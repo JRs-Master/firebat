@@ -174,9 +174,12 @@ export class AiManager {
       }
 
       const plan: FirebatPlan = parseResult.data;
-      // description 누락 방어: 빈 문자열이면 type 기반 기본값 채우기
+      // 필드 누락 방어
       for (const a of plan.actions) {
         if (!a.description) a.description = a.type;
+        if (a.type === 'SCHEDULE_TASK' && !(a as any).title) {
+          (a as any).title = a.description || 'SCHEDULE_TASK';
+        }
       }
       this.logger.info(`[AiManager] [${corrId}] [${modelId}] Plan validated (${llmMs}ms). Thoughts: ${plan.thoughts}`);
 
@@ -426,9 +429,12 @@ export class AiManager {
       }
 
       const plan = parseResult.data;
-      // description 누락 방어: 빈 문자열이면 type 기반 기본값 채우기
+      // 필드 누락 방어
       for (const a of plan.actions) {
         if (!a.description) a.description = a.type;
+        if (a.type === 'SCHEDULE_TASK' && !(a as any).title) {
+          (a as any).title = a.description || 'SCHEDULE_TASK';
+        }
       }
       this.logger.info(`[AiManager] [${corrId}] [${modelId}] Plan 수립 완료 (${llmMs}ms, ${plan.actions.length}개 액션)`);
       return { success: true, plan, corrId, modelId };
