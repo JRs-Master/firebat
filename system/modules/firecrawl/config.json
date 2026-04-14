@@ -1,16 +1,16 @@
 {
-  "name": "jina-reader",
+  "name": "firecrawl",
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Jina Reader API 기반 웹 스크래퍼. URL → 마크다운 텍스트 변환. 서버 리소스 제로.",
+  "description": "Firecrawl API 기반 웹 스크래퍼. URL → 마크다운 텍스트 변환. JS 렌더링 지원.",
   "runtime": "node",
   "capability": "web-scrape",
   "providerType": "api",
-  "secrets": [],
+  "secrets": ["FIRECRAWL_API_KEY"],
   "input": {
     "url": "string (required) — 스크래핑할 URL",
-    "keyword": "string (optional) — 이 키워드가 포함된 섹션만 추출 (대량 페이지에서 필요한 부분만 가져올 때)"
+    "keyword": "string (optional) — 이 키워드가 포함된 섹션만 추출"
   },
   "output": {
     "url": "string — 최종 URL",

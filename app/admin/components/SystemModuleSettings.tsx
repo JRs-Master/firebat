@@ -45,9 +45,10 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
       { key: 'defaultType', label: '기본 메시지 타입', type: 'text', placeholder: 'text', description: 'text | feed | list (기본: text)', defaultValue: 'text' },
     ],
   },
-  'jina-reader': {
-    title: 'Jina Reader 웹 스크래퍼',
+  'firecrawl': {
+    title: 'Firecrawl 웹 스크래퍼',
     fields: [
+      { key: 'firecrawlApiKey', label: 'API 키', type: 'secret', secretName: 'FIRECRAWL_API_KEY', placeholder: 'fc-...', description: 'firecrawl.dev에서 발급받은 API 키' },
       { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '30000', description: '마크다운 결과 최대 글자 수', defaultValue: 30000 },
     ],
   },
