@@ -4,7 +4,7 @@
  *
  * [INPUT]  stdin JSON: {
  *           "correlationId": "...",
- *           "data": { "url": "string" }
+ *           "data": { "url": "string", "keyword?": "string" }
  *         }
  * [OUTPUT] stdout JSON: {
  *           "success": true,
@@ -20,6 +20,7 @@ process.stdin.on('end', async () => {
   try {
     const { data } = JSON.parse(raw);
     const url = data?.url;
+    const keyword = data?.keyword; // 키워드 주변 텍스트만 추출
     if (!url) {
       console.log(JSON.stringify({ success: false, error: 'data.url 필드가 필요합니다.' }));
       return;
@@ -51,9 +52,20 @@ process.stdin.on('end', async () => {
 
     const maxLen = parseInt(process.env['MODULE_MAXTEXTLENGTH'] || '30000', 10);
 
+    let result = text;
+    // keyword가 있으면 해당 키워드 주변 텍스트만 추출 (앞뒤 3000자)
+    if (keyword) {
+      const idx = text.indexOf(keyword);
+      if (idx !== -1) {
+        const start = Math.max(0, idx - 500);
+        const end = Math.min(text.length, idx + 3000);
+        result = text.slice(start, end);
+      }
+    }
+
     console.log(JSON.stringify({
       success: true,
-      data: { url, title, text: text.slice(0, maxLen) },
+      data: { url, title, text: result.slice(0, maxLen) },
     }));
   } catch (e) {
     console.log(JSON.stringify({ success: false, error: e.message }));

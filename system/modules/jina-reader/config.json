@@ -9,7 +9,8 @@
   "providerType": "api",
   "secrets": [],
   "input": {
-    "url": "string (required) — 스크래핑할 URL"
+    "url": "string (required) — 스크래핑할 URL",
+    "keyword": "string (optional) — 이 키워드가 포함된 섹션만 추출 (대량 페이지에서 필요한 부분만 가져올 때)"
   },
   "output": {
     "url": "string — 최종 URL",
