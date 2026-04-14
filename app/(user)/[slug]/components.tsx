@@ -1,0 +1,655 @@
+'use client';
+
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+
+// ── 타입 ────────────────────────────────────────────────────────────────────
+interface ComponentDef {
+  type: string;
+  props?: Record<string, any>;
+}
+
+interface ComponentRendererProps {
+  components: ComponentDef[];
+}
+
+// ── Component 렌더러 ───────────────────────────────────────────────────────
+export function ComponentRenderer({ components, fullHeight }: ComponentRendererProps & { fullHeight?: boolean }) {
+  return (
+    <div className={fullHeight ? 'h-full' : 'flex flex-col gap-6'}>
+      {components.map((comp, i) => (
+        <ComponentSwitch key={i} comp={comp} />
+      ))}
+    </div>
+  );
+}
+
+function ComponentSwitch({ comp }: { comp: ComponentDef }) {
+  const { type, props = {} } = comp;
+  const p = props as any;
+
+  switch (type) {
+    case 'Header':        return <HeaderComp text={p.text ?? ''} level={p.level} />;
+    case 'Text':          return <TextComp content={p.content ?? ''} />;
+    case 'Image':         return <ImageComp src={p.src ?? ''} alt={p.alt} width={p.width} height={p.height} />;
+    case 'Form':          return <FormComp bindModule={p.bindModule} inputs={p.inputs ?? []} submitText={p.submitText} />;
+    case 'ResultDisplay': return null;
+    case 'Button':        return <ButtonComp text={p.text ?? ''} href={p.href} variant={p.variant} />;
+    case 'Divider':       return <DividerComp />;
+    case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} />;
+    case 'Card':          return <CardComp children={p.children ?? []} />;
+    case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} />;
+    case 'AdSlot':        return <AdSlotComp slotId={p.slotId} format={p.format} />;
+    case 'Html':          return <HtmlComp content={p.content ?? ''} />;
+    case 'Slider':        return <SliderComp label={p.label} min={p.min} max={p.max} step={p.step} defaultValue={p.defaultValue} unit={p.unit} />;
+    case 'Tabs':          return <TabsComp tabs={p.tabs ?? []} />;
+    case 'Accordion':     return <AccordionComp items={p.items ?? []} />;
+    case 'Progress':      return <ProgressComp value={p.value ?? 0} max={p.max} label={p.label} color={p.color} />;
+    case 'Badge':         return <BadgeComp text={p.text ?? ''} color={p.color} />;
+    case 'Alert':         return <AlertComp message={p.message ?? ''} type={p.type} title={p.title} />;
+    case 'List':          return <ListComp items={p.items ?? []} ordered={p.ordered} />;
+    case 'Carousel':      return <CarouselComp children={p.children ?? []} autoPlay={p.autoPlay} interval={p.interval} />;
+    case 'Countdown':     return <CountdownComp targetDate={p.targetDate ?? ''} label={p.label} />;
+    case 'Chart':         return <ChartComp type={p.chartType ?? 'bar'} data={p.data ?? []} labels={p.labels ?? []} title={p.title} />;
+    default:
+      return <div className="text-amber-600 text-sm p-3 bg-amber-50 rounded-xl border border-amber-200">지원되지 않는 컴포넌트입니다 ({type})</div>;
+  }
+}
+
+// ── Header ──────────────────────────────────────────────────────────────────
+function HeaderComp({ text, level = 1 }: { text: string; level?: number }) {
+  const clampedLevel = Math.min(Math.max(level, 1), 6);
+  const sizes: Record<number, string> = {
+    1: 'text-3xl sm:text-4xl font-extrabold',
+    2: 'text-2xl sm:text-3xl font-bold',
+    3: 'text-xl sm:text-2xl font-bold',
+    4: 'text-lg sm:text-xl font-semibold',
+    5: 'text-base font-semibold',
+    6: 'text-sm font-semibold',
+  };
+  const cls = `${sizes[clampedLevel] ?? sizes[1]} text-gray-900 leading-tight`;
+  if (clampedLevel === 1) return <h1 className={cls}>{text}</h1>;
+  if (clampedLevel === 2) return <h2 className={cls}>{text}</h2>;
+  if (clampedLevel === 3) return <h3 className={cls}>{text}</h3>;
+  if (clampedLevel === 4) return <h4 className={cls}>{text}</h4>;
+  if (clampedLevel === 5) return <h5 className={cls}>{text}</h5>;
+  return <h6 className={cls}>{text}</h6>;
+}
+
+// ── Text ────────────────────────────────────────────────────────────────────
+function TextComp({ content }: { content: string }) {
+  return <p className="text-gray-700 text-base sm:text-lg leading-relaxed whitespace-pre-wrap">{content}</p>;
+}
+
+// ── Image ───────────────────────────────────────────────────────────────────
+function ImageComp({ src, alt = '', width, height }: { src: string; alt?: string; width?: number; height?: number }) {
+  return (
+    <figure className="rounded-xl overflow-hidden shadow-sm border border-gray-100">
+      <img src={src} alt={alt} width={width} height={height} className="w-full h-auto object-cover" loading="lazy" />
+      {alt && <figcaption className="text-sm text-gray-500 px-4 py-2 bg-gray-50">{alt}</figcaption>}
+    </figure>
+  );
+}
+
+// ── Form (+ 인라인 ResultDisplay) ───────────────────────────────────────────
+function FormComp({ bindModule, inputs = [], submitText = '실행' }: {
+  bindModule?: string;
+  inputs: { name: string; label: string; type?: string; required?: boolean; placeholder?: string }[];
+  submitText?: string;
+}) {
+  const [formData, setFormData] = useState<Record<string, string>>({});
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleChange = useCallback((name: string, value: string) => {
+    setFormData(prev => ({ ...prev, [name]: value }));
+  }, []);
+
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bindModule) return;
+    setLoading(true);
+    setError(null);
+    setResult(null);
+
+    try {
+      const payload: Record<string, any> = {};
+      for (const input of inputs) {
+        const val = formData[input.name] ?? '';
+        if (input.type === 'number') payload[input.name] = parseFloat(val) || 0;
+        else payload[input.name] = val;
+      }
+
+      const res = await fetch('/api/module/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ module: bindModule, data: payload }),
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setResult(data.data?.data ?? data.data);
+      } else {
+        setError(data.error ?? '실행 실패');
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [bindModule, formData, inputs]);
+
+  return (
+    <div className="space-y-4">
+      <form onSubmit={handleSubmit} className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-4">
+        {inputs.map(input => (
+          <div key={input.name} className="flex flex-col gap-1.5">
+            <label htmlFor={`f-${input.name}`} className="text-sm font-semibold text-gray-700">
+              {input.label}{input.required && <span className="text-red-500 ml-0.5">*</span>}
+            </label>
+            <input
+              id={`f-${input.name}`}
+              type={input.type ?? 'text'}
+              required={input.required}
+              placeholder={input.placeholder ?? ''}
+              value={formData[input.name] ?? ''}
+              onChange={e => handleChange(input.name, e.target.value)}
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-800 text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+            />
+          </div>
+        ))}
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white font-bold rounded-xl transition-colors shadow-sm text-base"
+        >
+          {loading ? '처리 중...' : submitText}
+        </button>
+      </form>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-sm">
+          {error}
+        </div>
+      )}
+      {result && (
+        <div className="bg-green-50 border border-green-200 p-5 rounded-xl">
+          {typeof result === 'object' ? (
+            <div className="space-y-2">
+              {Object.entries(result).map(([key, val]) => (
+                <div key={key} className="flex items-baseline gap-2">
+                  <span className="text-sm font-semibold text-gray-600 min-w-[80px]">{key}:</span>
+                  <span className="text-base font-bold text-gray-900">{String(val)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-base font-bold text-gray-900">{String(result)}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Button ──────────────────────────────────────────────────────────────────
+function ButtonComp({ text, href, variant = 'primary' }: { text: string; href?: string; variant?: string }) {
+  const base = 'inline-flex items-center justify-center px-6 py-3 rounded-xl font-bold text-base transition-all shadow-sm';
+  const styles: Record<string, string> = {
+    primary: `${base} bg-blue-600 hover:bg-blue-700 text-white`,
+    secondary: `${base} bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200`,
+    outline: `${base} bg-white hover:bg-gray-50 text-blue-600 border-2 border-blue-600`,
+  };
+  const cls = styles[variant] ?? styles.primary;
+
+  if (href) {
+    return <a href={href} className={cls}>{text}</a>;
+  }
+  return <button className={cls}>{text}</button>;
+}
+
+// ── Divider ─────────────────────────────────────────────────────────────────
+function DividerComp() {
+  return <hr className="border-gray-200 my-2" />;
+}
+
+// ── Table ───────────────────────────────────────────────────────────────────
+function TableComp({ headers = [], rows = [] }: { headers: string[]; rows: string[][] }) {
+  return (
+    <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+      <table className="w-full text-left">
+        <thead className="bg-gray-50 border-b border-gray-200">
+          <tr>
+            {headers.map((h, i) => (
+              <th key={i} className="px-5 py-3 text-sm font-bold text-gray-600 uppercase tracking-wider">{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-100">
+          {rows.map((row, ri) => (
+            <tr key={ri} className="hover:bg-gray-50 transition-colors">
+              {row.map((cell, ci) => (
+                <td key={ci} className="px-5 py-3 text-sm text-gray-800">{cell}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Card ────────────────────────────────────────────────────────────────────
+function CardComp({ children = [] }: { children: ComponentDef[] }) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+      <ComponentRenderer components={children} />
+    </div>
+  );
+}
+
+// ── Grid ────────────────────────────────────────────────────────────────────
+function GridComp({ columns = 2, children = [] }: { columns?: number; children: ComponentDef[] }) {
+  const gridCls: Record<number, string> = {
+    1: 'grid-cols-1',
+    2: 'grid-cols-1 sm:grid-cols-2',
+    3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+    4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4',
+  };
+  return (
+    <div className={`grid ${gridCls[columns] ?? gridCls[2]} gap-4`}>
+      {children.map((comp, i) => (
+        <ComponentSwitch key={i} comp={comp} />
+      ))}
+    </div>
+  );
+}
+
+// ── AdSlot ──────────────────────────────────────────────────────────────────
+function AdSlotComp({ slotId, format = 'auto' }: { slotId?: string; format?: string }) {
+  if (!slotId) return null;
+  return (
+    <div className="flex items-center justify-center py-4">
+      <ins
+        className="adsbygoogle"
+        style={{ display: 'block' }}
+        data-ad-slot={slotId}
+        data-ad-format={format}
+        data-full-width-responsive="true"
+      />
+    </div>
+  );
+}
+
+// ── Html (iframe sandbox) ───────────────────────────────────────────────────
+function HtmlComp({ content }: { content: string }) {
+  const srcdoc = `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; overflow: auto; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.6; color: #1e293b; }
+  img, video { max-width: 100%; height: auto; }
+</style>
+</head><body>${content}</body></html>`;
+
+  return (
+    <iframe
+      srcDoc={srcdoc}
+      sandbox="allow-scripts"
+      className="w-full h-full border-0 bg-white"
+      title="Html content"
+    />
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 새 컴포넌트
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Slider ──────────────────────────────────────────────────────────────────
+function SliderComp({ label, min = 0, max = 100, step = 1, defaultValue, unit = '' }: {
+  label?: string; min?: number; max?: number; step?: number; defaultValue?: number; unit?: string;
+}) {
+  const [value, setValue] = useState(defaultValue ?? min);
+  return (
+    <div className="space-y-2">
+      {label && (
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold text-gray-700">{label}</span>
+          <span className="text-sm font-bold text-blue-600">{value}{unit}</span>
+        </div>
+      )}
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={e => setValue(Number(e.target.value))}
+        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+      />
+      {!label && <div className="text-right text-sm font-bold text-blue-600">{value}{unit}</div>}
+    </div>
+  );
+}
+
+// ── Tabs ─────────────────────────────────────────────────────────────────────
+function TabsComp({ tabs }: { tabs: { label: string; children: ComponentDef[] }[] }) {
+  const [active, setActive] = useState(0);
+  if (tabs.length === 0) return null;
+
+  return (
+    <div>
+      <div className="flex border-b border-gray-200 gap-1 overflow-x-auto">
+        {tabs.map((tab, i) => (
+          <button
+            key={i}
+            onClick={() => setActive(i)}
+            className={`px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors ${
+              active === i
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className="pt-4">
+        <ComponentRenderer components={tabs[active].children ?? []} />
+      </div>
+    </div>
+  );
+}
+
+// ── Accordion ───────────────────────────────────────────────────────────────
+function AccordionComp({ items }: { items: { title: string; children: ComponentDef[] }[] }) {
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
+
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden divide-y divide-gray-200">
+      {items.map((item, i) => (
+        <div key={i}>
+          <button
+            onClick={() => setOpenIndex(openIndex === i ? null : i)}
+            className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors"
+          >
+            <span className="text-sm font-semibold text-gray-800">{item.title}</span>
+            <svg
+              className={`w-4 h-4 text-gray-500 transition-transform ${openIndex === i ? 'rotate-180' : ''}`}
+              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {openIndex === i && (
+            <div className="px-5 pb-4">
+              <ComponentRenderer components={item.children ?? []} />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Progress ────────────────────────────────────────────────────────────────
+function ProgressComp({ value, max = 100, label, color = 'blue' }: {
+  value: number; max?: number; label?: string; color?: string;
+}) {
+  const pct = Math.min(100, Math.max(0, (value / max) * 100));
+  const colors: Record<string, string> = {
+    blue: 'bg-blue-500', green: 'bg-green-500', red: 'bg-red-500',
+    yellow: 'bg-yellow-500', purple: 'bg-purple-500', orange: 'bg-orange-500',
+  };
+  const barColor = colors[color] ?? colors.blue;
+
+  return (
+    <div className="space-y-1.5">
+      {label && (
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-semibold text-gray-700">{label}</span>
+          <span className="text-sm font-bold text-gray-500">{Math.round(pct)}%</span>
+        </div>
+      )}
+      <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all duration-500 ${barColor}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Badge ───────────────────────────────────────────────────────────────────
+function BadgeComp({ text, color = 'blue' }: { text: string; color?: string }) {
+  const colors: Record<string, string> = {
+    blue: 'bg-blue-100 text-blue-700',
+    green: 'bg-green-100 text-green-700',
+    red: 'bg-red-100 text-red-700',
+    yellow: 'bg-yellow-100 text-yellow-700',
+    purple: 'bg-purple-100 text-purple-700',
+    gray: 'bg-gray-100 text-gray-700',
+    orange: 'bg-orange-100 text-orange-700',
+  };
+  const cls = colors[color] ?? colors.blue;
+
+  return (
+    <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${cls}`}>
+      {text}
+    </span>
+  );
+}
+
+// ── Alert ───────────────────────────────────────────────────────────────────
+function AlertComp({ message, type = 'info', title }: { message: string; type?: string; title?: string }) {
+  const styles: Record<string, { bg: string; border: string; text: string; icon: string }> = {
+    info:    { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-800', icon: 'ℹ️' },
+    success: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-800', icon: '✅' },
+    warning: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-800', icon: '⚠️' },
+    error:   { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800', icon: '❌' },
+  };
+  const s = styles[type] ?? styles.info;
+
+  return (
+    <div className={`${s.bg} ${s.border} border rounded-xl p-4 flex gap-3`}>
+      <span className="text-lg shrink-0">{s.icon}</span>
+      <div>
+        {title && <div className={`font-bold text-sm mb-1 ${s.text}`}>{title}</div>}
+        <div className={`text-sm ${s.text}`}>{message}</div>
+      </div>
+    </div>
+  );
+}
+
+// ── List ────────────────────────────────────────────────────────────────────
+function ListComp({ items, ordered = false }: { items: string[]; ordered?: boolean }) {
+  const Tag = ordered ? 'ol' : 'ul';
+  return (
+    <Tag className={`space-y-1.5 pl-5 ${ordered ? 'list-decimal' : 'list-disc'} text-gray-700`}>
+      {items.map((item, i) => (
+        <li key={i} className="text-base leading-relaxed">{item}</li>
+      ))}
+    </Tag>
+  );
+}
+
+// ── Carousel ────────────────────────────────────────────────────────────────
+function CarouselComp({ children, autoPlay = false, interval = 5000 }: {
+  children: ComponentDef[]; autoPlay?: boolean; interval?: number;
+}) {
+  const [current, setCurrent] = useState(0);
+  const total = children.length;
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (autoPlay && total > 1) {
+      timerRef.current = setInterval(() => setCurrent(prev => (prev + 1) % total), interval);
+      return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    }
+  }, [autoPlay, interval, total]);
+
+  if (total === 0) return null;
+
+  const go = (dir: -1 | 1) => {
+    setCurrent((current + dir + total) % total);
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+  };
+
+  return (
+    <div className="relative">
+      <div className="overflow-hidden rounded-xl border border-gray-200">
+        <ComponentSwitch comp={children[current]} />
+      </div>
+      {total > 1 && (
+        <>
+          <button
+            onClick={() => go(-1)}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/80 shadow flex items-center justify-center hover:bg-white transition-colors"
+          >
+            <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          <button
+            onClick={() => go(1)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/80 shadow flex items-center justify-center hover:bg-white transition-colors"
+          >
+            <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </button>
+          <div className="flex justify-center gap-1.5 mt-3">
+            {children.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setCurrent(i)}
+                className={`w-2 h-2 rounded-full transition-colors ${i === current ? 'bg-blue-600' : 'bg-gray-300'}`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Countdown ───────────────────────────────────────────────────────────────
+function CountdownComp({ targetDate, label }: { targetDate: string; label?: string }) {
+  const [remaining, setRemaining] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+  const [expired, setExpired] = useState(false);
+
+  useEffect(() => {
+    const update = () => {
+      const diff = new Date(targetDate).getTime() - Date.now();
+      if (diff <= 0) { setExpired(true); return; }
+      setRemaining({
+        days: Math.floor(diff / 86400000),
+        hours: Math.floor((diff % 86400000) / 3600000),
+        minutes: Math.floor((diff % 3600000) / 60000),
+        seconds: Math.floor((diff % 60000) / 1000),
+      });
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [targetDate]);
+
+  if (expired) {
+    return (
+      <div className="text-center py-4">
+        {label && <div className="text-sm text-gray-500 mb-2">{label}</div>}
+        <div className="text-xl font-bold text-gray-800">종료되었습니다</div>
+      </div>
+    );
+  }
+
+  const units = [
+    { value: remaining.days, label: '일' },
+    { value: remaining.hours, label: '시간' },
+    { value: remaining.minutes, label: '분' },
+    { value: remaining.seconds, label: '초' },
+  ];
+
+  return (
+    <div className="text-center py-4">
+      {label && <div className="text-sm text-gray-500 mb-3">{label}</div>}
+      <div className="flex justify-center gap-3">
+        {units.map((u, i) => (
+          <div key={i} className="flex flex-col items-center bg-gray-50 rounded-xl px-4 py-3 min-w-[60px] border border-gray-200">
+            <span className="text-2xl sm:text-3xl font-extrabold text-gray-900 tabular-nums">
+              {String(u.value).padStart(2, '0')}
+            </span>
+            <span className="text-xs text-gray-500 mt-1">{u.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Chart (CSS-only, 외부 라이브러리 없음) ──────────────────────────────────
+function ChartComp({ type = 'bar', data, labels, title }: {
+  type: 'bar' | 'pie'; data: number[]; labels: string[]; title?: string;
+}) {
+  if (data.length === 0) return null;
+  const maxVal = Math.max(...data, 1);
+  const chartColors = [
+    'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-red-500',
+    'bg-purple-500', 'bg-orange-500', 'bg-teal-500', 'bg-pink-500',
+  ];
+  const pieColors = [
+    '#3b82f6', '#22c55e', '#eab308', '#ef4444',
+    '#a855f7', '#f97316', '#14b8a6', '#ec4899',
+  ];
+
+  if (type === 'pie') {
+    const total = data.reduce((s, v) => s + v, 0) || 1;
+    let cumPercent = 0;
+    const gradientParts = data.map((v, i) => {
+      const start = cumPercent;
+      cumPercent += (v / total) * 100;
+      return `${pieColors[i % pieColors.length]} ${start}% ${cumPercent}%`;
+    });
+    const gradient = `conic-gradient(${gradientParts.join(', ')})`;
+
+    return (
+      <div className="space-y-3">
+        {title && <div className="text-sm font-bold text-gray-800 text-center">{title}</div>}
+        <div className="flex items-center justify-center gap-6">
+          <div className="w-40 h-40 rounded-full shadow-sm border border-gray-100" style={{ background: gradient }} />
+          <div className="space-y-1.5">
+            {labels.map((label, i) => (
+              <div key={i} className="flex items-center gap-2 text-sm">
+                <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: pieColors[i % pieColors.length] }} />
+                <span className="text-gray-700">{label}</span>
+                <span className="text-gray-400 ml-auto">{Math.round((data[i] / total) * 100)}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // bar chart
+  return (
+    <div className="space-y-3">
+      {title && <div className="text-sm font-bold text-gray-800">{title}</div>}
+      <div className="space-y-2">
+        {data.map((v, i) => (
+          <div key={i} className="flex items-center gap-3">
+            <span className="text-xs text-gray-600 w-20 truncate text-right">{labels[i] ?? i}</span>
+            <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full ${chartColors[i % chartColors.length]} transition-all duration-500`}
+                style={{ width: `${(v / maxVal) * 100}%` }}
+              />
+            </div>
+            <span className="text-xs font-bold text-gray-700 w-10">{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

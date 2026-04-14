@@ -1,0 +1,20 @@
+{
+  "name": "kakao-talk",
+  "type": "utility",
+  "version": "1.0.0",
+  "description": "카카오톡 나에게 보내기 API. 텍스트/링크/리스트 메시지를 내 카톡으로 발송.",
+  "runtime": "node",
+  "capability": "notification",
+  "providerType": "api",
+  "secrets": ["KAKAO_ACCESS_TOKEN", "KAKAO_REFRESH_TOKEN", "KAKAO_REST_API_KEY", "KAKAO_CLIENT_SECRET"],
+  "input": {
+    "type": "string (optional) — text | feed | list (기본: text)",
+    "text": "string (required) — 메시지 본문",
+    "link": "string (optional) — 버튼 클릭 시 이동할 URL",
+    "buttonTitle": "string (optional) — 버튼 텍스트 (기본: '자세히 보기')"
+  },
+  "output": {
+    "success": "boolean",
+    "resultCode": "number — 카카오 API 응답 코드"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "jina-reader",
+  "type": "utility",
+  "version": "1.0.0",
+  "description": "Jina Reader API 기반 웹 스크래퍼. URL → 마크다운 텍스트 변환. 서버 리소스 제로.",
+  "runtime": "node",
+  "capability": "web-scrape",
+  "providerType": "api",
+  "secrets": [],
+  "input": {
+    "url": "string (required) — 스크래핑할 URL"
+  },
+  "output": {
+    "url": "string — 최종 URL",
+    "title": "string — 페이지 제목",
+    "text": "string — 마크다운 형식 본문 텍스트"
+  }
+}

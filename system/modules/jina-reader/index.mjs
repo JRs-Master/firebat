@@ -1,0 +1,61 @@
+/**
+ * Firebat System Module: jina-reader
+ * Jina Reader API 기반 웹 스크래퍼
+ *
+ * [INPUT]  stdin JSON: {
+ *           "correlationId": "...",
+ *           "data": { "url": "string" }
+ *         }
+ * [OUTPUT] stdout JSON: {
+ *           "success": true,
+ *           "data": { "url": "...", "title": "...", "text": "..." }
+ *         }
+ *         또는 { "success": false, "error": "..." }
+ *
+ * Jina Reader 무료 티어: API 키 없이 사용 가능 (rate limit 있음).
+ * API 키가 있으면 rate limit 완화.
+ */
+
+let raw = '';
+process.stdin.setEncoding('utf-8');
+process.stdin.on('data', chunk => { raw += chunk; });
+process.stdin.on('end', async () => {
+  try {
+    const { data } = JSON.parse(raw);
+    const url = data?.url;
+
+    if (!url) {
+      console.log(JSON.stringify({ success: false, error: 'data.url 필드가 필요합니다.' }));
+      return;
+    }
+
+    const headers = { 'Accept': 'text/markdown' };
+    const apiKey = process.env['JINA_API_KEY'];
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+    const resp = await fetch(`https://r.jina.ai/${url}`, { headers, signal: AbortSignal.timeout(25000) });
+
+    if (!resp.ok) {
+      console.log(JSON.stringify({ success: false, error: `Jina API ${resp.status}: ${resp.statusText}` }));
+      return;
+    }
+
+    const text = await resp.text();
+
+    // 제목 추출: Jina 마크다운 첫 줄이 "Title: ..." 또는 "# ..." 형태
+    let title = '';
+    const lines = text.split('\n');
+    if (lines[0]?.startsWith('Title:')) {
+      title = lines[0].slice(6).trim();
+    } else if (lines[0]?.startsWith('# ')) {
+      title = lines[0].slice(2).trim();
+    }
+
+    console.log(JSON.stringify({
+      success: true,
+      data: { url, title, text: text.slice(0, 5000) },
+    }));
+  } catch (e) {
+    console.log(JSON.stringify({ success: false, error: e.message }));
+  }
+});

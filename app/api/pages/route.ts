@@ -1,0 +1,59 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getCore } from '../../../lib/singleton';
+
+export async function GET() {
+  const result = await getCore().listPages();
+  if (!result.success) {
+    return NextResponse.json({ success: false, error: result.error }, { status: 500 });
+  }
+  return NextResponse.json({ success: true, pages: result.data });
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const { slug, spec } = await req.json();
+    if (!slug || !spec) {
+      return NextResponse.json({ success: false, error: 'slug와 spec이 필요합니다.' }, { status: 400 });
+    }
+
+    const specStr = typeof spec === 'string' ? spec : JSON.stringify(spec);
+    const result = await getCore().savePage(slug, specStr);
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 500 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const { slug, spec } = await req.json();
+    if (!slug || !spec) {
+      return NextResponse.json({ success: false, error: 'slug와 spec이 필요합니다.' }, { status: 400 });
+    }
+
+    const specStr = typeof spec === 'string' ? spec : JSON.stringify(spec);
+    const result = await getCore().savePage(slug, specStr);
+    if (!result.success) {
+      return NextResponse.json({ success: false, error: result.error }, { status: 500 });
+    }
+    return NextResponse.json({ success: true });
+  } catch (err: any) {
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  const slug = req.nextUrl.searchParams.get('slug');
+  if (!slug) {
+    return NextResponse.json({ success: false, error: 'slug 파라미터가 필요합니다.' }, { status: 400 });
+  }
+
+  const result = await getCore().deletePage(slug);
+  if (!result.success) {
+    return NextResponse.json({ success: false, error: result.error }, { status: 500 });
+  }
+  return NextResponse.json({ success: true });
+}

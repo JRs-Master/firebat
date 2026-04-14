@@ -1,0 +1,33 @@
+# 의존성 폴더
+node_modules/
+
+# Next.js 빌드 결과물
+.next/
+out/
+build/
+tsconfig.tsbuildinfo
+
+# 환경 변수
+.env
+.env.local
+.env.development
+.env.production
+
+# IDE/도구 로컬 설정
+.claude/
+.vscode/
+
+# Claude Code 작업 기록
+CLAUDE.md
+
+# 시스템 파일
+.DS_Store
+Thumbs.db
+
+# 런타임 데이터 (DB, 로그, 크론, MCP 설정 등)
+data/
+*.db
+
+# lock 파일 제외 (package-lock.json은 유지)
+yarn.lock
+pnpm-lock.yaml

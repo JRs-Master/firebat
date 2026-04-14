@@ -1,0 +1,54 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+/* user/modules, user/apps 내 Tailwind 클래스 스캔 */
+@source "../user/modules/**/*.{js,ts,jsx,tsx}";
+@source "../user/apps/**/*.{js,ts,jsx,tsx}";
+
+@layer base {
+  html {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-white text-gray-900;
+  }
+
+  /* 텍스트 드래그(선택) 시 우아한 파란색 하이라이트 */
+  ::selection {
+    @apply bg-blue-100 text-blue-900;
+  }
+}
+
+@layer utilities {
+  /* 세련된 스크롤바 커스텀 */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+  }
+
+  /* 공통 활용 가능한 에스테틱 유틸리티 */
+  .glass-panel {
+    @apply bg-white/80 backdrop-blur-md border border-gray-100 shadow-sm rounded-xl;
+  }
+
+  /* 커스텀 스크롤바 텍스트 영역 */
+  .scrolltext {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-gray-300) transparent;
+  }
+}
