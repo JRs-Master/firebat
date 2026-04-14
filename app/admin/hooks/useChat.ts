@@ -5,6 +5,14 @@ import { flushSync } from 'react-dom';
 import { Message, Conversation, INIT_MESSAGE, makeConv } from '../types';
 import { ConversationMeta } from '../components/Sidebar';
 
+// 저장된 대화 복원 시 진행 중 상태 정리
+function cleanMessages(msgs: Message[]): Message[] {
+  return msgs.map(m => m.isThinking || m.executing
+    ? { ...m, isThinking: false, executing: false, content: m.content || '중단되었습니다.' }
+    : m
+  );
+}
+
 // SSE 이벤트 파서 — buffer에서 완성된 이벤트만 파싱, 나머지는 반환
 function parseSSE(buffer: string): { events: { event: string; data: any }[]; remaining: string } {
   const events: { event: string; data: any }[] = [];
@@ -50,7 +58,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       const savedActiveId = localStorage.getItem('firebat_active_conv') ?? '';
       const active = convs.find(c => c.id === savedActiveId) ?? convs[convs.length - 1];
       setActiveConvId(active.id);
-      setMessages(active.messages);
+      setMessages(cleanMessages(active.messages));
     }
   }, []);
 
@@ -92,7 +100,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     const conv = conversations.find(c => c.id === id);
     if (!conv) return;
     setActiveConvId(id);
-    setMessages(conv.messages);
+    setMessages(cleanMessages(conv.messages));
     localStorage.setItem('firebat_active_conv', id);
   }, [activeConvId, conversations]);
 
