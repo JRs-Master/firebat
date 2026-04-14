@@ -178,8 +178,8 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
   }
 
   return (
-    <div className="flex w-full gap-4 items-start">
-      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-50 to-blue-100 border border-blue-200 flex items-center justify-center shadow-sm shrink-0">
+    <div className="flex w-full gap-2 sm:gap-4 items-start">
+      <div className="hidden sm:flex w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-50 to-blue-100 border border-blue-200 items-center justify-center shadow-sm shrink-0">
         <Bot size={22} className="text-blue-600" />
       </div>
       <div className="flex flex-col gap-2 flex-1 min-w-0">
