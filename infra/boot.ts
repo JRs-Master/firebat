@@ -81,7 +81,7 @@ export function getInfra(): FirebatInfraContainer {
         const filled = Math.round((pct / 100) * BAR_WIDTH);
         const bar = '█'.repeat(filled) + '░'.repeat(BAR_WIDTH - filled);
         process.stdout.write(`\r\x1b[38;5;${c}m[Firebat]\x1b[0m ${bar} ${String(pct).padStart(3)}% \x1b[38;5;246m${label}\x1b[0m`);
-        pause(15);
+        pause(5);
       }
       prev = target;
     }
