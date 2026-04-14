@@ -510,10 +510,23 @@ export class AiManager {
     const totalMs = Date.now() - startTime;
     this.logger.info(`[AiManager] [${corrId}] [${modelId}] 실행 완료 (${executedActions.length}개 액션, ${totalMs}ms)`);
 
+    // RUN_TASK 파이프라인 결과가 있으면 reply에 반영
+    let finalReply = plan.reply;
+    const taskResults = finalDataList.filter(d => d?.taskResult !== undefined);
+    if (taskResults.length > 0) {
+      const resultText = taskResults
+        .map(d => typeof d.taskResult === 'string' ? d.taskResult : JSON.stringify(d.taskResult, null, 2))
+        .join('\n\n')
+        .trim();
+      if (resultText) {
+        finalReply = resultText;
+      }
+    }
+
     return {
       success: true,
       thoughts: plan.thoughts,
-      reply: plan.reply,
+      reply: finalReply,
       executedActions,
       data: finalDataList.length === 1 ? finalDataList[0] : finalDataList.length > 1 ? finalDataList : undefined,
     };
