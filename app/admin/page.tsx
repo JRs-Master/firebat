@@ -91,7 +91,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   };
 
   return (
-    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50 max-w-sm">
+    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50 max-w-md">
       {suggestions.map((item, i) => {
         if (typeof item === 'string') {
           return (
@@ -130,7 +130,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
         if (item.type === 'toggle') {
           const selected = toggleSelections[i] ?? new Set();
           return (
-            <div key={i} className="px-4 py-3 border-b border-slate-200 last:border-b-0">
+            <div key={i} className="flex flex-col px-4 py-3 border-b border-slate-200 last:border-b-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{item.label}</span>
               <div className="flex flex-col gap-1 mt-2">
                 {item.options.map(opt => (
