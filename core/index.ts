@@ -155,9 +155,13 @@ export class FirebatCore {
     return this.module.run(moduleName, inputData);
   }
 
-  /** 경로 지정 직접 실행 (TEST_RUN, 파이프라인 등) */
+  /** 경로 지정 직접 실행 (TEST_RUN, 파이프라인 등) — capability 설정에 따라 provider 자동 선택 */
   async sandboxExecute(targetPath: string, inputData: any) {
-    return this.module.execute(targetPath, inputData);
+    const resolved = await this.task.resolvePreferredProvider(targetPath);
+    if (resolved !== targetPath) {
+      this.infra.log.info(`[Core] Capability 설정에 따라 provider 교체: ${targetPath} → ${resolved}`);
+    }
+    return this.module.execute(resolved, inputData);
   }
 
   async getSystemModules() { return this.module.listSystem(); }

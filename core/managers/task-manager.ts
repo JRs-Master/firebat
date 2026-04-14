@@ -63,15 +63,11 @@ export class TaskManager {
       try {
         switch (step.type) {
           case 'TEST_RUN': {
-            // Capability 모드에 따라 preferred provider로 자동 교체
-            const resolvedPath = await this.resolvePreferredProvider(step.path!);
-            if (resolvedPath !== step.path) {
-              this.log.info(`[Pipeline] Provider 교체: ${step.path} → ${resolvedPath}`);
-            }
-            const res = await this.core.sandboxExecute(resolvedPath, stepInput);
+            // Core.sandboxExecute가 capability 설정에 따라 provider 자동 교체
+            const res = await this.core.sandboxExecute(step.path!, stepInput);
             if (!res.success) {
               // 실패 시 같은 capability의 대체 provider로 폴백 시도
-              const fallbackRes = await this.tryFallbackProvider(resolvedPath, stepInput);
+              const fallbackRes = await this.tryFallbackProvider(step.path!, stepInput);
               if (fallbackRes) {
                 prev = fallbackRes.data;
                 break;
@@ -120,7 +116,7 @@ export class TaskManager {
   }
 
   /** Capability 모드에 따라 preferred provider 경로로 교체 (실행 전) */
-  private async resolvePreferredProvider(path: string): Promise<string> {
+  async resolvePreferredProvider(path: string): Promise<string> {
     const cache = await this.getCapabilityCache();
     const current = cache.get(path);
     if (!current?.capability) return path; // 시스템 모듈이 아니면 그대로
