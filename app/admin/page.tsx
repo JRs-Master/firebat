@@ -205,18 +205,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
               {/* Plan 표시 (답변 위에) */}
               {msg.plan && msg.plan.actions.length > 0 && (
                 <div className="flex flex-col gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-5">
-                  {msg.thoughts && (
-                    <div className="flex flex-col gap-1.5">
-                      {msg.thoughts.split('\n').filter(l => l.trim()).map((line, i) => (
-                        <div key={i} className="flex items-start gap-2 text-[13px] text-slate-600 leading-relaxed">
-                          <span className="text-blue-400 mt-0.5 shrink-0">›</span>
-                          <span>{line.replace(/^\d+\)\s*/, '')}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="flex flex-col gap-2 mt-1">
+                  <div className="flex flex-col gap-2">
                     <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">실행 단계</div>
                     {msg.plan.actions.map((action, i) => {
                       const step = msg.steps?.filter(s => s.index === i).slice(-1)[0];
