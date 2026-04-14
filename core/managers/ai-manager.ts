@@ -822,6 +822,16 @@ CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제. 새 모듈 만들지 마라.
   {"type":"EXECUTE","path":"<시스템 모듈 경로>","inputData":{"<입력키>":"<값>"}},
   {"type":"LLM_TRANSFORM","instruction":"결과에서 제목만 추출하여 번호 매겨 나열."}
 ]}
+$prev 규칙:
+- 각 단계의 결과는 자동으로 다음 단계의 입력이 된다 ($prev).
+- EXECUTE 결과는 모듈 출력의 data 객체다. 예: web-scrape 모듈 → $prev = {url, title, text}.
+- $prev.속성명으로 특정 필드 접근 가능. 예: $prev.url, $prev.text, $prev.title.
+- inputMap으로 매핑: {"url":"$prev.url"} → 이전 단계의 url 필드만 전달.
+- 검색 → URL 추출 → 스크래핑 같은 다단계 작업 예시:
+  1. EXECUTE(web-scrape, inputData:{url:"검색URL"}) → $prev = {url, title, text}
+  2. LLM_TRANSFORM(instruction:"본문에서 첫 번째 외부 링크 URL만 추출") → $prev = "https://..."
+  3. EXECUTE(web-scrape, inputMap:{url:"$prev"}) → $prev = {url, title, text}
+  4. LLM_TRANSFORM(instruction:"본문 내용을 요약")
 LLM_TRANSFORM의 instruction 작성 규칙:
 - 사용자가 물어본 범위만 정확히 지정하라. "요약하라", "정리하라" 같은 모호한 표현 금지.
 - 예: "실시간 트렌드" → "실시간 트렌드 목록만 추출". "뉴스 요약" → "뉴스 헤드라인만 추출". "첫번째 글 요약" → "첫번째 항목의 제목과 내용만 요약".
