@@ -101,6 +101,7 @@
   - **파이프라인 마지막 LLM_TRANSFORM 규칙**: 사용자에게 결과를 보여줘야 하는 파이프라인은 반드시 마지막 단계를 LLM_TRANSFORM으로 끝내야 함
   - **시스템 모듈 정보 동적 주입**: AI 프롬프트에 모듈 경로·입출력 스키마를 config.json에서 자동 생성 — 하드코딩 예시 금지, 모듈 추가 시 config.json만 작성하면 프롬프트 자동 반영
   - **파이프라인 단계 타입 제한**: TEST_RUN, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM 4가지만 허용. 모듈명을 타입으로 사용 금지
+  - **Capability 자동 폴백**: TEST_RUN 실패 시 같은 capability의 대체 provider로 자동 재시도. config.json의 capability/providerType 기반. 단독 TEST_RUN(유저 모듈 테스트)은 폴백 없음 — 파이프라인 실행에서만 동작
 - **타임존 파싱 (v0.1, 2026-04-14)**:
   - `parseInTimezone()`: Naive datetime 문자열을 설정된 타임존 기준으로 UTC 변환 (`Intl.DateTimeFormat` 사용)
   - `runAt`, `startAt`, `endAt` 모든 위치에 적용 (schedule, registerOnce, registerCron, restore)

@@ -11,6 +11,9 @@ import type { ILlmPort, ILogPort, PipelineStep } from '../ports';
  * Core 참조: 크로스 도메인 호출 (sandbox, network, mcp)
  */
 export class TaskManager {
+  /** 시스템 모듈 capability 캐시 (path → { capability, providerType, allProviders }) */
+  private capabilityCache: Map<string, { capability: string; providerType: string }> | null = null;
+
   constructor(
     private readonly core: FirebatCore,
     private readonly llm: ILlmPort,
@@ -60,7 +63,15 @@ export class TaskManager {
         switch (step.type) {
           case 'TEST_RUN': {
             const res = await this.core.sandboxExecute(step.path!, stepInput);
-            if (!res.success) return { success: false, error: `[Pipeline Step ${i + 1}] TEST_RUN 실패: ${res.error}` };
+            if (!res.success) {
+              // 실패 시 같은 capability의 대체 provider로 폴백 시도
+              const fallbackRes = await this.tryFallbackProvider(step.path!, stepInput);
+              if (fallbackRes) {
+                prev = fallbackRes.data;
+                break;
+              }
+              return { success: false, error: `[Pipeline Step ${i + 1}] TEST_RUN 실패: ${res.error}` };
+            }
             prev = res.data;
             break;
           }
@@ -93,6 +104,65 @@ export class TaskManager {
     }
 
     return { success: true, data: prev };
+  }
+
+  /** TEST_RUN 실패 시 같은 capability의 대체 provider 자동 폴백 */
+  private async tryFallbackProvider(failedPath: string, input: any): Promise<{ data: any } | null> {
+    const cache = await this.getCapabilityCache();
+    const failed = cache.get(failedPath);
+    if (!failed?.capability) return null;
+
+    // 같은 capability의 다른 provider 찾기
+    const alternatives: string[] = [];
+    for (const [path, info] of cache) {
+      if (path !== failedPath && info.capability === failed.capability) {
+        alternatives.push(path);
+      }
+    }
+    if (alternatives.length === 0) return null;
+
+    for (const altPath of alternatives) {
+      this.log.info(`[Pipeline] 폴백 시도: ${failedPath} → ${altPath}`);
+      try {
+        const res = await this.core.sandboxExecute(altPath, input);
+        if (res.success) {
+          this.log.info(`[Pipeline] 폴백 성공: ${altPath}`);
+          return { data: res.data };
+        }
+        this.log.warn(`[Pipeline] 폴백 실패: ${altPath} — ${res.error}`);
+      } catch (e: any) {
+        this.log.warn(`[Pipeline] 폴백 예외: ${altPath} — ${e.message}`);
+      }
+    }
+    return null;
+  }
+
+  /** 시스템 모듈 capability 캐시 빌드 (path → capability/providerType) */
+  private async getCapabilityCache(): Promise<Map<string, { capability: string; providerType: string }>> {
+    if (this.capabilityCache) return this.capabilityCache;
+
+    const cache = new Map<string, { capability: string; providerType: string }>();
+    const dirs = await this.core.listDir('system/modules');
+    if (!dirs.success || !dirs.data) {
+      this.capabilityCache = cache;
+      return cache;
+    }
+
+    for (const d of dirs.data) {
+      if (!d.isDirectory) continue;
+      const file = await this.core.readFile(`system/modules/${d.name}/config.json`);
+      if (!file.success || !file.data) continue;
+      try {
+        const m = JSON.parse(file.data);
+        if (!m.capability) continue;
+        const rt = m.runtime === 'node' ? 'index.mjs' : m.runtime === 'python' ? 'main.py' : 'index.mjs';
+        const path = `system/modules/${d.name}/${rt}`;
+        cache.set(path, { capability: m.capability, providerType: m.providerType || 'unknown' });
+      } catch {}
+    }
+
+    this.capabilityCache = cache;
+    return cache;
   }
 
   /** 파이프라인 단계의 입력 결정: 고정 inputData > inputMap > prev (모두 $prev 치환 적용) */
