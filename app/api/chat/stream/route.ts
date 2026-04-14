@@ -64,10 +64,21 @@ export async function POST(req: NextRequest) {
       const shouldAutoExecute = autoExecute || !needsConfirm;
 
       // 프론트엔드에는 요약 정보만 전송
+      // RUN_TASK는 파이프라인 단계를 풀어서 표시
+      const displayActions: any[] = [];
+      for (const a of plan.actions) {
+        if (a.type === 'RUN_TASK' && (a as any).pipeline?.length) {
+          for (const step of (a as any).pipeline) {
+            displayActions.push({ type: step.type, description: step.description || step.instruction || step.path || step.type });
+          }
+        } else {
+          displayActions.push({ type: a.type, description: (a as any).description, ...(('path' in a) ? { path: (a as any).path } : {}), ...(('slug' in a) ? { slug: (a as any).slug } : {}) });
+        }
+      }
       send('plan', {
         thoughts: plan.thoughts,
         reply: plan.reply,
-        actions: plan.actions.map(a => ({ type: a.type, description: (a as any).description, ...(('path' in a) ? { path: (a as any).path } : {}), ...(('slug' in a) ? { slug: (a as any).slug } : {}) })),
+        actions: displayActions,
         corrId,
         suggestions: plan.suggestions?.length ? plan.suggestions : undefined,
       });

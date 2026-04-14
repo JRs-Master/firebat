@@ -47,7 +47,7 @@ export class TaskManager {
   }
 
   /** 파이프라인 단계별 순차 실행 — 이전 단계 결과를 다음 단계에 자동 전달 */
-  async executePipeline(steps: PipelineStep[]): Promise<{ success: boolean; data?: any; error?: string }> {
+  async executePipeline(steps: PipelineStep[], onPipelineStep?: (index: number, status: 'start' | 'done' | 'error', error?: string) => void): Promise<{ success: boolean; data?: any; error?: string }> {
     // 사전 검증
     const err = this.validatePipeline(steps);
     if (err) return { success: false, error: err };
@@ -58,6 +58,7 @@ export class TaskManager {
       const step = steps[i];
       const stepInput = this.resolvePipelineInput(step, prev);
       this.log.info(`[Pipeline] Step ${i + 1}/${steps.length}: ${step.type}`);
+      onPipelineStep?.(i, 'start');
 
       try {
         switch (step.type) {
@@ -75,35 +76,42 @@ export class TaskManager {
                 prev = fallbackRes.data;
                 break;
               }
+              onPipelineStep?.(i, 'error', res.error);
               return { success: false, error: `[Pipeline Step ${i + 1}] TEST_RUN 실패: ${res.error}` };
             }
             prev = res.data;
+            onPipelineStep?.(i, 'done');
             break;
           }
           case 'MCP_CALL': {
             const args = step.inputMap ? this.resolveValue(step.inputMap, prev) : (step.arguments ?? {});
             const res = await this.core.callMcpTool(step.server!, step.tool!, args);
-            if (!res.success) return { success: false, error: `[Pipeline Step ${i + 1}] MCP_CALL 실패: ${res.error}` };
+            if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] MCP_CALL 실패: ${res.error}` }; }
             prev = res.data;
+            onPipelineStep?.(i, 'done');
             break;
           }
           case 'NETWORK_REQUEST': {
             const res = await this.core.networkFetch(step.url!, { method: step.method || 'GET', body: step.body, headers: step.headers });
-            if (!res.success) return { success: false, error: `[Pipeline Step ${i + 1}] NETWORK_REQUEST 실패: ${res.error}` };
+            if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] NETWORK_REQUEST 실패: ${res.error}` }; }
             prev = res.data;
+            onPipelineStep?.(i, 'done');
             break;
           }
           case 'LLM_TRANSFORM': {
             const inputText = typeof prev === 'string' ? prev : JSON.stringify(prev, null, 2);
             const res = await this.llm.askText(`${step.instruction}\n\n${inputText}`, '요청된 작업을 수행하고 결과만 출력하라. 한국어로 답변.');
-            if (!res.success) return { success: false, error: `[Pipeline Step ${i + 1}] LLM_TRANSFORM 실패: ${res.error}` };
+            if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] LLM_TRANSFORM 실패: ${res.error}` }; }
             prev = res.data;
+            onPipelineStep?.(i, 'done');
             break;
           }
           default:
+            onPipelineStep?.(i, 'error', `알 수 없는 단계 타입: ${step.type}`);
             return { success: false, error: `[Pipeline Step ${i + 1}] 알 수 없는 단계 타입: ${step.type}` };
         }
       } catch (e: any) {
+        onPipelineStep?.(i, 'error', e.message);
         return { success: false, error: `[Pipeline Step ${i + 1}] 예외: ${e.message}` };
       }
     }

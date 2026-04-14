@@ -485,26 +485,48 @@ export class AiManager {
     const executedActions: string[] = [];
     const finalDataList: any[] = [];
 
+    // RUN_TASK 파이프라인은 내부 단계를 풀어서 step 이벤트 전달
+    let stepOffset = 0;
+    let totalSteps = 0;
+    for (const a of plan.actions) {
+      totalSteps += (a.type === 'RUN_TASK' && a.pipeline?.length) ? a.pipeline.length : 1;
+    }
+
     for (let i = 0; i < plan.actions.length; i++) {
       const action = plan.actions[i];
-      onStep?.({ index: i, total: plan.actions.length, type: action.type, status: 'start' });
       executedActions.push(action.type);
 
-      const actionError = await this.executeAction(action, finalDataList, isDemo);
+      if (action.type === 'RUN_TASK' && action.pipeline?.length) {
+        // 파이프라인 단계별 step 이벤트
+        for (let j = 0; j < action.pipeline.length; j++) {
+          const pStep = action.pipeline[j];
+          const desc = pStep.description || pStep.instruction || pStep.path || pStep.type;
+          onStep?.({ index: stepOffset + j, total: totalSteps, type: pStep.type, status: 'start', description: desc } as any);
+        }
+        const taskRes = await this.core.runTask(action.pipeline, (pipeIdx, status, error) => {
+          const desc = action.pipeline[pipeIdx].description || action.pipeline[pipeIdx].instruction || action.pipeline[pipeIdx].path || action.pipeline[pipeIdx].type;
+          onStep?.({ index: stepOffset + pipeIdx, total: totalSteps, type: action.pipeline[pipeIdx].type, status, error, description: desc } as any);
+        });
+        if (!taskRes.success) {
+          this.logger.error(`[AiManager] [${corrId}] 액션 실패: RUN_TASK 실패: ${taskRes.error}`);
+          return { success: false, thoughts: plan.thoughts, reply: plan.reply, executedActions, error: `RUN_TASK 실패: ${taskRes.error}` };
+        }
+        finalDataList.push({ taskResult: taskRes.data });
+        stepOffset += action.pipeline.length;
+      } else {
+        onStep?.({ index: stepOffset, total: totalSteps, type: action.type, status: 'start' });
 
-      if (actionError) {
-        onStep?.({ index: i, total: plan.actions.length, type: action.type, status: 'error', error: actionError });
-        this.logger.error(`[AiManager] [${corrId}] 액션 실패: ${actionError}`);
-        return {
-          success: false,
-          thoughts: plan.thoughts,
-          reply: plan.reply,
-          executedActions,
-          error: actionError,
-        };
+        const actionError = await this.executeAction(action, finalDataList, isDemo);
+
+        if (actionError) {
+          onStep?.({ index: stepOffset, total: totalSteps, type: action.type, status: 'error', error: actionError });
+          this.logger.error(`[AiManager] [${corrId}] 액션 실패: ${actionError}`);
+          return { success: false, thoughts: plan.thoughts, reply: plan.reply, executedActions, error: actionError };
+        }
+
+        onStep?.({ index: stepOffset, total: totalSteps, type: action.type, status: 'done' });
+        stepOffset += 1;
       }
-
-      onStep?.({ index: i, total: plan.actions.length, type: action.type, status: 'done' });
     }
 
     const totalMs = Date.now() - startTime;

@@ -10,7 +10,7 @@ export const GEMINI_MODELS = [
 ];
 
 export type PlanAction = { type: string; description?: string; path?: string; slug?: string };
-export type StepStatus = { index: number; total: number; type: string; status: 'start' | 'done' | 'error'; error?: string };
+export type StepStatus = { index: number; total: number; type: string; status: 'start' | 'done' | 'error'; error?: string; description?: string };
 
 export type Message = {
   id: string;

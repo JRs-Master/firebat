@@ -170,8 +170,8 @@ export class FirebatCore {
   // ══════════════════════════════════════════════════════════════════════════
 
   /** 파이프라인 즉시 실행 (RUN_TASK 액션) */
-  async runTask(pipeline: PipelineStep[]): Promise<{ success: boolean; data?: any; error?: string }> {
-    return this.task.executePipeline(pipeline);
+  async runTask(pipeline: PipelineStep[], onPipelineStep?: (index: number, status: 'start' | 'done' | 'error', error?: string) => void): Promise<{ success: boolean; data?: any; error?: string }> {
+    return this.task.executePipeline(pipeline, onPipelineStep);
   }
 
   /** 파이프라인 검증 (ScheduleManager에서도 사용) */
