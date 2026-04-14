@@ -23,20 +23,17 @@ process.stdin.on('end', async () => {
   try {
     const { data } = JSON.parse(raw);
     const url = data?.url;
-    const format = data?.format || 'markdown';
-
     if (!url) {
       console.log(JSON.stringify({ success: false, error: 'data.url 필드가 필요합니다.' }));
       return;
     }
 
-    const useHtml = format === 'html';
     const headers = {
-      'Accept': useHtml ? 'text/html' : 'text/markdown',
+      'Accept': 'text/html',
+      'X-Return-Format': 'html',
       'X-Wait-For-Selector': 'body',
       'X-Timeout': '30',
     };
-    if (useHtml) headers['X-Return-Format'] = 'html';
     const apiKey = process.env['JINA_API_KEY'];
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
@@ -49,20 +46,10 @@ process.stdin.on('end', async () => {
 
     const text = await resp.text();
 
-    // 제목 추출: Jina 마크다운 첫 줄이 "Title: ..." 또는 "# ..." 형태
+    // HTML에서 <title> 추출
     let title = '';
-    if (!useHtml) {
-      const lines = text.split('\n');
-      if (lines[0]?.startsWith('Title:')) {
-        title = lines[0].slice(6).trim();
-      } else if (lines[0]?.startsWith('# ')) {
-        title = lines[0].slice(2).trim();
-      }
-    } else {
-      // HTML에서 <title> 추출
-      const m = text.match(/<title[^>]*>([^<]+)<\/title>/i);
-      if (m) title = m[1].trim();
-    }
+    const titleMatch = text.match(/<title[^>]*>([^<]+)<\/title>/i);
+    if (titleMatch) title = titleMatch[1].trim();
 
     console.log(JSON.stringify({
       success: true,

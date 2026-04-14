@@ -760,7 +760,6 @@ CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제. 새 모듈 만들지 마라.
 - api-first(기본): providerType=api 우선, 실패 시 local 폴백
 - local-first: providerType=local 우선, 실패 시 api 폴백
 실패 시 같은 모듈 재시도 금지 → 같은 capability의 다른 provider로 전환.
-웹 스크래핑 결과에 원하는 데이터가 없으면 format:"html"로 재시도하라. HTML은 display:none 등 숨겨진 요소도 포함한다.
 
 ## MCP 외부 도구
 [MCP 외부 도구] 목록의 도구만 MCP_CALL로 호출. inputSchema 준수. raw JSON 표시 금지.
