@@ -257,7 +257,7 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
           </div>
 
-          <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto min-h-[50vh] sm:min-h-[55vh]">
+          <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto h-[55vh] sm:h-[60vh]">
             <p className="text-[11px] sm:text-[12px] text-slate-400">
               외부 AI 도구(Claude Code, Cursor, VS Code 등)에서 이 파이어뱃 서버에 연결할 수 있습니다.
             </p>
@@ -433,7 +433,7 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
         )}
 
         {/* 설정 필드 */}
-        <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto flex-1 min-h-[40vh] sm:min-h-[45vh]">
+        <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto h-[55vh] sm:h-[60vh]">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 size={20} className="animate-spin text-slate-400" />
