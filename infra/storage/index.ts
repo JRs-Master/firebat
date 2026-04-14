@@ -28,7 +28,7 @@ export class LocalStorageAdapter implements IStoragePort {
   }
 
   private canRead(targetPath: string): boolean {
-    return this.isInsideZone(targetPath, ['app/(user)', 'user', 'docs', 'system/guidelines', 'system/modules']);
+    return this.isInsideZone(targetPath, ['app/(user)', 'user', 'docs', 'system/guidelines', 'system/modules', 'system/services']);
   }
 
   async read(targetPath: string): Promise<InfraResult<string>> {
