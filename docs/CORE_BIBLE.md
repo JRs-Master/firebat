@@ -130,7 +130,7 @@ interface FirebatInfraContainer {
 | 액션 | 호출 포트 |
 |---|---|
 | `WRITE_FILE`, `APPEND_FILE`, `DELETE_FILE`, `READ_FILE`, `LIST_DIR` | `IStoragePort` |
-| `TEST_RUN` | `ISandboxPort` |
+| `EXECUTE` | `ISandboxPort` |
 | `NETWORK_REQUEST` | `INetworkPort` |
 | `SCHEDULE_TASK`, `CANCEL_TASK`, `LIST_TASKS` | `ICronPort` |
 | `SAVE_PAGE`, `DELETE_PAGE`, `LIST_PAGES`, `DATABASE_QUERY` | `IDatabasePort` |
@@ -155,7 +155,7 @@ type FirebatAction =
   | { type: 'DELETE_FILE', path: string }
   | { type: 'READ_FILE', path: string }
   | { type: 'LIST_DIR', path: string }
-  | { type: 'TEST_RUN', path: string, mockData?: any }
+  | { type: 'EXECUTE', path: string, mockData?: any }
   | { type: 'NETWORK_REQUEST', url: string, method: string, body?: any, headers?: Record<string, string> }
   | { type: 'RUN_TASK', pipeline: PipelineStep[] }
   | { type: 'SCHEDULE_TASK', jobId: string, targetPath?: string, cronTime?: string, runAt?: string, delaySec?: number, pipeline?: PipelineStep[] }
@@ -205,7 +205,7 @@ interface FirebatPlan {
 
 ### TaskManager
 - 파이프라인 즉시 실행 엔진. ILlmPort, ILogPort 직접 주입 + Core 참조.
-- `executePipeline()`: 4가지 단계(TEST_RUN, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM) 순차 실행.
+- `executePipeline()`: 4가지 단계(EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM) 순차 실행.
 - `validatePipeline()`: 필수 필드 사전 검증 (ScheduleManager에서도 사용).
 - `$prev` 치환: 재귀적 `resolveValue()`로 inputData/inputMap 모든 위치에서 자동 전달.
 
