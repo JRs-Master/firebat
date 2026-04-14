@@ -74,13 +74,17 @@ export class TaskManager {
               // 실패 시 같은 capability의 대체 provider로 폴백 시도
               const fallbackRes = await this.tryFallbackProvider(resolvedPath, stepInput);
               if (fallbackRes) {
-                prev = fallbackRes.data;
+                const fd = fallbackRes.data;
+                prev = (fd && typeof fd === 'object' && 'success' in fd && 'data' in fd) ? fd.data : fd;
                 break;
               }
               onPipelineStep?.(i, 'error', res.error);
               return { success: false, error: `[Pipeline Step ${i + 1}] EXECUTE 실패: ${res.error}` };
             }
-            prev = res.data;
+            // 모듈 출력이 {success,data} 래핑된 경우 내부 data만 추출
+            prev = (res.data && typeof res.data === 'object' && 'success' in res.data && 'data' in res.data)
+              ? res.data.data
+              : res.data;
             this.log.debug(`[Pipeline] Step ${i + 1} output: ${JSON.stringify(prev)?.slice(0, 500)}`);
             onPipelineStep?.(i, 'done');
             break;
