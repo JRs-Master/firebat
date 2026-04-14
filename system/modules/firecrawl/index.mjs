@@ -43,6 +43,7 @@ process.stdin.on('end', async () => {
         formats: ['markdown'],
         waitFor: 3000,
         timeout: 30000,
+        maxAge: 0,
       }),
       signal: AbortSignal.timeout(35000),
     });
