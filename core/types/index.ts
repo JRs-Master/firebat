@@ -52,7 +52,7 @@ export const FirebatActionSchema = z.discriminatedUnion('type', [
   z.object({
     ...actionBase,
     type: z.literal('SCHEDULE_TASK'),
-    title: z.string().describe('사이드바에 표시할 짧은 이름 (예: "카톡 전송", "날씨 알림")'),
+    title: z.string().default('').describe('사이드바에 표시할 짧은 이름 (예: "카톡 전송", "날씨 알림")'),
     description: z.string().optional().describe('상세 스케줄 설명 (예: "5분 후 메일 요약해서 카톡 전송")'),
     targetPath: z.string().optional().describe('실행할 모듈 경로 (단순 모듈 실행 시)'),
     inputData: z.any().optional().describe('모듈에 전달할 입력 데이터 (targetPath 사용 시)'),
