@@ -51,9 +51,18 @@ process.stdin.on('end', async () => {
     const titleMatch = text.match(/<title[^>]*>([^<]+)<\/title>/i);
     if (titleMatch) title = titleMatch[1].trim();
 
+    // HTML이 너무 길면 <body> 내용만 추출 + 스크립트/스타일 제거
+    let body = text;
+    const bodyMatch = text.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    if (bodyMatch) body = bodyMatch[1];
+    // script, style, noscript 태그 제거
+    body = body.replace(/<(script|style|noscript)[^>]*>[\s\S]*?<\/\1>/gi, '');
+    // 연속 공백/줄바꿈 정리
+    body = body.replace(/\s{2,}/g, ' ').trim();
+
     console.log(JSON.stringify({
       success: true,
-      data: { url, title, text: text.slice(0, 15000) },
+      data: { url, title, text: body.slice(0, 80000) },
     }));
   } catch (e) {
     console.log(JSON.stringify({ success: false, error: e.message }));
