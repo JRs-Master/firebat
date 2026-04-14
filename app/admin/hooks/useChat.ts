@@ -179,7 +179,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           } else if (ev.event === 'step') {
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
-                ? { ...msg, planPending: false, isThinking: true, content: ev.data.description || '실행 중...' }
+                ? { ...msg, planPending: false, executing: true, steps: [...(msg.steps || []), ev.data] }
                 : msg
             ));
           } else if (ev.event === 'result') {
