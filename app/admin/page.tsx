@@ -34,12 +34,26 @@ function renderMarkdown(text: string) {
 }
 
 function inlineMd(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, i) => {
+  // 링크 + 볼드 처리: [text](url) 와 **bold** 를 분리
+  const parts = text.split(/(\[([^\]]+)\]\(([^)]+)\)|\*\*[^*]+\*\*)/g);
+  const result: React.ReactNode[] = [];
+  let i = 0;
+  while (i < parts.length) {
+    const part = parts[i];
+    if (!part) { i++; continue; }
+    // 링크 매칭: [text](url) → parts[i]=full, parts[i+1]=text, parts[i+2]=url
+    const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) {
+      result.push(<a key={i} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline underline-offset-2">{linkMatch[1]}</a>);
+      i += 3; // skip captured groups
+      continue;
+    }
     const bold = part.match(/^\*\*(.+)\*\*$/);
-    if (bold) return <strong key={i} className="font-bold text-slate-900">{bold[1]}</strong>;
-    return <span key={i}>{part}</span>;
-  });
+    if (bold) { result.push(<strong key={i} className="font-bold text-slate-900">{bold[1]}</strong>); i++; continue; }
+    result.push(<span key={i}>{part}</span>);
+    i++;
+  }
+  return <>{result}</>;
 }
 
 // ─── 선택지 버튼 (텍스트 버튼 + 인라인 입력 + 토글 다중 선택) ─────────────────
