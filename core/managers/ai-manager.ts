@@ -622,7 +622,23 @@ ${systemContext}
 - reply에 raw JSON/디버그 정보 금지. 결과는 자연어로 요약.
 - 대화/인사/질문 → actions: []
 - suggestions: 사용자 확인/선택이 필요할 때. 문자열="버튼", {"type":"input","label":"표시명","placeholder":"힌트"}=자유 입력 필드. 예: ["바로 실행", {"type":"input","label":"다른 시간 지정","placeholder":"오후 2시 30분"}]. 불필요하면 생략.
-- action 타입: SAVE_PAGE, DELETE_PAGE, LIST_PAGES, WRITE_FILE, READ_FILE, LIST_DIR, APPEND_FILE, DELETE_FILE, TEST_RUN, DATABASE_QUERY, NETWORK_REQUEST, SCHEDULE_TASK, CANCEL_TASK, LIST_TASKS, OPEN_URL, REQUEST_SECRET, SET_SECRET, MCP_CALL
+### 액션 JSON 샘플
+SAVE_PAGE: {"type":"SAVE_PAGE","description":"BMI 계산기 페이지 생성","slug":"bmi-calculator","spec":{"slug":"bmi-calculator","status":"published","project":"bmi","head":{"title":"BMI 계산기","description":"비만도 계산","keywords":["BMI"],"og":{"title":"BMI 계산기","description":"비만도 계산","image":"","type":"website"}},"body":[{"type":"Html","props":{"content":"<div>...</div>"}}]}}
+DELETE_PAGE: {"type":"DELETE_PAGE","description":"BMI 페이지 삭제","slug":"bmi-calculator"}
+LIST_PAGES: {"type":"LIST_PAGES","description":"페이지 목록 조회"}
+WRITE_FILE: {"type":"WRITE_FILE","description":"모듈 생성","path":"user/modules/weather/main.py","content":"import sys..."}
+READ_FILE: {"type":"READ_FILE","description":"파일 읽기","path":"user/modules/weather/main.py"}
+LIST_DIR: {"type":"LIST_DIR","description":"모듈 폴더 조회","path":"user/modules"}
+APPEND_FILE: {"type":"APPEND_FILE","description":"로그 추가","path":"user/modules/log/data.txt","content":"새 로그"}
+DELETE_FILE: {"type":"DELETE_FILE","description":"프로젝트 삭제","path":"user/modules/old-project"}
+TEST_RUN: {"type":"TEST_RUN","description":"날씨 모듈 테스트","path":"user/modules/weather/main.py","mockData":{"city":"Seoul"}}
+NETWORK_REQUEST: {"type":"NETWORK_REQUEST","description":"API 호출","url":"https://api.example.com/data","method":"GET"}
+OPEN_URL: {"type":"OPEN_URL","description":"페이지 열기","url":"/bmi-calculator"}
+REQUEST_SECRET: {"type":"REQUEST_SECRET","description":"API 키 요청","name":"openweather-api-key","prompt":"OpenWeather API 키를 입력해주세요"}
+SET_SECRET: {"type":"SET_SECRET","description":"설정값 저장","name":"preferred-lang","value":"ko"}
+MCP_CALL: {"type":"MCP_CALL","description":"이메일 검색","server":"gmail","tool":"search_emails","arguments":{"query":"is:unread","maxResults":5}}
+CANCEL_TASK: {"type":"CANCEL_TASK","description":"스케줄 해제","jobId":"cron-12345-abcd"}
+LIST_TASKS: {"type":"LIST_TASKS","description":"스케줄 목록 조회"}
 
 ## 실행 요청
 기존 프로젝트 활용. 새 모듈 만들지 마라.
@@ -658,14 +674,22 @@ user/modules/[name]/ 만. core/, infra/, system/, app/ 금지.
 시간 기준: ${userTz}. 현재: ${new Date().toLocaleString('ko-KR', { timeZone: userTz })}
 jobId는 시스템 자동 생성 — 넣지 마라.
 필수: title(짧은 이름). 선택: description(상세 설명).
-- (A) 단순: targetPath + inputData. (B) 파이프라인: pipeline 배열, $prev로 이전 결과 전달.
-- 단계 필수 필드: TEST_RUN(path), MCP_CALL(server, tool), NETWORK_REQUEST(url), LLM_TRANSFORM(instruction).
-- LLM_TRANSFORM instruction: 변환 지시문 필수. 알림용은 플레인 텍스트(마크다운 금지), 5W1H 기반.
-- 모드: cronTime(반복), cronTime+startAt/endAt(기간 한정), runAt(1회), delaySec(N초 후).
-- 시각이 이미 지났으면: 바로 실행할지, 시각 수정할지 reply에서 물어라. 자의적으로 시각을 바꾸지 마라.
-- 크론: "분 시 일 월 요일", ${userTz} 기준.
-- CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제.
-- 새 모듈 만들지 마라. 기존 모듈/페이지 사용.
+모드: cronTime(반복), cronTime+startAt/endAt(기간 한정), runAt(1회, ISO 8601), delaySec(N초 후).
+크론: "분 시 일 월 요일", ${userTz} 기준.
+시각이 이미 지났으면: 바로 실행할지, 시각 수정할지 reply에서 물어라. 자의적으로 시각을 바꾸지 마라.
+CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제. 새 모듈 만들지 마라.
+
+### SCHEDULE_TASK 샘플
+(A) 단순 모듈 실행:
+{"type":"SCHEDULE_TASK","description":"매일 9시 날씨 알림","title":"날씨 알림","targetPath":"user/modules/weather/index.mjs","inputData":{"city":"Seoul"},"cronTime":"0 9 * * *"}
+
+(B) 파이프라인 ($prev로 이전 결과 전달):
+{"type":"SCHEDULE_TASK","description":"메일 요약 카톡 발송","title":"메일 카톡","runAt":"2026-04-14T14:00:00","pipeline":[
+  {"type":"MCP_CALL","server":"gmail","tool":"search_emails","arguments":{"query":"is:unread","maxResults":5}},
+  {"type":"MCP_CALL","server":"gmail","tool":"get_email","inputMap":{"messageId":"$prev"}},
+  {"type":"LLM_TRANSFORM","instruction":"아래 메일 내용을 5W1H 기반 플레인 텍스트로 요약. 마크다운 금지."},
+  {"type":"TEST_RUN","path":"system/modules/kakao-talk/index.mjs","inputMap":{"text":"$prev"}}
+]}
 
 ## 시스템 모듈
 [시스템 모듈] 목록 우선 사용. 경로: system/modules/{name}/index.mjs 또는 main.py.
