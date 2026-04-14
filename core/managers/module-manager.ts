@@ -123,7 +123,7 @@ export class ModuleManager {
     return {
       sitemapEnabled: s.sitemapEnabled ?? true,
       rssEnabled: s.rssEnabled ?? true,
-      robotsTxt: s.robotsTxt ?? 'User-agent: *\nAllow: /\nDisallow: /admin',
+      robotsTxt: s.robotsTxt ?? 'User-agent: *\nAllow: /\nDisallow: /api\nDisallow: /admin',
       headScripts: s.headScripts ?? '',
       bodyScripts: s.bodyScripts ?? '',
       siteTitle: s.siteTitle ?? 'Firebat',

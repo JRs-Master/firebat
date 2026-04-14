@@ -58,21 +58,21 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
   'seo': {
     title: 'SEO 설정',
     fields: [
-      // 일반 탭
-      { key: 'siteTitle', label: '사이트 제목', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'SEO 기본 사이트 제목 (OG, RSS, Sitemap 등에 사용)', defaultValue: 'Firebat' },
-      { key: 'siteDescription', label: '사이트 설명', type: 'text', tab: '일반', placeholder: 'Just Imagine. Firebat Runs.', description: 'SEO 기본 사이트 설명', defaultValue: 'Just Imagine. Firebat Runs.' },
-      { key: 'siteUrl', label: '사이트 URL', type: 'text', tab: '일반', placeholder: 'https://firebat.co.kr', description: 'JSON-LD, Sitemap 등에 사용되는 기본 URL', defaultValue: 'https://firebat.co.kr' },
+      // 일반 탭 — defaultValue 없이 placeholder만 (백엔드 getSeoSettings에서 폴백)
+      { key: 'siteTitle', label: '사이트 제목', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'SEO 기본 사이트 제목 (OG, RSS, Sitemap 등에 사용)' },
+      { key: 'siteDescription', label: '사이트 설명', type: 'text', tab: '일반', placeholder: 'Just Imagine. Firebat Runs.', description: 'SEO 기본 사이트 설명' },
+      { key: 'siteUrl', label: '사이트 URL', type: 'text', tab: '일반', placeholder: 'https://firebat.co.kr', description: 'JSON-LD, Sitemap 등에 사용되는 기본 URL' },
       { key: 'jsonLdEnabled', label: 'JSON-LD 구조화 데이터', type: 'toggle', tab: '일반', description: 'WebSite + Organization 스키마 자동 삽입', defaultValue: true },
-      { key: 'jsonLdOrganization', label: '조직/브랜드명', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'JSON-LD Organization name', defaultValue: 'Firebat' },
-      { key: 'jsonLdLogoUrl', label: '로고 URL', type: 'text', tab: '일반', placeholder: 'https://firebat.co.kr/icon.svg', description: 'JSON-LD Organization 로고 이미지 URL', defaultValue: 'https://firebat.co.kr/icon.svg' },
+      { key: 'jsonLdOrganization', label: '조직/브랜드명', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'JSON-LD Organization name' },
+      { key: 'jsonLdLogoUrl', label: '로고 URL', type: 'text', tab: '일반', placeholder: 'https://firebat.co.kr/icon.svg', description: 'JSON-LD Organization 로고 이미지 URL' },
       // SEO 탭
       { key: 'sitemapEnabled', label: 'Sitemap 생성', type: 'toggle', tab: 'SEO', description: '/sitemap.xml 자동 생성', defaultValue: true },
       { key: 'rssEnabled', label: 'RSS 피드', type: 'toggle', tab: 'SEO', description: '/feed.xml 자동 생성', defaultValue: true },
-      { key: 'robotsTxt', label: 'robots.txt', type: 'textarea', tab: 'SEO', placeholder: 'User-agent: *\nAllow: /\nDisallow: /admin', description: 'robots.txt 내용', defaultValue: 'User-agent: *\nAllow: /\nDisallow: /admin' },
+      { key: 'robotsTxt', label: 'robots.txt', type: 'textarea', tab: 'SEO', placeholder: 'User-agent: *\nAllow: /\nDisallow: /api\nDisallow: /admin', description: 'robots.txt 내용', defaultValue: 'User-agent: *\nAllow: /\nDisallow: /api\nDisallow: /admin' },
       // OG 탭
-      { key: 'ogBgColor', label: '배경색', type: 'text', tab: 'OG', placeholder: '#f8fafc', description: 'OG 이미지 배경색 (HEX)', defaultValue: '#f8fafc' },
-      { key: 'ogAccentColor', label: '강조색', type: 'text', tab: 'OG', placeholder: '#2563eb', description: '상단 라인, 로고 테두리 색상', defaultValue: '#2563eb' },
-      { key: 'ogDomain', label: '도메인 표시', type: 'text', tab: 'OG', placeholder: 'firebat.co.kr', description: 'OG 이미지 우하단 도메인 텍스트', defaultValue: 'firebat.co.kr' },
+      { key: 'ogBgColor', label: '배경색', type: 'text', tab: 'OG', placeholder: '#f8fafc', description: 'OG 이미지 배경색 (HEX)' },
+      { key: 'ogAccentColor', label: '강조색', type: 'text', tab: 'OG', placeholder: '#2563eb', description: '상단 라인, 로고 테두리 색상' },
+      { key: 'ogDomain', label: '도메인 표시', type: 'text', tab: 'OG', placeholder: 'firebat.co.kr', description: 'OG 이미지 우하단 도메인 텍스트' },
       // 스크립트 탭
       { key: 'headScripts', label: '<head> 스크립트', type: 'textarea', tab: '스크립트', placeholder: '<!-- Google Analytics 등 -->', description: '모든 페이지 <head>에 삽입할 HTML' },
       { key: 'bodyScripts', label: '</body> 스크립트', type: 'textarea', tab: '스크립트', placeholder: '<!-- 채팅 위젯 등 -->', description: '모든 페이지 </body> 앞에 삽입할 HTML' },
