@@ -44,7 +44,7 @@ function inlineMd(text: string): React.ReactNode {
     // 링크 매칭: [text](url) → parts[i]=full, parts[i+1]=text, parts[i+2]=url
     const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
     if (linkMatch) {
-      result.push(<a key={i} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline underline-offset-2">{linkMatch[1]}</a>);
+      result.push(<a key={i} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">{linkMatch[1]}</a>);
       i += 3; // skip captured groups
       continue;
     }
