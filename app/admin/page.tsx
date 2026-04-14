@@ -35,7 +35,7 @@ function renderMarkdown(text: string) {
 
 function inlineMd(text: string): React.ReactNode {
   const result: React.ReactNode[] = [];
-  const regex = /\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*/g;
+  const regex = /\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*|(https?:\/\/[^\s)<]+)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   while ((m = regex.exec(text)) !== null) {
@@ -44,6 +44,8 @@ function inlineMd(text: string): React.ReactNode {
       result.push(<a key={m.index} href={m[2]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">{m[1]}</a>);
     } else if (m[3]) {
       result.push(<strong key={m.index} className="font-bold text-slate-900">{m[3]}</strong>);
+    } else if (m[4]) {
+      result.push(<a key={m.index} href={m[4]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">{m[4]}</a>);
     }
     last = regex.lastIndex;
   }
