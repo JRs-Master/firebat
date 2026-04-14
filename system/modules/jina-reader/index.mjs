@@ -74,11 +74,16 @@ process.stdin.on('end', async () => {
       if (found) body = found;
     }
 
+    // selector가 없으면 HTML 태그 제거 → 순수 텍스트 (용량 대폭 감소)
+    if (!selector) {
+      body = body.replace(/<[^>]+>/g, ' ');
+    }
+
     body = body.replace(/\s{2,}/g, ' ').trim();
 
     console.log(JSON.stringify({
       success: true,
-      data: { url, title, text: body.slice(0, 80000) },
+      data: { url, title, text: body.slice(0, 50000) },
     }));
   } catch (e) {
     console.log(JSON.stringify({ success: false, error: e.message }));
