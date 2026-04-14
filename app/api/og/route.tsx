@@ -10,8 +10,11 @@ import { getCore } from '../../../lib/singleton';
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const seo = getCore().getSeoSettings();
-  const title = searchParams.get('title') || seo.siteTitle || 'Firebat';
-  const description = searchParams.get('description') || seo.siteDescription || '';
+  const rawTitle = searchParams.get('title');
+  const rawDesc = searchParams.get('description');
+  const isPageOg = !!rawTitle; // 페이지별 OG vs 기본 브랜드 OG
+  const title = rawTitle || seo.siteTitle || 'Firebat';
+  const description = rawDesc || seo.siteDescription || 'Just Imagine. Firebat Runs.';
 
   return new ImageResponse(
     (
@@ -73,33 +76,45 @@ export async function GET(request: Request) {
           }}
         />
 
-        {/* 중앙 로고 + 텍스트 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+        {/* 중앙 브랜드 카드 */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
+          {/* 유령 로고 */}
           <div
             style={{
-              width: '80px',
-              height: '80px',
-              borderRadius: '20px',
-              background: '#0f172a',
+              width: '96px',
+              height: '96px',
+              borderRadius: '24px',
+              background: '#eff6ff',
+              border: '3px solid #2563eb',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              fontSize: '42px',
-              color: 'white',
-              fontWeight: 900,
-              boxShadow: '0 8px 32px rgba(15,23,42,0.15)',
+              boxShadow: '0 12px 40px rgba(37,99,235,0.15)',
             }}
           >
-            F
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 10h.01" />
+              <path d="M15 10h.01" />
+              <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z" />
+            </svg>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span style={{ fontSize: title.length > 20 ? '32px' : '48px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.02em' }}>
+
+          {/* 사이트 이름 */}
+          <span style={{ fontSize: '72px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.03em', lineHeight: 1 }}>
+            {isPageOg ? '' : 'Firebat'}
+          </span>
+
+          {/* 타이틀 (페이지별 OG일 때만) */}
+          {isPageOg && (
+            <span style={{ fontSize: title.length > 20 ? '48px' : '64px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1.1, textAlign: 'center', maxWidth: '900px' }}>
               {title}
             </span>
-            <span style={{ fontSize: '20px', fontWeight: 500, color: '#94a3b8', letterSpacing: '0.05em' }}>
-              {description}
-            </span>
-          </div>
+          )}
+
+          {/* 설명 */}
+          <span style={{ fontSize: '24px', fontWeight: 500, color: '#94a3b8', letterSpacing: '0.04em', textAlign: 'center', maxWidth: '800px', lineHeight: 1.4 }}>
+            {description}
+          </span>
         </div>
 
         {/* 하단 도메인 */}

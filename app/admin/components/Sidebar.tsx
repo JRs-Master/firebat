@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Loader2, Globe, Pencil, ExternalLink, Settings, Package, Cpu, Blocks, FileCode, Clock } from 'lucide-react';
+import { FolderTree, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Loader2, Globe, Pencil, ExternalLink, Settings, Package, Cpu, Blocks, FileCode, Clock, Wrench, Server } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 
@@ -359,7 +359,7 @@ export function Sidebar({
               {/* 서비스 */}
               {sysModules.filter(m => m.type === 'service').length > 0 && (
                 <div className="pb-1 px-2">
-                  <p className="px-2 pb-1 text-[9px] font-bold tracking-wider text-slate-300 uppercase">서비스</p>
+                  <p className="px-2 pb-1 text-[9px] font-bold tracking-wider text-slate-300 uppercase flex items-center gap-1"><Wrench size={9} /> 서비스</p>
                   <div className="space-y-0.5">
                     {sysModules.filter(m => m.type === 'service').map(m => {
                       const sysSelected = selectedItem === `sys:${m.name}`;
@@ -377,7 +377,7 @@ export function Sidebar({
                           }
                         }}
                       >
-                        <Settings size={12} className="text-slate-400 shrink-0 mt-0.5" />
+                        <Server size={12} className="text-emerald-400 shrink-0 mt-0.5" />
                         <div className="min-w-0 flex-1">
                           <p className="text-[12px] font-semibold text-slate-700 truncate">{m.name}</p>
                           <p className="text-[10px] text-slate-400 leading-tight truncate">{m.description}</p>
@@ -403,7 +403,7 @@ export function Sidebar({
               {/* 모듈 */}
               {sysModules.filter(m => m.type !== 'service').length > 0 && (
                 <div className="pb-2 px-2">
-                  <p className="px-2 pb-1 text-[9px] font-bold tracking-wider text-slate-300 uppercase">모듈</p>
+                  <p className="px-2 pb-1 text-[9px] font-bold tracking-wider text-slate-300 uppercase flex items-center gap-1"><Blocks size={9} /> 모듈</p>
                   <div className="space-y-0.5">
                     {sysModules.filter(m => m.type !== 'service').map(m => {
                       const sysSelected = selectedItem === `sys:${m.name}`;
