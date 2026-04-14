@@ -62,10 +62,15 @@ export class TaskManager {
       try {
         switch (step.type) {
           case 'TEST_RUN': {
-            const res = await this.core.sandboxExecute(step.path!, stepInput);
+            // Capability 모드에 따라 preferred provider로 자동 교체
+            const resolvedPath = await this.resolvePreferredProvider(step.path!);
+            if (resolvedPath !== step.path) {
+              this.log.info(`[Pipeline] Provider 교체: ${step.path} → ${resolvedPath}`);
+            }
+            const res = await this.core.sandboxExecute(resolvedPath, stepInput);
             if (!res.success) {
               // 실패 시 같은 capability의 대체 provider로 폴백 시도
-              const fallbackRes = await this.tryFallbackProvider(step.path!, stepInput);
+              const fallbackRes = await this.tryFallbackProvider(resolvedPath, stepInput);
               if (fallbackRes) {
                 prev = fallbackRes.data;
                 break;
@@ -106,6 +111,28 @@ export class TaskManager {
     return { success: true, data: prev };
   }
 
+  /** Capability 모드에 따라 preferred provider 경로로 교체 (실행 전) */
+  private async resolvePreferredProvider(path: string): Promise<string> {
+    const cache = await this.getCapabilityCache();
+    const current = cache.get(path);
+    if (!current?.capability) return path; // 시스템 모듈이 아니면 그대로
+
+    const settings = this.core.getCapabilitySettings(current.capability);
+    const mode = settings.mode || 'api-first';
+    const preferred = mode === 'local-first' || mode === 'local-only' ? 'local' : 'api';
+
+    // 이미 preferred 타입이면 그대로
+    if (current.providerType === preferred) return path;
+
+    // preferred 타입의 대체 provider 찾기
+    for (const [altPath, info] of cache) {
+      if (altPath !== path && info.capability === current.capability && info.providerType === preferred) {
+        return altPath;
+      }
+    }
+    return path; // 대체가 없으면 그대로
+  }
+
   /** TEST_RUN 실패 시 같은 capability의 대체 provider 자동 폴백 */
   private async tryFallbackProvider(failedPath: string, input: any): Promise<{ data: any } | null> {
     const cache = await this.getCapabilityCache();
@@ -113,52 +140,63 @@ export class TaskManager {
     if (!failed?.capability) return null;
 
     // 같은 capability의 다른 provider 찾기
-    const alternatives: string[] = [];
+    const alternatives: { path: string; providerType: string }[] = [];
     for (const [path, info] of cache) {
       if (path !== failedPath && info.capability === failed.capability) {
-        alternatives.push(path);
+        alternatives.push({ path, providerType: info.providerType });
       }
     }
     if (alternatives.length === 0) return null;
 
-    for (const altPath of alternatives) {
-      this.log.info(`[Pipeline] 폴백 시도: ${failedPath} → ${altPath}`);
+    // Capability 모드에 따라 정렬 (api-first → api 우선, local-first → local 우선)
+    const settings = this.core.getCapabilitySettings(failed.capability);
+    const mode = settings.mode || 'api-first';
+    const preferred = mode === 'local-first' || mode === 'local-only' ? 'local' : 'api';
+    alternatives.sort((a, b) => {
+      const aMatch = a.providerType === preferred ? 0 : 1;
+      const bMatch = b.providerType === preferred ? 0 : 1;
+      return aMatch - bMatch;
+    });
+
+    for (const alt of alternatives) {
+      this.log.info(`[Pipeline] 폴백 시도: ${failedPath} → ${alt.path} (${alt.providerType}, mode=${mode})`);
       try {
-        const res = await this.core.sandboxExecute(altPath, input);
+        const res = await this.core.sandboxExecute(alt.path, input);
         if (res.success) {
-          this.log.info(`[Pipeline] 폴백 성공: ${altPath}`);
+          this.log.info(`[Pipeline] 폴백 성공: ${alt.path}`);
           return { data: res.data };
         }
-        this.log.warn(`[Pipeline] 폴백 실패: ${altPath} — ${res.error}`);
+        this.log.warn(`[Pipeline] 폴백 실패: ${alt.path} — ${res.error}`);
       } catch (e: any) {
-        this.log.warn(`[Pipeline] 폴백 예외: ${altPath} — ${e.message}`);
+        this.log.warn(`[Pipeline] 폴백 예외: ${alt.path} — ${e.message}`);
       }
     }
     return null;
   }
 
-  /** 시스템 모듈 capability 캐시 빌드 (path → capability/providerType) */
+  /** 모듈 capability 캐시 빌드 — system/modules + user/modules 전체 스캔 */
   private async getCapabilityCache(): Promise<Map<string, { capability: string; providerType: string }>> {
     if (this.capabilityCache) return this.capabilityCache;
 
     const cache = new Map<string, { capability: string; providerType: string }>();
-    const dirs = await this.core.listDir('system/modules');
-    if (!dirs.success || !dirs.data) {
-      this.capabilityCache = cache;
-      return cache;
-    }
+    const bases = ['system/modules', 'user/modules'];
 
-    for (const d of dirs.data) {
-      if (!d.isDirectory) continue;
-      const file = await this.core.readFile(`system/modules/${d.name}/config.json`);
-      if (!file.success || !file.data) continue;
-      try {
-        const m = JSON.parse(file.data);
-        if (!m.capability) continue;
-        const rt = m.runtime === 'node' ? 'index.mjs' : m.runtime === 'python' ? 'main.py' : 'index.mjs';
-        const path = `system/modules/${d.name}/${rt}`;
-        cache.set(path, { capability: m.capability, providerType: m.providerType || 'unknown' });
-      } catch {}
+    for (const base of bases) {
+      const dirs = await this.core.listDir(base);
+      if (!dirs.success || !dirs.data) continue;
+
+      for (const d of dirs.data) {
+        if (!d.isDirectory) continue;
+        const file = await this.core.readFile(`${base}/${d.name}/config.json`);
+        if (!file.success || !file.data) continue;
+        try {
+          const m = JSON.parse(file.data);
+          if (!m.capability) continue;
+          const rt = m.runtime === 'node' ? 'index.mjs' : m.runtime === 'python' ? 'main.py' : 'index.mjs';
+          const path = `${base}/${d.name}/${rt}`;
+          cache.set(path, { capability: m.capability, providerType: m.providerType || 'unknown' });
+        } catch {}
+      }
     }
 
     this.capabilityCache = cache;
