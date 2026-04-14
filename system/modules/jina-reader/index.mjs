@@ -4,7 +4,7 @@
  *
  * [INPUT]  stdin JSON: {
  *           "correlationId": "...",
- *           "data": { "url": "string", "selector?": "string" }
+ *           "data": { "url": "string" }
  *         }
  * [OUTPUT] stdout JSON: {
  *           "success": true,
@@ -29,6 +29,7 @@ process.stdin.on('end', async () => {
       'Accept': 'text/markdown',
       'X-Wait-For-Selector': 'body',
       'X-Timeout': '30',
+      'X-No-Cache': 'true',
     };
     const apiKey = process.env['JINA_API_KEY'];
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
