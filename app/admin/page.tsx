@@ -123,15 +123,15 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
         );
       })}
 
-      {/* 일반 버튼 + 입력 (가로 배치) */}
+      {/* 일반 버튼 + 입력 */}
       {inlineItems.length > 0 && (
-        <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex flex-col gap-2">
           {inlineItems.map((item, j) => {
             const i = suggestions.indexOf(item);
             if (typeof item === 'string') {
               return (
                 <button key={i} onClick={() => onSuggestion?.(item)} disabled={loading}
-                  className="px-4 py-2 bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700 text-[13px] font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50">
+                  className="self-start px-4 py-2 bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700 text-[13px] font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50">
                   {item}
                 </button>
               );
