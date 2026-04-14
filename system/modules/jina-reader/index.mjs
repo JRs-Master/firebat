@@ -29,7 +29,11 @@ process.stdin.on('end', async () => {
       return;
     }
 
-    const headers = { 'Accept': 'text/markdown' };
+    const headers = {
+      'Accept': 'text/markdown',
+      'X-Wait-For-Selector': 'body',
+      'X-Timeout': '30',
+    };
     const apiKey = process.env['JINA_API_KEY'];
     if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
@@ -53,7 +57,7 @@ process.stdin.on('end', async () => {
 
     console.log(JSON.stringify({
       success: true,
-      data: { url, title, text: text.slice(0, 5000) },
+      data: { url, title, text: text.slice(0, 10000) },
     }));
   } catch (e) {
     console.log(JSON.stringify({ success: false, error: e.message }));
