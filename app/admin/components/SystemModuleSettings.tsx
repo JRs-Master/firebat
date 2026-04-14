@@ -86,7 +86,14 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
               merged[field.key] = field.defaultValue ?? '';
             }
           }
-          setSettings({ ...merged, ...(data.settings ?? {}) });
+          // 저장된 값 병합 (빈 문자열이면 기본값 유지)
+          const saved = data.settings ?? {};
+          for (const [key, val] of Object.entries(saved)) {
+            if (val !== '' && val !== null && val !== undefined) {
+              merged[key] = val;
+            }
+          }
+          setSettings(merged);
         }
       })
       .catch(() => {})
