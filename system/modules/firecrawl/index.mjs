@@ -41,6 +41,7 @@ process.stdin.on('end', async () => {
       body: JSON.stringify({
         url,
         formats: ['markdown'],
+        waitFor: 3000,
         timeout: 30000,
       }),
       signal: AbortSignal.timeout(35000),
