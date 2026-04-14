@@ -114,9 +114,14 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
               merged[field.key] = field.defaultValue ?? '';
             }
           }
-          // 저장된 값 병합 (빈 문자열이면 기본값 유지)
+          // 저장된 값 병합
           const saved = data.settings ?? {};
+          // defaultValue가 없는 필드 목록 (placeholder 전용 — 저장값 무시하고 비워둠)
+          const placeholderOnly = new Set(
+            (schema?.fields ?? []).filter(f => f.defaultValue === undefined && f.type !== 'toggle').map(f => f.key)
+          );
           for (const [key, val] of Object.entries(saved)) {
+            if (placeholderOnly.has(key)) continue; // placeholder 전용 필드는 저장값 무시
             if (val !== '' && val !== null && val !== undefined) {
               merged[key] = val;
             }
@@ -337,7 +342,7 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
                         {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
                       </button>
                     </div>
-                    <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">{jsonConfig}</pre>
+                    <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 whitespace-pre-wrap break-all leading-relaxed">{jsonConfig}</pre>
                     {!mcpTokenInfo.exists && <p className="text-[10px] text-amber-600 font-bold">위에서 토큰을 먼저 생성하세요.</p>}
                   </div>
                 );
@@ -355,7 +360,7 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
                         {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
                       </button>
                     </div>
-                    <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">{jsonConfig}</pre>
+                    <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 whitespace-pre-wrap break-all leading-relaxed">{jsonConfig}</pre>
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[10px] sm:text-[11px] text-amber-700 flex flex-col gap-1">
                       <p className="font-bold">SSH 키 필수</p>
                       <p>stdio 모드는 서버에 SSH 키가 등록되어 있어야 합니다. 서버 관리자에게 SSH 공개키 등록을 요청하세요.</p>
