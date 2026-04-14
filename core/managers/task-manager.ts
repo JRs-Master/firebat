@@ -107,8 +107,7 @@ export class TaskManager {
             break;
           }
           case 'LLM_TRANSFORM': {
-            const rawText = typeof prev === 'string' ? prev : JSON.stringify(prev, null, 2);
-            const inputText = rawText.length > 8000 ? rawText.slice(0, 8000) + '\n...(truncated)' : rawText;
+            const inputText = typeof prev === 'string' ? prev : JSON.stringify(prev, null, 2);
             const res = await this.llm.askText(`${step.instruction}\n\n---\n${inputText}\n---`, '너는 데이터 추출기다. 위 구분선(---) 안의 원본 데이터에서 요청된 내용만 그대로 추출하라. 규칙: 1) 원본에 없는 내용을 추가하지 마라. 2) 원본의 순서와 내용을 변경하지 마라. 3) 한국어로 출력. 4) 결과만 출력하고 설명을 붙이지 마라. 5) 원본 데이터에 요청한 정보가 없으면 "요청하신 정보를 찾을 수 없습니다."라고만 답하라.');
             if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] LLM_TRANSFORM 실패: ${res.error}` }; }
             prev = res.data;
