@@ -178,23 +178,29 @@ export class ScheduleManager {
 
   /** $prev 치환이 포함된 inputMap 해석 */
   private resolveInputMap(inputMap: Record<string, any>, prev: any): Record<string, any> {
-    const result: Record<string, any> = {};
-    for (const [key, value] of Object.entries(inputMap)) {
-      if (value === '$prev') {
-        result[key] = typeof prev === 'string' ? prev : JSON.stringify(prev);
-      } else if (typeof value === 'string' && value.includes('$prev')) {
-        result[key] = value.replace('$prev', typeof prev === 'string' ? prev : JSON.stringify(prev));
-      } else {
-        result[key] = value;
-      }
-    }
-    return result;
+    return this.resolveValue(inputMap, prev);
   }
 
-  /** 파이프라인 단계의 입력 결정: 고정 inputData > inputMap > prev */
+  /** 파이프라인 단계의 입력 결정: 고정 inputData > inputMap > prev (모두 $prev 치환 적용) */
   private resolvePipelineInput(step: PipelineStep, prev: any): any {
-    if (step.inputData !== undefined) return step.inputData;
+    if (step.inputData !== undefined) return this.resolveValue(step.inputData, prev);
     if (step.inputMap) return this.resolveInputMap(step.inputMap, prev);
     return prev;
+  }
+
+  /** 임의의 값에서 $prev 치환 (string, object 재귀) */
+  private resolveValue(val: any, prev: any): any {
+    if (typeof val === 'string') {
+      if (val === '$prev') return typeof prev === 'string' ? prev : JSON.stringify(prev);
+      if (val.includes('$prev')) return val.replace(/\$prev/g, typeof prev === 'string' ? prev : JSON.stringify(prev));
+      return val;
+    }
+    if (Array.isArray(val)) return val.map(v => this.resolveValue(v, prev));
+    if (val && typeof val === 'object') {
+      const result: Record<string, any> = {};
+      for (const [k, v] of Object.entries(val)) result[k] = this.resolveValue(v, prev);
+      return result;
+    }
+    return val;
   }
 }
