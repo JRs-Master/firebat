@@ -414,7 +414,7 @@ export default function AdminConsole() {
                   onKeyDown={handleKeyDown}
                   disabled={loading}
                   className="w-full min-h-[90px] max-h-[250px] p-5 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50"
-                  placeholder={loading ? '시스템이 명령을 집행 중입니다...' : '에이전트에게 내릴 지시사항을 입력하세요...'}
+                  placeholder={loading ? '명령 집행 중...' : '무엇을 도와드릴까요?'}
                 />
                 <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50/80">
                   <div className="flex items-center gap-2 text-[12px] text-slate-500 font-medium tracking-tight">
