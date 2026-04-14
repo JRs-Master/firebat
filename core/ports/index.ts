@@ -102,6 +102,8 @@ export interface CronScheduleOptions {
   endAt?: string;       // 기간 종료 — 자동 해제 (ISO 8601)
   inputData?: any;      // 모듈에 전달할 입력 데이터 (실행 시 stdin data로 주입)
   pipeline?: PipelineStep[]; // 복합 작업 파이프라인 (targetPath 대신 사용)
+  title?: string;       // 사이드바 표시용 짧은 이름
+  description?: string; // 상세 스케줄 설명
 }
 
 /** 크론 트리거 정보 — 타이머가 발화할 때 Core에 전달 */
@@ -135,7 +137,7 @@ export interface ICronPort {
   /** 스케줄링 해제 */
   cancel(jobId: string): Promise<InfraResult<void>>;
   /** 등록된 잡 목록 조회 */
-  list(): Array<{ jobId: string; targetPath: string; cronTime?: string; runAt?: string; delaySec?: number; startAt?: string; endAt?: string; inputData?: any; pipeline?: PipelineStep[]; createdAt: string; mode: string }>;
+  list(): Array<{ jobId: string; targetPath: string; title?: string; description?: string; cronTime?: string; runAt?: string; delaySec?: number; startAt?: string; endAt?: string; inputData?: any; pipeline?: PipelineStep[]; createdAt: string; mode: string }>;
   /** 타임존 설정 */
   setTimezone(tz: string): void;
   /** 현재 타임존 조회 */

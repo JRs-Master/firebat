@@ -36,13 +36,13 @@ export async function DELETE(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
-    const { jobId, targetPath, cronTime, runAt, delaySec, startAt, endAt, inputData } = body;
-    if (!jobId || !targetPath) {
-      return NextResponse.json({ error: 'jobId, targetPath 필수' }, { status: 400 });
+    const { jobId, targetPath, cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description } = body;
+    if (!jobId) {
+      return NextResponse.json({ error: 'jobId 필수' }, { status: 400 });
     }
 
     const core = getCore();
-    const result = await core.updateCronJob(jobId, targetPath, { cronTime, runAt, delaySec, startAt, endAt, inputData });
+    const result = await core.updateCronJob(jobId, targetPath || '', { cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description });
     if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 });
     return NextResponse.json({ success: true });
   } catch (e: any) {

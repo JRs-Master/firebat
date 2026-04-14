@@ -67,10 +67,25 @@ export function getInfra(): FirebatInfraContainer {
 \x1b[38;5;226m ╚═╝     ╚═╝╚═╝  ╚═╝╚══════╝╚═════╝ ╚═╝  ╚═╝   ╚═╝   \x1b[0m
 \x1b[38;5;246m            Just Imagine. Firebat Runs.\x1b[0m
 `);
-    log.info('\x1b[38;5;208m[Firebat]\x1b[0m Loading core...');
-    log.info('\x1b[38;5;214m[Firebat]\x1b[0m Loading managers...');
-    log.info('\x1b[38;5;220m[Firebat]\x1b[0m Loading infra...');
-    log.info('\x1b[38;5;226m[Firebat]\x1b[0m Loading system modules...');
+    const pause = (ms: number) => { const end = Date.now() + ms; while (Date.now() < end); };
+    const BAR_WIDTH = 30;
+    const steps = [
+      [208, 'Core',           25],
+      [214, 'Managers',       50],
+      [220, 'Infra',          75],
+      [226, 'System Modules', 100],
+    ] as [number, string, number][];
+    let prev = 0;
+    for (const [c, label, target] of steps) {
+      for (let pct = prev + 1; pct <= target; pct++) {
+        const filled = Math.round((pct / 100) * BAR_WIDTH);
+        const bar = '█'.repeat(filled) + '░'.repeat(BAR_WIDTH - filled);
+        process.stdout.write(`\r\x1b[38;5;${c}m[Firebat]\x1b[0m ${bar} ${String(pct).padStart(3)}% \x1b[38;5;246m${label}\x1b[0m`);
+        pause(15);
+      }
+      prev = target;
+    }
+    process.stdout.write('\n');
     log.info('\x1b[38;5;46m[Firebat]\x1b[0m Ready.');
   }
   return globalForInfra.firebatInfra;

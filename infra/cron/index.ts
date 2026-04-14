@@ -8,6 +8,8 @@ import path from 'path';
 interface CronJobRecord {
   jobId: string;
   targetPath: string;
+  title?: string;
+  description?: string;
   cronTime?: string;
   runAt?: string;
   delaySec?: number;
@@ -104,7 +106,7 @@ export class NodeCronAdapter implements ICronPort {
         return { success: false, error: `이미 등록된 잡 ID입니다: ${jobId}` };
       }
 
-      const { cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline } = opts;
+      const { cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description } = opts;
 
       // 유효성 검사
       if (!cronTime && !runAt && delaySec == null) {
@@ -119,7 +121,10 @@ export class NodeCronAdapter implements ICronPort {
 
       const now = new Date();
       const record: CronJobRecord = {
-        jobId, targetPath, cronTime, runAt, delaySec, startAt, endAt,
+        jobId, targetPath,
+        ...(title ? { title } : {}),
+        ...(description ? { description } : {}),
+        cronTime, runAt, delaySec, startAt, endAt,
         ...(inputData !== undefined ? { inputData } : {}),
         ...(pipeline ? { pipeline } : {}),
         createdAt: now.toISOString(),
@@ -176,6 +181,8 @@ export class NodeCronAdapter implements ICronPort {
     return Array.from(this.records.values()).map(r => ({
       jobId: r.jobId,
       targetPath: r.targetPath,
+      title: r.title,
+      description: r.description,
       cronTime: r.cronTime,
       runAt: r.runAt,
       delaySec: r.delaySec,

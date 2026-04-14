@@ -6,6 +6,8 @@ import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, Chec
 interface CronJob {
   jobId: string;
   targetPath: string;
+  title?: string;
+  description?: string;
   cronTime?: string;
   runAt?: string;
   delaySec?: number;
@@ -155,9 +157,9 @@ export function CronPanel() {
             >
               {modeIcon(job.mode)}
               <div className="flex-1 min-w-0">
-                <p className="text-[12px] font-semibold text-slate-700 truncate">{job.jobId}</p>
+                <p className="text-[12px] font-semibold text-slate-700 truncate">{job.title || job.jobId}</p>
                 <p className="text-[10px] text-slate-400 truncate">
-                  {modeLabel(job)} · {job.targetPath.replace('user/modules/', '')}
+                  {modeLabel(job)}{job.description ? ` · ${job.description}` : ''}
                 </p>
               </div>
               <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0">
@@ -235,7 +237,7 @@ export function CronPanel() {
 
 // ── 스케줄 등록/수정 모달 ──────────────────────────────────────────────
 export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
-  job: { jobId: string; targetPath: string; pageSlugs?: string[]; cronTime?: string; runAt?: string; delaySec?: number; startAt?: string; endAt?: string; inputData?: any; mode?: string } | null;
+  job: { jobId: string; targetPath: string; title?: string; description?: string; pipeline?: any[]; pageSlugs?: string[]; cronTime?: string; runAt?: string; delaySec?: number; startAt?: string; endAt?: string; inputData?: any; mode?: string } | null;
   onClose: () => void;
   onSaved: () => void;
   onDelete?: () => void;
@@ -246,15 +248,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
     (job?.mode as any) || 'cron'
   );
 
-  // 대상: 페이지 or 모듈 자동 감지
-  const hasPage = (job?.pageSlugs?.length ?? 0) > 0;
-  const hasModule = !!(job?.targetPath && !job.targetPath.startsWith('/'));
-  const targets: { label: string; value: string }[] = [];
-  if (hasPage) for (const s of job!.pageSlugs!) targets.push({ label: `페이지: /${s}`, value: `/${s}` });
-  if (hasModule) targets.push({ label: `모듈: ${job!.targetPath.replace('user/modules/', '')}`, value: job!.targetPath });
-  // 기존 편집 시 현재값 유지
-  const defaultTarget = job?.targetPath || (targets[0]?.value ?? '');
-  const [targetPath, setTargetPath] = useState(defaultTarget);
+  const [targetPath] = useState(job?.targetPath || '');
 
   // 반복 주기 (사용자 친화적)
   type FreqType = 'minutes' | 'hours' | 'daily' | 'weekly' | 'advanced';
@@ -304,16 +298,19 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
   };
 
   const handleSave = async () => {
-    if (!jobId || !targetPath) { setError('대상을 선택해 주세요.'); return; }
+    if (!jobId) { setError('잡 ID가 없습니다.'); return; }
     setSaving(true);
     setError('');
     try {
-      const body: any = { jobId, targetPath };
+      const body: any = { jobId, targetPath: targetPath || '' };
+      if (job?.pipeline) body.pipeline = job.pipeline;
       if (mode === 'cron') body.cronTime = buildCronTime();
       if (mode === 'once' && runAt) body.runAt = new Date(runAt).toISOString();
       if (mode === 'delay' && delaySec) body.delaySec = Number(delaySec);
       if (!permanent && endAt) body.endAt = new Date(endAt).toISOString();
       if (job?.inputData !== undefined) body.inputData = job.inputData;
+      if (job?.title) body.title = job.title;
+      if (job?.description) body.description = job.description;
 
       const res = await fetch('/api/cron', {
         method: 'PUT',
@@ -347,20 +344,13 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
         </div>
 
         <div className="px-5 py-4 space-y-3">
-          {/* 대상 선택 */}
-          <div>
-            <label className="text-[11px] font-semibold text-slate-500 mb-1 block">실행 대상</label>
-            {targets.length > 0 ? (
-              <select value={targetPath} onChange={e => setTargetPath(e.target.value)}
-                className="w-full px-3 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none focus:border-blue-400">
-                {targets.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            ) : (
-              <input value={targetPath} onChange={e => setTargetPath(e.target.value)}
-                placeholder="/page-slug 또는 user/modules/..." readOnly={!isNew}
-                className="w-full px-3 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none focus:border-blue-400" />
-            )}
-          </div>
+          {/* 스케줄 설명 */}
+          {(job?.title || job?.description) && (
+            <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
+              {job?.title && <p className="text-[12px] font-semibold text-slate-700">{job.title}</p>}
+              {job?.description && <p className="text-[11px] text-slate-500 mt-0.5">{job.description}</p>}
+            </div>
+          )}
 
           {/* 실행 모드 */}
           <div>
