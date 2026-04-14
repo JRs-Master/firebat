@@ -449,6 +449,7 @@ export default function AdminConsole() {
             onAiModelChange={setAiModel}
             onClose={() => setShowSettings(false)}
             onSave={() => setShowSettings(false)}
+            onOpenModuleSettings={(name) => { setShowSettings(false); setEditingModule(name); }}
           />
         )}
 

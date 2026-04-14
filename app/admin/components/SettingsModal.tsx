@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Download, Server, Terminal, Globe } from 'lucide-react';
+import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Download, Server, Terminal, Globe, Cpu, Wrench, Blocks } from 'lucide-react';
 import { GEMINI_MODELS, McpServer } from '../types';
+
+interface SystemModule { name: string; description: string; runtime: string; type?: string; }
 
 type Props = {
   isDemo: boolean;
@@ -10,10 +12,11 @@ type Props = {
   onAiModelChange: (model: string) => void;
   onClose: () => void;
   onSave: () => void;
+  onOpenModuleSettings?: (moduleName: string) => void;
 };
 
-export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSave }: Props) {
-  const [settingsTab, setSettingsTab] = useState<'general' | 'secrets' | 'mcp' | 'capabilities'>('general');
+export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings }: Props) {
+  const [settingsTab, setSettingsTab] = useState<'general' | 'secrets' | 'mcp' | 'capabilities' | 'system'>('general');
 
   // 일반 설정
   const [userTimezone, setUserTimezone] = useState('Asia/Seoul');
@@ -63,6 +66,16 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
   const [mcpTokenCopied, setMcpTokenCopied] = useState(false);
   const [mcpJsonTab, setMcpJsonTab] = useState<'api' | 'stdio'>('api');
   const [mcpJsonCopied, setMcpJsonCopied] = useState(false);
+
+  // 시스템 모듈
+  const [sysModules, setSysModules] = useState<SystemModule[]>([]);
+  const fetchSysModules = useCallback(async () => {
+    try {
+      const res = await fetch('/api/fs/system-modules');
+      const data = await res.json();
+      if (data.success) setSysModules(data.modules ?? []);
+    } catch {}
+  }, []);
 
   // ── 데이터 로드 ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -304,7 +317,8 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
   useEffect(() => {
     if (settingsTab === 'secrets') fetchSecrets();
     if (settingsTab === 'mcp') { fetchMcpServers(); fetchMcpToken(); }
-  }, [settingsTab, fetchSecrets, fetchMcpServers, fetchMcpToken]);
+    if (settingsTab === 'system') fetchSysModules();
+  }, [settingsTab, fetchSecrets, fetchMcpServers, fetchMcpToken, fetchSysModules]);
 
   // ── 저장 ───────────────────────────────────────────────────────────────────
   const handleSave = async () => {
@@ -350,7 +364,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
-      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[70vh] sm:max-h-[90vh]">
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
           <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
             <Settings size={18} className="text-blue-500" /> Settings
@@ -390,9 +404,17 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
               <Layers size={14} /> 기능
             </button>
           )}
+          {!isDemo && (
+            <button
+              onClick={() => setSettingsTab('system')}
+              className={`px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 ${settingsTab === 'system' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+            >
+              <Cpu size={14} /> 시스템
+            </button>
+          )}
         </div>
 
-        <div className="p-3 sm:p-6 flex flex-col gap-3 sm:gap-5 overflow-y-auto min-w-0 h-[50vh] sm:h-[60vh]">
+        <div className="p-3 sm:p-6 flex flex-col gap-3 sm:gap-5 overflow-y-auto min-w-0 flex-1">
           {settingsTab === 'general' && (
             <>
               {/* 모델 선택 */}
@@ -1050,6 +1072,59 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
           {settingsTab === 'capabilities' && (
             <CapabilityTabContent />
+          )}
+          {settingsTab === 'system' && (
+            <div className="flex flex-col gap-4">
+              {/* 서비스 */}
+              {sysModules.filter(m => m.type === 'service').length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5 mb-2"><Wrench size={11} /> 서비스</p>
+                  <div className="space-y-1">
+                    {sysModules.filter(m => m.type === 'service').map(m => (
+                      <button
+                        key={m.name}
+                        onClick={() => onOpenModuleSettings?.(m.name)}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-blue-200 hover:bg-blue-50/50 transition-colors text-left group"
+                      >
+                        <Server size={16} className="text-emerald-500 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] font-semibold text-slate-700">{m.name}</p>
+                          <p className="text-[11px] text-slate-400 truncate">{m.description}</p>
+                        </div>
+                        <Settings size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 모듈 */}
+              {sysModules.filter(m => m.type !== 'service').length > 0 && (
+                <div>
+                  <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5 mb-2"><Blocks size={11} /> 모듈</p>
+                  <div className="space-y-1">
+                    {sysModules.filter(m => m.type !== 'service').map(m => (
+                      <button
+                        key={m.name}
+                        onClick={() => onOpenModuleSettings?.(m.name)}
+                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-blue-200 hover:bg-blue-50/50 transition-colors text-left group"
+                      >
+                        <Blocks size={16} className="text-indigo-500 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] font-semibold text-slate-700">{m.name}</p>
+                          <p className="text-[11px] text-slate-400 truncate">{m.description}</p>
+                        </div>
+                        <Settings size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {sysModules.length === 0 && (
+                <p className="text-[13px] text-slate-400 italic text-center py-8">시스템 항목이 없습니다</p>
+              )}
+            </div>
           )}
         </div>
 

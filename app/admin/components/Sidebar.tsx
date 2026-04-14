@@ -1,14 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Loader2, Globe, Pencil, ExternalLink, Settings, Package, Cpu, Blocks, FileCode, Clock, Wrench, Server } from 'lucide-react';
+import { FolderTree, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Loader2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 
 interface Project { name: string; paths: string[]; pageSlugs?: string[]; }
 interface PageInfo { slug: string; title: string; status: string; updatedAt: string; project?: string | null; }
 interface MergedProject { name: string; paths: string[]; pages: PageInfo[]; }
-interface SystemModule { name: string; description: string; runtime: string; type?: string; }
 
 export type ConversationMeta = {
   id: string;
@@ -48,15 +47,6 @@ export function Sidebar({
     return () => window.removeEventListener('resize', handler);
   }, []);
 
-  // ── 시스템 모듈 ──
-  const [sysModules, setSysModules] = useState<SystemModule[]>([]);
-  const fetchSysModules = useCallback(async () => {
-    try {
-      const res = await fetch('/api/fs/system-modules');
-      const data = await res.json();
-      if (data.success) setSysModules(data.modules ?? []);
-    } catch {}
-  }, []);
 
   // ── 프로젝트 & 페이지 ──
   const [projects, setProjects] = useState<Project[]>([]);
@@ -112,10 +102,9 @@ export function Sidebar({
 
   const refreshAllRef = useRef(() => {});
   const refreshAll = useCallback(() => {
-    fetchSysModules();
     fetchProjects();
     fetchPages();
-  }, [fetchSysModules, fetchProjects, fetchPages]);
+  }, [fetchProjects, fetchPages]);
   refreshAllRef.current = refreshAll;
 
   // 최초 workspace 탭 진입 시 1회 로드
@@ -350,110 +339,11 @@ export function Sidebar({
         {tab === 'workspace' ? (
           <div className="flex flex-col h-full overflow-y-auto overscroll-contain">
 
-            {/* ── SYSTEM 섹션 ── */}
-            <div className="shrink-0">
-              <div className="px-3 py-2 text-[10px] font-extrabold tracking-widest text-slate-400 flex items-center gap-1.5">
-                <Cpu size={11} /> SYSTEM
-              </div>
-
-              {/* 서비스 */}
-              {sysModules.filter(m => m.type === 'service').length > 0 && (
-                <div className="pb-1 px-2">
-                  <p className="px-2 pb-1 text-[9px] font-bold tracking-wider text-slate-300 uppercase flex items-center gap-1"><Wrench size={9} /> 서비스</p>
-                  <div className="space-y-0.5">
-                    {sysModules.filter(m => m.type === 'service').map(m => {
-                      const sysSelected = selectedItem === `sys:${m.name}`;
-                      return (
-                      <div
-                        key={m.name}
-                        className={`group flex items-start gap-2 px-2 py-1.5 rounded-lg text-slate-600 transition-colors ${
-                          isMobile ? 'cursor-pointer' : ''
-                        } ${
-                          sysSelected ? 'bg-blue-50 border border-blue-100' : 'hover:bg-slate-100 border border-transparent'
-                        }`}
-                        onClick={() => {
-                          if (isMobile) {
-                            setSelectedItem(sysSelected ? null : `sys:${m.name}`);
-                          }
-                        }}
-                      >
-                        <Server size={12} className="text-emerald-400 shrink-0 mt-0.5" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[12px] font-semibold text-slate-700 truncate">{m.name}</p>
-                          <p className="text-[10px] text-slate-400 leading-tight truncate">{m.description}</p>
-                        </div>
-                        <span className={`flex items-center shrink-0 mt-0.5 transition-opacity ${
-                          isMobile ? (sysSelected ? 'opacity-100' : 'opacity-0 pointer-events-none') : 'opacity-0 group-hover:opacity-100'
-                        }`}>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); onOpenModuleSettings?.(m.name); setSelectedItem(null); }}
-                            className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors"
-                            title="설정"
-                          >
-                            <Settings size={12} />
-                          </button>
-                        </span>
-                      </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* 모듈 */}
-              {sysModules.filter(m => m.type !== 'service').length > 0 && (
-                <div className="pb-2 px-2">
-                  <p className="px-2 pb-1 text-[9px] font-bold tracking-wider text-slate-300 uppercase flex items-center gap-1"><Blocks size={9} /> 모듈</p>
-                  <div className="space-y-0.5">
-                    {sysModules.filter(m => m.type !== 'service').map(m => {
-                      const sysSelected = selectedItem === `sys:${m.name}`;
-                      return (
-                      <div
-                        key={m.name}
-                        className={`group flex items-start gap-2 px-2 py-1.5 rounded-lg text-slate-600 transition-colors ${
-                          isMobile ? 'cursor-pointer' : ''
-                        } ${
-                          sysSelected ? 'bg-blue-50 border border-blue-100' : 'hover:bg-slate-100 border border-transparent'
-                        }`}
-                        onClick={() => {
-                          if (isMobile) {
-                            setSelectedItem(sysSelected ? null : `sys:${m.name}`);
-                          }
-                        }}
-                      >
-                        <Blocks size={12} className="text-indigo-400 shrink-0 mt-0.5" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[12px] font-semibold text-slate-700 truncate">{m.name}</p>
-                          <p className="text-[10px] text-slate-400 leading-tight truncate">{m.description}</p>
-                        </div>
-                        <span className={`flex items-center shrink-0 mt-0.5 transition-opacity ${
-                          isMobile ? (sysSelected ? 'opacity-100' : 'opacity-0 pointer-events-none') : 'opacity-0 group-hover:opacity-100'
-                        }`}>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); onOpenModuleSettings?.(m.name); setSelectedItem(null); }}
-                            className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors"
-                            title="설정"
-                          >
-                            <Settings size={12} />
-                          </button>
-                        </span>
-                      </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {sysModules.length === 0 && (
-                <p className="px-3 pb-2 text-[11px] text-slate-400 italic">항목 없음</p>
-              )}
-            </div>
-
             {/* ── CRON JOBS 섹션 ── */}
             <CronPanel />
 
             {/* ── PROJECTS 섹션 ── */}
-            <div className="border-t border-slate-200/80 flex-shrink-0">
+            <div className="flex-shrink-0">
               <div className="px-3 py-2 text-[10px] font-extrabold tracking-widest text-slate-400 flex items-center gap-1.5">
                 <Package size={11} /> PROJECTS
               </div>
