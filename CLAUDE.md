@@ -280,6 +280,15 @@
 - **UI**: SystemModuleSettings에 oauth 필드 타입 추가, 연동 상태 표시 + 연동/재연동 버튼
 - **준비**: 카카오 디벨로퍼스 → 앱 생성 → talk_message 권한 활성화 → Redirect URI에 `{도메인}/api/auth/kakao/callback` 등록 → REST API 키를 Vault에 저장 → 연동 버튼 클릭
 
+### AI 판단 의존 축소 — JSON 스키마 정밀화 (구상, 2026-04-14)
+- **문제**: AI가 프롬프트 규칙을 무시하는 패턴 반복 (provider 선택 무시, optional 파라미터 미사용, 과도한 응답, 마크다운 링크 미사용)
+- **방향**: AI 판단 여지를 줄이고 시스템이 결정하도록 JSON 스키마/구조 강화
+- **구체 아이디어**:
+  1. **Provider 선택을 AI에서 제거** — AI는 capability만 지정, 시스템(CapabilityManager)이 provider 결정
+  2. **파이프라인 템플릿** — 자주 쓰는 패턴(웹 스크래핑 → 요약 등)을 미리 정의, AI가 템플릿 선택만
+  3. **액션 스키마 강화** — 필수 필드 확대, enum 제한, 기본값을 더 세밀하게
+- **근거**: 프롬프트 규칙 추가/강화로는 한계, 구조적으로 AI가 틀릴 수 없게 만드는 것이 근본 해법
+
 ### Phase 4: 배포 분리 (4/23 Ubuntu 26.04)
 - **4-1 3-Tier Docker 구성**: EasyPanel에 core/renderer/admin 3 컨테이너
 - **4-2 Core ↔ Next.js IPC 분리**: gRPC 또는 HTTP 내부 통신
