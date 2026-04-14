@@ -186,8 +186,8 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? {
-                    ...msg, isThinking: false, thoughts: ev.data.thoughts, content: ev.data.reply || '실행이 완료되었습니다.',
-                    executedActions: ev.data.executedActions || [], data: ev.data.data, error: ev.data.error, plan: undefined, planPending: false,
+                    ...msg, isThinking: false, executing: false, thoughts: ev.data.thoughts, content: ev.data.reply || '실행이 완료되었습니다.',
+                    executedActions: ev.data.executedActions || [], data: ev.data.data, error: ev.data.error, planPending: false,
                     suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
                   }
                 : msg
@@ -196,7 +196,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           } else if (ev.event === 'error') {
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
-                ? { ...msg, isThinking: false, error: ev.data.error, content: ev.data.error || '파이프라인 오류가 발생했습니다.' }
+                ? { ...msg, isThinking: false, executing: false, error: ev.data.error, content: ev.data.error || '파이프라인 오류가 발생했습니다.' }
                 : msg
             ));
           }

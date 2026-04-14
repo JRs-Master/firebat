@@ -34,25 +34,20 @@ function renderMarkdown(text: string) {
 }
 
 function inlineMd(text: string): React.ReactNode {
-  // 링크 + 볼드 처리: [text](url) 와 **bold** 를 분리
-  const parts = text.split(/(\[([^\]]+)\]\(([^)]+)\)|\*\*[^*]+\*\*)/g);
   const result: React.ReactNode[] = [];
-  let i = 0;
-  while (i < parts.length) {
-    const part = parts[i];
-    if (!part) { i++; continue; }
-    // 링크 매칭: [text](url) → parts[i]=full, parts[i+1]=text, parts[i+2]=url
-    const linkMatch = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-    if (linkMatch) {
-      result.push(<a key={i} href={linkMatch[2]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">{linkMatch[1]}</a>);
-      i += 3; // skip captured groups
-      continue;
+  const regex = /\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > last) result.push(<span key={last}>{text.slice(last, m.index)}</span>);
+    if (m[1] && m[2]) {
+      result.push(<a key={m.index} href={m[2]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">{m[1]}</a>);
+    } else if (m[3]) {
+      result.push(<strong key={m.index} className="font-bold text-slate-900">{m[3]}</strong>);
     }
-    const bold = part.match(/^\*\*(.+)\*\*$/);
-    if (bold) { result.push(<strong key={i} className="font-bold text-slate-900">{bold[1]}</strong>); i++; continue; }
-    result.push(<span key={i}>{part}</span>);
-    i++;
+    last = regex.lastIndex;
   }
+  if (last < text.length) result.push(<span key={last}>{text.slice(last)}</span>);
   return <>{result}</>;
 }
 
