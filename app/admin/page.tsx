@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Send, Cpu, AlertTriangle, Blocks, Bot, ExternalLink, X, Check, Loader2, CheckCircle2, Circle, XCircle } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { FileEditor } from './components/FileEditor';
@@ -40,6 +40,68 @@ function inlineMd(text: string): React.ReactNode {
     if (bold) return <strong key={i} className="font-bold text-slate-900">{bold[1]}</strong>;
     return <span key={i}>{part}</span>;
   });
+}
+
+// ─── 선택지 버튼 (텍스트 버튼 + 인라인 입력 필드) ────────────────────────────
+function SuggestionButtons({ suggestions, loading, onSuggestion }: {
+  suggestions: (string | { type: 'input'; label: string; placeholder?: string })[];
+  loading: boolean;
+  onSuggestion?: (text: string) => void;
+}) {
+  const [openInput, setOpenInput] = useState<number | null>(null);
+  const [inputValue, setInputValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (openInput !== null) inputRef.current?.focus();
+  }, [openInput]);
+
+  const handleInputSubmit = () => {
+    if (!inputValue.trim()) return;
+    onSuggestion?.(inputValue.trim());
+    setOpenInput(null);
+    setInputValue('');
+  };
+
+  return (
+    <div className="flex flex-wrap gap-2 items-center">
+      {suggestions.map((item, i) => {
+        if (typeof item === 'string') {
+          return (
+            <button key={i} onClick={() => onSuggestion?.(item)} disabled={loading}
+              className="px-4 py-2 bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700 text-[13px] font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50">
+              {item}
+            </button>
+          );
+        }
+        // input 타입
+        if (openInput === i) {
+          return (
+            <div key={i} className="flex items-center gap-1.5">
+              <input ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleInputSubmit()}
+                placeholder={item.placeholder || '입력하세요'}
+                className="px-3 py-2 border border-blue-300 rounded-xl text-[13px] text-slate-700 w-40 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+              <button onClick={handleInputSubmit} disabled={!inputValue.trim()}
+                className="px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-[13px] font-medium rounded-xl transition-colors disabled:opacity-50">
+                <Send size={14} />
+              </button>
+              <button onClick={() => { setOpenInput(null); setInputValue(''); }}
+                className="px-2 py-2 text-slate-400 hover:text-slate-600 text-[13px]">
+                <X size={14} />
+              </button>
+            </div>
+          );
+        }
+        return (
+          <button key={i} onClick={() => setOpenInput(i)} disabled={loading}
+            className="px-4 py-2 bg-white border border-dashed border-slate-300 hover:border-blue-300 hover:bg-blue-50 text-slate-500 text-[13px] font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50">
+            {item.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 // ─── 메시지 버블 ─────────────────────────────────────────────────────────────
@@ -175,15 +237,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
 
               {/* 선택지 버튼 */}
               {msg.suggestions && msg.suggestions.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {msg.suggestions.map((text, i) => (
-                    <button key={i} onClick={() => onSuggestion?.(text)}
-                      disabled={loading}
-                      className="px-4 py-2 bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700 text-[13px] font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50">
-                      {text}
-                    </button>
-                  ))}
-                </div>
+                <SuggestionButtons suggestions={msg.suggestions} loading={loading} onSuggestion={onSuggestion} />
               )}
 
               {/* 시크릿 입력 요청 */}

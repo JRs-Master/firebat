@@ -617,11 +617,11 @@ export class AiManager {
 ${systemContext}
 ## 응답
 유효한 JSON만 출력. \`\`\`json 감싸기 금지.
-{ "thoughts": "판단 근거 (앱 생성 시만 상세)", "reply": "사용자 답변 (한국어)", "actions": [...], "suggestions": ["선택지1", "선택지2"] }
+{ "thoughts": "판단 근거 (앱 생성 시만 상세)", "reply": "사용자 답변 (한국어)", "actions": [...], "suggestions": [...] }
 - action마다 description(한국어 설명) 필수.
 - reply에 raw JSON/디버그 정보 금지. 결과는 자연어로 요약.
 - 대화/인사/질문 → actions: []
-- suggestions: 사용자 확인/선택이 필요할 때 클릭 가능한 버튼으로 표시. 설계 확인, 시각 수정, 옵션 선택 등에 활용. 불필요하면 생략.
+- suggestions: 사용자 확인/선택이 필요할 때. 문자열="버튼", {"type":"input","label":"표시명","placeholder":"힌트"}=자유 입력 필드. 예: ["바로 실행", {"type":"input","label":"다른 시간 지정","placeholder":"오후 2시 30분"}]. 불필요하면 생략.
 - action 타입: SAVE_PAGE, DELETE_PAGE, LIST_PAGES, WRITE_FILE, READ_FILE, LIST_DIR, APPEND_FILE, DELETE_FILE, TEST_RUN, DATABASE_QUERY, NETWORK_REQUEST, SCHEDULE_TASK, CANCEL_TASK, LIST_TASKS, OPEN_URL, REQUEST_SECRET, SET_SECRET, MCP_CALL
 
 ## 실행 요청
