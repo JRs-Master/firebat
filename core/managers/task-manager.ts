@@ -58,6 +58,7 @@ export class TaskManager {
       const step = steps[i];
       const stepInput = this.resolvePipelineInput(step, prev);
       this.log.info(`[Pipeline] Step ${i + 1}/${steps.length}: ${step.type}`);
+      this.log.debug(`[Pipeline] Step ${i + 1} input: ${JSON.stringify(stepInput)?.slice(0, 500)}`);
       onPipelineStep?.(i, 'start');
 
       try {
@@ -80,6 +81,7 @@ export class TaskManager {
               return { success: false, error: `[Pipeline Step ${i + 1}] EXECUTE 실패: ${res.error}` };
             }
             prev = res.data;
+            this.log.debug(`[Pipeline] Step ${i + 1} output: ${JSON.stringify(prev)?.slice(0, 500)}`);
             onPipelineStep?.(i, 'done');
             break;
           }
@@ -88,6 +90,7 @@ export class TaskManager {
             const res = await this.core.callMcpTool(step.server!, step.tool!, args);
             if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] MCP_CALL 실패: ${res.error}` }; }
             prev = res.data;
+            this.log.debug(`[Pipeline] Step ${i + 1} output: ${JSON.stringify(prev)?.slice(0, 500)}`);
             onPipelineStep?.(i, 'done');
             break;
           }
@@ -95,6 +98,7 @@ export class TaskManager {
             const res = await this.core.networkFetch(step.url!, { method: step.method || 'GET', body: step.body, headers: step.headers });
             if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] NETWORK_REQUEST 실패: ${res.error}` }; }
             prev = res.data;
+            this.log.debug(`[Pipeline] Step ${i + 1} output: ${JSON.stringify(prev)?.slice(0, 500)}`);
             onPipelineStep?.(i, 'done');
             break;
           }
@@ -103,6 +107,7 @@ export class TaskManager {
             const res = await this.llm.askText(`${step.instruction}\n\n---\n${inputText}\n---`, '너는 데이터 추출기다. 위 구분선(---) 안의 원본 데이터에서 요청된 내용만 그대로 추출하라. 규칙: 1) 원본에 없는 내용을 추가하지 마라. 2) 원본의 순서와 내용을 변경하지 마라. 3) 한국어로 출력. 4) 결과만 출력하고 설명을 붙이지 마라. 5) 원본 데이터에 요청한 정보가 없으면 "요청하신 정보를 찾을 수 없습니다."라고만 답하라.');
             if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] LLM_TRANSFORM 실패: ${res.error}` }; }
             prev = res.data;
+            this.log.debug(`[Pipeline] Step ${i + 1} output: ${JSON.stringify(prev)?.slice(0, 500)}`);
             onPipelineStep?.(i, 'done');
             break;
           }
