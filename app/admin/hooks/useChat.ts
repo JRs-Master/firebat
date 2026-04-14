@@ -169,7 +169,10 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         const parsed = parseSSE(buffer);
         buffer = parsed.remaining;
 
-        for (const ev of parsed.events) {
+        for (let ei = 0; ei < parsed.events.length; ei++) {
+          const ev = parsed.events[ei];
+          // React 18 배칭 방지 — 이벤트 사이에 렌더 틈 확보
+          if (ei > 0) await new Promise(r => setTimeout(r, 0));
           if (ev.event === 'plan') {
             const needsConfirm = ev.data.actions?.some((a: any) => ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type));
             setMessages(prev => prev.map(msg =>
