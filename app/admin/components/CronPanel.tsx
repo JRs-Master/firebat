@@ -21,6 +21,7 @@ interface CronJob {
 interface CronLog {
   jobId: string;
   targetPath: string;
+  title?: string;
   triggeredAt: string;
   success: boolean;
   durationMs: number;
@@ -213,7 +214,7 @@ export function CronPanel() {
                   ) : (
                     <AlertCircle size={10} className="text-red-500 shrink-0" />
                   )}
-                  <span className="text-slate-600 font-medium truncate">{jobs.find(j => j.jobId === log.jobId)?.title || log.jobId}</span>
+                  <span className="text-slate-600 font-medium truncate">{log.title || log.jobId}</span>
                   <span className="text-slate-400 shrink-0">{log.durationMs}ms</span>
                   <span className="text-slate-400 shrink-0 ml-auto">{formatTime(log.triggeredAt)}</span>
                 </div>

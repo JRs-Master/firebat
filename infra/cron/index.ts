@@ -25,6 +25,7 @@ interface CronJobRecord {
 export interface CronLogEntry {
   jobId: string;
   targetPath: string;
+  title?: string;
   triggeredAt: string;
   success: boolean;
   durationMs: number;
@@ -252,7 +253,7 @@ export class NodeCronAdapter implements ICronPort {
         return;
       }
 
-      await this.fireTrigger(record.jobId, record.targetPath, 'CRON_SCHEDULER', record.inputData, record.pipeline);
+      await this.fireTrigger(record.jobId, record.targetPath, 'CRON_SCHEDULER', record.inputData, record.pipeline, record.title);
     }, { timezone: this.timezone });
     this.cronTasks.set(record.jobId, task);
 
@@ -281,7 +282,7 @@ export class NodeCronAdapter implements ICronPort {
       this.timers.delete(record.jobId);
       this.records.delete(record.jobId);
       this.persist();
-      await this.fireTrigger(record.jobId, record.targetPath, 'SCHEDULED_ONCE', record.inputData, record.pipeline);
+      await this.fireTrigger(record.jobId, record.targetPath, 'SCHEDULED_ONCE', record.inputData, record.pipeline, record.title);
     }, msUntilRun);
     this.timers.set(record.jobId, timer);
   }
@@ -290,13 +291,13 @@ export class NodeCronAdapter implements ICronPort {
     const timer = setTimeout(async () => {
       this.timers.delete(record.jobId);
       this.records.delete(record.jobId);
-      await this.fireTrigger(record.jobId, record.targetPath, 'DELAYED_RUN', record.inputData, record.pipeline);
+      await this.fireTrigger(record.jobId, record.targetPath, 'DELAYED_RUN', record.inputData, record.pipeline, record.title);
     }, record.delaySec! * 1000);
     this.timers.set(record.jobId, timer);
   }
 
   /** 트리거 발화 — Core에 실행 위임, 결과를 로그에 기록 */
-  private async fireTrigger(jobId: string, targetPath: string, trigger: string, inputData?: any, pipeline?: PipelineStep[]): Promise<void> {
+  private async fireTrigger(jobId: string, targetPath: string, trigger: string, inputData?: any, pipeline?: PipelineStep[], title?: string): Promise<void> {
     if (!this.triggerCallback) {
       this.log?.error(`[Cron] 트리거 콜백 미등록 — 잡 실행 불가: ${jobId}`);
       return;
@@ -306,10 +307,10 @@ export class NodeCronAdapter implements ICronPort {
     try {
       const result = await this.triggerCallback({ jobId, targetPath, trigger, inputData, pipeline });
       this.log?.[result.success ? 'info' : 'error'](`[Cron] 잡 ${result.success ? '완료' : '실패'}: ${jobId} (${result.durationMs}ms)${result.error ? ` — ${result.error}` : ''}`);
-      this.appendLog({ jobId, targetPath, triggeredAt: new Date().toISOString(), success: result.success, durationMs: result.durationMs, error: result.error });
+      this.appendLog({ jobId, targetPath, title, triggeredAt: new Date().toISOString(), success: result.success, durationMs: result.durationMs, error: result.error });
     } catch (e: any) {
       this.log?.error(`[Cron] 트리거 콜백 오류: ${jobId} — ${e.message}`);
-      this.appendLog({ jobId, targetPath, triggeredAt: new Date().toISOString(), success: false, durationMs: 0, error: e.message });
+      this.appendLog({ jobId, targetPath, title, triggeredAt: new Date().toISOString(), success: false, durationMs: 0, error: e.message });
     }
   }
 
