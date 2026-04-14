@@ -659,8 +659,8 @@ user/modules/[name]/ 만. core/, infra/, system/, app/ 금지.
 jobId는 시스템 자동 생성 — 넣지 마라.
 필수: title(짧은 이름). 선택: description(상세 설명).
 - (A) 단순: targetPath + inputData. (B) 파이프라인: pipeline 배열, $prev로 이전 결과 전달.
-- 단계 타입: TEST_RUN, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM.
-- LLM_TRANSFORM: 알림용은 플레인 텍스트(마크다운 금지), 5W1H 기반.
+- 단계 필수 필드: TEST_RUN(path), MCP_CALL(server, tool), NETWORK_REQUEST(url), LLM_TRANSFORM(instruction).
+- LLM_TRANSFORM instruction: 변환 지시문 필수. 알림용은 플레인 텍스트(마크다운 금지), 5W1H 기반.
 - 모드: cronTime(반복), cronTime+startAt/endAt(기간 한정), runAt(1회), delaySec(N초 후).
 - 시각이 이미 지났으면: 바로 실행할지, 시각 수정할지 reply에서 물어라. 자의적으로 시각을 바꾸지 마라.
 - 크론: "분 시 일 월 요일", ${userTz} 기준.
