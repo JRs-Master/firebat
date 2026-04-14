@@ -343,7 +343,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-3 min-h-[280px]">
+        <div className="px-5 py-4 space-y-3 min-h-[380px]">
           {/* 스케줄 설명 */}
           {(job?.title || job?.description) && (
             <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
