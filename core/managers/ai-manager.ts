@@ -52,26 +52,68 @@ export class AiManager {
       if (dirs.length === 0) {
         lines.push(`[시스템 모듈] 없음`);
       } else {
-        const modInfos: string[] = [];
+        // 모듈 정보 수집
+        const allMods: Array<{ name: string; path: string; capability?: string; providerType?: string; description: string; inputDesc: string; outputDesc: string }> = [];
         for (const d of dirs) {
           const file = await this.core.readFile(`system/modules/${d.name}/config.json`);
           if (file.success && file.data) {
             try {
               const m = JSON.parse(file.data);
               const rt = m.runtime === 'node' ? 'index.mjs' : m.runtime === 'python' ? 'main.py' : 'index.mjs';
-              const path = `system/modules/${d.name}/${rt}`;
-              const inputDesc = m.input ? Object.entries(m.input).map(([k, v]) => `${k}: ${v}`).join(', ') : '';
-              const outputDesc = m.output ? Object.entries(m.output).map(([k, v]) => `${k}: ${v}`).join(', ') : '';
-              const capInfo = m.capability ? ` [${m.capability}, ${m.providerType || 'unknown'}]` : '';
-              let line = `  - ${m.name} (${path})${capInfo}: ${m.description}`;
-              if (inputDesc) line += `\n    입력: {${inputDesc}}`;
-              if (outputDesc) line += `\n    출력: {${outputDesc}}`;
-              modInfos.push(line);
+              allMods.push({
+                name: m.name || d.name,
+                path: `system/modules/${d.name}/${rt}`,
+                capability: m.capability,
+                providerType: m.providerType,
+                description: m.description || '',
+                inputDesc: m.input ? Object.entries(m.input).map(([k, v]) => `${k}: ${v}`).join(', ') : '',
+                outputDesc: m.output ? Object.entries(m.output).map(([k, v]) => `${k}: ${v}`).join(', ') : '',
+              });
             } catch {
-              modInfos.push(`  - ${d.name}`);
+              allMods.push({ name: d.name, path: `system/modules/${d.name}`, description: '', inputDesc: '', outputDesc: '' });
             }
           }
         }
+
+        // capability 설정에 따라 필터링/정렬
+        const modInfos: string[] = [];
+        for (const mod of allMods) {
+          if (mod.capability) {
+            const settings = this.core.getCapabilitySettings(mod.capability);
+            const mode = settings.mode || 'api-first';
+            // *-only 모드: 해당 타입만 표시
+            if (mode === 'api-only' && mod.providerType !== 'api') continue;
+            if (mode === 'local-only' && mod.providerType !== 'local') continue;
+          }
+          const capInfo = mod.capability ? ` [${mod.capability}, ${mod.providerType || 'unknown'}]` : '';
+          let line = `  - ${mod.name} (${mod.path})${capInfo}: ${mod.description}`;
+          if (mod.inputDesc) line += `\n    입력: {${mod.inputDesc}}`;
+          if (mod.outputDesc) line += `\n    출력: {${mod.outputDesc}}`;
+          modInfos.push(line);
+        }
+
+        // *-first 모드: 같은 capability 내에서 우선 타입을 먼저 정렬
+        const capOrder = new Map<string, string>(); // capability → preferred providerType
+        for (const mod of allMods) {
+          if (mod.capability && !capOrder.has(mod.capability)) {
+            const settings = this.core.getCapabilitySettings(mod.capability);
+            const mode = settings.mode || 'api-first';
+            capOrder.set(mod.capability, mode === 'local-first' ? 'local' : 'api');
+          }
+        }
+        modInfos.sort((a, b) => {
+          // capability 정보 파싱
+          const capA = a.match(/\[(\S+), (\S+)\]/);
+          const capB = b.match(/\[(\S+), (\S+)\]/);
+          if (capA && capB && capA[1] === capB[1]) {
+            const preferred = capOrder.get(capA[1]) || 'api';
+            const aMatch = capA[2] === preferred ? 0 : 1;
+            const bMatch = capB[2] === preferred ? 0 : 1;
+            return aMatch - bMatch;
+          }
+          return 0;
+        });
+
         lines.push(`[시스템 모듈] TEST_RUN으로 호출. path에 아래 경로 사용.\n${modInfos.join('\n')}`);
       }
     }
