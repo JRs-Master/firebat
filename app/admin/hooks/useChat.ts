@@ -175,14 +175,13 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             const needsConfirm = ev.data.actions?.some((a: any) => ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type));
             flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
-                ? { ...msg, isThinking: !needsConfirm, thoughts: ev.data.thoughts, content: ev.data.reply, plan: ev.data, planPending: needsConfirm, suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined, statusText: needsConfirm ? undefined : '실행 준비 중...' }
+                ? { ...msg, isThinking: !needsConfirm, thoughts: ev.data.thoughts, content: ev.data.reply, plan: ev.data, planPending: needsConfirm, suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined }
                 : msg
             )));
           } else if (ev.event === 'step') {
-            const stepDesc = ev.data.description || '실행 중...';
             flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
-                ? { ...msg, planPending: false, executing: true, isThinking: true, steps: [...(msg.steps || []), ev.data], statusText: stepDesc }
+                ? { ...msg, planPending: false, executing: true, isThinking: true, steps: [...(msg.steps || []), ev.data] }
                 : msg
             )));
           } else if (ev.event === 'result') {
@@ -222,7 +221,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     if (!msg?.plan) return;
 
     setMessages(prev => prev.map(m =>
-      m.id === msgId ? { ...m, planPending: false, executing: true, isThinking: true, steps: [], statusText: '실행 준비 중...' } : m
+      m.id === msgId ? { ...m, planPending: false, executing: true, isThinking: true, steps: [] } : m
     ));
     setLoading(true);
 
@@ -250,7 +249,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         for (const ev of parsed.events) {
           if (ev.event === 'step') {
             flushSync(() => setMessages(prev => prev.map(m =>
-              m.id === msgId ? { ...m, steps: [...(m.steps || []), ev.data], statusText: ev.data.description || '실행 중...' } : m
+              m.id === msgId ? { ...m, steps: [...(m.steps || []), ev.data] } : m
             )));
           } else if (ev.event === 'result') {
             flushSync(() => setMessages(prev => prev.map(m =>
