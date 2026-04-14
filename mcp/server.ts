@@ -106,7 +106,7 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
     `파일 쓰기 (user/ 영역만). 부모 디렉토리 자동 생성.
 모듈 작성 시 반드시 준수:
 - 경로: user/modules/{모듈명}/main.py 또는 index.js
-- module.json 필수: { "name", "type": "utility", "runtime": "python", "project": "모듈명", "packages": [], "input": {}, "output": {} }
+- config.json 필수: { "name", "type": "utility", "runtime": "python", "project": "모듈명", "packages": [], "input": {}, "output": {} }
 - I/O: stdin으로 JSON 읽기, stdout 마지막 줄에 { "success": true, "data": {...} } 출력
 - Python: True/False/None 사용 (true/false/null 아님)
 - 프로젝트명 = 모듈 폴더명 = 페이지 slug 통일`,
@@ -293,7 +293,7 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
     { name: 'firebat-bible', file: 'FIREBAT_BIBLE.md', desc: '파이어뱃 전체 아키텍처 원칙' },
     { name: 'core-bible', file: 'CORE_BIBLE.md', desc: 'Core 계층 설계 규칙' },
     { name: 'infra-bible', file: 'INFRA_BIBLE.md', desc: 'Infra 계층 설계 규칙' },
-    { name: 'module-bible', file: 'MODULE_BIBLE.md', desc: '모듈 작성 수칙 (I/O 프로토콜, module.json 규약)' },
+    { name: 'module-bible', file: 'MODULE_BIBLE.md', desc: '모듈 작성 수칙 (I/O 프로토콜, config.json 규약)' },
   ];
 
   for (const bible of bibles) {
@@ -343,7 +343,7 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
 ## 규칙
 - **slug**: 영문 kebab-case. 프로젝트명과 통일 권장
-- **project**: 모듈의 module.json project와 동일 값 → 프로젝트 단위 일괄 삭제 가능
+- **project**: 모듈의 config.json project와 동일 값 → 프로젝트 단위 일괄 삭제 가능
 - **body**: 컴포넌트 배열. Html 컴포넌트를 메인으로 사용 (iframe sandbox 안에서 실행)
 
 ## 사용 가능한 컴포넌트
@@ -366,11 +366,11 @@ Form 컴포넌트에서 \`bindModule\`로 백엔드 모듈 연결:
     }),
   );
 
-  // module.json 규약 리소스
+  // config.json 규약 리소스
   server.resource(
     'module-guide',
     'firebat://guides/module',
-    { description: '모듈 작성 가이드 — module.json 구조, I/O 프로토콜', mimeType: 'text/markdown' },
+    { description: '모듈 작성 가이드 — config.json 구조, I/O 프로토콜', mimeType: 'text/markdown' },
     async () => ({
       contents: [{
         uri: 'firebat://guides/module',
@@ -380,13 +380,13 @@ Form 컴포넌트에서 \`bindModule\`로 백엔드 모듈 연결:
 ## 파일 구조
 \`\`\`
 user/modules/my-module/
-  ├── module.json    (필수)
+  ├── config.json    (필수)
   ├── main.py        (Python) 또는
   ├── index.js       (Node.js) 또는
   └── main.php       (PHP)
 \`\`\`
 
-## module.json 필수 필드
+## config.json 필수 필드
 \`\`\`json
 {
   "name": "my-module",
@@ -448,7 +448,7 @@ user/modules/my-module/
 | 프로젝트명 | kebab-case | weather-app |
 | 모듈 폴더 | user/modules/{프로젝트명}/ | user/modules/weather-app/ |
 | 페이지 slug | {프로젝트명} | weather-app |
-| module.json project | {프로젝트명} | "project": "weather-app" |
+| config.json project | {프로젝트명} | "project": "weather-app" |
 | PageSpec project | {프로젝트명} | "project": "weather-app" |
 
 ## 한 프로젝트에 페이지가 여러 개일 경우
@@ -486,7 +486,7 @@ slug에 접미사: weather-app, weather-app-settings, weather-app-history
 2. firebat://guides/module 리소스를 읽고 모듈 구조를 확인
 3. firebat://guides/naming 리소스를 읽고 네이밍 규칙을 확인
 4. save_page 도구로 PageSpec JSON을 저장 (slug: "${app_name}")
-5. 백엔드가 필요하면 write_file 도구로 module.json + main.py/index.js 생성
+5. 백엔드가 필요하면 write_file 도구로 config.json + main.py/index.js 생성
 6. run_module 도구로 모듈 테스트
 
 모든 코드는 프로덕션 수준의 디자인으로 작성하세요 (그라디언트, 애니메이션, 반응형).`,

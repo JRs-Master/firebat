@@ -1,0 +1,8 @@
+{
+  "name": "seo",
+  "type": "service",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "SEO 설정 (sitemap, robots.txt, RSS, OG 이미지, 스크립트 주입)",
+  "runtime": "none"
+}

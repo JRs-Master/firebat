@@ -1,6 +1,7 @@
 {
   "name": "browser-scrape",
-  "type": "utility",
+  "type": "module",
+  "scope": "system",
   "version": "1.0.0",
   "description": "Playwright 기반 JS 렌더링 웹 스크래퍼. 동적 JS 페이지, 검색엔진 결과 등 정적 requests로 불가한 모든 페이지에 사용.",
   "runtime": "python",

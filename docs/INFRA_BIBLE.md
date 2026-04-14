@@ -36,7 +36,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - `ISandboxPort` 구현.
 - **경로 검증**: `canExecute` 메서드로 `user/modules/`, `system/modules/` 외 실행 차단.
 - **언어 중립**: `.py`, `.js`, `.mjs`, `.php`, `.rs`, `.wasm`, `.sh` 지원.
-- **module.json 선제 설치**: `packages` 필드 의존성을 실행 전 자동 설치.
+- **config.json 선제 설치**: `packages` 필드 의존성을 실행 전 자동 설치.
 - **시크릿 env 주입**: `secrets` 배열 → Vault에서 값 조회 → 환경변수로 전달.
 - **타임아웃**: 30초 (`SANDBOX_TIMEOUT_MS`).
 - **stdin/stdout**: `{ correlationId, data }` 주입 → 마지막 줄 단일 JSON 수신.

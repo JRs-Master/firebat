@@ -2,12 +2,17 @@
  * OG 이미지 자동 생성 API
  *
  * GET /api/og → 1200×630 PNG 브랜드 카드 이미지
+ * GET /api/og?title=제목&description=설명 → 페이지별 OG 이미지
  */
 import { ImageResponse } from 'next/og';
+import { getCore } from '../../../lib/singleton';
 
-export const runtime = 'edge';
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const seo = getCore().getSeoSettings();
+  const title = searchParams.get('title') || seo.siteTitle || 'Firebat';
+  const description = searchParams.get('description') || seo.siteDescription || '';
 
-export async function GET() {
   return new ImageResponse(
     (
       <div
@@ -88,11 +93,11 @@ export async function GET() {
             F
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            <span style={{ fontSize: '48px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.02em' }}>
-              Firebat
+            <span style={{ fontSize: title.length > 20 ? '32px' : '48px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.02em' }}>
+              {title}
             </span>
             <span style={{ fontSize: '20px', fontWeight: 500, color: '#94a3b8', letterSpacing: '0.05em' }}>
-              만들기 + 운영 + 자동화
+              {description}
             </span>
           </div>
         </div>

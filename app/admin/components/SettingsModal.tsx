@@ -379,7 +379,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
               onClick={() => setSettingsTab('mcp')}
               className={`px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 ${settingsTab === 'mcp' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
             >
-              <Plug size={14} /> MCP
+              <Plug size={14} /> 외부 MCP
             </button>
           )}
           {!isDemo && (
@@ -531,12 +531,12 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                 </p>
               </div>
 
-              {/* 모듈 필요 API 키 (module.json에서 자동 수집) */}
+              {/* 모듈 필요 API 키 (config.json에서 자동 수집) */}
               {moduleSecrets.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <label className="text-xs sm:text-sm font-bold text-slate-700">모듈 필요 API 키</label>
                   <p className="text-[10px] sm:text-xs text-slate-400 font-medium -mt-1">
-                    모듈의 module.json에서 자동으로 감지된 키입니다.
+                    모듈의 config.json에서 자동으로 감지된 키입니다.
                   </p>
                   <div className="flex flex-col gap-1.5">
                     {moduleSecrets.map(ms => (
@@ -687,8 +687,9 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
           {settingsTab === 'mcp' && (
             <>
-              {/* ── Firebat MCP 서버 ── */}
-              <div className="flex flex-col gap-3 pb-4 border-b border-slate-200">
+              {/* ── 외부 MCP 서버 (클라이언트) ── */}
+              {/* Firebat MCP 서버 설정은 사이드바 > SYSTEM > 서비스 > mcp-server에서 관리 */}
+              <div className="flex flex-col gap-3 pb-4 border-b border-slate-200 hidden">
                 <div className="flex items-center gap-2">
                   <Server size={16} className="text-blue-600" />
                   <label className="text-xs sm:text-sm font-bold text-slate-700">Firebat MCP 서버</label>

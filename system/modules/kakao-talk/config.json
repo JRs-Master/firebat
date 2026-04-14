@@ -1,6 +1,7 @@
 {
   "name": "kakao-talk",
-  "type": "utility",
+  "type": "module",
+  "scope": "system",
   "version": "1.0.0",
   "description": "카카오톡 나에게 보내기 API. 텍스트/링크/리스트 메시지를 내 카톡으로 발송.",
   "runtime": "node",

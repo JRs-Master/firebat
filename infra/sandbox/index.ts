@@ -67,11 +67,11 @@ export class ProcessSandboxAdapter implements ISandboxPort {
     };
   }
 
-  /** module.json의 secrets 배열을 읽어 Vault에서 값을 가져와 env 객체로 반환 */
+  /** config.json의 secrets 배열을 읽어 Vault에서 값을 가져와 env 객체로 반환 */
   private loadSecretsEnv(moduleDir: string): Record<string, string> {
     const env: Record<string, string> = {};
     if (!this.vault) return env;
-    const manifestPath = path.join(moduleDir, 'module.json');
+    const manifestPath = path.join(moduleDir, 'config.json');
     if (!fs.existsSync(manifestPath)) return env;
     try {
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
@@ -122,11 +122,11 @@ export class ProcessSandboxAdapter implements ISandboxPort {
   }
 
   /**
-   * module.json이 있으면 선제적으로 packages 설치
+   * config.json이 있으면 선제적으로 packages 설치
    * 에러-감지 방식보다 빠르고 예측 가능
    */
   private async preInstallFromManifest(moduleDir: string): Promise<void> {
-    const manifestPath = path.join(moduleDir, 'module.json');
+    const manifestPath = path.join(moduleDir, 'config.json');
     if (!fs.existsSync(manifestPath)) return;
 
     let manifest: any;
@@ -156,7 +156,7 @@ export class ProcessSandboxAdapter implements ISandboxPort {
   }
 
   /**
-   * 실행 → 패키지 누락 감지 → 자동 설치 → 재시도 (module.json 없는 모듈의 안전망)
+   * 실행 → 패키지 누락 감지 → 자동 설치 → 재시도 (config.json 없는 모듈의 안전망)
    * AI는 의존성을 몰라도 됨. Infra가 전담 처리.
    */
   private async executeWithAutoInstall(
@@ -240,20 +240,20 @@ export class ProcessSandboxAdapter implements ISandboxPort {
       return { success: false, error: `[Kernel Block] 허용되지 않은 실행 경로입니다: ${targetPath}` };
     }
 
-    // 디렉토리 경로인 경우 module.json → entry 또는 index.* 자동 탐색
+    // 디렉토리 경로인 경우 config.json → entry 또는 index.* 자동 탐색
     let resolvedPath = targetPath;
     const absCheck = path.resolve(this.baseDir, targetPath);
     try {
       const stat = fs.statSync(absCheck);
       if (stat.isDirectory()) {
-        const manifestPath = path.join(absCheck, 'module.json');
+        const manifestPath = path.join(absCheck, 'config.json');
         if (fs.existsSync(manifestPath)) {
           const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
           if (manifest.entry) {
             resolvedPath = path.join(targetPath, manifest.entry);
           }
         }
-        // module.json에 entry가 없으면 index.* 탐색
+        // config.json에 entry가 없으면 index.* 탐색
         if (resolvedPath === targetPath) {
           for (const candidate of ['index.mjs', 'index.js', 'index.py', 'index.php', 'index.sh']) {
             if (fs.existsSync(path.join(absCheck, candidate))) {

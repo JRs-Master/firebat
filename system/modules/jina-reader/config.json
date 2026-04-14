@@ -1,6 +1,7 @@
 {
   "name": "jina-reader",
-  "type": "utility",
+  "type": "module",
+  "scope": "system",
   "version": "1.0.0",
   "description": "Jina Reader API 기반 웹 스크래퍼. URL → 마크다운 텍스트 변환. 서버 리소스 제로.",
   "runtime": "node",

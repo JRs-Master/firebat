@@ -20,7 +20,7 @@ export async function GET() {
           : '',
       };
     });
-    // 유저 모듈 module.json에서 필요한 시크릿 자동 수집
+    // 유저 모듈 config.json에서 필요한 시크릿 자동 수집
     const moduleSecrets = await core.listUserModuleSecrets();
     return NextResponse.json({ success: true, secrets, moduleSecrets });
   } catch (err: any) {

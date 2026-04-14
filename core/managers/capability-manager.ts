@@ -37,7 +37,7 @@ export class CapabilityManager {
 
       for (const entry of result.data) {
         if (!entry.isDirectory) continue;
-        const file = await this.storage.read(`${loc}/${entry.name}/module.json`);
+        const file = await this.storage.read(`${loc}/${entry.name}/config.json`);
         if (!file.success || !file.data) continue;
         try {
           const mod = JSON.parse(file.data);
@@ -68,7 +68,7 @@ export class CapabilityManager {
       if (!result.success || !result.data) continue;
       for (const entry of result.data) {
         if (!entry.isDirectory) continue;
-        const file = await this.storage.read(`${loc}/${entry.name}/module.json`);
+        const file = await this.storage.read(`${loc}/${entry.name}/config.json`);
         if (!file.success || !file.data) continue;
         try {
           const mod = JSON.parse(file.data);

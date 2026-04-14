@@ -7,7 +7,8 @@ import { ScheduleManager } from './managers/schedule-manager';
 import { SecretManager } from './managers/secret-manager';
 import { McpManager } from './managers/mcp-manager';
 import { CapabilityManager } from './managers/capability-manager';
-import type { FirebatInfraContainer, ILlmPort, McpServerConfig, CronScheduleOptions } from './ports';
+import { TaskManager } from './managers/task-manager';
+import type { FirebatInfraContainer, ILlmPort, McpServerConfig, CronScheduleOptions, PipelineStep } from './ports';
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
 import type { McpTokenInfo } from './managers/secret-manager';
@@ -36,6 +37,7 @@ export class FirebatCore {
   private readonly secret: SecretManager;
   private readonly mcp: McpManager;
   private readonly capability: CapabilityManager;
+  private readonly task: TaskManager;
 
   constructor(private readonly infra: FirebatInfraContainer) {
     // 매니저 생성 — 각 매니저는 자기 도메인의 인프라 포트를 직접 받음
@@ -48,10 +50,11 @@ export class FirebatCore {
     this.capability = new CapabilityManager(infra.storage, infra.vault, infra.log);
 
     // 크로스 도메인 매니저 — Core 참조 필요
-    this.schedule = new ScheduleManager(this, infra.cron, infra.llm, infra.log);
+    this.task = new TaskManager(this, infra.llm, infra.log);
+    this.schedule = new ScheduleManager(this, infra.cron, infra.log);
     this.ai = new AiManager(this, infra.llm, infra.log);
 
-    infra.log.debug('[FirebatCore] Boot sequence initialized. 9 managers bound.');
+    infra.log.debug('[FirebatCore] Boot sequence initialized. 10 managers bound.');
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -161,6 +164,20 @@ export class FirebatCore {
   getModuleSettings(moduleName: string) { return this.module.getSettings(moduleName); }
   setModuleSettings(moduleName: string, settings: Record<string, any>) { return this.module.setSettings(moduleName, settings); }
   getSeoSettings() { return this.module.getSeoSettings(); }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  태스크 → TaskManager (파이프라인 즉시 실행)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** 파이프라인 즉시 실행 (RUN_TASK 액션) */
+  async runTask(pipeline: PipelineStep[]): Promise<{ success: boolean; data?: any; error?: string }> {
+    return this.task.executePipeline(pipeline);
+  }
+
+  /** 파이프라인 검증 (ScheduleManager에서도 사용) */
+  validatePipeline(pipeline: PipelineStep[]): string | null {
+    return this.task.validatePipeline(pipeline);
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   //  스케줄링 → ScheduleManager + SSE

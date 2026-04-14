@@ -28,9 +28,9 @@ Firebat은 어떤 언어로 작성되었건(불가지론적) 동일한 방식으
 
 ---
 
-## 제3장: module.json 규약
+## 제3장: config.json 규약
 
-모든 모듈 폴더에 `module.json`을 필수 포함한다.
+모든 모듈 폴더에 `config.json`을 필수 포함한다.
 
 ### 공통 필수 필드
 ```json
@@ -129,7 +129,7 @@ Firebat은 어떤 언어로 작성되었건(불가지론적) 동일한 방식으
 이를 **Capability(기능) — Provider(제공자)** 패턴으로 관리한다.
 
 ### 제1항. capability 필드
-유틸리티 모듈의 `module.json`에 `capability` 필드를 선언하여 해당 모듈이 제공하는 기능을 명시한다.
+유틸리티 모듈의 `config.json`에 `capability` 필드를 선언하여 해당 모듈이 제공하는 기능을 명시한다.
 ```json
 {
   "name": "browser-scrape",

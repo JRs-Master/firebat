@@ -1,14 +1,16 @@
 import type { ISandboxPort, IStoragePort, IVaultPort } from '../ports';
 import type { InfraResult } from '../types';
 
-interface SystemModule {
+interface SystemEntry {
   name: string;
   description: string;
   runtime: string;
+  type: string;   // 'service' | 'module'
+  scope: string;  // 'system' | 'user'
 }
 
 /**
- * Module Manager — 모듈 실행 + 시스템 모듈 관리
+ * Module Manager — 모듈 실행 + 시스템 모듈/서비스 관리
  *
  * 인프라: ISandboxPort, IStoragePort, IVaultPort
  */
@@ -45,41 +47,62 @@ export class ModuleManager {
     return this.sandbox.execute(`user/modules/${moduleName}/${entry}`, inputData);
   }
 
-  /** system/modules/ 목록 조회 */
-  async listSystem(): Promise<SystemModule[]> {
-    const result = await this.storage.listDir('system/modules');
+  /** 시스템 모듈 목록 (system/modules/ — type: module) */
+  async listSystemModules(): Promise<SystemEntry[]> {
+    return this.scanDir('system/modules', 'module');
+  }
+
+  /** 시스템 서비스 목록 (system/services/ — type: service) */
+  async listSystemServices(): Promise<SystemEntry[]> {
+    return this.scanDir('system/services', 'service');
+  }
+
+  /** 시스템 모듈+서비스 통합 목록 */
+  async listSystem(): Promise<SystemEntry[]> {
+    const [services, modules] = await Promise.all([
+      this.listSystemServices(),
+      this.listSystemModules(),
+    ]);
+    return [...services, ...modules];
+  }
+
+  /** 디렉토리 스캔 — config.json 읽기 */
+  private async scanDir(dirPath: string, defaultType: string): Promise<SystemEntry[]> {
+    const result = await this.storage.listDir(dirPath);
     if (!result.success || !result.data) return [];
 
-    const modules: SystemModule[] = [];
+    const entries: SystemEntry[] = [];
     for (const entry of result.data) {
       if (!entry.isDirectory) continue;
-      const file = await this.storage.read(`system/modules/${entry.name}/module.json`);
+      const file = await this.storage.read(`${dirPath}/${entry.name}/config.json`);
       if (!file.success || !file.data) continue;
       try {
         const parsed = JSON.parse(file.data);
-        modules.push({
+        entries.push({
           name: parsed.name || entry.name,
           description: parsed.description || '',
-          runtime: parsed.runtime || '',
+          runtime: parsed.runtime || 'none',
+          type: parsed.type || defaultType,
+          scope: parsed.scope || 'system',
         });
       } catch {}
     }
-    return modules;
+    return entries;
   }
 
-  /** 시스템 모듈 설정 조회 */
-  getSettings(moduleName: string): Record<string, any> {
-    const raw = this.vault.getSecret(`system:module:${moduleName}:settings`);
+  /** 시스템 모듈/서비스 설정 조회 */
+  getSettings(name: string): Record<string, any> {
+    const raw = this.vault.getSecret(`system:module:${name}:settings`);
     if (!raw) return {};
     try { return JSON.parse(raw); } catch { return {}; }
   }
 
-  /** 시스템 모듈 설정 저장 */
-  setSettings(moduleName: string, settings: Record<string, any>): boolean {
-    return this.vault.setSecret(`system:module:${moduleName}:settings`, JSON.stringify(settings));
+  /** 시스템 모듈/서비스 설정 저장 */
+  setSettings(name: string, settings: Record<string, any>): boolean {
+    return this.vault.setSecret(`system:module:${name}:settings`, JSON.stringify(settings));
   }
 
-  /** SEO 모듈 설정 조회 (편의 메서드) */
+  /** SEO 서비스 설정 조회 (편의 메서드) */
   getSeoSettings(): {
     sitemapEnabled: boolean;
     rssEnabled: boolean;

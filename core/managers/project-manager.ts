@@ -24,12 +24,12 @@ export class ProjectManager {
     const map: Record<string, { paths: string[]; pageSlugs: string[] }> = {};
     const ensure = (p: string) => { if (!map[p]) map[p] = { paths: [], pageSlugs: [] }; };
 
-    // user/modules/*/module.json 스캔
+    // user/modules/*/config.json 스캔
     const modulesResult = await this.storage.listDir('user/modules');
     if (modulesResult.success && modulesResult.data) {
       for (const entry of modulesResult.data) {
         if (!entry.isDirectory) continue;
-        const jsonPath = `user/modules/${entry.name}/module.json`;
+        const jsonPath = `user/modules/${entry.name}/config.json`;
         const fileResult = await this.storage.read(jsonPath);
         if (!fileResult.success || !fileResult.data) continue;
         try {

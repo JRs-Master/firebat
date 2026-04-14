@@ -54,7 +54,7 @@ export class AiManager {
       } else {
         const modInfos: string[] = [];
         for (const d of dirs) {
-          const file = await this.core.readFile(`system/modules/${d.name}/module.json`);
+          const file = await this.core.readFile(`system/modules/${d.name}/config.json`);
           if (file.success && file.data) {
             try {
               const m = JSON.parse(file.data);
@@ -316,6 +316,15 @@ export class AiManager {
               executionError = `MCP_CALL 실패 (${action.server}/${action.tool}): ${mcpRes.error}`;
             } else {
               finalDataList.push({ mcpResult: { server: action.server, tool: action.tool, data: mcpRes.data } });
+            }
+            break;
+          }
+          case 'RUN_TASK': {
+            const taskRes = await this.core.runTask(action.pipeline);
+            if (!taskRes.success) {
+              executionError = `RUN_TASK 실패: ${taskRes.error}`;
+            } else {
+              finalDataList.push({ taskResult: taskRes.data });
             }
             break;
           }
@@ -605,6 +614,12 @@ export class AiManager {
         dataList.push({ mcpResult: { server: action.server, tool: action.tool, data: mcpRes.data } });
         return null;
       }
+      case 'RUN_TASK': {
+        const taskRes = await this.core.runTask(action.pipeline);
+        if (!taskRes.success) return `RUN_TASK 실패: ${taskRes.error}`;
+        dataList.push({ taskResult: taskRes.data });
+        return null;
+      }
     }
   }
 
@@ -668,8 +683,8 @@ user/modules/[name]/ 만. core/, infra/, system/, app/ 금지.
 
 ## 모듈
 - I/O: stdin JSON → stdout JSON. sys.argv 금지. Python: True/False/None.
-- module.json 필수 (name, runtime, packages, input, output).
-- API 키: module.json secrets 배열 등록 → 환경변수 자동 주입. 하드코딩 금지.
+- config.json 필수 (name, type, scope, runtime, packages, input, output).
+- API 키: config.json secrets 배열 등록 → 환경변수 자동 주입. 하드코딩 금지.
 - 미등록 키 → REQUEST_SECRET (다른 액션 앞에 배치). 키 이름은 kebab-case.
 - TEST_RUN mockData는 input 스펙에 맞는 실제 값.
 
@@ -678,15 +693,24 @@ user/modules/[name]/ 만. core/, infra/, system/, app/ 금지.
 jobId는 시스템 자동 생성 — 넣지 마라.
 필수: title(짧은 이름). 선택: description(상세 설명).
 모드: cronTime(반복), cronTime+startAt/endAt(기간 한정), runAt(1회, ISO 8601), delaySec(N초 후).
+즉시 실행이 필요한 복합 작업은 SCHEDULE_TASK가 아닌 RUN_TASK를 사용하라.
 크론: "분 시 일 월 요일", ${userTz} 기준.
 시각이 이미 지났으면: 바로 실행할지, 시각 수정할지 reply에서 물어라. 자의적으로 시각을 바꾸지 마라.
 CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제. 새 모듈 만들지 마라.
 
-### SCHEDULE_TASK 샘플
+### RUN_TASK (즉시 파이프라인 실행)
+"지금 바로 해줘" 류 복합 작업은 RUN_TASK. 예약이 아닌 즉시 실행.
+{"type":"RUN_TASK","description":"메일 요약 카톡 발송","pipeline":[
+  {"type":"MCP_CALL","server":"gmail","tool":"search_emails","arguments":{"query":"is:unread","maxResults":5}},
+  {"type":"LLM_TRANSFORM","instruction":"아래 메일 내용을 5W1H 기반 플레인 텍스트로 요약. 마크다운 금지."},
+  {"type":"TEST_RUN","path":"system/modules/kakao-talk/index.mjs","inputMap":{"text":"$prev"}}
+]}
+
+### SCHEDULE_TASK 샘플 (예약/반복)
 (A) 단순 모듈 실행:
 {"type":"SCHEDULE_TASK","description":"매일 9시 날씨 알림","title":"날씨 알림","targetPath":"user/modules/weather/index.mjs","inputData":{"city":"Seoul"},"cronTime":"0 9 * * *"}
 
-(B) 파이프라인 ($prev로 이전 결과 전달):
+(B) 파이프라인 예약 ($prev로 이전 결과 전달):
 {"type":"SCHEDULE_TASK","description":"메일 요약 카톡 발송","title":"메일 카톡","runAt":"2026-04-14T14:00:00","pipeline":[
   {"type":"MCP_CALL","server":"gmail","tool":"search_emails","arguments":{"query":"is:unread","maxResults":5}},
   {"type":"MCP_CALL","server":"gmail","tool":"get_email","inputMap":{"messageId":"$prev"}},

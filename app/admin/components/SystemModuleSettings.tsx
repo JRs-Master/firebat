@@ -42,6 +42,10 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
       { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '5000', description: '마크다운 결과 최대 글자 수', defaultValue: 5000 },
     ],
   },
+  'mcp-server': {
+    title: 'Firebat MCP 서버',
+    fields: [],  // MCP 서버는 커스텀 렌더링 (토큰 관리 + JSON 설정)
+  },
   'seo': {
     title: 'SEO 설정',
     fields: [

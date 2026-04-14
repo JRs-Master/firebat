@@ -71,26 +71,28 @@ interface FirebatInfraContainer {
 외부에서 `core.infra.storage` 등 포트를 직접 호출하지 않는다.
 모든 API route는 `getCore()` → Core 메서드 호출 패턴을 따른다.
 
-### 제1-1항. 9-Manager 아키텍처 (2026-04-14)
-`FirebatCore`는 **얇은 라우팅 파사드**. 비즈니스 로직은 9개 도메인 매니저에 위임한다.
+### 제1-1항. 10-Manager 아키텍처 (2026-04-14)
+`FirebatCore`는 **얇은 라우팅 파사드**. 비즈니스 로직은 10개 도메인 매니저에 위임한다.
 
-| 매니저 | 인프라 포트 | Core 참조 |
-|---|---|---|
-| AiManager | ILlmPort, ILogPort | ✅ (크로스 도메인) |
-| StorageManager | IStoragePort | ✗ |
-| PageManager | IDatabasePort, IStoragePort | ✗ |
-| ProjectManager | IStoragePort, IDatabasePort | ✗ |
-| ModuleManager | ISandboxPort, IStoragePort, IVaultPort | ✗ |
-| ScheduleManager | ICronPort, ILlmPort, ILogPort | ✅ (크로스 도메인) |
-| SecretManager | IVaultPort, IStoragePort | ✗ |
-| McpManager | IMcpClientPort | ✗ |
-| CapabilityManager | IStoragePort, IVaultPort, ILogPort | ✗ |
+| 매니저 | 인프라 포트 | Core 참조 | 역할 |
+|---|---|---|---|
+| AiManager | ILlmPort, ILogPort | ✅ | AI 채팅, Plan-Execute |
+| StorageManager | IStoragePort | ✗ | 파일 CRUD |
+| PageManager | IDatabasePort, IStoragePort | ✗ | 페이지 CRUD |
+| ProjectManager | IStoragePort, IDatabasePort | ✗ | 프로젝트 스캔/삭제 |
+| ModuleManager | ISandboxPort, IStoragePort, IVaultPort | ✗ | 모듈 실행 |
+| TaskManager | ILlmPort, ILogPort | ✅ | 파이프라인 즉시 실행 |
+| ScheduleManager | ICronPort, ILogPort | ✅ | 크론/예약 CRUD |
+| SecretManager | IVaultPort, IStoragePort | ✗ | 시크릿 관리 |
+| McpManager | IMcpClientPort | ✗ | MCP 클라이언트 |
+| CapabilityManager | IStoragePort, IVaultPort, ILogPort | ✗ | Provider 해석 |
 
 **규칙**:
 - 매니저는 자기 도메인의 인프라 포트를 **생성자에서 직접** 받는다.
 - 크로스 도메인 호출이 필요한 매니저(AI, Schedule)는 추가로 `FirebatCore` 참조를 받는다.
 - 매니저끼리 직접 호출 **금지** — Core가 유일한 중재자.
 - SSE 이벤트는 Core 파사드 메서드에서 발행. 예외: ScheduleManager.handleTrigger (비동기 크론 콜백).
+- **TaskManager ↔ ScheduleManager 관계**: TaskManager가 파이프라인 실행 엔진 담당. ScheduleManager는 크론 트리거 시 Core.runTask()로 TaskManager에 위임.
 - 로깅(ILogPort), 네트워크(INetworkPort)는 횡단 관심사 — 매니저 불필요, 포트 직접 사용.
 
 ### 제2항. Core 주요 메서드 영역
@@ -102,6 +104,7 @@ interface FirebatInfraContainer {
 | 프로젝트 | `scanProjects`, `deleteProject` |
 | 시스템 모듈 | `getSystemModules`, `getModuleSettings`, `setModuleSettings` |
 | 페이지 | `listPages`, `getPage`, `savePage`, `deletePage`, `listStaticPages` |
+| 태스크 | `runTask`, `validatePipeline` |
 | 크론 | `listCronJobs`, `cancelCronJob`, `updateCronJob`, `getCronLogs` |
 | 시크릿 | `listUserSecrets`, `setUserSecret`, `getUserSecret`, `deleteUserSecret` |
 | 시스템 설정 | `getTimezone`, `setTimezone`, `getSeoSettings` |
@@ -132,6 +135,7 @@ interface FirebatInfraContainer {
 | `SCHEDULE_TASK`, `CANCEL_TASK`, `LIST_TASKS` | `ICronPort` |
 | `SAVE_PAGE`, `DELETE_PAGE`, `LIST_PAGES`, `DATABASE_QUERY` | `IDatabasePort` |
 | `REQUEST_SECRET`, `SET_SECRET` | `IVaultPort` |
+| `RUN_TASK` | TaskManager (파이프라인 즉시 실행) |
 | `MCP_CALL` | `IMcpClientPort` |
 | `OPEN_URL` | 프론트엔드 반환 (미리보기 버튼) |
 
@@ -153,6 +157,7 @@ type FirebatAction =
   | { type: 'LIST_DIR', path: string }
   | { type: 'TEST_RUN', path: string, mockData?: any }
   | { type: 'NETWORK_REQUEST', url: string, method: string, body?: any, headers?: Record<string, string> }
+  | { type: 'RUN_TASK', pipeline: PipelineStep[] }
   | { type: 'SCHEDULE_TASK', jobId: string, targetPath?: string, cronTime?: string, runAt?: string, delaySec?: number, pipeline?: PipelineStep[] }
   | { type: 'CANCEL_TASK', jobId: string }
   | { type: 'LIST_TASKS' }
@@ -198,10 +203,15 @@ interface FirebatPlan {
 ### ModuleManager
 - 모듈 실행 (이름/경로), 시스템 모듈 설정. ISandboxPort, IStoragePort, IVaultPort 직접 주입.
 
+### TaskManager
+- 파이프라인 즉시 실행 엔진. ILlmPort, ILogPort 직접 주입 + Core 참조.
+- `executePipeline()`: 4가지 단계(TEST_RUN, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM) 순차 실행.
+- `validatePipeline()`: 필수 필드 사전 검증 (ScheduleManager에서도 사용).
+- `$prev` 치환: 재귀적 `resolveValue()`로 inputData/inputMap 모든 위치에서 자동 전달.
+
 ### ScheduleManager
-- 크론 CRUD + 파이프라인 실행 엔진. ICronPort, ILlmPort, ILogPort 직접 주입 + Core 참조.
-- `onTrigger` 콜백에서 파이프라인/모듈/URL 분기 처리.
-- 파이프라인 `LLM_TRANSFORM` 단계에서 주입받은 `ILlmPort`를 직접 사용.
+- 크론/예약 CRUD. ICronPort, ILogPort 직접 주입 + Core 참조.
+- `onTrigger` 콜백에서 파이프라인은 Core.runTask()로 TaskManager에 위임, 모듈/URL은 직접 처리.
 - SSE 직접 발행 (비동기 크론 콜백 예외).
 
 ### SecretManager

@@ -37,7 +37,7 @@ export class SecretManager {
     return this.vault.deleteSecret(`user:${name}`);
   }
 
-  /** 유저 모듈이 필요로 하는 시크릿 목록 (module.json secrets 필드에서 수집) */
+  /** 유저 모듈이 필요로 하는 시크릿 목록 (config.json secrets 필드에서 수집) */
   async listModuleSecrets(): Promise<Array<{ secretName: string; moduleName: string; hasValue: boolean }>> {
     const result: Array<{ secretName: string; moduleName: string; hasValue: boolean }> = [];
     const seen = new Set<string>();
@@ -45,7 +45,7 @@ export class SecretManager {
     if (!listResult.success || !listResult.data) return result;
     for (const entry of listResult.data) {
       if (!entry.isDirectory) continue;
-      const file = await this.storage.read(`user/modules/${entry.name}/module.json`);
+      const file = await this.storage.read(`user/modules/${entry.name}/config.json`);
       if (!file.success || !file.data) continue;
       try {
         const mod = JSON.parse(file.data);
