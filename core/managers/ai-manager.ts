@@ -662,7 +662,7 @@ jobId는 시스템 자동 생성 — 넣지 마라.
 - 단계 타입: TEST_RUN, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM.
 - LLM_TRANSFORM: 알림용은 플레인 텍스트(마크다운 금지), 5W1H 기반.
 - 모드: cronTime(반복), cronTime+startAt/endAt(기간 한정), runAt(1회), delaySec(N초 후).
-- 시각이 이미 지났거나 2분 이내면: 바로 실행할지, 시각 수정할지 reply에서 물어라. 자의적으로 시각을 바꾸지 마라.
+- 시각이 이미 지났으면: 바로 실행할지, 시각 수정할지 reply에서 물어라. 자의적으로 시각을 바꾸지 마라.
 - 크론: "분 시 일 월 요일", ${userTz} 기준.
 - CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제.
 - 새 모듈 만들지 마라. 기존 모듈/페이지 사용.
