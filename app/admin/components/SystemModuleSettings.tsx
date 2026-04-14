@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server } from 'lucide-react';
+import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, FileText, Code, Settings2, ExternalLink } from 'lucide-react';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
 type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret';
@@ -12,10 +12,19 @@ interface SettingField {
   placeholder?: string;
   description?: string;
   defaultValue?: any;
+  tab?: string;              // 탭 그룹 (없으면 기본 탭)
   oauthUrl?: string;        // oauth 타입 전용: 인증 시작 URL
   oauthSecrets?: string[];  // oauth 타입 전용: 연동 상태 확인용 시크릿 키
   secretName?: string;      // secret 타입 전용: Vault에 저장할 시크릿 키 이름
 }
+
+// 탭 정의 (아이콘 + 라벨)
+const TAB_META: Record<string, { label: string; icon: typeof Globe }> = {
+  '일반': { label: '일반', icon: Settings2 },
+  'SEO': { label: 'SEO', icon: Globe },
+  'OG': { label: 'OG 이미지', icon: Image },
+  '스크립트': { label: '스크립트', icon: Code },
+};
 
 // 모듈별 설정 필드 정의 — 새 모듈 추가 시 여기에 등록
 const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingField[] }> = {
@@ -49,13 +58,20 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
   'seo': {
     title: 'SEO 설정',
     fields: [
-      { key: 'sitemapEnabled', label: 'Sitemap 생성', type: 'toggle', description: '/sitemap.xml 자동 생성', defaultValue: true },
-      { key: 'rssEnabled', label: 'RSS 피드', type: 'toggle', description: '/feed.xml 자동 생성', defaultValue: true },
-      { key: 'robotsTxt', label: 'robots.txt', type: 'textarea', placeholder: 'User-agent: *\nAllow: /\nDisallow: /admin', description: 'robots.txt 내용', defaultValue: 'User-agent: *\nAllow: /\nDisallow: /admin' },
-      { key: 'headScripts', label: '<head> 스크립트', type: 'textarea', placeholder: '<!-- Google Analytics 등 -->', description: '모든 페이지 <head>에 삽입할 HTML' },
-      { key: 'bodyScripts', label: '</body> 스크립트', type: 'textarea', placeholder: '<!-- 채팅 위젯 등 -->', description: '모든 페이지 </body> 앞에 삽입할 HTML' },
-      { key: 'siteTitle', label: '사이트 제목', type: 'text', placeholder: 'Firebat', description: 'SEO 기본 사이트 제목', defaultValue: 'Firebat' },
-      { key: 'siteDescription', label: '사이트 설명', type: 'text', placeholder: 'Just Imagine. Firebat Runs.', description: 'SEO 기본 사이트 설명', defaultValue: 'Just Imagine. Firebat Runs.' },
+      // 일반 탭
+      { key: 'siteTitle', label: '사이트 제목', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'SEO 기본 사이트 제목 (OG, RSS, Sitemap 등에 사용)', defaultValue: 'Firebat' },
+      { key: 'siteDescription', label: '사이트 설명', type: 'text', tab: '일반', placeholder: 'Just Imagine. Firebat Runs.', description: 'SEO 기본 사이트 설명', defaultValue: 'Just Imagine. Firebat Runs.' },
+      // SEO 탭
+      { key: 'sitemapEnabled', label: 'Sitemap 생성', type: 'toggle', tab: 'SEO', description: '/sitemap.xml 자동 생성', defaultValue: true },
+      { key: 'rssEnabled', label: 'RSS 피드', type: 'toggle', tab: 'SEO', description: '/feed.xml 자동 생성', defaultValue: true },
+      { key: 'robotsTxt', label: 'robots.txt', type: 'textarea', tab: 'SEO', placeholder: 'User-agent: *\nAllow: /\nDisallow: /admin', description: 'robots.txt 내용', defaultValue: 'User-agent: *\nAllow: /\nDisallow: /admin' },
+      // OG 탭
+      { key: 'ogBgColor', label: '배경색', type: 'text', tab: 'OG', placeholder: '#f8fafc', description: 'OG 이미지 배경색 (HEX)', defaultValue: '#f8fafc' },
+      { key: 'ogAccentColor', label: '강조색', type: 'text', tab: 'OG', placeholder: '#2563eb', description: '상단 라인, 로고 테두리 색상', defaultValue: '#2563eb' },
+      { key: 'ogDomain', label: '도메인 표시', type: 'text', tab: 'OG', placeholder: 'firebat.co.kr', description: 'OG 이미지 우하단 도메인 텍스트', defaultValue: 'firebat.co.kr' },
+      // 스크립트 탭
+      { key: 'headScripts', label: '<head> 스크립트', type: 'textarea', tab: '스크립트', placeholder: '<!-- Google Analytics 등 -->', description: '모든 페이지 <head>에 삽입할 HTML' },
+      { key: 'bodyScripts', label: '</body> 스크립트', type: 'textarea', tab: '스크립트', placeholder: '<!-- 채팅 위젯 등 -->', description: '모든 페이지 </body> 앞에 삽입할 HTML' },
     ],
   },
 };
@@ -71,6 +87,14 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>('');
+
+  // 탭 목록 계산
+  const hasTabs = schema?.fields.some(f => f.tab);
+  const tabs = hasTabs ? [...new Set(schema!.fields.map(f => f.tab ?? '기본'))] : [];
+
+  // 초기 탭 설정
+  useEffect(() => { if (tabs.length > 0 && !activeTab) setActiveTab(tabs[0]); }, [tabs.length]); // eslint-disable-line
 
   // 초기 로드
   useEffect(() => {
@@ -371,7 +395,7 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm">
-      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[70vh] sm:max-h-[90vh]">
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[90vh]">
         {/* 헤더 */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
           <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -380,15 +404,63 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
         </div>
 
+        {/* 탭 바 */}
+        {hasTabs && (
+          <div className="flex border-b border-slate-200 px-3 sm:px-6 shrink-0 bg-white">
+            {tabs.map(tab => {
+              const meta = TAB_META[tab];
+              const Icon = meta?.icon;
+              return (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  className={`flex items-center gap-1.5 px-3 py-2.5 text-[11px] sm:text-[12px] font-bold transition-colors border-b-2 ${activeTab === tab ? 'text-blue-700 border-blue-500' : 'text-slate-400 border-transparent hover:text-slate-600'}`}
+                >
+                  {Icon && <Icon size={13} />} {meta?.label ?? tab}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* 설정 필드 */}
-        <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto h-[50vh] sm:h-[60vh]">
+        <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto flex-1">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 size={20} className="animate-spin text-slate-400" />
             </div>
           ) : (
-            schema.fields.map(field => (
-              <div key={field.key} className="flex flex-col gap-1.5">
+            <>
+            {/* OG 미리보기 */}
+            {activeTab === 'OG' && moduleName === 'seo' && (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs sm:text-sm font-bold text-slate-700">미리보기</label>
+                  <a
+                    href="/api/og"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-[10px] sm:text-[11px] text-blue-500 hover:text-blue-700 font-bold"
+                  >
+                    <ExternalLink size={11} /> 원본 보기
+                  </a>
+                </div>
+                <div
+                  className="relative rounded-lg border border-slate-200 overflow-hidden shadow-sm"
+                  style={{ aspectRatio: '1200/630' }}
+                >
+                  <img
+                    src={`/api/og?_t=${Date.now()}`}
+                    alt="OG 미리보기"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400">1200×630px · 설정 저장 후 새로고침하면 반영됩니다</p>
+              </div>
+            )}
+
+            {(hasTabs ? schema.fields.filter(f => (f.tab ?? '기본') === activeTab) : schema.fields).map(field => (
+              <div key={field.key} className="flex flex-col gap-1.5 mb-1">
                 {field.type === 'secret' ? (
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs sm:text-sm font-bold text-slate-700">{field.label}</label>
@@ -491,7 +563,8 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
                   </>
                 )}
               </div>
-            ))
+            ))}
+            </>
           )}
         </div>
 

@@ -111,16 +111,22 @@ export class ModuleManager {
     bodyScripts: string;
     siteTitle: string;
     siteDescription: string;
+    ogBgColor: string;
+    ogAccentColor: string;
+    ogDomain: string;
   } {
     const s = this.getSettings('seo');
     return {
       sitemapEnabled: s.sitemapEnabled ?? true,
-      rssEnabled: s.rssEnabled ?? false,
-      robotsTxt: s.robotsTxt ?? 'User-agent: *\nAllow: /',
+      rssEnabled: s.rssEnabled ?? true,
+      robotsTxt: s.robotsTxt ?? 'User-agent: *\nAllow: /\nDisallow: /admin',
       headScripts: s.headScripts ?? '',
       bodyScripts: s.bodyScripts ?? '',
       siteTitle: s.siteTitle ?? 'Firebat',
-      siteDescription: s.siteDescription ?? 'Firebat',
+      siteDescription: s.siteDescription ?? 'Just Imagine. Firebat Runs.',
+      ogBgColor: s.ogBgColor ?? '#f8fafc',
+      ogAccentColor: s.ogAccentColor ?? '#2563eb',
+      ogDomain: s.ogDomain ?? 'firebat.co.kr',
     };
   }
 }

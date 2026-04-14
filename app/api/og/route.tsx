@@ -15,6 +15,9 @@ export async function GET(request: Request) {
   const isPageOg = !!rawTitle; // 페이지별 OG vs 기본 브랜드 OG
   const title = rawTitle || seo.siteTitle || 'Firebat';
   const description = rawDesc || seo.siteDescription || 'Just Imagine. Firebat Runs.';
+  const bgColor = seo.ogBgColor || '#f8fafc';
+  const accentColor = seo.ogAccentColor || '#2563eb';
+  const domain = seo.ogDomain || 'firebat.co.kr';
 
   return new ImageResponse(
     (
@@ -25,7 +28,7 @@ export async function GET(request: Request) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#f8fafc',
+          background: bgColor,
           fontFamily: 'sans-serif',
           position: 'relative',
         }}
@@ -38,7 +41,7 @@ export async function GET(request: Request) {
             left: '0',
             right: '0',
             height: '5px',
-            background: 'linear-gradient(90deg, #2563eb, #60a5fa, #2563eb)',
+            background: `linear-gradient(90deg, ${accentColor}, ${accentColor}88, ${accentColor})`,
           }}
         />
 
@@ -51,7 +54,7 @@ export async function GET(request: Request) {
             width: '500px',
             height: '500px',
             borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(37,99,235,0.06) 0%, transparent 70%)',
+            background: `radial-gradient(circle, ${accentColor}0F 0%, transparent 70%)`,
           }}
         />
         <div
@@ -62,7 +65,7 @@ export async function GET(request: Request) {
             width: '450px',
             height: '450px',
             borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(37,99,235,0.04) 0%, transparent 70%)',
+            background: `radial-gradient(circle, ${accentColor}0A 0%, transparent 70%)`,
           }}
         />
 
@@ -84,15 +87,15 @@ export async function GET(request: Request) {
               width: '96px',
               height: '96px',
               borderRadius: '24px',
-              background: '#eff6ff',
-              border: '3px solid #2563eb',
+              background: `${accentColor}15`,
+              border: `3px solid ${accentColor}`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 12px 40px rgba(37,99,235,0.15)',
+              boxShadow: `0 12px 40px ${accentColor}26`,
             }}
           >
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 10h.01" />
               <path d="M15 10h.01" />
               <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z" />
@@ -128,7 +131,7 @@ export async function GET(request: Request) {
             color: '#cbd5e1',
           }}
         >
-          firebat.co.kr
+          {domain}
         </div>
       </div>
     ),
