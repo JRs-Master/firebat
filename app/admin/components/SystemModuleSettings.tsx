@@ -48,7 +48,7 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
   'jina-reader': {
     title: 'Jina Reader 웹 스크래퍼',
     fields: [
-      { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '50000', description: '마크다운 결과 최대 글자 수', defaultValue: 50000 },
+      { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '30000', description: '마크다운 결과 최대 글자 수', defaultValue: 30000 },
     ],
   },
   'mcp-server': {
