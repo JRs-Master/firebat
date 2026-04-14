@@ -580,7 +580,7 @@ export class AiManager {
     const totalMs = Date.now() - startTime;
     this.logger.info(`[AiManager] [${corrId}] [${modelId}] 실행 완료 (${executedActions.length}개 액션, ${totalMs}ms)`);
 
-    // RUN_TASK 파이프라인 결과가 있으면 reply에 반영
+    // 실행 결과를 reply에 반영 (RUN_TASK 파이프라인 결과 > 단독 EXECUTE 결과)
     let finalReply = plan.reply;
     const taskResults = finalDataList.filter(d => d?.taskResult !== undefined);
     if (taskResults.length > 0) {
@@ -590,6 +590,16 @@ export class AiManager {
         .trim();
       if (resultText) {
         finalReply = resultText;
+      }
+    } else if (finalDataList.length > 0) {
+      // 단독 EXECUTE 등의 결과가 있으면 reply에 반영
+      const dataTexts = finalDataList
+        .filter(d => d != null)
+        .map(d => typeof d === 'string' ? d : (d?.text || d?.content || JSON.stringify(d, null, 2)))
+        .join('\n\n')
+        .trim();
+      if (dataTexts) {
+        finalReply = dataTexts;
       }
     }
 
