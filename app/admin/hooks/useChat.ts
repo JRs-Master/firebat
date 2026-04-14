@@ -179,11 +179,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                 : msg
             )));
           } else if (ev.event === 'step') {
-            flushSync(() => setMessages(prev => prev.map(msg =>
+            setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? { ...msg, planPending: false, executing: true, isThinking: true, steps: [...(msg.steps || []), ev.data] }
                 : msg
-            )));
+            ));
           } else if (ev.event === 'result') {
             flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
@@ -248,9 +248,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
 
         for (const ev of parsed.events) {
           if (ev.event === 'step') {
-            flushSync(() => setMessages(prev => prev.map(m =>
+            setMessages(prev => prev.map(m =>
               m.id === msgId ? { ...m, steps: [...(m.steps || []), ev.data] } : m
-            )));
+            ));
           } else if (ev.event === 'result') {
             flushSync(() => setMessages(prev => prev.map(m =>
               m.id === msgId
