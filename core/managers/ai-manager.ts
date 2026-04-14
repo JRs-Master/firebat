@@ -757,9 +757,9 @@ CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제. 새 모듈 만들지 마라.
 ## 시스템 모듈
 [시스템 모듈]에 경로·입출력·capability·providerType이 명시되어 있다. TEST_RUN의 path에 해당 경로를, inputData에 입력 형식을 그대로 사용.
 같은 capability의 모듈이 여러 개면 반드시 [Capability 설정]의 모드에 따라 선택:
-- api-first(기본): 반드시 providerType=api 모듈을 먼저 사용. local 모듈 선택 금지.
+- api-first(기본): 반드시 providerType=api 모듈을 먼저 사용. JS 렌더링이 필요하다고 판단해도 local 선택 금지. 실패하면 TaskManager가 자동 폴백한다.
 - local-first: providerType=local 우선, 실패 시 api 폴백
-폴백은 TaskManager가 자동 처리하므로 AI는 항상 모드에 맞는 첫 번째 선택만 하라.
+AI는 절대 자의적으로 provider를 선택하지 마라. 모드에 따른 첫 번째 선택만 하라.
 
 ## MCP 외부 도구
 [MCP 외부 도구] 목록의 도구만 MCP_CALL로 호출. inputSchema 준수. raw JSON 표시 금지.
