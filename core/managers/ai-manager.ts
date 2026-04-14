@@ -550,12 +550,7 @@ export class AiManager {
       executedActions.push(action.type);
 
       if (action.type === 'RUN_TASK' && action.pipeline?.length) {
-        // 파이프라인 단계별 step 이벤트
-        for (let j = 0; j < action.pipeline.length; j++) {
-          const pStep = action.pipeline[j];
-          const desc = pStep.description || pStep.instruction || pStep.path || pStep.type;
-          onStep?.({ index: stepOffset + j, total: totalSteps, type: pStep.type, status: 'start', description: desc } as any);
-        }
+        // 파이프라인 실행 — 단계별 step 이벤트는 실행 시점에 콜백으로 전달
         const taskRes = await this.core.runTask(action.pipeline, (pipeIdx, status, error) => {
           const desc = action.pipeline[pipeIdx].description || action.pipeline[pipeIdx].instruction || action.pipeline[pipeIdx].path || action.pipeline[pipeIdx].type;
           onStep?.({ index: stepOffset + pipeIdx, total: totalSteps, type: action.pipeline[pipeIdx].type, status, error, description: desc } as any);
