@@ -58,6 +58,7 @@ export const FirebatActionSchema = z.discriminatedUnion('type', [
     inputData: z.any().optional().describe('모듈에 전달할 입력 데이터 (targetPath 사용 시)'),
     pipeline: z.array(z.object({
       type: z.string().describe('단계 타입: TEST_RUN | MCP_CALL | NETWORK_REQUEST | LLM_TRANSFORM'),
+      description: z.string().optional().describe('단계 설명 (UI 표시용)'),
       path: z.string().optional().describe('TEST_RUN 시 모듈 경로'),
       server: z.string().optional().describe('MCP_CALL 시 서버명'),
       tool: z.string().optional().describe('MCP_CALL 시 도구명'),
@@ -129,6 +130,7 @@ export const FirebatActionSchema = z.discriminatedUnion('type', [
     type: z.literal('RUN_TASK'),
     pipeline: z.array(z.object({
       type: z.string().describe('단계 타입: TEST_RUN | MCP_CALL | NETWORK_REQUEST | LLM_TRANSFORM'),
+      description: z.string().optional().describe('단계 설명 (UI 표시용)'),
       path: z.string().optional().describe('TEST_RUN 시 모듈 경로'),
       server: z.string().optional().describe('MCP_CALL 시 서버명'),
       tool: z.string().optional().describe('MCP_CALL 시 도구명'),
