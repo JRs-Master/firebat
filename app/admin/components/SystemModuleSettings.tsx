@@ -209,7 +209,7 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
   if (moduleName === 'mcp-server') {
     return (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm">
-        <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[70vh] sm:max-h-[90vh]">
+        <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[90vh]">
           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
             <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
               <Server size={18} className="text-emerald-500" /> Firebat MCP 서버
@@ -217,7 +217,7 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
           </div>
 
-          <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto h-[50vh] sm:h-[60vh]">
+          <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto flex-1">
             <p className="text-[11px] sm:text-[12px] text-slate-400">
               외부 AI 도구(Claude Code, Cursor, VS Code 등)에서 이 파이어뱃 서버에 연결할 수 있습니다.
             </p>
