@@ -1,6 +1,6 @@
 /**
  * Firebat System Module: jina-reader (web-scrape)
- * 직접 fetch 기반 웹 스크래퍼
+ * Jina Reader API 기반 웹 스크래퍼
  *
  * [INPUT]  stdin JSON: {
  *           "correlationId": "...",
@@ -27,12 +27,14 @@ process.stdin.on('end', async () => {
     }
 
     const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml',
-      'Accept-Language': 'ko-KR,ko;q=0.9',
+      'Accept': 'text/html',
+      'X-Wait-For-Selector': 'body',
+      'X-Timeout': '30',
     };
+    const apiKey = process.env['JINA_API_KEY'];
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
-    const resp = await fetch(url, { headers, signal: AbortSignal.timeout(25000), redirect: 'follow' });
+    const resp = await fetch(`https://r.jina.ai/${url}`, { headers, signal: AbortSignal.timeout(25000) });
 
     if (!resp.ok) {
       console.log(JSON.stringify({ success: false, error: `Jina API ${resp.status}: ${resp.statusText}` }));
