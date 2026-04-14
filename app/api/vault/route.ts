@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
-import { VERTEX_VAULT_KEYS } from '../../../infra/llm/factory';
 
 function isDemo(req: NextRequest) {
   return req.cookies.get('firebat_admin_token')?.value === 'demo';
 }
 
 const KEY_MAP: Record<string, string> = {
-  vertex_api_key:  VERTEX_VAULT_KEYS.apiKey,
-  vertex_project:  VERTEX_VAULT_KEYS.project,
-  vertex_location: VERTEX_VAULT_KEYS.location,
+  vertex_api_key:  'VERTEX_AI_API_KEY',
+  vertex_project:  'VERTEX_AI_PROJECT',
+  vertex_location: 'VERTEX_AI_LOCATION',
 };
 
 function maskKey(key: string | null): { hasKey: boolean; maskedKey: string } {

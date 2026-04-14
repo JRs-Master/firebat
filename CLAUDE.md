@@ -20,8 +20,7 @@
 - 9개 도메인 매니저가 실제 비즈니스 로직 수행
 - **Core 싱글톤**: 전체 프로세스에서 `getCore()` 하나만 존재. LLM 모델 변경은 요청별 `opts.model`로 처리하며, Core를 재생성하지 않음
 - **인프라 싱글톤**: `getInfra()`가 9개 어댑터를 1회 생성, `globalThis`에 캐시. LLM 어댑터는 lazy API 키 로드 (부팅 시 키 불필요)
-- 모든 API route는 `getCore()` → Core 메서드 호출
-- Auth는 부트스트랩 예외 (Core 경유 제외)
+- 모든 API route는 `getCore()` → Core 메서드 호출 (예외 없음)
 - **매니저 구조**:
   - 자체 도메인 매니저: 자기 인프라 포트를 직접 주입받음 (StorageManager ← IStoragePort)
   - 크로스 도메인 매니저: Core 참조를 추가로 받음 (AiManager, ScheduleManager)
@@ -98,6 +97,10 @@
   - RUN_TASK 액션: 즉시 파이프라인 실행 ("지금 바로 해줘")
   - SCHEDULE_TASK: 예약/반복만 담당, 트리거 시 Core.runTask()로 TaskManager에 위임
   - ScheduleManager에서 ILlmPort 의존성 제거 (LLM_TRANSFORM은 TaskManager가 담당)
+  - **RUN_TASK 결과 자동 reply 반영**: 파이프라인 실행 후 taskResult가 있으면 AI의 원래 reply를 결과로 교체 (유저가 다시 물어볼 필요 없음)
+  - **파이프라인 마지막 LLM_TRANSFORM 규칙**: 사용자에게 결과를 보여줘야 하는 파이프라인은 반드시 마지막 단계를 LLM_TRANSFORM으로 끝내야 함
+  - **시스템 모듈 정보 동적 주입**: AI 프롬프트에 모듈 경로·입출력 스키마를 config.json에서 자동 생성 — 하드코딩 예시 금지, 모듈 추가 시 config.json만 작성하면 프롬프트 자동 반영
+  - **파이프라인 단계 타입 제한**: TEST_RUN, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM 4가지만 허용. 모듈명을 타입으로 사용 금지
 - **타임존 파싱 (v0.1, 2026-04-14)**:
   - `parseInTimezone()`: Naive datetime 문자열을 설정된 타임존 기준으로 UTC 변환 (`Intl.DateTimeFormat` 사용)
   - `runAt`, `startAt`, `endAt` 모든 위치에 적용 (schedule, registerOnce, registerCron, restore)
@@ -186,7 +189,7 @@
 #### 보안 (Critical)
 - [x] **경로 탐색 공격 차단** — `infra/storage/index.ts` isInsideZone + path.resolve containment 체크 완료
 - [x] **Sandbox 경로 검증 추가** — `infra/sandbox/index.ts` canExecute 메서드로 user/modules/, system/modules/ 외 실행 차단 완료
-- [ ] **admin 기본 자격증명** — `app/api/auth/route.ts`: Vault/env 미설정 시 `'admin'/'admin'` 폴백. 프로덕션에서 경고 또는 차단 필요
+- [ ] **admin 기본 자격증명** — Core `getAdminCredentials()` 경유로 변경 완료. Vault/env 미설정 시 `'admin'/'admin'` 폴백은 여전히 존재 — 프로덕션에서 경고 또는 차단 필요
 - [ ] **demo 계정 제거 (v1.0 전 필수)** — `FIREBAT_DEMO=true` 환경변수로 게이팅. `user/user` 하드코딩.
   - 하드코딩 위치: `app/api/auth/route.ts` (id=`user`, password=`user` 비교, 토큰=`demo`, 역할=`demo`)
   - 데모 모드 제한사항: Vault 쓰기 차단, MCP 전체 차단 (API + AI 프롬프트 + UI 탭 숨김), 설정 변경 차단
@@ -197,7 +200,8 @@
 #### 바이블 위반
 - [x] **Core → Infra import** — `core/singleton.ts` → `lib/singleton.ts`로 이동 완료 (Core 순수성 유지)
 - [x] **Infra 싱글톤** — `infra/boot.ts` `getInfra()` 전체 싱글톤으로 변경 완료
-- [x] **Vault API Core 우회** — vault/route.ts, vault/secrets/route.ts가 Core 메서드(getVertexKey, setVertexKey, listUserSecrets 등) 경유로 변경 완료
+- [x] **Vault API Core 우회** — vault/route.ts, vault/secrets/route.ts가 Core 메서드(getVertexKey, setVertexKey, listUserSecrets 등) 경유로 변경 완료. vault/route.ts에서 VERTEX_VAULT_KEYS infra 직접 import 제거 완료
+- [x] **Auth Core 우회** — auth/route.ts가 vault 직접 import → Core `getAdminCredentials()`/`setAdminCredentials()` 경유로 변경 완료
 - [x] **ICronPort 불완전** — setTimezone/getTimezone 인터페이스에 추가, Core에서 `as any` 캐스팅 제거 완료
 
 #### 구조 개선

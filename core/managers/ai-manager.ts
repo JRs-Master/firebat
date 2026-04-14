@@ -62,7 +62,8 @@ export class AiManager {
               const path = `system/modules/${d.name}/${rt}`;
               const inputDesc = m.input ? Object.entries(m.input).map(([k, v]) => `${k}: ${v}`).join(', ') : '';
               const outputDesc = m.output ? Object.entries(m.output).map(([k, v]) => `${k}: ${v}`).join(', ') : '';
-              let line = `  - ${m.name} (${path}): ${m.description}`;
+              const capInfo = m.capability ? ` [${m.capability}, ${m.providerType || 'unknown'}]` : '';
+              let line = `  - ${m.name} (${path})${capInfo}: ${m.description}`;
               if (inputDesc) line += `\n    입력: {${inputDesc}}`;
               if (outputDesc) line += `\n    출력: {${outputDesc}}`;
               modInfos.push(line);
@@ -722,27 +723,30 @@ CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제. 새 모듈 만들지 마라.
 파이프라인 단계 type은 반드시 다음 4가지만 사용: TEST_RUN, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM.
 모듈 호출은 TEST_RUN(path=모듈 경로), 외부 API는 MCP_CALL 또는 NETWORK_REQUEST 사용.
 사용자에게 결과를 보여줘야 하는 파이프라인은 마지막 단계를 LLM_TRANSFORM으로 끝내라. 파이프라인 결과가 곧 사용자 답변이 된다.
-{"type":"RUN_TASK","description":"메일 요약 카톡 발송","pipeline":[
-  {"type":"MCP_CALL","server":"gmail","tool":"search_emails","arguments":{"query":"is:unread","maxResults":5}},
-  {"type":"LLM_TRANSFORM","instruction":"아래 메일 내용을 5W1H 기반 플레인 텍스트로 요약. 마크다운 금지."},
-  {"type":"TEST_RUN","path":"system/modules/kakao-talk/index.mjs","inputMap":{"text":"$prev"}}
+모듈 경로·입출력은 [시스템 모듈] 목록 참조, MCP 도구는 [MCP 외부 도구] 목록 참조. 하드코딩 금지.
+예시 (경로·서버·도구는 실제 목록에서 선택):
+{"type":"RUN_TASK","description":"복합 작업","pipeline":[
+  {"type":"TEST_RUN","path":"<시스템 모듈 경로>","inputData":{"<입력키>":"<값>"}},
+  {"type":"LLM_TRANSFORM","instruction":"결과를 사용자에게 보여줄 자연어로 요약."}
 ]}
 
 ### SCHEDULE_TASK 샘플 (예약/반복)
 (A) 단순 모듈 실행:
-{"type":"SCHEDULE_TASK","description":"매일 9시 날씨 알림","title":"날씨 알림","targetPath":"user/modules/weather/index.mjs","inputData":{"city":"Seoul"},"cronTime":"0 9 * * *"}
+{"type":"SCHEDULE_TASK","description":"매일 실행","title":"작업명","targetPath":"<모듈 경로>","inputData":{},"cronTime":"0 9 * * *"}
 
 (B) 파이프라인 예약 ($prev로 이전 결과 전달):
-{"type":"SCHEDULE_TASK","description":"메일 요약 카톡 발송","title":"메일 카톡","runAt":"2026-04-14T14:00:00","pipeline":[
-  {"type":"MCP_CALL","server":"gmail","tool":"search_emails","arguments":{"query":"is:unread","maxResults":5}},
-  {"type":"MCP_CALL","server":"gmail","tool":"get_email","inputMap":{"messageId":"$prev"}},
-  {"type":"LLM_TRANSFORM","instruction":"아래 메일 내용을 5W1H 기반 플레인 텍스트로 요약. 마크다운 금지."},
-  {"type":"TEST_RUN","path":"system/modules/kakao-talk/index.mjs","inputMap":{"text":"$prev"}}
+{"type":"SCHEDULE_TASK","description":"복합 예약","title":"작업명","runAt":"2026-04-14T14:00:00","pipeline":[
+  {"type":"MCP_CALL","server":"<서버명>","tool":"<도구명>","arguments":{}},
+  {"type":"LLM_TRANSFORM","instruction":"결과 요약."},
+  {"type":"TEST_RUN","path":"<모듈 경로>","inputMap":{"text":"$prev"}}
 ]}
 
 ## 시스템 모듈
-[시스템 모듈]에 경로·입출력이 명시되어 있다. TEST_RUN의 path에 해당 경로를, inputData에 입력 형식을 그대로 사용.
-MODULE_NOT_FOUND 시 같은 모듈 재시도 금지 → 다른 provider로 전환.
+[시스템 모듈]에 경로·입출력·capability·providerType이 명시되어 있다. TEST_RUN의 path에 해당 경로를, inputData에 입력 형식을 그대로 사용.
+같은 capability의 모듈이 여러 개면 [Capability 설정]의 모드에 따라 선택:
+- api-first(기본): providerType=api 우선, 실패 시 local 폴백
+- local-first: providerType=local 우선, 실패 시 api 폴백
+실패 시 같은 모듈 재시도 금지 → 같은 capability의 다른 provider로 전환.
 
 ## MCP 외부 도구
 [MCP 외부 도구] 목록의 도구만 MCP_CALL로 호출. inputSchema 준수. raw JSON 표시 금지.

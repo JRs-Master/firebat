@@ -218,6 +218,17 @@ export class FirebatCore {
   getVertexKey(key: string) { return this.secret.getSystem(key); }
   setVertexKey(key: string, value: string) { return this.secret.setSystem(key, value); }
 
+  // ── 관리자 인증 ──
+  getAdminCredentials() {
+    const id       = this.secret.getSystem('FIREBAT_ADMIN_ID')       ?? process.env.FIREBAT_ADMIN_ID       ?? 'admin';
+    const password = this.secret.getSystem('FIREBAT_ADMIN_PASSWORD') ?? process.env.FIREBAT_ADMIN_PASSWORD ?? 'admin';
+    return { id, password };
+  }
+  setAdminCredentials(newId?: string, newPassword?: string) {
+    if (newId)       this.secret.setSystem('FIREBAT_ADMIN_ID', newId);
+    if (newPassword) this.secret.setSystem('FIREBAT_ADMIN_PASSWORD', newPassword);
+  }
+
   // ── MCP 토큰 ──
   generateMcpToken(): string { return this.secret.generateMcpToken(); }
   validateMcpToken(token: string): boolean { return this.secret.validateMcpToken(token); }
