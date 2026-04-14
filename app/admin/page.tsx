@@ -168,6 +168,27 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   );
 }
 
+// ─── 플래닝 단계 문구 순환 ──────────────────────────────────────────────────
+const THINKING_PHASES = [
+  '명령을 분석하는 중...',
+  '실행 전략을 구상하는 중...',
+  '필요한 도구를 선택하는 중...',
+  '실행 계획을 수립하는 중...',
+];
+
+function ThinkingText({ statusText }: { statusText?: string }) {
+  const [phase, setPhase] = useState(0);
+  useEffect(() => {
+    if (statusText) return; // statusText가 있으면 순환 안 함
+    const timer = setInterval(() => {
+      setPhase(p => (p + 1) % THINKING_PHASES.length);
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [statusText]);
+
+  return <span className="transition-opacity duration-300">{statusText || THINKING_PHASES[phase]}</span>;
+}
+
 // ─── 메시지 버블 ─────────────────────────────────────────────────────────────
 function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
   msg: Message;
@@ -198,7 +219,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
           {msg.isThinking ? (
             <div className="flex items-center gap-4 text-slate-600 font-bold bg-slate-50 border border-slate-200 px-6 py-5 rounded-2xl shadow-inner">
               <div className="animate-spin text-blue-600"><Cpu size={22} /></div>
-              {msg.statusText || '명령 의도를 분석하고 수행 전략을 구상 중입니다...'}
+              <ThinkingText statusText={msg.statusText} />
             </div>
           ) : (
             <div className="flex flex-col gap-5">
