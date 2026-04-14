@@ -90,69 +90,82 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
     onSuggestion?.(`${label}: ${selected.join(', ')}`);
   };
 
+  // string/input 아이템과 toggle 아이템 분리
+  const inlineItems = suggestions.filter(s => typeof s === 'string' || (typeof s !== 'string' && s.type === 'input'));
+  const toggleItems = suggestions.map((s, i) => ({ item: s, idx: i })).filter(({ item }) => typeof item !== 'string' && item.type === 'toggle');
+
   return (
     <div className="flex flex-col gap-3">
-      {suggestions.map((item, i) => {
-        if (typeof item === 'string') {
-          return (
-            <button key={i} onClick={() => onSuggestion?.(item)} disabled={loading}
-              className="self-start px-4 py-2 bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700 text-[13px] font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50">
-              {item}
-            </button>
-          );
-        }
-        if (item.type === 'input') {
-          if (openInput === i) {
-            return (
-              <div key={i} className="flex items-center gap-1.5">
-                <input ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleInputSubmit()}
-                  placeholder={item.placeholder || '입력하세요'}
-                  className="px-3 py-2 border border-blue-300 rounded-xl text-[13px] text-slate-700 w-48 focus:outline-none focus:ring-2 focus:ring-blue-200" />
-                <button onClick={handleInputSubmit} disabled={!inputValue.trim()}
-                  className="px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-[13px] font-medium rounded-xl transition-colors disabled:opacity-50">
-                  <Send size={14} />
+      {/* 토글 그룹 */}
+      {toggleItems.map(({ item, idx }) => {
+        const t = item as { type: 'toggle'; label: string; options: string[]; defaults?: string[] };
+        const selected = toggleSelections[idx] ?? new Set();
+        return (
+          <div key={idx} className="flex flex-col gap-2">
+            <span className="text-[12px] font-semibold text-slate-500">{t.label}</span>
+            <div className="flex flex-wrap gap-1.5">
+              {t.options.map(opt => (
+                <button key={opt} onClick={() => toggleOption(idx, opt)} disabled={loading}
+                  className={`px-3 py-1.5 text-[13px] font-medium rounded-lg transition-colors border ${
+                    selected.has(opt)
+                      ? 'bg-blue-500 text-white border-blue-500 shadow-sm'
+                      : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                  } disabled:opacity-50`}>
+                  {opt}
                 </button>
-                <button onClick={() => { setOpenInput(null); setInputValue(''); }}
-                  className="px-2 py-2 text-slate-400 hover:text-slate-600 text-[13px]">
-                  <X size={14} />
-                </button>
-              </div>
-            );
-          }
-          return (
-            <button key={i} onClick={() => setOpenInput(i)} disabled={loading}
-              className="self-start px-4 py-2 bg-white border border-dashed border-slate-300 hover:border-blue-300 hover:bg-blue-50 text-slate-500 text-[13px] font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50">
-              {item.label}
-            </button>
-          );
-        }
-        if (item.type === 'toggle') {
-          const selected = toggleSelections[i] ?? new Set();
-          return (
-            <div key={i} className="flex flex-col gap-2">
-              <span className="text-[12px] font-semibold text-slate-500">{item.label}</span>
-              <div className="flex flex-wrap gap-1.5">
-                {item.options.map(opt => (
-                  <button key={opt} onClick={() => toggleOption(i, opt)} disabled={loading}
-                    className={`px-3 py-1.5 text-[13px] font-medium rounded-lg transition-all border ${
-                      selected.has(opt)
-                        ? 'bg-blue-500 text-white border-blue-500 shadow-sm'
-                        : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
-                    } disabled:opacity-50`}>
-                    {selected.has(opt) && <Check size={12} className="inline mr-1 -mt-0.5" />}{opt}
-                  </button>
-                ))}
-              </div>
-              <button onClick={() => handleToggleSubmit(i, item.label)} disabled={loading || selected.size === 0}
-                className="self-start px-4 py-1.5 bg-slate-800 hover:bg-black text-white text-[12px] font-medium rounded-lg transition-colors disabled:opacity-40 mt-0.5">
-                선택 완료 ({selected.size}개)
-              </button>
+              ))}
             </div>
-          );
-        }
-        return null;
+            <button onClick={() => handleToggleSubmit(idx, t.label)} disabled={loading || selected.size === 0}
+              className="self-start px-4 py-1.5 bg-slate-800 hover:bg-black text-white text-[12px] font-medium rounded-lg transition-colors disabled:opacity-40 mt-0.5">
+              선택 완료 ({selected.size}개)
+            </button>
+          </div>
+        );
       })}
+
+      {/* 일반 버튼 + 입력 (가로 배치) */}
+      {inlineItems.length > 0 && (
+        <div className="flex flex-wrap gap-2 items-center">
+          {inlineItems.map((item, j) => {
+            const i = suggestions.indexOf(item);
+            if (typeof item === 'string') {
+              return (
+                <button key={i} onClick={() => onSuggestion?.(item)} disabled={loading}
+                  className="px-4 py-2 bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700 text-[13px] font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50">
+                  {item}
+                </button>
+              );
+            }
+            if (item.type === 'input') {
+              if (openInput === i) {
+                return (
+                  <div key={i} className="flex items-center gap-1.5">
+                    <input ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleInputSubmit()}
+                      placeholder={item.placeholder || '입력하세요'}
+                      className="px-3 py-2 border border-blue-300 rounded-xl text-[13px] text-slate-700 w-48 focus:outline-none focus:ring-2 focus:ring-blue-200" />
+                    <button onClick={handleInputSubmit} disabled={!inputValue.trim()}
+                      className="px-3 py-2 bg-blue-500 hover:bg-blue-600 text-white text-[13px] font-medium rounded-xl transition-colors disabled:opacity-50">
+                      <Send size={14} />
+                    </button>
+                    <button onClick={() => { setOpenInput(null); setInputValue(''); }}
+                      className="px-2 py-2 text-slate-400 hover:text-slate-600 text-[13px]">
+                      <X size={14} />
+                    </button>
+                  </div>
+                );
+              }
+              return (
+                <button key={i} onClick={() => setOpenInput(i)} disabled={loading}
+                  className="px-4 py-2 bg-white border border-dashed border-slate-300 hover:border-blue-300 hover:bg-blue-50 text-slate-500 text-[13px] font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50">
+                  {item.label}
+                </button>
+              );
+            }
+            return null;
+          })}
+        </div>
+      )}
     </div>
   );
 }
