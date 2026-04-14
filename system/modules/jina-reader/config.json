@@ -3,18 +3,17 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "웹 스크래퍼. URL → 텍스트 추출. 서버 리소스 제로.",
+  "description": "Jina Reader API 기반 웹 스크래퍼. URL → 마크다운 텍스트 변환. 서버 리소스 제로.",
   "runtime": "node",
   "capability": "web-scrape",
   "providerType": "api",
   "secrets": [],
   "input": {
-    "url": "string (required) — 스크래핑할 URL",
-    "selector": "string (optional) — HTML에서 추출할 class명, id, 태그명 (예: d_trendrank, search-result)"
+    "url": "string (required) — 스크래핑할 URL"
   },
   "output": {
     "url": "string — 최종 URL",
     "title": "string — 페이지 제목",
-    "text": "string — 추출된 텍스트 (selector 사용 시 HTML)"
+    "text": "string — 마크다운 형식 본문 텍스트"
   }
 }
