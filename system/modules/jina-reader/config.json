@@ -9,7 +9,8 @@
   "providerType": "api",
   "secrets": [],
   "input": {
-    "url": "string (required) — 스크래핑할 URL"
+    "url": "string (required) — 스크래핑할 URL",
+    "format": "string (optional) — 'markdown'(기본) 또는 'html' (display:none 등 숨겨진 요소도 포함)"
   },
   "output": {
     "url": "string — 최종 URL",
