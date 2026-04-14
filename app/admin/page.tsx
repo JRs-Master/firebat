@@ -403,7 +403,7 @@ export default function AdminConsole() {
         </div>
 
         {/* 입력창 */}
-        <div className="absolute bottom-0 w-full bg-gradient-to-t from-slate-50 via-slate-50 to-transparent pt-16 pb-8 px-4 md:px-12 pointer-events-none z-10">
+        <div className="absolute bottom-0 w-full bg-gradient-to-t from-slate-50 via-slate-50 to-transparent pt-8 sm:pt-16 pb-3 sm:pb-8 px-4 md:px-12 pointer-events-none z-10">
           <div className="w-full md:w-[70%] max-w-6xl mx-auto relative pointer-events-auto flex flex-col">
             <div className="flex w-full gap-4">
               <div className="w-11 shrink-0 opacity-0 pointer-events-none hidden md:block" />
@@ -433,8 +433,8 @@ export default function AdminConsole() {
                 </div>
               </div>
             </div>
-            <div className="mt-4 text-center pb-2">
-              <span className="text-[11px] font-bold tracking-[0.2em] text-slate-400 uppercase">
+            <div className="mt-2 sm:mt-4 text-center pb-1 sm:pb-2">
+              <span className="text-[10px] sm:text-[11px] font-bold tracking-[0.2em] text-slate-400 uppercase">
                 © All rights reserved Firebat
               </span>
             </div>
