@@ -595,7 +595,7 @@ export class AiManager {
       // 단독 EXECUTE 등의 결과가 있으면 reply에 반영
       const dataTexts = finalDataList
         .filter(d => d != null)
-        .map(d => typeof d === 'string' ? d : (d?.text || d?.content || JSON.stringify(d, null, 2)))
+        .map(d => typeof d === 'string' ? d : (d?.text || d?.content || d?.data?.text || d?.data?.content || JSON.stringify(d, null, 2)))
         .join('\n\n')
         .trim();
       if (dataTexts) {
