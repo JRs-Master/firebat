@@ -63,16 +63,33 @@ export async function POST(req: NextRequest) {
       const needsConfirm = plan.actions.some(a => CONFIRM_ACTIONS.has(a.type));
       const shouldAutoExecute = autoExecute || !needsConfirm;
 
-      // 프론트엔드에는 요약 정보만 전송
+      // 프론트엔드에는 요약 정보만 전송 — 타입 기반 고정 메시지
+      const stepLabel = (type: string): string => {
+        switch (type) {
+          case 'TEST_RUN': return '시스템 모듈을 불러오는 중';
+          case 'MCP_CALL': return '외부 서비스에 연결하는 중';
+          case 'NETWORK_REQUEST': return 'API를 호출하는 중';
+          case 'LLM_TRANSFORM': return '결과를 정리하는 중';
+          case 'WRITE_FILE': return '파일을 저장하는 중';
+          case 'READ_FILE': return '파일을 읽는 중';
+          case 'SAVE_PAGE': return '페이지를 저장하는 중';
+          case 'DELETE_PAGE': return '페이지를 삭제하는 중';
+          case 'SCHEDULE_TASK': return '스케줄을 등록하는 중';
+          case 'CANCEL_TASK': return '스케줄을 해제하는 중';
+          case 'REQUEST_SECRET': return 'API 키 요청';
+          default: return type;
+        }
+      };
+
       // RUN_TASK는 파이프라인 단계를 풀어서 표시
       const displayActions: any[] = [];
       for (const a of plan.actions) {
         if (a.type === 'RUN_TASK' && (a as any).pipeline?.length) {
           for (const step of (a as any).pipeline) {
-            displayActions.push({ type: step.type, description: step.description || step.instruction || step.path || step.type });
+            displayActions.push({ type: step.type, description: stepLabel(step.type) });
           }
         } else {
-          displayActions.push({ type: a.type, description: (a as any).description, ...(('path' in a) ? { path: (a as any).path } : {}), ...(('slug' in a) ? { slug: (a as any).slug } : {}) });
+          displayActions.push({ type: a.type, description: stepLabel(a.type) });
         }
       }
       send('plan', {

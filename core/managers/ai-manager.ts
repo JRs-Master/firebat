@@ -212,11 +212,16 @@ export class AiManager {
       if (typeof cleanedData === 'string') {
         try { cleanedData = JSON.parse(cleanJsonString(cleanedData)); } catch {}
       }
+      // AI가 배열을 반환한 경우 → actions로 감싸서 복구 시도
+      if (Array.isArray(cleanedData)) {
+        this.logger.warn(`[AiManager] [${corrId}] [${modelId}] Plan이 배열로 반환됨 → 객체로 변환 시도`);
+        cleanedData = { thoughts: '', reply: '', actions: cleanedData, suggestions: [] };
+      }
 
       const parseResult = FirebatPlanSchema.safeParse(cleanedData);
       if (!parseResult.success) {
         const errorDetails = parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
-        lastError = `스키마 검증 실패: ${errorDetails}`;
+        lastError = errorDetails;
         this.logger.warn(`[AiManager] [${corrId}] [${modelId}] 스키마 실패 (${llmMs}ms): ${errorDetails}`);
         currentPrompt = `[SYSTEM] JSON 스키마 위반: ${errorDetails}. 수정하여 재시도하세요. 원본 요청: "${prompt}"`;
         continue;
@@ -440,7 +445,7 @@ export class AiManager {
     return {
       success: false,
       executedActions,
-      error: `[Max Retries Exceeded] User AI가 오류를 해결하지 못했습니다.\n마지막 오류: ${lastError ?? '알 수 없음'}`,
+      error: '요청을 처리하지 못했습니다. 다시 시도해 주세요.',
     };
   }
 
@@ -489,11 +494,16 @@ export class AiManager {
       if (typeof cleanedData === 'string') {
         try { cleanedData = JSON.parse(cleanJsonString(cleanedData)); } catch {}
       }
+      // AI가 배열을 반환한 경우 → actions로 감싸서 복구 시도
+      if (Array.isArray(cleanedData)) {
+        this.logger.warn(`[AiManager] [${corrId}] [${modelId}] Plan이 배열로 반환됨 → 객체로 변환 시도`);
+        cleanedData = { thoughts: '', reply: '', actions: cleanedData, suggestions: [] };
+      }
 
       const parseResult = FirebatPlanSchema.safeParse(cleanedData);
       if (!parseResult.success) {
         const errorDetails = parseResult.error.issues.map(e => `${e.path.join('.')}: ${e.message}`).join(', ');
-        lastError = `스키마 검증 실패: ${errorDetails}`;
+        lastError = errorDetails;
         this.logger.warn(`[AiManager] [${corrId}] [${modelId}] Plan 스키마 실패 (${llmMs}ms): ${errorDetails}`);
         currentPrompt = `[SYSTEM] JSON 스키마 위반: ${errorDetails}. 수정하여 재시도하세요. 원본 요청: "${prompt}"`;
         continue;
@@ -511,7 +521,8 @@ export class AiManager {
       return { success: true, plan, corrId, modelId };
     }
 
-    return { success: false, error: lastError ?? '알 수 없음' };
+    this.logger.error(`[AiManager] [${corrId}] [${modelId}] Plan ${maxRetries}회 실패: ${lastError}`);
+    return { success: false, error: '요청을 처리하지 못했습니다. 다시 시도해 주세요.' };
   }
 
   /** Plan의 액션을 단계별 실행 — onStep 콜백으로 진행률 전달 */

@@ -202,13 +202,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
             </div>
           ) : (
             <div className="flex flex-col gap-5">
-              {msg.content && (
-                <div className="text-slate-800 text-[15px] leading-relaxed border-l-4 border-slate-200 pl-4 py-1 space-y-1">
-                  {renderMarkdown(msg.content)}
-                </div>
-              )}
-
-              {/* Plan 표시 */}
+              {/* Plan 표시 (답변 위에) */}
               {msg.plan && msg.plan.actions.length > 0 && (
                 <div className="flex flex-col gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-5">
                   {msg.thoughts && (
@@ -276,6 +270,12 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
                       실행 중...
                     </div>
                   )}
+                </div>
+              )}
+
+              {msg.content && (
+                <div className="text-slate-800 text-[15px] leading-relaxed border-l-4 border-slate-200 pl-4 py-1 space-y-1">
+                  {renderMarkdown(msg.content)}
                 </div>
               )}
 
