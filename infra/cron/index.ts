@@ -61,6 +61,32 @@ export class NodeCronAdapter implements ICronPort {
     this.triggerCallback = callback;
   }
 
+  /**
+   * 타임존 정보가 없는 날짜 문자열을 설정된 타임존 기준으로 해석하여 UTC ms를 반환.
+   * 예: "2026-04-14T12:48:00" + timezone="Asia/Seoul" → 03:48 UTC
+   */
+  private parseInTimezone(dateStr: string): number {
+    // 이미 타임존 정보가 있으면 그대로 파싱
+    if (/[Zz]|[+-]\d{2}:?\d{2}$/.test(dateStr)) {
+      return new Date(dateStr).getTime();
+    }
+    // dateStr을 UTC로 간주하여 파싱
+    const asUtc = new Date(dateStr + 'Z').getTime();
+    // 설정된 타임존에서 그 시각이 몇 시인지 확인하여 offset 계산
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: this.timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(new Date(asUtc));
+    const get = (t: string) => parts.find(p => p.type === t)?.value ?? '00';
+    const tzLocalStr = `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}Z`;
+    const tzLocal = new Date(tzLocalStr).getTime();
+    const offset = tzLocal - asUtc; // 양수 = UTC보다 앞 (예: Asia/Seoul = +9h)
+    return asUtc - offset;
+  }
+
   /** 부팅 시 저장된 잡 복원 */
   restore(): void {
     // 부팅 시 쌓인 알림 초기화 (재시작 후 옛 알림이 한꺼번에 뜨는 것 방지)
@@ -76,10 +102,10 @@ export class NodeCronAdapter implements ICronPort {
 
       for (const job of jobs) {
         // 만료된 잡은 복원하지 않음
-        if (job.endAt && new Date(job.endAt).getTime() <= now) continue;
+        if (job.endAt && this.parseInTimezone(job.endAt) <= now) continue;
 
         // 일회성(runAt) 잡이 이미 지났으면 스킵
-        if (job.mode === 'once' && job.runAt && new Date(job.runAt).getTime() <= now) continue;
+        if (job.mode === 'once' && job.runAt && this.parseInTimezone(job.runAt) <= now) continue;
 
         // delay 잡은 메모리 전용이므로 복원 불가
         if (job.mode === 'delay') continue;
@@ -135,8 +161,8 @@ export class NodeCronAdapter implements ICronPort {
         // 반복 스케줄
         this.registerCron(record);
       } else if (runAt) {
-        // 특정 시각 1회 실행
-        const runTime = new Date(runAt).getTime();
+        // 특정 시각 1회 실행 (타임존 보정)
+        const runTime = this.parseInTimezone(runAt);
         if (runTime <= now.getTime()) {
           return { success: false, error: `runAt이 과거 시각입니다: ${runAt}` };
         }
@@ -215,9 +241,9 @@ export class NodeCronAdapter implements ICronPort {
     const task = cron.schedule(record.cronTime!, async () => {
       const now = Date.now();
 
-      if (record.startAt && now < new Date(record.startAt).getTime()) return;
+      if (record.startAt && now < this.parseInTimezone(record.startAt)) return;
 
-      if (record.endAt && now >= new Date(record.endAt).getTime()) {
+      if (record.endAt && now >= this.parseInTimezone(record.endAt)) {
         this.log?.info(`[Cron] 기간 만료 자동 해제: ${record.jobId}`);
         task.stop();
         this.cronTasks.delete(record.jobId);
@@ -232,7 +258,7 @@ export class NodeCronAdapter implements ICronPort {
 
     // endAt이 있으면 만료 시 자동 해제 타이머 (크론 틱 사이에 만료될 경우 대비)
     if (record.endAt) {
-      const msUntilEnd = new Date(record.endAt).getTime() - Date.now();
+      const msUntilEnd = this.parseInTimezone(record.endAt) - Date.now();
       if (msUntilEnd > 0) {
         setTimeout(() => {
           if (this.cronTasks.has(record.jobId)) {
@@ -248,7 +274,7 @@ export class NodeCronAdapter implements ICronPort {
   }
 
   private registerOnce(record: CronJobRecord): void {
-    const msUntilRun = new Date(record.runAt!).getTime() - Date.now();
+    const msUntilRun = this.parseInTimezone(record.runAt!) - Date.now();
     if (msUntilRun <= 0) return;
 
     const timer = setTimeout(async () => {
