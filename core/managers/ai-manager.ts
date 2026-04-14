@@ -611,10 +611,11 @@ export class AiManager {
 ${systemContext}
 ## 응답
 유효한 JSON만 출력. \`\`\`json 감싸기 금지.
-{ "thoughts": "판단 근거 (앱 생성 시만 상세)", "reply": "사용자 답변 (한국어)", "actions": [...] }
+{ "thoughts": "판단 근거 (앱 생성 시만 상세)", "reply": "사용자 답변 (한국어)", "actions": [...], "suggestions": ["선택지1", "선택지2"] }
 - action마다 description(한국어 설명) 필수.
 - reply에 raw JSON/디버그 정보 금지. 결과는 자연어로 요약.
 - 대화/인사/질문 → actions: []
+- suggestions: 사용자 확인/선택이 필요할 때 클릭 가능한 버튼으로 표시. 설계 확인, 시각 수정, 옵션 선택 등에 활용. 불필요하면 생략.
 - action 타입: SAVE_PAGE, DELETE_PAGE, LIST_PAGES, WRITE_FILE, READ_FILE, LIST_DIR, APPEND_FILE, DELETE_FILE, TEST_RUN, DATABASE_QUERY, NETWORK_REQUEST, SCHEDULE_TASK, CANCEL_TASK, LIST_TASKS, OPEN_URL, REQUEST_SECRET, SET_SECRET, MCP_CALL
 
 ## 실행 요청
@@ -624,7 +625,7 @@ ${systemContext}
 - 예약/반복: 기존 모듈/페이지 경로로 SCHEDULE_TASK. 페이지 URL도 targetPath에 넣을 수 있다.
 
 ## 앱/페이지 생성 — 2단계
-1단계: 설계(기능, UI/UX, 기술, 파일구조) → actions: [] → "진행할까요?"
+1단계: 설계(기능, UI/UX, 기술, 파일구조) → actions: [] → suggestions: ["진행", "수정 요청", "취소"]
 2단계: 확인 후 SAVE_PAGE + WRITE_FILE.
 - SAVE_PAGE로 PageSpec JSON 저장. page.tsx 직접 작성 금지.
 - PageSpec: { slug, status:"published", project, head: { title, description, keywords, og: { title, description, image:"", type:"website" } }, body: [{ type:"Html", props:{ content:"..." } }] }

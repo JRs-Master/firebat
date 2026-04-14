@@ -139,7 +139,8 @@ export const FirebatActionSchema = z.discriminatedUnion('type', [
 export const FirebatPlanSchema = z.object({
   thoughts: z.string().describe('사용자 지시를 어떻게 분석했고, 무슨 행동을 왜 취할 것인지에 대한 내부 사고 체인.'),
   reply: z.string().describe('사용자에게 직접 전달할 최종 답변(마크다운 지원). 작업 내역 요약, 질문에 대한 대답, 혹은 인사 등.'),
-  actions: z.array(FirebatActionSchema).default([]).describe('판결에 따라 실제로 수행할 물리적 액션들의 나열.')
+  actions: z.array(FirebatActionSchema).default([]).describe('판결에 따라 실제로 수행할 물리적 액션들의 나열.'),
+  suggestions: z.array(z.string()).default([]).describe('사용자에게 제시할 선택지 버튼 (예: ["바로 실행", "시각 수정", "취소"]). 질문/확인이 필요할 때만 사용.')
 });
 
 export type FirebatAction = z.infer<typeof FirebatActionSchema>;

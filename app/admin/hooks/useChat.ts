@@ -116,9 +116,10 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   }, [activeConvId]);
 
   // ── 전송 ───────────────────────────────────────────────────────────────────
-  const handleSubmit = useCallback(async () => {
-    if (!input.trim() || loading) return;
-    const userPrompt = input;
+  const handleSubmit = useCallback(async (overrideText?: string) => {
+    const text = overrideText ?? input;
+    if (!text.trim() || loading) return;
+    const userPrompt = text;
     setInput('');
     const id = Date.now().toString();
 
@@ -172,7 +173,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           if (ev.event === 'plan') {
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
-                ? { ...msg, isThinking: false, thoughts: ev.data.thoughts, content: ev.data.reply, plan: ev.data, planPending: true }
+                ? { ...msg, isThinking: false, thoughts: ev.data.thoughts, content: ev.data.reply, plan: ev.data, planPending: true, suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined }
                 : msg
             ));
           } else if (ev.event === 'step') {
@@ -187,6 +188,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                 ? {
                     ...msg, isThinking: false, thoughts: ev.data.thoughts, content: ev.data.reply || '실행이 완료되었습니다.',
                     executedActions: ev.data.executedActions || [], data: ev.data.data, error: ev.data.error, plan: undefined, planPending: false,
+                    suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
                   }
                 : msg
             ));

@@ -25,6 +25,7 @@ export type Message = {
   planPending?: boolean;
   steps?: StepStatus[];
   executing?: boolean;
+  suggestions?: string[];
 };
 
 export type Conversation = ConversationMeta & { messages: Message[] };

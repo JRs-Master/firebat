@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
           thoughts: plan.thoughts,
           reply: plan.reply,
           executedActions: [],
+          suggestions: plan.suggestions?.length ? plan.suggestions : undefined,
         });
         controller.close();
         return;
@@ -68,6 +69,7 @@ export async function POST(req: NextRequest) {
         reply: plan.reply,
         actions: plan.actions.map(a => ({ type: a.type, description: (a as any).description, ...(('path' in a) ? { path: (a as any).path } : {}), ...(('slug' in a) ? { slug: (a as any).slug } : {}) })),
         corrId,
+        suggestions: plan.suggestions?.length ? plan.suggestions : undefined,
       });
 
       if (!shouldAutoExecute) {

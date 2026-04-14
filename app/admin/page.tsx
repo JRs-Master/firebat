@@ -43,11 +43,12 @@ function inlineMd(text: string): React.ReactNode {
 }
 
 // ─── 메시지 버블 ─────────────────────────────────────────────────────────────
-function MessageBubble({ msg, loading, onConfirm, onReject }: {
+function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
   msg: Message;
   loading: boolean;
   onConfirm: (id: string) => void;
   onReject: (id: string) => void;
+  onSuggestion?: (text: string) => void;
 }) {
   if (msg.role === 'user') {
     return (
@@ -172,6 +173,19 @@ function MessageBubble({ msg, loading, onConfirm, onReject }: {
                 </div>
               )}
 
+              {/* 선택지 버튼 */}
+              {msg.suggestions && msg.suggestions.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {msg.suggestions.map((text, i) => (
+                    <button key={i} onClick={() => onSuggestion?.(text)}
+                      disabled={loading}
+                      className="px-4 py-2 bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-slate-700 text-[13px] font-medium rounded-xl transition-colors shadow-sm disabled:opacity-50">
+                      {text}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* 시크릿 입력 요청 */}
               {msg.data && (() => {
                 const items = Array.isArray(msg.data) ? msg.data : [msg.data];
@@ -273,6 +287,7 @@ export default function AdminConsole() {
                 loading={loading}
                 onConfirm={handleConfirmPlan}
                 onReject={handleRejectPlan}
+                onSuggestion={(text) => handleSubmit(text)}
               />
             ))}
             <div className="h-64 shrink-0 pointer-events-none" />
