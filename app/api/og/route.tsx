@@ -80,42 +80,65 @@ export async function GET(request: Request) {
         />
 
         {/* 중앙 브랜드 카드 */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}>
-          {/* 유령 로고 */}
-          <div
-            style={{
-              width: '120px',
-              height: '120px',
-              borderRadius: '32px',
-              background: `${accentColor}15`,
-              border: `4px solid ${accentColor}`,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              boxShadow: `0 16px 48px ${accentColor}26`,
-            }}
-          >
-            <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 10h.01" />
-              <path d="M15 10h.01" />
-              <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z" />
-            </svg>
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px' }}>
+          {/* [유령아이콘] Firebat — 가로 배치 */}
+          {!isPageOg && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
+              <div
+                style={{
+                  width: '140px',
+                  height: '140px',
+                  borderRadius: '36px',
+                  background: `${accentColor}15`,
+                  border: `4px solid ${accentColor}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: `0 16px 48px ${accentColor}26`,
+                }}
+              >
+                <svg width="84" height="84" viewBox="0 0 24 24" fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 10h.01" />
+                  <path d="M15 10h.01" />
+                  <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z" />
+                </svg>
+              </div>
+              <span style={{ fontSize: '160px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.04em', lineHeight: 1 }}>
+                {title}
+              </span>
+            </div>
+          )}
 
-          {/* 사이트 이름 */}
-          <span style={{ fontSize: '120px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.04em', lineHeight: 1 }}>
-            {isPageOg ? '' : title}
-          </span>
-
-          {/* 타이틀 (페이지별 OG일 때만) */}
+          {/* 페이지별 OG — 로고 + 타이틀 세로 */}
           {isPageOg && (
-            <span style={{ fontSize: title.length > 20 ? '72px' : '96px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.03em', lineHeight: 1.1, textAlign: 'center', maxWidth: '1000px' }}>
-              {title}
-            </span>
+            <>
+              <div
+                style={{
+                  width: '100px',
+                  height: '100px',
+                  borderRadius: '28px',
+                  background: `${accentColor}15`,
+                  border: `3px solid ${accentColor}`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: `0 12px 40px ${accentColor}26`,
+                }}
+              >
+                <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 10h.01" />
+                  <path d="M15 10h.01" />
+                  <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z" />
+                </svg>
+              </div>
+              <span style={{ fontSize: title.length > 20 ? '80px' : '120px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.03em', lineHeight: 1.1, textAlign: 'center', maxWidth: '1050px' }}>
+                {title}
+              </span>
+            </>
           )}
 
           {/* 설명 */}
-          <span style={{ fontSize: '36px', fontWeight: 500, color: '#94a3b8', letterSpacing: '0.03em', textAlign: 'center', maxWidth: '900px', lineHeight: 1.4 }}>
+          <span style={{ fontSize: '48px', fontWeight: 500, color: '#94a3b8', letterSpacing: '0.02em', textAlign: 'center', maxWidth: '1000px', lineHeight: 1.3 }}>
             {description}
           </span>
         </div>
