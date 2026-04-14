@@ -100,7 +100,7 @@ export class TaskManager {
           }
           case 'LLM_TRANSFORM': {
             const inputText = typeof prev === 'string' ? prev : JSON.stringify(prev, null, 2);
-            const res = await this.llm.askText(`${step.instruction}\n\n${inputText}`, '요청된 작업을 수행하고 결과만 출력하라. 한국어로 답변.');
+            const res = await this.llm.askText(`${step.instruction}\n\n${inputText}`, '요청된 작업을 수행하고 결과만 출력하라. 한국어로 답변. 원본 데이터에 있는 내용만 사용하라. 없는 내용을 추가하거나 만들어내지 마라.');
             if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] LLM_TRANSFORM 실패: ${res.error}` }; }
             prev = res.data;
             onPipelineStep?.(i, 'done');
@@ -218,11 +218,26 @@ export class TaskManager {
     return prev;
   }
 
-  /** 임의의 값에서 $prev 치환 (string, object 재귀) */
+  /** 임의의 값에서 $prev / $prev.key 치환 (string, object 재귀) */
   resolveValue(val: any, prev: any): any {
     if (typeof val === 'string') {
       if (val === '$prev') return typeof prev === 'string' ? prev : JSON.stringify(prev);
-      if (val.includes('$prev')) return val.replace(/\$prev/g, typeof prev === 'string' ? prev : JSON.stringify(prev));
+      // $prev.key 속성 접근 (예: $prev.url, $prev.title)
+      const propMatch = val.match(/^\$prev\.(\w+)$/);
+      if (propMatch) {
+        const key = propMatch[1];
+        if (prev && typeof prev === 'object' && key in prev) return prev[key];
+        return val; // 속성이 없으면 원본 유지
+      }
+      // 문자열 내 $prev.key 및 $prev 치환
+      if (val.includes('$prev')) {
+        let result = val.replace(/\$prev\.(\w+)/g, (_: string, key: string) => {
+          if (prev && typeof prev === 'object' && key in prev) return String(prev[key]);
+          return `$prev.${key}`;
+        });
+        result = result.replace(/\$prev/g, typeof prev === 'string' ? prev : JSON.stringify(prev));
+        return result;
+      }
       return val;
     }
     if (Array.isArray(val)) return val.map(v => this.resolveValue(v, prev));

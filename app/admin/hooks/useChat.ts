@@ -174,7 +174,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             const needsConfirm = ev.data.actions?.some((a: any) => ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type));
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
-                ? { ...msg, isThinking: !needsConfirm, thoughts: ev.data.thoughts, content: ev.data.reply, plan: ev.data, planPending: needsConfirm, suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined }
+                ? { ...msg, isThinking: !needsConfirm, thoughts: ev.data.thoughts, content: ev.data.reply, plan: ev.data, planPending: needsConfirm, suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined, statusText: needsConfirm ? undefined : '실행 준비 중...' }
                 : msg
             ));
           } else if (ev.event === 'step') {
@@ -220,7 +220,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     if (!msg?.plan) return;
 
     setMessages(prev => prev.map(m =>
-      m.id === msgId ? { ...m, planPending: false, executing: true, steps: [] } : m
+      m.id === msgId ? { ...m, planPending: false, executing: true, isThinking: true, steps: [], statusText: '실행 준비 중...' } : m
     ));
     setLoading(true);
 
