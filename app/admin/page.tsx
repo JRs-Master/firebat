@@ -132,13 +132,13 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
           return (
             <div key={i} className="px-4 py-3 border-b border-slate-200 last:border-b-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{item.label}</span>
-              <div className="flex flex-wrap gap-1.5 mt-2">
+              <div className="flex flex-col gap-1 mt-2">
                 {item.options.map(opt => (
                   <button key={opt} onClick={() => toggleOption(i, opt)} disabled={loading}
-                    className={`px-3 py-1.5 text-[12px] font-medium rounded-full transition-colors border ${
+                    className={`w-full px-4 py-2.5 text-left text-[13px] font-medium rounded-xl transition-colors border ${
                       selected.has(opt)
-                        ? 'bg-slate-800 text-white border-slate-800'
-                        : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : 'bg-white text-slate-500 border-slate-100 hover:bg-slate-50'
                     } disabled:opacity-50`}>
                     {opt}
                   </button>
