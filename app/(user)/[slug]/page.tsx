@@ -51,15 +51,35 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function DynamicPage({ params }: Props) {
   const rawSlug = (await params).slug;
   const slug = safeDecodeSlug(rawSlug);
-  const result = await getCore().getPage(slug);
+  const core = getCore();
+  const result = await core.getPage(slug);
   if (!result.success) notFound();
 
   const spec = result.data;
   const head = spec.head ?? {};
   const body = spec.body ?? [];
+  const seo = core.getSeoSettings();
+  const siteUrl = seo.siteUrl || BASE_URL;
+
+  // 페이지별 JSON-LD (WebPage)
+  const pageJsonLd = seo.jsonLdEnabled ? {
+    '@context': 'https://schema.org',
+    '@type': 'WebPage',
+    '@id': `${siteUrl}/${slug}`,
+    url: `${siteUrl}/${slug}`,
+    name: head.title ?? slug,
+    description: head.description ?? seo.siteDescription,
+    isPartOf: { '@id': `${siteUrl}/#website` },
+  } : null;
 
   return (
     <>
+      {pageJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(pageJsonLd) }}
+        />
+      )}
       {(head.scripts ?? []).map((s: any, i: number) => (
         <script key={i} src={s.src} async={s.async} crossOrigin={s.crossorigin} {...(s['data-ad-client'] ? { 'data-ad-client': s['data-ad-client'] } : {})} />
       ))}

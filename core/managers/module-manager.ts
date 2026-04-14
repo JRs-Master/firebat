@@ -114,6 +114,10 @@ export class ModuleManager {
     ogBgColor: string;
     ogAccentColor: string;
     ogDomain: string;
+    siteUrl: string;
+    jsonLdEnabled: boolean;
+    jsonLdOrganization: string;
+    jsonLdLogoUrl: string;
   } {
     const s = this.getSettings('seo');
     return {
@@ -127,6 +131,10 @@ export class ModuleManager {
       ogBgColor: s.ogBgColor ?? '#f8fafc',
       ogAccentColor: s.ogAccentColor ?? '#2563eb',
       ogDomain: s.ogDomain ?? 'firebat.co.kr',
+      siteUrl: s.siteUrl ?? '',
+      jsonLdEnabled: s.jsonLdEnabled ?? true,
+      jsonLdOrganization: s.jsonLdOrganization ?? 'Firebat',
+      jsonLdLogoUrl: s.jsonLdLogoUrl ?? '',
     };
   }
 }

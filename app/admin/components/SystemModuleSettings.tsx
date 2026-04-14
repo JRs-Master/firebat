@@ -61,6 +61,10 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
       // 일반 탭
       { key: 'siteTitle', label: '사이트 제목', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'SEO 기본 사이트 제목 (OG, RSS, Sitemap 등에 사용)', defaultValue: 'Firebat' },
       { key: 'siteDescription', label: '사이트 설명', type: 'text', tab: '일반', placeholder: 'Just Imagine. Firebat Runs.', description: 'SEO 기본 사이트 설명', defaultValue: 'Just Imagine. Firebat Runs.' },
+      { key: 'siteUrl', label: '사이트 URL', type: 'text', tab: '일반', placeholder: 'https://firebat.co.kr', description: 'JSON-LD, Sitemap 등에 사용되는 기본 URL' },
+      { key: 'jsonLdEnabled', label: 'JSON-LD 구조화 데이터', type: 'toggle', tab: '일반', description: 'WebSite + Organization 스키마 자동 삽입', defaultValue: true },
+      { key: 'jsonLdOrganization', label: '조직/브랜드명', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'JSON-LD Organization name', defaultValue: 'Firebat' },
+      { key: 'jsonLdLogoUrl', label: '로고 URL', type: 'text', tab: '일반', placeholder: 'https://firebat.co.kr/icon.svg', description: 'JSON-LD Organization 로고 이미지 URL' },
       // SEO 탭
       { key: 'sitemapEnabled', label: 'Sitemap 생성', type: 'toggle', tab: 'SEO', description: '/sitemap.xml 자동 생성', defaultValue: true },
       { key: 'rssEnabled', label: 'RSS 피드', type: 'toggle', tab: 'SEO', description: '/feed.xml 자동 생성', defaultValue: true },
