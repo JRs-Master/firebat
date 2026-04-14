@@ -262,55 +262,6 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
               외부 AI 도구(Claude Code, Cursor, VS Code 등)에서 이 파이어뱃 서버에 연결할 수 있습니다.
             </p>
 
-            {/* 토큰 관리 */}
-            <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[12px] sm:text-[13px] font-bold text-slate-600">인증 토큰</span>
-                <div className="flex items-center gap-1.5">
-                  {mcpTokenInfo.exists && (
-                    <button onClick={revokeMcpToken} className="text-[10px] sm:text-[11px] px-2 py-0.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors">
-                      폐기
-                    </button>
-                  )}
-                  <button
-                    onClick={generateMcpToken}
-                    disabled={mcpTokenLoading}
-                    className="text-[10px] sm:text-[11px] px-2.5 py-1 font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded transition-colors flex items-center gap-1"
-                  >
-                    {mcpTokenLoading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
-                    {mcpTokenInfo.exists ? '재생성' : '토큰 생성'}
-                  </button>
-                </div>
-              </div>
-
-              {mcpTokenRaw && (
-                <div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 flex flex-col gap-1.5">
-                  <p className="text-[10px] sm:text-[11px] font-bold text-amber-700">이 토큰은 다시 볼 수 없습니다. 지금 복사하세요.</p>
-                  <div className="flex items-center gap-1.5">
-                    <code className="flex-1 text-[11px] sm:text-[12px] font-mono bg-white border border-amber-200 rounded px-2 py-1 text-slate-700 break-all select-all">
-                      {mcpTokenRaw}
-                    </code>
-                    <button onClick={() => copyToClipboard(mcpTokenRaw, setMcpTokenCopied)} className="shrink-0 p-1.5 rounded hover:bg-amber-100 transition-colors" title="복사">
-                      {mcpTokenCopied ? <Check size={14} className="text-green-600" /> : <Copy size={14} className="text-amber-600" />}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {mcpTokenInfo.exists && !mcpTokenRaw && (
-                <div className="flex items-center gap-2 text-[11px] sm:text-[12px] text-slate-500">
-                  <code className="font-mono bg-white border border-slate-200 rounded px-2 py-0.5 text-slate-600">{mcpTokenInfo.hint}</code>
-                  {mcpTokenInfo.createdAt && (
-                    <span className="text-slate-400">생성: {new Date(mcpTokenInfo.createdAt).toLocaleDateString('ko-KR')}</span>
-                  )}
-                </div>
-              )}
-
-              {!mcpTokenInfo.exists && !mcpTokenRaw && (
-                <p className="text-[10px] sm:text-[11px] text-slate-400">토큰이 없습니다. SSE(API) 연결을 사용하려면 토큰을 생성하세요.</p>
-              )}
-            </div>
-
             {/* JSON 설정 보기 */}
             <div className="border border-slate-200 rounded-lg overflow-hidden">
               <div className="flex border-b border-slate-200">
@@ -335,7 +286,57 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
                   mcpServers: { firebat: { url: sseUrl, headers: { Authorization: `Bearer ${tokenValue}` } } },
                 }, null, 2);
                 return (
-                  <div className="p-3 flex flex-col gap-2">
+                  <div className="p-3 flex flex-col gap-3">
+                    {/* 인증 토큰 */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col gap-2 min-h-[60px]">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[12px] sm:text-[13px] font-bold text-slate-600">인증 토큰</span>
+                        <div className="flex items-center gap-1.5">
+                          {mcpTokenInfo.exists && (
+                            <button onClick={revokeMcpToken} className="text-[10px] sm:text-[11px] px-2 py-0.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors">
+                              폐기
+                            </button>
+                          )}
+                          <button
+                            onClick={generateMcpToken}
+                            disabled={mcpTokenLoading}
+                            className="text-[10px] sm:text-[11px] px-2.5 py-1 font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded transition-colors flex items-center gap-1"
+                          >
+                            {mcpTokenLoading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                            {mcpTokenInfo.exists ? '재생성' : '토큰 생성'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {mcpTokenRaw && (
+                        <div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 flex flex-col gap-1.5">
+                          <p className="text-[10px] sm:text-[11px] font-bold text-amber-700">이 토큰은 다시 볼 수 없습니다. 지금 복사하세요.</p>
+                          <div className="flex items-center gap-1.5">
+                            <code className="flex-1 text-[11px] sm:text-[12px] font-mono bg-white border border-amber-200 rounded px-2 py-1 text-slate-700 break-all select-all">
+                              {mcpTokenRaw}
+                            </code>
+                            <button onClick={() => copyToClipboard(mcpTokenRaw, setMcpTokenCopied)} className="shrink-0 p-1.5 rounded hover:bg-amber-100 transition-colors" title="복사">
+                              {mcpTokenCopied ? <Check size={14} className="text-green-600" /> : <Copy size={14} className="text-amber-600" />}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {mcpTokenInfo.exists && !mcpTokenRaw && (
+                        <div className="flex items-center gap-2 text-[11px] sm:text-[12px] text-slate-500">
+                          <code className="font-mono bg-white border border-slate-200 rounded px-2 py-0.5 text-slate-600">{mcpTokenInfo.hint}</code>
+                          {mcpTokenInfo.createdAt && (
+                            <span className="text-slate-400">생성: {new Date(mcpTokenInfo.createdAt).toLocaleDateString('ko-KR')}</span>
+                          )}
+                        </div>
+                      )}
+
+                      {!mcpTokenInfo.exists && !mcpTokenRaw && (
+                        <p className="text-[10px] sm:text-[11px] text-slate-400">토큰이 없습니다. SSE(API) 연결을 사용하려면 토큰을 생성하세요.</p>
+                      )}
+                    </div>
+
+                    {/* JSON 설정 */}
                     <div className="flex items-center justify-between">
                       <p className="text-[10px] sm:text-[11px] text-slate-500">VS Code / Cursor MCP 설정에 아래 JSON을 추가하세요.</p>
                       <button onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)} className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors" title="복사">
@@ -343,7 +344,6 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
                       </button>
                     </div>
                     <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 whitespace-pre-wrap break-all leading-relaxed">{jsonConfig}</pre>
-                    {!mcpTokenInfo.exists && <p className="text-[10px] text-amber-600 font-bold">위에서 토큰을 먼저 생성하세요.</p>}
                   </div>
                 );
               })()}
@@ -360,7 +360,7 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
                         {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
                       </button>
                     </div>
-                    <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 whitespace-pre-wrap break-all leading-relaxed">{jsonConfig}</pre>
+                    <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">{jsonConfig}</pre>
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[10px] sm:text-[11px] text-amber-700 flex flex-col gap-1">
                       <p className="font-bold">SSH 키 필수</p>
                       <p>stdio 모드는 서버에 SSH 키가 등록되어 있어야 합니다. 서버 관리자에게 SSH 공개키 등록을 요청하세요.</p>

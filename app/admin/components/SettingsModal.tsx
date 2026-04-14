@@ -851,11 +851,11 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
               <div className="flex flex-col gap-2">
                 <label className="text-xs sm:text-sm font-bold text-slate-700">외부 MCP 서버</label>
                 {mcpLoading ? (
-                  <div className="flex items-center justify-center py-6">
+                  <div className="flex items-center justify-center py-6 min-h-[80px]">
                     <Loader2 size={18} className="animate-spin text-slate-400" />
                   </div>
                 ) : mcpServers.length === 0 ? (
-                  <p className="text-[12px] sm:text-[13px] text-slate-400 py-4 text-center">등록된 MCP 서버가 없습니다</p>
+                  <p className="text-[12px] sm:text-[13px] text-slate-400 py-4 text-center min-h-[80px] flex items-center justify-center">등록된 MCP 서버가 없습니다</p>
                 ) : (
                   <div className="flex flex-col gap-1.5">
                     {mcpServers.map(s => {

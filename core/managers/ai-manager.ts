@@ -58,14 +58,20 @@ export class AiManager {
           if (file.success && file.data) {
             try {
               const m = JSON.parse(file.data);
+              const rt = m.runtime === 'node' ? 'index.mjs' : m.runtime === 'python' ? 'main.py' : 'index.mjs';
+              const path = `system/modules/${d.name}/${rt}`;
               const inputDesc = m.input ? Object.entries(m.input).map(([k, v]) => `${k}: ${v}`).join(', ') : '';
-              modInfos.push(`  - ${m.name}: ${m.description}${inputDesc ? ` | 입력: {${inputDesc}}` : ''}`);
+              const outputDesc = m.output ? Object.entries(m.output).map(([k, v]) => `${k}: ${v}`).join(', ') : '';
+              let line = `  - ${m.name} (${path}): ${m.description}`;
+              if (inputDesc) line += `\n    입력: {${inputDesc}}`;
+              if (outputDesc) line += `\n    출력: {${outputDesc}}`;
+              modInfos.push(line);
             } catch {
               modInfos.push(`  - ${d.name}`);
             }
           }
         }
-        lines.push(`[시스템 모듈]\n${modInfos.join('\n')}`);
+        lines.push(`[시스템 모듈] TEST_RUN으로 호출. path에 아래 경로 사용.\n${modInfos.join('\n')}`);
       }
     }
     const pages = await this.core.listPages();
@@ -700,6 +706,8 @@ CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제. 새 모듈 만들지 마라.
 
 ### RUN_TASK (즉시 파이프라인 실행)
 "지금 바로 해줘" 류 복합 작업은 RUN_TASK. 예약이 아닌 즉시 실행.
+파이프라인 단계 type은 반드시 다음 4가지만 사용: TEST_RUN, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM.
+모듈 호출은 TEST_RUN(path=모듈 경로), 외부 API는 MCP_CALL 또는 NETWORK_REQUEST 사용.
 {"type":"RUN_TASK","description":"메일 요약 카톡 발송","pipeline":[
   {"type":"MCP_CALL","server":"gmail","tool":"search_emails","arguments":{"query":"is:unread","maxResults":5}},
   {"type":"LLM_TRANSFORM","instruction":"아래 메일 내용을 5W1H 기반 플레인 텍스트로 요약. 마크다운 금지."},
@@ -719,7 +727,7 @@ CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제. 새 모듈 만들지 마라.
 ]}
 
 ## 시스템 모듈
-[시스템 모듈] 목록 우선 사용. 경로: system/modules/{name}/index.mjs 또는 main.py.
+[시스템 모듈]에 경로·입출력이 명시되어 있다. TEST_RUN의 path에 해당 경로를, inputData에 입력 형식을 그대로 사용.
 MODULE_NOT_FOUND 시 같은 모듈 재시도 금지 → 다른 provider로 전환.
 
 ## MCP 외부 도구
