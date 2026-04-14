@@ -394,16 +394,17 @@ export class AiManager {
         continue;
       }
 
-      // RUN_TASK 파이프라인 결과가 있으면 reply에 반영 (LLM_TRANSFORM 요약 결과)
+      // RUN_TASK 파이프라인 결과가 있으면 reply에 반영 (문자열 결과만, JSON은 AI reply 유지)
       let finalReply = plan.reply;
       const taskResults = finalDataList.filter(d => d?.taskResult !== undefined);
       if (taskResults.length > 0) {
-        const resultText = taskResults
-          .map(d => typeof d.taskResult === 'string' ? d.taskResult : JSON.stringify(d.taskResult, null, 2))
+        const textResults = taskResults
+          .filter(d => typeof d.taskResult === 'string')
+          .map(d => d.taskResult)
           .join('\n\n')
           .trim();
-        if (resultText) {
-          finalReply = resultText;
+        if (textResults) {
+          finalReply = textResults;
         }
       }
 
@@ -580,16 +581,17 @@ export class AiManager {
     const totalMs = Date.now() - startTime;
     this.logger.info(`[AiManager] [${corrId}] [${modelId}] 실행 완료 (${executedActions.length}개 액션, ${totalMs}ms)`);
 
-    // 실행 결과를 reply에 반영 (RUN_TASK 파이프라인 결과 > 단독 EXECUTE 결과)
+    // 실행 결과를 reply에 반영 (문자열 결과만, JSON은 AI reply 유지)
     let finalReply = plan.reply;
     const taskResults = finalDataList.filter(d => d?.taskResult !== undefined);
     if (taskResults.length > 0) {
-      const resultText = taskResults
-        .map(d => typeof d.taskResult === 'string' ? d.taskResult : JSON.stringify(d.taskResult, null, 2))
+      const textResults = taskResults
+        .filter(d => typeof d.taskResult === 'string')
+        .map(d => d.taskResult)
         .join('\n\n')
         .trim();
-      if (resultText) {
-        finalReply = resultText;
+      if (textResults) {
+        finalReply = textResults;
       }
     } else if (finalDataList.length > 0) {
       // 단독 EXECUTE 등의 결과가 있으면 reply에 반영

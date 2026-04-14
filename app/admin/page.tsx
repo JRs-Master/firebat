@@ -217,8 +217,8 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
       <div className="flex flex-col gap-2 flex-1 min-w-0">
         <div className="flex flex-col gap-3 w-full bg-white p-6 rounded-3xl rounded-tl-sm shadow-sm border border-slate-100">
           {msg.isThinking ? (
-            <div className="flex items-center gap-4 text-slate-600 font-bold bg-slate-50 border border-slate-200 px-6 py-5 rounded-2xl shadow-inner">
-              <div className="animate-spin text-blue-600"><Cpu size={22} /></div>
+            <div className="flex items-center gap-3 text-slate-600 font-medium bg-slate-50 border border-slate-200 px-4 py-3 sm:px-6 sm:py-5 rounded-2xl shadow-inner text-[13px] sm:text-[15px]">
+              <div className="animate-spin text-blue-600 shrink-0"><Cpu size={18} /></div>
               <ThinkingText statusText={msg.statusText} />
             </div>
           ) : (
@@ -385,7 +385,7 @@ export default function AdminConsole() {
                 loading={loading}
                 onConfirm={handleConfirmPlan}
                 onReject={handleRejectPlan}
-                onSuggestion={(text) => handleSubmit(text)}
+                onSuggestion={(text) => handleSubmit(text, true)}
               />
             ))}
             <div className="h-64 shrink-0 pointer-events-none" />

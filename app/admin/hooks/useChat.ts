@@ -117,7 +117,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   }, [activeConvId]);
 
   // ── 전송 ───────────────────────────────────────────────────────────────────
-  const handleSubmit = useCallback(async (overrideText?: string) => {
+  const handleSubmit = useCallback(async (overrideText?: string, isSuggestion?: boolean) => {
     const text = overrideText ?? input;
     if (!text.trim() || loading) return;
     const userPrompt = text;
@@ -135,7 +135,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       localStorage.setItem('firebat_active_conv', newConv.id);
     }
 
-    setMessages(prev => [...prev, { id: `u-${id}`, role: 'user', content: userPrompt }]);
+    if (!isSuggestion) {
+      setMessages(prev => [...prev, { id: `u-${id}`, role: 'user', content: userPrompt }]);
+    }
     setMessages(prev => [...prev, { id: `s-${id}`, role: 'system', isThinking: true }]);
     setLoading(true);
 
