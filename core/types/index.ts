@@ -39,7 +39,8 @@ export const FirebatActionSchema = z.discriminatedUnion('type', [
     ...actionBase,
     type: z.literal('EXECUTE'),
     path: z.string().describe('실행할 모듈 경로 (예: user/modules/web-search/index.js)'),
-    mockData: z.any().optional().describe('주입할 임의의 테스트 파라미터')
+    inputData: z.any().optional().describe('모듈에 전달할 입력 데이터'),
+    mockData: z.any().optional().describe('(하위 호환) inputData와 동일')
   }),
   z.object({
     ...actionBase,

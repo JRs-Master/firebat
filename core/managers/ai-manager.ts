@@ -281,7 +281,7 @@ export class AiManager {
             break;
           }
           case 'EXECUTE': {
-            const res = await this.core.sandboxExecute(action.path, action.mockData);
+            const res = await this.core.sandboxExecute(action.path, action.inputData ?? action.mockData);
             if (!res.success) {
               executionError = `EXECUTE 샌드박스 오류 (${action.path}): ${res.error}`;
             } else if (res.data?.success === false) {
@@ -637,7 +637,7 @@ export class AiManager {
         return null;
       }
       case 'EXECUTE': {
-        const res = await this.core.sandboxExecute(action.path, action.mockData);
+        const res = await this.core.sandboxExecute(action.path, action.inputData ?? action.mockData);
         if (!res.success) return `EXECUTE 샌드박스 오류 (${action.path}): ${res.error}`;
         if (res.data?.success === false) return `EXECUTE 모듈 로직 오류 (${action.path}): ${JSON.stringify(res.data)}`;
         dataList.push(res.data);
@@ -810,7 +810,7 @@ CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제. 새 모듈 만들지 마라.
 예시 (경로·서버·도구는 실제 목록에서 선택):
 {"type":"RUN_TASK","description":"복합 작업","pipeline":[
   {"type":"EXECUTE","path":"<시스템 모듈 경로>","inputData":{"<입력키>":"<값>"}},
-  {"type":"LLM_TRANSFORM","instruction":"실시간 트렌드 TOP 10 목록만 추출하여 번호 매겨 나열."}
+  {"type":"LLM_TRANSFORM","instruction":"결과에서 제목만 추출하여 번호 매겨 나열."}
 ]}
 LLM_TRANSFORM의 instruction 작성 규칙:
 - 사용자가 물어본 범위만 정확히 지정하라. "요약하라", "정리하라" 같은 모호한 표현 금지.
