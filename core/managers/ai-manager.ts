@@ -647,7 +647,7 @@ LIST_TASKS: {"type":"LIST_TASKS","description":"스케줄 목록 조회"}
 - 예약/반복: 기존 모듈/페이지 경로로 SCHEDULE_TASK. 페이지 URL도 targetPath에 넣을 수 있다.
 
 ## 앱/페이지 생성 — 2단계
-1단계: 설계(기능, UI/UX, 기술, 파일구조) → actions: [] → suggestions: ["진행", "수정 요청", "취소"]
+1단계: 설계(기능, UI/UX, 기술, 파일구조) → actions: [] → suggestions: ["진행", "기능 수정", "디자인 수정", {"type":"input","label":"직접 수정 요청","placeholder":"변경할 내용을 입력하세요"}, "취소"]
 2단계: 확인 후 SAVE_PAGE + WRITE_FILE.
 - SAVE_PAGE로 PageSpec JSON 저장. page.tsx 직접 작성 금지.
 - PageSpec: { slug, status:"published", project, head: { title, description, keywords, og: { title, description, image:"", type:"website" } }, body: [{ type:"Html", props:{ content:"..." } }] }
