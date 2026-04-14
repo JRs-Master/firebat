@@ -346,6 +346,19 @@ export class AiManager {
         continue;
       }
 
+      // RUN_TASK 파이프라인 결과가 있으면 reply에 반영 (LLM_TRANSFORM 요약 결과)
+      let finalReply = plan.reply;
+      const taskResults = finalDataList.filter(d => d?.taskResult !== undefined);
+      if (taskResults.length > 0) {
+        const resultText = taskResults
+          .map(d => typeof d.taskResult === 'string' ? d.taskResult : JSON.stringify(d.taskResult, null, 2))
+          .join('\n\n')
+          .trim();
+        if (resultText) {
+          finalReply = resultText;
+        }
+      }
+
       const totalMs = Date.now() - startTime;
       this.logger.info(`[AiManager] [${corrId}] [${modelId}] 완료 (${executedActions.length}개 액션, ${totalMs}ms)`);
       this.trainingLog({
@@ -358,13 +371,13 @@ export class AiManager {
         output: {
           thoughts: plan.thoughts,
           actions: executedActions,
-          reply: plan.reply.slice(0, 200),
+          reply: finalReply.slice(0, 200),
         },
       });
       return {
         success: true,
         thoughts: plan.thoughts,
-        reply: plan.reply,
+        reply: finalReply,
         executedActions,
         data: finalDataList.length === 1 ? finalDataList[0] : finalDataList.length > 1 ? finalDataList : undefined,
       };
@@ -708,6 +721,7 @@ CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제. 새 모듈 만들지 마라.
 "지금 바로 해줘" 류 복합 작업은 RUN_TASK. 예약이 아닌 즉시 실행.
 파이프라인 단계 type은 반드시 다음 4가지만 사용: TEST_RUN, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM.
 모듈 호출은 TEST_RUN(path=모듈 경로), 외부 API는 MCP_CALL 또는 NETWORK_REQUEST 사용.
+사용자에게 결과를 보여줘야 하는 파이프라인은 마지막 단계를 LLM_TRANSFORM으로 끝내라. 파이프라인 결과가 곧 사용자 답변이 된다.
 {"type":"RUN_TASK","description":"메일 요약 카톡 발송","pipeline":[
   {"type":"MCP_CALL","server":"gmail","tool":"search_emails","arguments":{"query":"is:unread","maxResults":5}},
   {"type":"LLM_TRANSFORM","instruction":"아래 메일 내용을 5W1H 기반 플레인 텍스트로 요약. 마크다운 금지."},
