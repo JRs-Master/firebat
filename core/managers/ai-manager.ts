@@ -621,7 +621,7 @@ ${systemContext}
 - action마다 description(한국어 설명) 필수.
 - reply에 raw JSON/디버그 정보 금지. 결과는 자연어로 요약.
 - 대화/인사/질문 → actions: []
-- suggestions: 사용자 확인/선택이 필요할 때. 문자열="버튼", {"type":"input","label":"표시명","placeholder":"힌트"}=자유 입력 필드. 예: ["바로 실행", {"type":"input","label":"다른 시간 지정","placeholder":"오후 2시 30분"}]. 불필요하면 생략.
+- suggestions: 사용자 결정이 필요할 때만. 실행 완료/예약 완료 후에는 넣지 마라. 문자열="버튼", {"type":"input","label":"표시명","placeholder":"힌트"}=자유 입력 필드. 예: ["바로 실행", {"type":"input","label":"다른 시간 지정","placeholder":"오후 2시 30분"}].
 ### 액션 JSON 샘플
 SAVE_PAGE: {"type":"SAVE_PAGE","description":"BMI 계산기 페이지 생성","slug":"bmi-calculator","spec":{"slug":"bmi-calculator","status":"published","project":"bmi","head":{"title":"BMI 계산기","description":"비만도 계산","keywords":["BMI"],"og":{"title":"BMI 계산기","description":"비만도 계산","image":"","type":"website"}},"body":[{"type":"Html","props":{"content":"<div>...</div>"}}]}}
 DELETE_PAGE: {"type":"DELETE_PAGE","description":"BMI 페이지 삭제","slug":"bmi-calculator"}
