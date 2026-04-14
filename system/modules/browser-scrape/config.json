@@ -17,7 +17,7 @@
   "output": {
     "url": "string — 최종 URL",
     "title": "string — 페이지 제목",
-    "text": "string — 페이지 본문 텍스트 (최대 3000자)",
+    "text": "string — 페이지 본문 텍스트",
     "links": "array<{href, text}> — 페이지 내 외부 링크 (입력 URL과 같은 도메인 자동 제외, 최대 10개)",
     "firstLink": "{href, text} | null — 첫 번째 외부 링크"
   }

@@ -49,9 +49,11 @@ process.stdin.on('end', async () => {
     if (lines[0]?.startsWith('Title:')) title = lines[0].slice(6).trim();
     else if (lines[0]?.startsWith('# ')) title = lines[0].slice(2).trim();
 
+    const maxLen = parseInt(process.env['MODULE_MAXTEXTLENGTH'] || '50000', 10);
+
     console.log(JSON.stringify({
       success: true,
-      data: { url, title, text: text.slice(0, 50000) },
+      data: { url, title, text: text.slice(0, maxLen) },
     }));
   } catch (e) {
     console.log(JSON.stringify({ success: false, error: e.message }));

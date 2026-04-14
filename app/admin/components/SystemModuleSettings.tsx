@@ -33,7 +33,7 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
     fields: [
       { key: 'timeout', label: '타임아웃 (ms)', type: 'number', placeholder: '30000', description: '페이지 로딩 제한 시간', defaultValue: 30000 },
       { key: 'headless', label: 'Headless 모드', type: 'toggle', description: '브라우저 UI 없이 실행', defaultValue: true },
-      { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '3000', description: '추출 텍스트 최대 글자 수', defaultValue: 3000 },
+      { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '50000', description: '추출 텍스트 최대 글자 수', defaultValue: 50000 },
     ],
   },
   'kakao-talk': {
@@ -48,7 +48,7 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
   'jina-reader': {
     title: 'Jina Reader 웹 스크래퍼',
     fields: [
-      { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '5000', description: '마크다운 결과 최대 글자 수', defaultValue: 5000 },
+      { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '50000', description: '마크다운 결과 최대 글자 수', defaultValue: 50000 },
     ],
   },
   'mcp-server': {

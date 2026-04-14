@@ -80,6 +80,19 @@ export class ProcessSandboxAdapter implements ISandboxPort {
         const value = this.vault.getSecret(`user:${name}`);
         if (value) env[name] = value;
       }
+      // 모듈 설정값도 env로 주입 (MODULE_SETTINGS_<KEY> 형식)
+      const moduleName = manifest.name || path.basename(moduleDir);
+      const settingsRaw = this.vault.getSecret(`system:module:${moduleName}:settings`);
+      if (settingsRaw) {
+        try {
+          const settings = JSON.parse(settingsRaw);
+          for (const [k, v] of Object.entries(settings)) {
+            if (v !== null && v !== undefined && v !== '') {
+              env[`MODULE_${k.toUpperCase()}`] = String(v);
+            }
+          }
+        } catch {}
+      }
     } catch {}
     return env;
   }

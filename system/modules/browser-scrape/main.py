@@ -26,6 +26,7 @@ Playwright 기반 JS 렌더링 웹 스크래퍼
 """
 import sys
 import json
+import os
 from urllib.parse import urlparse
 
 def extract_domain(url):
@@ -59,7 +60,7 @@ def main():
             page = browser.new_page(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36"
             )
-            page.goto(url, wait_until=wait_for, timeout=30000)
+            page.goto(url, wait_until=wait_for, timeout=int(os.environ.get('MODULE_TIMEOUT', '30000')))
 
             title = page.title()
 
@@ -100,7 +101,7 @@ def main():
             "data": {
                 "url":       url,
                 "title":     title,
-                "text":      text[:3000],  # 너무 길면 잘라서 반환 (html 대신 text만)
+                "text":      text[:int(os.environ.get('MODULE_MAXTEXTLENGTH', '50000'))],
                 "links":     links[:10],   # 최대 10개
                 "firstLink": first_link
             }
