@@ -84,18 +84,18 @@ export async function GET(request: Request) {
           {/* 유령 로고 */}
           <div
             style={{
-              width: '96px',
-              height: '96px',
-              borderRadius: '24px',
+              width: '120px',
+              height: '120px',
+              borderRadius: '32px',
               background: `${accentColor}15`,
-              border: `3px solid ${accentColor}`,
+              border: `4px solid ${accentColor}`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: `0 12px 40px ${accentColor}26`,
+              boxShadow: `0 16px 48px ${accentColor}26`,
             }}
           >
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M9 10h.01" />
               <path d="M15 10h.01" />
               <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z" />
@@ -103,19 +103,19 @@ export async function GET(request: Request) {
           </div>
 
           {/* 사이트 이름 */}
-          <span style={{ fontSize: '72px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.03em', lineHeight: 1 }}>
-            {isPageOg ? '' : 'Firebat'}
+          <span style={{ fontSize: '120px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.04em', lineHeight: 1 }}>
+            {isPageOg ? '' : title}
           </span>
 
           {/* 타이틀 (페이지별 OG일 때만) */}
           {isPageOg && (
-            <span style={{ fontSize: title.length > 20 ? '48px' : '64px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1.1, textAlign: 'center', maxWidth: '900px' }}>
+            <span style={{ fontSize: title.length > 20 ? '72px' : '96px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.03em', lineHeight: 1.1, textAlign: 'center', maxWidth: '1000px' }}>
               {title}
             </span>
           )}
 
           {/* 설명 */}
-          <span style={{ fontSize: '24px', fontWeight: 500, color: '#94a3b8', letterSpacing: '0.04em', textAlign: 'center', maxWidth: '800px', lineHeight: 1.4 }}>
+          <span style={{ fontSize: '36px', fontWeight: 500, color: '#94a3b8', letterSpacing: '0.03em', textAlign: 'center', maxWidth: '900px', lineHeight: 1.4 }}>
             {description}
           </span>
         </div>
@@ -126,7 +126,7 @@ export async function GET(request: Request) {
             position: 'absolute',
             bottom: '32px',
             right: '48px',
-            fontSize: '16px',
+            fontSize: '20px',
             fontWeight: 600,
             color: '#cbd5e1',
           }}
