@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { Message, Conversation, INIT_MESSAGE, makeConv } from '../types';
 import { ConversationMeta } from '../components/Sidebar';
 
@@ -169,26 +170,23 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         const parsed = parseSSE(buffer);
         buffer = parsed.remaining;
 
-        for (let ei = 0; ei < parsed.events.length; ei++) {
-          const ev = parsed.events[ei];
-          // React 18 배칭 방지 — 이벤트 사이에 렌더 틈 확보
-          if (ei > 0) await new Promise(r => setTimeout(r, 0));
+        for (const ev of parsed.events) {
           if (ev.event === 'plan') {
             const needsConfirm = ev.data.actions?.some((a: any) => ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type));
-            setMessages(prev => prev.map(msg =>
+            flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? { ...msg, isThinking: !needsConfirm, thoughts: ev.data.thoughts, content: ev.data.reply, plan: ev.data, planPending: needsConfirm, suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined, statusText: needsConfirm ? undefined : '실행 준비 중...' }
                 : msg
-            ));
+            )));
           } else if (ev.event === 'step') {
             const stepDesc = ev.data.description || '실행 중...';
-            setMessages(prev => prev.map(msg =>
+            flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? { ...msg, planPending: false, executing: true, isThinking: true, steps: [...(msg.steps || []), ev.data], statusText: stepDesc }
                 : msg
-            ));
+            )));
           } else if (ev.event === 'result') {
-            setMessages(prev => prev.map(msg =>
+            flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? {
                     ...msg, isThinking: false, executing: false, thoughts: ev.data.thoughts, content: ev.data.reply || '실행이 완료되었습니다.',
@@ -196,14 +194,14 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                     suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
                   }
                 : msg
-            ));
+            )));
             if (ev.data.executedActions?.length) { onRefresh(); window.dispatchEvent(new Event('firebat-refresh')); }
           } else if (ev.event === 'error') {
-            setMessages(prev => prev.map(msg =>
+            flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? { ...msg, isThinking: false, executing: false, error: ev.data.error, content: ev.data.error || '파이프라인 오류가 발생했습니다.' }
                 : msg
-            ));
+            )));
           }
         }
       }
@@ -251,18 +249,18 @@ export function useChat(aiModel: string, onRefresh: () => void) {
 
         for (const ev of parsed.events) {
           if (ev.event === 'step') {
-            setMessages(prev => prev.map(m =>
+            flushSync(() => setMessages(prev => prev.map(m =>
               m.id === msgId ? { ...m, steps: [...(m.steps || []), ev.data], statusText: ev.data.description || '실행 중...' } : m
-            ));
+            )));
           } else if (ev.event === 'result') {
-            setMessages(prev => prev.map(m =>
+            flushSync(() => setMessages(prev => prev.map(m =>
               m.id === msgId
                 ? {
-                    ...m, executing: false, executedActions: ev.data.executedActions || [],
+                    ...m, executing: false, isThinking: false, executedActions: ev.data.executedActions || [],
                     data: ev.data.data, error: ev.data.error, content: ev.data.reply || m.content || '실행이 완료되었습니다.',
                   }
                 : m
-            ));
+            )));
             if (ev.data.executedActions?.length) { onRefresh(); window.dispatchEvent(new Event('firebat-refresh')); }
           }
         }
