@@ -23,6 +23,7 @@ process.stdin.on('end', async () => {
   try {
     const { data } = JSON.parse(raw);
     const url = data?.url;
+    const selector = data?.selector; // class명, id, 태그 등으로 HTML 부분 추출
     if (!url) {
       console.log(JSON.stringify({ success: false, error: 'data.url 필드가 필요합니다.' }));
       return;
@@ -55,9 +56,24 @@ process.stdin.on('end', async () => {
     let body = text;
     const bodyMatch = text.match(/<body[^>]*>([\s\S]*)<\/body>/i);
     if (bodyMatch) body = bodyMatch[1];
-    // script, style, noscript 태그 제거
     body = body.replace(/<(script|style|noscript)[^>]*>[\s\S]*?<\/\1>/gi, '');
-    // 연속 공백/줄바꿈 정리
+
+    // selector가 있으면 해당 부분만 추출 (class, id, 태그명 매칭)
+    if (selector) {
+      const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // class="selector" 또는 id="selector" 또는 <selector 매칭
+      const patterns = [
+        new RegExp(`<[^>]*(?:class|id)="[^"]*${escaped}[^"]*"[^>]*>[\\s\\S]*?(?=<\\/[^>]+>\\s*<[^>]*(?:class|id)="|$)`, 'gi'),
+        new RegExp(`<${escaped}[^>]*>[\\s\\S]*?<\\/${escaped}>`, 'gi'),
+      ];
+      let found = '';
+      for (const pat of patterns) {
+        const matches = body.match(pat);
+        if (matches) { found = matches.join('\n'); break; }
+      }
+      if (found) body = found;
+    }
+
     body = body.replace(/\s{2,}/g, ' ').trim();
 
     console.log(JSON.stringify({

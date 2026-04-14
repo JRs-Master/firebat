@@ -9,7 +9,8 @@
   "providerType": "api",
   "secrets": [],
   "input": {
-    "url": "string (required) — 스크래핑할 URL"
+    "url": "string (required) — 스크래핑할 URL",
+    "selector": "string (optional) — HTML에서 추출할 class명, id, 태그명 (예: d_trendrank, search-result)"
   },
   "output": {
     "url": "string — 최종 URL",
