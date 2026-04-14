@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
 
       // 자동 실행 모드 → 바로 실행
       const result = await core.executePlan(plan, corrId!, opts, (step) => {
-        send('step', step);
+        send('step', { ...step, description: stepLabel((step as any).type) });
       });
 
       send('result', result);

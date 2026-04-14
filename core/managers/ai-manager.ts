@@ -815,8 +815,9 @@ CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제. 새 모듈 만들지 마라.
 예시 (경로·서버·도구는 실제 목록에서 선택):
 {"type":"RUN_TASK","description":"복합 작업","pipeline":[
   {"type":"EXECUTE","path":"<시스템 모듈 경로>","inputData":{"<입력키>":"<값>"}},
-  {"type":"LLM_TRANSFORM","instruction":"결과를 사용자에게 보여줄 자연어로 요약."}
+  {"type":"LLM_TRANSFORM","instruction":"사용자 질문에 해당하는 내용만 추출하여 답변."}
 ]}
+LLM_TRANSFORM의 instruction은 사용자가 물어본 범위만 추출하도록 작성하라. "실시간 트렌드"만 물어봤으면 트렌드 목록만 추출. 뉴스, 연예, 스포츠 등 안 물어본 카테고리를 포함시키지 마라.
 
 ### SCHEDULE_TASK 샘플 (예약/반복)
 (A) 단순 모듈 실행:

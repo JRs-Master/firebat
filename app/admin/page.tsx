@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Send, Cpu, AlertTriangle, Blocks, Bot, ExternalLink, X, Check, Loader2, CheckCircle2, Circle, XCircle } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Bot, ExternalLink, X, Check, Loader2, Circle } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { FileEditor } from './components/FileEditor';
 import { SettingsModal } from './components/SettingsModal';
@@ -195,70 +195,40 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
       </div>
       <div className="flex flex-col gap-2 flex-1 min-w-0">
         <div className="flex flex-col gap-3 w-full bg-white p-6 rounded-3xl rounded-tl-sm shadow-sm border border-slate-100">
-          {msg.isThinking && !msg.plan ? (
+          {msg.isThinking ? (
             <div className="flex items-center gap-4 text-slate-600 font-bold bg-slate-50 border border-slate-200 px-6 py-5 rounded-2xl shadow-inner">
               <div className="animate-spin text-blue-600"><Cpu size={22} /></div>
-              명령 의도를 분석하고 수행 전략을 구상 중입니다...
+              {msg.statusText || '명령 의도를 분석하고 수행 전략을 구상 중입니다...'}
             </div>
           ) : (
             <div className="flex flex-col gap-5">
-              {/* Plan 표시 (답변 위에) */}
-              {msg.plan && msg.plan.actions.length > 0 && (
+              {/* 확인 필요한 액션만 Plan 박스 표시 */}
+              {msg.planPending && msg.plan && msg.plan.actions.length > 0 && (
                 <div className="flex flex-col gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-5">
                   <div className="flex flex-col gap-2">
-                    <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">실행 단계</div>
-                    {msg.plan.actions.map((action, i) => {
-                      const step = msg.steps?.filter(s => s.index === i).slice(-1)[0];
-                      const stepIcon = !step
-                        ? <Circle size={14} className="text-slate-300" />
-                        : step.status === 'start'
-                        ? <Loader2 size={14} className="text-blue-500 animate-spin" />
-                        : step.status === 'done'
-                        ? <CheckCircle2 size={14} className="text-emerald-500" />
-                        : <XCircle size={14} className="text-red-500" />;
-
-                      return (
-                        <div key={i} className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium transition-colors ${
-                          step?.status === 'done' ? 'bg-emerald-50 border border-emerald-100 text-emerald-700' :
-                          step?.status === 'error' ? 'bg-red-50 border border-red-100 text-red-700' :
-                          step?.status === 'start' ? 'bg-blue-50 border border-blue-100 text-blue-700' :
-                          'bg-white border border-slate-100 text-slate-500'
-                        }`}>
-                          {stepIcon}
-                          <span className="flex-1">{action.description || action.type}</span>
-                          {step?.status === 'error' && step.error && (
-                            <span className="text-red-600 text-[11px] ml-auto truncate max-w-[50%]">{step.error}</span>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {msg.plan.actions.map((action, i) => (
+                      <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium bg-white border border-slate-100 text-slate-500">
+                        <Circle size={14} className="text-slate-300" />
+                        <span className="flex-1">{action.description || action.type}</span>
+                      </div>
+                    ))}
                   </div>
-
-                  {msg.planPending && (
-                    <div className="flex gap-3 mt-2">
-                      <button
-                        onClick={() => onConfirm(msg.id)}
-                        disabled={loading}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white text-[13px] font-bold rounded-xl transition-colors shadow-sm"
-                      >
-                        <Check size={16} /> 실행
-                      </button>
-                      <button
-                        onClick={() => onReject(msg.id)}
-                        disabled={loading}
-                        className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 disabled:bg-slate-50 text-slate-600 text-[13px] font-bold rounded-xl transition-colors"
-                      >
-                        <X size={16} /> 취소
-                      </button>
-                    </div>
-                  )}
-
-                  {msg.executing && (
-                    <div className="flex items-center gap-3 text-blue-600 text-[13px] font-bold mt-1">
-                      <Loader2 size={16} className="animate-spin" />
-                      실행 중...
-                    </div>
-                  )}
+                  <div className="flex gap-3 mt-2">
+                    <button
+                      onClick={() => onConfirm(msg.id)}
+                      disabled={loading}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white text-[13px] font-bold rounded-xl transition-colors shadow-sm"
+                    >
+                      <Check size={16} /> 실행
+                    </button>
+                    <button
+                      onClick={() => onReject(msg.id)}
+                      disabled={loading}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 disabled:bg-slate-50 text-slate-600 text-[13px] font-bold rounded-xl transition-colors"
+                    >
+                      <X size={16} /> 취소
+                    </button>
+                  </div>
                 </div>
               )}
 

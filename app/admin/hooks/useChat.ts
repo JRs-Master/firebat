@@ -171,15 +171,16 @@ export function useChat(aiModel: string, onRefresh: () => void) {
 
         for (const ev of parsed.events) {
           if (ev.event === 'plan') {
+            const needsConfirm = ev.data.actions?.some((a: any) => ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type));
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
-                ? { ...msg, isThinking: false, thoughts: ev.data.thoughts, content: ev.data.reply, plan: ev.data, planPending: true, suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined }
+                ? { ...msg, isThinking: !needsConfirm, thoughts: ev.data.thoughts, content: ev.data.reply, plan: ev.data, planPending: needsConfirm, suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined }
                 : msg
             ));
           } else if (ev.event === 'step') {
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
-                ? { ...msg, planPending: false, executing: true, steps: [...(msg.steps || []), ev.data] }
+                ? { ...msg, planPending: false, executing: true, isThinking: true, steps: [...(msg.steps || []), ev.data], statusText: ev.data.description || '실행 중...' }
                 : msg
             ));
           } else if (ev.event === 'result') {
@@ -247,7 +248,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         for (const ev of parsed.events) {
           if (ev.event === 'step') {
             setMessages(prev => prev.map(m =>
-              m.id === msgId ? { ...m, steps: [...(m.steps || []), ev.data] } : m
+              m.id === msgId ? { ...m, steps: [...(m.steps || []), ev.data], statusText: ev.data.description || '실행 중...' } : m
             ));
           } else if (ev.event === 'result') {
             setMessages(prev => prev.map(m =>

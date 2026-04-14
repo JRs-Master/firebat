@@ -30,8 +30,22 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       };
 
+      const stepLabel = (type: string): string => {
+        switch (type) {
+          case 'EXECUTE': return '시스템 모듈을 불러오는 중';
+          case 'MCP_CALL': return '외부 서비스에 연결하는 중';
+          case 'NETWORK_REQUEST': return 'API를 호출하는 중';
+          case 'LLM_TRANSFORM': return '결과를 정리하는 중';
+          case 'WRITE_FILE': return '파일을 저장하는 중';
+          case 'SAVE_PAGE': return '페이지를 저장하는 중';
+          case 'DELETE_PAGE': return '페이지를 삭제하는 중';
+          case 'SCHEDULE_TASK': return '스케줄을 등록하는 중';
+          case 'CANCEL_TASK': return '스케줄을 해제하는 중';
+          default: return type;
+        }
+      };
       const result = await core.executePlan(plan, corrId, opts, (step) => {
-        send('step', step);
+        send('step', { ...step, description: stepLabel((step as any).type) });
       });
 
       send('result', result);

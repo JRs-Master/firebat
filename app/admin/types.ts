@@ -25,6 +25,7 @@ export type Message = {
   planPending?: boolean;
   steps?: StepStatus[];
   executing?: boolean;
+  statusText?: string;
   suggestions?: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[] })[];
 };
 
