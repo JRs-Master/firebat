@@ -376,11 +376,16 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
               {freqType === 'advanced' ? (
                 <div className="space-y-1.5">
                   <input value={advancedCron} onChange={e => setAdvancedCron(e.target.value)}
-                    placeholder="분 시 일 월 요일 (예: 0 9 1 * *)"
+                    placeholder="분 시 일 월 요일 (예: 0 9 * * *)"
                     className="w-full px-3 py-1.5 text-[12px] font-mono border border-slate-300 rounded-lg outline-none focus:border-blue-400" />
                   {advancedCron && (
                     <p className="text-[10px] text-blue-600 px-1">→ {describeCron(advancedCron)}</p>
                   )}
+                  <div className="text-[10px] text-slate-400 px-1 space-y-0.5">
+                    <p>형식: 분(0-59) 시(0-23) 일(1-31) 월(1-12) 요일(0-6, 0=일)</p>
+                    <p>* = 매번 · */N = N마다 · 1,3,5 = 특정 값</p>
+                    <p>0 9 * * * = 매일 9시 · 0 9 * * 1-5 = 평일 9시 · */30 * * * * = 30분마다</p>
+                  </div>
                 </div>
               ) : (
                 <>
