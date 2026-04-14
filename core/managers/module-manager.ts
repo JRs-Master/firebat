@@ -21,7 +21,7 @@ export class ModuleManager {
     private readonly vault: IVaultPort,
   ) {}
 
-  /** 경로 지정 직접 실행 (TEST_RUN, 파이프라인 등) */
+  /** 경로 지정 직접 실행 (EXECUTE, 파이프라인 등) */
   async execute(targetPath: string, inputData: any): Promise<InfraResult<any>> {
     return this.sandbox.execute(targetPath, inputData);
   }

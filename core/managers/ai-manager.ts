@@ -114,7 +114,7 @@ export class AiManager {
           return 0;
         });
 
-        lines.push(`[시스템 모듈] TEST_RUN으로 호출. path에 아래 경로 사용.\n${modInfos.join('\n')}`);
+        lines.push(`[시스템 모듈] EXECUTE으로 호출. path에 아래 경로 사용.\n${modInfos.join('\n')}`);
       }
     }
     const pages = await this.core.listPages();
@@ -280,12 +280,12 @@ export class AiManager {
             else finalDataList.push({ path: action.path, items: res.data });
             break;
           }
-          case 'TEST_RUN': {
+          case 'EXECUTE': {
             const res = await this.core.sandboxExecute(action.path, action.mockData);
             if (!res.success) {
-              executionError = `TEST_RUN 샌드박스 오류 (${action.path}): ${res.error}`;
+              executionError = `EXECUTE 샌드박스 오류 (${action.path}): ${res.error}`;
             } else if (res.data?.success === false) {
-              executionError = `TEST_RUN 모듈 로직 오류 (${action.path}): ${JSON.stringify(res.data)}. 코드를 수정하세요.`;
+              executionError = `EXECUTE 모듈 로직 오류 (${action.path}): ${JSON.stringify(res.data)}. 코드를 수정하세요.`;
             } else {
               finalDataList.push(res.data);
             }
@@ -641,10 +641,10 @@ export class AiManager {
         dataList.push({ path: action.path, items: res.data });
         return null;
       }
-      case 'TEST_RUN': {
+      case 'EXECUTE': {
         const res = await this.core.sandboxExecute(action.path, action.mockData);
-        if (!res.success) return `TEST_RUN 샌드박스 오류 (${action.path}): ${res.error}`;
-        if (res.data?.success === false) return `TEST_RUN 모듈 로직 오류 (${action.path}): ${JSON.stringify(res.data)}`;
+        if (!res.success) return `EXECUTE 샌드박스 오류 (${action.path}): ${res.error}`;
+        if (res.data?.success === false) return `EXECUTE 모듈 로직 오류 (${action.path}): ${JSON.stringify(res.data)}`;
         dataList.push(res.data);
         return null;
       }
@@ -754,7 +754,7 @@ READ_FILE: {"type":"READ_FILE","description":"파일 읽기","path":"user/module
 LIST_DIR: {"type":"LIST_DIR","description":"모듈 폴더 조회","path":"user/modules"}
 APPEND_FILE: {"type":"APPEND_FILE","description":"로그 추가","path":"user/modules/log/data.txt","content":"새 로그"}
 DELETE_FILE: {"type":"DELETE_FILE","description":"프로젝트 삭제","path":"user/modules/old-project"}
-TEST_RUN: {"type":"TEST_RUN","description":"날씨 모듈 테스트","path":"user/modules/weather/main.py","mockData":{"city":"Seoul"}}
+EXECUTE: {"type":"EXECUTE","description":"날씨 모듈 테스트","path":"user/modules/weather/main.py","mockData":{"city":"Seoul"}}
 NETWORK_REQUEST: {"type":"NETWORK_REQUEST","description":"API 호출","url":"https://api.example.com/data","method":"GET"}
 OPEN_URL: {"type":"OPEN_URL","description":"페이지 열기","url":"/bmi-calculator"}
 REQUEST_SECRET: {"type":"REQUEST_SECRET","description":"API 키 요청","name":"openweather-api-key","prompt":"OpenWeather API 키를 입력해주세요"}
@@ -766,7 +766,7 @@ LIST_TASKS: {"type":"LIST_TASKS","description":"스케줄 목록 조회"}
 ## 실행 요청
 기존 프로젝트 활용. 새 모듈 만들지 마라.
 - [DB 페이지]/[프로젝트] 목록에서 먼저 확인.
-- 즉시 실행: 페이지 → OPEN_URL, 모듈 → TEST_RUN.
+- 즉시 실행: 페이지 → OPEN_URL, 모듈 → EXECUTE.
 - 예약/반복: 기존 모듈/페이지 경로로 SCHEDULE_TASK. 페이지 URL도 targetPath에 넣을 수 있다.
 
 ## 앱/페이지 생성 — 3단계 공동 설계
@@ -794,7 +794,7 @@ user/modules/[name]/ 만. core/, infra/, system/, app/ 금지.
 - config.json 필수 (name, type, scope, runtime, packages, input, output).
 - API 키: config.json secrets 배열 등록 → 환경변수 자동 주입. 하드코딩 금지.
 - 미등록 키 → REQUEST_SECRET (다른 액션 앞에 배치). 키 이름은 kebab-case.
-- TEST_RUN mockData는 input 스펙에 맞는 실제 값.
+- EXECUTE mockData는 input 스펙에 맞는 실제 값.
 
 ## 스케줄링
 시간 기준: ${userTz}. 현재: ${new Date().toLocaleString('ko-KR', { timeZone: userTz })}
@@ -808,13 +808,13 @@ CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제. 새 모듈 만들지 마라.
 
 ### RUN_TASK (즉시 파이프라인 실행)
 "지금 바로 해줘" 류 복합 작업은 RUN_TASK. 예약이 아닌 즉시 실행.
-파이프라인 단계 type은 반드시 다음 4가지만 사용: TEST_RUN, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM.
-모듈 호출은 TEST_RUN(path=모듈 경로), 외부 API는 MCP_CALL 또는 NETWORK_REQUEST 사용.
+파이프라인 단계 type은 반드시 다음 4가지만 사용: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM.
+모듈 호출은 EXECUTE(path=모듈 경로), 외부 API는 MCP_CALL 또는 NETWORK_REQUEST 사용.
 사용자에게 결과를 보여줘야 하는 파이프라인은 마지막 단계를 LLM_TRANSFORM으로 끝내라. 파이프라인 결과가 곧 사용자 답변이 된다.
 모듈 경로·입출력은 [시스템 모듈] 목록 참조, MCP 도구는 [MCP 외부 도구] 목록 참조. 하드코딩 금지.
 예시 (경로·서버·도구는 실제 목록에서 선택):
 {"type":"RUN_TASK","description":"복합 작업","pipeline":[
-  {"type":"TEST_RUN","path":"<시스템 모듈 경로>","inputData":{"<입력키>":"<값>"}},
+  {"type":"EXECUTE","path":"<시스템 모듈 경로>","inputData":{"<입력키>":"<값>"}},
   {"type":"LLM_TRANSFORM","instruction":"결과를 사용자에게 보여줄 자연어로 요약."}
 ]}
 
@@ -826,11 +826,11 @@ CANCEL_TASK: LIST_TASKS로 jobId 확인 후 해제. 새 모듈 만들지 마라.
 {"type":"SCHEDULE_TASK","description":"복합 예약","title":"작업명","runAt":"2026-04-14T14:00:00","pipeline":[
   {"type":"MCP_CALL","server":"<서버명>","tool":"<도구명>","arguments":{}},
   {"type":"LLM_TRANSFORM","instruction":"결과 요약."},
-  {"type":"TEST_RUN","path":"<모듈 경로>","inputMap":{"text":"$prev"}}
+  {"type":"EXECUTE","path":"<모듈 경로>","inputMap":{"text":"$prev"}}
 ]}
 
 ## 시스템 모듈
-[시스템 모듈]에 경로·입출력·capability·providerType이 명시되어 있다. TEST_RUN의 path에 해당 경로를, inputData에 입력 형식을 그대로 사용.
+[시스템 모듈]에 경로·입출력·capability·providerType이 명시되어 있다. EXECUTE의 path에 해당 경로를, inputData에 입력 형식을 그대로 사용.
 같은 capability의 모듈이 여러 개면 반드시 [Capability 설정]의 모드에 따라 선택:
 - api-first(기본): 반드시 providerType=api 모듈을 먼저 사용. JS 렌더링이 필요하다고 판단해도 local 선택 금지. 실패하면 TaskManager가 자동 폴백한다.
 - local-first: providerType=local 우선, 실패 시 api 폴백

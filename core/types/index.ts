@@ -37,7 +37,7 @@ export const FirebatActionSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...actionBase,
-    type: z.literal('TEST_RUN'),
+    type: z.literal('EXECUTE'),
     path: z.string().describe('실행할 모듈 경로 (예: user/modules/web-search/index.js)'),
     mockData: z.any().optional().describe('주입할 임의의 테스트 파라미터')
   }),
@@ -57,9 +57,9 @@ export const FirebatActionSchema = z.discriminatedUnion('type', [
     targetPath: z.string().optional().describe('실행할 모듈 경로 (단순 모듈 실행 시)'),
     inputData: z.any().optional().describe('모듈에 전달할 입력 데이터 (targetPath 사용 시)'),
     pipeline: z.array(z.object({
-      type: z.string().describe('단계 타입: TEST_RUN | MCP_CALL | NETWORK_REQUEST | LLM_TRANSFORM'),
+      type: z.string().describe('단계 타입: EXECUTE | MCP_CALL | NETWORK_REQUEST | LLM_TRANSFORM'),
       description: z.string().optional().describe('단계 설명 (UI 표시용)'),
-      path: z.string().optional().describe('TEST_RUN 시 모듈 경로'),
+      path: z.string().optional().describe('EXECUTE 시 모듈 경로'),
       server: z.string().optional().describe('MCP_CALL 시 서버명'),
       tool: z.string().optional().describe('MCP_CALL 시 도구명'),
       arguments: z.record(z.string(), z.any()).optional().describe('MCP_CALL 시 인자'),
@@ -129,9 +129,9 @@ export const FirebatActionSchema = z.discriminatedUnion('type', [
     ...actionBase,
     type: z.literal('RUN_TASK'),
     pipeline: z.array(z.object({
-      type: z.string().describe('단계 타입: TEST_RUN | MCP_CALL | NETWORK_REQUEST | LLM_TRANSFORM'),
+      type: z.string().describe('단계 타입: EXECUTE | MCP_CALL | NETWORK_REQUEST | LLM_TRANSFORM'),
       description: z.string().optional().describe('단계 설명 (UI 표시용)'),
-      path: z.string().optional().describe('TEST_RUN 시 모듈 경로'),
+      path: z.string().optional().describe('EXECUTE 시 모듈 경로'),
       server: z.string().optional().describe('MCP_CALL 시 서버명'),
       tool: z.string().optional().describe('MCP_CALL 시 도구명'),
       arguments: z.record(z.string(), z.any()).optional().describe('MCP_CALL 시 인자'),
@@ -216,7 +216,7 @@ export interface CoreResult<T = any> {
   success: boolean;
   thoughts?: string;       // AI가 어떤 판단으로 이 결론에 도달했는지
   reply?: string;          // 사용자에게 보여줄 친절한 최종 안내 메시지
-  executedActions: string[]; // 수행된 작업들 목록 (예: ["WRITE_FILE", "TEST_RUN"])
+  executedActions: string[]; // 수행된 작업들 목록 (예: ["WRITE_FILE", "EXECUTE"])
   data?: T;                // 프론트엔드 화면에 꽂아줄 최종 비즈니스 데이터
   error?: string;          // 전체 실패 시 에러 사유
 }

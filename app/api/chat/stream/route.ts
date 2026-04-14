@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
       // 프론트엔드에는 요약 정보만 전송 — 타입 기반 고정 메시지
       const stepLabel = (type: string): string => {
         switch (type) {
-          case 'TEST_RUN': return '시스템 모듈을 불러오는 중';
+          case 'EXECUTE': return '시스템 모듈을 불러오는 중';
           case 'MCP_CALL': return '외부 서비스에 연결하는 중';
           case 'NETWORK_REQUEST': return 'API를 호출하는 중';
           case 'LLM_TRANSFORM': return '결과를 정리하는 중';

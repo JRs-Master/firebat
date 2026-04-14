@@ -26,8 +26,8 @@ export class TaskManager {
       const s = steps[i];
       const n = i + 1;
       switch (s.type) {
-        case 'TEST_RUN':
-          if (!s.path) return `[Step ${n}] TEST_RUN에 path가 없습니다.`;
+        case 'EXECUTE':
+          if (!s.path) return `[Step ${n}] EXECUTE에 path가 없습니다.`;
           break;
         case 'MCP_CALL':
           if (!s.server) return `[Step ${n}] MCP_CALL에 server가 없습니다.`;
@@ -62,7 +62,7 @@ export class TaskManager {
 
       try {
         switch (step.type) {
-          case 'TEST_RUN': {
+          case 'EXECUTE': {
             // Capability 모드에 따라 preferred provider로 자동 교체
             const resolvedPath = await this.resolvePreferredProvider(step.path!);
             if (resolvedPath !== step.path) {
@@ -77,7 +77,7 @@ export class TaskManager {
                 break;
               }
               onPipelineStep?.(i, 'error', res.error);
-              return { success: false, error: `[Pipeline Step ${i + 1}] TEST_RUN 실패: ${res.error}` };
+              return { success: false, error: `[Pipeline Step ${i + 1}] EXECUTE 실패: ${res.error}` };
             }
             prev = res.data;
             onPipelineStep?.(i, 'done');
@@ -141,7 +141,7 @@ export class TaskManager {
     return path; // 대체가 없으면 그대로
   }
 
-  /** TEST_RUN 실패 시 같은 capability의 대체 provider 자동 폴백 */
+  /** EXECUTE 실패 시 같은 capability의 대체 provider 자동 폴백 */
   private async tryFallbackProvider(failedPath: string, input: any): Promise<{ data: any } | null> {
     const cache = await this.getCapabilityCache();
     const failed = cache.get(failedPath);

@@ -155,7 +155,7 @@ export class FirebatCore {
     return this.module.run(moduleName, inputData);
   }
 
-  /** 경로 지정 직접 실행 (TEST_RUN, 파이프라인 등) */
+  /** 경로 지정 직접 실행 (EXECUTE, 파이프라인 등) */
   async sandboxExecute(targetPath: string, inputData: any) {
     return this.module.execute(targetPath, inputData);
   }
