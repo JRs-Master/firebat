@@ -145,7 +145,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
                 ))}
               </div>
               <button onClick={() => handleToggleSubmit(i, item.label)} disabled={loading || selected.size === 0}
-                className="mt-2.5 px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-[12px] font-medium rounded-full transition-colors disabled:opacity-40">
+                className="self-end mt-2.5 px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-[12px] font-medium rounded-full transition-colors disabled:opacity-40">
                 선택 완료 ({selected.size}개)
               </button>
             </div>
