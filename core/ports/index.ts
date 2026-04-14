@@ -81,6 +81,7 @@ export interface INetworkPort {
 /** 파이프라인 단계 정의 */
 export interface PipelineStep {
   type: string;         // TEST_RUN | MCP_CALL | NETWORK_REQUEST | LLM_TRANSFORM
+  description?: string; // 단계 설명 (UI 표시용)
   path?: string;        // TEST_RUN 시 모듈 경로
   server?: string;      // MCP_CALL 시 서버명
   tool?: string;        // MCP_CALL 시 도구명
