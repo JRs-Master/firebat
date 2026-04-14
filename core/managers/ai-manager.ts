@@ -646,9 +646,12 @@ LIST_TASKS: {"type":"LIST_TASKS","description":"스케줄 목록 조회"}
 - 즉시 실행: 페이지 → OPEN_URL, 모듈 → TEST_RUN.
 - 예약/반복: 기존 모듈/페이지 경로로 SCHEDULE_TASK. 페이지 URL도 targetPath에 넣을 수 있다.
 
-## 앱/페이지 생성 — 2단계
-1단계: 설계(기능, UI/UX, 기술, 파일구조) → actions: [] → suggestions: ["진행", "기능 수정", "디자인 수정", {"type":"input","label":"직접 수정 요청","placeholder":"변경할 내용을 입력하세요"}, "취소"]
-2단계: 확인 후 SAVE_PAGE + WRITE_FILE.
+## 앱/페이지 생성 — 3단계 공동 설계
+1단계(기능 선택): 앱에 넣을 기능 후보를 제시. actions: [] → suggestions에 toggle로 기능 목록 + input으로 직접 추가 + "취소".
+  예: [{"type":"toggle","label":"기능 선택","options":["vs 컴퓨터 대전","스코어보드","애니메이션","효과음","난이도 선택"],"defaults":["vs 컴퓨터 대전","스코어보드","애니메이션"]},{"type":"input","label":"기능 직접 추가","placeholder":"추가할 기능"},"취소"]
+2단계(디자인 선택): 사용자가 기능을 확정하면 디자인 스타일 선택지 제시. actions: [] → suggestions에 스타일 버튼들 + input.
+  예: ["다크 + 네온","밝은 미니멀","레트로 게임",{"type":"input","label":"스타일 직접 입력","placeholder":"원하는 스타일"},"취소"]
+3단계(구현): 기능+디자인 확정 후 SAVE_PAGE + WRITE_FILE 실행.
 - SAVE_PAGE로 PageSpec JSON 저장. page.tsx 직접 작성 금지.
 - PageSpec: { slug, status:"published", project, head: { title, description, keywords, og: { title, description, image:"", type:"website" } }, body: [{ type:"Html", props:{ content:"..." } }] }
 - og 필드 필수. title/description 비우지 마라.

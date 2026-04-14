@@ -25,7 +25,7 @@ export type Message = {
   planPending?: boolean;
   steps?: StepStatus[];
   executing?: boolean;
-  suggestions?: (string | { type: 'input'; label: string; placeholder?: string })[];
+  suggestions?: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[] })[];
 };
 
 export type Conversation = ConversationMeta & { messages: Message[] };

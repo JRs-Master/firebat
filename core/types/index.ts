@@ -147,7 +147,13 @@ export const FirebatPlanSchema = z.object({
       label: z.string().describe('버튼에 표시할 텍스트 (예: "다른 시간 지정")'),
       placeholder: z.string().optional().describe('입력 필드 힌트 (예: "오후 2시 30분")'),
     }),
-  ])).default([]).describe('사용자에게 제시할 선택지. 문자열=버튼, {type:"input"}=클릭 시 텍스트 입력 필드 표시.')
+    z.object({
+      type: z.literal('toggle'),
+      label: z.string().describe('그룹 제목 (예: "기능 선택")'),
+      options: z.array(z.string()).describe('토글 옵션 목록'),
+      defaults: z.array(z.string()).optional().describe('기본 선택된 옵션 목록'),
+    }),
+  ])).default([]).describe('사용자에게 제시할 선택지. 문자열=버튼, {type:"input"}=텍스트 입력, {type:"toggle"}=다중 선택 토글.')
 });
 
 export type FirebatAction = z.infer<typeof FirebatActionSchema>;
