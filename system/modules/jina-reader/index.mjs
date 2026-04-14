@@ -1,19 +1,16 @@
 /**
- * Firebat System Module: jina-reader
- * Jina Reader API 기반 웹 스크래퍼
+ * Firebat System Module: jina-reader (web-scrape)
+ * 직접 fetch 기반 웹 스크래퍼
  *
  * [INPUT]  stdin JSON: {
  *           "correlationId": "...",
- *           "data": { "url": "string" }
+ *           "data": { "url": "string", "selector?": "string" }
  *         }
  * [OUTPUT] stdout JSON: {
  *           "success": true,
  *           "data": { "url": "...", "title": "...", "text": "..." }
  *         }
  *         또는 { "success": false, "error": "..." }
- *
- * Jina Reader 무료 티어: API 키 없이 사용 가능 (rate limit 있음).
- * API 키가 있으면 rate limit 완화.
  */
 
 let raw = '';
@@ -30,15 +27,12 @@ process.stdin.on('end', async () => {
     }
 
     const headers = {
-      'Accept': 'text/html',
-      'X-Return-Format': 'html',
-      'X-Wait-For-Selector': 'body',
-      'X-Timeout': '30',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml',
+      'Accept-Language': 'ko-KR,ko;q=0.9',
     };
-    const apiKey = process.env['JINA_API_KEY'];
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
 
-    const resp = await fetch(`https://r.jina.ai/${url}`, { headers, signal: AbortSignal.timeout(25000) });
+    const resp = await fetch(url, { headers, signal: AbortSignal.timeout(25000), redirect: 'follow' });
 
     if (!resp.ok) {
       console.log(JSON.stringify({ success: false, error: `Jina API ${resp.status}: ${resp.statusText}` }));

@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Jina Reader API 기반 웹 스크래퍼. URL → HTML 원본 반환. 서버 리소스 제로.",
+  "description": "웹 스크래퍼. URL → 텍스트 추출. 서버 리소스 제로.",
   "runtime": "node",
   "capability": "web-scrape",
   "providerType": "api",
@@ -15,6 +15,6 @@
   "output": {
     "url": "string — 최종 URL",
     "title": "string — 페이지 제목",
-    "text": "string — HTML 원본 텍스트"
+    "text": "string — 추출된 텍스트 (selector 사용 시 HTML)"
   }
 }
