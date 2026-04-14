@@ -317,7 +317,7 @@ export default function AdminConsole() {
                     <span className="ml-1 opacity-70">줄바꿈</span>
                   </div>
                   <button
-                    onClick={handleSubmit}
+                    onClick={() => handleSubmit()}
                     disabled={!input.trim() || loading}
                     className="bg-slate-900 hover:bg-black disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white h-10 w-12 rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]"
                   >
