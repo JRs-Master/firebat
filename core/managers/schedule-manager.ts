@@ -22,7 +22,38 @@ export class ScheduleManager {
   // ── 크론 CRUD ──
 
   async schedule(jobId: string, targetPath: string, opts: CronScheduleOptions): Promise<InfraResult<void>> {
+    // 파이프라인 사전 검증
+    if (opts.pipeline && opts.pipeline.length > 0) {
+      const err = this.validatePipeline(opts.pipeline);
+      if (err) return { success: false, error: err };
+    }
     return this.cron.schedule(jobId, targetPath, opts);
+  }
+
+  /** 파이프라인 등록 전 필수 필드 검증 */
+  private validatePipeline(steps: PipelineStep[]): string | null {
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      const n = i + 1;
+      switch (s.type) {
+        case 'TEST_RUN':
+          if (!s.path) return `[Step ${n}] TEST_RUN에 path가 없습니다.`;
+          break;
+        case 'MCP_CALL':
+          if (!s.server) return `[Step ${n}] MCP_CALL에 server가 없습니다.`;
+          if (!s.tool) return `[Step ${n}] MCP_CALL에 tool이 없습니다.`;
+          break;
+        case 'NETWORK_REQUEST':
+          if (!s.url) return `[Step ${n}] NETWORK_REQUEST에 url이 없습니다.`;
+          break;
+        case 'LLM_TRANSFORM':
+          if (!s.instruction) return `[Step ${n}] LLM_TRANSFORM에 instruction이 없습니다.`;
+          break;
+        default:
+          return `[Step ${n}] 알 수 없는 단계 타입: ${s.type}`;
+      }
+    }
+    return null;
   }
 
   async cancel(jobId: string): Promise<InfraResult<void>> {
