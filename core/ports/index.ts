@@ -167,6 +167,10 @@ export interface IDatabasePort {
   listPagesByProject(project: string): Promise<InfraResult<string[]>>;
   /** 프로젝트 단위 일괄 삭제 */
   deletePagesByProject(project: string): Promise<InfraResult<string[]>>;
+  /** 페이지 visibility 설정 (public/password/private) */
+  setPageVisibility(slug: string, visibility: 'public' | 'password' | 'private', password?: string): Promise<InfraResult<void>>;
+  /** 페이지 비밀번호 검증 */
+  verifyPagePassword(slug: string, password: string): Promise<InfraResult<boolean>>;
 }
 
 export interface IVaultPort {

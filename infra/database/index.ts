@@ -27,10 +27,15 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )
     `);
-    // project 컬럼이 없으면 추가 (기존 DB 마이그레이션)
-    try {
-      this.db.exec(`ALTER TABLE pages ADD COLUMN project TEXT`);
-    } catch { /* 이미 존재하면 무시 */ }
+    // 기존 DB 마이그레이션 — 컬럼 없으면 추가
+    const migrations = [
+      'ALTER TABLE pages ADD COLUMN project TEXT',
+      "ALTER TABLE pages ADD COLUMN visibility TEXT DEFAULT 'public'",
+      'ALTER TABLE pages ADD COLUMN password TEXT',
+    ];
+    for (const sql of migrations) {
+      try { this.db.exec(sql); } catch { /* 이미 존재하면 무시 */ }
+    }
   }
 
   async query(queryPayload: any, options?: any): Promise<InfraResult<any>> {
@@ -59,14 +64,14 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
   async listPages(): Promise<InfraResult<any[]>> {
     try {
       const rows = this.db.prepare(
-        `SELECT slug, status, spec, updated_at as updatedAt FROM pages ORDER BY updated_at DESC`
+        `SELECT slug, status, spec, visibility, updated_at as updatedAt FROM pages ORDER BY updated_at DESC`
       ).all() as any[];
       const list = rows.map(r => {
         try {
           const parsed = JSON.parse(r.spec);
-          return { slug: r.slug, status: r.status, title: parsed.head?.title ?? r.slug, project: parsed.project ?? null, updatedAt: r.updatedAt };
+          return { slug: r.slug, status: r.status, title: parsed.head?.title ?? r.slug, project: parsed.project ?? null, visibility: r.visibility ?? 'public', updatedAt: r.updatedAt };
         } catch {
-          return { slug: r.slug, status: r.status, title: r.slug, project: null, updatedAt: r.updatedAt };
+          return { slug: r.slug, status: r.status, title: r.slug, project: null, visibility: r.visibility ?? 'public', updatedAt: r.updatedAt };
         }
       });
       return { success: true, data: list };
@@ -77,9 +82,12 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
 
   async getPage(slug: string): Promise<InfraResult<any>> {
     try {
-      const row = this.db.prepare(`SELECT spec FROM pages WHERE slug = ?`).get(slug) as { spec: string } | undefined;
+      const row = this.db.prepare(`SELECT spec, visibility, password FROM pages WHERE slug = ?`).get(slug) as { spec: string; visibility: string; password: string | null } | undefined;
       if (!row) return { success: false, error: `Page not found: ${slug}` };
-      return { success: true, data: JSON.parse(row.spec) };
+      const parsed = JSON.parse(row.spec);
+      parsed._visibility = row.visibility ?? 'public';
+      parsed._hasPassword = !!row.password;
+      return { success: true, data: parsed };
     } catch (err: any) {
       return { success: false, error: err.message };
     }
@@ -100,6 +108,30 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
           updated_at = CURRENT_TIMESTAMP
       `).run(slug, spec, status, project);
       return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /** 페이지 visibility 설정 */
+  async setPageVisibility(slug: string, visibility: 'public' | 'password' | 'private', password?: string): Promise<InfraResult<void>> {
+    try {
+      const row = this.db.prepare(`SELECT slug FROM pages WHERE slug = ?`).get(slug);
+      if (!row) return { success: false, error: `Page not found: ${slug}` };
+      this.db.prepare(`UPDATE pages SET visibility = ?, password = ? WHERE slug = ?`)
+        .run(visibility, visibility === 'password' ? (password ?? null) : null, slug);
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /** 페이지 비밀번호 검증 */
+  async verifyPagePassword(slug: string, password: string): Promise<InfraResult<boolean>> {
+    try {
+      const row = this.db.prepare(`SELECT password FROM pages WHERE slug = ?`).get(slug) as { password: string | null } | undefined;
+      if (!row) return { success: false, error: `Page not found: ${slug}` };
+      return { success: true, data: row.password === password };
     } catch (err: any) {
       return { success: false, error: err.message };
     }

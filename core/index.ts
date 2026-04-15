@@ -45,7 +45,7 @@ export class FirebatCore {
     // 매니저 생성 — 각 매니저는 자기 도메인의 인프라 포트를 직접 받음
     this.storage = new StorageManager(infra.storage);
     this.page = new PageManager(infra.database, infra.storage);
-    this.project = new ProjectManager(infra.storage, infra.database);
+    this.project = new ProjectManager(infra.storage, infra.database, infra.vault);
     this.module = new ModuleManager(infra.sandbox, infra.storage, infra.vault);
     this.secret = new SecretManager(infra.vault, infra.storage);
     this.mcp = new McpManager(infra.mcpClient);
@@ -138,11 +138,40 @@ export class FirebatCore {
 
   async listStaticPages() { return this.page.listStatic(); }
 
+  /** 페이지 visibility 설정 */
+  async setPageVisibility(slug: string, visibility: 'public' | 'password' | 'private', password?: string) {
+    const res = await this.page.setVisibility(slug, visibility, password);
+    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    return res;
+  }
+
+  /** 페이지 비밀번호 검증 */
+  async verifyPagePassword(slug: string, password: string) {
+    return this.page.verifyPassword(slug, password);
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   //  프로젝트 → ProjectManager + SSE
   // ══════════════════════════════════════════════════════════════════════════
 
   async scanProjects() { return this.project.scan(); }
+
+  /** 프로젝트 visibility 설정 */
+  setProjectVisibility(project: string, visibility: 'public' | 'password' | 'private', password?: string) {
+    this.project.setVisibility(project, visibility, password);
+    eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    return { success: true };
+  }
+
+  /** 프로젝트 visibility 조회 */
+  getProjectVisibility(project: string) {
+    return this.project.getVisibility(project);
+  }
+
+  /** 프로젝트 비밀번호 검증 */
+  verifyProjectPassword(project: string, password: string) {
+    return this.project.verifyPassword(project, password);
+  }
 
   async deleteProject(project: string) {
     const res = await this.project.delete(project);

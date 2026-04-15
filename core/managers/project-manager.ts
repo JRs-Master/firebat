@@ -1,10 +1,13 @@
-import type { IStoragePort, IDatabasePort } from '../ports';
+import type { IStoragePort, IDatabasePort, IVaultPort } from '../ports';
 import type { InfraResult } from '../types';
+
+export type ProjectVisibility = 'public' | 'password' | 'private';
 
 export interface ProjectEntry {
   name: string;
   paths: string[];
   pageSlugs: string[];
+  visibility?: ProjectVisibility;
 }
 
 /**
@@ -17,6 +20,7 @@ export class ProjectManager {
   constructor(
     private readonly storage: IStoragePort,
     private readonly database: IDatabasePort,
+    private readonly vault: IVaultPort,
   ) {}
 
   /** 프로젝트 목록 스캔 (user/modules + DB pages) */
@@ -62,7 +66,10 @@ export class ProjectManager {
       }
     }
 
-    return Object.entries(map).map(([name, { paths, pageSlugs }]) => ({ name, paths, pageSlugs }));
+    return Object.entries(map).map(([name, { paths, pageSlugs }]) => ({
+      name, paths, pageSlugs,
+      visibility: this.getVisibility(name),
+    }));
   }
 
   /** 프로젝트 일괄 삭제 */
@@ -84,5 +91,29 @@ export class ProjectManager {
     }
 
     return { success: true, data: { paths: entry.paths, pages: deletedPages } };
+  }
+
+  /** 프로젝트 visibility 조회 */
+  getVisibility(project: string): ProjectVisibility {
+    const raw = this.vault.getSecret(`system:project:${project}:visibility`);
+    if (raw === 'private' || raw === 'password') return raw;
+    return 'public';
+  }
+
+  /** 프로젝트 visibility 설정 */
+  setVisibility(project: string, visibility: ProjectVisibility, password?: string): boolean {
+    this.vault.setSecret(`system:project:${project}:visibility`, visibility);
+    if (visibility === 'password' && password) {
+      this.vault.setSecret(`system:project:${project}:password`, password);
+    } else {
+      this.vault.deleteSecret(`system:project:${project}:password`);
+    }
+    return true;
+  }
+
+  /** 프로젝트 비밀번호 검증 */
+  verifyPassword(project: string, password: string): boolean {
+    const stored = this.vault.getSecret(`system:project:${project}:password`);
+    return stored === password;
   }
 }

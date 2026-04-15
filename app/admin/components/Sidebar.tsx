@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Loader2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock } from 'lucide-react';
+import { FolderTree, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Loader2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 
-interface Project { name: string; paths: string[]; pageSlugs?: string[]; }
-interface PageInfo { slug: string; title: string; status: string; updatedAt: string; project?: string | null; }
-interface MergedProject { name: string; paths: string[]; pages: PageInfo[]; }
+interface Project { name: string; paths: string[]; pageSlugs?: string[]; visibility?: string; }
+interface PageInfo { slug: string; title: string; status: string; updatedAt: string; project?: string | null; visibility?: string; }
+interface MergedProject { name: string; paths: string[]; pages: PageInfo[]; visibility?: string; }
 
 export type ConversationMeta = {
   id: string;
@@ -56,6 +56,9 @@ export function Sidebar({
   const [schedulingModule, setSchedulingModule] = useState<{ jobId: string; targetPath: string; pageSlugs?: string[] } | null>(null);
   // 모듈 경로 → 엔트리 파일명 캐시 (예: "user/modules/weather" → "main.py")
   const [moduleEntries, setModuleEntries] = useState<Record<string, string>>({});
+  // ⋯ 더보기 드롭다운 열린 항목 ID
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const ENTRY_FILES = ['main.py', 'index.js', 'index.mjs', 'main.php', 'main.sh'];
 
@@ -140,6 +143,48 @@ export function Sidebar({
     return () => { es?.close(); };
   }, []);
 
+  // ⋯ 메뉴 외부 클릭 닫기
+  useEffect(() => {
+    if (!openMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenu(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [openMenu]);
+
+  // 페이지 visibility 토글 (public ↔ private)
+  const handleTogglePageVisibility = async (slug: string, currentVis: string) => {
+    const next = currentVis === 'public' ? 'private' : 'public';
+    try {
+      await fetch(`/api/pages/${encodeURIComponent(slug)}/visibility`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visibility: next }),
+      });
+      fetchPages();
+    } catch {}
+    setOpenMenu(null);
+    setSelectedItem(null);
+  };
+
+  // 프로젝트 visibility 토글 (public ↔ private)
+  const handleToggleProjectVisibility = async (name: string, currentVis: string) => {
+    const next = currentVis === 'public' ? 'private' : 'public';
+    try {
+      await fetch('/api/fs/projects', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: name, visibility: next }),
+      });
+      refreshAll();
+    } catch {}
+    setOpenMenu(null);
+    setSelectedItem(null);
+  };
+
   // 모듈 엔트리 파일 열기 (캐시된 엔트리 정보 활용)
   const handleOpenModule = (modulePath: string) => {
     if (!onEditFile) return;
@@ -196,7 +241,7 @@ export function Sidebar({
   const mergedProjects: MergedProject[] = (() => {
     const map = new Map<string, MergedProject>();
     for (const p of projects) {
-      map.set(p.name, { name: p.name, paths: p.paths, pages: [] });
+      map.set(p.name, { name: p.name, paths: p.paths, pages: [], visibility: p.visibility });
     }
     const orphanPages: PageInfo[] = [];
     for (const pg of pages) {
@@ -387,27 +432,17 @@ export function Sidebar({
                             {isSingle ? (mainSlug ?? mp.name) : mp.name}
                           </span>
 
-                          {/* 액션 아이콘: PC=호버, 모바일=선택 시 표시 */}
+                          {/* 액션 아이콘: 열기 + ⋯ 더보기 */}
                           <span className={`flex items-center gap-0.5 shrink-0 justify-end transition-opacity ${
                             isMobile ? (isSelected ? 'opacity-100' : 'opacity-0 pointer-events-none') : 'opacity-0 group-hover:opacity-100'
                           }`}>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                let target = '';
-                                if (mp.paths.length > 0) {
-                                  const modPath = mp.paths[0];
-                                  const entry = moduleEntries[modPath] || 'main.py';
-                                  target = `${modPath}/${entry}`;
-                                }
-                                setSchedulingModule({ jobId: mp.name, targetPath: target, pageSlugs: mp.pages.map(p => p.slug) });
-                                setSelectedItem(null);
-                              }}
-                              className="p-1 rounded text-slate-400 hover:text-amber-500 hover:bg-amber-50 active:bg-amber-100 transition-colors"
-                              title="스케줄"
-                            >
-                              <Clock size={11} />
-                            </button>
+                            {/* visibility 아이콘 (비공개/비밀번호일 때만) */}
+                            {(mp.visibility === 'private' || (isSingle && mainSlug && mp.pages[0]?.visibility === 'private')) && (
+                              <EyeOff size={10} className="text-slate-400 shrink-0" />
+                            )}
+                            {(mp.visibility === 'password' || (isSingle && mainSlug && mp.pages[0]?.visibility === 'password')) && (
+                              <Lock size={10} className="text-slate-400 shrink-0" />
+                            )}
                             {mainSlug && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); window.open(`/${mainSlug}`, '_blank'); setSelectedItem(null); }}
@@ -417,34 +452,86 @@ export function Sidebar({
                                 <ExternalLink size={11} />
                               </button>
                             )}
-                            {!isMobile && isSingle && mainSlug && (
+                            <div className="relative" ref={openMenu === `proj:${mp.name}` ? menuRef : undefined}>
                               <button
-                                onClick={(e) => { e.stopPropagation(); handleEditPage(mainSlug); setSelectedItem(null); }}
-                                className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 active:bg-amber-100 transition-colors"
-                                title="편집"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenMenu(openMenu === `proj:${mp.name}` ? null : `proj:${mp.name}`);
+                                }}
+                                className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                                title="더보기"
                               >
-                                <Pencil size={11} />
+                                <MoreHorizontal size={11} />
                               </button>
-                            )}
-                            {isSingle && mainSlug ? (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDeletePage(mainSlug); setSelectedItem(null); }}
-                                disabled={deletingPage === mainSlug}
-                                className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 active:bg-red-100 transition-colors disabled:opacity-40"
-                                title="삭제"
-                              >
-                                {deletingPage === mainSlug ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
-                              </button>
-                            ) : (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleDeleteProject(mp.name); setSelectedItem(null); }}
-                                disabled={deletingProject === mp.name}
-                                className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 active:bg-red-100 transition-colors disabled:opacity-40"
-                                title="프로젝트 삭제"
-                              >
-                                {deletingProject === mp.name ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
-                              </button>
-                            )}
+                              {openMenu === `proj:${mp.name}` && (
+                                <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50">
+                                  {isSingle && mainSlug && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleEditPage(mainSlug); setOpenMenu(null); setSelectedItem(null); }}
+                                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
+                                    >
+                                      <Pencil size={11} /> 편집
+                                    </button>
+                                  )}
+                                  {isSingle && mainSlug ? (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleTogglePageVisibility(mainSlug, mp.pages[0]?.visibility ?? 'public');
+                                      }}
+                                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
+                                    >
+                                      {(mp.pages[0]?.visibility ?? 'public') === 'public' ? <><EyeOff size={11} /> 비공개</> : <><Eye size={11} /> 공개</>}
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleToggleProjectVisibility(mp.name, mp.visibility ?? 'public');
+                                      }}
+                                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
+                                    >
+                                      {(mp.visibility ?? 'public') === 'public' ? <><EyeOff size={11} /> 비공개</> : <><Eye size={11} /> 공개</>}
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      let target = '';
+                                      if (mp.paths.length > 0) {
+                                        const modPath = mp.paths[0];
+                                        const entry = moduleEntries[modPath] || 'main.py';
+                                        target = `${modPath}/${entry}`;
+                                      }
+                                      setSchedulingModule({ jobId: mp.name, targetPath: target, pageSlugs: mp.pages.map(p => p.slug) });
+                                      setOpenMenu(null);
+                                      setSelectedItem(null);
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
+                                  >
+                                    <Clock size={11} /> 스케줄
+                                  </button>
+                                  <div className="border-t border-slate-100 my-0.5" />
+                                  {isSingle && mainSlug ? (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleDeletePage(mainSlug); setOpenMenu(null); setSelectedItem(null); }}
+                                      disabled={deletingPage === mainSlug}
+                                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+                                    >
+                                      <Trash2 size={11} /> 삭제
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleDeleteProject(mp.name); setOpenMenu(null); setSelectedItem(null); }}
+                                      disabled={deletingProject === mp.name}
+                                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+                                    >
+                                      <Trash2 size={11} /> 프로젝트 삭제
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </span>
                         </div>
 
@@ -474,6 +561,8 @@ export function Sidebar({
                                     <span className={`flex items-center gap-0.5 shrink-0 transition-opacity ${
                                       isMobile ? (pgSelected ? 'opacity-100' : 'opacity-0 pointer-events-none') : 'opacity-0 group-hover:opacity-100'
                                     }`}>
+                                      {pg.visibility === 'private' && <EyeOff size={9} className="text-slate-400 shrink-0" />}
+                                      {pg.visibility === 'password' && <Lock size={9} className="text-slate-400 shrink-0" />}
                                       <button
                                         onClick={(e) => { e.stopPropagation(); window.open(`/${pg.slug}`, '_blank'); setSelectedItem(null); }}
                                         className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors"
@@ -481,23 +570,45 @@ export function Sidebar({
                                       >
                                         <ExternalLink size={10} />
                                       </button>
-                                      {!isMobile && (
+                                      <div className="relative" ref={openMenu === `page:${pg.slug}` ? menuRef : undefined}>
                                         <button
-                                          onClick={(e) => { e.stopPropagation(); handleEditPage(pg.slug); setSelectedItem(null); }}
-                                          className="p-0.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 active:bg-amber-100 transition-colors"
-                                          title="편집"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setOpenMenu(openMenu === `page:${pg.slug}` ? null : `page:${pg.slug}`);
+                                          }}
+                                          className="p-0.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                                          title="더보기"
                                         >
-                                          <Pencil size={10} />
+                                          <MoreHorizontal size={10} />
                                         </button>
-                                      )}
-                                      <button
-                                        onClick={(e) => { e.stopPropagation(); handleDeletePage(pg.slug); setSelectedItem(null); }}
-                                        disabled={deletingPage === pg.slug}
-                                        className="p-0.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 active:bg-red-100 transition-colors disabled:opacity-40"
-                                        title="삭제"
-                                      >
-                                        {deletingPage === pg.slug ? <Loader2 size={10} className="animate-spin" /> : <Trash2 size={10} />}
-                                      </button>
+                                        {openMenu === `page:${pg.slug}` && (
+                                          <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50">
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); handleEditPage(pg.slug); setOpenMenu(null); setSelectedItem(null); }}
+                                              className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
+                                            >
+                                              <Pencil size={10} /> 편집
+                                            </button>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleTogglePageVisibility(pg.slug, pg.visibility ?? 'public');
+                                              }}
+                                              className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
+                                            >
+                                              {(pg.visibility ?? 'public') === 'public' ? <><EyeOff size={10} /> 비공개</> : <><Eye size={10} /> 공개</>}
+                                            </button>
+                                            <div className="border-t border-slate-100 my-0.5" />
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); handleDeletePage(pg.slug); setOpenMenu(null); setSelectedItem(null); }}
+                                              disabled={deletingPage === pg.slug}
+                                              className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+                                            >
+                                              <Trash2 size={10} /> 삭제
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
                                     </span>
                                   </div>
                                 </div>
@@ -534,13 +645,36 @@ export function Sidebar({
                                           <Pencil size={10} />
                                         </button>
                                       )}
-                                      <button
-                                        onClick={(e) => { e.stopPropagation(); handleDeleteModule(p); setSelectedItem(null); }}
-                                        className="p-0.5 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 active:bg-red-100 transition-colors"
-                                        title="삭제"
-                                      >
-                                        <Trash2 size={10} />
-                                      </button>
+                                      <div className="relative" ref={openMenu === `mod:${p}` ? menuRef : undefined}>
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setOpenMenu(openMenu === `mod:${p}` ? null : `mod:${p}`);
+                                          }}
+                                          className="p-0.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                                          title="더보기"
+                                        >
+                                          <MoreHorizontal size={10} />
+                                        </button>
+                                        {openMenu === `mod:${p}` && (
+                                          <div className="absolute right-0 top-full mt-1 w-28 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50">
+                                            {isMobile && (
+                                              <button
+                                                onClick={(e) => { e.stopPropagation(); handleOpenModule(p); setOpenMenu(null); setSelectedItem(null); }}
+                                                className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
+                                              >
+                                                <Pencil size={10} /> 편집
+                                              </button>
+                                            )}
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); handleDeleteModule(p); setOpenMenu(null); setSelectedItem(null); }}
+                                              className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-red-500 hover:bg-red-50 transition-colors"
+                                            >
+                                              <Trash2 size={10} /> 삭제
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
                                     </span>
                                   </div>
                                 </div>

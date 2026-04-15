@@ -37,10 +37,11 @@ export function proxy(request: NextRequest) {
     }
   }
 
-  // ── /api/auth — 로그인/로그아웃은 인증 불필요 ──
-  if (pathname.startsWith('/api/auth')) {
-    return NextResponse.next();
-  }
+  // ── 인증 불필요 엔드포인트 ──
+  if (pathname.startsWith('/api/auth')) return NextResponse.next();
+  // 비밀번호 보호 페이지/프로젝트 검증 (비인증 사용자용)
+  if (pathname.match(/^\/api\/pages\/[^/]+\/visibility$/) && request.method === 'POST') return NextResponse.next();
+  if (pathname === '/api/fs/projects/verify') return NextResponse.next();
 
   // ── /api/* — 쿠키 또는 Bearer 없으면 401 ──
   if (pathname.startsWith('/api/')) {

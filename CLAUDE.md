@@ -48,6 +48,28 @@
 - 프로젝트에 페이지 + 모듈(.py 등) 통합 표시
 - 모듈 클릭 → FileEditor(모나코 + AI 코드 어시스턴트) 열림
 - 모바일: 탭→선택→아이콘 표시, PC: 호버 방식
+- **버튼 통합 (v0.1, 2026-04-15)**: 열기(ExternalLink) + ⋯(MoreHorizontal) 드롭다운으로 정리
+  - 드롭다운 메뉴: 편집, 공개/비공개 토글, 스케줄, 삭제
+  - visibility 아이콘: 비공개(EyeOff), 비밀번호(Lock) 항목명 옆에 표시
+  - 외부 클릭 시 메뉴 자동 닫힘
+
+### Visibility 시스템 (v0.1, 2026-04-15)
+- **3단계 공개 설정**: public(공개), password(비밀번호), private(비공개/404)
+- **페이지 visibility**: DB `pages` 테이블 `visibility`/`password` 컬럼, `setPageVisibility()` API
+- **프로젝트 visibility**: Vault `system:project:{name}:visibility` / `system:project:{name}:password`
+- **상속 체인**: 페이지 자체 설정 → 프로젝트 상속 → 기본 public
+- **접근 제어** (`app/(user)/[slug]/page.tsx`):
+  - private → `notFound()` (404)
+  - password → 쿠키 검증 (`fp_{slug}` 또는 `fp_{project}`) → 미인증 시 `PasswordGate` 표시
+  - `PasswordGate`: 클라이언트 비밀번호 입력 → API 검증 → 쿠키 저장(24시간) → `router.refresh()`
+- **SEO 필터링**: sitemap, RSS feed에서 비공개 페이지 제외
+- **메타데이터**: private → 최소화, password → `noindex, nofollow`
+- **proxy.ts**: 비밀번호 검증 엔드포인트 인증 면제 (`/api/pages/:slug/visibility` POST, `/api/fs/projects/verify` POST)
+- **API**:
+  - `PATCH /api/pages/:slug/visibility` — 페이지 visibility 변경 (관리자)
+  - `POST /api/pages/:slug/visibility` — 페이지 비밀번호 검증 (비인증)
+  - `PATCH /api/fs/projects` — 프로젝트 visibility 변경 (관리자)
+  - `POST /api/fs/projects/verify` — 프로젝트 비밀번호 검증 (비인증)
 
 ### AI 실행 (v0.1, 2026-04-12)
 - OPEN_URL 자동 팝업 제거 → 미리보기 버튼으로 변경
@@ -368,7 +390,10 @@
 - `app/api/mcp/tools/route.ts` — MCP 도구 목록/실행 API
 - `app/api/mcp/tokens/route.ts` — MCP 토큰 생성/조회/폐기 API
 - `app/(user)/[slug]/components.tsx` — 22개 빌트인 컴포넌트 렌더러
-- `app/(user)/[slug]/page.tsx` — 동적 페이지 렌더링 (Core.getPage, SEO 메타데이터)
+- `app/(user)/[slug]/page.tsx` — 동적 페이지 렌더링 (Core.getPage, SEO 메타데이터, visibility 접근 제어)
+- `app/(user)/[slug]/password-gate.tsx` — 비밀번호 보호 페이지 게이트 (클라이언트 컴포넌트)
+- `app/api/pages/[slug]/visibility/route.ts` — 페이지 visibility 설정/비밀번호 검증 API
+- `app/api/fs/projects/verify/route.ts` — 프로젝트 비밀번호 검증 API
 - `app/(user)/layout.tsx` — User 페이지 레이아웃 (SEO 스크립트 주입)
 - `app/(user)/seo-scripts.tsx` — SEO head/body 스크립트 DOM 주입 (클라이언트)
 - `app/sitemap.ts` — 동적 sitemap.xml (Next.js Metadata API)

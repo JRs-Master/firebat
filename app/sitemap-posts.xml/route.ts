@@ -13,7 +13,9 @@ export async function GET() {
   }
 
   const result = await core.listPages();
-  const pages = result.success && result.data ? result.data : [];
+  const allPages = result.success && result.data ? result.data : [];
+  // 공개 페이지만 포함 (password, private 제외)
+  const pages = allPages.filter(p => (p.visibility ?? 'public') === 'public');
 
   const entries = [
     // 홈페이지
