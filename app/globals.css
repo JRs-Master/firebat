@@ -51,4 +51,13 @@
     scrollbar-width: thin;
     scrollbar-color: var(--color-gray-300) transparent;
   }
+
+  /* 스크롤바 숨김 (탭 바 등) */
+  .scrollbar-none {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }

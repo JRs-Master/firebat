@@ -317,12 +317,16 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
   // 탭 콘텐츠 스크롤 리셋용
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // 탭 전환 시 데이터 로드 + 스크롤 리셋
+  const switchTab = (tab: typeof settingsTab) => {
+    setSettingsTab(tab);
+    contentRef.current?.scrollTo(0, 0);
+  };
+
+  // 탭 전환 시 데이터 로드
   useEffect(() => {
     if (settingsTab === 'secrets') fetchSecrets();
     if (settingsTab === 'mcp') { fetchMcpServers(); fetchMcpToken(); }
     if (settingsTab === 'system') fetchSysModules();
-    contentRef.current?.scrollTo(0, 0);
   }, [settingsTab, fetchSecrets, fetchMcpServers, fetchMcpToken, fetchSysModules]);
 
   // ── 저장 ───────────────────────────────────────────────────────────────────
@@ -369,7 +373,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
-      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
+      <div className="bg-white w-full sm:max-w-xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
           <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
             <Settings size={18} className="text-blue-500" /> Settings
@@ -380,39 +384,39 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
         </div>
 
         {/* 탭 */}
-        <div className="flex border-b border-slate-200 px-3 sm:px-6 bg-white shrink-0">
+        <div className="flex border-b border-slate-200 px-3 sm:px-6 bg-white shrink-0 overflow-x-auto scrollbar-none">
           <button
-            onClick={() => setSettingsTab('general')}
-            className={`px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors ${settingsTab === 'general' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+            onClick={() => switchTab('general')}
+            className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors whitespace-nowrap ${settingsTab === 'general' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
             일반
           </button>
           <button
-            onClick={() => setSettingsTab('secrets')}
-            className={`px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 ${settingsTab === 'secrets' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+            onClick={() => switchTab('secrets')}
+            className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'secrets' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
             <KeyRound size={14} /> API 키
           </button>
           {!isDemo && (
             <button
-              onClick={() => setSettingsTab('mcp')}
-              className={`px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 ${settingsTab === 'mcp' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+              onClick={() => switchTab('mcp')}
+              className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'mcp' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
             >
               <Plug size={14} /> 외부 MCP
             </button>
           )}
           {!isDemo && (
             <button
-              onClick={() => setSettingsTab('capabilities')}
-              className={`px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 ${settingsTab === 'capabilities' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+              onClick={() => switchTab('capabilities')}
+              className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'capabilities' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
             >
               <Layers size={14} /> 기능
             </button>
           )}
           {!isDemo && (
             <button
-              onClick={() => setSettingsTab('system')}
-              className={`px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 ${settingsTab === 'system' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+              onClick={() => switchTab('system')}
+              className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'system' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
             >
               <Cpu size={14} /> 시스템
             </button>
