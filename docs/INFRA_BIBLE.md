@@ -1,6 +1,6 @@
 # FIREBAT INFRA BIBLE — 행동 대장 수칙
 
-> 최종 개정: 2026-04-13 (v0.1)
+> 최종 개정: 2026-04-16 (v0.1)
 
 ## 전문(前文)
 
@@ -18,7 +18,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 
 ---
 
-## 제2장: 9개 어댑터 구현 규격
+## 제2장: 10개 어댑터 구현 규격
 
 ### 1. Storage Adapter (`infra/storage/`)
 - `IStoragePort` 구현.
@@ -48,8 +48,10 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - **요청별 모델 오버라이드**: `LlmCallOpts.model`로 호출마다 다른 모델 지정 가능.
 - `ask()`: JSON 응답 강제, temperature 0.2.
 - `askText()`: 텍스트 응답, temperature 0.3.
+- `askWithTools()`: Function Calling 도구 루프. `LlmCallOpts.onChunk` 설정 시 `generateContentStream()` 사용 (스트리밍 모드), 미설정 시 `generateContent()` (비스트리밍).
 - `getModelId()`: 기본 모델명 반환.
 - 타임아웃: 60초 (`LLM_TIMEOUT_MS`).
+- **스트리밍**: `onChunk` 콜백으로 thinking/text 청크를 실시간 전달. SSE `chunk` 이벤트로 프론트엔드에 전파.
 - API 키 우선순위: Vault → 환경변수.
 
 ### 5. Network Adapter (`infra/network/`)
@@ -87,12 +89,18 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - **영속 저장**: `data/mcp-servers.json`.
 - `addServer`/`removeServer`/`listTools`/`callTool`/`listAllTools`/`disconnectAll`.
 
+### 10. Auth Adapter (`infra/auth/`)
+- `IAuthPort` 구현 (VaultAuthAdapter).
+- Vault 기반 세션 저장: `auth:session:{token}` 키에 AuthSession JSON 저장.
+- 세션/API 토큰 CRUD: `saveSession`/`getSession`/`deleteSession`/`listSessions`/`deleteSessions`.
+- 만료 검사 포함: `getSession()` 호출 시 `expiresAt` 체크, 만료 시 자동 삭제.
+
 ---
 
 ## 제3장: 부트스트랩
 
 ### 제1항. 어댑터 조립 (`infra/boot.ts`)
-`getInfra()` 함수가 9개 어댑터를 1회 조립하여 `globalThis`에 캐시한다.
+`getInfra()` 함수가 10개 어댑터를 1회 조립하여 `globalThis`에 캐시한다.
 LLM 어댑터는 resolver 함수를 받아 lazy 초기화 (API 키 미설정 상태에서도 부팅 가능).
 
 ### 제2항. 서버 초기화
