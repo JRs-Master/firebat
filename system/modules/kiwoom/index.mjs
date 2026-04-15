@@ -158,7 +158,7 @@ async function getAccessToken(base, appKey, appSecret) {
 }
 
 /** API 호출 */
-async function callApi(base, token, appKey, appSecret, apiId, params = {}) {
+async function callApi(base, token, apiId, params = {}) {
   const category = ID_TO_CATEGORY[apiId];
   if (!category) throw new Error(`알 수 없는 API ID: ${apiId}. 지원되는 API 목록은 키움 REST API 문서를 참고하세요.`);
 
@@ -169,8 +169,6 @@ async function callApi(base, token, appKey, appSecret, apiId, params = {}) {
     headers: {
       'Content-Type': 'application/json;charset=UTF-8',
       'authorization': `Bearer ${token}`,
-      'appkey': appKey,
-      'secretkey': appSecret,
       'api-id': apiId,
       'cont-yn': 'N',
       'next-key': '',
@@ -237,7 +235,7 @@ process.stdin.on('end', async () => {
     const apiId = ACTION_MAP[action] || action;
     const params = buildParams(action, data);
 
-    const result = await callApi(base, token, appKey, appSecret, apiId, params);
+    const result = await callApi(base, token, apiId, params);
 
     console.log(JSON.stringify({
       success: true,
