@@ -282,6 +282,77 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
     },
   );
 
+  // ── 시스템 모듈 → 개별 MCP 도구 자동 등록 ────────────────────────────────
+
+  const sysModulesDir = path.resolve(process.cwd(), 'system/modules');
+  if (fs.existsSync(sysModulesDir)) {
+    const modDirs = fs.readdirSync(sysModulesDir, { withFileTypes: true })
+      .filter(d => d.isDirectory());
+
+    for (const dir of modDirs) {
+      const configPath = path.join(sysModulesDir, dir.name, 'config.json');
+      if (!fs.existsSync(configPath)) continue;
+
+      try {
+        const cfg = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+        if (cfg.type !== 'module' || !cfg.input?.properties) continue;
+
+        const rt = cfg.runtime === 'node' ? 'index.mjs' : cfg.runtime === 'python' ? 'main.py' : 'index.mjs';
+        const modulePath = `system/modules/${dir.name}/${rt}`;
+        const toolName = `sysmod_${dir.name}`;
+        const requiredFields: string[] = cfg.input.required || [];
+
+        // JSON Schema properties → Zod schema
+        const zodProps: Record<string, z.ZodTypeAny> = {};
+        for (const [key, prop] of Object.entries(cfg.input.properties as Record<string, any>)) {
+          let zType: z.ZodTypeAny;
+          switch (prop.type) {
+            case 'string':
+              zType = prop.enum?.length > 0
+                ? z.enum(prop.enum as [string, ...string[]])
+                : z.string();
+              break;
+            case 'integer':
+              zType = z.number().int();
+              break;
+            case 'number':
+              zType = z.number();
+              break;
+            case 'boolean':
+              zType = z.boolean();
+              break;
+            case 'array':
+              zType = z.array(z.any());
+              break;
+            case 'object':
+              zType = z.record(z.string(), z.any());
+              break;
+            default:
+              zType = z.any();
+          }
+          if (prop.description) zType = zType.describe(prop.description);
+          if (!requiredFields.includes(key)) zType = zType.optional();
+          zodProps[key] = zType;
+        }
+
+        server.tool(
+          toolName,
+          `[시스템 모듈] ${cfg.description || dir.name}`,
+          zodProps,
+          async (args) => {
+            const result = await core.sandboxExecute(modulePath, args);
+            return {
+              content: [{
+                type: 'text' as const,
+                text: JSON.stringify(result.success ? result.data : { error: result.error }, null, 2),
+              }],
+            };
+          },
+        );
+      } catch { /* config 파싱 실패 — 무시 */ }
+    }
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   //  리소스 — 파이어뱃 규칙/스펙 문서 (Claude Code가 참조)
   // ══════════════════════════════════════════════════════════════════════════
