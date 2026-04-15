@@ -62,7 +62,7 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
   'naver-ads': {
     title: '네이버 광고 키워드 도구',
     fields: [
-      { key: 'naverAdApiKey', label: 'API 키', type: 'secret', secretName: 'NAVER_AD_API_KEY', placeholder: '네이버 검색광고 → API 사용 관리', description: 'API License Key' },
+      { key: 'naverAdLicenseKey', label: 'License 키', type: 'secret', secretName: 'NAVER_AD_LICENSE_KEY', placeholder: '네이버 검색광고 → API 사용 관리', description: 'API License Key (액세스라이선스)' },
       { key: 'naverAdSecretKey', label: 'Secret 키', type: 'secret', secretName: 'NAVER_AD_SECRET_KEY', placeholder: 'HMAC 서명에 사용', description: 'API Secret Key' },
       { key: 'naverAdCustomerId', label: 'Customer ID', type: 'secret', secretName: 'NAVER_AD_CUSTOMER_ID', placeholder: '광고주 ID (숫자)', description: '네이버 검색광고 고객 ID' },
     ],

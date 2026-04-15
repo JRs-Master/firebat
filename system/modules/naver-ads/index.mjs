@@ -34,11 +34,11 @@ process.stdin.on('end', async () => {
       return;
     }
 
-    const apiKey = process.env['NAVER_AD_API_KEY'];
+    const apiKey = process.env['NAVER_AD_LICENSE_KEY'];
     const secretKey = process.env['NAVER_AD_SECRET_KEY'];
     const customerId = process.env['NAVER_AD_CUSTOMER_ID'];
     if (!apiKey || !secretKey || !customerId) {
-      console.log(JSON.stringify({ success: false, error: 'NAVER_AD_API_KEY / NAVER_AD_SECRET_KEY / NAVER_AD_CUSTOMER_ID가 설정되지 않았습니다. 설정 > 시스템 모듈 > naver-ads에서 등록해주세요.' }));
+      console.log(JSON.stringify({ success: false, error: 'NAVER_AD_LICENSE_KEY / NAVER_AD_SECRET_KEY / NAVER_AD_CUSTOMER_ID가 설정되지 않았습니다. 설정 > 시스템 모듈 > naver-ads에서 등록해주세요.' }));
       return;
     }
 
