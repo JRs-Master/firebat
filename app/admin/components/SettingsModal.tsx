@@ -314,11 +314,15 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // 탭 전환 시 데이터 로드
+  // 탭 콘텐츠 스크롤 리셋용
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  // 탭 전환 시 데이터 로드 + 스크롤 리셋
   useEffect(() => {
     if (settingsTab === 'secrets') fetchSecrets();
     if (settingsTab === 'mcp') { fetchMcpServers(); fetchMcpToken(); }
     if (settingsTab === 'system') fetchSysModules();
+    contentRef.current?.scrollTo(0, 0);
   }, [settingsTab, fetchSecrets, fetchMcpServers, fetchMcpToken, fetchSysModules]);
 
   // ── 저장 ───────────────────────────────────────────────────────────────────
@@ -415,7 +419,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
           )}
         </div>
 
-        <div className="p-3 sm:p-6 flex flex-col gap-3 sm:gap-5 overflow-y-auto min-w-0 flex-1">
+        <div ref={contentRef} className="p-3 sm:p-6 flex flex-col gap-3 sm:gap-5 overflow-y-scroll min-w-0 flex-1 min-h-0">
           {settingsTab === 'general' && (
             <>
               {/* 모델 선택 */}
