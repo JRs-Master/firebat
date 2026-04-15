@@ -127,7 +127,6 @@ export class VertexAiAdapter implements ILlmPort {
         parameters: t.parameters,
       }));
 
-      const supportsThinking = model.includes('2.5');
       const response = await this.withTimeout(
         ai.models.generateContent({
           model,
@@ -137,7 +136,7 @@ export class VertexAiAdapter implements ILlmPort {
             temperature: LLM_TEMPERATURE_TEXT,
             tools: [{ functionDeclarations }],
             toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
-            ...(supportsThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+            thinkingConfig: { thinkingBudget: 0 },
           } as Record<string, unknown>,
         }),
         LLM_TIMEOUT_MS,
