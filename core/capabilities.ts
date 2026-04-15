@@ -20,6 +20,9 @@ export const BUILTIN_CAPABILITIES: Record<string, CapabilityDef> = {
   'translate':    { label: '번역', description: '텍스트 번역' },
   'notification': { label: '알림', description: '슬랙/텔레그램/카톡 알림' },
   'pdf-gen':      { label: 'PDF 생성', description: 'HTML/마크다운 → PDF' },
+  'web-search':   { label: '웹 검색', description: '키워드 → 검색 결과 목록 (제목, URL, 설명)' },
+  'keyword-analytics': { label: '키워드 분석', description: '키워드 검색량, CPC, 경쟁도 등 광고/SEO 지표 조회' },
+  'stock-trading':     { label: '주식 거래', description: '시세 조회, 매수/매도 주문, 잔고 조회' },
 };
 
 /** capability별 설정 — providers 배열 순서가 곧 실행 순서 */

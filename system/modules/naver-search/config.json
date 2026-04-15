@@ -1,0 +1,70 @@
+{
+  "name": "naver-search",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "네이버 검색 API. 키워드로 웹문서/뉴스/블로그/이미지 등 검색 결과 조회.",
+  "runtime": "node",
+  "capability": "web-search",
+  "providerType": "api",
+  "secrets": ["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"],
+  "input": {
+    "type": "object",
+    "required": ["query"],
+    "properties": {
+      "query": {
+        "type": "string",
+        "description": "검색 키워드"
+      },
+      "type": {
+        "type": "string",
+        "enum": ["webkr", "news", "blog", "image", "shop", "cafearticle", "kin"],
+        "default": "webkr",
+        "description": "검색 유형 (webkr=웹문서, news=뉴스, blog=블로그, image=이미지, shop=쇼핑, cafearticle=카페, kin=지식iN)"
+      },
+      "display": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 10,
+        "description": "검색 결과 수 (최대 100)"
+      },
+      "start": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000,
+        "default": 1,
+        "description": "검색 시작 위치"
+      },
+      "sort": {
+        "type": "string",
+        "enum": ["sim", "date"],
+        "default": "sim",
+        "description": "정렬 방식 (sim=정확도순, date=최신순)"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": ["total", "items"],
+    "properties": {
+      "total": { "type": "integer", "description": "전체 검색 결과 수" },
+      "start": { "type": "integer", "description": "검색 시작 위치" },
+      "display": { "type": "integer", "description": "반환된 결과 수" },
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string", "description": "제목 (HTML 태그 포함 가능)" },
+            "link": { "type": "string", "description": "URL" },
+            "description": { "type": "string", "description": "요약/설명" }
+          }
+        },
+        "description": "검색 결과 목록"
+      }
+    },
+    "additionalProperties": false
+  }
+}

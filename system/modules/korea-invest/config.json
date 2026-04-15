@@ -1,0 +1,84 @@
+{
+  "name": "korea-invest",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "한국투자증권 Open API. 국내주식/해외주식/선물옵션 시세/호가/차트/주문/잔고/순위 등 전체 API 지원. trId 또는 편의 액션으로 300개+ API 직접 호출 가능.",
+  "runtime": "node",
+  "capability": "stock-trading",
+  "providerType": "api",
+  "secrets": ["KIS_APP_KEY", "KIS_APP_SECRET"],
+  "input": {
+    "type": "object",
+    "required": ["action"],
+    "properties": {
+      "action": {
+        "type": "string",
+        "description": "편의 액션: price(현재가), quote(호가), order-buy(매수), order-sell(매도), order-modify(정정취소), balance(잔고), deposit(예수금), chart-daily(일봉차트), chart-minute(분봉차트), ranking-volume(거래량순위), foreign-trade(외국인매매), overseas-price(해외시세), overseas-order-buy(해외매수), overseas-balance(해외잔고). 또는 trId 직접 지정 (예: FHKST01010100)"
+      },
+      "symbol": {
+        "type": "string",
+        "description": "종목코드 (국내: 005930, 해외: AAPL)"
+      },
+      "exchange": {
+        "type": "string",
+        "enum": ["NAS", "NYS", "AMS", "TSE", "HKS", "SHS", "SZS", "HSX", "HNX"],
+        "description": "해외 거래소 코드 (NAS=나스닥, NYS=뉴욕, TSE=도쿄 등). 해외 주문/시세에 필수"
+      },
+      "trId": {
+        "type": "string",
+        "description": "한투 TR_ID 직접 지정 (API 문서 참조)"
+      },
+      "url": {
+        "type": "string",
+        "description": "API URL 경로 직접 지정 (trId 사용 시)"
+      },
+      "method": {
+        "type": "string",
+        "enum": ["GET", "POST"],
+        "default": "GET",
+        "description": "HTTP 메서드"
+      },
+      "params": {
+        "type": "object",
+        "description": "API별 추가 파라미터 (GET=query, POST=body)"
+      },
+      "orderType": {
+        "type": "string",
+        "enum": ["buy", "sell"],
+        "description": "주문 유형"
+      },
+      "quantity": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "주문 수량"
+      },
+      "price": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "주문 가격 (0=시장가)"
+      },
+      "period": {
+        "type": "string",
+        "enum": ["D", "W", "M", "Y"],
+        "default": "D",
+        "description": "차트 기간 (D=일, W=주, M=월, Y=년)"
+      },
+      "mock": {
+        "type": "boolean",
+        "default": false,
+        "description": "모의투자 여부 (기본값: false=실전투자)"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": ["trId"],
+    "properties": {
+      "trId": { "type": "string", "description": "호출된 TR_ID" },
+      "data": { "type": "object", "description": "API 응답 데이터" }
+    },
+    "additionalProperties": true
+  }
+}

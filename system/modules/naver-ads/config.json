@@ -1,0 +1,54 @@
+{
+  "name": "naver-ads",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "네이버 광고 API (키워드 도구). 키워드 검색량, CPC, 경쟁도 등 광고/SEO 지표 조회.",
+  "runtime": "node",
+  "capability": "keyword-analytics",
+  "providerType": "api",
+  "secrets": ["NAVER_AD_API_KEY", "NAVER_AD_SECRET_KEY", "NAVER_AD_CUSTOMER_ID"],
+  "input": {
+    "type": "object",
+    "required": ["keywords"],
+    "properties": {
+      "keywords": {
+        "type": "array",
+        "items": { "type": "string" },
+        "maxItems": 5,
+        "description": "분석할 키워드 목록 (최대 5개)"
+      },
+      "showDetail": {
+        "type": "boolean",
+        "default": true,
+        "description": "월별 검색량 상세 데이터 포함 여부"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": ["keywords"],
+    "properties": {
+      "keywords": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "keyword": { "type": "string", "description": "키워드" },
+            "monthlyPcQcCnt": { "type": "integer", "description": "월간 PC 검색량" },
+            "monthlyMobileQcCnt": { "type": "integer", "description": "월간 모바일 검색량" },
+            "monthlyAvePcClkCnt": { "type": "number", "description": "월평균 PC 클릭수" },
+            "monthlyAveMobileClkCnt": { "type": "number", "description": "월평균 모바일 클릭수" },
+            "monthlyAvePcCtr": { "type": "number", "description": "월평균 PC 클릭률 (%)" },
+            "monthlyAveMobileCtr": { "type": "number", "description": "월평균 모바일 클릭률 (%)" },
+            "plAvgDepth": { "type": "integer", "description": "광고 경쟁도 (노출 광고수)" },
+            "compIdx": { "type": "string", "description": "경쟁 정도 (높음/중간/낮음)" }
+          }
+        },
+        "description": "키워드별 분석 결과"
+      }
+    },
+    "additionalProperties": false
+  }
+}

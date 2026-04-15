@@ -1,0 +1,74 @@
+{
+  "name": "kiwoom",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "키움증권 REST API. 국내주식 시세/호가/차트/주문/잔고/순위/종목정보 등 전체 API 지원. apiId로 200개+ API 직접 호출 가능.",
+  "runtime": "node",
+  "capability": "stock-trading",
+  "providerType": "api",
+  "secrets": ["KIWOOM_APP_KEY", "KIWOOM_APP_SECRET"],
+  "input": {
+    "type": "object",
+    "required": ["action"],
+    "properties": {
+      "action": {
+        "type": "string",
+        "description": "수행할 작업. 편의 액션: price(현재가), quote(호가), order-buy(매수), order-sell(매도), order-modify(정정), order-cancel(취소), balance(잔고), account(계좌조회), deposit(예수금), chart-daily(일봉), chart-minute(분봉), ranking-volume(거래량순위). 또는 apiId 직접 지정 (예: ka10001, kt10000)"
+      },
+      "symbol": {
+        "type": "string",
+        "description": "종목코드 (예: 005930=삼성전자)"
+      },
+      "params": {
+        "type": "object",
+        "description": "API별 추가 파라미터 (apiId 직접 호출 시 사용)"
+      },
+      "orderType": {
+        "type": "string",
+        "enum": ["buy", "sell"],
+        "description": "주문 유형 (order 액션에 사용)"
+      },
+      "quantity": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "주문 수량"
+      },
+      "price": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "주문 가격 (0=시장가)"
+      },
+      "orderNo": {
+        "type": "string",
+        "description": "원주문번호 (정정/취소 시 필수)"
+      },
+      "chartType": {
+        "type": "string",
+        "enum": ["tick", "minute", "daily", "weekly", "monthly", "yearly"],
+        "default": "daily",
+        "description": "차트 유형"
+      },
+      "count": {
+        "type": "integer",
+        "default": 30,
+        "description": "조회 건수"
+      },
+      "mock": {
+        "type": "boolean",
+        "default": false,
+        "description": "모의투자 여부 (기본값: false=실전투자)"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": ["apiId"],
+    "properties": {
+      "apiId": { "type": "string", "description": "호출된 API ID" },
+      "data": { "type": "object", "description": "API 응답 데이터" }
+    },
+    "additionalProperties": true
+  }
+}

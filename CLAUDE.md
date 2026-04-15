@@ -359,6 +359,42 @@
 - 1차: 로컬 파일 저장 (`data/media/`), 2차: S3/R2 등 오브젝트 스토리지
 - SEO 모듈의 OG 이미지 캐싱도 이 인프라 위에서 구현
 
+### 네이버 검색/광고 모듈 (v0.1, 2026-04-15)
+- **naver-search**: 네이버 검색 API (웹문서/뉴스/블로그/이미지/쇼핑/카페/지식iN)
+  - capability=`web-search`, providerType=`api`, secrets=`["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"]`
+  - 네이버 개발자센터 → 애플리케이션 등록 → 검색 API 사용 신청 → Client ID/Secret 발급
+  - HTML 태그 자동 제거 (네이버 검색 결과의 `<b>` 태그 등)
+- **naver-ads**: 네이버 광고 API 키워드 도구 (검색량, CPC, 경쟁도)
+  - capability=`keyword-analytics`, providerType=`api`, secrets=`["NAVER_AD_API_KEY", "NAVER_AD_SECRET_KEY", "NAVER_AD_CUSTOMER_ID"]`
+  - HMAC-SHA256 서명 인증 (X-API-KEY, X-Customer, X-Timestamp, X-Signature)
+  - 네이버 검색광고 → API 사용 관리 → API 키 발급
+- **신규 capability**: `web-search` (키워드→검색결과), `keyword-analytics` (키워드→광고/SEO 지표)
+
+### 증권 거래 모듈 (v0.1, 2026-04-15)
+- **stock-trading capability**: 시세 조회, 매수/매도 주문, 잔고 조회를 하나의 capability로 통합
+- **korea-invest**: 한국투자증권 Open API (300개+ API 전체 지원)
+  - capability=`stock-trading`, providerType=`api`, secrets=`["KIS_APP_KEY", "KIS_APP_SECRET"]`
+  - 편의 액션 70개+ (price, balance, chart-daily 등) + trId 직접 호출
+  - 국내주식/해외주식/선물옵션/ETF/ELW 시세·주문·잔고·차트·순위·재무
+  - 계좌는 API 키에 바인딩 (별도 계좌번호 불필요)
+  - 한국투자증권 API 포털에서 앱 등록 → appkey/appsecret 발급
+- **kiwoom**: 키움증권 REST API (200개+ API 전체 지원)
+  - capability=`stock-trading`, providerType=`api`, secrets=`["KIWOOM_APP_KEY", "KIWOOM_APP_SECRET"]`
+  - 편의 액션 60개+ (price, balance, chart-daily 등) + apiId 직접 호출
+  - API 카테고리 자동 매핑 (apiId → URL 카테고리)
+  - 계좌는 API 키에 바인딩 (별도 계좌번호 불필요)
+  - 키움 Open API 포털에서 앱 등록 → appkey/secretkey 발급
+
+### LLM Capability 시스템 모듈 전환 (구상)
+- **현재**: ILlmPort가 인프라 어댑터로 하드와이어링 (Vertex AI 고정)
+- **목표**: `llm` capability로 등록, 시스템 모듈로 전환
+  - `system/modules/vertex-gemini/` — 현재 VertexAiAdapter를 모듈화
+  - `system/modules/openai/` — OpenAI GPT 시리즈
+  - `system/modules/ollama/` — 로컬 Ollama
+- **효과**: Capability-Provider 패턴으로 LLM도 우선순위/폴백 관리 가능
+- **과제**: ILlmPort가 Core 내부(AiManager, TaskManager)에서 직접 사용 — 모듈(sandbox 실행)과 인터페이스 불일치. 중간 어댑터 계층 또는 ILlmPort 자체를 capability resolver로 교체 필요
+- **시기**: v1.0+ (3-Tier 분리 후 Core 내부 구조 변경 시 함께)
+
 ### Phase 5 이후 (장기)
 - **Rust Core 전환**: Phase 4에서 gRPC 인터페이스 확정 → Core 컨테이너 내부만 Rust로 교체
 - **모듈 패키징 개편**: 모노레포 구조 (entries/pipeline), 서브모듈 체이닝
@@ -427,6 +463,10 @@
 - `core/capabilities.ts` — Capability-Provider 타입 + 빌트인 Registry
 - `app/api/capabilities/route.ts` — Capability 목록/상세/설정 변경 API
 - `system/modules/firecrawl/index.mjs` — Firecrawl 웹 스크래퍼 (API, web-scrape)
+- `system/modules/naver-search/index.mjs` — 네이버 검색 API (API, web-search)
+- `system/modules/naver-ads/index.mjs` — 네이버 광고 키워드 도구 (API, keyword-analytics)
+- `system/modules/korea-invest/index.mjs` — 한국투자증권 Open API (API, stock-trading)
+- `system/modules/kiwoom/index.mjs` — 키움증권 REST API (API, stock-trading)
 - `system/modules/kakao-talk/index.mjs` — 카카오톡 나에게 보내기 (API, notification)
 
 ### Firecrawl 웹 스크래퍼 교체 (v0.1, 2026-04-14)
