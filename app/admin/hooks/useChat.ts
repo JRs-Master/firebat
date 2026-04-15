@@ -163,7 +163,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: userPrompt, config: { model: aiModel }, history: chatHistory, autoExecute: false }),
+        body: JSON.stringify({ prompt: userPrompt, config: { model: aiModel }, history: chatHistory, mode: 'tools' }),
       });
 
       const reader = res.body?.getReader();

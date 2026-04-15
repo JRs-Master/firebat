@@ -159,7 +159,10 @@ function handleToolsMode(
       case 'run_task': return '파이프라인 실행 중';
       case 'request_secret': return 'API 키 요청';
       case 'suggest': return '선택지 제시';
-      default: return name.startsWith('mcp_') ? '외부 서비스 연결 중' : name;
+      default:
+        if (name.startsWith('sysmod_')) return `시스템 모듈 실행 중 (${name.replace('sysmod_', '')})`;
+        if (name.startsWith('mcp_')) return '외부 서비스 연결 중';
+        return name;
     }
   };
 
