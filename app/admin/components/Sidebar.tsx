@@ -155,14 +155,19 @@ export function Sidebar({
     return () => document.removeEventListener('mousedown', handler);
   }, [openMenu]);
 
-  // 페이지 visibility 토글 (public ↔ private)
-  const handleTogglePageVisibility = async (slug: string, currentVis: string) => {
-    const next = currentVis === 'public' ? 'private' : 'public';
+  // 페이지 visibility 변경
+  const handleSetPageVisibility = async (slug: string, vis: 'public' | 'password' | 'private') => {
+    let password: string | undefined;
+    if (vis === 'password') {
+      const pw = prompt('비밀번호를 입력하세요');
+      if (!pw) return; // 취소
+      password = pw;
+    }
     try {
       await fetch(`/api/pages/${encodeURIComponent(slug)}/visibility`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visibility: next }),
+        body: JSON.stringify({ visibility: vis, ...(password ? { password } : {}) }),
       });
       fetchPages();
     } catch {}
@@ -170,14 +175,19 @@ export function Sidebar({
     setSelectedItem(null);
   };
 
-  // 프로젝트 visibility 토글 (public ↔ private)
-  const handleToggleProjectVisibility = async (name: string, currentVis: string) => {
-    const next = currentVis === 'public' ? 'private' : 'public';
+  // 프로젝트 visibility 변경
+  const handleSetProjectVisibility = async (name: string, vis: 'public' | 'password' | 'private') => {
+    let password: string | undefined;
+    if (vis === 'password') {
+      const pw = prompt('비밀번호를 입력하세요');
+      if (!pw) return;
+      password = pw;
+    }
     try {
       await fetch('/api/fs/projects', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project: name, visibility: next }),
+        body: JSON.stringify({ project: name, visibility: vis, ...(password ? { password } : {}) }),
       });
       refreshAll();
     } catch {}
@@ -473,27 +483,28 @@ export function Sidebar({
                                       <Pencil size={11} /> 편집
                                     </button>
                                   )}
-                                  {isSingle && mainSlug ? (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleTogglePageVisibility(mainSlug, mp.pages[0]?.visibility ?? 'public');
-                                      }}
-                                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
-                                    >
-                                      {(mp.pages[0]?.visibility ?? 'public') === 'public' ? <><EyeOff size={11} /> 비공개</> : <><Eye size={11} /> 공개</>}
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleToggleProjectVisibility(mp.name, mp.visibility ?? 'public');
-                                      }}
-                                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
-                                    >
-                                      {(mp.visibility ?? 'public') === 'public' ? <><EyeOff size={11} /> 비공개</> : <><Eye size={11} /> 공개</>}
-                                    </button>
-                                  )}
+                                  {/* visibility 서브메뉴 */}
+                                  {(() => {
+                                    const curVis = isSingle && mainSlug ? (mp.pages[0]?.visibility ?? 'public') : (mp.visibility ?? 'public');
+                                    const setVis = (vis: 'public' | 'password' | 'private') => (e: React.MouseEvent) => {
+                                      e.stopPropagation();
+                                      if (isSingle && mainSlug) handleSetPageVisibility(mainSlug, vis);
+                                      else handleSetProjectVisibility(mp.name, vis);
+                                    };
+                                    return (
+                                      <>
+                                        <button onClick={setVis('public')} className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-slate-50 transition-colors ${curVis === 'public' ? 'text-blue-600 font-bold' : 'text-slate-600'}`}>
+                                          <Eye size={11} /> 공개
+                                        </button>
+                                        <button onClick={setVis('password')} className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-slate-50 transition-colors ${curVis === 'password' ? 'text-blue-600 font-bold' : 'text-slate-600'}`}>
+                                          <Lock size={11} /> 비밀번호
+                                        </button>
+                                        <button onClick={setVis('private')} className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-slate-50 transition-colors ${curVis === 'private' ? 'text-blue-600 font-bold' : 'text-slate-600'}`}>
+                                          <EyeOff size={11} /> 비공개
+                                        </button>
+                                      </>
+                                    );
+                                  })()}
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
@@ -589,15 +600,19 @@ export function Sidebar({
                                             >
                                               <Pencil size={10} /> 편집
                                             </button>
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleTogglePageVisibility(pg.slug, pg.visibility ?? 'public');
-                                              }}
-                                              className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
-                                            >
-                                              {(pg.visibility ?? 'public') === 'public' ? <><EyeOff size={10} /> 비공개</> : <><Eye size={10} /> 공개</>}
-                                            </button>
+                                            {/* visibility 서브메뉴 */}
+                                            {(['public', 'password', 'private'] as const).map(vis => {
+                                              const curVis = pg.visibility ?? 'public';
+                                              const icon = vis === 'public' ? <Eye size={10} /> : vis === 'password' ? <Lock size={10} /> : <EyeOff size={10} />;
+                                              const label = vis === 'public' ? '공개' : vis === 'password' ? '비밀번호' : '비공개';
+                                              return (
+                                                <button key={vis} onClick={(e) => { e.stopPropagation(); handleSetPageVisibility(pg.slug, vis); }}
+                                                  className={`w-full flex items-center gap-2 px-3 py-1.5 text-[11px] hover:bg-slate-50 transition-colors ${curVis === vis ? 'text-blue-600 font-bold' : 'text-slate-600'}`}
+                                                >
+                                                  {icon} {label}
+                                                </button>
+                                              );
+                                            })}
                                             <div className="border-t border-slate-100 my-0.5" />
                                             <button
                                               onClick={(e) => { e.stopPropagation(); handleDeletePage(pg.slug); setOpenMenu(null); setSelectedItem(null); }}

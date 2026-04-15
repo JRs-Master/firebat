@@ -373,7 +373,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
-      <div className="bg-white w-full sm:max-w-xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
           <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
             <Settings size={18} className="text-blue-500" /> Settings
@@ -423,16 +423,16 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
           )}
         </div>
 
-        <div ref={contentRef} className="p-3 sm:p-6 flex flex-col gap-3 sm:gap-5 overflow-y-scroll min-w-0 flex-1 min-h-0">
+        <div ref={contentRef} className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-scroll min-w-0 flex-1 min-h-0">
           {settingsTab === 'general' && (
             <>
               {/* 모델 선택 */}
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-2">
                 <label className="text-xs sm:text-sm font-bold text-slate-700">Model</label>
                 <select
                   value={aiModel}
                   onChange={e => onAiModelChange(e.target.value)}
-                  className="w-full px-3 py-2 sm:px-4 sm:py-3 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[15px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
                 >
                   {GEMINI_MODELS.map(m => (
                     <option key={m.value} value={m.value}>{m.label}</option>
@@ -441,12 +441,12 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
               </div>
 
               {/* 타임존 */}
-              <div className="flex flex-col gap-1.5">
+              <div className="flex flex-col gap-2">
                 <label className="text-xs sm:text-sm font-bold text-slate-700">타임존</label>
                 <select
                   value={userTimezone}
                   onChange={e => setUserTimezone(e.target.value)}
-                  className="w-full px-3 py-2 sm:px-4 sm:py-3 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[15px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
                 >
                   <option value="Pacific/Midway">(UTC-11:00) 미드웨이</option>
                   <option value="Pacific/Honolulu">(UTC-10:00) 하와이</option>
@@ -489,7 +489,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
               </div>
 
               {/* 관리자 계정 변경 */}
-              <div className="flex flex-col gap-2 sm:gap-3 pt-1 border-t border-slate-100">
+              <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
                 <label className="text-xs sm:text-sm font-bold text-slate-700 pt-1">관리자 계정 변경</label>
                 <input
                   type="password"
@@ -521,7 +521,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
           {settingsTab === 'secrets' && (
             <>
               {/* Vertex AI */}
-              <div className="flex flex-col gap-2 sm:gap-3">
+              <div className="flex flex-col gap-2">
                 <label className="text-xs sm:text-sm font-bold text-slate-700">Vertex AI</label>
                 <input
                   type="password"
