@@ -256,25 +256,63 @@ async function callApi(base, token, appKey, appSecret, trId, method, url, params
   return await resp.json();
 }
 
-/** 편의 액션의 기본 파라미터 생성 */
+// ─── 오늘 날짜 / 90일전 날짜 헬퍼 ───
+function today() { return new Date().toISOString().slice(0,10).replace(/-/g,''); }
+function daysAgo(n) { const d = new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10).replace(/-/g,''); }
+
+// ─── 순위/분석 API FID_COND_SCR_DIV_CODE (엑셀 기준) ───
+const SCR_CODES = {
+  'volume-rank':'20171','ranking-volume':'20171',
+  'ranking-fluctuation':'20170','ranking-profit':'20173','ranking-marketcap':'20174',
+  'ranking-finance':'20175','ranking-quote-bal':'20172','ranking-disparity':'20178',
+  'ranking-market-value':'20179','ranking-volume-power':'20168','ranking-prefer':'20177',
+  'ranking-near-hl':'20187','ranking-top-interest':'20180','ranking-by-company':'20186',
+  'ranking-after-vol':'20176','ranking-overtime-vol':'20235','ranking-overtime-fluct':'20234',
+  'ranking-exp-trans':'20182','ranking-overtime-exp':'11186',
+  'ranking-credit':'11701','ranking-short':'20482','ranking-bulk-trans':'11909',
+  'vi-status':'20139','exp-closing':'11173',
+  'credit-company':'20477','credit-daily':'20476','short-daily':'20483',
+  'foreign-total':'20444','capture-uplowprice':'11130',
+  'pbar-tratio':'20113','tradprt-byamt':'11119',
+  'frgnmem-trade':'16441','frgnmem-pchs':'16444',
+  'invest-opinion':'16633','invest-by-sec':'16634',
+  'comp-interest':'20702',
+  'exp-total-index':'11175','index-category':'20214',
+  'elw-search':'15100',
+  'elw-updown':'20277','elw-volume':'20278','elw-indicator':'20279',
+  'elw-sensitivity':'20285','elw-quick-change':'20287','elw-newly-listed':'15480',
+  'etf-component':'12160',
+};
+
+// ─── 계좌 관련 액션 목록 ───
+const ACCOUNT_ACTIONS = new Set([
+  'balance','balance-pl','deposit','psbl-order','psbl-sell','daily-ccld',
+  'period-profit','period-trade','credit-psamount','psbl-rvsecncl',
+  'order-reserve-list','intgr-margin','period-rights',
+  'order-modify','order-reserve','order-reserve-cancel',
+  'order-credit-buy','order-credit-sell',
+  'futures-balance','futures-deposit',
+  'overseas-balance','overseas-ccld','overseas-psamount',
+]);
+
+/** 편의 액션의 기본 파라미터 생성 (엑셀 Required 필드 기반) */
 function buildParams(action, data) {
   const p = { ...(data.params || {}) };
+  const sym = data.symbol || '';
+  const exch = data.exchange || '';
 
-  // 종목코드 세팅
-  if (data.symbol) {
-    // 국내: FID_INPUT_ISCD, 해외: SYMB 등 — 액션에 따라 다름
-    if (action.startsWith('overseas-')) {
-      p.SYMB = p.SYMB || data.symbol;
-      if (data.exchange) p.EXCD = p.EXCD || data.exchange;
-    } else {
-      p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || data.symbol;
-      p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || 'J';
-    }
+  // ── 공통: 종목코드 (FID 기반 시세/순위 API만) ──
+  if (action.startsWith('overseas-')) {
+    if (sym) p.SYMB = p.SYMB || sym;
+    if (exch) p.EXCD = p.EXCD || exch;
+  } else if (!action.startsWith('ksd-') && !ACCOUNT_ACTIONS.has(action) && !action.includes('order-') && !['holiday','market-time','ranking-dividend','investor-program-today','cond-search-list','cond-search-result','mktfunds','loan-daily','investor-trend','estimate-perform','stock-info','product-info'].includes(action)) {
+    p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || sym;
+    p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || 'J';
   }
 
-  // 주문 파라미터
-  if (action.includes('order-buy') || action.includes('order-sell') || action.includes('order-modify') || action.includes('order-credit')) {
-    if (data.symbol) p.PDNO = p.PDNO || data.symbol;
+  // ── 주문 (POST) ──
+  if (action.includes('order-buy') || action.includes('order-sell') || action.includes('order-modify') || action.includes('order-credit') || action === 'order-reserve') {
+    if (sym) p.PDNO = p.PDNO || sym;
     if (data.quantity) p.ORD_QTY = p.ORD_QTY || String(data.quantity);
     if (data.price !== undefined) {
       p.ORD_UNPR = p.ORD_UNPR || String(data.price);
@@ -282,33 +320,728 @@ function buildParams(action, data) {
     }
   }
 
-  // 차트 기간
-  if (action.startsWith('chart-') && data.period) {
-    p.FID_PERIOD_DIV_CODE = p.FID_PERIOD_DIV_CODE || data.period;
-  }
-
-  // 계좌 관련 API 기본 파라미터 (계좌번호는 API 키에 바인딩 — 빈 문자열이 기본)
-  const accountActions = [
-    'balance', 'balance-pl', 'deposit', 'psbl-order', 'psbl-sell',
-    'daily-ccld', 'period-profit', 'period-trade', 'credit-psamount',
-    'psbl-rvsecncl', 'order-reserve-list', 'intgr-margin', 'period-rights',
-  ];
-  if (accountActions.includes(action)) {
+  // ── 계좌 (CANO/ACNT_PRDT_CD) ──
+  if (ACCOUNT_ACTIONS.has(action)) {
     p.CANO = p.CANO || data.accountNo || '';
     p.ACNT_PRDT_CD = p.ACNT_PRDT_CD || data.accountProductCode || '01';
   }
 
-  // balance 전용 기본 파라미터
-  if (action === 'balance') {
-    p.AFHR_FLPR_YN = p.AFHR_FLPR_YN || 'N';
-    p.OFL_YN = p.OFL_YN || '';
-    p.INQR_DVSN = p.INQR_DVSN || '02';
-    p.UNPR_DVSN = p.UNPR_DVSN || '01';
-    p.FUND_STTL_ICLD_YN = p.FUND_STTL_ICLD_YN || 'N';
-    p.FNCG_AMT_AUTO_RDPT_YN = p.FNCG_AMT_AUTO_RDPT_YN || 'N';
-    p.PRCS_DVSN = p.PRCS_DVSN || '01';
-    p.CTX_AREA_FK100 = p.CTX_AREA_FK100 || '';
-    p.CTX_AREA_NK100 = p.CTX_AREA_NK100 || '';
+  // ── FID_COND_SCR_DIV_CODE (순위/분석 API 고유 코드) ──
+  const scr = SCR_CODES[action];
+  if (scr) p.FID_COND_SCR_DIV_CODE = p.FID_COND_SCR_DIV_CODE || scr;
+
+  // ── 기간/차트 ──
+  if (data.period) p.FID_PERIOD_DIV_CODE = p.FID_PERIOD_DIV_CODE || data.period;
+
+  // ── 액션별 Required 기본값 (엑셀 기준) ──
+  switch (action) {
+
+    // ═══ 기본시세 ═══
+    case 'daily-price':
+      p.FID_PERIOD_DIV_CODE = p.FID_PERIOD_DIV_CODE || 'D';
+      p.FID_ORG_ADJ_PRC = p.FID_ORG_ADJ_PRC || '0';
+      break;
+    case 'time-ccnl':
+      p.FID_INPUT_HOUR_1 = p.FID_INPUT_HOUR_1 || '';
+      break;
+    case 'volume-rank': case 'ranking-volume':
+      p.FID_DIV_CLS_CODE = p.FID_DIV_CLS_CODE || '0';
+      p.FID_BLNG_CLS_CODE = p.FID_BLNG_CLS_CODE || '0';
+      p.FID_TRGT_CLS_CODE = p.FID_TRGT_CLS_CODE || '111111111';
+      p.FID_TRGT_EXLS_CLS_CODE = p.FID_TRGT_EXLS_CLS_CODE || '0000000000';
+      p.FID_INPUT_PRICE_1 = p.FID_INPUT_PRICE_1 || '';
+      p.FID_INPUT_PRICE_2 = p.FID_INPUT_PRICE_2 || '';
+      p.FID_VOL_CNT = p.FID_VOL_CNT || '';
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || '';
+      break;
+    case 'vi-status':
+      p.FID_DIV_CLS_CODE = p.FID_DIV_CLS_CODE || '0';
+      p.FID_MRKT_CLS_CODE = p.FID_MRKT_CLS_CODE || '0';
+      p.FID_RANK_SORT_CLS_CODE = p.FID_RANK_SORT_CLS_CODE || '0';
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || '';
+      p.FID_TRGT_CLS_CODE = p.FID_TRGT_CLS_CODE || '0';
+      p.FID_TRGT_EXLS_CLS_CODE = p.FID_TRGT_EXLS_CLS_CODE || '0';
+      break;
+    case 'exp-closing':
+      p.FID_RANK_SORT_CLS_CODE = p.FID_RANK_SORT_CLS_CODE || '0';
+      p.FID_BLNG_CLS_CODE = p.FID_BLNG_CLS_CODE || '0';
+      break;
+    case 'news-title':
+      p.FID_NEWS_OFER_ENTP_CODE = p.FID_NEWS_OFER_ENTP_CODE || '';
+      p.FID_COND_MRKT_CLS_CODE = p.FID_COND_MRKT_CLS_CODE || '0';
+      p.FID_TITL_CNTT = p.FID_TITL_CNTT || '';
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || '';
+      p.FID_INPUT_HOUR_1 = p.FID_INPUT_HOUR_1 || '';
+      p.FID_RANK_SORT_CLS_CODE = p.FID_RANK_SORT_CLS_CODE || '0';
+      p.FID_INPUT_SRNO = p.FID_INPUT_SRNO || '';
+      break;
+
+    // ═══ 종목정보 ═══
+    case 'stock-info': case 'product-info':
+      p.PDNO = p.PDNO || sym;
+      p.PRDT_TYPE_CD = p.PRDT_TYPE_CD || '300';
+      break;
+    case 'holiday':
+      p.BASS_DT = p.BASS_DT || today();
+      p.CTX_AREA_NK = p.CTX_AREA_NK || '';
+      p.CTX_AREA_FK = p.CTX_AREA_FK || '';
+      break;
+    case 'invest-opinion':
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(90);
+      p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || today();
+      break;
+    case 'invest-by-sec':
+      p.FID_DIV_CLS_CODE = p.FID_DIV_CLS_CODE || '0';
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(90);
+      p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || today();
+      break;
+    case 'estimate-perform':
+      p.SHT_CD = p.SHT_CD || sym;
+      break;
+    case 'credit-company':
+      p.fid_rank_sort_cls_code = p.fid_rank_sort_cls_code || '0';
+      p.fid_slct_yn = p.fid_slct_yn || '';
+      p.fid_input_iscd = p.fid_input_iscd || sym;
+      p.fid_cond_mrkt_div_code = p.fid_cond_mrkt_div_code || 'J';
+      break;
+
+    // ═══ 차트 ═══
+    case 'chart-daily':
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(90);
+      p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || today();
+      p.FID_PERIOD_DIV_CODE = p.FID_PERIOD_DIV_CODE || 'D';
+      p.FID_ORG_ADJ_PRC = p.FID_ORG_ADJ_PRC || '0';
+      break;
+    case 'chart-minute':
+      p.FID_INPUT_HOUR_1 = p.FID_INPUT_HOUR_1 || '';
+      p.FID_PW_DATA_INCU_YN = p.FID_PW_DATA_INCU_YN || 'N';
+      p.FID_ETC_CLS_CODE = p.FID_ETC_CLS_CODE || '';
+      break;
+    case 'chart-daily-tl':
+      p.FID_INPUT_HOUR_1 = p.FID_INPUT_HOUR_1 || '';
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(30);
+      p.FID_PW_DATA_INCU_YN = p.FID_PW_DATA_INCU_YN || 'N';
+      break;
+    case 'daily-trade-vol':
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(30);
+      p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || today();
+      p.FID_PERIOD_DIV_CODE = p.FID_PERIOD_DIV_CODE || 'D';
+      break;
+    case 'overtime-time':
+      p.FID_HOUR_CLS_CODE = p.FID_HOUR_CLS_CODE || '';
+      break;
+
+    // ═══ 업종/지수 ═══
+    case 'index-daily':
+      p.FID_PERIOD_DIV_CODE = p.FID_PERIOD_DIV_CODE || 'D';
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(30);
+      break;
+    case 'index-chart':
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(90);
+      p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || today();
+      p.FID_PERIOD_DIV_CODE = p.FID_PERIOD_DIV_CODE || 'D';
+      break;
+    case 'index-time':
+      p.FID_INPUT_HOUR_1 = p.FID_INPUT_HOUR_1 || '';
+      break;
+    case 'index-category':
+      p.FID_MRKT_CLS_CODE = p.FID_MRKT_CLS_CODE || '0';
+      p.FID_BLNG_CLS_CODE = p.FID_BLNG_CLS_CODE || '0';
+      break;
+    case 'index-minute':
+      p.FID_ETC_CLS_CODE = p.FID_ETC_CLS_CODE || '';
+      p.FID_INPUT_HOUR_1 = p.FID_INPUT_HOUR_1 || '';
+      p.FID_PW_DATA_INCU_YN = p.FID_PW_DATA_INCU_YN || 'N';
+      break;
+    case 'exp-index':
+      p.FID_MKOP_CLS_CODE = p.FID_MKOP_CLS_CODE || '0';
+      p.FID_INPUT_HOUR_1 = p.FID_INPUT_HOUR_1 || '';
+      break;
+    case 'exp-total-index':
+      p.fid_mrkt_cls_code = p.fid_mrkt_cls_code || '0';
+      p.fid_mkop_cls_code = p.fid_mkop_cls_code || '0';
+      break;
+    case 'comp-interest':
+      p.FID_DIV_CLS_CODE = p.FID_DIV_CLS_CODE || '0';
+      p.FID_DIV_CLS_CODE1 = p.FID_DIV_CLS_CODE1 || '0';
+      break;
+
+    // ═══ 주문 (정정/예약) ═══
+    case 'order-modify':
+      p.KRX_FWDG_ORD_ORGNO = p.KRX_FWDG_ORD_ORGNO || '';
+      p.RVSE_CNCL_DVSN_CD = p.RVSE_CNCL_DVSN_CD || '01';
+      p.QTY_ALL_ORD_YN = p.QTY_ALL_ORD_YN || 'Y';
+      break;
+    case 'order-reserve':
+      p.SLL_BUY_DVSN_CD = p.SLL_BUY_DVSN_CD || '02';
+      p.ORD_DVSN_CD = p.ORD_DVSN_CD || '00';
+      p.ORD_OBJT_CBLC_DVSN_CD = p.ORD_OBJT_CBLC_DVSN_CD || '10';
+      break;
+
+    // ═══ 계좌 ═══
+    case 'balance':
+      p.AFHR_FLPR_YN = p.AFHR_FLPR_YN || 'N';
+      p.OFL_YN = p.OFL_YN || '';
+      p.INQR_DVSN = p.INQR_DVSN || '02';
+      p.UNPR_DVSN = p.UNPR_DVSN || '01';
+      p.FUND_STTL_ICLD_YN = p.FUND_STTL_ICLD_YN || 'N';
+      p.FNCG_AMT_AUTO_RDPT_YN = p.FNCG_AMT_AUTO_RDPT_YN || 'N';
+      p.PRCS_DVSN = p.PRCS_DVSN || '01';
+      p.CTX_AREA_FK100 = p.CTX_AREA_FK100 || '';
+      p.CTX_AREA_NK100 = p.CTX_AREA_NK100 || '';
+      break;
+    case 'balance-pl':
+      p.AFHR_FLPR_YN = p.AFHR_FLPR_YN || 'N';
+      p.OFL_YN = p.OFL_YN || '';
+      p.INQR_DVSN = p.INQR_DVSN || '02';
+      p.UNPR_DVSN = p.UNPR_DVSN || '01';
+      p.FUND_STTL_ICLD_YN = p.FUND_STTL_ICLD_YN || 'N';
+      p.FNCG_AMT_AUTO_RDPT_YN = p.FNCG_AMT_AUTO_RDPT_YN || 'N';
+      p.PRCS_DVSN = p.PRCS_DVSN || '01';
+      p.COST_ICLD_YN = p.COST_ICLD_YN || 'Y';
+      p.CTX_AREA_FK100 = p.CTX_AREA_FK100 || '';
+      p.CTX_AREA_NK100 = p.CTX_AREA_NK100 || '';
+      break;
+    case 'deposit':
+      p.INQR_DVSN_1 = p.INQR_DVSN_1 || '01';
+      p.BSPR_BF_DT_APLY_YN = p.BSPR_BF_DT_APLY_YN || '';
+      break;
+    case 'psbl-order':
+      p.PDNO = p.PDNO || sym;
+      p.ORD_UNPR = p.ORD_UNPR || '0';
+      p.ORD_DVSN = p.ORD_DVSN || '01';
+      p.CMA_EVLU_AMT_ICLD_YN = p.CMA_EVLU_AMT_ICLD_YN || 'Y';
+      p.OVRS_ICLD_YN = p.OVRS_ICLD_YN || 'N';
+      break;
+    case 'psbl-sell':
+      p.PDNO = p.PDNO || sym;
+      break;
+    case 'psbl-rvsecncl':
+      p.CTX_AREA_FK100 = p.CTX_AREA_FK100 || '';
+      p.CTX_AREA_NK100 = p.CTX_AREA_NK100 || '';
+      p.INQR_DVSN_1 = p.INQR_DVSN_1 || '0';
+      p.INQR_DVSN_2 = p.INQR_DVSN_2 || '0';
+      break;
+    case 'order-reserve-list':
+      p.RSVN_ORD_ORD_DT = p.RSVN_ORD_ORD_DT || daysAgo(30);
+      p.RSVN_ORD_END_DT = p.RSVN_ORD_END_DT || today();
+      p.RSVN_ORD_SEQ = p.RSVN_ORD_SEQ || '';
+      p.TMNL_MDIA_KIND_CD = p.TMNL_MDIA_KIND_CD || '00';
+      p.PRCS_DVSN_CD = p.PRCS_DVSN_CD || '0';
+      p.CNCL_YN = p.CNCL_YN || '';
+      p.PDNO = p.PDNO || '';
+      p.SLL_BUY_DVSN_CD = p.SLL_BUY_DVSN_CD || '0';
+      p.CTX_AREA_FK200 = p.CTX_AREA_FK200 || '';
+      p.CTX_AREA_NK200 = p.CTX_AREA_NK200 || '';
+      break;
+    case 'period-profit':
+      p.INQR_STRT_DT = p.INQR_STRT_DT || daysAgo(30);
+      p.INQR_END_DT = p.INQR_END_DT || today();
+      p.PDNO = p.PDNO || '';
+      p.SORT_DVSN = p.SORT_DVSN || '00';
+      p.INQR_DVSN = p.INQR_DVSN || '00';
+      p.CBLC_DVSN = p.CBLC_DVSN || '00';
+      p.CTX_AREA_FK100 = p.CTX_AREA_FK100 || '';
+      p.CTX_AREA_NK100 = p.CTX_AREA_NK100 || '';
+      break;
+    case 'period-trade':
+      p.PDNO = p.PDNO || '';
+      p.INQR_STRT_DT = p.INQR_STRT_DT || daysAgo(30);
+      p.INQR_END_DT = p.INQR_END_DT || today();
+      p.SORT_DVSN = p.SORT_DVSN || '00';
+      p.CBLC_DVSN = p.CBLC_DVSN || '00';
+      p.CTX_AREA_FK100 = p.CTX_AREA_FK100 || '';
+      p.CTX_AREA_NK100 = p.CTX_AREA_NK100 || '';
+      break;
+    case 'period-rights':
+      p.INQR_DVSN = p.INQR_DVSN || '00';
+      p.CUST_RNCNO25 = p.CUST_RNCNO25 || '';
+      p.HMID = p.HMID || '';
+      p.INQR_STRT_DT = p.INQR_STRT_DT || daysAgo(90);
+      p.INQR_END_DT = p.INQR_END_DT || today();
+      p.RGHT_TYPE_CD = p.RGHT_TYPE_CD || '';
+      p.PDNO = p.PDNO || '';
+      p.PRDT_TYPE_CD = p.PRDT_TYPE_CD || '';
+      p.CTX_AREA_FK100 = p.CTX_AREA_FK100 || '';
+      p.CTX_AREA_NK100 = p.CTX_AREA_NK100 || '';
+      break;
+    case 'credit-psamount':
+      p.PDNO = p.PDNO || sym;
+      p.ORD_UNPR = p.ORD_UNPR || '0';
+      p.ORD_DVSN = p.ORD_DVSN || '01';
+      p.CRDT_TYPE = p.CRDT_TYPE || '';
+      p.CMA_EVLU_AMT_ICLD_YN = p.CMA_EVLU_AMT_ICLD_YN || 'Y';
+      p.OVRS_ICLD_YN = p.OVRS_ICLD_YN || 'N';
+      break;
+    case 'intgr-margin':
+      p.CMA_EVLU_AMT_ICLD_YN = p.CMA_EVLU_AMT_ICLD_YN || 'Y';
+      p.WCRC_FRCR_DVSN_CD = p.WCRC_FRCR_DVSN_CD || '01';
+      p.FWEX_CTRT_FRCR_DVSN_CD = p.FWEX_CTRT_FRCR_DVSN_CD || '01';
+      break;
+
+    // ═══ 순위 공통 FID 기본값 ═══
+    case 'ranking-fluctuation':
+      p.fid_rank_sort_cls_code = p.fid_rank_sort_cls_code || '0';
+      p.fid_input_cnt_1 = p.fid_input_cnt_1 || '0';
+      p.fid_prc_cls_code = p.fid_prc_cls_code || '0';
+      p.fid_input_price_1 = p.fid_input_price_1 || '';
+      p.fid_input_price_2 = p.fid_input_price_2 || '';
+      p.fid_vol_cnt = p.fid_vol_cnt || '';
+      p.fid_trgt_cls_code = p.fid_trgt_cls_code || '0';
+      p.fid_trgt_exls_cls_code = p.fid_trgt_exls_cls_code || '0';
+      p.fid_div_cls_code = p.fid_div_cls_code || '0';
+      p.fid_rsfl_rate1 = p.fid_rsfl_rate1 || '';
+      p.fid_rsfl_rate2 = p.fid_rsfl_rate2 || '';
+      break;
+    case 'ranking-profit': case 'ranking-finance': case 'ranking-market-value':
+      p.fid_trgt_cls_code = p.fid_trgt_cls_code || '0';
+      p.fid_div_cls_code = p.fid_div_cls_code || '0';
+      p.fid_input_price_1 = p.fid_input_price_1 || '';
+      p.fid_input_price_2 = p.fid_input_price_2 || '';
+      p.fid_vol_cnt = p.fid_vol_cnt || '';
+      p.fid_input_option_1 = p.fid_input_option_1 || '';
+      p.fid_input_option_2 = p.fid_input_option_2 || '';
+      p.fid_rank_sort_cls_code = p.fid_rank_sort_cls_code || '0';
+      p.fid_blng_cls_code = p.fid_blng_cls_code || '0';
+      p.fid_trgt_exls_cls_code = p.fid_trgt_exls_cls_code || '0';
+      break;
+    case 'ranking-marketcap':
+      p.fid_div_cls_code = p.fid_div_cls_code || '0';
+      p.fid_trgt_cls_code = p.fid_trgt_cls_code || '0';
+      p.fid_trgt_exls_cls_code = p.fid_trgt_exls_cls_code || '0';
+      p.fid_input_price_1 = p.fid_input_price_1 || '';
+      p.fid_input_price_2 = p.fid_input_price_2 || '';
+      p.fid_vol_cnt = p.fid_vol_cnt || '';
+      break;
+    case 'ranking-quote-bal':
+      p.fid_rank_sort_cls_code = p.fid_rank_sort_cls_code || '0';
+      p.fid_div_cls_code = p.fid_div_cls_code || '0';
+      p.fid_trgt_cls_code = p.fid_trgt_cls_code || '0';
+      p.fid_trgt_exls_cls_code = p.fid_trgt_exls_cls_code || '0';
+      p.fid_input_price_1 = p.fid_input_price_1 || '';
+      p.fid_input_price_2 = p.fid_input_price_2 || '';
+      p.fid_vol_cnt = p.fid_vol_cnt || '';
+      break;
+    case 'ranking-disparity':
+      p.fid_div_cls_code = p.fid_div_cls_code || '0';
+      p.fid_rank_sort_cls_code = p.fid_rank_sort_cls_code || '0';
+      p.fid_hour_cls_code = p.fid_hour_cls_code || '0';
+      p.fid_trgt_cls_code = p.fid_trgt_cls_code || '0';
+      p.fid_trgt_exls_cls_code = p.fid_trgt_exls_cls_code || '0';
+      p.fid_input_price_1 = p.fid_input_price_1 || '';
+      p.fid_input_price_2 = p.fid_input_price_2 || '';
+      p.fid_vol_cnt = p.fid_vol_cnt || '';
+      break;
+    case 'ranking-credit':
+      p.FID_OPTION = p.FID_OPTION || '0';
+      p.FID_RANK_SORT_CLS_CODE = p.FID_RANK_SORT_CLS_CODE || '0';
+      break;
+    case 'ranking-short':
+      p.FID_APLY_RANG_VOL = p.FID_APLY_RANG_VOL || '';
+      p.FID_PERIOD_DIV_CODE = p.FID_PERIOD_DIV_CODE || 'D';
+      p.FID_INPUT_CNT_1 = p.FID_INPUT_CNT_1 || '0';
+      p.FID_TRGT_EXLS_CLS_CODE = p.FID_TRGT_EXLS_CLS_CODE || '0';
+      p.FID_TRGT_CLS_CODE = p.FID_TRGT_CLS_CODE || '0';
+      p.FID_APLY_RANG_PRC_1 = p.FID_APLY_RANG_PRC_1 || '';
+      p.FID_APLY_RANG_PRC_2 = p.FID_APLY_RANG_PRC_2 || '';
+      break;
+    case 'ranking-dividend':
+      p.CTS_AREA = p.CTS_AREA || '';
+      p.GB1 = p.GB1 || '0';
+      p.UPJONG = p.UPJONG || '';
+      p.GB2 = p.GB2 || '0';
+      p.GB3 = p.GB3 || '0';
+      p.F_DT = p.F_DT || daysAgo(365);
+      p.T_DT = p.T_DT || today();
+      p.GB4 = p.GB4 || '0';
+      break;
+    case 'ranking-volume-power':
+      p.fid_trgt_exls_cls_code = p.fid_trgt_exls_cls_code || '0';
+      p.fid_div_cls_code = p.fid_div_cls_code || '0';
+      p.fid_input_price_1 = p.fid_input_price_1 || '';
+      p.fid_input_price_2 = p.fid_input_price_2 || '';
+      p.fid_vol_cnt = p.fid_vol_cnt || '';
+      p.fid_trgt_cls_code = p.fid_trgt_cls_code || '0';
+      break;
+    case 'ranking-prefer':
+      p.fid_div_cls_code = p.fid_div_cls_code || '0';
+      p.fid_trgt_cls_code = p.fid_trgt_cls_code || '0';
+      p.fid_trgt_exls_cls_code = p.fid_trgt_exls_cls_code || '0';
+      p.fid_input_price_1 = p.fid_input_price_1 || '';
+      p.fid_input_price_2 = p.fid_input_price_2 || '';
+      p.fid_vol_cnt = p.fid_vol_cnt || '';
+      break;
+    case 'ranking-near-hl':
+      p.fid_aply_rang_vol = p.fid_aply_rang_vol || '';
+      p.fid_div_cls_code = p.fid_div_cls_code || '0';
+      p.fid_input_cnt_1 = p.fid_input_cnt_1 || '0';
+      p.fid_input_cnt_2 = p.fid_input_cnt_2 || '0';
+      p.fid_prc_cls_code = p.fid_prc_cls_code || '0';
+      p.fid_trgt_cls_code = p.fid_trgt_cls_code || '0';
+      p.fid_trgt_exls_cls_code = p.fid_trgt_exls_cls_code || '0';
+      p.fid_aply_rang_prc_1 = p.fid_aply_rang_prc_1 || '';
+      p.fid_aply_rang_prc_2 = p.fid_aply_rang_prc_2 || '';
+      break;
+    case 'ranking-bulk-trans':
+      p.fid_rank_sort_cls_code = p.fid_rank_sort_cls_code || '0';
+      p.fid_div_cls_code = p.fid_div_cls_code || '0';
+      p.fid_input_price_1 = p.fid_input_price_1 || '';
+      p.fid_aply_rang_prc_1 = p.fid_aply_rang_prc_1 || '';
+      p.fid_aply_rang_prc_2 = p.fid_aply_rang_prc_2 || '';
+      p.fid_input_iscd_2 = p.fid_input_iscd_2 || '';
+      p.fid_trgt_exls_cls_code = p.fid_trgt_exls_cls_code || '0';
+      p.fid_trgt_cls_code = p.fid_trgt_cls_code || '0';
+      p.fid_vol_cnt = p.fid_vol_cnt || '';
+      break;
+    case 'ranking-top-interest':
+      p.fid_input_iscd_2 = p.fid_input_iscd_2 || '';
+      p.fid_trgt_cls_code = p.fid_trgt_cls_code || '0';
+      p.fid_trgt_exls_cls_code = p.fid_trgt_exls_cls_code || '0';
+      p.fid_input_price_1 = p.fid_input_price_1 || '';
+      p.fid_input_price_2 = p.fid_input_price_2 || '';
+      p.fid_vol_cnt = p.fid_vol_cnt || '';
+      p.fid_div_cls_code = p.fid_div_cls_code || '0';
+      p.fid_input_cnt_1 = p.fid_input_cnt_1 || '0';
+      break;
+    case 'ranking-by-company':
+      p.fid_trgt_exls_cls_code = p.fid_trgt_exls_cls_code || '0';
+      p.fid_div_cls_code = p.fid_div_cls_code || '0';
+      p.fid_rank_sort_cls_code = p.fid_rank_sort_cls_code || '0';
+      p.fid_input_date_1 = p.fid_input_date_1 || today();
+      p.fid_input_date_2 = p.fid_input_date_2 || today();
+      p.fid_trgt_cls_code = p.fid_trgt_cls_code || '0';
+      p.fid_aply_rang_vol = p.fid_aply_rang_vol || '';
+      p.fid_aply_rang_prc_1 = p.fid_aply_rang_prc_1 || '';
+      p.fid_aply_rang_prc_2 = p.fid_aply_rang_prc_2 || '';
+      break;
+    case 'ranking-after-vol':
+      p.fid_rank_sort_cls_code = p.fid_rank_sort_cls_code || '0';
+      p.fid_div_cls_code = p.fid_div_cls_code || '0';
+      p.fid_trgt_exls_cls_code = p.fid_trgt_exls_cls_code || '0';
+      p.fid_trgt_cls_code = p.fid_trgt_cls_code || '0';
+      p.fid_vol_cnt = p.fid_vol_cnt || '';
+      p.fid_input_price_1 = p.fid_input_price_1 || '';
+      p.fid_input_price_2 = p.fid_input_price_2 || '';
+      break;
+    case 'ranking-overtime-vol':
+      p.FID_RANK_SORT_CLS_CODE = p.FID_RANK_SORT_CLS_CODE || '0';
+      p.FID_INPUT_PRICE_1 = p.FID_INPUT_PRICE_1 || '';
+      p.FID_INPUT_PRICE_2 = p.FID_INPUT_PRICE_2 || '';
+      p.FID_VOL_CNT = p.FID_VOL_CNT || '';
+      p.FID_TRGT_CLS_CODE = p.FID_TRGT_CLS_CODE || '0';
+      p.FID_TRGT_EXLS_CLS_CODE = p.FID_TRGT_EXLS_CLS_CODE || '0';
+      break;
+    case 'ranking-overtime-fluct':
+      p.FID_MRKT_CLS_CODE = p.FID_MRKT_CLS_CODE || '0';
+      p.FID_DIV_CLS_CODE = p.FID_DIV_CLS_CODE || '0';
+      p.FID_INPUT_PRICE_1 = p.FID_INPUT_PRICE_1 || '';
+      p.FID_INPUT_PRICE_2 = p.FID_INPUT_PRICE_2 || '';
+      p.FID_VOL_CNT = p.FID_VOL_CNT || '';
+      p.FID_TRGT_CLS_CODE = p.FID_TRGT_CLS_CODE || '0';
+      p.FID_TRGT_EXLS_CLS_CODE = p.FID_TRGT_EXLS_CLS_CODE || '0';
+      break;
+    case 'ranking-exp-trans':
+      p.fid_rank_sort_cls_code = p.fid_rank_sort_cls_code || '0';
+      p.fid_div_cls_code = p.fid_div_cls_code || '0';
+      p.fid_aply_rang_prc_1 = p.fid_aply_rang_prc_1 || '';
+      p.fid_vol_cnt = p.fid_vol_cnt || '';
+      p.fid_pbmn = p.fid_pbmn || '';
+      p.fid_blng_cls_code = p.fid_blng_cls_code || '0';
+      p.fid_mkop_cls_code = p.fid_mkop_cls_code || '0';
+      break;
+    case 'ranking-overtime-exp':
+      p.FID_RANK_SORT_CLS_CODE = p.FID_RANK_SORT_CLS_CODE || '0';
+      p.FID_DIV_CLS_CODE = p.FID_DIV_CLS_CODE || '0';
+      p.FID_INPUT_PRICE_1 = p.FID_INPUT_PRICE_1 || '';
+      p.FID_INPUT_PRICE_2 = p.FID_INPUT_PRICE_2 || '';
+      p.FID_INPUT_VOL_1 = p.FID_INPUT_VOL_1 || '';
+      break;
+
+    // ═══ 시세분석 ═══
+    case 'foreign-total':
+      p.FID_DIV_CLS_CODE = p.FID_DIV_CLS_CODE || '0';
+      p.FID_RANK_SORT_CLS_CODE = p.FID_RANK_SORT_CLS_CODE || '0';
+      p.FID_ETC_CLS_CODE = p.FID_ETC_CLS_CODE || '';
+      break;
+    case 'investor-daily':
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(30);
+      p.FID_INPUT_ISCD_1 = p.FID_INPUT_ISCD_1 || '';
+      p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || today();
+      p.FID_INPUT_ISCD_2 = p.FID_INPUT_ISCD_2 || '';
+      break;
+    case 'investor-time':
+      p.fid_input_iscd = p.fid_input_iscd || sym;
+      p.fid_input_iscd_2 = p.fid_input_iscd_2 || '';
+      break;
+    case 'investor-by-stock':
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(30);
+      p.FID_ORG_ADJ_PRC = p.FID_ORG_ADJ_PRC || '0';
+      p.FID_ETC_CLS_CODE = p.FID_ETC_CLS_CODE || '';
+      break;
+    case 'investor-trend':
+      p.MKSC_SHRN_ISCD = p.MKSC_SHRN_ISCD || sym;
+      break;
+    case 'program-today':
+      p.FID_MRKT_CLS_CODE = p.FID_MRKT_CLS_CODE || '0';
+      p.FID_SCTN_CLS_CODE = p.FID_SCTN_CLS_CODE || '0';
+      p.FID_COND_MRKT_DIV_CODE1 = p.FID_COND_MRKT_DIV_CODE1 || '';
+      p.FID_INPUT_HOUR_1 = p.FID_INPUT_HOUR_1 || '';
+      break;
+    case 'program-daily':
+      p.FID_MRKT_CLS_CODE = p.FID_MRKT_CLS_CODE || '0';
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(30);
+      p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || today();
+      break;
+    case 'program-by-stock-daily':
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(30);
+      break;
+    case 'investor-program-today':
+      p.EXCH_DIV_CLS_CODE = p.EXCH_DIV_CLS_CODE || '0';
+      p.MRKT_DIV_CLS_CODE = p.MRKT_DIV_CLS_CODE || '0';
+      break;
+    case 'credit-daily':
+      p.fid_input_date_1 = p.fid_input_date_1 || daysAgo(30);
+      break;
+    case 'short-daily':
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(30);
+      p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || today();
+      break;
+    case 'loan-daily':
+      p.MRKT_DIV_CLS_CODE = p.MRKT_DIV_CLS_CODE || '0';
+      p.MKSC_SHRN_ISCD = p.MKSC_SHRN_ISCD || sym;
+      p.START_DATE = p.START_DATE || daysAgo(30);
+      p.END_DATE = p.END_DATE || today();
+      p.CTS = p.CTS || '';
+      break;
+    case 'cond-search-list':
+      p.user_id = p.user_id || '';
+      break;
+    case 'cond-search-result':
+      p.user_id = p.user_id || '';
+      p.seq = p.seq || '';
+      break;
+    case 'exp-price-trend':
+      p.fid_mkop_cls_code = p.fid_mkop_cls_code || '0';
+      break;
+    case 'pbar-tratio':
+      p.FID_INPUT_HOUR_1 = p.FID_INPUT_HOUR_1 || '';
+      break;
+    case 'mktfunds':
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(30);
+      break;
+    case 'member-daily':
+      p.FID_INPUT_ISCD_2 = p.FID_INPUT_ISCD_2 || '';
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(30);
+      p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || today();
+      p.FID_SCTN_CLS_CODE = p.FID_SCTN_CLS_CODE || '';
+      break;
+    case 'capture-uplowprice':
+      p.FID_PRC_CLS_CODE = p.FID_PRC_CLS_CODE || '0';
+      p.FID_DIV_CLS_CODE = p.FID_DIV_CLS_CODE || '0';
+      p.FID_TRGT_CLS_CODE = p.FID_TRGT_CLS_CODE || '0';
+      p.FID_TRGT_EXLS_CLS_CODE = p.FID_TRGT_EXLS_CLS_CODE || '0';
+      p.FID_INPUT_PRICE_1 = p.FID_INPUT_PRICE_1 || '';
+      p.FID_INPUT_PRICE_2 = p.FID_INPUT_PRICE_2 || '';
+      p.FID_VOL_CNT = p.FID_VOL_CNT || '';
+      break;
+    case 'frgnmem-trade':
+      p.FID_RANK_SORT_CLS_CODE = p.FID_RANK_SORT_CLS_CODE || '0';
+      p.FID_RANK_SORT_CLS_CODE_2 = p.FID_RANK_SORT_CLS_CODE_2 || '0';
+      break;
+    case 'frgnmem-pchs':
+      p.FID_INPUT_ISCD_2 = p.FID_INPUT_ISCD_2 || '';
+      break;
+
+    // ═══ 재무 ═══
+    case 'finance-balance': case 'finance-income': case 'finance-ratio':
+    case 'finance-profit': case 'finance-other': case 'finance-stability':
+    case 'finance-growth':
+      p.FID_DIV_CLS_CODE = p.FID_DIV_CLS_CODE || p.fid_div_cls_code || '0';
+      p.fid_div_cls_code = p.fid_div_cls_code || p.FID_DIV_CLS_CODE || '0';
+      p.fid_cond_mrkt_div_code = p.fid_cond_mrkt_div_code || 'J';
+      p.fid_input_iscd = p.fid_input_iscd || sym;
+      break;
+
+    // ═══ 예탁원(KSD) ═══
+    case 'ksd-bonus': case 'ksd-dividend': case 'ksd-paidin': case 'ksd-purreq':
+    case 'ksd-merger': case 'ksd-revsplit': case 'ksd-capdcrs': case 'ksd-listinfo':
+    case 'ksd-puboffer': case 'ksd-forfeit': case 'ksd-manddeposit': case 'ksd-sharemeet':
+      p.SHT_CD = p.SHT_CD || sym;
+      p.F_DT = p.F_DT || daysAgo(365);
+      p.T_DT = p.T_DT || today();
+      p.CTS = p.CTS || '';
+      if (action === 'ksd-dividend') {
+        p.GB1 = p.GB1 || '0';
+        p.HIGH_GB = p.HIGH_GB || '0';
+      }
+      if (action === 'ksd-paidin') p.GB1 = p.GB1 || '0';
+      if (action === 'ksd-revsplit') p.MARKET_GB = p.MARKET_GB || '0';
+      break;
+
+    // ═══ ELW ═══
+    case 'elw-search':
+      p.FID_RANK_SORT_CLS_CODE = p.FID_RANK_SORT_CLS_CODE || '0';
+      p.FID_INPUT_CNT_1 = p.FID_INPUT_CNT_1 || '0';
+      p.FID_RANK_SORT_CLS_CODE_2 = p.FID_RANK_SORT_CLS_CODE_2 || '0';
+      p.FID_INPUT_CNT_2 = p.FID_INPUT_CNT_2 || '0';
+      p.FID_RANK_SORT_CLS_CODE_3 = p.FID_RANK_SORT_CLS_CODE_3 || '0';
+      p.FID_INPUT_CNT_3 = p.FID_INPUT_CNT_3 || '0';
+      p.FID_TRGT_CLS_CODE = p.FID_TRGT_CLS_CODE || '0';
+      p.FID_UNAS_INPUT_ISCD = p.FID_UNAS_INPUT_ISCD || '';
+      p.FID_MRKT_CLS_CODE = p.FID_MRKT_CLS_CODE || '0';
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || '';
+      p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || '';
+      p.FID_INPUT_ISCD_2 = p.FID_INPUT_ISCD_2 || '';
+      p.FID_ETC_CLS_CODE = p.FID_ETC_CLS_CODE || '';
+      p.FID_INPUT_RMNN_DYNU_1 = p.FID_INPUT_RMNN_DYNU_1 || '';
+      p.FID_INPUT_RMNN_DYNU_2 = p.FID_INPUT_RMNN_DYNU_2 || '';
+      p.FID_PRPR_CNT1 = p.FID_PRPR_CNT1 || '';
+      p.FID_PRPR_CNT2 = p.FID_PRPR_CNT2 || '';
+      p.FID_RSFL_RATE1 = p.FID_RSFL_RATE1 || '';
+      p.FID_RSFL_RATE2 = p.FID_RSFL_RATE2 || '';
+      p.FID_VOL1 = p.FID_VOL1 || '';
+      p.FID_VOL2 = p.FID_VOL2 || '';
+      p.FID_APLY_RANG_PRC_1 = p.FID_APLY_RANG_PRC_1 || '';
+      p.FID_APLY_RANG_PRC_2 = p.FID_APLY_RANG_PRC_2 || '';
+      p.FID_LVRG_VAL1 = p.FID_LVRG_VAL1 || '';
+      p.FID_LVRG_VAL2 = p.FID_LVRG_VAL2 || '';
+      p.FID_VOL3 = p.FID_VOL3 || '';
+      p.FID_VOL4 = p.FID_VOL4 || '';
+      p.FID_INTS_VLTL1 = p.FID_INTS_VLTL1 || '';
+      p.FID_INTS_VLTL2 = p.FID_INTS_VLTL2 || '';
+      p.FID_PRMM_VAL1 = p.FID_PRMM_VAL1 || '';
+      p.FID_PRMM_VAL2 = p.FID_PRMM_VAL2 || '';
+      p.FID_GEAR1 = p.FID_GEAR1 || '';
+      p.FID_GEAR2 = p.FID_GEAR2 || '';
+      p.FID_PRLS_QRYR_RATE1 = p.FID_PRLS_QRYR_RATE1 || '';
+      p.FID_PRLS_QRYR_RATE2 = p.FID_PRLS_QRYR_RATE2 || '';
+      p.FID_DELTA1 = p.FID_DELTA1 || '';
+      p.FID_DELTA2 = p.FID_DELTA2 || '';
+      p.FID_ACPR1 = p.FID_ACPR1 || '';
+      p.FID_ACPR2 = p.FID_ACPR2 || '';
+      p.FID_STCK_CNVR_RATE1 = p.FID_STCK_CNVR_RATE1 || '';
+      p.FID_STCK_CNVR_RATE2 = p.FID_STCK_CNVR_RATE2 || '';
+      p.FID_DIV_CLS_CODE = p.FID_DIV_CLS_CODE || '0';
+      p.FID_PRIT1 = p.FID_PRIT1 || '';
+      p.FID_PRIT2 = p.FID_PRIT2 || '';
+      p.FID_CFP1 = p.FID_CFP1 || '';
+      p.FID_CFP2 = p.FID_CFP2 || '';
+      p.FID_INPUT_NMIX_PRICE_1 = p.FID_INPUT_NMIX_PRICE_1 || '';
+      p.FID_INPUT_NMIX_PRICE_2 = p.FID_INPUT_NMIX_PRICE_2 || '';
+      p.FID_EGEA_VAL1 = p.FID_EGEA_VAL1 || '';
+      p.FID_EGEA_VAL2 = p.FID_EGEA_VAL2 || '';
+      p.FID_INPUT_DVDN_ERT = p.FID_INPUT_DVDN_ERT || '';
+      p.FID_INPUT_HIST_VLTL = p.FID_INPUT_HIST_VLTL || '';
+      p.FID_THETA1 = p.FID_THETA1 || '';
+      p.FID_THETA2 = p.FID_THETA2 || '';
+      break;
+    case 'elw-updown': case 'elw-volume': case 'elw-indicator': case 'elw-sensitivity':
+    case 'elw-quick-change':
+      p.FID_UNAS_INPUT_ISCD = p.FID_UNAS_INPUT_ISCD || '';
+      p.FID_INPUT_RMNN_DYNU_1 = p.FID_INPUT_RMNN_DYNU_1 || '';
+      p.FID_DIV_CLS_CODE = p.FID_DIV_CLS_CODE || '0';
+      p.FID_INPUT_PRICE_1 = p.FID_INPUT_PRICE_1 || '';
+      p.FID_INPUT_PRICE_2 = p.FID_INPUT_PRICE_2 || '';
+      p.FID_INPUT_VOL_1 = p.FID_INPUT_VOL_1 || '';
+      p.FID_INPUT_VOL_2 = p.FID_INPUT_VOL_2 || '';
+      p.FID_RANK_SORT_CLS_CODE = p.FID_RANK_SORT_CLS_CODE || '0';
+      p.FID_BLNG_CLS_CODE = p.FID_BLNG_CLS_CODE || '0';
+      if (action === 'elw-updown' || action === 'elw-volume') {
+        p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || '';
+        p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || '';
+      }
+      if (action === 'elw-volume') p.FID_INPUT_ISCD_2 = p.FID_INPUT_ISCD_2 || '';
+      if (action === 'elw-sensitivity') p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || '';
+      if (action === 'elw-quick-change') {
+        p.FID_MRKT_CLS_CODE = p.FID_MRKT_CLS_CODE || '0';
+        p.FID_HOUR_CLS_CODE = p.FID_HOUR_CLS_CODE || '0';
+        p.FID_INPUT_HOUR_1 = p.FID_INPUT_HOUR_1 || '';
+        p.FID_INPUT_HOUR_2 = p.FID_INPUT_HOUR_2 || '';
+      }
+      break;
+    case 'elw-newly-listed':
+      p.FID_DIV_CLS_CODE = p.FID_DIV_CLS_CODE || '0';
+      p.FID_UNAS_INPUT_ISCD = p.FID_UNAS_INPUT_ISCD || '';
+      p.FID_INPUT_ISCD_2 = p.FID_INPUT_ISCD_2 || '';
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || '';
+      p.FID_BLNC_CLS_CODE = p.FID_BLNC_CLS_CODE || '0';
+      break;
+
+    // ═══ ETF/ETN ═══
+    case 'etf-nav-time':
+      p.fid_hour_cls_code = p.fid_hour_cls_code || '';
+      break;
+    case 'etf-nav-day':
+      p.fid_input_date_1 = p.fid_input_date_1 || daysAgo(30);
+      p.fid_input_date_2 = p.fid_input_date_2 || today();
+      break;
+    case 'etf-component':
+      break;
+
+    // ═══ 선물옵션 ═══
+    case 'futures-chart':
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(90);
+      p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || today();
+      p.FID_PERIOD_DIV_CODE = p.FID_PERIOD_DIV_CODE || 'D';
+      break;
+    case 'futures-balance':
+      p.MGNA_DVSN = p.MGNA_DVSN || '01';
+      p.EXCC_STAT_CD = p.EXCC_STAT_CD || '0';
+      p.CTX_AREA_FK200 = p.CTX_AREA_FK200 || '';
+      p.CTX_AREA_NK200 = p.CTX_AREA_NK200 || '';
+      break;
+    case 'futures-margin':
+      p.BASS_DT = p.BASS_DT || today();
+      p.BAST_ID = p.BAST_ID || '';
+      p.CTX_AREA_NK200 = p.CTX_AREA_NK200 || '';
+      break;
+
+    // ═══ 해외주식 ═══
+    case 'overseas-price': case 'overseas-detail': case 'overseas-quote':
+      p.AUTH = p.AUTH || '';
+      break;
+    case 'overseas-daily':
+      p.AUTH = p.AUTH || '';
+      p.GUBN = p.GUBN || '0';
+      p.BYMD = p.BYMD || '';
+      p.MODP = p.MODP || '0';
+      break;
+    case 'overseas-chart':
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(90);
+      p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || today();
+      p.FID_PERIOD_DIV_CODE = p.FID_PERIOD_DIV_CODE || 'D';
+      break;
+    case 'overseas-ccnl':
+      p.AUTH = p.AUTH || '';
+      p.KEYB = p.KEYB || '';
+      p.TDAY = p.TDAY || '';
+      break;
+    case 'overseas-search':
+      p.AUTH = p.AUTH || '';
+      break;
+    case 'overseas-balance':
+      p.OVRS_EXCG_CD = p.OVRS_EXCG_CD || exch;
+      p.TR_CRCY_CD = p.TR_CRCY_CD || '';
+      break;
+    case 'overseas-ccld':
+      p.PDNO = p.PDNO || '';
+      p.ORD_STRT_DT = p.ORD_STRT_DT || daysAgo(7);
+      p.ORD_END_DT = p.ORD_END_DT || today();
+      p.SLL_BUY_DVSN = p.SLL_BUY_DVSN || '0';
+      p.CCLD_NCCS_DVSN = p.CCLD_NCCS_DVSN || '0';
+      p.OVRS_EXCG_CD = p.OVRS_EXCG_CD || exch;
+      p.SORT_SQN = p.SORT_SQN || 'DS';
+      p.ORD_DT = p.ORD_DT || '';
+      p.ORD_GNO_BRNO = p.ORD_GNO_BRNO || '';
+      p.ODNO = p.ODNO || '';
+      p.CTX_AREA_NK200 = p.CTX_AREA_NK200 || '';
+      p.CTX_AREA_FK200 = p.CTX_AREA_FK200 || '';
+      break;
+    case 'overseas-psamount':
+      p.OVRS_EXCG_CD = p.OVRS_EXCG_CD || exch;
+      p.OVRS_ORD_UNPR = p.OVRS_ORD_UNPR || '0';
+      p.ITEM_CD = p.ITEM_CD || sym;
+      break;
   }
 
   return p;
