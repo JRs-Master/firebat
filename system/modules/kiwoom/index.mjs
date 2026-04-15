@@ -214,30 +214,7 @@ process.stdin.on('data', chunk => { raw += chunk; });
 process.stdin.on('end', async () => {
   try {
     const { data } = JSON.parse(raw);
-    // 액션명 정규화: 한국어·변형·스네이크케이스 등 → 영문 편의 액션
-    function normalizeAction(raw) {
-      if (!raw) return raw;
-      if (ACTION_MAP[raw]) return raw;
-      const KEYWORDS = [
-        [/price|현재가|주가|시세|current/i, 'price'],
-        [/quote|호가|asking/i, 'quote'],
-        [/order.?buy|매수/i, 'order-buy'],
-        [/order.?sell|매도/i, 'order-sell'],
-        [/order.?mod|정정/i, 'order-modify'],
-        [/order.?cancel|취소/i, 'order-cancel'],
-        [/chart.?min|분봉/i, 'chart-minute'],
-        [/chart|일봉/i, 'chart-daily'],
-        [/balance|잔고/i, 'balance'],
-        [/account|계좌/i, 'account'],
-        [/deposit|예수금/i, 'deposit'],
-        [/rank.*vol|거래량.*순위|volume.*rank/i, 'ranking-volume'],
-      ];
-      for (const [re, mapped] of KEYWORDS) {
-        if (re.test(raw)) return mapped;
-      }
-      return raw;
-    }
-    const action = normalizeAction(data?.action);
+    const action = data?.action;
     if (!action) {
       console.log(JSON.stringify({ success: false, error: 'data.action 필드가 필요합니다. 편의 액션(price, balance 등) 또는 apiId(ka10001 등)를 지정하세요.' }));
       return;
