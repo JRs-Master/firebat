@@ -189,6 +189,7 @@ function handleToolsMode(
         success: result.success,
         reply: result.reply,
         executedActions: result.executedActions,
+        data: result.data,
         suggestions: result.data && typeof result.data === 'object' && 'suggestions' in result.data
           ? (result.data as Record<string, unknown>).suggestions
           : undefined,
