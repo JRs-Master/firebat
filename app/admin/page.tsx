@@ -298,6 +298,34 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
                 );
               })()}
 
+              {/* 인라인 HTML 렌더링 (차트/그래프 등) */}
+              {msg.data && (() => {
+                const items = Array.isArray(msg.data) ? msg.data : [msg.data];
+                const htmlItems = items.filter((d: any) => d && 'htmlContent' in d);
+                return htmlItems.length > 0 ? (
+                  <div className="space-y-3 mt-2">
+                    {htmlItems.map((h: any, i: number) => {
+                      const raw = h.htmlContent as string;
+                      const isFullDoc = raw.trim().toLowerCase().startsWith('<!doctype') || raw.trim().toLowerCase().startsWith('<html');
+                      const srcdoc = isFullDoc ? raw : `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:0;height:100%;overflow:auto}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.6;color:#1e293b}</style>
+</head><body>${raw}</body></html>`;
+                      return (
+                        <iframe
+                          key={i}
+                          srcDoc={srcdoc}
+                          sandbox="allow-scripts"
+                          className="w-full border border-slate-200 rounded-xl bg-white"
+                          style={{ height: h.htmlHeight || '400px' }}
+                          title="Inline HTML"
+                        />
+                      );
+                    })}
+                  </div>
+                ) : null;
+              })()}
+
               {/* 데이터 + 미리보기 링크 */}
               {msg.data && (() => {
                 const items = Array.isArray(msg.data) ? msg.data : [msg.data];
