@@ -9,10 +9,16 @@
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { FirebatCore } from '../core/index';
-import fs from 'fs';
-import path from 'path';
+
+// fs/path는 Turbopack NFT 추적 방지를 위해 함수 내부에서 동적 로드
+let _fs: typeof import('fs') | null = null;
+let _path: typeof import('path') | null = null;
+function getFs() { if (!_fs) _fs = require('fs'); return _fs!; }
+function getPath() { if (!_path) _path = require('path'); return _path!; }
 
 export function createFirebatMcpServer(core: FirebatCore): McpServer {
+  const fs = getFs();
+  const path = getPath();
   const server = new McpServer({
     name: 'firebat',
     version: '0.1.0',
@@ -284,7 +290,7 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   // ── 시스템 모듈 → 개별 MCP 도구 자동 등록 ────────────────────────────────
 
-  const sysModulesDir = path.resolve(/* turbopackIgnore: true */ process.cwd(), 'system/modules');
+  const sysModulesDir = path.resolve(process.cwd(), 'system/modules');
   if (fs.existsSync(sysModulesDir)) {
     const modDirs = fs.readdirSync(sysModulesDir, { withFileTypes: true })
       .filter(d => d.isDirectory());
@@ -357,7 +363,7 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
   //  리소스 — 파이어뱃 규칙/스펙 문서 (Claude Code가 참조)
   // ══════════════════════════════════════════════════════════════════════════
 
-  const docsDir = path.resolve(/* turbopackIgnore: true */ process.cwd(), 'docs');
+  const docsDir = path.resolve(process.cwd(), 'docs');
 
   // 바이블 문서 리소스
   const bibles = [

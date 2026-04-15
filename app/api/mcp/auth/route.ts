@@ -8,45 +8,51 @@
  * DELETE /api/mcp/auth?server=xxx — credentials 삭제 (재인증용)
  */
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
-/** 공통 키 파일 경로 (~/.firebat/gcp-oauth.keys.json) */
-const FIREBAT_DIR = path.join(/* turbopackIgnore: true */ os.homedir(), '.firebat');
-const KEYS_PATH = path.join(FIREBAT_DIR, 'gcp-oauth.keys.json');
+// fs/path/os는 Turbopack NFT 추적 방지를 위해 함수 내부에서 동적 로드
+function getFs(): typeof import('fs') { return require('fs'); }
+function getPath(): typeof import('path') { return require('path'); }
+function getOs(): typeof import('os') { return require('os'); }
+
+/** 공통 키 파일 경로 (~/.firebat/gcp-oauth.keys.json) — lazy 초기화 */
+function getFirebatDir() { return getPath().join(getOs().homedir(), '.firebat'); }
+function getKeysPath() { return getPath().join(getFirebatDir(), 'gcp-oauth.keys.json'); }
 
 /** 서비스별 스코프 + credentials 경로 */
-const OAUTH_SERVICES: Record<string, {
+function getOAuthServices(): Record<string, {
   credentialsPath: string;
-  legacyPaths?: string[];  // 외부 MCP 패키지가 참조하는 경로 (호환용, 같이 저장)
+  legacyPaths?: string[];
   scopes: string[];
-}> = {
-  gmail: {
-    credentialsPath: path.join(FIREBAT_DIR, 'credentials-gmail.json'),
-    legacyPaths: [path.join(/* turbopackIgnore: true */ os.homedir(), '.gmail-mcp', 'credentials.json')],
-    scopes: [
-      'https://www.googleapis.com/auth/gmail.modify',
-      'https://www.googleapis.com/auth/gmail.send',
-      'https://www.googleapis.com/auth/gmail.readonly',
-    ],
-  },
-  drive: {
-    credentialsPath: path.join(FIREBAT_DIR, 'credentials-drive.json'),
-    scopes: [
-      'https://www.googleapis.com/auth/drive',
-      'https://www.googleapis.com/auth/drive.file',
-    ],
-  },
-  calendar: {
-    credentialsPath: path.join(FIREBAT_DIR, 'credentials-calendar.json'),
-    scopes: [
-      'https://www.googleapis.com/auth/calendar',
-      'https://www.googleapis.com/auth/calendar.events',
-    ],
-  },
-};
+}> {
+  const p = getPath();
+  const dir = getFirebatDir();
+  return {
+    gmail: {
+      credentialsPath: p.join(dir, 'credentials-gmail.json'),
+      legacyPaths: [p.join(getOs().homedir(), '.gmail-mcp', 'credentials.json')],
+      scopes: [
+        'https://www.googleapis.com/auth/gmail.modify',
+        'https://www.googleapis.com/auth/gmail.send',
+        'https://www.googleapis.com/auth/gmail.readonly',
+      ],
+    },
+    drive: {
+      credentialsPath: p.join(dir, 'credentials-drive.json'),
+      scopes: [
+        'https://www.googleapis.com/auth/drive',
+        'https://www.googleapis.com/auth/drive.file',
+      ],
+    },
+    calendar: {
+      credentialsPath: p.join(dir, 'credentials-calendar.json'),
+      scopes: [
+        'https://www.googleapis.com/auth/calendar',
+        'https://www.googleapis.com/auth/calendar.events',
+      ],
+    },
+  };
+}
 
 /** Nginx 리버스 프록시 뒤에서도 올바른 origin 반환 */
 export function getOrigin(req: NextRequest): string {
@@ -58,7 +64,7 @@ export function getOrigin(req: NextRequest): string {
 /** Google OAuth 키 파일 파싱 */
 export function readOAuthKeys(): { clientId: string; clientSecret: string } | null {
   try {
-    const raw = JSON.parse(fs.readFileSync(KEYS_PATH, 'utf-8'));
+    const raw = JSON.parse(getFs().readFileSync(getKeysPath(), 'utf-8'));
     const cred = raw.web || raw.installed;
     if (!cred) return null;
     return { clientId: cred.client_id, clientSecret: cred.client_secret };
@@ -69,12 +75,12 @@ export function readOAuthKeys(): { clientId: string; clientSecret: string } | nu
 
 /** 서비스 키 찾기 (serverName에 gmail/drive/calendar 포함 시 매칭) */
 export function findServiceKey(serverName: string): string | undefined {
-  return Object.keys(OAUTH_SERVICES).find(k => serverName.toLowerCase().includes(k));
+  return Object.keys(getOAuthServices()).find(k => serverName.toLowerCase().includes(k));
 }
 
 /** 서비스 설정 가져오기 */
 export function getServiceConfig(key: string) {
-  return OAUTH_SERVICES[key];
+  return getOAuthServices()[key];
 }
 
 /** POST — OAuth URL 생성 */
@@ -89,16 +95,17 @@ export async function POST(req: NextRequest) {
 
     const serviceKey = findServiceKey(serverName);
     if (!serviceKey) {
-      return NextResponse.json({ success: false, error: `'${serverName}'에 대한 OAuth 설정을 찾을 수 없습니다. 지원: ${Object.keys(OAUTH_SERVICES).join(', ')}` }, { status: 400 });
+      return NextResponse.json({ success: false, error: `'${serverName}'에 대한 OAuth 설정을 찾을 수 없습니다. 지원: ${Object.keys(getOAuthServices()).join(', ')}` }, { status: 400 });
     }
 
-    const service = OAUTH_SERVICES[serviceKey];
+    const service = getOAuthServices()[serviceKey];
+    const keysPath = getKeysPath();
 
     // 키 파일 읽기
-    if (!fs.existsSync(KEYS_PATH)) {
+    if (!getFs().existsSync(keysPath)) {
       return NextResponse.json({
         success: false,
-        error: `OAuth 키 파일을 찾을 수 없습니다: ${KEYS_PATH}\n\nGoogle Cloud Console에서 OAuth 클라이언트 ID(웹 애플리케이션)를 만들고 JSON을 다운받아 위 경로에 배치하세요.`,
+        error: `OAuth 키 파일을 찾을 수 없습니다: ${keysPath}\n\nGoogle Cloud Console에서 OAuth 클라이언트 ID(웹 애플리케이션)를 만들고 JSON을 다운받아 위 경로에 배치하세요.`,
       }, { status: 400 });
     }
 
@@ -108,7 +115,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 이미 credentials가 있는지 확인
-    if (fs.existsSync(service.credentialsPath)) {
+    if (getFs().existsSync(service.credentialsPath)) {
       return NextResponse.json({
         success: true,
         alreadyAuthenticated: true,
@@ -152,10 +159,11 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: false, error: '알 수 없는 서버' }, { status: 400 });
   }
 
-  const service = OAUTH_SERVICES[serviceKey];
+  const service = getOAuthServices()[serviceKey];
   const allPaths = [service.credentialsPath, ...(service.legacyPaths ?? [])];
+  const f = getFs();
   for (const p of allPaths) {
-    if (fs.existsSync(p)) fs.unlinkSync(p);
+    if (f.existsSync(p)) f.unlinkSync(p);
   }
 
   return NextResponse.json({ success: true, message: 'credentials 삭제됨. 재인증 가능.' });

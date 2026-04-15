@@ -5,10 +5,11 @@
  * Google이 인증 후 리다이렉트 → 토큰 교환 → credentials 저장 → 창 자동 닫기
  */
 import { NextRequest } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import { readOAuthKeys, getServiceConfig, getOrigin } from '../route';
 import { requireAuth, isAuthError } from '../../../../../lib/auth-guard';
+
+function getFs(): typeof import('fs') { return require('fs'); }
+function getPath(): typeof import('path') { return require('path'); }
 
 function htmlResponse(title: string, body: string, type: 'success' | 'error' | 'info' = 'success') {
   const colors = { success: '#3b82f6', error: '#ef4444', info: '#64748b' };
@@ -104,14 +105,16 @@ export async function GET(req: NextRequest) {
     };
 
     const credJson = JSON.stringify(credentials, null, 2);
-    const credDir = path.dirname(service.credentialsPath);
-    if (!fs.existsSync(credDir)) fs.mkdirSync(credDir, { recursive: true });
-    fs.writeFileSync(service.credentialsPath, credJson, 'utf-8');
+    const f = getFs();
+    const p = getPath();
+    const credDir = p.dirname(service.credentialsPath);
+    if (!f.existsSync(credDir)) f.mkdirSync(credDir, { recursive: true });
+    f.writeFileSync(service.credentialsPath, credJson, 'utf-8');
     if (service.legacyPaths) {
       for (const lp of service.legacyPaths) {
-        const lpDir = path.dirname(lp);
-        if (!fs.existsSync(lpDir)) fs.mkdirSync(lpDir, { recursive: true });
-        fs.writeFileSync(lp, credJson, 'utf-8');
+        const lpDir = p.dirname(lp);
+        if (!f.existsSync(lpDir)) f.mkdirSync(lpDir, { recursive: true });
+        f.writeFileSync(lp, credJson, 'utf-8');
       }
     }
 
