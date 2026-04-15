@@ -95,7 +95,7 @@ export class TaskManager {
             }
             // 모듈 출력이 success: false인 경우 (API 키 누락 등 모듈 레벨 에러)
             if (res.data && typeof res.data === 'object' && 'success' in res.data && res.data.success === false) {
-              const moduleErr = (res.data as Record<string, unknown>).error || JSON.stringify(res.data);
+              const moduleErr = (res.data as unknown as Record<string, unknown>).error || JSON.stringify(res.data);
               // 폴백 시도
               const fallbackRes = await this.tryFallbackProvider(resolvedPath, stepInput);
               if (fallbackRes) {
