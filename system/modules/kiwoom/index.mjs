@@ -17,7 +17,7 @@ const API_CATEGORY = {
   // 계좌
   acnt: ['ka00001', 'ka01690', 'ka10072', 'ka10073', 'ka10074', 'ka10075', 'ka10076', 'ka10077', 'ka10085', 'ka10088', 'ka10170', 'kt00001', 'kt00002', 'kt00003', 'kt00004', 'kt00005', 'kt00007', 'kt00008', 'kt00009', 'kt00010', 'kt00011', 'kt00012', 'kt00013', 'kt00015', 'kt00016', 'kt00017', 'kt00018', 'kt50020', 'kt50021', 'kt50030', 'kt50031', 'kt50032', 'kt50075'],
   // 시세
-  mrkcond: ['ka10004', 'ka10005', 'ka10006', 'ka10007', 'ka10011', 'ka10044', 'ka10045', 'ka10046', 'ka10047', 'ka10063', 'ka10066', 'ka10078', 'ka10086', 'ka10087', 'ka50010', 'ka50012', 'ka50087', 'ka50100', 'ka50101', 'ka90005', 'ka90006', 'ka90007', 'ka90008', 'ka90010', 'ka90013', 'ka52301'],
+  mrkcond: ['ka10004', 'ka10005', 'ka10006', 'ka10007', 'ka10011', 'ka10044', 'ka10045', 'ka10046', 'ka10047', 'ka10063', 'ka10066', 'ka10078', 'ka10086', 'ka10087', 'ka50010', 'ka50012', 'ka50087', 'ka50100', 'ka50101', 'ka90005', 'ka90006', 'ka90007', 'ka90008', 'ka90010', 'ka90013'],
   // 종목정보
   stkinfo: ['ka00198', 'ka10001', 'ka10002', 'ka10003', 'ka10013', 'ka10015', 'ka10016', 'ka10017', 'ka10018', 'ka10019', 'ka10024', 'ka10025', 'ka10026', 'ka10028', 'ka10043', 'ka10052', 'ka10054', 'ka10055', 'ka10058', 'ka10059', 'ka10061', 'ka10084', 'ka10095', 'ka10099', 'ka10100', 'ka10101', 'ka10102', 'ka90003', 'ka90004', 'kt20016', 'kt20017'],
   // 순위정보
@@ -25,15 +25,15 @@ const API_CATEGORY = {
   // 주문
   ordr: ['kt10000', 'kt10001', 'kt10002', 'kt10003', 'kt50000', 'kt50001', 'kt50002', 'kt50003'],
   // 차트
-  chart: ['ka10060', 'ka10064', 'ka10079', 'ka10080', 'ka10081', 'ka10082', 'ka10083', 'ka10094', 'ka50079', 'ka50080', 'ka50081', 'ka50082', 'ka50083', 'ka50091', 'ka50092'],
+  chart: ['ka10060', 'ka10064', 'ka10079', 'ka10080', 'ka10081', 'ka10082', 'ka10083', 'ka10094', 'ka20004', 'ka20005', 'ka20006', 'ka20007', 'ka20008', 'ka20019', 'ka50079', 'ka50080', 'ka50081', 'ka50082', 'ka50083', 'ka50091', 'ka50092'],
   // 기관/외국인
-  frgnistt: ['ka10008', 'ka10009', 'ka10131'],
+  frgnistt: ['ka10008', 'ka10009', 'ka10131', 'ka52301'],
   // 업종
-  sect: ['ka10010', 'ka10051'],
+  sect: ['ka10010', 'ka10051', 'ka20001', 'ka20002', 'ka20003', 'ka20009'],
   // 공매도
   shsa: ['ka10014'],
   // 대차거래
-  slb: ['ka10068', 'ka10069', 'ka10105', 'ka10106', 'ka90012'],
+  slb: ['ka10068', 'ka10069', 'ka10105', 'ka10106', 'ka20068', 'ka90012'],
   // 테마
   thme: ['ka90001', 'ka90002'],
   // ELW
@@ -137,6 +137,98 @@ const ACTION_MAP = {
   'gold-quote':     'ka50101',  // 금현물 호가
   'gold-balance':   'kt50020',  // 금현물 잔고확인
   'gold-deposit':   'kt50021',  // 금현물 예수금
+  'gold-ccld':      'kt50030',  // 금현물 주문체결전체조회
+  'gold-detail':    'kt50031',  // 금현물 주문체결조회
+  'gold-history':   'kt50032',  // 금현물 거래내역조회
+  'gold-unsettled': 'kt50075',  // 금현물 미체결조회
+  'gold-tick-chart':'ka50079',  // 금현물 틱차트
+  'gold-minute-chart':'ka50080',// 금현물 분봉차트
+  'gold-daily-chart':'ka50081', // 금현물 일봉차트
+  'gold-ccnl':     'ka50010',  // 금현물 체결추이
+  'gold-daily-trend':'ka50012', // 금현물 일별추이
+  'gold-investor':  'ka52301',  // 금현물 투자자현황
+  // 업종
+  'sector-price':   'ka20001',  // 업종현재가
+  'sector-stocks':  'ka20002',  // 업종별주가
+  'sector-all':     'ka20003',  // 전업종지수
+  'sector-daily':   'ka20009',  // 업종현재가일별
+  'sector-tick-chart':'ka20004',// 업종틱차트
+  'sector-minute-chart':'ka20005',// 업종분봉차트
+  'sector-daily-chart':'ka20006',// 업종일봉차트
+  'sector-weekly-chart':'ka20007',// 업종주봉차트
+  'sector-monthly-chart':'ka20008',// 업종월봉차트
+  'sector-yearly-chart':'ka20019',// 업종년봉차트
+  // 추가 계좌
+  'daily-deposit':  'kt00002',  // 일별추정예탁자산현황
+  'ccld-balance':   'kt00005',  // 체결잔고
+  'ccld-detail':    'kt00007',  // 계좌별주문체결내역상세
+  'next-settle':    'kt00008',  // 계좌별익일결제예정내역
+  'ccld-status':    'kt00009',  // 계좌별주문체결현황
+  'withdraw-limit': 'kt00010',  // 주문인출가능금액
+  'margin-qty':     'kt00011',  // 증거금율별주문가능수량조회
+  'credit-margin':  'kt00012',  // 신용보증금율별주문가능수량조회
+  'margin-detail':  'kt00013',  // 증거금세부내역조회
+  'trade-history':  'kt00015',  // 위탁종합거래내역
+  'daily-yield':    'kt00016',  // 일별계좌수익률상세현황
+  'daily-status':   'kt00017',  // 계좌별당일현황
+  // 추가 종목정보
+  'realtime-rank':  'ka00198',  // 실시간종목조회순위
+  'high-low':       'ka10016',  // 신고저가
+  'limit-price':    'ka10017',  // 상하한가
+  'near-highlow':   'ka10018',  // 고저가근접
+  'price-surge':    'ka10019',  // 가격급등락
+  'volume-renew':   'ka10024',  // 거래량갱신
+  'price-cluster':  'ka10025',  // 매물대집중
+  'per-range':      'ka10026',  // 고저PER
+  'open-change':    'ka10028',  // 시가대비등락률
+  'vi-trigger':     'ka10054',  // 변동성완화장치발동종목
+  'today-volume':   'ka10055',  // 당일전일체결량
+  // 추가 순위정보
+  'ranking-quote':      'ka10020', // 호가잔량상위
+  'ranking-quote-surge':'ka10021', // 호가잔량급증
+  'ranking-ratio-surge':'ka10022', // 잔량율급증
+  'ranking-prev-vol':   'ka10031', // 전일거래량상위
+  'ranking-credit-ratio':'ka10033',// 신용비율상위
+  'ranking-foreign-cont':'ka10035',// 외인연속순매매상위
+  'ranking-foreign-limit':'ka10036',// 외인한도소진율증가상위
+  'ranking-foreign-window':'ka10037',// 외국계창구매매상위
+  'ranking-broker-trade':'ka10039', // 증권사별매매상위
+  'ranking-today-broker':'ka10040', // 당일주요거래원
+  'ranking-net-broker':  'ka10042', // 순매수거래원순위
+  'ranking-overtime':    'ka10098', // 시간외단일가등락율순위
+  'ranking-foreign-inst':'ka90009', // 외국인기관매매상위
+  // 추가 분석
+  'inst-daily':     'ka10044',  // 일별기관매매종목
+  'inst-trend':     'ka10045',  // 종목별기관매매추이
+  'strength-time':  'ka10046',  // 체결강도추이시간별
+  'strength-daily': 'ka10047',  // 체결강도추이일별
+  'broker-trend':   'ka10078',  // 증권사별종목매매동향
+  'investor-by-stock':'ka10058',// 투자자별일별매매종목
+  'inst-by-stock':  'ka10059',  // 종목별투자자기관별
+  'inst-total':     'ka10061',  // 종목별투자자기관별합계
+  'same-net':       'ka10062',  // 동일순매매순위
+  'intraday-inv':   'ka10063',  // 장중투자자별매매
+  'afterclose-inv': 'ka10066',  // 장마감후투자자별매매
+  'inst-cont':      'ka10131',  // 기관외국인연속매매현황
+  'program-time':   'ka90005',  // 프로그램매매추이시간대별
+  'program-arb':    'ka90006',  // 프로그램매매차익잔고추이
+  'program-cum':    'ka90007',  // 프로그램매매누적추이
+  'program-by-stock':'ka90008', // 종목시간별프로그램매매추이
+  'program-daily':  'ka90010',  // 프로그램매매추이일자별
+  'program-by-stock-daily':'ka90013',// 종목일별프로그램매매추이
+  'program-by-stock-info':'ka90004', // 종목별프로그램매매현황
+  // 대차거래
+  'lending-top10':  'ka10069',  // 대차거래상위10종목
+  'lending-by-stock':'ka20068', // 대차거래추이(종목별)
+  'lending-detail': 'ka90012',  // 대차거래내역
+  // 조건검색
+  'cond-list':      'ka10171',  // 조건검색 목록조회
+  'cond-search':    'ka10172',  // 조건검색 요청 일반
+  'cond-realtime':  'ka10173',  // 조건검색 요청 실시간
+  'cond-cancel':    'ka10174',  // 조건검색 실시간 해제
+  // 신용
+  'credit-avail':   'kt20016',  // 신용융자 가능종목
+  'credit-inquiry': 'kt20017',  // 신용융자 가능문의
 };
 
 /** OAuth 토큰 발급 */

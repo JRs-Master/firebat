@@ -71,17 +71,26 @@ process.stdin.on('end', async () => {
     }
 
     const json = await resp.json();
-    const allResults = (json.keywordList || []).map(item => ({
-      keyword: item.relKeyword,
-      monthlyPcQcCnt: item.monthlyPcQcCnt ?? 0,
-      monthlyMobileQcCnt: item.monthlyMobileQcCnt ?? 0,
-      monthlyAvePcClkCnt: item.monthlyAvePcClkCnt ?? 0,
-      monthlyAveMobileClkCnt: item.monthlyAveMobileClkCnt ?? 0,
-      monthlyAvePcCtr: item.monthlyAvePcCtr ?? 0,
-      monthlyAveMobileCtr: item.monthlyAveMobileCtr ?? 0,
-      plAvgDepth: item.plAvgDepth ?? 0,
-      compIdx: item.compIdx || '',
-    }));
+    // "< 10" 문자열 → 숫자 변환 헬퍼
+    const toNum = (v) => (typeof v === 'string' ? (v.includes('<') ? 0 : Number(v)) : (v ?? 0));
+
+    const allResults = (json.keywordList || []).map(item => {
+      const entry = {
+        keyword: item.relKeyword,
+        monthlyPcQcCnt: toNum(item.monthlyPcQcCnt),
+        monthlyMobileQcCnt: toNum(item.monthlyMobileQcCnt),
+        monthlyAvePcClkCnt: item.monthlyAvePcClkCnt ?? 0,
+        monthlyAveMobileClkCnt: item.monthlyAveMobileClkCnt ?? 0,
+        monthlyAvePcCtr: item.monthlyAvePcCtr ?? 0,
+        monthlyAveMobileCtr: item.monthlyAveMobileCtr ?? 0,
+        plAvgDepth: item.plAvgDepth ?? 0,
+        compIdx: item.compIdx || '',
+      };
+      // showDetail=1 시 월별 상세 데이터
+      if (item.monthlyPcQcCntList) entry.monthlyPcQcCntList = item.monthlyPcQcCntList;
+      if (item.monthlyMobileQcCntList) entry.monthlyMobileQcCntList = item.monthlyMobileQcCntList;
+      return entry;
+    });
     // 입력 키워드 우선, 나머지 연관 키워드 뒤에 배치
     const lowerKws = keywords.map(k => k.toLowerCase());
     const exact = allResults.filter(r => lowerKws.includes(r.keyword?.toLowerCase()));

@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "네이버 광고 API (키워드 도구). 키워드 검색량, CPC, 경쟁도 등 광고/SEO 지표 조회.",
+  "description": "네이버 검색광고 API (키워드도구). 키워드 검색량·CPC·경쟁도 + 연관 키워드(relatedKeywords) 함께 반환. 연관검색어 조회에도 이 도구를 사용. showDetail=true 시 최근 12개월 월별 검색량 포함.",
   "runtime": "node",
   "capability": "keyword-analytics",
   "providerType": "api",
@@ -21,7 +21,7 @@
       "showDetail": {
         "type": "boolean",
         "default": true,
-        "description": "월별 검색량 상세 데이터 포함 여부"
+        "description": "월별 검색량 상세 데이터(최근 12개월) 포함 여부"
       }
     },
     "additionalProperties": false
@@ -42,11 +42,53 @@
             "monthlyAveMobileClkCnt": { "type": "number", "description": "월평균 모바일 클릭수" },
             "monthlyAvePcCtr": { "type": "number", "description": "월평균 PC 클릭률 (%)" },
             "monthlyAveMobileCtr": { "type": "number", "description": "월평균 모바일 클릭률 (%)" },
-            "plAvgDepth": { "type": "integer", "description": "광고 경쟁도 (노출 광고수)" },
+            "plAvgDepth": { "type": "integer", "description": "월평균 노출 광고수 (경쟁 깊이)" },
+            "compIdx": { "type": "string", "description": "경쟁 정도 (높음/중간/낮음)" },
+            "monthlyPcQcCntList": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "year": { "type": "string" },
+                  "month": { "type": "string" },
+                  "cnt": { "type": "integer" }
+                }
+              },
+              "description": "최근 12개월 PC 검색량 월별 내역 (showDetail=true 시)"
+            },
+            "monthlyMobileQcCntList": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "year": { "type": "string" },
+                  "month": { "type": "string" },
+                  "cnt": { "type": "integer" }
+                }
+              },
+              "description": "최근 12개월 모바일 검색량 월별 내역 (showDetail=true 시)"
+            }
+          }
+        },
+        "description": "입력 키워드별 분석 결과"
+      },
+      "relatedKeywords": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "keyword": { "type": "string", "description": "연관 키워드" },
+            "monthlyPcQcCnt": { "type": "integer", "description": "월간 PC 검색량" },
+            "monthlyMobileQcCnt": { "type": "integer", "description": "월간 모바일 검색량" },
+            "monthlyAvePcClkCnt": { "type": "number", "description": "월평균 PC 클릭수" },
+            "monthlyAveMobileClkCnt": { "type": "number", "description": "월평균 모바일 클릭수" },
+            "monthlyAvePcCtr": { "type": "number", "description": "월평균 PC 클릭률 (%)" },
+            "monthlyAveMobileCtr": { "type": "number", "description": "월평균 모바일 클릭률 (%)" },
+            "plAvgDepth": { "type": "integer", "description": "월평균 노출 광고수" },
             "compIdx": { "type": "string", "description": "경쟁 정도 (높음/중간/낮음)" }
           }
         },
-        "description": "키워드별 분석 결과"
+        "description": "연관 키워드 목록 (최대 20개). 입력 키워드 외에 API가 추천하는 관련 키워드."
       }
     },
     "additionalProperties": false

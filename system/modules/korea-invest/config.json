@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "한국투자증권 Open API. 국내주식/해외주식/선물옵션 시세/호가/차트/주문/잔고/순위 등 전체 API 지원. trId 또는 편의 액션으로 300개+ API 직접 호출 가능.",
+  "description": "한국투자증권 Open API. 국내주식/해외주식/선물옵션/ETF/ELW 시세·호가·차트·주문·잔고·순위·재무·예탁원정보 등 전체 API 지원. trId 또는 편의 액션으로 300개+ API 직접 호출 가능.",
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
@@ -14,17 +14,70 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["price", "quote", "order-buy", "order-sell", "order-modify", "balance", "deposit", "chart-daily", "chart-minute", "ranking-volume", "foreign-trade", "overseas-price", "overseas-order-buy", "overseas-balance"],
-        "description": "편의 액션명 (영문 그대로 사용). price=현재가, quote=호가, balance=잔고, chart-daily=일봉, ranking-volume=거래량순위. 또는 trId 필드에 TR_ID 직접 지정."
+        "enum": [
+          "price", "price2", "quote", "execution", "daily-price", "investor", "member",
+          "time-ccnl", "overtime-price", "overtime-quote", "volume-rank", "vi-status",
+          "exp-closing", "news-title",
+          "stock-info", "product-info", "holiday", "invest-opinion", "invest-by-sec",
+          "estimate-perform", "credit-company",
+          "chart-daily", "chart-minute", "chart-daily-tl", "daily-trade-vol",
+          "overtime-daily", "overtime-time",
+          "index-price", "index-daily", "index-chart", "index-time", "index-tick",
+          "index-category", "index-minute", "exp-index", "exp-total-index",
+          "market-time", "comp-interest",
+          "order-buy", "order-sell", "order-modify", "order-reserve", "order-reserve-cancel",
+          "order-credit-buy", "order-credit-sell",
+          "balance", "balance-pl", "deposit", "psbl-order", "psbl-sell",
+          "daily-ccld", "psbl-rvsecncl", "order-reserve-list",
+          "period-profit", "period-trade", "period-rights",
+          "credit-psamount", "intgr-margin",
+          "ranking-volume", "ranking-fluctuation", "ranking-profit", "ranking-marketcap",
+          "ranking-finance", "ranking-quote-bal", "ranking-disparity", "ranking-credit",
+          "ranking-short", "ranking-dividend", "ranking-market-value", "ranking-volume-power",
+          "ranking-prefer", "ranking-near-hl", "ranking-bulk-trans", "ranking-top-interest",
+          "ranking-by-company", "ranking-after-vol", "ranking-overtime-vol",
+          "ranking-overtime-fluct", "ranking-exp-trans", "ranking-overtime-exp", "ranking-hts-top",
+          "foreign-total", "investor-daily", "investor-time", "investor-by-stock", "investor-trend",
+          "program-today", "program-daily", "program-by-stock", "program-by-stock-daily",
+          "investor-program-today",
+          "credit-daily", "short-daily", "loan-daily",
+          "cond-search-list", "cond-search-result", "exp-price-trend",
+          "pbar-tratio", "tradprt-byamt", "mktfunds", "member-daily",
+          "capture-uplowprice", "frgnmem-trade", "frgnmem-pchs",
+          "finance-balance", "finance-income", "finance-ratio", "finance-profit",
+          "finance-other", "finance-stability", "finance-growth",
+          "ksd-bonus", "ksd-dividend", "ksd-paidin", "ksd-purreq",
+          "ksd-merger", "ksd-revsplit", "ksd-capdcrs", "ksd-listinfo",
+          "ksd-puboffer", "ksd-forfeit", "ksd-manddeposit", "ksd-sharemeet",
+          "elw-price", "elw-search", "elw-updown", "elw-volume",
+          "elw-indicator", "elw-sensitivity", "elw-quick-change", "elw-newly-listed",
+          "etf-price", "etf-nav-daily", "etf-nav-time", "etf-nav-day", "etf-component",
+          "futures-price", "futures-quote", "futures-chart",
+          "futures-order", "futures-modify", "futures-balance", "futures-deposit", "futures-margin",
+          "overseas-price", "overseas-detail", "overseas-daily", "overseas-chart",
+          "overseas-quote", "overseas-ccnl", "overseas-search",
+          "overseas-order-buy", "overseas-order-sell", "overseas-order-modify",
+          "overseas-balance", "overseas-ccld", "overseas-psamount"
+        ],
+        "description": "편의 액션명 (영문 그대로 사용). price=현재가, quote=호가, balance=잔고, chart-daily=일봉, ranking-volume=거래량순위 등. 또는 trId+url 필드로 직접 지정."
       },
       "symbol": {
         "type": "string",
-        "description": "종목코드 (국내: 005930, 해외: AAPL)"
+        "description": "종목코드 (국내: 005930=삼성전자, 해외: AAPL)"
       },
       "exchange": {
         "type": "string",
         "enum": ["NAS", "NYS", "AMS", "TSE", "HKS", "SHS", "SZS", "HSX", "HNX"],
-        "description": "해외 거래소 코드 (NAS=나스닥, NYS=뉴욕, TSE=도쿄 등). 해외 주문/시세에 필수"
+        "description": "해외 거래소 코드 (NAS=나스닥, NYS=뉴욕, TSE=도쿄 등). 해외 액션에 필수."
+      },
+      "accountNo": {
+        "type": "string",
+        "description": "계좌번호 앞 8자리 (계좌 조회 시 필요)"
+      },
+      "accountProductCode": {
+        "type": "string",
+        "default": "01",
+        "description": "계좌상품코드 뒤 2자리 (기본 01)"
       },
       "trId": {
         "type": "string",
@@ -32,7 +85,7 @@
       },
       "url": {
         "type": "string",
-        "description": "API URL 경로 직접 지정 (trId 사용 시)"
+        "description": "API URL 경로 직접 지정 (trId 사용 시 필수)"
       },
       "method": {
         "type": "string",
@@ -43,11 +96,6 @@
       "params": {
         "type": "object",
         "description": "API별 추가 파라미터 (GET=query, POST=body)"
-      },
-      "orderType": {
-        "type": "string",
-        "enum": ["buy", "sell"],
-        "description": "주문 유형"
       },
       "quantity": {
         "type": "integer",
@@ -78,7 +126,8 @@
     "required": ["trId"],
     "properties": {
       "trId": { "type": "string", "description": "호출된 TR_ID" },
-      "data": { "type": "object", "description": "API 응답 데이터" }
+      "action": { "type": "string", "description": "요청한 액션명" },
+      "data": { "type": "object", "description": "API 응답 데이터 (API별로 다름)" }
     },
     "additionalProperties": true
   }

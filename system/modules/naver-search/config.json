@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "네이버 검색 API. 키워드로 웹문서/뉴스/블로그/이미지 등 검색 결과 조회.",
+  "description": "네이버 검색 API. 웹문서·뉴스·블로그·이미지·쇼핑·카페·지식iN 7가지 유형 지원. 유형별로 반환 필드가 다름 (블로그: bloggername/postdate, 뉴스: originallink/pubDate, 이미지: thumbnail/sizeheight/sizewidth, 쇼핑: lprice/hprice/mallName/brand/category, 카페: cafename/cafeurl, 지식iN: 기본 필드).",
   "runtime": "node",
   "capability": "web-search",
   "providerType": "api",
@@ -27,20 +27,24 @@
         "minimum": 1,
         "maximum": 100,
         "default": 10,
-        "description": "검색 결과 수 (최대 100)"
+        "description": "검색 결과 수 (최대 100, shop은 최대 100)"
       },
       "start": {
         "type": "integer",
         "minimum": 1,
         "maximum": 1000,
         "default": 1,
-        "description": "검색 시작 위치"
+        "description": "검색 시작 위치 (최대 1000)"
       },
       "sort": {
         "type": "string",
         "enum": ["sim", "date"],
         "default": "sim",
-        "description": "정렬 방식 (sim=정확도순, date=최신순)"
+        "description": "정렬 (sim=정확도순, date=최신순, shop에서는 sim=정확도/date=날짜/asc=가격오름/dsc=가격내림)"
+      },
+      "filter": {
+        "type": "string",
+        "description": "이미지 검색 필터 (all=전체, large=큰이미지, medium=중간, small=작은이미지). image 유형에서만 사용."
       }
     },
     "additionalProperties": false
@@ -57,12 +61,34 @@
         "items": {
           "type": "object",
           "properties": {
-            "title": { "type": "string", "description": "제목 (HTML 태그 포함 가능)" },
+            "title": { "type": "string", "description": "제목" },
             "link": { "type": "string", "description": "URL" },
-            "description": { "type": "string", "description": "요약/설명" }
+            "description": { "type": "string", "description": "요약/설명" },
+            "originallink": { "type": "string", "description": "[news] 원본 기사 URL" },
+            "pubDate": { "type": "string", "description": "[news] 발행일 (RFC 822)" },
+            "bloggername": { "type": "string", "description": "[blog] 블로거 이름" },
+            "bloggerlink": { "type": "string", "description": "[blog] 블로그 URL" },
+            "postdate": { "type": "string", "description": "[blog] 작성일 (YYYYMMDD)" },
+            "thumbnail": { "type": "string", "description": "[image] 썸네일 URL" },
+            "sizeheight": { "type": "string", "description": "[image] 이미지 높이 (px)" },
+            "sizewidth": { "type": "string", "description": "[image] 이미지 너비 (px)" },
+            "image": { "type": "string", "description": "[shop] 상품 이미지 URL" },
+            "lprice": { "type": "string", "description": "[shop] 최저가" },
+            "hprice": { "type": "string", "description": "[shop] 최고가" },
+            "mallName": { "type": "string", "description": "[shop] 쇼핑몰 이름" },
+            "productId": { "type": "string", "description": "[shop] 상품 ID" },
+            "productType": { "type": "string", "description": "[shop] 상품 유형 (1=일반, 2=일반+카탈로그, 3=카탈로그)" },
+            "brand": { "type": "string", "description": "[shop] 브랜드" },
+            "maker": { "type": "string", "description": "[shop] 제조사" },
+            "category1": { "type": "string", "description": "[shop] 대분류" },
+            "category2": { "type": "string", "description": "[shop] 중분류" },
+            "category3": { "type": "string", "description": "[shop] 소분류" },
+            "category4": { "type": "string", "description": "[shop] 세분류" },
+            "cafename": { "type": "string", "description": "[cafearticle] 카페 이름" },
+            "cafeurl": { "type": "string", "description": "[cafearticle] 카페 URL" }
           }
         },
-        "description": "검색 결과 목록"
+        "description": "검색 결과 목록. 유형별로 포함되는 필드가 다름."
       }
     },
     "additionalProperties": false

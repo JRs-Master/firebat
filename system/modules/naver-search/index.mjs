@@ -43,6 +43,8 @@ process.stdin.on('end', async () => {
       start: String(start),
       sort,
     });
+    // 이미지 검색 필터 (all/large/medium/small)
+    if (type === 'image' && data.filter) params.set('filter', data.filter);
 
     const resp = await fetch(`https://openapi.naver.com/v1/search/${type}?${params}`, {
       method: 'GET',
@@ -64,11 +66,49 @@ process.stdin.on('end', async () => {
     // HTML 태그 제거 헬퍼
     const strip = (s) => (s || '').replace(/<\/?b>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
 
-    const items = (json.items || []).map(item => ({
-      title: strip(item.title),
-      link: item.link || item.originallink || '',
-      description: strip(item.description),
-    }));
+    const items = (json.items || []).map(item => {
+      const base = {
+        title: strip(item.title),
+        link: item.link || '',
+        description: strip(item.description || ''),
+      };
+      // 유형별 추가 필드
+      switch (type) {
+        case 'news':
+          if (item.originallink) base.originallink = item.originallink;
+          if (item.pubDate) base.pubDate = item.pubDate;
+          break;
+        case 'blog':
+          if (item.bloggername) base.bloggername = strip(item.bloggername);
+          if (item.bloggerlink) base.bloggerlink = item.bloggerlink;
+          if (item.postdate) base.postdate = item.postdate;
+          break;
+        case 'image':
+          if (item.thumbnail) base.thumbnail = item.thumbnail;
+          if (item.sizeheight) base.sizeheight = item.sizeheight;
+          if (item.sizewidth) base.sizewidth = item.sizewidth;
+          break;
+        case 'shop':
+          if (item.image) base.image = item.image;
+          if (item.lprice) base.lprice = item.lprice;
+          if (item.hprice) base.hprice = item.hprice;
+          if (item.mallName) base.mallName = item.mallName;
+          if (item.productId) base.productId = item.productId;
+          if (item.productType) base.productType = item.productType;
+          if (item.brand) base.brand = item.brand;
+          if (item.maker) base.maker = item.maker;
+          if (item.category1) base.category1 = item.category1;
+          if (item.category2) base.category2 = item.category2;
+          if (item.category3) base.category3 = item.category3;
+          if (item.category4) base.category4 = item.category4;
+          break;
+        case 'cafearticle':
+          if (item.cafename) base.cafename = strip(item.cafename);
+          if (item.cafeurl) base.cafeurl = item.cafeurl;
+          break;
+      }
+      return base;
+    });
 
     console.log(JSON.stringify({
       success: true,

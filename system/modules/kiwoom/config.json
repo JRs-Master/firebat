@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "키움증권 REST API. 국내주식 시세/호가/차트/주문/잔고/순위/종목정보 등 전체 API 지원. apiId로 200개+ API 직접 호출 가능.",
+  "description": "키움증권 REST API. 국내주식 시세/호가/차트/주문/잔고/순위/종목정보/업종/ELW/ETF/금현물/테마/조건검색 등 전체 API 지원. 편의 액션 또는 apiId로 200개+ API 직접 호출 가능.",
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
@@ -14,8 +14,49 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["price", "quote", "order-buy", "order-sell", "order-modify", "order-cancel", "balance", "account", "deposit", "chart-daily", "chart-minute", "ranking-volume"],
-        "description": "편의 액션명 (영문 그대로 사용). price=현재가, quote=호가, balance=잔고, chart-daily=일봉, ranking-volume=거래량순위. 또는 apiId 필드에 API ID 직접 지정."
+        "enum": [
+          "price", "quote", "daily-price", "tick-data", "time-price", "after-hours",
+          "chart-tick", "chart-minute", "chart-daily", "chart-weekly", "chart-monthly", "chart-yearly",
+          "order-buy", "order-sell", "order-modify", "order-cancel",
+          "credit-buy", "credit-sell", "credit-modify", "credit-cancel",
+          "gold-buy", "gold-sell", "gold-modify", "gold-cancel",
+          "account", "balance", "deposit", "asset", "evaluation",
+          "unsettled", "settled", "daily-pnl", "realized-pnl", "today-pnl",
+          "trade-log", "account-yield", "daily-deposit", "ccld-balance",
+          "ccld-detail", "next-settle", "ccld-status", "withdraw-limit",
+          "margin-qty", "credit-margin", "margin-detail", "trade-history",
+          "daily-yield", "daily-status",
+          "stock-info", "trade-broker", "execution", "credit-trend", "trade-detail",
+          "stock-list", "stock-detail", "sector-list", "broker-list",
+          "realtime-rank", "high-low", "limit-price", "near-highlow", "price-surge",
+          "volume-renew", "price-cluster", "per-range", "open-change",
+          "vi-trigger", "today-volume",
+          "ranking-volume", "ranking-amount", "ranking-change", "ranking-foreign",
+          "ranking-broker", "ranking-volume-surge", "ranking-quote", "ranking-quote-surge",
+          "ranking-ratio-surge", "ranking-prev-vol", "ranking-credit-ratio",
+          "ranking-foreign-cont", "ranking-foreign-limit", "ranking-foreign-window",
+          "ranking-broker-trade", "ranking-today-broker", "ranking-net-broker",
+          "ranking-overtime", "ranking-foreign-inst",
+          "foreign-trade", "institution",
+          "short-selling", "lending-trend", "lending-top10", "lending-by-stock", "lending-detail",
+          "theme-list", "theme-stocks",
+          "program-top50", "program-time", "program-arb", "program-cum",
+          "program-by-stock", "program-daily", "program-by-stock-daily", "program-by-stock-info",
+          "sector-investor", "sector-price", "sector-stocks", "sector-all", "sector-daily",
+          "sector-tick-chart", "sector-minute-chart", "sector-daily-chart",
+          "sector-weekly-chart", "sector-monthly-chart", "sector-yearly-chart",
+          "etf-yield", "etf-info", "etf-daily", "etf-all",
+          "gold-price", "gold-quote", "gold-balance", "gold-deposit",
+          "gold-ccld", "gold-detail", "gold-history", "gold-unsettled",
+          "gold-tick-chart", "gold-minute-chart", "gold-daily-chart",
+          "gold-ccnl", "gold-daily-trend", "gold-investor",
+          "inst-daily", "inst-trend", "strength-time", "strength-daily",
+          "broker-trend", "investor-by-stock", "inst-by-stock", "inst-total",
+          "same-net", "intraday-inv", "afterclose-inv", "inst-cont",
+          "cond-list", "cond-search", "cond-realtime", "cond-cancel",
+          "credit-avail", "credit-inquiry"
+        ],
+        "description": "편의 액션명 (영문 그대로 사용). price=현재가, quote=호가, balance=잔고, chart-daily=일봉, ranking-volume=거래량순위 등. 또는 apiId(ka10001 등)를 직접 지정."
       },
       "symbol": {
         "type": "string",
@@ -24,11 +65,6 @@
       "params": {
         "type": "object",
         "description": "API별 추가 파라미터 (apiId 직접 호출 시 사용)"
-      },
-      "orderType": {
-        "type": "string",
-        "enum": ["buy", "sell"],
-        "description": "주문 유형 (order 액션에 사용)"
       },
       "quantity": {
         "type": "integer",
@@ -44,16 +80,10 @@
         "type": "string",
         "description": "원주문번호 (정정/취소 시 필수)"
       },
-      "chartType": {
-        "type": "string",
-        "enum": ["tick", "minute", "daily", "weekly", "monthly", "yearly"],
-        "default": "daily",
-        "description": "차트 유형"
-      },
       "count": {
         "type": "integer",
         "default": 30,
-        "description": "조회 건수"
+        "description": "차트 조회 건수"
       },
       "mock": {
         "type": "boolean",
@@ -68,7 +98,8 @@
     "required": ["apiId"],
     "properties": {
       "apiId": { "type": "string", "description": "호출된 API ID" },
-      "data": { "type": "object", "description": "API 응답 데이터" }
+      "action": { "type": "string", "description": "요청한 액션명" },
+      "data": { "type": "object", "description": "API 응답 데이터 (API별로 다름)" }
     },
     "additionalProperties": true
   }
