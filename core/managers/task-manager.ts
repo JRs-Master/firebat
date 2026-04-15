@@ -63,7 +63,12 @@ export class TaskManager {
       const stepInput: Record<string, unknown> = (rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput))
         ? rawInput as Record<string, unknown>
         : rawInput !== undefined ? { data: rawInput } : {};
-      this.log.info(`[Pipeline] Step ${i + 1}/${steps.length}: ${step.type}`);
+      const stepDetail = step.type === 'EXECUTE' ? step.path
+        : step.type === 'MCP_CALL' ? `${step.server}/${step.tool}`
+        : step.type === 'NETWORK_REQUEST' ? step.url
+        : step.type === 'LLM_TRANSFORM' ? step.instruction?.slice(0, 60)
+        : '';
+      this.log.info(`[Pipeline] Step ${i + 1}/${steps.length}: ${step.type}${stepDetail ? ` → ${stepDetail}` : ''}`);
 
       onPipelineStep?.(i, 'start');
 
