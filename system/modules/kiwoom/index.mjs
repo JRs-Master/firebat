@@ -277,23 +277,637 @@ async function callApi(base, token, apiId, params = {}) {
   return await resp.json();
 }
 
-/** 편의 액션의 기본 파라미터 생성 */
+/** 오늘 날짜 YYYYMMDD */
+function today() { return new Date().toISOString().slice(0,10).replace(/-/g,''); }
+/** N일 전 날짜 YYYYMMDD */
+function daysAgo(n) { const d = new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10).replace(/-/g,''); }
+
+/** 편의 액션의 기본 파라미터 생성 — 엑셀 Required 필드 기반 디폴트 */
 function buildParams(action, data) {
   const p = data.params || {};
 
-  // 종목코드가 필요한 액션
+  // 종목코드
   if (data.symbol) p.stk_cd = p.stk_cd || data.symbol;
 
-  // 주문 파라미터
+  // 주문 파라미터 (order-*, credit-*, gold-*)
   if (action.startsWith('order-') || action.startsWith('credit-') || action.startsWith('gold-')) {
     if (data.quantity) p.ord_qty = p.ord_qty || String(data.quantity);
     if (data.price !== undefined) p.ord_prc = p.ord_prc || String(data.price);
-    if (data.orderNo) p.orgn_ord_no = p.orgn_ord_no || data.orderNo;
+    if (data.orderNo) {
+      p.orig_ord_no = p.orig_ord_no || data.orderNo;
+      p.orgn_ord_no = p.orgn_ord_no || data.orderNo;
+    }
   }
 
   // 차트 건수
-  if (action.startsWith('chart-') && data.count) {
-    p.cnt = p.cnt || String(data.count);
+  if (action.startsWith('chart-') || (action.startsWith('sector-') && action.includes('chart'))
+      || (action.startsWith('gold-') && action.includes('chart'))) {
+    p.cnt = p.cnt || String(data.count || 30);
+  }
+
+  // ─── 액션별 Required 파라미터 디폴트 (엑셀 기반) ───
+  switch (action) {
+    // ── 시세/종목정보 ──
+    case 'realtime-rank': // 실시간종목조회순위 (ka00198)
+      p.qry_tp = p.qry_tp || '4'; // 4=당일누적
+      break;
+    case 'daily-price': // 일별주가요청 (ka10086)
+      p.qry_dt = p.qry_dt || today();
+      p.indc_tp = p.indc_tp || '0'; // 0=수량
+      break;
+    case 'credit-trend': // 신용매매동향요청 (ka10013)
+      p.dt = p.dt || '1';
+      p.qry_tp = p.qry_tp || '1';
+      break;
+    case 'short-selling': // 공매도추이요청 (ka10014)
+      p.strt_dt = p.strt_dt || daysAgo(30);
+      p.end_dt = p.end_dt || today();
+      break;
+    case 'trade-detail': // 일별거래상세요청 (ka10015)
+      p.strt_dt = p.strt_dt || daysAgo(30);
+      break;
+    case 'high-low': // 신고저가요청 (ka10016)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.ntl_tp = p.ntl_tp || '0';
+      p.high_low_close_tp = p.high_low_close_tp || '0';
+      p.stk_cnd = p.stk_cnd || '0';
+      p.trde_qty_tp = p.trde_qty_tp || '0';
+      p.crd_cnd = p.crd_cnd || '0';
+      p.updown_incls = p.updown_incls || '1';
+      p.dt = p.dt || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'limit-price': // 상하한가요청 (ka10017)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.updown_tp = p.updown_tp || '0';
+      p.sort_tp = p.sort_tp || '1';
+      p.stk_cnd = p.stk_cnd || '0';
+      p.trde_qty_tp = p.trde_qty_tp || '0';
+      p.crd_cnd = p.crd_cnd || '0';
+      p.trde_gold_tp = p.trde_gold_tp || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'near-highlow': // 고저가근접요청 (ka10018)
+      p.high_low_tp = p.high_low_tp || '1';
+      p.alacc_rt = p.alacc_rt || '5';
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.trde_qty_tp = p.trde_qty_tp || '0';
+      p.stk_cnd = p.stk_cnd || '0';
+      p.crd_cnd = p.crd_cnd || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'price-surge': // 가격급등락요청 (ka10019)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.flu_tp = p.flu_tp || '1';
+      p.tm_tp = p.tm_tp || '0';
+      p.tm = p.tm || '0';
+      p.trde_qty_tp = p.trde_qty_tp || '0';
+      p.stk_cnd = p.stk_cnd || '0';
+      p.crd_cnd = p.crd_cnd || '0';
+      p.pric_cnd = p.pric_cnd || '0';
+      p.updown_incls = p.updown_incls || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'volume-renew': // 거래량갱신요청 (ka10024)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.cycle_tp = p.cycle_tp || '1';
+      p.trde_qty_tp = p.trde_qty_tp || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'price-cluster': // 매물대집중요청 (ka10025)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.prps_cnctr_rt = p.prps_cnctr_rt || '10';
+      p.cur_prc_entry = p.cur_prc_entry || '0';
+      p.prpscnt = p.prpscnt || '5';
+      p.cycle_tp = p.cycle_tp || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'per-range': // 고저PER요청 (ka10026)
+      p.pertp = p.pertp || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'open-change': // 시가대비등락률요청 (ka10028)
+      p.sort_tp = p.sort_tp || '1';
+      p.trde_qty_cnd = p.trde_qty_cnd || '0';
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.updown_incls = p.updown_incls || '1';
+      p.stk_cnd = p.stk_cnd || '0';
+      p.crd_cnd = p.crd_cnd || '0';
+      p.trde_prica_cnd = p.trde_prica_cnd || '0';
+      p.flu_cnd = p.flu_cnd || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'vi-trigger': // 변동성완화장치발동종목요청 (ka10054)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.bf_mkrt_tp = p.bf_mkrt_tp || '0';
+      p.motn_tp = p.motn_tp || '0';
+      p.skip_stk = p.skip_stk || '0';
+      p.trde_qty_tp = p.trde_qty_tp || '0';
+      p.min_trde_qty = p.min_trde_qty || '0';
+      p.max_trde_qty = p.max_trde_qty || '0';
+      p.trde_prica_tp = p.trde_prica_tp || '0';
+      p.min_trde_prica = p.min_trde_prica || '0';
+      p.max_trde_prica = p.max_trde_prica || '0';
+      p.motn_drc = p.motn_drc || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'today-volume': // 당일전일체결량요청 (ka10055)
+      p.tdy_pred = p.tdy_pred || '0';
+      break;
+    case 'stock-list': // 종목정보 리스트 (ka10099)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      break;
+    case 'sector-list': // 업종코드 리스트 (ka10101)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      break;
+
+    // ── 순위 ──
+    case 'ranking-quote': // 호가잔량상위요청 (ka10020)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.sort_tp = p.sort_tp || '1';
+      p.trde_qty_tp = p.trde_qty_tp || '0';
+      p.stk_cnd = p.stk_cnd || '0';
+      p.crd_cnd = p.crd_cnd || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-quote-surge': // 호가잔량급증요청 (ka10021)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.trde_tp = p.trde_tp || '1';
+      p.sort_tp = p.sort_tp || '1';
+      p.tm_tp = p.tm_tp || '0';
+      p.trde_qty_tp = p.trde_qty_tp || '0';
+      p.stk_cnd = p.stk_cnd || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-ratio-surge': // 잔량율급증요청 (ka10022)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.rt_tp = p.rt_tp || '1';
+      p.tm_tp = p.tm_tp || '0';
+      p.trde_qty_tp = p.trde_qty_tp || '0';
+      p.stk_cnd = p.stk_cnd || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-volume-surge': // 거래량급증요청 (ka10023)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.sort_tp = p.sort_tp || '1';
+      p.tm_tp = p.tm_tp || '0';
+      p.trde_qty_tp = p.trde_qty_tp || '0';
+      p.stk_cnd = p.stk_cnd || '0';
+      p.pric_tp = p.pric_tp || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-change': // 전일대비등락률상위요청 (ka10027)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.sort_tp = p.sort_tp || '1';
+      p.trde_qty_cnd = p.trde_qty_cnd || '0';
+      p.stk_cnd = p.stk_cnd || '0';
+      p.crd_cnd = p.crd_cnd || '0';
+      p.updown_incls = p.updown_incls || '1';
+      p.pric_cnd = p.pric_cnd || '0';
+      p.trde_prica_cnd = p.trde_prica_cnd || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-volume': // 당일거래량상위요청 (ka10030)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.sort_tp = p.sort_tp || '1';
+      p.mang_stk_incls = p.mang_stk_incls || '1';
+      p.crd_tp = p.crd_tp || '0';
+      p.trde_qty_tp = p.trde_qty_tp || '0';
+      p.pric_tp = p.pric_tp || '0';
+      p.trde_prica_tp = p.trde_prica_tp || '0';
+      p.mrkt_open_tp = p.mrkt_open_tp || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-prev-vol': // 전일거래량상위요청 (ka10031)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.qry_tp = p.qry_tp || '1';
+      p.rank_strt = p.rank_strt || '1';
+      p.rank_end = p.rank_end || '50';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-amount': // 거래대금상위요청 (ka10032)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.mang_stk_incls = p.mang_stk_incls || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-credit-ratio': // 신용비율상위요청 (ka10033)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.trde_qty_tp = p.trde_qty_tp || '0';
+      p.stk_cnd = p.stk_cnd || '0';
+      p.updown_incls = p.updown_incls || '1';
+      p.crd_cnd = p.crd_cnd || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-foreign': // 외인기간별매매상위요청 (ka10034)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.trde_tp = p.trde_tp || '1';
+      p.dt = p.dt || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-foreign-cont': // 외인연속순매매상위요청 (ka10035)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.trde_tp = p.trde_tp || '1';
+      p.base_dt_tp = p.base_dt_tp || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-foreign-limit': // 외인한도소진율증가상위 (ka10036)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.dt = p.dt || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-foreign-window': // 외국계창구매매상위요청 (ka10037)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.dt = p.dt || '1';
+      p.trde_tp = p.trde_tp || '1';
+      p.sort_tp = p.sort_tp || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-broker': // 종목별증권사순위요청 (ka10038)
+      p.qry_tp = p.qry_tp || '1';
+      break;
+    case 'ranking-broker-trade': // 증권사별매매상위요청 (ka10039)
+      p.trde_qty_tp = p.trde_qty_tp || '0';
+      p.trde_tp = p.trde_tp || '1';
+      p.dt = p.dt || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'ranking-net-broker': // 순매수거래원순위요청 (ka10042)
+      p.qry_dt_tp = p.qry_dt_tp || '1';
+      p.pot_tp = p.pot_tp || '1';
+      p.sort_base = p.sort_base || '1';
+      break;
+    case 'ranking-overtime': // 시간외단일가등락율순위요청 (ka10098)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.sort_base = p.sort_base || '1';
+      p.stk_cnd = p.stk_cnd || '0';
+      p.trde_qty_cnd = p.trde_qty_cnd || '0';
+      p.crd_cnd = p.crd_cnd || '0';
+      p.trde_prica = p.trde_prica || '0';
+      break;
+    case 'ranking-foreign-inst': // 외국인기관매매상위요청 (ka90009)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.amt_qty_tp = p.amt_qty_tp || '1';
+      p.qry_dt_tp = p.qry_dt_tp || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+
+    // ── 차트 ──
+    case 'chart-tick': // 주식틱차트 (ka10079)
+      p.tic_scope = p.tic_scope || '1';
+      p.upd_stkpc_tp = p.upd_stkpc_tp || '1';
+      break;
+    case 'chart-minute': // 주식분봉차트 (ka10080)
+      p.tic_scope = p.tic_scope || '1';
+      p.upd_stkpc_tp = p.upd_stkpc_tp || '1';
+      break;
+    case 'chart-daily': // 주식일봉차트 (ka10081)
+      p.base_dt = p.base_dt || today();
+      p.upd_stkpc_tp = p.upd_stkpc_tp || '1';
+      break;
+    case 'chart-weekly': // 주식주봉차트 (ka10082)
+      p.base_dt = p.base_dt || today();
+      p.upd_stkpc_tp = p.upd_stkpc_tp || '1';
+      break;
+    case 'chart-monthly': // 주식월봉차트 (ka10083)
+      p.base_dt = p.base_dt || today();
+      p.upd_stkpc_tp = p.upd_stkpc_tp || '1';
+      break;
+    case 'chart-yearly': // 주식년봉차트 (ka10094)
+      p.base_dt = p.base_dt || today();
+      p.upd_stkpc_tp = p.upd_stkpc_tp || '1';
+      break;
+
+    // ── 기관/외국인 ──
+    case 'inst-daily': // 일별기관매매종목요청 (ka10044)
+      p.strt_dt = p.strt_dt || daysAgo(30);
+      p.end_dt = p.end_dt || today();
+      p.trde_tp = p.trde_tp || '1';
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'inst-trend': // 종목별기관매매추이요청 (ka10045)
+      p.strt_dt = p.strt_dt || daysAgo(30);
+      p.end_dt = p.end_dt || today();
+      p.orgn_prsm_unp_tp = p.orgn_prsm_unp_tp || '1';
+      p.for_prsm_unp_tp = p.for_prsm_unp_tp || '1';
+      break;
+    case 'sector-investor': // 업종별투자자순매수요청 (ka10051)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.amt_qty_tp = p.amt_qty_tp || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'investor-by-stock': // 투자자별일별매매종목요청 (ka10058)
+      p.strt_dt = p.strt_dt || daysAgo(30);
+      p.end_dt = p.end_dt || today();
+      p.trde_tp = p.trde_tp || '1';
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.invsr_tp = p.invsr_tp || '9000';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'inst-by-stock': // 종목별투자자기관별요청 (ka10059)
+      p.dt = p.dt || '1';
+      p.amt_qty_tp = p.amt_qty_tp || '1';
+      p.trde_tp = p.trde_tp || '1';
+      p.unit_tp = p.unit_tp || '1';
+      break;
+    case 'inst-total': // 종목별투자자기관별합계요청 (ka10061)
+      p.strt_dt = p.strt_dt || daysAgo(30);
+      p.end_dt = p.end_dt || today();
+      p.amt_qty_tp = p.amt_qty_tp || '1';
+      p.trde_tp = p.trde_tp || '1';
+      p.unit_tp = p.unit_tp || '1';
+      break;
+    case 'same-net': // 동일순매매순위요청 (ka10062)
+      p.strt_dt = p.strt_dt || daysAgo(30);
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.trde_tp = p.trde_tp || '1';
+      p.sort_cnd = p.sort_cnd || '1';
+      p.unit_tp = p.unit_tp || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'intraday-inv': // 장중투자자별매매요청 (ka10063)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.amt_qty_tp = p.amt_qty_tp || '1';
+      p.invsr = p.invsr || '0';
+      p.frgn_all = p.frgn_all || '0';
+      p.smtm_netprps_tp = p.smtm_netprps_tp || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'afterclose-inv': // 장마감후투자자별매매요청 (ka10066)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.amt_qty_tp = p.amt_qty_tp || '1';
+      p.trde_tp = p.trde_tp || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'inst-cont': // 기관외국인연속매매현황요청 (ka10131)
+      p.dt = p.dt || today();
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.netslmt_tp = p.netslmt_tp || '1';
+      p.stk_inds_tp = p.stk_inds_tp || '1';
+      p.amt_qty_tp = p.amt_qty_tp || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'broker-trend': // 증권사별종목매매동향요청 (ka10078)
+      p.strt_dt = p.strt_dt || daysAgo(30);
+      p.end_dt = p.end_dt || today();
+      break;
+
+    // ── 프로그램매매 ──
+    case 'program-top50': // 프로그램순매수상위50 (ka90003)
+      p.trde_upper_tp = p.trde_upper_tp || '1';
+      p.amt_qty_tp = p.amt_qty_tp || '1';
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'program-by-stock-info': // 종목별프로그램매매현황 (ka90004)
+      p.dt = p.dt || '1';
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'program-time': // 프로그램매매추이 시간대별 (ka90005)
+      p.date = p.date || today();
+      p.amt_qty_tp = p.amt_qty_tp || '1';
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.min_tic_tp = p.min_tic_tp || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'program-arb': // 차익잔고추이 (ka90006)
+      p.date = p.date || today();
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'program-cum': // 누적추이 (ka90007)
+      p.date = p.date || today();
+      p.amt_qty_tp = p.amt_qty_tp || '1';
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'program-by-stock': // 종목시간별 (ka90008)
+      p.amt_qty_tp = p.amt_qty_tp || '1';
+      p.date = p.date || today();
+      break;
+    case 'program-daily': // 일자별 (ka90010)
+      p.date = p.date || today();
+      p.amt_qty_tp = p.amt_qty_tp || '1';
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.min_tic_tp = p.min_tic_tp || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+
+    // ── 공매도/대차거래 ──
+    case 'lending-trend': // 대차거래추이 (ka10068)
+      p.all_tp = p.all_tp || '0';
+      break;
+    case 'lending-top10': // 대차거래상위10종목 (ka10069)
+      p.strt_dt = p.strt_dt || daysAgo(30);
+      p.mrkt_tp = p.mrkt_tp || '0';
+      break;
+    case 'lending-detail': // 대차거래내역 (ka90012)
+      p.dt = p.dt || '1';
+      p.mrkt_tp = p.mrkt_tp || '0';
+      break;
+
+    // ── 업종 ──
+    case 'sector-price': // 업종현재가 (ka20001)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      break;
+    case 'sector-stocks': // 업종별주가 (ka20002)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'sector-daily': // 업종현재가일별 (ka20009)
+      p.mrkt_tp = p.mrkt_tp || '0';
+      break;
+    case 'sector-tick-chart': // 업종틱차트 (ka20004)
+      p.tic_scope = p.tic_scope || '1';
+      break;
+    case 'sector-minute-chart': // 업종분봉 (ka20005)
+      p.tic_scope = p.tic_scope || '1';
+      break;
+    case 'sector-daily-chart': // 업종일봉 (ka20006)
+      p.base_dt = p.base_dt || today();
+      break;
+    case 'sector-weekly-chart': // 업종주봉 (ka20007)
+      p.base_dt = p.base_dt || today();
+      break;
+    case 'sector-monthly-chart': // 업종월봉 (ka20008)
+      p.base_dt = p.base_dt || today();
+      break;
+    case 'sector-yearly-chart': // 업종년봉 (ka20019)
+      p.base_dt = p.base_dt || today();
+      break;
+
+    // ── ETF ──
+    case 'etf-yield': // ETF수익율 (ka40001)
+      p.dt = p.dt || '1';
+      break;
+    case 'etf-all': // ETF전체시세 (ka40004)
+      p.txon_type = p.txon_type || '0';
+      p.navpre = p.navpre || '0';
+      p.mngmcomp = p.mngmcomp || '';
+      p.txon_yn = p.txon_yn || '0';
+      p.trace_idex = p.trace_idex || '';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+
+    // ── 금현물 ──
+    case 'gold-daily-trend': // 금현물일별추이 (ka50012)
+      p.base_dt = p.base_dt || today();
+      break;
+    case 'gold-tick-chart': // 금현물틱차트 (ka50079)
+      p.tic_scope = p.tic_scope || '1';
+      p.upd_stkpc_tp = p.upd_stkpc_tp || '1';
+      break;
+    case 'gold-minute-chart': // 금현물분봉 (ka50080)
+      p.tic_scope = p.tic_scope || '1';
+      break;
+    case 'gold-daily-chart': // 금현물일봉 (ka50081)
+      p.base_dt = p.base_dt || today();
+      p.upd_stkpc_tp = p.upd_stkpc_tp || '1';
+      break;
+    case 'gold-quote': // 금현물호가 (ka50101)
+      p.tic_scope = p.tic_scope || '1';
+      break;
+    case 'gold-ccld': // 금현물 주문체결전체조회 (kt50030)
+      p.ord_dt = p.ord_dt || today();
+      p.mrkt_deal_tp = p.mrkt_deal_tp || '0';
+      p.stk_bond_tp = p.stk_bond_tp || '0';
+      p.slby_tp = p.slby_tp || '0';
+      break;
+    case 'gold-detail': // 금현물 주문체결조회 (kt50031)
+      p.qry_tp = p.qry_tp || '1';
+      p.stk_bond_tp = p.stk_bond_tp || '0';
+      p.sell_tp = p.sell_tp || '0';
+      p.dmst_stex_tp = p.dmst_stex_tp || '0';
+      break;
+    case 'gold-unsettled': // 금현물 미체결조회 (kt50075)
+      p.ord_dt = p.ord_dt || today();
+      p.mrkt_deal_tp = p.mrkt_deal_tp || '0';
+      p.stk_bond_tp = p.stk_bond_tp || '0';
+      p.sell_tp = p.sell_tp || '0';
+      break;
+
+    // ── 테마 ──
+    case 'theme-list': // 테마그룹별 (ka90001)
+      p.qry_tp = p.qry_tp || '1';
+      p.date_tp = p.date_tp || '1'; // 1일전
+      p.flu_pl_amt_tp = p.flu_pl_amt_tp || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'theme-stocks': // 테마구성종목 (ka90002)
+      p.stex_tp = p.stex_tp || '0';
+      break;
+
+    // ── 계좌 ──
+    case 'daily-pnl': // 일별잔고수익률 (ka01690)
+      p.qry_dt = p.qry_dt || today();
+      break;
+    case 'realized-pnl': // 일자별실현손익요청 (ka10074)
+      p.strt_dt = p.strt_dt || daysAgo(30);
+      p.end_dt = p.end_dt || today();
+      break;
+    case 'unsettled': // 미체결요청 (ka10075)
+      p.all_stk_tp = p.all_stk_tp || '0';
+      p.trde_tp = p.trde_tp || '1';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'settled': // 체결요청 (ka10076)
+      p.qry_tp = p.qry_tp || '1';
+      p.sell_tp = p.sell_tp || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'account-yield': // 계좌수익률요청 (ka10085)
+      p.stex_tp = p.stex_tp || '0';
+      break;
+    case 'trade-log': // 당일매매일지요청 (ka10170)
+      p.ottks_tp = p.ottks_tp || '0';
+      p.ch_crd_tp = p.ch_crd_tp || '0';
+      break;
+    case 'deposit': // 예수금상세현황요청 (kt00001)
+      p.qry_tp = p.qry_tp || '1';
+      break;
+    case 'daily-deposit': // 일별추정예탁자산현황 (kt00002)
+      p.start_dt = p.start_dt || daysAgo(30);
+      p.end_dt = p.end_dt || today();
+      break;
+    case 'asset': // 추정자산조회요청 (kt00003)
+      p.qry_tp = p.qry_tp || '1';
+      break;
+    case 'evaluation': // 계좌평가현황 (kt00004)
+      p.qry_tp = p.qry_tp || '1';
+      p.dmst_stex_tp = p.dmst_stex_tp || '0';
+      break;
+    case 'ccld-balance': // 체결잔고 (kt00005)
+      p.dmst_stex_tp = p.dmst_stex_tp || '0';
+      break;
+    case 'ccld-detail': // 주문체결내역상세 (kt00007)
+      p.qry_tp = p.qry_tp || '1';
+      p.stk_bond_tp = p.stk_bond_tp || '0';
+      p.sell_tp = p.sell_tp || '0';
+      p.dmst_stex_tp = p.dmst_stex_tp || '0';
+      break;
+    case 'ccld-status': // 주문체결현황 (kt00009)
+      p.stk_bond_tp = p.stk_bond_tp || '0';
+      p.mrkt_tp = p.mrkt_tp || '0';
+      p.sell_tp = p.sell_tp || '0';
+      p.qry_tp = p.qry_tp || '1';
+      p.dmst_stex_tp = p.dmst_stex_tp || '0';
+      break;
+    case 'withdraw-limit': // 주문인출가능금액 (kt00010)
+      p.trde_tp = p.trde_tp || '1';
+      p.uv = p.uv || '0';
+      break;
+    case 'trade-history': // 위탁종합거래내역 (kt00015)
+      p.strt_dt = p.strt_dt || daysAgo(30);
+      p.end_dt = p.end_dt || today();
+      p.tp = p.tp || '0';
+      p.gds_tp = p.gds_tp || '0';
+      p.dmst_stex_tp = p.dmst_stex_tp || '0';
+      break;
+    case 'daily-yield': // 일별계좌수익률상세 (kt00016)
+      p.fr_dt = p.fr_dt || daysAgo(30);
+      p.to_dt = p.to_dt || today();
+      break;
+    case 'balance': // 계좌평가잔고내역요청 (kt00018)
+      p.qry_tp = p.qry_tp || '1';
+      p.dmst_stex_tp = p.dmst_stex_tp || '0';
+      break;
+
+    // ── 주문 ──
+    case 'order-buy': // 주식매수주문 (kt10000)
+    case 'order-sell': // 주식매도주문 (kt10001)
+      p.dmst_stex_tp = p.dmst_stex_tp || '0';
+      p.trde_tp = p.trde_tp || '1'; // 1=지정가
+      break;
+    case 'order-modify': // 주식정정주문 (kt10002)
+      p.dmst_stex_tp = p.dmst_stex_tp || '0';
+      break;
+    case 'order-cancel': // 주식취소주문 (kt10003)
+      p.dmst_stex_tp = p.dmst_stex_tp || '0';
+      break;
+    case 'credit-buy': // 신용매수 (kt10006)
+    case 'credit-sell': // 신용매도 (kt10007)
+      p.dmst_stex_tp = p.dmst_stex_tp || '0';
+      p.trde_tp = p.trde_tp || '1';
+      if (action === 'credit-sell') p.crd_deal_tp = p.crd_deal_tp || '1';
+      break;
+    case 'credit-modify': // 신용정정 (kt10008)
+    case 'credit-cancel': // 신용취소 (kt10009)
+      p.dmst_stex_tp = p.dmst_stex_tp || '0';
+      break;
+    case 'gold-buy': // 금현물매수 (kt50000)
+    case 'gold-sell': // 금현물매도 (kt50001)
+      p.trde_tp = p.trde_tp || '1';
+      break;
+
+    // ── 기타 ──
+    case 'credit-avail': // 신용융자 가능종목 (kt20016)
+      p.mrkt_deal_tp = p.mrkt_deal_tp || '0';
+      break;
+    case 'cond-search': // 조건검색 일반 (ka10172)
+    case 'cond-realtime': // 조건검색 실시간 (ka10173)
+      p.search_type = p.search_type || '0';
+      p.stex_tp = p.stex_tp || '0';
+      break;
   }
 
   return p;

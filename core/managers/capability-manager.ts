@@ -42,8 +42,11 @@ export class CapabilityManager {
         try {
           const mod = JSON.parse(file.data);
           if (mod.capability === capId) {
+            const moduleName = mod.name || entry.name;
+            // 비활성화된 모듈은 provider에서 제외
+            if (!this.isModuleEnabled(moduleName)) continue;
             providers.push({
-              moduleName: mod.name || entry.name,
+              moduleName,
               providerType: mod.providerType || 'local',
               location,
               description: mod.description || '',
@@ -98,6 +101,16 @@ export class CapabilityManager {
   /** capability 설정 저장 (Vault) */
   setSettings(capId: string, settings: CapabilitySettings): boolean {
     return this.vault.setSecret(`system:capability:${capId}:settings`, JSON.stringify(settings));
+  }
+
+  /** 모듈 활성화 여부 확인 (ModuleManager와 동일 로직 — Vault 직접 조회) */
+  private isModuleEnabled(name: string): boolean {
+    const raw = this.vault.getSecret(`system:module:${name}:settings`);
+    if (!raw) return true; // 설정 없으면 기본 활성화
+    try {
+      const s = JSON.parse(raw);
+      return s.enabled !== false;
+    } catch { return true; }
   }
 
   /** 설정 기준으로 실행할 provider 선택 — providers 배열 순서대로 시도 */

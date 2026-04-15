@@ -62,9 +62,12 @@ export class AiManager {
           if (file.success && file.data) {
             try {
               const m = JSON.parse(file.data);
+              const moduleName = m.name || d.name;
+              // 비활성화된 모듈은 시스템 컨텍스트에서 제외
+              if (!this.core.isModuleEnabled(moduleName)) continue;
               const rt = m.runtime === 'node' ? 'index.mjs' : m.runtime === 'python' ? 'main.py' : 'index.mjs';
               allMods.push({
-                name: m.name || d.name,
+                name: moduleName,
                 path: `system/modules/${d.name}/${rt}`,
                 capability: m.capability,
                 providerType: m.providerType,
@@ -1500,6 +1503,9 @@ run_task/schedule_task의 pipeline에서:
         try {
           const cfg = JSON.parse(file.data);
           if (cfg.type !== 'module' || !cfg.input) continue;
+          // 비활성화된 모듈은 도구 목록에서 제외
+          const moduleName = cfg.name || d.name;
+          if (!this.core.isModuleEnabled(moduleName)) continue;
           const rt = cfg.runtime === 'node' ? 'index.mjs' : cfg.runtime === 'python' ? 'main.py' : 'index.mjs';
           const toolName = `sysmod_${d.name.replace(/-/g, '_')}`;
           tools.push({

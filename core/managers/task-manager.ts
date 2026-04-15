@@ -168,8 +168,9 @@ export class TaskManager {
     const settings = this.core.getCapabilitySettings(current.capability);
     if (settings.providers.length === 0) return path; // 순서 미설정이면 그대로
 
-    // 사용자 정의 순서에서 첫 번째로 존재하는 provider 경로 반환
+    // 사용자 정의 순서에서 첫 번째로 활성화된 provider 경로 반환
     for (const name of settings.providers) {
+      if (!this.core.isModuleEnabled(name)) continue;
       for (const [altPath, info] of cache) {
         if (info.capability === current.capability && altPath !== path) {
           // moduleName 매칭: 경로에서 모듈명 추출
@@ -193,11 +194,12 @@ export class TaskManager {
     const failed = cache.get(failedPath);
     if (!failed?.capability) return null;
 
-    // 같은 capability의 다른 provider 찾기
+    // 같은 capability의 다른 provider 찾기 (비활성 모듈 제외)
     const alternatives: { path: string; providerType: string; moduleName: string }[] = [];
     for (const [path, info] of cache) {
       if (path !== failedPath && info.capability === failed.capability) {
         const moduleName = path.split('/').slice(-2, -1)[0];
+        if (!this.core.isModuleEnabled(moduleName)) continue;
         alternatives.push({ path, providerType: info.providerType, moduleName });
       }
     }

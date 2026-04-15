@@ -7,6 +7,7 @@ interface SystemEntry {
   runtime: string;
   type: string;   // 'service' | 'module'
   scope: string;  // 'system' | 'user'
+  enabled: boolean;
 }
 
 /**
@@ -78,16 +79,31 @@ export class ModuleManager {
       if (!file.success || !file.data) continue;
       try {
         const parsed = JSON.parse(file.data);
+        const moduleName = parsed.name || entry.name;
         entries.push({
-          name: parsed.name || entry.name,
+          name: moduleName,
           description: parsed.description || '',
           runtime: parsed.runtime || 'none',
           type: parsed.type || defaultType,
           scope: parsed.scope || 'system',
+          enabled: this.isEnabled(moduleName),
         });
       } catch {}
     }
     return entries;
+  }
+
+  /** 모듈/서비스 활성화 여부 (기본 true — 하위 호환) */
+  isEnabled(name: string): boolean {
+    const settings = this.getSettings(name);
+    return settings.enabled !== false; // 미설정 시 true
+  }
+
+  /** 모듈/서비스 활성화/비활성화 토글 */
+  setEnabled(name: string, enabled: boolean): boolean {
+    const settings = this.getSettings(name);
+    settings.enabled = enabled;
+    return this.setSettings(name, settings);
   }
 
   /** 시스템 모듈/서비스 설정 조회 */

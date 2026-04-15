@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Download, Server, Terminal, Globe, Cpu, Wrench, Blocks } from 'lucide-react';
 import { GEMINI_MODELS, McpServer } from '../types';
 
-interface SystemModule { name: string; description: string; runtime: string; type?: string; }
+interface SystemModule { name: string; description: string; runtime: string; type?: string; enabled?: boolean; }
 
 type Props = {
   isDemo: boolean;
@@ -76,6 +76,16 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
       const data = await res.json();
       if (data.success) setSysModules(data.modules ?? []);
     } catch {}
+  }, []);
+  const toggleModuleEnabled = useCallback(async (name: string, enabled: boolean) => {
+    // 낙관적 UI 업데이트
+    setSysModules(prev => prev.map(m => m.name === name ? { ...m, enabled } : m));
+    try {
+      await fetch('/api/settings/modules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, enabled }) });
+    } catch {
+      // 실패 시 롤백
+      setSysModules(prev => prev.map(m => m.name === name ? { ...m, enabled: !enabled } : m));
+    }
   }, []);
 
   // ── 데이터 로드 ────────────────────────────────────────────────────────────
@@ -1090,18 +1100,23 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                   <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5 mb-2"><Wrench size={11} /> 서비스</p>
                   <div className="space-y-1">
                     {sysModules.filter(m => m.type === 'service').map(m => (
-                      <button
-                        key={m.name}
-                        onClick={() => onOpenModuleSettings?.(m.name)}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-blue-200 hover:bg-blue-50/50 transition-colors text-left group"
-                      >
-                        <Server size={16} className="text-emerald-500 shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[13px] font-semibold text-slate-700">{m.name}</p>
-                          <p className="text-[11px] text-slate-400 truncate">{m.description}</p>
-                        </div>
-                        <Settings size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
-                      </button>
+                      <div key={m.name} className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors group ${m.enabled === false ? 'border-slate-100 bg-slate-50/50 opacity-60' : 'border-slate-200 hover:border-blue-200 hover:bg-blue-50/50'}`}>
+                        <button onClick={() => onOpenModuleSettings?.(m.name)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                          <Server size={16} className="text-emerald-500 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[13px] font-semibold text-slate-700">{m.name}</p>
+                            <p className="text-[11px] text-slate-400 truncate">{m.description}</p>
+                          </div>
+                          <Settings size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleModuleEnabled(m.name, m.enabled === false); }}
+                          className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${m.enabled !== false ? 'bg-blue-500' : 'bg-slate-300'}`}
+                          title={m.enabled !== false ? '활성' : '비활성'}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${m.enabled !== false ? 'translate-x-4' : ''}`} />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1113,18 +1128,23 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                   <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5 mb-2"><Blocks size={11} /> 모듈</p>
                   <div className="space-y-1">
                     {sysModules.filter(m => m.type !== 'service').map(m => (
-                      <button
-                        key={m.name}
-                        onClick={() => onOpenModuleSettings?.(m.name)}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 hover:border-blue-200 hover:bg-blue-50/50 transition-colors text-left group"
-                      >
-                        <Blocks size={16} className="text-indigo-500 shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[13px] font-semibold text-slate-700">{m.name}</p>
-                          <p className="text-[11px] text-slate-400 truncate">{m.description}</p>
-                        </div>
-                        <Settings size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
-                      </button>
+                      <div key={m.name} className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors group ${m.enabled === false ? 'border-slate-100 bg-slate-50/50 opacity-60' : 'border-slate-200 hover:border-blue-200 hover:bg-blue-50/50'}`}>
+                        <button onClick={() => onOpenModuleSettings?.(m.name)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                          <Blocks size={16} className="text-indigo-500 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[13px] font-semibold text-slate-700">{m.name}</p>
+                            <p className="text-[11px] text-slate-400 truncate">{m.description}</p>
+                          </div>
+                          <Settings size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleModuleEnabled(m.name, m.enabled === false); }}
+                          className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${m.enabled !== false ? 'bg-blue-500' : 'bg-slate-300'}`}
+                          title={m.enabled !== false ? '활성' : '비활성'}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${m.enabled !== false ? 'translate-x-4' : ''}`} />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 </div>

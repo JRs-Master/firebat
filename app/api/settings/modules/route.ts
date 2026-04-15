@@ -23,3 +23,16 @@ export async function PATCH(req: NextRequest) {
   const ok = getCore().setModuleSettings(name, settings ?? {});
   return NextResponse.json({ success: ok });
 }
+
+/** POST /api/settings/modules — 모듈 활성화/비활성화 토글 */
+export async function POST(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
+  const { name, enabled } = await req.json();
+  if (!name || typeof enabled !== 'boolean') {
+    return NextResponse.json({ success: false, error: 'name(string), enabled(boolean) 필요' }, { status: 400 });
+  }
+
+  const ok = getCore().setModuleEnabled(name, enabled);
+  return NextResponse.json({ success: ok, enabled });
+}
