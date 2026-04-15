@@ -233,12 +233,16 @@ export interface ToolResult {
 export interface ToolExchangeEntry {
   toolCalls: ToolCall[];
   toolResults: ToolResult[];
+  /** LLM 원본 응답 parts (thought_signature 등 보존) — 어댑터가 멀티턴 시 그대로 사용 */
+  rawModelParts?: unknown[];
 }
 
 /** Function Calling 응답 — 텍스트 + 도구 호출 */
 export interface LlmToolResponse {
   text: string;
   toolCalls: ToolCall[];
+  /** LLM 원본 응답 parts — 멀티턴 교환 시 보존용 */
+  rawModelParts?: unknown[];
 }
 
 export interface ILlmPort {

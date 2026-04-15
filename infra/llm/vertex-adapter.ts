@@ -104,13 +104,20 @@ export class VertexAiAdapter implements ILlmPort {
 
       // 멀티턴 도구 교환 히스토리 추가 (이전 턴의 호출 → 결과)
       for (const exchange of toolExchanges) {
-        // 모델의 도구 호출
-        contents.push({
-          role: 'model',
-          parts: exchange.toolCalls.map(tc => ({
-            functionCall: { name: tc.name, args: tc.args },
-          })),
-        });
+        // 모델의 도구 호출 — 원본 parts가 있으면 그대로 사용 (thought_signature 보존)
+        if (exchange.rawModelParts && Array.isArray(exchange.rawModelParts)) {
+          contents.push({
+            role: 'model',
+            parts: exchange.rawModelParts as Array<Record<string, unknown>>,
+          });
+        } else {
+          contents.push({
+            role: 'model',
+            parts: exchange.toolCalls.map(tc => ({
+              functionCall: { name: tc.name, args: tc.args },
+            })),
+          });
+        }
         // 도구 실행 결과
         contents.push({
           role: 'user',
@@ -136,23 +143,26 @@ export class VertexAiAdapter implements ILlmPort {
             temperature: LLM_TEMPERATURE_TEXT,
             tools: [{ functionDeclarations }],
             toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
-            thinkingConfig: { thinkingBudget: 0 },
           } as Record<string, unknown>,
         }),
         LLM_TIMEOUT_MS,
       );
 
-      // 응답 파싱 — 텍스트 파트와 functionCall 파트 분리
+      // 응답 파싱 — 텍스트 파트와 functionCall 파트 분리, 원본 parts 보존
       const textParts: string[] = [];
       const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+      let rawModelParts: unknown[] | undefined;
 
       const candidates = (response as unknown as Record<string, unknown>).candidates as Array<Record<string, unknown>> | undefined;
       if (candidates && candidates.length > 0) {
         const parts = (candidates[0].content as Record<string, unknown>)?.parts as Array<Record<string, unknown>> | undefined;
         if (parts) {
+          // 원본 parts 보존 (thought_signature 등 멀티턴 시 필요)
+          rawModelParts = parts;
           for (const part of parts) {
             if (part.text && typeof part.text === 'string') {
-              textParts.push(part.text);
+              // thinking 파트는 건너뛰기 (thought: true인 경우)
+              if (!part.thought) textParts.push(part.text);
             }
             if (part.functionCall && typeof part.functionCall === 'object') {
               const fc = part.functionCall as Record<string, unknown>;
@@ -173,7 +183,7 @@ export class VertexAiAdapter implements ILlmPort {
 
       return {
         success: true,
-        data: { text: textParts.join(''), toolCalls },
+        data: { text: textParts.join(''), toolCalls, rawModelParts },
       };
     } catch (e: any) {
       return { success: false, error: `[VertexAI] askWithTools 실패: ${e.message}` };
