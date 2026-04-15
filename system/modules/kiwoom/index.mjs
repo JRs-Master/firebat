@@ -214,7 +214,15 @@ process.stdin.on('data', chunk => { raw += chunk; });
 process.stdin.on('end', async () => {
   try {
     const { data } = JSON.parse(raw);
-    const action = data?.action;
+    // 한국어/변형 액션명 → 영문 정규화
+    const ALIAS = {
+      '현재가': 'price', '주가': 'price', '시세': 'price', '주식현재가': 'price', '주식현재가시세': 'price', '주식시세': 'price',
+      '호가': 'quote', '매수': 'order-buy', '매도': 'order-sell', '정정': 'order-modify', '취소': 'order-cancel',
+      '잔고': 'balance', '계좌': 'account', '예수금': 'deposit',
+      '일봉': 'chart-daily', '차트': 'chart-daily', '분봉': 'chart-minute',
+      '거래량순위': 'ranking-volume', '거래량': 'ranking-volume',
+    };
+    const action = ALIAS[data?.action] || data?.action;
     if (!action) {
       console.log(JSON.stringify({ success: false, error: 'data.action 필드가 필요합니다. 편의 액션(price, balance 등) 또는 apiId(ka10001 등)를 지정하세요.' }));
       return;
