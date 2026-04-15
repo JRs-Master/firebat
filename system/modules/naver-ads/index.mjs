@@ -71,23 +71,25 @@ process.stdin.on('end', async () => {
     }
 
     const json = await resp.json();
-    const keywordList = (json.keywordList || [])
-      .filter(item => keywords.some(kw => item.relKeyword === kw))
-      .map(item => ({
-        keyword: item.relKeyword,
-        monthlyPcQcCnt: item.monthlyPcQcCnt ?? 0,
-        monthlyMobileQcCnt: item.monthlyMobileQcCnt ?? 0,
-        monthlyAvePcClkCnt: item.monthlyAvePcClkCnt ?? 0,
-        monthlyAveMobileClkCnt: item.monthlyAveMobileClkCnt ?? 0,
-        monthlyAvePcCtr: item.monthlyAvePcCtr ?? 0,
-        monthlyAveMobileCtr: item.monthlyAveMobileCtr ?? 0,
-        plAvgDepth: item.plAvgDepth ?? 0,
-        compIdx: item.compIdx || '',
-      }));
+    const allResults = (json.keywordList || []).map(item => ({
+      keyword: item.relKeyword,
+      monthlyPcQcCnt: item.monthlyPcQcCnt ?? 0,
+      monthlyMobileQcCnt: item.monthlyMobileQcCnt ?? 0,
+      monthlyAvePcClkCnt: item.monthlyAvePcClkCnt ?? 0,
+      monthlyAveMobileClkCnt: item.monthlyAveMobileClkCnt ?? 0,
+      monthlyAvePcCtr: item.monthlyAvePcCtr ?? 0,
+      monthlyAveMobileCtr: item.monthlyAveMobileCtr ?? 0,
+      plAvgDepth: item.plAvgDepth ?? 0,
+      compIdx: item.compIdx || '',
+    }));
+    // 입력 키워드 우선, 나머지 연관 키워드 뒤에 배치
+    const lowerKws = keywords.map(k => k.toLowerCase());
+    const exact = allResults.filter(r => lowerKws.includes(r.keyword?.toLowerCase()));
+    const related = allResults.filter(r => !lowerKws.includes(r.keyword?.toLowerCase()));
 
     console.log(JSON.stringify({
       success: true,
-      data: { keywords: keywordList },
+      data: { keywords: exact, relatedKeywords: related.slice(0, 20) },
     }));
   } catch (e) {
     console.log(JSON.stringify({ success: false, error: e.message }));
