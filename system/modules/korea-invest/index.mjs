@@ -214,17 +214,34 @@ process.stdin.on('data', chunk => { raw += chunk; });
 process.stdin.on('end', async () => {
   try {
     const { data } = JSON.parse(raw);
-    // 한국어/변형 액션명 → 영문 정규화
-    const ALIAS = {
-      '현재가': 'price', '주가': 'price', '시세': 'price', '주식현재가': 'price', '주식현재가시세': 'price', '주식시세': 'price',
-      '호가': 'quote', '매수': 'order-buy', '매도': 'order-sell', '정정': 'order-modify', '취소': 'order-modify',
-      '잔고': 'balance', '계좌': 'balance', '예수금': 'deposit',
-      '일봉': 'chart-daily', '차트': 'chart-daily', '분봉': 'chart-minute',
-      '거래량순위': 'ranking-volume', '거래량': 'ranking-volume',
-      '외국인': 'foreign-total', '투자자': 'investor-daily',
-      '재무': 'finance-ratio', '배당': 'ranking-dividend',
-    };
-    const action = ALIAS[data?.action] || data?.action;
+    // 액션명 정규화: 한국어·변형·스네이크케이스 등 → 영문 편의 액션
+    function normalizeAction(raw) {
+      if (!raw) return raw;
+      // 정확히 ACTION_MAP에 있으면 그대로
+      if (ACTION_MAP[raw]) return raw;
+      // 키워드 기반 매칭 (순서 중요: 구체적 → 일반적)
+      const KEYWORDS = [
+        [/price|현재가|주가|시세|current/i, 'price'],
+        [/quote|호가|asking/i, 'quote'],
+        [/order.?buy|매수/i, 'order-buy'],
+        [/order.?sell|매도/i, 'order-sell'],
+        [/order.?(mod|cancel|정정|취소)/i, 'order-modify'],
+        [/chart.?min|분봉/i, 'chart-minute'],
+        [/chart|일봉/i, 'chart-daily'],
+        [/balance|잔고|계좌/i, 'balance'],
+        [/deposit|예수금/i, 'deposit'],
+        [/rank.*vol|거래량.*순위|volume.*rank/i, 'ranking-volume'],
+        [/foreign|외국인/i, 'foreign-total'],
+        [/investor|투자자/i, 'investor-daily'],
+        [/finance|재무/i, 'finance-ratio'],
+        [/dividend|배당/i, 'ranking-dividend'],
+      ];
+      for (const [re, mapped] of KEYWORDS) {
+        if (re.test(raw)) return mapped;
+      }
+      return raw;
+    }
+    const action = normalizeAction(data?.action);
     if (!action) {
       console.log(JSON.stringify({ success: false, error: 'data.action 필드가 필요합니다. 편의 액션(price, balance 등) 또는 trId를 url과 함께 지정하세요.' }));
       return;
