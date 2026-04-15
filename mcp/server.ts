@@ -284,7 +284,7 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   // ── 시스템 모듈 → 개별 MCP 도구 자동 등록 ────────────────────────────────
 
-  const sysModulesDir = path.resolve(process.cwd(), 'system/modules');
+  const sysModulesDir = path.resolve(/* turbopackIgnore: true */ process.cwd(), 'system/modules');
   if (fs.existsSync(sysModulesDir)) {
     const modDirs = fs.readdirSync(sysModulesDir, { withFileTypes: true })
       .filter(d => d.isDirectory());
@@ -357,7 +357,7 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
   //  리소스 — 파이어뱃 규칙/스펙 문서 (Claude Code가 참조)
   // ══════════════════════════════════════════════════════════════════════════
 
-  const docsDir = path.resolve(process.cwd(), 'docs');
+  const docsDir = path.resolve(/* turbopackIgnore: true */ process.cwd(), 'docs');
 
   // 바이블 문서 리소스
   const bibles = [
