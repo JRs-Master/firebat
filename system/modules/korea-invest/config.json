@@ -14,7 +14,8 @@
     "properties": {
       "action": {
         "type": "string",
-        "description": "편의 액션: price(현재가), quote(호가), order-buy(매수), order-sell(매도), order-modify(정정취소), balance(잔고), deposit(예수금), chart-daily(일봉차트), chart-minute(분봉차트), ranking-volume(거래량순위), foreign-trade(외국인매매), overseas-price(해외시세), overseas-order-buy(해외매수), overseas-balance(해외잔고). 또는 trId 직접 지정 (예: FHKST01010100)"
+        "enum": ["price", "quote", "order-buy", "order-sell", "order-modify", "balance", "deposit", "chart-daily", "chart-minute", "ranking-volume", "foreign-trade", "overseas-price", "overseas-order-buy", "overseas-balance"],
+        "description": "편의 액션명 (영문 그대로 사용). price=현재가, quote=호가, balance=잔고, chart-daily=일봉, ranking-volume=거래량순위. 또는 trId 필드에 TR_ID 직접 지정."
       },
       "symbol": {
         "type": "string",
