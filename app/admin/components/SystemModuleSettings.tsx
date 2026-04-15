@@ -59,7 +59,7 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
   'seo': {
     title: 'SEO 설정',
     fields: [
-      // 일반 탭 — defaultValue 없이 placeholder만 (백엔드 getSeoSettings에서 폴백)
+      // 일반 탭 — placeholder는 힌트용, 빈 값이면 백엔드에서 기본값 적용
       { key: 'siteTitle', label: '사이트 제목', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'SEO 기본 사이트 제목 (OG, RSS, Sitemap 등에 사용)' },
       { key: 'siteDescription', label: '사이트 설명', type: 'text', tab: '일반', placeholder: 'Just Imagine. Firebat Runs.', description: 'SEO 기본 사이트 설명' },
       { key: 'siteUrl', label: '사이트 URL', type: 'text', tab: '일반', placeholder: 'https://firebat.co.kr', description: 'JSON-LD, Sitemap 등에 사용되는 기본 URL' },
@@ -116,15 +116,10 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
               merged[field.key] = field.defaultValue ?? '';
             }
           }
-          // 저장된 값 병합
+          // 저장된 값 병합 (빈 문자열도 유효한 저장값으로 표시)
           const saved = data.settings ?? {};
-          // defaultValue가 없는 필드 목록 (placeholder 전용 — 저장값 무시하고 비워둠)
-          const placeholderOnly = new Set(
-            (schema?.fields ?? []).filter(f => f.defaultValue === undefined && f.type !== 'toggle').map(f => f.key)
-          );
           for (const [key, val] of Object.entries(saved)) {
-            if (placeholderOnly.has(key)) continue; // placeholder 전용 필드는 저장값 무시
-            if (val !== '' && val !== null && val !== undefined) {
+            if (val !== null && val !== undefined) {
               merged[key] = val;
             }
           }
