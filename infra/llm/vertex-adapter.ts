@@ -134,51 +134,82 @@ export class VertexAiAdapter implements ILlmPort {
         parameters: t.parameters,
       }));
 
-      const response = await this.withTimeout(
-        ai.models.generateContent({
-          model,
-          contents,
-          config: {
-            systemInstruction: systemPrompt,
-            temperature: LLM_TEMPERATURE_TEXT,
-            tools: [{ functionDeclarations }],
-            toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
-          } as Record<string, unknown>,
-        }),
-        LLM_TIMEOUT_MS,
-      );
+      const requestConfig = {
+        model,
+        contents,
+        config: {
+          systemInstruction: systemPrompt,
+          temperature: LLM_TEMPERATURE_TEXT,
+          tools: [{ functionDeclarations }],
+          toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+        } as Record<string, unknown>,
+      };
 
-      // 응답 파싱 — 텍스트 파트와 functionCall 파트 분리, 원본 parts 보존
       const textParts: string[] = [];
       const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
       let rawModelParts: unknown[] | undefined;
 
-      const candidates = (response as unknown as Record<string, unknown>).candidates as Array<Record<string, unknown>> | undefined;
-      if (candidates && candidates.length > 0) {
-        const parts = (candidates[0].content as Record<string, unknown>)?.parts as Array<Record<string, unknown>> | undefined;
-        if (parts) {
-          // 원본 parts 보존 (thought_signature 등 멀티턴 시 필요)
-          rawModelParts = parts;
+      if (opts?.onChunk) {
+        // ── 스트리밍 모드 ──
+        const stream = await this.withTimeout(
+          ai.models.generateContentStream(requestConfig),
+          LLM_TIMEOUT_MS,
+        );
+
+        const allParts: Record<string, unknown>[] = [];
+
+        for await (const chunk of stream) {
+          const candidates = (chunk as unknown as Record<string, unknown>).candidates as Array<Record<string, unknown>> | undefined;
+          if (!candidates?.[0]) continue;
+          const parts = (candidates[0].content as Record<string, unknown>)?.parts as Array<Record<string, unknown>> | undefined;
+          if (!parts) continue;
+
           for (const part of parts) {
+            allParts.push(part);
             if (part.text && typeof part.text === 'string') {
-              // thinking 파트는 건너뛰기 (thought: true인 경우)
-              if (!part.thought) textParts.push(part.text);
+              if (part.thought) {
+                opts.onChunk({ type: 'thinking', content: part.text });
+              } else {
+                textParts.push(part.text);
+                opts.onChunk({ type: 'text', content: part.text });
+              }
             }
             if (part.functionCall && typeof part.functionCall === 'object') {
               const fc = part.functionCall as Record<string, unknown>;
-              toolCalls.push({
-                name: fc.name as string,
-                args: (fc.args as Record<string, unknown>) ?? {},
-              });
+              toolCalls.push({ name: fc.name as string, args: (fc.args as Record<string, unknown>) ?? {} });
             }
           }
         }
-      }
 
-      // response.text 폴백 (candidates 파싱 실패 시)
-      if (textParts.length === 0 && toolCalls.length === 0) {
-        const fallbackText = response.text || '';
-        if (fallbackText) textParts.push(fallbackText);
+        rawModelParts = allParts.length > 0 ? allParts : undefined;
+      } else {
+        // ── 비스트리밍 모드 (기존) ──
+        const response = await this.withTimeout(
+          ai.models.generateContent(requestConfig),
+          LLM_TIMEOUT_MS,
+        );
+
+        const candidates = (response as unknown as Record<string, unknown>).candidates as Array<Record<string, unknown>> | undefined;
+        if (candidates && candidates.length > 0) {
+          const parts = (candidates[0].content as Record<string, unknown>)?.parts as Array<Record<string, unknown>> | undefined;
+          if (parts) {
+            rawModelParts = parts;
+            for (const part of parts) {
+              if (part.text && typeof part.text === 'string') {
+                if (!part.thought) textParts.push(part.text);
+              }
+              if (part.functionCall && typeof part.functionCall === 'object') {
+                const fc = part.functionCall as Record<string, unknown>;
+                toolCalls.push({ name: fc.name as string, args: (fc.args as Record<string, unknown>) ?? {} });
+              }
+            }
+          }
+        }
+
+        if (textParts.length === 0 && toolCalls.length === 0) {
+          const fallbackText = response.text || '';
+          if (fallbackText) textParts.push(fallbackText);
+        }
       }
 
       return {

@@ -77,9 +77,20 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages]);
 
-  // ── 스크롤 ─────────────────────────────────────────────────────────────────
+  // ── 스크롤 — 하단 근처에 있을 때만 자동 스크롤 ──────────────────────────────
+  const isNearBottomRef = useRef(true);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleScroll = useCallback(() => {
+    const el = chatContainerRef.current;
+    if (!el) return;
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  }, []);
+
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (isNearBottomRef.current) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
   // ── 대화 관리 ──────────────────────────────────────────────────────────────
@@ -181,7 +192,19 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         buffer = parsed.remaining;
 
         for (const ev of parsed.events) {
-          if (ev.event === 'plan') {
+          if (ev.event === 'chunk') {
+            // 스트리밍 텍스트 청크 — 타이핑 효과
+            const chunkType = ev.data.type as 'text' | 'thinking';
+            const chunkContent = ev.data.content as string;
+            setMessages(prev => prev.map(msg => {
+              if (msg.id !== `s-${id}`) return msg;
+              if (chunkType === 'text') {
+                return { ...msg, isThinking: false, content: (msg.content || '') + chunkContent, streaming: true };
+              }
+              // thinking 청크 — thinkingText에 누적
+              return { ...msg, isThinking: true, thinkingText: (msg.thinkingText || '') + chunkContent };
+            }));
+          } else if (ev.event === 'plan') {
             const needsConfirm = ev.data.actions?.some((a: any) => ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type));
             flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
@@ -198,7 +221,8 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? {
-                    ...msg, isThinking: false, executing: false, thoughts: ev.data.thoughts, content: ev.data.reply || '실행이 완료되었습니다.',
+                    ...msg, isThinking: false, executing: false, streaming: false, thoughts: ev.data.thoughts,
+                    content: ev.data.reply || msg.content || '실행이 완료되었습니다.',
                     executedActions: ev.data.executedActions || [], data: ev.data.data, error: ev.data.error, planPending: false,
                     suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
                   }
@@ -297,7 +321,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   return {
     messages, input, setInput, loading,
     conversations: convMetas, activeConvId,
-    chatEndRef,
+    chatEndRef, chatContainerRef, handleScroll,
     handleNewConv, handleSelectConv, handleDeleteConv,
     handleSubmit, handleConfirmPlan, handleRejectPlan,
   };

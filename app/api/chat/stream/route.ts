@@ -183,6 +183,8 @@ function handleToolsMode(
           error: info.error,
         });
         if (info.status !== 'start') stepIndex++;
+      }, (chunk) => {
+        send('chunk', chunk);
       });
 
       send('result', {

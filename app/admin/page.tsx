@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Send, Cpu, AlertTriangle, Blocks, Bot, ExternalLink, X, Check, Loader2, Circle } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Bot, ExternalLink, X, Check, Loader2, Circle, Copy, CheckCheck, Menu } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { FileEditor } from './components/FileEditor';
 import { SettingsModal } from './components/SettingsModal';
@@ -176,17 +176,75 @@ const THINKING_PHASES = [
   '실행 계획을 수립하는 중...',
 ];
 
-function ThinkingText({ statusText }: { statusText?: string }) {
+function ThinkingText({ statusText, thinkingText }: { statusText?: string; thinkingText?: string }) {
   const [phase, setPhase] = useState(0);
+  const thinkingRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    if (statusText) return; // statusText가 있으면 순환 안 함
+    if (statusText || thinkingText) return;
     const timer = setInterval(() => {
       setPhase(p => (p + 1) % THINKING_PHASES.length);
     }, 2500);
     return () => clearInterval(timer);
-  }, [statusText]);
+  }, [statusText, thinkingText]);
+
+  // thinking 텍스트 자동 스크롤
+  useEffect(() => {
+    if (thinkingText && thinkingRef.current) {
+      thinkingRef.current.scrollTop = thinkingRef.current.scrollHeight;
+    }
+  }, [thinkingText]);
+
+  if (thinkingText) {
+    // 마지막 100자만 표시 (긴 thinking은 잘라서)
+    const display = thinkingText.length > 150 ? '...' + thinkingText.slice(-150) : thinkingText;
+    return (
+      <div ref={thinkingRef} className="flex-1 overflow-hidden">
+        <span className="text-slate-500 italic text-[12px] sm:text-[13px] leading-snug whitespace-pre-wrap">{display}</span>
+      </div>
+    );
+  }
 
   return <span className="transition-opacity duration-300">{statusText || THINKING_PHASES[phase]}</span>;
+}
+
+// ─── 복사 버튼 ─────────────────────────────────────────────────────────────────
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [text]);
+  return (
+    <button
+      onClick={handleCopy}
+      className="absolute top-1 right-1 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 opacity-0 group-hover/copy:opacity-100 transition-all"
+      title="복사"
+    >
+      {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
+    </button>
+  );
+}
+
+// ─── 에러 접이식 박스 ──────────────────────────────────────────────────────────
+function ErrorCollapsible({ error }: { error: string }) {
+  const [open, setOpen] = useState(false);
+  const short = error.length > 60 ? error.slice(0, 60) + '…' : error;
+  return (
+    <div
+      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-100 text-red-700 rounded-md text-[13px] font-bold tracking-tight shadow-sm cursor-pointer hover:bg-red-100 transition-colors w-fit max-w-full"
+      onClick={() => setOpen(!open)}
+    >
+      <AlertTriangle size={14} className="text-red-500 shrink-0" />
+      {open ? (
+        <span className="font-mono font-normal leading-relaxed break-all min-w-0">{error}</span>
+      ) : (
+        <span className="truncate">{short}</span>
+      )}
+    </div>
+  );
 }
 
 // ─── 메시지 버블 ─────────────────────────────────────────────────────────────
@@ -216,10 +274,10 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
       </div>
       <div className="flex flex-col gap-2 flex-1 min-w-0">
         <div className="flex flex-col gap-3 w-full bg-white p-6 rounded-3xl rounded-tl-sm shadow-sm border border-slate-100">
-          {msg.isThinking ? (
+          {msg.isThinking && !msg.streaming ? (
             <div className="flex items-center gap-3 text-slate-600 font-medium bg-slate-50 border border-slate-200 px-4 py-3 sm:px-6 sm:py-5 rounded-2xl shadow-inner text-[13px] sm:text-[15px]">
               <div className="animate-spin text-blue-600 shrink-0"><Cpu size={18} /></div>
-              <ThinkingText statusText={msg.statusText} />
+              <ThinkingText statusText={msg.statusText} thinkingText={msg.thinkingText} />
             </div>
           ) : (
             <div className="flex flex-col gap-5">
@@ -254,8 +312,11 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
               )}
 
               {msg.content && (
-                <div className="text-slate-800 text-[15px] leading-relaxed border-l-4 border-slate-200 pl-4 py-1 space-y-1">
-                  {renderMarkdown(msg.content)}
+                <div className="group/copy relative">
+                  <div className="text-slate-800 text-[15px] leading-relaxed border-l-4 border-slate-200 pl-4 py-1 space-y-1">
+                    {renderMarkdown(msg.content)}
+                  </div>
+                  <CopyButton text={msg.content} />
                 </div>
               )}
 
@@ -271,12 +332,9 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
                 </div>
               )}
 
-              {/* 에러 */}
+              {/* 에러 — 접이식 태그 */}
               {msg.error && (
-                <div className="flex items-start gap-3 bg-red-50 border border-red-200 text-red-800 px-5 py-4 rounded-xl shadow-sm text-sm overflow-hidden">
-                  <AlertTriangle size={20} className="mt-0.5 shrink-0 text-red-500" />
-                  <div className="font-mono leading-relaxed break-all min-w-0">{msg.error}</div>
-                </div>
+                <ErrorCollapsible error={msg.error} />
               )}
 
               {/* 선택지 버튼 */}
@@ -365,12 +423,13 @@ export default function AdminConsole() {
   const [aiModel, setAiModel] = useState('gemini-3-flash-preview');
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [editingModule, setEditingModule] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const fetchFileTree = useCallback(async () => {}, []);
 
   const {
     messages, input, setInput, loading,
-    conversations, activeConvId, chatEndRef,
+    conversations, activeConvId, chatEndRef, chatContainerRef, handleScroll,
     handleNewConv, handleSelectConv, handleDeleteConv,
     handleSubmit, handleConfirmPlan, handleRejectPlan,
   } = useChat(aiModel, fetchFileTree);
@@ -400,13 +459,22 @@ export default function AdminConsole() {
         onOpenSettings={() => setShowSettings(true)}
         onEditFile={(filePath) => setEditingFile(filePath)}
         onOpenModuleSettings={(name) => setEditingModule(name)}
+        mobileOpen={mobileMenuOpen}
+        onMobileOpenChange={setMobileMenuOpen}
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
         <div className="absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
+        {/* 모바일 햄버거 버튼 */}
+        <button
+          onClick={() => setMobileMenuOpen(true)}
+          className="md:hidden absolute top-3 left-3 z-20 p-2 rounded-lg bg-white/80 backdrop-blur border border-slate-200 text-slate-600 hover:bg-slate-100 shadow-sm"
+        >
+          <Menu size={20} />
+        </button>
 
         {/* 메시지 목록 */}
-        <div className="flex-1 overflow-y-auto px-4 md:px-12 pt-16 scrolltext">
+        <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 md:px-12 pt-16 scrolltext">
           <div className="w-full md:w-[70%] max-w-6xl mx-auto space-y-10">
             {messages.map((msg) => (
               <MessageBubble

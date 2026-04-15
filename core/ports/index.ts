@@ -202,10 +202,18 @@ export interface ISandboxPort {
   execute(targetPath: string, inputData: Record<string, unknown>): Promise<InfraResult<ModuleOutput>>;
 }
 
+/** 스트리밍 청크 타입 */
+export interface LlmChunk {
+  type: 'text' | 'thinking';
+  content: string;
+}
+
 /** LLM 호출 옵션 — 요청별 모델 오버라이드 등 */
 export interface LlmCallOpts {
   /** 이 호출에만 사용할 모델 (미지정 시 기본 모델) */
   model?: string;
+  /** 스트리밍 청크 콜백 — 설정 시 generateContentStream 사용 */
+  onChunk?: (chunk: LlmChunk) => void;
 }
 
 // ── Function Calling 타입 ──────────────────────────────────────────────────

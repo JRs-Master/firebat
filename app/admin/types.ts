@@ -21,6 +21,8 @@ export type Message = {
   data?: any;
   error?: string;
   isThinking?: boolean;
+  thinkingText?: string;
+  streaming?: boolean;
   plan?: { thoughts: string; reply: string; actions: PlanAction[]; corrId: string };
   planPending?: boolean;
   steps?: StepStatus[];

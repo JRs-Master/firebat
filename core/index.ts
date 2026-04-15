@@ -10,7 +10,7 @@ import { CapabilityManager } from './managers/capability-manager';
 import { TaskManager } from './managers/task-manager';
 import { AuthManager } from './managers/auth-manager';
 import type { ApiTokenInfo } from './managers/auth-manager';
-import type { FirebatInfraContainer, ILlmPort, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
+import type { FirebatInfraContainer, ILlmPort, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
 import type { InfraResult, FirebatPlan } from './types';
 import type { CapabilitySettings } from './capabilities';
 import { eventBus } from '../lib/events';
@@ -73,8 +73,9 @@ export class FirebatCore {
     history: ChatMessage[] = [],
     opts?: AiRequestOpts,
     onToolCall?: (info: { name: string; status: 'start' | 'done' | 'error'; error?: string }) => void,
+    onChunk?: (chunk: LlmChunk) => void,
   ) {
-    return this.ai.processWithTools(prompt, history, opts, onToolCall);
+    return this.ai.processWithTools(prompt, history, opts, onToolCall, onChunk);
   }
 
   async planOnly(prompt: string, history: ChatMessage[] = [], opts?: AiRequestOpts) {

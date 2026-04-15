@@ -1,5 +1,5 @@
 import type { FirebatCore, AiRequestOpts } from '../index';
-import type { ILlmPort, ILogPort, LlmCallOpts, ChatMessage, PageListItem, ToolDefinition, JsonSchema, ToolCall, ToolResult, ToolExchangeEntry } from '../ports';
+import type { ILlmPort, ILogPort, LlmCallOpts, LlmChunk, ChatMessage, PageListItem, ToolDefinition, JsonSchema, ToolCall, ToolResult, ToolExchangeEntry } from '../ports';
 import { FirebatPlanSchema, FirebatPlan, FirebatAction, CoreResult, type InfraResult } from '../types';
 
 /**
@@ -893,9 +893,12 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
     history: ChatMessage[] = [],
     opts?: AiRequestOpts,
     onToolCall?: (info: { name: string; status: 'start' | 'done' | 'error'; error?: string }) => void,
+    onChunk?: (chunk: LlmChunk) => void,
   ): Promise<CoreResult> {
     const isDemo = opts?.isDemo ?? false;
-    const llmOpts: LlmCallOpts | undefined = opts?.model ? { model: opts.model } : undefined;
+    const llmOpts: LlmCallOpts | undefined = opts?.model || onChunk
+      ? { ...(opts?.model ? { model: opts.model } : {}), ...(onChunk ? { onChunk } : {}) }
+      : undefined;
     const MAX_TOOL_TURNS = 10;
 
     const timestamp = new Date().toISOString();

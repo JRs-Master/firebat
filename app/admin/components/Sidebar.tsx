@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Loader2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock } from 'lucide-react';
+import { FolderTree, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Loader2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, Menu } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 
@@ -26,6 +26,9 @@ interface SidebarProps {
   onOpenSettings?: () => void;
   onEditFile?: (filePath: string) => void;
   onOpenModuleSettings?: (moduleName: string) => void;
+  /** 외부에서 사이드바 열기 요청 (모바일 햄버거) */
+  mobileOpen?: boolean;
+  onMobileOpenChange?: (open: boolean) => void;
 }
 
 export function Sidebar({
@@ -33,6 +36,7 @@ export function Sidebar({
   conversations, activeConvId,
   onSelectConv, onNewConv, onDeleteConv,
   isDemo, onOpenSettings, onEditFile, onOpenModuleSettings,
+  mobileOpen, onMobileOpenChange,
 }: SidebarProps) {
   const [tab, setTab] = useState<'workspace' | 'chats'>('workspace');
   const [collapsed, setCollapsed] = useState(true);
@@ -46,6 +50,13 @@ export function Sidebar({
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, []);
+
+  // 모바일 햄버거 버튼 외부 제어
+  useEffect(() => {
+    if (isMobile && mobileOpen !== undefined) {
+      setCollapsed(!mobileOpen);
+    }
+  }, [mobileOpen, isMobile]);
 
 
   // ── 프로젝트 & 페이지 ──
@@ -308,6 +319,11 @@ export function Sidebar({
     }
   }, [isMobile, collapsed]);
 
+  const closeSidebar = () => {
+    setCollapsed(true);
+    onMobileOpenChange?.(false);
+  };
+
   const expand = (t: 'workspace' | 'chats') => {
     setTab(t);
     setCollapsed(false);
@@ -325,6 +341,8 @@ export function Sidebar({
 
   /* ── 아이콘만 보이는 접힌 모드 ── */
   if (collapsed) {
+    // 모바일에서는 아이콘 바 숨김 (햄버거 버튼이 page.tsx에서 표시됨)
+    if (isMobile) return null;
     return (
       <>
       <div className="w-12 border-r border-slate-200 bg-white flex flex-col items-center py-3 gap-3 shrink-0 z-20 shadow-lg">
@@ -375,11 +393,11 @@ export function Sidebar({
     {/* 모바일 backdrop */}
     {isMobile && (
       <div
-        className="fixed top-[3.5rem] inset-x-0 bottom-0 bg-black/30 z-10 md:hidden touch-none"
-        onClick={() => setCollapsed(true)}
+        className="fixed inset-0 bg-black/30 z-30 md:hidden touch-none"
+        onClick={closeSidebar}
       />
     )}
-    <div className={`${isMobile ? 'fixed top-[3.5rem] left-0 bottom-0 z-20' : 'relative'} w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 shadow-lg overscroll-contain`}>
+    <div className={`${isMobile ? 'fixed top-0 left-0 bottom-0 z-40' : 'relative'} w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 shadow-lg overscroll-contain`}>
 
       {/* 탭 헤더 */}
       <div className="flex items-center gap-1 px-2 py-2 border-b border-slate-200/80">
@@ -410,7 +428,7 @@ export function Sidebar({
           </button>
         )}
         <button
-          onClick={() => setCollapsed(true)}
+          onClick={closeSidebar}
           className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
           title="사이드바 접기"
         >
@@ -738,7 +756,7 @@ export function Sidebar({
           <div className="flex flex-col h-full">
             <div className="p-2 border-b border-slate-200/60">
               <button
-                onClick={() => { onNewConv(); if (isMobile) setCollapsed(true); }}
+                onClick={() => { onNewConv(); if (isMobile) closeSidebar(); }}
                 className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12px] font-bold transition-colors shadow-sm"
               >
                 <Plus size={13} /> 새 대화
