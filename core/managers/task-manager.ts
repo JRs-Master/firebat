@@ -93,6 +93,20 @@ export class TaskManager {
               onPipelineStep?.(i, 'error', res.error);
               return { success: false, error: `[Pipeline Step ${i + 1}] EXECUTE 실패: ${res.error}` };
             }
+            // 모듈 출력이 success: false인 경우 (API 키 누락 등 모듈 레벨 에러)
+            if (res.data && typeof res.data === 'object' && 'success' in res.data && res.data.success === false) {
+              const moduleErr = (res.data as Record<string, unknown>).error || JSON.stringify(res.data);
+              // 폴백 시도
+              const fallbackRes = await this.tryFallbackProvider(resolvedPath, stepInput);
+              if (fallbackRes) {
+                const fd = fallbackRes.data;
+                prev = (fd && typeof fd === 'object' && 'success' in fd && 'data' in fd)
+                  ? (fd as Record<string, unknown>).data : fd;
+                break;
+              }
+              onPipelineStep?.(i, 'error', String(moduleErr));
+              return { success: false, error: `[Pipeline Step ${i + 1}] 모듈 실행 실패: ${moduleErr}` };
+            }
             // 모듈 출력이 {success,data} 래핑된 경우 내부 data만 추출
             prev = (res.data && typeof res.data === 'object' && 'success' in res.data && 'data' in res.data)
               ? res.data.data
