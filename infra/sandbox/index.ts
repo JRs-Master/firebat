@@ -1,4 +1,4 @@
-import { ISandboxPort, IVaultPort } from '../../core/ports';
+import { ISandboxPort, IVaultPort, ModuleOutput } from '../../core/ports';
 import { InfraResult, ModuleOutputSchema } from '../../core/types';
 import { execFile, exec } from 'child_process';
 import { promisify } from 'util';
@@ -59,7 +59,7 @@ export class ProcessSandboxAdapter implements ISandboxPort {
     return null;
   }
 
-  private runtimeError(runtime: string): InfraResult<any> {
+  private runtimeError(runtime: string): InfraResult<ModuleOutput> {
     const guide = INSTALL_GUIDES[runtime] ?? `${runtime} 설치 필요`;
     return {
       success: false,
@@ -98,7 +98,7 @@ export class ProcessSandboxAdapter implements ISandboxPort {
   }
 
   /** 프로세스 실행 후 stdout 파싱 결과 반환 */
-  private runProcess(command: string, args: string[], payload: any, timeoutMs: number, secretsEnv?: Record<string, string>): Promise<InfraResult<any>> {
+  private runProcess(command: string, args: string[], payload: Record<string, unknown>, timeoutMs: number, secretsEnv?: Record<string, string>): Promise<InfraResult<ModuleOutput>> {
     return new Promise((resolve) => {
       // UTF-8 강제: Windows에서 Python stdin/stdout이 cp949로 처리되는 것을 방지
       const env = {
@@ -142,7 +142,7 @@ export class ProcessSandboxAdapter implements ISandboxPort {
     const manifestPath = path.join(moduleDir, 'config.json');
     if (!fs.existsSync(manifestPath)) return;
 
-    let manifest: any;
+    let manifest: { packages?: string[]; runtime?: string };
     try {
       manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
     } catch { return; }
@@ -174,8 +174,8 @@ export class ProcessSandboxAdapter implements ISandboxPort {
    */
   private async executeWithAutoInstall(
     command: string, args: string[], moduleDir: string,
-    inputData: any, timeoutMs: number
-  ): Promise<InfraResult<any>> {
+    inputData: Record<string, unknown>, timeoutMs: number
+  ): Promise<InfraResult<ModuleOutput>> {
     const MAX_RETRIES = SANDBOX_MAX_RETRIES;
     const secretsEnv = this.loadSecretsEnv(moduleDir);
 
@@ -247,7 +247,7 @@ export class ProcessSandboxAdapter implements ISandboxPort {
     return resolved.startsWith(userModules + path.sep) || resolved.startsWith(systemModules + path.sep);
   }
 
-  async execute(targetPath: string, inputData: any): Promise<InfraResult<any>> {
+  async execute(targetPath: string, inputData: Record<string, unknown>): Promise<InfraResult<ModuleOutput>> {
     // 페이지 URL (크론 페이지 알림용) — 파일 실행이 아니므로 경로 검증 스킵
     if (!targetPath.startsWith('/') && !this.canExecute(targetPath)) {
       return { success: false, error: `[Kernel Block] 허용되지 않은 실행 경로입니다: ${targetPath}` };

@@ -135,7 +135,8 @@ export class McpClientAdapter implements IMcpClientPort {
         server: serverName,
         name: t.name,
         description: t.description ?? '',
-        inputSchema: t.inputSchema,
+        // MCP SDK의 inputSchema 타입은 JsonSchema와 구조가 같지만 타입 정의가 달라 캐스팅
+        inputSchema: t.inputSchema as McpToolInfo['inputSchema'],
       }));
       return { success: true, data: tools };
     } catch (err: any) {
@@ -157,14 +158,15 @@ export class McpClientAdapter implements IMcpClientPort {
     return { success: true, data: allTools };
   }
 
-  async callTool(serverName: string, toolName: string, args: any): Promise<InfraResult<any>> {
+  async callTool(serverName: string, toolName: string, args: Record<string, unknown>): Promise<InfraResult<unknown>> {
     try {
       const client = await this.connect(serverName);
       const result = await client.callTool({ name: toolName, arguments: args ?? {} });
       // MCP 도구 결과에서 텍스트 추출
-      const textContent = (result.content as any[])
-        ?.filter((c: any) => c.type === 'text')
-        .map((c: any) => c.text)
+      const contentArr = Array.isArray(result.content) ? result.content : [];
+      const textContent = contentArr
+        .filter((c: { type: string }) => c.type === 'text')
+        .map((c: { type: string; text?: string }) => c.text ?? '')
         .join('\n');
       return { success: true, data: { content: textContent, raw: result.content } };
     } catch (err: any) {

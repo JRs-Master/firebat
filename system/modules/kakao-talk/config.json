@@ -9,13 +9,91 @@
   "providerType": "api",
   "secrets": ["KAKAO_ACCESS_TOKEN", "KAKAO_REFRESH_TOKEN", "KAKAO_REST_API_KEY", "KAKAO_CLIENT_SECRET"],
   "input": {
-    "type": "string (optional) — text | feed | list (기본: text)",
-    "text": "string (required) — 메시지 본문",
-    "link": "string (optional) — 버튼 클릭 시 이동할 URL",
-    "buttonTitle": "string (optional) — 버튼 텍스트 (기본: '자세히 보기')"
+    "type": "object",
+    "required": ["text"],
+    "properties": {
+      "type": {
+        "type": "string",
+        "enum": ["text", "feed", "list"],
+        "default": "text",
+        "description": "메시지 타입"
+      },
+      "text": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "메시지 본문 (최대 200자)"
+      },
+      "link": {
+        "type": "string",
+        "format": "uri",
+        "description": "버튼 클릭 시 이동할 URL"
+      },
+      "buttonTitle": {
+        "type": "string",
+        "default": "자세히 보기",
+        "description": "버튼 텍스트"
+      },
+      "imageUrl": {
+        "type": "string",
+        "format": "uri",
+        "description": "feed/list 타입에 표시할 이미지 URL"
+      },
+      "imageWidth": {
+        "type": "integer",
+        "minimum": 200,
+        "maximum": 800,
+        "description": "이미지 너비 (px)"
+      },
+      "imageHeight": {
+        "type": "integer",
+        "minimum": 200,
+        "maximum": 800,
+        "description": "이미지 높이 (px)"
+      },
+      "buttons": {
+        "type": "array",
+        "maxItems": 2,
+        "items": {
+          "type": "object",
+          "required": ["title", "link"],
+          "properties": {
+            "title": { "type": "string", "description": "버튼 텍스트" },
+            "link": { "type": "string", "format": "uri", "description": "버튼 URL" }
+          },
+          "additionalProperties": false
+        },
+        "description": "커스텀 버튼 목록 (최대 2개, buttonTitle 대체)"
+      },
+      "listHeaderTitle": {
+        "type": "string",
+        "description": "list 타입의 헤더 제목"
+      },
+      "items": {
+        "type": "array",
+        "maxItems": 5,
+        "items": {
+          "type": "object",
+          "required": ["title"],
+          "properties": {
+            "title": { "type": "string", "description": "항목 제목" },
+            "description": { "type": "string", "description": "항목 설명" },
+            "imageUrl": { "type": "string", "format": "uri", "description": "항목 이미지 URL" },
+            "link": { "type": "string", "format": "uri", "description": "항목 클릭 URL" }
+          },
+          "additionalProperties": false
+        },
+        "description": "list 타입의 항목 목록 (최대 5개)"
+      }
+    },
+    "additionalProperties": false
   },
   "output": {
-    "success": "boolean",
-    "resultCode": "number — 카카오 API 응답 코드"
+    "type": "object",
+    "required": ["success", "resultCode"],
+    "properties": {
+      "success":    { "type": "boolean", "description": "발송 성공 여부" },
+      "resultCode": { "type": "integer", "description": "카카오 API 응답 코드 (0=성공)" }
+    },
+    "additionalProperties": false
   }
 }

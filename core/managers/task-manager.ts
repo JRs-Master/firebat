@@ -39,24 +39,30 @@ export class TaskManager {
         case 'LLM_TRANSFORM':
           if (!s.instruction) return `[Step ${n}] LLM_TRANSFORM에 instruction이 없습니다.`;
           break;
-        default:
-          return `[Step ${n}] 알 수 없는 단계 타입: ${s.type}`;
+        default: {
+          const _exhaustive: never = s;
+          return `[Step ${n}] 알 수 없는 단계 타입: ${(_exhaustive as PipelineStep).type}`;
+        }
       }
     }
     return null;
   }
 
   /** 파이프라인 단계별 순차 실행 — 이전 단계 결과를 다음 단계에 자동 전달 */
-  async executePipeline(steps: PipelineStep[], onPipelineStep?: (index: number, status: 'start' | 'done' | 'error', error?: string) => void): Promise<{ success: boolean; data?: any; error?: string }> {
+  async executePipeline(steps: PipelineStep[], onPipelineStep?: (index: number, status: 'start' | 'done' | 'error', error?: string) => void): Promise<{ success: boolean; data?: unknown; error?: string }> {
     // 사전 검증
     const err = this.validatePipeline(steps);
     if (err) return { success: false, error: err };
 
-    let prev: any = undefined;
+    let prev: unknown = undefined;
 
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
-      const stepInput = this.resolvePipelineInput(step, prev);
+      const rawInput = this.resolvePipelineInput(step, prev);
+      // EXECUTE/MCP_CALL은 Record<string, unknown>이 필요 — 안전하게 변환
+      const stepInput: Record<string, unknown> = (rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput))
+        ? rawInput as Record<string, unknown>
+        : rawInput !== undefined ? { data: rawInput } : {};
       this.log.info(`[Pipeline] Step ${i + 1}/${steps.length}: ${step.type}`);
       this.log.debug(`[Pipeline] Step ${i + 1} input: ${JSON.stringify(stepInput)?.slice(0, 500)}`);
       onPipelineStep?.(i, 'start');
@@ -75,7 +81,8 @@ export class TaskManager {
               const fallbackRes = await this.tryFallbackProvider(resolvedPath, stepInput);
               if (fallbackRes) {
                 const fd = fallbackRes.data;
-                prev = (fd && typeof fd === 'object' && 'success' in fd && 'data' in fd) ? fd.data : fd;
+                prev = (fd && typeof fd === 'object' && 'success' in fd && 'data' in fd)
+                  ? (fd as Record<string, unknown>).data : fd;
                 break;
               }
               onPipelineStep?.(i, 'error', res.error);
@@ -90,7 +97,9 @@ export class TaskManager {
             break;
           }
           case 'MCP_CALL': {
-            const args = step.inputMap ? this.resolveValue(step.inputMap, prev) : (step.arguments ?? {});
+            const args = step.inputMap
+              ? this.resolveValue(step.inputMap, prev) as Record<string, unknown>
+              : (step.arguments ?? {});
             const res = await this.core.callMcpTool(step.server!, step.tool!, args);
             if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] MCP_CALL 실패: ${res.error}` }; }
             prev = res.data;
@@ -115,9 +124,12 @@ export class TaskManager {
             onPipelineStep?.(i, 'done');
             break;
           }
-          default:
-            onPipelineStep?.(i, 'error', `알 수 없는 단계 타입: ${step.type}`);
-            return { success: false, error: `[Pipeline Step ${i + 1}] 알 수 없는 단계 타입: ${step.type}` };
+          default: {
+            const _exhaustive: never = step;
+            const unknownType = (_exhaustive as PipelineStep).type;
+            onPipelineStep?.(i, 'error', `알 수 없는 단계 타입: ${unknownType}`);
+            return { success: false, error: `[Pipeline Step ${i + 1}] 알 수 없는 단계 타입: ${unknownType}` };
+          }
         }
       } catch (e: any) {
         onPipelineStep?.(i, 'error', e.message);
@@ -151,7 +163,7 @@ export class TaskManager {
   }
 
   /** EXECUTE 실패 시 같은 capability의 대체 provider 자동 폴백 */
-  private async tryFallbackProvider(failedPath: string, input: any): Promise<{ data: any } | null> {
+  private async tryFallbackProvider(failedPath: string, input: Record<string, unknown>): Promise<{ data: unknown } | null> {
     const cache = await this.getCapabilityCache();
     const failed = cache.get(failedPath);
     if (!failed?.capability) return null;
@@ -221,27 +233,27 @@ export class TaskManager {
   }
 
   /** 파이프라인 단계의 입력 결정: 고정 inputData > inputMap > prev (모두 $prev 치환 적용) */
-  private resolvePipelineInput(step: PipelineStep, prev: any): any {
+  private resolvePipelineInput(step: PipelineStep, prev: unknown): Record<string, unknown> | unknown {
     if (step.inputData !== undefined) return this.resolveValue(step.inputData, prev);
     if (step.inputMap) return this.resolveValue(step.inputMap, prev);
     return prev;
   }
 
   /** 임의의 값에서 $prev / $prev.key 치환 (string, object 재귀) */
-  resolveValue(val: any, prev: any): any {
+  resolveValue(val: unknown, prev: unknown): unknown {
     if (typeof val === 'string') {
       if (val === '$prev') return typeof prev === 'string' ? prev : JSON.stringify(prev);
       // $prev.key 속성 접근 (예: $prev.url, $prev.title)
       const propMatch = val.match(/^\$prev\.(\w+)$/);
       if (propMatch) {
         const key = propMatch[1];
-        if (prev && typeof prev === 'object' && key in prev) return prev[key];
+        if (prev && typeof prev === 'object' && key in prev) return (prev as Record<string, unknown>)[key];
         return val; // 속성이 없으면 원본 유지
       }
       // 문자열 내 $prev.key 및 $prev 치환
       if (val.includes('$prev')) {
         let result = val.replace(/\$prev\.(\w+)/g, (_: string, key: string) => {
-          if (prev && typeof prev === 'object' && key in prev) return String(prev[key]);
+          if (prev && typeof prev === 'object' && key in prev) return String((prev as Record<string, unknown>)[key]);
           return `$prev.${key}`;
         });
         result = result.replace(/\$prev/g, typeof prev === 'string' ? prev : JSON.stringify(prev));
@@ -251,7 +263,7 @@ export class TaskManager {
     }
     if (Array.isArray(val)) return val.map(v => this.resolveValue(v, prev));
     if (val && typeof val === 'object') {
-      const result: Record<string, any> = {};
+      const result: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(val)) result[k] = this.resolveValue(v, prev);
       return result;
     }

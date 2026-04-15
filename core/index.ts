@@ -10,8 +10,8 @@ import { CapabilityManager } from './managers/capability-manager';
 import { TaskManager } from './managers/task-manager';
 import { AuthManager } from './managers/auth-manager';
 import type { ApiTokenInfo } from './managers/auth-manager';
-import type { FirebatInfraContainer, ILlmPort, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession } from './ports';
-import type { InfraResult } from './types';
+import type { FirebatInfraContainer, ILlmPort, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
+import type { InfraResult, FirebatPlan } from './types';
 import type { CapabilitySettings } from './capabilities';
 import { eventBus } from '../lib/events';
 
@@ -64,16 +64,16 @@ export class FirebatCore {
   //  AI 채팅 → AiManager
   // ══════════════════════════════════════════════════════════════════════════
 
-  async requestAction(prompt: string, history: any[] = [], opts?: AiRequestOpts) {
+  async requestAction(prompt: string, history: ChatMessage[] = [], opts?: AiRequestOpts) {
     return this.ai.process(prompt, history, opts);
   }
 
-  async planOnly(prompt: string, history: any[] = [], opts?: AiRequestOpts) {
+  async planOnly(prompt: string, history: ChatMessage[] = [], opts?: AiRequestOpts) {
     return this.ai.planOnly(prompt, history, opts);
   }
 
   async executePlan(
-    plan: any,
+    plan: FirebatPlan,
     corrId: string,
     opts?: AiRequestOpts,
     onStep?: (step: { index: number; total: number; type: string; status: 'start' | 'done' | 'error'; error?: string }) => void,
@@ -183,12 +183,12 @@ export class FirebatCore {
   //  모듈 → ModuleManager
   // ══════════════════════════════════════════════════════════════════════════
 
-  async runModule(moduleName: string, inputData: any) {
+  async runModule(moduleName: string, inputData: Record<string, unknown>) {
     return this.module.run(moduleName, inputData);
   }
 
   /** 경로 지정 직접 실행 (EXECUTE, 파이프라인 등) */
-  async sandboxExecute(targetPath: string, inputData: any) {
+  async sandboxExecute(targetPath: string, inputData: Record<string, unknown>) {
     return this.module.execute(targetPath, inputData);
   }
 
@@ -202,7 +202,7 @@ export class FirebatCore {
   // ══════════════════════════════════════════════════════════════════════════
 
   /** 파이프라인 즉시 실행 (RUN_TASK 액션) */
-  async runTask(pipeline: PipelineStep[], onPipelineStep?: (index: number, status: 'start' | 'done' | 'error', error?: string) => void): Promise<{ success: boolean; data?: any; error?: string }> {
+  async runTask(pipeline: PipelineStep[], onPipelineStep?: (index: number, status: 'start' | 'done' | 'error', error?: string) => void): Promise<{ success: boolean; data?: unknown; error?: string }> {
     return this.task.executePipeline(pipeline, onPipelineStep);
   }
 
@@ -291,7 +291,7 @@ export class FirebatCore {
   //  네트워크 (얇은 패스스루 — 매니저 불필요)
   // ══════════════════════════════════════════════════════════════════════════
 
-  async networkFetch(url: string, options?: any): Promise<InfraResult<any>> {
+  async networkFetch(url: string, options?: NetworkRequestOptions): Promise<InfraResult<NetworkResponse>> {
     return this.infra.network.fetch(url, options);
   }
 
@@ -304,7 +304,7 @@ export class FirebatCore {
   async removeMcpServer(name: string) { return this.mcp.removeServer(name); }
   async listMcpTools(serverName: string) { return this.mcp.listTools(serverName); }
   async listAllMcpTools() { return this.mcp.listAllTools(); }
-  async callMcpTool(serverName: string, toolName: string, args: any) { return this.mcp.callTool(serverName, toolName, args); }
+  async callMcpTool(serverName: string, toolName: string, args: Record<string, unknown>) { return this.mcp.callTool(serverName, toolName, args); }
 
   // ══════════════════════════════════════════════════════════════════════════
   //  Capability → CapabilityManager
@@ -322,7 +322,7 @@ export class FirebatCore {
   //  DB 쿼리 (얇은 패스스루 — 매니저 불필요)
   // ══════════════════════════════════════════════════════════════════════════
 
-  async queryDatabase(query: any, params?: any): Promise<InfraResult<any>> {
-    return this.infra.database.query(query, params);
+  async queryDatabase(sql: string, params?: unknown[]): Promise<InfraResult<Record<string, unknown>[]>> {
+    return this.infra.database.query(sql, params);
   }
 }

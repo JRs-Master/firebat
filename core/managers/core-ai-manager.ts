@@ -1,5 +1,5 @@
 import type { FirebatCore } from '../index';
-import type { ILlmPort, ILogPort } from '../ports';
+import type { ILlmPort, ILogPort, ChatMessage } from '../ports';
 import { CoreResult } from '../types';
 
 /**
@@ -55,7 +55,7 @@ export class CoreAiManager {
     return lines.join('\n') || '[시스템 상태 조회 실패]';
   }
 
-  private async analyze(prompt: string, history: any[], systemContext: string): Promise<CoreAiAnalysis | null> {
+  private async analyze(prompt: string, history: ChatMessage[], systemContext: string): Promise<CoreAiAnalysis | null> {
     const systemPrompt = `당신은 Firebat의 Core AI다.
 역할은 시스템 분석과 의도 판단뿐이며, 직접 실행하거나 시스템을 수정하는 일은 절대 하지 않는다.
 
@@ -88,11 +88,19 @@ ${systemContext}
     if (!result.success) return null;
 
     try {
-      let data = result.data;
-      if (typeof data === 'string') {
-        data = JSON.parse(data.replace(/^```json\n?/m, '').replace(/\n?```$/m, '').trim());
+      if (!result.data) return null;
+      const data = result.data;
+      // LlmJsonResponse를 CoreAiAnalysis로 변환 시도
+      const raw = data as unknown as Record<string, unknown>;
+      if (raw.intent && raw.analysis && raw.systemContext && raw.enrichedPrompt) {
+        return raw as unknown as CoreAiAnalysis;
       }
-      return data as CoreAiAnalysis;
+      // reply 필드에 JSON이 들어있을 수 있음
+      if (data.reply) {
+        const parsed = JSON.parse(data.reply.replace(/^```json\n?/m, '').replace(/\n?```$/m, '').trim());
+        return parsed as CoreAiAnalysis;
+      }
+      return null;
     } catch {
       return null;
     }
@@ -102,7 +110,7 @@ ${systemContext}
     this.logger.info(`[CORE_AI_TRAINING] ${JSON.stringify(entry)}`);
   }
 
-  async process(prompt: string, history: any[] = []): Promise<CoreResult> {
+  async process(prompt: string, history: ChatMessage[] = []): Promise<CoreResult> {
     const timestamp = new Date().toISOString();
     const systemContext = await this.gatherSystemContext();
     this.logger.info('[CoreAiManager] System context gathered.');

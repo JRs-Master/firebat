@@ -1,4 +1,4 @@
-import { IDatabasePort } from '../../core/ports';
+import { IDatabasePort, PageListItem, PageSpec } from '../../core/ports';
 import { InfraResult } from '../../core/types';
 import Database from 'better-sqlite3';
 import { DB_PATH } from '../config';
@@ -38,21 +38,17 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
     }
   }
 
-  async query(queryPayload: any, options?: any): Promise<InfraResult<any>> {
+  async query(sql: string, params?: unknown[]): Promise<InfraResult<Record<string, unknown>[]>> {
     try {
-      if (typeof queryPayload !== 'string') {
-         return { success: false, error: '[Adapter Mismatch] SqliteDatabaseAdapter currently requires raw SQL strings, not JSON payload objects.' };
-      }
-      
-      const isSelect = queryPayload.trim().toUpperCase().startsWith('SELECT');
-      const stmt = this.db.prepare(queryPayload);
-      
+      const isSelect = sql.trim().toUpperCase().startsWith('SELECT');
+      const stmt = this.db.prepare(sql);
+
       if (isSelect) {
-        const rows = options ? stmt.all(options) : stmt.all();
-        return { success: true, data: rows };
+        const rows = params ? stmt.all(...params) : stmt.all();
+        return { success: true, data: rows as Record<string, unknown>[] };
       } else {
-        const info = options ? stmt.run(options) : stmt.run();
-        return { success: true, data: info };
+        const info = params ? stmt.run(...params) : stmt.run();
+        return { success: true, data: [info as unknown as Record<string, unknown>] };
       }
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -61,17 +57,21 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
 
   // ── PageSpec CRUD ────────────────────────────────────────────────────────
 
-  async listPages(): Promise<InfraResult<any[]>> {
+  async listPages(): Promise<InfraResult<PageListItem[]>> {
     try {
       const rows = this.db.prepare(
         `SELECT slug, status, spec, visibility, updated_at as updatedAt FROM pages ORDER BY updated_at DESC`
-      ).all() as any[];
-      const list = rows.map(r => {
+      ).all() as Array<{ slug: string; status: string; spec: string; visibility: string | null; updatedAt: string }>;
+      const toVisibility = (v: string | null): 'public' | 'password' | 'private' => {
+        if (v === 'password' || v === 'private') return v;
+        return 'public';
+      };
+      const list: PageListItem[] = rows.map(r => {
         try {
           const parsed = JSON.parse(r.spec);
-          return { slug: r.slug, status: r.status, title: parsed.head?.title ?? r.slug, project: parsed.project ?? null, visibility: r.visibility ?? 'public', updatedAt: r.updatedAt };
+          return { slug: r.slug, status: r.status, title: parsed.head?.title ?? r.slug, project: parsed.project ?? undefined, visibility: toVisibility(r.visibility), updatedAt: r.updatedAt };
         } catch {
-          return { slug: r.slug, status: r.status, title: r.slug, project: null, visibility: r.visibility ?? 'public', updatedAt: r.updatedAt };
+          return { slug: r.slug, status: r.status, title: r.slug, project: undefined, visibility: toVisibility(r.visibility), updatedAt: r.updatedAt };
         }
       });
       return { success: true, data: list };
@@ -80,7 +80,7 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
     }
   }
 
-  async getPage(slug: string): Promise<InfraResult<any>> {
+  async getPage(slug: string): Promise<InfraResult<PageSpec>> {
     try {
       const row = this.db.prepare(`SELECT spec, visibility, password FROM pages WHERE slug = ?`).get(slug) as { spec: string; visibility: string; password: string | null } | undefined;
       if (!row) return { success: false, error: `Page not found: ${slug}` };

@@ -4,48 +4,199 @@ import type { InfraResult } from '../types';
  * Firebat - Core Ports
  * Core가 물리적 세상(Infra)과 통신하기 위해 요구하는 엄격한 인터페이스(명세서)입니다.
  * 중요: Core는 절대 try-catch에 의존하지 않으며, Infra는 에러 발생 시 throw 대신 무조건 InfraResult(success:false)를 반환해야 합니다.
+ *
+ * any 사용 금지 — 모든 데이터는 구체적 타입 또는 unknown + 타입 가드로 처리
  */
 
+// ── 공통 타입 ──────────────────────────────────────────────────────────────
+
+/** LLM 대화 메시지 */
+export interface ChatMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+}
+
+/** LLM JSON 응답 (FirebatPlan 구조) */
+export interface LlmJsonResponse {
+  thoughts: string;
+  reply: string;
+  actions: Record<string, unknown>[];  // 파싱 후 FirebatAction[]으로 검증
+  suggestions: unknown[];              // 파싱 후 Suggestion[]으로 검증
+}
+
+/** 네트워크 요청 옵션 */
+export interface NetworkRequestOptions {
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
+  headers?: Record<string, string>;
+  body?: string | Record<string, unknown>;
+  timeout?: number;
+}
+
+/** 네트워크 응답 */
+export interface NetworkResponse {
+  status: number;
+  headers: Record<string, string>;
+  data: string | Record<string, unknown>;
+}
+
+/** 모듈 출력 (stdout JSON) */
+export interface ModuleOutput {
+  success: boolean;
+  data?: Record<string, unknown>;
+  error?: string;
+  code?: string;
+}
+
+/** 로그 메타데이터 */
+export interface LogMeta {
+  correlationId?: string;
+  model?: string;
+  durationMs?: number;
+  [key: string]: string | number | boolean | undefined;
+}
+
+/** InfraResult 메타데이터 */
+export interface ResultMeta {
+  durationMs?: number;
+  cached?: boolean;
+  model?: string;
+  [key: string]: string | number | boolean | undefined;
+}
+
+/** 페이지 목록 항목 */
+export interface PageListItem {
+  slug: string;
+  title: string;
+  status: string;
+  project?: string;
+  visibility?: 'public' | 'password' | 'private';
+  updatedAt?: string;
+  createdAt?: string;
+}
+
+/** PageSpec 헤드 */
+export interface PageHead {
+  title?: string;
+  description?: string;
+  keywords?: string[];
+  robots?: string;
+  canonical?: string;
+  og?: {
+    title?: string;
+    description?: string;
+    image?: string;
+    type?: string;
+  };
+  meta?: Array<{ name?: string; property?: string; content: string }>;
+  scripts?: Array<{ src: string; async?: boolean; crossorigin?: string; 'data-ad-client'?: string }>;
+  styles?: Array<{ href: string }>;
+}
+
+/** PageSpec 컴포넌트 (discriminated union) */
+export type PageComponent =
+  | { type: 'Hero'; title?: string; subtitle?: string; bgColor?: string; textColor?: string }
+  | { type: 'Text'; content: string; align?: 'left' | 'center' | 'right' }
+  | { type: 'Html'; html: string }
+  | { type: 'Image'; src: string; alt?: string; width?: number; height?: number }
+  | { type: 'Button'; label: string; href: string; variant?: 'primary' | 'secondary' | 'outline' }
+  | { type: 'Card'; title?: string; description?: string; image?: string; link?: string }
+  | { type: 'Grid'; columns?: number; items: PageComponent[] }
+  | { type: 'Form'; fields: FormField[]; submitLabel?: string; action?: string; bindModule?: string }
+  | { type: 'Table'; headers: string[]; rows: string[][] }
+  | { type: 'Accordion'; items: Array<{ title: string; content: string }> }
+  | { type: 'Tabs'; tabs: Array<{ label: string; content: string }> }
+  | { type: 'Divider' }
+  | { type: 'Spacer'; height?: number }
+  | { type: 'Header'; level?: 1 | 2 | 3 | 4 | 5 | 6; text: string }
+  | { type: 'List'; ordered?: boolean; items: string[] }
+  | { type: 'Quote'; text: string; author?: string }
+  | { type: 'Code'; language?: string; code: string }
+  | { type: 'Video'; src: string; poster?: string }
+  | { type: 'Embed'; src: string; width?: number; height?: number }
+  | { type: 'Map'; lat: number; lng: number; zoom?: number }
+  | { type: 'Chart'; chartType: 'bar' | 'line' | 'pie' | 'doughnut'; data: ChartData }
+  | { type: 'Countdown'; targetDate: string; label?: string };
+
+export interface FormField {
+  name: string;
+  label?: string;
+  type: 'text' | 'email' | 'number' | 'textarea' | 'select' | 'checkbox' | 'date';
+  required?: boolean;
+  placeholder?: string;
+  options?: string[];
+}
+
+export interface ChartData {
+  labels: string[];
+  datasets: Array<{
+    label: string;
+    data: number[];
+    backgroundColor?: string | string[];
+  }>;
+}
+
+/** PageSpec — 페이지 전체 데이터 */
+export interface PageSpec {
+  slug: string;
+  head?: PageHead;
+  body?: PageComponent[];
+  project?: string;
+  _visibility?: 'public' | 'password' | 'private';
+}
+
+// ── JSON Schema 타입 (config.json input/output) ─────────────────────────
+
+export interface JsonSchemaProperty {
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object' | 'null' | Array<'object' | 'null' | 'string' | 'number' | 'integer' | 'boolean' | 'array'>;
+  description?: string;
+  enum?: (string | number | boolean)[];
+  default?: unknown;
+  format?: string;
+  minimum?: number;
+  maximum?: number;
+  minLength?: number;
+  maxLength?: number;
+  maxItems?: number;
+  items?: JsonSchema | JsonSchemaProperty;
+  properties?: Record<string, JsonSchemaProperty>;
+  required?: string[];
+  additionalProperties?: boolean | { type: string };
+}
+
+export interface JsonSchema {
+  type: 'object' | 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'null';
+  required?: string[];
+  properties?: Record<string, JsonSchemaProperty>;
+  additionalProperties?: boolean;
+  items?: JsonSchema | JsonSchemaProperty;
+  description?: string;
+}
+
+// ── Port 인터페이스 ─────────────────────────────────────────────────────
+
 export interface IStoragePort {
-  /**
-   * 해당 경로의 텍스트 콘텐츠 읽기
-   */
+  /** 해당 경로의 텍스트 콘텐츠 읽기 */
   read(path: string): Promise<InfraResult<string>>;
-
-  /**
-   * 파일 쓰기(부모 폴더 자동 생성 포함)
-   */
+  /** 파일 쓰기(부모 폴더 자동 생성 포함) */
   write(path: string, content: string): Promise<InfraResult<void>>;
-
-  /**
-   * 파일 삭제
-   */
+  /** 파일 삭제 */
   delete(path: string): Promise<InfraResult<void>>;
-
-  /**
-   * 디렉토리 내 파일 목록 조회 (이름 목록)
-   */
+  /** 디렉토리 내 파일 목록 조회 (이름 목록) */
   list(path: string): Promise<InfraResult<string[]>>;
-
-  /**
-   * 디렉토리 내 항목 목록 조회 (이름 + 디렉토리 여부)
-   */
+  /** 디렉토리 내 항목 목록 조회 (이름 + 디렉토리 여부) */
   listDir(path: string): Promise<InfraResult<Array<{ name: string; isDirectory: boolean }>>>;
 }
 
 export interface ILogPort {
-  // 로깅은 시스템 종료와 무관하므로 예외적으로 리턴값을 강제하지 않음
-  info(message: string, meta?: any): void;
-  warn(message: string, meta?: any): void;
-  error(message: string, meta?: any): void;
-  debug(message: string, meta?: any): void;
+  info(message: string, meta?: LogMeta): void;
+  warn(message: string, meta?: LogMeta): void;
+  error(message: string, meta?: LogMeta): void;
+  debug(message: string, meta?: LogMeta): void;
 }
 
 export interface ISandboxPort {
-  /**
-   * 유저 모듈 코드를 자식 프로세스로 실행하고 그 ModuleOutput을 InfraResult에 담아 리턴
-   */
-  execute(targetPath: string, inputData: any): Promise<InfraResult<any>>;
+  /** 유저 모듈 코드를 자식 프로세스로 실행하고 그 ModuleOutput을 InfraResult에 담아 리턴 */
+  execute(targetPath: string, inputData: Record<string, unknown>): Promise<InfraResult<ModuleOutput>>;
 }
 
 /** LLM 호출 옵션 — 요청별 모델 오버라이드 등 */
@@ -55,76 +206,129 @@ export interface LlmCallOpts {
 }
 
 export interface ILlmPort {
-  /**
-   * AI에게 질의를 보내고 JSON 파싱된 결과를 받아옵니다. (Agent 전용)
-   */
-  ask(prompt: string, systemPrompt?: string, history?: any[], opts?: LlmCallOpts): Promise<InfraResult<any>>;
-
-  /**
-   * AI에게 질의를 보내고 순수 텍스트 결과를 받아옵니다. (코드 어시스트 등 JSON 불필요 시)
-   */
+  /** AI에게 질의를 보내고 JSON 파싱된 결과를 받아옵니다. (Agent 전용) */
+  ask(prompt: string, systemPrompt?: string, history?: ChatMessage[], opts?: LlmCallOpts): Promise<InfraResult<LlmJsonResponse>>;
+  /** AI에게 질의를 보내고 순수 텍스트 결과를 받아옵니다. (코드 어시스트 등 JSON 불필요 시) */
   askText(prompt: string, systemPrompt?: string, opts?: LlmCallOpts): Promise<InfraResult<string>>;
-
-  /**
-   * 기본 모델 ID 반환
-   */
+  /** 기본 모델 ID 반환 */
   getModelId(): string;
 }
 
 export interface INetworkPort {
-  /**
-   * 격리 샌드박스 없이 빠르게 수행하는 가벼운 HTTP 통신
-   */
-  fetch(url: string, options?: any): Promise<InfraResult<any>>;
+  /** 격리 샌드박스 없이 빠르게 수행하는 가벼운 HTTP 통신 */
+  fetch(url: string, options?: NetworkRequestOptions): Promise<InfraResult<NetworkResponse>>;
 }
 
-/** 파이프라인 단계 정의 */
-export interface PipelineStep {
-  type: string;         // EXECUTE | MCP_CALL | NETWORK_REQUEST | LLM_TRANSFORM
-  description?: string; // 단계 설명 (UI 표시용)
-  path?: string;        // EXECUTE 시 모듈 경로
-  server?: string;      // MCP_CALL 시 서버명
-  tool?: string;        // MCP_CALL 시 도구명
-  arguments?: Record<string, any>; // MCP_CALL 시 인자
-  url?: string;         // NETWORK_REQUEST 시 URL
-  method?: string;      // NETWORK_REQUEST 시 HTTP 메서드
-  body?: any;           // NETWORK_REQUEST 시 요청 body
-  headers?: Record<string, string>; // NETWORK_REQUEST 시 헤더
-  instruction?: string; // LLM_TRANSFORM 시 변환 지시문
-  inputData?: any;      // 이 단계에 주입할 고정 입력
-  inputMap?: Record<string, any>;   // 입력 매핑 ("$prev" → 이전 단계 결과)
+// ── 파이프라인 단계 (Discriminated Union) ────────────────────────────────
+
+/** 파이프라인 단계 공통 필드 */
+interface PipelineStepBase {
+  description?: string;
+  inputData?: Record<string, unknown>;
+  inputMap?: Record<string, unknown>;
 }
+
+/** EXECUTE — 모듈 실행 */
+export interface ExecuteStep extends PipelineStepBase {
+  type: 'EXECUTE';
+  path: string;
+}
+
+/** MCP_CALL — 외부 MCP 도구 호출 */
+export interface McpCallStep extends PipelineStepBase {
+  type: 'MCP_CALL';
+  server: string;
+  tool: string;
+  arguments?: Record<string, unknown>;
+}
+
+/** NETWORK_REQUEST — HTTP 요청 */
+export interface NetworkRequestStep extends PipelineStepBase {
+  type: 'NETWORK_REQUEST';
+  url: string;
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+  headers?: Record<string, string>;
+  body?: string | Record<string, unknown>;
+}
+
+/** LLM_TRANSFORM — LLM 변환 */
+export interface LlmTransformStep extends PipelineStepBase {
+  type: 'LLM_TRANSFORM';
+  instruction: string;
+}
+
+/** 파이프라인 단계 = 4가지 중 하나 */
+export type PipelineStep = ExecuteStep | McpCallStep | NetworkRequestStep | LlmTransformStep;
+
+/** 파이프라인 단계 타입 리터럴 */
+export type PipelineStepType = PipelineStep['type'];
+
+// ── 크론/스케줄링 ───────────────────────────────────────────────────────
 
 export interface CronScheduleOptions {
-  cronTime?: string;    // 반복 주기 (크론 표현식)
-  runAt?: string;       // 특정 시각 1회 실행 (ISO 8601)
-  delaySec?: number;    // N초 후 1회 실행
-  startAt?: string;     // 기간 시작 (ISO 8601)
-  endAt?: string;       // 기간 종료 — 자동 해제 (ISO 8601)
-  inputData?: any;      // 모듈에 전달할 입력 데이터 (실행 시 stdin data로 주입)
-  pipeline?: PipelineStep[]; // 복합 작업 파이프라인 (targetPath 대신 사용)
-  title?: string;       // 사이드바 표시용 짧은 이름
-  description?: string; // 상세 스케줄 설명
+  cronTime?: string;
+  runAt?: string;
+  delaySec?: number;
+  startAt?: string;
+  endAt?: string;
+  inputData?: Record<string, unknown>;
+  pipeline?: PipelineStep[];
+  title?: string;
+  description?: string;
 }
 
-/** 크론 트리거 정보 — 타이머가 발화할 때 Core에 전달 */
-export type CronTriggerInfo = {
+/** 크론 실행 로그 */
+export interface CronLogEntry {
   jobId: string;
   targetPath: string;
-  trigger: string;    // 'CRON_SCHEDULER' | 'SCHEDULED_ONCE' | 'DELAYED_RUN'
-  inputData?: any;
-  pipeline?: PipelineStep[]; // 복합 작업 파이프라인
-};
-
-/** 크론 잡 실행 결과 — Core가 실행 후 반환 */
-export type CronJobResult = {
-  jobId: string;
-  targetPath: string;
-  trigger: string;
+  title?: string;
+  triggeredAt: string;
   success: boolean;
   durationMs: number;
   error?: string;
-};
+}
+
+/** 크론 트리거 타입 */
+export type CronTriggerType = 'CRON_SCHEDULER' | 'SCHEDULED_ONCE' | 'DELAYED_RUN';
+
+/** 크론 트리거 정보 — 타이머가 발화할 때 Core에 전달 */
+export interface CronTriggerInfo {
+  jobId: string;
+  targetPath: string;
+  trigger: CronTriggerType;
+  inputData?: Record<string, unknown>;
+  pipeline?: PipelineStep[];
+}
+
+/** 크론 잡 실행 결과 — Core가 실행 후 반환 */
+export interface CronJobResult {
+  jobId: string;
+  targetPath: string;
+  trigger: CronTriggerType;
+  success: boolean;
+  durationMs: number;
+  error?: string;
+}
+
+/** 크론 잡 모드 */
+export type CronJobMode = 'cron' | 'once' | 'delay';
+
+/** 크론 잡 정보 (목록 조회용) */
+export interface CronJobInfo {
+  jobId: string;
+  targetPath: string;
+  title?: string;
+  description?: string;
+  cronTime?: string;
+  runAt?: string;
+  delaySec?: number;
+  startAt?: string;
+  endAt?: string;
+  inputData?: Record<string, unknown>;
+  pipeline?: PipelineStep[];
+  createdAt: string;
+  mode: CronJobMode;
+}
 
 export interface ICronPort {
   /**
@@ -138,27 +342,32 @@ export interface ICronPort {
   /** 스케줄링 해제 */
   cancel(jobId: string): Promise<InfraResult<void>>;
   /** 등록된 잡 목록 조회 */
-  list(): Array<{ jobId: string; targetPath: string; title?: string; description?: string; cronTime?: string; runAt?: string; delaySec?: number; startAt?: string; endAt?: string; inputData?: any; pipeline?: PipelineStep[]; createdAt: string; mode: string }>;
+  list(): CronJobInfo[];
   /** 타임존 설정 */
   setTimezone(tz: string): void;
   /** 현재 타임존 조회 */
   getTimezone(): string;
   /** 트리거 콜백 등록 — 타이머 발화 시 Core가 실행을 오케스트레이션 */
   onTrigger(callback: (info: CronTriggerInfo) => Promise<CronJobResult>): void;
+  /** 실행 로그 조회 */
+  getLogs(limit?: number): CronLogEntry[];
+  /** 실행 로그 전체 삭제 */
+  clearLogs(): void;
+  /** 페이지 URL 알림 소비 (소비 후 정리) */
+  consumeNotifications(): Array<{ jobId: string; url: string; triggeredAt: string }>;
+  /** 페이지 URL 알림 추가 */
+  appendNotify(entry: { jobId: string; url: string; triggeredAt: string }): void;
 }
 
 export interface IDatabasePort {
-  /**
-   * SQL(Postgres/SQLite) 또는 NoSQL(MongoDB) 쿼리를 범용으로 실행하고 결과를 반환합니다.
-   * 향후 MongoDB 어댑터를 끼워넣을 때는 queryPayload로 JSON 객체를 그대로 받아서 처리하게 됩니다.
-   */
-  query(queryPayload: any, options?: any): Promise<InfraResult<any>>;
+  /** SQL 쿼리 실행 */
+  query(sql: string, params?: unknown[]): Promise<InfraResult<Record<string, unknown>[]>>;
 
   // ── PageSpec CRUD ──────────────────────────────────────────────────────
-  /** 페이지 목록 조회 (slug, status, title, updatedAt) */
-  listPages(): Promise<InfraResult<any[]>>;
+  /** 페이지 목록 조회 */
+  listPages(): Promise<InfraResult<PageListItem[]>>;
   /** 특정 slug의 PageSpec 전체 조회 */
-  getPage(slug: string): Promise<InfraResult<any>>;
+  getPage(slug: string): Promise<InfraResult<PageSpec>>;
   /** PageSpec 저장 (upsert) */
   savePage(slug: string, spec: string): Promise<InfraResult<void>>;
   /** 페이지 삭제 */
@@ -167,7 +376,7 @@ export interface IDatabasePort {
   listPagesByProject(project: string): Promise<InfraResult<string[]>>;
   /** 프로젝트 단위 일괄 삭제 */
   deletePagesByProject(project: string): Promise<InfraResult<string[]>>;
-  /** 페이지 visibility 설정 (public/password/private) */
+  /** 페이지 visibility 설정 */
   setPageVisibility(slug: string, visibility: 'public' | 'password' | 'private', password?: string): Promise<InfraResult<void>>;
   /** 페이지 비밀번호 검증 */
   verifyPagePassword(slug: string, password: string): Promise<InfraResult<boolean>>;
@@ -186,10 +395,10 @@ export interface IVaultPort {
   listKeysByPrefix(prefix: string): string[];
 }
 
-// ── MCP 클라이언트 ──────────────────────────────────────────────────────────
+// ── MCP 클라이언트 ──────────────────────────────────────────────────────
 
 export interface McpServerConfig {
-  /** 서버 고유 이름 (예: gmail, slack) */
+  /** 서버 고유 이름 */
   name: string;
   /** 전송 방식 */
   transport: 'stdio' | 'sse';
@@ -213,19 +422,19 @@ export interface McpToolInfo {
   /** 도구 설명 */
   description: string;
   /** 입력 스키마 (JSON Schema) */
-  inputSchema?: any;
+  inputSchema?: JsonSchema;
 }
 
-// ── 인증 ──────────────────────────────────────────────────────────────────────
+// ── 인증 ────────────────────────────────────────────────────────────────
 
 /** 통합 세션 — 로그인 세션(만료 있음) + API 토큰(만료 없음) */
 export interface AuthSession {
   token: string;
   type: 'session' | 'api';
   role: 'admin' | 'demo';
-  label?: string;         // API 토큰 식별 라벨 (예: "MCP용")
-  createdAt: number;      // epoch ms
-  expiresAt?: number;     // epoch ms — undefined = 영구 (API 토큰)
+  label?: string;
+  createdAt: number;
+  expiresAt?: number;
 }
 
 export interface IAuthPort {
@@ -235,13 +444,13 @@ export interface IAuthPort {
   getSession(token: string): AuthSession | null;
   /** 세션 삭제 */
   deleteSession(token: string): boolean;
-  /** 특정 타입의 모든 세션 목록 (마스킹 등은 매니저 책임) */
+  /** 특정 타입의 모든 세션 목록 */
   listSessions(type: 'session' | 'api'): AuthSession[];
   /** 특정 타입의 모든 세션 삭제 */
   deleteSessions(type: 'session' | 'api'): number;
 }
 
-// ── MCP 클라이언트 ──────────────────────────────────────────────────────────
+// ── MCP 클라이언트 Port ──────────────────────────────────────────────────
 
 export interface IMcpClientPort {
   /** 등록된 MCP 서버 설정 목록 */
@@ -255,7 +464,7 @@ export interface IMcpClientPort {
   /** 모든 활성 서버의 도구 목록 (AI 프롬프트용) */
   listAllTools(): Promise<InfraResult<McpToolInfo[]>>;
   /** 도구 실행 */
-  callTool(serverName: string, toolName: string, args: any): Promise<InfraResult<any>>;
+  callTool(serverName: string, toolName: string, args: Record<string, unknown>): Promise<InfraResult<unknown>>;
   /** 모든 연결 해제 (셧다운용) */
   disconnectAll(): Promise<void>;
 }

@@ -1,5 +1,5 @@
 import type { FirebatCore, AiRequestOpts } from '../index';
-import type { ILlmPort, ILogPort, LlmCallOpts } from '../ports';
+import type { ILlmPort, ILogPort, LlmCallOpts, ChatMessage, PageListItem } from '../ports';
 import { FirebatPlanSchema, FirebatPlan, FirebatAction, CoreResult, type InfraResult } from '../types';
 
 /**
@@ -23,7 +23,7 @@ export class AiManager {
     this.logger.info(`[USER_AI_TRAINING] ${JSON.stringify(entry)}`);
   }
 
-  private compressHistory(history: any[]): { recentHistory: any[]; contextSummary: string } {
+  private compressHistory(history: ChatMessage[]): { recentHistory: ChatMessage[]; contextSummary: string } {
     const WINDOW_SIZE = 8;
     if (history.length <= WINDOW_SIZE) return { recentHistory: history, contextSummary: '' };
 
@@ -119,7 +119,7 @@ export class AiManager {
     }
     const pages = await this.core.listPages();
     if (pages.success && pages.data) {
-      const slugs = pages.data.map((p: any) => `/${p.slug}`);
+      const slugs = pages.data.map((p: PageListItem) => `/${p.slug}`);
       lines.push(`[DB 페이지] ${slugs.length > 0 ? slugs.join(', ') : '없음'}`);
     }
     // 사용자 시크릿 목록 (값은 노출하지 않음)
@@ -169,7 +169,7 @@ export class AiManager {
     return lines.join('\n') || '[시스템 상태 조회 실패]';
   }
 
-  async process(prompt: string, history: any[] = [], opts?: AiRequestOpts, maxRetries = 3): Promise<CoreResult> {
+  async process(prompt: string, history: ChatMessage[] = [], opts?: AiRequestOpts, maxRetries = 3): Promise<CoreResult> {
     const isDemo = opts?.isDemo ?? false;
     const llmOpts: LlmCallOpts | undefined = opts?.model ? { model: opts.model } : undefined;
     let currentPrompt = prompt;
@@ -231,14 +231,14 @@ export class AiManager {
       // 필드 누락 방어
       for (const a of plan.actions) {
         if (!a.description) a.description = a.type;
-        if (a.type === 'SCHEDULE_TASK' && !(a as any).title) {
-          (a as any).title = a.description || 'SCHEDULE_TASK';
+        if (a.type === 'SCHEDULE_TASK' && !a.title) {
+          a.title = a.description || 'SCHEDULE_TASK';
         }
       }
       this.logger.info(`[AiManager] [${corrId}] [${modelId}] Plan validated (${llmMs}ms). Thoughts: ${plan.thoughts}`);
 
       let executionError: string | null = null;
-      const finalDataList: any[] = [];
+      const finalDataList: unknown[] = [];
       executedActions.length = 0;
 
       for (const action of plan.actions) {
@@ -281,7 +281,7 @@ export class AiManager {
             break;
           }
           case 'EXECUTE': {
-            const res = await this.core.sandboxExecute(action.path, action.inputData ?? action.mockData);
+            const res = await this.core.sandboxExecute(action.path, action.inputData ?? {});
             if (!res.success) {
               executionError = `EXECUTE 샌드박스 오류 (${action.path}): ${res.error}`;
             } else if (res.data?.success === false) {
@@ -302,10 +302,10 @@ export class AiManager {
             const res = await this.core.scheduleCronJob(jobId, action.targetPath ?? '', {
               cronTime: action.cronTime, runAt: action.runAt, delaySec: action.delaySec,
               startAt: action.startAt, endAt: action.endAt,
-              inputData: (action as any).inputData,
+              inputData: action.inputData,
               pipeline: action.pipeline,
-              title: (action as any).title,
-              description: (action as any).description,
+              title: action.title,
+              description: action.description,
             });
             if (!res.success) executionError = `SCHEDULE_TASK 오류: ${res.error}`;
             break;
@@ -396,11 +396,13 @@ export class AiManager {
 
       // RUN_TASK 파이프라인 결과가 있으면 reply에 반영 (문자열 결과만, JSON은 AI reply 유지)
       let finalReply = plan.reply;
-      const taskResults = finalDataList.filter(d => d?.taskResult !== undefined);
+      const hasTaskResult = (d: unknown): d is { taskResult: unknown } =>
+        d !== null && typeof d === 'object' && 'taskResult' in d;
+      const taskResults = finalDataList.filter(hasTaskResult);
       if (taskResults.length > 0) {
         const textResults = taskResults
           .filter(d => typeof d.taskResult === 'string')
-          .map(d => d.taskResult)
+          .map(d => d.taskResult as string)
           .join('\n\n')
           .trim();
         if (textResults) {
@@ -455,7 +457,7 @@ export class AiManager {
   // ══════════════════════════════════════════════════════════════════════════
 
   /** Plan만 수립 (실행하지 않음) — 유저 확인용 */
-  async planOnly(prompt: string, history: any[] = [], opts?: AiRequestOpts, maxRetries = 3): Promise<{
+  async planOnly(prompt: string, history: ChatMessage[] = [], opts?: AiRequestOpts, maxRetries = 3): Promise<{
     success: boolean;
     plan?: FirebatPlan;
     corrId?: string;
@@ -514,8 +516,8 @@ export class AiManager {
       // 필드 누락 방어
       for (const a of plan.actions) {
         if (!a.description) a.description = a.type;
-        if (a.type === 'SCHEDULE_TASK' && !(a as any).title) {
-          (a as any).title = a.description || 'SCHEDULE_TASK';
+        if (a.type === 'SCHEDULE_TASK' && !a.title) {
+          a.title = a.description || 'SCHEDULE_TASK';
         }
       }
       this.logger.info(`[AiManager] [${corrId}] [${modelId}] Plan 수립 완료 (${llmMs}ms, ${plan.actions.length}개 액션)`);
@@ -537,7 +539,7 @@ export class AiManager {
     const startTime = Date.now();
     const modelId = opts?.model ?? this.llm.getModelId();
     const executedActions: string[] = [];
-    const finalDataList: any[] = [];
+    const finalDataList: unknown[] = [];
 
     // RUN_TASK 파이프라인은 내부 단계를 풀어서 step 이벤트 전달
     let stepOffset = 0;
@@ -552,9 +554,11 @@ export class AiManager {
 
       if (action.type === 'RUN_TASK' && action.pipeline?.length) {
         // 파이프라인 실행 — 단계별 step 이벤트는 실행 시점에 콜백으로 전달
-        const taskRes = await this.core.runTask(action.pipeline, (pipeIdx, status, error) => {
-          const desc = action.pipeline[pipeIdx].description || action.pipeline[pipeIdx].instruction || action.pipeline[pipeIdx].path || action.pipeline[pipeIdx].type;
-          onStep?.({ index: stepOffset + pipeIdx, total: totalSteps, type: action.pipeline[pipeIdx].type, status, error, description: desc } as any);
+        const pipelineSteps = action.pipeline;
+        const taskRes = await this.core.runTask(pipelineSteps, (pipeIdx, status, error) => {
+          const step = pipelineSteps[pipeIdx];
+          const desc = step.description || ('instruction' in step ? step.instruction : '') || ('path' in step ? step.path : '') || step.type;
+          onStep?.({ index: stepOffset + pipeIdx, total: totalSteps, type: step.type, status, error });
         });
         if (!taskRes.success) {
           this.logger.error(`[AiManager] [${corrId}] 액션 실패: RUN_TASK 실패: ${taskRes.error}`);
@@ -583,11 +587,13 @@ export class AiManager {
 
     // 실행 결과를 reply에 반영 (문자열 결과만, JSON은 AI reply 유지)
     let finalReply = plan.reply;
-    const taskResults = finalDataList.filter(d => d?.taskResult !== undefined);
+    const hasTaskResult = (d: unknown): d is { taskResult: unknown } =>
+      d !== null && typeof d === 'object' && 'taskResult' in d;
+    const taskResults = finalDataList.filter(hasTaskResult);
     if (taskResults.length > 0) {
       const textResults = taskResults
         .filter(d => typeof d.taskResult === 'string')
-        .map(d => d.taskResult)
+        .map(d => d.taskResult as string)
         .join('\n\n')
         .trim();
       if (textResults) {
@@ -595,9 +601,23 @@ export class AiManager {
       }
     } else if (finalDataList.length > 0) {
       // 단독 EXECUTE 등의 결과가 있으면 reply에 반영
+      const extractText = (d: unknown): string => {
+        if (typeof d === 'string') return d;
+        if (d && typeof d === 'object') {
+          const r = d as Record<string, unknown>;
+          if (typeof r.text === 'string') return r.text;
+          if (typeof r.content === 'string') return r.content;
+          if (r.data && typeof r.data === 'object') {
+            const inner = r.data as Record<string, unknown>;
+            if (typeof inner.text === 'string') return inner.text;
+            if (typeof inner.content === 'string') return inner.content;
+          }
+        }
+        return JSON.stringify(d, null, 2);
+      };
       const dataTexts = finalDataList
         .filter(d => d != null)
-        .map(d => typeof d === 'string' ? d : (d?.text || d?.content || d?.data?.text || d?.data?.content || JSON.stringify(d, null, 2)))
+        .map(extractText)
         .join('\n\n')
         .trim();
       if (dataTexts) {
@@ -615,7 +635,7 @@ export class AiManager {
   }
 
   /** 단일 액션 실행 — 에러 문자열 반환 (성공 시 null) */
-  private async executeAction(action: FirebatAction, dataList: any[], isDemo = false): Promise<string | null | undefined> {
+  private async executeAction(action: FirebatAction, dataList: unknown[], isDemo = false): Promise<string | null | undefined> {
     switch (action.type) {
       case 'WRITE_FILE': {
         if (action.content == null) return `WRITE_FILE 실패: content가 비어 있습니다 (${action.path})`;
@@ -649,7 +669,7 @@ export class AiManager {
         return null;
       }
       case 'EXECUTE': {
-        const res = await this.core.sandboxExecute(action.path, action.inputData ?? action.mockData);
+        const res = await this.core.sandboxExecute(action.path, action.inputData ?? {});
         if (!res.success) return `EXECUTE 샌드박스 오류 (${action.path}): ${res.error}`;
         if (res.data?.success === false) return `EXECUTE 모듈 로직 오류 (${action.path}): ${JSON.stringify(res.data)}`;
         dataList.push(res.data);
@@ -666,10 +686,9 @@ export class AiManager {
         const res = await this.core.scheduleCronJob(jobId, action.targetPath ?? '', {
           cronTime: action.cronTime, runAt: action.runAt, delaySec: action.delaySec,
           startAt: action.startAt, endAt: action.endAt,
-          inputData: (action as any).inputData,
+          inputData: action.inputData,
           pipeline: action.pipeline,
-          title: (action as any).title,
-          description: (action as any).description,
+          title: action.title,
         });
         return res.success ? null : `SCHEDULE_TASK 오류: ${res.error}`;
       }

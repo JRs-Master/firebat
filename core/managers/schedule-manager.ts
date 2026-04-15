@@ -45,15 +45,15 @@ export class ScheduleManager {
   }
 
   getLogs(limit?: number) {
-    return (this.cron as any).getLogs?.(limit) ?? [];
+    return this.cron.getLogs(limit);
   }
 
   clearLogs() {
-    (this.cron as any).clearLogs?.();
+    this.cron.clearLogs();
   }
 
   consumeNotifications(): { jobId: string; url: string; triggeredAt: string }[] {
-    return (this.cron as any).consumeNotifications?.() ?? [];
+    return this.cron.consumeNotifications();
   }
 
   // ── 트리거 핸들러 ──
@@ -73,7 +73,7 @@ export class ScheduleManager {
       } else if (info.targetPath.startsWith('/')) {
         // 페이지 URL → 알림 파일에 기록
         this.log.info(`[Cron] 잡 실행: ${info.jobId} → ${info.targetPath} (${info.trigger})`);
-        (this.cron as any).appendNotify?.({ jobId: info.jobId, url: info.targetPath, triggeredAt: new Date().toISOString() });
+        this.cron.appendNotify({ jobId: info.jobId, url: info.targetPath, triggeredAt: new Date().toISOString() });
         success = true;
       } else {
         // 모듈 실행 — Core 경유 (크로스 도메인)

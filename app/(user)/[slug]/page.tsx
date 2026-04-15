@@ -15,7 +15,7 @@ function safeDecodeSlug(slug: string): string {
 }
 
 /** 페이지 visibility를 해석 (페이지 자체 → 프로젝트 상속 → 기본 public) */
-function resolveVisibility(spec: any): 'public' | 'password' | 'private' {
+function resolveVisibility(spec: { _visibility?: string; project?: string }): 'public' | 'password' | 'private' {
   const pageVis = spec._visibility;
   if (pageVis === 'private' || pageVis === 'password') return pageVis;
   // 프로젝트 상속
@@ -33,7 +33,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const slug = safeDecodeSlug(rawSlug);
   const core = getCore();
   const result = await core.getPage(slug);
-  if (!result.success) return { title: 'Not Found' };
+  if (!result.success || !result.data) return { title: 'Not Found' };
 
   const spec = result.data;
   const visibility = resolveVisibility(spec);
@@ -79,7 +79,7 @@ export default async function DynamicPage({ params }: Props) {
   const slug = safeDecodeSlug(rawSlug);
   const core = getCore();
   const result = await core.getPage(slug);
-  if (!result.success) notFound();
+  if (!result.success || !result.data) notFound();
 
   const spec = result.data;
   const visibility = resolveVisibility(spec);
@@ -89,7 +89,7 @@ export default async function DynamicPage({ params }: Props) {
 
   // 비밀번호 보호 페이지 — 쿠키 검증 후 미인증이면 폼 표시
   if (visibility === 'password') {
-    const isProjectPassword = spec._visibility !== 'password' && spec.project;
+    const isProjectPassword = spec._visibility !== 'password' && !!spec.project;
     const cookieStore = await cookies();
     const cookieKey = isProjectPassword ? `fp_${spec.project}` : `fp_${slug}`;
     const savedPw = cookieStore.get(cookieKey)?.value;
@@ -98,7 +98,7 @@ export default async function DynamicPage({ params }: Props) {
     let verified = false;
     if (savedPw) {
       const pw = decodeURIComponent(savedPw);
-      if (isProjectPassword) {
+      if (isProjectPassword && spec.project) {
         verified = core.verifyProjectPassword(spec.project, pw);
       } else {
         const res = await core.verifyPagePassword(slug, pw);

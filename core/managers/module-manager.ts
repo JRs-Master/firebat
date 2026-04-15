@@ -1,4 +1,4 @@
-import type { ISandboxPort, IStoragePort, IVaultPort } from '../ports';
+import type { ISandboxPort, IStoragePort, IVaultPort, ModuleOutput } from '../ports';
 import type { InfraResult } from '../types';
 
 interface SystemEntry {
@@ -22,12 +22,12 @@ export class ModuleManager {
   ) {}
 
   /** 경로 지정 직접 실행 (EXECUTE, 파이프라인 등) */
-  async execute(targetPath: string, inputData: any): Promise<InfraResult<any>> {
+  async execute(targetPath: string, inputData: Record<string, unknown>): Promise<InfraResult<ModuleOutput>> {
     return this.sandbox.execute(targetPath, inputData);
   }
 
   /** 모듈명으로 실행 — 엔트리 파일 자동 탐색 (Form bindModule 전용) */
-  async run(moduleName: string, inputData: any): Promise<InfraResult<any>> {
+  async run(moduleName: string, inputData: Record<string, unknown>): Promise<InfraResult<ModuleOutput>> {
     if (moduleName.includes('..') || moduleName.includes('/') || moduleName.includes('\\')) {
       return { success: false, error: '잘못된 모듈 이름입니다.' };
     }

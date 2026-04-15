@@ -50,10 +50,34 @@ Firebat은 어떤 언어로 작성되었건(불가지론적) 동일한 방식으
   "packages": ["pip_or_npm_패키지명"],
   "project": "프로젝트명 (PageSpec project와 동일 값으로 묶기)",
   "secrets": ["API_KEY_NAME"],
-  "input": { "필드명": "타입 설명" },
-  "output": { "필드명": "타입 설명" }
+  "capability": "기능 ID (kebab-case, 예: web-scrape)",
+  "providerType": "local | api",
+  "input": {
+    "type": "object",
+    "required": ["필수 필드명"],
+    "properties": {
+      "필드명": {
+        "type": "string | number | integer | boolean | array | object",
+        "description": "필드 설명"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": ["필수 필드명"],
+    "properties": {
+      "필드명": {
+        "type": "string | number | integer | boolean | array | object",
+        "description": "필드 설명"
+      }
+    },
+    "additionalProperties": false
+  }
 }
 ```
+
+> **중요**: input/output은 **JSON Schema Draft 2020-12** 형식으로 정의한다. 자연어 기술(`"url": "string (required) — 설명"`) 금지. 모든 property에 `type`과 `description` 필수, `required` 배열과 `additionalProperties: false` 필수. 상세 규격은 `docs/IO_SCHEMA_BIBLE.md` 참조.
 
 ### 어댑터 모듈 추가 필드
 ```json

@@ -28,7 +28,7 @@ export class McpManager {
     return this.mcpClient.listAllTools();
   }
 
-  async callTool(serverName: string, toolName: string, args: any) {
+  async callTool(serverName: string, toolName: string, args: Record<string, unknown>) {
     return this.mcpClient.callTool(serverName, toolName, args);
   }
 }

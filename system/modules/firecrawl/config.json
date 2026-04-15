@@ -9,12 +9,102 @@
   "providerType": "api",
   "secrets": ["FIRECRAWL_API_KEY"],
   "input": {
-    "url": "string (required) — 스크래핑할 URL",
-    "keyword": "string (optional) — 이 키워드가 포함된 섹션만 추출"
+    "type": "object",
+    "required": ["url"],
+    "properties": {
+      "url": {
+        "type": "string",
+        "format": "uri",
+        "description": "스크래핑할 URL"
+      },
+      "keyword": {
+        "type": "string",
+        "description": "이 키워드가 포함된 섹션만 추출 (Firebat 자체 후처리)"
+      },
+      "formats": {
+        "type": "array",
+        "items": { "type": "string", "enum": ["markdown", "html", "rawHtml", "links", "screenshot", "screenshot@fullPage"] },
+        "default": ["markdown"],
+        "description": "반환 포맷"
+      },
+      "onlyMainContent": {
+        "type": "boolean",
+        "default": true,
+        "description": "메인 콘텐츠만 추출 (nav, footer 제외)"
+      },
+      "includeTags": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "포함할 HTML 태그 목록"
+      },
+      "excludeTags": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "제외할 HTML 태그 목록"
+      },
+      "headers": {
+        "type": "object",
+        "additionalProperties": { "type": "string" },
+        "description": "커스텀 HTTP 헤더"
+      },
+      "waitFor": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 30000,
+        "default": 3000,
+        "description": "페이지 로드 후 대기 시간 (ms)"
+      },
+      "timeout": {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 60000,
+        "default": 30000,
+        "description": "요청 타임아웃 (ms)"
+      },
+      "mobile": {
+        "type": "boolean",
+        "default": false,
+        "description": "모바일 뷰포트 사용"
+      },
+      "skipTlsVerification": {
+        "type": "boolean",
+        "default": false,
+        "description": "TLS 인증서 검증 건너뛰기"
+      },
+      "removeBase64Images": {
+        "type": "boolean",
+        "default": true,
+        "description": "base64 인코딩 이미지 제거"
+      },
+      "blockAds": {
+        "type": "boolean",
+        "default": true,
+        "description": "광고 차단"
+      },
+      "maxAge": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 0,
+        "description": "캐시 최대 수명 (초). 0=캐시 미사용"
+      }
+    },
+    "additionalProperties": false
   },
   "output": {
-    "url": "string — 최종 URL",
-    "title": "string — 페이지 제목",
-    "text": "string — 마크다운 형식 본문 텍스트"
+    "type": "object",
+    "required": ["url", "title", "text"],
+    "properties": {
+      "url":   { "type": "string", "description": "최종 URL (리다이렉트 후)" },
+      "title": { "type": "string", "description": "페이지 제목" },
+      "text":  { "type": "string", "description": "마크다운 형식 본문 텍스트" },
+      "html":  { "type": "string", "description": "HTML 원본 (formats에 html 포함 시)" },
+      "links": {
+        "type": "array",
+        "items": { "type": "string", "format": "uri" },
+        "description": "페이지 내 링크 목록 (formats에 links 포함 시)"
+      },
+      "screenshot": { "type": "string", "description": "스크린샷 URL (formats에 screenshot 포함 시)" }
+    },
+    "additionalProperties": false
   }
 }

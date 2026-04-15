@@ -1,4 +1,4 @@
-import { ICronPort, CronScheduleOptions, CronJobResult, CronTriggerInfo, ILogPort, PipelineStep } from '../../core/ports';
+import { ICronPort, CronScheduleOptions, CronJobResult, CronTriggerInfo, CronJobInfo, CronTriggerType, CronLogEntry, ILogPort, PipelineStep } from '../../core/ports';
 import { InfraResult } from '../../core/types';
 import cron, { ScheduledTask } from 'node-cron';
 import fs from 'fs';
@@ -15,22 +15,13 @@ interface CronJobRecord {
   delaySec?: number;
   startAt?: string;
   endAt?: string;
-  inputData?: any;
+  inputData?: Record<string, unknown>;
   pipeline?: PipelineStep[];
   createdAt: string;
-  mode: 'cron' | 'once' | 'delay';
+  mode: CronJobInfo['mode'];
 }
 
-/** 실행 로그 엔트리 */
-export interface CronLogEntry {
-  jobId: string;
-  targetPath: string;
-  title?: string;
-  triggeredAt: string;
-  success: boolean;
-  durationMs: number;
-  error?: string;
-}
+// CronLogEntry는 core/ports에서 import (포트 정의가 정본)
 
 import { CRON_JOBS_FILE, CRON_LOGS_FILE, CRON_NOTIFY_FILE, CRON_MAX_LOGS, CRON_DEFAULT_TIMEZONE, CRON_RECENT_NOTIFY_MS } from '../config';
 
@@ -297,7 +288,7 @@ export class NodeCronAdapter implements ICronPort {
   }
 
   /** 트리거 발화 — Core에 실행 위임, 결과를 로그에 기록 */
-  private async fireTrigger(jobId: string, targetPath: string, trigger: string, inputData?: any, pipeline?: PipelineStep[], title?: string): Promise<void> {
+  private async fireTrigger(jobId: string, targetPath: string, trigger: CronTriggerType, inputData?: Record<string, unknown>, pipeline?: PipelineStep[], title?: string): Promise<void> {
     if (!this.triggerCallback) {
       this.log?.error(`[Cron] 트리거 콜백 미등록 — 잡 실행 불가: ${jobId}`);
       return;
@@ -333,7 +324,7 @@ export class NodeCronAdapter implements ICronPort {
     try {
       if (!fs.existsSync(NOTIFY_FILE)) return;
       const items = JSON.parse(fs.readFileSync(NOTIFY_FILE, 'utf-8'));
-      const filtered = items.filter((n: any) => n.jobId !== jobId);
+      const filtered = (items as Array<{ jobId: string }>).filter(n => n.jobId !== jobId);
       fs.writeFileSync(NOTIFY_FILE, JSON.stringify(filtered, null, 2));
     } catch {}
   }
@@ -347,7 +338,7 @@ export class NodeCronAdapter implements ICronPort {
       if (items.length === 0) return [];
       // 30초 이상 된 알림은 버림 (서버 재시작 시 쌓인 알림 방지)
       const now = Date.now();
-      const fresh = items.filter((n: any) => now - new Date(n.triggeredAt).getTime() < CRON_RECENT_NOTIFY_MS);
+      const fresh = (items as Array<{ jobId: string; url: string; triggeredAt: string }>).filter(n => now - new Date(n.triggeredAt).getTime() < CRON_RECENT_NOTIFY_MS);
       fs.writeFileSync(NOTIFY_FILE, '[]');
       return fresh;
     } catch { return []; }
@@ -355,7 +346,7 @@ export class NodeCronAdapter implements ICronPort {
 
   appendNotify(entry: { jobId: string; url: string; triggeredAt: string }): void {
     try {
-      let items: any[] = [];
+      let items: Array<{ jobId: string; url: string; triggeredAt: string }> = [];
       if (fs.existsSync(NOTIFY_FILE)) {
         items = JSON.parse(fs.readFileSync(NOTIFY_FILE, 'utf-8'));
       }

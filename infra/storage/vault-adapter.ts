@@ -71,7 +71,7 @@ export class VaultAdapter {
   listKeys(): string[] {
     try {
       const stmt = this.db.prepare('SELECT key FROM secrets ORDER BY key');
-      return stmt.all().map((row: any) => row.key);
+      return (stmt.all() as Array<{ key: string }>).map(row => row.key);
     } catch (e) {
       console.error('[Vault] Error listing keys:', e);
       return [];
@@ -82,7 +82,7 @@ export class VaultAdapter {
   listKeysByPrefix(prefix: string): string[] {
     try {
       const stmt = this.db.prepare('SELECT key FROM secrets WHERE key LIKE ? ORDER BY key');
-      return stmt.all(`${prefix}%`).map((row: any) => row.key);
+      return (stmt.all(`${prefix}%`) as Array<{ key: string }>).map(row => row.key);
     } catch (e) {
       console.error('[Vault] Error listing keys by prefix:', e);
       return [];

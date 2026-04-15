@@ -1,4 +1,4 @@
-import { ILogPort } from '../../core/ports';
+import { ILogPort, LogMeta } from '../../core/ports';
 import fs from 'fs';
 import path from 'path';
 
@@ -61,7 +61,7 @@ function extractTrainingJson(message: string): string | null {
  * - 콘솔 출력 병행
  */
 export class ConsoleLogAdapter implements ILogPort {
-  info(message: string, meta?: any): void {
+  info(message: string, meta?: LogMeta): void {
     const time = new Date().toISOString();
     const line = meta
       ? `[${time}] [INFO] ${message} ${JSON.stringify(meta)}`
@@ -77,7 +77,7 @@ export class ConsoleLogAdapter implements ILogPort {
     }
   }
 
-  warn(message: string, meta?: any): void {
+  warn(message: string, meta?: LogMeta): void {
     const time = new Date().toISOString();
     const line = meta
       ? `[${time}] [WARN] ${message} ${JSON.stringify(meta)}`
@@ -87,7 +87,7 @@ export class ConsoleLogAdapter implements ILogPort {
     writeToFile(appLogPath(), line);
   }
 
-  error(message: string, meta?: any): void {
+  error(message: string, meta?: LogMeta): void {
     const time = new Date().toISOString();
     const line = meta
       ? `[${time}] [ERROR] ${message} ${JSON.stringify(meta)}`
@@ -97,7 +97,7 @@ export class ConsoleLogAdapter implements ILogPort {
     writeToFile(appLogPath(), line);
   }
 
-  debug(message: string, meta?: any): void {
+  debug(message: string, meta?: LogMeta): void {
     const time = new Date().toISOString();
     const line = meta
       ? `[${time}] [DEBUG] ${message} ${JSON.stringify(meta)}`
