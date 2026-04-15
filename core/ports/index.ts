@@ -191,7 +191,10 @@ export interface ILogPort {
   info(message: string, meta?: LogMeta): void;
   warn(message: string, meta?: LogMeta): void;
   error(message: string, meta?: LogMeta): void;
+  /** 디버그 로그 — 기본 off, setDebug(true)로 활성화 */
   debug(message: string, meta?: LogMeta): void;
+  /** 디버그 모드 on/off */
+  setDebug(enabled: boolean): void;
 }
 
 export interface ISandboxPort {
@@ -205,11 +208,46 @@ export interface LlmCallOpts {
   model?: string;
 }
 
+// ── Function Calling 타입 ──────────────────────────────────────────────────
+
+/** Function Calling 도구 정의 — Gemini functionDeclarations 형식 */
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: JsonSchema;
+}
+
+/** LLM이 반환한 도구 호출 */
+export interface ToolCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
+/** 도구 실행 결과 — LLM에 피드백 */
+export interface ToolResult {
+  name: string;
+  result: Record<string, unknown>;
+}
+
+/** 도구 호출 ↔ 결과 교환 1턴 — 멀티턴 루프에서 이전 턴을 전달 */
+export interface ToolExchangeEntry {
+  toolCalls: ToolCall[];
+  toolResults: ToolResult[];
+}
+
+/** Function Calling 응답 — 텍스트 + 도구 호출 */
+export interface LlmToolResponse {
+  text: string;
+  toolCalls: ToolCall[];
+}
+
 export interface ILlmPort {
-  /** AI에게 질의를 보내고 JSON 파싱된 결과를 받아옵니다. (Agent 전용) */
+  /** AI에게 질의를 보내고 JSON 파싱된 결과를 받아옵니다. (레거시 — Function Calling 전환 후 제거 예정) */
   ask(prompt: string, systemPrompt?: string, history?: ChatMessage[], opts?: LlmCallOpts): Promise<InfraResult<LlmJsonResponse>>;
   /** AI에게 질의를 보내고 순수 텍스트 결과를 받아옵니다. (코드 어시스트 등 JSON 불필요 시) */
   askText(prompt: string, systemPrompt?: string, opts?: LlmCallOpts): Promise<InfraResult<string>>;
+  /** Function Calling — 도구 정의와 함께 질의, 텍스트 + 도구 호출 반환. toolExchanges로 멀티턴 도구 루프 지원 */
+  askWithTools(prompt: string, systemPrompt: string, tools: ToolDefinition[], history?: ChatMessage[], toolExchanges?: ToolExchangeEntry[], opts?: LlmCallOpts): Promise<InfraResult<LlmToolResponse>>;
   /** 기본 모델 ID 반환 */
   getModelId(): string;
 }

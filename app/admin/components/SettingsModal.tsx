@@ -1159,26 +1159,16 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 // ── Capability 탭 내부 컴포넌트 ──────────────────────────────────────────────
 type CapInfo = { id: string; label: string; description: string; providerCount: number };
 type ProviderInfo = { moduleName: string; providerType: 'local' | 'api'; location: 'system' | 'user'; description: string };
-type CapMode = 'api-first' | 'local-first' | 'api-only' | 'local-only' | 'manual';
-
-const MODE_LABELS: Record<CapMode, string> = {
-  'api-first': 'API 우선',
-  'local-first': '로컬 우선',
-  'api-only': 'API 전용',
-  'local-only': '로컬 전용',
-  'manual': '수동 지정',
-};
 
 function CapabilityTabContent() {
   const [caps, setCaps] = useState<CapInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCap, setSelectedCap] = useState<string | null>(null);
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [mode, setMode] = useState<CapMode>('api-first');
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [orderChanged, setOrderChanged] = useState(false);
 
-  // 목록 로드
   useEffect(() => {
     fetch('/api/capabilities')
       .then(r => r.json())
@@ -1187,10 +1177,10 @@ function CapabilityTabContent() {
       .finally(() => setLoading(false));
   }, []);
 
-  // 상세 로드
   const loadDetail = async (id: string) => {
     setSelectedCap(id);
     setDetailLoading(true);
+    setOrderChanged(false);
     try {
       const res = await fetch('/api/capabilities', {
         method: 'POST',
@@ -1199,22 +1189,41 @@ function CapabilityTabContent() {
       });
       const data = await res.json();
       if (data.success) {
-        setProviders(data.providers ?? []);
-        setMode(data.settings?.mode ?? 'api-first');
+        const provs: ProviderInfo[] = data.providers ?? [];
+        const savedOrder: string[] = data.settings?.providers ?? [];
+        // 저장된 순서가 있으면 그 순서로 정렬
+        if (savedOrder.length > 0) {
+          provs.sort((a, b) => {
+            const aIdx = savedOrder.indexOf(a.moduleName);
+            const bIdx = savedOrder.indexOf(b.moduleName);
+            return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+          });
+        }
+        setProviders(provs);
       }
     } catch {}
     finally { setDetailLoading(false); }
   };
 
-  const saveMode = async () => {
+  const moveProvider = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= providers.length) return;
+    const next = [...providers];
+    [next[index], next[target]] = [next[target], next[index]];
+    setProviders(next);
+    setOrderChanged(true);
+  };
+
+  const saveOrder = async () => {
     if (!selectedCap) return;
     setSaving(true);
     try {
       await fetch('/api/capabilities', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: selectedCap, settings: { mode, providers: [] } }),
+        body: JSON.stringify({ id: selectedCap, settings: { providers: providers.map(p => p.moduleName) } }),
       });
+      setOrderChanged(false);
     } catch {}
     finally { setSaving(false); }
   };
@@ -1229,7 +1238,6 @@ function CapabilityTabContent() {
 
   return (
     <>
-      {/* capability 목록 */}
       <div className="flex flex-col gap-2">
         <label className="text-xs sm:text-sm font-bold text-slate-700">Capability 목록</label>
         <p className="text-[10px] sm:text-xs text-slate-400 font-medium -mt-1">
@@ -1263,7 +1271,6 @@ function CapabilityTabContent() {
         )}
       </div>
 
-      {/* 선택된 capability 상세 */}
       {selectedCap && (
         <div className="flex flex-col gap-3 pt-2 border-t border-slate-100">
           {detailLoading ? (
@@ -1272,15 +1279,18 @@ function CapabilityTabContent() {
             </div>
           ) : (
             <>
-              {/* Provider 목록 */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">Provider 목록</label>
+                <label className="text-xs sm:text-sm font-bold text-slate-700">
+                  실행 순서 {providers.length > 1 && <span className="text-[10px] text-slate-400 font-normal ml-1">위에서부터 우선 실행</span>}
+                </label>
                 {providers.length === 0 ? (
                   <p className="text-[12px] text-slate-400 py-2">등록된 provider가 없습니다</p>
                 ) : (
-                  providers.map(p => (
+                  providers.map((p, i) => (
                     <div key={p.moduleName} className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                      {/* 순서 번호 */}
+                      <span className="text-[11px] font-bold text-slate-400 w-4 text-center shrink-0">{i + 1}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
                         p.providerType === 'api' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
                       }`}>
                         {p.providerType === 'api' ? 'API' : 'LOCAL'}
@@ -1289,36 +1299,41 @@ function CapabilityTabContent() {
                         <span className="text-[13px] font-bold text-slate-700">{p.moduleName}</span>
                         <span className="ml-1.5 text-[10px] text-slate-400">{p.location}</span>
                       </div>
+                      {/* 순서 변경 버튼 */}
+                      {providers.length > 1 && (
+                        <div className="flex flex-col gap-0.5 shrink-0">
+                          <button
+                            onClick={() => moveProvider(i, -1)}
+                            disabled={i === 0}
+                            className="p-0.5 text-slate-400 hover:text-slate-700 disabled:text-slate-200 disabled:cursor-default transition-colors"
+                            title="위로"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                          </button>
+                          <button
+                            onClick={() => moveProvider(i, 1)}
+                            disabled={i === providers.length - 1}
+                            className="p-0.5 text-slate-400 hover:text-slate-700 disabled:text-slate-200 disabled:cursor-default transition-colors"
+                            title="아래로"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ))
                 )}
               </div>
 
-              {/* 모드 선택 */}
-              {providers.length > 1 && (
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs sm:text-sm font-bold text-slate-700">실행 모드</label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {(Object.entries(MODE_LABELS) as [CapMode, string][]).map(([m, label]) => (
-                      <button
-                        key={m}
-                        onClick={() => setMode(m)}
-                        className={`px-3 py-1.5 text-[12px] font-bold rounded-lg border transition-colors ${
-                          mode === m ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-400 hover:text-slate-600'
-                        }`}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    onClick={saveMode}
-                    disabled={saving}
-                    className="w-full px-3 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors mt-1"
-                  >
-                    {saving ? '저장 중...' : '모드 저장'}
-                  </button>
-                </div>
+              {/* 순서 저장 */}
+              {providers.length > 1 && orderChanged && (
+                <button
+                  onClick={saveOrder}
+                  disabled={saving}
+                  className="w-full px-3 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
+                >
+                  {saving ? '저장 중...' : '순서 저장'}
+                </button>
               )}
             </>
           )}

@@ -91,8 +91,8 @@ export class CapabilityManager {
   /** capability 설정 조회 (Vault) */
   getSettings(capId: string): CapabilitySettings {
     const raw = this.vault.getSecret(`system:capability:${capId}:settings`);
-    if (!raw) return { mode: 'api-first', providers: [] };
-    try { return JSON.parse(raw); } catch { return { mode: 'api-first', providers: [] }; }
+    if (!raw) return { providers: [] };
+    try { return JSON.parse(raw); } catch { return { providers: [] }; }
   }
 
   /** capability 설정 저장 (Vault) */
@@ -100,7 +100,7 @@ export class CapabilityManager {
     return this.vault.setSecret(`system:capability:${capId}:settings`, JSON.stringify(settings));
   }
 
-  /** 설정 기준으로 실행할 provider 선택 */
+  /** 설정 기준으로 실행할 provider 선택 — providers 배열 순서대로 시도 */
   async resolve(capId: string): Promise<CapabilityProvider | null> {
     const providers = await this.getProviders(capId);
     if (providers.length === 0) return null;
@@ -108,20 +108,15 @@ export class CapabilityManager {
 
     const settings = this.getSettings(capId);
 
-    switch (settings.mode) {
-      case 'api-only': return providers.find(p => p.providerType === 'api') ?? null;
-      case 'local-only': return providers.find(p => p.providerType === 'local') ?? null;
-      case 'local-first': return providers.find(p => p.providerType === 'local') ?? providers.find(p => p.providerType === 'api') ?? null;
-      case 'manual': {
-        for (const name of settings.providers) {
-          const found = providers.find(p => p.moduleName === name);
-          if (found) return found;
-        }
-        return providers[0];
+    // 사용자 정의 순서가 있으면 그 순서대로 반환
+    if (settings.providers.length > 0) {
+      for (const name of settings.providers) {
+        const found = providers.find(p => p.moduleName === name);
+        if (found) return found;
       }
-      case 'api-first':
-      default:
-        return providers.find(p => p.providerType === 'api') ?? providers.find(p => p.providerType === 'local') ?? null;
     }
+
+    // 순서 미설정 시 기본: api provider 우선
+    return providers.find(p => p.providerType === 'api') ?? providers[0];
   }
 }

@@ -322,22 +322,32 @@
 - **UI**: SystemModuleSettings에 oauth 필드 타입 추가, 연동 상태 표시 + 연동/재연동 버튼
 - **준비**: 카카오 디벨로퍼스 → 앱 생성 → talk_message 권한 활성화 → Redirect URI에 `{도메인}/api/auth/kakao/callback` 등록 → REST API 키를 Vault에 저장 → 연동 버튼 클릭
 
-### AI 판단 의존 축소 — Function Calling 전환 (구상, 2026-04-15)
-- **문제**: AI가 프롬프트 규칙을 무시하는 패턴 반복 (provider 선택 무시, optional 파라미터 미사용, 과도한 응답, 마크다운 링크 미사용)
-- **근본 원인**: 자유형 JSON 액션 생성 → AI 판단 여지가 너무 많음. 프롬프트 규칙 추가로는 한계
-- **해법**: Gemini **Function Calling** (네이티브 tool use)으로 전환
-  - 현재: 프롬프트 규칙 → AI가 JSON 액션 배열 자유 생성 → 파싱 → 실행
-  - 변경: 도구 스키마 정의 → AI가 도구 호출 → 바로 실행
-  - 파라미터 스키마가 강제되므로 필수 필드 누락·타입 오류·provider 선택 실수 구조적 제거
-- **도구 정의 재활용**: 기존 MCP 서버 (`mcp/server.ts`)의 15개 도구 정의를 Gemini function 도구로 변환
-- **MCP 서버는 1개만 유지** (외부 AI 접속용). User AI는 function calling으로 Core 메서드 직접 호출
+### Function Calling 전환 (v0.1, 2026-04-15)
+- **문제**: AI가 자유형 JSON 액션 생성 시 프롬프트 규칙을 무시하는 패턴 반복
+- **해법**: Gemini **Function Calling** (네이티브 tool use) 도입
+- **구현 완료**:
+  - **ILlmPort 확장**: `askWithTools()` 메서드 + `ToolDefinition`, `ToolCall`, `ToolResult`, `ToolExchangeEntry`, `LlmToolResponse` 타입
+  - **VertexAiAdapter**: `askWithTools()` 구현 — `functionDeclarations` + `toolConfig: AUTO`, 멀티턴 `toolExchanges` 지원
+  - **AiManager.buildToolDefinitions()**: 19개 정적 Core 도구 + 동적 MCP 외부 도구 + `suggest` 도구 (사용자 선택지 제시)
+  - **AiManager.processWithTools()**: 멀티턴 도구 루프 (MAX_TOOL_TURNS=10), 도구 호출 → 실행 → 결과 피드백 → 다음 호출 반복
+  - **executeToolCall()**: 19개 Core 도구 + `mcp_` 접두사 동적 MCP 도구 라우팅
+  - **buildToolSystemPrompt()**: 액션 JSON 샘플 제거, 도구 사용 규칙만 명시 (프롬프트 60% 축소)
+  - **SSE 스트리밍**: `/api/chat/stream` `mode:'tools'` → 도구 호출 진행 상황 실시간 전달
+  - **Core.requestActionWithTools()**: 파사드 패스스루 + `onToolCall` 콜백
+- **레거시 공존**: 기존 `process()` (JSON 모드) + `planOnly()`/`executePlan()` 유지. 프론트엔드에서 `mode:'tools'` 플래그로 전환
+- **향후**: 프론트엔드 전환 완료 후 레거시 JSON 모드 제거, FirebatPlanSchema/Zod 파싱 코드 정리
 - **3개 AI 역할 정리**:
   | AI | 역할 | Core 접근 방식 |
   |---|---|---|
   | 외부 AI (Claude Code 등) | 외부에서 Firebat 조작 | MCP 서버 (stdio/SSE) |
   | User AI (Gemini) | 어드민 채팅 요청 처리 | Function Calling → Core 메서드 |
   | Core AI (v1+ 삼위일체) | 시스템 자기진화/최적화 | Core 내부 직접 호출 |
-- **기대 효과**: 프롬프트 규칙 대폭 축소, 액션 파싱 코드 제거, AI 오동작 구조적 차단
+
+### Capability-Provider 순서 사용자 정의 (v0.1, 2026-04-15)
+- **5-mode 시스템 제거**: `CapabilityMode` (api-first/local-first/api-only/local-only/manual) → `providers: string[]` 단일 순서 배열
+- **UI**: 설정 모달 기능 탭에서 위/아래 화살표로 provider 순서 변경
+- **resolve()**: 사용자 정의 순서 우선, 미설정 시 api provider 기본
+- **TaskManager**: resolvePreferredProvider/tryFallbackProvider가 settings.providers 순서 기반으로 동작
 
 ### Phase 4: 배포 분리 (4/23 Ubuntu 26.04)
 - **4-1 3-Tier Docker 구성**: EasyPanel에 core/renderer/admin 3 컨테이너

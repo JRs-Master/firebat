@@ -64,7 +64,7 @@ export class TaskManager {
         ? rawInput as Record<string, unknown>
         : rawInput !== undefined ? { data: rawInput } : {};
       this.log.info(`[Pipeline] Step ${i + 1}/${steps.length}: ${step.type}`);
-      this.log.debug(`[Pipeline] Step ${i + 1} input: ${JSON.stringify(stepInput)?.slice(0, 500)}`);
+
       onPipelineStep?.(i, 'start');
 
       try {
@@ -92,7 +92,7 @@ export class TaskManager {
             prev = (res.data && typeof res.data === 'object' && 'success' in res.data && 'data' in res.data)
               ? res.data.data
               : res.data;
-            this.log.debug(`[Pipeline] Step ${i + 1} output: ${JSON.stringify(prev)?.slice(0, 500)}`);
+
             onPipelineStep?.(i, 'done');
             break;
           }
@@ -103,7 +103,7 @@ export class TaskManager {
             const res = await this.core.callMcpTool(step.server!, step.tool!, args);
             if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] MCP_CALL 실패: ${res.error}` }; }
             prev = res.data;
-            this.log.debug(`[Pipeline] Step ${i + 1} output: ${JSON.stringify(prev)?.slice(0, 500)}`);
+
             onPipelineStep?.(i, 'done');
             break;
           }
@@ -111,7 +111,7 @@ export class TaskManager {
             const res = await this.core.networkFetch(step.url!, { method: step.method || 'GET', body: step.body, headers: step.headers });
             if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] NETWORK_REQUEST 실패: ${res.error}` }; }
             prev = res.data;
-            this.log.debug(`[Pipeline] Step ${i + 1} output: ${JSON.stringify(prev)?.slice(0, 500)}`);
+
             onPipelineStep?.(i, 'done');
             break;
           }
@@ -120,7 +120,7 @@ export class TaskManager {
             const res = await this.llm.askText(`${step.instruction}\n\n---\n${inputText}\n---`, '너는 데이터 추출기다. 위 구분선(---) 안의 원본 데이터에서 요청된 내용만 그대로 추출하라. 규칙: 1) 원본에 없는 내용을 추가하지 마라. 2) 원본의 순서와 내용을 변경하지 마라. 3) 한국어로 출력. 4) 결과만 출력하고 설명을 붙이지 마라. 5) 원본 데이터에 요청한 정보가 없으면 "요청하신 정보를 찾을 수 없습니다."라고만 답하라.');
             if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] LLM_TRANSFORM 실패: ${res.error}` }; }
             prev = res.data;
-            this.log.debug(`[Pipeline] Step ${i + 1} output: ${JSON.stringify(prev)?.slice(0, 500)}`);
+
             onPipelineStep?.(i, 'done');
             break;
           }
@@ -140,26 +140,32 @@ export class TaskManager {
     return { success: true, data: prev };
   }
 
-  /** Capability 모드에 따라 preferred provider 경로로 교체 (실행 전) */
+  /** Capability 설정 순서에 따라 preferred provider 경로로 교체 (실행 전) */
   private async resolvePreferredProvider(path: string): Promise<string> {
     const cache = await this.getCapabilityCache();
     const current = cache.get(path);
-    if (!current?.capability) return path; // 시스템 모듈이 아니면 그대로
+    if (!current?.capability) return path;
 
     const settings = this.core.getCapabilitySettings(current.capability);
-    const mode = settings.mode || 'api-first';
-    const preferred = mode === 'local-first' || mode === 'local-only' ? 'local' : 'api';
+    if (settings.providers.length === 0) return path; // 순서 미설정이면 그대로
 
-    // 이미 preferred 타입이면 그대로
-    if (current.providerType === preferred) return path;
-
-    // preferred 타입의 대체 provider 찾기
-    for (const [altPath, info] of cache) {
-      if (altPath !== path && info.capability === current.capability && info.providerType === preferred) {
-        return altPath;
+    // 사용자 정의 순서에서 첫 번째로 존재하는 provider 경로 반환
+    for (const name of settings.providers) {
+      for (const [altPath, info] of cache) {
+        if (info.capability === current.capability && altPath !== path) {
+          // moduleName 매칭: 경로에서 모듈명 추출
+          const pathModName = altPath.split('/').slice(-2, -1)[0];
+          if (pathModName === name || info.capability === current.capability) {
+            // 첫 번째 우선순위 provider가 현재와 다르면 교체
+            if (name !== path.split('/').slice(-2, -1)[0]) {
+              const preferred = [...cache.entries()].find(([, i]) => i.capability === current.capability && altPath.includes(name));
+              if (preferred) return preferred[0];
+            }
+          }
+        }
       }
     }
-    return path; // 대체가 없으면 그대로
+    return path;
   }
 
   /** EXECUTE 실패 시 같은 capability의 대체 provider 자동 폴백 */
@@ -169,26 +175,27 @@ export class TaskManager {
     if (!failed?.capability) return null;
 
     // 같은 capability의 다른 provider 찾기
-    const alternatives: { path: string; providerType: string }[] = [];
+    const alternatives: { path: string; providerType: string; moduleName: string }[] = [];
     for (const [path, info] of cache) {
       if (path !== failedPath && info.capability === failed.capability) {
-        alternatives.push({ path, providerType: info.providerType });
+        const moduleName = path.split('/').slice(-2, -1)[0];
+        alternatives.push({ path, providerType: info.providerType, moduleName });
       }
     }
     if (alternatives.length === 0) return null;
 
-    // Capability 모드에 따라 정렬 (api-first → api 우선, local-first → local 우선)
+    // 사용자 정의 순서로 정렬
     const settings = this.core.getCapabilitySettings(failed.capability);
-    const mode = settings.mode || 'api-first';
-    const preferred = mode === 'local-first' || mode === 'local-only' ? 'local' : 'api';
-    alternatives.sort((a, b) => {
-      const aMatch = a.providerType === preferred ? 0 : 1;
-      const bMatch = b.providerType === preferred ? 0 : 1;
-      return aMatch - bMatch;
-    });
+    if (settings.providers.length > 0) {
+      alternatives.sort((a, b) => {
+        const aIdx = settings.providers.indexOf(a.moduleName);
+        const bIdx = settings.providers.indexOf(b.moduleName);
+        return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+      });
+    }
 
     for (const alt of alternatives) {
-      this.log.info(`[Pipeline] 폴백 시도: ${failedPath} → ${alt.path} (${alt.providerType}, mode=${mode})`);
+      this.log.info(`[Pipeline] 폴백 시도: ${failedPath} → ${alt.path} (${alt.providerType})`);
       try {
         const res = await this.core.sandboxExecute(alt.path, input);
         if (res.success) {

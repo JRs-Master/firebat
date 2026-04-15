@@ -24,6 +24,9 @@ export function getInfra(): FirebatInfraContainer {
   if (!globalForInfra.firebatInfra) {
     const log = new ConsoleLogAdapter();
 
+    // Vault에 logger 주입 (부팅 전 console.error 대신 ILogPort 사용)
+    vault.setLogger(log);
+
     // Sandbox
     const sandbox = new ProcessSandboxAdapter();
     sandbox.setVault(vault);

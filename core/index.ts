@@ -57,7 +57,7 @@ export class FirebatCore {
     this.schedule = new ScheduleManager(this, infra.cron, infra.log);
     this.ai = new AiManager(this, infra.llm, infra.log);
 
-    infra.log.debug('[FirebatCore] Boot sequence initialized. 11 managers bound.');
+
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -66,6 +66,15 @@ export class FirebatCore {
 
   async requestAction(prompt: string, history: ChatMessage[] = [], opts?: AiRequestOpts) {
     return this.ai.process(prompt, history, opts);
+  }
+
+  async requestActionWithTools(
+    prompt: string,
+    history: ChatMessage[] = [],
+    opts?: AiRequestOpts,
+    onToolCall?: (info: { name: string; status: 'start' | 'done' | 'error'; error?: string }) => void,
+  ) {
+    return this.ai.processWithTools(prompt, history, opts, onToolCall);
   }
 
   async planOnly(prompt: string, history: ChatMessage[] = [], opts?: AiRequestOpts) {

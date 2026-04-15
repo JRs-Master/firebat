@@ -61,6 +61,23 @@ function extractTrainingJson(message: string): string | null {
  * - 콘솔 출력 병행
  */
 export class ConsoleLogAdapter implements ILogPort {
+  private debugEnabled = false;
+
+  setDebug(enabled: boolean): void {
+    this.debugEnabled = enabled;
+  }
+
+  debug(message: string, meta?: LogMeta): void {
+    if (!this.debugEnabled) return;
+    const time = new Date().toISOString();
+    const line = meta
+      ? `[${time}] [DEBUG] ${message} ${JSON.stringify(meta)}`
+      : `[${time}] [DEBUG] ${message}`;
+
+    console.log(line);
+    writeToFile(appLogPath(), line);
+  }
+
   info(message: string, meta?: LogMeta): void {
     const time = new Date().toISOString();
     const line = meta
@@ -97,13 +114,4 @@ export class ConsoleLogAdapter implements ILogPort {
     writeToFile(appLogPath(), line);
   }
 
-  debug(message: string, meta?: LogMeta): void {
-    const time = new Date().toISOString();
-    const line = meta
-      ? `[${time}] [DEBUG] ${message} ${JSON.stringify(meta)}`
-      : `[${time}] [DEBUG] ${message}`;
-
-    // debug는 콘솔만, 파일에는 안 씀
-    console.log(line);
-  }
 }

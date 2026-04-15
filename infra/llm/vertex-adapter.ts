@@ -1,4 +1,4 @@
-import { ILlmPort, LlmCallOpts, ChatMessage, LlmJsonResponse } from '../../core/ports';
+import { ILlmPort, LlmCallOpts, ChatMessage, LlmJsonResponse, ToolDefinition, ToolExchangeEntry, LlmToolResponse } from '../../core/ports';
 import { InfraResult } from '../../core/types';
 import { GoogleGenAI } from '@google/genai';
 import { DEFAULT_MODEL, DEFAULT_VERTEX_LOCATION, LLM_TIMEOUT_MS, LLM_TEMPERATURE_JSON, LLM_TEMPERATURE_TEXT } from '../config';
@@ -85,6 +85,99 @@ export class VertexAiAdapter implements ILlmPort {
       }
     } catch (e: any) {
       return { success: false, error: `[VertexAI] ask 실패: ${e.message}` };
+    }
+  }
+
+  async askWithTools(prompt: string, systemPrompt: string, tools: ToolDefinition[], history: ChatMessage[] = [], toolExchanges: ToolExchangeEntry[] = [], opts?: LlmCallOpts): Promise<InfraResult<LlmToolResponse>> {
+    const ai = this.getClient();
+    if (!ai) return { success: false, error: 'Vertex AI API 키가 누락되었습니다. 설정(톱니바퀴)에서 Vertex AI 키를 입력해주세요.' };
+
+    const model = opts?.model ?? this.defaultModel;
+    try {
+      // 대화 히스토리 → contents
+      const contents: Array<{ role: 'user' | 'model'; parts: Array<Record<string, unknown>> }> = history.map(h => ({
+        role: (h.role === 'assistant' ? 'model' : 'user') as 'user' | 'model',
+        parts: [{ text: typeof h.content === 'string' && h.content.trim() ? h.content : JSON.stringify(h) }],
+      }));
+      // 사용자 프롬프트
+      contents.push({ role: 'user', parts: [{ text: prompt }] });
+
+      // 멀티턴 도구 교환 히스토리 추가 (이전 턴의 호출 → 결과)
+      for (const exchange of toolExchanges) {
+        // 모델의 도구 호출
+        contents.push({
+          role: 'model',
+          parts: exchange.toolCalls.map(tc => ({
+            functionCall: { name: tc.name, args: tc.args },
+          })),
+        });
+        // 도구 실행 결과
+        contents.push({
+          role: 'user',
+          parts: exchange.toolResults.map(tr => ({
+            functionResponse: { name: tr.name, response: tr.result },
+          })),
+        });
+      }
+
+      // ToolDefinition[] → Gemini functionDeclarations 변환
+      const functionDeclarations = tools.map(t => ({
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+      }));
+
+      const supportsThinking = model.includes('2.5');
+      const response = await this.withTimeout(
+        ai.models.generateContent({
+          model,
+          contents,
+          config: {
+            systemInstruction: systemPrompt,
+            temperature: LLM_TEMPERATURE_TEXT,
+            tools: [{ functionDeclarations }],
+            toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+            ...(supportsThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+          } as Record<string, unknown>,
+        }),
+        LLM_TIMEOUT_MS,
+      );
+
+      // 응답 파싱 — 텍스트 파트와 functionCall 파트 분리
+      const textParts: string[] = [];
+      const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+
+      const candidates = (response as unknown as Record<string, unknown>).candidates as Array<Record<string, unknown>> | undefined;
+      if (candidates && candidates.length > 0) {
+        const parts = (candidates[0].content as Record<string, unknown>)?.parts as Array<Record<string, unknown>> | undefined;
+        if (parts) {
+          for (const part of parts) {
+            if (part.text && typeof part.text === 'string') {
+              textParts.push(part.text);
+            }
+            if (part.functionCall && typeof part.functionCall === 'object') {
+              const fc = part.functionCall as Record<string, unknown>;
+              toolCalls.push({
+                name: fc.name as string,
+                args: (fc.args as Record<string, unknown>) ?? {},
+              });
+            }
+          }
+        }
+      }
+
+      // response.text 폴백 (candidates 파싱 실패 시)
+      if (textParts.length === 0 && toolCalls.length === 0) {
+        const fallbackText = response.text || '';
+        if (fallbackText) textParts.push(fallbackText);
+      }
+
+      return {
+        success: true,
+        data: { text: textParts.join(''), toolCalls },
+      };
+    } catch (e: any) {
+      return { success: false, error: `[VertexAI] askWithTools 실패: ${e.message}` };
     }
   }
 

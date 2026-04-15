@@ -22,13 +22,9 @@ export const BUILTIN_CAPABILITIES: Record<string, CapabilityDef> = {
   'pdf-gen':      { label: 'PDF 생성', description: 'HTML/마크다운 → PDF' },
 };
 
-/** Provider 선택 모드 */
-export type CapabilityMode = 'api-first' | 'local-first' | 'api-only' | 'local-only' | 'manual';
-
-/** capability별 설정 */
+/** capability별 설정 — providers 배열 순서가 곧 실행 순서 */
 export interface CapabilitySettings {
-  mode: CapabilityMode;
-  providers: string[]; // manual 모드에서 시도 순서
+  providers: string[]; // 실행 우선순위 순서 (moduleName 배열)
 }
 
 /** capability에 연결된 provider 정보 */

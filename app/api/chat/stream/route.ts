@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
 import { storePlan } from '../plan-cache';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
+import type { FirebatCore } from '../../../../core';
 
 /**
  * Plan-Execute SSE 스트리밍 엔드포인트
@@ -15,7 +16,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  const { prompt, config, history = [], autoExecute = false } = await req.json();
+  const { prompt, config, history = [], autoExecute = false, mode } = await req.json();
 
   if (!prompt) {
     return new Response(JSON.stringify({ error: 'prompt is required' }), { status: 400 });
@@ -24,6 +25,11 @@ export async function POST(req: NextRequest) {
   const isDemo = auth.role === 'demo';
   const opts = { model: config?.model as string | undefined, isDemo };
   const core = getCore();
+
+  // Function Calling 모드
+  if (mode === 'tools') {
+    return handleToolsMode(core, prompt, history, opts);
+  }
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -117,6 +123,74 @@ export async function POST(req: NextRequest) {
       });
 
       send('result', result);
+      controller.close();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
+}
+
+/** Function Calling 모드 — 도구 호출 루프를 SSE로 스트리밍 */
+function handleToolsMode(
+  core: FirebatCore,
+  prompt: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+  opts: { model?: string; isDemo: boolean },
+) {
+  const encoder = new TextEncoder();
+
+  const toolLabel = (name: string): string => {
+    switch (name) {
+      case 'execute': return '모듈 실행 중';
+      case 'mcp_call': return '외부 서비스 연결 중';
+      case 'network_request': return 'API 호출 중';
+      case 'write_file': return '파일 저장 중';
+      case 'read_file': return '파일 읽는 중';
+      case 'save_page': return '페이지 저장 중';
+      case 'delete_page': return '페이지 삭제 중';
+      case 'schedule_task': return '스케줄 등록 중';
+      case 'cancel_task': return '스케줄 해제 중';
+      case 'run_task': return '파이프라인 실행 중';
+      case 'request_secret': return 'API 키 요청';
+      case 'suggest': return '선택지 제시';
+      default: return name.startsWith('mcp_') ? '외부 서비스 연결 중' : name;
+    }
+  };
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event: string, data: unknown) => {
+        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+      };
+
+      let stepIndex = 0;
+
+      const result = await core.requestActionWithTools(prompt, history, opts, (info) => {
+        send('step', {
+          index: stepIndex,
+          type: info.name,
+          status: info.status,
+          description: toolLabel(info.name),
+          error: info.error,
+        });
+        if (info.status !== 'start') stepIndex++;
+      });
+
+      send('result', {
+        success: result.success,
+        reply: result.reply,
+        executedActions: result.executedActions,
+        suggestions: result.data && typeof result.data === 'object' && 'suggestions' in result.data
+          ? (result.data as Record<string, unknown>).suggestions
+          : undefined,
+        error: result.error,
+      });
       controller.close();
     },
   });

@@ -4,6 +4,19 @@ import fs from 'fs';
 
 export class VaultAdapter {
   private db: Database.Database;
+  private logger: { error(msg: string): void } | null = null;
+
+  /** ILogPort 주입 — boot 시 log 어댑터 생성 후 호출 */
+  setLogger(log: { error(msg: string): void }): void {
+    this.logger = log;
+  }
+
+  private logError(msg: string, e: unknown): void {
+    const errMsg = e instanceof Error ? e.message : String(e);
+    if (this.logger) {
+      this.logger.error(`${msg}: ${errMsg}`);
+    }
+  }
 
   constructor() {
     const dbPath = path.resolve(process.cwd(), 'data', 'vault.db');
@@ -34,7 +47,7 @@ export class VaultAdapter {
       const result = stmt.get(key) as { value: string } | undefined;
       return result ? result.value : null;
     } catch (e) {
-      console.error('[Vault] Error getting secret:', e);
+      this.logError('[Vault] Error getting secret', e);
       return null;
     }
   }
@@ -51,7 +64,7 @@ export class VaultAdapter {
       stmt.run(key, value);
       return true;
     } catch (e) {
-      console.error('[Vault] Error setting secret:', e);
+      this.logError('[Vault] Error setting secret', e);
       return false;
     }
   }
@@ -62,7 +75,7 @@ export class VaultAdapter {
       stmt.run(key);
       return true;
     } catch (e) {
-      console.error('[Vault] Error deleting secret:', e);
+      this.logError('[Vault] Error deleting secret', e);
       return false;
     }
   }
@@ -73,7 +86,7 @@ export class VaultAdapter {
       const stmt = this.db.prepare('SELECT key FROM secrets ORDER BY key');
       return (stmt.all() as Array<{ key: string }>).map(row => row.key);
     } catch (e) {
-      console.error('[Vault] Error listing keys:', e);
+      this.logError('[Vault] Error listing keys', e);
       return [];
     }
   }
@@ -84,7 +97,7 @@ export class VaultAdapter {
       const stmt = this.db.prepare('SELECT key FROM secrets WHERE key LIKE ? ORDER BY key');
       return (stmt.all(`${prefix}%`) as Array<{ key: string }>).map(row => row.key);
     } catch (e) {
-      console.error('[Vault] Error listing keys by prefix:', e);
+      this.logError('[Vault] Error listing keys by prefix', e);
       return [];
     }
   }
