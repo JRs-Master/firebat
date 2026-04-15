@@ -14,7 +14,7 @@ import os from 'os';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
 /** 공통 키 파일 경로 (~/.firebat/gcp-oauth.keys.json) */
-const FIREBAT_DIR = path.join(os.homedir(), '.firebat');
+const FIREBAT_DIR = path.join(/* turbopackIgnore: true */ os.homedir(), '.firebat');
 const KEYS_PATH = path.join(FIREBAT_DIR, 'gcp-oauth.keys.json');
 
 /** 서비스별 스코프 + credentials 경로 */
@@ -25,7 +25,7 @@ const OAUTH_SERVICES: Record<string, {
 }> = {
   gmail: {
     credentialsPath: path.join(FIREBAT_DIR, 'credentials-gmail.json'),
-    legacyPaths: [path.join(os.homedir(), '.gmail-mcp', 'credentials.json')],
+    legacyPaths: [path.join(/* turbopackIgnore: true */ os.homedir(), '.gmail-mcp', 'credentials.json')],
     scopes: [
       'https://www.googleapis.com/auth/gmail.modify',
       'https://www.googleapis.com/auth/gmail.send',

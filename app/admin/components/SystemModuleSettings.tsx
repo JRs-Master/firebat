@@ -52,6 +52,35 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
       { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '30000', description: '마크다운 결과 최대 글자 수', defaultValue: 30000 },
     ],
   },
+  'naver-search': {
+    title: '네이버 검색 API',
+    fields: [
+      { key: 'naverClientId', label: 'Client ID', type: 'secret', secretName: 'NAVER_CLIENT_ID', placeholder: '네이버 개발자센터 → 앱 → Client ID', description: '네이버 검색 API Client ID' },
+      { key: 'naverClientSecret', label: 'Client Secret', type: 'secret', secretName: 'NAVER_CLIENT_SECRET', placeholder: '네이버 개발자센터 → 앱 → Client Secret', description: '네이버 검색 API Client Secret' },
+    ],
+  },
+  'naver-ads': {
+    title: '네이버 광고 키워드 도구',
+    fields: [
+      { key: 'naverAdApiKey', label: 'API 키', type: 'secret', secretName: 'NAVER_AD_API_KEY', placeholder: '네이버 검색광고 → API 사용 관리', description: 'API License Key' },
+      { key: 'naverAdSecretKey', label: 'Secret 키', type: 'secret', secretName: 'NAVER_AD_SECRET_KEY', placeholder: 'HMAC 서명에 사용', description: 'API Secret Key' },
+      { key: 'naverAdCustomerId', label: 'Customer ID', type: 'secret', secretName: 'NAVER_AD_CUSTOMER_ID', placeholder: '광고주 ID (숫자)', description: '네이버 검색광고 고객 ID' },
+    ],
+  },
+  'kiwoom': {
+    title: '키움증권 REST API',
+    fields: [
+      { key: 'kiwoomAppKey', label: 'App Key', type: 'secret', secretName: 'KIWOOM_APP_KEY', placeholder: '키움 Open API → 앱 등록', description: '키움증권 API App Key' },
+      { key: 'kiwoomAppSecret', label: 'App Secret', type: 'secret', secretName: 'KIWOOM_APP_SECRET', placeholder: '키움 Open API → 앱 등록', description: '키움증권 API App Secret' },
+    ],
+  },
+  'korea-invest': {
+    title: '한국투자증권 Open API',
+    fields: [
+      { key: 'kisAppKey', label: 'App Key', type: 'secret', secretName: 'KIS_APP_KEY', placeholder: '한투 API 포털 → 앱 등록', description: '한국투자증권 API App Key' },
+      { key: 'kisAppSecret', label: 'App Secret', type: 'secret', secretName: 'KIS_APP_SECRET', placeholder: '한투 API 포털 → 앱 등록', description: '한국투자증권 API App Secret' },
+    ],
+  },
   'mcp-server': {
     title: 'Firebat MCP 서버',
     fields: [],  // MCP 서버는 커스텀 렌더링 (토큰 관리 + JSON 설정)
