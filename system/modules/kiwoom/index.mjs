@@ -163,7 +163,6 @@ async function callApi(base, token, appKey, appSecret, apiId, params = {}) {
   if (!category) throw new Error(`알 수 없는 API ID: ${apiId}. 지원되는 API 목록은 키움 REST API 문서를 참고하세요.`);
 
   const url = `${base}/api/dostk/${category}`;
-  const body = { api_id: apiId, ...params };
 
   const resp = await fetch(url, {
     method: 'POST',
@@ -172,8 +171,11 @@ async function callApi(base, token, appKey, appSecret, apiId, params = {}) {
       'authorization': `Bearer ${token}`,
       'appkey': appKey,
       'secretkey': appSecret,
+      'api-id': apiId,
+      'cont-yn': 'N',
+      'next-key': '',
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(params),
     signal: AbortSignal.timeout(15000),
   });
 
