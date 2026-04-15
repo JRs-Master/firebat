@@ -61,7 +61,7 @@ export class VaultAdapter {
         value = excluded.value,
         updated_at = CURRENT_TIMESTAMP
       `);
-      stmt.run(key, value);
+      stmt.run(key, value.trim());
       return true;
     } catch (e) {
       this.logError('[Vault] Error setting secret', e);
