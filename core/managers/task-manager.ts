@@ -217,11 +217,18 @@ export class TaskManager {
       this.log.info(`[Pipeline] 폴백 시도: ${failedPath} → ${alt.path} (${alt.providerType})`);
       try {
         const res = await this.core.sandboxExecute(alt.path, input);
-        if (res.success) {
-          this.log.info(`[Pipeline] 폴백 성공: ${alt.path}`);
-          return { data: res.data };
+        if (!res.success) {
+          this.log.warn(`[Pipeline] 폴백 실패: ${alt.path} — ${res.error}`);
+          continue;
         }
-        this.log.warn(`[Pipeline] 폴백 실패: ${alt.path} — ${res.error}`);
+        // 모듈 레벨 실패 체크 (API 키 누락 등)
+        if (res.data && typeof res.data === 'object' && 'success' in res.data && res.data.success === false) {
+          const moduleErr = (res.data as unknown as Record<string, unknown>).error || '';
+          this.log.warn(`[Pipeline] 폴백 모듈 실패: ${alt.path} — ${moduleErr}`);
+          continue;
+        }
+        this.log.info(`[Pipeline] 폴백 성공: ${alt.path}`);
+        return { data: res.data };
       } catch (e: any) {
         this.log.warn(`[Pipeline] 폴백 예외: ${alt.path} — ${e.message}`);
       }
