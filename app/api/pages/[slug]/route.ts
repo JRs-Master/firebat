@@ -1,5 +1,6 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
+import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
 function safeDecodeSlug(slug: string): string {
   try { return decodeURIComponent(slug); }
@@ -7,9 +8,11 @@ function safeDecodeSlug(slug: string): string {
 }
 
 export async function GET(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const rawSlug = (await params).slug;
   const slug = safeDecodeSlug(rawSlug);
   const result = await getCore().getPage(slug);

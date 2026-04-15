@@ -13,10 +13,11 @@ type Props = {
   onClose: () => void;
   onSave: () => void;
   onOpenModuleSettings?: (moduleName: string) => void;
+  initialTab?: 'general' | 'secrets' | 'mcp' | 'capabilities' | 'system';
 };
 
-export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings }: Props) {
-  const [settingsTab, setSettingsTab] = useState<'general' | 'secrets' | 'mcp' | 'capabilities' | 'system'>('general');
+export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
+  const [settingsTab, setSettingsTab] = useState<'general' | 'secrets' | 'mcp' | 'capabilities' | 'system'>(initialTab ?? 'general');
 
   // 일반 설정
   const [userTimezone, setUserTimezone] = useState('Asia/Seoul');

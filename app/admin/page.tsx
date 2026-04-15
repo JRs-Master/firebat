@@ -331,6 +331,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
 // ─── 메인 ────────────────────────────────────────────────────────────────────
 export default function AdminConsole() {
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'secrets' | 'mcp' | 'capabilities' | 'system' | undefined>(undefined);
   const [isDemo, setIsDemo] = useState(false);
   const [aiModel, setAiModel] = useState('gemini-3-flash-preview');
   const [editingFile, setEditingFile] = useState<string | null>(null);
@@ -447,9 +448,10 @@ export default function AdminConsole() {
             isDemo={isDemo}
             aiModel={aiModel}
             onAiModelChange={setAiModel}
-            onClose={() => setShowSettings(false)}
-            onSave={() => setShowSettings(false)}
+            onClose={() => { setShowSettings(false); setSettingsInitialTab(undefined); }}
+            onSave={() => { setShowSettings(false); setSettingsInitialTab(undefined); }}
             onOpenModuleSettings={(name) => { setShowSettings(false); setEditingModule(name); }}
+            initialTab={settingsInitialTab}
           />
         )}
 
@@ -458,6 +460,7 @@ export default function AdminConsole() {
           <SystemModuleSettings
             moduleName={editingModule}
             onClose={() => setEditingModule(null)}
+            onBack={() => { setEditingModule(null); setSettingsInitialTab('system'); setShowSettings(true); }}
           />
         )}
       </div>

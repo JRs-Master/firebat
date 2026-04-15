@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
 /** 공통 키 파일 경로 (~/.firebat/gcp-oauth.keys.json) */
 const FIREBAT_DIR = path.join(os.homedir(), '.firebat');
@@ -78,6 +79,8 @@ export function getServiceConfig(key: string) {
 
 /** POST — OAuth URL 생성 */
 export async function POST(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   try {
     const { serverName } = await req.json();
     if (!serverName) {
@@ -137,6 +140,8 @@ export async function POST(req: NextRequest) {
 
 /** DELETE — credentials 삭제 (재인증용) */
 export async function DELETE(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const serverName = req.nextUrl.searchParams.get('server');
   if (!serverName) {
     return NextResponse.json({ success: false, error: 'server 필수' }, { status: 400 });

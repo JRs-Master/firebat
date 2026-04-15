@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, FileText, Code, Settings2, ExternalLink } from 'lucide-react';
+import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, FileText, Code, Settings2, ExternalLink, ArrowLeft } from 'lucide-react';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
 type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret';
@@ -84,9 +84,10 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
 interface Props {
   moduleName: string;
   onClose: () => void;
+  onBack?: () => void;
 }
 
-export function SystemModuleSettings({ moduleName, onClose }: Props) {
+export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
   const schema = MODULE_SETTINGS_SCHEMA[moduleName];
   const [settings, setSettings] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
@@ -249,16 +250,17 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
   // ── MCP 서버 커스텀 렌더링 ─────────────────────────────────────────────────
   if (moduleName === 'mcp-server') {
     return (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm">
-        <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[90vh]">
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
+        <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
             <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
+              {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors mr-1"><ArrowLeft size={18} /></button>}
               <Server size={18} className="text-emerald-500" /> Firebat MCP 서버
             </h2>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
           </div>
 
-          <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto h-[55vh] sm:h-[60vh]">
+          <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto flex-1">
             <p className="text-[11px] sm:text-[12px] text-slate-400">
               외부 AI 도구(Claude Code, Cursor, VS Code 등)에서 이 파이어뱃 서버에 연결할 수 있습니다.
             </p>
@@ -387,15 +389,16 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
   // 스키마가 없는 모듈 — 기본 정보만 표시
   if (!schema) {
     return (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm">
-        <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[70vh] sm:max-h-[90vh]">
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
+        <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
             <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
+              {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors mr-1"><ArrowLeft size={18} /></button>}
               <Blocks size={18} className="text-indigo-500" /> {moduleName}
             </h2>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
           </div>
-          <div className="p-6 text-center text-slate-500 text-sm">
+          <div className="p-6 text-center text-slate-500 text-sm flex-1 flex items-center justify-center">
             이 모듈에 대한 설정 항목이 아직 정의되지 않았습니다.
           </div>
         </div>
@@ -404,11 +407,12 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm">
-      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[85vh] sm:max-h-[90vh]">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
+      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
         {/* 헤더 */}
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
           <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
+            {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors mr-1"><ArrowLeft size={18} /></button>}
             <Blocks size={18} className="text-indigo-500" /> {schema.title}
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
@@ -434,7 +438,7 @@ export function SystemModuleSettings({ moduleName, onClose }: Props) {
         )}
 
         {/* 설정 필드 */}
-        <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto h-[55vh] sm:h-[60vh]">
+        <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto flex-1">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 size={20} className="animate-spin text-slate-400" />

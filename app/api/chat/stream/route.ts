@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
 import { storePlan } from '../plan-cache';
+import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
 /**
  * Plan-Execute SSE 스트리밍 엔드포인트
@@ -12,13 +13,15 @@ import { storePlan } from '../plan-cache';
  *   error   — 오류
  */
 export async function POST(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const { prompt, config, history = [], autoExecute = false } = await req.json();
 
   if (!prompt) {
     return new Response(JSON.stringify({ error: 'prompt is required' }), { status: 400 });
   }
 
-  const isDemo = req.cookies.get('firebat_admin_token')?.value === 'demo';
+  const isDemo = auth.role === 'demo';
   const opts = { model: config?.model as string | undefined, isDemo };
   const core = getCore();
 

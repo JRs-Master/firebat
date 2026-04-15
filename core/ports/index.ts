@@ -212,6 +212,33 @@ export interface McpToolInfo {
   inputSchema?: any;
 }
 
+// ── 인증 ──────────────────────────────────────────────────────────────────────
+
+/** 통합 세션 — 로그인 세션(만료 있음) + API 토큰(만료 없음) */
+export interface AuthSession {
+  token: string;
+  type: 'session' | 'api';
+  role: 'admin' | 'demo';
+  label?: string;         // API 토큰 식별 라벨 (예: "MCP용")
+  createdAt: number;      // epoch ms
+  expiresAt?: number;     // epoch ms — undefined = 영구 (API 토큰)
+}
+
+export interface IAuthPort {
+  /** 세션 저장 */
+  saveSession(session: AuthSession): boolean;
+  /** 토큰으로 세션 조회 (만료 검사 포함, 만료 시 자동 삭제) */
+  getSession(token: string): AuthSession | null;
+  /** 세션 삭제 */
+  deleteSession(token: string): boolean;
+  /** 특정 타입의 모든 세션 목록 (마스킹 등은 매니저 책임) */
+  listSessions(type: 'session' | 'api'): AuthSession[];
+  /** 특정 타입의 모든 세션 삭제 */
+  deleteSessions(type: 'session' | 'api'): number;
+}
+
+// ── MCP 클라이언트 ──────────────────────────────────────────────────────────
+
 export interface IMcpClientPort {
   /** 등록된 MCP 서버 설정 목록 */
   listServers(): McpServerConfig[];
@@ -230,7 +257,7 @@ export interface IMcpClientPort {
 }
 
 /**
- * 9가지 권한을 모두 모아 Core에 주입하기 위한 단일 통제권 컨테이너
+ * 10가지 권한을 모두 모아 Core에 주입하기 위한 단일 통제권 컨테이너
  */
 export interface FirebatInfraContainer {
   storage: IStoragePort;
@@ -242,4 +269,5 @@ export interface FirebatInfraContainer {
   database: IDatabasePort;
   vault: IVaultPort;
   mcpClient: IMcpClientPort;
+  auth: IAuthPort;
 }

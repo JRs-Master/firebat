@@ -8,6 +8,7 @@ import { NextRequest } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import { readOAuthKeys, getServiceConfig, getOrigin } from '../route';
+import { requireAuth, isAuthError } from '../../../../../lib/auth-guard';
 
 function htmlResponse(title: string, body: string, type: 'success' | 'error' | 'info' = 'success') {
   const colors = { success: '#3b82f6', error: '#ef4444', info: '#64748b' };
@@ -42,6 +43,8 @@ function htmlResponse(title: string, body: string, type: 'success' | 'error' | '
 }
 
 export async function GET(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const code = req.nextUrl.searchParams.get('code');
   const state = req.nextUrl.searchParams.get('state');
   const error = req.nextUrl.searchParams.get('error');

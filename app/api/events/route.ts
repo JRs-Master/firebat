@@ -1,7 +1,11 @@
+import { NextRequest } from 'next/server';
 import { eventBus, type FirebatEvent } from '../../../lib/events';
+import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 
 /** GET /api/events — SSE 이벤트 스트림 (Core → 클라이언트 실시간 알림) */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const encoder = new TextEncoder();
 
   let unsubscribe: (() => void) | null = null;

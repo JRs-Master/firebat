@@ -8,10 +8,11 @@ import { SecretManager } from './managers/secret-manager';
 import { McpManager } from './managers/mcp-manager';
 import { CapabilityManager } from './managers/capability-manager';
 import { TaskManager } from './managers/task-manager';
-import type { FirebatInfraContainer, ILlmPort, McpServerConfig, CronScheduleOptions, PipelineStep } from './ports';
+import { AuthManager } from './managers/auth-manager';
+import type { ApiTokenInfo } from './managers/auth-manager';
+import type { FirebatInfraContainer, ILlmPort, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession } from './ports';
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
-import type { McpTokenInfo } from './managers/secret-manager';
 import { eventBus } from '../lib/events';
 
 /** AI 요청 옵션 — 요청별 모델/데모 모드 지정 */
@@ -38,6 +39,7 @@ export class FirebatCore {
   private readonly mcp: McpManager;
   private readonly capability: CapabilityManager;
   private readonly task: TaskManager;
+  private readonly authMgr: AuthManager;
 
   constructor(private readonly infra: FirebatInfraContainer) {
     // 매니저 생성 — 각 매니저는 자기 도메인의 인프라 포트를 직접 받음
@@ -48,13 +50,14 @@ export class FirebatCore {
     this.secret = new SecretManager(infra.vault, infra.storage);
     this.mcp = new McpManager(infra.mcpClient);
     this.capability = new CapabilityManager(infra.storage, infra.vault, infra.log);
+    this.authMgr = new AuthManager(infra.auth, infra.vault);
 
     // 크로스 도메인 매니저 — Core 참조 필요
     this.task = new TaskManager(this, infra.llm, infra.log);
     this.schedule = new ScheduleManager(this, infra.cron, infra.log);
     this.ai = new AiManager(this, infra.llm, infra.log);
 
-    infra.log.debug('[FirebatCore] Boot sequence initialized. 10 managers bound.');
+    infra.log.debug('[FirebatCore] Boot sequence initialized. 11 managers bound.');
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -218,22 +221,28 @@ export class FirebatCore {
   getVertexKey(key: string) { return this.secret.getSystem(key); }
   setVertexKey(key: string, value: string) { return this.secret.setSystem(key, value); }
 
-  // ── 관리자 인증 ──
-  getAdminCredentials() {
-    const id       = this.secret.getSystem('FIREBAT_ADMIN_ID')       ?? process.env.FIREBAT_ADMIN_ID       ?? 'admin';
-    const password = this.secret.getSystem('FIREBAT_ADMIN_PASSWORD') ?? process.env.FIREBAT_ADMIN_PASSWORD ?? 'admin';
-    return { id, password };
-  }
-  setAdminCredentials(newId?: string, newPassword?: string) {
-    if (newId)       this.secret.setSystem('FIREBAT_ADMIN_ID', newId);
-    if (newPassword) this.secret.setSystem('FIREBAT_ADMIN_PASSWORD', newPassword);
-  }
+  // ══════════════════════════════════════════════════════════════════════════
+  //  인증 → AuthManager
+  // ══════════════════════════════════════════════════════════════════════════
 
-  // ── MCP 토큰 ──
-  generateMcpToken(): string { return this.secret.generateMcpToken(); }
-  validateMcpToken(token: string): boolean { return this.secret.validateMcpToken(token); }
-  revokeMcpToken(): boolean { return this.secret.revokeMcpToken(); }
-  getMcpTokenInfo(): McpTokenInfo { return this.secret.getMcpTokenInfo(); }
+  /** 로그인 — 세션 토큰 발급. 실패 시 null */
+  login(id: string, password: string): AuthSession | null { return this.authMgr.login(id, password); }
+  /** 세션 토큰 검증 */
+  validateSession(token: string): AuthSession | null { return this.authMgr.validateSession(token); }
+  /** 로그아웃 */
+  logout(token: string): boolean { return this.authMgr.logout(token); }
+  /** 모든 종류의 토큰 검증 (세션 + API) */
+  validateToken(token: string): AuthSession | null { return this.authMgr.validateToken(token); }
+
+  // ── API 토큰 (MCP 등) ──
+  generateApiToken(label?: string): string { return this.authMgr.generateApiToken(label); }
+  validateApiToken(token: string): AuthSession | null { return this.authMgr.validateApiToken(token); }
+  revokeApiTokens(): number { return this.authMgr.revokeApiTokens(); }
+  getApiTokenInfo(): ApiTokenInfo { return this.authMgr.getApiTokenInfo(); }
+
+  // ── 관리자 자격증명 ──
+  getAdminCredentials() { return this.authMgr.getAdminCredentials(); }
+  setAdminCredentials(newId?: string, newPassword?: string) { this.authMgr.setAdminCredentials(newId, newPassword); }
 
   // ══════════════════════════════════════════════════════════════════════════
   //  시스템 설정 (얇은 패스스루 — 매니저 불필요)

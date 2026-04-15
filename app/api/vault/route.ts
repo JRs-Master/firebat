@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
+import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 
-function isDemo(req: NextRequest) {
-  return req.cookies.get('firebat_admin_token')?.value === 'demo';
-}
+// isDemo는 requireAuth의 auth.role로 확인
 
 const KEY_MAP: Record<string, string> = {
   vertex_api_key:  'VERTEX_AI_API_KEY',
@@ -20,7 +19,9 @@ function maskKey(key: string | null): { hasKey: boolean; maskedKey: string } {
 const PLAIN_KEYS = new Set(['vertex_location', 'vertex_project']);
 
 // Vertex AI 키 현황 조회
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   try {
     const core = getCore();
     const keys: Record<string, { hasKey: boolean; maskedKey: string }> = {};
@@ -38,7 +39,9 @@ export async function GET() {
 
 // Vertex AI 키 저장
 export async function POST(req: NextRequest) {
-  if (isDemo(req)) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
+  if (auth.role === 'demo') {
     return NextResponse.json({ success: false, error: '데모 모드에서는 설정을 변경할 수 없습니다.' }, { status: 403 });
   }
   try {

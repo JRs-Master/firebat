@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
+import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
-function isDemo(req: NextRequest) {
-  return req.cookies.get('firebat_admin_token')?.value === 'demo';
-}
+// isDemo는 requireAuth의 auth.role로 확인
 
 /** GET /api/vault/secrets — 사용자 시크릿 키 목록 (값은 마스킹) + 유저 모듈 필요 시크릿 */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   try {
     const core = getCore();
     const names = core.listUserSecrets();
@@ -30,7 +31,9 @@ export async function GET() {
 
 /** POST /api/vault/secrets — 사용자 시크릿 저장 { name, value } */
 export async function POST(req: NextRequest) {
-  if (isDemo(req)) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
+  if (auth.role === 'demo') {
     return NextResponse.json({ success: false, error: '데모 모드에서는 설정을 변경할 수 없습니다.' }, { status: 403 });
   }
   try {
@@ -57,7 +60,9 @@ export async function POST(req: NextRequest) {
 
 /** DELETE /api/vault/secrets?name=xxx — 사용자 시크릿 삭제 */
 export async function DELETE(req: NextRequest) {
-  if (isDemo(req)) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
+  if (auth.role === 'demo') {
     return NextResponse.json({ success: false, error: '데모 모드에서는 설정을 변경할 수 없습니다.' }, { status: 403 });
   }
   const name = req.nextUrl.searchParams.get('name');

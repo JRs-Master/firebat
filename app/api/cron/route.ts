@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
+import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 
 /** GET /api/cron — 크론 잡 목록 + 실행 로그 + 페이지 열기 알림 */
 export async function GET(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const core = getCore();
   const jobs = core.listCronJobs();
   const logs = core.getCronLogs(50);
@@ -17,6 +20,8 @@ export async function GET(req: NextRequest) {
 
 /** DELETE /api/cron?jobId=xxx — 크론 잡 해제, DELETE /api/cron?logs=clear — 로그 전체 삭제 */
 export async function DELETE(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const core = getCore();
 
   if (req.nextUrl.searchParams.get('logs') === 'clear') {
@@ -34,6 +39,8 @@ export async function DELETE(req: NextRequest) {
 
 /** PUT /api/cron — 크론 잡 수정 (해제 후 재등록) */
 export async function PUT(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   try {
     const body = await req.json();
     const { jobId, targetPath, cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description } = body;

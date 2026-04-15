@@ -17,15 +17,12 @@ const sessions = new Map<string, { transport: WebStandardStreamableHTTPServerTra
 
 /** Authorization 헤더에서 Bearer 토큰 추출 + 검증 */
 function validateBearerToken(req: NextRequest): boolean {
-  const core = getCore();
-  const tokenInfo = core.getMcpTokenInfo();
-  if (!tokenInfo.exists) return false;
-
   const authHeader = req.headers.get('authorization') ?? '';
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) return false;
 
-  return core.validateMcpToken(match[1]);
+  const core = getCore();
+  return !!core.validateApiToken(match[1]);
 }
 
 function unauthorizedResponse() {

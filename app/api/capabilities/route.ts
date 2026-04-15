@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
+import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 
 /** GET /api/capabilities — capability 목록 조회 (각 capability별 provider 수 포함) */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const core = getCore();
   const list = await core.listCapabilitiesWithProviders();
   return NextResponse.json({ success: true, capabilities: list });
@@ -10,6 +13,8 @@ export async function GET() {
 
 /** GET /api/capabilities?id=web-scrape — 특정 capability의 provider 목록 + 설정 */
 export async function POST(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const { id } = await req.json();
   if (!id) return NextResponse.json({ success: false, error: 'capability id 필요' }, { status: 400 });
 
@@ -29,6 +34,8 @@ export async function POST(req: NextRequest) {
 
 /** PATCH /api/capabilities — capability 설정 변경 (모드, 우선순위 등) */
 export async function PATCH(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const { id, settings, label, description } = await req.json();
   if (!id) return NextResponse.json({ success: false, error: 'capability id 필요' }, { status: 400 });
 

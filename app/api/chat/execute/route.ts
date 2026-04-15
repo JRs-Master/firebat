@@ -1,12 +1,15 @@
 import { NextRequest } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
 import { retrievePlan } from '../plan-cache';
+import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
 /**
  * Plan 실행 SSE 엔드포인트
  * 유저가 Plan을 확인한 후 실행 요청
  */
 export async function POST(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const { corrId, config } = await req.json();
 
   if (!corrId) {
@@ -19,7 +22,7 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: 'Plan이 만료되었거나 존재하지 않습니다. 다시 요청해 주세요.' }), { status: 404 });
   }
 
-  const isDemo = req.cookies.get('firebat_admin_token')?.value === 'demo';
+  const isDemo = auth.role === 'demo';
   const opts = { model: config?.model as string | undefined, isDemo };
   const core = getCore();
 

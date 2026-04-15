@@ -14,6 +14,7 @@ import { NodeCronAdapter } from './cron';
 import { vault } from './storage/vault-adapter';
 import { buildVertexAdapter, VERTEX_VAULT_KEYS } from './llm/factory';
 import { McpClientAdapter } from './mcp-client';
+import { VaultAuthAdapter } from './auth';
 import { DB_PATH, DEFAULT_MODEL, DEFAULT_VERTEX_LOCATION } from './config';
 
 /** 전체 인프라 싱글톤 */
@@ -55,6 +56,7 @@ export function getInfra(): FirebatInfraContainer {
       vault,
       mcpClient,
       llm,
+      auth: new VaultAuthAdapter(vault),
     };
 
     // nfo-style banner — 불꽃 그라데이션 (빨강→주황→노랑)

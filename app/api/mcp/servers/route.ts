@@ -7,13 +7,14 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
+import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
-function isDemo(req: NextRequest) {
-  return req.cookies.get('firebat_admin_token')?.value === 'demo';
-}
+// isDemo는 requireAuth의 auth.role로 확인
 
 /** GET — 등록된 MCP 서버 목록 */
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   try {
     const core = getCore();
     const servers = core.listMcpServers();
@@ -25,7 +26,9 @@ export async function GET() {
 
 /** POST — MCP 서버 추가/수정 */
 export async function POST(req: NextRequest) {
-  if (isDemo(req)) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
+  if (auth.role === 'demo') {
     return NextResponse.json({ success: false, error: '데모 모드에서는 설정을 변경할 수 없습니다.' }, { status: 403 });
   }
   try {
@@ -60,7 +63,9 @@ export async function POST(req: NextRequest) {
 
 /** DELETE — MCP 서버 제거 */
 export async function DELETE(req: NextRequest) {
-  if (isDemo(req)) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
+  if (auth.role === 'demo') {
     return NextResponse.json({ success: false, error: '데모 모드에서는 설정을 변경할 수 없습니다.' }, { status: 403 });
   }
   const name = req.nextUrl.searchParams.get('name');

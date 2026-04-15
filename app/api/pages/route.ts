@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
+import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const result = await getCore().listPages();
   if (!result.success) {
     return NextResponse.json({ success: false, error: result.error }, { status: 500 });
@@ -10,6 +13,8 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   try {
     const { slug, spec } = await req.json();
     if (!slug || !spec) {
@@ -28,6 +33,8 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   try {
     const { slug, spec } = await req.json();
     if (!slug || !spec) {
@@ -46,6 +53,8 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const auth = requireAuth(req);
+  if (isAuthError(auth)) return auth;
   const slug = req.nextUrl.searchParams.get('slug');
   if (!slug) {
     return NextResponse.json({ success: false, error: 'slug 파라미터가 필요합니다.' }, { status: 400 });
