@@ -59,6 +59,9 @@ export function Sidebar({
   // ⋯ 더보기 드롭다운 열린 항목 ID
   const [openMenu, setOpenMenu] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  // 비밀번호 입력 모달
+  const [pwModal, setPwModal] = useState<{ type: 'page' | 'project'; target: string } | null>(null);
+  const [pwInput, setPwInput] = useState('');
 
   const ENTRY_FILES = ['main.py', 'index.js', 'index.mjs', 'main.php', 'main.sh'];
 
@@ -157,17 +160,18 @@ export function Sidebar({
 
   // 페이지 visibility 변경
   const handleSetPageVisibility = async (slug: string, vis: 'public' | 'password' | 'private') => {
-    let password: string | undefined;
     if (vis === 'password') {
-      const pw = prompt('비밀번호를 입력하세요');
-      if (!pw) return; // 취소
-      password = pw;
+      setPwModal({ type: 'page', target: slug });
+      setPwInput('');
+      setOpenMenu(null);
+      setSelectedItem(null);
+      return;
     }
     try {
       await fetch(`/api/pages/${encodeURIComponent(slug)}/visibility`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visibility: vis, ...(password ? { password } : {}) }),
+        body: JSON.stringify({ visibility: vis }),
       });
       fetchPages();
     } catch {}
@@ -177,22 +181,47 @@ export function Sidebar({
 
   // 프로젝트 visibility 변경
   const handleSetProjectVisibility = async (name: string, vis: 'public' | 'password' | 'private') => {
-    let password: string | undefined;
     if (vis === 'password') {
-      const pw = prompt('비밀번호를 입력하세요');
-      if (!pw) return;
-      password = pw;
+      setPwModal({ type: 'project', target: name });
+      setPwInput('');
+      setOpenMenu(null);
+      setSelectedItem(null);
+      return;
     }
     try {
       await fetch('/api/fs/projects', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project: name, visibility: vis, ...(password ? { password } : {}) }),
+        body: JSON.stringify({ project: name, visibility: vis }),
       });
       refreshAll();
     } catch {}
     setOpenMenu(null);
     setSelectedItem(null);
+  };
+
+  // 비밀번호 모달 확인
+  const handlePwConfirm = async () => {
+    if (!pwModal || !pwInput.trim()) return;
+    try {
+      if (pwModal.type === 'page') {
+        await fetch(`/api/pages/${encodeURIComponent(pwModal.target)}/visibility`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ visibility: 'password', password: pwInput }),
+        });
+        fetchPages();
+      } else {
+        await fetch('/api/fs/projects', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project: pwModal.target, visibility: 'password', password: pwInput }),
+        });
+        refreshAll();
+      }
+    } catch {}
+    setPwModal(null);
+    setPwInput('');
   };
 
   // 모듈 엔트리 파일 열기 (캐시된 엔트리 정보 활용)
@@ -796,6 +825,46 @@ export function Sidebar({
         onClose={() => setSchedulingModule(null)}
         onSaved={() => { setSchedulingModule(null); window.dispatchEvent(new Event('firebat-refresh')); }}
       />
+    )}
+
+    {/* 비밀번호 설정 모달 */}
+    {pwModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => setPwModal(null)}>
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-xs overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="px-5 py-3 border-b border-slate-200 bg-slate-50">
+            <h3 className="text-sm font-bold text-slate-800">비밀번호 설정</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {pwModal.type === 'page' ? `"${pwModal.target}"` : `프로젝트 "${pwModal.target}"`} 접근 비밀번호
+            </p>
+          </div>
+          <div className="px-5 py-4 flex flex-col gap-3">
+            <input
+              type="password"
+              value={pwInput}
+              onChange={e => setPwInput(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handlePwConfirm()}
+              placeholder="비밀번호 입력"
+              autoFocus
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setPwModal(null)}
+                className="px-3 py-1.5 text-[12px] font-bold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={handlePwConfirm}
+                disabled={!pwInput.trim()}
+                className="px-4 py-1.5 text-[12px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     )}
   </>
   );
