@@ -125,7 +125,16 @@
       },
       "items": {
         "type": "array",
-        "description": "[estimate:performance-bulk] [{key, device, bid, keywordplus}] 배열"
+        "description": "[estimate:performance-bulk] [{key, device, bid, keywordplus}] 배열",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": { "type": "string", "description": "키워드 또는 소재 ID" },
+            "device": { "type": "string", "enum": ["PC", "MOBILE"], "description": "디바이스" },
+            "bid": { "type": "integer", "description": "입찰가" },
+            "keywordplus": { "type": "boolean", "description": "키워드 확장 여부" }
+          }
+        }
       },
       "subAction": {
         "type": "string",
