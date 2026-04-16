@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { Message, Conversation, INIT_MESSAGE, makeConv } from '../types';
 import { ConversationMeta } from '../components/Sidebar';
 
@@ -165,7 +166,6 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     setMessages(prev => [...prev, { id: `s-${id}`, role: 'system', isThinking: true }]);
     setLoading(true);
 
-    const requestStart = Date.now();
     try {
       const chatHistory = messages
         .filter(m => m.id !== 'system-init' && !m.isThinking)
@@ -182,7 +182,6 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: userPrompt, config: { model: aiModel }, history: chatHistory, mode: 'tools', ...(imageData ? { image: imageData } : {}) }),
       });
-      console.log(`[FETCH-DONE] +${Date.now() - requestStart}ms status=${res.status}`);
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error('스트림을 읽을 수 없습니다.');
@@ -205,12 +204,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           if (ev.event === 'chunk') {
             const chunkType = ev.data.type as 'text' | 'thinking';
             const chunkContent = ev.data.content as string;
-            console.log(`[CHUNK] +${Date.now() - requestStart}ms`, chunkType, chunkContent?.length);
             if (chunkType === 'thinking') {
-              setMessages(prev => prev.map(msg => {
+              flushSync(() => setMessages(prev => prev.map(msg => {
                 if (msg.id !== `s-${id}`) return msg;
                 return { ...msg, isThinking: true, streaming: false, statusText: undefined, thinkingText: (msg.thinkingText || '') + chunkContent };
-              }));
+              })));
             } else {
               setMessages(prev => prev.map(msg => {
                 if (msg.id !== `s-${id}`) return msg;

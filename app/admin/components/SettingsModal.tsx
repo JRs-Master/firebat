@@ -342,12 +342,12 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
   // ── 저장 ───────────────────────────────────────────────────────────────────
   const handleSave = async () => {
-    localStorage.setItem('firebat_model', aiModel);
+    localStorage.setItem('firebat_model', aiModel); // 폴백용
 
     await fetch('/api/settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ timezone: userTimezone }),
+      body: JSON.stringify({ timezone: userTimezone, aiModel }),
     }).catch(() => {});
 
     const vertexSaves = [

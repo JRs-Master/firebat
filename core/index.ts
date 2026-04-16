@@ -13,7 +13,7 @@ import type { ApiTokenInfo } from './managers/auth-manager';
 import type { FirebatInfraContainer, ILlmPort, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
 import type { InfraResult, FirebatPlan } from './types';
 import type { CapabilitySettings } from './capabilities';
-import { VK_SYSTEM_TIMEZONE } from './vault-keys';
+import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL } from './vault-keys';
 import { eventBus } from '../lib/events';
 
 /** AI 요청 옵션 — 요청별 모델/데모 모드 지정 */
@@ -307,6 +307,14 @@ export class FirebatCore {
     const ok = this.infra.vault.setSecret(VK_SYSTEM_TIMEZONE, tz);
     if (ok) this.infra.cron.setTimezone(tz);
     return ok;
+  }
+
+  getAiModel(): string | null {
+    return this.infra.vault.getSecret(VK_SYSTEM_AI_MODEL);
+  }
+
+  setAiModel(model: string): boolean {
+    return this.infra.vault.setSecret(VK_SYSTEM_AI_MODEL, model);
   }
 
   // ══════════════════════════════════════════════════════════════════════════

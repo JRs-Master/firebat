@@ -524,8 +524,19 @@ export default function AdminConsole() {
   useEffect(() => {
     const role = document.cookie.split(';').find(c => c.trim().startsWith('firebat_role='))?.split('=')[1];
     setIsDemo(role === 'demo');
-    const savedModel = localStorage.getItem('firebat_model') || 'gemini-3-flash-preview';
-    setAiModel(savedModel);
+    // 서버(Vault)에서 모델 로드 — 실패 시 localStorage 폴백
+    (async () => {
+      try {
+        const res = await fetch('/api/settings');
+        const data = await res.json();
+        if (data.success && data.aiModel) {
+          setAiModel(data.aiModel);
+          return;
+        }
+      } catch {}
+      const savedModel = localStorage.getItem('firebat_model') || 'gemini-3-flash-preview';
+      setAiModel(savedModel);
+    })();
   }, []);
 
   // 레이아웃 헤더 햄버거 토글 이벤트 수신

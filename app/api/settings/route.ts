@@ -10,6 +10,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     success: true,
     timezone: core.getTimezone(),
+    aiModel: core.getAiModel(),
   });
 }
 
@@ -22,6 +23,9 @@ export async function PATCH(req: NextRequest) {
 
   if (body.timezone) {
     core.setTimezone(body.timezone);
+  }
+  if (body.aiModel) {
+    core.setAiModel(body.aiModel);
   }
 
   return NextResponse.json({ success: true });
