@@ -25,7 +25,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           {/* 모바일 사이드바 토글 */}
           <button
             onClick={() => window.dispatchEvent(new Event('firebat-toggle-sidebar'))}
-            className={`md:hidden p-1.5 -ml-1 rounded-lg transition-colors ${sidebarOpen ? 'bg-slate-200 text-slate-700' : 'text-slate-500 hover:bg-slate-100'}`}
+            className={`md:hidden p-1.5 -ml-1 rounded-lg transition-colors ${sidebarOpen ? 'bg-slate-100 text-slate-700' : 'text-slate-500'}`}
           >
             <Menu size={18} />
           </button>
