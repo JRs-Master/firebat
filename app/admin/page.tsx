@@ -200,19 +200,21 @@ function CopyButton({ text }: { text: string }) {
 }
 
 // ─── 에러 접이식 박스 ──────────────────────────────────────────────────────────
-function ErrorCollapsible({ error }: { error: string }) {
+function ErrorCollapsible({ error, label }: { error: string; label?: string }) {
   const [open, setOpen] = useState(false);
-  const short = error.length > 60 ? error.slice(0, 60) + '…' : error;
   return (
-    <div
-      className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-100 text-red-700 rounded-md text-[13px] font-bold tracking-tight shadow-sm cursor-pointer hover:bg-red-100 transition-colors w-fit max-w-full"
-      onClick={() => setOpen(!open)}
-    >
-      <AlertTriangle size={14} className="text-red-500 shrink-0" />
-      {open ? (
-        <span className="font-mono font-normal leading-relaxed break-all min-w-0">{error}</span>
-      ) : (
-        <span className="truncate">{short}</span>
+    <div className="flex flex-col gap-1 w-fit max-w-full">
+      <div
+        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-100 text-red-700 rounded-md text-[13px] font-bold tracking-tight shadow-sm cursor-pointer hover:bg-red-100 transition-colors"
+        onClick={() => setOpen(!open)}
+      >
+        <AlertTriangle size={14} className="text-red-500 shrink-0" />
+        <span>{label || '오류 발생'}</span>
+      </div>
+      {open && (
+        <div className="px-3 py-2 bg-red-50/50 border border-red-100 rounded-md text-[12px] font-mono text-red-600 leading-relaxed break-all">
+          {error}
+        </div>
       )}
     </div>
   );
@@ -307,7 +309,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
               )}
               {/* step 에러 상세 (접이식) */}
               {msg.steps?.filter(s => s.error).map((s, i) => (
-                <ErrorCollapsible key={`step-err-${i}`} error={`${s.type}: ${s.error}`} />
+                <ErrorCollapsible key={`step-err-${i}`} label={`${s.type} 오류`} error={s.error || '알 수 없는 오류'} />
               ))}
 
               {/* 에러 — 접이식 태그 */}
