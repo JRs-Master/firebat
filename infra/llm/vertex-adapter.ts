@@ -6,8 +6,8 @@ import { DEFAULT_MODEL, DEFAULT_VERTEX_LOCATION, LLM_TIMEOUT_MS, LLM_TEMPERATURE
 /** 모델별 thinkingConfig 빌드 — 2.5는 thinkingBudget, 3+는 thinkingLevel (동시 사용 불가) */
 function buildThinkingConfig(model: string, enable: boolean): Record<string, unknown> {
   if (!enable) return {};
-  // Gemini 2.5 계열
-  if (model.includes('2.5')) return { includeThoughts: true, thinkingBudget: 2048 };
+  // Gemini 2.5 계열 — thinkingBudget: -1 = 동적 (모델이 자동 조절)
+  if (model.includes('2.5')) return { includeThoughts: true, thinkingBudget: -1 };
   // Gemini 3+ 계열 (기본)
   return { includeThoughts: true };
 }
