@@ -613,31 +613,38 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
         </div>
 
         {/* 하단 버튼 */}
-        <div className="px-3 sm:px-6 py-2.5 sm:py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0">
-          <div>
-            {saved && (
-              <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold">
-                <CheckCircle2 size={15} /> 저장 완료
-              </span>
-            )}
-          </div>
-          <div className="flex gap-2 sm:gap-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors"
-            >
-              닫기
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex items-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors shadow-sm"
-            >
-              {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-              {saving ? '저장 중...' : '저장'}
-            </button>
-          </div>
-        </div>
+        {(() => {
+          const hasNonSecretFields = schema?.fields.some(f => f.type !== 'secret' && f.type !== 'oauth');
+          return (
+            <div className="px-3 sm:px-6 py-2.5 sm:py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0">
+              <div>
+                {saved && (
+                  <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold">
+                    <CheckCircle2 size={15} /> 저장 완료
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2 sm:gap-3">
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors"
+                >
+                  닫기
+                </button>
+                {hasNonSecretFields && (
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="flex items-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors shadow-sm"
+                  >
+                    {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
+                    {saving ? '저장 중...' : '저장'}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
