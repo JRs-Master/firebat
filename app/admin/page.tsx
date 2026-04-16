@@ -178,9 +178,9 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
 
 // ─── Thinking 블록 — 버블 상단에 항상 표시 ──────────────────────────────────
 function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: string; thinkingText?: string; isActive?: boolean }) {
-  // 활성 상태 (thinking/실행 중) — 큰 박스
-  if (isActive) {
-    const display = (() => {
+  if (!isActive && !thinkingText) return null;
+  const label = (() => {
+    if (isActive) {
       if (statusText) return statusText;
       if (thinkingText) {
         const lines = thinkingText.split('\n').filter(l => l.trim());
@@ -188,22 +188,13 @@ function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: st
         return '생각 중... ' + (last.length > 50 ? last.slice(-50) + '…' : last);
       }
       return '생각 중...';
-    })();
-    return (
-      <div className="flex items-center gap-3 text-slate-600 font-medium bg-slate-50 border border-slate-200 px-4 py-3 sm:px-6 sm:py-5 rounded-2xl shadow-inner text-[13px] sm:text-[15px]">
-        <div className="animate-spin text-blue-600 shrink-0"><Cpu size={18} /></div>
-        <span className="truncate">{display}</span>
-      </div>
-    );
-  }
-
-  // 완료/진행 상태 — 한 줄 텍스트
-  if (!thinkingText) return null;
-  const label = thinkingText === '답변 완료' ? '답변 완료' : '답변 중...';
+    }
+    return thinkingText === '답변 완료' ? '답변 완료' : '답변 중...';
+  })();
   return (
     <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
-      <Cpu size={13} className="shrink-0" />
-      <span>{label}</span>
+      {isActive ? <div className="animate-spin shrink-0"><Cpu size={13} /></div> : <Cpu size={13} className="shrink-0" />}
+      <span className="truncate">{label}</span>
     </div>
   );
 }
