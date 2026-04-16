@@ -3,18 +3,10 @@ import { InfraResult } from '../../core/types';
 import { GoogleGenAI } from '@google/genai';
 import { DEFAULT_MODEL, DEFAULT_VERTEX_LOCATION, LLM_TIMEOUT_MS, LLM_TEMPERATURE_JSON, LLM_TEMPERATURE_TEXT } from '../config';
 
-/** 모델별 thinkingConfig
- *  - 2.5: thinkingBudget (정수, -1=동적). Lite는 미지원
- *  - 3+: thinkingLevel (minimal/low/medium/high). 기본값 minimal이라 명시 필요
- */
-function buildThinkingConfig(model: string, enable: boolean): Record<string, unknown> {
-  if (!enable) return {};
-  // 2.5 Lite는 thinking 미지원 (include_thoughts 전달 시 400)
-  if (model.includes('2.5') && model.includes('lite')) return {};
-  // 2.5는 thinkingBudget 필수
-  if (model.includes('2.5')) return { includeThoughts: true, thinkingBudget: -1 };
-  // 3+는 thinkingLevel 명시 (기본 minimal → 지정 안 하면 thinking 최소)
-  return { includeThoughts: true, thinkingLevel: 'low' };
+/** thinkingConfig — Gemini 3+: thinkingLevel (minimal/low/medium/high) */
+function buildThinkingConfig(level: string): Record<string, unknown> {
+  if (level === 'minimal') return { thinkingLevel: 'minimal' };
+  return { includeThoughts: true, thinkingLevel: level };
 }
 
 /**
@@ -167,7 +159,7 @@ export class VertexAiAdapter implements ILlmPort {
         config: {
           systemInstruction: systemPrompt,
           temperature: LLM_TEMPERATURE_TEXT,
-          thinkingConfig: buildThinkingConfig(model, true),
+          thinkingConfig: buildThinkingConfig(opts?.thinkingLevel ?? 'low'),
           // 도구가 없으면 tools/toolConfig 생략 (빈 배열 전달 시 Vertex AI 400 에러)
           ...(functionDeclarations.length > 0 ? {
             tools: [{ functionDeclarations }],

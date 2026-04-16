@@ -8,6 +8,7 @@
 // ── 시스템 설정 ──
 export const VK_SYSTEM_TIMEZONE = 'system:timezone';
 export const VK_SYSTEM_AI_MODEL = 'system:ai-model';
+export const VK_SYSTEM_AI_THINKING_LEVEL = 'system:ai-thinking-level';
 
 // ── 인증 ──
 export const VK_ADMIN_ID = 'FIREBAT_ADMIN_ID';

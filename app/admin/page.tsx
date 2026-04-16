@@ -11,7 +11,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { SystemModuleSettings } from './components/SystemModuleSettings';
 import { SecretInput } from './components/ChatWidgets';
 import { useChat } from './hooks/useChat';
-import { Message, StepStatus } from './types';
+import { Message, StepStatus, GEMINI_MODELS } from './types';
 
 // ─── 마크다운 커스텀 컴포넌트 ───────────────────────────────────────────────
 const mdComponents = {
@@ -526,16 +526,17 @@ export default function AdminConsole() {
     setIsDemo(role === 'demo');
     // 서버(Vault)에서 모델 로드 — 실패 시 localStorage 폴백
     (async () => {
+      const isValid = (m: string) => GEMINI_MODELS.some(x => x.value === m);
       try {
         const res = await fetch('/api/settings');
         const data = await res.json();
-        if (data.success && data.aiModel) {
+        if (data.success && data.aiModel && isValid(data.aiModel)) {
           setAiModel(data.aiModel);
           return;
         }
       } catch {}
-      const savedModel = localStorage.getItem('firebat_model') || 'gemini-3-flash-preview';
-      setAiModel(savedModel);
+      const savedModel = localStorage.getItem('firebat_model');
+      setAiModel(savedModel && isValid(savedModel) ? savedModel : 'gemini-3-flash-preview');
     })();
   }, []);
 

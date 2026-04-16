@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
     success: true,
     timezone: core.getTimezone(),
     aiModel: core.getAiModel(),
+    aiThinkingLevel: core.getAiThinkingLevel(),
   });
 }
 
@@ -26,6 +27,9 @@ export async function PATCH(req: NextRequest) {
   }
   if (body.aiModel) {
     core.setAiModel(body.aiModel);
+  }
+  if (body.aiThinkingLevel) {
+    core.setAiThinkingLevel(body.aiThinkingLevel);
   }
 
   return NextResponse.json({ success: true });

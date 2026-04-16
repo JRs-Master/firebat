@@ -216,6 +216,8 @@ export interface LlmChunk {
 export interface LlmCallOpts {
   /** 이 호출에만 사용할 모델 (미지정 시 기본 모델) */
   model?: string;
+  /** Thinking 수준 (minimal/low/medium/high) */
+  thinkingLevel?: string;
   /** 스트리밍 청크 콜백 — 설정 시 generateContentStream 사용 */
   onChunk?: (chunk: LlmChunk) => void;
   /** 현재 프롬프트에 첨부할 이미지 (Base64 data URL 또는 순수 base64) */

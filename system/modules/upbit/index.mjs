@@ -353,21 +353,7 @@ async function callApi(method, endpoint, params, accessKey, secretKey, needAuth)
 }
 
 // ─── 메인 ───
-async function main() {
-  const raw = process.argv[2];
-  if (!raw) {
-    console.log(JSON.stringify({ success: false, error: 'input JSON이 필요합니다.' }));
-    process.exit(1);
-  }
-
-  let input;
-  try {
-    input = JSON.parse(raw);
-  } catch {
-    console.log(JSON.stringify({ success: false, error: 'input JSON 파싱 실패' }));
-    process.exit(1);
-  }
-
+async function main(input) {
   const { action, endpoint: directEndpoint, method: directMethod } = input;
   const accessKey = process.env.UPBIT_ACCESS_KEY;
   const secretKey = process.env.UPBIT_SECRET_KEY;
@@ -418,4 +404,16 @@ async function main() {
   }
 }
 
-main();
+let raw = '';
+process.stdin.setEncoding('utf-8');
+process.stdin.on('data', c => { raw += c; });
+process.stdin.on('end', async () => {
+  try {
+    const parsed = JSON.parse(raw);
+    const input = parsed.data ?? parsed;
+    await main(input);
+  } catch (err) {
+    console.log(JSON.stringify({ success: false, error: `입력 파싱 실패: ${err.message}` }));
+    process.exit(1);
+  }
+});

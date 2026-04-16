@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Download, Server, Terminal, Globe, Cpu, Wrench, Blocks } from 'lucide-react';
-import { GEMINI_MODELS, McpServer } from '../types';
+import { GEMINI_MODELS, THINKING_LEVELS, McpServer } from '../types';
 
 interface SystemModule { name: string; description: string; runtime: string; type?: string; enabled?: boolean; }
 
@@ -21,6 +21,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
   // 일반 설정
   const [userTimezone, setUserTimezone] = useState('Asia/Seoul');
+  const [thinkingLevel, setThinkingLevel] = useState('low');
 
   // Vertex AI
   const [vertexApiKey, setVertexApiKey] = useState('');
@@ -90,9 +91,12 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
   // ── 데이터 로드 ────────────────────────────────────────────────────────────
   useEffect(() => {
-    // 타임존
+    // 타임존 + thinking level
     fetch('/api/settings').then(r => r.json()).then(data => {
-      if (data.success && data.timezone) setUserTimezone(data.timezone);
+      if (data.success) {
+        if (data.timezone) setUserTimezone(data.timezone);
+        if (data.aiThinkingLevel) setThinkingLevel(data.aiThinkingLevel);
+      }
     }).catch(() => {});
 
     // Vault 키
@@ -347,7 +351,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
     await fetch('/api/settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ timezone: userTimezone, aiModel }),
+      body: JSON.stringify({ timezone: userTimezone, aiModel, aiThinkingLevel: thinkingLevel }),
     }).catch(() => {});
 
     const vertexSaves = [
@@ -446,6 +450,20 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                   className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
                 >
                   {GEMINI_MODELS.map(m => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Thinking 수준 */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs sm:text-sm font-bold text-slate-700">Thinking 수준</label>
+                <select
+                  value={thinkingLevel}
+                  onChange={e => setThinkingLevel(e.target.value)}
+                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                >
+                  {THINKING_LEVELS.map(m => (
                     <option key={m.value} value={m.value}>{m.label}</option>
                   ))}
                 </select>
