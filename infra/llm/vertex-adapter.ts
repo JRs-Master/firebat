@@ -149,12 +149,15 @@ export class VertexAiAdapter implements ILlmPort {
         parameters: t.parameters,
       }));
 
+      const supportsThinking = model.includes('2.5');
       const requestConfig = {
         model,
         contents,
         config: {
           systemInstruction: systemPrompt,
           temperature: LLM_TEMPERATURE_TEXT,
+          // 2.5 모델: thinking 활성화 → 사고 과정 스트리밍
+          ...(supportsThinking ? { thinkingConfig: { thinkingBudget: 2048 } } : {}),
           // 도구가 없으면 tools/toolConfig 생략 (빈 배열 전달 시 Vertex AI 400 에러)
           ...(functionDeclarations.length > 0 ? {
             tools: [{ functionDeclarations }],
