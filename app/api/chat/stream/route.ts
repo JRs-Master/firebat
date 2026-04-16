@@ -16,14 +16,14 @@ import type { FirebatCore } from '../../../../core';
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  const { prompt, config, history = [], autoExecute = false, mode } = await req.json();
+  const { prompt, config, history = [], autoExecute = false, mode, image } = await req.json();
 
   if (!prompt) {
     return new Response(JSON.stringify({ error: 'prompt is required' }), { status: 400 });
   }
 
   const isDemo = auth.role === 'demo';
-  const opts = { model: config?.model as string | undefined, isDemo };
+  const opts = { model: config?.model as string | undefined, isDemo, ...(image ? { image: image as string } : {}) };
   const core = getCore();
 
   // Function Calling 모드

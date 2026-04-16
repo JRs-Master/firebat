@@ -29,6 +29,7 @@ export type Message = {
   executing?: boolean;
   statusText?: string;
   suggestions?: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[] })[];
+  image?: string;
 };
 
 export type Conversation = ConversationMeta & { messages: Message[] };

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Loader2, Circle, Copy, CheckCheck } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Loader2, Circle, Copy, CheckCheck, ImagePlus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Sidebar } from './components/Sidebar';
@@ -270,8 +270,11 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
   if (msg.role === 'user') {
     return (
       <div className="flex w-full gap-4 items-start justify-end">
-        <div className="flex flex-col gap-2 max-w-[75%]">
-          <div className="bg-slate-800 text-white px-4 py-3 sm:px-6 sm:py-4 rounded-3xl rounded-tr-sm shadow-md text-[14px] sm:text-[15.5px] leading-relaxed break-words border border-slate-700 w-fit self-end">
+        <div className="flex flex-col gap-2 max-w-[75%] items-end">
+          {msg.image && (
+            <img src={msg.image} alt="첨부 이미지" className="max-w-[240px] max-h-[180px] rounded-2xl border border-slate-600 shadow-md object-cover" />
+          )}
+          <div className="bg-slate-800 text-white px-4 py-3 sm:px-6 sm:py-4 rounded-3xl rounded-tr-sm shadow-md text-[14px] sm:text-[15.5px] leading-relaxed break-words border border-slate-700 w-fit">
             {msg.content}
           </div>
         </div>
@@ -437,10 +440,38 @@ export default function AdminConsole() {
 
   const {
     messages, input, setInput, loading,
+    attachedImage, setAttachedImage,
     conversations, activeConvId, chatEndRef, chatContainerRef, handleScroll,
     handleNewConv, handleSelectConv, handleDeleteConv,
     handleSubmit, handleConfirmPlan, handleRejectPlan,
   } = useChat(aiModel, fetchFileTree);
+
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageSelect = useCallback((file: File) => {
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > 10 * 1024 * 1024) return; // 10MB 제한
+    const reader = new FileReader();
+    reader.onload = () => setAttachedImage(reader.result as string);
+    reader.readAsDataURL(file);
+  }, [setAttachedImage]);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    const file = e.dataTransfer.files[0];
+    if (file) handleImageSelect(file);
+  }, [handleImageSelect]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    const items = e.clipboardData.items;
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) handleImageSelect(file);
+        break;
+      }
+    }
+  }, [handleImageSelect]);
 
   // 초기화
   useEffect(() => {
@@ -505,16 +536,52 @@ export default function AdminConsole() {
           <div className="w-full md:w-[70%] max-w-6xl mx-auto relative pointer-events-auto flex flex-col">
             <div className="flex w-full gap-4">
               <div className="w-11 shrink-0 opacity-0 pointer-events-none hidden md:block" />
-              <div className="flex-1 min-w-0 flex flex-col bg-white border border-slate-300 rounded-2xl shadow-xl focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100/50 transition-all overflow-hidden">
+              <div
+                className="flex-1 min-w-0 flex flex-col bg-white border border-slate-300 rounded-2xl shadow-xl focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100/50 transition-all overflow-hidden"
+                onDrop={handleDrop}
+                onDragOver={(e) => e.preventDefault()}
+              >
+                {/* 이미지 미리보기 */}
+                {attachedImage && (
+                  <div className="px-5 pt-4 pb-1">
+                    <div className="relative inline-block">
+                      <img src={attachedImage} alt="첨부" className="max-h-[120px] max-w-[200px] rounded-xl border border-slate-200 object-cover" />
+                      <button
+                        onClick={() => setAttachedImage(null)}
+                        className="absolute -top-2 -right-2 w-5 h-5 bg-slate-800 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-colors"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
                   disabled={loading}
                   className="w-full min-h-[90px] max-h-[250px] p-5 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50"
                   placeholder={loading ? '명령 집행 중...' : '무엇을 도와드릴까요?'}
                 />
-                <div className="flex items-center justify-end px-5 py-3 border-t border-slate-100 bg-slate-50/80">
+                <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50/80">
+                  <div className="flex items-center gap-2">
+                    <input
+                      ref={imageInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); e.target.value = ''; }}
+                    />
+                    <button
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={loading}
+                      className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
+                      title="이미지 첨부"
+                    >
+                      <ImagePlus size={18} />
+                    </button>
+                  </div>
                   <button
                     onClick={() => handleSubmit()}
                     disabled={!input.trim() || loading}

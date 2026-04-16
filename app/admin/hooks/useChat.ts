@@ -33,6 +33,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   const [messages, setMessages] = useState<Message[]>([INIT_MESSAGE]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -140,7 +141,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     const text = overrideText ?? input;
     if (!text.trim() || loading) return;
     const userPrompt = text;
+    const imageData = attachedImage;
     setInput('');
+    setAttachedImage(null);
     const id = Date.now().toString();
 
     if (!activeConvId) {
@@ -155,7 +158,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     }
 
     if (!isSuggestion) {
-      setMessages(prev => [...prev, { id: `u-${id}`, role: 'user', content: userPrompt }]);
+      setMessages(prev => [...prev, { id: `u-${id}`, role: 'user', content: userPrompt, image: imageData || undefined }]);
     }
     setMessages(prev => [...prev, { id: `s-${id}`, role: 'system', isThinking: true }]);
     setLoading(true);
@@ -174,7 +177,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: userPrompt, config: { model: aiModel }, history: chatHistory, mode: 'tools' }),
+        body: JSON.stringify({ prompt: userPrompt, config: { model: aiModel }, history: chatHistory, mode: 'tools', ...(imageData ? { image: imageData } : {}) }),
       });
 
       const reader = res.body?.getReader();
@@ -247,7 +250,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     } finally {
       setLoading(false);
     }
-  }, [input, loading, activeConvId, messages, aiModel, onRefresh]);
+  }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage]);
 
   // Plan 실행 확인
   const handleConfirmPlan = useCallback(async (msgId: string) => {
@@ -320,6 +323,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
 
   return {
     messages, input, setInput, loading,
+    attachedImage, setAttachedImage,
     conversations: convMetas, activeConvId,
     chatEndRef, chatContainerRef, handleScroll,
     handleNewConv, handleSelectConv, handleDeleteConv,
