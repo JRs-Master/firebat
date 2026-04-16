@@ -178,9 +178,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
 
 // ─── Thinking 블록 — 버블 상단에 항상 표시 ──────────────────────────────────
 function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: string; thinkingText?: string; isActive?: boolean }) {
-  console.log('[RENDER-THINKING]', { statusText, thinkingText: thinkingText?.slice(-40), isActive });
   if (!isActive && !thinkingText) return null;
-  // 완료 상태
   if (thinkingText === '답변 완료') {
     return (
       <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
@@ -189,7 +187,6 @@ function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: st
       </div>
     );
   }
-  // 도구 실행 중
   if (statusText) {
     return (
       <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
@@ -198,7 +195,6 @@ function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: st
       </div>
     );
   }
-  // thinkingText가 있으면 항상 thinking 내용 표시 (active/streaming 무관)
   if (thinkingText) {
     const lines = thinkingText.split('\n').filter(l => l.trim());
     const last = lines.length > 0 ? lines[lines.length - 1].trim() : '';
@@ -210,7 +206,6 @@ function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: st
       </div>
     );
   }
-  // thinking 시작 직후 (아직 내용 없음)
   return (
     <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
       <div className="animate-spin shrink-0"><Cpu size={13} /></div>

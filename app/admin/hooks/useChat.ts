@@ -165,6 +165,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     setMessages(prev => [...prev, { id: `s-${id}`, role: 'system', isThinking: true }]);
     setLoading(true);
 
+    const requestStart = Date.now();
     try {
       const chatHistory = messages
         .filter(m => m.id !== 'system-init' && !m.isThinking)
@@ -181,6 +182,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prompt: userPrompt, config: { model: aiModel }, history: chatHistory, mode: 'tools', ...(imageData ? { image: imageData } : {}) }),
       });
+      console.log(`[FETCH-DONE] +${Date.now() - requestStart}ms status=${res.status}`);
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error('스트림을 읽을 수 없습니다.');
@@ -203,18 +205,15 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           if (ev.event === 'chunk') {
             const chunkType = ev.data.type as 'text' | 'thinking';
             const chunkContent = ev.data.content as string;
-            console.log('[CHUNK-DEBUG]', chunkType, chunkContent?.slice(0, 40));
+            console.log(`[CHUNK] +${Date.now() - requestStart}ms`, chunkType, chunkContent?.length);
             if (chunkType === 'thinking') {
               setMessages(prev => prev.map(msg => {
                 if (msg.id !== `s-${id}`) return msg;
-                const newText = (msg.thinkingText || '') + chunkContent;
-                console.log('[THINKING-STATE]', { prev: msg.thinkingText?.slice(-30), new: newText.slice(-30), isThinking: true, streaming: false });
-                return { ...msg, isThinking: true, streaming: false, statusText: undefined, thinkingText: newText };
+                return { ...msg, isThinking: true, streaming: false, statusText: undefined, thinkingText: (msg.thinkingText || '') + chunkContent };
               }));
             } else {
               setMessages(prev => prev.map(msg => {
                 if (msg.id !== `s-${id}`) return msg;
-                console.log('[TEXT-STATE]', { thinkingText: msg.thinkingText?.slice(-30), content: msg.content?.slice(0, 30), isThinking: false, streaming: true });
                 return { ...msg, isThinking: false, statusText: undefined, content: (msg.content || '') + chunkContent, streaming: true };
               }));
             }
