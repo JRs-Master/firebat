@@ -220,7 +220,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="absolute top-1 right-1 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 opacity-0 group-hover/copy:opacity-100 transition-all"
+      className="absolute bottom-1 right-1 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 sm:opacity-0 sm:group-hover/copy:opacity-100 transition-all"
       title="복사"
     >
       {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
@@ -259,7 +259,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
     return (
       <div className="flex w-full gap-4 items-start justify-end">
         <div className="flex flex-col gap-2 max-w-[75%]">
-          <div className="bg-slate-800 text-white px-6 py-4 rounded-3xl rounded-tr-sm shadow-md text-[15.5px] leading-relaxed break-words border border-slate-700 w-fit self-end">
+          <div className="bg-slate-800 text-white px-4 py-3 sm:px-6 sm:py-4 rounded-3xl rounded-tr-sm shadow-md text-[14px] sm:text-[15.5px] leading-relaxed break-words border border-slate-700 w-fit self-end">
             {msg.content}
           </div>
         </div>
@@ -273,7 +273,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
         <Bot size={22} className="text-blue-600" />
       </div>
       <div className="flex flex-col gap-2 flex-1 min-w-0">
-        <div className="flex flex-col gap-3 w-full bg-white p-6 rounded-3xl rounded-tl-sm shadow-sm border border-slate-100">
+        <div className="flex flex-col gap-3 w-full bg-white px-4 py-3 sm:p-6 rounded-3xl rounded-tl-sm shadow-sm border border-slate-100">
           {msg.isThinking && !msg.streaming ? (
             <div className="flex items-center gap-3 text-slate-600 font-medium bg-slate-50 border border-slate-200 px-4 py-3 sm:px-6 sm:py-5 rounded-2xl shadow-inner text-[13px] sm:text-[15px]">
               <div className="animate-spin text-blue-600 shrink-0"><Cpu size={18} /></div>
@@ -313,7 +313,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
 
               {msg.content && (
                 <div className="group/copy relative">
-                  <div className="text-slate-800 text-[15px] leading-relaxed border-l-4 border-slate-200 pl-4 py-1 space-y-1">
+                  <div className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">
                     {renderMarkdown(msg.content)}
                   </div>
                   <CopyButton text={msg.content} />

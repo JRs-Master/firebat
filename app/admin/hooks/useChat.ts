@@ -212,9 +212,10 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                 : msg
             )));
           } else if (ev.event === 'step') {
+            const stepDesc = ev.data.status === 'start' ? ev.data.description : undefined;
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
-                ? { ...msg, planPending: false, executing: true, isThinking: true, steps: [...(msg.steps || []), ev.data] }
+                ? { ...msg, planPending: false, executing: true, isThinking: true, steps: [...(msg.steps || []), ev.data], ...(stepDesc ? { statusText: stepDesc } : {}) }
                 : msg
             ));
           } else if (ev.event === 'result') {
