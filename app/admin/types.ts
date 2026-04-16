@@ -46,7 +46,7 @@ export type McpServer = {
 export const INIT_MESSAGE: Message = {
   id: 'system-init',
   role: 'system',
-  content: '무엇을 도와드릴까요?',
+  content: '',
   executedActions: [],
 };
 

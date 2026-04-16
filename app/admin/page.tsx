@@ -262,14 +262,18 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
   onReject: (id: string) => void;
   onSuggestion?: (text: string) => void;
 }) {
-  // 초기 인사 메시지 — 유령 아이콘 + 인사문구 (복사 버튼 없음)
+  // 초기 인사 메시지 — 히어로 (스크롤에 밀려 올라가며 사라짐)
   if (msg.id === 'system-init') {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-12 sm:py-20">
-        <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-indigo-100 to-blue-200 border border-blue-200 flex items-center justify-center shadow-lg">
-          <Ghost size={32} className="text-blue-600" />
+      <div className="flex flex-col items-center justify-center gap-5 py-20 sm:py-32 select-none">
+        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-indigo-100 to-blue-200 border border-blue-200 flex items-center justify-center shadow-lg">
+          <Ghost size={36} className="text-blue-600 sm:hidden" />
+          <Ghost size={44} className="text-blue-600 hidden sm:block" />
         </div>
-        <p className="text-slate-500 text-[15px] sm:text-[17px] font-medium">{msg.content}</p>
+        <div className="flex flex-col items-center gap-1.5">
+          <h1 className="text-[22px] sm:text-[28px] font-extrabold tracking-tight text-slate-800">Firebat</h1>
+          <p className="text-slate-400 text-[13px] sm:text-[15px] font-medium italic tracking-wide">Just Imagine. Firebat Runs.</p>
+        </div>
       </div>
     );
   }
