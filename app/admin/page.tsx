@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Loader2, Circle, Copy, CheckCheck, ImagePlus } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Loader2, Circle, Copy, CheckCheck, ImagePlus, Plus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Sidebar } from './components/Sidebar';
@@ -457,6 +457,7 @@ export default function AdminConsole() {
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [editingModule, setEditingModule] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [showPlusMenu, setShowPlusMenu] = useState(false);
 
   const fetchFileTree = useCallback(async () => {}, []);
 
@@ -505,7 +506,7 @@ export default function AdminConsole() {
 
   // 레이아웃 헤더 햄버거 토글 이벤트 수신
   useEffect(() => {
-    const handler = () => setMobileMenuOpen(true);
+    const handler = () => setMobileMenuOpen(prev => !prev);
     window.addEventListener('firebat-toggle-sidebar', handler);
     return () => window.removeEventListener('firebat-toggle-sidebar', handler);
   }, []);
@@ -565,7 +566,7 @@ export default function AdminConsole() {
               >
                 {/* 이미지 미리보기 */}
                 {attachedImage && (
-                  <div className="px-5 pt-4 pb-1">
+                  <div className="px-4 pt-3 pb-1">
                     <div className="relative inline-block">
                       <img src={attachedImage} alt="첨부" className="max-h-[120px] max-w-[200px] rounded-xl border border-slate-200 object-cover" />
                       <button
@@ -577,35 +578,50 @@ export default function AdminConsole() {
                     </div>
                   </div>
                 )}
-                <div className="relative">
-                  <textarea
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    onPaste={handlePaste}
-                    disabled={loading}
-                    className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] pl-12 pr-14 sm:pr-16 py-3 sm:py-5 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50"
-                    placeholder={loading ? '명령 집행 중...' : '무엇을 도와드릴까요?'}
-                  />
-                  <input
-                    ref={imageInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); e.target.value = ''; }}
-                  />
-                  <button
-                    onClick={() => imageInputRef.current?.click()}
-                    disabled={loading}
-                    className="absolute left-2 sm:left-3 bottom-2 sm:bottom-3.5 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
-                    title="이미지 첨부"
-                  >
-                    <ImagePlus size={18} />
-                  </button>
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  disabled={loading}
+                  className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] px-4 sm:px-5 pt-3 sm:pt-4 pb-1 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50"
+                  placeholder={loading ? '명령 집행 중...' : '무엇을 도와드릴까요?'}
+                />
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); e.target.value = ''; }}
+                />
+                <div className="flex items-center justify-between px-2 sm:px-3 py-2">
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowPlusMenu(v => !v)}
+                      disabled={loading}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
+                    >
+                      <Plus size={20} />
+                    </button>
+                    {showPlusMenu && (
+                      <>
+                        <div className="fixed inset-0 z-20" onClick={() => setShowPlusMenu(false)} />
+                        <div className="absolute bottom-full left-0 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 min-w-[160px]">
+                          <button
+                            onClick={() => { imageInputRef.current?.click(); setShowPlusMenu(false); }}
+                            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                          >
+                            <ImagePlus size={16} className="text-slate-400" />
+                            이미지 첨부
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                   <button
                     onClick={() => handleSubmit()}
                     disabled={!input.trim() || loading}
-                    className="absolute right-2 sm:right-3 bottom-2 sm:bottom-3 bg-slate-900 hover:bg-black disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]"
+                    className="bg-slate-900 hover:bg-black disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]"
                   >
                     {loading
                       ? <div className="animate-spin text-white"><Cpu size={14} /></div>
