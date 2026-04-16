@@ -218,9 +218,13 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                 : msg
             )));
           } else if (ev.event === 'step') {
+            const stepDone = ev.data.status !== 'start';
             flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
-                ? { ...msg, planPending: false, executing: true, isThinking: true, streaming: false, thinkingText: undefined, statusText: ev.data.description || msg.statusText, steps: [...(msg.steps || []), ev.data] }
+                ? { ...msg, planPending: false, executing: true, isThinking: true, streaming: false,
+                    // start: 도구명 표시, done/error: statusText 제거 → thinking 표시로 전환
+                    statusText: stepDone ? undefined : (ev.data.description || msg.statusText),
+                    steps: [...(msg.steps || []), ev.data] }
                 : msg
             )));
           } else if (ev.event === 'result') {
@@ -248,10 +252,16 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     } catch (err: any) {
       setMessages(prev => prev.map(msg =>
         msg.id === `s-${id}`
-          ? { ...msg, isThinking: false, error: err.message, content: '서버 네트워크 연결이 끊어졌습니다.' }
+          ? { ...msg, isThinking: false, executing: false, streaming: false, error: err.message, content: msg.content || '서버 네트워크 연결이 끊어졌습니다.' }
           : msg
       ));
     } finally {
+      // 스트림 종료 후에도 isThinking이 풀리지 않은 경우 강제 해제
+      setMessages(prev => prev.map(msg =>
+        msg.id === `s-${id}` && (msg.isThinking || msg.executing || msg.streaming)
+          ? { ...msg, isThinking: false, executing: false, streaming: false, content: msg.content || msg.error || '응답을 받지 못했습니다.' }
+          : msg
+      ));
       setLoading(false);
     }
   }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage]);
