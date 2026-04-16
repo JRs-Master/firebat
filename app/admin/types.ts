@@ -1,6 +1,7 @@
 import { ConversationMeta } from './components/Sidebar';
 
 export const GEMINI_MODELS = [
+  { value: 'auto',                                  label: '자동 선택 (복잡도에 따라 라우팅)' },
   { value: 'gemini-3.1-flash-lite-preview',         label: 'Gemini 3.1 Flash Lite (경량/초고속)' },
   { value: 'gemini-3-flash-preview',                label: 'Gemini 3 Flash (빠름/가성비)' },
   { value: 'gemini-3.1-pro-preview',                label: 'Gemini 3.1 Pro (고성능)' },
