@@ -39,8 +39,17 @@ const mdComponents = {
   hr: () => <hr className="border-slate-200 my-3" />,
 };
 
+function cleanMarkdown(text: string): string {
+  // 줄 단위로 홀수 개 **가 있으면 고아 ** 제거 (줄바꿈에 걸쳐 깨진 bold 마커)
+  return text.split('\n').map(line => {
+    const count = (line.match(/\*\*/g) || []).length;
+    if (count % 2 !== 0) return line.replace(/\*\*/, '');
+    return line;
+  }).join('\n');
+}
+
 function renderMarkdown(text: string) {
-  return <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{text}</ReactMarkdown>;
+  return <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{cleanMarkdown(text)}</ReactMarkdown>;
 }
 
 // ─── 선택지 버튼 (텍스트 버튼 + 인라인 입력 + 토글 다중 선택) ─────────────────
