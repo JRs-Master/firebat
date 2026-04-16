@@ -262,6 +262,18 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
   onReject: (id: string) => void;
   onSuggestion?: (text: string) => void;
 }) {
+  // 초기 인사 메시지 — 유령 아이콘 + 인사문구 (복사 버튼 없음)
+  if (msg.id === 'system-init') {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-12 sm:py-20">
+        <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-indigo-100 to-blue-200 border border-blue-200 flex items-center justify-center shadow-lg">
+          <Bot size={32} className="text-blue-600" />
+        </div>
+        <p className="text-slate-500 text-[15px] sm:text-[17px] font-medium">{msg.content}</p>
+      </div>
+    );
+  }
+
   if (msg.role === 'user') {
     return (
       <div className="flex w-full gap-4 items-start justify-end">
@@ -467,25 +479,20 @@ export default function AdminConsole() {
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
-        {/* 상단 그라디언트 + 모바일 햄버거/새대화 오버레이 */}
-        <div className="absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
-        <div className="md:hidden absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-2 py-2 pointer-events-none">
-          <button
-            onClick={() => setMobileMenuOpen(true)}
-            className="pointer-events-auto p-1.5 rounded-lg text-slate-500 hover:bg-white/80 transition-colors"
-          >
+        {/* 모바일 상단 바 — 햄버거 + 새대화 */}
+        <div className="md:hidden flex items-center justify-between px-2 h-11 shrink-0 border-b border-slate-100 bg-slate-50">
+          <button onClick={() => setMobileMenuOpen(true)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200 transition-colors">
             <Menu size={18} />
           </button>
-          <button
-            onClick={handleNewConv}
-            className="pointer-events-auto p-1.5 rounded-lg text-slate-500 hover:bg-white/80 transition-colors"
-          >
+          <button onClick={handleNewConv} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200 transition-colors">
             <Plus size={18} />
           </button>
         </div>
+        {/* PC 상단 그라디언트 */}
+        <div className="hidden md:block absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
 
         {/* 메시지 목록 */}
-        <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 md:px-12 pt-12 md:pt-16 scrolltext">
+        <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 md:px-12 pt-4 md:pt-16 scrolltext">
           <div className="w-full md:w-[70%] max-w-6xl mx-auto space-y-10">
             {messages.map((msg) => (
               <MessageBubble
