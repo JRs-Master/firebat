@@ -153,8 +153,8 @@
         "description": "[search:ordin] 분야코드"
       },
       "cls": {
-        "type": "integer",
-        "enum": [1, 2],
+        "type": "string",
+        "enum": ["1", "2"],
         "description": "[search:trty] 1=양자조약, 2=다자조약"
       },
       "natCd": {

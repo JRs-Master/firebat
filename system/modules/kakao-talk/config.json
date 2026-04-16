@@ -136,8 +136,8 @@
         "description": "[send-me/send-friends:commerce] 통화 단위 (기본 '원')"
       },
       "currencyUnitPosition": {
-        "type": "integer",
-        "enum": [0, 1],
+        "type": "string",
+        "enum": ["0", "1"],
         "description": "[send-me/send-friends:commerce] 통화 위치 (0=뒤, 1=앞)"
       },
       "calendarId": {

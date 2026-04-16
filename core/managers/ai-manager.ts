@@ -2,6 +2,24 @@ import type { FirebatCore, AiRequestOpts } from '../index';
 import type { ILlmPort, ILogPort, LlmCallOpts, LlmChunk, ChatMessage, PageListItem, ToolDefinition, JsonSchema, ToolCall, ToolResult, ToolExchangeEntry } from '../ports';
 import { FirebatPlanSchema, FirebatPlan, FirebatAction, CoreResult, type InfraResult } from '../types';
 
+/** Vertex AI Function Calling은 enum 값이 반드시 string이어야 함 — 재귀 변환 */
+function sanitizeSchema(schema: Record<string, unknown>): Record<string, unknown> {
+  if (!schema || typeof schema !== 'object') return schema;
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(schema)) {
+    if (k === 'enum' && Array.isArray(v)) {
+      result[k] = v.map(e => String(e));
+    } else if (Array.isArray(v)) {
+      result[k] = v.map(e => (e && typeof e === 'object' ? sanitizeSchema(e as Record<string, unknown>) : e));
+    } else if (v && typeof v === 'object') {
+      result[k] = sanitizeSchema(v as Record<string, unknown>);
+    } else {
+      result[k] = v;
+    }
+  }
+  return result;
+}
+
 /**
  * AI Manager — 창작자
  *
@@ -1677,7 +1695,7 @@ run_task/schedule_task의 pipeline에서:
           tools.push({
             name: toolName,
             description: `[시스템 모듈] ${cfg.description || d.name}`,
-            parameters: cfg.input as JsonSchema,
+            parameters: sanitizeSchema(cfg.input) as unknown as JsonSchema,
           });
           // 경로 매핑 저장 (executeToolCall에서 사용)
           this._sysmodPaths.set(toolName, `system/modules/${d.name}/${rt}`);
