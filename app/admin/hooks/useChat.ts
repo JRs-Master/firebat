@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { flushSync } from 'react-dom';
 import { Message, Conversation, INIT_MESSAGE, makeConv } from '../types';
 import { ConversationMeta } from '../components/Sidebar';
 
@@ -205,10 +204,10 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             const chunkType = ev.data.type as 'text' | 'thinking';
             const chunkContent = ev.data.content as string;
             if (chunkType === 'thinking') {
-              flushSync(() => setMessages(prev => prev.map(msg => {
+              setMessages(prev => prev.map(msg => {
                 if (msg.id !== `s-${id}`) return msg;
                 return { ...msg, isThinking: true, streaming: false, statusText: undefined, thinkingText: (msg.thinkingText || '') + chunkContent };
-              })));
+              }));
             } else {
               setMessages(prev => prev.map(msg => {
                 if (msg.id !== `s-${id}`) return msg;

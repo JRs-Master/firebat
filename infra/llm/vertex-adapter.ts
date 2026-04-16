@@ -3,9 +3,12 @@ import { InfraResult } from '../../core/types';
 import { GoogleGenAI } from '@google/genai';
 import { DEFAULT_MODEL, DEFAULT_VERTEX_LOCATION, LLM_TIMEOUT_MS, LLM_TEMPERATURE_JSON, LLM_TEMPERATURE_TEXT } from '../config';
 
-/** thinking 활성화 — 2.5/3 공통, includeThoughts만 사용 */
-function buildThinkingConfig(enable: boolean): Record<string, unknown> {
-  return enable ? { includeThoughts: true } : {};
+/** thinking 활성화 — Lite 모델은 thinking 미지원 */
+function buildThinkingConfig(model: string, enable: boolean): Record<string, unknown> {
+  if (!enable) return {};
+  // Lite 계열은 thinking 미지원 (include_thoughts 전달 시 400 에러)
+  if (model.includes('lite')) return {};
+  return { includeThoughts: true };
 }
 
 /**
@@ -158,7 +161,7 @@ export class VertexAiAdapter implements ILlmPort {
         config: {
           systemInstruction: systemPrompt,
           temperature: LLM_TEMPERATURE_TEXT,
-          thinkingConfig: buildThinkingConfig(true),
+          thinkingConfig: buildThinkingConfig(model, true),
           // 도구가 없으면 tools/toolConfig 생략 (빈 배열 전달 시 Vertex AI 400 에러)
           ...(functionDeclarations.length > 0 ? {
             tools: [{ functionDeclarations }],
