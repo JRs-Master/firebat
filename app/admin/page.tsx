@@ -178,20 +178,15 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
 
 // ─── 상태 문구 ─────────────────────────────────────────────────────────────
 function ThinkingText({ statusText, thinkingText }: { statusText?: string; thinkingText?: string }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (thinkingText && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [thinkingText]);
   // 도구 실행 설명이 있으면 최우선 표시
   if (statusText) return <span>{statusText}</span>;
-  // LLM thinking 스트림 — 전체 내용을 스크롤 영역에 라이브 표시
+  // LLM thinking 스트림 — "생각 중... 최신 내용" 한 줄 라이브
   if (thinkingText) {
+    const lines = thinkingText.split('\n').filter(l => l.trim());
+    const lastLine = lines.length > 0 ? lines[lines.length - 1].trim() : '';
+    const display = lastLine.length > 50 ? lastLine.slice(-50) + '…' : lastLine;
     return (
-      <div ref={scrollRef} className="max-h-[120px] sm:max-h-[160px] overflow-y-auto text-slate-500 italic text-[12px] sm:text-[13px] leading-snug whitespace-pre-wrap scrollbar-thin">
-        {thinkingText}
-      </div>
+      <span className="truncate">생각 중... <span className="text-slate-400 italic text-[12px] sm:text-[13px]">{display}</span></span>
     );
   }
   return <span>생각하는 중...</span>;
@@ -319,8 +314,8 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
       <div className="flex flex-col gap-1 flex-1 min-w-0">
         <div className="flex flex-col gap-3 w-full bg-white px-4 py-3 sm:p-6 rounded-3xl rounded-tl-sm shadow-sm border border-slate-100">
           {msg.isThinking && !msg.streaming ? (
-            <div className="flex items-start gap-3 text-slate-600 font-medium bg-slate-50 border border-slate-200 px-4 py-3 sm:px-6 sm:py-5 rounded-2xl shadow-inner text-[13px] sm:text-[15px]">
-              <div className="animate-spin text-blue-600 shrink-0 mt-0.5"><Cpu size={18} /></div>
+            <div className="flex items-center gap-3 text-slate-600 font-medium bg-slate-50 border border-slate-200 px-4 py-3 sm:px-6 sm:py-5 rounded-2xl shadow-inner text-[13px] sm:text-[15px]">
+              <div className="animate-spin text-blue-600 shrink-0"><Cpu size={18} /></div>
               <ThinkingText statusText={msg.statusText} thinkingText={msg.thinkingText} />
             </div>
           ) : (
