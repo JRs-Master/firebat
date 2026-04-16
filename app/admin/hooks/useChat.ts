@@ -88,27 +88,13 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   }, []);
 
+  // 새 메시지 추가 시에만 스크롤 (스트리밍 중 자동 스크롤 안 함 — 사용자가 직접 내려서 봄)
+  const prevMsgCountRef = useRef(messages.length);
   useEffect(() => {
-    if (!isNearBottomRef.current) return;
-    const container = chatContainerRef.current;
-    if (!container) return;
-
-    // 활성 메시지(스트리밍/thinking 중) 찾기
-    const activeEl = container.querySelector('[data-msg-active]') as HTMLElement | null;
-    if (activeEl) {
-      const gap = 24; // 헤더와의 간격
-      const containerRect = container.getBoundingClientRect();
-      const msgRect = activeEl.getBoundingClientRect();
-      // 메시지 상단의 절대 스크롤 위치
-      const msgTopAbs = msgRect.top - containerRect.top + container.scrollTop;
-      const pinScroll = msgTopAbs - gap;
-      // 최대 스크롤 (맨 아래)
-      const maxScroll = container.scrollHeight - container.clientHeight;
-      // 짧은 메시지: 하단 추적, 긴 메시지: 상단 고정
-      container.scrollTo({ top: Math.min(pinScroll, maxScroll), behavior: 'smooth' });
-    } else {
+    if (messages.length > prevMsgCountRef.current && isNearBottomRef.current) {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
+    prevMsgCountRef.current = messages.length;
   }, [messages]);
 
   // ── 대화 관리 ──────────────────────────────────────────────────────────────
