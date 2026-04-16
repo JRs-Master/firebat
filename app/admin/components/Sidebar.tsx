@@ -393,11 +393,11 @@ export function Sidebar({
     {/* 모바일 backdrop */}
     {isMobile && (
       <div
-        className="fixed inset-0 bg-black/30 z-30 md:hidden touch-none"
+        className="fixed top-12 inset-x-0 bottom-0 bg-black/30 z-30 md:hidden touch-none"
         onClick={closeSidebar}
       />
     )}
-    <div className={`${isMobile ? 'fixed inset-y-0 left-0 z-40 h-dvh' : 'relative'} w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 shadow-lg overflow-hidden`}>
+    <div className={`${isMobile ? 'fixed top-12 bottom-0 left-0 z-40' : 'relative'} w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 shadow-lg overflow-hidden`}>
 
       {/* 탭 헤더 */}
       <div className="flex items-center gap-1 px-2 py-2 border-b border-slate-200/80">
