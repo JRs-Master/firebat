@@ -65,7 +65,6 @@ export class VertexAiAdapter implements ILlmPort {
       }));
       contents.push({ role: 'user', parts: [{ text: prompt }] });
 
-      const supportsThinking = /2\.5|gemini-3/.test(model);
       const response = await this.withTimeout(
         ai.models.generateContent({
           model,
@@ -74,7 +73,7 @@ export class VertexAiAdapter implements ILlmPort {
             systemInstruction: systemPrompt || '',
             responseMimeType: 'application/json',
             temperature: LLM_TEMPERATURE_JSON,
-            ...(supportsThinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+            thinkingConfig: { thinkingBudget: 0 },
           },
         }),
         LLM_TIMEOUT_MS,
@@ -149,15 +148,13 @@ export class VertexAiAdapter implements ILlmPort {
         parameters: t.parameters,
       }));
 
-      const supportsThinking = /2\.5|gemini-3/.test(model);
       const requestConfig = {
         model,
         contents,
         config: {
           systemInstruction: systemPrompt,
           temperature: LLM_TEMPERATURE_TEXT,
-          // 2.5 모델: thinking 활성화 → 사고 과정 스트리밍
-          ...(supportsThinking ? { thinkingConfig: { thinkingBudget: 2048 } } : {}),
+          thinkingConfig: { thinkingBudget: 2048 },
           // 도구가 없으면 tools/toolConfig 생략 (빈 배열 전달 시 Vertex AI 400 에러)
           ...(functionDeclarations.length > 0 ? {
             tools: [{ functionDeclarations }],
