@@ -87,6 +87,13 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
       { key: 'lawApiOc', label: 'API 인증값 (OC)', type: 'secret', secretName: 'LAW_API_OC', placeholder: 'open.law.go.kr → 마이페이지 → 인증값', description: '국가법령정보 공동활용 API 인증값' },
     ],
   },
+  'upbit': {
+    title: '업비트 Open API',
+    fields: [
+      { key: 'upbitAccessKey', label: 'Access Key', type: 'secret', secretName: 'UPBIT_ACCESS_KEY', placeholder: '업비트 → Open API 관리 → Access Key', description: '업비트 API Access Key' },
+      { key: 'upbitSecretKey', label: 'Secret Key', type: 'secret', secretName: 'UPBIT_SECRET_KEY', placeholder: '업비트 → Open API 관리 → Secret Key', description: '업비트 API Secret Key' },
+    ],
+  },
   'mcp-server': {
     title: 'Firebat MCP 서버',
     fields: [],  // MCP 서버는 커스텀 렌더링 (토큰 관리 + JSON 설정)
