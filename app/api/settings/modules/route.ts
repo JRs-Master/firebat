@@ -9,8 +9,12 @@ export async function GET(req: NextRequest) {
   const name = req.nextUrl.searchParams.get('name');
   if (!name) return NextResponse.json({ success: false, error: '모듈 이름 필요' }, { status: 400 });
 
-  const settings = getCore().getModuleSettings(name);
-  return NextResponse.json({ success: true, settings });
+  const core = getCore();
+  const [settings, config] = await Promise.all([
+    core.getModuleSettings(name),
+    core.getModuleConfig(name),
+  ]);
+  return NextResponse.json({ success: true, settings, config });
 }
 
 /** PATCH /api/settings/modules — 모듈 설정 저장 */

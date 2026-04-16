@@ -155,8 +155,11 @@ export class VertexAiAdapter implements ILlmPort {
         config: {
           systemInstruction: systemPrompt,
           temperature: LLM_TEMPERATURE_TEXT,
-          tools: [{ functionDeclarations }],
-          toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+          // 도구가 없으면 tools/toolConfig 생략 (빈 배열 전달 시 Vertex AI 400 에러)
+          ...(functionDeclarations.length > 0 ? {
+            tools: [{ functionDeclarations }],
+            toolConfig: { functionCallingConfig: { mode: 'AUTO' } },
+          } : {}),
         } as Record<string, unknown>,
       };
 

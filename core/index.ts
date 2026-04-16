@@ -213,6 +213,7 @@ export class FirebatCore {
 
   async getSystemModules() { return this.module.listSystem(); }
   getModuleSettings(moduleName: string) { return this.module.getSettings(moduleName); }
+  async getModuleConfig(moduleName: string) { return this.module.getConfig(moduleName); }
   setModuleSettings(moduleName: string, settings: Record<string, any>) { return this.module.setSettings(moduleName, settings); }
   isModuleEnabled(moduleName: string) { return this.module.isEnabled(moduleName); }
   setModuleEnabled(moduleName: string, enabled: boolean) { this.ai.invalidateCache(); return this.module.setEnabled(moduleName, enabled); }

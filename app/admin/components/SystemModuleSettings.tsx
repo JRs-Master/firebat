@@ -26,10 +26,12 @@ const TAB_META: Record<string, { label: string; icon: typeof Globe }> = {
   '스크립트': { label: '스크립트', icon: Code },
 };
 
-// 모듈별 설정 필드 정의 — 새 모듈 추가 시 여기에 등록
-const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingField[] }> = {
+/**
+ * 특수 설정이 필요한 모듈만 등록 (oauth, 커스텀 필드 등)
+ * 일반 secret 필드는 config.json의 secrets 배열에서 자동 생성됨
+ */
+const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingField[] }> = {
   'browser-scrape': {
-    title: 'Playwright 웹 스크래퍼',
     fields: [
       { key: 'timeout', label: '타임아웃 (ms)', type: 'number', placeholder: '30000', description: '페이지 로딩 제한 시간', defaultValue: 30000 },
       { key: 'headless', label: 'Headless 모드', type: 'toggle', description: '브라우저 UI 없이 실행', defaultValue: true },
@@ -37,91 +39,49 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
     ],
   },
   'kakao-talk': {
-    title: '카카오톡 메시지',
     fields: [
-      { key: 'kakaoRestApiKey', label: 'REST API 키', type: 'secret', secretName: 'KAKAO_REST_API_KEY', placeholder: '카카오 디벨로퍼스 → 앱 키', description: '카카오 앱의 REST API 키' },
-      { key: 'kakaoClientSecret', label: '클라이언트 시크릿', type: 'secret', secretName: 'KAKAO_CLIENT_SECRET', placeholder: '카카오 로그인 → 보안', description: '클라이언트 시크릿 코드 (활성화한 경우)' },
-      { key: 'kakaoOAuth', label: '카카오 계정 연동', type: 'oauth', oauthUrl: '/api/auth/kakao', oauthSecrets: ['KAKAO_ACCESS_TOKEN'], description: '위 키 등록 후 연동하면 액세스 토큰이 자동 발급됩니다.' },
+      { key: 'kakaoOAuth', label: '카카오 계정 연동', type: 'oauth', oauthUrl: '/api/auth/kakao', oauthSecrets: ['KAKAO_ACCESS_TOKEN'], description: '키 등록 후 연동하면 액세스 토큰이 자동 발급됩니다.' },
       { key: 'defaultType', label: '기본 메시지 타입', type: 'text', placeholder: 'text', description: 'text | feed | list (기본: text)', defaultValue: 'text' },
     ],
   },
   'firecrawl': {
-    title: 'Firecrawl 웹 스크래퍼',
     fields: [
-      { key: 'firecrawlApiKey', label: 'API 키', type: 'secret', secretName: 'FIRECRAWL_API_KEY', placeholder: 'fc-...', description: 'firecrawl.dev에서 발급받은 API 키' },
       { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '30000', description: '마크다운 결과 최대 글자 수', defaultValue: 30000 },
     ],
   },
-  'naver-search': {
-    title: '네이버 검색 API',
-    fields: [
-      { key: 'naverClientId', label: 'Client ID', type: 'secret', secretName: 'NAVER_CLIENT_ID', placeholder: '네이버 개발자센터 → 앱 → Client ID', description: '네이버 검색 API Client ID' },
-      { key: 'naverClientSecret', label: 'Client Secret', type: 'secret', secretName: 'NAVER_CLIENT_SECRET', placeholder: '네이버 개발자센터 → 앱 → Client Secret', description: '네이버 검색 API Client Secret' },
-    ],
-  },
-  'naver-ads': {
-    title: '네이버 광고 키워드 도구',
-    fields: [
-      { key: 'naverAdLicenseKey', label: 'License 키', type: 'secret', secretName: 'NAVER_AD_LICENSE_KEY', placeholder: '네이버 검색광고 → API 사용 관리', description: 'API License Key (액세스라이선스)' },
-      { key: 'naverAdSecretKey', label: 'Secret 키', type: 'secret', secretName: 'NAVER_AD_SECRET_KEY', placeholder: 'HMAC 서명에 사용', description: 'API Secret Key' },
-      { key: 'naverAdCustomerId', label: 'Customer ID', type: 'secret', secretName: 'NAVER_AD_CUSTOMER_ID', placeholder: '광고주 ID (숫자)', description: '네이버 검색광고 고객 ID' },
-    ],
-  },
-  'kiwoom': {
-    title: '키움증권 REST API',
-    fields: [
-      { key: 'kiwoomAppKey', label: 'App Key', type: 'secret', secretName: 'KIWOOM_APP_KEY', placeholder: '키움 Open API → 앱 등록', description: '키움증권 API App Key' },
-      { key: 'kiwoomAppSecret', label: 'App Secret', type: 'secret', secretName: 'KIWOOM_APP_SECRET', placeholder: '키움 Open API → 앱 등록', description: '키움증권 API App Secret' },
-    ],
-  },
-  'korea-invest': {
-    title: '한국투자증권 Open API',
-    fields: [
-      { key: 'kisAppKey', label: 'App Key', type: 'secret', secretName: 'KIS_APP_KEY', placeholder: '한투 API 포털 → 앱 등록', description: '한국투자증권 API App Key' },
-      { key: 'kisAppSecret', label: 'App Secret', type: 'secret', secretName: 'KIS_APP_SECRET', placeholder: '한투 API 포털 → 앱 등록', description: '한국투자증권 API App Secret' },
-    ],
-  },
-  'law-search': {
-    title: '국가법령정보 Open API',
-    fields: [
-      { key: 'lawApiOc', label: 'API 인증값 (OC)', type: 'secret', secretName: 'LAW_API_OC', placeholder: 'open.law.go.kr → 마이페이지 → 인증값', description: '국가법령정보 공동활용 API 인증값' },
-    ],
-  },
-  'upbit': {
-    title: '업비트 Open API',
-    fields: [
-      { key: 'upbitAccessKey', label: 'Access Key', type: 'secret', secretName: 'UPBIT_ACCESS_KEY', placeholder: '업비트 → Open API 관리 → Access Key', description: '업비트 API Access Key' },
-      { key: 'upbitSecretKey', label: 'Secret Key', type: 'secret', secretName: 'UPBIT_SECRET_KEY', placeholder: '업비트 → Open API 관리 → Secret Key', description: '업비트 API Secret Key' },
-    ],
-  },
   'mcp-server': {
-    title: 'Firebat MCP 서버',
-    fields: [],  // MCP 서버는 커스텀 렌더링 (토큰 관리 + JSON 설정)
+    fields: [],  // 커스텀 렌더링 (토큰 관리 + JSON 설정)
   },
   'seo': {
-    title: 'SEO 설정',
     fields: [
-      // 일반 탭 — placeholder는 힌트용, 빈 값이면 백엔드에서 기본값 적용
       { key: 'siteTitle', label: '사이트 제목', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'SEO 기본 사이트 제목 (OG, RSS, Sitemap 등에 사용)' },
       { key: 'siteDescription', label: '사이트 설명', type: 'text', tab: '일반', placeholder: 'Just Imagine. Firebat Runs.', description: 'SEO 기본 사이트 설명' },
       { key: 'siteUrl', label: '사이트 URL', type: 'text', tab: '일반', placeholder: 'https://firebat.co.kr', description: 'JSON-LD, Sitemap 등에 사용되는 기본 URL' },
       { key: 'jsonLdEnabled', label: 'JSON-LD 구조화 데이터', type: 'toggle', tab: '일반', description: 'WebSite + Organization 스키마 자동 삽입', defaultValue: true },
       { key: 'jsonLdOrganization', label: '조직/브랜드명', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'JSON-LD Organization name' },
       { key: 'jsonLdLogoUrl', label: '로고 URL', type: 'text', tab: '일반', placeholder: 'https://firebat.co.kr/icon.svg', description: 'JSON-LD Organization 로고 이미지 URL' },
-      // SEO 탭
       { key: 'sitemapEnabled', label: 'Sitemap 생성', type: 'toggle', tab: 'SEO', description: '/sitemap.xml 자동 생성', defaultValue: true },
       { key: 'rssEnabled', label: 'RSS 피드', type: 'toggle', tab: 'SEO', description: '/feed.xml 자동 생성', defaultValue: true },
       { key: 'robotsTxt', label: 'robots.txt', type: 'textarea', tab: 'SEO', placeholder: 'User-agent: *\nAllow: /\nDisallow: /api\nDisallow: /admin', description: 'robots.txt 내용', defaultValue: 'User-agent: *\nAllow: /\nDisallow: /api\nDisallow: /admin' },
-      // OG 탭
       { key: 'ogBgColor', label: '배경색', type: 'text', tab: 'OG', placeholder: '#f8fafc', description: 'OG 이미지 배경색 (HEX)' },
       { key: 'ogAccentColor', label: '강조색', type: 'text', tab: 'OG', placeholder: '#2563eb', description: '상단 라인, 로고 테두리 색상' },
       { key: 'ogDomain', label: '도메인 표시', type: 'text', tab: 'OG', placeholder: 'firebat.co.kr', description: 'OG 이미지 우하단 도메인 텍스트' },
-      // 스크립트 탭
       { key: 'headScripts', label: '<head> 스크립트', type: 'textarea', tab: '스크립트', placeholder: '<!-- Google Analytics 등 -->', description: '모든 페이지 <head>에 삽입할 HTML' },
       { key: 'bodyScripts', label: '</body> 스크립트', type: 'textarea', tab: '스크립트', placeholder: '<!-- 채팅 위젯 등 -->', description: '모든 페이지 </body> 앞에 삽입할 HTML' },
     ],
   },
 };
+
+/** config.json secrets 배열 → SettingField[] 자동 생성 */
+function secretsToFields(secrets: string[]): SettingField[] {
+  return secrets.map(name => ({
+    key: `_secret_${name}`,
+    label: name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+    type: 'secret' as FieldType,
+    secretName: name,
+    placeholder: name,
+  }));
+}
 
 interface Props {
   moduleName: string;
@@ -130,7 +90,8 @@ interface Props {
 }
 
 export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
-  const schema = MODULE_SETTINGS_SCHEMA[moduleName];
+  const manualSchema = MODULE_SETTINGS_SCHEMA[moduleName];
+  const [schema, setSchema] = useState<{ title: string; fields: SettingField[] } | null>(null);
   const [settings, setSettings] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -144,23 +105,35 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
   // 초기 탭 설정
   useEffect(() => { if (tabs.length > 0 && !activeTab) setActiveTab(tabs[0]); }, [tabs.length]); // eslint-disable-line
 
-  // 초기 로드
+  // 초기 로드 — config.json + settings 동시 조회
   useEffect(() => {
     setLoading(true);
     fetch(`/api/settings/modules?name=${encodeURIComponent(moduleName)}`)
       .then(r => r.json())
       .then(data => {
         if (data.success) {
+          // config.json에서 secrets 자동 생성
+          const config = data.config as Record<string, unknown> | null;
+          const configSecrets = (config?.secrets as string[] | undefined) ?? [];
+          const autoFields = secretsToFields(configSecrets);
+
+          // 수동 스키마의 secret 필드 중 config.json secrets에 이미 있는 것은 제외 (자동 생성으로 대체)
+          const manualFields = manualSchema?.fields ?? [];
+          const autoSecretNames = new Set(configSecrets);
+          const filteredManual = manualFields.filter(f => !(f.type === 'secret' && f.secretName && autoSecretNames.has(f.secretName)));
+
+          // 병합: 자동 secret 필드 먼저, 수동 필드 뒤에
+          const allFields = [...autoFields, ...filteredManual];
+          const title = manualSchema?.title || (config?.description as string) || moduleName;
+          setSchema({ title, fields: allFields });
+
           // 기본값과 저장된 값 병합
           const merged: Record<string, any> = {};
-          if (schema) {
-            for (const field of schema.fields) {
-              merged[field.key] = field.defaultValue ?? '';
-            }
+          for (const field of allFields) {
+            if (field.defaultValue !== undefined) merged[field.key] = field.defaultValue;
           }
-          // 저장된 값 병합 (빈 문자열도 유효한 저장값으로 표시)
-          const saved = data.settings ?? {};
-          for (const [key, val] of Object.entries(saved)) {
+          const savedData = data.settings ?? {};
+          for (const [key, val] of Object.entries(savedData)) {
             if (val !== null && val !== undefined) {
               merged[key] = val;
             }
@@ -170,7 +143,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [moduleName, schema]);
+  }, [moduleName]); // eslint-disable-line
 
   // OAuth 연동 상태 + 시크릿 값 로드
   const [oauthStatus, setOauthStatus] = useState<Record<string, boolean>>({});
@@ -423,20 +396,20 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
     );
   }
 
-  // 스키마가 없는 모듈 — 기본 정보만 표시
-  if (!schema) {
+  // 로딩 중이거나 설정 필드가 없는 모듈
+  if (!loading && schema && schema.fields.length === 0) {
     return (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
         <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
             <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
               {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors mr-1"><ArrowLeft size={18} /></button>}
-              <Blocks size={18} className="text-indigo-500" /> {moduleName}
+              <Blocks size={18} className="text-indigo-500" /> {schema.title}
             </h2>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
           </div>
           <div className="p-6 text-center text-slate-500 text-sm flex-1 flex items-center justify-center">
-            이 모듈에 대한 설정 항목이 아직 정의되지 않았습니다.
+            이 모듈에 대한 설정 항목이 없습니다.
           </div>
         </div>
       </div>
@@ -450,7 +423,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
           <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
             {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors mr-1"><ArrowLeft size={18} /></button>}
-            <Blocks size={18} className="text-indigo-500" /> {schema.title}
+            <Blocks size={18} className="text-indigo-500" /> {schema?.title ?? moduleName}
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
         </div>
@@ -510,7 +483,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
               </div>
             )}
 
-            {(hasTabs ? schema.fields.filter(f => (f.tab ?? '기본') === activeTab) : schema.fields).map(field => (
+            {(hasTabs ? (schema?.fields ?? []).filter(f => (f.tab ?? '기본') === activeTab) : (schema?.fields ?? [])).map(field => (
               <div key={field.key} className="flex flex-col gap-1.5 mb-1">
                 {field.type === 'secret' ? (
                   <div className="flex flex-col gap-1.5">

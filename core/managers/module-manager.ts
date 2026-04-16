@@ -119,6 +119,17 @@ export class ModuleManager {
     return this.vault.setSecret(vkModuleSettings(name), JSON.stringify(settings));
   }
 
+  /** 모듈/서비스 config.json 원본 조회 */
+  async getConfig(name: string): Promise<Record<string, unknown> | null> {
+    for (const dir of ['system/modules', 'system/services', 'user/modules']) {
+      const file = await this.storage.read(`${dir}/${name}/config.json`);
+      if (file.success && file.data) {
+        try { return JSON.parse(file.data); } catch { return null; }
+      }
+    }
+    return null;
+  }
+
   /** SEO 서비스 설정 조회 (편의 메서드) */
   getSeoSettings(): {
     sitemapEnabled: boolean;
