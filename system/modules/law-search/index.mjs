@@ -38,7 +38,14 @@ function out(success, dataOrError) {
 
 // ── 공통 fetch ──────────────────────────────────────────────────────────────
 async function apiFetch(url) {
-  const resp = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT) });
+  let resp;
+  try {
+    resp = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT) });
+  } catch (e) {
+    // 네트워크 장애, DNS 실패, 타임아웃 등
+    const cause = e.cause?.code || e.cause?.message || '';
+    throw new Error(`law.go.kr 접속 실패: ${e.message}${cause ? ` (${cause})` : ''}. 잠시 후 다시 시도해주세요.`);
+  }
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
     throw new Error(`API ${resp.status}: ${t}`.trim());
@@ -49,7 +56,7 @@ async function apiFetch(url) {
     if (json.result) throw new Error(`${json.result}: ${json.msg || ''}`.trim());
     return json;
   } catch (e) {
-    if (e.message.startsWith('API ') || e.message.includes('검증')) throw e;
+    if (e.message.startsWith('API ') || e.message.includes('검증') || e.message.includes('law.go.kr')) throw e;
     // JSON 파싱 실패 — HTML/XML 응답일 수 있음
     return { _raw: text.slice(0, 10000) };
   }
