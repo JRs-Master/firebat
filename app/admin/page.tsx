@@ -514,13 +514,7 @@ export default function AdminConsole() {
                   className="w-full min-h-[90px] max-h-[250px] p-5 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50"
                   placeholder={loading ? '명령 집행 중...' : '무엇을 도와드릴까요?'}
                 />
-                <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50/80">
-                  <div className="flex items-center gap-2 text-[12px] text-slate-500 font-medium tracking-tight">
-                    <kbd className="font-sans px-1.5 py-0.5 bg-white border border-slate-300 shadow-sm rounded text-slate-600">Shift</kbd>
-                    <span>+</span>
-                    <kbd className="font-sans px-1.5 py-0.5 bg-white border border-slate-300 shadow-sm rounded text-slate-600">Enter</kbd>
-                    <span className="ml-1 opacity-70">줄바꿈</span>
-                  </div>
+                <div className="flex items-center justify-end px-5 py-3 border-t border-slate-100 bg-slate-50/80">
                   <button
                     onClick={() => handleSubmit()}
                     disabled={!input.trim() || loading}

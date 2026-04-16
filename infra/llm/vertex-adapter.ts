@@ -94,13 +94,24 @@ export class VertexAiAdapter implements ILlmPort {
 
     const model = opts?.model ?? this.defaultModel;
     try {
-      // 대화 히스토리 → contents
-      const contents: Array<{ role: 'user' | 'model'; parts: Array<Record<string, unknown>> }> = history.map(h => ({
-        role: (h.role === 'assistant' ? 'model' : 'user') as 'user' | 'model',
-        parts: [{ text: typeof h.content === 'string' && h.content.trim() ? h.content : JSON.stringify(h) }],
-      }));
-      // 사용자 프롬프트
-      contents.push({ role: 'user', parts: [{ text: prompt }] });
+      // 대화 히스토리 → contents (이미지 포함)
+      const contents: Array<{ role: 'user' | 'model'; parts: Array<Record<string, unknown>> }> = history.map(h => {
+        const parts: Array<Record<string, unknown>> = [{ text: typeof h.content === 'string' && h.content.trim() ? h.content : JSON.stringify(h) }];
+        if (h.image) {
+          const base64 = h.image.includes(',') ? h.image.split(',')[1] : h.image;
+          const mimeType = h.imageMimeType || (h.image.match(/^data:([^;]+);/)?.[1]) || 'image/jpeg';
+          parts.push({ inlineData: { data: base64, mimeType } });
+        }
+        return { role: (h.role === 'assistant' ? 'model' : 'user') as 'user' | 'model', parts };
+      });
+      // 사용자 프롬프트 (이미지는 opts.image로 전달)
+      const userParts: Array<Record<string, unknown>> = [{ text: prompt }];
+      if (opts?.image) {
+        const base64 = opts.image.includes(',') ? opts.image.split(',')[1] : opts.image;
+        const mimeType = opts.imageMimeType || (opts.image.match(/^data:([^;]+);/)?.[1]) || 'image/jpeg';
+        userParts.push({ inlineData: { data: base64, mimeType } });
+      }
+      contents.push({ role: 'user', parts: userParts });
 
       // 멀티턴 도구 교환 히스토리 추가 (이전 턴의 호출 → 결과)
       for (const exchange of toolExchanges) {

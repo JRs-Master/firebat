@@ -14,6 +14,10 @@ import type { InfraResult } from '../types';
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  /** Base64 인코딩된 이미지 데이터 (data:image/png;base64,... 또는 순수 base64) */
+  image?: string;
+  /** 이미지 MIME 타입 (image/png, image/jpeg 등) */
+  imageMimeType?: string;
 }
 
 /** LLM JSON 응답 (FirebatPlan 구조) */
@@ -214,6 +218,10 @@ export interface LlmCallOpts {
   model?: string;
   /** 스트리밍 청크 콜백 — 설정 시 generateContentStream 사용 */
   onChunk?: (chunk: LlmChunk) => void;
+  /** 현재 프롬프트에 첨부할 이미지 (Base64 data URL 또는 순수 base64) */
+  image?: string;
+  /** 이미지 MIME 타입 */
+  imageMimeType?: string;
 }
 
 // ── Function Calling 타입 ──────────────────────────────────────────────────

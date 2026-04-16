@@ -19,6 +19,8 @@ import { eventBus } from '../lib/events';
 export interface AiRequestOpts {
   model?: string;
   isDemo?: boolean;
+  /** 현재 프롬프트에 첨부된 이미지 (Base64 data URL) */
+  image?: string;
 }
 
 /**
