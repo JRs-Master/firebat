@@ -977,11 +977,9 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
 
   /**
    * 복잡도 분류기 — Flash-Lite로 'flash' or 'pro' 판정 (Google 공식 패턴)
-   * 실패 시 기본값(Flash)으로 폴백
+   * 실패 시 기본값(Flash)으로 폴백. 결과는 training 로그에 저장 (파인튜닝용)
    */
   private async classifyComplexity(prompt: string, corrId: string): Promise<'flash' | 'pro'> {
-    const FLASH = 'gemini-3-flash-preview';
-    const PRO = 'gemini-3.1-pro-preview';
     const systemPrompt = `You are a Task Routing AI. Analyze the user's request and classify complexity.
 
 Return JSON ONLY: {"reasoning": "brief why", "model_choice": "flash" | "pro"}
@@ -1002,19 +1000,37 @@ SIMPLE (flash) if: specific, bounded, 1-3 tool calls expected.`;
       this.logger.warn(`[AiManager] [${corrId}] Classifier 실패 (${ms}ms), flash로 폴백: ${res.error ?? ''}`);
       return 'flash';
     }
+
+    let choice: 'flash' | 'pro' = 'flash';
+    let reasoning = '';
     try {
-      // 응답에서 JSON 블록 추출
       const match = res.data.match(/\{[\s\S]*\}/);
       if (!match) throw new Error('JSON not found');
       const parsed = JSON.parse(match[0]) as { reasoning?: string; model_choice?: string };
-      const choice = parsed.model_choice === 'pro' ? 'pro' : 'flash';
-      this.logger.info(`[AiManager] [${corrId}] Classifier (${ms}ms) → ${choice} | ${parsed.reasoning ?? ''}`);
-      return choice;
+      choice = parsed.model_choice === 'pro' ? 'pro' : 'flash';
+      reasoning = parsed.reasoning ?? '';
+      this.logger.info(`[AiManager] [${corrId}] Classifier (${ms}ms) → ${choice} | ${reasoning}`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       this.logger.warn(`[AiManager] [${corrId}] Classifier 파싱 실패 (${ms}ms), flash로 폴백: ${msg}`);
-      return 'flash';
     }
+
+    // Training 로그 저장 — 나중에 Flash-Lite 라우터 파인튜닝용
+    try {
+      const modelResponse = JSON.stringify({ reasoning, model_choice: choice });
+      this.logger.info(`[USER_AI_TRAINING] ${JSON.stringify({
+        _task: 'classifier',
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        contents: [
+          { role: 'user', parts: [{ text: prompt }] },
+          { role: 'model', parts: [{ text: modelResponse }] },
+        ],
+      })}`);
+    } catch {
+      // 로그 실패 무시
+    }
+
+    return choice;
   }
 
   /** 'auto' 모델을 실제 모델 ID로 해석 */
