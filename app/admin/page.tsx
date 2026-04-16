@@ -178,6 +178,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
 
 // ─── Thinking 블록 — 버블 상단에 항상 표시 ──────────────────────────────────
 function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: string; thinkingText?: string; isActive?: boolean }) {
+  console.log('[RENDER-THINKING]', { statusText, thinkingText: thinkingText?.slice(-40), isActive });
   if (!isActive && !thinkingText) return null;
   // 완료 상태
   if (thinkingText === '답변 완료') {

@@ -201,17 +201,20 @@ export function useChat(aiModel: string, onRefresh: () => void) {
 
         for (const ev of parsed.events) {
           if (ev.event === 'chunk') {
-            // 스트리밍 텍스트 청크 — 타이핑 효과
             const chunkType = ev.data.type as 'text' | 'thinking';
             const chunkContent = ev.data.content as string;
+            console.log('[CHUNK-DEBUG]', chunkType, chunkContent?.slice(0, 40));
             if (chunkType === 'thinking') {
               setMessages(prev => prev.map(msg => {
                 if (msg.id !== `s-${id}`) return msg;
-                return { ...msg, isThinking: true, streaming: false, statusText: undefined, thinkingText: (msg.thinkingText || '') + chunkContent };
+                const newText = (msg.thinkingText || '') + chunkContent;
+                console.log('[THINKING-STATE]', { prev: msg.thinkingText?.slice(-30), new: newText.slice(-30), isThinking: true, streaming: false });
+                return { ...msg, isThinking: true, streaming: false, statusText: undefined, thinkingText: newText };
               }));
             } else {
               setMessages(prev => prev.map(msg => {
                 if (msg.id !== `s-${id}`) return msg;
+                console.log('[TEXT-STATE]', { thinkingText: msg.thinkingText?.slice(-30), content: msg.content?.slice(0, 30), isThinking: false, streaming: true });
                 return { ...msg, isThinking: false, statusText: undefined, content: (msg.content || '') + chunkContent, streaming: true };
               }));
             }
