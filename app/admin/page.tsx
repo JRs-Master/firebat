@@ -8,7 +8,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { SystemModuleSettings } from './components/SystemModuleSettings';
 import { SecretInput } from './components/ChatWidgets';
 import { useChat } from './hooks/useChat';
-import { Message } from './types';
+import { Message, StepStatus } from './types';
 
 // ─── 간이 마크다운 렌더러 ────────────────────────────────────────────────────
 function renderMarkdown(text: string) {
@@ -199,6 +199,40 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+// ─── 액션 태그 (에러 시 빨간색 + 클릭 펼침) ──────────────────────────────────
+function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[] }) {
+  const [openIdx, setOpenIdx] = useState<number | null>(null);
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex flex-wrap gap-2">
+        {actions.map((action, i) => {
+          const step = steps?.find(s => s.type === action && s.status === 'error');
+          const isError = !!step;
+          return (
+            <div
+              key={i}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-bold tracking-tight shadow-sm ${isError ? 'bg-red-50 border border-red-100 text-red-700 cursor-pointer hover:bg-red-100' : 'bg-indigo-50 border border-indigo-100 text-indigo-700'} transition-colors`}
+              onClick={isError ? () => setOpenIdx(openIdx === i ? null : i) : undefined}
+            >
+              {isError ? <AlertTriangle size={14} className="text-red-500" /> : <Blocks size={14} className="text-indigo-500" />}
+              {action}
+            </div>
+          );
+        })}
+      </div>
+      {openIdx !== null && (() => {
+        const action = actions[openIdx];
+        const step = steps?.find(s => s.type === action && s.status === 'error');
+        return step?.error ? (
+          <div className="px-3 py-2 bg-red-50/50 border border-red-100 rounded-md text-[12px] font-mono text-red-600 leading-relaxed break-all">
+            {step.error}
+          </div>
+        ) : null;
+      })()}
+    </div>
+  );
+}
+
 // ─── 에러 접이식 박스 ──────────────────────────────────────────────────────────
 function ErrorCollapsible({ error, label }: { error: string; label?: string }) {
   const [open, setOpen] = useState(false);
@@ -293,24 +327,10 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
                 </div>
               )}
 
-              {/* 실행 완료된 액션 태그 + step 에러 */}
+              {/* 실행 완료된 액션 태그 — 에러 시 빨간색 + 클릭 펼침 */}
               {msg.executedActions && msg.executedActions.length > 0 && !msg.plan && (
-                <div className="flex flex-wrap gap-2">
-                  {msg.executedActions.map((action, i) => {
-                    const step = msg.steps?.find(s => s.type === action && s.status === 'error');
-                    return (
-                      <div key={i} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-bold tracking-tight shadow-sm ${step ? 'bg-red-50 border border-red-100 text-red-700' : 'bg-indigo-50 border border-indigo-100 text-indigo-700'}`}>
-                        {step ? <AlertTriangle size={14} className="text-red-500" /> : <Blocks size={14} className="text-indigo-500" />}
-                        {action}
-                      </div>
-                    );
-                  })}
-                </div>
+                <ActionTags actions={msg.executedActions} steps={msg.steps} />
               )}
-              {/* step 에러 상세 (접이식) */}
-              {msg.steps?.filter(s => s.error).map((s, i) => (
-                <ErrorCollapsible key={`step-err-${i}`} label={`${s.type} 오류`} error={s.error || '알 수 없는 오류'} />
-              ))}
 
               {/* 에러 — 접이식 태그 */}
               {msg.error && (
