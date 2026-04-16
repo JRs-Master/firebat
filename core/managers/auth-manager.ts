@@ -1,4 +1,5 @@
 import type { IAuthPort, IVaultPort, AuthSession } from '../ports';
+import { VK_ADMIN_ID, VK_ADMIN_PASSWORD } from '../vault-keys';
 
 /** API 토큰 정보 (마스킹된 힌트 + 생성일) */
 export interface ApiTokenInfo {
@@ -125,14 +126,14 @@ export class AuthManager {
   // ══════════════════════════════════════════════════════════════════════════
 
   getAdminCredentials(): { id: string; password: string } {
-    const id       = this.vault.getSecret('FIREBAT_ADMIN_ID')       ?? process.env.FIREBAT_ADMIN_ID       ?? 'admin';
-    const password = this.vault.getSecret('FIREBAT_ADMIN_PASSWORD') ?? process.env.FIREBAT_ADMIN_PASSWORD ?? 'admin';
+    const id       = this.vault.getSecret(VK_ADMIN_ID)       ?? process.env.FIREBAT_ADMIN_ID       ?? 'admin';
+    const password = this.vault.getSecret(VK_ADMIN_PASSWORD) ?? process.env.FIREBAT_ADMIN_PASSWORD ?? 'admin';
     return { id, password };
   }
 
   setAdminCredentials(newId?: string, newPassword?: string): void {
-    if (newId)       this.vault.setSecret('FIREBAT_ADMIN_ID', newId);
-    if (newPassword) this.vault.setSecret('FIREBAT_ADMIN_PASSWORD', newPassword);
+    if (newId)       this.vault.setSecret(VK_ADMIN_ID, newId);
+    if (newPassword) this.vault.setSecret(VK_ADMIN_PASSWORD, newPassword);
   }
 
   // ══════════════════════════════════════════════════════════════════════════

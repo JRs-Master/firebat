@@ -315,8 +315,17 @@ export interface LlmTransformStep extends PipelineStepBase {
   instruction: string;
 }
 
-/** 파이프라인 단계 = 4가지 중 하나 */
-export type PipelineStep = ExecuteStep | McpCallStep | NetworkRequestStep | LlmTransformStep;
+/** CONDITION — 조건 검사 (false면 파이프라인 중단, 에러가 아닌 정상 종료) */
+export interface ConditionStep {
+  type: 'CONDITION';
+  description?: string;
+  field: string;       // 검사 대상 ($prev, $prev.price 등)
+  op: '==' | '!=' | '<' | '<=' | '>' | '>=' | 'includes' | 'not_includes' | 'exists' | 'not_exists';
+  value?: unknown;     // 비교 값 (exists/not_exists는 불필요)
+}
+
+/** 파이프라인 단계 = 5가지 중 하나 */
+export type PipelineStep = ExecuteStep | McpCallStep | NetworkRequestStep | LlmTransformStep | ConditionStep;
 
 /** 파이프라인 단계 타입 리터럴 */
 export type PipelineStepType = PipelineStep['type'];

@@ -2,8 +2,8 @@
   "name": "law-search",
   "type": "module",
   "scope": "system",
-  "version": "1.0.0",
-  "description": "국가법령정보 Open API. 법령/판례/행정규칙/자치법규/헌재결정례/법령해석례/조약 검색 및 본문 조회. action: search(목록 검색), detail(본문 조회). target: law(법령), prec(판례), admrul(행정규칙), ordin(자치법규), detc(헌재결정례), expc(법령해석례), trty(조약). 법률 자문 시 법령 검색 후 본문 조회하여 조문/판결문 기반 답변 가능.",
+  "version": "2.0.0",
+  "description": "국가법령정보 Open API (open.law.go.kr). 3가지 액션: search(목록 검색), detail(본문 조회), article(조항호목 조회). 8가지 target: law(법령), prec(판례), admrul(행정규칙), ordin(자치법규), detc(헌재결정례), expc(법령해석례), trty(조약), lsHistory(연혁법령). 법률 자문 시 검색→본문 조회로 조문/판결문 기반 답변 가능. 조항호목 조회로 특정 조문만 정밀 조회 가능.",
   "runtime": "node",
   "capability": "law-search",
   "providerType": "api",
@@ -14,28 +14,36 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["search", "detail"],
-        "description": "search=목록 검색, detail=본문 조회"
+        "enum": ["search", "detail", "article"],
+        "description": "search=목록 검색(lawSearch.do), detail=본문 조회(lawService.do), article=조항호목 조회(lawjosub)"
       },
       "target": {
         "type": "string",
-        "enum": ["law", "prec", "admrul", "ordin", "detc", "expc", "trty"],
+        "enum": ["law", "prec", "admrul", "ordin", "detc", "expc", "trty", "lsHistory"],
         "default": "law",
-        "description": "대상 (law=법령, prec=판례, admrul=행정규칙, ordin=자치법규, detc=헌재결정례, expc=법령해석례, trty=조약)"
+        "description": "대상. law=법령, prec=판례, admrul=행정규칙, ordin=자치법규, detc=헌재결정례, expc=법령해석례, trty=조약, lsHistory=연혁법령"
       },
       "query": {
         "type": "string",
         "description": "[search] 검색 키워드"
       },
-      "id": {
+      "ID": {
         "type": "string",
-        "description": "[detail] 법령ID 또는 판례일련번호 (검색 결과의 법령ID/판례일련번호 사용)"
+        "description": "[detail/article] 법령ID, 판례일련번호, 행정규칙일련번호 등 (검색 결과에서 획득)"
+      },
+      "MST": {
+        "type": "string",
+        "description": "[detail/article] 법령일련번호. ID 대신 사용 가능 (법령 전용)"
+      },
+      "LM": {
+        "type": "string",
+        "description": "[detail] 법령명/판례명/안건명으로 본문 조회"
       },
       "search": {
         "type": "string",
         "enum": ["1", "2"],
         "default": "1",
-        "description": "[search] 검색범위 (1=제목, 2=본문)"
+        "description": "[search] 검색범위. 1=제목(기본), 2=본문"
       },
       "display": {
         "type": "integer",
@@ -52,8 +60,160 @@
       },
       "sort": {
         "type": "string",
-        "enum": ["lasc", "ldes", "dasc", "ddes", "efasc", "efdes"],
-        "description": "[search] 정렬 (lasc/ldes=법령명, dasc/ddes=공포일자, efasc/efdes=시행일자)"
+        "enum": ["lasc", "ldes", "dasc", "ddes", "nasc", "ndes", "efasc", "efdes", "rasc", "rdes"],
+        "description": "[search] 정렬. lasc/ldes=이름순, dasc/ddes=공포일/선고일, efasc/efdes=시행일, nasc/ndes=번호순"
+      },
+      "date": {
+        "type": "integer",
+        "description": "[search] 날짜 검색 (공포일/선고일/발령일/종국일, YYYYMMDD)"
+      },
+      "efYd": {
+        "type": "string",
+        "description": "[search:law/ordin] 시행일자 범위 (20090101~20090130)"
+      },
+      "ancYd": {
+        "type": "string",
+        "description": "[search:law/ordin] 공포일자 범위"
+      },
+      "ancNo": {
+        "type": "string",
+        "description": "[search:law/ordin] 공포번호 범위 (306~400)"
+      },
+      "prncYd": {
+        "type": "string",
+        "description": "[search:prec] 선고일자 범위 (20090101~20090130)"
+      },
+      "prmlYd": {
+        "type": "string",
+        "description": "[search:admrul] 발령일자 범위"
+      },
+      "modYd": {
+        "type": "string",
+        "description": "[search:admrul] 수정일자 범위"
+      },
+      "edYd": {
+        "type": "string",
+        "description": "[search:detc] 종국일자 범위"
+      },
+      "regYd": {
+        "type": "string",
+        "description": "[search:expc] 등록일자 범위"
+      },
+      "explYd": {
+        "type": "string",
+        "description": "[search:expc] 해석일자 범위"
+      },
+      "eftYd": {
+        "type": "string",
+        "description": "[search:trty] 발효일자 범위"
+      },
+      "concYd": {
+        "type": "string",
+        "description": "[search:trty] 체결일자 범위"
+      },
+      "nb": {
+        "type": "string",
+        "description": "[search] 번호 검색 (공포번호/사건번호/발령번호)"
+      },
+      "org": {
+        "type": "string",
+        "description": "[search] 기관 코드. law=소관부처, prec=법원종류(400201=대법원,400202=하위), admrul=소관부처, ordin=지자체코드"
+      },
+      "curt": {
+        "type": "string",
+        "description": "[search:prec] 법원명 (대법원, 서울고등법원 등)"
+      },
+      "knd": {
+        "type": "string",
+        "description": "[search] 종류 코드. law=법령종류, admrul=1~6(훈령/예규/고시/공고/지침/기타), ordin=30001~30011"
+      },
+      "rrClsCd": {
+        "type": "string",
+        "description": "[search:law/ordin] 제개정구분 (300201=제정, 300202=일부개정, 300203=전부개정, 300204=폐지 등)"
+      },
+      "nw": {
+        "type": "string",
+        "enum": ["1", "2"],
+        "description": "[search:admrul/ordin] 1=현행(기본), 2=연혁"
+      },
+      "lsChapNo": {
+        "type": "string",
+        "description": "[search:law/ordin] 법령분류 (01~44편)"
+      },
+      "gana": {
+        "type": "string",
+        "description": "[search] 사전식 검색 (가,나,다...)"
+      },
+      "sborg": {
+        "type": "string",
+        "description": "[search:ordin] 시군구 코드"
+      },
+      "ordinFd": {
+        "type": "integer",
+        "description": "[search:ordin] 분야코드"
+      },
+      "cls": {
+        "type": "integer",
+        "enum": [1, 2],
+        "description": "[search:trty] 1=양자조약, 2=다자조약"
+      },
+      "natCd": {
+        "type": "integer",
+        "description": "[search:trty] 국가코드"
+      },
+      "inq": {
+        "type": "string",
+        "description": "[search:expc] 질의기관"
+      },
+      "rpl": {
+        "type": "integer",
+        "description": "[search:expc] 회신기관"
+      },
+      "itmno": {
+        "type": "integer",
+        "description": "[search:expc] 안건번호 (130217 = 13-0217)"
+      },
+      "JO": {
+        "type": "string",
+        "description": "[detail:law/article] 조문번호 6자리. 제2조=000200, 제10조=001000, 제100조=010000"
+      },
+      "HANG": {
+        "type": "string",
+        "description": "[article] 항번호 6자리. 제2항=000200"
+      },
+      "HO": {
+        "type": "string",
+        "description": "[article] 호번호 6자리. 제2호=000200"
+      },
+      "MOK": {
+        "type": "string",
+        "description": "[article] 목번호 한글 1글자 (가,나,다,라...)"
+      },
+      "LANG": {
+        "type": "string",
+        "enum": ["KO", "ORI"],
+        "description": "[detail:law] KO=한글(기본), ORI=원문"
+      },
+      "LID": {
+        "type": "string",
+        "description": "[detail:admrul] 행정규칙ID"
+      },
+      "LD": {
+        "type": "integer",
+        "description": "[detail:law] 공포일자"
+      },
+      "LN": {
+        "type": "integer",
+        "description": "[detail:law] 공포번호"
+      },
+      "chrClsCd": {
+        "type": "string",
+        "enum": ["010202", "010203"],
+        "description": "[detail:trty] 언어 코드. 010202=한글(기본), 010203=영문"
+      },
+      "datSrcNm": {
+        "type": "string",
+        "description": "[search:prec] 데이터출처명"
       }
     },
     "additionalProperties": false
@@ -61,17 +221,14 @@
   "output": {
     "type": "object",
     "properties": {
-      "totalCnt": { "type": "integer", "description": "검색 총 건수" },
-      "page": { "type": "integer", "description": "현재 페이지" },
+      "totalCnt": { "type": "integer", "description": "[search] 검색 총 건수" },
+      "page": { "type": "integer", "description": "[search] 현재 페이지" },
       "items": {
         "type": "array",
-        "description": "검색 결과 목록",
+        "description": "[search] 검색 결과 목록",
         "items": { "type": "object" }
-      },
-      "detail": {
-        "type": "object",
-        "description": "본문 조회 결과 (조문/판결문 등)"
       }
-    }
+    },
+    "description": "search → {totalCnt, page, items[]}, detail → target별 본문 객체, article → 조항호목 객체"
   }
 }

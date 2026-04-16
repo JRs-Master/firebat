@@ -7,6 +7,7 @@
 import { NextRequest } from 'next/server';
 import { readOAuthKeys, getServiceConfig, getOrigin } from '../route';
 import { requireAuth, isAuthError } from '../../../../../lib/auth-guard';
+import { DEFAULT_OAUTH_TOKEN_EXPIRY_SECONDS } from '../../../../../infra/config';
 
 function getFs(): typeof import('fs') { return require('fs'); }
 function getPath(): typeof import('path') { return require('path'); }
@@ -34,7 +35,7 @@ function htmlResponse(title: string, body: string, type: 'success' | 'error' | '
 </div>
 <script>
   if (window.opener) {
-    window.opener.postMessage({ type: 'mcp-oauth-done', success: ${type === 'success'} }, '*');
+    window.opener.postMessage({ type: 'mcp-oauth-done', success: ${type === 'success'} }, window.location.origin);
     ${autoClose ? "setTimeout(() => window.close(), 1500);" : ''}
   }
 </script>
@@ -101,7 +102,7 @@ export async function GET(req: NextRequest) {
       refresh_token: tokenData.refresh_token,
       access_token: tokenData.access_token,
       token_type: tokenData.token_type || 'Bearer',
-      expiry_date: Date.now() + (tokenData.expires_in ?? 3600) * 1000,
+      expiry_date: Date.now() + (tokenData.expires_in ?? DEFAULT_OAUTH_TOKEN_EXPIRY_SECONDS) * 1000,
     };
 
     const credJson = JSON.stringify(credentials, null, 2);

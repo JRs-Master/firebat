@@ -29,29 +29,38 @@ export async function POST(req: NextRequest) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      const send = (event: string, data: any) => {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-      };
-
-      const stepLabel = (type: string): string => {
-        switch (type) {
-          case 'EXECUTE': return '시스템 모듈을 불러오는 중';
-          case 'MCP_CALL': return '외부 서비스에 연결하는 중';
-          case 'NETWORK_REQUEST': return 'API를 호출하는 중';
-          case 'LLM_TRANSFORM': return '결과를 정리하는 중';
-          case 'WRITE_FILE': return '파일을 저장하는 중';
-          case 'SAVE_PAGE': return '페이지를 저장하는 중';
-          case 'DELETE_PAGE': return '페이지를 삭제하는 중';
-          case 'SCHEDULE_TASK': return '스케줄을 등록하는 중';
-          case 'CANCEL_TASK': return '스케줄을 해제하는 중';
-          default: return type;
+      const send = (event: string, data: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: '직렬화 실패' })}\n\n`));
         }
       };
-      const result = await core.executePlan(plan, corrId, opts, (step) => {
-        send('step', { ...step, description: stepLabel((step as any).type) });
-      });
 
-      send('result', result);
+      try {
+        const stepLabel = (type: string): string => {
+          switch (type) {
+            case 'EXECUTE': return '시스템 모듈을 불러오는 중';
+            case 'MCP_CALL': return '외부 서비스에 연결하는 중';
+            case 'NETWORK_REQUEST': return 'API를 호출하는 중';
+            case 'LLM_TRANSFORM': return '결과를 정리하는 중';
+            case 'WRITE_FILE': return '파일을 저장하는 중';
+            case 'SAVE_PAGE': return '페이지를 저장하는 중';
+            case 'DELETE_PAGE': return '페이지를 삭제하는 중';
+            case 'SCHEDULE_TASK': return '스케줄을 등록하는 중';
+            case 'CANCEL_TASK': return '스케줄을 해제하는 중';
+            case 'CONDITION': return '조건 검사 중';
+            default: return type;
+          }
+        };
+        const result = await core.executePlan(plan, corrId, opts, (step) => {
+          send('step', { ...step, description: stepLabel((step as any).type) });
+        });
+
+        send('result', result);
+      } catch (err: any) {
+        send('error', { error: err.message || '알 수 없는 오류' });
+      }
       controller.close();
     },
   });

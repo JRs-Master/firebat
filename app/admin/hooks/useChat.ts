@@ -188,8 +188,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+        if (value) buffer += decoder.decode(value, { stream: !done });
+        if (done) {
+          // 스트림 종료 시 잔여 버퍼 flush (마지막 \n\n 없는 이벤트 처리)
+          if (buffer.trim()) buffer += '\n\n';
+        }
 
         const parsed = parseSSE(buffer);
         buffer = parsed.remaining;
@@ -240,6 +243,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             )));
           }
         }
+        if (done) break;
       }
     } catch (err: any) {
       setMessages(prev => prev.map(msg =>
@@ -277,8 +281,10 @@ export function useChat(aiModel: string, onRefresh: () => void) {
 
       while (true) {
         const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+        if (value) buffer += decoder.decode(value, { stream: !done });
+        if (done) {
+          if (buffer.trim()) buffer += '\n\n';
+        }
 
         const parsed = parseSSE(buffer);
         buffer = parsed.remaining;
@@ -300,6 +306,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             if (ev.data.executedActions?.length) { onRefresh(); window.dispatchEvent(new Event('firebat-refresh')); }
           }
         }
+        if (done) break;
       }
     } catch (err: any) {
       setMessages(prev => prev.map(m =>

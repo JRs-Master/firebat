@@ -25,7 +25,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
   // Vertex AI
   const [vertexApiKey, setVertexApiKey] = useState('');
   const [vertexProject, setVertexProject] = useState('');
-  const [vertexLocation, setVertexLocation] = useState('us-central1');
+  const [vertexLocation, setVertexLocation] = useState('asia-northeast3');
 
   // 관리자 계정 변경
   const [adminCurrentPw, setAdminCurrentPw] = useState('');
@@ -257,6 +257,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
         setMcpAuth({ server: serverName, step: 'waiting', authUrl: data.authUrl });
         const popup = window.open(data.authUrl, 'mcp-oauth', 'width=500,height=700,left=200,top=100');
         const handler = (ev: MessageEvent) => {
+          if (ev.origin !== window.location.origin) return;
           if (ev.data?.type === 'mcp-oauth-done') {
             window.removeEventListener('message', handler);
             if (ev.data.success) {

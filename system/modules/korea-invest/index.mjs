@@ -134,6 +134,10 @@ const ACTION_MAP = {
   'capture-uplowprice':{ trId: 'FHKST130000C0', url: '/uapi/domestic-stock/v1/quotations/capture-uplowprice' },
   'frgnmem-trade':    { trId: 'FHKST644100C0', url: '/uapi/domestic-stock/v1/quotations/frgnmem-trade-estimate' },
   'frgnmem-pchs':     { trId: 'FHKST644400C0', url: '/uapi/domestic-stock/v1/quotations/frgnmem-pchs-trend' },
+  'frgnmem-trade-trend':{ trId: 'FHPST04320000', url: '/uapi/domestic-stock/v1/quotations/frgnmem-trade-trend' },
+  'intstock-grouplist': { trId: 'HHKCM113004C7', url: '/uapi/domestic-stock/v1/quotations/intstock-grouplist' },
+  'intstock-multprice': { trId: 'FHKST11300006', url: '/uapi/domestic-stock/v1/quotations/intstock-multprice' },
+  'intstock-stocklist':  { trId: 'HHKCM113004C6', url: '/uapi/domestic-stock/v1/quotations/intstock-stocklist-by-group' },
 
   // ══ 국내주식 재무 ══
   'finance-balance':  { trId: 'FHKST66430100', url: '/uapi/domestic-stock/v1/finance/balance-sheet' },
@@ -167,6 +171,20 @@ const ACTION_MAP = {
   'elw-sensitivity':{ trId: 'FHPEW02850000', url: '/uapi/elw/v1/ranking/sensitivity' },
   'elw-quick-change':{ trId: 'FHPEW02870000', url: '/uapi/elw/v1/ranking/quick-change' },
   'elw-newly-listed':{ trId: 'FHKEW154800C0', url: '/uapi/elw/v1/quotations/newly-listed' },
+  'elw-compare':     { trId: 'FHKEW151701C0', url: '/uapi/elw/v1/quotations/compare-stocks' },
+  'elw-expiration':  { trId: 'FHKEW154700C0', url: '/uapi/elw/v1/quotations/expiration-stocks' },
+  'elw-indicator-ccnl':  { trId: 'FHPEW02740100', url: '/uapi/elw/v1/quotations/indicator-trend-ccnl' },
+  'elw-indicator-daily': { trId: 'FHPEW02740200', url: '/uapi/elw/v1/quotations/indicator-trend-daily' },
+  'elw-indicator-minute':{ trId: 'FHPEW02740300', url: '/uapi/elw/v1/quotations/indicator-trend-minute' },
+  'elw-lp-trade':    { trId: 'FHPEW03760000', url: '/uapi/elw/v1/quotations/lp-trade-trend' },
+  'elw-sensitivity-ccnl':  { trId: 'FHPEW02830100', url: '/uapi/elw/v1/quotations/sensitivity-trend-ccnl' },
+  'elw-sensitivity-daily': { trId: 'FHPEW02830200', url: '/uapi/elw/v1/quotations/sensitivity-trend-daily' },
+  'elw-udrl-asset-list':   { trId: 'FHKEW154100C0', url: '/uapi/elw/v1/quotations/udrl-asset-list' },
+  'elw-udrl-asset-price':  { trId: 'FHKEW154101C0', url: '/uapi/elw/v1/quotations/udrl-asset-price' },
+  'elw-volatility-ccnl':  { trId: 'FHPEW02840100', url: '/uapi/elw/v1/quotations/volatility-trend-ccnl' },
+  'elw-volatility-daily': { trId: 'FHPEW02840200', url: '/uapi/elw/v1/quotations/volatility-trend-daily' },
+  'elw-volatility-minute':{ trId: 'FHPEW02840300', url: '/uapi/elw/v1/quotations/volatility-trend-minute' },
+  'elw-volatility-tick':  { trId: 'FHPEW02840400', url: '/uapi/elw/v1/quotations/volatility-trend-tick' },
 
   // ══ ETF/ETN ══
   'etf-price':      { trId: 'FHPST02400000', url: '/uapi/etfetn/v1/quotations/inquire-price' },
@@ -175,15 +193,35 @@ const ACTION_MAP = {
   'etf-nav-day':    { trId: 'FHPST02440200', url: '/uapi/etfetn/v1/quotations/nav-comparison-daily-trend' },
   'etf-component':  { trId: 'FHKST121600C0', url: '/uapi/etfetn/v1/quotations/inquire-component-stock-price' },
 
-  // ══ 선물옵션 ══
+  // ══ 국내선물옵션 시세 ══
   'futures-price':  { trId: 'FHMIF10000000', url: '/uapi/domestic-futureoption/v1/quotations/inquire-price' },
   'futures-quote':  { trId: 'FHMIF10010000', url: '/uapi/domestic-futureoption/v1/quotations/inquire-asking-price' },
   'futures-chart':  { trId: 'FHKIF03020100', url: '/uapi/domestic-futureoption/v1/quotations/inquire-daily-fuopchartprice' },
+  'futures-time-chart':{ trId: 'FHKIF03020200', url: '/uapi/domestic-futureoption/v1/quotations/inquire-time-fuopchartprice' },
+  'futures-exp-price': { trId: 'FHPIF05110100', url: '/uapi/domestic-futureoption/v1/quotations/exp-price-trend' },
+  'futures-board-top': { trId: 'FHPIF05030000', url: '/uapi/domestic-futureoption/v1/quotations/display-board-top' },
+  'futures-board-futures':{ trId: 'FHPIF05030200', url: '/uapi/domestic-futureoption/v1/quotations/display-board-futures' },
+  'futures-board-callput':{ trId: 'FHPIF05030100', url: '/uapi/domestic-futureoption/v1/quotations/display-board-callput' },
+  'futures-board-option-list':{ trId: 'FHPIO056104C0', url: '/uapi/domestic-futureoption/v1/quotations/display-board-option-list' },
+  'futures-margin': { trId: 'TTTO6032R', url: '/uapi/domestic-futureoption/v1/quotations/margin-rate' },
+
+  // ══ 국내선물옵션 주문/계좌 ══
   'futures-order':  { trId: 'TTTO1101U', mockTrId: 'VTTO1101U', method: 'POST', url: '/uapi/domestic-futureoption/v1/trading/order' },
   'futures-modify': { trId: 'TTTO1103U', mockTrId: 'VTTO1103U', method: 'POST', url: '/uapi/domestic-futureoption/v1/trading/order-rvsecncl' },
   'futures-balance':{ trId: 'CTFO6118R', mockTrId: 'VTFO6118R', url: '/uapi/domestic-futureoption/v1/trading/inquire-balance' },
   'futures-deposit':{ trId: 'CTRP6550R', url: '/uapi/domestic-futureoption/v1/trading/inquire-deposit' },
-  'futures-margin': { trId: 'TTTO6032R', url: '/uapi/domestic-futureoption/v1/quotations/margin-rate' },
+  'futures-ccnl':   { trId: 'TTTO5201R', mockTrId: 'VTTO5201R', url: '/uapi/domestic-futureoption/v1/trading/inquire-ccnl' },
+  'futures-ccnl-bstime':{ trId: 'CTFO5139R', url: '/uapi/domestic-futureoption/v1/trading/inquire-ccnl-bstime' },
+  'futures-psbl-order': { trId: 'TTTO5105R', mockTrId: 'VTTO5105R', url: '/uapi/domestic-futureoption/v1/trading/inquire-psbl-order' },
+  'futures-daily-fee':  { trId: 'CTFO6119R', url: '/uapi/domestic-futureoption/v1/trading/inquire-daily-amount-fee' },
+  'futures-settlement-pl':{ trId: 'CTFO6117R', url: '/uapi/domestic-futureoption/v1/trading/inquire-balance-settlement-pl' },
+  'futures-valuation-pl': { trId: 'CTFO6159R', url: '/uapi/domestic-futureoption/v1/trading/inquire-balance-valuation-pl' },
+
+  // ══ 국내선물옵션 야간 ══
+  'futures-ngt-balance':    { trId: 'CTFN6118R', url: '/uapi/domestic-futureoption/v1/trading/inquire-ngt-balance' },
+  'futures-ngt-ccnl':       { trId: 'STTN5201R', url: '/uapi/domestic-futureoption/v1/trading/inquire-ngt-ccnl' },
+  'futures-ngt-psbl-order': { trId: 'STTN5105R', url: '/uapi/domestic-futureoption/v1/trading/inquire-psbl-ngt-order' },
+  'futures-ngt-margin':     { trId: 'CTFN7107R', url: '/uapi/domestic-futureoption/v1/trading/ngt-margin-detail' },
 
   // ══ 해외주식 시세 ══
   'overseas-price':      { trId: 'HHDFS00000300', url: '/uapi/overseas-price/v1/quotations/price' },
@@ -193,14 +231,110 @@ const ACTION_MAP = {
   'overseas-quote':      { trId: 'HHDFS76200100', url: '/uapi/overseas-price/v1/quotations/inquire-asking-price' },
   'overseas-ccnl':       { trId: 'HHDFS76200300', url: '/uapi/overseas-price/v1/quotations/inquire-ccnl' },
   'overseas-search':     { trId: 'HHDFS76410000', url: '/uapi/overseas-price/v1/quotations/inquire-search' },
+  'overseas-time-chart': { trId: 'FHKST03030200', url: '/uapi/overseas-price/v1/quotations/inquire-time-itemchartprice' },
+  'overseas-time-index-chart': { trId: 'FHKST03030300', url: '/uapi/overseas-price/v1/quotations/inquire-time-indexchartprice' },
+  'overseas-price-fluct':{ trId: 'HHDFS76380000', url: '/uapi/overseas-price/v1/quotations/price-fluct' },
+  'overseas-volume-rank':{ trId: 'HHDFS76380100', url: '/uapi/overseas-price/v1/quotations/trade-vol' },
+  'overseas-volume-power':{ trId: 'HHDFS76380200', url: '/uapi/overseas-price/v1/quotations/volume-power' },
+  'overseas-volume-surge':{ trId: 'HHDFS76380300', url: '/uapi/overseas-price/v1/quotations/volume-surge' },
+  'overseas-new-highlow':{ trId: 'HHDFS76380400', url: '/uapi/overseas-price/v1/quotations/new-highlow' },
+  'overseas-trade-growth':{ trId: 'HHDFS76380500', url: '/uapi/overseas-price/v1/quotations/trade-growth' },
+  'overseas-market-cap': { trId: 'HHDFS76380600', url: '/uapi/overseas-price/v1/quotations/market-cap' },
+  'overseas-updown-rate':{ trId: 'HHDFS76380700', url: '/uapi/overseas-price/v1/quotations/updown-rate' },
+  'overseas-industry':   { trId: 'HHDFS76400100', url: '/uapi/overseas-price/v1/quotations/industry-price' },
+  'overseas-industry-theme':{ trId: 'HHDFS76400200', url: '/uapi/overseas-price/v1/quotations/industry-theme' },
+  'overseas-news':       { trId: 'HHDFS76410100', url: '/uapi/overseas-price/v1/quotations/news-title' },
+  'overseas-search-info':{ trId: 'CTPF1702R', url: '/uapi/overseas-price/v1/quotations/search-info' },
+  'overseas-holiday':    { trId: 'CTOS5011R', url: '/uapi/overseas-price/v1/quotations/countries-holiday' },
+  'overseas-delayed-ccnl':{ trId: 'HHDFS76200400', url: '/uapi/overseas-price/v1/quotations/delayed-ccnl' },
+  'overseas-delayed-quote':{ trId: 'HHDFS76200500', url: '/uapi/overseas-price/v1/quotations/delayed-asking-price-asia' },
+  'overseas-brknews':    { trId: 'FHKST01011801', url: '/uapi/overseas-price/v1/quotations/brknews-title' },
+  'overseas-colable':    { trId: 'CTLN4050R', url: '/uapi/overseas-price/v1/quotations/colable-by-company' },
+  'overseas-rights-by-ice':{ trId: 'HHDFS78330900', url: '/uapi/overseas-price/v1/quotations/rights-by-ice' },
 
   // ══ 해외주식 주문/계좌 ══
   'overseas-order-buy':  { trId: 'TTTT1002U', mockTrId: 'VTTT1002U', method: 'POST', url: '/uapi/overseas-stock/v1/trading/order' },
   'overseas-order-sell': { trId: 'TTTT1006U', mockTrId: 'VTTT1001U', method: 'POST', url: '/uapi/overseas-stock/v1/trading/order' },
   'overseas-order-modify':{ trId: 'TTTT1004U', mockTrId: 'VTTT1004U', method: 'POST', url: '/uapi/overseas-stock/v1/trading/order-rvsecncl' },
+  'overseas-order-reserve':{ trId: 'TTTT3039U', method: 'POST', url: '/uapi/overseas-stock/v1/trading/order-resv' },
+  'overseas-order-reserve-cancel':{ trId: 'TTTT3041U', method: 'POST', url: '/uapi/overseas-stock/v1/trading/order-resv-rvsecncl' },
+  'overseas-daytime-order':{ trId: 'TTTS6036U', mockTrId: 'VTTS6036U', method: 'POST', url: '/uapi/overseas-stock/v1/trading/daytime-order' },
+  'overseas-daytime-modify':{ trId: 'TTTS6038U', mockTrId: 'VTTS6038U', method: 'POST', url: '/uapi/overseas-stock/v1/trading/daytime-order-rvsecncl' },
   'overseas-balance':    { trId: 'TTTS3012R', mockTrId: 'VTTS3012R', url: '/uapi/overseas-stock/v1/trading/inquire-balance' },
+  'overseas-present-balance':{ trId: 'CTRP6504R', url: '/uapi/overseas-stock/v1/trading/inquire-present-balance' },
   'overseas-ccld':       { trId: 'TTTS3035R', mockTrId: 'VTTS3035R', url: '/uapi/overseas-stock/v1/trading/inquire-ccnl' },
+  'overseas-nccs':       { trId: 'TTTS3018R', mockTrId: 'VTTS3018R', url: '/uapi/overseas-stock/v1/trading/inquire-nccs' },
   'overseas-psamount':   { trId: 'TTTS3007R', mockTrId: 'VTTS3007R', url: '/uapi/overseas-stock/v1/trading/inquire-psamount' },
+  'overseas-period-profit':{ trId: 'TTTS3039R', url: '/uapi/overseas-stock/v1/trading/inquire-period-profit' },
+  'overseas-period-trans':{ trId: 'TTTS3040R', url: '/uapi/overseas-stock/v1/trading/inquire-period-trans' },
+  'overseas-period-rights':{ trId: 'CTRG6504R', url: '/uapi/overseas-stock/v1/trading/period-rights' },
+  'overseas-paymt-balance':{ trId: 'TTTS3041R', url: '/uapi/overseas-stock/v1/trading/inquire-paymt-stdr-balance' },
+  'overseas-margin':     { trId: 'TTTS6044R', url: '/uapi/overseas-stock/v1/trading/foreign-margin' },
+  'overseas-order-reserve-list':{ trId: 'TTTT3039R', url: '/uapi/overseas-stock/v1/trading/order-resv-list' },
+  'overseas-algo-order':  { trId: 'TTTS6046U', method: 'POST', url: '/uapi/overseas-stock/v1/trading/algo-ordno' },
+  'overseas-algo-ccnl':   { trId: 'TTTS6047R', url: '/uapi/overseas-stock/v1/trading/inquire-algo-ccnl' },
+  'overseas-ccnl-notice': { trId: 'TTTS6050R', url: '/uapi/overseas-stock/v1/trading/ccnl-notice' },
+  'overseas-trade-pbmn': { trId: 'HHDFS76320010', url: '/uapi/overseas-stock/v1/ranking/trade-pbmn' },
+  'overseas-trade-turnover':{ trId: 'HHDFS76340000', url: '/uapi/overseas-stock/v1/ranking/trade-turnover' },
+
+  // ══ 국내채권 시세 ══
+  'bond-price':      { trId: 'FHKBN16500000', url: '/uapi/domestic-bond/v1/quotations/inquire-price' },
+  'bond-daily':      { trId: 'FHKBP13800000', url: '/uapi/domestic-bond/v1/quotations/inquire-daily-price' },
+  'bond-chart':      { trId: 'FHKBP13810000', url: '/uapi/domestic-bond/v1/quotations/inquire-daily-itemchartprice' },
+  'bond-quote':      { trId: 'FHKBP16510000', url: '/uapi/domestic-bond/v1/quotations/inquire-asking-price' },
+  'bond-ccnl':       { trId: 'FHKBP16520000', url: '/uapi/domestic-bond/v1/quotations/inquire-ccnl' },
+  'bond-search':     { trId: 'CTPF1618R', url: '/uapi/domestic-bond/v1/quotations/search-bond-info' },
+  'bond-issue':      { trId: 'CTPF1619R', url: '/uapi/domestic-bond/v1/quotations/issue-info' },
+  'bond-avg-unit':   { trId: 'HHKBP14020000', url: '/uapi/domestic-bond/v1/quotations/avg-unit' },
+  'bond-index-ccnl': { trId: 'FHKBP16530000', url: '/uapi/domestic-bond/v1/quotations/bond-index-ccnl' },
+
+  // ══ 국내채권 주문/계좌 ══
+  'bond-buy':        { trId: 'TTTC0601U', mockTrId: 'VTSC0601U', method: 'POST', url: '/uapi/domestic-bond/v1/trading/buy' },
+  'bond-sell':       { trId: 'TTTC0601U', mockTrId: 'VTSC0601U', method: 'POST', url: '/uapi/domestic-bond/v1/trading/sell' },
+  'bond-modify':     { trId: 'TTTC0603U', mockTrId: 'VTSC0603U', method: 'POST', url: '/uapi/domestic-bond/v1/trading/order-rvsecncl' },
+  'bond-balance':    { trId: 'CTSC6504R', mockTrId: 'VTSC6504R', url: '/uapi/domestic-bond/v1/trading/inquire-balance' },
+  'bond-psbl-order': { trId: 'CTSC6001R', mockTrId: 'VTSC6001R', url: '/uapi/domestic-bond/v1/trading/inquire-psbl-order' },
+  'bond-psbl-rvsecncl':{ trId: 'CTSC6003R', url: '/uapi/domestic-bond/v1/trading/inquire-psbl-rvsecncl' },
+  'bond-ccld':       { trId: 'CTSC6002R', mockTrId: 'VTSC6002R', url: '/uapi/domestic-bond/v1/trading/inquire-ccnl' },
+  'bond-daily-ccld': { trId: 'CTSC6004R', url: '/uapi/domestic-bond/v1/trading/inquire-daily-ccld' },
+
+  // ══ 해외선물옵션 시세 (선물) ══
+  'ovsfut-price':       { trId: 'HHDFC55010000', url: '/uapi/overseas-futureoption/v1/quotations/inquire-price' },
+  'ovsfut-detail':      { trId: 'HHDFC55010100', url: '/uapi/overseas-futureoption/v1/quotations/stock-detail' },
+  'ovsfut-asking-price':{ trId: 'HHDFC86000000', url: '/uapi/overseas-futureoption/v1/quotations/inquire-asking-price' },
+  'ovsfut-daily-ccnl':  { trId: 'HHDFC55020100', url: '/uapi/overseas-futureoption/v1/quotations/daily-ccnl' },
+  'ovsfut-weekly-ccnl': { trId: 'HHDFC55020000', url: '/uapi/overseas-futureoption/v1/quotations/weekly-ccnl' },
+  'ovsfut-monthly-ccnl':{ trId: 'HHDFC55020300', url: '/uapi/overseas-futureoption/v1/quotations/monthly-ccnl' },
+  'ovsfut-tick-ccnl':   { trId: 'HHDFC55020200', url: '/uapi/overseas-futureoption/v1/quotations/tick-ccnl' },
+  'ovsfut-time-chart':  { trId: 'HHDFC55020400', url: '/uapi/overseas-futureoption/v1/quotations/inquire-time-futurechartprice' },
+  'ovsfut-search-contract':{ trId: 'HHDFC55200000', url: '/uapi/overseas-futureoption/v1/quotations/search-contract-detail' },
+  'ovsfut-investor-unpd':{ trId: 'HHDDB95030000', url: '/uapi/overseas-futureoption/v1/quotations/investor-unpd-trend' },
+  'ovsfut-market-time': { trId: 'OTFM2229R', url: '/uapi/overseas-futureoption/v1/quotations/market-time' },
+
+  // ══ 해외선물옵션 시세 (옵션) ══
+  'ovsfut-opt-price':       { trId: 'HHDFO55010000', url: '/uapi/overseas-futureoption/v1/quotations/opt-price' },
+  'ovsfut-opt-detail':      { trId: 'HHDFO55010100', url: '/uapi/overseas-futureoption/v1/quotations/opt-detail' },
+  'ovsfut-opt-asking-price':{ trId: 'HHDFO86000000', url: '/uapi/overseas-futureoption/v1/quotations/opt-asking-price' },
+  'ovsfut-opt-daily-ccnl':  { trId: 'HHDFO55020100', url: '/uapi/overseas-futureoption/v1/quotations/opt-daily-ccnl' },
+  'ovsfut-opt-weekly-ccnl': { trId: 'HHDFO55020000', url: '/uapi/overseas-futureoption/v1/quotations/opt-weekly-ccnl' },
+  'ovsfut-opt-monthly-ccnl':{ trId: 'HHDFO55020300', url: '/uapi/overseas-futureoption/v1/quotations/opt-monthly-ccnl' },
+  'ovsfut-opt-tick-ccnl':   { trId: 'HHDFO55020200', url: '/uapi/overseas-futureoption/v1/quotations/opt-tick-ccnl' },
+  'ovsfut-opt-time-chart':  { trId: 'HHDFO55020100', url: '/uapi/overseas-futureoption/v1/quotations/inquire-time-optchartprice' },
+  'ovsfut-search-opt':      { trId: 'HHDFO55200000', url: '/uapi/overseas-futureoption/v1/quotations/search-opt-detail' },
+
+  // ══ 해외선물옵션 주문/계좌 ══
+  'ovsfut-order':       { trId: 'OTFM3001U', method: 'POST', url: '/uapi/overseas-futureoption/v1/trading/order' },
+  'ovsfut-modify':      { trId: 'OTFM3002U', method: 'POST', url: '/uapi/overseas-futureoption/v1/trading/order-rvsecncl' },
+  'ovsfut-cancel':      { trId: 'OTFM3003U', method: 'POST', url: '/uapi/overseas-futureoption/v1/trading/order-rvsecncl' },
+  'ovsfut-ccld':        { trId: 'OTFM3116R', url: '/uapi/overseas-futureoption/v1/trading/inquire-ccld' },
+  'ovsfut-daily-ccld':  { trId: 'OTFM3122R', url: '/uapi/overseas-futureoption/v1/trading/inquire-daily-ccld' },
+  'ovsfut-daily-order': { trId: 'OTFM3120R', url: '/uapi/overseas-futureoption/v1/trading/inquire-daily-order' },
+  'ovsfut-deposit':     { trId: 'OTFM1411R', url: '/uapi/overseas-futureoption/v1/trading/inquire-deposit' },
+  'ovsfut-psamount':    { trId: 'OTFM3304R', url: '/uapi/overseas-futureoption/v1/trading/inquire-psamount' },
+  'ovsfut-period-ccld': { trId: 'OTFM3118R', url: '/uapi/overseas-futureoption/v1/trading/inquire-period-ccld' },
+  'ovsfut-period-trans':{ trId: 'OTFM3114R', url: '/uapi/overseas-futureoption/v1/trading/inquire-period-trans' },
+  'ovsfut-unpd':        { trId: 'OTFM1412R', url: '/uapi/overseas-futureoption/v1/trading/inquire-unpd' },
+  'ovsfut-margin':      { trId: 'OTFM3115R', url: '/uapi/overseas-futureoption/v1/trading/margin-detail' },
 };
 
 /** OAuth 토큰 발급 (Vault 캐싱 — config.json tokenCache 기반) */
@@ -286,7 +420,12 @@ const SCR_CODES = {
   'elw-search':'15100',
   'elw-updown':'20277','elw-volume':'20278','elw-indicator':'20279',
   'elw-sensitivity':'20285','elw-quick-change':'20287','elw-newly-listed':'15480',
+  'elw-compare':'11517','elw-expiration':'11547',
+  'elw-udrl-asset-list':'11541','elw-udrl-asset-price':'11541',
   'etf-component':'12160',
+  'frgnmem-trade-trend':'20432',
+  'futures-board-futures':'20503','futures-board-callput':'20503',
+  'futures-board-option-list':'509',
 };
 
 // ─── 계좌 관련 액션 목록 ───
@@ -296,8 +435,23 @@ const ACCOUNT_ACTIONS = new Set([
   'order-reserve-list','intgr-margin','period-rights',
   'order-modify','order-reserve','order-reserve-cancel',
   'order-credit-buy','order-credit-sell',
-  'futures-balance','futures-deposit',
-  'overseas-balance','overseas-ccld','overseas-psamount',
+  // 국내선물옵션
+  'futures-order','futures-modify',
+  'futures-balance','futures-deposit','futures-ccnl','futures-ccnl-bstime',
+  'futures-psbl-order','futures-daily-fee','futures-settlement-pl','futures-valuation-pl',
+  'futures-ngt-balance','futures-ngt-ccnl','futures-ngt-psbl-order','futures-ngt-margin',
+  // 해외주식
+  'overseas-balance','overseas-present-balance','overseas-ccld','overseas-nccs',
+  'overseas-psamount','overseas-period-profit','overseas-period-trans',
+  'overseas-period-rights','overseas-paymt-balance','overseas-margin',
+  'overseas-order-reserve-list','overseas-algo-ccnl','overseas-ccnl-notice',
+  // 해외선물옵션
+  'ovsfut-order','ovsfut-modify','ovsfut-cancel',
+  'ovsfut-ccld','ovsfut-daily-ccld','ovsfut-daily-order',
+  'ovsfut-deposit','ovsfut-psamount','ovsfut-period-ccld','ovsfut-period-trans',
+  'ovsfut-unpd','ovsfut-margin',
+  // 국내채권
+  'bond-balance','bond-psbl-order','bond-psbl-rvsecncl','bond-ccld','bond-daily-ccld',
 ]);
 
 /** 편의 액션의 기본 파라미터 생성 (엑셀 Required 필드 기반) */
@@ -310,13 +464,13 @@ function buildParams(action, data) {
   if (action.startsWith('overseas-')) {
     if (sym) p.SYMB = p.SYMB || sym;
     if (exch) p.EXCD = p.EXCD || exch;
-  } else if (!action.startsWith('ksd-') && !ACCOUNT_ACTIONS.has(action) && !action.includes('order-') && !['holiday','market-time','ranking-dividend','investor-program-today','cond-search-list','cond-search-result','mktfunds','loan-daily','investor-trend','estimate-perform','stock-info','product-info'].includes(action)) {
+  } else if (!action.startsWith('ksd-') && !action.startsWith('ovsfut-') && !action.startsWith('futures-') && !action.startsWith('intstock-') && !ACCOUNT_ACTIONS.has(action) && !action.includes('order-') && !['holiday','market-time','ranking-dividend','investor-program-today','cond-search-list','cond-search-result','mktfunds','loan-daily','investor-trend','estimate-perform','stock-info','product-info','frgnmem-trade-trend','overseas-trade-pbmn','overseas-trade-turnover','overseas-colable','overseas-brknews','overseas-rights-by-ice'].includes(action)) {
     p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || sym;
     p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || 'J';
   }
 
-  // ── 주문 (POST) ──
-  if (action.includes('order-buy') || action.includes('order-sell') || action.includes('order-modify') || action.includes('order-credit') || action === 'order-reserve') {
+  // ── 주문 (POST) — 국내주식/해외주식 (ovsfut는 별도 처리) ──
+  if ((action.includes('order-buy') || action.includes('order-sell') || action.includes('order-modify') || action.includes('order-credit') || action === 'order-reserve') && !action.startsWith('ovsfut-')) {
     if (sym) p.PDNO = p.PDNO || sym;
     if (data.quantity) p.ORD_QTY = p.ORD_QTY || String(data.quantity);
     if (data.price !== undefined) {
@@ -328,7 +482,9 @@ function buildParams(action, data) {
   // ── 계좌 (CANO/ACNT_PRDT_CD) ──
   if (ACCOUNT_ACTIONS.has(action)) {
     p.CANO = p.CANO || data.accountNo || '';
-    p.ACNT_PRDT_CD = p.ACNT_PRDT_CD || data.accountProductCode || '01';
+    // 선물옵션 계좌상품코드 기본값 '03', 그 외 '01'
+    const defProd = (action.startsWith('futures-') || action.startsWith('ovsfut-')) ? '03' : '01';
+    p.ACNT_PRDT_CD = p.ACNT_PRDT_CD || data.accountProductCode || defProd;
   }
 
   // ── FID_COND_SCR_DIV_CODE (순위/분석 API 고유 코드) ──
@@ -983,22 +1139,114 @@ function buildParams(action, data) {
     case 'etf-component':
       break;
 
-    // ═══ 선물옵션 ═══
+    // ═══ 국내선물옵션 시세 ═══
+    case 'futures-price': case 'futures-quote':
+      p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || 'F';
+      p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || sym;
+      break;
     case 'futures-chart':
+      p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || 'F';
+      p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || sym;
       p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(90);
       p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || today();
       p.FID_PERIOD_DIV_CODE = p.FID_PERIOD_DIV_CODE || 'D';
       break;
-    case 'futures-balance':
-      p.MGNA_DVSN = p.MGNA_DVSN || '01';
-      p.EXCC_STAT_CD = p.EXCC_STAT_CD || '0';
-      p.CTX_AREA_FK200 = p.CTX_AREA_FK200 || '';
-      p.CTX_AREA_NK200 = p.CTX_AREA_NK200 || '';
+    case 'futures-time-chart':
+      p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || 'F';
+      p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || sym;
+      p.FID_HOUR_CLS_CODE = p.FID_HOUR_CLS_CODE || '60';
+      p.FID_PW_DATA_INCU_YN = p.FID_PW_DATA_INCU_YN || 'N';
+      p.FID_FAKE_TICK_INCU_YN = p.FID_FAKE_TICK_INCU_YN || 'N';
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || today();
+      p.FID_INPUT_HOUR_1 = p.FID_INPUT_HOUR_1 || '';
+      break;
+    case 'futures-exp-price':
+      p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || 'F';
+      p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || sym;
+      break;
+    case 'futures-board-top':
+      p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || 'F';
+      p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || sym;
+      break;
+    case 'futures-board-futures':
+      p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || 'F';
+      p.FID_COND_MRKT_CLS_CODE = p.FID_COND_MRKT_CLS_CODE || 'MKI';
+      break;
+    case 'futures-board-callput':
+      p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || 'O';
+      p.FID_MRKT_CLS_CODE = p.FID_MRKT_CLS_CODE || 'CO';
+      p.FID_MTRT_CNT = p.FID_MTRT_CNT || '';
+      p.FID_MRKT_CLS_CODE1 = p.FID_MRKT_CLS_CODE1 || 'PO';
+      break;
+    case 'futures-board-option-list':
+      p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || '';
+      p.FID_COND_MRKT_CLS_CODE = p.FID_COND_MRKT_CLS_CODE || '';
       break;
     case 'futures-margin':
       p.BASS_DT = p.BASS_DT || today();
       p.BAST_ID = p.BAST_ID || '';
       p.CTX_AREA_NK200 = p.CTX_AREA_NK200 || '';
+      break;
+
+    // ═══ 국내선물옵션 계좌 ═══
+    case 'futures-balance':
+      p.MGNA_DVSN = p.MGNA_DVSN || '01';
+      p.EXCC_STAT_CD = p.EXCC_STAT_CD || '1';
+      p.CTX_AREA_FK200 = p.CTX_AREA_FK200 || '';
+      p.CTX_AREA_NK200 = p.CTX_AREA_NK200 || '';
+      break;
+    case 'futures-ccnl':
+      p.STRT_ORD_DT = p.STRT_ORD_DT || daysAgo(7);
+      p.END_ORD_DT = p.END_ORD_DT || today();
+      p.SLL_BUY_DVSN_CD = p.SLL_BUY_DVSN_CD || '00';
+      p.CCLD_NCCS_DVSN = p.CCLD_NCCS_DVSN || '00';
+      p.SORT_SQN = p.SORT_SQN || 'DS';
+      break;
+    case 'futures-ccnl-bstime':
+      p.ORD_DT = p.ORD_DT || today();
+      p.FUOP_TR_STRT_TMD = p.FUOP_TR_STRT_TMD || '000000';
+      p.FUOP_TR_END_TMD = p.FUOP_TR_END_TMD || '235959';
+      break;
+    case 'futures-psbl-order':
+      p.PDNO = p.PDNO || sym;
+      p.SLL_BUY_DVSN_CD = p.SLL_BUY_DVSN_CD || '02';
+      p.UNIT_PRICE = p.UNIT_PRICE || '0';
+      p.ORD_DVSN_CD = p.ORD_DVSN_CD || '01';
+      break;
+    case 'futures-daily-fee':
+      p.INQR_STRT_DAY = p.INQR_STRT_DAY || daysAgo(30);
+      p.INQR_END_DAY = p.INQR_END_DAY || today();
+      p.CTX_AREA_FK200 = p.CTX_AREA_FK200 || '';
+      p.CTX_AREA_NK200 = p.CTX_AREA_NK200 || '';
+      break;
+    case 'futures-settlement-pl':
+      p.INQR_DT = p.INQR_DT || today();
+      p.CTX_AREA_FK200 = p.CTX_AREA_FK200 || '';
+      p.CTX_AREA_NK200 = p.CTX_AREA_NK200 || '';
+      break;
+    case 'futures-valuation-pl':
+      p.MGNA_DVSN = p.MGNA_DVSN || '01';
+      p.EXCC_STAT_CD = p.EXCC_STAT_CD || '1';
+      break;
+    case 'futures-ngt-balance':
+      p.MGNA_DVSN = p.MGNA_DVSN || '01';
+      p.EXCC_STAT_CD = p.EXCC_STAT_CD || '1';
+      break;
+    case 'futures-ngt-ccnl':
+      p.STRT_ORD_DT = p.STRT_ORD_DT || daysAgo(7);
+      p.END_ORD_DT = p.END_ORD_DT || today();
+      p.SLL_BUY_DVSN_CD = p.SLL_BUY_DVSN_CD || '00';
+      p.CCLD_NCCS_DVSN = p.CCLD_NCCS_DVSN || '00';
+      break;
+    case 'futures-ngt-psbl-order':
+      p.PDNO = p.PDNO || sym;
+      p.PRDT_TYPE_CD = p.PRDT_TYPE_CD || '301';
+      p.SLL_BUY_DVSN_CD = p.SLL_BUY_DVSN_CD || '02';
+      p.UNIT_PRICE = p.UNIT_PRICE || '0';
+      p.ORD_DVSN_CD = p.ORD_DVSN_CD || '01';
+      break;
+    case 'futures-ngt-margin':
+      p.MGNA_DVSN_CD = p.MGNA_DVSN_CD || '01';
       break;
 
     // ═══ 해외주식 ═══
@@ -1046,6 +1294,227 @@ function buildParams(action, data) {
       p.OVRS_EXCG_CD = p.OVRS_EXCG_CD || exch;
       p.OVRS_ORD_UNPR = p.OVRS_ORD_UNPR || '0';
       p.ITEM_CD = p.ITEM_CD || sym;
+      break;
+    case 'overseas-order-reserve-list':
+      p.OVRS_EXCG_CD = p.OVRS_EXCG_CD || exch;
+      p.INQR_STRT_DT = p.INQR_STRT_DT || daysAgo(30);
+      p.INQR_END_DT = p.INQR_END_DT || today();
+      p.INQR_DVSN_CD = p.INQR_DVSN_CD || '00';
+      break;
+    case 'overseas-brknews':
+      p.FID_NEWS_OFER_ENTP_CODE = p.FID_NEWS_OFER_ENTP_CODE || '0';
+      p.FID_COND_SCR_DIV_CODE = p.FID_COND_SCR_DIV_CODE || '11801';
+      p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || '';
+      p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || '';
+      p.FID_TITL_CNTT = p.FID_TITL_CNTT || '';
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || '';
+      p.FID_INPUT_HOUR_1 = p.FID_INPUT_HOUR_1 || '';
+      p.FID_RANK_SORT_CLS_CODE = p.FID_RANK_SORT_CLS_CODE || '0';
+      p.FID_INPUT_SRNO = p.FID_INPUT_SRNO || '';
+      break;
+    case 'overseas-colable':
+      p.PDNO = p.PDNO || sym;
+      p.NATN_CD = p.NATN_CD || '840';
+      p.INQR_SQN_DVSN = p.INQR_SQN_DVSN || '01';
+      break;
+    case 'overseas-rights-by-ice':
+      p.NCOD = p.NCOD || 'US';
+      p.SYMB = p.SYMB || sym;
+      p.ST_YMD = p.ST_YMD || daysAgo(90);
+      p.ED_YMD = p.ED_YMD || today();
+      break;
+    case 'overseas-trade-pbmn':
+      p.EXCD = p.EXCD || exch;
+      p.NDAY = p.NDAY || '0';
+      p.VOL_RANG = p.VOL_RANG || '0';
+      p.AUTH = p.AUTH || '';
+      p.KEYB = p.KEYB || '';
+      break;
+    case 'overseas-trade-turnover':
+      p.EXCD = p.EXCD || exch;
+      p.NDAY = p.NDAY || '0';
+      p.VOL_RANG = p.VOL_RANG || '0';
+      break;
+
+    // ═══ 해외선물옵션 시세 ═══
+    case 'ovsfut-price': case 'ovsfut-detail': case 'ovsfut-asking-price':
+      p.SRS_CD = p.SRS_CD || sym;
+      break;
+    case 'ovsfut-daily-ccnl': case 'ovsfut-weekly-ccnl':
+    case 'ovsfut-monthly-ccnl': case 'ovsfut-tick-ccnl':
+      p.SRS_CD = p.SRS_CD || sym;
+      p.EXCH_CD = p.EXCH_CD || exch || 'CME';
+      p.CLOSE_DATE_TIME = p.CLOSE_DATE_TIME || today();
+      p.QRY_TP = p.QRY_TP || 'Q';
+      p.QRY_CNT = p.QRY_CNT || '30';
+      break;
+    case 'ovsfut-time-chart':
+      p.SRS_CD = p.SRS_CD || sym;
+      p.EXCH_CD = p.EXCH_CD || exch || 'CME';
+      p.CLOSE_DATE_TIME = p.CLOSE_DATE_TIME || today();
+      p.QRY_CNT = p.QRY_CNT || '120';
+      p.QRY_GAP = p.QRY_GAP || '1';
+      break;
+    case 'ovsfut-search-contract':
+      p.QRY_CNT = p.QRY_CNT || '1';
+      p.SRS_CD_01 = p.SRS_CD_01 || sym;
+      break;
+    case 'ovsfut-opt-price': case 'ovsfut-opt-detail': case 'ovsfut-opt-asking-price':
+      p.SRS_CD = p.SRS_CD || sym;
+      break;
+    case 'ovsfut-opt-daily-ccnl': case 'ovsfut-opt-weekly-ccnl':
+    case 'ovsfut-opt-monthly-ccnl': case 'ovsfut-opt-tick-ccnl':
+      p.SRS_CD = p.SRS_CD || sym;
+      p.EXCH_CD = p.EXCH_CD || exch || 'CME';
+      p.QRY_CNT = p.QRY_CNT || '20';
+      break;
+    case 'ovsfut-opt-time-chart':
+      p.SRS_CD = p.SRS_CD || sym;
+      p.EXCH_CD = p.EXCH_CD || exch || 'CME';
+      p.CLOSE_DATE_TIME = p.CLOSE_DATE_TIME || today();
+      p.QRY_CNT = p.QRY_CNT || '120';
+      p.QRY_GAP = p.QRY_GAP || '1';
+      break;
+    case 'ovsfut-search-opt':
+      p.QRY_CNT = p.QRY_CNT || '1';
+      p.SRS_CD_01 = p.SRS_CD_01 || sym;
+      break;
+    case 'ovsfut-investor-unpd':
+      p.PROD_ISCD = p.PROD_ISCD || sym;
+      p.BSOP_DATE = p.BSOP_DATE || today();
+      p.UPMU_GUBUN = p.UPMU_GUBUN || '0';
+      p.CTS_KEY = p.CTS_KEY || '';
+      break;
+    case 'ovsfut-market-time':
+      p.FM_EXCG_CD = p.FM_EXCG_CD || exch || 'CME';
+      p.OPT_YN = p.OPT_YN || 'N';
+      break;
+
+    // ═══ 해외선물옵션 주문/계좌 ═══
+    case 'ovsfut-order':
+      p.OVRS_FUTR_FX_PDNO = p.OVRS_FUTR_FX_PDNO || sym;
+      p.SLL_BUY_DVSN_CD = p.SLL_BUY_DVSN_CD || '02';
+      p.PRIC_DVSN_CD = p.PRIC_DVSN_CD || '1';
+      p.FM_ORD_QTY = p.FM_ORD_QTY || String(data.quantity || '1');
+      p.CCLD_CNDT_CD = p.CCLD_CNDT_CD || '0';
+      break;
+    case 'ovsfut-modify': case 'ovsfut-cancel':
+      p.ORGN_ORD_DT = p.ORGN_ORD_DT || '';
+      p.ORGN_ODNO = p.ORGN_ODNO || '';
+      break;
+    case 'ovsfut-ccld':
+      p.CCLD_NCCS_DVSN = p.CCLD_NCCS_DVSN || '01';
+      p.SLL_BUY_DVSN_CD = p.SLL_BUY_DVSN_CD || '%%';
+      p.FUOP_DVSN = p.FUOP_DVSN || '00';
+      p.CTX_AREA_FK200 = p.CTX_AREA_FK200 || '';
+      p.CTX_AREA_NK200 = p.CTX_AREA_NK200 || '';
+      break;
+    case 'ovsfut-daily-ccld':
+      p.STRT_DT = p.STRT_DT || daysAgo(7);
+      p.END_DT = p.END_DT || today();
+      p.FUOP_DVSN_CD = p.FUOP_DVSN_CD || '00';
+      p.CRCY_CD = p.CRCY_CD || 'USD';
+      p.FM_ITEM_FTNG_YN = p.FM_ITEM_FTNG_YN || 'N';
+      p.SLL_BUY_DVSN_CD = p.SLL_BUY_DVSN_CD || '%%';
+      break;
+    case 'ovsfut-daily-order':
+      p.STRT_DT = p.STRT_DT || daysAgo(7);
+      p.END_DT = p.END_DT || today();
+      p.CCLD_NCCS_DVSN = p.CCLD_NCCS_DVSN || '01';
+      p.SLL_BUY_DVSN_CD = p.SLL_BUY_DVSN_CD || '%%';
+      p.FUOP_DVSN = p.FUOP_DVSN || '00';
+      break;
+    case 'ovsfut-deposit':
+      p.CRCY_CD = p.CRCY_CD || 'USD';
+      p.INQR_DT = p.INQR_DT || today();
+      break;
+    case 'ovsfut-psamount':
+      p.OVRS_FUTR_FX_PDNO = p.OVRS_FUTR_FX_PDNO || sym;
+      p.SLL_BUY_DVSN_CD = p.SLL_BUY_DVSN_CD || '02';
+      break;
+    case 'ovsfut-period-ccld':
+      p.INQR_TERM_FROM_DT = p.INQR_TERM_FROM_DT || daysAgo(30);
+      p.INQR_TERM_TO_DT = p.INQR_TERM_TO_DT || today();
+      p.CRCY_CD = p.CRCY_CD || 'USD';
+      p.WHOL_TRSL_YN = p.WHOL_TRSL_YN || 'N';
+      p.FUOP_DVSN = p.FUOP_DVSN || '00';
+      p.CTX_AREA_FK200 = p.CTX_AREA_FK200 || '';
+      p.CTX_AREA_NK200 = p.CTX_AREA_NK200 || '';
+      break;
+    case 'ovsfut-period-trans':
+      p.INQR_TERM_FROM_DT = p.INQR_TERM_FROM_DT || daysAgo(30);
+      p.INQR_TERM_TO_DT = p.INQR_TERM_TO_DT || today();
+      p.ACNT_TR_TYPE_CD = p.ACNT_TR_TYPE_CD || '';
+      p.CRCY_CD = p.CRCY_CD || 'USD';
+      break;
+    case 'ovsfut-unpd':
+      p.FUOP_DVSN = p.FUOP_DVSN || '00';
+      p.CTX_AREA_FK100 = p.CTX_AREA_FK100 || '';
+      p.CTX_AREA_NK100 = p.CTX_AREA_NK100 || '';
+      break;
+    case 'ovsfut-margin':
+      p.CRCY_CD = p.CRCY_CD || 'USD';
+      p.INQR_DT = p.INQR_DT || today();
+      break;
+
+    // ═══ 추가 ELW ═══
+    case 'elw-compare':
+      p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || sym;
+      break;
+    case 'elw-expiration':
+      p.FID_INPUT_DATE_1 = p.FID_INPUT_DATE_1 || daysAgo(30);
+      p.FID_INPUT_DATE_2 = p.FID_INPUT_DATE_2 || today();
+      p.FID_DIV_CLS_CODE = p.FID_DIV_CLS_CODE || '2';
+      p.FID_UNAS_INPUT_ISCD = p.FID_UNAS_INPUT_ISCD || '000000';
+      p.FID_INPUT_ISCD_2 = p.FID_INPUT_ISCD_2 || '00000';
+      p.FID_BLNG_CLS_CODE = p.FID_BLNG_CLS_CODE || '0';
+      break;
+    case 'elw-indicator-ccnl': case 'elw-indicator-daily':
+    case 'elw-sensitivity-ccnl': case 'elw-sensitivity-daily':
+    case 'elw-volatility-ccnl': case 'elw-volatility-daily':
+    case 'elw-volatility-tick': case 'elw-lp-trade':
+      p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || 'W';
+      p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || sym;
+      break;
+    case 'elw-indicator-minute': case 'elw-volatility-minute':
+      p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || 'W';
+      p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || sym;
+      p.FID_HOUR_CLS_CODE = p.FID_HOUR_CLS_CODE || '60';
+      p.FID_PW_DATA_INCU_YN = p.FID_PW_DATA_INCU_YN || 'N';
+      break;
+    case 'elw-udrl-asset-list':
+      p.FID_RANK_SORT_CLS_CODE = p.FID_RANK_SORT_CLS_CODE || '0';
+      p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || '00000';
+      break;
+    case 'elw-udrl-asset-price':
+      p.FID_COND_MRKT_DIV_CODE = p.FID_COND_MRKT_DIV_CODE || 'W';
+      p.FID_MRKT_CLS_CODE = p.FID_MRKT_CLS_CODE || 'A';
+      p.FID_INPUT_ISCD = p.FID_INPUT_ISCD || '00000';
+      p.FID_UNAS_INPUT_ISCD = p.FID_UNAS_INPUT_ISCD || sym;
+      p.FID_TRGT_EXLS_CLS_CODE = p.FID_TRGT_EXLS_CLS_CODE || '0';
+      p.FID_OPTION = p.FID_OPTION || '0';
+      break;
+
+    // ═══ 추가 국내주식 ═══
+    case 'intstock-grouplist':
+      p.TYPE = p.TYPE || '1';
+      p.FID_ETC_CLS_CODE = p.FID_ETC_CLS_CODE || '00';
+      p.USER_ID = p.USER_ID || '';
+      break;
+    case 'intstock-multprice':
+      p.FID_COND_MRKT_DIV_CODE_1 = p.FID_COND_MRKT_DIV_CODE_1 || 'J';
+      p.FID_INPUT_ISCD_1 = p.FID_INPUT_ISCD_1 || sym;
+      break;
+    case 'intstock-stocklist':
+      p.TYPE = p.TYPE || '1';
+      p.USER_ID = p.USER_ID || '';
+      p.INTER_GRP_CODE = p.INTER_GRP_CODE || '';
+      p.FID_ETC_CLS_CODE = p.FID_ETC_CLS_CODE || '00';
+      break;
+    case 'frgnmem-trade-trend':
+      p.FID_INPUT_ISCD_2 = p.FID_INPUT_ISCD_2 || '99999';
+      p.FID_MRKT_CLS_CODE = p.FID_MRKT_CLS_CODE || 'A';
+      p.FID_VOL_CNT = p.FID_VOL_CNT || '';
       break;
   }
 

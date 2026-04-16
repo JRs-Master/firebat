@@ -44,6 +44,11 @@ function extractTrainingJson(message: string): string | null {
       const raw = message.slice(idx + prefix.length).trim();
       try {
         const parsed = JSON.parse(raw);
+        // contents 형식이면 그대로 저장 (Vertex AI 파인튜닝 호환)
+        if (parsed.contents && Array.isArray(parsed.contents)) {
+          return JSON.stringify(parsed);
+        }
+        // 레거시: _prefix 붙여서 저장
         return JSON.stringify({ _prefix: prefix.replace(/[\[\]]/g, ''), ...parsed });
       } catch {
         return JSON.stringify({ _prefix: prefix.replace(/[\[\]]/g, ''), _raw: raw });

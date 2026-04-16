@@ -1,8 +1,18 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { Menu } from 'lucide-react';
 
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // 사이드바 상태 동기화 — page.tsx에서 발행하는 이벤트 수신
+  useEffect(() => {
+    const handler = (e: Event) => setSidebarOpen((e as CustomEvent).detail?.open ?? false);
+    window.addEventListener('firebat-sidebar-state', handler);
+    return () => window.removeEventListener('firebat-sidebar-state', handler);
+  }, []);
+
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
     window.location.href = '/login';
@@ -15,7 +25,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           {/* 모바일 사이드바 토글 */}
           <button
             onClick={() => window.dispatchEvent(new Event('firebat-toggle-sidebar'))}
-            className="md:hidden p-1.5 -ml-1 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+            className={`md:hidden p-1.5 -ml-1 rounded-lg transition-colors ${sidebarOpen ? 'bg-slate-200 text-slate-700' : 'text-slate-500 hover:bg-slate-100'}`}
           >
             <Menu size={18} />
           </button>

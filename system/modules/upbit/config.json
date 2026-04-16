@@ -1,0 +1,256 @@
+{
+  "name": "upbit",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "업비트 Open API. 암호화폐 시세(캔들/체결/호가/Ticker), 주문(매수/매도/취소/정정), 계좌 잔고, 입출금 관리 등 전체 API 지원. 편의 액션 또는 직접 endpoint 호출 가능.",
+  "runtime": "node",
+  "capability": "crypto-trading",
+  "providerType": "api",
+  "secrets": ["UPBIT_ACCESS_KEY", "UPBIT_SECRET_KEY"],
+  "input": {
+    "type": "object",
+    "required": ["action"],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "accounts",
+          "order-chance", "order-detail", "order-create", "order-cancel",
+          "order-cancel-and-new", "order-cancel-uuids", "order-cancel-open",
+          "order-list-uuids", "order-list-closed", "order-list-open", "order-test",
+          "candle-seconds", "candle-minutes", "candle-days", "candle-weeks", "candle-months", "candle-years",
+          "trades",
+          "ticker", "ticker-all",
+          "orderbook", "orderbook-instruments",
+          "markets",
+          "withdraw-detail", "withdraw-list", "withdraw-cancel",
+          "withdraw-coin", "withdraw-krw", "withdraw-addresses", "withdraw-chance",
+          "deposit-detail", "deposit-list", "deposit-create-address",
+          "deposit-krw", "deposit-addresses", "deposit-address", "deposit-chance",
+          "wallet-status", "api-keys"
+        ],
+        "description": "편의 액션명. accounts=잔고, ticker=현재가, candle-minutes=분봉, order-create=주문, trades=체결내역 등. 또는 endpoint+method로 직접 호출."
+      },
+      "market": {
+        "type": "string",
+        "description": "마켓 코드 (예: KRW-BTC, KRW-ETH, BTC-XRP)"
+      },
+      "markets": {
+        "type": "string",
+        "description": "마켓 코드 목록 (쉼표 구분, 예: KRW-BTC,KRW-ETH). ticker/orderbook용"
+      },
+      "side": {
+        "type": "string",
+        "enum": ["bid", "ask"],
+        "description": "주문 방향 (bid=매수, ask=매도)"
+      },
+      "volume": {
+        "type": "string",
+        "description": "주문 수량 (문자열)"
+      },
+      "price": {
+        "type": "string",
+        "description": "주문 가격 (문자열). 시장가 매수 시 총액"
+      },
+      "ord_type": {
+        "type": "string",
+        "enum": ["limit", "price", "market", "best"],
+        "default": "limit",
+        "description": "주문 유형 (limit=지정가, price=시장가매수, market=시장가매도, best=최유리)"
+      },
+      "identifier": {
+        "type": "string",
+        "description": "사용자 지정 주문 ID"
+      },
+      "uuid": {
+        "type": "string",
+        "description": "주문/입출금 UUID"
+      },
+      "uuids": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "UUID 배열 (일괄 조회/취소)"
+      },
+      "time_in_force": {
+        "type": "string",
+        "enum": ["fok", "ioc", "post_only"],
+        "description": "주문 체결 조건"
+      },
+      "smp_type": {
+        "type": "string",
+        "enum": ["cancel_maker", "cancel_taker", "reduce"],
+        "description": "자전거래 방지 옵션"
+      },
+      "unit": {
+        "type": "integer",
+        "enum": [1, 3, 5, 10, 15, 30, 60, 240],
+        "description": "분봉 단위 (candle-minutes용)"
+      },
+      "to": {
+        "type": "string",
+        "description": "캔들 조회 종료 시각 (ISO 8601 또는 HHmmss)"
+      },
+      "count": {
+        "type": "integer",
+        "default": 200,
+        "description": "조회 개수 (캔들 최대 200, 체결 최대 500)"
+      },
+      "converting_price_unit": {
+        "type": "string",
+        "description": "환산 화폐 단위 (candle-days용, 예: KRW)"
+      },
+      "cursor": {
+        "type": "string",
+        "description": "페이지네이션 커서 (sequential_id 등)"
+      },
+      "days_ago": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 7,
+        "description": "최근 체결 내역 n일 전 조회 (trades용)"
+      },
+      "level": {
+        "type": "string",
+        "default": "0",
+        "description": "호가 모아보기 레벨 (orderbook용)"
+      },
+      "quote_currencies": {
+        "type": "string",
+        "description": "호가 통화 목록 (ticker-all용, 예: KRW,BTC)"
+      },
+      "is_details": {
+        "type": "boolean",
+        "description": "상세 정보 포함 여부 (markets용)"
+      },
+      "currency": {
+        "type": "string",
+        "description": "통화 코드 (예: BTC, ETH). 입출금 조회/요청용"
+      },
+      "net_type": {
+        "type": "string",
+        "description": "블록체인 네트워크 타입 (예: ETH, TRX, SOL)"
+      },
+      "address": {
+        "type": "string",
+        "description": "출금 수신 주소"
+      },
+      "secondary_address": {
+        "type": "string",
+        "description": "보조 주소 (태그/메모, XRP 등)"
+      },
+      "amount": {
+        "type": "string",
+        "description": "입출금 금액 (문자열)"
+      },
+      "transaction_type": {
+        "type": "string",
+        "enum": ["default", "internal"],
+        "description": "출금 거래 유형 (default=일반, internal=내부이체)"
+      },
+      "two_factor_type": {
+        "type": "string",
+        "enum": ["kakao", "naver", "hana"],
+        "description": "2차 인증 방식 (원화 입출금용)"
+      },
+      "state": {
+        "type": "string",
+        "description": "상태 필터 (입출금/주문 조회용)"
+      },
+      "states": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "상태 배열 필터 (주문 조회용)"
+      },
+      "order_by": {
+        "type": "string",
+        "enum": ["asc", "desc"],
+        "default": "desc",
+        "description": "정렬 순서"
+      },
+      "page": {
+        "type": "integer",
+        "default": 1,
+        "description": "페이지 번호"
+      },
+      "limit": {
+        "type": "integer",
+        "default": 100,
+        "description": "페이지당 조회 개수"
+      },
+      "from": {
+        "type": "string",
+        "description": "조회 시작점 (커서/날짜)"
+      },
+      "txid": {
+        "type": "string",
+        "description": "트랜잭션 ID (입출금 조회)"
+      },
+      "txids": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "트랜잭션 ID 배열"
+      },
+      "prev_order_uuid": {
+        "type": "string",
+        "description": "정정 대상 원주문 UUID (order-cancel-and-new용)"
+      },
+      "prev_order_identifier": {
+        "type": "string",
+        "description": "정정 대상 원주문 식별자 (order-cancel-and-new용)"
+      },
+      "new_ord_type": {
+        "type": "string",
+        "enum": ["limit", "best"],
+        "description": "정정 주문 유형 (order-cancel-and-new용)"
+      },
+      "new_volume": {
+        "type": "string",
+        "description": "정정 주문 수량"
+      },
+      "new_price": {
+        "type": "string",
+        "description": "정정 주문 가격"
+      },
+      "new_identifier": {
+        "type": "string",
+        "description": "정정 주문 식별자"
+      },
+      "new_time_in_force": {
+        "type": "string",
+        "enum": ["fok", "ioc", "post_only"],
+        "description": "정정 주문 체결 조건"
+      },
+      "new_smp_type": {
+        "type": "string",
+        "enum": ["cancel_maker", "cancel_taker", "reduce"],
+        "description": "정정 주문 자전거래 방지"
+      },
+      "endpoint": {
+        "type": "string",
+        "description": "API 경로 직접 지정 (예: /v1/candles/days)"
+      },
+      "method": {
+        "type": "string",
+        "enum": ["GET", "POST", "DELETE"],
+        "default": "GET",
+        "description": "HTTP 메서드 (endpoint 직접 호출 시)"
+      },
+      "params": {
+        "type": "object",
+        "description": "API별 추가 파라미터 (endpoint 직접 호출 시)"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "required": ["action"],
+    "properties": {
+      "action": { "type": "string", "description": "요청한 액션명" },
+      "endpoint": { "type": "string", "description": "호출된 API 경로" },
+      "data": { "type": "object", "description": "API 응답 데이터 (API별로 다름)" }
+    },
+    "additionalProperties": true
+  }
+}

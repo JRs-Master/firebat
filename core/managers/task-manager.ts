@@ -39,6 +39,10 @@ export class TaskManager {
         case 'LLM_TRANSFORM':
           if (!s.instruction) return `[Step ${n}] LLM_TRANSFORM에 instruction이 없습니다.`;
           break;
+        case 'CONDITION':
+          if (!s.field) return `[Step ${n}] CONDITION에 field가 없습니다.`;
+          if (!s.op) return `[Step ${n}] CONDITION에 op가 없습니다.`;
+          break;
         default: {
           const _exhaustive: never = s;
           return `[Step ${n}] 알 수 없는 단계 타입: ${(_exhaustive as PipelineStep).type}`;
@@ -67,6 +71,7 @@ export class TaskManager {
         : step.type === 'MCP_CALL' ? `${step.server}/${step.tool}`
         : step.type === 'NETWORK_REQUEST' ? step.url
         : step.type === 'LLM_TRANSFORM' ? step.instruction?.slice(0, 60)
+        : step.type === 'CONDITION' ? `${step.field} ${step.op} ${step.value ?? ''}`
         : '';
       this.log.info(`[Pipeline] Step ${i + 1}/${steps.length}: ${step.type}${stepDetail ? ` → ${stepDetail}` : ''}`);
 
@@ -143,6 +148,23 @@ export class TaskManager {
             onPipelineStep?.(i, 'done');
             break;
           }
+          case 'CONDITION': {
+            // $prev에서 field 값 추출
+            const fieldVal = this.resolveValue(step.field, prev);
+            const met = this.evaluateCondition(fieldVal, step.op, step.value);
+            this.log.info(`[Pipeline] CONDITION: ${step.field} ${step.op} ${step.value ?? ''} → ${met}`);
+
+            if (!met) {
+              // 조건 미충족 — 에러가 아닌 정상 종료 (나머지 단계 스킵)
+              onPipelineStep?.(i, 'done');
+              this.log.info(`[Pipeline] 조건 미충족 — 파이프라인 정상 종료 (이후 ${steps.length - i - 1}단계 스킵)`);
+              return { success: true, data: { conditionMet: false, field: step.field, op: step.op, value: step.value, actual: fieldVal } };
+            }
+
+            onPipelineStep?.(i, 'done');
+            // prev 유지 (CONDITION은 데이터를 변환하지 않음)
+            break;
+          }
           default: {
             const _exhaustive: never = step;
             const unknownType = (_exhaustive as PipelineStep).type;
@@ -157,6 +179,28 @@ export class TaskManager {
     }
 
     return { success: true, data: prev };
+  }
+
+  /** CONDITION 비교 연산 수행 */
+  private evaluateCondition(actual: unknown, op: string, expected?: unknown): boolean {
+    // 숫자 비교 가능하면 숫자로 변환
+    const numActual = Number(actual);
+    const numExpected = Number(expected);
+    const bothNumeric = !isNaN(numActual) && !isNaN(numExpected) && actual !== '' && actual !== null;
+
+    switch (op) {
+      case '==':  return bothNumeric ? numActual === numExpected : String(actual) === String(expected);
+      case '!=':  return bothNumeric ? numActual !== numExpected : String(actual) !== String(expected);
+      case '<':   return bothNumeric ? numActual < numExpected : false;
+      case '<=':  return bothNumeric ? numActual <= numExpected : false;
+      case '>':   return bothNumeric ? numActual > numExpected : false;
+      case '>=':  return bothNumeric ? numActual >= numExpected : false;
+      case 'includes':     return String(actual).includes(String(expected));
+      case 'not_includes': return !String(actual).includes(String(expected));
+      case 'exists':       return actual !== undefined && actual !== null && actual !== '';
+      case 'not_exists':   return actual === undefined || actual === null || actual === '';
+      default: return false;
+    }
   }
 
   /** Capability 설정 순서에 따라 preferred provider 경로로 교체 (실행 전) */
@@ -269,6 +313,7 @@ export class TaskManager {
 
   /** 파이프라인 단계의 입력 결정: 고정 inputData > inputMap > prev (모두 $prev 치환 적용) */
   private resolvePipelineInput(step: PipelineStep, prev: unknown): Record<string, unknown> | unknown {
+    if (step.type === 'CONDITION') return prev; // CONDITION은 입력 변환 없음
     if (step.inputData !== undefined) return this.resolveValue(step.inputData, prev);
     if (step.inputMap) return this.resolveValue(step.inputMap, prev);
     return prev;

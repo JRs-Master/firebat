@@ -13,6 +13,7 @@ import type { ApiTokenInfo } from './managers/auth-manager';
 import type { FirebatInfraContainer, ILlmPort, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
 import type { InfraResult, FirebatPlan } from './types';
 import type { CapabilitySettings } from './capabilities';
+import { VK_SYSTEM_TIMEZONE } from './vault-keys';
 import { eventBus } from '../lib/events';
 
 /** AI 요청 옵션 — 요청별 모델/데모 모드 지정 */
@@ -107,7 +108,13 @@ export class FirebatCore {
 
   async writeFile(path: string, content: string) {
     const res = await this.storage.write(path, content);
-    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    if (res.success) {
+      eventBus.emit({ type: 'sidebar:refresh', data: {} });
+      // 모듈 config.json 변경 시 AI 캐시 무효화
+      if (path.endsWith('/config.json') && (path.includes('modules/') || path.includes('services/'))) {
+        this.ai.invalidateCache();
+      }
+    }
     return res;
   }
 
@@ -208,7 +215,7 @@ export class FirebatCore {
   getModuleSettings(moduleName: string) { return this.module.getSettings(moduleName); }
   setModuleSettings(moduleName: string, settings: Record<string, any>) { return this.module.setSettings(moduleName, settings); }
   isModuleEnabled(moduleName: string) { return this.module.isEnabled(moduleName); }
-  setModuleEnabled(moduleName: string, enabled: boolean) { return this.module.setEnabled(moduleName, enabled); }
+  setModuleEnabled(moduleName: string, enabled: boolean) { this.ai.invalidateCache(); return this.module.setEnabled(moduleName, enabled); }
   getSeoSettings() { return this.module.getSeoSettings(); }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -292,11 +299,11 @@ export class FirebatCore {
   // ══════════════════════════════════════════════════════════════════════════
 
   getTimezone(): string {
-    return this.infra.vault.getSecret('system:timezone') || 'Asia/Seoul';
+    return this.infra.vault.getSecret(VK_SYSTEM_TIMEZONE) || 'Asia/Seoul';
   }
 
   setTimezone(tz: string): boolean {
-    const ok = this.infra.vault.setSecret('system:timezone', tz);
+    const ok = this.infra.vault.setSecret(VK_SYSTEM_TIMEZONE, tz);
     if (ok) this.infra.cron.setTimezone(tz);
     return ok;
   }

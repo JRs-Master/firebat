@@ -2,95 +2,204 @@
   "name": "naver-ads",
   "type": "module",
   "scope": "system",
-  "version": "1.0.0",
-  "description": "네이버 검색광고 API (키워드도구). 키워드 검색량·CPC·경쟁도 + 연관 키워드(relatedKeywords) 함께 반환. 연관검색어 조회에도 이 도구를 사용. showDetail=true 시 최근 12개월 월별 검색량 포함.",
+  "version": "2.0.0",
+  "description": "네이버 검색광고 API. keyword-tool(키워드 검색량/CPC/경쟁도+연관키워드), stats(캠페인/광고그룹/키워드 성과 통계), estimate(입찰가 시뮬레이션), bizmoney(잔액/충전/소진 내역), managed-keywords(키워드 관리상태), list-campaigns/adgroups/keywords/ads(관리), raw(직접 API 호출).",
   "runtime": "node",
   "capability": "keyword-analytics",
   "providerType": "api",
   "secrets": ["NAVER_AD_LICENSE_KEY", "NAVER_AD_SECRET_KEY", "NAVER_AD_CUSTOMER_ID"],
   "input": {
     "type": "object",
-    "required": ["keywords"],
     "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "keyword-tool", "stats", "estimate", "bizmoney", "managed-keywords",
+          "list-campaigns", "get-campaign", "list-adgroups", "get-adgroup",
+          "list-keywords", "get-keyword", "list-ads", "get-ad",
+          "list-channels", "list-extensions", "list-labels", "list-shared-budgets",
+          "raw"
+        ],
+        "default": "keyword-tool",
+        "description": "API 액션"
+      },
       "keywords": {
         "type": "array",
         "items": { "type": "string" },
         "maxItems": 5,
-        "description": "분석할 키워드 목록 (최대 5개)"
+        "description": "[keyword-tool/managed-keywords] 키워드 목록 (최대 5개)"
       },
       "showDetail": {
         "type": "boolean",
         "default": true,
-        "description": "월별 검색량 상세 데이터(최근 12개월) 포함 여부"
+        "description": "[keyword-tool] 월별 검색량 상세 (최근 12개월)"
+      },
+      "siteId": {
+        "type": "string",
+        "description": "[keyword-tool] 사이트 ID"
+      },
+      "biztpId": {
+        "type": "string",
+        "description": "[keyword-tool] 업종 ID"
+      },
+      "event": {
+        "type": "integer",
+        "description": "[keyword-tool] 시즌 이벤트"
+      },
+      "month": {
+        "type": "integer",
+        "description": "[keyword-tool] 월"
+      },
+      "id": {
+        "type": "string",
+        "description": "[stats/get-*] 단일 엔티티 ID (캠페인/광고그룹/키워드/소재)"
+      },
+      "ids": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "[stats/list-*] 복수 ID 배열"
+      },
+      "fields": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["impCnt", "clkCnt", "salesAmt", "ctr", "cpc", "avgRnk", "ccnt", "recentAvgRnk", "recentAvgCpc", "pcNxAvgRnk", "mblNxAvgRnk", "crto", "convAmt", "ror", "cpConv", "viewCnt"]
+        },
+        "description": "[stats] 조회할 지표. impCnt=노출, clkCnt=클릭, salesAmt=비용, ctr=클릭률, cpc=클릭당비용, avgRnk=평균순위, ccnt=전환수"
+      },
+      "timeRange": {
+        "type": "object",
+        "properties": {
+          "since": { "type": "string", "description": "시작일 YYYY-MM-DD" },
+          "until": { "type": "string", "description": "종료일 YYYY-MM-DD" }
+        },
+        "description": "[stats] 조회 기간"
+      },
+      "datePreset": {
+        "type": "string",
+        "enum": ["today", "yesterday", "last7days", "last30days", "lastweek", "lastmonth", "lastquarter"],
+        "description": "[stats] 프리셋 기간 (timeRange 대신 사용)"
+      },
+      "timeIncrement": {
+        "type": "string",
+        "enum": ["1", "allDays"],
+        "description": "[stats] 1=일별, allDays=합산"
+      },
+      "breakdown": {
+        "type": "string",
+        "enum": ["pcMblTp", "dayw"],
+        "description": "[stats] 분류. pcMblTp=PC/모바일, dayw=요일별"
+      },
+      "statType": {
+        "type": "string",
+        "description": "[stats] 통계 유형"
+      },
+      "estimateType": {
+        "type": "string",
+        "enum": ["performance", "performance-bulk", "average-position-bid", "median-bid", "exposure-minimum-bid"],
+        "default": "performance",
+        "description": "[estimate] 시뮬레이션 유형. performance=예상 성과, average-position-bid=평균순위 입찰가, median-bid=중위 입찰가, exposure-minimum-bid=보장노출 최소 입찰가"
+      },
+      "keyType": {
+        "type": "string",
+        "enum": ["id", "keyword"],
+        "default": "keyword",
+        "description": "[estimate] id=키워드ID로 조회, keyword=키워드 문자열로 조회"
+      },
+      "key": {
+        "type": "string",
+        "description": "[estimate] 키워드 문자열 또는 ID (keyType에 따라)"
+      },
+      "bid": {
+        "type": "integer",
+        "description": "[estimate] 입찰가 (원)"
+      },
+      "device": {
+        "type": "string",
+        "enum": ["PC", "MOBILE"],
+        "description": "[estimate] 디바이스"
+      },
+      "keywordplus": {
+        "type": "boolean",
+        "description": "[estimate] 키워드 확장 여부"
+      },
+      "items": {
+        "type": "array",
+        "description": "[estimate:performance-bulk] [{key, device, bid, keywordplus}] 배열"
+      },
+      "subAction": {
+        "type": "string",
+        "enum": ["balance", "charge-history", "exhaust-history", "period-history"],
+        "default": "balance",
+        "description": "[bizmoney] balance=잔액, charge-history=충전내역, exhaust-history=소진내역, period-history=일별현황"
+      },
+      "searchStartDt": {
+        "type": "string",
+        "description": "[bizmoney:history] 조회 시작일 YYYYMMDD"
+      },
+      "searchEndDt": {
+        "type": "string",
+        "description": "[bizmoney:history] 조회 종료일 YYYYMMDD"
+      },
+      "nccCampaignId": {
+        "type": "string",
+        "description": "[list-adgroups/list-keywords] 캠페인 ID 필터"
+      },
+      "nccAdgroupId": {
+        "type": "string",
+        "description": "[list-keywords/list-ads] 광고그룹 ID 필터"
+      },
+      "campaignType": {
+        "type": "string",
+        "description": "[list-campaigns] 캠페인 유형 필터"
+      },
+      "ownerId": {
+        "type": "string",
+        "description": "[list-extensions] 소유자 ID"
+      },
+      "nccLabelId": {
+        "type": "string",
+        "description": "[list-*] 라벨 ID 필터"
+      },
+      "channelTp": {
+        "type": "string",
+        "description": "[list-channels] 채널 유형 필터"
+      },
+      "recordSize": {
+        "type": "integer",
+        "description": "[list-*] 페이지당 결과 수"
+      },
+      "selector": {
+        "type": "string",
+        "description": "[list-*] 페이징 셀렉터"
+      },
+      "method": {
+        "type": "string",
+        "enum": ["GET", "POST", "PUT", "DELETE"],
+        "default": "GET",
+        "description": "[raw] HTTP 메서드"
+      },
+      "uri": {
+        "type": "string",
+        "description": "[raw] API 경로 (예: /api/ncc/campaigns)"
+      },
+      "params": {
+        "type": "object",
+        "description": "[raw] 쿼리 파라미터"
+      },
+      "body": {
+        "type": "object",
+        "description": "[raw] POST/PUT 요청 바디"
       }
     },
     "additionalProperties": false
   },
   "output": {
     "type": "object",
-    "required": ["keywords"],
     "properties": {
-      "keywords": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "keyword": { "type": "string", "description": "키워드" },
-            "monthlyPcQcCnt": { "type": "integer", "description": "월간 PC 검색량" },
-            "monthlyMobileQcCnt": { "type": "integer", "description": "월간 모바일 검색량" },
-            "monthlyAvePcClkCnt": { "type": "number", "description": "월평균 PC 클릭수" },
-            "monthlyAveMobileClkCnt": { "type": "number", "description": "월평균 모바일 클릭수" },
-            "monthlyAvePcCtr": { "type": "number", "description": "월평균 PC 클릭률 (%)" },
-            "monthlyAveMobileCtr": { "type": "number", "description": "월평균 모바일 클릭률 (%)" },
-            "plAvgDepth": { "type": "integer", "description": "월평균 노출 광고수 (경쟁 깊이)" },
-            "compIdx": { "type": "string", "description": "경쟁 정도 (높음/중간/낮음)" },
-            "monthlyPcQcCntList": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "year": { "type": "string" },
-                  "month": { "type": "string" },
-                  "cnt": { "type": "integer" }
-                }
-              },
-              "description": "최근 12개월 PC 검색량 월별 내역 (showDetail=true 시)"
-            },
-            "monthlyMobileQcCntList": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "year": { "type": "string" },
-                  "month": { "type": "string" },
-                  "cnt": { "type": "integer" }
-                }
-              },
-              "description": "최근 12개월 모바일 검색량 월별 내역 (showDetail=true 시)"
-            }
-          }
-        },
-        "description": "입력 키워드별 분석 결과"
-      },
-      "relatedKeywords": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "keyword": { "type": "string", "description": "연관 키워드" },
-            "monthlyPcQcCnt": { "type": "integer", "description": "월간 PC 검색량" },
-            "monthlyMobileQcCnt": { "type": "integer", "description": "월간 모바일 검색량" },
-            "monthlyAvePcClkCnt": { "type": "number", "description": "월평균 PC 클릭수" },
-            "monthlyAveMobileClkCnt": { "type": "number", "description": "월평균 모바일 클릭수" },
-            "monthlyAvePcCtr": { "type": "number", "description": "월평균 PC 클릭률 (%)" },
-            "monthlyAveMobileCtr": { "type": "number", "description": "월평균 모바일 클릭률 (%)" },
-            "plAvgDepth": { "type": "integer", "description": "월평균 노출 광고수" },
-            "compIdx": { "type": "string", "description": "경쟁 정도 (높음/중간/낮음)" }
-          }
-        },
-        "description": "연관 키워드 목록 (최대 20개). 입력 키워드 외에 API가 추천하는 관련 키워드."
-      }
+      "keywords": { "type": "array", "description": "[keyword-tool] 입력 키워드 분석 결과" },
+      "relatedKeywords": { "type": "array", "description": "[keyword-tool] 연관 키워드 (최대 20)" }
     },
-    "additionalProperties": false
+    "description": "action별 응답 구조가 다름. keyword-tool={keywords,relatedKeywords}, stats=통계 배열, estimate=시뮬레이션 결과, bizmoney=잔액/내역"
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../lib/auth-guard';
+import { SESSION_MAX_AGE_SECONDS } from '../../../infra/config';
 
 // 로그인
 export async function POST(req: NextRequest) {
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
     httpOnly: true,
     path: '/',
     sameSite: 'lax',
-    maxAge: 24 * 60 * 60, // 24시간
+    maxAge: SESSION_MAX_AGE_SECONDS, // 24시간
   });
 
   // 클라이언트 읽기용 역할 쿠키 (비밀 아님)
@@ -34,7 +35,7 @@ export async function POST(req: NextRequest) {
     httpOnly: true,
     path: '/',
     sameSite: 'lax',
-    maxAge: 24 * 60 * 60,
+    maxAge: SESSION_MAX_AGE_SECONDS,
   });
 
   return res;

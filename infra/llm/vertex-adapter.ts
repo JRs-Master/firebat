@@ -12,6 +12,8 @@ import { DEFAULT_MODEL, DEFAULT_VERTEX_LOCATION, LLM_TIMEOUT_MS, LLM_TEMPERATURE
 export class VertexAiAdapter implements ILlmPort {
   private ai: GoogleGenAI | null = null;
   private cachedApiKey: string | null = null;
+  private cachedLocation: string | null = null;
+  private cachedProject: string | null = null;
 
   constructor(
     private readonly resolveApiKey: () => string | null,
@@ -24,18 +26,20 @@ export class VertexAiAdapter implements ILlmPort {
     return this.defaultModel;
   }
 
-  /** API 키가 변경되면 클라이언트 재생성, 미설정이면 null */
+  /** API 키/프로젝트/리전이 변경되면 클라이언트 재생성, 미설정이면 null */
   private getClient(): GoogleGenAI | null {
     const apiKey = this.resolveApiKey();
     if (!apiKey) return null;
-    if (apiKey !== this.cachedApiKey) {
-      const project = this.resolveProject();
-      const location = this.resolveLocation();
+    const project = this.resolveProject() ?? null;
+    const location = this.resolveLocation();
+    if (apiKey !== this.cachedApiKey || location !== this.cachedLocation || project !== this.cachedProject) {
       // @google/genai 타입 정의가 vertexai 옵션을 포함하지 않아 타입 단언 필요
       this.ai = project
         ? new GoogleGenAI({ vertexai: true, project, location, apiKey } as Record<string, unknown> as ConstructorParameters<typeof GoogleGenAI>[0])
         : new GoogleGenAI({ apiKey, vertexai: true } as Record<string, unknown> as ConstructorParameters<typeof GoogleGenAI>[0]);
       this.cachedApiKey = apiKey;
+      this.cachedLocation = location;
+      this.cachedProject = project;
     }
     return this.ai;
   }

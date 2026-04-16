@@ -1,5 +1,6 @@
 import type { ISandboxPort, IStoragePort, IVaultPort, ModuleOutput } from '../ports';
 import type { InfraResult } from '../types';
+import { vkModuleSettings } from '../vault-keys';
 
 interface SystemEntry {
   name: string;
@@ -108,14 +109,14 @@ export class ModuleManager {
 
   /** 시스템 모듈/서비스 설정 조회 */
   getSettings(name: string): Record<string, any> {
-    const raw = this.vault.getSecret(`system:module:${name}:settings`);
+    const raw = this.vault.getSecret(vkModuleSettings(name));
     if (!raw) return {};
     try { return JSON.parse(raw); } catch { return {}; }
   }
 
   /** 시스템 모듈/서비스 설정 저장 */
   setSettings(name: string, settings: Record<string, any>): boolean {
-    return this.vault.setSecret(`system:module:${name}:settings`, JSON.stringify(settings));
+    return this.vault.setSecret(vkModuleSettings(name), JSON.stringify(settings));
   }
 
   /** SEO 서비스 설정 조회 (편의 메서드) */

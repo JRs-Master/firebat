@@ -23,6 +23,7 @@ export const BUILTIN_CAPABILITIES: Record<string, CapabilityDef> = {
   'web-search':   { label: '웹 검색', description: '키워드 → 검색 결과 목록 (제목, URL, 설명)' },
   'keyword-analytics': { label: '키워드 분석', description: '키워드 검색량, CPC, 경쟁도 등 광고/SEO 지표 조회' },
   'stock-trading':     { label: '주식 거래', description: '시세 조회, 매수/매도 주문, 잔고 조회' },
+  'crypto-trading':    { label: '암호화폐 거래', description: '암호화폐 시세 조회, 매수/매도 주문, 잔고/입출금 관리' },
   'law-search':        { label: '법령 검색', description: '국가법령정보 검색 — 법령/판례/행정규칙/헌재결정례 조회' },
 };
 

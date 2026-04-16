@@ -48,11 +48,20 @@ const LlmTransformStepSchema = z.object({
   inputMap: z.record(z.string(), z.unknown()).optional(),
 });
 
+const ConditionStepSchema = z.object({
+  type: z.literal('CONDITION'),
+  description: z.string().optional(),
+  field: z.string().describe('검사 대상 ($prev, $prev.price 등)'),
+  op: z.enum(['==', '!=', '<', '<=', '>', '>=', 'includes', 'not_includes', 'exists', 'not_exists']).describe('비교 연산자'),
+  value: z.unknown().optional().describe('비교 값 (exists/not_exists는 불필요)'),
+});
+
 export const PipelineStepSchema = z.discriminatedUnion('type', [
   ExecuteStepSchema,
   McpCallStepSchema,
   NetworkRequestStepSchema,
   LlmTransformStepSchema,
+  ConditionStepSchema,
 ]);
 
 // ── FirebatAction (Discriminated Union) ─────────────────────────────────

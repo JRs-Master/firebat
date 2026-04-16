@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Loader2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, Menu } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 
@@ -311,13 +311,13 @@ export function Sidebar({
     return result;
   })();
 
-  // ── 모바일 body 스크롤 방지 ──
+  // ── 오버레이 body 스크롤 방지 ──
   useEffect(() => {
-    if (isMobile && !collapsed) {
+    if (!collapsed) {
       document.body.style.overflow = 'hidden';
       return () => { document.body.style.overflow = ''; };
     }
-  }, [isMobile, collapsed]);
+  }, [collapsed]);
 
   const closeSidebar = () => {
     setCollapsed(true);
@@ -375,13 +375,6 @@ export function Sidebar({
             <Settings size={18} />
           </button>
         )}
-        <button
-          onClick={() => setCollapsed(false)}
-          className="p-2 rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition-colors"
-          title="사이드바 열기"
-        >
-          <ChevronRight size={16} />
-        </button>
       </div>
     </>
     );
@@ -390,14 +383,12 @@ export function Sidebar({
   /* ── 펼쳐진 모드 ── */
   return (
     <>
-    {/* 모바일 backdrop */}
-    {isMobile && (
-      <div
-        className="fixed top-12 inset-x-0 bottom-0 bg-black/30 z-30 md:hidden touch-none"
-        onClick={closeSidebar}
-      />
-    )}
-    <div className={`${isMobile ? 'fixed top-12 bottom-0 left-0 z-40' : 'relative'} w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 shadow-lg overflow-hidden`}>
+    {/* backdrop */}
+    <div
+      className="fixed top-12 inset-x-0 bottom-0 bg-black/30 z-30 touch-none"
+      onClick={closeSidebar}
+    />
+    <div className="fixed top-12 bottom-0 left-0 z-40 w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 shadow-lg overflow-hidden">
 
       {/* 탭 헤더 */}
       <div className="flex items-center gap-1 px-2 py-2 border-b border-slate-200/80">
@@ -418,22 +409,15 @@ export function Sidebar({
           <MessageSquare size={12} /> CHATS
         </button>
         <div className="flex-1" />
-        {tab === 'workspace' && (
+        {!isDemo && onOpenSettings ? (
           <button
-            onClick={refreshAll}
-            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-            title="새로고침"
+            onClick={() => { onOpenSettings(); if (isMobile) closeSidebar(); }}
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+            title="설정"
           >
-            <RefreshCw size={13} />
+            <Settings size={14} />
           </button>
-        )}
-        <button
-          onClick={closeSidebar}
-          className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
-          title="사이드바 접기"
-        >
-          <ChevronLeft size={14} />
-        </button>
+        ) : null}
       </div>
 
       {/* 패널 컨텐츠 */}
@@ -814,17 +798,6 @@ export function Sidebar({
         )}
       </div>
 
-      {/* 설정 버튼 — 사이드바 하단 */}
-      {!isDemo && onOpenSettings && (
-        <div className="shrink-0 border-t border-slate-200/80 px-3 py-2">
-          <button
-            onClick={onOpenSettings}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors text-[12px] font-semibold"
-          >
-            <Settings size={14} /> Settings
-          </button>
-        </div>
-      )}
     </div>
 
     {/* PageSpec 에디터 모달 — PC에서만 표시 */}

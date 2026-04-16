@@ -1,5 +1,6 @@
 import type { IStoragePort, IVaultPort, ILogPort } from '../ports';
 import { BUILTIN_CAPABILITIES, type CapabilityDef, type CapabilitySettings, type CapabilityProvider } from '../capabilities';
+import { vkCapabilitySettings, vkModuleSettings } from '../vault-keys';
 
 /**
  * Capability Manager — Provider 해석 + 설정 관리
@@ -93,19 +94,19 @@ export class CapabilityManager {
 
   /** capability 설정 조회 (Vault) */
   getSettings(capId: string): CapabilitySettings {
-    const raw = this.vault.getSecret(`system:capability:${capId}:settings`);
+    const raw = this.vault.getSecret(vkCapabilitySettings(capId));
     if (!raw) return { providers: [] };
     try { return JSON.parse(raw); } catch { return { providers: [] }; }
   }
 
   /** capability 설정 저장 (Vault) */
   setSettings(capId: string, settings: CapabilitySettings): boolean {
-    return this.vault.setSecret(`system:capability:${capId}:settings`, JSON.stringify(settings));
+    return this.vault.setSecret(vkCapabilitySettings(capId), JSON.stringify(settings));
   }
 
   /** 모듈 활성화 여부 확인 (ModuleManager와 동일 로직 — Vault 직접 조회) */
   private isModuleEnabled(name: string): boolean {
-    const raw = this.vault.getSecret(`system:module:${name}:settings`);
+    const raw = this.vault.getSecret(vkModuleSettings(name));
     if (!raw) return true; // 설정 없으면 기본 활성화
     try {
       const s = JSON.parse(raw);

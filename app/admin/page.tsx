@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Loader2, Circle, Copy, CheckCheck, ImagePlus, Plus } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Circle, Copy, CheckCheck, ImagePlus, Plus } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import { Sidebar } from './components/Sidebar';
 import { FileEditor } from './components/FileEditor';
 import { SettingsModal } from './components/SettingsModal';
@@ -49,16 +50,15 @@ const mdComponents = {
 };
 
 function cleanMarkdown(text: string): string {
-  // 줄 단위로 홀수 개 **가 있으면 고아 ** 제거 (줄바꿈에 걸쳐 깨진 bold 마커)
-  return text.split('\n').map(line => {
-    const count = (line.match(/\*\*/g) || []).length;
-    if (count % 2 !== 0) return line.replace(/\*\*/, '');
-    return line;
-  }).join('\n');
+  // **text** → <strong>text</strong> 변환 (CommonMark 파서가 한국어+따옴표 조합에서 볼드 인식 실패 방지)
+  let cleaned = text.replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>');
+  // 남은 고아 ** 제거
+  cleaned = cleaned.replace(/\*\*/g, '');
+  return cleaned;
 }
 
 function renderMarkdown(text: string) {
-  return <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{cleanMarkdown(text)}</ReactMarkdown>;
+  return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{cleanMarkdown(text)}</ReactMarkdown>;
 }
 
 // ─── 선택지 버튼 (텍스트 버튼 + 인라인 입력 + 토글 다중 선택) ─────────────────
@@ -510,6 +510,11 @@ export default function AdminConsole() {
     window.addEventListener('firebat-toggle-sidebar', handler);
     return () => window.removeEventListener('firebat-toggle-sidebar', handler);
   }, []);
+
+  // 사이드바 상태를 layout.tsx 헤더 토글 버튼에 동기화
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('firebat-sidebar-state', { detail: { open: mobileMenuOpen } }));
+  }, [mobileMenuOpen]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }

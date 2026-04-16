@@ -2,95 +2,228 @@
   "name": "naver-search",
   "type": "module",
   "scope": "system",
-  "version": "1.0.0",
-  "description": "네이버 검색 API. 웹문서·뉴스·블로그·이미지·쇼핑·카페·지식iN 7가지 유형 지원. 유형별로 반환 필드가 다름 (블로그: bloggername/postdate, 뉴스: originallink/pubDate, 이미지: thumbnail/sizeheight/sizewidth, 쇼핑: lprice/hprice/mallName/brand/category, 카페: cafename/cafeurl, 지식iN: 기본 필드).",
+  "version": "2.0.0",
+  "description": "네이버 검색 + 데이터랩 API. 검색(search): webkr(웹문서), blog(블로그), news(뉴스), image(이미지), shop(쇼핑), cafearticle(카페), kin(지식iN), encyc(백과사전), book(도서), book_adv(도서 상세검색), doc(전문자료), local(지역), adult(성인검색어 판별), errata(오타변환). 데이터랩: search-trend(검색어 트렌드), shopping-categories(분야별 트렌드), shopping-keywords(키워드 트렌드), shopping-by-device/gender/age(클릭 분석).",
   "runtime": "node",
   "capability": "web-search",
   "providerType": "api",
   "secrets": ["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"],
   "input": {
     "type": "object",
-    "required": ["query"],
     "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["search", "search-trend", "shopping-categories", "shopping-keywords", "shopping-by-device", "shopping-by-gender", "shopping-by-age"],
+        "default": "search",
+        "description": "API 액션. search=네이버 검색, search-trend=검색어 트렌드, shopping-*=쇼핑인사이트"
+      },
       "query": {
         "type": "string",
-        "description": "검색 키워드"
+        "description": "[search] 검색 키워드 (UTF-8)"
       },
       "type": {
         "type": "string",
-        "enum": ["webkr", "news", "blog", "image", "shop", "cafearticle", "kin"],
+        "enum": ["webkr", "news", "blog", "image", "shop", "cafearticle", "kin", "encyc", "book", "book_adv", "doc", "local", "adult", "errata"],
         "default": "webkr",
-        "description": "검색 유형 (webkr=웹문서, news=뉴스, blog=블로그, image=이미지, shop=쇼핑, cafearticle=카페, kin=지식iN)"
+        "description": "[search] 검색 유형. webkr=웹문서, news=뉴스, blog=블로그, image=이미지, shop=쇼핑, cafearticle=카페, kin=지식iN, encyc=백과사전, book=도서, book_adv=도서 상세검색, doc=전문자료, local=지역(max 5건), adult=성인검색어 판별, errata=오타변환"
       },
       "display": {
         "type": "integer",
         "minimum": 1,
         "maximum": 100,
         "default": 10,
-        "description": "검색 결과 수 (최대 100, shop은 최대 100)"
+        "description": "[search] 결과 수. 대부분 최대 100, local은 최대 5"
       },
       "start": {
         "type": "integer",
         "minimum": 1,
         "maximum": 1000,
         "default": 1,
-        "description": "검색 시작 위치 (최대 1000)"
+        "description": "[search] 시작 위치. 대부분 최대 1000, local은 1 고정"
       },
       "sort": {
         "type": "string",
-        "enum": ["sim", "date"],
+        "enum": ["sim", "date", "asc", "dsc", "point", "random", "comment"],
         "default": "sim",
-        "description": "정렬 (sim=정확도순, date=최신순, shop에서는 sim=정확도/date=날짜/asc=가격오름/dsc=가격내림)"
+        "description": "[search] 정렬. sim=정확도, date=최신순. shop: asc=가격오름/dsc=가격내림. kin: point=평점순. local: random=정확도/comment=리뷰순"
       },
       "filter": {
         "type": "string",
-        "description": "이미지 검색 필터 (all=전체, large=큰이미지, medium=중간, small=작은이미지). image 유형에서만 사용."
+        "description": "[search:image] all/large/medium/small. [search:shop] naverpay=네이버페이 상품만"
+      },
+      "exclude": {
+        "type": "string",
+        "description": "[search:shop] 제외 조건. 콜론 구분: used(중고), rental(렌탈), cbshop(해외직구). 예: used:cbshop"
+      },
+      "d_titl": {
+        "type": "string",
+        "description": "[search:book_adv] 제목 검색"
+      },
+      "d_auth": {
+        "type": "string",
+        "description": "[search:book_adv] 저자 검색"
+      },
+      "d_cont": {
+        "type": "string",
+        "description": "[search:book_adv] 목차 검색"
+      },
+      "d_isbn": {
+        "type": "string",
+        "description": "[search:book_adv] ISBN 검색"
+      },
+      "d_publ": {
+        "type": "string",
+        "description": "[search:book_adv] 출판사 검색"
+      },
+      "d_dafr": {
+        "type": "string",
+        "description": "[search:book_adv] 출간일 시작 (YYYYMMDD)"
+      },
+      "d_dato": {
+        "type": "string",
+        "description": "[search:book_adv] 출간일 끝 (YYYYMMDD)"
+      },
+      "startDate": {
+        "type": "string",
+        "description": "[데이터랩] 시작일 YYYY-MM-DD (검색 트렌드: 2016-01-01 이후, 쇼핑: 2017-08-01 이후. 기본 3개월 전)"
+      },
+      "endDate": {
+        "type": "string",
+        "description": "[데이터랩] 종료일 YYYY-MM-DD (기본 오늘)"
+      },
+      "timeUnit": {
+        "type": "string",
+        "enum": ["date", "week", "month"],
+        "default": "week",
+        "description": "[데이터랩] 집계 단위. date=일별(최대1년), week=주별(최대2년), month=월별(최대5년)"
+      },
+      "keywordGroups": {
+        "type": "array",
+        "maxItems": 5,
+        "items": {
+          "type": "object",
+          "required": ["groupName", "keywords"],
+          "properties": {
+            "groupName": { "type": "string", "description": "그룹 이름 (레이블)" },
+            "keywords": {
+              "type": "array",
+              "maxItems": 20,
+              "items": { "type": "string" },
+              "description": "검색어 목록 (그룹당 최대 20개)"
+            }
+          }
+        },
+        "description": "[search-trend] 키워드 그룹 (최대 5그룹). 같은 그룹의 키워드는 합산 비교"
+      },
+      "category": {
+        "type": "array",
+        "maxItems": 5,
+        "items": {
+          "type": "object",
+          "required": ["name", "param"],
+          "properties": {
+            "name": { "type": "string", "description": "분야 이름 (레이블)" },
+            "param": {
+              "type": "array",
+              "maxItems": 5,
+              "items": { "type": "string" },
+              "description": "카테고리 코드 (50000000=패션의류, 50000001=패션잡화, 50000002=화장품, 50000003=디지털가전, 50000004=가구인테리어, 50000005=출산육아, 50000006=식품, 50000007=스포츠레저, 50000008=생활건강)"
+            }
+          }
+        },
+        "description": "[shopping-categories] 쇼핑 분야 그룹 (최대 5개)"
+      },
+      "categoryCode": {
+        "type": "string",
+        "description": "[shopping-keywords/by-device/by-gender/by-age] 단일 카테고리 코드 (예: 50000000)"
+      },
+      "keyword": {
+        "type": "array",
+        "maxItems": 5,
+        "items": {
+          "type": "object",
+          "required": ["name", "param"],
+          "properties": {
+            "name": { "type": "string", "description": "키워드 그룹명" },
+            "param": {
+              "type": "array",
+              "maxItems": 5,
+              "items": { "type": "string" },
+              "description": "키워드 목록 (최대 5개)"
+            }
+          }
+        },
+        "description": "[shopping-keywords] 키워드 그룹 배열 (최대 5그룹)"
+      },
+      "keywordText": {
+        "type": "string",
+        "description": "[shopping-by-device/by-gender/by-age] 분석할 단일 키워드"
+      },
+      "device": {
+        "type": "string",
+        "enum": ["pc", "mo"],
+        "description": "[데이터랩] 기기 필터. pc=PC, mo=모바일 (생략 시 전체)"
+      },
+      "gender": {
+        "type": "string",
+        "enum": ["m", "f"],
+        "description": "[데이터랩] 성별 필터. m=남성, f=여성 (생략 시 전체)"
+      },
+      "ages": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"]
+        },
+        "description": "[데이터랩] 연령 필터. 1=0-12, 2=13-18, 3=19-24, 4=25-29, 5=30-34, 6=35-39, 7=40-44, 8=45-49, 9=50-54, 10=55-59, 11=60+"
       }
     },
     "additionalProperties": false
   },
   "output": {
     "type": "object",
-    "required": ["total", "items"],
     "properties": {
-      "total": { "type": "integer", "description": "전체 검색 결과 수" },
-      "start": { "type": "integer", "description": "검색 시작 위치" },
-      "display": { "type": "integer", "description": "반환된 결과 수" },
+      "total": { "type": "integer", "description": "[search] 전체 검색 결과 수" },
+      "start": { "type": "integer", "description": "[search] 시작 위치" },
+      "display": { "type": "integer", "description": "[search] 반환된 결과 수" },
       "items": {
         "type": "array",
         "items": {
           "type": "object",
           "properties": {
-            "title": { "type": "string", "description": "제목" },
-            "link": { "type": "string", "description": "URL" },
-            "description": { "type": "string", "description": "요약/설명" },
-            "originallink": { "type": "string", "description": "[news] 원본 기사 URL" },
-            "pubDate": { "type": "string", "description": "[news] 발행일 (RFC 822)" },
-            "bloggername": { "type": "string", "description": "[blog] 블로거 이름" },
-            "bloggerlink": { "type": "string", "description": "[blog] 블로그 URL" },
-            "postdate": { "type": "string", "description": "[blog] 작성일 (YYYYMMDD)" },
-            "thumbnail": { "type": "string", "description": "[image] 썸네일 URL" },
-            "sizeheight": { "type": "string", "description": "[image] 이미지 높이 (px)" },
-            "sizewidth": { "type": "string", "description": "[image] 이미지 너비 (px)" },
-            "image": { "type": "string", "description": "[shop] 상품 이미지 URL" },
-            "lprice": { "type": "string", "description": "[shop] 최저가" },
-            "hprice": { "type": "string", "description": "[shop] 최고가" },
-            "mallName": { "type": "string", "description": "[shop] 쇼핑몰 이름" },
-            "productId": { "type": "string", "description": "[shop] 상품 ID" },
-            "productType": { "type": "string", "description": "[shop] 상품 유형 (1=일반, 2=일반+카탈로그, 3=카탈로그)" },
-            "brand": { "type": "string", "description": "[shop] 브랜드" },
-            "maker": { "type": "string", "description": "[shop] 제조사" },
-            "category1": { "type": "string", "description": "[shop] 대분류" },
-            "category2": { "type": "string", "description": "[shop] 중분류" },
-            "category3": { "type": "string", "description": "[shop] 소분류" },
-            "category4": { "type": "string", "description": "[shop] 세분류" },
-            "cafename": { "type": "string", "description": "[cafearticle] 카페 이름" },
-            "cafeurl": { "type": "string", "description": "[cafearticle] 카페 URL" }
+            "title": { "type": "string" },
+            "link": { "type": "string" },
+            "description": { "type": "string" }
           }
         },
-        "description": "검색 결과 목록. 유형별로 포함되는 필드가 다름."
+        "description": "[search] 검색 결과. 유형별 필드가 다름"
+      },
+      "adult": { "type": "boolean", "description": "[adult] 성인검색어 여부" },
+      "errata": { "type": "string", "description": "[errata] 교정된 검색어" },
+      "startDate": { "type": "string", "description": "[데이터랩] 조회 시작일" },
+      "endDate": { "type": "string", "description": "[데이터랩] 조회 종료일" },
+      "timeUnit": { "type": "string", "description": "[데이터랩] 집계 단위" },
+      "results": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "title": { "type": "string", "description": "그룹명" },
+            "data": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "period": { "type": "string", "description": "집계 시작일" },
+                  "ratio": { "type": "number", "description": "상대 비율 (0~100)" },
+                  "group": { "type": "string", "description": "[by-device/by-gender/by-age] 분류값" }
+                }
+              }
+            }
+          }
+        },
+        "description": "[데이터랩] 그룹별 트렌드 결과"
       }
-    },
-    "additionalProperties": false
+    }
   }
 }

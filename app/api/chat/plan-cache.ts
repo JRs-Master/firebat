@@ -6,10 +6,13 @@
  * 프론트엔드에는 요약 정보만 전송하고, 실행 시 원본 plan 사용.
  */
 
+import { PLAN_CACHE_EXPIRE_MS, PLAN_CACHE_MAX_SIZE } from '../../../infra/config';
+
 const planStore = new Map<string, { plan: any; createdAt: number }>();
 
 // 10분 이상 된 캐시 자동 정리
-const EXPIRE_MS = 10 * 60 * 1000;
+const EXPIRE_MS = PLAN_CACHE_EXPIRE_MS;
+const MAX_CACHE_SIZE = PLAN_CACHE_MAX_SIZE;
 
 function cleanup() {
   const now = Date.now();
@@ -18,8 +21,22 @@ function cleanup() {
   }
 }
 
+// 1분마다 자동 정리
+setInterval(cleanup, 60_000);
+
 export function storePlan(corrId: string, plan: any) {
-  cleanup();
+  // 크기 제한 — 가장 오래된 항목 제거
+  if (planStore.size >= MAX_CACHE_SIZE) {
+    let oldest: string | null = null;
+    let oldestTime = Infinity;
+    for (const [key, entry] of planStore) {
+      if (entry.createdAt < oldestTime) {
+        oldest = key;
+        oldestTime = entry.createdAt;
+      }
+    }
+    if (oldest) planStore.delete(oldest);
+  }
   planStore.set(corrId, { plan, createdAt: Date.now() });
 }
 

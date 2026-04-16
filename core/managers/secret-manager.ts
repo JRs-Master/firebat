@@ -1,4 +1,5 @@
 import type { IVaultPort, IStoragePort } from '../ports';
+import { vkUserSecret } from '../vault-keys';
 
 /**
  * Secret Manager — 시크릿 CRUD + 모듈 시크릿 스캔
@@ -20,15 +21,15 @@ export class SecretManager {
   }
 
   setUser(name: string, value: string): boolean {
-    return this.vault.setSecret(`user:${name}`, value);
+    return this.vault.setSecret(vkUserSecret(name), value);
   }
 
   getUser(name: string): string | null {
-    return this.vault.getSecret(`user:${name}`);
+    return this.vault.getSecret(vkUserSecret(name));
   }
 
   deleteUser(name: string): boolean {
-    return this.vault.deleteSecret(`user:${name}`);
+    return this.vault.deleteSecret(vkUserSecret(name));
   }
 
   /** 유저 모듈이 필요로 하는 시크릿 목록 (config.json secrets 필드에서 수집) */

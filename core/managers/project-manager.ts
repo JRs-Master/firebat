@@ -1,5 +1,6 @@
 import type { IStoragePort, IDatabasePort, IVaultPort } from '../ports';
 import type { InfraResult } from '../types';
+import { vkProjectVisibility, vkProjectPassword } from '../vault-keys';
 
 export type ProjectVisibility = 'public' | 'password' | 'private';
 
@@ -95,25 +96,25 @@ export class ProjectManager {
 
   /** 프로젝트 visibility 조회 */
   getVisibility(project: string): ProjectVisibility {
-    const raw = this.vault.getSecret(`system:project:${project}:visibility`);
+    const raw = this.vault.getSecret(vkProjectVisibility(project));
     if (raw === 'private' || raw === 'password') return raw;
     return 'public';
   }
 
   /** 프로젝트 visibility 설정 */
   setVisibility(project: string, visibility: ProjectVisibility, password?: string): boolean {
-    this.vault.setSecret(`system:project:${project}:visibility`, visibility);
+    this.vault.setSecret(vkProjectVisibility(project), visibility);
     if (visibility === 'password' && password) {
-      this.vault.setSecret(`system:project:${project}:password`, password);
+      this.vault.setSecret(vkProjectPassword(project), password);
     } else {
-      this.vault.deleteSecret(`system:project:${project}:password`);
+      this.vault.deleteSecret(vkProjectPassword(project));
     }
     return true;
   }
 
   /** 프로젝트 비밀번호 검증 */
   verifyPassword(project: string, password: string): boolean {
-    const stored = this.vault.getSecret(`system:project:${project}:password`);
+    const stored = this.vault.getSecret(vkProjectPassword(project));
     return stored === password;
   }
 }

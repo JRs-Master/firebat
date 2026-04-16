@@ -2,53 +2,66 @@
   "name": "kakao-talk",
   "type": "module",
   "scope": "system",
-  "version": "1.0.0",
-  "description": "카카오톡 나에게 보내기 API. 텍스트/링크/리스트 메시지를 내 카톡으로 발송.",
+  "version": "2.0.0",
+  "description": "카카오톡 메시지 + 소셜 + 채널 + 캘린더 API. send-me(나에게 보내기, 6종 템플릿: text/feed/list/location/commerce/calendar), send-me-scrap(스크랩 메시지), send-friends(친구에게 보내기), profile(내 프로필), friends(친구 목록+UUID), channels(채널 관계), calendars(캘린더 목록), create-event(이벤트 생성), list-events(이벤트 목록).",
   "runtime": "node",
   "capability": "notification",
   "providerType": "api",
   "secrets": ["KAKAO_ACCESS_TOKEN", "KAKAO_REFRESH_TOKEN", "KAKAO_REST_API_KEY", "KAKAO_CLIENT_SECRET"],
   "input": {
     "type": "object",
-    "required": ["text"],
     "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["send-me", "send-me-scrap", "send-friends", "profile", "friends", "channels", "calendars", "create-event", "list-events"],
+        "default": "send-me",
+        "description": "API 액션"
+      },
       "type": {
         "type": "string",
-        "enum": ["text", "feed", "list"],
+        "enum": ["text", "feed", "list", "location", "commerce", "calendar"],
         "default": "text",
-        "description": "메시지 타입"
+        "description": "[send-me/send-friends] 메시지 템플릿 타입. text=텍스트, feed=카드형, list=목록형(최소2항목), location=위치(address필수), commerce=상품(regularPrice필수), calendar=일정(calendarId+calendarIdType필수)"
       },
       "text": {
         "type": "string",
         "maxLength": 200,
-        "description": "메시지 본문 (최대 200자)"
+        "description": "[send-me/send-friends] 메시지 본문 (text타입: 필수, 기타: title 대체용)"
+      },
+      "title": {
+        "type": "string",
+        "description": "[send-me/send-friends] feed/list/location/commerce/calendar 타입 제목"
+      },
+      "description": {
+        "type": "string",
+        "description": "[send-me/send-friends] feed/location/commerce/calendar 타입 설명"
       },
       "link": {
         "type": "string",
         "format": "uri",
-        "description": "버튼 클릭 시 이동할 URL"
+        "description": "[send-me/send-friends] 버튼/콘텐츠 클릭 시 이동할 URL"
       },
       "buttonTitle": {
         "type": "string",
         "default": "자세히 보기",
-        "description": "버튼 텍스트"
+        "description": "[send-me/send-friends] 기본 버튼 텍스트 (buttons 미지정 시)"
       },
       "imageUrl": {
         "type": "string",
         "format": "uri",
-        "description": "feed/list 타입에 표시할 이미지 URL"
+        "description": "[send-me/send-friends] 콘텐츠 이미지 URL (feed/list/location/commerce/calendar)"
       },
       "imageWidth": {
         "type": "integer",
         "minimum": 200,
         "maximum": 800,
-        "description": "이미지 너비 (px)"
+        "description": "[send-me/send-friends:feed] 이미지 너비 (px)"
       },
       "imageHeight": {
         "type": "integer",
         "minimum": 200,
         "maximum": 800,
-        "description": "이미지 높이 (px)"
+        "description": "[send-me/send-friends:feed] 이미지 높이 (px)"
       },
       "buttons": {
         "type": "array",
@@ -59,41 +72,194 @@
           "properties": {
             "title": { "type": "string", "description": "버튼 텍스트" },
             "link": { "type": "string", "format": "uri", "description": "버튼 URL" }
-          },
-          "additionalProperties": false
+          }
         },
-        "description": "커스텀 버튼 목록 (최대 2개, buttonTitle 대체)"
+        "description": "[send-me/send-friends] 커스텀 버튼 (최대 2개, calendar은 1개)"
       },
       "listHeaderTitle": {
         "type": "string",
-        "description": "list 타입의 헤더 제목"
+        "description": "[send-me/send-friends:list] 리스트 헤더 제목"
       },
       "items": {
         "type": "array",
-        "maxItems": 5,
+        "maxItems": 3,
         "items": {
           "type": "object",
           "required": ["title"],
           "properties": {
             "title": { "type": "string", "description": "항목 제목" },
             "description": { "type": "string", "description": "항목 설명" },
-            "imageUrl": { "type": "string", "format": "uri", "description": "항목 이미지 URL" },
+            "imageUrl": { "type": "string", "format": "uri", "description": "항목 이미지" },
             "link": { "type": "string", "format": "uri", "description": "항목 클릭 URL" }
-          },
-          "additionalProperties": false
+          }
         },
-        "description": "list 타입의 항목 목록 (최대 5개)"
+        "description": "[send-me/send-friends:list] 목록 항목 (최대 3개, 최소 2개 자동 패딩)"
+      },
+      "itemContent": {
+        "type": "object",
+        "description": "[send-me/send-friends:feed] 아이템 콘텐츠 (profileText, profileImageUrl, titleImageUrl, titleImageText, titleImageCategory, items[{item,itemOp}], sum, sumOp)"
+      },
+      "social": {
+        "type": "object",
+        "description": "[send-me/send-friends:feed/location] 소셜 정보 (likeCount, commentCount, sharedCount, viewCount, subscriberCount)"
+      },
+      "address": {
+        "type": "string",
+        "description": "[send-me/send-friends:location] 위치 주소 (필수)"
+      },
+      "addressTitle": {
+        "type": "string",
+        "description": "[send-me/send-friends:location] 위치명"
+      },
+      "regularPrice": {
+        "type": "integer",
+        "description": "[send-me/send-friends:commerce] 정가 (필수)"
+      },
+      "discountPrice": {
+        "type": "integer",
+        "description": "[send-me/send-friends:commerce] 할인가"
+      },
+      "discountRate": {
+        "type": "integer",
+        "description": "[send-me/send-friends:commerce] 할인율 (%)"
+      },
+      "fixedDiscountPrice": {
+        "type": "integer",
+        "description": "[send-me/send-friends:commerce] 정액 할인"
+      },
+      "productName": {
+        "type": "string",
+        "description": "[send-me/send-friends:commerce] 상품명"
+      },
+      "currencyUnit": {
+        "type": "string",
+        "description": "[send-me/send-friends:commerce] 통화 단위 (기본 '원')"
+      },
+      "currencyUnitPosition": {
+        "type": "integer",
+        "enum": [0, 1],
+        "description": "[send-me/send-friends:commerce] 통화 위치 (0=뒤, 1=앞)"
+      },
+      "calendarId": {
+        "type": "string",
+        "description": "[send-me/send-friends:calendar, create-event, list-events] 캘린더/이벤트 ID"
+      },
+      "calendarIdType": {
+        "type": "string",
+        "enum": ["event", "calendar"],
+        "description": "[send-me/send-friends:calendar] ID 타입 (event=이벤트ID, calendar=캘린더ID)"
+      },
+      "requestUrl": {
+        "type": "string",
+        "format": "uri",
+        "description": "[send-me-scrap] 스크랩할 URL (필수)"
+      },
+      "templateId": {
+        "type": "integer",
+        "description": "[send-me-scrap] 커스텀 템플릿 ID"
+      },
+      "templateArgs": {
+        "type": "object",
+        "description": "[send-me-scrap] 템플릿 인자 (key-value)"
+      },
+      "receiverUuids": {
+        "type": "array",
+        "maxItems": 5,
+        "items": { "type": "string" },
+        "description": "[send-friends] 수신자 UUID 배열 (최대 5명, friends 액션으로 조회)"
+      },
+      "offset": {
+        "type": "integer",
+        "description": "[friends] 페이징 오프셋 (기본 0)"
+      },
+      "limit": {
+        "type": "integer",
+        "maximum": 100,
+        "description": "[friends] 페이지 크기 (최대 100)"
+      },
+      "order": {
+        "type": "string",
+        "enum": ["asc", "desc"],
+        "description": "[friends] 정렬 순서"
+      },
+      "friendOrder": {
+        "type": "string",
+        "enum": ["nickname", "favorite"],
+        "description": "[friends] 정렬 기준 (nickname=이름순, favorite=즐겨찾기)"
+      },
+      "channelIds": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "[channels] 조회할 채널 ID 배열 (미지정 시 전체)"
+      },
+      "filter": {
+        "type": "string",
+        "enum": ["ALL", "USER", "SUBSCRIBE"],
+        "description": "[calendars] 캘린더 필터 (ALL=전체, USER=내 캘린더, SUBSCRIBE=구독)"
+      },
+      "event": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "description": "이벤트 제목" },
+          "time": {
+            "type": "object",
+            "properties": {
+              "start_at": { "type": "string", "description": "시작 시각 (ISO 8601, 예: 2026-04-20T10:00:00Z)" },
+              "end_at": { "type": "string", "description": "종료 시각 (ISO 8601)" },
+              "time_zone": { "type": "string", "description": "타임존 (예: Asia/Seoul)" },
+              "all_day": { "type": "boolean", "description": "종일 이벤트 여부" },
+              "lunar": { "type": "boolean", "description": "음력 여부" }
+            },
+            "description": "이벤트 시간"
+          },
+          "description": { "type": "string", "description": "이벤트 설명" },
+          "location": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "location_id": { "type": "integer" },
+              "address": { "type": "string" },
+              "latitude": { "type": "number" },
+              "longitude": { "type": "number" }
+            },
+            "description": "이벤트 장소"
+          },
+          "reminders": {
+            "type": "array",
+            "items": { "type": "integer" },
+            "description": "알림 (분 단위, 예: [0, 10, 60])"
+          },
+          "color": { "type": "string", "description": "이벤트 색상" }
+        },
+        "description": "[create-event] 이벤트 객체 (title, time 필수)"
+      },
+      "preset": {
+        "type": "string",
+        "enum": ["TODAY", "THIS_WEEK", "THIS_MONTH"],
+        "description": "[list-events] 기간 프리셋 (from/to 대신 사용)"
+      },
+      "from": {
+        "type": "string",
+        "description": "[list-events] 조회 시작일 (ISO 8601)"
+      },
+      "to": {
+        "type": "string",
+        "description": "[list-events] 조회 종료일 (ISO 8601)"
       }
     },
     "additionalProperties": false
   },
   "output": {
     "type": "object",
-    "required": ["success", "resultCode"],
     "properties": {
-      "success":    { "type": "boolean", "description": "발송 성공 여부" },
-      "resultCode": { "type": "integer", "description": "카카오 API 응답 코드 (0=성공)" }
+      "resultCode": { "type": "integer", "description": "[send-me/send-me-scrap] 카카오 응답 코드 (0=성공)" },
+      "successfulReceiverUuids": { "type": "array", "description": "[send-friends] 발송 성공 UUID 목록" },
+      "failureInfo": { "type": "array", "description": "[send-friends] 발송 실패 정보" },
+      "nickName": { "type": "string", "description": "[profile] 닉네임" },
+      "profileImageUrl": { "type": "string", "description": "[profile] 프로필 이미지" },
+      "totalCount": { "type": "integer", "description": "[friends] 전체 친구 수" },
+      "friends": { "type": "array", "description": "[friends] 친구 목록 (uuid, nickname, thumbnail, favorite)" }
     },
-    "additionalProperties": false
+    "description": "action별 응답 구조가 다름. send-me=resultCode, send-friends=successfulReceiverUuids+failureInfo, profile=닉네임+이미지, friends=친구목록+UUID, channels/calendars/events=카카오 원본 응답"
   }
 }
