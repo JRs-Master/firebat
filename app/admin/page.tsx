@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Loader2, Circle, Copy, CheckCheck, Menu } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Sidebar } from './components/Sidebar';
 import { FileEditor } from './components/FileEditor';
 import { SettingsModal } from './components/SettingsModal';
@@ -10,47 +12,31 @@ import { SecretInput } from './components/ChatWidgets';
 import { useChat } from './hooks/useChat';
 import { Message, StepStatus } from './types';
 
-// ─── 간이 마크다운 렌더러 ────────────────────────────────────────────────────
+// ─── 마크다운 커스텀 컴포넌트 ───────────────────────────────────────────────
+const mdComponents = {
+  h1: (props: any) => <h1 className="text-[18px] font-bold text-slate-800 mt-5 mb-2" {...props} />,
+  h2: (props: any) => <h2 className="text-[16px] font-bold text-slate-800 mt-4 mb-1.5" {...props} />,
+  h3: (props: any) => <h3 className="text-[15px] font-bold text-slate-800 mt-3 mb-1" {...props} />,
+  h4: (props: any) => <h4 className="text-[14px] font-bold text-slate-700 mt-2 mb-1" {...props} />,
+  p: (props: any) => <p className="mb-2 last:mb-0" {...props} />,
+  ul: (props: any) => <ul className="list-disc list-outside ml-5 mb-2 space-y-1" {...props} />,
+  ol: (props: any) => <ol className="list-decimal list-outside ml-5 mb-2 space-y-1" {...props} />,
+  li: (props: any) => <li className="pl-0.5" {...props} />,
+  strong: (props: any) => <strong className="font-bold text-slate-900" {...props} />,
+  a: (props: any) => <a className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer" {...props} />,
+  code: ({ inline, children, ...props }: any) =>
+    inline
+      ? <code className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[13px] font-mono" {...props}>{children}</code>
+      : <pre className="bg-slate-900 text-slate-100 rounded-xl p-4 overflow-x-auto text-[13px] font-mono mb-2"><code {...props}>{children}</code></pre>,
+  blockquote: (props: any) => <blockquote className="border-l-3 border-slate-300 pl-3 text-slate-600 italic mb-2" {...props} />,
+  table: (props: any) => <div className="overflow-x-auto mb-2"><table className="w-full text-[13px] border-collapse" {...props} /></div>,
+  th: (props: any) => <th className="border border-slate-200 bg-slate-50 px-3 py-1.5 text-left font-bold text-slate-700" {...props} />,
+  td: (props: any) => <td className="border border-slate-200 px-3 py-1.5 text-slate-600" {...props} />,
+  hr: () => <hr className="border-slate-200 my-3" />,
+};
+
 function renderMarkdown(text: string) {
-  const lines = text.split('\n');
-  const elements: React.ReactNode[] = [];
-  let key = 0;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) { elements.push(<br key={key++} />); continue; }
-
-    const h3 = trimmed.match(/^###\s+(.+)/);
-    if (h3) { elements.push(<h3 key={key++} className="text-[15px] font-bold text-slate-800 mt-3 mb-1">{inlineMd(h3[1])}</h3>); continue; }
-    const h2 = trimmed.match(/^##\s+(.+)/);
-    if (h2) { elements.push(<h2 key={key++} className="text-[16px] font-bold text-slate-800 mt-4 mb-1">{inlineMd(h2[1])}</h2>); continue; }
-
-    const li = trimmed.match(/^[-*]\s+(.+)/);
-    if (li) { elements.push(<div key={key++} className="flex gap-2 ml-1"><span className="text-slate-400 shrink-0">•</span><span>{inlineMd(li[1])}</span></div>); continue; }
-
-    elements.push(<p key={key++}>{inlineMd(trimmed)}</p>);
-  }
-  return <>{elements}</>;
-}
-
-function inlineMd(text: string): React.ReactNode {
-  const result: React.ReactNode[] = [];
-  const regex = /\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*|(https?:\/\/[^\s)<]+)/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  while ((m = regex.exec(text)) !== null) {
-    if (m.index > last) result.push(<span key={last}>{text.slice(last, m.index)}</span>);
-    if (m[1] && m[2]) {
-      result.push(<a key={m.index} href={m[2]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">{m[1]}</a>);
-    } else if (m[3]) {
-      result.push(<strong key={m.index} className="font-bold text-slate-900">{m[3]}</strong>);
-    } else if (m[4]) {
-      result.push(<a key={m.index} href={m[4]} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800">{m[4]}</a>);
-    }
-    last = regex.lastIndex;
-  }
-  if (last < text.length) result.push(<span key={last}>{text.slice(last)}</span>);
-  return <>{result}</>;
+  return <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>{text}</ReactMarkdown>;
 }
 
 // ─── 선택지 버튼 (텍스트 버튼 + 인라인 입력 + 토글 다중 선택) ─────────────────

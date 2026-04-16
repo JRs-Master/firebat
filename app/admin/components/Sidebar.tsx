@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Loader2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, Menu, Ghost } from 'lucide-react';
+import { FolderTree, MessageSquare, RefreshCw, ChevronLeft, ChevronRight, ChevronDown, Plus, Trash2, Loader2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, Menu } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 
@@ -398,14 +398,6 @@ export function Sidebar({
       />
     )}
     <div className={`${isMobile ? 'fixed inset-y-0 left-0 z-40 h-dvh' : 'relative'} w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 shadow-lg overflow-hidden`}>
-
-      {/* 브랜딩 */}
-      <div className="flex items-center gap-2.5 px-3 py-3 shrink-0">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-100 to-blue-200 border border-blue-200 flex items-center justify-center shadow-sm">
-          <Ghost size={18} className="text-blue-600" />
-        </div>
-        <span className="text-[14px] font-extrabold tracking-tight text-slate-800">Firebat <span className="text-[11px] font-bold text-slate-400">V1.0</span></span>
-      </div>
 
       {/* 탭 헤더 */}
       <div className="flex items-center gap-1 px-2 py-2 border-b border-slate-200/80">
