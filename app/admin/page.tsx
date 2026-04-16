@@ -27,7 +27,7 @@ const mdComponents = {
   code: ({ inline, children, ...props }: any) =>
     inline
       ? <code className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[13px] font-mono" {...props}>{children}</code>
-      : <pre className="bg-slate-900 text-slate-100 rounded-xl p-4 overflow-x-auto text-[13px] font-mono mb-2"><code {...props}>{children}</code></pre>,
+      : <pre className="bg-slate-50 text-slate-800 border border-slate-200 rounded-xl p-4 overflow-x-auto text-[13px] font-mono mb-2"><code {...props}>{children}</code></pre>,
   blockquote: (props: any) => <blockquote className="border-l-3 border-slate-300 pl-3 text-slate-600 italic mb-2" {...props} />,
   table: (props: any) => <div className="overflow-x-auto mb-2"><table className="w-full text-[13px] border-collapse" {...props} /></div>,
   th: (props: any) => <th className="border border-slate-200 bg-slate-50 px-3 py-1.5 text-left font-bold text-slate-700" {...props} />,
