@@ -3,6 +3,15 @@ import { InfraResult } from '../../core/types';
 import { GoogleGenAI } from '@google/genai';
 import { DEFAULT_MODEL, DEFAULT_VERTEX_LOCATION, LLM_TIMEOUT_MS, LLM_TEMPERATURE_JSON, LLM_TEMPERATURE_TEXT } from '../config';
 
+/** 모델별 thinkingConfig 빌드 — 2.5는 thinkingBudget, 3+는 thinkingLevel (동시 사용 불가) */
+function buildThinkingConfig(model: string, enable: boolean): Record<string, unknown> {
+  if (!enable) return {};
+  // Gemini 2.5 계열
+  if (model.includes('2.5')) return { includeThoughts: true, thinkingBudget: 2048 };
+  // Gemini 3+ 계열 (기본)
+  return { includeThoughts: true };
+}
+
 /**
  * Vertex AI 어댑터 (Google Cloud AI Platform)
  *
@@ -153,7 +162,7 @@ export class VertexAiAdapter implements ILlmPort {
         config: {
           systemInstruction: systemPrompt,
           temperature: LLM_TEMPERATURE_TEXT,
-          thinkingConfig: { includeThoughts: true },
+          thinkingConfig: buildThinkingConfig(model, true),
           // 도구가 없으면 tools/toolConfig 생략 (빈 배열 전달 시 Vertex AI 400 에러)
           ...(functionDeclarations.length > 0 ? {
             tools: [{ functionDeclarations }],
