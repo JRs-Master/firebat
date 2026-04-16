@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Loader2, Circle, Copy, CheckCheck, Menu } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Loader2, Circle, Copy, CheckCheck } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Sidebar } from './components/Sidebar';
@@ -447,6 +447,13 @@ export default function AdminConsole() {
     setAiModel(savedModel);
   }, []);
 
+  // 레이아웃 헤더 햄버거 토글 이벤트 수신
+  useEffect(() => {
+    const handler = () => setMobileMenuOpen(true);
+    window.addEventListener('firebat-toggle-sidebar', handler);
+    return () => window.removeEventListener('firebat-toggle-sidebar', handler);
+  }, []);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
   };
@@ -469,16 +476,6 @@ export default function AdminConsole() {
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
-        {/* 모바일 상단 바 — 유령 + Firebat + 햄버거 토글 */}
-        <div className="md:hidden flex items-center justify-between px-3 h-11 shrink-0 border-b border-slate-100 bg-white">
-          <div className="flex items-center gap-2">
-            <Ghost size={20} className="text-blue-600" />
-            <span className="text-[13px] font-extrabold tracking-tight text-slate-800">Firebat</span>
-          </div>
-          <button onClick={() => setMobileMenuOpen(true)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200 transition-colors">
-            <Menu size={18} />
-          </button>
-        </div>
         {/* PC 상단 그라디언트 */}
         <div className="hidden md:block absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
 
