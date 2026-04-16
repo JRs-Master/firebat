@@ -407,9 +407,9 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
             </div>
           )}
         </div>
-        {/* 복사 버튼 — 버블 바깥, 좌측 하단 고정 */}
+        {/* 복사 버튼 — 버블 바깥 우측 하단 */}
         {msg.content && !msg.isThinking && (
-          <div className="flex pl-1">
+          <div className="flex justify-end pr-1">
             <CopyButton text={msg.content} />
           </div>
         )}
@@ -467,27 +467,25 @@ export default function AdminConsole() {
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
-        {/* 모바일 헤더 */}
-        <div className="md:hidden flex items-center justify-between px-3 py-2 bg-white/80 backdrop-blur border-b border-slate-100 z-20 shrink-0">
+        {/* 상단 그라디언트 + 모바일 햄버거/새대화 오버레이 */}
+        <div className="absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
+        <div className="md:hidden absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-2 py-2 pointer-events-none">
           <button
             onClick={() => setMobileMenuOpen(true)}
-            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+            className="pointer-events-auto p-1.5 rounded-lg text-slate-500 hover:bg-white/80 transition-colors"
           >
             <Menu size={18} />
           </button>
-          <span className="text-[12px] font-bold tracking-widest text-slate-400 uppercase">Firebat</span>
           <button
             onClick={handleNewConv}
-            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+            className="pointer-events-auto p-1.5 rounded-lg text-slate-500 hover:bg-white/80 transition-colors"
           >
             <Plus size={18} />
           </button>
         </div>
-        {/* PC 상단 그라디언트 */}
-        <div className="hidden md:block absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
 
         {/* 메시지 목록 */}
-        <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 md:px-12 pt-4 md:pt-16 scrolltext">
+        <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 md:px-12 pt-12 md:pt-16 scrolltext">
           <div className="w-full md:w-[70%] max-w-6xl mx-auto space-y-10">
             {messages.map((msg) => (
               <MessageBubble
