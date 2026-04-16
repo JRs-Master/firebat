@@ -65,7 +65,7 @@ export class VertexAiAdapter implements ILlmPort {
       }));
       contents.push({ role: 'user', parts: [{ text: prompt }] });
 
-      const supportsThinking = model.includes('2.5');
+      const supportsThinking = /2\.5|gemini-3/.test(model);
       const response = await this.withTimeout(
         ai.models.generateContent({
           model,
@@ -149,7 +149,7 @@ export class VertexAiAdapter implements ILlmPort {
         parameters: t.parameters,
       }));
 
-      const supportsThinking = model.includes('2.5');
+      const supportsThinking = /2\.5|gemini-3/.test(model);
       const requestConfig = {
         model,
         contents,
