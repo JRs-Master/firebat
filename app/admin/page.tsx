@@ -189,7 +189,7 @@ function ThinkingText({ statusText, thinkingText }: { statusText?: string; think
       <span className="truncate">생각 중... <span className="text-slate-400 italic text-[12px] sm:text-[13px]">{display}</span></span>
     );
   }
-  return <span>생각하는 중...</span>;
+  return <span>생각 중...</span>;
 }
 
 // ─── 복사 버튼 ─────────────────────────────────────────────────────────────────

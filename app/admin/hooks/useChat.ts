@@ -207,8 +207,8 @@ export function useChat(aiModel: string, onRefresh: () => void) {
               if (chunkType === 'text') {
                 return { ...msg, isThinking: false, statusText: undefined, thinkingText: undefined, content: (msg.content || '') + chunkContent, streaming: true };
               }
-              // thinking 청크 — thinkingText에 누적 (statusText는 유지 — 도구 실행 중이면 설명 표시 우선)
-              return { ...msg, isThinking: true, thinkingText: (msg.thinkingText || '') + chunkContent };
+              // thinking 청크 — thinkingText에 누적, statusText 제거하여 thinking 내용 우선 표시
+              return { ...msg, isThinking: true, statusText: undefined, thinkingText: (msg.thinkingText || '') + chunkContent };
             }));
           } else if (ev.event === 'plan') {
             const needsConfirm = ev.data.actions?.some((a: any) => ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type));
@@ -222,8 +222,8 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? { ...msg, planPending: false, executing: true, isThinking: true, streaming: false,
-                    // start: 도구명 표시, done/error: statusText 제거 → thinking 표시로 전환
-                    statusText: stepDone ? undefined : (ev.data.description || msg.statusText),
+                    // start: 도구명 표시, done/error: "결과 정리 중..."
+                    statusText: stepDone ? '결과 정리 중...' : (ev.data.description || msg.statusText),
                     steps: [...(msg.steps || []), ev.data] }
                 : msg
             )));
