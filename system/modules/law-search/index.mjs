@@ -152,8 +152,11 @@ async function handleDetail(OC, data) {
   const id = data.ID || data.id;
   const mst = data.MST || data.mst;
 
+  // query를 LM으로 폴백 (AI가 query로 보내는 경우 대응)
+  if (!data.LM && data.query) data.LM = data.query;
+
   if (!id && !mst && !data.LM) {
-    return out(false, 'detail 액션에는 ID, MST, 또는 LM 중 하나가 필요합니다.');
+    return out(false, 'detail 액션에는 ID, MST, LM, 또는 query(법령명) 중 하나가 필요합니다.');
   }
 
   const p = new URLSearchParams({ OC, target, type: 'JSON' });
@@ -201,11 +204,25 @@ async function handleDetail(OC, data) {
 //  3. article — 조항호목 개별 조회 (lawService.do?target=lawjosub)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleArticle(OC, data) {
-  const id = data.ID || data.id;
-  const mst = data.MST || data.mst;
+  let id = data.ID || data.id;
+  let mst = data.MST || data.mst;
   const jo = data.JO || data.jo;
+  const lm = data.LM || data.query;  // 법령명으로도 조회 가능
 
-  if (!id && !mst) return out(false, 'article 액션에는 ID(법령ID) 또는 MST(법령일련번호)가 필요합니다.');
+  // ID/MST 없으면 법령명으로 자동 검색
+  if (!id && !mst && lm) {
+    const searchP = new URLSearchParams({ OC, target: 'law', type: 'JSON', query: lm, display: '1' });
+    const searchJson = await apiFetch(`${BASE}/lawSearch.do?${searchP}`);
+    const searchResult = parseSearchResult('law', searchJson);
+    if (searchResult.items?.length > 0) {
+      const first = searchResult.items[0];
+      mst = first['법령일련번호'] || first['법령MST'] || first.MST;
+      id = first['법령ID'] || first.ID;
+    }
+    if (!id && !mst) return out(false, `"${lm}" 법령을 찾을 수 없습니다.`);
+  }
+
+  if (!id && !mst) return out(false, 'article 액션에는 ID, MST, 또는 query(법령명)가 필요합니다.');
   if (!jo) return out(false, 'article 액션에는 JO(조문번호, 6자리)가 필요합니다. 예: 제2조=000200, 제10조=001000');
 
   const p = new URLSearchParams({ OC, target: 'lawjosub', type: 'JSON' });
