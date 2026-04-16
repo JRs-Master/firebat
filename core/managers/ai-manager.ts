@@ -1248,6 +1248,10 @@ run_task/schedule_task의 pipeline에서:
 - og 필드 필수. HTML+CSS+JS 자유. 프로덕션 수준 디자인.
 - localStorage/sessionStorage 금지 (sandbox). vw 단위 금지 (100%).
 
+## 마크다운 규칙
+- 코드 블록(\`\`\`)은 실제 코드에만 사용. 일반 텍스트·제목·링크·강조에 코드 블록 사용 금지.
+- 강조는 **볼드**, 제목은 ##, 목록은 - 사용.
+
 ## 금지
 - [Kernel Block] 에러 → 도구 호출 중단. 우회 금지.
 - 시스템 내부 코드 설명/출력 금지.`;
