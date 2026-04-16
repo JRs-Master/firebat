@@ -159,6 +159,12 @@ function handleToolsMode(
       case 'run_task': return '파이프라인 실행 중';
       case 'request_secret': return 'API 키 요청';
       case 'suggest': return '선택지 제시';
+      case 'render_html': return 'HTML 렌더링 중';
+      case 'list_dir': return '폴더 목록 조회 중';
+      case 'list_pages': return '페이지 목록 조회 중';
+      case 'get_page': return '페이지 조회 중';
+      case 'delete_file': return '파일 삭제 중';
+      case 'list_cron_jobs': return '스케줄 목록 조회 중';
       default:
         if (name.startsWith('sysmod_')) return `시스템 모듈 실행 중 (${name.replace('sysmod_', '')})`;
         if (name.startsWith('mcp_')) return '외부 서비스 연결 중';

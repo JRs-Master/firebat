@@ -333,8 +333,8 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
               )}
 
               {/* 실행 완료된 액션 태그 — 에러 시 빨간색 + 클릭 펼침 */}
-              {msg.executedActions && msg.executedActions.length > 0 && !msg.plan && (
-                <ActionTags actions={msg.executedActions} steps={msg.steps} />
+              {msg.executedActions && msg.executedActions.filter(a => a !== 'render_html' && a !== 'suggest').length > 0 && !msg.plan && (
+                <ActionTags actions={msg.executedActions.filter(a => a !== 'render_html' && a !== 'suggest')} steps={msg.steps} />
               )}
 
               {/* 에러 — 접이식 태그 */}
