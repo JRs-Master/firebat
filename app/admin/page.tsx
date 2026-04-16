@@ -24,10 +24,14 @@ const mdComponents = {
   li: (props: any) => <li className="pl-0.5" {...props} />,
   strong: (props: any) => <strong className="font-bold text-slate-900" {...props} />,
   a: (props: any) => <a className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer" {...props} />,
-  code: ({ inline, children, ...props }: any) =>
-    inline
-      ? <code className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[13px] font-mono" {...props}>{children}</code>
-      : <pre className="bg-slate-50 text-slate-800 border border-slate-200 rounded-xl p-4 overflow-x-auto text-[13px] font-mono mb-2"><code {...props}>{children}</code></pre>,
+  code: ({ inline, children, ...props }: any) => {
+    const text = String(children).replace(/\n$/, '');
+    const isShort = !text.includes('\n') && text.length < 60;
+    if (inline || isShort) {
+      return <code className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-md text-[13px] font-bold tracking-tight" {...props}>{children}</code>;
+    }
+    return <pre className="bg-slate-50 text-slate-800 border border-slate-200 rounded-xl p-4 overflow-x-auto text-[13px] font-mono mb-2"><code {...props}>{children}</code></pre>;
+  },
   blockquote: (props: any) => <blockquote className="border-l-3 border-slate-300 pl-3 text-slate-600 italic mb-2" {...props} />,
   table: (props: any) => <div className="overflow-x-auto mb-2"><table className="w-full text-[13px] border-collapse" {...props} /></div>,
   th: (props: any) => <th className="border border-slate-200 bg-slate-50 px-3 py-1.5 text-left font-bold text-slate-700" {...props} />,
@@ -333,8 +337,8 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
               )}
 
               {/* 실행 완료된 액션 태그 — 에러 시 빨간색 + 클릭 펼침 */}
-              {msg.executedActions && msg.executedActions.filter(a => a !== 'render_html' && a !== 'suggest').length > 0 && !msg.plan && (
-                <ActionTags actions={msg.executedActions.filter(a => a !== 'render_html' && a !== 'suggest')} steps={msg.steps} />
+              {msg.executedActions && msg.executedActions.length > 0 && !msg.plan && (
+                <ActionTags actions={msg.executedActions} steps={msg.steps} />
               )}
 
               {/* 에러 — 접이식 태그 */}
