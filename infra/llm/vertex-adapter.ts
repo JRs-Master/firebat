@@ -192,8 +192,6 @@ export class VertexAiAdapter implements ILlmPort {
 
           for (const part of parts) {
             allParts.push(part);
-            // DEBUG: 2.5 thinking 디버깅 — 배포 후 제거
-            console.log('[STREAM-DEBUG]', model, JSON.stringify(Object.keys(part)), part.thought, typeof part.thought);
             if (part.text && typeof part.text === 'string') {
               if (part.thought) {
                 opts.onChunk({ type: 'thinking', content: part.text });
