@@ -89,7 +89,24 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   }, []);
 
   useEffect(() => {
-    if (isNearBottomRef.current) {
+    if (!isNearBottomRef.current) return;
+    const container = chatContainerRef.current;
+    if (!container) return;
+
+    // 활성 메시지(스트리밍/thinking 중) 찾기
+    const activeEl = container.querySelector('[data-msg-active]') as HTMLElement | null;
+    if (activeEl) {
+      const gap = 24; // 헤더와의 간격
+      const containerRect = container.getBoundingClientRect();
+      const msgRect = activeEl.getBoundingClientRect();
+      // 메시지 상단의 절대 스크롤 위치
+      const msgTopAbs = msgRect.top - containerRect.top + container.scrollTop;
+      const pinScroll = msgTopAbs - gap;
+      // 최대 스크롤 (맨 아래)
+      const maxScroll = container.scrollHeight - container.clientHeight;
+      // 짧은 메시지: 하단 추적, 긴 메시지: 상단 고정
+      container.scrollTo({ top: Math.min(pinScroll, maxScroll), behavior: 'smooth' });
+    } else {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
@@ -203,15 +220,16 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             const chunkType = ev.data.type as 'text' | 'thinking';
             const chunkContent = ev.data.content as string;
             if (chunkType === 'thinking') {
-              // thinking 청크 — flushSync로 즉시 렌더 (PC에서 text 청크와 배칭되어 안 보이는 문제 방지)
+              // thinking 청크 — flushSync로 즉시 렌더
               flushSync(() => setMessages(prev => prev.map(msg => {
                 if (msg.id !== `s-${id}`) return msg;
                 return { ...msg, isThinking: true, streaming: false, statusText: undefined, thinkingText: (msg.thinkingText || '') + chunkContent };
               })));
             } else {
+              // text 청크 — thinkingText 유지 (result 이벤트에서 정리)
               setMessages(prev => prev.map(msg => {
                 if (msg.id !== `s-${id}`) return msg;
-                return { ...msg, isThinking: false, statusText: undefined, thinkingText: undefined, content: (msg.content || '') + chunkContent, streaming: true };
+                return { ...msg, isThinking: false, statusText: undefined, content: (msg.content || '') + chunkContent, streaming: true };
               }));
             }
           } else if (ev.event === 'plan') {

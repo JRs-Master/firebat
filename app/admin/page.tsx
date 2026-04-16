@@ -176,20 +176,35 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   );
 }
 
-// ─── 상태 문구 ─────────────────────────────────────────────────────────────
-function ThinkingText({ statusText, thinkingText }: { statusText?: string; thinkingText?: string }) {
-  // 도구 실행 설명이 있으면 최우선 표시
-  if (statusText) return <span>{statusText}</span>;
-  // LLM thinking 스트림 — "생각 중... 최신 내용" 한 줄 라이브
-  if (thinkingText) {
-    const lines = thinkingText.split('\n').filter(l => l.trim());
-    const lastLine = lines.length > 0 ? lines[lines.length - 1].trim() : '';
-    const display = lastLine.length > 50 ? lastLine.slice(-50) + '…' : lastLine;
+// ─── Thinking 블록 — 버블 상단에 항상 표시 ──────────────────────────────────
+function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: string; thinkingText?: string; isActive?: boolean }) {
+  // 활성 상태 (thinking/실행 중) — 큰 박스
+  if (isActive) {
+    const display = (() => {
+      if (statusText) return statusText;
+      if (thinkingText) {
+        const lines = thinkingText.split('\n').filter(l => l.trim());
+        const last = lines.length > 0 ? lines[lines.length - 1].trim() : '';
+        return '생각 중... ' + (last.length > 50 ? last.slice(-50) + '…' : last);
+      }
+      return '생각 중...';
+    })();
     return (
-      <span className="truncate">생각 중... <span className="text-slate-400 italic text-[12px] sm:text-[13px]">{display}</span></span>
+      <div className="flex items-center gap-3 text-slate-600 font-medium bg-slate-50 border border-slate-200 px-4 py-3 sm:px-6 sm:py-5 rounded-2xl shadow-inner text-[13px] sm:text-[15px]">
+        <div className="animate-spin text-blue-600 shrink-0"><Cpu size={18} /></div>
+        <span className="truncate">{display}</span>
+      </div>
     );
   }
-  return <span>생각 중...</span>;
+
+  // 완료 상태 — "답변 중..." 한 줄
+  if (!thinkingText) return null;
+  return (
+    <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
+      <Cpu size={13} className="shrink-0" />
+      <span>답변 중...</span>
+    </div>
+  );
 }
 
 // ─── 복사 버튼 ─────────────────────────────────────────────────────────────────
@@ -306,19 +321,19 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
     );
   }
 
+  const isActive = msg.isThinking || msg.streaming || msg.executing;
   return (
-    <div className="flex w-full gap-2 sm:gap-4 items-start">
+    <div className="flex w-full gap-2 sm:gap-4 items-start" {...(isActive ? { 'data-msg-active': '' } : {})}>
       <div className="hidden sm:flex w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-50 to-blue-100 border border-blue-200 items-center justify-center shadow-sm shrink-0">
         <Ghost size={22} className="text-blue-600" />
       </div>
       <div className="flex flex-col gap-1 flex-1 min-w-0">
         <div className="flex flex-col gap-3 w-full bg-white px-4 py-3 sm:p-6 rounded-3xl rounded-tl-sm shadow-sm border border-slate-100">
-          {msg.isThinking && !msg.streaming ? (
-            <div className="flex items-center gap-3 text-slate-600 font-medium bg-slate-50 border border-slate-200 px-4 py-3 sm:px-6 sm:py-5 rounded-2xl shadow-inner text-[13px] sm:text-[15px]">
-              <div className="animate-spin text-blue-600 shrink-0"><Cpu size={18} /></div>
-              <ThinkingText statusText={msg.statusText} thinkingText={msg.thinkingText} />
-            </div>
-          ) : (
+          {/* thinking — 버블 상단에 항상 표시 */}
+          {(msg.isThinking || msg.thinkingText) && (
+            <ThinkingBlock statusText={msg.statusText} thinkingText={msg.thinkingText} isActive={msg.isThinking && !msg.streaming} />
+          )}
+          {(!msg.isThinking || msg.streaming || msg.content) && (
             <div className="flex flex-col gap-5">
               {/* 확인 필요한 액션만 Plan 박스 표시 */}
               {msg.planPending && msg.plan && msg.plan.actions.length > 0 && (
