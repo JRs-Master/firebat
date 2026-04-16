@@ -178,13 +178,20 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
 
 // ─── 상태 문구 ─────────────────────────────────────────────────────────────
 function ThinkingText({ statusText, thinkingText }: { statusText?: string; thinkingText?: string }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (thinkingText && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [thinkingText]);
   // 도구 실행 설명이 있으면 최우선 표시
   if (statusText) return <span>{statusText}</span>;
-  // LLM thinking 스트림
+  // LLM thinking 스트림 — 전체 내용을 스크롤 영역에 라이브 표시
   if (thinkingText) {
-    const display = thinkingText.length > 150 ? '...' + thinkingText.slice(-150) : thinkingText;
     return (
-      <span className="text-slate-500 italic text-[12px] sm:text-[13px] leading-snug whitespace-pre-wrap">{display}</span>
+      <div ref={scrollRef} className="max-h-[120px] sm:max-h-[160px] overflow-y-auto text-slate-500 italic text-[12px] sm:text-[13px] leading-snug whitespace-pre-wrap scrollbar-thin">
+        {thinkingText}
+      </div>
     );
   }
   return <span>생각하는 중...</span>;
@@ -312,8 +319,8 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
       <div className="flex flex-col gap-1 flex-1 min-w-0">
         <div className="flex flex-col gap-3 w-full bg-white px-4 py-3 sm:p-6 rounded-3xl rounded-tl-sm shadow-sm border border-slate-100">
           {msg.isThinking && !msg.streaming ? (
-            <div className="flex items-center gap-3 text-slate-600 font-medium bg-slate-50 border border-slate-200 px-4 py-3 sm:px-6 sm:py-5 rounded-2xl shadow-inner text-[13px] sm:text-[15px]">
-              <div className="animate-spin text-blue-600 shrink-0"><Cpu size={18} /></div>
+            <div className="flex items-start gap-3 text-slate-600 font-medium bg-slate-50 border border-slate-200 px-4 py-3 sm:px-6 sm:py-5 rounded-2xl shadow-inner text-[13px] sm:text-[15px]">
+              <div className="animate-spin text-blue-600 shrink-0 mt-0.5"><Cpu size={18} /></div>
               <ThinkingText statusText={msg.statusText} thinkingText={msg.thinkingText} />
             </div>
           ) : (
