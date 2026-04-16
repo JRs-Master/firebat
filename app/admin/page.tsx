@@ -333,7 +333,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
               )}
 
               {/* 에러 — 접이식 태그 */}
-              {msg.error && (
+              {msg.error && !msg.steps?.some(s => s.error) && (
                 <ErrorCollapsible error={msg.error} />
               )}
 

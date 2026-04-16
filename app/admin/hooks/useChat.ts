@@ -201,8 +201,8 @@ export function useChat(aiModel: string, onRefresh: () => void) {
               if (chunkType === 'text') {
                 return { ...msg, isThinking: false, content: (msg.content || '') + chunkContent, streaming: true };
               }
-              // thinking 청크 — thinkingText에 누적
-              return { ...msg, isThinking: true, thinkingText: (msg.thinkingText || '') + chunkContent };
+              // thinking 청크 — thinkingText에 누적, statusText 클리어
+              return { ...msg, isThinking: true, statusText: undefined, thinkingText: (msg.thinkingText || '') + chunkContent };
             }));
           } else if (ev.event === 'plan') {
             const needsConfirm = ev.data.actions?.some((a: any) => ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type));
@@ -215,7 +215,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             const stepDesc = ev.data.status === 'start' ? ev.data.description : undefined;
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
-                ? { ...msg, planPending: false, executing: true, isThinking: true, steps: [...(msg.steps || []), ev.data], ...(stepDesc ? { statusText: stepDesc } : {}) }
+                ? { ...msg, planPending: false, executing: true, isThinking: true, streaming: false, thinkingText: undefined, steps: [...(msg.steps || []), ev.data], ...(stepDesc ? { statusText: stepDesc } : {}) }
                 : msg
             ));
           } else if (ev.event === 'result') {
