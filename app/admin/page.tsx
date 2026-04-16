@@ -169,43 +169,14 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
 }
 
 // ─── 플래닝 단계 문구 순환 ──────────────────────────────────────────────────
-const THINKING_PHASES = [
-  '명령을 분석하는 중...',
-  '실행 전략을 구상하는 중...',
-  '필요한 도구를 선택하는 중...',
-  '실행 계획을 수립하는 중...',
-];
-
 function ThinkingText({ statusText, thinkingText }: { statusText?: string; thinkingText?: string }) {
-  const [phase, setPhase] = useState(0);
-  const thinkingRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (statusText || thinkingText) return;
-    const timer = setInterval(() => {
-      setPhase(p => (p + 1) % THINKING_PHASES.length);
-    }, 2500);
-    return () => clearInterval(timer);
-  }, [statusText, thinkingText]);
-
-  // thinking 텍스트 자동 스크롤
-  useEffect(() => {
-    if (thinkingText && thinkingRef.current) {
-      thinkingRef.current.scrollTop = thinkingRef.current.scrollHeight;
-    }
-  }, [thinkingText]);
-
   if (thinkingText) {
-    // 마지막 100자만 표시 (긴 thinking은 잘라서)
     const display = thinkingText.length > 150 ? '...' + thinkingText.slice(-150) : thinkingText;
     return (
-      <div ref={thinkingRef} className="flex-1 overflow-hidden">
-        <span className="text-slate-500 italic text-[12px] sm:text-[13px] leading-snug whitespace-pre-wrap">{display}</span>
-      </div>
+      <span className="text-slate-500 italic text-[12px] sm:text-[13px] leading-snug whitespace-pre-wrap">{display}</span>
     );
   }
-
-  return <span className="transition-opacity duration-300">{statusText || THINKING_PHASES[phase]}</span>;
+  return <span>{statusText || '생각하는 중...'}</span>;
 }
 
 // ─── 복사 버튼 ─────────────────────────────────────────────────────────────────
@@ -371,19 +342,19 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
                 return htmlItems.length > 0 ? (
                   <div className="space-y-3 mt-2">
                     {htmlItems.map((h: any, i: number) => {
-                      const raw = h.htmlContent as string;
-                      const isFullDoc = raw.trim().toLowerCase().startsWith('<!doctype') || raw.trim().toLowerCase().startsWith('<html');
-                      const srcdoc = isFullDoc ? raw : `<!DOCTYPE html>
+                      const src = h.htmlContent as string;
+                      const isFullDoc = src.trim().toLowerCase().startsWith('<!doctype') || src.trim().toLowerCase().startsWith('<html');
+                      const srcdoc = isFullDoc ? src : `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:0;height:100%;overflow:auto;max-width:100%}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.6;color:#1e293b}canvas,svg,img,table{max-width:100%;height:auto}</style>
-</head><body>${raw}</body></html>`;
+<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:8px;overflow-x:hidden;max-width:100vw}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.6;color:#1e293b}canvas,svg,img,table,div{max-width:100%!important;height:auto}</style>
+</head><body>${src}</body></html>`;
                       return (
                         <iframe
                           key={i}
                           srcDoc={srcdoc}
                           sandbox="allow-scripts"
-                          className="w-full border border-slate-200 rounded-xl bg-white"
-                          style={{ height: h.htmlHeight || '400px' }}
+                          className="w-full border border-slate-200 rounded-xl bg-white block"
+                          style={{ height: h.htmlHeight || '400px', maxWidth: '100%' }}
                           title="Inline HTML"
                         />
                       );
