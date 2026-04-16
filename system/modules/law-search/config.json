@@ -1,0 +1,77 @@
+{
+  "name": "law-search",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "국가법령정보 Open API. 법령/판례/행정규칙/자치법규/헌재결정례/법령해석례/조약 검색 및 본문 조회. action: search(목록 검색), detail(본문 조회). target: law(법령), prec(판례), admrul(행정규칙), ordin(자치법규), detc(헌재결정례), expc(법령해석례), trty(조약). 법률 자문 시 법령 검색 후 본문 조회하여 조문/판결문 기반 답변 가능.",
+  "runtime": "node",
+  "capability": "law-search",
+  "providerType": "api",
+  "secrets": ["LAW_API_OC"],
+  "input": {
+    "type": "object",
+    "required": ["action"],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["search", "detail"],
+        "description": "search=목록 검색, detail=본문 조회"
+      },
+      "target": {
+        "type": "string",
+        "enum": ["law", "prec", "admrul", "ordin", "detc", "expc", "trty"],
+        "default": "law",
+        "description": "대상 (law=법령, prec=판례, admrul=행정규칙, ordin=자치법규, detc=헌재결정례, expc=법령해석례, trty=조약)"
+      },
+      "query": {
+        "type": "string",
+        "description": "[search] 검색 키워드"
+      },
+      "id": {
+        "type": "string",
+        "description": "[detail] 법령ID 또는 판례일련번호 (검색 결과의 법령ID/판례일련번호 사용)"
+      },
+      "search": {
+        "type": "integer",
+        "enum": [1, 2],
+        "default": 1,
+        "description": "[search] 검색범위 (1=제목, 2=본문)"
+      },
+      "display": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 20,
+        "description": "[search] 결과 수 (최대 100)"
+      },
+      "page": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 1,
+        "description": "[search] 페이지 번호"
+      },
+      "sort": {
+        "type": "string",
+        "enum": ["lasc", "ldes", "dasc", "ddes", "efasc", "efdes"],
+        "description": "[search] 정렬 (lasc/ldes=법령명, dasc/ddes=공포일자, efasc/efdes=시행일자)"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "totalCnt": { "type": "integer", "description": "검색 총 건수" },
+      "page": { "type": "integer", "description": "현재 페이지" },
+      "items": {
+        "type": "array",
+        "description": "검색 결과 목록",
+        "items": { "type": "object" }
+      },
+      "detail": {
+        "type": "object",
+        "description": "본문 조회 결과 (조문/판결문 등)"
+      }
+    }
+  }
+}
