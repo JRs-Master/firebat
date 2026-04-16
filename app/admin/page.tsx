@@ -191,7 +191,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="absolute bottom-1 right-1 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 sm:opacity-0 sm:group-hover/copy:opacity-100 transition-all"
+      className="self-end p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
       title="복사"
     >
       {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
@@ -319,7 +319,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
               )}
 
               {msg.content && (
-                <div className="group/copy relative">
+                <div className="flex flex-col">
                   <div className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">
                     {renderMarkdown(msg.content)}
                   </div>
