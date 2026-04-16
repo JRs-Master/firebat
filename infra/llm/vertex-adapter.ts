@@ -3,11 +3,14 @@ import { InfraResult } from '../../core/types';
 import { GoogleGenAI } from '@google/genai';
 import { DEFAULT_MODEL, DEFAULT_VERTEX_LOCATION, LLM_TIMEOUT_MS, LLM_TEMPERATURE_JSON, LLM_TEMPERATURE_TEXT } from '../config';
 
-/** thinking 활성화 — Lite 모델은 thinking 미지원 */
+/** 모델별 thinkingConfig — 2.5는 thinkingBudget 필수, 3은 기본값, Lite는 미지원 */
 function buildThinkingConfig(model: string, enable: boolean): Record<string, unknown> {
   if (!enable) return {};
-  // Lite 계열은 thinking 미지원 (include_thoughts 전달 시 400 에러)
+  // Lite 계열은 thinking 미지원 (include_thoughts 전달 시 400)
   if (model.includes('lite')) return {};
+  // 2.5는 thinkingBudget 없으면 thinking을 거의 안 함 — -1 (동적) 필수
+  if (model.includes('2.5')) return { includeThoughts: true, thinkingBudget: -1 };
+  // 3+는 includeThoughts만으로 기본 수준 thinking
   return { includeThoughts: true };
 }
 
