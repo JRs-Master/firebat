@@ -179,22 +179,41 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
 // ─── Thinking 블록 — 버블 상단에 항상 표시 ──────────────────────────────────
 function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: string; thinkingText?: string; isActive?: boolean }) {
   if (!isActive && !thinkingText) return null;
-  const label = (() => {
-    if (isActive) {
-      if (statusText) return statusText;
-      if (thinkingText) {
-        const lines = thinkingText.split('\n').filter(l => l.trim());
-        const last = lines.length > 0 ? lines[lines.length - 1].trim() : '';
-        return '생각 중... ' + (last.length > 50 ? last.slice(-50) + '…' : last);
-      }
-      return '생각 중...';
-    }
-    return thinkingText === '답변 완료' ? '답변 완료' : '답변 중...';
-  })();
+  // 완료 상태
+  if (thinkingText === '답변 완료') {
+    return (
+      <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
+        <Cpu size={13} className="shrink-0" />
+        <span>답변 완료</span>
+      </div>
+    );
+  }
+  // 도구 실행 중
+  if (statusText) {
+    return (
+      <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
+        <div className="animate-spin shrink-0"><Cpu size={13} /></div>
+        <span className="truncate">{statusText}</span>
+      </div>
+    );
+  }
+  // thinkingText가 있으면 항상 thinking 내용 표시 (active/streaming 무관)
+  if (thinkingText) {
+    const lines = thinkingText.split('\n').filter(l => l.trim());
+    const last = lines.length > 0 ? lines[lines.length - 1].trim() : '';
+    const content = last.length > 50 ? last.slice(-50) + '…' : last;
+    return (
+      <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
+        <div className="animate-spin shrink-0"><Cpu size={13} /></div>
+        <span className="truncate">생각 중... {content}</span>
+      </div>
+    );
+  }
+  // thinking 시작 직후 (아직 내용 없음)
   return (
     <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
-      {isActive ? <div className="animate-spin shrink-0"><Cpu size={13} /></div> : <Cpu size={13} className="shrink-0" />}
-      <span className="truncate">{label}</span>
+      <div className="animate-spin shrink-0"><Cpu size={13} /></div>
+      <span>생각 중...</span>
     </div>
   );
 }
