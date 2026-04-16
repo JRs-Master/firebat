@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Send, Cpu, AlertTriangle, Blocks, Bot, ExternalLink, X, Check, Loader2, Circle, Copy, CheckCheck, Menu, Plus } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Loader2, Circle, Copy, CheckCheck, Menu } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { FileEditor } from './components/FileEditor';
 import { SettingsModal } from './components/SettingsModal';
@@ -267,7 +267,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-12 sm:py-20">
         <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gradient-to-br from-indigo-100 to-blue-200 border border-blue-200 flex items-center justify-center shadow-lg">
-          <Bot size={32} className="text-blue-600" />
+          <Ghost size={32} className="text-blue-600" />
         </div>
         <p className="text-slate-500 text-[15px] sm:text-[17px] font-medium">{msg.content}</p>
       </div>
@@ -289,7 +289,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
   return (
     <div className="flex w-full gap-2 sm:gap-4 items-start">
       <div className="hidden sm:flex w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-50 to-blue-100 border border-blue-200 items-center justify-center shadow-sm shrink-0">
-        <Bot size={22} className="text-blue-600" />
+        <Ghost size={22} className="text-blue-600" />
       </div>
       <div className="flex flex-col gap-1 flex-1 min-w-0">
         <div className="flex flex-col gap-3 w-full bg-white px-4 py-3 sm:p-6 rounded-3xl rounded-tl-sm shadow-sm border border-slate-100">
@@ -479,13 +479,14 @@ export default function AdminConsole() {
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
-        {/* 모바일 상단 바 — 햄버거 + 새대화 */}
-        <div className="md:hidden flex items-center justify-between px-2 h-11 shrink-0 border-b border-slate-100 bg-slate-50">
+        {/* 모바일 상단 바 — 유령 + Firebat + 햄버거 토글 */}
+        <div className="md:hidden flex items-center justify-between px-3 h-11 shrink-0 border-b border-slate-100 bg-white">
+          <div className="flex items-center gap-2">
+            <Ghost size={20} className="text-blue-600" />
+            <span className="text-[13px] font-extrabold tracking-tight text-slate-800">Firebat</span>
+          </div>
           <button onClick={() => setMobileMenuOpen(true)} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200 transition-colors">
             <Menu size={18} />
-          </button>
-          <button onClick={handleNewConv} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-200 transition-colors">
-            <Plus size={18} />
           </button>
         </div>
         {/* PC 상단 그라디언트 */}
