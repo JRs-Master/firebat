@@ -26,9 +26,12 @@ const mdComponents = {
   a: (props: any) => <a className="text-blue-600 hover:text-blue-800 underline" target="_blank" rel="noopener noreferrer" {...props} />,
   code: ({ inline, children, ...props }: any) => {
     const text = String(children).replace(/\n$/, '');
-    const isShort = !text.includes('\n') && text.length < 60;
-    if (inline || isShort) {
+    const TOOL_NAMES = new Set(['render_html','execute','write_file','read_file','save_page','delete_page','delete_file','list_dir','list_pages','get_page','schedule_task','cancel_task','run_task','request_secret','suggest','mcp_call','network_request','list_cron_jobs','list_files']);
+    if (TOOL_NAMES.has(text) || text.startsWith('sysmod_') || text.startsWith('mcp_')) {
       return <code className="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-md text-[13px] font-bold tracking-tight" {...props}>{children}</code>;
+    }
+    if (inline) {
+      return <code className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[13px] font-mono" {...props}>{children}</code>;
     }
     return <pre className="bg-slate-50 text-slate-800 border border-slate-200 rounded-xl p-4 overflow-x-auto text-[13px] font-mono mb-2"><code {...props}>{children}</code></pre>;
   },
