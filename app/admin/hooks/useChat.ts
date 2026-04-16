@@ -199,10 +199,10 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             setMessages(prev => prev.map(msg => {
               if (msg.id !== `s-${id}`) return msg;
               if (chunkType === 'text') {
-                return { ...msg, isThinking: false, content: (msg.content || '') + chunkContent, streaming: true };
+                return { ...msg, isThinking: false, statusText: undefined, thinkingText: undefined, content: (msg.content || '') + chunkContent, streaming: true };
               }
-              // thinking 청크 — thinkingText에 누적, statusText 클리어
-              return { ...msg, isThinking: true, statusText: undefined, thinkingText: (msg.thinkingText || '') + chunkContent };
+              // thinking 청크 — thinkingText에 누적 (statusText는 유지 — 도구 실행 중이면 설명 표시 우선)
+              return { ...msg, isThinking: true, thinkingText: (msg.thinkingText || '') + chunkContent };
             }));
           } else if (ev.event === 'plan') {
             const needsConfirm = ev.data.actions?.some((a: any) => ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type));
@@ -212,17 +212,16 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                 : msg
             )));
           } else if (ev.event === 'step') {
-            const stepDesc = ev.data.status === 'start' ? ev.data.description : undefined;
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
-                ? { ...msg, planPending: false, executing: true, isThinking: true, streaming: false, thinkingText: undefined, steps: [...(msg.steps || []), ev.data], ...(stepDesc ? { statusText: stepDesc } : {}) }
+                ? { ...msg, planPending: false, executing: true, isThinking: true, streaming: false, thinkingText: undefined, statusText: ev.data.description || msg.statusText, steps: [...(msg.steps || []), ev.data] }
                 : msg
             ));
           } else if (ev.event === 'result') {
             flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? {
-                    ...msg, isThinking: false, executing: false, streaming: false, thoughts: ev.data.thoughts,
+                    ...msg, isThinking: false, executing: false, streaming: false, statusText: undefined, thinkingText: undefined, thoughts: ev.data.thoughts,
                     content: ev.data.reply || msg.content || (ev.data.error ? '' : '실행이 완료되었습니다.'),
                     executedActions: ev.data.executedActions || [], data: ev.data.data, error: ev.data.error, planPending: false,
                     suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,

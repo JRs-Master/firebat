@@ -154,15 +154,18 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   );
 }
 
-// ─── 플래닝 단계 문구 순환 ──────────────────────────────────────────────────
+// ─── 상태 문구 ─────────────────────────────────────────────────────────────
 function ThinkingText({ statusText, thinkingText }: { statusText?: string; thinkingText?: string }) {
+  // 도구 실행 설명이 있으면 최우선 표시
+  if (statusText) return <span>{statusText}</span>;
+  // LLM thinking 스트림
   if (thinkingText) {
     const display = thinkingText.length > 150 ? '...' + thinkingText.slice(-150) : thinkingText;
     return (
       <span className="text-slate-500 italic text-[12px] sm:text-[13px] leading-snug whitespace-pre-wrap">{display}</span>
     );
   }
-  return <span>{statusText || '생각하는 중...'}</span>;
+  return <span>생각하는 중...</span>;
 }
 
 // ─── 복사 버튼 ─────────────────────────────────────────────────────────────────
