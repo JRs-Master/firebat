@@ -526,7 +526,7 @@ export default function AdminConsole() {
                 onSuggestion={(text) => handleSubmit(text, true)}
               />
             ))}
-            <div className="h-64 shrink-0 pointer-events-none" />
+            <div className="h-32 sm:h-64 shrink-0 pointer-events-none" />
             <div ref={chatEndRef} />
           </div>
         </div>
@@ -555,39 +555,40 @@ export default function AdminConsole() {
                     </div>
                   </div>
                 )}
-                <textarea
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  onPaste={handlePaste}
-                  disabled={loading}
-                  className="w-full min-h-[90px] max-h-[250px] p-5 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50"
-                  placeholder={loading ? '명령 집행 중...' : '무엇을 도와드릴까요?'}
-                />
-                <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50/80">
-                  <div className="flex items-center gap-2">
-                    <input
-                      ref={imageInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); e.target.value = ''; }}
-                    />
-                    <button
-                      onClick={() => imageInputRef.current?.click()}
-                      disabled={loading}
-                      className="p-2 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
-                      title="이미지 첨부"
-                    >
-                      <ImagePlus size={18} />
-                    </button>
-                  </div>
+                <div className="relative">
+                  <textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    onPaste={handlePaste}
+                    disabled={loading}
+                    className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] pl-12 pr-14 sm:pr-16 py-3 sm:py-5 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50"
+                    placeholder={loading ? '명령 집행 중...' : '무엇을 도와드릴까요?'}
+                  />
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); e.target.value = ''; }}
+                  />
+                  <button
+                    onClick={() => imageInputRef.current?.click()}
+                    disabled={loading}
+                    className="absolute left-2 sm:left-3 bottom-2 sm:bottom-3.5 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
+                    title="이미지 첨부"
+                  >
+                    <ImagePlus size={18} />
+                  </button>
                   <button
                     onClick={() => handleSubmit()}
                     disabled={!input.trim() || loading}
-                    className="bg-slate-900 hover:bg-black disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white h-10 w-12 rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]"
+                    className="absolute right-2 sm:right-3 bottom-2 sm:bottom-3 bg-slate-900 hover:bg-black disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]"
                   >
-                    {loading ? <div className="animate-spin text-white"><Cpu size={16} /></div> : <Send size={18} />}
+                    {loading
+                      ? <div className="animate-spin text-white"><Cpu size={14} /></div>
+                      : <><Send size={14} className="sm:hidden" /><Send size={18} className="hidden sm:block" /></>
+                    }
                   </button>
                 </div>
               </div>

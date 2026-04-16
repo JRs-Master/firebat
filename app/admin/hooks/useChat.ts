@@ -215,11 +215,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                 : msg
             )));
           } else if (ev.event === 'step') {
-            setMessages(prev => prev.map(msg =>
+            flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? { ...msg, planPending: false, executing: true, isThinking: true, streaming: false, thinkingText: undefined, statusText: ev.data.description || msg.statusText, steps: [...(msg.steps || []), ev.data] }
                 : msg
-            ));
+            )));
           } else if (ev.event === 'result') {
             flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
