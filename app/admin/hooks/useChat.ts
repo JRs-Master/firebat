@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { flushSync } from 'react-dom';
 import { Message, Conversation, INIT_MESSAGE, makeConv } from '../types';
 import { ConversationMeta } from '../components/Sidebar';
 
@@ -206,13 +205,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             const chunkType = ev.data.type as 'text' | 'thinking';
             const chunkContent = ev.data.content as string;
             if (chunkType === 'thinking') {
-              // thinking 청크 — flushSync로 즉시 렌더
-              flushSync(() => setMessages(prev => prev.map(msg => {
+              setMessages(prev => prev.map(msg => {
                 if (msg.id !== `s-${id}`) return msg;
                 return { ...msg, isThinking: true, streaming: false, statusText: undefined, thinkingText: (msg.thinkingText || '') + chunkContent };
-              })));
+              }));
             } else {
-              // text 청크 — thinkingText 유지 (result 이벤트에서 정리)
               setMessages(prev => prev.map(msg => {
                 if (msg.id !== `s-${id}`) return msg;
                 return { ...msg, isThinking: false, statusText: undefined, content: (msg.content || '') + chunkContent, streaming: true };
@@ -220,23 +217,22 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             }
           } else if (ev.event === 'plan') {
             const needsConfirm = ev.data.actions?.some((a: any) => ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type));
-            flushSync(() => setMessages(prev => prev.map(msg =>
+            setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? { ...msg, isThinking: !needsConfirm, thoughts: ev.data.thoughts, content: ev.data.reply, plan: ev.data, planPending: needsConfirm, suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined }
                 : msg
-            )));
+            ));
           } else if (ev.event === 'step') {
             const stepDone = ev.data.status !== 'start';
-            flushSync(() => setMessages(prev => prev.map(msg =>
+            setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? { ...msg, planPending: false, executing: true, isThinking: true, streaming: false,
-                    // start: 도구명 표시, done/error: "결과 정리 중..."
                     statusText: stepDone ? '결과 정리 중...' : (ev.data.description || msg.statusText),
                     steps: [...(msg.steps || []), ev.data] }
                 : msg
-            )));
+            ));
           } else if (ev.event === 'result') {
-            flushSync(() => setMessages(prev => prev.map(msg =>
+            setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? {
                     ...msg, isThinking: false, executing: false, streaming: false, statusText: undefined, thinkingText: msg.thinkingText ? '답변 완료' : undefined, thoughts: ev.data.thoughts,
@@ -245,14 +241,14 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                     suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
                   }
                 : msg
-            )));
+            ));
             if (ev.data.executedActions?.length) { onRefresh(); window.dispatchEvent(new Event('firebat-refresh')); }
           } else if (ev.event === 'error') {
-            flushSync(() => setMessages(prev => prev.map(msg =>
+            setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? { ...msg, isThinking: false, executing: false, error: ev.data.error, content: msg.content || '' }
                 : msg
-            )));
+            ));
           }
         }
         if (done) break;
@@ -313,14 +309,14 @@ export function useChat(aiModel: string, onRefresh: () => void) {
               m.id === msgId ? { ...m, steps: [...(m.steps || []), ev.data] } : m
             ));
           } else if (ev.event === 'result') {
-            flushSync(() => setMessages(prev => prev.map(m =>
+            setMessages(prev => prev.map(m =>
               m.id === msgId
                 ? {
                     ...m, executing: false, isThinking: false, executedActions: ev.data.executedActions || [],
                     data: ev.data.data, error: ev.data.error, content: ev.data.reply || m.content || '실행이 완료되었습니다.',
                   }
                 : m
-            )));
+            ));
             if (ev.data.executedActions?.length) { onRefresh(); window.dispatchEvent(new Event('firebat-refresh')); }
           }
         }
