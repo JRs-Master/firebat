@@ -73,7 +73,6 @@ export class VertexAiAdapter implements ILlmPort {
             systemInstruction: systemPrompt || '',
             responseMimeType: 'application/json',
             temperature: LLM_TEMPERATURE_JSON,
-            thinkingConfig: { thinkingBudget: 0 },
           },
         }),
         LLM_TIMEOUT_MS,
@@ -154,7 +153,7 @@ export class VertexAiAdapter implements ILlmPort {
         config: {
           systemInstruction: systemPrompt,
           temperature: LLM_TEMPERATURE_TEXT,
-          thinkingConfig: { includeThoughts: true, thinkingBudget: 2048, thinkingLevel: 'medium' },
+          thinkingConfig: { includeThoughts: true },
           // 도구가 없으면 tools/toolConfig 생략 (빈 배열 전달 시 Vertex AI 400 에러)
           ...(functionDeclarations.length > 0 ? {
             tools: [{ functionDeclarations }],
