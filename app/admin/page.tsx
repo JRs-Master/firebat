@@ -320,17 +320,24 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
                 </div>
               )}
 
-              {/* 실행 완료된 액션 태그 */}
+              {/* 실행 완료된 액션 태그 + step 에러 */}
               {msg.executedActions && msg.executedActions.length > 0 && !msg.plan && (
                 <div className="flex flex-wrap gap-2">
-                  {msg.executedActions.map((action, i) => (
-                    <div key={i} className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-md text-[13px] font-bold tracking-tight shadow-sm">
-                      <Blocks size={14} className="text-indigo-500" />
-                      {action}
-                    </div>
-                  ))}
+                  {msg.executedActions.map((action, i) => {
+                    const step = msg.steps?.find(s => s.type === action && s.status === 'error');
+                    return (
+                      <div key={i} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-bold tracking-tight shadow-sm ${step ? 'bg-red-50 border border-red-100 text-red-700' : 'bg-indigo-50 border border-indigo-100 text-indigo-700'}`}>
+                        {step ? <AlertTriangle size={14} className="text-red-500" /> : <Blocks size={14} className="text-indigo-500" />}
+                        {action}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
+              {/* step 에러 상세 (접이식) */}
+              {msg.steps?.filter(s => s.error).map((s, i) => (
+                <ErrorCollapsible key={`step-err-${i}`} error={`${s.type}: ${s.error}`} />
+              ))}
 
               {/* 에러 — 접이식 태그 */}
               {msg.error && (
