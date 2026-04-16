@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Send, Cpu, AlertTriangle, Blocks, Bot, ExternalLink, X, Check, Loader2, Circle, Copy, CheckCheck, Menu } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Bot, ExternalLink, X, Check, Loader2, Circle, Copy, CheckCheck, Menu, Plus } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { FileEditor } from './components/FileEditor';
 import { SettingsModal } from './components/SettingsModal';
@@ -191,10 +191,10 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="self-end p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
+      className="self-end p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
       title="복사"
     >
-      {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
+      {copied ? <CheckCheck size={13} className="text-emerald-500" /> : <Copy size={13} />}
     </button>
   );
 }
@@ -279,7 +279,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
       <div className="hidden sm:flex w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-50 to-blue-100 border border-blue-200 items-center justify-center shadow-sm shrink-0">
         <Bot size={22} className="text-blue-600" />
       </div>
-      <div className="flex flex-col gap-2 flex-1 min-w-0">
+      <div className="flex flex-col gap-1 flex-1 min-w-0">
         <div className="flex flex-col gap-3 w-full bg-white px-4 py-3 sm:p-6 rounded-3xl rounded-tl-sm shadow-sm border border-slate-100">
           {msg.isThinking && !msg.streaming ? (
             <div className="flex items-center gap-3 text-slate-600 font-medium bg-slate-50 border border-slate-200 px-4 py-3 sm:px-6 sm:py-5 rounded-2xl shadow-inner text-[13px] sm:text-[15px]">
@@ -319,11 +319,8 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
               )}
 
               {msg.content && (
-                <div className="flex flex-col">
-                  <div className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">
-                    {renderMarkdown(msg.content)}
-                  </div>
-                  <CopyButton text={msg.content} />
+                <div className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">
+                  {renderMarkdown(msg.content)}
                 </div>
               )}
 
@@ -410,6 +407,10 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
             </div>
           )}
         </div>
+        {/* 복사 버튼 — 버블 바깥 우측 하단 */}
+        {msg.content && !msg.isThinking && (
+          <CopyButton text={msg.content} />
+        )}
       </div>
     </div>
   );
@@ -464,17 +465,27 @@ export default function AdminConsole() {
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
-        <div className="absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
-        {/* 모바일 햄버거 버튼 */}
-        <button
-          onClick={() => setMobileMenuOpen(true)}
-          className="md:hidden absolute top-3 left-3 z-20 p-2 rounded-lg bg-white/80 backdrop-blur border border-slate-200 text-slate-600 hover:bg-slate-100 shadow-sm"
-        >
-          <Menu size={20} />
-        </button>
+        {/* 모바일 헤더 */}
+        <div className="md:hidden flex items-center justify-between px-3 py-2 bg-white/80 backdrop-blur border-b border-slate-100 z-20 shrink-0">
+          <button
+            onClick={() => setMobileMenuOpen(true)}
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+          >
+            <Menu size={18} />
+          </button>
+          <span className="text-[12px] font-bold tracking-widest text-slate-400 uppercase">Firebat</span>
+          <button
+            onClick={handleNewConv}
+            className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors"
+          >
+            <Plus size={18} />
+          </button>
+        </div>
+        {/* PC 상단 그라디언트 */}
+        <div className="hidden md:block absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
 
         {/* 메시지 목록 */}
-        <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 md:px-12 pt-16 scrolltext">
+        <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 md:px-12 pt-4 md:pt-16 scrolltext">
           <div className="w-full md:w-[70%] max-w-6xl mx-auto space-y-10">
             {messages.map((msg) => (
               <MessageBubble

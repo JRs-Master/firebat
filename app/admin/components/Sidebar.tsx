@@ -397,7 +397,7 @@ export function Sidebar({
         onClick={closeSidebar}
       />
     )}
-    <div className={`${isMobile ? 'fixed top-0 left-0 bottom-0 z-40 max-h-dvh overflow-y-auto' : 'relative'} w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 shadow-lg overscroll-contain`}>
+    <div className={`${isMobile ? 'fixed inset-y-0 left-0 z-40 h-dvh' : 'relative'} w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 shadow-lg overflow-hidden`}>
 
       {/* 탭 헤더 */}
       <div className="flex items-center gap-1 px-2 py-2 border-b border-slate-200/80">
