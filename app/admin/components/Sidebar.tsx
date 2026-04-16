@@ -383,6 +383,8 @@ export function Sidebar({
   /* ── 펼쳐진 모드 ── */
   return (
     <>
+    {/* PC: 아이콘 바 자리 유지 (사이드바 펼침/접힘 시 대화 영역 움직임 방지) */}
+    {!isMobile && <div className="w-12 shrink-0" />}
     {/* backdrop */}
     <div
       className="fixed top-12 inset-x-0 bottom-0 bg-black/30 z-30 touch-none"
