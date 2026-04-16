@@ -191,10 +191,10 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="self-end p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
+      className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
       title="복사"
     >
-      {copied ? <CheckCheck size={13} className="text-emerald-500" /> : <Copy size={13} />}
+      {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
     </button>
   );
 }
@@ -407,9 +407,11 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
             </div>
           )}
         </div>
-        {/* 복사 버튼 — 버블 바깥 우측 하단 */}
+        {/* 복사 버튼 — 버블 바깥, 좌측 하단 고정 */}
         {msg.content && !msg.isThinking && (
-          <CopyButton text={msg.content} />
+          <div className="flex pl-1">
+            <CopyButton text={msg.content} />
+          </div>
         )}
       </div>
     </div>
