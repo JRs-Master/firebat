@@ -146,7 +146,9 @@ async function handleSearch(OC, data) {
 //  2. detail — 본문 조회 (lawService.do)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleDetail(OC, data) {
-  const target = data.target || 'law';
+  // target=law → eflaw 자동 전환 (시행법령: 조문 내용이 더 완전하게 반환됨)
+  const rawTarget = data.target || 'law';
+  const target = rawTarget === 'law' ? 'eflaw' : rawTarget;
   const id = data.ID || data.id;
   const mst = data.MST || data.mst;
 
@@ -159,7 +161,7 @@ async function handleDetail(OC, data) {
   if (mst) p.set('MST', String(mst));
 
   // target별 고유 파라미터
-  if (target === 'law') {
+  if (target === 'eflaw' || target === 'law') {
     if (data.LM) p.set('LM', data.LM);
     if (data.LD) p.set('LD', String(data.LD));
     if (data.LN) p.set('LN', String(data.LN));
@@ -183,7 +185,16 @@ async function handleDetail(OC, data) {
   const json = await apiFetch(`${BASE}/lawService.do?${p}`);
   if (json._raw) return out(true, { rawText: json._raw });
 
-  out(true, parseDetailResult(target, json));
+  const result = parseDetailResult(target, json);
+  // 조문이 빈 경우 디버그용 키 목록 포함
+  if ((target === 'law' || target === 'eflaw') && result && !result.조문) {
+    result._debugKeys = Object.keys(json).slice(0, 10);
+    const rootObj = findRoot(json, target);
+    if (rootObj && rootObj !== json) {
+      result._debugRootKeys = Object.keys(Array.isArray(rootObj) ? rootObj[0] || {} : rootObj).slice(0, 20);
+    }
+  }
+  out(true, result);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -229,9 +240,11 @@ function toArray(v) { return v == null ? [] : Array.isArray(v) ? v : [v]; }
 
 // ── 검색 결과 파싱 ──────────────────────────────────────────────────────────
 function parseSearchResult(target, json) {
-  // API 응답 최상위 키: target명 또는 PrecSearch/LawSearch 등
+  // API 응답 최상위 키: 영어/한국어/Search 접미사 등 다양한 형태
   const root = json[target] || json.LawSearch || json.PrecSearch || json.AdmRulSearch
-    || json.OrdinSearch || json.DetcSearch || json.ExpcSearch || json.TrtySearch || json;
+    || json.OrdinSearch || json.DetcSearch || json.ExpcSearch || json.TrtySearch
+    || json['법령'] || json['판례'] || json['행정규칙'] || json['자치법규']
+    || json['헌재결정례'] || json['법령해석례'] || json['조약'] || json;
   if (!root) return { totalCnt: 0, page: 1, items: [] };
 
   const totalCnt = parseInt(root.totalCnt || root.totalCount || '0', 10);
@@ -246,11 +259,38 @@ function parseSearchResult(target, json) {
 }
 
 // ── 본문 결과 파싱 ──────────────────────────────────────────────────────────
-function parseDetailResult(target, json) {
-  const root = json[target] || json.law || json.prec || json.admrul
-    || json.ordin || json.detc || json.expc || json.trty || json;
+// API 응답 root 키: 영어(law) 또는 한국어(법령) 둘 다 가능
+const ROOT_KEYS = {
+  law:       ['law', 'eflaw', '법령'],
+  eflaw:     ['eflaw', 'law', '법령'],
+  prec:      ['prec', '판례'],
+  admrul:    ['admrul', '행정규칙'],
+  ordin:     ['ordin', '자치법규'],
+  detc:      ['detc', '헌재결정례'],
+  expc:      ['expc', '법령해석례'],
+  trty:      ['trty', '조약'],
+  lsHistory: ['lsHistory', '연혁법령', 'law', '법령'],
+};
 
-  if (target === 'law' || target === 'lsHistory') return parseLawDetail(root);
+function findRoot(json, target) {
+  // target별 후보 키
+  const keys = ROOT_KEYS[target] || [target];
+  for (const k of keys) {
+    if (json[k]) return json[k];
+  }
+  // 모든 후보 키 시도
+  for (const vals of Object.values(ROOT_KEYS)) {
+    for (const k of vals) {
+      if (json[k]) return json[k];
+    }
+  }
+  return json;
+}
+
+function parseDetailResult(target, json) {
+  const root = findRoot(json, target);
+
+  if (target === 'law' || target === 'eflaw' || target === 'lsHistory') return parseLawDetail(root);
   if (target === 'prec') return parsePrecDetail(root);
   if (target === 'admrul') return parseAdmrulDetail(root);
   if (target === 'ordin') return parseOrdinDetail(root);
@@ -263,22 +303,31 @@ function parseDetailResult(target, json) {
 
 // ── 법령 본문 ────────────────────────────────────────────────────────────────
 function parseLawDetail(root) {
+  // 배열로 감싸져 있는 경우 첫 번째 요소 사용
+  const r = Array.isArray(root) ? root[0] : root;
+  if (!r || typeof r !== 'object') return { error: '법령 본문 파싱 실패' };
+
   const info = {
-    법령ID: root['법령ID'] || '',
-    법령명: root['법령명_한글'] || root['법령명한글'] || '',
-    법령명한자: root['법령명_한자'] || root['법령명한자'] || '',
-    법령약칭: root['법령명약칭'] || root['법령약칭명'] || '',
-    법종구분: root['법종구분'] || root['법종구분명'] || '',
-    소관부처: root['소관부처'] || root['소관부처명'] || '',
-    전화번호: root['전화번호'] || '',
-    공포일자: root['공포일자'] || '',
-    공포번호: root['공포번호'] || '',
-    시행일자: root['시행일자'] || '',
-    제개정구분: root['제개정구분'] || '',
+    법령ID: r['법령ID'] || r['법령키'] || '',
+    법령명: r['법령명_한글'] || r['법령명한글'] || r['법령명'] || '',
+    법령명한자: r['법령명_한자'] || r['법령명한자'] || '',
+    법령약칭: r['법령명약칭'] || r['법령약칭명'] || r['법령약칭'] || '',
+    법종구분: r['법종구분'] || r['법종구분명'] || '',
+    소관부처: r['소관부처'] || r['소관부처명'] || '',
+    전화번호: r['전화번호'] || '',
+    공포일자: r['공포일자'] || '',
+    공포번호: r['공포번호'] || '',
+    시행일자: r['시행일자'] || '',
+    제개정구분: r['제개정구분'] || r['제개정구분명'] || '',
   };
 
-  // 조문
-  const articles = toArray(root['조문'] || root['조문단위']);
+  // 조문 — API가 { 조문: { 조문단위: [...] } } 또는 { 조문: [...] } 형태로 반환
+  const rawJomun = r['조문'] || r['조문단위'] || r['조문내용'];
+  const articles = toArray(
+    rawJomun && typeof rawJomun === 'object' && !Array.isArray(rawJomun) && rawJomun['조문단위']
+      ? rawJomun['조문단위']  // { 조문: { 조문단위: [...] } } 형태
+      : rawJomun
+  );
   if (articles.length > 0) {
     info.조문 = articles.map(a => {
       const art = {
@@ -287,8 +336,13 @@ function parseLawDetail(root) {
         조문내용: a['조문내용'] || '',
         조문시행일자: a['조문시행일자'] || '',
       };
-      // 항
-      const hangs = toArray(a['항']);
+      // 항 — { 항: { 항배열: [...] } } 또는 { 항: [...] } 형태
+      const rawHang = a['항'];
+      const hangs = toArray(
+        rawHang && typeof rawHang === 'object' && !Array.isArray(rawHang) && rawHang['항배열']
+          ? rawHang['항배열']
+          : rawHang
+      );
       if (hangs.length > 0) {
         art.항 = hangs.map(h => {
           const hang = { 항번호: h['항번호'] || '', 항내용: h['항내용'] || '' };
@@ -309,7 +363,7 @@ function parseLawDetail(root) {
   }
 
   // 부칙
-  const addenda = toArray(root['부칙']);
+  const addenda = toArray(r['부칙']);
   if (addenda.length > 0 && addenda[0]) {
     info.부칙 = addenda.map(a => ({
       부칙공포일자: a['부칙공포일자'] || '',
@@ -319,7 +373,7 @@ function parseLawDetail(root) {
   }
 
   // 별표
-  const tables = toArray(root['별표']);
+  const tables = toArray(r['별표']);
   if (tables.length > 0 && tables[0]) {
     info.별표 = tables.map(t => ({
       별표번호: t['별표번호'] || '',
@@ -332,8 +386,8 @@ function parseLawDetail(root) {
   }
 
   // 개정문/제개정이유
-  if (root['개정문내용']) info.개정문내용 = root['개정문내용'];
-  if (root['제개정이유내용']) info.제개정이유내용 = root['제개정이유내용'];
+  if (r['개정문내용']) info.개정문내용 = r['개정문내용'];
+  if (r['제개정이유내용']) info.제개정이유내용 = r['제개정이유내용'];
 
   return cleanObject(info);
 }
