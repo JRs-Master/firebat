@@ -8,6 +8,7 @@
   "capability": "stock-trading",
   "providerType": "api",
   "secrets": ["KIWOOM_APP_KEY", "KIWOOM_APP_SECRET"],
+  "tokenCache": { "key": "KIWOOM_ACCESS_TOKEN", "ttlHours": 23 },
   "input": {
     "type": "object",
     "required": ["action"],

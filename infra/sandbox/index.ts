@@ -67,6 +67,17 @@ export class ProcessSandboxAdapter implements ISandboxPort {
     };
   }
 
+  /** config.json에서 tokenCache 설정 읽기 */
+  private readTokenCache(moduleDir: string): { key: string; ttlHours: number } | null {
+    try {
+      const manifestPath = path.join(moduleDir, 'config.json');
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      const tc = manifest.tokenCache;
+      if (tc && tc.key && tc.ttlHours > 0) return tc;
+    } catch {}
+    return null;
+  }
+
   /** config.json의 secrets 배열을 읽어 Vault에서 값을 가져와 env 객체로 반환 */
   private loadSecretsEnv(moduleDir: string): Record<string, string> {
     const env: Record<string, string> = {};
@@ -79,6 +90,17 @@ export class ProcessSandboxAdapter implements ISandboxPort {
       for (const name of secrets) {
         const value = this.vault.getSecret(`user:${name}`);
         if (value) env[name] = value;
+      }
+
+      // tokenCache: Vault에 캐시된 토큰을 만료 체크 후 env로 주입
+      const tc = manifest.tokenCache;
+      if (tc?.key && this.vault) {
+        const expiresAt = this.vault.getSecret(`user:${tc.key}__expires`);
+        const expired = expiresAt && new Date(expiresAt).getTime() <= Date.now();
+        if (!expired) {
+          const token = this.vault.getSecret(`user:${tc.key}`);
+          if (token) env[tc.key] = token;
+        }
       }
       // 모듈 설정값도 env로 주입 (MODULE_SETTINGS_<KEY> 형식)
       const moduleName = manifest.name || path.basename(moduleDir);
@@ -98,7 +120,7 @@ export class ProcessSandboxAdapter implements ISandboxPort {
   }
 
   /** 프로세스 실행 후 stdout 파싱 결과 반환 */
-  private runProcess(command: string, args: string[], payload: Record<string, unknown>, timeoutMs: number, secretsEnv?: Record<string, string>): Promise<InfraResult<ModuleOutput>> {
+  private runProcess(command: string, args: string[], payload: Record<string, unknown>, timeoutMs: number, secretsEnv?: Record<string, string>, moduleDir?: string): Promise<InfraResult<ModuleOutput>> {
     return new Promise((resolve) => {
       // UTF-8 강제: Windows에서 Python stdin/stdout이 cp949로 처리되는 것을 방지
       const env = {
@@ -117,10 +139,31 @@ export class ProcessSandboxAdapter implements ISandboxPort {
         try {
           const outputStr = stdout.trim().split('\n').pop() || '';
           const parsed = JSON.parse(outputStr);
+
+          // __updateSecrets: 모듈이 Vault에 저장할 시크릿 (토큰 캐싱 등)
+          const updateSecrets = parsed.__updateSecrets;
+          delete parsed.__updateSecrets;
+
           const valRes = ModuleOutputSchema.safeParse(parsed);
           if (!valRes.success) {
             return resolve({ success: false, error: `Protocol Violation: 모듈이 규격에 맞지 않는 JSON을 반환했습니다. Dump: ${stdout}` });
           }
+
+          // Vault에 시크릿 저장 (__updateSecrets + tokenCache TTL 자동 적용)
+          if (updateSecrets && typeof updateSecrets === 'object' && this.vault) {
+            const tc = moduleDir ? this.readTokenCache(moduleDir) : null;
+            for (const [k, v] of Object.entries(updateSecrets)) {
+              if (typeof v === 'string') {
+                this.vault.setSecret(`user:${k}`, v);
+                // tokenCache 키와 일치하면 TTL 기반 만료시간 저장
+                if (tc && k === tc.key) {
+                  const expiry = new Date(Date.now() + tc.ttlHours * 3600000).toISOString();
+                  this.vault.setSecret(`user:${k}__expires`, expiry);
+                }
+              }
+            }
+          }
+
           return resolve({ success: true, data: valRes.data });
         } catch {
           return resolve({ success: false, error: `Protocol Violation: stdout에 유효한 JSON이 없습니다. Dump: ${stdout}` });
@@ -180,7 +223,7 @@ export class ProcessSandboxAdapter implements ISandboxPort {
     const secretsEnv = this.loadSecretsEnv(moduleDir);
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      const result = await this.runProcess(command, args, inputData, timeoutMs, secretsEnv);
+      const result = await this.runProcess(command, args, inputData, timeoutMs, secretsEnv, moduleDir);
 
       // 완전한 성공 (모듈도 success: true)
       if (result.success && result.data?.success !== false) return result;

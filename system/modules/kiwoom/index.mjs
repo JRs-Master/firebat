@@ -231,8 +231,12 @@ const ACTION_MAP = {
   'credit-inquiry': 'kt20017',  // 신용융자 가능문의
 };
 
-/** OAuth 토큰 발급 */
+/** OAuth 토큰 발급 (Vault 캐싱 — config.json tokenCache 기반) */
 async function getAccessToken(base, appKey, appSecret) {
+  // Vault에서 캐시된 토큰 (sandbox가 만료 체크 후 env 주입)
+  const cached = process.env['KIWOOM_ACCESS_TOKEN'];
+  if (cached) return { token: cached, isNew: false };
+
   const resp = await fetch(`${base}/oauth2/token`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json;charset=UTF-8' },
@@ -246,7 +250,8 @@ async function getAccessToken(base, appKey, appSecret) {
   if (!resp.ok) throw new Error(`토큰 발급 실패: ${resp.status}`);
   const json = await resp.json();
   if (!json.token) throw new Error(`토큰 응답 오류: ${JSON.stringify(json)}`);
-  return json.token;
+
+  return { token: json.token, isNew: true };
 }
 
 /** API 호출 */
@@ -935,7 +940,7 @@ process.stdin.on('end', async () => {
 
     const isMock = data.mock === true;
     const base = isMock ? BASE_MOCK : BASE_REAL;
-    const token = await getAccessToken(base, appKey, appSecret);
+    const { token, isNew } = await getAccessToken(base, appKey, appSecret);
 
     // 편의 액션 → apiId 변환, 또는 직접 apiId 사용
     const apiId = ACTION_MAP[action] || action;
@@ -943,10 +948,13 @@ process.stdin.on('end', async () => {
 
     const result = await callApi(base, token, apiId, params);
 
-    console.log(JSON.stringify({
+    const output = {
       success: true,
       data: { apiId, action, ...result },
-    }));
+    };
+    // 새 토큰 발급 시 Vault에 캐싱 요청 (TTL은 config.json tokenCache.ttlHours)
+    if (isNew) output.__updateSecrets = { KIWOOM_ACCESS_TOKEN: token };
+    console.log(JSON.stringify(output));
   } catch (e) {
     console.log(JSON.stringify({ success: false, error: e.message }));
   }
