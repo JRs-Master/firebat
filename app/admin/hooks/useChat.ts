@@ -253,7 +253,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             flushSync(() => setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? {
-                    ...msg, isThinking: false, executing: false, streaming: false, statusText: undefined, thinkingText: undefined, thoughts: ev.data.thoughts,
+                    ...msg, isThinking: false, executing: false, streaming: false, statusText: undefined, thinkingText: msg.thinkingText ? '답변 완료' : undefined, thoughts: ev.data.thoughts,
                     content: ev.data.reply || msg.content || (ev.data.error ? '' : '실행이 완료되었습니다.'),
                     executedActions: ev.data.executedActions || [], data: ev.data.data, error: ev.data.error, planPending: false,
                     suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,

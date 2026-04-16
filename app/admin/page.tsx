@@ -197,12 +197,13 @@ function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: st
     );
   }
 
-  // 완료 상태 — "답변 중..." 한 줄
+  // 완료/진행 상태 — 한 줄 텍스트
   if (!thinkingText) return null;
+  const label = thinkingText === '답변 완료' ? '답변 완료' : '답변 중...';
   return (
     <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
       <Cpu size={13} className="shrink-0" />
-      <span>답변 중...</span>
+      <span>{label}</span>
     </div>
   );
 }
