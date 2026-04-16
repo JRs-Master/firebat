@@ -44,9 +44,9 @@ export function Sidebar({
 
   useEffect(() => {
     const checkMobile = () => window.innerWidth < 768;
-    setCollapsed(checkMobile());
+    // PC/모바일 모두 기본 접힘으로 시작
     setIsMobile(checkMobile());
-    const handler = () => { setCollapsed(checkMobile()); setIsMobile(checkMobile()); };
+    const handler = () => { setIsMobile(checkMobile()); };
     window.addEventListener('resize', handler);
     return () => window.removeEventListener('resize', handler);
   }, []);
