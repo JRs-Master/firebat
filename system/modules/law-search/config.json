@@ -32,9 +32,9 @@
         "description": "[detail] 법령ID 또는 판례일련번호 (검색 결과의 법령ID/판례일련번호 사용)"
       },
       "search": {
-        "type": "integer",
-        "enum": [1, 2],
-        "default": 1,
+        "type": "string",
+        "enum": ["1", "2"],
+        "default": "1",
         "description": "[search] 검색범위 (1=제목, 2=본문)"
       },
       "display": {
