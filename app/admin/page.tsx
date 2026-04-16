@@ -556,7 +556,7 @@ export default function AdminConsole() {
                 onSuggestion={(text) => handleSubmit(text, true)}
               />
             ))}
-            <div className="h-32 sm:h-64 shrink-0 pointer-events-none" />
+            <div className="h-48 sm:h-64 shrink-0 pointer-events-none" />
             <div ref={chatEndRef} />
           </div>
         </div>

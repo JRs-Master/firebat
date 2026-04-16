@@ -202,14 +202,18 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             // 스트리밍 텍스트 청크 — 타이핑 효과
             const chunkType = ev.data.type as 'text' | 'thinking';
             const chunkContent = ev.data.content as string;
-            setMessages(prev => prev.map(msg => {
-              if (msg.id !== `s-${id}`) return msg;
-              if (chunkType === 'text') {
+            if (chunkType === 'thinking') {
+              // thinking 청크 — flushSync로 즉시 렌더 (PC에서 text 청크와 배칭되어 안 보이는 문제 방지)
+              flushSync(() => setMessages(prev => prev.map(msg => {
+                if (msg.id !== `s-${id}`) return msg;
+                return { ...msg, isThinking: true, streaming: false, statusText: undefined, thinkingText: (msg.thinkingText || '') + chunkContent };
+              })));
+            } else {
+              setMessages(prev => prev.map(msg => {
+                if (msg.id !== `s-${id}`) return msg;
                 return { ...msg, isThinking: false, statusText: undefined, thinkingText: undefined, content: (msg.content || '') + chunkContent, streaming: true };
-              }
-              // thinking 청크 — thinkingText에 누적, statusText 제거하여 thinking 내용 우선 표시
-              return { ...msg, isThinking: true, statusText: undefined, thinkingText: (msg.thinkingText || '') + chunkContent };
-            }));
+              }));
+            }
           } else if (ev.event === 'plan') {
             const needsConfirm = ev.data.actions?.some((a: any) => ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type));
             flushSync(() => setMessages(prev => prev.map(msg =>
