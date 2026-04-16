@@ -81,6 +81,12 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title: string; fields: SettingFie
       { key: 'kisAppSecret', label: 'App Secret', type: 'secret', secretName: 'KIS_APP_SECRET', placeholder: '한투 API 포털 → 앱 등록', description: '한국투자증권 API App Secret' },
     ],
   },
+  'law-search': {
+    title: '국가법령정보 Open API',
+    fields: [
+      { key: 'lawApiOc', label: 'API 인증값 (OC)', type: 'secret', secretName: 'LAW_API_OC', placeholder: 'open.law.go.kr → 마이페이지 → 인증값', description: '국가법령정보 공동활용 API 인증값' },
+    ],
+  },
   'mcp-server': {
     title: 'Firebat MCP 서버',
     fields: [],  // MCP 서버는 커스텀 렌더링 (토큰 관리 + JSON 설정)
