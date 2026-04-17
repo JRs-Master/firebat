@@ -407,25 +407,37 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
                 </div>
               )}
 
-              {msg.content && (
-                <div className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">
-                  {renderMarkdown(msg.content)}
+              {/* 인라인 블록 렌더링 — text/html 순서 보존 (Claude 스타일) */}
+              {msg.data?.blocks && Array.isArray(msg.data.blocks) && msg.data.blocks.length > 0 ? (
+                <div className="flex flex-col gap-3">
+                  {msg.data.blocks.map((b: any, i: number) => (
+                    b.type === 'text'
+                      ? <div key={i} className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">{renderMarkdown(b.text)}</div>
+                      : <AutoResizeIframe key={i} src={b.htmlContent as string} initialHeight={b.htmlHeight} />
+                  ))}
                 </div>
+              ) : (
+                <>
+                  {msg.content && (
+                    <div className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">
+                      {renderMarkdown(msg.content)}
+                    </div>
+                  )}
+                  {/* 인라인 HTML 렌더링 (차트/그래프 등) — 답변 바로 아래 (blocks 없을 때 fallback) */}
+                  {msg.data && (() => {
+                    const dataObj = msg.data as any;
+                    const raw = dataObj?.htmlItems ?? (Array.isArray(dataObj) ? dataObj : [dataObj]);
+                    const htmlItems = raw.filter((d: any) => d && 'htmlContent' in d);
+                    return htmlItems.length > 0 ? (
+                      <div className="space-y-3 mt-2">
+                        {htmlItems.map((h: any, i: number) => (
+                          <AutoResizeIframe key={i} src={h.htmlContent as string} initialHeight={h.htmlHeight} />
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+                </>
               )}
-
-              {/* 인라인 HTML 렌더링 (차트/그래프 등) — 답변 바로 아래 */}
-              {msg.data && (() => {
-                const dataObj = msg.data as any;
-                const raw = dataObj?.htmlItems ?? (Array.isArray(dataObj) ? dataObj : [dataObj]);
-                const htmlItems = raw.filter((d: any) => d && 'htmlContent' in d);
-                return htmlItems.length > 0 ? (
-                  <div className="space-y-3 mt-2">
-                    {htmlItems.map((h: any, i: number) => (
-                      <AutoResizeIframe key={i} src={h.htmlContent as string} initialHeight={h.htmlHeight} />
-                    ))}
-                  </div>
-                ) : null;
-              })()}
 
               {/* 에러 — 접이식 태그 */}
               {msg.error && !msg.steps?.some(s => s.error) && (
