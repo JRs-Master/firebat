@@ -55,11 +55,15 @@ function shortDate(d: string): string {
   return parts.length === 3 ? `${parts[1]}/${parts[2]}` : n;
 }
 
-// 숫자를 간결하게 (100000000 → 1.0억, 15000 → 1.5만)
+// 숫자를 간결하게 (한 줄에 들어가도록 짧게)
 function compactKorean(n: number): string {
   const abs = Math.abs(n);
-  if (abs >= 1e8) return (n / 1e8).toFixed(1) + '억';
-  if (abs >= 1e4) return (n / 1e4).toFixed(1) + '만';
+  if (abs >= 1e8) {
+    const v = n / 1e8;
+    return (v >= 10 ? Math.round(v).toString() : v.toFixed(1)) + '억';
+  }
+  if (abs >= 1e4) return Math.round(n / 1e4).toLocaleString('ko-KR') + '만';
+  if (abs >= 1e3) return Math.round(n / 1e3).toLocaleString('ko-KR') + '천';
   return n.toLocaleString('ko-KR');
 }
 
@@ -188,9 +192,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           { label: '저가', v: periodLow, color: 'text-blue-600' },
           { label: '거래량', v: latest.volume, color: 'text-slate-700', compact: true },
         ].map((s, i) => (
-          <div key={i} className="bg-slate-50 rounded-xl p-2.5 sm:p-3 flex flex-col gap-0.5">
+          <div key={i} className="bg-slate-50 rounded-xl p-2 sm:p-3 flex flex-col gap-0.5 min-w-0">
             <span className="text-[10px] sm:text-[11px] text-slate-400 font-semibold">{s.label}</span>
-            <span className={`text-[13px] sm:text-[15px] font-extrabold tabular-nums ${s.color}`}>
+            <span className={`text-[12px] sm:text-[15px] font-extrabold tabular-nums whitespace-nowrap ${s.color}`}>
               {s.compact ? compactKorean(s.v) : s.v.toLocaleString('ko-KR')}
             </span>
           </div>
@@ -288,16 +292,23 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         {/* 호버 툴팁 */}
         {hoverBar && hoverX != null && (
           <div
-            className="absolute pointer-events-none bg-slate-900/95 text-white rounded-lg px-2.5 py-2 text-[11px] shadow-lg"
-            style={{ left: `${(hoverX / W) * 100}%`, top: 4, transform: hoverX > W / 2 ? 'translateX(calc(-100% - 8px))' : 'translateX(8px)' }}
+            className="absolute pointer-events-none bg-slate-900/95 text-white rounded-lg px-3 py-2 text-[11px] shadow-lg whitespace-nowrap"
+            style={{ left: `${(hoverX / W) * 100}%`, top: 4, transform: hoverX > W / 2 ? 'translateX(calc(-100% - 8px))' : 'translateX(8px)', minWidth: 140 }}
           >
-            <div className="font-bold text-[11px] text-slate-300 mb-1">{normalizeDate(hoverBar.date)}</div>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 tabular-nums">
-              <span className="text-slate-400">시가</span><span>{hoverBar.open.toLocaleString('ko-KR')}</span>
-              <span className="text-slate-400">고가</span><span className="text-red-300">{hoverBar.high.toLocaleString('ko-KR')}</span>
-              <span className="text-slate-400">저가</span><span className="text-blue-300">{hoverBar.low.toLocaleString('ko-KR')}</span>
-              <span className="text-slate-400">종가</span><span className="font-bold">{hoverBar.close.toLocaleString('ko-KR')}</span>
-              <span className="text-slate-400">거래량</span><span>{compactKorean(hoverBar.volume)}</span>
+            <div className="font-bold text-[11px] text-slate-300 mb-1.5">{normalizeDate(hoverBar.date)}</div>
+            <div className="flex flex-col gap-0.5 tabular-nums">
+              {[
+                { k: '시가', v: hoverBar.open.toLocaleString('ko-KR'), c: '' },
+                { k: '고가', v: hoverBar.high.toLocaleString('ko-KR'), c: 'text-red-300' },
+                { k: '저가', v: hoverBar.low.toLocaleString('ko-KR'), c: 'text-blue-300' },
+                { k: '종가', v: hoverBar.close.toLocaleString('ko-KR'), c: 'font-bold' },
+                { k: '거래량', v: compactKorean(hoverBar.volume), c: 'text-slate-300' },
+              ].map((row, i) => (
+                <div key={i} className="flex items-baseline justify-between gap-4">
+                  <span className="text-slate-400">{row.k}</span>
+                  <span className={row.c}>{row.v}</span>
+                </div>
+              ))}
             </div>
           </div>
         )}
