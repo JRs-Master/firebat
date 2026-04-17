@@ -19,11 +19,11 @@ process.stdin.on('end', async () => {
     const { data } = JSON.parse(raw);
     const action = data?.action || 'keyword-tool';
 
-    const apiKey = process.env['NAVER_AD_LICENSE_KEY'];
+    const apiKey = process.env['NAVER_AD_API_KEY'];
     const secretKey = process.env['NAVER_AD_SECRET_KEY'];
     const customerId = process.env['NAVER_AD_CUSTOMER_ID'];
     if (!apiKey || !secretKey || !customerId) {
-      return out(false, 'NAVER_AD_LICENSE_KEY / NAVER_AD_SECRET_KEY / NAVER_AD_CUSTOMER_ID가 설정되지 않았습니다.');
+      return out(false, 'NAVER_AD_API_KEY / NAVER_AD_SECRET_KEY / NAVER_AD_CUSTOMER_ID가 설정되지 않았습니다.');
     }
 
     const ctx = { apiKey, secretKey, customerId };

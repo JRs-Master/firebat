@@ -7,7 +7,7 @@
   "runtime": "node",
   "capability": "keyword-analytics",
   "providerType": "api",
-  "secrets": ["NAVER_AD_LICENSE_KEY", "NAVER_AD_SECRET_KEY", "NAVER_AD_CUSTOMER_ID"],
+  "secrets": ["NAVER_AD_API_KEY", "NAVER_AD_SECRET_KEY", "NAVER_AD_CUSTOMER_ID"],
   "input": {
     "type": "object",
     "properties": {
