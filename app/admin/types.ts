@@ -16,6 +16,14 @@ export const THINKING_LEVELS = [
 export type PlanAction = { type: string; description?: string; path?: string; slug?: string };
 export type StepStatus = { index: number; total: number; type: string; status: 'start' | 'done' | 'error'; error?: string; description?: string };
 
+export type PendingAction = {
+  planId: string;
+  name: string;
+  summary: string;
+  args?: Record<string, unknown>;
+  status?: 'pending' | 'approved' | 'rejected';
+};
+
 export type Message = {
   id: string;
   role: 'user' | 'system';
@@ -29,6 +37,7 @@ export type Message = {
   streaming?: boolean;
   plan?: { thoughts: string; reply: string; actions: PlanAction[]; corrId: string };
   planPending?: boolean;
+  pendingActions?: PendingAction[];
   steps?: StepStatus[];
   executing?: boolean;
   statusText?: string;

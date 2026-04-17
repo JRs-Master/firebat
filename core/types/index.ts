@@ -166,12 +166,6 @@ export const FirebatActionSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     ...actionBase,
-    type: z.literal('SET_SECRET'),
-    name: z.string().describe('저장할 시크릿 키 이름'),
-    value: z.string().describe('시크릿 값'),
-  }),
-  z.object({
-    ...actionBase,
     type: z.literal('RUN_TASK'),
     pipeline: z.array(PipelineStepSchema).describe('즉시 실행할 파이프라인 단계 배열'),
   }),

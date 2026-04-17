@@ -231,6 +231,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                 : msg
             ));
           } else if (ev.event === 'result') {
+            const pendingActions = ev.data.data?.pendingActions as { planId: string; name: string; summary: string; args?: any }[] | undefined;
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? {
@@ -238,6 +239,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                     content: ev.data.reply || msg.content || (ev.data.error ? '' : '실행이 완료되었습니다.'),
                     executedActions: ev.data.executedActions || [], data: ev.data.data, error: ev.data.error, planPending: false,
                     suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
+                    pendingActions: pendingActions?.map(p => ({ ...p, status: 'pending' as const })),
                   }
                 : msg
             ));
@@ -339,6 +341,30 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     ));
   }, []);
 
+  // Pending tool 개별 승인
+  const handleApprovePending = useCallback(async (msgId: string, planId: string) => {
+    try {
+      const res = await fetch(`/api/plan/commit?planId=${encodeURIComponent(planId)}`, { method: 'POST' });
+      const data = await res.json();
+      setMessages(prev => prev.map(m => m.id !== msgId ? m : {
+        ...m,
+        pendingActions: m.pendingActions?.map(p => p.planId === planId ? { ...p, status: data.success ? 'approved' : 'pending' } : p),
+      }));
+      if (data.success) { onRefresh(); window.dispatchEvent(new Event('firebat-refresh')); }
+    } catch {}
+  }, [onRefresh]);
+
+  // Pending tool 개별 거부
+  const handleRejectPending = useCallback(async (msgId: string, planId: string) => {
+    try {
+      await fetch(`/api/plan/reject?planId=${encodeURIComponent(planId)}`, { method: 'POST' });
+      setMessages(prev => prev.map(m => m.id !== msgId ? m : {
+        ...m,
+        pendingActions: m.pendingActions?.map(p => p.planId === planId ? { ...p, status: 'rejected' } : p),
+      }));
+    } catch {}
+  }, []);
+
   const convMetas: ConversationMeta[] = conversations.map(({ id, title, createdAt }) => ({ id, title, createdAt }));
 
   return {
@@ -348,5 +374,6 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     chatEndRef, chatContainerRef, handleScroll,
     handleNewConv, handleSelectConv, handleDeleteConv,
     handleSubmit, handleConfirmPlan, handleRejectPlan,
+    handleApprovePending, handleRejectPending,
   };
 }
