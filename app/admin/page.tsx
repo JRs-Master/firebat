@@ -495,7 +495,7 @@ export default function AdminConsole() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'secrets' | 'mcp' | 'capabilities' | 'system' | undefined>(undefined);
   const [isDemo, setIsDemo] = useState(false);
-  const [aiModel, setAiModel] = useState('auto');
+  const [aiModel, setAiModel] = useState('gemini-3-flash-preview');
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [editingModule, setEditingModule] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -554,7 +554,7 @@ export default function AdminConsole() {
         }
       } catch {}
       const savedModel = localStorage.getItem('firebat_model');
-      setAiModel(savedModel && isValid(savedModel) ? savedModel : 'auto');
+      setAiModel(savedModel && isValid(savedModel) ? savedModel : 'gemini-3-flash-preview');
     })();
   }, []);
 
