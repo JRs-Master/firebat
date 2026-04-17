@@ -279,10 +279,10 @@ function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[
           return (
             <div
               key={i}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[13px] font-bold tracking-tight shadow-sm ${isError ? 'bg-red-50 border border-red-100 text-red-700 cursor-pointer hover:bg-red-100' : 'bg-indigo-50 border border-indigo-100 text-indigo-700'} transition-colors`}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium ${isError ? 'bg-red-50 border border-red-100 text-red-600 cursor-pointer hover:bg-red-100' : 'bg-slate-50 border border-slate-200 text-slate-500'} transition-colors`}
               onClick={isError ? () => setOpenIdx(openIdx === i ? null : i) : undefined}
             >
-              {isError ? <AlertTriangle size={14} className="text-red-500" /> : <Blocks size={14} className="text-indigo-500" />}
+              {isError ? <AlertTriangle size={10} className="text-red-400" /> : <Blocks size={10} className="text-slate-400" />}
               {action}
             </div>
           );
@@ -474,12 +474,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
                 );
               })()}
 
-              {/* 실행 완료된 액션 태그 — 최하단 */}
-              {msg.executedActions && msg.executedActions.length > 0 && !msg.plan && (
-                <ActionTags actions={msg.executedActions} steps={msg.steps} />
-              )}
-
-              {/* Pending Actions — 승인 버튼, 도구 뱃지 밑 */}
+              {/* Pending Actions — 승인 버튼 (액션 필요, 눈에 띄게 위쪽) */}
               {msg.pendingActions && msg.pendingActions.length > 0 && (
                 <div className="flex flex-col gap-2">
                   {msg.pendingActions.map(p => (
@@ -509,6 +504,11 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
                     </div>
                   ))}
                 </div>
+              )}
+
+              {/* 실행 완료된 액션 태그 — 최하단, 미니멀 */}
+              {msg.executedActions && msg.executedActions.length > 0 && !msg.plan && (
+                <ActionTags actions={msg.executedActions} steps={msg.steps} />
               )}
             </div>
           )}
