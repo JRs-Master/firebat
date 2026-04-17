@@ -590,12 +590,59 @@ function CountdownComp({ targetDate, label }: { targetDate: string; label?: stri
   );
 }
 
-// ── Chart (CSS-only, 외부 라이브러리 없음) ──────────────────────────────────
+// ── Chart (SVG, 외부 라이브러리 없음) ──────────────────────────────────────
 function ChartComp({ type = 'bar', data, labels, title }: {
-  type: 'bar' | 'pie'; data: number[]; labels: string[]; title?: string;
+  type: 'bar' | 'pie' | 'line' | 'doughnut'; data: number[]; labels: string[]; title?: string;
 }) {
   if (data.length === 0) return null;
   const maxVal = Math.max(...data, 1);
+  const minVal = Math.min(...data, 0);
+
+  // line chart
+  if (type === 'line') {
+    const W = 720, H = 260, padL = 56, padR = 24, padT = 20, padB = 28;
+    const plotW = W - padL - padR;
+    const plotH = H - padT - padB;
+    const range = maxVal - minVal || 1;
+    const yMin = minVal - range * 0.05;
+    const yMax = maxVal + range * 0.05;
+    const xs = data.map((_, i) => padL + (data.length <= 1 ? 0 : (i / (data.length - 1)) * plotW));
+    const ys = data.map(v => padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH);
+    const path = xs.map((x, i) => `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
+    const area = `${path} L ${xs[xs.length - 1].toFixed(1)},${padT + plotH} L ${xs[0].toFixed(1)},${padT + plotH} Z`;
+    const ticks = 4;
+    const yTicks = Array.from({ length: ticks + 1 }, (_, i) => yMin + (yMax - yMin) * (i / ticks));
+    const xStep = Math.max(1, Math.floor(data.length / 6));
+    return (
+      <div className="space-y-2">
+        {title && <div className="text-sm font-bold text-gray-800">{title}</div>}
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block">
+          <defs>
+            <linearGradient id="line-grad" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {yTicks.map((t, i) => {
+            const y = padT + plotH - (i / ticks) * plotH;
+            return (
+              <g key={i}>
+                <line x1={padL} x2={W - padR} y1={y} y2={y} stroke="#e2e8f0" strokeDasharray="2 3" />
+                <text x={padL - 6} y={y} fill="#94a3b8" fontSize="10" textAnchor="end" dominantBaseline="middle">{Math.round(t).toLocaleString('ko-KR')}</text>
+              </g>
+            );
+          })}
+          <path d={area} fill="url(#line-grad)" />
+          <path d={path} fill="none" stroke="#3b82f6" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          {xs.map((x, i) => <circle key={i} cx={x} cy={ys[i]} r={3} fill="#3b82f6" />)}
+          {data.map((_, i) => i % xStep === 0 || i === data.length - 1 ? (
+            <text key={i} x={xs[i]} y={H - 8} fill="#94a3b8" fontSize="10" textAnchor="middle">{labels[i] ?? i}</text>
+          ) : null)}
+        </svg>
+      </div>
+    );
+  }
+
   const chartColors = [
     'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-red-500',
     'bg-purple-500', 'bg-orange-500', 'bg-teal-500', 'bg-pink-500',
@@ -605,7 +652,7 @@ function ChartComp({ type = 'bar', data, labels, title }: {
     '#a855f7', '#f97316', '#14b8a6', '#ec4899',
   ];
 
-  if (type === 'pie') {
+  if (type === 'pie' || type === 'doughnut') {
     const total = data.reduce((s, v) => s + v, 0) || 1;
     let cumPercent = 0;
     const gradientParts = data.map((v, i) => {
