@@ -176,6 +176,39 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   );
 }
 
+// ─── 자동 높이 iframe — 내부 콘텐츠에 맞춰 높이 자동 확장 ──────────────────
+function AutoResizeIframe({ src, initialHeight }: { src: string; initialHeight?: string }) {
+  const idRef = useRef('ifr-' + Math.random().toString(36).slice(2, 10));
+  const [height, setHeight] = useState(initialHeight || '200px');
+
+  const isFullDoc = src.trim().toLowerCase().startsWith('<!doctype') || src.trim().toLowerCase().startsWith('<html');
+  const autoScript = `<script>(function(){var id=${JSON.stringify(idRef.current)};function send(){var h=Math.max(document.documentElement.scrollHeight,document.body&&document.body.scrollHeight||0);parent.postMessage({type:'iframe-resize',id:id,height:h},'*');}if(window.ResizeObserver){new ResizeObserver(send).observe(document.documentElement);}window.addEventListener('load',send);setTimeout(send,100);setTimeout(send,600);setTimeout(send,1500);})();<\/script>`;
+  const srcdoc = isFullDoc
+    ? src.replace(/<\/body>/i, autoScript + '</body>')
+    : `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:8px;overflow-x:hidden;max-width:100vw}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.6;color:#1e293b}canvas,svg,img,table,div{max-width:100%!important;height:auto}</style></head><body>${src}${autoScript}</body></html>`;
+
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'iframe-resize' && e.data?.id === idRef.current && typeof e.data.height === 'number') {
+        setHeight(e.data.height + 'px');
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
+
+  return (
+    <iframe
+      srcDoc={srcdoc}
+      sandbox="allow-scripts"
+      scrolling="no"
+      className="w-full border border-slate-200 rounded-xl bg-white block"
+      style={{ height, maxWidth: '100%' }}
+      title="Inline HTML"
+    />
+  );
+}
+
 // ─── Thinking 블록 — 버블 상단에 항상 표시 ──────────────────────────────────
 function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: string; thinkingText?: string; isActive?: boolean }) {
   if (!isActive && !thinkingText) return null;
@@ -414,24 +447,9 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion }: {
                 const htmlItems = raw.filter((d: any) => d && 'htmlContent' in d);
                 return htmlItems.length > 0 ? (
                   <div className="space-y-3 mt-2">
-                    {htmlItems.map((h: any, i: number) => {
-                      const src = h.htmlContent as string;
-                      const isFullDoc = src.trim().toLowerCase().startsWith('<!doctype') || src.trim().toLowerCase().startsWith('<html');
-                      const srcdoc = isFullDoc ? src : `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:8px;overflow-x:hidden;max-width:100vw}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:15px;line-height:1.6;color:#1e293b}canvas,svg,img,table,div{max-width:100%!important;height:auto}</style>
-</head><body>${src}</body></html>`;
-                      return (
-                        <iframe
-                          key={i}
-                          srcDoc={srcdoc}
-                          sandbox="allow-scripts"
-                          className="w-full border border-slate-200 rounded-xl bg-white block"
-                          style={{ height: h.htmlHeight || '400px', maxWidth: '100%' }}
-                          title="Inline HTML"
-                        />
-                      );
-                    })}
+                    {htmlItems.map((h: any, i: number) => (
+                      <AutoResizeIframe key={i} src={h.htmlContent as string} initialHeight={h.htmlHeight} />
+                    ))}
                   </div>
                 ) : null;
               })()}
