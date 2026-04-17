@@ -251,30 +251,45 @@ function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: st
 }
 
 // ─── 복사 버튼 ─────────────────────────────────────────────────────────────────
+function fallback(text: string, onOk: () => void) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    if (ok) onOk();
+  } catch { /* 무시 */ }
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(text).then(() => {
+    const showOk = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
-    });
+    };
+    // 1) 모던 clipboard API (secure context)
+    if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(showOk).catch(() => fallback(text, showOk));
+      return;
+    }
+    // 2) 폴백 (execCommand)
+    fallback(text, showOk);
   }, [text]);
   return (
-    <>
-      <button
-        onClick={handleCopy}
-        className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
-        title="복사"
-      >
-        {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
-      </button>
-      {copied && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-slate-900 text-white text-[12px] font-medium px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 animate-in fade-in slide-in-from-bottom-2">
-          <CheckCheck size={13} className="text-emerald-400" />
-          복사되었습니다
-        </div>
-      )}
-    </>
+    <button
+      onClick={handleCopy}
+      className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
+      title={copied ? '복사됨' : '복사'}
+    >
+      {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
+    </button>
   );
 }
 
@@ -605,6 +620,22 @@ export default function AdminConsole() {
     }
   }, [handleImageSelect]);
 
+  // 입력 카드 위에서 세로 드래그 → 채팅 영역 스크롤 포워딩 (모바일 UX)
+  const cardTouchY = useRef<number | null>(null);
+  const handleCardTouchStart = useCallback((e: React.TouchEvent) => {
+    // textarea 안에서의 터치는 스킵 (textarea 자체 스크롤 유지)
+    const t = e.target as HTMLElement;
+    if (t.tagName === 'TEXTAREA' || t.closest('button')) { cardTouchY.current = null; return; }
+    cardTouchY.current = e.touches[0]?.clientY ?? null;
+  }, []);
+  const handleCardTouchMove = useCallback((e: React.TouchEvent) => {
+    if (cardTouchY.current == null) return;
+    const y = e.touches[0]?.clientY ?? 0;
+    const dy = cardTouchY.current - y;
+    cardTouchY.current = y;
+    if (chatContainerRef.current) chatContainerRef.current.scrollTop += dy;
+  }, [chatContainerRef]);
+
   // 초기화
   useEffect(() => {
     const role = document.cookie.split(';').find(c => c.trim().startsWith('firebat_role='))?.split('=')[1];
@@ -663,7 +694,7 @@ export default function AdminConsole() {
         <div className="hidden md:block absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
 
         {/* 메시지 목록 */}
-        <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-2 md:px-12 pt-4 md:pt-16 scrolltext">
+        <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 md:px-12 pt-4 md:pt-16 scrolltext">
           <div className="w-full md:w-[70%] max-w-6xl mx-auto space-y-10">
             {messages.map((msg) => (
               <MessageBubble
@@ -691,6 +722,8 @@ export default function AdminConsole() {
                 className="flex-1 min-w-0 flex flex-col bg-white border border-slate-300 rounded-2xl shadow-xl focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-100/50 transition-all overflow-hidden"
                 onDrop={handleDrop}
                 onDragOver={(e) => e.preventDefault()}
+                onTouchStart={handleCardTouchStart}
+                onTouchMove={handleCardTouchMove}
               >
                 {/* 이미지 미리보기 */}
                 {attachedImage && (
@@ -711,10 +744,9 @@ export default function AdminConsole() {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
-                  onTouchMove={(e) => e.stopPropagation()}
                   disabled={loading}
-                  style={{ touchAction: 'auto', WebkitUserSelect: 'text' }}
-                  className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] px-4 sm:px-5 pt-3 sm:pt-4 pb-1 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50 select-text"
+                  style={{ touchAction: 'pan-y', overscrollBehavior: 'contain', WebkitUserSelect: 'text', WebkitOverflowScrolling: 'touch' }}
+                  className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] px-4 sm:px-5 pt-3 sm:pt-4 pb-1 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50 select-text overflow-y-auto"
                   placeholder={loading ? '명령 집행 중...' : '무엇을 도와드릴까요?'}
                 />
                 <input
