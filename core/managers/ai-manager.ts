@@ -1633,7 +1633,7 @@ run_task/schedule_task의 pipeline에서:
         description: `채팅에 인라인 컴포넌트 렌더링 (iframe 없음, React 직접 렌더). 클로드 스타일 풍부한 응답 가능 — 텍스트 사이사이에 Card/Table/StockChart 등을 배치할 수 있음.
 
 **사용 가능한 타입:**
-- StockChart: 주식 차트 {symbol, data[{date,open,high,low,close,volume}], indicators?, buyPoints?, sellPoints?}
+- StockChart: 주식 차트 {symbol, title(**종목 한글명 필수** 예:"삼성전자"), data[{date,open,high,low,close,volume}], indicators?, buyPoints?, sellPoints?}. 최소 10일 이상 데이터 권장. title에 심볼 코드("005930") 넣지 마라.
 - Card: 카드 {children: Component[]}
 - Grid: 그리드 {columns, children: Component[]}
 - Table: 표 {headers: [], rows: [][]}

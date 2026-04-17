@@ -256,17 +256,25 @@ function CopyButton({ text }: { text: string }) {
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopied(false), 1600);
     });
   }, [text]);
   return (
-    <button
-      onClick={handleCopy}
-      className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
-      title="복사"
-    >
-      {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
-    </button>
+    <>
+      <button
+        onClick={handleCopy}
+        className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
+        title="복사"
+      >
+        {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
+      </button>
+      {copied && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-slate-900 text-white text-[12px] font-medium px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 animate-in fade-in slide-in-from-bottom-2">
+          <CheckCheck size={13} className="text-emerald-400" />
+          복사되었습니다
+        </div>
+      )}
+    </>
   );
 }
 
@@ -373,7 +381,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
         <Ghost size={22} className="text-blue-600" />
       </div>
       <div className="flex flex-col gap-1 flex-1 min-w-0">
-        <div className="flex flex-col gap-3 w-full bg-white px-4 py-3 sm:p-6 rounded-3xl rounded-tl-sm shadow-sm border border-slate-100">
+        <div className="flex flex-col gap-3 w-full">
           {/* thinking — 버블 상단에 항상 표시 */}
           {(msg.isThinking || msg.thinkingText) && (
             <ThinkingBlock statusText={msg.statusText} thinkingText={msg.thinkingText} isActive={msg.isThinking && !msg.streaming} />
@@ -655,7 +663,7 @@ export default function AdminConsole() {
         <div className="hidden md:block absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-slate-50 to-transparent z-10 pointer-events-none" />
 
         {/* 메시지 목록 */}
-        <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 md:px-12 pt-4 md:pt-16 scrolltext">
+        <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-2 md:px-12 pt-4 md:pt-16 scrolltext">
           <div className="w-full md:w-[70%] max-w-6xl mx-auto space-y-10">
             {messages.map((msg) => (
               <MessageBubble
@@ -703,8 +711,10 @@ export default function AdminConsole() {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
+                  onTouchMove={(e) => e.stopPropagation()}
                   disabled={loading}
-                  className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] px-4 sm:px-5 pt-3 sm:pt-4 pb-1 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50"
+                  style={{ touchAction: 'auto', WebkitUserSelect: 'text' }}
+                  className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] px-4 sm:px-5 pt-3 sm:pt-4 pb-1 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50 select-text"
                   placeholder={loading ? '명령 집행 중...' : '무엇을 도와드릴까요?'}
                 />
                 <input

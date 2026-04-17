@@ -162,7 +162,19 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const first = safeData[0];
   const change = latest && first ? latest.close - first.close : 0;
   const changePct = first ? (change / first.close) * 100 : 0;
-  const isUp = change >= 0;
+  const isUp = change > 0;
+  const isDown = change < 0;
+  // 3상태 색상
+  const changeColor = isUp ? 'text-red-600' : isDown ? 'text-blue-600' : 'text-slate-400';
+  const changeArrow = isUp ? '▲' : isDown ? '▼' : '–';
+  const changeSign = isUp ? '+' : '';
+  // 기간 표시 — 시작/종료 같으면 단일 날짜
+  const firstDate = shortDate(safeData[0].date);
+  const lastDate = shortDate(latest.date);
+  const periodLabel = firstDate === lastDate ? `${firstDate} · 1일` : `${firstDate} ~ ${lastDate} · ${n}일`;
+  // 제목 중복 방지
+  const titleText = title && title.trim() && title.trim() !== symbol ? title : symbol;
+  const showSymbolChip = titleText !== symbol;
   const periodHigh = Math.max(...safeData.map(d => d.high));
   const periodLow = Math.min(...safeData.map(d => d.low));
 
@@ -183,15 +195,15 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div className="flex flex-col">
           <div className="flex items-baseline gap-2">
-            <span className="text-[16px] sm:text-[18px] font-extrabold text-slate-900 tracking-tight">{title || symbol}</span>
-            <span className="text-[11px] text-slate-400 font-semibold">{symbol}</span>
+            <span className="text-[16px] sm:text-[18px] font-extrabold text-slate-900 tracking-tight">{titleText}</span>
+            {showSymbolChip && <span className="text-[11px] text-slate-400 font-semibold">{symbol}</span>}
           </div>
-          <span className="text-[11px] text-slate-400 mt-0.5">{shortDate(safeData[0].date)} ~ {shortDate(latest.date)} · {n}일</span>
+          <span className="text-[11px] text-slate-400 mt-0.5">{periodLabel}</span>
         </div>
         <div className="flex items-baseline gap-2">
           <span className="text-[20px] sm:text-[22px] font-extrabold text-slate-900 tabular-nums">{latest.close.toLocaleString('ko-KR')}</span>
-          <span className={`text-[12px] font-bold tabular-nums ${isUp ? 'text-red-600' : 'text-blue-600'}`}>
-            {isUp ? '▲' : '▼'} {Math.abs(change).toLocaleString('ko-KR')} ({isUp ? '+' : ''}{changePct.toFixed(2)}%)
+          <span className={`text-[12px] font-bold tabular-nums ${changeColor}`}>
+            {changeArrow} {Math.abs(change).toLocaleString('ko-KR')} ({changeSign}{changePct.toFixed(2)}%)
           </span>
         </div>
       </div>
