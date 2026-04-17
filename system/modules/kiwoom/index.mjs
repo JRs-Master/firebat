@@ -232,10 +232,12 @@ const ACTION_MAP = {
 };
 
 /** OAuth 토큰 발급 (Vault 캐싱 — config.json tokenCache 기반) */
-async function getAccessToken(base, appKey, appSecret) {
+async function getAccessToken(base, appKey, appSecret, forceNew = false) {
   // Vault에서 캐시된 토큰 (sandbox가 만료 체크 후 env 주입)
-  const cached = process.env['KIWOOM_ACCESS_TOKEN'];
-  if (cached) return { token: cached, isNew: false };
+  if (!forceNew) {
+    const cached = process.env['KIWOOM_ACCESS_TOKEN'];
+    if (cached) return { token: cached, isNew: false };
+  }
 
   const resp = await fetch(`${base}/oauth2/token`, {
     method: 'POST',
@@ -940,13 +942,22 @@ process.stdin.on('end', async () => {
 
     const isMock = data.mock === true;
     const base = isMock ? BASE_MOCK : BASE_REAL;
-    const { token, isNew } = await getAccessToken(base, appKey, appSecret);
+    let { token, isNew } = await getAccessToken(base, appKey, appSecret);
 
     // 편의 액션 → apiId 변환, 또는 직접 apiId 사용
     const apiId = ACTION_MAP[action] || action;
     const params = buildParams(action, data);
 
-    const result = await callApi(base, token, apiId, params);
+    let result = await callApi(base, token, apiId, params);
+
+    // 토큰 무효 감지 (캐시된 토큰이 서버에서 무효화된 경우) — 강제 재발급 후 1회 재시도
+    const isTokenInvalid = result?.return_code === 3 || /Token이 유효하지 않습니다|token.*invalid/i.test(result?.return_msg || '');
+    if (isTokenInvalid && !isNew) {
+      const fresh = await getAccessToken(base, appKey, appSecret, true);
+      token = fresh.token;
+      isNew = true;
+      result = await callApi(base, token, apiId, params);
+    }
 
     const output = {
       success: true,
