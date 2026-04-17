@@ -108,9 +108,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const safeData = useMemo(() => fullData.slice(viewStart, viewEnd + 1), [fullData, viewStart, viewEnd]);
   const n = safeData.length;
 
-  // 줌/팬 내부 참조
-  const panRef = useRef<{ startX: number; startS: number; startE: number } | null>(null);
+  // 줌/팬 내부 참조 (isDragging: 임계값 넘어야 팬 시작 — 그 전까지는 툴팁)
+  const panRef = useRef<{ startX: number; startS: number; startE: number; isDragging: boolean } | null>(null);
   const pinchRef = useRef<{ startDist: number; startS: number; startE: number } | null>(null);
+  const PAN_THRESHOLD = 6;
 
   // 줌: 픽셀 X 위치 앵커로 범위 조정 (factor < 1 = 확대, > 1 = 축소)
   const zoomAround = useCallback((factor: number, clientX: number) => {
@@ -179,12 +180,11 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     return { xs, yPrice, yVol, candleW, minP: pMin, maxP: pMax, maxV, maLines };
   }, [safeData, n, indicators, plotW, plotH, padLeft, padTop, volPlotH]);
 
-  // 호버 → 인덱스 매핑 (viewData 내부)
-  const handlePointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+  // clientX → viewData 인덱스 매핑 (툴팁/호버용)
+  const updateHoverFromClientX = useCallback((clientX: number) => {
     if (!priceBoxRef.current || n === 0) return;
-    if (panRef.current) return; // 드래그 중에는 호버 스킵
     const rect = priceBoxRef.current.getBoundingClientRect();
-    const relX = e.clientX - rect.left;
+    const relX = clientX - rect.left;
     const svgX = (relX / rect.width) * W;
     const dataX = svgX - padLeft;
     const slots = n <= 1 ? 1 : (n - 1 + 2);
@@ -192,25 +192,33 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     setHoverIdx(Math.max(0, Math.min(n - 1, idx)));
   }, [n, plotW]);
 
+  const handlePointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (panRef.current?.isDragging) return; // 실제 팬 중에는 호버 스킵
+    updateHoverFromClientX(e.clientX);
+  }, [updateHoverFromClientX]);
+
   const handleLeave = useCallback(() => { setHoverIdx(null); }, []);
 
-  // PC: 마우스 드래그 팬
+  // PC: 마우스 드래그 팬 (임계값 초과 시 팬 시작)
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (fullN < 2) return;
-    panRef.current = { startX: e.clientX, startS: viewStart, startE: viewEnd };
-    setHoverIdx(null);
+    panRef.current = { startX: e.clientX, startS: viewStart, startE: viewEnd, isDragging: false };
   }, [viewStart, viewEnd, fullN]);
   const handleMouseMovePan = useCallback((e: React.MouseEvent) => {
     if (!panRef.current || !priceBoxRef.current) return;
+    const dx = e.clientX - panRef.current.startX;
+    if (!panRef.current.isDragging && Math.abs(dx) < PAN_THRESHOLD) return; // 아직 팬 아님
+    panRef.current.isDragging = true;
+    setHoverIdx(null);
     const rect = priceBoxRef.current.getBoundingClientRect();
     const range = panRef.current.startE - panRef.current.startS + 1;
-    const dxIdx = Math.round(-(e.clientX - panRef.current.startX) / rect.width * range);
+    const dxIdx = Math.round(-dx / rect.width * range);
     const newS = Math.max(0, Math.min(fullN - range, panRef.current.startS + dxIdx));
     if (newS !== viewStart) setView({ s: newS, e: newS + range - 1 });
   }, [viewStart, fullN]);
   const handleMouseUp = useCallback(() => { panRef.current = null; }, []);
 
-  // 모바일: 1손가락 팬 + 2손가락 핀치
+  // 모바일: 짧은 탭/드래그 = 툴팁, 긴 드래그 = 팬, 2손가락 = 핀치
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (fullN < 2) return;
     if (e.touches.length === 2) {
@@ -219,10 +227,11 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       panRef.current = null;
       setHoverIdx(null);
     } else if (e.touches.length === 1) {
-      panRef.current = { startX: e.touches[0].clientX, startS: viewStart, startE: viewEnd };
+      panRef.current = { startX: e.touches[0].clientX, startS: viewStart, startE: viewEnd, isDragging: false };
       pinchRef.current = null;
+      updateHoverFromClientX(e.touches[0].clientX); // 탭한 위치 툴팁 즉시 표시
     }
-  }, [viewStart, viewEnd, fullN]);
+  }, [viewStart, viewEnd, fullN, updateHoverFromClientX]);
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (!priceBoxRef.current) return;
     if (e.touches.length === 2 && pinchRef.current) {
@@ -238,13 +247,21 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       newS = Math.max(0, Math.min(fullN - newRange, newS));
       setView({ s: newS, e: newS + newRange - 1 });
     } else if (e.touches.length === 1 && panRef.current) {
+      const dx = e.touches[0].clientX - panRef.current.startX;
+      if (!panRef.current.isDragging && Math.abs(dx) < PAN_THRESHOLD) {
+        // 아직 드래그 임계값 미달 — 툴팁 위치 업데이트
+        updateHoverFromClientX(e.touches[0].clientX);
+        return;
+      }
+      panRef.current.isDragging = true;
+      setHoverIdx(null); // 팬 시작하면 툴팁 숨김
       const rect = priceBoxRef.current.getBoundingClientRect();
       const range = panRef.current.startE - panRef.current.startS + 1;
-      const dxIdx = Math.round(-(e.touches[0].clientX - panRef.current.startX) / rect.width * range);
+      const dxIdx = Math.round(-dx / rect.width * range);
       const newS = Math.max(0, Math.min(fullN - range, panRef.current.startS + dxIdx));
       if (newS !== viewStart) setView({ s: newS, e: newS + range - 1 });
     }
-  }, [viewStart, fullN]);
+  }, [viewStart, fullN, updateHoverFromClientX]);
   const handleTouchEnd = useCallback(() => { panRef.current = null; pinchRef.current = null; }, []);
 
   const priceTicks = useMemo(() => niceTicks(minP, maxP, 5), [minP, maxP]);
@@ -342,7 +359,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
-        style={{ touchAction: 'none' }}
+        style={{ touchAction: 'pan-y' }}
       >
         <svg viewBox={`0 0 ${W} ${priceH}`} className="w-full h-auto block" preserveAspectRatio="none" style={{ touchAction: 'pan-y' }}>
           {/* 가로 그리드 */}

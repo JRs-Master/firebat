@@ -222,10 +222,13 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                 : msg
             ));
           } else if (ev.event === 'step') {
-            const stepDone = ev.data.status !== 'start';
+            const stepStart = ev.data.status === 'start';
+            const stepDone = !stepStart;
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? { ...msg, planPending: false, executing: true, isThinking: true, streaming: false,
+                    // 도구 호출 시작 시 그때까지 스트리밍된 중간 턴 text 초기화 — 최종 턴 text만 남김
+                    content: stepStart ? '' : msg.content,
                     statusText: stepDone ? '결과 정리 중...' : (ev.data.description || msg.statusText),
                     steps: [...(msg.steps || []), ev.data] }
                 : msg
