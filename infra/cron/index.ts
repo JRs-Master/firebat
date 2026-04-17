@@ -17,6 +17,7 @@ interface CronJobRecord {
   endAt?: string;
   inputData?: Record<string, unknown>;
   pipeline?: PipelineStep[];
+  oneShot?: boolean;
   createdAt: string;
   mode: CronJobInfo['mode'];
 }
@@ -124,7 +125,7 @@ export class NodeCronAdapter implements ICronPort {
         return { success: false, error: `이미 등록된 잡 ID입니다: ${jobId}` };
       }
 
-      const { cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description } = opts;
+      const { cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description, oneShot } = opts;
 
       // 유효성 검사
       if (!cronTime && !runAt && delaySec == null) {
@@ -145,6 +146,7 @@ export class NodeCronAdapter implements ICronPort {
         cronTime, runAt, delaySec, startAt, endAt,
         ...(inputData !== undefined ? { inputData } : {}),
         ...(pipeline ? { pipeline } : {}),
+        ...(oneShot ? { oneShot } : {}),
         createdAt: now.toISOString(),
         mode: cronTime ? 'cron' : (runAt ? 'once' : 'delay'),
       };
@@ -244,7 +246,7 @@ export class NodeCronAdapter implements ICronPort {
         return;
       }
 
-      await this.fireTrigger(record.jobId, record.targetPath, 'CRON_SCHEDULER', record.inputData, record.pipeline, record.title);
+      await this.fireTrigger(record.jobId, record.targetPath, 'CRON_SCHEDULER', record.inputData, record.pipeline, record.title, record.oneShot);
     }, { timezone: this.timezone });
     this.cronTasks.set(record.jobId, task);
 
@@ -273,7 +275,7 @@ export class NodeCronAdapter implements ICronPort {
       this.timers.delete(record.jobId);
       this.records.delete(record.jobId);
       this.persist();
-      await this.fireTrigger(record.jobId, record.targetPath, 'SCHEDULED_ONCE', record.inputData, record.pipeline, record.title);
+      await this.fireTrigger(record.jobId, record.targetPath, 'SCHEDULED_ONCE', record.inputData, record.pipeline, record.title, record.oneShot);
     }, msUntilRun);
     this.timers.set(record.jobId, timer);
   }
@@ -282,13 +284,13 @@ export class NodeCronAdapter implements ICronPort {
     const timer = setTimeout(async () => {
       this.timers.delete(record.jobId);
       this.records.delete(record.jobId);
-      await this.fireTrigger(record.jobId, record.targetPath, 'DELAYED_RUN', record.inputData, record.pipeline, record.title);
+      await this.fireTrigger(record.jobId, record.targetPath, 'DELAYED_RUN', record.inputData, record.pipeline, record.title, record.oneShot);
     }, record.delaySec! * 1000);
     this.timers.set(record.jobId, timer);
   }
 
   /** 트리거 발화 — Core에 실행 위임, 결과를 로그에 기록 */
-  private async fireTrigger(jobId: string, targetPath: string, trigger: CronTriggerType, inputData?: Record<string, unknown>, pipeline?: PipelineStep[], title?: string): Promise<void> {
+  private async fireTrigger(jobId: string, targetPath: string, trigger: CronTriggerType, inputData?: Record<string, unknown>, pipeline?: PipelineStep[], title?: string, oneShot?: boolean): Promise<void> {
     if (!this.triggerCallback) {
       this.log?.error(`[Cron] 트리거 콜백 미등록 — 잡 실행 불가: ${jobId}`);
       return;
@@ -296,7 +298,7 @@ export class NodeCronAdapter implements ICronPort {
 
     this.log?.info(`[Cron] 트리거 발화: ${jobId} → ${targetPath || '(pipeline)'} (${trigger})`);
     try {
-      const result = await this.triggerCallback({ jobId, targetPath, trigger, inputData, pipeline });
+      const result = await this.triggerCallback({ jobId, targetPath, trigger, inputData, pipeline, oneShot });
       this.log?.[result.success ? 'info' : 'error'](`[Cron] 잡 ${result.success ? '완료' : '실패'}: ${jobId} (${result.durationMs}ms)${result.error ? ` — ${result.error}` : ''}`);
       this.appendLog({ jobId, targetPath, title, triggeredAt: new Date().toISOString(), success: result.success, durationMs: result.durationMs, error: result.error });
     } catch (e: any) {

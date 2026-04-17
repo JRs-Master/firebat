@@ -344,6 +344,8 @@ export interface CronScheduleOptions {
   pipeline?: PipelineStep[];
   title?: string;
   description?: string;
+  /** 첫 성공 시 자동 취소 (가격 알림 등 조건부 1회 패턴) */
+  oneShot?: boolean;
 }
 
 /** 크론 실행 로그 */
@@ -367,6 +369,7 @@ export interface CronTriggerInfo {
   trigger: CronTriggerType;
   inputData?: Record<string, unknown>;
   pipeline?: PipelineStep[];
+  oneShot?: boolean;
 }
 
 /** 크론 잡 실행 결과 — Core가 실행 후 반환 */

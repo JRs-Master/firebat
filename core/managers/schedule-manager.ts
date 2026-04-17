@@ -62,6 +62,7 @@ export class ScheduleManager {
     const start = Date.now();
     let success = false;
     let error: string | undefined;
+    let conditionMet = true; // CONDITION 스텝 결과 — 조건 미충족 시 false (oneShot 재시도 대기 표시)
 
     try {
       if (info.pipeline && info.pipeline.length > 0) {
@@ -70,6 +71,9 @@ export class ScheduleManager {
         const pipeResult = await this.core.runTask(info.pipeline);
         success = pipeResult.success;
         if (!pipeResult.success) error = pipeResult.error;
+        // CONDITION 단계에서 미충족이면 data.conditionMet === false
+        const d = pipeResult.data as { conditionMet?: boolean } | undefined;
+        if (d && d.conditionMet === false) conditionMet = false;
       } else if (info.targetPath.startsWith('/')) {
         // 페이지 URL → 알림 파일에 기록
         this.log.info(`[Cron] 잡 실행: ${info.jobId} → ${info.targetPath} (${info.trigger})`);
@@ -89,6 +93,13 @@ export class ScheduleManager {
 
     const durationMs = Date.now() - start;
     this.log[success ? 'info' : 'error'](`[Cron] 잡 ${success ? '완료' : '실패'}: ${info.jobId} (${durationMs}ms)${error ? ` — ${error}` : ''}`);
+
+    // oneShot: 조건 충족 + 전체 성공 시 자동 취소 (가격 알림 등 조건부 1회 패턴)
+    // CONDITION이 미충족이면 conditionMet=false로 폴링 계속
+    if (success && conditionMet && info.oneShot) {
+      this.log.info(`[Cron] oneShot 성공 → 자동 취소: ${info.jobId}`);
+      await this.cron.cancel(info.jobId);
+    }
 
     // SSE 이벤트
     eventBus.emit({ type: 'cron:complete', data: { jobId: info.jobId, success, durationMs, error } });

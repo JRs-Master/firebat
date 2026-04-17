@@ -103,15 +103,56 @@ export function CronPanel() {
   };
 
   const formatCron = (expr: string) => {
-    const parts = expr.split(' ');
-    if (parts.length === 5) {
-      const [min, hour, , , dow] = parts;
-      if (min !== '*' && hour !== '*' && dow === '*') return `매일 ${hour}:${min.padStart(2, '0')}`;
-      if (min !== '*' && hour !== '*') return `${hour}:${min.padStart(2, '0')}`;
-      if (min.startsWith('*/')) return `${min.slice(2)}분마다`;
-      if (hour.startsWith('*/')) return `${hour.slice(2)}시간마다`;
-    }
-    return expr;
+    const parts = expr.split(/\s+/);
+    if (parts.length !== 5) return expr;
+    const [min, hour, dom, mon, dow] = parts;
+
+    const DOW_KO = ['일', '월', '화', '수', '목', '금', '토'];
+    const dowLabel = (() => {
+      if (dow === '*') return '';
+      if (dow === '1-5') return '평일';
+      if (dow === '0,6' || dow === '6,0') return '주말';
+      if (/^\d$/.test(dow)) return DOW_KO[parseInt(dow)] + '요일';
+      if (/^\d+(,\d+)+$/.test(dow)) return dow.split(',').map(d => DOW_KO[parseInt(d)]).join('·') + '요일';
+      if (/^\d+-\d+$/.test(dow)) {
+        const [s, e] = dow.split('-').map(Number);
+        return `${DOW_KO[s]}~${DOW_KO[e]}요일`;
+      }
+      return '';
+    })();
+
+    const hourLabel = (() => {
+      if (hour === '*') return null;
+      if (/^\d+-\d+$/.test(hour)) {
+        const [s, e] = hour.split('-').map(Number);
+        return `${s}~${e}시`;
+      }
+      if (/^\*\/\d+$/.test(hour)) return `${hour.slice(2)}시간마다`;
+      if (/^\d+$/.test(hour)) return `${hour}시`;
+      return null;
+    })();
+
+    const minLabel = (() => {
+      if (min === '*') return '매분';
+      if (min === '0') return '정각';
+      if (/^\*\/\d+$/.test(min)) return `${min.slice(2)}분마다`;
+      if (/^\d+$/.test(min)) return `${min}분`;
+      return min + '분';
+    })();
+
+    const parts_out: string[] = [];
+    if (dowLabel) parts_out.push(dowLabel);
+    if (dom !== '*') parts_out.push(`${dom}일`);
+    if (mon !== '*') parts_out.push(`${mon}월`);
+
+    // 시·분 조합
+    if (hourLabel && min === '0') parts_out.push(hourLabel + ' 정각');
+    else if (hourLabel && /^\d+$/.test(min)) parts_out.push(`${hour}:${min.padStart(2, '0')}`);
+    else if (hourLabel && /^\*\/\d+$/.test(min)) parts_out.push(`${hourLabel} ${min.slice(2)}분마다`);
+    else if (hourLabel) parts_out.push(hourLabel);
+    else parts_out.push(minLabel);
+
+    return parts_out.join(' ') || expr;
   };
 
   const formatTime = (iso: string) => {
