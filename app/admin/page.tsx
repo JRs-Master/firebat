@@ -10,6 +10,7 @@ import { FileEditor } from './components/FileEditor';
 import { SettingsModal } from './components/SettingsModal';
 import { SystemModuleSettings } from './components/SystemModuleSettings';
 import { SecretInput } from './components/ChatWidgets';
+import StockChart from './chat-components/StockChart';
 import { useChat } from './hooks/useChat';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
 
@@ -411,11 +412,12 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
               {/* 인라인 블록 렌더링 — text/html 순서 보존 (Claude 스타일) */}
               {msg.data?.blocks && Array.isArray(msg.data.blocks) && msg.data.blocks.length > 0 ? (
                 <div className="flex flex-col gap-3">
-                  {msg.data.blocks.map((b: any, i: number) => (
-                    b.type === 'text'
-                      ? <div key={i} className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">{renderMarkdown(b.text)}</div>
-                      : <AutoResizeIframe key={i} src={b.htmlContent as string} initialHeight={b.htmlHeight} />
-                  ))}
+                  {msg.data.blocks.map((b: any, i: number) => {
+                    if (b.type === 'text') return <div key={i} className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">{renderMarkdown(b.text)}</div>;
+                    if (b.type === 'html') return <AutoResizeIframe key={i} src={b.htmlContent as string} initialHeight={b.htmlHeight} />;
+                    if (b.type === 'component' && b.name === 'StockChart') return <StockChart key={i} {...(b.props || {})} />;
+                    return null;
+                  })}
                 </div>
               ) : (
                 <>
