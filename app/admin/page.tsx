@@ -187,7 +187,7 @@ function AutoResizeIframe({ src, initialHeight }: { src: string; initialHeight?:
   const autoScript = `<script>(function(){var id=${JSON.stringify(idRef.current)};var peak=0;function measure(){var b=document.body;if(!b)return 0;return Math.max(b.scrollHeight,b.offsetHeight,Math.ceil(b.getBoundingClientRect().height));}function send(){var h=measure();if(h<=peak)return;peak=h;parent.postMessage({type:'iframe-resize',id:id,height:h},'*');}function attach(){if(!document.body)return;if(window.ResizeObserver)new ResizeObserver(send).observe(document.body);send();}if(document.body)attach();else document.addEventListener('DOMContentLoaded',attach);window.addEventListener('load',send);[100,500,1500,3000].forEach(function(t){setTimeout(send,t);});})();<\/script>`;
   const srcdoc = isFullDoc
     ? src.replace(/<\/head>/i, baseStyle + '</head>').replace(/<\/body>/i, autoScript + '</body>')
-    : `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${baseStyle}<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:8px;max-width:100vw}canvas,svg,img,table,div{max-width:100%!important;height:auto}</style></head><body>${src}${autoScript}</body></html>`;
+    : `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${baseStyle}<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:4px;max-width:100vw}img,table{max-width:100%!important;height:auto}canvas{max-width:100%}</style></head><body>${src}${autoScript}</body></html>`;
 
   useEffect(() => {
     const handler = (e: MessageEvent) => {
