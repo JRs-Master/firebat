@@ -119,10 +119,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     const pMin = minP - rangeP * 0.05;
     const pMax = maxP + rangeP * 0.05;
     const maxV = Math.max(...volumes, 1);
-    const xs = safeData.map((_, i) => padLeft + (n <= 1 ? 0 : (i / (n - 1)) * plotW));
+    // 차트 관례: 우측에 2일치 여백 (마지막 캔들이 끝에 붙지 않게)
+    const RIGHT_MARGIN_SLOTS = 2;
+    const slots = n <= 1 ? 1 : (n - 1 + RIGHT_MARGIN_SLOTS);
+    const xs = safeData.map((_, i) => padLeft + (n <= 1 ? 0 : (i / slots) * plotW));
     const yPrice = (p: number) => padTop + plotH - ((p - pMin) / (pMax - pMin)) * plotH;
     const yVol = (v: number) => 4 + volPlotH - (v / maxV) * volPlotH;
-    const candleW = n > 1 ? (plotW / (n - 1)) * 0.55 : 10;
+    const candleW = n > 1 ? (plotW / slots) * 0.55 : 10;
     const maLines = indicators.map(ind => {
       const period = parseInt(ind.replace('MA', ''), 10);
       const values = sma(closes, period);
@@ -140,7 +143,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     const relX = e.clientX - rect.left;
     const svgX = (relX / rect.width) * W;
     const dataX = svgX - padLeft;
-    const idx = Math.round((dataX / plotW) * (n - 1));
+    // 우측 여백 2슬롯 반영 (xs 계산과 동일)
+    const slots = n <= 1 ? 1 : (n - 1 + 2);
+    const idx = Math.round((dataX / plotW) * slots);
     setHoverIdx(Math.max(0, Math.min(n - 1, idx)));
   }, [n, plotW]);
 
