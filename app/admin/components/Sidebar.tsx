@@ -751,7 +751,7 @@ export function Sidebar({
           <div className="flex flex-col h-full">
             <div className="p-2 border-b border-slate-200/60">
               <button
-                onClick={() => { onNewConv(); if (isMobile) closeSidebar(); }}
+                onClick={() => { onNewConv(); closeSidebar(); }}
                 className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[12px] font-bold transition-colors shadow-sm"
               >
                 <Plus size={13} /> 새 대화
