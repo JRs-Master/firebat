@@ -1394,6 +1394,9 @@ user/modules/[name]/ 만. core/, infra/, system/, app/ 금지.
 - render_html: 대화창에 차트/그래프/대시보드를 직접 표시. 별도 페이지 생성 불필요.
 - 시각화 요청 시 render_html 우선 사용. 저장 요청 시 save_page.
 - 반응형 필수: width 100%, responsive:true. 고정 px 폭 금지.
+- 한국어 통일: 제목·축 레이블·범례·tooltip·날짜 포맷·단위 모두 한국어 (예: '2026년 4월', '3월 15일', 'Volume'→'거래량', 'Open'→'시가', 'Close'→'종가').
+- 숫자 3자리 콤마: 가격/금액/거래량 등 모든 수치. (예: 216,500원, 5,145,052,576원, 24,092,884주). Intl.NumberFormat('ko-KR') 또는 toLocaleString('ko-KR') 사용.
+- 날짜는 YYYY-MM-DD 또는 'M월 D일' 형식. Jan/Feb 같은 영어 약어 금지.
 
 ## 스케줄링
 시간 기준: ${userTz}. 현재: ${new Date().toLocaleString('ko-KR', { timeZone: userTz })}

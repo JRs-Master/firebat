@@ -202,7 +202,6 @@ function AutoResizeIframe({ src, initialHeight }: { src: string; initialHeight?:
     <iframe
       srcDoc={srcdoc}
       sandbox="allow-scripts"
-      scrolling="no"
       className="w-full border border-slate-200 rounded-xl bg-white block"
       style={{ height, maxWidth: '100%' }}
       title="Inline HTML"
