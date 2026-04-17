@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, useCallback } from 'react';
+import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 
 export type OhlcvBar = {
   date: string; // YYYY-MM-DD or YYYYMMDD
@@ -92,13 +92,52 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 유효 데이터만 + 오래된 → 최신 순서로 정렬 (API가 역순 반환 가능)
   // 모든 OHLCV 필드가 finite number여야 통과 (AI가 일부 필드 누락하는 경우 방어)
   const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
-  const safeData = useMemo(() => {
+  const fullData = useMemo(() => {
     const valid = data.filter(d =>
       d && isNum(d.open) && isNum(d.high) && isNum(d.low) && isNum(d.close) && isNum(d.volume)
     );
     return [...valid].sort((a, b) => normalizeDate(a.date).localeCompare(normalizeDate(b.date)));
   }, [data]);
+  const fullN = fullData.length;
+
+  // 뷰 윈도우 (팬/줌) — null이면 전체 보기
+  const [view, setView] = useState<{ s: number; e: number } | null>(null);
+  useEffect(() => { setView(null); /* 데이터 변경 시 뷰 리셋 */ }, [fullN]);
+  const viewStart = Math.max(0, Math.min(fullN - 1, view?.s ?? 0));
+  const viewEnd = Math.max(viewStart, Math.min(fullN - 1, view?.e ?? fullN - 1));
+  const safeData = useMemo(() => fullData.slice(viewStart, viewEnd + 1), [fullData, viewStart, viewEnd]);
   const n = safeData.length;
+
+  // 줌/팬 내부 참조
+  const panRef = useRef<{ startX: number; startS: number; startE: number } | null>(null);
+  const pinchRef = useRef<{ startDist: number; startS: number; startE: number } | null>(null);
+
+  // 줌: 픽셀 X 위치 앵커로 범위 조정 (factor < 1 = 확대, > 1 = 축소)
+  const zoomAround = useCallback((factor: number, clientX: number) => {
+    if (!priceBoxRef.current || fullN < 2) return;
+    const rect = priceBoxRef.current.getBoundingClientRect();
+    const relX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const curRange = viewEnd - viewStart + 1;
+    const anchorIdx = viewStart + relX * (curRange - 1);
+    const newRange = Math.max(5, Math.min(fullN, Math.round(curRange * factor)));
+    let newS = Math.round(anchorIdx - relX * (newRange - 1));
+    newS = Math.max(0, Math.min(fullN - newRange, newS));
+    setView({ s: newS, e: newS + newRange - 1 });
+  }, [viewStart, viewEnd, fullN]);
+
+  // PC 휠 줌 (preventDefault 필요 → native listener)
+  useEffect(() => {
+    const el = priceBoxRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (fullN < 2) return;
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 1.15 : 1 / 1.15;
+      zoomAround(factor, e.clientX);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [zoomAround, fullN]);
 
   // 차트 치수 (가변)
   const W = 720; // viewBox 기준 너비
@@ -140,39 +179,91 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     return { xs, yPrice, yVol, candleW, minP: pMin, maxP: pMax, maxV, maLines };
   }, [safeData, n, indicators, plotW, plotH, padLeft, padTop, volPlotH]);
 
-  // 호버 → 인덱스 매핑
+  // 호버 → 인덱스 매핑 (viewData 내부)
   const handlePointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!priceBoxRef.current || n === 0) return;
+    if (panRef.current) return; // 드래그 중에는 호버 스킵
     const rect = priceBoxRef.current.getBoundingClientRect();
     const relX = e.clientX - rect.left;
     const svgX = (relX / rect.width) * W;
     const dataX = svgX - padLeft;
-    // 우측 여백 2슬롯 반영 (xs 계산과 동일)
     const slots = n <= 1 ? 1 : (n - 1 + 2);
     const idx = Math.round((dataX / plotW) * slots);
     setHoverIdx(Math.max(0, Math.min(n - 1, idx)));
   }, [n, plotW]);
 
-  const handleLeave = useCallback(() => setHoverIdx(null), []);
+  const handleLeave = useCallback(() => { setHoverIdx(null); }, []);
+
+  // PC: 마우스 드래그 팬
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (fullN < 2) return;
+    panRef.current = { startX: e.clientX, startS: viewStart, startE: viewEnd };
+    setHoverIdx(null);
+  }, [viewStart, viewEnd, fullN]);
+  const handleMouseMovePan = useCallback((e: React.MouseEvent) => {
+    if (!panRef.current || !priceBoxRef.current) return;
+    const rect = priceBoxRef.current.getBoundingClientRect();
+    const range = panRef.current.startE - panRef.current.startS + 1;
+    const dxIdx = Math.round(-(e.clientX - panRef.current.startX) / rect.width * range);
+    const newS = Math.max(0, Math.min(fullN - range, panRef.current.startS + dxIdx));
+    if (newS !== viewStart) setView({ s: newS, e: newS + range - 1 });
+  }, [viewStart, fullN]);
+  const handleMouseUp = useCallback(() => { panRef.current = null; }, []);
+
+  // 모바일: 1손가락 팬 + 2손가락 핀치
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (fullN < 2) return;
+    if (e.touches.length === 2) {
+      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      pinchRef.current = { startDist: d, startS: viewStart, startE: viewEnd };
+      panRef.current = null;
+      setHoverIdx(null);
+    } else if (e.touches.length === 1) {
+      panRef.current = { startX: e.touches[0].clientX, startS: viewStart, startE: viewEnd };
+      pinchRef.current = null;
+    }
+  }, [viewStart, viewEnd, fullN]);
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!priceBoxRef.current) return;
+    if (e.touches.length === 2 && pinchRef.current) {
+      const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      const factor = pinchRef.current.startDist / Math.max(d, 1);
+      const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const rect = priceBoxRef.current.getBoundingClientRect();
+      const relX = Math.max(0, Math.min(1, (centerX - rect.left) / rect.width));
+      const startRange = pinchRef.current.startE - pinchRef.current.startS + 1;
+      const anchorIdx = pinchRef.current.startS + relX * (startRange - 1);
+      const newRange = Math.max(5, Math.min(fullN, Math.round(startRange * factor)));
+      let newS = Math.round(anchorIdx - relX * (newRange - 1));
+      newS = Math.max(0, Math.min(fullN - newRange, newS));
+      setView({ s: newS, e: newS + newRange - 1 });
+    } else if (e.touches.length === 1 && panRef.current) {
+      const rect = priceBoxRef.current.getBoundingClientRect();
+      const range = panRef.current.startE - panRef.current.startS + 1;
+      const dxIdx = Math.round(-(e.touches[0].clientX - panRef.current.startX) / rect.width * range);
+      const newS = Math.max(0, Math.min(fullN - range, panRef.current.startS + dxIdx));
+      if (newS !== viewStart) setView({ s: newS, e: newS + range - 1 });
+    }
+  }, [viewStart, fullN]);
+  const handleTouchEnd = useCallback(() => { panRef.current = null; pinchRef.current = null; }, []);
 
   const priceTicks = useMemo(() => niceTicks(minP, maxP, 5), [minP, maxP]);
   const volTicks = useMemo(() => niceTicks(0, maxV, 3).filter(t => t > 0), [maxV]);
 
-  const latest = safeData[n - 1];
-  const first = safeData[0];
-  const change = latest && first ? latest.close - first.close : 0;
-  const changePct = first ? (change / first.close) * 100 : 0;
+  // 헤더는 전체 데이터 기준 (가격), 기간/고가/저가는 가시 범위 기준
+  const latest = fullData[fullN - 1];
+  const viewFirst = safeData[0];
+  const viewLatest = safeData[n - 1];
+  const change = viewLatest && viewFirst ? viewLatest.close - viewFirst.close : 0;
+  const changePct = viewFirst ? (change / viewFirst.close) * 100 : 0;
   const isUp = change > 0;
   const isDown = change < 0;
-  // 3상태 색상
   const changeColor = isUp ? 'text-red-600' : isDown ? 'text-blue-600' : 'text-slate-400';
   const changeArrow = isUp ? '▲' : isDown ? '▼' : '–';
   const changeSign = isUp ? '+' : '';
-  // 기간 표시 — 시작/종료 같으면 단일 날짜
-  const firstDate = shortDate(safeData[0].date);
-  const lastDate = shortDate(latest.date);
+  const firstDate = shortDate(viewFirst.date);
+  const lastDate = shortDate(viewLatest.date);
   const periodLabel = firstDate === lastDate ? `${firstDate} · 1일` : `${firstDate} ~ ${lastDate} · ${n}일`;
-  // 제목 중복 방지
   const titleText = title && title.trim() && title.trim() !== symbol ? title : symbol;
   const showSymbolChip = titleText !== symbol;
   const periodHigh = Math.max(...safeData.map(d => d.high));
@@ -237,8 +328,22 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         </div>
       )}
 
-      {/* 가격 차트 */}
-      <div ref={priceBoxRef} className="relative select-none" onPointerMove={handlePointer} onPointerLeave={handleLeave}>
+      {/* 가격 차트 (드래그 팬 + 휠/핀치 줌) */}
+      <div
+        ref={priceBoxRef}
+        className="relative select-none cursor-grab active:cursor-grabbing"
+        onPointerMove={handlePointer}
+        onPointerLeave={handleLeave}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMovePan}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        style={{ touchAction: 'none' }}
+      >
         <svg viewBox={`0 0 ${W} ${priceH}`} className="w-full h-auto block" preserveAspectRatio="none" style={{ touchAction: 'pan-y' }}>
           {/* 가로 그리드 */}
           {priceTicks.map(t => {
@@ -300,13 +405,22 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             <line x1={hoverX} x2={hoverX} y1={padTop} y2={priceH - padBottom} stroke={FG} strokeWidth={1} strokeDasharray="2 2" opacity={0.35} />
           )}
 
-          {/* X축 라벨 (일부만) */}
+          {/* X축 라벨: 매월 첫 거래일 + 마지막 날짜 */}
           {(() => {
-            const labelCount = Math.min(5, n);
-            const step = Math.max(1, Math.floor((n - 1) / (labelCount - 1 || 1)));
             const indices: number[] = [];
-            for (let i = 0; i < n; i += step) indices.push(i);
-            if (indices[indices.length - 1] !== n - 1) indices.push(n - 1);
+            let prevMonth = '';
+            for (let i = 0; i < n; i++) {
+              const dn = normalizeDate(safeData[i].date);
+              const month = dn.slice(0, 7); // YYYY-MM
+              if (month !== prevMonth) { indices.push(i); prevMonth = month; }
+            }
+            const last = n - 1;
+            // 끝이 빠졌으면 추가. 끝과 직전 라벨이 너무 가까우면 직전 제거 (최소 간격 = 전체의 8%)
+            const minGap = Math.max(2, Math.floor(n * 0.08));
+            if (indices[indices.length - 1] !== last) {
+              if (indices.length > 0 && last - indices[indices.length - 1] < minGap) indices.pop();
+              indices.push(last);
+            }
             return indices.map(i => (
               <text key={'xl' + i} x={xs[i]} y={priceH - 6} fill={MUTED} fontSize="10" textAnchor="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{shortDate(safeData[i].date)}</text>
             ));
