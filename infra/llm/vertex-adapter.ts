@@ -1,7 +1,7 @@
 import { ILlmPort, LlmCallOpts, ChatMessage, LlmJsonResponse, ToolDefinition, ToolExchangeEntry, LlmToolResponse } from '../../core/ports';
 import { InfraResult } from '../../core/types';
 import { GoogleGenAI } from '@google/genai';
-import { DEFAULT_MODEL, DEFAULT_VERTEX_LOCATION, LLM_TIMEOUT_MS, LLM_TEMPERATURE_JSON, LLM_TEMPERATURE_TEXT } from '../config';
+import { DEFAULT_MODEL, LLM_TIMEOUT_MS, LLM_TEMPERATURE_JSON, LLM_TEMPERATURE_TEXT } from '../config';
 
 /** thinkingConfig — Gemini 3+: thinkingLevel (minimal/low/medium/high) */
 function buildThinkingConfig(level: string): Record<string, unknown> {
@@ -10,21 +10,17 @@ function buildThinkingConfig(level: string): Record<string, unknown> {
 }
 
 /**
- * Vertex AI 어댑터 (Google Cloud AI Platform)
+ * Gemini 어댑터 (Google AI Studio 직접 호출)
  *
  * - 싱글톤: API 키를 Vault에서 lazy 로드, 변경 시 자동 재초기화
  * - 요청별 모델 오버라이드: opts.model로 호출마다 다른 모델 사용 가능
  */
-export class VertexAiAdapter implements ILlmPort {
+export class GeminiAdapter implements ILlmPort {
   private ai: GoogleGenAI | null = null;
   private cachedApiKey: string | null = null;
-  private cachedLocation: string | null = null;
-  private cachedProject: string | null = null;
 
   constructor(
     private readonly resolveApiKey: () => string | null,
-    private readonly resolveProject: () => string | undefined,
-    private readonly resolveLocation: () => string,
     private readonly defaultModel: string = DEFAULT_MODEL,
   ) {}
 
@@ -32,20 +28,13 @@ export class VertexAiAdapter implements ILlmPort {
     return this.defaultModel;
   }
 
-  /** API 키/프로젝트/리전이 변경되면 클라이언트 재생성, 미설정이면 null */
+  /** API 키 변경 시 클라이언트 재생성, 미설정이면 null */
   private getClient(): GoogleGenAI | null {
     const apiKey = this.resolveApiKey();
     if (!apiKey) return null;
-    const project = this.resolveProject() ?? null;
-    const location = this.resolveLocation();
-    if (apiKey !== this.cachedApiKey || location !== this.cachedLocation || project !== this.cachedProject) {
-      // @google/genai 타입 정의가 vertexai 옵션을 포함하지 않아 타입 단언 필요
-      this.ai = project
-        ? new GoogleGenAI({ vertexai: true, project, location, apiKey } as Record<string, unknown> as ConstructorParameters<typeof GoogleGenAI>[0])
-        : new GoogleGenAI({ apiKey, vertexai: true } as Record<string, unknown> as ConstructorParameters<typeof GoogleGenAI>[0]);
+    if (apiKey !== this.cachedApiKey) {
+      this.ai = new GoogleGenAI({ apiKey });
       this.cachedApiKey = apiKey;
-      this.cachedLocation = location;
-      this.cachedProject = project;
     }
     return this.ai;
   }
@@ -61,7 +50,7 @@ export class VertexAiAdapter implements ILlmPort {
 
   async ask(prompt: string, systemPrompt?: string, history: ChatMessage[] = [], opts?: LlmCallOpts): Promise<InfraResult<LlmJsonResponse>> {
     const ai = this.getClient();
-    if (!ai) return { success: false, error: 'Vertex AI API 키가 누락되었습니다. 설정(톱니바퀴)에서 Vertex AI 키를 입력해주세요.' };
+    if (!ai) return { success: false, error: 'Gemini API 키가 누락되었습니다. 설정(톱니바퀴)에서 Gemini API 키를 입력해주세요.' };
 
     const model = opts?.model ?? this.defaultModel;
     try {
@@ -92,13 +81,13 @@ export class VertexAiAdapter implements ILlmPort {
         return { success: true, data: { thoughts: '', reply: text, actions: [], suggestions: [] } };
       }
     } catch (e: any) {
-      return { success: false, error: `[VertexAI] ask 실패: ${e.message}` };
+      return { success: false, error: `[Gemini] ask 실패: ${e.message}` };
     }
   }
 
   async askWithTools(prompt: string, systemPrompt: string, tools: ToolDefinition[], history: ChatMessage[] = [], toolExchanges: ToolExchangeEntry[] = [], opts?: LlmCallOpts): Promise<InfraResult<LlmToolResponse>> {
     const ai = this.getClient();
-    if (!ai) return { success: false, error: 'Vertex AI API 키가 누락되었습니다. 설정(톱니바퀴)에서 Vertex AI 키를 입력해주세요.' };
+    if (!ai) return { success: false, error: 'Gemini API 키가 누락되었습니다. 설정(톱니바퀴)에서 Gemini API 키를 입력해주세요.' };
 
     const model = opts?.model ?? this.defaultModel;
     try {
@@ -240,13 +229,13 @@ export class VertexAiAdapter implements ILlmPort {
         data: { text: textParts.join(''), toolCalls, rawModelParts },
       };
     } catch (e: any) {
-      return { success: false, error: `[VertexAI] askWithTools 실패: ${e.message}` };
+      return { success: false, error: `[Gemini] askWithTools 실패: ${e.message}` };
     }
   }
 
   async askText(prompt: string, systemPrompt?: string, opts?: LlmCallOpts): Promise<InfraResult<string>> {
     const ai = this.getClient();
-    if (!ai) return { success: false, error: 'Vertex AI API 키가 누락되었습니다. 설정(톱니바퀴)에서 Vertex AI 키를 입력해주세요.' };
+    if (!ai) return { success: false, error: 'Gemini API 키가 누락되었습니다. 설정(톱니바퀴)에서 Gemini API 키를 입력해주세요.' };
 
     const model = opts?.model ?? this.defaultModel;
     try {
@@ -264,7 +253,7 @@ export class VertexAiAdapter implements ILlmPort {
 
       return { success: true, data: response.text || '' };
     } catch (e: any) {
-      return { success: false, error: `[VertexAI] askText 실패: ${e.message}` };
+      return { success: false, error: `[Gemini] askText 실패: ${e.message}` };
     }
   }
 }

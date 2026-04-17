@@ -23,10 +23,8 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
   const [userTimezone, setUserTimezone] = useState('Asia/Seoul');
   const [thinkingLevel, setThinkingLevel] = useState('low');
 
-  // Vertex AI
-  const [vertexApiKey, setVertexApiKey] = useState('');
-  const [vertexProject, setVertexProject] = useState('');
-  const [vertexLocation, setVertexLocation] = useState('asia-northeast3');
+  // Gemini
+  const [geminiApiKey, setGeminiApiKey] = useState('');
 
   // 관리자 계정 변경
   const [adminCurrentPw, setAdminCurrentPw] = useState('');
@@ -101,10 +99,8 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
     // Vault 키
     fetch('/api/vault').then(r => r.json()).then(data => {
-      if (data.success && data.keys) {
-        if (data.keys.vertex_api_key?.hasKey) setVertexApiKey(data.keys.vertex_api_key.maskedKey);
-        if (data.keys.vertex_project?.hasKey) setVertexProject(data.keys.vertex_project.maskedKey);
-        if (data.keys.vertex_location?.hasKey) setVertexLocation(data.keys.vertex_location.maskedKey);
+      if (data.success && data.keys?.gemini_api_key?.hasKey) {
+        setGeminiApiKey(data.keys.gemini_api_key.maskedKey);
       }
     }).catch(() => {});
   }, []);
@@ -354,19 +350,12 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
       body: JSON.stringify({ timezone: userTimezone, aiModel, aiThinkingLevel: thinkingLevel }),
     }).catch(() => {});
 
-    const vertexSaves = [
-      { key: 'vertex_api_key', val: vertexApiKey },
-      { key: 'vertex_project', val: vertexProject },
-      { key: 'vertex_location', val: vertexLocation },
-    ];
-    for (const { key, val } of vertexSaves) {
-      if (val && !val.includes('...') && val !== '***') {
-        await fetch('/api/vault', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ provider: key, apiKey: val }),
-        }).catch(() => {});
-      }
+    if (geminiApiKey && !geminiApiKey.includes('...') && geminiApiKey !== '***') {
+      await fetch('/api/vault', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: geminiApiKey }),
+      }).catch(() => {});
     }
 
     if (adminCurrentPw && (adminNewId.trim() || adminNewPw.trim())) {
@@ -549,45 +538,18 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
           {settingsTab === 'secrets' && (
             <>
-              {/* Vertex AI */}
+              {/* Gemini */}
               <div className="flex flex-col gap-2">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">Vertex AI</label>
+                <label className="text-xs sm:text-sm font-bold text-slate-700">Gemini</label>
                 <input
                   type="password"
-                  value={vertexApiKey}
-                  onChange={e => setVertexApiKey(e.target.value)}
-                  placeholder="Vertex AI API Key"
+                  value={geminiApiKey}
+                  onChange={e => setGeminiApiKey(e.target.value)}
+                  placeholder="Gemini API Key"
                   className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
-                <input
-                  type="text"
-                  value={vertexProject}
-                  onChange={e => setVertexProject(e.target.value)}
-                  placeholder="GCP Project ID"
-                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-                <select
-                  value={vertexLocation}
-                  onChange={e => setVertexLocation(e.target.value)}
-                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
-                >
-                  <optgroup label="미국">
-                    <option value="us-central1">us-central1 (아이오와)</option>
-                    <option value="us-east1">us-east1 (사우스캐롤라이나)</option>
-                    <option value="us-west1">us-west1 (오리건)</option>
-                  </optgroup>
-                  <optgroup label="아시아">
-                    <option value="asia-northeast1">asia-northeast1 (도쿄)</option>
-                    <option value="asia-northeast3">asia-northeast3 (서울)</option>
-                    <option value="asia-southeast1">asia-southeast1 (싱가포르)</option>
-                  </optgroup>
-                  <optgroup label="유럽">
-                    <option value="europe-west1">europe-west1 (벨기에)</option>
-                    <option value="europe-west4">europe-west4 (네덜란드)</option>
-                  </optgroup>
-                </select>
                 <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
-                  Express 모드에서는 Project ID 불필요
+                  Google AI Studio (aistudio.google.com) → API Keys
                 </p>
               </div>
 

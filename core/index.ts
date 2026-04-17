@@ -269,8 +269,8 @@ export class FirebatCore {
   getUserSecret(name: string) { return this.secret.getUser(name); }
   deleteUserSecret(name: string) { return this.secret.deleteUser(name); }
   async listUserModuleSecrets() { return this.secret.listModuleSecrets(); }
-  getVertexKey(key: string) { return this.secret.getSystem(key); }
-  setVertexKey(key: string, value: string) { return this.secret.setSystem(key, value); }
+  getGeminiKey(key: string) { return this.secret.getSystem(key); }
+  setGeminiKey(key: string, value: string) { return this.secret.setSystem(key, value); }
 
   // ══════════════════════════════════════════════════════════════════════════
   //  인증 → AuthManager

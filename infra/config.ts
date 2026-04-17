@@ -17,7 +17,6 @@ export const CRON_NOTIFY_FILE = path.resolve(DATA_DIR, 'cron-notify.json');
 
 // ── LLM ──────────────────────────────────────────────────────────────
 export const DEFAULT_MODEL = 'gemini-3-flash-preview';
-export const DEFAULT_VERTEX_LOCATION = 'asia-northeast3';
 export const LLM_TIMEOUT_MS = 120_000;
 export const LLM_TEMPERATURE_JSON = 0.2;    // JSON 응답 (ask)
 export const LLM_TEMPERATURE_TEXT = 0.3;    // 텍스트 응답 (askText)

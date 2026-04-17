@@ -2,13 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 
-// isDemo는 requireAuth의 auth.role로 확인
-
-const KEY_MAP: Record<string, string> = {
-  vertex_api_key:  'VERTEX_AI_API_KEY',
-  vertex_project:  'VERTEX_AI_PROJECT',
-  vertex_location: 'VERTEX_AI_LOCATION',
-};
+// Gemini API 키 (Vault 내부 키 이름은 GEMINI_API_KEY, 레거시 VERTEX_AI_API_KEY 폴백 지원)
+const GEMINI_KEY = 'GEMINI_API_KEY';
+const LEGACY_VERTEX_KEY = 'VERTEX_AI_API_KEY';
 
 function maskKey(key: string | null): { hasKey: boolean; maskedKey: string } {
   if (!key) return { hasKey: false, maskedKey: '' };
@@ -16,28 +12,20 @@ function maskKey(key: string | null): { hasKey: boolean; maskedKey: string } {
   return { hasKey: true, maskedKey: '***' };
 }
 
-const PLAIN_KEYS = new Set(['vertex_location', 'vertex_project']);
-
-// Vertex AI 키 현황 조회
+// Gemini 키 현황 조회
 export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
   try {
     const core = getCore();
-    const keys: Record<string, { hasKey: boolean; maskedKey: string }> = {};
-    for (const [alias, secretKey] of Object.entries(KEY_MAP)) {
-      const value = core.getVertexKey(secretKey);
-      keys[alias] = PLAIN_KEYS.has(alias)
-        ? { hasKey: !!value, maskedKey: value ?? '' }
-        : maskKey(value);
-    }
-    return NextResponse.json({ success: true, keys });
+    const value = core.getGeminiKey(GEMINI_KEY) || core.getGeminiKey(LEGACY_VERTEX_KEY);
+    return NextResponse.json({ success: true, keys: { gemini_api_key: maskKey(value) } });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
-// Vertex AI 키 저장
+// Gemini 키 저장
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
@@ -45,19 +33,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: '데모 모드에서는 설정을 변경할 수 없습니다.' }, { status: 403 });
   }
   try {
-    const { provider, apiKey } = await req.json();
-
+    const { apiKey } = await req.json();
     if (!apiKey) {
       return NextResponse.json({ success: false, error: 'apiKey field is required' }, { status: 400 });
     }
 
-    const secretKey = KEY_MAP[provider];
-    if (!secretKey) {
-      return NextResponse.json({ success: false, error: `Unknown key: ${provider}` }, { status: 400 });
-    }
-
     const core = getCore();
-    const saved = core.setVertexKey(secretKey, apiKey);
+    const saved = core.setGeminiKey(GEMINI_KEY, apiKey);
     return saved
       ? NextResponse.json({ success: true })
       : NextResponse.json({ success: false, error: 'Database save failed' }, { status: 500 });

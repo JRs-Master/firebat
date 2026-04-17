@@ -1,19 +1,15 @@
 import type { ILlmPort } from '../../core/ports';
-import { VertexAiAdapter } from './vertex-adapter';
+import { GeminiAdapter } from './vertex-adapter';
 
-/** Vertex AI Vault 키 이름 */
-export const VERTEX_VAULT_KEYS = {
-  apiKey:   'VERTEX_AI_API_KEY',
-  project:  'VERTEX_AI_PROJECT',
-  location: 'VERTEX_AI_LOCATION',
+/** Gemini Vault 키 이름 */
+export const GEMINI_VAULT_KEYS = {
+  apiKey: 'GEMINI_API_KEY',
 };
 
-/** Vertex AI 어댑터 생성 (싱글톤용 — lazy API 키 로드) */
-export function buildVertexAdapter(
+/** Gemini 어댑터 생성 (싱글톤용 — lazy API 키 로드) */
+export function buildGeminiAdapter(
   resolveApiKey: () => string | null,
   defaultModel: string,
-  resolveProject: () => string | undefined,
-  resolveLocation: () => string,
 ): ILlmPort {
-  return new VertexAiAdapter(resolveApiKey, resolveProject, resolveLocation, defaultModel);
+  return new GeminiAdapter(resolveApiKey, defaultModel);
 }

@@ -12,10 +12,10 @@ import { SqliteDatabaseAdapter } from './database';
 import { FetchNetworkAdapter } from './network';
 import { NodeCronAdapter } from './cron';
 import { vault } from './storage/vault-adapter';
-import { buildVertexAdapter, VERTEX_VAULT_KEYS } from './llm/factory';
+import { buildGeminiAdapter, GEMINI_VAULT_KEYS } from './llm/factory';
 import { McpClientAdapter } from './mcp-client';
 import { VaultAuthAdapter } from './auth';
-import { DB_PATH, DEFAULT_MODEL, DEFAULT_VERTEX_LOCATION } from './config';
+import { DB_PATH, DEFAULT_MODEL } from './config';
 
 /** 전체 인프라 싱글톤 */
 const globalForInfra = globalThis as unknown as { firebatInfra: FirebatInfraContainer | undefined };
@@ -41,12 +41,14 @@ export function getInfra(): FirebatInfraContainer {
     // MCP Client
     const mcpClient = new McpClientAdapter();
 
-    // LLM — lazy API 키 로드, 요청별 모델 오버라이드 지원
-    const llm = buildVertexAdapter(
-      () => vault.getSecret(VERTEX_VAULT_KEYS.apiKey) || process.env[VERTEX_VAULT_KEYS.apiKey] || null,
+    // LLM — lazy API 키 로드 (legacy VERTEX_AI_API_KEY 폴백)
+    const llm = buildGeminiAdapter(
+      () => vault.getSecret(GEMINI_VAULT_KEYS.apiKey)
+        || vault.getSecret('VERTEX_AI_API_KEY')
+        || process.env[GEMINI_VAULT_KEYS.apiKey]
+        || process.env['VERTEX_AI_API_KEY']
+        || null,
       DEFAULT_MODEL,
-      () => vault.getSecret(VERTEX_VAULT_KEYS.project) || process.env[VERTEX_VAULT_KEYS.project] || undefined,
-      () => vault.getSecret(VERTEX_VAULT_KEYS.location) || process.env[VERTEX_VAULT_KEYS.location] || DEFAULT_VERTEX_LOCATION,
     );
 
     globalForInfra.firebatInfra = {

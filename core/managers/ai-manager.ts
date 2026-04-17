@@ -48,80 +48,6 @@ export class AiManager {
     private readonly logger: ILogPort,
   ) {}
 
-  private trainingLog(entry: object): void {
-    this.logger.info(`[USER_AI_TRAINING] ${JSON.stringify(entry)}`);
-  }
-
-  /**
-   * Vertex AI 파인튜닝용 학습 데이터 기록 — Gemini contents 형식
-   * 전체 멀티턴(user→model functionCall→user functionResponse→...→model text) 저장
-   */
-  private trainingLogContents(
-    prompt: string,
-    toolExchanges: ToolExchangeEntry[],
-    finalReply: string,
-    history: ChatMessage[] = [],
-  ): void {
-    try {
-      const contents: Array<{ role: string; parts: unknown[] }> = [];
-
-      // 1. 대화 히스토리 (최근 4개만 — 파인튜닝에서는 컨텍스트 최소화)
-      const recent = history.slice(-4);
-      for (const h of recent) {
-        contents.push({
-          role: h.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: typeof h.content === 'string' ? h.content : JSON.stringify(h.content) }],
-        });
-      }
-
-      // 2. 사용자 프롬프트
-      contents.push({ role: 'user', parts: [{ text: prompt }] });
-
-      // 3. 멀티턴 도구 교환
-      for (const exchange of toolExchanges) {
-        // 모델의 도구 호출
-        const modelParts: unknown[] = [];
-        for (const tc of exchange.toolCalls) {
-          modelParts.push({ functionCall: { name: tc.name, args: tc.args } });
-        }
-        contents.push({ role: 'model', parts: modelParts });
-
-        // 도구 실행 결과 (응답 크기 제한 — 파인튜닝 토큰 비용 절감)
-        const responseParts: unknown[] = [];
-        for (const tr of exchange.toolResults) {
-          const trimmed = this.trimToolResult(tr.result);
-          responseParts.push({ functionResponse: { name: tr.name, response: trimmed } });
-        }
-        contents.push({ role: 'user', parts: responseParts });
-      }
-
-      // 4. 최종 텍스트 응답
-      if (finalReply) {
-        contents.push({ role: 'model', parts: [{ text: finalReply }] });
-      }
-
-      this.logger.info(`[USER_AI_TRAINING] ${JSON.stringify({ contents })}`);
-    } catch {
-      // 학습 로그 실패는 무시 — 서비스에 영향 없음
-    }
-  }
-
-  /** 도구 결과를 파인튜닝용으로 축소 (최대 2000자) */
-  private trimToolResult(result: Record<string, unknown>): Record<string, unknown> {
-    const str = JSON.stringify(result);
-    if (str.length <= 2000) return result;
-    // 큰 결과는 success/error + 요약만 보존
-    const trimmed: Record<string, unknown> = { success: result.success };
-    if (result.error) trimmed.error = (result.error as string).slice(0, 500);
-    if (result.content) trimmed.content = (result.content as string).slice(0, 1500);
-    if (result.items && Array.isArray(result.items)) trimmed.items = `[${result.items.length} items]`;
-    if (result.data) {
-      const dataStr = JSON.stringify(result.data);
-      trimmed.data = dataStr.length > 1500 ? dataStr.slice(0, 1500) + '...' : result.data;
-    }
-    return trimmed;
-  }
-
   private compressHistory(history: ChatMessage[]): { recentHistory: ChatMessage[]; contextSummary: string } {
     const WINDOW_SIZE = 8;
     if (history.length <= WINDOW_SIZE) return { recentHistory: history, contextSummary: '' };
@@ -270,7 +196,6 @@ export class AiManager {
     const executedActions: string[] = [];
     let lastError: string | null = null;
 
-    const timestamp = new Date().toISOString();
     const startTime = Date.now();
     const corrId = Math.random().toString(36).slice(2, 10);
     const modelId = llmOpts?.model ?? this.llm.getModelId();
@@ -505,19 +430,6 @@ export class AiManager {
 
       const totalMs = Date.now() - startTime;
       this.logger.info(`[AiManager] [${corrId}] [${modelId}] 완료 (${executedActions.length}개 액션, ${totalMs}ms)`);
-      this.trainingLog({
-        timestamp,
-        type: 'success',
-        corrId,
-        model: modelId,
-        durationMs: totalMs,
-        input: { promptPreview: prompt.slice(0, 200), historyLength: history.length },
-        output: {
-          thoughts: plan.thoughts,
-          actions: executedActions,
-          reply: finalReply.slice(0, 200),
-        },
-      });
       return {
         success: true,
         thoughts: plan.thoughts,
@@ -529,15 +441,6 @@ export class AiManager {
 
     const totalMs = Date.now() - startTime;
     this.logger.error(`[AiManager] [${corrId}] [${modelId}] 최종 실패 (${maxRetries}회 시도, ${totalMs}ms): ${lastError}`);
-    this.trainingLog({
-      timestamp,
-      type: 'failure',
-      corrId,
-      model: modelId,
-      durationMs: totalMs,
-      input: { promptPreview: prompt.slice(0, 200), historyLength: history.length },
-      output: { lastError },
-    });
     return {
       success: false,
       executedActions,
@@ -1002,32 +905,15 @@ SIMPLE (flash) if: specific, bounded, 1-3 tool calls expected.`;
     }
 
     let choice: 'flash' | 'pro' = 'flash';
-    let reasoning = '';
     try {
       const match = res.data.match(/\{[\s\S]*\}/);
       if (!match) throw new Error('JSON not found');
       const parsed = JSON.parse(match[0]) as { reasoning?: string; model_choice?: string };
       choice = parsed.model_choice === 'pro' ? 'pro' : 'flash';
-      reasoning = parsed.reasoning ?? '';
-      this.logger.info(`[AiManager] [${corrId}] Classifier (${ms}ms) → ${choice} | ${reasoning}`);
+      this.logger.info(`[AiManager] [${corrId}] Classifier (${ms}ms) → ${choice} | ${parsed.reasoning ?? ''}`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       this.logger.warn(`[AiManager] [${corrId}] Classifier 파싱 실패 (${ms}ms), flash로 폴백: ${msg}`);
-    }
-
-    // Training 로그 저장 — 나중에 Flash-Lite 라우터 파인튜닝용
-    try {
-      const modelResponse = JSON.stringify({ reasoning, model_choice: choice });
-      this.logger.info(`[USER_AI_TRAINING] ${JSON.stringify({
-        _task: 'classifier',
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [
-          { role: 'user', parts: [{ text: prompt }] },
-          { role: 'model', parts: [{ text: modelResponse }] },
-        ],
-      })}`);
-    } catch {
-      // 로그 실패 무시
     }
 
     return choice;
@@ -1051,7 +937,6 @@ SIMPLE (flash) if: specific, bounded, 1-3 tool calls expected.`;
     const thinkingLevel = this.core.getAiThinkingLevel();
     const corrId = Math.random().toString(36).slice(2, 10);
     const startTime = Date.now();
-    const timestamp = new Date().toISOString();
 
     // auto 모델 해석: 단순 대화는 flash-lite, 그 외는 classifier 호출
     let resolvedModel = opts?.model;
@@ -1161,8 +1046,6 @@ SIMPLE (flash) if: specific, bounded, 1-3 tool calls expected.`;
 
     const totalMs = Date.now() - startTime;
     this.logger.info(`[AiManager] [${corrId}] [${modelId}] Function Calling 완료 (${executedActions.length}개 도구, ${totalMs}ms)`);
-    // Vertex AI 파인튜닝용 학습 데이터 기록 (전체 멀티턴 contents)
-    this.trainingLogContents(prompt, toolExchanges, finalReply, recentHistory);
 
     return {
       success: true,
