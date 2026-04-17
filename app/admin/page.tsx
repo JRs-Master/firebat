@@ -11,6 +11,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { SystemModuleSettings } from './components/SystemModuleSettings';
 import { SecretInput } from './components/ChatWidgets';
 import StockChart from './chat-components/StockChart';
+import { ComponentRenderer } from '../(user)/[slug]/components';
 import { useChat } from './hooks/useChat';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
 
@@ -415,7 +416,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
                   {msg.data.blocks.map((b: any, i: number) => {
                     if (b.type === 'text') return <div key={i} className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">{renderMarkdown(b.text)}</div>;
                     if (b.type === 'html') return <AutoResizeIframe key={i} src={b.htmlContent as string} initialHeight={b.htmlHeight} />;
-                    if (b.type === 'component' && b.name === 'StockChart') return <StockChart key={i} {...(b.props || {})} />;
+                    if (b.type === 'component') return <ComponentRenderer key={i} components={[{ type: b.name, props: b.props || {} }]} />;
                     return null;
                   })}
                 </div>
