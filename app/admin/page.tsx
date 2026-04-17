@@ -378,38 +378,6 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
           {(!msg.isThinking || msg.streaming || msg.content) && (
             <div className="flex flex-col gap-5">
               {/* 확인 필요한 액션만 Plan 박스 표시 */}
-              {/* Pending Actions — 개별 승인 필요 도구 */}
-              {msg.pendingActions && msg.pendingActions.length > 0 && (
-                <div className="flex flex-col gap-2">
-                  {msg.pendingActions.map(p => (
-                    <div key={p.planId} className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
-                      <AlertTriangle size={15} className="text-amber-600 shrink-0" />
-                      <span className="flex-1 text-[13px] font-medium text-slate-700 truncate">{p.summary}</span>
-                      {p.status === 'approved' ? (
-                        <span className="text-[12px] font-bold text-emerald-600 px-2">✓ 실행됨</span>
-                      ) : p.status === 'rejected' ? (
-                        <span className="text-[12px] font-medium text-slate-400 px-2">취소됨</span>
-                      ) : (
-                        <>
-                          <button
-                            onClick={() => onApprovePending?.(msg.id, p.planId)}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold rounded-lg transition-colors shadow-sm"
-                          >
-                            <Check size={13} /> 승인
-                          </button>
-                          <button
-                            onClick={() => onRejectPending?.(msg.id, p.planId)}
-                            className="flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-500 text-[12px] font-bold rounded-lg border border-slate-200 transition-colors"
-                          >
-                            <X size={13} /> 거부
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
               {msg.planPending && msg.plan && msg.plan.actions.length > 0 && (
                 <div className="flex flex-col gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-5">
                   <div className="flex flex-col gap-2">
@@ -459,11 +427,6 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
                 ) : null;
               })()}
 
-              {/* 실행 완료된 액션 태그 — 에러 시 빨간색 + 클릭 펼침 */}
-              {msg.executedActions && msg.executedActions.length > 0 && !msg.plan && (
-                <ActionTags actions={msg.executedActions} steps={msg.steps} />
-              )}
-
               {/* 에러 — 접이식 태그 */}
               {msg.error && !msg.steps?.some(s => s.error) && (
                 <ErrorCollapsible error={msg.error} />
@@ -510,6 +473,43 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
                   </>
                 );
               })()}
+
+              {/* 실행 완료된 액션 태그 — 최하단 */}
+              {msg.executedActions && msg.executedActions.length > 0 && !msg.plan && (
+                <ActionTags actions={msg.executedActions} steps={msg.steps} />
+              )}
+
+              {/* Pending Actions — 승인 버튼, 도구 뱃지 밑 */}
+              {msg.pendingActions && msg.pendingActions.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {msg.pendingActions.map(p => (
+                    <div key={p.planId} className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                      <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                      <span className="flex-1 text-[13px] font-medium text-slate-700 truncate">{p.summary}</span>
+                      {p.status === 'approved' ? (
+                        <span className="text-[12px] font-bold text-emerald-600 px-2">✓ 실행됨</span>
+                      ) : p.status === 'rejected' ? (
+                        <span className="text-[12px] font-medium text-slate-400 px-2">취소됨</span>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => onApprovePending?.(msg.id, p.planId)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold rounded-lg transition-colors shadow-sm"
+                          >
+                            <Check size={13} /> 승인
+                          </button>
+                          <button
+                            onClick={() => onRejectPending?.(msg.id, p.planId)}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-500 text-[12px] font-bold rounded-lg border border-slate-200 transition-colors"
+                          >
+                            <X size={13} /> 거부
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>
