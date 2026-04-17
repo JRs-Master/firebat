@@ -109,7 +109,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const n = safeData.length;
 
   // 줌/팬 내부 참조 (isDragging: 임계값 넘어야 팬 시작 — 그 전까지는 툴팁)
-  const panRef = useRef<{ startX: number; startS: number; startE: number; isDragging: boolean } | null>(null);
+  const panRef = useRef<{ startX: number; startY: number; startS: number; startE: number; isDragging: boolean } | null>(null);
   const pinchRef = useRef<{ startDist: number; startS: number; startE: number } | null>(null);
   const PAN_THRESHOLD = 6;
 
@@ -202,7 +202,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // PC: 마우스 드래그 팬 (임계값 초과 시 팬 시작)
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (fullN < 2) return;
-    panRef.current = { startX: e.clientX, startS: viewStart, startE: viewEnd, isDragging: false };
+    panRef.current = { startX: e.clientX, startY: e.clientY, startS: viewStart, startE: viewEnd, isDragging: false };
   }, [viewStart, viewEnd, fullN]);
   const handleMouseMovePan = useCallback((e: React.MouseEvent) => {
     if (!panRef.current || !priceBoxRef.current) return;
@@ -218,7 +218,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   }, [viewStart, fullN]);
   const handleMouseUp = useCallback(() => { panRef.current = null; }, []);
 
-  // 모바일: 짧은 탭/드래그 = 툴팁, 긴 드래그 = 팬, 2손가락 = 핀치
+  // 모바일: 가로 드래그 중에만 툴팁, 긴 드래그 = 팬, 2손가락 = 핀치, 세로는 페이지 스크롤로 넘김
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (fullN < 2) return;
     if (e.touches.length === 2) {
@@ -227,11 +227,12 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       panRef.current = null;
       setHoverIdx(null);
     } else if (e.touches.length === 1) {
-      panRef.current = { startX: e.touches[0].clientX, startS: viewStart, startE: viewEnd, isDragging: false };
+      // startY도 기록해 세로/가로 의도 판별
+      panRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, startS: viewStart, startE: viewEnd, isDragging: false };
       pinchRef.current = null;
-      updateHoverFromClientX(e.touches[0].clientX); // 탭한 위치 툴팁 즉시 표시
+      // 터치하자마자 툴팁 표시 X — 의도 판별(가로 vs 세로) 후 결정
     }
-  }, [viewStart, viewEnd, fullN, updateHoverFromClientX]);
+  }, [viewStart, viewEnd, fullN]);
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (!priceBoxRef.current) return;
     if (e.touches.length === 2 && pinchRef.current) {
@@ -248,13 +249,18 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       setView({ s: newS, e: newS + newRange - 1 });
     } else if (e.touches.length === 1 && panRef.current) {
       const dx = e.touches[0].clientX - panRef.current.startX;
-      if (!panRef.current.isDragging && Math.abs(dx) < PAN_THRESHOLD) {
-        // 아직 드래그 임계값 미달 — 툴팁 위치 업데이트
+      const dy = e.touches[0].clientY - panRef.current.startY;
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+      // 세로 의도: touchAction:pan-y 덕에 브라우저가 페이지 스크롤 — 툴팁/팬 모두 스킵
+      if (absDy > absDx + 2) return;
+      if (!panRef.current.isDragging && absDx < PAN_THRESHOLD) {
+        // 가로로 약간 움직임 → 툴팁 표시 (짧은 제스처)
         updateHoverFromClientX(e.touches[0].clientX);
         return;
       }
       panRef.current.isDragging = true;
-      setHoverIdx(null); // 팬 시작하면 툴팁 숨김
+      setHoverIdx(null);
       const rect = priceBoxRef.current.getBoundingClientRect();
       const range = panRef.current.startE - panRef.current.startS + 1;
       const dxIdx = Math.round(-dx / rect.width * range);

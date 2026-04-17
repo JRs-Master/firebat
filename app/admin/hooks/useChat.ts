@@ -36,6 +36,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
+  // chunk-flow 애니메이션 관리 (도구 사용 흐름에서 최종 text가 흐르듯 등장)
+  const chunkAnimRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cancelChunkAnim = () => {
+    if (chunkAnimRef.current) { clearInterval(chunkAnimRef.current); chunkAnimRef.current = null; }
+  };
 
   // ── 초기화: 대화 목록 복원 ─────────────────────────────────────────────────
   useEffect(() => {
@@ -227,27 +232,81 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? { ...msg, planPending: false, executing: true, isThinking: true, streaming: false,
-                    // 도구 호출 시작 시 그때까지 스트리밍된 중간 턴 text 초기화 — 최종 턴 text만 남김
-                    content: stepStart ? '' : msg.content,
                     statusText: stepDone ? '결과 정리 중...' : (ev.data.description || msg.statusText),
                     steps: [...(msg.steps || []), ev.data] }
                 : msg
             ));
           } else if (ev.event === 'result') {
             const pendingActions = ev.data.data?.pendingActions as { planId: string; name: string; summary: string; args?: any }[] | undefined;
-            setMessages(prev => prev.map(msg =>
-              msg.id === `s-${id}`
-                ? {
-                    ...msg, isThinking: false, executing: false, streaming: false, statusText: undefined, thinkingText: msg.thinkingText ? '답변 완료' : undefined, thoughts: ev.data.thoughts,
-                    content: ev.data.reply || msg.content || (ev.data.error ? '' : '실행이 완료되었습니다.'),
-                    executedActions: ev.data.executedActions || [], data: ev.data.data, error: ev.data.error, planPending: false,
-                    suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
-                    pendingActions: pendingActions?.map(p => ({ ...p, status: 'pending' as const })),
+            const hadExecutedActions = !!ev.data.executedActions?.length;
+            const fullReply: string = ev.data.reply || (ev.data.error ? '' : '실행이 완료되었습니다.');
+            const blocksData = ev.data.data?.blocks as Array<{ type: string; text?: string }> | undefined;
+            const hasBlocks = Array.isArray(blocksData) && blocksData.length > 0;
+            // 도구 실행이 있었던 경우만 chunk-flow — Fast Path(도구 0개)는 이미 실시간 스트리밍됐으므로 즉시 세팅
+            const shouldAnimate = !!fullReply && !ev.data.error && hadExecutedActions;
+
+            cancelChunkAnim();
+
+            if (shouldAnimate) {
+              // 최종 text block을 찾아 animatedTextIdx 결정 — 있으면 blocks 내부를 animate, 없으면 content를 animate
+              const lastTextIdx = hasBlocks ? (() => {
+                for (let i = blocksData!.length - 1; i >= 0; i--) if (blocksData![i].type === 'text') return i;
+                return -1;
+              })() : -1;
+              // 초기 상태: 텍스트 빈 상태로 세팅
+              setMessages(prev => prev.map(msg => {
+                if (msg.id !== `s-${id}`) return msg;
+                let newBlocks = blocksData;
+                if (hasBlocks && lastTextIdx >= 0) {
+                  newBlocks = blocksData!.map((b, i) => i === lastTextIdx ? { ...b, text: '' } : b);
+                }
+                return {
+                  ...msg, isThinking: false, executing: false, streaming: false, statusText: undefined,
+                  thinkingText: msg.thinkingText ? '답변 완료' : undefined, thoughts: ev.data.thoughts,
+                  content: lastTextIdx >= 0 ? msg.content : '', // blocks 쓰면 msg.content 건들지 않음
+                  executedActions: ev.data.executedActions || [],
+                  data: hasBlocks ? { ...ev.data.data, blocks: newBlocks } : ev.data.data,
+                  error: ev.data.error, planPending: false,
+                  suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
+                  pendingActions: pendingActions?.map(p => ({ ...p, status: 'pending' as const })),
+                };
+              }));
+              // 청크 단위 점진 append (50자 / 25ms → ~2000자/초)
+              const CHUNK = 50;
+              const TICK = 25;
+              let pos = 0;
+              chunkAnimRef.current = setInterval(() => {
+                pos = Math.min(pos + CHUNK, fullReply.length);
+                const partial = fullReply.slice(0, pos);
+                setMessages(prev => prev.map(msg => {
+                  if (msg.id !== `s-${id}`) return msg;
+                  if (hasBlocks && lastTextIdx >= 0 && msg.data && Array.isArray((msg.data as any).blocks)) {
+                    const blocks = ((msg.data as any).blocks as any[]).slice();
+                    blocks[lastTextIdx] = { ...blocks[lastTextIdx], text: partial };
+                    return { ...msg, data: { ...(msg.data as any), blocks } };
                   }
-                : msg
-            ));
-            if (ev.data.executedActions?.length) { onRefresh(); window.dispatchEvent(new Event('firebat-refresh')); }
+                  return { ...msg, content: partial };
+                }));
+                if (pos >= fullReply.length) cancelChunkAnim();
+              }, TICK);
+            } else {
+              // 즉시 세팅 (Fast Path 또는 에러)
+              setMessages(prev => prev.map(msg =>
+                msg.id === `s-${id}`
+                  ? {
+                      ...msg, isThinking: false, executing: false, streaming: false, statusText: undefined,
+                      thinkingText: msg.thinkingText ? '답변 완료' : undefined, thoughts: ev.data.thoughts,
+                      content: fullReply || msg.content,
+                      executedActions: ev.data.executedActions || [], data: ev.data.data, error: ev.data.error, planPending: false,
+                      suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
+                      pendingActions: pendingActions?.map(p => ({ ...p, status: 'pending' as const })),
+                    }
+                  : msg
+              ));
+            }
+            if (hadExecutedActions) { onRefresh(); window.dispatchEvent(new Event('firebat-refresh')); }
           } else if (ev.event === 'error') {
+            cancelChunkAnim();
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? { ...msg, isThinking: false, executing: false, error: ev.data.error, content: msg.content || '' }
