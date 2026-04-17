@@ -530,11 +530,19 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
           )}
         </div>
         {/* 복사 버튼 — 버블 바깥 우측 하단 */}
-        {msg.content && !msg.isThinking && (
-          <div className="flex justify-end pr-1">
-            <CopyButton text={msg.content} />
-          </div>
-        )}
+        {(msg.content || (msg.data?.blocks && msg.data.blocks.length > 0)) && !msg.isThinking && (() => {
+          // 전체 텍스트 수집: blocks 있으면 blocks의 text만 합침, 없으면 content
+          let full = '';
+          if (msg.data?.blocks && Array.isArray(msg.data.blocks)) {
+            full = msg.data.blocks.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n\n');
+          }
+          if (!full && msg.content) full = msg.content;
+          return full ? (
+            <div className="flex justify-end pr-1">
+              <CopyButton text={full} />
+            </div>
+          ) : null;
+        })()}
       </div>
     </div>
   );
