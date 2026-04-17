@@ -445,6 +445,20 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
                 </div>
               )}
 
+              {/* 인라인 HTML 렌더링 (차트/그래프 등) — 답변 바로 아래 */}
+              {msg.data && (() => {
+                const dataObj = msg.data as any;
+                const raw = dataObj?.htmlItems ?? (Array.isArray(dataObj) ? dataObj : [dataObj]);
+                const htmlItems = raw.filter((d: any) => d && 'htmlContent' in d);
+                return htmlItems.length > 0 ? (
+                  <div className="space-y-3 mt-2">
+                    {htmlItems.map((h: any, i: number) => (
+                      <AutoResizeIframe key={i} src={h.htmlContent as string} initialHeight={h.htmlHeight} />
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+
               {/* 실행 완료된 액션 태그 — 에러 시 빨간색 + 클릭 펼침 */}
               {msg.executedActions && msg.executedActions.length > 0 && !msg.plan && (
                 <ActionTags actions={msg.executedActions} steps={msg.steps} />
@@ -472,20 +486,6 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
                     ))}
                   </div>
                 );
-              })()}
-
-              {/* 인라인 HTML 렌더링 (차트/그래프 등) */}
-              {msg.data && (() => {
-                const dataObj = msg.data as any;
-                const raw = dataObj?.htmlItems ?? (Array.isArray(dataObj) ? dataObj : [dataObj]);
-                const htmlItems = raw.filter((d: any) => d && 'htmlContent' in d);
-                return htmlItems.length > 0 ? (
-                  <div className="space-y-3 mt-2">
-                    {htmlItems.map((h: any, i: number) => (
-                      <AutoResizeIframe key={i} src={h.htmlContent as string} initialHeight={h.htmlHeight} />
-                    ))}
-                  </div>
-                ) : null;
               })()}
 
               {/* 데이터 + 미리보기 링크 */}
