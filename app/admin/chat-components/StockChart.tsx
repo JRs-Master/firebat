@@ -89,8 +89,11 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const priceBoxRef = useRef<HTMLDivElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
-  // 유효 데이터만
-  const safeData = useMemo(() => data.filter(d => d && typeof d.close === 'number'), [data]);
+  // 유효 데이터만 + 오래된 → 최신 순서로 정렬 (API가 역순 반환 가능)
+  const safeData = useMemo(() => {
+    const valid = data.filter(d => d && typeof d.close === 'number');
+    return [...valid].sort((a, b) => normalizeDate(a.date).localeCompare(normalizeDate(b.date)));
+  }, [data]);
   const n = safeData.length;
 
   // 차트 치수 (가변)
