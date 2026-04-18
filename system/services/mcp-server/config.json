@@ -1,7 +1,0 @@
-{
-  "name": "mcp-server",
-  "type": "service",
-  "scope": "system",
-  "version": "1.0.0",
-  "description": "Firebat MCP 서버 (외부 AI 도구 연동, 토큰 인증)"
-}

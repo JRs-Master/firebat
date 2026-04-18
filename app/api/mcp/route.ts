@@ -32,8 +32,20 @@ function unauthorizedResponse() {
   );
 }
 
+function serviceDisabledResponse() {
+  return new Response(
+    JSON.stringify({ error: 'Firebat MCP 서버(앱 개발용)가 비활성화되어 있습니다. 사이드바 > SYSTEM > 서비스 > mcp-server-app에서 활성화하세요.' }),
+    { status: 503, headers: { 'Content-Type': 'application/json' } },
+  );
+}
+
+function checkServiceEnabled(): boolean {
+  return getCore().isModuleEnabled('mcp-server-app');
+}
+
 /** POST /api/mcp — JSON-RPC 요청 처리 (초기화 + 일반 메시지) */
 export async function POST(req: NextRequest) {
+  if (!checkServiceEnabled()) return serviceDisabledResponse();
   if (!validateBearerToken(req)) return unauthorizedResponse();
 
   const sessionId = req.headers.get('mcp-session-id');
@@ -64,6 +76,7 @@ export async function POST(req: NextRequest) {
 
 /** GET /api/mcp — SSE 스트림 (서버→클라이언트 알림용) */
 export async function GET(req: NextRequest) {
+  if (!checkServiceEnabled()) return serviceDisabledResponse();
   if (!validateBearerToken(req)) return unauthorizedResponse();
 
   const sessionId = req.headers.get('mcp-session-id');
@@ -80,6 +93,7 @@ export async function GET(req: NextRequest) {
 
 /** DELETE /api/mcp — 세션 종료 */
 export async function DELETE(req: NextRequest) {
+  if (!checkServiceEnabled()) return serviceDisabledResponse();
   if (!validateBearerToken(req)) return unauthorizedResponse();
 
   const sessionId = req.headers.get('mcp-session-id');

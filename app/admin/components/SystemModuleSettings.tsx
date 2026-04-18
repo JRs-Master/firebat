@@ -49,8 +49,11 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '30000', description: '마크다운 결과 최대 글자 수', defaultValue: 30000 },
     ],
   },
-  'mcp-server': {
-    fields: [],  // 커스텀 렌더링 (토큰 관리 + JSON 설정)
+  'mcp-server-app': {
+    fields: [],  // 커스텀 렌더링 (앱 개발용 — Claude Code, Cursor, VS Code)
+  },
+  'mcp-server-llm': {
+    fields: [],  // 커스텀 렌더링 (LLM 통신용 — OpenAI Responses API, Claude API)
   },
   'seo': {
     fields: [
@@ -224,29 +227,45 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
   const [mcpJsonTab, setMcpJsonTab] = useState<'api' | 'stdio'>('api');
   const [mcpJsonCopied, setMcpJsonCopied] = useState(false);
 
+  // 서비스별 엔드포인트 매핑 (app=외부용, llm=내부용)
+  const isMcpApp = moduleName === 'mcp-server-app';
+  const isMcpLlm = moduleName === 'mcp-server-llm';
+  const mcpTokenEndpoint = isMcpLlm ? '/api/mcp-internal/token' : '/api/mcp/tokens';
+  const mcpServerPath = isMcpLlm ? '/api/mcp-internal' : '/api/mcp';
+
   useEffect(() => {
-    if (moduleName !== 'mcp-server') return;
-    fetch('/api/mcp/tokens').then(r => r.json()).then(data => {
-      if (data.success) setMcpTokenInfo({ exists: data.exists, hint: data.hint, createdAt: data.createdAt });
+    if (!isMcpApp && !isMcpLlm) return;
+    fetch(mcpTokenEndpoint).then(r => r.json()).then(data => {
+      if (data.success) {
+        if (isMcpLlm) {
+          // /api/mcp-internal/token 응답 형식: { token: {hasToken, masked}, createdAt }
+          setMcpTokenInfo({ exists: data.token?.hasToken ?? false, hint: data.token?.masked ?? null, createdAt: data.createdAt ?? null });
+        } else {
+          setMcpTokenInfo({ exists: data.exists, hint: data.hint, createdAt: data.createdAt });
+        }
+      }
     }).catch(() => {});
-  }, [moduleName]);
+  }, [moduleName, isMcpApp, isMcpLlm, mcpTokenEndpoint]);
 
   const generateMcpToken = async () => {
     if (mcpTokenInfo.exists && !confirm('기존 토큰이 무효화됩니다. 새 토큰을 생성하시겠습니까?')) return;
     setMcpTokenLoading(true);
     try {
-      const res = await fetch('/api/mcp/tokens', { method: 'POST' });
+      const res = await fetch(mcpTokenEndpoint, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         setMcpTokenRaw(data.token);
-        setMcpTokenInfo({ exists: true, hint: data.hint, createdAt: data.createdAt });
+        const hint = isMcpLlm
+          ? `${(data.token as string).slice(0, 8)}****${(data.token as string).slice(-4)}`
+          : data.hint;
+        setMcpTokenInfo({ exists: true, hint, createdAt: data.createdAt });
       }
     } catch {} finally { setMcpTokenLoading(false); }
   };
 
   const revokeMcpToken = async () => {
-    if (!confirm('토큰을 폐기하면 SSE(API) 연결이 즉시 차단됩니다. 계속하시겠습니까?')) return;
-    await fetch('/api/mcp/tokens', { method: 'DELETE' });
+    if (!confirm('토큰을 폐기하면 해당 연결이 즉시 차단됩니다. 계속하시겠습니까?')) return;
+    await fetch(mcpTokenEndpoint, { method: 'DELETE' });
     setMcpTokenInfo({ exists: false, hint: null, createdAt: null });
     setMcpTokenRaw(null);
   };
@@ -257,23 +276,25 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // ── MCP 서버 커스텀 렌더링 ─────────────────────────────────────────────────
-  if (moduleName === 'mcp-server') {
+  // ── MCP 서버 커스텀 렌더링 (앱 개발용 / LLM 통신용 공용) ─────────────────────
+  if (isMcpApp || isMcpLlm) {
+    const titleText = isMcpLlm ? 'Firebat MCP 서버 (LLM 통신용)' : 'Firebat MCP 서버 (앱 개발용)';
+    const descText = isMcpLlm
+      ? 'OpenAI Responses API (hosted MCP), Claude API 등 외부 LLM이 Firebat의 전체 도구 세트에 접근할 때 사용합니다.'
+      : '외부 AI 도구(Claude Code, Cursor, VS Code 등)에서 이 파이어뱃 서버에 연결할 수 있습니다.';
     return (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
         <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
             <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
               {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors mr-1"><ArrowLeft size={18} /></button>}
-              <Server size={18} className="text-emerald-500" /> Firebat MCP 서버
+              <Server size={18} className={isMcpLlm ? 'text-purple-500' : 'text-emerald-500'} /> {titleText}
             </h2>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
           </div>
 
           <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-scroll flex-1 min-h-0">
-            <p className="text-[11px] sm:text-[12px] text-slate-400">
-              외부 AI 도구(Claude Code, Cursor, VS Code 등)에서 이 파이어뱃 서버에 연결할 수 있습니다.
-            </p>
+            <p className="text-[11px] sm:text-[12px] text-slate-400">{descText}</p>
 
             {/* JSON 설정 보기 */}
             <div className="border border-slate-200 rounded-lg overflow-hidden">
@@ -284,20 +305,32 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
                 >
                   <Globe size={12} /> SSE (API)
                 </button>
-                <button
-                  onClick={() => { setMcpJsonTab('stdio'); setMcpJsonCopied(false); }}
-                  className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] sm:text-[12px] font-bold transition-colors ${mcpJsonTab === 'stdio' ? 'bg-green-50 text-green-700 border-b-2 border-green-500' : 'text-slate-400 hover:text-slate-600'}`}
-                >
-                  <Terminal size={12} /> stdio (SSH)
-                </button>
+                {isMcpApp && (
+                  <button
+                    onClick={() => { setMcpJsonTab('stdio'); setMcpJsonCopied(false); }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] sm:text-[12px] font-bold transition-colors ${mcpJsonTab === 'stdio' ? 'bg-green-50 text-green-700 border-b-2 border-green-500' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    <Terminal size={12} /> stdio (SSH)
+                  </button>
+                )}
               </div>
 
               {mcpJsonTab === 'api' && (() => {
-                const sseUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/mcp` : '/api/mcp';
+                const sseUrl = typeof window !== 'undefined' ? `${window.location.origin}${mcpServerPath}` : mcpServerPath;
                 const tokenValue = mcpTokenRaw || (mcpTokenInfo.exists ? '<생성된 토큰>' : '<토큰을 먼저 생성하세요>');
-                const jsonConfig = JSON.stringify({
-                  mcpServers: { firebat: { url: sseUrl, headers: { Authorization: `Bearer ${tokenValue}` } } },
-                }, null, 2);
+                const jsonConfig = isMcpLlm
+                  ? JSON.stringify({
+                      tools: [{
+                        type: 'mcp',
+                        server_label: 'firebat-internal',
+                        server_url: sseUrl,
+                        headers: { Authorization: `Bearer ${tokenValue}` },
+                        require_approval: 'never',
+                      }],
+                    }, null, 2)
+                  : JSON.stringify({
+                      mcpServers: { firebat: { url: sseUrl, headers: { Authorization: `Bearer ${tokenValue}` } } },
+                    }, null, 2);
                 return (
                   <div className="p-3 flex flex-col gap-3">
                     {/* 인증 토큰 */}
@@ -351,7 +384,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
 
                     {/* JSON 설정 */}
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] sm:text-[11px] text-slate-500">VS Code / Cursor MCP 설정에 아래 JSON을 추가하세요.</p>
+                      <p className="text-[10px] sm:text-[11px] text-slate-500">{isMcpLlm ? 'OpenAI Responses API의 tools에 아래 설정을 추가하세요 (Claude API도 동일 URL 사용).' : 'VS Code / Cursor MCP 설정에 아래 JSON을 추가하세요.'}</p>
                       <button onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)} className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors" title="복사">
                         {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
                       </button>

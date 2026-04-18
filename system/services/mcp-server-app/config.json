@@ -1,0 +1,7 @@
+{
+  "name": "mcp-server-app",
+  "type": "service",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "Firebat MCP 서버 (앱 개발용 — Claude Code, Cursor, VS Code 등 외부 AI 도구 연결)"
+}

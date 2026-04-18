@@ -24,12 +24,24 @@ function validateBearerToken(req: NextRequest): boolean {
 
 function unauthorizedResponse() {
   return new Response(
-    JSON.stringify({ error: 'Unauthorized — 내부 MCP 토큰 필요. 설정 > MCP > LLM 통신용 탭에서 생성.' }),
+    JSON.stringify({ error: 'Unauthorized — 내부 MCP 토큰 필요. 사이드바 > SYSTEM > 서비스 > mcp-server-llm에서 생성.' }),
     { status: 401, headers: { 'Content-Type': 'application/json' } },
   );
 }
 
+function serviceDisabledResponse() {
+  return new Response(
+    JSON.stringify({ error: 'Firebat MCP 서버(LLM 통신용)가 비활성화되어 있습니다. 사이드바 > SYSTEM > 서비스 > mcp-server-llm에서 활성화하세요.' }),
+    { status: 503, headers: { 'Content-Type': 'application/json' } },
+  );
+}
+
+function checkServiceEnabled(): boolean {
+  return getCore().isModuleEnabled('mcp-server-llm');
+}
+
 export async function POST(req: NextRequest) {
+  if (!checkServiceEnabled()) return serviceDisabledResponse();
   if (!validateBearerToken(req)) return unauthorizedResponse();
 
   const sessionId = req.headers.get('mcp-session-id');
@@ -52,6 +64,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  if (!checkServiceEnabled()) return serviceDisabledResponse();
   if (!validateBearerToken(req)) return unauthorizedResponse();
   const sessionId = req.headers.get('mcp-session-id');
   if (!sessionId || !sessions.has(sessionId)) {
@@ -64,6 +77,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  if (!checkServiceEnabled()) return serviceDisabledResponse();
   if (!validateBearerToken(req)) return unauthorizedResponse();
   const sessionId = req.headers.get('mcp-session-id');
   if (sessionId && sessions.has(sessionId)) {

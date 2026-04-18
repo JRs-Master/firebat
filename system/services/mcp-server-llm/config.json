@@ -1,0 +1,7 @@
+{
+  "name": "mcp-server-llm",
+  "type": "service",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "Firebat MCP 서버 (LLM 통신용 — OpenAI Responses API, Claude API 등 외부 LLM 연결)"
+}
