@@ -10,6 +10,8 @@ import { CapabilityManager } from './managers/capability-manager';
 import { TaskManager } from './managers/task-manager';
 import { AuthManager } from './managers/auth-manager';
 import type { ApiTokenInfo } from './managers/auth-manager';
+import { ConversationManager } from './managers/conversation-manager';
+import type { ConversationSummary, ConversationRecord } from './managers/conversation-manager';
 import type { FirebatInfraContainer, ILlmPort, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
 import type { InfraResult, FirebatPlan } from './types';
 import type { CapabilitySettings } from './capabilities';
@@ -45,6 +47,7 @@ export class FirebatCore {
   private readonly capability: CapabilityManager;
   private readonly task: TaskManager;
   private readonly authMgr: AuthManager;
+  private readonly conversation: ConversationManager;
 
   constructor(private readonly infra: FirebatInfraContainer) {
     // 매니저 생성 — 각 매니저는 자기 도메인의 인프라 포트를 직접 받음
@@ -56,6 +59,7 @@ export class FirebatCore {
     this.mcp = new McpManager(infra.mcpClient);
     this.capability = new CapabilityManager(infra.storage, infra.vault, infra.log);
     this.authMgr = new AuthManager(infra.auth, infra.vault);
+    this.conversation = new ConversationManager(infra.database);
 
     // 크로스 도메인 매니저 — Core 참조 필요
     this.task = new TaskManager(this, infra.llm, infra.log);
@@ -261,6 +265,17 @@ export class FirebatCore {
   getCronLogs(limit?: number) { return this.schedule.getLogs(limit); }
   clearCronLogs() { this.schedule.clearLogs(); }
   consumeCronNotifications() { return this.schedule.consumeNotifications(); }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  대화 히스토리 (admin 다기기 동기화) → ConversationManager
+  // ══════════════════════════════════════════════════════════════════════════
+
+  listConversations(owner: string) { return this.conversation.list(owner); }
+  getConversation(owner: string, id: string) { return this.conversation.get(owner, id); }
+  saveConversation(owner: string, id: string, title: string, messages: unknown[], createdAt?: number) {
+    return this.conversation.save(owner, id, title, messages, createdAt);
+  }
+  deleteConversation(owner: string, id: string) { return this.conversation.delete(owner, id); }
 
   // ══════════════════════════════════════════════════════════════════════════
   //  시크릿 → SecretManager

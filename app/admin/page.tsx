@@ -647,7 +647,7 @@ export default function AdminConsole() {
     handleNewConv, handleSelectConv, handleDeleteConv,
     handleSubmit, handleConfirmPlan, handleRejectPlan,
     handleApprovePending, handleRejectPending, handleStop,
-  } = useChat(aiModel, fetchFileTree);
+  } = useChat(aiModel, fetchFileTree, isDemo);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
 

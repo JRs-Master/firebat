@@ -36,6 +36,18 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
     for (const sql of migrations) {
       try { this.db.exec(sql); } catch { /* 이미 존재하면 무시 */ }
     }
+    // 대화 저장 테이블 (admin 계정의 채팅 히스토리 — 다기기 동기화용)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id         TEXT PRIMARY KEY,
+        owner      TEXT NOT NULL DEFAULT 'admin',
+        title      TEXT NOT NULL DEFAULT '새 대화',
+        messages   TEXT NOT NULL DEFAULT '[]',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      )
+    `);
+    try { this.db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_owner_updated ON conversations(owner, updated_at DESC)'); } catch {}
   }
 
   async query(sql: string, params?: unknown[]): Promise<InfraResult<Record<string, unknown>[]>> {

@@ -28,7 +28,7 @@ function parseSSE(buffer: string): { events: { event: string; data: any }[]; rem
   return { events, remaining };
 }
 
-export function useChat(aiModel: string, onRefresh: () => void) {
+export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean = false) {
   const [messages, setMessages] = useState<Message[]>([INIT_MESSAGE]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -48,7 +48,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     abortRef.current = null;
   }, []);
 
-  // ── 초기화: 대화 목록 복원 ─────────────────────────────────────────────────
+  // ── 초기화: 대화 목록 복원 (로컬 즉시 + admin은 DB 백그라운드 동기화) ──────
   useEffect(() => {
     const raw = localStorage.getItem('firebat_conversations');
     let convs: Conversation[] = raw ? JSON.parse(raw) : [];
@@ -71,20 +71,94 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       setActiveConvId(active.id);
       setMessages(cleanMessages(active.messages));
     }
-  }, []);
 
-  // ── 대화 저장 (메시지 변경 시) ─────────────────────────────────────────────
+    // admin이면 DB에서 최신 대화 목록 풀 (localStorage → DB 마이그레이션 포함)
+    if (isDemo) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/conversations');
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.success) return;
+        const remote: Array<{ id: string; title: string; createdAt: number; updatedAt: number }> = data.conversations ?? [];
+
+        // localStorage에만 있는 대화 → DB로 업로드 (1회 마이그레이션)
+        const remoteIds = new Set(remote.map(r => r.id));
+        for (const local of convs) {
+          if (!remoteIds.has(local.id)) {
+            await fetch('/api/conversations', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: local.id, title: local.title, messages: local.messages, createdAt: local.createdAt }),
+            }).catch(() => {});
+          }
+        }
+
+        // DB 목록을 풀 로드 — 메시지 포함
+        const fullList: Conversation[] = [];
+        for (const r of remote) {
+          const localMatch = convs.find(c => c.id === r.id);
+          // 로컬이 더 최신이면 로컬 유지 (아직 DB 저장 안 된 타이핑 중 내용 보호)
+          if (localMatch && localMatch.createdAt >= r.updatedAt) {
+            fullList.push(localMatch);
+            continue;
+          }
+          try {
+            const one = await fetch(`/api/conversations?id=${encodeURIComponent(r.id)}`).then(x => x.json());
+            if (one.success && one.conversation) {
+              fullList.push({ id: r.id, title: r.title, createdAt: r.createdAt, messages: one.conversation.messages });
+            }
+          } catch {}
+        }
+        // 로컬에만 있는 신규 대화도 합치기
+        for (const local of convs) {
+          if (!fullList.find(c => c.id === local.id)) fullList.push(local);
+        }
+        fullList.sort((a, b) => a.createdAt - b.createdAt);
+
+        if (fullList.length > 0) {
+          setConversations(fullList);
+          localStorage.setItem('firebat_conversations', JSON.stringify(fullList));
+          // 현재 활성 대화가 DB에 더 최신이면 메시지 교체
+          const savedActiveId = localStorage.getItem('firebat_active_conv') ?? '';
+          const activeFromRemote = fullList.find(c => c.id === savedActiveId);
+          if (activeFromRemote) {
+            setMessages(cleanMessages(activeFromRemote.messages));
+          }
+        }
+      } catch {}
+    })();
+  }, [isDemo]);
+
+  // ── 대화 저장 (메시지 변경 시) — localStorage 즉시 + admin이면 DB에 debounce 저장 ──
+  const dbSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!activeConvId || conversations.length === 0) return;
+    let titleToSave = '새 대화';
     setConversations(prev => {
       const firstUser = messages.find(m => m.role === 'user');
       const title = firstUser?.content
         ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
         : '새 대화';
+      titleToSave = title;
       const updated = prev.map(c => c.id === activeConvId ? { ...c, messages, title } : c);
       localStorage.setItem('firebat_conversations', JSON.stringify(updated));
       return updated;
     });
+
+    // admin → 500ms debounce로 DB 저장
+    if (!isDemo) {
+      if (dbSaveTimerRef.current) clearTimeout(dbSaveTimerRef.current);
+      const convMeta = conversations.find(c => c.id === activeConvId);
+      const createdAt = convMeta?.createdAt ?? Date.now();
+      dbSaveTimerRef.current = setTimeout(() => {
+        fetch('/api/conversations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: activeConvId, title: titleToSave, messages, createdAt }),
+        }).catch(() => {});
+      }, 500);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages]);
 
@@ -130,6 +204,10 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   }, [activeConvId, conversations]);
 
   const handleDeleteConv = useCallback((id: string) => {
+    // admin은 DB에서도 삭제
+    if (!isDemo) {
+      fetch(`/api/conversations?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+    }
     setConversations(prev => {
       const updated = prev.filter(c => c.id !== id);
       localStorage.setItem('firebat_conversations', JSON.stringify(updated));
@@ -147,7 +225,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       }
       return updated;
     });
-  }, [activeConvId]);
+  }, [activeConvId, isDemo]);
 
   // ── 전송 ───────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async (overrideText?: string, isSuggestion?: boolean) => {
