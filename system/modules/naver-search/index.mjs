@@ -299,7 +299,9 @@ async function handleShoppingCategories(ctx, data) {
 //  데이터랩 — 쇼핑 분야 내 키워드 트렌드
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleShoppingKeywords(ctx, data) {
-  if (!data.categoryCode) return out(false, 'categoryCode가 필요합니다. (예: "50000000")');
+  // 'category' 를 'categoryCode' 별칭으로 수용 (AI가 API 응답 필드명과 혼동하는 흔한 실수)
+  const categoryCode = data.categoryCode ?? data.category;
+  if (!categoryCode) return out(false, 'categoryCode 필드가 필요합니다 (필드명은 "categoryCode", 예: "50000000"). 주요 카테고리: 50000000=패션의류, 50000003=디지털가전, 50000006=식품.');
   if (!data.keyword || !Array.isArray(data.keyword) || data.keyword.length === 0) {
     return out(false, 'keyword 배열이 필요합니다. [{name, param:["키워드"]}] 형식.');
   }
@@ -308,7 +310,7 @@ async function handleShoppingKeywords(ctx, data) {
     startDate: data.startDate || threeMonthsAgo(),
     endDate: data.endDate || today(),
     timeUnit: data.timeUnit || 'week',
-    category: data.categoryCode,
+    category: categoryCode,
     keyword: data.keyword.slice(0, 5).map(k => ({
       name: k.name || k.param?.[0] || '',
       param: Array.isArray(k.param) ? k.param.slice(0, 5) : [String(k.param)],
@@ -327,14 +329,15 @@ async function handleShoppingKeywords(ctx, data) {
 //  데이터랩 — 쇼핑 키워드 기기/성별/연령 분석
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleShoppingBreakdown(ctx, data, breakdownType) {
-  if (!data.categoryCode) return out(false, 'categoryCode가 필요합니다.');
+  const categoryCode = data.categoryCode ?? data.category;
+  if (!categoryCode) return out(false, 'categoryCode 필드가 필요합니다 (필드명은 "categoryCode"). 주요 코드: 50000000=패션의류, 50000003=디지털가전, 50000006=식품.');
   if (!data.keywordText) return out(false, 'keywordText(문자열)가 필요합니다.');
 
   const body = {
     startDate: data.startDate || threeMonthsAgo(),
     endDate: data.endDate || today(),
     timeUnit: data.timeUnit || 'week',
-    category: data.categoryCode,
+    category: categoryCode,
     keyword: data.keywordText,
   };
 
