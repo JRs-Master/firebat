@@ -192,6 +192,8 @@ export class OpenAiAdapter implements ILlmPort {
         input,
         temperature: LLM_TEMPERATURE_TEXT,
         ...(openaiTools.length > 0 ? { tools: openaiTools, tool_choice: 'auto' } : {}),
+        // Reasoning 요약 노출 (GPT-5.4 시리즈 thinking 표시용)
+        reasoning: { effort: 'medium', summary: 'auto' },
       };
 
       const textParts: string[] = [];
@@ -225,8 +227,8 @@ export class OpenAiAdapter implements ILlmPort {
             textParts.push(event.delta);
             opts.onChunk({ type: 'text', content: event.delta });
           }
-          // thinking/reasoning delta (모델에 따라)
-          else if (t === 'response.reasoning.delta' && typeof event.delta === 'string') {
+          // thinking/reasoning delta (GPT-5.4 시리즈 reasoning summary)
+          else if ((t === 'response.reasoning.delta' || t === 'response.reasoning_summary_text.delta' || t === 'response.reasoning_text.delta') && typeof event.delta === 'string') {
             opts.onChunk({ type: 'thinking', content: event.delta });
           }
           // function_call 아이템 추가됨 (arguments 스트리밍 전에 name/id 고정)
