@@ -547,12 +547,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
                         <span className="text-[12px] font-bold text-emerald-600 px-2">✓ 실행됨</span>
                       ) : p.status === 'rejected' ? (
                         <span className="text-[12px] font-medium text-slate-400 px-2">취소됨</span>
-                      ) : p.status === 'error' ? (
-                        <button
-                          onClick={() => onRejectPending?.(msg.id, p.planId)}
-                          className="flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-500 text-[12px] font-bold rounded-lg border border-slate-200 transition-colors"
-                        ><X size={13} /> 닫기</button>
-                      ) : p.status === 'past-runat' ? (
+                      ) : p.status === 'error' ? null : p.status === 'past-runat' ? (
                         <>
                           <button
                             onClick={() => onApprovePendingAction?.(msg.id, p.planId, 'now')}
