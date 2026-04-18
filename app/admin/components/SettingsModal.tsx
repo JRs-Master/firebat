@@ -18,6 +18,14 @@ type Props = {
 
 export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
   const [settingsTab, setSettingsTab] = useState<'general' | 'secrets' | 'mcp' | 'capabilities' | 'system'>(initialTab ?? 'general');
+  const [mcpSubTab, setMcpSubTab] = useState<'app' | 'llm'>('app');
+  // 내부 MCP 토큰 (LLM 통신용)
+  const [internalMcpToken, setInternalMcpToken] = useState<{ hasToken: boolean; masked: string }>({ hasToken: false, masked: '' });
+  const [internalMcpTokenRaw, setInternalMcpTokenRaw] = useState<string | null>(null);
+  const [internalMcpCreatedAt, setInternalMcpCreatedAt] = useState<string | null>(null);
+  const [internalMcpLoading, setInternalMcpLoading] = useState(false);
+  const [internalMcpCopied, setInternalMcpCopied] = useState(false);
+  const [internalMcpConfigCopied, setInternalMcpConfigCopied] = useState(false);
 
   // 일반 설정
   const [userTimezone, setUserTimezone] = useState('Asia/Seoul');
@@ -319,6 +327,40 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
     setMcpTokenRaw(null);
   };
 
+  // 내부 MCP 토큰 (LLM 통신용)
+  const fetchInternalMcpToken = useCallback(async () => {
+    try {
+      const res = await fetch('/api/mcp-internal/token');
+      const data = await res.json();
+      if (data.success) {
+        setInternalMcpToken(data.token);
+        setInternalMcpCreatedAt(data.createdAt);
+      }
+    } catch {}
+  }, []);
+
+  const generateInternalMcpToken = async () => {
+    if (internalMcpToken.hasToken && !confirm('기존 내부 MCP 토큰이 무효화됩니다. 새로 생성하시겠습니까?')) return;
+    setInternalMcpLoading(true);
+    try {
+      const res = await fetch('/api/mcp-internal/token', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        setInternalMcpTokenRaw(data.token);
+        setInternalMcpToken({ hasToken: true, masked: `${data.token.slice(0, 8)}****${data.token.slice(-4)}` });
+        setInternalMcpCreatedAt(data.createdAt);
+      }
+    } catch {} finally { setInternalMcpLoading(false); }
+  };
+
+  const revokeInternalMcpToken = async () => {
+    if (!confirm('내부 MCP 토큰을 폐기하면 OpenAI/Claude API의 연결이 즉시 차단됩니다.')) return;
+    await fetch('/api/mcp-internal/token', { method: 'DELETE' });
+    setInternalMcpToken({ hasToken: false, masked: '' });
+    setInternalMcpTokenRaw(null);
+    setInternalMcpCreatedAt(null);
+  };
+
   const copyToClipboard = async (text: string, setCopied: (v: boolean) => void) => {
     await navigator.clipboard.writeText(text);
     setCopied(true);
@@ -336,9 +378,9 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
   // 탭 전환 시 데이터 로드
   useEffect(() => {
     if (settingsTab === 'secrets') fetchSecrets();
-    if (settingsTab === 'mcp') { fetchMcpServers(); fetchMcpToken(); }
+    if (settingsTab === 'mcp') { fetchMcpServers(); fetchMcpToken(); fetchInternalMcpToken(); }
     if (settingsTab === 'system') fetchSysModules();
-  }, [settingsTab, fetchSecrets, fetchMcpServers, fetchMcpToken, fetchSysModules]);
+  }, [settingsTab, fetchSecrets, fetchMcpServers, fetchMcpToken, fetchInternalMcpToken, fetchSysModules]);
 
   // ── 저장 ───────────────────────────────────────────────────────────────────
   const handleSave = async () => {
@@ -709,6 +751,126 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
           {settingsTab === 'mcp' && (
             <>
+              {/* 서브탭 스위처 */}
+              <div className="flex border-b border-slate-200 mb-4 -mt-2">
+                <button
+                  onClick={() => setMcpSubTab('app')}
+                  className={`px-3 py-2 text-[12px] sm:text-[13px] font-bold transition-colors ${mcpSubTab === 'app' ? 'text-blue-600 border-b-2 border-blue-500' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  앱 개발용
+                </button>
+                <button
+                  onClick={() => setMcpSubTab('llm')}
+                  className={`px-3 py-2 text-[12px] sm:text-[13px] font-bold transition-colors ${mcpSubTab === 'llm' ? 'text-blue-600 border-b-2 border-blue-500' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  LLM 통신용
+                </button>
+              </div>
+
+              {/* ── LLM 통신용 — OpenAI Responses API / Claude API 연결 ── */}
+              {mcpSubTab === 'llm' && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2">
+                    <Server size={16} className="text-purple-600" />
+                    <label className="text-xs sm:text-sm font-bold text-slate-700">내부 MCP 서버 (LLM 통신용)</label>
+                  </div>
+                  <p className="text-[11px] sm:text-[12px] text-slate-400 -mt-1">
+                    OpenAI Responses API(hosted MCP), Claude API 등 외부 LLM이 Firebat의 전체 도구 세트에 접근할 때 사용합니다.
+                  </p>
+
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[12px] sm:text-[13px] font-bold text-slate-600">인증 토큰</span>
+                      <div className="flex items-center gap-1.5">
+                        {internalMcpToken.hasToken && (
+                          <button
+                            onClick={revokeInternalMcpToken}
+                            className="text-[10px] sm:text-[11px] px-2 py-0.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                          >
+                            폐기
+                          </button>
+                        )}
+                        <button
+                          onClick={generateInternalMcpToken}
+                          disabled={internalMcpLoading}
+                          className="text-[10px] sm:text-[11px] px-2.5 py-1 font-bold text-white bg-purple-600 hover:bg-purple-700 disabled:bg-slate-300 rounded transition-colors flex items-center gap-1"
+                        >
+                          {internalMcpLoading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                          {internalMcpToken.hasToken ? '재생성' : '토큰 생성'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {internalMcpTokenRaw && (
+                      <div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 flex flex-col gap-1.5">
+                        <p className="text-[10px] sm:text-[11px] font-bold text-amber-700">이 토큰은 다시 볼 수 없습니다. 지금 복사하세요.</p>
+                        <div className="flex items-center gap-1.5">
+                          <code className="flex-1 text-[11px] sm:text-[12px] font-mono bg-white border border-amber-200 rounded px-2 py-1 text-slate-700 break-all select-all">
+                            {internalMcpTokenRaw}
+                          </code>
+                          <button
+                            onClick={() => copyToClipboard(internalMcpTokenRaw, setInternalMcpCopied)}
+                            className="shrink-0 p-1.5 rounded hover:bg-amber-100 transition-colors"
+                            title="복사"
+                          >
+                            {internalMcpCopied ? <Check size={14} className="text-green-600" /> : <Copy size={14} className="text-amber-600" />}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {internalMcpToken.hasToken && !internalMcpTokenRaw && (
+                      <div className="flex items-center gap-2 text-[11px] sm:text-[12px] text-slate-500">
+                        <code className="font-mono bg-white border border-slate-200 rounded px-2 py-0.5 text-slate-600">{internalMcpToken.masked}</code>
+                        {internalMcpCreatedAt && (
+                          <span className="text-slate-400">생성: {new Date(internalMcpCreatedAt).toLocaleDateString('ko-KR')}</span>
+                        )}
+                      </div>
+                    )}
+
+                    {!internalMcpToken.hasToken && !internalMcpTokenRaw && (
+                      <p className="text-[10px] sm:text-[11px] text-slate-400">토큰이 없습니다. 외부 LLM 연결을 사용하려면 토큰을 생성하세요.</p>
+                    )}
+                  </div>
+
+                  {/* 연결 정보 JSON */}
+                  {(() => {
+                    const mcpUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/api/mcp-internal`;
+                    const tokenValue = internalMcpTokenRaw || (internalMcpToken.hasToken ? '<기존 토큰을 사용 — 재생성 시 위 값 사용>' : '<토큰을 먼저 생성하세요>');
+                    const openaiConfig = JSON.stringify({
+                      tools: [{
+                        type: 'mcp',
+                        server_label: 'firebat-internal',
+                        server_url: mcpUrl,
+                        headers: { Authorization: `Bearer ${tokenValue}` },
+                        require_approval: 'never',
+                      }],
+                    }, null, 2);
+                    return (
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[11px] sm:text-[12px] font-bold text-slate-600">OpenAI Responses API 설정</label>
+                          <button
+                            onClick={() => copyToClipboard(openaiConfig, setInternalMcpConfigCopied)}
+                            className="p-1 rounded hover:bg-slate-100 transition-colors"
+                            title="복사"
+                          >
+                            {internalMcpConfigCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
+                          </button>
+                        </div>
+                        <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">
+                          {openaiConfig}
+                        </pre>
+                        <p className="text-[10px] text-slate-400">
+                          Claude API도 동일 URL + Bearer 토큰으로 연결 가능 (MCP connector 사용).
+                        </p>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+
+              {mcpSubTab === 'app' && (<>
               {/* ── 외부 MCP 서버 (클라이언트) ── */}
               {/* Firebat MCP 서버 설정은 사이드바 > SYSTEM > 서비스 > mcp-server에서 관리 */}
               <div className="flex flex-col gap-3 pb-4 border-b border-slate-200 hidden">
@@ -1067,6 +1229,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                   등록된 MCP 서버의 도구는 AI가 자동으로 인식하여 호출할 수 있습니다.
                 </p>
               </div>
+              </>)}
             </>
           )}
 
