@@ -333,7 +333,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const hoverX = hoverIdx != null ? xs[hoverIdx] : null;
 
   return (
-    <div className="flex flex-col gap-4 bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm">
+    <div className="flex flex-col gap-4 bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm sm:max-w-[820px] w-full">
       {/* 헤더 */}
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div className="flex flex-col">
@@ -396,7 +396,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         onTouchCancel={handleTouchEnd}
         style={{ touchAction: 'pan-y' }}
       >
-        <svg viewBox={`0 0 ${W} ${priceH}`} className="w-full h-auto block" preserveAspectRatio="xMidYMid meet" style={{ touchAction: 'pan-y', maxHeight: '40vh' }}>
+        <svg viewBox={`0 0 ${W} ${priceH}`} className="w-full h-auto block" preserveAspectRatio="xMidYMid meet" style={{ touchAction: 'pan-y' }}>
           {/* 가로 그리드 */}
           {priceTicks.map(t => {
             const y = yPrice(t);
@@ -506,7 +506,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
 
       {/* 거래량 차트 */}
       <div className="relative">
-        <svg viewBox={`0 0 ${W} ${volH}`} className="w-full h-auto block" preserveAspectRatio="xMidYMid meet" style={{ maxHeight: '12vh' }}>
+        <svg viewBox={`0 0 ${W} ${volH}`} className="w-full h-auto block" preserveAspectRatio="xMidYMid meet">
           {volTicks.map(t => {
             const y = yVol(t);
             return (
