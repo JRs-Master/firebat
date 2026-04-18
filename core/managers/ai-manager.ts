@@ -2210,27 +2210,21 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
     if (!userQuery.trim()) return allTools;
 
     try {
-      // 항상 포함 안전망 — AI가 응답 최소 수단. request_secret은 제외 (AI 남용 방지)
-      const safetyNames = new Set(['render_alert', 'render_callout', 'suggest']);
-      const { ToolSearchIndex } = await import('../../infra/llm/tool-search-index');
+      const { ToolSearchIndex, ALWAYS_INCLUDE } = await import('../../infra/llm/tool-search-index');
       const capabilityOf = (name: string) => this._toolCapabilities.get(name);
-      // MiniLM 다국어 모델 특성상 한국어 점수 범위가 0.15~0.30으로 좁음 → threshold 0.17
-      const matches = await ToolSearchIndex.query(userQuery, allTools, { topK: 10, threshold: 0.17, capabilityOf });
-      let matchNames = new Set(matches.map(m => m.name));
+      // 카테고리 단위 벡터 검색 (도구 개별 아님) — 의미 분리 명확해 점수 범위 넓음
+      const { selectedToolNames, matchedCategories } = await ToolSearchIndex.query(userQuery, allTools, {
+        topCategories: 3,
+        threshold: 0.3,
+        capabilityOf,
+      });
 
-      // Fallback: threshold 걸러 match=0이면 점수 무시하고 top-5는 무조건 주기
-      if (matchNames.size === 0) {
-        const forced = await ToolSearchIndex.query(userQuery, allTools, { topK: 5, threshold: -1, capabilityOf });
-        matchNames = new Set(forced.map(m => m.name));
-        this.logger.info(`[ToolSearch] threshold 미달 → 강제 top-5 폴백 적용`);
-      }
-
-      const allowed = new Set([...safetyNames, ...matchNames, ...sessionUsedToolNames]);
+      const allowed = new Set([...ALWAYS_INCLUDE, ...selectedToolNames, ...sessionUsedToolNames]);
       const selected = allTools.filter(t => allowed.has(t.name));
-      this.logger.info(`[ToolSearch] ${selected.length}/${allTools.length}개 선택 (match=${matchNames.size}, session=${sessionUsedToolNames.size})`);
+      const catSummary = matchedCategories.map(c => `${c.id}:${c.score.toFixed(2)}`).join(',');
+      this.logger.info(`[ToolSearch] ${selected.length}/${allTools.length}개 선택 (categories=[${catSummary}], session=${sessionUsedToolNames.size})`);
       return selected.length > 0 ? selected : allTools;
     } catch (e) {
-      // 벡터 검색 실패(모델 로드 등) 시 안전하게 전체 도구 반환
       this.logger.warn(`[ToolSearch] 검색 실패, 전체 도구 폴백: ${(e as Error).message}`);
       return allTools;
     }

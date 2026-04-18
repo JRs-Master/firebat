@@ -1,16 +1,15 @@
 /**
- * Tool Search Index — 벡터 임베딩 기반 도구 검색
+ * Tool Search Index — 벡터 임베딩 기반 카테고리 검색
  *
  * 목적: Gemini/Vertex처럼 hosted MCP가 없는 프로바이더는 매 요청마다 전체 도구 정의를
  * 프롬프트에 넣어야 하는데, 도구 수가 늘어나면 토큰·응답속도·정확도 모두 악화.
- * 사용자 메시지로 관련 도구만 골라 AI에게 주는 라우팅 레이어.
+ * 사용자 메시지로 관련 카테고리만 뽑아 그 안의 도구만 AI에게 주는 라우팅 레이어.
  *
  * 설계:
  * - @xenova/transformers + paraphrase-multilingual-MiniLM-L12-v2 (한국어 semantic OK)
- * - 부팅 시 모든 도구(name + description + capability)를 임베딩
- * - 디스크 캐시: data/tool-embeddings.json에 {contentHash, vector} 저장 → 변경된 도구만 재임베딩
- * - 쿼리 시 사용자 메시지를 임베딩해 cosine similarity로 top-K 반환
- * - 모듈 on/off 시 invalidate() → 메모리 필터만 재구성 (임베딩 재사용)
+ * - 카테고리 ~8개에만 임베딩 (개별 도구 60개 아님) — 의미 분리 명확, 점수 범위 넓음
+ * - 도구 → 카테고리 매핑: hardcoded prefix + capability 기반 자동 분류
+ * - 디스크 캐시: data/tool-embeddings.json에 {contentHash, vector} 저장
  */
 import type { ToolDefinition } from '../../core/ports';
 import fs from 'fs';
@@ -20,20 +19,90 @@ import crypto from 'crypto';
 const CACHE_FILE = path.join(process.cwd(), 'data', 'tool-embeddings.json');
 const MODEL_NAME = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2';
 
+// ── 카테고리 정의 ─────────────────────────────────────────────────────────
+// id, 의미 검색용 semanticText(길수록 좋음), 이 카테고리에 속한 도구 판정 규칙
+interface CategoryDef {
+  id: string;
+  label: string;
+  semanticText: string; // 벡터 임베딩 입력
+  // 도구 이름으로 카테고리 판정 (우선), capability로 판정 (대체)
+  matchByName?: (name: string) => boolean;
+  matchByCapability?: string[];
+}
+
+const CATEGORIES: CategoryDef[] = [
+  {
+    id: 'stock',
+    label: '주식·증권',
+    semanticText: '주식 증권 시세 주가 종목 차트 캔들 OHLCV 이동평균 주문 매수 매도 체결 잔고 호가 거래량 코스피 코스닥 삼성전자 LG 현대 SK 상장 공시 재무 실적',
+    matchByName: (n) => n === 'sysmod_kiwoom' || n === 'sysmod_korea_invest',
+    matchByCapability: ['stock-trading'],
+  },
+  {
+    id: 'crypto',
+    label: '가상자산·암호화폐',
+    semanticText: '업비트 비트코인 이더리움 가상자산 암호화폐 코인 알트코인 시세 거래 매수 매도 체인 블록체인 지갑',
+    matchByName: (n) => n === 'sysmod_upbit',
+    matchByCapability: ['crypto-trading'],
+  },
+  {
+    id: 'search',
+    label: '검색·뉴스·웹 스크래핑',
+    semanticText: '검색 뉴스 웹 인터넷 블로그 쇼핑 카페 지식인 백과사전 네이버 구글 기사 스크랩 크롤링 웹페이지 URL 콘텐츠 키워드 트렌드 데이터랩',
+    matchByName: (n) => n.includes('naver_search') || n.includes('naver_ads') || n.includes('firecrawl') || n.includes('browser_scrape'),
+    matchByCapability: ['web-search', 'web-scrape', 'keyword-analytics'],
+  },
+  {
+    id: 'messaging',
+    label: '메시지·이메일 발송',
+    semanticText: '메시지 알림 발송 전송 카톡 카카오톡 이메일 메일 지메일 Gmail 보내다 발송하다 푸시 알람 공지',
+    matchByName: (n) => n.includes('kakao_talk') || (n.startsWith('mcp_gmail_') && (n.includes('send') || n.includes('draft'))),
+    matchByCapability: ['notification'],
+  },
+  {
+    id: 'mail-read',
+    label: '이메일 읽기·검색',
+    semanticText: '메일 이메일 편지 받은편지함 인박스 수신 검색 조회 읽기 확인 발신자 제목 내용 요약 Gmail Outlook',
+    matchByName: (n) => n.startsWith('mcp_gmail_') && !n.includes('send') && !n.includes('draft'),
+  },
+  {
+    id: 'law',
+    label: '법률·법령·판례',
+    semanticText: '법 법령 법률 판례 행정규칙 자치법규 헌법 조문 조항 판결 법원 소송 계약 형법 민법 상법 헌재 조약',
+    matchByName: (n) => n.includes('law_search'),
+    matchByCapability: ['law-search'],
+  },
+  {
+    id: 'visualization',
+    label: '차트·표·경고 등 UI 렌더링',
+    semanticText: '차트 그래프 표 테이블 경고 알림 주의 박스 카드 배지 제목 헤더 리스트 목록 진행 프로그래스 이미지 그리드 시각화 렌더링 출력 보여주기',
+    matchByName: (n) => n.startsWith('render_'),
+  },
+  {
+    id: 'storage',
+    label: '파일·페이지 저장·읽기·삭제',
+    semanticText: '파일 페이지 문서 저장 읽기 쓰기 삭제 목록 디렉토리 폴더 업로드 다운로드 슬러그 PageSpec HTML 컴포넌트',
+    matchByName: (n) => ['read_file', 'write_file', 'delete_file', 'list_dir', 'save_page', 'delete_page', 'list_pages'].includes(n),
+  },
+  {
+    id: 'scheduling',
+    label: '스케줄·예약·태스크',
+    semanticText: '스케줄 예약 크론 정기 매일 매시간 몇시에 태스크 작업 자동화 즉시 실행 취소 해제 목록 조회 파이프라인',
+    matchByName: (n) => ['schedule_task', 'run_task', 'cancel_task', 'list_tasks'].includes(n),
+  },
+  {
+    id: 'module',
+    label: '모듈 실행·외부 호출',
+    semanticText: '모듈 실행 execute 사용자 정의 직접 호출 네트워크 요청 HTTP API 외부 서비스 MCP 서버 통합 커스텀',
+    matchByName: (n) => n === 'execute' || n === 'network_request' || n === 'mcp_call' || (n.startsWith('mcp_') && !n.startsWith('mcp_gmail_')) || n.startsWith('sysmod_') === false && n.startsWith('render_') === false,
+  },
+];
+
+// 안전망 — 어느 카테고리도 매칭 못 해도 항상 포함 (AI가 답변 최소 수단 확보)
+const ALWAYS_INCLUDE = new Set(['render_alert', 'render_callout', 'suggest']);
+
 let pipelinePromise: Promise<any> | null = null;
-let cachedEntries: IndexEntry[] | null = null;
-let buildPromise: Promise<IndexEntry[]> | null = null;
-
-interface IndexEntry {
-  name: string;
-  hash: string;       // content SHA-1 (라벨 포맷 포함) — 변경 감지용
-  vector: Float32Array;
-}
-
-interface DiskCacheEntry {
-  hash: string;
-  vector: number[];   // JSON 직렬화 위해 number[]
-}
+let cachedCategoryVectors: { id: string; vector: Float32Array }[] | null = null;
 
 async function getEmbedder() {
   if (!pipelinePromise) {
@@ -60,22 +129,12 @@ function cosine(a: Float32Array, b: Float32Array): number {
   return dot;
 }
 
-/**
- * 임베딩 입력 텍스트 — 라벨 포맷으로 모델이 구조 인지 (이름·설명·capability 구분)
- */
-function toolToText(tool: ToolDefinition, capability?: string): string {
-  const lines: string[] = [];
-  lines.push(`Tool: ${tool.name}`);
-  if (tool.description) lines.push(`Desc: ${tool.description}`);
-  if (capability) lines.push(`Cap: ${capability}`);
-  return lines.join('\n');
-}
-
 function sha1(s: string): string {
   return crypto.createHash('sha1').update(s, 'utf8').digest('hex');
 }
 
 // ── 디스크 캐시 I/O ────────────────────────────────────────────────────────
+interface DiskCacheEntry { hash: string; vector: number[]; }
 function loadDiskCache(): Record<string, DiskCacheEntry> {
   try {
     if (!fs.existsSync(CACHE_FILE)) return {};
@@ -83,99 +142,115 @@ function loadDiskCache(): Record<string, DiskCacheEntry> {
     return JSON.parse(raw);
   } catch { return {}; }
 }
-
 function saveDiskCache(cache: Record<string, DiskCacheEntry>): void {
   try {
     fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
     fs.writeFileSync(CACHE_FILE, JSON.stringify(cache), 'utf-8');
-  } catch { /* 쓰기 실패 무시 — 다음 부팅 시 재생성 */ }
+  } catch { /* 쓰기 실패 무시 */ }
 }
 
 /**
- * 도구 목록으로 인덱스 구축 — 디스크 캐시와 해시 비교, 변경된 것만 재임베딩
+ * 카테고리 벡터 인덱스 구축 — 부팅 1회 (카테고리 정의 변경 시 해시 불일치로 재임베딩)
  */
-async function buildIndex(tools: ToolDefinition[], capabilityOf?: (name: string) => string | undefined): Promise<IndexEntry[]> {
+async function buildCategoryIndex(): Promise<{ id: string; vector: Float32Array }[]> {
   const diskCache = loadDiskCache();
-  const entries: IndexEntry[] = [];
+  const result: { id: string; vector: Float32Array }[] = [];
   const newCache: Record<string, DiskCacheEntry> = {};
-  let reused = 0;
-  let embedded = 0;
+  let reused = 0, embedded = 0;
 
-  for (const t of tools) {
-    const text = toolToText(t, capabilityOf?.(t.name));
+  for (const cat of CATEGORIES) {
+    const text = `Category: ${cat.label}\nKeywords: ${cat.semanticText}`;
     const hash = sha1(text);
-
-    const hit = diskCache[t.name];
+    const key = `__category:${cat.id}`;
+    const hit = diskCache[key];
     if (hit && hit.hash === hash && Array.isArray(hit.vector)) {
-      // 캐시 재사용
-      entries.push({ name: t.name, hash, vector: new Float32Array(hit.vector) });
-      newCache[t.name] = hit;
+      result.push({ id: cat.id, vector: new Float32Array(hit.vector) });
+      newCache[key] = hit;
       reused++;
       continue;
     }
-
     try {
       const vec = await embed(text);
-      entries.push({ name: t.name, hash, vector: vec });
-      newCache[t.name] = { hash, vector: Array.from(vec) };
+      result.push({ id: cat.id, vector: vec });
+      newCache[key] = { hash, vector: Array.from(vec) };
       embedded++;
     } catch {
-      // 임베딩 실패 도구는 인덱스 누락 (검색에 안 나옴)
+      // 임베딩 실패 카테고리는 검색에서 제외
     }
   }
 
-  // 디스크 캐시 업데이트 (제거된 도구는 자연 삭제됨)
+  // 기존 디스크 캐시에 다른 키(예전 도구별 임베딩)가 남아있어도 무시, 새 캐시로 덮어씀
   saveDiskCache(newCache);
-  // 빌드 요약 로그 (stderr — Core/Infra 환경 모두 동작)
-  process.stderr.write(`[ToolSearch] 인덱스 빌드: ${tools.length}개 (재사용 ${reused}, 임베딩 ${embedded})\n`);
-  return entries;
+  process.stderr.write(`[ToolSearch] 카테고리 인덱스 빌드: ${CATEGORIES.length}개 (재사용 ${reused}, 임베딩 ${embedded})\n`);
+  return result;
+}
+
+/**
+ * 도구 → 카테고리 매핑. 매칭 안 되는 도구는 'utility' 또는 null 반환.
+ */
+function categorizeTool(tool: ToolDefinition, capability?: string): string | null {
+  for (const cat of CATEGORIES) {
+    if (cat.matchByName?.(tool.name)) return cat.id;
+    if (cat.matchByCapability && capability && cat.matchByCapability.includes(capability)) return cat.id;
+  }
+  return null;
 }
 
 export class ToolSearchIndex {
-  /**
-   * 인덱스 무효화 — 도구 목록 변경 시 호출. 다음 query에서 재구축.
-   * 디스크 캐시는 해시로 관리되므로 재사용 가능한 것은 그대로 씀.
-   */
   static invalidate() {
-    cachedEntries = null;
-    buildPromise = null;
+    cachedCategoryVectors = null;
   }
 
-  /** 준비된 인덱스 반환 (최초/invalidate 후엔 빌드, 그 외엔 캐시) */
-  static async ensureIndex(tools: ToolDefinition[], capabilityOf?: (name: string) => string | undefined): Promise<IndexEntry[]> {
-    if (cachedEntries) return cachedEntries;
-    if (!buildPromise) {
-      buildPromise = buildIndex(tools, capabilityOf).then(e => {
-        cachedEntries = e;
-        return e;
-      });
+  static async ensureIndex(): Promise<{ id: string; vector: Float32Array }[]> {
+    if (!cachedCategoryVectors) {
+      cachedCategoryVectors = await buildCategoryIndex();
     }
-    return buildPromise;
+    return cachedCategoryVectors;
   }
 
   /**
-   * 쿼리와 유사한 도구 top-K 반환 + 점수 분포 로깅 (캘리브레이션용)
+   * 쿼리로 top-K 카테고리 선택 → 그 안의 도구 이름 Set 반환
    */
   static async query(
     query: string,
     tools: ToolDefinition[],
-    opts: { topK?: number; threshold?: number; capabilityOf?: (name: string) => string | undefined } = {},
-  ): Promise<{ name: string; score: number }[]> {
-    const { topK = 10, threshold = 0.35, capabilityOf } = opts;
-    if (!query.trim()) return [];
+    opts: { topCategories?: number; threshold?: number; capabilityOf?: (name: string) => string | undefined } = {},
+  ): Promise<{ selectedToolNames: Set<string>; matchedCategories: { id: string; score: number }[] }> {
+    const { topCategories = 3, threshold = 0.3, capabilityOf } = opts;
+    if (!query.trim()) return { selectedToolNames: new Set(), matchedCategories: [] };
 
-    const entries = await this.ensureIndex(tools, capabilityOf);
-    if (entries.length === 0) return [];
+    const catVectors = await this.ensureIndex();
+    if (catVectors.length === 0) return { selectedToolNames: new Set(), matchedCategories: [] };
 
+    // 쿼리 임베딩 → 모든 카테고리와 cosine sim
     const q = await embed(query);
-    const scored = entries.map(e => ({ name: e.name, score: cosine(q, e.vector) }));
+    const scored = catVectors.map(c => ({ id: c.id, score: cosine(q, c.vector) }));
     scored.sort((a, b) => b.score - a.score);
 
-    // 캘리브레이션 로그 — top-8 점수 분포 (threshold 튜닝 자료)
-    const top8 = scored.slice(0, 8).map(s => `${s.name}:${s.score.toFixed(3)}`).join(' ');
+    // 캘리브레이션 로그
+    const top5 = scored.slice(0, 5).map(s => `${s.id}:${s.score.toFixed(3)}`).join(' ');
     const qPreview = query.length > 40 ? query.slice(0, 40) + '…' : query;
-    process.stderr.write(`[ToolSearch] query="${qPreview}" top8=[${top8}] threshold=${threshold}\n`);
+    process.stderr.write(`[ToolSearch] query="${qPreview}" categories=[${top5}] threshold=${threshold}\n`);
 
-    return scored.filter(s => s.score >= threshold).slice(0, topK);
+    // threshold 통과한 것 중 top-N, 없으면 top-1 강제 폴백
+    let picked = scored.filter(s => s.score >= threshold).slice(0, topCategories);
+    if (picked.length === 0) picked = scored.slice(0, 1);
+
+    const pickedIds = new Set(picked.map(p => p.id));
+    const selectedToolNames = new Set<string>();
+    for (const tool of tools) {
+      const cap = capabilityOf?.(tool.name);
+      const catId = categorizeTool(tool, cap);
+      if (catId && pickedIds.has(catId)) selectedToolNames.add(tool.name);
+    }
+
+    return { selectedToolNames, matchedCategories: picked };
+  }
+
+  /** UI/디버그용: 등록된 카테고리 목록 */
+  static listCategories() {
+    return CATEGORIES.map(c => ({ id: c.id, label: c.label }));
   }
 }
+
+export { ALWAYS_INCLUDE };
