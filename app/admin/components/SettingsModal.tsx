@@ -393,11 +393,26 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
   // 탭 콘텐츠 스크롤 리셋용
   const contentRef = useRef<HTMLDivElement>(null);
+  // 탭 바 자체의 가로 스크롤 — 선택된 탭이 잘리지 않도록 중앙 노출
+  const tabBarRef = useRef<HTMLDivElement>(null);
 
   const switchTab = (tab: typeof settingsTab) => {
     setSettingsTab(tab);
     contentRef.current?.scrollTo(0, 0);
   };
+
+  // 현재 활성 탭 버튼을 시야 중앙으로 스크롤 (작은 화면에서 탭 잘림 방지)
+  useEffect(() => {
+    const bar = tabBarRef.current;
+    if (!bar) return;
+    const active = bar.querySelector<HTMLElement>('button[data-active="true"]');
+    if (active) {
+      const barRect = bar.getBoundingClientRect();
+      const btnRect = active.getBoundingClientRect();
+      const delta = (btnRect.left + btnRect.right) / 2 - (barRect.left + barRect.right) / 2;
+      bar.scrollBy({ left: delta, behavior: 'smooth' });
+    }
+  }, [settingsTab]);
 
   // 탭 전환 시 데이터 로드
   useEffect(() => {
@@ -458,22 +473,28 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
           </button>
         </div>
 
-        {/* 탭 */}
-        <div className="flex border-b border-slate-200 px-3 sm:px-6 bg-white shrink-0 overflow-x-auto scrollbar-none">
+        {/* 탭 — 좌우 끝에 페이드 그라데이션으로 스크롤 가능 힌트 */}
+        <div className="relative shrink-0 border-b border-slate-200 bg-white">
+          <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white to-transparent z-10" />
+          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white to-transparent z-10" />
+          <div ref={tabBarRef} className="flex px-3 sm:px-6 bg-white overflow-x-auto scrollbar-none scroll-smooth">
           <button
             onClick={() => switchTab('general')}
+            data-active={settingsTab === 'general'}
             className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors whitespace-nowrap ${settingsTab === 'general' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
             일반
           </button>
           <button
             onClick={() => switchTab('ai')}
+            data-active={settingsTab === 'ai'}
             className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'ai' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
             <Cpu size={14} /> AI
           </button>
           <button
             onClick={() => switchTab('secrets')}
+            data-active={settingsTab === 'secrets'}
             className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'secrets' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
             <KeyRound size={14} /> API 키
@@ -481,6 +502,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
           {!isDemo && (
             <button
               onClick={() => switchTab('mcp')}
+              data-active={settingsTab === 'mcp'}
               className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'mcp' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
             >
               <Plug size={14} /> 외부 MCP
@@ -489,6 +511,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
           {!isDemo && (
             <button
               onClick={() => switchTab('capabilities')}
+              data-active={settingsTab === 'capabilities'}
               className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'capabilities' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
             >
               <Layers size={14} /> 기능
@@ -497,11 +520,13 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
           {!isDemo && (
             <button
               onClick={() => switchTab('system')}
+              data-active={settingsTab === 'system'}
               className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'system' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
             >
               <Cpu size={14} /> 시스템
             </button>
           )}
+          </div>
         </div>
 
         <div ref={contentRef} className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-scroll min-w-0 flex-1 min-h-0">
