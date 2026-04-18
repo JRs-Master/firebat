@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Circle, Copy, CheckCheck, ImagePlus, Plus } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Circle, Copy, CheckCheck, ImagePlus, Plus, Square } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -591,7 +591,7 @@ export default function AdminConsole() {
     conversations, activeConvId, chatEndRef, chatContainerRef, handleScroll,
     handleNewConv, handleSelectConv, handleDeleteConv,
     handleSubmit, handleConfirmPlan, handleRejectPlan,
-    handleApprovePending, handleRejectPending,
+    handleApprovePending, handleRejectPending, handleStop,
   } = useChat(aiModel, fetchFileTree);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -745,10 +745,9 @@ export default function AdminConsole() {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
-                  disabled={loading}
                   style={{ touchAction: 'pan-y', overscrollBehavior: 'contain', WebkitUserSelect: 'text', WebkitOverflowScrolling: 'touch' }}
-                  className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] px-4 sm:px-5 pt-3 sm:pt-4 pb-1 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50 select-text overflow-y-auto"
-                  placeholder={loading ? '명령 집행 중...' : '무엇을 도와드릴까요?'}
+                  className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] px-4 sm:px-5 pt-3 sm:pt-4 pb-1 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 select-text overflow-y-auto"
+                  placeholder={loading ? '응답 중... 중지하려면 아래 정지 버튼' : '무엇을 도와드릴까요?'}
                 />
                 <input
                   ref={imageInputRef}
@@ -782,12 +781,13 @@ export default function AdminConsole() {
                     )}
                   </div>
                   <button
-                    onClick={() => handleSubmit()}
-                    disabled={!input.trim() || loading}
-                    className="bg-slate-900 hover:bg-black disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]"
+                    onClick={() => loading ? handleStop() : handleSubmit()}
+                    disabled={!loading && !input.trim()}
+                    title={loading ? '생성 중지' : '전송'}
+                    className={`${loading ? 'bg-red-500 hover:bg-red-600' : 'bg-slate-900 hover:bg-black'} disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]`}
                   >
                     {loading
-                      ? <div className="animate-spin text-white"><Cpu size={14} /></div>
+                      ? <><Square size={12} fill="currentColor" className="sm:hidden" /><Square size={16} fill="currentColor" className="hidden sm:block" /></>
                       : <><Send size={14} className="sm:hidden" /><Send size={18} className="hidden sm:block" /></>
                     }
                   </button>

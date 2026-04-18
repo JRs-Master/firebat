@@ -41,6 +41,12 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   const cancelChunkAnim = () => {
     if (chunkAnimRef.current) { clearInterval(chunkAnimRef.current); chunkAnimRef.current = null; }
   };
+  // 요청 중단용 AbortController — 전송 중 중지 버튼 누르면 abort
+  const abortRef = useRef<AbortController | null>(null);
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+  }, []);
 
   // ── 초기화: 대화 목록 복원 ─────────────────────────────────────────────────
   useEffect(() => {
@@ -185,9 +191,12 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       const lastAssistantMsg = [...messages].reverse().find(m => m.role === 'system' && m.data && typeof (m.data as any).responseId === 'string');
       const previousResponseId = lastAssistantMsg ? (lastAssistantMsg.data as any).responseId as string : undefined;
 
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: ctrl.signal,
         body: JSON.stringify({
           prompt: userPrompt,
           config: { model: aiModel },
@@ -328,9 +337,13 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         if (done) break;
       }
     } catch (err: any) {
+      cancelChunkAnim();
+      const aborted = err?.name === 'AbortError';
       setMessages(prev => prev.map(msg =>
         msg.id === `s-${id}`
-          ? { ...msg, isThinking: false, executing: false, streaming: false, error: err.message, content: msg.content || '서버 네트워크 연결이 끊어졌습니다.' }
+          ? { ...msg, isThinking: false, executing: false, streaming: false,
+              error: aborted ? undefined : err.message,
+              content: msg.content || (aborted ? '중단되었습니다.' : '서버 네트워크 연결이 끊어졌습니다.') }
           : msg
       ));
     } finally {
@@ -340,6 +353,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           ? { ...msg, isThinking: false, executing: false, streaming: false, content: msg.content || msg.error || '응답을 받지 못했습니다.' }
           : msg
       ));
+      abortRef.current = null;
       setLoading(false);
     }
   }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage]);
@@ -448,5 +462,6 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     handleNewConv, handleSelectConv, handleDeleteConv,
     handleSubmit, handleConfirmPlan, handleRejectPlan,
     handleApprovePending, handleRejectPending,
+    handleStop,
   };
 }
