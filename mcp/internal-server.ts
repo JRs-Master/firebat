@@ -15,7 +15,7 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   // ── UI 렌더링 ───────────────────────────────────────────────────────────
   server.tool(
-    'render_pagespec',
+    'render_component',
     '채팅에 인라인 컴포넌트 렌더링. type enum: StockChart, Table, Alert, Card, Grid, Badge, Progress, Header, Text, List, Divider, Countdown, Chart. props는 컴포넌트별 다름.',
     {
       type: z.enum([
@@ -30,7 +30,7 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'render_html',
-    '자유 HTML 인라인 렌더링 (iframe). 정형 UI는 render_pagespec 우선. CDN 필요 시 libraries로 선택.',
+    '자유 HTML 인라인 렌더링 (iframe). 정형 UI는 render_component 우선. CDN 필요 시 libraries로 선택.',
     {
       html: z.string().describe('HTML 본문 또는 완전한 HTML'),
       height: z.string().optional().describe('iframe 높이 (기본 400px)'),
