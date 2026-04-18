@@ -360,8 +360,26 @@ async function getAccessToken(base, appKey, appSecret) {
   return { token: json.access_token, isNew: true };
 }
 
-/** API 호출 (GET/POST 자동 분기) */
-async function callApi(base, token, appKey, appSecret, trId, method, url, params = {}) {
+// ── Rate Limit (한투: 모의 초당 2, 실전 초당 20. 보수적으로 초당 10 적용) ──
+const RATE_LIMIT = 10;
+const WINDOW_MS = 1000;
+const _reqTimes = [];
+
+async function acquireSlot() {
+  while (true) {
+    const now = Date.now();
+    while (_reqTimes.length > 0 && now - _reqTimes[0] >= WINDOW_MS) _reqTimes.shift();
+    if (_reqTimes.length < RATE_LIMIT) {
+      _reqTimes.push(now);
+      return;
+    }
+    const waitMs = WINDOW_MS - (now - _reqTimes[0]) + 5;
+    await new Promise(r => setTimeout(r, waitMs));
+  }
+}
+
+/** API 호출 (GET/POST 자동 분기) — 자동 throttle + 429 재시도 (최대 2회, 1초 간격) */
+async function callApi(base, token, appKey, appSecret, trId, method, url, params = {}, retry = 2) {
   const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'authorization': `Bearer ${token}`,
@@ -386,7 +404,15 @@ async function callApi(base, token, appKey, appSecret, trId, method, url, params
     if (qsStr) fullUrl += `?${qsStr}`;
   }
 
+  await acquireSlot();
   const resp = await fetch(fullUrl, fetchOpts);
+
+  // 429: rate limit 초과 → 1초 대기 후 재시도
+  if (resp.status === 429 && retry > 0) {
+    await new Promise(r => setTimeout(r, 1100));
+    return callApi(base, token, appKey, appSecret, trId, method, url, params, retry - 1);
+  }
+
   if (!resp.ok) {
     const errText = await resp.text().catch(() => '');
     throw new Error(`한투 API ${resp.status}: ${resp.statusText} ${errText}`.trim());

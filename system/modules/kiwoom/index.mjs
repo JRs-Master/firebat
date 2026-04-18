@@ -256,13 +256,35 @@ async function getAccessToken(base, appKey, appSecret, forceNew = false) {
   return { token: json.token, isNew: true };
 }
 
-/** API 호출 */
-async function callApi(base, token, apiId, params = {}) {
+// ── Rate Limit (초당 5회 제한, 키움) ─────────────────────────────────────
+// 프로세스 레벨 토큰 버킷 — 1초 단위 윈도우 내 5회까지 허용
+const RATE_LIMIT = 5;
+const WINDOW_MS = 1000;
+const _reqTimes = [];
+
+async function acquireSlot() {
+  while (true) {
+    const now = Date.now();
+    // 1초 지난 요청 제거
+    while (_reqTimes.length > 0 && now - _reqTimes[0] >= WINDOW_MS) _reqTimes.shift();
+    if (_reqTimes.length < RATE_LIMIT) {
+      _reqTimes.push(now);
+      return;
+    }
+    // 슬롯이 비기까지 대기
+    const waitMs = WINDOW_MS - (now - _reqTimes[0]) + 5;
+    await new Promise(r => setTimeout(r, waitMs));
+  }
+}
+
+/** API 호출 — 자동 throttle + 429 재시도 (최대 2회, 1초 간격) */
+async function callApi(base, token, apiId, params = {}, retry = 2) {
   const category = ID_TO_CATEGORY[apiId];
   if (!category) throw new Error(`알 수 없는 API ID: ${apiId}. 지원되는 API 목록은 키움 REST API 문서를 참고하세요.`);
 
   const url = `${base}/api/dostk/${category}`;
 
+  await acquireSlot();
   const resp = await fetch(url, {
     method: 'POST',
     headers: {
@@ -275,6 +297,12 @@ async function callApi(base, token, apiId, params = {}) {
     body: JSON.stringify(params),
     signal: AbortSignal.timeout(15000),
   });
+
+  // 429: rate limit 초과 → 1초 대기 후 재시도
+  if (resp.status === 429 && retry > 0) {
+    await new Promise(r => setTimeout(r, 1100));
+    return callApi(base, token, apiId, params, retry - 1);
+  }
 
   if (!resp.ok) {
     const errText = await resp.text().catch(() => '');
