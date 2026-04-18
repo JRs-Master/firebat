@@ -90,9 +90,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   // 유효 데이터만 + 오래된 → 최신 순서로 정렬 (API가 역순 반환 가능)
-  // 모든 OHLCV 필드가 finite number여야 통과 (AI가 일부 필드 누락하는 경우 방어)
+  // data가 undefined/null/비배열이어도 크래시 방지
   const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
   const fullData = useMemo(() => {
+    if (!Array.isArray(data) || data.length === 0) return [];
     const valid = data.filter(d =>
       d && isNum(d.open) && isNum(d.high) && isNum(d.low) && isNum(d.close) && isNum(d.volume)
     );

@@ -1269,11 +1269,13 @@ render_component 도구로 구조화 렌더링. 타입 enum: StockChart, Table, 
 - 여러 카드형 정보 묶음 → \`Grid\` + \`Card\`
 
 **예시 (삼성전자 주가 전망 요청 시):**
-1. sysmod 도구로 시세·차트·뉴스 조회
-2. render_component(StockChart) — 일봉 차트
-3. render_component(Table) — 현재가/등락률/PER 등 수치
-4. render_component(Alert) — 투자 주의사항
+1. sysmod 도구로 시세·차트·뉴스 조회 → 결과 데이터 확보
+2. render_component(type:"StockChart", **props에 실제 OHLCV 데이터 전부 포함**: {symbol:"005930", title:"삼성전자", data:[{date,open,high,low,close,volume},...]})
+3. render_component(type:"Table", **props에 실제 수치**: {headers:["항목","값"], rows:[["현재가","216,000원"],...]})
+4. render_component(type:"Alert", **props에 실제 메시지**: {message:"단기 급등 후 변동성 주의", type:"warn", title:"투자 주의사항"})
 5. 종합 해설 텍스트 (짧게)
+
+**⚠️ render_component 호출 시 props는 절대 비우지 마라. 도구에서 받은 실제 데이터를 props에 그대로 넣어라.** type만 있고 props가 {}인 호출은 UI 렌더링 실패를 유발한다.
 
 한국어 라벨 사용 (시가/종가/고가/저가/거래량).
 
@@ -1615,7 +1617,7 @@ run_task/schedule_task의 pipeline에서:
 - 강조/경고 박스는 Alert 컴포넌트 (\`**주의**\` 같은 텍스트 금지).`,
         parameters: {
           type: 'object',
-          required: ['type'],
+          required: ['type', 'props'],
           properties: {
             type: {
               type: 'string',
@@ -1627,7 +1629,25 @@ run_task/schedule_task의 pipeline에서:
               ],
               description: '컴포넌트 타입',
             },
-            props: { type: 'object', description: '컴포넌트 props (타입별 다름)', additionalProperties: true },
+            props: {
+              type: 'object',
+              description: `컴포넌트 렌더 데이터 (**필수, 절대 빈 객체 금지**). 타입별 스키마:
+- StockChart: {symbol:"005930", title?:"삼성전자", data:[{date:"2026-04-17",open,high,low,close,volume},...], indicators?:["MA5","MA20"], buyPoints?, sellPoints?}
+- Table: {headers:["항목","값"], rows:[["현재가","216,000원"],["등락률","-0.69%"],...]}
+- Alert: {message:"...", type:"info"|"warn"|"error"|"success", title?}
+- Card: {children: Component[]}
+- Grid: {columns:2, children: [...]}
+- Badge: {text, color}
+- Progress: {value, max?, label?, color?}
+- Header: {text, level?:1..6}
+- Text: {content}
+- List: {items:[], ordered?}
+- Divider: {} (빈 객체 허용 유일한 케이스)
+- Countdown: {targetDate, label?}
+- Chart: {chartType:"bar"|"line"|"pie"|"doughnut", data, labels, title?}
+- Image: {src, alt?, width?, height?}`,
+              additionalProperties: true,
+            },
           },
         },
       },
