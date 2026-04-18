@@ -371,12 +371,31 @@ arguments는 대상 도구의 inputSchema에 맞춰 작성.`,
           const toolName = `sysmod_${modName.replace(/-/g, '_')}`;
           const inputProps: Record<string, { description?: string; type?: string; enum?: unknown[] }> = config.input?.properties ?? {};
           const requiredList: string[] = config.input?.required ?? [];
+          // JSON Schema 타입 → zod 변환 (required는 최소값 강제로 빈 값 차단)
+          const toZodType = (prop: { type?: string; enum?: unknown[] }, isRequired: boolean): z.ZodTypeAny => {
+            const t = prop.type;
+            let base: z.ZodTypeAny;
+            if (t === 'string') {
+              base = prop.enum ? z.enum(prop.enum as [string, ...string[]]) : (isRequired ? z.string().min(1) : z.string());
+            } else if (t === 'number' || t === 'integer') {
+              base = z.number();
+            } else if (t === 'boolean') {
+              base = z.boolean();
+            } else if (t === 'array') {
+              base = z.array(z.any());
+            } else if (t === 'object') {
+              base = z.record(z.string(), z.any());
+            } else {
+              base = z.any();
+            }
+            return base;
+          };
           const zodShape: Record<string, z.ZodTypeAny> = {};
           for (const [key, prop] of Object.entries(inputProps)) {
             const desc = prop.description || '';
-            zodShape[key] = requiredList.includes(key)
-              ? z.any().describe(desc)
-              : z.any().optional().describe(desc);
+            const isRequired = requiredList.includes(key);
+            const zt = toZodType(prop, isRequired).describe(desc);
+            zodShape[key] = isRequired ? zt : zt.optional();
           }
 
           // 상세 설명 (capability, 입력 필드 enum/타입, 반환 필드, 필요 시크릿 등)
