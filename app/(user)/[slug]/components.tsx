@@ -47,6 +47,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'Progress':      return <ProgressComp value={p.value ?? 0} max={p.max} label={p.label} color={p.color} />;
     case 'Badge':         return <BadgeComp text={p.text ?? ''} color={p.color} />;
     case 'Alert':         return <AlertComp message={p.message ?? ''} type={p.type} title={p.title} />;
+    case 'Callout':       return <AlertComp message={p.message ?? ''} type={p.type ?? 'info'} title={p.title} />;
     case 'List':          return <ListComp items={p.items ?? []} ordered={p.ordered} />;
     case 'Carousel':      return <CarouselComp children={p.children ?? []} autoPlay={p.autoPlay} interval={p.interval} />;
     case 'Countdown':     return <CountdownComp targetDate={p.targetDate ?? ''} label={p.label} />;
@@ -446,11 +447,15 @@ function BadgeComp({ text, color = 'blue' }: { text: string; color?: string }) {
 // ── Alert ───────────────────────────────────────────────────────────────────
 function AlertComp({ message, type = 'info', title }: { message: string; type?: string; title?: string }) {
   const styles: Record<string, { bg: string; border: string; text: string; icon: string }> = {
-    info:    { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-800', icon: 'ℹ️' },
-    success: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-800', icon: '✅' },
-    warn:    { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-800', icon: '⚠️' },
-    warning: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-800', icon: '⚠️' },
-    error:   { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800', icon: '❌' },
+    info:    { bg: 'bg-blue-50',   border: 'border-blue-200',   text: 'text-blue-800',   icon: 'ℹ️' },
+    success: { bg: 'bg-green-50',  border: 'border-green-200',  text: 'text-green-800',  icon: '✅' },
+    warn:    { bg: 'bg-amber-50',  border: 'border-amber-200',  text: 'text-amber-800',  icon: '⚠️' },
+    warning: { bg: 'bg-amber-50',  border: 'border-amber-200',  text: 'text-amber-800',  icon: '⚠️' },
+    error:   { bg: 'bg-red-50',    border: 'border-red-200',    text: 'text-red-800',    icon: '❌' },
+    danger:  { bg: 'bg-red-50',    border: 'border-red-200',    text: 'text-red-800',    icon: '❌' },
+    tip:     { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-800', icon: '💡' },
+    accent:  { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-800', icon: '🔥' },
+    neutral: { bg: 'bg-slate-50',  border: 'border-slate-200',  text: 'text-slate-700',  icon: '📎' },
   };
   const s = styles[type] ?? styles.info;
 

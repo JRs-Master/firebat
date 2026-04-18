@@ -296,12 +296,20 @@ function CopyButton({ text }: { text: string }) {
 // ─── 액션 태그 (에러 시 빨간색 + 클릭 펼침) ──────────────────────────────────
 function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[] }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
+  // 같은 도구 중복은 하나로 합치고 호출 횟수를 xN으로 표시
+  const counts = new Map<string, number>();
+  const order: string[] = [];
+  for (const a of actions) {
+    if (!counts.has(a)) order.push(a);
+    counts.set(a, (counts.get(a) || 0) + 1);
+  }
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap gap-2">
-        {actions.map((action, i) => {
+        {order.map((action, i) => {
           const step = steps?.find(s => s.type === action && s.status === 'error');
           const isError = !!step;
+          const n = counts.get(action) || 1;
           return (
             <div
               key={i}
@@ -309,13 +317,13 @@ function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[
               onClick={isError ? () => setOpenIdx(openIdx === i ? null : i) : undefined}
             >
               {isError ? <AlertTriangle size={10} className="text-red-400" /> : <Blocks size={10} className="text-slate-400" />}
-              {action}
+              {action}{n > 1 && <span className="text-slate-400 ml-0.5">×{n}</span>}
             </div>
           );
         })}
       </div>
       {openIdx !== null && (() => {
-        const action = actions[openIdx];
+        const action = order[openIdx];
         const step = steps?.find(s => s.type === action && s.status === 'error');
         return step?.error ? (
           <div className="px-3 py-2 bg-red-50/50 border border-red-100 rounded-md text-[12px] font-mono text-red-600 leading-relaxed break-all">
@@ -333,10 +341,10 @@ function ErrorCollapsible({ error, label }: { error: string; label?: string }) {
   return (
     <div className="flex flex-col gap-1 w-fit max-w-full">
       <div
-        className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-100 text-red-700 rounded-md text-[13px] font-bold tracking-tight shadow-sm cursor-pointer hover:bg-red-100 transition-colors"
+        className="flex items-center gap-1 px-2 py-0.5 bg-red-50 border border-red-100 text-red-600 rounded text-[11px] font-medium cursor-pointer hover:bg-red-100 transition-colors"
         onClick={() => setOpen(!open)}
       >
-        <AlertTriangle size={14} className="text-red-500 shrink-0" />
+        <AlertTriangle size={10} className="text-red-400 shrink-0" />
         <span>{label || '오류 발생'}</span>
       </div>
       {open && (

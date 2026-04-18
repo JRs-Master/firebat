@@ -23,9 +23,15 @@ export class ScheduleManager {
   // ── 크론 CRUD ──
 
   async schedule(jobId: string, targetPath: string, opts: CronScheduleOptions): Promise<InfraResult<void>> {
+    // targetPath 또는 pipeline 중 하나는 반드시 있어야 함 (빈 스케줄 등록 방지)
+    const hasPath = typeof targetPath === 'string' && targetPath.trim() !== '';
+    const hasPipeline = Array.isArray(opts.pipeline) && opts.pipeline.length > 0;
+    if (!hasPath && !hasPipeline) {
+      return { success: false, error: 'schedule_task: targetPath 또는 pipeline 중 하나는 반드시 지정하세요.' };
+    }
     // 파이프라인 사전 검증 — TaskManager에 위임
-    if (opts.pipeline && opts.pipeline.length > 0) {
-      const err = this.core.validatePipeline(opts.pipeline);
+    if (hasPipeline) {
+      const err = this.core.validatePipeline(opts.pipeline!);
       if (err) return { success: false, error: err };
     }
     return this.cron.schedule(jobId, targetPath, opts);
