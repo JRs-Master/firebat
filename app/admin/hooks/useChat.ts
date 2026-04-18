@@ -285,11 +285,19 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
         .filter(m => m.id !== 'system-init' && !m.isThinking)
         .map(m => {
           const role = m.role === 'system' ? 'model' : 'user';
-          // 도구 실행 메타·m.data 모두 제외 — 순수 user/assistant 텍스트만 히스토리로 전달.
-          // 메타를 넣으면 "하이" 같은 짧은 신규 턴에 AI가 이전 도구 실행을 재현해 환각 발생.
-          const content = (m.content || '').trim();
-          return { role, content: content || JSON.stringify(m) };
-        });
+          // 순수 텍스트만 사용. content 비었으면 blocks에서 text 블록만 추출.
+          // JSON.stringify(m) 폴백 금지 — m.data.blocks(컴포넌트 props, 분석 원문)가 통째로
+          // 유입돼 AI가 이전 턴을 재현(환각) 원인이 됨.
+          let content = (m.content || '').trim();
+          if (!content && m.data && Array.isArray(m.data.blocks)) {
+            const texts = m.data.blocks
+              .filter((b: any) => b && b.type === 'text' && typeof b.text === 'string')
+              .map((b: any) => b.text as string);
+            content = texts.join('\n').trim();
+          }
+          return { role, content: content || '(빈 응답)' };
+        })
+        .filter(h => h.content && h.content !== '(빈 응답)');
 
       // 이전 응답의 responseId 찾기 — OpenAI Responses API multi-turn state (history 재전송 대체)
       // previousResponseId는 userd turn 간 이어받지 않음 — OpenAI 서버측 reasoning 트레이스가
