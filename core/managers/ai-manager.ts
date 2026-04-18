@@ -1644,6 +1644,11 @@ ${systemContext}
 - 시계열 한 개 지표 → render_chart
 조회한 데이터를 텍스트로만 서술하지 말고 반드시 컴포넌트로 시각화.
 
+## render_* 출력 방식 (절대 규칙)
+render_table·render_stock_chart·render_alert·render_chart·render_header·render_html 등은 **함수 호출(function call)**로만 사용한다.
+절대 \`\`\`json ... \`\`\` 마크다운 코드 블록 안에 {"type":"render_xxx", "props":{...}} 형태로 텍스트 출력하지 마라.
+시각화가 필요하면 해당 도구를 직접 호출하고, 최종 답변 텍스트에는 맥락 해설만 써라.
+
 ## 스키마 준수
 - strict 도구는 모든 required 필드를 실제 값으로 채워라. 누락 시 API 거부.
 - 도구 결과는 자연어로 요약. raw JSON 노출 금지.
