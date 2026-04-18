@@ -186,11 +186,13 @@ export class OpenAiAdapter implements ILlmPort {
         }));
       }
 
+      // GPT-5.4/o 시리즈는 temperature 미지원 — 모델 prefix로 판별해 조건부 포함
+      const supportsTemperature = !/^(gpt-5|o[1-9])/i.test(model);
       const payload: Record<string, unknown> = {
         model,
         instructions: systemPrompt,
         input,
-        temperature: LLM_TEMPERATURE_TEXT,
+        ...(supportsTemperature ? { temperature: LLM_TEMPERATURE_TEXT } : {}),
         ...(openaiTools.length > 0 ? { tools: openaiTools, tool_choice: 'auto' } : {}),
         // Reasoning 요약 노출 (GPT-5.4 시리즈 thinking 표시용)
         reasoning: { effort: 'medium', summary: 'auto' },
