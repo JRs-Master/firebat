@@ -286,8 +286,12 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
         .map(m => {
           const role = m.role === 'system' ? 'model' : 'user';
           let content = m.content || '';
-          if (m.executedActions?.length) content += `\n[이전 턴 실행 액션: ${m.executedActions.join(', ')}]`;
-          if (m.data) content += `\n[이전 턴 실행 결과: ${JSON.stringify(m.data)}]`;
+          // 이전 턴 도구 이름만 메타로 포함 — 구체 데이터(m.data)는 제외 (환각·토큰 누적 방지)
+          // AI는 주제 맥락만 기억, 구체 수치·차트 데이터는 필요 시 재조회
+          if (m.executedActions?.length) {
+            const uniqueActions = Array.from(new Set(m.executedActions));
+            content += `\n[이전 턴 실행 도구: ${uniqueActions.join(', ')}]`;
+          }
           return { role, content: content.trim() || JSON.stringify(m) };
         });
 
