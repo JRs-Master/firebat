@@ -360,8 +360,8 @@ async function getAccessToken(base, appKey, appSecret) {
   return { token: json.access_token, isNew: true };
 }
 
-// ── Rate Limit (한투: 모의 초당 2, 실전 초당 20. 보수적으로 초당 10 적용) ──
-const RATE_LIMIT = 10;
+// ── Rate Limit (한투 실전 초당 20건 기준. 모의는 2건이나 429 재시도로 커버) ──
+const RATE_LIMIT = 20;
 const WINDOW_MS = 1000;
 const _reqTimes = [];
 
