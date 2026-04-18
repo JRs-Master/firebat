@@ -76,7 +76,9 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
 
     if (convs.length > 0) {
       const savedActiveId = localStorage.getItem('firebat_active_conv') ?? '';
-      const active = convs.find(c => c.id === savedActiveId) ?? convs[convs.length - 1];
+      // 폴백: 최근 활동 대화(updatedAt 최대). 정렬이 아직 안 된 상태일 수 있어 직접 reduce.
+      const mostRecent = convs.reduce((a, b) => ((b.updatedAt ?? b.createdAt) > (a.updatedAt ?? a.createdAt) ? b : a));
+      const active = convs.find(c => c.id === savedActiveId) ?? mostRecent;
       setActiveConvId(active.id);
       setMessages(cleanMessages(active.messages));
     }
@@ -112,7 +114,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
           try {
             const one = await fetch(`/api/conversations?id=${encodeURIComponent(r.id)}`).then(x => x.json());
             if (one.success && one.conversation) {
-              fullList.push({ id: r.id, title: r.title, createdAt: r.createdAt, messages: one.conversation.messages });
+              fullList.push({ id: r.id, title: r.title, createdAt: r.createdAt, updatedAt: r.updatedAt, messages: one.conversation.messages });
             } else if (localMatch) {
               fullList.push(localMatch);
             }
@@ -124,8 +126,8 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
         for (const local of convs) {
           if (!fullList.find(c => c.id === local.id)) fullList.push(local);
         }
-        // 최신 대화가 뒤로 가도록 오름차순 정렬 (Sidebar가 배열 순서대로 렌더링)
-        fullList.sort((a, b) => a.createdAt - b.createdAt);
+        // 최신 활동 순 (updatedAt 내림차순) — Sidebar 에서 위쪽이 최신
+        fullList.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
 
         if (fullList.length > 0) {
           setConversations(fullList);
@@ -151,8 +153,11 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
     const title = firstUser?.content
       ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
       : '새 대화';
+    const now = Date.now();
     setConversations(prev => {
-      const updated = prev.map(c => c.id === activeConvId ? { ...c, messages, title } : c);
+      const updated = prev.map(c => c.id === activeConvId ? { ...c, messages, title, updatedAt: now } : c);
+      // 사이드바 최신 순 유지 (UI 즉시 반영)
+      updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
       localStorage.setItem('firebat_conversations', JSON.stringify(updated));
       return updated;
     });

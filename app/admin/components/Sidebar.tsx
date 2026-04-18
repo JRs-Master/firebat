@@ -13,6 +13,8 @@ export type ConversationMeta = {
   id: string;
   title: string;
   createdAt: number;
+  /** 최근 활동 순 정렬 기준. 없으면 createdAt 폴백 */
+  updatedAt?: number;
 };
 
 interface SidebarProps {

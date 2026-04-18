@@ -114,5 +114,6 @@ export function makeConv(messages: Message[] = [INIT_MESSAGE]): Conversation {
   const title = firstUser?.content
     ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
     : '새 대화';
-  return { id: Date.now().toString(), title, createdAt: Date.now(), messages };
+  const now = Date.now();
+  return { id: now.toString(), title, createdAt: now, updatedAt: now, messages };
 }
