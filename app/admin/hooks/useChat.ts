@@ -103,23 +103,22 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
           }
         }
 
-        // DB 목록을 풀 로드 — 메시지 포함
+        // DB 목록을 풀 로드 — 메시지 포함. 초기 로드는 DB가 authoritative.
+        // (이전 로직은 activeConvId 매칭 시 무조건 로컬 → 다른 기기에서 이어 쓴 내용이
+        //  PC에서 사라지던 버그. 이제는 항상 DB 버전 우선, fetch 실패 시에만 로컬 폴백.)
         const fullList: Conversation[] = [];
         for (const r of remote) {
           const localMatch = convs.find(c => c.id === r.id);
-          // 로컬이 현재 활성 대화이고 타이핑 중일 수 있으면 유지. 그 외엔 DB 버전 우선.
-          // (이전: localMatch.createdAt >= r.updatedAt 비교는 필드 의미가 달라 논리 오류)
-          const currentActiveId = typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null;
-          if (localMatch && localMatch.id === currentActiveId) {
-            fullList.push(localMatch);
-            continue;
-          }
           try {
             const one = await fetch(`/api/conversations?id=${encodeURIComponent(r.id)}`).then(x => x.json());
             if (one.success && one.conversation) {
               fullList.push({ id: r.id, title: r.title, createdAt: r.createdAt, messages: one.conversation.messages });
+            } else if (localMatch) {
+              fullList.push(localMatch);
             }
-          } catch {}
+          } catch {
+            if (localMatch) fullList.push(localMatch);
+          }
         }
         // 로컬에만 있는 신규 대화도 합치기
         for (const local of convs) {
