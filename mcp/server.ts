@@ -28,7 +28,9 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'list_pages',
-    '등록된 페이지 목록 조회 (slug, status, title, updatedAt)',
+    `등록된 모든 페이지 메타데이터 목록을 반환한다.
+반환: [{slug, title, status: 'published'|'draft', project?, visibility?: 'public'|'password'|'private', createdAt?, updatedAt?}]
+사용 시점: 페이지 전체 목록 확인, 특정 프로젝트 소속 페이지 파악, slug 존재 여부 확인 전에.`,
     {},
     async () => {
       const result = await core.listPages();
@@ -40,8 +42,11 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'get_page',
-    '특정 slug의 PageSpec JSON 조회',
-    { slug: z.string().describe('페이지 slug (예: weather-app)') },
+    `특정 slug의 전체 PageSpec JSON을 조회한다.
+반환: {slug, head?: {title, description, keywords[], og?}, body: [{type, props}], project?, _visibility?}
+사용 시점: 기존 페이지 수정 전 현재 구조 확인, 템플릿으로 활용, 디버깅.
+실패: 페이지가 없으면 error 반환.`,
+    { slug: z.string().describe('페이지 slug (kebab-case, 한글 허용). list_pages로 확인 가능') },
     async ({ slug }) => {
       const result = await core.getPage(slug);
       return {
@@ -83,7 +88,9 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'delete_page',
-    '페이지 삭제',
+    `페이지를 영구 삭제한다. 사용자 확인 없이 즉시 삭제되므로 신중하게 사용하라.
+사용 시점: 사용자가 명시적으로 삭제 요청한 페이지만.
+주의: 복구 불가. 프로젝트 전체 삭제는 delete_project 사용.`,
     { slug: z.string().describe('삭제할 페이지 slug') },
     async ({ slug }) => {
       const result = await core.deletePage(slug);
@@ -97,8 +104,12 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'read_file',
-    '파일 읽기 (user/, docs/, system/guidelines/, system/modules/ 영역)',
-    { path: z.string().describe('읽을 파일 경로 (예: user/modules/weather-app/main.py)') },
+    `파일 텍스트 내용 읽기.
+허용 구역: user/, docs/, system/modules/
+금지 구역: core/, infra/, app/, data/, system/services/ 등 시스템 영역
+사용 시점: 기존 모듈 코드 검토, 문서 참조, 디버깅.
+반환: 파일 내용 문자열. 경로 없거나 권한 없으면 error.`,
+    { path: z.string().describe('읽을 파일 경로. 예: user/modules/weather-app/main.py, docs/FIREBAT_BIBLE.md') },
     async ({ path }) => {
       const result = await core.readFile(path);
       return {
@@ -130,8 +141,11 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'delete_file',
-    '파일/디렉토리 삭제 (user/ 영역만)',
-    { path: z.string().describe('삭제할 경로') },
+    `파일 또는 디렉토리 영구 삭제 (user/ 영역만).
+허용 구역: user/modules/* 만
+사용 시점: 사용자가 명시적으로 삭제 요청한 경우.
+주의: 디렉토리 삭제 시 하위 전체 영구 삭제. 복구 불가.`,
+    { path: z.string().describe('삭제할 경로. 예: user/modules/old-app') },
     async ({ path }) => {
       const result = await core.deleteFile(path);
       return {
@@ -142,8 +156,11 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'list_dir',
-    '디렉토리 내 항목 목록 조회 (이름 + 디렉토리 여부)',
-    { path: z.string().describe('조회할 디렉토리 경로 (예: user/modules)') },
+    `디렉토리 내 항목 목록 조회.
+반환: [{name: 파일명, isDirectory: boolean}]
+사용 시점: 프로젝트 구조 파악, 특정 파일 존재 여부 확인.
+허용: user/, docs/, system/modules/`,
+    { path: z.string().describe('조회할 디렉토리 경로. 예: user/modules, user/modules/weather-app') },
     async ({ path }) => {
       const result = await core.getFileTree(path);
       return {
@@ -156,10 +173,13 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'run_module',
-    '사용자 모듈 실행 (user/modules/ 안의 모듈)',
+    `사용자 모듈(user/modules/) 샌드박스 실행. 모듈의 config.json input 스키마에 따라 입력 전달.
+I/O: stdin으로 {correlationId, data: input} JSON → 모듈이 stdout 마지막 줄에 {success: true, data: {...}} 반환.
+사용 시점: 모듈 테스트, 사용자가 모듈 실행 요청.
+실패: 모듈 없음, 타임아웃(30초), stdout JSON 형식 오류, 모듈 내부 error throw.`,
     {
-      module_name: z.string().describe('모듈 이름 (예: weather-app)'),
-      input: z.record(z.string(), z.any()).optional().describe('모듈에 전달할 입력 데이터'),
+      module_name: z.string().describe('user/modules/ 내 모듈 폴더명 (예: weather-app)'),
+      input: z.record(z.string(), z.any()).optional().describe('config.json input.properties 스키마에 맞는 값. 예: {query:"서울", days:3}'),
     },
     async ({ module_name, input }) => {
       const result = await core.runModule(module_name, input ?? {});
@@ -173,7 +193,10 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'list_projects',
-    '프로젝트 목록 스캔 (모듈 + 페이지 통합)',
+    `전체 프로젝트 목록 스캔. 프로젝트 = 모듈 + 페이지 그룹.
+반환: [{name, pages: [...], modules: [...]}]
+사용 시점: 전체 앱 구조 파악, 프로젝트 존재 여부 확인.
+네이밍 규칙: 프로젝트명 = 모듈 폴더명 = 페이지 slug 통일.`,
     {},
     async () => {
       const projects = await core.scanProjects();
@@ -185,8 +208,10 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'delete_project',
-    '프로젝트 일괄 삭제 (모듈 + 페이지)',
-    { project: z.string().describe('삭제할 프로젝트 이름') },
+    `프로젝트 전체(모듈 폴더 + 소속 페이지 모두)를 일괄 영구 삭제.
+사용 시점: 사용자가 명시적으로 프로젝트 전체 삭제 요청.
+주의: 복구 불가. 단일 페이지만 지우려면 delete_page 사용.`,
+    { project: z.string().describe('삭제할 프로젝트명 (= 모듈 폴더명 = 페이지 slug)') },
     async ({ project }) => {
       const result = await core.deleteProject(project);
       return {
@@ -199,7 +224,10 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'list_cron_jobs',
-    '등록된 크론 잡 목록 조회',
+    `등록된 크론/예약 작업 전체 목록.
+반환: [{jobId, targetPath, title?, mode: 'cron'|'once'|'delay', cronTime?, runAt?, delaySec?, inputData?, pipeline?, createdAt}]
+사용 시점: 예약 작업 현황 확인, cancel_cron_job의 jobId 얻기 전.
+모드: cron(반복), once(특정 시각 1회), delay(N초 후 1회).`,
     {},
     async () => {
       const jobs = core.listCronJobs();
@@ -211,8 +239,10 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'cancel_cron_job',
-    '크론 잡 해제',
-    { job_id: z.string().describe('해제할 잡 ID') },
+    `크론/예약 작업 영구 해제. 실행 중이면 다음 발화 전에 중단.
+사용 시점: 사용자가 명시적으로 예약 해제 요청한 경우.
+주의: 해제 후 복구 불가. 재등록 필요.`,
+    { job_id: z.string().describe('해제할 잡 ID (list_cron_jobs로 확인)') },
     async ({ job_id }) => {
       const result = await core.cancelCronJob(job_id);
       return {
@@ -225,7 +255,10 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'list_system_modules',
-    '시스템 모듈 목록 조회 (system/modules/)',
+    `Firebat 내장 시스템 모듈(system/modules/) 목록.
+반환: [{name, description, capability, providerType, input, output, secrets[]}]
+사용 시점: 어떤 기능 사용 가능한지 확인 (kiwoom 주식, naver_search 검색, kakao_talk 메시지 등).
+중요: 각 모듈은 sysmod_{name} 전용 도구로도 호출 가능 (예: sysmod_kiwoom).`,
     {},
     async () => {
       const modules = await core.getSystemModules();
@@ -237,7 +270,8 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'get_timezone',
-    '현재 설정된 타임존 조회',
+    `현재 시스템 타임존 IANA 문자열 반환 (예: "Asia/Seoul", "UTC").
+사용 시점: 스케줄 등록 전 현재 타임존 확인, 시각 표시 포맷팅.`,
     {},
     async () => {
       return {
@@ -250,7 +284,10 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'list_mcp_servers',
-    '등록된 외부 MCP 서버 설정 목록 조회',
+    `Firebat이 연결된 외부 MCP 서버 설정 목록.
+반환: [{name, transport: 'stdio'|'sse', command?, args?, url?, enabled}]
+사용 시점: Gmail/Slack 등 외부 MCP 서버 연결 상태 확인.
+Firebat MCP 서버 자체가 아니라 Firebat이 클라이언트로 접속한 외부 서버들임.`,
     {},
     async () => {
       const servers = core.listMcpServers();
@@ -262,7 +299,9 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'list_mcp_tools',
-    '모든 활성 외부 MCP 서버의 사용 가능한 도구 목록',
+    `활성화된 모든 외부 MCP 서버의 사용 가능한 도구 목록.
+반환: [{server, name, description, inputSchema?}]
+사용 시점: call_mcp_tool 호출 전 tool_name 확인, 어떤 외부 기능 가능한지 파악.`,
     {},
     async () => {
       const result = await core.listAllMcpTools();
@@ -274,11 +313,14 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'call_mcp_tool',
-    '외부 MCP 서버의 도구 실행',
+    `외부 MCP 서버의 도구를 호출. Firebat MCP 클라이언트가 대상 서버에 JSON-RPC로 호출.
+사용 시점: 외부 서비스(Gmail, Slack 등) 기능 사용 — list_mcp_tools로 도구명 확인 후 실행.
+arguments는 해당 도구의 inputSchema 준수 필요.
+실패: 서버 연결 끊김, 도구 없음, 인자 스키마 불일치.`,
     {
-      server_name: z.string().describe('MCP 서버 이름'),
-      tool_name: z.string().describe('실행할 도구 이름'),
-      arguments: z.record(z.string(), z.any()).optional().describe('도구에 전달할 인자'),
+      server_name: z.string().describe('MCP 서버 이름 (list_mcp_servers로 확인)'),
+      tool_name: z.string().describe('실행할 도구 이름 (list_mcp_tools로 확인)'),
+      arguments: z.record(z.string(), z.any()).optional().describe('도구 inputSchema 준수한 인자 JSON'),
     },
     async ({ server_name, tool_name, arguments: args }) => {
       const result = await core.callMcpTool(server_name, tool_name, args ?? {});
@@ -341,9 +383,22 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
           zodProps[key] = zType;
         }
 
+        // config.json 상세 정보를 설명에 포함 (input/output 스키마 힌트)
+        const inputHint = cfg.input?.properties
+          ? '\n입력 필드: ' + Object.entries(cfg.input.properties as Record<string, { type?: string; description?: string; enum?: unknown[] }>)
+              .map(([k, v]) => `${k}${cfg.input.required?.includes(k) ? '*' : ''}: ${v.type || 'any'}${v.enum ? ` (enum: ${v.enum.slice(0, 8).join('/')}${v.enum.length > 8 ? '...' : ''})` : ''}${v.description ? ` — ${v.description}` : ''}`)
+              .slice(0, 10).join('; ')
+          : '';
+        const outputHint = cfg.output?.properties
+          ? '\n반환 필드: ' + Object.keys(cfg.output.properties).slice(0, 8).join(', ')
+          : '';
+        const capHint = cfg.capability ? `\ncapability: ${cfg.capability} (${cfg.providerType || '?'})` : '';
+        const secretHint = cfg.secrets?.length ? `\n필요 시크릿: ${cfg.secrets.join(', ')} (미설정 시 request_secret)` : '';
+        const description = `[시스템 모듈] ${cfg.description || dir.name}${capHint}${inputHint}${outputHint}${secretHint}`;
+
         server.tool(
           toolName,
-          `[시스템 모듈] ${cfg.description || dir.name}`,
+          description,
           zodProps,
           async (args) => {
             const result = await core.sandboxExecute(modulePath, args);

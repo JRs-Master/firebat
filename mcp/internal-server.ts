@@ -77,7 +77,9 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
   // ── 페이지 ──────────────────────────────────────────────────────────────
   server.tool(
     'list_pages',
-    '등록된 페이지 목록 조회',
+    `등록된 모든 페이지 메타데이터 목록.
+반환: [{slug, title, status, project?, visibility?, updatedAt?}]
+사용 시점: 페이지 전체 현황 확인, 특정 slug 존재 여부 파악.`,
     {},
     async () => {
       const r = await core.listPages();
@@ -87,8 +89,10 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'get_page',
-    '페이지 PageSpec 조회',
-    { slug: z.string() },
+    `특정 slug 페이지의 전체 PageSpec JSON 조회.
+반환: {slug, head?, body: [{type, props}], project?, _visibility?}
+사용 시점: 기존 페이지 수정 전 구조 확인, 템플릿 참고.`,
+    { slug: z.string().describe('페이지 slug (kebab-case, 한글 허용)') },
     async ({ slug }) => {
       const r = await core.getPage(slug);
       return { content: [{ type: 'text', text: JSON.stringify(r.success ? r.data : { error: r.error }) }] };
@@ -97,8 +101,22 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'save_page',
-    '페이지 저장 (upsert). spec은 PageSpec JSON 문자열.',
-    { slug: z.string(), spec: z.string() },
+    `페이지 저장 (upsert). spec은 **반드시 아래 PageSpec JSON** 문자열:
+{
+  "slug": "kebab-case",
+  "status": "published",
+  "project": "project-name",
+  "head": {"title": "...", "description": "...", "keywords": [...]},
+  "body": [{"type": "Html", "props": {"content": "<전체 HTML>"}}]
+}
+규칙:
+- body는 컴포넌트 배열. Html 컴포넌트가 주. props.content에 HTML+CSS+JS.
+- {title, html} 같은 자체 형식 절대 금지.
+- Html content는 iframe sandbox(allow-scripts)에서 실행.`,
+    {
+      slug: z.string().describe('페이지 slug'),
+      spec: z.string().describe('PageSpec JSON 문자열 전체'),
+    },
     async ({ slug, spec }) => {
       const r = await core.savePage(slug, spec);
       return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true, slug, url: `/${slug}` } : { error: r.error }) }] };
@@ -107,8 +125,9 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'delete_page',
-    '페이지 삭제',
-    { slug: z.string() },
+    `페이지 영구 삭제 (사용자 확인 후에만).
+주의: 복구 불가. 프로젝트 전체 삭제는 별도 도구.`,
+    { slug: z.string().describe('삭제할 페이지 slug') },
     async ({ slug }) => {
       const r = await core.deletePage(slug);
       return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true } : { error: r.error }) }] };
@@ -118,8 +137,11 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
   // ── 파일 ────────────────────────────────────────────────────────────────
   server.tool(
     'read_file',
-    '파일 읽기 (user/, docs/, system/modules/ 영역)',
-    { path: z.string() },
+    `파일 텍스트 내용 읽기.
+허용: user/, docs/, system/modules/
+금지: core/, infra/, app/, data/
+사용 시점: 기존 코드 검토, 문서 참조, 디버깅.`,
+    { path: z.string().describe('파일 경로. 예: user/modules/bmi/main.py') },
     async ({ path }) => {
       const r = await core.readFile(path);
       return { content: [{ type: 'text', text: r.success ? r.data! : `실패: ${r.error}` }] };
@@ -128,8 +150,18 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'write_file',
-    '파일 쓰기 (user/ 영역만). 부모 디렉토리 자동 생성.',
-    { path: z.string(), content: z.string() },
+    `파일 쓰기 (user/ 영역만). 부모 디렉토리 자동 생성.
+**모듈 작성 시 필수 준수:**
+- 경로: user/modules/{모듈명}/main.py 또는 index.mjs
+- config.json 필수: {"name", "type":"utility", "runtime":"python"|"node", "project":"모듈명", "packages":[], "secrets":[], "input":{}, "output":{}}
+- I/O: stdin으로 {correlationId, data:{...}} JSON → stdout 마지막 줄 {"success":true,"data":{...}}
+- Python: True/False/None (JSON의 true/false/null 아님)
+- 시크릿은 os.environ["KEY"] (Python) / process.env["KEY"] (Node)
+- 프로젝트명 = 모듈 폴더명 = 페이지 slug 통일 권장`,
+    {
+      path: z.string().describe('파일 경로. 예: user/modules/bmi/main.py, user/modules/bmi/config.json'),
+      content: z.string().describe('파일 내용 전체'),
+    },
     async ({ path, content }) => {
       const r = await core.writeFile(path, content);
       return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true } : { error: r.error }) }] };
@@ -138,8 +170,9 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'delete_file',
-    '파일/디렉토리 삭제 (user/ 영역만)',
-    { path: z.string() },
+    `파일/디렉토리 영구 삭제 (user/ 영역만). 복구 불가.
+디렉토리 삭제 시 하위 전체 삭제.`,
+    { path: z.string().describe('삭제 경로') },
     async ({ path }) => {
       const r = await core.deleteFile(path);
       return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true } : { error: r.error }) }] };
@@ -148,8 +181,10 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'list_dir',
-    '디렉토리 내 항목 목록',
-    { path: z.string() },
+    `디렉토리 항목 목록.
+반환: [{name, isDirectory}]
+사용 시점: 프로젝트 구조 파악, 파일 존재 확인.`,
+    { path: z.string().describe('디렉토리 경로. 예: user/modules') },
     async ({ path }) => {
       const r = await core.getFileTree(path);
       return { content: [{ type: 'text', text: JSON.stringify(r) }] };
@@ -175,12 +210,15 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'network_request',
-    'HTTP 요청',
+    `가벼운 HTTP 요청 (JSON/HTML 응답 반환).
+반환: {status, headers, data}
+사용 시점: 공개 API 호출, 간단한 웹 fetch.
+시스템 모듈 우선: 특정 서비스(주식/네이버/카카오 등)는 sysmod_* 도구가 더 적합.`,
     {
-      url: z.string(),
-      method: z.enum(['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS']).optional(),
-      headers: z.record(z.string(), z.string()).optional(),
-      body: z.string().optional(),
+      url: z.string().describe('전체 URL (https://...)'),
+      method: z.enum(['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS']).optional().describe('기본 GET'),
+      headers: z.record(z.string(), z.string()).optional().describe('요청 헤더'),
+      body: z.string().optional().describe('POST/PUT 본문. JSON이면 Content-Type: application/json 헤더 추가'),
     },
     async ({ url, method, headers, body }) => {
       const r = await core.networkFetch(url, { method: method as 'GET', headers, body });
@@ -191,17 +229,29 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
   // ── 스케줄링 ────────────────────────────────────────────────────────────
   server.tool(
     'schedule_task',
-    '예약 작업 등록. cronTime(반복), runAt(1회, ISO 8601), delaySec(N초 후) 중 하나. pipeline 배열로 복합 작업.',
+    `예약/반복 작업 등록. 3가지 모드 중 하나 선택:
+1) cronTime: "분 시 일 월 요일" (예: "0 9 * * 1-5" = 평일 9시) — 영구 반복
+2) runAt: ISO 8601 (예: "2026-04-18T15:00:00+09:00") — 특정 시각 1회
+3) delaySec: N초 후 1회
+
+targetPath + inputData: 단일 모듈 실행.
+pipeline: 복합 작업 (EXECUTE/MCP_CALL/NETWORK_REQUEST/LLM_TRANSFORM/CONDITION 5가지 스텝 조합).
+oneShot: 첫 성공 시 자동 취소 (가격 알림 등 조건부 1회 패턴).
+startAt/endAt: cronTime의 유효 기간 (만료 시 자동 해제).
+
+예: {cronTime:"*/5 9-15 * * 1-5", pipeline:[{type:"EXECUTE",path:"system/modules/kiwoom/index.mjs",inputData:{action:"price",symbol:"005930"}},{type:"CONDITION",field:"$prev.price",op:">=",value:217000},{type:"EXECUTE",path:"system/modules/kakao-talk/index.mjs",inputData:{action:"send-me",text:"삼성전자 217000원 도달"}}], oneShot:true}
+
+주의: 시각이 지났으면 사용자에게 바로 실행할지 확인. 자의적 조정 금지.`,
     {
-      targetPath: z.string().optional(),
-      cronTime: z.string().optional(),
-      runAt: z.string().optional(),
-      delaySec: z.number().optional(),
-      startAt: z.string().optional(),
-      endAt: z.string().optional(),
-      inputData: z.record(z.string(), z.any()).optional(),
-      pipeline: z.array(z.any()).optional(),
-      title: z.string().optional(),
+      targetPath: z.string().optional().describe('단일 실행 시 모듈 경로 (pipeline 쓰면 불필요)'),
+      cronTime: z.string().optional().describe('크론 표현식'),
+      runAt: z.string().optional().describe('ISO 8601 시각'),
+      delaySec: z.number().optional().describe('N초 후'),
+      startAt: z.string().optional().describe('반복 시작 시각 (ISO 8601)'),
+      endAt: z.string().optional().describe('반복 종료 시각 (ISO 8601)'),
+      inputData: z.record(z.string(), z.any()).optional().describe('단일 실행 입력'),
+      pipeline: z.array(z.any()).optional().describe('파이프라인 스텝 배열'),
+      title: z.string().optional().describe('잡 제목 (UI/알림용)'),
       oneShot: z.boolean().optional().describe('첫 성공 시 자동 취소'),
     },
     async (args) => {
@@ -223,8 +273,9 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'cancel_task',
-    '예약 작업 취소',
-    { jobId: z.string() },
+    `예약/반복 작업 영구 해제. 실행 중이면 다음 발화 전 중단.
+사용자가 명시적으로 해제 요청한 경우만. 복구 불가.`,
+    { jobId: z.string().describe('해제할 잡 ID (list_tasks로 확인)') },
     async ({ jobId }) => {
       const r = await core.cancelCronJob(jobId);
       return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true } : { error: r.error }) }] };
@@ -233,7 +284,8 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'list_tasks',
-    '등록된 크론 잡 목록',
+    `등록된 예약/반복 작업 전체 목록.
+반환: [{jobId, targetPath, title?, mode:'cron'|'once'|'delay', cronTime?, runAt?, delaySec?, inputData?, pipeline?, createdAt}]`,
     {},
     async () => {
       const jobs = core.listCronJobs();
@@ -243,8 +295,17 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'run_task',
-    '파이프라인 즉시 실행 (EXECUTE/MCP_CALL/NETWORK_REQUEST/LLM_TRANSFORM/CONDITION 5종)',
-    { pipeline: z.array(z.any()).describe('파이프라인 단계 배열') },
+    `파이프라인 즉시 실행 (예약 아님). 5가지 스텝 타입을 순차 실행:
+- EXECUTE: {type:"EXECUTE", path:"system/modules/xxx/index.mjs", inputData:{...}}
+- MCP_CALL: {type:"MCP_CALL", server:"gmail", tool:"send_email", arguments:{...}} — 외부 MCP 서버
+- NETWORK_REQUEST: {type:"NETWORK_REQUEST", url:"https://...", method:"GET"}
+- LLM_TRANSFORM: {type:"LLM_TRANSFORM", instruction:"이 데이터를 요약해줘"}
+- CONDITION: {type:"CONDITION", field:"$prev.price", op:">=", value:1000} — false면 중단
+
+$prev 치환: 이전 단계 결과에서 값 가져오기. 예: "$prev.url", "$prev.text".
+inputMap: {"url":"$prev.url"} 형태로 매핑 가능.
+사용자에게 결과 보여줄 때는 마지막을 LLM_TRANSFORM으로 끝내라.`,
+    { pipeline: z.array(z.any()).describe('파이프라인 스텝 배열') },
     async ({ pipeline }) => {
       const r = await core.runTask(pipeline as import('../core/ports').PipelineStep[]);
       return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true, data: r.data } : { error: r.error }) }] };
@@ -254,8 +315,15 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
   // ── 시크릿/외부 MCP ───────────────────────────────────────────────────
   server.tool(
     'request_secret',
-    '사용자에게 API 키 입력 요청. name은 kebab-case.',
-    { name: z.string(), prompt: z.string().optional(), helpUrl: z.string().optional() },
+    `사용자에게 API 키/시크릿 입력 요청. 프론트엔드에 입력창 표시, 사용자가 입력하면 Vault에 저장.
+사용 시점: 모듈 실행에 필요한 시크릿이 Vault에 없을 때 (모듈이 'secret missing' 에러 반환 시).
+중요: AI는 시크릿 값을 절대 모름. 입력은 사용자↔Vault 직접. AI는 요청만.
+name은 kebab-case (KIWOOM_APP_KEY → kiwoom-app-key). 모듈 config.json의 secrets 배열 이름과 일치.`,
+    {
+      name: z.string().describe('시크릿 키 이름 (kebab-case). 예: "openai-api-key"'),
+      prompt: z.string().optional().describe('사용자에게 보여줄 안내 메시지'),
+      helpUrl: z.string().optional().describe('키 발급 안내 URL (예: OpenAI 키 발급 페이지)'),
+    },
     async ({ name, prompt, helpUrl }) => ({
       content: [{ type: 'text', text: JSON.stringify({ success: true, requestSecret: true, name, prompt, helpUrl }) }],
     }),
@@ -263,11 +331,13 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'mcp_call',
-    '외부 MCP 서버 도구 호출',
+    `외부 MCP 서버(Gmail/Slack/커스텀 등) 도구 호출.
+Firebat 내장 기능이 아닌 외부 서비스 연동 전용. 시스템 모듈은 sysmod_* 사용, 내부 기능은 이 MCP의 다른 도구 사용.
+arguments는 대상 도구의 inputSchema에 맞춰 작성.`,
     {
-      server: z.string().describe('MCP 서버 이름'),
-      tool: z.string().describe('도구 이름'),
-      arguments: z.record(z.string(), z.any()).optional(),
+      server: z.string().describe('외부 MCP 서버 이름'),
+      tool: z.string().describe('해당 서버의 도구 이름'),
+      arguments: z.record(z.string(), z.any()).optional().describe('도구 inputSchema 준수한 인자'),
     },
     async ({ server: srv, tool, arguments: args }) => {
       const r = await core.callMcpTool(srv, tool, args ?? {});
@@ -299,8 +369,7 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
           if (!entryPath) continue;
 
           const toolName = `sysmod_${modName.replace(/-/g, '_')}`;
-          // config.json의 input.properties를 zod shape으로 평탄화 (AI가 args wrapper 없이 직접 필드 전달)
-          const inputProps: Record<string, { description?: string; type?: string }> = config.input?.properties ?? {};
+          const inputProps: Record<string, { description?: string; type?: string; enum?: unknown[] }> = config.input?.properties ?? {};
           const requiredList: string[] = config.input?.required ?? [];
           const zodShape: Record<string, z.ZodTypeAny> = {};
           for (const [key, prop] of Object.entries(inputProps)) {
@@ -310,9 +379,22 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
               : z.any().optional().describe(desc);
           }
 
+          // 상세 설명 (capability, 입력 필드 enum/타입, 반환 필드, 필요 시크릿 등)
+          const capHint = config.capability ? `\ncapability: ${config.capability} (${config.providerType || '?'})` : '';
+          const inputHint = Object.keys(inputProps).length > 0
+            ? '\n입력 필드: ' + Object.entries(inputProps)
+                .map(([k, v]) => `${k}${requiredList.includes(k) ? '*' : ''}: ${v.type || 'any'}${v.enum ? ` (enum: ${(v.enum as unknown[]).slice(0, 8).join('/')}${(v.enum as unknown[]).length > 8 ? '...' : ''})` : ''}${v.description ? ` — ${v.description}` : ''}`)
+                .slice(0, 10).join('; ')
+            : '';
+          const outputHint = config.output?.properties
+            ? '\n반환 필드: ' + Object.keys(config.output.properties).slice(0, 8).join(', ')
+            : '';
+          const secretHint = config.secrets?.length ? `\n필요 시크릿: ${config.secrets.join(', ')} (미설정 시 request_secret 호출)` : '';
+          const description = `[시스템 모듈] ${config.description || modName}${capHint}${inputHint}${outputHint}${secretHint}`;
+
           server.tool(
             toolName,
-            config.description || `시스템 모듈: ${modName}`,
+            description,
             zodShape,
             async (args: Record<string, unknown>) => {
               const execPath = entryPath!;
