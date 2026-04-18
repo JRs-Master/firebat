@@ -20,8 +20,23 @@ type Props = {
 export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
   const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system'>(initialTab ?? 'general');
   // AI 탭: 모드(일반/Vertex) + 프로바이더(openai/google/anthropic)
-  const [aiMode, setAiMode] = useState<'general' | 'vertex'>('general');
-  const [aiProvider, setAiProvider] = useState<'openai' | 'google' | 'anthropic'>('openai');
+  // 현재 aiModel로부터 초기값 자동 유도
+  const inferModeProvider = (model: string): { mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic' } => {
+    if (model.endsWith('-vertex')) return { mode: 'vertex', provider: 'google' };
+    if (model.startsWith('gpt-')) return { mode: 'general', provider: 'openai' };
+    if (model.startsWith('claude-')) return { mode: 'general', provider: 'anthropic' };
+    if (model.startsWith('gemini-')) return { mode: 'general', provider: 'google' };
+    return { mode: 'general', provider: 'openai' };
+  };
+  const _initMp = inferModeProvider(aiModel);
+  const [aiMode, setAiMode] = useState<'general' | 'vertex'>(_initMp.mode);
+  const [aiProvider, setAiProvider] = useState<'openai' | 'google' | 'anthropic'>(_initMp.provider);
+  // aiModel이 외부에서 바뀌면(상위에서 저장값 로드 등) 모드/공급자도 재추론
+  useEffect(() => {
+    const mp = inferModeProvider(aiModel);
+    setAiMode(mp.mode);
+    setAiProvider(mp.provider);
+  }, [aiModel]);
   const [mcpSubTab, setMcpSubTab] = useState<'app' | 'llm'>('app');
   // 내부 MCP 토큰 (LLM 통신용)
   const [internalMcpToken, setInternalMcpToken] = useState<{ hasToken: boolean; masked: string }>({ hasToken: false, masked: '' });
@@ -591,25 +606,40 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
             const providerLabels: Record<'openai' | 'google' | 'anthropic', string> = {
               openai: 'OpenAI', google: 'Google', anthropic: 'Anthropic',
             };
-            // Thinking 필터
-            const thinkingKind = getThinkingKind(aiModel);
+            // 모델 드롭다운용 option 배열
+            const modelOptions = modelsForProvider.length > 0
+              ? modelsForProvider.map(m => ({ value: m.value, label: m.label }))
+              : [{ value: '', label: '사용 가능한 모델 없음' }];
+            const modelValue = modelsForProvider.some(m => m.value === aiModel) ? aiModel : (modelsForProvider[0]?.value ?? '');
+            // Thinking 필터 — 현재 실제 선택된 모델(modelValue) 기준, aiModel(stale) 아님
+            const thinkingKind = getThinkingKind(modelValue);
             const thinkingOptions = filterThinkingLevels(thinkingKind);
             const thinkingValid = thinkingOptions.some(l => l.value === thinkingLevel);
             const thinkingValue = thinkingValid ? thinkingLevel : (thinkingOptions[0]?.value ?? 'medium');
             const thinkingLabel = thinkingKind === 'reasoning' ? 'Reasoning (OpenAI)'
               : thinkingKind === 'thinking' ? 'Thinking (Gemini)'
               : 'Extended Thinking (Claude)';
-            // 모델 드롭다운용 option 배열
-            const modelOptions = modelsForProvider.length > 0
-              ? modelsForProvider.map(m => ({ value: m.value, label: m.label }))
-              : [{ value: '', label: '사용 가능한 모델 없음' }];
-            const modelValue = modelsForProvider.some(m => m.value === aiModel) ? aiModel : (modelsForProvider[0]?.value ?? '');
             return (
               <>
                 <Field label="모드" help="일반 모드: 각 공급자 직통 API · Vertex 모드: GCP Vertex AI (Service Account 인증)">
                   <SegButtons<'general' | 'vertex'>
                     value={aiMode}
-                    onChange={setAiMode}
+                    onChange={(m) => {
+                      setAiMode(m);
+                      // 새 모드에서 현재 공급자가 유효한지 재확인, 유효한 첫 모델로 전환
+                      const nextProviders = providersByMode[m];
+                      const nextProvider = nextProviders.includes(aiProvider) ? aiProvider : nextProviders[0];
+                      setAiProvider(nextProvider);
+                      const nextModels = GEMINI_MODELS.filter(mm => {
+                        const v = mm.value;
+                        if (m === 'vertex') return v.endsWith('-vertex');
+                        if (v.endsWith('-vertex')) return false;
+                        if (nextProvider === 'openai') return v.startsWith('gpt-');
+                        if (nextProvider === 'google') return v.startsWith('gemini-');
+                        return v.startsWith('claude-');
+                      });
+                      if (nextModels[0]) onAiModelChange(nextModels[0].value);
+                    }}
                     options={[{ value: 'general', label: '일반' }, { value: 'vertex', label: 'Vertex' }]}
                   />
                 </Field>
@@ -617,7 +647,18 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                 <Field label="공급자">
                   <SegButtons<'openai' | 'google' | 'anthropic'>
                     value={effectiveProvider}
-                    onChange={setAiProvider}
+                    onChange={(p) => {
+                      setAiProvider(p);
+                      const nextModels = GEMINI_MODELS.filter(mm => {
+                        const v = mm.value;
+                        if (aiMode === 'vertex') return v.endsWith('-vertex');
+                        if (v.endsWith('-vertex')) return false;
+                        if (p === 'openai') return v.startsWith('gpt-');
+                        if (p === 'google') return v.startsWith('gemini-');
+                        return v.startsWith('claude-');
+                      });
+                      if (nextModels[0]) onAiModelChange(nextModels[0].value);
+                    }}
                     options={activeProviders.map(p => ({ value: p, label: providerLabels[p] }))}
                   />
                 </Field>
