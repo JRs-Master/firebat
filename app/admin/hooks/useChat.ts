@@ -147,13 +147,15 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
   // 타이머가 fire될 때의 컨텍스트(대화 ID)를 기억해, 저장 직전에 아직 같은 대화가 활성인지 재확인
   useEffect(() => {
     if (!activeConvId || conversations.length === 0) return;
-    let titleToSave = '새 대화';
+
+    // title은 effect 본문에서 먼저 계산 — setState updater 안에서 계산하면
+    // React가 render phase에 실행해 outer 변수가 stale 기본값으로 남음 (DB에 '새 대화'로 박히던 원인)
+    const firstUser = messages.find(m => m.role === 'user');
+    const title = firstUser?.content
+      ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
+      : '새 대화';
+
     setConversations(prev => {
-      const firstUser = messages.find(m => m.role === 'user');
-      const title = firstUser?.content
-        ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
-        : '새 대화';
-      titleToSave = title;
       const updated = prev.map(c => c.id === activeConvId ? { ...c, messages, title } : c);
       localStorage.setItem('firebat_conversations', JSON.stringify(updated));
       return updated;
@@ -167,7 +169,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       // 클로저에 바인딩 — fire 시점에 activeConvId가 바뀌어도 이 호출은 원래 대화를 저장
       const snapshotId = activeConvId;
       const snapshotMessages = messages;
-      const snapshotTitle = titleToSave;
+      const snapshotTitle = title;
       dbSaveTimerRef.current = setTimeout(() => {
         fetch('/api/conversations', {
           method: 'POST',
