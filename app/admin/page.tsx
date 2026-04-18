@@ -527,11 +527,14 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
               {msg.pendingActions && msg.pendingActions.length > 0 && (
                 <div className="flex flex-col gap-2">
                   {msg.pendingActions.map(p => (
-                    <div key={p.planId} className={`flex flex-col gap-1 px-3 py-2.5 rounded-xl ${p.status === 'past-runat' ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
+                    <div key={p.planId} className={`flex flex-col gap-1 px-3 py-2.5 rounded-xl ${p.status === 'past-runat' || p.status === 'error' ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
                       {p.status === 'past-runat' && (
                         <div className="text-[11px] font-bold text-red-600">
                           ⏱ 예약 시각이 이미 지났습니다 ({p.originalRunAt ? new Date(p.originalRunAt).toLocaleString('ko-KR') : '-'}). 즉시 보낼지 시간을 변경할지 선택하세요.
                         </div>
+                      )}
+                      {p.status === 'error' && p.errorMessage && (
+                        <div className="text-[11px] font-bold text-red-600 break-all">⚠ 실행 실패: {p.errorMessage}</div>
                       )}
                       <div className="flex items-center gap-2">
                       <AlertTriangle size={15} className={`shrink-0 ${p.status === 'past-runat' ? 'text-red-500' : 'text-amber-600'}`} />
@@ -540,6 +543,11 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
                         <span className="text-[12px] font-bold text-emerald-600 px-2">✓ 실행됨</span>
                       ) : p.status === 'rejected' ? (
                         <span className="text-[12px] font-medium text-slate-400 px-2">취소됨</span>
+                      ) : p.status === 'error' ? (
+                        <button
+                          onClick={() => onRejectPending?.(msg.id, p.planId)}
+                          className="flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-500 text-[12px] font-bold rounded-lg border border-slate-200 transition-colors"
+                        ><X size={13} /> 닫기</button>
                       ) : p.status === 'past-runat' ? (
                         <>
                           <button

@@ -443,9 +443,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         ...m,
         pendingActions: m.pendingActions?.map(p => {
           if (p.planId !== planId) return p;
-          if (data.success) return { ...p, status: 'approved' as const };
+          if (data.success) return { ...p, status: 'approved' as const, errorMessage: undefined };
           if (data.code === 'PAST_RUNAT') return { ...p, status: 'past-runat' as const, originalRunAt: data.originalRunAt };
-          return { ...p, status: 'pending' as const };
+          return { ...p, status: 'error' as const, errorMessage: data.error || '실행 실패' };
         }),
       }));
       if (data.success) { onRefresh(); window.dispatchEvent(new Event('firebat-refresh')); }
