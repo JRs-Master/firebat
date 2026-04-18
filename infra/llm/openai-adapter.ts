@@ -79,7 +79,14 @@ export class OpenAiAdapter implements ILlmPort {
       input.push({ role: 'user', content: prompt });
     }
 
-    // 멀티턴 도구 교환: function_call + function_call_output 아이템으로 누적
+    // 멀티턴 도구 교환: function_call + function_call_output (결과 2000자 제한으로 토큰 폭발 방지)
+    const MAX_RESULT_LEN = 2000;
+    const trimResult = (r: unknown): string => {
+      const s = JSON.stringify(r ?? {});
+      return s.length > MAX_RESULT_LEN
+        ? s.slice(0, MAX_RESULT_LEN) + `...[${s.length - MAX_RESULT_LEN}자 생략]`
+        : s;
+    };
     for (const exchange of toolExchanges) {
       exchange.toolCalls.forEach((tc, idx) => {
         const callId = `call_${idx}_${exchange.toolCalls.length}_${Math.random().toString(36).slice(2, 8)}`;
@@ -93,7 +100,7 @@ export class OpenAiAdapter implements ILlmPort {
         input.push({
           type: 'function_call_output',
           call_id: callId,
-          output: JSON.stringify(tr?.result ?? {}),
+          output: trimResult(tr?.result),
         });
       });
     }
@@ -175,9 +182,25 @@ export class OpenAiAdapter implements ILlmPort {
       const textParts: string[] = [];
       const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
 
+      // 429 Rate limit 재시도 헬퍼 (최대 2회, 응답의 retry-after 값 따라 대기)
+      const callWithRetry = async (p: Record<string, unknown>, retry = 2): Promise<any> => {
+        try {
+          return await (client.responses.create as any)(p);
+        } catch (e: any) {
+          const msg = e?.message || '';
+          const match = msg.match(/try again in ([\d.]+)s/i);
+          if (retry > 0 && (e?.status === 429 || /429/.test(msg))) {
+            const waitMs = match ? Math.ceil(parseFloat(match[1]) * 1000) + 200 : 2000;
+            await new Promise(r => setTimeout(r, waitMs));
+            return callWithRetry(p, retry - 1);
+          }
+          throw e;
+        }
+      };
+
       if (opts?.onChunk) {
         // ── 스트리밍 모드: responses.create({stream:true}) ──
-        const stream = await (client.responses.create as any)({ ...payload, stream: true });
+        const stream = await callWithRetry({ ...payload, stream: true });
         const toolCallAcc: Record<string, { name: string; args: string }> = {};
 
         for await (const event of stream as AsyncIterable<any>) {
@@ -222,7 +245,7 @@ export class OpenAiAdapter implements ILlmPort {
         }
       } else {
         // ── 비스트리밍 모드 ──
-        const response = await (client.responses.create as any)(payload);
+        const response = await callWithRetry(payload);
         const output = response.output as Array<Record<string, any>> | undefined;
         if (output) {
           for (const item of output) {
