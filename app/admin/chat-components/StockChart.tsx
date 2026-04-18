@@ -396,7 +396,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         onTouchCancel={handleTouchEnd}
         style={{ touchAction: 'pan-y' }}
       >
-        <svg viewBox={`0 0 ${W} ${priceH}`} className="w-full block" preserveAspectRatio="none" style={{ touchAction: 'pan-y', height: '280px', maxHeight: '36vh' }}>
+        <svg viewBox={`0 0 ${W} ${priceH}`} className="w-full h-auto block" preserveAspectRatio="xMidYMid meet" style={{ touchAction: 'pan-y', maxHeight: '40vh' }}>
           {/* 가로 그리드 */}
           {priceTicks.map(t => {
             const y = yPrice(t);
@@ -506,7 +506,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
 
       {/* 거래량 차트 */}
       <div className="relative">
-        <svg viewBox={`0 0 ${W} ${volH}`} className="w-full block" preserveAspectRatio="none" style={{ height: '80px', maxHeight: '12vh' }}>
+        <svg viewBox={`0 0 ${W} ${volH}`} className="w-full h-auto block" preserveAspectRatio="xMidYMid meet" style={{ maxHeight: '12vh' }}>
           {volTicks.map(t => {
             const y = yVol(t);
             return (
