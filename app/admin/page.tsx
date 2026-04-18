@@ -61,9 +61,15 @@ function cleanMarkdown(text: string): string {
   // 남은 고아 ** 제거
   cleaned = cleaned.replace(/\*\*/g, '');
   // AI가 render_* 를 코드블록에 출력한 경우 제거 (렌더링 안 되고 길게 늘어지는 환각 텍스트)
-  // 지원: ```json/python/js 등 + 안에 "type":"render_xxx" 또는 render_xxx( 패턴
+  // 지원 패턴:
+  //   1. "type":"render_xxx" 형태
+  //   2. render_xxx(...) 함수 호출 형태
+  //   3. // 로 시작하는 주석이 있는 json 블록 (AI가 데이터를 나열하며 narrative 주석 붙이는 환각 패턴)
+  //   4. OHLCV/차트용 props 덤프 (symbol + data 배열 + open/high/low/close)
   cleaned = cleaned.replace(/```[a-zA-Z]*\s*(?:\/\/[^\n]*\n)?[\s\S]*?["']type["']\s*:\s*["']render_[a-z_]+["'][\s\S]*?```/g, '');
   cleaned = cleaned.replace(/```[a-zA-Z]*\s*(?:\/\/[^\n]*\n)?[\s\S]*?render_[a-z_]+\s*\([\s\S]*?```/g, '');
+  cleaned = cleaned.replace(/```json\s*\n\s*\/\/[^\n]*\n[\s\S]*?```/g, '');
+  cleaned = cleaned.replace(/```[a-zA-Z]*\s*(?:\/\/[^\n]*\n)?[\s\S]*?["']symbol["']\s*:[\s\S]*?["']data["']\s*:\s*\[[\s\S]*?["'](open|close|high|low)["'][\s\S]*?```/g, '');
   return cleaned;
 }
 
