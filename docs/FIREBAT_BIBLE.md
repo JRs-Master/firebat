@@ -1,6 +1,6 @@
 # FIREBAT BIBLE — 헌법
 
-> 최종 개정: 2026-04-13 (v0.1)
+> 최종 개정: 2026-04-18 (v0.1)
 
 ## 전문(前文)
 
@@ -194,11 +194,13 @@ Firebat의 핵심 차별점: **"만들기 + 운영 + 자동화"**.
 | 런타임 | Next.js 내 in-process | 3-Tier Docker (Core/Renderer/Admin) |
 | Core 언어 | TypeScript | Rust (gRPC/IPC 분리) |
 | JSON 검증 | Zod | Serde |
-| LLM | Vertex AI (Gemini 2.5 Flash) | 파인튜닝 모델 |
-| 모듈 실행 | 자식 프로세스 | 자식 프로세스 + WASM |
+| LLM | Config-driven 멀티 프로바이더 (OpenAI / Gemini AI Studio / Anthropic / Vertex AI). 각 프로바이더 네이티브 SDK (`openai`, `@anthropic-ai/sdk`, `@google/genai`) 사용. 핸들러 5종: openai-responses / anthropic-messages / gemini-native / vertex-gemini / openai-chat. 새 모델은 `infra/llm/configs/*.json` 추가만으로 확장. | 자체 파인튜닝 모델 + Core AI 삼위일체 |
+| 모듈 실행 | 자식 프로세스 + `__updateSecrets` 영속 (키 화이트리스트 검증) | 자식 프로세스 + WASM |
 | 어댑터 | `infra/` 내 하드코딩 | `system/modules/` 동적 로드 |
 | 내부 모니터링 | 미구현 | Core AI 피드백 루프 |
 | 미디어 | 미구현 | IMediaPort (S3/R2) |
+| 대화 히스토리 | admin 계정: SQLite `conversations` 테이블 + 500ms debounce (다기기 동기화). demo: localStorage | 분산/클라우드 불필요 |
+| 인증 | IAuthPort + AuthManager (세션 토큰 + API 토큰 통합) | 동일 |
 
 ---
 

@@ -141,7 +141,7 @@ export class ProcessSandboxAdapter implements ISandboxPort {
           const parsed = JSON.parse(outputStr);
 
           // __updateSecrets: 모듈이 Vault에 저장할 시크릿 (토큰 캐싱 등)
-          const updateSecrets = parsed.__updateSecrets;
+          const updateSecretsRaw = parsed.__updateSecrets;
           delete parsed.__updateSecrets;
 
           const valRes = ModuleOutputSchema.safeParse(parsed);
@@ -149,17 +149,21 @@ export class ProcessSandboxAdapter implements ISandboxPort {
             return resolve({ success: false, error: `Protocol Violation: 모듈이 규격에 맞지 않는 JSON을 반환했습니다. Dump: ${stdout}` });
           }
 
-          // Vault에 시크릿 저장 (__updateSecrets + tokenCache TTL 자동 적용)
-          if (updateSecrets && typeof updateSecrets === 'object' && this.vault) {
+          // __updateSecrets 엄격 검증 후 Vault 저장
+          // 형식 요구: { [키: string]: string } — 값이 string 아니면 해당 항목 스킵
+          // 키 화이트리스트: config.json의 secrets 배열에 선언된 이름만 허용 (오염 방지)
+          if (updateSecretsRaw && typeof updateSecretsRaw === 'object' && !Array.isArray(updateSecretsRaw) && this.vault) {
+            const allowedSecrets = new Set<string>(Array.isArray(secretsEnv) ? [] : Object.keys(secretsEnv ?? {}));
             const tc = moduleDir ? this.readTokenCache(moduleDir) : null;
-            for (const [k, v] of Object.entries(updateSecrets)) {
-              if (typeof v === 'string') {
-                this.vault.setSecret(`user:${k}`, v);
-                // tokenCache 키와 일치하면 TTL 기반 만료시간 저장
-                if (tc && k === tc.key) {
-                  const expiry = new Date(Date.now() + tc.ttlHours * 3600000).toISOString();
-                  this.vault.setSecret(`user:${k}__expires`, expiry);
-                }
+            for (const [k, v] of Object.entries(updateSecretsRaw)) {
+              if (typeof k !== 'string' || !k.match(/^[A-Z0-9_]+$/)) continue; // 키는 대문자/숫자/언더스코어만
+              if (typeof v !== 'string' || v.length > 8192) continue;            // 값은 string + 8KB 제한
+              if (allowedSecrets.size > 0 && !allowedSecrets.has(k)) continue;   // config.json secrets 배열에 없으면 거부
+              this.vault.setSecret(`user:${k}`, v);
+              // tokenCache 키와 일치하면 TTL 기반 만료시간 저장
+              if (tc && k === tc.key) {
+                const expiry = new Date(Date.now() + tc.ttlHours * 3600000).toISOString();
+                this.vault.setSecret(`user:${k}__expires`, expiry);
               }
             }
           }

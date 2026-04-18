@@ -14,6 +14,7 @@ import type { ChatMessage, LlmCallOpts, LlmJsonResponse, LlmToolResponse, ToolDe
 import type { InfraResult } from '../../../core/types';
 import type { FormatHandler, FormatHandlerContext } from '../format-handler';
 import { LLM_TIMEOUT_MS, LLM_TEMPERATURE_JSON, LLM_TEMPERATURE_TEXT } from '../../config';
+import { adaptSchemaForGemini } from './_gemini-shared';
 
 function buildThinkingConfig(level: string): Record<string, unknown> {
   if (level === 'minimal') return { thinkingLevel: 'minimal' };
@@ -131,27 +132,10 @@ export class VertexGeminiFormat implements FormatHandler {
         });
       }
 
-      // Gemini 공통: enum은 string 배열 + integer/number에 enum 금지
-      const adaptSchema = (schema: unknown): unknown => {
-        if (!schema || typeof schema !== 'object') return schema;
-        if (Array.isArray(schema)) return schema.map(adaptSchema);
-        const s = schema as Record<string, unknown>;
-        const result: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(s)) {
-          if (k === 'enum' && Array.isArray(v)) {
-            const type = s.type as string | undefined;
-            if (type === 'integer' || type === 'number') continue;
-            result[k] = v.map(e => String(e));
-          } else if (v && typeof v === 'object') {
-            result[k] = adaptSchema(v);
-          } else { result[k] = v; }
-        }
-        return result;
-      };
       const functionDeclarations = tools.map(t => ({
         name: t.name,
         description: t.description,
-        parameters: adaptSchema(t.parameters),
+        parameters: adaptSchemaForGemini(t.parameters),
       }));
 
       const requestConfig = {

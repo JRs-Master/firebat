@@ -39,15 +39,17 @@ process.stdin.on('end', async () => {
     // - 핸들러가 { _status, _error } 반환 → kapi 호출 실패 (401이면 토큰 갱신 후 재시도)
     // - 핸들러가 { _ok: data } 반환 → 성공 데이터 (변환된 형태)
     // - 핸들러가 그 외 객체 반환 → 원본 kapi 응답 (성공, 변환 없음)
-    let refreshedToken = null; // 401 재시도 성공 시 새 토큰 — sandbox가 Vault에 저장
+    let refreshedAccessToken = null;   // 401 재시도 성공 시 새 access token
+    let refreshedRefreshToken = null;  // 카카오가 rotating한 새 refresh token (있으면)
     const withRetry = async (fn) => {
       let r = await fn(accessToken);
       if (r && r._status === 401 && refreshToken && restApiKey) {
         process.stderr.write('[kakao-talk] 토큰 만료, 갱신 시도...\n');
-        const newToken = await refreshAccessToken(restApiKey, refreshToken, clientSecret);
-        if (newToken) {
-          accessToken = newToken;
-          refreshedToken = newToken;
+        const refreshed = await refreshAccessToken(restApiKey, refreshToken, clientSecret);
+        if (refreshed) {
+          accessToken = refreshed.accessToken;
+          refreshedAccessToken = refreshed.accessToken;
+          if (refreshed.refreshToken) refreshedRefreshToken = refreshed.refreshToken;
           r = await fn(accessToken);
         } else {
           return { _error: '토큰 갱신 실패. 카카오 연동을 다시 진행해주세요.' };
@@ -56,8 +58,13 @@ process.stdin.on('end', async () => {
       return r;
     };
 
-    // 응답 객체에 __updateSecrets 주입 → sandbox가 Vault에 반영 (`user:KAKAO_ACCESS_TOKEN`)
-    const withTokenUpdate = (obj) => refreshedToken ? { ...obj, __updateSecrets: { KAKAO_ACCESS_TOKEN: refreshedToken } } : obj;
+    // 응답 객체에 __updateSecrets 주입 → sandbox가 Vault에 반영
+    const withTokenUpdate = (obj) => {
+      if (!refreshedAccessToken) return obj;
+      const secrets = { KAKAO_ACCESS_TOKEN: refreshedAccessToken };
+      if (refreshedRefreshToken) secrets.KAKAO_REFRESH_TOKEN = refreshedRefreshToken;
+      return { ...obj, __updateSecrets: secrets };
+    };
     const run = async (fn) => {
       const r = await withRetry(fn);
       if (!r) return outRaw(withTokenUpdate({ success: false, error: '알 수 없는 오류' }));
@@ -356,6 +363,7 @@ async function handleListEvents(token, data) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  토큰 갱신
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+/** 갱신 응답: { access_token, refresh_token? } 반환 (refresh_token은 rotating 시에만) */
 async function refreshAccessToken(restApiKey, refreshToken, clientSecret) {
   try {
     const params = { grant_type: 'refresh_token', client_id: restApiKey, refresh_token: refreshToken };
@@ -368,6 +376,7 @@ async function refreshAccessToken(restApiKey, refreshToken, clientSecret) {
     });
     if (!resp.ok) return null;
     const data = await resp.json();
-    return data.access_token || null;
+    if (!data.access_token) return null;
+    return { accessToken: data.access_token, refreshToken: data.refresh_token || null };
   } catch { return null; }
 }

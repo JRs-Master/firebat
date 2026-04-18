@@ -51,7 +51,14 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
   // ── 초기화: 대화 목록 복원 (로컬 즉시 + admin은 DB 백그라운드 동기화) ──────
   useEffect(() => {
     const raw = localStorage.getItem('firebat_conversations');
-    let convs: Conversation[] = raw ? JSON.parse(raw) : [];
+    let convs: Conversation[] = [];
+    if (raw) {
+      try { convs = JSON.parse(raw); }
+      catch (e) {
+        console.warn('[useChat] firebat_conversations 파싱 실패 — 빈 상태로 시작:', e);
+        localStorage.removeItem('firebat_conversations'); // 손상된 데이터 제거
+      }
+    }
 
     if (convs.length === 0) {
       const oldChat = localStorage.getItem('firebat_chat_history');
@@ -59,7 +66,9 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
         try {
           const msgs: Message[] = JSON.parse(oldChat);
           if (msgs.length > 0) convs = [makeConv(msgs)];
-        } catch {}
+        } catch (e) {
+          console.warn('[useChat] firebat_chat_history 파싱 실패:', e);
+        }
       }
     }
 
@@ -98,8 +107,10 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
         const fullList: Conversation[] = [];
         for (const r of remote) {
           const localMatch = convs.find(c => c.id === r.id);
-          // 로컬이 더 최신이면 로컬 유지 (아직 DB 저장 안 된 타이핑 중 내용 보호)
-          if (localMatch && localMatch.createdAt >= r.updatedAt) {
+          // 로컬이 현재 활성 대화이고 타이핑 중일 수 있으면 유지. 그 외엔 DB 버전 우선.
+          // (이전: localMatch.createdAt >= r.updatedAt 비교는 필드 의미가 달라 논리 오류)
+          const currentActiveId = typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null;
+          if (localMatch && localMatch.id === currentActiveId) {
             fullList.push(localMatch);
             continue;
           }
@@ -114,6 +125,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
         for (const local of convs) {
           if (!fullList.find(c => c.id === local.id)) fullList.push(local);
         }
+        // 최신 대화가 뒤로 가도록 오름차순 정렬 (Sidebar가 배열 순서대로 렌더링)
         fullList.sort((a, b) => a.createdAt - b.createdAt);
 
         if (fullList.length > 0) {
@@ -132,6 +144,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
 
   // ── 대화 저장 (메시지 변경 시) — localStorage 즉시 + admin이면 DB에 debounce 저장 ──
   const dbSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 타이머가 fire될 때의 컨텍스트(대화 ID)를 기억해, 저장 직전에 아직 같은 대화가 활성인지 재확인
   useEffect(() => {
     if (!activeConvId || conversations.length === 0) return;
     let titleToSave = '새 대화';
@@ -151,16 +164,29 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       if (dbSaveTimerRef.current) clearTimeout(dbSaveTimerRef.current);
       const convMeta = conversations.find(c => c.id === activeConvId);
       const createdAt = convMeta?.createdAt ?? Date.now();
+      // 클로저에 바인딩 — fire 시점에 activeConvId가 바뀌어도 이 호출은 원래 대화를 저장
+      const snapshotId = activeConvId;
+      const snapshotMessages = messages;
+      const snapshotTitle = titleToSave;
       dbSaveTimerRef.current = setTimeout(() => {
         fetch('/api/conversations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: activeConvId, title: titleToSave, messages, createdAt }),
+          body: JSON.stringify({ id: snapshotId, title: snapshotTitle, messages: snapshotMessages, createdAt }),
         }).catch(() => {});
+        dbSaveTimerRef.current = null;
       }, 500);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages]);
+
+  // 언마운트 시 debounce 타이머 정리 (누수 방지)
+  useEffect(() => () => {
+    if (dbSaveTimerRef.current) {
+      clearTimeout(dbSaveTimerRef.current);
+      dbSaveTimerRef.current = null;
+    }
+  }, []);
 
   // ── 스크롤 — 하단 근처에 있을 때만 자동 스크롤 ──────────────────────────────
   const isNearBottomRef = useRef(true);

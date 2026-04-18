@@ -1,6 +1,6 @@
 # FIREBAT INFRA BIBLE — 행동 대장 수칙
 
-> 최종 개정: 2026-04-16 (v0.1)
+> 최종 개정: 2026-04-18 (v0.1)
 
 ## 전문(前文)
 
@@ -40,6 +40,10 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - **시크릿 env 주입**: `secrets` 배열 → Vault에서 값 조회 → 환경변수로 전달.
 - **타임아웃**: 30초 (`SANDBOX_TIMEOUT_MS`).
 - **stdin/stdout**: `{ correlationId, data }` 주입 → 마지막 줄 단일 JSON 수신.
+- **`__updateSecrets` 영속**: 모듈이 stdout JSON에 `__updateSecrets: {키:값}` 필드를 포함하면 sandbox가 Vault(`user:{키}`)에 자동 저장.
+  - **엄격 검증**: 키는 대문자/숫자/언더스코어(`^[A-Z0-9_]+$`)만, 값은 string + 8KB 제한, **config.json `secrets` 배열에 선언된 이름만 허용** (오염 방지).
+  - `tokenCache` 키와 일치하면 `ttlHours` 기반 `__expires` 자동 기록 (TTL 만료 후 자동 갱신 흐름에 연계).
+  - 예: 카카오톡 모듈이 401 → refresh_token으로 갱신 → 새 `KAKAO_ACCESS_TOKEN`(+ rotating `KAKAO_REFRESH_TOKEN`)을 `__updateSecrets`로 반환 → Vault 영속 → 다음 실행 시 재사용.
 
 ### 4. LLM Adapter (`infra/llm/config-adapter.ts` + format handlers) — 2026-04-18 Config-driven 개편
 - `ILlmPort` 구현은 **ConfigDrivenAdapter 단일**. 프로바이더별 개별 어댑터 금지.
