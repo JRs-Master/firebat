@@ -2,8 +2,8 @@
   "id": "gemini-3-flash-preview",
   "displayName": "Gemini 3 Flash (Preview)",
   "provider": "google-aistudio",
-  "format": "openai-chat",
-  "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+  "format": "gemini-native",
+  "endpoint": "https://generativelanguage.googleapis.com/v1beta/models",
   "apiKeyVaultKey": "GEMINI_API_KEY",
   "features": {
     "vision": true,

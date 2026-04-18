@@ -18,6 +18,7 @@ import { OpenAIResponsesFormat } from './formats/openai-responses';
 import { OpenAIChatFormat } from './formats/openai-chat';
 import { AnthropicMessagesFormat } from './formats/anthropic-messages';
 import { VertexGeminiFormat } from './formats/vertex-gemini';
+import { GeminiNativeFormat } from './formats/gemini-native';
 
 export class ConfigDrivenAdapter implements ILlmPort {
   private handlers: Record<LlmFormat, FormatHandler>;
@@ -33,6 +34,7 @@ export class ConfigDrivenAdapter implements ILlmPort {
       'openai-chat': new OpenAIChatFormat(),
       'anthropic-messages': new AnthropicMessagesFormat(),
       'vertex-gemini': new VertexGeminiFormat(),
+      'gemini-native': new GeminiNativeFormat(),
     };
   }
 

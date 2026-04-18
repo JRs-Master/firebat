@@ -13,11 +13,14 @@ type Props = {
   onClose: () => void;
   onSave: () => void;
   onOpenModuleSettings?: (moduleName: string) => void;
-  initialTab?: 'general' | 'secrets' | 'mcp' | 'capabilities' | 'system';
+  initialTab?: 'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system';
 };
 
 export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
-  const [settingsTab, setSettingsTab] = useState<'general' | 'secrets' | 'mcp' | 'capabilities' | 'system'>(initialTab ?? 'general');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system'>(initialTab ?? 'general');
+  // AI 탭: 모드(일반/Vertex) + 프로바이더(openai/google/anthropic)
+  const [aiMode, setAiMode] = useState<'general' | 'vertex'>('general');
+  const [aiProvider, setAiProvider] = useState<'openai' | 'google' | 'anthropic'>('openai');
   const [mcpSubTab, setMcpSubTab] = useState<'app' | 'llm'>('app');
   // 내부 MCP 토큰 (LLM 통신용)
   const [internalMcpToken, setInternalMcpToken] = useState<{ hasToken: boolean; masked: string }>({ hasToken: false, masked: '' });
@@ -448,6 +451,12 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
             일반
           </button>
           <button
+            onClick={() => switchTab('ai')}
+            className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'ai' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          >
+            <Cpu size={14} /> AI
+          </button>
+          <button
             onClick={() => switchTab('secrets')}
             className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'secrets' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
@@ -482,34 +491,6 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
         <div ref={contentRef} className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-scroll min-w-0 flex-1 min-h-0">
           {settingsTab === 'general' && (
             <>
-              {/* 모델 선택 */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">Model</label>
-                <select
-                  value={aiModel}
-                  onChange={e => onAiModelChange(e.target.value)}
-                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
-                >
-                  {GEMINI_MODELS.map(m => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Thinking 수준 */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">Thinking 수준</label>
-                <select
-                  value={thinkingLevel}
-                  onChange={e => setThinkingLevel(e.target.value)}
-                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
-                >
-                  {THINKING_LEVELS.map(m => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
-                  ))}
-                </select>
-              </div>
-
               {/* 타임존 */}
               <div className="flex flex-col gap-2">
                 <label className="text-xs sm:text-sm font-bold text-slate-700">타임존</label>
@@ -588,67 +569,161 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
             </>
           )}
 
+          {settingsTab === 'ai' && (() => {
+            // 모드별 사용 가능 프로바이더
+            const providersByMode: Record<'general' | 'vertex', Array<'openai' | 'google' | 'anthropic'>> = {
+              general: ['openai', 'google', 'anthropic'],
+              vertex: ['google'],
+            };
+            const activeProviders = providersByMode[aiMode];
+            const effectiveProvider = activeProviders.includes(aiProvider) ? aiProvider : activeProviders[0];
+            // 모델 필터: 모드(일반/Vertex) + 프로바이더
+            const modelsForProvider = GEMINI_MODELS.filter(m => {
+              const v = m.value;
+              if (aiMode === 'vertex') return v.endsWith('-vertex');
+              if (v.endsWith('-vertex')) return false; // vertex 모델은 일반 모드 제외
+              if (effectiveProvider === 'openai') return v.startsWith('gpt-');
+              if (effectiveProvider === 'google') return v.startsWith('gemini-');
+              if (effectiveProvider === 'anthropic') return v.startsWith('claude-');
+              return false;
+            });
+            const providerLabels: Record<'openai' | 'google' | 'anthropic', string> = {
+              openai: 'OpenAI', google: 'Google', anthropic: 'Anthropic',
+            };
+            return (
+              <>
+                {/* 1단계: 모드 */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs sm:text-sm font-bold text-slate-700">모드</label>
+                  <div className="flex gap-2">
+                    {(['general', 'vertex'] as const).map(m => (
+                      <button
+                        key={m}
+                        onClick={() => setAiMode(m)}
+                        className={`flex-1 px-3 py-2 text-[13px] font-bold rounded-lg border transition-colors ${aiMode === m ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                      >
+                        {m === 'general' ? '일반' : 'Vertex'}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
+                    일반 모드: 각 공급자 직통 API · Vertex 모드: GCP Vertex AI (Service Account 인증)
+                  </p>
+                </div>
+
+                {/* 2단계: 프로바이더 */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs sm:text-sm font-bold text-slate-700">공급자</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {activeProviders.map(p => (
+                      <button
+                        key={p}
+                        onClick={() => setAiProvider(p)}
+                        className={`flex-1 min-w-[80px] px-3 py-2 text-[13px] font-bold rounded-lg border transition-colors ${effectiveProvider === p ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                      >
+                        {providerLabels[p]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3단계: 모델 */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs sm:text-sm font-bold text-slate-700">모델</label>
+                  <select
+                    value={modelsForProvider.some(m => m.value === aiModel) ? aiModel : (modelsForProvider[0]?.value ?? '')}
+                    onChange={e => onAiModelChange(e.target.value)}
+                    className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                  >
+                    {modelsForProvider.length === 0
+                      ? <option value="">사용 가능한 모델 없음</option>
+                      : modelsForProvider.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                  </select>
+                </div>
+
+                {/* Thinking 수준 */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs sm:text-sm font-bold text-slate-700">Thinking 수준</label>
+                  <select
+                    value={thinkingLevel}
+                    onChange={e => setThinkingLevel(e.target.value)}
+                    className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                  >
+                    {THINKING_LEVELS.map(m => (
+                      <option key={m.value} value={m.value}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* API 키 — 선택된 프로바이더/모드에 따라 ─────────────────── */}
+                <div className="pt-2 border-t border-slate-100 flex flex-col gap-3">
+                  <label className="text-xs sm:text-sm font-bold text-slate-700">공급자 API 키</label>
+
+                  {aiMode === 'general' && effectiveProvider === 'openai' && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] text-slate-500">OpenAI</label>
+                      <input
+                        type="password"
+                        value={geminiApiKey}
+                        onChange={e => setGeminiApiKey(e.target.value)}
+                        placeholder="sk-proj-..."
+                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      <p className="text-[10px] text-slate-400">platform.openai.com → API Keys</p>
+                    </div>
+                  )}
+
+                  {aiMode === 'general' && effectiveProvider === 'google' && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] text-slate-500">Google AI Studio</label>
+                      <input
+                        type="password"
+                        value={googleApiKey}
+                        onChange={e => setGoogleApiKey(e.target.value)}
+                        placeholder="AIza..."
+                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      <p className="text-[10px] text-slate-400">aistudio.google.com → Get API key</p>
+                    </div>
+                  )}
+
+                  {aiMode === 'general' && effectiveProvider === 'anthropic' && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] text-slate-500">Anthropic</label>
+                      <input
+                        type="password"
+                        value={anthropicApiKey}
+                        onChange={e => setAnthropicApiKey(e.target.value)}
+                        placeholder="sk-ant-..."
+                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                      <p className="text-[10px] text-slate-400">console.anthropic.com → API Keys</p>
+                    </div>
+                  )}
+
+                  {aiMode === 'vertex' && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[11px] text-slate-500">Google Vertex AI 서비스 계정 JSON</label>
+                      <textarea
+                        value={vertexSaJson}
+                        onChange={e => setVertexSaJson(e.target.value)}
+                        placeholder='{"type":"service_account","project_id":"...","private_key":"..."}'
+                        rows={5}
+                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
+                      />
+                      <p className="text-[10px] text-slate-400">GCP Console → IAM → 서비스 계정 → 키 생성 (JSON 전체 붙여넣기)</p>
+                    </div>
+                  )}
+                </div>
+              </>
+            );
+          })()}
+
           {settingsTab === 'secrets' && (
             <>
-              {/* OpenAI */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">OpenAI</label>
-                <input
-                  type="password"
-                  value={geminiApiKey}
-                  onChange={e => setGeminiApiKey(e.target.value)}
-                  placeholder="OpenAI API Key (sk-proj-...)"
-                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-                <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
-                  OpenAI Platform (platform.openai.com) → API Keys — GPT-5.4 시리즈 사용 시 필수
-                </p>
-              </div>
-
-              {/* Google AI Studio (Gemini) */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">Google AI Studio (Gemini)</label>
-                <input
-                  type="password"
-                  value={googleApiKey}
-                  onChange={e => setGoogleApiKey(e.target.value)}
-                  placeholder="Gemini API Key (AIza...)"
-                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-                <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
-                  aistudio.google.com → Get API key — Gemini 3 시리즈 사용 시 필수
-                </p>
-              </div>
-
-              {/* Anthropic (Claude) */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">Anthropic (Claude)</label>
-                <input
-                  type="password"
-                  value={anthropicApiKey}
-                  onChange={e => setAnthropicApiKey(e.target.value)}
-                  placeholder="Anthropic API Key (sk-ant-...)"
-                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                />
-                <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
-                  console.anthropic.com → API Keys — Claude 4 시리즈 사용 시 필수
-                </p>
-              </div>
-
-              {/* Google Vertex AI (Service Account JSON) */}
-              <div className="flex flex-col gap-2">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">Google Vertex AI (서비스 계정)</label>
-                <textarea
-                  value={vertexSaJson}
-                  onChange={e => setVertexSaJson(e.target.value)}
-                  placeholder='{"type":"service_account","project_id":"...","private_key":"..."}'
-                  rows={4}
-                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
-                />
-                <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
-                  GCP Console → IAM → 서비스 계정 → 키 생성 (JSON 전체 붙여넣기) — Gemini (Vertex) 모델 사용 시 필수
-                </p>
-              </div>
+              <p className="text-[11px] sm:text-[12px] text-slate-400 font-medium -mt-1 mb-1">
+                LLM 공급자 키(OpenAI / Google / Anthropic / Vertex)는 <span className="font-bold text-blue-600">AI 탭</span>에서 관리하세요.
+              </p>
 
               {/* 모듈 필요 API 키 (config.json에서 자동 수집) */}
               {moduleSecrets.length > 0 && (

@@ -9,7 +9,7 @@
  * - 새 format → formats/ 핸들러 추가 + config 생성
  */
 
-export type LlmFormat = 'openai-responses' | 'openai-chat' | 'anthropic-messages' | 'vertex-gemini';
+export type LlmFormat = 'openai-responses' | 'openai-chat' | 'anthropic-messages' | 'vertex-gemini' | 'gemini-native';
 
 export interface ModelFeatures {
   /** OpenAI hosted MCP connector (Responses API 전용) */
