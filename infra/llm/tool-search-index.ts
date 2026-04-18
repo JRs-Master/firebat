@@ -269,7 +269,7 @@ export class ToolSearchIndex {
       categoryClusterGap?: number;
       /** stage 2 에서 도구 top1 - top3 점수 차 임계 (기본 0.015) */
       toolSpreadMin?: number;
-      /** stage 2 에서 top1 근접 도구 선택 범위 (기본 0.015) */
+      /** stage 2 에서 top1 근접 도구 선택 범위 (기본 0.030 — 유사 기능 형제 도구까지 포함) */
       toolClusterGap?: number;
       topToolsPerCategory?: number;
       capabilityOf?: (name: string) => string | undefined;
@@ -280,7 +280,7 @@ export class ToolSearchIndex {
       categorySpreadMin = 0.030,
       categoryClusterGap = 0.020,
       toolSpreadMin = 0.015,
-      toolClusterGap = 0.015,
+      toolClusterGap = 0.030,
       topToolsPerCategory = 5,
       capabilityOf,
     } = opts;
