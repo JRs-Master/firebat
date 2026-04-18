@@ -154,6 +154,7 @@ export class AiManager {
   }
 
   private compressHistory(history: ChatMessage[]): { recentHistory: ChatMessage[]; contextSummary: string } {
+    // 레거시 경로(process/planOnly)용 — Function Calling 경로는 compressHistoryWithSearch 사용
     const WINDOW_SIZE = 5;
     if (history.length <= WINDOW_SIZE) return { recentHistory: history, contextSummary: '' };
 
@@ -164,6 +165,64 @@ export class AiManager {
         const role = h.role === 'user' ? '사용자' : 'AI';
         const raw = typeof h.content === 'string' ? h.content : JSON.stringify(h);
         return `[${role}]: ${raw.slice(0, 120)}${raw.length > 120 ? '...' : ''}`;
+      }).join('\n');
+
+    return { recentHistory, contextSummary };
+  }
+
+  /**
+   * Function Calling 용 하이브리드 히스토리 조립:
+   *  - 최근 1턴(user+assistant 2개)만 원문 — recency 대응
+   *  - 그 이전 턴은 현재 유저 쿼리 기반 벡터 검색으로 관련된 메시지 preview만 주입
+   *    (spread 판정으로 "하이"류 노이즈 쿼리에선 과거 맥락 아예 미주입)
+   *  - 옛 답변 세부 정보가 필요하면 AI가 search_history 도구로 직접 조회
+   */
+  private async compressHistoryWithSearch(
+    history: ChatMessage[],
+    userPrompt: string,
+    opts: { owner?: string; currentConvId?: string },
+  ): Promise<{ recentHistory: ChatMessage[]; contextSummary: string }> {
+    const WINDOW_SIZE = 2; // 최근 1턴(=user+assistant 2개 메시지)
+    const recentHistory = history.slice(-WINDOW_SIZE);
+
+    if (!userPrompt.trim() || !opts.owner) return { recentHistory, contextSummary: '' };
+
+    // 벡터 검색 — minScore=0 으로 전체 받아 spread 판정
+    const searchRes = await this.core.searchConversationHistory(opts.owner, userPrompt, {
+      currentConvId: opts.currentConvId,
+      limit: 10,
+      minScore: 0,
+    });
+
+    if (!searchRes.success || !searchRes.data || searchRes.data.length === 0) {
+      return { recentHistory, contextSummary: '' };
+    }
+
+    // 상대 스코어링 (ToolSearch와 동일 로직): top1 - top5 spread 미만이면 신호 없음
+    const matches = searchRes.data;
+    const MIN_SPREAD = 0.030;
+    const CLUSTER_GAP = 0.020;
+    const top1 = matches[0]?.score ?? 0;
+    const refIdx = Math.min(4, matches.length - 1);
+    const refScore = matches[refIdx]?.score ?? top1;
+    const spread = top1 - refScore;
+
+    if (spread < MIN_SPREAD) {
+      process.stderr.write(`[HistorySearch] query="${userPrompt.slice(0, 40)}" matches=${matches.length} spread=${spread.toFixed(3)} → 신호없음\n`);
+      return { recentHistory, contextSummary: '' };
+    }
+
+    const cutoff = top1 - CLUSTER_GAP;
+    const picked = matches.filter(m => m.score >= cutoff).slice(0, 5);
+    if (picked.length === 0) return { recentHistory, contextSummary: '' };
+
+    process.stderr.write(`[HistorySearch] query="${userPrompt.slice(0, 40)}" spread=${spread.toFixed(3)} pick=${picked.length}개\n`);
+
+    const contextSummary = `[관련 과거 대화 (${picked.length}개 매칭)]\n` +
+      picked.map(m => {
+        const roleLabel = m.role === 'user' ? '사용자' : 'AI';
+        const preview = (m.contentPreview || '').slice(0, 200);
+        return `[${roleLabel}]: ${preview}`;
       }).join('\n');
 
     return { recentHistory, contextSummary };
@@ -994,7 +1053,11 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
     const MAX_TOOL_TURNS = 10;
     const modelId = baseLlmOpts?.model ?? this.llm.getModelId();
 
-    const { recentHistory, contextSummary } = this.compressHistory(history);
+    const { recentHistory, contextSummary } = await this.compressHistoryWithSearch(
+      history,
+      prompt,
+      { owner: opts?.owner, currentConvId: opts?.conversationId },
+    );
     const systemContext = await this.gatherSystemContext(isDemo);
 
     const systemPrompt = this.buildToolSystemPrompt(systemContext);
