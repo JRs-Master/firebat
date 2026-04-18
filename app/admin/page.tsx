@@ -60,6 +60,10 @@ function cleanMarkdown(text: string): string {
   let cleaned = text.replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>');
   // 남은 고아 ** 제거
   cleaned = cleaned.replace(/\*\*/g, '');
+  // AI가 render_* 를 코드블록에 출력한 경우 제거 (렌더링 안 되고 길게 늘어지는 환각 텍스트)
+  // 지원: ```json/python/js 등 + 안에 "type":"render_xxx" 또는 render_xxx( 패턴
+  cleaned = cleaned.replace(/```[a-zA-Z]*\s*(?:\/\/[^\n]*\n)?[\s\S]*?["']type["']\s*:\s*["']render_[a-z_]+["'][\s\S]*?```/g, '');
+  cleaned = cleaned.replace(/```[a-zA-Z]*\s*(?:\/\/[^\n]*\n)?[\s\S]*?render_[a-z_]+\s*\([\s\S]*?```/g, '');
   return cleaned;
 }
 
@@ -299,6 +303,7 @@ function CopyButton({ text }: { text: string }) {
 
 // ─── 액션 태그 (에러 시 빨간색 + 클릭 펼침) ──────────────────────────────────
 function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[] }) {
+  const [expanded, setExpanded] = useState(false);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   // 같은 도구 중복은 하나로 합치고 호출 횟수를 xN으로 표시
   const counts = new Map<string, number>();
@@ -307,26 +312,40 @@ function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[
     if (!counts.has(a)) order.push(a);
     counts.set(a, (counts.get(a) || 0) + 1);
   }
+  const hasError = order.some(a => steps?.find(s => s.type === a && s.status === 'error'));
+  const totalCalls = actions.length;
   return (
     <div className="flex flex-col gap-1">
-      <div className="flex flex-wrap gap-2">
-        {order.map((action, i) => {
-          const step = steps?.find(s => s.type === action && s.status === 'error');
-          const isError = !!step;
-          const n = counts.get(action) || 1;
-          return (
-            <div
-              key={i}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium ${isError ? 'bg-red-50 border border-red-100 text-red-600 cursor-pointer hover:bg-red-100' : 'bg-slate-50 border border-slate-200 text-slate-500'} transition-colors`}
-              onClick={isError ? () => setOpenIdx(openIdx === i ? null : i) : undefined}
-            >
-              {isError ? <AlertTriangle size={10} className="text-red-400" /> : <Blocks size={10} className="text-slate-400" />}
-              {action}{n > 1 && <span className="text-slate-400 ml-0.5">×{n}</span>}
-            </div>
-          );
-        })}
+      {/* 요약 배지 — 펼침/접힘 토글 */}
+      <div
+        className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium w-fit cursor-pointer transition-colors ${hasError ? 'bg-red-50 border border-red-100 text-red-600 hover:bg-red-100' : 'bg-slate-50 border border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+        onClick={() => setExpanded(v => !v)}
+      >
+        {hasError ? <AlertTriangle size={10} className="text-red-400" /> : <Blocks size={10} className="text-slate-400" />}
+        <span>도구 {order.length}종{totalCalls !== order.length && `·${totalCalls}회`}</span>
+        <span className="text-slate-400 ml-0.5">{expanded ? '▾' : '▸'}</span>
       </div>
-      {openIdx !== null && (() => {
+      {/* 펼쳤을 때 개별 도구 배지 표시 */}
+      {expanded && (
+        <div className="flex flex-wrap gap-2">
+          {order.map((action, i) => {
+            const step = steps?.find(s => s.type === action && s.status === 'error');
+            const isError = !!step;
+            const n = counts.get(action) || 1;
+            return (
+              <div
+                key={i}
+                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium ${isError ? 'bg-red-50 border border-red-100 text-red-600 cursor-pointer hover:bg-red-100' : 'bg-slate-50 border border-slate-200 text-slate-500'} transition-colors`}
+                onClick={isError ? () => setOpenIdx(openIdx === i ? null : i) : undefined}
+              >
+                {isError ? <AlertTriangle size={10} className="text-red-400" /> : <Blocks size={10} className="text-slate-400" />}
+                {action}{n > 1 && <span className="text-slate-400 ml-0.5">×{n}</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {expanded && openIdx !== null && (() => {
         const action = order[openIdx];
         const step = steps?.find(s => s.type === action && s.status === 'error');
         return step?.error ? (
