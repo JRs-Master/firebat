@@ -172,8 +172,9 @@ export class OpenAiAdapter implements ILlmPort {
         openaiTools = [{
           type: 'mcp',
           server_label: 'firebat-internal',
+          server_description: 'Firebat 내부 도구 (페이지/파일/모듈/스케줄/시스템 모듈/UI 컴포넌트 렌더)',
           server_url: mcpConfig.url,
-          headers: { Authorization: `Bearer ${mcpConfig.token}` },
+          authorization: mcpConfig.token,
           require_approval: 'never',
         }];
       } else {
@@ -186,16 +187,21 @@ export class OpenAiAdapter implements ILlmPort {
         }));
       }
 
-      // GPT-5.4/o 시리즈는 temperature 미지원 — 모델 prefix로 판별해 조건부 포함
-      const supportsTemperature = !/^(gpt-5|o[1-9])/i.test(model);
+      // GPT-5.4/o 시리즈는 temperature/top_p 미지원 — 모델 prefix로 조건부 제외
+      const isReasoningModel = /^(gpt-5|o[1-9])/i.test(model);
+      // opts.thinkingLevel (minimal/low/medium/high) → reasoning.effort 매핑
+      const effortValue: 'minimal' | 'low' | 'medium' | 'high' | 'none' =
+        (opts?.thinkingLevel as any) || 'medium';
       const payload: Record<string, unknown> = {
         model,
         instructions: systemPrompt,
         input,
-        ...(supportsTemperature ? { temperature: LLM_TEMPERATURE_TEXT } : {}),
+        ...(isReasoningModel ? {} : { temperature: LLM_TEMPERATURE_TEXT }),
         ...(openaiTools.length > 0 ? { tools: openaiTools, tool_choice: 'auto' } : {}),
-        // Reasoning 요약 노출 (GPT-5.4 시리즈 thinking 표시용)
-        reasoning: { effort: 'medium', summary: 'auto' },
+        // Reasoning (GPT-5/o 시리즈) — effort는 설정값, summary는 thinking UI 표시용
+        ...(isReasoningModel ? { reasoning: { effort: effortValue, summary: 'auto' } } : {}),
+        // Prompt caching 히트율 ↑ (사용자별 일관된 캐시)
+        prompt_cache_key: 'firebat-admin',
       };
 
       const textParts: string[] = [];

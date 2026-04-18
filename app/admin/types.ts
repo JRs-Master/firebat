@@ -8,11 +8,14 @@ export const AI_MODELS = [
 // 기존 이름 호환을 위한 alias
 export const GEMINI_MODELS = AI_MODELS;
 
+// OpenAI reasoning.effort 매핑 값 (none/minimal/low/medium/high/xhigh)
 export const THINKING_LEVELS = [
-  { value: 'minimal', label: 'Minimal (최소, 가장 빠름)' },
-  { value: 'low',     label: 'Low (낮음, 기본)' },
-  { value: 'medium',  label: 'Medium (중간)' },
-  { value: 'high',    label: 'High (높음, 가장 깊은 추론)' },
+  { value: 'none',    label: 'None (추론 없음, 최저 지연)' },
+  { value: 'minimal', label: 'Minimal (최소, 빠름)' },
+  { value: 'low',     label: 'Low (낮음)' },
+  { value: 'medium',  label: 'Medium (중간, 기본)' },
+  { value: 'high',    label: 'High (높음, 복잡 추론)' },
+  { value: 'xhigh',   label: 'XHigh (최고, 평가 전용 권장)' },
 ];
 
 export type PlanAction = { type: string; description?: string; path?: string; slug?: string };
