@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Download, Server, Terminal, Globe, Cpu, Wrench, Blocks } from 'lucide-react';
 import { GEMINI_MODELS, THINKING_LEVELS, McpServer, getThinkingKind, filterThinkingLevels } from '../types';
+import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
 
 interface SystemModule { name: string; description: string; runtime: string; type?: string; enabled?: boolean; }
 
@@ -590,141 +591,80 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
             const providerLabels: Record<'openai' | 'google' | 'anthropic', string> = {
               openai: 'OpenAI', google: 'Google', anthropic: 'Anthropic',
             };
+            // Thinking 필터
+            const thinkingKind = getThinkingKind(aiModel);
+            const thinkingOptions = filterThinkingLevels(thinkingKind);
+            const thinkingValid = thinkingOptions.some(l => l.value === thinkingLevel);
+            const thinkingValue = thinkingValid ? thinkingLevel : (thinkingOptions[0]?.value ?? 'medium');
+            const thinkingLabel = thinkingKind === 'reasoning' ? 'Reasoning (OpenAI)'
+              : thinkingKind === 'thinking' ? 'Thinking (Gemini)'
+              : 'Extended Thinking (Claude)';
+            // 모델 드롭다운용 option 배열
+            const modelOptions = modelsForProvider.length > 0
+              ? modelsForProvider.map(m => ({ value: m.value, label: m.label }))
+              : [{ value: '', label: '사용 가능한 모델 없음' }];
+            const modelValue = modelsForProvider.some(m => m.value === aiModel) ? aiModel : (modelsForProvider[0]?.value ?? '');
             return (
               <>
-                {/* 1단계: 모드 */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs sm:text-sm font-bold text-slate-700">모드</label>
-                  <div className="flex gap-2">
-                    {(['general', 'vertex'] as const).map(m => (
-                      <button
-                        key={m}
-                        onClick={() => setAiMode(m)}
-                        className={`flex-1 px-3 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-lg border transition-colors ${aiMode === m ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-400 hover:text-slate-600'}`}
-                      >
-                        {m === 'general' ? '일반' : 'Vertex'}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
-                    일반 모드: 각 공급자 직통 API · Vertex 모드: GCP Vertex AI (Service Account 인증)
-                  </p>
-                </div>
+                <Field label="모드" help="일반 모드: 각 공급자 직통 API · Vertex 모드: GCP Vertex AI (Service Account 인증)">
+                  <SegButtons<'general' | 'vertex'>
+                    value={aiMode}
+                    onChange={setAiMode}
+                    options={[{ value: 'general', label: '일반' }, { value: 'vertex', label: 'Vertex' }]}
+                  />
+                </Field>
 
-                {/* 2단계: 프로바이더 */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs sm:text-sm font-bold text-slate-700">공급자</label>
-                  <div className="flex gap-2 flex-wrap">
-                    {activeProviders.map(p => (
-                      <button
-                        key={p}
-                        onClick={() => setAiProvider(p)}
-                        className={`flex-1 min-w-[80px] px-3 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-lg border transition-colors ${effectiveProvider === p ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-400 hover:text-slate-600'}`}
-                      >
-                        {providerLabels[p]}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <Field label="공급자">
+                  <SegButtons<'openai' | 'google' | 'anthropic'>
+                    value={effectiveProvider}
+                    onChange={setAiProvider}
+                    options={activeProviders.map(p => ({ value: p, label: providerLabels[p] }))}
+                  />
+                </Field>
 
-                {/* 3단계: 모델 */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs sm:text-sm font-bold text-slate-700">모델</label>
-                  <select
-                    value={modelsForProvider.some(m => m.value === aiModel) ? aiModel : (modelsForProvider[0]?.value ?? '')}
-                    onChange={e => onAiModelChange(e.target.value)}
-                    className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
-                  >
-                    {modelsForProvider.length === 0
-                      ? <option value="">사용 가능한 모델 없음</option>
-                      : modelsForProvider.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                  </select>
-                </div>
+                <Field label="모델">
+                  <SelectInput value={modelValue} onChange={onAiModelChange} options={modelOptions} />
+                </Field>
 
-                {/* Thinking 수준 — 선택된 모델이 지원하는 레벨만 노출 */}
-                {(() => {
-                  const kind = getThinkingKind(aiModel);
-                  const levels = filterThinkingLevels(kind);
-                  if (!kind || levels.length === 0) return null;
-                  // 현재 값이 모델 지원 범위 밖이면 첫 허용값으로 보정
-                  const currentValid = levels.some(l => l.value === thinkingLevel);
-                  const effectiveValue = currentValid ? thinkingLevel : levels[0].value;
-                  const kindLabel = kind === 'reasoning' ? 'Reasoning (OpenAI)'
-                    : kind === 'thinking' ? 'Thinking (Gemini)'
-                    : 'Extended Thinking (Claude)';
-                  return (
-                    <div className="flex flex-col gap-2">
-                      <label className="text-xs sm:text-sm font-bold text-slate-700">{kindLabel}</label>
-                      <select
-                        value={effectiveValue}
-                        onChange={e => setThinkingLevel(e.target.value)}
-                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
-                      >
-                        {levels.map(m => (
-                          <option key={m.value} value={m.value}>{m.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  );
-                })()}
+                {thinkingKind && thinkingOptions.length > 0 && (
+                  <Field label={thinkingLabel}>
+                    <SelectInput value={thinkingValue} onChange={setThinkingLevel} options={thinkingOptions} />
+                  </Field>
+                )}
 
-                {/* API 키 — 선택된 프로바이더/모드에 따라 ─────────────────── */}
+                {/* API 키 — 선택된 프로바이더/모드에 따라 */}
                 <div className="pt-2 border-t border-slate-100 flex flex-col gap-3">
-                  <label className="text-xs sm:text-sm font-bold text-slate-700">공급자 API 키</label>
+                  <FieldLabel>공급자 API 키</FieldLabel>
 
                   {aiMode === 'general' && effectiveProvider === 'openai' && (
                     <div className="flex flex-col gap-1.5">
                       <label className="text-[11px] text-slate-500">OpenAI</label>
-                      <input
-                        type="password"
-                        value={geminiApiKey}
-                        onChange={e => setGeminiApiKey(e.target.value)}
-                        placeholder="sk-proj-..."
-                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                      <p className="text-[10px] text-slate-400">platform.openai.com → API Keys</p>
+                      <TextInput type="password" value={geminiApiKey} onChange={setGeminiApiKey} placeholder="sk-proj-..." />
+                      <HelpText className="!text-[10px]">platform.openai.com → API Keys</HelpText>
                     </div>
                   )}
 
                   {aiMode === 'general' && effectiveProvider === 'google' && (
                     <div className="flex flex-col gap-1.5">
                       <label className="text-[11px] text-slate-500">Google AI Studio</label>
-                      <input
-                        type="password"
-                        value={googleApiKey}
-                        onChange={e => setGoogleApiKey(e.target.value)}
-                        placeholder="AIza..."
-                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                      <p className="text-[10px] text-slate-400">aistudio.google.com → Get API key</p>
+                      <TextInput type="password" value={googleApiKey} onChange={setGoogleApiKey} placeholder="AIza..." />
+                      <HelpText className="!text-[10px]">aistudio.google.com → Get API key</HelpText>
                     </div>
                   )}
 
                   {aiMode === 'general' && effectiveProvider === 'anthropic' && (
                     <div className="flex flex-col gap-1.5">
                       <label className="text-[11px] text-slate-500">Anthropic</label>
-                      <input
-                        type="password"
-                        value={anthropicApiKey}
-                        onChange={e => setAnthropicApiKey(e.target.value)}
-                        placeholder="sk-ant-..."
-                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                      <p className="text-[10px] text-slate-400">console.anthropic.com → API Keys</p>
+                      <TextInput type="password" value={anthropicApiKey} onChange={setAnthropicApiKey} placeholder="sk-ant-..." />
+                      <HelpText className="!text-[10px]">console.anthropic.com → API Keys</HelpText>
                     </div>
                   )}
 
                   {aiMode === 'vertex' && (
                     <div className="flex flex-col gap-1.5">
                       <label className="text-[11px] text-slate-500">Google Vertex AI 서비스 계정 JSON</label>
-                      <textarea
-                        value={vertexSaJson}
-                        onChange={e => setVertexSaJson(e.target.value)}
-                        placeholder='{"type":"service_account","project_id":"...","private_key":"..."}'
-                        rows={5}
-                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
-                      />
-                      <p className="text-[10px] text-slate-400">GCP Console → IAM → 서비스 계정 → 키 생성 (JSON 전체 붙여넣기)</p>
+                      <Textarea value={vertexSaJson} onChange={setVertexSaJson} placeholder='{"type":"service_account","project_id":"...","private_key":"..."}' rows={5} mono />
+                      <HelpText className="!text-[10px]">GCP Console → IAM → 서비스 계정 → 키 생성 (JSON 전체 붙여넣기)</HelpText>
                     </div>
                   )}
                 </div>
