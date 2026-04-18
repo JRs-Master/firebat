@@ -395,7 +395,8 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
       <div className="hidden sm:flex w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-50 to-blue-100 border border-blue-200 items-center justify-center shadow-sm shrink-0">
         <Ghost size={22} className="text-blue-600" />
       </div>
-      <div className="flex flex-col gap-1 flex-1 min-w-0">
+      {/* 첫 줄이 유령 아이콘 중앙(높이 44px의 ~50%)에 맞도록 pt-3 */}
+      <div className="flex flex-col gap-1 flex-1 min-w-0 sm:pt-3">
         <div className="flex flex-col gap-3 w-full">
           {/* thinking — 버블 상단에 항상 표시 */}
           {(msg.isThinking || msg.thinkingText) && (
