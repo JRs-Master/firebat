@@ -596,7 +596,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
           </div>
         </div>
 
-        <div ref={contentRef} className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-scroll min-w-0 flex-1 min-h-0">
+        <div ref={contentRef} className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto min-w-0 flex-1 min-h-0 [scrollbar-gutter:stable_both-edges]">
           {settingsTab === 'general' && (
             <>
               {/* 타임존 */}
