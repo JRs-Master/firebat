@@ -17,18 +17,21 @@ import type { FirebatCore } from '../../../../core';
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  const { prompt, config, history = [], autoExecute = false, mode, image, previousResponseId } = await req.json();
+  const { prompt, config, history = [], autoExecute = false, mode, image, previousResponseId, conversationId } = await req.json();
 
   if (!prompt) {
     return new Response(JSON.stringify({ error: 'prompt is required' }), { status: 400 });
   }
 
   const isDemo = auth.role === 'demo';
+  const owner = auth.role === 'admin' ? 'admin' : 'demo';
   const opts = {
     model: config?.model as string | undefined,
     isDemo,
+    owner,
     ...(image ? { image: image as string } : {}),
     ...(previousResponseId ? { previousResponseId: previousResponseId as string } : {}),
+    ...(conversationId ? { conversationId: conversationId as string } : {}),
   };
   const core = getCore();
 
@@ -157,7 +160,7 @@ function handleToolsMode(
   core: FirebatCore,
   prompt: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
-  opts: { model?: string; isDemo: boolean },
+  opts: { model?: string; isDemo: boolean; owner?: string; image?: string; previousResponseId?: string; conversationId?: string },
 ) {
   const encoder = new TextEncoder();
 
@@ -181,6 +184,7 @@ function handleToolsMode(
       case 'get_page': return '페이지 조회 중';
       case 'delete_file': return '파일 삭제 중';
       case 'list_cron_jobs': return '스케줄 목록 조회 중';
+      case 'search_history': return '과거 대화 검색 중';
       default:
         if (name.startsWith('sysmod_')) return `시스템 모듈 실행 중 (${name.replace('sysmod_', '')})`;
         if (name.startsWith('mcp_')) return '외부 서비스 연결 중';

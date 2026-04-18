@@ -312,6 +312,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
           config: { model: aiModel },
           history: chatHistory,
           mode: 'tools',
+          ...(activeConvId ? { conversationId: activeConvId } : {}),
           ...(imageData ? { image: imageData } : {}),
           ...(previousResponseId ? { previousResponseId } : {}),
         }),

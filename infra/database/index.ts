@@ -48,6 +48,22 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
       )
     `);
     try { this.db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_owner_updated ON conversations(owner, updated_at DESC)'); } catch {}
+
+    // 메시지 단위 벡터 임베딩 (search_history 도구용 — 과거 대화 검색)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS conversation_embeddings (
+        conv_id         TEXT NOT NULL,
+        owner           TEXT NOT NULL,
+        msg_idx         INTEGER NOT NULL,
+        role            TEXT NOT NULL,
+        content_hash    TEXT NOT NULL,
+        content_preview TEXT NOT NULL,
+        embedding       BLOB NOT NULL,
+        created_at      INTEGER NOT NULL,
+        PRIMARY KEY (conv_id, msg_idx)
+      )
+    `);
+    try { this.db.exec('CREATE INDEX IF NOT EXISTS idx_conv_embeddings_owner ON conversation_embeddings(owner, created_at DESC)'); } catch {}
   }
 
   async query(sql: string, params?: unknown[]): Promise<InfraResult<Record<string, unknown>[]>> {

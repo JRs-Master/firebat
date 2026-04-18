@@ -17,7 +17,6 @@ import path from 'path';
 import crypto from 'crypto';
 
 const CACHE_FILE = path.join(process.cwd(), 'data', 'tool-embeddings.json');
-const MODEL_NAME = 'Xenova/paraphrase-multilingual-MiniLM-L12-v2';
 
 // ── 카테고리 정의 ─────────────────────────────────────────────────────────
 // id, 의미 검색용 semanticText(길수록 좋음), 이 카테고리에 속한 도구 판정 규칙
@@ -85,6 +84,12 @@ const CATEGORIES: CategoryDef[] = [
     matchByName: (n) => ['read_file', 'write_file', 'delete_file', 'list_dir', 'save_page', 'delete_page', 'list_pages'].includes(n),
   },
   {
+    id: 'memory',
+    label: '과거 대화 검색·참조',
+    semanticText: '이전 대화 과거 예전 지난번 전에 말한 기억 복기 회상 맥락 이어서 참조 다시 물어본 전번 그때 그거 그 이야기 어제 오늘 아까 방금',
+    matchByName: (n) => n === 'search_history',
+  },
+  {
     id: 'scheduling',
     label: '스케줄·예약·태스크',
     semanticText: '스케줄 예약 크론 정기 매일 매시간 몇시에 태스크 작업 자동화 즉시 실행 취소 해제 목록 조회 파이프라인',
@@ -101,34 +106,10 @@ const CATEGORIES: CategoryDef[] = [
 // 안전망 — 어느 카테고리도 매칭 못 해도 항상 포함 (AI가 답변 최소 수단 확보)
 const ALWAYS_INCLUDE = new Set(['render_alert', 'render_callout', 'suggest']);
 
-let pipelinePromise: Promise<any> | null = null;
+import { embed, cosine } from './embedder';
+
 let cachedCategoryVectors: { id: string; vector: Float32Array }[] | null = null;
 let cachedToolVectors: Map<string, { hash: string; vector: Float32Array }> | null = null;
-
-async function getEmbedder() {
-  if (!pipelinePromise) {
-    pipelinePromise = (async () => {
-      const { pipeline, env } = await import('@xenova/transformers');
-      env.cacheDir = '.cache/transformers';
-      env.allowLocalModels = true;
-      return await pipeline('feature-extraction', MODEL_NAME);
-    })();
-  }
-  return pipelinePromise;
-}
-
-async function embed(text: string): Promise<Float32Array> {
-  const extractor = await getEmbedder();
-  const output = await extractor(text, { pooling: 'mean', normalize: true });
-  return output.data as Float32Array;
-}
-
-function cosine(a: Float32Array, b: Float32Array): number {
-  const n = Math.min(a.length, b.length);
-  let dot = 0;
-  for (let i = 0; i < n; i++) dot += a[i] * b[i];
-  return dot;
-}
 
 function sha1(s: string): string {
   return crypto.createHash('sha1').update(s, 'utf8').digest('hex');

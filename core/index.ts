@@ -26,6 +26,10 @@ export interface AiRequestOpts {
   image?: string;
   /** 이전 응답 ID (OpenAI Responses API multi-turn state) */
   previousResponseId?: string;
+  /** 현재 활성 대화 ID — search_history 도구에 전달, 현재 대화 우선 부스트용 */
+  conversationId?: string;
+  /** 대화 소유자 (admin / demo 등) — search_history 실행 시 owner 스코프 */
+  owner?: string;
 }
 
 /**
@@ -276,6 +280,9 @@ export class FirebatCore {
     return this.conversation.save(owner, id, title, messages, createdAt);
   }
   deleteConversation(owner: string, id: string) { return this.conversation.delete(owner, id); }
+  searchConversationHistory(owner: string, query: string, opts?: { currentConvId?: string; limit?: number; withinDays?: number; minScore?: number }) {
+    return this.conversation.searchHistory(owner, query, opts);
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   //  시크릿 → SecretManager
