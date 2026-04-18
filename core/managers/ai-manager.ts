@@ -148,8 +148,9 @@ export class AiManager {
     if (AiManager.RENDER_TOOL_MAP[toolName]) {
       return { success: true, component: AiManager.RENDER_TOOL_MAP[toolName], summary: `${AiManager.RENDER_TOOL_MAP[toolName]} 렌더 완료` };
     }
-    // 그 외(sysmod_*, mcp_* 등)는 공통 trim
-    return this.trimToolResult(result);
+    // 그 외(sysmod_*, mcp_* 등)는 원본 유지 — AI가 후속 render 호출 시 필요한 데이터 보존
+    // trim은 render 쪽에서 이미 축약되므로 추가 손실 방지
+    return result;
   }
 
   private compressHistory(history: ChatMessage[]): { recentHistory: ChatMessage[]; contextSummary: string } {
