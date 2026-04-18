@@ -232,26 +232,50 @@ const ACTION_MAP = {
 };
 
 /**
- * AI가 action 어순을 뒤집거나(daily-chart↔chart-daily) 별칭을 쓰는 경우를 정규화.
- * 1) 정확 매칭 우선
- * 2) 하이픈 분리 후 순서 바꿔 매칭 (chart-* / *-chart 호환)
- * 3) 언더스코어/공백/카멜 → 케밥 변환
+ * AI가 action 이름을 변형해 보내는 케이스를 정규화.
+ * 1) 정확 매칭
+ * 2) 카멜/언더스코어/공백 → 케밥
+ * 3) 2단어 하이픈 리버스 (daily-chart ↔ chart-daily)
+ * 4) 서브스트링 포함 매칭 (price-chart-daily 안에 chart-daily)
+ * 5) Jaccard 토큰 오버랩 ≥ 0.5 폴백
  */
 function normalizeAction(raw) {
   if (!raw || typeof raw !== 'string') return raw;
-  // 카멜/언더스코어/공백 → kebab-case
   const kebab = raw
     .replace(/[_\s]+/g, '-')
     .replace(/([a-z])([A-Z])/g, '$1-$2')
     .toLowerCase()
     .trim();
   if (ACTION_MAP[kebab]) return kebab;
-  // 하이픈으로 나눠 순서 뒤집어도 동일 apiId 있는지 확인 (daily-chart ↔ chart-daily)
+
   const parts = kebab.split('-');
   if (parts.length === 2) {
     const reversed = `${parts[1]}-${parts[0]}`;
     if (ACTION_MAP[reversed]) return reversed;
   }
+
+  // 서브스트링 포함 — 긴 키부터 검사 (chart-daily 가 chart보다 먼저 매칭되도록)
+  const keys = Object.keys(ACTION_MAP).sort((a, b) => b.length - a.length);
+  for (const key of keys) {
+    if (key.length >= 4 && kebab.includes(key)) return key;
+  }
+
+  // Jaccard 토큰 오버랩 폴백
+  const tokens = new Set(parts);
+  let bestKey = null;
+  let bestScore = 0;
+  for (const key of keys) {
+    const keyTokens = new Set(key.split('-'));
+    const inter = [...tokens].filter(t => keyTokens.has(t)).length;
+    const uni = new Set([...tokens, ...keyTokens]).size;
+    const jac = uni > 0 ? inter / uni : 0;
+    if (jac > bestScore) {
+      bestScore = jac;
+      bestKey = key;
+    }
+  }
+  if (bestKey && bestScore >= 0.5) return bestKey;
+
   return kebab;
 }
 
