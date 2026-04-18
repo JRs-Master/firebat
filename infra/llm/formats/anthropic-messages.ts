@@ -111,8 +111,14 @@ export class AnthropicMessagesFormat implements FormatHandler {
       }));
 
       const messages = this.buildMessages(history, prompt, toolExchanges, opts);
-      const thinking = ctx.config.features?.extendedThinking && opts?.thinkingLevel !== 'none'
-        ? { type: 'enabled' as const, budget_tokens: 5000 }
+      // Claude extended thinking: thinkingLevel → budget_tokens 매핑
+      const budgetMap: Record<string, number> = {
+        low: 4000, medium: 10000, high: 20000, xhigh: 32000, max: 64000,
+      };
+      const level = opts?.thinkingLevel ?? 'medium';
+      const budget = budgetMap[level];
+      const thinking = ctx.config.features?.extendedThinking && level !== 'none' && budget
+        ? { type: 'enabled' as const, budget_tokens: budget }
         : undefined;
 
       const payload: Anthropic.MessageCreateParams = {

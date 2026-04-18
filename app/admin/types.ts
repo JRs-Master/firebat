@@ -21,14 +21,15 @@ export const AI_MODELS = [
 // 기존 이름 호환을 위한 alias
 export const GEMINI_MODELS = AI_MODELS;
 
-// OpenAI reasoning.effort 매핑 값 (none/minimal/low/medium/high/xhigh)
+// 통합 Thinking/Reasoning 레벨 (none/minimal/low/medium/high/xhigh/max)
 export const THINKING_LEVELS = [
   { value: 'none',    label: 'None (추론 없음, 최저 지연)' },
   { value: 'minimal', label: 'Minimal (최소, 빠름)' },
   { value: 'low',     label: 'Low (낮음)' },
   { value: 'medium',  label: 'Medium (중간, 기본)' },
-  { value: 'high',    label: 'High (높음, 복잡 추론)' },
-  { value: 'xhigh',   label: 'XHigh (최고, 평가 전용 권장)' },
+  { value: 'high',    label: 'High (높음)' },
+  { value: 'xhigh',   label: 'Extra High (더 높음)' },
+  { value: 'max',     label: 'Max (최대 예산)' },
 ];
 
 /** 모델 thinking 지원 종류 — null이면 Thinking 옵션 UI 비노출 */
@@ -47,13 +48,12 @@ export function getThinkingKind(model: string): ThinkingKind {
 /** 각 종류별 허용 레벨 필터 */
 export function filterThinkingLevels(kind: ThinkingKind): { value: string; label: string }[] {
   if (!kind) return [];
-  if (kind === 'reasoning') return THINKING_LEVELS; // 전체
+  // OpenAI reasoning.effort: minimal/low/medium/high + xhigh(gpt-5.4+) + none(끄기)
+  if (kind === 'reasoning') return THINKING_LEVELS.filter(l => l.value !== 'max');
+  // Gemini thinkingLevel: minimal/low/medium/high
   if (kind === 'thinking') return THINKING_LEVELS.filter(l => ['minimal', 'low', 'medium', 'high'].includes(l.value));
-  // extendedThinking: Claude는 사실상 on/off
-  return [
-    { value: 'none',    label: 'None (비활성)' },
-    { value: 'medium',  label: 'Enabled (활성, 기본 예산)' },
-  ];
+  // Claude extended thinking: budget_tokens로 제어 — low/medium/high/xhigh/max 로 맵핑
+  return THINKING_LEVELS.filter(l => ['low', 'medium', 'high', 'xhigh', 'max'].includes(l.value));
 }
 
 export type PlanAction = { type: string; description?: string; path?: string; slug?: string };
