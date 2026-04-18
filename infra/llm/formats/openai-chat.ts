@@ -90,11 +90,12 @@ export class OpenAIChatFormat implements FormatHandler {
       if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
       messages.push(...this.toMessages(history, prompt, opts));
       // 멀티턴 toolExchanges 반영 — tool_call_id는 assistant/tool 메시지 간 반드시 일치해야 함
+      // Gemini OpenAI-compat: content:null 거부 → 빈 문자열 사용
       toolExchanges.forEach((ex, exIdx) => {
         const callIds = ex.toolCalls.map((_, i) => `call_${exIdx}_${i}`);
         messages.push({
           role: 'assistant',
-          content: null,
+          content: '',
           tool_calls: ex.toolCalls.map((tc, i) => ({ id: callIds[i], type: 'function' as const, function: { name: tc.name, arguments: JSON.stringify(tc.args) } })),
         });
         ex.toolResults.forEach((tr, i) => messages.push({ role: 'tool', tool_call_id: callIds[i] ?? `call_${exIdx}_${i}`, content: JSON.stringify(tr.result) }));
@@ -151,6 +152,11 @@ export class OpenAIChatFormat implements FormatHandler {
         }
       }
       return { success: true, data: { text: textParts.join(''), toolCalls } };
-    } catch (e: any) { return { success: false, error: `[${ctx.config.provider}] askWithTools 실패: ${e.message}` }; }
+    } catch (e: any) {
+      // 400 디버깅용 상세 로그 (응답 body, 요청 구조)
+      const body = e?.error?.message || e?.response?.data || e?.body || '';
+      const detail = body ? ` | detail: ${typeof body === 'string' ? body : JSON.stringify(body).slice(0, 500)}` : '';
+      return { success: false, error: `[${ctx.config.provider}] askWithTools 실패: ${e.message}${detail}` };
+    }
   }
 }

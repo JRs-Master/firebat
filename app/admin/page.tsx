@@ -747,7 +747,7 @@ export default function AdminConsole() {
                   onPaste={handlePaste}
                   style={{ touchAction: 'pan-y', overscrollBehavior: 'contain', WebkitUserSelect: 'text', WebkitOverflowScrolling: 'touch' }}
                   className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] px-4 sm:px-5 pt-3 sm:pt-4 pb-1 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 select-text overflow-y-auto"
-                  placeholder={loading ? '응답 중... 중지하려면 아래 정지 버튼' : '무엇을 도와드릴까요?'}
+                  placeholder={loading ? '명령 집행 중...' : '무엇을 도와드릴까요?'}
                 />
                 <input
                   ref={imageInputRef}
