@@ -1,0 +1,14 @@
+{
+  "id": "gemini-3.1-pro-preview",
+  "displayName": "Gemini 3.1 Pro (Preview)",
+  "provider": "google-aistudio",
+  "format": "openai-chat",
+  "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+  "apiKeyVaultKey": "GEMINI_API_KEY",
+  "features": {
+    "vision": true,
+    "temperature": true,
+    "thinking": true
+  },
+  "pricing": { "input": 1.25, "output": 10.00, "cachedInput": 0.125 }
+}

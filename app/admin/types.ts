@@ -1,9 +1,22 @@
 import { ConversationMeta } from './components/Sidebar';
 
 export const AI_MODELS = [
+  // OpenAI (Responses API)
   { value: 'gpt-5.4-nano', label: 'GPT-5.4 Nano (초경량/저렴)' },
-  { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini (기본/가성비)' },
-  { value: 'gpt-5.4',      label: 'GPT-5.4 (고품질)' },
+  { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini (OpenAI 가성비)' },
+  { value: 'gpt-5.4',      label: 'GPT-5.4 (OpenAI 고품질)' },
+  // Google AI Studio (OpenAI-compat)
+  { value: 'gemini-3-flash-preview',          label: 'Gemini 3 Flash (AI Studio)' },
+  { value: 'gemini-3.1-flash-lite-preview',   label: 'Gemini 3.1 Flash Lite (AI Studio)' },
+  { value: 'gemini-3.1-pro-preview',          label: 'Gemini 3.1 Pro (AI Studio)' },
+  // Google Vertex AI (Service Account)
+  { value: 'gemini-3-flash-preview-vertex',          label: 'Gemini 3 Flash (Vertex)' },
+  { value: 'gemini-3.1-flash-lite-preview-vertex',   label: 'Gemini 3.1 Flash Lite (Vertex)' },
+  { value: 'gemini-3.1-pro-preview-vertex',          label: 'Gemini 3.1 Pro (Vertex)' },
+  // Anthropic
+  { value: 'claude-haiku-4-5',  label: 'Claude Haiku 4.5 (저렴/빠름)' },
+  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (균형)' },
+  { value: 'claude-opus-4-7',   label: 'Claude Opus 4.7 (최고급)' },
 ];
 // 기존 이름 호환을 위한 alias
 export const GEMINI_MODELS = AI_MODELS;

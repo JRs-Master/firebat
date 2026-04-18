@@ -194,13 +194,15 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   }, [n, plotW]);
 
   const handlePointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
-    if (panRef.current?.isDragging) return; // 실제 팬 중에는 호버 스킵
-    updateHoverFromClientX(e.clientX);
+    updateHoverFromClientX(e.clientX); // 팬 중에도 툴팁 유지
   }, [updateHoverFromClientX]);
 
   const handleLeave = useCallback(() => { setHoverIdx(null); }, []);
 
-  // PC: 마우스 드래그 팬 (임계값 초과 시 팬 시작)
+  // 줌 인 상태 여부: 현재 뷰 범위 < 전체 데이터 수 (팬 가능한지 판단)
+  const canPan = viewEnd - viewStart + 1 < fullN;
+
+  // PC: 호버 = 툴팁, 마우스다운+드래그 = 팬 (줌인 상태일 때만)
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (fullN < 2) return;
     panRef.current = { startX: e.clientX, startY: e.clientY, startS: viewStart, startE: viewEnd, isDragging: false };
@@ -210,16 +212,22 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     const dx = e.clientX - panRef.current.startX;
     if (!panRef.current.isDragging && Math.abs(dx) < PAN_THRESHOLD) return; // 아직 팬 아님
     panRef.current.isDragging = true;
-    setHoverIdx(null);
+    // 팬 중에도 툴팁 유지 (줌인/아웃 모두 커서 위치 표시)
+    updateHoverFromClientX(e.clientX);
+    if (!canPan) return; // 줌아웃이면 툴팁만 갱신
     const rect = priceBoxRef.current.getBoundingClientRect();
     const range = panRef.current.startE - panRef.current.startS + 1;
     const dxIdx = Math.round(-dx / rect.width * range);
     const newS = Math.max(0, Math.min(fullN - range, panRef.current.startS + dxIdx));
     if (newS !== viewStart) setView({ s: newS, e: newS + range - 1 });
-  }, [viewStart, fullN]);
+  }, [viewStart, fullN, canPan, updateHoverFromClientX]);
   const handleMouseUp = useCallback(() => { panRef.current = null; }, []);
 
-  // 모바일: 가로 드래그 중에만 툴팁, 긴 드래그 = 팬, 2손가락 = 핀치, 세로는 페이지 스크롤로 넘김
+  // 모바일:
+  // - 2손가락 핀치 = 줌
+  // - 1손가락 세로 드래그 = 페이지 스크롤 (touchAction:pan-y가 브라우저에 위임)
+  // - 1손가락 가로 드래그 = 줌인 상태일 때만 팬
+  // - 1손가락 터치(거의 정지) = 툴팁
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (fullN < 2) return;
     if (e.touches.length === 2) {
@@ -228,12 +236,12 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       panRef.current = null;
       setHoverIdx(null);
     } else if (e.touches.length === 1) {
-      // startY도 기록해 세로/가로 의도 판별
       panRef.current = { startX: e.touches[0].clientX, startY: e.touches[0].clientY, startS: viewStart, startE: viewEnd, isDragging: false };
       pinchRef.current = null;
-      // 터치하자마자 툴팁 표시 X — 의도 판별(가로 vs 세로) 후 결정
+      // 터치 즉시 툴팁 표시 (정지 터치 = 툴팁 요구사항)
+      updateHoverFromClientX(e.touches[0].clientX);
     }
-  }, [viewStart, viewEnd, fullN]);
+  }, [viewStart, viewEnd, fullN, updateHoverFromClientX]);
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (!priceBoxRef.current) return;
     if (e.touches.length === 2 && pinchRef.current) {
@@ -253,22 +261,24 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       const dy = e.touches[0].clientY - panRef.current.startY;
       const absDx = Math.abs(dx);
       const absDy = Math.abs(dy);
-      // 세로 의도: touchAction:pan-y 덕에 브라우저가 페이지 스크롤 — 툴팁/팬 모두 스킵
-      if (absDy > absDx + 2) return;
-      if (!panRef.current.isDragging && absDx < PAN_THRESHOLD) {
-        // 가로로 약간 움직임 → 툴팁 표시 (짧은 제스처)
-        updateHoverFromClientX(e.touches[0].clientX);
+      // 세로 의도 감지 → 이 제스처 전체 포기 (페이지 스크롤 양보)
+      if (absDy > absDx + 4) {
+        setHoverIdx(null);
+        panRef.current = null;
         return;
       }
+      // 가로 이동 — 줌인/아웃 모두 툴팁 항상 갱신
+      updateHoverFromClientX(e.touches[0].clientX);
+      if (!panRef.current.isDragging && absDx < PAN_THRESHOLD) return; // 짧은 이동: 툴팁만
+      if (!canPan) return; // 줌아웃 상태: 툴팁만, 팬 없음
       panRef.current.isDragging = true;
-      setHoverIdx(null);
       const rect = priceBoxRef.current.getBoundingClientRect();
       const range = panRef.current.startE - panRef.current.startS + 1;
       const dxIdx = Math.round(-dx / rect.width * range);
       const newS = Math.max(0, Math.min(fullN - range, panRef.current.startS + dxIdx));
       if (newS !== viewStart) setView({ s: newS, e: newS + range - 1 });
     }
-  }, [viewStart, fullN, updateHoverFromClientX]);
+  }, [viewStart, fullN, updateHoverFromClientX, canPan]);
   const handleTouchEnd = useCallback(() => { panRef.current = null; pinchRef.current = null; }, []);
 
   const priceTicks = useMemo(() => niceTicks(minP, maxP, 5), [minP, maxP]);
@@ -355,7 +365,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       {/* 가격 차트 (드래그 팬 + 휠/핀치 줌) */}
       <div
         ref={priceBoxRef}
-        className="relative select-none cursor-grab active:cursor-grabbing"
+        className={`relative select-none ${canPan ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'}`}
         onPointerMove={handlePointer}
         onPointerLeave={handleLeave}
         onMouseDown={handleMouseDown}

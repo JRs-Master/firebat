@@ -12,7 +12,7 @@ import { SqliteDatabaseAdapter } from './database';
 import { FetchNetworkAdapter } from './network';
 import { NodeCronAdapter } from './cron';
 import { vault } from './storage/vault-adapter';
-import { buildOpenAiAdapter, OPENAI_VAULT_KEYS } from './llm/factory';
+import { buildConfigDrivenAdapter, loadModelRegistry } from './llm/factory';
 import { McpClientAdapter } from './mcp-client';
 import { VaultAuthAdapter } from './auth';
 import { DB_PATH, DEFAULT_MODEL } from './config';
@@ -41,12 +41,16 @@ export function getInfra(): FirebatInfraContainer {
     // MCP Client
     const mcpClient = new McpClientAdapter();
 
-    // LLM — OpenAI (lazy API 키 + 내부 MCP connector 설정 로드)
-    const llm = buildOpenAiAdapter(
-      () => vault.getSecret(OPENAI_VAULT_KEYS.apiKey)
-        || process.env[OPENAI_VAULT_KEYS.apiKey]
-        || null,
+    // LLM — Config-driven (configs/*.json 전체 로드 → format handler 위임)
+    const registry = loadModelRegistry();
+    const modelIds = Object.keys(registry);
+    if (modelIds.length === 0) {
+      log.warn('[Firebat] LLM 모델 config가 없습니다. infra/llm/configs/ 디렉토리를 확인하세요.');
+    }
+    const llm = buildConfigDrivenAdapter(
+      registry,
       DEFAULT_MODEL,
+      (key: string) => vault.getSecret(key) || process.env[key] || null,
       () => {
         const token = vault.getSecret('system:internal-mcp-token');
         const baseUrl = process.env['NEXT_PUBLIC_BASE_URL'] || 'https://firebat.co.kr';

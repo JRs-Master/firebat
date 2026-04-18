@@ -31,8 +31,11 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
   const [userTimezone, setUserTimezone] = useState('Asia/Seoul');
   const [thinkingLevel, setThinkingLevel] = useState('low');
 
-  // Gemini
-  const [geminiApiKey, setGeminiApiKey] = useState('');
+  // Provider API 키 (OpenAI / Google AI Studio / Anthropic / Vertex SA)
+  const [geminiApiKey, setGeminiApiKey] = useState(''); // OpenAI (기존 이름 유지)
+  const [googleApiKey, setGoogleApiKey] = useState(''); // Gemini AI Studio
+  const [anthropicApiKey, setAnthropicApiKey] = useState(''); // Claude
+  const [vertexSaJson, setVertexSaJson] = useState(''); // Vertex AI Service Account JSON
 
   // 관리자 계정 변경
   const [adminCurrentPw, setAdminCurrentPw] = useState('');
@@ -107,9 +110,11 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
     // Vault 키
     fetch('/api/vault').then(r => r.json()).then(data => {
-      if (data.success && data.keys?.openai_api_key?.hasKey) {
-        setGeminiApiKey(data.keys.openai_api_key.maskedKey);
-      }
+      if (!data.success) return;
+      if (data.keys?.openai_api_key?.hasKey) setGeminiApiKey(data.keys.openai_api_key.maskedKey);
+      if (data.keys?.gemini_api_key?.hasKey) setGoogleApiKey(data.keys.gemini_api_key.maskedKey);
+      if (data.keys?.anthropic_api_key?.hasKey) setAnthropicApiKey(data.keys.anthropic_api_key.maskedKey);
+      if (data.keys?.google_service_account_json?.hasKey) setVertexSaJson(data.keys.google_service_account_json.maskedKey);
     }).catch(() => {});
   }, []);
 
@@ -392,13 +397,18 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
       body: JSON.stringify({ timezone: userTimezone, aiModel, aiThinkingLevel: thinkingLevel }),
     }).catch(() => {});
 
-    if (geminiApiKey && !geminiApiKey.includes('...') && geminiApiKey !== '***') {
+    const saveProviderKey = async (provider: 'openai' | 'gemini' | 'anthropic' | 'vertex', value: string) => {
+      if (!value || value.includes('...') || value === '***') return;
       await fetch('/api/vault', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: geminiApiKey }),
+        body: JSON.stringify({ provider, apiKey: value }),
       }).catch(() => {});
-    }
+    };
+    await saveProviderKey('openai', geminiApiKey);
+    await saveProviderKey('gemini', googleApiKey);
+    await saveProviderKey('anthropic', anthropicApiKey);
+    await saveProviderKey('vertex', vertexSaJson);
 
     if (adminCurrentPw && (adminNewId.trim() || adminNewPw.trim())) {
       const res = await fetch('/api/auth', {
@@ -591,7 +601,52 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                   className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
-                  OpenAI Platform (platform.openai.com) → API Keys
+                  OpenAI Platform (platform.openai.com) → API Keys — GPT-5.4 시리즈 사용 시 필수
+                </p>
+              </div>
+
+              {/* Google AI Studio (Gemini) */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs sm:text-sm font-bold text-slate-700">Google AI Studio (Gemini)</label>
+                <input
+                  type="password"
+                  value={googleApiKey}
+                  onChange={e => setGoogleApiKey(e.target.value)}
+                  placeholder="Gemini API Key (AIza...)"
+                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
+                  aistudio.google.com → Get API key — Gemini 3 시리즈 사용 시 필수
+                </p>
+              </div>
+
+              {/* Anthropic (Claude) */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs sm:text-sm font-bold text-slate-700">Anthropic (Claude)</label>
+                <input
+                  type="password"
+                  value={anthropicApiKey}
+                  onChange={e => setAnthropicApiKey(e.target.value)}
+                  placeholder="Anthropic API Key (sk-ant-...)"
+                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+                <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
+                  console.anthropic.com → API Keys — Claude 4 시리즈 사용 시 필수
+                </p>
+              </div>
+
+              {/* Google Vertex AI (Service Account JSON) */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs sm:text-sm font-bold text-slate-700">Google Vertex AI (서비스 계정)</label>
+                <textarea
+                  value={vertexSaJson}
+                  onChange={e => setVertexSaJson(e.target.value)}
+                  placeholder='{"type":"service_account","project_id":"...","private_key":"..."}'
+                  rows={4}
+                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y"
+                />
+                <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
+                  GCP Console → IAM → 서비스 계정 → 키 생성 (JSON 전체 붙여넣기) — Gemini (Vertex) 모델 사용 시 필수
                 </p>
               </div>
 

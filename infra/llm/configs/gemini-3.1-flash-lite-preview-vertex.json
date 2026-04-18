@@ -1,0 +1,15 @@
+{
+  "id": "gemini-3.1-flash-lite-preview-vertex",
+  "displayName": "Gemini 3.1 Flash Lite (Vertex)",
+  "provider": "google-vertex",
+  "format": "vertex-gemini",
+  "endpoint": "https://aiplatform.googleapis.com/v1beta1",
+  "apiKeyVaultKey": "GOOGLE_SERVICE_ACCOUNT_JSON",
+  "extraHeaders": { "x-vertex-location": "us-central1" },
+  "features": {
+    "vision": true,
+    "temperature": true,
+    "thinking": false
+  },
+  "pricing": { "input": 0.10, "output": 0.40, "cachedInput": 0.025 }
+}

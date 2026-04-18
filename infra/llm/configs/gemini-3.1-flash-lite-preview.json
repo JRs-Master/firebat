@@ -1,0 +1,14 @@
+{
+  "id": "gemini-3.1-flash-lite-preview",
+  "displayName": "Gemini 3.1 Flash Lite (Preview)",
+  "provider": "google-aistudio",
+  "format": "openai-chat",
+  "endpoint": "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+  "apiKeyVaultKey": "GEMINI_API_KEY",
+  "features": {
+    "vision": true,
+    "temperature": true,
+    "thinking": false
+  },
+  "pricing": { "input": 0.10, "output": 0.40, "cachedInput": 0.025 }
+}

@@ -1,0 +1,17 @@
+{
+  "id": "claude-sonnet-4-6",
+  "displayName": "Claude Sonnet 4.6",
+  "provider": "anthropic",
+  "format": "anthropic-messages",
+  "endpoint": "https://api.anthropic.com/v1/messages",
+  "apiKeyVaultKey": "ANTHROPIC_API_KEY",
+  "extraHeaders": { "anthropic-version": "2023-06-01" },
+  "features": {
+    "mcpConnector": true,
+    "extendedThinking": true,
+    "vision": true,
+    "temperature": true,
+    "promptCache": true
+  },
+  "pricing": { "input": 3.00, "output": 15.00, "cachedInput": 0.30 }
+}

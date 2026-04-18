@@ -1,0 +1,17 @@
+{
+  "id": "claude-opus-4-7",
+  "displayName": "Claude Opus 4.7",
+  "provider": "anthropic",
+  "format": "anthropic-messages",
+  "endpoint": "https://api.anthropic.com/v1/messages",
+  "apiKeyVaultKey": "ANTHROPIC_API_KEY",
+  "extraHeaders": { "anthropic-version": "2023-06-01" },
+  "features": {
+    "mcpConnector": true,
+    "extendedThinking": true,
+    "vision": true,
+    "temperature": true,
+    "promptCache": true
+  },
+  "pricing": { "input": 15.00, "output": 75.00, "cachedInput": 1.50 }
+}
