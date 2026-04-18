@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import StockChart from '../../admin/chat-components/StockChart';
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
@@ -464,6 +466,19 @@ function BadgeComp({ text, color = 'blue' }: { text: string; color?: string }) {
 }
 
 // ── Alert ───────────────────────────────────────────────────────────────────
+// Alert/Callout 내부에서만 쓰는 경량 마크다운 렌더러 — AI가 **bold**, 1./2. 목록, \n 줄바꿈 섞어 보내는 경우 대응
+const alertMdComponents = {
+  p: (props: any) => <p className="mb-1 last:mb-0" {...props} />,
+  strong: (props: any) => <strong className="font-bold" {...props} />,
+  em: (props: any) => <em className="italic" {...props} />,
+  ul: (props: any) => <ul className="list-disc list-outside ml-5 space-y-0.5" {...props} />,
+  ol: (props: any) => <ol className="list-decimal list-outside ml-5 space-y-0.5" {...props} />,
+  li: (props: any) => <li {...props} />,
+  code: (props: any) => <code className="px-1 py-0.5 bg-black/10 rounded text-[12px] font-mono" {...props} />,
+  a: (props: any) => <a className="underline" target="_blank" rel="noopener noreferrer" {...props} />,
+  br: () => <br />,
+};
+
 function AlertComp({ message, type = 'info', title }: { message: string; type?: string; title?: string }) {
   const styles: Record<string, { bg: string; border: string; text: string; icon: string }> = {
     info:    { bg: 'bg-blue-50',   border: 'border-blue-200',   text: 'text-blue-800',   icon: 'ℹ️' },
@@ -482,9 +497,11 @@ function AlertComp({ message, type = 'info', title }: { message: string; type?: 
   return (
     <div className={`${s.bg} ${s.border} border rounded-xl p-4 flex gap-3`}>
       <span className="text-lg shrink-0">{s.icon}</span>
-      <div>
+      <div className="min-w-0 flex-1">
         {title && <div className={`font-bold text-sm mb-1 ${s.text}`}>{title}</div>}
-        <div className={`text-sm ${s.text}`}>{message}</div>
+        <div className={`text-sm ${s.text} prose-sm break-words`}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={alertMdComponents}>{message}</ReactMarkdown>
+        </div>
       </div>
     </div>
   );
