@@ -305,9 +305,12 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 헤더는 전체 데이터 기준 (가격), 기간/고가/저가는 가시 범위 기준
   const latest = fullData[fullN - 1];
   const viewFirst = safeData[0];
+  // 헤더 변동: 전일 종가 대비 (일간 변동, 증권앱 표준). 전일 없으면 기간 시작 대비 폴백.
+  const prevClose = fullData[fullN - 2]?.close;
   const viewLatest = safeData[n - 1];
-  const change = viewLatest && viewFirst ? viewLatest.close - viewFirst.close : 0;
-  const changePct = viewFirst ? (change / viewFirst.close) * 100 : 0;
+  const baseClose = prevClose ?? viewFirst?.close ?? 0;
+  const change = latest && baseClose ? latest.close - baseClose : 0;
+  const changePct = baseClose ? (change / baseClose) * 100 : 0;
   const isUp = change > 0;
   const isDown = change < 0;
   const changeColor = isUp ? 'text-red-600' : isDown ? 'text-blue-600' : 'text-slate-400';
