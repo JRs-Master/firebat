@@ -314,19 +314,23 @@ function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[
   }
   const hasError = order.some(a => steps?.find(s => s.type === a && s.status === 'error'));
   const totalCalls = actions.length;
+  // 도구 1종만 호출된 경우: 요약 배지 스킵하고 개별 배지만 표시 (접힘 무의미)
+  const singleOnly = order.length === 1;
   return (
     <div className="flex flex-col gap-1">
-      {/* 요약 배지 — 펼침/접힘 토글 */}
-      <div
-        className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium w-fit cursor-pointer transition-colors ${hasError ? 'bg-red-50 border border-red-100 text-red-600 hover:bg-red-100' : 'bg-slate-50 border border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-        onClick={() => setExpanded(v => !v)}
-      >
-        {hasError ? <AlertTriangle size={10} className="text-red-400" /> : <Blocks size={10} className="text-slate-400" />}
-        <span>도구 {order.length}종{totalCalls !== order.length && `·${totalCalls}회`}</span>
-        <span className="text-slate-400 ml-0.5">{expanded ? '▾' : '▸'}</span>
-      </div>
-      {/* 펼쳤을 때 개별 도구 배지 표시 */}
-      {expanded && (
+      {/* 요약 배지 — 펼침/접힘 토글 (2종 이상일 때만) */}
+      {!singleOnly && (
+        <div
+          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium w-fit cursor-pointer transition-colors ${hasError ? 'bg-red-50 border border-red-100 text-red-600 hover:bg-red-100' : 'bg-slate-50 border border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+          onClick={() => setExpanded(v => !v)}
+        >
+          {hasError ? <AlertTriangle size={10} className="text-red-400" /> : <Blocks size={10} className="text-slate-400" />}
+          <span>도구 {order.length}종{totalCalls !== order.length && `·${totalCalls}회`}</span>
+          <span className="text-slate-400 ml-0.5">{expanded ? '▾' : '▸'}</span>
+        </div>
+      )}
+      {/* 개별 도구 배지 — 1종이면 항상 표시, 2종 이상이면 펼쳤을 때만 */}
+      {(singleOnly || expanded) && (
         <div className="flex flex-wrap gap-2">
           {order.map((action, i) => {
             const step = steps?.find(s => s.type === action && s.status === 'error');
@@ -345,7 +349,7 @@ function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[
           })}
         </div>
       )}
-      {expanded && openIdx !== null && (() => {
+      {(singleOnly || expanded) && openIdx !== null && (() => {
         const action = order[openIdx];
         const step = steps?.find(s => s.type === action && s.status === 'error');
         return step?.error ? (
@@ -876,7 +880,7 @@ export default function AdminConsole() {
                     onClick={() => loading ? handleStop() : handleSubmit()}
                     disabled={!loading && !input.trim()}
                     title={loading ? '생성 중지' : '전송'}
-                    className="bg-gradient-to-br from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 disabled:from-slate-300 disabled:to-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]"
+                    className="bg-slate-700 hover:bg-slate-800 disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]"
                   >
                     {loading
                       ? <><Square size={12} fill="currentColor" className="sm:hidden" /><Square size={16} fill="currentColor" className="hidden sm:block" /></>
