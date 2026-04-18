@@ -45,9 +45,13 @@ const mdComponents = {
     );
   },
   blockquote: (props: any) => <blockquote className="border-l-3 border-slate-300 pl-3 text-slate-600 italic mb-2" {...props} />,
-  table: (props: any) => <div className="overflow-x-auto mb-2"><table className="w-full text-[13px] border-collapse" {...props} /></div>,
-  th: (props: any) => <th className="border border-slate-200 bg-slate-50 px-3 py-1.5 text-left font-bold text-slate-700" {...props} />,
-  td: (props: any) => <td className="border border-slate-200 px-3 py-1.5 text-slate-600" {...props} />,
+  table: (props: any) => (
+    <div className="overflow-auto mb-2 rounded-xl border border-slate-200 max-h-[70vh]">
+      <table className="min-w-full text-[13px] border-separate border-spacing-0" {...props} />
+    </div>
+  ),
+  th: (props: any) => <th className="bg-slate-50 px-3 py-1.5 text-left font-bold text-slate-700 whitespace-nowrap sticky top-0 z-10 border-b border-slate-200" {...props} />,
+  td: (props: any) => <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap border-b border-slate-100" {...props} />,
   hr: () => <hr className="border-slate-200 my-3" />,
 };
 
