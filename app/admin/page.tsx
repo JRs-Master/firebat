@@ -303,7 +303,6 @@ function CopyButton({ text }: { text: string }) {
 
 // ─── 액션 태그 (에러 시 빨간색 + 클릭 펼침) ──────────────────────────────────
 function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[] }) {
-  const [expanded, setExpanded] = useState(false);
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   // 같은 도구 중복은 하나로 합치고 호출 횟수를 xN으로 표시
   const counts = new Map<string, number>();
@@ -312,44 +311,26 @@ function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[
     if (!counts.has(a)) order.push(a);
     counts.set(a, (counts.get(a) || 0) + 1);
   }
-  const hasError = order.some(a => steps?.find(s => s.type === a && s.status === 'error'));
-  const totalCalls = actions.length;
-  // 도구 1종만 호출된 경우: 요약 배지 스킵하고 개별 배지만 표시 (접힘 무의미)
-  const singleOnly = order.length === 1;
   return (
     <div className="flex flex-col gap-1">
-      {/* 요약 배지 — 펼침/접힘 토글 (2종 이상일 때만) */}
-      {!singleOnly && (
-        <div
-          className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium w-fit cursor-pointer transition-colors ${hasError ? 'bg-red-50 border border-red-100 text-red-600 hover:bg-red-100' : 'bg-slate-50 border border-slate-200 text-slate-500 hover:bg-slate-100'}`}
-          onClick={() => setExpanded(v => !v)}
-        >
-          {hasError ? <AlertTriangle size={10} className="text-red-400" /> : <Blocks size={10} className="text-slate-400" />}
-          <span>도구 {order.length}종{totalCalls !== order.length && `·${totalCalls}회`}</span>
-          <span className="text-slate-400 ml-0.5">{expanded ? '▾' : '▸'}</span>
-        </div>
-      )}
-      {/* 개별 도구 배지 — 1종이면 항상 표시, 2종 이상이면 펼쳤을 때만 */}
-      {(singleOnly || expanded) && (
-        <div className="flex flex-wrap gap-2">
-          {order.map((action, i) => {
-            const step = steps?.find(s => s.type === action && s.status === 'error');
-            const isError = !!step;
-            const n = counts.get(action) || 1;
-            return (
-              <div
-                key={i}
-                className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium ${isError ? 'bg-red-50 border border-red-100 text-red-600 cursor-pointer hover:bg-red-100' : 'bg-slate-50 border border-slate-200 text-slate-500'} transition-colors`}
-                onClick={isError ? () => setOpenIdx(openIdx === i ? null : i) : undefined}
-              >
-                {isError ? <AlertTriangle size={10} className="text-red-400" /> : <Blocks size={10} className="text-slate-400" />}
-                {action}{n > 1 && <span className="text-slate-400 ml-0.5">×{n}</span>}
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {(singleOnly || expanded) && openIdx !== null && (() => {
+      <div className="flex flex-wrap gap-2">
+        {order.map((action, i) => {
+          const step = steps?.find(s => s.type === action && s.status === 'error');
+          const isError = !!step;
+          const n = counts.get(action) || 1;
+          return (
+            <div
+              key={i}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium ${isError ? 'bg-red-50 border border-red-100 text-red-600 cursor-pointer hover:bg-red-100' : 'bg-slate-50 border border-slate-200 text-slate-500'} transition-colors`}
+              onClick={isError ? () => setOpenIdx(openIdx === i ? null : i) : undefined}
+            >
+              {isError ? <AlertTriangle size={10} className="text-red-400" /> : <Blocks size={10} className="text-slate-400" />}
+              {action}{n > 1 && <span className="text-slate-400 ml-0.5">×{n}</span>}
+            </div>
+          );
+        })}
+      </div>
+      {openIdx !== null && (() => {
         const action = order[openIdx];
         const step = steps?.find(s => s.type === action && s.status === 'error');
         return step?.error ? (

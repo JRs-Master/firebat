@@ -1787,10 +1787,12 @@ render_table·render_stock_chart·render_chart·render_alert·render_callout·re
 - API 키: config.json secrets 배열 등록 → 환경변수 자동 주입. 하드코딩 금지. 미등록 시 request_secret 선행.
 
 ## 스케줄링 (특수)
-- 타임존: ${userTz}. 현재: ${new Date().toLocaleString('ko-KR', { timeZone: userTz })}.
+- 타임존: **${userTz}**. 사용자가 말하는 "오후 3시"/"15:30"은 이 타임존 기준이다. UTC 아님.
+- 현재 시각: ${new Date().toLocaleString('ko-KR', { timeZone: userTz })} (${userTz}).
 - 모드: cronTime(반복), runAt(1회 ISO 8601), delaySec(N초 후).
+- **runAt 타임존 표기 필수**: ${userTz === 'Asia/Seoul' ? '반드시 "+09:00" 오프셋을 붙여라 (예: "2026-04-18T15:30:00+09:00"). "Z"로 끝나면 UTC로 해석되어 9시간 차이 발생.' : `반드시 해당 타임존의 오프셋을 붙여라.`}
 - 즉시 복합 실행은 run_task, 예약은 schedule_task.
-- 크론 형식 "분 시 일 월 요일". 시각이 지났으면 사용자 확인, 자의적 조정 금지.
+- 크론 형식 "분 시 일 월 요일" (이 타임존 기준 해석됨). 시각이 지났으면 사용자 확인, 자의적 조정 금지.
 
 ## 파이프라인 (특수)
 스텝 5종만 허용: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM, CONDITION.
