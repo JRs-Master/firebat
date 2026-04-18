@@ -34,39 +34,55 @@ process.stdin.on('end', async () => {
 
     if (!accessToken) return out(false, 'KAKAO_ACCESS_TOKEN이 설정되지 않았습니다.');
 
-    // 토큰 자동 갱신 래퍼 — 핸들러가 undefined 반환(이미 out() 호출)이면 그대로 종료,
-    // 객체 반환이면 _status=401 체크 후 갱신 재시도.
+    // 토큰 자동 갱신 래퍼
+    // - 핸들러가 { _error: '...' } 반환 → 검증 에러
+    // - 핸들러가 { _status, _error } 반환 → kapi 호출 실패 (401이면 토큰 갱신 후 재시도)
+    // - 핸들러가 { _ok: data } 반환 → 성공 데이터 (변환된 형태)
+    // - 핸들러가 그 외 객체 반환 → 원본 kapi 응답 (성공, 변환 없음)
+    let refreshedToken = null; // 401 재시도 성공 시 새 토큰 — sandbox가 Vault에 저장
     const withRetry = async (fn) => {
-      let result = await fn(accessToken);
-      if (result && result._status === 401 && refreshToken && restApiKey) {
+      let r = await fn(accessToken);
+      if (r && r._status === 401 && refreshToken && restApiKey) {
         process.stderr.write('[kakao-talk] 토큰 만료, 갱신 시도...\n');
         const newToken = await refreshAccessToken(restApiKey, refreshToken, clientSecret);
         if (newToken) {
           accessToken = newToken;
-          result = await fn(accessToken);
+          refreshedToken = newToken;
+          r = await fn(accessToken);
         } else {
-          return out(false, '토큰 갱신 실패. 카카오 연동을 다시 진행해주세요.');
+          return { _error: '토큰 갱신 실패. 카카오 연동을 다시 진행해주세요.' };
         }
       }
-      return result;
+      return r;
+    };
+
+    // 응답 객체에 __updateSecrets 주입 → sandbox가 Vault에 반영 (`user:KAKAO_ACCESS_TOKEN`)
+    const withTokenUpdate = (obj) => refreshedToken ? { ...obj, __updateSecrets: { KAKAO_ACCESS_TOKEN: refreshedToken } } : obj;
+    const run = async (fn) => {
+      const r = await withRetry(fn);
+      if (!r) return outRaw(withTokenUpdate({ success: false, error: '알 수 없는 오류' }));
+      if (r._error) return outRaw(withTokenUpdate({ success: false, error: r._error }));
+      if (r._status) return outRaw(withTokenUpdate({ success: false, error: r._error || `카카오 API ${r._status}` }));
+      return outRaw(withTokenUpdate({ success: true, data: r._ok !== undefined ? r._ok : r }));
     };
 
     switch (action) {
-      case 'send-me': return await withRetry(t => handleSendMe(t, data));
-      case 'send-me-scrap': return await withRetry(t => handleSendMeScrap(t, data));
-      case 'send-friends': return await withRetry(t => handleSendFriends(t, data));
-      case 'profile': return await withRetry(t => handleProfile(t));
-      case 'friends': return await withRetry(t => handleFriends(t, data));
-      case 'channels': return await withRetry(t => handleChannels(t, data));
-      case 'calendars': return await withRetry(t => handleCalendars(t, data));
-      case 'create-event': return await withRetry(t => handleCreateEvent(t, data));
-      case 'list-events': return await withRetry(t => handleListEvents(t, data));
+      case 'send-me': return await run(t => handleSendMe(t, data));
+      case 'send-me-scrap': return await run(t => handleSendMeScrap(t, data));
+      case 'send-friends': return await run(t => handleSendFriends(t, data));
+      case 'profile': return await run(t => handleProfile(t));
+      case 'friends': return await run(t => handleFriends(t, data));
+      case 'channels': return await run(t => handleChannels(t, data));
+      case 'calendars': return await run(t => handleCalendars(t, data));
+      case 'create-event': return await run(t => handleCreateEvent(t, data));
+      case 'list-events': return await run(t => handleListEvents(t, data));
       default: return out(false, `알 수 없는 action: ${action}`);
     }
   } catch (e) { out(false, e.message); }
 });
 
 function out(ok, d) { console.log(JSON.stringify(ok ? { success: true, data: d } : { success: false, error: d })); }
+function outRaw(obj) { console.log(JSON.stringify(obj)); }
 
 async function kapiPost(token, url, formBody) {
   const resp = await fetch(url, {
@@ -94,10 +110,8 @@ async function kapiGet(token, url) {
   return await resp.json();
 }
 
-function checkErr(result) {
-  if (result._error) { out(false, result._error); return true; }
-  return false;
-}
+// kapi 응답이 에러면 그대로 통과(호출 쪽에서 _status / _error 확인), 성공이면 null.
+function kapiErr(result) { return result && (result._status || result._error) ? result : null; }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  템플릿 빌더
@@ -211,25 +225,25 @@ function buildTemplate(data) {
 //  나에게 보내기
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleSendMe(token, data) {
-  if (!data.text && !data.title) return out(false, 'text 또는 title이 필요합니다.');
+  if (!data.text && !data.title) return { _error: 'text 또는 title이 필요합니다.' };
   const tmpl = buildTemplate(data);
   const body = `template_object=${encodeURIComponent(JSON.stringify(tmpl))}`;
   const result = await kapiPost(token, `${KAPI}/v2/api/talk/memo/default/send`, body);
-  if (checkErr(result)) return;
-  out(true, { resultCode: result.result_code ?? 0 });
+  const err = kapiErr(result); if (err) return err;
+  return { _ok: { resultCode: result.result_code ?? 0 } };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  나에게 스크랩 메시지 보내기
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleSendMeScrap(token, data) {
-  if (!data.requestUrl) return out(false, 'requestUrl이 필요합니다.');
+  if (!data.requestUrl) return { _error: 'requestUrl이 필요합니다.' };
   let body = `request_url=${encodeURIComponent(data.requestUrl)}`;
   if (data.templateId) body += `&template_id=${data.templateId}`;
   if (data.templateArgs) body += `&template_args=${encodeURIComponent(JSON.stringify(data.templateArgs))}`;
   const result = await kapiPost(token, `${KAPI}/v2/api/talk/memo/scrap/send`, body);
-  if (checkErr(result)) return;
-  out(true, { resultCode: result.result_code ?? 0 });
+  const err = kapiErr(result); if (err) return err;
+  return { _ok: { resultCode: result.result_code ?? 0 } };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -237,19 +251,19 @@ async function handleSendMeScrap(token, data) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleSendFriends(token, data) {
   if (!data.receiverUuids || !Array.isArray(data.receiverUuids) || data.receiverUuids.length === 0) {
-    return out(false, 'receiverUuids 배열이 필요합니다. friends 액션으로 UUID를 조회하세요.');
+    return { _error: 'receiverUuids 배열이 필요합니다. friends 액션으로 UUID를 조회하세요.' };
   }
-  if (!data.text && !data.title) return out(false, 'text 또는 title이 필요합니다.');
+  if (!data.text && !data.title) return { _error: 'text 또는 title이 필요합니다.' };
 
   const tmpl = buildTemplate(data);
   const uuids = JSON.stringify(data.receiverUuids.slice(0, 5));
   const body = `receiver_uuids=${encodeURIComponent(uuids)}&template_object=${encodeURIComponent(JSON.stringify(tmpl))}`;
   const result = await kapiPost(token, `${KAPI}/v1/api/talk/friends/message/default/send`, body);
-  if (checkErr(result)) return;
-  out(true, {
+  const err = kapiErr(result); if (err) return err;
+  return { _ok: {
     successfulReceiverUuids: result.successful_receiver_uuids || [],
     failureInfo: result.failure_info || [],
-  });
+  } };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -257,12 +271,12 @@ async function handleSendFriends(token, data) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleProfile(token) {
   const result = await kapiGet(token, `${KAPI}/v1/api/talk/profile`);
-  if (checkErr(result)) return;
-  out(true, {
+  const err = kapiErr(result); if (err) return err;
+  return { _ok: {
     nickName: result.nickName || '',
     profileImageUrl: result.profileImageURL || '',
     thumbnailUrl: result.thumbnailURL || '',
-  });
+  } };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -276,14 +290,14 @@ async function handleFriends(token, data) {
   if (data.friendOrder) params.set('friend_order', data.friendOrder);
   const qs = params.toString();
   const result = await kapiGet(token, `${KAPI}/v1/api/talk/friends${qs ? '?' + qs : ''}`);
-  if (checkErr(result)) return;
-  out(true, {
+  const err = kapiErr(result); if (err) return err;
+  return { _ok: {
     totalCount: result.total_count || 0,
     favoriteCount: result.favorite_count || 0,
     friends: (result.elements || []).map(f => ({
       uuid: f.uuid, nickname: f.profile_nickname, thumbnail: f.profile_thumbnail_image, favorite: f.favorite,
     })),
-  });
+  } };
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -294,8 +308,8 @@ async function handleChannels(token, data) {
   if (data.channelIds) params.set('channel_ids', Array.isArray(data.channelIds) ? data.channelIds.join(',') : data.channelIds);
   const qs = params.toString();
   const result = await kapiGet(token, `${KAPI}/v2/api/talk/channels${qs ? '?' + qs : ''}`);
-  if (checkErr(result)) return;
-  out(true, result);
+  const err = kapiErr(result); if (err) return err;
+  return result;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -306,22 +320,22 @@ async function handleCalendars(token, data) {
   if (data.filter) params.set('filter', data.filter); // ALL, USER, SUBSCRIBE
   const qs = params.toString();
   const result = await kapiGet(token, `${KAPI}/v2/api/calendar/calendars${qs ? '?' + qs : ''}`);
-  if (checkErr(result)) return;
-  out(true, result);
+  const err = kapiErr(result); if (err) return err;
+  return result;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  캘린더 이벤트 생성
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleCreateEvent(token, data) {
-  if (!data.event) return out(false, 'event 객체가 필요합니다. {title, time:{start_at, end_at, time_zone}}');
+  if (!data.event) return { _error: 'event 객체가 필요합니다. {title, time:{start_at, end_at, time_zone}}' };
   const body = new URLSearchParams();
   if (data.calendarId) body.set('calendar_id', data.calendarId);
   body.set('event', JSON.stringify(data.event));
 
   const result = await kapiPost(token, `${KAPI}/v2/api/calendar/create/event`, body.toString());
-  if (checkErr(result)) return;
-  out(true, result);
+  const err = kapiErr(result); if (err) return err;
+  return result;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -335,8 +349,8 @@ async function handleListEvents(token, data) {
   if (data.to) params.set('to', data.to);
   const qs = params.toString();
   const result = await kapiGet(token, `${KAPI}/v2/api/calendar/events${qs ? '?' + qs : ''}`);
-  if (checkErr(result)) return;
-  out(true, result);
+  const err = kapiErr(result); if (err) return err;
+  return result;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
