@@ -34,10 +34,11 @@ process.stdin.on('end', async () => {
 
     if (!accessToken) return out(false, 'KAKAO_ACCESS_TOKEN이 설정되지 않았습니다.');
 
-    // 토큰 자동 갱신 래퍼
+    // 토큰 자동 갱신 래퍼 — 핸들러가 undefined 반환(이미 out() 호출)이면 그대로 종료,
+    // 객체 반환이면 _status=401 체크 후 갱신 재시도.
     const withRetry = async (fn) => {
       let result = await fn(accessToken);
-      if (result._status === 401 && refreshToken && restApiKey) {
+      if (result && result._status === 401 && refreshToken && restApiKey) {
         process.stderr.write('[kakao-talk] 토큰 만료, 갱신 시도...\n');
         const newToken = await refreshAccessToken(restApiKey, refreshToken, clientSecret);
         if (newToken) {
