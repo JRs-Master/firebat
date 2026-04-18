@@ -293,11 +293,22 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
           if (!entryPath) continue;
 
           const toolName = `sysmod_${modName.replace(/-/g, '_')}`;
+          // config.json의 input.properties를 zod shape으로 평탄화 (AI가 args wrapper 없이 직접 필드 전달)
+          const inputProps: Record<string, { description?: string; type?: string }> = config.input?.properties ?? {};
+          const requiredList: string[] = config.input?.required ?? [];
+          const zodShape: Record<string, z.ZodTypeAny> = {};
+          for (const [key, prop] of Object.entries(inputProps)) {
+            const desc = prop.description || '';
+            zodShape[key] = requiredList.includes(key)
+              ? z.any().describe(desc)
+              : z.any().optional().describe(desc);
+          }
+
           server.tool(
             toolName,
             config.description || `시스템 모듈: ${modName}`,
-            { args: z.record(z.string(), z.any()).optional().describe('모듈 입력 인자 (config.json input 스키마 참조)') },
-            async ({ args }) => {
+            zodShape,
+            async (args: Record<string, unknown>) => {
               const execPath = entryPath!;
               const r = await core.sandboxExecute(execPath, args ?? {});
               if (!r.success) return { content: [{ type: 'text', text: JSON.stringify({ error: r.error }) }] };
