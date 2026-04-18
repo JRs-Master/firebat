@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Download, Server, Terminal, Globe, Cpu, Wrench, Blocks } from 'lucide-react';
+import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Download, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight } from 'lucide-react';
 import { GEMINI_MODELS, THINKING_LEVELS, McpServer, getThinkingKind, filterThinkingLevels } from '../types';
 import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
 
@@ -401,24 +401,70 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
     contentRef.current?.scrollTo(0, 0);
   };
 
-  // PC용: 탭 바 마우스 드래그 스크롤
+  // PC용: 탭 바 마우스 드래그 스크롤 (임계값 넘어야 실제 드래그로 간주 → 클릭과 충돌 방지)
+  const draggedRef = useRef(false);
   useEffect(() => {
     const bar = tabBarRef.current;
     if (!bar) return;
     let isDown = false;
     let startX = 0;
     let startScroll = 0;
-    const onDown = (e: MouseEvent) => { isDown = true; startX = e.pageX; startScroll = bar.scrollLeft; bar.style.cursor = 'grabbing'; };
-    const onMove = (e: MouseEvent) => { if (!isDown) return; e.preventDefault(); bar.scrollLeft = startScroll - (e.pageX - startX); };
-    const onUp = () => { isDown = false; bar.style.cursor = ''; };
+    const DRAG_THRESHOLD = 5;
+    const onDown = (e: MouseEvent) => { isDown = true; startX = e.pageX; startScroll = bar.scrollLeft; draggedRef.current = false; };
+    const onMove = (e: MouseEvent) => {
+      if (!isDown) return;
+      const dx = e.pageX - startX;
+      if (!draggedRef.current && Math.abs(dx) < DRAG_THRESHOLD) return;
+      draggedRef.current = true;
+      bar.style.cursor = 'grabbing';
+      e.preventDefault();
+      bar.scrollLeft = startScroll - dx;
+    };
+    const onUp = () => {
+      isDown = false;
+      bar.style.cursor = '';
+      // 다음 tick에 reset — click 이벤트 확인 후
+      setTimeout(() => { draggedRef.current = false; }, 0);
+    };
+    // 드래그 직후 click 차단
+    const onClickCapture = (e: MouseEvent) => {
+      if (draggedRef.current) { e.preventDefault(); e.stopPropagation(); }
+    };
     bar.addEventListener('mousedown', onDown);
+    bar.addEventListener('click', onClickCapture, true);
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     return () => {
       bar.removeEventListener('mousedown', onDown);
+      bar.removeEventListener('click', onClickCapture, true);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
+  }, []);
+
+  // 탭 스크롤 상태 — 좌/우 화살표 가시성 제어
+  const [scrollState, setScrollState] = useState({ canLeft: false, canRight: false });
+  const updateScrollState = useCallback(() => {
+    const bar = tabBarRef.current;
+    if (!bar) return;
+    setScrollState({
+      canLeft: bar.scrollLeft > 2,
+      canRight: bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 2,
+    });
+  }, []);
+  useEffect(() => {
+    const bar = tabBarRef.current;
+    if (!bar) return;
+    updateScrollState();
+    bar.addEventListener('scroll', updateScrollState);
+    const ro = new ResizeObserver(updateScrollState);
+    ro.observe(bar);
+    return () => { bar.removeEventListener('scroll', updateScrollState); ro.disconnect(); };
+  }, [updateScrollState]);
+  const scrollTabs = useCallback((dir: 'left' | 'right') => {
+    const bar = tabBarRef.current;
+    if (!bar) return;
+    bar.scrollBy({ left: dir === 'left' ? -120 : 120, behavior: 'smooth' });
   }, []);
 
   // 탭 전환 시 데이터 로드
@@ -480,8 +526,25 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
           </button>
         </div>
 
-        {/* 탭 — 모바일은 터치 스크롤, PC는 드래그 스크롤 */}
-        <div ref={tabBarRef} className="flex border-b border-slate-200 px-3 sm:px-6 bg-white shrink-0 overflow-x-auto scrollbar-none select-none">
+        {/* 탭 — 모바일은 터치 스크롤, PC는 드래그 + 호버 시 화살표 */}
+        <div className="relative shrink-0 border-b border-slate-200 bg-white group">
+          {scrollState.canLeft && (
+            <button
+              type="button"
+              onClick={() => scrollTabs('left')}
+              className="hidden sm:flex absolute left-0 top-0 bottom-0 z-20 w-7 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-r from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
+              aria-label="이전 탭"
+            ><ChevronLeft size={16} /></button>
+          )}
+          {scrollState.canRight && (
+            <button
+              type="button"
+              onClick={() => scrollTabs('right')}
+              className="hidden sm:flex absolute right-0 top-0 bottom-0 z-20 w-7 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-l from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
+              aria-label="다음 탭"
+            ><ChevronRight size={16} /></button>
+          )}
+          <div ref={tabBarRef} className="flex px-3 sm:px-6 bg-white overflow-x-auto scrollbar-none select-none cursor-grab">
           <button
             onClick={() => switchTab('general')}
             data-active={settingsTab === 'general'}
@@ -530,6 +593,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
               <Cpu size={14} /> 시스템
             </button>
           )}
+          </div>
         </div>
 
         <div ref={contentRef} className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-scroll min-w-0 flex-1 min-h-0">
