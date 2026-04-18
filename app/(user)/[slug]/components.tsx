@@ -453,9 +453,10 @@ function AlertComp({ message, type = 'info', title }: { message: string; type?: 
     warning: { bg: 'bg-amber-50',  border: 'border-amber-200',  text: 'text-amber-800',  icon: '⚠️' },
     error:   { bg: 'bg-red-50',    border: 'border-red-200',    text: 'text-red-800',    icon: '❌' },
     danger:  { bg: 'bg-red-50',    border: 'border-red-200',    text: 'text-red-800',    icon: '❌' },
-    tip:     { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-800', icon: '💡' },
-    accent:  { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-800', icon: '🔥' },
-    neutral: { bg: 'bg-slate-50',  border: 'border-slate-200',  text: 'text-slate-700',  icon: '📎' },
+    tip:       { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-800', icon: '💡' },
+    accent:    { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-800', icon: '🔥' },
+    highlight: { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-800', icon: '⭐' },
+    neutral:   { bg: 'bg-slate-50',  border: 'border-slate-200',  text: 'text-slate-700',  icon: '📎' },
   };
   const s = styles[type] ?? styles.info;
 
