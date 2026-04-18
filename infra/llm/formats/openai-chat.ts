@@ -153,10 +153,19 @@ export class OpenAIChatFormat implements FormatHandler {
       }
       return { success: true, data: { text: textParts.join(''), toolCalls } };
     } catch (e: any) {
-      // 400 디버깅용 상세 로그 (응답 body, 요청 구조)
-      const body = e?.error?.message || e?.response?.data || e?.body || '';
+      // 400 디버깅용 상세 로그 (응답 body + 요청 페이로드)
+      const status = e?.status || e?.response?.status;
+      const body = e?.error?.message || e?.response?.data || e?.body || e?.error || '';
       const detail = body ? ` | detail: ${typeof body === 'string' ? body : JSON.stringify(body).slice(0, 500)}` : '';
-      return { success: false, error: `[${ctx.config.provider}] askWithTools 실패: ${e.message}${detail}` };
+      const reqDump = status === 400 ? ` | req: ${JSON.stringify({ model: ctx.config.id, toolCount: tools.length, exchangeCount: toolExchanges.length, messageCount: toolExchanges.length * 2 + 1 }).slice(0, 400)}` : '';
+      // 추가: 첫 번째 도구 메시지 구조 덤프 (400일 때만)
+      const lastExDump = status === 400 && toolExchanges.length > 0
+        ? ` | lastExchange: ${JSON.stringify({
+            toolCalls: toolExchanges[toolExchanges.length - 1].toolCalls.map(tc => ({ name: tc.name, argsKeys: Object.keys(tc.args || {}) })),
+            toolResults: toolExchanges[toolExchanges.length - 1].toolResults.map(tr => ({ name: tr.name, result: JSON.stringify(tr.result).slice(0, 120) })),
+          }).slice(0, 500)}`
+        : '';
+      return { success: false, error: `[${ctx.config.provider}] askWithTools 실패: ${e.message}${detail}${reqDump}${lastExDump}` };
     }
   }
 }
