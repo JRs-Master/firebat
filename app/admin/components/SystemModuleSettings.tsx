@@ -127,7 +127,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
 
           // 병합: 자동 secret 필드 먼저, 수동 필드 뒤에
           const allFields = [...autoFields, ...filteredManual];
-          const title = manualSchema?.title || (config?.description as string) || moduleName;
+          const title = manualSchema?.title || moduleName;
           setSchema({ title, fields: allFields });
 
           // 기본값과 저장된 값 병합
