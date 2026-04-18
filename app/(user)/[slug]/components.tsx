@@ -448,6 +448,7 @@ function AlertComp({ message, type = 'info', title }: { message: string; type?: 
   const styles: Record<string, { bg: string; border: string; text: string; icon: string }> = {
     info:    { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-800', icon: 'ℹ️' },
     success: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-800', icon: '✅' },
+    warn:    { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-800', icon: '⚠️' },
     warning: { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-800', icon: '⚠️' },
     error:   { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-800', icon: '❌' },
   };
