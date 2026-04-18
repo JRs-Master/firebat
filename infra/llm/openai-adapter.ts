@@ -79,8 +79,8 @@ export class OpenAiAdapter implements ILlmPort {
       input.push({ role: 'user', content: prompt });
     }
 
-    // 멀티턴 도구 교환: function_call + function_call_output (결과 2000자 제한으로 토큰 폭발 방지)
-    const MAX_RESULT_LEN = 2000;
+    // 멀티턴 도구 교환: function_call + function_call_output (결과 8000자 제한으로 토큰 폭발 방지)
+    const MAX_RESULT_LEN = 8000;
     const trimResult = (r: unknown): string => {
       const s = JSON.stringify(r ?? {});
       return s.length > MAX_RESULT_LEN
