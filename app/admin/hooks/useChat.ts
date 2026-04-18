@@ -335,7 +335,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
                 : msg
             ));
           } else if (ev.event === 'result') {
-            const pendingActions = ev.data.data?.pendingActions as { planId: string; name: string; summary: string; args?: any }[] | undefined;
+            const pendingActions = ev.data.data?.pendingActions as { planId: string; name: string; summary: string; args?: any; status?: 'past-runat'; originalRunAt?: string }[] | undefined;
             const hadExecutedActions = !!ev.data.executedActions?.length;
             // 빈 응답 판정: reply 없음 + 에러 없음 + 실행된 도구도 없음 + blocks/pending도 없음 → AI가 아무것도 안 한 것
             const hasAnyOutput = !!(ev.data.executedActions?.length) || !!(ev.data.data?.blocks?.length) || !!(ev.data.data?.pendingActions?.length);
@@ -371,7 +371,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
                   data: hasBlocks ? { ...ev.data.data, blocks: newBlocks } : ev.data.data,
                   error: ev.data.error, planPending: false,
                   suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
-                  pendingActions: pendingActions?.map(p => ({ ...p, status: 'pending' as const })),
+                  pendingActions: pendingActions?.map(p => ({ ...p, status: p.status ?? 'pending' })),
                 };
               }));
               // 청크 단위 점진 append (50자 / 25ms → ~2000자/초)
@@ -402,7 +402,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
                       content: fullReply || msg.content,
                       executedActions: ev.data.executedActions || [], data: ev.data.data, error: ev.data.error, planPending: false,
                       suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
-                      pendingActions: pendingActions?.map(p => ({ ...p, status: 'pending' as const })),
+                      pendingActions: pendingActions?.map(p => ({ ...p, status: p.status ?? 'pending' })),
                     }
                   : msg
               ));
