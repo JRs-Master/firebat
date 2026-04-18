@@ -428,14 +428,25 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     ));
   }, []);
 
-  // Pending tool 개별 승인
-  const handleApprovePending = useCallback(async (msgId: string, planId: string) => {
+  // Pending tool 개별 승인 — action: 'now'(즉시 실행) / 'reschedule'(새 시간) 지원
+  const handleApprovePending = useCallback(async (msgId: string, planId: string, action?: 'now' | 'reschedule', newRunAt?: string) => {
     try {
-      const res = await fetch(`/api/plan/commit?planId=${encodeURIComponent(planId)}`, { method: 'POST' });
+      const qs = new URLSearchParams({ planId });
+      if (action) qs.set('action', action);
+      const res = await fetch(`/api/plan/commit?${qs.toString()}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newRunAt ? { runAt: newRunAt } : {}),
+      });
       const data = await res.json();
       setMessages(prev => prev.map(m => m.id !== msgId ? m : {
         ...m,
-        pendingActions: m.pendingActions?.map(p => p.planId === planId ? { ...p, status: data.success ? 'approved' : 'pending' } : p),
+        pendingActions: m.pendingActions?.map(p => {
+          if (p.planId !== planId) return p;
+          if (data.success) return { ...p, status: 'approved' as const };
+          if (data.code === 'PAST_RUNAT') return { ...p, status: 'past-runat' as const, originalRunAt: data.originalRunAt };
+          return { ...p, status: 'pending' as const };
+        }),
       }));
       if (data.success) { onRefresh(); window.dispatchEvent(new Event('firebat-refresh')); }
     } catch {}

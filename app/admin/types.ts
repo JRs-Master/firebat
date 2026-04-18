@@ -64,7 +64,8 @@ export type PendingAction = {
   name: string;
   summary: string;
   args?: Record<string, unknown>;
-  status?: 'pending' | 'approved' | 'rejected';
+  status?: 'pending' | 'approved' | 'rejected' | 'past-runat';
+  originalRunAt?: string; // PAST_RUNAT 상태일 때 원래 예약 시각
 };
 
 export type Message = {

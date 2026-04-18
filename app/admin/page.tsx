@@ -357,7 +357,7 @@ function ErrorCollapsible({ error, label }: { error: string; label?: string }) {
 }
 
 // ─── 메시지 버블 ─────────────────────────────────────────────────────────────
-function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onApprovePending, onRejectPending }: {
+function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onApprovePending, onRejectPending, onApprovePendingAction }: {
   msg: Message;
   loading: boolean;
   onConfirm: (id: string) => void;
@@ -365,6 +365,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
   onSuggestion?: (text: string) => void;
   onApprovePending?: (msgId: string, planId: string) => void;
   onRejectPending?: (msgId: string, planId: string) => void;
+  onApprovePendingAction?: (msgId: string, planId: string, action: 'now' | 'reschedule', newRunAt?: string) => void;
 }) {
   // 초기 인사 메시지 — 히어로 (스크롤에 밀려 올라가며 사라짐)
   if (msg.id === 'system-init') {
@@ -526,13 +527,50 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
               {msg.pendingActions && msg.pendingActions.length > 0 && (
                 <div className="flex flex-col gap-2">
                   {msg.pendingActions.map(p => (
-                    <div key={p.planId} className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
-                      <AlertTriangle size={15} className="text-amber-600 shrink-0" />
+                    <div key={p.planId} className={`flex flex-col gap-1 px-3 py-2.5 rounded-xl ${p.status === 'past-runat' ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'}`}>
+                      {p.status === 'past-runat' && (
+                        <div className="text-[11px] font-bold text-red-600">
+                          ⏱ 예약 시각이 이미 지났습니다 ({p.originalRunAt ? new Date(p.originalRunAt).toLocaleString('ko-KR') : '-'}). 즉시 보낼지 시간을 변경할지 선택하세요.
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                      <AlertTriangle size={15} className={`shrink-0 ${p.status === 'past-runat' ? 'text-red-500' : 'text-amber-600'}`} />
                       <span className="flex-1 text-[13px] font-medium text-slate-700 truncate">{p.summary}</span>
                       {p.status === 'approved' ? (
                         <span className="text-[12px] font-bold text-emerald-600 px-2">✓ 실행됨</span>
                       ) : p.status === 'rejected' ? (
                         <span className="text-[12px] font-medium text-slate-400 px-2">취소됨</span>
+                      ) : p.status === 'past-runat' ? (
+                        <>
+                          <button
+                            onClick={() => onApprovePendingAction?.(msg.id, p.planId, 'now')}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold rounded-lg transition-colors shadow-sm"
+                          >
+                            즉시 보내기
+                          </button>
+                          <button
+                            onClick={() => {
+                              const cur = new Date(Date.now() + 5 * 60_000);
+                              const yyyy = cur.getFullYear(), mm = String(cur.getMonth() + 1).padStart(2, '0'), dd = String(cur.getDate()).padStart(2, '0');
+                              const hh = String(cur.getHours()).padStart(2, '0'), mi = String(cur.getMinutes()).padStart(2, '0');
+                              const suggested = `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+                              const input = window.prompt('새 예약 시각 (YYYY-MM-DDTHH:mm)', suggested);
+                              if (!input) return;
+                              // 초·타임존 보정 — 입력값은 사용자 로컬 시각 가정
+                              const iso = input.length === 16 ? input + ':00' : input;
+                              onApprovePendingAction?.(msg.id, p.planId, 'reschedule', iso);
+                            }}
+                            className="flex items-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 text-[12px] font-bold rounded-lg border border-slate-300 transition-colors"
+                          >
+                            시간 변경
+                          </button>
+                          <button
+                            onClick={() => onRejectPending?.(msg.id, p.planId)}
+                            className="flex items-center gap-1 px-2 py-1.5 bg-white hover:bg-slate-50 text-slate-400 text-[12px] font-bold rounded-lg border border-slate-200 transition-colors"
+                          >
+                            <X size={13} />
+                          </button>
+                        </>
                       ) : (
                         <>
                           <button
@@ -549,6 +587,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
                           </button>
                         </>
                       )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -731,6 +770,7 @@ export default function AdminConsole() {
                 onReject={handleRejectPlan}
                 onSuggestion={(text) => handleSubmit(text, true)}
                 onApprovePending={handleApprovePending}
+                onApprovePendingAction={(msgId, planId, action, newRunAt) => handleApprovePending(msgId, planId, action, newRunAt)}
                 onRejectPending={handleRejectPending}
               />
             ))}
