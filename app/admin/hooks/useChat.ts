@@ -141,53 +141,67 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
     })();
   }, [isDemo]);
 
-  // ── 대화 저장 (메시지 변경 시) — localStorage 즉시 + admin이면 DB에 debounce 저장 ──
-  const dbSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // 타이머가 fire될 때의 컨텍스트(대화 ID)를 기억해, 저장 직전에 아직 같은 대화가 활성인지 재확인
+  // ── 대화 저장 — localStorage는 messages 변경마다, DB는 확정 시점에만 명시 호출 ──
+  // (이전 debounce 기반 → 500ms 창에 데이터 잃는 문제. 서버가 union merge 하므로 명시 호출이 안전)
+  //
+  // localStorage 저장: 스트리밍 중 UI 상태 유지용. 동기라 즉시·손실 없음.
   useEffect(() => {
     if (!activeConvId || conversations.length === 0) return;
-
-    // title은 effect 본문에서 먼저 계산 — setState updater 안에서 계산하면
-    // React가 render phase에 실행해 outer 변수가 stale 기본값으로 남음 (DB에 '새 대화'로 박히던 원인)
     const firstUser = messages.find(m => m.role === 'user');
     const title = firstUser?.content
       ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
       : '새 대화';
-
     setConversations(prev => {
       const updated = prev.map(c => c.id === activeConvId ? { ...c, messages, title } : c);
       localStorage.setItem('firebat_conversations', JSON.stringify(updated));
       return updated;
     });
-
-    // admin → 500ms debounce로 DB 저장
-    if (!isDemo) {
-      if (dbSaveTimerRef.current) clearTimeout(dbSaveTimerRef.current);
-      const convMeta = conversations.find(c => c.id === activeConvId);
-      const createdAt = convMeta?.createdAt ?? Date.now();
-      // 클로저에 바인딩 — fire 시점에 activeConvId가 바뀌어도 이 호출은 원래 대화를 저장
-      const snapshotId = activeConvId;
-      const snapshotMessages = messages;
-      const snapshotTitle = title;
-      dbSaveTimerRef.current = setTimeout(() => {
-        fetch('/api/conversations', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: snapshotId, title: snapshotTitle, messages: snapshotMessages, createdAt }),
-        }).catch(() => {});
-        dbSaveTimerRef.current = null;
-      }, 500);
-    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages]);
 
-  // 언마운트 시 debounce 타이머 정리 (누수 방지)
-  useEffect(() => () => {
-    if (dbSaveTimerRef.current) {
-      clearTimeout(dbSaveTimerRef.current);
-      dbSaveTimerRef.current = null;
-    }
-  }, []);
+  // DB 저장 — 명시 호출용. handleSubmit·스트림 완료·visibilitychange=hidden 3개 시점에서만.
+  // 서버의 union merge 덕에 여러 번 호출해도 안전. 모바일-PC 동시 편집도 양쪽 다 보존됨.
+  const saveToDbRef = useRef<(convId: string, msgs: Message[]) => void>(() => {});
+  saveToDbRef.current = (convId: string, msgs: Message[]) => {
+    if (isDemo || !convId) return;
+    const firstUser = msgs.find(m => m.role === 'user');
+    const title = firstUser?.content
+      ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
+      : '새 대화';
+    const convMeta = conversations.find(c => c.id === convId);
+    const createdAt = convMeta?.createdAt ?? Date.now();
+    fetch('/api/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: convId, title, messages: msgs, createdAt }),
+      keepalive: true, // navigate 중에도 요청 유지
+    }).catch(() => {});
+  };
+
+  // visibilitychange=hidden 안전망 — 탭 전환·앱 전환·닫기 직전 현재 상태 flush (sendBeacon)
+  useEffect(() => {
+    if (isDemo) return;
+    const flush = () => {
+      if (document.visibilityState !== 'hidden') return;
+      if (!activeConvId || messages.length === 0) return;
+      const firstUser = messages.find(m => m.role === 'user');
+      const title = firstUser?.content
+        ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
+        : '새 대화';
+      const convMeta = conversations.find(c => c.id === activeConvId);
+      const createdAt = convMeta?.createdAt ?? Date.now();
+      const body = JSON.stringify({ id: activeConvId, title, messages, createdAt });
+      // sendBeacon은 JSON body 지원 불완전 → Blob 으로 래핑
+      const blob = new Blob([body], { type: 'application/json' });
+      try { navigator.sendBeacon('/api/conversations', blob); } catch {}
+    };
+    document.addEventListener('visibilitychange', flush);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', flush);
+      window.removeEventListener('pagehide', flush);
+    };
+  }, [activeConvId, messages, conversations, isDemo]);
 
   // ── 스크롤 — 하단 근처에 있을 때만 자동 스크롤 ──────────────────────────────
   const isNearBottomRef = useRef(true);
@@ -275,10 +289,21 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       localStorage.setItem('firebat_active_conv', newConv.id);
     }
 
-    if (!isSuggestion) {
-      setMessages(prev => [...prev, { id: `u-${id}`, role: 'user', content: userPrompt, image: imageData || undefined }]);
+    // 유저 메시지 push + pending system 메시지 push (atomic)
+    let msgsAfterUserPush: Message[] = [];
+    setMessages(prev => {
+      const next: Message[] = isSuggestion
+        ? [...prev, { id: `s-${id}`, role: 'system' as const, isThinking: true }]
+        : [...prev, { id: `u-${id}`, role: 'user' as const, content: userPrompt, image: imageData || undefined }, { id: `s-${id}`, role: 'system' as const, isThinking: true }];
+      msgsAfterUserPush = next;
+      return next;
+    });
+    // 저장 시점 1: 유저 메시지 DB 즉시 반영 (스트리밍 끊겨도 유저 입력은 남음)
+    const convIdForSave = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
+    if (convIdForSave) {
+      // setMessages updater가 돌고 난 다음 프레임에 호출되도록 microtask 지연
+      queueMicrotask(() => saveToDbRef.current(convIdForSave, msgsAfterUserPush));
     }
-    setMessages(prev => [...prev, { id: `s-${id}`, role: 'system', isThinking: true }]);
     setLoading(true);
 
     try {
@@ -469,13 +494,23 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       ));
     } finally {
       // 스트림 종료 후에도 isThinking이 풀리지 않은 경우 강제 해제
-      setMessages(prev => prev.map(msg =>
-        msg.id === `s-${id}` && (msg.isThinking || msg.executing || msg.streaming)
-          ? { ...msg, isThinking: false, executing: false, streaming: false, content: msg.content || msg.error || '응답을 받지 못했습니다.' }
-          : msg
-      ));
+      let finalMsgs: Message[] = [];
+      setMessages(prev => {
+        const next = prev.map(msg =>
+          msg.id === `s-${id}` && (msg.isThinking || msg.executing || msg.streaming)
+            ? { ...msg, isThinking: false, executing: false, streaming: false, content: msg.content || msg.error || '응답을 받지 못했습니다.' }
+            : msg
+        );
+        finalMsgs = next;
+        return next;
+      });
       abortRef.current = null;
       setLoading(false);
+      // 저장 시점 2: AI 응답 완료 직후 DB 반영
+      const convIdForSave = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
+      if (convIdForSave) {
+        queueMicrotask(() => saveToDbRef.current(convIdForSave, finalMsgs));
+      }
     }
   }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage]);
 

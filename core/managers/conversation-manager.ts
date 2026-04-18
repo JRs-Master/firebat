@@ -96,10 +96,32 @@ export class ConversationManager {
     return { success: true, data: { id: r.id, title: r.title, messages, createdAt: r.createdAt, updatedAt: r.updatedAt } };
   }
 
+  /**
+   * 메시지 ID 기준 union merge 저장:
+   *  - 기존 DB 메시지와 incoming 을 m.id 로 합집합
+   *  - 동일 id 존재 시 incoming 쪽 우선 (예: 스트리밍 중 블록 업데이트)
+   *  - id 없는 메시지는 그대로 append (구버전 호환)
+   *  - PC와 모바일이 동시에 서로 다른 메시지를 보내도 양쪽 다 보존됨
+   */
   async save(owner: string, id: string, title: string, messages: unknown[], createdAt?: number): Promise<InfraResult<void>> {
     const now = Date.now();
     const created = createdAt ?? now;
-    const messagesJson = JSON.stringify(messages ?? []);
+    const incoming = messages ?? [];
+
+    // 기존 messages 읽기 (있으면 merge, 없으면 신규)
+    const existingRes = await this.db.query(
+      `SELECT messages FROM conversations WHERE id = ? AND owner = ?`,
+      [id, owner],
+    );
+    let mergedMessages: unknown[] = incoming;
+    if (existingRes.success && existingRes.data && existingRes.data.length > 0) {
+      try {
+        const existing = JSON.parse((existingRes.data[0].messages as string) || '[]') as unknown[];
+        mergedMessages = this.unionMergeMessages(existing, incoming);
+      } catch { /* 파싱 실패 시 incoming 그대로 사용 */ }
+    }
+
+    const messagesJson = JSON.stringify(mergedMessages);
     const res = await this.db.query(
       `INSERT INTO conversations (id, owner, title, messages, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
@@ -112,8 +134,53 @@ export class ConversationManager {
     if (!res.success) return { success: false, error: res.error };
 
     // 메시지 임베딩 업서트 (변경·신규만) — 실패해도 저장 자체는 성공으로 반환
-    this.syncEmbeddings(owner, id, messages ?? []).catch(() => {});
+    this.syncEmbeddings(owner, id, mergedMessages).catch(() => {});
     return { success: true };
+  }
+
+  /** 메시지 ID 기준 union merge. 동일 id 존재 시 incoming 쪽 우선. */
+  private unionMergeMessages(existing: unknown[], incoming: unknown[]): unknown[] {
+    const getId = (m: unknown): string | null => {
+      if (!m || typeof m !== 'object') return null;
+      const id = (m as Record<string, unknown>).id;
+      return typeof id === 'string' && id ? id : null;
+    };
+    // 모든 id 수집 (incoming 우선 순위)
+    const byId = new Map<string, unknown>();
+    const noId: unknown[] = [];
+    // 먼저 existing 을 byId에 채움
+    for (const m of existing) {
+      const mid = getId(m);
+      if (mid) byId.set(mid, m);
+      else noId.push(m);
+    }
+    // incoming 으로 덮어씀 + 신규 추가
+    for (const m of incoming) {
+      const mid = getId(m);
+      if (mid) byId.set(mid, m);
+    }
+    // incoming 의 id 없는 메시지도 append (ID 없는 건 dedup 불가하지만 놓치지 않도록)
+    for (const m of incoming) {
+      if (!getId(m) && !existing.includes(m)) noId.push(m);
+    }
+    // 순서: incoming 순서 유지. 기존 existing 중 incoming 에 없는 것 뒤에 추가.
+    const result: unknown[] = [];
+    const seenIds = new Set<string>();
+    for (const m of incoming) {
+      const mid = getId(m);
+      if (mid) {
+        result.push(byId.get(mid) ?? m);
+        seenIds.add(mid);
+      } else {
+        result.push(m);
+      }
+    }
+    // existing 중 incoming 에 없는 id 의 메시지는 뒤에 append
+    for (const m of existing) {
+      const mid = getId(m);
+      if (mid && !seenIds.has(mid)) result.push(m);
+    }
+    return result;
   }
 
   async delete(owner: string, id: string): Promise<InfraResult<void>> {
