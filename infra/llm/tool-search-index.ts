@@ -106,13 +106,14 @@ const CATEGORIES: CategoryDef[] = [
 // 안전망 — 어느 카테고리도 매칭 못 해도 항상 포함 (AI가 답변 최소 수단 확보)
 const ALWAYS_INCLUDE = new Set(['render_alert', 'render_callout', 'suggest']);
 
-import { embed, cosine } from './embedder';
+import { embedQuery, embedPassage, cosine, EMBED_VERSION } from './embedder';
 
 let cachedCategoryVectors: { id: string; vector: Float32Array }[] | null = null;
 let cachedToolVectors: Map<string, { hash: string; vector: Float32Array }> | null = null;
 
 function sha1(s: string): string {
-  return crypto.createHash('sha1').update(s, 'utf8').digest('hex');
+  // 임베딩 모델 버전을 해시에 섞어서 모델 교체 시 전체 캐시 자동 무효화
+  return crypto.createHash('sha1').update(`${EMBED_VERSION}:${s}`, 'utf8').digest('hex');
 }
 
 // ── 디스크 캐시 I/O ────────────────────────────────────────────────────────
@@ -152,7 +153,7 @@ async function buildCategoryIndex(): Promise<{ id: string; vector: Float32Array 
       continue;
     }
     try {
-      const vec = await embed(text);
+      const vec = await embedPassage(text);
       result.push({ id: cat.id, vector: vec });
       newCache[key] = { hash, vector: Array.from(vec) };
       embedded++;
@@ -213,7 +214,7 @@ async function ensureToolVectors(
     }
 
     try {
-      const vec = await embed(text);
+      const vec = await embedPassage(text);
       cachedToolVectors.set(tool.name, { hash, vector: vec });
       diskCache[memKey] = { hash, vector: Array.from(vec) };
       embedded++;
@@ -272,7 +273,7 @@ export class ToolSearchIndex {
     if (catVectors.length === 0) return { selectedToolNames: new Set(), matchedCategories: [] };
 
     // ── Stage 1: 쿼리 ↔ 카테고리 ─────────────────────────
-    const q = await embed(query);
+    const q = await embedQuery(query);
     const catScored = catVectors.map(c => ({ id: c.id, score: cosine(q, c.vector) }));
     catScored.sort((a, b) => b.score - a.score);
 
