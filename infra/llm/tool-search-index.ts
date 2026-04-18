@@ -72,12 +72,6 @@ const CATEGORIES: CategoryDef[] = [
     matchByCapability: ['law-search'],
   },
   {
-    id: 'visualization',
-    label: '차트·표·경고 등 UI 렌더링',
-    semanticText: '차트 그래프 표 테이블 경고 알림 주의 박스 카드 배지 제목 헤더 리스트 목록 진행 프로그래스 이미지 그리드 시각화 렌더링 출력 보여주기',
-    matchByName: (n) => n.startsWith('render_'),
-  },
-  {
     id: 'storage',
     label: '파일·페이지 저장·읽기·삭제',
     semanticText: '파일 페이지 문서 저장 읽기 쓰기 삭제 목록 디렉토리 폴더 업로드 다운로드 슬러그 PageSpec HTML 컴포넌트',
