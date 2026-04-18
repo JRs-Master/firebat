@@ -17,6 +17,33 @@ function buildThinkingConfig(level: string): Record<string, unknown> {
   return { includeThoughts: true, thinkingLevel: level };
 }
 
+/**
+ * Gemini용 JSON Schema 어댑터
+ * - enum: 항상 string 배열이어야 함 (Gemini 제약)
+ * - type이 integer/number + enum 있으면 → enum 제거 (Gemini가 숫자 enum 거부)
+ * - 재귀적으로 nested properties/items에도 적용
+ */
+function adaptSchemaForGemini(schema: unknown): unknown {
+  if (!schema || typeof schema !== 'object') return schema;
+  if (Array.isArray(schema)) return schema.map(adaptSchemaForGemini);
+  const s = schema as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(s)) {
+    if (k === 'enum' && Array.isArray(v)) {
+      const type = s.type as string | undefined;
+      // 숫자 타입 + enum → enum 제거 (Gemini 미지원)
+      if (type === 'integer' || type === 'number') continue;
+      // string enum → 값 string 변환 (mixed 타입 방어)
+      result[k] = v.map(e => String(e));
+    } else if (v && typeof v === 'object') {
+      result[k] = adaptSchemaForGemini(v);
+    } else {
+      result[k] = v;
+    }
+  }
+  return result;
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
     promise,
@@ -120,7 +147,7 @@ export class GeminiNativeFormat implements FormatHandler {
       const functionDeclarations = tools.map(t => ({
         name: t.name,
         description: t.description,
-        parameters: t.parameters,
+        parameters: adaptSchemaForGemini(t.parameters),
       }));
 
       const requestConfig = {

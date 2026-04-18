@@ -610,16 +610,33 @@ export default function AdminConsole() {
     if (file) handleImageSelect(file);
   }, [handleImageSelect]);
 
-  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    // 이미지 첨부 처리
     const items = e.clipboardData.items;
     for (const item of Array.from(items)) {
       if (item.type.startsWith('image/')) {
         const file = item.getAsFile();
         if (file) handleImageSelect(file);
-        break;
+        e.preventDefault();
+        return;
       }
     }
-  }, [handleImageSelect]);
+    // 텍스트 붙여넣기 시 끝 공백/개행 제거 (복사본 끝 \n 때문에 커서가 다음 줄로 가는 현상 방지)
+    const text = e.clipboardData.getData('text');
+    if (!text) return;
+    const trimmed = text.replace(/[\s\n\r]+$/, '');
+    if (trimmed === text) return; // 공백 없으면 기본 동작
+    e.preventDefault();
+    const ta = e.currentTarget;
+    const start = ta.selectionStart ?? input.length;
+    const end = ta.selectionEnd ?? input.length;
+    const next = input.slice(0, start) + trimmed + input.slice(end);
+    setInput(next);
+    requestAnimationFrame(() => {
+      const pos = start + trimmed.length;
+      ta.setSelectionRange(pos, pos);
+    });
+  }, [handleImageSelect, input, setInput]);
 
   // 입력 카드 위에서 세로 드래그 → 채팅 영역 스크롤 포워딩 (모바일 UX)
   const cardTouchY = useRef<number | null>(null);

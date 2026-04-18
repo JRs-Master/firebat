@@ -141,6 +141,24 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     return () => el.removeEventListener('wheel', onWheel);
   }, [zoomAround, fullN]);
 
+  // 모바일 2손가락 핀치: 브라우저 viewport 줌 차단 (차트 자체 핀치로 처리)
+  useEffect(() => {
+    const el = priceBoxRef.current;
+    if (!el) return;
+    const onTouchStartNative = (e: TouchEvent) => {
+      if (e.touches.length === 2) e.preventDefault();
+    };
+    const onTouchMoveNative = (e: TouchEvent) => {
+      if (e.touches.length === 2) e.preventDefault();
+    };
+    el.addEventListener('touchstart', onTouchStartNative, { passive: false });
+    el.addEventListener('touchmove', onTouchMoveNative, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStartNative);
+      el.removeEventListener('touchmove', onTouchMoveNative);
+    };
+  }, []);
+
   // 차트 치수 (가변)
   const W = 720; // viewBox 기준 너비
   const priceH = 280;
