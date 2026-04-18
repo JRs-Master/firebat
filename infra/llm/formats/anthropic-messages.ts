@@ -52,17 +52,18 @@ export class AnthropicMessagesFormat implements FormatHandler {
     } else {
       msgs.push({ role: 'user', content: prompt });
     }
-    // tool exchanges (multi-turn)
-    for (const ex of toolExchanges) {
+    // tool exchanges (multi-turn) — tool_use_id는 assistant/user 메시지 간 반드시 일치
+    toolExchanges.forEach((ex, exIdx) => {
+      const useIds = ex.toolCalls.map((_, i) => `toolu_${exIdx}_${i}`);
       msgs.push({
         role: 'assistant',
-        content: ex.toolCalls.map((tc, i) => ({ type: 'tool_use' as const, id: `toolu_${i}_${Date.now()}`, name: tc.name, input: tc.args })),
+        content: ex.toolCalls.map((tc, i) => ({ type: 'tool_use' as const, id: useIds[i], name: tc.name, input: tc.args })),
       });
       msgs.push({
         role: 'user',
-        content: ex.toolResults.map((tr, i) => ({ type: 'tool_result' as const, tool_use_id: `toolu_${i}_${Date.now()}`, content: JSON.stringify(tr.result) })),
+        content: ex.toolResults.map((tr, i) => ({ type: 'tool_result' as const, tool_use_id: useIds[i] ?? `toolu_${exIdx}_${i}`, content: JSON.stringify(tr.result) })),
       });
-    }
+    });
     return msgs;
   }
 

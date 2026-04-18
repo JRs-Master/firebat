@@ -89,15 +89,16 @@ export class OpenAIChatFormat implements FormatHandler {
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
       if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
       messages.push(...this.toMessages(history, prompt, opts));
-      // 멀티턴 toolExchanges 반영
-      for (const ex of toolExchanges) {
+      // 멀티턴 toolExchanges 반영 — tool_call_id는 assistant/tool 메시지 간 반드시 일치해야 함
+      toolExchanges.forEach((ex, exIdx) => {
+        const callIds = ex.toolCalls.map((_, i) => `call_${exIdx}_${i}`);
         messages.push({
           role: 'assistant',
           content: null,
-          tool_calls: ex.toolCalls.map((tc, i) => ({ id: `call_${i}_${Date.now()}`, type: 'function' as const, function: { name: tc.name, arguments: JSON.stringify(tc.args) } })),
+          tool_calls: ex.toolCalls.map((tc, i) => ({ id: callIds[i], type: 'function' as const, function: { name: tc.name, arguments: JSON.stringify(tc.args) } })),
         });
-        ex.toolResults.forEach((tr, i) => messages.push({ role: 'tool', tool_call_id: `call_${i}_${Date.now()}`, content: JSON.stringify(tr.result) }));
-      }
+        ex.toolResults.forEach((tr, i) => messages.push({ role: 'tool', tool_call_id: callIds[i] ?? `call_${exIdx}_${i}`, content: JSON.stringify(tr.result) }));
+      });
       const openaiTools: OpenAI.Chat.Completions.ChatCompletionTool[] = tools.map(t => ({
         type: 'function',
         function: { name: t.name, description: t.description, parameters: t.parameters as unknown as Record<string, unknown>, ...(t.strict && ctx.config.features?.strictTools ? { strict: true } : {}) },
