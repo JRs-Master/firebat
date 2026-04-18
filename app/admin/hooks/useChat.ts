@@ -292,8 +292,10 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
         });
 
       // 이전 응답의 responseId 찾기 — OpenAI Responses API multi-turn state (history 재전송 대체)
-      const lastAssistantMsg = [...messages].reverse().find(m => m.role === 'system' && m.data && typeof (m.data as any).responseId === 'string');
-      const previousResponseId = lastAssistantMsg ? (lastAssistantMsg.data as any).responseId as string : undefined;
+      // previousResponseId는 userd turn 간 이어받지 않음 — OpenAI 서버측 reasoning 트레이스가
+      // 턴마다 누적되어 출력 토큰(과금)이 과도해지는 것을 방지. 각 user 입력마다 새 chain.
+      // (같은 요청 내의 멀티턴 도구 루프는 ai-manager 내부에서 자체 관리)
+      const previousResponseId: string | undefined = undefined;
 
       const ctrl = new AbortController();
       abortRef.current = ctrl;

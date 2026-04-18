@@ -104,10 +104,12 @@ export class AnthropicMessagesFormat implements FormatHandler {
         authorization_token: mcpConfig!.token,
       }] : undefined;
       // MCP 사용 시 inline tools 스킵 (Firebat 내부 도구는 MCP 서버에서 노출됨)
-      const anthropicTools: Anthropic.Tool[] = useMcp ? [] : tools.map(t => ({
+      // cache_control: 마지막 도구에 ephemeral 지정 → tools 블록 전체 캐싱 (5분 TTL, 동일 세션 반복 호출 시 -90%)
+      const anthropicTools: Anthropic.Tool[] = useMcp ? [] : tools.map((t, i) => ({
         name: t.name,
         description: t.description,
         input_schema: t.parameters as any,
+        ...(i === tools.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
       }));
 
       const messages = this.buildMessages(history, prompt, toolExchanges, opts);
@@ -121,10 +123,15 @@ export class AnthropicMessagesFormat implements FormatHandler {
         ? { type: 'enabled' as const, budget_tokens: budget }
         : undefined;
 
+      // system prompt도 캐싱: 긴 프롬프트(수천 토큰)가 반복 호출마다 재처리되는 비용 절감
+      const systemBlocks: Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }> = systemPrompt
+        ? [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }]
+        : [];
+
       const payload: Anthropic.MessageCreateParams = {
         model: ctx.config.id,
         max_tokens: 8192,
-        system: systemPrompt,
+        ...(systemBlocks.length > 0 ? { system: systemBlocks as any } : {}),
         messages,
         ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
         ...(thinking ? { thinking } : {}),
