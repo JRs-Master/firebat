@@ -393,7 +393,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
   // 탭 콘텐츠 스크롤 리셋용
   const contentRef = useRef<HTMLDivElement>(null);
-  // 탭 바 자체의 가로 스크롤 — 선택된 탭이 잘리지 않도록 중앙 노출
+  // 탭 바 — PC에서 드래그로 가로 스크롤 (모바일은 터치로 기본 동작)
   const tabBarRef = useRef<HTMLDivElement>(null);
 
   const switchTab = (tab: typeof settingsTab) => {
@@ -401,18 +401,25 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
     contentRef.current?.scrollTo(0, 0);
   };
 
-  // 현재 활성 탭 버튼을 시야 중앙으로 스크롤 (작은 화면에서 탭 잘림 방지)
+  // PC용: 탭 바 마우스 드래그 스크롤
   useEffect(() => {
     const bar = tabBarRef.current;
     if (!bar) return;
-    const active = bar.querySelector<HTMLElement>('button[data-active="true"]');
-    if (active) {
-      const barRect = bar.getBoundingClientRect();
-      const btnRect = active.getBoundingClientRect();
-      const delta = (btnRect.left + btnRect.right) / 2 - (barRect.left + barRect.right) / 2;
-      bar.scrollBy({ left: delta, behavior: 'smooth' });
-    }
-  }, [settingsTab]);
+    let isDown = false;
+    let startX = 0;
+    let startScroll = 0;
+    const onDown = (e: MouseEvent) => { isDown = true; startX = e.pageX; startScroll = bar.scrollLeft; bar.style.cursor = 'grabbing'; };
+    const onMove = (e: MouseEvent) => { if (!isDown) return; e.preventDefault(); bar.scrollLeft = startScroll - (e.pageX - startX); };
+    const onUp = () => { isDown = false; bar.style.cursor = ''; };
+    bar.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      bar.removeEventListener('mousedown', onDown);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
 
   // 탭 전환 시 데이터 로드
   useEffect(() => {
@@ -473,11 +480,8 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
           </button>
         </div>
 
-        {/* 탭 — 좌우 끝에 페이드 그라데이션으로 스크롤 가능 힌트 */}
-        <div className="relative shrink-0 border-b border-slate-200 bg-white">
-          <div className="pointer-events-none absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-white to-transparent z-10" />
-          <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white to-transparent z-10" />
-          <div ref={tabBarRef} className="flex px-3 sm:px-6 bg-white overflow-x-auto scrollbar-none scroll-smooth">
+        {/* 탭 — 모바일은 터치 스크롤, PC는 드래그 스크롤 */}
+        <div ref={tabBarRef} className="flex border-b border-slate-200 px-3 sm:px-6 bg-white shrink-0 overflow-x-auto scrollbar-none select-none">
           <button
             onClick={() => switchTab('general')}
             data-active={settingsTab === 'general'}
@@ -526,7 +530,6 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
               <Cpu size={14} /> 시스템
             </button>
           )}
-          </div>
         </div>
 
         <div ref={contentRef} className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-scroll min-w-0 flex-1 min-h-0">
