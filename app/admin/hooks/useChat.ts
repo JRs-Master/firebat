@@ -259,7 +259,12 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           } else if (ev.event === 'result') {
             const pendingActions = ev.data.data?.pendingActions as { planId: string; name: string; summary: string; args?: any }[] | undefined;
             const hadExecutedActions = !!ev.data.executedActions?.length;
-            const fullReply: string = ev.data.reply || (ev.data.error ? '' : '실행이 완료되었습니다.');
+            // 빈 응답 판정: reply 없음 + 에러 없음 + 실행된 도구도 없음 + blocks/pending도 없음 → AI가 아무것도 안 한 것
+            const hasAnyOutput = !!(ev.data.executedActions?.length) || !!(ev.data.data?.blocks?.length) || !!(ev.data.data?.pendingActions?.length);
+            const fullReply: string = ev.data.reply
+              || (ev.data.error ? ''
+                : hasAnyOutput ? '실행이 완료되었습니다.'
+                : '응답을 받지 못했습니다. 다시 요청해주세요.');
             const blocksData = ev.data.data?.blocks as Array<{ type: string; text?: string }> | undefined;
             const hasBlocks = Array.isArray(blocksData) && blocksData.length > 0;
             // 스트리밍 제거 후 모든 응답이 result에 한 번에 도착 → 항상 chunk-flow 애니메이션
