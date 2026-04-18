@@ -285,14 +285,10 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
         .filter(m => m.id !== 'system-init' && !m.isThinking)
         .map(m => {
           const role = m.role === 'system' ? 'model' : 'user';
-          let content = m.content || '';
-          // 이전 턴 도구 이름만 메타로 포함 — 구체 데이터(m.data)는 제외 (환각·토큰 누적 방지)
-          // AI는 주제 맥락만 기억, 구체 수치·차트 데이터는 필요 시 재조회
-          if (m.executedActions?.length) {
-            const uniqueActions = Array.from(new Set(m.executedActions));
-            content += `\n[이전 턴 실행 도구: ${uniqueActions.join(', ')}]`;
-          }
-          return { role, content: content.trim() || JSON.stringify(m) };
+          // 도구 실행 메타·m.data 모두 제외 — 순수 user/assistant 텍스트만 히스토리로 전달.
+          // 메타를 넣으면 "하이" 같은 짧은 신규 턴에 AI가 이전 도구 실행을 재현해 환각 발생.
+          const content = (m.content || '').trim();
+          return { role, content: content || JSON.stringify(m) };
         });
 
       // 이전 응답의 responseId 찾기 — OpenAI Responses API multi-turn state (history 재전송 대체)
