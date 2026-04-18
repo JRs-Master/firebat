@@ -243,6 +243,9 @@ export interface ToolDefinition {
 export interface ToolCall {
   name: string;
   args: Record<string, unknown>;
+  /** 이미 실행된 결과 (OpenAI hosted MCP connector 등에서 LLM 서버가 내부 실행한 경우).
+   *  값이 있으면 Core는 executeToolCall을 건너뛰고 이 결과를 그대로 사용. */
+  preExecutedResult?: Record<string, unknown>;
 }
 
 /** 도구 실행 결과 — LLM에 피드백 */

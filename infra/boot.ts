@@ -41,12 +41,18 @@ export function getInfra(): FirebatInfraContainer {
     // MCP Client
     const mcpClient = new McpClientAdapter();
 
-    // LLM — OpenAI (lazy API 키 로드)
+    // LLM — OpenAI (lazy API 키 + 내부 MCP connector 설정 로드)
     const llm = buildOpenAiAdapter(
       () => vault.getSecret(OPENAI_VAULT_KEYS.apiKey)
         || process.env[OPENAI_VAULT_KEYS.apiKey]
         || null,
       DEFAULT_MODEL,
+      () => {
+        const token = vault.getSecret('system:internal-mcp-token');
+        const baseUrl = process.env['NEXT_PUBLIC_BASE_URL'] || 'https://firebat.co.kr';
+        if (!token) return null;
+        return { url: `${baseUrl}/api/mcp-internal`, token };
+      },
     );
 
     globalForInfra.firebatInfra = {

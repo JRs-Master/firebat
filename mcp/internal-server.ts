@@ -269,8 +269,46 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     },
   );
 
-  // ── 시스템 모듈 동적 노출 ─────────────────────────────────────────────
-  // (시스템 모듈은 config.json 기반으로 런타임에 등록됨 — 추후 addSysmodTools(server) 확장)
+  // ── 시스템 모듈 동적 노출 (config.json 기반) ─────────────────────────
+  try {
+    const fs = require('fs') as typeof import('fs');
+    const path = require('path') as typeof import('path');
+    const modulesDir = path.join(process.cwd(), 'system/modules');
+    if (fs.existsSync(modulesDir)) {
+      const modules = fs.readdirSync(modulesDir, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => d.name);
+
+      for (const modName of modules) {
+        const configPath = path.join(modulesDir, modName, 'config.json');
+        if (!fs.existsSync(configPath)) continue;
+        try {
+          const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+          const entryFiles = ['index.mjs', 'index.js', 'main.py'];
+          let entryPath: string | null = null;
+          for (const ef of entryFiles) {
+            const p = path.join(modulesDir, modName, ef);
+            if (fs.existsSync(p)) { entryPath = `system/modules/${modName}/${ef}`; break; }
+          }
+          if (!entryPath) continue;
+
+          const toolName = `sysmod_${modName.replace(/-/g, '_')}`;
+          server.tool(
+            toolName,
+            config.description || `시스템 모듈: ${modName}`,
+            { args: z.record(z.string(), z.any()).optional().describe('모듈 입력 인자 (config.json input 스키마 참조)') },
+            async ({ args }) => {
+              const execPath = entryPath!;
+              const r = await core.sandboxExecute(execPath, args ?? {});
+              if (!r.success) return { content: [{ type: 'text', text: JSON.stringify({ error: r.error }) }] };
+              if (r.data?.success === false) return { content: [{ type: 'text', text: JSON.stringify(r.data) }] };
+              return { content: [{ type: 'text', text: JSON.stringify({ success: true, data: r.data }) }] };
+            },
+          );
+        } catch { /* 해당 모듈 건너뜀 */ }
+      }
+    }
+  } catch { /* 시스템 모듈 스캔 실패 무시 */ }
 
   return server;
 }

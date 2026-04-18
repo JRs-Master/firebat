@@ -18,6 +18,8 @@ export class OpenAiAdapter implements ILlmPort {
   constructor(
     private readonly resolveApiKey: () => string | null,
     private readonly defaultModel: string = DEFAULT_MODEL,
+    // 내부 MCP connector 설정 — Vault에서 토큰+URL lazy 로드
+    private readonly resolveMcpConfig?: () => { url: string; token: string } | null,
   ) {}
 
   getModelId(): string {
@@ -163,14 +165,26 @@ export class OpenAiAdapter implements ILlmPort {
     try {
       const input = this.buildInput(history, prompt, opts?.image, opts?.imageMimeType, toolExchanges);
 
-      // Responses API tools: {type: 'function', name, description, parameters, strict?}
-      const openaiTools = tools.map(t => ({
-        type: 'function' as const,
-        name: t.name,
-        description: t.description,
-        parameters: t.parameters as unknown as Record<string, unknown>,
-        ...(t.strict ? { strict: true } : {}),
-      }));
+      // MCP connector 설정 확인 — 있으면 MCP 단일 사용 (인라인 중복 방지), 없으면 인라인 폴백
+      const mcpConfig = this.resolveMcpConfig?.();
+      let openaiTools: Array<Record<string, unknown>>;
+      if (mcpConfig?.token) {
+        openaiTools = [{
+          type: 'mcp',
+          server_label: 'firebat-internal',
+          server_url: mcpConfig.url,
+          headers: { Authorization: `Bearer ${mcpConfig.token}` },
+          require_approval: 'never',
+        }];
+      } else {
+        openaiTools = tools.map(t => ({
+          type: 'function',
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters as unknown as Record<string, unknown>,
+          ...(t.strict ? { strict: true } : {}),
+        }));
+      }
 
       const payload: Record<string, unknown> = {
         model,
@@ -181,7 +195,7 @@ export class OpenAiAdapter implements ILlmPort {
       };
 
       const textParts: string[] = [];
-      const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+      const toolCalls: Array<{ name: string; args: Record<string, unknown>; preExecutedResult?: Record<string, unknown> }> = [];
 
       // 429 Rate limit 재시도 헬퍼 (최대 2회, 응답의 retry-after 값 따라 대기)
       const callWithRetry = async (p: Record<string, unknown>, retry = 2): Promise<any> => {
@@ -234,6 +248,19 @@ export class OpenAiAdapter implements ILlmPort {
               toolCallAcc[callId].args = event.arguments as string || toolCallAcc[callId].args;
             }
           }
+          // MCP call 완료 — OpenAI가 내부적으로 MCP 서버 호출하고 결과까지 받아옴
+          else if (t === 'response.output_item.done' && event.item?.type === 'mcp_call') {
+            const item = event.item;
+            let args: Record<string, unknown> = {};
+            try { args = typeof item.arguments === 'string' ? JSON.parse(item.arguments) : (item.arguments ?? {}); } catch {}
+            let output: unknown = item.output;
+            try { if (typeof output === 'string') output = JSON.parse(output); } catch {}
+            toolCalls.push({
+              name: item.name as string,
+              args,
+              preExecutedResult: (output as Record<string, unknown>) ?? { success: true },
+            });
+          }
         }
 
         for (const callId of Object.keys(toolCallAcc)) {
@@ -268,6 +295,17 @@ export class OpenAiAdapter implements ILlmPort {
               } catch {
                 toolCalls.push({ name: item.name as string, args: {} });
               }
+            } else if (item.type === 'mcp_call') {
+              // OpenAI가 MCP connector로 이미 호출하고 결과 받음
+              let args: Record<string, unknown> = {};
+              try { args = typeof item.arguments === 'string' ? JSON.parse(item.arguments) : (item.arguments ?? {}); } catch {}
+              let output: unknown = item.output;
+              try { if (typeof output === 'string') output = JSON.parse(output); } catch {}
+              toolCalls.push({
+                name: item.name as string,
+                args,
+                preExecutedResult: (output as Record<string, unknown>) ?? { success: true },
+              });
             }
           }
         }
