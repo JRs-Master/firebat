@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Download, Server, Terminal, Globe, Cpu, Wrench, Blocks } from 'lucide-react';
-import { GEMINI_MODELS, THINKING_LEVELS, McpServer } from '../types';
+import { GEMINI_MODELS, THINKING_LEVELS, McpServer, getThinkingKind, filterThinkingLevels } from '../types';
 
 interface SystemModule { name: string; description: string; runtime: string; type?: string; enabled?: boolean; }
 
@@ -600,7 +600,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                       <button
                         key={m}
                         onClick={() => setAiMode(m)}
-                        className={`flex-1 px-3 py-2 text-[13px] font-bold rounded-lg border transition-colors ${aiMode === m ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                        className={`flex-1 px-3 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-lg border transition-colors ${aiMode === m ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-400 hover:text-slate-600'}`}
                       >
                         {m === 'general' ? '일반' : 'Vertex'}
                       </button>
@@ -619,7 +619,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                       <button
                         key={p}
                         onClick={() => setAiProvider(p)}
-                        className={`flex-1 min-w-[80px] px-3 py-2 text-[13px] font-bold rounded-lg border transition-colors ${effectiveProvider === p ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}
+                        className={`flex-1 min-w-[80px] px-3 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-lg border transition-colors ${effectiveProvider === p ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-400 hover:text-slate-600'}`}
                       >
                         {providerLabels[p]}
                       </button>
@@ -641,19 +641,32 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                   </select>
                 </div>
 
-                {/* Thinking 수준 */}
-                <div className="flex flex-col gap-2">
-                  <label className="text-xs sm:text-sm font-bold text-slate-700">Thinking 수준</label>
-                  <select
-                    value={thinkingLevel}
-                    onChange={e => setThinkingLevel(e.target.value)}
-                    className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
-                  >
-                    {THINKING_LEVELS.map(m => (
-                      <option key={m.value} value={m.value}>{m.label}</option>
-                    ))}
-                  </select>
-                </div>
+                {/* Thinking 수준 — 선택된 모델이 지원하는 레벨만 노출 */}
+                {(() => {
+                  const kind = getThinkingKind(aiModel);
+                  const levels = filterThinkingLevels(kind);
+                  if (!kind || levels.length === 0) return null;
+                  // 현재 값이 모델 지원 범위 밖이면 첫 허용값으로 보정
+                  const currentValid = levels.some(l => l.value === thinkingLevel);
+                  const effectiveValue = currentValid ? thinkingLevel : levels[0].value;
+                  const kindLabel = kind === 'reasoning' ? 'Reasoning (OpenAI)'
+                    : kind === 'thinking' ? 'Thinking (Gemini)'
+                    : 'Extended Thinking (Claude)';
+                  return (
+                    <div className="flex flex-col gap-2">
+                      <label className="text-xs sm:text-sm font-bold text-slate-700">{kindLabel}</label>
+                      <select
+                        value={effectiveValue}
+                        onChange={e => setThinkingLevel(e.target.value)}
+                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
+                      >
+                        {levels.map(m => (
+                          <option key={m.value} value={m.value}>{m.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })()}
 
                 {/* API 키 — 선택된 프로바이더/모드에 따라 ─────────────────── */}
                 <div className="pt-2 border-t border-slate-100 flex flex-col gap-3">

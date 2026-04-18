@@ -31,6 +31,31 @@ export const THINKING_LEVELS = [
   { value: 'xhigh',   label: 'XHigh (최고, 평가 전용 권장)' },
 ];
 
+/** 모델 thinking 지원 종류 — null이면 Thinking 옵션 UI 비노출 */
+export type ThinkingKind = 'reasoning' | 'thinking' | 'extendedThinking' | null;
+
+export function getThinkingKind(model: string): ThinkingKind {
+  if (model.startsWith('gpt-')) return 'reasoning';           // OpenAI reasoning.effort
+  if (model.startsWith('claude-')) return 'extendedThinking'; // Anthropic enabled/disabled
+  if (model.startsWith('gemini-')) {
+    if (model.includes('flash-lite')) return null;            // Lite는 thinking 미지원
+    return 'thinking';                                         // Gemini thinkingLevel
+  }
+  return null;
+}
+
+/** 각 종류별 허용 레벨 필터 */
+export function filterThinkingLevels(kind: ThinkingKind): { value: string; label: string }[] {
+  if (!kind) return [];
+  if (kind === 'reasoning') return THINKING_LEVELS; // 전체
+  if (kind === 'thinking') return THINKING_LEVELS.filter(l => ['minimal', 'low', 'medium', 'high'].includes(l.value));
+  // extendedThinking: Claude는 사실상 on/off
+  return [
+    { value: 'none',    label: 'None (비활성)' },
+    { value: 'medium',  label: 'Enabled (활성, 기본 예산)' },
+  ];
+}
+
 export type PlanAction = { type: string; description?: string; path?: string; slug?: string };
 export type StepStatus = { index: number; total: number; type: string; status: 'start' | 'done' | 'error'; error?: string; description?: string };
 

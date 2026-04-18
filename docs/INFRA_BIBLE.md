@@ -41,18 +41,31 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - **타임아웃**: 30초 (`SANDBOX_TIMEOUT_MS`).
 - **stdin/stdout**: `{ correlationId, data }` 주입 → 마지막 줄 단일 JSON 수신.
 
-### 4. LLM Adapter (`infra/llm/vertex-adapter.ts`)
-- `ILlmPort` 구현.
-- Vertex AI Express 모드 (API 키 인증).
-- **Lazy 클라이언트**: 부팅 시 API 키를 직접 읽지 않고, resolver 함수로 첫 호출 시 로드. API 키 변경 시 자동 재연결.
-- **요청별 모델 오버라이드**: `LlmCallOpts.model`로 호출마다 다른 모델 지정 가능.
-- `ask()`: JSON 응답 강제, temperature 0.2.
-- `askText()`: 텍스트 응답, temperature 0.3.
-- `askWithTools()`: Function Calling 도구 루프. `LlmCallOpts.onChunk` 설정 시 `generateContentStream()` 사용 (스트리밍 모드), 미설정 시 `generateContent()` (비스트리밍).
-- `getModelId()`: 기본 모델명 반환.
+### 4. LLM Adapter (`infra/llm/config-adapter.ts` + format handlers) — 2026-04-18 Config-driven 개편
+- `ILlmPort` 구현은 **ConfigDrivenAdapter 단일**. 프로바이더별 개별 어댑터 금지.
+- **Config 파일** (`infra/llm/configs/*.json`): 모델당 1개. 새 LLM 도입 시 JSON 추가만으로 확장.
+  - 필수: `id`, `displayName`, `provider`, `format`, `endpoint`, `apiKeyVaultKey`.
+  - 선택: `features` (mcpConnector/strictTools/reasoning/thinking/extendedThinking/toolSearch/promptCache24h 등), `pricing`, `extraHeaders`.
+- **포맷 핸들러 5종** (`infra/llm/formats/*.ts`):
+  | format | SDK | 용도 |
+  |---|---|---|
+  | `openai-responses` | `openai` | OpenAI Responses API — GPT-5.4 (MCP hosted, tool_search, previous_response_id, 24h cache, reasoning) |
+  | `anthropic-messages` | `@anthropic-ai/sdk` | Anthropic Messages API — Claude 4 (MCP hosted, extended thinking) |
+  | `gemini-native` | `@google/genai` (apiKey) | Gemini AI Studio — 네이티브 functionCall/functionResponse 멀티턴 |
+  | `vertex-gemini` | `@google/genai` (vertexai:true) | GCP Vertex AI — Service Account JSON + OAuth access token 자동 갱신 |
+  | `openai-chat` | `openai` | OpenAI Chat Completions 호환 (Ollama/OpenRouter/LM Studio 등 서드파티) |
+- **ConfigDrivenAdapter**: `config.format` → 해당 FormatHandler에 위임. 각 핸들러는 `ask/askText/askWithTools` 시그니처 통일.
+- **Lazy 인증**: API Key/Service Account는 resolver 함수로 첫 호출 시 로드. Vault 변경 시 WeakMap 캐시 무효화.
+- **인증 분리**: API Key (OpenAI/Gemini/Anthropic) vs Service Account JSON (Vertex).
+- **Gemini 공통 스키마 어댑터**: `enum`은 string 배열, `integer`/`number` + `enum` 조합 금지 (Gemini 제약 우회).
+- **요청별 모델 오버라이드**: `LlmCallOpts.model`로 호출마다 config 재해석 — 같은 Adapter 인스턴스로 다중 프로바이더 커버.
+- **스트리밍**: `onChunk` 콜백으로 thinking/text 청크 실시간 전달. SSE `chunk` 이벤트로 프론트엔드 전파.
+- **Firebat 내부 도구 노출**:
+  - GPT/Claude (MCP connector 지원): hosted MCP 서버 URL만 전달 → 프로바이더가 Firebat MCP 서버로 직접 접속.
+  - Gemini/Vertex: function calling — `functionDeclarations` inline 전달.
 - 타임아웃: 60초 (`LLM_TIMEOUT_MS`).
-- **스트리밍**: `onChunk` 콜백으로 thinking/text 청크를 실시간 전달. SSE `chunk` 이벤트로 프론트엔드에 전파.
-- API 키 우선순위: Vault → 환경변수.
+
+**원칙**: "어떤 LLM 선택해도 동작해야 하고 개별 어댑터를 만들면 안 된다" — 새 모델은 JSON 파일 하나 추가. 새 포맷(새 인증/엔드포인트 체계)만 새 handler 추가.
 
 ### 5. Network Adapter (`infra/network/`)
 - `INetworkPort` 구현.
