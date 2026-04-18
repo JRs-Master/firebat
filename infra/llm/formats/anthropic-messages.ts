@@ -92,19 +92,22 @@ export class AnthropicMessagesFormat implements FormatHandler {
     const client = this.getClient(ctx);
     if (!client) return { success: false, error: `${ctx.config.displayName} API 키 누락` };
     try {
-      const anthropicTools: Anthropic.Tool[] = tools.map(t => ({
+      // 내부 MCP connector (Anthropic hosted MCP) — OpenAI와 동일 전략
+      // mcpConnector 활성 + 토큰 존재 시: inline tools 배열 생략, MCP 서버 단일 경로만 사용 (중복 방지)
+      const mcpConfig = ctx.resolveMcpConfig?.();
+      const useMcp = !!(ctx.config.features?.mcpConnector && mcpConfig?.token);
+      const mcpServers = useMcp ? [{
+        type: 'url' as const,
+        url: mcpConfig!.url,
+        name: 'firebat-internal',
+        authorization_token: mcpConfig!.token,
+      }] : undefined;
+      // MCP 사용 시 inline tools 스킵 (Firebat 내부 도구는 MCP 서버에서 노출됨)
+      const anthropicTools: Anthropic.Tool[] = useMcp ? [] : tools.map(t => ({
         name: t.name,
         description: t.description,
         input_schema: t.parameters as any,
       }));
-      // 내부 MCP connector (Anthropic도 hosted MCP 지원)
-      const mcpConfig = ctx.resolveMcpConfig?.();
-      const mcpServers = (ctx.config.features?.mcpConnector && mcpConfig?.token) ? [{
-        type: 'url' as const,
-        url: mcpConfig.url,
-        name: 'firebat-internal',
-        authorization_token: mcpConfig.token,
-      }] : undefined;
 
       const messages = this.buildMessages(history, prompt, toolExchanges, opts);
       const thinking = ctx.config.features?.extendedThinking && opts?.thinkingLevel !== 'none'
