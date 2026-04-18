@@ -173,16 +173,20 @@ export class OpenAiAdapter implements ILlmPort {
       const mcpConfig = this.resolveMcpConfig?.();
       let openaiTools: Array<Record<string, unknown>>;
       if (mcpConfig?.token) {
-        openaiTools = [{
-          type: 'mcp',
-          server_label: 'firebat-internal',
-          server_description: 'Firebat 내부 도구 (페이지/파일/모듈/스케줄/시스템 모듈/UI 컴포넌트 렌더)',
-          server_url: mcpConfig.url,
-          authorization: mcpConfig.token,
-          require_approval: 'never',
-          // Tool Search 호환 — 필요한 도구만 동적 로드 (gpt-5.4+, 토큰 절감)
-          defer_loading: true,
-        }];
+        // Tool Search + MCP 조합: OpenAI가 쿼리별 관련 도구만 동적 로드 (gpt-5.4+)
+        // tool_search는 defer_loading: true인 도구들을 대상으로 검색/로드
+        openaiTools = [
+          { type: 'tool_search' },
+          {
+            type: 'mcp',
+            server_label: 'firebat-internal',
+            server_description: 'Firebat 내부 도구 (페이지/파일/모듈/스케줄/시스템 모듈/UI 컴포넌트 렌더)',
+            server_url: mcpConfig.url,
+            authorization: mcpConfig.token,
+            require_approval: 'never',
+            defer_loading: true,
+          },
+        ];
       } else {
         openaiTools = tools.map(t => ({
           type: 'function',
