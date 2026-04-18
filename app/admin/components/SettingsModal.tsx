@@ -56,6 +56,10 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
   const [anthropicApiKey, setAnthropicApiKey] = useState(''); // Claude
   const [vertexSaJson, setVertexSaJson] = useState(''); // Vertex AI Service Account JSON
 
+  // AI 어시스턴트 라우터 (Self-learning Flash Lite)
+  const [aiRouterEnabled, setAiRouterEnabled] = useState(false);
+  const [aiRouterModel, setAiRouterModel] = useState('gemini-3-flash-lite');
+
   // 관리자 계정 변경
   const [adminCurrentPw, setAdminCurrentPw] = useState('');
   const [adminNewId, setAdminNewId] = useState('');
@@ -124,6 +128,8 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
       if (data.success) {
         if (data.timezone) setUserTimezone(data.timezone);
         if (data.aiThinkingLevel) setThinkingLevel(data.aiThinkingLevel);
+        if (typeof data.aiRouterEnabled === 'boolean') setAiRouterEnabled(data.aiRouterEnabled);
+        if (data.aiRouterModel) setAiRouterModel(data.aiRouterModel);
       }
     }).catch(() => {});
 
@@ -481,7 +487,13 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
     await fetch('/api/settings', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ timezone: userTimezone, aiModel, aiThinkingLevel: thinkingLevel }),
+      body: JSON.stringify({
+        timezone: userTimezone,
+        aiModel,
+        aiThinkingLevel: thinkingLevel,
+        aiRouterEnabled,
+        aiRouterModel,
+      }),
     }).catch(() => {});
 
     const saveProviderKey = async (provider: 'openai' | 'gemini' | 'anthropic' | 'vertex', value: string) => {
@@ -801,6 +813,49 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                     </div>
                   )}
                 </div>
+
+                {/* AI 어시스턴트 라우터 */}
+                {(() => {
+                  const hasGeminiKey = !!googleApiKey || !!vertexSaJson;
+                  return (
+                    <div className="pt-4 border-t border-slate-100 flex flex-col gap-2">
+                      <FieldLabel>AI 어시스턴트 라우터</FieldLabel>
+                      <label className={`flex items-start gap-2 p-3 rounded-xl border ${hasGeminiKey ? 'border-slate-200 hover:bg-slate-50 cursor-pointer' : 'border-slate-100 bg-slate-50 cursor-not-allowed opacity-60'}`}>
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={aiRouterEnabled}
+                          disabled={!hasGeminiKey}
+                          onChange={e => setAiRouterEnabled(e.target.checked)}
+                        />
+                        <div className="flex-1">
+                          <div className="text-[13px] font-bold text-slate-800">AI 어시스턴트 활성화</div>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            도구·컴포넌트 선별을 Gemini Flash Lite 가 학습하며 자동 수행합니다.
+                            결과는 캐시되어 시간이 지날수록 LLM 호출이 줄어듭니다.
+                          </div>
+                          {!hasGeminiKey && (
+                            <div className="text-[11px] text-amber-600 mt-1.5 font-bold">
+                              ⚠️ Gemini(Google AI Studio) 또는 Vertex API 키를 먼저 등록하세요.
+                            </div>
+                          )}
+                        </div>
+                      </label>
+                      {aiRouterEnabled && hasGeminiKey && (
+                        <Field label="모델">
+                          <SelectInput
+                            value={aiRouterModel}
+                            onChange={setAiRouterModel}
+                            options={[
+                              { value: 'gemini-3-flash-lite', label: 'Gemini 3 Flash Lite (저비용)' },
+                              { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview (정확도↑)' },
+                            ]}
+                          />
+                        </Field>
+                      )}
+                    </div>
+                  );
+                })()}
               </>
             );
           })()}

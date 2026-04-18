@@ -64,6 +64,26 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
       )
     `);
     try { this.db.exec('CREATE INDEX IF NOT EXISTS idx_conv_embeddings_owner ON conversation_embeddings(owner, created_at DESC)'); } catch {}
+
+    // 도구·컴포넌트 라우팅 캐시 (self-learning router)
+    //  - 유저 쿼리 임베딩을 저장해두고, 유사 쿼리 재유입 시 캐시된 라우팅 재사용
+    //  - Flash Lite 호출 빈도 감소 → 시간 지날수록 LLM 비용 체감
+    //  - success/failure 카운트로 잘못된 라우팅 자동 폐기
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS routing_cache (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind            TEXT NOT NULL,       -- 'tools' | 'components'
+        query_text      TEXT NOT NULL,
+        query_embedding BLOB NOT NULL,
+        result_json     TEXT NOT NULL,       -- { tools: [...] } 또는 { components: [...] }
+        success_count   INTEGER NOT NULL DEFAULT 0,
+        failure_count   INTEGER NOT NULL DEFAULT 0,
+        use_count       INTEGER NOT NULL DEFAULT 0,
+        created_at      INTEGER NOT NULL,
+        last_used_at    INTEGER NOT NULL
+      )
+    `);
+    try { this.db.exec('CREATE INDEX IF NOT EXISTS idx_routing_cache_kind ON routing_cache(kind, last_used_at DESC)'); } catch {}
   }
 
   async query(sql: string, params?: unknown[]): Promise<InfraResult<Record<string, unknown>[]>> {

@@ -7,11 +7,15 @@ export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
   const core = getCore();
+  const routerEnabledRaw = core.getGeminiKey('system:ai-router:enabled');
+  const routerModel = core.getGeminiKey('system:ai-router:model');
   return NextResponse.json({
     success: true,
     timezone: core.getTimezone(),
     aiModel: core.getAiModel(),
     aiThinkingLevel: core.getAiThinkingLevel(),
+    aiRouterEnabled: routerEnabledRaw === 'true' || routerEnabledRaw === '1',
+    aiRouterModel: routerModel || 'gemini-3-flash-lite',
   });
 }
 
@@ -30,6 +34,12 @@ export async function PATCH(req: NextRequest) {
   }
   if (body.aiThinkingLevel) {
     core.setAiThinkingLevel(body.aiThinkingLevel);
+  }
+  if (typeof body.aiRouterEnabled === 'boolean') {
+    core.setGeminiKey('system:ai-router:enabled', body.aiRouterEnabled ? 'true' : 'false');
+  }
+  if (typeof body.aiRouterModel === 'string' && body.aiRouterModel) {
+    core.setGeminiKey('system:ai-router:model', body.aiRouterModel);
   }
 
   return NextResponse.json({ success: true });

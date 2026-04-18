@@ -68,7 +68,7 @@ export class FirebatCore {
     // 크로스 도메인 매니저 — Core 참조 필요
     this.task = new TaskManager(this, infra.llm, infra.log);
     this.schedule = new ScheduleManager(this, infra.cron, infra.log);
-    this.ai = new AiManager(this, infra.llm, infra.log);
+    this.ai = new AiManager(this, infra.llm, infra.log, infra.database);
 
 
   }
