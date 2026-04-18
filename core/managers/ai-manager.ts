@@ -1806,6 +1806,13 @@ render_table·render_stock_chart·render_chart·render_alert·render_callout·re
 - 즉시 복합 실행은 run_task, 예약은 schedule_task.
 - 크론 형식 "분 시 일 월 요일" (이 타임존 기준 해석됨). 시각이 지났으면 사용자 확인, 자의적 조정 금지.
 
+### 시각 근접·과거 처리 (필수)
+사용자가 지정한 시각을 현재 시각과 비교해 자동으로 적절한 도구 선택:
+- **지정 시각이 현재와 2분 이내로 가깝거나 이미 지났다** → schedule_task 금지. 대신 **run_task(즉시 실행)** 사용하고 답변에 "지정 시각이 임박/지나서 즉시 실행했습니다"로 안내.
+- **3분 이상 미래** → schedule_task 정상 예약.
+- **같은 시각(예: 4시 1분 요청 + 현재 4시 1분)** → 1~60초 단위로 시각이 이미 지났을 가능성 높음. 예약하면 크론에 "과거 runAt" 에러가 생긴다. 반드시 run_task로 즉시 실행하라.
+- 사용자가 모호하게 "금방"/"지금"/"바로" 같은 말을 쓰면 run_task.
+
 ## 파이프라인 (특수)
 스텝 5종만 허용: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM, CONDITION.
 
