@@ -159,10 +159,16 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
   // ── 실행 ────────────────────────────────────────────────────────────────
   server.tool(
     'execute',
-    '사용자/시스템 모듈 실행. path=경로, inputData=입력 JSON',
-    { path: z.string(), inputData: z.record(z.string(), z.any()).optional() },
+    '⚠️ 시스템 모듈은 이 도구 대신 **sysmod_*** (예: sysmod_kiwoom) 를 사용하라. 이 도구는 user/modules/ 사용자 정의 모듈 실행 전용. inputData 필수 (빈 객체 금지).',
+    {
+      path: z.string().describe('user/modules/*/index.* 경로'),
+      inputData: z.record(z.string(), z.any()).describe('모듈 입력 JSON (반드시 실제 값 포함)'),
+    },
     async ({ path, inputData }) => {
-      const r = await core.sandboxExecute(path, inputData ?? {});
+      if (!inputData || Object.keys(inputData).length === 0) {
+        return { content: [{ type: 'text', text: JSON.stringify({ error: 'inputData 빈 객체 금지. 모듈 입력 필드를 실제 값으로 채워라. 시스템 모듈이면 sysmod_* 사용.' }) }] };
+      }
+      const r = await core.sandboxExecute(path, inputData);
       return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true, data: r.data } : { error: r.error }) }] };
     },
   );
