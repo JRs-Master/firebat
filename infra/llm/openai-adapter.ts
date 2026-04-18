@@ -20,6 +20,8 @@ export class OpenAiAdapter implements ILlmPort {
     private readonly defaultModel: string = DEFAULT_MODEL,
     // 내부 MCP connector 설정 — Vault에서 토큰+URL lazy 로드
     private readonly resolveMcpConfig?: () => { url: string; token: string } | null,
+    // tool_search 지원 여부 (gpt-5.4-mini/gpt-5.4만 지원, nano는 미지원)
+    private readonly supportsToolSearch: boolean = true,
   ) {}
 
   getModelId(): string {
@@ -173,20 +175,22 @@ export class OpenAiAdapter implements ILlmPort {
       const mcpConfig = this.resolveMcpConfig?.();
       let openaiTools: Array<Record<string, unknown>>;
       if (mcpConfig?.token) {
-        // Tool Search + MCP 조합: OpenAI가 쿼리별 관련 도구만 동적 로드 (gpt-5.4+)
+        // Tool Search + MCP 조합: OpenAI가 쿼리별 관련 도구만 동적 로드 (gpt-5.4+ mini 이상)
         // tool_search는 defer_loading: true인 도구들을 대상으로 검색/로드
-        openaiTools = [
-          { type: 'tool_search' },
-          {
-            type: 'mcp',
-            server_label: 'firebat-internal',
-            server_description: 'Firebat 내부 도구 (페이지/파일/모듈/스케줄/시스템 모듈/UI 컴포넌트 렌더)',
-            server_url: mcpConfig.url,
-            authorization: mcpConfig.token,
-            require_approval: 'never',
-            defer_loading: true,
-          },
-        ];
+        // nano는 tool_search 미지원 → 전체 도구 로드 (defer_loading 제거)
+        const mcpTool: Record<string, unknown> = {
+          type: 'mcp',
+          server_label: 'firebat-internal',
+          server_description: 'Firebat 내부 도구 (페이지/파일/모듈/스케줄/시스템 모듈/UI 컴포넌트 렌더)',
+          server_url: mcpConfig.url,
+          authorization: mcpConfig.token,
+          require_approval: 'never',
+        };
+        if (this.supportsToolSearch) {
+          openaiTools = [{ type: 'tool_search' }, { ...mcpTool, defer_loading: true }];
+        } else {
+          openaiTools = [mcpTool]; // nano: tool_search 없이 MCP 단독
+        }
       } else {
         openaiTools = tools.map(t => ({
           type: 'function',

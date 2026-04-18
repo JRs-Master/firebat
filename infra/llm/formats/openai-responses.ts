@@ -19,7 +19,8 @@ export class OpenAIResponsesFormat implements FormatHandler {
   private getAdapter(ctx: FormatHandlerContext): OpenAiAdapter {
     let a = this.adapterCache.get(ctx);
     if (!a) {
-      a = new OpenAiAdapter(ctx.resolveApiKey, ctx.config.id, ctx.resolveMcpConfig);
+      const supportsToolSearch = !!ctx.config.features?.toolSearch;
+      a = new OpenAiAdapter(ctx.resolveApiKey, ctx.config.id, ctx.resolveMcpConfig, supportsToolSearch);
       this.adapterCache.set(ctx, a);
     }
     return a;
