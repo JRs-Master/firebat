@@ -163,7 +163,11 @@ export class OpenAiAdapter implements ILlmPort {
 
     const model = opts?.model ?? this.defaultModel;
     try {
-      const input = this.buildInput(history, prompt, opts?.image, opts?.imageMimeType, toolExchanges);
+      // previous_response_id 사용 시 history·toolExchanges 재전송 불필요 — OpenAI 서버가 상태 유지
+      const usingPrevResponse = !!opts?.previousResponseId;
+      const input = usingPrevResponse
+        ? this.buildInput([], prompt, opts?.image, opts?.imageMimeType, [])
+        : this.buildInput(history, prompt, opts?.image, opts?.imageMimeType, toolExchanges);
 
       // MCP connector 설정 확인 — 있으면 MCP 단일 사용 (인라인 중복 방지), 없으면 인라인 폴백
       const mcpConfig = this.resolveMcpConfig?.();
@@ -176,6 +180,8 @@ export class OpenAiAdapter implements ILlmPort {
           server_url: mcpConfig.url,
           authorization: mcpConfig.token,
           require_approval: 'never',
+          // Tool Search 호환 — 필요한 도구만 동적 로드 (gpt-5.4+, 토큰 절감)
+          defer_loading: true,
         }];
       } else {
         openaiTools = tools.map(t => ({
@@ -192,20 +198,23 @@ export class OpenAiAdapter implements ILlmPort {
       // opts.thinkingLevel (minimal/low/medium/high) → reasoning.effort 매핑
       const effortValue: 'minimal' | 'low' | 'medium' | 'high' | 'none' =
         (opts?.thinkingLevel as any) || 'medium';
+      // 24시간 확장 캐시 (gpt-5/gpt-4.1+에서만 유효)
+      const supportsExtendedCache = /^(gpt-5|gpt-4\.1)/i.test(model);
       const payload: Record<string, unknown> = {
         model,
         instructions: systemPrompt,
         input,
         ...(isReasoningModel ? {} : { temperature: LLM_TEMPERATURE_TEXT }),
         ...(openaiTools.length > 0 ? { tools: openaiTools, tool_choice: 'auto' } : {}),
-        // Reasoning (GPT-5/o 시리즈) — effort는 설정값, summary는 thinking UI 표시용
         ...(isReasoningModel ? { reasoning: { effort: effortValue, summary: 'auto' } } : {}),
-        // Prompt caching 히트율 ↑ (사용자별 일관된 캐시)
         prompt_cache_key: 'firebat-admin',
+        ...(supportsExtendedCache ? { prompt_cache_retention: '24h' } : {}),
+        ...(opts?.previousResponseId ? { previous_response_id: opts.previousResponseId } : {}),
       };
 
       const textParts: string[] = [];
       const toolCalls: Array<{ name: string; args: Record<string, unknown>; preExecutedResult?: Record<string, unknown> }> = [];
+      let responseId: string | undefined;
 
       // 429 Rate limit 재시도 헬퍼 (최대 2회, 응답의 retry-after 값 따라 대기)
       const callWithRetry = async (p: Record<string, unknown>, retry = 2): Promise<any> => {
@@ -230,8 +239,15 @@ export class OpenAiAdapter implements ILlmPort {
 
         for await (const event of stream as AsyncIterable<any>) {
           const t = event.type as string;
+          // 응답 생성 시작 — response.id 포착 (previous_response_id용)
+          if (t === 'response.created' && event.response?.id) {
+            responseId = event.response.id as string;
+          }
+          else if (t === 'response.completed' && event.response?.id) {
+            responseId = event.response.id as string;
+          }
           // 텍스트 delta
-          if (t === 'response.output_text.delta' && typeof event.delta === 'string') {
+          else if (t === 'response.output_text.delta' && typeof event.delta === 'string') {
             textParts.push(event.delta);
             opts.onChunk({ type: 'text', content: event.delta });
           }
@@ -284,6 +300,7 @@ export class OpenAiAdapter implements ILlmPort {
       } else {
         // ── 비스트리밍 모드 ──
         const response = await callWithRetry(payload);
+        if (response?.id) responseId = response.id as string;
         const output = response.output as Array<Record<string, any>> | undefined;
         if (output) {
           for (const item of output) {
@@ -323,7 +340,7 @@ export class OpenAiAdapter implements ILlmPort {
 
       return {
         success: true,
-        data: { text: textParts.join(''), toolCalls },
+        data: { text: textParts.join(''), toolCalls, ...(responseId ? { responseId } : {}) },
       };
     } catch (e: any) {
       return { success: false, error: `[OpenAI] askWithTools 실패: ${e.message}` };

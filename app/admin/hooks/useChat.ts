@@ -181,10 +181,21 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           return { role, content: content.trim() || JSON.stringify(m) };
         });
 
+      // 이전 응답의 responseId 찾기 — OpenAI Responses API multi-turn state (history 재전송 대체)
+      const lastAssistantMsg = [...messages].reverse().find(m => m.role === 'system' && m.data && typeof (m.data as any).responseId === 'string');
+      const previousResponseId = lastAssistantMsg ? (lastAssistantMsg.data as any).responseId as string : undefined;
+
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: userPrompt, config: { model: aiModel }, history: chatHistory, mode: 'tools', ...(imageData ? { image: imageData } : {}) }),
+        body: JSON.stringify({
+          prompt: userPrompt,
+          config: { model: aiModel },
+          history: chatHistory,
+          mode: 'tools',
+          ...(imageData ? { image: imageData } : {}),
+          ...(previousResponseId ? { previousResponseId } : {}),
+        }),
       });
 
       const reader = res.body?.getReader();

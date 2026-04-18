@@ -22,6 +22,8 @@ export interface AiRequestOpts {
   isDemo?: boolean;
   /** 현재 프롬프트에 첨부된 이미지 (Base64 data URL) */
   image?: string;
+  /** 이전 응답 ID (OpenAI Responses API multi-turn state) */
+  previousResponseId?: string;
 }
 
 /**

@@ -878,14 +878,16 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
     const thinkingOnlyChunk: ((c: LlmChunk) => void) | undefined = onChunk
       ? (c: LlmChunk) => { if (c.type === 'thinking') onChunk(c); }
       : undefined;
-    const llmOpts: LlmCallOpts = {
+    // previousResponseId 추적 — 첫 호출엔 opts.previousResponseId, 멀티턴 루프 내 매 turn 갱신
+    let currentResponseId: string | undefined = opts?.previousResponseId;
+    const baseLlmOpts: LlmCallOpts = {
       thinkingLevel,
       ...(opts?.model ? { model: opts.model } : {}),
       ...(opts?.image ? { image: opts.image } : {}),
       ...(thinkingOnlyChunk ? { onChunk: thinkingOnlyChunk } : {}),
     };
     const MAX_TOOL_TURNS = 10;
-    const modelId = llmOpts?.model ?? this.llm.getModelId();
+    const modelId = baseLlmOpts?.model ?? this.llm.getModelId();
 
     const { recentHistory, contextSummary } = this.compressHistory(history);
     const systemContext = await this.gatherSystemContext(isDemo);
@@ -916,7 +918,11 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
 
     for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
       const llmStart = Date.now();
-      const llmRes = await this.llm.askWithTools(prompt, finalSystemPrompt, tools, recentHistory, toolExchanges, llmOpts);
+      // previousResponseId 있으면 history/toolExchanges 재전송 생략 (OpenAI 서버가 유지)
+      const turnLlmOpts: LlmCallOpts = { ...baseLlmOpts, ...(currentResponseId ? { previousResponseId: currentResponseId } : {}) };
+      const turnHistory = currentResponseId ? [] : recentHistory;
+      const turnExchanges = currentResponseId ? [] : toolExchanges;
+      const llmRes = await this.llm.askWithTools(prompt, finalSystemPrompt, tools, turnHistory, turnExchanges, turnLlmOpts);
       const llmMs = Date.now() - llmStart;
 
       if (!llmRes.success) {
@@ -924,7 +930,8 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
         return { success: false, executedActions, error: `LLM API 실패: ${llmRes.error}` };
       }
 
-      const { text: rawText, toolCalls } = llmRes.data!;
+      const { text: rawText, toolCalls, responseId } = llmRes.data!;
+      if (responseId) currentResponseId = responseId; // 다음 턴에 previous_response_id로 재사용
       const text = (rawText || '').trim();
       this.logger.info(`[AiManager] [${corrId}] [${modelId}] Turn ${turn + 1} (${llmMs}ms): text=${text.length}자, tools=${toolCalls.length}개`);
 
@@ -1016,16 +1023,18 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
       this.logger.info(`[AiManager] [${corrId}] 최종 응답 전체:\n${finalReply}`);
     }
 
+    const hasData = collectedData.length > 0 || suggestions.length > 0 || pendingActions.length > 0 || blocks.length > 0 || !!currentResponseId;
     return {
       success: true,
       reply: finalReply,
       executedActions,
-      data: collectedData.length > 0 || suggestions.length > 0 || pendingActions.length > 0 || blocks.length > 0
+      data: hasData
         ? {
             ...(suggestions.length > 0 ? { suggestions } : {}),
             ...(collectedData.length > 0 ? { htmlItems: collectedData } : {}),
             ...(pendingActions.length > 0 ? { pendingActions } : {}),
             ...(blocks.length > 0 ? { blocks } : {}),
+            ...(currentResponseId ? { responseId: currentResponseId } : {}),
           }
         : undefined,
     };

@@ -224,6 +224,8 @@ export interface LlmCallOpts {
   image?: string;
   /** 이미지 MIME 타입 */
   imageMimeType?: string;
+  /** 이전 응답 ID (OpenAI Responses API) — 설정 시 history 재전송 불필요, OpenAI 서버가 상태 유지 */
+  previousResponseId?: string;
 }
 
 // ── Function Calling 타입 ──────────────────────────────────────────────────
@@ -268,6 +270,8 @@ export interface LlmToolResponse {
   toolCalls: ToolCall[];
   /** LLM 원본 응답 parts — 멀티턴 교환 시 보존용 */
   rawModelParts?: unknown[];
+  /** OpenAI Responses API 응답 ID — 다음 요청의 previous_response_id로 사용하면 history 재전송 불필요 */
+  responseId?: string;
 }
 
 export interface ILlmPort {
