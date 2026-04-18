@@ -171,22 +171,21 @@ export class AiManager {
   }
 
   /**
-   * Function Calling 용 하이브리드 히스토리 조립:
-   *  - 최근 user 질문 2개만 원문 유지 (대화 주제 흐름 앵커)
-   *  - assistant 응답은 recent window에서도 통째로 드롭 — 이전 turn 본문이
-   *    환각·replay 의 유일한 원천이기 때문. 구체 수치·분석이 필요하면 AI가
-   *    search_history 도구로 명시 조회해야 함.
-   *  - 유저 쿼리 기반 벡터 검색으로 관련 과거 메시지 preview만 주입 (spread 판정)
+   * Function Calling 용 히스토리 조립 — 벡터 검색 단일 경로:
+   *  - recent window 없음 (user 질문도 안 남김). 이전 턴의 모든 문맥은
+   *    HistorySearch(spread 판정) 또는 AI의 명시적 search_history 호출로 획득.
+   *  - 효과:
+   *    · topic-shift 쿼리("하이", "다른 거")에 이전 턴 흔적 0
+   *    · 의미적 연속 쿼리("이어서 삼성전자", "또 해줘 그거")는 벡터 검색이 원문 인출
+   *    · 중복 주입 방지 (recent + HistorySearch 이중 유입 차단)
+   *  - 모호한 쿼리("또", "이어서"만)는 spread 약해 주입 0 → AI가 유저에게 역질문
    */
   private async compressHistoryWithSearch(
-    history: ChatMessage[],
+    _history: ChatMessage[],
     userPrompt: string,
     opts: { owner?: string; currentConvId?: string },
   ): Promise<{ recentHistory: ChatMessage[]; contextSummary: string }> {
-    // assistant 메시지는 전부 드롭, user 메시지 중 최근 2개만 유지.
-    // (role 매핑: useChat에서 'system'→'model'로 들어오므로 여기서는 'user'만 남김)
-    const userOnly = history.filter(h => h.role === 'user');
-    const recentHistory = userOnly.slice(-2);
+    const recentHistory: ChatMessage[] = []; // 고정 빈 배열
 
     if (!userPrompt.trim() || !opts.owner) return { recentHistory, contextSummary: '' };
 
