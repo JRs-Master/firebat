@@ -36,7 +36,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'ResultDisplay': return null;
     case 'Button':        return <ButtonComp text={p.text ?? ''} href={p.href} variant={p.variant} />;
     case 'Divider':       return <DividerComp />;
-    case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} />;
+    case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} />;
     case 'Card':          return <CardComp children={p.children ?? []} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} />;
     case 'AdSlot':        return <AdSlotComp slotId={p.slotId} format={p.format} />;
@@ -216,23 +216,40 @@ function DividerComp() {
 }
 
 // ── Table ───────────────────────────────────────────────────────────────────
-function TableComp({ headers = [], rows = [] }: { headers: string[]; rows: string[][] }) {
+function TableComp({ headers = [], rows = [], stickyCol = false }: { headers: string[]; rows: string[][]; stickyCol?: boolean }) {
+  // 헤더 행은 항상 sticky (세로 스크롤 시), stickyCol=true면 첫 열도 sticky (가로 스크롤 시)
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
-      <table className="w-full text-left">
-        <thead className="bg-gray-50 border-b border-gray-200">
+    <div className="overflow-auto rounded-xl border border-gray-200 shadow-sm max-h-[70vh]">
+      <table className="min-w-full text-left border-separate border-spacing-0">
+        <thead className="bg-gray-50">
           <tr>
-            {headers.map((h, i) => (
-              <th key={i} className="px-5 py-3 text-sm font-bold text-gray-600 uppercase tracking-wider">{h}</th>
-            ))}
+            {headers.map((h, i) => {
+              const isStickyCell = stickyCol && i === 0;
+              return (
+                <th
+                  key={i}
+                  className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-200 whitespace-nowrap bg-gray-50 sticky top-0 ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#e5e7eb]' : 'z-10'}`}
+                >
+                  {h}
+                </th>
+              );
+            })}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100">
+        <tbody>
           {rows.map((row, ri) => (
             <tr key={ri} className="hover:bg-gray-50 transition-colors">
-              {row.map((cell, ci) => (
-                <td key={ci} className="px-5 py-3 text-sm text-gray-800">{cell}</td>
-              ))}
+              {row.map((cell, ci) => {
+                const isStickyCell = stickyCol && ci === 0;
+                return (
+                  <td
+                    key={ci}
+                    className={`px-4 py-3 text-[13px] text-gray-800 border-b border-gray-100 whitespace-nowrap ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold' : ''}`}
+                  >
+                    {cell}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>
