@@ -311,11 +311,22 @@ export class TaskManager {
     return cache;
   }
 
-  /** 파이프라인 단계의 입력 결정: 고정 inputData > inputMap > prev (모두 $prev 치환 적용) */
+  /** 파이프라인 단계의 입력 결정: inputData(고정값) + inputMap($prev 매핑) 병합, 둘 다 $prev 치환 적용.
+   *  inputMap이 inputData의 동일 키를 덮어쓴다 (매핑이 우선). */
   private resolvePipelineInput(step: PipelineStep, prev: unknown): Record<string, unknown> | unknown {
     if (step.type === 'CONDITION') return prev; // CONDITION은 입력 변환 없음
-    if (step.inputData !== undefined) return this.resolveValue(step.inputData, prev);
-    if (step.inputMap) return this.resolveValue(step.inputMap, prev);
+    const hasData = step.inputData !== undefined;
+    const hasMap = !!step.inputMap;
+    if (hasData && hasMap) {
+      const fromData = this.resolveValue(step.inputData, prev);
+      const fromMap = this.resolveValue(step.inputMap, prev);
+      if (fromData && typeof fromData === 'object' && !Array.isArray(fromData) && fromMap && typeof fromMap === 'object' && !Array.isArray(fromMap)) {
+        return { ...(fromData as Record<string, unknown>), ...(fromMap as Record<string, unknown>) };
+      }
+      return fromData; // 객체가 아니면 inputData 우선 유지
+    }
+    if (hasData) return this.resolveValue(step.inputData, prev);
+    if (hasMap) return this.resolveValue(step.inputMap, prev);
     return prev;
   }
 
