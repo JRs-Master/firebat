@@ -89,17 +89,19 @@ export class OpenAIChatFormat implements FormatHandler {
       const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
       if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
       messages.push(...this.toMessages(history, prompt, opts));
-      // 멀티턴 toolExchanges 반영 — tool_call_id는 assistant/tool 메시지 간 반드시 일치해야 함
-      // Gemini OpenAI-compat: content:null 거부 → 빈 문자열 사용
-      toolExchanges.forEach((ex, exIdx) => {
-        const callIds = ex.toolCalls.map((_, i) => `call_${exIdx}_${i}`);
-        messages.push({
-          role: 'assistant',
-          content: '',
-          tool_calls: ex.toolCalls.map((tc, i) => ({ id: callIds[i], type: 'function' as const, function: { name: tc.name, arguments: JSON.stringify(tc.args) } })),
-        });
-        ex.toolResults.forEach((tr, i) => messages.push({ role: 'tool', tool_call_id: callIds[i] ?? `call_${exIdx}_${i}`, content: JSON.stringify(tr.result) }));
-      });
+      // 멀티턴 toolExchanges 반영
+      // Gemini OpenAI-compat은 tool_calls/tool 멀티턴을 불안정하게 처리(400 no body)
+      // → 도구 호출 기록을 평문 assistant/user 메시지로 변환해 전달 (범용 호환)
+      // 다른 프로바이더(진짜 OpenAI 등)도 이 형식 수용 가능
+      for (const ex of toolExchanges) {
+        const callsText = ex.toolCalls.map((tc, i) => {
+          const result = ex.toolResults[i]?.result;
+          const resStr = typeof result === 'string' ? result : JSON.stringify(result ?? {});
+          return `[Tool Call: ${tc.name}]\n args: ${JSON.stringify(tc.args ?? {})}\n result: ${resStr.slice(0, 800)}`;
+        }).join('\n\n');
+        messages.push({ role: 'assistant', content: '(이전 턴 도구 호출)' });
+        messages.push({ role: 'user', content: `[이전 턴 도구 실행 결과]\n${callsText}\n\n위 결과를 바탕으로 계속 진행하세요. 실패한 도구는 올바른 args로 재호출하세요.` });
+      }
       const openaiTools: OpenAI.Chat.Completions.ChatCompletionTool[] = tools.map(t => ({
         type: 'function',
         function: { name: t.name, description: t.description, parameters: t.parameters as unknown as Record<string, unknown>, ...(t.strict && ctx.config.features?.strictTools ? { strict: true } : {}) },
