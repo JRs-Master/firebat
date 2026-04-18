@@ -50,8 +50,8 @@ const mdComponents = {
       <table className="min-w-full text-[13px] border-separate border-spacing-0" {...props} />
     </div>
   ),
-  th: (props: any) => <th className="bg-slate-50 px-3 py-1.5 text-left font-bold text-slate-700 whitespace-nowrap sticky top-0 z-10 border-b border-slate-200" {...props} />,
-  td: (props: any) => <td className="px-3 py-1.5 text-slate-600 whitespace-nowrap border-b border-slate-100" {...props} />,
+  th: (props: any) => <th className="bg-slate-50 px-3 py-1.5 text-left font-bold text-slate-700 sticky top-0 z-10 border-b border-slate-200 min-w-[120px]" {...props} />,
+  td: (props: any) => <td className="px-3 py-1.5 text-slate-600 border-b border-slate-100 min-w-[120px] align-top break-words" {...props} />,
   hr: () => <hr className="border-slate-200 my-3" />,
 };
 

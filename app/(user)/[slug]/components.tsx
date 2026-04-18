@@ -216,19 +216,21 @@ function DividerComp() {
 }
 
 // ── Table ───────────────────────────────────────────────────────────────────
-function TableComp({ headers = [], rows = [], stickyCol = false }: { headers: string[]; rows: string[][]; stickyCol?: boolean }) {
-  // 헤더 행은 항상 sticky (세로 스크롤 시), stickyCol=true면 첫 열도 sticky (가로 스크롤 시)
+function TableComp({ headers = [], rows = [], stickyCol }: { headers: string[]; rows: string[][]; stickyCol?: boolean }) {
+  // 헤더 행은 항상 sticky (세로 스크롤 시)
+  // stickyCol: 미지정 시 4열 이상이면 자동 활성 (첫 열 = 행 라벨 추정)
+  const firstColSticky = stickyCol ?? (headers.length >= 4);
   return (
     <div className="overflow-auto rounded-xl border border-gray-200 shadow-sm max-h-[70vh]">
       <table className="min-w-full text-left border-separate border-spacing-0">
         <thead className="bg-gray-50">
           <tr>
             {headers.map((h, i) => {
-              const isStickyCell = stickyCol && i === 0;
+              const isStickyCell = firstColSticky && i === 0;
               return (
                 <th
                   key={i}
-                  className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-200 whitespace-nowrap bg-gray-50 sticky top-0 ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#e5e7eb]' : 'z-10'}`}
+                  className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-200 bg-gray-50 sticky top-0 min-w-[120px] ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#e5e7eb]' : 'z-10'}`}
                 >
                   {h}
                 </th>
@@ -240,11 +242,11 @@ function TableComp({ headers = [], rows = [], stickyCol = false }: { headers: st
           {rows.map((row, ri) => (
             <tr key={ri} className="hover:bg-gray-50 transition-colors">
               {row.map((cell, ci) => {
-                const isStickyCell = stickyCol && ci === 0;
+                const isStickyCell = firstColSticky && ci === 0;
                 return (
                   <td
                     key={ci}
-                    className={`px-4 py-3 text-[13px] text-gray-800 border-b border-gray-100 whitespace-nowrap ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold' : ''}`}
+                    className={`px-4 py-3 text-[13px] text-gray-800 border-b border-gray-100 align-top min-w-[120px] break-words ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold whitespace-nowrap' : ''}`}
                   >
                     {cell}
                   </td>
