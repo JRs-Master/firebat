@@ -233,6 +233,10 @@ export interface ToolDefinition {
   name: string;
   description: string;
   parameters: JsonSchema;
+  /** strict 모드 (OpenAI Structured Outputs) — 스키마 엄격 준수 강제.
+   *  true로 설정하려면 parameters가 additionalProperties:false + 모든 field required 요건 만족 필요.
+   */
+  strict?: boolean;
 }
 
 /** LLM이 반환한 도구 호출 */

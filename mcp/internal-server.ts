@@ -13,20 +13,44 @@ import { FirebatCore } from '../core/index';
 export function createInternalMcpServer(core: FirebatCore): McpServer {
   const server = new McpServer({ name: 'firebat-internal', version: '0.1.0' });
 
-  // ── UI 렌더링 ───────────────────────────────────────────────────────────
-  server.tool(
-    'render_component',
-    '채팅에 인라인 컴포넌트 렌더링. type enum: StockChart, Table, Alert, Card, Grid, Badge, Progress, Header, Text, List, Divider, Countdown, Chart. props는 컴포넌트별 다름.',
-    {
-      type: z.enum([
-        'Header','Text','Image','Divider','Table','Card','Grid','Progress','Badge','Alert','List','Countdown','Chart','StockChart',
-      ]).describe('컴포넌트 타입'),
-      props: z.record(z.string(), z.any()).optional().describe('컴포넌트 props'),
-    },
-    async ({ type, props }) => ({
-      content: [{ type: 'text', text: JSON.stringify({ success: true, component: type, props: props ?? {} }) }],
-    }),
-  );
+  // ── UI 렌더링 — 14개 render_* 도구 ────────────────────────────────────
+  const makeRender = (name: string, component: string, schema: Record<string, z.ZodTypeAny>, desc: string) => {
+    server.tool(name, desc, schema, async (args: Record<string, unknown>) => ({
+      content: [{ type: 'text', text: JSON.stringify({ success: true, component, props: args }) }],
+    }));
+  };
+
+  makeRender('render_stock_chart', 'StockChart', {
+    symbol: z.string(), title: z.string(), data: z.array(z.any()),
+    indicators: z.array(z.enum(['MA5','MA10','MA20','MA60'])).optional(),
+    buyPoints: z.array(z.any()).optional(), sellPoints: z.array(z.any()).optional(),
+  }, '주식 시세 차트 (일봉/분봉). data는 OHLCV 배열.');
+  makeRender('render_table', 'Table', {
+    headers: z.array(z.string()), rows: z.array(z.array(z.string())),
+  }, '표. 수치 3개 이상 시 필수.');
+  makeRender('render_alert', 'Alert', {
+    message: z.string(),
+    type: z.enum(['info','warn','error','success']),
+    title: z.string().optional(),
+  }, '알림/주의/경고 박스.');
+  makeRender('render_badge', 'Badge', { text: z.string(), color: z.string() }, '작은 태그/뱃지.');
+  makeRender('render_progress', 'Progress', {
+    value: z.number(), max: z.number().optional(), label: z.string().optional(), color: z.string().optional(),
+  }, '진행률 바.');
+  makeRender('render_header', 'Header', { text: z.string(), level: z.number().optional() }, '섹션 제목.');
+  makeRender('render_text', 'Text', { content: z.string() }, '본문 텍스트 블록.');
+  makeRender('render_list', 'List', { items: z.array(z.string()), ordered: z.boolean().optional() }, '목록.');
+  makeRender('render_divider', 'Divider', {}, '섹션 구분선.');
+  makeRender('render_countdown', 'Countdown', { targetDate: z.string(), label: z.string().optional() }, '카운트다운.');
+  makeRender('render_chart', 'Chart', {
+    chartType: z.enum(['bar','line','pie','doughnut']),
+    labels: z.array(z.string()), data: z.array(z.number()), title: z.string().optional(),
+  }, '간단 차트 (막대/선/원).');
+  makeRender('render_image', 'Image', {
+    src: z.string(), alt: z.string().optional(), width: z.number().optional(), height: z.number().optional(),
+  }, '이미지.');
+  makeRender('render_card', 'Card', { children: z.array(z.any()) }, '카드.');
+  makeRender('render_grid', 'Grid', { columns: z.number(), children: z.array(z.any()) }, '그리드.');
 
   server.tool(
     'render_html',

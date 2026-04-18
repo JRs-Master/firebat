@@ -163,12 +163,13 @@ export class OpenAiAdapter implements ILlmPort {
     try {
       const input = this.buildInput(history, prompt, opts?.image, opts?.imageMimeType, toolExchanges);
 
-      // Responses API tools: {type: 'function', name, description, parameters}
+      // Responses API tools: {type: 'function', name, description, parameters, strict?}
       const openaiTools = tools.map(t => ({
         type: 'function' as const,
         name: t.name,
         description: t.description,
         parameters: t.parameters as unknown as Record<string, unknown>,
+        ...(t.strict ? { strict: true } : {}),
       }));
 
       const payload: Record<string, unknown> = {
