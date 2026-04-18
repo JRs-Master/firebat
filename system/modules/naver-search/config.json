@@ -10,6 +10,7 @@
   "secrets": ["NAVER_CLIENT_ID", "NAVER_CLIENT_SECRET"],
   "input": {
     "type": "object",
+    "required": ["query"],
     "properties": {
       "action": {
         "type": "string",
@@ -19,7 +20,7 @@
       },
       "query": {
         "type": "string",
-        "description": "[search] 검색 키워드 (UTF-8)"
+        "description": "[search 필수] 검색 키워드 (UTF-8). 데이터랩 액션(search-trend/shopping-*)에서는 실제로 사용되지 않지만 스키마상 필수이므로 빈 문자열 전달 가능."
       },
       "type": {
         "type": "string",
