@@ -784,7 +784,7 @@ export default function AdminConsole() {
                     onClick={() => loading ? handleStop() : handleSubmit()}
                     disabled={!loading && !input.trim()}
                     title={loading ? '생성 중지' : '전송'}
-                    className={`${loading ? 'bg-red-500 hover:bg-red-600' : 'bg-slate-900 hover:bg-black'} disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]`}
+                    className="bg-slate-900 hover:bg-black disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]"
                   >
                     {loading
                       ? <><Square size={12} fill="currentColor" className="sm:hidden" /><Square size={16} fill="currentColor" className="hidden sm:block" /></>
