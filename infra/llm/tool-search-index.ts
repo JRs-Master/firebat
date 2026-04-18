@@ -103,6 +103,7 @@ const ALWAYS_INCLUDE = new Set(['render_alert', 'render_callout', 'suggest']);
 
 let pipelinePromise: Promise<any> | null = null;
 let cachedCategoryVectors: { id: string; vector: Float32Array }[] | null = null;
+let cachedToolVectors: Map<string, { hash: string; vector: Float32Array }> | null = null;
 
 async function getEmbedder() {
   if (!pipelinePromise) {
@@ -196,9 +197,65 @@ function categorizeTool(tool: ToolDefinition, capability?: string): string | nul
   return null;
 }
 
+/** Tool-level 임베딩 텍스트 (stage 2용) */
+function toolToText(tool: ToolDefinition, capability?: string): string {
+  const lines = [`Tool: ${tool.name}`];
+  if (tool.description) lines.push(`Desc: ${tool.description}`);
+  if (capability) lines.push(`Cap: ${capability}`);
+  return lines.join('\n');
+}
+
+/**
+ * 도구 벡터 인덱스 빌드 — 디스크 캐시(해시)로 변경분만 재임베딩
+ */
+async function ensureToolVectors(
+  tools: ToolDefinition[],
+  capabilityOf?: (name: string) => string | undefined,
+): Promise<Map<string, { hash: string; vector: Float32Array }>> {
+  if (!cachedToolVectors) cachedToolVectors = new Map();
+  const diskCache = loadDiskCache();
+  let reused = 0, embedded = 0;
+
+  for (const tool of tools) {
+    const text = toolToText(tool, capabilityOf?.(tool.name));
+    const hash = sha1(text);
+    const memKey = `__tool:${tool.name}`;
+
+    const memHit = cachedToolVectors.get(tool.name);
+    if (memHit && memHit.hash === hash) { reused++; continue; }
+
+    const diskHit = diskCache[memKey];
+    if (diskHit && diskHit.hash === hash && Array.isArray(diskHit.vector)) {
+      cachedToolVectors.set(tool.name, { hash, vector: new Float32Array(diskHit.vector) });
+      reused++;
+      continue;
+    }
+
+    try {
+      const vec = await embed(text);
+      cachedToolVectors.set(tool.name, { hash, vector: vec });
+      diskCache[memKey] = { hash, vector: Array.from(vec) };
+      embedded++;
+    } catch { /* 실패한 도구는 stage 2에서 제외 */ }
+  }
+
+  // 이번에 전달받은 도구 목록에 없는 기존 엔트리는 메모리에서 삭제 (모듈 제거 반영)
+  const names = new Set(tools.map(t => t.name));
+  for (const name of Array.from(cachedToolVectors.keys())) {
+    if (!names.has(name)) cachedToolVectors.delete(name);
+  }
+
+  if (embedded > 0) {
+    saveDiskCache(diskCache);
+    process.stderr.write(`[ToolSearch] 도구 인덱스 업데이트: 재사용 ${reused}, 임베딩 ${embedded}\n`);
+  }
+  return cachedToolVectors;
+}
+
 export class ToolSearchIndex {
   static invalidate() {
     cachedCategoryVectors = null;
+    cachedToolVectors = null;
   }
 
   static async ensureIndex(): Promise<{ id: string; vector: Float32Array }[]> {
@@ -209,42 +266,81 @@ export class ToolSearchIndex {
   }
 
   /**
-   * 쿼리로 top-K 카테고리 선택 → 그 안의 도구 이름 Set 반환
+   * 2단계 벡터 검색:
+   *  Stage 1 — 카테고리 top-K 매칭
+   *  Stage 2 — 해당 카테고리 소속 도구들을 개별 임베딩으로 재순위 (카테고리당 top-N, threshold 적용)
+   *            카테고리 내 도구 수가 SMALL_CATEGORY 이하면 stage 2 스킵 (전부 포함)
    */
   static async query(
     query: string,
     tools: ToolDefinition[],
-    opts: { topCategories?: number; threshold?: number; capabilityOf?: (name: string) => string | undefined } = {},
+    opts: { topCategories?: number; categoryThreshold?: number; toolThreshold?: number; topToolsPerCategory?: number; capabilityOf?: (name: string) => string | undefined } = {},
   ): Promise<{ selectedToolNames: Set<string>; matchedCategories: { id: string; score: number }[] }> {
-    const { topCategories = 3, threshold = 0.3, capabilityOf } = opts;
+    const {
+      topCategories = 3,
+      categoryThreshold = 0.3,
+      toolThreshold = 0.2,
+      topToolsPerCategory = 5,
+      capabilityOf,
+    } = opts;
     if (!query.trim()) return { selectedToolNames: new Set(), matchedCategories: [] };
+
+    const SMALL_CATEGORY = 2; // 도구 N개 이하 카테고리는 stage 2 스킵
 
     const catVectors = await this.ensureIndex();
     if (catVectors.length === 0) return { selectedToolNames: new Set(), matchedCategories: [] };
 
-    // 쿼리 임베딩 → 모든 카테고리와 cosine sim
+    // ── Stage 1: 쿼리 ↔ 카테고리 ─────────────────────────
     const q = await embed(query);
-    const scored = catVectors.map(c => ({ id: c.id, score: cosine(q, c.vector) }));
-    scored.sort((a, b) => b.score - a.score);
+    const catScored = catVectors.map(c => ({ id: c.id, score: cosine(q, c.vector) }));
+    catScored.sort((a, b) => b.score - a.score);
 
-    // 캘리브레이션 로그
-    const top5 = scored.slice(0, 5).map(s => `${s.id}:${s.score.toFixed(3)}`).join(' ');
+    const topCats = catScored.slice(0, 5).map(s => `${s.id}:${s.score.toFixed(3)}`).join(' ');
     const qPreview = query.length > 40 ? query.slice(0, 40) + '…' : query;
-    process.stderr.write(`[ToolSearch] query="${qPreview}" categories=[${top5}] threshold=${threshold}\n`);
+    process.stderr.write(`[ToolSearch] stage1 query="${qPreview}" cats=[${topCats}]\n`);
 
-    // threshold 통과한 것 중 top-N, 없으면 top-1 강제 폴백
-    let picked = scored.filter(s => s.score >= threshold).slice(0, topCategories);
-    if (picked.length === 0) picked = scored.slice(0, 1);
+    let pickedCats = catScored.filter(s => s.score >= categoryThreshold).slice(0, topCategories);
+    if (pickedCats.length === 0) pickedCats = catScored.slice(0, 1);
+    const pickedCatIds = new Set(pickedCats.map(p => p.id));
 
-    const pickedIds = new Set(picked.map(p => p.id));
-    const selectedToolNames = new Set<string>();
+    // 카테고리별 도구 그룹화
+    const toolsByCategory = new Map<string, ToolDefinition[]>();
     for (const tool of tools) {
-      const cap = capabilityOf?.(tool.name);
-      const catId = categorizeTool(tool, cap);
-      if (catId && pickedIds.has(catId)) selectedToolNames.add(tool.name);
+      const catId = categorizeTool(tool, capabilityOf?.(tool.name));
+      if (!catId || !pickedCatIds.has(catId)) continue;
+      if (!toolsByCategory.has(catId)) toolsByCategory.set(catId, []);
+      toolsByCategory.get(catId)!.push(tool);
     }
 
-    return { selectedToolNames, matchedCategories: picked };
+    // ── Stage 2: 카테고리 내 도구 재순위 ─────────────────
+    const selectedToolNames = new Set<string>();
+    for (const [catId, catTools] of toolsByCategory) {
+      // 도구 수 적으면 stage 2 스킵 (전부 포함)
+      if (catTools.length <= SMALL_CATEGORY) {
+        for (const t of catTools) selectedToolNames.add(t.name);
+        continue;
+      }
+
+      // stage 2: 도구 임베딩 (없으면 빌드) → 쿼리 매칭
+      const toolVecs = await ensureToolVectors(catTools, capabilityOf);
+      const toolScored = catTools
+        .map(t => {
+          const v = toolVecs.get(t.name);
+          return v ? { name: t.name, score: cosine(q, v.vector) } : { name: t.name, score: 0 };
+        })
+        .sort((a, b) => b.score - a.score);
+
+      // stage 2 로그
+      const top3 = toolScored.slice(0, 3).map(s => `${s.name}:${s.score.toFixed(3)}`).join(' ');
+      process.stderr.write(`[ToolSearch] stage2 cat=${catId} top3=[${top3}]\n`);
+
+      // threshold 통과분 중 top-N, 없으면 최상위 1개는 폴백
+      let picked = toolScored.filter(s => s.score >= toolThreshold).slice(0, topToolsPerCategory);
+      if (picked.length === 0) picked = toolScored.slice(0, 1);
+      for (const p of picked) selectedToolNames.add(p.name);
+    }
+
+    return { selectedToolNames, matchedCategories: pickedCats };
   }
 
   /** UI/디버그용: 등록된 카테고리 목록 */
