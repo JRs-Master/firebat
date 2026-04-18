@@ -99,8 +99,8 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
     // Vault 키
     fetch('/api/vault').then(r => r.json()).then(data => {
-      if (data.success && data.keys?.gemini_api_key?.hasKey) {
-        setGeminiApiKey(data.keys.gemini_api_key.maskedKey);
+      if (data.success && data.keys?.openai_api_key?.hasKey) {
+        setGeminiApiKey(data.keys.openai_api_key.maskedKey);
       }
     }).catch(() => {});
   }, []);
@@ -538,18 +538,18 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
           {settingsTab === 'secrets' && (
             <>
-              {/* Gemini */}
+              {/* OpenAI */}
               <div className="flex flex-col gap-2">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">Gemini</label>
+                <label className="text-xs sm:text-sm font-bold text-slate-700">OpenAI</label>
                 <input
                   type="password"
                   value={geminiApiKey}
                   onChange={e => setGeminiApiKey(e.target.value)}
-                  placeholder="Gemini API Key"
+                  placeholder="OpenAI API Key (sk-proj-...)"
                   className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
-                  Google AI Studio (aistudio.google.com) → API Keys
+                  OpenAI Platform (platform.openai.com) → API Keys
                 </p>
               </div>
 

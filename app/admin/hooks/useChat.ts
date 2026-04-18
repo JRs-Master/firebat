@@ -242,8 +242,8 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             const fullReply: string = ev.data.reply || (ev.data.error ? '' : '실행이 완료되었습니다.');
             const blocksData = ev.data.data?.blocks as Array<{ type: string; text?: string }> | undefined;
             const hasBlocks = Array.isArray(blocksData) && blocksData.length > 0;
-            // 도구 실행이 있었던 경우만 chunk-flow — Fast Path(도구 0개)는 이미 실시간 스트리밍됐으므로 즉시 세팅
-            const shouldAnimate = !!fullReply && !ev.data.error && hadExecutedActions;
+            // 스트리밍 제거 후 모든 응답이 result에 한 번에 도착 → 항상 chunk-flow 애니메이션
+            const shouldAnimate = !!fullReply && !ev.data.error;
 
             cancelChunkAnim();
 

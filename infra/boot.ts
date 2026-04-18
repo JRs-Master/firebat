@@ -12,7 +12,7 @@ import { SqliteDatabaseAdapter } from './database';
 import { FetchNetworkAdapter } from './network';
 import { NodeCronAdapter } from './cron';
 import { vault } from './storage/vault-adapter';
-import { buildGeminiAdapter, GEMINI_VAULT_KEYS } from './llm/factory';
+import { buildOpenAiAdapter, OPENAI_VAULT_KEYS } from './llm/factory';
 import { McpClientAdapter } from './mcp-client';
 import { VaultAuthAdapter } from './auth';
 import { DB_PATH, DEFAULT_MODEL } from './config';
@@ -41,12 +41,10 @@ export function getInfra(): FirebatInfraContainer {
     // MCP Client
     const mcpClient = new McpClientAdapter();
 
-    // LLM — lazy API 키 로드 (legacy VERTEX_AI_API_KEY 폴백)
-    const llm = buildGeminiAdapter(
-      () => vault.getSecret(GEMINI_VAULT_KEYS.apiKey)
-        || vault.getSecret('VERTEX_AI_API_KEY')
-        || process.env[GEMINI_VAULT_KEYS.apiKey]
-        || process.env['VERTEX_AI_API_KEY']
+    // LLM — OpenAI (lazy API 키 로드)
+    const llm = buildOpenAiAdapter(
+      () => vault.getSecret(OPENAI_VAULT_KEYS.apiKey)
+        || process.env[OPENAI_VAULT_KEYS.apiKey]
         || null,
       DEFAULT_MODEL,
     );

@@ -1,10 +1,12 @@
 import { ConversationMeta } from './components/Sidebar';
 
-export const GEMINI_MODELS = [
-  { value: 'gemini-3.1-flash-lite-preview',         label: 'Gemini 3.1 Flash Lite (경량/초고속)' },
-  { value: 'gemini-3-flash-preview',                label: 'Gemini 3 Flash (빠름/가성비)' },
-  { value: 'gemini-3.1-pro-preview',                label: 'Gemini 3.1 Pro (고성능)' },
+export const AI_MODELS = [
+  { value: 'gpt-5.4-nano', label: 'GPT-5.4 Nano (초경량/저렴)' },
+  { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini (기본/가성비)' },
+  { value: 'gpt-5.4',      label: 'GPT-5.4 (고품질)' },
 ];
+// 기존 이름 호환을 위한 alias
+export const GEMINI_MODELS = AI_MODELS;
 
 export const THINKING_LEVELS = [
   { value: 'minimal', label: 'Minimal (최소, 가장 빠름)' },
