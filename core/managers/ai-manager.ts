@@ -2247,10 +2247,9 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
       // 카테고리 단위 벡터 검색 (도구 개별 아님) — 의미 분리 명확해 점수 범위 넓음
       const { selectedToolNames, matchedCategories } = await ToolSearchIndex.query(userQuery, allTools, {
         topCategories: 3,
-        categoryThreshold: 0.3,
-        toolThreshold: 0.2,
         topToolsPerCategory: 5,
         capabilityOf,
+        // spread/clusterGap 기본값 사용 (E5 retrieval 기준 튜닝됨)
       });
 
       const allowed = new Set([...ALWAYS_INCLUDE, ...selectedToolNames, ...sessionUsedToolNames]);

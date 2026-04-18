@@ -107,7 +107,16 @@ async function handleKeywordTool(ctx, data) {
     return out(false, 'keywords 배열이 필요합니다.');
   }
 
-  const params = { hintKeywords: keywords.slice(0, 5).join(',') };
+  // 네이버 광고 API 제약: hintKeywords 각 키워드는 공백 불가, 최대 5개
+  // AI가 "삼성전자 주가" 같이 공백 포함 키워드 전달 시 400 에러 → 공백 제거 후 전달
+  const sanitized = keywords
+    .map(k => String(k ?? '').replace(/\s+/g, ''))
+    .filter(k => k.length > 0)
+    .slice(0, 5);
+  if (sanitized.length === 0) {
+    return out(false, 'keywords 배열에 유효한(비어있지 않은) 키워드가 없습니다.');
+  }
+  const params = { hintKeywords: sanitized.join(',') };
   if (data.showDetail !== false) params.showDetail = '1';
   if (data.siteId) params.siteId = data.siteId;
   if (data.biztpId) params.biztpId = data.biztpId;

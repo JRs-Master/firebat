@@ -248,26 +248,45 @@ export class ToolSearchIndex {
   }
 
   /**
-   * 2단계 벡터 검색:
+   * 2단계 벡터 검색 — 상대 스코어링 기반 (E5 같은 retrieval 모델은 절대 임계값이 무의미)
+   *
    *  Stage 1 — 카테고리 top-K 매칭
-   *  Stage 2 — 해당 카테고리 소속 도구들을 개별 임베딩으로 재순위 (카테고리당 top-N, threshold 적용)
-   *            카테고리 내 도구 수가 SMALL_CATEGORY 이하면 stage 2 스킵 (전부 포함)
+   *    - spread(top1 - topN) 로 신호 강도 판정 → 임계 미달이면 "신호 없음" 으로 빈 집합 반환
+   *    - 통과 시 top1 근접(clusterGap 이내) 카테고리만 선택
+   *  Stage 2 — 카테고리 소속 도구들을 개별 임베딩으로 재순위 (동일 원리로 상대 판정)
+   *    - 도구 수 ≤ SMALL_CATEGORY 는 stage 2 스킵 (전부 포함)
+   *
+   * 상대 스코어링 장점: 쿼리 길이·모델 편향 무관하게 "top이 유의미하게 두드러지는가"만 판정
    */
   static async query(
     query: string,
     tools: ToolDefinition[],
-    opts: { topCategories?: number; categoryThreshold?: number; toolThreshold?: number; topToolsPerCategory?: number; capabilityOf?: (name: string) => string | undefined } = {},
+    opts: {
+      topCategories?: number;
+      /** 카테고리 top1 - top5 점수 차가 이 값 미만이면 "신호 없음" 판정 (기본 0.030) */
+      categorySpreadMin?: number;
+      /** top1 근접 카테고리 선택 범위: top1 - clusterGap 이상인 카테고리만 (기본 0.020) */
+      categoryClusterGap?: number;
+      /** stage 2 에서 도구 top1 - top3 점수 차 임계 (기본 0.015) */
+      toolSpreadMin?: number;
+      /** stage 2 에서 top1 근접 도구 선택 범위 (기본 0.015) */
+      toolClusterGap?: number;
+      topToolsPerCategory?: number;
+      capabilityOf?: (name: string) => string | undefined;
+    } = {},
   ): Promise<{ selectedToolNames: Set<string>; matchedCategories: { id: string; score: number }[] }> {
     const {
       topCategories = 3,
-      categoryThreshold = 0.3,
-      toolThreshold = 0.2,
+      categorySpreadMin = 0.030,
+      categoryClusterGap = 0.020,
+      toolSpreadMin = 0.015,
+      toolClusterGap = 0.015,
       topToolsPerCategory = 5,
       capabilityOf,
     } = opts;
     if (!query.trim()) return { selectedToolNames: new Set(), matchedCategories: [] };
 
-    const SMALL_CATEGORY = 2; // 도구 N개 이하 카테고리는 stage 2 스킵
+    const SMALL_CATEGORY = 2;
 
     const catVectors = await this.ensureIndex();
     if (catVectors.length === 0) return { selectedToolNames: new Set(), matchedCategories: [] };
@@ -277,12 +296,24 @@ export class ToolSearchIndex {
     const catScored = catVectors.map(c => ({ id: c.id, score: cosine(q, c.vector) }));
     catScored.sort((a, b) => b.score - a.score);
 
-    const topCats = catScored.slice(0, 5).map(s => `${s.id}:${s.score.toFixed(3)}`).join(' ');
+    const topCatsLog = catScored.slice(0, 5).map(s => `${s.id}:${s.score.toFixed(3)}`).join(' ');
     const qPreview = query.length > 40 ? query.slice(0, 40) + '…' : query;
-    process.stderr.write(`[ToolSearch] stage1 query="${qPreview}" cats=[${topCats}]\n`);
 
-    let pickedCats = catScored.filter(s => s.score >= categoryThreshold).slice(0, topCategories);
-    if (pickedCats.length === 0) pickedCats = catScored.slice(0, 1);
+    // 상대 판정: top1 vs top5 spread — 좁으면 신호 없음
+    const top1Score = catScored[0]?.score ?? 0;
+    const refIdx = Math.min(4, catScored.length - 1); // top5 (없으면 가능한 하위)
+    const refScore = catScored[refIdx]?.score ?? top1Score;
+    const spread = top1Score - refScore;
+
+    if (spread < categorySpreadMin) {
+      process.stderr.write(`[ToolSearch] stage1 query="${qPreview}" cats=[${topCatsLog}] spread=${spread.toFixed(3)} → 신호없음(ALWAYS_INCLUDE만)\n`);
+      return { selectedToolNames: new Set(), matchedCategories: [] };
+    }
+
+    // 신호 있음: top1 근접(clusterGap 이내) 카테고리 선택
+    const cutoff = top1Score - categoryClusterGap;
+    const pickedCats = catScored.filter(s => s.score >= cutoff).slice(0, topCategories);
+    process.stderr.write(`[ToolSearch] stage1 query="${qPreview}" cats=[${topCatsLog}] spread=${spread.toFixed(3)} pick=${pickedCats.map(p => p.id).join(',')}\n`);
     const pickedCatIds = new Set(pickedCats.map(p => p.id));
 
     // 카테고리별 도구 그룹화
@@ -303,7 +334,6 @@ export class ToolSearchIndex {
         continue;
       }
 
-      // stage 2: 도구 임베딩 (없으면 빌드) → 쿼리 매칭
       const toolVecs = await ensureToolVectors(catTools, capabilityOf);
       const toolScored = catTools
         .map(t => {
@@ -312,13 +342,22 @@ export class ToolSearchIndex {
         })
         .sort((a, b) => b.score - a.score);
 
-      // stage 2 로그
-      const top3 = toolScored.slice(0, 3).map(s => `${s.name}:${s.score.toFixed(3)}`).join(' ');
-      process.stderr.write(`[ToolSearch] stage2 cat=${catId} top3=[${top3}]\n`);
+      const top3Log = toolScored.slice(0, 3).map(s => `${s.name}:${s.score.toFixed(3)}`).join(' ');
+      const tTop1 = toolScored[0]?.score ?? 0;
+      const tRefIdx = Math.min(2, toolScored.length - 1);
+      const tRef = toolScored[tRefIdx]?.score ?? tTop1;
+      const tSpread = tTop1 - tRef;
 
-      // threshold 통과분 중 top-N, 없으면 최상위 1개는 폴백
-      let picked = toolScored.filter(s => s.score >= toolThreshold).slice(0, topToolsPerCategory);
-      if (picked.length === 0) picked = toolScored.slice(0, 1);
+      if (tSpread < toolSpreadMin) {
+        // 도구 간 분리 약함 → 카테고리 내 상위 1개만 대표로 포함 (전체 스팸 방지)
+        process.stderr.write(`[ToolSearch] stage2 cat=${catId} top3=[${top3Log}] spread=${tSpread.toFixed(3)} → 대표 1개\n`);
+        if (toolScored[0]) selectedToolNames.add(toolScored[0].name);
+        continue;
+      }
+
+      const tCutoff = tTop1 - toolClusterGap;
+      const picked = toolScored.filter(s => s.score >= tCutoff).slice(0, topToolsPerCategory);
+      process.stderr.write(`[ToolSearch] stage2 cat=${catId} top3=[${top3Log}] spread=${tSpread.toFixed(3)} pick=${picked.length}개\n`);
       for (const p of picked) selectedToolNames.add(p.name);
     }
 

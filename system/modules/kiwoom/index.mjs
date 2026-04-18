@@ -231,6 +231,30 @@ const ACTION_MAP = {
   'credit-inquiry': 'kt20017',  // 신용융자 가능문의
 };
 
+/**
+ * AI가 action 어순을 뒤집거나(daily-chart↔chart-daily) 별칭을 쓰는 경우를 정규화.
+ * 1) 정확 매칭 우선
+ * 2) 하이픈 분리 후 순서 바꿔 매칭 (chart-* / *-chart 호환)
+ * 3) 언더스코어/공백/카멜 → 케밥 변환
+ */
+function normalizeAction(raw) {
+  if (!raw || typeof raw !== 'string') return raw;
+  // 카멜/언더스코어/공백 → kebab-case
+  const kebab = raw
+    .replace(/[_\s]+/g, '-')
+    .replace(/([a-z])([A-Z])/g, '$1-$2')
+    .toLowerCase()
+    .trim();
+  if (ACTION_MAP[kebab]) return kebab;
+  // 하이픈으로 나눠 순서 뒤집어도 동일 apiId 있는지 확인 (daily-chart ↔ chart-daily)
+  const parts = kebab.split('-');
+  if (parts.length === 2) {
+    const reversed = `${parts[1]}-${parts[0]}`;
+    if (ACTION_MAP[reversed]) return reversed;
+  }
+  return kebab;
+}
+
 /** OAuth 토큰 발급 (Vault 캐싱 — config.json tokenCache 기반) */
 async function getAccessToken(base, appKey, appSecret, forceNew = false) {
   // Vault에서 캐시된 토큰 (sandbox가 만료 체크 후 env 주입)
@@ -973,8 +997,10 @@ process.stdin.on('end', async () => {
     let { token, isNew } = await getAccessToken(base, appKey, appSecret);
 
     // 편의 액션 → apiId 변환, 또는 직접 apiId 사용
-    const apiId = ACTION_MAP[action] || action;
-    const params = buildParams(action, data);
+    // AI가 어순 뒤집어 보내는 흔한 실수(daily-chart, weekly-chart 등)도 동일 apiId로 라우팅
+    const normalizedAction = normalizeAction(action);
+    const apiId = ACTION_MAP[normalizedAction] || normalizedAction;
+    const params = buildParams(normalizedAction, data);
 
     let result = await callApi(base, token, apiId, params);
 
