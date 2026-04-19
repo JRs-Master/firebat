@@ -857,7 +857,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                   </div>
                 )}
 
-                {execMode === 'api' && thinkingKind && thinkingOptions.length > 0 && (
+                {thinkingKind && thinkingOptions.length > 0 && (
                   <Field label={thinkingLabel}>
                     <SelectInput value={thinkingValue} onChange={setThinkingLevel} options={thinkingOptions} />
                   </Field>
@@ -922,11 +922,14 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                             Gemini Flash Lite 가 아래 역할을 수행합니다. 출력은 JSON 스키마로 강제되어 구조적으로 안전합니다.
                           </div>
                           <ul className="text-[11px] text-slate-600 mt-1.5 space-y-0.5 list-disc list-inside leading-relaxed">
-                            <li><b>도구 선별</b> — Gemini 계열 User AI 에서만 (GPT/Claude 는 MCP 가 대신)</li>
-                            <li><b>컴포넌트 선별</b> — 모든 User AI 공통 (search_components)</li>
-                            <li><b>히스토리 쿼리 리라이트</b> — 대명사·지시어 해소 (모든 User AI 공통)</li>
-                            <li><b>히스토리 결과 재랭킹</b> — 벡터 top-N 에서 의미적 top-K 선별 (공통)</li>
+                            <li><b>도구 선별</b> — Gemini(API) 계열에서만. GPT/Claude(API)·CLI 는 각자 MCP 가 처리</li>
+                            <li><b>컴포넌트 선별</b> — search_components 호출 시 (모든 User AI 공통)</li>
+                            <li><b>히스토리 쿼리 리라이트</b> — search_history 호출 시 대명사·지시어 해소</li>
+                            <li><b>히스토리 결과 재랭킹</b> — 벡터 top-N 에서 의미적 top-K 선별</li>
                           </ul>
+                          <div className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
+                            <b className="text-slate-600">CLI 모드</b>: 최근 10턴 대화만 prompt 에 번들되므로, 10턴 넘는 장기 대화나 다른 대화 참조가 필요할 때 AI Assistant 가 search_history 호출 품질을 보강합니다.
+                          </div>
                           <div className="text-[11px] text-slate-400 mt-1.5">
                             결과는 캐시되어 시간이 지날수록 LLM 호출이 줄어듭니다.
                           </div>

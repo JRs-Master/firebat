@@ -18,7 +18,9 @@ export const AI_MODELS = [
   { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (균형)' },
   { value: 'claude-opus-4-7',   label: 'Claude Opus 4.7 (최고급)' },
   // CLI 모드 (구독 기반, 키 불필요)
-  { value: 'cli-claude-code', label: 'Claude Code CLI (Claude Pro/Max 구독)' },
+  { value: 'cli-claude-code',        label: 'Claude Code CLI · Sonnet 4.6 (기본)' },
+  { value: 'cli-claude-code-haiku',  label: 'Claude Code CLI · Haiku 4.5 (빠름)' },
+  { value: 'cli-claude-code-opus',   label: 'Claude Code CLI · Opus 4.7 (Max 전용)' },
 ];
 // 기존 이름 호환을 위한 alias
 export const GEMINI_MODELS = AI_MODELS;
@@ -40,6 +42,7 @@ export type ThinkingKind = 'reasoning' | 'thinking' | 'extendedThinking' | null;
 export function getThinkingKind(model: string): ThinkingKind {
   if (model.startsWith('gpt-')) return 'reasoning';           // OpenAI reasoning.effort
   if (model.startsWith('claude-')) return 'extendedThinking'; // Anthropic enabled/disabled
+  if (model.startsWith('cli-claude-code')) return 'extendedThinking'; // Claude Code CLI 도 budget_tokens 기반
   if (model.startsWith('gemini-')) {
     if (model.includes('flash-lite')) return null;            // Lite는 thinking 미지원
     return 'thinking';                                         // Gemini thinkingLevel

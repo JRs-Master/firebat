@@ -71,6 +71,8 @@ export interface ModelConfig {
   features?: ModelFeatures;
   /** 1M 토큰당 가격 (정보용, UI 표시) */
   pricing?: ModelPricing;
+  /** CLI 모드 전용 — `claude --model <cliModel>` 로 전달할 모델 이름 (sonnet/opus/haiku) */
+  cliModel?: string;
 }
 
 /** 여러 모델 config의 묶음 (configs/*.json 로드 결과) */

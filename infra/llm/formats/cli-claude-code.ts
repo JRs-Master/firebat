@@ -33,7 +33,23 @@ interface RunOptions {
   history?: ChatMessage[];
   resumeSessionId?: string;
   mcpConfigPath?: string;
+  cliModel?: string;
+  thinkingLevel?: string;
   onChunk?: LlmCallOpts['onChunk'];
+}
+
+/** Firebat thinkingLevel → Anthropic extended thinking budget_tokens */
+function thinkingBudgetTokens(level?: string): number | null {
+  if (!level || level === 'none') return null;
+  const map: Record<string, number> = {
+    minimal: 1024,
+    low: 2048,
+    medium: 8192,
+    high: 16384,
+    xhigh: 32768,
+    max: 65536,
+  };
+  return map[level] ?? null;
 }
 
 /** stream-json 이벤트 타입 */
@@ -87,18 +103,21 @@ export class CliClaudeCodeFormat implements FormatHandler {
     return { success: true, data: res.text };
   }
 
-  async askWithTools(prompt: string, systemPrompt: string, _tools: ToolDefinition[], history: ChatMessage[], _toolExchanges: ToolExchangeEntry[], opts: LlmCallOpts | undefined, _ctx: FormatHandlerContext): Promise<InfraResult<LlmToolResponse>> {
+  async askWithTools(prompt: string, systemPrompt: string, _tools: ToolDefinition[], history: ChatMessage[], _toolExchanges: ToolExchangeEntry[], opts: LlmCallOpts | undefined, ctx: FormatHandlerContext): Promise<InfraResult<LlmToolResponse>> {
     // Claude Code 가 내부에서 tool use loop 처리 (MCP 서버 통해).
     // 우리는 prompt + systemPrompt + 초기 history 를 넘기고 최종 text 만 받음.
     // toolExchanges 는 CLI 내부 처리이므로 빈 배열 반환.
     const resumeSessionId = (opts as { cliSessionId?: string })?.cliSessionId;
     const mcpConfigPath = this.ensureMcpConfigFile();
+    const cliModel = ctx.config.cliModel;
 
     const res = await this.runClaude(prompt, {
       systemPrompt,
       history,
       resumeSessionId,
       mcpConfigPath,
+      cliModel,
+      thinkingLevel: opts?.thinkingLevel,
       onChunk: opts?.onChunk,
     });
 
@@ -161,6 +180,13 @@ export class CliClaudeCodeFormat implements FormatHandler {
       }
       if (options.mcpConfigPath) {
         args.push('--mcp-config', options.mcpConfigPath);
+      }
+      if (options.cliModel) {
+        args.push('--model', options.cliModel);
+      }
+      const thinkingBudget = thinkingBudgetTokens(options.thinkingLevel);
+      if (thinkingBudget != null) {
+        args.push('--max-thinking-tokens', String(thinkingBudget));
       }
 
       let child;

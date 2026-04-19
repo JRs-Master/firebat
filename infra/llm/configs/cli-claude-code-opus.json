@@ -1,11 +1,11 @@
 {
-  "id": "cli-claude-code",
-  "displayName": "Claude Code CLI · Sonnet 4.6 (기본)",
+  "id": "cli-claude-code-opus",
+  "displayName": "Claude Code CLI · Opus 4.7 (Max 전용)",
   "provider": "anthropic",
   "format": "cli-claude-code",
   "endpoint": "local://claude-cli",
   "apiKeyVaultKey": "CLI_CLAUDE_CODE_STATUS",
-  "cliModel": "claude-sonnet-4-6",
+  "cliModel": "claude-opus-4-7",
   "features": {
     "mcpConnector": true,
     "vision": true,
