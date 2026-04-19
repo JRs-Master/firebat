@@ -219,6 +219,9 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
     };
     const refresh = async () => {
       if (!activeConvId) return;
+      // 스트리밍·도구 실행 중이면 스킵 — 현재 turn을 DB의 이전 상태로 덮어쓰는 것 방지
+      //  (방금 POST한 user 메시지 때문에 DB updatedAt가 local보다 미세하게 더 큼 → 무조건 overwrite되는 경로)
+      if (messages.some(m => m.isThinking || m.executing || m.streaming)) return;
       const convMeta = conversations.find(c => c.id === activeConvId);
       if (!convMeta) return;
       const localUpdatedAt = convMeta.updatedAt ?? convMeta.createdAt ?? 0;
