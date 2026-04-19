@@ -33,6 +33,9 @@ export interface HistorySearchMatch {
   contentPreview: string;
   createdAt: number;
   score: number;
+  /** includeBlocks=true 시 AI 메시지의 원본 blocks 반환 (component/html 블록의 props·htmlContent 포함).
+   *  AI 가 과거 차트·표 데이터를 재조회 없이 재활용할 때 사용. */
+  blocks?: unknown[];
 }
 
 const CONTENT_PREVIEW_MAX = 500;
@@ -262,9 +265,9 @@ export class ConversationManager {
   async searchHistory(
     owner: string,
     query: string,
-    opts: { currentConvId?: string; limit?: number; withinDays?: number; minScore?: number } = {},
+    opts: { currentConvId?: string; limit?: number; withinDays?: number; minScore?: number; includeBlocks?: boolean } = {},
   ): Promise<InfraResult<HistorySearchMatch[]>> {
-    const { currentConvId, limit = 5, withinDays = 60, minScore = 0.25 } = opts;
+    const { currentConvId, limit = 5, withinDays = 60, minScore = 0.25, includeBlocks = false } = opts;
     if (!query.trim()) return { success: true, data: [] };
 
     const cutoff = Date.now() - withinDays * 86400000;
@@ -299,6 +302,35 @@ export class ConversationManager {
 
     scored.sort((a, b) => b.score - a.score);
     const filtered = scored.filter(s => s.score >= minScore).slice(0, limit);
+
+    // includeBlocks: 매칭된 메시지의 원본 blocks 로드 (component/html 블록의 props 포함)
+    if (includeBlocks && filtered.length > 0) {
+      // conv 단위로 묶어서 한 번에 로드 (같은 conv 의 여러 msg 있을 때 중복 조회 방지)
+      const byConv = new Map<string, HistorySearchMatch[]>();
+      for (const m of filtered) {
+        const arr = byConv.get(m.convId) ?? [];
+        arr.push(m);
+        byConv.set(m.convId, arr);
+      }
+      for (const [convId, matches] of byConv) {
+        const convRes = await this.db.query(
+          `SELECT messages FROM conversations WHERE id = ? AND owner = ?`,
+          [convId, owner],
+        );
+        if (!convRes.success || !convRes.data || convRes.data.length === 0) continue;
+        try {
+          const messages = JSON.parse((convRes.data[0].messages as string) || '[]') as unknown[];
+          for (const m of matches) {
+            const msg = messages[m.msgIdx] as Record<string, unknown> | undefined;
+            if (msg && msg.data && typeof msg.data === 'object') {
+              const blocks = (msg.data as Record<string, unknown>).blocks;
+              if (Array.isArray(blocks)) m.blocks = blocks;
+            }
+          }
+        } catch { /* 파싱 실패 시 blocks 없이 반환 */ }
+      }
+    }
+
     return { success: true, data: filtered };
   }
 }

@@ -281,7 +281,7 @@ export class FirebatCore {
   }
   deleteConversation(owner: string, id: string) { return this.conversation.delete(owner, id); }
   isConversationDeleted(owner: string, id: string) { return this.conversation.isDeleted(owner, id); }
-  searchConversationHistory(owner: string, query: string, opts?: { currentConvId?: string; limit?: number; withinDays?: number; minScore?: number }) {
+  searchConversationHistory(owner: string, query: string, opts?: { currentConvId?: string; limit?: number; withinDays?: number; minScore?: number; includeBlocks?: boolean }) {
     return this.conversation.searchHistory(owner, query, opts);
   }
 
