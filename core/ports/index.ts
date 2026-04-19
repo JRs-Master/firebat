@@ -288,6 +288,17 @@ export interface LlmToolResponse {
     | { type: 'html'; htmlContent: string; htmlHeight?: string }
     | { type: 'component'; name: string; props: Record<string, unknown> }
   >;
+  /** MCP 경유로 생성된 pending actions (schedule_task / save_page 등 승인 필요 작업).
+   *  CLI 모드에서 MCP 핸들러가 createPending 해서 tool_result 에 planId 포함 → 여기로 전달.
+   *  ai-manager 가 자신의 pendingActions 배열에 추가. */
+  pendingActions?: Array<{
+    planId: string;
+    name: string;
+    summary: string;
+    args?: Record<string, unknown>;
+  }>;
+  /** MCP suggest 도구로 생성된 사용자 선택지 (CLI 모드) */
+  suggestions?: unknown[];
 }
 
 export interface ILlmPort {

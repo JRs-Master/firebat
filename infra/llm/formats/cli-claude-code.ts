@@ -30,6 +30,8 @@ interface CliRunResult {
     | { type: 'html'; htmlContent: string; htmlHeight?: string }
     | { type: 'component'; name: string; props: Record<string, unknown> }
   >;
+  pendingActions: Array<{ planId: string; name: string; summary: string; args?: Record<string, unknown> }>;
+  suggestions: unknown[];
   error?: string;
 }
 
@@ -158,11 +160,11 @@ export class CliClaudeCodeFormat implements FormatHandler {
       data: {
         text: res.text,
         toolCalls: [],
-        responseId: res.sessionId, // 다음 턴 resume 용
-        // Claude Code 내부에서 호출된 도구들 → Core 가 executedActions 에 반영해 UI 배지 표시
+        responseId: res.sessionId,
         internallyUsedTools: res.usedTools,
-        // render_* 도구 결과 → Core 가 blocks 배열에 추가해 실제 UI 렌더
         renderedBlocks: res.renderedBlocks,
+        pendingActions: res.pendingActions,
+        suggestions: res.suggestions,
       },
     };
   }
@@ -290,11 +292,9 @@ export class CliClaudeCodeFormat implements FormatHandler {
 
       let child;
       try {
-        // stdin 을 즉시 닫아서 "no stdin data received in 3s" 경고 방지.
-        // --print 모드는 prompt 를 인자로 받으므로 stdin 불필요.
         child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'] });
       } catch (e) {
-        resolve({ text: '', usedTools: [], renderedBlocks: [], error: `Claude Code CLI 실행 실패 (claude 명령어 미설치?): ${(e as Error).message}` });
+        resolve({ text: '', usedTools: [], renderedBlocks: [], pendingActions: [], suggestions: [], error: `Claude Code CLI 실행 실패 (claude 명령어 미설치?): ${(e as Error).message}` });
         return;
       }
 
@@ -303,9 +303,10 @@ export class CliClaudeCodeFormat implements FormatHandler {
       let currentTextBuffer = '';
       let finalText = '';
       const usedTools: string[] = [];
-      // tool_use id → name/args 매핑. tool_result 받으면 id 로 매칭해서 render 결과 추출.
       const pendingToolUses = new Map<string, { name: string; input: unknown }>();
       const renderedBlocks: CliRunResult['renderedBlocks'] = [];
+      const pendingActions: CliRunResult['pendingActions'] = [];
+      const suggestions: unknown[] = [];
       let sessionId: string | undefined;
       let errored = false;
       let errorMsg: string | undefined;
@@ -373,16 +374,29 @@ export class CliClaudeCodeFormat implements FormatHandler {
                   try {
                     const payload = JSON.parse(textPayload) as Record<string, unknown>;
                     if (payload.success) {
+                      // 1) render_* 결과 → blocks
                       if (pending.name === 'render_html' && typeof payload.htmlContent === 'string') {
                         renderedBlocks.push({ type: 'html', htmlContent: payload.htmlContent, htmlHeight: payload.htmlHeight as string | undefined });
                       } else if (typeof payload.component === 'string') {
                         renderedBlocks.push({ type: 'component', name: payload.component, props: (payload.props as Record<string, unknown>) ?? {} });
                       } else if (RENDER_COMPONENT_MAP[pending.name]) {
-                        // props 는 tool_use.input 에서 추출 (서버 MCP 응답이 props 없이 success 만 줄 경우 대비)
                         renderedBlocks.push({ type: 'component', name: RENDER_COMPONENT_MAP[pending.name], props: (pending.input as Record<string, unknown>) ?? {} });
                       }
+                      // 2) 승인 대기 도구 (schedule_task/save_page/delete_page/delete_file) → pendingActions
+                      if (payload.pending === true && typeof payload.planId === 'string') {
+                        pendingActions.push({
+                          planId: payload.planId,
+                          name: pending.name,
+                          summary: typeof payload.summary === 'string' ? payload.summary : pending.name,
+                          args: pending.input as Record<string, unknown> | undefined,
+                        });
+                      }
+                      // 3) suggest 도구 → suggestions
+                      if (pending.name === 'suggest' && Array.isArray(payload.suggestions)) {
+                        for (const s of payload.suggestions) suggestions.push(s);
+                      }
                     }
-                  } catch { /* 파싱 실패 시 render 미추출 */ }
+                  } catch { /* 파싱 실패 시 무시 */ }
                 }
                 pendingToolUses.delete(toolUseId!);
               }
@@ -415,29 +429,26 @@ export class CliClaudeCodeFormat implements FormatHandler {
       });
 
       child.on('error', (e) => {
-        resolve({ text: '', usedTools, renderedBlocks, error: `Claude Code CLI 프로세스 에러: ${e.message}` });
+        resolve({ text: '', usedTools, renderedBlocks, pendingActions, suggestions, error: `Claude Code CLI 프로세스 에러: ${e.message}` });
       });
 
       child.on('close', (code) => {
         if (stdoutBuf.trim()) processLine(stdoutBuf);
         if (!finalText && currentTextBuffer.trim()) finalText = currentTextBuffer;
-
-        // Claude Code 자체가 디스크에 만든 tool-results 캐시 정리
-        // (매 요청마다 쌓이면 디스크 낭비 + 예전 캐시 참조로 혼란 가능성)
         this.cleanupClaudeCacheFiles().catch(() => {});
 
         if (errored) {
-          resolve({ text: finalText, usedTools, renderedBlocks, sessionId, error: errorMsg });
+          resolve({ text: finalText, usedTools, renderedBlocks, pendingActions, suggestions, sessionId, error: errorMsg });
           return;
         }
         if (code !== 0) {
           resolve({
-            text: finalText, usedTools, renderedBlocks, sessionId,
+            text: finalText, usedTools, renderedBlocks, pendingActions, suggestions, sessionId,
             error: `Claude Code 비정상 종료 (exit ${code}): ${stderrBuf.slice(0, 500)}`,
           });
           return;
         }
-        resolve({ text: finalText, usedTools, renderedBlocks, sessionId });
+        resolve({ text: finalText, usedTools, renderedBlocks, pendingActions, suggestions, sessionId });
       });
     });
   }

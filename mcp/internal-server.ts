@@ -153,8 +153,9 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     'suggest',
     '사용자에게 선택지 제시. string=버튼, {type:"input",label,placeholder}=입력, {type:"toggle",label,options}=다중 선택.',
     { suggestions: z.array(z.any()).describe('선택지 배열') },
-    async () => ({
-      content: [{ type: 'text', text: JSON.stringify({ success: true, displayed: true }) }],
+    async ({ suggestions }) => ({
+      // suggestions 를 tool_result 에 포함해서 CLI 핸들러가 추출 → Firebat UI 로 전달
+      content: [{ type: 'text', text: JSON.stringify({ success: true, displayed: true, suggestions }) }],
     }),
   );
 
@@ -202,8 +203,13 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
       spec: z.string().describe('PageSpec JSON 문자열 전체'),
     },
     async ({ slug, spec }) => {
-      const r = await core.savePage(slug, spec);
-      return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true, slug, url: `/${slug}` } : { error: r.error }) }] };
+      // 승인 대기 — 기존 페이지 덮어쓰기 방지 + 의도 확인
+      const { createPending } = await import('../lib/pending-tools');
+      const planId = createPending('save_page', { slug, spec }, `페이지 저장: /${slug}`);
+      return { content: [{ type: 'text', text: JSON.stringify({
+        success: true, pending: true, planId, summary: `페이지 저장: /${slug}`,
+        message: '사용자 승인 대기 중입니다. Firebat UI 에서 승인 버튼 클릭 시 실제 저장됩니다.',
+      }) }] };
     },
   );
 
@@ -213,8 +219,12 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 주의: 복구 불가. 프로젝트 전체 삭제는 별도 도구.`,
     { slug: z.string().describe('삭제할 페이지 slug') },
     async ({ slug }) => {
-      const r = await core.deletePage(slug);
-      return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true } : { error: r.error }) }] };
+      const { createPending } = await import('../lib/pending-tools');
+      const planId = createPending('delete_page', { slug }, `페이지 삭제: /${slug}`);
+      return { content: [{ type: 'text', text: JSON.stringify({
+        success: true, pending: true, planId, summary: `페이지 삭제: /${slug}`,
+        message: '사용자 승인 대기 중입니다.',
+      }) }] };
     },
   );
 
@@ -258,8 +268,12 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 디렉토리 삭제 시 하위 전체 삭제.`,
     { path: z.string().describe('삭제 경로') },
     async ({ path }) => {
-      const r = await core.deleteFile(path);
-      return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true } : { error: r.error }) }] };
+      const { createPending } = await import('../lib/pending-tools');
+      const planId = createPending('delete_file', { path }, `파일 삭제: ${path}`);
+      return { content: [{ type: 'text', text: JSON.stringify({
+        success: true, pending: true, planId, summary: `파일 삭제: ${path}`,
+        message: '사용자 승인 대기 중입니다.',
+      }) }] };
     },
   );
 
@@ -339,19 +353,22 @@ startAt/endAt: cronTime의 유효 기간 (만료 시 자동 해제).
       oneShot: z.boolean().optional().describe('첫 성공 시 자동 취소'),
     },
     async (args) => {
-      const jobId = `cron-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-      const r = await core.scheduleCronJob(jobId, args.targetPath ?? '', {
-        cronTime: args.cronTime,
-        runAt: args.runAt,
-        delaySec: args.delaySec,
-        startAt: args.startAt,
-        endAt: args.endAt,
-        inputData: args.inputData,
-        pipeline: args.pipeline as import('../core/ports').PipelineStep[] | undefined,
-        title: args.title,
-        oneShot: args.oneShot,
-      });
-      return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true, jobId } : { error: r.error }) }] };
+      // 승인 대기 — 실제 등록은 UI 승인 후. 한 번 Pending 에 올려놓고 AI 에겐 대기 중임을 알림.
+      // cli-claude-code.ts 핸들러가 tool_result 를 파싱해 Firebat UI pendingActions 로 전달.
+      const { createPending } = await import('../lib/pending-tools');
+      const title = args.title || '예약 등록';
+      const when = args.cronTime ? `cron: ${args.cronTime}`
+        : args.runAt ? `1회: ${args.runAt}`
+        : args.delaySec != null ? `${args.delaySec}초 후`
+        : '시각 미지정';
+      const summary = `${title} (${when})`;
+      const planId = createPending('schedule_task', args as Record<string, unknown>, summary);
+      return {
+        content: [{ type: 'text', text: JSON.stringify({
+          success: true, pending: true, planId, summary,
+          message: '사용자 승인 대기 중입니다. Firebat UI 에서 승인 버튼 클릭 시 실제 등록됩니다.',
+        }) }],
+      };
     },
   );
 
