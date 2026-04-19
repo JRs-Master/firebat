@@ -25,7 +25,36 @@ interface CliRunResult {
   text: string;
   sessionId?: string;
   usedTools: string[];
+  renderedBlocks: Array<
+    | { type: 'text'; text: string }
+    | { type: 'html'; htmlContent: string; htmlHeight?: string }
+    | { type: 'component'; name: string; props: Record<string, unknown> }
+  >;
   error?: string;
+}
+
+/** render_* 도구 이름 → 컴포넌트 타입 매핑 (mcp prefix 제거 후 매칭) */
+const RENDER_COMPONENT_MAP: Record<string, string> = {
+  render_stock_chart: 'StockChart',
+  render_table: 'Table',
+  render_alert: 'Alert',
+  render_callout: 'Callout',
+  render_badge: 'Badge',
+  render_progress: 'Progress',
+  render_header: 'Header',
+  render_text: 'Text',
+  render_list: 'List',
+  render_divider: 'Divider',
+  render_countdown: 'Countdown',
+  render_chart: 'Chart',
+  render_image: 'Image',
+  render_card: 'Card',
+  render_grid: 'Grid',
+};
+
+/** mcp__firebat__render_stock_chart → render_stock_chart */
+function stripMcpPrefix(name: string): string {
+  return name.replace(/^mcp__[^_]+__/, '');
 }
 
 interface RunOptions {
@@ -132,6 +161,8 @@ export class CliClaudeCodeFormat implements FormatHandler {
         responseId: res.sessionId, // 다음 턴 resume 용
         // Claude Code 내부에서 호출된 도구들 → Core 가 executedActions 에 반영해 UI 배지 표시
         internallyUsedTools: res.usedTools,
+        // render_* 도구 결과 → Core 가 blocks 배열에 추가해 실제 UI 렌더
+        renderedBlocks: res.renderedBlocks,
       },
     };
   }
@@ -240,11 +271,12 @@ export class CliClaudeCodeFormat implements FormatHandler {
 
       let stdoutBuf = '';
       let stderrBuf = '';
-      // 최종 response 는 "마지막 tool_use/tool_result 이후의 assistant text" 만 채택.
-      // 중간 assistant text (도구 호출 사이에 끼는 진행 멘트) 는 thinking 스트림으로 보내고 최종 응답엔 미포함.
-      let currentTextBuffer = ''; // 현재 assistant turn 의 누적 text
-      let finalText = ''; // 최종 (도구 호출 없이 끝나는) assistant text
+      let currentTextBuffer = '';
+      let finalText = '';
       const usedTools: string[] = [];
+      // tool_use id → name/args 매핑. tool_result 받으면 id 로 매칭해서 render 결과 추출.
+      const pendingToolUses = new Map<string, { name: string; input: unknown }>();
+      const renderedBlocks: CliRunResult['renderedBlocks'] = [];
       let sessionId: string | undefined;
       let errored = false;
       let errorMsg: string | undefined;
@@ -279,17 +311,46 @@ export class CliClaudeCodeFormat implements FormatHandler {
             } else if (c.type === 'tool_use' && typeof c.name === 'string') {
               // 도구 호출 발생 → 지금까지의 text 는 중간 멘트 → thinking 으로 노출
               flushIntermediateAsThinking();
-              usedTools.push(c.name);
-              options.onChunk?.({ type: 'thinking', content: `[도구 호출: ${c.name}]` });
+              const bareName = stripMcpPrefix(c.name);
+              usedTools.push(bareName);
+              options.onChunk?.({ type: 'thinking', content: `[도구 호출: ${bareName}]` });
+              // tool_use id 기록 → 나중 tool_result 매칭용
+              const toolUseId = (c as unknown as { id?: string }).id;
+              if (toolUseId) pendingToolUses.set(toolUseId, { name: bareName, input: c.input });
             }
           }
         }
-        // tool_result 는 user 이벤트로 옴 — assistant 가 다시 말을 시작하는 경계
+        // tool_result 는 user 이벤트로 옴 — render_* 결과면 UI blocks 로 추출
         if (ev.type === 'user' && ev.message?.content) {
           for (const c of ev.message.content) {
             if (c.type === 'tool_result') {
-              // 도구 결과 받음 — buffer 정리 (이미 tool_use 직전에 flush 했지만 안전망)
               flushIntermediateAsThinking();
+              const toolUseId = (c as unknown as { tool_use_id?: string }).tool_use_id;
+              const pending = toolUseId ? pendingToolUses.get(toolUseId) : undefined;
+              if (pending) {
+                // Firebat MCP render 도구 결과 → UI blocks 추가
+                // content 는 array[{type:'text',text:'{"success":true,"component":"X","props":{...}}'}] 형식
+                const rawContent = (c as unknown as { content?: unknown }).content;
+                const textPayload = Array.isArray(rawContent)
+                  ? (rawContent[0] as { text?: string })?.text
+                  : typeof rawContent === 'string' ? rawContent : undefined;
+                if (textPayload) {
+                  try {
+                    const payload = JSON.parse(textPayload) as Record<string, unknown>;
+                    if (payload.success) {
+                      if (pending.name === 'render_html' && typeof payload.htmlContent === 'string') {
+                        renderedBlocks.push({ type: 'html', htmlContent: payload.htmlContent, htmlHeight: payload.htmlHeight as string | undefined });
+                      } else if (typeof payload.component === 'string') {
+                        renderedBlocks.push({ type: 'component', name: payload.component, props: (payload.props as Record<string, unknown>) ?? {} });
+                      } else if (RENDER_COMPONENT_MAP[pending.name]) {
+                        // props 는 tool_use.input 에서 추출 (서버 MCP 응답이 props 없이 success 만 줄 경우 대비)
+                        renderedBlocks.push({ type: 'component', name: RENDER_COMPONENT_MAP[pending.name], props: (pending.input as Record<string, unknown>) ?? {} });
+                      }
+                    }
+                  } catch { /* 파싱 실패 시 render 미추출 */ }
+                }
+                pendingToolUses.delete(toolUseId!);
+              }
             }
           }
         }
@@ -323,26 +384,21 @@ export class CliClaudeCodeFormat implements FormatHandler {
       });
 
       child.on('close', (code) => {
-        // 잔여 stdout 처리
         if (stdoutBuf.trim()) processLine(stdoutBuf);
-
-        // result 이벤트 없이 종료됐는데 currentTextBuffer 에 내용 있으면 그게 최종 응답
         if (!finalText && currentTextBuffer.trim()) finalText = currentTextBuffer;
 
         if (errored) {
-          resolve({ text: finalText, usedTools, sessionId, error: errorMsg });
+          resolve({ text: finalText, usedTools, renderedBlocks, sessionId, error: errorMsg });
           return;
         }
         if (code !== 0) {
           resolve({
-            text: finalText,
-            usedTools,
-            sessionId,
+            text: finalText, usedTools, renderedBlocks, sessionId,
             error: `Claude Code 비정상 종료 (exit ${code}): ${stderrBuf.slice(0, 500)}`,
           });
           return;
         }
-        resolve({ text: finalText, usedTools, sessionId });
+        resolve({ text: finalText, usedTools, renderedBlocks, sessionId });
       });
     });
   }

@@ -281,6 +281,13 @@ export interface LlmToolResponse {
   /** LLM 이 내부에서 이미 호출한 도구 이름 배열 (CLI 모드처럼 어댑터가 도구 루프를 직접 돌린 경우).
    *  Core 는 이를 executedActions 에 반영해 액션 뱃지 표시. 실제 실행은 어댑터가 끝냈으므로 재호출 X. */
   internallyUsedTools?: string[];
+  /** LLM 이 내부에서 실행한 render 도구의 결과 블록들 (CLI 모드 — UI 표시 필요).
+   *  component/html 블록 형태. ai-manager 가 자신의 blocks 배열에 추가. */
+  renderedBlocks?: Array<
+    | { type: 'text'; text: string }
+    | { type: 'html'; htmlContent: string; htmlHeight?: string }
+    | { type: 'component'; name: string; props: Record<string, unknown> }
+  >;
 }
 
 export interface ILlmPort {
