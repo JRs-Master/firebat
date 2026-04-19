@@ -49,6 +49,19 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
     `);
     try { this.db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_owner_updated ON conversations(owner, updated_at DESC)'); } catch {}
 
+    // 대화 삭제 tombstone — 한 기기에서 삭제 후 다른 기기의 stale POST 가 되살리는 레이스 방지.
+    //  - DELETE 시 tombstone 기록 + conversations row 삭제
+    //  - POST 시 tombstone 있으면 409 반환 → 클라이언트는 로컬에서도 제거
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS deleted_conversations (
+        id         TEXT NOT NULL,
+        owner      TEXT NOT NULL,
+        deleted_at INTEGER NOT NULL,
+        PRIMARY KEY (id, owner)
+      )
+    `);
+    try { this.db.exec('CREATE INDEX IF NOT EXISTS idx_deleted_conversations_owner ON deleted_conversations(owner, deleted_at DESC)'); } catch {}
+
     // 메시지 단위 벡터 임베딩 (search_history 도구용 — 과거 대화 검색)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS conversation_embeddings (

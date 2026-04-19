@@ -177,6 +177,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
 
   // DB 저장 — 명시 호출용. handleSubmit·스트림 완료·visibilitychange=hidden 3개 시점에서만.
   // 서버의 union merge 덕에 여러 번 호출해도 안전. 모바일-PC 동시 편집도 양쪽 다 보존됨.
+  // 서버가 409 (deleted tombstone) 반환하면 로컬에서도 제거 — 다른 기기의 삭제를 반영.
   const saveToDbRef = useRef<(convId: string, msgs: Message[]) => void>(() => {});
   saveToDbRef.current = (convId: string, msgs: Message[]) => {
     if (isDemo || !convId) return;
@@ -194,6 +195,20 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: convId, title, messages: cleanMsgs, createdAt }),
       keepalive: true, // navigate 중에도 요청 유지
+    }).then(res => {
+      if (res.status === 409) {
+        // 서버가 삭제된 대화라고 알려줌 → 로컬에서도 제거
+        setConversations(prev => {
+          const updated = prev.filter(c => c.id !== convId);
+          localStorage.setItem('firebat_conversations', JSON.stringify(updated));
+          return updated;
+        });
+        if (activeConvId === convId) {
+          setActiveConvId('');
+          setMessages([INIT_MESSAGE]);
+          localStorage.removeItem('firebat_active_conv');
+        }
+      }
     }).catch(() => {});
   };
 

@@ -280,6 +280,7 @@ export class FirebatCore {
     return this.conversation.save(owner, id, title, messages, createdAt);
   }
   deleteConversation(owner: string, id: string) { return this.conversation.delete(owner, id); }
+  isConversationDeleted(owner: string, id: string) { return this.conversation.isDeleted(owner, id); }
   searchConversationHistory(owner: string, query: string, opts?: { currentConvId?: string; limit?: number; withinDays?: number; minScore?: number }) {
     return this.conversation.searchHistory(owner, query, opts);
   }

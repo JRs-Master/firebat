@@ -178,6 +178,12 @@ export class ConversationManager {
   }
 
   async delete(owner: string, id: string): Promise<InfraResult<void>> {
+    // tombstone 기록 먼저 — 이후 오는 stale POST 를 서버에서 거부할 근거
+    await this.db.query(
+      `INSERT INTO deleted_conversations (id, owner, deleted_at) VALUES (?, ?, ?)
+       ON CONFLICT(id, owner) DO UPDATE SET deleted_at = excluded.deleted_at`,
+      [id, owner, Date.now()],
+    );
     const res = await this.db.query(
       `DELETE FROM conversations WHERE owner = ? AND id = ?`,
       [owner, id],
@@ -186,6 +192,15 @@ export class ConversationManager {
     // 임베딩도 함께 정리
     await this.db.query(`DELETE FROM conversation_embeddings WHERE conv_id = ? AND owner = ?`, [id, owner]);
     return { success: true };
+  }
+
+  /** 삭제 기록 여부 확인 — POST (save) 진입 시 tombstone 체크용 */
+  async isDeleted(owner: string, id: string): Promise<boolean> {
+    const res = await this.db.query(
+      `SELECT 1 FROM deleted_conversations WHERE owner = ? AND id = ? LIMIT 1`,
+      [owner, id],
+    );
+    return !!(res.success && res.data && res.data.length > 0);
   }
 
   /**

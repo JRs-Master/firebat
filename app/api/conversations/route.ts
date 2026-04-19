@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
     : NextResponse.json({ success: false, error: res.error }, { status: 500 });
 }
 
-/** POST — 대화 저장/갱신 (upsert) */
+/** POST — 대화 저장/갱신 (upsert). 삭제된 대화(tombstone) 는 409 로 거부. */
 export async function POST(req: NextRequest) {
   const auth = assertAdmin(req);
   if (auth instanceof NextResponse) return auth;
@@ -43,7 +43,12 @@ export async function POST(req: NextRequest) {
     if (!id || !title || !Array.isArray(messages)) {
       return NextResponse.json({ success: false, error: 'id, title, messages 필수' }, { status: 400 });
     }
-    const res = await getCore().saveConversation('admin', id, title, messages, createdAt);
+    const core = getCore();
+    // tombstone 체크 — 한 기기에서 삭제한 대화를 다른 기기의 stale POST 가 되살리는 것 방지
+    if (await core.isConversationDeleted('admin', id)) {
+      return NextResponse.json({ success: false, error: 'deleted', deleted: true }, { status: 409 });
+    }
+    const res = await core.saveConversation('admin', id, title, messages, createdAt);
     return res.success
       ? NextResponse.json({ success: true })
       : NextResponse.json({ success: false, error: res.error }, { status: 500 });
