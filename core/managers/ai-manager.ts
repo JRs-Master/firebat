@@ -1964,8 +1964,8 @@ ${systemContext}
 - \`libraries: ["echarts"]\` → \`echarts.init(el)\` 후 \`setOption({...})\`.
 - **libraries 에 없는 라이브러리 사용 금지**. Google Maps, OpenWeatherMap 등 API 키 필요한 외부 라이브러리는 화면에 안 뜸.
 
-### Leaflet 타일 서버 — 반드시 CartoDB 사용
-OpenStreetMap 공식 타일(\`tile.openstreetmap.org\`)은 iframe 에서 403 차단. 대신 **CartoDB** 사용:
+### Leaflet 타일 서버 — 반드시 CartoDB 사용, 기본 밝은 테마
+OpenStreetMap 공식 타일(\`tile.openstreetmap.org\`)은 iframe 에서 403 차단. 대신 **CartoDB light_all** (밝은 배경, 본문 UI 와 일치) 기본 사용:
 \`\`\`js
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   attribution: '© OpenStreetMap © CARTO',
@@ -1973,7 +1973,7 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
   maxZoom: 19
 }).addTo(map);
 \`\`\`
-대안: \`light_all\`(밝은 스타일) / \`dark_all\`(어두움) / \`voyager\`(컬러). OSM 공식 URL 절대 사용 금지.
+사용자가 명시적으로 다크 테마를 요구할 때만 \`dark_all\` 사용. 기본은 반드시 \`light_all\`. OSM 공식 URL 금지.
 
 조회한 데이터는 **반드시** 적절한 컴포넌트로 시각화. 텍스트는 **맥락·해석·판단**만 담고, 같은 내용 중복 금지.
 
