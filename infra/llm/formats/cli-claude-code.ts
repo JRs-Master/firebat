@@ -200,9 +200,12 @@ export class CliClaudeCodeFormat implements FormatHandler {
         '--print', finalPrompt,
         '--output-format', 'stream-json',
         '--verbose',
-        // Firebat MCP 도구 전부 허용 — Core 내부 checkNeedsApproval 이 위험 작업은 이미 승인 대기로 처리.
-        // (--dangerously-skip-permissions 는 root 권한에서 차단되므로 whitelist 방식 사용)
+        // Firebat MCP 도구만 허용 — Core 내부 checkNeedsApproval 이 위험 작업 승인 처리.
+        // (--dangerously-skip-permissions 는 root 권한에서 차단되므로 whitelist 방식)
         '--allowed-tools', 'mcp__firebat__*',
+        // Claude Code 내장 도구 차단 — Bash/Read/Write/Edit/Agent/ToolSearch 등은 Firebat 맥락에서
+        // 불필요한 작업 수행으로 시간 낭비. MCP 기반 Firebat 도구만 사용하도록 제한.
+        '--disallowed-tools', 'Bash,Read,Write,Edit,Glob,Grep,Task,BashOutput,KillBash,WebFetch,WebSearch,NotebookEdit,TodoWrite,ExitPlanMode',
       ];
 
       if (options.systemPrompt) {
