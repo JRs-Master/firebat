@@ -169,7 +169,10 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
   const saveToDbRef = useRef<(convId: string, msgs: Message[]) => void>(() => {});
   saveToDbRef.current = (convId: string, msgs: Message[]) => {
     if (isDemo || !convId) return;
-    const firstUser = msgs.find(m => m.role === 'user');
+    // in-progress 메시지는 DB 에 저장하지 않음 — 저장 후 세션 끊기면 "thinking" 상태가
+    // 다른 기기에서 "중단되었습니다" 로 오해되어 표시되는 문제 방지
+    const cleanMsgs = msgs.filter(m => !m.isThinking && !m.executing && !m.streaming);
+    const firstUser = cleanMsgs.find(m => m.role === 'user');
     const title = firstUser?.content
       ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
       : '새 대화';
@@ -178,7 +181,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
     fetch('/api/conversations', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: convId, title, messages: msgs, createdAt }),
+      body: JSON.stringify({ id: convId, title, messages: cleanMsgs, createdAt }),
       keepalive: true, // navigate 중에도 요청 유지
     }).catch(() => {});
   };
@@ -189,13 +192,16 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
     const flush = () => {
       if (document.visibilityState !== 'hidden') return;
       if (!activeConvId || messages.length === 0) return;
-      const firstUser = messages.find(m => m.role === 'user');
+      // in-progress 상태는 DB 에 저장하지 않음 (타기기에서 "중단되었습니다" 로 오해되는 문제 방지)
+      const cleanMsgs = messages.filter(m => !m.isThinking && !m.executing && !m.streaming);
+      if (cleanMsgs.length === 0) return;
+      const firstUser = cleanMsgs.find(m => m.role === 'user');
       const title = firstUser?.content
         ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
         : '새 대화';
       const convMeta = conversations.find(c => c.id === activeConvId);
       const createdAt = convMeta?.createdAt ?? Date.now();
-      const body = JSON.stringify({ id: activeConvId, title, messages, createdAt });
+      const body = JSON.stringify({ id: activeConvId, title, messages: cleanMsgs, createdAt });
       // sendBeacon은 JSON body 지원 불완전 → Blob 으로 래핑
       const blob = new Blob([body], { type: 'application/json' });
       try { navigator.sendBeacon('/api/conversations', blob); } catch {}
