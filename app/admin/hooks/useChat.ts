@@ -248,11 +248,11 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
                 if (remoteIds.has(c.id)) return true;
                 // 로컬에만 있는 대화: 실 메시지 있으면 타기기에서 삭제된 것 → 제거
                 const hasRealMessages = c.messages && c.messages.some(m => m.id !== 'system-init' && m.role === 'user');
-                return !hasRealMessages; // 미동기화 신규 대화는 유지
+                return !hasRealMessages;
               });
-              if (filtered.length !== prev.length) {
-                localStorage.setItem('firebat_conversations', JSON.stringify(filtered));
-              }
+              // 변경 없으면 prev 그대로 반환 — 불필요한 리렌더 방지 (iframe 재생성 차단)
+              if (filtered.length === prev.length) return prev;
+              localStorage.setItem('firebat_conversations', JSON.stringify(filtered));
               return filtered;
             });
             // 현재 활성 대화가 서버에서 삭제됐으면 화면도 정리
