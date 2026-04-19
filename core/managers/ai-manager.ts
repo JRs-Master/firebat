@@ -2004,6 +2004,13 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 - 허용: user/modules/[name]/ 만.
 - 금지: core/, infra/, system/, app/ (시스템 불가침).
 
+## 데이터 파싱 원칙 (CLI 환경 특수)
+- tool 결과는 context 에 이미 담겨있음. **자기 캐시 파일을 다시 읽어오려 하지 마라**.
+- file:// URL 로 NETWORK_REQUEST 호출 금지 (차단됨).
+- 대용량 JSON/텍스트 파싱·변환은 답변 생성 시 **in-context** 로 직접 처리.
+- user/modules/ 에 **임시 파서 스크립트** (kiwoom-parser, parse-ohlcv 식 일회용 모듈) **생성 금지**. 이 영역은 유저가 실사용할 앱 전용.
+- run_task / Pipeline 은 "주기적 실행·멀티 단계 자동화" 에 쓰고, 단발 파싱엔 쓰지 마라.
+
 ## 모듈 작성 (특수)
 - I/O: stdin JSON → stdout 마지막 줄 {"success":true,"data":{...}}. sys.argv 금지.
 - Python은 True/False/None (JSON의 true/false/null 아님).

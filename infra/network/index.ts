@@ -8,7 +8,14 @@ import { InfraResult } from '../../core/types';
 export class FetchNetworkAdapter implements INetworkPort {
   async fetch(url: string, options?: NetworkRequestOptions): Promise<InfraResult<NetworkResponse>> {
     try {
-      // 보안 추가 방어: 내부망 접근 금지 (127.0.0.x 등 방어 로직 추가 가능)
+      // http(s) 프로토콜만 허용 — file://, ftp://, data: 등은 거부
+      //  · file:// 은 로컬 파일 읽기 우회 (Claude Code 가 자기 캐시 경로 접근 시도했던 사례)
+      //  · data: 는 임의 바이트 로딩에 오용될 수 있음
+      const lower = url.trim().toLowerCase();
+      if (!lower.startsWith('http://') && !lower.startsWith('https://')) {
+        return { success: false, error: `지원하지 않는 URL 프로토콜: ${url.slice(0, 30)}... (http/https 만 허용)` };
+      }
+      // 내부망 접근 금지 (localhost·127.0.0.x)
       if (url.includes('127.0.0.1') || url.includes('localhost')) {
          return { success: false, error: 'Access Denied: Cannot access localhost via Core NetworkPort.' };
       }
