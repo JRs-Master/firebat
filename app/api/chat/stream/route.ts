@@ -5,6 +5,11 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 import { PLAN_UI_RENDER_DELAY_MS } from '../../../../infra/config';
 import type { FirebatCore } from '../../../../core';
 
+// CLI 모드 (Claude Code 등) 는 초기 MCP 도구 로딩·멀티턴 도구 사용에 수분 소요 가능.
+// Next.js 기본 타임아웃으로 SSE 끊기는 것 방지.
+export const maxDuration = 600; // 10분
+export const dynamic = 'force-dynamic';
+
 /**
  * Plan-Execute SSE 스트리밍 엔드포인트
  *
@@ -194,13 +199,30 @@ function handleToolsMode(
 
   const stream = new ReadableStream({
     async start(controller) {
+      // 연결 종료 플래그 — controller 가 닫힌 뒤 enqueue 호출하면 throw 발생.
+      // CLI 서브프로세스(Claude Code) 는 비동기로 계속 이벤트 emit 하므로,
+      // 클라이언트 abort 후에도 엉뚱한 enqueue 시도가 이어지면 uncaughtException 연쇄.
+      let closed = false;
+      const safeEnqueue = (chunk: Uint8Array) => {
+        if (closed) return;
+        try { controller.enqueue(chunk); }
+        catch { closed = true; /* 재시도 금지 — 닫힌 뒤엔 전부 무시 */ }
+      };
       const send = (event: string, data: unknown) => {
         try {
-          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-        } catch {
-          controller.enqueue(encoder.encode(`event: error\ndata: ${JSON.stringify({ error: '직렬화 실패' })}\n\n`));
-        }
+          safeEnqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch { /* JSON 직렬화 실패 시 조용히 드롭 */ }
       };
+
+      // 클라이언트 abort (페이지 닫기·탭 이동·네트워크 끊김) 감지 → flag 세팅
+      const onAbort = () => { closed = true; };
+      try { req.signal.addEventListener('abort', onAbort); } catch {}
+
+      // Keep-alive ping — 15초마다 SSE 주석. Claude Code 초기 로딩 수분 지속 시 연결 유지.
+      const keepAlive = setInterval(() => {
+        if (closed) { clearInterval(keepAlive); return; }
+        safeEnqueue(encoder.encode(`: ping ${Date.now()}\n\n`));
+      }, 15000);
 
       try {
         let stepIndex = 0;
@@ -231,7 +253,10 @@ function handleToolsMode(
       } catch (err: any) {
         send('error', { error: err.message || '알 수 없는 오류' });
       }
-      controller.close();
+      clearInterval(keepAlive);
+      try { req.signal.removeEventListener('abort', onAbort); } catch {}
+      closed = true;
+      try { controller.close(); } catch { /* 이미 닫혀있으면 무시 */ }
     },
   });
 
