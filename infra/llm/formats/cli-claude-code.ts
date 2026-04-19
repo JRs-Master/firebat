@@ -139,7 +139,8 @@ export class CliClaudeCodeFormat implements FormatHandler {
   private ensureMcpConfigFile(): string {
     const configPath = path.join(os.tmpdir(), 'firebat-claude-mcp-config.json');
     const projectDir = process.cwd();
-    const stdioPath = path.join(projectDir, 'mcp', 'stdio.ts');
+    // CLI User AI 전용 엔트리 사용 — internal-server 의 render 도구 포함 (VSCode 용 stdio.ts 와 분리)
+    const stdioPath = path.join(projectDir, 'mcp', 'stdio-user-ai.ts');
     const config = {
       mcpServers: {
         firebat: {
