@@ -122,9 +122,19 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
             if (localMatch) fullList.push(localMatch);
           }
         }
-        // 로컬에만 있는 신규 대화도 합치기
+        // 로컬에만 있는 대화 처리:
+        //  - 실 메시지가 있는 대화가 DB 에 없으면 = 다른 기기에서 삭제된 것 → 로컬에서도 제거
+        //  - 메시지가 없거나 INIT 만 있는 신규 대화는 아직 DB 동기화 전 상태 → 로컬 유지
         for (const local of convs) {
-          if (!fullList.find(c => c.id === local.id)) fullList.push(local);
+          if (fullList.find(c => c.id === local.id)) continue;
+          const hasRealMessages = local.messages && local.messages.some(m =>
+            m.id !== 'system-init' && m.role === 'user'
+          );
+          if (!hasRealMessages) {
+            // 신규 미동기화 대화 → 유지
+            fullList.push(local);
+          }
+          // 실 메시지 있는데 DB 에 없음 → 삭제된 것으로 판단, 로컬에서도 제거 (push 안 함)
         }
         // 최신 활동 순 (updatedAt 내림차순) — Sidebar 에서 위쪽이 최신
         fullList.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
