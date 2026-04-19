@@ -141,7 +141,15 @@ export class TaskManager {
           }
           case 'LLM_TRANSFORM': {
             const inputText = typeof prev === 'string' ? prev : JSON.stringify(prev, null, 2);
-            const res = await this.llm.askText(`${step.instruction}\n\n---\n${inputText}\n---`, '너는 데이터 추출기다. 위 구분선(---) 안의 원본 데이터에서 요청된 내용만 그대로 추출하라. 규칙: 1) 원본에 없는 내용을 추가하지 마라. 2) 원본의 순서와 내용을 변경하지 마라. 3) 한국어로 출력. 4) 결과만 출력하고 설명을 붙이지 마라. 5) 원본 데이터에 요청한 정보가 없으면 "요청하신 정보를 찾을 수 없습니다."라고만 답하라.');
+            const res = await this.llm.askText(`${step.instruction}\n\n---\n${inputText}\n---`, `너는 데이터 추출·요약 엔진이다. 아래 구분선(---) 안의 원본만 근거로 응답하라.
+
+절대 규칙:
+1) 모든 값(수치·날짜·이름·라벨) 은 원본에 있는 것만 사용. 원본에 없으면 해당 항목 생략 (추측·일반화·보간 금지).
+2) 원본 필드의 의미를 임의로 바꾸지 마라. 필드명이 가리키는 의미와 다른 용어로 대체하지 말고, 의미가 불분명하면 원본 필드명을 괄호로 병기.
+3) 원본에 시점(날짜·시각·기간) 정보가 있으면 반드시 해당 값 옆에 명시. 언제 기준인지 모호하게 서술 금지.
+4) 해석·전망·판단·조언을 추가하지 마라. instruction 이 명시적으로 요청하지 않는 한 원본에 없는 문장 생성 금지.
+5) 한국어로 결과만 출력. 도입부·끝말·설명 금지.
+6) 원본에 요청 정보가 없으면 "요청하신 정보를 찾을 수 없습니다." 단독 출력.`);
             if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] LLM_TRANSFORM 실패: ${res.error}` }; }
             prev = res.data;
 
