@@ -33,6 +33,8 @@ export interface RouteResult {
   source: 'cache' | 'llm';
   /** recentContext 주어졌을 때, 이전 라우팅에 대한 유저 피드백 판정 결과 */
   previousFeedback?: FeedbackSignal;
+  /** 현재 쿼리가 이전 턴 맥락을 필요로 하는지 — LLM 판정 (지시어/연속성 감지) */
+  needsPreviousContext?: boolean;
 }
 
 /** 유사 쿼리 간주 임계값 */
@@ -166,16 +168,21 @@ export class LlmRouter {
     const catalog = availableTools.map(t => `- ${t.name}: ${(t.description || '').slice(0, 100)}`).join('\n');
 
     const systemPrompt = recentContext
-      ? `당신은 Firebat 의 도구 라우터 + 유저 피드백 판정기입니다.
-두 가지 작업을 한 번에 수행:
+      ? `당신은 Firebat 의 도구 라우터 + 맥락 판정기입니다.
+세 가지 작업을 한 번에 수행:
 1) 현재 유저 쿼리에 관련된 도구 이름 선별
-2) 직전 라우팅에 대한 유저의 만족도 판정 (positive/negative/neutral)
-   - "아니 그게 아니라/틀렸/엉뚱" 등 명확한 불만 → negative
-   - "좋아/완벽/맞아/고마워" 등 명확한 만족 → positive
+2) 직전 라우팅에 대한 유저의 만족도 (positive/negative/neutral)
+   - "아니 그게 아니라/틀렸/엉뚱" → negative
+   - "좋아/완벽/맞아/고마워" → positive
    - 애매·중립·단순 이어짐 → neutral
+3) 현재 쿼리가 직전 턴 맥락을 참조해야 하는지 (needs_previous_context)
+   - true: "이거/그거/저거/아까/다시/이어서/계속/또/더/말고" 등 지시어·연속 표현이 있어
+           이전 턴을 참조해야 의미 파악 가능
+   - false: 새 주제 / 독립된 질문 (이전 턴은 참조 불필요)
+   - 판단 기준: 이전 턴을 안 보면 현재 쿼리를 이해 못 하는 경우만 true
 
 응답은 순수 JSON 만 (마크다운·설명 금지):
-{ "tools": ["name1", "name2"], "previous_feedback": "neutral" }`
+{ "tools": ["name1"], "previous_feedback": "neutral", "needs_previous_context": false }`
       : `당신은 Firebat 의 도구 라우터입니다. 유저 쿼리를 보고 관련 도구 이름만 JSON 배열로 반환하세요.
 다른 설명·마크다운·코드블록 금지. 오직 JSON 배열만.
 
@@ -213,7 +220,7 @@ ${catalog}
 
     const id = await this.saveCache('tools', query, qVec, parsed.names);
     const merged = Array.from(new Set([...alwaysInclude, ...parsed.names]));
-    return { names: merged, cacheId: id, source: 'llm', previousFeedback: parsed.feedback };
+    return { names: merged, cacheId: id, source: 'llm', previousFeedback: parsed.feedback, needsPreviousContext: parsed.needsPreviousContext };
   }
 
   /** 컴포넌트 라우팅 — 유저 쿼리로 관련 컴포넌트 이름 배열 반환 */
@@ -252,7 +259,7 @@ ${catalogText}
 }
 
 /** LLM 응답 파싱: 배열 형태 또는 {tools, previous_feedback} 오브젝트 형태 모두 지원 */
-function parseRouteResponse(text: string, validNames: string[], expectFeedback: boolean): { names: string[]; feedback?: FeedbackSignal } {
+function parseRouteResponse(text: string, validNames: string[], expectFeedback: boolean): { names: string[]; feedback?: FeedbackSignal; needsPreviousContext?: boolean } {
   const cleaned = text
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```\s*$/i, '')
@@ -269,6 +276,7 @@ function parseRouteResponse(text: string, validNames: string[], expectFeedback: 
 
   let namesRaw: unknown;
   let feedback: FeedbackSignal | undefined;
+  let needsPreviousContext: boolean | undefined;
 
   if (Array.isArray(parsed)) {
     namesRaw = parsed;
@@ -277,12 +285,13 @@ function parseRouteResponse(text: string, validNames: string[], expectFeedback: 
     namesRaw = obj.tools ?? obj.names ?? obj.components;
     const fb = obj.previous_feedback;
     if (fb === 'positive' || fb === 'negative' || fb === 'neutral') feedback = fb;
+    if (typeof obj.needs_previous_context === 'boolean') needsPreviousContext = obj.needs_previous_context;
   }
 
-  if (!Array.isArray(namesRaw)) return { names: [], feedback };
+  if (!Array.isArray(namesRaw)) return { names: [], feedback, needsPreviousContext };
   const validSet = new Set(validNames);
   const names = (namesRaw as unknown[])
     .filter((x): x is string => typeof x === 'string')
     .filter(n => validSet.has(n));
-  return { names, feedback };
+  return { names, feedback, needsPreviousContext };
 }
