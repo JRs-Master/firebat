@@ -138,49 +138,43 @@ export class ConversationManager {
     return { success: true };
   }
 
-  /** 메시지 ID 기준 union merge. 동일 id 존재 시 incoming 쪽 우선. */
+  /**
+   * 메시지 ID 기준 union merge — 동일 id 는 incoming 우선.
+   * merge 후 id 의 timestamp 로 시간순 정렬 — 다기기 out-of-order 저장 시 순서 꼬임 방지.
+   * (id 형식: "u-${Date.now()}" / "s-${Date.now()}" / "system-init" 등)
+   */
   private unionMergeMessages(existing: unknown[], incoming: unknown[]): unknown[] {
     const getId = (m: unknown): string | null => {
       if (!m || typeof m !== 'object') return null;
       const id = (m as Record<string, unknown>).id;
       return typeof id === 'string' && id ? id : null;
     };
-    // 모든 id 수집 (incoming 우선 순위)
+    // id 의 숫자 부분 (timestamp) 추출 — "u-1776559416890" → 1776559416890
+    const getTs = (id: string | null): number => {
+      if (!id) return 0;
+      const m = id.match(/(\d{10,})/);
+      return m ? parseInt(m[1], 10) : 0;
+    };
+    // 모든 메시지 union (같은 id 면 incoming 우선)
     const byId = new Map<string, unknown>();
-    const noId: unknown[] = [];
-    // 먼저 existing 을 byId에 채움
+    const noIdMsgs: unknown[] = [];
     for (const m of existing) {
       const mid = getId(m);
       if (mid) byId.set(mid, m);
-      else noId.push(m);
+      else noIdMsgs.push(m);
     }
-    // incoming 으로 덮어씀 + 신규 추가
     for (const m of incoming) {
       const mid = getId(m);
       if (mid) byId.set(mid, m);
+      else if (!noIdMsgs.includes(m)) noIdMsgs.push(m);
     }
-    // incoming 의 id 없는 메시지도 append (ID 없는 건 dedup 불가하지만 놓치지 않도록)
-    for (const m of incoming) {
-      if (!getId(m) && !existing.includes(m)) noId.push(m);
-    }
-    // 순서: incoming 순서 유지. 기존 existing 중 incoming 에 없는 것 뒤에 추가.
-    const result: unknown[] = [];
-    const seenIds = new Set<string>();
-    for (const m of incoming) {
-      const mid = getId(m);
-      if (mid) {
-        result.push(byId.get(mid) ?? m);
-        seenIds.add(mid);
-      } else {
-        result.push(m);
-      }
-    }
-    // existing 중 incoming 에 없는 id 의 메시지는 뒤에 append
-    for (const m of existing) {
-      const mid = getId(m);
-      if (mid && !seenIds.has(mid)) result.push(m);
-    }
-    return result;
+    // timestamp 순으로 정렬 (id 에 ts 없으면 맨 앞/뒤 배치)
+    const withId = Array.from(byId.entries())
+      .map(([id, msg]) => ({ id, msg, ts: getTs(id) }))
+      .sort((a, b) => a.ts - b.ts)
+      .map(x => x.msg);
+    // id 없는 메시지는 그대로 뒤에 (순서 불확실하지만 보존)
+    return [...withId, ...noIdMsgs];
   }
 
   async delete(owner: string, id: string): Promise<InfraResult<void>> {
