@@ -168,8 +168,8 @@ export class CliClaudeCodeFormat implements FormatHandler {
   }
 
   /**
-   * Claude Code 가 ~/.claude/projects/*/tool-results/*.txt 에 만드는 디스크 캐시를 정리.
-   * 세션 종료마다 호출 — 오래된 캐시가 디스크 누적되는 것 방지.
+   * Claude Code 가 ~/.claude/projects/ 하위 각 프로젝트의 tool-results 디렉토리에 만드는
+   * 디스크 캐시를 정리. 세션 종료마다 호출 — 오래된 캐시가 디스크 누적되는 것 방지.
    * 10분 이전 파일만 제거 (현재 실행 중 참조 방지).
    */
   private async cleanupClaudeCacheFiles(): Promise<void> {
