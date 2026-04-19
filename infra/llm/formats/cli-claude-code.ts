@@ -265,7 +265,7 @@ export class CliClaudeCodeFormat implements FormatHandler {
         // --print 모드는 prompt 를 인자로 받으므로 stdin 불필요.
         child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'] });
       } catch (e) {
-        resolve({ text: '', usedTools: [], error: `Claude Code CLI 실행 실패 (claude 명령어 미설치?): ${(e as Error).message}` });
+        resolve({ text: '', usedTools: [], renderedBlocks: [], error: `Claude Code CLI 실행 실패 (claude 명령어 미설치?): ${(e as Error).message}` });
         return;
       }
 
@@ -303,11 +303,17 @@ export class CliClaudeCodeFormat implements FormatHandler {
           return;
         }
 
-        // assistant: text 누적 / tool_use 감지 시 직전까지의 text 를 중간 멘트로 처리
+        // assistant: text / thinking / tool_use
         if (ev.type === 'assistant' && ev.message?.content) {
           for (const c of ev.message.content) {
             if (c.type === 'text' && typeof c.text === 'string') {
               currentTextBuffer += c.text;
+            } else if (c.type === 'thinking') {
+              // Extended thinking 블록 — UI 의 "생각 중" 영역으로 스트리밍
+              const thinkingText = (c as unknown as { thinking?: string }).thinking;
+              if (typeof thinkingText === 'string' && thinkingText) {
+                options.onChunk?.({ type: 'thinking', content: thinkingText });
+              }
             } else if (c.type === 'tool_use' && typeof c.name === 'string') {
               // 도구 호출 발생 → 지금까지의 text 는 중간 멘트 → thinking 으로 노출
               flushIntermediateAsThinking();
@@ -380,7 +386,7 @@ export class CliClaudeCodeFormat implements FormatHandler {
       });
 
       child.on('error', (e) => {
-        resolve({ text: '', usedTools, error: `Claude Code CLI 프로세스 에러: ${e.message}` });
+        resolve({ text: '', usedTools, renderedBlocks, error: `Claude Code CLI 프로세스 에러: ${e.message}` });
       });
 
       child.on('close', (code) => {
