@@ -49,12 +49,14 @@ export const THINKING_LEVELS = [
 export type ThinkingKind = 'reasoning' | 'thinking' | 'extendedThinking' | null;
 
 export function getThinkingKind(model: string): ThinkingKind {
-  if (model.startsWith('gpt-')) return 'reasoning';           // OpenAI reasoning.effort
-  if (model.startsWith('claude-')) return 'extendedThinking'; // Anthropic enabled/disabled
-  if (model.startsWith('cli-claude-code')) return 'extendedThinking'; // Claude Code CLI 도 budget_tokens 기반
+  if (model.startsWith('gpt-')) return 'reasoning';              // OpenAI reasoning.effort
+  if (model.startsWith('claude-')) return 'extendedThinking';    // Anthropic enabled/disabled
+  if (model.startsWith('cli-claude-code')) return 'extendedThinking'; // Claude Code CLI --effort
+  if (model.startsWith('cli-codex')) return 'reasoning';          // Codex CLI --config model_reasoning_effort
+  if (model.startsWith('cli-gemini')) return null;                // Gemini CLI 는 thinking 플래그 미지원 (CLI 내부 자동)
   if (model.startsWith('gemini-')) {
-    if (model.includes('flash-lite')) return null;            // Lite는 thinking 미지원
-    return 'thinking';                                         // Gemini thinkingLevel
+    if (model.includes('flash-lite')) return null;                // Lite는 thinking 미지원
+    return 'thinking';                                             // Gemini thinkingLevel
   }
   return null;
 }

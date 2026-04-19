@@ -4,14 +4,12 @@
  * OpenAI Codex CLI 를 자식 프로세스로 spawn 하여 실행. ChatGPT Plus/Pro 구독 사용.
  * 인증은 `codex login` 으로 브라우저 OAuth (API 키 불필요).
  *
- * 실행: codex exec "prompt" --json
- * MCP: ~/.codex/config.toml 또는 --config 플래그로 지정.
- *
- * Claude Code 와 MCP 연결 방식·출력 파싱은 다름.
- * 기본 버전 — 텍스트 + 도구 뱃지 수준. render block 추출은 Codex 의 실제 이벤트
- * 포맷 확정 후 확장 예정 (현재는 구독 연결 + 기본 응답 전달 목표).
+ * 실행: codex exec "prompt" --json --skip-git-repo-check --full-auto
+ * MCP: ~/.codex/config.toml 대신 임시 CODEX_HOME 디렉토리에 config.toml 생성 후 env 주입.
+ * Thinking: --config model_reasoning_effort=<level> (minimal|low|medium|high|xhigh)
  */
-import { spawn } from 'child_process';
+import { spawn, ChildProcessByStdio } from 'child_process';
+import type { Readable } from 'stream';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -30,8 +28,17 @@ interface RunOptions {
   systemPrompt?: string;
   history?: ChatMessage[];
   cliModel?: string;
-  mcpConfigPath?: string;
+  codexHome?: string;
+  thinkingLevel?: string;
   onChunk?: LlmCallOpts['onChunk'];
+}
+
+/** THINKING_LEVELS → Codex model_reasoning_effort 매핑 (max 미지원, xhigh 모델 의존) */
+function mapThinkingToCodex(level?: string): string | undefined {
+  if (!level || level === 'none') return undefined;
+  if (level === 'max') return 'xhigh';
+  if (['minimal', 'low', 'medium', 'high', 'xhigh'].includes(level)) return level;
+  return undefined;
 }
 
 export class CliCodexFormat implements FormatHandler {
@@ -39,7 +46,7 @@ export class CliCodexFormat implements FormatHandler {
     const jsonInstruction = opts?.jsonSchema
       ? `\n\n응답은 다음 JSON 스키마를 정확히 따르는 JSON 객체로만 반환 (마크다운·설명 금지):\n${JSON.stringify(opts.jsonSchema)}`
       : '\n\n응답은 JSON 객체로만 반환 (마크다운·설명 금지).';
-    const res = await this.runCodex(prompt + jsonInstruction, { systemPrompt, history });
+    const res = await this.runCodex(prompt + jsonInstruction, { systemPrompt, history, thinkingLevel: opts?.thinkingLevel });
     if (res.error) return { success: false, error: res.error };
     try { return { success: true, data: JSON.parse(res.text) as LlmJsonResponse }; }
     catch { return { success: true, data: { thoughts: '', reply: res.text, actions: [], suggestions: [] } }; }
@@ -49,20 +56,21 @@ export class CliCodexFormat implements FormatHandler {
     const jsonInstruction = opts?.jsonSchema
       ? `\n\n응답은 다음 JSON 스키마를 정확히 따르는 JSON 객체로만 반환 (마크다운·설명 금지):\n${JSON.stringify(opts.jsonSchema)}`
       : opts?.jsonMode ? '\n\n응답은 JSON 객체로만 반환.' : '';
-    const res = await this.runCodex(prompt + jsonInstruction, { systemPrompt, onChunk: opts?.onChunk });
+    const res = await this.runCodex(prompt + jsonInstruction, { systemPrompt, onChunk: opts?.onChunk, thinkingLevel: opts?.thinkingLevel });
     if (res.error) return { success: false, error: res.error };
     return { success: true, data: res.text };
   }
 
   async askWithTools(prompt: string, systemPrompt: string, _tools: ToolDefinition[], history: ChatMessage[], _toolExchanges: ToolExchangeEntry[], opts: LlmCallOpts | undefined, ctx: FormatHandlerContext): Promise<InfraResult<LlmToolResponse>> {
     const mcpCfg = ctx.resolveMcpConfig?.();
-    const mcpConfigPath = this.ensureMcpConfigFile(mcpCfg?.token, mcpCfg?.url?.replace(/\/api\/mcp-internal.*$/, ''));
+    const codexHome = this.ensureCodexHome(mcpCfg?.token, mcpCfg?.url?.replace(/\/api\/mcp-internal.*$/, ''));
     const cliModel = ctx.config.cliModel;
     const res = await this.runCodex(prompt, {
       systemPrompt,
       history,
       cliModel,
-      mcpConfigPath,
+      codexHome,
+      thinkingLevel: opts?.thinkingLevel,
       onChunk: opts?.onChunk,
     });
     if (res.error) return { success: false, error: res.error };
@@ -77,25 +85,36 @@ export class CliCodexFormat implements FormatHandler {
     };
   }
 
-  private ensureMcpConfigFile(internalMcpToken?: string | null, baseUrl?: string): string {
-    const configPath = path.join(os.tmpdir(), 'firebat-codex-mcp-config.json');
-    let config: Record<string, unknown>;
+  /** Firebat 전용 CODEX_HOME 디렉토리 생성 + config.toml 쓰기 */
+  private ensureCodexHome(internalMcpToken?: string | null, baseUrl?: string): string {
+    const codexHome = path.join(os.tmpdir(), 'firebat-codex-home');
+    fs.mkdirSync(codexHome, { recursive: true });
+    // 기존 ~/.codex/auth.json 복사 (로그인 세션 유지)
+    const realAuth = path.join(os.homedir(), '.codex', 'auth.json');
+    const tmpAuth = path.join(codexHome, 'auth.json');
+    if (fs.existsSync(realAuth) && !fs.existsSync(tmpAuth)) {
+      try { fs.copyFileSync(realAuth, tmpAuth); } catch { /* 권한 이슈는 무시 */ }
+    }
+
+    let toml = '';
     if (internalMcpToken) {
+      // HTTP 전송은 experimental_use_rmcp_client 필요 (현재 미지원 가능) — stdio 우선
+      // baseUrl 이 있으면 향후 HTTP 시도용으로 남겨두지만 기본은 stdio 사용
       const url = `${baseUrl || 'http://127.0.0.1:3000'}/api/mcp-internal`;
-      config = {
-        mcpServers: {
-          firebat: { type: 'http', url, headers: { Authorization: `Bearer ${internalMcpToken}` } },
-        },
-      };
+      toml += `[features]\nexperimental_use_rmcp_client = true\n\n`;
+      toml += `[mcp_servers.firebat]\n`;
+      toml += `url = "${url}"\n`;
+      toml += `bearer_token_env_var = "FIREBAT_MCP_TOKEN"\n`;
     } else {
       const projectDir = process.cwd();
-      const stdioPath = path.join(projectDir, 'mcp', 'stdio-user-ai.ts');
-      config = {
-        mcpServers: { firebat: { command: 'npx', args: ['tsx', stdioPath], cwd: projectDir } },
-      };
+      const stdioPath = path.join(projectDir, 'mcp', 'stdio-user-ai.ts').replace(/\\/g, '\\\\');
+      toml += `[mcp_servers.firebat]\n`;
+      toml += `command = "npx"\n`;
+      toml += `args = ["tsx", "${stdioPath}"]\n`;
+      toml += `cwd = "${projectDir.replace(/\\/g, '\\\\')}"\n`;
     }
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
-    return configPath;
+    fs.writeFileSync(path.join(codexHome, 'config.toml'), toml);
+    return codexHome;
   }
 
   private buildPromptWithHistory(prompt: string, history?: ChatMessage[]): string {
@@ -116,18 +135,20 @@ export class CliCodexFormat implements FormatHandler {
         ? `${options.systemPrompt}\n\n${finalPrompt}`
         : finalPrompt;
 
-      // codex exec — non-interactive 모드. --json 으로 이벤트 스트림.
-      const args: string[] = ['exec', promptWithSystem, '--json', '--skip-git-repo-check'];
-      if (options.cliModel) {
-        args.push('--model', options.cliModel);
-      }
-      if (options.mcpConfigPath) {
-        args.push('--config', `mcp_config_file=${options.mcpConfigPath}`);
-      }
+      // codex exec — non-interactive + --full-auto (workspace-write + on-request approval)
+      const args: string[] = ['exec', promptWithSystem, '--json', '--skip-git-repo-check', '--full-auto'];
+      if (options.cliModel) args.push('--model', options.cliModel);
 
-      let child;
+      const effort = mapThinkingToCodex(options.thinkingLevel);
+      if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
+
+      const childEnv: NodeJS.ProcessEnv = options.codexHome
+        ? { ...process.env, CODEX_HOME: options.codexHome }
+        : process.env;
+
+      let child: ChildProcessByStdio<null, Readable, Readable>;
       try {
-        child = spawn('codex', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        child = spawn('codex', args, { stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
       } catch (e) {
         resolve({ text: '', usedTools: [], error: `Codex CLI 실행 실패 (codex 명령어 미설치?): ${(e as Error).message}` });
         return;
@@ -150,16 +171,13 @@ export class CliCodexFormat implements FormatHandler {
             errorMsg = (ev.message as string) || (ev.error as string) || 'Codex 오류';
             return;
           }
-          // session id
           if (typeof ev.session_id === 'string' && !sessionId) sessionId = ev.session_id;
           if (typeof ev.id === 'string' && !sessionId) sessionId = ev.id;
-          // text 추출 — 여러 이벤트 포맷 대응
           const text = (ev.text as string) ?? (ev.content as string) ?? (ev.message as string) ?? (ev.output as string);
           if (typeof text === 'string' && text) {
             textParts.push(text);
             options.onChunk?.({ type: 'text', content: text });
           }
-          // tool_use
           if (ev.type === 'tool_use' || ev.type === 'tool_call') {
             const toolName = (ev.name as string) || (ev.tool as string);
             if (toolName) {
@@ -169,7 +187,6 @@ export class CliCodexFormat implements FormatHandler {
             }
           }
         } catch {
-          // JSON 아닌 텍스트 — 일반 출력으로 누적
           textParts.push(line);
           options.onChunk?.({ type: 'text', content: line });
         }

@@ -69,18 +69,12 @@ interface RunOptions {
   onChunk?: LlmCallOpts['onChunk'];
 }
 
-/** Firebat thinkingLevel → Anthropic extended thinking budget_tokens */
-function thinkingBudgetTokens(level?: string): number | null {
-  if (!level || level === 'none') return null;
-  const map: Record<string, number> = {
-    minimal: 1024,
-    low: 2048,
-    medium: 8192,
-    high: 16384,
-    xhigh: 32768,
-    max: 65536,
-  };
-  return map[level] ?? null;
+/** Firebat thinkingLevel → Claude Code CLI --effort 값 (low/medium/high/xhigh/max).
+ *  minimal/none 은 미지원이므로 null 반환 (플래그 생략). */
+function mapThinkingToEffort(level?: string): string | null {
+  if (!level || level === 'none' || level === 'minimal') return null;
+  if (['low', 'medium', 'high', 'xhigh', 'max'].includes(level)) return level;
+  return null;
 }
 
 /** stream-json 이벤트 타입 */
@@ -285,9 +279,9 @@ export class CliClaudeCodeFormat implements FormatHandler {
       if (options.cliModel) {
         args.push('--model', options.cliModel);
       }
-      const thinkingBudget = thinkingBudgetTokens(options.thinkingLevel);
-      if (thinkingBudget != null) {
-        args.push('--max-thinking-tokens', String(thinkingBudget));
+      const effort = mapThinkingToEffort(options.thinkingLevel);
+      if (effort) {
+        args.push('--effort', effort);
       }
 
       let child;
