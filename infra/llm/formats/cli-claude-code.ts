@@ -168,6 +168,35 @@ export class CliClaudeCodeFormat implements FormatHandler {
   }
 
   /**
+   * Claude Code 가 ~/.claude/projects/*/tool-results/*.txt 에 만드는 디스크 캐시를 정리.
+   * 세션 종료마다 호출 — 오래된 캐시가 디스크 누적되는 것 방지.
+   * 10분 이전 파일만 제거 (현재 실행 중 참조 방지).
+   */
+  private async cleanupClaudeCacheFiles(): Promise<void> {
+    try {
+      const homeDir = os.homedir();
+      const claudeProjectsDir = path.join(homeDir, '.claude', 'projects');
+      if (!fs.existsSync(claudeProjectsDir)) return;
+      const tenMinAgo = Date.now() - 10 * 60 * 1000;
+      const entries = fs.readdirSync(claudeProjectsDir);
+      for (const proj of entries) {
+        const toolResultsDir = path.join(claudeProjectsDir, proj, 'tool-results');
+        if (!fs.existsSync(toolResultsDir)) continue;
+        try {
+          const files = fs.readdirSync(toolResultsDir);
+          for (const f of files) {
+            const fp = path.join(toolResultsDir, f);
+            try {
+              const st = fs.statSync(fp);
+              if (st.mtimeMs < tenMinAgo) fs.unlinkSync(fp);
+            } catch {}
+          }
+        } catch {}
+      }
+    } catch {}
+  }
+
+  /**
    * Firebat MCP 서버를 연결한 mcp-config.json 을 임시 디렉토리에 생성.
    *
    * HTTP streamable 전송 우선 — 이미 Firebat 메인 프로세스에 떠있는 /api/mcp-internal 에 연결.
@@ -392,6 +421,10 @@ export class CliClaudeCodeFormat implements FormatHandler {
       child.on('close', (code) => {
         if (stdoutBuf.trim()) processLine(stdoutBuf);
         if (!finalText && currentTextBuffer.trim()) finalText = currentTextBuffer;
+
+        // Claude Code 자체가 디스크에 만든 tool-results 캐시 정리
+        // (매 요청마다 쌓이면 디스크 낭비 + 예전 캐시 참조로 혼란 가능성)
+        this.cleanupClaudeCacheFiles().catch(() => {});
 
         if (errored) {
           resolve({ text: finalText, usedTools, renderedBlocks, sessionId, error: errorMsg });
