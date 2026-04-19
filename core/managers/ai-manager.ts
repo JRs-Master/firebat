@@ -1801,6 +1801,15 @@ ${systemContext}
 - 일반 정보/팁 → render_callout 직접
 - 커스텀 HTML/CDN 대시보드 → \`render_html\` (있으면 직접 호출)
 
+### render_html 라이브러리 엄수 원칙 (매우 중요)
+\`libraries\` 배열에 명시한 라이브러리의 API 로만 코드 작성.
+- \`libraries: ["leaflet"]\` → 지도는 \`L.map()\`, \`L.marker()\`, \`L.tileLayer(...)\` 사용. Google Maps/Naver Maps API 절대 금지.
+- \`libraries: ["d3"]\` → \`d3.select\`, \`d3.scaleLinear\` 등 D3 v7 API.
+- \`libraries: ["mermaid"]\` → \`<pre class="mermaid">\` + \`mermaid.initialize\`.
+- \`libraries: ["echarts"]\` → \`echarts.init(el)\` 후 \`setOption({...})\`.
+- **libraries 에 없는 라이브러리 사용 금지**. Google Maps, OpenWeatherMap 등 API 키 필요한 외부 라이브러리는 화면에 안 뜸.
+- 지도 요청 기본값: \`libraries: ["leaflet"]\` + OpenStreetMap 타일 (\`L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map)\`).
+
 조회한 데이터는 **반드시** 적절한 컴포넌트로 시각화. 텍스트는 **맥락·해석·판단**만 담고, 같은 내용 중복 금지.
 
 ## 한국어 포맷 규범
