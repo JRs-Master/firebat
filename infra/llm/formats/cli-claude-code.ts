@@ -108,7 +108,9 @@ export class CliClaudeCodeFormat implements FormatHandler {
     // 우리는 prompt + systemPrompt + 초기 history 를 넘기고 최종 text 만 받음.
     // toolExchanges 는 CLI 내부 처리이므로 빈 배열 반환.
     const resumeSessionId = (opts as { cliSessionId?: string })?.cliSessionId;
-    const mcpConfigPath = this.ensureMcpConfigFile();
+    // HTTP MCP 우선 — 내부 토큰 있으면 Firebat 메인 프로세스 /api/mcp-internal 에 연결 (즉시)
+    const mcpCfg = ctx.resolveMcpConfig?.();
+    const mcpConfigPath = this.ensureMcpConfigFile(mcpCfg?.token, mcpCfg?.url?.replace(/\/api\/mcp-internal.*$/, ''));
     const cliModel = ctx.config.cliModel;
 
     const res = await this.runClaude(prompt, {
@@ -134,22 +136,43 @@ export class CliClaudeCodeFormat implements FormatHandler {
 
   /**
    * Firebat MCP 서버를 연결한 mcp-config.json 을 임시 디렉토리에 생성.
-   * Claude Code 가 이 config 로 MCP 서버 연결 → Firebat 내부 도구 사용 가능.
+   *
+   * HTTP streamable 전송 우선 — 이미 Firebat 메인 프로세스에 떠있는 /api/mcp-internal 에 연결.
+   * 매 claude spawn 마다 서브프로세스로 Firebat Core 를 재부팅(~수분) 하지 않고 즉시 도구 사용 가능.
+   *
+   * 내부 MCP 토큰이 없으면 stdio 폴백 (기존 경로, 초기 부팅 느림).
    */
-  private ensureMcpConfigFile(): string {
+  private ensureMcpConfigFile(internalMcpToken?: string | null, baseUrl?: string): string {
     const configPath = path.join(os.tmpdir(), 'firebat-claude-mcp-config.json');
     const projectDir = process.cwd();
-    // CLI User AI 전용 엔트리 사용 — internal-server 의 render 도구 포함 (VSCode 용 stdio.ts 와 분리)
-    const stdioPath = path.join(projectDir, 'mcp', 'stdio-user-ai.ts');
-    const config = {
-      mcpServers: {
-        firebat: {
-          command: 'npx',
-          args: ['tsx', stdioPath],
-          cwd: projectDir,
+
+    let config: Record<string, unknown>;
+    if (internalMcpToken) {
+      // HTTP streamable — Firebat 메인 프로세스의 /api/mcp-internal 에 연결 (즉시, 캐시된 Core 공유)
+      const url = `${baseUrl || 'http://127.0.0.1:3000'}/api/mcp-internal`;
+      config = {
+        mcpServers: {
+          firebat: {
+            type: 'http',
+            url,
+            headers: { Authorization: `Bearer ${internalMcpToken}` },
+          },
         },
-      },
-    };
+      };
+    } else {
+      // stdio 폴백 — 토큰 미설정 시. 매번 Firebat Core 재부팅하므로 초기 호출 느림.
+      const stdioPath = path.join(projectDir, 'mcp', 'stdio-user-ai.ts');
+      config = {
+        mcpServers: {
+          firebat: {
+            command: 'npx',
+            args: ['tsx', stdioPath],
+            cwd: projectDir,
+          },
+        },
+      };
+    }
+
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
     return configPath;
   }
