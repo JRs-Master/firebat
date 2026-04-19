@@ -37,9 +37,10 @@
 
 ---
 
-## 제2장: Page Component 목록 (22종)
+## 제2장: Page Component 목록 (27종)
 
 페이지용 컴포넌트. `save_page`로 DB에 저장 → `app/(user)/[slug]/page.tsx`가 렌더.
+채팅에서는 `render_<name>` 도구로도 직접 렌더 가능.
 
 ### 기본 UI
 | Component | 역할 | 주요 Props |
@@ -79,9 +80,23 @@
 ### 시각화
 | Component | 역할 | 주요 Props |
 |---|---|---|
-| `Chart` | 단순 차트 | type(bar/line/pie/doughnut), data, labels, title |
+| `Chart` | 단순 차트 (색상/팔레트 커스텀) | type(bar/line/pie/doughnut), data, labels, title, color, palette, subtitle, unit, showValues |
 | `Html` | 사용자 HTML (iframe sandbox) | content |
 | `AdSlot` | 광고 슬롯 | slotId, format |
+
+### 카드·요약 (v0.1, 2026-04-19 추가)
+| Component | 역할 | 주요 Props |
+|---|---|---|
+| `Metric` | KPI 카드 (값 + 변화량 + 아이콘) | label, value, delta, unit, icon, trend(up/down) |
+| `Timeline` | 세로 타임라인 | items[{title, date, description, status}] |
+| `Compare` | 2열 비교 카드 | left{title, points[]}, right{title, points[]}, title |
+| `KeyValue` | 키-값 리스트 | entries[{label, value, highlight?}] |
+| `StatusBadge` | 상태 배지 그룹 | items[{label, status(ok/warn/error/info)}] |
+
+### 알림 확장 (v0.1, 2026-04-18)
+| Component | 역할 | 주요 Props |
+|---|---|---|
+| `Callout` | 정보 강조 박스 | type(info/success/tip/accent/highlight/neutral), title, content |
 
 ---
 

@@ -310,6 +310,8 @@ export function Sidebar({
     for (const pg of orphanPages) {
       result.push({ name: pg.slug, paths: [], pages: [pg] });
     }
+    // ABC 정렬 (생성·수정 시 순서 변경 방지). 대소문자 무시 + 한/영 locale-aware.
+    result.sort((a, b) => a.name.localeCompare(b.name, 'ko', { sensitivity: 'base' }));
     return result;
   })();
 

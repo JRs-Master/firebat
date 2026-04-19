@@ -24,7 +24,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - `IStoragePort` 구현.
 - **경로 탐색 공격 차단**: `isInsideZone` + `path.resolve` containment 체크.
 - **쓰기 허용 구역**: `app/(user)/`, `user/`
-- **읽기 허용 구역**: `app/(user)/`, `user/`, `docs/`, `system/guidelines/`, `system/modules/`
+- **읽기 허용 구역**: `app/(user)/`, `user/`, `docs/`, `system/modules/`, `system/services/`
 - `listDir(path)`: `{name, isDirectory}[]` 반환.
 
 ### 2. Log Adapter (`infra/log/`)
@@ -50,14 +50,17 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - **Config 파일** (`infra/llm/configs/*.json`): 모델당 1개. 새 LLM 도입 시 JSON 추가만으로 확장.
   - 필수: `id`, `displayName`, `provider`, `format`, `endpoint`, `apiKeyVaultKey`.
   - 선택: `features` (mcpConnector/strictTools/reasoning/thinking/extendedThinking/toolSearch/promptCache24h 등), `pricing`, `extraHeaders`.
-- **포맷 핸들러 5종** (`infra/llm/formats/*.ts`):
-  | format | SDK | 용도 |
+- **포맷 핸들러 8종** (`infra/llm/formats/*.ts`) — API 5 + CLI 3:
+  | format | SDK / 실행 | 용도 |
   |---|---|---|
   | `openai-responses` | `openai` | OpenAI Responses API — GPT-5.4 (MCP hosted, tool_search, previous_response_id, 24h cache, reasoning) |
   | `anthropic-messages` | `@anthropic-ai/sdk` | Anthropic Messages API — Claude 4 (MCP hosted, extended thinking) |
   | `gemini-native` | `@google/genai` (apiKey) | Gemini AI Studio — 네이티브 functionCall/functionResponse 멀티턴 |
   | `vertex-gemini` | `@google/genai` (vertexai:true) | GCP Vertex AI — Service Account JSON + OAuth access token 자동 갱신 |
   | `openai-chat` | `openai` | OpenAI Chat Completions 호환 (Ollama/OpenRouter/LM Studio 등 서드파티) |
+  | `cli-claude-code` | `claude` 자식 프로세스 | Claude Pro/Max 구독. stream-json 이벤트 파싱, `--effort` thinking, `--mcp-config` |
+  | `cli-codex` | `codex exec` 자식 프로세스 | ChatGPT Plus/Pro 구독. 임시 `CODEX_HOME`에 config.toml + stdio MCP, `model_reasoning_effort` |
+  | `cli-gemini` | `gemini -p` 자식 프로세스 | Google AI Pro 구독. 임시 `GEMINI_HOME`에 settings.json + stdio MCP, `--output-format stream-json` |
 - **ConfigDrivenAdapter**: `config.format` → 해당 FormatHandler에 위임. 각 핸들러는 `ask/askText/askWithTools` 시그니처 통일.
 - **Lazy 인증**: API Key/Service Account는 resolver 함수로 첫 호출 시 로드. Vault 변경 시 WeakMap 캐시 무효화.
 - **인증 분리**: API Key (OpenAI/Gemini/Anthropic) vs Service Account JSON (Vertex).
@@ -102,7 +105,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 ### 9. MCP Client Adapter (`infra/mcp-client/`)
 - `IMcpClientPort` 구현.
 - 외부 MCP 서버(Gmail, Slack 등) 접속 및 도구 호출.
-- **전송 방식**: stdio (로컬 프로세스) + SSE (원격 서버).
+- **전송 방식**: stdio (로컬 프로세스) + Streamable HTTP (원격 서버).
 - **영속 저장**: `data/mcp-servers.json`.
 - `addServer`/`removeServer`/`listTools`/`callTool`/`listAllTools`/`disconnectAll`.
 

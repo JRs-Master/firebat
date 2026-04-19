@@ -74,7 +74,7 @@ interface FirebatInfraContainer {
 모든 API route는 `getCore()` → Core 메서드 호출 패턴을 따른다.
 
 ### 제1-1항. 11-Manager 아키텍처 (2026-04-16)
-`FirebatCore`는 **얇은 라우팅 파사드**. 비즈니스 로직은 10개 도메인 매니저에 위임한다.
+`FirebatCore`는 **얇은 라우팅 파사드**. 비즈니스 로직은 11개 도메인 매니저에 위임한다.
 
 | 매니저 | 인프라 포트 | Core 참조 | 역할 |
 |---|---|---|---|

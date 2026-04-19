@@ -22,24 +22,33 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
   // AI 탭: 실행모드(api/cli) + 모드(일반/Vertex) + 프로바이더(openai/google/anthropic)
   // api 모드: 키 기반, pay-per-token (기존)
   // cli 모드: 구독 기반, 자체 인증 (월정액 Claude Pro/Max, ChatGPT Plus, Gemini Advanced 등)
-  const inferModeProvider = (model: string): { execMode: 'api' | 'cli'; mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic' } => {
-    if (model.startsWith('cli-')) return { execMode: 'cli', mode: 'general', provider: 'anthropic' };
-    if (model.endsWith('-vertex')) return { execMode: 'api', mode: 'vertex', provider: 'google' };
-    if (model.startsWith('gpt-')) return { execMode: 'api', mode: 'general', provider: 'openai' };
-    if (model.startsWith('claude-')) return { execMode: 'api', mode: 'general', provider: 'anthropic' };
-    if (model.startsWith('gemini-')) return { execMode: 'api', mode: 'general', provider: 'google' };
-    return { execMode: 'api', mode: 'general', provider: 'openai' };
+  type CliProvider = 'claude' | 'codex' | 'gemini';
+  const inferCliProvider = (model: string): CliProvider => {
+    if (model.startsWith('cli-claude-code')) return 'claude';
+    if (model.startsWith('cli-codex')) return 'codex';
+    if (model.startsWith('cli-gemini')) return 'gemini';
+    return 'claude';
+  };
+  const inferModeProvider = (model: string): { execMode: 'api' | 'cli'; mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic'; cliProvider: CliProvider } => {
+    if (model.startsWith('cli-')) return { execMode: 'cli', mode: 'general', provider: 'anthropic', cliProvider: inferCliProvider(model) };
+    if (model.endsWith('-vertex')) return { execMode: 'api', mode: 'vertex', provider: 'google', cliProvider: 'claude' };
+    if (model.startsWith('gpt-')) return { execMode: 'api', mode: 'general', provider: 'openai', cliProvider: 'claude' };
+    if (model.startsWith('claude-')) return { execMode: 'api', mode: 'general', provider: 'anthropic', cliProvider: 'claude' };
+    if (model.startsWith('gemini-')) return { execMode: 'api', mode: 'general', provider: 'google', cliProvider: 'claude' };
+    return { execMode: 'api', mode: 'general', provider: 'openai', cliProvider: 'claude' };
   };
   const _initMp = inferModeProvider(aiModel);
   const [execMode, setExecMode] = useState<'api' | 'cli'>(_initMp.execMode);
   const [aiMode, setAiMode] = useState<'general' | 'vertex'>(_initMp.mode);
   const [aiProvider, setAiProvider] = useState<'openai' | 'google' | 'anthropic'>(_initMp.provider);
+  const [cliProvider, setCliProvider] = useState<CliProvider>(_initMp.cliProvider);
   // aiModel이 외부에서 바뀌면(상위에서 저장값 로드 등) 모드/공급자도 재추론
   useEffect(() => {
     const mp = inferModeProvider(aiModel);
     setExecMode(mp.execMode);
     setAiMode(mp.mode);
     setAiProvider(mp.provider);
+    setCliProvider(mp.cliProvider);
   }, [aiModel]);
   // CLI 상태
   const [cliStatus, setCliStatus] = useState<{ installed: boolean; loggedIn: boolean; error?: string } | null>(null);
@@ -698,16 +707,23 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
 
           {settingsTab === 'ai' && (() => {
             // 모드별 사용 가능 프로바이더
+            // 공급자는 ABC 순. Anthropic → Google → OpenAI
             const providersByMode: Record<'general' | 'vertex', Array<'openai' | 'google' | 'anthropic'>> = {
-              general: ['openai', 'google', 'anthropic'],
+              general: ['anthropic', 'google', 'openai'],
               vertex: ['google'],
             };
             const activeProviders = providersByMode[aiMode];
             const effectiveProvider = activeProviders.includes(aiProvider) ? aiProvider : activeProviders[0];
+            const cliProviderPrefix: Record<CliProvider, string> = {
+              claude: 'cli-claude-code',
+              codex: 'cli-codex',
+              gemini: 'cli-gemini',
+            };
             // 모델 필터: 실행모드(api/cli) + 모드(일반/Vertex) + 프로바이더
+            // 모델 순서는 types.ts 원본 유지 (최신·고품질 순서, ABC 아님)
             const modelsForProvider = GEMINI_MODELS.filter(m => {
               const v = m.value;
-              if (execMode === 'cli') return v.startsWith('cli-');
+              if (execMode === 'cli') return v.startsWith(cliProviderPrefix[cliProvider]);
               if (v.startsWith('cli-')) return false;
               if (aiMode === 'vertex') return v.endsWith('-vertex');
               if (v.endsWith('-vertex')) return false; // vertex 모델은 일반 모드 제외
@@ -718,6 +734,9 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
             });
             const providerLabels: Record<'openai' | 'google' | 'anthropic', string> = {
               openai: 'OpenAI', google: 'Google', anthropic: 'Anthropic',
+            };
+            const cliProviderLabels: Record<CliProvider, string> = {
+              claude: 'Claude', codex: 'Codex', gemini: 'Gemini',
             };
             // 모델 드롭다운용 option 배열
             const modelOptions = modelsForProvider.length > 0
@@ -740,8 +759,9 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                     onChange={(em) => {
                       setExecMode(em);
                       if (em === 'cli') {
-                        // CLI 모드로 전환 — 첫 CLI 모델 선택
-                        const firstCli = GEMINI_MODELS.find(mm => mm.value.startsWith('cli-'));
+                        // CLI 모드로 전환 — 현재 cliProvider의 첫 모델 (types.ts 원본 순서)
+                        const prefix = cliProviderPrefix[cliProvider];
+                        const firstCli = GEMINI_MODELS.find(mm => mm.value.startsWith(prefix));
                         if (firstCli) onAiModelChange(firstCli.value);
                       } else {
                         // API 모드로 복귀 — 기존 공급자/모드에 맞는 첫 모델
@@ -805,6 +825,22 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                       if (nextModels[0]) onAiModelChange(nextModels[0].value);
                     }}
                     options={activeProviders.map(p => ({ value: p, label: providerLabels[p] }))}
+                  />
+                </Field>
+                )}
+
+                {execMode === 'cli' && (
+                <Field label="공급자" help="Anthropic Claude Code / OpenAI Codex / Google Gemini CLI — 구독 계정으로 인증">
+                  <SegButtons<CliProvider>
+                    value={cliProvider}
+                    onChange={(p) => {
+                      setCliProvider(p);
+                      // 공급자 변경 시 해당 프로바이더의 첫 모델 (types.ts 원본 순서)
+                      const prefix = cliProviderPrefix[p];
+                      const first = GEMINI_MODELS.find(mm => mm.value.startsWith(prefix));
+                      if (first) onAiModelChange(first.value);
+                    }}
+                    options={(['claude', 'codex', 'gemini'] as CliProvider[]).map(p => ({ value: p, label: cliProviderLabels[p] }))}
                   />
                 </Field>
                 )}
