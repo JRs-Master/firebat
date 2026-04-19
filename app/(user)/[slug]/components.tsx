@@ -81,8 +81,20 @@ function HeaderComp({ text, level = 1 }: { text: string; level?: number }) {
 }
 
 // ── Text ────────────────────────────────────────────────────────────────────
+/** 문자열 내 literal "\n" / "\t" 이스케이프를 실제 개행·탭으로 치환.
+ *  AI 가 JSON 에 개행 넣을 때 가끔 "\\n" (literal backslash-n) 로 직렬화해서 오는 경우 대응. */
+function normalizeEscapes(s: string): string {
+  if (!s || typeof s !== 'string') return s;
+  return s.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+}
+
 function TextComp({ content }: { content: string }) {
-  return <p className="text-gray-700 text-base sm:text-lg leading-relaxed whitespace-pre-wrap">{content}</p>;
+  const normalized = normalizeEscapes(content);
+  return (
+    <div className="text-gray-700 text-base sm:text-lg leading-relaxed prose prose-sm max-w-none">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{normalized}</ReactMarkdown>
+    </div>
+  );
 }
 
 // ── Image ───────────────────────────────────────────────────────────────────
@@ -494,13 +506,19 @@ function AlertComp({ message, type = 'info', title }: { message: string; type?: 
   };
   const s = styles[type] ?? styles.info;
 
+  const normTitle = title ? normalizeEscapes(title) : undefined;
+  const normMessage = normalizeEscapes(message);
   return (
     <div className={`${s.bg} ${s.border} border rounded-xl p-4 flex gap-3`}>
       <span className="text-lg shrink-0">{s.icon}</span>
       <div className="min-w-0 flex-1">
-        {title && <div className={`font-bold text-sm mb-1 ${s.text}`}>{title}</div>}
+        {normTitle && (
+          <div className={`font-bold text-sm mb-1 ${s.text}`}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={alertMdComponents}>{normTitle}</ReactMarkdown>
+          </div>
+        )}
         <div className={`text-sm ${s.text} prose-sm break-words`}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={alertMdComponents}>{message}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={alertMdComponents}>{normMessage}</ReactMarkdown>
         </div>
       </div>
     </div>
