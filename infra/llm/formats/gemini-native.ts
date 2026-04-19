@@ -75,6 +75,11 @@ export class GeminiNativeFormat implements FormatHandler {
       };
       // JSON Mode 강제: Gemini 가 text 앞뒤 설명·마크다운 없이 순수 JSON 반환
       if (opts?.jsonMode) genConfig.responseMimeType = 'application/json';
+      // JSON Schema 강제: grammar-level constrained decoding (구조 위반 출력 불가능)
+      if (opts?.jsonSchema) {
+        genConfig.responseMimeType = 'application/json';
+        genConfig.responseSchema = adaptSchemaForGemini(opts.jsonSchema);
+      }
 
       const response = await withTimeout(
         ai.models.generateContent({

@@ -1634,21 +1634,32 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
         case 'search_history': {
           const { query, limit } = tc.args as { query: string; limit?: number };
           const owner = opts?.owner ?? (isDemo ? 'demo' : 'admin');
+          const topK = typeof limit === 'number' ? limit : 5;
 
-          // 쿼리 맥락 보강 — 대명사("이거/저건") 등 애매한 쿼리를 직전 user 발화로 보완
-          // 예: query="이거 옛날 데이터" + prev="다음 실시간 트렌드 알려줘"
-          //     → 결합 "이거 옛날 데이터 다음 실시간 트렌드 알려줘" 로 임베딩
+          // 쿼리 리라이트 — AI Assistant 활성화 시 Flash Lite 가 대명사·지시어 해소,
+          // 비활성화 시 직전 유저 발화와 단순 결합 (기존 동작)
           const prev = this._currentTurnPrevUserQuery;
-          const enrichedQuery = prev && prev !== query
+          let enrichedQuery = prev && prev !== query
             ? `${query} ${prev}`.slice(0, 500)
             : query;
+          if (this.isRouterEnabled()) {
+            try {
+              const router = this.getRouter();
+              const rewritten = await router.generateSearchQuery(query, prev);
+              enrichedQuery = rewritten.query;
+            } catch (e) {
+              this.logger.warn(`[LLMRouter] generateSearchQuery 실패, 단순 결합 사용: ${(e as Error).message}`);
+            }
+          }
 
+          // 재랭킹을 위해 벡터 검색은 topK × 3 (최소 15) 까지 넉넉히 받음
+          const overfetch = this.isRouterEnabled() ? Math.max(topK * 3, 15) : topK;
           const res = await this.core.searchConversationHistory(owner, enrichedQuery, {
             currentConvId: opts?.conversationId,
-            limit: typeof limit === 'number' ? limit : 5,
+            limit: overfetch,
           });
           if (!res.success) return { success: false, error: res.error };
-          const matches = (res.data ?? []).map(m => ({
+          const rawMatches = (res.data ?? []).map(m => ({
             convId: m.convId,
             convTitle: m.convTitle,
             role: m.role,
@@ -1656,6 +1667,18 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
             score: Number(m.score.toFixed(3)),
             isCurrentConv: m.convId === opts?.conversationId,
           }));
+
+          // 재랭킹 — AI Assistant 활성화 시 Flash Lite 가 의미적 관련성으로 top-K 선별.
+          // 비활성화 시 벡터 유사도 순서 그대로 앞 topK 개 반환.
+          let matches = rawMatches.slice(0, topK);
+          if (this.isRouterEnabled() && rawMatches.length > topK) {
+            try {
+              const router = this.getRouter();
+              matches = await router.rerankHistory(enrichedQuery, rawMatches, topK);
+            } catch (e) {
+              this.logger.warn(`[LLMRouter] rerankHistory 실패, 벡터 순서 유지: ${(e as Error).message}`);
+            }
+          }
           return { success: true, matches, count: matches.length, enrichedQuery: enrichedQuery !== query ? enrichedQuery : undefined };
         }
         default: {
@@ -1857,7 +1880,7 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 - 라벨·축·단위·날짜 모두 한국어 ("시가/종가/고가/저가/거래량", "M월 D일" 또는 "YYYY년 M월 D일").
 - 숫자는 3자리 콤마 (\`toLocaleString('ko-KR')\` 기준). 금액은 "원" 단위 명시. 퍼센트는 소수점 둘째자리까지.
 - 강조: **볼드**. 제목: ## / ###. 목록: - 또는 번호.
-- 마크다운 표 \`|---|\` 금지 → render_table 사용.
+- 마크다운 표 \`|---|\` 금지 → search_components("비교 표") → render("table", ...) 사용.
 - 코드 블록(\`\`\`)은 실제 코드/명령어에만 사용 — JSON 시각화 데이터에 쓰지 마라.
 
 ## 스키마·응답 규율
@@ -2165,7 +2188,7 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
       ...this.buildRenderTools(),
       {
         name: 'render_html',
-        description: '자유 HTML 인라인 렌더링 (iframe). 정형화된 UI는 render_* (render_stock_chart/render_table/render_alert 등) 우선 사용. render_html은 지도/다이어그램/애니메이션/수학식 등 CDN 라이브러리 필요할 때만. CDN은 libraries 파라미터로 선택.',
+        description: '자유 HTML 인라인 렌더링 (iframe). 정형화된 UI(표·차트·리스트 등)는 search_components 로 찾아서 render(name, props) 로 호출. 경고·알림은 render_alert / render_callout 직접 호출. render_html 은 지도/다이어그램/애니메이션/수학식 등 CDN 라이브러리 필요할 때만. CDN 은 libraries 파라미터로 선택.',
         parameters: {
           type: 'object',
           required: ['html'],

@@ -89,6 +89,11 @@ export class VertexGeminiFormat implements FormatHandler {
         temperature: opts?.jsonMode ? LLM_TEMPERATURE_JSON : LLM_TEMPERATURE_TEXT,
       };
       if (opts?.jsonMode) genConfig.responseMimeType = 'application/json';
+      // JSON Schema 강제: grammar-level constrained decoding
+      if (opts?.jsonSchema) {
+        genConfig.responseMimeType = 'application/json';
+        genConfig.responseSchema = adaptSchemaForGemini(opts.jsonSchema);
+      }
       const response = await withTimeout(
         ai.models.generateContent({
           model: ctx.config.id,

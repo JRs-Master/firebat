@@ -228,6 +228,10 @@ export interface LlmCallOpts {
   previousResponseId?: string;
   /** JSON 응답 강제 (responseMimeType=application/json). askText 에서 사용. 마크다운·설명 방지. */
   jsonMode?: boolean;
+  /** JSON 스키마 강제 (Gemini responseSchema / OpenAI response_format.json_schema).
+   *  jsonMode=true 와 함께 사용. grammar-level constrained decoding 으로 구조 위반 출력 불가능.
+   *  enum·required·additionalProperties 등 전부 강제 준수. */
+  jsonSchema?: Record<string, unknown>;
 }
 
 // ── Function Calling 타입 ──────────────────────────────────────────────────

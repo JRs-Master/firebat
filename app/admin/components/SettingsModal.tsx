@@ -819,7 +819,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                   const hasGeminiKey = !!googleApiKey || !!vertexSaJson;
                   return (
                     <div className="pt-4 border-t border-slate-100 flex flex-col gap-2">
-                      <FieldLabel>AI 어시스턴트 라우터</FieldLabel>
+                      <FieldLabel>AI 어시스턴트</FieldLabel>
                       <label className={`flex items-start gap-2 p-3 rounded-xl border ${hasGeminiKey ? 'border-slate-200 hover:bg-slate-50 cursor-pointer' : 'border-slate-100 bg-slate-50 cursor-not-allowed opacity-60'}`}>
                         <input
                           type="checkbox"
@@ -830,8 +830,16 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                         />
                         <div className="flex-1">
                           <div className="text-[13px] font-bold text-slate-800">AI 어시스턴트 활성화</div>
-                          <div className="text-[11px] text-slate-500 mt-0.5">
-                            도구·컴포넌트 선별을 Gemini Flash Lite 가 학습하며 자동 수행합니다.
+                          <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                            Gemini Flash Lite 가 아래 역할을 수행합니다. 출력은 JSON 스키마로 강제되어 구조적으로 안전합니다.
+                          </div>
+                          <ul className="text-[11px] text-slate-600 mt-1.5 space-y-0.5 list-disc list-inside leading-relaxed">
+                            <li><b>도구 선별</b> — Gemini 계열 User AI 에서만 (GPT/Claude 는 MCP 가 대신)</li>
+                            <li><b>컴포넌트 선별</b> — 모든 User AI 공통 (search_components)</li>
+                            <li><b>히스토리 쿼리 리라이트</b> — 대명사·지시어 해소 (모든 User AI 공통)</li>
+                            <li><b>히스토리 결과 재랭킹</b> — 벡터 top-N 에서 의미적 top-K 선별 (공통)</li>
+                          </ul>
+                          <div className="text-[11px] text-slate-400 mt-1.5">
                             결과는 캐시되어 시간이 지날수록 LLM 호출이 줄어듭니다.
                           </div>
                           {!hasGeminiKey && (

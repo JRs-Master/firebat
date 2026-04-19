@@ -46,6 +46,58 @@ const MIN_USE_BEFORE_CONFIDENCE_CHECK = 3;
 /** 연속 실패 이 값 이상이면 캐시 무시 */
 const MAX_FAILURE_STREAK = 3;
 
+// ── JSON 스키마 (grammar-level 강제) ───────────────────────────────────────
+// Gemini responseSchema 제약: enum 은 반드시 string 배열, integer+enum 금지.
+// 아래 스키마는 어댑터가 별도 변환 없이도 통과하도록 작성됨.
+
+/** routeTools 기본 응답 (recentContext 없을 때): 이름 배열 하나 */
+const ROUTE_TOOLS_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    tools: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['tools'],
+};
+
+/** routeTools 확장 응답 (recentContext 있을 때): 이름 + 피드백 + 맥락 플래그 */
+const ROUTE_TOOLS_WITH_FEEDBACK_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    tools: { type: 'array', items: { type: 'string' } },
+    previous_feedback: { type: 'string', enum: ['positive', 'negative', 'neutral'] },
+    needs_previous_context: { type: 'boolean' },
+  },
+  required: ['tools', 'previous_feedback', 'needs_previous_context'],
+};
+
+/** routeComponents 응답: 컴포넌트 이름 배열 */
+const ROUTE_COMPONENTS_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    components: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['components'],
+};
+
+/** generateSearchQuery 응답: 리라이트된 히스토리 검색 쿼리 + 맥락 필요 여부 */
+const GENERATE_SEARCH_QUERY_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    query: { type: 'string' },
+    needs_previous_context: { type: 'boolean' },
+  },
+  required: ['query', 'needs_previous_context'],
+};
+
+/** rerankHistory 응답: 후보 중 top-K 인덱스 배열 */
+const RERANK_HISTORY_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  properties: {
+    top_indices: { type: 'array', items: { type: 'integer' } },
+  },
+  required: ['top_indices'],
+};
+
 /** Flash Lite 라우터 — tools/components 공통 */
 export class LlmRouter {
   constructor(
@@ -207,7 +259,13 @@ ${catalog}
 
 이 쿼리에 관련된 도구 이름 JSON 배열:`;
 
-    const res = await this.llm.askText(userPrompt, systemPrompt, { model: this.routerModel, jsonMode: true });
+    // JSON 스키마 강제 — recentContext 유무로 분기 (필드 개수 다름)
+    const schema = recentContext ? ROUTE_TOOLS_WITH_FEEDBACK_SCHEMA : ROUTE_TOOLS_SCHEMA;
+    const res = await this.llm.askText(userPrompt, systemPrompt, {
+      model: this.routerModel,
+      jsonMode: true,
+      jsonSchema: schema,
+    });
     if (!res.success) {
       return { names: alwaysInclude, cacheId: -1, source: 'llm' };
     }
@@ -246,7 +304,11 @@ ${catalogText}
 
 관련 컴포넌트 이름 JSON 배열:`;
 
-    const res = await this.llm.askText(userPrompt, systemPrompt, { model: this.routerModel, jsonMode: true });
+    const res = await this.llm.askText(userPrompt, systemPrompt, {
+      model: this.routerModel,
+      jsonMode: true,
+      jsonSchema: ROUTE_COMPONENTS_SCHEMA,
+    });
     if (!res.success) return { names: [], cacheId: -1, source: 'llm' };
 
     const validNames = catalog.map(c => c.name);
@@ -255,6 +317,108 @@ ${catalogText}
 
     const id = await this.saveCache('components', query, qVec, parsed.names);
     return { names: parsed.names, cacheId: id, source: 'llm' };
+  }
+
+  /**
+   * (C) 히스토리 벡터 검색용 쿼리 리라이트.
+   *
+   * - 대명사·지시어("이거/저거/아까")가 포함된 애매한 쿼리를 이전 턴 맥락으로 해소
+   * - 벡터 검색 recall 향상이 목적 (의미는 보존, 임베딩 적합성 개선)
+   * - prevQuery 없거나 router 비활성 시 원본 그대로 반환
+   */
+  async generateSearchQuery(rawQuery: string, prevQuery?: string): Promise<{ query: string; needsPreviousContext: boolean }> {
+    if (!rawQuery.trim()) return { query: rawQuery, needsPreviousContext: false };
+
+    const systemPrompt = `당신은 히스토리 벡터 검색 쿼리 리라이터입니다.
+유저가 현재 던진 쿼리를 과거 대화 검색용으로 재작성하세요.
+
+원칙:
+- 대명사·지시어("이거/저거/아까/다시")가 있으면 직전 유저 쿼리로 풀어서 구체화
+- 독립 신규 주제면 원본 그대로 (추측 금지)
+- needs_previous_context: 직전 턴 참조가 의미 파악에 필요하면 true
+
+응답은 순수 JSON:
+{ "query": "...", "needs_previous_context": true/false }`;
+
+    const userPrompt = prevQuery
+      ? `직전 유저 쿼리: "${prevQuery}"
+현재 유저 쿼리: "${rawQuery}"
+
+검색용으로 재작성:`
+      : `현재 유저 쿼리: "${rawQuery}"
+
+검색용으로 재작성:`;
+
+    const res = await this.llm.askText(userPrompt, systemPrompt, {
+      model: this.routerModel,
+      jsonMode: true,
+      jsonSchema: GENERATE_SEARCH_QUERY_SCHEMA,
+    });
+    if (!res.success) return { query: rawQuery, needsPreviousContext: false };
+
+    try {
+      const parsed = JSON.parse(res.data || '{}') as { query?: string; needs_previous_context?: boolean };
+      const q = typeof parsed.query === 'string' && parsed.query.trim() ? parsed.query.trim() : rawQuery;
+      const ctx = typeof parsed.needs_previous_context === 'boolean' ? parsed.needs_previous_context : false;
+      return { query: q, needsPreviousContext: ctx };
+    } catch {
+      return { query: rawQuery, needsPreviousContext: false };
+    }
+  }
+
+  /**
+   * (D) 히스토리 검색 결과 재랭킹.
+   *
+   * - 벡터 top-N 후보 중 **현재 쿼리와 의미적으로 맞는 것** 을 top-K 로 선별
+   * - 벡터 유사도만으로는 잡기 어려운 주제 경계(예: "삼성전자" ↔ "삼성바이오") 분리
+   * - 실패 시 원본 순서 유지하며 앞 K 개 반환
+   */
+  async rerankHistory<T extends { preview: string }>(query: string, candidates: T[], topK: number = 5): Promise<T[]> {
+    if (candidates.length === 0) return [];
+    if (candidates.length <= topK) return candidates;
+
+    const systemPrompt = `당신은 대화 히스토리 재랭커입니다.
+유저가 찾는 과거 대화 후보들 중 **현재 쿼리와 의미적으로 가장 관련 깊은 것** 을 상위 ${topK} 개 인덱스로 반환하세요.
+
+판단 기준:
+- 주제·엔티티 일치 (예: "삼성전자" 쿼리엔 삼성바이오 답변은 제외)
+- 최근성보다 의미 관련성 우선
+- 애매하면 제외
+
+응답은 순수 JSON:
+{ "top_indices": [0, 3, 5, ...] }  // 후보 배열 인덱스, 관련도 내림차순, 최대 ${topK} 개`;
+
+    const listText = candidates.map((c, i) => `[${i}] ${c.preview.slice(0, 150)}`).join('\n');
+    const userPrompt = `현재 쿼리: "${query}"
+
+후보:
+${listText}
+
+상위 ${topK} 인덱스:`;
+
+    const res = await this.llm.askText(userPrompt, systemPrompt, {
+      model: this.routerModel,
+      jsonMode: true,
+      jsonSchema: RERANK_HISTORY_SCHEMA,
+    });
+    if (!res.success) return candidates.slice(0, topK);
+
+    try {
+      const parsed = JSON.parse(res.data || '{}') as { top_indices?: unknown[] };
+      if (!Array.isArray(parsed.top_indices)) return candidates.slice(0, topK);
+      const picked: T[] = [];
+      const seen = new Set<number>();
+      for (const raw of parsed.top_indices) {
+        const idx = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
+        if (!Number.isInteger(idx) || idx < 0 || idx >= candidates.length || seen.has(idx)) continue;
+        seen.add(idx);
+        picked.push(candidates[idx]);
+        if (picked.length >= topK) break;
+      }
+      return picked.length > 0 ? picked : candidates.slice(0, topK);
+    } catch {
+      return candidates.slice(0, topK);
+    }
   }
 }
 
