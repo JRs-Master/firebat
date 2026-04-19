@@ -763,7 +763,7 @@ export function Sidebar({
               {conversations.length === 0 && (
                 <p className="text-[12px] text-slate-400 text-center py-6">대화 내역이 없습니다.</p>
               )}
-              {[...conversations].reverse().map(conv => {
+              {conversations.map(conv => {
                 const convSelected = selectedItem === `conv:${conv.id}`;
                 return (
                   <div key={conv.id}>
