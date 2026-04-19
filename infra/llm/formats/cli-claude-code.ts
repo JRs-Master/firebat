@@ -130,6 +130,8 @@ export class CliClaudeCodeFormat implements FormatHandler {
         text: res.text,
         toolCalls: [],
         responseId: res.sessionId, // 다음 턴 resume 용
+        // Claude Code 내부에서 호출된 도구들 → Core 가 executedActions 에 반영해 UI 배지 표시
+        internallyUsedTools: res.usedTools,
       },
     };
   }

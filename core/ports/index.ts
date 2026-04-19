@@ -278,6 +278,9 @@ export interface LlmToolResponse {
   rawModelParts?: unknown[];
   /** OpenAI Responses API 응답 ID — 다음 요청의 previous_response_id로 사용하면 history 재전송 불필요 */
   responseId?: string;
+  /** LLM 이 내부에서 이미 호출한 도구 이름 배열 (CLI 모드처럼 어댑터가 도구 루프를 직접 돌린 경우).
+   *  Core 는 이를 executedActions 에 반영해 액션 뱃지 표시. 실제 실행은 어댑터가 끝냈으므로 재호출 X. */
+  internallyUsedTools?: string[];
 }
 
 export interface ILlmPort {
