@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
   // Function Calling 모드
   if (mode === 'tools') {
-    return handleToolsMode(core, prompt, history, opts);
+    return handleToolsMode(core, prompt, history, opts, req.signal);
   }
 
   const encoder = new TextEncoder();
@@ -166,6 +166,7 @@ function handleToolsMode(
   prompt: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   opts: { model?: string; isDemo: boolean; owner?: string; image?: string; previousResponseId?: string; conversationId?: string },
+  abortSignal?: AbortSignal,
 ) {
   const encoder = new TextEncoder();
 
@@ -197,7 +198,6 @@ function handleToolsMode(
     }
   };
 
-  const abortSignal = req.signal;
   const stream = new ReadableStream({
     async start(controller) {
       // 연결 종료 플래그 — controller 가 닫힌 뒤 enqueue 호출하면 throw 발생.
@@ -217,7 +217,7 @@ function handleToolsMode(
 
       // 클라이언트 abort (페이지 닫기·탭 이동·네트워크 끊김) 감지 → flag 세팅
       const onAbort = () => { closed = true; };
-      try { abortSignal.addEventListener('abort', onAbort); } catch {}
+      try { abortSignal?.addEventListener('abort', onAbort); } catch {}
 
       // Keep-alive ping — 15초마다 SSE 주석. Claude Code 초기 로딩 수분 지속 시 연결 유지.
       const keepAlive = setInterval(() => {
@@ -255,7 +255,7 @@ function handleToolsMode(
         send('error', { error: err.message || '알 수 없는 오류' });
       }
       clearInterval(keepAlive);
-      try { abortSignal.removeEventListener('abort', onAbort); } catch {}
+      try { abortSignal?.removeEventListener('abort', onAbort); } catch {}
       closed = true;
       try { controller.close(); } catch { /* 이미 닫혀있으면 무시 */ }
     },
