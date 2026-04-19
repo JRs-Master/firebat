@@ -180,7 +180,9 @@ export class CliClaudeCodeFormat implements FormatHandler {
       ];
 
       if (options.systemPrompt) {
-        args.push('--append-system-prompt', options.systemPrompt);
+        // --system-prompt 로 완전 교체 — Claude Code 기본 "코딩 도구" 프롬프트 대신
+        // Firebat User AI 페르소나·시각화 규칙을 주입
+        args.push('--system-prompt', options.systemPrompt);
       }
       if (options.resumeSessionId) {
         args.push('--resume', options.resumeSessionId);
