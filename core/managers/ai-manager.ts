@@ -143,6 +143,15 @@ export class AiManager {
    */
   private slimResultForLLM(toolName: string, result: Record<string, unknown>): Record<string, unknown> {
     if (!result) return result;
+    // render(name, props) 디스패처: 컴포넌트별 요약 처리 — 내부 toolName 을 매핑된 render_* 로 재귀 축약
+    if (toolName === 'render' && typeof result.component === 'string') {
+      const comp = result.component as string;
+      const invMap: Record<string, string> = Object.entries(AiManager.RENDER_TOOL_MAP)
+        .reduce((acc, [k, v]) => ({ ...acc, [v]: k }), {} as Record<string, string>);
+      const mappedTool = invMap[comp];
+      if (mappedTool) return this.slimResultForLLM(mappedTool, result);
+      return { success: true, component: comp, summary: `${comp} 렌더 완료` };
+    }
     // render_* 특별 처리: 대용량 props 탈거 + 메타만
     if (toolName === 'render_stock_chart') {
       const props = (result.props as Record<string, unknown>) || {};
@@ -1261,7 +1270,7 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
         if (!result || result.success === false) continue;
         if (tc.name === 'render_html' && result.htmlContent) {
           blocks.push({ type: 'html', htmlContent: result.htmlContent as string, htmlHeight: result.htmlHeight as string | undefined });
-        } else if (AiManager.RENDER_TOOL_MAP[tc.name] && result.component) {
+        } else if ((tc.name === 'render' || AiManager.RENDER_TOOL_MAP[tc.name]) && result.component) {
           blocks.push({ type: 'component', name: result.component as string, props: (result.props as Record<string, unknown>) ?? {} });
         }
       }
