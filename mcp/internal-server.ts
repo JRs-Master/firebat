@@ -52,17 +52,52 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
   makeRender('render_card', 'Card', { children: z.array(z.any()) }, '카드.');
   makeRender('render_grid', 'Grid', { columns: z.number(), children: z.array(z.any()) }, '그리드.');
 
+  const CDN_MAP: Record<string, string> = {
+    d3: '<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>',
+    mermaid: '<script src="https://cdn.jsdelivr.net/npm/mermaid@10"></script>',
+    leaflet: '<link rel="stylesheet" href="https://unpkg.com/leaflet@1/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1/dist/leaflet.js"></script>',
+    threejs: '<script src="https://cdn.jsdelivr.net/npm/three@0.160/build/three.min.js"></script>',
+    animejs: '<script src="https://cdn.jsdelivr.net/npm/animejs@3/lib/anime.min.js"></script>',
+    tailwindcss: '<script src="https://cdn.tailwindcss.com"></script>',
+    katex: '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css"/><script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/contrib/auto-render.min.js"></script>',
+    hljs: '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github.min.css"/><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>',
+    marked: '<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>',
+    cytoscape: '<script src="https://cdn.jsdelivr.net/npm/cytoscape@3/dist/cytoscape.min.js"></script>',
+    mathjax: '<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>',
+    echarts: '<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>',
+    p5: '<script src="https://cdn.jsdelivr.net/npm/p5@1/lib/p5.min.js"></script>',
+    lottie: '<script src="https://cdn.jsdelivr.net/npm/lottie-web@5/build/player/lottie.min.js"></script>',
+    datatables: '<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css"/><script src="https://cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script><script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>',
+    swiper: '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"/><script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>',
+  };
+
   server.tool(
     'render_html',
-    '자유 HTML 인라인 렌더링 (iframe). 정형 UI는 render_component 우선. CDN 필요 시 libraries로 선택.',
+    '자유 HTML 인라인 렌더링 (iframe). 정형 UI는 render_component 우선. CDN 필요 시 libraries 배열에 명시 — 자동으로 <head>에 script/link 태그 삽입됨.',
     {
       html: z.string().describe('HTML 본문 또는 완전한 HTML'),
       height: z.string().optional().describe('iframe 높이 (기본 400px)'),
-      libraries: z.array(z.enum(['d3','mermaid','leaflet','threejs','animejs','tailwindcss','katex','hljs','marked','cytoscape','mathjax','p5','lottie','datatables','swiper'])).optional(),
+      libraries: z.array(z.enum(['d3','mermaid','leaflet','threejs','animejs','tailwindcss','katex','hljs','marked','cytoscape','mathjax','p5','lottie','datatables','swiper','echarts'])).optional().describe('사용할 CDN 라이브러리. 선택 시 script/link 태그가 HTML에 자동 주입.'),
     },
-    async ({ html, height }) => ({
-      content: [{ type: 'text', text: JSON.stringify({ success: true, htmlContent: html, htmlHeight: height ?? '400px' }) }],
-    }),
+    async ({ html, height, libraries }) => {
+      // CDN 라이브러리 자동 삽입 (API 모드 executeToolCall 과 동일 로직)
+      let finalHtml = html;
+      if (libraries && libraries.length > 0) {
+        const cdnTags = libraries.map(l => CDN_MAP[l]).filter(Boolean).join('\n');
+        if (cdnTags) {
+          if (finalHtml.includes('</head>')) {
+            finalHtml = finalHtml.replace('</head>', `${cdnTags}\n</head>`);
+          } else if (finalHtml.includes('<body')) {
+            finalHtml = finalHtml.replace(/<body/i, `${cdnTags}\n<body`);
+          } else {
+            finalHtml = `${cdnTags}\n${finalHtml}`;
+          }
+        }
+      }
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ success: true, htmlContent: finalHtml, htmlHeight: height ?? '400px' }) }],
+      };
+    },
   );
 
   server.tool(
