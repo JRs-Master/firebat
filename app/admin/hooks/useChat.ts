@@ -246,22 +246,17 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
             setConversations(prev => {
               const filtered = prev.filter(c => {
                 if (remoteIds.has(c.id)) return true;
-                // 로컬에만 있는 대화: 실 메시지 있으면 타기기에서 삭제된 것 → 제거
+                // 활성 대화는 절대 제거 금지 — 방금 만들고 아직 DB 저장 안 된 상태거나
+                // 응답 막 받고 POST 진행 중인 타이밍일 수 있음. 자동 삭제 시 화면 통째로 날아감
+                if (c.id === activeConvId) return true;
+                // 로컬에만 있는 비활성 대화: 실 메시지 있으면 타기기에서 삭제된 것 → 제거
                 const hasRealMessages = c.messages && c.messages.some(m => m.id !== 'system-init' && m.role === 'user');
                 return !hasRealMessages;
               });
-              // 변경 없으면 prev 그대로 반환 — 불필요한 리렌더 방지 (iframe 재생성 차단)
               if (filtered.length === prev.length) return prev;
               localStorage.setItem('firebat_conversations', JSON.stringify(filtered));
               return filtered;
             });
-            // 현재 활성 대화가 서버에서 삭제됐으면 화면도 정리
-            if (activeConvId && !remoteIds.has(activeConvId)) {
-              setActiveConvId('');
-              setMessages([INIT_MESSAGE]);
-              localStorage.removeItem('firebat_active_conv');
-              return; // 현재 conv 삭제됐으니 2) 단계 스킵
-            }
           }
         }
       } catch {}
