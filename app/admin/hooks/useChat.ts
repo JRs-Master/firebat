@@ -233,10 +233,41 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       try { navigator.sendBeacon('/api/conversations', blob); } catch {}
     };
     const refresh = async () => {
-      if (!activeConvId) return;
-      // 스트리밍·도구 실행 중이면 스킵 — 현재 turn을 DB의 이전 상태로 덮어쓰는 것 방지
-      //  (방금 POST한 user 메시지 때문에 DB updatedAt가 local보다 미세하게 더 큼 → 무조건 overwrite되는 경로)
+      // 스트리밍·도구 실행 중이면 스킵
       if (messages.some(m => m.isThinking || m.executing || m.streaming)) return;
+
+      // 1) 대화 목록 재조회 — 타기기에서 삭제된 대화를 로컬에서도 제거
+      try {
+        const listRes = await fetch('/api/conversations');
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          if (listData.success && Array.isArray(listData.conversations)) {
+            const remoteIds = new Set<string>(listData.conversations.map((r: { id: string }) => r.id));
+            setConversations(prev => {
+              const filtered = prev.filter(c => {
+                if (remoteIds.has(c.id)) return true;
+                // 로컬에만 있는 대화: 실 메시지 있으면 타기기에서 삭제된 것 → 제거
+                const hasRealMessages = c.messages && c.messages.some(m => m.id !== 'system-init' && m.role === 'user');
+                return !hasRealMessages; // 미동기화 신규 대화는 유지
+              });
+              if (filtered.length !== prev.length) {
+                localStorage.setItem('firebat_conversations', JSON.stringify(filtered));
+              }
+              return filtered;
+            });
+            // 현재 활성 대화가 서버에서 삭제됐으면 화면도 정리
+            if (activeConvId && !remoteIds.has(activeConvId)) {
+              setActiveConvId('');
+              setMessages([INIT_MESSAGE]);
+              localStorage.removeItem('firebat_active_conv');
+              return; // 현재 conv 삭제됐으니 2) 단계 스킵
+            }
+          }
+        }
+      } catch {}
+
+      // 2) 현재 활성 conv 단일 갱신 — 다른 기기에서 이어 쓴 메시지 반영
+      if (!activeConvId) return;
       const convMeta = conversations.find(c => c.id === activeConvId);
       if (!convMeta) return;
       const localUpdatedAt = convMeta.updatedAt ?? convMeta.createdAt ?? 0;
