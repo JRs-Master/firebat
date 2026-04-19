@@ -69,11 +69,18 @@ export class GeminiNativeFormat implements FormatHandler {
     const ai = this.getClient(ctx);
     if (!ai) return { success: false, error: 'Gemini API 키가 누락되었습니다.' };
     try {
+      const genConfig: Record<string, unknown> = {
+        systemInstruction: systemPrompt || '',
+        temperature: opts?.jsonMode ? LLM_TEMPERATURE_JSON : LLM_TEMPERATURE_TEXT,
+      };
+      // JSON Mode 강제: Gemini 가 text 앞뒤 설명·마크다운 없이 순수 JSON 반환
+      if (opts?.jsonMode) genConfig.responseMimeType = 'application/json';
+
       const response = await withTimeout(
         ai.models.generateContent({
           model: ctx.config.id,
           contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          config: { systemInstruction: systemPrompt || '', temperature: LLM_TEMPERATURE_TEXT },
+          config: genConfig,
         }),
         LLM_TIMEOUT_MS,
       );

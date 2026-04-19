@@ -200,7 +200,7 @@ ${catalog}
 
 이 쿼리에 관련된 도구 이름 JSON 배열:`;
 
-    const res = await this.llm.askText(userPrompt, systemPrompt, { model: this.routerModel });
+    const res = await this.llm.askText(userPrompt, systemPrompt, { model: this.routerModel, jsonMode: true });
     if (!res.success) {
       return { names: alwaysInclude, cacheId: -1, source: 'llm' };
     }
@@ -239,7 +239,7 @@ ${catalogText}
 
 관련 컴포넌트 이름 JSON 배열:`;
 
-    const res = await this.llm.askText(userPrompt, systemPrompt, { model: this.routerModel });
+    const res = await this.llm.askText(userPrompt, systemPrompt, { model: this.routerModel, jsonMode: true });
     if (!res.success) return { names: [], cacheId: -1, source: 'llm' };
 
     const validNames = catalog.map(c => c.name);

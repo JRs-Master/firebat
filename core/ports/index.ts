@@ -226,6 +226,8 @@ export interface LlmCallOpts {
   imageMimeType?: string;
   /** 이전 응답 ID (OpenAI Responses API) — 설정 시 history 재전송 불필요, OpenAI 서버가 상태 유지 */
   previousResponseId?: string;
+  /** JSON 응답 강제 (responseMimeType=application/json). askText 에서 사용. 마크다운·설명 방지. */
+  jsonMode?: boolean;
 }
 
 // ── Function Calling 타입 ──────────────────────────────────────────────────
