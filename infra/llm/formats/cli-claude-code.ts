@@ -208,11 +208,22 @@ export class CliClaudeCodeFormat implements FormatHandler {
 
       let stdoutBuf = '';
       let stderrBuf = '';
-      const textParts: string[] = [];
+      // 최종 response 는 "마지막 tool_use/tool_result 이후의 assistant text" 만 채택.
+      // 중간 assistant text (도구 호출 사이에 끼는 진행 멘트) 는 thinking 스트림으로 보내고 최종 응답엔 미포함.
+      let currentTextBuffer = ''; // 현재 assistant turn 의 누적 text
+      let finalText = ''; // 최종 (도구 호출 없이 끝나는) assistant text
       const usedTools: string[] = [];
       let sessionId: string | undefined;
       let errored = false;
       let errorMsg: string | undefined;
+
+      const flushIntermediateAsThinking = () => {
+        // 현재 currentTextBuffer 를 중간 멘트로 간주 → thinking 스트림으로 보내고 비움
+        if (currentTextBuffer.trim()) {
+          options.onChunk?.({ type: 'thinking', content: currentTextBuffer });
+        }
+        currentTextBuffer = '';
+      };
 
       const processLine = (line: string) => {
         if (!line.trim()) return;
@@ -220,34 +231,46 @@ export class CliClaudeCodeFormat implements FormatHandler {
         try { ev = JSON.parse(line) as ClaudeEvent; }
         catch { return; /* 파싱 실패 스킵 */ }
 
-        // 세션 ID 캡처 (첫 system.init 또는 응답 메시지에서)
         if (ev.session_id && !sessionId) sessionId = ev.session_id;
 
-        // 에러 이벤트
         if (ev.is_error === true || ev.subtype === 'error') {
           errored = true;
           errorMsg = ev.result || 'Claude Code CLI 오류';
           return;
         }
 
-        // assistant 메시지: text / tool_use
+        // assistant: text 누적 / tool_use 감지 시 직전까지의 text 를 중간 멘트로 처리
         if (ev.type === 'assistant' && ev.message?.content) {
           for (const c of ev.message.content) {
             if (c.type === 'text' && typeof c.text === 'string') {
-              textParts.push(c.text);
-              options.onChunk?.({ type: 'text', content: c.text });
+              currentTextBuffer += c.text;
             } else if (c.type === 'tool_use' && typeof c.name === 'string') {
+              // 도구 호출 발생 → 지금까지의 text 는 중간 멘트 → thinking 으로 노출
+              flushIntermediateAsThinking();
               usedTools.push(c.name);
-              // 도구 호출 시작을 thinking 스트림으로 알림 (UI 표시용)
               options.onChunk?.({ type: 'thinking', content: `[도구 호출: ${c.name}]` });
             }
           }
         }
-        // 결과 이벤트 (실행 종료)
+        // tool_result 는 user 이벤트로 옴 — assistant 가 다시 말을 시작하는 경계
+        if (ev.type === 'user' && ev.message?.content) {
+          for (const c of ev.message.content) {
+            if (c.type === 'tool_result') {
+              // 도구 결과 받음 — buffer 정리 (이미 tool_use 직전에 flush 했지만 안전망)
+              flushIntermediateAsThinking();
+            }
+          }
+        }
+        // 결과 이벤트 (실행 종료) — 이 시점의 currentTextBuffer = 최종 응답
         if (ev.type === 'result') {
           if (ev.is_error) {
             errored = true;
             errorMsg = ev.result || '실행 오류';
+          } else {
+            // 최종 text 는 마지막 assistant turn 의 buffer
+            finalText = currentTextBuffer;
+            // 스트리밍 시 화면 표시를 위해 text 이벤트로 발행
+            if (finalText) options.onChunk?.({ type: 'text', content: finalText });
           }
         }
       };
@@ -271,20 +294,23 @@ export class CliClaudeCodeFormat implements FormatHandler {
         // 잔여 stdout 처리
         if (stdoutBuf.trim()) processLine(stdoutBuf);
 
+        // result 이벤트 없이 종료됐는데 currentTextBuffer 에 내용 있으면 그게 최종 응답
+        if (!finalText && currentTextBuffer.trim()) finalText = currentTextBuffer;
+
         if (errored) {
-          resolve({ text: textParts.join(''), usedTools, sessionId, error: errorMsg });
+          resolve({ text: finalText, usedTools, sessionId, error: errorMsg });
           return;
         }
         if (code !== 0) {
           resolve({
-            text: textParts.join(''),
+            text: finalText,
             usedTools,
             sessionId,
             error: `Claude Code 비정상 종료 (exit ${code}): ${stderrBuf.slice(0, 500)}`,
           });
           return;
         }
-        resolve({ text: textParts.join(''), usedTools, sessionId });
+        resolve({ text: finalText, usedTools, sessionId });
       });
     });
   }
