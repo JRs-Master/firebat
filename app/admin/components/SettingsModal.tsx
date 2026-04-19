@@ -823,7 +823,10 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                         onClick={async () => {
                           setCliChecking(true);
                           try {
-                            const provider = modelValue === 'cli-claude-code' ? 'claude-code' : modelValue === 'cli-codex' ? 'codex' : 'gemini';
+                            const provider = modelValue.startsWith('cli-claude-code') ? 'claude-code'
+                              : modelValue === 'cli-codex' ? 'codex'
+                              : modelValue.startsWith('cli-gemini') ? 'gemini'
+                              : 'claude-code';
                             const res = await fetch(`/api/auth/cli?provider=${provider}`);
                             const data = await res.json();
                             setCliStatus({ installed: !!data.installed, loggedIn: !!data.loggedIn, error: data.error });

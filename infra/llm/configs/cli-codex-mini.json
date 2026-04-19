@@ -1,0 +1,14 @@
+{
+  "id": "cli-codex-mini",
+  "displayName": "Codex CLI · GPT-5.4 Mini (가성비)",
+  "provider": "openai",
+  "format": "cli-codex",
+  "endpoint": "local://codex-cli",
+  "apiKeyVaultKey": "CLI_CODEX_STATUS",
+  "cliModel": "gpt-5.4-mini",
+  "features": {
+    "mcpConnector": true,
+    "vision": true,
+    "reasoning": true
+  }
+}

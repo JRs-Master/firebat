@@ -1,0 +1,13 @@
+{
+  "id": "cli-claude-code-auto",
+  "displayName": "Claude Code CLI · Auto (플랜 기본값)",
+  "provider": "anthropic",
+  "format": "cli-claude-code",
+  "endpoint": "local://claude-code-cli",
+  "apiKeyVaultKey": "CLI_CLAUDE_CODE_STATUS",
+  "features": {
+    "mcpConnector": true,
+    "vision": true,
+    "extendedThinking": true
+  }
+}
