@@ -170,7 +170,15 @@ export class CliClaudeCodeFormat implements FormatHandler {
     return new Promise((resolve) => {
       // resume 없으면 history 를 prompt 에 병합해서 맥락 주입
       const finalPrompt = options.resumeSessionId ? prompt : this.buildPromptWithHistory(prompt, options.history);
-      const args: string[] = ['--print', finalPrompt, '--output-format', 'stream-json', '--verbose'];
+      const args: string[] = [
+        '--print', finalPrompt,
+        '--output-format', 'stream-json',
+        '--verbose',
+        // 권한 프롬프트 자동 우회 (headless 모드 필수).
+        // Firebat MCP 도구는 이미 Core 내부 승인 시스템(checkNeedsApproval) 이 있으므로
+        // Claude Code 쪽 추가 확인은 중복.
+        '--dangerously-skip-permissions',
+      ];
 
       if (options.systemPrompt) {
         args.push('--append-system-prompt', options.systemPrompt);
