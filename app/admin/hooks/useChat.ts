@@ -547,7 +547,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
                 }
                 return {
                   ...msg, isThinking: false, executing: false, streaming: false, statusText: undefined,
-                  thinkingText: msg.thinkingText ? '답변 완료' : undefined, thoughts: ev.data.thoughts,
+                  thinkingText: '답변 완료', thoughts: ev.data.thoughts,
                   content: lastTextIdx >= 0 ? msg.content : '', // blocks 쓰면 msg.content 건들지 않음
                   executedActions: ev.data.executedActions || [],
                   data: hasBlocks ? { ...ev.data.data, blocks: newBlocks } : ev.data.data,
@@ -580,7 +580,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
                 msg.id === `s-${id}`
                   ? {
                       ...msg, isThinking: false, executing: false, streaming: false, statusText: undefined,
-                      thinkingText: msg.thinkingText ? '답변 완료' : undefined, thoughts: ev.data.thoughts,
+                      thinkingText: '답변 완료', thoughts: ev.data.thoughts,
                       content: fullReply || msg.content,
                       executedActions: ev.data.executedActions || [], data: ev.data.data, error: ev.data.error, planPending: false,
                       suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
