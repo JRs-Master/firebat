@@ -704,10 +704,8 @@ function ChartComp({ type = 'bar', data, labels, title }: {
     );
   }
 
-  const chartColors = [
-    'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-red-500',
-    'bg-purple-500', 'bg-orange-500', 'bg-teal-500', 'bg-pink-500',
-  ];
+  // bar 차트: 동일 색상 사용 (알록달록한 무지개 대신 단일 tone — 금융·리서치 느낌)
+  // pie 차트: 섹터 구분 위해 다색 유지
   const pieColors = [
     '#3b82f6', '#22c55e', '#eab308', '#ef4444',
     '#a855f7', '#f97316', '#14b8a6', '#ec4899',
@@ -752,7 +750,7 @@ function ChartComp({ type = 'bar', data, labels, title }: {
             <span className="text-xs text-gray-600 w-20 truncate text-right">{labels[i] ?? i}</span>
             <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full ${chartColors[i % chartColors.length]} transition-all duration-500`}
+                className="h-full rounded-full bg-blue-500 transition-all duration-500"
                 style={{ width: `${(v / maxVal) * 100}%` }}
               />
             </div>
