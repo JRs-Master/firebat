@@ -4,12 +4,11 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Message, Conversation, INIT_MESSAGE, makeConv } from '../types';
 import { ConversationMeta } from '../components/Sidebar';
 
-// 저장된 대화 복원 시 진행 중 상태 정리
+// 저장된 대화 복원 시 진행 중 상태(좀비 메시지) 제거
+// 유저가 Stop 버튼으로 중단한 메시지는 catch 블록에서 이미 content="중단되었습니다." + isThinking=false 상태로 확정됨.
+// 여기서 걸리는 건 스트림이 이상하게 끊겨 복원된 미완 메시지 → 드롭해야 DB 오염 안 됨.
 function cleanMessages(msgs: Message[]): Message[] {
-  return msgs.map(m => m.isThinking || m.executing
-    ? { ...m, isThinking: false, executing: false, content: m.content || '중단되었습니다.' }
-    : m
-  );
+  return msgs.filter(m => !m.isThinking && !m.executing && !m.streaming);
 }
 
 // SSE 이벤트 파서 — buffer에서 완성된 이벤트만 파싱, 나머지는 반환
@@ -156,16 +155,18 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
   // ── 대화 저장 — localStorage는 messages 변경마다, DB는 확정 시점에만 명시 호출 ──
   // (이전 debounce 기반 → 500ms 창에 데이터 잃는 문제. 서버가 union merge 하므로 명시 호출이 안전)
   //
-  // localStorage 저장: 스트리밍 중 UI 상태 유지용. 동기라 즉시·손실 없음.
+  // localStorage 저장: 완료된 메시지만 캐시. 스트리밍 중(isThinking/executing/streaming)은 제외해
+  //   ─ 탭 닫기 / 새로고침 중 멈춘 좀비 상태를 다음 로드 때 "중단되었습니다"로 박제하는 경로를 차단.
   useEffect(() => {
     if (!activeConvId || conversations.length === 0) return;
-    const firstUser = messages.find(m => m.role === 'user');
+    const cleanMsgs = messages.filter(m => !m.isThinking && !m.executing && !m.streaming);
+    const firstUser = cleanMsgs.find(m => m.role === 'user');
     const title = firstUser?.content
       ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
       : '새 대화';
     const now = Date.now();
     setConversations(prev => {
-      const updated = prev.map(c => c.id === activeConvId ? { ...c, messages, title, updatedAt: now } : c);
+      const updated = prev.map(c => c.id === activeConvId ? { ...c, messages: cleanMsgs, title, updatedAt: now } : c);
       // 사이드바 최신 순 유지 (UI 즉시 반영)
       updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
       localStorage.setItem('firebat_conversations', JSON.stringify(updated));
@@ -197,10 +198,10 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
   };
 
   // visibilitychange=hidden 안전망 — 탭 전환·앱 전환·닫기 직전 현재 상태 flush (sendBeacon)
+  // visibilitychange=visible — 탭 복귀 시 다른 기기의 갱신을 반영하기 위해 active conv 재조회
   useEffect(() => {
     if (isDemo) return;
     const flush = () => {
-      if (document.visibilityState !== 'hidden') return;
       if (!activeConvId || messages.length === 0) return;
       // in-progress 상태는 DB 에 저장하지 않음 (타기기에서 "중단되었습니다" 로 오해되는 문제 방지)
       const cleanMsgs = messages.filter(m => !m.isThinking && !m.executing && !m.streaming);
@@ -216,11 +217,41 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       const blob = new Blob([body], { type: 'application/json' });
       try { navigator.sendBeacon('/api/conversations', blob); } catch {}
     };
-    document.addEventListener('visibilitychange', flush);
+    const refresh = async () => {
+      if (!activeConvId) return;
+      const convMeta = conversations.find(c => c.id === activeConvId);
+      if (!convMeta) return;
+      const localUpdatedAt = convMeta.updatedAt ?? convMeta.createdAt ?? 0;
+      try {
+        const res = await fetch(`/api/conversations?id=${encodeURIComponent(activeConvId)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.success || !data.conversation) return;
+        const remoteUpdatedAt = data.conversation.updatedAt ?? 0;
+        if (remoteUpdatedAt <= localUpdatedAt) return;
+        const remoteMsgs = cleanMessages(data.conversation.messages ?? []);
+        setMessages(remoteMsgs);
+        setConversations(prev => {
+          const updated = prev.map(c => c.id === activeConvId
+            ? { ...c, messages: remoteMsgs, updatedAt: remoteUpdatedAt }
+            : c);
+          updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+          localStorage.setItem('firebat_conversations', JSON.stringify(updated));
+          return updated;
+        });
+      } catch {}
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush();
+      else if (document.visibilityState === 'visible') void refresh();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pagehide', flush);
+    window.addEventListener('focus', refresh);
     return () => {
-      document.removeEventListener('visibilitychange', flush);
+      document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pagehide', flush);
+      window.removeEventListener('focus', refresh);
     };
   }, [activeConvId, messages, conversations, isDemo]);
 
@@ -263,7 +294,30 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
     setActiveConvId(id);
     setMessages(cleanMessages(conv.messages));
     localStorage.setItem('firebat_active_conv', id);
-  }, [activeConvId, conversations]);
+    // 다기기 동기화: 선택 시 DB 최신 버전이 로컬보다 최근이면 메시지 교체
+    if (isDemo) return;
+    const localUpdatedAt = conv.updatedAt ?? conv.createdAt ?? 0;
+    (async () => {
+      try {
+        const res = await fetch(`/api/conversations?id=${encodeURIComponent(id)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.success || !data.conversation) return;
+        const remoteUpdatedAt = data.conversation.updatedAt ?? 0;
+        if (remoteUpdatedAt <= localUpdatedAt) return;
+        const remoteMsgs = cleanMessages(data.conversation.messages ?? []);
+        setMessages(remoteMsgs);
+        setConversations(prev => {
+          const updated = prev.map(c => c.id === id
+            ? { ...c, messages: remoteMsgs, updatedAt: remoteUpdatedAt }
+            : c);
+          updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+          localStorage.setItem('firebat_conversations', JSON.stringify(updated));
+          return updated;
+        });
+      } catch {}
+    })();
+  }, [activeConvId, conversations, isDemo]);
 
   const handleDeleteConv = useCallback((id: string) => {
     // admin은 DB에서도 삭제
