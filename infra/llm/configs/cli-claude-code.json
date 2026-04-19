@@ -1,0 +1,12 @@
+{
+  "id": "cli-claude-code",
+  "displayName": "Claude Code CLI (구독)",
+  "provider": "anthropic",
+  "format": "cli-claude-code",
+  "endpoint": "local://claude-cli",
+  "apiKeyVaultKey": "CLI_CLAUDE_CODE_STATUS",
+  "features": {
+    "mcpConnector": true,
+    "vision": true
+  }
+}

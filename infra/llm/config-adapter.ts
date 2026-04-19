@@ -19,6 +19,7 @@ import { OpenAIChatFormat } from './formats/openai-chat';
 import { AnthropicMessagesFormat } from './formats/anthropic-messages';
 import { VertexGeminiFormat } from './formats/vertex-gemini';
 import { GeminiNativeFormat } from './formats/gemini-native';
+import { CliClaudeCodeFormat } from './formats/cli-claude-code';
 
 export class ConfigDrivenAdapter implements ILlmPort {
   private handlers: Record<LlmFormat, FormatHandler>;
@@ -35,6 +36,10 @@ export class ConfigDrivenAdapter implements ILlmPort {
       'anthropic-messages': new AnthropicMessagesFormat(),
       'vertex-gemini': new VertexGeminiFormat(),
       'gemini-native': new GeminiNativeFormat(),
+      'cli-claude-code': new CliClaudeCodeFormat(),
+      // TODO: 'cli-codex' / 'cli-gemini' 추가 예정
+      'cli-codex': new CliClaudeCodeFormat(),  // 임시 — 핸들러 교체 예정
+      'cli-gemini': new CliClaudeCodeFormat(), // 임시 — 핸들러 교체 예정
     };
   }
 

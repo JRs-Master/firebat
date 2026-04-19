@@ -9,7 +9,16 @@
  * - 새 format → formats/ 핸들러 추가 + config 생성
  */
 
-export type LlmFormat = 'openai-responses' | 'openai-chat' | 'anthropic-messages' | 'vertex-gemini' | 'gemini-native';
+export type LlmFormat =
+  | 'openai-responses'
+  | 'openai-chat'
+  | 'anthropic-messages'
+  | 'vertex-gemini'
+  | 'gemini-native'
+  // CLI 모드 — 구독 기반 인증, 자식 프로세스 spawn 으로 실행
+  | 'cli-claude-code'
+  | 'cli-codex'
+  | 'cli-gemini';
 
 export interface ModelFeatures {
   /** OpenAI hosted MCP connector (Responses API 전용) */

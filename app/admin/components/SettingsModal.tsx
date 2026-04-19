@@ -19,24 +19,31 @@ type Props = {
 
 export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
   const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system'>(initialTab ?? 'general');
-  // AI 탭: 모드(일반/Vertex) + 프로바이더(openai/google/anthropic)
-  // 현재 aiModel로부터 초기값 자동 유도
-  const inferModeProvider = (model: string): { mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic' } => {
-    if (model.endsWith('-vertex')) return { mode: 'vertex', provider: 'google' };
-    if (model.startsWith('gpt-')) return { mode: 'general', provider: 'openai' };
-    if (model.startsWith('claude-')) return { mode: 'general', provider: 'anthropic' };
-    if (model.startsWith('gemini-')) return { mode: 'general', provider: 'google' };
-    return { mode: 'general', provider: 'openai' };
+  // AI 탭: 실행모드(api/cli) + 모드(일반/Vertex) + 프로바이더(openai/google/anthropic)
+  // api 모드: 키 기반, pay-per-token (기존)
+  // cli 모드: 구독 기반, 자체 인증 (월정액 Claude Pro/Max, ChatGPT Plus, Gemini Advanced 등)
+  const inferModeProvider = (model: string): { execMode: 'api' | 'cli'; mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic' } => {
+    if (model.startsWith('cli-')) return { execMode: 'cli', mode: 'general', provider: 'anthropic' };
+    if (model.endsWith('-vertex')) return { execMode: 'api', mode: 'vertex', provider: 'google' };
+    if (model.startsWith('gpt-')) return { execMode: 'api', mode: 'general', provider: 'openai' };
+    if (model.startsWith('claude-')) return { execMode: 'api', mode: 'general', provider: 'anthropic' };
+    if (model.startsWith('gemini-')) return { execMode: 'api', mode: 'general', provider: 'google' };
+    return { execMode: 'api', mode: 'general', provider: 'openai' };
   };
   const _initMp = inferModeProvider(aiModel);
+  const [execMode, setExecMode] = useState<'api' | 'cli'>(_initMp.execMode);
   const [aiMode, setAiMode] = useState<'general' | 'vertex'>(_initMp.mode);
   const [aiProvider, setAiProvider] = useState<'openai' | 'google' | 'anthropic'>(_initMp.provider);
   // aiModel이 외부에서 바뀌면(상위에서 저장값 로드 등) 모드/공급자도 재추론
   useEffect(() => {
     const mp = inferModeProvider(aiModel);
+    setExecMode(mp.execMode);
     setAiMode(mp.mode);
     setAiProvider(mp.provider);
   }, [aiModel]);
+  // CLI 상태
+  const [cliStatus, setCliStatus] = useState<{ installed: boolean; loggedIn: boolean; error?: string } | null>(null);
+  const [cliChecking, setCliChecking] = useState(false);
   const [mcpSubTab, setMcpSubTab] = useState<'app' | 'llm'>('app');
   // 내부 MCP 토큰 (LLM 통신용)
   const [internalMcpToken, setInternalMcpToken] = useState<{ hasToken: boolean; masked: string }>({ hasToken: false, masked: '' });
@@ -697,9 +704,11 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
             };
             const activeProviders = providersByMode[aiMode];
             const effectiveProvider = activeProviders.includes(aiProvider) ? aiProvider : activeProviders[0];
-            // 모델 필터: 모드(일반/Vertex) + 프로바이더
+            // 모델 필터: 실행모드(api/cli) + 모드(일반/Vertex) + 프로바이더
             const modelsForProvider = GEMINI_MODELS.filter(m => {
               const v = m.value;
+              if (execMode === 'cli') return v.startsWith('cli-');
+              if (v.startsWith('cli-')) return false;
               if (aiMode === 'vertex') return v.endsWith('-vertex');
               if (v.endsWith('-vertex')) return false; // vertex 모델은 일반 모드 제외
               if (effectiveProvider === 'openai') return v.startsWith('gpt-');
@@ -725,6 +734,34 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
               : 'Extended Thinking (Claude)';
             return (
               <>
+                <Field label="실행 모드" help="API: 각 공급자 키 기반 pay-per-token · CLI: Claude Pro/Max, ChatGPT Plus 등 구독 계정 직접 사용 (월정액)">
+                  <SegButtons<'api' | 'cli'>
+                    value={execMode}
+                    onChange={(em) => {
+                      setExecMode(em);
+                      if (em === 'cli') {
+                        // CLI 모드로 전환 — 첫 CLI 모델 선택
+                        const firstCli = GEMINI_MODELS.find(mm => mm.value.startsWith('cli-'));
+                        if (firstCli) onAiModelChange(firstCli.value);
+                      } else {
+                        // API 모드로 복귀 — 기존 공급자/모드에 맞는 첫 모델
+                        const firstApi = GEMINI_MODELS.find(mm => {
+                          const v = mm.value;
+                          if (v.startsWith('cli-')) return false;
+                          if (aiMode === 'vertex') return v.endsWith('-vertex');
+                          if (v.endsWith('-vertex')) return false;
+                          if (aiProvider === 'openai') return v.startsWith('gpt-');
+                          if (aiProvider === 'google') return v.startsWith('gemini-');
+                          return v.startsWith('claude-');
+                        });
+                        if (firstApi) onAiModelChange(firstApi.value);
+                      }
+                    }}
+                    options={[{ value: 'api', label: 'API' }, { value: 'cli', label: 'CLI (구독)' }]}
+                  />
+                </Field>
+
+                {execMode === 'api' && (
                 <Field label="모드" help="일반 모드: 각 공급자 직통 API · Vertex 모드: GCP Vertex AI (Service Account 인증)">
                   <SegButtons<'general' | 'vertex'>
                     value={aiMode}
@@ -736,6 +773,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                       setAiProvider(nextProvider);
                       const nextModels = GEMINI_MODELS.filter(mm => {
                         const v = mm.value;
+                        if (v.startsWith('cli-')) return false;
                         if (m === 'vertex') return v.endsWith('-vertex');
                         if (v.endsWith('-vertex')) return false;
                         if (nextProvider === 'openai') return v.startsWith('gpt-');
@@ -747,7 +785,9 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                     options={[{ value: 'general', label: '일반' }, { value: 'vertex', label: 'Vertex' }]}
                   />
                 </Field>
+                )}
 
+                {execMode === 'api' && (
                 <Field label="공급자">
                   <SegButtons<'openai' | 'google' | 'anthropic'>
                     value={effectiveProvider}
@@ -755,6 +795,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                       setAiProvider(p);
                       const nextModels = GEMINI_MODELS.filter(mm => {
                         const v = mm.value;
+                        if (v.startsWith('cli-')) return false;
                         if (aiMode === 'vertex') return v.endsWith('-vertex');
                         if (v.endsWith('-vertex')) return false;
                         if (p === 'openai') return v.startsWith('gpt-');
@@ -766,18 +807,64 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                     options={activeProviders.map(p => ({ value: p, label: providerLabels[p] }))}
                   />
                 </Field>
+                )}
 
                 <Field label="모델">
                   <SelectInput value={modelValue} onChange={onAiModelChange} options={modelOptions} />
                 </Field>
 
-                {thinkingKind && thinkingOptions.length > 0 && (
+                {execMode === 'cli' && (
+                  <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
+                    <FieldLabel>CLI 인증 상태</FieldLabel>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={cliChecking}
+                        onClick={async () => {
+                          setCliChecking(true);
+                          try {
+                            const provider = modelValue === 'cli-claude-code' ? 'claude-code' : modelValue === 'cli-codex' ? 'codex' : 'gemini';
+                            const res = await fetch(`/api/auth/cli?provider=${provider}`);
+                            const data = await res.json();
+                            setCliStatus({ installed: !!data.installed, loggedIn: !!data.loggedIn, error: data.error });
+                          } catch (e) {
+                            setCliStatus({ installed: false, loggedIn: false, error: (e as Error).message });
+                          } finally { setCliChecking(false); }
+                        }}
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 disabled:bg-slate-400 text-white text-[12px] font-bold rounded-lg"
+                      >
+                        {cliChecking ? '확인 중...' : '상태 확인'}
+                      </button>
+                      {cliStatus && (
+                        <span className={`text-[12px] font-bold ${cliStatus.loggedIn ? 'text-green-600' : cliStatus.installed ? 'text-amber-600' : 'text-red-600'}`}>
+                          {cliStatus.loggedIn ? '● 설치·인증 완료' : cliStatus.installed ? '● 설치됨 (인증 필요)' : '● 미설치'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                      <b>CLI 모드 사용 안내</b>
+                      <ul className="mt-1 ml-4 list-disc space-y-0.5">
+                        <li>서버 터미널에서 CLI 설치 + 로그인 필요 (브라우저 기반 OAuth)</li>
+                        <li>Claude Code: <code className="bg-white px-1 rounded">npm i -g @anthropic-ai/claude-code</code> → <code className="bg-white px-1 rounded">claude login</code></li>
+                        <li>로그인 후 위 "상태 확인" 버튼으로 검증</li>
+                        <li>구독 기반 — Claude Pro/Max 계정으로 API 키 없이 동작</li>
+                        <li><span className="text-amber-700 font-bold">TOS 주의</span>: 개인 사용에 한함. 다른 사용자 서비스 백엔드로 사용 시 위반 리스크</li>
+                      </ul>
+                      {cliStatus?.error && (
+                        <div className="mt-2 text-red-600 font-mono text-[10px]">{cliStatus.error.slice(0, 200)}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {execMode === 'api' && thinkingKind && thinkingOptions.length > 0 && (
                   <Field label={thinkingLabel}>
                     <SelectInput value={thinkingValue} onChange={setThinkingLevel} options={thinkingOptions} />
                   </Field>
                 )}
 
-                {/* API 키 — 선택된 프로바이더/모드에 따라 */}
+                {/* API 키 — API 모드에서만 노출. CLI 모드는 자체 인증이라 키 불필요 */}
+                {execMode === 'api' && (
                 <div className="pt-2 border-t border-slate-100 flex flex-col gap-3">
                   <FieldLabel>공급자 API 키</FieldLabel>
 
@@ -813,6 +900,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* AI 어시스턴트 라우터 */}
                 {(() => {

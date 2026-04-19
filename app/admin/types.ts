@@ -17,6 +17,8 @@ export const AI_MODELS = [
   { value: 'claude-haiku-4-5',  label: 'Claude Haiku 4.5 (저렴/빠름)' },
   { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (균형)' },
   { value: 'claude-opus-4-7',   label: 'Claude Opus 4.7 (최고급)' },
+  // CLI 모드 (구독 기반, 키 불필요)
+  { value: 'cli-claude-code', label: 'Claude Code CLI (Claude Pro/Max 구독)' },
 ];
 // 기존 이름 호환을 위한 alias
 export const GEMINI_MODELS = AI_MODELS;
