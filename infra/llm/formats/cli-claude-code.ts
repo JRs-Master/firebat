@@ -174,10 +174,9 @@ export class CliClaudeCodeFormat implements FormatHandler {
         '--print', finalPrompt,
         '--output-format', 'stream-json',
         '--verbose',
-        // 권한 프롬프트 자동 우회 (headless 모드 필수).
-        // Firebat MCP 도구는 이미 Core 내부 승인 시스템(checkNeedsApproval) 이 있으므로
-        // Claude Code 쪽 추가 확인은 중복.
-        '--dangerously-skip-permissions',
+        // Firebat MCP 도구 전부 허용 — Core 내부 checkNeedsApproval 이 위험 작업은 이미 승인 대기로 처리.
+        // (--dangerously-skip-permissions 는 root 권한에서 차단되므로 whitelist 방식 사용)
+        '--allowed-tools', 'mcp__firebat__*',
       ];
 
       if (options.systemPrompt) {
@@ -199,7 +198,9 @@ export class CliClaudeCodeFormat implements FormatHandler {
 
       let child;
       try {
-        child = spawn('claude', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+        // stdin 을 즉시 닫아서 "no stdin data received in 3s" 경고 방지.
+        // --print 모드는 prompt 를 인자로 받으므로 stdin 불필요.
+        child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'] });
       } catch (e) {
         resolve({ text: '', usedTools: [], error: `Claude Code CLI 실행 실패 (claude 명령어 미설치?): ${(e as Error).message}` });
         return;
