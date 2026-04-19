@@ -44,8 +44,57 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
   makeRender('render_countdown', 'Countdown', { targetDate: z.string(), label: z.string().optional() }, '카운트다운.');
   makeRender('render_chart', 'Chart', {
     chartType: z.enum(['bar','line','pie','doughnut']),
-    labels: z.array(z.string()), data: z.array(z.number()), title: z.string().optional(),
-  }, '간단 차트 (막대/선/원).');
+    labels: z.array(z.string()),
+    data: z.array(z.number()),
+    title: z.string().optional(),
+    subtitle: z.string().optional().describe('부제목 (데이터 출처·기간 등)'),
+    unit: z.string().optional().describe('값 단위 (예: "원", "%", "건")'),
+    color: z.enum(['blue','green','red','purple','orange','teal','pink','yellow','slate']).optional().describe('bar/line 단일 색상 (기본 blue)'),
+    palette: z.enum(['default','pastel','mono-blue','mono-green','red-green','earth']).optional().describe('pie/doughnut 색상 팔레트'),
+    showValues: z.boolean().optional().describe('bar 값 inline 표시 (기본 true)'),
+  }, '간단 차트 (막대/선/원). 다중 시리즈·애노테이션 필요시 render_html + echarts 사용.');
+
+  makeRender('render_metric', 'Metric', {
+    label: z.string().describe('지표명 (예: "현재가", "PER")'),
+    value: z.union([z.string(), z.number()]).describe('대표 수치'),
+    unit: z.string().optional().describe('단위 (원, %, 배 등)'),
+    delta: z.union([z.string(), z.number()]).optional().describe('증감치 (예: -1500, "-0.69%")'),
+    deltaType: z.enum(['up','down','neutral']).optional().describe('up=빨강, down=파랑, neutral=회색'),
+    subLabel: z.string().optional().describe('보조 설명 (예: "전일 대비")'),
+    icon: z.string().optional().describe('이모지 아이콘 (예: "📈")'),
+  }, '단일 지표 카드. 라벨+값+증감. Grid 안에 여러 개 배치하면 KPI 대시보드.');
+
+  makeRender('render_timeline', 'Timeline', {
+    items: z.array(z.object({
+      date: z.string(),
+      title: z.string(),
+      description: z.string().optional(),
+      type: z.enum(['default','success','warning','error']).optional(),
+    })),
+  }, '연대기 / 이벤트 타임라인. 일정·이력·단계별 진행 표시.');
+
+  makeRender('render_compare', 'Compare', {
+    title: z.string().optional(),
+    left: z.object({ label: z.string(), items: z.array(z.object({ key: z.string(), value: z.string() })) }),
+    right: z.object({ label: z.string(), items: z.array(z.object({ key: z.string(), value: z.string() })) }),
+  }, 'A vs B 대조 표. 두 대상 항목별 비교.');
+
+  makeRender('render_key_value', 'KeyValue', {
+    title: z.string().optional(),
+    items: z.array(z.object({
+      key: z.string(),
+      value: z.union([z.string(), z.number()]),
+      highlight: z.boolean().optional(),
+    })),
+    columns: z.number().optional().describe('1/2/3 (기본 2)'),
+  }, '라벨:값 구조적 나열. 종목 정보·제품 스펙 등.');
+
+  makeRender('render_status_badge', 'StatusBadge', {
+    items: z.array(z.object({
+      label: z.string(),
+      status: z.enum(['positive','negative','neutral','warning','info']),
+    })),
+  }, '의미 기반 상태 뱃지 세트. 예: "정배열"(positive), "과열"(warning), "중립"(neutral).');
   makeRender('render_image', 'Image', {
     src: z.string(), alt: z.string().optional(), width: z.number().optional(), height: z.number().optional(),
   }, '이미지.');

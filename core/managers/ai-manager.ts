@@ -1953,19 +1953,24 @@ ${systemContext}
 **섹션·레이아웃**
 - \`render_header\` — 섹션 제목 (h1/h2/h3 레벨 구분)
 - \`render_divider\` — 섹션 간 시각 구분
-- \`render_grid\` — 다수 카드·지표 격자 배치 (보통 2~4 columns)
-- \`render_card\` — 개별 정보 블록 (지표, 간단 인사이트)
+- \`render_grid\` — 다수 카드·지표 격자 배치 (2~4 columns). **render_metric 여러 개를 담아 KPI 대시보드** 구성 시 자주 사용
+- \`render_card\` — 자유 children 담는 범용 컨테이너
 
-**데이터 시각화**
+**지표·데이터**
+- \`render_metric\` — **단일 지표 카드** (라벨 + 값 + 증감 화살표 + 아이콘). "현재가/PER/보유율/달성률" 같은 **단일 수치에 우선 사용** — Card 안에 Text 3개 넣지 마라
+- \`render_key_value\` — 라벨:값 구조적 나열 (종목 스펙·제품 정보)
 - \`render_stock_chart\` — OHLCV 시계열 (주식)
-- \`render_chart\` — 막대·선·원형 (비교·추이·분포)
-- \`render_table\` — 수치 비교 표 (3열 이상이면 필수)
+- \`render_chart\` — 막대·선·원형 (color/palette/subtitle/unit 지원)
+- \`render_table\` — 비교 표 (수치 셀은 +/− 색상 자동)
+- \`render_compare\` — A vs B 대조 (두 대상 속성별 비교)
+- \`render_timeline\` — 연대기·이벤트 (날짜 + 제목 + 설명, 타입별 색 점)
 - \`render_progress\` — 진행률·달성률·점수
 
 **강조·메타**
-- \`render_callout\` — 핵심 요약·팁·판단 박스 (info/success/tip/accent/highlight/neutral 6색상)
-- \`render_alert\` — 경고·리스크만 (warn/error)
-- \`render_badge\` — 상태 태그 (예: "과열", "매수추천", "정배열")
+- \`render_callout\` — 핵심 요약·팁·판단 박스 (info/success/tip/accent/highlight/neutral)
+- \`render_alert\` — 경고·리스크 (warn/error)
+- \`render_status_badge\` — 의미 기반 상태 뱃지 세트 (positive/negative/neutral/warning/info, 여러 개 한 줄에)
+- \`render_badge\` — 단일 커스텀 태그
 - \`render_countdown\` — 시한 있는 이벤트
 
 **자유 HTML** — 위로 안 되는 커스텀 시각화만 (지도/다이어그램/애니메이션)
@@ -1975,20 +1980,26 @@ ${systemContext}
 
 "삼성전자 분석" 요청 →
 1. render_header("삼성전자 (005930) 다음주 전망")
-2. render_grid([render_card("현재가 216,000원"), render_card("PER 32배"), render_card("외국인 49.2%")])
-3. render_callout(info, "핵심 인사이트: 3주만에 +29% 급등, 저항권 진입")
+2. render_grid(columns=4, children=[
+     render_metric(label="현재가", value=216000, unit="원", delta=-1500, deltaType="down"),
+     render_metric(label="PER", value="32.91배", subLabel="업종 18배"),
+     render_metric(label="외국인 보유율", value="49.2%", deltaType="neutral"),
+     render_metric(label="52주 고점 대비", value="-3.1%", deltaType="down"),
+   ])
+3. render_status_badge([{label:"MA 정배열", status:"positive"}, {label:"공매도 과열", status:"warning"}, {label:"외국인 순매수 3일", status:"positive"}])
 4. render_stock_chart(OHLCV 60일)
 5. render_divider
-6. render_header("시나리오별 분기")
+6. render_header("시나리오별 분기", level=2)
 7. render_table(강세/중립/약세 × 조건/가격대)
-8. render_callout(tip, "실전 대응: 218,000 돌파 확인 후 추가 매수")
-9. render_alert(warn, "리스크: 공매도 잔고 160조 + 신용잔고 과열")
-10. 결론 한 줄 — 텍스트
+8. render_compare(left={label:"매수", items:[...]}, right={label:"매도", items:[...]})
+9. render_callout(tip, "실전 대응: 218,000 돌파 확인 후 추가 매수")
+10. render_alert(warn, "리스크: 공매도 잔고 160조 + 신용잔고 과열")
+11. 결론 한 줄 — 텍스트
 
 "서울 지도" 요청 →
 1. render_header("서울 주요 명소 지도")
-2. render_html(Leaflet + 마커 + 팝업)
-3. render_grid([render_card("문화유산 4곳"), render_card("공원 3곳"), render_card("전망대 2곳")])
+2. render_html(Leaflet + 마커 + 팝업, libraries=["leaflet"])
+3. render_grid(columns=3, children=[render_metric(label="문화유산", value=4), render_metric(label="공원", value=3), render_metric(label="전망대", value=2)])
 4. render_callout(tip, "추천 동선: 경복궁 → 북촌 → 창덕궁")
 
 ### 절대 금지 (분석·전망·비교 규모에서만 적용)

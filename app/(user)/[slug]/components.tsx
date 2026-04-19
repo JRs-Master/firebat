@@ -53,8 +53,13 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'List':          return <ListComp items={p.items ?? []} ordered={p.ordered} />;
     case 'Carousel':      return <CarouselComp children={p.children ?? []} autoPlay={p.autoPlay} interval={p.interval} />;
     case 'Countdown':     return <CountdownComp targetDate={p.targetDate ?? ''} label={p.label} />;
-    case 'Chart':         return <ChartComp type={p.chartType ?? 'bar'} data={p.data ?? []} labels={p.labels ?? []} title={p.title} />;
+    case 'Chart':         return <ChartComp type={p.chartType ?? 'bar'} data={p.data ?? []} labels={p.labels ?? []} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} palette={p.palette} showValues={p.showValues} />;
     case 'StockChart':    return <StockChart symbol={p.symbol ?? ''} title={p.title} data={p.data ?? []} indicators={p.indicators} buyPoints={p.buyPoints} sellPoints={p.sellPoints} />;
+    case 'Metric':        return <MetricComp label={p.label ?? ''} value={p.value ?? ''} unit={p.unit} delta={p.delta} deltaType={p.deltaType} subLabel={p.subLabel} icon={p.icon} />;
+    case 'Timeline':      return <TimelineComp items={p.items ?? []} />;
+    case 'Compare':       return <CompareComp title={p.title} left={p.left ?? { label: 'A', items: [] }} right={p.right ?? { label: 'B', items: [] }} />;
+    case 'KeyValue':      return <KeyValueComp title={p.title} items={p.items ?? []} columns={p.columns} />;
+    case 'StatusBadge':   return <StatusBadgeComp items={p.items ?? []} />;
     default:
       return <div className="text-amber-600 text-sm p-3 bg-amber-50 rounded-xl border border-amber-200">지원되지 않는 컴포넌트입니다 ({type})</div>;
   }
@@ -257,10 +262,18 @@ function TableComp({ headers = [], rows = [], stickyCol }: { headers: string[]; 
             <tr key={ri} className="hover:bg-gray-50 transition-colors">
               {row.map((cell, ci) => {
                 const isStickyCell = firstColSticky && ci === 0;
+                // 셀 값이 순수 숫자면 3자리 콤마 + 부호 색상 (+ 빨강, − 파랑) 자동 적용.
+                //   "12,345", "+5.3%", "-1.2%", "▲3.1%", "▼-2%" 같은 포맷도 패턴 감지.
+                //   "216,000원" 처럼 단위 붙은 것도 지원.
+                const s = typeof cell === 'string' ? cell.trim() : String(cell);
+                const isNumLike = /^[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(원|%|배|개|건|만|억|조|명|월|일|시|분)?$/.test(s);
+                const isPositive = isNumLike && /^[▲+]/.test(s);
+                const isNegative = isNumLike && /^[▼\-−]/.test(s);
+                const numClass = isPositive ? 'text-red-600 font-semibold' : isNegative ? 'text-blue-600 font-semibold' : '';
                 return (
                   <td
                     key={ci}
-                    className={`px-4 py-3 text-[13px] text-gray-800 border-b border-gray-100 align-top min-w-[120px] break-words ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold whitespace-nowrap' : ''}`}
+                    className={`px-4 py-3 text-[13px] border-b border-gray-100 align-top min-w-[120px] break-words ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold whitespace-nowrap text-gray-800' : numClass || 'text-gray-800'} ${isNumLike && !isStickyCell ? 'tabular-nums text-right' : ''}`}
                   >
                     {cell}
                   </td>
@@ -652,8 +665,37 @@ function CountdownComp({ targetDate, label }: { targetDate: string; label?: stri
 }
 
 // ── Chart (SVG, 외부 라이브러리 없음) ──────────────────────────────────────
-function ChartComp({ type = 'bar', data, labels, title }: {
-  type: 'bar' | 'pie' | 'line' | 'doughnut'; data: number[]; labels: string[]; title?: string;
+const COLOR_MAP: Record<string, { bar: string; hex: string }> = {
+  blue:   { bar: 'bg-blue-500',   hex: '#3b82f6' },
+  green:  { bar: 'bg-green-500',  hex: '#22c55e' },
+  red:    { bar: 'bg-red-500',    hex: '#ef4444' },
+  purple: { bar: 'bg-purple-500', hex: '#a855f7' },
+  orange: { bar: 'bg-orange-500', hex: '#f97316' },
+  teal:   { bar: 'bg-teal-500',   hex: '#14b8a6' },
+  pink:   { bar: 'bg-pink-500',   hex: '#ec4899' },
+  yellow: { bar: 'bg-yellow-500', hex: '#eab308' },
+  slate:  { bar: 'bg-slate-500',  hex: '#64748b' },
+};
+
+const PALETTE_MAP: Record<string, string[]> = {
+  default: ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#a855f7', '#f97316', '#14b8a6', '#ec4899'],
+  pastel:  ['#93c5fd', '#86efac', '#fde68a', '#fca5a5', '#d8b4fe', '#fdba74', '#5eead4', '#f9a8d4'],
+  'mono-blue':  ['#1e3a8a', '#1d4ed8', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#dbeafe'],
+  'mono-green': ['#14532d', '#15803d', '#22c55e', '#4ade80', '#86efac', '#bbf7d0'],
+  'red-green':  ['#ef4444', '#f87171', '#fca5a5', '#86efac', '#22c55e', '#15803d'],
+  earth:        ['#78350f', '#b45309', '#d97706', '#f59e0b', '#65a30d', '#166534'],
+};
+
+function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, palette, showValues = true }: {
+  type: 'bar' | 'pie' | 'line' | 'doughnut';
+  data: number[];
+  labels: string[];
+  title?: string;
+  subtitle?: string;
+  unit?: string;
+  color?: string;
+  palette?: string;
+  showValues?: boolean;
 }) {
   if (data.length === 0) return null;
   const maxVal = Math.max(...data, 1);
@@ -704,14 +746,19 @@ function ChartComp({ type = 'bar', data, labels, title }: {
     );
   }
 
-  const chartColors = [
-    'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-red-500',
-    'bg-purple-500', 'bg-orange-500', 'bg-teal-500', 'bg-pink-500',
-  ];
-  const pieColors = [
-    '#3b82f6', '#22c55e', '#eab308', '#ef4444',
-    '#a855f7', '#f97316', '#14b8a6', '#ec4899',
-  ];
+  const barColor = (color && COLOR_MAP[color]) ? COLOR_MAP[color].bar : 'bg-blue-500';
+  const pieColors = PALETTE_MAP[palette ?? 'default'] ?? PALETTE_MAP.default;
+  const fmtVal = (v: number) => {
+    const base = Math.abs(v) >= 10000 ? v.toLocaleString('ko-KR') : v.toString();
+    return unit ? `${base}${unit}` : base;
+  };
+
+  const titleBlock = (title || subtitle) && (
+    <div className="space-y-0.5">
+      {title && <div className="text-sm font-bold text-gray-800">{title}</div>}
+      {subtitle && <div className="text-xs text-gray-500">{subtitle}</div>}
+    </div>
+  );
 
   if (type === 'pie' || type === 'doughnut') {
     const total = data.reduce((s, v) => s + v, 0) || 1;
@@ -725,7 +772,7 @@ function ChartComp({ type = 'bar', data, labels, title }: {
 
     return (
       <div className="space-y-3">
-        {title && <div className="text-sm font-bold text-gray-800 text-center">{title}</div>}
+        {titleBlock}
         <div className="flex items-center justify-center gap-6">
           <div className="w-40 h-40 rounded-full shadow-sm border border-gray-100" style={{ background: gradient }} />
           <div className="space-y-1.5">
@@ -745,21 +792,167 @@ function ChartComp({ type = 'bar', data, labels, title }: {
   // bar chart
   return (
     <div className="space-y-3">
-      {title && <div className="text-sm font-bold text-gray-800">{title}</div>}
+      {titleBlock}
       <div className="space-y-2">
         {data.map((v, i) => (
           <div key={i} className="flex items-center gap-3">
             <span className="text-xs text-gray-600 w-20 truncate text-right">{labels[i] ?? i}</span>
             <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full ${chartColors[i % chartColors.length]} transition-all duration-500`}
+                className={`h-full rounded-full ${barColor} transition-all duration-500`}
                 style={{ width: `${(v / maxVal) * 100}%` }}
               />
             </div>
-            <span className="text-xs font-bold text-gray-700 w-10">{v}</span>
+            {showValues && <span className="text-xs font-bold text-gray-700 min-w-[3rem] text-right">{fmtVal(v)}</span>}
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// ── Metric ──────────────────────────────────────────────────────────────────
+// 라벨 + 대표값 + 증감(delta) 전용 카드. Card + Text 3개 조합 대체.
+function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon }: {
+  label: string;
+  value: string | number;
+  unit?: string;
+  delta?: string | number;
+  deltaType?: 'up' | 'down' | 'neutral';
+  subLabel?: string;
+  icon?: string;
+}) {
+  const deltaColor = deltaType === 'up' ? 'text-red-600' : deltaType === 'down' ? 'text-blue-600' : 'text-gray-500';
+  const deltaArrow = deltaType === 'up' ? '▲' : deltaType === 'down' ? '▼' : '';
+  const valStr = typeof value === 'number' ? value.toLocaleString('ko-KR') : value;
+  return (
+    <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
+      <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+        {icon && <span>{icon}</span>}
+        <span className="font-medium">{label}</span>
+      </div>
+      <div className="flex items-baseline gap-1">
+        <span className="text-2xl font-bold text-gray-900">{valStr}</span>
+        {unit && <span className="text-sm text-gray-500">{unit}</span>}
+      </div>
+      {delta != null && (
+        <div className={`text-xs font-bold mt-1 ${deltaColor}`}>
+          {deltaArrow} {typeof delta === 'number' ? delta.toLocaleString('ko-KR') : delta}
+        </div>
+      )}
+      {subLabel && <div className="text-xs text-gray-400 mt-1">{subLabel}</div>}
+    </div>
+  );
+}
+
+// ── Timeline ────────────────────────────────────────────────────────────────
+// 연대기 / 이벤트 타임라인. 세로로 점+선+날짜+제목+설명.
+function TimelineComp({ items }: {
+  items: Array<{ date: string; title: string; description?: string; type?: 'default' | 'success' | 'warning' | 'error' }>;
+}) {
+  const dotColor: Record<string, string> = {
+    default: 'bg-blue-500',
+    success: 'bg-green-500',
+    warning: 'bg-amber-500',
+    error:   'bg-red-500',
+  };
+  return (
+    <div className="relative pl-6">
+      <div className="absolute left-[11px] top-2 bottom-2 w-px bg-gray-200" />
+      <div className="space-y-5">
+        {items.map((item, i) => (
+          <div key={i} className="relative">
+            <div className={`absolute -left-[18px] top-1 w-3 h-3 rounded-full border-2 border-white ${dotColor[item.type ?? 'default']} shadow-sm`} />
+            <div className="text-xs text-gray-500 font-mono mb-0.5">{item.date}</div>
+            <div className="font-bold text-sm text-gray-900">{item.title}</div>
+            {item.description && <div className="text-sm text-gray-600 mt-0.5 leading-relaxed">{item.description}</div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Compare (A vs B) ────────────────────────────────────────────────────────
+function CompareComp({ title, left, right }: {
+  title?: string;
+  left: { label: string; items: Array<{ key: string; value: string }> };
+  right: { label: string; items: Array<{ key: string; value: string }> };
+}) {
+  const allKeys = Array.from(new Set([...left.items.map(i => i.key), ...right.items.map(i => i.key)]));
+  const leftMap = new Map(left.items.map(i => [i.key, i.value]));
+  const rightMap = new Map(right.items.map(i => [i.key, i.value]));
+  return (
+    <div className="space-y-3">
+      {title && <div className="text-base font-bold text-gray-800">{title}</div>}
+      <div className="grid grid-cols-[1fr_auto_1fr] gap-0 bg-white border border-gray-200 rounded-2xl overflow-hidden">
+        <div className="p-4 bg-blue-50 border-b border-blue-100">
+          <div className="text-xs text-blue-600 font-bold uppercase tracking-wider">{left.label}</div>
+        </div>
+        <div className="bg-gray-50 border-b border-gray-200" />
+        <div className="p-4 bg-amber-50 border-b border-amber-100">
+          <div className="text-xs text-amber-700 font-bold uppercase tracking-wider">{right.label}</div>
+        </div>
+        {allKeys.map(k => (
+          <React.Fragment key={k}>
+            <div className="p-3 text-sm text-gray-700 border-t border-gray-100 first:border-t-0">{leftMap.get(k) ?? '—'}</div>
+            <div className="px-3 py-2 text-xs text-gray-400 font-medium flex items-center justify-center bg-gray-50 border-t border-gray-100 first:border-t-0">{k}</div>
+            <div className="p-3 text-sm text-gray-700 border-t border-gray-100 first:border-t-0">{rightMap.get(k) ?? '—'}</div>
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── KeyValue ────────────────────────────────────────────────────────────────
+// 라벨:값 구조적 나열. 종목 정보, 제품 스펙 등.
+function KeyValueComp({ title, items, columns = 2 }: {
+  title?: string;
+  items: Array<{ key: string; value: string | number; highlight?: boolean }>;
+  columns?: number;
+}) {
+  const gridCls: Record<number, string> = {
+    1: 'grid-cols-1',
+    2: 'grid-cols-1 sm:grid-cols-2',
+    3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+  };
+  return (
+    <div className="space-y-2">
+      {title && <div className="text-sm font-bold text-gray-800">{title}</div>}
+      <div className={`grid ${gridCls[columns] ?? gridCls[2]} gap-x-4 gap-y-2`}>
+        {items.map((item, i) => (
+          <div key={i} className="flex items-baseline justify-between gap-3 py-1.5 border-b border-gray-100">
+            <span className="text-xs text-gray-500 shrink-0">{item.key}</span>
+            <span className={`text-sm text-right tabular-nums ${item.highlight ? 'font-bold text-gray-900' : 'text-gray-700'}`}>
+              {typeof item.value === 'number' ? item.value.toLocaleString('ko-KR') : item.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── StatusBadge ─────────────────────────────────────────────────────────────
+// 의미 기반 상태 뱃지 세트 (정배열/과열/중립 등).
+function StatusBadgeComp({ items }: {
+  items: Array<{ label: string; status: 'positive' | 'negative' | 'neutral' | 'warning' | 'info' }>;
+}) {
+  const styles: Record<string, string> = {
+    positive: 'bg-green-50 text-green-700 border-green-200',
+    negative: 'bg-red-50 text-red-700 border-red-200',
+    neutral:  'bg-gray-50 text-gray-700 border-gray-200',
+    warning:  'bg-amber-50 text-amber-700 border-amber-200',
+    info:     'bg-blue-50 text-blue-700 border-blue-200',
+  };
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map((item, i) => (
+        <span key={i} className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${styles[item.status] ?? styles.neutral}`}>
+          {item.label}
+        </span>
+      ))}
     </div>
   );
 }

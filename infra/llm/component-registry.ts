@@ -260,6 +260,130 @@ export const COMPONENTS: ComponentDef[] = [
       },
     },
   },
+  {
+    name: 'metric',
+    componentType: 'Metric',
+    description: '단일 지표 카드 (라벨 + 값 + 증감 화살표 + 아이콘). KPI 대시보드 구성 시 Grid 안에 여러 개 배치.',
+    semanticText: '지표 수치 카드 KPI 대시보드 현재가 PER PBR 보유율 달성률 점수 변동 증감 상승 하락 메트릭 스탯 stat metric 통계',
+    propsSchema: {
+      type: 'object',
+      required: ['label', 'value'],
+      additionalProperties: false,
+      properties: {
+        label: { type: 'string', description: '지표명' },
+        value: { type: ['string', 'number'], description: '대표 수치' },
+        unit: { type: ['string', 'null'], description: '단위 (원/%/배 등)' },
+        delta: { type: ['string', 'number', 'null'], description: '증감치' },
+        deltaType: { type: ['string', 'null'], enum: ['up', 'down', 'neutral'], description: 'up=빨강, down=파랑, neutral=회색 (생략 가능)' },
+        subLabel: { type: ['string', 'null'], description: '보조 설명' },
+        icon: { type: ['string', 'null'], description: '이모지 아이콘' },
+      },
+    },
+  },
+  {
+    name: 'timeline',
+    componentType: 'Timeline',
+    description: '연대기 / 이벤트 타임라인. 날짜 + 제목 + 설명 세로 배치.',
+    semanticText: '타임라인 연대기 이벤트 이력 히스토리 history timeline 일정 단계 progress steps',
+    propsSchema: {
+      type: 'object',
+      required: ['items'],
+      additionalProperties: false,
+      properties: {
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['date', 'title'],
+            properties: {
+              date: { type: 'string' },
+              title: { type: 'string' },
+              description: { type: ['string', 'null'] },
+              type: { type: ['string', 'null'], enum: ['default', 'success', 'warning', 'error'], description: '점 색상 구분 (생략 가능)' },
+            },
+          },
+        },
+      },
+    },
+  },
+  {
+    name: 'compare',
+    componentType: 'Compare',
+    description: 'A vs B 대조. 두 대상의 속성별 비교를 표 형태로.',
+    semanticText: '비교 대조 vs AB 선택 옵션 compare versus 장단점 대비',
+    propsSchema: {
+      type: 'object',
+      required: ['left', 'right'],
+      properties: {
+        title: { type: ['string', 'null'] },
+        left: {
+          type: 'object',
+          required: ['label', 'items'],
+          properties: {
+            label: { type: 'string' },
+            items: { type: 'array', items: { type: 'object', required: ['key', 'value'], properties: { key: { type: 'string' }, value: { type: 'string' } } } },
+          },
+        },
+        right: {
+          type: 'object',
+          required: ['label', 'items'],
+          properties: {
+            label: { type: 'string' },
+            items: { type: 'array', items: { type: 'object', required: ['key', 'value'], properties: { key: { type: 'string' }, value: { type: 'string' } } } },
+          },
+        },
+      },
+    },
+  },
+  {
+    name: 'key_value',
+    componentType: 'KeyValue',
+    description: '라벨:값 구조적 나열. 종목 스펙·제품 정보·재무 지표 등.',
+    semanticText: '키밸류 라벨 값 속성 정보 스펙 spec 정보 info 필드',
+    propsSchema: {
+      type: 'object',
+      required: ['items'],
+      properties: {
+        title: { type: ['string', 'null'] },
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['key', 'value'],
+            properties: {
+              key: { type: 'string' },
+              value: { type: ['string', 'number'] },
+              highlight: { type: ['boolean', 'null'] },
+            },
+          },
+        },
+        columns: { type: ['integer', 'null'], description: '1/2/3 (기본 2)' },
+      },
+    },
+  },
+  {
+    name: 'status_badge',
+    componentType: 'StatusBadge',
+    description: '의미 기반 상태 뱃지 세트. 여러 상태를 한 줄에. 예: "정배열"(positive), "과열"(warning).',
+    semanticText: '상태 뱃지 배지 태그 지표 정배열 과열 중립 positive negative warning info label tag chip',
+    propsSchema: {
+      type: 'object',
+      required: ['items'],
+      properties: {
+        items: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['label', 'status'],
+            properties: {
+              label: { type: 'string' },
+              status: { type: 'string', enum: ['positive', 'negative', 'neutral', 'warning', 'info'] },
+            },
+          },
+        },
+      },
+    },
+  },
 ];
 
 /** name → ComponentDef 맵 (render 디스패처에서 사용) */
