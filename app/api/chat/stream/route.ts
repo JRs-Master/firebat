@@ -248,38 +248,8 @@ function handleToolsMode(
             : undefined,
           error: result.error,
         });
-
-        // ── Server-side fail-safe 저장 ──
-        // 프론트가 SSE 끊겨(서버 재시작·네트워크) result 를 못 받으면 답변이 유실됨.
-        // 이를 방지하기 위해 result 전송 직후 서버에서 직접 대화에 assistant turn 을 append.
-        // 프론트도 정상 수신 시 자기 저장을 하지만 union-merge 라 중복 없음.
-        if (opts.conversationId && result.success && (result.reply || result.data)) {
-          try {
-            const existing = await core.getConversation(opts.owner ?? 'admin', opts.conversationId);
-            const prevMsgs = existing.success && existing.data
-              ? (existing.data.messages as unknown[])
-              : [];
-            const assistantMsg = {
-              id: `a-${Date.now()}`,
-              role: 'system',
-              content: result.reply ?? '',
-              thinkingText: '답변 완료',
-              executedActions: result.executedActions ?? [],
-              data: result.data,
-              error: result.error,
-            };
-            const nextMsgs = [...prevMsgs, assistantMsg];
-            // 제목 첫 user 기준 — 기존 제목 유지 선호
-            const existingTitle = existing.success && existing.data
-              ? (existing.data as { title?: string }).title
-              : undefined;
-            const title = existingTitle || (prompt.slice(0, 28) + (prompt.length > 28 ? '…' : ''));
-            const createdAt = existing.success && existing.data
-              ? (existing.data as { createdAt?: number }).createdAt ?? Date.now()
-              : Date.now();
-            await core.saveConversation(opts.owner ?? 'admin', opts.conversationId, title, nextMsgs, createdAt);
-          } catch { /* 저장 실패는 UI 동작에 영향 없음 — 프론트 저장으로 폴백 */ }
-        }
+        // NOTE: 이전에 여기서 server-side fail-safe 저장을 시도했으나 프론트 저장과 중복 발생.
+        // 프론트에서 id 통일·덮어쓰기 전까지는 서버 저장 비활성.
       } catch (err: any) {
         send('error', { error: err.message || '알 수 없는 오류' });
       }

@@ -445,8 +445,8 @@ export class CliGeminiFormat implements FormatHandler {
       // (프롬프트로 금지해도 Gemini flash 가 종종 뱉으므로 방어)
       const sanitizeFinal = (t: string): string => {
         return t
-          // [Thought: true|false] 마커 (chunk 경계에 걸려 스트리밍 중 못 잡힌 것)
-          .replace(/\[Thought:\s*(?:true|false)\]/g, '')
+          // [Thought: true|false] 마커 (공백·대소문자 변종 허용)
+          .replace(/\[\s*Thought\s*:\s*(?:true|false)\s*\]/gi, '')
           // `mcp_firebat_render_*` / `render_table` / `render_metric` 등 도구 이름 백틱 표기 + 뒤 괄호 설명 제거
           .replace(/`(?:mcp_firebat_)?render_[a-z_]+`\s*(?:\([^)]*\))?[^\n]*\n?/g, '')
           // 줄 시작이 도구 이름만 있는 경우 (백틱 없이)
