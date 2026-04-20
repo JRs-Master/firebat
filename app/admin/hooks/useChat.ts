@@ -47,108 +47,68 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     abortRef.current = null;
   }, []);
 
-  // ── 초기화: 대화 목록 복원 (로컬 즉시 + admin은 DB 백그라운드 동기화) ──────
+  // ── 초기화: DB 우선 로드 (다기기 동기화 보장). 실패 시에만 localStorage 폴백. ──
+  // localStorage 는 offline 백업 · 네트워크 장애 대응용으로만 역할 제한.
   useEffect(() => {
-    const raw = localStorage.getItem('firebat_conversations');
-    let convs: Conversation[] = [];
-    if (raw) {
-      try { convs = JSON.parse(raw); }
-      catch (e) {
-        console.warn('[useChat] firebat_conversations 파싱 실패 — 빈 상태로 시작:', e);
-        localStorage.removeItem('firebat_conversations'); // 손상된 데이터 제거
-      }
-    }
-
-    if (convs.length === 0) {
-      const oldChat = localStorage.getItem('firebat_chat_history');
-      if (oldChat) {
-        try {
-          const msgs: Message[] = JSON.parse(oldChat);
-          if (msgs.length > 0) convs = [makeConv(msgs)];
-        } catch (e) {
-          console.warn('[useChat] firebat_chat_history 파싱 실패:', e);
-        }
-      }
-    }
-
-    setConversations(convs);
-
-    if (convs.length > 0) {
-      const savedActiveId = localStorage.getItem('firebat_active_conv') ?? '';
-      // 폴백: 최근 활동 대화(updatedAt 최대). 정렬이 아직 안 된 상태일 수 있어 직접 reduce.
-      const mostRecent = convs.reduce((a, b) => ((b.updatedAt ?? b.createdAt) > (a.updatedAt ?? a.createdAt) ? b : a));
-      const active = convs.find(c => c.id === savedActiveId) ?? mostRecent;
-      setActiveConvId(active.id);
-      setMessages(cleanMessages(active.messages));
-    }
-
-    // DB에서 최신 대화 목록 풀 (localStorage → DB 마이그레이션 포함)
+    let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/conversations');
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!data.success) return;
-        const remote: Array<{ id: string; title: string; createdAt: number; updatedAt: number }> = data.conversations ?? [];
+        // 1) DB 에서 대화 목록 + 활성 대화 상세 가져오기
+        const listRes = await fetch('/api/conversations');
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          if (listData.success && !cancelled) {
+            const remote: Array<{ id: string; title: string; createdAt: number; updatedAt: number }> = listData.conversations ?? [];
+            remote.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
 
-        // localStorage에만 있는 대화 → DB로 업로드 (1회 마이그레이션)
-        const remoteIds = new Set(remote.map(r => r.id));
-        for (const local of convs) {
-          if (!remoteIds.has(local.id)) {
-            await fetch('/api/conversations', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: local.id, title: local.title, messages: local.messages, createdAt: local.createdAt }),
-            }).catch(() => {});
-          }
-        }
+            // 활성 대화 ID — 저장된 것 먼저, 없으면 가장 최근
+            const savedActiveId = localStorage.getItem('firebat_active_conv') ?? '';
+            const activeId = remote.find(r => r.id === savedActiveId)?.id ?? remote[0]?.id ?? '';
 
-        // DB 목록을 풀 로드 — 메시지 포함. 초기 로드는 DB가 authoritative.
-        // (이전 로직은 activeConvId 매칭 시 무조건 로컬 → 다른 기기에서 이어 쓴 내용이
-        //  PC에서 사라지던 버그. 이제는 항상 DB 버전 우선, fetch 실패 시에만 로컬 폴백.)
-        const fullList: Conversation[] = [];
-        for (const r of remote) {
-          const localMatch = convs.find(c => c.id === r.id);
-          try {
-            const one = await fetch(`/api/conversations?id=${encodeURIComponent(r.id)}`).then(x => x.json());
-            if (one.success && one.conversation) {
-              fullList.push({ id: r.id, title: r.title, createdAt: r.createdAt, updatedAt: r.updatedAt, messages: one.conversation.messages });
-            } else if (localMatch) {
-              fullList.push(localMatch);
+            // 활성 대화 상세 (messages) 만 즉시 fetch. 나머지는 빈 messages 로 초기화 — 선택 시 lazy load.
+            let activeMessages: Message[] = [];
+            if (activeId) {
+              try {
+                const one = await fetch(`/api/conversations?id=${encodeURIComponent(activeId)}`).then(x => x.json());
+                if (one.success && one.conversation) activeMessages = one.conversation.messages ?? [];
+              } catch {}
             }
-          } catch {
-            if (localMatch) fullList.push(localMatch);
-          }
-        }
-        // 로컬에만 있는 대화 처리:
-        //  - 실 메시지가 있는 대화가 DB 에 없으면 = 다른 기기에서 삭제된 것 → 로컬에서도 제거
-        //  - 메시지가 없거나 INIT 만 있는 신규 대화는 아직 DB 동기화 전 상태 → 로컬 유지
-        for (const local of convs) {
-          if (fullList.find(c => c.id === local.id)) continue;
-          const hasRealMessages = local.messages && local.messages.some(m =>
-            m.id !== 'system-init' && m.role === 'user'
-          );
-          if (!hasRealMessages) {
-            // 신규 미동기화 대화 → 유지
-            fullList.push(local);
-          }
-          // 실 메시지 있는데 DB 에 없음 → 삭제된 것으로 판단, 로컬에서도 제거 (push 안 함)
-        }
-        // 최신 활동 순 (updatedAt 내림차순) — Sidebar 에서 위쪽이 최신
-        fullList.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
 
-        if (fullList.length > 0) {
-          setConversations(fullList);
-          localStorage.setItem('firebat_conversations', JSON.stringify(fullList));
-          // 현재 활성 대화가 DB에 더 최신이면 메시지 교체
-          const savedActiveId = localStorage.getItem('firebat_active_conv') ?? '';
-          const activeFromRemote = fullList.find(c => c.id === savedActiveId);
-          if (activeFromRemote) {
-            setMessages(cleanMessages(activeFromRemote.messages));
+            const fullList: Conversation[] = remote.map(r => ({
+              id: r.id, title: r.title, createdAt: r.createdAt, updatedAt: r.updatedAt,
+              messages: r.id === activeId ? activeMessages : [],
+            }));
+
+            setConversations(fullList);
+            localStorage.setItem('firebat_conversations', JSON.stringify(fullList));
+            if (activeId) {
+              setActiveConvId(activeId);
+              setMessages(cleanMessages(activeMessages));
+            }
+            return;
           }
         }
-      } catch {}
+      } catch { /* DB 실패 → 아래 offline 폴백 */ }
+
+      // 2) DB 실패 시에만 localStorage 에서 복원 (offline · 네트워크 장애)
+      if (cancelled) return;
+      const raw = localStorage.getItem('firebat_conversations');
+      if (!raw) return;
+      try {
+        const convs: Conversation[] = JSON.parse(raw);
+        if (convs.length === 0) return;
+        setConversations(convs);
+        const savedActiveId = localStorage.getItem('firebat_active_conv') ?? '';
+        const mostRecent = convs.reduce((a, b) => ((b.updatedAt ?? b.createdAt) > (a.updatedAt ?? a.createdAt) ? b : a));
+        const active = convs.find(c => c.id === savedActiveId) ?? mostRecent;
+        setActiveConvId(active.id);
+        setMessages(cleanMessages(active.messages));
+      } catch (e) {
+        console.warn('[useChat] localStorage 폴백 파싱 실패:', e);
+        localStorage.removeItem('firebat_conversations');
+      }
     })();
+    return () => { cancelled = true; };
   }, []);
 
   // ── 대화 저장 — localStorage는 messages 변경마다, DB는 확정 시점에만 명시 호출 ──
