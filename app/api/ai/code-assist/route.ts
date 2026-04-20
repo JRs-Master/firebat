@@ -12,7 +12,10 @@ export async function POST(req: NextRequest) {
     }
 
     const core = getCore();
-    const result = await core.codeAssist({ code, language, instruction, selectedCode }, { model: config?.model });
+    const result = await core.codeAssist(
+      { code, language, instruction, selectedCode },
+      { model: config?.model, thinkingLevel: config?.thinkingLevel },
+    );
 
     if (!result.success) {
       return NextResponse.json({ success: false, error: result.error }, { status: 500 });

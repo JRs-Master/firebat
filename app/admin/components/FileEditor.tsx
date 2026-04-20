@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { X, Save, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send, Trash2, User } from 'lucide-react';
+import { X, Save, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send, Trash2, User, RotateCcw, Cpu } from 'lucide-react';
+import { AI_MODELS, THINKING_LEVELS } from '../types';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
@@ -12,6 +13,37 @@ const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
     </div>
   ),
 });
+
+// Monaco Diff Editor — 코드 모드 턴의 before/after 시각화
+const DiffEditor = dynamic(() => import('@monaco-editor/react').then(m => m.DiffEditor), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full bg-[#1e1e1e] text-slate-400 text-sm">
+      <Loader2 size={20} className="animate-spin mr-2" /> diff 로딩 중...
+    </div>
+  ),
+});
+
+// 슬래시 명령어 — 입력창에서 "/" 로 시작하면 드롭다운 표시, 선택 시 지시문 확장
+type SlashCommand = { cmd: string; label: string; instruction: string; mode: 'explain' | 'code' };
+const SLASH_COMMANDS: SlashCommand[] = [
+  { cmd: '/explain', label: '코드 설명', instruction: '이 코드가 무엇을 하는지 단계별로 설명해줘. 핵심 함수·분기·사이드 이펙트 위주로.', mode: 'explain' },
+  { cmd: '/fix',     label: '버그 수정', instruction: '이 코드에서 잠재적 버그·엣지 케이스를 찾아 수정한 전체 코드만 반환해줘.', mode: 'code' },
+  { cmd: '/test',    label: '테스트 생성', instruction: '이 코드의 주요 함수에 대한 유닛 테스트를 생성해줘 (해당 언어의 표준 테스트 프레임워크 사용).', mode: 'code' },
+  { cmd: '/doc',     label: '주석 추가', instruction: '각 함수·클래스에 간결한 한국어 주석/docstring 을 추가한 전체 코드를 반환해줘.', mode: 'code' },
+  { cmd: '/refactor', label: '리팩토링', instruction: '이 코드를 가독성·성능·네이밍 관점에서 리팩토링한 전체 코드만 반환해줘.', mode: 'code' },
+  { cmd: '/review',  label: '코드 리뷰', instruction: '이 코드를 전문가 관점에서 리뷰해줘. 개선점·리스크·좋은 점을 bullet 로 정리.', mode: 'explain' },
+];
+
+// 빈 상태에서 바로 클릭 가능한 프리셋 프롬프트
+const PRESET_PROMPTS: Array<{ label: string; instruction: string }> = [
+  { label: '🔍 코드 리뷰',    instruction: '이 코드를 전문가 관점에서 리뷰해줘. 개선점·리스크·좋은 점을 bullet 로 정리.' },
+  { label: '🐛 버그 찾기',    instruction: '이 코드에서 잠재적 버그와 엣지 케이스를 찾아서 문제점을 설명해줘.' },
+  { label: '⚡ 성능 최적화',  instruction: '이 코드의 성능을 개선할 방법을 제안해줘.' },
+  { label: '🏷 타입 명시',    instruction: '모든 변수·함수에 명확한 타입 어노테이션을 추가한 전체 코드를 반환해줘.' },
+  { label: '🛡 에러 처리',    instruction: '빠진 에러 처리·try-catch·입력 검증을 추가한 전체 코드를 반환해줘.' },
+  { label: '📖 주석 추가',    instruction: '각 함수에 간결한 한국어 docstring/주석을 추가한 전체 코드를 반환해줘.' },
+];
 
 function detectLanguage(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
@@ -88,6 +120,14 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
     setChat([]);
     try { localStorage.removeItem(chatStorageKey); } catch {}
   }, [chatStorageKey]);
+
+  // 세션 로컬 override — null 이면 어드민 기본값(aiModel prop) 사용
+  const [localModel, setLocalModel]       = useState<string | null>(null);
+  const [localThinking, setLocalThinking] = useState<string | null>(null);
+  const [slashOpen, setSlashOpen]         = useState<'root' | 'model' | 'thinking' | null>(null);
+
+  // Diff 프리뷰 모달 — 코드 모드 턴의 before/after 시각화
+  const [diffTurnId, setDiffTurnId] = useState<string | null>(null);
 
   const editorRef   = useRef<any>(null);
   const aiInputRef  = useRef<HTMLTextAreaElement>(null);
@@ -194,18 +234,19 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
     setTimeout(() => aiInputRef.current?.focus(), 50);
   }, [updateSelectionInfo]);
 
-  // AI 요청 — 대화 히스토리에 turn 누적
-  const handleAiSubmit = useCallback(async () => {
-    if (!aiInstruction.trim() || aiLoading) return;
+  // AI 요청 — 대화 히스토리에 turn 누적. override 지정 시 입력창 값 대신 사용 (프리셋/슬래시용)
+  const handleAiSubmit = useCallback(async (override?: string) => {
+    const raw = (override ?? aiInstruction).trim();
+    if (!raw || aiLoading) return;
     // 지시문 기반 모드 추정 — 백엔드 codeAssist 와 동일 키워드 목록
     const explainKeywords = ['알려줘', '알려달', '설명', '분석', '검토', '리뷰', '뭐가 문제', '왜', '어떻게', '파악', '평가', 'explain', 'review', 'analyze', 'analyse', 'describe'];
-    const lowered = aiInstruction.toLowerCase();
-    const mode: 'explain' | 'code' = explainKeywords.some(k => aiInstruction.includes(k) || lowered.includes(k.toLowerCase())) ? 'explain' : 'code';
+    const lowered = raw.toLowerCase();
+    const mode: 'explain' | 'code' = explainKeywords.some(k => raw.includes(k) || lowered.includes(k.toLowerCase())) ? 'explain' : 'code';
 
     const turnId = Date.now().toString();
-    const userTurn: ChatTurn = { id: `u-${turnId}`, role: 'user', content: aiInstruction };
+    const userTurn: ChatTurn = { id: `u-${turnId}`, role: 'user', content: raw };
     setChat(prev => [...prev, userTurn]);
-    const sentInstruction = aiInstruction;
+    const sentInstruction = raw;
     setAiInstruction('');
     setAiLoading(true);
     setAiError(null);
@@ -217,15 +258,17 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
       ? editor.getModel()?.getValueInRange(sel)
       : undefined;
 
-    // 모델 우선순위: prop(어드민 채팅과 통일) → localStorage 폴백 → 서버 기본
-    let model: string | undefined = aiModel;
+    // 모델 우선순위: 로컬 override → prop(어드민 채팅과 통일) → localStorage 폴백 → 서버 기본
+    let model: string | undefined = localModel ?? aiModel;
     if (!model) {
       try {
         const stored = localStorage.getItem('firebat_model');
         if (stored) model = stored;
       } catch {}
     }
-    const config = model ? { model } : {};
+    const config: { model?: string; thinkingLevel?: string } = {};
+    if (model) config.model = model;
+    if (localThinking) config.thinkingLevel = localThinking;
 
     try {
       const res  = await fetch('/api/ai/code-assist', {
@@ -251,7 +294,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
     } finally {
       setAiLoading(false);
     }
-  }, [aiInstruction, aiLoading, content, lang, aiModel]);
+  }, [aiInstruction, aiLoading, content, lang, aiModel, localModel, localThinking]);
 
   // 특정 턴의 코드 제안을 에디터에 적용
   const applyTurn = useCallback((turnId: string) => {
@@ -510,13 +553,47 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 </button>
               </div>
 
+              {/* 모델·thinking override 배지 (기본값과 다를 때만) */}
+              {(localModel || localThinking) && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-900/30 border-b border-amber-700/40 text-[11px]">
+                  <Cpu size={11} className="text-amber-400" />
+                  <span className="text-amber-300">
+                    {localModel && <><b>{AI_MODELS.find(m => m.value === localModel)?.label || localModel}</b></>}
+                    {localModel && localThinking && ' · '}
+                    {localThinking && <>thinking: <b>{localThinking}</b></>}
+                  </span>
+                  <button
+                    onClick={() => { setLocalModel(null); setLocalThinking(null); }}
+                    className="ml-auto flex items-center gap-1 text-amber-400 hover:text-amber-200"
+                    title="어드민 설정으로 복원"
+                  >
+                    <RotateCcw size={10} /> 기본값
+                  </button>
+                </div>
+              )}
+
               {/* 대화 히스토리 */}
               <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
                 {chat.length === 0 && !aiLoading && (
-                  <div className="text-center text-slate-500 text-[12px] py-10">
-                    <Sparkles size={20} className="mx-auto mb-2 text-violet-500/50" />
-                    코드 수정·리뷰를 요청해 보세요.<br />
-                    <span className="text-[11px] text-slate-600">"~알려줘/설명해줘" = 리뷰 모드</span>
+                  <div className="space-y-3 py-2">
+                    <div className="text-center text-slate-500 text-[12px]">
+                      <Sparkles size={18} className="mx-auto mb-1.5 text-violet-500/50" />
+                      빠르게 시작하기
+                    </div>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {PRESET_PROMPTS.map(preset => (
+                        <button
+                          key={preset.label}
+                          onClick={() => handleAiSubmit(preset.instruction)}
+                          className="text-left bg-slate-800/40 hover:bg-violet-600/20 border border-slate-700/60 hover:border-violet-600/50 rounded-lg px-2.5 py-2 text-[11.5px] text-slate-300 hover:text-violet-200 transition-colors"
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="text-center text-[10.5px] text-slate-600 pt-2 border-t border-slate-800/60">
+                      <code className="text-violet-400/70">/</code> 로 슬래시 명령어 · <code className="text-violet-400/70">/model</code> · <code className="text-violet-400/70">/thinking</code>
+                    </div>
                   </div>
                 )}
                 {chat.map((turn, idx) => (
@@ -539,6 +616,15 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                             </pre>
                           </div>
                           <div className="flex items-center gap-1.5 mt-1.5">
+                            {turn.mode === 'code' && (
+                              <button
+                                onClick={() => setDiffTurnId(turn.id)}
+                                className="flex items-center gap-1 px-2 py-1 bg-blue-600/80 hover:bg-blue-600 text-white text-[11px] font-bold rounded transition-colors"
+                                title="적용 전 변경점 미리보기"
+                              >
+                                <Eye size={11} /> Diff
+                              </button>
+                            )}
                             {turn.mode === 'code' && !turn.applied && (
                               <button
                                 onClick={() => applyTurn(turn.id)}
@@ -592,23 +678,107 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 <div ref={chatEndRef} />
               </div>
 
+              {/* 슬래시 명령어 드롭다운 */}
+              {slashOpen && (
+                <div className="mx-2 mb-1 bg-[#252540] border border-violet-700/40 rounded-lg overflow-hidden shadow-xl">
+                  {slashOpen === 'root' && (
+                    <>
+                      {SLASH_COMMANDS.filter(c => c.cmd.startsWith(aiInstruction) || aiInstruction === '/').map(c => (
+                        <button
+                          key={c.cmd}
+                          onClick={() => { setAiInstruction(''); setSlashOpen(null); handleAiSubmit(c.instruction); }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-violet-600/30 transition-colors"
+                        >
+                          <code className="text-violet-400 font-bold">{c.cmd}</code>
+                          <span className="text-slate-300">{c.label}</span>
+                          <span className="ml-auto text-[10px] text-slate-500">{c.mode === 'explain' ? '리뷰' : '코드'}</span>
+                        </button>
+                      ))}
+                      <div className="border-t border-slate-700/60" />
+                      <button
+                        onClick={() => { setAiInstruction(''); setSlashOpen('model'); }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-violet-600/30 transition-colors"
+                      >
+                        <code className="text-violet-400 font-bold">/model</code>
+                        <span className="text-slate-300">모델 변경</span>
+                      </button>
+                      <button
+                        onClick={() => { setAiInstruction(''); setSlashOpen('thinking'); }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-violet-600/30 transition-colors"
+                      >
+                        <code className="text-violet-400 font-bold">/thinking</code>
+                        <span className="text-slate-300">추론 강도 변경</span>
+                      </button>
+                      <button
+                        onClick={() => { setLocalModel(null); setLocalThinking(null); setAiInstruction(''); setSlashOpen(null); }}
+                        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-amber-600/30 transition-colors border-t border-slate-700/60"
+                      >
+                        <code className="text-amber-400 font-bold">/reset</code>
+                        <span className="text-slate-300">기본값(어드민 설정)으로 복원</span>
+                      </button>
+                    </>
+                  )}
+                  {slashOpen === 'model' && (
+                    <div className="max-h-64 overflow-y-auto">
+                      <div className="px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-700/60 sticky top-0 bg-[#252540]">모델 선택</div>
+                      {AI_MODELS.map(m => (
+                        <button
+                          key={m.value}
+                          onClick={() => { setLocalModel(m.value); setAiInstruction(''); setSlashOpen(null); }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-violet-600/30 transition-colors"
+                        >
+                          {(localModel ?? aiModel) === m.value && <Check size={11} className="text-violet-400" />}
+                          <span className="text-slate-200">{m.label}</span>
+                          <code className="ml-auto text-[10px] text-slate-500">{m.value}</code>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {slashOpen === 'thinking' && (
+                    <div>
+                      <div className="px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-700/60">추론 강도</div>
+                      {THINKING_LEVELS.map(l => (
+                        <button
+                          key={l.value}
+                          onClick={() => { setLocalThinking(l.value); setAiInstruction(''); setSlashOpen(null); }}
+                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-violet-600/30 transition-colors"
+                        >
+                          {localThinking === l.value && <Check size={11} className="text-violet-400" />}
+                          <span className="text-slate-200">{l.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* 입력창 (사이드바 하단) */}
               <div className="border-t border-violet-800/40 p-2 flex-shrink-0">
                 <div className="flex items-end gap-2">
                   <textarea
                     ref={aiInputRef}
                     value={aiInstruction}
-                    onChange={(e) => setAiInstruction(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAiSubmit(); }
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setAiInstruction(v);
+                      // "/" 만 입력됐거나 /로 시작하면 슬래시 메뉴 오픈
+                      if (v === '/' || (v.startsWith('/') && !v.includes(' '))) {
+                        setSlashOpen('root');
+                      } else {
+                        setSlashOpen(null);
+                      }
                     }}
-                    placeholder={isPageMode ? '"헤더 색 바꿔줘" 또는 "뭐가 문제야?"' : '수정할 내용 입력 (Enter 전송 / Shift+Enter 줄바꿈)'}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape' && slashOpen) { e.preventDefault(); setSlashOpen(null); return; }
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); setSlashOpen(null); handleAiSubmit(); }
+                    }}
+                    placeholder={isPageMode ? '"헤더 색 바꿔줘" 또는 "/" 로 명령어' : '수정할 내용 또는 "/" 로 명령어 (Enter 전송)'}
                     rows={2}
                     disabled={aiLoading}
                     className="flex-1 bg-[#252540] border border-violet-700/40 rounded-lg px-2.5 py-2 text-[12.5px] text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-violet-500 transition-colors disabled:opacity-50"
                   />
                   <button
-                    onClick={handleAiSubmit}
+                    onClick={() => handleAiSubmit()}
                     disabled={!aiInstruction.trim() || aiLoading}
                     className="flex items-center justify-center w-10 h-10 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors shrink-0"
                     title="전송 (Enter)"
@@ -628,6 +798,57 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
           <span className="opacity-60">Ctrl+K: AI 어시스트</span>
           {isDirty && <span className="ml-auto opacity-90">● 수정됨</span>}
         </div>
+
+        {/* Monaco Diff 모달 — 코드 모드 턴의 before/after 시각화 */}
+        {diffTurnId && (() => {
+          const turn = chat.find(t => t.id === diffTurnId);
+          if (!turn) return null;
+          return (
+            <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4" onClick={() => setDiffTurnId(null)}>
+              <div className="bg-[#1e1e1e] rounded-xl shadow-2xl w-full max-w-6xl h-[85vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-700 bg-[#252526]">
+                  <Eye size={14} className="text-blue-400" />
+                  <span className="text-[13px] font-bold text-slate-200">변경점 미리보기</span>
+                  <span className="text-[11px] text-slate-500">
+                    <span className="text-red-400">← 원본</span> · <span className="text-green-400">AI 제안 →</span>
+                  </span>
+                  <div className="flex-1" />
+                  {!turn.applied && (
+                    <button
+                      onClick={() => { applyTurn(turn.id); setDiffTurnId(null); }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-[12px] font-bold rounded-lg transition-colors"
+                    >
+                      <Check size={12} /> 적용하고 닫기
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setDiffTurnId(null)}
+                    className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+                <div className="flex-1 min-h-0">
+                  <DiffEditor
+                    height="100%"
+                    language={lang}
+                    theme="vs-dark"
+                    original={content}
+                    modified={turn.content}
+                    options={{
+                      readOnly: true,
+                      renderSideBySide: true,
+                      fontSize: 13,
+                      fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace",
+                      minimap: { enabled: false },
+                      scrollBeyondLastLine: false,
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

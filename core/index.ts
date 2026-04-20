@@ -21,6 +21,8 @@ import { eventBus } from '../lib/events';
 /** AI 요청 옵션 — 요청별 모델/이미지/멀티턴 컨텍스트 지정 */
 export interface AiRequestOpts {
   model?: string;
+  /** thinking/reasoning 강도 override (none/minimal/low/medium/high/xhigh/max) */
+  thinkingLevel?: string;
   /** 현재 프롬프트에 첨부된 이미지 (Base64 data URL) */
   image?: string;
   /** 이전 응답 ID (OpenAI Responses API multi-turn state) */

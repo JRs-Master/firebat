@@ -2660,7 +2660,9 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
     selectedCode?: string;
   }, opts?: AiRequestOpts): Promise<InfraResult<string>> {
     const { code, language, instruction, selectedCode } = params;
-    const llmOpts: LlmCallOpts | undefined = opts?.model ? { model: opts.model } : undefined;
+    const llmOpts: LlmCallOpts = {};
+    if (opts?.model) llmOpts.model = opts.model;
+    if (opts?.thinkingLevel) llmOpts.thinkingLevel = opts.thinkingLevel;
 
     // 사용자 지시를 분석·설명 모드 vs 코드 수정 모드로 분기.
     // "알려줘/설명/분석/검토/리뷰/뭐가 문제/왜" 계열은 설명(마크다운) 반환,
