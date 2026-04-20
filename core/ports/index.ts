@@ -238,6 +238,9 @@ export interface LlmCallOpts {
   /** CLI 모드 세션 캡처 콜백 — 첫 호출 시 stream 이벤트에서 발견한 새 session_id 전달.
    *  호출자는 이걸 DB 에 저장했다가 다음 턴에 cliResumeSessionId 로 되돌려줌. */
   onCliSessionId?: (sessionId: string) => void;
+  /** CLI 데몬 캐시 key 로 사용될 대화 ID (Claude Code persistent daemon).
+   *  있으면 해당 대화의 장시간 서브프로세스를 재사용 — 매 턴 spawn 제거. */
+  conversationId?: string;
 }
 
 // ── Function Calling 타입 ──────────────────────────────────────────────────
