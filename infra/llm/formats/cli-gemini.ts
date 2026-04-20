@@ -57,10 +57,11 @@ export class CliGeminiFormat implements FormatHandler {
 
   async askWithTools(prompt: string, systemPrompt: string, _tools: ToolDefinition[], history: ChatMessage[], _toolExchanges: ToolExchangeEntry[], opts: LlmCallOpts | undefined, ctx: FormatHandlerContext): Promise<InfraResult<LlmToolResponse>> {
     const mcpCfg = ctx.resolveMcpConfig?.();
-    const geminiHome = this.ensureGeminiHome(mcpCfg?.token, mcpCfg?.url?.replace(/\/api\/mcp-internal.*$/, ''));
-    // Firebat 시스템 프롬프트를 GEMINI.md 로 기록 → Gemini CLI 가 프로젝트 context 로 자동 로드.
-    //  -p 에는 user query 만 전달 → echo 버그 없음, Gemini 기본 페르소나와도 깔끔히 레이어링.
-    const geminiWorkspace = this.ensureGeminiWorkspace(systemPrompt);
+    const baseUrl = mcpCfg?.url?.replace(/\/api\/mcp-internal.*$/, '');
+    // workspace 하나에 GEMINI.md(시스템 프롬프트) + .gemini/settings.json(MCP 설정) 통합.
+    // GEMINI_HOME env var 는 Gemini CLI 가 지원 안 함 → 프로젝트 로컬 설정으로 주입.
+    const geminiWorkspace = this.ensureGeminiWorkspace(systemPrompt, mcpCfg?.token, baseUrl);
+    const geminiHome = undefined; // 더 이상 사용 안 함 (호환성 유지 위해 필드 유지)
     const cliModel = ctx.config.cliModel;
     const resumeSessionId = opts?.cliResumeSessionId;
     let res = await this.runGemini(prompt, {
@@ -101,16 +102,38 @@ export class CliGeminiFormat implements FormatHandler {
   }
 
   /**
-   * Firebat 전용 Gemini workspace 디렉토리 생성 + GEMINI.md 기록.
-   * Gemini CLI 는 cwd 에서 GEMINI.md 를 자동 로드해 프로젝트 컨텍스트로 사용.
-   * 이 방식으로 '--system-prompt' 부재 문제를 우회 + Gemini 기본 페르소나와 깔끔히 공존.
+   * Firebat 전용 Gemini workspace 디렉토리 생성 + GEMINI.md + .gemini/settings.json 기록.
+   *
+   * Gemini CLI 동작:
+   *   - cwd/GEMINI.md → 프로젝트 컨텍스트로 자동 로드 (system prompt 대체)
+   *   - cwd/.gemini/settings.json → 프로젝트 설정 (mcpServers 등, user settings 위에 머지)
+   *
+   * GEMINI_HOME env var 는 Gemini CLI 가 지원하지 않음 → ~/.gemini/settings.json 수정 없이
+   * 프로젝트 로컬 설정으로 MCP 주입.
    */
-  private ensureGeminiWorkspace(systemPrompt?: string): string {
+  private ensureGeminiWorkspace(systemPrompt: string | undefined, internalMcpToken?: string | null, baseUrl?: string): string {
     const workspace = path.join(os.tmpdir(), 'firebat-gemini-workspace');
-    fs.mkdirSync(workspace, { recursive: true });
+    const geminiDir = path.join(workspace, '.gemini');
+    fs.mkdirSync(geminiDir, { recursive: true });
     if (systemPrompt) {
       fs.writeFileSync(path.join(workspace, 'GEMINI.md'), systemPrompt);
     }
+    // 프로젝트 로컬 MCP 설정
+    const mcpServers: Record<string, unknown> = {};
+    if (internalMcpToken) {
+      const url = `${baseUrl || 'http://127.0.0.1:3000'}/api/mcp-internal`;
+      mcpServers.firebat = { httpUrl: url, headers: { Authorization: `Bearer ${internalMcpToken}` }, timeout: 30000 };
+    } else {
+      const projectDir = process.cwd();
+      const stdioPath = path.join(projectDir, 'mcp', 'stdio-user-ai.ts');
+      mcpServers.firebat = { command: 'npx', args: ['tsx', stdioPath], cwd: projectDir, timeout: 30000 };
+    }
+    const settings = {
+      mcpServers,
+      autoMemory: false,
+      telemetry: { enabled: false },
+    };
+    fs.writeFileSync(path.join(geminiDir, 'settings.json'), JSON.stringify(settings, null, 2));
     return workspace;
   }
 
