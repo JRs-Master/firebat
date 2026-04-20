@@ -93,27 +93,28 @@ export class AnthropicMessagesFormat implements FormatHandler {
     const client = this.getClient(ctx);
     if (!client) return { success: false, error: `${ctx.config.displayName} API 키 누락` };
     try {
-      // 내부 MCP connector (Anthropic hosted MCP) — OpenAI와 동일 전략
-      // mcpConnector 활성 + 토큰 존재 시: inline tools 배열 생략, MCP 서버 단일 경로만 사용 (중복 방지)
+      // MCP connector: 공식 스펙 (2025-11-20) — mcp_servers 는 연결 정의만, 도구 설정은 tools 배열의 mcp_toolset 객체
       const mcpConfig = ctx.resolveMcpConfig?.();
       const useMcp = !!(ctx.config.features?.mcpConnector && mcpConfig?.token);
+      const MCP_SERVER_NAME = 'firebat-internal';
       const mcpServers = useMcp ? [{
         type: 'url' as const,
         url: mcpConfig!.url,
-        name: 'firebat-internal',
+        name: MCP_SERVER_NAME,
         authorization_token: mcpConfig!.token,
       }] : undefined;
-      // MCP 사용 시 inline tools 스킵 (Firebat 내부 도구는 MCP 서버에서 노출됨)
-      // cache_control: 마지막 도구에 ephemeral 지정 → tools 블록 전체 캐싱 (5분 TTL, 동일 세션 반복 호출 시 -90%)
-      const anthropicTools: Anthropic.Tool[] = useMcp ? [] : tools.map((t, i) => ({
+
+      // inline tools (MCP 미사용 시) + MCPToolset (MCP 사용 시). 둘은 배타적으로 택일해야 호환.
+      const inlineTools: Anthropic.Tool[] = useMcp ? [] : tools.map((t, i) => ({
         name: t.name,
         description: t.description,
         input_schema: t.parameters as any,
         ...(i === tools.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
       }));
+      const mcpToolsets = useMcp ? [{ type: 'mcp_toolset' as const, mcp_server_name: MCP_SERVER_NAME }] : [];
+      const combinedTools: any[] = [...inlineTools, ...mcpToolsets];
 
       const messages = this.buildMessages(history, prompt, toolExchanges, opts);
-      // Claude extended thinking: thinkingLevel → budget_tokens 매핑
       const budgetMap: Record<string, number> = {
         low: 4000, medium: 10000, high: 20000, xhigh: 32000, max: 64000,
       };
@@ -123,26 +124,32 @@ export class AnthropicMessagesFormat implements FormatHandler {
         ? { type: 'enabled' as const, budget_tokens: budget }
         : undefined;
 
-      // system prompt도 캐싱: 긴 프롬프트(수천 토큰)가 반복 호출마다 재처리되는 비용 절감
       const systemBlocks: Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }> = systemPrompt
         ? [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }]
         : [];
 
-      const payload: Anthropic.MessageCreateParams = {
+      // max_tokens: Claude 4 시리즈는 최대 64K output 지원. 분석 응답 truncation 방지.
+      const maxTokens = 32000;
+
+      const betas = useMcp ? ['mcp-client-2025-11-20'] : undefined;
+      const payload: any = {
         model: ctx.config.id,
-        max_tokens: 8192,
-        ...(systemBlocks.length > 0 ? { system: systemBlocks as any } : {}),
+        max_tokens: maxTokens,
+        ...(systemBlocks.length > 0 ? { system: systemBlocks } : {}),
         messages,
-        ...(anthropicTools.length > 0 ? { tools: anthropicTools } : {}),
+        ...(combinedTools.length > 0 ? { tools: combinedTools } : {}),
         ...(thinking ? { thinking } : {}),
-        ...(mcpServers ? ({ mcp_servers: mcpServers } as any) : {}),
+        ...(mcpServers ? { mcp_servers: mcpServers } : {}),
+        ...(betas ? { betas } : {}),
       };
 
       const textParts: string[] = [];
       const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+      // MCP 경유 호출은 beta namespace 필수 (client.beta.messages.*)
+      const api = useMcp ? client.beta.messages : client.messages;
 
       if (opts?.onChunk) {
-        const stream = client.messages.stream(payload);
+        const stream = (api as any).stream(payload);
         for await (const event of stream) {
           if (event.type === 'content_block_delta') {
             const delta: any = event.delta;
@@ -155,14 +162,18 @@ export class AnthropicMessagesFormat implements FormatHandler {
           }
         }
         const final = await stream.finalMessage();
-        for (const c of final.content) {
-          if (c.type === 'tool_use') toolCalls.push({ name: c.name, args: c.input as Record<string, unknown> });
+        for (const c of final.content as any[]) {
+          if (c.type === 'tool_use' || c.type === 'mcp_tool_use') {
+            toolCalls.push({ name: c.name, args: (c.input as Record<string, unknown>) ?? {} });
+          }
         }
       } else {
-        const res = await client.messages.create({ ...payload, stream: false }) as Anthropic.Message;
-        for (const c of res.content) {
+        const res = await (api as any).create({ ...payload, stream: false });
+        for (const c of res.content as any[]) {
           if (c.type === 'text') textParts.push(c.text);
-          else if (c.type === 'tool_use') toolCalls.push({ name: c.name, args: c.input as Record<string, unknown> });
+          else if (c.type === 'tool_use' || c.type === 'mcp_tool_use') {
+            toolCalls.push({ name: c.name, args: (c.input as Record<string, unknown>) ?? {} });
+          }
         }
       }
       return { success: true, data: { text: textParts.join(''), toolCalls } };
