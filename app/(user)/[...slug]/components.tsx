@@ -305,7 +305,8 @@ function TableComp({ headers = [], rows = [], stickyCol, align, cellAlign }: {
   const firstColSticky = stickyCol ?? (headers.length >= 4);
 
   // 컬럼별 숫자성 판정 — 컬럼 셀 중 60%+ 가 숫자면 숫자 컬럼으로 간주 (자동 우측 정렬)
-  const isNumLikeStr = (s: string) => /^[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(원|%|배|개|건|만|억|조|명|월|일|시|분)?$/.test(s);
+  // "약 22배", "대략 5.0배", "~51%" 같은 approximate prefix 도 숫자 셀로 인식.
+  const isNumLikeStr = (s: string) => /^(?:약|대략|~|≈|approx\.?)?\s*[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(원|%|배|개|건|만|억|조|명|월|일|시|분|달러|엔|위안|유로|\$|￥|€|£)?$/i.test(s);
   const numericCol: boolean[] = headers.map((_, ci) => {
     if (rows.length === 0) return false;
     let n = 0;
@@ -1062,9 +1063,9 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, alig
   const deltaArrow = deltaType === 'up' ? '▲' : deltaType === 'down' ? '▼' : '';
   const valStr = formatNumberString(value);
 
-  // value 가 숫자 패턴인지 (콤마·부호·단위 허용)
+  // value 가 숫자 패턴인지 (콤마·부호·단위·approximate prefix 허용)
   const valueIsNumeric = typeof value === 'number'
-    || /^[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(원|%|배|개|건|만|억|조|명|월|일|시|분)?$/.test(String(value).trim());
+    || /^(?:약|대략|~|≈|approx\.?)?\s*[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(원|%|배|개|건|만|억|조|명|월|일|시|분|달러|엔|위안|유로|\$|￥|€|£)?$/i.test(String(value).trim());
 
   // 우선순위: 필드별 명시 > 전체 align > 자동(한국 금융 카드 스타일)
   const la = labelAlign    ?? align ?? 'center';
