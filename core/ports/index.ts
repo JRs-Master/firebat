@@ -181,6 +181,8 @@ export interface JsonSchema {
 export interface IStoragePort {
   /** 해당 경로의 텍스트 콘텐츠 읽기 */
   read(path: string): Promise<InfraResult<string>>;
+  /** 바이너리 파일 읽기 → base64 + mimeType + size. 이미지/PDF/기타 바이너리. */
+  readBinary(path: string): Promise<InfraResult<{ base64: string; mimeType: string; size: number }>>;
   /** 파일 쓰기(부모 폴더 자동 생성 포함) */
   write(path: string, content: string): Promise<InfraResult<void>>;
   /** 파일 삭제 */

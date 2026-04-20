@@ -231,7 +231,7 @@ class ClaudeCodeDaemon {
       '--output-format', 'stream-json',
       '--verbose',
       '--allowed-tools', 'mcp__firebat__*',
-      '--disallowed-tools', 'Agent,Task,ToolSearch,SlashCommand,Bash,BashOutput,KillBash,KillShell,Read,Write,Edit,NotebookEdit,Glob,Grep,WebFetch,WebSearch,TodoWrite,ExitPlanMode,ListMcpResources,ReadMcpResource',
+      '--disallowed-tools', 'Agent,Task,TaskOutput,TaskStop,ToolSearch,SlashCommand,Bash,BashOutput,KillBash,KillShell,Read,Write,Edit,NotebookEdit,Glob,Grep,WebFetch,WebSearch,TodoWrite,EnterPlanMode,ExitPlanMode,EnterWorktree,ExitWorktree,Monitor,PushNotification,RemoteTrigger,ScheduleWakeup,Skill,AskUserQuestion,CronCreate,CronDelete,CronList,ListMcpResources,ReadMcpResource',
     ];
     if (spawnOpts.systemPrompt) args.push('--system-prompt', spawnOpts.systemPrompt);
     if (spawnOpts.mcpConfigPath) args.push('--mcp-config', spawnOpts.mcpConfigPath);

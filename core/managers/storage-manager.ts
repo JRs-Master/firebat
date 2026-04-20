@@ -21,6 +21,10 @@ export class StorageManager {
     return this.storage.read(path);
   }
 
+  async readBinary(path: string): Promise<InfraResult<{ base64: string; mimeType: string; size: number }>> {
+    return this.storage.readBinary(path);
+  }
+
   async write(path: string, content: string): Promise<InfraResult<void>> {
     return this.storage.write(path, content);
   }

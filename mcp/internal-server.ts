@@ -159,6 +159,45 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     }),
   );
 
+  server.tool(
+    'propose_plan',
+    `복합 다단계 작업 실행 전 사용자 승인용 플랜 카드.
+
+**사용 시점**:
+- 5개 이상 도구 호출이 예상되는 복잡 분석·자동화
+- 파일 여러 개 수정·대규모 리팩토링
+- 사용자가 "계획 먼저" 명시 요청
+- 비용·시간 많이 드는 작업 시작 전
+
+동작: PlanCard 렌더 + "✓실행 / ⚙수정 / ✕취소" 버튼. 사용자 "실행" 클릭 후 AI 가 단계별 진행.
+단순 앱/페이지 생성(사다리타기 등)엔 3단계 suggest 플로우 사용 — 여기 쓰지 마라.`,
+    {
+      title: z.string().describe('플랜 제목 (간결). 예: "삼성전자 펀더멘털 5단계 분석"'),
+      steps: z.array(z.object({
+        title: z.string(),
+        description: z.string().optional(),
+        tool: z.string().optional(),
+      })).describe('실행 단계 순서'),
+      estimatedTime: z.string().optional().describe('예상 소요. 예: "2~3분"'),
+      risks: z.array(z.string()).optional().describe('주의사항·리스크'),
+    },
+    async (args) => {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({
+          success: true,
+          component: 'PlanCard',
+          props: {
+            title: args.title,
+            steps: args.steps,
+            estimatedTime: args.estimatedTime,
+            risks: args.risks,
+          },
+          suggestions: ['✓ 실행', '⚙ 수정 제안', '✕ 취소'],
+        }) }],
+      };
+    },
+  );
+
   // ── 페이지 ──────────────────────────────────────────────────────────────
   server.tool(
     'list_pages',
@@ -239,6 +278,19 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     async ({ path }) => {
       const r = await core.readFile(path);
       return { content: [{ type: 'text', text: r.success ? r.data! : `실패: ${r.error}` }] };
+    },
+  );
+
+  server.tool(
+    'read_image',
+    `이미지·바이너리 파일 base64 로 읽기 (user/ 영역).
+사용: 사용자가 업로드한 이미지 분석·파싱, 썸네일 용도. PNG/JPG/WEBP/PDF 등.
+응답: { base64, mimeType, size }`,
+    { path: z.string().describe('바이너리 파일 경로. 예: user/uploads/chart.png') },
+    async ({ path }) => {
+      const r = await core.readFileBinary(path);
+      if (!r.success) return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: r.error }) }] };
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, ...r.data }) }] };
     },
   );
 

@@ -26,9 +26,21 @@ export function ComponentRenderer({ components, fullHeight }: ComponentRendererP
   );
 }
 
+// 소문자·snake_case → PascalCase 정규화 (AI 가 잘못된 형식으로 보내도 관용)
+const TYPE_ALIAS: Record<string, string> = {
+  metric: 'Metric', timeline: 'Timeline', compare: 'Compare', key_value: 'KeyValue', keyvalue: 'KeyValue',
+  status_badge: 'StatusBadge', statusbadge: 'StatusBadge', plan_card: 'PlanCard', plancard: 'PlanCard',
+  stock_chart: 'StockChart', stockchart: 'StockChart', header: 'Header', text: 'Text', image: 'Image',
+  form: 'Form', button: 'Button', divider: 'Divider', table: 'Table', card: 'Card', grid: 'Grid',
+  html: 'Html', slider: 'Slider', tabs: 'Tabs', accordion: 'Accordion', progress: 'Progress',
+  badge: 'Badge', alert: 'Alert', callout: 'Callout', list: 'List', carousel: 'Carousel',
+  countdown: 'Countdown', chart: 'Chart', ad_slot: 'AdSlot', adslot: 'AdSlot',
+};
+
 function ComponentSwitch({ comp }: { comp: ComponentDef }) {
-  const { type, props = {} } = comp;
+  const { type: rawType, props = {} } = comp;
   const p = props as any;
+  const type = TYPE_ALIAS[(rawType || '').toLowerCase()] ?? rawType;
 
   switch (type) {
     case 'Header':        return <HeaderComp text={p.text ?? ''} level={p.level} />;
@@ -60,6 +72,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'Compare':       return <CompareComp title={p.title} left={p.left ?? { label: 'A', items: [] }} right={p.right ?? { label: 'B', items: [] }} />;
     case 'KeyValue':      return <KeyValueComp title={p.title} items={p.items ?? []} columns={p.columns} />;
     case 'StatusBadge':   return <StatusBadgeComp items={p.items ?? []} />;
+    case 'PlanCard':      return <PlanCardComp title={p.title ?? ''} steps={p.steps ?? []} estimatedTime={p.estimatedTime} risks={p.risks} />;
     default:
       return <div className="text-amber-600 text-sm p-3 bg-amber-50 rounded-xl border border-amber-200">지원되지 않는 컴포넌트입니다 ({type})</div>;
   }
@@ -953,6 +966,54 @@ function StatusBadgeComp({ items }: {
           {item.label}
         </span>
       ))}
+    </div>
+  );
+}
+
+// ── PlanCard ────────────────────────────────────────────────────────────────
+// 복합 작업 실행 전 승인 플랜. AI 가 propose_plan MCP 도구로 호출 → 이 카드 +
+// suggest 버튼(실행/수정/취소)이 같이 표시됨.
+function PlanCardComp({ title, steps, estimatedTime, risks }: {
+  title: string;
+  steps: Array<{ title: string; description?: string; tool?: string }>;
+  estimatedTime?: string;
+  risks?: string[];
+}) {
+  return (
+    <div className="border border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl p-4 my-2">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs font-bold">PLAN</div>
+        <h3 className="text-sm sm:text-base font-bold text-indigo-900 flex-1">{title}</h3>
+        {estimatedTime && (
+          <span className="text-[11px] font-medium text-indigo-600 bg-white/60 px-2 py-0.5 rounded-full border border-indigo-200">
+            ⏱ {estimatedTime}
+          </span>
+        )}
+      </div>
+      <ol className="space-y-2">
+        {steps.map((s, i) => (
+          <li key={i} className="flex gap-3 items-start">
+            <div className="shrink-0 w-5 h-5 rounded-full bg-white border-2 border-indigo-400 text-indigo-700 text-[10px] font-bold flex items-center justify-center mt-0.5">
+              {i + 1}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[13px] font-semibold text-slate-800">{s.title}</div>
+              {s.description && <div className="text-[11px] text-slate-600 mt-0.5">{s.description}</div>}
+              {s.tool && (
+                <div className="text-[10px] text-indigo-500 mt-0.5 font-mono">→ {s.tool}</div>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+      {risks && risks.length > 0 && (
+        <div className="mt-3 pt-3 border-t border-indigo-200">
+          <div className="text-[11px] font-bold text-amber-700 mb-1">⚠ 주의사항</div>
+          <ul className="text-[11px] text-amber-800 space-y-0.5 list-disc ml-4">
+            {risks.map((r, i) => <li key={i}>{r}</li>)}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

@@ -306,7 +306,7 @@ export class CliClaudeCodeFormat implements FormatHandler {
         // Claude Code 내장 도구 차단 — Firebat 맥락에서 불필요한 작업으로 시간 낭비.
         // 특히 Agent/Task(서브에이전트 spawn), ToolSearch(도구 탐색 에이전트) 는
         // 수십 초~수분 추가 소요. MCP 기반 Firebat 도구만 사용하도록 전면 제한.
-        '--disallowed-tools', 'Agent,Task,ToolSearch,SlashCommand,Bash,BashOutput,KillBash,KillShell,Read,Write,Edit,NotebookEdit,Glob,Grep,WebFetch,WebSearch,TodoWrite,ExitPlanMode,ListMcpResources,ReadMcpResource',
+        '--disallowed-tools', 'Agent,Task,TaskOutput,TaskStop,ToolSearch,SlashCommand,Bash,BashOutput,KillBash,KillShell,Read,Write,Edit,NotebookEdit,Glob,Grep,WebFetch,WebSearch,TodoWrite,EnterPlanMode,ExitPlanMode,EnterWorktree,ExitWorktree,Monitor,PushNotification,RemoteTrigger,ScheduleWakeup,Skill,AskUserQuestion,CronCreate,CronDelete,CronList,ListMcpResources,ReadMcpResource',
       ];
 
       if (options.systemPrompt) {

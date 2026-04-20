@@ -362,6 +362,38 @@ export const COMPONENTS: ComponentDef[] = [
     },
   },
   {
+    name: 'plan_card',
+    componentType: 'PlanCard',
+    description: '복잡 다단계 작업 실행 전 사용자 승인용 플랜 카드. 제목 + 단계 체크리스트 + 예상 시간 + 리스크. AI 가 5개+ 도구 호출 예상될 때 이걸 먼저 제시 → suggest 로 ["실행","수정","취소"] 받아 진행.',
+    semanticText: '플랜 계획 로드맵 단계 step 체크리스트 todo 예정 로드맵 plan approve execute workflow 승인',
+    propsSchema: {
+      type: 'object',
+      required: ['title', 'steps'],
+      properties: {
+        title: { type: 'string', description: '플랜 제목 (간결히)' },
+        steps: {
+          type: 'array',
+          description: '실행 단계 순서',
+          items: {
+            type: 'object',
+            required: ['title'],
+            properties: {
+              title: { type: 'string', description: '단계 제목' },
+              description: { type: ['string', 'null'], description: '간단 설명 (선택)' },
+              tool: { type: ['string', 'null'], description: '사용할 주요 도구명 (참고용)' },
+            },
+          },
+        },
+        estimatedTime: { type: ['string', 'null'], description: '예상 소요. 예: "2~3분"' },
+        risks: {
+          type: ['array', 'null'],
+          description: '주의사항·리스크',
+          items: { type: 'string' },
+        },
+      },
+    },
+  },
+  {
     name: 'status_badge',
     componentType: 'StatusBadge',
     description: '의미 기반 상태 뱃지 세트. 여러 상태를 한 줄에. 예: "정배열"(positive), "과열"(warning).',

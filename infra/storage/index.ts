@@ -44,6 +44,26 @@ export class LocalStorageAdapter implements IStoragePort {
     }
   }
 
+  /** 바이너리 읽기 — base64. 확장자로 MIME 타입 추정 */
+  async readBinary(targetPath: string): Promise<InfraResult<{ base64: string; mimeType: string; size: number }>> {
+    try {
+      if (!this.canRead(targetPath)) {
+        return { success: false, error: `[Kernel Block] Access Denied: ${targetPath}` };
+      }
+      const absolutePath = path.resolve(this.baseDir, targetPath);
+      const buf = await fs.readFile(absolutePath);
+      const ext = path.extname(targetPath).toLowerCase().slice(1);
+      const MIME: Record<string, string> = {
+        png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
+        gif: 'image/gif', svg: 'image/svg+xml', bmp: 'image/bmp', ico: 'image/x-icon',
+        pdf: 'application/pdf', zip: 'application/zip',
+      };
+      return { success: true, data: { base64: buf.toString('base64'), mimeType: MIME[ext] ?? 'application/octet-stream', size: buf.length } };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
   async write(targetPath: string, content: string): Promise<InfraResult<void>> {
     try {
       if (!this.canWrite(targetPath)) {

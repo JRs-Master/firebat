@@ -116,6 +116,11 @@ export class FirebatCore {
     return this.storage.read(path);
   }
 
+  /** 바이너리 파일 읽기 — base64 로 반환 (read_image MCP 도구용) */
+  async readFileBinary(path: string): Promise<InfraResult<{ base64: string; mimeType: string; size: number }>> {
+    return this.storage.readBinary(path);
+  }
+
   async writeFile(path: string, content: string) {
     const res = await this.storage.write(path, content);
     if (res.success) {

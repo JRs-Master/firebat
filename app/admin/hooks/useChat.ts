@@ -166,7 +166,16 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       : '새 대화';
     const now = Date.now();
     setConversations(prev => {
-      const updated = prev.map(c => c.id === activeConvId ? { ...c, messages: cleanMsgs, title, updatedAt: now } : c);
+      // 메시지 내용이 실제로 달라진 경우에만 updatedAt 갱신 → 대화 클릭만 해도 맨 위로 올라가던 버그 수정
+      const cur = prev.find(c => c.id === activeConvId);
+      const prevSerialized = JSON.stringify(cur?.messages ?? []);
+      const newSerialized = JSON.stringify(cleanMsgs);
+      const contentChanged = prevSerialized !== newSerialized;
+      const updated = prev.map(c =>
+        c.id === activeConvId
+          ? { ...c, messages: cleanMsgs, title, ...(contentChanged ? { updatedAt: now } : {}) }
+          : c,
+      );
       // 사이드바 최신 순 유지 (UI 즉시 반영)
       updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
       localStorage.setItem('firebat_conversations', JSON.stringify(updated));
