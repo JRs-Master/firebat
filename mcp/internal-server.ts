@@ -21,10 +21,20 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
   };
 
   makeRender('render_stock_chart', 'StockChart', {
-    symbol: z.string(), title: z.string(), data: z.array(z.any()),
-    indicators: z.array(z.enum(['MA5','MA10','MA20','MA60'])).optional(),
-    buyPoints: z.array(z.any()).optional(), sellPoints: z.array(z.any()).optional(),
-  }, '주식 시세 차트 (일봉/분봉). data는 OHLCV 배열.');
+    symbol: z.string().describe('종목 코드 또는 이름 (표시용)'),
+    title: z.string().describe('차트 제목'),
+    data: z.array(z.object({
+      date: z.string().describe('YYYY-MM-DD 또는 시각 문자열'),
+      open: z.number(),
+      high: z.number(),
+      low: z.number(),
+      close: z.number(),
+      volume: z.number(),
+    })).describe('OHLCV 배열 (오름차순 정렬, 날짜 오래된 것부터 최근 순)'),
+    indicators: z.array(z.enum(['MA5','MA10','MA20','MA60'])).optional().describe('이동평균선 겹쳐 그리기'),
+    buyPoints: z.array(z.object({ price: z.number(), label: z.string() })).optional().describe('매수 구간 점선 + 라벨'),
+    sellPoints: z.array(z.object({ price: z.number(), label: z.string() })).optional().describe('매도 구간 점선 + 라벨'),
+  }, '주식 캔들스틱 + 거래량 차트. 팬/줌 지원, 호버 시 OHLC 툴팁.');
   makeRender('render_table', 'Table', {
     headers: z.array(z.string()),
     rows: z.array(z.array(z.string())),
@@ -35,27 +45,41 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
   }, '표. 수치 3개 이상 시 필수. 기본 정렬은 자동(숫자→우측, 텍스트→좌측). align 로 컬럼, cellAlign 으로 셀별 override.');
   makeRender('render_alert', 'Alert', {
     message: z.string(),
-    type: z.enum(['info','warn','error','success']),
+    type: z.enum(['info','warn','error','success']).describe('warn=주황, error=빨강, success=초록, info=파랑'),
     title: z.string().optional(),
-  }, '알림/주의/경고 박스.');
+  }, '경고·주의·위험 박스 (리스크·오류 알림 전용). 일반 정보·팁은 render_callout 사용.');
   makeRender('render_callout', 'Callout', {
     message: z.string(),
-    type: z.enum(['info','success','tip','accent','highlight','neutral']).optional(),
+    type: z.enum(['info','success','tip','accent','highlight','neutral']).optional().describe('tip=보라, accent=주황, highlight=노랑, neutral=회색 (기본 info=파랑)'),
     title: z.string().optional(),
-  }, '정보 강조 박스. 경고 외 일반 안내·팁·하이라이트용.');
-  makeRender('render_badge', 'Badge', { text: z.string(), color: z.string() }, '작은 태그/뱃지.');
+  }, '정보 강조 박스 — 팁·핵심 요약·판단 근거·하이라이트. 경고는 render_alert 사용.');
+  makeRender('render_badge', 'Badge', {
+    text: z.string(),
+    color: z.enum(['blue','green','red','yellow','purple','gray','orange']).describe('뱃지 색상'),
+  }, '작은 태그/뱃지 1개. 여러 상태 나열은 render_status_badge 사용.');
   makeRender('render_progress', 'Progress', {
-    value: z.number(), max: z.number().optional(), label: z.string().optional(), color: z.string().optional(),
-  }, '진행률 바.');
+    value: z.number().describe('현재 값'),
+    max: z.number().optional().describe('최대 값 (기본 100)'),
+    label: z.string().optional().describe('진행바 제목'),
+    color: z.enum(['blue','green','red','yellow','purple','orange']).optional().describe('바 색상 (기본 blue)'),
+  }, '진행률 바. 달성률·로딩·목표 대비 현황 시각화.');
   makeRender('render_header', 'Header', {
     text: z.string(),
     level: z.number().optional(),
     align: z.enum(['left','right','center']).optional().describe('기본 left. 히어로 섹션·카드 타이틀은 center.'),
   }, '섹션 제목.');
-  makeRender('render_text', 'Text', { content: z.string() }, '본문 텍스트 블록.');
-  makeRender('render_list', 'List', { items: z.array(z.string()), ordered: z.boolean().optional() }, '목록.');
-  makeRender('render_divider', 'Divider', {}, '섹션 구분선.');
-  makeRender('render_countdown', 'Countdown', { targetDate: z.string(), label: z.string().optional() }, '카운트다운.');
+  makeRender('render_text', 'Text', {
+    content: z.string().describe('마크다운 지원 — **굵게** *기울임* `코드` 목록 링크 등. 이 필드만 마크다운 허용.'),
+  }, '본문 텍스트 블록 (마크다운 렌더). 짧은 한 줄·헤딩은 render_header / render_callout 우선.');
+  makeRender('render_list', 'List', {
+    items: z.array(z.string()).describe('각 항목 한 줄 텍스트'),
+    ordered: z.boolean().optional().describe('true=번호 목록(1,2,3), false=불릿(기본)'),
+  }, '순서·비순서 목록. 각 항목 간결한 한 줄씩.');
+  makeRender('render_divider', 'Divider', {}, '섹션 구분선 (수평선). 긴 리포트에서 주제 전환 시 사용.');
+  makeRender('render_countdown', 'Countdown', {
+    targetDate: z.string().describe('ISO 8601 형식 목표 시각. 예: "2026-12-31T23:59:59+09:00"'),
+    label: z.string().optional().describe('카운트다운 제목. 예: "이벤트 종료까지"'),
+  }, '목표 시각까지 남은 일/시/분/초 실시간 카운트다운.');
   makeRender('render_chart', 'Chart', {
     chartType: z.enum(['bar','line','pie','doughnut']),
     labels: z.array(z.string()),
@@ -115,17 +139,20 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     })),
   }, '의미 기반 상태 뱃지 세트. 예: "정배열"(positive), "과열"(warning), "중립"(neutral).');
   makeRender('render_image', 'Image', {
-    src: z.string(), alt: z.string().optional(), width: z.number().optional(), height: z.number().optional(),
-  }, '이미지.');
+    src: z.string().describe('이미지 URL (http/https 또는 상대 경로)'),
+    alt: z.string().optional().describe('대체 텍스트 (접근성·SEO)'),
+    width: z.number().optional().describe('픽셀 단위 너비'),
+    height: z.number().optional().describe('픽셀 단위 높이'),
+  }, '이미지 블록 (figure + caption).');
   makeRender('render_card', 'Card', {
-    children: z.array(z.any()),
+    children: z.array(z.any()).describe('카드 안에 넣을 render_* 결과 배열 (컨테이너)'),
     align: z.enum(['left','right','center']).optional().describe('카드 내부 전체 텍스트 정렬. 기본 left.'),
-  }, '카드.');
+  }, '흰 배경·둥근 테두리 카드 컨테이너. 관련 컴포넌트 묶음 용도.');
   makeRender('render_grid', 'Grid', {
-    columns: z.number(),
-    children: z.array(z.any()),
+    columns: z.number().describe('1~4 열. KPI 대시보드는 보통 2~3'),
+    children: z.array(z.any()).describe('각 셀에 배치할 render_* 결과 배열'),
     align: z.enum(['left','right','center']).optional().describe('그리드 내부 전체 텍스트 정렬. 기본 left.'),
-  }, '그리드.');
+  }, '2D 격자 레이아웃. render_metric 여러 개를 담으면 KPI 대시보드.');
 
   const CDN_MAP: Record<string, string> = {
     d3: '<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>',

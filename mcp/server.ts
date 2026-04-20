@@ -73,7 +73,8 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 }
 - body는 컴포넌트 배열. Html 컴포넌트의 props.content에 HTML+CSS+JS를 넣으세요.
 - 절대로 { title, html } 같은 자체 형식을 사용하지 마세요.
-- Html content는 iframe sandbox 안에서 실행됩니다.`,
+- Html content는 iframe sandbox 안에서 실행됩니다.
+- body에 쓸 수 있는 컴포넌트: Header, Text, Image, Form, Button, Divider, Table, Metric, KeyValue, Progress, Chart, StockChart, Timeline, Compare, Alert, Callout, Badge, StatusBadge, Countdown, List, Carousel, Tabs, Accordion, Card, Grid, Html, Slider, AdSlot (전체 27종). 상세 스키마는 firebat://guides/pagespec 리소스 참조.`,
     {
       slug: z.string().describe('페이지 slug (kebab-case)'),
       spec: z.string().describe('PageSpec JSON 문자열 — 반드시 위 형식 준수. body[].type은 "Html", body[].props.content에 HTML 코드'),
@@ -499,7 +500,13 @@ arguments는 해당 도구의 inputSchema 준수 필요.
 - **body**: 컴포넌트 배열. Html 컴포넌트를 메인으로 사용 (iframe sandbox 안에서 실행)
 
 ## 사용 가능한 컴포넌트
-Header, Text, Image, Form, ResultDisplay, Button, Divider, Table, Card, Grid, Html, AdSlot, Slider, Tabs, Accordion, Progress, Badge, Alert, List, Carousel, Countdown, Chart
+**레이아웃**: Card, Grid, Divider, Tabs, Accordion, Carousel
+**텍스트·이미지**: Header, Text, Image
+**데이터**: Table, Metric, KeyValue, Progress, Chart, StockChart, Timeline, Compare
+**상태·알림**: Alert, Callout, Badge, StatusBadge, Countdown
+**인터랙티브**: Form, Button, Slider
+**자유 HTML**: Html (iframe sandbox — CDN·차트·애니메이션 자유)
+**광고**: AdSlot
 
 ## Html 컴포넌트
 - iframe sandbox="allow-scripts" 안에서 실행
