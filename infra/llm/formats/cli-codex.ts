@@ -170,7 +170,8 @@ export class CliCodexFormat implements FormatHandler {
 
   private runCodex(prompt: string, options: RunOptions): Promise<CliRunResult> {
     return new Promise((resolve) => {
-      const finalPrompt = this.buildPromptWithHistory(prompt, options.history);
+      // resume 시 history 주입 생략 — Codex 세션이 이미 컨텍스트 보유
+      const finalPrompt = options.resumeSessionId ? prompt : this.buildPromptWithHistory(prompt, options.history);
       const promptWithSystem = options.systemPrompt
         ? `${options.systemPrompt}\n\n${finalPrompt}`
         : finalPrompt;

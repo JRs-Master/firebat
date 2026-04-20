@@ -227,9 +227,11 @@ export class CliGeminiFormat implements FormatHandler {
     return new Promise((resolve) => {
       // systemPrompt 는 GEMINI.md 경유 주입되므로 여기서는 user query 만.
       //   이 방식 이점: Gemini 기본 시스템 프롬프트와 공존, echo 없음, 깔끔한 레이어링.
+      // resume 시 history 주입 생략 — Gemini 세션이 이미 컨텍스트 보유
+      const promptBody = options.resumeSessionId ? prompt : this.buildPromptWithHistory(prompt, options.history);
       const finalPrompt = options.systemPrompt
-        ? `<SYSTEM_INSTRUCTIONS>\n${options.systemPrompt}\n</SYSTEM_INSTRUCTIONS>\n\n<USER_QUERY>\n${this.buildPromptWithHistory(prompt, options.history)}\n</USER_QUERY>\n\n위 SYSTEM_INSTRUCTIONS 는 행동 규범. 반복·요약 금지. USER_QUERY 에만 답하세요.`
-        : this.buildPromptWithHistory(prompt, options.history);
+        ? `<SYSTEM_INSTRUCTIONS>\n${options.systemPrompt}\n</SYSTEM_INSTRUCTIONS>\n\n<USER_QUERY>\n${promptBody}\n</USER_QUERY>\n\n위 SYSTEM_INSTRUCTIONS 는 행동 규범. 반복·요약 금지. USER_QUERY 에만 답하세요.`
+        : promptBody;
 
       // gemini -p "..." --output-format stream-json --approval-mode yolo
       const args: string[] = [

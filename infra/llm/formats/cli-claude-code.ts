@@ -151,8 +151,11 @@ export class CliClaudeCodeFormat implements FormatHandler {
         cliModel,
         thinkingEffort,
       });
-      // daemon 모드: history 는 데몬 내부 세션에 이미 있음 → 현재 prompt 만 전달
-      const daemonRes = await daemon.send(prompt, opts?.onChunk);
+      // 신규 데몬(첫 send) 이면 UI 의 prior history 를 주입. warm daemon 은 자체 세션 보유 → prompt 만.
+      const daemonPrompt = daemon.isFirstSend()
+        ? this.buildPromptWithHistory(prompt, history)
+        : prompt;
+      const daemonRes = await daemon.send(daemonPrompt, opts?.onChunk);
       if (daemonRes.error) {
         // 데몬 실패 시 invalidate + 콜드 경로 폴백 (안정성)
         claudeDaemonManager.invalidate(conversationId);

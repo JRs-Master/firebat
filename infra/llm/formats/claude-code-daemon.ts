@@ -220,6 +220,8 @@ class ClaudeCodeDaemon {
   private busy = false;
   private dead = false;
   private lastUsed = Date.now();
+  /** 첫 send 여부 — 신규 spawn 된 데몬은 UI 의 prior history 를 모름. 첫 턴에 한해 호출자가 history 주입. */
+  private firstSend = true;
 
   constructor(key: string, spawnOpts: DaemonSpawnOptions) {
     this.key = key;
@@ -289,6 +291,8 @@ class ClaudeCodeDaemon {
 
   isDead(): boolean { return this.dead; }
   getLastUsed(): number { return this.lastUsed; }
+  /** 신규 spawn 여부 — 첫 send 에서만 true. 호출자가 history 주입 결정 시 참조. */
+  isFirstSend(): boolean { return this.firstSend; }
 
   /** 1개 요청 전송 + 응답 대기. 동시 호출은 queue 로 직렬화. */
   async send(prompt: string, onChunk?: (c: LlmChunk) => void): Promise<DaemonRunResult> {
@@ -303,6 +307,7 @@ class ClaudeCodeDaemon {
           return;
         }
         this.busy = true;
+        this.firstSend = false; // 이후 send 는 warm
         this.currentState = new RequestState();
         this.currentOnChunk = onChunk;
         this.currentResolve = resolve;
