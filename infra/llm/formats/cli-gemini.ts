@@ -184,6 +184,12 @@ export class CliGeminiFormat implements FormatHandler {
         'WebFetchTool', 'WebSearchTool', 'MemoryTool', 'GlobTool', 'GrepTool',
         'EnterPlanMode', 'ExitPlanMode', 'PlanMode',
       ],
+      // Thinking 출력 차단 — Gemini Flash 의 'Comparing Major Tech Stocks I'm now...' 같은
+      // reasoning 누출 원인. 모델 레벨에서 includeThoughts:false 로 thought 생성 자체 억제.
+      // https://geminicli.com/docs/reference/configuration (thinkingConfig)
+      model: { thinkingConfig: { includeThoughts: false, thinkingBudget: 0 } },
+      // UI 레벨 백업 가드 — 혹시라도 inline thinking display 가 출력에 섞이면 숨김
+      ui: { inlineThinkingMode: 'off' },
     };
     fs.writeFileSync(path.join(geminiDir, 'settings.json'), JSON.stringify(settings, null, 2));
     return workspace;
@@ -217,6 +223,9 @@ export class CliGeminiFormat implements FormatHandler {
       mcpServers,
       autoMemory: false,        // 세션 mining 비활성 (Firebat DB에 별도 저장)
       telemetry: { enabled: false },
+      // Thinking 출력 차단 (workspace settings 와 동일 설정)
+      model: { thinkingConfig: { includeThoughts: false, thinkingBudget: 0 } },
+      ui: { inlineThinkingMode: 'off' },
     };
     fs.writeFileSync(path.join(geminiHome, 'settings.json'), JSON.stringify(settings, null, 2));
     return geminiHome;
