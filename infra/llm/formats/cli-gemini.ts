@@ -441,12 +441,24 @@ export class CliGeminiFormat implements FormatHandler {
       child.on('error', (e) => {
         resolve({ text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId, error: `Gemini CLI 프로세스 에러: ${e.message}` });
       });
-      // 텍스트 후처리 — AI 가 본문에 섞어 넣은 도구 이름·[Thought:] 마커·markdown 표 정리.
+      // 텍스트 후처리 — AI 가 본문에 섞어 넣은 도구 이름·[Thought:] 마커·영문 reasoning 정리.
       // (프롬프트로 금지해도 Gemini flash 가 종종 뱉으므로 방어)
+      //
+      // 영문 reasoning 시그니처: 문단이 gerund 키워드로 시작하고 1인칭 동사 포함.
+      // 한국어 첫 글자가 나올 때까지의 영문 블록을 전체 제거.
+      // 예) "Comparing Major Tech Stocks I'm now initiating... compile the comparison table. 하이닉스, ..."
+      //   →  "하이닉스, ..."
+      const REASONING_PREFIX = '(?:Comparing|Analyzing|Refining|Reviewing|Finalizing|Preparing|Evaluating|Processing|Synthesizing|Compiling|Investigating|Considering|Formulating|Examining|Displaying|Conducting|Gathering|Summarizing)';
+      const leakedReasoningRe = new RegExp(
+        `(?:^|\\n|\\s)(?:\\*\\*)?\\s*${REASONING_PREFIX}\\b[^가-힣]*?(?=[가-힣]|\\n\\n|$)`,
+        'g',
+      );
       const sanitizeFinal = (t: string): string => {
         return t
           // [Thought: true|false] 마커 (공백·대소문자 변종 허용)
           .replace(/\[\s*Thought\s*:\s*(?:true|false)\s*\]/gi, '')
+          // 영문 reasoning 누출 제거 — 한국어 첫 글자 직전까지 영문 블록 통째 날림
+          .replace(leakedReasoningRe, ' ')
           // `mcp_firebat_render_*` / `render_table` / `render_metric` 등 도구 이름 백틱 표기 + 뒤 괄호 설명 제거
           .replace(/`(?:mcp_firebat_)?render_[a-z_]+`\s*(?:\([^)]*\))?[^\n]*\n?/g, '')
           // 줄 시작이 도구 이름만 있는 경우 (백틱 없이)
