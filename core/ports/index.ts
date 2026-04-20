@@ -556,7 +556,7 @@ export interface McpToolInfo {
 export interface AuthSession {
   token: string;
   type: 'session' | 'api';
-  role: 'admin' | 'demo';
+  role: 'admin';
   label?: string;
   createdAt: number;
   expiresAt?: number;

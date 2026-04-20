@@ -33,17 +33,10 @@ export class AuthManager {
 
   /** 자격증명 검증 후 세션 토큰 발급. 실패 시 null */
   login(id: string, password: string): AuthSession | null {
-    // 데모 계정
-    if (process.env.FIREBAT_DEMO === 'true' && id === 'user' && password === 'user') {
-      return this.createSession('demo');
-    }
-
-    // 관리자 계정
     const creds = this.getAdminCredentials();
     if (id === creds.id && password === creds.password) {
       return this.createSession('admin');
     }
-
     return null;
   }
 
@@ -140,7 +133,7 @@ export class AuthManager {
   //  Private
   // ══════════════════════════════════════════════════════════════════════════
 
-  private createSession(role: 'admin' | 'demo'): AuthSession {
+  private createSession(role: 'admin'): AuthSession {
     const session: AuthSession = {
       token: this.generateToken('fbat_'),
       type: 'session',

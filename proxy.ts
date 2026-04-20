@@ -15,10 +15,10 @@ import type { NextRequest } from 'next/server';
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
 
-  // 쿠키 확인 — 새 토큰(fbat_) 또는 레거시(authenticated/demo)
+  // 쿠키 확인 — 새 토큰(fbat_) 또는 레거시(authenticated)
   const newToken = request.cookies.get('firebat_token');
   const legacyToken = request.cookies.get('firebat_admin_token');
-  const hasCookie = !!newToken?.value || legacyToken?.value === 'authenticated' || legacyToken?.value === 'demo';
+  const hasCookie = !!newToken?.value || legacyToken?.value === 'authenticated';
 
   // Bearer 토큰 확인
   const hasBearer = !!request.headers.get('authorization')?.startsWith('Bearer ');

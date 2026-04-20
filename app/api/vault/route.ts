@@ -39,9 +39,6 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  if (auth.role === 'demo') {
-    return NextResponse.json({ success: false, error: '데모 모드에서는 설정을 변경할 수 없습니다.' }, { status: 403 });
-  }
   try {
     const { apiKey, provider } = await req.json();
     if (!apiKey) {

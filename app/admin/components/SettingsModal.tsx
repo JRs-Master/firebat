@@ -8,7 +8,6 @@ import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButto
 interface SystemModule { name: string; description: string; runtime: string; type?: string; enabled?: boolean; }
 
 type Props = {
-  isDemo: boolean;
   aiModel: string;
   onAiModelChange: (model: string) => void;
   onClose: () => void;
@@ -17,7 +16,7 @@ type Props = {
   initialTab?: 'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system';
 };
 
-export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
+export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
   const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system'>(initialTab ?? 'general');
   // AI 탭: 실행모드(api/cli) + 모드(일반/Vertex) + 프로바이더(openai/google/anthropic)
   // api 모드: 키 기반, pay-per-token (기존)
@@ -594,33 +593,27 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
           >
             <KeyRound size={14} /> API 키
           </button>
-          {!isDemo && (
-            <button
-              onClick={() => switchTab('mcp')}
-              data-active={settingsTab === 'mcp'}
-              className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'mcp' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-            >
-              <Plug size={14} /> 외부 MCP
-            </button>
-          )}
-          {!isDemo && (
-            <button
-              onClick={() => switchTab('capabilities')}
-              data-active={settingsTab === 'capabilities'}
-              className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'capabilities' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-            >
-              <Layers size={14} /> 기능
-            </button>
-          )}
-          {!isDemo && (
-            <button
-              onClick={() => switchTab('system')}
-              data-active={settingsTab === 'system'}
-              className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'system' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-            >
-              <Cpu size={14} /> 시스템
-            </button>
-          )}
+          <button
+            onClick={() => switchTab('mcp')}
+            data-active={settingsTab === 'mcp'}
+            className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'mcp' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          >
+            <Plug size={14} /> 외부 MCP
+          </button>
+          <button
+            onClick={() => switchTab('capabilities')}
+            data-active={settingsTab === 'capabilities'}
+            className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'capabilities' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          >
+            <Layers size={14} /> 기능
+          </button>
+          <button
+            onClick={() => switchTab('system')}
+            data-active={settingsTab === 'system'}
+            className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'system' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          >
+            <Cpu size={14} /> 시스템
+          </button>
           </div>
         </div>
 

@@ -29,12 +29,11 @@ export function requireAuth(request: NextRequest): AuthSession | NextResponse {
 
   // 3) 레거시 쿠키 호환 (기존 firebat_admin_token)
   const legacyCookie = request.cookies.get('firebat_admin_token');
-  if (legacyCookie?.value === 'authenticated' || legacyCookie?.value === 'demo') {
-    // 레거시 토큰 — 임시 세션 객체 반환 (마이그레이션 기간)
+  if (legacyCookie?.value === 'authenticated') {
     return {
       token: legacyCookie.value,
       type: 'session',
-      role: legacyCookie.value === 'demo' ? 'demo' : 'admin',
+      role: 'admin',
       createdAt: Date.now(),
     };
   }

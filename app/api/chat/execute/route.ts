@@ -22,8 +22,7 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: 'Plan이 만료되었거나 존재하지 않습니다. 다시 요청해 주세요.' }), { status: 404 });
   }
 
-  const isDemo = auth.role === 'demo';
-  const opts = { model: config?.model as string | undefined, isDemo };
+  const opts = { model: config?.model as string | undefined };
   const core = getCore();
 
   const encoder = new TextEncoder();

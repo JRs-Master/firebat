@@ -24,7 +24,6 @@ interface SidebarProps {
   onSelectConv: (id: string) => void;
   onNewConv: () => void;
   onDeleteConv: (id: string) => void;
-  isDemo?: boolean;
   onOpenSettings?: () => void;
   onEditFile?: (filePath: string) => void;
   onOpenModuleSettings?: (moduleName: string) => void;
@@ -37,7 +36,7 @@ export function Sidebar({
   onRefreshTree,
   conversations, activeConvId,
   onSelectConv, onNewConv, onDeleteConv,
-  isDemo, onOpenSettings, onEditFile, onOpenModuleSettings,
+  onOpenSettings, onEditFile, onOpenModuleSettings,
   mobileOpen, onMobileOpenChange,
 }: SidebarProps) {
   const [tab, setTab] = useState<'workspace' | 'chats'>('workspace');
@@ -413,7 +412,7 @@ export function Sidebar({
           )}
         </button>
         <div className="flex-1" />
-        {!isDemo && onOpenSettings && (
+        {onOpenSettings && (
           <button
             onClick={onOpenSettings}
             className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors"
@@ -458,7 +457,7 @@ export function Sidebar({
           <MessageSquare size={12} /> CHATS
         </button>
         <div className="flex-1" />
-        {!isDemo && onOpenSettings ? (
+        {onOpenSettings ? (
           <button
             onClick={() => { onOpenSettings(); if (isMobile) closeSidebar(); }}
             className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"

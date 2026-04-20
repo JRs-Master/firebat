@@ -654,7 +654,6 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
 export default function AdminConsole() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'secrets' | 'mcp' | 'capabilities' | 'system' | undefined>(undefined);
-  const [isDemo, setIsDemo] = useState(false);
   const [aiModel, setAiModel] = useState('gpt-5.4-mini');
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [editingModule, setEditingModule] = useState<string | null>(null);
@@ -670,7 +669,7 @@ export default function AdminConsole() {
     handleNewConv, handleSelectConv, handleDeleteConv,
     handleSubmit, handleConfirmPlan, handleRejectPlan,
     handleApprovePending, handleRejectPending, handleStop,
-  } = useChat(aiModel, fetchFileTree, isDemo);
+  } = useChat(aiModel, fetchFileTree);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -734,8 +733,6 @@ export default function AdminConsole() {
 
   // 초기화
   useEffect(() => {
-    const role = document.cookie.split(';').find(c => c.trim().startsWith('firebat_role='))?.split('=')[1];
-    setIsDemo(role === 'demo');
     // 서버(Vault)에서 모델 로드 — 실패 시 localStorage 폴백
     (async () => {
       const isValid = (m: string) => GEMINI_MODELS.some(x => x.value === m);
@@ -777,7 +774,6 @@ export default function AdminConsole() {
         onSelectConv={handleSelectConv}
         onNewConv={handleNewConv}
         onDeleteConv={handleDeleteConv}
-        isDemo={isDemo}
         onOpenSettings={() => setShowSettings(true)}
         onEditFile={(filePath) => setEditingFile(filePath)}
         onOpenModuleSettings={(name) => setEditingModule(name)}
@@ -911,7 +907,6 @@ export default function AdminConsole() {
         {/* 설정 모달 */}
         {showSettings && (
           <SettingsModal
-            isDemo={isDemo}
             aiModel={aiModel}
             onAiModelChange={setAiModel}
             onClose={() => { setShowSettings(false); setSettingsInitialTab(undefined); }}

@@ -38,11 +38,11 @@ export class AiManager {
   private readonly _toolCapabilities = new Map<string, string>();
 
   /** 시스템 컨텍스트 캐시 (60초 TTL) */
-  private _ctxCache: { text: string; ts: number; isDemo: boolean } | null = null;
+  private _ctxCache: { text: string; ts: number } | null = null;
   private static readonly CTX_CACHE_TTL = 60_000;
 
   /** 도구 정의 캐시 (60초 TTL) */
-  private _toolsCache: { tools: ToolDefinition[]; ts: number; isDemo: boolean } | null = null;
+  private _toolsCache: { tools: ToolDefinition[]; ts: number } | null = null;
   private static readonly TOOLS_CACHE_TTL = 60_000;
 
   /** LLM 기반 self-learning 라우터 (on-demand lazy 초기화) */
@@ -317,9 +317,9 @@ export class AiManager {
     return { recentHistory, contextSummary };
   }
 
-  private async gatherSystemContext(isDemo = false): Promise<string> {
+  private async gatherSystemContext(): Promise<string> {
     // 캐시 히트 시 바로 반환 (60초 TTL)
-    if (this._ctxCache && this._ctxCache.isDemo === isDemo && (Date.now() - this._ctxCache.ts) < AiManager.CTX_CACHE_TTL) {
+    if (this._ctxCache && (Date.now() - this._ctxCache.ts) < AiManager.CTX_CACHE_TTL) {
       return this._ctxCache.text;
     }
     const lines: string[] = [];
@@ -401,26 +401,23 @@ export class AiManager {
     // 사용자 시크릿 목록 (값은 노출하지 않음)
     const secretKeys = this.core.listUserSecrets();
     lines.push(`[저장된 시크릿] ${secretKeys.length > 0 ? secretKeys.join(', ') : '없음'}`);
-    // MCP 외부 도구 목록 (데모 모드에서는 비활성)
-    if (!isDemo) {
-      const servers = this.core.listMcpServers();
-      const enabledServers = servers.filter(s => s.enabled);
-      if (enabledServers.length === 0) {
-        lines.push(`[MCP 외부 도구] 없음`);
-      } else {
-        const mcpResult = await this.core.listAllMcpTools();
-        if (mcpResult.success && mcpResult.data && mcpResult.data.length > 0) {
-          const toolList = mcpResult.data.map(t => `${t.server}/${t.name}: ${t.description}`).join('\n  ');
-          lines.push(`[MCP 외부 도구]\n  ${toolList}`);
-          // 도구가 나온 서버 vs 등록된 서버 비교 → 연결 실패 서버 표시
-          const connectedServers = new Set(mcpResult.data.map(t => t.server));
-          const failedServers = enabledServers.filter(s => !connectedServers.has(s.name));
-          if (failedServers.length > 0) {
-            lines.push(`[MCP 연결 실패] ${failedServers.map(s => s.name).join(', ')} — 서버가 응답하지 않거나 인증이 필요합니다.`);
-          }
-        } else {
-          lines.push(`[MCP 외부 도구] 등록된 서버 ${enabledServers.length}개 (${enabledServers.map(s => s.name).join(', ')}), 연결 실패 — 서버가 응답하지 않거나 인증이 필요합니다.`);
+    // MCP 외부 도구 목록
+    const servers = this.core.listMcpServers();
+    const enabledServers = servers.filter(s => s.enabled);
+    if (enabledServers.length === 0) {
+      lines.push(`[MCP 외부 도구] 없음`);
+    } else {
+      const mcpResult = await this.core.listAllMcpTools();
+      if (mcpResult.success && mcpResult.data && mcpResult.data.length > 0) {
+        const toolList = mcpResult.data.map(t => `${t.server}/${t.name}: ${t.description}`).join('\n  ');
+        lines.push(`[MCP 외부 도구]\n  ${toolList}`);
+        const connectedServers = new Set(mcpResult.data.map(t => t.server));
+        const failedServers = enabledServers.filter(s => !connectedServers.has(s.name));
+        if (failedServers.length > 0) {
+          lines.push(`[MCP 연결 실패] ${failedServers.map(s => s.name).join(', ')} — 서버가 응답하지 않거나 인증이 필요합니다.`);
         }
+      } else {
+        lines.push(`[MCP 외부 도구] 등록된 서버 ${enabledServers.length}개 (${enabledServers.map(s => s.name).join(', ')}), 연결 실패 — 서버가 응답하지 않거나 인증이 필요합니다.`);
       }
     }
     // Capability 설정 (사용자 정의 provider 순서)
@@ -437,12 +434,11 @@ export class AiManager {
     }
 
     const result = lines.join('\n') || '[시스템 상태 조회 실패]';
-    this._ctxCache = { text: result, ts: Date.now(), isDemo };
+    this._ctxCache = { text: result, ts: Date.now() };
     return result;
   }
 
   async process(prompt: string, history: ChatMessage[] = [], opts?: AiRequestOpts, maxRetries = 3): Promise<CoreResult> {
-    const isDemo = opts?.isDemo ?? false;
     const llmOpts: LlmCallOpts | undefined = opts?.model ? { model: opts.model } : undefined;
     let currentPrompt = prompt;
     let attempt = 0;
@@ -453,7 +449,7 @@ export class AiManager {
     const corrId = Math.random().toString(36).slice(2, 10);
     const modelId = llmOpts?.model ?? this.llm.getModelId();
     const { recentHistory, contextSummary } = this.compressHistory(history);
-    const systemContext = await this.gatherSystemContext(isDemo);
+    const systemContext = await this.gatherSystemContext();
 
     const systemPrompt = this.buildSystemPrompt(systemContext);
 
@@ -630,7 +626,6 @@ export class AiManager {
             break;
           }
           case 'MCP_CALL': {
-            if (isDemo) { executionError = 'MCP는 데모 모드에서 사용할 수 없습니다.'; break; }
             const mcpRes = await this.core.callMcpTool(action.server, action.tool, action.arguments ?? {});
             if (!mcpRes.success) {
               executionError = `MCP_CALL 실패 (${action.server}/${action.tool}): ${mcpRes.error}`;
@@ -708,12 +703,11 @@ export class AiManager {
     modelId?: string;
     error?: string;
   }> {
-    const isDemo = opts?.isDemo ?? false;
     const llmOpts: LlmCallOpts | undefined = opts?.model ? { model: opts.model } : undefined;
     const corrId = Math.random().toString(36).slice(2, 10);
     const modelId = llmOpts?.model ?? this.llm.getModelId();
     const { recentHistory, contextSummary } = this.compressHistory(history);
-    const systemContext = await this.gatherSystemContext(isDemo);
+    const systemContext = await this.gatherSystemContext();
     const systemPrompt = this.buildSystemPrompt(systemContext);
     const finalSystemPrompt = contextSummary ? systemPrompt + `\n\n${contextSummary}` : systemPrompt;
 
@@ -779,7 +773,6 @@ export class AiManager {
     opts?: AiRequestOpts,
     onStep?: (step: { index: number; total: number; type: string; status: 'start' | 'done' | 'error'; error?: string }) => void,
   ): Promise<CoreResult> {
-    const isDemo = opts?.isDemo ?? false;
     const startTime = Date.now();
     const modelId = opts?.model ?? this.llm.getModelId();
     const executedActions: string[] = [];
@@ -813,7 +806,7 @@ export class AiManager {
       } else {
         onStep?.({ index: stepOffset, total: totalSteps, type: action.type, status: 'start' });
 
-        const actionError = await this.executeAction(action, finalDataList, isDemo);
+        const actionError = await this.executeAction(action, finalDataList);
 
         if (actionError) {
           onStep?.({ index: stepOffset, total: totalSteps, type: action.type, status: 'error', error: actionError });
@@ -879,7 +872,7 @@ export class AiManager {
   }
 
   /** 단일 액션 실행 — 에러 문자열 반환 (성공 시 null) */
-  private async executeAction(action: FirebatAction, dataList: unknown[], isDemo = false): Promise<string | null | undefined> {
+  private async executeAction(action: FirebatAction, dataList: unknown[]): Promise<string | null | undefined> {
     switch (action.type) {
       case 'WRITE_FILE': {
         if (action.content == null) return `WRITE_FILE 실패: content가 비어 있습니다 (${action.path})`;
@@ -982,7 +975,6 @@ export class AiManager {
         return null;
       }
       case 'MCP_CALL': {
-        if (isDemo) return 'MCP는 데모 모드에서 사용할 수 없습니다.';
         const mcpRes = await this.core.callMcpTool(action.server, action.tool, action.arguments ?? {});
         if (!mcpRes.success) return `MCP_CALL 실패 (${action.server}/${action.tool}): ${mcpRes.error}`;
         dataList.push({ mcpResult: { server: action.server, tool: action.tool, data: mcpRes.data } });
@@ -1121,7 +1113,6 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
     onToolCall?: (info: { name: string; status: 'start' | 'done' | 'error'; error?: string }) => void,
     onChunk?: (chunk: LlmChunk) => void,
   ): Promise<CoreResult> {
-    const isDemo = opts?.isDemo ?? false;
     const thinkingLevel = this.core.getAiThinkingLevel();
     const corrId = Math.random().toString(36).slice(2, 10);
     const startTime = Date.now();
@@ -1167,7 +1158,7 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
     // search_history 맥락 보강용 — 직전 user 발화 저장 (compressHistoryWithSearch 가 비워도 history 에서 직접 추출)
     const prevUserMsg = history.filter(h => h.role === 'user').slice(-1)[0];
     this._currentTurnPrevUserQuery = (prevUserMsg?.content || '').trim();
-    const systemContext = await this.gatherSystemContext(isDemo);
+    const systemContext = await this.gatherSystemContext();
 
     const systemPrompt = this.buildToolSystemPrompt(systemContext);
     const finalSystemPrompt = contextSummary
@@ -1175,7 +1166,7 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
       : systemPrompt;
 
     // 도구 정의 빌드 (캐시 활용). 실제 LLM 전송 방식(MCP connector vs 인라인)은 어댑터가 결정.
-    const allTools = await this.buildToolDefinitions(isDemo);
+    const allTools = await this.buildToolDefinitions();
     // Gemini/Vertex는 사용자 쿼리로 벡터 검색 → 관련 도구만 선별 (토큰 절감)
     // 다른 프로바이더는 allTools 그대로 반환됨
     const sessionUsedToolNames = new Set<string>();
@@ -1344,7 +1335,7 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
           result = tc.preExecutedResult;
           this.logger.info(`[AiManager] [${corrId}] Tool (MCP 서버에서 실행됨): ${tc.name}`);
         } else {
-          result = await this.executeToolCall(tc, isDemo, opts);
+          result = await this.executeToolCall(tc, opts);
         }
         toolResults.push({ name: tc.name, result });
 
@@ -1555,7 +1546,7 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
   }
 
   /** 단일 도구 호출 실행 — 결과를 Record<string, unknown>로 반환 */
-  private async executeToolCall(tc: ToolCall, isDemo = false, opts?: AiRequestOpts): Promise<Record<string, unknown>> {
+  private async executeToolCall(tc: ToolCall, opts?: AiRequestOpts): Promise<Record<string, unknown>> {
     try {
       switch (tc.name) {
         case 'write_file': {
@@ -1667,7 +1658,6 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
           return taskRes.success ? { success: true, data: taskRes.data } : { success: false, error: taskRes.error };
         }
         case 'mcp_call': {
-          if (isDemo) return { success: false, error: 'MCP는 데모 모드에서 사용할 수 없습니다.' };
           const { server, tool, arguments: args } = tc.args as { server: string; tool: string; arguments?: Record<string, unknown> };
           const res = await this.core.callMcpTool(server, tool, args ?? {});
           return res.success ? { success: true, data: res.data } : { success: false, error: res.error };
@@ -1752,7 +1742,7 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
         }
         case 'search_history': {
           const { query, limit, includeBlocks } = tc.args as { query: string; limit?: number; includeBlocks?: boolean };
-          const owner = opts?.owner ?? (isDemo ? 'demo' : 'admin');
+          const owner = opts?.owner ?? 'admin';
           const topK = typeof limit === 'number' ? limit : 5;
 
           // 쿼리 리라이트 — AI Assistant 활성화 시 Flash Lite 가 대명사·지시어 해소,
@@ -1825,7 +1815,6 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
           }
           // mcp_ 접두사 동적 도구 → MCP 호출로 라우팅
           if (tc.name.startsWith('mcp_')) {
-            if (isDemo) return { success: false, error: 'MCP는 데모 모드에서 사용할 수 없습니다.' };
             // mcp_{server}_{tool} → server, tool 분리
             const parts = tc.name.slice(4).split('_');
             const server = parts[0];
@@ -2601,8 +2590,8 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
   }
 
   /** 동적 도구 정의 빌드 — Core 정적 도구 + MCP 외부 도구 (60초 캐시) */
-  async buildToolDefinitions(isDemo = false): Promise<ToolDefinition[]> {
-    if (this._toolsCache && this._toolsCache.isDemo === isDemo && (Date.now() - this._toolsCache.ts) < AiManager.TOOLS_CACHE_TTL) {
+  async buildToolDefinitions(): Promise<ToolDefinition[]> {
+    if (this._toolsCache && (Date.now() - this._toolsCache.ts) < AiManager.TOOLS_CACHE_TTL) {
       return this._toolsCache.tools;
     }
     const tools = [...this.getCoreToolDefinitions()];
@@ -2634,21 +2623,18 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
       }
     }
 
-    // 데모 모드에서는 MCP 도구 제외
-    if (!isDemo) {
-      const mcpResult = await this.core.listAllMcpTools();
-      if (mcpResult.success && mcpResult.data) {
-        for (const t of mcpResult.data) {
-          tools.push({
-            name: `mcp_${t.server}_${t.name}`,
-            description: `[MCP ${t.server}] ${t.description}`,
-            parameters: t.inputSchema ?? { type: 'object', properties: {} },
-          });
-        }
+    const mcpResult = await this.core.listAllMcpTools();
+    if (mcpResult.success && mcpResult.data) {
+      for (const t of mcpResult.data) {
+        tools.push({
+          name: `mcp_${t.server}_${t.name}`,
+          description: `[MCP ${t.server}] ${t.description}`,
+          parameters: t.inputSchema ?? { type: 'object', properties: {} },
+        });
       }
     }
 
-    this._toolsCache = { tools, ts: Date.now(), isDemo };
+    this._toolsCache = { tools, ts: Date.now() };
     return tools;
   }
 

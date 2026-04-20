@@ -38,9 +38,6 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  if (auth.role === 'demo') {
-    return NextResponse.json({ success: false, error: '데모 모드 불가' }, { status: 403 });
-  }
   const core = getCore();
   const token = generateToken();
   const now = new Date().toISOString();
@@ -52,9 +49,6 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  if (auth.role === 'demo') {
-    return NextResponse.json({ success: false, error: '데모 모드 불가' }, { status: 403 });
-  }
   const core = getCore();
   // secret 삭제는 vault 직접 호출 필요 — setGeminiKey로는 덮어쓰기만
   core.setGeminiKey(TOKEN_KEY, '');

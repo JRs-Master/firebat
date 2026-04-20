@@ -10,6 +10,5 @@ export async function POST(req: NextRequest) {
   const res = NextResponse.json({ success: true });
   res.cookies.delete('firebat_token');
   res.cookies.delete('firebat_admin_token');
-  res.cookies.delete('firebat_role');
   return res;
 }

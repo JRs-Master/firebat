@@ -9,15 +9,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
-// isDemo는 requireAuth의 auth.role로 확인
-
 /** GET — 도구 목록 */
 export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  if (auth.role === 'demo') {
-    return NextResponse.json({ success: false, error: '데모 모드에서는 MCP를 사용할 수 없습니다.' }, { status: 403 });
-  }
   try {
     const core = getCore();
     const serverName = req.nextUrl.searchParams.get('server');
@@ -38,9 +33,6 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  if (auth.role === 'demo') {
-    return NextResponse.json({ success: false, error: '데모 모드에서는 MCP를 사용할 수 없습니다.' }, { status: 403 });
-  }
   try {
     const { server, tool, arguments: args } = await req.json();
 

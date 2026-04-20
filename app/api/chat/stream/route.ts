@@ -28,12 +28,9 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: 'prompt is required' }), { status: 400 });
   }
 
-  const isDemo = auth.role === 'demo';
-  const owner = auth.role === 'admin' ? 'admin' : 'demo';
   const opts = {
     model: config?.model as string | undefined,
-    isDemo,
-    owner,
+    owner: 'admin',
     ...(image ? { image: image as string } : {}),
     ...(previousResponseId ? { previousResponseId: previousResponseId as string } : {}),
     ...(conversationId ? { conversationId: conversationId as string } : {}),
@@ -165,7 +162,7 @@ function handleToolsMode(
   core: FirebatCore,
   prompt: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
-  opts: { model?: string; isDemo: boolean; owner?: string; image?: string; previousResponseId?: string; conversationId?: string },
+  opts: { model?: string; owner?: string; image?: string; previousResponseId?: string; conversationId?: string },
   abortSignal?: AbortSignal,
 ) {
   const encoder = new TextEncoder();

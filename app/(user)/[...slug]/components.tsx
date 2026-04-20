@@ -866,19 +866,27 @@ function PieChartInteractive({ segments, gradient, titleBlock, unit, centerHandl
   centerHandler: (e: React.MouseEvent<HTMLDivElement>, setHovered: (i: number | null) => void) => void;
 }) {
   const [hovered, setHovered] = React.useState<number | null>(null);
+  const [cursorPos, setCursorPos] = React.useState<{ x: number; y: number } | null>(null);
   const hoveredSeg = hovered != null ? segments[hovered] : null;
   return (
     <div className="space-y-3">
       {titleBlock}
       <div className="flex items-center justify-center gap-6">
         <div
-          className="relative w-40 h-40 rounded-full shadow-sm border border-gray-100 cursor-crosshair"
+          className="relative w-40 h-40 rounded-full shadow-sm border border-gray-100"
           style={{ background: gradient }}
-          onMouseMove={(e) => centerHandler(e, setHovered)}
-          onMouseLeave={() => setHovered(null)}
+          onMouseMove={(e) => {
+            centerHandler(e, setHovered);
+            const rect = e.currentTarget.getBoundingClientRect();
+            setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+          }}
+          onMouseLeave={() => { setHovered(null); setCursorPos(null); }}
         >
-          {hoveredSeg && (
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white/95 shadow-lg rounded-lg px-3 py-2 text-center pointer-events-none border border-slate-200">
+          {hoveredSeg && cursorPos && (
+            <div
+              className="absolute bg-white/95 shadow-lg rounded-lg px-3 py-2 text-center pointer-events-none border border-slate-200 z-10"
+              style={{ left: cursorPos.x + 14, top: cursorPos.y + 14 }}
+            >
               <div className="text-[11px] font-bold text-slate-800 whitespace-nowrap">{hoveredSeg.label}</div>
               <div className="text-[14px] font-extrabold text-slate-900">
                 {hoveredSeg.value.toLocaleString('ko-KR')}{unit || ''}

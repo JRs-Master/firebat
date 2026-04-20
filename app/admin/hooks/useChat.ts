@@ -27,7 +27,7 @@ function parseSSE(buffer: string): { events: { event: string; data: any }[]; rem
   return { events, remaining };
 }
 
-export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean = false) {
+export function useChat(aiModel: string, onRefresh: () => void) {
   const [messages, setMessages] = useState<Message[]>([INIT_MESSAGE]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -82,8 +82,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       setMessages(cleanMessages(active.messages));
     }
 
-    // admin이면 DB에서 최신 대화 목록 풀 (localStorage → DB 마이그레이션 포함)
-    if (isDemo) return;
+    // DB에서 최신 대화 목록 풀 (localStorage → DB 마이그레이션 포함)
     (async () => {
       try {
         const res = await fetch('/api/conversations');
@@ -150,7 +149,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
         }
       } catch {}
     })();
-  }, [isDemo]);
+  }, []);
 
   // ── 대화 저장 — localStorage는 messages 변경마다, DB는 확정 시점에만 명시 호출 ──
   // (이전 debounce 기반 → 500ms 창에 데이터 잃는 문제. 서버가 union merge 하므로 명시 호출이 안전)
@@ -189,7 +188,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
   // 서버가 409 (deleted tombstone) 반환하면 로컬에서도 제거 — 다른 기기의 삭제를 반영.
   const saveToDbRef = useRef<(convId: string, msgs: Message[]) => void>(() => {});
   saveToDbRef.current = (convId: string, msgs: Message[]) => {
-    if (isDemo || !convId) return;
+    if (!convId) return;
     // in-progress 메시지는 DB 에 저장하지 않음 — 저장 후 세션 끊기면 "thinking" 상태가
     // 다른 기기에서 "중단되었습니다" 로 오해되어 표시되는 문제 방지
     const cleanMsgs = msgs.filter(m => !m.isThinking && !m.executing && !m.streaming);
@@ -224,7 +223,6 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
   // visibilitychange=hidden 안전망 — 탭 전환·앱 전환·닫기 직전 현재 상태 flush (sendBeacon)
   // visibilitychange=visible — 탭 복귀 시 다른 기기의 갱신을 반영하기 위해 active conv 재조회
   useEffect(() => {
-    if (isDemo) return;
     const flush = () => {
       if (!activeConvId || messages.length === 0) return;
       // in-progress 상태는 DB 에 저장하지 않음 (타기기에서 "중단되었습니다" 로 오해되는 문제 방지)
@@ -312,7 +310,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       window.removeEventListener('pagehide', flush);
       window.removeEventListener('focus', refresh);
     };
-  }, [activeConvId, messages, conversations, isDemo]);
+  }, [activeConvId, messages, conversations]);
 
   // ── 스크롤 — 하단 근처에 있을 때만 자동 스크롤 ──────────────────────────────
   const isNearBottomRef = useRef(true);
@@ -354,7 +352,6 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
     setMessages(cleanMessages(conv.messages));
     localStorage.setItem('firebat_active_conv', id);
     // 다기기 동기화: 선택 시 DB 최신 버전이 로컬보다 최근이면 메시지 교체
-    if (isDemo) return;
     const localUpdatedAt = conv.updatedAt ?? conv.createdAt ?? 0;
     (async () => {
       try {
@@ -376,13 +373,11 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
         });
       } catch {}
     })();
-  }, [activeConvId, conversations, isDemo]);
+  }, [activeConvId, conversations]);
 
   const handleDeleteConv = useCallback((id: string) => {
-    // admin은 DB에서도 삭제
-    if (!isDemo) {
-      fetch(`/api/conversations?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
-    }
+    // DB에서도 삭제
+    fetch(`/api/conversations?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
     setConversations(prev => {
       const updated = prev.filter(c => c.id !== id);
       localStorage.setItem('firebat_conversations', JSON.stringify(updated));
@@ -400,7 +395,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       }
       return updated;
     });
-  }, [activeConvId, isDemo]);
+  }, [activeConvId]);
 
   // ── 전송 ───────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async (overrideText?: string, isSuggestion?: boolean) => {

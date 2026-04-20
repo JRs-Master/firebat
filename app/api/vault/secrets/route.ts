@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
-// isDemo는 requireAuth의 auth.role로 확인
-
 /** GET /api/vault/secrets — 사용자 시크릿 키 목록 (값은 마스킹) + 유저 모듈 필요 시크릿 */
 export async function GET(req: NextRequest) {
   const auth = requireAuth(req);
@@ -33,9 +31,6 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  if (auth.role === 'demo') {
-    return NextResponse.json({ success: false, error: '데모 모드에서는 설정을 변경할 수 없습니다.' }, { status: 403 });
-  }
   try {
     const { name, value } = await req.json();
     if (!name || typeof name !== 'string') {
@@ -62,9 +57,6 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  if (auth.role === 'demo') {
-    return NextResponse.json({ success: false, error: '데모 모드에서는 설정을 변경할 수 없습니다.' }, { status: 403 });
-  }
   const name = req.nextUrl.searchParams.get('name');
   if (!name) return NextResponse.json({ success: false, error: 'name 필요' }, { status: 400 });
 

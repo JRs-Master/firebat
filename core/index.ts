@@ -18,17 +18,16 @@ import type { CapabilitySettings } from './capabilities';
 import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL } from './vault-keys';
 import { eventBus } from '../lib/events';
 
-/** AI 요청 옵션 — 요청별 모델/데모 모드 지정 */
+/** AI 요청 옵션 — 요청별 모델/이미지/멀티턴 컨텍스트 지정 */
 export interface AiRequestOpts {
   model?: string;
-  isDemo?: boolean;
   /** 현재 프롬프트에 첨부된 이미지 (Base64 data URL) */
   image?: string;
   /** 이전 응답 ID (OpenAI Responses API multi-turn state) */
   previousResponseId?: string;
   /** 현재 활성 대화 ID — search_history 도구에 전달, 현재 대화 우선 부스트용 */
   conversationId?: string;
-  /** 대화 소유자 (admin / demo 등) — search_history 실행 시 owner 스코프 */
+  /** 대화 소유자 — search_history 실행 시 owner 스코프 */
   owner?: string;
 }
 

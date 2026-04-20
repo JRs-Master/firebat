@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false }, { status: 401 });
   }
 
-  const res = NextResponse.json({ success: true, role: session.role });
+  const res = NextResponse.json({ success: true });
 
   // httpOnly 세션 쿠키 (실제 토큰)
   res.cookies.set({
@@ -25,13 +25,10 @@ export async function POST(req: NextRequest) {
     maxAge: SESSION_MAX_AGE_SECONDS, // 24시간
   });
 
-  // 클라이언트 읽기용 역할 쿠키 (비밀 아님)
-  res.cookies.set({ name: 'firebat_role', value: session.role, httpOnly: false, path: '/' });
-
   // 레거시 쿠키도 설정 (마이그레이션 기간)
   res.cookies.set({
     name: 'firebat_admin_token',
-    value: session.role === 'demo' ? 'demo' : 'authenticated',
+    value: 'authenticated',
     httpOnly: true,
     path: '/',
     sameSite: 'lax',
@@ -50,7 +47,6 @@ export async function DELETE(req: NextRequest) {
   const res = NextResponse.json({ success: true });
   res.cookies.delete('firebat_token');
   res.cookies.delete('firebat_admin_token');
-  res.cookies.delete('firebat_role');
   return res;
 }
 
