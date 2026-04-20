@@ -226,7 +226,7 @@ Open `http://localhost:3000/admin` for the admin console.
 
 1. **AI model**: Settings → AI tab → execution mode (API/CLI) → provider (OpenAI/Google/Anthropic) → model
    - **API mode**: Enter the provider API key (`sk-proj-…`, `AIza…`, `sk-ant-…`) or a Vertex Service Account JSON
-   - **CLI mode**: Run `claude auth login` / `codex login` / `gemini auth login` on the server and click **"Check status"**
+   - **CLI mode**: Run `claude auth login` / `codex login` / `gemini` (first run triggers browser OAuth) on the server and click **"Check status"**
 2. **Timezone**: Settings → General tab (default `Asia/Seoul`)
 3. **MCP token**: Sidebar → SYSTEM → Firebat MCP Server → generate a bearer token for external AI clients
 
