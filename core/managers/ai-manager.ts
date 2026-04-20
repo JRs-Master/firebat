@@ -2176,6 +2176,38 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 - 시스템 모듈은 EXECUTE(path="system/modules/{name}/index.mjs") — MCP_CALL 아님.
 - 사용자에게 결과 보여줄 땐 마지막을 LLM_TRANSFORM.
 
+### 다중 대상 처리 (절대 규칙)
+대상이 N개면 **N개의 EXECUTE step 으로 분리**하라. 1번 호출로 퉁치지 마라.
+
+❌ 3종목 주가 조회 (잘못 — 실제 자주 나는 실수):
+\`\`\`
+steps: [
+  {EXECUTE kiwoom inputData:{action:"price", symbol:"005930"}},  // 1번만!
+  {LLM_TRANSFORM "삼성/LG/SK하이닉스 현재가 정리"},                  // 데이터 없음
+  {EXECUTE kakao-talk}
+]
+→ "요청하신 정보를 찾을 수 없습니다" 로 발송됨
+\`\`\`
+
+✅ 올바른 형태:
+\`\`\`
+steps: [
+  {EXECUTE kiwoom inputData:{action:"price", symbol:"005930"}},   // 삼성
+  {EXECUTE kiwoom inputData:{action:"price", symbol:"066570"}},   // LG
+  {EXECUTE kiwoom inputData:{action:"price", symbol:"000660"}},   // SK하이닉스
+  {LLM_TRANSFORM "3개 종목 데이터를 '종목명: 가격원' 한 줄씩 정리"},
+  {EXECUTE kakao-talk inputData:{action:"send-me", text:"$prev"}}
+]
+\`\`\`
+
+### 도메인별 필수 모듈 (임의 대체 금지)
+- **주가·시세·재무**: sysmod_kiwoom 또는 sysmod_korea_invest (action:"price", symbol:"XXXXXX"). **naver_search 로 주가 긁기 절대 금지** — 블로그·뉴스 혼재라 파싱 실패함.
+- **암호화폐**: sysmod_upbit (KRW-BTC 등).
+- **웹검색·뉴스·쇼핑 키워드**: sysmod_naver_search.
+- **키워드 검색량·CPC**: sysmod_naver_ads.
+- **외부 웹페이지 본문 스크랩**: sysmod_firecrawl (URL 전제).
+- **카톡 발송**: sysmod_kakao_talk (action:"send-me", text:"...").
+
 ## 페이지 생성 (특수)
 PageSpec: {slug, status:"published", project, head:{title, description, keywords, og}, body:[{type:"Html", props:{content:"..."}}]}.
 - og 필수. HTML+CSS+JS 자유. 프로덕션 수준 디자인.

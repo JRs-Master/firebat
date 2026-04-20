@@ -74,6 +74,11 @@ export class TaskManager {
         : step.type === 'CONDITION' ? `${step.field} ${step.op} ${step.value ?? ''}`
         : '';
       this.log.info(`[Pipeline] Step ${i + 1}/${steps.length}: ${step.type}${stepDetail ? ` → ${stepDetail}` : ''}`);
+      // 입력 가시화 (500자) — 어느 종목·파라미터로 호출됐는지 디버깅 가능
+      try {
+        const inputPreview = JSON.stringify(stepInput).slice(0, 500);
+        this.log.info(`[Pipeline] Step ${i + 1} input: ${inputPreview}`);
+      } catch {}
 
       onPipelineStep?.(i, 'start');
 
@@ -116,6 +121,9 @@ export class TaskManager {
             prev = (res.data && typeof res.data === 'object' && 'success' in res.data && 'data' in res.data)
               ? res.data.data
               : res.data;
+            try {
+              this.log.info(`[Pipeline] Step ${i + 1} output: ${JSON.stringify(prev).slice(0, 500)}`);
+            } catch {}
 
             onPipelineStep?.(i, 'done');
             break;
