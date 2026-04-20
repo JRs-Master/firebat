@@ -498,8 +498,9 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
                 <ErrorCollapsible error={msg.error} />
               )}
 
-              {/* 선택지 버튼 */}
-              {msg.suggestions && msg.suggestions.length > 0 && (
+              {/* 선택지 버튼 — past-runat pendingAction 있으면 숨김 (즉시/시간변경 버튼과 중복 방지) */}
+              {msg.suggestions && msg.suggestions.length > 0
+                && !msg.pendingActions?.some(p => p.status === 'past-runat') && (
                 <SuggestionButtons suggestions={msg.suggestions} loading={loading} onSuggestion={onSuggestion} />
               )}
 
