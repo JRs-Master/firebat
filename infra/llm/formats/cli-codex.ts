@@ -176,11 +176,14 @@ export class CliCodexFormat implements FormatHandler {
         ? `${options.systemPrompt}\n\n${finalPrompt}`
         : finalPrompt;
 
-      // codex exec — non-interactive + --full-auto (workspace-write + on-request approval)
+      // codex exec — non-interactive.
+      // 보안: --sandbox read-only (Codex 내장 bash·write 차단, 모든 작업은 MCP firebat 도구만 경유)
+      //       --ask-for-approval never (yolo 와 동등, 승인 prompt 차단)
       // resume 시: codex exec resume <session_id> <prompt> ... (서브커맨드)
+      const securityFlags = ['--json', '--skip-git-repo-check', '--sandbox', 'read-only', '--ask-for-approval', 'never'];
       const args: string[] = options.resumeSessionId
-        ? ['exec', 'resume', options.resumeSessionId, promptWithSystem, '--json', '--skip-git-repo-check', '--full-auto']
-        : ['exec', promptWithSystem, '--json', '--skip-git-repo-check', '--full-auto'];
+        ? ['exec', 'resume', options.resumeSessionId, promptWithSystem, ...securityFlags]
+        : ['exec', promptWithSystem, ...securityFlags];
       if (options.cliModel) args.push('--model', options.cliModel);
 
       const effort = mapThinkingToCodex(options.thinkingLevel);

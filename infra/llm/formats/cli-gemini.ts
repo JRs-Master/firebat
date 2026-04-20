@@ -174,6 +174,16 @@ export class CliGeminiFormat implements FormatHandler {
       mcpServers,
       autoMemory: false,
       telemetry: { enabled: false },
+      // 내장 툴 차단 — mcp_firebat_* 만 사용하도록 유도. shell/file 등 위험 툴 전면 금지.
+      //  (Gemini CLI 의 자체 도구 세트: ShellTool, ReadFileTool, WriteFileTool, EditTool, WebFetchTool, WebSearchTool,
+      //   MemoryTool, GlobTool, GrepTool, EnterPlanMode, ExitPlanMode 등.
+      //   Firebat 은 MCP 로 필요한 건 다 노출하므로 내장 툴은 0으로 설정)
+      coreTools: [],
+      excludeTools: [
+        'ShellTool', 'ReadFileTool', 'WriteFileTool', 'EditTool',
+        'WebFetchTool', 'WebSearchTool', 'MemoryTool', 'GlobTool', 'GrepTool',
+        'EnterPlanMode', 'ExitPlanMode', 'PlanMode',
+      ],
     };
     fs.writeFileSync(path.join(geminiDir, 'settings.json'), JSON.stringify(settings, null, 2));
     return workspace;
@@ -315,6 +325,13 @@ export class CliGeminiFormat implements FormatHandler {
           const toolId = typeof ev.tool_id === 'string' ? ev.tool_id : '';
           const params = ev.parameters ?? ev.input;
           if (rawName) {
+            // Gemini CLI 내장 메타 도구 차단 — enter_plan_mode 등 진입 시 출력 스트림이
+            // 멈춰 UI 가 '로봇 사라짐' 상태로 보임. 호출 자체는 이미 발생했으므로
+            // 사용자에게만 알리고 턴 종료는 result 이벤트를 그대로 기다림.
+            const META_TOOLS = ['enter_plan_mode', 'exit_plan_mode', 'plan_mode', 'plan'];
+            if (META_TOOLS.includes(rawName.toLowerCase())) {
+              options.onChunk?.({ type: 'thinking', content: `[메타 도구 ${rawName} 호출 감지 — 3단계 suggest 플로우를 사용해야 합니다]` });
+            }
             const bare = stripGeminiMcpPrefix(rawName);
             usedTools.push(bare);
             options.onChunk?.({ type: 'thinking', content: `[도구 호출: ${bare}]` });
