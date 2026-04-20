@@ -1014,9 +1014,9 @@ function PieChartInteractive({ segments, gradient, titleBlock, unit, centerHandl
               style={{ left: cursorPos.x + 14, top: cursorPos.y + 14 }}
             >
               {(() => {
-                // AI 가 data 에 이미 퍼센트 값을 넣은 경우 pct 와 중복되는 문제 방어.
-                // unit='%' 이거나 value/pct 가 동일하면 value 만 표시.
-                const isPercentInput = unit === '%' || Math.abs(hoveredSeg.value - hoveredSeg.pct) < 0.05;
+                // AI 가 data 에 이미 퍼센트 값을 넣거나 label 에 '(%)' 를 박은 경우 pct 와 중복되는 문제 방어.
+                const labelHasPercent = /\(\s*\d+(\.\d+)?\s*%\s*\)/.test(hoveredSeg.label);
+                const isPercentInput = unit === '%' || labelHasPercent || Math.abs(hoveredSeg.value - hoveredSeg.pct) < 0.05;
                 return <>
                   <div className="text-[11px] font-bold text-slate-800 whitespace-nowrap">{hoveredSeg.label}</div>
                   <div className="text-[14px] font-extrabold text-slate-900">

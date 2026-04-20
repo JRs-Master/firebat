@@ -81,16 +81,20 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     label: z.string().optional().describe('카운트다운 제목. 예: "이벤트 종료까지"'),
   }, '목표 시각까지 남은 일/시/분/초 실시간 카운트다운.');
   makeRender('render_chart', 'Chart', {
-    chartType: z.enum(['bar','line','pie','doughnut']),
-    labels: z.array(z.string()),
-    data: z.array(z.number()),
+    chartType: z.enum(['bar','line','pie','doughnut']).describe(
+      'bar=값 크기 비교 (독립 수치). line=시간에 따른 추세. ' +
+      'pie/doughnut=전체에서 차지하는 비율 (부분 합 = 전체 100%). ' +
+      '⚠️ 독립 비율 비교(종목별 외국인 보유율 등)는 합계가 100% 아니므로 pie 금지 — bar 사용.'
+    ),
+    labels: z.array(z.string()).describe('각 항목 라벨. **값·퍼센트 중복 표기 금지** (예: "삼성전자 (49.1%)" → "삼성전자"로).'),
+    data: z.array(z.number()).describe('수치 배열. labels 와 길이 동일.'),
     title: z.string().optional(),
     subtitle: z.string().optional().describe('부제목 (데이터 출처·기간 등)'),
     unit: z.string().optional().describe('값 단위 (예: "원", "%", "건")'),
     color: z.enum(['blue','green','red','purple','orange','teal','pink','yellow','slate']).optional().describe('bar/line 단일 색상 (기본 blue)'),
     palette: z.enum(['default','pastel','mono-blue','mono-green','red-green','earth']).optional().describe('pie/doughnut 색상 팔레트'),
     showValues: z.boolean().optional().describe('bar 값 inline 표시 (기본 true)'),
-  }, '간단 차트 (막대/선/원). 다중 시리즈·애노테이션 필요시 render_html + echarts 사용.');
+  }, '간단 차트. chartType 선택이 중요 — 비율 분해만 pie, 독립 수치 비교는 bar.');
 
   makeRender('render_metric', 'Metric', {
     label: z.string().describe('지표명 (예: "현재가", "PER")'),
@@ -220,9 +224,10 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 - 도구 호출이 5회 이상 + 파일 다수 수정이 함께 예상될 때
 - 대규모 리팩토링·마이그레이션
 - 사용자가 "계획 먼저" 명시 요청
+- 사용자 요청에 "리서치 / 리포트 / 심층 분석 / 종합 조사 / 검토 보고서" 같은 **큰 작업 명시 키워드**가 있고 도구 3회 이상 예상될 때
 - 장시간·다량 API 호출로 비용·시간 부담이 큰 작업
 
-**쓰지 마라**: 단순 조회, 단일 또는 소수(≤4) 도구 호출로 끝나는 작업, 인사·단답, 단일 페이지 생성(suggest 3단계 사용).`,
+**쓰지 마라**: 단순 조회, 단일 또는 소수(≤4) 도구 호출로 끝나는 일반 비교·요약, 인사·단답, 단일 페이지 생성(suggest 3단계 사용).`,
     {
       title: z.string().describe('플랜 제목 (간결). 예: "삼성전자 펀더멘털 5단계 분석"'),
       steps: z.array(z.object({
