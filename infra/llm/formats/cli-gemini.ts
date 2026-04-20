@@ -206,7 +206,17 @@ export class CliGeminiFormat implements FormatHandler {
           const ev = JSON.parse(line) as Record<string, unknown>;
           if (ev.type === 'error' || ev.error) {
             errored = true;
-            errorMsg = (ev.message as string) || (ev.error as string) || 'Gemini 오류';
+            // 에러 필드가 객체일 수 있음 ([object Object] 방지 위해 stringify)
+            const toErrStr = (v: unknown): string => {
+              if (typeof v === 'string') return v;
+              if (v && typeof v === 'object') {
+                const m = (v as Record<string, unknown>).message;
+                if (typeof m === 'string') return m;
+                try { return JSON.stringify(v); } catch { return String(v); }
+              }
+              return String(v ?? '');
+            };
+            errorMsg = toErrStr(ev.message) || toErrStr(ev.error) || 'Gemini 오류';
             return;
           }
           // session_id 캡처 (Claude Code 와 유사한 stream-json 포맷 가정)

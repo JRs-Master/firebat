@@ -594,7 +594,9 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
             cancelChunkAnim();
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
-                ? { ...msg, isThinking: false, executing: false, error: ev.data.error, content: msg.content || '' }
+                ? { ...msg, isThinking: false, executing: false, streaming: false,
+                    thinkingText: '답변 완료', // 에러여도 완료 표시 유지 (로봇·글자 사라지는 문제 방지)
+                    error: ev.data.error, content: msg.content || '' }
                 : msg
             ));
           }
@@ -607,6 +609,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       setMessages(prev => prev.map(msg =>
         msg.id === `s-${id}`
           ? { ...msg, isThinking: false, executing: false, streaming: false,
+              thinkingText: '답변 완료',
               error: aborted ? undefined : err.message,
               content: msg.content || (aborted ? '중단되었습니다.' : '서버 네트워크 연결이 끊어졌습니다.') }
           : msg
@@ -617,7 +620,7 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       setMessages(prev => {
         const next = prev.map(msg =>
           msg.id === `s-${id}` && (msg.isThinking || msg.executing || msg.streaming)
-            ? { ...msg, isThinking: false, executing: false, streaming: false, content: msg.content || msg.error || '응답을 받지 못했습니다.' }
+            ? { ...msg, isThinking: false, executing: false, streaming: false, thinkingText: '답변 완료', content: msg.content || msg.error || '응답을 받지 못했습니다.' }
             : msg
         );
         finalMsgs = next;
