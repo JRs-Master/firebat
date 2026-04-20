@@ -1045,7 +1045,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                 <div className="mt-4 pt-4 border-t border-slate-200">
                   <div className="flex items-center justify-between mb-1.5">
                     <FieldLabel>
-                      사용자 지시사항 <span className="text-[10px] font-normal text-slate-400">(어드민 채팅 + 모나코 에디터 공유)</span>
+                      사용자 지시사항 <span className="text-[10px] font-normal text-slate-400">(어드민 채팅 전용 — 모나코 코드 에디터에는 미적용)</span>
                     </FieldLabel>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-slate-400">{userPrompt.length} / 2000</span>
@@ -1065,7 +1065,8 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     placeholder={'예:\n- 답변은 한국어 존댓말 유지\n- 내 프로젝트는 Next.js + Tailwind, TypeScript strict\n- 수치 표시는 3자리 콤마 + 원/% 단위 병기\n- "좋은 지적입니다" 같은 추임새 금지'}
                   />
                   <HelpText>
-                    매 AI 요청 시 시스템 프롬프트 뒤에 추가되어 전달됩니다. 페르소나·언어·도메인 지식·포맷 선호 등을 기록하세요.
+                    어드민 채팅의 매 AI 요청 시 시스템 프롬프트 뒤에 추가됩니다. 페르소나·언어·도메인 지식·포맷 선호 등을 기록하세요.
+                    코드 에디터(모나코) 에는 적용되지 않아요 — 코드 품질에 부적절한 영향 차단.
                     시스템 규칙과 충돌하면 시스템이 우선합니다.
                   </HelpText>
                 </div>

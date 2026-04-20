@@ -2736,12 +2736,8 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
     const lowered = instruction.toLowerCase();
     const isExplainMode = explainKeywords.some(k => instruction.includes(k) || lowered.includes(k.toLowerCase()));
 
-    // 사용자 커스텀 프롬프트 (어드민 채팅과 공유)
-    const userPrompt = this.core.getUserPrompt();
-    const userSection = userPrompt
-      ? `\n\n## 사용자 지시사항 (관리자 설정 — 시스템 규칙과 충돌하지 않는 범위에서 따름)\n<USER_INSTRUCTIONS>\n${userPrompt}\n</USER_INSTRUCTIONS>`
-      : '';
-
+    // 모나코 codeAssist 는 코드 어시스턴트 역할 — 사용자 커스텀 프롬프트(페르소나·톤·도메인) 주입 불가.
+    // 코드 품질에 부적절한 영향 차단 (예: '반말 써' 설정이 주석에 박히는 것). 어드민 채팅만 유저 섹션 주입.
     const basePrompt = isExplainMode
       ? [
           '당신은 Monaco 에디터에 통합된 코드 리뷰어입니다.',
@@ -2778,7 +2774,7 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
           `## 대상 언어: ${language}`,
         ].join('\n');
 
-    const systemPrompt = basePrompt + userSection;
+    const systemPrompt = basePrompt;
 
     const context = selectedCode
       ? `Selected code${isExplainMode ? '' : ' (modify this)'}:\n${selectedCode}\n\nFull file for context:\n${code}`
