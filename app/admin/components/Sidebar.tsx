@@ -290,15 +290,20 @@ export function Sidebar({
   const openRenamePage = (slug: string) => { setRenameTarget({ type: 'page', current: slug }); setRenameInput(slug); setRenameSetRedirect(true); };
   const openRenameProject = (name: string) => { setRenameTarget({ type: 'project', current: name }); setRenameInput(name); setRenameSetRedirect(true); };
 
+  // slug 자동 정규화: 앞뒤 공백·선행·후행 슬래시 제거 + 연속 슬래시 축약
+  const normalizeSlug = (s: string) => s.trim().replace(/^\/+/, '').replace(/\/+$/, '').replace(/\/{2,}/g, '/');
+
   const submitRename = async () => {
-    if (!renameTarget || !renameInput.trim() || renameInput === renameTarget.current) return;
+    if (!renameTarget) return;
+    const normalized = normalizeSlug(renameInput);
+    if (!normalized || normalized === renameTarget.current) return;
     setRenaming(true);
     try {
       if (renameTarget.type === 'page') {
         const res = await fetch(`/api/pages/${encodeURIComponent(renameTarget.current)}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ newSlug: renameInput.trim(), setRedirect: renameSetRedirect }),
+          body: JSON.stringify({ newSlug: normalized, setRedirect: renameSetRedirect }),
         });
         const data = await res.json();
         if (!data.success) { alert(data.error || '변경 실패'); return; }
@@ -306,7 +311,7 @@ export function Sidebar({
         const res = await fetch(`/api/fs/projects`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'rename', project: renameTarget.current, newName: renameInput.trim(), setRedirect: renameSetRedirect }),
+          body: JSON.stringify({ action: 'rename', project: renameTarget.current, newName: normalized, setRedirect: renameSetRedirect }),
         });
         const data = await res.json();
         if (!data.success) { alert(data.error || '변경 실패'); return; }
@@ -887,8 +892,15 @@ export function Sidebar({
 
     {/* URL / 프로젝트 이름 변경 모달 */}
     {renameTarget && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => !renaming && setRenameTarget(null)}>
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+        // 드래그 후 바깥에서 놓여도 모달 닫히지 않도록 — mousedown 이 backdrop 자체에서 시작된 경우에만 닫기
+        onMouseDown={(e) => {
+          if (renaming) return;
+          if (e.target === e.currentTarget) setRenameTarget(null);
+        }}
+      >
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden" onMouseDown={e => e.stopPropagation()}>
           <div className="px-5 py-3 border-b border-slate-200 bg-slate-50">
             <h3 className="text-sm font-bold text-slate-800">
               {renameTarget.type === 'page' ? 'URL (slug) 변경' : '프로젝트 이름 변경'}

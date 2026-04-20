@@ -41,11 +41,12 @@ export class PageManager {
 
   /** slug 이름 변경 — 리디렉트 옵션. 새 slug 중복 시 실패 반환 */
   async rename(oldSlug: string, newSlug: string, opts: { setRedirect?: boolean } = {}): Promise<InfraResult<{ oldSlug: string; newSlug: string }>> {
-    if (!newSlug || !newSlug.trim()) return { success: false, error: '새 slug 가 비어 있습니다.' };
+    // 자동 정규화: 공백·선행/후행/연속 슬래시 제거 (클라이언트 편의)
+    newSlug = (newSlug ?? '').trim().replace(/^\/+/, '').replace(/\/+$/, '').replace(/\/{2,}/g, '/');
+    if (!newSlug) return { success: false, error: '새 slug 가 비어 있습니다.' };
     if (oldSlug === newSlug) return { success: false, error: '기존과 동일한 slug 입니다.' };
-    // 허용: 영숫자/한글/하이픈/슬래시. 선행·후행 슬래시·연속 슬래시 금지
-    if (/^\/|\/$|\/\//.test(newSlug) || /\s/.test(newSlug)) {
-      return { success: false, error: 'slug 형식 오류: 공백·선행/후행/연속 슬래시 금지.' };
+    if (/\s/.test(newSlug)) {
+      return { success: false, error: 'slug 에 공백을 넣을 수 없습니다.' };
     }
     // 중복 검사
     const dup = await this.database.getPage(newSlug);
