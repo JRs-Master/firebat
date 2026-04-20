@@ -774,6 +774,7 @@ export default function AdminConsole() {
         onSelectConv={handleSelectConv}
         onNewConv={handleNewConv}
         onDeleteConv={handleDeleteConv}
+        aiModel={aiModel}
         onOpenSettings={() => setShowSettings(true)}
         onEditFile={(filePath) => setEditingFile(filePath)}
         onOpenModuleSettings={(name) => setEditingModule(name)}
@@ -899,6 +900,7 @@ export default function AdminConsole() {
         {editingFile && (
           <FileEditor
             filePath={editingFile}
+            aiModel={aiModel}
             onClose={() => setEditingFile(null)}
             onSaved={() => fetchFileTree()}
           />

@@ -2662,24 +2662,40 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
     const { code, language, instruction, selectedCode } = params;
     const llmOpts: LlmCallOpts | undefined = opts?.model ? { model: opts.model } : undefined;
 
-    const systemPrompt = [
-      'You are an expert code assistant.',
-      'Respond with ONLY the raw code — no explanations, no markdown fences, no backticks.',
-      'Preserve the original indentation style and language conventions.',
-      `Target language: ${language}`,
-    ].join('\n');
+    // 사용자 지시를 분석·설명 모드 vs 코드 수정 모드로 분기.
+    // "알려줘/설명/분석/검토/리뷰/뭐가 문제/왜" 계열은 설명(마크다운) 반환,
+    // 그 외("수정/추가/리팩토링/고쳐줘/만들어줘" 등)는 raw 코드 반환.
+    const explainKeywords = ['알려줘', '알려달', '설명', '분석', '검토', '리뷰', '뭐가 문제', '왜', '어떻게', '파악', '평가', 'explain', 'review', 'analyze', 'analyse', 'what does', 'why', 'describe'];
+    const lowered = instruction.toLowerCase();
+    const isExplainMode = explainKeywords.some(k => instruction.includes(k) || lowered.includes(k.toLowerCase()));
+
+    const systemPrompt = isExplainMode
+      ? [
+          'You are an expert code reviewer.',
+          'The user wants an explanation, review, or analysis — NOT a code rewrite.',
+          'Respond in Korean markdown: bullet points, short sections, cite specific line/function names.',
+          'Focus on actionable observations. Avoid dumping the entire code back.',
+          `Target language: ${language}`,
+        ].join('\n')
+      : [
+          'You are an expert code assistant.',
+          'Respond with ONLY the raw code — no explanations, no markdown fences, no backticks.',
+          'Preserve the original indentation style and language conventions.',
+          `Target language: ${language}`,
+        ].join('\n');
 
     const context = selectedCode
-      ? `Selected code (modify this):\n${selectedCode}\n\nFull file for context:\n${code}`
+      ? `Selected code${isExplainMode ? '' : ' (modify this)'}:\n${selectedCode}\n\nFull file for context:\n${code}`
       : `Full file:\n${code}`;
 
     const result = await this.llm.askText(`Instruction: ${instruction}\n\n${context}`, systemPrompt, llmOpts);
     if (!result.success) return result;
 
-    const cleaned = (result.data ?? '')
-      .replace(/^```[\w]*\n?/, '')
-      .replace(/\n?```$/, '')
-      .trim();
+    // 설명 모드에선 마크다운 그대로 유지. 코드 모드에선 코드블록 래퍼 제거.
+    const raw = result.data ?? '';
+    const cleaned = isExplainMode
+      ? raw.trim()
+      : raw.replace(/^```[\w]*\n?/, '').replace(/\n?```$/, '').trim();
 
     return { success: true, data: cleaned };
   }

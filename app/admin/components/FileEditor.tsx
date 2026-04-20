@@ -30,11 +30,13 @@ interface FileEditorProps {
   filePath?: string;
   /** 페이지 slug (PageSpec 모드) */
   pageSlug?: string;
+  /** 어드민 채팅과 동일한 User AI 모델 (미지정 시 서버 기본값) */
+  aiModel?: string;
   onClose: () => void;
   onSaved?: () => void;
 }
 
-export function FileEditor({ filePath, pageSlug, onClose, onSaved }: FileEditorProps) {
+export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: FileEditorProps) {
   const isPageMode = !!pageSlug;
   const [content, setContent]   = useState('');
   const [original, setOriginal] = useState('');
@@ -51,6 +53,7 @@ export function FileEditor({ filePath, pageSlug, onClose, onSaved }: FileEditorP
   const [aiInstruction, setAiInstruction] = useState('');
   const [aiLoading, setAiLoading]       = useState(false);
   const [aiResult, setAiResult]         = useState<string | null>(null);
+  const [aiMode, setAiMode]             = useState<'explain' | 'code'>('code');
   const [aiError, setAiError]           = useState<string | null>(null);
   const [selectionInfo, setSelectionInfo] = useState<string>('전체 파일');
   const [copied, setCopied]             = useState(false);
@@ -159,6 +162,11 @@ export function FileEditor({ filePath, pageSlug, onClose, onSaved }: FileEditorP
   // AI 요청
   const handleAiSubmit = useCallback(async () => {
     if (!aiInstruction.trim() || aiLoading) return;
+    // 지시문 기반 모드 추정 — 백엔드 codeAssist 와 동일 키워드 목록
+    const explainKeywords = ['알려줘', '알려달', '설명', '분석', '검토', '리뷰', '뭐가 문제', '왜', '어떻게', '파악', '평가', 'explain', 'review', 'analyze', 'analyse', 'describe'];
+    const lowered = aiInstruction.toLowerCase();
+    const mode: 'explain' | 'code' = explainKeywords.some(k => aiInstruction.includes(k) || lowered.includes(k.toLowerCase())) ? 'explain' : 'code';
+    setAiMode(mode);
     setAiLoading(true);
     setAiResult(null);
     setAiError(null);
@@ -170,11 +178,15 @@ export function FileEditor({ filePath, pageSlug, onClose, onSaved }: FileEditorP
       ? editor.getModel()?.getValueInRange(sel)
       : undefined;
 
-    let config: any = { provider: 'gemini', model: 'gemini-3-flash-preview' };
-    try {
-      const stored = localStorage.getItem('firebat_llm_config');
-      if (stored) config = JSON.parse(stored);
-    } catch {}
+    // 모델 우선순위: prop(어드민 채팅과 통일) → localStorage 폴백 → 서버 기본
+    let model: string | undefined = aiModel;
+    if (!model) {
+      try {
+        const stored = localStorage.getItem('firebat_model');
+        if (stored) model = stored;
+      } catch {}
+    }
+    const config = model ? { model } : {};
 
     try {
       const res  = await fetch('/api/ai/code-assist', {
@@ -190,7 +202,7 @@ export function FileEditor({ filePath, pageSlug, onClose, onSaved }: FileEditorP
     } finally {
       setAiLoading(false);
     }
-  }, [aiInstruction, aiLoading, content, lang]);
+  }, [aiInstruction, aiLoading, content, lang, aiModel]);
 
   // 결과 적용
   const applyResult = useCallback(() => {
@@ -483,18 +495,20 @@ export function FileEditor({ filePath, pageSlug, onClose, onSaved }: FileEditorP
 
             {aiResult && (
               <div className="px-4 pb-3 space-y-2">
-                <div className="relative bg-[#0d1117] rounded-lg border border-slate-700/60 max-h-40 overflow-y-auto">
-                  <pre className="p-3 text-[12px] text-slate-300 font-mono whitespace-pre-wrap break-all">
-                    {aiResult.slice(0, 800)}{aiResult.length > 800 ? '\n...' : ''}
+                <div className={`relative rounded-lg border border-slate-700/60 max-h-60 overflow-y-auto ${aiMode === 'explain' ? 'bg-slate-800/50' : 'bg-[#0d1117]'}`}>
+                  <pre className={`p-3 text-[12px] text-slate-200 whitespace-pre-wrap break-words leading-relaxed ${aiMode === 'explain' ? '' : 'font-mono break-all'}`}>
+                    {aiResult.slice(0, 1500)}{aiResult.length > 1500 ? '\n...' : ''}
                   </pre>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={applyResult}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-[12px] font-bold rounded-lg transition-colors"
-                  >
-                    <Check size={12} /> 적용
-                  </button>
+                  {aiMode === 'code' && (
+                    <button
+                      onClick={applyResult}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-[12px] font-bold rounded-lg transition-colors"
+                    >
+                      <Check size={12} /> 적용
+                    </button>
+                  )}
                   <button
                     onClick={copyResult}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-[12px] font-bold rounded-lg transition-colors"
@@ -508,7 +522,9 @@ export function FileEditor({ filePath, pageSlug, onClose, onSaved }: FileEditorP
                     다시 작성
                   </button>
                   <span className="text-[11px] text-slate-600 ml-auto">
-                    {selectionInfo !== '전체 파일' ? '선택 영역을 교체합니다' : '파일 전체를 교체합니다'}
+                    {aiMode === 'explain'
+                      ? '설명·리뷰 결과 (코드 교체 안 됨)'
+                      : selectionInfo !== '전체 파일' ? '선택 영역을 교체합니다' : '파일 전체를 교체합니다'}
                   </span>
                 </div>
               </div>

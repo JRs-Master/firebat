@@ -24,6 +24,7 @@ interface SidebarProps {
   onSelectConv: (id: string) => void;
   onNewConv: () => void;
   onDeleteConv: (id: string) => void;
+  aiModel?: string;
   onOpenSettings?: () => void;
   onEditFile?: (filePath: string) => void;
   onOpenModuleSettings?: (moduleName: string) => void;
@@ -36,7 +37,7 @@ export function Sidebar({
   onRefreshTree,
   conversations, activeConvId,
   onSelectConv, onNewConv, onDeleteConv,
-  onOpenSettings, onEditFile, onOpenModuleSettings,
+  aiModel, onOpenSettings, onEditFile, onOpenModuleSettings,
   mobileOpen, onMobileOpenChange,
 }: SidebarProps) {
   const [tab, setTab] = useState<'workspace' | 'chats'>('workspace');
@@ -884,6 +885,7 @@ export function Sidebar({
     {editingPageSlug && !isMobile && (
       <FileEditor
         pageSlug={editingPageSlug}
+        aiModel={aiModel}
         onClose={() => setEditingPageSlug(null)}
         onSaved={fetchPages}
       />
