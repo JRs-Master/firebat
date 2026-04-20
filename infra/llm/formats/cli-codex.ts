@@ -21,8 +21,38 @@ interface CliRunResult {
   text: string;
   sessionId?: string;
   usedTools: string[];
+  renderedBlocks: Array<
+    | { type: 'text'; text: string }
+    | { type: 'html'; htmlContent: string; htmlHeight?: string }
+    | { type: 'component'; name: string; props: Record<string, unknown> }
+  >;
+  pendingActions: Array<{ planId: string; name: string; summary: string; args?: Record<string, unknown> }>;
+  suggestions: unknown[];
   error?: string;
 }
+
+const RENDER_COMPONENT_MAP: Record<string, string> = {
+  render_stock_chart: 'StockChart',
+  render_table: 'Table',
+  render_alert: 'Alert',
+  render_callout: 'Callout',
+  render_badge: 'Badge',
+  render_progress: 'Progress',
+  render_header: 'Header',
+  render_text: 'Text',
+  render_list: 'List',
+  render_divider: 'Divider',
+  render_countdown: 'Countdown',
+  render_chart: 'Chart',
+  render_image: 'Image',
+  render_card: 'Card',
+  render_grid: 'Grid',
+  render_metric: 'Metric',
+  render_timeline: 'Timeline',
+  render_compare: 'Compare',
+  render_key_value: 'KeyValue',
+  render_status_badge: 'StatusBadge',
+};
 
 interface RunOptions {
   systemPrompt?: string;
@@ -88,6 +118,9 @@ export class CliCodexFormat implements FormatHandler {
         toolCalls: [],
         responseId: res.sessionId,
         internallyUsedTools: res.usedTools,
+        renderedBlocks: res.renderedBlocks,
+        pendingActions: res.pendingActions,
+        suggestions: res.suggestions,
       },
     };
   }
@@ -160,7 +193,7 @@ export class CliCodexFormat implements FormatHandler {
       try {
         child = spawn('codex', args, { stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
       } catch (e) {
-        resolve({ text: '', usedTools: [], error: `Codex CLI 실행 실패 (codex 명령어 미설치?): ${(e as Error).message}` });
+        resolve({ text: '', usedTools: [], renderedBlocks: [], pendingActions: [], suggestions: [], error: `Codex CLI 실행 실패 (codex 명령어 미설치?): ${(e as Error).message}` });
         return;
       }
 
@@ -168,37 +201,117 @@ export class CliCodexFormat implements FormatHandler {
       let stderrBuf = '';
       const textParts: string[] = [];
       const usedTools: string[] = [];
+      const renderedBlocks: CliRunResult['renderedBlocks'] = [];
+      const pendingActions: CliRunResult['pendingActions'] = [];
+      const suggestions: unknown[] = [];
       let sessionId: string | undefined;
       let errored = false;
       let errorMsg: string | undefined;
 
+      const toErrStr = (v: unknown): string => {
+        if (typeof v === 'string') return v;
+        if (v && typeof v === 'object') {
+          const m = (v as Record<string, unknown>).message;
+          if (typeof m === 'string') return m;
+          try { return JSON.stringify(v); } catch { return String(v); }
+        }
+        return String(v ?? '');
+      };
+
+      // Codex exec --json 포맷:
+      //   thread.started { thread_id }
+      //   turn.started / turn.completed / turn.failed { error: { message } }
+      //   item.started / item.completed / item.updated { item: { id, type, ...typeSpecific } }
+      //     item.type 종류: agent_message (text), reasoning (text), command_execution,
+      //                    file_change, mcp_tool_call (server,tool,arguments,result), web_search, todo_list, error
+      //   error { message }
       const processLine = (line: string) => {
         if (!line.trim()) return;
-        try {
-          const ev = JSON.parse(line) as Record<string, unknown>;
-          if (ev.type === 'error' || ev.error) {
-            errored = true;
-            errorMsg = (ev.message as string) || (ev.error as string) || 'Codex 오류';
+        let ev: Record<string, unknown>;
+        try { ev = JSON.parse(line) as Record<string, unknown>; } catch { return; }
+
+        const t = ev.type;
+        if (t === 'thread.started') {
+          if (typeof ev.thread_id === 'string' && !sessionId) sessionId = ev.thread_id;
+          return;
+        }
+        if (t === 'turn.failed') {
+          errored = true;
+          errorMsg = toErrStr((ev.error as Record<string, unknown>)?.message) || toErrStr(ev.error) || 'Codex turn 실패';
+          return;
+        }
+        if (t === 'error') {
+          errored = true;
+          errorMsg = toErrStr(ev.message) || 'Codex 오류';
+          return;
+        }
+        if (t === 'turn.started' || t === 'turn.completed') return; // 통계만
+
+        // item.* 이벤트
+        if (t === 'item.started' || t === 'item.completed' || t === 'item.updated') {
+          const item = ev.item as Record<string, unknown> | undefined;
+          if (!item) return;
+          const itemType = item.type;
+          // agent_message: 최종 assistant 텍스트 (completed 만)
+          if (itemType === 'agent_message' && t === 'item.completed' && typeof item.text === 'string') {
+            textParts.push(item.text);
+            options.onChunk?.({ type: 'text', content: item.text });
             return;
           }
-          if (typeof ev.session_id === 'string' && !sessionId) sessionId = ev.session_id;
-          if (typeof ev.id === 'string' && !sessionId) sessionId = ev.id;
-          const text = (ev.text as string) ?? (ev.content as string) ?? (ev.message as string) ?? (ev.output as string);
-          if (typeof text === 'string' && text) {
-            textParts.push(text);
-            options.onChunk?.({ type: 'text', content: text });
+          // reasoning: thinking 스트림
+          if (itemType === 'reasoning' && typeof item.text === 'string') {
+            options.onChunk?.({ type: 'thinking', content: item.text });
+            return;
           }
-          if (ev.type === 'tool_use' || ev.type === 'tool_call') {
-            const toolName = (ev.name as string) || (ev.tool as string);
-            if (toolName) {
-              const bare = toolName.replace(/^mcp__[^_]+__/, '');
-              usedTools.push(bare);
-              options.onChunk?.({ type: 'thinking', content: `[도구 호출: ${bare}]` });
+          // mcp_tool_call: 도구 호출 + 결과
+          if (itemType === 'mcp_tool_call') {
+            const server = typeof item.server === 'string' ? item.server : '';
+            const toolName = typeof item.tool === 'string' ? item.tool : '';
+            if (!toolName) return;
+            if (t === 'item.started') {
+              usedTools.push(toolName);
+              options.onChunk?.({ type: 'thinking', content: `[도구 호출: ${toolName}]` });
+              return;
             }
+            if (t === 'item.completed' && server === 'firebat') {
+              // result.content[0].text 에 우리 MCP 응답 JSON 있음
+              const result = item.result as Record<string, unknown> | undefined;
+              const contents = result?.content as Array<Record<string, unknown>> | undefined;
+              const textPayload = contents?.[0]?.text;
+              if (typeof textPayload !== 'string') return;
+              try {
+                const payload = JSON.parse(textPayload) as Record<string, unknown>;
+                if (!payload.success) return;
+                const args = (item.arguments as Record<string, unknown>) ?? {};
+                // 1) render_* → blocks
+                if (toolName === 'render_html' && typeof payload.htmlContent === 'string') {
+                  renderedBlocks.push({ type: 'html', htmlContent: payload.htmlContent, htmlHeight: payload.htmlHeight as string | undefined });
+                } else if (typeof payload.component === 'string') {
+                  renderedBlocks.push({ type: 'component', name: payload.component, props: (payload.props as Record<string, unknown>) ?? {} });
+                } else if (RENDER_COMPONENT_MAP[toolName]) {
+                  renderedBlocks.push({ type: 'component', name: RENDER_COMPONENT_MAP[toolName], props: args });
+                }
+                // 2) pending
+                if (payload.pending === true && typeof payload.planId === 'string') {
+                  pendingActions.push({
+                    planId: payload.planId,
+                    name: toolName,
+                    summary: typeof payload.summary === 'string' ? payload.summary : toolName,
+                    args,
+                  });
+                }
+                // 3) suggest
+                if (toolName === 'suggest' && Array.isArray(payload.suggestions)) {
+                  for (const s of payload.suggestions) suggestions.push(s);
+                }
+              } catch { /* 파싱 실패 무시 */ }
+            }
+            return;
           }
-        } catch {
-          textParts.push(line);
-          options.onChunk?.({ type: 'text', content: line });
+          // item.type === 'error' 내부 에러 (치명적 아님, 로깅만)
+          if (itemType === 'error' && typeof item.message === 'string') {
+            options.onChunk?.({ type: 'thinking', content: `[도구 오류: ${item.message}]` });
+          }
         }
       };
 
@@ -210,22 +323,22 @@ export class CliCodexFormat implements FormatHandler {
       });
       child.stderr.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString(); });
       child.on('error', (e) => {
-        resolve({ text: textParts.join(''), usedTools, error: `Codex CLI 프로세스 에러: ${e.message}` });
+        resolve({ text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId, error: `Codex CLI 프로세스 에러: ${e.message}` });
       });
       child.on('close', (code) => {
         if (stdoutBuf.trim()) processLine(stdoutBuf);
         if (errored) {
-          resolve({ text: textParts.join(''), usedTools, sessionId, error: errorMsg });
+          resolve({ text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId, error: errorMsg });
           return;
         }
         if (code !== 0) {
           resolve({
-            text: textParts.join(''), usedTools, sessionId,
+            text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId,
             error: `Codex 비정상 종료 (exit ${code}): ${stderrBuf.slice(0, 500)}`,
           });
           return;
         }
-        resolve({ text: textParts.join(''), usedTools, sessionId });
+        resolve({ text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId });
       });
     });
   }
