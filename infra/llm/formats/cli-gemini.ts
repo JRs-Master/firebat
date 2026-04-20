@@ -2,7 +2,7 @@
  * cli-gemini format handler
  *
  * Google Gemini CLI 를 자식 프로세스로 spawn 하여 실행. Google AI Pro 구독 (또는 무료 티어) 사용.
- * 인증은 `gemini` 실행 시 브라우저 OAuth 자동 오픈 (API 키 불필요).
+ * 인증은 `gemini auth login` 으로 OAuth 코드 플로우 (API 키 불필요).
  *
  * 실행: gemini -p "prompt" --output-format stream-json --approval-mode yolo
  * MCP: ~/.gemini/settings.json 대신 임시 GEMINI_HOME 에 settings.json 생성 + env 주입.

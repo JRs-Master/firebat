@@ -876,7 +876,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                     gemini: {
                       name: 'Gemini CLI',
                       install: 'npm i -g @google/gemini-cli',
-                      login: 'gemini (실행 시 브라우저 OAuth 자동 오픈)',
+                      login: 'gemini auth login',
                       subscription: 'Google AI Pro 구독 (또는 무료 티어)',
                       apiProvider: 'gemini',
                     },
