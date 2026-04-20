@@ -2087,6 +2087,7 @@ ${systemContext}
   ❌ \`\`mcp_firebat_render_header\`\` (Level 2: "제목")
   ❌ "render_table 로 표를 그리겠습니다"
   ✅ 실제 tool_use 로 도구를 호출하고, reply 엔 내용 요약만. 도구 호출 방법·계획을 문서화하지 마라.
+  ※ **예외**: \`propose_plan\` 은 계획 카드 UI 도구 — 복합 작업(5+ 도구 호출, 대규모 분석·리포트) 시작 전 **반드시 먼저 호출**하여 사용자 승인 받아라. 프롬프트의 "도구 계획 금지" 규칙은 텍스트로 설명하는 것에만 적용되며, propose_plan 도구 호출 자체는 권장된다.
 - **markdown 표 (\`|---|\` 문법) 절대 금지** — 수치 3개 이상이면 무조건 render_table 도구 호출.
 - **환각 수치 금지** — "월간 검색량 17,150회" 같은 숫자는 반드시 sysmod_naver_ads / sysmod_naver_search / sysmod_kiwoom 등 실제 데이터 모듈 호출 후 나온 값만 사용. 요청에 "연관키워드/검색량/CPC/트렌드/시세/현재가" 등 수치 용어 있으면 도구 먼저 부르고 답해라.
 

@@ -350,23 +350,18 @@ export class CliGeminiFormat implements FormatHandler {
                 }
               }
             } else {
-              // [Thought:] 마커 없이 누출된 reasoning 블록 감지.
-              // Gemini CLI 가 minimal/low thinking 에서 '**Conducting Final Review** I'm now...' 같은
-              // 사고 과정을 text 스트림에 뱉는 경우 대응.
-              // 보수적 감지: reasoning 시그니처 키워드(gerund + 1인칭) 둘 다 있는 영문 문단만 분리.
-              // 영어로 답변해달라는 정상 요청에는 영향 없음.
+              // [Thought:] 마커 없이 누출된 reasoning 블록 감지 — chunk 전체 기준 한 번만 판정.
+              // split·개행 추가 하지 않음 (markdown 표가 깨지거나 Thought 마커가 경계에 걸리는 문제 방지).
+              // 최종 cleanup 은 sanitizeFinal 에서 처리.
               const REASONING_GERUND = /\b(Conducting|Analyzing|Refining|Reviewing|Finalizing|Preparing|Evaluating|Processing|Synthesizing|Compiling|Investigating|Considering|Formulating|Examining)\b/;
-              const FIRST_PERSON = /\bI['']?(m|ve| am| will| have| need| ensure|\s)|\bLet me\b|\bMy (next|step|plan|focus|approach)\b/;
-              const chunks = raw.split(/\n{2,}/);
-              for (const chunk of chunks) {
-                if (!chunk.trim()) continue;
-                const looksLikeReasoning = REASONING_GERUND.test(chunk) && FIRST_PERSON.test(chunk) && !/[가-힣]/.test(chunk);
-                if (looksLikeReasoning) {
-                  options.onChunk?.({ type: 'thinking', content: chunk });
-                } else {
-                  textParts.push(chunk + '\n\n');
-                  options.onChunk?.({ type: 'text', content: chunk + '\n\n' });
-                }
+              const FIRST_PERSON = /\bI['']?(m|ve| am| will| have| need)\b|\bLet me\b|\bMy (next|step|plan|focus|approach)\b/;
+              const hasKorean = /[가-힣]/.test(raw);
+              const looksLikeReasoning = !hasKorean && REASONING_GERUND.test(raw) && FIRST_PERSON.test(raw);
+              if (looksLikeReasoning) {
+                options.onChunk?.({ type: 'thinking', content: raw });
+              } else {
+                textParts.push(raw);
+                options.onChunk?.({ type: 'text', content: raw });
               }
             }
           }
@@ -406,7 +401,8 @@ export class CliGeminiFormat implements FormatHandler {
                 // 1) render_* 결과 → blocks
                 if (pending.name === 'render_html' && typeof payload.htmlContent === 'string') {
                   renderedBlocks.push({ type: 'html', htmlContent: payload.htmlContent, htmlHeight: payload.htmlHeight as string | undefined });
-                } else if (typeof payload.component === 'string') {
+                } else if (typeof payload.component === 'string' && payload.component.trim()) {
+                  // 빈 문자열이면 '지원되지 않는 컴포넌트 ()' 로 렌더되므로 제외 + RENDER_COMPONENT_MAP 폴백으로 넘김
                   renderedBlocks.push({ type: 'component', name: payload.component, props: (payload.props as Record<string, unknown>) ?? {} });
                 } else if (RENDER_COMPONENT_MAP[pending.name]) {
                   renderedBlocks.push({ type: 'component', name: RENDER_COMPONENT_MAP[pending.name], props: (pending.parameters as Record<string, unknown>) ?? {} });
@@ -445,11 +441,13 @@ export class CliGeminiFormat implements FormatHandler {
       child.on('error', (e) => {
         resolve({ text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId, error: `Gemini CLI 프로세스 에러: ${e.message}` });
       });
-      // 텍스트 후처리 — AI 가 본문에 도구 이름·계획·markdown 표 토해낸 것 정리.
+      // 텍스트 후처리 — AI 가 본문에 섞어 넣은 도구 이름·[Thought:] 마커·markdown 표 정리.
       // (프롬프트로 금지해도 Gemini flash 가 종종 뱉으므로 방어)
       const sanitizeFinal = (t: string): string => {
         return t
-          // `mcp_firebat_render_*` / `render_table` / `render_metric` 등 도구 이름 백틱 표기 + 뒤따르는 설명 줄 제거
+          // [Thought: true|false] 마커 (chunk 경계에 걸려 스트리밍 중 못 잡힌 것)
+          .replace(/\[Thought:\s*(?:true|false)\]/g, '')
+          // `mcp_firebat_render_*` / `render_table` / `render_metric` 등 도구 이름 백틱 표기 + 뒤 괄호 설명 제거
           .replace(/`(?:mcp_firebat_)?render_[a-z_]+`\s*(?:\([^)]*\))?[^\n]*\n?/g, '')
           // 줄 시작이 도구 이름만 있는 경우 (백틱 없이)
           .replace(/^\s*mcp_firebat_render_[a-z_]+\b[^\n]*\n/gm, '')
