@@ -1013,20 +1013,11 @@ function PieChartInteractive({ segments, gradient, titleBlock, unit, centerHandl
               className="absolute bg-white/95 shadow-lg rounded-lg px-3 py-2 text-center pointer-events-none border border-slate-200 z-10"
               style={{ left: cursorPos.x + 14, top: cursorPos.y + 14 }}
             >
-              {(() => {
-                // AI 가 data 에 이미 퍼센트 값을 넣거나 label 에 '(%)' 를 박은 경우 pct 와 중복되는 문제 방어.
-                const labelHasPercent = /\(\s*\d+(\.\d+)?\s*%\s*\)/.test(hoveredSeg.label);
-                const isPercentInput = unit === '%' || labelHasPercent || Math.abs(hoveredSeg.value - hoveredSeg.pct) < 0.05;
-                return <>
-                  <div className="text-[11px] font-bold text-slate-800 whitespace-nowrap">{hoveredSeg.label}</div>
-                  <div className="text-[14px] font-extrabold text-slate-900">
-                    {hoveredSeg.value.toLocaleString('ko-KR')}{unit || ''}
-                  </div>
-                  {!isPercentInput && (
-                    <div className="text-[10px] text-slate-500">{hoveredSeg.pct.toFixed(1)}%</div>
-                  )}
-                </>;
-              })()}
+              <div className="text-[11px] font-bold text-slate-800 whitespace-nowrap">{hoveredSeg.label}</div>
+              <div className="text-[14px] font-extrabold text-slate-900">
+                {hoveredSeg.value.toLocaleString('ko-KR')}{unit || ''}
+              </div>
+              <div className="text-[10px] text-slate-500">{hoveredSeg.pct.toFixed(1)}%</div>
             </div>
           )}
         </div>
