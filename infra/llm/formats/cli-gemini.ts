@@ -445,20 +445,33 @@ export class CliGeminiFormat implements FormatHandler {
       child.on('error', (e) => {
         resolve({ text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId, error: `Gemini CLI 프로세스 에러: ${e.message}` });
       });
+      // 텍스트 후처리 — AI 가 본문에 도구 이름·계획·markdown 표 토해낸 것 정리.
+      // (프롬프트로 금지해도 Gemini flash 가 종종 뱉으므로 방어)
+      const sanitizeFinal = (t: string): string => {
+        return t
+          // `mcp_firebat_render_*` / `render_table` / `render_metric` 등 도구 이름 백틱 표기 + 뒤따르는 설명 줄 제거
+          .replace(/`(?:mcp_firebat_)?render_[a-z_]+`\s*(?:\([^)]*\))?[^\n]*\n?/g, '')
+          // 줄 시작이 도구 이름만 있는 경우 (백틱 없이)
+          .replace(/^\s*mcp_firebat_render_[a-z_]+\b[^\n]*\n/gm, '')
+          // 빈 줄 3연속 이상 축약
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+      };
       child.on('close', (code) => {
         if (stdoutBuf.trim()) processLine(stdoutBuf);
+        const finalText = sanitizeFinal(textParts.join(''));
         if (errored) {
-          resolve({ text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId, error: errorMsg });
+          resolve({ text: finalText, usedTools, renderedBlocks, pendingActions, suggestions, sessionId, error: errorMsg });
           return;
         }
         if (code !== 0) {
           resolve({
-            text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId,
+            text: finalText, usedTools, renderedBlocks, pendingActions, suggestions, sessionId,
             error: `Gemini 비정상 종료 (exit ${code}): ${stderrBuf.slice(0, 500)}`,
           });
           return;
         }
-        resolve({ text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId });
+        resolve({ text: finalText, usedTools, renderedBlocks, pendingActions, suggestions, sessionId });
       });
     });
   }
