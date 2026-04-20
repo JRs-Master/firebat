@@ -15,6 +15,8 @@ import { vault } from './storage/vault-adapter';
 import { buildConfigDrivenAdapter, loadModelRegistry } from './llm/factory';
 import { McpClientAdapter } from './mcp-client';
 import { VaultAuthAdapter } from './auth';
+import { EmbedderAdapter } from './llm/embedder-adapter';
+import { LlmRouter } from './llm/llm-router';
 import { DB_PATH, DEFAULT_MODEL } from './config';
 
 /** 전체 인프라 싱글톤 */
@@ -59,17 +61,20 @@ export function getInfra(): FirebatInfraContainer {
       },
     );
 
+    const database = new SqliteDatabaseAdapter(DB_PATH);
     globalForInfra.firebatInfra = {
       storage: new LocalStorageAdapter(),
       log,
       sandbox,
-      database: new SqliteDatabaseAdapter(DB_PATH),
+      database,
       network: new FetchNetworkAdapter(),
       cron,
       vault,
       mcpClient,
       llm,
       auth: new VaultAuthAdapter(vault),
+      embedder: new EmbedderAdapter(),
+      toolRouter: (modelId: string) => new LlmRouter(database, llm, modelId),
     };
 
     // nfo-style banner — 불꽃 그라데이션 (빨강→주황→노랑)

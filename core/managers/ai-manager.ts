@@ -1,6 +1,5 @@
 import type { FirebatCore, AiRequestOpts } from '../index';
-import type { ILlmPort, ILogPort, LlmCallOpts, LlmChunk, ChatMessage, PageListItem, ToolDefinition, JsonSchema, JsonSchemaProperty, ToolCall, ToolResult, ToolExchangeEntry, IDatabasePort } from '../ports';
-import { LlmRouter, type RouteResult } from '../../infra/llm/llm-router';
+import type { ILlmPort, ILogPort, LlmCallOpts, LlmChunk, ChatMessage, PageListItem, ToolDefinition, JsonSchema, JsonSchemaProperty, ToolCall, ToolResult, ToolExchangeEntry, IDatabasePort, IToolRouterPort, RouteResult, ToolRouterFactory } from '../ports';
 import { FirebatPlanSchema, FirebatPlan, FirebatAction, CoreResult, type InfraResult } from '../types';
 
 /** Vertex AI Function Calling은 enum 값이 반드시 string이어야 함 — 재귀 변환 */
@@ -46,7 +45,7 @@ export class AiManager {
   private static readonly TOOLS_CACHE_TTL = 60_000;
 
   /** LLM 기반 self-learning 라우터 (on-demand lazy 초기화) */
-  private _llmRouter: LlmRouter | null = null;
+  private _llmRouter: IToolRouterPort | null = null;
   /** 직전 턴의 라우팅 cacheId — AI 가 도구 사용했는지 관측해 score 반영 */
   private _lastRouteCacheIds: { tools?: number; components?: number[] } = {};
   /** 대화 세션별 직전 라우팅 기록 — 유저 피드백 감지용 (conversationId → {...}) */
@@ -59,12 +58,13 @@ export class AiManager {
     private readonly llm: ILlmPort,
     private readonly logger: ILogPort,
     private readonly db: IDatabasePort,
+    private readonly routerFactory: ToolRouterFactory,
   ) {}
 
-  private getRouter(modelId?: string): LlmRouter {
+  private getRouter(modelId?: string): IToolRouterPort {
     const model = modelId ?? this.core.getGeminiKey('system:ai-router:model') ?? 'gemini-3-flash-lite';
     if (!this._llmRouter) {
-      this._llmRouter = new LlmRouter(this.db, this.llm, model);
+      this._llmRouter = this.routerFactory(model);
     }
     return this._llmRouter;
   }

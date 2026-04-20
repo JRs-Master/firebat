@@ -594,8 +594,68 @@ export interface IMcpClientPort {
   disconnectAll(): Promise<void>;
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+//  Embedder / Router 포트 — 텍스트 임베딩·self-learning 도구 라우팅
+// ─────────────────────────────────────────────────────────────────────────
+
+/** 텍스트 임베딩 포트 — 멀티언어 e5 모델 등 infra 구현체를 추상화 */
+export interface IEmbedderPort {
+  /** 모델 버전 — 캐시 무효화 키 */
+  readonly version: string;
+  /** 사용자 쿼리 임베딩 (검색 입력) */
+  embedQuery(text: string): Promise<Float32Array>;
+  /** 인덱스 대상 문서 임베딩 */
+  embedPassage(text: string): Promise<Float32Array>;
+  /** 정규화된 벡터 간 cosine similarity */
+  cosine(a: Float32Array, b: Float32Array): number;
+  /** Float32Array → Buffer (SQLite BLOB 저장용) */
+  float32ToBuffer(arr: Float32Array): Buffer;
+  /** Buffer → Float32Array */
+  bufferToFloat32(buf: Buffer): Float32Array;
+}
+
+export type RouteFeedbackSignal = 'positive' | 'negative' | 'neutral';
+
+export interface RouteResult {
+  names: string[];
+  cacheId: number;
+  source: 'cache' | 'llm';
+  previousFeedback?: RouteFeedbackSignal;
+  needsPreviousContext?: boolean;
+}
+
+export interface RecentRoutingContext {
+  previousQuery: string;
+  previousNames: string[];
+}
+
+export interface ComponentCatalogItem {
+  name: string;
+  description: string;
+}
+
+export type RouteKind = 'tools' | 'components';
+
+/** Self-learning 도구 라우팅 포트 — Flash Lite + 벡터 캐시 기반 infra 구현체 */
+export interface IToolRouterPort {
+  routeTools(
+    userQuery: string,
+    allTools: ToolDefinition[],
+    alwaysInclude: string[],
+    recentContext?: RecentRoutingContext,
+  ): Promise<RouteResult>;
+  routeComponents(query: string, catalog: ComponentCatalogItem[]): Promise<RouteResult>;
+  generateSearchQuery(rawQuery: string, prevQuery?: string): Promise<{ query: string; needsPreviousContext: boolean }>;
+  rerankHistory<T extends { preview: string }>(query: string, candidates: T[], topK?: number): Promise<T[]>;
+  recordSuccess(cacheId: number): Promise<void>;
+  recordFailure(cacheId: number, weight?: number): Promise<void>;
+}
+
+/** 라우터 팩토리 — 특정 모델 ID 로 IToolRouterPort 구현체 생성 */
+export type ToolRouterFactory = (modelId: string) => IToolRouterPort;
+
 /**
- * 10가지 권한을 모두 모아 Core에 주입하기 위한 단일 통제권 컨테이너
+ * 권한 포트 모두 모아 Core에 주입하기 위한 단일 통제권 컨테이너
  */
 export interface FirebatInfraContainer {
   storage: IStoragePort;
@@ -608,4 +668,7 @@ export interface FirebatInfraContainer {
   vault: IVaultPort;
   mcpClient: IMcpClientPort;
   auth: IAuthPort;
+  embedder: IEmbedderPort;
+  /** Vault 기반 모델명을 매 요청 시 읽어야 해서 factory 로 주입 */
+  toolRouter: ToolRouterFactory;
 }

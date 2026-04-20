@@ -11,31 +11,21 @@
  *
  * 시간이 지나면서 유저 쿼리 패턴이 포화되어 Flash Lite 호출 빈도 급감.
  */
-import type { ILlmPort, ToolDefinition } from '../../core/ports';
-import type { IDatabasePort } from '../../core/ports';
+import type {
+  ILlmPort,
+  ToolDefinition,
+  IDatabasePort,
+  IToolRouterPort,
+  RouteResult,
+  RecentRoutingContext,
+  RouteFeedbackSignal,
+  RouteKind,
+  ComponentCatalogItem,
+} from '../../core/ports';
 import { embedQuery, cosine, float32ToBuffer, bufferToFloat32 } from './embedder';
 
-export type RouteKind = 'tools' | 'components';
-
-export interface RecentRoutingContext {
-  /** 직전 유저 쿼리 */
-  previousQuery: string;
-  /** 직전 라우팅된 도구/컴포넌트 이름 */
-  previousNames: string[];
-}
-
-export type FeedbackSignal = 'positive' | 'negative' | 'neutral';
-
-export interface RouteResult {
-  names: string[];
-  /** 캐시 hit 이면 해당 엔트리 ID (success/failure 업데이트용). miss 면 신규 생성된 ID. */
-  cacheId: number;
-  source: 'cache' | 'llm';
-  /** recentContext 주어졌을 때, 이전 라우팅에 대한 유저 피드백 판정 결과 */
-  previousFeedback?: FeedbackSignal;
-  /** 현재 쿼리가 이전 턴 맥락을 필요로 하는지 — LLM 판정 (지시어/연속성 감지) */
-  needsPreviousContext?: boolean;
-}
+export type { RouteKind, RecentRoutingContext, RouteResult };
+export type FeedbackSignal = RouteFeedbackSignal;
 
 /** 유사 쿼리 간주 임계값 */
 const CACHE_HIT_THRESHOLD = 0.92;
@@ -99,7 +89,7 @@ const RERANK_HISTORY_SCHEMA: Record<string, unknown> = {
 };
 
 /** Flash Lite 라우터 — tools/components 공통 */
-export class LlmRouter {
+export class LlmRouter implements IToolRouterPort {
   constructor(
     private readonly db: IDatabasePort,
     private readonly llm: ILlmPort,
@@ -282,7 +272,7 @@ ${catalog}
   }
 
   /** 컴포넌트 라우팅 — 유저 쿼리로 관련 컴포넌트 이름 배열 반환 */
-  async routeComponents(query: string, catalog: Array<{ name: string; description: string }>): Promise<RouteResult> {
+  async routeComponents(query: string, catalog: ComponentCatalogItem[]): Promise<RouteResult> {
     if (!query.trim()) return { names: [], cacheId: -1, source: 'cache' };
     const qVec = await embedQuery(query);
 

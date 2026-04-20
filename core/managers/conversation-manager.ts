@@ -9,9 +9,8 @@
  * - 메시지 삭제 시 해당 msg_idx 이상 row 제거
  * - 검색 시 owner + 현재 대화 우선 부스트
  */
-import type { IDatabasePort } from '../ports';
+import type { IDatabasePort, IEmbedderPort } from '../ports';
 import type { InfraResult } from '../types';
-import { embedQuery, embedPassage, cosine, float32ToBuffer, bufferToFloat32, EMBED_VERSION } from '../../infra/llm/embedder';
 import crypto from 'crypto';
 
 export interface ConversationSummary {
@@ -40,9 +39,9 @@ export interface HistorySearchMatch {
 
 const CONTENT_PREVIEW_MAX = 500;
 
-function sha1(s: string): string {
+function sha1(embedVersion: string, s: string): string {
   // 임베딩 모델 버전을 해시에 섞어서 모델 교체 시 기존 저장분 전체 재임베딩 유도
-  return crypto.createHash('sha1').update(`${EMBED_VERSION}:${s}`, 'utf8').digest('hex');
+  return crypto.createHash('sha1').update(`${embedVersion}:${s}`, 'utf8').digest('hex');
 }
 
 /** 메시지 객체에서 검색 가능한 텍스트 추출 */
@@ -71,7 +70,10 @@ function messageToText(msg: unknown): { role: string; text: string } | null {
 }
 
 export class ConversationManager {
-  constructor(private readonly db: IDatabasePort) {}
+  constructor(
+    private readonly db: IDatabasePort,
+    private readonly embedder: IEmbedderPort,
+  ) {}
 
   async list(owner: string): Promise<InfraResult<ConversationSummary[]>> {
     const res = await this.db.query(
@@ -258,15 +260,15 @@ export class ConversationManager {
     for (let i = 0; i < messages.length; i++) {
       const parsed = messageToText(messages[i]);
       if (!parsed) continue;
-      const hash = sha1(parsed.text);
+      const hash = sha1(this.embedder.version, parsed.text);
       keepIdx.add(i);
       if (existing.get(i) === hash) continue; // 변경 없음
 
       // 임베딩 생성 (실패 시 스킵) — 저장된 메시지는 passage 프리픽스
       try {
-        const vec = await embedPassage(parsed.text);
+        const vec = await this.embedder.embedPassage(parsed.text);
         const preview = parsed.text.slice(0, CONTENT_PREVIEW_MAX);
-        const blob = float32ToBuffer(vec);
+        const blob = this.embedder.float32ToBuffer(vec);
         await this.db.query(
           `INSERT INTO conversation_embeddings (conv_id, owner, msg_idx, role, content_hash, content_preview, embedding, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -313,12 +315,12 @@ export class ConversationManager {
     if (rows.length === 0) return { success: true, data: [] };
 
     let qVec: Float32Array;
-    try { qVec = await embedQuery(query); }
+    try { qVec = await this.embedder.embedQuery(query); }
     catch (e: any) { return { success: false, error: `임베딩 실패: ${e.message}` }; }
 
     const scored: HistorySearchMatch[] = rows.map(r => {
-      const vec = bufferToFloat32(r.embedding);
-      let score = cosine(qVec, vec);
+      const vec = this.embedder.bufferToFloat32(r.embedding);
+      let score = this.embedder.cosine(qVec, vec);
       if (currentConvId && r.convId === currentConvId) score += 0.2; // 현재 대화 부스트
       return {
         convId: r.convId,

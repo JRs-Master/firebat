@@ -62,12 +62,12 @@ export class FirebatCore {
     this.mcp = new McpManager(infra.mcpClient);
     this.capability = new CapabilityManager(infra.storage, infra.vault, infra.log);
     this.authMgr = new AuthManager(infra.auth, infra.vault);
-    this.conversation = new ConversationManager(infra.database);
+    this.conversation = new ConversationManager(infra.database, infra.embedder);
 
     // 크로스 도메인 매니저 — Core 참조 필요
     this.task = new TaskManager(this, infra.llm, infra.log);
     this.schedule = new ScheduleManager(this, infra.cron, infra.log);
-    this.ai = new AiManager(this, infra.llm, infra.log, infra.database);
+    this.ai = new AiManager(this, infra.llm, infra.log, infra.database, infra.toolRouter);
 
 
   }
