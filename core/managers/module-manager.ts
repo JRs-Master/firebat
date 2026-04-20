@@ -158,7 +158,7 @@ export class ModuleManager {
       siteDescription: s.siteDescription || 'Just Imagine. Firebat Runs.',
       ogBgColor: s.ogBgColor || '#f8fafc',
       ogAccentColor: s.ogAccentColor || '#2563eb',
-      ogDomain: s.ogDomain || 'firebat.co.kr',
+      ogDomain: s.ogDomain ?? '',
       siteUrl: s.siteUrl ?? '',
       jsonLdEnabled: s.jsonLdEnabled ?? true,
       jsonLdOrganization: s.jsonLdOrganization || 'Firebat',

@@ -49,8 +49,9 @@ export default function robots(): MetadataRoute.Robots {
     });
   }
 
+  const baseUrl = seo.siteUrl || BASE_URL;
   return {
     rules,
-    ...(seo.sitemapEnabled ? { sitemap: `${BASE_URL}/sitemap.xml` } : {}),
+    ...(seo.sitemapEnabled ? { sitemap: `${baseUrl}/sitemap.xml` } : {}),
   };
 }

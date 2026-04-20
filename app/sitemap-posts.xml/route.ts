@@ -1,10 +1,10 @@
 import { getCore } from '../../lib/singleton';
-import { BASE_URL } from '../../infra/config';
+import { getBaseUrl } from '../../lib/base-url';
 
 export const dynamic = 'force-dynamic';
 
 /** GET /sitemap-posts.xml — DB 동적 포스트 사이트맵 */
-export async function GET() {
+export async function GET(req: Request) {
   const core = getCore();
   const seo = core.getSeoSettings();
 
@@ -12,6 +12,7 @@ export async function GET() {
     return new Response('Sitemap is disabled', { status: 404 });
   }
 
+  const baseUrl = seo.siteUrl || getBaseUrl(req);
   const result = await core.listPages();
   const allPages = result.success && result.data ? result.data : [];
   // 공개 페이지만 포함 (password, private 제외)
@@ -19,10 +20,10 @@ export async function GET() {
 
   const entries = [
     // 홈페이지
-    `  <url>\n    <loc>${BASE_URL}</loc>\n    <lastmod>${new Date().toISOString()}</lastmod>\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>`,
+    `  <url>\n    <loc>${baseUrl}</loc>\n    <lastmod>${new Date().toISOString()}</lastmod>\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>`,
     // DB 페이지
     ...pages.map(page => {
-      const loc = `${BASE_URL}/${encodeURIComponent(page.slug)}`;
+      const loc = `${baseUrl}/${encodeURIComponent(page.slug)}`;
       const lastmod = page.updatedAt ? new Date(page.updatedAt).toISOString() : new Date().toISOString();
       return `  <url>\n    <loc>${loc}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>`;
     }),

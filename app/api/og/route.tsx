@@ -17,7 +17,11 @@ export async function GET(request: Request) {
   const description = rawDesc || seo.siteDescription || 'Just Imagine. Firebat Runs.';
   const bgColor = seo.ogBgColor || '#f8fafc';
   const accentColor = seo.ogAccentColor || '#2563eb';
-  const domain = seo.ogDomain || 'firebat.co.kr';
+  // 빈 값이면 요청 호스트에서 추출 (다른 도메인 배포 시 자동 반영)
+  let domain = seo.ogDomain;
+  if (!domain) {
+    try { domain = new URL(request.url).host; } catch { domain = ''; }
+  }
 
   return new ImageResponse(
     (

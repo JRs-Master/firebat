@@ -53,7 +53,7 @@ export function getInfra(): FirebatInfraContainer {
       (key: string) => vault.getSecret(key) || process.env[key] || null,
       () => {
         const token = vault.getSecret('system:internal-mcp-token');
-        const baseUrl = process.env['NEXT_PUBLIC_BASE_URL'] || 'https://firebat.co.kr';
+        const baseUrl = process.env['NEXT_PUBLIC_BASE_URL'] || 'http://localhost:3000';
         if (!token) return null;
         return { url: `${baseUrl}/api/mcp-internal`, token };
       },

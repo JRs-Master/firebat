@@ -31,7 +31,9 @@ export const CRON_DEFAULT_TIMEZONE = 'Asia/Seoul';
 export const CRON_RECENT_NOTIFY_MS = 30_000; // 최근 알림 필터 기간
 
 // ── 도메인 (SEO, OG 등 외부 노출용) ─────────────────────────────────
-export const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'https://firebat.co.kr';
+// 우선순위: NEXT_PUBLIC_BASE_URL 환경변수 → 런타임 요청 host → localhost 폴백.
+// 요청 host 우선 사용을 원하면 `getBaseUrl(req)` 헬퍼를 호출하세요.
+export const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
 // ── AI ──────────────────────────────────────────────────────────────────
 export const AI_HISTORY_WINDOW_SIZE = 8;
@@ -56,7 +58,7 @@ export const DEFAULT_SITE_TITLE = 'Firebat';
 export const DEFAULT_SITE_DESCRIPTION = 'Just Imagine. Firebat Runs.';
 export const DEFAULT_OG_BG_COLOR = '#f8fafc';
 export const DEFAULT_OG_ACCENT_COLOR = '#2563eb';
-export const DEFAULT_OG_DOMAIN = 'firebat.co.kr';
+export const DEFAULT_OG_DOMAIN = '';
 export const DEFAULT_JSONLD_ORG = 'Firebat';
 
 // ── OAuth ───────────────────────────────────────────────────────────────

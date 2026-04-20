@@ -1,10 +1,10 @@
 import { getCore } from '../../lib/singleton';
-import { BASE_URL } from '../../infra/config';
+import { getBaseUrl } from '../../lib/base-url';
 
 export const dynamic = 'force-dynamic';
 
 /** GET /sitemap-pages.xml — 정적 페이지 사이트맵 */
-export async function GET() {
+export async function GET(req: Request) {
   const core = getCore();
   const seo = core.getSeoSettings();
 
@@ -12,6 +12,7 @@ export async function GET() {
     return new Response('Sitemap is disabled', { status: 404 });
   }
 
+  const baseUrl = seo.siteUrl || getBaseUrl(req);
   const result = await core.listPages();
   const dbPages = result.success && result.data ? result.data : [];
   const staticPages = await core.listStaticPages();
@@ -19,7 +20,7 @@ export async function GET() {
   const entries = staticPages
     .filter(slug => !dbPages.some(p => p.slug === slug))
     .map(slug => {
-      const loc = `${BASE_URL}/${encodeURIComponent(slug)}`;
+      const loc = `${baseUrl}/${encodeURIComponent(slug)}`;
       return `  <url>\n    <loc>${loc}</loc>\n    <lastmod>${new Date().toISOString()}</lastmod>\n    <changefreq>monthly</changefreq>\n    <priority>0.5</priority>\n  </url>`;
     })
     .join('\n');

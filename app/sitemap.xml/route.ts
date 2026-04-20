@@ -1,10 +1,10 @@
 import { getCore } from '../../lib/singleton';
-import { BASE_URL } from '../../infra/config';
+import { getBaseUrl } from '../../lib/base-url';
 
 export const dynamic = 'force-dynamic';
 
 /** GET /sitemap.xml — Sitemap Index */
-export async function GET() {
+export async function GET(req: Request) {
   const core = getCore();
   const seo = core.getSeoSettings();
 
@@ -12,14 +12,15 @@ export async function GET() {
     return new Response('Sitemap is disabled', { status: 404 });
   }
 
+  const baseUrl = seo.siteUrl || getBaseUrl(req);
   const sitemaps = [
-    `${BASE_URL}/sitemap-posts.xml`,
+    `${baseUrl}/sitemap-posts.xml`,
   ];
 
   // 정적 페이지가 있을 때만 포함
   const staticPages = await core.listStaticPages();
   if (staticPages.length > 0) {
-    sitemaps.push(`${BASE_URL}/sitemap-pages.xml`);
+    sitemaps.push(`${baseUrl}/sitemap-pages.xml`);
   }
 
   const entries = sitemaps.map(url =>
