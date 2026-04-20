@@ -26,7 +26,7 @@ interface CliRunResult {
     | { type: 'html'; htmlContent: string; htmlHeight?: string }
     | { type: 'component'; name: string; props: Record<string, unknown> }
   >;
-  pendingActions: Array<{ planId: string; name: string; summary: string; args?: Record<string, unknown> }>;
+  pendingActions: Array<{ planId: string; name: string; summary: string; args?: Record<string, unknown>; status?: 'past-runat'; originalRunAt?: string }>;
   suggestions: unknown[];
   error?: string;
 }
@@ -298,6 +298,8 @@ export class CliCodexFormat implements FormatHandler {
                     name: toolName,
                     summary: typeof payload.summary === 'string' ? payload.summary : toolName,
                     args,
+                    ...(payload.status === 'past-runat' ? { status: 'past-runat' as const } : {}),
+                    ...(typeof payload.originalRunAt === 'string' ? { originalRunAt: payload.originalRunAt } : {}),
                   });
                 }
                 // 3) suggest

@@ -305,6 +305,10 @@ export interface LlmToolResponse {
     name: string;
     summary: string;
     args?: Record<string, unknown>;
+    /** 과거 시각 요청 감지 시 'past-runat' — UI 가 즉시 발송/시간 변경 버튼 표시 */
+    status?: 'past-runat';
+    /** status='past-runat' 일 때 원래 요청된 runAt (ISO 8601) */
+    originalRunAt?: string;
   }>;
   /** MCP suggest 도구로 생성된 사용자 선택지 (CLI 모드) */
   suggestions?: unknown[];

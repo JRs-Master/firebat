@@ -74,7 +74,7 @@ export interface DaemonRunResult {
     | { type: 'html'; htmlContent: string; htmlHeight?: string }
     | { type: 'component'; name: string; props: Record<string, unknown> }
   >;
-  pendingActions: Array<{ planId: string; name: string; summary: string; args?: Record<string, unknown> }>;
+  pendingActions: Array<{ planId: string; name: string; summary: string; args?: Record<string, unknown>; status?: 'past-runat'; originalRunAt?: string }>;
   suggestions: unknown[];
   error?: string;
 }
@@ -160,6 +160,8 @@ class RequestState {
                       name: pending.name,
                       summary: typeof payload.summary === 'string' ? payload.summary : pending.name,
                       args: pending.input as Record<string, unknown> | undefined,
+                      ...(payload.status === 'past-runat' ? { status: 'past-runat' as const } : {}),
+                      ...(typeof payload.originalRunAt === 'string' ? { originalRunAt: payload.originalRunAt } : {}),
                     });
                   }
                   if (pending.name === 'suggest' && Array.isArray(payload.suggestions)) {

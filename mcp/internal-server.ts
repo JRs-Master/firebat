@@ -363,10 +363,23 @@ startAt/endAt: cronTime의 유효 기간 (만료 시 자동 해제).
         : '시각 미지정';
       const summary = `${title} (${when})`;
       const planId = createPending('schedule_task', args as Record<string, unknown>, summary);
+      // 과거 runAt 감지 → 승인 버튼 대신 '즉시 발송 / 시간 변경' UI 유도
+      let status: 'past-runat' | undefined;
+      let originalRunAt: string | undefined;
+      if (args.runAt) {
+        const t = Date.parse(args.runAt);
+        if (!isNaN(t) && t <= Date.now()) {
+          status = 'past-runat';
+          originalRunAt = args.runAt;
+        }
+      }
       return {
         content: [{ type: 'text', text: JSON.stringify({
           success: true, pending: true, planId, summary,
-          message: '사용자 승인 대기 중입니다. Firebat UI 에서 승인 버튼 클릭 시 실제 등록됩니다.',
+          ...(status ? { status, originalRunAt } : {}),
+          message: status
+            ? '요청 시각이 이미 지났습니다. 즉시 실행 또는 새 시각 지정이 필요합니다.'
+            : '사용자 승인 대기 중입니다. Firebat UI 에서 승인 버튼 클릭 시 실제 등록됩니다.',
         }) }],
       };
     },

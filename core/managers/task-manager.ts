@@ -347,12 +347,15 @@ export class TaskManager {
       if (propMatch) {
         const key = propMatch[1];
         if (prev && typeof prev === 'object' && key in prev) return (prev as Record<string, unknown>)[key];
-        return val; // 속성이 없으면 원본 유지
+        // prev 가 string 인데 .key 로 접근 시도 → 문자열 자체 반환 (LLM_TRANSFORM 결과가 단일 string 일 때 $prev.text 패턴 대응)
+        if (typeof prev === 'string') return prev;
+        return val; // 속성 없음 + 문자열 아님 → 원본 유지
       }
       // 문자열 내 $prev.key 및 $prev 치환
       if (val.includes('$prev')) {
         let result = val.replace(/\$prev\.(\w+)/g, (_: string, key: string) => {
           if (prev && typeof prev === 'object' && key in prev) return String((prev as Record<string, unknown>)[key]);
+          if (typeof prev === 'string') return prev; // string 폴백 (위와 동일 논리)
           return `$prev.${key}`;
         });
         result = result.replace(/\$prev/g, typeof prev === 'string' ? prev : JSON.stringify(prev));
