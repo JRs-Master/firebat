@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { X, Save, Loader2, AlertTriangle, Bot, Sparkles, ChevronDown, Check, Copy, Eye } from 'lucide-react';
+import { X, Save, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send, Trash2, User } from 'lucide-react';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
@@ -48,18 +48,55 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  // AI 패널 상태
+  // AI 사이드바 상태 — VSCode Copilot Chat 스타일 우측 사이드바
   const [aiOpen, setAiOpen]             = useState(false);
   const [aiInstruction, setAiInstruction] = useState('');
   const [aiLoading, setAiLoading]       = useState(false);
-  const [aiResult, setAiResult]         = useState<string | null>(null);
-  const [aiMode, setAiMode]             = useState<'explain' | 'code'>('code');
   const [aiError, setAiError]           = useState<string | null>(null);
   const [selectionInfo, setSelectionInfo] = useState<string>('전체 파일');
-  const [copied, setCopied]             = useState(false);
+  const [copiedIdx, setCopiedIdx]       = useState<number | null>(null);
 
-  const editorRef  = useRef<any>(null);
-  const aiInputRef = useRef<HTMLTextAreaElement>(null);
+  // 대화 히스토리 (localStorage 영속, 파일·페이지별 분리)
+  type ChatTurn = {
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    mode?: 'explain' | 'code';
+    /** 이 턴이 assistant 고 코드 모드일 때 에디터 적용 가능 여부 */
+    applied?: boolean;
+  };
+  const chatStorageKey = isPageMode ? `firebat_editor_chat_page_${pageSlug}` : `firebat_editor_chat_file_${filePath}`;
+  const [chat, setChat] = useState<ChatTurn[]>([]);
+
+  // 대화 복원 — 파일 로드 시 해당 파일의 대화 기록 가져옴
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(chatStorageKey);
+      if (raw) setChat(JSON.parse(raw));
+      else setChat([]);
+    } catch { setChat([]); }
+  }, [chatStorageKey]);
+
+  // 대화 저장 — 변경 시마다 debounced 없이 즉시 (파일당 최대 수십 턴이라 부담 없음)
+  useEffect(() => {
+    try {
+      if (chat.length > 0) localStorage.setItem(chatStorageKey, JSON.stringify(chat));
+    } catch {}
+  }, [chat, chatStorageKey]);
+
+  const clearChat = useCallback(() => {
+    setChat([]);
+    try { localStorage.removeItem(chatStorageKey); } catch {}
+  }, [chatStorageKey]);
+
+  const editorRef   = useRef<any>(null);
+  const aiInputRef  = useRef<HTMLTextAreaElement>(null);
+  const chatEndRef  = useRef<HTMLDivElement>(null);
+
+  // 새 턴 추가 시 스크롤 하단 고정
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chat.length, aiLoading]);
 
   const isDirty  = content !== original;
   const lang     = isPageMode ? 'json' : detectLanguage(filePath!);
@@ -153,22 +190,24 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
   const openAiPanel = useCallback(() => {
     updateSelectionInfo();
     setAiOpen(true);
-    setAiResult(null);
     setAiError(null);
-    setAiInstruction('');
     setTimeout(() => aiInputRef.current?.focus(), 50);
   }, [updateSelectionInfo]);
 
-  // AI 요청
+  // AI 요청 — 대화 히스토리에 turn 누적
   const handleAiSubmit = useCallback(async () => {
     if (!aiInstruction.trim() || aiLoading) return;
     // 지시문 기반 모드 추정 — 백엔드 codeAssist 와 동일 키워드 목록
     const explainKeywords = ['알려줘', '알려달', '설명', '분석', '검토', '리뷰', '뭐가 문제', '왜', '어떻게', '파악', '평가', 'explain', 'review', 'analyze', 'analyse', 'describe'];
     const lowered = aiInstruction.toLowerCase();
     const mode: 'explain' | 'code' = explainKeywords.some(k => aiInstruction.includes(k) || lowered.includes(k.toLowerCase())) ? 'explain' : 'code';
-    setAiMode(mode);
+
+    const turnId = Date.now().toString();
+    const userTurn: ChatTurn = { id: `u-${turnId}`, role: 'user', content: aiInstruction };
+    setChat(prev => [...prev, userTurn]);
+    const sentInstruction = aiInstruction;
+    setAiInstruction('');
     setAiLoading(true);
-    setAiResult(null);
     setAiError(null);
 
     const editor   = editorRef.current;
@@ -192,11 +231,21 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
       const res  = await fetch('/api/ai/code-assist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: content, language: lang, instruction: aiInstruction, selectedCode, config }),
+        body: JSON.stringify({ code: content, language: lang, instruction: sentInstruction, selectedCode, config }),
       });
       const data = await res.json();
-      if (data.success) setAiResult(data.suggestion);
-      else setAiError(data.error);
+      if (data.success) {
+        const assistantTurn: ChatTurn = {
+          id: `a-${turnId}`,
+          role: 'assistant',
+          content: data.suggestion,
+          mode,
+          applied: false,
+        };
+        setChat(prev => [...prev, assistantTurn]);
+      } else {
+        setAiError(data.error || '응답 실패');
+      }
     } catch (e: any) {
       setAiError(e.message);
     } finally {
@@ -204,33 +253,27 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
     }
   }, [aiInstruction, aiLoading, content, lang, aiModel]);
 
-  // 결과 적용
-  const applyResult = useCallback(() => {
-    if (!aiResult || !editorRef.current) return;
+  // 특정 턴의 코드 제안을 에디터에 적용
+  const applyTurn = useCallback((turnId: string) => {
+    const turn = chat.find(t => t.id === turnId);
+    if (!turn || turn.mode !== 'code' || !editorRef.current) return;
     const editor = editorRef.current;
-    const sel    = editor.getSelection();
     const model  = editor.getModel();
-
-    if (sel && !sel.isEmpty()) {
-      model.pushEditOperations([], [{ range: sel, text: aiResult }], () => null);
-    } else {
-      const fullRange = model.getFullModelRange();
-      model.pushEditOperations([], [{ range: fullRange, text: aiResult }], () => null);
-    }
+    const fullRange = model.getFullModelRange();
+    model.pushEditOperations([], [{ range: fullRange, text: turn.content }], () => null);
     setContent(model.getValue());
-    setAiOpen(false);
-    setAiResult(null);
-    setAiInstruction('');
-  }, [aiResult]);
+    setChat(prev => prev.map(t => t.id === turnId ? { ...t, applied: true } : t));
+  }, [chat]);
 
-  // 결과 복사
-  const copyResult = useCallback(() => {
-    if (!aiResult) return;
-    navigator.clipboard.writeText(aiResult).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+  // 특정 턴 복사
+  const copyTurn = useCallback((turnId: string, idx: number) => {
+    const turn = chat.find(t => t.id === turnId);
+    if (!turn) return;
+    navigator.clipboard.writeText(turn.content).then(() => {
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx(null), 1500);
     });
-  }, [aiResult]);
+  }, [chat]);
 
   // 키보드 단축키
   useEffect(() => {
@@ -396,7 +439,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
 
           {/* PageSpec 미리보기 패널 */}
           {isPageMode && previewOpen && previewData && (
-            <div className="w-80 bg-[#252526] overflow-y-auto p-4 space-y-4 flex-shrink-0">
+            <div className="w-72 bg-[#252526] overflow-y-auto p-4 space-y-4 flex-shrink-0 border-r border-slate-700/50">
               <h3 className="text-xs font-extrabold tracking-widest text-slate-400">구조 미리보기</h3>
 
               <div className="space-y-2">
@@ -439,98 +482,144 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
               )}
             </div>
           )}
-        </div>
 
-        {/* AI 패널 */}
-        {aiOpen && (
-          <div className="border-t border-violet-800/60 bg-[#1a1a2e] flex-shrink-0">
-            <div className="flex items-center gap-2 px-4 py-2 border-b border-violet-800/40">
-              <Bot size={13} className="text-violet-400" />
-              <span className="text-[12px] font-bold text-violet-300">
-                AI {isPageMode ? 'PageSpec' : '코드'} 어시스트
-              </span>
-              <span className="text-[11px] text-slate-500 bg-slate-800/60 px-2 py-0.5 rounded-full ml-1">
-                {selectionInfo}
-              </span>
-              <div className="flex-1" />
-              <button
-                onClick={() => setAiOpen(false)}
-                className="p-1 text-slate-500 hover:text-slate-300 rounded transition-colors"
-              >
-                <ChevronDown size={14} />
-              </button>
-            </div>
-
-            {!aiResult && (
-              <div className="flex items-end gap-2 px-4 py-3">
-                <textarea
-                  ref={aiInputRef}
-                  value={aiInstruction}
-                  onChange={(e) => setAiInstruction(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAiSubmit(); }
-                  }}
-                  placeholder={isPageMode ? 'PageSpec을 어떻게 수정할까요? (Enter로 실행)' : '무엇을 수정할까요? (Enter로 실행, Shift+Enter 줄바꿈)'}
-                  rows={2}
-                  className="flex-1 bg-[#252540] border border-violet-700/40 rounded-lg px-3 py-2 text-[13px] text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-violet-500 transition-colors font-mono"
-                />
+          {/* AI 사이드바 (우측) — VSCode Copilot Chat 스타일 */}
+          {aiOpen && (
+            <aside className="w-[380px] flex-shrink-0 bg-[#1a1a2e] border-l border-violet-800/60 flex flex-col min-h-0">
+              {/* 사이드바 헤더 */}
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-violet-800/40 flex-shrink-0">
+                <Bot size={14} className="text-violet-400" />
+                <span className="text-[12px] font-bold text-violet-300">AI 어시스트</span>
+                <span className="text-[10px] text-slate-500 bg-slate-800/60 px-2 py-0.5 rounded-full">{selectionInfo}</span>
+                <div className="flex-1" />
+                {chat.length > 0 && (
+                  <button
+                    onClick={clearChat}
+                    className="p-1 text-slate-500 hover:text-red-400 rounded transition-colors"
+                    title="대화 삭제"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
                 <button
-                  onClick={handleAiSubmit}
-                  disabled={!aiInstruction.trim() || aiLoading}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-700 disabled:text-slate-500 text-white text-[12px] font-bold rounded-lg transition-colors shrink-0 h-[58px]"
+                  onClick={() => setAiOpen(false)}
+                  className="p-1 text-slate-500 hover:text-slate-300 rounded transition-colors"
+                  title="사이드바 닫기"
                 >
-                  {aiLoading
-                    ? <><Loader2 size={13} className="animate-spin" /> 생성 중</>
-                    : <><Sparkles size={13} /> 생성</>}
+                  <X size={14} />
                 </button>
               </div>
-            )}
 
-            {aiError && (
-              <div className="mx-4 mb-3 flex items-center gap-1.5 text-red-400 text-[12px] bg-red-950/40 px-3 py-2 rounded-lg border border-red-800/50">
-                <AlertTriangle size={13} /> {aiError}
-                <button onClick={() => setAiError(null)} className="ml-auto text-slate-500 hover:text-slate-300"><X size={12} /></button>
+              {/* 대화 히스토리 */}
+              <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-0">
+                {chat.length === 0 && !aiLoading && (
+                  <div className="text-center text-slate-500 text-[12px] py-10">
+                    <Sparkles size={20} className="mx-auto mb-2 text-violet-500/50" />
+                    코드 수정·리뷰를 요청해 보세요.<br />
+                    <span className="text-[11px] text-slate-600">"~알려줘/설명해줘" = 리뷰 모드</span>
+                  </div>
+                )}
+                {chat.map((turn, idx) => (
+                  <div key={turn.id} className={turn.role === 'user' ? 'flex justify-end' : 'flex gap-2'}>
+                    {turn.role === 'assistant' && (
+                      <div className="w-6 h-6 rounded-full bg-violet-600/30 text-violet-300 flex items-center justify-center shrink-0 mt-0.5">
+                        <Bot size={13} />
+                      </div>
+                    )}
+                    <div className={`max-w-[85%] ${turn.role === 'user' ? '' : 'flex-1 min-w-0'}`}>
+                      {turn.role === 'user' ? (
+                        <div className="bg-violet-600/30 border border-violet-600/40 rounded-lg px-3 py-2 text-[12.5px] text-slate-100 whitespace-pre-wrap break-words">
+                          {turn.content}
+                        </div>
+                      ) : (
+                        <>
+                          <div className={`rounded-lg border border-slate-700/60 ${turn.mode === 'explain' ? 'bg-slate-800/40' : 'bg-[#0d1117]'}`}>
+                            <pre className={`p-2.5 text-[12px] text-slate-200 whitespace-pre-wrap break-words leading-relaxed max-h-80 overflow-y-auto ${turn.mode === 'explain' ? '' : 'font-mono'}`}>
+                              {turn.content}
+                            </pre>
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-1.5">
+                            {turn.mode === 'code' && !turn.applied && (
+                              <button
+                                onClick={() => applyTurn(turn.id)}
+                                className="flex items-center gap-1 px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-[11px] font-bold rounded transition-colors"
+                              >
+                                <Check size={11} /> 적용
+                              </button>
+                            )}
+                            {turn.mode === 'code' && turn.applied && (
+                              <span className="flex items-center gap-1 px-2 py-1 bg-green-900/30 text-green-400 text-[11px] font-bold rounded">
+                                <Check size={11} /> 적용됨
+                              </span>
+                            )}
+                            <button
+                              onClick={() => copyTurn(turn.id, idx)}
+                              className="flex items-center gap-1 px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-[11px] rounded transition-colors"
+                              title="복사"
+                            >
+                              {copiedIdx === idx ? <Check size={11} /> : <Copy size={11} />}
+                            </button>
+                            <span className="text-[10px] text-slate-600 ml-auto">
+                              {turn.mode === 'explain' ? '리뷰' : '코드 제안'}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    {turn.role === 'user' && (
+                      <div className="w-6 h-6 rounded-full bg-slate-700 text-slate-300 flex items-center justify-center shrink-0 mt-0.5 ml-2">
+                        <User size={12} />
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {aiLoading && (
+                  <div className="flex gap-2">
+                    <div className="w-6 h-6 rounded-full bg-violet-600/30 text-violet-300 flex items-center justify-center shrink-0 mt-0.5">
+                      <Bot size={13} />
+                    </div>
+                    <div className="flex-1 bg-slate-800/40 border border-slate-700/60 rounded-lg px-3 py-2 text-[12px] text-slate-400 flex items-center gap-2">
+                      <Loader2 size={12} className="animate-spin" /> 생성 중...
+                    </div>
+                  </div>
+                )}
+                {aiError && (
+                  <div className="flex items-center gap-1.5 text-red-400 text-[12px] bg-red-950/40 px-3 py-2 rounded-lg border border-red-800/50">
+                    <AlertTriangle size={13} /> {aiError}
+                    <button onClick={() => setAiError(null)} className="ml-auto text-slate-500 hover:text-slate-300"><X size={12} /></button>
+                  </div>
+                )}
+                <div ref={chatEndRef} />
               </div>
-            )}
 
-            {aiResult && (
-              <div className="px-4 pb-3 space-y-2">
-                <div className={`relative rounded-lg border border-slate-700/60 max-h-60 overflow-y-auto ${aiMode === 'explain' ? 'bg-slate-800/50' : 'bg-[#0d1117]'}`}>
-                  <pre className={`p-3 text-[12px] text-slate-200 whitespace-pre-wrap break-words leading-relaxed ${aiMode === 'explain' ? '' : 'font-mono break-all'}`}>
-                    {aiResult.slice(0, 1500)}{aiResult.length > 1500 ? '\n...' : ''}
-                  </pre>
-                </div>
-                <div className="flex items-center gap-2">
-                  {aiMode === 'code' && (
-                    <button
-                      onClick={applyResult}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-[12px] font-bold rounded-lg transition-colors"
-                    >
-                      <Check size={12} /> 적용
-                    </button>
-                  )}
+              {/* 입력창 (사이드바 하단) */}
+              <div className="border-t border-violet-800/40 p-2 flex-shrink-0">
+                <div className="flex items-end gap-2">
+                  <textarea
+                    ref={aiInputRef}
+                    value={aiInstruction}
+                    onChange={(e) => setAiInstruction(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAiSubmit(); }
+                    }}
+                    placeholder={isPageMode ? '"헤더 색 바꿔줘" 또는 "뭐가 문제야?"' : '수정할 내용 입력 (Enter 전송 / Shift+Enter 줄바꿈)'}
+                    rows={2}
+                    disabled={aiLoading}
+                    className="flex-1 bg-[#252540] border border-violet-700/40 rounded-lg px-2.5 py-2 text-[12.5px] text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-violet-500 transition-colors disabled:opacity-50"
+                  />
                   <button
-                    onClick={copyResult}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-[12px] font-bold rounded-lg transition-colors"
+                    onClick={handleAiSubmit}
+                    disabled={!aiInstruction.trim() || aiLoading}
+                    className="flex items-center justify-center w-10 h-10 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors shrink-0"
+                    title="전송 (Enter)"
                   >
-                    {copied ? <><Check size={12} /> 복사됨</> : <><Copy size={12} /> 복사</>}
+                    {aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                   </button>
-                  <button
-                    onClick={() => { setAiResult(null); setAiInstruction(''); setTimeout(() => aiInputRef.current?.focus(), 50); }}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 text-[12px] rounded-lg transition-colors"
-                  >
-                    다시 작성
-                  </button>
-                  <span className="text-[11px] text-slate-600 ml-auto">
-                    {aiMode === 'explain'
-                      ? '설명·리뷰 결과 (코드 교체 안 됨)'
-                      : selectionInfo !== '전체 파일' ? '선택 영역을 교체합니다' : '파일 전체를 교체합니다'}
-                  </span>
                 </div>
               </div>
-            )}
-          </div>
-        )}
+            </aside>
+          )}
+        </div>
 
         {/* 하단 상태바 */}
         <div className="flex items-center gap-4 px-4 py-1.5 bg-[#007acc] text-white text-[11px] font-mono flex-shrink-0">
