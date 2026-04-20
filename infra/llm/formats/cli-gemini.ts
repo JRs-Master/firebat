@@ -30,6 +30,7 @@ interface RunOptions {
   history?: ChatMessage[];
   cliModel?: string;
   geminiHome?: string;
+  geminiWorkspace?: string;
   resumeSessionId?: string;
   onChunk?: LlmCallOpts['onChunk'];
 }
@@ -57,13 +58,17 @@ export class CliGeminiFormat implements FormatHandler {
   async askWithTools(prompt: string, systemPrompt: string, _tools: ToolDefinition[], history: ChatMessage[], _toolExchanges: ToolExchangeEntry[], opts: LlmCallOpts | undefined, ctx: FormatHandlerContext): Promise<InfraResult<LlmToolResponse>> {
     const mcpCfg = ctx.resolveMcpConfig?.();
     const geminiHome = this.ensureGeminiHome(mcpCfg?.token, mcpCfg?.url?.replace(/\/api\/mcp-internal.*$/, ''));
+    // Firebat 시스템 프롬프트를 GEMINI.md 로 기록 → Gemini CLI 가 프로젝트 context 로 자동 로드.
+    //  -p 에는 user query 만 전달 → echo 버그 없음, Gemini 기본 페르소나와도 깔끔히 레이어링.
+    const geminiWorkspace = this.ensureGeminiWorkspace(systemPrompt);
     const cliModel = ctx.config.cliModel;
     const resumeSessionId = opts?.cliResumeSessionId;
     const res = await this.runGemini(prompt, {
-      systemPrompt,
+      systemPrompt: undefined, // GEMINI.md 로 이동했으므로 prompt 에 넣지 않음
       history,
       cliModel,
       geminiHome,
+      geminiWorkspace,
       resumeSessionId,
       onChunk: opts?.onChunk,
     });
@@ -81,6 +86,20 @@ export class CliGeminiFormat implements FormatHandler {
         internallyUsedTools: res.usedTools,
       },
     };
+  }
+
+  /**
+   * Firebat 전용 Gemini workspace 디렉토리 생성 + GEMINI.md 기록.
+   * Gemini CLI 는 cwd 에서 GEMINI.md 를 자동 로드해 프로젝트 컨텍스트로 사용.
+   * 이 방식으로 '--system-prompt' 부재 문제를 우회 + Gemini 기본 페르소나와 깔끔히 공존.
+   */
+  private ensureGeminiWorkspace(systemPrompt?: string): string {
+    const workspace = path.join(os.tmpdir(), 'firebat-gemini-workspace');
+    fs.mkdirSync(workspace, { recursive: true });
+    if (systemPrompt) {
+      fs.writeFileSync(path.join(workspace, 'GEMINI.md'), systemPrompt);
+    }
+    return workspace;
   }
 
   /** Firebat 전용 GEMINI_HOME 디렉토리 + settings.json 쓰기 */
@@ -129,17 +148,15 @@ export class CliGeminiFormat implements FormatHandler {
 
   private runGemini(prompt: string, options: RunOptions): Promise<CliRunResult> {
     return new Promise((resolve) => {
-      const finalPrompt = this.buildPromptWithHistory(prompt, options.history);
-      // Gemini CLI 는 --system-prompt 플래그 부재 → system/user 구분자 명시.
-      // 이전 버그: '하이' 한마디에 system prompt 전문을 echo (15939자 응답).
-      // 해결: XML 태그 + 명시적 지시로 USER_QUERY 에만 답하도록 강제.
-      const promptWithSystem = options.systemPrompt
-        ? `<SYSTEM_INSTRUCTIONS>\n${options.systemPrompt}\n</SYSTEM_INSTRUCTIONS>\n\n<USER_QUERY>\n${finalPrompt}\n</USER_QUERY>\n\n위 SYSTEM_INSTRUCTIONS 는 당신의 행동 규범입니다. 규범을 반복·요약하거나 그 내용에 대해 언급하지 마세요. USER_QUERY 에만 직접 답하세요.`
-        : finalPrompt;
+      // systemPrompt 는 GEMINI.md 경유 주입되므로 여기서는 user query 만.
+      //   이 방식 이점: Gemini 기본 시스템 프롬프트와 공존, echo 없음, 깔끔한 레이어링.
+      const finalPrompt = options.systemPrompt
+        ? `<SYSTEM_INSTRUCTIONS>\n${options.systemPrompt}\n</SYSTEM_INSTRUCTIONS>\n\n<USER_QUERY>\n${this.buildPromptWithHistory(prompt, options.history)}\n</USER_QUERY>\n\n위 SYSTEM_INSTRUCTIONS 는 행동 규범. 반복·요약 금지. USER_QUERY 에만 답하세요.`
+        : this.buildPromptWithHistory(prompt, options.history);
 
       // gemini -p "..." --output-format stream-json --approval-mode yolo
       const args: string[] = [
-        '-p', promptWithSystem,
+        '-p', finalPrompt,
         '--output-format', 'stream-json',
         '--approval-mode', 'yolo',
       ];
@@ -152,7 +169,12 @@ export class CliGeminiFormat implements FormatHandler {
 
       let child: ChildProcessByStdio<null, Readable, Readable>;
       try {
-        child = spawn('gemini', args, { stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
+        child = spawn('gemini', args, {
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: childEnv,
+          // cwd = workspace (GEMINI.md 가 있는 디렉토리) → Gemini 가 자동 로드
+          ...(options.geminiWorkspace ? { cwd: options.geminiWorkspace } : {}),
+        });
       } catch (e) {
         resolve({ text: '', usedTools: [], error: `Gemini CLI 실행 실패 (gemini 명령어 미설치?): ${(e as Error).message}` });
         return;
