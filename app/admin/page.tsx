@@ -60,6 +60,11 @@ function cleanMarkdown(text: string): string {
   let cleaned = text.replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>');
   // 남은 고아 ** 제거
   cleaned = cleaned.replace(/\*\*/g, '');
+  // Gemini CLI 사고 과정 마커 — 파서가 놓친 경우 UI 에서 마지막 안전장치로 제거
+  //   '[Thought: true]...' 이 한 번이라도 등장하면 그 이후 블록 전체 thought 로 간주하여 삭제
+  if (cleaned.includes('[Thought:')) {
+    cleaned = cleaned.replace(/\[Thought:\s*(?:true|false)\][\s\S]*?(?=\[Thought:\s*(?:true|false)\]|$)/g, '');
+  }
   // AI 가 render_* / PageSpec 컴포넌트를 코드블록에 출력한 경우 제거 (렌더링 안 되고 길게 늘어지는 환각 텍스트)
   // 지원 패턴:
   //   1. "type":"render_xxx" 형태

@@ -309,15 +309,49 @@ export class CliGeminiFormat implements FormatHandler {
           errorMsg = toErrStr(ev.message) || toErrStr(ev.error) || 'Gemini 오류';
           return;
         }
-        // message — role=assistant 만 채택. thought=true 는 thinking 스트림으로 분리 (최종 텍스트에 포함 X)
+        // message — role=assistant 만 채택.
+        //   Gemini 포맷 2종:
+        //     1) event-level thought 플래그: {role:'assistant', content, thought:true}
+        //     2) 인라인 마커: content 안에 '[Thought: true]...' 문자열로 사고 과정 삽입
+        //   둘 다 thinking 스트림으로 분리.
         if (t === 'message') {
           const role = ev.role;
           if (role === 'assistant' && typeof ev.content === 'string') {
             if (ev.thought === true) {
               options.onChunk?.({ type: 'thinking', content: ev.content });
+              return;
+            }
+            // 인라인 [Thought: true] 마커 파싱
+            const raw = ev.content;
+            if (raw.includes('[Thought:')) {
+              // [Thought: true]<...>(다음 [Thought: ...] 또는 끝까지) 블록을 모두 thinking 으로 분리
+              const THOUGHT_RE = /\[Thought:\s*(?:true|false)\]/g;
+              const parts: Array<{ kind: 'text' | 'thinking'; text: string }> = [];
+              let lastIdx = 0;
+              let m: RegExpExecArray | null;
+              // 첫 마커 이전: 일반 텍스트
+              while ((m = THOUGHT_RE.exec(raw)) !== null) {
+                if (m.index > lastIdx) {
+                  parts.push({ kind: lastIdx === 0 ? 'text' : 'thinking', text: raw.slice(lastIdx, m.index) });
+                }
+                lastIdx = m.index + m[0].length;
+              }
+              // 마지막 마커 이후 나머지 — thinking (마커가 한 번이라도 있었다면)
+              if (lastIdx < raw.length) {
+                parts.push({ kind: 'thinking', text: raw.slice(lastIdx) });
+              }
+              for (const p of parts) {
+                if (!p.text) continue;
+                if (p.kind === 'text') {
+                  textParts.push(p.text);
+                  options.onChunk?.({ type: 'text', content: p.text });
+                } else {
+                  options.onChunk?.({ type: 'thinking', content: p.text });
+                }
+              }
             } else {
-              textParts.push(ev.content);
-              options.onChunk?.({ type: 'text', content: ev.content });
+              textParts.push(raw);
+              options.onChunk?.({ type: 'text', content: raw });
             }
           }
           return;

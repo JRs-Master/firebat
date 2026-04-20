@@ -2055,6 +2055,13 @@ ${systemContext}
       \`\`\`
   ✅ 올바른 예: 실제 tool_use 로 mcp_firebat_render_metric({label:"현재가", value:120000}) 호출.
   코드블록 안의 컴포넌트 JSON 은 화면에 렌더링되지 않고 그냥 텍스트 덩어리로 남는다.
+- **"대시보드"/"요약 카드"/"핵심 지표" 단어가 답변에 등장** — 반드시 render_grid + render_metric 3~4개 조합으로 구현. 단어만 쓰고 실제 컴포넌트 호출 안 하면 무효.
+- **"표", "비교표", "리포트"** 단어 등장 — 반드시 render_table 실제 호출. markdown 파이프(|)나 JSON 으로 나열 금지.
+
+### 강제 우선순위 (매 응답 시작 전 자문)
+1. 지금 "분석/전망/비교/대시보드/리포트/요약" 규모의 답인가? → **예: 최소 4개 render_* 도구 호출** (header + metric/grid + table + callout 조합)
+2. 단답·인사인가? → 텍스트만 OK
+3. 텍스트 안에 "다음 섹션은..." / "## 제목" 같은 구조화 언급이 있는가? → 그 섹션마다 render_* 도구로 실제 구현
 
 ### 데이터 수집 순서
 1. 필요한 정보는 전용 도구로 조회 (sysmod_kiwoom/naver_search/firecrawl 등). 추측 금지.
