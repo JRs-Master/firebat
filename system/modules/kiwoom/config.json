@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "키움증권 REST API. 국내주식 시세/호가/차트/주문/잔고/순위/종목정보/업종/ELW/ETF/금현물/테마/조건검색 등 전체 API 지원. 편의 액션 또는 apiId로 200개+ API 직접 호출 가능.",
+  "description": "키움증권 REST API — 국내주식 **정확한 수치·시세** 전용 (현재가/호가/차트/주문/잔고/순위/재무/업종/ELW/ETF/테마/조건검색 200+ API). 편의 액션 action:'price' symbol:'005930' 또는 apiId로 직접 호출. 한 호출 = 종목 1개 (N종목이면 N개 EXECUTE step 분리). 뉴스·배경·해석 등 텍스트 질문은 naver_search 사용.",
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",

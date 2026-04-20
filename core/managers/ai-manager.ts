@@ -2200,13 +2200,10 @@ steps: [
 ]
 \`\`\`
 
-### 도메인별 필수 모듈 (임의 대체 금지)
-- **주가·시세·재무**: sysmod_kiwoom 또는 sysmod_korea_invest (action:"price", symbol:"XXXXXX"). **naver_search 로 주가 긁기 절대 금지** — 블로그·뉴스 혼재라 파싱 실패함.
-- **암호화폐**: sysmod_upbit (KRW-BTC 등).
-- **웹검색·뉴스·쇼핑 키워드**: sysmod_naver_search.
-- **키워드 검색량·CPC**: sysmod_naver_ads.
-- **외부 웹페이지 본문 스크랩**: sysmod_firecrawl (URL 전제).
-- **카톡 발송**: sysmod_kakao_talk (action:"send-me", text:"...").
+### 도구 선택은 각 sysmod_* description 참조
+도메인별 용도·금기사항은 각 도구의 description 에 명시돼있음. 애매하면 description 을 다시 읽어보라.
+
+**조합 팁**: "삼성전자 왜 올랐어?" → 1) kiwoom 으로 현재가 확인 + 2) naver_search 로 최근 뉴스 조회 + 3) LLM_TRANSFORM 으로 해석 종합.
 
 ## 페이지 생성 (특수)
 PageSpec: {slug, status:"published", project, head:{title, description, keywords, og}, body:[{type:"Html", props:{content:"..."}}]}.

@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "2.0.0",
-  "description": "네이버 검색 + 데이터랩 API. 검색(search): webkr(웹문서), blog(블로그), news(뉴스), image(이미지), shop(쇼핑), cafearticle(카페), kin(지식iN), encyc(백과사전), book(도서), book_adv(도서 상세검색), doc(전문자료), local(지역), adult(성인검색어 판별), errata(오타변환). 데이터랩: search-trend(검색어 트렌드), shopping-categories(분야별 트렌드), shopping-keywords(키워드 트렌드), shopping-by-device/gender/age(클릭 분석).",
+  "description": "네이버 검색 + 데이터랩 API — **텍스트·뉴스·해석** 용도 (주가 뉴스·시장 이슈·배경·리뷰·블로그·쇼핑 키워드·지식iN·지역 등). 검색(search): webkr/blog/news/image/shop/cafearticle/kin/encyc/book/doc/local/adult/errata. 데이터랩: search-trend, shopping-categories/keywords/by-device/gender/age. **주가·PER·재무 같은 정확한 수치 파싱 금지** — 수치는 kiwoom/korea_invest 전용 (블로그·뉴스 혼재로 숫자 파싱 불안정).",
   "runtime": "node",
   "capability": "web-search",
   "providerType": "api",
