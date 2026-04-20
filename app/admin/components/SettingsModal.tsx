@@ -835,6 +835,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                     value={cliProvider}
                     onChange={(p) => {
                       setCliProvider(p);
+                      setCliStatus(null); // 공급자 바뀌면 이전 인증 상태 무효화
                       // 공급자 변경 시 해당 프로바이더의 첫 모델 (types.ts 원본 순서)
                       const prefix = cliProviderPrefix[p];
                       const first = GEMINI_MODELS.find(mm => mm.value.startsWith(prefix));
@@ -849,9 +850,41 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                   <SelectInput value={modelValue} onChange={onAiModelChange} options={modelOptions} />
                 </Field>
 
-                {execMode === 'cli' && (
+                {execMode === 'cli' && (() => {
+                  // 현재 공급자별 설치/인증 안내
+                  const guide: Record<CliProvider, {
+                    name: string;
+                    install: string;
+                    login: string;
+                    subscription: string;
+                    apiProvider: 'claude-code' | 'codex' | 'gemini';
+                  }> = {
+                    claude: {
+                      name: 'Claude Code',
+                      install: 'npm i -g @anthropic-ai/claude-code',
+                      login: 'claude auth login',
+                      subscription: 'Claude Pro/Max 구독',
+                      apiProvider: 'claude-code',
+                    },
+                    codex: {
+                      name: 'Codex CLI',
+                      install: 'npm i -g @openai/codex',
+                      login: 'codex login',
+                      subscription: 'ChatGPT Plus/Pro 구독',
+                      apiProvider: 'codex',
+                    },
+                    gemini: {
+                      name: 'Gemini CLI',
+                      install: 'npm i -g @google/gemini-cli',
+                      login: 'gemini auth login',
+                      subscription: 'Google AI Pro 구독 (또는 무료 티어)',
+                      apiProvider: 'gemini',
+                    },
+                  };
+                  const g = guide[cliProvider];
+                  return (
                   <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
-                    <FieldLabel>CLI 인증 상태</FieldLabel>
+                    <FieldLabel>CLI 인증 상태 — {g.name}</FieldLabel>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -859,11 +892,7 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                         onClick={async () => {
                           setCliChecking(true);
                           try {
-                            const provider = modelValue.startsWith('cli-claude-code') ? 'claude-code'
-                              : modelValue === 'cli-codex' ? 'codex'
-                              : modelValue.startsWith('cli-gemini') ? 'gemini'
-                              : 'claude-code';
-                            const res = await fetch(`/api/auth/cli?provider=${provider}`);
+                            const res = await fetch(`/api/auth/cli?provider=${g.apiProvider}`);
                             const data = await res.json();
                             setCliStatus({ installed: !!data.installed, loggedIn: !!data.loggedIn, error: data.error });
                           } catch (e) {
@@ -881,12 +910,13 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                       )}
                     </div>
                     <div className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                      <b>CLI 모드 사용 안내</b>
+                      <b>{g.name} 사용 안내</b>
                       <ul className="mt-1 ml-4 list-disc space-y-0.5">
                         <li>서버 터미널에서 CLI 설치 + 로그인 필요 (브라우저 기반 OAuth)</li>
-                        <li>Claude Code: <code className="bg-white px-1 rounded">npm i -g @anthropic-ai/claude-code</code> → <code className="bg-white px-1 rounded">claude login</code></li>
+                        <li>설치: <code className="bg-white px-1 rounded">{g.install}</code></li>
+                        <li>로그인: <code className="bg-white px-1 rounded">{g.login}</code></li>
                         <li>로그인 후 위 "상태 확인" 버튼으로 검증</li>
-                        <li>구독 기반 — Claude Pro/Max 계정으로 API 키 없이 동작</li>
+                        <li>구독 기반 — {g.subscription} 으로 API 키 없이 동작</li>
                         <li><span className="text-amber-700 font-bold">TOS 주의</span>: 개인 사용에 한함. 다른 사용자 서비스 백엔드로 사용 시 위반 리스크</li>
                       </ul>
                       {cliStatus?.error && (
@@ -894,7 +924,8 @@ export function SettingsModal({ isDemo, aiModel, onAiModelChange, onClose, onSav
                       )}
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {thinkingKind && thinkingOptions.length > 0 && (
                   <Field label={thinkingLabel}>
