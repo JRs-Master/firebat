@@ -63,7 +63,7 @@ export class CliGeminiFormat implements FormatHandler {
     const geminiWorkspace = this.ensureGeminiWorkspace(systemPrompt);
     const cliModel = ctx.config.cliModel;
     const resumeSessionId = opts?.cliResumeSessionId;
-    const res = await this.runGemini(prompt, {
+    let res = await this.runGemini(prompt, {
       systemPrompt: undefined, // GEMINI.md 로 이동했으므로 prompt 에 넣지 않음
       history,
       cliModel,
@@ -72,6 +72,18 @@ export class CliGeminiFormat implements FormatHandler {
       resumeSessionId,
       onChunk: opts?.onChunk,
     });
+    // resume 실패(세션 삭제·workspace 변경 등) → resume 없이 재시도
+    if (res.error && resumeSessionId && /Invalid session identifier|Error resuming session/i.test(res.error)) {
+      res = await this.runGemini(prompt, {
+        systemPrompt: undefined,
+        history,
+        cliModel,
+        geminiHome,
+        geminiWorkspace,
+        resumeSessionId: undefined,
+        onChunk: opts?.onChunk,
+      });
+    }
     if (res.error) return { success: false, error: res.error };
     // 첫 턴 session_id 캡처
     if (res.sessionId && !resumeSessionId && opts?.onCliSessionId) {
