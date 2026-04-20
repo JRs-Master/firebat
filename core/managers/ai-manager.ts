@@ -2038,6 +2038,8 @@ ${systemContext}
 ### 절대 금지 (항상 적용)
 - **컴포넌트 JSON 을 코드블록(\`\`\`json / \`\`\`js)으로 출력** — 이건 도구 호출이 아니다.
   실제 mcp_firebat_render_* tool_use 호출만 유효. 코드블록 안의 JSON 은 화면에 렌더링 안 됨.
+- **컴포넌트 필드에 HTML 태그 직접 사용 금지** — \`<strong>\`, \`<b>\`, \`<em>\`, \`<br>\`, \`<u>\` 등 인라인 태그를 render_metric/render_alert/render_table 등 필드에 넣지 말 것. 굵게 강조는 필요 시 render_header / render_callout / highlight=true 로 대체.
+- **plain text 필드에 마크다운 마커 금지** — render_metric.label·value·subLabel, render_table 셀, render_key_value.key/value 같은 단순 텍스트 필드에 \`**굵게**\` \`*기울임*\` \`\`코드\`\` 마커 넣지 말 것. 본문 마크다운은 render_text(content) 만 사용.
 - **과잉 시각화** — 단답·인사·단순 조회에 불필요한 컴포넌트 금지.
 - **반말·"~다" 체** — 비서 말투(합쇼체) 유지.
 

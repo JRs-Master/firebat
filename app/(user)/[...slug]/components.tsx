@@ -91,12 +91,13 @@ function HeaderComp({ text, level = 1, align }: { text: string; level?: number; 
   };
   const alignCls = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : '';
   const cls = `${sizes[clampedLevel] ?? sizes[1]} text-gray-900 leading-tight ${alignCls}`;
-  if (clampedLevel === 1) return <h1 className={cls}>{text}</h1>;
-  if (clampedLevel === 2) return <h2 className={cls}>{text}</h2>;
-  if (clampedLevel === 3) return <h3 className={cls}>{text}</h3>;
-  if (clampedLevel === 4) return <h4 className={cls}>{text}</h4>;
-  if (clampedLevel === 5) return <h5 className={cls}>{text}</h5>;
-  return <h6 className={cls}>{text}</h6>;
+  const clean = cleanPlainText(text);
+  if (clampedLevel === 1) return <h1 className={cls}>{clean}</h1>;
+  if (clampedLevel === 2) return <h2 className={cls}>{clean}</h2>;
+  if (clampedLevel === 3) return <h3 className={cls}>{clean}</h3>;
+  if (clampedLevel === 4) return <h4 className={cls}>{clean}</h4>;
+  if (clampedLevel === 5) return <h5 className={cls}>{clean}</h5>;
+  return <h6 className={cls}>{clean}</h6>;
 }
 
 // ── Text ────────────────────────────────────────────────────────────────────
@@ -345,7 +346,7 @@ function TableComp({ headers = [], rows = [], stickyCol, align, cellAlign }: {
                   key={i}
                   className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-200 bg-gray-50 sticky top-0 min-w-[120px] ${alignClass(i, false)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#e5e7eb]' : 'z-10'}`}
                 >
-                  {h}
+                  {cleanPlainText(h)}
                 </th>
               );
             })}
@@ -361,12 +362,14 @@ function TableComp({ headers = [], rows = [], stickyCol, align, cellAlign }: {
                 const isPositive = cellIsNum && /^[▲+]/.test(s);
                 const isNegative = cellIsNum && /^[▼\-−]/.test(s);
                 const numClass = isPositive ? 'text-red-600 font-semibold' : isNegative ? 'text-blue-600 font-semibold' : '';
+                // 숫자 셀이면 3자리 콤마 자동, 텍스트 셀이면 HTML/마크다운 마커 제거
+                const displayCell = cellIsNum ? formatNumberString(cell) : cleanPlainText(cell);
                 return (
                   <td
                     key={ci}
                     className={`px-4 py-3 text-[13px] border-b border-gray-100 align-top min-w-[120px] break-words ${alignClass(ci, cellIsNum, ri)} ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold whitespace-nowrap text-gray-800' : numClass || 'text-gray-800'}`}
                   >
-                    {cell}
+                    {displayCell}
                   </td>
                 );
               })}
@@ -552,7 +555,7 @@ function ProgressComp({ value, max = 100, label, color = 'blue' }: {
     <div className="space-y-1.5">
       {label && (
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-gray-700">{label}</span>
+          <span className="text-sm font-semibold text-gray-700">{cleanPlainText(label)}</span>
           <span className="text-sm font-bold text-gray-500">{Math.round(pct)}%</span>
         </div>
       )}
@@ -578,7 +581,7 @@ function BadgeComp({ text, color = 'blue' }: { text: string; color?: string }) {
 
   return (
     <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${cls}`}>
-      {text}
+      {cleanPlainText(text)}
     </span>
   );
 }
@@ -637,7 +640,7 @@ function ListComp({ items, ordered = false }: { items: string[]; ordered?: boole
   return (
     <Tag className={`space-y-1.5 pl-5 ${ordered ? 'list-decimal' : 'list-disc'} text-gray-700`}>
       {items.map((item, i) => (
-        <li key={i} className="text-base leading-relaxed">{item}</li>
+        <li key={i} className="text-base leading-relaxed">{cleanPlainText(item)}</li>
       ))}
     </Tag>
   );
@@ -727,7 +730,7 @@ function CountdownComp({ targetDate, label }: { targetDate: string; label?: stri
   if (expired) {
     return (
       <div className="text-center py-4">
-        {label && <div className="text-sm text-gray-500 mb-2">{label}</div>}
+        {label && <div className="text-sm text-gray-500 mb-2">{cleanPlainText(label)}</div>}
         <div className="text-xl font-bold text-gray-800">종료되었습니다</div>
       </div>
     );
@@ -742,7 +745,7 @@ function CountdownComp({ targetDate, label }: { targetDate: string; label?: stri
 
   return (
     <div className="text-center py-4">
-      {label && <div className="text-sm text-gray-500 mb-3">{label}</div>}
+      {label && <div className="text-sm text-gray-500 mb-3">{cleanPlainText(label)}</div>}
       <div className="flex justify-center gap-3">
         {units.map((u, i) => (
           <div key={i} className="flex flex-col items-center bg-gray-50 rounded-xl px-4 py-3 min-w-[60px] border border-gray-200">
@@ -1076,18 +1079,18 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, alig
     <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm flex flex-col">
       <div className={`flex items-center gap-1.5 text-xs text-gray-500 mb-1 ${justify(la)}`}>
         {icon && <span>{icon}</span>}
-        <span className="font-medium">{label}</span>
+        <span className="font-medium">{cleanPlainText(label)}</span>
       </div>
       <div className={`flex items-baseline gap-1 w-full ${justify(va)}`}>
-        <span className={`text-2xl font-bold text-gray-900 ${valueIsNumeric ? 'tabular-nums' : ''}`}>{valStr}</span>
-        {unit && <span className="text-sm text-gray-500">{unit}</span>}
+        <span className={`text-2xl font-bold text-gray-900 ${valueIsNumeric ? 'tabular-nums' : ''}`}>{valueIsNumeric ? valStr : cleanPlainText(valStr)}</span>
+        {unit && <span className="text-sm text-gray-500">{cleanPlainText(unit)}</span>}
       </div>
       {delta != null && (
         <div className={`text-xs font-bold mt-1 tabular-nums ${deltaColor} ${text(da)}`}>
           {deltaArrow} {formatNumberString(delta)}
         </div>
       )}
-      {subLabel && <div className={`text-xs text-gray-400 mt-1 ${text(sa)}`}>{subLabel}</div>}
+      {subLabel && <div className={`text-xs text-gray-400 mt-1 ${text(sa)}`}>{cleanPlainText(subLabel)}</div>}
     </div>
   );
 }
@@ -1110,9 +1113,9 @@ function TimelineComp({ items }: {
         {items.map((item, i) => (
           <div key={i} className="relative">
             <div className={`absolute -left-[18px] top-1 w-3 h-3 rounded-full border-2 border-white ${dotColor[item.type ?? 'default']} shadow-sm`} />
-            <div className="text-xs text-gray-500 font-mono mb-0.5">{item.date}</div>
-            <div className="font-bold text-sm text-gray-900">{item.title}</div>
-            {item.description && <div className="text-sm text-gray-600 mt-0.5 leading-relaxed">{item.description}</div>}
+            <div className="text-xs text-gray-500 font-mono mb-0.5">{cleanPlainText(item.date)}</div>
+            <div className="font-bold text-sm text-gray-900">{cleanPlainText(item.title)}</div>
+            {item.description && <div className="text-sm text-gray-600 mt-0.5 leading-relaxed">{cleanPlainText(item.description)}</div>}
           </div>
         ))}
       </div>
@@ -1131,22 +1134,26 @@ function CompareComp({ title, left, right }: {
   const rightMap = new Map(right.items.map(i => [i.key, i.value]));
   return (
     <div className="space-y-3">
-      {title && <div className="text-base font-bold text-gray-800">{title}</div>}
+      {title && <div className="text-base font-bold text-gray-800">{cleanPlainText(title)}</div>}
       <div className="grid grid-cols-[1fr_auto_1fr] gap-0 bg-white border border-gray-200 rounded-2xl overflow-hidden">
         <div className="p-4 bg-blue-50 border-b border-blue-100">
-          <div className="text-xs text-blue-600 font-bold uppercase tracking-wider">{left.label}</div>
+          <div className="text-xs text-blue-600 font-bold uppercase tracking-wider">{cleanPlainText(left.label)}</div>
         </div>
         <div className="bg-gray-50 border-b border-gray-200" />
         <div className="p-4 bg-amber-50 border-b border-amber-100">
-          <div className="text-xs text-amber-700 font-bold uppercase tracking-wider">{right.label}</div>
+          <div className="text-xs text-amber-700 font-bold uppercase tracking-wider">{cleanPlainText(right.label)}</div>
         </div>
-        {allKeys.map(k => (
-          <React.Fragment key={k}>
-            <div className="p-3 text-sm text-gray-700 border-t border-gray-100 first:border-t-0">{leftMap.get(k) ?? '—'}</div>
-            <div className="px-3 py-2 text-xs text-gray-400 font-medium flex items-center justify-center bg-gray-50 border-t border-gray-100 first:border-t-0">{k}</div>
-            <div className="p-3 text-sm text-gray-700 border-t border-gray-100 first:border-t-0">{rightMap.get(k) ?? '—'}</div>
-          </React.Fragment>
-        ))}
+        {allKeys.map(k => {
+          const lv = leftMap.get(k);
+          const rv = rightMap.get(k);
+          return (
+            <React.Fragment key={k}>
+              <div className="p-3 text-sm text-gray-700 border-t border-gray-100 first:border-t-0">{lv != null ? formatNumberString(lv) : '—'}</div>
+              <div className="px-3 py-2 text-xs text-gray-400 font-medium flex items-center justify-center bg-gray-50 border-t border-gray-100 first:border-t-0">{cleanPlainText(k)}</div>
+              <div className="p-3 text-sm text-gray-700 border-t border-gray-100 first:border-t-0">{rv != null ? formatNumberString(rv) : '—'}</div>
+            </React.Fragment>
+          );
+        })}
       </div>
     </div>
   );
@@ -1166,13 +1173,13 @@ function KeyValueComp({ title, items, columns = 2 }: {
   };
   return (
     <div className="space-y-2">
-      {title && <div className="text-sm font-bold text-gray-800">{title}</div>}
+      {title && <div className="text-sm font-bold text-gray-800">{cleanPlainText(title)}</div>}
       <div className={`grid ${gridCls[columns] ?? gridCls[2]} gap-x-4 gap-y-2`}>
         {items.map((item, i) => (
           <div key={i} className="flex items-baseline justify-between gap-3 py-1.5 border-b border-gray-100">
-            <span className="text-xs text-gray-500 shrink-0">{item.key}</span>
+            <span className="text-xs text-gray-500 shrink-0">{cleanPlainText(item.key)}</span>
             <span className={`text-sm text-right tabular-nums ${item.highlight ? 'font-bold text-gray-900' : 'text-gray-700'}`}>
-              {typeof item.value === 'number' ? item.value.toLocaleString('ko-KR') : item.value}
+              {formatNumberString(item.value)}
             </span>
           </div>
         ))}
@@ -1197,7 +1204,7 @@ function StatusBadgeComp({ items }: {
     <div className="flex flex-wrap gap-1.5">
       {items.map((item, i) => (
         <span key={i} className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${styles[item.status] ?? styles.neutral}`}>
-          {item.label}
+          {cleanPlainText(item.label)}
         </span>
       ))}
     </div>
@@ -1217,10 +1224,10 @@ function PlanCardComp({ title, steps, estimatedTime, risks }: {
     <div className="border border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-2xl p-4 my-2">
       <div className="flex items-center gap-2 mb-3">
         <div className="w-6 h-6 rounded-lg bg-indigo-600 text-white flex items-center justify-center text-xs font-bold">PLAN</div>
-        <h3 className="text-sm sm:text-base font-bold text-indigo-900 flex-1">{title}</h3>
+        <h3 className="text-sm sm:text-base font-bold text-indigo-900 flex-1">{cleanPlainText(title)}</h3>
         {estimatedTime && (
           <span className="text-[11px] font-medium text-indigo-600 bg-white/60 px-2 py-0.5 rounded-full border border-indigo-200">
-            ⏱ {estimatedTime}
+            ⏱ {cleanPlainText(estimatedTime)}
           </span>
         )}
       </div>
@@ -1231,8 +1238,8 @@ function PlanCardComp({ title, steps, estimatedTime, risks }: {
               {i + 1}
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-[13px] font-semibold text-slate-800">{s.title}</div>
-              {s.description && <div className="text-[11px] text-slate-600 mt-0.5">{s.description}</div>}
+              <div className="text-[13px] font-semibold text-slate-800">{cleanPlainText(s.title)}</div>
+              {s.description && <div className="text-[11px] text-slate-600 mt-0.5">{cleanPlainText(s.description)}</div>}
               {s.tool && (
                 <div className="text-[10px] text-indigo-500 mt-0.5 font-mono">→ {s.tool}</div>
               )}

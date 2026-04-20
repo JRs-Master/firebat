@@ -497,7 +497,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         for (const ev of parsed.events) {
           if (ev.event === 'chunk') {
             const chunkType = ev.data.type as 'text' | 'thinking';
-            const chunkContent = ev.data.content as string;
+            const chunkContent = (ev.data.content as string) ?? '';
+            // 빈 chunk 는 isThinking 플립시키지 않음 — 로봇 사라지고 텍스트 없는 상태 방지
+            if (!chunkContent) continue;
             if (chunkType === 'thinking') {
               setMessages(prev => prev.map(msg => {
                 if (msg.id !== `s-${id}`) return msg;
