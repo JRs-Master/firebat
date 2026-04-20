@@ -22,7 +22,43 @@ interface CliRunResult {
   text: string;
   sessionId?: string;
   usedTools: string[];
+  renderedBlocks: Array<
+    | { type: 'text'; text: string }
+    | { type: 'html'; htmlContent: string; htmlHeight?: string }
+    | { type: 'component'; name: string; props: Record<string, unknown> }
+  >;
+  pendingActions: Array<{ planId: string; name: string; summary: string; args?: Record<string, unknown> }>;
+  suggestions: unknown[];
   error?: string;
+}
+
+/** render_* 도구 이름 → 컴포넌트 타입 매핑 (prefix 제거 후) */
+const RENDER_COMPONENT_MAP: Record<string, string> = {
+  render_stock_chart: 'StockChart',
+  render_table: 'Table',
+  render_alert: 'Alert',
+  render_callout: 'Callout',
+  render_badge: 'Badge',
+  render_progress: 'Progress',
+  render_header: 'Header',
+  render_text: 'Text',
+  render_list: 'List',
+  render_divider: 'Divider',
+  render_countdown: 'Countdown',
+  render_chart: 'Chart',
+  render_image: 'Image',
+  render_card: 'Card',
+  render_grid: 'Grid',
+  render_metric: 'Metric',
+  render_timeline: 'Timeline',
+  render_compare: 'Compare',
+  render_key_value: 'KeyValue',
+  render_status_badge: 'StatusBadge',
+};
+
+/** Gemini CLI MCP 도구 prefix 제거 — mcp_firebat_schedule_task → schedule_task */
+function stripGeminiMcpPrefix(name: string): string {
+  return name.replace(/^mcp_firebat_/, '').replace(/^mcp__[^_]+__/, '');
 }
 
 interface RunOptions {
@@ -97,6 +133,9 @@ export class CliGeminiFormat implements FormatHandler {
         toolCalls: [],
         responseId: res.sessionId,
         internallyUsedTools: res.usedTools,
+        renderedBlocks: res.renderedBlocks,
+        pendingActions: res.pendingActions,
+        suggestions: res.suggestions,
       },
     };
   }
@@ -214,7 +253,7 @@ export class CliGeminiFormat implements FormatHandler {
           ...(options.geminiWorkspace ? { cwd: options.geminiWorkspace } : {}),
         });
       } catch (e) {
-        resolve({ text: '', usedTools: [], error: `Gemini CLI 실행 실패 (gemini 명령어 미설치?): ${(e as Error).message}` });
+        resolve({ text: '', usedTools: [], renderedBlocks: [], pendingActions: [], suggestions: [], error: `Gemini CLI 실행 실패 (gemini 명령어 미설치?): ${(e as Error).message}` });
         return;
       }
 
@@ -222,69 +261,103 @@ export class CliGeminiFormat implements FormatHandler {
       let stderrBuf = '';
       const textParts: string[] = [];
       const usedTools: string[] = [];
+      const pendingToolCalls = new Map<string, { name: string; parameters: unknown }>();
+      const renderedBlocks: CliRunResult['renderedBlocks'] = [];
+      const pendingActions: CliRunResult['pendingActions'] = [];
+      const suggestions: unknown[] = [];
       let sessionId: string | undefined;
       let errored = false;
       let errorMsg: string | undefined;
 
+      const toErrStr = (v: unknown): string => {
+        if (typeof v === 'string') return v;
+        if (v && typeof v === 'object') {
+          const m = (v as Record<string, unknown>).message;
+          if (typeof m === 'string') return m;
+          try { return JSON.stringify(v); } catch { return String(v); }
+        }
+        return String(v ?? '');
+      };
+
       const processLine = (line: string) => {
         if (!line.trim()) return;
-        try {
-          const ev = JSON.parse(line) as Record<string, unknown>;
-          if (ev.type === 'error' || ev.error) {
-            errored = true;
-            // 에러 필드가 객체일 수 있음 ([object Object] 방지 위해 stringify)
-            const toErrStr = (v: unknown): string => {
-              if (typeof v === 'string') return v;
-              if (v && typeof v === 'object') {
-                const m = (v as Record<string, unknown>).message;
-                if (typeof m === 'string') return m;
-                try { return JSON.stringify(v); } catch { return String(v); }
-              }
-              return String(v ?? '');
-            };
-            errorMsg = toErrStr(ev.message) || toErrStr(ev.error) || 'Gemini 오류';
-            return;
-          }
-          // session_id 캡처 (Claude Code 와 유사한 stream-json 포맷 가정)
-          if (typeof ev.session_id === 'string' && !sessionId) sessionId = ev.session_id;
-          if (typeof ev.sessionId === 'string' && !sessionId) sessionId = ev.sessionId;
+        let ev: Record<string, unknown>;
+        try { ev = JSON.parse(line) as Record<string, unknown>; }
+        catch { return; /* 파싱 실패 스킵 */ }
 
-          // 이벤트 필터 — assistant/model role 의 출력만 캡처. user/system echo 차단.
-          //   stream-json 포맷 케이스 대응:
-          //     1) 최상위 type: 'user'/'assistant'/'system'
-          //     2) role: 'user'/'assistant'/'model'/'system'
-          //     3) message.role: 'user'/'assistant' (Claude Code 스타일)
-          const evType = typeof ev.type === 'string' ? ev.type : '';
-          const evRole = typeof ev.role === 'string' ? ev.role : (typeof (ev.message as Record<string, unknown>)?.role === 'string' ? (ev.message as Record<string, unknown>).role as string : '');
-          const isAssistant =
-            evType === 'assistant' || evType === 'model' ||
-            evRole === 'assistant' || evRole === 'model' ||
-            // role 정보 없는 flat text 이벤트는 허용 (Gemini가 text만 보낼 수도)
-            (!evType && !evRole);
-          if (evType === 'user' || evType === 'system' || evRole === 'user' || evRole === 'system') {
-            return; // 프롬프트 echo 차단
-          }
-
-          // message / text chunk
-          const text = (ev.text as string) ?? (ev.content as string) ?? (ev.message as string);
-          if (typeof text === 'string' && text && isAssistant) {
-            textParts.push(text);
-            options.onChunk?.({ type: 'text', content: text });
-          }
-          // tool_use
-          if (ev.type === 'tool_use' || ev.type === 'tool_call' || ev.type === 'function_call') {
-            const toolName = (ev.name as string) || (ev.tool as string);
-            if (toolName) {
-              const bare = toolName.replace(/^mcp__[^_]+__/, '');
-              usedTools.push(bare);
-              options.onChunk?.({ type: 'thinking', content: `[도구 호출: ${bare}]` });
-            }
-          }
-        } catch {
-          // JSON 아닌 텍스트 — 일반 출력 누적 (json 포맷 실패 대비)
-          textParts.push(line);
-          options.onChunk?.({ type: 'text', content: line });
+        const t = ev.type;
+        // session_id (init 이벤트)
+        if (t === 'init' && typeof ev.session_id === 'string') {
+          if (!sessionId) sessionId = ev.session_id;
+          return;
         }
+        // 에러 이벤트
+        if (t === 'error' || ev.error) {
+          errored = true;
+          errorMsg = toErrStr(ev.message) || toErrStr(ev.error) || 'Gemini 오류';
+          return;
+        }
+        // message — role=assistant 만 채택
+        if (t === 'message') {
+          const role = ev.role;
+          if (role === 'assistant' && typeof ev.content === 'string') {
+            textParts.push(ev.content);
+            options.onChunk?.({ type: 'text', content: ev.content });
+          }
+          return;
+        }
+        // tool_use — 도구 호출 시작
+        if (t === 'tool_use') {
+          const rawName = typeof ev.tool_name === 'string' ? ev.tool_name
+            : typeof ev.name === 'string' ? ev.name : '';
+          const toolId = typeof ev.tool_id === 'string' ? ev.tool_id : '';
+          const params = ev.parameters ?? ev.input;
+          if (rawName) {
+            const bare = stripGeminiMcpPrefix(rawName);
+            usedTools.push(bare);
+            options.onChunk?.({ type: 'thinking', content: `[도구 호출: ${bare}]` });
+            if (toolId) pendingToolCalls.set(toolId, { name: bare, parameters: params });
+          }
+          return;
+        }
+        // tool_result — tool_id 로 매칭, output JSON 파싱 → render/pending/suggestions 추출
+        if (t === 'tool_result') {
+          const toolId = typeof ev.tool_id === 'string' ? ev.tool_id : '';
+          const pending = toolId ? pendingToolCalls.get(toolId) : undefined;
+          const output = ev.output;
+          const outputStr = typeof output === 'string' ? output : JSON.stringify(output);
+          if (pending && outputStr) {
+            try {
+              const payload = JSON.parse(outputStr) as Record<string, unknown>;
+              if (payload.success) {
+                // 1) render_* 결과 → blocks
+                if (pending.name === 'render_html' && typeof payload.htmlContent === 'string') {
+                  renderedBlocks.push({ type: 'html', htmlContent: payload.htmlContent, htmlHeight: payload.htmlHeight as string | undefined });
+                } else if (typeof payload.component === 'string') {
+                  renderedBlocks.push({ type: 'component', name: payload.component, props: (payload.props as Record<string, unknown>) ?? {} });
+                } else if (RENDER_COMPONENT_MAP[pending.name]) {
+                  renderedBlocks.push({ type: 'component', name: RENDER_COMPONENT_MAP[pending.name], props: (pending.parameters as Record<string, unknown>) ?? {} });
+                }
+                // 2) 승인 대기 도구 → pendingActions
+                if (payload.pending === true && typeof payload.planId === 'string') {
+                  pendingActions.push({
+                    planId: payload.planId,
+                    name: pending.name,
+                    summary: typeof payload.summary === 'string' ? payload.summary : pending.name,
+                    args: pending.parameters as Record<string, unknown> | undefined,
+                  });
+                }
+                // 3) suggest 도구 → suggestions
+                if (pending.name === 'suggest' && Array.isArray(payload.suggestions)) {
+                  for (const s of payload.suggestions) suggestions.push(s);
+                }
+              }
+            } catch { /* 파싱 실패 무시 */ }
+            pendingToolCalls.delete(toolId);
+          }
+          return;
+        }
+        // result — 실행 종료, 통계만 (별도 처리 불필요)
       };
 
       child.stdout.on('data', (chunk: Buffer) => {
@@ -295,22 +368,22 @@ export class CliGeminiFormat implements FormatHandler {
       });
       child.stderr.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString(); });
       child.on('error', (e) => {
-        resolve({ text: textParts.join(''), usedTools, sessionId, error: `Gemini CLI 프로세스 에러: ${e.message}` });
+        resolve({ text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId, error: `Gemini CLI 프로세스 에러: ${e.message}` });
       });
       child.on('close', (code) => {
         if (stdoutBuf.trim()) processLine(stdoutBuf);
         if (errored) {
-          resolve({ text: textParts.join(''), usedTools, sessionId, error: errorMsg });
+          resolve({ text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId, error: errorMsg });
           return;
         }
         if (code !== 0) {
           resolve({
-            text: textParts.join(''), usedTools, sessionId,
+            text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId,
             error: `Gemini 비정상 종료 (exit ${code}): ${stderrBuf.slice(0, 500)}`,
           });
           return;
         }
-        resolve({ text: textParts.join(''), usedTools, sessionId });
+        resolve({ text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId });
       });
     });
   }
