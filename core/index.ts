@@ -284,6 +284,14 @@ export class FirebatCore {
   searchConversationHistory(owner: string, query: string, opts?: { currentConvId?: string; limit?: number; withinDays?: number; minScore?: number; includeBlocks?: boolean }) {
     return this.conversation.searchHistory(owner, query, opts);
   }
+  /** CLI 세션 resume — 대화의 현재 모델과 매칭 시에만 반환 */
+  getCliSession(conversationId: string, currentModel: string) {
+    return this.conversation.getCliSession(conversationId, currentModel);
+  }
+  /** CLI 세션 저장 (첫 턴 후) */
+  setCliSession(conversationId: string, sessionId: string, model: string) {
+    return this.conversation.setCliSession(conversationId, sessionId, model);
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   //  시크릿 → SecretManager

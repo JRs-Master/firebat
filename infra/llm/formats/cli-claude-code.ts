@@ -132,7 +132,7 @@ export class CliClaudeCodeFormat implements FormatHandler {
     // Claude Code 가 내부에서 tool use loop 처리 (MCP 서버 통해).
     // 우리는 prompt + systemPrompt + 초기 history 를 넘기고 최종 text 만 받음.
     // toolExchanges 는 CLI 내부 처리이므로 빈 배열 반환.
-    const resumeSessionId = (opts as { cliSessionId?: string })?.cliSessionId;
+    const resumeSessionId = opts?.cliResumeSessionId;
     // HTTP MCP 우선 — 내부 토큰 있으면 Firebat 메인 프로세스 /api/mcp-internal 에 연결 (즉시)
     const mcpCfg = ctx.resolveMcpConfig?.();
     const mcpConfigPath = this.ensureMcpConfigFile(mcpCfg?.token, mcpCfg?.url?.replace(/\/api\/mcp-internal.*$/, ''));
@@ -149,6 +149,10 @@ export class CliClaudeCodeFormat implements FormatHandler {
     });
 
     if (res.error) return { success: false, error: res.error };
+    // 첫 턴: session_id 캡처 → 호출자에게 전달 (DB 영속화 용)
+    if (res.sessionId && !resumeSessionId && opts?.onCliSessionId) {
+      opts.onCliSessionId(res.sessionId);
+    }
     return {
       success: true,
       data: {

@@ -232,6 +232,12 @@ export interface LlmCallOpts {
    *  jsonMode=true 와 함께 사용. grammar-level constrained decoding 으로 구조 위반 출력 불가능.
    *  enum·required·additionalProperties 등 전부 강제 준수. */
   jsonSchema?: Record<string, unknown>;
+  /** CLI 모드 세션 resume — 이전 CLI 서브프로세스 세션 ID. 있으면 --resume 으로 재연결.
+   *  모델이 바뀌면 호출자가 null 로 전달해야 함 (세션은 모델과 결합). */
+  cliResumeSessionId?: string;
+  /** CLI 모드 세션 캡처 콜백 — 첫 호출 시 stream 이벤트에서 발견한 새 session_id 전달.
+   *  호출자는 이걸 DB 에 저장했다가 다음 턴에 cliResumeSessionId 로 되돌려줌. */
+  onCliSessionId?: (sessionId: string) => void;
 }
 
 // ── Function Calling 타입 ──────────────────────────────────────────────────

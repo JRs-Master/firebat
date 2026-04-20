@@ -48,6 +48,9 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
       )
     `);
     try { this.db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_owner_updated ON conversations(owner, updated_at DESC)'); } catch {}
+    // CLI 모드 세션 resume 용 컬럼 (마이그레이션: 존재하지 않을 때만 추가)
+    try { this.db.exec(`ALTER TABLE conversations ADD COLUMN cli_session_id TEXT`); } catch { /* 이미 존재하면 무시 */ }
+    try { this.db.exec(`ALTER TABLE conversations ADD COLUMN cli_model TEXT`); } catch { /* 이미 존재하면 무시 */ }
 
     // 대화 삭제 tombstone — 한 기기에서 삭제 후 다른 기기의 stale POST 가 되살리는 레이스 방지.
     //  - DELETE 시 tombstone 기록 + conversations row 삭제

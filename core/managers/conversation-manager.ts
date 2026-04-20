@@ -197,6 +197,37 @@ export class ConversationManager {
     return { success: true };
   }
 
+  /**
+   * CLI 모드 세션 ID 조회 (현재 모델 매칭 시에만 반환 — 모델 바뀌면 null)
+   */
+  async getCliSession(id: string, currentModel: string): Promise<{ sessionId: string; model: string } | null> {
+    const res = await this.db.query(
+      `SELECT cli_session_id as sessionId, cli_model as model FROM conversations WHERE id = ?`,
+      [id],
+    );
+    if (!res.success || !res.data || res.data.length === 0) return null;
+    const r = res.data[0] as { sessionId: string | null; model: string | null };
+    if (!r.sessionId || !r.model) return null;
+    if (r.model !== currentModel) return null; // 모델 바뀌면 세션 무효
+    return { sessionId: r.sessionId, model: r.model };
+  }
+
+  /** CLI 세션 ID 저장 (첫 호출 시 핸들러가 캡처한 session_id 를 영속화) */
+  async setCliSession(id: string, sessionId: string, model: string): Promise<void> {
+    await this.db.query(
+      `UPDATE conversations SET cli_session_id = ?, cli_model = ? WHERE id = ?`,
+      [sessionId, model, id],
+    );
+  }
+
+  /** CLI 세션 초기화 (모델 변경·오류 시) */
+  async clearCliSession(id: string): Promise<void> {
+    await this.db.query(
+      `UPDATE conversations SET cli_session_id = NULL, cli_model = NULL WHERE id = ?`,
+      [id],
+    );
+  }
+
   /** 삭제 기록 여부 확인 — POST (save) 진입 시 tombstone 체크용 */
   async isDeleted(owner: string, id: string): Promise<boolean> {
     const res = await this.db.query(

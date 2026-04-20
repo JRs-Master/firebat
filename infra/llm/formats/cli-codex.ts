@@ -30,6 +30,7 @@ interface RunOptions {
   cliModel?: string;
   codexHome?: string;
   thinkingLevel?: string;
+  resumeSessionId?: string;
   onChunk?: LlmCallOpts['onChunk'];
 }
 
@@ -65,15 +66,21 @@ export class CliCodexFormat implements FormatHandler {
     const mcpCfg = ctx.resolveMcpConfig?.();
     const codexHome = this.ensureCodexHome(mcpCfg?.token, mcpCfg?.url?.replace(/\/api\/mcp-internal.*$/, ''));
     const cliModel = ctx.config.cliModel;
+    const resumeSessionId = opts?.cliResumeSessionId;
     const res = await this.runCodex(prompt, {
       systemPrompt,
       history,
       cliModel,
       codexHome,
       thinkingLevel: opts?.thinkingLevel,
+      resumeSessionId,
       onChunk: opts?.onChunk,
     });
     if (res.error) return { success: false, error: res.error };
+    // 첫 턴에서 session_id 캡처 → 호출자에게 전달
+    if (res.sessionId && !resumeSessionId && opts?.onCliSessionId) {
+      opts.onCliSessionId(res.sessionId);
+    }
     return {
       success: true,
       data: {
@@ -136,7 +143,10 @@ export class CliCodexFormat implements FormatHandler {
         : finalPrompt;
 
       // codex exec — non-interactive + --full-auto (workspace-write + on-request approval)
-      const args: string[] = ['exec', promptWithSystem, '--json', '--skip-git-repo-check', '--full-auto'];
+      // resume 시: codex exec resume <session_id> <prompt> ... (서브커맨드)
+      const args: string[] = options.resumeSessionId
+        ? ['exec', 'resume', options.resumeSessionId, promptWithSystem, '--json', '--skip-git-repo-check', '--full-auto']
+        : ['exec', promptWithSystem, '--json', '--skip-git-repo-check', '--full-auto'];
       if (options.cliModel) args.push('--model', options.cliModel);
 
       const effort = mapThinkingToCodex(options.thinkingLevel);

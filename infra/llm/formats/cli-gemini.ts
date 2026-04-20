@@ -20,6 +20,7 @@ import type { FormatHandler, FormatHandlerContext } from '../format-handler';
 
 interface CliRunResult {
   text: string;
+  sessionId?: string;
   usedTools: string[];
   error?: string;
 }
@@ -29,6 +30,7 @@ interface RunOptions {
   history?: ChatMessage[];
   cliModel?: string;
   geminiHome?: string;
+  resumeSessionId?: string;
   onChunk?: LlmCallOpts['onChunk'];
 }
 
@@ -56,19 +58,26 @@ export class CliGeminiFormat implements FormatHandler {
     const mcpCfg = ctx.resolveMcpConfig?.();
     const geminiHome = this.ensureGeminiHome(mcpCfg?.token, mcpCfg?.url?.replace(/\/api\/mcp-internal.*$/, ''));
     const cliModel = ctx.config.cliModel;
+    const resumeSessionId = opts?.cliResumeSessionId;
     const res = await this.runGemini(prompt, {
       systemPrompt,
       history,
       cliModel,
       geminiHome,
+      resumeSessionId,
       onChunk: opts?.onChunk,
     });
     if (res.error) return { success: false, error: res.error };
+    // 첫 턴 session_id 캡처
+    if (res.sessionId && !resumeSessionId && opts?.onCliSessionId) {
+      opts.onCliSessionId(res.sessionId);
+    }
     return {
       success: true,
       data: {
         text: res.text,
         toolCalls: [],
+        responseId: res.sessionId,
         internallyUsedTools: res.usedTools,
       },
     };
@@ -132,6 +141,7 @@ export class CliGeminiFormat implements FormatHandler {
         '--approval-mode', 'yolo',
       ];
       if (options.cliModel) args.push('-m', options.cliModel);
+      if (options.resumeSessionId) args.push('--resume', options.resumeSessionId);
 
       const childEnv: NodeJS.ProcessEnv = options.geminiHome
         ? { ...process.env, GEMINI_HOME: options.geminiHome }
@@ -149,6 +159,7 @@ export class CliGeminiFormat implements FormatHandler {
       let stderrBuf = '';
       const textParts: string[] = [];
       const usedTools: string[] = [];
+      let sessionId: string | undefined;
       let errored = false;
       let errorMsg: string | undefined;
 
@@ -161,6 +172,9 @@ export class CliGeminiFormat implements FormatHandler {
             errorMsg = (ev.message as string) || (ev.error as string) || 'Gemini 오류';
             return;
           }
+          // session_id 캡처 (Claude Code 와 유사한 stream-json 포맷 가정)
+          if (typeof ev.session_id === 'string' && !sessionId) sessionId = ev.session_id;
+          if (typeof ev.sessionId === 'string' && !sessionId) sessionId = ev.sessionId;
           // message / text chunk
           const text = (ev.text as string) ?? (ev.content as string) ?? (ev.message as string);
           if (typeof text === 'string' && text) {
@@ -191,22 +205,22 @@ export class CliGeminiFormat implements FormatHandler {
       });
       child.stderr.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString(); });
       child.on('error', (e) => {
-        resolve({ text: textParts.join(''), usedTools, error: `Gemini CLI 프로세스 에러: ${e.message}` });
+        resolve({ text: textParts.join(''), usedTools, sessionId, error: `Gemini CLI 프로세스 에러: ${e.message}` });
       });
       child.on('close', (code) => {
         if (stdoutBuf.trim()) processLine(stdoutBuf);
         if (errored) {
-          resolve({ text: textParts.join(''), usedTools, error: errorMsg });
+          resolve({ text: textParts.join(''), usedTools, sessionId, error: errorMsg });
           return;
         }
         if (code !== 0) {
           resolve({
-            text: textParts.join(''), usedTools,
+            text: textParts.join(''), usedTools, sessionId,
             error: `Gemini 비정상 종료 (exit ${code}): ${stderrBuf.slice(0, 500)}`,
           });
           return;
         }
-        resolve({ text: textParts.join(''), usedTools });
+        resolve({ text: textParts.join(''), usedTools, sessionId });
       });
     });
   }
