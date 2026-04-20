@@ -3,15 +3,11 @@ import { getCore } from '../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 
 /**
- * /api/conversations — admin 계정 대화 히스토리 CRUD (다기기 동기화)
- * demo 역할은 차단 (user 계정은 로컬스토리지만 사용).
+ * /api/conversations — 관리자 대화 히스토리 CRUD (다기기 동기화)
  */
 function assertAdmin(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  if (auth.role !== 'admin') {
-    return NextResponse.json({ success: false, error: 'admin 전용 API' }, { status: 403 });
-  }
   return auth;
 }
 

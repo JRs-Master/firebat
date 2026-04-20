@@ -17,9 +17,6 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 function assertAdmin(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  if (auth.role !== 'admin') {
-    return NextResponse.json({ success: false, error: 'admin 전용' }, { status: 403 });
-  }
   return auth;
 }
 

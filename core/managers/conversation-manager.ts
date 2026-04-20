@@ -1,10 +1,7 @@
 /**
- * ConversationManager — 관리자 채팅 대화를 DB에 저장/조회
+ * ConversationManager — 관리자 채팅 대화를 DB에 저장/조회 (다기기 동기화)
  *
- * admin 계정은 다기기 동기화를 위해 대화를 conversations 테이블에 보관.
- * demo 등 다른 역할은 이 매니저를 사용하지 않고 클라이언트 localStorage만 사용.
- *
- * 추가: 메시지 단위 벡터 임베딩으로 과거 대화 search_history 도구 지원.
+ * 메시지 단위 벡터 임베딩으로 과거 대화 search_history 도구 지원.
  * - 저장 시 변경된 메시지만 임베딩 (content_hash 비교)
  * - 메시지 삭제 시 해당 msg_idx 이상 row 제거
  * - 검색 시 owner + 현재 대화 우선 부스트
