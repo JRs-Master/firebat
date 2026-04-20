@@ -15,7 +15,7 @@ import type { ConversationSummary, ConversationRecord } from './managers/convers
 import type { FirebatInfraContainer, ILlmPort, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
 import type { InfraResult, FirebatPlan } from './types';
 import type { CapabilitySettings } from './capabilities';
-import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL } from './vault-keys';
+import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT } from './vault-keys';
 import { eventBus } from '../lib/events';
 
 /** AI 요청 옵션 — 요청별 모델/이미지/멀티턴 컨텍스트 지정 */
@@ -377,6 +377,17 @@ export class FirebatCore {
 
   setAiThinkingLevel(level: string): boolean {
     return this.infra.vault.setSecret(VK_SYSTEM_AI_THINKING_LEVEL, level);
+  }
+
+  /** 사용자가 설정한 커스텀 프롬프트. 어드민 채팅·모나코 에디터 시스템 프롬프트에 공통 주입. */
+  getUserPrompt(): string {
+    return this.infra.vault.getSecret(VK_SYSTEM_USER_PROMPT) || '';
+  }
+
+  setUserPrompt(prompt: string): boolean {
+    // 2000자 제한 (토큰 낭비 방지)
+    const trimmed = (prompt || '').slice(0, 2000);
+    return this.infra.vault.setSecret(VK_SYSTEM_USER_PROMPT, trimmed);
   }
 
   // ══════════════════════════════════════════════════════════════════════════

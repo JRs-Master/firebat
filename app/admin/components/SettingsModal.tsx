@@ -75,6 +75,11 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const [aiRouterEnabled, setAiRouterEnabled] = useState(false);
   const [aiRouterModel, setAiRouterModel] = useState('gemini-3-flash-lite');
 
+  // 사용자 커스텀 프롬프트 (어드민 채팅·모나코 에디터 공유)
+  const [userPrompt, setUserPrompt] = useState('');
+  const [userPromptSaving, setUserPromptSaving] = useState(false);
+  const [userPromptSaved, setUserPromptSaved] = useState(false);
+
   // 관리자 계정 변경
   const [adminCurrentPw, setAdminCurrentPw] = useState('');
   const [adminNewId, setAdminNewId] = useState('');
@@ -145,6 +150,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
         if (data.aiThinkingLevel) setThinkingLevel(data.aiThinkingLevel);
         if (typeof data.aiRouterEnabled === 'boolean') setAiRouterEnabled(data.aiRouterEnabled);
         if (data.aiRouterModel) setAiRouterModel(data.aiRouterModel);
+        if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
       }
     }).catch(() => {});
 
@@ -157,6 +163,22 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
       if (data.keys?.google_service_account_json?.hasKey) setVertexSaJson(data.keys.google_service_account_json.maskedKey);
     }).catch(() => {});
   }, []);
+
+  // 사용자 커스텀 프롬프트 저장
+  const saveUserPrompt = useCallback(async () => {
+    setUserPromptSaving(true);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userPrompt }),
+      });
+      if (res.ok) {
+        setUserPromptSaved(true);
+        setTimeout(() => setUserPromptSaved(false), 1500);
+      }
+    } finally { setUserPromptSaving(false); }
+  }, [userPrompt]);
 
   // 시크릿
   const fetchSecrets = useCallback(async () => {
@@ -1018,6 +1040,35 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     </div>
                   );
                 })()}
+
+                {/* 사용자 커스텀 프롬프트 — 어드민 채팅·모나코 에디터 공유 */}
+                <div className="mt-4 pt-4 border-t border-slate-200">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <FieldLabel>
+                      사용자 지시사항 <span className="text-[10px] font-normal text-slate-400">(어드민 채팅 + 모나코 에디터 공유)</span>
+                    </FieldLabel>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-slate-400">{userPrompt.length} / 2000</span>
+                      <button
+                        onClick={saveUserPrompt}
+                        disabled={userPromptSaving}
+                        className="px-2.5 py-1 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-300 text-white text-[11px] font-bold rounded-md transition-colors"
+                      >
+                        {userPromptSaving ? '저장 중' : userPromptSaved ? '저장됨 ✓' : '저장'}
+                      </button>
+                    </div>
+                  </div>
+                  <Textarea
+                    value={userPrompt}
+                    onChange={(v) => setUserPrompt(v.slice(0, 2000))}
+                    rows={6}
+                    placeholder={'예:\n- 답변은 한국어 존댓말 유지\n- 내 프로젝트는 Next.js + Tailwind, TypeScript strict\n- 수치 표시는 3자리 콤마 + 원/% 단위 병기\n- "좋은 지적입니다" 같은 추임새 금지'}
+                  />
+                  <HelpText>
+                    매 AI 요청 시 시스템 프롬프트 뒤에 추가되어 전달됩니다. 페르소나·언어·도메인 지식·포맷 선호 등을 기록하세요.
+                    시스템 규칙과 충돌하면 시스템이 우선합니다.
+                  </HelpText>
+                </div>
               </>
             );
           })()}

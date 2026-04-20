@@ -16,6 +16,7 @@ export async function GET(req: NextRequest) {
     aiThinkingLevel: core.getAiThinkingLevel(),
     aiRouterEnabled: routerEnabledRaw === 'true' || routerEnabledRaw === '1',
     aiRouterModel: routerModel || 'gemini-3-flash-lite',
+    userPrompt: core.getUserPrompt(),
   });
 }
 
@@ -40,6 +41,9 @@ export async function PATCH(req: NextRequest) {
   }
   if (typeof body.aiRouterModel === 'string' && body.aiRouterModel) {
     core.setGeminiKey('system:ai-router:model', body.aiRouterModel);
+  }
+  if (typeof body.userPrompt === 'string') {
+    core.setUserPrompt(body.userPrompt);
   }
 
   return NextResponse.json({ success: true });

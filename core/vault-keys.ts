@@ -9,6 +9,8 @@
 export const VK_SYSTEM_TIMEZONE = 'system:timezone';
 export const VK_SYSTEM_AI_MODEL = 'system:ai-model';
 export const VK_SYSTEM_AI_THINKING_LEVEL = 'system:ai-thinking-level';
+/** 사용자가 직접 입력하는 커스텀 프롬프트 — 어드민 채팅·모나코 에디터 모두 주입 */
+export const VK_SYSTEM_USER_PROMPT = 'system:user-prompt';
 
 // ── 인증 ──
 export const VK_ADMIN_ID = 'FIREBAT_ADMIN_ID';
