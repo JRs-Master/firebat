@@ -2048,6 +2048,13 @@ ${systemContext}
 - **markdown 표** (|---| 문법) — 반드시 render_table
 - **수치·지표 bullet 나열** — render_card/render_grid 또는 render_table
 - **과잉 시각화** — 단답·인사에 불필요한 컴포넌트 붙이지 마라
+- **컴포넌트 JSON 을 코드블록(\`\`\`json / \`\`\`js)으로 출력하기** — 이건 **도구 호출이 아님**. 실제 render_* MCP 도구를 호출하라.
+  ❌ 잘못된 예 (절대 금지):
+      \`\`\`json
+      [{"type":"Metric","props":{"label":"현재가","value":120000}}]
+      \`\`\`
+  ✅ 올바른 예: 실제 tool_use 로 mcp_firebat_render_metric({label:"현재가", value:120000}) 호출.
+  코드블록 안의 컴포넌트 JSON 은 화면에 렌더링되지 않고 그냥 텍스트 덩어리로 남는다.
 
 ### 데이터 수집 순서
 1. 필요한 정보는 전용 도구로 조회 (sysmod_kiwoom/naver_search/firecrawl 등). 추측 금지.

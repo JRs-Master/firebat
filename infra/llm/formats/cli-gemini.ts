@@ -309,12 +309,16 @@ export class CliGeminiFormat implements FormatHandler {
           errorMsg = toErrStr(ev.message) || toErrStr(ev.error) || 'Gemini 오류';
           return;
         }
-        // message — role=assistant 만 채택
+        // message — role=assistant 만 채택. thought=true 는 thinking 스트림으로 분리 (최종 텍스트에 포함 X)
         if (t === 'message') {
           const role = ev.role;
           if (role === 'assistant' && typeof ev.content === 'string') {
-            textParts.push(ev.content);
-            options.onChunk?.({ type: 'text', content: ev.content });
+            if (ev.thought === true) {
+              options.onChunk?.({ type: 'thinking', content: ev.content });
+            } else {
+              textParts.push(ev.content);
+              options.onChunk?.({ type: 'text', content: ev.content });
+            }
           }
           return;
         }
