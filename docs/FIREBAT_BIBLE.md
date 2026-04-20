@@ -201,7 +201,7 @@ Firebat의 핵심 차별점: **"만들기 + 운영 + 자동화"**.
 | 어댑터 | `infra/` 내 하드코딩 | `system/modules/` 동적 로드 |
 | 내부 모니터링 | 미구현 | Core AI 피드백 루프 |
 | 미디어 | 미구현 | IMediaPort (S3/R2) |
-| 대화 히스토리 | admin 계정: SQLite `conversations` 테이블 + 500ms debounce (다기기 동기화). demo: localStorage | 분산/클라우드 불필요 |
+| 대화 히스토리 | SQLite `conversations` 테이블 + localStorage 이중 저장 (다기기 동기화) | 분산/클라우드 불필요 |
 | 인증 | IAuthPort + AuthManager (세션 토큰 + API 토큰 통합) | 동일 |
 
 ---

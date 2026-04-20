@@ -1989,6 +1989,8 @@ ${systemContext}
 
 **지표·데이터**
 - \`render_metric\` — **단일 지표 카드** (라벨 + 값 + 증감 화살표 + 아이콘). "현재가/PER/보유율/달성률" 같은 **단일 수치에 우선 사용** — Card 안에 Text 3개 넣지 마라
+  - ❌ **두 개 이상의 동등한 데이터를 하나의 metric 에 우겨넣지 마라.** value 는 메인 수치 하나, subLabel 은 짧은 부연 설명만. 예: \`render_metric(label="코스피 급등", value="STX엔진", subLabel="진원생명과학 +29.89%")\` 금지 — 진원생명과학이 작게 눌림.
+  - ✅ 동등한 2개 이상: grid 슬롯 늘려 metric 병렬 배치, 또는 render_table / render_key_value 사용
 - \`render_key_value\` — 라벨:값 구조적 나열 (종목 스펙·제품 정보)
 - \`render_stock_chart\` — OHLCV 시계열 (주식)
 - \`render_chart\` — 막대·선·원형 (color/palette/subtitle/unit 지원)

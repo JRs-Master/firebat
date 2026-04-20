@@ -26,8 +26,13 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     buyPoints: z.array(z.any()).optional(), sellPoints: z.array(z.any()).optional(),
   }, '주식 시세 차트 (일봉/분봉). data는 OHLCV 배열.');
   makeRender('render_table', 'Table', {
-    headers: z.array(z.string()), rows: z.array(z.array(z.string())),
-  }, '표. 수치 3개 이상 시 필수.');
+    headers: z.array(z.string()),
+    rows: z.array(z.array(z.string())),
+    /** 컬럼별 정렬. 미지정 시 자동(숫자 컬럼→right, 그 외→left). 짧은 상태·뱃지성 단어는 center 추천. */
+    align: z.array(z.enum(['left', 'right', 'center'])).optional(),
+    /** 셀별 정렬 override — cellAlign[행][열]. 합계 행·특정 셀만 따로 맞출 때. */
+    cellAlign: z.array(z.array(z.enum(['left', 'right', 'center']))).optional(),
+  }, '표. 수치 3개 이상 시 필수. 기본 정렬은 자동(숫자→우측, 텍스트→좌측). align 로 컬럼, cellAlign 으로 셀별 override.');
   makeRender('render_alert', 'Alert', {
     message: z.string(),
     type: z.enum(['info','warn','error','success']),
@@ -42,7 +47,11 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
   makeRender('render_progress', 'Progress', {
     value: z.number(), max: z.number().optional(), label: z.string().optional(), color: z.string().optional(),
   }, '진행률 바.');
-  makeRender('render_header', 'Header', { text: z.string(), level: z.number().optional() }, '섹션 제목.');
+  makeRender('render_header', 'Header', {
+    text: z.string(),
+    level: z.number().optional(),
+    align: z.enum(['left','right','center']).optional().describe('기본 left. 히어로 섹션·카드 타이틀은 center.'),
+  }, '섹션 제목.');
   makeRender('render_text', 'Text', { content: z.string() }, '본문 텍스트 블록.');
   makeRender('render_list', 'List', { items: z.array(z.string()), ordered: z.boolean().optional() }, '목록.');
   makeRender('render_divider', 'Divider', {}, '섹션 구분선.');
@@ -61,13 +70,18 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   makeRender('render_metric', 'Metric', {
     label: z.string().describe('지표명 (예: "현재가", "PER")'),
-    value: z.union([z.string(), z.number()]).describe('대표 수치'),
+    value: z.union([z.string(), z.number()]).describe('대표 수치 — 하나만. 두 개 값 병렬 금지. 숫자는 3자리 콤마 자동.'),
     unit: z.string().optional().describe('단위 (원, %, 배 등)'),
-    delta: z.union([z.string(), z.number()]).optional().describe('증감치 (예: -1500, "-0.69%")'),
+    delta: z.union([z.string(), z.number()]).optional().describe('증감치 (예: -1500, "-0.69%"). 숫자 3자리 콤마 자동.'),
     deltaType: z.enum(['up','down','neutral']).optional().describe('up=빨강, down=파랑, neutral=회색'),
-    subLabel: z.string().optional().describe('보조 설명 (예: "전일 대비")'),
+    subLabel: z.string().optional().describe('보조 설명 — 부가 맥락만. 동등한 값 병렬 표시 금지.'),
     icon: z.string().optional().describe('이모지 아이콘 (예: "📈")'),
-  }, '단일 지표 카드. 라벨+값+증감. Grid 안에 여러 개 배치하면 KPI 대시보드.');
+    align: z.enum(['left','right','center']).optional().describe('전체 정렬 일괄 지정. 미지정 시 기본값: label·subLabel=center, value=(숫자→right / 텍스트→center), delta=right.'),
+    labelAlign: z.enum(['left','right','center']).optional().describe('라벨 정렬만 개별 지정.'),
+    valueAlign: z.enum(['left','right','center']).optional().describe('값 정렬만 개별 지정.'),
+    deltaAlign: z.enum(['left','right','center']).optional().describe('증감 정렬만 개별 지정.'),
+    subLabelAlign: z.enum(['left','right','center']).optional().describe('부연 설명 정렬만 개별 지정.'),
+  }, '단일 지표 카드. 라벨+값+증감. 필드별 정렬 개별 조절 가능.');
 
   makeRender('render_timeline', 'Timeline', {
     items: z.array(z.object({
@@ -103,8 +117,15 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
   makeRender('render_image', 'Image', {
     src: z.string(), alt: z.string().optional(), width: z.number().optional(), height: z.number().optional(),
   }, '이미지.');
-  makeRender('render_card', 'Card', { children: z.array(z.any()) }, '카드.');
-  makeRender('render_grid', 'Grid', { columns: z.number(), children: z.array(z.any()) }, '그리드.');
+  makeRender('render_card', 'Card', {
+    children: z.array(z.any()),
+    align: z.enum(['left','right','center']).optional().describe('카드 내부 전체 텍스트 정렬. 기본 left.'),
+  }, '카드.');
+  makeRender('render_grid', 'Grid', {
+    columns: z.number(),
+    children: z.array(z.any()),
+    align: z.enum(['left','right','center']).optional().describe('그리드 내부 전체 텍스트 정렬. 기본 left.'),
+  }, '그리드.');
 
   const CDN_MAP: Record<string, string> = {
     d3: '<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>',

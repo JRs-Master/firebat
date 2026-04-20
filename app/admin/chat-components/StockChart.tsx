@@ -88,6 +88,8 @@ function niceTicks(min: number, max: number, count = 5): number[] {
 export default function StockChart({ symbol, title, data, indicators = ['MA5', 'MA20'], buyPoints, sellPoints }: StockChartProps) {
   const priceBoxRef = useRef<HTMLDivElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // 툴팁 위치용 실시간 마우스 좌표 (컨테이너 기준)
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
   // 유효 데이터만 + 오래된 → 최신 순서로 정렬 (API가 역순 반환 가능)
   // data가 undefined/null/비배열이어도 크래시 방지
@@ -213,9 +215,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
 
   const handlePointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     updateHoverFromClientX(e.clientX); // 팬 중에도 툴팁 유지
+    if (priceBoxRef.current) {
+      const rect = priceBoxRef.current.getBoundingClientRect();
+      setHoverPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    }
   }, [updateHoverFromClientX]);
 
-  const handleLeave = useCallback(() => { setHoverIdx(null); }, []);
+  const handleLeave = useCallback(() => { setHoverIdx(null); setHoverPos(null); }, []);
 
   // 줌 인 상태 여부: 현재 뷰 범위 < 전체 데이터 수 (팬 가능한지 판단)
   const canPan = viewEnd - viewStart + 1 < fullN;
@@ -386,7 +392,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       {/* 가격 차트 (드래그 팬 + 휠/핀치 줌) */}
       <div
         ref={priceBoxRef}
-        className={`relative select-none ${canPan ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair'}`}
+        className={`relative select-none ${canPan ? 'cursor-grab active:cursor-grabbing' : ''}`}
         onPointerMove={handlePointer}
         onPointerLeave={handleLeave}
         onMouseDown={handleMouseDown}
@@ -482,11 +488,17 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           })()}
         </svg>
 
-        {/* 호버 툴팁 */}
-        {hoverBar && hoverX != null && (
+        {/* 호버 툴팁 — 마우스 위치 기준 */}
+        {hoverBar && hoverPos && (
           <div
-            className="absolute pointer-events-none bg-slate-900/95 text-white rounded-lg px-3 py-2 text-[11px] shadow-lg whitespace-nowrap"
-            style={{ left: `${(hoverX / W) * 100}%`, top: 4, transform: hoverX > W / 2 ? 'translateX(calc(-100% - 8px))' : 'translateX(8px)', minWidth: 140 }}
+            className="absolute pointer-events-none bg-slate-900/95 text-white rounded-lg px-3 py-2 text-[11px] shadow-lg whitespace-nowrap z-10"
+            style={{
+              left: hoverPos.x + 14,
+              top: Math.max(4, hoverPos.y - 8),
+              transform: hoverPos.x > 0.6 * (priceBoxRef.current?.clientWidth ?? 800)
+                ? 'translateX(calc(-100% - 28px))' : undefined,
+              minWidth: 140,
+            }}
           >
             <div className="font-bold text-[11px] text-slate-300 mb-1.5">{normalizeDate(hoverBar.date)}</div>
             <div className="flex flex-col gap-0.5 tabular-nums">

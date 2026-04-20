@@ -43,16 +43,16 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
   const type = TYPE_ALIAS[(rawType || '').toLowerCase()] ?? rawType;
 
   switch (type) {
-    case 'Header':        return <HeaderComp text={p.text ?? ''} level={p.level} />;
+    case 'Header':        return <HeaderComp text={p.text ?? ''} level={p.level} align={p.align} />;
     case 'Text':          return <TextComp content={p.content ?? ''} />;
     case 'Image':         return <ImageComp src={p.src ?? ''} alt={p.alt} width={p.width} height={p.height} />;
     case 'Form':          return <FormComp bindModule={p.bindModule} inputs={p.inputs ?? []} submitText={p.submitText} />;
     case 'ResultDisplay': return null;
     case 'Button':        return <ButtonComp text={p.text ?? ''} href={p.href} variant={p.variant} />;
     case 'Divider':       return <DividerComp />;
-    case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} />;
-    case 'Card':          return <CardComp children={p.children ?? []} />;
-    case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} />;
+    case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} align={p.align} cellAlign={p.cellAlign} />;
+    case 'Card':          return <CardComp children={p.children ?? []} align={p.align} />;
+    case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;
     case 'AdSlot':        return <AdSlotComp slotId={p.slotId} format={p.format} />;
     case 'Html':          return <HtmlComp content={p.content ?? ''} />;
     case 'Slider':        return <SliderComp label={p.label} min={p.min} max={p.max} step={p.step} defaultValue={p.defaultValue} unit={p.unit} />;
@@ -67,7 +67,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'Countdown':     return <CountdownComp targetDate={p.targetDate ?? ''} label={p.label} />;
     case 'Chart':         return <ChartComp type={p.chartType ?? 'bar'} data={p.data ?? []} labels={p.labels ?? []} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} palette={p.palette} showValues={p.showValues} />;
     case 'StockChart':    return <StockChart symbol={p.symbol ?? ''} title={p.title} data={p.data ?? []} indicators={p.indicators} buyPoints={p.buyPoints} sellPoints={p.sellPoints} />;
-    case 'Metric':        return <MetricComp label={p.label ?? ''} value={p.value ?? ''} unit={p.unit} delta={p.delta} deltaType={p.deltaType} subLabel={p.subLabel} icon={p.icon} />;
+    case 'Metric':        return <MetricComp label={p.label ?? ''} value={p.value ?? ''} unit={p.unit} delta={p.delta} deltaType={p.deltaType} subLabel={p.subLabel} icon={p.icon} align={p.align} labelAlign={p.labelAlign} valueAlign={p.valueAlign} deltaAlign={p.deltaAlign} subLabelAlign={p.subLabelAlign} />;
     case 'Timeline':      return <TimelineComp items={p.items ?? []} />;
     case 'Compare':       return <CompareComp title={p.title} left={p.left ?? { label: 'A', items: [] }} right={p.right ?? { label: 'B', items: [] }} />;
     case 'KeyValue':      return <KeyValueComp title={p.title} items={p.items ?? []} columns={p.columns} />;
@@ -79,7 +79,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
 }
 
 // ── Header ──────────────────────────────────────────────────────────────────
-function HeaderComp({ text, level = 1 }: { text: string; level?: number }) {
+function HeaderComp({ text, level = 1, align }: { text: string; level?: number; align?: 'left' | 'right' | 'center' }) {
   const clampedLevel = Math.min(Math.max(level, 1), 6);
   const sizes: Record<number, string> = {
     1: 'text-3xl sm:text-4xl font-extrabold',
@@ -89,7 +89,8 @@ function HeaderComp({ text, level = 1 }: { text: string; level?: number }) {
     5: 'text-base font-semibold',
     6: 'text-sm font-semibold',
   };
-  const cls = `${sizes[clampedLevel] ?? sizes[1]} text-gray-900 leading-tight`;
+  const alignCls = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : '';
+  const cls = `${sizes[clampedLevel] ?? sizes[1]} text-gray-900 leading-tight ${alignCls}`;
   if (clampedLevel === 1) return <h1 className={cls}>{text}</h1>;
   if (clampedLevel === 2) return <h2 className={cls}>{text}</h2>;
   if (clampedLevel === 3) return <h3 className={cls}>{text}</h3>;
@@ -104,6 +105,48 @@ function HeaderComp({ text, level = 1 }: { text: string; level?: number }) {
 function normalizeEscapes(s: string): string {
   if (!s || typeof s !== 'string') return s;
   return s.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+}
+
+/** AI 가 실수로 넣은 HTML 인라인 태그를 마크다운으로 변환.
+ *  ReactMarkdown 은 rehype-raw 없이 HTML 을 렌더링하지 않아 그대로 노출되므로
+ *  렌더 직전 간단 변환 (XSS 방지 목적으로 rehype-raw 추가는 회피). */
+function htmlToMarkdown(s: string): string {
+  if (!s || typeof s !== 'string') return s;
+  return s
+    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
+    .replace(/<\s*\/?\s*(strong|b)\s*>/gi, '**')
+    .replace(/<\s*\/?\s*(em|i)\s*>/gi, '*')
+    .replace(/<\s*\/?\s*code\s*>/gi, '`')
+    .replace(/<\s*\/?\s*u\s*>/gi, '')
+    // 나머지 모르는 태그는 제거 (안전 차원)
+    .replace(/<\/?[a-zA-Z][^>]*>/g, '');
+}
+
+/** 일반 text 필드 (label/value/subLabel 등) — 마크다운 렌더 없이 HTML·마크다운 마커 제거만 */
+function cleanPlainText(s: string | number | undefined): string {
+  if (s == null) return '';
+  let str = typeof s === 'string' ? s : String(s);
+  // HTML 태그 → 마크다운 → 최종 제거 (plain text 필드이므로 ** * ` 도 제거)
+  str = htmlToMarkdown(str);
+  str = str.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/`([^`]+)`/g, '$1');
+  return str;
+}
+
+/** 숫자 3자리 콤마 자동 포맷 — 모든 텍스트 컴포넌트에서 공용.
+ *  - number 타입 → toLocaleString
+ *  - "1000000" 순수 숫자 문자열 → "1,000,000"
+ *  - "216000원", "▲1500" 처럼 접두·접미가 있는 경우도 숫자부만 콤마 처리
+ *  - 이미 콤마 있거나 4자리 미만이면 그대로 */
+function formatNumberString(v: string | number | null | undefined): string {
+  if (v == null) return '';
+  if (typeof v === 'number') return v.toLocaleString('ko-KR');
+  const s = String(v);
+  if (s.includes(',')) return s;
+  const pure = s.trim().match(/^([+\-]?)(\d{4,})(\.\d+)?$/);
+  if (pure) return pure[1] + Number(pure[2]).toLocaleString('ko-KR') + (pure[3] ?? '');
+  const wrapped = s.match(/^(\D*)(\d{4,})(\D*)$/);
+  if (wrapped) return wrapped[1] + Number(wrapped[2]).toLocaleString('ko-KR') + wrapped[3];
+  return s;
 }
 
 function TextComp({ content }: { content: string }) {
@@ -248,13 +291,51 @@ function DividerComp() {
 }
 
 // ── Table ───────────────────────────────────────────────────────────────────
-function TableComp({ headers = [], rows = [], stickyCol }: { headers: string[]; rows: string[][]; stickyCol?: boolean }) {
+type AlignOpt = 'left' | 'right' | 'center';
+function TableComp({ headers = [], rows = [], stickyCol, align, cellAlign }: {
+  headers: string[]; rows: string[][]; stickyCol?: boolean;
+  /** 컬럼별 정렬 — AI 명시 가능. 미지정 시 자동(숫자 컬럼→우측, 그 외→좌측). */
+  align?: (AlignOpt | null | undefined)[];
+  /** 셀별 정렬 override — cellAlign[ri][ci]. 특정 행·셀만 따로 조절할 때 사용. */
+  cellAlign?: ((AlignOpt | null | undefined)[] | null | undefined)[];
+}) {
   // 헤더 행은 항상 sticky (세로 스크롤 시)
   // stickyCol: 미지정 시 4열 이상이면 자동 활성 (첫 열 = 행 라벨 추정)
   const firstColSticky = stickyCol ?? (headers.length >= 4);
+
+  // 컬럼별 숫자성 판정 — 컬럼 셀 중 60%+ 가 숫자면 숫자 컬럼으로 간주 (자동 우측 정렬)
+  const isNumLikeStr = (s: string) => /^[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(원|%|배|개|건|만|억|조|명|월|일|시|분)?$/.test(s);
+  const numericCol: boolean[] = headers.map((_, ci) => {
+    if (rows.length === 0) return false;
+    let n = 0;
+    for (const r of rows) {
+      const v = typeof r[ci] === 'string' ? (r[ci] as string).trim() : String(r[ci] ?? '');
+      if (v && isNumLikeStr(v)) n++;
+    }
+    return n / rows.length >= 0.6;
+  });
+
+  const alignClass = (ci: number, cellIsNum: boolean, ri?: number) => {
+    // 셀별 override (최우선)
+    if (ri != null) {
+      const cellExplicit = cellAlign?.[ri]?.[ci];
+      if (cellExplicit === 'left') return 'text-left';
+      if (cellExplicit === 'right') return 'text-right tabular-nums';
+      if (cellExplicit === 'center') return 'text-center';
+    }
+    // 컬럼 명시
+    const explicit = align?.[ci];
+    if (explicit === 'left') return 'text-left';
+    if (explicit === 'right') return 'text-right tabular-nums';
+    if (explicit === 'center') return 'text-center';
+    // 자동: 컬럼 숫자 지배적 → 우측, 셀 자체가 숫자 → 우측, 그 외 → 좌측
+    if (numericCol[ci] || cellIsNum) return 'text-right tabular-nums';
+    return 'text-left';
+  };
+
   return (
     <div className="overflow-auto rounded-xl border border-gray-200 shadow-sm max-h-[70vh]">
-      <table className="min-w-full text-left border-separate border-spacing-0">
+      <table className="min-w-full border-separate border-spacing-0">
         <thead className="bg-gray-50">
           <tr>
             {headers.map((h, i) => {
@@ -262,7 +343,7 @@ function TableComp({ headers = [], rows = [], stickyCol }: { headers: string[]; 
               return (
                 <th
                   key={i}
-                  className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-200 bg-gray-50 sticky top-0 min-w-[120px] ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#e5e7eb]' : 'z-10'}`}
+                  className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-200 bg-gray-50 sticky top-0 min-w-[120px] ${alignClass(i, false)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#e5e7eb]' : 'z-10'}`}
                 >
                   {h}
                 </th>
@@ -275,18 +356,15 @@ function TableComp({ headers = [], rows = [], stickyCol }: { headers: string[]; 
             <tr key={ri} className="hover:bg-gray-50 transition-colors">
               {row.map((cell, ci) => {
                 const isStickyCell = firstColSticky && ci === 0;
-                // 셀 값이 순수 숫자면 3자리 콤마 + 부호 색상 (+ 빨강, − 파랑) 자동 적용.
-                //   "12,345", "+5.3%", "-1.2%", "▲3.1%", "▼-2%" 같은 포맷도 패턴 감지.
-                //   "216,000원" 처럼 단위 붙은 것도 지원.
                 const s = typeof cell === 'string' ? cell.trim() : String(cell);
-                const isNumLike = /^[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(원|%|배|개|건|만|억|조|명|월|일|시|분)?$/.test(s);
-                const isPositive = isNumLike && /^[▲+]/.test(s);
-                const isNegative = isNumLike && /^[▼\-−]/.test(s);
+                const cellIsNum = isNumLikeStr(s);
+                const isPositive = cellIsNum && /^[▲+]/.test(s);
+                const isNegative = cellIsNum && /^[▼\-−]/.test(s);
                 const numClass = isPositive ? 'text-red-600 font-semibold' : isNegative ? 'text-blue-600 font-semibold' : '';
                 return (
                   <td
                     key={ci}
-                    className={`px-4 py-3 text-[13px] border-b border-gray-100 align-top min-w-[120px] break-words ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold whitespace-nowrap text-gray-800' : numClass || 'text-gray-800'} ${isNumLike && !isStickyCell ? 'tabular-nums text-right' : ''}`}
+                    className={`px-4 py-3 text-[13px] border-b border-gray-100 align-top min-w-[120px] break-words ${alignClass(ci, cellIsNum, ri)} ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold whitespace-nowrap text-gray-800' : numClass || 'text-gray-800'}`}
                   >
                     {cell}
                   </td>
@@ -301,24 +379,26 @@ function TableComp({ headers = [], rows = [], stickyCol }: { headers: string[]; 
 }
 
 // ── Card ────────────────────────────────────────────────────────────────────
-function CardComp({ children = [] }: { children: ComponentDef[] }) {
+function CardComp({ children = [], align }: { children: ComponentDef[]; align?: AlignOpt }) {
+  const alignCls = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : '';
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
+    <div className={`bg-white border border-gray-200 rounded-2xl p-6 shadow-sm ${alignCls}`}>
       <ComponentRenderer components={children} />
     </div>
   );
 }
 
 // ── Grid ────────────────────────────────────────────────────────────────────
-function GridComp({ columns = 2, children = [] }: { columns?: number; children: ComponentDef[] }) {
+function GridComp({ columns = 2, children = [], align }: { columns?: number; children: ComponentDef[]; align?: AlignOpt }) {
   const gridCls: Record<number, string> = {
     1: 'grid-cols-1',
     2: 'grid-cols-1 sm:grid-cols-2',
     3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
     4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4',
   };
+  const alignCls = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : '';
   return (
-    <div className={`grid ${gridCls[columns] ?? gridCls[2]} gap-4`}>
+    <div className={`grid ${gridCls[columns] ?? gridCls[2]} gap-4 ${alignCls}`}>
       {children.map((comp, i) => (
         <ComponentSwitch key={i} comp={comp} />
       ))}
@@ -716,47 +796,7 @@ function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, p
 
   // line chart
   if (type === 'line') {
-    const W = 720, H = 260, padL = 56, padR = 24, padT = 20, padB = 28;
-    const plotW = W - padL - padR;
-    const plotH = H - padT - padB;
-    const range = maxVal - minVal || 1;
-    const yMin = minVal - range * 0.05;
-    const yMax = maxVal + range * 0.05;
-    const xs = data.map((_, i) => padL + (data.length <= 1 ? 0 : (i / (data.length - 1)) * plotW));
-    const ys = data.map(v => padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH);
-    const path = xs.map((x, i) => `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
-    const area = `${path} L ${xs[xs.length - 1].toFixed(1)},${padT + plotH} L ${xs[0].toFixed(1)},${padT + plotH} Z`;
-    const ticks = 4;
-    const yTicks = Array.from({ length: ticks + 1 }, (_, i) => yMin + (yMax - yMin) * (i / ticks));
-    const xStep = Math.max(1, Math.floor(data.length / 6));
-    return (
-      <div className="space-y-2">
-        {title && <div className="text-sm font-bold text-gray-800">{title}</div>}
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block">
-          <defs>
-            <linearGradient id="line-grad" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
-              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          {yTicks.map((t, i) => {
-            const y = padT + plotH - (i / ticks) * plotH;
-            return (
-              <g key={i}>
-                <line x1={padL} x2={W - padR} y1={y} y2={y} stroke="#e2e8f0" strokeDasharray="2 3" />
-                <text x={padL - 6} y={y} fill="#94a3b8" fontSize="10" textAnchor="end" dominantBaseline="middle">{Math.round(t).toLocaleString('ko-KR')}</text>
-              </g>
-            );
-          })}
-          <path d={area} fill="url(#line-grad)" />
-          <path d={path} fill="none" stroke="#3b82f6" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-          {xs.map((x, i) => <circle key={i} cx={x} cy={ys[i]} r={3} fill="#3b82f6" />)}
-          {data.map((_, i) => i % xStep === 0 || i === data.length - 1 ? (
-            <text key={i} x={xs[i]} y={H - 8} fill="#94a3b8" fontSize="10" textAnchor="middle">{labels[i] ?? i}</text>
-          ) : null)}
-        </svg>
-      </div>
-    );
+    return <LineChartInteractive data={data} labels={labels} title={title} unit={unit} minVal={minVal} maxVal={maxVal} />;
   }
 
   const barColor = (color && COLOR_MAP[color]) ? COLOR_MAP[color].bar : 'bg-blue-500';
@@ -815,6 +855,88 @@ function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, p
 
   // bar / line chart — hover 상세 툴팁 포함
   return <BarChartInteractive data={data} labels={labels} titleBlock={titleBlock} unit={unit} showValues={showValues} barColor={barColor} maxVal={maxVal} fmtVal={fmtVal} type={type} />;
+}
+
+function LineChartInteractive({ data, labels, title, unit, minVal, maxVal }: {
+  data: number[]; labels: string[]; title?: string; unit?: string; minVal: number; maxVal: number;
+}) {
+  const [hovered, setHovered] = React.useState<number | null>(null);
+  const [cursorPos, setCursorPos] = React.useState<{ x: number; y: number } | null>(null);
+  const W = 720, H = 260, padL = 56, padR = 24, padT = 20, padB = 28;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const range = maxVal - minVal || 1;
+  const yMin = minVal - range * 0.05;
+  const yMax = maxVal + range * 0.05;
+  const xs = data.map((_, i) => padL + (data.length <= 1 ? 0 : (i / (data.length - 1)) * plotW));
+  const ys = data.map(v => padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH);
+  const path = xs.map((x, i) => `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
+  const area = `${path} L ${xs[xs.length - 1].toFixed(1)},${padT + plotH} L ${xs[0].toFixed(1)},${padT + plotH} Z`;
+  const ticks = 4;
+  const yTicks = Array.from({ length: ticks + 1 }, (_, i) => yMin + (yMax - yMin) * (i / ticks));
+  const xStep = Math.max(1, Math.floor(data.length / 6));
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  // 가장 가까운 데이터 포인트 찾기 (SVG viewBox 좌표계 기준)
+  const handleMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const relX = ((e.clientX - rect.left) / rect.width) * W;
+    let minDist = Infinity, idx = -1;
+    for (let i = 0; i < xs.length; i++) {
+      const d = Math.abs(xs[i] - relX);
+      if (d < minDist) { minDist = d; idx = i; }
+    }
+    if (idx >= 0) setHovered(idx);
+    setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+
+  return (
+    <div className="space-y-2">
+      {title && <div className="text-sm font-bold text-gray-800">{title}</div>}
+      <div
+        ref={containerRef}
+        className="relative"
+        onMouseMove={handleMove}
+        onMouseLeave={() => { setHovered(null); setCursorPos(null); }}
+      >
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block">
+          <defs>
+            <linearGradient id="line-grad" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          {yTicks.map((t, i) => {
+            const y = padT + plotH - (i / ticks) * plotH;
+            return (
+              <g key={i}>
+                <line x1={padL} x2={W - padR} y1={y} y2={y} stroke="#e2e8f0" strokeDasharray="2 3" />
+                <text x={padL - 6} y={y} fill="#94a3b8" fontSize="10" textAnchor="end" dominantBaseline="middle">{Math.round(t).toLocaleString('ko-KR')}</text>
+              </g>
+            );
+          })}
+          <path d={area} fill="url(#line-grad)" />
+          <path d={path} fill="none" stroke="#3b82f6" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+          {xs.map((x, i) => <circle key={i} cx={x} cy={ys[i]} r={hovered === i ? 5 : 3} fill="#3b82f6" />)}
+          {data.map((_, i) => i % xStep === 0 || i === data.length - 1 ? (
+            <text key={i} x={xs[i]} y={H - 8} fill="#94a3b8" fontSize="10" textAnchor="middle">{labels[i] ?? i}</text>
+          ) : null)}
+        </svg>
+        {hovered != null && cursorPos && (
+          <div
+            className="absolute pointer-events-none bg-white/95 shadow-lg rounded-lg px-3 py-2 text-center border border-slate-200 z-10"
+            style={{ left: cursorPos.x + 14, top: cursorPos.y + 14 }}
+          >
+            <div className="text-[11px] font-bold text-slate-800 whitespace-nowrap">{labels[hovered] ?? hovered}</div>
+            <div className="text-[14px] font-extrabold text-slate-900">
+              {data[hovered].toLocaleString('ko-KR')}{unit || ''}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function BarChartInteractive({ data, labels, titleBlock, unit, showValues, barColor, maxVal, fmtVal, type }: {
@@ -916,7 +1038,7 @@ function PieChartInteractive({ segments, gradient, titleBlock, unit, centerHandl
 
 // ── Metric ──────────────────────────────────────────────────────────────────
 // 라벨 + 대표값 + 증감(delta) 전용 카드. Card + Text 3개 조합 대체.
-function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon }: {
+function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, align, labelAlign, valueAlign, deltaAlign, subLabelAlign }: {
   label: string;
   value: string | number;
   unit?: string;
@@ -924,26 +1046,48 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon }: {
   deltaType?: 'up' | 'down' | 'neutral';
   subLabel?: string;
   icon?: string;
+  /** 전체 정렬 일괄 지정 (하위 4개 개별 align 이 없으면 이 값 사용). */
+  align?: 'left' | 'right' | 'center';
+  /** 필드별 정렬 override — 각각 따로 지정 가능. 미지정 시 한국 금융 카드 스타일:
+   *  label·subLabel=가운데, value=(숫자→우측 / 텍스트→가운데), delta=우측. */
+  labelAlign?: 'left' | 'right' | 'center';
+  valueAlign?: 'left' | 'right' | 'center';
+  deltaAlign?: 'left' | 'right' | 'center';
+  subLabelAlign?: 'left' | 'right' | 'center';
 }) {
   const deltaColor = deltaType === 'up' ? 'text-red-600' : deltaType === 'down' ? 'text-blue-600' : 'text-gray-500';
   const deltaArrow = deltaType === 'up' ? '▲' : deltaType === 'down' ? '▼' : '';
-  const valStr = typeof value === 'number' ? value.toLocaleString('ko-KR') : value;
+  const valStr = formatNumberString(value);
+
+  // value 가 숫자 패턴인지 (콤마·부호·단위 허용)
+  const valueIsNumeric = typeof value === 'number'
+    || /^[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(원|%|배|개|건|만|억|조|명|월|일|시|분)?$/.test(String(value).trim());
+
+  // 우선순위: 필드별 명시 > 전체 align > 자동(한국 금융 카드 스타일)
+  const la = labelAlign    ?? align ?? 'center';
+  const va = valueAlign    ?? align ?? (valueIsNumeric ? 'right' : 'center');
+  const da = deltaAlign    ?? align ?? 'right';
+  const sa = subLabelAlign ?? align ?? 'center';
+
+  const justify = (a: string) => a === 'center' ? 'justify-center' : a === 'right' ? 'justify-end' : 'justify-start';
+  const text    = (a: string) => a === 'center' ? 'text-center'    : a === 'right' ? 'text-right'   : 'text-left';
+
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm">
-      <div className="flex items-center gap-1.5 text-xs text-gray-500 mb-1">
+    <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm flex flex-col">
+      <div className={`flex items-center gap-1.5 text-xs text-gray-500 mb-1 ${justify(la)}`}>
         {icon && <span>{icon}</span>}
         <span className="font-medium">{label}</span>
       </div>
-      <div className="flex items-baseline gap-1">
-        <span className="text-2xl font-bold text-gray-900">{valStr}</span>
+      <div className={`flex items-baseline gap-1 w-full ${justify(va)}`}>
+        <span className={`text-2xl font-bold text-gray-900 ${valueIsNumeric ? 'tabular-nums' : ''}`}>{valStr}</span>
         {unit && <span className="text-sm text-gray-500">{unit}</span>}
       </div>
       {delta != null && (
-        <div className={`text-xs font-bold mt-1 ${deltaColor}`}>
-          {deltaArrow} {typeof delta === 'number' ? delta.toLocaleString('ko-KR') : delta}
+        <div className={`text-xs font-bold mt-1 tabular-nums ${deltaColor} ${text(da)}`}>
+          {deltaArrow} {formatNumberString(delta)}
         </div>
       )}
-      {subLabel && <div className="text-xs text-gray-400 mt-1">{subLabel}</div>}
+      {subLabel && <div className={`text-xs text-gray-400 mt-1 ${text(sa)}`}>{subLabel}</div>}
     </div>
   );
 }

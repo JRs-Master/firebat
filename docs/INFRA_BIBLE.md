@@ -145,7 +145,7 @@ LLM 어댑터는 resolver 함수를 받아 lazy 초기화 (API 키 미설정 상
 | `LLM_TIMEOUT_MS` | `60000` | LLM 타임아웃 |
 | `SANDBOX_TIMEOUT_MS` | `30000` | 샌드박스 타임아웃 |
 | `CRON_DEFAULT_TIMEZONE` | `Asia/Seoul` | 기본 타임존 |
-| `BASE_URL` | `https://firebat.co.kr` | SEO/OG 외부 노출 도메인 |
+| `BASE_URL` | `http://localhost:3000` | SEO/OG 외부 노출 도메인. `NEXT_PUBLIC_BASE_URL` env 또는 `lib/base-url.ts` `getBaseUrl(req)` 로 요청 host 자동 감지 가능 |
 
 ---
 
