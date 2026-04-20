@@ -350,8 +350,24 @@ export class CliGeminiFormat implements FormatHandler {
                 }
               }
             } else {
-              textParts.push(raw);
-              options.onChunk?.({ type: 'text', content: raw });
+              // [Thought:] 마커 없이 누출된 reasoning 블록 감지.
+              // Gemini CLI 가 minimal/low thinking 에서 '**Conducting Final Review** I'm now...' 같은
+              // 사고 과정을 text 스트림에 뱉는 경우 대응.
+              // 보수적 감지: reasoning 시그니처 키워드(gerund + 1인칭) 둘 다 있는 영문 문단만 분리.
+              // 영어로 답변해달라는 정상 요청에는 영향 없음.
+              const REASONING_GERUND = /\b(Conducting|Analyzing|Refining|Reviewing|Finalizing|Preparing|Evaluating|Processing|Synthesizing|Compiling|Investigating|Considering|Formulating|Examining)\b/;
+              const FIRST_PERSON = /\bI['']?(m|ve| am| will| have| need| ensure|\s)|\bLet me\b|\bMy (next|step|plan|focus|approach)\b/;
+              const chunks = raw.split(/\n{2,}/);
+              for (const chunk of chunks) {
+                if (!chunk.trim()) continue;
+                const looksLikeReasoning = REASONING_GERUND.test(chunk) && FIRST_PERSON.test(chunk) && !/[가-힣]/.test(chunk);
+                if (looksLikeReasoning) {
+                  options.onChunk?.({ type: 'thinking', content: chunk });
+                } else {
+                  textParts.push(chunk + '\n\n');
+                  options.onChunk?.({ type: 'text', content: chunk + '\n\n' });
+                }
+              }
             }
           }
           return;

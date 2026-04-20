@@ -831,7 +831,7 @@ export function Sidebar({
               {conversations.length === 0 && (
                 <p className="text-[12px] text-slate-400 text-center py-6">대화 내역이 없습니다.</p>
               )}
-              {conversations.map(conv => {
+              {[...conversations].sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt)).map(conv => {
                 const convSelected = selectedItem === `conv:${conv.id}`;
                 return (
                   <div key={conv.id}>

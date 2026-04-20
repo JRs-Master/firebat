@@ -753,7 +753,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     } catch {}
   }, []);
 
-  const convMetas: ConversationMeta[] = conversations.map(({ id, title, createdAt }) => ({ id, title, createdAt }));
+  const convMetas: ConversationMeta[] = conversations.map(({ id, title, createdAt, updatedAt }) => ({ id, title, createdAt, updatedAt }));
 
   return {
     messages, input, setInput, loading,
