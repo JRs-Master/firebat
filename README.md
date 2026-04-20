@@ -97,7 +97,7 @@ User prompt
 ```
 
 - **Multi-provider**: OpenAI GPT-5.4 / Anthropic Claude 4 / Google Gemini 3 / GCP Vertex AI — one `ILlmPort`, add models by dropping a JSON config
-- **CLI mode**: Subscription-based (Claude Pro/Max, ChatGPT Plus/Pro, Google AI Pro) — no API key, runs the local CLI as a child process
+- **CLI mode**: Subscription-based (Claude Pro/Max, ChatGPT Plus/Pro, Google AI Pro) — no API key, runs the local CLI as a child process. Session resume + Claude Code persistent daemon for 2nd-turn speedup
 - **Streaming**: `onChunk` callback → SSE `chunk` event delivers tokens and thinking in real time
 - **Core tools**: File CRUD, page management, module execution, scheduling, secrets, MCP calls, inline component rendering
 - **Auto vs. confirm policy**: Irreversible actions prompt for approval; everything else runs automatically

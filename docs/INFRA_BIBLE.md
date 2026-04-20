@@ -53,14 +53,23 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - **포맷 핸들러 8종** (`infra/llm/formats/*.ts`) — API 5 + CLI 3:
   | format | SDK / 실행 | 용도 |
   |---|---|---|
-  | `openai-responses` | `openai` | OpenAI Responses API — GPT-5.4 (MCP hosted, tool_search, previous_response_id, 24h cache, reasoning) |
-  | `anthropic-messages` | `@anthropic-ai/sdk` | Anthropic Messages API — Claude 4 (MCP hosted, extended thinking) |
-  | `gemini-native` | `@google/genai` (apiKey) | Gemini AI Studio — 네이티브 functionCall/functionResponse 멀티턴 |
+  | `openai-responses` | `openai` (`client.responses`) | OpenAI Responses API — GPT-5.4 (MCP connector, tool_search + defer_loading, previous_response_id, 24h cache, reasoning.effort) |
+  | `anthropic-messages` | `@anthropic-ai/sdk` (`client.beta.messages`) | Claude 4 Messages API — MCP connector 2025-11-20 (`betas + mcp_toolset` 필수), extended thinking, max_tokens 32K |
+  | `gemini-native` | `@google/genai` (apiKey) | Gemini AI Studio — 네이티브 functionCall/functionResponse 멀티턴 (rawModelParts 보존) |
   | `vertex-gemini` | `@google/genai` (vertexai:true) | GCP Vertex AI — Service Account JSON + OAuth access token 자동 갱신 |
-  | `openai-chat` | `openai` | OpenAI Chat Completions 호환 (Ollama/OpenRouter/LM Studio 등 서드파티) |
-  | `cli-claude-code` | `claude` 자식 프로세스 | Claude Pro/Max 구독. stream-json 이벤트 파싱, `--effort` thinking, `--mcp-config` |
-  | `cli-codex` | `codex exec` 자식 프로세스 | ChatGPT Plus/Pro 구독. 임시 `CODEX_HOME`에 config.toml + stdio MCP, `model_reasoning_effort` |
-  | `cli-gemini` | `gemini -p` 자식 프로세스 | Google AI Pro 구독. 임시 `GEMINI_HOME`에 settings.json + stdio MCP, `--output-format stream-json` |
+  | `openai-chat` | `openai` (`client.chat.completions`) | OpenAI Chat Completions 호환 (Ollama/OpenRouter/LM Studio 등 예비, 현재 등록 모델 없음) |
+  | `cli-claude-code` | `claude` 자식 프로세스 | Claude Pro/Max 구독. `--print --output-format stream-json --verbose --allowed-tools 'mcp__firebat__*' --mcp-config <json> --effort <level>`. **Daemon 지원**: `conversationId` 있으면 `--input-format stream-json` 으로 대화당 프로세스 재사용 |
+  | `cli-codex` | `codex exec` 자식 프로세스 | ChatGPT Plus/Pro 구독. 임시 `CODEX_HOME/config.toml` ([mcp_servers.firebat]) + env 주입, `--json --skip-git-repo-check --full-auto -c model_reasoning_effort="<level>"`. 이벤트: `thread.started` / `turn.{started,completed,failed}` / `item.{started,completed}.item.type:agent_message\|reasoning\|mcp_tool_call` |
+  | `cli-gemini` | `gemini -p` 자식 프로세스 | Google AI Pro 구독. `workspace/.gemini/settings.json` (프로젝트 로컬 MCP, cwd 자동 로드) + `GEMINI.md` (시스템 프롬프트) + cwd 설정. `--output-format stream-json --approval-mode yolo`. **도구 이름 `mcp_firebat_` 접두사**. 이벤트: `init` / `message{role}` / `tool_use{tool_name,tool_id,parameters}` / `tool_result{tool_id,output}` / `result` |
+
+- **CLI 세션 resume** (3사 공통):
+  - DB: `conversations` 테이블 `cli_session_id`, `cli_model` 컬럼. 모델 변경 시 자동 무효화.
+  - 플래그: Claude `--resume <uuid>`, Codex `exec resume <id>`, Gemini `--resume <uuid>`
+  - resume 시 prompt 에 history 중복 주입 금지 (CLI 세션이 이미 보유)
+- **Claude Code Persistent Daemon** (`claude-code-daemon.ts`):
+  - 대화당 1개 subprocess, LRU max 5, 30분 idle timeout
+  - stdin stream-json 으로 user message 주입, stdout 이벤트 수집
+  - 신규 데몬 첫 send 시 UI history seed, 이후는 prompt 만
 - **ConfigDrivenAdapter**: `config.format` → 해당 FormatHandler에 위임. 각 핸들러는 `ask/askText/askWithTools` 시그니처 통일.
 - **Lazy 인증**: API Key/Service Account는 resolver 함수로 첫 호출 시 로드. Vault 변경 시 WeakMap 캐시 무효화.
 - **인증 분리**: API Key (OpenAI/Gemini/Anthropic) vs Service Account JSON (Vertex).
