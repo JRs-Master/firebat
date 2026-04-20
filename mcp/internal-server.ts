@@ -40,9 +40,9 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     rows: z.array(z.array(z.string())),
     /** 컬럼별 정렬. 미지정 시 자동(숫자 컬럼→right, 그 외→left). 짧은 상태·뱃지성 단어는 center 추천. */
     align: z.array(z.enum(['left', 'right', 'center'])).optional(),
-    /** 셀별 정렬 override — cellAlign[행][열]. 합계 행·특정 셀만 따로 맞출 때. */
-    cellAlign: z.array(z.array(z.enum(['left', 'right', 'center']))).optional(),
-  }, '표. 수치 3개 이상 시 필수. 기본 정렬은 자동(숫자→우측, 텍스트→좌측). align 로 컬럼, cellAlign 으로 셀별 override.');
+    // 참고: 셀별 정렬(cellAlign) 은 Gemini CLI 가 중첩 배열 + enum 스키마를 거부해서 MCP 도구 노출에서 제외.
+    // PageSpec body 에서 직접 prop 으로 지정은 여전히 가능 (components.tsx Table 컴포넌트는 cellAlign 지원).
+  }, '표. 수치 3개 이상 시 필수. 기본 정렬은 자동(숫자→우측, 텍스트→좌측). align 로 컬럼별 정렬 지정 가능.');
   makeRender('render_alert', 'Alert', {
     message: z.string(),
     type: z.enum(['info','warn','error','success']).describe('warn=주황, error=빨강, success=초록, info=파랑'),
