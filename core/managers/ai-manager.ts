@@ -2143,6 +2143,11 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 PageSpec: {slug, status:"published", project, head:{title, description, keywords, og}, body:[{type:"Html", props:{content:"..."}}]}.
 - og 필수. HTML+CSS+JS 자유. 프로덕션 수준 디자인.
 - localStorage/sessionStorage 금지 (sandbox). vw 단위 금지 (100% 사용).
+- **slug 컨벤션**: 라우트는 catch-all 이라 슬래시 중첩 허용.
+  - 독립 페이지 (프로젝트 없음): 평탄 kebab-case. 예: "about", "contact-us"
+  - 프로젝트 소속 페이지: "{project}/{detail-kebab}" 중첩. 예: "bitcoin/2026-04-20-review", "bitcoin/weekly/W16"
+  - project 필드는 slug 의 첫 세그먼트와 **일치**시킬 것
+  - 공백·선행/후행 슬래시·연속 슬래시 금지. 깊이 2~3단계 권장
 
 ## 금지
 - [Kernel Block] 에러 → 도구 호출 중단, 우회 금지.

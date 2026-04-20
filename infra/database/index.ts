@@ -100,6 +100,15 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
       )
     `);
     try { this.db.exec('CREATE INDEX IF NOT EXISTS idx_routing_cache_kind ON routing_cache(kind, last_used_at DESC)'); } catch {}
+
+    // 페이지 URL 리디렉트 — slug 변경 시 구 URL 로 들어오는 요청을 신 URL 로 자동 이동
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS page_redirects (
+        from_slug   TEXT PRIMARY KEY,
+        to_slug     TEXT NOT NULL,
+        created_at  INTEGER NOT NULL
+      )
+    `);
   }
 
   async query(sql: string, params?: unknown[]): Promise<InfraResult<Record<string, unknown>[]>> {

@@ -281,6 +281,44 @@ export function Sidebar({
     setEditingPageSlug(slug);
   };
 
+  // URL 변경 모달 상태 — type: page (단일 slug) / project (일괄 이름 변경)
+  const [renameTarget, setRenameTarget] = useState<{ type: 'page' | 'project'; current: string } | null>(null);
+  const [renameInput, setRenameInput] = useState('');
+  const [renameSetRedirect, setRenameSetRedirect] = useState(true);
+  const [renaming, setRenaming] = useState(false);
+
+  const openRenamePage = (slug: string) => { setRenameTarget({ type: 'page', current: slug }); setRenameInput(slug); setRenameSetRedirect(true); };
+  const openRenameProject = (name: string) => { setRenameTarget({ type: 'project', current: name }); setRenameInput(name); setRenameSetRedirect(true); };
+
+  const submitRename = async () => {
+    if (!renameTarget || !renameInput.trim() || renameInput === renameTarget.current) return;
+    setRenaming(true);
+    try {
+      if (renameTarget.type === 'page') {
+        const res = await fetch(`/api/pages/${encodeURIComponent(renameTarget.current)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ newSlug: renameInput.trim(), setRedirect: renameSetRedirect }),
+        });
+        const data = await res.json();
+        if (!data.success) { alert(data.error || '변경 실패'); return; }
+      } else {
+        const res = await fetch(`/api/fs/projects`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'rename', project: renameTarget.current, newName: renameInput.trim(), setRedirect: renameSetRedirect }),
+        });
+        const data = await res.json();
+        if (!data.success) { alert(data.error || '변경 실패'); return; }
+      }
+      setRenameTarget(null);
+      fetchPages();
+      fetchProjects();
+    } finally {
+      setRenaming(false);
+    }
+  };
+
   const toggleProject = (name: string) => {
     setExpandedProjects(prev => {
       const next = new Set(prev);
@@ -569,6 +607,23 @@ export function Sidebar({
                                     <Clock size={11} /> 스케줄
                                   </button>
                                   <div className="border-t border-slate-100 my-0.5" />
+                                  {/* URL 변경 — 단일 페이지는 slug 편집, 프로젝트는 이름 일괄 변경 */}
+                                  {isSingle && mainSlug ? (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); openRenamePage(mainSlug); setOpenMenu(null); setSelectedItem(null); }}
+                                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
+                                    >
+                                      <Globe size={11} /> URL 변경
+                                    </button>
+                                  ) : (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); openRenameProject(mp.name); setOpenMenu(null); setSelectedItem(null); }}
+                                      className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
+                                    >
+                                      <Globe size={11} /> 프로젝트 이름 변경
+                                    </button>
+                                  )}
+                                  <div className="border-t border-slate-100 my-0.5" />
                                   {isSingle && mainSlug ? (
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleDeletePage(mainSlug); setOpenMenu(null); setSelectedItem(null); }}
@@ -645,6 +700,12 @@ export function Sidebar({
                                               className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
                                             >
                                               <Pencil size={10} /> 편집
+                                            </button>
+                                            <button
+                                              onClick={(e) => { e.stopPropagation(); openRenamePage(pg.slug); setOpenMenu(null); setSelectedItem(null); }}
+                                              className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-600 hover:bg-slate-50 transition-colors"
+                                            >
+                                              <Globe size={10} /> URL 변경
                                             </button>
                                             {/* visibility 서브메뉴 */}
                                             {(['public', 'password', 'private'] as const).map(vis => {
@@ -822,6 +883,51 @@ export function Sidebar({
         onClose={() => setEditingPageSlug(null)}
         onSaved={fetchPages}
       />
+    )}
+
+    {/* URL / 프로젝트 이름 변경 모달 */}
+    {renameTarget && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={() => !renaming && setRenameTarget(null)}>
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+          <div className="px-5 py-3 border-b border-slate-200 bg-slate-50">
+            <h3 className="text-sm font-bold text-slate-800">
+              {renameTarget.type === 'page' ? 'URL (slug) 변경' : '프로젝트 이름 변경'}
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {renameTarget.type === 'page'
+                ? `현재: /${renameTarget.current}`
+                : `현재 프로젝트: ${renameTarget.current} — 소속 페이지 slug 전부 일괄 변경`}
+            </p>
+          </div>
+          <div className="px-5 py-4 flex flex-col gap-3">
+            <input
+              type="text"
+              value={renameInput}
+              onChange={e => setRenameInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !renaming) submitRename(); }}
+              placeholder={renameTarget.type === 'page' ? '새 slug (예: bitcoin/2026-04-20-review)' : '새 프로젝트 이름 (예: bitcoin-reviews)'}
+              autoFocus
+              disabled={renaming}
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100"
+            />
+            <label className="flex items-center gap-2 text-[12px] text-slate-700 cursor-pointer">
+              <input type="checkbox" checked={renameSetRedirect} onChange={e => setRenameSetRedirect(e.target.checked)} disabled={renaming} />
+              <span>구 URL → 새 URL 리디렉트 등록 (권장, 외부 공유된 링크 유지)</span>
+            </label>
+            <p className="text-[10px] text-slate-400">
+              {renameTarget.type === 'page'
+                ? 'slug 는 kebab-case + 슬래시 중첩 허용. 공백/선행후행슬래시/연속슬래시 금지.'
+                : '소속 페이지의 slug 첫 세그먼트가 일괄 교체됩니다. 모듈 폴더명은 영향 받지 않음.'}
+            </p>
+          </div>
+          <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+            <button onClick={() => setRenameTarget(null)} disabled={renaming} className="px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-40">취소</button>
+            <button onClick={submitRename} disabled={renaming || !renameInput.trim() || renameInput === renameTarget.current} className="px-3 py-1.5 text-[12px] bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg disabled:bg-slate-300">
+              {renaming ? '변경 중...' : '변경'}
+            </button>
+          </div>
+        </div>
+      </div>
     )}
 
     {/* 스케줄 등록/수정 모달 */}

@@ -1,4 +1,4 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { getCore } from '../../../lib/singleton';
 import { ComponentRenderer } from './components';
@@ -8,10 +8,14 @@ import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
 
-/** URL 인코딩된 한글 slug를 안전하게 디코딩 */
-function safeDecodeSlug(slug: string): string {
-  try { return decodeURIComponent(slug); }
-  catch { return slug; }
+/** URL 인코딩된 한글 slug를 안전하게 디코딩 (catch-all 세그먼트 배열 지원) */
+function safeDecodeSlug(slugArr: string[] | string): string {
+  const raw = Array.isArray(slugArr) ? slugArr.map(s => {
+    try { return decodeURIComponent(s); } catch { return s; }
+  }).join('/') : (() => {
+    try { return decodeURIComponent(slugArr); } catch { return slugArr; }
+  })();
+  return raw;
 }
 
 /** 페이지 visibility를 해석 (페이지 자체 → 프로젝트 상속 → 기본 public) */
@@ -26,7 +30,7 @@ function resolveVisibility(spec: { _visibility?: string; project?: string }): 'p
   return 'public';
 }
 
-type Props = { params: Promise<{ slug: string }> };
+type Props = { params: Promise<{ slug: string[] }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const rawSlug = (await params).slug;
@@ -79,7 +83,12 @@ export default async function DynamicPage({ params }: Props) {
   const slug = safeDecodeSlug(rawSlug);
   const core = getCore();
   const result = await core.getPage(slug);
-  if (!result.success || !result.data) notFound();
+  if (!result.success || !result.data) {
+    // 리디렉트 테이블 확인 — slug 변경/프로젝트 이동된 페이지 자동 이동
+    const redirectTo = await core.getPageRedirect(slug);
+    if (redirectTo) redirect(`/${redirectTo}`);
+    notFound();
+  }
 
   const spec = result.data;
   const visibility = resolveVisibility(spec);

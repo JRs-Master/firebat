@@ -11,7 +11,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { SystemModuleSettings } from './components/SystemModuleSettings';
 import { SecretInput } from './components/ChatWidgets';
 import StockChart from './chat-components/StockChart';
-import { ComponentRenderer } from '../(user)/[slug]/components';
+import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
 

@@ -165,6 +165,21 @@ export class FirebatCore {
     return res;
   }
 
+  async renamePage(oldSlug: string, newSlug: string, opts?: { setRedirect?: boolean }) {
+    const res = await this.page.rename(oldSlug, newSlug, opts ?? {});
+    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    return res;
+  }
+
+  async renameProject(oldName: string, newName: string, opts?: { setRedirect?: boolean }) {
+    const res = await this.page.renameProject(oldName, newName, opts ?? {});
+    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    return res;
+  }
+
+  /** from_slug → to_slug 리디렉트 — (user)/[...slug]/page.tsx 에서 사용 */
+  async getPageRedirect(fromSlug: string) { return this.page.getRedirect(fromSlug); }
+
   async listStaticPages() { return this.page.listStatic(); }
 
   /** 페이지 visibility 설정 */
