@@ -341,7 +341,7 @@ export class CliGeminiFormat implements FormatHandler {
                 parts.push({ kind: 'thinking', text: raw.slice(lastIdx) });
               }
               for (const p of parts) {
-                if (!p.text) continue;
+                if (!p.text || !p.text.trim()) continue; // 공백만 있는 조각은 스킵 (isThinking 플립 방지)
                 if (p.kind === 'text') {
                   textParts.push(p.text);
                   options.onChunk?.({ type: 'text', content: p.text });

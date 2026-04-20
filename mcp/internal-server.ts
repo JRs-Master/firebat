@@ -33,6 +33,11 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     type: z.enum(['info','warn','error','success']),
     title: z.string().optional(),
   }, '알림/주의/경고 박스.');
+  makeRender('render_callout', 'Callout', {
+    message: z.string(),
+    type: z.enum(['info','success','tip','accent','highlight','neutral']).optional(),
+    title: z.string().optional(),
+  }, '정보 강조 박스. 경고 외 일반 안내·팁·하이라이트용.');
   makeRender('render_badge', 'Badge', { text: z.string(), color: z.string() }, '작은 태그/뱃지.');
   makeRender('render_progress', 'Progress', {
     value: z.number(), max: z.number().optional(), label: z.string().optional(), color: z.string().optional(),
