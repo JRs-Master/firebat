@@ -429,10 +429,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     });
     // 명령 전송 직후엔 사용자가 어디 있든 무조건 하단으로 — user 메시지 + 로봇 '생각중' 이 viewport 끝에 보이게.
     // isNearBottomRef 를 true 로 되돌려 이후 첫 chunk 도달 시 자연스럽게 따라가는 하단 상태 유지.
+    // React state 반영 → DOM 업데이트 후 스크롤해야 하므로 rAF 두 번 (commit 이후 paint 시점 보장).
     isNearBottomRef.current = true;
-    queueMicrotask(() => {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-    });
+    }));
     // 저장 시점 1: 유저 메시지 DB 즉시 반영 (스트리밍 끊겨도 유저 입력은 남음)
     const convIdForSave = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
     if (convIdForSave) {
