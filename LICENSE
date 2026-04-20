@@ -1,0 +1,67 @@
+Firebat — Source-Available License (Interim)
+
+Copyright (c) 2026 Firebat. All Rights Reserved.
+
+The source code in this repository is made publicly visible for transparency,
+review, and personal study. No other rights are granted.
+
+1. Permissions — you MAY:
+   - View and read the source code.
+   - Clone the repository for personal, non-production study and evaluation.
+   - Submit issues, pull requests, and suggestions (submission implies a
+     non-exclusive license for Firebat to use the contribution).
+
+2. Restrictions — you MAY NOT, without prior written permission from Firebat:
+   - Copy, modify, merge, publish, or create derivative works.
+   - Distribute, sublicense, or sell copies or modified versions.
+   - Deploy this software — in whole or in part, modified or unmodified — in
+     a production environment, a commercial product, or a hosted service.
+   - Remove or alter copyright, trademark, or attribution notices.
+
+3. Future re-licensing:
+   Firebat reserves the right to re-license this software under a standard
+   open-source or source-available license (e.g., Apache-2.0, MIT, AGPL-3.0,
+   BSL-1.1) at any time. Any such re-license applies from its effective date
+   forward; this notice governs the code until then.
+
+4. No warranty:
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+   THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY.
+
+Contact: https://firebat.co.kr
+
+---
+
+Firebat — 소스 공개 라이선스 (임시)
+
+Copyright (c) 2026 Firebat. All Rights Reserved.
+
+본 저장소의 소스 코드는 투명성 · 코드 리뷰 · 개인 학습 목적으로만 공개됩니다.
+그 외의 권리는 부여되지 않습니다.
+
+1. 허용 범위 — 다음은 허용됩니다:
+   - 소스 코드의 열람 및 읽기.
+   - 개인 학습 · 비상용 평가를 위한 저장소 클론.
+   - 이슈 · PR · 제안 제출 (제출은 Firebat이 해당 기여를 사용할 수 있는
+     비배타적 라이선스를 의미합니다).
+
+2. 금지 사항 — Firebat의 사전 서면 허가 없이 다음을 할 수 없습니다:
+   - 복제 · 수정 · 병합 · 배포 · 파생 저작물 작성.
+   - 재배포 · 서브라이선스 · 판매 (수정판 포함).
+   - 상용 제품 · 호스팅 서비스 · 운영 환경에서의 배포.
+     (전체 또는 일부, 수정 여부와 무관)
+   - 저작권 · 상표 · 출처 표기의 제거 또는 변경.
+
+3. 향후 재라이선스:
+   Firebat은 언제든 표준 오픈소스 혹은 소스 공개 라이선스(Apache-2.0, MIT,
+   AGPL-3.0, BSL-1.1 등)로 재라이선스할 권리를 보유합니다. 재라이선스는
+   그 발효일 이후부터 적용되며, 그 전까지는 본 고지가 적용됩니다.
+
+4. 면책:
+   본 소프트웨어는 "있는 그대로(AS IS)" 제공되며 상품성 · 특정 목적 적합성 ·
+   비침해에 대한 어떠한 보증도 하지 않습니다. 저작자는 어떠한 청구 · 손해 ·
+   책임에 대해서도 책임지지 않습니다.
+
+문의: https://firebat.co.kr

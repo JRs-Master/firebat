@@ -20,7 +20,7 @@
   <img src="https://img.shields.io/badge/LLM-Multi--Provider-4285F4" alt="Multi-Provider LLM" />
   <img src="https://img.shields.io/badge/MCP-1.29-purple" alt="MCP" />
   <img src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite" alt="SQLite" />
-  <img src="https://img.shields.io/badge/License-Private-red" alt="License" />
+  <img src="https://img.shields.io/badge/License-Source--Available-red" alt="License" />
 </p>
 
 ---
@@ -323,6 +323,14 @@ firebat/
 | **v2.0** | Rust Core + gRPC + dynamic loading of system modules | Planned |
 
 > 🇰🇷 **로드맵** — v0.1(완료): Core + Infra + 11 매니저 + MCP + 스케줄링 + Vault + 멀티 LLM + CLI 모드. v1.0(예정): 3-Tier Docker(EasyPanel) + Core/Next.js IPC 분리. v2.0(예정): Rust Core + gRPC + 시스템 모듈 동적 로드.
+
+---
+
+## License
+
+Source-available for viewing and study. Redistribution, modification, and production / commercial use require prior written permission. See [LICENSE](LICENSE) for full terms. The license may be upgraded to a standard open-source license (Apache-2.0, MIT, AGPL-3.0, BSL-1.1, …) in the future.
+
+> 🇰🇷 **라이선스** — 소스 열람/학습 목적으로 공개. 재배포·수정·상용 사용은 사전 서면 허가 필요. 전체 조건은 [LICENSE](LICENSE) 참조. 향후 표준 오픈소스 라이선스(Apache-2.0, MIT, AGPL-3.0, BSL-1.1 등)로 전환 가능.
 
 ---
 
