@@ -359,19 +359,10 @@ export class CliGeminiFormat implements FormatHandler {
                 }
               }
             } else {
-              // [Thought:] 마커 없이 누출된 reasoning 블록 감지 — chunk 전체 기준 한 번만 판정.
-              // split·개행 추가 하지 않음 (markdown 표가 깨지거나 Thought 마커가 경계에 걸리는 문제 방지).
-              // 최종 cleanup 은 sanitizeFinal 에서 처리.
-              const REASONING_GERUND = /\b(Conducting|Analyzing|Refining|Reviewing|Finalizing|Preparing|Evaluating|Processing|Synthesizing|Compiling|Investigating|Considering|Formulating|Examining)\b/;
-              const FIRST_PERSON = /\bI['']?(m|ve| am| will| have| need)\b|\bLet me\b|\bMy (next|step|plan|focus|approach)\b/;
-              const hasKorean = /[가-힣]/.test(raw);
-              const looksLikeReasoning = !hasKorean && REASONING_GERUND.test(raw) && FIRST_PERSON.test(raw);
-              if (looksLikeReasoning) {
-                options.onChunk?.({ type: 'thinking', content: raw });
-              } else {
-                textParts.push(raw);
-                options.onChunk?.({ type: 'text', content: raw });
-              }
+              // thinkingConfig.includeThoughts=false 로 thought 생성 자체가 억제되므로
+              // raw content 는 그대로 text 로 통과. reasoning 감지 defensive regex 제거.
+              textParts.push(raw);
+              options.onChunk?.({ type: 'text', content: raw });
             }
           }
           return;
@@ -450,28 +441,13 @@ export class CliGeminiFormat implements FormatHandler {
       child.on('error', (e) => {
         resolve({ text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId, error: `Gemini CLI 프로세스 에러: ${e.message}` });
       });
-      // 텍스트 후처리 — AI 가 본문에 섞어 넣은 도구 이름·[Thought:] 마커·영문 reasoning 정리.
-      // (프롬프트로 금지해도 Gemini flash 가 종종 뱉으므로 방어)
-      //
-      // 영문 reasoning 시그니처: 문단이 gerund 키워드로 시작하고 1인칭 동사 포함.
-      // 한국어 첫 글자가 나올 때까지의 영문 블록을 전체 제거.
-      // 예) "Comparing Major Tech Stocks I'm now initiating... compile the comparison table. 하이닉스, ..."
-      //   →  "하이닉스, ..."
-      const REASONING_PREFIX = '(?:Comparing|Analyzing|Refining|Reviewing|Finalizing|Preparing|Evaluating|Processing|Synthesizing|Compiling|Investigating|Considering|Formulating|Examining|Displaying|Conducting|Gathering|Summarizing)';
-      const leakedReasoningRe = new RegExp(
-        `(?:^|\\n|\\s)(?:\\*\\*)?\\s*${REASONING_PREFIX}\\b[^가-힣]*?(?=[가-힣]|\\n\\n|$)`,
-        'g',
-      );
+      // 텍스트 후처리 — 최소화. thinkingConfig.includeThoughts=false 로 reasoning 자체가 억제되므로
+      // 특정 언어 블록을 regex 로 잘라내는 defensive 로직 제거. 혹시 CLI 가 뱉는 드문 케이스는
+      // [Thought:] 마커 정도만 제거.
       const sanitizeFinal = (t: string): string => {
         return t
           // [Thought: true|false] 마커 (공백·대소문자 변종 허용)
           .replace(/\[\s*Thought\s*:\s*(?:true|false)\s*\]/gi, '')
-          // 영문 reasoning 누출 제거 — 한국어 첫 글자 직전까지 영문 블록 통째 날림
-          .replace(leakedReasoningRe, ' ')
-          // `mcp_firebat_render_*` / `render_table` / `render_metric` 등 도구 이름 백틱 표기 + 뒤 괄호 설명 제거
-          .replace(/`(?:mcp_firebat_)?render_[a-z_]+`\s*(?:\([^)]*\))?[^\n]*\n?/g, '')
-          // 줄 시작이 도구 이름만 있는 경우 (백틱 없이)
-          .replace(/^\s*mcp_firebat_render_[a-z_]+\b[^\n]*\n/gm, '')
           // 빈 줄 3연속 이상 축약
           .replace(/\n{3,}/g, '\n\n')
           .trim();
