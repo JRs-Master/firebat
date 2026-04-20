@@ -242,8 +242,14 @@ export function useChat(aiModel: string, onRefresh: () => void, isDemo: boolean 
       try { navigator.sendBeacon('/api/conversations', blob); } catch {}
     };
     const refresh = async () => {
-      // 스트리밍·도구 실행 중이면 스킵
-      if (messages.some(m => m.isThinking || m.executing || m.streaming)) return;
+      // 스트리밍·도구 실행 중이면 DB 재조회는 스킵. 단 브라우저가 백그라운드 탭을 throttle 해서
+      // 진행 중 메시지의 DOM 반영이 밀렸을 수 있으므로, 활성 메시지 객체 참조만 새로 만들어 강제 재렌더.
+      if (messages.some(m => m.isThinking || m.executing || m.streaming)) {
+        setMessages(prev => prev.map(m =>
+          (m.isThinking || m.executing || m.streaming) ? { ...m } : m,
+        ));
+        return;
+      }
 
       // 1) 대화 목록 재조회 — 타기기에서 삭제된 대화를 로컬에서도 제거
       try {
