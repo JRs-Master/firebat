@@ -283,11 +283,14 @@ export class ConversationManager {
       } catch { /* 임베딩 실패 시 해당 메시지 스킵 */ }
     }
 
-    // 배열 길이 줄어 사라진 msg_idx 제거
-    for (const idx of existing.keys()) {
-      if (!keepIdx.has(idx)) {
-        await this.db.query(`DELETE FROM conversation_embeddings WHERE conv_id = ? AND msg_idx = ?`, [convId, idx]);
-      }
+    // 배열 길이 줄어 사라진 msg_idx 제거 (한 쿼리로 일괄 삭제)
+    const toDelete = [...existing.keys()].filter(idx => !keepIdx.has(idx));
+    if (toDelete.length > 0) {
+      const placeholders = toDelete.map(() => '?').join(',');
+      await this.db.query(
+        `DELETE FROM conversation_embeddings WHERE conv_id = ? AND msg_idx IN (${placeholders})`,
+        [convId, ...toDelete],
+      );
     }
   }
 

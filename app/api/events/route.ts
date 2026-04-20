@@ -10,26 +10,34 @@ export async function GET(req: NextRequest) {
 
   let unsubscribe: (() => void) | null = null;
   let keepalive: ReturnType<typeof setInterval> | null = null;
+  let closed = false;
+
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    unsubscribe?.();
+    if (keepalive) { clearInterval(keepalive); keepalive = null; }
+  };
 
   const stream = new ReadableStream({
     start(controller) {
       controller.enqueue(encoder.encode(': connected\n\n'));
 
       unsubscribe = eventBus.subscribe((event: FirebatEvent) => {
+        if (closed) return;
         try {
           const data = JSON.stringify({ type: event.type, data: event.data });
           controller.enqueue(encoder.encode(`data: ${data}\n\n`));
-        } catch {}
+        } catch { cleanup(); }
       });
 
       keepalive = setInterval(() => {
-        try { controller.enqueue(encoder.encode(': ping\n\n')); } catch {}
+        if (closed) return;
+        try { controller.enqueue(encoder.encode(': ping\n\n')); }
+        catch { cleanup(); }
       }, 30000);
     },
-    cancel() {
-      unsubscribe?.();
-      if (keepalive) clearInterval(keepalive);
-    },
+    cancel() { cleanup(); },
   });
 
   return new Response(stream, {

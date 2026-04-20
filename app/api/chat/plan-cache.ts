@@ -21,8 +21,9 @@ function cleanup() {
   }
 }
 
-// 1분마다 자동 정리
-setInterval(cleanup, 60_000);
+// 1분마다 자동 정리 — unref()로 프로세스 종료 블로킹 방지, dev HMR 누적 방지
+const _cleanupTimer = setInterval(cleanup, 60_000);
+if (typeof (_cleanupTimer as any).unref === 'function') (_cleanupTimer as any).unref();
 
 export function storePlan(corrId: string, plan: any) {
   // 크기 제한 — 가장 오래된 항목 제거
