@@ -136,6 +136,16 @@ export function sanitizeBlock(block: { type?: string; name?: string; props?: unk
   return { ...block, props: sanitizeValue(block.props, compName as string) as Record<string, unknown> };
 }
 
+/** 유효하지 않은 블록(이름 누락, 빈 content 등) 걸러내기 — 프론트에서 '지원되지 않는 컴포넌트 ()' 방지 */
+export function isValidBlock(block: unknown): boolean {
+  if (!block || typeof block !== 'object') return false;
+  const b = block as { type?: string; name?: string; text?: string; htmlContent?: string };
+  if (b.type === 'component') return typeof b.name === 'string' && b.name.trim().length > 0;
+  if (b.type === 'text') return typeof b.text === 'string' && b.text.trim().length > 0;
+  if (b.type === 'html') return typeof b.htmlContent === 'string' && b.htmlContent.trim().length > 0;
+  return false;
+}
+
 /** reply 텍스트 정제 (최종 사용자 메시지 본문 — 마크다운 렌더러에 들어감).
  *  모든 LLM (API·CLI 공통) 이 거치는 지점 — 공급자별 후처리는 여기로 일원화. */
 export function sanitizeReply(reply: string | undefined | null): string {

@@ -360,7 +360,7 @@ export class CliGeminiFormat implements FormatHandler {
               }
             } else {
               // thinkingConfig.includeThoughts=false 로 thought 생성 자체가 억제되므로
-              // raw content 는 그대로 text 로 통과. reasoning 감지 defensive regex 제거.
+              // raw content 는 그대로 text 로 통과.
               textParts.push(raw);
               options.onChunk?.({ type: 'text', content: raw });
             }
