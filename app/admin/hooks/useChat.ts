@@ -642,14 +642,26 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       ));
     } finally {
       cancelWatchdog();
-      // 스트림 종료 후에도 isThinking이 풀리지 않은 경우 강제 해제
+      // 스트림 종료 후 방어 로직 — '로봇 사라짐 + 빈 메시지' 방지
+      //   1) 여전히 isThinking/executing/streaming 이면 강제 해제
+      //   2) 해제됐지만 visible 콘텐츠 (content/blocks/pendingActions/error) 가 하나도 없으면 fallback 채움
       let finalMsgs: Message[] = [];
       setMessages(prev => {
-        const next = prev.map(msg =>
-          msg.id === `s-${id}` && (msg.isThinking || msg.executing || msg.streaming)
-            ? { ...msg, isThinking: false, executing: false, streaming: false, thinkingText: '답변 완료', content: msg.content || msg.error || '응답을 받지 못했습니다.' }
-            : msg
-        );
+        const next = prev.map(msg => {
+          if (msg.id !== `s-${id}`) return msg;
+          const stillActive = msg.isThinking || msg.executing || msg.streaming;
+          const hasVisible = (msg.content && msg.content.trim()) || msg.error || ((msg.data as { blocks?: unknown[] } | undefined)?.blocks?.length ?? 0) > 0 || (msg.pendingActions?.length ?? 0) > 0 || (msg.suggestions?.length ?? 0) > 0;
+          if (stillActive || !hasVisible) {
+            return {
+              ...msg,
+              isThinking: false, executing: false, streaming: false,
+              thinkingText: '답변 완료',
+              content: msg.content || msg.error || '응답을 받지 못했습니다. 다시 시도해주세요.',
+              error: msg.error || (!hasVisible ? '응답이 비어있습니다 (SSE 연결 끊김 가능성)' : undefined),
+            };
+          }
+          return msg;
+        });
         finalMsgs = next;
         return next;
       });
