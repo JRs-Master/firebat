@@ -876,11 +876,11 @@ export default function AdminConsole() {
                         </>
                       )}
                     </div>
-                    {/* 플랜모드 토글 — ON 이면 propose_plan 강제, OFF 면 AI 판단 */}
+                    {/* 플랜모드 토글 */}
                     <button
                       onClick={() => setPlanMode(!planMode)}
                       disabled={loading}
-                      title={planMode ? '플랜모드 ON — 작업 전 plan 카드 제시' : '플랜모드 OFF — AI 가 알아서 판단'}
+                      title="플랜모드"
                       className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-colors disabled:opacity-50 ${
                         planMode
                           ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'

@@ -1055,9 +1055,9 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                             options={aiAssistantModels.map(id => ({
                               value: id,
                               label: id === 'gemini-3.1-flash-lite-preview'
-                                ? 'Gemini 3.1 Flash Lite — $0.25 / $1.50 per 1M'
+                                ? 'Gemini 3.1 Flash Lite'
                                 : id === 'gpt-5-nano'
-                                  ? 'GPT-5 Nano — $0.05 / $0.40 per 1M (최저가)'
+                                  ? 'GPT-5 Nano'
                                   : id,
                             }))}
                           />
