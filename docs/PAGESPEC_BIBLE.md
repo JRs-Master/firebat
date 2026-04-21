@@ -224,6 +224,48 @@ PageSpec 컴포넌트와 별도로, 채팅에서만 쓰는 특수 컴포넌트.
 - 마크다운/HTML 원본이 의미를 갖는 필드(예: Text.content) 는 `PRESERVE_FIELDS_BY_COMP` 에 컴포넌트별 등록.
 - **하드코딩 금지**: 특정 모델·특정 상황 defensive regex 로 덮지 말고 필드명 분류로 해결.
 
+### 제2항. render_* ↔ 컴포넌트 단일 매핑 (v0.1, 2026-04-21)
+
+`lib/render-map.ts` 가 단일 source. 이전엔 5군데 (ai-manager / cli-gemini / cli-claude-code / cli-codex / claude-code-daemon) 에 동일 매핑 hardcode → 모두 import 통합.
+
+```ts
+// lib/render-map.ts
+export const RENDER_TOOL_MAP = {
+  render_table: 'Table',
+  render_chart: 'Chart',
+  render_metric: 'Metric',
+  // ... 20개
+};
+export function normalizeRenderName(name: string): string | null;
+```
+
+**자동 정규화** (`normalizeRenderName`):
+- `render_table` (정확) → `render_table`
+- `render-table` (kebab) → `render_table`
+- `table` (접두사 누락) → `render_table`
+- 매칭 실패 → null
+
+`AiManager.executeToolCall` default case 가 호출 → AI 가 `table` / `render-chart` / `render_챠트` 등 잘못 호출해도 자동 매칭. 새 컴포넌트 추가 시 `lib/render-map.ts` 한 줄만 수정.
+
+### 제3항. 자동 마크다운 변환 (v0.1, 2026-04-21)
+
+AI 가 시스템 프롬프트 무시하고 `|---|` 마크다운 표 / `## 헤더` 그대로 출력하는 케이스 backend 후처리. `core/utils/sanitize.ts` 의 `extractMarkdownStructure(reply)`:
+
+- reply 를 line 단위로 walk → segments `[text|header|table]` 순서 분할
+- `# ~ ######` 헤더 → `render_header` (level 1~6)
+- `|---| 표` (헤더줄 + 구분줄 + 데이터줄 N개) → `render_table`
+
+`AiManager.processWithTools` 가 segments 로 마지막 text 블록을 교체 (순서 보존). 시스템 프롬프트 강제 룰 대신 후처리.
+
+### 제4항. 컴포넌트 정렬 (column 일관) (v0.1, 2026-04-21)
+
+per-cell numeric 자동 right-align 로직 제거 (column 안 정렬 일관 유지). AI 가 `align: ['left', 'right', 'center', ...]` 명시한 것만 사용. 미지정 시:
+- 데이터 셀: 좌측
+- 헤더: 짧으면(≤20자) center, 길면 좌측 (multi-line 어색 회피)
+- ▲▼ 색상 (등락 시각화) 은 유지
+
+Metric 도 동일: `valueIsNumeric` 자동 right 정렬 제거. AI 가 `valueAlign` 명시 안 하면 center.
+
 ## 제7장: 향후 계획
 
 - [ ] `render_pagespec` 도구 — PageSpec 컴포넌트를 채팅에서도 쓸 수 있게 노출

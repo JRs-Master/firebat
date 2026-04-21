@@ -267,3 +267,81 @@ const result = await core.requestAction(prompt, history, { model: 'gemini-2.5-pr
 - 로그 레벨: `INFO`(정상), `WARN`(스키마 실패), `ERROR`(LLM/액션 실패), `DEBUG`(부팅 등 개발용)
 
 학습 데이터는 `training-YYYY-MM-DD.jsonl`에 자동 분리 저장.
+
+---
+
+## 제9장: AI Assistant + 통합 Resolver (v0.1, 2026-04-21)
+
+### 제1항. 3개 AI 역할 구분
+
+| AI | 역할 | Vault 키 / 위치 |
+|---|---|---|
+| **User AI** | 어드민 채팅의 메인 모델. 사용자가 설정에서 선택. | `system:ai-model` |
+| **AI Assistant** | 백엔드 헬퍼. 도구 라우터 + needs_previous_context 판정 + 자동 search_history 주입. | `system:ai-router:model` |
+| **Code Assistant** | 모나코 에디터 (FileEditor) 의 코드 어시스트 — User AI 와 같은 모델, 시스템 프롬프트만 다름. | (User AI 모델 공유) |
+
+User Prompt (사용자 지시사항, `system:user-prompt`) 는 **User AI 만** 주입. AI Assistant·Code Assistant 는 미주입 (라우팅 정확도·코드 품질 보호).
+
+### 제2항. AI Assistant 모델 선택
+
+`lib/vault-keys.ts` 의 `AI_ASSISTANT_MODELS`:
+```ts
+export const DEFAULT_AI_ASSISTANT_MODEL = 'gemini-3.1-flash-lite-preview';
+export const AI_ASSISTANT_MODELS = ['gemini-3.1-flash-lite-preview', 'gpt-5-nano'];
+```
+
+Core 파사드: `getAiAssistantModel` / `setAiAssistantModel` / `getAvailableAiAssistantModels`.
+
+### 제3항. 통합 호출 Resolver
+
+**문제:** AI 가 도구 호출 시 일관성 부족 — `kakao_talk` / `kakao-talk` / `sysmod_kakao_talk` / `system/modules/kakao-talk/index.mjs` 등 다양한 형태.
+
+**해법:** `AiManager.resolveCallTarget(identifier)` — 비즈니스 로직.
+1. MCP 서버 (외부 등록) 검색 → `{ kind: 'mcp', server }`
+2. `system/modules/*` + `user/modules/*` 폴더 검색 → `{ kind: 'execute', path }`
+3. 변형 매칭: name / snake / kebab / `sysmod_` 접두사 / full path 모두 인식
+4. 60초 캐시
+
+**Core 파사드 (BIBLE 준수, 1줄 wrapper):**
+```ts
+async resolveCallTarget(identifier: string) {
+  return this.ai.resolveCallTarget(identifier);
+}
+```
+
+**적용 위치:**
+- `AiManager.executeToolCall` default case — 일반 대화 도구 호출
+- `TaskManager.runPipeline` MCP_CALL step — server 가 module 명이면 EXECUTE 로 자동 변환
+- `TaskManager.runPipeline` EXECUTE step — bare name → full path 정규화
+
+매니저 간 직접 호출 금지 원칙 준수: TaskManager → Core.resolveCallTarget → AiManager.resolveCallTarget.
+
+### 제4항. Plan Follow-Through (planExecuteId / planReviseId)
+
+`lib/plan-store.ts` — propose_plan 호출 시 planId 발급 + steps 저장 (in-memory map, 30분 TTL, max 50).
+
+**✓실행 (planExecuteId):**
+1. propose_plan 결과 suggestions 에 `{ type: 'plan-confirm', planId, label }` 동봉
+2. 사용자 ✓실행 클릭 → frontend 가 planExecuteId 동봉 chat 요청
+3. Backend: plan-store 조회 → `planToInstruction(plan, originalRequest)` → 시스템 프롬프트 맨 앞 prepend
+4. AI 가 단계별 실행 (시각·예약 표현 인식 시 `schedule_task` wrap)
+
+**⚙수정 제안 (planReviseId):**
+1. suggestions 에 `{ type: 'plan-revise', planId, label, placeholder }` 동봉
+2. 사용자 입력 시 planReviseId + 피드백 텍스트 전송
+3. Backend: `planToReviseInstruction` → "⚙ plan 재작성 모드" 룰 강제 → AI 가 propose_plan 재호출 (새 planId)
+4. 새 PlanCard 발급 → 사용자 다시 ✓실행/⚙수정 가능 (반복)
+
+### 제5항. AI Assistant 자동 history 주입
+
+AI Assistant ON 시:
+1. `routeTools` LLM 호출에서 `needs_previous_context` 동시 판정 (모든 모델 — Gemini API 만이 아니라 GPT/Claude/CLI 도)
+2. 도구 필터링은 Gemini API 만 (CLI 자체 처리, hosted MCP 는 서버측)
+3. needs_previous_context=true → backend 가 `search_history` 자동 호출 + 결과 시스템 프롬프트 prepend
+4. User AI 도구 목록에서 `search_history` 제외 (중복 방지)
+
+### 제6항. 플랜모드 토글 (입력창)
+
+사용자가 명시적으로 ON/OFF 제어. localStorage `firebat_plan_mode` 영속:
+- **ON**: 모든 요청에 `propose_plan` 강제 (예외 0건). `planModePrefix` 가 시스템 프롬프트 맨 앞 prepend.
+- **OFF**: AI 자유 판단 (도구 그대로 유지, AI 가 알아서 호출).
