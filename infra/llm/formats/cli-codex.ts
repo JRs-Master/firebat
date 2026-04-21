@@ -31,28 +31,8 @@ interface CliRunResult {
   error?: string;
 }
 
-const RENDER_COMPONENT_MAP: Record<string, string> = {
-  render_stock_chart: 'StockChart',
-  render_table: 'Table',
-  render_alert: 'Alert',
-  render_callout: 'Callout',
-  render_badge: 'Badge',
-  render_progress: 'Progress',
-  render_header: 'Header',
-  render_text: 'Text',
-  render_list: 'List',
-  render_divider: 'Divider',
-  render_countdown: 'Countdown',
-  render_chart: 'Chart',
-  render_image: 'Image',
-  render_card: 'Card',
-  render_grid: 'Grid',
-  render_metric: 'Metric',
-  render_timeline: 'Timeline',
-  render_compare: 'Compare',
-  render_key_value: 'KeyValue',
-  render_status_badge: 'StatusBadge',
-};
+// render_* 도구 매핑은 lib/render-map.ts 단일 source 에서 import
+import { RENDER_TOOL_MAP as RENDER_COMPONENT_MAP } from '../../../lib/render-map';
 
 interface RunOptions {
   systemPrompt?: string;
