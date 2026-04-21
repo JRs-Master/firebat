@@ -74,7 +74,10 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'StatusBadge':   return <StatusBadgeComp items={p.items ?? []} />;
     case 'PlanCard':      return <PlanCardComp title={p.title ?? ''} steps={p.steps ?? []} estimatedTime={p.estimatedTime} risks={p.risks} />;
     default:
-      return <div className="text-amber-600 text-sm p-3 bg-amber-50 rounded-xl border border-amber-200">지원되지 않는 컴포넌트입니다 ({type})</div>;
+      // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
+      // (개발자는 console 에서 확인 가능)
+      if (typeof console !== 'undefined') console.warn('[ComponentSwitch] 알 수 없는 컴포넌트 type:', type, comp);
+      return null;
   }
 }
 
