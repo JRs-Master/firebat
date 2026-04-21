@@ -16,8 +16,7 @@ export async function GET(req: NextRequest) {
     aiRouterEnabled: routerEnabledRaw === 'true' || routerEnabledRaw === '1',
     aiAssistantModel: core.getAiAssistantModel(),
     aiAssistantModels: core.getAvailableAiAssistantModels(),
-    userPrompt: core.getUserPromptStored(),
-    userPromptDefault: core.getUserPromptDefault(),
+    userPrompt: core.getUserPrompt(),
   });
 }
 

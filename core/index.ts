@@ -16,7 +16,6 @@ import type { FirebatInfraContainer, ILlmPort, LlmChunk, McpServerConfig, CronSc
 import type { InfraResult, FirebatPlan } from './types';
 import type { CapabilitySettings } from './capabilities';
 import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT, VK_SYSTEM_AI_ASSISTANT_MODEL, DEFAULT_AI_ASSISTANT_MODEL, AI_ASSISTANT_MODELS } from './vault-keys';
-import { DEFAULT_USER_PROMPT } from './default-user-prompt';
 import { eventBus } from '../lib/events';
 
 /** AI 요청 옵션 — 요청별 모델/이미지/멀티턴 컨텍스트 지정 */
@@ -382,22 +381,12 @@ export class FirebatCore {
     return this.infra.vault.setSecret(VK_SYSTEM_AI_THINKING_LEVEL, level);
   }
 
-  /** 사용자가 설정한 커스텀 프롬프트 (User AI 전용). Vault 비어있으면 DEFAULT_USER_PROMPT 폴백.
-   *  Code Assistant·AI Assistant 는 사용자 취향 주입 안 함 — 코드 품질·라우팅 정확도 보호. */
+  /** 사용자가 설정한 커스텀 프롬프트 (User AI 전용 — Vault 만, fallback 없음).
+   *  비어있으면 빈 문자열 반환 → 시스템 프롬프트에 사용자 지시사항 섹션 자체 미주입.
+   *  Code Assistant·AI Assistant 는 user prompt 미사용 — 코드 품질·라우팅 정확도 보호. */
   getUserPrompt(): string {
-    const stored = this.infra.vault.getSecret(VK_SYSTEM_USER_PROMPT);
-    if (stored && stored.trim()) return stored;
-    return DEFAULT_USER_PROMPT;
-  }
-
-  /** 사용자가 직접 저장한 값만 반환 — UI textarea 초기값 표시용.
-   *  값이 없으면 DEFAULT_USER_PROMPT 를 placeholder 로 보여주기 위함. */
-  getUserPromptStored(): string {
     return this.infra.vault.getSecret(VK_SYSTEM_USER_PROMPT) || '';
   }
-
-  /** 기본 사용자 프롬프트 (수정 안 했을 때 사용되는 값) — UI 가 placeholder 로 표시. */
-  getUserPromptDefault(): string { return DEFAULT_USER_PROMPT; }
 
   setUserPrompt(prompt: string): boolean {
     // 2000자 제한 (토큰 낭비 방지)
