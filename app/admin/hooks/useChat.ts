@@ -574,12 +574,15 @@ export function useChat(aiModel: string, onRefresh: () => void) {
               }, TICK);
             } else {
               // 즉시 세팅 (Fast Path 또는 에러)
+              // 보이는 게 아무것도 없으면 fallback 메시지 — '로봇 사라짐 + 빈 화면' 방지
+              const hasAnything = fullReply || hasBlocks || pendingActions?.length || ev.data.suggestions?.length || ev.data.error;
+              const fallbackContent = !hasAnything ? '응답이 비어있습니다. 다시 시도해주세요.' : (fullReply || '');
               setMessages(prev => prev.map(msg =>
                 msg.id === `s-${id}`
                   ? {
                       ...msg, isThinking: false, executing: false, streaming: false, statusText: undefined,
                       thinkingText: '답변 완료', thoughts: ev.data.thoughts,
-                      content: fullReply || msg.content,
+                      content: fallbackContent || msg.content,
                       executedActions: ev.data.executedActions || [], data: ev.data.data, error: ev.data.error, planPending: false,
                       suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
                       pendingActions: pendingActions?.map(p => ({ ...p, status: p.status ?? 'pending' })),
@@ -593,8 +596,10 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             setMessages(prev => prev.map(msg =>
               msg.id === `s-${id}`
                 ? { ...msg, isThinking: false, executing: false, streaming: false,
-                    thinkingText: '답변 완료', // 에러여도 완료 표시 유지 (로봇·글자 사라지는 문제 방지)
-                    error: ev.data.error, content: msg.content || '' }
+                    thinkingText: '답변 완료',
+                    error: ev.data.error,
+                    // content 비어있으면 fallback — 메시지 박스가 visible 하게
+                    content: msg.content || (ev.data.error ? '' : '응답을 받지 못했습니다.') }
                 : msg
             ));
           }
