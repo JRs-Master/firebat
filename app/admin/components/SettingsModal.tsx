@@ -41,6 +41,32 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const [aiMode, setAiMode] = useState<'general' | 'vertex'>(_initMp.mode);
   const [aiProvider, setAiProvider] = useState<'openai' | 'google' | 'anthropic'>(_initMp.provider);
   const [cliProvider, setCliProvider] = useState<CliProvider>(_initMp.cliProvider);
+
+  /** 카테고리별 마지막 선택 모델 — 공급자/모드 전환 시 첫 모델(auto) 대신 직전 선택 복원.
+   *  카테고리 키: cli-claude / cli-codex / cli-gemini / vertex-google / api-openai / api-google / api-anthropic */
+  const categoryOf = (model: string): string => {
+    if (model.startsWith('cli-claude-code')) return 'cli-claude';
+    if (model.startsWith('cli-codex')) return 'cli-codex';
+    if (model.startsWith('cli-gemini')) return 'cli-gemini';
+    if (model.endsWith('-vertex')) return 'vertex-google';
+    if (model.startsWith('gpt-')) return 'api-openai';
+    if (model.startsWith('gemini-')) return 'api-google';
+    if (model.startsWith('claude-')) return 'api-anthropic';
+    return '';
+  };
+  const LAST_MODEL_LS_KEY = 'firebat_last_model_by_category';
+  const [lastModelByCategory, setLastModelByCategory] = useState<Record<string, string>>(() => {
+    if (typeof window === 'undefined') return {};
+    try { return JSON.parse(localStorage.getItem(LAST_MODEL_LS_KEY) || '{}'); } catch { return {}; }
+  });
+  /** 새 카테고리 전환 시 호출 — 마지막 모델 복원, 없으면 첫 모델 fallback. */
+  const restoreOrFirst = (newCategory: string, fallbackFirst: string | undefined) => {
+    const remembered = lastModelByCategory[newCategory];
+    const isValid = remembered && GEMINI_MODELS.some(m => m.value === remembered) && categoryOf(remembered) === newCategory;
+    if (isValid) onAiModelChange(remembered);
+    else if (fallbackFirst) onAiModelChange(fallbackFirst);
+  };
+
   // aiModel이 외부에서 바뀌면(상위에서 저장값 로드 등) 모드/공급자도 재추론
   useEffect(() => {
     const mp = inferModeProvider(aiModel);
@@ -48,6 +74,14 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
     setAiMode(mp.mode);
     setAiProvider(mp.provider);
     setCliProvider(mp.cliProvider);
+    // 현재 모델을 카테고리 기억에 저장
+    const cat = categoryOf(aiModel);
+    if (cat && lastModelByCategory[cat] !== aiModel) {
+      const next = { ...lastModelByCategory, [cat]: aiModel };
+      setLastModelByCategory(next);
+      try { localStorage.setItem(LAST_MODEL_LS_KEY, JSON.stringify(next)); } catch {}
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiModel]);
   // CLI 상태
   const [cliStatus, setCliStatus] = useState<{ installed: boolean; loggedIn: boolean; error?: string } | null>(null);
@@ -774,17 +808,17 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                   <SegButtons<'api' | 'cli'>
                     value={execMode}
                     onChange={(em) => {
-                      if (em === execMode) return; // 같은 값 재선택 — 변경 없음
+                      if (em === execMode) return;
                       setExecMode(em);
                       if (em === 'cli') {
-                        // CLI 모드로 전환 — 현재 모델이 이미 CLI 면 유지, 아니면 첫 모델
                         if (aiModel.startsWith('cli-')) return;
+                        const newCat = `cli-${cliProvider}`;
                         const prefix = cliProviderPrefix[cliProvider];
                         const firstCli = GEMINI_MODELS.find(mm => mm.value.startsWith(prefix));
-                        if (firstCli) onAiModelChange(firstCli.value);
+                        restoreOrFirst(newCat, firstCli?.value);
                       } else {
-                        // API 모드로 복귀 — 현재 모델이 이미 API 면 유지, 아니면 첫 모델
                         if (!aiModel.startsWith('cli-')) return;
+                        const newCat = aiMode === 'vertex' ? 'vertex-google' : `api-${aiProvider}`;
                         const firstApi = GEMINI_MODELS.find(mm => {
                           const v = mm.value;
                           if (v.startsWith('cli-')) return false;
@@ -794,7 +828,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                           if (aiProvider === 'google') return v.startsWith('gemini-');
                           return v.startsWith('claude-');
                         });
-                        if (firstApi) onAiModelChange(firstApi.value);
+                        restoreOrFirst(newCat, firstApi?.value);
                       }
                     }}
                     options={[{ value: 'api', label: 'API' }, { value: 'cli', label: 'CLI (구독)' }]}
@@ -811,12 +845,12 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                       const nextProviders = providersByMode[m];
                       const nextProvider = nextProviders.includes(aiProvider) ? aiProvider : nextProviders[0];
                       setAiProvider(nextProvider);
-                      // 현재 모델이 새 모드에 이미 적합하면 유지 (vertex/일반 매칭 + provider 매칭)
                       const fits = (m === 'vertex' ? aiModel.endsWith('-vertex') : !aiModel.endsWith('-vertex'))
                         && (nextProvider === 'openai' ? aiModel.startsWith('gpt-')
                             : nextProvider === 'google' ? aiModel.startsWith('gemini-')
                             : aiModel.startsWith('claude-'));
                       if (fits) return;
+                      const newCat = m === 'vertex' ? 'vertex-google' : `api-${nextProvider}`;
                       const nextModels = GEMINI_MODELS.filter(mm => {
                         const v = mm.value;
                         if (v.startsWith('cli-')) return false;
@@ -826,7 +860,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                         if (nextProvider === 'google') return v.startsWith('gemini-');
                         return v.startsWith('claude-');
                       });
-                      if (nextModels[0]) onAiModelChange(nextModels[0].value);
+                      restoreOrFirst(newCat, nextModels[0]?.value);
                     }}
                     options={[{ value: 'general', label: '일반' }, { value: 'vertex', label: 'Vertex' }]}
                   />
@@ -840,12 +874,12 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     onChange={(p) => {
                       if (p === effectiveProvider) return;
                       setAiProvider(p);
-                      // 현재 모델이 새 공급자·모드에 이미 적합하면 유지
                       const fits = (aiMode === 'vertex' ? aiModel.endsWith('-vertex') : !aiModel.endsWith('-vertex'))
                         && (p === 'openai' ? aiModel.startsWith('gpt-')
                             : p === 'google' ? aiModel.startsWith('gemini-')
                             : aiModel.startsWith('claude-'));
                       if (fits) return;
+                      const newCat = aiMode === 'vertex' ? 'vertex-google' : `api-${p}`;
                       const nextModels = GEMINI_MODELS.filter(mm => {
                         const v = mm.value;
                         if (v.startsWith('cli-')) return false;
@@ -855,7 +889,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                         if (p === 'google') return v.startsWith('gemini-');
                         return v.startsWith('claude-');
                       });
-                      if (nextModels[0]) onAiModelChange(nextModels[0].value);
+                      restoreOrFirst(newCat, nextModels[0]?.value);
                     }}
                     options={activeProviders.map(p => ({ value: p, label: providerLabels[p] }))}
                   />
@@ -871,10 +905,10 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                       setCliProvider(p);
                       setCliStatus(null);
                       const prefix = cliProviderPrefix[p];
-                      // 현재 모델이 이미 새 prefix 면 유지 (예: cli-gemini-flash → gemini 재선택 시 그대로)
                       if (aiModel.startsWith(prefix)) return;
+                      const newCat = `cli-${p}`;
                       const first = GEMINI_MODELS.find(mm => mm.value.startsWith(prefix));
-                      if (first) onAiModelChange(first.value);
+                      restoreOrFirst(newCat, first?.value);
                     }}
                     options={(['claude', 'codex', 'gemini'] as CliProvider[]).map(p => ({ value: p, label: cliProviderLabels[p] }))}
                   />
