@@ -180,7 +180,8 @@ export function CronPanel() {
     return job.mode;
   };
 
-  if (jobs.length === 0 && logs.length === 0) return null;
+  // 항상 SCHEDULER 섹션 표시 — 잡·로그 둘 다 없어도 빈 상태 노출
+  // (사용자가 cron 등록 직후 즉시 발화 시 잡 목록 비어보여도 이 섹션은 유지)
 
   return (
     <div className="border-t border-slate-200/80">

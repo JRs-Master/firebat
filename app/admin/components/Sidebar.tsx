@@ -150,7 +150,7 @@ export function Sidebar({
       es.onmessage = (e) => {
         try {
           const event = JSON.parse(e.data);
-          if (event.type === 'sidebar:refresh') {
+          if (event.type === 'sidebar:refresh' || event.type === 'cron:complete') {
             refreshAllRef.current();
           }
         } catch {}
