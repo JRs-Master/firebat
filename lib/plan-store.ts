@@ -81,8 +81,9 @@ ${stepsText}
 - 텍스트 답변·설명 금지 — 오직 propose_plan tool_use 만.`;
 }
 
-/** plan steps 를 LLM 이 따라 실행할 수 있게 한국어 텍스트로 직렬화 */
-export function planToInstruction(plan: StoredPlan): string {
+/** plan steps 를 LLM 이 따라 실행할 수 있게 한국어 텍스트로 직렬화.
+ *  originalRequest: 사용자 원래 메시지 — 시각·예약 정보가 plan steps 에 누락된 경우 AI 가 다시 인식 가능. */
+export function planToInstruction(plan: StoredPlan, originalRequest?: string): string {
   const stepsText = plan.steps
     .map((s, i) => {
       const desc = s.description ? ` — ${s.description}` : '';
@@ -90,14 +91,19 @@ export function planToInstruction(plan: StoredPlan): string {
       return `[${i + 1}] ${s.title}${desc}${tool}`;
     })
     .join('\n');
+  const originalSection = originalRequest
+    ? `\n## 사용자 원래 요청 (참고 — 시각·예약·조건 등이 plan steps 에 없으면 여기서 인식)\n"${originalRequest}"\n`
+    : '';
   return `사용자가 직전 plan 을 ✓실행으로 승인했습니다. 아래 단계를 그대로 따라 실행하세요.
 
 ## 승인된 plan: ${plan.title}
 ${stepsText}
-
+${originalSection}
 ## 실행 규칙
 - 위 단계들을 순서대로 모두 실행. 단계 임의 변경·생략 금지.
 - propose_plan 도구 **재호출 금지** (이미 승인됨).
+- **사용자 원래 요청에 시각·예약 표현 (X시 X분, X분 후, 매일 등) 이 있으면 → \`schedule_task\` 도구로 wrap.** 단계들은 schedule_task 의 pipeline 인자로 들어감. 즉시 실행 금지.
+- 시각·예약 표현 없으면 → \`run_task\` 또는 단계별 직접 도구 호출로 즉시 실행.
 - 각 단계의 tool 명시가 있으면 그 도구를 사용. 명시 없으면 단계 내용에 적합한 도구 선택.
 - 마지막 단계 종료 후 결과를 사용자에게 시각화 컴포넌트로 보고.`;
 }

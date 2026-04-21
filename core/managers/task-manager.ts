@@ -132,6 +132,22 @@ export class TaskManager {
             const args = step.inputMap
               ? this.resolveValue(step.inputMap, prev) as Record<string, unknown>
               : (step.arguments ?? {});
+            // System module 자동 fallback — AI 가 server='kakao_talk' 등으로 system module 을 MCP_CALL 로 잘못 호출 시 EXECUTE 로 변환
+            const sysModuleName = (step.server || '').replace(/_/g, '-');
+            const sysModulePath = `system/modules/${sysModuleName}/index.mjs`;
+            const sysCheck = await this.core.readFile(sysModulePath).catch(() => ({ success: false }));
+            if (sysCheck.success) {
+              this.log.info(`[Pipeline] Step ${i + 1} MCP_CALL '${step.server}' → system module 자동 변환 → EXECUTE ${sysModulePath}`);
+              const inputData = step.inputData
+                ? this.resolveValue(step.inputData, prev) as Record<string, unknown>
+                : args;
+              const exRes = await this.core.sandboxExecute(sysModulePath, inputData);
+              if (!exRes.success) { onPipelineStep?.(i, 'error', exRes.error); return { success: false, error: `[Pipeline Step ${i + 1}] EXECUTE (MCP_CALL fallback) 실패: ${exRes.error}` }; }
+              const d = exRes.data as Record<string, unknown> | undefined;
+              prev = d && 'success' in d && 'data' in d ? d.data : d;
+              onPipelineStep?.(i, 'done');
+              break;
+            }
             const res = await this.core.callMcpTool(step.server!, step.tool!, args);
             if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] MCP_CALL 실패: ${res.error}` }; }
             prev = res.data;
