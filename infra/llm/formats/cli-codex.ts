@@ -307,7 +307,7 @@ export class CliCodexFormat implements FormatHandler {
                   });
                 }
                 // 3) suggest
-                if (toolName === 'suggest' && Array.isArray(payload.suggestions)) {
+                if ((toolName === 'suggest' || toolName === 'propose_plan') && Array.isArray(payload.suggestions)) {
                   for (const s of payload.suggestions) suggestions.push(s);
                 }
               } catch { /* 파싱 실패 무시 */ }

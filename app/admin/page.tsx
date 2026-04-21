@@ -982,7 +982,7 @@ export default function AdminConsole() {
                     <button
                       onClick={() => setPlanMode(!planMode)}
                       disabled={loading}
-                      title="플랜모드"
+                      title={planMode ? '플랜모드 사용중' : '플랜모드 미사용'}
                       className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-colors disabled:opacity-50 ${
                         planMode
                           ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
@@ -990,7 +990,7 @@ export default function AdminConsole() {
                       }`}
                     >
                       <ListChecks size={14} />
-                      <span>플랜</span>
+                      <span>{planMode ? '플랜모드 사용중' : '플랜모드 미사용'}</span>
                     </button>
                   </div>
                   <button

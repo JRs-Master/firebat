@@ -424,7 +424,8 @@ export class CliGeminiFormat implements FormatHandler {
                   });
                 }
                 // 3) suggest 도구 → suggestions
-                if (pending.name === 'suggest' && Array.isArray(payload.suggestions)) {
+                // suggest / propose_plan 둘 다 suggestions 배열 반환 → frontend 의 SuggestionButtons 가 plan-confirm type 인식
+                if ((pending.name === 'suggest' || pending.name === 'propose_plan') && Array.isArray(payload.suggestions)) {
                   for (const s of payload.suggestions) suggestions.push(s);
                 }
               }

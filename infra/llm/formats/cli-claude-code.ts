@@ -437,7 +437,7 @@ export class CliClaudeCodeFormat implements FormatHandler {
                         });
                       }
                       // 3) suggest 도구 → suggestions
-                      if (pending.name === 'suggest' && Array.isArray(payload.suggestions)) {
+                      if ((pending.name === 'suggest' || pending.name === 'propose_plan') && Array.isArray(payload.suggestions)) {
                         for (const s of payload.suggestions) suggestions.push(s);
                       }
                     }
