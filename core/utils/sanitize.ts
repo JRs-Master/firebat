@@ -80,8 +80,9 @@ const PRESERVE_FIELDS_BY_COMP: Record<string, Set<string>> = {
   Html: new Set(['content', 'htmlContent']),
 };
 
-/** 숫자성 문자열 감지 — Table 의 isNumLikeStr 과 동일 규칙. */
-const NUM_LIKE_RE = /^(?:약|대략|~|≈|approx\.?)?\s*[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(원|%|배|개|건|만|억|조|명|월|일|시|분|달러|엔|위안|유로|\$|￥|€|£)?$/i;
+/** 숫자성 문자열 감지 — Table 의 isNumLikeStr 과 동일 규칙.
+ *  합성 단위(조원, 만원) + 접미사(+/-) 인식 위해 단위 그룹은 0~N 회 반복 + 접미사 허용. */
+const NUM_LIKE_RE = /^(?:약|대략|~|≈|approx\.?)?\s*[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(?:원|%|배|개|건|만|억|조|천|명|월|일|시|분|달러|엔|위안|유로|\$|￥|€|£)*\s*[+\-]?\s*$/i;
 
 function sanitizeValue(val: unknown, componentName?: string, fieldName?: string, insideTextArray = false): unknown {
   // preserve 대상: 컴포넌트+필드 조합 매칭 시 원본 유지

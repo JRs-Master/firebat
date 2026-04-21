@@ -776,14 +776,17 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                   <SegButtons<'api' | 'cli'>
                     value={execMode}
                     onChange={(em) => {
+                      if (em === execMode) return; // 같은 값 재선택 — 변경 없음
                       setExecMode(em);
                       if (em === 'cli') {
-                        // CLI 모드로 전환 — 현재 cliProvider의 첫 모델 (types.ts 원본 순서)
+                        // CLI 모드로 전환 — 현재 모델이 이미 CLI 면 유지, 아니면 첫 모델
+                        if (aiModel.startsWith('cli-')) return;
                         const prefix = cliProviderPrefix[cliProvider];
                         const firstCli = GEMINI_MODELS.find(mm => mm.value.startsWith(prefix));
                         if (firstCli) onAiModelChange(firstCli.value);
                       } else {
-                        // API 모드로 복귀 — 기존 공급자/모드에 맞는 첫 모델
+                        // API 모드로 복귀 — 현재 모델이 이미 API 면 유지, 아니면 첫 모델
+                        if (!aiModel.startsWith('cli-')) return;
                         const firstApi = GEMINI_MODELS.find(mm => {
                           const v = mm.value;
                           if (v.startsWith('cli-')) return false;
@@ -805,11 +808,17 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                   <SegButtons<'general' | 'vertex'>
                     value={aiMode}
                     onChange={(m) => {
+                      if (m === aiMode) return;
                       setAiMode(m);
-                      // 새 모드에서 현재 공급자가 유효한지 재확인, 유효한 첫 모델로 전환
                       const nextProviders = providersByMode[m];
                       const nextProvider = nextProviders.includes(aiProvider) ? aiProvider : nextProviders[0];
                       setAiProvider(nextProvider);
+                      // 현재 모델이 새 모드에 이미 적합하면 유지 (vertex/일반 매칭 + provider 매칭)
+                      const fits = (m === 'vertex' ? aiModel.endsWith('-vertex') : !aiModel.endsWith('-vertex'))
+                        && (nextProvider === 'openai' ? aiModel.startsWith('gpt-')
+                            : nextProvider === 'google' ? aiModel.startsWith('gemini-')
+                            : aiModel.startsWith('claude-'));
+                      if (fits) return;
                       const nextModels = GEMINI_MODELS.filter(mm => {
                         const v = mm.value;
                         if (v.startsWith('cli-')) return false;
@@ -831,7 +840,14 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                   <SegButtons<'openai' | 'google' | 'anthropic'>
                     value={effectiveProvider}
                     onChange={(p) => {
+                      if (p === effectiveProvider) return;
                       setAiProvider(p);
+                      // 현재 모델이 새 공급자·모드에 이미 적합하면 유지
+                      const fits = (aiMode === 'vertex' ? aiModel.endsWith('-vertex') : !aiModel.endsWith('-vertex'))
+                        && (p === 'openai' ? aiModel.startsWith('gpt-')
+                            : p === 'google' ? aiModel.startsWith('gemini-')
+                            : aiModel.startsWith('claude-'));
+                      if (fits) return;
                       const nextModels = GEMINI_MODELS.filter(mm => {
                         const v = mm.value;
                         if (v.startsWith('cli-')) return false;
@@ -853,10 +869,12 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                   <SegButtons<CliProvider>
                     value={cliProvider}
                     onChange={(p) => {
+                      if (p === cliProvider) return;
                       setCliProvider(p);
-                      setCliStatus(null); // 공급자 바뀌면 이전 인증 상태 무효화
-                      // 공급자 변경 시 해당 프로바이더의 첫 모델 (types.ts 원본 순서)
+                      setCliStatus(null);
                       const prefix = cliProviderPrefix[p];
+                      // 현재 모델이 이미 새 prefix 면 유지 (예: cli-gemini-flash → gemini 재선택 시 그대로)
+                      if (aiModel.startsWith(prefix)) return;
                       const first = GEMINI_MODELS.find(mm => mm.value.startsWith(prefix));
                       if (first) onAiModelChange(first.value);
                     }}

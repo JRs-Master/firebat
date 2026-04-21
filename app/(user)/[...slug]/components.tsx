@@ -289,8 +289,8 @@ function TableComp({ headers = [], rows = [], stickyCol, align, cellAlign }: {
   const firstColSticky = stickyCol ?? (headers.length >= 4);
 
   // 컬럼별 숫자성 판정 — 컬럼 셀 중 60%+ 가 숫자면 숫자 컬럼으로 간주 (자동 우측 정렬)
-  // "약 22배", "대략 5.0배", "~51%" 같은 approximate prefix 도 숫자 셀로 인식.
-  const isNumLikeStr = (s: string) => /^(?:약|대략|~|≈|approx\.?)?\s*[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(원|%|배|개|건|만|억|조|명|월|일|시|분|달러|엔|위안|유로|\$|￥|€|£)?$/i.test(s);
+  // "약 22배", "대략 5.0배", "~51%", "258.9조원", "300조원+" 등 prefix·합성 단위·접미사 모두 인식.
+  const isNumLikeStr = (s: string) => /^(?:약|대략|~|≈|approx\.?)?\s*[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(?:원|%|배|개|건|만|억|조|천|명|월|일|시|분|달러|엔|위안|유로|\$|￥|€|£)*\s*[+\-]?\s*$/i.test(s);
   const numericCol: boolean[] = headers.map((_, ci) => {
     if (rows.length === 0) return false;
     let n = 0;
@@ -319,6 +319,17 @@ function TableComp({ headers = [], rows = [], stickyCol, align, cellAlign }: {
     return 'text-left';
   };
 
+  /** 헤더는 짧으면(≤10자) 가운데, 길면 줄바꿈 가능성 → 컬럼 자동 정렬 따름. */
+  const headerAlignClass = (ci: number, headerText: string) => {
+    const explicit = align?.[ci];
+    if (explicit === 'left') return 'text-left';
+    if (explicit === 'right') return 'text-right tabular-nums';
+    if (explicit === 'center') return 'text-center';
+    const len = (headerText || '').trim().length;
+    if (len > 0 && len <= 10) return 'text-center';
+    return alignClass(ci, false);
+  };
+
   return (
     <div className="overflow-auto rounded-xl border border-gray-200 shadow-sm max-h-[70vh]">
       <table className="min-w-full border-separate border-spacing-0">
@@ -326,12 +337,13 @@ function TableComp({ headers = [], rows = [], stickyCol, align, cellAlign }: {
           <tr>
             {headers.map((h, i) => {
               const isStickyCell = firstColSticky && i === 0;
+              const headerText = cleanPlainText(h);
               return (
                 <th
                   key={i}
-                  className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-200 bg-gray-50 sticky top-0 min-w-[120px] ${alignClass(i, false)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#e5e7eb]' : 'z-10'}`}
+                  className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-200 bg-gray-50 sticky top-0 min-w-[120px] ${headerAlignClass(i, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#e5e7eb]' : 'z-10'}`}
                 >
-                  {cleanPlainText(h)}
+                  {headerText}
                 </th>
               );
             })}
