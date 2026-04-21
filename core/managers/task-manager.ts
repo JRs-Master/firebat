@@ -85,8 +85,17 @@ export class TaskManager {
       try {
         switch (step.type) {
           case 'EXECUTE': {
+            // path 가 full path 가 아니고 bare name (예: 'kakao-talk', 'sysmod_kiwoom') 이면 resolver 로 정규화
+            let stepPath = step.path!;
+            if (!stepPath.includes('/')) {
+              const target = await this.core.resolveCallTarget(stepPath);
+              if (target?.kind === 'execute') {
+                this.log.info(`[Pipeline] Step ${i + 1} EXECUTE '${stepPath}' → '${target.path}' 자동 정규화`);
+                stepPath = target.path;
+              }
+            }
             // Capability 모드에 따라 preferred provider로 자동 교체
-            const resolvedPath = await this.resolvePreferredProvider(step.path!);
+            const resolvedPath = await this.resolvePreferredProvider(stepPath);
             if (resolvedPath !== step.path) {
               this.log.info(`[Pipeline] Provider 교체: ${step.path} → ${resolvedPath}`);
             }
@@ -132,23 +141,23 @@ export class TaskManager {
             const args = step.inputMap
               ? this.resolveValue(step.inputMap, prev) as Record<string, unknown>
               : (step.arguments ?? {});
-            // System module 자동 fallback — AI 가 server='kakao_talk' 등으로 system module 을 MCP_CALL 로 잘못 호출 시 EXECUTE 로 변환
-            const sysModuleName = (step.server || '').replace(/_/g, '-');
-            const sysModulePath = `system/modules/${sysModuleName}/index.mjs`;
-            const sysCheck = await this.core.readFile(sysModulePath).catch(() => ({ success: false }));
-            if (sysCheck.success) {
-              this.log.info(`[Pipeline] Step ${i + 1} MCP_CALL '${step.server}' → system module 자동 변환 → EXECUTE ${sysModulePath}`);
+            // 통합 resolver — server 명이 system/user module 과 매칭되면 EXECUTE 로 자동 변환
+            const target = await this.core.resolveCallTarget(step.server || '');
+            if (target?.kind === 'execute') {
+              this.log.info(`[Pipeline] Step ${i + 1} MCP_CALL '${step.server}' → module 자동 변환 → EXECUTE ${target.path}`);
               const inputData = step.inputData
                 ? this.resolveValue(step.inputData, prev) as Record<string, unknown>
                 : args;
-              const exRes = await this.core.sandboxExecute(sysModulePath, inputData);
+              const exRes = await this.core.sandboxExecute(target.path, inputData);
               if (!exRes.success) { onPipelineStep?.(i, 'error', exRes.error); return { success: false, error: `[Pipeline Step ${i + 1}] EXECUTE (MCP_CALL fallback) 실패: ${exRes.error}` }; }
               const d = exRes.data as Record<string, unknown> | undefined;
               prev = d && 'success' in d && 'data' in d ? d.data : d;
               onPipelineStep?.(i, 'done');
               break;
             }
-            const res = await this.core.callMcpTool(step.server!, step.tool!, args);
+            // target?.kind === 'mcp' 또는 resolver 가 못 찾으면 기존 MCP 호출 경로
+            const serverName = target?.kind === 'mcp' ? target.server : step.server!;
+            const res = await this.core.callMcpTool(serverName, step.tool!, args);
             if (!res.success) { onPipelineStep?.(i, 'error', res.error); return { success: false, error: `[Pipeline Step ${i + 1}] MCP_CALL 실패: ${res.error}` }; }
             prev = res.data;
 

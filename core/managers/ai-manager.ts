@@ -44,6 +44,10 @@ export class AiManager {
   /** 도구 정의 캐시 (60초 TTL) */
   private _toolsCache: { tools: ToolDefinition[]; ts: number } | null = null;
   private static readonly TOOLS_CACHE_TTL = 60_000;
+  /** AI 가 호출한 identifier (서버명·모듈명·sysmod_*·full path) → 실제 dispatch target.
+   *  AI 가 도구 호출 일관성 부족해도 backend 가 자동 보정 (kakao_talk → system/modules/kakao-talk/index.mjs 등). */
+  private _callTargetCache: { map: Map<string, { kind: 'mcp'; server: string } | { kind: 'execute'; path: string }>; ts: number } | null = null;
+  private static readonly CALL_TARGET_TTL = 60_000;
 
   /** LLM 기반 self-learning 라우터 (on-demand lazy 초기화) */
   private _llmRouter: IToolRouterPort | null = null;
@@ -2773,6 +2777,54 @@ suggest 사용 시 권장 패턴:
       this.logger.warn(`[ToolSearch] 검색 실패, 전체 도구 폴백: ${(e as Error).message}`);
       return { tools: allTools };
     }
+  }
+
+  /** AI 가 호출한 identifier → 실제 dispatch target 해석.
+   *  매칭 우선순위: 정확한 이름 → snake/kebab 변형 → sysmod_ 접두사 / full path → null
+   *  - MCP 서버 명 매칭: { kind:'mcp', server }
+   *  - system/user modules 폴더 명 매칭: { kind:'execute', path }
+   *  AI 가 server='kakao_talk' / path='kakao-talk' / sysmod_kiwoom 등 다양하게 호출해도 자동 분기. */
+  async resolveCallTarget(identifier: string): Promise<{ kind: 'mcp'; server: string } | { kind: 'execute'; path: string } | null> {
+    if (!identifier) return null;
+    const lookup = (id: string, map: Map<string, { kind: 'mcp'; server: string } | { kind: 'execute'; path: string }>) =>
+      map.get(id) ?? map.get(id.replace(/_/g, '-')) ?? map.get(id.replace(/-/g, '_'));
+    if (this._callTargetCache && (Date.now() - this._callTargetCache.ts) < AiManager.CALL_TARGET_TTL) {
+      const hit = lookup(identifier, this._callTargetCache.map);
+      if (hit !== undefined) return hit;
+    }
+    const map = new Map<string, { kind: 'mcp'; server: string } | { kind: 'execute'; path: string }>();
+    // 1) 외부 MCP 서버
+    try {
+      const mcpServers = this.core.listMcpServers();
+      if (Array.isArray(mcpServers)) {
+        for (const s of mcpServers) {
+          if (!s?.name) continue;
+          const target = { kind: 'mcp' as const, server: s.name };
+          map.set(s.name, target);
+          map.set(s.name.replace(/-/g, '_'), target);
+          map.set(s.name.replace(/_/g, '-'), target);
+        }
+      }
+    } catch { /* MCP 미설정 무시 */ }
+    // 2) system + user modules
+    for (const dir of ['system/modules', 'user/modules']) {
+      try {
+        const ls = await this.core.listDir(dir);
+        if (!ls.success || !ls.data) continue;
+        for (const e of ls.data.filter(x => x.isDirectory)) {
+          const path = `${dir}/${e.name}/index.mjs`;
+          const target = { kind: 'execute' as const, path };
+          map.set(e.name, target);
+          map.set(e.name.replace(/-/g, '_'), target);
+          map.set(e.name.replace(/_/g, '-'), target);
+          map.set(`sysmod_${e.name}`, target);
+          map.set(`sysmod_${e.name.replace(/-/g, '_')}`, target);
+          map.set(path, target);
+        }
+      } catch { /* 폴더 없음 무시 */ }
+    }
+    this._callTargetCache = { map, ts: Date.now() };
+    return lookup(identifier, map) ?? null;
   }
 
   /** 동적 도구 정의 빌드 — Core 정적 도구 + MCP 외부 도구 (60초 캐시) */

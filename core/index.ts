@@ -117,6 +117,12 @@ export class FirebatCore {
     return this.ai.codeAssist(params, opts);
   }
 
+  /** AI/pipeline 이 호출한 identifier (서버명·모듈명·sysmod_*·full path) → 실제 dispatch target.
+   *  매니저 간 직접 호출 금지 원칙 — TaskManager 가 ai 매니저의 resolver 쓸 때 이 facade 경유. */
+  async resolveCallTarget(identifier: string) {
+    return this.ai.resolveCallTarget(identifier);
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   //  파일 시스템 → StorageManager + SSE
   // ══════════════════════════════════════════════════════════════════════════
