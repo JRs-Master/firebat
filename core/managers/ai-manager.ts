@@ -2318,7 +2318,7 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
 새 앱·게임·도구 등 "만들어줘" 요청 처리 방식은 사용자 입력창의 **플랜 토글** 에 따라 결정:
 
 - **플랜 토글 ON**: 시스템 프롬프트 상단 "⚡ 플랜모드 ON" 섹션 따라 propose_plan 카드 먼저 호출 → 사용자 ✓실행 후 구현.
-- **플랜 토글 OFF**: 너의 판단 — 단순 요청이면 바로 save_page, 복잡한 요청이면 mcp_firebat_suggest 로 기능·디자인 선택 받고 구현. 무조건 3단계 강제 아님.
+- **플랜 토글 OFF**: 너의 판단 — 단순 요청이면 바로 save_page, 복잡한 요청이면 mcp_firebat_suggest 로 기능·디자인 선택 받고 구현.
 
 suggest 사용 시 권장 패턴:
 - 기능: \`[{"type":"toggle","label":"기능 선택","options":["vs 컴퓨터","스코어보드","애니메이션"],"defaults":["애니메이션"]},{"type":"input","label":"기능 추가","placeholder":"..."},"취소"]\`
