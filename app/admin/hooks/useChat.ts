@@ -320,8 +320,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     setActiveConvId(id);
     setMessages(cleanMessages(conv.messages));
     localStorage.setItem('firebat_active_conv', id);
-    // 다기기 동기화: 선택 시 DB 최신 버전이 로컬보다 최근이면 메시지 교체
+    // 다기기 동기화: 선택 시 DB 최신 버전 fetch.
+    // 로컬이 빈/incomplete (system-init 외 메시지 0개) 이면 updatedAt 무시하고 DB 우선 →
+    // saveToDb debounce 와 updatedAt 갱신 race 로 화면이 빈 상태로 굳는 문제 방지.
     const localUpdatedAt = conv.updatedAt ?? conv.createdAt ?? 0;
+    const localRealMsgCount = conv.messages.filter(m => m.id !== 'system-init').length;
     (async () => {
       try {
         const res = await fetch(`/api/conversations?id=${encodeURIComponent(id)}`);
@@ -329,12 +332,17 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         const data = await res.json();
         if (!data.success || !data.conversation) return;
         const remoteUpdatedAt = data.conversation.updatedAt ?? 0;
-        if (remoteUpdatedAt <= localUpdatedAt) return;
         const remoteMsgs = cleanMessages(data.conversation.messages ?? []);
+        const remoteRealMsgCount = remoteMsgs.filter(m => m.id !== 'system-init').length;
+        // DB 우선 적용 조건: 로컬이 비어있거나 / DB 가 더 최신이거나 / DB 메시지 수가 더 많거나
+        const shouldUseRemote = localRealMsgCount === 0
+          || remoteUpdatedAt > localUpdatedAt
+          || remoteRealMsgCount > localRealMsgCount;
+        if (!shouldUseRemote) return;
         setMessages(remoteMsgs);
         setConversations(prev => {
           const updated = prev.map(c => c.id === id
-            ? { ...c, messages: remoteMsgs, updatedAt: remoteUpdatedAt }
+            ? { ...c, messages: remoteMsgs, updatedAt: Math.max(remoteUpdatedAt, localUpdatedAt) }
             : c);
           updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
           localStorage.setItem('firebat_conversations', JSON.stringify(updated));
