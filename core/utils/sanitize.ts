@@ -26,10 +26,35 @@ export function htmlToMarkdown(s: string): string {
     .replace(/<\/?[a-zA-Z][^>]*>/g, '');
 }
 
-/** Plain text 필드 정제 — HTML 태그 + 마크다운 마커 제거. render_text 외 모든 텍스트 필드에. */
+/** AI (특히 Claude Haiku) 가 한국어/emoji 토큰을 \uXXXX escape 형태로 출력하는 케이스 디코딩.
+ *  surrogate pair (emoji) 도 정확히 합쳐 처리. */
+export function decodeUnicodeEscapes(s: string): string {
+  if (!s || typeof s !== 'string' || !s.includes('\\u')) return s;
+  // \uD83D\uDD1F 같은 surrogate pair 는 한 번에 처리 → 올바른 emoji 코드포인트 복원
+  return s.replace(/\\u([\dA-Fa-f]{4})(?:\\u([\dA-Fa-f]{4}))?/g, (match, hi, lo) => {
+    try {
+      const high = parseInt(hi, 16);
+      if (lo) {
+        const low = parseInt(lo, 16);
+        // surrogate pair 인지 확인
+        if (high >= 0xD800 && high <= 0xDBFF && low >= 0xDC00 && low <= 0xDFFF) {
+          return String.fromCharCode(high, low);
+        }
+        // surrogate 가 아니면 두 글자 각각
+        return String.fromCharCode(high) + String.fromCharCode(low);
+      }
+      return String.fromCharCode(high);
+    } catch {
+      return match;
+    }
+  });
+}
+
+/** Plain text 필드 정제 — HTML 태그 + 마크다운 마커 제거 + unicode escape 디코딩. */
 export function cleanText(s: string | number | null | undefined): string {
   if (s == null) return '';
   let str = typeof s === 'string' ? s : String(s);
+  str = decodeUnicodeEscapes(str);
   str = htmlToMarkdown(str);
   // plain text 필드엔 **/*/` 마커도 제거 (마크다운 렌더 안 되므로 raw 노출됨)
   str = str.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/`([^`]+)`/g, '$1');
@@ -235,7 +260,7 @@ export function extractMarkdownTables(reply: string): { cleanedReply: string; ta
  *  모든 LLM (API·CLI 공통) 이 거치는 지점 — 공급자별 후처리는 여기로 일원화. */
 export function sanitizeReply(reply: string | undefined | null): string {
   if (!reply) return '';
-  return htmlToMarkdown(reply)
+  return decodeUnicodeEscapes(htmlToMarkdown(reply))
     // 3+ 개행 → 2 개행 (CLI 출력이 간혹 과도한 공백 행 포함)
     .replace(/\n{3,}/g, '\n\n')
     .trim();
