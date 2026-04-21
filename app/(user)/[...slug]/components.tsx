@@ -65,7 +65,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'List':          return <ListComp items={p.items ?? []} ordered={p.ordered} />;
     case 'Carousel':      return <CarouselComp children={p.children ?? []} autoPlay={p.autoPlay} interval={p.interval} />;
     case 'Countdown':     return <CountdownComp targetDate={p.targetDate ?? ''} label={p.label} />;
-    case 'Chart':         return <ChartComp type={p.chartType ?? 'bar'} data={p.data ?? []} labels={p.labels ?? []} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} palette={p.palette} showValues={p.showValues} />;
+    case 'Chart':         return <ChartComp type={p.chartType ?? 'bar'} data={p.data ?? []} labels={p.labels ?? []} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} palette={p.palette} showValues={p.showValues} showPct={p.showPct} />;
     case 'StockChart':    return <StockChart symbol={p.symbol ?? ''} title={p.title} data={p.data ?? []} indicators={p.indicators} buyPoints={p.buyPoints} sellPoints={p.sellPoints} />;
     case 'Metric':        return <MetricComp label={p.label ?? ''} value={p.value ?? ''} unit={p.unit} delta={p.delta} deltaType={p.deltaType} subLabel={p.subLabel} icon={p.icon} align={p.align} labelAlign={p.labelAlign} valueAlign={p.valueAlign} deltaAlign={p.deltaAlign} subLabelAlign={p.subLabelAlign} />;
     case 'Timeline':      return <TimelineComp items={p.items ?? []} />;
@@ -108,32 +108,16 @@ function normalizeEscapes(s: string): string {
   return s.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
 }
 
-/** AI 가 실수로 넣은 HTML 인라인 태그를 마크다운으로 변환.
- *  ReactMarkdown 은 rehype-raw 없이 HTML 을 렌더링하지 않아 그대로 노출되므로
- *  렌더 직전 간단 변환 (XSS 방지 목적으로 rehype-raw 추가는 회피). */
-function htmlToMarkdown(s: string): string {
-  if (!s || typeof s !== 'string') return s;
-  return s
-    .replace(/<\s*br\s*\/?\s*>/gi, '\n')
-    .replace(/<\s*\/?\s*(strong|b)\s*>/gi, '**')
-    .replace(/<\s*\/?\s*(em|i)\s*>/gi, '*')
-    .replace(/<\s*\/?\s*code\s*>/gi, '`')
-    .replace(/<\s*\/?\s*u\s*>/gi, '')
-    // 나머지 모르는 태그는 제거 (안전 차원)
-    .replace(/<\/?[a-zA-Z][^>]*>/g, '');
+/** Plain-text 필드(label/value/subLabel 등) HTML·마크다운 마커 제거와 숫자 콤마 포맷은
+ *  백엔드 `core/utils/sanitize.ts` 의 sanitizeBlock 에서 일괄 처리됨 — 프론트는 받은 값 그대로 렌더.
+ *
+ *  아래 두 헬퍼는 null/undefined → '' 코어션 용도로만 남김 (이전 호출부 40+ 유지).
+ *  실제 정제·포맷 로직 없음. */
+function cleanPlainText(s: string | number | null | undefined): string {
+  return s == null ? '' : String(s);
 }
 
-/** 일반 text 필드 (label/value/subLabel 등) — 마크다운 렌더 없이 HTML·마크다운 마커 제거만 */
-function cleanPlainText(s: string | number | undefined): string {
-  if (s == null) return '';
-  let str = typeof s === 'string' ? s : String(s);
-  // HTML 태그 → 마크다운 → 최종 제거 (plain text 필드이므로 ** * ` 도 제거)
-  str = htmlToMarkdown(str);
-  str = str.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').replace(/`([^`]+)`/g, '$1');
-  return str;
-}
-
-/** 숫자 3자리 콤마 자동 포맷 — 모든 텍스트 컴포넌트에서 공용.
+/** display-time 숫자 포맷 — 차트 내부 원시 숫자(backend 가 preserve 하는 Chart data) 전용.
  *  - number 타입 → toLocaleString
  *  - "1000000" 순수 숫자 문자열 → "1,000,000"
  *  - "216000원", "▲1500" 처럼 접두·접미가 있는 경우도 숫자부만 콤마 처리
@@ -783,7 +767,7 @@ const PALETTE_MAP: Record<string, string[]> = {
   earth:        ['#78350f', '#b45309', '#d97706', '#f59e0b', '#65a30d', '#166534'],
 };
 
-function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, palette, showValues = true }: {
+function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, palette, showValues = true, showPct = true }: {
   type: 'bar' | 'pie' | 'line' | 'doughnut';
   data: number[];
   labels: string[];
@@ -793,6 +777,8 @@ function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, p
   color?: string;
   palette?: string;
   showValues?: boolean;
+  /** pie/doughnut tooltip 에 자동 계산 pct 표시 여부 (기본 true). data 자체가 이미 퍼센트면 false 권장. */
+  showPct?: boolean;
 }) {
   if (data.length === 0) return null;
   const maxVal = Math.max(...data, 1);
@@ -854,7 +840,7 @@ function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, p
       setHovered(null);
     };
 
-    return <PieChartInteractive segments={segments} gradient={gradient} titleBlock={titleBlock} unit={unit} centerHandler={centerHandler} />;
+    return <PieChartInteractive segments={segments} gradient={gradient} titleBlock={titleBlock} unit={unit} centerHandler={centerHandler} showPct={showPct} />;
   }
 
   // bar / line chart — hover 상세 툴팁 포함
@@ -984,12 +970,13 @@ function BarChartInteractive({ data, labels, titleBlock, unit, showValues, barCo
 }
 
 // 파이/도넛 차트 호버 인터랙션 분리 — 클라이언트 상태 보유
-function PieChartInteractive({ segments, gradient, titleBlock, unit, centerHandler }: {
+function PieChartInteractive({ segments, gradient, titleBlock, unit, centerHandler, showPct = true }: {
   segments: Array<{ label: string; value: number; pct: number; color: string }>;
   gradient: string;
   titleBlock: React.ReactNode;
   unit?: string;
   centerHandler: (e: React.MouseEvent<HTMLDivElement>, setHovered: (i: number | null) => void) => void;
+  showPct?: boolean;
 }) {
   const [hovered, setHovered] = React.useState<number | null>(null);
   const [cursorPos, setCursorPos] = React.useState<{ x: number; y: number } | null>(null);
@@ -1017,7 +1004,9 @@ function PieChartInteractive({ segments, gradient, titleBlock, unit, centerHandl
               <div className="text-[14px] font-extrabold text-slate-900">
                 {hoveredSeg.value.toLocaleString('ko-KR')}{unit || ''}
               </div>
-              <div className="text-[10px] text-slate-500">{hoveredSeg.pct.toFixed(1)}%</div>
+              {showPct && (
+                <div className="text-[10px] text-slate-500">{hoveredSeg.pct.toFixed(1)}%</div>
+              )}
             </div>
           )}
         </div>
@@ -1031,7 +1020,7 @@ function PieChartInteractive({ segments, gradient, titleBlock, unit, centerHandl
             >
               <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: seg.color }} />
               <span className="text-gray-700">{seg.label}</span>
-              <span className="text-gray-400 ml-auto">{seg.pct.toFixed(1)}%</span>
+              {showPct && <span className="text-gray-400 ml-auto">{seg.pct.toFixed(1)}%</span>}
             </div>
           ))}
         </div>

@@ -94,6 +94,7 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     color: z.enum(['blue','green','red','purple','orange','teal','pink','yellow','slate']).optional().describe('bar/line 단일 색상 (기본 blue)'),
     palette: z.enum(['default','pastel','mono-blue','mono-green','red-green','earth']).optional().describe('pie/doughnut 색상 팔레트'),
     showValues: z.boolean().optional().describe('bar 값 inline 표시 (기본 true)'),
+    showPct: z.boolean().optional().describe('pie/doughnut 범례·툴팁에 자동 계산 % 표시 (기본 true). data 가 이미 퍼센트 값(합≠100)이면 false 로 중복 회피.'),
   }, '간단 차트. chartType 선택이 중요 — 비율 분해만 pie, 독립 수치 비교는 bar.');
 
   makeRender('render_metric', 'Metric', {

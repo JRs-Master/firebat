@@ -1,6 +1,7 @@
 import type { FirebatCore, AiRequestOpts } from '../index';
 import type { ILlmPort, ILogPort, LlmCallOpts, LlmChunk, ChatMessage, PageListItem, ToolDefinition, JsonSchema, JsonSchemaProperty, ToolCall, ToolResult, ToolExchangeEntry, IDatabasePort, IToolRouterPort, RouteResult, ToolRouterFactory } from '../ports';
 import { FirebatPlanSchema, FirebatPlan, FirebatAction, CoreResult, type InfraResult } from '../types';
+import { sanitizeBlock, sanitizeReply } from '../utils/sanitize';
 
 /** Vertex AI Function Calling은 enum 값이 반드시 string이어야 함 — 재귀 변환 */
 function sanitizeSchema(schema: Record<string, unknown>): Record<string, unknown> {
@@ -1440,17 +1441,21 @@ AI는 절대 자의적으로 provider를 선택하지 마라. 목록 순서대�
     // Vertex AI 파인튜닝용 학습 데이터 기록 (전체 멀티턴 contents)
     this.trainingLogContents(prompt, toolExchanges, finalReply, recentHistory);
 
-    const hasData = collectedData.length > 0 || suggestions.length > 0 || pendingActions.length > 0 || blocks.length > 0 || !!currentResponseId;
+    // 중앙 sanitize — blocks props 의 text·numeric 필드 자동 정제 (render_text/render_html 은 원본 유지)
+    const sanitizedBlocks = blocks.map(b => sanitizeBlock(b as Record<string, unknown>));
+    const sanitizedReply = sanitizeReply(finalReply);
+
+    const hasData = collectedData.length > 0 || suggestions.length > 0 || pendingActions.length > 0 || sanitizedBlocks.length > 0 || !!currentResponseId;
     return {
       success: true,
-      reply: finalReply,
+      reply: sanitizedReply,
       executedActions,
       data: hasData
         ? {
             ...(suggestions.length > 0 ? { suggestions } : {}),
             ...(collectedData.length > 0 ? { htmlItems: collectedData } : {}),
             ...(pendingActions.length > 0 ? { pendingActions } : {}),
-            ...(blocks.length > 0 ? { blocks } : {}),
+            ...(sanitizedBlocks.length > 0 ? { blocks: sanitizedBlocks } : {}),
             ...(currentResponseId ? { responseId: currentResponseId } : {}),
           }
         : undefined,
