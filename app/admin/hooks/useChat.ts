@@ -637,7 +637,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         queueMicrotask(() => saveToDbRef.current(convIdForSave, finalMsgs));
       }
     }
-  }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage]);
+  }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage, planMode]);
 
   // Plan 실행 확인
   const handleConfirmPlan = useCallback(async (msgId: string) => {
