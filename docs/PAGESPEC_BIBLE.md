@@ -203,7 +203,28 @@ PageSpec 컴포넌트와 별도로, 채팅에서만 쓰는 특수 컴포넌트.
 
 ---
 
-## 제6장: 향후 계획
+## 제6장: LLM 응답 sanitize 레이어 (v0.1, 2026-04-21)
+
+모든 LLM (Gemini/Claude/Codex/GPT — API·CLI 공통) 응답이 `AiManager.processWithTools` 한 지점을 통과하므로 정제도 이 지점에서만 수행. 프론트 컴포넌트는 받은 값을 그대로 렌더.
+
+- **파일**: `core/utils/sanitize.ts`
+- **진입점**: `AiManager.processWithTools` 최종 return 직전 `sanitizeBlock` / `sanitizeReply` 일괄 적용
+- **규칙 (필드명 기반)**:
+  - `TEXT_FIELDS` (label/title/message/description/subLabel/unit/…) → HTML 인라인 태그 + 마크다운 마커(`**`, `*`, `` ` ``) 제거
+  - `NUMERIC_LIKE_FIELDS` (value/delta) → 숫자·숫자성 문자열은 locale 콤마 포맷 (`1000000` → `"1,000,000"`)
+  - `TEXT_ARRAY_FIELDS` (columns/rows/cells/items/steps/indicators/buyPoints/sellPoints) → 배열 원소 재귀 정제. `rows` 는 2차원이라 `insideTextArray` 플래그 전파.
+  - `PRESERVE` (Text.content, Html.content/htmlContent) → 원본 유지 (마크다운 렌더러 + iframe 담당)
+- **프론트 측**: `app/(user)/[...slug]/components.tsx` 의 `cleanPlainText` 는 `null → ''` 코어션 passthrough 로 단순화. 실제 정제 로직 제거 → 이중 처리 / 스타일별 중복 구현 방지.
+- **리플라이 텍스트**: `sanitizeReply` 는 HTML 태그만 마크다운 마커로 치환하고 마커는 유지 (ReactMarkdown 이 렌더).
+
+### 제1항. 추가 원칙
+
+- 새 render_* 컴포넌트의 텍스트 필드명은 `TEXT_FIELDS` set 에 등록 (필드명 기준 자동 인식).
+- 배열 필드(예: `sections`) 원소가 텍스트 원시값이면 `TEXT_ARRAY_FIELDS` 에 추가.
+- 마크다운/HTML 원본이 의미를 갖는 필드(예: Text.content) 는 `PRESERVE_FIELDS_BY_COMP` 에 컴포넌트별 등록.
+- **하드코딩 금지**: 특정 모델·특정 상황 defensive regex 로 덮지 말고 필드명 분류로 해결.
+
+## 제7장: 향후 계획
 
 - [ ] `render_pagespec` 도구 — PageSpec 컴포넌트를 채팅에서도 쓸 수 있게 노출
 - [ ] `LineChart`/`BarChart` 채팅 전용 컴포넌트 (StockChart 스타일)
