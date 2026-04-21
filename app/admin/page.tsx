@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Circle, Copy, CheckCheck, ImagePlus, Plus, Square } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Circle, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -669,6 +669,7 @@ export default function AdminConsole() {
     handleNewConv, handleSelectConv, handleDeleteConv,
     handleSubmit, handleConfirmPlan, handleRejectPlan,
     handleApprovePending, handleRejectPending, handleStop,
+    planMode, setPlanMode,
   } = useChat(aiModel, fetchFileTree);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -851,28 +852,44 @@ export default function AdminConsole() {
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); e.target.value = ''; }}
                 />
                 <div className="flex items-center justify-between px-2 sm:px-3 py-2">
-                  <div className="relative">
+                  <div className="flex items-center gap-1">
+                    <div className="relative">
+                      <button
+                        onClick={() => setShowPlusMenu(v => !v)}
+                        disabled={loading}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
+                      >
+                        <Plus size={20} />
+                      </button>
+                      {showPlusMenu && (
+                        <>
+                          <div className="fixed inset-0 z-20" onClick={() => setShowPlusMenu(false)} />
+                          <div className="absolute bottom-full left-0 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 min-w-[160px]">
+                            <button
+                              onClick={() => { imageInputRef.current?.click(); setShowPlusMenu(false); }}
+                              className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                            >
+                              <ImagePlus size={16} className="text-slate-400" />
+                              이미지 첨부
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    {/* 플랜모드 토글 — ON 이면 propose_plan 강제, OFF 면 AI 판단 */}
                     <button
-                      onClick={() => setShowPlusMenu(v => !v)}
+                      onClick={() => setPlanMode(!planMode)}
                       disabled={loading}
-                      className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
+                      title={planMode ? '플랜모드 ON — 작업 전 plan 카드 제시' : '플랜모드 OFF — AI 가 알아서 판단'}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-colors disabled:opacity-50 ${
+                        planMode
+                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+                          : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 border border-transparent'
+                      }`}
                     >
-                      <Plus size={20} />
+                      <ListChecks size={14} />
+                      <span>플랜</span>
                     </button>
-                    {showPlusMenu && (
-                      <>
-                        <div className="fixed inset-0 z-20" onClick={() => setShowPlusMenu(false)} />
-                        <div className="absolute bottom-full left-0 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg z-30 py-1 min-w-[160px]">
-                          <button
-                            onClick={() => { imageInputRef.current?.click(); setShowPlusMenu(false); }}
-                            className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-                          >
-                            <ImagePlus size={16} className="text-slate-400" />
-                            이미지 첨부
-                          </button>
-                        </div>
-                      </>
-                    )}
                   </div>
                   <button
                     onClick={() => loading ? handleStop() : handleSubmit()}

@@ -32,6 +32,8 @@ export interface AiRequestOpts {
   conversationId?: string;
   /** 대화 소유자 — search_history 실행 시 owner 스코프 */
   owner?: string;
+  /** 플랜모드 — true 면 AI 가 작업 전에 propose_plan 도구로 계획 카드를 먼저 제시 */
+  planMode?: boolean;
 }
 
 /**

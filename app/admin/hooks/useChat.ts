@@ -34,6 +34,15 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState('');
+  // 플랜모드 토글 — ON 이면 AI 가 propose_plan 도구 우선 호출, OFF 면 알아서 판단
+  // localStorage 영속 (세션 간 유지)
+  const [planMode, setPlanMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('firebat_plan_mode') === 'true';
+  });
+  useEffect(() => {
+    if (typeof window !== 'undefined') localStorage.setItem('firebat_plan_mode', planMode ? 'true' : 'false');
+  }, [planMode]);
   const chatEndRef = useRef<HTMLDivElement>(null);
   // chunk-flow 애니메이션 관리 (도구 사용 흐름에서 최종 text가 흐르듯 등장)
   const chunkAnimRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -438,6 +447,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           config: { model: aiModel },
           history: chatHistory,
           mode: 'tools',
+          planMode, // ON 이면 propose_plan 도구 우선 호출 강제
           ...(activeConvId ? { conversationId: activeConvId } : {}),
           ...(imageData ? { image: imageData } : {}),
           ...(previousResponseId ? { previousResponseId } : {}),
@@ -731,5 +741,6 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     handleSubmit, handleConfirmPlan, handleRejectPlan,
     handleApprovePending, handleRejectPending,
     handleStop,
+    planMode, setPlanMode,
   };
 }
