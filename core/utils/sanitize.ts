@@ -147,44 +147,88 @@ export function isValidBlock(block: unknown): boolean {
   return false;
 }
 
-/** 마크다운 표 추출 → render_table block 변환.
- *  AI 가 시스템 프롬프트의 "마크다운 표 절대 금지" 무시하고 |---| 표 그대로 출력하는 케이스 후처리.
- *  reply 에서 표 패턴 제거 + 추출된 표를 component block 배열로 반환.
+/** 마크다운 표 + 헤더 추출 → 순서 있는 segments 로 분할.
+ *  AI 가 시스템 프롬프트 무시하고 |---| 표 / ## 헤더 그대로 출력하는 케이스 후처리.
+ *  reply 를 line 단위로 walk → 표/헤더 발견 시 segment 분리, 일반 텍스트는 buffer 누적.
  *
- *  마크다운 표 형식:
- *    | 헤더1 | 헤더2 |
- *    | --- | --- |
- *    | 셀1 | 셀2 |
- *
- *  반환: { cleanedReply, tables: [{headers, rows}] } */
+ *  반환: segments — 순서대로 [text|header|table] 구조 */
+export type ReplySegment =
+  | { type: 'text'; text: string }
+  | { type: 'header'; level: number; text: string }
+  | { type: 'table'; headers: string[]; rows: string[][] };
+
+export function extractMarkdownStructure(reply: string): { segments: ReplySegment[] } {
+  if (!reply) return { segments: [] };
+  const segments: ReplySegment[] = [];
+  const lines = reply.split('\n');
+  let textBuffer: string[] = [];
+  const cleanInline = (s: string) => s.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').trim();
+  const flushText = () => {
+    const text = textBuffer.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (text) segments.push({ type: 'text', text });
+    textBuffer = [];
+  };
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // 1. 헤더 (#~######) — 단독 줄
+    const headerMatch = line.match(/^\s*(#{1,6})\s+(.+?)\s*$/);
+    if (headerMatch) {
+      flushText();
+      segments.push({ type: 'header', level: headerMatch[1].length, text: cleanInline(headerMatch[2]) });
+      i++;
+      continue;
+    }
+    // 2. 표 — 헤더줄 + 구분줄 + 데이터줄 N개
+    if (line.trim().startsWith('|') && i + 2 < lines.length) {
+      const headerLine = line.trim();
+      const sepLine = lines[i + 1].trim();
+      const sepCells = sepLine.startsWith('|') ? sepLine.split('|').slice(1, -1).map(c => c.trim()) : [];
+      const isValidSep = sepCells.length > 0 && sepCells.every(c => /^:?-+:?$/.test(c));
+      if (isValidSep) {
+        const headerCells = headerLine.split('|').slice(1, -1).map(c => c.trim());
+        if (headerCells.length === sepCells.length) {
+          const rows: string[][] = [];
+          let j = i + 2;
+          while (j < lines.length && lines[j].trim().startsWith('|')) {
+            const cells = lines[j].trim().split('|').slice(1, -1).map(c => c.trim());
+            if (cells.length === headerCells.length) rows.push(cells);
+            else break;
+            j++;
+          }
+          if (rows.length > 0) {
+            flushText();
+            segments.push({
+              type: 'table',
+              headers: headerCells.map(cleanInline),
+              rows: rows.map(r => r.map(cleanInline)),
+            });
+            i = j;
+            continue;
+          }
+        }
+      }
+    }
+    // 3. 일반 텍스트
+    textBuffer.push(line);
+    i++;
+  }
+  flushText();
+  return { segments };
+}
+
+/** @deprecated extractMarkdownStructure 사용 권장. 하위 호환용으로 유지. */
 export function extractMarkdownTables(reply: string): { cleanedReply: string; tables: Array<{ headers: string[]; rows: string[][] }> } {
-  if (!reply) return { cleanedReply: reply, tables: [] };
+  const { segments } = extractMarkdownStructure(reply);
   const tables: Array<{ headers: string[]; rows: string[][] }> = [];
-  // 표 블록 패턴: 헤더줄 + 구분줄(:--- / --- / ---:) + 데이터줄 1개 이상
-  const tableRe = /(^|\n)((?:\|[^\n]*\|[ \t]*\n)?\|[^\n]*\|[ \t]*\n\|[ \t:|\-]+\|[ \t]*\n(?:\|[^\n]*\|[ \t]*\n?)+)/g;
-  const cleanedReply = reply.replace(tableRe, (match, prefix, tableBlock: string) => {
-    const lines = tableBlock.trim().split('\n').map(l => l.trim()).filter(l => l.startsWith('|'));
-    if (lines.length < 3) return match; // 헤더 + 구분 + 1행 미만이면 표 아님
-    const parseLine = (line: string): string[] => {
-      const cells = line.split('|').slice(1, -1).map(c => c.trim());
-      return cells;
-    };
-    const headers = parseLine(lines[0]);
-    // 구분줄 (lines[1]) 검증 — :---:, ---, --- 패턴
-    const sepCells = parseLine(lines[1]);
-    const isValidSep = sepCells.length === headers.length && sepCells.every(c => /^:?-+:?$/.test(c));
-    if (!isValidSep) return match;
-    const rows = lines.slice(2).map(parseLine).filter(r => r.length === headers.length);
-    if (rows.length === 0 || headers.length === 0) return match;
-    // 셀의 markdown bold (**굵게**) 제거 — render_table 셀은 plain text
-    const cleanCell = (c: string) => c.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').trim();
-    tables.push({
-      headers: headers.map(cleanCell),
-      rows: rows.map(r => r.map(cleanCell)),
-    });
-    return prefix; // 표를 reply 에서 제거 (앞 줄바꿈만 유지)
-  });
-  return { cleanedReply: cleanedReply.replace(/\n{3,}/g, '\n\n').trim(), tables };
+  const textParts: string[] = [];
+  for (const s of segments) {
+    if (s.type === 'table') tables.push({ headers: s.headers, rows: s.rows });
+    else if (s.type === 'text') textParts.push(s.text);
+    else if (s.type === 'header') textParts.push(`${'#'.repeat(s.level)} ${s.text}`);
+  }
+  return { cleanedReply: textParts.join('\n\n'), tables };
 }
 
 /** reply 텍스트 정제 (최종 사용자 메시지 본문 — 마크다운 렌더러에 들어감).

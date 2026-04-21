@@ -303,6 +303,99 @@ function fallback(text: string, onOk: () => void) {
   } catch { /* 무시 */ }
 }
 
+/** chat block (text / html / component) → 복사용 마크다운 직렬화.
+ *  컴포넌트 종류별로 사람이 읽기 좋은 형태로 변환 — 표는 |---| 표, Metric 은 "라벨: 값" 등. */
+function serializeBlockToMarkdown(b: any): string {
+  if (!b || typeof b !== 'object') return '';
+  if (b.type === 'text') return String(b.text || '').trim();
+  if (b.type === 'html') return ''; // iframe 콘텐츠는 복사 제외 (HTML 원문 노출 부적절)
+  if (b.type !== 'component') return '';
+  const name = b.name as string;
+  const p = (b.props || {}) as Record<string, any>;
+  switch (name) {
+    case 'Header': return `${'#'.repeat(Math.min(Math.max(p.level || 2, 1), 6))} ${p.text ?? ''}`.trim();
+    case 'Text': return String(p.content ?? '').trim();
+    case 'Divider': return '---';
+    case 'Table': {
+      const headers = Array.isArray(p.headers) ? p.headers : [];
+      const rows = Array.isArray(p.rows) ? p.rows : [];
+      if (headers.length === 0) return '';
+      const headerLine = `| ${headers.join(' | ')} |`;
+      const sepLine = `| ${headers.map(() => '---').join(' | ')} |`;
+      const rowLines = rows.map((r: any[]) => `| ${r.map(c => String(c ?? '')).join(' | ')} |`);
+      return [headerLine, sepLine, ...rowLines].join('\n');
+    }
+    case 'Metric': {
+      const parts = [`**${p.label ?? ''}**: ${p.value ?? ''}${p.unit ? ' ' + p.unit : ''}`];
+      if (p.delta != null) parts.push(`(Δ ${p.delta})`);
+      if (p.subLabel) parts.push(`— ${p.subLabel}`);
+      return parts.join(' ').trim();
+    }
+    case 'KeyValue': {
+      const items = Array.isArray(p.items) ? p.items : [];
+      const lines = items.map((it: any) => `- **${it.key ?? ''}**: ${it.value ?? ''}`);
+      return p.title ? `**${p.title}**\n${lines.join('\n')}` : lines.join('\n');
+    }
+    case 'List': {
+      const items = Array.isArray(p.items) ? p.items : [];
+      const ordered = !!p.ordered;
+      return items.map((it: string, i: number) => `${ordered ? `${i + 1}.` : '-'} ${it}`).join('\n');
+    }
+    case 'Alert':
+    case 'Callout': {
+      const icon = name === 'Alert' ? '⚠' : 'ℹ';
+      return `${icon} ${p.title ? `**${p.title}** — ` : ''}${p.message ?? ''}`;
+    }
+    case 'Badge':
+    case 'StatusBadge': {
+      if (Array.isArray(p.items)) return p.items.map((it: any) => `[${it.label ?? ''}]`).join(' ');
+      return `[${p.text ?? ''}]`;
+    }
+    case 'Progress':
+      return `**${p.label ?? ''}**: ${p.value ?? 0}${p.max ? ` / ${p.max}` : ''}`;
+    case 'Countdown':
+      return `**${p.label ?? '카운트다운'}**: ${p.targetDate ?? ''}`;
+    case 'Compare': {
+      const lh = p.left?.label ?? 'A';
+      const rh = p.right?.label ?? 'B';
+      const allKeys = new Set<string>();
+      (p.left?.items ?? []).forEach((it: any) => allKeys.add(it.key));
+      (p.right?.items ?? []).forEach((it: any) => allKeys.add(it.key));
+      const lMap = new Map((p.left?.items ?? []).map((it: any) => [it.key, it.value]));
+      const rMap = new Map((p.right?.items ?? []).map((it: any) => [it.key, it.value]));
+      const lines = [
+        p.title ? `**${p.title}**` : '',
+        `| 항목 | ${lh} | ${rh} |`,
+        `| --- | --- | --- |`,
+        ...Array.from(allKeys).map(k => `| ${k} | ${lMap.get(k) ?? '-'} | ${rMap.get(k) ?? '-'} |`),
+      ].filter(Boolean);
+      return lines.join('\n');
+    }
+    case 'Timeline': {
+      const items = Array.isArray(p.items) ? p.items : [];
+      return items.map((it: any) => `- **${it.date ?? ''}** ${it.title ?? ''}${it.description ? ` — ${it.description}` : ''}`).join('\n');
+    }
+    case 'PlanCard': {
+      const steps = Array.isArray(p.steps) ? p.steps : [];
+      const stepLines = steps.map((s: any, i: number) => `${i + 1}. **${s.title ?? ''}**${s.description ? ` — ${s.description}` : ''}${s.tool ? ` [${s.tool}]` : ''}`);
+      const lines = [
+        `## 📋 ${p.title ?? '플랜'}`,
+        ...stepLines,
+        p.estimatedTime ? `_⏱ 예상 소요: ${p.estimatedTime}_` : '',
+        ...(Array.isArray(p.risks) && p.risks.length > 0 ? ['', '**⚠ 주의사항**', ...p.risks.map((r: string) => `- ${r}`)] : []),
+      ].filter(Boolean);
+      return lines.join('\n');
+    }
+    case 'Chart':
+    case 'StockChart':
+      return `[${name === 'StockChart' ? '주식 차트' : '차트'}: ${p.title ?? p.symbol ?? ''}]`;
+    case 'Image':
+      return p.alt ? `![${p.alt}](${p.src ?? ''})` : `![](${p.src ?? ''})`;
+    default:
+      return '';
+  }
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = useCallback(() => {
@@ -642,10 +735,10 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
         </div>
         {/* 복사 버튼 — 버블 바깥 우측 하단 */}
         {(msg.content || (msg.data?.blocks && msg.data.blocks.length > 0)) && !msg.isThinking && (() => {
-          // 전체 텍스트 수집: blocks 있으면 blocks의 text만 합침, 없으면 content
+          // 전체 직렬화: text + 컴포넌트 (Table → 마크다운 표, Metric → "라벨: 값", Header → "## 제목" 등)
           let full = '';
           if (msg.data?.blocks && Array.isArray(msg.data.blocks)) {
-            full = msg.data.blocks.filter((b: any) => b.type === 'text').map((b: any) => b.text).join('\n\n');
+            full = msg.data.blocks.map((b: any) => serializeBlockToMarkdown(b)).filter((s: string) => s).join('\n\n');
           }
           if (!full && msg.content) full = msg.content;
           return full ? (
