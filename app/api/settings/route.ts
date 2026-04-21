@@ -8,15 +8,16 @@ export async function GET(req: NextRequest) {
   if (isAuthError(auth)) return auth;
   const core = getCore();
   const routerEnabledRaw = core.getGeminiKey('system:ai-router:enabled');
-  const routerModel = core.getGeminiKey('system:ai-router:model');
   return NextResponse.json({
     success: true,
     timezone: core.getTimezone(),
     aiModel: core.getAiModel(),
     aiThinkingLevel: core.getAiThinkingLevel(),
     aiRouterEnabled: routerEnabledRaw === 'true' || routerEnabledRaw === '1',
-    aiRouterModel: routerModel || 'gemini-3-flash-lite',
-    userPrompt: core.getUserPrompt(),
+    aiAssistantModel: core.getAiAssistantModel(),
+    aiAssistantModels: core.getAvailableAiAssistantModels(),
+    userPrompt: core.getUserPromptStored(),
+    userPromptDefault: core.getUserPromptDefault(),
   });
 }
 
@@ -39,8 +40,8 @@ export async function PATCH(req: NextRequest) {
   if (typeof body.aiRouterEnabled === 'boolean') {
     core.setGeminiKey('system:ai-router:enabled', body.aiRouterEnabled ? 'true' : 'false');
   }
-  if (typeof body.aiRouterModel === 'string' && body.aiRouterModel) {
-    core.setGeminiKey('system:ai-router:model', body.aiRouterModel);
+  if (typeof body.aiAssistantModel === 'string' && body.aiAssistantModel) {
+    core.setAiAssistantModel(body.aiAssistantModel);
   }
   if (typeof body.userPrompt === 'string') {
     core.setUserPrompt(body.userPrompt);

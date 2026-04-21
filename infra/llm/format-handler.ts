@@ -51,4 +51,8 @@ export interface FormatHandler {
     opts: LlmCallOpts | undefined,
     ctx: FormatHandlerContext,
   ): Promise<InfraResult<LlmToolResponse>>;
+
+  /** 이 format 의 내부 메타 도구 목록 (AI 가 호출하면 안 되는 것들).
+   *  CLI 전용 — API 모드는 구현하지 않음 (빈 배열로 간주). */
+  getBannedInternalTools?(): string[];
 }

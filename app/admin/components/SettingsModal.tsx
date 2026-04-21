@@ -73,10 +73,12 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
 
   // AI 어시스턴트 라우터 (Self-learning Flash Lite)
   const [aiRouterEnabled, setAiRouterEnabled] = useState(false);
-  const [aiRouterModel, setAiRouterModel] = useState('gemini-3-flash-lite');
+  const [aiAssistantModel, setAiAssistantModel] = useState('gemini-3.1-flash-lite-preview');
+  const [aiAssistantModels, setAiAssistantModels] = useState<string[]>(['gemini-3.1-flash-lite-preview', 'gpt-5-nano']);
 
   // 사용자 커스텀 프롬프트 (어드민 채팅·모나코 에디터 공유)
   const [userPrompt, setUserPrompt] = useState('');
+  const [userPromptDefault, setUserPromptDefault] = useState('');
   const [userPromptSaving, setUserPromptSaving] = useState(false);
   const [userPromptSaved, setUserPromptSaved] = useState(false);
 
@@ -149,8 +151,10 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
         if (data.timezone) setUserTimezone(data.timezone);
         if (data.aiThinkingLevel) setThinkingLevel(data.aiThinkingLevel);
         if (typeof data.aiRouterEnabled === 'boolean') setAiRouterEnabled(data.aiRouterEnabled);
-        if (data.aiRouterModel) setAiRouterModel(data.aiRouterModel);
+        if (data.aiAssistantModel) setAiAssistantModel(data.aiAssistantModel);
+        if (Array.isArray(data.aiAssistantModels) && data.aiAssistantModels.length > 0) setAiAssistantModels(data.aiAssistantModels);
         if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
+        if (typeof data.userPromptDefault === 'string') setUserPromptDefault(data.userPromptDefault);
       }
     }).catch(() => {});
 
@@ -529,7 +533,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
         aiModel,
         aiThinkingLevel: thinkingLevel,
         aiRouterEnabled,
-        aiRouterModel,
+        aiAssistantModel,
       }),
     }).catch(() => {});
 
@@ -1025,15 +1029,19 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                           )}
                         </div>
                       </label>
-                      {aiRouterEnabled && hasGeminiKey && (
-                        <Field label="모델">
+                      {aiRouterEnabled && (
+                        <Field label="AI Assistant 모델">
                           <SelectInput
-                            value={aiRouterModel}
-                            onChange={setAiRouterModel}
-                            options={[
-                              { value: 'gemini-3-flash-lite', label: 'Gemini 3 Flash Lite (저비용)' },
-                              { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview (정확도↑)' },
-                            ]}
+                            value={aiAssistantModel}
+                            onChange={setAiAssistantModel}
+                            options={aiAssistantModels.map(id => ({
+                              value: id,
+                              label: id === 'gemini-3.1-flash-lite-preview'
+                                ? 'Gemini 3.1 Flash Lite — $0.25 / $1.50 per 1M'
+                                : id === 'gpt-5-nano'
+                                  ? 'GPT-5 Nano — $0.05 / $0.40 per 1M (최저가)'
+                                  : id,
+                            }))}
                           />
                         </Field>
                       )}
@@ -1041,14 +1049,23 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                   );
                 })()}
 
-                {/* 사용자 커스텀 프롬프트 — 어드민 채팅·모나코 에디터 공유 */}
+                {/* 사용자 지시사항 — User AI 전용 (Code Assistant·AI Assistant 미적용) */}
                 <div className="mt-4 pt-4 border-t border-slate-200">
                   <div className="flex items-center justify-between mb-1.5">
                     <FieldLabel>
-                      사용자 지시사항 <span className="text-[10px] font-normal text-slate-400">(어드민 채팅 전용 — 모나코 코드 에디터에는 미적용)</span>
+                      사용자 지시사항 <span className="text-[10px] font-normal text-slate-400">(User AI 전용 — Code Assistant·AI Assistant 미적용)</span>
                     </FieldLabel>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-slate-400">{userPrompt.length} / 2000</span>
+                      {!userPrompt && userPromptDefault && (
+                        <button
+                          onClick={() => setUserPrompt(userPromptDefault.slice(0, 2000))}
+                          className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 text-[11px] font-bold rounded-md transition-colors"
+                          title="기본 지시사항을 textarea 에 채워 편집 시작"
+                        >
+                          기본값 불러오기
+                        </button>
+                      )}
                       <button
                         onClick={saveUserPrompt}
                         disabled={userPromptSaving}
@@ -1062,12 +1079,14 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     value={userPrompt}
                     onChange={(v) => setUserPrompt(v.slice(0, 2000))}
                     rows={6}
-                    placeholder={'예:\n- 답변은 한국어 존댓말 유지\n- 내 프로젝트는 Next.js + Tailwind, TypeScript strict\n- 수치 표시는 3자리 콤마 + 원/% 단위 병기\n- "좋은 지적입니다" 같은 추임새 금지'}
+                    placeholder={userPromptDefault
+                      ? `(저장된 값 없음 — 아래 기본 지시사항이 자동 적용 중)\n\n${userPromptDefault.slice(0, 400)}…`
+                      : '예:\n- 답변은 한국어 존댓말 유지\n- 내 프로젝트는 Next.js + Tailwind, TypeScript strict\n- 수치 표시는 3자리 콤마 + 원/% 단위 병기'}
                   />
                   <HelpText>
-                    어드민 채팅의 매 AI 요청 시 시스템 프롬프트 뒤에 추가됩니다. 페르소나·언어·도메인 지식·포맷 선호 등을 기록하세요.
-                    코드 에디터(모나코) 에는 적용되지 않아요 — 코드 품질에 부적절한 영향 차단.
-                    시스템 규칙과 충돌하면 시스템이 우선합니다.
+                    User AI (어드민 채팅) 매 요청 시 시스템 프롬프트 뒤에 주입. 비어두면 기본 지시사항이 자동 적용 — "기본값 불러오기" 로 편집 시작.
+                    Code Assistant (모나코)·AI Assistant (도구 라우터) 에는 적용 안 됨 — 코드 품질·라우팅 정확도 보호.
+                    시스템 규칙과 충돌하면 시스템이 우선.
                   </HelpText>
                 </div>
               </>

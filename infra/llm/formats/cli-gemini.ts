@@ -72,6 +72,11 @@ interface RunOptions {
 }
 
 export class CliGeminiFormat implements FormatHandler {
+  /** Gemini CLI 내장 메타 도구 — 진입 시 출력 스트림이 멈추거나 UI 가 꼬여 금지. */
+  getBannedInternalTools(): string[] {
+    return ['enter_plan_mode', 'exit_plan_mode', 'plan_mode', 'plan'];
+  }
+
   async ask(prompt: string, systemPrompt: string | undefined, history: ChatMessage[], opts: LlmCallOpts | undefined, _ctx: FormatHandlerContext): Promise<InfraResult<LlmJsonResponse>> {
     const jsonInstruction = opts?.jsonSchema
       ? `\n\n응답은 다음 JSON 스키마를 정확히 따르는 JSON 객체로만 반환 (마크다운·설명 금지):\n${JSON.stringify(opts.jsonSchema)}`
@@ -156,8 +161,8 @@ export class CliGeminiFormat implements FormatHandler {
     fs.mkdirSync(geminiDir, { recursive: true });
     if (systemPrompt) {
       // Gemini CLI 는 MCP 도구를 `mcp_firebat_*` 접두사로 등록. 시스템 프롬프트는 맨 이름(schedule_task 등)으로
-      // 작성되어 있어 Gemini 가 매칭 실패 → 도구 호출 0개 현상 발생. 접두사 규칙 주입.
-      const geminiCliNote = `\n\n## Gemini CLI 전용 도구 이름 규칙 (매우 중요)\n\n이 런타임에서는 Firebat 내부 도구가 MCP 서버 \`firebat\` 경유로 등록되어, **\`mcp_firebat_\` 접두사**가 붙은 이름으로만 호출 가능합니다. 위 문서에 나온 도구 이름을 실제로 호출할 때는 반드시 접두사를 붙이세요:\n\n- \`schedule_task\` → \`mcp_firebat_schedule_task\`\n- \`run_task\` → \`mcp_firebat_run_task\`\n- \`execute\` → \`mcp_firebat_execute\`\n- \`search_history\` → \`mcp_firebat_search_history\`\n- \`render_header\` → \`mcp_firebat_render_header\`\n- \`render_text\` → \`mcp_firebat_render_text\`\n- \`render_grid\` / \`render_card\` / \`render_table\` / \`render_chart\` / \`render_stock_chart\` / \`render_alert\` / \`render_badge\` / \`render_progress\` / \`render_list\` / \`render_divider\` / \`render_countdown\` / \`render_image\` / \`render_metric\` / \`render_timeline\` / \`render_compare\` / \`render_key_value\` / \`render_status_badge\` / \`render_html\` 등 **모든 render_ 도구** → \`mcp_firebat_render_*\` 형태로 호출\n- \`sysmod_kiwoom\` → \`mcp_firebat_sysmod_kiwoom\`, \`sysmod_upbit\` → \`mcp_firebat_sysmod_upbit\` 등 **모든 sysmod_ 도구** 동일 규칙\n- \`save_page\` / \`get_page\` / \`list_pages\` / \`delete_page\` / \`read_file\` / \`write_file\` / \`delete_file\` / \`list_dir\` / \`list_projects\` / \`delete_project\` / \`suggest\` / \`request_secret\` / \`set_secret\` 등 모든 핵심 도구 동일\n\n외부 MCP(gmail 등)는 자체 네임스페이스 접두사 (\`gmail_send_email\` 등) 를 따르므로 위 규칙 적용 안 함.\n\n**절대 원칙**: 위 문서에서 언급된 도구 이름이 있으면 접두사 \`mcp_firebat_\` 를 붙여 호출하세요. 접두사 없이 호출하면 'Tool not found' 로 실패합니다.\n`;
+      // 작성되어 있어 Gemini 가 매칭 실패 → 도구 호출 0개 현상 발생. 접두사 규칙만 주입 (도구 이름 enumerate 안 함).
+      const geminiCliNote = `\n\n## Gemini CLI 전용 도구 이름 규칙 (매우 중요)\n\n이 런타임에서는 Firebat 내부 도구가 MCP 서버 \`firebat\` 경유로 등록됩니다. 시스템 프롬프트·도구 문서에 적힌 모든 Firebat 도구 이름 (render_*, sysmod_*, schedule_task, run_task, save_page, write_file, suggest, request_secret 등) 은 호출 시 반드시 \`mcp_firebat_\` 접두사를 붙이세요.\n\n예시: \`render_chart\` → \`mcp_firebat_render_chart\`, \`sysmod_kiwoom\` → \`mcp_firebat_sysmod_kiwoom\`, \`schedule_task\` → \`mcp_firebat_schedule_task\`\n\n외부 MCP (gmail 등) 는 각자 네임스페이스 규칙을 따름. 접두사 없이 호출 시 'Tool not found' 로 실패합니다.\n`;
       fs.writeFileSync(path.join(workspace, 'GEMINI.md'), systemPrompt + geminiCliNote);
     }
     // 프로젝트 로컬 MCP 설정

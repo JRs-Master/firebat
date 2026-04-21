@@ -46,6 +46,12 @@ export class ConfigDrivenAdapter implements ILlmPort {
 
   getModelId(): string { return this.defaultModelId; }
 
+  getBannedInternalTools(modelId?: string): string[] {
+    const config = this.resolveConfig(modelId);
+    const handler = this.handlers[config.format];
+    return handler?.getBannedInternalTools?.() ?? [];
+  }
+
   /** 모델 ID 또는 prefix로 config 해석 */
   private resolveConfig(modelId?: string): ModelConfig {
     const id = modelId ?? this.defaultModelId;

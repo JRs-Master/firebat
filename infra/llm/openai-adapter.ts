@@ -28,6 +28,10 @@ export class OpenAiAdapter implements ILlmPort {
     return this.defaultModel;
   }
 
+  getBannedInternalTools(_modelId?: string): string[] {
+    return []; // OpenAI API 모드는 CLI 내장 도구 없음
+  }
+
   private getClient(): OpenAI | null {
     const apiKey = this.resolveApiKey();
     if (!apiKey) return null;

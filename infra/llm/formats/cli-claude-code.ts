@@ -103,6 +103,11 @@ interface ClaudeEvent {
 }
 
 export class CliClaudeCodeFormat implements FormatHandler {
+  /** Claude Code CLI 내장 도구 — 이미 --allowed-tools 로 필터링되지만 프롬프트에서도 재강조. */
+  getBannedInternalTools(): string[] {
+    return ['Task', 'Agent', 'ToolSearch'];
+  }
+
   async ask(prompt: string, systemPrompt: string | undefined, history: ChatMessage[], opts: LlmCallOpts | undefined, _ctx: FormatHandlerContext): Promise<InfraResult<LlmJsonResponse>> {
     // JSON 모드: Claude Code 에 JSON 반환 지시. jsonSchema 있으면 프롬프트에 병합.
     const jsonInstruction = opts?.jsonSchema

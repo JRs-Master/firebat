@@ -11,6 +11,14 @@ export const VK_SYSTEM_AI_MODEL = 'system:ai-model';
 export const VK_SYSTEM_AI_THINKING_LEVEL = 'system:ai-thinking-level';
 /** 사용자가 직접 입력하는 커스텀 프롬프트 — 어드민 채팅·모나코 에디터 모두 주입 */
 export const VK_SYSTEM_USER_PROMPT = 'system:user-prompt';
+/** AI Assistant (도구 라우터·자기진화 등 시스템 내부 서브 AI) 모델 선택 */
+export const VK_SYSTEM_AI_ASSISTANT_MODEL = 'system:ai-router:model';
+
+/** AI Assistant 기본 모델. User AI 와 별개의 백엔드 헬퍼 — 싸고 빠른 모델 선호.
+ *  `infra/llm/configs/<id>.json` 에 대응 설정 필요. */
+export const DEFAULT_AI_ASSISTANT_MODEL = 'gemini-3.1-flash-lite-preview';
+/** UI 에 노출할 AI Assistant 선택지. 토글·드롭다운 옵션 출처. */
+export const AI_ASSISTANT_MODELS: readonly string[] = ['gemini-3.1-flash-lite-preview', 'gpt-5-nano'];
 
 // ── 인증 ──
 export const VK_ADMIN_ID = 'FIREBAT_ADMIN_ID';

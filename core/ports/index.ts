@@ -325,6 +325,10 @@ export interface ILlmPort {
   askWithTools(prompt: string, systemPrompt: string, tools: ToolDefinition[], history?: ChatMessage[], toolExchanges?: ToolExchangeEntry[], opts?: LlmCallOpts): Promise<InfraResult<LlmToolResponse>>;
   /** 기본 모델 ID 반환 */
   getModelId(): string;
+  /** 지정 모델 런타임의 내부 메타 도구 목록 (AI 가 호출하면 안 되는 것들).
+   *  CLI 전용 (enter_plan_mode, Task, Agent 등 각 CLI 내장 도구). API 모드는 빈 배열.
+   *  AiManager 가 시스템 프롬프트에 주입 → 공급자별 하드코딩 회피. */
+  getBannedInternalTools(modelId?: string): string[];
 }
 
 export interface INetworkPort {
