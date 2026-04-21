@@ -147,6 +147,46 @@ export function isValidBlock(block: unknown): boolean {
   return false;
 }
 
+/** 마크다운 표 추출 → render_table block 변환.
+ *  AI 가 시스템 프롬프트의 "마크다운 표 절대 금지" 무시하고 |---| 표 그대로 출력하는 케이스 후처리.
+ *  reply 에서 표 패턴 제거 + 추출된 표를 component block 배열로 반환.
+ *
+ *  마크다운 표 형식:
+ *    | 헤더1 | 헤더2 |
+ *    | --- | --- |
+ *    | 셀1 | 셀2 |
+ *
+ *  반환: { cleanedReply, tables: [{headers, rows}] } */
+export function extractMarkdownTables(reply: string): { cleanedReply: string; tables: Array<{ headers: string[]; rows: string[][] }> } {
+  if (!reply) return { cleanedReply: reply, tables: [] };
+  const tables: Array<{ headers: string[]; rows: string[][] }> = [];
+  // 표 블록 패턴: 헤더줄 + 구분줄(:--- / --- / ---:) + 데이터줄 1개 이상
+  const tableRe = /(^|\n)((?:\|[^\n]*\|[ \t]*\n)?\|[^\n]*\|[ \t]*\n\|[ \t:|\-]+\|[ \t]*\n(?:\|[^\n]*\|[ \t]*\n?)+)/g;
+  const cleanedReply = reply.replace(tableRe, (match, prefix, tableBlock: string) => {
+    const lines = tableBlock.trim().split('\n').map(l => l.trim()).filter(l => l.startsWith('|'));
+    if (lines.length < 3) return match; // 헤더 + 구분 + 1행 미만이면 표 아님
+    const parseLine = (line: string): string[] => {
+      const cells = line.split('|').slice(1, -1).map(c => c.trim());
+      return cells;
+    };
+    const headers = parseLine(lines[0]);
+    // 구분줄 (lines[1]) 검증 — :---:, ---, --- 패턴
+    const sepCells = parseLine(lines[1]);
+    const isValidSep = sepCells.length === headers.length && sepCells.every(c => /^:?-+:?$/.test(c));
+    if (!isValidSep) return match;
+    const rows = lines.slice(2).map(parseLine).filter(r => r.length === headers.length);
+    if (rows.length === 0 || headers.length === 0) return match;
+    // 셀의 markdown bold (**굵게**) 제거 — render_table 셀은 plain text
+    const cleanCell = (c: string) => c.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1').trim();
+    tables.push({
+      headers: headers.map(cleanCell),
+      rows: rows.map(r => r.map(cleanCell)),
+    });
+    return prefix; // 표를 reply 에서 제거 (앞 줄바꿈만 유지)
+  });
+  return { cleanedReply: cleanedReply.replace(/\n{3,}/g, '\n\n').trim(), tables };
+}
+
 /** reply 텍스트 정제 (최종 사용자 메시지 본문 — 마크다운 렌더러에 들어감).
  *  모든 LLM (API·CLI 공통) 이 거치는 지점 — 공급자별 후처리는 여기로 일원화. */
 export function sanitizeReply(reply: string | undefined | null): string {
