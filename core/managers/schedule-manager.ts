@@ -1,7 +1,7 @@
 import type { FirebatCore } from '../index';
 import type { ICronPort, ILogPort, CronScheduleOptions, CronTriggerInfo, CronJobResult } from '../ports';
 import type { InfraResult } from '../types';
-import { eventBus } from '../../lib/events';
+// SSE emit 은 Core 가 담당 — Manager 는 더 이상 eventBus import 불필요
 
 /**
  * Schedule Manager — 크론/예약 CRUD
@@ -17,7 +17,8 @@ export class ScheduleManager {
     private readonly cron: ICronPort,
     private readonly log: ILogPort,
   ) {
-    this.cron.onTrigger(async (info) => this.handleTrigger(info));
+    // 비동기 트리거 콜백도 Core facade 경유 — BIBLE 일관성 (예외 0건)
+    this.cron.onTrigger(async (info) => this.core.handleCronTrigger(info));
   }
 
   // ── 크론 CRUD ──
@@ -62,9 +63,9 @@ export class ScheduleManager {
     return this.cron.consumeNotifications();
   }
 
-  // ── 트리거 핸들러 ──
+  // ── 트리거 핸들러 (Core 가 호출, SSE emit 은 Core 가 담당) ──
 
-  private async handleTrigger(info: CronTriggerInfo): Promise<CronJobResult> {
+  async handleTrigger(info: CronTriggerInfo): Promise<CronJobResult> {
     const start = Date.now();
     let success = false;
     let error: string | undefined;
@@ -107,10 +108,7 @@ export class ScheduleManager {
       await this.cron.cancel(info.jobId);
     }
 
-    // SSE 이벤트
-    eventBus.emit({ type: 'cron:complete', data: { jobId: info.jobId, success, durationMs, error } });
-    eventBus.emit({ type: 'sidebar:refresh', data: {} });
-
+    // SSE emit 은 Core.handleCronTrigger 에서 담당 (BIBLE 일관성)
     return { jobId: info.jobId, targetPath: info.targetPath, trigger: info.trigger, success, durationMs, error };
   }
 }

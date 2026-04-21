@@ -99,7 +99,9 @@ interface FirebatInfraContainer {
 - 매니저는 자기 도메인의 인프라 포트를 **생성자에서 직접** 받는다.
 - 크로스 도메인 호출이 필요한 매니저(AI, Schedule)는 추가로 `FirebatCore` 참조를 받는다.
 - 매니저끼리 직접 호출 **금지** — Core가 유일한 중재자.
-- SSE 이벤트는 Core 파사드 메서드에서 발행. 예외: ScheduleManager.handleTrigger (비동기 크론 콜백).
+- SSE 이벤트는 **Core 파사드 메서드에서만 발행** — 예외 0건 (v0.1, 2026-04-21).
+  - 비동기 트리거 콜백 (cron/webhook/WebSocket/FS watcher 등) 도 Core facade 경유. 인프라 어댑터가 callback 등록 시 `core.handleXxx()` 호출하도록 closure 로 Core 참조 전달.
+  - 예: `cron.onTrigger((info) => core.handleCronTrigger(info))` — Manager 직접 호출 X. Core 가 Manager 메서드 호출 후 SSE emit.
 - **TaskManager ↔ ScheduleManager 관계**: TaskManager가 파이프라인 실행 엔진 담당. ScheduleManager는 크론 트리거 시 Core.runTask()로 TaskManager에 위임.
 - 로깅(ILogPort), 네트워크(INetworkPort)는 횡단 관심사 — 매니저 불필요, 포트 직접 사용.
 
@@ -219,8 +221,8 @@ interface FirebatPlan {
 
 ### ScheduleManager
 - 크론/예약 CRUD. ICronPort, ILogPort 직접 주입 + Core 참조.
-- `onTrigger` 콜백에서 파이프라인은 Core.runTask()로 TaskManager에 위임, 모듈/URL은 직접 처리.
-- SSE 직접 발행 (비동기 크론 콜백 예외).
+- `cron.onTrigger((info) => core.handleCronTrigger(info))` — 비동기 트리거 콜백도 Core facade 경유 (BIBLE 일관, 예외 0건).
+- handleTrigger 는 작업만 수행, SSE emit 은 Core.handleCronTrigger 가 담당.
 
 ### SecretManager
 - Vault 시크릿 관리 (사용자/시스템). IVaultPort, IStoragePort 직접 주입.

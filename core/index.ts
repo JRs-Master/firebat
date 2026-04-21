@@ -305,6 +305,15 @@ export class FirebatCore {
   clearCronLogs() { this.schedule.clearLogs(); }
   consumeCronNotifications() { return this.schedule.consumeNotifications(); }
 
+  /** Cron 비동기 트리거 콜백 — 시각 도달 시 cron 어댑터가 호출.
+   *  Manager 직접 호출 안 하고 Core facade 경유 → SSE emit 단일 지점 (BIBLE 일관성). */
+  async handleCronTrigger(info: import('./ports').CronTriggerInfo) {
+    const result = await this.schedule.handleTrigger(info);
+    eventBus.emit({ type: 'cron:complete', data: { jobId: result.jobId, success: result.success, durationMs: result.durationMs, error: result.error } });
+    eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    return result;
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   //  대화 히스토리 (admin 다기기 동기화) → ConversationManager
   // ══════════════════════════════════════════════════════════════════════════
