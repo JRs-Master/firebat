@@ -990,7 +990,7 @@ export default function AdminConsole() {
                       }`}
                     >
                       <ListChecks size={14} />
-                      <span>{planMode ? '플랜모드 사용중' : '플랜모드 미사용'}</span>
+                      <span>플랜</span>
                     </button>
                   </div>
                   <button
