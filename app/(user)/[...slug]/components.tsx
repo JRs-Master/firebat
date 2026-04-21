@@ -319,15 +319,17 @@ function TableComp({ headers = [], rows = [], stickyCol, align, cellAlign }: {
     return 'text-left';
   };
 
-  /** 헤더는 짧으면(≤10자) 가운데, 길면 줄바꿈 가능성 → 컬럼 자동 정렬 따름. */
+  /** 헤더 정책: 명시값 우선, 그 외 무조건 가운데.
+   *  단 한국어 기준 ~20자 초과 시 줄바꿈 거의 확실 → 좌측 정렬 (multi-line 가운데 정렬 어색 회피).
+   *  컬럼 width 가 동적이라 정확한 줄바꿈 측정은 불가, 보수적 휴리스틱. */
   const headerAlignClass = (ci: number, headerText: string) => {
     const explicit = align?.[ci];
     if (explicit === 'left') return 'text-left';
     if (explicit === 'right') return 'text-right tabular-nums';
     if (explicit === 'center') return 'text-center';
     const len = (headerText || '').trim().length;
-    if (len > 0 && len <= 10) return 'text-center';
-    return alignClass(ci, false);
+    if (len > 20) return 'text-left';
+    return 'text-center';
   };
 
   return (
