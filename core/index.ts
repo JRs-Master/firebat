@@ -36,6 +36,9 @@ export interface AiRequestOpts {
   /** 사용자가 직전 turn 의 propose_plan 카드에서 ✓실행 클릭 시 동봉되는 planId.
    *  AiManager 가 plan-store 에서 steps 조회 후 시스템 프롬프트에 강제 주입. */
   planExecuteId?: string;
+  /** 사용자가 ⚙수정 제안 input 에 피드백 입력 시 동봉되는 planId.
+   *  AiManager 가 직전 plan + 사용자 피드백 → propose_plan 재호출 강제. */
+  planReviseId?: string;
 }
 
 /**

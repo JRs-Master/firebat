@@ -291,21 +291,10 @@ function TableComp({ headers = [], rows = [], stickyCol, align, cellAlign }: {
   // stickyCol: 미지정 시 4열 이상이면 자동 활성 (첫 열 = 행 라벨 추정)
   const firstColSticky = stickyCol ?? (headers.length >= 4);
 
-  // 컬럼별 숫자성 판정 — 컬럼 셀 중 60%+ 가 숫자면 숫자 컬럼으로 간주 (자동 우측 정렬)
-  // "약 22배", "대략 5.0배", "~51%", "258.9조원", "300조원+" 등 prefix·합성 단위·접미사 모두 인식.
-  const isNumLikeStr = (s: string) => /^(?:약|대략|~|≈|approx\.?)?\s*[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(?:원|%|배|개|건|만|억|조|천|명|월|일|시|분|달러|엔|위안|유로|\$|￥|€|£)*\s*[+\-]?\s*$/i.test(s);
-  const numericCol: boolean[] = headers.map((_, ci) => {
-    if (rows.length === 0) return false;
-    let n = 0;
-    for (const r of rows) {
-      const v = typeof r[ci] === 'string' ? (r[ci] as string).trim() : String(r[ci] ?? '');
-      if (v && isNumLikeStr(v)) n++;
-    }
-    return n / rows.length >= 0.6;
-  });
-
-  const alignClass = (ci: number, cellIsNum: boolean, ri?: number) => {
-    // 셀별 override (최우선)
+  /** 정렬: AI 가 align 배열로 명시한 값만 사용. 미지정 시 column 전체 left (cells), center (header).
+   *  per-cell 자동 감지 제거 — column 안에서 cell 마다 정렬 다르게 보이는 문제 차단. */
+  const alignClass = (ci: number, ri?: number) => {
+    // 셀별 override (최우선) — AI 가 명시한 경우만
     if (ri != null) {
       const cellExplicit = cellAlign?.[ri]?.[ci];
       if (cellExplicit === 'left') return 'text-left';
@@ -317,14 +306,11 @@ function TableComp({ headers = [], rows = [], stickyCol, align, cellAlign }: {
     if (explicit === 'left') return 'text-left';
     if (explicit === 'right') return 'text-right tabular-nums';
     if (explicit === 'center') return 'text-center';
-    // 자동: 컬럼 숫자 지배적 → 우측, 셀 자체가 숫자 → 우측, 그 외 → 좌측
-    if (numericCol[ci] || cellIsNum) return 'text-right tabular-nums';
+    // 미지정: 좌측 (column 안 일관성 유지)
     return 'text-left';
   };
 
-  /** 헤더 정책: 명시값 우선, 그 외 무조건 가운데.
-   *  단 한국어 기준 ~20자 초과 시 줄바꿈 거의 확실 → 좌측 정렬 (multi-line 가운데 정렬 어색 회피).
-   *  컬럼 width 가 동적이라 정확한 줄바꿈 측정은 불가, 보수적 휴리스틱. */
+  /** 헤더 정책: 명시값 우선, 그 외 짧으면(≤20자) 가운데, 길면 좌측. */
   const headerAlignClass = (ci: number, headerText: string) => {
     const explicit = align?.[ci];
     if (explicit === 'left') return 'text-left';
@@ -360,16 +346,15 @@ function TableComp({ headers = [], rows = [], stickyCol, align, cellAlign }: {
               {row.map((cell, ci) => {
                 const isStickyCell = firstColSticky && ci === 0;
                 const s = typeof cell === 'string' ? cell.trim() : String(cell);
-                const cellIsNum = isNumLikeStr(s);
-                const isPositive = cellIsNum && /^[▲+]/.test(s);
-                const isNegative = cellIsNum && /^[▼\-−]/.test(s);
+                // 색상만 유지 — ▲▼ 패턴 (등락 시각화). 정렬은 column 단위 AI 명시.
+                const isPositive = /^[▲+]/.test(s);
+                const isNegative = /^[▼\-−]/.test(s);
                 const numClass = isPositive ? 'text-red-600 font-semibold' : isNegative ? 'text-blue-600 font-semibold' : '';
-                // 숫자 셀이면 3자리 콤마 자동, 텍스트 셀이면 HTML/마크다운 마커 제거
-                const displayCell = cellIsNum ? formatNumberString(cell) : cleanPlainText(cell);
+                const displayCell = formatNumberString(cell);
                 return (
                   <td
                     key={ci}
-                    className={`px-4 py-3 text-[13px] border-b border-gray-100 align-top min-w-[120px] break-words ${alignClass(ci, cellIsNum, ri)} ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold whitespace-nowrap text-gray-800' : numClass || 'text-gray-800'}`}
+                    className={`px-4 py-3 text-[13px] border-b border-gray-100 align-top min-w-[120px] break-words ${alignClass(ci, ri)} ${isStickyCell ? 'sticky left-0 z-10 bg-white shadow-[2px_0_0_0_#f3f4f6] font-semibold whitespace-nowrap text-gray-800' : numClass || 'text-gray-800'}`}
                   >
                     {displayCell}
                   </td>
@@ -1070,12 +1055,9 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, alig
   const valStr = formatNumberString(value);
 
   // value 가 숫자 패턴인지 (콤마·부호·단위·approximate prefix 허용)
-  const valueIsNumeric = typeof value === 'number'
-    || /^(?:약|대략|~|≈|approx\.?)?\s*[▲▼+\-−]?\s*[\d,]+(\.\d+)?\s*(원|%|배|개|건|만|억|조|명|월|일|시|분|달러|엔|위안|유로|\$|￥|€|£)?$/i.test(String(value).trim());
-
-  // 우선순위: 필드별 명시 > 전체 align > 자동(한국 금융 카드 스타일)
+  // 우선순위: 필드별 명시 > 전체 align > 기본값 (자동 numeric 감지 제거 — AI 명시 안 하면 일관)
   const la = labelAlign    ?? align ?? 'center';
-  const va = valueAlign    ?? align ?? (valueIsNumeric ? 'right' : 'center');
+  const va = valueAlign    ?? align ?? 'center';
   const da = deltaAlign    ?? align ?? 'right';
   const sa = subLabelAlign ?? align ?? 'center';
 
@@ -1089,7 +1071,7 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, alig
         <span className="font-medium">{cleanPlainText(label)}</span>
       </div>
       <div className={`flex items-baseline gap-1 w-full ${justify(va)}`}>
-        <span className={`text-2xl font-bold text-gray-900 ${valueIsNumeric ? 'tabular-nums' : ''}`}>{valueIsNumeric ? valStr : cleanPlainText(valStr)}</span>
+        <span className="text-2xl font-bold text-gray-900 tabular-nums">{valStr}</span>
         {unit && <span className="text-sm text-gray-500">{cleanPlainText(unit)}</span>}
       </div>
       {delta != null && (

@@ -375,7 +375,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   }, [activeConvId]);
 
   // ── 전송 ───────────────────────────────────────────────────────────────────
-  const handleSubmit = useCallback(async (overrideText?: string, isSuggestion?: boolean, meta?: { planExecuteId?: string }) => {
+  const handleSubmit = useCallback(async (overrideText?: string, isSuggestion?: boolean, meta?: { planExecuteId?: string; planReviseId?: string }) => {
     const text = overrideText ?? input;
     if (!text.trim() || loading) return;
     const userPrompt = text;
@@ -457,6 +457,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           mode: 'tools',
           planMode, // ON 이면 propose_plan 도구 우선 호출 강제
           ...(meta?.planExecuteId ? { planExecuteId: meta.planExecuteId } : {}),
+          ...(meta?.planReviseId ? { planReviseId: meta.planReviseId } : {}),
           ...(activeConvId ? { conversationId: activeConvId } : {}),
           ...(imageData ? { image: imageData } : {}),
           ...(previousResponseId ? { previousResponseId } : {}),

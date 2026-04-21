@@ -261,10 +261,10 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
             estimatedTime: args.estimatedTime,
             risks: args.risks,
           },
-          // ✓실행 클릭 시 frontend 가 이 type 을 보고 planId 를 chat 요청에 동봉
+          // ✓실행 → planExecuteId 동봉 / ⚙수정 → input + planReviseId 동봉 → AI 가 plan 재작성
           suggestions: [
             { type: 'plan-confirm', planId, label: '✓ 실행' },
-            '⚙ 수정 제안',
+            { type: 'plan-revise', planId, label: '⚙ 수정 제안', placeholder: '예: 1단계 빼고, 차트도 추가해줘' },
             '✕ 취소',
           ],
         }) }],

@@ -89,9 +89,9 @@ function renderMarkdown(text: string) {
 
 // ─── 선택지 버튼 (텍스트 버튼 + 인라인 입력 + 토글 다중 선택) ─────────────────
 function SuggestionButtons({ suggestions, loading, onSuggestion }: {
-  suggestions: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[] } | { type: 'plan-confirm'; planId: string; label: string })[];
+  suggestions: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[] } | { type: 'plan-confirm'; planId: string; label: string } | { type: 'plan-revise'; planId: string; label: string; placeholder?: string })[];
   loading: boolean;
-  onSuggestion?: (text: string, meta?: { planExecuteId?: string }) => void;
+  onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
 }) {
   const [openInput, setOpenInput] = useState<number | null>(null);
   const [inputValue, setInputValue] = useState('');
@@ -113,9 +113,9 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
     if (openInput !== null) inputRef.current?.focus();
   }, [openInput]);
 
-  const handleInputSubmit = () => {
+  const handleInputSubmit = (meta?: { planReviseId?: string }) => {
     if (!inputValue.trim()) return;
-    onSuggestion?.(inputValue.trim());
+    onSuggestion?.(inputValue.trim(), meta);
     setOpenInput(null);
     setInputValue('');
   };
@@ -155,6 +155,33 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
             </button>
           );
         }
+        if (item.type === 'plan-revise') {
+          // ⚙수정 제안 — input 열림 → 사용자 피드백 입력 → planReviseId 동봉 전송
+          if (openInput === i) {
+            return (
+              <div key={i} className="flex items-center gap-1.5 px-3 py-2.5 border-b border-slate-200 last:border-b-0 bg-amber-50/40">
+                <input ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && handleInputSubmit({ planReviseId: item.planId })}
+                  placeholder={item.placeholder || '어떻게 수정할까요?'}
+                  className="flex-1 px-3 py-1.5 border border-amber-300 rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-200 bg-white" />
+                <button onClick={() => handleInputSubmit({ planReviseId: item.planId })} disabled={!inputValue.trim()}
+                  className="p-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors disabled:opacity-50">
+                  <Send size={14} />
+                </button>
+                <button onClick={() => { setOpenInput(null); setInputValue(''); }}
+                  className="p-1.5 text-slate-400 hover:text-slate-600">
+                  <X size={14} />
+                </button>
+              </div>
+            );
+          }
+          return (
+            <button key={i} onClick={() => setOpenInput(i)} disabled={loading}
+              className="w-full px-4 py-3 text-left text-[13px] font-medium text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-50 border-b border-slate-200 last:border-b-0">
+              {item.label}
+            </button>
+          );
+        }
         if (item.type === 'input') {
           if (openInput === i) {
             return (
@@ -163,7 +190,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
                   onKeyDown={e => e.key === 'Enter' && handleInputSubmit()}
                   placeholder={item.placeholder || '입력하세요'}
                   className="flex-1 px-3 py-1.5 border border-blue-300 rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white" />
-                <button onClick={handleInputSubmit} disabled={!inputValue.trim()}
+                <button onClick={() => handleInputSubmit()} disabled={!inputValue.trim()}
                   className="p-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50">
                   <Send size={14} />
                 </button>
@@ -491,7 +518,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
   loading: boolean;
   onConfirm: (id: string) => void;
   onReject: (id: string) => void;
-  onSuggestion?: (text: string, meta?: { planExecuteId?: string }) => void;
+  onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
   onApprovePending?: (msgId: string, planId: string) => void;
   onRejectPending?: (msgId: string, planId: string) => void;
   onApprovePendingAction?: (msgId: string, planId: string, action: 'now' | 'reschedule', newRunAt?: string) => void;

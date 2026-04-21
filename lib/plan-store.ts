@@ -56,6 +56,31 @@ export function deletePlan(planId: string): void {
   store.delete(planId);
 }
 
+/** plan steps + 사용자 수정 요청 → propose_plan 재호출 강제 시스템 프롬프트.
+ *  사용자가 plan card 의 ⚙수정 제안 input 으로 "1단계 빼줘" 같은 피드백 입력 시 사용. */
+export function planToReviseInstruction(plan: StoredPlan, userFeedback: string): string {
+  const stepsText = plan.steps
+    .map((s, i) => {
+      const desc = s.description ? ` — ${s.description}` : '';
+      const tool = s.tool ? ` [${s.tool}]` : '';
+      return `[${i + 1}] ${s.title}${desc}${tool}`;
+    })
+    .join('\n');
+  return `사용자가 직전 plan 에 대한 수정 요청을 했습니다. 사용자 피드백을 반영해 propose_plan 도구를 **재호출**하세요.
+
+## 직전 plan: ${plan.title}
+${stepsText}
+
+## 사용자 수정 요청
+"${userFeedback}"
+
+## 재작성 규칙
+- 사용자 요청대로 단계 추가/삭제/수정 후 propose_plan 도구를 다시 호출.
+- title, steps, estimatedTime, risks 모두 갱신.
+- propose_plan 호출 후 **즉시 턴 종료** — 다른 도구·텍스트 응답 금지. 사용자가 새 plan card 보고 다시 ✓실행 누름.
+- 텍스트 답변·설명 금지 — 오직 propose_plan tool_use 만.`;
+}
+
 /** plan steps 를 LLM 이 따라 실행할 수 있게 한국어 텍스트로 직렬화 */
 export function planToInstruction(plan: StoredPlan): string {
   const stepsText = plan.steps
