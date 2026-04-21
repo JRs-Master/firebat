@@ -4,11 +4,20 @@
  * AI 가 propose_plan 호출 → planId 발급 + steps 등 저장.
  * 사용자가 ✓실행 클릭 → 다음 chat 요청에 planExecuteId 동봉 → AiManager 가 조회 후 시스템 프롬프트에 강제 주입.
  *
- * 기존 PlanCard 가 component blocks 으로 렌더되지만 history 엔 text 만 남아 다음 턴에 plan 정보 손실되던 문제 해결.
+ * **파일 영속화** (v0.1, 2026-04-22): PM2 재시작·서버 재부팅 후에도 plan 유지.
+ * - in-memory Map 1차 캐시 + `data/plan-store.json` 영속 저장 (기존 cron-*.json 패턴과 동일)
+ * - 부팅 시 파일 로드, 쓰기 시 즉시 flush (크기 작음 — TTL 3시간, max 50)
+ *
+ * 기존 PlanCard 가 component blocks 으로 conversations 테이블에 저장되지만
+ * planId → steps 매핑만은 별도 저장 필요 (DB 저장하면 과잉, JSON 적합).
  */
 
-const PLAN_EXPIRE_MS = 30 * 60_000; // 30분
+import fs from 'fs';
+import path from 'path';
+
+const PLAN_EXPIRE_MS = 3 * 60 * 60_000; // 3시간 — 사용자가 한참 뒤 ✓실행 눌러도 유효
 const MAX_SIZE = 50;
+const STORE_FILE = path.resolve(process.env.FIREBAT_DATA_DIR || 'data', 'plan-store.json');
 
 export interface PlanStep {
   title: string;
@@ -27,11 +36,33 @@ export interface StoredPlan {
 
 const store = new Map<string, StoredPlan>();
 
+// 부팅 시 파일에서 복원 (PM2 재시작 후에도 plan 유지)
+(function loadFromFile() {
+  try {
+    if (!fs.existsSync(STORE_FILE)) return;
+    const raw = fs.readFileSync(STORE_FILE, 'utf-8');
+    const arr = JSON.parse(raw) as StoredPlan[];
+    const now = Date.now();
+    for (const p of arr) {
+      if (p?.planId && now - p.createdAt <= PLAN_EXPIRE_MS) store.set(p.planId, p);
+    }
+  } catch { /* 파일 손상 시 무시, 빈 store 로 시작 */ }
+})();
+
+function flush() {
+  try {
+    fs.mkdirSync(path.dirname(STORE_FILE), { recursive: true });
+    fs.writeFileSync(STORE_FILE, JSON.stringify(Array.from(store.values()), null, 2));
+  } catch { /* 파일 쓰기 실패는 in-memory 만 유지 */ }
+}
+
 function cleanup() {
   const now = Date.now();
+  let changed = false;
   for (const [id, p] of store) {
-    if (now - p.createdAt > PLAN_EXPIRE_MS) store.delete(id);
+    if (now - p.createdAt > PLAN_EXPIRE_MS) { store.delete(id); changed = true; }
   }
+  if (changed) flush();
 }
 const cleanupInterval = setInterval(cleanup, 60_000);
 cleanupInterval.unref?.();
@@ -46,6 +77,7 @@ export function storePlan(plan: Omit<StoredPlan, 'createdAt'>): void {
     if (oldest) store.delete(oldest);
   }
   store.set(plan.planId, { ...plan, createdAt: Date.now() });
+  flush();
 }
 
 export function getPlan(planId: string): StoredPlan | null {
@@ -53,7 +85,7 @@ export function getPlan(planId: string): StoredPlan | null {
 }
 
 export function deletePlan(planId: string): void {
-  store.delete(planId);
+  if (store.delete(planId)) flush();
 }
 
 /** plan steps + 사용자 수정 요청 → propose_plan 재호출 강제 시스템 프롬프트.

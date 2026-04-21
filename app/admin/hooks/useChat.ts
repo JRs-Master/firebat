@@ -55,6 +55,13 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     abortRef.current?.abort();
     abortRef.current = null;
   }, []);
+  // Watchdog — isThinking 이 N분 넘게 유지되면 SSE 연결 끊김·result 누락으로 간주
+  // 강제로 isThinking 해제 + 에러 뱃지 표시 (로봇 사라짐·빈 화면 방지)
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelWatchdog = () => {
+    if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null; }
+  };
+  const WATCHDOG_MS = 3 * 60_000; // 3분
 
   // ── 초기화: DB 우선 로드 (다기기 동기화 보장). 실패 시에만 localStorage 폴백. ──
   // localStorage 는 offline 백업 · 네트워크 장애 대응용으로만 역할 제한.
@@ -446,6 +453,20 @@ export function useChat(aiModel: string, onRefresh: () => void) {
 
       const ctrl = new AbortController();
       abortRef.current = ctrl;
+      // Watchdog: N분 내에 result 이벤트 안 오면 강제 abort + 에러 뱃지
+      cancelWatchdog();
+      watchdogRef.current = setTimeout(() => {
+        ctrl.abort();
+        cancelChunkAnim();
+        setMessages(prev => prev.map(msg =>
+          msg.id === `s-${id}` && (msg.isThinking || msg.executing || msg.streaming)
+            ? { ...msg, isThinking: false, executing: false, streaming: false,
+                thinkingText: '응답 지연', error: msg.error || '응답이 3분을 초과했습니다. SSE 연결 끊김 가능성 — 다시 시도해주세요.',
+                content: msg.content || '' }
+            : msg
+        ));
+        setLoading(false);
+      }, WATCHDOG_MS);
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -609,6 +630,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       }
     } catch (err: any) {
       cancelChunkAnim();
+      cancelWatchdog();
       const aborted = err?.name === 'AbortError';
       setMessages(prev => prev.map(msg =>
         msg.id === `s-${id}`
@@ -619,6 +641,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           : msg
       ));
     } finally {
+      cancelWatchdog();
       // 스트림 종료 후에도 isThinking이 풀리지 않은 경우 강제 해제
       let finalMsgs: Message[] = [];
       setMessages(prev => {
