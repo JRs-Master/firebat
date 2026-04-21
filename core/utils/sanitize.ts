@@ -136,9 +136,12 @@ export function sanitizeBlock(block: { type?: string; name?: string; props?: unk
   return { ...block, props: sanitizeValue(block.props, compName as string) as Record<string, unknown> };
 }
 
-/** reply 텍스트 정제 (최종 사용자 메시지 본문 — 마크다운 렌더러에 들어감). */
+/** reply 텍스트 정제 (최종 사용자 메시지 본문 — 마크다운 렌더러에 들어감).
+ *  모든 LLM (API·CLI 공통) 이 거치는 지점 — 공급자별 후처리는 여기로 일원화. */
 export function sanitizeReply(reply: string | undefined | null): string {
   if (!reply) return '';
-  // reply 는 마크다운 렌더되므로 HTML 태그만 마크다운으로 변환 (마커는 유지).
-  return htmlToMarkdown(reply);
+  return htmlToMarkdown(reply)
+    // 3+ 개행 → 2 개행 (CLI 출력이 간혹 과도한 공백 행 포함)
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }

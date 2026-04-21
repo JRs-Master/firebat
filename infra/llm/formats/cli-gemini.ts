@@ -441,20 +441,11 @@ export class CliGeminiFormat implements FormatHandler {
       child.on('error', (e) => {
         resolve({ text: textParts.join(''), usedTools, renderedBlocks, pendingActions, suggestions, sessionId, error: `Gemini CLI 프로세스 에러: ${e.message}` });
       });
-      // 텍스트 후처리 — 최소화. thinkingConfig.includeThoughts=false 로 reasoning 자체가 억제되므로
-      // 특정 언어 블록을 regex 로 잘라내는 defensive 로직 제거. 혹시 CLI 가 뱉는 드문 케이스는
-      // [Thought:] 마커 정도만 제거.
-      const sanitizeFinal = (t: string): string => {
-        return t
-          // [Thought: true|false] 마커 (공백·대소문자 변종 허용)
-          .replace(/\[\s*Thought\s*:\s*(?:true|false)\s*\]/gi, '')
-          // 빈 줄 3연속 이상 축약
-          .replace(/\n{3,}/g, '\n\n')
-          .trim();
-      };
+      // 텍스트 후처리는 중앙 `core/utils/sanitize.ts` 의 sanitizeReply 가 담당
+      // (HTML 인라인 태그 → 마크다운, 3+ 개행 축약 등). 공급자별 defensive 로직 제거.
       child.on('close', (code) => {
         if (stdoutBuf.trim()) processLine(stdoutBuf);
-        const finalText = sanitizeFinal(textParts.join(''));
+        const finalText = textParts.join('').trim();
         if (errored) {
           resolve({ text: finalText, usedTools, renderedBlocks, pendingActions, suggestions, sessionId, error: errorMsg });
           return;
