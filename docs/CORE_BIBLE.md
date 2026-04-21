@@ -347,3 +347,86 @@ AI Assistant ON 시:
 사용자가 명시적으로 ON/OFF 제어. localStorage `firebat_plan_mode` 영속:
 - **ON**: 모든 요청에 `propose_plan` 강제 (예외 0건). `planModePrefix` 가 시스템 프롬프트 맨 앞 prepend.
 - **OFF**: AI 자유 판단 (도구 그대로 유지, AI 가 알아서 호출).
+
+---
+
+## 제10장: 프론트엔드 매니저 3종 (v0.1, 2026-04-22)
+
+어드민 UI 의 상태 관리를 3개 매니저로 분리. 이전엔 `useChat` 내부 7군데 흩어진 `setMessages` 호출로 상태 전이가 추적 불가 → 로봇 사라짐·빈 버블 버그 반복. Core 12-Manager 와 같이 **UI 도메인별 담당구역 명시화**.
+
+### 제1항. 위치 규칙
+
+모든 프론트 매니저는 `app/admin/hooks/` 에 위치. React hooks + 순수 함수만 사용. 외부 라이브러리 (Redux / Zustand / XState) 도입 금지.
+
+### 제2항. ChatManager (`chat-manager.ts` + `useChat.ts`)
+
+담당구역: 채팅 메시지 + 대화 + plan + SSE 스트림 + abort + watchdog + DB sync.
+
+**핵심 원리 — 인바리언트 기반 상태 머신**:
+- `chatReducer(state, action)` 이 **유일한** 상태 전이 지점 (이전: 7군데 흩어진 setMessages)
+- 모든 SSE 이벤트·watchdog·abort·finally 가 `ChatAction` 으로 통일 디스패치
+- `enforceInvariant`: 터미널 상태 (`!isThinking && !executing && !streaming`) 인데 visible 콘텐츠 0 이면 자동 fallback. **구조적으로 로봇 사라짐 불가능**.
+
+**판정 함수**:
+- `isTerminal(m)`: 진행 중 플래그 전부 false 인지
+- `hasVisible(m)`: content / error / blocks / pendingActions / suggestions / user-image / system-init 중 하나라도 있는지
+
+**액션 목록** (20여 종):
+- 로드/전환: `LOAD`, `SEND_USER`, `SEND_SUGGESTION`
+- SSE: `CHUNK_TEXT`, `CHUNK_THINKING`, `PLAN`, `STEP`, `RESULT`, `RESULT_ANIM_TICK`, `ERROR`
+- 종료 안전망: `ABORTED`, `TIMEOUT`, `NETWORK_ERROR`, `FINALIZE`
+- Plan: `CONFIRM_PLAN_START`, `REJECT_PLAN`
+- Pending: `PENDING_APPROVED / REJECTED / PAST_RUNAT / ERROR`
+
+**Side effect 분리**: reducer 는 순수 함수. 훅이 fetch·타이머·DB·scroll 을 담당하고 action 만 디스패치.
+
+**Fallback 문구 중앙 관리**: `FALLBACK.{EMPTY_REPLY|INVISIBLE|TIMEOUT|NETWORK|ABORTED|REJECTED}` 한 곳에.
+
+### 제3항. EventsManager (`events-manager.ts`)
+
+담당구역: SSE `/api/events` 단일 구독 + fan-out + `firebat-refresh` window 이벤트 통합.
+
+**이전 문제**: Sidebar, CronPanel 이 각자 `new EventSource('/api/events')` → 한 탭에 연결 2개. 모바일 배터리·서버 리소스 낭비.
+
+**해결**: 모듈 싱글톤 `EventBusSingleton`. refCount 로 첫 구독 시 connect / 마지막 해지 시 close.
+
+**훅 API**:
+- `useEvents(types, handler)` — 특정 이벤트 타입만 필터
+- `useLocalRefresh(handler)` — window `firebat-refresh` 만 구독
+- `useSidebarRefresh(handler)` — SSE `sidebar:refresh` / `cron:complete` + `firebat-refresh` 통합 (Sidebar·CronPanel 공통 패턴)
+- `emitLocalRefresh()` — `firebat-refresh` 발행 헬퍼
+
+### 제4항. SettingsManager (`settings-manager.ts`)
+
+담당구역: 타입 안전한 localStorage 스키마 + cross-tab 동기화.
+
+**이전 문제**: `firebat_model` / `firebat_plan_mode` / `firebat_active_conv` / `firebat_last_model_by_category` / `firebat_editor_chat_*` 등 키 8개+ 가 여러 파일에 흩어짐. 오타·타입 불일치·탭 간 동기화 없음.
+
+**해결**:
+- `SettingsSchema` 타입에 키 등록 → 자동 타입 안전
+- `useSetting(key)`: `useState` 와 동일 API + localStorage 영속 + `storage` 이벤트로 다른 탭 동기화
+- `readSetting(key)` / `writeSetting(key, v)`: 훅 밖 즉시 접근 (초기 로드·저장 시점)
+
+**직렬화 자동**: boolean → `'true'|'false'`, object → JSON, 나머지 raw.
+
+### 제5항. 역할 경계 (Backend Core 와 명확히 분리)
+
+| 구분 | 담당구역 | 위치 |
+|---|---|---|
+| Core 12-Manager | 도메인 비즈니스 로직, 포트 라우팅 | `core/managers/` |
+| Frontend 3-Manager | UI 상태 전이, 브라우저 영속, 이벤트 구독 | `app/admin/hooks/` |
+
+**금지 사항**:
+- Frontend 매니저가 Core 내부 import 금지 — 반드시 `/api/*` HTTP 경유
+- Frontend 매니저끼리 직접 호출 가능 (Core BIBLE 의 "매니저 간 직접 호출 금지" 제약은 Backend 에만 해당 — UI 상태는 서로 독립적이라 강제할 이유 없음)
+- 외부 상태 라이브러리 (Redux / Zustand / XState / MobX) 도입 금지 — `useReducer` + `useState` + `useEffect` 로 충분
+
+### 제6항. 새 프론트 매니저 추가 기준
+
+아래 중 2개 이상 해당 시 새 매니저 신설 고려:
+1. 상태 전이 지점이 3군데 이상 흩어져 있음
+2. 여러 컴포넌트가 공유 subscribe 하는 이벤트 스트림
+3. localStorage 키 3개+ 가 같은 도메인에 속함
+4. 버그 재발이 같은 root cause 에서 3회 이상
+
+1개만 해당하면 기존 매니저에 기능 추가 또는 로컬 훅으로 처리.

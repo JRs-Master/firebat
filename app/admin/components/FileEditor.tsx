@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { X, Save, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send, Trash2, User, RotateCcw, Cpu } from 'lucide-react';
 import { AI_MODELS, THINKING_LEVELS } from '../types';
+import { readSetting } from '../hooks/settings-manager';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
@@ -258,13 +259,11 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
       ? editor.getModel()?.getValueInRange(sel)
       : undefined;
 
-    // 모델 우선순위: 로컬 override → prop(어드민 채팅과 통일) → localStorage 폴백 → 서버 기본
+    // 모델 우선순위: 로컬 override → prop(어드민 채팅과 통일) → SettingsManager 폴백 → 서버 기본
     let model: string | undefined = localModel ?? aiModel;
     if (!model) {
-      try {
-        const stored = localStorage.getItem('firebat_model');
-        if (stored) model = stored;
-      } catch {}
+      const stored = readSetting('firebat_model');
+      if (stored) model = stored;
     }
     const config: { model?: string; thinkingLevel?: string } = {};
     if (model) config.model = model;

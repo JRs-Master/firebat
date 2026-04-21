@@ -44,6 +44,9 @@ One prompt flows through **design → implementation → deployment → scheduli
 
 ```
 ┌────────────────────────────────────────────────────────────┐
+│           app/admin/hooks/  (Frontend Managers)            │
+│     ChatManager · EventsManager · SettingsManager          │
+├────────────────────────────────────────────────────────────┤
 │                 app/api/  (Primary Adapter)                │
 │                Next.js Route Handlers · Auth               │
 ├────────────────────────────────────────────────────────────┤
@@ -53,7 +56,7 @@ One prompt flows through **design → implementation → deployment → scheduli
 │   │                                                    │   │
 │   │  AI · Storage · Page · Project · Module            │   │
 │   │  Task · Schedule · Secret · MCP · Capability · Auth│   │
-│   │                    11 Managers                     │   │
+│   │                    12 Managers                     │   │
 │   └────────────────────┬───────────────────────────────┘   │
 │                        │ Ports (Interface)                 │
 │   ┌────────────────────┴───────────────────────────────┐   │
@@ -61,22 +64,24 @@ One prompt flows through **design → implementation → deployment → scheduli
 │   │                                                    │   │
 │   │  Storage · Log · Sandbox · LLM · Network           │   │
 │   │  Cron · Database · Vault · MCP Client · Auth       │   │
-│   │                     10 Adapters                    │   │
+│   │  Embedder · ToolRouter                             │   │
+│   │                     12 Adapters                    │   │
 │   └────────────────────────────────────────────────────┘   │
 │                                                            │
 └────────────────────────────────────────────────────────────┘
 ```
 
-**Hexagonal Architecture** — Core holds pure business logic only; every I/O call lives inside an Infra adapter.
+**Hexagonal Architecture** — Core holds pure business logic only; every I/O call lives inside an Infra adapter. Frontend UI state is managed by 3 dedicated managers mirroring the backend pattern.
 
 | Principle | Description |
 |---|---|
 | **Core purity** | Core never imports `fs`, `fetch`, DB drivers, or any I/O library directly |
-| **Ports & Adapters** | Core talks to Infra only through 10 interface (Port) definitions |
+| **Ports & Adapters** | Core talks to Infra only through 12 interface (Port) definitions |
 | **Error encapsulation** | Infra never throws — it returns `InfraResult<T>` instead |
 | **Facade pattern** | Every API route goes through the `getCore()` singleton |
+| **Frontend managers** | UI state transitions concentrated in 3 managers (Chat / Events / Settings) — reducer-based invariants prevent whole classes of UI bugs by construction |
 
-> 🇰🇷 **헥사고날 아키텍처** — Core는 순수 비즈니스 로직만 담당하고, 모든 I/O는 Infra 어댑터가 처리합니다. Core는 I/O 라이브러리를 직접 import하지 않고 10개 포트 인터페이스로만 Infra와 통신하며, Infra는 절대 throw하지 않고 `InfraResult<T>`를 반환합니다. 모든 API route는 `getCore()` 싱글톤을 거칩니다.
+> 🇰🇷 **헥사고날 아키텍처** — Core는 순수 비즈니스 로직만 담당하고, 모든 I/O는 Infra 어댑터가 처리합니다. Core는 I/O 라이브러리를 직접 import하지 않고 12개 포트 인터페이스로만 Infra와 통신하며, Infra는 절대 throw하지 않고 `InfraResult<T>`를 반환합니다. 모든 API route는 `getCore()` 싱글톤을 거칩니다. 프론트엔드 UI 상태는 3개 매니저(Chat/Events/Settings)로 분리되어 reducer 기반 인바리언트로 UI 버그를 구조적으로 차단합니다.
 
 ---
 
@@ -256,8 +261,8 @@ npm run mcp
 firebat/
 ├── core/                    # Pure business logic (no I/O)
 │   ├── index.ts             #   FirebatCore Facade
-│   ├── ports/               #   10 Port interfaces
-│   ├── managers/            #   11 domain managers
+│   ├── ports/               #   12 Port interfaces
+│   ├── managers/            #   12 domain managers
 │   ├── types/               #   FirebatPlan, FirebatAction
 │   └── capabilities.ts      #   Capability-Provider registry
 │
@@ -276,6 +281,7 @@ firebat/
 │
 ├── app/                     # Next.js App Router
 │   ├── admin/               #   Admin console (chat, settings, editor)
+│   │   └── hooks/           #     Frontend managers: Chat / Events / Settings
 │   ├── (user)/              #   User-facing pages (dynamic render)
 │   └── api/                 #   API routes (Primary Adapter)
 │
@@ -299,8 +305,8 @@ firebat/
 │
 ├── docs/                    # Design documents (bibles)
 │   ├── FIREBAT_BIBLE.md     #   Top-level constitution (identity, separation of powers)
-│   ├── CORE_BIBLE.md        #   Core purity, 10 Ports, 11-Manager architecture
-│   ├── INFRA_BIBLE.md       #   10 Adapter specs, bootstrap
+│   ├── CORE_BIBLE.md        #   Core purity, 12 Ports, 12-Manager backend + 3-Manager frontend architecture
+│   ├── INFRA_BIBLE.md       #   12 Adapter specs, bootstrap
 │   ├── MODULE_BIBLE.md      #   Module system, Capability-Provider pattern
 │   ├── PAGESPEC_BIBLE.md    #   PageSpec schema + chat rendering rules
 │   └── IO_SCHEMA_BIBLE.md   #   Module I/O schema reference

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
+import { useSidebarRefresh } from '../hooks/events-manager';
 
 interface Project { name: string; paths: string[]; pageSlugs?: string[]; visibility?: string; }
 interface PageInfo { slug: string; title: string; status: string; updatedAt: string; project?: string | null; visibility?: string; }
@@ -135,29 +136,9 @@ export function Sidebar({
     }
   }, [tab, refreshAll]);
 
-  // AI 액션 완료 시 자동 갱신 (ref로 안정 참조)
-  useEffect(() => {
-    const handler = () => refreshAllRef.current();
-    window.addEventListener('firebat-refresh', handler);
-    return () => window.removeEventListener('firebat-refresh', handler);
-  }, []);
-
-  // SSE 실시간 이벤트 — Core가 보내는 sidebar:refresh 수신
-  useEffect(() => {
-    let es: EventSource | null = null;
-    try {
-      es = new EventSource('/api/events');
-      es.onmessage = (e) => {
-        try {
-          const event = JSON.parse(e.data);
-          if (event.type === 'sidebar:refresh' || event.type === 'cron:complete') {
-            refreshAllRef.current();
-          }
-        } catch {}
-      };
-    } catch {}
-    return () => { es?.close(); };
-  }, []);
+  // AI 액션 완료 (window 'firebat-refresh') + SSE (sidebar:refresh / cron:complete) 통합 수신
+  // EventsManager 싱글톤이 EventSource 1개만 유지 — CronPanel 과 공유.
+  useSidebarRefresh(() => refreshAllRef.current());
 
   // ⋯ 메뉴 외부 클릭 닫기
   useEffect(() => {

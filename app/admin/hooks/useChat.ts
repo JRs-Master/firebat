@@ -1,15 +1,22 @@
+/**
+ * useChat — Chat UI 훅 (ChatManager reducer + SettingsManager 활용)
+ *
+ * 상태 전이 모두 `chatReducer` 에 위임 (chat-manager.ts). 이 훅은 side effect 만 담당:
+ *   - DB / localStorage 동기화
+ *   - SSE /api/chat/stream 수신 → ChatAction 디스패치
+ *   - AbortController / watchdog / chunk 애니메이션 ref
+ *   - 스크롤 / visibilitychange / focus / pagehide
+ *
+ * 로봇 사라짐 버그는 reducer 의 `enforceInvariant` 가 구조적으로 차단.
+ */
+
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Message, Conversation, INIT_MESSAGE, makeConv } from '../types';
+import { useReducer, useState, useRef, useEffect, useCallback } from 'react';
+import { Message, Conversation, INIT_MESSAGE, makeConv, PendingAction } from '../types';
 import { ConversationMeta } from '../components/Sidebar';
-
-// 저장된 대화 복원 시 진행 중 상태(좀비 메시지) 제거
-// 유저가 Stop 버튼으로 중단한 메시지는 catch 블록에서 이미 content="중단되었습니다." + isThinking=false 상태로 확정됨.
-// 여기서 걸리는 건 스트림이 이상하게 끊겨 복원된 미완 메시지 → 드롭해야 DB 오염 안 됨.
-function cleanMessages(msgs: Message[]): Message[] {
-  return msgs.filter(m => !m.isThinking && !m.executing && !m.streaming);
-}
+import { chatReducer, cleanMessages } from './chat-manager';
+import { useSetting } from './settings-manager';
 
 // SSE 이벤트 파서 — buffer에서 완성된 이벤트만 파싱, 나머지는 반환
 function parseSSE(buffer: string): { events: { event: string; data: any }[]; remaining: string } {
@@ -28,48 +35,50 @@ function parseSSE(buffer: string): { events: { event: string; data: any }[]; rem
 }
 
 export function useChat(aiModel: string, onRefresh: () => void) {
-  const [messages, setMessages] = useState<Message[]>([INIT_MESSAGE]);
+  const [messages, dispatch] = useReducer(chatReducer, [INIT_MESSAGE]);
+  // 최신 messages ref — queueMicrotask / async 콜백에서 stale closure 회피
+  const messagesRef = useRef<Message[]>([INIT_MESSAGE]);
+  messagesRef.current = messages;
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConvId, setActiveConvId] = useState('');
-  // 플랜모드 토글 — ON 이면 AI 가 propose_plan 도구 우선 호출, OFF 면 알아서 판단
-  // localStorage 영속 (세션 간 유지)
-  const [planMode, setPlanMode] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return localStorage.getItem('firebat_plan_mode') === 'true';
-  });
-  useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('firebat_plan_mode', planMode ? 'true' : 'false');
-  }, [planMode]);
+  const [activeConvId, setActiveConvIdState] = useState('');
+  const [planMode, setPlanMode] = useSetting('firebat_plan_mode');
+
+  // activeConvId 는 훅 밖 useSetting 초기화 타이밍 race 가 있어 useState + 수동 동기화 유지
+  const setActiveConvId = useCallback((id: string) => {
+    setActiveConvIdState(id);
+    if (typeof window !== 'undefined') {
+      if (id) localStorage.setItem('firebat_active_conv', id);
+      else localStorage.removeItem('firebat_active_conv');
+    }
+  }, []);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
-  // chunk-flow 애니메이션 관리 (도구 사용 흐름에서 최종 text가 흐르듯 등장)
+  // chunk-flow 애니메이션
   const chunkAnimRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancelChunkAnim = () => {
     if (chunkAnimRef.current) { clearInterval(chunkAnimRef.current); chunkAnimRef.current = null; }
   };
-  // 요청 중단용 AbortController — 전송 중 중지 버튼 누르면 abort
+  // 요청 중단용 AbortController
   const abortRef = useRef<AbortController | null>(null);
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
     abortRef.current = null;
   }, []);
-  // Watchdog — isThinking 이 N분 넘게 유지되면 SSE 연결 끊김·result 누락으로 간주
-  // 강제로 isThinking 해제 + 에러 뱃지 표시 (로봇 사라짐·빈 화면 방지)
+  // Watchdog — N분 넘게 무응답이면 강제 터미널 + 에러 뱃지
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cancelWatchdog = () => {
     if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null; }
   };
-  const WATCHDOG_MS = 3 * 60_000; // 3분
+  const WATCHDOG_MS = 3 * 60_000;
 
-  // ── 초기화: DB 우선 로드 (다기기 동기화 보장). 실패 시에만 localStorage 폴백. ──
-  // localStorage 는 offline 백업 · 네트워크 장애 대응용으로만 역할 제한.
+  // ── 초기화: DB 우선 로드 (다기기 동기화 보장). 실패 시에만 localStorage 폴백 ──
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        // 1) DB 에서 대화 목록 + 활성 대화 상세 가져오기
         const listRes = await fetch('/api/conversations');
         if (listRes.ok) {
           const listData = await listRes.json();
@@ -77,11 +86,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             const remote: Array<{ id: string; title: string; createdAt: number; updatedAt: number }> = listData.conversations ?? [];
             remote.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
 
-            // 활성 대화 ID — 저장된 것 먼저, 없으면 가장 최근
             const savedActiveId = localStorage.getItem('firebat_active_conv') ?? '';
             const activeId = remote.find(r => r.id === savedActiveId)?.id ?? remote[0]?.id ?? '';
 
-            // 활성 대화 상세 (messages) 만 즉시 fetch. 나머지는 빈 messages 로 초기화 — 선택 시 lazy load.
             let activeMessages: Message[] = [];
             if (activeId) {
               try {
@@ -99,14 +106,13 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             localStorage.setItem('firebat_conversations', JSON.stringify(fullList));
             if (activeId) {
               setActiveConvId(activeId);
-              setMessages(cleanMessages(activeMessages));
+              dispatch({ type: 'LOAD', messages: cleanMessages(activeMessages) });
             }
             return;
           }
         }
-      } catch { /* DB 실패 → 아래 offline 폴백 */ }
+      } catch { /* DB 실패 → offline 폴백 */ }
 
-      // 2) DB 실패 시에만 localStorage 에서 복원 (offline · 네트워크 장애)
       if (cancelled) return;
       const raw = localStorage.getItem('firebat_conversations');
       if (!raw) return;
@@ -118,30 +124,25 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         const mostRecent = convs.reduce((a, b) => ((b.updatedAt ?? b.createdAt) > (a.updatedAt ?? a.createdAt) ? b : a));
         const active = convs.find(c => c.id === savedActiveId) ?? mostRecent;
         setActiveConvId(active.id);
-        setMessages(cleanMessages(active.messages));
+        dispatch({ type: 'LOAD', messages: cleanMessages(active.messages) });
       } catch (e) {
         console.warn('[useChat] localStorage 폴백 파싱 실패:', e);
         localStorage.removeItem('firebat_conversations');
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [setActiveConvId]);
 
-  // ── 대화 저장 — localStorage는 messages 변경마다, DB는 확정 시점에만 명시 호출 ──
-  // (이전 debounce 기반 → 500ms 창에 데이터 잃는 문제. 서버가 union merge 하므로 명시 호출이 안전)
-  //
-  // localStorage 저장: 완료된 메시지만 캐시. 스트리밍 중(isThinking/executing/streaming)은 제외해
-  //   ─ 탭 닫기 / 새로고침 중 멈춘 좀비 상태를 다음 로드 때 "중단되었습니다"로 박제하는 경로를 차단.
+  // ── 대화 저장 — localStorage 는 messages 변경마다, DB 는 확정 시점에만 ──
   useEffect(() => {
     if (!activeConvId || conversations.length === 0) return;
-    const cleanMsgs = messages.filter(m => !m.isThinking && !m.executing && !m.streaming);
+    const cleanMsgs = cleanMessages(messages);
     const firstUser = cleanMsgs.find(m => m.role === 'user');
     const title = firstUser?.content
       ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
       : '새 대화';
     const now = Date.now();
     setConversations(prev => {
-      // 메시지 내용이 실제로 달라진 경우에만 updatedAt 갱신 → 대화 클릭만 해도 맨 위로 올라가던 버그 수정
       const cur = prev.find(c => c.id === activeConvId);
       const prevSerialized = JSON.stringify(cur?.messages ?? []);
       const newSerialized = JSON.stringify(cleanMsgs);
@@ -151,7 +152,6 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           ? { ...c, messages: cleanMsgs, title, ...(contentChanged ? { updatedAt: now } : {}) }
           : c,
       );
-      // 사이드바 최신 순 유지 (UI 즉시 반영)
       updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
       localStorage.setItem('firebat_conversations', JSON.stringify(updated));
       return updated;
@@ -159,15 +159,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages]);
 
-  // DB 저장 — 명시 호출용. handleSubmit·스트림 완료·visibilitychange=hidden 3개 시점에서만.
-  // 서버의 union merge 덕에 여러 번 호출해도 안전. 모바일-PC 동시 편집도 양쪽 다 보존됨.
-  // 서버가 409 (deleted tombstone) 반환하면 로컬에서도 제거 — 다른 기기의 삭제를 반영.
+  // DB 저장 — 명시 호출. union merge 로 안전.
   const saveToDbRef = useRef<(convId: string, msgs: Message[]) => void>(() => {});
   saveToDbRef.current = (convId: string, msgs: Message[]) => {
     if (!convId) return;
-    // in-progress 메시지는 DB 에 저장하지 않음 — 저장 후 세션 끊기면 "thinking" 상태가
-    // 다른 기기에서 "중단되었습니다" 로 오해되어 표시되는 문제 방지
-    const cleanMsgs = msgs.filter(m => !m.isThinking && !m.executing && !m.streaming);
+    const cleanMsgs = cleanMessages(msgs);
     const firstUser = cleanMsgs.find(m => m.role === 'user');
     const title = firstUser?.content
       ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
@@ -178,10 +174,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: convId, title, messages: cleanMsgs, createdAt }),
-      keepalive: true, // navigate 중에도 요청 유지
+      keepalive: true,
     }).then(res => {
       if (res.status === 409) {
-        // 서버가 삭제된 대화라고 알려줌 → 로컬에서도 제거
         setConversations(prev => {
           const updated = prev.filter(c => c.id !== convId);
           localStorage.setItem('firebat_conversations', JSON.stringify(updated));
@@ -189,20 +184,17 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         });
         if (activeConvId === convId) {
           setActiveConvId('');
-          setMessages([INIT_MESSAGE]);
-          localStorage.removeItem('firebat_active_conv');
+          dispatch({ type: 'LOAD', messages: [INIT_MESSAGE] });
         }
       }
     }).catch(() => {});
   };
 
-  // visibilitychange=hidden 안전망 — 탭 전환·앱 전환·닫기 직전 현재 상태 flush (sendBeacon)
-  // visibilitychange=visible — 탭 복귀 시 다른 기기의 갱신을 반영하기 위해 active conv 재조회
+  // visibilitychange=hidden 안전망 / visible 재조회
   useEffect(() => {
     const flush = () => {
       if (!activeConvId || messages.length === 0) return;
-      // in-progress 상태는 DB 에 저장하지 않음 (타기기에서 "중단되었습니다" 로 오해되는 문제 방지)
-      const cleanMsgs = messages.filter(m => !m.isThinking && !m.executing && !m.streaming);
+      const cleanMsgs = cleanMessages(messages);
       if (cleanMsgs.length === 0) return;
       const firstUser = cleanMsgs.find(m => m.role === 'user');
       const title = firstUser?.content
@@ -211,21 +203,17 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       const convMeta = conversations.find(c => c.id === activeConvId);
       const createdAt = convMeta?.createdAt ?? Date.now();
       const body = JSON.stringify({ id: activeConvId, title, messages: cleanMsgs, createdAt });
-      // sendBeacon은 JSON body 지원 불완전 → Blob 으로 래핑
       const blob = new Blob([body], { type: 'application/json' });
       try { navigator.sendBeacon('/api/conversations', blob); } catch {}
     };
     const refresh = async () => {
-      // 스트리밍·도구 실행 중이면 DB 재조회는 스킵. 단 브라우저가 백그라운드 탭을 throttle 해서
-      // 진행 중 메시지의 DOM 반영이 밀렸을 수 있으므로, 활성 메시지 객체 참조만 새로 만들어 강제 재렌더.
+      // 스트리밍·도구 실행 중이면 스킵. 단, 메시지 참조 리뉴얼로 강제 재렌더.
       if (messages.some(m => m.isThinking || m.executing || m.streaming)) {
-        setMessages(prev => prev.map(m =>
-          (m.isThinking || m.executing || m.streaming) ? { ...m } : m,
-        ));
+        // reducer 바깥 상태라 ref 갱신 용도 dispatch — LOAD 로 동일 배열 재설정하면 인바리언트 자동 통과
+        dispatch({ type: 'LOAD', messages: messages.map(m => ({ ...m })) });
         return;
       }
 
-      // 1) 대화 목록 재조회 — 타기기에서 삭제된 대화를 로컬에서도 제거
       try {
         const listRes = await fetch('/api/conversations');
         if (listRes.ok) {
@@ -235,10 +223,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             setConversations(prev => {
               const filtered = prev.filter(c => {
                 if (remoteIds.has(c.id)) return true;
-                // 활성 대화는 절대 제거 금지 — 방금 만들고 아직 DB 저장 안 된 상태거나
-                // 응답 막 받고 POST 진행 중인 타이밍일 수 있음. 자동 삭제 시 화면 통째로 날아감
                 if (c.id === activeConvId) return true;
-                // 로컬에만 있는 비활성 대화: 실 메시지 있으면 타기기에서 삭제된 것 → 제거
                 const hasRealMessages = c.messages && c.messages.some(m => m.id !== 'system-init' && m.role === 'user');
                 return !hasRealMessages;
               });
@@ -250,7 +235,6 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         }
       } catch {}
 
-      // 2) 현재 활성 conv 단일 갱신 — 다른 기기에서 이어 쓴 메시지 반영
       if (!activeConvId) return;
       const convMeta = conversations.find(c => c.id === activeConvId);
       if (!convMeta) return;
@@ -263,7 +247,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         const remoteUpdatedAt = data.conversation.updatedAt ?? 0;
         if (remoteUpdatedAt <= localUpdatedAt) return;
         const remoteMsgs = cleanMessages(data.conversation.messages ?? []);
-        setMessages(remoteMsgs);
+        dispatch({ type: 'LOAD', messages: remoteMsgs });
         setConversations(prev => {
           const updated = prev.map(c => c.id === activeConvId
             ? { ...c, messages: remoteMsgs, updatedAt: remoteUpdatedAt }
@@ -288,7 +272,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     };
   }, [activeConvId, messages, conversations]);
 
-  // ── 스크롤 — 하단 근처에 있을 때만 자동 스크롤 ──────────────────────────────
+  // ── 스크롤 ─────────────────────────────────────────────────────────────────
   const isNearBottomRef = useRef(true);
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
@@ -298,7 +282,6 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
   }, []);
 
-  // 새 메시지 추가 시에만 스크롤 (스트리밍 중 자동 스크롤 안 함 — 사용자가 직접 내려서 봄)
   const prevMsgCountRef = useRef(messages.length);
   useEffect(() => {
     if (messages.length > prevMsgCountRef.current && isNearBottomRef.current) {
@@ -316,20 +299,17 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       return updated;
     });
     setActiveConvId(newConv.id);
-    setMessages([INIT_MESSAGE]);
-    localStorage.setItem('firebat_active_conv', newConv.id);
-  }, []);
+    dispatch({ type: 'LOAD', messages: [INIT_MESSAGE] });
+  }, [setActiveConvId]);
 
   const handleSelectConv = useCallback((id: string) => {
     if (id === activeConvId) return;
     const conv = conversations.find(c => c.id === id);
     if (!conv) return;
     setActiveConvId(id);
-    setMessages(cleanMessages(conv.messages));
-    localStorage.setItem('firebat_active_conv', id);
-    // 다기기 동기화: 선택 시 DB 최신 버전 fetch.
-    // 로컬이 빈/incomplete (system-init 외 메시지 0개) 이면 updatedAt 무시하고 DB 우선 →
-    // saveToDb debounce 와 updatedAt 갱신 race 로 화면이 빈 상태로 굳는 문제 방지.
+    dispatch({ type: 'LOAD', messages: cleanMessages(conv.messages) });
+
+    // 다기기 동기화: 선택 시 DB 최신 버전 fetch
     const localUpdatedAt = conv.updatedAt ?? conv.createdAt ?? 0;
     const localRealMsgCount = conv.messages.filter(m => m.id !== 'system-init').length;
     (async () => {
@@ -341,12 +321,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         const remoteUpdatedAt = data.conversation.updatedAt ?? 0;
         const remoteMsgs = cleanMessages(data.conversation.messages ?? []);
         const remoteRealMsgCount = remoteMsgs.filter(m => m.id !== 'system-init').length;
-        // DB 우선 적용 조건: 로컬이 비어있거나 / DB 가 더 최신이거나 / DB 메시지 수가 더 많거나
         const shouldUseRemote = localRealMsgCount === 0
           || remoteUpdatedAt > localUpdatedAt
           || remoteRealMsgCount > localRealMsgCount;
         if (!shouldUseRemote) return;
-        setMessages(remoteMsgs);
+        dispatch({ type: 'LOAD', messages: remoteMsgs });
         setConversations(prev => {
           const updated = prev.map(c => c.id === id
             ? { ...c, messages: remoteMsgs, updatedAt: Math.max(remoteUpdatedAt, localUpdatedAt) }
@@ -357,10 +336,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         });
       } catch {}
     })();
-  }, [activeConvId, conversations]);
+  }, [activeConvId, conversations, setActiveConvId]);
 
   const handleDeleteConv = useCallback((id: string) => {
-    // DB에서도 삭제
     fetch(`/api/conversations?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
     setConversations(prev => {
       const updated = prev.filter(c => c.id !== id);
@@ -368,18 +346,16 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       if (id === activeConvId) {
         if (updated.length === 0) {
           setActiveConvId('');
-          setMessages([INIT_MESSAGE]);
-          localStorage.removeItem('firebat_active_conv');
+          dispatch({ type: 'LOAD', messages: [INIT_MESSAGE] });
         } else {
           const last = updated[updated.length - 1];
           setActiveConvId(last.id);
-          setMessages(last.messages);
-          localStorage.setItem('firebat_active_conv', last.id);
+          dispatch({ type: 'LOAD', messages: last.messages });
         }
       }
       return updated;
     });
-  }, [activeConvId]);
+  }, [activeConvId, setActiveConvId]);
 
   // ── 전송 ───────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async (overrideText?: string, isSuggestion?: boolean, meta?: { planExecuteId?: string; planReviseId?: string }) => {
@@ -390,6 +366,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     setInput('');
     setAttachedImage(null);
     const id = Date.now().toString();
+    const systemId = `s-${id}`;
 
     if (!activeConvId) {
       const newConv = makeConv();
@@ -399,30 +376,24 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         return updated;
       });
       setActiveConvId(newConv.id);
-      localStorage.setItem('firebat_active_conv', newConv.id);
     }
 
-    // 유저 메시지 push + pending system 메시지 push (atomic)
-    let msgsAfterUserPush: Message[] = [];
-    setMessages(prev => {
-      const next: Message[] = isSuggestion
-        ? [...prev, { id: `s-${id}`, role: 'system' as const, isThinking: true }]
-        : [...prev, { id: `u-${id}`, role: 'user' as const, content: userPrompt, image: imageData || undefined }, { id: `s-${id}`, role: 'system' as const, isThinking: true }];
-      msgsAfterUserPush = next;
-      return next;
-    });
-    // 명령 전송 직후엔 사용자가 어디 있든 무조건 하단으로 — user 메시지 + 로봇 '생각중' 이 viewport 끝에 보이게.
-    // isNearBottomRef 를 true 로 되돌려 이후 첫 chunk 도달 시 자연스럽게 따라가는 하단 상태 유지.
-    // React state 반영 → DOM 업데이트 후 스크롤해야 하므로 rAF 두 번 (commit 이후 paint 시점 보장).
+    if (isSuggestion) {
+      dispatch({ type: 'SEND_SUGGESTION', systemId });
+    } else {
+      dispatch({ type: 'SEND_USER', userId: `u-${id}`, systemId, content: userPrompt, image: imageData || undefined });
+    }
+
+    // 명령 전송 직후엔 무조건 하단으로
     isNearBottomRef.current = true;
     requestAnimationFrame(() => requestAnimationFrame(() => {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }));
-    // 저장 시점 1: 유저 메시지 DB 즉시 반영 (스트리밍 끊겨도 유저 입력은 남음)
+
+    // 저장 시점 1: 유저 메시지 DB 즉시 반영 (다음 프레임에 최신 messages ref 로)
     const convIdForSave = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
     if (convIdForSave) {
-      // setMessages updater가 돌고 난 다음 프레임에 호출되도록 microtask 지연
-      queueMicrotask(() => saveToDbRef.current(convIdForSave, msgsAfterUserPush));
+      queueMicrotask(() => saveToDbRef.current(convIdForSave, messagesRef.current));
     }
     setLoading(true);
 
@@ -431,9 +402,6 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         .filter(m => m.id !== 'system-init' && !m.isThinking)
         .map(m => {
           const role = m.role === 'system' ? 'model' : 'user';
-          // 순수 텍스트만 사용. content 비었으면 blocks에서 text 블록만 추출.
-          // JSON.stringify(m) 폴백 금지 — m.data.blocks(컴포넌트 props, 분석 원문)가 통째로
-          // 유입돼 AI가 이전 턴을 재현(환각) 원인이 됨.
           let content = (m.content || '').trim();
           if (!content && m.data && Array.isArray(m.data.blocks)) {
             const texts = m.data.blocks
@@ -445,28 +413,18 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         })
         .filter(h => h.content && h.content !== '(빈 응답)');
 
-      // 이전 응답의 responseId 찾기 — OpenAI Responses API multi-turn state (history 재전송 대체)
-      // previousResponseId는 userd turn 간 이어받지 않음 — OpenAI 서버측 reasoning 트레이스가
-      // 턴마다 누적되어 출력 토큰(과금)이 과도해지는 것을 방지. 각 user 입력마다 새 chain.
-      // (같은 요청 내의 멀티턴 도구 루프는 ai-manager 내부에서 자체 관리)
       const previousResponseId: string | undefined = undefined;
 
       const ctrl = new AbortController();
       abortRef.current = ctrl;
-      // Watchdog: N분 내에 result 이벤트 안 오면 강제 abort + 에러 뱃지
       cancelWatchdog();
       watchdogRef.current = setTimeout(() => {
         ctrl.abort();
         cancelChunkAnim();
-        setMessages(prev => prev.map(msg =>
-          msg.id === `s-${id}` && (msg.isThinking || msg.executing || msg.streaming)
-            ? { ...msg, isThinking: false, executing: false, streaming: false,
-                thinkingText: '응답 지연', error: msg.error || '응답이 3분을 초과했습니다. SSE 연결 끊김 가능성 — 다시 시도해주세요.',
-                content: msg.content || '' }
-            : msg
-        ));
+        dispatch({ type: 'TIMEOUT', id: systemId });
         setLoading(false);
       }, WATCHDOG_MS);
+
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -476,7 +434,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           config: { model: aiModel },
           history: chatHistory,
           mode: 'tools',
-          planMode, // ON 이면 propose_plan 도구 우선 호출 강제
+          planMode,
           ...(meta?.planExecuteId ? { planExecuteId: meta.planExecuteId } : {}),
           ...(meta?.planReviseId ? { planReviseId: meta.planReviseId } : {}),
           ...(activeConvId ? { conversationId: activeConvId } : {}),
@@ -494,10 +452,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       while (true) {
         const { done, value } = await reader.read();
         if (value) buffer += decoder.decode(value, { stream: !done });
-        if (done) {
-          // 스트림 종료 시 잔여 버퍼 flush (마지막 \n\n 없는 이벤트 처리)
-          if (buffer.trim()) buffer += '\n\n';
-        }
+        if (done && buffer.trim()) buffer += '\n\n';
 
         const parsed = parseSSE(buffer);
         buffer = parsed.remaining;
@@ -506,124 +461,76 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           if (ev.event === 'chunk') {
             const chunkType = ev.data.type as 'text' | 'thinking';
             const chunkContent = (ev.data.content as string) ?? '';
-            // 빈 chunk 는 isThinking 플립시키지 않음 — 로봇 사라지고 텍스트 없는 상태 방지
             if (!chunkContent) continue;
-            if (chunkType === 'thinking') {
-              setMessages(prev => prev.map(msg => {
-                if (msg.id !== `s-${id}`) return msg;
-                return { ...msg, isThinking: true, streaming: false, statusText: undefined, thinkingText: (msg.thinkingText || '') + chunkContent };
-              }));
-            } else {
-              setMessages(prev => prev.map(msg => {
-                if (msg.id !== `s-${id}`) return msg;
-                return { ...msg, isThinking: false, statusText: undefined, content: (msg.content || '') + chunkContent, streaming: true };
-              }));
-            }
+            if (chunkType === 'thinking') dispatch({ type: 'CHUNK_THINKING', id: systemId, content: chunkContent });
+            else dispatch({ type: 'CHUNK_TEXT', id: systemId, content: chunkContent });
           } else if (ev.event === 'plan') {
-            const needsConfirm = ev.data.actions?.some((a: any) => ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type));
-            setMessages(prev => prev.map(msg =>
-              msg.id === `s-${id}`
-                ? { ...msg, isThinking: !needsConfirm, thoughts: ev.data.thoughts, content: ev.data.reply, plan: ev.data, planPending: needsConfirm, suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined }
-                : msg
-            ));
+            const needsConfirm = ev.data.actions?.some((a: any) =>
+              ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type),
+            );
+            dispatch({
+              type: 'PLAN', id: systemId,
+              plan: ev.data,
+              thoughts: ev.data.thoughts,
+              reply: ev.data.reply,
+              suggestions: ev.data.suggestions,
+              needsConfirm,
+            });
           } else if (ev.event === 'step') {
             const stepStart = ev.data.status === 'start';
-            const stepDone = !stepStart;
-            setMessages(prev => prev.map(msg =>
-              msg.id === `s-${id}`
-                ? { ...msg, planPending: false, executing: true, isThinking: true, streaming: false,
-                    statusText: stepDone ? '결과 정리 중...' : (ev.data.description || msg.statusText),
-                    steps: [...(msg.steps || []), ev.data] }
-                : msg
-            ));
+            dispatch({ type: 'STEP', id: systemId, step: ev.data, isLast: !stepStart });
           } else if (ev.event === 'result') {
-            const pendingActions = ev.data.data?.pendingActions as { planId: string; name: string; summary: string; args?: any; status?: 'past-runat'; originalRunAt?: string }[] | undefined;
-            const hadExecutedActions = !!ev.data.executedActions?.length;
-            // 빈 응답 판정: reply 없음 + 에러 없음 + 실행된 도구도 없음 + blocks/pending도 없음 → AI가 아무것도 안 한 것
-            const hasAnyOutput = !!(ev.data.executedActions?.length) || !!(ev.data.data?.blocks?.length) || !!(ev.data.data?.pendingActions?.length);
+            const pendingActions = ev.data.data?.pendingActions as PendingAction[] | undefined;
+            const blocksData = ev.data.data?.blocks as Array<{ type: string; text?: string }> | undefined;
+            const hasBlocks = Array.isArray(blocksData) && blocksData.length > 0;
+            const hasAnyOutput = !!(ev.data.executedActions?.length) || hasBlocks || !!(pendingActions?.length);
             const fullReply: string = ev.data.reply
               || (ev.data.error ? ''
                 : hasAnyOutput ? '실행이 완료되었습니다.'
                 : '응답을 받지 못했습니다. 다시 요청해주세요.');
-            const blocksData = ev.data.data?.blocks as Array<{ type: string; text?: string }> | undefined;
-            const hasBlocks = Array.isArray(blocksData) && blocksData.length > 0;
-            // 스트리밍 제거 후 모든 응답이 result에 한 번에 도착 → 항상 chunk-flow 애니메이션
             const shouldAnimate = !!fullReply && !ev.data.error;
+            const lastTextIdx = hasBlocks ? (() => {
+              for (let i = blocksData!.length - 1; i >= 0; i--) if (blocksData![i].type === 'text') return i;
+              return -1;
+            })() : -1;
 
             cancelChunkAnim();
 
+            dispatch({
+              type: 'RESULT',
+              id: systemId,
+              payload: {
+                reply: fullReply,
+                thoughts: ev.data.thoughts,
+                executedActions: ev.data.executedActions,
+                data: ev.data.data,
+                error: ev.data.error,
+                suggestions: ev.data.suggestions,
+                pendingActions,
+              },
+              hasAnimation: shouldAnimate,
+              lastTextIdx,
+            });
+
             if (shouldAnimate) {
-              // 최종 text block을 찾아 animatedTextIdx 결정 — 있으면 blocks 내부를 animate, 없으면 content를 animate
-              const lastTextIdx = hasBlocks ? (() => {
-                for (let i = blocksData!.length - 1; i >= 0; i--) if (blocksData![i].type === 'text') return i;
-                return -1;
-              })() : -1;
-              // 초기 상태: 텍스트 빈 상태로 세팅
-              setMessages(prev => prev.map(msg => {
-                if (msg.id !== `s-${id}`) return msg;
-                let newBlocks = blocksData;
-                if (hasBlocks && lastTextIdx >= 0) {
-                  newBlocks = blocksData!.map((b, i) => i === lastTextIdx ? { ...b, text: '' } : b);
-                }
-                return {
-                  ...msg, isThinking: false, executing: false, streaming: false, statusText: undefined,
-                  thinkingText: '답변 완료', thoughts: ev.data.thoughts,
-                  content: lastTextIdx >= 0 ? msg.content : '', // blocks 쓰면 msg.content 건들지 않음
-                  executedActions: ev.data.executedActions || [],
-                  data: hasBlocks ? { ...ev.data.data, blocks: newBlocks } : ev.data.data,
-                  error: ev.data.error, planPending: false,
-                  suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
-                  pendingActions: pendingActions?.map(p => ({ ...p, status: p.status ?? 'pending' })),
-                };
-              }));
-              // 청크 단위 점진 append (50자 / 25ms → ~2000자/초)
+              // 청크 단위 점진 append
               const CHUNK = 50;
               const TICK = 25;
               let pos = 0;
               chunkAnimRef.current = setInterval(() => {
                 pos = Math.min(pos + CHUNK, fullReply.length);
                 const partial = fullReply.slice(0, pos);
-                setMessages(prev => prev.map(msg => {
-                  if (msg.id !== `s-${id}`) return msg;
-                  if (hasBlocks && lastTextIdx >= 0 && msg.data && Array.isArray((msg.data as any).blocks)) {
-                    const blocks = ((msg.data as any).blocks as any[]).slice();
-                    blocks[lastTextIdx] = { ...blocks[lastTextIdx], text: partial };
-                    return { ...msg, data: { ...(msg.data as any), blocks } };
-                  }
-                  return { ...msg, content: partial };
-                }));
+                dispatch({ type: 'RESULT_ANIM_TICK', id: systemId, partial, lastTextIdx });
                 if (pos >= fullReply.length) cancelChunkAnim();
               }, TICK);
-            } else {
-              // 즉시 세팅 (Fast Path 또는 에러)
-              // 보이는 게 아무것도 없으면 fallback 메시지 — '로봇 사라짐 + 빈 화면' 방지
-              const hasAnything = fullReply || hasBlocks || pendingActions?.length || ev.data.suggestions?.length || ev.data.error;
-              const fallbackContent = !hasAnything ? '응답이 비어있습니다. 다시 시도해주세요.' : (fullReply || '');
-              setMessages(prev => prev.map(msg =>
-                msg.id === `s-${id}`
-                  ? {
-                      ...msg, isThinking: false, executing: false, streaming: false, statusText: undefined,
-                      thinkingText: '답변 완료', thoughts: ev.data.thoughts,
-                      content: fallbackContent || msg.content,
-                      executedActions: ev.data.executedActions || [], data: ev.data.data, error: ev.data.error, planPending: false,
-                      suggestions: ev.data.suggestions?.length ? ev.data.suggestions : undefined,
-                      pendingActions: pendingActions?.map(p => ({ ...p, status: p.status ?? 'pending' })),
-                    }
-                  : msg
-              ));
             }
-            if (hadExecutedActions) { onRefresh(); window.dispatchEvent(new Event('firebat-refresh')); }
+            if (ev.data.executedActions?.length) {
+              onRefresh();
+              window.dispatchEvent(new Event('firebat-refresh'));
+            }
           } else if (ev.event === 'error') {
             cancelChunkAnim();
-            setMessages(prev => prev.map(msg =>
-              msg.id === `s-${id}`
-                ? { ...msg, isThinking: false, executing: false, streaming: false,
-                    thinkingText: '답변 완료',
-                    error: ev.data.error,
-                    // content 비어있으면 fallback — 메시지 박스가 visible 하게
-                    content: msg.content || (ev.data.error ? '' : '응답을 받지 못했습니다.') }
-                : msg
-            ));
+            dispatch({ type: 'ERROR', id: systemId, error: ev.data.error });
           }
         }
         if (done) break;
@@ -631,58 +538,28 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     } catch (err: any) {
       cancelChunkAnim();
       cancelWatchdog();
-      const aborted = err?.name === 'AbortError';
-      setMessages(prev => prev.map(msg =>
-        msg.id === `s-${id}`
-          ? { ...msg, isThinking: false, executing: false, streaming: false,
-              thinkingText: '답변 완료',
-              error: aborted ? undefined : err.message,
-              content: msg.content || (aborted ? '중단되었습니다.' : '서버 네트워크 연결이 끊어졌습니다.') }
-          : msg
-      ));
+      if (err?.name === 'AbortError') dispatch({ type: 'ABORTED', id: systemId });
+      else dispatch({ type: 'NETWORK_ERROR', id: systemId, message: err.message });
     } finally {
       cancelWatchdog();
-      // 스트림 종료 후 방어 로직 — '로봇 사라짐 + 빈 메시지' 방지
-      //   1) 여전히 isThinking/executing/streaming 이면 강제 해제
-      //   2) 해제됐지만 visible 콘텐츠 (content/blocks/pendingActions/error) 가 하나도 없으면 fallback 채움
-      let finalMsgs: Message[] = [];
-      setMessages(prev => {
-        const next = prev.map(msg => {
-          if (msg.id !== `s-${id}`) return msg;
-          const stillActive = msg.isThinking || msg.executing || msg.streaming;
-          const hasVisible = (msg.content && msg.content.trim()) || msg.error || ((msg.data as { blocks?: unknown[] } | undefined)?.blocks?.length ?? 0) > 0 || (msg.pendingActions?.length ?? 0) > 0 || (msg.suggestions?.length ?? 0) > 0;
-          if (stillActive || !hasVisible) {
-            return {
-              ...msg,
-              isThinking: false, executing: false, streaming: false,
-              thinkingText: '답변 완료',
-              content: msg.content || msg.error || '응답을 받지 못했습니다. 다시 시도해주세요.',
-              error: msg.error || (!hasVisible ? '응답이 비어있습니다 (SSE 연결 끊김 가능성)' : undefined),
-            };
-          }
-          return msg;
-        });
-        finalMsgs = next;
-        return next;
-      });
+      // 스트림 종료 안전망 — 여전히 in-flight 면 reducer 의 FINALIZE + enforceInvariant 가 자동 복구
+      dispatch({ type: 'FINALIZE', id: systemId });
       abortRef.current = null;
       setLoading(false);
-      // 저장 시점 2: AI 응답 완료 직후 DB 반영
-      const convIdForSave = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
-      if (convIdForSave) {
-        queueMicrotask(() => saveToDbRef.current(convIdForSave, finalMsgs));
+      // 저장 시점 2: AI 응답 완료 직후 DB 반영 (최신 messages ref 로)
+      const convIdForSave2 = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
+      if (convIdForSave2) {
+        queueMicrotask(() => saveToDbRef.current(convIdForSave2, messagesRef.current));
       }
     }
-  }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage, planMode]);
+  }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage, planMode, setActiveConvId]);
 
   // Plan 실행 확인
   const handleConfirmPlan = useCallback(async (msgId: string) => {
     const msg = messages.find(m => m.id === msgId);
     if (!msg?.plan) return;
 
-    setMessages(prev => prev.map(m =>
-      m.id === msgId ? { ...m, planPending: false, executing: true, isThinking: true, steps: [] } : m
-    ));
+    dispatch({ type: 'CONFIRM_PLAN_START', msgId });
     setLoading(true);
 
     try {
@@ -701,51 +578,48 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       while (true) {
         const { done, value } = await reader.read();
         if (value) buffer += decoder.decode(value, { stream: !done });
-        if (done) {
-          if (buffer.trim()) buffer += '\n\n';
-        }
+        if (done && buffer.trim()) buffer += '\n\n';
 
         const parsed = parseSSE(buffer);
         buffer = parsed.remaining;
 
         for (const ev of parsed.events) {
           if (ev.event === 'step') {
-            setMessages(prev => prev.map(m =>
-              m.id === msgId ? { ...m, steps: [...(m.steps || []), ev.data] } : m
-            ));
+            dispatch({ type: 'STEP', id: msgId, step: ev.data, isLast: ev.data.status !== 'start' });
           } else if (ev.event === 'result') {
-            setMessages(prev => prev.map(m =>
-              m.id === msgId
-                ? {
-                    ...m, executing: false, isThinking: false, executedActions: ev.data.executedActions || [],
-                    data: ev.data.data, error: ev.data.error, content: ev.data.reply || m.content || '실행이 완료되었습니다.',
-                  }
-                : m
-            ));
-            if (ev.data.executedActions?.length) { onRefresh(); window.dispatchEvent(new Event('firebat-refresh')); }
+            dispatch({
+              type: 'RESULT', id: msgId,
+              payload: {
+                reply: ev.data.reply,
+                executedActions: ev.data.executedActions,
+                data: ev.data.data,
+                error: ev.data.error,
+              },
+              hasAnimation: false,
+              lastTextIdx: -1,
+            });
+            if (ev.data.executedActions?.length) {
+              onRefresh();
+              window.dispatchEvent(new Event('firebat-refresh'));
+            }
           }
         }
         if (done) break;
       }
     } catch (err: any) {
-      setMessages(prev => prev.map(m =>
-        m.id === msgId ? { ...m, executing: false, error: err.message } : m
-      ));
+      dispatch({ type: 'NETWORK_ERROR', id: msgId, message: err.message });
     } finally {
+      dispatch({ type: 'FINALIZE', id: msgId });
       setLoading(false);
     }
   }, [messages, aiModel, onRefresh]);
 
   // Plan 거부
   const handleRejectPlan = useCallback((msgId: string) => {
-    setMessages(prev => prev.map(m =>
-      m.id === msgId
-        ? { ...m, planPending: false, content: (m.content || '') + '\n\n(사용자가 실행을 취소했습니다.)' }
-        : m
-    ));
+    dispatch({ type: 'REJECT_PLAN', msgId });
   }, []);
 
-  // Pending tool 개별 승인 — action: 'now'(즉시 실행) / 'reschedule'(새 시간) 지원
+  // Pending tool 개별 승인
   const handleApprovePending = useCallback(async (msgId: string, planId: string, action?: 'now' | 'reschedule', newRunAt?: string) => {
     try {
       const qs = new URLSearchParams({ planId });
@@ -756,16 +630,15 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         body: JSON.stringify(newRunAt ? { runAt: newRunAt } : {}),
       });
       const data = await res.json();
-      setMessages(prev => prev.map(m => m.id !== msgId ? m : {
-        ...m,
-        pendingActions: m.pendingActions?.map(p => {
-          if (p.planId !== planId) return p;
-          if (data.success) return { ...p, status: 'approved' as const, errorMessage: undefined };
-          if (data.code === 'PAST_RUNAT') return { ...p, status: 'past-runat' as const, originalRunAt: data.originalRunAt };
-          return { ...p, status: 'error' as const, errorMessage: data.error || '실행 실패' };
-        }),
-      }));
-      if (data.success) { onRefresh(); window.dispatchEvent(new Event('firebat-refresh')); }
+      if (data.success) {
+        dispatch({ type: 'PENDING_APPROVED', msgId, planId });
+        onRefresh();
+        window.dispatchEvent(new Event('firebat-refresh'));
+      } else if (data.code === 'PAST_RUNAT') {
+        dispatch({ type: 'PENDING_PAST_RUNAT', msgId, planId, originalRunAt: data.originalRunAt });
+      } else {
+        dispatch({ type: 'PENDING_ERROR', msgId, planId, errorMessage: data.error || '실행 실패' });
+      }
     } catch {}
   }, [onRefresh]);
 
@@ -773,10 +646,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   const handleRejectPending = useCallback(async (msgId: string, planId: string) => {
     try {
       await fetch(`/api/plan/reject?planId=${encodeURIComponent(planId)}`, { method: 'POST' });
-      setMessages(prev => prev.map(m => m.id !== msgId ? m : {
-        ...m,
-        pendingActions: m.pendingActions?.map(p => p.planId === planId ? { ...p, status: 'rejected' } : p),
-      }));
+      dispatch({ type: 'PENDING_REJECTED', msgId, planId });
     } catch {}
   }, []);
 

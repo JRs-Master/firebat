@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Save, Settings } from 'lucide-react';
+import { useSidebarRefresh } from '../hooks/events-manager';
 
 interface CronJob {
   jobId: string;
@@ -44,23 +45,12 @@ export function CronPanel() {
     } catch {}
   }, []);
 
-  // SSE 실시간 이벤트 수신 + 알림 폴링 (30초)
-  useEffect(() => {
-    // SSE 연결 — 크론 완료 시 즉시 갱신
-    let es: EventSource | null = null;
-    try {
-      es = new EventSource('/api/events');
-      es.onmessage = (e) => {
-        try {
-          const event = JSON.parse(e.data);
-          if (event.type === 'cron:complete' || event.type === 'sidebar:refresh') {
-            fetchCron();
-          }
-        } catch {}
-      };
-    } catch {}
+  // SSE (cron:complete / sidebar:refresh) + window 'firebat-refresh' 통합 수신
+  // EventsManager 싱글톤이 EventSource 1개만 유지 — Sidebar 와 공유.
+  useSidebarRefresh(fetchCron);
 
-    // 알림 폴링 (페이지 열기용, 30초 간격)
+  // 알림 폴링 (페이지 열기용, 30초 간격)
+  useEffect(() => {
     const poll = async () => {
       try {
         const nRes = await fetch('/api/cron?notify=poll');
@@ -70,20 +60,10 @@ export function CronPanel() {
       } catch {}
     };
     const id = setInterval(poll, 30000);
-
-    return () => {
-      es?.close();
-      clearInterval(id);
-    };
-  }, [fetchCron]);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => { fetchCron(); }, [fetchCron]);
-
-  useEffect(() => {
-    const handler = () => fetchCron();
-    window.addEventListener('firebat-refresh', handler);
-    return () => window.removeEventListener('firebat-refresh', handler);
-  }, [fetchCron]);
 
   const handleCancel = async (jobId: string) => {
     if (!confirm(`잡 "${jobId}"을(를) 해제하시겠습니까?`)) return;

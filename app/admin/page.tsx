@@ -13,6 +13,7 @@ import { SecretInput } from './components/ChatWidgets';
 import StockChart from './chat-components/StockChart';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
+import { readSetting } from './hooks/settings-manager';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
 
 // ─── 마크다운 커스텀 컴포넌트 ───────────────────────────────────────────────
@@ -874,7 +875,7 @@ export default function AdminConsole() {
           return;
         }
       } catch {}
-      const savedModel = localStorage.getItem('firebat_model');
+      const savedModel = readSetting('firebat_model');
       setAiModel(savedModel && isValid(savedModel) ? savedModel : 'gpt-5.4-mini');
     })();
   }, []);

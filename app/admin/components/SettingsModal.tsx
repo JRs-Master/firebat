@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Download, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight } from 'lucide-react';
 import { GEMINI_MODELS, THINKING_LEVELS, McpServer, getThinkingKind, filterThinkingLevels } from '../types';
 import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
+import { useSetting, writeSetting } from '../hooks/settings-manager';
 
 interface SystemModule { name: string; description: string; runtime: string; type?: string; enabled?: boolean; }
 
@@ -54,11 +55,8 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
     if (model.startsWith('claude-')) return 'api-anthropic';
     return '';
   };
-  const LAST_MODEL_LS_KEY = 'firebat_last_model_by_category';
-  const [lastModelByCategory, setLastModelByCategory] = useState<Record<string, string>>(() => {
-    if (typeof window === 'undefined') return {};
-    try { return JSON.parse(localStorage.getItem(LAST_MODEL_LS_KEY) || '{}'); } catch { return {}; }
-  });
+  // SettingsManager 경유 — 다른 탭에서 변경하면 `storage` 이벤트로 자동 동기화.
+  const [lastModelByCategory, setLastModelByCategory] = useSetting('firebat_last_model_by_category');
   /** 새 카테고리 전환 시 호출 — 마지막 모델 복원, 없으면 첫 모델 fallback. */
   const restoreOrFirst = (newCategory: string, fallbackFirst: string | undefined) => {
     const remembered = lastModelByCategory[newCategory];
@@ -77,9 +75,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
     // 현재 모델을 카테고리 기억에 저장
     const cat = categoryOf(aiModel);
     if (cat && lastModelByCategory[cat] !== aiModel) {
-      const next = { ...lastModelByCategory, [cat]: aiModel };
-      setLastModelByCategory(next);
-      try { localStorage.setItem(LAST_MODEL_LS_KEY, JSON.stringify(next)); } catch {}
+      setLastModelByCategory({ ...lastModelByCategory, [cat]: aiModel });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiModel]);
@@ -555,7 +551,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
 
   // ── 저장 ───────────────────────────────────────────────────────────────────
   const handleSave = async () => {
-    localStorage.setItem('firebat_model', aiModel); // 폴백용
+    writeSetting('firebat_model', aiModel); // SettingsManager 경유 폴백
 
     await fetch('/api/settings', {
       method: 'PATCH',
