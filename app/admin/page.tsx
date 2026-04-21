@@ -89,9 +89,9 @@ function renderMarkdown(text: string) {
 
 // ─── 선택지 버튼 (텍스트 버튼 + 인라인 입력 + 토글 다중 선택) ─────────────────
 function SuggestionButtons({ suggestions, loading, onSuggestion }: {
-  suggestions: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[] })[];
+  suggestions: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[] } | { type: 'plan-confirm'; planId: string; label: string })[];
   loading: boolean;
-  onSuggestion?: (text: string) => void;
+  onSuggestion?: (text: string, meta?: { planExecuteId?: string }) => void;
 }) {
   const [openInput, setOpenInput] = useState<number | null>(null);
   const [inputValue, setInputValue] = useState('');
@@ -143,6 +143,15 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
             <button key={i} onClick={() => onSuggestion?.(item)} disabled={loading}
               className="w-full px-4 py-3 text-left text-[13px] font-medium text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-50 border-b border-slate-200 last:border-b-0">
               {item}
+            </button>
+          );
+        }
+        if (item.type === 'plan-confirm') {
+          // ✓실행 — 클릭 시 planId 동봉해 backend 가 plan steps 강제 주입
+          return (
+            <button key={i} onClick={() => onSuggestion?.(item.label, { planExecuteId: item.planId })} disabled={loading}
+              className="w-full px-4 py-3 text-left text-[13px] font-bold text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100 transition-colors disabled:opacity-50 border-b border-slate-200 last:border-b-0">
+              {item.label}
             </button>
           );
         }
@@ -389,7 +398,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
   loading: boolean;
   onConfirm: (id: string) => void;
   onReject: (id: string) => void;
-  onSuggestion?: (text: string) => void;
+  onSuggestion?: (text: string, meta?: { planExecuteId?: string }) => void;
   onApprovePending?: (msgId: string, planId: string) => void;
   onRejectPending?: (msgId: string, planId: string) => void;
   onApprovePendingAction?: (msgId: string, planId: string, action: 'now' | 'reschedule', newRunAt?: string) => void;
@@ -797,7 +806,7 @@ export default function AdminConsole() {
                 loading={loading}
                 onConfirm={handleConfirmPlan}
                 onReject={handleRejectPlan}
-                onSuggestion={(text) => handleSubmit(text, true)}
+                onSuggestion={(text, meta) => handleSubmit(text, true, meta)}
                 onApprovePending={handleApprovePending}
                 onApprovePendingAction={(msgId, planId, action, newRunAt) => handleApprovePending(msgId, planId, action, newRunAt)}
                 onRejectPending={handleRejectPending}

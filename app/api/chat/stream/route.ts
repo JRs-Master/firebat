@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  const { prompt, config, history = [], autoExecute = false, mode, image, previousResponseId, conversationId, planMode } = await req.json();
+  const { prompt, config, history = [], autoExecute = false, mode, image, previousResponseId, conversationId, planMode, planExecuteId } = await req.json();
 
   if (!prompt) {
     return new Response(JSON.stringify({ error: 'prompt is required' }), { status: 400 });
@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
     ...(previousResponseId ? { previousResponseId: previousResponseId as string } : {}),
     ...(conversationId ? { conversationId: conversationId as string } : {}),
     ...(planMode === true ? { planMode: true } : {}),
+    ...(typeof planExecuteId === 'string' && planExecuteId ? { planExecuteId } : {}),
   };
   const core = getCore();
 
@@ -163,7 +164,7 @@ function handleToolsMode(
   core: FirebatCore,
   prompt: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
-  opts: { model?: string; owner?: string; image?: string; previousResponseId?: string; conversationId?: string; planMode?: boolean },
+  opts: { model?: string; owner?: string; image?: string; previousResponseId?: string; conversationId?: string; planMode?: boolean; planExecuteId?: string },
   abortSignal?: AbortSignal,
 ) {
   const encoder = new TextEncoder();

@@ -33,6 +33,9 @@ export interface AiRequestOpts {
   owner?: string;
   /** 플랜모드 — true 면 AI 가 작업 전에 propose_plan 도구로 계획 카드를 먼저 제시 */
   planMode?: boolean;
+  /** 사용자가 직전 turn 의 propose_plan 카드에서 ✓실행 클릭 시 동봉되는 planId.
+   *  AiManager 가 plan-store 에서 steps 조회 후 시스템 프롬프트에 강제 주입. */
+  planExecuteId?: string;
 }
 
 /**

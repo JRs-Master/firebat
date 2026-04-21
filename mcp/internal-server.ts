@@ -240,17 +240,33 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
       risks: z.array(z.string()).optional().describe('주의사항·리스크'),
     },
     async (args) => {
+      // planId 발급 + plan-store 저장 → ✓실행 시 backend 가 조회해 다음 턴 prompt 에 강제 주입
+      const { storePlan } = await import('../lib/plan-store');
+      const planId = 'plan-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
+      storePlan({
+        planId,
+        title: args.title as string,
+        steps: args.steps as Array<{ title: string; description?: string; tool?: string }>,
+        estimatedTime: args.estimatedTime as string | undefined,
+        risks: args.risks as string[] | undefined,
+      });
       return {
         content: [{ type: 'text', text: JSON.stringify({
           success: true,
           component: 'PlanCard',
           props: {
+            planId,
             title: args.title,
             steps: args.steps,
             estimatedTime: args.estimatedTime,
             risks: args.risks,
           },
-          suggestions: ['✓ 실행', '⚙ 수정 제안', '✕ 취소'],
+          // ✓실행 클릭 시 frontend 가 이 type 을 보고 planId 를 chat 요청에 동봉
+          suggestions: [
+            { type: 'plan-confirm', planId, label: '✓ 실행' },
+            '⚙ 수정 제안',
+            '✕ 취소',
+          ],
         }) }],
       };
     },
