@@ -71,13 +71,10 @@ export default async function SharePage({ params }: PageProps) {
   const expiresInHours = Math.max(0, Math.ceil((share.expiresAt - Date.now()) / 3_600_000));
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* 공유 배너 */}
+      {/* 공유 배너 — 사용자 원문 노출 방지, 고정 타이틀만 */}
       <header className="sticky top-0 z-10 bg-white/90 backdrop-blur border-b border-slate-200 px-4 py-3">
-        <div className="max-w-3xl mx-auto flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-sm font-bold text-slate-800 truncate">{share.title}</span>
-            <span className="text-[10px] font-bold tracking-widest text-slate-400 uppercase shrink-0">· Firebat 공유</span>
-          </div>
+        <div className="w-full md:w-[70%] max-w-6xl mx-auto flex items-center justify-between gap-3">
+          <span className="text-sm font-bold text-slate-800">Firebat 공유</span>
           <span className="text-[11px] text-slate-400 shrink-0">{expiresInHours}시간 뒤 만료</span>
         </div>
       </header>

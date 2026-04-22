@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { ComponentRenderer } from '../../(user)/[...slug]/components';
+import { isSuggestionClickUserMessage } from '../../admin/hooks/chat-manager';
 
 // 공유 페이지 전용 읽기 전용 메시지 리스트. 어드민 MessageBubble 의 인터랙티브 요소
 // (plan-confirm, pendingActions, suggestions, 복사·공유 버튼) 는 모두 제거 — 읽기만.
@@ -103,10 +104,20 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
 }
 
 export function SharedMessageList({ messages }: { messages: unknown[] }) {
-  const msgs = (messages as ShareMessage[]).filter(m => m && m.id !== 'system-init' && (m.role === 'user' || m.role === 'system'));
+  const msgs = (messages as ShareMessage[]).filter(m => {
+    if (!m) return false;
+    if (m.id === 'system-init') return false;
+    if (m.role !== 'user' && m.role !== 'system') return false;
+    // 버튼 클릭 흔적 user 말풍선 (✓실행 등) 은 읽기 전용 공유 페이지에서 불필요 — 실제 실행 버튼처럼 보이는 착시 유발
+    if (isSuggestionClickUserMessage(m)) return false;
+    return true;
+  });
+  // 어드민 대화창과 동일한 반응형 너비 — px-3 md:px-12 + w-full md:w-[70%] max-w-6xl
   return (
-    <div className="max-w-3xl mx-auto px-4 py-8 space-y-10">
-      {msgs.map((m, i) => <MessageRow key={m.id || i} msg={m} />)}
+    <div className="w-full px-3 md:px-12 py-6 md:py-10">
+      <div className="w-full md:w-[70%] max-w-6xl mx-auto space-y-10">
+        {msgs.map((m, i) => <MessageRow key={m.id || i} msg={m} />)}
+      </div>
     </div>
   );
 }

@@ -87,6 +87,9 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
       )
     `);
     try { this.db.exec('CREATE INDEX IF NOT EXISTS idx_shared_expires ON shared_conversations(expires_at)'); } catch {}
+    // dedup_key 컬럼 (마이그레이션) — 같은 키 + 유효 share 존재 시 재사용
+    try { this.db.exec('ALTER TABLE shared_conversations ADD COLUMN dedup_key TEXT'); } catch { /* 이미 존재 */ }
+    try { this.db.exec('CREATE INDEX IF NOT EXISTS idx_shared_dedup ON shared_conversations(dedup_key, expires_at)'); } catch {}
 
     // 메시지 단위 벡터 임베딩 (search_history 도구용 — 과거 대화 검색)
     this.db.exec(`
@@ -258,19 +261,31 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
 
   /** 특정 프로젝트의 모든 페이지 삭제 */
   // ── Shared conversations (공유 대화) ────────────────────────────────────
-  /** 공유 생성 — 8자리 hex slug 자동 할당 (충돌 시 재시도). */
-  async createShare(input: { type: 'turn' | 'full'; title: string; messages: unknown[]; owner?: string; sourceConvId?: string; ttlMs: number }): Promise<InfraResult<{ slug: string; expiresAt: number }>> {
+  /** 공유 생성 — 8자리 hex slug 자동 할당 (충돌 시 재시도).
+   *  dedupKey 제공 시 같은 키 + 유효한 share 존재하면 기존 slug/expiresAt 반환 (24h TTL 갱신 X). */
+  async createShare(input: { type: 'turn' | 'full'; title: string; messages: unknown[]; owner?: string; sourceConvId?: string; ttlMs: number; dedupKey?: string }): Promise<InfraResult<{ slug: string; expiresAt: number; reused?: boolean }>> {
     try {
-      const messagesJson = JSON.stringify(input.messages);
       const now = Date.now();
       const expiresAt = now + input.ttlMs;
+      // dedupKey 있고 유효한 share 존재 → 재사용
+      if (input.dedupKey) {
+        const existing = this.db.prepare(
+          `SELECT slug, expires_at as expiresAt FROM shared_conversations
+           WHERE dedup_key = ? AND expires_at > ?
+           ORDER BY created_at DESC LIMIT 1`,
+        ).get(input.dedupKey, now) as { slug: string; expiresAt: number } | undefined;
+        if (existing) {
+          return { success: true, data: { slug: existing.slug, expiresAt: existing.expiresAt, reused: true } };
+        }
+      }
+      const messagesJson = JSON.stringify(input.messages);
       for (let attempt = 0; attempt < 5; attempt++) {
         const slug = Math.random().toString(36).slice(2, 10);
         try {
           this.db.prepare(
-            `INSERT INTO shared_conversations (slug, type, title, messages, owner, source_conv_id, created_at, expires_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).run(slug, input.type, input.title, messagesJson, input.owner ?? null, input.sourceConvId ?? null, now, expiresAt);
+            `INSERT INTO shared_conversations (slug, type, title, messages, owner, source_conv_id, created_at, expires_at, dedup_key)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).run(slug, input.type, input.title, messagesJson, input.owner ?? null, input.sourceConvId ?? null, now, expiresAt, input.dedupKey ?? null);
           return { success: true, data: { slug, expiresAt } };
         } catch (err: any) {
           if (err?.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') continue; // slug 충돌 → 재시도

@@ -10,9 +10,11 @@ type ShareInput = {
   conversationId?: string;
   title?: string;
   messages: unknown[];
+  /** 재사용 키 — 같은 값으로 24h 내 여러번 요청 시 DB 에서 기존 slug 반환 (device 공유) */
+  dedupKey?: string;
 };
 
-export async function createShareLink(input: ShareInput): Promise<{ url: string; expiresAt: number } | { error: string }> {
+export async function createShareLink(input: ShareInput): Promise<{ url: string; expiresAt: number; reused?: boolean } | { error: string }> {
   try {
     const res = await fetch('/api/share', {
       method: 'POST',
@@ -21,7 +23,7 @@ export async function createShareLink(input: ShareInput): Promise<{ url: string;
     });
     const data = await res.json();
     if (!data.success) return { error: data.error || '공유 생성 실패' };
-    return { url: data.url, expiresAt: data.expiresAt };
+    return { url: data.url, expiresAt: data.expiresAt, reused: data.reused };
   } catch (err: unknown) {
     return { error: err instanceof Error ? err.message : String(err) };
   }

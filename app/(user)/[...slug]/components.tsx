@@ -766,7 +766,8 @@ const PALETTE_MAP: Record<string, string[]> = {
   'mono-blue':  ['#1e3a8a', '#1d4ed8', '#3b82f6', '#60a5fa', '#93c5fd', '#bfdbfe', '#dbeafe'],
   'mono-green': ['#14532d', '#15803d', '#22c55e', '#4ade80', '#86efac', '#bbf7d0'],
   'red-green':  ['#ef4444', '#f87171', '#fca5a5', '#86efac', '#22c55e', '#15803d'],
-  earth:        ['#78350f', '#b45309', '#d97706', '#f59e0b', '#65a30d', '#166534'],
+  // earth — 갈색 계열만이면 세그먼트 구분 불가. 인접 슬롯 간 hue 간격 확보 (갈/녹/주황 교차).
+  earth:        ['#b45309', '#166534', '#d97706', '#78350f', '#65a30d', '#f59e0b'],
 };
 
 function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, palette, showValues = true, showPct = true }: {

@@ -511,7 +511,7 @@ export interface IDatabasePort {
   verifyPagePassword(slug: string, password: string): Promise<InfraResult<boolean>>;
 
   // ── Shared conversations (공유 대화) ────────────────────────────────────
-  createShare(input: { type: 'turn' | 'full'; title: string; messages: unknown[]; owner?: string; sourceConvId?: string; ttlMs: number }): Promise<InfraResult<{ slug: string; expiresAt: number }>>;
+  createShare(input: { type: 'turn' | 'full'; title: string; messages: unknown[]; owner?: string; sourceConvId?: string; ttlMs: number; dedupKey?: string }): Promise<InfraResult<{ slug: string; expiresAt: number; reused?: boolean }>>;
   getShare(slug: string): Promise<InfraResult<SharedConversationRecord | null>>;
   cleanupExpiredShares(): Promise<InfraResult<{ deleted: number }>>;
 }

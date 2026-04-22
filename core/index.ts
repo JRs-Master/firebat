@@ -363,8 +363,9 @@ export class FirebatCore {
   // ── 공유 대화 (shared conversations) ────────────────────────────────────
   // ChatGPT·Claude 스타일 공유. TTL 24시간. 만료는 cron 이 정리.
   /** 공유 생성 — 단일턴 (type='turn') or 전체대화 (type='full').
-   *  messages 는 공유 시점 snapshot — 원본 변경 영향 X. */
-  async createShare(input: { type: 'turn' | 'full'; title: string; messages: unknown[]; owner?: string; sourceConvId?: string; ttlMs?: number }) {
+   *  messages 는 공유 시점 snapshot — 원본 변경 영향 X.
+   *  dedupKey: 같은 키로 24h 내 여러번 요청 시 DB 가 기존 slug 반환 (동일 메시지 재공유 시 링크 유지). */
+  async createShare(input: { type: 'turn' | 'full'; title: string; messages: unknown[]; owner?: string; sourceConvId?: string; ttlMs?: number; dedupKey?: string }) {
     const ttlMs = input.ttlMs ?? 24 * 60 * 60 * 1000; // 기본 24시간
     return this.infra.database.createShare({ ...input, ttlMs });
   }

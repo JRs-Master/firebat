@@ -14,7 +14,7 @@ import StockChart from './chat-components/StockChart';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
 import { readSetting, writeSetting } from './hooks/settings-manager';
-import { THINKING_STATUS } from './hooks/chat-manager';
+import { THINKING_STATUS, isSuggestionClickUserMessage } from './hooks/chat-manager';
 import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
 
@@ -500,7 +500,7 @@ function CopyButton({ text }: { text: string }) {
   const handleCopy = useCallback(() => {
     const showOk = () => {
       setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
+      setTimeout(() => setCopied(false), 1800);
     };
     // 1) 모던 clipboard API (secure context)
     if (typeof navigator !== 'undefined' && navigator.clipboard && window.isSecureContext) {
@@ -511,24 +511,30 @@ function CopyButton({ text }: { text: string }) {
     fallback(text, showOk);
   }, [text]);
   return (
-    <button
-      onClick={handleCopy}
-      className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
-      title={copied ? '복사됨' : '복사'}
-    >
-      {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
-    </button>
+    <div className="inline-flex items-center gap-1">
+      {/* 모바일은 브라우저가 복사 확인 토스트를 자동 노출 → PC 에서만 inline 피드백 */}
+      {copied && <span className="hidden sm:inline text-[11px] text-emerald-500 font-medium">복사되었습니다</span>}
+      <button
+        onClick={handleCopy}
+        className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
+        title={copied ? '복사됨' : '복사'}
+      >
+        {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
+      </button>
+    </div>
   );
 }
 
 /** 단일턴 (user + AI 응답 한 쌍) 공유 버튼. 복사 버튼 옆에 배치.
  *  POST /api/share 로 24시간 TTL 공유 slug 생성 → 클립보드 복사 + 토스트. */
-function ShareTurnButton({ messages, conversationId, title }: { messages: unknown[]; conversationId: string; title?: string }) {
+function ShareTurnButton({ messages, conversationId, title, msgId }: { messages: unknown[]; conversationId: string; title?: string; msgId?: string }) {
   const [status, setStatus] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
   const handleShare = useCallback(async () => {
     if (status === 'sharing') return;
     setStatus('sharing');
-    const res = await createShareLink({ type: 'turn', conversationId, title, messages });
+    // 백엔드 DB 가 dedupKey 기반 재사용 담당 — 24h 내 같은 메시지 공유 요청이면 기존 slug 반환
+    const dedupKey = msgId ? `turn:${conversationId}:${msgId}` : undefined;
+    const res = await createShareLink({ type: 'turn', conversationId, title, messages, dedupKey });
     if ('error' in res) {
       setStatus('error');
       setTimeout(() => setStatus('idle'), 2200);
@@ -537,16 +543,22 @@ function ShareTurnButton({ messages, conversationId, title }: { messages: unknow
     const ok = await copyToClipboard(res.url);
     setStatus(ok ? 'done' : 'error');
     setTimeout(() => setStatus('idle'), 2200);
-  }, [messages, conversationId, title, status]);
+  }, [messages, conversationId, title, status, msgId]);
+  const label = status === 'done' ? '공유 링크 복사됨' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중...' : '';
+  const labelCls = status === 'error' ? 'text-red-500' : 'text-emerald-500';
   return (
-    <button
-      onClick={handleShare}
-      disabled={status === 'sharing'}
-      className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors disabled:opacity-50"
-      title={status === 'done' ? '공유 링크 복사됨 (24시간 유효)' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중...' : '이 응답 공유 (24h)'}
-    >
-      {status === 'done' ? <CheckCheck size={14} className="text-emerald-500" /> : <Share2 size={14} />}
-    </button>
+    <div className="inline-flex items-center gap-1">
+      {/* PC/모바일 공통으로 공유 피드백 표시 — 생성 + 복사가 한 번에 이루어지므로 상태 안내 필요 */}
+      {label && <span className={`text-[11px] ${labelCls} font-medium`}>{label}</span>}
+      <button
+        onClick={handleShare}
+        disabled={status === 'sharing'}
+        className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors disabled:opacity-50"
+        title={status === 'done' ? '공유 링크 복사됨 (24시간 유효)' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중...' : '이 응답 공유 (24h)'}
+      >
+        {status === 'done' ? <CheckCheck size={14} className="text-emerald-500" /> : <Share2 size={14} />}
+      </button>
+    </div>
   );
 }
 
@@ -676,7 +688,16 @@ function MessageBubble({ msg, loading, onSuggestion, onApprovePending, onRejectP
                   {msg.data.blocks.map((b: any, i: number) => {
                     if (b.type === 'text') return <div key={i} className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">{renderMarkdown(b.text)}</div>;
                     if (b.type === 'html') return <AutoResizeIframe key={i} src={b.htmlContent as string} initialHeight={b.htmlHeight} />;
-                    if (b.type === 'component') return <ComponentRenderer key={i} components={[{ type: b.name, props: b.props || {} }]} />;
+                    if (b.type === 'component') {
+                      // PlanCard 는 PC 에서 우측 정렬 (max-w-md) — 모바일은 full width
+                      const isPlanCard = b.name === 'PlanCard';
+                      const wrapCls = isPlanCard ? 'sm:ml-auto sm:max-w-md w-full' : '';
+                      return (
+                        <div key={i} className={wrapCls}>
+                          <ComponentRenderer components={[{ type: b.name, props: b.props || {} }]} />
+                        </div>
+                      );
+                    }
                     return null;
                   })}
                 </div>
@@ -842,7 +863,7 @@ function MessageBubble({ msg, loading, onSuggestion, onApprovePending, onRejectP
           return full ? (
             <div className="flex justify-end pr-1 gap-0.5 items-center">
               <CopyButton text={full} />
-              {shareContext && <ShareTurnButton messages={shareContext.turnMessages} conversationId={shareContext.conversationId} />}
+              {shareContext && <ShareTurnButton msgId={msg.id} messages={shareContext.turnMessages} conversationId={shareContext.conversationId} />}
             </div>
           ) : null;
         })()}
@@ -1007,13 +1028,19 @@ export default function AdminConsole() {
         <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 md:px-12 pt-4 md:pt-16 scrolltext">
           <div className="w-full md:w-[70%] max-w-6xl mx-auto space-y-10">
             {messages.map((msg, idx) => {
+              // 버튼 클릭 흔적 user 메시지 (✓ 실행, ✕ 취소, ⚙ 수정 등) — 과거 SEND_USER 경로로 저장된 잔재.
+              // SEND_SUGGESTION 도입 이후 신규 대화에선 생성되지 않지만, 기존 대화 로드 시 잔존 — 렌더에서 숨김.
+              if (isSuggestionClickUserMessage(msg)) return null;
               // 단일턴 공유용 — system 메시지 바로 앞의 user 메시지 + 현재 system 메시지 쌍
+              // 플랜 전체 흐름은 사이드바의 "대화 전체 공유" 로 묶는다 (여기선 턴 단위만).
+              // activeConvId 는 단순 참조 (share slug 는 독립) — 없어도 공유 가능
               let shareContext: { conversationId: string; turnMessages: unknown[] } | undefined;
-              if (activeConvId && msg.role === 'system' && msg.id !== 'system-init') {
+              if (msg.role === 'system' && msg.id !== 'system-init') {
                 for (let i = idx - 1; i >= 0; i--) {
                   const prev = messages[i];
-                  if (prev && prev.role === 'user') {
-                    shareContext = { conversationId: activeConvId, turnMessages: [prev, msg] };
+                  // 버튼 클릭 흔적은 실제 user prev 로 간주 X — 계속 walk back
+                  if (prev && prev.role === 'user' && !isSuggestionClickUserMessage(prev)) {
+                    shareContext = { conversationId: activeConvId || 'unsaved', turnMessages: [prev, msg] };
                     break;
                   }
                 }

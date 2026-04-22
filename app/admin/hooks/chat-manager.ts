@@ -37,6 +37,28 @@ export function isTerminal(m: Message): boolean {
   return !m.isThinking && !m.executing && !m.streaming;
 }
 
+/** Suggestion 버튼 클릭 흔적 판정 — 실제 사용자 입력 아님.
+ *  plan-confirm(✓ 실행) / plan-revise(⚙ 수정 제안) / 취소(✕ 취소) 등 SEND_SUGGESTION 경로로
+ *  만들어진 user 메시지는 렌더 / shareContext walk-back / share title 등에서 제외.
+ *  과거(2026-04-22 SEND_SUGGESTION 도입 전)에는 버튼 클릭도 SEND_USER 로 저장되어
+ *  `✓ 실행` 등이 user 말풍선으로 남아있음 — 소급 필터로 정리. */
+export function isSuggestionClickContent(content: unknown): boolean {
+  if (typeof content !== 'string') return false;
+  const c = content.trim();
+  if (!c) return false;
+  if (c === '✓ 실행' || c === '✓실행') return true;
+  if (c === '✕ 취소' || c === '✕취소') return true;
+  if (c.startsWith('⚙')) return true;
+  return false;
+}
+
+export function isSuggestionClickUserMessage(m: unknown): boolean {
+  if (!m || typeof m !== 'object') return false;
+  const obj = m as Record<string, unknown>;
+  if (obj.role !== 'user') return false;
+  return isSuggestionClickContent(obj.content);
+}
+
 export function hasVisible(m: Message): boolean {
   if (m.content && m.content.trim()) return true;
   if (m.error) return true;

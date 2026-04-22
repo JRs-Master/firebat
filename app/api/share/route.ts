@@ -21,20 +21,16 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const type = body.type === 'turn' ? 'turn' : 'full';
     const conversationId = typeof body.conversationId === 'string' ? body.conversationId : undefined;
+    const dedupKey = typeof body.dedupKey === 'string' && body.dedupKey ? body.dedupKey : undefined;
     const messages = Array.isArray(body.messages) ? body.messages : null;
     if (!messages || messages.length === 0) {
       return NextResponse.json({ success: false, error: '공유할 메시지가 없습니다' }, { status: 400 });
     }
 
-    // title 자동 생성 — 첫 user 메시지 28자 + …
-    let title: string = typeof body.title === 'string' ? body.title : '';
-    if (!title) {
-      const firstUser = messages.find((m: unknown) => m && typeof m === 'object' && (m as Record<string, unknown>).role === 'user');
-      const content = firstUser && typeof (firstUser as Record<string, unknown>).content === 'string'
-        ? (firstUser as Record<string, unknown>).content as string
-        : '';
-      title = content ? content.slice(0, 28) + (content.length > 28 ? '…' : '') : (type === 'turn' ? '공유된 응답' : '공유된 대화');
-    }
+    // title — 생성자가 명시 전달하면 사용, 없으면 generic (사용자 원문을 title 로 노출하지 않음)
+    const title: string = typeof body.title === 'string' && body.title
+      ? body.title
+      : (type === 'turn' ? '공유된 응답' : '공유된 대화');
 
     const core = getCore();
     const res = await core.createShare({
@@ -43,6 +39,7 @@ export async function POST(req: NextRequest) {
       messages,
       owner: auth.role,
       sourceConvId: conversationId,
+      dedupKey,
     });
     if (!res.success || !res.data) {
       return NextResponse.json({ success: false, error: res.error || '공유 생성 실패' }, { status: 500 });
@@ -53,6 +50,7 @@ export async function POST(req: NextRequest) {
       slug: res.data.slug,
       url: `${base}/share/${res.data.slug}`,
       expiresAt: res.data.expiresAt,
+      reused: res.data.reused === true,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

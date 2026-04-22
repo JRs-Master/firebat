@@ -87,6 +87,14 @@ export function useSetting<K extends keyof SettingsSchema>(
 ): [SettingsSchema[K], (value: SettingsSchema[K] | ((prev: SettingsSchema[K]) => SettingsSchema[K])) => void] {
   const [value, setValue] = useState<SettingsSchema[K]>(() => readSetting(key));
 
+  // SSR 하이드레이션 동기화 — 서버는 window 없이 DEFAULTS 로 렌더 → 클라이언트 mount 후
+  // localStorage 값으로 재동기화. useState 초기화와 중복이지만 SSR 시 className 등이
+  // DEFAULTS 기준 박제되는 문제를 트리거 재렌더로 해결.
+  useEffect(() => {
+    const current = readSetting(key);
+    setValue(prev => (prev !== current ? current : prev));
+  }, [key]);
+
   // cross-tab 동기화 — storage 이벤트는 다른 탭에서 localStorage 변경 시 발생
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {

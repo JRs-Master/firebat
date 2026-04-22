@@ -150,12 +150,16 @@ function handleToolsMode(
             const userMsg = saveOpts.userId && saveOpts.userPrompt
               ? { id: saveOpts.userId, role: 'user' as const, content: saveOpts.userPrompt, ...(saveOpts.image ? { image: saveOpts.image } : {}) }
               : null;
+            // suggestions / pendingActions 포함 — 새로고침 후에도 ✓실행 버튼·승인 UI 복원
+            const resultPending = resultData && 'pendingActions' in resultData ? (resultData.pendingActions as unknown[] | undefined) : undefined;
             const systemMsg = {
               id: saveOpts.systemId,
               role: 'system' as const,
               content: result.reply || '',
               executedActions: result.executedActions,
               data: result.data,
+              ...(resultSuggestions && Array.isArray(resultSuggestions) && resultSuggestions.length > 0 ? { suggestions: resultSuggestions } : {}),
+              ...(resultPending && Array.isArray(resultPending) && resultPending.length > 0 ? { pendingActions: resultPending } : {}),
               ...(result.error ? { error: result.error } : {}),
             };
             const msgs = userMsg ? [userMsg, systemMsg] : [systemMsg];

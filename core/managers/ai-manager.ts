@@ -903,8 +903,10 @@ export class AiManager {
 
       // propose_plan 호출 시 강제 턴 종료 — 사용자가 ✓실행 누른 뒤에야 다음 작업 진행
       // (PlanCard + suggestions 는 blocks/suggestions 에 이미 적재됨)
+      // trailing text 는 PlanCard 와 정보 중복이므로 drop — 위/아래 카드 위치 참조 문구도 자연스레 제거
       if (toolCalls.some(tc => tc.name === 'propose_plan')) {
-        this.logger.info(`[AiManager] [${corrId}] propose_plan 호출 감지 → 사용자 승인 대기 위해 도구 루프 강제 종료`);
+        this.logger.info(`[AiManager] [${corrId}] propose_plan 호출 감지 → trailing text drop + 승인 대기 위해 턴 종료`);
+        finalReply = '';
         break;
       }
     }

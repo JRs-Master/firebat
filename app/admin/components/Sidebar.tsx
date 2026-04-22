@@ -1014,8 +1014,8 @@ function ShareConvButton({ convId, title }: { convId: string; title: string }) {
         setTimeout(() => setStatus('idle'), 2200);
         return;
       }
-      // 2) 공유 생성
-      const shareRes = await createShareLink({ type: 'full', conversationId: convId, title, messages });
+      // 2) 공유 생성 — 백엔드 DB 가 dedupKey 기반 재사용 담당
+      const shareRes = await createShareLink({ type: 'full', conversationId: convId, title, messages, dedupKey: `full:${convId}` });
       if ('error' in shareRes) {
         setStatus('error');
         setTimeout(() => setStatus('idle'), 2200);
