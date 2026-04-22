@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Circle, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Circle, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks, Share2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -15,6 +15,7 @@ import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
 import { readSetting, writeSetting } from './hooks/settings-manager';
 import { THINKING_STATUS } from './hooks/chat-manager';
+import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
 
 // ─── 마크다운 커스텀 컴포넌트 ───────────────────────────────────────────────
@@ -520,6 +521,35 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+/** 단일턴 (user + AI 응답 한 쌍) 공유 버튼. 복사 버튼 옆에 배치.
+ *  POST /api/share 로 24시간 TTL 공유 slug 생성 → 클립보드 복사 + 토스트. */
+function ShareTurnButton({ messages, conversationId, title }: { messages: unknown[]; conversationId: string; title?: string }) {
+  const [status, setStatus] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
+  const handleShare = useCallback(async () => {
+    if (status === 'sharing') return;
+    setStatus('sharing');
+    const res = await createShareLink({ type: 'turn', conversationId, title, messages });
+    if ('error' in res) {
+      setStatus('error');
+      setTimeout(() => setStatus('idle'), 2200);
+      return;
+    }
+    const ok = await copyToClipboard(res.url);
+    setStatus(ok ? 'done' : 'error');
+    setTimeout(() => setStatus('idle'), 2200);
+  }, [messages, conversationId, title, status]);
+  return (
+    <button
+      onClick={handleShare}
+      disabled={status === 'sharing'}
+      className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors disabled:opacity-50"
+      title={status === 'done' ? '공유 링크 복사됨 (24시간 유효)' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중...' : '이 응답 공유 (24h)'}
+    >
+      {status === 'done' ? <CheckCheck size={14} className="text-emerald-500" /> : <Share2 size={14} />}
+    </button>
+  );
+}
+
 // ─── 액션 태그 (에러 시 빨간색 + 클릭 펼침) ──────────────────────────────────
 function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[] }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
@@ -584,13 +614,15 @@ function ErrorCollapsible({ error, label }: { error: string; label?: string }) {
 }
 
 // ─── 메시지 버블 ─────────────────────────────────────────────────────────────
-function MessageBubble({ msg, loading, onSuggestion, onApprovePending, onRejectPending, onApprovePendingAction }: {
+function MessageBubble({ msg, loading, onSuggestion, onApprovePending, onRejectPending, onApprovePendingAction, shareContext }: {
   msg: Message;
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
   onApprovePending?: (msgId: string, planId: string) => void;
   onRejectPending?: (msgId: string, planId: string) => void;
   onApprovePendingAction?: (msgId: string, planId: string, action: 'now' | 'reschedule', newRunAt?: string) => void;
+  /** 단일턴 공유용 — user 메시지 + 현재 system 메시지 쌍. 없으면 공유 버튼 숨김. */
+  shareContext?: { conversationId: string; turnMessages: unknown[] };
 }) {
   // 초기 인사 메시지 — 히어로 (스크롤에 밀려 올라가며 사라짐)
   if (msg.id === 'system-init') {
@@ -799,7 +831,7 @@ function MessageBubble({ msg, loading, onSuggestion, onApprovePending, onRejectP
             </div>
           )}
         </div>
-        {/* 복사 버튼 — 버블 바깥 우측 하단 */}
+        {/* 복사·공유 버튼 — 버블 바깥 우측 하단 */}
         {(msg.content || (msg.data?.blocks && msg.data.blocks.length > 0)) && !msg.isThinking && (() => {
           // 전체 직렬화: text + 컴포넌트 (Table → 마크다운 표, Metric → "라벨: 값", Header → "## 제목" 등)
           let full = '';
@@ -808,8 +840,9 @@ function MessageBubble({ msg, loading, onSuggestion, onApprovePending, onRejectP
           }
           if (!full && msg.content) full = msg.content;
           return full ? (
-            <div className="flex justify-end pr-1">
+            <div className="flex justify-end pr-1 gap-0.5 items-center">
               <CopyButton text={full} />
+              {shareContext && <ShareTurnButton messages={shareContext.turnMessages} conversationId={shareContext.conversationId} />}
             </div>
           ) : null;
         })()}
@@ -973,17 +1006,31 @@ export default function AdminConsole() {
         {/* 메시지 목록 */}
         <div ref={chatContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 md:px-12 pt-4 md:pt-16 scrolltext">
           <div className="w-full md:w-[70%] max-w-6xl mx-auto space-y-10">
-            {messages.map((msg) => (
-              <MessageBubble
-                key={msg.id}
-                msg={msg}
-                loading={loading}
-                onSuggestion={(text, meta) => handleSubmit(text, true, meta)}
-                onApprovePending={handleApprovePending}
-                onApprovePendingAction={(msgId, planId, action, newRunAt) => handleApprovePending(msgId, planId, action, newRunAt)}
-                onRejectPending={handleRejectPending}
-              />
-            ))}
+            {messages.map((msg, idx) => {
+              // 단일턴 공유용 — system 메시지 바로 앞의 user 메시지 + 현재 system 메시지 쌍
+              let shareContext: { conversationId: string; turnMessages: unknown[] } | undefined;
+              if (activeConvId && msg.role === 'system' && msg.id !== 'system-init') {
+                for (let i = idx - 1; i >= 0; i--) {
+                  const prev = messages[i];
+                  if (prev && prev.role === 'user') {
+                    shareContext = { conversationId: activeConvId, turnMessages: [prev, msg] };
+                    break;
+                  }
+                }
+              }
+              return (
+                <MessageBubble
+                  key={msg.id}
+                  msg={msg}
+                  loading={loading}
+                  onSuggestion={(text, meta) => handleSubmit(text, true, meta)}
+                  onApprovePending={handleApprovePending}
+                  onApprovePendingAction={(msgId, planId, action, newRunAt) => handleApprovePending(msgId, planId, action, newRunAt)}
+                  onRejectPending={handleRejectPending}
+                  shareContext={shareContext}
+                />
+              );
+            })}
             <div className="h-48 sm:h-64 shrink-0 pointer-events-none" />
             <div ref={chatEndRef} />
           </div>

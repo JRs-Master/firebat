@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 import { useSidebarRefresh } from '../hooks/events-manager';
+import { createShareLink, copyToClipboard } from '../hooks/share-helper';
 
 interface Project { name: string; paths: string[]; pageSlugs?: string[]; visibility?: string; }
 interface PageInfo { slug: string; title: string; status: string; updatedAt: string; project?: string | null; visibility?: string; }
@@ -853,16 +854,19 @@ export function Sidebar({
                         </p>
                         <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(conv.createdAt)}</p>
                       </div>
-                      {/* 삭제 아이콘: PC=호버, 모바일=선택 시 */}
-                      <button
-                        onClick={(e) => { e.stopPropagation(); onDeleteConv(conv.id); setSelectedItem(null); }}
-                        className={`p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 active:bg-red-100 rounded transition-all shrink-0 ${
-                          isMobile ? ((convSelected || conv.id === activeConvId) ? 'opacity-100' : 'opacity-0 pointer-events-none') : 'opacity-0 group-hover:opacity-100'
-                        }`}
-                        title="삭제"
-                      >
-                        <Trash2 size={11} />
-                      </button>
+                      {/* 공유·삭제 아이콘 묶음: PC=호버, 모바일=선택 시 */}
+                      <span className={`flex items-center gap-0.5 shrink-0 transition-all ${
+                        isMobile ? ((convSelected || conv.id === activeConvId) ? 'opacity-100' : 'opacity-0 pointer-events-none') : 'opacity-0 group-hover:opacity-100'
+                      }`}>
+                        <ShareConvButton convId={conv.id} title={conv.title} />
+                        <button
+                          onClick={(e) => { e.stopPropagation(); onDeleteConv(conv.id); setSelectedItem(null); }}
+                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 active:bg-red-100 rounded transition-colors"
+                          title="삭제"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </span>
                     </div>
                   </div>
                 );
@@ -985,5 +989,55 @@ export function Sidebar({
       </div>
     )}
   </>
+  );
+}
+
+/** 대화 전체 공유 버튼 — 클릭 시 DB 에서 메시지 fetch → 공유 생성 → 클립보드 복사 */
+function ShareConvButton({ convId, title }: { convId: string; title: string }) {
+  const [status, setStatus] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
+  const handleShare = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (status === 'sharing') return;
+    setStatus('sharing');
+    try {
+      // 1) 대화 메시지 fetch
+      const convRes = await fetch(`/api/conversations?id=${encodeURIComponent(convId)}`);
+      const convData = await convRes.json();
+      if (!convData.success || !convData.conversation) {
+        setStatus('error');
+        setTimeout(() => setStatus('idle'), 2200);
+        return;
+      }
+      const messages = (convData.conversation.messages || []).filter((m: { id?: string }) => m.id !== 'system-init');
+      if (messages.length === 0) {
+        setStatus('error');
+        setTimeout(() => setStatus('idle'), 2200);
+        return;
+      }
+      // 2) 공유 생성
+      const shareRes = await createShareLink({ type: 'full', conversationId: convId, title, messages });
+      if ('error' in shareRes) {
+        setStatus('error');
+        setTimeout(() => setStatus('idle'), 2200);
+        return;
+      }
+      // 3) 클립보드 복사
+      const ok = await copyToClipboard(shareRes.url);
+      setStatus(ok ? 'done' : 'error');
+      setTimeout(() => setStatus('idle'), 2200);
+    } catch {
+      setStatus('error');
+      setTimeout(() => setStatus('idle'), 2200);
+    }
+  };
+  return (
+    <button
+      onClick={handleShare}
+      disabled={status === 'sharing'}
+      className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 active:bg-blue-100 rounded transition-colors disabled:opacity-50"
+      title={status === 'done' ? '공유 링크 복사됨 (24시간 유효)' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중...' : '이 대화 공유 (24h)'}
+    >
+      {status === 'done' ? <CheckCheck size={11} className="text-emerald-500" /> : <Share2 size={11} />}
+    </button>
   );
 }

@@ -80,7 +80,15 @@ export class FirebatCore {
     this.schedule = new ScheduleManager(this, infra.cron, infra.log);
     this.ai = new AiManager(this, infra.llm, infra.log, infra.database, infra.toolRouter);
 
-
+    // 공유 대화 만료 자동 정리 — 1시간마다 expired 삭제. unref 로 프로세스 종료 방해 안 함.
+    const shareCleanupInterval = setInterval(() => {
+      this.cleanupExpiredShares().then(r => {
+        if (r.success && r.data && r.data.deleted > 0) {
+          this.infra.log.info(`[Share] 만료 공유 ${r.data.deleted}개 정리`);
+        }
+      }).catch(() => {});
+    }, 60 * 60_000);
+    shareCleanupInterval.unref?.();
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -352,6 +360,23 @@ export class FirebatCore {
   setCliSession(conversationId: string, sessionId: string, model: string) {
     return this.conversation.setCliSession(conversationId, sessionId, model);
   }
+  // ── 공유 대화 (shared conversations) ────────────────────────────────────
+  // ChatGPT·Claude 스타일 공유. TTL 24시간. 만료는 cron 이 정리.
+  /** 공유 생성 — 단일턴 (type='turn') or 전체대화 (type='full').
+   *  messages 는 공유 시점 snapshot — 원본 변경 영향 X. */
+  async createShare(input: { type: 'turn' | 'full'; title: string; messages: unknown[]; owner?: string; sourceConvId?: string; ttlMs?: number }) {
+    const ttlMs = input.ttlMs ?? 24 * 60 * 60 * 1000; // 기본 24시간
+    return this.infra.database.createShare({ ...input, ttlMs });
+  }
+  /** 공유 조회 — 만료 시 null 반환 (404 처리용). 공개 API (인증 없음). */
+  async getShare(slug: string) {
+    return this.infra.database.getShare(slug);
+  }
+  /** 만료된 공유 정리 — cron 에서 호출. */
+  async cleanupExpiredShares() {
+    return this.infra.database.cleanupExpiredShares();
+  }
+
   // Plan 실행 / 3-stage state (multi-turn 지속) — 대화 수준 JSON 유지
   getActivePlanState(conversationId: string) {
     return this.conversation.getActivePlanState(conversationId);

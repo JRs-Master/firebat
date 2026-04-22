@@ -69,6 +69,25 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
     `);
     try { this.db.exec('CREATE INDEX IF NOT EXISTS idx_deleted_conversations_owner ON deleted_conversations(owner, deleted_at DESC)'); } catch {}
 
+    // 공유 대화 (shared conversations) — ChatGPT·Claude 의 공유 기능과 동일.
+    //  - type='turn': 단일 Q+A pair 공유 (MessageBubble 복사 옆 버튼)
+    //  - type='full': 전체 대화 공유 (Sidebar ⋯ 메뉴)
+    //  - messages 는 공유 시점 snapshot — 원본 대화가 바뀌거나 삭제돼도 불변
+    //  - expires_at 경과 후 자동 삭제 (cron 1시간마다)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS shared_conversations (
+        slug           TEXT PRIMARY KEY,
+        type           TEXT NOT NULL DEFAULT 'full',
+        title          TEXT NOT NULL DEFAULT '공유된 대화',
+        messages       TEXT NOT NULL,
+        owner          TEXT,
+        source_conv_id TEXT,
+        created_at     INTEGER NOT NULL,
+        expires_at     INTEGER NOT NULL
+      )
+    `);
+    try { this.db.exec('CREATE INDEX IF NOT EXISTS idx_shared_expires ON shared_conversations(expires_at)'); } catch {}
+
     // 메시지 단위 벡터 임베딩 (search_history 도구용 — 과거 대화 검색)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS conversation_embeddings (
@@ -238,6 +257,59 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
   }
 
   /** 특정 프로젝트의 모든 페이지 삭제 */
+  // ── Shared conversations (공유 대화) ────────────────────────────────────
+  /** 공유 생성 — 8자리 hex slug 자동 할당 (충돌 시 재시도). */
+  async createShare(input: { type: 'turn' | 'full'; title: string; messages: unknown[]; owner?: string; sourceConvId?: string; ttlMs: number }): Promise<InfraResult<{ slug: string; expiresAt: number }>> {
+    try {
+      const messagesJson = JSON.stringify(input.messages);
+      const now = Date.now();
+      const expiresAt = now + input.ttlMs;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const slug = Math.random().toString(36).slice(2, 10);
+        try {
+          this.db.prepare(
+            `INSERT INTO shared_conversations (slug, type, title, messages, owner, source_conv_id, created_at, expires_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).run(slug, input.type, input.title, messagesJson, input.owner ?? null, input.sourceConvId ?? null, now, expiresAt);
+          return { success: true, data: { slug, expiresAt } };
+        } catch (err: any) {
+          if (err?.code === 'SQLITE_CONSTRAINT_PRIMARYKEY') continue; // slug 충돌 → 재시도
+          return { success: false, error: err.message };
+        }
+      }
+      return { success: false, error: 'slug 충돌 5회 — 재시도 포기' };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /** 공유 조회 — 만료 시 null 반환 (404 처리용). */
+  async getShare(slug: string): Promise<InfraResult<{ slug: string; type: 'turn' | 'full'; title: string; messages: unknown[]; createdAt: number; expiresAt: number } | null>> {
+    try {
+      const row = this.db.prepare(
+        `SELECT slug, type, title, messages, created_at as createdAt, expires_at as expiresAt
+         FROM shared_conversations WHERE slug = ?`,
+      ).get(slug) as { slug: string; type: string; title: string; messages: string; createdAt: number; expiresAt: number } | undefined;
+      if (!row) return { success: true, data: null };
+      if (row.expiresAt < Date.now()) return { success: true, data: null }; // 만료
+      let messages: unknown[] = [];
+      try { messages = JSON.parse(row.messages); } catch {}
+      return { success: true, data: { slug: row.slug, type: row.type as 'turn' | 'full', title: row.title, messages, createdAt: row.createdAt, expiresAt: row.expiresAt } };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /** 만료된 공유 정리 — 1시간마다 cron 에서 호출. */
+  async cleanupExpiredShares(): Promise<InfraResult<{ deleted: number }>> {
+    try {
+      const res = this.db.prepare(`DELETE FROM shared_conversations WHERE expires_at < ?`).run(Date.now());
+      return { success: true, data: { deleted: res.changes } };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
   async deletePagesByProject(project: string): Promise<InfraResult<string[]>> {
     try {
       const slugs = this.db.prepare(`SELECT slug FROM pages WHERE project = ?`).all(project) as { slug: string }[];

@@ -44,6 +44,8 @@ export function proxy(request: NextRequest) {
   // 비밀번호 보호 페이지/프로젝트 검증 (비인증 사용자용)
   if (pathname.match(/^\/api\/pages\/[^/]+\/visibility$/) && request.method === 'POST') return NextResponse.next();
   if (pathname === '/api/fs/projects/verify') return NextResponse.next();
+  // 공유 대화 공개 읽기 — 공유 링크 받은 사람 인증 없이 접근. POST (생성) 는 인증 필수.
+  if (pathname.match(/^\/api\/share\/[^/]+$/) && request.method === 'GET') return NextResponse.next();
 
   // ── /api/* — 쿠키 또는 Bearer 없으면 401 ──
   if (pathname.startsWith('/api/')) {

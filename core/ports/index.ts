@@ -509,7 +509,21 @@ export interface IDatabasePort {
   setPageVisibility(slug: string, visibility: 'public' | 'password' | 'private', password?: string): Promise<InfraResult<void>>;
   /** 페이지 비밀번호 검증 */
   verifyPagePassword(slug: string, password: string): Promise<InfraResult<boolean>>;
+
+  // ── Shared conversations (공유 대화) ────────────────────────────────────
+  createShare(input: { type: 'turn' | 'full'; title: string; messages: unknown[]; owner?: string; sourceConvId?: string; ttlMs: number }): Promise<InfraResult<{ slug: string; expiresAt: number }>>;
+  getShare(slug: string): Promise<InfraResult<SharedConversationRecord | null>>;
+  cleanupExpiredShares(): Promise<InfraResult<{ deleted: number }>>;
 }
+
+export type SharedConversationRecord = {
+  slug: string;
+  type: 'turn' | 'full';
+  title: string;
+  messages: unknown[];
+  createdAt: number;
+  expiresAt: number;
+};
 
 export interface IVaultPort {
   /** 시크릿 값 조회 (없으면 null) */
