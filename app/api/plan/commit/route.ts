@@ -39,9 +39,20 @@ export async function POST(req: NextRequest) {
       }
       case 'save_page': {
         // spec 타입 검사 제거 — Core.savePage 가 canonicalJson 으로 정규화 (string/object 모두 허용)
-        const { slug, spec } = args as { slug: string; spec: Record<string, unknown> | string };
-        const r = await core.savePage(slug, spec);
-        result = r.success ? { success: true, data: { slug, url: `/${slug}` } } : { success: false, error: r.error };
+        // allowOverwrite=false (기본) 면 slug 충돌 시 자동 -N 접미사 → 기존 페이지 보존
+        const { slug, spec, allowOverwrite } = args as { slug: string; spec: Record<string, unknown> | string; allowOverwrite?: boolean };
+        const r = await core.savePage(slug, spec, { allowOverwrite: !!allowOverwrite });
+        if (!r.success) { result = { success: false, error: r.error }; break; }
+        const actualSlug = r.data?.slug ?? slug;
+        const renamed = !!r.data?.renamed;
+        result = {
+          success: true,
+          data: {
+            slug: actualSlug,
+            url: `/${actualSlug}`,
+            ...(renamed ? { renamed: true, note: `기존 "${slug}" 보존 → "${actualSlug}" 로 저장` } : {}),
+          },
+        };
         break;
       }
       case 'delete_file': {

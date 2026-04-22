@@ -838,6 +838,7 @@ export default function AdminConsole() {
     handleSubmit,
     handleApprovePending, handleRejectPending, handleStop,
     planMode, setPlanMode,
+    refreshConversations,
   } = useChat(aiModel, fetchFileTree);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -956,6 +957,7 @@ export default function AdminConsole() {
         onSelectConv={handleSelectConv}
         onNewConv={handleNewConv}
         onDeleteConv={handleDeleteConv}
+        onRefreshChats={refreshConversations}
         aiModel={aiModel}
         onOpenSettings={() => setShowSettings(true)}
         onEditFile={(filePath) => setEditingFile(filePath)}

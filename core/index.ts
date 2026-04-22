@@ -158,12 +158,41 @@ export class FirebatCore {
   async getPage(slug: string) { return this.page.get(slug); }
 
   /** spec 은 string (JSON) 이든 object 든 받음 — Core facade 에서 canonical JSON 으로 정규화.
-   *  호출자 (API / MCP / ai-manager) 는 타입 신경 쓸 필요 없음. 이중 인코딩 원천 차단. */
-  async savePage(slug: string, spec: string | Record<string, unknown>) {
+   *  호출자 (API / MCP / ai-manager) 는 타입 신경 쓸 필요 없음. 이중 인코딩 원천 차단.
+   *
+   *  allowOverwrite=false (기본) 시 slug 충돌이면 -2, -3 접미사 자동 할당 → 기존 페이지 보존.
+   *  allowOverwrite=true 시 덮어쓰기 — AI 가 사용자의 명시적 "수정" 요청을 처리할 때만 true. */
+  async savePage(slug: string, spec: string | Record<string, unknown>, opts?: { allowOverwrite?: boolean }): Promise<InfraResult<{ slug: string; renamed?: boolean }>> {
     const specStr = canonicalJson(spec);
-    const res = await this.page.save(slug, specStr);
+    let finalSlug = slug;
+    let renamed = false;
+    if (!opts?.allowOverwrite) {
+      // 기존 slug 존재 여부 확인 → 있으면 `-2`, `-3` ... 자동 증가
+      const existing = await this.page.get(slug);
+      if (existing.success) {
+        for (let i = 2; i <= 100; i++) {
+          const candidate = `${slug}-${i}`;
+          const check = await this.page.get(candidate);
+          if (!check.success) { finalSlug = candidate; renamed = true; break; }
+        }
+        if (!renamed) return { success: false, error: `slug 할당 실패 (${slug}-2 ~ ${slug}-100 모두 사용 중)` };
+      }
+    }
+    // spec 의 slug 필드도 수정 (canonical JSON 재생성)
+    if (finalSlug !== slug) {
+      try {
+        const parsed = JSON.parse(specStr);
+        parsed.slug = finalSlug;
+        const res = await this.page.save(finalSlug, JSON.stringify(parsed));
+        if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+        return res.success ? { success: true, data: { slug: finalSlug, renamed: true } } : { success: false, error: res.error };
+      } catch (err: any) {
+        return { success: false, error: `spec slug 갱신 실패: ${err.message}` };
+      }
+    }
+    const res = await this.page.save(finalSlug, specStr);
     if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
-    return res;
+    return res.success ? { success: true, data: { slug: finalSlug, renamed: false } } : { success: false, error: res.error };
   }
 
   async deletePage(slug: string) {

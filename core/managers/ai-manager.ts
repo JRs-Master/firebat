@@ -1165,9 +1165,18 @@ export class AiManager {
         }
         case 'save_page': {
           // spec 타입 검사 제거 — Core.savePage 가 canonicalJson 으로 통일 정규화 (string/object 모두 허용)
-          const { slug, spec } = tc.args as { slug: string; spec: Record<string, unknown> | string };
-          const res = await this.core.savePage(slug, spec);
-          return res.success ? { success: true, slug, url: `/${slug}` } : { success: false, error: res.error };
+          // allowOverwrite=false (기본) 면 slug 충돌 시 자동 -N 접미사 → 기존 페이지 보존
+          const { slug, spec, allowOverwrite } = tc.args as { slug: string; spec: Record<string, unknown> | string; allowOverwrite?: boolean };
+          const res = await this.core.savePage(slug, spec, { allowOverwrite: !!allowOverwrite });
+          if (!res.success) return { success: false, error: res.error };
+          const actualSlug = res.data?.slug ?? slug;
+          const renamed = !!res.data?.renamed;
+          return {
+            success: true,
+            slug: actualSlug,
+            url: `/${actualSlug}`,
+            ...(renamed ? { renamed: true, note: `기존 "${slug}" 페이지 보존을 위해 "${actualSlug}" 로 저장됨. 덮어쓰려면 allowOverwrite:true 명시.` } : {}),
+          };
         }
         case 'delete_page': {
           const { slug } = tc.args as { slug: string };
@@ -1716,10 +1725,13 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
 \`[{"type":"toggle","label":"기능 선택","options":["vs 컴퓨터","스코어보드","애니메이션"],"defaults":["애니메이션"]},{"type":"input","label":"기능 직접 추가","placeholder":"..."},"취소"]\`
 
 **Stage 2 — 디자인 스타일** (유저가 기능 확정 후 다음 턴에 호출):
-\`["다크 + 네온","밝은 미니멀","레트로",{"type":"input","label":"스타일 직접 입력","placeholder":"..."},"취소"]\`
+\`[{"type":"toggle","label":"디자인 스타일","options":["다크 + 네온","밝은 미니멀","레트로","파스텔","모던 화이트"],"defaults":[]},{"type":"input","label":"스타일 직접 입력","placeholder":"..."},"취소"]\`
+
+**중요**: 디자인도 **toggle 형태 (defaults:[])** 로 제시할 것. 문자열 단일 버튼 배열 ["다크","미니멀",...] 로 주면 **사용자가 클릭 즉시 전송**돼 바꿀 수 없음. toggle 이면 사용자가 선택·해제 반복 후 "전송" 버튼 눌러야 확정됨.
 
 **Stage 3 — 구현** (기능+디자인 확정 후):
 - save_page + 필요시 write_file. 완료 후 **반드시 \`complete_plan\` 호출하여 plan context 종료.**
+- 기존 같은 slug 있으면 자동으로 -2 접미사 (allowOverwrite 기본 false). 사용자가 명시적 수정 요청 시만 allowOverwrite=true.
 
 ### 진행 중 plan 식별 (시스템 프롬프트 상단 "🎯 진행 중 plan" 섹션)
 - 해당 섹션이 프롬프트에 있으면 **이전 턴의 plan 이어가기 중**. 사용자가 방금 보낸 메시지는 plan 의 stage 응답 (예: "기능: 추가/삭제, 완료체크").
@@ -1862,13 +1874,14 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
       },
       {
         name: 'save_page',
-        description: '페이지 생성/수정. PageSpec JSON으로 저장.',
+        description: `페이지 저장. slug 충돌 시 자동 -2 접미사 (allowOverwrite=false 기본). 사용자 명시적 수정 요청 시만 allowOverwrite=true.`,
         parameters: {
           type: 'object',
           required: ['slug', 'spec'],
           properties: {
             slug: { type: 'string', description: '페이지 URL 슬러그 (kebab-case)' },
             spec: { type: 'object', description: 'PageSpec JSON (slug, head, body 포함)', additionalProperties: true },
+            allowOverwrite: { type: 'boolean', description: '기존 페이지 덮어쓰기 허용 (명시적 수정 요청 시만 true)' },
           },
         },
       },

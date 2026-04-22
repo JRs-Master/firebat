@@ -190,11 +190,64 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     }).catch(() => {});
   };
 
+  // DB 재조회 — 사이드바 펼침·탭 전환·visibility change 등 여러 지점에서 호출
+  const refreshConversations = useCallback(async () => {
+    // 스트리밍·도구 실행 중이면 스킵 (최신 로컬 state 가 더 신뢰성 있음). 참조 리뉴얼로 강제 재렌더.
+    if (messagesRef.current.some(m => m.isThinking || m.executing || m.streaming)) {
+      dispatch({ type: 'LOAD', messages: messagesRef.current.map(m => ({ ...m })) });
+      return;
+    }
+    // 1) 대화 목록 재조회 — 타기기에서 삭제된 대화를 로컬에서도 제거
+    try {
+      const listRes = await fetch('/api/conversations');
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        if (listData.success && Array.isArray(listData.conversations)) {
+          const remoteIds = new Set<string>(listData.conversations.map((r: { id: string }) => r.id));
+          setConversations(prev => {
+            const filtered = prev.filter(c => {
+              if (remoteIds.has(c.id)) return true;
+              if (c.id === activeConvId) return true;
+              const hasRealMessages = c.messages && c.messages.some(m => m.id !== 'system-init' && m.role === 'user');
+              return !hasRealMessages;
+            });
+            if (filtered.length === prev.length) return prev;
+            localStorage.setItem('firebat_conversations', JSON.stringify(filtered));
+            return filtered;
+          });
+        }
+      }
+    } catch {}
+    // 2) 현재 활성 conv 단일 갱신 — 다른 기기에서 이어 쓴 메시지 반영
+    if (!activeConvId) return;
+    const convMeta = conversations.find(c => c.id === activeConvId);
+    if (!convMeta) return;
+    const localUpdatedAt = convMeta.updatedAt ?? convMeta.createdAt ?? 0;
+    try {
+      const res = await fetch(`/api/conversations?id=${encodeURIComponent(activeConvId)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.success || !data.conversation) return;
+      const remoteUpdatedAt = data.conversation.updatedAt ?? 0;
+      if (remoteUpdatedAt <= localUpdatedAt) return;
+      const remoteMsgs = cleanMessages(data.conversation.messages ?? []);
+      dispatch({ type: 'LOAD', messages: remoteMsgs });
+      setConversations(prev => {
+        const updated = prev.map(c => c.id === activeConvId
+          ? { ...c, messages: remoteMsgs, updatedAt: remoteUpdatedAt }
+          : c);
+        updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+        localStorage.setItem('firebat_conversations', JSON.stringify(updated));
+        return updated;
+      });
+    } catch {}
+  }, [activeConvId, conversations]);
+
   // visibilitychange=hidden 안전망 / visible 재조회
   useEffect(() => {
     const flush = () => {
-      if (!activeConvId || messages.length === 0) return;
-      const cleanMsgs = cleanMessages(messages);
+      if (!activeConvId || messagesRef.current.length === 0) return;
+      const cleanMsgs = cleanMessages(messagesRef.current);
       if (cleanMsgs.length === 0) return;
       const firstUser = cleanMsgs.find(m => m.role === 'user');
       const title = firstUser?.content
@@ -206,71 +259,19 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       const blob = new Blob([body], { type: 'application/json' });
       try { navigator.sendBeacon('/api/conversations', blob); } catch {}
     };
-    const refresh = async () => {
-      // 스트리밍·도구 실행 중이면 스킵. 단, 메시지 참조 리뉴얼로 강제 재렌더.
-      if (messages.some(m => m.isThinking || m.executing || m.streaming)) {
-        // reducer 바깥 상태라 ref 갱신 용도 dispatch — LOAD 로 동일 배열 재설정하면 인바리언트 자동 통과
-        dispatch({ type: 'LOAD', messages: messages.map(m => ({ ...m })) });
-        return;
-      }
-
-      try {
-        const listRes = await fetch('/api/conversations');
-        if (listRes.ok) {
-          const listData = await listRes.json();
-          if (listData.success && Array.isArray(listData.conversations)) {
-            const remoteIds = new Set<string>(listData.conversations.map((r: { id: string }) => r.id));
-            setConversations(prev => {
-              const filtered = prev.filter(c => {
-                if (remoteIds.has(c.id)) return true;
-                if (c.id === activeConvId) return true;
-                const hasRealMessages = c.messages && c.messages.some(m => m.id !== 'system-init' && m.role === 'user');
-                return !hasRealMessages;
-              });
-              if (filtered.length === prev.length) return prev;
-              localStorage.setItem('firebat_conversations', JSON.stringify(filtered));
-              return filtered;
-            });
-          }
-        }
-      } catch {}
-
-      if (!activeConvId) return;
-      const convMeta = conversations.find(c => c.id === activeConvId);
-      if (!convMeta) return;
-      const localUpdatedAt = convMeta.updatedAt ?? convMeta.createdAt ?? 0;
-      try {
-        const res = await fetch(`/api/conversations?id=${encodeURIComponent(activeConvId)}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!data.success || !data.conversation) return;
-        const remoteUpdatedAt = data.conversation.updatedAt ?? 0;
-        if (remoteUpdatedAt <= localUpdatedAt) return;
-        const remoteMsgs = cleanMessages(data.conversation.messages ?? []);
-        dispatch({ type: 'LOAD', messages: remoteMsgs });
-        setConversations(prev => {
-          const updated = prev.map(c => c.id === activeConvId
-            ? { ...c, messages: remoteMsgs, updatedAt: remoteUpdatedAt }
-            : c);
-          updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
-          localStorage.setItem('firebat_conversations', JSON.stringify(updated));
-          return updated;
-        });
-      } catch {}
-    };
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') flush();
-      else if (document.visibilityState === 'visible') void refresh();
+      else if (document.visibilityState === 'visible') void refreshConversations();
     };
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pagehide', flush);
-    window.addEventListener('focus', refresh);
+    window.addEventListener('focus', refreshConversations);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('pagehide', flush);
-      window.removeEventListener('focus', refresh);
+      window.removeEventListener('focus', refreshConversations);
     };
-  }, [activeConvId, messages, conversations]);
+  }, [activeConvId, conversations, refreshConversations]);
 
   // ── 스크롤 ─────────────────────────────────────────────────────────────────
   const isNearBottomRef = useRef(true);
@@ -583,5 +584,6 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     handleApprovePending, handleRejectPending,
     handleStop,
     planMode, setPlanMode,
+    refreshConversations, // 사이드바 펼침·탭 전환 등 on-demand 동기화용
   };
 }

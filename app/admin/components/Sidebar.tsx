@@ -25,6 +25,8 @@ interface SidebarProps {
   onSelectConv: (id: string) => void;
   onNewConv: () => void;
   onDeleteConv: (id: string) => void;
+  /** 다기기 동기화용 — DB 에서 대화 목록·활성 대화 재조회. Sidebar 펼침·채팅 탭 전환 시 호출. */
+  onRefreshChats?: () => void;
   aiModel?: string;
   onOpenSettings?: () => void;
   onEditFile?: (filePath: string) => void;
@@ -38,12 +40,22 @@ export function Sidebar({
   onRefreshTree,
   conversations, activeConvId,
   onSelectConv, onNewConv, onDeleteConv,
+  onRefreshChats,
   aiModel, onOpenSettings, onEditFile, onOpenModuleSettings,
   mobileOpen, onMobileOpenChange,
 }: SidebarProps) {
   const [tab, setTab] = useState<'workspace' | 'chats'>('workspace');
   const [collapsed, setCollapsed] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+
+  // 사이드바 펼칠 때 + chats 탭 선택 시 DB 에서 대화 재조회 (모바일↔PC 동기화)
+  const refreshChatsRef = useRef(onRefreshChats);
+  refreshChatsRef.current = onRefreshChats;
+  useEffect(() => {
+    if (!collapsed && tab === 'chats') {
+      refreshChatsRef.current?.();
+    }
+  }, [collapsed, tab]);
 
   useEffect(() => {
     const checkMobile = () => window.innerWidth < 768;

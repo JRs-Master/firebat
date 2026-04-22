@@ -299,26 +299,23 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'save_page',
-    `페이지 저장 (upsert). spec은 **반드시 아래 PageSpec JSON** 문자열:
-{
-  "slug": "kebab-case",
-  "status": "published",
-  "project": "project-name",
-  "head": {"title": "...", "description": "...", "keywords": [...]},
-  "body": [{"type": "Html", "props": {"content": "<전체 HTML>"}}]
-}
-규칙:
-- body는 컴포넌트 배열. Html 컴포넌트가 주. props.content에 HTML+CSS+JS.
-- {title, html} 같은 자체 형식 절대 금지.
-- Html content는 iframe sandbox(allow-scripts)에서 실행.`,
+    `페이지 저장. PageSpec JSON 문자열:
+{"slug":"kebab-case","status":"published","project":"...","head":{"title":"...","description":"...","keywords":[...]},"body":[{"type":"Html","props":{"content":"<HTML>"}}]}
+
+- body 는 컴포넌트 배열, Html 이 주, props.content 에 HTML+CSS+JS
+- {title, html} 자체 형식 금지
+- Html 은 iframe sandbox(allow-scripts) 에서 실행
+- slug 충돌 시 자동 -2 접미사 (allowOverwrite 기본 false). 사용자 명시적 수정 요청 시만 true.
+- pending 반환 — 실제 저장은 사용자 승인 후`,
     {
       slug: z.string().describe('페이지 slug'),
       spec: z.string().describe('PageSpec JSON 문자열 전체'),
+      allowOverwrite: z.boolean().optional().describe('기존 페이지 덮어쓰기 허용 (사용자 명시적 수정 요청 시에만 true)'),
     },
-    async ({ slug, spec }) => {
+    async ({ slug, spec, allowOverwrite }) => {
       // 승인 대기 — 기존 페이지 덮어쓰기 방지 + 의도 확인
       const { createPending } = await import('../lib/pending-tools');
-      const planId = createPending('save_page', { slug, spec }, `페이지 저장: /${slug}`);
+      const planId = createPending('save_page', { slug, spec, allowOverwrite: !!allowOverwrite }, `페이지 저장: /${slug}${allowOverwrite ? ' (덮어쓰기)' : ''}`);
       return { content: [{ type: 'text', text: JSON.stringify({
         success: true, pending: true, planId, summary: `페이지 저장: /${slug}`,
         message: '사용자 승인 대기 중입니다. Firebat UI 에서 승인 버튼 클릭 시 실제 저장됩니다.',
