@@ -74,17 +74,18 @@ export function writeSetting<K extends keyof SettingsSchema>(key: K, value: Sett
 
 // ── useSetting 훅 ───────────────────────────────────────────────────────────
 /** localStorage 영속 + cross-tab 동기화되는 useState.
- *  다른 탭에서 같은 키 변경 시 자동 반영 (`storage` 이벤트). */
+ *  다른 탭에서 같은 키 변경 시 자동 반영 (`storage` 이벤트).
+ *
+ *  중요: 초기값은 useState **initializer 안에서 동기적으로 localStorage 읽기**.
+ *  이전에는 DEFAULTS 로 시작 후 useEffect 로 하이드레이션했는데, 그 사이 다른
+ *  useEffect 가 stale DEFAULTS 기반으로 setValue 를 호출하면 **localStorage 를
+ *  빈 객체 + 현재 값 하나** 로 덮어써 다른 카테고리 기억이 전부 날아가는 race 발생.
+ *  (SettingsModal 의 "카테고리 전환 시 이전 모델 복원" 이 작동 안 하던 원인.)
+ *  'use client' 컴포넌트만 useSetting 호출하므로 SSR 하이드레이션 충돌 없음. */
 export function useSetting<K extends keyof SettingsSchema>(
   key: K,
 ): [SettingsSchema[K], (value: SettingsSchema[K] | ((prev: SettingsSchema[K]) => SettingsSchema[K])) => void] {
-  // 초기값: SSR 안전하게 DEFAULTS 로 시작 후 mount 시점에 localStorage 읽기
-  const [value, setValue] = useState<SettingsSchema[K]>(() => DEFAULTS[key]);
-
-  // mount 시 localStorage 에서 복원
-  useEffect(() => {
-    setValue(readSetting(key));
-  }, [key]);
+  const [value, setValue] = useState<SettingsSchema[K]>(() => readSetting(key));
 
   // cross-tab 동기화 — storage 이벤트는 다른 탭에서 localStorage 변경 시 발생
   useEffect(() => {

@@ -22,7 +22,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  const { prompt, config, history = [], image, previousResponseId, conversationId, planMode, planExecuteId, planReviseId } = await req.json();
+  const { prompt, config, history = [], image, previousResponseId, conversationId, planMode, planExecuteId, planReviseId, systemId, userId } = await req.json();
 
   if (!prompt) {
     return new Response(JSON.stringify({ error: 'prompt is required' }), { status: 400 });
@@ -39,7 +39,13 @@ export async function POST(req: NextRequest) {
     ...(typeof planReviseId === 'string' && planReviseId ? { planReviseId } : {}),
   };
   const core = getCore();
-  return handleToolsMode(core, prompt, history, opts, req.signal);
+  const saveOpts = {
+    systemId: typeof systemId === 'string' ? systemId : undefined,
+    userId: typeof userId === 'string' ? userId : undefined,
+    userPrompt: prompt,
+    image: typeof image === 'string' ? image : undefined,
+  };
+  return handleToolsMode(core, prompt, history, opts, req.signal, saveOpts);
 }
 
 /** Function Calling 모드 — 도구 호출 루프를 SSE로 스트리밍 */
@@ -49,6 +55,7 @@ function handleToolsMode(
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   opts: { model?: string; owner?: string; image?: string; previousResponseId?: string; conversationId?: string; planMode?: boolean; planExecuteId?: string; planReviseId?: string },
   abortSignal?: AbortSignal,
+  saveOpts?: { systemId?: string; userId?: string; userPrompt?: string; image?: string },
 ) {
   const encoder = new TextEncoder();
 
@@ -123,18 +130,44 @@ function handleToolsMode(
           send('chunk', chunk);
         });
 
+        const resultData = result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : undefined;
+        const resultSuggestions = resultData && 'suggestions' in resultData ? resultData.suggestions : undefined;
         send('result', {
           success: result.success,
           reply: result.reply,
           executedActions: result.executedActions,
           data: result.data,
-          suggestions: result.data && typeof result.data === 'object' && 'suggestions' in result.data
-            ? (result.data as Record<string, unknown>).suggestions
-            : undefined,
+          suggestions: resultSuggestions,
           error: result.error,
         });
-        // NOTE: 이전에 여기서 server-side fail-safe 저장을 시도했으나 프론트 저장과 중복 발생.
-        // 프론트에서 id 통일·덮어쓰기 전까지는 서버 저장 비활성.
+
+        // ── 백엔드 주도 저장 (v0.1, 2026-04-22) ─────────────────────────────
+        // 프론트 state 가 꼬여도 (애니메이션 throttle·브라우저 crash 등) DB 는 정확한 최종 상태 보유.
+        // 클라이언트가 보낸 systemId 로 upsert → unionMerge 가 프론트 POST 와 자연 병합 (동일 ID 일치).
+        if (opts.conversationId && saveOpts?.systemId) {
+          try {
+            // user 메시지 + system(AI 응답) 메시지 쌍 저장
+            const userMsg = saveOpts.userId && saveOpts.userPrompt
+              ? { id: saveOpts.userId, role: 'user' as const, content: saveOpts.userPrompt, ...(saveOpts.image ? { image: saveOpts.image } : {}) }
+              : null;
+            const systemMsg = {
+              id: saveOpts.systemId,
+              role: 'system' as const,
+              content: result.reply || '',
+              executedActions: result.executedActions,
+              data: result.data,
+              ...(result.error ? { error: result.error } : {}),
+            };
+            const msgs = userMsg ? [userMsg, systemMsg] : [systemMsg];
+            // 기존 title 유지 — 없으면 첫 user 메시지 기반. ConversationManager.save 의 ON CONFLICT 는 title 덮어씀
+            // 이슈 방지: 기존 값 먼저 조회 후 re-post
+            const existing = await core.getConversation(opts.owner || 'admin', opts.conversationId);
+            const title = existing.success && existing.data
+              ? existing.data.title
+              : (saveOpts.userPrompt || '새 대화').slice(0, 28) + ((saveOpts.userPrompt || '').length > 28 ? '…' : '');
+            await core.saveConversation(opts.owner || 'admin', opts.conversationId, title, msgs);
+          } catch { /* 백엔드 저장 실패해도 프론트 saveToDb 가 백업 역할 — 조용히 무시 */ }
+        }
       } catch (err: any) {
         send('error', { error: err.message || '알 수 없는 오류' });
       }

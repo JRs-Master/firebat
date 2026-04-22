@@ -435,6 +435,8 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           history: chatHistory,
           mode: 'tools',
           planMode,
+          systemId, // 백엔드 주도 저장용 — 스트림 완료 시 서버가 같은 ID 로 DB 에 upsert
+          userId: `u-${id}`, // 같이 저장 (user 메시지도 백엔드 저장으로 통일)
           ...(meta?.planExecuteId ? { planExecuteId: meta.planExecuteId } : {}),
           ...(meta?.planReviseId ? { planReviseId: meta.planReviseId } : {}),
           ...(activeConvId ? { conversationId: activeConvId } : {}),
