@@ -14,7 +14,7 @@ import StockChart from './chat-components/StockChart';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
 import { readSetting, writeSetting } from './hooks/settings-manager';
-import { THINKING_STATUS, isSuggestionClickUserMessage } from './hooks/chat-manager';
+import { THINKING_STATUS, isSuggestionClickUserMessage, isSectionStartBlock } from './hooks/chat-manager';
 import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
 
@@ -701,9 +701,11 @@ function MessageBubble({ msg, loading, onSuggestion, onApprovePending, onRejectP
               {msg.data?.blocks && Array.isArray(msg.data.blocks) && msg.data.blocks.length > 0 ? (
                 <div className="flex flex-col gap-3">
                   {msg.data.blocks.map((b: any, i: number) => {
-                    if (b.type === 'text') return <div key={i} className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">{renderMarkdown(b.text)}</div>;
-                    if (b.type === 'html') return <AutoResizeIframe key={i} src={b.htmlContent as string} initialHeight={b.htmlHeight} />;
-                    if (b.type === 'component') return <ComponentRenderer key={i} components={[{ type: b.name, props: b.props || {} }]} />;
+                    // 섹션 경계 (Header / Divider) 앞에 추가 여백 — chat-manager 의 공통 규칙 (share 페이지와 동일)
+                    const wrapCls = isSectionStartBlock(b, i) ? 'mt-5' : '';
+                    if (b.type === 'text') return <div key={i} className={`text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1 ${wrapCls}`}>{renderMarkdown(b.text)}</div>;
+                    if (b.type === 'html') return <div key={i} className={wrapCls}><AutoResizeIframe src={b.htmlContent as string} initialHeight={b.htmlHeight} /></div>;
+                    if (b.type === 'component') return <div key={i} className={wrapCls}><ComponentRenderer components={[{ type: b.name, props: b.props || {} }]} /></div>;
                     return null;
                   })}
                 </div>

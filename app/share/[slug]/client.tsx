@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { ComponentRenderer } from '../../(user)/[...slug]/components';
-import { isSuggestionClickUserMessage } from '../../admin/hooks/chat-manager';
+import { isSuggestionClickUserMessage, isSectionStartBlock } from '../../admin/hooks/chat-manager';
 
 // 공유 페이지 전용 읽기 전용 메시지 리스트. 어드민 MessageBubble 의 인터랙티브 요소
 // (plan-confirm, pendingActions, suggestions, 복사·공유 버튼) 는 모두 제거 — 읽기만.
@@ -68,9 +68,11 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
       <div className="flex flex-col gap-3 flex-1 min-w-0 sm:pt-3">
         {Array.isArray(blocks) && blocks.length > 0 ? (
           blocks.map((b, i) => {
+            // 섹션 경계 (Header / Divider) 앞에 추가 여백 — admin 대화창과 동일 규칙 (chat-manager.isSectionStartBlock)
+            const wrapCls = isSectionStartBlock(b, i) ? 'mt-5' : '';
             if (b.type === 'text' && b.text) {
               return (
-                <div key={i} className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">
+                <div key={i} className={`text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1 ${wrapCls}`}>
                   <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{b.text}</ReactMarkdown>
                 </div>
               );
@@ -82,14 +84,18 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
                   key={i}
                   srcDoc={b.htmlContent}
                   sandbox="allow-scripts"
-                  className="w-full border border-slate-200 rounded-xl bg-white block"
+                  className={`w-full border border-slate-200 rounded-xl bg-white block ${wrapCls}`}
                   style={{ height: b.htmlHeight || '400px' }}
                   title="Shared HTML"
                 />
               );
             }
             if (b.type === 'component' && b.name) {
-              return <ComponentRenderer key={i} components={[{ type: b.name, props: b.props || {} }]} />;
+              return (
+                <div key={i} className={wrapCls}>
+                  <ComponentRenderer components={[{ type: b.name, props: b.props || {} }]} />
+                </div>
+              );
             }
             return null;
           })

@@ -59,6 +59,17 @@ export function isSuggestionClickUserMessage(m: unknown): boolean {
   return isSuggestionClickContent(obj.content);
 }
 
+/** 섹션 경계 블록 판정 — Header/Divider 는 긴 리포트에서 섹션 구분자로 쓰임.
+ *  앞에 추가 여백(mt-5) 을 주면 가독성 크게 향상. admin 대화창 / share 페이지 공통 규칙. */
+export function isSectionStartBlock(
+  block: { type?: string; name?: string },
+  index: number,
+): boolean {
+  if (index === 0) return false;
+  if (block.type !== 'component') return false;
+  return block.name === 'Header' || block.name === 'Divider';
+}
+
 export function hasVisible(m: Message): boolean {
   if (m.content && m.content.trim()) return true;
   if (m.error) return true;
