@@ -514,20 +514,30 @@ export class AiManager {
     const currentModel = opts?.model ?? this.llm.getModelId();
     const systemPrompt = this.buildToolSystemPrompt(systemContext, currentModel);
 
-    // ✓실행 클릭 시: plan-store 에서 직전 plan 조회 → 시스템 프롬프트 맨 앞에 강제 주입
-    // ⚙수정 클릭 시: 직전 plan + 사용자 피드백 → propose_plan 재호출 강제
+    // Plan 실행 맥락 — 3군데 경로:
+    //  1. 이번 턴에 ✓실행 클릭 (planExecuteId 동봉) → plan 을 conversation 에 저장 후 주입
+    //  2. 이번 턴에 ⚙수정 클릭 (planReviseId 동봉) → 재작성 룰 주입 (기존 그대로)
+    //  3. 진행 중 plan 있음 (conversations.active_plan_state.planId) → 자동 주입 (multi-turn 지속)
+    //
+    // plan 은 `complete_plan` 도구가 호출되어야 종료 — 이전처럼 1회 소비(deletePlan) 하지 않음.
+    // 3-stage 공동설계 · multi-step plan 실행이 턴 경계를 넘어 이어질 수 있음.
     let planExecuteRule = '';
     if (opts?.planExecuteId) {
-      const { getPlan, planToInstruction, deletePlan } = await import('../../lib/plan-store');
+      const { getPlan, planToInstruction } = await import('../../lib/plan-store');
       const plan = getPlan(opts.planExecuteId);
       if (plan) {
-        // 사용자 원래 요청 (시각·예약 정보) 추출 — history 의 마지막 user 메시지 (✓실행 직전)
         const originalRequest = history.filter(h => h.role === 'user').slice(-1)[0]?.content;
         planExecuteRule = `# 🎯 승인된 plan 실행 모드 (다른 모든 규칙보다 우선)\n\n${planToInstruction(plan, originalRequest)}\n\n─────────────────────────────────────\n\n`;
-        deletePlan(opts.planExecuteId); // 일회용 — 재사용 방지
-        this.logger.info(`[AiManager] [${corrId}] planExecuteId=${opts.planExecuteId} → plan steps 주입 (${plan.steps.length}단계)`);
+        // conversation 에 저장 — 이후 턴에서도 맥락 유지 (planExecuteId 재전송 불필요)
+        if (opts.conversationId) {
+          await this.core.setActivePlanState(opts.conversationId, {
+            planId: opts.planExecuteId,
+            originalRequest,
+            startedAt: Date.now(),
+          });
+        }
+        this.logger.info(`[AiManager] [${corrId}] planExecuteId=${opts.planExecuteId} → plan steps 주입 (${plan.steps.length}단계) + conversation.active_plan_state 저장`);
       } else {
-        // plan 만료·미존재 — AI 에 맡기지 말고 즉시 에러 반환 (로봇 사라짐·애매한 답변 방지)
         this.logger.warn(`[AiManager] [${corrId}] planExecuteId=${opts.planExecuteId} 만료됨 — 에러 반환`);
         return {
           success: false,
@@ -540,7 +550,7 @@ export class AiManager {
       const plan = getPlan(opts.planReviseId);
       if (plan) {
         planExecuteRule = `# ⚙ plan 재작성 모드 (다른 모든 규칙보다 우선)\n\n${planToReviseInstruction(plan, prompt)}\n\n─────────────────────────────────────\n\n`;
-        deletePlan(opts.planReviseId); // 일회용 — 새 plan 호출되면 새 planId 발급
+        deletePlan(opts.planReviseId); // 재작성 요청은 1회성 — 새 plan 호출되면 새 planId
         this.logger.info(`[AiManager] [${corrId}] planReviseId=${opts.planReviseId} → 재작성 룰 주입 (피드백: ${prompt.slice(0, 50)})`);
       } else {
         this.logger.warn(`[AiManager] [${corrId}] planReviseId=${opts.planReviseId} 만료됨 — 에러 반환`);
@@ -549,6 +559,22 @@ export class AiManager {
           error: '수정할 플랜이 만료됐거나 서버 재시작으로 사라졌습니다. 같은 요청을 다시 보내 새 플랜을 만들어주세요.',
           executedActions: [],
         };
+      }
+    } else if (opts?.conversationId) {
+      // 진행 중 plan 자동 주입 — 3-stage 공동설계 multi-turn 유지의 핵심
+      const activeState = await this.core.getActivePlanState(opts.conversationId);
+      if (activeState && typeof activeState.planId === 'string') {
+        const { getPlan, planToInstruction } = await import('../../lib/plan-store');
+        const plan = getPlan(activeState.planId);
+        if (plan) {
+          const originalRequest = typeof activeState.originalRequest === 'string' ? activeState.originalRequest : undefined;
+          planExecuteRule = `# 🎯 진행 중 plan (이전 턴에서 이어가기)\n\n${planToInstruction(plan, originalRequest)}\n\n**이 plan 의 단계를 모두 완료했으면 \`complete_plan\` 도구를 호출해서 종료하세요.** 완료 안 된 단계 있으면 이어서 진행.\n\n─────────────────────────────────────\n\n`;
+          this.logger.info(`[AiManager] [${corrId}] 진행 중 plan 자동 주입 (planId=${activeState.planId}, ${plan.steps.length}단계)`);
+        } else {
+          // plan-store 에서 만료 → conversation state 도 정리
+          await this.core.clearActivePlanState(opts.conversationId);
+          this.logger.info(`[AiManager] [${corrId}] 진행 중 plan 만료 — active_plan_state 정리`);
+        }
       }
     }
 
@@ -1281,6 +1307,20 @@ export class AiManager {
           // suggest는 프론트엔드에서 처리 — 도구 결과로 확인만 전달
           return { success: true, displayed: true };
         }
+        case 'complete_plan': {
+          // 진행 중 plan 종료 — conversation 의 active_plan_state 클리어 + plan-store 에서도 제거
+          const reason = (tc.args as { reason?: string }).reason || 'AI 판단 완료';
+          if (opts?.conversationId) {
+            const state = await this.core.getActivePlanState(opts.conversationId);
+            if (state && typeof state.planId === 'string') {
+              const { deletePlan } = await import('../../lib/plan-store');
+              deletePlan(state.planId);
+            }
+            await this.core.clearActivePlanState(opts.conversationId);
+          }
+          this.logger.info(`[AiManager] complete_plan: ${reason}`);
+          return { success: true, completed: true, reason };
+        }
         case 'search_history': {
           const { query, limit, includeBlocks } = tc.args as { query: string; limit?: number; includeBlocks?: boolean };
           const owner = opts?.owner ?? 'admin';
@@ -1668,16 +1708,35 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
   - project 필드는 slug 의 첫 세그먼트와 **일치**시킬 것
   - 공백·선행/후행 슬래시·연속 슬래시 금지. 깊이 2~3단계 권장
 
-## 앱/페이지 생성 가이드
-새 앱·게임·도구 등 "만들어줘" 요청 처리 방식은 사용자 입력창의 **플랜 토글** 에 따라 결정:
+## 앱/페이지 생성 가이드 — 3-stage 공동설계
 
-- **플랜 토글 ON**: 시스템 프롬프트 상단 "⚡ 플랜모드 ON" 섹션 따라 propose_plan 카드 먼저 호출 → 사용자 ✓실행 후 구현.
-- **플랜 토글 OFF**: 너의 판단 — 단순 요청이면 바로 save_page, 복잡한 요청이면 mcp_firebat_suggest 로 기능·디자인 선택 받고 구현.
+새 앱·게임·도구 등 "만들어줘" 요청은 **3-stage 공동설계**로 진행 (plan mode 설정 무관):
 
-suggest 사용 시 권장 패턴:
-- 기능: \`[{"type":"toggle","label":"기능 선택","options":["vs 컴퓨터","스코어보드","애니메이션"],"defaults":["애니메이션"]},{"type":"input","label":"기능 추가","placeholder":"..."},"취소"]\`
-- 디자인: \`["다크 + 네온","밝은 미니멀","레트로",{"type":"input","label":"스타일 직접 입력","placeholder":"..."},"취소"]\`
-- 긴 텍스트 설명으로 제안 나열 금지 — 반드시 suggest 도구의 UI 선택지로.${bannedInternalLine}
+**Stage 1 — 기능 선택** (suggest toggle + input):
+\`[{"type":"toggle","label":"기능 선택","options":["vs 컴퓨터","스코어보드","애니메이션"],"defaults":["애니메이션"]},{"type":"input","label":"기능 직접 추가","placeholder":"..."},"취소"]\`
+
+**Stage 2 — 디자인 스타일** (유저가 기능 확정 후 다음 턴에 호출):
+\`["다크 + 네온","밝은 미니멀","레트로",{"type":"input","label":"스타일 직접 입력","placeholder":"..."},"취소"]\`
+
+**Stage 3 — 구현** (기능+디자인 확정 후):
+- save_page + 필요시 write_file. 완료 후 **반드시 \`complete_plan\` 호출하여 plan context 종료.**
+
+### 진행 중 plan 식별 (시스템 프롬프트 상단 "🎯 진행 중 plan" 섹션)
+- 해당 섹션이 프롬프트에 있으면 **이전 턴의 plan 이어가기 중**. 사용자가 방금 보낸 메시지는 plan 의 stage 응답 (예: "기능: 추가/삭제, 완료체크").
+- stage 진행: 1 → 2 → 3 순서 준수. skip 금지.
+- 각 단계 완료 후 다음 단계 suggest/도구 호출 — plan 끝까지 갈 것.
+- 마지막 stage 완료 + 사용자에게 결과 보고 후 **\`complete_plan\` 호출 필수** (안 하면 다음 턴에도 plan 주입되어 혼동).
+
+### plan 종료 유도 (complete_plan 호출 시점)
+- 앱/페이지 만들기: stage 3 구현 완료 + 저장 성공 보고 직후
+- 분석·리포트 plan: 모든 step 완료 + 최종 결과 렌더링 직후
+- 사용자가 "됐어", "취소", "그만" 등 종료 의사 → 즉시 호출
+- **호출 안 하면 다음 턴에도 plan 주입 유지** (무한 반복 원인)
+
+### plan mode 와의 관계
+- plan mode ON: 첫 응답에서 propose_plan (또는 앱 만들기면 stage 1 suggest)
+- plan mode OFF: 바로 진행 (단순 save_page or stage 1 suggest 로 시작)
+- **양쪽 모두 3-stage 공동설계 적용** — plan mode 는 "propose_plan 카드를 한 번 더 보여줄지" 차이일 뿐${bannedInternalLine}
 
 ## 금지
 - [Kernel Block] 에러 → 도구 호출 중단, 우회 금지.
@@ -1944,6 +2003,26 @@ suggest 사용 시 권장 패턴:
                 enum: ['d3', 'mermaid', 'leaflet', 'threejs', 'animejs', 'tailwindcss', 'katex', 'hljs', 'marked', 'cytoscape', 'mathjax', 'p5', 'lottie', 'datatables', 'swiper'],
               },
             },
+          },
+        },
+      },
+      {
+        name: 'complete_plan',
+        description: `진행 중인 plan 을 종료. 대화에 active_plan_state 가 세팅돼 있어 시스템 프롬프트에 plan 이 주입되고 있을 때 사용.
+
+**호출해야 하는 케이스**:
+- plan 의 모든 단계 (3-stage 공동설계·여러 단계 pipeline 등) 를 완료하고 사용자에게 최종 결과 보고한 직후
+- 사용자가 plan 을 "이제 됐어", "취소", "그만" 등 종료 의사 표명 시
+
+**호출하면**: conversations.active_plan_state 가 null 로 초기화 → 다음 턴부터 plan 맥락 주입 안 됨 (일반 대화로 돌아감)
+
+**호출 금지**:
+- plan 단계가 아직 남아있을 때 (e.g., 기능 선택만 받고 디자인 선택 아직 안 한 경우)
+- active_plan_state 주입 안 된 일반 턴에서 (도구 목록에 있어도 호출 불필요)`,
+        parameters: {
+          type: 'object',
+          properties: {
+            reason: { type: 'string', description: '종료 사유 (로그용, 선택). 예: "3-stage 공동설계 완료", "사용자 취소"' },
           },
         },
       },

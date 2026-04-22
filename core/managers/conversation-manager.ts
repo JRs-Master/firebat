@@ -236,6 +236,37 @@ export class ConversationManager {
     return !!(res.success && res.data && res.data.length > 0);
   }
 
+  // ── Plan 실행 / 3-stage 진행 state (multi-turn 지속) ──────────────────────
+  // 대화 수준 JSON 상태. planExecuteId 1회 소비 대신 대화가 살아있는 동안 유지.
+  // AI 는 매 턴 system prompt 에 이 state 주입받아 맥락 유지 → 3-stage 공동설계가
+  // plan mode ON 상태에서도 정상 이어짐.
+
+  /** 진행 중 plan state 조회. 없으면 null. */
+  async getActivePlanState(id: string): Promise<Record<string, unknown> | null> {
+    const res = await this.db.query(
+      `SELECT active_plan_state as state FROM conversations WHERE id = ?`,
+      [id],
+    );
+    if (!res.success || !res.data || res.data.length === 0) return null;
+    const raw = (res.data[0] as { state: string | null }).state;
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+
+  /** plan state 세팅 — null 전달 시 초기화 (= clear 와 동일). */
+  async setActivePlanState(id: string, state: Record<string, unknown> | null): Promise<void> {
+    const serialized = state ? JSON.stringify(state) : null;
+    await this.db.query(
+      `UPDATE conversations SET active_plan_state = ? WHERE id = ?`,
+      [serialized, id],
+    );
+  }
+
+  /** plan 완료 — active state 초기화 (AI 의 complete_plan tool / 사용자 명시 종료). */
+  async clearActivePlanState(id: string): Promise<void> {
+    await this.setActivePlanState(id, null);
+  }
+
   /**
    * 메시지 배열과 기존 임베딩 비교 → 변경·신규만 재임베딩, 제거된 인덱스는 삭제
    */

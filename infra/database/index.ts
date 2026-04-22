@@ -52,6 +52,9 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
     // CLI 모드 세션 resume 용 컬럼 (마이그레이션: 존재하지 않을 때만 추가)
     try { this.db.exec(`ALTER TABLE conversations ADD COLUMN cli_session_id TEXT`); } catch { /* 이미 존재하면 무시 */ }
     try { this.db.exec(`ALTER TABLE conversations ADD COLUMN cli_model TEXT`); } catch { /* 이미 존재하면 무시 */ }
+    // Plan 실행 / 3-stage 공동설계 진행 상태 — multi-turn 지속용 JSON
+    // { planId, currentStage?, selections?, type? } 등 구조. null 이면 진행 중 plan 없음.
+    try { this.db.exec(`ALTER TABLE conversations ADD COLUMN active_plan_state TEXT`); } catch { /* 이미 존재 */ }
 
     // 대화 삭제 tombstone — 한 기기에서 삭제 후 다른 기기의 stale POST 가 되살리는 레이스 방지.
     //  - DELETE 시 tombstone 기록 + conversations row 삭제

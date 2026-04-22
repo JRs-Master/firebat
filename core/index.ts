@@ -323,6 +323,16 @@ export class FirebatCore {
   setCliSession(conversationId: string, sessionId: string, model: string) {
     return this.conversation.setCliSession(conversationId, sessionId, model);
   }
+  // Plan 실행 / 3-stage state (multi-turn 지속) — 대화 수준 JSON 유지
+  getActivePlanState(conversationId: string) {
+    return this.conversation.getActivePlanState(conversationId);
+  }
+  setActivePlanState(conversationId: string, state: Record<string, unknown> | null) {
+    return this.conversation.setActivePlanState(conversationId, state);
+  }
+  clearActivePlanState(conversationId: string) {
+    return this.conversation.clearActivePlanState(conversationId);
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   //  시크릿 → SecretManager
