@@ -202,8 +202,9 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   };
 
   return (
-    // PC 에선 우측 정렬 (버블 흐름과 시각적 분리), 모바일은 full-width
-    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50 max-w-md sm:ml-auto">
+    // PC: max-w-md(448px) 로 capped + sm:ml-auto 로 우측 정렬. 모바일: w-full 로 부모 너비 꽉 채움.
+    // w-full 없이 max-w-md 만 두면 content 자연 너비로 줄어드는 문제 — 두 클래스 조합 필수.
+    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50 w-full max-w-md sm:ml-auto">
       {suggestions.map((item, i) => {
         if (typeof item === 'string') {
           // 단일 버튼 — 즉시 전송

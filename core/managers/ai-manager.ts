@@ -778,10 +778,21 @@ export class AiManager {
         suggestions = innerSuggestions;
       }
 
+      // CLI 모드 (Claude Code CLI, Codex, Gemini CLI) 는 도구 호출을 내부 처리하고 toolCalls=[] 반환 →
+      // propose_plan 은 internallyUsedTools 로만 감지 가능. 이 턴이 propose_plan 턴이면 trailing text drop.
+      const isProposePlanTurn = toolCalls.some(tc => tc.name === 'propose_plan')
+        || (internallyUsedTools || []).some(n => n.replace(/^mcp__[^_]+__/, '') === 'propose_plan');
+
       // 도구 호출이 없으면 최종 응답
       if (toolCalls.length === 0) {
-        finalReply = text;
-        if (text) blocks.push({ type: 'text', text });
+        if (isProposePlanTurn) {
+          // PlanCard + suggestions 로 이미 완전 — "위 카드에서..." 같은 사족 drop
+          this.logger.info(`[AiManager] [${corrId}] propose_plan (CLI 내부) 감지 → trailing text drop`);
+          finalReply = '';
+        } else {
+          finalReply = text;
+          if (text) blocks.push({ type: 'text', text });
+        }
         break;
       }
 
@@ -904,7 +915,8 @@ export class AiManager {
       // propose_plan 호출 시 강제 턴 종료 — 사용자가 ✓실행 누른 뒤에야 다음 작업 진행
       // (PlanCard + suggestions 는 blocks/suggestions 에 이미 적재됨)
       // trailing text 는 PlanCard 와 정보 중복이므로 drop — 위/아래 카드 위치 참조 문구도 자연스레 제거
-      if (toolCalls.some(tc => tc.name === 'propose_plan')) {
+      // isProposePlanTurn 은 CLI 내부 사용까지 포함 (toolCalls 는 비어도 internallyUsedTools 로 감지됨)
+      if (isProposePlanTurn) {
         this.logger.info(`[AiManager] [${corrId}] propose_plan 호출 감지 → trailing text drop + 승인 대기 위해 턴 종료`);
         finalReply = '';
         break;

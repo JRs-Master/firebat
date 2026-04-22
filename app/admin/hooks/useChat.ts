@@ -96,17 +96,20 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                 if (one.success && one.conversation) activeMessages = one.conversation.messages ?? [];
               } catch {}
             }
+            // cleanMessages 적용 후 conversations + dispatch LOAD 에 동일 값 주입.
+            // 두 곳이 다른 값이면 직후 save effect 가 "바뀜" 판정해 updatedAt bump → 목록 최상단으로 올라감 (의도치 않음).
+            const cleanedActive = cleanMessages(activeMessages);
 
             const fullList: Conversation[] = remote.map(r => ({
               id: r.id, title: r.title, createdAt: r.createdAt, updatedAt: r.updatedAt,
-              messages: r.id === activeId ? activeMessages : [],
+              messages: r.id === activeId ? cleanedActive : [],
             }));
 
             setConversations(fullList);
             localStorage.setItem('firebat_conversations', JSON.stringify(fullList));
             if (activeId) {
               setActiveConvId(activeId);
-              dispatch({ type: 'LOAD', messages: cleanMessages(activeMessages) });
+              dispatch({ type: 'LOAD', messages: cleanedActive });
             }
             return;
           }
