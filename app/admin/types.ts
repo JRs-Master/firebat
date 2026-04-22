@@ -72,7 +72,6 @@ export function filterThinkingLevels(kind: ThinkingKind): { value: string; label
   return THINKING_LEVELS.filter(l => ['low', 'medium', 'high', 'xhigh', 'max'].includes(l.value));
 }
 
-export type PlanAction = { type: string; description?: string; path?: string; slug?: string };
 export type StepStatus = { index: number; total: number; type: string; status: 'start' | 'done' | 'error'; error?: string; description?: string };
 
 export type PendingAction = {
@@ -96,8 +95,6 @@ export type Message = {
   isThinking?: boolean;
   thinkingText?: string;
   streaming?: boolean;
-  plan?: { thoughts: string; reply: string; actions: PlanAction[]; corrId: string };
-  planPending?: boolean;
   pendingActions?: PendingAction[];
   steps?: StepStatus[];
   executing?: boolean;

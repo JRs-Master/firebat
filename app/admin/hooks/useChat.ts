@@ -464,18 +464,6 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             if (!chunkContent) continue;
             if (chunkType === 'thinking') dispatch({ type: 'CHUNK_THINKING', id: systemId, content: chunkContent });
             else dispatch({ type: 'CHUNK_TEXT', id: systemId, content: chunkContent });
-          } else if (ev.event === 'plan') {
-            const needsConfirm = ev.data.actions?.some((a: any) =>
-              ['SAVE_PAGE', 'DELETE_PAGE', 'DELETE_FILE', 'SCHEDULE_TASK'].includes(a.type),
-            );
-            dispatch({
-              type: 'PLAN', id: systemId,
-              plan: ev.data,
-              thoughts: ev.data.thoughts,
-              reply: ev.data.reply,
-              suggestions: ev.data.suggestions,
-              needsConfirm,
-            });
           } else if (ev.event === 'step') {
             const stepStart = ev.data.status === 'start';
             dispatch({ type: 'STEP', id: systemId, step: ev.data, isLast: !stepStart });
@@ -554,70 +542,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     }
   }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage, planMode, setActiveConvId]);
 
-  // Plan 실행 확인
-  const handleConfirmPlan = useCallback(async (msgId: string) => {
-    const msg = messages.find(m => m.id === msgId);
-    if (!msg?.plan) return;
-
-    dispatch({ type: 'CONFIRM_PLAN_START', msgId });
-    setLoading(true);
-
-    try {
-      const res = await fetch('/api/chat/execute', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ corrId: msg.plan.corrId, config: { model: aiModel } }),
-      });
-
-      const reader = res.body?.getReader();
-      if (!reader) throw new Error('스트림을 읽을 수 없습니다.');
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (value) buffer += decoder.decode(value, { stream: !done });
-        if (done && buffer.trim()) buffer += '\n\n';
-
-        const parsed = parseSSE(buffer);
-        buffer = parsed.remaining;
-
-        for (const ev of parsed.events) {
-          if (ev.event === 'step') {
-            dispatch({ type: 'STEP', id: msgId, step: ev.data, isLast: ev.data.status !== 'start' });
-          } else if (ev.event === 'result') {
-            dispatch({
-              type: 'RESULT', id: msgId,
-              payload: {
-                reply: ev.data.reply,
-                executedActions: ev.data.executedActions,
-                data: ev.data.data,
-                error: ev.data.error,
-              },
-              hasAnimation: false,
-              lastTextIdx: -1,
-            });
-            if (ev.data.executedActions?.length) {
-              onRefresh();
-              window.dispatchEvent(new Event('firebat-refresh'));
-            }
-          }
-        }
-        if (done) break;
-      }
-    } catch (err: any) {
-      dispatch({ type: 'NETWORK_ERROR', id: msgId, message: err.message });
-    } finally {
-      dispatch({ type: 'FINALIZE', id: msgId });
-      setLoading(false);
-    }
-  }, [messages, aiModel, onRefresh]);
-
-  // Plan 거부
-  const handleRejectPlan = useCallback((msgId: string) => {
-    dispatch({ type: 'REJECT_PLAN', msgId });
-  }, []);
+  // 레거시 JSON 모드의 handleConfirmPlan / handleRejectPlan 은 v0.1, 2026-04-22 제거됨.
+  // 현재는 propose_plan 도구 → PlanCard (render_* blocks) → suggestions 의 plan-confirm 버튼으로
+  // handleSubmit(text, true, { planExecuteId }) 호출 — 모두 Function Calling 경로.
 
   // Pending tool 개별 승인
   const handleApprovePending = useCallback(async (msgId: string, planId: string, action?: 'now' | 'reschedule', newRunAt?: string) => {
@@ -658,7 +585,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     conversations: convMetas, activeConvId,
     chatEndRef, chatContainerRef, handleScroll,
     handleNewConv, handleSelectConv, handleDeleteConv,
-    handleSubmit, handleConfirmPlan, handleRejectPlan,
+    handleSubmit,
     handleApprovePending, handleRejectPending,
     handleStop,
     planMode, setPlanMode,

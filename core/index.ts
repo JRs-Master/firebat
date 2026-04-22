@@ -13,7 +13,7 @@ import type { ApiTokenInfo } from './managers/auth-manager';
 import { ConversationManager } from './managers/conversation-manager';
 import type { ConversationSummary, ConversationRecord } from './managers/conversation-manager';
 import type { FirebatInfraContainer, ILlmPort, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
-import type { InfraResult, FirebatPlan } from './types';
+import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
 import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT, VK_SYSTEM_AI_ASSISTANT_MODEL, DEFAULT_AI_ASSISTANT_MODEL, AI_ASSISTANT_MODELS } from './vault-keys';
 import { eventBus } from '../lib/events';
@@ -86,10 +86,6 @@ export class FirebatCore {
   //  AI 채팅 → AiManager
   // ══════════════════════════════════════════════════════════════════════════
 
-  async requestAction(prompt: string, history: ChatMessage[] = [], opts?: AiRequestOpts) {
-    return this.ai.process(prompt, history, opts);
-  }
-
   async requestActionWithTools(
     prompt: string,
     history: ChatMessage[] = [],
@@ -98,19 +94,6 @@ export class FirebatCore {
     onChunk?: (chunk: LlmChunk) => void,
   ) {
     return this.ai.processWithTools(prompt, history, opts, onToolCall, onChunk);
-  }
-
-  async planOnly(prompt: string, history: ChatMessage[] = [], opts?: AiRequestOpts) {
-    return this.ai.planOnly(prompt, history, opts);
-  }
-
-  async executePlan(
-    plan: FirebatPlan,
-    corrId: string,
-    opts?: AiRequestOpts,
-    onStep?: (step: { index: number; total: number; type: string; status: 'start' | 'done' | 'error'; error?: string }) => void,
-  ) {
-    return this.ai.executePlan(plan, corrId, opts, onStep);
   }
 
   async codeAssist(params: { code: string; language: string; instruction: string; selectedCode?: string }, opts?: AiRequestOpts) {

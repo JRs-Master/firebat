@@ -387,7 +387,11 @@ export class TaskManager {
       // 문자열 내 $prev.key 및 $prev 치환
       if (val.includes('$prev')) {
         let result = val.replace(/\$prev\.(\w+)/g, (_: string, key: string) => {
-          if (prev && typeof prev === 'object' && key in prev) return String((prev as Record<string, unknown>)[key]);
+          if (prev && typeof prev === 'object' && key in prev) {
+            // 객체·배열은 JSON.stringify — 그냥 String() 하면 "[object Object]" 가 들어가 다음 step 뻑남
+            const v = (prev as Record<string, unknown>)[key];
+            return v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v);
+          }
           if (typeof prev === 'string') return prev; // string 폴백 (위와 동일 논리)
           return `$prev.${key}`;
         });

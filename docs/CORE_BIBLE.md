@@ -108,7 +108,7 @@ interface FirebatInfraContainer {
 ### 제2항. Core 주요 메서드 영역
 | 영역 | 메서드 |
 |---|---|
-| AI 채팅 | `requestAction`, `requestActionWithTools`, `planOnly`, `executePlan` |
+| AI 채팅 | `requestActionWithTools` (Function Calling 유일 경로), `codeAssist`, `resolveCallTarget` |
 | 모듈 실행 | `runModule` |
 | 파일 시스템 | `readFile`, `writeFile`, `deleteFile`, `getFileTree` |
 | 프로젝트 | `scanProjects`, `deleteProject` |
@@ -233,9 +233,9 @@ interface FirebatPlan {
 ### CapabilityManager
 - Capability-Provider 해석 + 설정. IStoragePort, IVaultPort, ILogPort 직접 주입.
 
-### CoreAiManager (v1+ 활성화 예정)
-- 시스템 내부 분석용 판단 함수. ILlmPort, ILogPort 직접 주입.
-- `[CORE_AI_TRAINING]` 프리픽스로 로깅.
+### CoreAiManager (v1+ 재설계)
+- 시스템 내부 자기진화용 AI. v0.1 스텁은 레거시 `requestAction` 을 참조했으나 2026-04-22 삭제.
+- v1.0 재활성화 시 Function Calling (`requestActionWithTools`) 경로 위에서 새로 설계.
 
 ---
 
@@ -255,7 +255,7 @@ const core = getCore(); // 싱글톤 Core 획득
 ```
 LLM 모델 오버라이드가 필요한 경우 Core 메서드의 `opts` 파라미터로 전달:
 ```typescript
-const result = await core.requestAction(prompt, history, { model: 'gemini-2.5-pro' });
+const result = await core.requestActionWithTools(prompt, history, { model: 'gemini-3.1-pro-preview' });
 ```
 
 ---

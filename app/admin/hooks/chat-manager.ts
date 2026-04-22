@@ -24,7 +24,6 @@ export const FALLBACK = {
   TIMEOUT: '응답이 3분을 초과했습니다. SSE 연결 끊김 가능성 — 다시 시도해주세요.',
   NETWORK: '서버 네트워크 연결이 끊어졌습니다.',
   ABORTED: '중단되었습니다.',
-  REJECTED: '(사용자가 실행을 취소했습니다.)',
 } as const;
 
 // ── 판정 헬퍼 ──────────────────────────────────────────────────────────────
@@ -64,10 +63,9 @@ export type ChatAction =
   | { type: 'SEND_USER'; userId: string; systemId: string; content: string; image?: string }
   // suggestion 전송 — user 없이 pending system 만 push
   | { type: 'SEND_SUGGESTION'; systemId: string }
-  // SSE 이벤트
+  // SSE 이벤트 (Function Calling 모드. 레거시 'plan' 이벤트는 v0.1, 2026-04-22 삭제됨)
   | { type: 'CHUNK_TEXT'; id: string; content: string }
   | { type: 'CHUNK_THINKING'; id: string; content: string }
-  | { type: 'PLAN'; id: string; plan: Message['plan']; thoughts?: string; reply?: string; suggestions?: Message['suggestions']; needsConfirm: boolean }
   | { type: 'STEP'; id: string; step: StepStatus; isLast: boolean }
   | { type: 'RESULT'; id: string; payload: ResultPayload; hasAnimation: boolean; lastTextIdx: number }
   | { type: 'RESULT_ANIM_TICK'; id: string; partial: string; lastTextIdx: number }
@@ -77,9 +75,6 @@ export type ChatAction =
   | { type: 'TIMEOUT'; id: string }
   | { type: 'NETWORK_ERROR'; id: string; message: string }
   | { type: 'FINALIZE'; id: string } // finally 블록: 여전히 in-flight 면 강제 터미널 + 인바리언트
-  // Plan 확정/거부
-  | { type: 'CONFIRM_PLAN_START'; msgId: string }
-  | { type: 'REJECT_PLAN'; msgId: string }
   // Pending action (schedule_task 등)
   | { type: 'PENDING_APPROVED'; msgId: string; planId: string }
   | { type: 'PENDING_REJECTED'; msgId: string; planId: string }
@@ -133,24 +128,10 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
         ? { ...m, isThinking: true, streaming: false, statusText: undefined, thinkingText: (m.thinkingText || '') + action.content }
         : m);
 
-    case 'PLAN':
-      return state.map(m => m.id === action.id
-        ? {
-            ...m,
-            isThinking: !action.needsConfirm,
-            thoughts: action.thoughts,
-            content: action.reply,
-            plan: action.plan,
-            planPending: action.needsConfirm,
-            suggestions: action.suggestions && action.suggestions.length > 0 ? action.suggestions : undefined,
-          }
-        : m);
-
     case 'STEP':
       return state.map(m => m.id === action.id
         ? {
             ...m,
-            planPending: false,
             executing: true,
             isThinking: true,
             streaming: false,
@@ -188,7 +169,6 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
             executedActions: p.executedActions || [],
             data: newData,
             error: p.error,
-            planPending: false,
             suggestions: p.suggestions && p.suggestions.length > 0 ? p.suggestions : undefined,
             pendingActions: p.pendingActions?.map(pa => ({ ...pa, status: pa.status ?? 'pending' })),
           }
@@ -271,16 +251,6 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
           thinkingText: m.thinkingText || '답변 완료',
         };
       });
-
-    case 'CONFIRM_PLAN_START':
-      return state.map(m => m.id === action.msgId
-        ? { ...m, planPending: false, executing: true, isThinking: true, steps: [] }
-        : m);
-
-    case 'REJECT_PLAN':
-      return state.map(m => m.id === action.msgId
-        ? { ...m, planPending: false, content: (m.content || '') + `\n\n${FALLBACK.REJECTED}` }
-        : m);
 
     case 'PENDING_APPROVED':
       return state.map(m => m.id !== action.msgId ? m : {

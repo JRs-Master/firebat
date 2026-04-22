@@ -514,11 +514,9 @@ function ErrorCollapsible({ error, label }: { error: string; label?: string }) {
 }
 
 // ─── 메시지 버블 ─────────────────────────────────────────────────────────────
-function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onApprovePending, onRejectPending, onApprovePendingAction }: {
+function MessageBubble({ msg, loading, onSuggestion, onApprovePending, onRejectPending, onApprovePendingAction }: {
   msg: Message;
   loading: boolean;
-  onConfirm: (id: string) => void;
-  onReject: (id: string) => void;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
   onApprovePending?: (msgId: string, planId: string) => void;
   onRejectPending?: (msgId: string, planId: string) => void;
@@ -570,36 +568,6 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
           )}
           {(!msg.isThinking || msg.streaming || msg.content) && (
             <div className="flex flex-col gap-5">
-              {/* 확인 필요한 액션만 Plan 박스 표시 */}
-              {msg.planPending && msg.plan && msg.plan.actions.length > 0 && (
-                <div className="flex flex-col gap-3 bg-slate-50 border border-slate-200 rounded-2xl p-5">
-                  <div className="flex flex-col gap-2">
-                    {msg.plan.actions.map((action, i) => (
-                      <div key={i} className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium bg-white border border-slate-100 text-slate-500">
-                        <Circle size={14} className="text-slate-300" />
-                        <span className="flex-1">{action.description || action.type}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex gap-3 mt-2">
-                    <button
-                      onClick={() => onConfirm(msg.id)}
-                      disabled={loading}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white text-[13px] font-bold rounded-xl transition-colors shadow-sm"
-                    >
-                      <Check size={16} /> 실행
-                    </button>
-                    <button
-                      onClick={() => onReject(msg.id)}
-                      disabled={loading}
-                      className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 disabled:bg-slate-50 text-slate-600 text-[13px] font-bold rounded-xl transition-colors"
-                    >
-                      <X size={16} /> 취소
-                    </button>
-                  </div>
-                </div>
-              )}
-
               {/* 인라인 블록 렌더링 — text/html 순서 보존 (Claude 스타일) */}
               {msg.data?.blocks && Array.isArray(msg.data.blocks) && msg.data.blocks.length > 0 ? (
                 <div className="flex flex-col gap-3">
@@ -755,7 +723,7 @@ function MessageBubble({ msg, loading, onConfirm, onReject, onSuggestion, onAppr
               )}
 
               {/* 실행 완료된 액션 태그 — 최하단, 미니멀 */}
-              {msg.executedActions && msg.executedActions.length > 0 && !msg.plan && (
+              {msg.executedActions && msg.executedActions.length > 0 && (
                 <ActionTags actions={msg.executedActions} steps={msg.steps} />
               )}
             </div>
@@ -797,7 +765,7 @@ export default function AdminConsole() {
     attachedImage, setAttachedImage,
     conversations, activeConvId, chatEndRef, chatContainerRef, handleScroll,
     handleNewConv, handleSelectConv, handleDeleteConv,
-    handleSubmit, handleConfirmPlan, handleRejectPlan,
+    handleSubmit,
     handleApprovePending, handleRejectPending, handleStop,
     planMode, setPlanMode,
   } = useChat(aiModel, fetchFileTree);
@@ -925,8 +893,6 @@ export default function AdminConsole() {
                 key={msg.id}
                 msg={msg}
                 loading={loading}
-                onConfirm={handleConfirmPlan}
-                onReject={handleRejectPlan}
                 onSuggestion={(text, meta) => handleSubmit(text, true, meta)}
                 onApprovePending={handleApprovePending}
                 onApprovePendingAction={(msgId, planId, action, newRunAt) => handleApprovePending(msgId, planId, action, newRunAt)}
