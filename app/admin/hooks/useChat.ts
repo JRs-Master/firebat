@@ -15,7 +15,7 @@
 import { useReducer, useState, useRef, useEffect, useCallback } from 'react';
 import { Message, Conversation, INIT_MESSAGE, makeConv, PendingAction } from '../types';
 import { ConversationMeta } from '../components/Sidebar';
-import { chatReducer, cleanMessages } from './chat-manager';
+import { chatReducer, cleanMessages, FALLBACK } from './chat-manager';
 import { useSetting } from './settings-manager';
 
 // SSE 이벤트 파서 — buffer에서 완성된 이벤트만 파싱, 나머지는 반환
@@ -475,7 +475,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             const fullReply: string = ev.data.reply
               || (ev.data.error ? ''
                 : hasAnyOutput ? '실행이 완료되었습니다.'
-                : '응답을 받지 못했습니다. 다시 요청해주세요.');
+                : FALLBACK.EMPTY_REPLY);
             const shouldAnimate = !!fullReply && !ev.data.error;
             const lastTextIdx = hasBlocks ? (() => {
               for (let i = blocksData!.length - 1; i >= 0; i--) if (blocksData![i].type === 'text') return i;

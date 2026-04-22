@@ -14,6 +14,7 @@ import StockChart from './chat-components/StockChart';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
 import { readSetting } from './hooks/settings-manager';
+import { THINKING_STATUS } from './hooks/chat-manager';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
 
 // ─── 마크다운 커스텀 컴포넌트 ───────────────────────────────────────────────
@@ -279,11 +280,11 @@ function AutoResizeIframe({ src, initialHeight }: { src: string; initialHeight?:
 // ─── Thinking 블록 — 버블 상단에 항상 표시 ──────────────────────────────────
 function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: string; thinkingText?: string; isActive?: boolean }) {
   if (!isActive && !thinkingText) return null;
-  if (thinkingText === '답변 완료') {
+  if (thinkingText === THINKING_STATUS.DONE) {
     return (
       <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
         <Cpu size={13} className="shrink-0" />
-        <span>답변 완료</span>
+        <span>{THINKING_STATUS.DONE}</span>
       </div>
     );
   }

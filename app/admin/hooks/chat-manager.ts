@@ -26,6 +26,12 @@ export const FALLBACK = {
   ABORTED: '중단되었습니다.',
 } as const;
 
+// ── 상태 라벨 (thinkingText 값) — ThinkingBlock 이 sentinel 비교로 분기. 단일 source ────
+export const THINKING_STATUS = {
+  DONE: '답변 완료',
+  DELAYED: '응답 지연',
+} as const;
+
 // ── 판정 헬퍼 ──────────────────────────────────────────────────────────────
 export function isTerminal(m: Message): boolean {
   return !m.isThinking && !m.executing && !m.streaming;
@@ -91,7 +97,7 @@ function enforceInvariant(m: Message): Message {
     ...m,
     content: m.content || m.error || FALLBACK.EMPTY_REPLY,
     error: m.error || FALLBACK.INVISIBLE,
-    thinkingText: m.thinkingText || '답변 완료',
+    thinkingText: m.thinkingText || THINKING_STATUS.DONE,
   };
 }
 
@@ -160,7 +166,7 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
             executing: false,
             streaming: false,
             statusText: undefined,
-            thinkingText: '답변 완료',
+            thinkingText: THINKING_STATUS.DONE,
             thoughts: p.thoughts,
             // blocks 애니메이션 대상이면 m.content 건들지 않고 blocks 내부 text 만 애니메이션
             content: action.hasAnimation && action.lastTextIdx >= 0 && hasBlocks
@@ -193,7 +199,7 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
             isThinking: false,
             executing: false,
             streaming: false,
-            thinkingText: '답변 완료',
+            thinkingText: THINKING_STATUS.DONE,
             error: action.error,
             content: m.content || '',
           }
@@ -206,7 +212,7 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
             isThinking: false,
             executing: false,
             streaming: false,
-            thinkingText: '답변 완료',
+            thinkingText: THINKING_STATUS.DONE,
             content: m.content || FALLBACK.ABORTED,
           }
         : m);
@@ -220,7 +226,7 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
           isThinking: false,
           executing: false,
           streaming: false,
-          thinkingText: '응답 지연',
+          thinkingText: THINKING_STATUS.DELAYED,
           error: m.error || FALLBACK.TIMEOUT,
         };
       });
@@ -232,7 +238,7 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
             isThinking: false,
             executing: false,
             streaming: false,
-            thinkingText: '답변 완료',
+            thinkingText: THINKING_STATUS.DONE,
             error: action.message,
             content: m.content || FALLBACK.NETWORK,
           }
@@ -248,7 +254,7 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
           isThinking: false,
           executing: false,
           streaming: false,
-          thinkingText: m.thinkingText || '답변 완료',
+          thinkingText: m.thinkingText || THINKING_STATUS.DONE,
         };
       });
 
