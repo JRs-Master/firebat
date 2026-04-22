@@ -1,26 +1,42 @@
 # FIREBAT BIBLE — 헌법
 
-> 최종 개정: 2026-04-18 (v0.1)
+> 최종 개정: 2026-04-22 (v0.1)
 
 ## 전문(前文)
 
 본 문서는 Firebat의 **최고 등급 아키텍처 헌법**이다.
-Firebat은 **단독 서버(VPS)에서 동작하는 AI 주도형 실행 플랫폼**으로, "만들기 + 운영 + 자동화"를 통합한다.
+Firebat은 **AI-Powered Visual Automation Agent (VAA)** — 단독 서버(VPS)에서 동작하는 AI 기반 시각적 자동화 에이전트로, "만들기 + 운영 + 자동화"를 통합한다.
 이 헌법에 명시된 원칙은 모든 코드, 모듈, 컴포넌트, 프롬프트 설계의 기준이 된다.
 
 ---
 
 ## 제1장: 정체성 (Identity)
 
-### 제1항. AI 에이전트의 베이스캠프
+### 제1항. VAA — AI-Powered Visual Automation Agent
+Firebat 의 카테고리는 **VAA (Visual Automation Agent)** — AI 를 엔진으로 쓰는 시각적 자동화 에이전트다.
+대외 설명 문구: **"AI-Powered Visual Automation Agent"**. 내부 약어: **VAA**.
+
+기존 카테고리 구분:
+- **Agent (LangGraph/CrewAI 류)**: 추상 목표 → 자율 해결. 산출물은 주로 대화 로그.
+- **Automation (n8n/Zapier)**: 사용자 정의 워크플로우 → 반복 실행. 코드 없이 비주얼 조립.
+- **Builder (v0/Bolt/Lovable)**: AI 가 앱 생성. 일회성 산출물.
+
+Firebat 은 이 세 축 교집합:
+- **V (Visual)** — 결과물이 시각적. 페이지·차트·테이블·카드·PlanCard 등 20여 render_* 컴포넌트.
+- **A (Automation)** — 크론 스케줄러 + 파이프라인. 사용자 부재 중에도 반복 실행·외부 알림.
+- **A (Agent)** — Function Calling 멀티턴 도구 루프. 사용자 한 마디에 AI 가 자율 도구 선택·실행.
+
+"AI" 는 엔진(필수 재료)이고 "Automation Agent" 가 차별축(카테고리 정체성). 마케팅 문구에선 AI 함께 노출, 약어는 VAA 유지.
+
+### 제2항. AI 에이전트의 베이스캠프
 Firebat은 **AI가 시스템을 구축·디버깅·배포하기 위해 존재하는 언어 중립적 실행 운영체제(Execution OS)**다.
 AI는 이 플랫폼 위에서 활동하는 '전속 개발자'이며, Firebat은 AI가 만들어낸 결과물이 시스템을 파괴하지 않도록 격리(Sandbox)하고 통제하는 '법률과 경찰'의 역할을 한다.
 
-### 제2항. 단독 점유의 원칙 (Self-Hosted & Single-Node)
+### 제3항. 단독 점유의 원칙 (Self-Hosted & Single-Node)
 단일 리눅스 VPS에서 구동되는 것을 기준으로 한다. Vercel, AWS Lambda, Edge 등 서버리스/분산 환경은 배제한다.
 영구 저장(Persistence)은 로컬 파일 시스템과 **로컬 SQLite**만을 유일한 진실의 원천으로 삼는다.
 
-### 제3항. 궁극의 언어 중립성 (Universal Execution)
+### 제4항. 궁극의 언어 중립성 (Universal Execution)
 모듈은 JS, Python, PHP, Rust, WASM 등 어떤 언어로 작성되었든 `stdin/stdout` 상에서 JSON만 교환할 수 있다면 모두 적법한 실행 단위로 인정한다.
 
 ---

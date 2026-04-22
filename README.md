@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  Self-hosted AI workspace with a web UI that builds, runs, and automates from a single prompt.
+  <strong>AI-Powered Visual Automation Agent (VAA)</strong> — Self-hosted, single-node, multi-LLM.
   <br />
-  <sub>웹 UI에서 한 마디 대화로 웹 앱을 만들고·운영하고·자동화하는 개인 설치형 AI 플랫폼</sub>
+  <sub>웹 UI에서 한 마디 대화로 웹 앱을 만들고·운영하고·자동화하는 AI 기반 시각적 자동화 에이전트</sub>
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 
 ## What is Firebat?
 
-Firebat is a **self-hosted AI platform that designs, ships, schedules, and automates** — all from a single conversation.
+Firebat is an **AI-Powered Visual Automation Agent (VAA)** — a self-hosted platform that designs, ships, schedules, and automates from a single conversation.
 
 ```
 "Build me a weather app"  →  AI writes the code  →  Page deploys
@@ -36,7 +36,16 @@ Firebat is a **self-hosted AI platform that designs, ships, schedules, and autom
 
 One prompt flows through **design → implementation → deployment → scheduling → notification**.
 
-> 🇰🇷 Firebat은 **대화 한 마디로 웹 앱을 만들고, 자동화하고, 운영하는** 개인 설치형 AI 플랫폼입니다. 하나의 프롬프트가 **설계 → 구현 → 배포 → 스케줄링 → 알림**까지 관통합니다.
+**Why VAA?** Firebat sits at the intersection of three categories:
+- **Visual** — results are pages, charts, tables, cards (20+ render_* components), not chat logs.
+- **Automation** — cron + pipelines run while you're away (not one-shot chat).
+- **Agent** — native Function Calling multi-turn tool loop (no brittle JSON parsing).
+
+Existing tools pick one: LangGraph/CrewAI are agents but not visual/automation. n8n/Zapier are automation but not agents. v0/Bolt are visual but one-shot. Firebat is all three.
+
+> 🇰🇷 Firebat은 **AI 기반 시각적 자동화 에이전트 (VAA)** 입니다. 대화 한 마디로 웹 앱을 만들고, 자동화하고, 운영합니다. 하나의 프롬프트가 **설계 → 구현 → 배포 → 스케줄링 → 알림**까지 관통합니다.
+>
+> Agent (LangGraph) + Automation (n8n) + Builder (v0/Bolt) 세 카테고리의 교집합. 결과물이 **시각적**(페이지·차트·카드)이고, **자동화 반복 실행**되고, **AI 가 자율 도구 선택**합니다.
 
 ---
 
