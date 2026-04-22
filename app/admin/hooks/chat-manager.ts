@@ -40,8 +40,21 @@ export function isTerminal(m: Message): boolean {
 export function hasVisible(m: Message): boolean {
   if (m.content && m.content.trim()) return true;
   if (m.error) return true;
+  // blocks 는 "개수 > 0" 만으로 visible 판정하면 안 됨 — text 블록이 빈 문자열이면 렌더 시 아무것도 안 보임
+  // (RESULT 애니메이션 초기 상태: blocks=[{type:'text', text:''}] 가 length=1 이지만 실질 빈 버블)
+  // → 블록별로 "실제 렌더될 내용" 이 하나라도 있어야 visible
   const blocks = (m.data as { blocks?: unknown[] } | undefined)?.blocks;
-  if (Array.isArray(blocks) && blocks.length > 0) return true;
+  if (Array.isArray(blocks)) {
+    const meaningful = blocks.some((b) => {
+      if (!b || typeof b !== 'object') return false;
+      const bo = b as Record<string, unknown>;
+      if (bo.type === 'text') return typeof bo.text === 'string' && bo.text.trim().length > 0;
+      if (bo.type === 'html') return typeof bo.htmlContent === 'string' && bo.htmlContent.length > 0;
+      if (bo.type === 'component') return !!bo.name; // 컴포넌트 블록은 name 만 있으면 렌더 — UI 가 props 책임
+      return false;
+    });
+    if (meaningful) return true;
+  }
   if ((m.pendingActions?.length ?? 0) > 0) return true;
   if ((m.suggestions?.length ?? 0) > 0) return true;
   // user 메시지는 content 없어도 image 만으로 visible

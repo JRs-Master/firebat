@@ -484,6 +484,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
 
             cancelChunkAnim();
 
+            // 기존에 RESULT 도착 후 setInterval(25ms) 로 text 를 progressive append 하던 애니메이션이 있었으나:
+            //   - 백그라운드 탭 브라우저가 타이머를 1초로 throttle → 25ms 기대 tick 이 사실상 느려짐
+            //   - 그 사이 FINALIZE + DB 저장이 blocks[0].text='' 상태로 박제 → 복귀 시 빈 버블
+            //   - CLI 모드는 어차피 10~100초 대기 후 한 번에 도착 — "타이핑 느낌" 효과 실익도 적음
+            // → 애니메이션 제거. RESULT 도착 즉시 최종 text 박음. chunk 이벤트 기반 실시간 스트리밍은 유지 (OpenAI API 등).
             dispatch({
               type: 'RESULT',
               id: systemId,
@@ -496,22 +501,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                 suggestions: ev.data.suggestions,
                 pendingActions,
               },
-              hasAnimation: shouldAnimate,
+              hasAnimation: false, // 항상 full reply 즉시 세팅
               lastTextIdx,
             });
-
-            if (shouldAnimate) {
-              // 청크 단위 점진 append
-              const CHUNK = 50;
-              const TICK = 25;
-              let pos = 0;
-              chunkAnimRef.current = setInterval(() => {
-                pos = Math.min(pos + CHUNK, fullReply.length);
-                const partial = fullReply.slice(0, pos);
-                dispatch({ type: 'RESULT_ANIM_TICK', id: systemId, partial, lastTextIdx });
-                if (pos >= fullReply.length) cancelChunkAnim();
-              }, TICK);
-            }
             if (ev.data.executedActions?.length) {
               onRefresh();
               window.dispatchEvent(new Event('firebat-refresh'));
