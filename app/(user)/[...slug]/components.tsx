@@ -819,30 +819,7 @@ function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, p
     });
     const gradient = `conic-gradient(${gradientParts.join(', ')})`;
 
-    // 각도 → 세그먼트 인덱스 매핑 (호버 시 마우스 위치로 어느 조각인지 감지)
-    const centerHandler = (e: React.MouseEvent<HTMLDivElement>, setHovered: (i: number | null) => void) => {
-      const el = e.currentTarget;
-      const rect = el.getBoundingClientRect();
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const dx = e.clientX - cx;
-      const dy = e.clientY - cy;
-      const r = Math.sqrt(dx * dx + dy * dy);
-      const maxR = rect.width / 2;
-      if (r > maxR) { setHovered(null); return; }
-      // conic-gradient 는 top 부터 시계 방향 → atan2 기준 변환
-      let deg = Math.atan2(dy, dx) * 180 / Math.PI + 90;
-      if (deg < 0) deg += 360;
-      const pct = (deg / 360) * 100;
-      let acc = 0;
-      for (let i = 0; i < segments.length; i++) {
-        acc += segments[i].pct;
-        if (pct <= acc) { setHovered(i); return; }
-      }
-      setHovered(null);
-    };
-
-    return <PieChartInteractive segments={segments} gradient={gradient} titleBlock={titleBlock} unit={unit} centerHandler={centerHandler} showPct={showPct} />;
+    return <PieChartInteractive segments={segments} gradient={gradient} titleBlock={titleBlock} unit={unit} showPct={showPct} />;
   }
 
   // bar / line chart — hover 상세 툴팁 포함
@@ -931,58 +908,46 @@ function LineChartInteractive({ data, labels, title, unit, minVal, maxVal }: {
   );
 }
 
-function BarChartInteractive({ data, labels, titleBlock, unit, showValues, barColor, maxVal, fmtVal, type }: {
+function BarChartInteractive({ data, labels, titleBlock, unit, showValues, barColor, maxVal, fmtVal, type: _type }: {
   data: number[]; labels: string[]; titleBlock: React.ReactNode; unit?: string; showValues: boolean;
   barColor: string; maxVal: number; fmtVal: (v: number) => string; type: 'bar' | 'line';
 }) {
-  const [hovered, setHovered] = React.useState<number | null>(null);
-  const total = data.reduce((s, v) => s + v, 0) || 1;
+  // 툴팁 제거 (v0.1, 2026-04-22) — AI 가 잘못 넣은 데이터가 tooltip 의 derived 계산
+  // (pct 등) 을 거치면서 증폭됨. showValues inline 값으로 충분.
   return (
     <div className="space-y-3">
       {titleBlock}
       <div className="space-y-2">
-        {data.map((v, i) => {
-          const isHovered = hovered === i;
-          return (
-            <div
-              key={i}
-              className={`flex items-center gap-3 px-1 py-0.5 rounded transition-colors cursor-default ${isHovered ? 'bg-blue-50' : ''}`}
-              onMouseEnter={() => setHovered(i)}
-              onMouseLeave={() => setHovered(null)}
-            >
-              <span className={`text-xs w-20 truncate text-right ${isHovered ? 'text-slate-900 font-bold' : 'text-gray-600'}`}>{labels[i] ?? i}</span>
-              <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden relative">
-                <div
-                  className={`h-full rounded-full ${barColor} transition-all duration-500 ${isHovered ? 'opacity-100' : 'opacity-85'}`}
-                  style={{ width: `${(v / maxVal) * 100}%` }}
-                />
-                {isHovered && (
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 bg-white shadow-md rounded px-2 py-0.5 text-[10px] font-bold text-slate-800 border border-slate-200 pointer-events-none whitespace-nowrap">
-                    {fmtVal(v)}{unit || ''} · {((v / total) * 100).toFixed(1)}%
-                  </div>
-                )}
-              </div>
-              {showValues && <span className="text-xs font-bold text-gray-700 min-w-[3rem] text-right">{fmtVal(v)}</span>}
+        {data.map((v, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-3 px-1 py-0.5 rounded cursor-default"
+          >
+            <span className="text-xs w-20 truncate text-right text-gray-600">{labels[i] ?? i}</span>
+            <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden relative">
+              <div
+                className={`h-full rounded-full ${barColor} transition-all duration-500 opacity-85`}
+                style={{ width: `${(v / maxVal) * 100}%` }}
+              />
             </div>
-          );
-        })}
+            {showValues && <span className="text-xs font-bold text-gray-700 min-w-[3rem] text-right">{fmtVal(v)}{unit || ''}</span>}
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
 // 파이/도넛 차트 호버 인터랙션 분리 — 클라이언트 상태 보유
-function PieChartInteractive({ segments, gradient, titleBlock, unit, centerHandler, showPct = true }: {
+function PieChartInteractive({ segments, gradient, titleBlock, unit, showPct = true }: {
   segments: Array<{ label: string; value: number; pct: number; color: string }>;
   gradient: string;
   titleBlock: React.ReactNode;
   unit?: string;
-  centerHandler: (e: React.MouseEvent<HTMLDivElement>, setHovered: (i: number | null) => void) => void;
   showPct?: boolean;
 }) {
-  const [hovered, setHovered] = React.useState<number | null>(null);
-  const [cursorPos, setCursorPos] = React.useState<{ x: number; y: number } | null>(null);
-  const hoveredSeg = hovered != null ? segments[hovered] : null;
+  // 툴팁 제거 (v0.1, 2026-04-22) — legend 에 label + value + pct 이미 표시됨.
+  // tooltip 은 derived 계산 (pct toFixed 등) 이 AI 잘못된 데이터를 증폭시킴.
   return (
     <div className="space-y-3">
       {titleBlock}
@@ -990,38 +955,13 @@ function PieChartInteractive({ segments, gradient, titleBlock, unit, centerHandl
         <div
           className="relative w-40 h-40 rounded-full shadow-sm border border-gray-100"
           style={{ background: gradient }}
-          onMouseMove={(e) => {
-            centerHandler(e, setHovered);
-            const rect = e.currentTarget.getBoundingClientRect();
-            setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-          }}
-          onMouseLeave={() => { setHovered(null); setCursorPos(null); }}
-        >
-          {hoveredSeg && cursorPos && (
-            <div
-              className="absolute bg-white/95 shadow-lg rounded-lg px-3 py-2 text-center pointer-events-none border border-slate-200 z-10"
-              style={{ left: cursorPos.x + 14, top: cursorPos.y + 14 }}
-            >
-              <div className="text-[11px] font-bold text-slate-800 whitespace-nowrap">{hoveredSeg.label}</div>
-              <div className="text-[14px] font-extrabold text-slate-900">
-                {hoveredSeg.value.toLocaleString('ko-KR')}{unit || ''}
-              </div>
-              {showPct && (
-                <div className="text-[10px] text-slate-500">{hoveredSeg.pct.toFixed(1)}%</div>
-              )}
-            </div>
-          )}
-        </div>
+        />
         <div className="space-y-1.5">
           {segments.map((seg, i) => (
-            <div
-              key={i}
-              className={`flex items-center gap-2 text-sm cursor-pointer px-1 py-0.5 rounded transition-colors ${hovered === i ? 'bg-slate-100' : ''}`}
-              onMouseEnter={() => setHovered(i)}
-              onMouseLeave={() => setHovered(null)}
-            >
+            <div key={i} className="flex items-center gap-2 text-sm px-1 py-0.5">
               <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: seg.color }} />
               <span className="text-gray-700">{seg.label}</span>
+              <span className="text-gray-500 ml-2">{seg.value.toLocaleString('ko-KR')}{unit || ''}</span>
               {showPct && <span className="text-gray-400 ml-auto">{seg.pct.toFixed(1)}%</span>}
             </div>
           ))}
