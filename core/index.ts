@@ -15,7 +15,7 @@ import type { ConversationSummary, ConversationRecord } from './managers/convers
 import type { FirebatInfraContainer, ILlmPort, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
-import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT, VK_SYSTEM_AI_ASSISTANT_MODEL, DEFAULT_AI_ASSISTANT_MODEL, AI_ASSISTANT_MODELS } from './vault-keys';
+import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT, VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_LAST_MODEL_BY_CATEGORY, DEFAULT_AI_ASSISTANT_MODEL, AI_ASSISTANT_MODELS } from './vault-keys';
 import { eventBus } from '../lib/events';
 import { canonicalJson } from './utils/json-normalize';
 
@@ -410,6 +410,18 @@ export class FirebatCore {
     // 2000자 제한 (토큰 낭비 방지)
     const trimmed = (prompt || '').slice(0, 2000);
     return this.infra.vault.setSecret(VK_SYSTEM_USER_PROMPT, trimmed);
+  }
+
+  /** 설정 모달 "AI 카테고리별 마지막 선택 모델" — 멀티 기기 동기화용 Vault 저장.
+   *  반환: { category: modelValue } 객체. 미설정 시 빈 객체. */
+  getLastModelByCategory(): Record<string, string> {
+    const raw = this.infra.vault.getSecret(VK_SYSTEM_LAST_MODEL_BY_CATEGORY);
+    if (!raw) return {};
+    try { return JSON.parse(raw); } catch { return {}; }
+  }
+
+  setLastModelByCategory(value: Record<string, string>): boolean {
+    return this.infra.vault.setSecret(VK_SYSTEM_LAST_MODEL_BY_CATEGORY, JSON.stringify(value));
   }
 
   /** AI Assistant (도구 라우터 등 내부 서브 AI) 모델.

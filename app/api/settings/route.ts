@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
     aiAssistantModel: core.getAiAssistantModel(),
     aiAssistantModels: core.getAvailableAiAssistantModels(),
     userPrompt: core.getUserPrompt(),
+    lastModelByCategory: core.getLastModelByCategory(),
   });
 }
 
@@ -44,6 +45,9 @@ export async function PATCH(req: NextRequest) {
   }
   if (typeof body.userPrompt === 'string') {
     core.setUserPrompt(body.userPrompt);
+  }
+  if (body.lastModelByCategory && typeof body.lastModelByCategory === 'object') {
+    core.setLastModelByCategory(body.lastModelByCategory as Record<string, string>);
   }
 
   return NextResponse.json({ success: true });

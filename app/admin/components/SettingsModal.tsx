@@ -75,7 +75,14 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
     // 현재 모델을 카테고리 기억에 저장
     const cat = categoryOf(aiModel);
     if (cat && lastModelByCategory[cat] !== aiModel) {
-      setLastModelByCategory({ ...lastModelByCategory, [cat]: aiModel });
+      const next = { ...lastModelByCategory, [cat]: aiModel };
+      setLastModelByCategory(next);
+      // DB 동기화 (비동기, 실패해도 localStorage 에는 저장됨) — 멀티 기기 공유
+      fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lastModelByCategory: next }),
+      }).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiModel]);

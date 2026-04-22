@@ -13,6 +13,9 @@ export const VK_SYSTEM_AI_THINKING_LEVEL = 'system:ai-thinking-level';
 export const VK_SYSTEM_USER_PROMPT = 'system:user-prompt';
 /** AI Assistant (도구 라우터·자기진화 등 시스템 내부 서브 AI) 모델 선택 */
 export const VK_SYSTEM_AI_ASSISTANT_MODEL = 'system:ai-router:model';
+/** 설정 모달 "AI 카테고리별 마지막 선택 모델" — 멀티기기 동기화.
+ *  JSON 문자열 저장: {"cli-claude":"cli-claude-code-opus","api-anthropic":"claude-sonnet-4-6",...} */
+export const VK_SYSTEM_LAST_MODEL_BY_CATEGORY = 'system:last-model-by-category';
 
 /** AI Assistant 기본 모델. User AI 와 별개의 백엔드 헬퍼 — 싸고 빠른 모델 선호.
  *  `infra/llm/configs/<id>.json` 에 대응 설정 필요. */

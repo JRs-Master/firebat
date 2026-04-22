@@ -13,7 +13,7 @@ import { SecretInput } from './components/ChatWidgets';
 import StockChart from './chat-components/StockChart';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
-import { readSetting } from './hooks/settings-manager';
+import { readSetting, writeSetting } from './hooks/settings-manager';
 import { THINKING_STATUS } from './hooks/chat-manager';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
 
@@ -900,21 +900,30 @@ export default function AdminConsole() {
     if (chatContainerRef.current) chatContainerRef.current.scrollTop += dy;
   }, [chatContainerRef]);
 
-  // 초기화
+  // 초기화 — 서버(Vault) 설정을 localStorage 에 sync. DB 가 진실의 원천, localStorage 는 fast path cache.
   useEffect(() => {
-    // 서버(Vault)에서 모델 로드 — 실패 시 localStorage 폴백
+    const isValid = (m: string) => GEMINI_MODELS.some(x => x.value === m);
     (async () => {
-      const isValid = (m: string) => GEMINI_MODELS.some(x => x.value === m);
+      let loadedFromServer = false;
       try {
         const res = await fetch('/api/settings');
         const data = await res.json();
-        if (data.success && data.aiModel && isValid(data.aiModel)) {
-          setAiModel(data.aiModel);
-          return;
+        if (data.success) {
+          if (data.aiModel && isValid(data.aiModel)) {
+            setAiModel(data.aiModel);
+            writeSetting('firebat_model', data.aiModel); // localStorage cache sync
+            loadedFromServer = true;
+          }
+          // "AI 카테고리별 마지막 선택 모델" 도 DB → localStorage sync (멀티기기 동기화의 핵심)
+          if (data.lastModelByCategory && typeof data.lastModelByCategory === 'object') {
+            writeSetting('firebat_last_model_by_category', data.lastModelByCategory);
+          }
         }
       } catch {}
-      const savedModel = readSetting('firebat_model');
-      setAiModel(savedModel && isValid(savedModel) ? savedModel : 'gpt-5.4-mini');
+      if (!loadedFromServer) {
+        const savedModel = readSetting('firebat_model');
+        setAiModel(savedModel && isValid(savedModel) ? savedModel : 'gpt-5.4-mini');
+      }
     })();
   }, []);
 
