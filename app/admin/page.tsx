@@ -98,7 +98,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   const [openInput, setOpenInput] = useState<number | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [toggleSelections, setToggleSelections] = useState<Record<number, Set<string>>>({});
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   // 토글 기본값 초기화
   useEffect(() => {
@@ -158,20 +158,28 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
           );
         }
         if (item.type === 'plan-revise') {
-          // ⚙수정 제안 — input 열림 → 사용자 피드백 입력 → planReviseId 동봉 전송
+          // ⚙수정 제안 — textarea 로 여러 줄 누적 가능. Enter=줄바꿈, Ctrl/⌘+Enter=전송, 버튼 클릭 전송.
           if (openInput === i) {
             return (
-              <div key={i} className="flex items-center gap-1.5 px-3 py-2.5 border-b border-slate-200 last:border-b-0 bg-amber-50/40">
-                <input ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleInputSubmit({ planReviseId: item.planId })}
-                  placeholder={item.placeholder || '어떻게 수정할까요?'}
+              <div key={i} className="flex items-start gap-1.5 px-3 py-2.5 border-b border-slate-200 last:border-b-0 bg-amber-50/40">
+                <textarea ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      handleInputSubmit({ planReviseId: item.planId });
+                    }
+                  }}
+                  placeholder={item.placeholder || '어떻게 수정할까요? (Enter=줄바꿈, Ctrl/⌘+Enter=전송)'}
+                  rows={1}
+                  style={{ resize: 'none', overflow: 'hidden' }}
+                  onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; }}
                   className="flex-1 px-3 py-1.5 border border-amber-300 rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-200 bg-white" />
                 <button onClick={() => handleInputSubmit({ planReviseId: item.planId })} disabled={!inputValue.trim()}
-                  className="p-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors disabled:opacity-50">
+                  className="p-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors disabled:opacity-50 shrink-0">
                   <Send size={14} />
                 </button>
                 <button onClick={() => { setOpenInput(null); setInputValue(''); }}
-                  className="p-1.5 text-slate-400 hover:text-slate-600">
+                  className="p-1.5 text-slate-400 hover:text-slate-600 shrink-0">
                   <X size={14} />
                 </button>
               </div>
@@ -185,19 +193,28 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
           );
         }
         if (item.type === 'input') {
+          // 입력 필드 — textarea 로 여러 줄 누적 가능. Enter=줄바꿈, Ctrl/⌘+Enter=전송, 버튼 클릭 전송.
           if (openInput === i) {
             return (
-              <div key={i} className="flex items-center gap-1.5 px-3 py-2.5 border-b border-slate-200 last:border-b-0">
-                <input ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && handleInputSubmit()}
-                  placeholder={item.placeholder || '입력하세요'}
+              <div key={i} className="flex items-start gap-1.5 px-3 py-2.5 border-b border-slate-200 last:border-b-0">
+                <textarea ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      handleInputSubmit();
+                    }
+                  }}
+                  placeholder={item.placeholder ? `${item.placeholder} (Enter=줄바꿈, Ctrl/⌘+Enter=전송)` : '입력하세요 (Enter=줄바꿈, Ctrl/⌘+Enter=전송)'}
+                  rows={1}
+                  style={{ resize: 'none', overflow: 'hidden' }}
+                  onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; }}
                   className="flex-1 px-3 py-1.5 border border-blue-300 rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white" />
                 <button onClick={() => handleInputSubmit()} disabled={!inputValue.trim()}
-                  className="p-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50">
+                  className="p-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50 shrink-0">
                   <Send size={14} />
                 </button>
                 <button onClick={() => { setOpenInput(null); setInputValue(''); }}
-                  className="p-1.5 text-slate-400 hover:text-slate-600">
+                  className="p-1.5 text-slate-400 hover:text-slate-600 shrink-0">
                   <X size={14} />
                 </button>
               </div>

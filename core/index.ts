@@ -17,6 +17,7 @@ import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
 import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT, VK_SYSTEM_AI_ASSISTANT_MODEL, DEFAULT_AI_ASSISTANT_MODEL, AI_ASSISTANT_MODELS } from './vault-keys';
 import { eventBus } from '../lib/events';
+import { canonicalJson } from './utils/json-normalize';
 
 /** AI 요청 옵션 — 요청별 모델/이미지/멀티턴 컨텍스트 지정 */
 export interface AiRequestOpts {
@@ -156,8 +157,11 @@ export class FirebatCore {
   async listPages() { return this.page.list(); }
   async getPage(slug: string) { return this.page.get(slug); }
 
-  async savePage(slug: string, spec: string) {
-    const res = await this.page.save(slug, spec);
+  /** spec 은 string (JSON) 이든 object 든 받음 — Core facade 에서 canonical JSON 으로 정규화.
+   *  호출자 (API / MCP / ai-manager) 는 타입 신경 쓸 필요 없음. 이중 인코딩 원천 차단. */
+  async savePage(slug: string, spec: string | Record<string, unknown>) {
+    const specStr = canonicalJson(spec);
+    const res = await this.page.save(slug, specStr);
     if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
     return res;
   }

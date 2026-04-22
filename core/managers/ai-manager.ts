@@ -1138,9 +1138,9 @@ export class AiManager {
           return res.success ? { success: true, data: res.data } : { success: false, error: res.error };
         }
         case 'save_page': {
-          const { slug, spec } = tc.args as { slug: string; spec: Record<string, unknown> };
-          const specStr = JSON.stringify(spec);
-          const res = await this.core.savePage(slug, specStr);
+          // spec 타입 검사 제거 — Core.savePage 가 canonicalJson 으로 통일 정규화 (string/object 모두 허용)
+          const { slug, spec } = tc.args as { slug: string; spec: Record<string, unknown> | string };
+          const res = await this.core.savePage(slug, spec);
           return res.success ? { success: true, slug, url: `/${slug}` } : { success: false, error: res.error };
         }
         case 'delete_page': {

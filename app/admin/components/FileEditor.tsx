@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { X, Save, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send, Trash2, User, RotateCcw, Cpu } from 'lucide-react';
 import { AI_MODELS, THINKING_LEVELS } from '../types';
 import { readSetting } from '../hooks/settings-manager';
+import { tryUnwrapJson } from '../../../core/utils/json-normalize';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
@@ -156,7 +157,20 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
       .then(r => r.json())
       .then(data => {
         if (data.success) {
-          const text = isPageMode ? JSON.stringify(data.spec, null, 2) : data.content;
+          let text: string;
+          if (isPageMode) {
+            // PageSpec 손상 자동 복구 — tryUnwrapJson 이 깊이 3까지 재파싱 시도.
+            // 완전 손상이면 raw 문자열 display + 경고 (블랭크 방지, AI 로 고칠 수 있게).
+            const spec = tryUnwrapJson<Record<string, unknown>>(data.spec);
+            if (spec) {
+              text = JSON.stringify(spec, null, 2);
+            } else {
+              text = typeof data.spec === 'string' ? data.spec : JSON.stringify(data.spec, null, 2);
+              setError('PageSpec JSON 손상 — 수동 편집 또는 AI 로 복구하세요');
+            }
+          } else {
+            text = data.content;
+          }
           setContent(text);
           setOriginal(text);
         } else {

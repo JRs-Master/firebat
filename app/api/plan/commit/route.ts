@@ -38,8 +38,9 @@ export async function POST(req: NextRequest) {
         break;
       }
       case 'save_page': {
-        const { slug, spec } = args as { slug: string; spec: Record<string, unknown> };
-        const r = await core.savePage(slug, JSON.stringify(spec));
+        // spec 타입 검사 제거 — Core.savePage 가 canonicalJson 으로 정규화 (string/object 모두 허용)
+        const { slug, spec } = args as { slug: string; spec: Record<string, unknown> | string };
+        const r = await core.savePage(slug, spec);
         result = r.success ? { success: true, data: { slug, url: `/${slug}` } } : { success: false, error: r.error };
         break;
       }

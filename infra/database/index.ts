@@ -2,6 +2,7 @@ import { IDatabasePort, PageListItem, PageSpec } from '../../core/ports';
 import { InfraResult } from '../../core/types';
 import Database from 'better-sqlite3';
 import { DB_PATH } from '../config';
+import { unwrapJson } from '../../core/utils/json-normalize';
 
 /**
  * 범용 DB 포트의 1차 구현체 (로컬 SQLite)
@@ -157,10 +158,11 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
     try {
       const row = this.db.prepare(`SELECT spec, visibility, password FROM pages WHERE slug = ?`).get(slug) as { spec: string; visibility: string; password: string | null } | undefined;
       if (!row) return { success: false, error: `Page not found: ${slug}` };
-      const parsed = JSON.parse(row.spec);
+      // 과거 double-encoded 저장된 손상 데이터도 자동 복구 — unwrapJson 이 깊이 3까지 재파싱
+      const parsed = unwrapJson<Record<string, unknown>>(row.spec);
       parsed._visibility = row.visibility ?? 'public';
       parsed._hasPassword = !!row.password;
-      return { success: true, data: parsed };
+      return { success: true, data: parsed as unknown as PageSpec };
     } catch (err: any) {
       return { success: false, error: err.message };
     }
