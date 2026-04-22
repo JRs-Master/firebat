@@ -202,7 +202,8 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   };
 
   return (
-    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50 max-w-md">
+    // PC 에선 우측 정렬 (버블 흐름과 시각적 분리), 모바일은 full-width
+    <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50 max-w-md sm:ml-auto">
       {suggestions.map((item, i) => {
         if (typeof item === 'string') {
           // 단일 버튼 — 즉시 전송
@@ -511,9 +512,7 @@ function CopyButton({ text }: { text: string }) {
     fallback(text, showOk);
   }, [text]);
   return (
-    <div className="inline-flex items-center gap-1">
-      {/* 모바일은 브라우저가 복사 확인 토스트를 자동 노출 → PC 에서만 inline 피드백 */}
-      {copied && <span className="hidden sm:inline text-[11px] text-emerald-500 font-medium">복사되었습니다</span>}
+    <div className="relative inline-flex">
       <button
         onClick={handleCopy}
         className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
@@ -521,6 +520,12 @@ function CopyButton({ text }: { text: string }) {
       >
         {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
       </button>
+      {/* PC/모바일 공통 말풍선 피드백 — 모바일 브라우저 중 자동 토스트 없는 기종도 있으므로 항상 표시. absolute 로 레이아웃 shift 없음. */}
+      {copied && (
+        <span className="absolute top-full right-0 mt-1 whitespace-nowrap text-[11px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 font-medium shadow-sm z-10">
+          복사됨
+        </span>
+      )}
     </div>
   );
 }
@@ -544,12 +549,15 @@ function ShareTurnButton({ messages, conversationId, title, msgId }: { messages:
     setStatus(ok ? 'done' : 'error');
     setTimeout(() => setStatus('idle'), 2200);
   }, [messages, conversationId, title, status, msgId]);
-  const label = status === 'done' ? '공유 링크 복사됨' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중...' : '';
-  const labelCls = status === 'error' ? 'text-red-500' : 'text-emerald-500';
+  // 통일된 라벨 — 둘 다 "~됨" 형태 (복사됨 / 링크 복사됨)
+  const label = status === 'done' ? '링크 복사됨' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중…' : '';
+  const labelCls = status === 'error'
+    ? 'text-red-600 bg-red-50 border-red-200'
+    : status === 'sharing'
+      ? 'text-slate-500 bg-slate-50 border-slate-200'
+      : 'text-emerald-600 bg-emerald-50 border-emerald-200';
   return (
-    <div className="inline-flex items-center gap-1">
-      {/* PC/모바일 공통으로 공유 피드백 표시 — 생성 + 복사가 한 번에 이루어지므로 상태 안내 필요 */}
-      {label && <span className={`text-[11px] ${labelCls} font-medium`}>{label}</span>}
+    <div className="relative inline-flex">
       <button
         onClick={handleShare}
         disabled={status === 'sharing'}
@@ -558,6 +566,12 @@ function ShareTurnButton({ messages, conversationId, title, msgId }: { messages:
       >
         {status === 'done' ? <CheckCheck size={14} className="text-emerald-500" /> : <Share2 size={14} />}
       </button>
+      {/* PC/모바일 공통 — 생성+복사가 한 번에 일어나므로 상태 필수 표시. 아이콘 밑 absolute 배치. */}
+      {label && (
+        <span className={`absolute top-full right-0 mt-1 whitespace-nowrap text-[11px] rounded px-1.5 py-0.5 font-medium shadow-sm z-10 border ${labelCls}`}>
+          {label}
+        </span>
+      )}
     </div>
   );
 }
@@ -688,16 +702,7 @@ function MessageBubble({ msg, loading, onSuggestion, onApprovePending, onRejectP
                   {msg.data.blocks.map((b: any, i: number) => {
                     if (b.type === 'text') return <div key={i} className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">{renderMarkdown(b.text)}</div>;
                     if (b.type === 'html') return <AutoResizeIframe key={i} src={b.htmlContent as string} initialHeight={b.htmlHeight} />;
-                    if (b.type === 'component') {
-                      // PlanCard 는 PC 에서 우측 정렬 (max-w-md) — 모바일은 full width
-                      const isPlanCard = b.name === 'PlanCard';
-                      const wrapCls = isPlanCard ? 'sm:ml-auto sm:max-w-md w-full' : '';
-                      return (
-                        <div key={i} className={wrapCls}>
-                          <ComponentRenderer components={[{ type: b.name, props: b.props || {} }]} />
-                        </div>
-                      );
-                    }
+                    if (b.type === 'component') return <ComponentRenderer key={i} components={[{ type: b.name, props: b.props || {} }]} />;
                     return null;
                   })}
                 </div>

@@ -14,7 +14,7 @@
 
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 // ── 스키마 정의 ─────────────────────────────────────────────────────────────
 // 새 설정 추가 시 이 타입에만 키 추가하면 useSetting / readSetting / writeSetting 이 자동 지원.
@@ -82,36 +82,47 @@ export function writeSetting<K extends keyof SettingsSchema>(key: K, value: Sett
  *  빈 객체 + 현재 값 하나** 로 덮어써 다른 카테고리 기억이 전부 날아가는 race 발생.
  *  (SettingsModal 의 "카테고리 전환 시 이전 모델 복원" 이 작동 안 하던 원인.)
  *  'use client' 컴포넌트만 useSetting 호출하므로 SSR 하이드레이션 충돌 없음. */
+// ── localStorage 외부 스토어 브릿지 ──────────────────────────────────────────
+// 같은 key 구독자는 같은 listener 리스트 공유 — setPlanMode 후 모든 구독 hook 동기 갱신.
+const subscribers = new Map<string, Set<() => void>>();
+
+function subscribe(key: string, cb: () => void): () => void {
+  let set = subscribers.get(key);
+  if (!set) { set = new Set(); subscribers.set(key, set); }
+  set.add(cb);
+  // cross-tab: 다른 탭 storage 이벤트 → 이 탭도 알림
+  const onStorage = (e: StorageEvent) => { if (e.key === key) cb(); };
+  if (typeof window !== 'undefined') window.addEventListener('storage', onStorage);
+  return () => {
+    set!.delete(cb);
+    if (set!.size === 0) subscribers.delete(key);
+    if (typeof window !== 'undefined') window.removeEventListener('storage', onStorage);
+  };
+}
+
+function notify(key: string) {
+  const set = subscribers.get(key);
+  if (!set) return;
+  for (const cb of set) cb();
+}
+
+/** useSetting — useSyncExternalStore 기반.
+ *  SSR 시 getServerSnapshot 이 DEFAULTS 반환 → 클라이언트 getSnapshot 이 localStorage 반환.
+ *  React 가 hydration mismatch 없이 자동으로 외부 스토어 값으로 렌더 — useEffect flicker 없음. */
 export function useSetting<K extends keyof SettingsSchema>(
   key: K,
 ): [SettingsSchema[K], (value: SettingsSchema[K] | ((prev: SettingsSchema[K]) => SettingsSchema[K])) => void] {
-  const [value, setValue] = useState<SettingsSchema[K]>(() => readSetting(key));
-
-  // SSR 하이드레이션 동기화 — 서버는 window 없이 DEFAULTS 로 렌더 → 클라이언트 mount 후
-  // localStorage 값으로 재동기화. useState 초기화와 중복이지만 SSR 시 className 등이
-  // DEFAULTS 기준 박제되는 문제를 트리거 재렌더로 해결.
-  useEffect(() => {
-    const current = readSetting(key);
-    setValue(prev => (prev !== current ? current : prev));
-  }, [key]);
-
-  // cross-tab 동기화 — storage 이벤트는 다른 탭에서 localStorage 변경 시 발생
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key !== key) return;
-      if (e.newValue === null) { setValue(DEFAULTS[key]); return; }
-      try { setValue(deserialize(key, e.newValue)); } catch {}
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, [key]);
+  const value = useSyncExternalStore<SettingsSchema[K]>(
+    useCallback(cb => subscribe(key, cb), [key]),
+    useCallback(() => readSetting(key), [key]),
+    useCallback(() => DEFAULTS[key], [key]),
+  );
 
   const update = useCallback((next: SettingsSchema[K] | ((prev: SettingsSchema[K]) => SettingsSchema[K])) => {
-    setValue(prev => {
-      const resolved = typeof next === 'function' ? (next as (p: SettingsSchema[K]) => SettingsSchema[K])(prev) : next;
-      writeSetting(key, resolved);
-      return resolved;
-    });
+    const prev = readSetting(key);
+    const resolved = typeof next === 'function' ? (next as (p: SettingsSchema[K]) => SettingsSchema[K])(prev) : next;
+    writeSetting(key, resolved);
+    notify(key); // 같은 탭 내 다른 useSetting(key) 구독자 즉시 갱신
   }, [key]);
 
   return [value, update];
