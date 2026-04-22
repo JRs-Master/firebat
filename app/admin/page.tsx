@@ -89,58 +89,122 @@ function renderMarkdown(text: string) {
   return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{cleanMarkdown(text)}</ReactMarkdown>;
 }
 
-// ─── 선택지 버튼 (텍스트 버튼 + 인라인 입력 + 토글 다중 선택) ─────────────────
+// ─── 선택지 버튼 (단일 버튼 + 카드 aggregate: toggle + multi-input + plan-revise) ───
+// 핵심 동작:
+//   - string / plan-confirm: 클릭 즉시 전송 (단일)
+//   - toggle / input / plan-revise: 카드 내 모든 값 집약 → 카드 하단 "전송" 버튼 한 번에
+//   - input / plan-revise 는 여러 줄 (칸) 입력 가능. + 버튼 또는 Ctrl/⌘+Enter 로 추가, × 로 제거
+//   - 키 매핑:
+//     PC (pointer: fine) — Enter=전송(카드 전체), Shift+Enter=해당 칸 줄바꿈, Ctrl/⌘+Enter=새 칸 추가+포커스
+//     Mobile (pointer: coarse) — Enter=해당 칸 줄바꿈, 전송/추가는 버튼 탭
 function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   suggestions: (string | { type: 'input'; label: string; placeholder?: string } | { type: 'toggle'; label: string; options: string[]; defaults?: string[] } | { type: 'plan-confirm'; planId: string; label: string } | { type: 'plan-revise'; planId: string; label: string; placeholder?: string })[];
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
 }) {
-  const [openInput, setOpenInput] = useState<number | null>(null);
-  const [inputValue, setInputValue] = useState('');
-  const [toggleSelections, setToggleSelections] = useState<Record<number, Set<string>>>({});
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // 카드 내 aggregate state
+  const [toggleValues, setToggleValues] = useState<Record<number, Set<string>>>({});
+  const [inputValues, setInputValues] = useState<Record<number, string[]>>({});  // idx → 여러 칸 배열
+  const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
 
-  // 토글 기본값 초기화
+  // aggregate 항목 (toggle / input / plan-revise) 가 하나라도 있으면 카드 하단 전송 버튼 노출
+  const hasAggregate = suggestions.some(it => typeof it !== 'string' && (it.type === 'toggle' || it.type === 'input' || it.type === 'plan-revise'));
+
+  // plan-revise 가 카드에 있으면 전송 시 planReviseId 동봉
+  const aggregateMeta = (() => {
+    for (const it of suggestions) {
+      if (typeof it !== 'string' && it.type === 'plan-revise') return { planReviseId: it.planId };
+    }
+    return undefined;
+  })();
+
+  // suggestions 변경 시 기본값 세팅 — toggle defaults + input 빈 칸 1개
   useEffect(() => {
-    const init: Record<number, Set<string>> = {};
+    const tInit: Record<number, Set<string>> = {};
+    const iInit: Record<number, string[]> = {};
     suggestions.forEach((item, i) => {
-      if (typeof item !== 'string' && item.type === 'toggle') {
-        init[i] = new Set(item.defaults ?? item.options);
-      }
+      if (typeof item === 'string') return;
+      if (item.type === 'toggle') tInit[i] = new Set(item.defaults ?? item.options);
+      if (item.type === 'input' || item.type === 'plan-revise') iInit[i] = [''];
     });
-    setToggleSelections(init);
+    setToggleValues(tInit);
+    setInputValues(iInit);
   }, [suggestions]);
 
-  useEffect(() => {
-    if (openInput !== null) inputRef.current?.focus();
-  }, [openInput]);
+  const isMobile = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 
-  const handleInputSubmit = (meta?: { planReviseId?: string }) => {
-    if (!inputValue.trim()) return;
-    onSuggestion?.(inputValue.trim(), meta);
-    setOpenInput(null);
-    setInputValue('');
-  };
-
-  const toggleOption = (idx: number, option: string) => {
-    setToggleSelections(prev => {
+  const toggleOption = (idx: number, opt: string) => {
+    setToggleValues(prev => {
       const set = new Set(prev[idx] ?? []);
-      if (set.has(option)) set.delete(option);
-      else set.add(option);
+      if (set.has(opt)) set.delete(opt);
+      else set.add(opt);
       return { ...prev, [idx]: set };
     });
   };
 
-  const handleToggleSubmit = (idx: number, label: string) => {
-    const selected = Array.from(toggleSelections[idx] ?? []);
-    if (selected.length === 0) return;
-    onSuggestion?.(`${label}: ${selected.join(', ')}`);
+  const updateInputValue = (idx: number, subIdx: number, value: string) => {
+    setInputValues(prev => {
+      const arr = [...(prev[idx] ?? [''])];
+      arr[subIdx] = value;
+      return { ...prev, [idx]: arr };
+    });
+  };
+
+  const addInputRow = (idx: number, afterSubIdx?: number) => {
+    const rows = inputValues[idx] ?? [''];
+    const insertAt = afterSubIdx !== undefined ? afterSubIdx + 1 : rows.length;
+    setInputValues(prev => {
+      const arr = [...(prev[idx] ?? [''])];
+      arr.splice(insertAt, 0, '');
+      return { ...prev, [idx]: arr };
+    });
+    // 새 칸으로 포커스
+    setTimeout(() => textareaRefs.current[`${idx}-${insertAt}`]?.focus(), 20);
+  };
+
+  const removeInputRow = (idx: number, subIdx: number) => {
+    setInputValues(prev => {
+      const arr = [...(prev[idx] ?? [''])];
+      if (arr.length <= 1) return prev;
+      arr.splice(subIdx, 1);
+      return { ...prev, [idx]: arr };
+    });
+  };
+
+  // 카드 전체 aggregate 전송 — 모든 toggle + input 값을 label 기준으로 묶어 newline join
+  const hasAnyContent = () => {
+    for (let i = 0; i < suggestions.length; i++) {
+      const item = suggestions[i];
+      if (typeof item === 'string') continue;
+      if (item.type === 'toggle' && (toggleValues[i]?.size ?? 0) > 0) return true;
+      if ((item.type === 'input' || item.type === 'plan-revise') && (inputValues[i] ?? []).some(v => v.trim())) return true;
+    }
+    return false;
+  };
+
+  const handleAggregateSubmit = () => {
+    const parts: string[] = [];
+    suggestions.forEach((item, i) => {
+      if (typeof item === 'string') return;
+      if (item.type === 'toggle') {
+        const selected = Array.from(toggleValues[i] ?? []);
+        if (selected.length > 0) parts.push(`${item.label}: ${selected.join(', ')}`);
+      }
+      if (item.type === 'input' || item.type === 'plan-revise') {
+        const vals = (inputValues[i] ?? []).map(v => v.trim()).filter(Boolean);
+        if (vals.length > 0) parts.push(`${item.label}: ${vals.join(' / ')}`);
+      }
+    });
+    const text = parts.join('\n');
+    if (!text) return;
+    onSuggestion?.(text, aggregateMeta);
   };
 
   return (
     <div className="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50 max-w-md">
       {suggestions.map((item, i) => {
         if (typeof item === 'string') {
+          // 단일 버튼 — 즉시 전송
           return (
             <button key={i} onClick={() => onSuggestion?.(item)} disabled={loading}
               className="w-full px-4 py-3 text-left text-[13px] font-medium text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-50 border-b border-slate-200 last:border-b-0">
@@ -149,7 +213,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
           );
         }
         if (item.type === 'plan-confirm') {
-          // ✓실행 — 클릭 시 planId 동봉해 backend 가 plan steps 강제 주입
+          // ✓실행 — 단일 버튼, 즉시 전송 + planExecuteId 동봉
           return (
             <button key={i} onClick={() => onSuggestion?.(item.label, { planExecuteId: item.planId })} disabled={loading}
               className="w-full px-4 py-3 text-left text-[13px] font-bold text-emerald-700 bg-emerald-50/50 hover:bg-emerald-100 transition-colors disabled:opacity-50 border-b border-slate-200 last:border-b-0">
@@ -157,78 +221,8 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
             </button>
           );
         }
-        if (item.type === 'plan-revise') {
-          // ⚙수정 제안 — textarea 로 여러 줄 누적 가능. Enter=줄바꿈, Ctrl/⌘+Enter=전송, 버튼 클릭 전송.
-          if (openInput === i) {
-            return (
-              <div key={i} className="flex items-start gap-1.5 px-3 py-2.5 border-b border-slate-200 last:border-b-0 bg-amber-50/40">
-                <textarea ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                      e.preventDefault();
-                      handleInputSubmit({ planReviseId: item.planId });
-                    }
-                  }}
-                  placeholder={item.placeholder || '어떻게 수정할까요? (Enter=줄바꿈, Ctrl/⌘+Enter=전송)'}
-                  rows={1}
-                  style={{ resize: 'none', overflow: 'hidden' }}
-                  onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; }}
-                  className="flex-1 px-3 py-1.5 border border-amber-300 rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-200 bg-white" />
-                <button onClick={() => handleInputSubmit({ planReviseId: item.planId })} disabled={!inputValue.trim()}
-                  className="p-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors disabled:opacity-50 shrink-0">
-                  <Send size={14} />
-                </button>
-                <button onClick={() => { setOpenInput(null); setInputValue(''); }}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 shrink-0">
-                  <X size={14} />
-                </button>
-              </div>
-            );
-          }
-          return (
-            <button key={i} onClick={() => setOpenInput(i)} disabled={loading}
-              className="w-full px-4 py-3 text-left text-[13px] font-medium text-amber-700 hover:bg-amber-50 transition-colors disabled:opacity-50 border-b border-slate-200 last:border-b-0">
-              {item.label}
-            </button>
-          );
-        }
-        if (item.type === 'input') {
-          // 입력 필드 — textarea 로 여러 줄 누적 가능. Enter=줄바꿈, Ctrl/⌘+Enter=전송, 버튼 클릭 전송.
-          if (openInput === i) {
-            return (
-              <div key={i} className="flex items-start gap-1.5 px-3 py-2.5 border-b border-slate-200 last:border-b-0">
-                <textarea ref={inputRef} value={inputValue} onChange={e => setInputValue(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                      e.preventDefault();
-                      handleInputSubmit();
-                    }
-                  }}
-                  placeholder={item.placeholder ? `${item.placeholder} (Enter=줄바꿈, Ctrl/⌘+Enter=전송)` : '입력하세요 (Enter=줄바꿈, Ctrl/⌘+Enter=전송)'}
-                  rows={1}
-                  style={{ resize: 'none', overflow: 'hidden' }}
-                  onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; }}
-                  className="flex-1 px-3 py-1.5 border border-blue-300 rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200 bg-white" />
-                <button onClick={() => handleInputSubmit()} disabled={!inputValue.trim()}
-                  className="p-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg transition-colors disabled:opacity-50 shrink-0">
-                  <Send size={14} />
-                </button>
-                <button onClick={() => { setOpenInput(null); setInputValue(''); }}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 shrink-0">
-                  <X size={14} />
-                </button>
-              </div>
-            );
-          }
-          return (
-            <button key={i} onClick={() => setOpenInput(i)} disabled={loading}
-              className="w-full px-4 py-3 text-left text-[13px] font-medium text-slate-400 hover:bg-slate-100 transition-colors disabled:opacity-50 border-b border-slate-200 last:border-b-0">
-              {item.label}
-            </button>
-          );
-        }
         if (item.type === 'toggle') {
-          const selected = toggleSelections[i] ?? new Set();
+          const selected = toggleValues[i] ?? new Set<string>();
           return (
             <div key={i} className="flex flex-col px-4 py-3 border-b border-slate-200 last:border-b-0">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{item.label}</span>
@@ -236,23 +230,81 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
                 {item.options.map(opt => (
                   <button key={opt} onClick={() => toggleOption(i, opt)} disabled={loading}
                     className={`w-full px-4 py-2.5 text-left text-[13px] font-medium rounded-xl transition-colors border ${
-                      selected.has(opt)
-                        ? 'bg-blue-50 text-blue-700 border-blue-200'
-                        : 'bg-white text-slate-500 border-slate-100 hover:bg-slate-50'
+                      selected.has(opt) ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-white text-slate-500 border-slate-100 hover:bg-slate-50'
                     } disabled:opacity-50`}>
                     {opt}
                   </button>
                 ))}
               </div>
-              <button onClick={() => handleToggleSubmit(i, item.label)} disabled={loading || selected.size === 0}
-                className="self-end mt-2.5 px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-[12px] font-medium rounded-full transition-colors disabled:opacity-40">
-                선택 완료 ({selected.size}개)
+            </div>
+          );
+        }
+        if (item.type === 'input' || item.type === 'plan-revise') {
+          const isRevise = item.type === 'plan-revise';
+          const rows = inputValues[i] ?? [''];
+          const bgWrap = isRevise ? 'bg-amber-50/40' : '';
+          const borderCls = isRevise ? 'border-amber-300 focus:ring-amber-200' : 'border-blue-300 focus:ring-blue-200';
+          return (
+            <div key={i} className={`flex flex-col gap-1.5 px-3 py-2.5 border-b border-slate-200 last:border-b-0 ${bgWrap}`}>
+              <span className={`text-[11px] font-semibold uppercase tracking-wide ${isRevise ? 'text-amber-600' : 'text-slate-400'}`}>{item.label}</span>
+              {rows.map((val, subIdx) => {
+                const key = `${i}-${subIdx}`;
+                return (
+                  <div key={key} className="flex items-start gap-1.5">
+                    <textarea
+                      ref={el => { textareaRefs.current[key] = el; }}
+                      value={val}
+                      onChange={e => updateInputValue(i, subIdx, e.target.value)}
+                      onKeyDown={e => {
+                        // 모바일: Enter=기본(줄바꿈) — 버튼 탭으로만 전송·추가
+                        if (isMobile()) return;
+                        // PC
+                        if (e.key === 'Enter' && e.shiftKey) return;          // Shift+Enter=이 칸 줄바꿈 (기본 동작)
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { // Ctrl/⌘+Enter=새 칸 추가
+                          e.preventDefault();
+                          addInputRow(i, subIdx);
+                          return;
+                        }
+                        if (e.key === 'Enter') {                              // Enter=카드 전체 전송
+                          e.preventDefault();
+                          handleAggregateSubmit();
+                        }
+                      }}
+                      placeholder={subIdx === 0 ? (item.placeholder || (isRevise ? '어떻게 수정할까요?' : '입력')) : ''}
+                      rows={1}
+                      style={{ resize: 'none', overflow: 'hidden' }}
+                      onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; }}
+                      className={`flex-1 px-3 py-1.5 border rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 bg-white ${borderCls}`}
+                    />
+                    {rows.length > 1 && (
+                      <button onClick={() => removeInputRow(i, subIdx)} title="이 칸 삭제"
+                        className="p-1.5 text-slate-400 hover:text-red-500 shrink-0 rounded-md hover:bg-red-50 transition-colors">
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              <button onClick={() => addInputRow(i)} disabled={loading}
+                className={`self-start mt-0.5 flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md transition-colors ${
+                  isRevise ? 'text-amber-600 hover:text-amber-800 hover:bg-amber-100' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                }`}>
+                <Plus size={12} /> 항목 추가
               </button>
             </div>
           );
         }
         return null;
       })}
+      {/* 카드 하단 공통 전송 버튼 — aggregate 항목 있을 때만 */}
+      {hasAggregate && (
+        <div className="flex items-center justify-end gap-2 px-3 py-2.5 bg-slate-100/60 border-t border-slate-200">
+          <button onClick={handleAggregateSubmit} disabled={loading || !hasAnyContent()}
+            className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-[12px] font-bold rounded-full transition-colors shadow-sm">
+            <Send size={12} /> 전송
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -879,6 +931,10 @@ export default function AdminConsole() {
   }, [mobileMenuOpen]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // 모바일 (가상 키보드에 Shift 없음): Enter=기본 동작(줄바꿈) 허용, 전송은 버튼 탭만
+    // PC: Enter=전송, Shift+Enter=줄바꿈 (표준 chat 패턴)
+    const isCoarse = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+    if (isCoarse) return;
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
   };
 
