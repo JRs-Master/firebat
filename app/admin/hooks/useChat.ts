@@ -195,11 +195,14 @@ export function useChat(aiModel: string, onRefresh: () => void) {
 
   // DB 재조회 — 사이드바 펼침·탭 전환·visibility change 등 여러 지점에서 호출
   const refreshConversations = useCallback(async () => {
-    // 스트리밍·도구 실행 중이면 스킵 (최신 로컬 state 가 더 신뢰성 있음). 참조 리뉴얼로 강제 재렌더.
-    if (messagesRef.current.some(m => m.isThinking || m.executing || m.streaming)) {
-      dispatch({ type: 'LOAD', messages: messagesRef.current.map(m => ({ ...m })) });
-      return;
-    }
+    // 스트리밍·도구 실행 중 여부 — 이 경우 로컬 우선이지만, 모바일 백그라운드 throttling 으로
+    // SSE 가 조용히 끊어진 경우 DB 쪽이 진짜 응답 보유. 아래 per-message 비교로 판단.
+    const hasInflight = messagesRef.current.some(m => m.isThinking || m.executing || m.streaming);
+    // 로컬 메시지에 에러·빈 응답 fallback 이 박혀있는지 — 있으면 DB 가 진짜 응답일 가능성 높음
+    const hasFallback = messagesRef.current.some(m =>
+      m.role === 'system' && !m.isThinking && typeof m.content === 'string'
+      && (m.content === FALLBACK.EMPTY_REPLY || m.content === FALLBACK.INVISIBLE || m.content === FALLBACK.NETWORK || m.content === FALLBACK.TIMEOUT),
+    );
     // 1) 대화 목록 재조회 — 타기기에서 삭제된 대화를 로컬에서도 제거
     try {
       const listRes = await fetch('/api/conversations');
@@ -221,7 +224,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         }
       }
     } catch {}
-    // 2) 현재 활성 conv 단일 갱신 — 다른 기기에서 이어 쓴 메시지 반영
+    // 2) 현재 활성 conv 단일 갱신 — 다른 기기에서 이어 쓴 메시지 반영 / 백엔드 최종 응답 복구
     if (!activeConvId) return;
     const convMeta = conversations.find(c => c.id === activeConvId);
     if (!convMeta) return;
@@ -232,8 +235,25 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       const data = await res.json();
       if (!data.success || !data.conversation) return;
       const remoteUpdatedAt = data.conversation.updatedAt ?? 0;
-      if (remoteUpdatedAt <= localUpdatedAt) return;
       const remoteMsgs = cleanMessages(data.conversation.messages ?? []);
+      // per-message 보강 체크 — 로컬이 fallback/inflight 이고 DB 에 완료본 있으면 force LOAD
+      //  - 모바일 백그라운드 throttling 으로 프론트가 에러 박제 / SSE 누락했지만 백엔드는 완주한 케이스 복구
+      const shouldForceLoad = (hasInflight || hasFallback) && remoteMsgs.some(rm => {
+        const local = messagesRef.current.find(lm => lm.id === rm.id);
+        if (!local) return false;
+        const localEmpty = !local.content?.trim() && !(local.data as any)?.blocks?.length;
+        const localIsError = typeof local.content === 'string'
+          && (local.content === FALLBACK.EMPTY_REPLY || local.content === FALLBACK.INVISIBLE || local.content === FALLBACK.NETWORK || local.content === FALLBACK.TIMEOUT);
+        const localInflight = local.isThinking || local.executing || local.streaming;
+        const remoteHasContent = (typeof rm.content === 'string' && rm.content.trim().length > 0) || ((rm.data as any)?.blocks?.length ?? 0) > 0;
+        return (localEmpty || localIsError || localInflight) && remoteHasContent;
+      });
+      // 스트리밍 진행 중인데 DB 에 완료본이 없으면 스킵 (현재 로컬 state 보존 — LOAD 시 in-flight 메시지 유실 방지)
+      if (hasInflight && !shouldForceLoad) {
+        dispatch({ type: 'LOAD', messages: messagesRef.current.map(m => ({ ...m })) });
+        return;
+      }
+      if (!shouldForceLoad && remoteUpdatedAt <= localUpdatedAt) return;
       dispatch({ type: 'LOAD', messages: remoteMsgs });
       setConversations(prev => {
         const updated = prev.map(c => c.id === activeConvId
