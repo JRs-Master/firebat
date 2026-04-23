@@ -70,6 +70,32 @@ export function isSectionStartBlock(
   return block.name === 'Header' || block.name === 'Divider';
 }
 
+/** AI 가 설명 텍스트에 HTML 태그 이름을 백틱 없이 써서 rehype-raw 가 실제 HTML 요소로
+ *  파싱해버리는 문제 방어. 예: "`</header>`로 교정" 이라고 써야 하는데 "</header>로 교정"
+ *  으로 쓰면 `</header>` 가 빈 HTML 요소로 렌더되어 앞 글자가 사라져 보임.
+ *  블록 레벨 태그 (markdown 내부에서 쓰이지 않는) 만 선별 escape — strong/em/br/a/code 등
+ *  인라인 태그는 정상 렌더되도록 그대로 둠. 이미 코드펜스(```) 안에 있으면 건드리지 않음. */
+export function escapeHtmlTagMentions(text: string): string {
+  if (!text) return text;
+  const BLOCK_TAGS = [
+    'header', 'footer', 'article', 'main', 'nav', 'section', 'aside',
+    'div', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th', 'caption', 'colgroup',
+    'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+    'form', 'input', 'select', 'option', 'textarea',
+    'iframe', 'html', 'body', 'head', 'script', 'style', 'meta', 'link',
+    'template', 'slot', 'canvas', 'svg',
+  ];
+  const tagAlt = BLOCK_TAGS.join('|');
+  const tagPattern = new RegExp(`</?(?:${tagAlt})(?:\\s[^>]*)?\\/?>`, 'gi');
+  // 코드펜스 블록은 건너뛰고 바깥 텍스트만 처리
+  const parts = text.split(/(```[\s\S]*?```)/g);
+  return parts.map((p, i) => {
+    if (i % 2 === 1) return p; // 코드펜스 원본 유지
+    return p.replace(tagPattern, m => `\`${m}\``);
+  }).join('');
+}
+
 export function hasVisible(m: Message): boolean {
   if (m.content && m.content.trim()) return true;
   if (m.error) return true;

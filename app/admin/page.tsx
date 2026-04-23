@@ -14,7 +14,7 @@ import StockChart from './chat-components/StockChart';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
 import { readSetting, writeSetting } from './hooks/settings-manager';
-import { THINKING_STATUS, isSuggestionClickUserMessage, isSectionStartBlock } from './hooks/chat-manager';
+import { THINKING_STATUS, isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from './hooks/chat-manager';
 import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
 
@@ -87,7 +87,8 @@ function cleanMarkdown(text: string): string {
 }
 
 function renderMarkdown(text: string) {
-  return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{cleanMarkdown(text)}</ReactMarkdown>;
+  // cleanMarkdown → escapeHtmlTagMentions 순서: JSON/render 블록 제거 후, 남은 텍스트의 HTML 태그 이름 보호.
+  return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{escapeHtmlTagMentions(cleanMarkdown(text))}</ReactMarkdown>;
 }
 
 // ─── 선택지 버튼 (단일 버튼 + 카드 aggregate: toggle + multi-input + plan-revise) ───
