@@ -31,9 +31,14 @@ export const CRON_DEFAULT_TIMEZONE = 'Asia/Seoul';
 export const CRON_RECENT_NOTIFY_MS = 30_000; // 최근 알림 필터 기간
 
 // ── 도메인 (SEO, OG 등 외부 노출용) ─────────────────────────────────
-// 우선순위: NEXT_PUBLIC_BASE_URL 환경변수 → 런타임 요청 host → localhost 폴백.
-// 요청 host 우선 사용을 원하면 `getBaseUrl(req)` 헬퍼를 호출하세요.
-export const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+// 우선순위:
+//   1. NEXT_PUBLIC_BASE_URL 환경변수 (명시 설정, 최우선)
+//   2. 런타임 요청 host (요청 컨텍스트 있을 때만 — getBaseUrl 헬퍼 사용)
+//   3. NODE_ENV=production 이면 firebat.co.kr (배포 기본값)
+//   4. dev 폴백 (localhost:3000)
+// env 안 설정해도 프로덕션에선 자동으로 firebat.co.kr 사용 — OG 이미지·sitemap 에 localhost 누출 방지.
+export const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL
+  || (process.env.NODE_ENV === 'production' ? 'https://firebat.co.kr' : 'http://localhost:3000');
 
 // ── AI ──────────────────────────────────────────────────────────────────
 export const AI_HISTORY_WINDOW_SIZE = 8;
