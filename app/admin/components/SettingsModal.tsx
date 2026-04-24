@@ -123,6 +123,9 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const [imageModel, setImageModelState] = useState('gpt-image-1');
   const [imageModels, setImageModels] = useState<ImageModelEntry[]>([]);
 
+  // AI 탭 서브탭 — LLM(모델 선택) / 프롬프트(사용자 지시사항) / 이미지(생성 모델)
+  const [aiSubTab, setAiSubTab] = useState<'llm' | 'prompt' | 'image'>('llm');
+
   // 관리자 계정 변경
   const [adminCurrentPw, setAdminCurrentPw] = useState('');
   const [adminNewId, setAdminNewId] = useState('');
@@ -814,6 +817,27 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
               : 'Extended Thinking (Claude)';
             return (
               <>
+                {/* AI 서브탭 바 — LLM(모델) / 프롬프트 / 이미지 */}
+                <div className="flex items-center gap-1 border-b border-slate-200 -mt-1 mb-2">
+                  {([
+                    { v: 'llm', label: 'LLM' },
+                    { v: 'prompt', label: '프롬프트' },
+                    { v: 'image', label: '이미지' },
+                  ] as const).map(t => (
+                    <button
+                      key={t.v}
+                      onClick={() => setAiSubTab(t.v)}
+                      className={`px-3 py-1.5 text-[12px] sm:text-[13px] font-bold border-b-2 transition-colors -mb-px ${
+                        aiSubTab === t.v
+                          ? 'border-blue-500 text-blue-600'
+                          : 'border-transparent text-slate-400 hover:text-slate-600'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+                {aiSubTab === 'llm' && (<>
                 <Field label="실행 모드" help="API: 각 공급자 키 기반 pay-per-token · CLI: Claude Pro/Max, ChatGPT Plus 등 구독 계정 직접 사용 (월정액)">
                   <SegButtons<'api' | 'cli'>
                     value={execMode}
@@ -1108,9 +1132,11 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     </div>
                   );
                 })()}
+                </>)}
 
                 {/* 사용자 지시사항 — User AI 전용 (Code Assistant·AI Assistant 미적용) */}
-                <div className="mt-4 pt-4 border-t border-slate-200">
+                {aiSubTab === 'prompt' && (
+                <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <FieldLabel>
                       사용자 지시사항 <span className="text-[10px] font-normal text-slate-400">(User AI 전용)</span>
@@ -1137,9 +1163,11 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     Code Assistant·AI Assistant 에는 적용 안 됨.
                   </HelpText>
                 </div>
+                )}
 
                 {/* 이미지 생성 모델 — image_gen 도구 호출 시 사용 */}
-                <div className="mt-4 pt-4 border-t border-slate-200">
+                {aiSubTab === 'image' && (
+                <div>
                   <FieldLabel>이미지 생성 모델</FieldLabel>
                   <HelpText>
                     AI 가 image_gen 도구 호출 시 사용할 모델. 서버에 자동 저장되어 /api/media URL 반환됨 — render_image·블로그 포스팅 등에 재사용.
@@ -1222,6 +1250,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     );
                   })()}
                 </div>
+                )}
               </>
             );
           })()}
