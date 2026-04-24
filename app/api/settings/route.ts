@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
     aiAssistantModels: core.getAvailableAiAssistantModels(),
     userPrompt: core.getUserPrompt(),
     lastModelByCategory: core.getLastModelByCategory(),
+    imageModel: core.getImageModel(),
+    imageModels: core.getAvailableImageModels(),
   });
 }
 
@@ -48,6 +50,9 @@ export async function PATCH(req: NextRequest) {
   }
   if (body.lastModelByCategory && typeof body.lastModelByCategory === 'object') {
     core.setLastModelByCategory(body.lastModelByCategory as Record<string, string>);
+  }
+  if (typeof body.imageModel === 'string' && body.imageModel) {
+    core.setImageModel(body.imageModel);
   }
 
   return NextResponse.json({ success: true });

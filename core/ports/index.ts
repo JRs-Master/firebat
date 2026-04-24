@@ -777,9 +777,19 @@ export interface ImageGenResult {
   revisedPrompt?: string;
 }
 
+export interface ImageModelInfo {
+  id: string;
+  displayName: string;
+  provider: string;
+  format: string;
+  requiresOrganizationVerification?: boolean;
+}
+
 export interface IImageGenPort {
   /** 현재 설정된 모델 ID 반환 — 로그용 */
   getModelId(): string;
+  /** 설정 UI 용 모델 목록 — registry 에서 로드된 모든 config */
+  listModels(): ImageModelInfo[];
   /** 이미지 생성 — Core 의 ImageManager 가 이 결과를 IMediaPort 로 저장 */
   generate(opts: ImageGenOpts, callOpts?: ImageGenCallOpts): Promise<InfraResult<ImageGenResult>>;
 }

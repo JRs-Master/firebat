@@ -12,7 +12,7 @@
  *  - 공유 지점: prompt 를 텍스트 AI 가 만들어서 이 매니저에 넘기는 흐름만 있음
  *  - LLM 과 동일한 config-adapter 패턴 재사용 (hexagonal 에서 만나면 port 만 다름)
  */
-import type { IImageGenPort, IMediaPort, IVaultPort, ILogPort, ImageGenOpts } from '../ports';
+import type { IImageGenPort, IMediaPort, IVaultPort, ILogPort, ImageGenOpts, ImageModelInfo } from '../ports';
 import type { InfraResult } from '../types';
 
 const VK_IMAGE_MODEL = 'system:image-model';
@@ -49,6 +49,10 @@ export class ImageManager {
   setModel(modelId: string): InfraResult<void> {
     const ok = this.vault.setSecret(VK_IMAGE_MODEL, modelId);
     return ok ? { success: true, data: undefined } : { success: false, error: 'Vault 저장 실패' };
+  }
+
+  listModels(): ImageModelInfo[] {
+    return this.imageGen.listModels();
   }
 
   async generate(input: GenerateImageInput, corrId?: string): Promise<InfraResult<GenerateImageResult>> {

@@ -398,6 +398,10 @@ export class FirebatCore {
   setImageModel(modelId: string) {
     return this.image.setModel(modelId);
   }
+  /** 설정 UI 카스케이드용 — registry 에 등록된 모든 이미지 모델 목록 */
+  getAvailableImageModels() {
+    return this.image.listModels();
+  }
   /** /api/media/<slug>.<ext> 에서 파일 서빙용 — slug 로 binary + contentType 반환 */
   readMedia(slug: string) {
     return this.infra.media.read(slug);

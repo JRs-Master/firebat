@@ -15,6 +15,7 @@ import type {
   ImageGenOpts,
   ImageGenCallOpts,
   ImageGenResult,
+  ImageModelInfo,
 } from '../../core/ports';
 import type { InfraResult } from '../../core/types';
 import type { ImageFormatHandler } from './format-handler';
@@ -40,6 +41,16 @@ export class ImageConfigDrivenAdapter implements IImageGenPort {
   }
 
   getModelId(): string { return this.defaultModelId; }
+
+  listModels(): ImageModelInfo[] {
+    return Object.values(this.registry).map(cfg => ({
+      id: cfg.id,
+      displayName: cfg.displayName,
+      provider: cfg.provider,
+      format: cfg.format,
+      requiresOrganizationVerification: (cfg as unknown as { requiresOrganizationVerification?: boolean }).requiresOrganizationVerification,
+    }));
+  }
 
   private resolveConfig(modelId?: string): ImageGenModelConfig | null {
     const id = modelId ?? this.defaultModelId;

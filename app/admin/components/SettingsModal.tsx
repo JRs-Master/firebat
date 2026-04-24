@@ -118,6 +118,11 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const [userPromptSaving, setUserPromptSaving] = useState(false);
   const [userPromptSaved, setUserPromptSaved] = useState(false);
 
+  // 이미지 생성 모델 (AI 탭 하단 섹션)
+  type ImageModelEntry = { id: string; displayName: string; provider: string; format: string; requiresOrganizationVerification?: boolean };
+  const [imageModel, setImageModelState] = useState('gpt-image-1');
+  const [imageModels, setImageModels] = useState<ImageModelEntry[]>([]);
+
   // 관리자 계정 변경
   const [adminCurrentPw, setAdminCurrentPw] = useState('');
   const [adminNewId, setAdminNewId] = useState('');
@@ -190,6 +195,8 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
         if (data.aiAssistantModel) setAiAssistantModel(data.aiAssistantModel);
         if (Array.isArray(data.aiAssistantModels) && data.aiAssistantModels.length > 0) setAiAssistantModels(data.aiAssistantModels);
         if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
+        if (typeof data.imageModel === 'string') setImageModelState(data.imageModel);
+        if (Array.isArray(data.imageModels)) setImageModels(data.imageModels);
       }
     }).catch(() => {});
 
@@ -1129,6 +1136,91 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     User AI (어드민 채팅) 시스템 프롬프트 뒤에 주입. 비어두면 미주입 — 모델 본연의 응답.
                     Code Assistant·AI Assistant 에는 적용 안 됨.
                   </HelpText>
+                </div>
+
+                {/* 이미지 생성 모델 — image_gen 도구 호출 시 사용 */}
+                <div className="mt-4 pt-4 border-t border-slate-200">
+                  <FieldLabel>이미지 생성 모델</FieldLabel>
+                  <HelpText>
+                    AI 가 image_gen 도구 호출 시 사용할 모델. 서버에 자동 저장되어 /api/media URL 반환됨 — render_image·블로그 포스팅 등에 재사용.
+                  </HelpText>
+                  {(() => {
+                    // 카스케이드: 실행모드 (API only — CLI 핸들러는 v2) → 공급자 → 모델
+                    // 모델 entries 를 execMode/provider 로 필터링
+                    const imageExecMode: 'api' | 'cli' = 'api'; // v1 은 API 만 (CLI 핸들러 추후)
+                    const providersAvailable = Array.from(new Set(imageModels.map(m => m.provider))).sort();
+                    const activeProvider = imageModels.find(m => m.id === imageModel)?.provider ?? providersAvailable[0] ?? 'openai';
+                    const modelsForProvider = imageModels.filter(m => m.provider === activeProvider);
+                    const currentModel = imageModels.find(m => m.id === imageModel) || modelsForProvider[0];
+
+                    const saveImageModel = (modelId: string) => {
+                      setImageModelState(modelId);
+                      fetch('/api/settings', {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ imageModel: modelId }),
+                      }).catch(() => {});
+                    };
+
+                    const switchProvider = (prov: string) => {
+                      const firstOfProv = imageModels.find(m => m.provider === prov);
+                      if (firstOfProv) saveImageModel(firstOfProv.id);
+                    };
+
+                    const providerLabels: Record<string, string> = {
+                      openai: 'OpenAI',
+                      google: 'Google',
+                      anthropic: 'Anthropic',
+                      stability: 'Stability AI',
+                    };
+
+                    if (imageModels.length === 0) {
+                      return <div className="text-[12px] text-slate-400 mt-2">등록된 이미지 모델이 없습니다. infra/image/configs/ 에 JSON 추가 필요.</div>;
+                    }
+
+                    return (
+                      <div className="flex flex-col gap-3 mt-2">
+                        <Field label="실행 모드" help="API: 공급자 API 키 pay-per-image · CLI: 구독 기반 (향후 지원)">
+                          <SegButtons<'api' | 'cli'>
+                            value={imageExecMode}
+                            onChange={() => { /* v1 은 API 고정, CLI 는 diagonal disabled */ }}
+                            options={[
+                              { value: 'api', label: 'API' },
+                              { value: 'cli', label: 'CLI (향후)' },
+                            ]}
+                          />
+                        </Field>
+                        <Field label="공급자">
+                          <SegButtons<string>
+                            value={activeProvider}
+                            onChange={switchProvider}
+                            options={providersAvailable.map(p => ({ value: p, label: providerLabels[p] ?? p }))}
+                          />
+                        </Field>
+                        <Field label="모델">
+                          <SelectInput
+                            value={imageModel}
+                            onChange={saveImageModel}
+                            options={modelsForProvider.map(m => ({
+                              value: m.id,
+                              label: m.requiresOrganizationVerification
+                                ? `${m.displayName} (조직 인증 필요)`
+                                : m.displayName,
+                            }))}
+                          />
+                        </Field>
+                        {currentModel?.requiresOrganizationVerification && (
+                          <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 leading-relaxed">
+                            ⚠️ <b>{currentModel.displayName}</b> 은 OpenAI 조직 인증이 필요합니다.{' '}
+                            <a href="https://platform.openai.com/settings/organization/general" target="_blank" rel="noopener noreferrer" className="underline font-bold">
+                              platform.openai.com
+                            </a>{' '}
+                            에서 Verify Organization 한 번 하시면 됩니다 (반영 최대 15분).
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </>
             );
