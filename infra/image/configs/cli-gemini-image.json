@@ -1,0 +1,15 @@
+{
+  "id": "cli-gemini-image",
+  "displayName": "Gemini CLI (2.5 Flash Image)",
+  "provider": "google",
+  "format": "cli-gemini-image",
+  "endpoint": "local",
+  "apiKeyVaultKey": "",
+  "features": {
+    "subscription": true,
+    "multilingualText": true,
+    "sizes": ["auto"],
+    "qualities": ["standard"]
+  },
+  "pricing": { "note": "Google AI Pro 구독 포함" }
+}

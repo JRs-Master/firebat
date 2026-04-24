@@ -783,6 +783,12 @@ export interface ImageModelInfo {
   provider: string;
   format: string;
   requiresOrganizationVerification?: boolean;
+  /** 지원 사이즈 목록 — 설정 UI drop-down 에 노출. ["auto"] 면 모델 자동 */
+  sizes?: string[];
+  /** 지원 품질 목록 — 설정 UI drop-down 에 노출. ["standard"] 면 품질 고정 */
+  qualities?: string[];
+  /** CLI 구독 기반 여부 — API 키 불필요, 과금 구독에 포함 */
+  subscription?: boolean;
 }
 
 export interface IImageGenPort {

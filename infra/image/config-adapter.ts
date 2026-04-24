@@ -21,6 +21,9 @@ import type { InfraResult } from '../../core/types';
 import type { ImageFormatHandler } from './format-handler';
 import type { ImageGenFormat, ImageGenModelConfig, ImageGenRegistry } from './image-config';
 import { OpenAIImageFormat } from './formats/openai-image';
+import { GeminiNativeImageFormat } from './formats/gemini-native-image';
+import { CliCodexImageFormat } from './formats/cli-codex-image';
+import { CliGeminiImageFormat } from './formats/cli-gemini-image';
 
 export class ImageConfigDrivenAdapter implements IImageGenPort {
   private handlers: Partial<Record<ImageGenFormat, ImageFormatHandler>>;
@@ -32,24 +35,30 @@ export class ImageConfigDrivenAdapter implements IImageGenPort {
   ) {
     this.handlers = {
       'openai-image': new OpenAIImageFormat(),
-      // 'gemini-native-image': new GeminiNativeImageFormat(),   // v2
-      // 'vertex-gemini-image': new VertexGeminiImageFormat(),   // v2
-      // 'stability-api': new StabilityApiFormat(),              // v2
-      // 'cli-codex-image': new CliCodexImageFormat(),           // v2 (CLI 경로)
-      // 'cli-gemini-image': new CliGeminiImageFormat(),         // v2 (CLI 경로)
+      'gemini-native-image': new GeminiNativeImageFormat(),
+      'cli-codex-image': new CliCodexImageFormat(),
+      'cli-gemini-image': new CliGeminiImageFormat(),
+      // 'vertex-gemini-image': new VertexGeminiImageFormat(),   // 향후
+      // 'stability-api': new StabilityApiFormat(),              // 향후
     };
   }
 
   getModelId(): string { return this.defaultModelId; }
 
   listModels(): ImageModelInfo[] {
-    return Object.values(this.registry).map(cfg => ({
-      id: cfg.id,
-      displayName: cfg.displayName,
-      provider: cfg.provider,
-      format: cfg.format,
-      requiresOrganizationVerification: (cfg as unknown as { requiresOrganizationVerification?: boolean }).requiresOrganizationVerification,
-    }));
+    return Object.values(this.registry).map(cfg => {
+      const features = (cfg.features ?? {}) as Record<string, unknown>;
+      return {
+        id: cfg.id,
+        displayName: cfg.displayName,
+        provider: cfg.provider,
+        format: cfg.format,
+        requiresOrganizationVerification: (cfg as unknown as { requiresOrganizationVerification?: boolean }).requiresOrganizationVerification,
+        sizes: Array.isArray(features.sizes) ? features.sizes as string[] : undefined,
+        qualities: Array.isArray(features.qualities) ? features.qualities as string[] : undefined,
+        subscription: features.subscription === true,
+      };
+    });
   }
 
   private resolveConfig(modelId?: string): ImageGenModelConfig | null {

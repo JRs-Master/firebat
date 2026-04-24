@@ -1,0 +1,14 @@
+{
+  "id": "gemini-2.5-flash-image",
+  "displayName": "Gemini 2.5 Flash Image",
+  "provider": "google",
+  "format": "gemini-native-image",
+  "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent",
+  "apiKeyVaultKey": "GEMINI_API_KEY",
+  "features": {
+    "multilingualText": true,
+    "sizes": ["auto"],
+    "qualities": ["standard"]
+  },
+  "pricing": { "perImage": 0.039 }
+}

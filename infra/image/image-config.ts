@@ -6,12 +6,12 @@ import fs from 'fs';
 import path from 'path';
 
 export type ImageGenFormat =
-  | 'openai-image'        // OpenAI gpt-image-2 (Images API)
-  | 'gemini-native-image' // Gemini 2.5 Flash Image (AI Studio)
-  | 'vertex-gemini-image' // Vertex AI Gemini 이미지
-  | 'stability-api'       // Stability AI (SD3 등)
-  | 'cli-codex-image'     // Codex CLI native
-  | 'cli-gemini-image';   // Gemini CLI native
+  | 'openai-image'        // OpenAI gpt-image-1 / gpt-image-2 (Images API)
+  | 'gemini-native-image' // Gemini 2.5 Flash Image (AI Studio, generateContent)
+  | 'vertex-gemini-image' // Vertex AI Gemini 이미지 (향후)
+  | 'stability-api'       // Stability AI (SD3 등, 향후)
+  | 'cli-codex-image'     // Codex CLI native (구독)
+  | 'cli-gemini-image';   // Gemini CLI native (구독)
 
 export interface ImageGenModelConfig {
   id: string;

@@ -16,6 +16,8 @@ import type { IImageGenPort, IMediaPort, IVaultPort, ILogPort, ImageGenOpts, Ima
 import type { InfraResult } from '../types';
 
 const VK_IMAGE_MODEL = 'system:image-model';
+const VK_IMAGE_SIZE = 'system:image-size';
+const VK_IMAGE_QUALITY = 'system:image-quality';
 
 export interface GenerateImageInput extends ImageGenOpts {
   /** 저장 시 파일명 힌트 (로그용). 예: "blog-hero-samsung" */
@@ -51,6 +53,27 @@ export class ImageManager {
     return ok ? { success: true, data: undefined } : { success: false, error: 'Vault 저장 실패' };
   }
 
+  /** 사용자 설정 기본 사이즈 — AI 가 명시 안 하면 이 값으로 폴백. null 이면 "auto". */
+  getDefaultSize(): string | null {
+    return this.vault.getSecret(VK_IMAGE_SIZE);
+  }
+  setDefaultSize(size: string | null): InfraResult<void> {
+    const ok = size === null
+      ? this.vault.deleteSecret(VK_IMAGE_SIZE)
+      : this.vault.setSecret(VK_IMAGE_SIZE, size);
+    return ok ? { success: true, data: undefined } : { success: false, error: 'Vault 저장 실패' };
+  }
+  /** 사용자 설정 기본 품질 */
+  getDefaultQuality(): string | null {
+    return this.vault.getSecret(VK_IMAGE_QUALITY);
+  }
+  setDefaultQuality(quality: string | null): InfraResult<void> {
+    const ok = quality === null
+      ? this.vault.deleteSecret(VK_IMAGE_QUALITY)
+      : this.vault.setSecret(VK_IMAGE_QUALITY, quality);
+    return ok ? { success: true, data: undefined } : { success: false, error: 'Vault 저장 실패' };
+  }
+
   listModels(): ImageModelInfo[] {
     return this.imageGen.listModels();
   }
@@ -60,10 +83,13 @@ export class ImageManager {
     const modelId = input.model ?? this.getModel();
     const log = (msg: string) => this.logger.info(`[ImageManager]${corrId ? ` [${corrId}]` : ''} [${modelId}] ${msg}`);
 
-    log(`generate 시작: prompt=${input.prompt.slice(0, 100)}${input.prompt.length > 100 ? '…' : ''} size=${input.size ?? 'default'} quality=${input.quality ?? 'default'}`);
+    // 사용자 명령이 우선, 없으면 설정된 기본값 폴백 — 둘 다 없으면 핸들러 기본값 사용
+    const size = input.size ?? this.getDefaultSize() ?? undefined;
+    const quality = input.quality ?? this.getDefaultQuality() ?? undefined;
+    log(`generate 시작: prompt=${input.prompt.slice(0, 100)}${input.prompt.length > 100 ? '…' : ''} size=${size ?? 'handler-default'} quality=${quality ?? 'handler-default'}`);
 
     // 1) 이미지 생성 — IImageGenPort → binary
-    const genRes = await this.imageGen.generate({ ...input, model: modelId }, { corrId, model: modelId });
+    const genRes = await this.imageGen.generate({ ...input, size, quality, model: modelId }, { corrId, model: modelId });
     if (!genRes.success || !genRes.data) {
       this.logger.error(`[ImageManager]${corrId ? ` [${corrId}]` : ''} [${modelId}] 생성 실패: ${genRes.error}`);
       return { success: false, error: genRes.error || '이미지 생성 실패' };

@@ -119,9 +119,20 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const [userPromptSaved, setUserPromptSaved] = useState(false);
 
   // 이미지 생성 모델 (AI 탭 하단 섹션)
-  type ImageModelEntry = { id: string; displayName: string; provider: string; format: string; requiresOrganizationVerification?: boolean };
+  type ImageModelEntry = {
+    id: string;
+    displayName: string;
+    provider: string;
+    format: string;
+    requiresOrganizationVerification?: boolean;
+    sizes?: string[];
+    qualities?: string[];
+    subscription?: boolean;
+  };
   const [imageModel, setImageModelState] = useState('gpt-image-1');
   const [imageModels, setImageModels] = useState<ImageModelEntry[]>([]);
+  const [imageDefaultSize, setImageDefaultSize] = useState<string>('');
+  const [imageDefaultQuality, setImageDefaultQuality] = useState<string>('');
 
   // AI 탭 서브탭 — LLM(모델 선택) / 프롬프트(사용자 지시사항) / 이미지(생성 모델)
   const [aiSubTab, setAiSubTab] = useState<'llm' | 'prompt' | 'image'>('llm');
@@ -200,6 +211,8 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
         if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
         if (typeof data.imageModel === 'string') setImageModelState(data.imageModel);
         if (Array.isArray(data.imageModels)) setImageModels(data.imageModels);
+        if (typeof data.imageDefaultSize === 'string') setImageDefaultSize(data.imageDefaultSize);
+        if (typeof data.imageDefaultQuality === 'string') setImageDefaultQuality(data.imageDefaultQuality);
       }
     }).catch(() => {});
 
@@ -1173,48 +1186,88 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     AI 가 image_gen 도구 호출 시 사용할 모델. 서버에 자동 저장되어 /api/media URL 반환됨 — render_image·블로그 포스팅 등에 재사용.
                   </HelpText>
                   {(() => {
-                    // 카스케이드: 실행모드 (API only — CLI 핸들러는 v2) → 공급자 → 모델
-                    // 모델 entries 를 execMode/provider 로 필터링
-                    const imageExecMode: 'api' | 'cli' = 'api'; // v1 은 API 만 (CLI 핸들러 추후)
-                    const providersAvailable = Array.from(new Set(imageModels.map(m => m.provider))).sort();
-                    const activeProvider = imageModels.find(m => m.id === imageModel)?.provider ?? providersAvailable[0] ?? 'openai';
-                    const modelsForProvider = imageModels.filter(m => m.provider === activeProvider);
-                    const currentModel = imageModels.find(m => m.id === imageModel) || modelsForProvider[0];
+                    // Mode 판정: format prefix 로 API/CLI 구분
+                    const modelMode = (m: ImageModelEntry): 'api' | 'cli' =>
+                      m.format.startsWith('cli-') ? 'cli' : 'api';
+                    const currentModelEntry = imageModels.find(m => m.id === imageModel);
+                    const imageExecMode: 'api' | 'cli' = currentModelEntry ? modelMode(currentModelEntry) : 'api';
 
-                    const saveImageModel = (modelId: string) => {
-                      setImageModelState(modelId);
+                    // 현재 execMode 에 해당하는 모델만 필터
+                    const modelsInMode = imageModels.filter(m => modelMode(m) === imageExecMode);
+                    const providersAvailable = Array.from(new Set(modelsInMode.map(m => m.provider))).sort();
+                    const activeProvider = currentModelEntry?.provider ?? providersAvailable[0] ?? 'openai';
+                    const modelsForProvider = modelsInMode.filter(m => m.provider === activeProvider);
+                    const currentModel = currentModelEntry || modelsForProvider[0];
+
+                    const savePartial = (patch: Record<string, unknown>) => {
                       fetch('/api/settings', {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ imageModel: modelId }),
+                        body: JSON.stringify(patch),
                       }).catch(() => {});
                     };
-
+                    const saveImageModel = (modelId: string) => {
+                      setImageModelState(modelId);
+                      // 모델 바뀌면 사이즈/품질 호환성 재검증 — 지원 안 하는 값이면 리셋
+                      const newModel = imageModels.find(m => m.id === modelId);
+                      const newSize = newModel?.sizes?.includes(imageDefaultSize) ? imageDefaultSize : '';
+                      const newQuality = newModel?.qualities?.includes(imageDefaultQuality) ? imageDefaultQuality : '';
+                      setImageDefaultSize(newSize);
+                      setImageDefaultQuality(newQuality);
+                      savePartial({ imageModel: modelId, imageDefaultSize: newSize, imageDefaultQuality: newQuality });
+                    };
+                    const switchMode = (mode: 'api' | 'cli') => {
+                      if (mode === imageExecMode) return;
+                      const firstOfMode = imageModels.find(m => modelMode(m) === mode);
+                      if (firstOfMode) saveImageModel(firstOfMode.id);
+                    };
                     const switchProvider = (prov: string) => {
-                      const firstOfProv = imageModels.find(m => m.provider === prov);
+                      const firstOfProv = modelsInMode.find(m => m.provider === prov);
                       if (firstOfProv) saveImageModel(firstOfProv.id);
+                    };
+                    const saveSize = (v: string) => {
+                      setImageDefaultSize(v);
+                      savePartial({ imageDefaultSize: v });
+                    };
+                    const saveQuality = (v: string) => {
+                      setImageDefaultQuality(v);
+                      savePartial({ imageDefaultQuality: v });
                     };
 
                     const providerLabels: Record<string, string> = {
-                      openai: 'OpenAI',
-                      google: 'Google',
-                      anthropic: 'Anthropic',
-                      stability: 'Stability AI',
+                      openai: 'OpenAI', google: 'Google', anthropic: 'Anthropic', stability: 'Stability AI',
+                    };
+                    const sizeLabels: Record<string, string> = {
+                      'auto': '자동 (모델 판단)',
+                      '1024x1024': '정사각 1024×1024 (1:1)',
+                      '1536x1024': '가로 1536×1024 (3:2, 블로그 헤더)',
+                      '1024x1536': '세로 1024×1536 (2:3, 포스터)',
+                    };
+                    const qualityLabels: Record<string, string> = {
+                      'low': '낮음 (빠름, 저렴)',
+                      'medium': '보통 (권장)',
+                      'high': '높음 (품질 최고, 고비용)',
+                      'standard': '표준',
                     };
 
                     if (imageModels.length === 0) {
                       return <div className="text-[12px] text-slate-400 mt-2">등록된 이미지 모델이 없습니다. infra/image/configs/ 에 JSON 추가 필요.</div>;
                     }
 
+                    const hasModesAvailable = {
+                      api: imageModels.some(m => modelMode(m) === 'api'),
+                      cli: imageModels.some(m => modelMode(m) === 'cli'),
+                    };
+
                     return (
                       <div className="flex flex-col gap-3 mt-2">
-                        <Field label="실행 모드" help="API: 공급자 API 키 pay-per-image · CLI: 구독 기반 (향후 지원)">
+                        <Field label="실행 모드" help="API: 공급자 API 키 pay-per-image · CLI: Codex/Gemini CLI 구독 (월정액)">
                           <SegButtons<'api' | 'cli'>
                             value={imageExecMode}
-                            onChange={() => { /* v1 은 API 고정, CLI 는 diagonal disabled */ }}
+                            onChange={switchMode}
                             options={[
-                              { value: 'api', label: 'API' },
-                              { value: 'cli', label: 'CLI (향후)' },
+                              { value: 'api', label: `API${hasModesAvailable.api ? '' : ' (없음)'}` },
+                              { value: 'cli', label: `CLI (구독)${hasModesAvailable.cli ? '' : ' (없음)'}` },
                             ]}
                           />
                         </Field>
@@ -1229,21 +1282,39 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                           <SelectInput
                             value={imageModel}
                             onChange={saveImageModel}
-                            options={modelsForProvider.map(m => ({
-                              value: m.id,
-                              label: m.requiresOrganizationVerification
-                                ? `${m.displayName} (조직 인증 필요)`
-                                : m.displayName,
-                            }))}
+                            options={modelsForProvider.map(m => ({ value: m.id, label: m.displayName }))}
                           />
                         </Field>
+                        {currentModel?.sizes && currentModel.sizes.length > 0 && (
+                          <Field label="기본 사이즈" help="사용자 명령이 우선. 미지정 시 이 값으로 폴백.">
+                            <SelectInput
+                              value={imageDefaultSize || (currentModel.sizes.includes('auto') ? 'auto' : currentModel.sizes[0])}
+                              onChange={saveSize}
+                              options={currentModel.sizes.map(s => ({ value: s, label: sizeLabels[s] ?? s }))}
+                            />
+                          </Field>
+                        )}
+                        {currentModel?.qualities && currentModel.qualities.length > 0 && (
+                          <Field label="기본 품질" help="사용자 명령이 우선. 미지정 시 이 값으로 폴백.">
+                            <SelectInput
+                              value={imageDefaultQuality || (currentModel.qualities.includes('medium') ? 'medium' : currentModel.qualities[0])}
+                              onChange={saveQuality}
+                              options={currentModel.qualities.map(q => ({ value: q, label: qualityLabels[q] ?? q }))}
+                            />
+                          </Field>
+                        )}
                         {currentModel?.requiresOrganizationVerification && (
                           <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 leading-relaxed">
-                            ⚠️ <b>{currentModel.displayName}</b> 은 OpenAI 조직 인증이 필요합니다.{' '}
+                            ⚠️ <b>{currentModel.displayName}</b> 은 OpenAI 조직 인증 필요.{' '}
                             <a href="https://platform.openai.com/settings/organization/general" target="_blank" rel="noopener noreferrer" className="underline font-bold">
                               platform.openai.com
                             </a>{' '}
-                            에서 Verify Organization 한 번 하시면 됩니다 (반영 최대 15분).
+                            에서 Verify Organization 한 번 (반영 최대 15분).
+                          </div>
+                        )}
+                        {currentModel?.subscription && (
+                          <div className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2.5 py-1.5 leading-relaxed">
+                            💳 구독 기반 — API 키 불필요. 서버에 <code className="text-[10px] bg-white px-1 rounded">{imageExecMode === 'cli' && currentModel.provider === 'openai' ? 'codex' : 'gemini'}</code> CLI 가 설치되고 로그인되어 있어야 합니다.
                           </div>
                         )}
                       </div>

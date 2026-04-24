@@ -20,6 +20,8 @@ export async function GET(req: NextRequest) {
     lastModelByCategory: core.getLastModelByCategory(),
     imageModel: core.getImageModel(),
     imageModels: core.getAvailableImageModels(),
+    imageDefaultSize: core.getImageDefaultSize(),
+    imageDefaultQuality: core.getImageDefaultQuality(),
   });
 }
 
@@ -53,6 +55,14 @@ export async function PATCH(req: NextRequest) {
   }
   if (typeof body.imageModel === 'string' && body.imageModel) {
     core.setImageModel(body.imageModel);
+  }
+  if ('imageDefaultSize' in body) {
+    const v = body.imageDefaultSize;
+    core.setImageDefaultSize(typeof v === 'string' && v ? v : null);
+  }
+  if ('imageDefaultQuality' in body) {
+    const v = body.imageDefaultQuality;
+    core.setImageDefaultQuality(typeof v === 'string' && v ? v : null);
   }
 
   return NextResponse.json({ success: true });

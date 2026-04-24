@@ -402,6 +402,12 @@ export class FirebatCore {
   getAvailableImageModels() {
     return this.image.listModels();
   }
+  /** 기본 이미지 사이즈 — AI 미지정 시 폴백 (사용자 명령 우선) */
+  getImageDefaultSize() { return this.image.getDefaultSize(); }
+  setImageDefaultSize(size: string | null) { return this.image.setDefaultSize(size); }
+  /** 기본 이미지 품질 — AI 미지정 시 폴백 */
+  getImageDefaultQuality() { return this.image.getDefaultQuality(); }
+  setImageDefaultQuality(quality: string | null) { return this.image.setDefaultQuality(quality); }
   /** /api/media/<slug>.<ext> 에서 파일 서빙용 — slug 로 binary + contentType 반환 */
   readMedia(slug: string) {
     return this.infra.media.read(slug);

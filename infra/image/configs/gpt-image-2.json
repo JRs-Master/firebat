@@ -1,6 +1,6 @@
 {
   "id": "gpt-image-2",
-  "displayName": "GPT Image 2 (Duct Tape)",
+  "displayName": "GPT Image 2",
   "provider": "openai",
   "format": "openai-image",
   "endpoint": "https://api.openai.com/v1/images/generations",
