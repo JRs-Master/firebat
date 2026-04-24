@@ -120,21 +120,13 @@ function cleanPlainText(s: string | number | null | undefined): string {
   return s == null ? '' : String(s);
 }
 
-/** display-time 숫자 포맷 — 차트 내부 원시 숫자(backend 가 preserve 하는 Chart data) 전용.
- *  - number 타입 → toLocaleString
- *  - "1000000" 순수 숫자 문자열 → "1,000,000"
- *  - "216000원", "▲1500" 처럼 접두·접미가 있는 경우도 숫자부만 콤마 처리
- *  - 이미 콤마 있거나 4자리 미만이면 그대로 */
+/** display-time 값 변환 — AI 가 이미 포맷팅한 값을 그대로 렌더.
+ *  숫자 콤마·연도·전화번호 구분은 AI 책임 (context 판단 정확도 높음).
+ *  number 타입은 "금액 맥락일 가능성 높음" 가정으로 toLocaleString 유지 — 연도는 보통 string. */
 function formatNumberString(v: string | number | null | undefined): string {
   if (v == null) return '';
   if (typeof v === 'number') return v.toLocaleString('ko-KR');
-  const s = String(v);
-  if (s.includes(',')) return s;
-  const pure = s.trim().match(/^([+\-]?)(\d{4,})(\.\d+)?$/);
-  if (pure) return pure[1] + Number(pure[2]).toLocaleString('ko-KR') + (pure[3] ?? '');
-  const wrapped = s.match(/^(\D*)(\d{4,})(\D*)$/);
-  if (wrapped) return wrapped[1] + Number(wrapped[2]).toLocaleString('ko-KR') + wrapped[3];
-  return s;
+  return String(v);
 }
 
 function TextComp({ content }: { content: string }) {

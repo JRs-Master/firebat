@@ -129,22 +129,14 @@ function sanitizeValue(val: unknown, componentName?: string, fieldName?: string,
     return out;
   }
   if (typeof val === 'string') {
+    // text 필드: HTML 태그·마크다운 마커 제거 (구조 정제만)
     if (fieldName && TEXT_FIELDS.has(fieldName)) return cleanText(val);
-    if (fieldName && NUMERIC_LIKE_FIELDS.has(fieldName)) {
-      const pure = val.trim().match(/^[+\-]?\d+(\.\d+)?$/);
-      return pure ? formatNumber(val) : cleanText(val);
-    }
-    if (insideTextArray) {
-      // 셀·리스트 원소: 숫자성이면 콤마 포맷, 아니면 텍스트 정제
-      return NUM_LIKE_RE.test(val.trim()) ? formatNumber(val) : cleanText(val);
-    }
+    // numeric 필드 / 배열 원소: cleanText 만 — 숫자 포맷은 AI 책임 (연도·전화번호·금액 구분을 AI 가 더 잘 함)
+    if (fieldName && NUMERIC_LIKE_FIELDS.has(fieldName)) return cleanText(val);
+    if (insideTextArray) return cleanText(val);
     return val;
   }
-  if (typeof val === 'number') {
-    if (insideTextArray) return formatNumber(val); // 셀 숫자 → "1,000,000"
-    if (fieldName && NUMERIC_LIKE_FIELDS.has(fieldName)) return formatNumber(val); // Metric value/delta → locale 문자열
-    return val;
-  }
+  // number 타입: 원본 유지 — 프론트 컴포넌트가 필요 시 자체 포맷
   return val;
 }
 

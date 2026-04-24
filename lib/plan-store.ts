@@ -81,7 +81,27 @@ export function storePlan(plan: Omit<StoredPlan, 'createdAt'>): void {
 }
 
 export function getPlan(planId: string): StoredPlan | null {
-  return store.get(planId) ?? null;
+  // 1차: in-memory 캐시
+  const hit = store.get(planId);
+  if (hit) return hit;
+  // 2차: 파일 폴백 — Next.js 번들 분리로 storePlan 한 모듈과 getPlan 호출하는 모듈이
+  //       다른 Map 인스턴스일 수 있음. 파일은 공유되므로 재조회로 우회.
+  try {
+    if (!fs.existsSync(STORE_FILE)) return null;
+    const raw = fs.readFileSync(STORE_FILE, 'utf-8');
+    const arr = JSON.parse(raw) as StoredPlan[];
+    const now = Date.now();
+    let found: StoredPlan | null = null;
+    for (const p of arr) {
+      if (!p?.planId || now - p.createdAt > PLAN_EXPIRE_MS) continue;
+      // 발견한 김에 메모리에도 복원 (다음 조회 캐시 히트)
+      store.set(p.planId, p);
+      if (p.planId === planId) found = p;
+    }
+    return found;
+  } catch {
+    return null;
+  }
 }
 
 export function deletePlan(planId: string): void {
