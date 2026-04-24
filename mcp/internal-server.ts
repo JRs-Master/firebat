@@ -295,7 +295,7 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 - 텍스트 넣을 땐 따옴표로 명시 ("title text: 'Samsung 2026 Outlook'"). gpt-image-2 는 한국어 포함 다국어 텍스트 99% 정확.`,
     {
       prompt: z.string().describe('이미지 설명 프롬프트. 영어 권장 (품질 최적). 한국어 명시 텍스트는 따옴표 안에.'),
-      size: z.enum(['1024x1024', '1792x1024', '1024x1792']).optional().describe('출력 크기. 기본 1024x1024 (정사각). 블로그 헤더는 1792x1024, 세로 썸네일은 1024x1792.'),
+      size: z.enum(['1024x1024', '1536x1024', '1024x1536', 'auto']).optional().describe('출력 크기. 기본 1024x1024 (정사각). 블로그 헤더는 1536x1024 (가로), 세로 썸네일·포스터는 1024x1536. auto 는 프롬프트 기반 자동.'),
       quality: z.enum(['low', 'medium', 'high']).optional().describe('품질. low=$0.011, medium=$0.042(기본), high=$0.19. 블로그 헤더·중요 이미지는 high 권장.'),
       filenameHint: z.string().optional().describe('파일명 힌트 (로그용). 예: "blog-hero-samsung-2026"'),
     },

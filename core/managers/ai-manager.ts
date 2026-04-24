@@ -2102,7 +2102,7 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
           required: ['prompt'],
           properties: {
             prompt: { type: 'string', description: '이미지 설명. 영어 권장, 상세 묘사 + 스타일 키워드.' },
-            size: { type: 'string', enum: ['1024x1024', '1792x1024', '1024x1792'], description: '출력 크기. 기본 1024x1024. 블로그 헤더=1792x1024, 세로 썸네일=1024x1792.' },
+            size: { type: 'string', enum: ['1024x1024', '1536x1024', '1024x1536', 'auto'], description: '출력 크기. 기본 1024x1024 (정사각). 블로그 헤더=1536x1024 (가로), 세로 썸네일·포스터=1024x1536. auto=모델 자동 판단.' },
             quality: { type: 'string', enum: ['low', 'medium', 'high'], description: '품질 (비용: low $0.011 / medium $0.042 / high $0.19). 블로그 헤더는 high 권장, 일반 삽화는 medium.' },
             filenameHint: { type: 'string', description: '파일명 힌트 (로그용 선택). 예: "blog-hero-samsung-2026"' },
           },
