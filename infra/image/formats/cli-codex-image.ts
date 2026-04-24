@@ -1,13 +1,17 @@
 /**
  * Codex CLI 이미지 생성 핸들러 (구독 기반, gpt-image-2 native).
  *
- * 동작: `codex exec --output-format stream-json --skip-git-repo-check "prompt"` 를
- * 자식 프로세스로 spawn → stream-json 이벤트에서 image 바이너리 추출.
+ * 공식문서: https://developers.openai.com/codex/cli/features
+ *  - "$imagegen" 명령어로 명시적 이미지 생성 skill 호출
+ *  - gpt-image-2 native 사용, Codex 사용 한도 3~5x 차감
+ *  - 레퍼런스 이미지 첨부로 iterate 가능 (v2 에서 지원 예정)
  *
- * 주의: Codex CLI 이미지 출력 프로토콜은 공식 문서가 thin 해서 추정 기반.
- * - `item.completed` 의 `item.type === 'image'` 또는 `agent_image` 로 올 것으로 예상
- * - content 에 file path (/tmp/codex-image-xxx.png) 또는 base64 포함 가능성
- * - 실측 후 파싱 보강 필요 — 현재 코드는 양쪽 케이스 모두 시도
+ * 동작: `codex exec --output-format stream-json --skip-git-repo-check "$imagegen <prompt>"` spawn
+ *   → stream-json 이벤트에서 item.completed + item.type=agent_image / generated_image 파싱
+ *   → 또는 tool_result 의 파일 경로에서 binary 추출
+ *
+ * 실측 기반 보강 필요 — 처음 구현은 OpenAI 공식 문서의 $imagegen 스킬 존재만 확인.
+ * 실제 stream-json 이벤트 포맷은 서버에서 codex 실행 후 로그 검토로 확정.
  */
 import { spawn } from 'child_process';
 import fs from 'fs';
@@ -17,7 +21,7 @@ import type { ImageGenOpts, ImageGenCallOpts, ImageGenResult } from '../../../co
 import type { InfraResult } from '../../../core/types';
 import type { ImageFormatHandler, ImageFormatHandlerContext } from '../format-handler';
 
-const CODEX_TIMEOUT_MS = 5 * 60_000; // 이미지 생성은 느릴 수 있음 (5분)
+const CODEX_TIMEOUT_MS = 5 * 60_000;
 
 export class CliCodexImageFormat implements ImageFormatHandler {
   async generate(
@@ -25,10 +29,10 @@ export class CliCodexImageFormat implements ImageFormatHandler {
     _callOpts: ImageGenCallOpts | undefined,
     _ctx: ImageFormatHandlerContext,
   ): Promise<InfraResult<ImageGenResult>> {
-    // prompt 에 size/quality 힌트 주입 — Codex CLI 는 CLI flag 로 이미지 파라미터 지정 못함
-    const sizeHint = opts.size && opts.size !== 'auto' ? ` (size: ${opts.size})` : '';
-    const qualityHint = opts.quality ? ` (quality: ${opts.quality})` : '';
-    const prompt = `Generate image: ${opts.prompt}${sizeHint}${qualityHint}`;
+    // $imagegen 명시적 호출 + 파라미터는 프롬프트로 전달 (Codex CLI 는 구조화 flag 미지원)
+    const sizeHint = opts.size && opts.size !== 'auto' ? ` size:${opts.size}` : '';
+    const qualityHint = opts.quality ? ` quality:${opts.quality}` : '';
+    const prompt = `$imagegen ${opts.prompt}${sizeHint}${qualityHint}`;
 
     return new Promise<InfraResult<ImageGenResult>>((resolve) => {
       let stdoutBuf = '';
@@ -50,7 +54,6 @@ export class CliCodexImageFormat implements ImageFormatHandler {
 
       child.stdout.on('data', (chunk: Buffer) => {
         stdoutBuf += chunk.toString();
-        // stream-json 은 한 줄에 한 이벤트 (NDJSON)
         const lines = stdoutBuf.split('\n');
         stdoutBuf = lines.pop() ?? '';
         for (const line of lines) {
@@ -74,18 +77,17 @@ export class CliCodexImageFormat implements ImageFormatHandler {
       child.on('close', (code) => {
         clearTimeout(timeout);
         if (resolved) return;
-        done({ success: false, error: `Codex CLI 종료 (exit ${code}): ${stderrBuf.slice(0, 500) || '이미지 추출 실패'}` });
+        done({ success: false, error: `Codex CLI 종료 (exit ${code}): ${stderrBuf.slice(0, 500) || stdoutBuf.slice(-500) || '이미지 추출 실패 — 프로토콜 파서 재검토 필요'}` });
       });
     });
   }
 
-  /** Codex CLI stream-json 이벤트에서 이미지 binary 추출 시도.
-   *  프로토콜 실측 결과에 따라 확장 필요 — 현재는 3가지 패턴 지원. */
+  /** Codex CLI stream-json 이벤트에서 이미지 binary 추출.
+   *  공식 프로토콜 문서 부재 — 3가지 패턴 매칭 + 실측 후 보강 필요. */
   private tryExtractImage(ev: Record<string, unknown>): InfraResult<ImageGenResult> | null {
     const type = ev.type as string | undefined;
     const item = ev.item as Record<string, unknown> | undefined;
 
-    // 패턴 1: item.completed + item.type === 'image' + base64 data
     if (type === 'item.completed' && item) {
       const itemType = item.type as string | undefined;
       if (itemType === 'image' || itemType === 'agent_image' || itemType === 'generated_image') {
@@ -106,7 +108,6 @@ export class CliCodexImageFormat implements ImageFormatHandler {
       }
     }
 
-    // 패턴 2: tool_result 메타에 이미지 파일 경로
     if (type === 'tool_result' && ev.content) {
       const content = ev.content as unknown;
       if (typeof content === 'string' && content.includes('.png')) {

@@ -7,11 +7,11 @@ import path from 'path';
 
 export type ImageGenFormat =
   | 'openai-image'        // OpenAI gpt-image-1 / gpt-image-2 (Images API)
-  | 'gemini-native-image' // Gemini 2.5 Flash Image (AI Studio, generateContent)
+  | 'gemini-native-image' // Gemini 3.1 Flash Image Preview (AI Studio, generateContent)
   | 'vertex-gemini-image' // Vertex AI Gemini 이미지 (향후)
   | 'stability-api'       // Stability AI (SD3 등, 향후)
-  | 'cli-codex-image'     // Codex CLI native (구독)
-  | 'cli-gemini-image';   // Gemini CLI native (구독)
+  | 'cli-codex-image';    // Codex CLI $imagegen (구독)
+  // Gemini CLI 는 공식 이미지 생성 skill 미지원 — Gemini 쪽은 API 경로만 사용
 
 export interface ImageGenModelConfig {
   id: string;

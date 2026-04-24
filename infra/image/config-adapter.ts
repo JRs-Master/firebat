@@ -23,7 +23,8 @@ import type { ImageGenFormat, ImageGenModelConfig, ImageGenRegistry } from './im
 import { OpenAIImageFormat } from './formats/openai-image';
 import { GeminiNativeImageFormat } from './formats/gemini-native-image';
 import { CliCodexImageFormat } from './formats/cli-codex-image';
-import { CliGeminiImageFormat } from './formats/cli-gemini-image';
+// Gemini CLI 는 공식 이미지 생성 명령어 미지원 — 제거 (2026-04-24 실측).
+// Codex CLI 는 $imagegen skill 공식 지원 → 유지.
 
 export class ImageConfigDrivenAdapter implements IImageGenPort {
   private handlers: Partial<Record<ImageGenFormat, ImageFormatHandler>>;
@@ -37,7 +38,7 @@ export class ImageConfigDrivenAdapter implements IImageGenPort {
       'openai-image': new OpenAIImageFormat(),
       'gemini-native-image': new GeminiNativeImageFormat(),
       'cli-codex-image': new CliCodexImageFormat(),
-      'cli-gemini-image': new CliGeminiImageFormat(),
+      // 'cli-gemini-image': 미지원 (Gemini CLI 는 코딩 에이전트 전용, $imagegen 같은 skill 없음)
       // 'vertex-gemini-image': new VertexGeminiImageFormat(),   // 향후
       // 'stability-api': new StabilityApiFormat(),              // 향후
     };
