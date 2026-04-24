@@ -17,6 +17,7 @@ import { Message, Conversation, INIT_MESSAGE, makeConv, PendingAction } from '..
 import { ConversationMeta } from '../components/Sidebar';
 import { chatReducer, cleanMessages, FALLBACK } from './chat-manager';
 import { useSetting } from './settings-manager';
+import { useWakeLock } from './use-wake-lock';
 
 // SSE 이벤트 파서 — buffer에서 완성된 이벤트만 파싱, 나머지는 반환
 function parseSSE(buffer: string): { events: { event: string; data: any }[]; remaining: string } {
@@ -41,6 +42,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   messagesRef.current = messages;
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  // 모바일 화면 자동 잠금 방지 — AI 응답 중 SSE 끊김 / "로봇 사라짐" 방지.
+  // loading=true 동안 wake lock 유지, 끝나면 자동 해제.
+  useWakeLock(loading);
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvIdState] = useState('');
