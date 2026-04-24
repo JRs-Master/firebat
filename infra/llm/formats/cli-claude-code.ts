@@ -440,8 +440,10 @@ export class CliClaudeCodeFormat implements FormatHandler {
           } else {
             // 최종 text 는 마지막 assistant turn 의 buffer
             finalText = currentTextBuffer;
-            // 스트리밍 시 화면 표시를 위해 text 이벤트로 발행
-            if (finalText) options.onChunk?.({ type: 'text', content: finalText });
+            // CLI 는 진짜 스트리밍이 아니라 result 시점 일괄 emit — thinking 으로 보내서 thinkingText 에만 쌓음.
+            // 최종 content 는 RESULT.reply 로 결정 (ai-manager 가 propose_plan trailing drop 등 판단).
+            // text 로 보내면 "137자 content flash → RESULT(reply='')로 비워짐" 발생.
+            if (finalText) options.onChunk?.({ type: 'thinking', content: finalText });
           }
         }
       };

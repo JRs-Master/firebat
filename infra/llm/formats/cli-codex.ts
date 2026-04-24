@@ -239,7 +239,8 @@ export class CliCodexFormat implements FormatHandler {
           // agent_message: 최종 assistant 텍스트 (completed 만)
           if (itemType === 'agent_message' && t === 'item.completed' && typeof item.text === 'string') {
             textParts.push(item.text);
-            options.onChunk?.({ type: 'text', content: item.text });
+            // thinking 으로 emit — 최종 content 는 RESULT.reply 가 결정 (cli-claude-code 와 동일 이유)
+            options.onChunk?.({ type: 'thinking', content: item.text });
             return;
           }
           // reasoning: thinking 스트림

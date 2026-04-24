@@ -328,7 +328,9 @@ export class CliGeminiFormat implements FormatHandler {
               if (!text || !text.trim()) return; // 공백만 있는 조각은 스킵 (isThinking 플립 방지)
               if (kind === 'text') {
                 textParts.push(text);
-                options.onChunk?.({ type: 'text', content: text });
+                // text 도 thinking 으로 전송 — 최종 content 는 RESULT.reply 가 결정
+                // (cli-claude-code 와 동일 이유: propose_plan turn 의 flash 방지)
+                options.onChunk?.({ type: 'thinking', content: text });
               } else {
                 options.onChunk?.({ type: 'thinking', content: text });
               }

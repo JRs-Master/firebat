@@ -165,7 +165,9 @@ class RequestState {
         this.errorMsg = ev.result || '실행 오류';
       } else {
         this.finalText = this.currentTextBuffer;
-        if (this.finalText) onChunk?.({ type: 'text', content: this.finalText });
+        // thinking 으로 보내서 thinkingText 에만 쌓음 — 최종 content 는 RESULT.reply 로 결정
+        // (cli-claude-code.ts 와 동일 이유: propose_plan turn 의 "flash → 비워짐" 방지)
+        if (this.finalText) onChunk?.({ type: 'thinking', content: this.finalText });
       }
       this.complete = true;
     }
