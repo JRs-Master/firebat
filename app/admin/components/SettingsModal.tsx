@@ -812,8 +812,10 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
             const providerLabels: Record<'openai' | 'google' | 'anthropic', string> = {
               openai: 'OpenAI', google: 'Google', anthropic: 'Anthropic',
             };
+            // 공급자 통일 — API/CLI 모두 Anthropic / Google / OpenAI (회사명 고정).
+            // 내부 키는 역사적 이유로 CliProvider=claude/codex/gemini 유지 — 라벨만 회사명으로 매핑.
             const cliProviderLabels: Record<CliProvider, string> = {
-              claude: 'Claude', codex: 'Codex', gemini: 'Gemini',
+              claude: 'Anthropic', codex: 'OpenAI', gemini: 'Google',
             };
             // 모델 드롭다운용 option 배열
             const modelOptions = modelsForProvider.length > 0
@@ -957,7 +959,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                       const first = GEMINI_MODELS.find(mm => mm.value.startsWith(prefix));
                       restoreOrFirst(newCat, first?.value);
                     }}
-                    options={(['claude', 'codex', 'gemini'] as CliProvider[]).map(p => ({ value: p, label: cliProviderLabels[p] }))}
+                    options={(['claude', 'gemini', 'codex'] as CliProvider[]).map(p => ({ value: p, label: cliProviderLabels[p] }))}
                   />
                 </Field>
                 )}
@@ -1326,11 +1328,17 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                             에서 Verify Organization 한 번 (반영 최대 15분).
                           </div>
                         )}
-                        {currentModel?.subscription && (
-                          <div className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2.5 py-1.5 leading-relaxed">
-                            💳 구독 기반 — API 키 불필요. 서버에 <code className="text-[10px] bg-white px-1 rounded">{imageExecMode === 'cli' && currentModel.provider === 'openai' ? 'codex' : 'gemini'}</code> CLI 가 설치되고 로그인되어 있어야 합니다.
-                          </div>
-                        )}
+                        {currentModel?.subscription && (() => {
+                          const cliBinByProvider: Record<string, string> = {
+                            openai: 'codex', google: 'gemini', anthropic: 'claude',
+                          };
+                          const cliBin = cliBinByProvider[currentModel.provider] ?? 'cli';
+                          return (
+                            <div className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2.5 py-1.5 leading-relaxed">
+                              💳 구독 기반 — API 키 불필요. 서버에 <code className="text-[10px] bg-white px-1 rounded">{cliBin}</code> CLI 가 설치되고 로그인되어 있어야 합니다.
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   })()}
