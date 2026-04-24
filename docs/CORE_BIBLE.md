@@ -77,8 +77,8 @@ interface FirebatInfraContainer {
 외부에서 `core.infra.storage` 등 포트를 직접 호출하지 않는다.
 모든 API route는 `getCore()` → Core 메서드 호출 패턴을 따른다.
 
-### 제1-1항. 12-Manager 아키텍처 (2026-04-20)
-`FirebatCore`는 **얇은 라우팅 파사드**. 비즈니스 로직은 12개 도메인 매니저에 위임한다.
+### 제1-1항. 13-Manager 아키텍처 (2026-04-20, 2026-04-24 ImageManager 추가)
+`FirebatCore`는 **얇은 라우팅 파사드**. 비즈니스 로직은 13개 도메인 매니저에 위임한다.
 
 | 매니저 | 인프라 포트 | Core 참조 | 역할 |
 |---|---|---|---|
@@ -94,6 +94,7 @@ interface FirebatInfraContainer {
 | CapabilityManager | IStoragePort, IVaultPort, ILogPort | ✗ | Provider 해석 |
 | AuthManager | IAuthPort, IVaultPort | ✗ | 통합 인증 (세션+API 토큰) |
 | ConversationManager | IDatabasePort, IEmbedderPort | ✗ | 대화 DB 저장/검색 (임베딩) |
+| ImageManager | IImageGenPort, IMediaPort, IImageProcessorPort, IVaultPort, ILogPort | ✗ | 이미지 생성+후처리 파이프라인 (sharp + blurhash + aspectRatio attention crop) |
 
 **규칙**:
 - 매니저는 자기 도메인의 인프라 포트를 **생성자에서 직접** 받는다.
@@ -352,7 +353,7 @@ AI Assistant ON 시:
 
 ## 제10장: 프론트엔드 매니저 3종 (v0.1, 2026-04-22)
 
-어드민 UI 의 상태 관리를 3개 매니저로 분리. 이전엔 `useChat` 내부 7군데 흩어진 `setMessages` 호출로 상태 전이가 추적 불가 → 로봇 사라짐·빈 버블 버그 반복. Core 12-Manager 와 같이 **UI 도메인별 담당구역 명시화**.
+어드민 UI 의 상태 관리를 3개 매니저로 분리. 이전엔 `useChat` 내부 7군데 흩어진 `setMessages` 호출로 상태 전이가 추적 불가 → 로봇 사라짐·빈 버블 버그 반복. Core 13-Manager 와 같이 **UI 도메인별 담당구역 명시화**.
 
 ### 제1항. 위치 규칙
 
@@ -413,7 +414,7 @@ AI Assistant ON 시:
 
 | 구분 | 담당구역 | 위치 |
 |---|---|---|
-| Core 12-Manager | 도메인 비즈니스 로직, 포트 라우팅 | `core/managers/` |
+| Core 13-Manager | 도메인 비즈니스 로직, 포트 라우팅 | `core/managers/` |
 | Frontend 3-Manager | UI 상태 전이, 브라우저 영속, 이벤트 구독 | `app/admin/hooks/` |
 
 **금지 사항**:
