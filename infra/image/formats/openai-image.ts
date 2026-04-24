@@ -1,16 +1,18 @@
 /**
- * OpenAI Images API 핸들러 — gpt-image-2 (Duct Tape) 대응.
+ * OpenAI Images API 핸들러 — gpt-image-1 (현 세대, DALL-E 후속).
  *
  * 요청: POST https://api.openai.com/v1/images/generations
- * 바디: { model, prompt, n, size, quality, response_format }
- *  - response_format="b64_json" 으로 받으면 URL 대신 base64 binary 직접 반환 → 다운로드 round-trip 절약
+ * 바디: { model, prompt, n, size, quality }
+ *  - gpt-image-1 은 response_format 파라미터 없음 (기본 b64_json 반환)
+ *  - output_format 으로 png/jpeg/webp 지정 가능 (기본 png)
  *
- * gpt-image-2 지원 파라미터:
- *  - size: "1024x1024" | "1792x1024" | "1024x1792" | "auto"
+ * gpt-image-1 지원 파라미터:
+ *  - size: "1024x1024" | "1536x1024" (landscape) | "1024x1536" (portrait) | "auto"
  *  - quality: "low" | "medium" | "high"
- *  - n: 1 (현재)
+ *  - n: 1~10
  *
- * 미지원 파라미터 (DALL-E 3 잔재): style 은 무시됨.
+ * 유의: DALL-E 3 의 "1792x1024" / "1024x1792" 사이즈는 gpt-image-1 에선 400.
+ * gpt-image-2 는 2026-05 API 공개 예정 — config 추가만 하면 핸들러 재사용.
  */
 import type { ImageGenOpts, ImageGenCallOpts, ImageGenResult } from '../../../core/ports';
 import type { InfraResult } from '../../../core/types';
@@ -18,8 +20,20 @@ import type { ImageFormatHandler, ImageFormatHandlerContext } from '../format-ha
 
 const DEFAULT_SIZE = '1024x1024';
 const DEFAULT_QUALITY = 'medium';
+const SUPPORTED_SIZES = new Set(['1024x1024', '1536x1024', '1024x1536', 'auto']);
+
+/** AI 가 DALL-E 3 시절 값을 넘기면 gpt-image-1 호환 값으로 매핑 */
+function normalizeSize(size?: string): string {
+  if (!size) return DEFAULT_SIZE;
+  if (SUPPORTED_SIZES.has(size)) return size;
+  // DALL-E 3 landscape/portrait → gpt-image-1 대응 근사치
+  if (size === '1792x1024') return '1536x1024';
+  if (size === '1024x1792') return '1024x1536';
+  return DEFAULT_SIZE;
+}
 
 function parseSize(size: string): { width?: number; height?: number } {
+  if (size === 'auto') return {};
   const m = size.match(/^(\d+)x(\d+)$/);
   return m ? { width: parseInt(m[1], 10), height: parseInt(m[2], 10) } : {};
 }
@@ -33,7 +47,7 @@ export class OpenAIImageFormat implements ImageFormatHandler {
     const apiKey = ctx.resolveApiKey();
     if (!apiKey) return { success: false, error: `API 키가 설정되지 않았습니다: ${ctx.config.apiKeyVaultKey}` };
 
-    const size = opts.size ?? DEFAULT_SIZE;
+    const size = normalizeSize(opts.size);
     const quality = opts.quality ?? DEFAULT_QUALITY;
 
     const body = {
@@ -42,7 +56,6 @@ export class OpenAIImageFormat implements ImageFormatHandler {
       n: opts.n ?? 1,
       size,
       quality,
-      response_format: 'b64_json',
     };
 
     try {
@@ -57,7 +70,9 @@ export class OpenAIImageFormat implements ImageFormatHandler {
       });
       if (!res.ok) {
         const txt = await res.text().catch(() => '');
-        return { success: false, error: `OpenAI Images API ${res.status}: ${txt.slice(0, 500)}` };
+        // 개행 문자 제거 — 여러 줄 에러 바디가 로그 파서에 의해 중간에서 잘리던 문제 방지
+        const flat = txt.replace(/\s+/g, ' ').slice(0, 2000);
+        return { success: false, error: `OpenAI Images API ${res.status}: ${flat}` };
       }
       const json = await res.json() as {
         data?: Array<{ b64_json?: string; revised_prompt?: string }>;

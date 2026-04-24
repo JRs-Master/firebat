@@ -69,6 +69,9 @@ export function writeSetting<K extends keyof SettingsSchema>(key: K, value: Sett
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(key, serialize(key, value));
+    // 훅 밖에서 직접 호출 시에도 snapshot 캐시 무효화 + 구독자 알림 — hook 의 notify 와 동일 효과
+    invalidateSnapshot(key as string);
+    notify(key as string);
   } catch {}
 }
 
@@ -86,12 +89,35 @@ export function writeSetting<K extends keyof SettingsSchema>(key: K, value: Sett
 // 같은 key 구독자는 같은 listener 리스트 공유 — setPlanMode 후 모든 구독 hook 동기 갱신.
 const subscribers = new Map<string, Set<() => void>>();
 
+// snapshot 캐시 — object/array 타입은 JSON.parse 로 매번 새 레퍼런스 생성되면
+// useSyncExternalStore 가 "값이 바뀌었다" 고 판정해 무한 루프 → 페이지 크래시.
+// 원본 raw 문자열을 키로 캐시해서 동일 raw 면 동일 객체 반환 (stable reference).
+const snapshotCache = new Map<string, { raw: string | null; value: unknown }>();
+
+function getStableSnapshot<K extends keyof SettingsSchema>(key: K): SettingsSchema[K] {
+  if (typeof window === 'undefined') return DEFAULTS[key];
+  const raw = localStorage.getItem(key);
+  const cached = snapshotCache.get(key as string);
+  if (cached && cached.raw === raw) return cached.value as SettingsSchema[K];
+  const value = raw === null ? DEFAULTS[key] : (() => {
+    try { return deserialize(key, raw); } catch { return DEFAULTS[key]; }
+  })();
+  snapshotCache.set(key as string, { raw, value });
+  return value;
+}
+
+function invalidateSnapshot(key: string) {
+  snapshotCache.delete(key);
+}
+
 function subscribe(key: string, cb: () => void): () => void {
   let set = subscribers.get(key);
   if (!set) { set = new Set(); subscribers.set(key, set); }
   set.add(cb);
-  // cross-tab: 다른 탭 storage 이벤트 → 이 탭도 알림
-  const onStorage = (e: StorageEvent) => { if (e.key === key) cb(); };
+  // cross-tab: 다른 탭 storage 이벤트 → 이 탭도 알림 (캐시 무효화 선행)
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === key) { invalidateSnapshot(key); cb(); }
+  };
   if (typeof window !== 'undefined') window.addEventListener('storage', onStorage);
   return () => {
     set!.delete(cb);
@@ -101,9 +127,20 @@ function subscribe(key: string, cb: () => void): () => void {
 }
 
 function notify(key: string) {
+  invalidateSnapshot(key);
   const set = subscribers.get(key);
   if (!set) return;
   for (const cb of set) cb();
+}
+
+// Server snapshot — SSR 동안 단일 레퍼런스 유지 (key 별)
+const serverSnapshots = new Map<string, unknown>();
+function getServerSnapshot<K extends keyof SettingsSchema>(key: K): SettingsSchema[K] {
+  const cached = serverSnapshots.get(key as string);
+  if (cached !== undefined) return cached as SettingsSchema[K];
+  const value = DEFAULTS[key];
+  serverSnapshots.set(key as string, value);
+  return value;
 }
 
 /** useSetting — useSyncExternalStore 기반.
@@ -114,15 +151,14 @@ export function useSetting<K extends keyof SettingsSchema>(
 ): [SettingsSchema[K], (value: SettingsSchema[K] | ((prev: SettingsSchema[K]) => SettingsSchema[K])) => void] {
   const value = useSyncExternalStore<SettingsSchema[K]>(
     useCallback(cb => subscribe(key, cb), [key]),
-    useCallback(() => readSetting(key), [key]),
-    useCallback(() => DEFAULTS[key], [key]),
+    useCallback(() => getStableSnapshot(key), [key]),
+    useCallback(() => getServerSnapshot(key), [key]),
   );
 
   const update = useCallback((next: SettingsSchema[K] | ((prev: SettingsSchema[K]) => SettingsSchema[K])) => {
     const prev = readSetting(key);
     const resolved = typeof next === 'function' ? (next as (p: SettingsSchema[K]) => SettingsSchema[K])(prev) : next;
-    writeSetting(key, resolved);
-    notify(key); // 같은 탭 내 다른 useSetting(key) 구독자 즉시 갱신
+    writeSetting(key, resolved); // writeSetting 내부에서 이미 invalidate + notify
   }, [key]);
 
   return [value, update];
