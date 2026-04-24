@@ -12,6 +12,8 @@ import { AuthManager } from './managers/auth-manager';
 import type { ApiTokenInfo } from './managers/auth-manager';
 import { ConversationManager } from './managers/conversation-manager';
 import type { ConversationSummary, ConversationRecord } from './managers/conversation-manager';
+import { ImageManager } from './managers/image-manager';
+import type { GenerateImageInput, GenerateImageResult } from './managers/image-manager';
 import type { FirebatInfraContainer, ILlmPort, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
@@ -62,6 +64,7 @@ export class FirebatCore {
   private readonly task: TaskManager;
   private readonly authMgr: AuthManager;
   private readonly conversation: ConversationManager;
+  private readonly image: ImageManager;
 
   constructor(private readonly infra: FirebatInfraContainer) {
     // 매니저 생성 — 각 매니저는 자기 도메인의 인프라 포트를 직접 받음
@@ -74,6 +77,7 @@ export class FirebatCore {
     this.capability = new CapabilityManager(infra.storage, infra.vault, infra.log);
     this.authMgr = new AuthManager(infra.auth, infra.vault);
     this.conversation = new ConversationManager(infra.database, infra.embedder);
+    this.image = new ImageManager(infra.imageGen, infra.media, infra.vault, infra.log);
 
     // 크로스 도메인 매니저 — Core 참조 필요
     this.task = new TaskManager(this, infra.llm, infra.log);
@@ -376,6 +380,27 @@ export class FirebatCore {
   /** 만료된 공유 정리 — cron 에서 호출. */
   async cleanupExpiredShares() {
     return this.infra.database.cleanupExpiredShares();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  이미지 생성 → ImageManager / 미디어 조회 → IMediaPort
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** AI 가 image_gen 도구 호출 → 이 메서드 → 생성 + 서버 저장 + URL 반환 */
+  generateImage(input: GenerateImageInput, corrId?: string) {
+    return this.image.generate(input, corrId);
+  }
+  /** 선택된 이미지 모델 ID (Vault 기반) */
+  getImageModel() {
+    return this.image.getModel();
+  }
+  /** 이미지 모델 변경 (설정 UI 에서 호출) */
+  setImageModel(modelId: string) {
+    return this.image.setModel(modelId);
+  }
+  /** /api/media/<slug>.<ext> 에서 파일 서빙용 — slug 로 binary + contentType 반환 */
+  readMedia(slug: string) {
+    return this.infra.media.read(slug);
   }
 
   // Plan 실행 / 3-stage state (multi-turn 지속) — 대화 수준 JSON 유지

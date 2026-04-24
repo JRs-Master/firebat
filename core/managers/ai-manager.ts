@@ -1330,6 +1330,27 @@ export class AiManager {
           // suggest는 프론트엔드에서 처리 — 도구 결과로 확인만 전달
           return { success: true, displayed: true };
         }
+        case 'image_gen': {
+          const { prompt, size, quality, filenameHint } = tc.args as {
+            prompt: string;
+            size?: string;
+            quality?: string;
+            filenameHint?: string;
+          };
+          const res = await this.core.generateImage({ prompt, size, quality, filenameHint });
+          if (!res.success || !res.data) return { success: false, error: res.error || '이미지 생성 실패' };
+          const d = res.data;
+          return {
+            success: true,
+            url: d.url,
+            thumbnailUrl: d.thumbnailUrl,
+            width: d.width,
+            height: d.height,
+            slug: d.slug,
+            modelId: d.modelId,
+            revisedPrompt: d.revisedPrompt,
+          };
+        }
         case 'complete_plan': {
           // 진행 중 plan 종료 — conversation 의 active_plan_state 클리어 + plan-store 에서도 제거
           const reason = (tc.args as { reason?: string }).reason || 'AI 판단 완료';
@@ -2065,6 +2086,25 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
               description: '선택지 배열. 문자열=버튼, {"type":"input","label":"..","placeholder":".."}=입력, {"type":"toggle","label":"..","options":[..]}=다중 선택',
               items: { type: ['object', 'string'] },
             },
+          },
+        },
+      },
+      {
+        name: 'image_gen',
+        description: `AI 이미지 생성 + 서버 자동 저장. 반환 URL 을 render_image 의 src 에 바로 사용하거나 블로그 포스팅에 첨부.
+
+**사용 시점**: 블로그 헤더·썸네일·일러스트 필요할 때, 사용자가 "이미지/그림/썸네일" 명시 요청할 때.
+**쓰지 마라**: 데이터 차트는 render_chart (인터랙티브·정확). 표는 render_table. 수치는 render_metric.
+
+프롬프트는 영어 권장 (모델 최적). 한국어 명시 텍스트는 따옴표 안에 ("title: '삼성전자 2026'"). 스타일 키워드 포함 ("photorealistic", "minimalist flat illustration", "cinematic lighting" 등). gpt-image-2 는 다국어 텍스트 99% 정확.`,
+        parameters: {
+          type: 'object',
+          required: ['prompt'],
+          properties: {
+            prompt: { type: 'string', description: '이미지 설명. 영어 권장, 상세 묘사 + 스타일 키워드.' },
+            size: { type: 'string', enum: ['1024x1024', '1792x1024', '1024x1792'], description: '출력 크기. 기본 1024x1024. 블로그 헤더=1792x1024, 세로 썸네일=1024x1792.' },
+            quality: { type: 'string', enum: ['low', 'medium', 'high'], description: '품질 (비용: low $0.011 / medium $0.042 / high $0.19). 블로그 헤더는 high 권장, 일반 삽화는 medium.' },
+            filenameHint: { type: 'string', description: '파일명 힌트 (로그용 선택). 예: "blog-hero-samsung-2026"' },
           },
         },
       },

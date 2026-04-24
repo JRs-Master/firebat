@@ -1,0 +1,15 @@
+{
+  "id": "gpt-image-2",
+  "displayName": "GPT Image 2 (Duct Tape)",
+  "provider": "openai",
+  "format": "openai-image",
+  "endpoint": "https://api.openai.com/v1/images/generations",
+  "apiKeyVaultKey": "OPENAI_API_KEY",
+  "features": {
+    "multilingualText": true,
+    "photorealistic": true,
+    "sizes": ["1024x1024", "1792x1024", "1024x1792"],
+    "qualities": ["low", "medium", "high"]
+  },
+  "pricing": { "lowPerImage": 0.011, "mediumPerImage": 0.042, "highPerImage": 0.19 }
+}

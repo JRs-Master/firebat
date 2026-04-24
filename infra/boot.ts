@@ -17,6 +17,8 @@ import { McpClientAdapter } from './mcp-client';
 import { VaultAuthAdapter } from './auth';
 import { EmbedderAdapter } from './llm/embedder-adapter';
 import { LlmRouter } from './llm/llm-router';
+import { LocalMediaAdapter } from './media/local-adapter';
+import { buildImageConfigDrivenAdapter, loadImageRegistry, DEFAULT_IMAGE_MODEL } from './image/factory';
 import { DB_PATH, DEFAULT_MODEL } from './config';
 
 /** 전체 인프라 싱글톤 */
@@ -62,6 +64,17 @@ export function getInfra(): FirebatInfraContainer {
     );
 
     const database = new SqliteDatabaseAdapter(DB_PATH);
+
+    // Image generation — LLM 과 동일 패턴 (config-driven)
+    const imageRegistry = loadImageRegistry();
+    const imageGen = buildImageConfigDrivenAdapter(
+      imageRegistry,
+      DEFAULT_IMAGE_MODEL,
+      (key: string) => vault.getSecret(key) || process.env[key] || null,
+    );
+    // Media — 서버 저장 (data/media/)
+    const media = new LocalMediaAdapter(log);
+
     globalForInfra.firebatInfra = {
       storage: new LocalStorageAdapter(),
       log,
@@ -74,6 +87,8 @@ export function getInfra(): FirebatInfraContainer {
       llm,
       auth: new VaultAuthAdapter(vault),
       embedder: new EmbedderAdapter(),
+      media,
+      imageGen,
       toolRouter: (modelId: string) => new LlmRouter(database, llm, modelId),
     };
 

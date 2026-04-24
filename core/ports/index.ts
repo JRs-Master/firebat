@@ -687,6 +687,99 @@ export interface FirebatInfraContainer {
   mcpClient: IMcpClientPort;
   auth: IAuthPort;
   embedder: IEmbedderPort;
+  media: IMediaPort;
+  imageGen: IImageGenPort;
   /** Vault 기반 모델명을 매 요청 시 읽어야 해서 factory 로 주입 */
   toolRouter: ToolRouterFactory;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Media (이미지/파일 저장·서빙) — AI 생성 이미지, OG 썸네일 캐싱, 업로드 등 공용 미디어 인프라
+// ══════════════════════════════════════════════════════════════════════════
+
+export interface MediaSaveOptions {
+  /** 파일 확장자 (png/jpg/webp 등) — 미지정 시 contentType 에서 추론 */
+  ext?: string;
+  /** 원본 파일명 힌트 — 저장엔 영향 없고 로그에만 사용 */
+  originalName?: string;
+  /** 썸네일 생성 여부 (기본 false). true 면 256px 썸네일 동시 저장 */
+  thumbnail?: boolean;
+  /** 썸네일 최대 너비 px (thumbnail=true 시 유효). 기본 256 */
+  thumbnailWidth?: number;
+}
+
+export interface MediaSaveResult {
+  /** 고유 slug — URL 조립 및 재조회용 */
+  slug: string;
+  /** 공개 URL — /api/media/<slug>.<ext> 형태 */
+  url: string;
+  /** 썸네일 URL (thumbnail=true 시만) — /api/media/<slug>-thumb.<ext> */
+  thumbnailUrl?: string;
+  /** 이미지 실제 크기 (감지 가능한 경우만) */
+  width?: number;
+  height?: number;
+  /** 바이트 크기 */
+  bytes: number;
+}
+
+export interface MediaFileRecord {
+  slug: string;
+  ext: string;
+  contentType: string;
+  bytes: number;
+  createdAt: number;
+}
+
+export interface IMediaPort {
+  /** binary 저장 + URL 발급. 썸네일 옵션으로 동시 생성 가능. */
+  save(binary: Buffer | Uint8Array, contentType: string, opts?: MediaSaveOptions): Promise<InfraResult<MediaSaveResult>>;
+  /** slug 로 파일 경로 + 메타데이터 조회. API route 에서 스트리밍 응답용. */
+  read(slug: string): Promise<InfraResult<{ binary: Buffer; contentType: string; record: MediaFileRecord } | null>>;
+  /** 메타데이터만 (HEAD 등) */
+  stat(slug: string): Promise<InfraResult<MediaFileRecord | null>>;
+  /** 수동 삭제 (정리 cron 등에서 사용) */
+  remove(slug: string): Promise<InfraResult<void>>;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Image Generation (AI 이미지 생성) — LLM 과 대칭 구조. API/CLI 모드별 핸들러 + config.
+// ══════════════════════════════════════════════════════════════════════════
+
+export interface ImageGenOpts {
+  prompt: string;
+  /** 출력 크기 — 공식 지원 값 중 하나. 예: "1024x1024" | "1792x1024" | "1024x1792" */
+  size?: string;
+  /** 품질 — provider 마다 해석 다름 ("standard" | "hd" | "low" | "medium" | "high" 등) */
+  quality?: string;
+  /** 스타일 지시 (선택) */
+  style?: string;
+  /** n 개 생성 (1 권장, 다수 지원 provider 만) */
+  n?: number;
+  /** 모델 ID override — 미지정 시 ImageGenCallOpts 의 기본 사용 */
+  model?: string;
+}
+
+export interface ImageGenCallOpts {
+  /** 모델 ID — config-adapter 가 이걸로 config 선택 */
+  model?: string;
+  /** 요청 상관 ID — 로깅 추적 */
+  corrId?: string;
+}
+
+export interface ImageGenResult {
+  /** 생성된 이미지 binary (PNG/WEBP 등) */
+  binary: Buffer;
+  contentType: string;
+  /** 감지 가능한 경우 해상도 */
+  width?: number;
+  height?: number;
+  /** provider 가 반환한 revised_prompt 등 */
+  revisedPrompt?: string;
+}
+
+export interface IImageGenPort {
+  /** 현재 설정된 모델 ID 반환 — 로그용 */
+  getModelId(): string;
+  /** 이미지 생성 — Core 의 ImageManager 가 이 결과를 IMediaPort 로 저장 */
+  generate(opts: ImageGenOpts, callOpts?: ImageGenCallOpts): Promise<InfraResult<ImageGenResult>>;
 }

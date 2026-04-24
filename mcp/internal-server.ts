@@ -272,6 +272,59 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     },
   );
 
+  // ── 이미지 생성 ──────────────────────────────────────────────────────────
+  server.tool(
+    'image_gen',
+    `AI 이미지 생성 후 서버에 자동 저장하고 공개 URL 을 반환한다.
+
+**사용 시점**:
+- 블로그·SNS 포스팅용 헤더/썸네일 이미지 필요할 때
+- 분석 글에 맥락 일러스트 필요할 때
+- 사용자가 "이미지/그림/썸네일/일러스트" 명시 요청할 때
+
+**쓰지 마라 (render_* 가 더 나은 경우)**:
+- 데이터 차트 → render_chart / render_stock_chart (인터랙티브, 정확)
+- 표 → render_table
+- 수치 카드 → render_metric
+
+반환 URL 은 영속 서버 저장본 (/api/media/*). 반환받은 url 을 render_image 의 src 에 바로 넣어 표시하거나, 블로그 포스팅 파이프라인에 첨부할 수 있다.
+
+**프롬프트 품질 팁**:
+- 영어로 상세 묘사 권장 (모델 품질 최고). 한국어도 되지만 영문이 더 정확.
+- 스타일 키워드 포함 ("photorealistic", "minimalist flat illustration", "cinematic lighting", "infographic style" 등)
+- 텍스트 넣을 땐 따옴표로 명시 ("title text: 'Samsung 2026 Outlook'"). gpt-image-2 는 한국어 포함 다국어 텍스트 99% 정확.`,
+    {
+      prompt: z.string().describe('이미지 설명 프롬프트. 영어 권장 (품질 최적). 한국어 명시 텍스트는 따옴표 안에.'),
+      size: z.enum(['1024x1024', '1792x1024', '1024x1792']).optional().describe('출력 크기. 기본 1024x1024 (정사각). 블로그 헤더는 1792x1024, 세로 썸네일은 1024x1792.'),
+      quality: z.enum(['low', 'medium', 'high']).optional().describe('품질. low=$0.011, medium=$0.042(기본), high=$0.19. 블로그 헤더·중요 이미지는 high 권장.'),
+      filenameHint: z.string().optional().describe('파일명 힌트 (로그용). 예: "blog-hero-samsung-2026"'),
+    },
+    async (args) => {
+      const res = await core.generateImage({
+        prompt: args.prompt as string,
+        size: args.size as string | undefined,
+        quality: args.quality as string | undefined,
+        filenameHint: args.filenameHint as string | undefined,
+      });
+      if (!res.success || !res.data) {
+        return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: res.error || '이미지 생성 실패' }) }] };
+      }
+      const d = res.data;
+      return {
+        content: [{ type: 'text', text: JSON.stringify({
+          success: true,
+          url: d.url,
+          thumbnailUrl: d.thumbnailUrl,
+          width: d.width,
+          height: d.height,
+          slug: d.slug,
+          modelId: d.modelId,
+          revisedPrompt: d.revisedPrompt,
+        }) }],
+      };
+    },
+  );
+
   // ── 페이지 ──────────────────────────────────────────────────────────────
   server.tool(
     'list_pages',
