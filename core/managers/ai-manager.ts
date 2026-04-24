@@ -708,7 +708,18 @@ export class AiManager {
       }
       const llmStart = Date.now();
       // previousResponseId 있으면 history/toolExchanges 재전송 생략 (OpenAI 서버가 유지)
-      const turnLlmOpts: LlmCallOpts = { ...baseLlmOpts, ...(currentResponseId ? { previousResponseId: currentResponseId } : {}) };
+      // 동적 temperature — 도구 호출 턴 (turn 1 ~ 중간) 은 0.2 (스키마 엄수),
+      // 최종 응답 턴 (toolExchanges 가 쌓여있는 상태 = 이번에 tool_choice:none 기대) 은 0.7.
+      // turn 번호만으로 안 건 불확실해서 "이전 턴에 도구 호출이 있었나" 기준:
+      //  - 아직 도구 호출 기록 없음 → 이번 턴도 도구 호출 가능성 높음 (낮은 temp)
+      //  - 도구 호출이 이미 있었음 → 이번엔 summarize turn 일 가능성 (높은 temp)
+      // Heuristic 이라 완벽치 않지만 실험적으로 효과 있음.
+      const dynamicTemp = toolExchanges.length === 0 ? 0.2 : 0.7;
+      const turnLlmOpts: LlmCallOpts = {
+        ...baseLlmOpts,
+        temperature: dynamicTemp,
+        ...(currentResponseId ? { previousResponseId: currentResponseId } : {}),
+      };
       const turnHistory = currentResponseId ? [] : recentHistory;
       // 이전 턴 결과는 aggressive 축약 — 매 턴 누적 재전송되는 토큰 비용 차단.
       //  (sysmod/mcp/network/execute 원본이 멀티턴 루프에서 반복 전송되는 문제 해결)

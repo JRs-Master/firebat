@@ -212,11 +212,13 @@ export class OpenAiAdapter implements ILlmPort {
         (opts?.thinkingLevel as any) || 'medium';
       // 24시간 확장 캐시 (gpt-5/gpt-4.1+에서만 유효)
       const supportsExtendedCache = /^(gpt-5|gpt-4\.1)/i.test(model);
+      // opts.temperature (동적 주입) 우선, 없으면 기본값. reasoning 모델은 어차피 무시.
+      const temp = typeof opts?.temperature === 'number' ? opts.temperature : LLM_TEMPERATURE_TEXT;
       const payload: Record<string, unknown> = {
         model,
         instructions: systemPrompt,
         input,
-        ...(isReasoningModel ? {} : { temperature: LLM_TEMPERATURE_TEXT }),
+        ...(isReasoningModel ? {} : { temperature: temp }),
         ...(openaiTools.length > 0 ? { tools: openaiTools, tool_choice: 'auto' } : {}),
         ...(isReasoningModel ? { reasoning: { effort: effortValue, summary: 'auto' } } : {}),
         prompt_cache_key: 'firebat-admin',

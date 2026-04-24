@@ -148,12 +148,14 @@ export class VertexGeminiFormat implements FormatHandler {
         parameters: adaptSchemaForGemini(t.parameters),
       }));
 
+      // opts.temperature 동적 주입 우선. 없으면 기본값.
+      const tempValue = typeof opts?.temperature === 'number' ? opts.temperature : LLM_TEMPERATURE_TEXT;
       const requestConfig = {
         model: ctx.config.id,
         contents,
         config: {
           systemInstruction: systemPrompt,
-          temperature: LLM_TEMPERATURE_TEXT,
+          temperature: tempValue,
           ...(ctx.config.features?.thinking ? { thinkingConfig: buildThinkingConfig(opts?.thinkingLevel ?? 'low') } : {}),
           ...(functionDeclarations.length > 0 ? {
             tools: [{ functionDeclarations }],

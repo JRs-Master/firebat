@@ -132,6 +132,8 @@ export class AnthropicMessagesFormat implements FormatHandler {
       const maxTokens = 32000;
 
       const betas = useMcp ? ['mcp-client-2025-11-20'] : undefined;
+      // Extended thinking 활성 시 temperature 무시됨 (Anthropic 공식 제약). 아니면 opts 값 사용.
+      const tempValue = typeof opts?.temperature === 'number' ? opts.temperature : undefined;
       const payload: any = {
         model: ctx.config.id,
         max_tokens: maxTokens,
@@ -139,6 +141,7 @@ export class AnthropicMessagesFormat implements FormatHandler {
         messages,
         ...(combinedTools.length > 0 ? { tools: combinedTools } : {}),
         ...(thinking ? { thinking } : {}),
+        ...(tempValue !== undefined && !thinking ? { temperature: tempValue } : {}),
         ...(mcpServers ? { mcp_servers: mcpServers } : {}),
         ...(betas ? { betas } : {}),
       };

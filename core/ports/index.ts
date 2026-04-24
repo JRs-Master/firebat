@@ -220,6 +220,10 @@ export interface LlmCallOpts {
   model?: string;
   /** Thinking 수준 (minimal/low/medium/high) */
   thinkingLevel?: string;
+  /** 샘플링 온도 — 0=deterministic, 1=default, 2=창의적.
+   *  도구 호출 턴엔 낮게 (스키마 준수), 최종 응답 턴엔 높게 (자연스러운 글) 동적 설정 권장.
+   *  API 핸들러만 반영 (CLI 는 구독 기반이라 이 파라미터 미지원). */
+  temperature?: number;
   /** 스트리밍 청크 콜백 — 설정 시 generateContentStream 사용 */
   onChunk?: (chunk: LlmChunk) => void;
   /** 현재 프롬프트에 첨부할 이미지 (Base64 data URL 또는 순수 base64) */
