@@ -710,6 +710,8 @@ export interface MediaSaveOptions {
   thumbnail?: boolean;
   /** 썸네일 최대 너비 px (thumbnail=true 시 유효). 기본 256 */
   thumbnailWidth?: number;
+  /** 저장 scope — 'user' (AI 가 유저 요청으로 생성한 블로그·일러스트) / 'system' (Firebat 자체 생성 OG·캐시 등). 기본 'user'. */
+  scope?: 'user' | 'system';
 }
 
 export interface MediaSaveResult {
@@ -732,6 +734,7 @@ export interface MediaFileRecord {
   contentType: string;
   bytes: number;
   createdAt: number;
+  scope?: 'user' | 'system';
 }
 
 export interface IMediaPort {
