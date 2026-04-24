@@ -1,9 +1,11 @@
 import type { MetadataRoute } from 'next';
+import { headers } from 'next/headers';
 import { getCore } from '../lib/singleton';
 import { BASE_URL } from '../infra/config';
 
-/** 동적 robots.txt — SEO 모듈 설정에서 내용 로드 */
-export default function robots(): MetadataRoute.Robots {
+/** 동적 robots.txt — SEO 모듈 설정에서 내용 로드.
+ *  Next.js metadata route 는 req 객체 없지만 headers() API 로 요청 host 접근 가능. */
+export default async function robots(): Promise<MetadataRoute.Robots> {
   const core = getCore();
   const seo = core.getSeoSettings();
   const raw = seo.robotsTxt.trim();
@@ -49,7 +51,25 @@ export default function robots(): MetadataRoute.Robots {
     });
   }
 
-  const baseUrl = seo.siteUrl || BASE_URL;
+  // baseUrl 우선순위:
+  //  1. SEO 설정 siteUrl (관리자 입력)
+  //  2. NEXT_PUBLIC_BASE_URL env
+  //  3. 요청 host (nginx Host / X-Forwarded-Host 자동 전달)
+  //  4. BASE_URL (env 폴백, 최종적으로 localhost)
+  let baseUrl = seo.siteUrl || process.env.NEXT_PUBLIC_BASE_URL || '';
+  if (!baseUrl) {
+    try {
+      const h = await headers();
+      const host = h.get('x-forwarded-host') || h.get('host');
+      if (host) {
+        const proto = h.get('x-forwarded-proto') || (host.startsWith('localhost') || host.startsWith('127.') ? 'http' : 'https');
+        baseUrl = `${proto}://${host}`;
+      }
+    } catch { /* headers 접근 실패 */ }
+  }
+  if (!baseUrl) baseUrl = BASE_URL;
+  baseUrl = baseUrl.replace(/\/$/, '');
+
   return {
     rules,
     ...(seo.sitemapEnabled ? { sitemap: `${baseUrl}/sitemap.xml` } : {}),
