@@ -21,7 +21,7 @@ import type { Message, StepStatus, PendingAction } from '../types';
 export const FALLBACK = {
   EMPTY_REPLY: '응답을 받지 못했습니다. 다시 시도해주세요.',
   INVISIBLE: '응답이 비어있습니다 (SSE 연결 누락 가능성)',
-  TIMEOUT: '응답이 3분을 초과했습니다. SSE 연결 끊김 가능성 — 다시 시도해주세요.',
+  TIMEOUT: '서버에서 2분 넘게 응답이 없습니다. SSE 연결 끊김 가능성 — 다시 시도해주세요.',
   NETWORK: '서버 네트워크 연결이 끊어졌습니다.',
   ABORTED: '중단되었습니다.',
 } as const;
