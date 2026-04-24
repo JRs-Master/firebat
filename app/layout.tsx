@@ -8,10 +8,11 @@ export const viewport: Viewport = {
 };
 
 // metadataBase — Next.js 가 OG 이미지·Twitter 카드 URL 을 절대경로로 해석할 때 기준.
-// 미설정 시 localhost:3000 으로 폴백되어 SNS 크롤러가 이미지 못 가져옴.
-// 우선순위: NEXT_PUBLIC_BASE_URL env → firebat.co.kr (기본) → 로컬 개발 fallback.
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL
-  || (process.env.NODE_ENV === 'production' ? 'https://firebat.co.kr' : 'http://localhost:3000');
+// 범용 플랫폼이라 특정 도메인 하드코딩 X. 우선순위:
+//   1. NEXT_PUBLIC_BASE_URL env (배포 시 명시)
+//   2. dev fallback (localhost:3000)
+// 동적 페이지 (blog/slug 등) 는 자체 generateMetadata 에서 SEO.siteUrl 기준 override 가능.
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),

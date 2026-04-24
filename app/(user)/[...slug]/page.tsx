@@ -3,6 +3,27 @@ import { cookies } from 'next/headers';
 import { getCore } from '../../../lib/singleton';
 import { ComponentRenderer } from './components';
 import { BASE_URL } from '../../../infra/config';
+import { headers } from 'next/headers';
+
+/** 실제 사용할 base URL 해석 —
+ *   1. SEO 설정의 siteUrl (관리자가 Firebat 설정에서 입력, 최우선)
+ *   2. NEXT_PUBLIC_BASE_URL env
+ *   3. 요청 헤더 host (nginx X-Forwarded-Host / Host)
+ *   4. infra/config BASE_URL (env 폴백 또는 localhost:3000)
+ * 범용 플랫폼이라 특정 도메인 하드코딩 배제 — 배포 환경이 자체적으로 값 제공. */
+async function resolveBaseUrl(seoSiteUrl?: string): Promise<string> {
+  if (seoSiteUrl) return seoSiteUrl.replace(/\/$/, '');
+  if (process.env.NEXT_PUBLIC_BASE_URL) return process.env.NEXT_PUBLIC_BASE_URL.replace(/\/$/, '');
+  try {
+    const h = await headers();
+    const host = h.get('x-forwarded-host') || h.get('host');
+    if (host) {
+      const proto = h.get('x-forwarded-proto') || (host.startsWith('localhost') || host.startsWith('127.') ? 'http' : 'https');
+      return `${proto}://${host}`;
+    }
+  } catch { /* headers() 접근 실패 — 폴백 */ }
+  return BASE_URL;
+}
 import { PasswordGate } from './password-gate';
 import type { Metadata } from 'next';
 
@@ -54,13 +75,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const head = spec.head ?? {};
   const seo = core.getSeoSettings();
+  const baseUrl = await resolveBaseUrl(seo.siteUrl);
 
   const ogTitle = head.og?.title ?? head.title ?? slug;
   const ogDesc = head.og?.description ?? head.description ?? seo.siteDescription;
   const ogImage = head.og?.image ||
-    `${BASE_URL}/api/og?title=${encodeURIComponent(ogTitle)}&description=${encodeURIComponent(ogDesc)}`;
+    `${baseUrl}/api/og?title=${encodeURIComponent(ogTitle)}&description=${encodeURIComponent(ogDesc)}`;
 
   return {
+    // metadataBase override — layout 의 정적 값 대신 동적 resolve 결과 사용 (상대경로 이미지도 이 기준으로 절대화)
+    metadataBase: new URL(baseUrl),
     title: head.title ?? slug,
     description: head.description ?? '',
     keywords: head.keywords ?? [],
@@ -130,7 +154,7 @@ export default async function DynamicPage({ params }: Props) {
   const head = spec.head ?? {};
   const body = spec.body ?? [];
   const seo = core.getSeoSettings();
-  const siteUrl = seo.siteUrl || BASE_URL;
+  const siteUrl = await resolveBaseUrl(seo.siteUrl);
 
   // 페이지별 JSON-LD (WebPage)
   const pageJsonLd = seo.jsonLdEnabled ? {
