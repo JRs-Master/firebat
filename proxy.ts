@@ -46,6 +46,9 @@ export function proxy(request: NextRequest) {
   if (pathname === '/api/fs/projects/verify') return NextResponse.next();
   // 공유 대화 공개 읽기 — 공유 링크 받은 사람 인증 없이 접근. POST (생성) 는 인증 필수.
   if (pathname.match(/^\/api\/share\/[^/]+$/) && request.method === 'GET') return NextResponse.next();
+  // AI 생성 이미지 공개 서빙 — /api/media/<slug>.<ext>. 블로그·OG·공유 페이지에서 익명 접근.
+  //   slug 자체가 랜덤 hex 라 URL 모르면 접근 불가 (obscurity). GET 만 허용.
+  if (pathname.startsWith('/api/media/') && request.method === 'GET') return NextResponse.next();
 
   // ── /api/* — 쿠키 또는 Bearer 없으면 401 ──
   if (pathname.startsWith('/api/')) {
