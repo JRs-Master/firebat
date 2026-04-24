@@ -441,49 +441,57 @@ export function Sidebar({
     />
     <div className="fixed top-12 bottom-0 left-0 z-40 w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 shadow-lg overflow-hidden">
 
-      {/* 탭 헤더 */}
-      <div className="flex items-center gap-1 px-2 py-2 border-b border-slate-200/80">
+      {/* 탭 헤더 — 아이콘 전용 (PC·모바일 공통, 공간 절약) */}
+      <div className="flex items-center gap-0.5 px-2 py-2 border-b border-slate-200/80">
         <button
           onClick={() => setTab('workspace')}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-extrabold tracking-widest transition-colors ${
+          title="Workspace"
+          className={`p-2 rounded-md transition-colors ${
             tab === 'workspace' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
           }`}
         >
-          <FolderTree size={12} /> WORKSPACE
+          <FolderTree size={15} />
         </button>
         <button
           onClick={() => setTab('chats')}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-extrabold tracking-widest transition-colors ${
+          title="대화 목록"
+          className={`relative p-2 rounded-md transition-colors ${
             tab === 'chats' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
           }`}
         >
-          <MessageSquare size={12} /> CHATS
+          <MessageSquare size={15} />
+          {conversations.length > 0 && tab !== 'chats' && (
+            <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-blue-500 text-white text-[8px] font-black rounded-full flex items-center justify-center">
+              {Math.min(conversations.length, 9)}
+            </span>
+          )}
         </button>
         <button
           onClick={() => setTab('gallery')}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-extrabold tracking-widest transition-colors ${
+          title="갤러리"
+          className={`p-2 rounded-md transition-colors ${
             tab === 'gallery' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
           }`}
         >
-          <ImageIcon size={12} /> GALLERY
+          <ImageIcon size={15} />
         </button>
         <div className="flex-1" />
         {onOpenSettings ? (
           <button
             onClick={() => { onOpenSettings(); if (isMobile) closeSidebar(); }}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
             title="설정"
           >
-            <Settings size={14} />
+            <Settings size={15} />
           </button>
         ) : null}
         {!isMobile && (
           <button
             onClick={closeSidebar}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
             title="사이드바 접기"
           >
-            <PanelLeftClose size={14} />
+            <PanelLeftClose size={15} />
           </button>
         )}
       </div>
