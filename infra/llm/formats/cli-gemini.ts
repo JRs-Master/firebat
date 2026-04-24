@@ -273,6 +273,10 @@ export class CliGeminiFormat implements FormatHandler {
       let sessionId: string | undefined;
       let errored = false;
       let errorMsg: string | undefined;
+      // 스트림 청크 경계를 넘어 상태 유지 — [Thought: true] 와 [Thought: false] 가
+      // 서로 다른 청크에 도착해도 중간 내용을 thinking 으로 정확히 분리.
+      // 청크 조각화 버그 방지 (thinking 텍스트가 본문으로 누출되던 문제).
+      let isInThought = false;
 
       const toErrStr = (v: unknown): string => {
         if (typeof v === 'string') return v;
@@ -314,39 +318,35 @@ export class CliGeminiFormat implements FormatHandler {
               options.onChunk?.({ type: 'thinking', content: ev.content });
               return;
             }
-            // 인라인 [Thought: true] 마커 파싱
+            // 인라인 [Thought: true/false] 마커 파싱 — 청크 조각화 대응 stateful 파서.
+            //   청크 간 경계를 넘어 isInThought 상태 유지 (처음 보고된 버그 원인).
+            //   한 청크에 마커가 없어도 isInThought=true 면 그 청크 전체가 thinking.
+            //   한 청크 안에 여러 마커가 있으면 각 마커 전후 세그먼트 분할 후 당시 state 기준 분류.
             const raw = ev.content;
-            if (raw.includes('[Thought:')) {
-              // [Thought: true]<...>(다음 [Thought: ...] 또는 끝까지) 블록을 모두 thinking 으로 분리
-              const THOUGHT_RE = /\[Thought:\s*(?:true|false)\]/g;
-              const parts: Array<{ kind: 'text' | 'thinking'; text: string }> = [];
-              let lastIdx = 0;
-              let m: RegExpExecArray | null;
-              // 첫 마커 이전: 일반 텍스트
-              while ((m = THOUGHT_RE.exec(raw)) !== null) {
-                if (m.index > lastIdx) {
-                  parts.push({ kind: lastIdx === 0 ? 'text' : 'thinking', text: raw.slice(lastIdx, m.index) });
-                }
-                lastIdx = m.index + m[0].length;
+            const MARKER_RE = /\[Thought:\s*(true|false)\]/g;
+            const emit = (text: string, kind: 'text' | 'thinking') => {
+              if (!text || !text.trim()) return; // 공백만 있는 조각은 스킵 (isThinking 플립 방지)
+              if (kind === 'text') {
+                textParts.push(text);
+                options.onChunk?.({ type: 'text', content: text });
+              } else {
+                options.onChunk?.({ type: 'thinking', content: text });
               }
-              // 마지막 마커 이후 나머지 — thinking (마커가 한 번이라도 있었다면)
-              if (lastIdx < raw.length) {
-                parts.push({ kind: 'thinking', text: raw.slice(lastIdx) });
+            };
+            let cursor = 0;
+            let m: RegExpExecArray | null;
+            while ((m = MARKER_RE.exec(raw)) !== null) {
+              // 마커 이전 segment — 지금 state 기준으로 분류
+              if (m.index > cursor) {
+                emit(raw.slice(cursor, m.index), isInThought ? 'thinking' : 'text');
               }
-              for (const p of parts) {
-                if (!p.text || !p.text.trim()) continue; // 공백만 있는 조각은 스킵 (isThinking 플립 방지)
-                if (p.kind === 'text') {
-                  textParts.push(p.text);
-                  options.onChunk?.({ type: 'text', content: p.text });
-                } else {
-                  options.onChunk?.({ type: 'thinking', content: p.text });
-                }
-              }
-            } else {
-              // thinkingConfig.includeThoughts=false 로 thought 생성 자체가 억제되므로
-              // raw content 는 그대로 text 로 통과.
-              textParts.push(raw);
-              options.onChunk?.({ type: 'text', content: raw });
+              // 마커 소비: state 플립 (true → thinking 모드 ON, false → OFF)
+              isInThought = m[1] === 'true';
+              cursor = m.index + m[0].length;
+            }
+            // 마지막 마커 이후 남은 조각 — 현재 state 기준
+            if (cursor < raw.length) {
+              emit(raw.slice(cursor), isInThought ? 'thinking' : 'text');
             }
           }
           return;
