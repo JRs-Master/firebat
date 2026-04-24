@@ -692,6 +692,7 @@ export interface FirebatInfraContainer {
   auth: IAuthPort;
   embedder: IEmbedderPort;
   media: IMediaPort;
+  imageProcessor: IImageProcessorPort;
   imageGen: IImageGenPort;
   /** Vault 기반 모델명을 매 요청 시 읽어야 해서 factory 로 주입 */
   toolRouter: ToolRouterFactory;
@@ -704,27 +705,49 @@ export interface FirebatInfraContainer {
 export interface MediaSaveOptions {
   /** 파일 확장자 (png/jpg/webp 등) — 미지정 시 contentType 에서 추론 */
   ext?: string;
-  /** 원본 파일명 힌트 — 저장엔 영향 없고 로그에만 사용 */
-  originalName?: string;
-  /** 썸네일 생성 여부 (기본 false). true 면 256px 썸네일 동시 저장 */
+  /** 파일명 힌트 — 네이밍 규칙 적용: YYYY-MM-DD-<hint-slug>-<rand>.ext */
+  filenameHint?: string;
+  /** 썸네일 생성 여부 (기본 true). 256px 썸네일 동시 저장 */
   thumbnail?: boolean;
-  /** 썸네일 최대 너비 px (thumbnail=true 시 유효). 기본 256 */
-  thumbnailWidth?: number;
-  /** 저장 scope — 'user' (AI 가 유저 요청으로 생성한 블로그·일러스트) / 'system' (Firebat 자체 생성 OG·캐시 등). 기본 'user'. */
+  /** 반응형 variants 생성 (기본 빈 배열 = 비활성) */
+  variants?: Array<{ width: number; format?: 'webp' | 'avif' | 'jpeg' }>;
+  /** 저장 scope — 'user' / 'system'. 기본 'user'. */
   scope?: 'user' | 'system';
+  /** 이미지 생성 도구가 넘기는 메타 — 갤러리에서 검색·표시용 */
+  prompt?: string;
+  revisedPrompt?: string;
+  model?: string;
+  size?: string;
+  quality?: string;
+  /** aspect ratio crop 결과 보존 — 예: "16:9", "1:1", "4:5" */
+  aspectRatio?: string;
+  /** crop 전략 — 'attention' (자동) / 'entropy' / 'center' / {x,y} */
+  focusPoint?: 'attention' | 'entropy' | 'center' | { x: number; y: number };
+}
+
+export interface MediaVariant {
+  width: number;
+  height?: number;
+  format: string;      // 'webp' | 'avif' | 'jpeg' | ...
+  url: string;         // /user/media/<slug>-480w.webp
+  bytes: number;
 }
 
 export interface MediaSaveResult {
-  /** 고유 slug — URL 조립 및 재조회용 */
+  /** 고유 slug — URL 조립 및 재조회용. 네이밍 규칙: YYYY-MM-DD-<hint>-<rand> */
   slug: string;
-  /** 공개 URL — /api/media/<slug>.<ext> 형태 */
+  /** 공개 URL 원본 — /user/media/<slug>.<ext> 또는 /system/media/... */
   url: string;
-  /** 썸네일 URL (thumbnail=true 시만) — /api/media/<slug>-thumb.<ext> */
+  /** 썸네일 URL (256px webp) */
   thumbnailUrl?: string;
-  /** 이미지 실제 크기 (감지 가능한 경우만) */
+  /** 반응형 variants 목록 (생성 활성 시) */
+  variants?: MediaVariant[];
+  /** Blurhash 문자열 (생성 활성 시) */
+  blurhash?: string;
+  /** 이미지 실제 크기 */
   width?: number;
   height?: number;
-  /** 바이트 크기 */
+  /** 원본 바이트 크기 */
   bytes: number;
 }
 
@@ -733,19 +756,93 @@ export interface MediaFileRecord {
   ext: string;
   contentType: string;
   bytes: number;
+  width?: number;
+  height?: number;
   createdAt: number;
   scope?: 'user' | 'system';
+  /** 갤러리 검색·표시용 메타 */
+  filenameHint?: string;
+  prompt?: string;
+  revisedPrompt?: string;
+  model?: string;
+  size?: string;
+  quality?: string;
+  /** aspect ratio crop 결과 (예: "16:9") */
+  aspectRatio?: string;
+  /** crop 전략 */
+  focusPoint?: 'attention' | 'entropy' | 'center' | { x: number; y: number };
+  /** 반응형 variants */
+  variants?: MediaVariant[];
+  /** 썸네일 URL */
+  thumbnailUrl?: string;
+  /** Blurhash (LQIP) */
+  blurhash?: string;
 }
 
 export interface IMediaPort {
-  /** binary 저장 + URL 발급. 썸네일 옵션으로 동시 생성 가능. */
+  /** binary 저장 + URL 발급. 원본만 저장 — variants 는 saveVariant() 로 별도 기록. */
   save(binary: Buffer | Uint8Array, contentType: string, opts?: MediaSaveOptions): Promise<InfraResult<MediaSaveResult>>;
+  /** variant/thumbnail binary 를 기존 slug 에 연결해 저장. suffix 규칙: '480w', 'thumb', 'full' 등 */
+  saveVariant(
+    slug: string,
+    scope: 'user' | 'system',
+    suffix: string,
+    format: string,
+    binary: Buffer,
+    variantMeta: Omit<MediaVariant, 'url'>,
+  ): Promise<InfraResult<string>>;
+  /** 메타 JSON 업데이트 — variants[] / thumbnailUrl / blurhash / width·height 반영 */
+  updateMeta(slug: string, scope: 'user' | 'system', patch: Partial<MediaFileRecord>): Promise<InfraResult<void>>;
   /** slug 로 파일 경로 + 메타데이터 조회. API route 에서 스트리밍 응답용. */
   read(slug: string): Promise<InfraResult<{ binary: Buffer; contentType: string; record: MediaFileRecord } | null>>;
   /** 메타데이터만 (HEAD 등) */
   stat(slug: string): Promise<InfraResult<MediaFileRecord | null>>;
-  /** 수동 삭제 (정리 cron 등에서 사용) */
+  /** 수동 삭제 (정리 cron 등에서 사용) — 원본 + 모든 variants + 썸네일 + 메타 JSON 일괄 제거 */
   remove(slug: string): Promise<InfraResult<void>>;
+  /** 갤러리용 목록 — scope 필터 + 검색 + 페이징. 최신순 정렬. */
+  list(opts?: { scope?: 'user' | 'system' | 'all'; limit?: number; offset?: number; search?: string }): Promise<InfraResult<{ items: MediaFileRecord[]; total: number }>>;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Image Processor (후처리 — resize/convert/thumbnail/blurhash). sharp 기반.
+// 원본 이미지를 받아 다양한 포맷·크기 variants 생성. ImageManager 가 파이프라인 조립.
+// ══════════════════════════════════════════════════════════════════════════
+
+export interface ImageMetadata {
+  width: number;
+  height: number;
+  format: string;       // 'png' | 'jpeg' | 'webp' | 'avif' | ...
+  bytes: number;
+  hasAlpha?: boolean;
+}
+
+export interface ResizeOpts {
+  width?: number;
+  height?: number;
+  fit?: 'contain' | 'cover' | 'fill' | 'inside' | 'outside';
+  /** 크롭 위치 — cover/outside 시에만 유효.
+   *  'attention' = sharp 내장 saliency 감지 (인물·제품 자동 중심)
+   *  'entropy' = 엔트로피 최대 영역 (디테일 많은 곳)
+   *  'center' = 가운데 (기본)
+   *  { x, y } = 0~1 상대 좌표 수동 지정 (0.5, 0.5 = 정중앙) */
+  position?: 'attention' | 'entropy' | 'center' | { x: number; y: number };
+  /** 출력 포맷 — 미지정 시 원본 유지 */
+  format?: 'png' | 'jpeg' | 'webp' | 'avif';
+  /** 품질 (jpeg/webp/avif 만) */
+  quality?: number;
+  /** progressive encoding (jpeg/webp) */
+  progressive?: boolean;
+  /** EXIF 등 메타데이터 제거 */
+  stripMetadata?: boolean;
+}
+
+export interface IImageProcessorPort {
+  /** 이미지 메타데이터 파싱 (포맷 무관) */
+  getMetadata(binary: Buffer | Uint8Array): Promise<InfraResult<ImageMetadata>>;
+  /** 리사이즈 + 포맷 변환 */
+  process(binary: Buffer | Uint8Array, opts: ResizeOpts): Promise<InfraResult<Buffer>>;
+  /** Blurhash 생성 (LQIP, 32자 내외 문자열) */
+  blurhash(binary: Buffer | Uint8Array, components?: { x: number; y: number }): Promise<InfraResult<string>>;
 }
 
 // ══════════════════════════════════════════════════════════════════════════

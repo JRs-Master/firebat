@@ -18,6 +18,7 @@ import { VaultAuthAdapter } from './auth';
 import { EmbedderAdapter } from './llm/embedder-adapter';
 import { LlmRouter } from './llm/llm-router';
 import { LocalMediaAdapter } from './media/local-adapter';
+import { SharpImageProcessorAdapter } from './image-processor/sharp-adapter';
 import { buildImageConfigDrivenAdapter, loadImageRegistry, DEFAULT_IMAGE_MODEL } from './image/factory';
 import { DB_PATH, DEFAULT_MODEL } from './config';
 
@@ -72,8 +73,10 @@ export function getInfra(): FirebatInfraContainer {
       DEFAULT_IMAGE_MODEL,
       (key: string) => vault.getSecret(key) || process.env[key] || null,
     );
-    // Media — 서버 저장 (data/media/)
+    // Media — 서버 저장 (user/media + system/media)
     const media = new LocalMediaAdapter(log);
+    // Image post-processor — sharp + blurhash (resize/convert/variants/blurhash)
+    const imageProcessor = new SharpImageProcessorAdapter();
 
     globalForInfra.firebatInfra = {
       storage: new LocalStorageAdapter(),
@@ -88,6 +91,7 @@ export function getInfra(): FirebatInfraContainer {
       auth: new VaultAuthAdapter(vault),
       embedder: new EmbedderAdapter(),
       media,
+      imageProcessor,
       imageGen,
       toolRouter: (modelId: string) => new LlmRouter(database, llm, modelId),
     };

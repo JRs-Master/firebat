@@ -1343,24 +1343,29 @@ export class AiManager {
           return { success: true, displayed: true };
         }
         case 'image_gen': {
-          const { prompt, size, quality, filenameHint } = tc.args as {
+          const { prompt, size, quality, filenameHint, aspectRatio, focusPoint } = tc.args as {
             prompt: string;
             size?: string;
             quality?: string;
             filenameHint?: string;
+            aspectRatio?: string;
+            focusPoint?: 'attention' | 'entropy' | 'center';
           };
-          const res = await this.core.generateImage({ prompt, size, quality, filenameHint });
+          const res = await this.core.generateImage({ prompt, size, quality, filenameHint, aspectRatio, focusPoint });
           if (!res.success || !res.data) return { success: false, error: res.error || '이미지 생성 실패' };
           const d = res.data;
           return {
             success: true,
             url: d.url,
             thumbnailUrl: d.thumbnailUrl,
+            variants: d.variants,
+            blurhash: d.blurhash,
             width: d.width,
             height: d.height,
             slug: d.slug,
             modelId: d.modelId,
             revisedPrompt: d.revisedPrompt,
+            aspectRatio: d.aspectRatio,
           };
         }
         case 'complete_plan': {

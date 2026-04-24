@@ -145,11 +145,20 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     })),
   }, '의미 기반 상태 뱃지 세트. 예: "정배열"(positive), "과열"(warning), "중립"(neutral).');
   makeRender('render_image', 'Image', {
-    src: z.string().describe('이미지 URL (http/https 또는 상대 경로)'),
+    src: z.string().describe('이미지 URL (http/https 또는 상대 경로). image_gen 결과의 url 을 그대로 전달.'),
     alt: z.string().optional().describe('대체 텍스트 (접근성·SEO)'),
     width: z.number().optional().describe('픽셀 단위 너비'),
     height: z.number().optional().describe('픽셀 단위 높이'),
-  }, '이미지 블록 (figure + caption).');
+    variants: z.array(z.object({
+      width: z.number(),
+      height: z.number().optional(),
+      format: z.string(),
+      url: z.string(),
+      bytes: z.number().optional(),
+    })).optional().describe('반응형 variants (image_gen 결과의 variants 배열 그대로). 있으면 <picture> + srcset 자동 구성.'),
+    blurhash: z.string().optional().describe('Blurhash LQIP 문자열 (image_gen 결과의 blurhash). 로딩 플레이스홀더 표시.'),
+    thumbnailUrl: z.string().optional().describe('썸네일 URL (image_gen 결과의 thumbnailUrl). 갤러리용 보조 필드.'),
+  }, '이미지 블록 (figure + caption). image_gen 결과의 url/variants/blurhash 전부 넘겨주면 <picture> + AVIF/WebP srcset + blur placeholder 자동 구성.');
   makeRender('render_card', 'Card', {
     children: z.array(z.any()).describe('카드 안에 넣을 render_* 결과 배열 (컨테이너)'),
     align: z.enum(['left','right','center']).optional().describe('카드 내부 전체 텍스트 정렬. 기본 left.'),
@@ -282,6 +291,8 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
       size: z.enum(['1024x1024', '1536x1024', '1024x1536', 'auto']).optional().describe('출력 크기 (OpenAI gpt-image 계열만 유효, Gemini 는 무시). 미지정 시 서버 기본값.'),
       quality: z.enum(['low', 'medium', 'high']).optional().describe('품질 (OpenAI 만 유효). low=$0.011 / medium=$0.042 / high=$0.17.'),
       filenameHint: z.string().optional().describe('파일명 힌트 (로그용). 예: "blog-hero-samsung-2026"'),
+      aspectRatio: z.string().optional().describe('Aspect ratio 후처리 crop — "16:9"(블로그 히어로), "1:1"(소셜), "4:5"(인스타), "3:2"(일반). 지정 시 sharp 가 인물·제품 자동 감지로 해당 비율 crop. OpenAI/Gemini 가 원하는 비율을 안 지원할 때 유용.'),
+      focusPoint: z.enum(['attention', 'entropy', 'center']).optional().describe('Crop 전략 (aspectRatio 지정 시만 적용). attention=saliency 자동(기본·권장), entropy=디테일 많은 영역, center=중앙 고정.'),
     },
     async (args) => {
       const res = await core.generateImage({
@@ -289,6 +300,8 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
         size: args.size as string | undefined,
         quality: args.quality as string | undefined,
         filenameHint: args.filenameHint as string | undefined,
+        aspectRatio: args.aspectRatio as string | undefined,
+        focusPoint: args.focusPoint as 'attention' | 'entropy' | 'center' | undefined,
       });
       if (!res.success || !res.data) {
         return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: res.error || '이미지 생성 실패' }) }] };
@@ -299,11 +312,14 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
           success: true,
           url: d.url,
           thumbnailUrl: d.thumbnailUrl,
+          variants: d.variants,
+          blurhash: d.blurhash,
           width: d.width,
           height: d.height,
           slug: d.slug,
           modelId: d.modelId,
           revisedPrompt: d.revisedPrompt,
+          aspectRatio: d.aspectRatio,
         }) }],
       };
     },

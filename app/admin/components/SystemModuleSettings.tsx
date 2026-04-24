@@ -22,6 +22,7 @@ interface SettingField {
 const TAB_META: Record<string, { label: string; icon: typeof Globe }> = {
   '일반': { label: '일반', icon: Settings2 },
   'SEO': { label: 'SEO', icon: Globe },
+  '이미지': { label: '이미지', icon: Image },
   'OG': { label: 'OG 이미지', icon: Image },
   '스크립트': { label: '스크립트', icon: Code },
 };
@@ -66,6 +67,16 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'sitemapEnabled', label: 'Sitemap 생성', type: 'toggle', tab: 'SEO', description: '/sitemap.xml 자동 생성', defaultValue: true },
       { key: 'rssEnabled', label: 'RSS 피드', type: 'toggle', tab: 'SEO', description: '/feed.xml 자동 생성', defaultValue: true },
       { key: 'robotsTxt', label: 'robots.txt', type: 'textarea', tab: 'SEO', placeholder: 'User-agent: *\nAllow: /\nDisallow: /api\nDisallow: /admin', description: 'robots.txt 내용', defaultValue: 'User-agent: *\nAllow: /\nDisallow: /api\nDisallow: /admin' },
+      // 이미지 후처리 (sharp + blurhash) — AI 생성 이미지에 자동 적용
+      { key: 'imageWebp', label: 'WebP 변환', type: 'toggle', tab: '이미지', description: '대부분 브라우저 지원, 원본 대비 25~35% 작음', defaultValue: true },
+      { key: 'imageAvif', label: 'AVIF 변환', type: 'toggle', tab: '이미지', description: '최신 포맷, WebP 대비 20% 더 작음. Safari 16+, Chrome 85+', defaultValue: true },
+      { key: 'imageThumbnail', label: '썸네일 생성 (256px)', type: 'toggle', tab: '이미지', description: '갤러리 썸네일 — <slug>-thumb.webp', defaultValue: true },
+      { key: 'imageBlurhash', label: 'Blurhash LQIP', type: 'toggle', tab: '이미지', description: '로딩 중 부드러운 블러 플레이스홀더 (LCP 개선, 32자 문자열)', defaultValue: true },
+      { key: 'imageVariants', label: '반응형 너비 (CSV)', type: 'text', tab: '이미지', placeholder: '480, 768, 1024', description: '각 너비마다 WebP/AVIF 쌍 생성 — srcset 자동 반영', defaultValue: '480, 768, 1024' },
+      { key: 'imageDefaultQuality', label: '기본 품질 (1~100)', type: 'number', tab: '이미지', placeholder: '85', description: 'WebP/AVIF/JPEG 압축 품질. 85 권장', defaultValue: 85 },
+      { key: 'imageStripExif', label: 'EXIF 제거', type: 'toggle', tab: '이미지', description: '촬영 위치·장비 등 메타데이터 제거 (프라이버시·용량)', defaultValue: true },
+      { key: 'imageProgressive', label: 'Progressive 인코딩', type: 'toggle', tab: '이미지', description: 'JPEG/WebP 점진 표시 — 느린 네트워크에서 UX 개선', defaultValue: true },
+      { key: 'imageKeepOriginal', label: '원본 파일 유지', type: 'toggle', tab: '이미지', description: '끄면 variants 만 보관 (용량 절약, 권장: 켜둠)', defaultValue: true },
       { key: 'ogBgColor', label: '배경색', type: 'text', tab: 'OG', placeholder: '#f8fafc', description: 'OG 이미지 배경색 (HEX)' },
       { key: 'ogAccentColor', label: '강조색', type: 'text', tab: 'OG', placeholder: '#2563eb', description: '상단 라인, 로고 테두리 색상' },
       { key: 'ogDomain', label: '도메인 표시', type: 'text', tab: 'OG', placeholder: 'example.com', description: 'OG 이미지 우하단 도메인 텍스트. 비워두면 요청 host 자동 감지.' },

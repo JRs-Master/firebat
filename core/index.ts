@@ -77,7 +77,7 @@ export class FirebatCore {
     this.capability = new CapabilityManager(infra.storage, infra.vault, infra.log);
     this.authMgr = new AuthManager(infra.auth, infra.vault);
     this.conversation = new ConversationManager(infra.database, infra.embedder);
-    this.image = new ImageManager(infra.imageGen, infra.media, infra.vault, infra.log);
+    this.image = new ImageManager(infra.imageGen, infra.media, infra.imageProcessor, infra.vault, infra.log);
 
     // 크로스 도메인 매니저 — Core 참조 필요
     this.task = new TaskManager(this, infra.llm, infra.log);
@@ -408,9 +408,21 @@ export class FirebatCore {
   /** 기본 이미지 품질 — AI 미지정 시 폴백 */
   getImageDefaultQuality() { return this.image.getDefaultQuality(); }
   setImageDefaultQuality(quality: string | null) { return this.image.setDefaultQuality(quality); }
-  /** /api/media/<slug>.<ext> 에서 파일 서빙용 — slug 로 binary + contentType 반환 */
+  /** /user/media/<slug>.<ext> 에서 파일 서빙용 — slug 로 binary + contentType 반환 */
   readMedia(slug: string) {
     return this.infra.media.read(slug);
+  }
+  /** 갤러리용 미디어 목록 — scope/검색/페이징 */
+  listMedia(opts?: { scope?: 'user' | 'system' | 'all'; limit?: number; offset?: number; search?: string }) {
+    return this.infra.media.list(opts);
+  }
+  /** 갤러리에서 수동 삭제 */
+  removeMedia(slug: string) {
+    return this.infra.media.remove(slug);
+  }
+  /** SEO 이미지 설정 */
+  getImageSettings() {
+    return this.image.getImageSettings();
   }
 
   // Plan 실행 / 3-stage state (multi-turn 지속) — 대화 수준 JSON 유지

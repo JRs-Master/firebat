@@ -45,7 +45,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
   switch (type) {
     case 'Header':        return <HeaderComp text={p.text ?? ''} level={p.level} align={p.align} />;
     case 'Text':          return <TextComp content={p.content ?? ''} />;
-    case 'Image':         return <ImageComp src={p.src ?? ''} alt={p.alt} width={p.width} height={p.height} />;
+    case 'Image':         return <ImageComp src={p.src ?? ''} alt={p.alt} width={p.width} height={p.height} variants={p.variants} blurhash={p.blurhash} thumbnailUrl={p.thumbnailUrl} />;
     case 'Form':          return <FormComp bindModule={p.bindModule} inputs={p.inputs ?? []} submitText={p.submitText} />;
     case 'ResultDisplay': return null;
     case 'Button':        return <ButtonComp text={p.text ?? ''} href={p.href} variant={p.variant} />;
@@ -147,20 +147,104 @@ function TextComp({ content }: { content: string }) {
 }
 
 // ── Image ───────────────────────────────────────────────────────────────────
+// <picture> + AVIF/WebP srcset + blurhash placeholder
 // 반응형: 부모 폭(대화창·페이지) 기준 max-w-full, 세로로 너무 길면 max-h-[70vh] 로 제한.
 // figure 는 w-fit 으로 실제 이미지 렌더 너비에 딱 맞춰 — 오른쪽 흰 여백 방지.
 // object-contain: 비율 유지 (crop 금지). width/height attribute 는 CLS 방지 hint.
-function ImageComp({ src, alt = '', width, height }: { src: string; alt?: string; width?: number; height?: number }) {
+// blurhash: 로딩 중 <canvas> 로 블러 프레임 표시 → 이미지 로드되면 페이드인.
+interface ImageVariantProp {
+  width: number;
+  height?: number;
+  format: string;
+  url: string;
+  bytes?: number;
+}
+function ImageComp({
+  src, alt = '', width, height, variants, blurhash, thumbnailUrl,
+}: {
+  src: string; alt?: string; width?: number; height?: number;
+  variants?: ImageVariantProp[]; blurhash?: string; thumbnailUrl?: string;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  // blurhash decode — 마운트 시 1회. 서버/클라 분리 위해 dynamic import
+  useEffect(() => {
+    if (!blurhash || !canvasRef.current) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { decode } = await import('blurhash');
+        const canvas = canvasRef.current;
+        if (!canvas || cancelled) return;
+        const W = 32, H = 32;
+        const pixels = decode(blurhash, W, H);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const imageData = ctx.createImageData(W, H);
+        imageData.data.set(pixels);
+        ctx.putImageData(imageData, 0, 0);
+      } catch { /* blurhash 실패는 조용히 — 원본 이미지 로드는 계속 */ }
+    })();
+    return () => { cancelled = true; };
+  }, [blurhash]);
+
+  // variants 를 포맷별 srcset 으로 그룹핑
+  const srcsetFor = (fmt: string) => {
+    if (!variants || variants.length === 0) return '';
+    return variants
+      .filter(v => v.format === fmt && v.width > 0)
+      .sort((a, b) => a.width - b.width)
+      .map(v => `${v.url} ${v.width}w`)
+      .join(', ');
+  };
+  const avifSrcset = srcsetFor('avif');
+  const webpSrcset = srcsetFor('webp');
+  const sizes = '(max-width: 640px) 100vw, (max-width: 1024px) 80vw, 1024px';
+  const hasVariants = Boolean(avifSrcset || webpSrcset);
+
   return (
     <figure className="rounded-xl overflow-hidden shadow-sm border border-gray-100 w-fit max-w-full">
-      <img
-        src={src}
-        alt={alt}
-        width={width}
-        height={height}
-        className="block max-w-full max-h-[70vh] h-auto object-contain"
-        loading="lazy"
-      />
+      <div className="relative">
+        {/* blurhash 캔버스 — 이미지 로드 전까지만 보임 */}
+        {blurhash && !loaded && (
+          <canvas
+            ref={canvasRef}
+            width={32}
+            height={32}
+            aria-hidden="true"
+            className="absolute inset-0 w-full h-full object-cover blur-sm scale-110"
+            style={{ filter: 'blur(8px)' }}
+          />
+        )}
+        {hasVariants ? (
+          <picture>
+            {avifSrcset && <source type="image/avif" srcSet={avifSrcset} sizes={sizes} />}
+            {webpSrcset && <source type="image/webp" srcSet={webpSrcset} sizes={sizes} />}
+            <img
+              src={src}
+              alt={alt}
+              width={width}
+              height={height}
+              onLoad={() => setLoaded(true)}
+              className={`block relative max-w-full max-h-[70vh] h-auto object-contain transition-opacity duration-300 ${loaded || !blurhash ? 'opacity-100' : 'opacity-0'}`}
+              loading="lazy"
+              decoding="async"
+            />
+          </picture>
+        ) : (
+          <img
+            src={src}
+            alt={alt}
+            width={width}
+            height={height}
+            onLoad={() => setLoaded(true)}
+            className={`block relative max-w-full max-h-[70vh] h-auto object-contain transition-opacity duration-300 ${loaded || !blurhash ? 'opacity-100' : 'opacity-0'}`}
+            loading="lazy"
+            decoding="async"
+          />
+        )}
+      </div>
       {alt && <figcaption className="text-sm text-gray-500 px-4 py-2 bg-gray-50">{alt}</figcaption>}
     </figure>
   );

@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
+import { GalleryPanel } from './GalleryPanel';
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { createShareLink, copyToClipboard } from '../hooks/share-helper';
 
@@ -45,7 +46,7 @@ export function Sidebar({
   aiModel, onOpenSettings, onEditFile, onOpenModuleSettings,
   mobileOpen, onMobileOpenChange,
 }: SidebarProps) {
-  const [tab, setTab] = useState<'workspace' | 'chats'>('workspace');
+  const [tab, setTab] = useState<'workspace' | 'chats' | 'gallery'>('workspace');
   const [collapsed, setCollapsed] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -365,7 +366,7 @@ export function Sidebar({
     onMobileOpenChange?.(false);
   };
 
-  const expand = (t: 'workspace' | 'chats') => {
+  const expand = (t: 'workspace' | 'chats' | 'gallery') => {
     setTab(t);
     setCollapsed(false);
   };
@@ -405,6 +406,13 @@ export function Sidebar({
               {Math.min(conversations.length, 9)}
             </span>
           )}
+        </button>
+        <button
+          onClick={() => expand('gallery')}
+          className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors"
+          title="갤러리"
+        >
+          <ImageIcon size={18} />
         </button>
         <div className="flex-1" />
         {onOpenSettings && (
@@ -451,6 +459,14 @@ export function Sidebar({
         >
           <MessageSquare size={12} /> CHATS
         </button>
+        <button
+          onClick={() => setTab('gallery')}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-extrabold tracking-widest transition-colors ${
+            tab === 'gallery' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+          }`}
+        >
+          <ImageIcon size={12} /> GALLERY
+        </button>
         <div className="flex-1" />
         {onOpenSettings ? (
           <button
@@ -474,7 +490,9 @@ export function Sidebar({
 
       {/* 패널 컨텐츠 */}
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-        {tab === 'workspace' ? (
+        {tab === 'gallery' ? (
+          <GalleryPanel />
+        ) : tab === 'workspace' ? (
           <div className="flex flex-col h-full overflow-y-auto overscroll-contain">
 
             {/* ── CRON JOBS 섹션 ── */}

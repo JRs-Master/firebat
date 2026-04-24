@@ -1,19 +1,22 @@
 /**
  * LocalMediaAdapter — IMediaPort 구현체.
  *
- * 저장소: `user/media/<slug>.<ext>` + 메타데이터 JSON (`<slug>.json` 동일 폴더).
- *  - data/ 는 시스템 영속 (DB, 크론, logs) 전용.
- *  - user/ 는 유저 콘텐츠 영역 (user/modules, user/media 등).
- *  - 이미지는 유저가 AI 로 생성한 콘텐츠 → user/media 가 의미론적으로 적합.
- * 썸네일: `user/media/<slug>-thumb.<ext>` (옵션, sharp 미설치 시 silently skip).
- * 공개 URL: `/media/<slug>.<ext>` 로 서빙 (app/media/[...slug]/route.ts, /api/ 밖).
+ * 저장소:
+ *   - user/media/<slug>.<ext>   — AI 가 유저 요청으로 생성한 블로그·일러스트
+ *   - system/media/<slug>.<ext> — Firebat 자체 생성 (OG 캐시·모듈 자산, v2+)
+ * 썸네일/variants: 같은 dir 에 <slug>-thumb.webp, <slug>-480w.webp 등 suffix 파일.
+ * 공개 URL: /user/media/<filename>, /system/media/<filename> (nginx alias 권장).
  *
- * 왜 DB 가 아니라 파일?
- *  - 이미지 바이너리는 DB 에 넣으면 조회 매번 read 비용 + 백업·복원·마이그레이션 부담
- *  - 파일 시스템은 OS 차원 캐싱·압축 혜택 + rsync·S3 동기화 단순
- *  - 메타데이터만 JSON 으로 같이 저장해서 DB 없이도 정보 유지
+ * 네이밍 규칙 (v0.1, 2026-04-24):
+ *   YYYY-MM-DD-<hint-slug>-<rand4>.<ext>
+ *   - hint 있으면: 2026-04-24-samsung-hero-1c19.png
+ *   - hint 없으면: 2026-04-24-1c19.png (짧은 날짜+랜덤)
+ *   - 한국어 hint 허용 (파일시스템·브라우저 둘 다 UTF-8 지원)
  *
- * Slug 형식: `<timestamp36>-<random4>` (정렬 가능·짧음·충돌 확률 극히 낮음)
+ * 메타데이터: <slug>.json 별도 저장 (variants·prompt·blurhash 등 포함).
+ *
+ * 후처리: ImageManager 가 호출 전에 이미 variants·thumbnail·blurhash 생성해 넘김.
+ * 이 어댑터는 단순 파일 쓰기/읽기 만 담당 (관심사 분리).
  */
 import fs from 'fs';
 import path from 'path';
@@ -23,20 +26,17 @@ import type {
   MediaSaveOptions,
   MediaSaveResult,
   MediaFileRecord,
+  MediaVariant,
   ILogPort,
 } from '../../core/ports';
 import type { InfraResult } from '../../core/types';
 
 // scope 별 저장 디렉토리 분리:
-//  - user/media: 유저가 AI 로 만든 콘텐츠 (블로그 헤더·일러스트·썸네일 등)
-//  - system/media: Firebat 자체 생성물 (OG 이미지 캐시, 모듈 생성 자산 등)
-// env 로 override 가능 (다른 경로 마운트 시 유용).
 const USER_MEDIA_DIR = process.env.FIREBAT_USER_MEDIA_DIR || path.join('user', 'media');
 const SYSTEM_MEDIA_DIR = process.env.FIREBAT_SYSTEM_MEDIA_DIR || path.join('system', 'media');
 const mediaDir = (scope: 'user' | 'system'): string =>
   scope === 'system' ? SYSTEM_MEDIA_DIR : USER_MEDIA_DIR;
 
-/** contentType → 확장자 매핑 (일반적인 이미지 포맷만) */
 const CONTENT_TYPE_EXT: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -60,22 +60,33 @@ function contentTypeFromExt(ext: string): string {
   return 'application/octet-stream';
 }
 
-function generateSlug(): string {
-  const ts = Date.now().toString(36);
-  const rnd = crypto.randomBytes(2).toString('hex');
-  return `${ts}-${rnd}`;
+/** 날짜 prefix: YYYY-MM-DD (UTC) */
+function datePrefix(d = new Date()): string {
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
-/** PNG 바이트 스트림에서 width/height 파싱 (IHDR chunk, offset 16~23).
- *  JPEG/WEBP 파서는 v2 에서 (sharp 도입과 함께). 지금은 PNG 만. */
-function parsePngDimensions(buf: Buffer): { width?: number; height?: number } {
-  // PNG signature: 89 50 4E 47 0D 0A 1A 0A
-  if (buf.length < 24) return {};
-  if (buf[0] !== 0x89 || buf[1] !== 0x50 || buf[2] !== 0x4E || buf[3] !== 0x47) return {};
-  // IHDR starts at offset 8 (4-byte length + 4-byte 'IHDR'), width at 16, height at 20
-  const width = buf.readUInt32BE(16);
-  const height = buf.readUInt32BE(20);
-  return { width, height };
+/** filenameHint 정제 — 특수문자 → '-', 연속 '-' 압축, 앞뒤 '-' 제거, 최대 40자. 한국어 허용. */
+function slugifyHint(hint: string): string {
+  return hint
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-')
+    .slice(0, 40);
+}
+
+/** 네이밍 규칙: YYYY-MM-DD-<hint>-<rand4>  또는  YYYY-MM-DD-<rand4> */
+function generateSlug(hint?: string): string {
+  const date = datePrefix();
+  const rand = crypto.randomBytes(2).toString('hex');
+  if (hint) {
+    const cleaned = slugifyHint(hint);
+    if (cleaned) return `${date}-${cleaned}-${rand}`;
+  }
+  return `${date}-${rand}`;
 }
 
 export class LocalMediaAdapter implements IMediaPort {
@@ -84,8 +95,8 @@ export class LocalMediaAdapter implements IMediaPort {
   }
 
   private ensureDirs(): void {
-    try { fs.mkdirSync(USER_MEDIA_DIR, { recursive: true }); } catch { /* 이미 존재 */ }
-    try { fs.mkdirSync(SYSTEM_MEDIA_DIR, { recursive: true }); } catch { /* 이미 존재 */ }
+    try { fs.mkdirSync(USER_MEDIA_DIR, { recursive: true }); } catch {}
+    try { fs.mkdirSync(SYSTEM_MEDIA_DIR, { recursive: true }); } catch {}
   }
 
   private slugPath(slug: string, ext: string, scope: 'user' | 'system'): string {
@@ -94,6 +105,11 @@ export class LocalMediaAdapter implements IMediaPort {
 
   private metaPath(slug: string, scope: 'user' | 'system'): string {
     return path.join(mediaDir(scope), `${slug}.json`);
+  }
+
+  /** variant·thumbnail 용 suffix 파일 경로 — 예: <slug>-480w.webp, <slug>-thumb.webp */
+  private suffixPath(slug: string, suffix: string, ext: string, scope: 'user' | 'system'): string {
+    return path.join(mediaDir(scope), `${slug}-${suffix}.${ext}`);
   }
 
   async save(
@@ -105,13 +121,13 @@ export class LocalMediaAdapter implements IMediaPort {
       const scope = opts?.scope ?? 'user';
       const buf = Buffer.isBuffer(binary) ? binary : Buffer.from(binary);
       const ext = (opts?.ext ?? extFromContentType(contentType)).replace(/^\./, '');
-      const slug = generateSlug();
+      const slug = generateSlug(opts?.filenameHint);
       const filePath = this.slugPath(slug, ext, scope);
       await fs.promises.writeFile(filePath, buf);
 
-      // PNG 면 크기 파싱 (v2 에서 sharp 로 포맷 무관하게 확장 가능)
-      const dims = ext === 'png' ? parsePngDimensions(buf) : {};
-
+      const url = `/${scope}/media/${slug}.${ext}`;
+      // variants/thumbnail/blurhash 는 ImageManager 에서 sharp 로 별도 생성 후 saveVariant() 로 여기에 기록.
+      // 이 save() 는 원본만 쓰고, 메타는 initial 상태로 저장.
       const record: MediaFileRecord = {
         slug,
         ext,
@@ -119,31 +135,64 @@ export class LocalMediaAdapter implements IMediaPort {
         bytes: buf.length,
         createdAt: Date.now(),
         scope,
+        ...(opts?.filenameHint ? { filenameHint: opts.filenameHint } : {}),
+        ...(opts?.prompt ? { prompt: opts.prompt } : {}),
+        ...(opts?.revisedPrompt ? { revisedPrompt: opts.revisedPrompt } : {}),
+        ...(opts?.model ? { model: opts.model } : {}),
+        ...(opts?.size ? { size: opts.size } : {}),
+        ...(opts?.quality ? { quality: opts.quality } : {}),
       };
       await fs.promises.writeFile(this.metaPath(slug, scope), JSON.stringify(record, null, 2));
 
-      // URL 을 파일 경로와 1:1 매핑 — /user/media/<slug>.ext 또는 /system/media/<slug>.ext.
-      // nginx 가 location /user/media/ 는 alias /root/firebat/user/media/ 로 단순 매핑.
-      const url = `/${scope}/media/${slug}.${ext}`;
-      // 썸네일: v1 에선 sharp 미도입 → 옵션 들어와도 silently skip (TODO)
-      const thumbnailUrl: string | undefined = undefined;
-
-      this.logger.info(`[Media] saved scope=${scope} slug=${slug}.${ext} bytes=${buf.length}${opts?.originalName ? ` (${opts.originalName})` : ''}`);
+      this.logger.info(`[Media] saved scope=${scope} slug=${slug}.${ext} bytes=${buf.length}${opts?.filenameHint ? ` hint="${opts.filenameHint}"` : ''}`);
       return {
         success: true,
         data: {
           slug,
           url,
-          thumbnailUrl,
           bytes: buf.length,
-          ...(dims.width ? { width: dims.width } : {}),
-          ...(dims.height ? { height: dims.height } : {}),
         },
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`[Media] save 실패: ${msg}`);
       return { success: false, error: msg };
+    }
+  }
+
+  /** variant / thumbnail binary 를 기존 slug 에 연결해 저장. 메타에도 기록. */
+  async saveVariant(
+    slug: string,
+    scope: 'user' | 'system',
+    suffix: string,              // 'thumb' | '480w' | '768w' | ...
+    format: string,              // 'webp' | 'avif' | ...
+    binary: Buffer,
+    variantMeta: Omit<MediaVariant, 'url'>,
+  ): Promise<InfraResult<string>> {
+    try {
+      const ext = format === 'jpeg' ? 'jpg' : format;
+      const filePath = this.suffixPath(slug, suffix, ext, scope);
+      await fs.promises.writeFile(filePath, binary);
+      const url = `/${scope}/media/${slug}-${suffix}.${ext}`;
+      return { success: true, data: url };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`[Media] saveVariant 실패: ${msg}`);
+      return { success: false, error: msg };
+    }
+  }
+
+  /** 메타 JSON 업데이트 (variants·thumbnailUrl·blurhash 추가 반영) */
+  async updateMeta(slug: string, scope: 'user' | 'system', patch: Partial<MediaFileRecord>): Promise<InfraResult<void>> {
+    try {
+      const metaBuf = await fs.promises.readFile(this.metaPath(slug, scope), 'utf-8').catch(() => null);
+      if (!metaBuf) return { success: false, error: 'meta 파일이 없습니다' };
+      const record = JSON.parse(metaBuf) as MediaFileRecord;
+      const updated = { ...record, ...patch };
+      await fs.promises.writeFile(this.metaPath(slug, scope), JSON.stringify(updated, null, 2));
+      return { success: true, data: undefined };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
   }
 
@@ -165,11 +214,34 @@ export class LocalMediaAdapter implements IMediaPort {
       if (slug.includes('/') || slug.includes('\\') || slug.includes('..')) {
         return { success: false, error: '잘못된 slug 형식' };
       }
-      const found = await this.findSlug(slug);
+      // slug 가 variant suffix 포함할 수 있음 — 예: 2026-04-24-samsung-1c19-480w
+      // 이 경우 base slug 로 meta 찾기 → 실제 파일 경로는 slug+ext 직접 사용
+      const baseSlug = slug.replace(/-(?:\d+w|thumb)$/, '');
+      const found = await this.findSlug(baseSlug);
       if (!found) return { success: true, data: null };
-      const binary = await fs.promises.readFile(this.slugPath(slug, found.record.ext, found.scope)).catch(() => null);
+
+      // slug 가 base 면 원본, suffix 있으면 variant 파일
+      const isVariant = baseSlug !== slug;
+      let filePath: string;
+      let contentType: string;
+      if (isVariant) {
+        // variant 는 webp/avif 일 가능성 → meta.variants 에서 찾기
+        const suffix = slug.slice(baseSlug.length + 1); // '480w', 'thumb' 등
+        // 확장자 추정: 파일 시스템 glob (간단히 webp·avif·jpg 순서로 시도)
+        for (const tryExt of ['webp', 'avif', 'jpg', 'png']) {
+          const p = this.suffixPath(baseSlug, suffix, tryExt, found.scope);
+          try {
+            const binary = await fs.promises.readFile(p);
+            return { success: true, data: { binary, contentType: contentTypeFromExt(tryExt), record: found.record } };
+          } catch { continue; }
+        }
+        return { success: true, data: null };
+      }
+      filePath = this.slugPath(slug, found.record.ext, found.scope);
+      contentType = found.record.contentType || contentTypeFromExt(found.record.ext);
+      const binary = await fs.promises.readFile(filePath).catch(() => null);
       if (!binary) return { success: true, data: null };
-      return { success: true, data: { binary, contentType: found.record.contentType || contentTypeFromExt(found.record.ext), record: found.record } };
+      return { success: true, data: { binary, contentType, record: found.record } };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
@@ -194,11 +266,63 @@ export class LocalMediaAdapter implements IMediaPort {
       }
       const found = await this.findSlug(slug);
       if (!found) return { success: true, data: undefined };
+      // 원본 + 모든 variants + 메타 삭제
       await fs.promises.unlink(this.slugPath(slug, found.record.ext, found.scope)).catch(() => {});
+      for (const v of found.record.variants ?? []) {
+        // v.url 에서 파일명 추출
+        const filename = path.basename(v.url);
+        const variantPath = path.join(mediaDir(found.scope), filename);
+        await fs.promises.unlink(variantPath).catch(() => {});
+      }
+      if (found.record.thumbnailUrl) {
+        const thumbName = path.basename(found.record.thumbnailUrl);
+        await fs.promises.unlink(path.join(mediaDir(found.scope), thumbName)).catch(() => {});
+      }
       await fs.promises.unlink(this.metaPath(slug, found.scope)).catch(() => {});
-      // 썸네일 (있으면) — v2 정리
-      this.logger.info(`[Media] removed scope=${found.scope} slug=${slug}`);
+      this.logger.info(`[Media] removed scope=${found.scope} slug=${slug} (+${found.record.variants?.length ?? 0} variants)`);
       return { success: true, data: undefined };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  /** 갤러리용 list — scope 기반 전체 meta 스캔 + 최신순 정렬 + 페이징. */
+  async list(opts?: { scope?: 'user' | 'system' | 'all'; limit?: number; offset?: number; search?: string }): Promise<InfraResult<{ items: MediaFileRecord[]; total: number }>> {
+    try {
+      const scopes: Array<'user' | 'system'> = opts?.scope === 'all' || !opts?.scope
+        ? ['user', 'system']
+        : [opts.scope];
+      const all: MediaFileRecord[] = [];
+      for (const scope of scopes) {
+        const dir = mediaDir(scope);
+        if (!fs.existsSync(dir)) continue;
+        const files = await fs.promises.readdir(dir);
+        for (const f of files) {
+          if (!f.endsWith('.json')) continue;
+          try {
+            const content = await fs.promises.readFile(path.join(dir, f), 'utf-8');
+            const record = JSON.parse(content) as MediaFileRecord;
+            if (!record.scope) record.scope = scope;
+            all.push(record);
+          } catch { /* corrupted meta 스킵 */ }
+        }
+      }
+      // 검색 필터 — filenameHint, prompt, model 에서 키워드 매칭
+      const filtered = opts?.search
+        ? all.filter(r => {
+            const q = opts.search!.toLowerCase();
+            return (r.filenameHint?.toLowerCase().includes(q)
+              || r.prompt?.toLowerCase().includes(q)
+              || r.model?.toLowerCase().includes(q)
+              || r.slug.toLowerCase().includes(q));
+          })
+        : all;
+      filtered.sort((a, b) => b.createdAt - a.createdAt);
+      const total = filtered.length;
+      const offset = opts?.offset ?? 0;
+      const limit = opts?.limit ?? 50;
+      const items = filtered.slice(offset, offset + limit);
+      return { success: true, data: { items, total } };
     } catch (err: unknown) {
       return { success: false, error: err instanceof Error ? err.message : String(err) };
     }
