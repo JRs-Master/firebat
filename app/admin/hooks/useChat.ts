@@ -151,9 +151,12 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     const now = Date.now();
     setConversations(prev => {
       const cur = prev.find(c => c.id === activeConvId);
-      const prevSerialized = JSON.stringify(cur?.messages ?? []);
+      if (!cur) return prev;
+      const prevSerialized = JSON.stringify(cur.messages ?? []);
       const newSerialized = JSON.stringify(cleanMsgs);
       const contentChanged = prevSerialized !== newSerialized;
+      // 메시지·제목 모두 동일하면 early return — 불필요한 re-render + 사이드바 깜빡임 방지
+      if (!contentChanged && cur.title === title) return prev;
       const updated = prev.map(c =>
         c.id === activeConvId
           ? { ...c, messages: cleanMsgs, title, ...(contentChanged ? { updatedAt: now } : {}) }
@@ -355,6 +358,14 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         if (!shouldUseRemote) return;
         dispatch({ type: 'LOAD', messages: remoteMsgs });
         setConversations(prev => {
+          // 실제로 업데이트 필요한 경우만 새 array 생성 — 사이드바 재렌더 최소화
+          const cur = prev.find(c => c.id === id);
+          if (cur) {
+            const prevSer = JSON.stringify(cur.messages ?? []);
+            const newSer = JSON.stringify(remoteMsgs);
+            const newUpdatedAt = Math.max(remoteUpdatedAt, localUpdatedAt);
+            if (prevSer === newSer && cur.updatedAt === newUpdatedAt) return prev;
+          }
           const updated = prev.map(c => c.id === id
             ? { ...c, messages: remoteMsgs, updatedAt: Math.max(remoteUpdatedAt, localUpdatedAt) }
             : c);

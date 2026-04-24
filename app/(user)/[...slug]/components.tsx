@@ -148,16 +148,17 @@ function TextComp({ content }: { content: string }) {
 
 // ── Image ───────────────────────────────────────────────────────────────────
 // 반응형: 부모 폭(대화창·페이지) 기준 max-w-full, 세로로 너무 길면 max-h-[70vh] 로 제한.
-// object-contain: 비율 유지 (crop 금지). width/height attribute 는 CLS 방지용 hint.
+// figure 는 w-fit 으로 실제 이미지 렌더 너비에 딱 맞춰 — 오른쪽 흰 여백 방지.
+// object-contain: 비율 유지 (crop 금지). width/height attribute 는 CLS 방지 hint.
 function ImageComp({ src, alt = '', width, height }: { src: string; alt?: string; width?: number; height?: number }) {
   return (
-    <figure className="rounded-xl overflow-hidden shadow-sm border border-gray-100 max-w-full inline-block align-top">
+    <figure className="rounded-xl overflow-hidden shadow-sm border border-gray-100 w-fit max-w-full">
       <img
         src={src}
         alt={alt}
         width={width}
         height={height}
-        className="block max-w-full max-h-[70vh] w-auto h-auto object-contain"
+        className="block max-w-full max-h-[70vh] h-auto object-contain"
         loading="lazy"
       />
       {alt && <figcaption className="text-sm text-gray-500 px-4 py-2 bg-gray-50">{alt}</figcaption>}
