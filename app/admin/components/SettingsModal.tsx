@@ -1194,8 +1194,10 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
 
                     // 현재 execMode 에 해당하는 모델만 필터
                     const modelsInMode = imageModels.filter(m => modelMode(m) === imageExecMode);
-                    const providersAvailable = Array.from(new Set(modelsInMode.map(m => m.provider))).sort();
-                    const activeProvider = currentModelEntry?.provider ?? providersAvailable[0] ?? 'openai';
+                    // 공급자는 LLM 탭과 통일 — 항상 Anthropic / Google / OpenAI (ABC 순). 해당 provider 에 모델 없으면 비활성 표시.
+                    const CANONICAL_PROVIDERS: Array<'anthropic' | 'google' | 'openai'> = ['anthropic', 'google', 'openai'];
+                    const providersWithModel = new Set(modelsInMode.map(m => m.provider));
+                    const activeProvider = currentModelEntry?.provider ?? CANONICAL_PROVIDERS.find(p => providersWithModel.has(p)) ?? 'openai';
                     const modelsForProvider = modelsInMode.filter(m => m.provider === activeProvider);
                     const currentModel = currentModelEntry || modelsForProvider[0];
 
@@ -1235,13 +1237,20 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     };
 
                     const providerLabels: Record<string, string> = {
-                      openai: 'OpenAI', google: 'Google', anthropic: 'Anthropic', stability: 'Stability AI',
+                      anthropic: 'Anthropic', google: 'Google', openai: 'OpenAI',
                     };
                     const sizeLabels: Record<string, string> = {
                       'auto': '자동 (모델 판단)',
+                      // OpenAI gpt-image-1/2 픽셀 사이즈
                       '1024x1024': '정사각 1024×1024 (1:1)',
                       '1536x1024': '가로 1536×1024 (3:2, 블로그 헤더)',
                       '1024x1536': '세로 1024×1536 (2:3, 포스터)',
+                      // Gemini aspect ratios (프롬프트 힌트로 전달)
+                      '1:1': '정사각 1:1',
+                      '16:9': '와이드 16:9 (유튜브 썸네일·블로그)',
+                      '9:16': '세로 9:16 (쇼츠·릴스·스토리)',
+                      '4:3': '클래식 4:3',
+                      '3:4': '세로 3:4',
                     };
                     const qualityLabels: Record<string, string> = {
                       'low': '낮음 (빠름, 저렴)',
@@ -1274,15 +1283,20 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                         <Field label="공급자">
                           <SegButtons<string>
                             value={activeProvider}
-                            onChange={switchProvider}
-                            options={providersAvailable.map(p => ({ value: p, label: providerLabels[p] ?? p }))}
+                            onChange={(p) => { if (providersWithModel.has(p)) switchProvider(p); }}
+                            options={CANONICAL_PROVIDERS.map(p => ({
+                              value: p,
+                              label: providersWithModel.has(p) ? providerLabels[p] : `${providerLabels[p]} (미지원)`,
+                            }))}
                           />
                         </Field>
                         <Field label="모델">
                           <SelectInput
                             value={imageModel}
                             onChange={saveImageModel}
-                            options={modelsForProvider.map(m => ({ value: m.id, label: m.displayName }))}
+                            options={modelsForProvider.length > 0
+                              ? modelsForProvider.map(m => ({ value: m.id, label: m.displayName }))
+                              : [{ value: '', label: '사용 가능한 모델 없음' }]}
                           />
                         </Field>
                         {currentModel?.sizes && currentModel.sizes.length > 0 && (
