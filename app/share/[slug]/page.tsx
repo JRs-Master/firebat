@@ -29,7 +29,18 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const firstUser = (share.messages as Array<{ role?: string; content?: string }>).find(m => m.role === 'user');
   const description = typeof firstUser?.content === 'string' ? firstUser.content.slice(0, 200) : 'Firebat 에서 공유된 대화';
   const hdrs = await headers();
-  const baseUrl = (hdrs.get('x-forwarded-proto') || 'https') + '://' + (hdrs.get('host') || 'firebat.co.kr');
+  // baseUrl 우선순위: NEXT_PUBLIC_BASE_URL → 요청 host (nginx 자동 전달) → localhost 폴백
+  let baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? '';
+  if (!baseUrl) {
+    const host = hdrs.get('x-forwarded-host') || hdrs.get('host');
+    if (host) {
+      const proto = hdrs.get('x-forwarded-proto') || (host.startsWith('localhost') || host.startsWith('127.') ? 'http' : 'https');
+      baseUrl = `${proto}://${host}`;
+    } else {
+      baseUrl = 'http://localhost:3000';
+    }
+  }
+  baseUrl = baseUrl.replace(/\/$/, '');
   const shareUrl = `${baseUrl}/share/${slug}`;
   return {
     title: `${share.title} — Firebat 공유`,
