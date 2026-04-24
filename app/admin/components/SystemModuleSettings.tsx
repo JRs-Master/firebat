@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, FileText, Code, Settings2, ExternalLink, ArrowLeft } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
 type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret';
@@ -372,9 +373,11 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
                             <code className="flex-1 text-[11px] sm:text-[12px] font-mono bg-white border border-amber-200 rounded px-2 py-1 text-slate-700 break-all select-all">
                               {mcpTokenRaw}
                             </code>
-                            <button onClick={() => copyToClipboard(mcpTokenRaw, setMcpTokenCopied)} className="shrink-0 p-1.5 rounded hover:bg-amber-100 transition-colors" title="복사">
-                              {mcpTokenCopied ? <Check size={14} className="text-green-600" /> : <Copy size={14} className="text-amber-600" />}
-                            </button>
+                            <Tooltip label="복사">
+                              <button onClick={() => copyToClipboard(mcpTokenRaw, setMcpTokenCopied)} className="shrink-0 p-1.5 rounded hover:bg-amber-100 transition-colors">
+                                {mcpTokenCopied ? <Check size={14} className="text-green-600" /> : <Copy size={14} className="text-amber-600" />}
+                              </button>
+                            </Tooltip>
                           </div>
                         </div>
                       )}
@@ -396,9 +399,11 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
                     {/* JSON 설정 */}
                     <div className="flex items-center justify-between">
                       <p className="text-[10px] sm:text-[11px] text-slate-500">{isMcpLlm ? 'OpenAI Responses API의 tools에 아래 설정을 추가하세요 (Claude API도 동일 URL 사용).' : 'VS Code / Cursor MCP 설정에 아래 JSON을 추가하세요.'}</p>
-                      <button onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)} className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors" title="복사">
-                        {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
-                      </button>
+                      <Tooltip label="복사">
+                        <button onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)} className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors">
+                          {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
+                        </button>
+                      </Tooltip>
                     </div>
                     <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 whitespace-pre-wrap break-all leading-relaxed">{jsonConfig}</pre>
                   </div>
@@ -413,9 +418,11 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
                   <div className="p-3 flex flex-col gap-2">
                     <div className="flex items-center justify-between">
                       <p className="text-[10px] sm:text-[11px] text-slate-500">SSH를 통해 서버에 직접 접속하여 실행합니다.</p>
-                      <button onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)} className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors" title="복사">
-                        {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
-                      </button>
+                      <Tooltip label="복사">
+                        <button onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)} className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors">
+                          {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
+                        </button>
+                      </Tooltip>
                     </div>
                     <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">{jsonConfig}</pre>
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[10px] sm:text-[11px] text-amber-700 flex flex-col gap-1">

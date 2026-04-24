@@ -5,6 +5,7 @@
  * 스타일 변경 시 여기 한 곳만 수정하면 전체에 반영.
  */
 'use client';
+import { Tooltip } from './Tooltip';
 
 import React from 'react';
 
@@ -110,13 +111,14 @@ export function SegButtons<T extends string>({
 
 export function Toggle({ checked, onChange, title }: { checked: boolean; onChange: (v: boolean) => void; title?: string }) {
   return (
-    <button
-      onClick={() => onChange(!checked)}
-      title={title ?? (checked ? '활성' : '비활성')}
-      className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${checked ? 'bg-blue-500' : 'bg-slate-300'}`}
-    >
-      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${checked ? 'translate-x-4' : ''}`} />
-    </button>
+    <Tooltip label={title ?? (checked ? '활성' : '비활성')}>
+      <button
+        onClick={() => onChange(!checked)}
+        className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${checked ? 'bg-blue-500' : 'bg-slate-300'}`}
+      >
+        <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${checked ? 'translate-x-4' : ''}`} />
+      </button>
+    </Tooltip>
   );
 }
 

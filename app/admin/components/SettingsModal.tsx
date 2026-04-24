@@ -5,6 +5,7 @@ import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Che
 import { GEMINI_MODELS, THINKING_LEVELS, McpServer, getThinkingKind, filterThinkingLevels } from '../types';
 import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
 import { useSetting, writeSetting } from '../hooks/settings-manager';
+import { Tooltip } from './Tooltip';
 
 interface SystemModule { name: string; description: string; runtime: string; type?: string; enabled?: boolean; }
 
@@ -1552,13 +1553,14 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                         <code className="flex-1 text-[11px] sm:text-[12px] font-mono bg-white border border-amber-200 rounded px-2 py-1 text-slate-700 break-all select-all">
                           {mcpTokenRaw}
                         </code>
-                        <button
-                          onClick={() => copyToClipboard(mcpTokenRaw, setMcpTokenCopied)}
-                          className="shrink-0 p-1.5 rounded hover:bg-amber-100 transition-colors"
-                          title="복사"
-                        >
-                          {mcpTokenCopied ? <Check size={14} className="text-green-600" /> : <Copy size={14} className="text-amber-600" />}
-                        </button>
+                        <Tooltip label="복사">
+                          <button
+                            onClick={() => copyToClipboard(mcpTokenRaw, setMcpTokenCopied)}
+                            className="shrink-0 p-1.5 rounded hover:bg-amber-100 transition-colors"
+                          >
+                            {mcpTokenCopied ? <Check size={14} className="text-green-600" /> : <Copy size={14} className="text-amber-600" />}
+                          </button>
+                        </Tooltip>
                       </div>
                     </div>
                   )}
@@ -1614,13 +1616,14 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                           <p className="text-[10px] sm:text-[11px] text-slate-500">
                             VS Code / Cursor MCP 설정에 아래 JSON을 추가하세요.
                           </p>
-                          <button
-                            onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)}
-                            className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
-                            title="복사"
-                          >
-                            {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
-                          </button>
+                          <Tooltip label="복사">
+                            <button
+                              onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)}
+                              className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
+                            >
+                              {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
+                            </button>
+                          </Tooltip>
                         </div>
                         <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">
                           {jsonConfig}
@@ -1647,13 +1650,14 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                           <p className="text-[10px] sm:text-[11px] text-slate-500">
                             SSH를 통해 서버에 직접 접속하여 실행합니다.
                           </p>
-                          <button
-                            onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)}
-                            className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
-                            title="복사"
-                          >
-                            {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
-                          </button>
+                          <Tooltip label="복사">
+                            <button
+                              onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)}
+                              className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
+                            >
+                              {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
+                            </button>
+                          </Tooltip>
                         </div>
                         <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">
                           {jsonConfig}
@@ -1697,22 +1701,24 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                             )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0 ml-2">
-                            <button
-                              onClick={() => isEditing ? setMcpEditing(null) : startEditMcp(s)}
-                              className={`p-1 rounded transition-colors ${isEditing ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'}`}
-                              title="편집"
-                            >
-                              <Pencil size={14} />
-                            </button>
-                            {s.transport === 'stdio' && (
+                            <Tooltip label="편집">
                               <button
-                                onClick={() => startMcpAuth(s.name)}
-                                disabled={mcpAuth?.server === s.name && mcpAuth.step === 'starting'}
-                                className="text-[11px] px-2 py-1 rounded font-bold text-slate-500 hover:text-amber-600 hover:bg-amber-50 border border-slate-200 transition-colors disabled:opacity-50"
-                                title="OAuth 인증"
+                                onClick={() => isEditing ? setMcpEditing(null) : startEditMcp(s)}
+                                className={`p-1 rounded transition-colors ${isEditing ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'}`}
                               >
-                                인증
+                                <Pencil size={14} />
                               </button>
+                            </Tooltip>
+                            {s.transport === 'stdio' && (
+                              <Tooltip label="OAuth 인증">
+                                <button
+                                  onClick={() => startMcpAuth(s.name)}
+                                  disabled={mcpAuth?.server === s.name && mcpAuth.step === 'starting'}
+                                  className="text-[11px] px-2 py-1 rounded font-bold text-slate-500 hover:text-amber-600 hover:bg-amber-50 border border-slate-200 transition-colors disabled:opacity-50"
+                                >
+                                  인증
+                                </button>
+                              </Tooltip>
                             )}
                             <button onClick={() => deleteMcpServer(s.name)} className="text-slate-400 hover:text-red-500 transition-colors p-1">
                               <Trash2 size={15} />
@@ -1890,13 +1896,14 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                           </div>
                           <Settings size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
                         </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); toggleModuleEnabled(m.name, m.enabled === false); }}
-                          className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${m.enabled !== false ? 'bg-blue-500' : 'bg-slate-300'}`}
-                          title={m.enabled !== false ? '활성' : '비활성'}
-                        >
-                          <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${m.enabled !== false ? 'translate-x-4' : ''}`} />
-                        </button>
+                        <Tooltip label={m.enabled !== false ? '활성' : '비활성'}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); toggleModuleEnabled(m.name, m.enabled === false); }}
+                            className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${m.enabled !== false ? 'bg-blue-500' : 'bg-slate-300'}`}
+                          >
+                            <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${m.enabled !== false ? 'translate-x-4' : ''}`} />
+                          </button>
+                        </Tooltip>
                       </div>
                     ))}
                   </div>
@@ -1918,13 +1925,14 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                           </div>
                           <Settings size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
                         </button>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); toggleModuleEnabled(m.name, m.enabled === false); }}
-                          className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${m.enabled !== false ? 'bg-blue-500' : 'bg-slate-300'}`}
-                          title={m.enabled !== false ? '활성' : '비활성'}
-                        >
-                          <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${m.enabled !== false ? 'translate-x-4' : ''}`} />
-                        </button>
+                        <Tooltip label={m.enabled !== false ? '활성' : '비활성'}>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); toggleModuleEnabled(m.name, m.enabled === false); }}
+                            className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${m.enabled !== false ? 'bg-blue-500' : 'bg-slate-300'}`}
+                          >
+                            <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${m.enabled !== false ? 'translate-x-4' : ''}`} />
+                          </button>
+                        </Tooltip>
                       </div>
                     ))}
                   </div>
@@ -2103,22 +2111,24 @@ function CapabilityTabContent() {
                       {/* 순서 변경 버튼 */}
                       {providers.length > 1 && (
                         <div className="flex flex-col gap-0.5 shrink-0">
-                          <button
-                            onClick={() => moveProvider(i, -1)}
-                            disabled={i === 0}
-                            className="p-0.5 text-slate-400 hover:text-slate-700 disabled:text-slate-200 disabled:cursor-default transition-colors"
-                            title="위로"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
-                          </button>
-                          <button
-                            onClick={() => moveProvider(i, 1)}
-                            disabled={i === providers.length - 1}
-                            className="p-0.5 text-slate-400 hover:text-slate-700 disabled:text-slate-200 disabled:cursor-default transition-colors"
-                            title="아래로"
-                          >
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-                          </button>
+                          <Tooltip label="위로">
+                            <button
+                              onClick={() => moveProvider(i, -1)}
+                              disabled={i === 0}
+                              className="p-0.5 text-slate-400 hover:text-slate-700 disabled:text-slate-200 disabled:cursor-default transition-colors"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                            </button>
+                          </Tooltip>
+                          <Tooltip label="아래로">
+                            <button
+                              onClick={() => moveProvider(i, 1)}
+                              disabled={i === providers.length - 1}
+                              className="p-0.5 text-slate-400 hover:text-slate-700 disabled:text-slate-200 disabled:cursor-default transition-colors"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                            </button>
+                          </Tooltip>
                         </div>
                       )}
                     </div>

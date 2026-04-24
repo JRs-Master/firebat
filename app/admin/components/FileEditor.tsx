@@ -6,6 +6,7 @@ import { X, Save, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send,
 import { AI_MODELS, THINKING_LEVELS } from '../types';
 import { readSetting } from '../hooks/settings-manager';
 import { tryUnwrapJson } from '../../../core/utils/json-normalize';
+import { Tooltip } from './Tooltip';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
@@ -412,17 +413,18 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
 
           <div className="flex items-center gap-2 flex-shrink-0">
             {/* AI 버튼 */}
-            <button
-              onClick={openAiPanel}
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
-                aiOpen
-                  ? 'bg-violet-600 text-white'
-                  : 'bg-[#2d2d2d] text-violet-400 hover:bg-violet-600/20 border border-violet-700/40'
-              }`}
-              title="AI 어시스트 (Ctrl+K)"
-            >
-              <Bot size={13} /> AI
-            </button>
+            <Tooltip label="AI 어시스트 (Ctrl+K)">
+              <button
+                onClick={openAiPanel}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-bold transition-colors ${
+                  aiOpen
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-[#2d2d2d] text-violet-400 hover:bg-violet-600/20 border border-violet-700/40'
+                }`}
+              >
+                <Bot size={13} /> AI
+              </button>
+            </Tooltip>
 
             {/* PageSpec 미리보기 */}
             {isPageMode && (
@@ -549,21 +551,23 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 <span className="text-[10px] text-slate-500 bg-slate-800/60 px-2 py-0.5 rounded-full">{selectionInfo}</span>
                 <div className="flex-1" />
                 {chat.length > 0 && (
-                  <button
-                    onClick={clearChat}
-                    className="p-1 text-slate-500 hover:text-red-400 rounded transition-colors"
-                    title="대화 삭제"
-                  >
-                    <Trash2 size={13} />
-                  </button>
+                  <Tooltip label="대화 삭제">
+                    <button
+                      onClick={clearChat}
+                      className="p-1 text-slate-500 hover:text-red-400 rounded transition-colors"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </Tooltip>
                 )}
-                <button
-                  onClick={() => setAiOpen(false)}
-                  className="p-1 text-slate-500 hover:text-slate-300 rounded transition-colors"
-                  title="사이드바 닫기"
-                >
-                  <X size={14} />
-                </button>
+                <Tooltip label="사이드바 닫기">
+                  <button
+                    onClick={() => setAiOpen(false)}
+                    className="p-1 text-slate-500 hover:text-slate-300 rounded transition-colors"
+                  >
+                    <X size={14} />
+                  </button>
+                </Tooltip>
               </div>
 
               {/* 모델·thinking override 배지 (기본값과 다를 때만) */}
@@ -575,13 +579,14 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                     {localModel && localThinking && ' · '}
                     {localThinking && <>thinking: <b>{localThinking}</b></>}
                   </span>
-                  <button
-                    onClick={() => { setLocalModel(null); setLocalThinking(null); }}
-                    className="ml-auto flex items-center gap-1 text-amber-400 hover:text-amber-200"
-                    title="어드민 설정으로 복원"
-                  >
-                    <RotateCcw size={10} /> 기본값
-                  </button>
+                  <Tooltip label="어드민 설정으로 복원">
+                    <button
+                      onClick={() => { setLocalModel(null); setLocalThinking(null); }}
+                      className="ml-auto flex items-center gap-1 text-amber-400 hover:text-amber-200"
+                    >
+                      <RotateCcw size={10} /> 기본값
+                    </button>
+                  </Tooltip>
                 </div>
               )}
 
@@ -630,13 +635,14 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                           </div>
                           <div className="flex items-center gap-1.5 mt-1.5">
                             {turn.mode === 'code' && (
-                              <button
-                                onClick={() => setDiffTurnId(turn.id)}
-                                className="flex items-center gap-1 px-2 py-1 bg-blue-600/80 hover:bg-blue-600 text-white text-[11px] font-bold rounded transition-colors"
-                                title="적용 전 변경점 미리보기"
-                              >
-                                <Eye size={11} /> Diff
-                              </button>
+                              <Tooltip label="적용 전 변경점 미리보기">
+                                <button
+                                  onClick={() => setDiffTurnId(turn.id)}
+                                  className="flex items-center gap-1 px-2 py-1 bg-blue-600/80 hover:bg-blue-600 text-white text-[11px] font-bold rounded transition-colors"
+                                >
+                                  <Eye size={11} /> Diff
+                                </button>
+                              </Tooltip>
                             )}
                             {turn.mode === 'code' && !turn.applied && (
                               <button
@@ -651,13 +657,14 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                                 <Check size={11} /> 적용됨
                               </span>
                             )}
-                            <button
-                              onClick={() => copyTurn(turn.id, idx)}
-                              className="flex items-center gap-1 px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-[11px] rounded transition-colors"
-                              title="복사"
-                            >
-                              {copiedIdx === idx ? <Check size={11} /> : <Copy size={11} />}
-                            </button>
+                            <Tooltip label="복사">
+                              <button
+                                onClick={() => copyTurn(turn.id, idx)}
+                                className="flex items-center gap-1 px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-[11px] rounded transition-colors"
+                              >
+                                {copiedIdx === idx ? <Check size={11} /> : <Copy size={11} />}
+                              </button>
+                            </Tooltip>
                             <span className="text-[10px] text-slate-600 ml-auto">
                               {turn.mode === 'explain' ? '리뷰' : '코드 제안'}
                             </span>
@@ -790,14 +797,15 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                     disabled={aiLoading}
                     className="flex-1 bg-[#252540] border border-violet-700/40 rounded-lg px-2.5 py-2 text-[12.5px] text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-violet-500 transition-colors disabled:opacity-50"
                   />
-                  <button
-                    onClick={() => handleAiSubmit()}
-                    disabled={!aiInstruction.trim() || aiLoading}
-                    className="flex items-center justify-center w-10 h-10 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors shrink-0"
-                    title="전송 (Enter)"
-                  >
-                    {aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                  </button>
+                  <Tooltip label="전송 (Enter)">
+                    <button
+                      onClick={() => handleAiSubmit()}
+                      disabled={!aiInstruction.trim() || aiLoading}
+                      className="flex items-center justify-center w-10 h-10 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded-lg transition-colors shrink-0"
+                    >
+                      {aiLoading ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                    </button>
+                  </Tooltip>
                 </div>
               </div>
             </aside>

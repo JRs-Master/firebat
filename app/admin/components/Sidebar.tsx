@@ -557,9 +557,11 @@ export function Sidebar({
                             <Globe size={12} className="text-blue-500 shrink-0" />
                           )}
 
-                          <span className="flex-1 text-[12px] font-semibold text-slate-700 truncate" title={mp.name}>
-                            {isSingle ? (mainSlug ?? mp.name) : mp.name}
-                          </span>
+                          <Tooltip label={mp.name}>
+                            <span className="flex-1 text-[12px] font-semibold text-slate-700 truncate">
+                              {isSingle ? (mainSlug ?? mp.name) : mp.name}
+                            </span>
+                          </Tooltip>
 
                           {/* 액션 아이콘: 열기 + ⋯ 더보기 */}
                           <span className={`flex items-center gap-0.5 shrink-0 justify-end transition-opacity ${
@@ -573,25 +575,27 @@ export function Sidebar({
                               <Lock size={10} className="text-slate-400 shrink-0" />
                             )}
                             {mainSlug && (
-                              <button
-                                onClick={(e) => { e.stopPropagation(); window.open(`/${mainSlug}`, '_blank'); setSelectedItem(null); }}
-                                className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors"
-                                title="열기"
-                              >
-                                <ExternalLink size={11} />
-                              </button>
+                              <Tooltip label="열기">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); window.open(`/${mainSlug}`, '_blank'); setSelectedItem(null); }}
+                                  className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors"
+                                >
+                                  <ExternalLink size={11} />
+                                </button>
+                              </Tooltip>
                             )}
                             <div className="relative" ref={openMenu === `proj:${mp.name}` ? menuRef : undefined}>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOpenMenu(openMenu === `proj:${mp.name}` ? null : `proj:${mp.name}`);
-                                }}
-                                className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors"
-                                title="더보기"
-                              >
-                                <MoreHorizontal size={11} />
-                              </button>
+                              <Tooltip label="더보기">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenMenu(openMenu === `proj:${mp.name}` ? null : `proj:${mp.name}`);
+                                  }}
+                                  className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                                >
+                                  <MoreHorizontal size={11} />
+                                </button>
+                              </Tooltip>
                               {openMenu === `proj:${mp.name}` && (
                                 <div className="absolute right-0 top-full mt-1 w-36 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50">
                                   {isSingle && mainSlug && (
@@ -702,32 +706,36 @@ export function Sidebar({
                                     }}
                                   >
                                     <Globe size={11} className="text-blue-400 shrink-0" />
-                                    <span className="flex-1 text-[11px] font-medium text-slate-600 truncate" title={pg.title}>
-                                      {pg.slug}
-                                    </span>
+                                    <Tooltip label={pg.title}>
+                                      <span className="flex-1 text-[11px] font-medium text-slate-600 truncate">
+                                        {pg.slug}
+                                      </span>
+                                    </Tooltip>
                                     <span className={`flex items-center gap-0.5 shrink-0 transition-opacity ${
                                       isMobile ? (pgSelected ? 'opacity-100' : 'opacity-0 pointer-events-none') : 'opacity-0 group-hover:opacity-100'
                                     }`}>
                                       {pg.visibility === 'private' && <EyeOff size={9} className="text-slate-400 shrink-0" />}
                                       {pg.visibility === 'password' && <Lock size={9} className="text-slate-400 shrink-0" />}
-                                      <button
-                                        onClick={(e) => { e.stopPropagation(); window.open(`/${pg.slug}`, '_blank'); setSelectedItem(null); }}
-                                        className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors"
-                                        title="열기"
-                                      >
-                                        <ExternalLink size={10} />
-                                      </button>
-                                      <div className="relative" ref={openMenu === `page:${pg.slug}` ? menuRef : undefined}>
+                                      <Tooltip label="열기">
                                         <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setOpenMenu(openMenu === `page:${pg.slug}` ? null : `page:${pg.slug}`);
-                                          }}
-                                          className="p-0.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors"
-                                          title="더보기"
+                                          onClick={(e) => { e.stopPropagation(); window.open(`/${pg.slug}`, '_blank'); setSelectedItem(null); }}
+                                          className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors"
                                         >
-                                          <MoreHorizontal size={10} />
+                                          <ExternalLink size={10} />
                                         </button>
+                                      </Tooltip>
+                                      <div className="relative" ref={openMenu === `page:${pg.slug}` ? menuRef : undefined}>
+                                        <Tooltip label="더보기">
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setOpenMenu(openMenu === `page:${pg.slug}` ? null : `page:${pg.slug}`);
+                                            }}
+                                            className="p-0.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                                          >
+                                            <MoreHorizontal size={10} />
+                                          </button>
+                                        </Tooltip>
                                         {openMenu === `page:${pg.slug}` && (
                                           <div className="absolute right-0 top-full mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50">
                                             <button
@@ -787,32 +795,36 @@ export function Sidebar({
                                     }}
                                   >
                                     <FileCode size={11} className="text-emerald-500 shrink-0" />
-                                    <span className="flex-1 text-[11px] font-medium text-slate-500 truncate" title={p}>
-                                      {entryFile}
-                                    </span>
+                                    <Tooltip label={p}>
+                                      <span className="flex-1 text-[11px] font-medium text-slate-500 truncate">
+                                        {entryFile}
+                                      </span>
+                                    </Tooltip>
                                     <span className={`flex items-center gap-0.5 shrink-0 transition-opacity ${
                                       isMobile ? (modSelected ? 'opacity-100' : 'opacity-0 pointer-events-none') : 'opacity-0 group-hover:opacity-100'
                                     }`}>
                                       {!isMobile && (
-                                        <button
-                                          onClick={(e) => { e.stopPropagation(); handleOpenModule(p); setSelectedItem(null); }}
-                                          className="p-0.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 active:bg-amber-100 transition-colors"
-                                          title="편집"
-                                        >
-                                          <Pencil size={10} />
-                                        </button>
+                                        <Tooltip label="편집">
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); handleOpenModule(p); setSelectedItem(null); }}
+                                            className="p-0.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 active:bg-amber-100 transition-colors"
+                                          >
+                                            <Pencil size={10} />
+                                          </button>
+                                        </Tooltip>
                                       )}
                                       <div className="relative" ref={openMenu === `mod:${p}` ? menuRef : undefined}>
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setOpenMenu(openMenu === `mod:${p}` ? null : `mod:${p}`);
-                                          }}
-                                          className="p-0.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors"
-                                          title="더보기"
-                                        >
-                                          <MoreHorizontal size={10} />
-                                        </button>
+                                        <Tooltip label="더보기">
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setOpenMenu(openMenu === `mod:${p}` ? null : `mod:${p}`);
+                                            }}
+                                            className="p-0.5 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors"
+                                          >
+                                            <MoreHorizontal size={10} />
+                                          </button>
+                                        </Tooltip>
                                         {openMenu === `mod:${p}` && (
                                           <div className="absolute right-0 top-full mt-1 w-28 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-50">
                                             {isMobile && (
@@ -895,13 +907,14 @@ export function Sidebar({
                         isMobile ? ((convSelected || conv.id === activeConvId) ? 'opacity-100' : 'opacity-0 pointer-events-none') : 'opacity-0 group-hover:opacity-100'
                       }`}>
                         <ShareConvButton convId={conv.id} title={conv.title} />
-                        <button
-                          onClick={(e) => { e.stopPropagation(); onDeleteConv(conv.id); setSelectedItem(null); }}
-                          className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 active:bg-red-100 rounded transition-colors"
-                          title="삭제"
-                        >
-                          <Trash2 size={11} />
-                        </button>
+                        <Tooltip label="삭제">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onDeleteConv(conv.id); setSelectedItem(null); }}
+                            className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 active:bg-red-100 rounded transition-colors"
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </Tooltip>
                       </span>
                     </div>
                   </div>
@@ -1067,13 +1080,14 @@ function ShareConvButton({ convId, title }: { convId: string; title: string }) {
     }
   };
   return (
+    <Tooltip label={status === 'done' ? '공유 링크 복사됨 (24시간 유효)' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중...' : '이 대화 공유 (24h)'}>
     <button
       onClick={handleShare}
       disabled={status === 'sharing'}
       className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 active:bg-blue-100 rounded transition-colors disabled:opacity-50"
-      title={status === 'done' ? '공유 링크 복사됨 (24시간 유효)' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중...' : '이 대화 공유 (24h)'}
     >
       {status === 'done' ? <CheckCheck size={11} className="text-emerald-500" /> : <Share2 size={11} />}
     </button>
+    </Tooltip>
   );
 }

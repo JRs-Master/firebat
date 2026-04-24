@@ -10,6 +10,7 @@ import { FileEditor } from './components/FileEditor';
 import { SettingsModal } from './components/SettingsModal';
 import { SystemModuleSettings } from './components/SystemModuleSettings';
 import { SecretInput } from './components/ChatWidgets';
+import { Tooltip } from './components/Tooltip';
 import StockChart from './chat-components/StockChart';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
@@ -281,10 +282,12 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
                       className={`flex-1 px-3 py-1.5 border rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 bg-white ${borderCls}`}
                     />
                     {rows.length > 1 && (
-                      <button onClick={() => removeInputRow(i, subIdx)} title="이 칸 삭제"
-                        className="p-1.5 text-slate-400 hover:text-red-500 shrink-0 rounded-md hover:bg-red-50 transition-colors">
-                        <X size={14} />
-                      </button>
+                      <Tooltip label="이 칸 삭제">
+                        <button onClick={() => removeInputRow(i, subIdx)}
+                          className="p-1.5 text-slate-400 hover:text-red-500 shrink-0 rounded-md hover:bg-red-50 transition-colors">
+                          <X size={14} />
+                        </button>
+                      </Tooltip>
                     )}
                   </div>
                 );
@@ -515,13 +518,14 @@ function CopyButton({ text }: { text: string }) {
   }, [text]);
   return (
     <div className="relative inline-flex">
-      <button
-        onClick={handleCopy}
-        className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
-        title={copied ? '복사됨' : '복사'}
-      >
-        {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
-      </button>
+      <Tooltip label={copied ? '복사됨' : '복사'}>
+        <button
+          onClick={handleCopy}
+          className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
+        >
+          {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
+        </button>
+      </Tooltip>
       {/* PC/모바일 공통 말풍선 피드백 — 모바일 브라우저 중 자동 토스트 없는 기종도 있으므로 항상 표시. absolute 로 레이아웃 shift 없음. */}
       {copied && (
         <span className="absolute top-full right-0 mt-1 whitespace-nowrap text-[11px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 font-medium shadow-sm z-10">
@@ -560,14 +564,15 @@ function ShareTurnButton({ messages, conversationId, title, msgId }: { messages:
       : 'text-emerald-600 bg-emerald-50 border-emerald-200';
   return (
     <div className="relative inline-flex">
-      <button
-        onClick={handleShare}
-        disabled={status === 'sharing'}
-        className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors disabled:opacity-50"
-        title={status === 'done' ? '공유 링크 복사됨 (24시간 유효)' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중...' : '이 응답 공유 (24h)'}
-      >
-        {status === 'done' ? <CheckCheck size={14} className="text-emerald-500" /> : <Share2 size={14} />}
-      </button>
+      <Tooltip label={status === 'done' ? '공유 링크 복사됨 (24시간 유효)' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중...' : '이 응답 공유 (24h)'}>
+        <button
+          onClick={handleShare}
+          disabled={status === 'sharing'}
+          className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors disabled:opacity-50"
+        >
+          {status === 'done' ? <CheckCheck size={14} className="text-emerald-500" /> : <Share2 size={14} />}
+        </button>
+      </Tooltip>
       {/* PC/모바일 공통 — 생성+복사가 한 번에 일어나므로 상태 필수 표시. 아이콘 밑 absolute 배치. */}
       {label && (
         <span className={`absolute top-full right-0 mt-1 whitespace-nowrap text-[11px] rounded px-1.5 py-0.5 font-medium shadow-sm z-10 border ${labelCls}`}>
@@ -1141,10 +1146,10 @@ export default function AdminConsole() {
                       )}
                     </div>
                     {/* 플랜모드 토글 */}
+                    <Tooltip label={planMode ? '플랜모드 사용중' : '플랜모드 미사용'}>
                     <button
                       onClick={() => setPlanMode(!planMode)}
                       disabled={loading}
-                      title={planMode ? '플랜모드 사용중' : '플랜모드 미사용'}
                       className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-colors disabled:opacity-50 ${
                         planMode
                           ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
@@ -1154,11 +1159,12 @@ export default function AdminConsole() {
                       <ListChecks size={14} />
                       <span>플랜</span>
                     </button>
+                    </Tooltip>
                   </div>
+                  <Tooltip label={loading ? '생성 중지' : '전송'}>
                   <button
                     onClick={() => loading ? handleStop() : handleSubmit()}
                     disabled={!loading && !input.trim()}
-                    title={loading ? '생성 중지' : '전송'}
                     className="bg-slate-800 hover:bg-slate-900 border border-slate-700 text-white disabled:bg-slate-300 disabled:text-slate-500 disabled:border-slate-300 disabled:cursor-not-allowed h-8 w-8 sm:h-10 sm:w-10 rounded-lg sm:rounded-xl transition-all flex items-center justify-center shadow-md active:scale-[0.98]"
                   >
                     {loading
@@ -1166,6 +1172,7 @@ export default function AdminConsole() {
                       : <><Send size={14} className="sm:hidden" /><Send size={18} className="hidden sm:block" /></>
                     }
                   </button>
+                  </Tooltip>
                 </div>
               </div>
             </div>

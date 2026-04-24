@@ -5,6 +5,7 @@ import {
   ChevronRight, ChevronDown,
   ExternalLink, Trash2, Loader2, Pencil,
 } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 export interface TreeNode {
   name: string;
@@ -98,36 +99,39 @@ const TreeNodeComponent = ({ node, depth, onRefresh, onEdit }: NodeProps) => {
         <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-1 flex-shrink-0">
           {/* 열기 (page.tsx만) */}
           {pageUrl && (
-            <button
-              onClick={handleOpen}
-              className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-              title="브라우저에서 열기"
-            >
-              <ExternalLink size={12} />
-            </button>
+            <Tooltip label="브라우저에서 열기">
+              <button
+                onClick={handleOpen}
+                className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+              >
+                <ExternalLink size={12} />
+              </button>
+            </Tooltip>
           )}
 
           {/* 편집 (파일만) */}
           {!node.isDirectory && canDelete && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onEdit?.(node.path); }}
-              className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
-              title="편집"
-            >
-              <Pencil size={12} />
-            </button>
+            <Tooltip label="편집">
+              <button
+                onClick={(e) => { e.stopPropagation(); onEdit?.(node.path); }}
+                className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+              >
+                <Pencil size={12} />
+              </button>
+            </Tooltip>
           )}
 
           {/* 삭제 */}
           {canDelete && (
-            <button
-              onClick={handleDelete}
-              disabled={deleting}
-              className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
-              title="삭제"
-            >
-              {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
-            </button>
+            <Tooltip label="삭제">
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors disabled:opacity-40"
+              >
+                {deleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+              </button>
+            </Tooltip>
           )}
         </span>
       </div>

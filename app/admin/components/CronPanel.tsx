@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Save, Settings } from 'lucide-react';
 import { useSidebarRefresh } from '../hooks/events-manager';
+import { Tooltip } from './Tooltip';
 
 interface CronJob {
   jobId: string;
@@ -186,21 +187,23 @@ export function CronPanel() {
                 </p>
               </div>
               <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                <button
-                  onClick={() => setEditing(job)}
-                  className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
-                  title="설정"
-                >
-                  <Settings size={11} />
-                </button>
-                <button
-                  onClick={() => handleCancel(job.jobId)}
-                  disabled={cancelling === job.jobId}
-                  className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                  title="해제"
-                >
-                  {cancelling === job.jobId ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
-                </button>
+                <Tooltip label="설정">
+                  <button
+                    onClick={() => setEditing(job)}
+                    className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                  >
+                    <Settings size={11} />
+                  </button>
+                </Tooltip>
+                <Tooltip label="해제">
+                  <button
+                    onClick={() => handleCancel(job.jobId)}
+                    disabled={cancelling === job.jobId}
+                    className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                  >
+                    {cancelling === job.jobId ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                  </button>
+                </Tooltip>
               </span>
             </div>
           ))}
@@ -218,13 +221,14 @@ export function CronPanel() {
               최근 실행 로그 ({logs.length})
             </button>
             {showLogs && (
-              <button
-                onClick={handleClearLogs}
-                className="p-0.5 text-slate-400 hover:text-red-500 transition-colors"
-                title="로그 전체 삭제"
-              >
-                <Trash2 size={10} />
-              </button>
+              <Tooltip label="로그 전체 삭제">
+                <button
+                  onClick={handleClearLogs}
+                  className="p-0.5 text-slate-400 hover:text-red-500 transition-colors"
+                >
+                  <Trash2 size={10} />
+                </button>
+              </Tooltip>
             )}
           </div>
           {showLogs && (

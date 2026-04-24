@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Loader2, X, Copy, Check, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 interface MediaItem {
   slug: string;
@@ -137,11 +138,10 @@ export function GalleryPanel() {
             {items.map(item => {
               const thumbSrc = item.thumbnailUrl || `/${item.scope ?? 'user'}/media/${item.slug}.${item.ext}`;
               return (
+                <Tooltip key={`${item.scope}-${item.slug}`} label={item.filenameHint || item.slug}>
                 <button
-                  key={`${item.scope}-${item.slug}`}
                   onClick={() => setSelected(item)}
                   className="group relative aspect-square bg-slate-100 rounded-md overflow-hidden hover:ring-2 hover:ring-blue-400 transition-all"
-                  title={item.filenameHint || item.slug}
                 >
                   <img
                     src={thumbSrc}
@@ -154,6 +154,7 @@ export function GalleryPanel() {
                     <span className="absolute top-1 right-1 bg-amber-500 text-white text-[8px] font-black px-1 py-0.5 rounded">SYS</span>
                   )}
                 </button>
+                </Tooltip>
               );
             })}
           </div>
