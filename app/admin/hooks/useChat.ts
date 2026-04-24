@@ -73,10 +73,21 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   }, []);
   // Watchdog — N분 넘게 무응답이면 강제 터미널 + 에러 뱃지
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const watchdogOnFireRef = useRef<(() => void) | null>(null);
   const cancelWatchdog = () => {
     if (watchdogRef.current) { clearTimeout(watchdogRef.current); watchdogRef.current = null; }
+    watchdogOnFireRef.current = null;
   };
-  const WATCHDOG_MS = 3 * 60_000;
+  // idle timeout — SSE 이벤트가 이 시간 동안 안 오면 죽은 연결로 간주.
+  // 이미지 생성은 20~30초/장, 3장이면 ~90초 → 여유롭게 120초.
+  // 총 응답 시간 제한이 아니라 "조용한 시간" 제한이므로 이벤트만 꾸준히 오면 계속 연장됨.
+  const WATCHDOG_IDLE_MS = 2 * 60_000;
+  const resetWatchdog = () => {
+    if (watchdogRef.current) clearTimeout(watchdogRef.current);
+    const onFire = watchdogOnFireRef.current;
+    if (!onFire) return;
+    watchdogRef.current = setTimeout(onFire, WATCHDOG_IDLE_MS);
+  };
 
   // ── 초기화: DB 우선 로드 (다기기 동기화 보장). 실패 시에만 localStorage 폴백 ──
   useEffect(() => {
@@ -457,12 +468,14 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       cancelWatchdog();
-      watchdogRef.current = setTimeout(() => {
+      // onFire 핸들러 등록 — SSE 이벤트 올 때마다 resetWatchdog 가 이걸로 재스케줄
+      watchdogOnFireRef.current = () => {
         ctrl.abort();
         cancelChunkAnim();
         dispatch({ type: 'TIMEOUT', id: systemId });
         setLoading(false);
-      }, WATCHDOG_MS);
+      };
+      resetWatchdog();
 
       const res = await fetch('/api/chat/stream', {
         method: 'POST',
@@ -492,7 +505,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
 
       while (true) {
         const { done, value } = await reader.read();
-        if (value) buffer += decoder.decode(value, { stream: !done });
+        if (value) {
+          buffer += decoder.decode(value, { stream: !done });
+          // SSE chunk 도착 = 살아있음 → watchdog 재스케줄 (idle timeout 방식)
+          resetWatchdog();
+        }
         if (done && buffer.trim()) buffer += '\n\n';
 
         const parsed = parseSSE(buffer);
