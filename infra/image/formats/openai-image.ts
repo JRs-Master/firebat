@@ -50,8 +50,10 @@ export class OpenAIImageFormat implements ImageFormatHandler {
     const size = normalizeSize(opts.size);
     const quality = opts.quality ?? DEFAULT_QUALITY;
 
+    // ctx.config.id 우선 — resolveConfig 가 registry 기반으로 정규화한 값이라 권위. opts.model 은 힌트일 뿐
+    // (사용자가 registry 에 없는 모델 ID 요청해도 fallback 된 config 로 실제 호출)
     const body = {
-      model: opts.model ?? ctx.config.id,
+      model: ctx.config.id,
       prompt: opts.prompt,
       n: opts.n ?? 1,
       size,

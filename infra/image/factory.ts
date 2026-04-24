@@ -7,7 +7,7 @@ import path from 'path';
 import { ImageConfigDrivenAdapter } from './config-adapter';
 import { loadImageGenRegistry, type ImageGenRegistry } from './image-config';
 
-export const DEFAULT_IMAGE_MODEL = 'gpt-image-2';
+export const DEFAULT_IMAGE_MODEL = 'gpt-image-1';
 
 export function buildImageConfigDrivenAdapter(
   registry: ImageGenRegistry,
