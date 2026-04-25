@@ -126,6 +126,13 @@ export class FirebatCore {
       }).catch(() => {});
     }, 60 * 60_000);
     shareCleanupInterval.unref?.();
+
+    // 만료 세션 sweep — 6시간마다. listSessions 가 만료된 세션 자동 삭제.
+    // getSession 도 lazy 정리 하지만 호출 안 된 토큰은 Vault 에 남아 디스크 누적 가능.
+    const sessionSweepInterval = setInterval(() => {
+      try { this.authMgr.sweepExpiredSessions(); } catch {}
+    }, 6 * 60 * 60_000);
+    sessionSweepInterval.unref?.();
   }
 
   /**

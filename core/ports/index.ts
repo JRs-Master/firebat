@@ -640,6 +640,9 @@ export interface AuthSession {
   label?: string;
   createdAt: number;
   expiresAt?: number;
+  /** 마지막 사용 시각 (ms epoch) — validateApiToken / validateSession 호출 시 갱신.
+   *  도용 의심 패턴 감지 + 미사용 토큰 정리 + 어드민 UI 표시에 활용. */
+  lastUsedAt?: number;
 }
 
 export interface IAuthPort {

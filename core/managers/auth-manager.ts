@@ -2,12 +2,13 @@ import type { IAuthPort, IVaultPort, AuthSession } from '../ports';
 import { VK_ADMIN_ID, VK_ADMIN_PASSWORD } from '../vault-keys';
 import * as nodeCrypto from 'crypto';
 
-/** API 토큰 정보 (마스킹된 힌트 + 생성일) */
+/** API 토큰 정보 (마스킹된 힌트 + 생성일 + 마지막 사용) */
 export interface ApiTokenInfo {
   exists: boolean;
-  hint: string | null;     // 예: fbat_a1b2****k9m3
+  hint: string | null;       // 예: fbat_a1b2****k9m3
   label?: string;
-  createdAt: string | null; // ISO 8601
+  createdAt: string | null;  // ISO 8601
+  lastUsedAt?: string;        // ISO 8601 — 미사용이면 undefined (UI '사용 기록 없음')
 }
 
 /** 세션 토큰 유효기간 — 24시간 */
@@ -105,17 +106,36 @@ export class AuthManager {
     return null;
   }
 
-  /** 세션 토큰 검증 — 유효한 세션 반환, 실패 시 null */
+  /** 세션 토큰 검증 — 유효한 세션 반환, 실패 시 null. 사용 시 lastUsedAt 갱신. */
   validateSession(token: string): AuthSession | null {
     if (!token) return null;
     const session = this.auth.getSession(token);
     if (!session || session.type !== 'session') return null;
+    this.touchLastUsed(session);
     return session;
   }
 
   /** 로그아웃 — 세션 삭제 */
   logout(token: string): boolean {
     return this.auth.deleteSession(token);
+  }
+
+  /** 만료된 세션 일괄 정리 (Vault 디스크 누적 방지).
+   *  getSession 도 lazy 정리 하지만 호출 안 된 expired 세션은 남음 — 주기적 sweep 으로 청소.
+   *  cron 등록은 Core 가 부팅 시 처리. 일반 로직 — 모든 만료 세션 동등 삭제. */
+  sweepExpiredSessions(): { sessions: number; api: number } {
+    const sessions = this.auth.listSessions('session');  // listSessions 가 만료된 것 자동 삭제
+    const api = this.auth.listSessions('api');           // API 토큰은 만료 없음 (정리 0)
+    return { sessions: sessions.length, api: api.length };
+  }
+
+  /** lastUsedAt 갱신 — 1분 throttle (매 요청마다 Vault 쓰기 비용 회피). */
+  private touchLastUsed(session: AuthSession): void {
+    const now = Date.now();
+    const last = session.lastUsedAt ?? 0;
+    if (now - last < 60_000) return;  // 1분 이내 동일 토큰 갱신 스킵
+    session.lastUsedAt = now;
+    try { this.auth.saveSession(session); } catch { /* 갱신 실패해도 인증은 정상 */ }
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -140,11 +160,12 @@ export class AuthManager {
     return token;
   }
 
-  /** API 토큰 검증 */
+  /** API 토큰 검증. 사용 시 lastUsedAt 갱신 — 도용 의심 패턴 감지·미사용 토큰 식별 기반. */
   validateApiToken(token: string): AuthSession | null {
     if (!token) return null;
     const session = this.auth.getSession(token);
     if (!session || session.type !== 'api') return null;
+    this.touchLastUsed(session);
     return session;
   }
 
@@ -153,7 +174,7 @@ export class AuthManager {
     return this.auth.deleteSessions('api');
   }
 
-  /** API 토큰 정보 (마스킹) */
+  /** API 토큰 정보 (마스킹) — lastUsedAt 포함. 어드민 UI 에서 도용 감지 기반. */
   getApiTokenInfo(): ApiTokenInfo {
     const sessions = this.auth.listSessions('api');
     if (sessions.length === 0) return { exists: false, hint: null, createdAt: null };
@@ -166,6 +187,7 @@ export class AuthManager {
       hint,
       label: s.label,
       createdAt: new Date(s.createdAt).toISOString(),
+      ...(s.lastUsedAt ? { lastUsedAt: new Date(s.lastUsedAt).toISOString() } : {}),
     };
   }
 

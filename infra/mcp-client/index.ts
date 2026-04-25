@@ -15,6 +15,11 @@ import path from 'path';
 
 const CONFIG_PATH = path.join(process.cwd(), 'data', 'mcp-servers.json');
 
+/** MCP 외부 서버 요청 timeout — listTools / callTool 공통.
+ *  외부 서버가 hang 되면 RequestTimeout 에러 → 실패 처리 + 자동 disconnect (다음 호출 재연결).
+ *  일반 로직 — 모든 서버·도구 동등 적용. 도메인별 분기 0. */
+const MCP_REQUEST_TIMEOUT_MS = 30_000;
+
 export class McpClientAdapter implements IMcpClientPort {
   private configs: McpServerConfig[] = [];
   private clients = new Map<string, Client>();
@@ -130,7 +135,8 @@ export class McpClientAdapter implements IMcpClientPort {
   async listTools(serverName: string): Promise<InfraResult<McpToolInfo[]>> {
     try {
       const client = await this.connect(serverName);
-      const result = await client.listTools();
+      // 30초 timeout — 외부 서버가 hang 되면 RequestTimeout 에러로 빠르게 실패.
+      const result = await client.listTools(undefined, { timeout: MCP_REQUEST_TIMEOUT_MS });
       const tools: McpToolInfo[] = (result.tools ?? []).map(t => ({
         server: serverName,
         name: t.name,
@@ -140,6 +146,8 @@ export class McpClientAdapter implements IMcpClientPort {
       }));
       return { success: true, data: tools };
     } catch (err: any) {
+      // 실패 시 disconnect — 다음 호출이 새 연결 시도 (서버 죽었다 살아나면 자동 복구).
+      await this.disconnect(serverName).catch(() => undefined);
       return { success: false, error: err.message };
     }
   }
@@ -161,7 +169,11 @@ export class McpClientAdapter implements IMcpClientPort {
   async callTool(serverName: string, toolName: string, args: Record<string, unknown>): Promise<InfraResult<unknown>> {
     try {
       const client = await this.connect(serverName);
-      const result = await client.callTool({ name: toolName, arguments: args ?? {} });
+      const result = await client.callTool(
+        { name: toolName, arguments: args ?? {} },
+        undefined,
+        { timeout: MCP_REQUEST_TIMEOUT_MS },
+      );
       // MCP 도구 결과에서 텍스트 추출
       const contentArr = Array.isArray(result.content) ? result.content : [];
       const textContent = contentArr
@@ -170,6 +182,8 @@ export class McpClientAdapter implements IMcpClientPort {
         .join('\n');
       return { success: true, data: { content: textContent, raw: result.content } };
     } catch (err: any) {
+      // 실패 시 disconnect — 다음 호출이 새 연결 시도 (자동 재연결).
+      await this.disconnect(serverName).catch(() => undefined);
       return { success: false, error: err.message };
     }
   }
