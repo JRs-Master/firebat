@@ -41,27 +41,44 @@ function sha1(embedVersion: string, s: string): string {
   return crypto.createHash('sha1').update(`${embedVersion}:${s}`, 'utf8').digest('hex');
 }
 
-/** 메시지 객체에서 검색 가능한 텍스트 추출 */
+/** 메시지 객체에서 검색 가능한 텍스트 추출.
+ *  이미지 블록은 alt / prompt / filenameHint 를 텍스트화 — search_history 가 이미지 conversation 도 매칭. */
 function messageToText(msg: unknown): { role: string; text: string } | null {
   if (!msg || typeof msg !== 'object') return null;
   const m = msg as Record<string, unknown>;
   const role = typeof m.role === 'string' ? m.role : 'unknown';
-  // content (최우선) + 안 되면 content에서 데이터 제외한 blocks.text
+  // content (최우선) + 안 되면 blocks 의 text·이미지 메타 추출
   let text = '';
   if (typeof m.content === 'string' && m.content.trim()) {
     text = m.content;
   } else if (m.data && typeof m.data === 'object') {
     const blocks = (m.data as Record<string, unknown>).blocks;
     if (Array.isArray(blocks)) {
-      text = blocks
-        .filter(b => b && typeof b === 'object' && (b as Record<string, unknown>).type === 'text')
-        .map(b => (b as Record<string, unknown>).text)
-        .filter(t => typeof t === 'string')
-        .join('\n');
+      const parts: string[] = [];
+      for (const b of blocks) {
+        if (!b || typeof b !== 'object') continue;
+        const bo = b as Record<string, unknown>;
+        if (bo.type === 'text' && typeof bo.text === 'string') {
+          if (bo.text.trim()) parts.push(bo.text);
+        } else if (bo.type === 'Image') {
+          // 이미지 블록 — alt/prompt/filenameHint 합쳐 [이미지] prefix 로 검색 인덱싱.
+          // 일반 로직: 모든 Image 블록 동등 처리 (AI 생성·업로드 무관).
+          const imgParts: string[] = [];
+          for (const k of ['alt', 'prompt', 'filenameHint'] as const) {
+            const v = bo[k];
+            if (typeof v === 'string' && v.trim()) imgParts.push(v.trim());
+          }
+          if (imgParts.length > 0) parts.push(`[이미지] ${imgParts.join(' ')}`);
+        }
+      }
+      text = parts.join('\n');
     }
   }
+  // user 메시지가 이미지 첨부만 있고 content 없으면 — 검색 가능하도록 표시.
+  if (!text.trim() && role === 'user' && m.image) {
+    text = '[이미지 첨부]';
+  }
   if (!text.trim()) return null;
-  // 시스템 메시지·진행 중·에러만 있는 메시지는 스킵
   if (role === 'unknown') return null;
   return { role, text };
 }

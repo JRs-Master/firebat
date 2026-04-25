@@ -302,6 +302,39 @@ export class AiManager {
         }
         return { success: true, htmlContent: html, htmlHeight: args.height || '400px' };
       },
+      search_media: async (args) => {
+        const { query, scope, source, limit } = args as { query: string; scope?: 'user' | 'system' | 'all'; source?: 'ai-generated' | 'upload'; limit?: number };
+        const cap = typeof limit === 'number' ? Math.min(50, Math.max(1, limit)) : 10;
+        const res = await this.core.listMedia({
+          scope: scope ?? 'all',
+          search: query,
+          limit: cap,
+          offset: 0,
+        });
+        if (!res.success) return { success: false, error: res.error };
+        const items = (res.data?.items ?? [])
+          // source 필터 — listMedia 가 source 필터 미지원이라 도구 단에서 필터.
+          // legacy(미설정) = 'ai-generated' 로 간주 (메모리 룰 호환).
+          .filter(item => {
+            if (!source) return true;
+            const s = item.source ?? 'ai-generated';
+            return s === source;
+          })
+          .map(item => ({
+            slug: item.slug,
+            url: `/${item.scope ?? 'user'}/media/${item.slug}.${item.ext}`,
+            thumbnailUrl: item.thumbnailUrl,
+            prompt: item.prompt,
+            filenameHint: item.filenameHint,
+            model: item.model,
+            width: item.width,
+            height: item.height,
+            createdAt: new Date(item.createdAt).toISOString(),
+            source: item.source ?? 'ai-generated',
+            ...(item.status && item.status !== 'done' ? { status: item.status, errorMsg: item.errorMsg } : {}),
+          }));
+        return { success: true, matches: items, count: items.length, total: res.data?.total ?? items.length };
+      },
       search_history: async (args, ctx) => {
         const { query, limit, includeBlocks } = args as { query: string; limit?: number; includeBlocks?: boolean };
         const owner = ctx.owner ?? 'admin';
@@ -2241,6 +2274,28 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
             query: { type: 'string', description: '검색할 키워드/문장 (의미 기반 매칭)' },
             limit: { type: 'integer', description: '반환할 최대 결과 수 (기본 5)' },
             includeBlocks: { type: 'boolean', description: '매칭 메시지의 원본 blocks(component/html props 포함) 반환. 과거 차트·표 데이터를 재활용할 때 true. 기본 false (텍스트 프리뷰만).' },
+          },
+        },
+      },
+      {
+        name: 'search_media',
+        description: `갤러리 이미지 검색 — prompt·파일명·모델 단어 매칭. AI 생성·사용자 업로드 모두.
+사용 시점:
+- "전에 만든 그 차트 이미지", "삼성 이미지 가져와줘" 같이 갤러리에서 특정 이미지 찾을 때.
+- 이미지 재사용 — 새로 생성하지 않고 기존 자산 활용 (비용 절감).
+- 페이지 만들 때 갤러리 자산 인용 ("배경에 우주 이미지 박아줘" → search_media → render_image).
+
+대화 흐름 안에서 이미지 찾기 (이전 turn 의 이미지) 는 search_history 사용 — search_media 는 갤러리 전체 검색.
+
+scope='all' 기본. source: 'ai-generated' (image_gen 결과) / 'upload' (사용자 첨부 저장) 필터.`,
+        parameters: {
+          type: 'object',
+          required: ['query'],
+          properties: {
+            query: { type: 'string', description: '검색어 — prompt·filenameHint·model 단어 매칭. 한국어/영어 OK' },
+            scope: { type: 'string', enum: ['user', 'system', 'all'], description: 'user(AI 생성·업로드 기본) / system(Firebat 내부) / all. 기본 all' },
+            source: { type: 'string', enum: ['ai-generated', 'upload'], description: '출처 필터 — 미지정 시 모두' },
+            limit: { type: 'integer', description: '최대 결과 수 (기본 10, 최대 50)' },
           },
         },
       },
