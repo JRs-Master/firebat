@@ -1,4 +1,4 @@
-import { ISandboxPort, IVaultPort, ModuleOutput } from '../../core/ports';
+import { ISandboxPort, IVaultPort, ModuleOutput, SandboxExecuteOpts } from '../../core/ports';
 import { InfraResult, ModuleOutputSchema } from '../../core/types';
 import { execFile, exec } from 'child_process';
 import { promisify } from 'util';
@@ -119,8 +119,14 @@ export class ProcessSandboxAdapter implements ISandboxPort {
     return env;
   }
 
-  /** 프로세스 실행 후 stdout 파싱 결과 반환 */
-  private runProcess(command: string, args: string[], payload: Record<string, unknown>, timeoutMs: number, secretsEnv?: Record<string, string>, moduleDir?: string): Promise<InfraResult<ModuleOutput>> {
+  /** 프로세스 실행 후 stdout 파싱 결과 반환.
+   *  onProgress 가 있으면 stdout 의 `[STATUS] {...}` 라인을 실시간 파싱해 호출.
+   *  최종 결과 JSON 은 마지막 줄 (기존 동작 유지). */
+  private runProcess(
+    command: string, args: string[], payload: Record<string, unknown>, timeoutMs: number,
+    secretsEnv?: Record<string, string>, moduleDir?: string,
+    onProgress?: SandboxExecuteOpts['onProgress'],
+  ): Promise<InfraResult<ModuleOutput>> {
     return new Promise((resolve) => {
       // UTF-8 강제: Windows에서 Python stdin/stdout이 cp949로 처리되는 것을 방지
       const env = {
@@ -178,6 +184,30 @@ export class ProcessSandboxAdapter implements ISandboxPort {
         child.stdin.write(JSON.stringify({ correlationId: `run-${Date.now()}`, data: payload || {} }) + '\n');
         child.stdin.end();
       }
+
+      // onProgress 가 있으면 stdout 라인 모니터링 — '[STATUS] {...}' 패턴 파싱.
+      // 일반 로직 — 모든 모듈에 동등 적용 (도메인 무관). 최종 결과 JSON 은 execFile 콜백이 별도 처리.
+      if (onProgress && child.stdout) {
+        let buffer = '';
+        child.stdout.on('data', (chunk: Buffer | string) => {
+          buffer += chunk.toString();
+          let nlIdx: number;
+          while ((nlIdx = buffer.indexOf('\n')) >= 0) {
+            const line = buffer.slice(0, nlIdx).trim();
+            buffer = buffer.slice(nlIdx + 1);
+            if (!line.startsWith('[STATUS]')) continue;
+            const jsonPart = line.slice('[STATUS]'.length).trim();
+            try {
+              const parsed = JSON.parse(jsonPart) as Record<string, unknown>;
+              const update: { progress?: number; message?: string; meta?: Record<string, unknown> } = {};
+              if (typeof parsed.progress === 'number') update.progress = parsed.progress;
+              if (typeof parsed.message === 'string') update.message = parsed.message;
+              if (parsed.meta && typeof parsed.meta === 'object') update.meta = parsed.meta as Record<string, unknown>;
+              onProgress(update);
+            } catch { /* 잘못된 JSON 라인은 무시 — 일반 로그로 흘러감 */ }
+          }
+        });
+      }
     });
   }
 
@@ -221,13 +251,14 @@ export class ProcessSandboxAdapter implements ISandboxPort {
    */
   private async executeWithAutoInstall(
     command: string, args: string[], moduleDir: string,
-    inputData: Record<string, unknown>, timeoutMs: number
+    inputData: Record<string, unknown>, timeoutMs: number,
+    onProgress?: SandboxExecuteOpts['onProgress'],
   ): Promise<InfraResult<ModuleOutput>> {
     const MAX_RETRIES = SANDBOX_MAX_RETRIES;
     const secretsEnv = this.loadSecretsEnv(moduleDir);
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      const result = await this.runProcess(command, args, inputData, timeoutMs, secretsEnv, moduleDir);
+      const result = await this.runProcess(command, args, inputData, timeoutMs, secretsEnv, moduleDir, onProgress);
 
       // 완전한 성공 (모듈도 success: true)
       if (result.success && result.data?.success !== false) return result;
@@ -294,7 +325,7 @@ export class ProcessSandboxAdapter implements ISandboxPort {
     return resolved.startsWith(userModules + path.sep) || resolved.startsWith(systemModules + path.sep);
   }
 
-  async execute(targetPath: string, inputData: Record<string, unknown>): Promise<InfraResult<ModuleOutput>> {
+  async execute(targetPath: string, inputData: Record<string, unknown>, opts?: SandboxExecuteOpts): Promise<InfraResult<ModuleOutput>> {
     // 페이지 URL (크론 페이지 알림용) — 파일 실행이 아니므로 경로 검증 스킵
     if (!targetPath.startsWith('/') && !this.canExecute(targetPath)) {
       return { success: false, error: `[Kernel Block] 허용되지 않은 실행 경로입니다: ${targetPath}` };
@@ -384,6 +415,6 @@ export class ProcessSandboxAdapter implements ISandboxPort {
     }
 
     await this.preInstallFromManifest(moduleDir);
-    return this.executeWithAutoInstall(command, args, moduleDir, inputData, timeoutMs);
+    return this.executeWithAutoInstall(command, args, moduleDir, inputData, timeoutMs, opts?.onProgress);
   }
 }

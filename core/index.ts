@@ -286,9 +286,11 @@ export class FirebatCore {
     return this.module.run(moduleName, inputData);
   }
 
-  /** 경로 지정 직접 실행 (EXECUTE, 파이프라인 등) */
-  async sandboxExecute(targetPath: string, inputData: Record<string, unknown>) {
-    return this.module.execute(targetPath, inputData);
+  /** 경로 지정 직접 실행 (EXECUTE, 파이프라인 등).
+   *  opts.onProgress: 모듈 stdout 의 `[STATUS] {progress?, message?, meta?}` 라인 파싱 콜백.
+   *  Caller (Pipeline step·cron 등) 가 StatusManager 와 연결 가능. */
+  async sandboxExecute(targetPath: string, inputData: Record<string, unknown>, opts?: import('./ports').SandboxExecuteOpts) {
+    return this.module.execute(targetPath, inputData, opts);
   }
 
   async getSystemModules() { return this.module.listSystem(); }
@@ -330,13 +332,30 @@ export class FirebatCore {
         default: return '';
       }
     };
-    const wrappedCallback = (idx: number, status: 'start' | 'done' | 'error', error?: string) => {
+    const wrappedCallback = (
+      idx: number,
+      status: 'start' | 'done' | 'error' | 'progress',
+      error?: string,
+      subUpdate?: { progress?: number; message?: string },
+    ) => {
       const step = pipeline[idx];
       const detail = stepDetail(step);
       if (status === 'start') {
         this.statusMgr.update(job.id, {
           progress: total > 0 ? idx / total : 0,
           message: `Step ${idx + 1}/${total}: ${step.type}${detail ? ` → ${detail}` : ''}`,
+        });
+      } else if (status === 'progress' && subUpdate) {
+        // 모듈 stdout [STATUS] 진행도를 step 수준 progress 에 반영.
+        // 일반 로직 — sub.progress (0~1) 를 step idx 안의 비율로 환산해 전체 progress 갱신.
+        const stepBase = total > 0 ? idx / total : 0;
+        const stepWidth = total > 0 ? 1 / total : 0;
+        const subProgress = typeof subUpdate.progress === 'number'
+          ? Math.max(0, Math.min(1, subUpdate.progress))
+          : undefined;
+        this.statusMgr.update(job.id, {
+          ...(typeof subProgress === 'number' ? { progress: stepBase + stepWidth * subProgress } : {}),
+          ...(subUpdate.message ? { message: `Step ${idx + 1}/${total}: ${subUpdate.message}` } : {}),
         });
       } else if (status === 'done') {
         this.statusMgr.update(job.id, {
@@ -349,7 +368,10 @@ export class FirebatCore {
           message: `Step ${idx + 1}/${total} 실패: ${error ?? 'unknown'}`,
         });
       }
-      onPipelineStep?.(idx, status, error);
+      // 외부 caller 는 기존 시그니처 ('start' | 'done' | 'error') 만 받음 — 'progress' 는 status 내부 전용
+      if (status !== 'progress') {
+        onPipelineStep?.(idx, status, error);
+      }
     };
     const res = await this.task.executePipeline(pipeline, wrappedCallback);
     if (res.success) {

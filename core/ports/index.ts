@@ -203,9 +203,20 @@ export interface ILogPort {
   setDebug(enabled: boolean): void;
 }
 
+export interface SandboxExecuteOpts {
+  /** 모듈 stdout 의 `[STATUS] {"progress":0.5,"message":"..."}` 라인 파싱 콜백.
+   *  모듈이 진행도 보고하면 caller (Core·TaskManager 등) 가 StatusManager 와 연결 가능.
+   *  형식: `[STATUS] <JSON-object>` — 줄 시작에 정확히 위치해야 인식됨.
+   *  - progress: 0~1 number (선택)
+   *  - message: string (선택)
+   *  - meta: object (선택, 모듈 특정 정보)
+   *  최종 결과 JSON (마지막 줄) 은 별개 — 이 콜백은 진행 보고 전용. */
+  onProgress?: (update: { progress?: number; message?: string; meta?: Record<string, unknown> }) => void;
+}
+
 export interface ISandboxPort {
   /** 유저 모듈 코드를 자식 프로세스로 실행하고 그 ModuleOutput을 InfraResult에 담아 리턴 */
-  execute(targetPath: string, inputData: Record<string, unknown>): Promise<InfraResult<ModuleOutput>>;
+  execute(targetPath: string, inputData: Record<string, unknown>, opts?: SandboxExecuteOpts): Promise<InfraResult<ModuleOutput>>;
 }
 
 /** 스트리밍 청크 타입 */

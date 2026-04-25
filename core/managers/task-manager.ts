@@ -76,7 +76,10 @@ export class TaskManager {
   }
 
   /** 파이프라인 단계별 순차 실행 — 이전 단계 결과를 다음 단계에 자동 전달 */
-  async executePipeline(steps: PipelineStep[], onPipelineStep?: (index: number, status: 'start' | 'done' | 'error', error?: string) => void): Promise<{ success: boolean; data?: unknown; error?: string }> {
+  async executePipeline(
+    steps: PipelineStep[],
+    onPipelineStep?: (index: number, status: 'start' | 'done' | 'error' | 'progress', error?: string, subUpdate?: { progress?: number; message?: string }) => void,
+  ): Promise<{ success: boolean; data?: unknown; error?: string }> {
     // 사전 검증
     const err = this.validatePipeline(steps);
     if (err) return { success: false, error: err };
@@ -122,7 +125,11 @@ export class TaskManager {
             if (resolvedPath !== step.path) {
               this.log.info(`[Pipeline] Provider 교체: ${step.path} → ${resolvedPath}`);
             }
-            const res = await this.core.sandboxExecute(resolvedPath, stepInput);
+            const res = await this.core.sandboxExecute(resolvedPath, stepInput, {
+              // 모듈 stdout 의 [STATUS] 라인 → caller (Core.runTask) 의 wrappedCallback 으로 forward
+              // → pipeline status job 의 message·progress 갱신
+              onProgress: (update) => onPipelineStep?.(i, 'progress', undefined, update),
+            });
             if (!res.success) {
               // 실패 시 같은 capability의 대체 provider로 폴백 시도
               const fallbackRes = await this.tryFallbackProvider(resolvedPath, stepInput);

@@ -23,9 +23,10 @@ export class ModuleManager {
     private readonly vault: IVaultPort,
   ) {}
 
-  /** 경로 지정 직접 실행 (EXECUTE, 파이프라인 등) */
-  async execute(targetPath: string, inputData: Record<string, unknown>): Promise<InfraResult<ModuleOutput>> {
-    return this.sandbox.execute(targetPath, inputData);
+  /** 경로 지정 직접 실행 (EXECUTE, 파이프라인 등).
+   *  opts.onProgress 가 있으면 모듈 stdout 의 `[STATUS] {...}` 라인 실시간 파싱해 호출 (Step 5: Sandbox 스트리밍). */
+  async execute(targetPath: string, inputData: Record<string, unknown>, opts?: import('../ports').SandboxExecuteOpts): Promise<InfraResult<ModuleOutput>> {
+    return this.sandbox.execute(targetPath, inputData, opts);
   }
 
   /** 모듈명으로 실행 — 엔트리 파일 자동 탐색 (Form bindModule 전용) */
