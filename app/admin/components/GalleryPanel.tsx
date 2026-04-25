@@ -236,21 +236,23 @@ function MediaDetailModal({
   if (!mounted) return null;
 
   const modalContent = (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-stretch justify-center sm:items-center sm:p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
       {/*
-        모달 — svh (small viewport height) 사용. 브라우저 하단 툴바·iOS home indicator 등 chrome 영역
-        항상 가정해서 모달이 brower UI 뒤로 잘리지 않게 함.
-        - dvh: 동적 (브라우저 UI 표시 여부 따라 변동) — 일부 모바일 브라우저(Samsung Internet 등)가 spec 정확히 안 지켜 잘림
-        - svh: 최소 가정 (브라우저 UI 항상 표시) — 보수적이지만 모든 브라우저에서 안전
-        모바일: 100svh / PC: 85vh
+        모달 크기 — 모바일은 inset-0 의 자식 flex item 으로 자연스러운 viewport 높이 채움.
+        - 외부 fixed inset-0 + flex items-stretch → 모달이 부모 높이 자동 계산 (viewport unit 의존 X)
+        - viewport unit (vh/dvh/svh) 은 일부 모바일 브라우저(Samsung Internet)에서 부정확 → 사용 회피
+        - 안전을 위해 헤더 paddingTop·버튼 paddingBottom 에 env(safe-area-inset-*) 추가
         Portal 로 document.body 에 직접 렌더 → sidebar 등 부모의 containing block 회피.
       */}
       <div
-        className="bg-white w-full sm:max-w-3xl sm:rounded-2xl rounded-t-none shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[100svh] sm:h-[85vh]"
+        className="bg-white w-full sm:max-w-3xl sm:rounded-2xl rounded-t-none shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-full sm:h-[85vh] sm:max-h-[85vh]"
         onClick={e => e.stopPropagation()}
       >
-        {/* 헤더 — N/total 인디케이터 + prev/next + 닫기 */}
-        <div className="flex items-center justify-between px-3 sm:px-4 py-3 border-b border-slate-100 bg-slate-50 shrink-0 gap-2">
+        {/* 헤더 — N/total 인디케이터 + prev/next + 닫기. safe-area-inset-top 으로 status bar 침범 방지 */}
+        <div
+          className="flex items-center justify-between px-3 sm:px-4 py-3 border-b border-slate-100 bg-slate-50 shrink-0 gap-2"
+          style={{ paddingTop: 'max(env(safe-area-inset-top), 12px)' }}
+        >
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 truncate min-w-0 flex-1">
             <ImageIcon size={14} className="text-blue-500 shrink-0" />
             <span className="truncate">{item.filenameHint || item.slug}</span>
@@ -286,8 +288,8 @@ function MediaDetailModal({
 
         {/* 본문 — 모바일 flex-col / PC flex-row */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-3 p-3 sm:p-4 overflow-hidden">
-          {/* 프리뷰 — 높이 고정 (모바일 30svh / PC flex-1) + 좌우 swipe-style 버튼 (모바일) */}
-          <div className="relative shrink-0 md:flex-1 md:min-w-0 h-[30svh] md:h-auto md:max-h-full bg-slate-50 rounded-lg p-2 flex items-center justify-center overflow-hidden">
+          {/* 프리뷰 — 높이 고정 (모바일: viewport 의 1/3 정도, basis 로 자연 비율) */}
+          <div className="relative shrink-0 md:flex-1 md:min-w-0 basis-[30%] md:basis-auto md:h-auto md:max-h-full bg-slate-50 rounded-lg p-2 flex items-center justify-center overflow-hidden">
             <img
               src={url}
               alt={item.filenameHint || item.slug}
@@ -355,8 +357,11 @@ function MediaDetailModal({
               <MetaRow label="Blurhash" value={item.blurhash ? '✓ 생성됨' : '✗'} />
             </div>
 
-            {/* 버튼 — 위치 고정 (하단) */}
-            <div className="shrink-0 flex flex-col gap-1.5 pt-1">
+            {/* 버튼 — 위치 고정 (하단). safe-area-inset-bottom 으로 브라우저 하단 툴바·home indicator 침범 방지 */}
+            <div
+              className="shrink-0 flex flex-col gap-1.5 pt-1"
+              style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
+            >
               <button
                 onClick={() => copy(url, 'url')}
                 className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
