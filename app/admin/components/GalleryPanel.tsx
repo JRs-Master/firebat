@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Loader2, X, Copy, Check, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Search, Loader2, X, Copy, Check, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 
 interface MediaItem {
@@ -35,7 +36,9 @@ export function GalleryPanel() {
   const [scope, setScope] = useState<'all' | 'user' | 'system'>('user');
   const [search, setSearch] = useState('');
   const [offset, setOffset] = useState(0);
-  const [selected, setSelected] = useState<MediaItem | null>(null);
+  // selected 를 index 로 추적 — prev/next 탐색 가능
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const selected = selectedIndex !== null && selectedIndex < items.length ? items[selectedIndex] : null;
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchList = useCallback(async (reset: boolean) => {
@@ -84,7 +87,7 @@ export function GalleryPanel() {
       const data = await res.json();
       if (data.success) {
         setItems(prev => prev.filter(i => i.slug !== slug));
-        setSelected(null);
+        setSelectedIndex(null);
       } else {
         alert(`삭제 실패: ${data.error || 'unknown'}`);
       }
@@ -135,12 +138,12 @@ export function GalleryPanel() {
           </div>
         ) : (
           <div className="grid grid-cols-3 gap-1.5">
-            {items.map(item => {
+            {items.map((item, idx) => {
               const thumbSrc = item.thumbnailUrl || `/${item.scope ?? 'user'}/media/${item.slug}.${item.ext}`;
               return (
                 <Tooltip key={`${item.scope}-${item.slug}`} label={item.filenameHint || item.slug}>
                 <button
-                  onClick={() => setSelected(item)}
+                  onClick={() => setSelectedIndex(idx)}
                   className="group relative aspect-square bg-slate-100 rounded-md overflow-hidden hover:ring-2 hover:ring-blue-400 transition-all"
                 >
                   <img
@@ -172,11 +175,17 @@ export function GalleryPanel() {
         )}
       </div>
 
-      {/* 상세 모달 */}
-      {selected && (
+      {/* 상세 모달 — Portal 로 document.body 직접 렌더링 (sidebar/parent 의 containing block 회피) */}
+      {selected && selectedIndex !== null && (
         <MediaDetailModal
           item={selected}
-          onClose={() => setSelected(null)}
+          index={selectedIndex}
+          total={items.length}
+          hasPrev={selectedIndex > 0}
+          hasNext={selectedIndex < items.length - 1}
+          onPrev={() => setSelectedIndex(i => (i !== null && i > 0 ? i - 1 : i))}
+          onNext={() => setSelectedIndex(i => (i !== null && i < items.length - 1 ? i + 1 : i))}
+          onClose={() => setSelectedIndex(null)}
           onDelete={() => handleDelete(selected.slug)}
         />
       )}
@@ -185,9 +194,33 @@ export function GalleryPanel() {
 }
 
 function MediaDetailModal({
-  item, onClose, onDelete,
-}: { item: MediaItem; onClose: () => void; onDelete: () => void }) {
+  item, index, total, hasPrev, hasNext, onPrev, onNext, onClose, onDelete,
+}: {
+  item: MediaItem;
+  index: number;
+  total: number;
+  hasPrev: boolean;
+  hasNext: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+  onClose: () => void;
+  onDelete: () => void;
+}) {
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  // SSR 안전: client 마운트 후에만 portal 활성화
+  useEffect(() => { setMounted(true); }, []);
+  // 키보드 ← → 로 이전/다음, Esc 로 닫기
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft' && hasPrev) onPrev();
+      else if (e.key === 'ArrowRight' && hasNext) onNext();
+      else if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hasPrev, hasNext, onPrev, onNext, onClose]);
+
   const copy = (text: string, field: string) => {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text).then(() => {
@@ -200,44 +233,81 @@ function MediaDetailModal({
   const sizeKb = (item.bytes / 1024).toFixed(1);
   const createdStr = new Date(item.createdAt).toLocaleString('ko-KR');
 
-  return (
+  if (!mounted) return null;
+
+  const modalContent = (
     <div className="fixed inset-0 z-[60] flex items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
       {/*
-        모달 크기 — dvh (dynamic viewport height) 사용해서 모바일 주소창 변화 대응.
+        모달 — dvh (dynamic viewport height) 사용해서 모바일 주소창 변화 대응.
         모바일: 100dvh (전체 화면) / PC: 85vh
-        구조:
-          [header shrink-0]
-          [body flex-1 min-h-0 flex-col(mobile) flex-row(md+)]
-            [preview shrink-0 (높이 고정)]
-            [right column flex-col]
-              [prompt 영역 flex-1 min-h-0 overflow-y-auto] ← 프롬프트만 스크롤
-              [meta rows shrink-0]   ← 위치 고정
-              [buttons shrink-0]     ← 위치 고정
+        Portal 로 document.body 에 직접 렌더 → sidebar 등 부모의 containing block 회피.
       */}
       <div
         className="bg-white w-full sm:max-w-3xl sm:rounded-2xl rounded-t-none shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[100dvh] sm:h-[85vh]"
         onClick={e => e.stopPropagation()}
       >
-        {/* 헤더 */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50 shrink-0">
-          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 truncate">
+        {/* 헤더 — N/total 인디케이터 + prev/next + 닫기 */}
+        <div className="flex items-center justify-between px-3 sm:px-4 py-3 border-b border-slate-100 bg-slate-50 shrink-0 gap-2">
+          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 truncate min-w-0 flex-1">
             <ImageIcon size={14} className="text-blue-500 shrink-0" />
             <span className="truncate">{item.filenameHint || item.slug}</span>
           </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 shrink-0 p-1 rounded hover:bg-slate-200" aria-label="닫기">
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-[11px] text-slate-400 tabular-nums px-1">{index + 1} / {total}</span>
+            <Tooltip label="이전 (←)">
+              <button
+                onClick={onPrev}
+                disabled={!hasPrev}
+                className="p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                aria-label="이전"
+              >
+                <ChevronLeft size={18} />
+              </button>
+            </Tooltip>
+            <Tooltip label="다음 (→)">
+              <button
+                onClick={onNext}
+                disabled={!hasNext}
+                className="p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                aria-label="다음"
+              >
+                <ChevronRight size={18} />
+              </button>
+            </Tooltip>
+            <button onClick={onClose} className="ml-1 text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-200" aria-label="닫기">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         {/* 본문 — 모바일 flex-col / PC flex-row */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-3 p-3 sm:p-4 overflow-hidden">
-          {/* 프리뷰 — 높이 고정 (모바일 30dvh / PC flex-1) */}
-          <div className="shrink-0 md:flex-1 md:min-w-0 h-[30dvh] md:h-auto md:max-h-full bg-slate-50 rounded-lg p-2 flex items-center justify-center overflow-hidden">
+          {/* 프리뷰 — 높이 고정 (모바일 30dvh / PC flex-1) + 좌우 swipe-style 버튼 (모바일) */}
+          <div className="relative shrink-0 md:flex-1 md:min-w-0 h-[30dvh] md:h-auto md:max-h-full bg-slate-50 rounded-lg p-2 flex items-center justify-center overflow-hidden">
             <img
               src={url}
               alt={item.filenameHint || item.slug}
               className="max-w-full max-h-full object-contain rounded"
             />
+            {/* 모바일 prev/next 오버레이 — 헤더의 작은 버튼 외에 큰 영역 탭으로도 가능 */}
+            {hasPrev && (
+              <button
+                onClick={onPrev}
+                className="md:hidden absolute left-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/40 text-white hover:bg-slate-900/60 transition-colors"
+                aria-label="이전"
+              >
+                <ChevronLeft size={20} />
+              </button>
+            )}
+            {hasNext && (
+              <button
+                onClick={onNext}
+                className="md:hidden absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/40 text-white hover:bg-slate-900/60 transition-colors"
+                aria-label="다음"
+              >
+                <ChevronRight size={20} />
+              </button>
+            )}
           </div>
 
           {/* 우측 컬럼 — 프롬프트만 스크롤, 메타·버튼 고정 */}
@@ -307,6 +377,9 @@ function MediaDetailModal({
       </div>
     </div>
   );
+
+  // Portal — document.body 직접 렌더링으로 sidebar/parent 의 fixed containing block 회피
+  return createPortal(modalContent, document.body);
 }
 
 function MetaRow({ icon, label, value }: { icon?: React.ReactNode; label: string; value: string }) {

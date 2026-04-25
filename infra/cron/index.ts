@@ -198,29 +198,65 @@ export class NodeCronAdapter implements ICronPort {
   }
 
   list() {
-    return Array.from(this.records.values()).map(r => ({
-      jobId: r.jobId,
-      targetPath: r.targetPath,
-      title: r.title,
-      description: r.description,
-      cronTime: r.cronTime,
-      runAt: r.runAt,
-      delaySec: r.delaySec,
-      startAt: r.startAt,
-      endAt: r.endAt,
-      inputData: r.inputData,
-      pipeline: r.pipeline,
-      createdAt: r.createdAt,
-      mode: r.mode,
-    }));
+    // 1차: 메모리 records (정상 boot 후 사용)
+    if (this.records.size > 0) {
+      return Array.from(this.records.values()).map(r => ({
+        jobId: r.jobId,
+        targetPath: r.targetPath,
+        title: r.title,
+        description: r.description,
+        cronTime: r.cronTime,
+        runAt: r.runAt,
+        delaySec: r.delaySec,
+        startAt: r.startAt,
+        endAt: r.endAt,
+        inputData: r.inputData,
+        pipeline: r.pipeline,
+        createdAt: r.createdAt,
+        mode: r.mode,
+      }));
+    }
+    // 2차: 파일 폴백 — Next.js multi-isolate / boot timing 안전망.
+    // records 비어있어도 cron-jobs.json 이 진실의 단일 source 역할
+    try {
+      if (!fs.existsSync(JOBS_FILE)) return [];
+      const raw = fs.readFileSync(JOBS_FILE, 'utf-8');
+      const jobs: CronJobRecord[] = JSON.parse(raw);
+      this.log?.warn(`[Cron] list() 메모리 비어있음 → 파일 폴백 (${jobs.length}개)`);
+      return jobs.map(r => ({
+        jobId: r.jobId,
+        targetPath: r.targetPath,
+        title: r.title,
+        description: r.description,
+        cronTime: r.cronTime,
+        runAt: r.runAt,
+        delaySec: r.delaySec,
+        startAt: r.startAt,
+        endAt: r.endAt,
+        inputData: r.inputData,
+        pipeline: r.pipeline,
+        createdAt: r.createdAt,
+        mode: r.mode,
+      }));
+    } catch (e: any) {
+      this.log?.error(`[Cron] list() 파일 폴백 실패: ${e.message}`);
+      return [];
+    }
   }
 
   getLogs(limit: number = 50): CronLogEntry[] {
     try {
-      if (!fs.existsSync(LOGS_FILE)) return [];
-      const logs: CronLogEntry[] = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf-8'));
+      if (!fs.existsSync(LOGS_FILE)) {
+        this.log?.warn(`[Cron] getLogs: LOGS_FILE 없음 (${LOGS_FILE})`);
+        return [];
+      }
+      const raw = fs.readFileSync(LOGS_FILE, 'utf-8');
+      const logs: CronLogEntry[] = JSON.parse(raw);
       return logs.slice(-limit);
-    } catch { return []; }
+    } catch (e: any) {
+      this.log?.error(`[Cron] getLogs 실패: ${e.message} (path=${LOGS_FILE})`);
+      return [];
+    }
   }
 
   clearLogs(): void {
