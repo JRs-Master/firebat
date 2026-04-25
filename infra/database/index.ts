@@ -135,6 +135,20 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
         created_at  INTEGER NOT NULL
       )
     `);
+
+    // 미디어 사용처 인덱스 — 페이지 PageSpec 안의 image src 에서 추출한 (media_slug, page_slug) 매핑.
+    // PageManager.save 시 자동 upsert, delete 시 page_slug 기준 일괄 삭제.
+    // 갤러리 삭제 confirm 차등화 + 사용처 표시에 활용.
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS media_usage (
+        media_slug  TEXT NOT NULL,
+        page_slug   TEXT NOT NULL,
+        used_at     INTEGER NOT NULL,
+        PRIMARY KEY (media_slug, page_slug)
+      );
+      CREATE INDEX IF NOT EXISTS idx_media_usage_page ON media_usage(page_slug);
+      CREATE INDEX IF NOT EXISTS idx_media_usage_media ON media_usage(media_slug);
+    `);
   }
 
   async query(sql: string, params?: unknown[]): Promise<InfraResult<Record<string, unknown>[]>> {

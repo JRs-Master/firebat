@@ -302,6 +302,10 @@ export class FirebatCore {
 
   async listStaticPages() { return this.page.listStatic(); }
 
+  /** 미디어 slug 의 사용처 — 갤러리 삭제 confirm·메타 표시에 사용.
+   *  PageManager.save 시 자동 인덱스 갱신, delete 시 자동 정리. */
+  async findMediaUsage(mediaSlug: string) { return this.page.findMediaUsage(mediaSlug); }
+
   /** 페이지 visibility 설정 */
   async setPageVisibility(slug: string, visibility: 'public' | 'password' | 'private', password?: string) {
     const res = await this.page.setVisibility(slug, visibility, password);

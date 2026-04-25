@@ -91,8 +91,23 @@ export function GalleryPanel() {
     setTimeout(() => fetchList(false), 0);
   };
 
+  // 선택된 미디어의 사용처 — 모달 열릴 때 fetch. 페이지에 박힌 이미지 삭제 경고 + 메타 표시.
+  const [selectedUsage, setSelectedUsage] = useState<Array<{ pageSlug: string; usedAt: number }>>([]);
+  useEffect(() => {
+    if (!selected) { setSelectedUsage([]); return; }
+    fetch(`/api/media/usage?slug=${encodeURIComponent(selected.slug)}`)
+      .then(r => r.json())
+      .then(j => { if (j.success) setSelectedUsage(j.data ?? []); })
+      .catch(() => {});
+  }, [selected?.slug]);
+
   const handleDelete = async (slug: string) => {
-    if (!window.confirm('이 이미지를 삭제하시겠어요? (원본 + 모든 variants + 썸네일 일괄 삭제)')) return;
+    // 사용처 차등 confirm — 페이지에 박힌 이미지면 빨간 경고 + 페이지 목록.
+    const usage = selectedUsage;
+    const msg = usage.length > 0
+      ? `⚠️ 이 이미지는 ${usage.length}개 페이지에 사용 중입니다:\n\n${usage.map(u => `  • /${u.pageSlug}`).join('\n')}\n\n삭제하면 해당 페이지의 이미지가 깨집니다. 정말 삭제하시겠어요?`
+      : '이 이미지를 삭제하시겠어요? (원본 + 모든 variants + 썸네일 일괄 삭제)';
+    if (!window.confirm(msg)) return;
     try {
       const res = await fetch(`/api/media/list?slug=${encodeURIComponent(slug)}`, { method: 'DELETE' });
       const data = await res.json();
@@ -241,6 +256,7 @@ export function GalleryPanel() {
           onDelete={() => handleDelete(selected.slug)}
           onRegenerate={() => handleRegenerate(selected.slug)}
           regenerating={regenerating}
+          usage={selectedUsage}
         />
       )}
     </div>
@@ -248,7 +264,7 @@ export function GalleryPanel() {
 }
 
 function MediaDetailModal({
-  item, index, total, hasPrev, hasNext, onPrev, onNext, onClose, onDelete, onRegenerate, regenerating,
+  item, index, total, hasPrev, hasNext, onPrev, onNext, onClose, onDelete, onRegenerate, regenerating, usage,
 }: {
   item: MediaItem;
   index: number;
@@ -261,6 +277,8 @@ function MediaDetailModal({
   onDelete: () => void;
   onRegenerate: () => void;
   regenerating: boolean;
+  /** 페이지 사용처 — 비어있으면 '사용 안 됨' 표시. PageManager 인덱스에서 자동 갱신. */
+  usage: Array<{ pageSlug: string; usedAt: number }>;
 }) {
   const isError = item.status === 'error';
   const canRegenerate = !!item.prompt; // prompt 있어야 재실행 가능
@@ -429,6 +447,30 @@ function MediaDetailModal({
                 ? `${item.variants.length}개 (${[...new Set(item.variants.map(v => v.format))].join('/')})`
                 : '없음'} />
               <MetaRow label="Blurhash" value={item.blurhash ? '✓ 생성됨' : '✗'} />
+              {/* 사용처 — 페이지 PageSpec 안 박힌 곳. 빈 배열 = '사용 안 됨'. */}
+              <div className="flex items-start gap-1.5 text-[11px]">
+                <span className="shrink-0 text-slate-400 font-bold uppercase text-[10px] mt-0.5 min-w-[64px]">사용처</span>
+                {usage.length === 0 ? (
+                  <span className="text-slate-400 italic">사용 안 됨</span>
+                ) : (
+                  <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                    {usage.slice(0, 5).map(u => (
+                      <a
+                        key={u.pageSlug}
+                        href={`/${u.pageSlug}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline break-all"
+                      >
+                        /{u.pageSlug}
+                      </a>
+                    ))}
+                    {usage.length > 5 && (
+                      <span className="text-slate-400 text-[10px]">+{usage.length - 5}개 더</span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* 버튼 — 위치 고정 (하단). safe-area-inset-bottom 으로 브라우저 하단 툴바·home indicator 침범 방지.
