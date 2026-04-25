@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../../lib/singleton';
+import * as nodeCrypto from 'crypto';
+
+/** state 비교 — timing-safe 동일 길이만 통과. CSRF 방지. */
+function statesMatch(a?: string | null, b?: string | null): boolean {
+  if (!a || !b || a.length !== b.length) return false;
+  return nodeCrypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+}
 
 /**
  * GET /api/auth/kakao/callback — 카카오 OAuth 콜백
@@ -13,6 +20,8 @@ import { getCore } from '../../../../../lib/singleton';
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get('code');
   const error = req.nextUrl.searchParams.get('error');
+  const stateFromQuery = req.nextUrl.searchParams.get('state');
+  const stateFromCookie = req.cookies.get('kakao_oauth_state')?.value;
 
   // 사용자가 동의를 거부한 경우
   if (error) {
@@ -21,6 +30,11 @@ export async function GET(req: NextRequest) {
 
   if (!code) {
     return redirectToAdmin('인증 코드가 없습니다.', 'error');
+  }
+
+  // CSRF — state 검증 (cookie 와 query 일치). 일치하지 않으면 정상 흐름 아님.
+  if (!stateFromQuery || !stateFromCookie || !statesMatch(stateFromQuery, stateFromCookie)) {
+    return redirectToAdmin('OAuth state 검증 실패 — CSRF 의심. 다시 시도해주세요.', 'error');
   }
 
   const core = getCore();
@@ -70,7 +84,9 @@ export async function GET(req: NextRequest) {
       core.setUserSecret('KAKAO_REFRESH_TOKEN', refresh_token);
     }
 
-    return redirectToAdmin('카카오톡 연동 완료! 토큰이 저장되었습니다.', 'success');
+    const res = redirectToAdmin('카카오톡 연동 완료! 토큰이 저장되었습니다.', 'success');
+    res.cookies.delete('kakao_oauth_state');  // state 1회용 — 즉시 폐기
+    return res;
   } catch (e: any) {
     return redirectToAdmin(`토큰 교환 중 오류: ${e.message}`, 'error');
   }

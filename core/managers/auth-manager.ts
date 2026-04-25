@@ -1,5 +1,6 @@
 import type { IAuthPort, IVaultPort, AuthSession } from '../ports';
 import { VK_ADMIN_ID, VK_ADMIN_PASSWORD } from '../vault-keys';
+import * as nodeCrypto from 'crypto';
 
 /** API 토큰 정보 (마스킹된 힌트 + 생성일) */
 export interface ApiTokenInfo {
@@ -12,6 +13,30 @@ export interface ApiTokenInfo {
 /** 세션 토큰 유효기간 — 24시간 */
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 
+/** Brute force 방지 — IP·계정 조합당 N회 실패 시 lockMs 동안 잠금. 일반 로직, 도메인별 분기 X. */
+const LOGIN_FAIL_LIMIT = 5;
+const LOGIN_LOCK_MS = 60 * 1000;       // 60초 잠금
+const LOGIN_FAIL_DECAY_MS = 10 * 60 * 1000;  // 10분 무행동 시 카운터 리셋
+
+interface LoginAttemptState {
+  failCount: number;
+  lockedUntil: number;     // 0 = 잠금 안 됨
+  lastAttemptAt: number;
+}
+
+/** 시간 안정 문자열 비교 — id/password 비교 시 timing attack 방지.
+ *  길이 비교 자체가 누설일 수 있어 padding 후 timingSafeEqual.  */
+function timingSafeStringEqual(a: string, b: string): boolean {
+  // 길이 다르면 padding 후 비교 (mismatch 보장 + 동일 시간).
+  const max = Math.max(a.length, b.length, 1);
+  const ab = Buffer.from(a.padEnd(max, '\0'));
+  const bb = Buffer.from(b.padEnd(max, '\0'));
+  if (ab.length !== bb.length) return false;
+  const equal = nodeCrypto.timingSafeEqual(ab, bb);
+  // 길이 mismatch 는 mismatch 로 처리 (timingSafeEqual 거친 후 비트마스크).
+  return equal && a.length === b.length;
+}
+
 /**
  * Auth Manager — 통합 인증/토큰 관리
  *
@@ -22,6 +47,10 @@ const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
  * 인프라: IAuthPort (세션 저장), IVaultPort (자격증명 저장)
  */
 export class AuthManager {
+  /** 로그인 실패 카운트 — key 는 ip 또는 'global' (옵션 제공자가 키 선택).
+   *  메모리 저장 — restart 시 리셋. 영속까지는 v1.x. */
+  private loginAttempts = new Map<string, LoginAttemptState>();
+
   constructor(
     private readonly auth: IAuthPort,
     private readonly vault: IVaultPort,
@@ -31,11 +60,47 @@ export class AuthManager {
   //  로그인/로그아웃 (세션 토큰)
   // ══════════════════════════════════════════════════════════════════════════
 
-  /** 자격증명 검증 후 세션 토큰 발급. 실패 시 null */
-  login(id: string, password: string): AuthSession | null {
+  /** 자격증명 검증 후 세션 토큰 발급. 실패 시 null.
+   *  attemptKey: 호출자 (route handler) 가 IP 등 식별자 전달. 미전달 시 'global' (전체 합산 — 1인 운영 OK).
+   *  반환 null + lockedSec: 잠겼으면 caller 가 429 응답으로 변환.
+   *  순수 비교 로직: timing-safe + lock 카운터. 도메인별 특수 처리 X. */
+  login(id: string, password: string, attemptKey: string = 'global'): AuthSession | { locked: true; retryAfterSec: number } | null {
+    const now = Date.now();
+    const state = this.loginAttempts.get(attemptKey);
+
+    // 잠금 상태 체크
+    if (state && state.lockedUntil > now) {
+      return { locked: true, retryAfterSec: Math.ceil((state.lockedUntil - now) / 1000) };
+    }
+    // 일정 시간 무행동 시 카운터 리셋 (정상 사용자가 가끔 실수해도 영향 없음)
+    if (state && now - state.lastAttemptAt > LOGIN_FAIL_DECAY_MS) {
+      state.failCount = 0;
+      state.lockedUntil = 0;
+    }
+
     const creds = this.getAdminCredentials();
-    if (id === creds.id && password === creds.password) {
+    const idMatch = timingSafeStringEqual(id ?? '', creds.id);
+    const pwMatch = timingSafeStringEqual(password ?? '', creds.password);
+    const ok = idMatch && pwMatch;
+
+    if (ok) {
+      // 성공 시 카운터 리셋
+      this.loginAttempts.delete(attemptKey);
       return this.createSession('admin');
+    }
+
+    // 실패 처리 — 카운터 증가, 한도 초과 시 lockedUntil 설정
+    const updated: LoginAttemptState = state ?? { failCount: 0, lockedUntil: 0, lastAttemptAt: now };
+    updated.failCount += 1;
+    updated.lastAttemptAt = now;
+    if (updated.failCount >= LOGIN_FAIL_LIMIT) {
+      updated.lockedUntil = now + LOGIN_LOCK_MS;
+      updated.failCount = 0;  // 잠금 시작 시 카운터 리셋 — 잠금 해제 후 다시 5회 시도 가능
+    }
+    this.loginAttempts.set(attemptKey, updated);
+
+    if (updated.lockedUntil > now) {
+      return { locked: true, retryAfterSec: Math.ceil((updated.lockedUntil - now) / 1000) };
     }
     return null;
   }

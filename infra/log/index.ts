@@ -1,6 +1,7 @@
 import { ILogPort, LogMeta } from '../../core/ports';
 import fs from 'fs';
 import path from 'path';
+import { redactString, redactMeta } from '../security/token-redactor';
 
 const LOG_DIR = path.join(process.cwd(), 'data', 'logs');
 
@@ -74,10 +75,12 @@ export class ConsoleLogAdapter implements ILogPort {
 
   debug(message: string, meta?: LogMeta): void {
     if (!this.debugEnabled) return;
+    const safeMsg = redactString(message);
+    const safeMeta = meta ? redactMeta(meta) : undefined;
     const time = new Date().toISOString();
-    const line = meta
-      ? `[${time}] [DEBUG] ${message} ${JSON.stringify(meta)}`
-      : `[${time}] [DEBUG] ${message}`;
+    const line = safeMeta
+      ? `[${time}] [DEBUG] ${safeMsg} ${JSON.stringify(safeMeta)}`
+      : `[${time}] [DEBUG] ${safeMsg}`;
 
     console.log(line);
     writeToFile(appLogPath(), line);
@@ -85,35 +88,53 @@ export class ConsoleLogAdapter implements ILogPort {
 
   info(message: string, meta?: LogMeta): void {
     const time = new Date().toISOString();
-    const line = meta
-      ? `[${time}] [INFO] ${message} ${JSON.stringify(meta)}`
-      : `[${time}] [INFO] ${message}`;
-
-    console.log(line);
 
     if (isTraining(message)) {
+      // Training JSONL 은 마스킹 후 별도 파일.
       const jsonLine = extractTrainingJson(message);
-      if (jsonLine) writeToFile(trainingLogPath(), jsonLine);
-    } else {
-      writeToFile(appLogPath(), line);
+      if (jsonLine) {
+        // JSONL 본문도 토큰 마스킹 — 파인튜닝 데이터 누설 방지.
+        try {
+          const obj = JSON.parse(jsonLine);
+          writeToFile(trainingLogPath(), JSON.stringify(redactMeta(obj)));
+        } catch {
+          writeToFile(trainingLogPath(), redactString(jsonLine));
+        }
+      }
+      // 콘솔에는 short 메시지만 (raw training JSON 노출 X).
+      console.log(`[${time}] [INFO] [training data captured]`);
+      return;
     }
+
+    const safeMsg = redactString(message);
+    const safeMeta = meta ? redactMeta(meta) : undefined;
+    const line = safeMeta
+      ? `[${time}] [INFO] ${safeMsg} ${JSON.stringify(safeMeta)}`
+      : `[${time}] [INFO] ${safeMsg}`;
+
+    console.log(line);
+    writeToFile(appLogPath(), line);
   }
 
   warn(message: string, meta?: LogMeta): void {
+    const safeMsg = redactString(message);
+    const safeMeta = meta ? redactMeta(meta) : undefined;
     const time = new Date().toISOString();
-    const line = meta
-      ? `[${time}] [WARN] ${message} ${JSON.stringify(meta)}`
-      : `[${time}] [WARN] ${message}`;
+    const line = safeMeta
+      ? `[${time}] [WARN] ${safeMsg} ${JSON.stringify(safeMeta)}`
+      : `[${time}] [WARN] ${safeMsg}`;
 
     console.warn(line);
     writeToFile(appLogPath(), line);
   }
 
   error(message: string, meta?: LogMeta): void {
+    const safeMsg = redactString(message);
+    const safeMeta = meta ? redactMeta(meta) : undefined;
     const time = new Date().toISOString();
-    const line = meta
-      ? `[${time}] [ERROR] ${message} ${JSON.stringify(meta)}`
-      : `[${time}] [ERROR] ${message}`;
+    const line = safeMeta
+      ? `[${time}] [ERROR] ${safeMsg} ${JSON.stringify(safeMeta)}`
+      : `[${time}] [ERROR] ${safeMsg}`;
 
     console.error(line);
     writeToFile(appLogPath(), line);

@@ -836,8 +836,11 @@ export class FirebatCore {
   //  인증 → AuthManager
   // ══════════════════════════════════════════════════════════════════════════
 
-  /** 로그인 — 세션 토큰 발급. 실패 시 null */
-  login(id: string, password: string): AuthSession | null { return this.authMgr.login(id, password); }
+  /** 로그인 — 세션 토큰 발급. 실패 시 null. 잠금 시 { locked, retryAfterSec }.
+   *  attemptKey 는 IP 등 식별자 (rate limit 키) — 미전달 시 'global'. */
+  login(id: string, password: string, attemptKey?: string): AuthSession | { locked: true; retryAfterSec: number } | null {
+    return this.authMgr.login(id, password, attemptKey);
+  }
   /** 세션 토큰 검증 */
   validateSession(token: string): AuthSession | null { return this.authMgr.validateSession(token); }
   /** 로그아웃 */

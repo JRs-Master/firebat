@@ -128,14 +128,35 @@ export class ProcessSandboxAdapter implements ISandboxPort {
     onProgress?: SandboxExecuteOpts['onProgress'],
   ): Promise<InfraResult<ModuleOutput>> {
     return new Promise((resolve) => {
+      // 환경변수 whitelist — Firebat 시스템 env 누설 방지.
+      // 모듈은 (a) 기본 OS env (PATH/HOME 등), (b) 명시 secrets/settings 만 받음.
+      // process.env 전체 spread 시 OPENAI_API_KEY, ANTHROPIC_API_KEY 등 시스템 키
+      // 가 임의 모듈에 노출됨 → secrets 화이트리스트 우회.
+      // 일반 로직 — 변수 종류 enumerate 가 아닌 이름 패턴 + 화이트리스트 조합.
+      const ALLOWED_ENV_KEYS = [
+        // OS basics — 모듈 실행 (node/python 찾기, cache, locale)에 필수
+        'PATH', 'HOME', 'USER', 'USERNAME', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ',
+        // Windows
+        'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'PROGRAMFILES', 'PROGRAMFILES(X86)',
+        'SYSTEMROOT', 'SYSTEMDRIVE', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP',
+        // Unix temp / shell
+        'SHELL', 'TMPDIR',
+        // Node 실행 환경 (Sandbox 가 node 자식 spawn 시)
+        'NODE_PATH', 'NODE_OPTIONS',
+      ];
+      const baseEnv: Record<string, string> = {};
+      for (const key of ALLOWED_ENV_KEYS) {
+        const v = process.env[key];
+        if (v !== undefined) baseEnv[key] = v;
+      }
       // UTF-8 강제: Windows에서 Python stdin/stdout이 cp949로 처리되는 것을 방지
-      const env = {
-        ...process.env,
+      const env: Record<string, string> = {
+        ...baseEnv,
         PYTHONIOENCODING: 'utf-8',
         PYTHONUTF8: '1',
         ...(secretsEnv ?? {}),
       };
-      const child = execFile(command, args, { timeout: timeoutMs, env }, (error, stdout, stderr) => {
+      const child = execFile(command, args, { timeout: timeoutMs, env: env as NodeJS.ProcessEnv }, (error, stdout, stderr) => {
         if (error) {
           if (error.killed) {
             return resolve({ success: false, error: `[TIMEOUT] 최대 실행 시간(${timeoutMs / 1000}초) 초과.` });
