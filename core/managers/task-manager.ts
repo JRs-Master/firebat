@@ -455,7 +455,9 @@ export class TaskManager {
           if (typeof prev === 'string') return prev; // string 폴백 (위와 동일 논리)
           return `$prev.${key}`;
         });
-        result = result.replace(/\$prev/g, typeof prev === 'string' ? prev : JSON.stringify(prev));
+        // 단독 $prev 만 치환 — 위 regex 가 preserve 한 "$prev.missing" 의 $prev 부분 덮어쓰기 방지.
+        // negative lookahead (?!\.\w) — $prev 뒤에 .word 가 오지 않을 때만 매칭.
+        result = result.replace(/\$prev(?!\.\w)/g, typeof prev === 'string' ? prev : JSON.stringify(prev));
         return result;
       }
       return val;
