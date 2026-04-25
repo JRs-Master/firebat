@@ -254,11 +254,12 @@ function MediaDetailModal({
           </h3>
           <div className="flex items-center gap-1 shrink-0">
             <span className="text-[11px] text-slate-400 tabular-nums px-1">{index + 1} / {total}</span>
+            {/* 헤더 화살표 — PC 전용 (모바일은 이미지 좌우 floating 버튼으로 대체, 중복 회피) */}
             <Tooltip label="이전 (←)">
               <button
                 onClick={onPrev}
                 disabled={!hasPrev}
-                className="p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="hidden md:inline-flex p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 transition-colors"
                 aria-label="이전"
               >
                 <ChevronLeft size={18} />
@@ -268,13 +269,13 @@ function MediaDetailModal({
               <button
                 onClick={onNext}
                 disabled={!hasNext}
-                className="p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="hidden md:inline-flex p-1.5 rounded text-slate-500 hover:bg-slate-200 disabled:opacity-30 transition-colors"
                 aria-label="다음"
               >
                 <ChevronRight size={18} />
               </button>
             </Tooltip>
-            <button onClick={onClose} className="ml-1 text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-200" aria-label="닫기">
+            <button onClick={onClose} className="md:ml-1 text-slate-400 hover:text-slate-600 p-1 rounded hover:bg-slate-200" aria-label="닫기">
               <X size={18} />
             </button>
           </div>
@@ -289,46 +290,46 @@ function MediaDetailModal({
               alt={item.filenameHint || item.slug}
               className="max-w-full max-h-full object-contain rounded"
             />
-            {/* 모바일 prev/next 오버레이 — 헤더의 작은 버튼 외에 큰 영역 탭으로도 가능 */}
-            {hasPrev && (
-              <button
-                onClick={onPrev}
-                className="md:hidden absolute left-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/40 text-white hover:bg-slate-900/60 transition-colors"
-                aria-label="이전"
-              >
-                <ChevronLeft size={20} />
-              </button>
-            )}
-            {hasNext && (
-              <button
-                onClick={onNext}
-                className="md:hidden absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/40 text-white hover:bg-slate-900/60 transition-colors"
-                aria-label="다음"
-              >
-                <ChevronRight size={20} />
-              </button>
-            )}
+            {/* 모바일 prev/next floating — 모바일 전용 (헤더 화살표는 PC 전용, 중복 회피).
+                hasPrev/Next 항상 렌더해서 위치 안정 — disabled 시 opacity 만 낮춤 (cursor 모양 변경 X) */}
+            <button
+              onClick={onPrev}
+              disabled={!hasPrev}
+              className="md:hidden absolute left-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/40 text-white hover:bg-slate-900/60 disabled:opacity-20 transition-colors"
+              aria-label="이전"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <button
+              onClick={onNext}
+              disabled={!hasNext}
+              className="md:hidden absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-slate-900/40 text-white hover:bg-slate-900/60 disabled:opacity-20 transition-colors"
+              aria-label="다음"
+            >
+              <ChevronRight size={20} />
+            </button>
           </div>
 
           {/* 우측 컬럼 — 프롬프트만 스크롤, 메타·버튼 고정 */}
           <div className="flex-1 md:flex-none md:w-64 md:shrink-0 min-h-0 flex flex-col gap-2 text-[12px]">
-            {/* 프롬프트 — flex-1 + overflow-y-auto. 길면 여기만 스크롤됨 */}
-            {(item.prompt || item.revisedPrompt) && (
-              <div className="flex-1 min-h-[60px] overflow-y-auto pr-1 border-b border-slate-100 pb-2">
-                {item.prompt && (
-                  <div className="mb-2">
-                    <div className="flex items-center gap-1 text-slate-400 font-bold uppercase text-[10px] mb-0.5"><Sparkles size={10} /> 프롬프트</div>
-                    <p className="text-slate-700 break-words leading-relaxed">{item.prompt}</p>
-                  </div>
-                )}
-                {item.revisedPrompt && item.revisedPrompt !== item.prompt && (
-                  <div>
-                    <div className="text-slate-400 font-bold uppercase text-[10px] mb-0.5">AI 수정본</div>
-                    <p className="text-slate-600 break-words italic leading-relaxed">{item.revisedPrompt}</p>
-                  </div>
-                )}
-              </div>
-            )}
+            {/* 프롬프트 — 항상 렌더(prompt 없을 때 placeholder). flex-1 유지로 메타·버튼 위치 일정 */}
+            <div className="flex-1 min-h-[60px] overflow-y-auto pr-1 border-b border-slate-100 pb-2">
+              {item.prompt && (
+                <div className="mb-2">
+                  <div className="flex items-center gap-1 text-slate-400 font-bold uppercase text-[10px] mb-0.5"><Sparkles size={10} /> 프롬프트</div>
+                  <p className="text-slate-700 break-words leading-relaxed">{item.prompt}</p>
+                </div>
+              )}
+              {item.revisedPrompt && item.revisedPrompt !== item.prompt && (
+                <div>
+                  <div className="text-slate-400 font-bold uppercase text-[10px] mb-0.5">AI 수정본</div>
+                  <p className="text-slate-600 break-words italic leading-relaxed">{item.revisedPrompt}</p>
+                </div>
+              )}
+              {!item.prompt && !item.revisedPrompt && (
+                <p className="text-slate-400 italic text-[11px]">프롬프트 정보 없음</p>
+              )}
+            </div>
 
             {/* 메타 정보 — 위치 고정 */}
             <div className="shrink-0 flex flex-col gap-1.5">
