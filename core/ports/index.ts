@@ -28,6 +28,21 @@ export interface LlmJsonResponse {
   suggestions: unknown[];              // 파싱 후 Suggestion[]으로 검증
 }
 
+/** LLM 호출의 token 사용량 + 비용 (어댑터가 자기 SDK 응답에서 추출).
+ *  CLI 모드는 사용자 구독이라 cost=0 (또는 미산정). API 모드만 cost 계산. */
+export interface LlmTokenUsage {
+  /** 입력 (prompt) 토큰 수 */
+  inputTokens?: number;
+  /** 출력 (completion) 토큰 수 */
+  outputTokens?: number;
+  /** 입력+출력 합계 (선택). 어댑터가 직접 줄 수도, Core 가 input+output 합산할 수도 */
+  totalTokens?: number;
+  /** 모델 식별자 (가격 lookup 용) */
+  model?: string;
+  /** 어댑터가 직접 계산한 USD 비용 (선택). 미설정 시 Core 가 model + tokens 으로 산정 */
+  costUsd?: number;
+}
+
 /** 네트워크 요청 옵션 */
 export interface NetworkRequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
@@ -304,6 +319,9 @@ export interface LlmToolResponse {
   rawModelParts?: unknown[];
   /** OpenAI Responses API 응답 ID — 다음 요청의 previous_response_id로 사용하면 history 재전송 불필요 */
   responseId?: string;
+  /** Token 사용량 + 비용 (어댑터가 자기 SDK 응답에서 추출).
+   *  CostManager 가 누적 → 일별·모델별 통계. */
+  usage?: LlmTokenUsage;
   /** LLM 이 내부에서 이미 호출한 도구 이름 배열 (CLI 모드처럼 어댑터가 도구 루프를 직접 돌린 경우).
    *  Core 는 이를 executedActions 에 반영해 액션 뱃지 표시. 실제 실행은 어댑터가 끝냈으므로 재호출 X. */
   internallyUsedTools?: string[];
@@ -344,6 +362,9 @@ export interface ILlmPort {
    *  CLI 전용 (enter_plan_mode, Task, Agent 등 각 CLI 내장 도구). API 모드는 빈 배열.
    *  AiManager 가 시스템 프롬프트에 주입 → 공급자별 하드코딩 회피. */
   getBannedInternalTools(modelId?: string): string[];
+  /** 모델별 1M 토큰당 가격 (USD). null = 가격 정보 없음 (CLI 구독 모델 등 — 비용 산정 불가).
+   *  CostManager 가 이 정보로 LlmTokenUsage.costUsd 계산. */
+  getModelPricing?(modelId: string): { inputPer1M: number; outputPer1M: number } | null;
 }
 
 export interface INetworkPort {

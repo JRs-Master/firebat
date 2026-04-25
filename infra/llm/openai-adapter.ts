@@ -229,6 +229,7 @@ export class OpenAiAdapter implements ILlmPort {
       const textParts: string[] = [];
       const toolCalls: Array<{ name: string; args: Record<string, unknown>; preExecutedResult?: Record<string, unknown> }> = [];
       let responseId: string | undefined;
+      let usage: { input_tokens?: number; output_tokens?: number; total_tokens?: number } | undefined;
 
       // 429 Rate limit 재시도 헬퍼 (최대 2회, 응답의 retry-after 값 따라 대기)
       const callWithRetry = async (p: Record<string, unknown>, retry = 2): Promise<any> => {
@@ -259,6 +260,8 @@ export class OpenAiAdapter implements ILlmPort {
           }
           else if (t === 'response.completed' && event.response?.id) {
             responseId = event.response.id as string;
+            // usage 도 함께 캡처 (Responses API 는 completed 이벤트의 response 객체에 포함)
+            if (event.response.usage) usage = event.response.usage;
           }
           // 텍스트 delta
           else if (t === 'response.output_text.delta' && typeof event.delta === 'string') {
@@ -315,6 +318,7 @@ export class OpenAiAdapter implements ILlmPort {
         // ── 비스트리밍 모드 ──
         const response = await callWithRetry(payload);
         if (response?.id) responseId = response.id as string;
+        if (response?.usage) usage = response.usage;
         const output = response.output as Array<Record<string, any>> | undefined;
         if (output) {
           for (const item of output) {
@@ -354,7 +358,19 @@ export class OpenAiAdapter implements ILlmPort {
 
       return {
         success: true,
-        data: { text: textParts.join(''), toolCalls, ...(responseId ? { responseId } : {}) },
+        data: {
+          text: textParts.join(''),
+          toolCalls,
+          ...(responseId ? { responseId } : {}),
+          ...(usage ? {
+            usage: {
+              inputTokens: usage.input_tokens,
+              outputTokens: usage.output_tokens,
+              totalTokens: usage.total_tokens,
+              model: opts?.model,
+            },
+          } : {}),
+        },
       };
     } catch (e: any) {
       return { success: false, error: `[OpenAI] askWithTools 실패: ${e.message}` };

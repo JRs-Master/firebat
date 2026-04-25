@@ -752,8 +752,10 @@ export class AiManager {
         return { success: false, executedActions, error: `LLM API 실패: ${llmRes.error}` };
       }
 
-      const { text: rawText, toolCalls, responseId, rawModelParts, internallyUsedTools, renderedBlocks: innerBlocks, pendingActions: innerPending, suggestions: innerSuggestions } = llmRes.data!;
+      const { text: rawText, toolCalls, responseId, rawModelParts, internallyUsedTools, renderedBlocks: innerBlocks, pendingActions: innerPending, suggestions: innerSuggestions, usage } = llmRes.data!;
       if (responseId) currentResponseId = responseId; // 다음 턴에 previous_response_id로 재사용
+      // LLM 비용 추적 — 어댑터가 usage 채우면 CostManager 에 누적 (Core facade 경유)
+      if (usage) this.core.recordLlmCost(usage);
       const text = (rawText || '').trim();
       this.logger.info(`[AiManager] [${corrId}] [${modelId}] Turn ${turn + 1} (${llmMs}ms): text=${text.length}자, tools=${toolCalls.length}개${internallyUsedTools?.length ? `, internal=${internallyUsedTools.length}개` : ''}${innerBlocks?.length ? `, blocks=${innerBlocks.length}개` : ''}`);
 

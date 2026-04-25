@@ -148,6 +148,7 @@ export class AnthropicMessagesFormat implements FormatHandler {
 
       const textParts: string[] = [];
       const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+      let usage: { input_tokens?: number; output_tokens?: number } | undefined;
       // MCP 경유 호출은 beta namespace 필수 (client.beta.messages.*)
       const api = useMcp ? client.beta.messages : client.messages;
 
@@ -170,6 +171,7 @@ export class AnthropicMessagesFormat implements FormatHandler {
             toolCalls.push({ name: c.name, args: (c.input as Record<string, unknown>) ?? {} });
           }
         }
+        usage = final.usage;
       } else {
         const res = await (api as any).create({ ...payload, stream: false });
         for (const c of res.content as any[]) {
@@ -178,8 +180,22 @@ export class AnthropicMessagesFormat implements FormatHandler {
             toolCalls.push({ name: c.name, args: (c.input as Record<string, unknown>) ?? {} });
           }
         }
+        usage = res.usage;
       }
-      return { success: true, data: { text: textParts.join(''), toolCalls } };
+      return {
+        success: true,
+        data: {
+          text: textParts.join(''),
+          toolCalls,
+          ...(usage ? {
+            usage: {
+              inputTokens: usage.input_tokens,
+              outputTokens: usage.output_tokens,
+              model: ctx.config.id,
+            },
+          } : {}),
+        },
+      };
     } catch (e: any) { return { success: false, error: `[Claude] askWithTools 실패: ${e.message}` }; }
   }
 }

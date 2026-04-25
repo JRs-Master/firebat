@@ -17,6 +17,8 @@ import type { GenerateImageInput, GenerateImageResult } from './managers/image-m
 import { EventManager } from './managers/event-manager';
 import { StatusManager } from './managers/status-manager';
 import type { JobStatus, JobType, JobStatusKind, JobChangeEvent } from './managers/status-manager';
+import { CostManager } from './managers/cost-manager';
+import type { CostStatsFilter, CostStatsSummary } from './managers/cost-manager';
 import type { FirebatInfraContainer, ILlmPort, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
@@ -70,6 +72,7 @@ export class FirebatCore {
   private readonly image: ImageManager;
   private readonly event: EventManager;
   private readonly statusMgr: StatusManager;
+  private readonly cost: CostManager;
 
   constructor(private readonly infra: FirebatInfraContainer) {
     // 매니저 생성 — 각 매니저는 자기 도메인의 인프라 포트를 직접 받음
@@ -85,6 +88,18 @@ export class FirebatCore {
     this.image = new ImageManager(infra.imageGen, infra.media, infra.imageProcessor, infra.vault, infra.log);
     this.event = new EventManager(infra.log);
     this.statusMgr = new StatusManager(infra.log, this.event);
+    // CostManager — LLM 호출 token·비용 누적. 가격 정보는 ILlmPort.getModelPricing 에서 lookup (미구현 어댑터는 null).
+    // 일자 키는 사용자 timezone 기준 ISO YYYY-MM-DD.
+    this.cost = new CostManager(
+      infra.vault,
+      infra.log,
+      (model) => infra.llm.getModelPricing?.(model) ?? null,
+      () => {
+        const tz = this.getTimezone();
+        return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' })
+          .format(new Date()); // en-CA → 'YYYY-MM-DD'
+      },
+    );
 
     // 크로스 도메인 매니저 — Core 참조 필요
     this.task = new TaskManager(this, infra.llm, infra.log);
@@ -680,6 +695,25 @@ export class FirebatCore {
   /** 디버깅·관리자 UI — 현재 메모리 상태 요약 */
   getJobStats() {
     return this.statusMgr.getStats();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  LLM 비용 추적 → CostManager
+  //  AiManager 가 askWithTools 응답의 usage 받으면 recordLlmCost 호출.
+  //  통계 페이지·관리자 모니터링은 getLlmCostStats 사용.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** LLM 호출 1건 기록. Caller (AiManager) 가 usage 받으면 호출. */
+  recordLlmCost(usage: import('./ports').LlmTokenUsage): void {
+    this.cost.recordCall(usage);
+  }
+  /** 일별·모델별 비용 통계 — 어드민 통계 페이지·UI 차트용 */
+  getLlmCostStats(filter?: CostStatsFilter): CostStatsSummary {
+    return this.cost.getStats(filter);
+  }
+  /** 즉시 flush — Vault 영속 강제 */
+  async flushLlmCost(): Promise<void> {
+    return this.cost.flushNow();
   }
 
   // Plan 실행 / 3-stage state (multi-turn 지속) — 대화 수준 JSON 유지

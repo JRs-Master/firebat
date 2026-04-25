@@ -96,4 +96,15 @@ export class ConfigDrivenAdapter implements ILlmPort {
 
   /** UI 용: 등록된 모든 모델 config 목록 */
   getAllModels(): ModelConfig[] { return Object.values(this.registry); }
+
+  /** CostManager 용: 모델별 1M 토큰당 가격 (USD).
+   *  config 의 pricing 필드 (input·output) 그대로 노출. 미설정 (CLI 구독 모델 등) = null. */
+  getModelPricing(modelId: string): { inputPer1M: number; outputPer1M: number } | null {
+    const config = this.registry[modelId];
+    if (!config?.pricing) return null;
+    return {
+      inputPer1M: config.pricing.input,
+      outputPer1M: config.pricing.output,
+    };
+  }
 }

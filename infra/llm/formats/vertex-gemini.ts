@@ -167,12 +167,15 @@ export class VertexGeminiFormat implements FormatHandler {
       const textParts: string[] = [];
       const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
       let rawModelParts: unknown[] | undefined;
+      let usageMetadata: { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number } | undefined;
 
       if (opts?.onChunk) {
         const stream = await withTimeout(ai.models.generateContentStream(requestConfig), LLM_TIMEOUT_MS);
         const allParts: Record<string, unknown>[] = [];
         for await (const chunk of stream) {
-          const candidates = (chunk as unknown as Record<string, unknown>).candidates as Array<Record<string, unknown>> | undefined;
+          const chunkObj = chunk as unknown as Record<string, unknown>;
+          if (chunkObj.usageMetadata) usageMetadata = chunkObj.usageMetadata as typeof usageMetadata;
+          const candidates = chunkObj.candidates as Array<Record<string, unknown>> | undefined;
           if (!candidates?.[0]) continue;
           const parts = (candidates[0].content as Record<string, unknown>)?.parts as Array<Record<string, unknown>> | undefined;
           if (!parts) continue;
@@ -191,7 +194,9 @@ export class VertexGeminiFormat implements FormatHandler {
         rawModelParts = allParts.length > 0 ? allParts : undefined;
       } else {
         const response = await withTimeout(ai.models.generateContent(requestConfig), LLM_TIMEOUT_MS);
-        const candidates = (response as unknown as Record<string, unknown>).candidates as Array<Record<string, unknown>> | undefined;
+        const respObj = response as unknown as Record<string, unknown>;
+        if (respObj.usageMetadata) usageMetadata = respObj.usageMetadata as typeof usageMetadata;
+        const candidates = respObj.candidates as Array<Record<string, unknown>> | undefined;
         if (candidates && candidates.length > 0) {
           const parts = (candidates[0].content as Record<string, unknown>)?.parts as Array<Record<string, unknown>> | undefined;
           if (parts) {
@@ -211,7 +216,22 @@ export class VertexGeminiFormat implements FormatHandler {
         }
       }
 
-      return { success: true, data: { text: textParts.join(''), toolCalls, rawModelParts } };
+      return {
+        success: true,
+        data: {
+          text: textParts.join(''),
+          toolCalls,
+          rawModelParts,
+          ...(usageMetadata ? {
+            usage: {
+              inputTokens: usageMetadata.promptTokenCount,
+              outputTokens: usageMetadata.candidatesTokenCount,
+              totalTokens: usageMetadata.totalTokenCount,
+              model: ctx.config.id,
+            },
+          } : {}),
+        },
+      };
     } catch (e: any) { return { success: false, error: `[VertexAI] askWithTools 실패: ${e.message}` }; }
   }
 }
