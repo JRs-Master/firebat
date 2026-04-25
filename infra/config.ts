@@ -30,6 +30,11 @@ export const CRON_MAX_LOGS = 200;
 export const CRON_DEFAULT_TIMEZONE = 'Asia/Seoul';
 export const CRON_RECENT_NOTIFY_MS = 30_000; // 최근 알림 필터 기간
 
+// ── 로그 회전 ────────────────────────────────────────────────────────
+/** 일별 로그 파일 (app-YYYY-MM-DD.log / training-*.jsonl) 보존 일수.
+ *  부팅 시 + 매일 1회 GC 가 임계 일수 이전 파일 자동 삭제. */
+export const LOG_RETENTION_DAYS = Number(process.env.FIREBAT_LOG_RETENTION_DAYS || '30');
+
 // ── 도메인 (SEO, OG 등 외부 노출용) ─────────────────────────────────
 // Firebat 은 범용 플랫폼 — 특정 도메인 하드코딩 배제.
 // 실제 사용 우선순위 (getBaseUrl / page-level resolve 에서 해결):

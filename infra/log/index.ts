@@ -2,8 +2,43 @@ import { ILogPort, LogMeta } from '../../core/ports';
 import fs from 'fs';
 import path from 'path';
 import { redactString, redactMeta } from '../security/token-redactor';
+import { LOG_RETENTION_DAYS } from '../config';
 
 const LOG_DIR = path.join(process.cwd(), 'data', 'logs');
+
+/** 일별 로그 파일 GC — LOG_RETENTION_DAYS 보다 오래된 app-*.log / training-*.jsonl 삭제.
+ *  파일명에 박힌 날짜로 판정 (mtime 보다 안정적). 일반 로직 — 패턴 매칭으로 모든 일별 파일 균일 처리. */
+function gcOldLogs(): void {
+  if (!fs.existsSync(LOG_DIR)) return;
+  const cutoff = Date.now() - LOG_RETENTION_DAYS * 86400 * 1000;
+  const dailyPattern = /^(app|training)-(\d{4}-\d{2}-\d{2})\.(log|jsonl)$/;
+  let removed = 0;
+  try {
+    for (const name of fs.readdirSync(LOG_DIR)) {
+      const m = dailyPattern.exec(name);
+      if (!m) continue;
+      const dateStr = m[2];  // YYYY-MM-DD
+      const fileTime = new Date(dateStr + 'T00:00:00Z').getTime();
+      if (Number.isFinite(fileTime) && fileTime < cutoff) {
+        try { fs.unlinkSync(path.join(LOG_DIR, name)); removed++; } catch {}
+      }
+    }
+  } catch {}
+  if (removed > 0) {
+    // 콘솔만 — 로그 파일에 쓰면 GC 결과가 다시 GC 대상이 됨 (소량이라 OK 지만 cleanliness)
+    console.log(`[Firebat] 로그 GC: ${removed}개 일별 파일 정리 (보존 ${LOG_RETENTION_DAYS}일)`);
+  }
+}
+
+// 부팅 시 1회 + 24시간 마다 — Node 단일 프로세스라 module load 시 한 번만 등록.
+const __logGcG = globalThis as unknown as { __firebatLogGcWired?: boolean };
+if (!__logGcG.__firebatLogGcWired) {
+  __logGcG.__firebatLogGcWired = true;
+  // 부팅 직후 lazy 실행 (서버 시작 지연 0)
+  setTimeout(gcOldLogs, 30_000).unref?.();
+  const dailyTimer = setInterval(gcOldLogs, 24 * 60 * 60 * 1000);
+  dailyTimer.unref?.();
+}
 
 function ensureLogDir() {
   if (!fs.existsSync(LOG_DIR)) {
