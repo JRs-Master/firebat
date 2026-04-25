@@ -19,6 +19,8 @@ import { StatusManager } from './managers/status-manager';
 import type { JobStatus, JobType, JobStatusKind, JobChangeEvent } from './managers/status-manager';
 import { CostManager } from './managers/cost-manager';
 import type { CostStatsFilter, CostStatsSummary } from './managers/cost-manager';
+import { ToolManager } from './managers/tool-manager';
+import type { ToolDefinition, ToolListFilter, ToolExecuteContext, ToolExecuteResult } from './managers/tool-manager';
 import type { FirebatInfraContainer, ILlmPort, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
@@ -73,6 +75,7 @@ export class FirebatCore {
   private readonly event: EventManager;
   private readonly statusMgr: StatusManager;
   private readonly cost: CostManager;
+  private readonly tool: ToolManager;
 
   constructor(private readonly infra: FirebatInfraContainer) {
     // 매니저 생성 — 각 매니저는 자기 도메인의 인프라 포트를 직접 받음
@@ -100,6 +103,8 @@ export class FirebatCore {
           .format(new Date()); // en-CA → 'YYYY-MM-DD'
       },
     );
+    // ToolManager — 도구 등록·dispatch 단일 source. Step 2~ 에서 정적·동적 도구 등록.
+    this.tool = new ToolManager(infra.log);
 
     // 크로스 도메인 매니저 — Core 참조 필요
     this.task = new TaskManager(this, infra.llm, infra.log);
@@ -714,6 +719,49 @@ export class FirebatCore {
   /** 즉시 flush — Vault 영속 강제 */
   async flushLlmCost(): Promise<void> {
     return this.cost.flushNow();
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  도구 → ToolManager
+  //  도구 등록·dispatch 단일 source. AiManager·MCP server·SDK 가 같은 registry 사용.
+  //  Step 1: backbone facade. Step 2~ 에서 정적·동적 도구 등록 + executeToolCall 마이그레이션.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** 도구 등록 (static·sysmod·mcp·render·meta 카테고리). 같은 이름 재등록 = 덮어씀. */
+  registerTool(def: ToolDefinition): void {
+    this.tool.register(def);
+  }
+  /** 일괄 등록 — 부팅 시 정적 도구 batch */
+  registerTools(defs: ToolDefinition[]): void {
+    this.tool.registerMany(defs);
+  }
+  /** 도구 등록 해제 */
+  unregisterTool(name: string): boolean {
+    return this.tool.unregister(name);
+  }
+  /** 단일 조회 */
+  getToolDefinition(name: string): ToolDefinition | null {
+    return this.tool.get(name);
+  }
+  /** 등록된 도구 목록 (필터 가능) */
+  listTools(filter?: ToolListFilter): ToolDefinition[] {
+    return this.tool.list(filter);
+  }
+  /** 도구 실행 — name·args·ctx 받아 handler 호출 */
+  async executeTool(name: string, args: Record<string, unknown>, ctx: ToolExecuteContext): Promise<ToolExecuteResult> {
+    return this.tool.execute(name, args, ctx);
+  }
+  /** AI Function Calling 용 도구 정의 빌드 — askWithTools 에 그대로 전달 */
+  buildAiToolDefinitions(filter?: ToolListFilter) {
+    return this.tool.buildAiToolDefinitions(filter);
+  }
+  /** MCP 서버 도구 description 빌드 — mcp/server.ts 에서 사용 */
+  buildMcpToolDescriptions(filter?: ToolListFilter) {
+    return this.tool.buildMcpToolDescriptions(filter);
+  }
+  /** 디버깅·관리자 UI — 도구 통계 */
+  getToolStats() {
+    return this.tool.getStats();
   }
 
   // Plan 실행 / 3-stage state (multi-turn 지속) — 대화 수준 JSON 유지
