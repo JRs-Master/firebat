@@ -21,6 +21,7 @@ import { LocalMediaAdapter } from './media/local-adapter';
 import { SharpImageProcessorAdapter } from './image-processor/sharp-adapter';
 import { buildImageConfigDrivenAdapter, loadImageRegistry, DEFAULT_IMAGE_MODEL } from './image/factory';
 import { DB_PATH, DEFAULT_MODEL } from './config';
+import { initSentryServer, resolveSentryDsn, resolveSentryEnvironment, wrapLoggerWithSentry, isSentryEnabled } from './observability/sentry-adapter';
 
 /** 전체 인프라 싱글톤 */
 const globalForInfra = globalThis as unknown as { firebatInfra: FirebatInfraContainer | undefined };
@@ -31,6 +32,19 @@ export function getInfra(): FirebatInfraContainer {
 
     // Vault에 logger 주입 (부팅 전 console.error 대신 ILogPort 사용)
     vault.setLogger(log);
+
+    // Sentry — DSN 우선순위: env → Vault. 미설정이면 자동 noop.
+    // env 만으로 init 한 instrumentation.ts 가 있어도 Vault DSN 으로 재시도 가능 (멱등).
+    const sentryDsn = resolveSentryDsn((k) => vault.getSecret(k));
+    initSentryServer({
+      dsn: sentryDsn,
+      environment: resolveSentryEnvironment((k) => vault.getSecret(k)),
+      runtime: 'nodejs',
+    });
+    if (isSentryEnabled()) {
+      // logger.error 자동 forward — 한 번만 wrap (멱등 마커 내장).
+      wrapLoggerWithSentry(log);
+    }
 
     // Sandbox
     const sandbox = new ProcessSandboxAdapter();

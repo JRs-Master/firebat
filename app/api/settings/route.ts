@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
     imageModels: core.getAvailableImageModels(),
     imageDefaultSize: core.getImageDefaultSize(),
     imageDefaultQuality: core.getImageDefaultQuality(),
+    sentry: core.getSentryDsn(),
   });
 }
 
@@ -63,6 +64,15 @@ export async function PATCH(req: NextRequest) {
   if ('imageDefaultQuality' in body) {
     const v = body.imageDefaultQuality;
     core.setImageDefaultQuality(typeof v === 'string' && v ? v : null);
+  }
+  if ('sentryDsn' in body) {
+    const v = body.sentryDsn;
+    if (typeof v === 'string') {
+      const ok = core.setSentryDsn(v);
+      if (!ok) {
+        return NextResponse.json({ success: false, error: 'DSN 형식 오류 — https:// 로 시작해야 합니다' }, { status: 400 });
+      }
+    }
   }
 
   return NextResponse.json({ success: true });

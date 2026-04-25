@@ -144,6 +144,13 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const [adminNewPw, setAdminNewPw] = useState('');
   const [adminPwError, setAdminPwError] = useState('');
 
+  // Sentry 에러 추적 — DSN 우선순위: env → Vault. preview 는 마스킹된 값.
+  const [sentryStatus, setSentryStatus] = useState<{ configured: boolean; source: 'env' | 'vault' | 'none'; preview: string }>({ configured: false, source: 'none', preview: '' });
+  const [sentryDsnInput, setSentryDsnInput] = useState('');
+  const [sentryDsnSaving, setSentryDsnSaving] = useState(false);
+  const [sentryDsnSaved, setSentryDsnSaved] = useState<'ok' | 'err' | null>(null);
+  const [sentryDsnError, setSentryDsnError] = useState('');
+
   // 시크릿
   const [userSecrets, setUserSecrets] = useState<{ name: string; hasValue: boolean; maskedValue: string }[]>([]);
   const [moduleSecrets, setModuleSecrets] = useState<{ secretName: string; moduleName: string; hasValue: boolean }[]>([]);
@@ -214,6 +221,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
         if (Array.isArray(data.imageModels)) setImageModels(data.imageModels);
         if (typeof data.imageDefaultSize === 'string') setImageDefaultSize(data.imageDefaultSize);
         if (typeof data.imageDefaultQuality === 'string') setImageDefaultQuality(data.imageDefaultQuality);
+        if (data.sentry && typeof data.sentry === 'object') setSentryStatus(data.sentry);
       }
     }).catch(() => {});
 
@@ -226,6 +234,38 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
       if (data.keys?.google_service_account_json?.hasKey) setVertexSaJson(data.keys.google_service_account_json.maskedKey);
     }).catch(() => {});
   }, []);
+
+  // Sentry DSN 저장 — env 가 설정돼 있으면 Vault 입력은 무시되지만 UI 는 허용
+  const saveSentryDsn = useCallback(async () => {
+    setSentryDsnSaving(true);
+    setSentryDsnError('');
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sentryDsn: sentryDsnInput }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        setSentryDsnSaved('ok');
+        setSentryDsnInput('');
+        // 상태 재조회
+        fetch('/api/settings').then(r => r.json()).then(d => {
+          if (d.success && d.sentry) setSentryStatus(d.sentry);
+        }).catch(() => {});
+        setTimeout(() => setSentryDsnSaved(null), 2000);
+      } else {
+        setSentryDsnSaved('err');
+        setSentryDsnError(data.error || '저장 실패');
+        setTimeout(() => setSentryDsnSaved(null), 3000);
+      }
+    } catch (e) {
+      setSentryDsnSaved('err');
+      setSentryDsnError(e instanceof Error ? e.message : 'network error');
+    } finally {
+      setSentryDsnSaving(false);
+    }
+  }, [sentryDsnInput]);
 
   // 사용자 커스텀 프롬프트 저장
   const saveUserPrompt = useCallback(async () => {
@@ -786,6 +826,45 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                 />
                 {adminPwError && <p className="text-[10px] sm:text-xs text-red-500 font-medium">{adminPwError}</p>}
                 <p className="text-[10px] sm:text-xs text-slate-400 font-medium">현재 비밀번호 입력 필수. 빈칸은 기존 유지.</p>
+              </div>
+
+              {/* Sentry 에러 추적 */}
+              <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
+                <label className="text-xs sm:text-sm font-bold text-slate-700 pt-1">에러 추적 (Sentry)</label>
+                <div className="flex items-center gap-2 text-[11px] sm:text-[12px]">
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium ${sentryStatus.configured ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${sentryStatus.configured ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                    {sentryStatus.configured ? '활성' : '비활성'}
+                  </span>
+                  {sentryStatus.configured && (
+                    <span className="text-slate-500">
+                      소스: <code className="px-1 py-0.5 bg-slate-100 rounded text-slate-700 text-[10px]">{sentryStatus.source}</code>
+                      {sentryStatus.preview && <> · DSN: <code className="px-1 py-0.5 bg-slate-100 rounded text-slate-600 text-[10px]">{sentryStatus.preview}</code></>}
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="password"
+                  value={sentryDsnInput}
+                  onChange={e => { setSentryDsnInput(e.target.value); setSentryDsnError(''); }}
+                  placeholder={sentryStatus.source === 'env' ? 'env 의 SENTRY_DSN 이 우선합니다 (입력해도 무시)' : 'https://...@sentry.io/... (비우면 비활성)'}
+                  disabled={sentryStatus.source === 'env'}
+                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[12px] sm:text-[13px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50 disabled:text-slate-400"
+                />
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
+                    DSN 변경 후 서버 재시작 필요. PII (시크릿·토큰·prompt) 는 자동 마스킹.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={saveSentryDsn}
+                    disabled={sentryDsnSaving || sentryStatus.source === 'env'}
+                    className={`px-3 py-1 rounded-md text-[11px] sm:text-[12px] font-medium transition-colors ${sentryDsnSaved === 'ok' ? 'bg-emerald-600 text-white' : sentryDsnSaved === 'err' ? 'bg-red-600 text-white' : 'bg-blue-600 text-white hover:bg-blue-700 disabled:bg-slate-300'}`}
+                  >
+                    {sentryDsnSaving ? '저장 중' : sentryDsnSaved === 'ok' ? '저장됨 ✓' : sentryDsnSaved === 'err' ? '실패' : '저장'}
+                  </button>
+                </div>
+                {sentryDsnError && <p className="text-[10px] sm:text-xs text-red-500 font-medium">{sentryDsnError}</p>}
               </div>
             </>
           )}
