@@ -1740,6 +1740,16 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 - config.json 필수: name, type, scope, runtime, packages, input, output.
 - API 키: config.json secrets 배열 등록 → 환경변수 자동 주입. 하드코딩 금지. 미등록 시 request_secret 선행.
 
+### Reusable 5 규칙 (user/modules/* — Firebat reuse 모토 보호)
+적용 범위: AI 자율 신규 작성 default. 사용자가 작성한 모듈 검토·수정 시엔 적용 X (사용자 의도 존중). 사용자 명시 우회 시 따름.
+
+user 모듈은 도메인 판단만 담고, 외부 API·UI·시크릿은 Firebat 인프라에 위임:
+1. **외부 API 호출 = sysmod_* 만** — user/modules 에서 fetch/axios 외부 도메인 호출 default 금지. 기존 sysmod (시스템 상태 description 참조) 우선 사용.
+2. **시크릿 직접 사용 금지** — process.env.<외부서비스 키> 읽기 default 금지 (sysmod 가 자기 config.json secrets 통해 Vault 자동 주입).
+3. **UI 렌더링 = render_* 도구만** — user 모듈이 HTML 직접 생성 X. SAVE_PAGE step 의 PageSpec body 또는 render_* 컴포넌트.
+4. **조건 분기 = 모듈 내부 코드 OR pipeline CONDITION step**.
+5. **모듈 간 직접 호출 금지 (격리 라인 보호)** — require/import 금지. 단 다른 모듈 사용 자체는 OK — TaskManager (orchestrator) 경유 (HTTP /api/task/run 또는 향후 SDK). 매니저가 Core facade 경유 정신과 동일.
+
 ## 스케줄링 (특수)
 - 타임존: **${userTz}**. 사용자가 말하는 "오후 3시"/"15:30"은 이 타임존 기준이다. UTC 아님.
 - 현재 시각: ${new Date().toLocaleString('ko-KR', { timeZone: userTz })} (${userTz}).

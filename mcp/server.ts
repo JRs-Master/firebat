@@ -127,7 +127,14 @@ export function createFirebatMcpServer(core: FirebatCore): McpServer {
 - config.json 필수: { "name", "type": "utility", "runtime": "python", "project": "모듈명", "packages": [], "input": {}, "output": {} }
 - I/O: stdin으로 JSON 읽기, stdout 마지막 줄에 { "success": true, "data": {...} } 출력
 - Python: True/False/None 사용 (true/false/null 아님)
-- 프로젝트명 = 모듈 폴더명 = 페이지 slug 통일`,
+- 프로젝트명 = 모듈 폴더명 = 페이지 slug 통일
+
+Reusable 5 규칙 (user/modules — reuse 모토 보호, AI 자율 신규 작성 default · 사용자 명시 우회 시 따름):
+1. 외부 API 호출 = sysmod_* 만 (fetch/axios 외부 도메인 default 금지)
+2. 시크릿 직접 사용 금지 (sysmod 가 Vault 자동 주입)
+3. UI 렌더링 = render_* 도구만 (HTML 직접 생성 X)
+4. 조건 분기 = 모듈 내부 코드 OR pipeline CONDITION step
+5. 모듈 간 직접 호출 금지 (require/import X). 다른 모듈 사용은 TaskManager 경유 OK (격리 라인 보호 + reuse 활성화)`,
     {
       path: z.string().describe('쓸 파일 경로 (예: user/modules/weather-app/main.py)'),
       content: z.string().describe('파일 내용'),
