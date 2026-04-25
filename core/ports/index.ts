@@ -432,6 +432,13 @@ export interface CronLogEntry {
   success: boolean;
   durationMs: number;
   error?: string;
+  /** 마지막 step 의 의미있는 결과 요약 — silent failure 추적용.
+   *  SAVE_PAGE step → {savedSlug, renamed}, EXECUTE → 모듈 출력 핵심 필드,
+   *  LLM_TRANSFORM 단독 종료 → {textPreview} 등. 형식 자유 (JSON-friendly). */
+  output?: Record<string, unknown>;
+  /** 실행된 step 수 / 총 step 수 — 파이프라인 어디까지 갔는지 가시화 */
+  stepsExecuted?: number;
+  stepsTotal?: number;
 }
 
 /** 크론 트리거 타입 */
@@ -455,6 +462,11 @@ export interface CronJobResult {
   success: boolean;
   durationMs: number;
   error?: string;
+  /** 의미있는 결과 데이터 (SAVE_PAGE 의 slug 등). cron-logs.json 에 그대로 저장. */
+  output?: Record<string, unknown>;
+  /** 파이프라인 진행 추적 */
+  stepsExecuted?: number;
+  stepsTotal?: number;
 }
 
 /** 크론 잡 모드 */

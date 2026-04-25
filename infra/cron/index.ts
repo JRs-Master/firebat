@@ -299,8 +299,16 @@ export class NodeCronAdapter implements ICronPort {
     this.log?.info(`[Cron] 트리거 발화: ${jobId} → ${targetPath || '(pipeline)'} (${trigger})`);
     try {
       const result = await this.triggerCallback({ jobId, targetPath, trigger, inputData, pipeline, oneShot });
-      this.log?.[result.success ? 'info' : 'error'](`[Cron] 잡 ${result.success ? '완료' : '실패'}: ${jobId} (${result.durationMs}ms)${result.error ? ` — ${result.error}` : ''}`);
-      this.appendLog({ jobId, targetPath, title, triggeredAt: new Date().toISOString(), success: result.success, durationMs: result.durationMs, error: result.error });
+      const outputSummary = result.output ? ` output=${JSON.stringify(result.output).slice(0, 100)}` : '';
+      const stepsSummary = result.stepsTotal != null ? ` steps=${result.stepsExecuted ?? '?'}/${result.stepsTotal}` : '';
+      this.log?.[result.success ? 'info' : 'error'](`[Cron] 잡 ${result.success ? '완료' : '실패'}: ${jobId} (${result.durationMs}ms)${stepsSummary}${outputSummary}${result.error ? ` — ${result.error}` : ''}`);
+      this.appendLog({
+        jobId, targetPath, title, triggeredAt: new Date().toISOString(),
+        success: result.success, durationMs: result.durationMs, error: result.error,
+        ...(result.output ? { output: result.output } : {}),
+        ...(result.stepsExecuted != null ? { stepsExecuted: result.stepsExecuted } : {}),
+        ...(result.stepsTotal != null ? { stepsTotal: result.stepsTotal } : {}),
+      });
     } catch (e: any) {
       this.log?.error(`[Cron] 트리거 콜백 오류: ${jobId} — ${e.message}`);
       this.appendLog({ jobId, targetPath, title, triggeredAt: new Date().toISOString(), success: false, durationMs: 0, error: e.message });

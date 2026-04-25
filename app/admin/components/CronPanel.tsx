@@ -28,6 +28,10 @@ interface CronLog {
   success: boolean;
   durationMs: number;
   error?: string;
+  /** 마지막 step 결과 요약 (savedSlug 등) — silent failure 추적용 */
+  output?: Record<string, any>;
+  stepsExecuted?: number;
+  stepsTotal?: number;
 }
 
 export function CronPanel() {
@@ -232,19 +236,40 @@ export function CronPanel() {
             )}
           </div>
           {showLogs && (
-            <div className="px-2 pb-2 space-y-0.5 max-h-40 overflow-y-auto">
-              {[...logs].reverse().slice(0, 20).map((log, i) => (
-                <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px]">
-                  {log.success ? (
-                    <CheckCircle2 size={10} className="text-emerald-500 shrink-0" />
-                  ) : (
-                    <AlertCircle size={10} className="text-red-500 shrink-0" />
-                  )}
-                  <span className="text-slate-600 font-medium truncate">{log.title || log.jobId}</span>
-                  <span className="text-slate-400 shrink-0">{log.durationMs}ms</span>
-                  <span className="text-slate-400 shrink-0 ml-auto">{formatTime(log.triggeredAt)}</span>
-                </div>
-              ))}
+            <div className="px-2 pb-2 space-y-1 max-h-60 overflow-y-auto">
+              {[...logs].reverse().slice(0, 20).map((log, i) => {
+                // output 요약 — savedSlug 우선 표시. warning 있으면 경고 색상
+                const out = log.output || {};
+                const savedSlug = out.savedSlug as string | undefined;
+                const warning = out.warning as string | undefined;
+                const stepFrac = log.stepsTotal != null ? `${log.stepsExecuted ?? '?'}/${log.stepsTotal}` : null;
+                return (
+                  <div key={i} className={`flex flex-col gap-0.5 px-2 py-1 rounded text-[10px] ${warning ? 'bg-amber-50' : ''}`}>
+                    <div className="flex items-center gap-1.5">
+                      {log.success ? (
+                        <CheckCircle2 size={10} className={`shrink-0 ${warning ? 'text-amber-500' : 'text-emerald-500'}`} />
+                      ) : (
+                        <AlertCircle size={10} className="text-red-500 shrink-0" />
+                      )}
+                      <span className="text-slate-600 font-medium truncate">{log.title || log.jobId}</span>
+                      <span className="text-slate-400 shrink-0">{log.durationMs}ms</span>
+                      {stepFrac && <span className="text-slate-400 shrink-0">· {stepFrac} step</span>}
+                      <span className="text-slate-400 shrink-0 ml-auto">{formatTime(log.triggeredAt)}</span>
+                    </div>
+                    {savedSlug && (
+                      <div className="flex items-center gap-1 pl-4 text-emerald-700">
+                        <span>→ /{savedSlug}</span>
+                      </div>
+                    )}
+                    {warning && (
+                      <div className="pl-4 text-amber-700 break-words">⚠ {warning}</div>
+                    )}
+                    {log.error && (
+                      <div className="pl-4 text-red-600 break-words">{log.error}</div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </>
