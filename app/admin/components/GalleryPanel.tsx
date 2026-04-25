@@ -238,12 +238,15 @@ function MediaDetailModal({
   const modalContent = (
     <div className="fixed inset-0 z-[60] flex items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
       {/*
-        모달 — dvh (dynamic viewport height) 사용해서 모바일 주소창 변화 대응.
-        모바일: 100dvh (전체 화면) / PC: 85vh
+        모달 — svh (small viewport height) 사용. 브라우저 하단 툴바·iOS home indicator 등 chrome 영역
+        항상 가정해서 모달이 brower UI 뒤로 잘리지 않게 함.
+        - dvh: 동적 (브라우저 UI 표시 여부 따라 변동) — 일부 모바일 브라우저(Samsung Internet 등)가 spec 정확히 안 지켜 잘림
+        - svh: 최소 가정 (브라우저 UI 항상 표시) — 보수적이지만 모든 브라우저에서 안전
+        모바일: 100svh / PC: 85vh
         Portal 로 document.body 에 직접 렌더 → sidebar 등 부모의 containing block 회피.
       */}
       <div
-        className="bg-white w-full sm:max-w-3xl sm:rounded-2xl rounded-t-none shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[100dvh] sm:h-[85vh]"
+        className="bg-white w-full sm:max-w-3xl sm:rounded-2xl rounded-t-none shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[100svh] sm:h-[85vh]"
         onClick={e => e.stopPropagation()}
       >
         {/* 헤더 — N/total 인디케이터 + prev/next + 닫기 */}
@@ -283,8 +286,8 @@ function MediaDetailModal({
 
         {/* 본문 — 모바일 flex-col / PC flex-row */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-3 p-3 sm:p-4 overflow-hidden">
-          {/* 프리뷰 — 높이 고정 (모바일 30dvh / PC flex-1) + 좌우 swipe-style 버튼 (모바일) */}
-          <div className="relative shrink-0 md:flex-1 md:min-w-0 h-[30dvh] md:h-auto md:max-h-full bg-slate-50 rounded-lg p-2 flex items-center justify-center overflow-hidden">
+          {/* 프리뷰 — 높이 고정 (모바일 30svh / PC flex-1) + 좌우 swipe-style 버튼 (모바일) */}
+          <div className="relative shrink-0 md:flex-1 md:min-w-0 h-[30svh] md:h-auto md:max-h-full bg-slate-50 rounded-lg p-2 flex items-center justify-center overflow-hidden">
             <img
               src={url}
               alt={item.filenameHint || item.slug}
