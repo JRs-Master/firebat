@@ -1,7 +1,5 @@
-import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getCore } from '../../../lib/singleton';
-import { getBaseUrl } from '../../../lib/base-url';
 import { SharedMessageList } from './client';
 import { headers } from 'next/headers';
 

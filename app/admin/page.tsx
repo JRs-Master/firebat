@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Circle, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks, Share2, Image as ImageIcon } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks, Share2, Image as ImageIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -12,7 +12,6 @@ import { SystemModuleSettings } from './components/SystemModuleSettings';
 import { SecretInput } from './components/ChatWidgets';
 import { Tooltip } from './components/Tooltip';
 import { ActiveJobsIndicator } from './components/ActiveJobsIndicator';
-import StockChart from './chat-components/StockChart';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
 import { readSetting, writeSetting } from './hooks/settings-manager';

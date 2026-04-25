@@ -6,7 +6,7 @@
  *
  * Primary Adapter: MCP 프로토콜 → Core 메서드 호출
  */
-import { McpServer, ResourceTemplate } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { FirebatCore } from '../core/index';
 

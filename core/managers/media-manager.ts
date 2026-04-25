@@ -24,7 +24,6 @@ import type {
   ImageGenOpts,
   ImageModelInfo,
   MediaVariant,
-  MediaFileRecord,
 } from '../ports';
 import type { InfraResult } from '../types';
 import { vkModuleSettings } from '../vault-keys';

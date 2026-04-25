@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, FileText, Code, Settings2, ExternalLink, ArrowLeft } from 'lucide-react';
+import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, Code, Settings2, ExternalLink, ArrowLeft } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────

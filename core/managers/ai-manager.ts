@@ -1,5 +1,5 @@
 import type { FirebatCore, AiRequestOpts } from '../index';
-import type { ILlmPort, ILogPort, LlmCallOpts, LlmChunk, ChatMessage, PageListItem, ToolDefinition, JsonSchema, JsonSchemaProperty, ToolCall, ToolResult, ToolExchangeEntry, IDatabasePort, IToolRouterPort, RouteResult, ToolRouterFactory } from '../ports';
+import type { ILlmPort, ILogPort, LlmCallOpts, LlmChunk, ChatMessage, PageListItem, ToolDefinition, JsonSchema, ToolCall, ToolResult, ToolExchangeEntry, IDatabasePort, IToolRouterPort, ToolRouterFactory } from '../ports';
 import { CoreResult, type InfraResult } from '../types';
 import { sanitizeBlock, sanitizeReply, isValidBlock, extractMarkdownStructure } from '../utils/sanitize';
 import { RENDER_TOOL_MAP, normalizeRenderName } from '../../lib/render-map';
@@ -1476,8 +1476,7 @@ export class AiManager {
   /** 단일 도구 호출 실행 — 결과를 Record<string, unknown>로 반환 */
   private async executeToolCall(tc: ToolCall, opts?: AiRequestOpts): Promise<Record<string, unknown>> {
     try {
-      // ToolManager 위임 — 등록된 도구는 자동 dispatch (점진 마이그레이션 안전망).
-      // 등록 안 된 도구는 fall-through → 기존 switch 처리.
+      // 1) ToolManager 등록 도구 — 정적·동적 모두 단일 dispatch.
       if (this.core.getToolDefinition(tc.name)) {
         return await this.core.executeTool(tc.name, tc.args as Record<string, unknown>, {
           conversationId: opts?.conversationId,
@@ -1485,336 +1484,39 @@ export class AiManager {
           requestOpts: opts as Record<string, unknown> | undefined,
         });
       }
-      switch (tc.name) {
-        case 'write_file': {
-          const { path, content } = tc.args as { path: string; content: string };
-          if (content == null) return { success: false, error: 'content가 비어 있습니다' };
-          const res = await this.core.writeFile(path, content);
-          return res.success ? { success: true } : { success: false, error: res.error };
-        }
-        case 'read_file': {
-          const { path, lines } = tc.args as { path: string; lines?: number };
-          const res = await this.core.readFile(path);
-          if (!res.success) return { success: false, error: res.error };
-          let text = res.data || '';
-          if (lines && text.split('\n').length > lines) {
-            text = text.split('\n').slice(0, lines).join('\n') + `\n... (truncated to ${lines} lines)`;
-          }
-          return { success: true, content: text };
-        }
-        case 'list_dir': {
-          const { path } = tc.args as { path: string };
-          const res = await this.core.listFiles(path);
-          return res.success ? { success: true, items: res.data } : { success: false, error: res.error };
-        }
-        case 'append_file': {
-          const { path, content } = tc.args as { path: string; content: string };
-          const readRes = await this.core.readFile(path);
-          const combined = readRes.success ? readRes.data + '\n' + content : content;
-          const res = await this.core.writeFile(path, combined);
-          return res.success ? { success: true } : { success: false, error: res.error };
-        }
-        case 'delete_file': {
-          const { path } = tc.args as { path: string };
-          const res = await this.core.deleteFile(path);
-          return res.success ? { success: true } : { success: false, error: res.error };
-        }
-        case 'execute': {
-          const { path, inputData } = tc.args as { path: string; inputData?: Record<string, unknown> };
-          const res = await this.core.sandboxExecute(path, inputData ?? {});
-          if (!res.success) return { success: false, error: res.error };
-          if (res.data?.success === false) return { success: false, error: JSON.stringify(res.data) };
-          return { success: true, data: res.data };
-        }
-        case 'network_request': {
-          const { url, method, body, headers } = tc.args as {
-            url: string; method?: string; body?: string; headers?: Record<string, string>;
-          };
-          const res = await this.core.networkFetch(url, { method: method as 'GET', body, headers });
-          return res.success ? { success: true, data: res.data } : { success: false, error: res.error };
-        }
-        case 'save_page': {
-          // spec 타입 검사 제거 — Core.savePage 가 canonicalJson 으로 통일 정규화 (string/object 모두 허용)
-          // allowOverwrite=false (기본) 면 slug 충돌 시 자동 -N 접미사 → 기존 페이지 보존
-          const { slug, spec, allowOverwrite } = tc.args as { slug: string; spec: Record<string, unknown> | string; allowOverwrite?: boolean };
-          const res = await this.core.savePage(slug, spec, { allowOverwrite: !!allowOverwrite });
-          if (!res.success) return { success: false, error: res.error };
-          const actualSlug = res.data?.slug ?? slug;
-          const renamed = !!res.data?.renamed;
-          return {
-            success: true,
-            slug: actualSlug,
-            url: `/${actualSlug}`,
-            ...(renamed ? { renamed: true, note: `기존 "${slug}" 페이지 보존을 위해 "${actualSlug}" 로 저장됨. 덮어쓰려면 allowOverwrite:true 명시.` } : {}),
-          };
-        }
-        case 'delete_page': {
-          const { slug } = tc.args as { slug: string };
-          const res = await this.core.deletePage(slug);
-          return res.success ? { success: true } : { success: false, error: res.error };
-        }
-        case 'list_pages': {
-          const res = await this.core.listPages();
-          return res.success ? { success: true, pages: res.data } : { success: false, error: res.error };
-        }
-        case 'schedule_task': {
-          const args = tc.args as Record<string, unknown>;
-          const jobId = `cron-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-          const res = await this.core.scheduleCronJob(jobId, (args.targetPath as string) ?? '', {
-            cronTime: args.cronTime as string | undefined,
-            runAt: args.runAt as string | undefined,
-            delaySec: args.delaySec as number | undefined,
-            startAt: args.startAt as string | undefined,
-            endAt: args.endAt as string | undefined,
-            inputData: args.inputData as Record<string, unknown> | undefined,
-            pipeline: args.pipeline as unknown[] as import('../ports').PipelineStep[] | undefined,
-            title: args.title as string | undefined,
-            oneShot: args.oneShot as boolean | undefined,
-          });
-          return res.success ? { success: true, jobId } : { success: false, error: res.error };
-        }
-        case 'cancel_task': {
-          const { jobId } = tc.args as { jobId: string };
-          const res = await this.core.cancelCronJob(jobId);
-          return res.success ? { success: true } : { success: false, error: res.error };
-        }
-        case 'list_tasks': {
-          const jobs = this.core.listCronJobs();
-          return { success: true, cronJobs: jobs };
-        }
-        case 'database_query': {
-          const { query, params } = tc.args as { query: string; params?: unknown[] };
-          const res = await this.core.queryDatabase(query, params);
-          return res.success ? { success: true, data: res.data } : { success: false, error: res.error };
-        }
-        case 'open_url': {
-          return { success: true, openUrl: tc.args.url };
-        }
-        case 'request_secret': {
-          return { success: true, requestSecret: true, name: tc.args.name, prompt: tc.args.prompt, helpUrl: tc.args.helpUrl };
-        }
-        case 'run_task': {
-          // AI가 'steps' 같은 다른 이름으로 보내는 실수를 흡수
-          const rawArgs = tc.args as Record<string, unknown>;
-          const pipeline = (rawArgs.pipeline ?? rawArgs.steps ?? rawArgs.tasks) as import('../ports').PipelineStep[] | undefined;
-          if (!Array.isArray(pipeline) || pipeline.length === 0) {
-            return { success: false, error: "run_task 인자 누락: 'pipeline' 배열이 필요합니다. 각 step은 type(EXECUTE/MCP_CALL/NETWORK_REQUEST/LLM_TRANSFORM/CONDITION) 필수." };
-          }
-          const taskRes = await this.core.runTask(pipeline);
-          return taskRes.success ? { success: true, data: taskRes.data } : { success: false, error: taskRes.error };
-        }
-        case 'mcp_call': {
-          const { server, tool, arguments: args } = tc.args as { server: string; tool: string; arguments?: Record<string, unknown> };
-          const res = await this.core.callMcpTool(server, tool, args ?? {});
-          return res.success ? { success: true, data: res.data } : { success: false, error: res.error };
-        }
-        // 직접 노출되는 render_* — alert/callout 안전망만 유지 (나머지는 render 디스패처 경유)
-        case 'render_alert':
-        case 'render_callout': {
-          const componentType = RENDER_TOOL_MAP[tc.name];
-          return { success: true, component: componentType, props: tc.args as Record<string, unknown> };
-        }
-        case 'search_components': {
-          const { query, limit } = tc.args as { query: string; limit?: number };
-          const { COMPONENTS } = await import('../../infra/llm/component-registry');
-
-          // Router enabled → LLM 기반 분류 (캐시 포함)
-          if (this.isRouterEnabled()) {
-            try {
-              const router = this.getRouter();
-              const catalog = COMPONENTS.map(c => ({ name: c.name, description: c.description }));
-              const result = await router.routeComponents(query, catalog);
-              this._lastRouteCacheIds.components = [...(this._lastRouteCacheIds.components ?? []), result.cacheId].filter(id => id >= 0);
-              const picked = COMPONENTS.filter(c => result.names.includes(c.name)).slice(0, typeof limit === 'number' ? limit : 5);
-              this.logger.info(`[LLMRouter] search_components (${result.source}, cacheId=${result.cacheId}): ${picked.length}개`);
-              return { success: true, components: picked.map(c => ({ name: c.name, description: c.description, propsSchema: c.propsSchema })) };
-            } catch (e) {
-              this.logger.warn(`[LLMRouter] search_components 실패, 벡터 폴백: ${(e as Error).message}`);
-              // fallthrough → 벡터
-            }
-          }
-
-          // 벡터 폴백
-          const { ComponentSearchIndex } = await import('../../infra/llm/component-search-index');
-          const matches = await ComponentSearchIndex.query(query, { limit: typeof limit === 'number' ? limit : 5 });
-          return { success: true, components: matches };
-        }
-        case 'render': {
-          const { name, props } = tc.args as { name: string; props?: Record<string, unknown> };
-          if (!name) return { success: false, error: 'render: name 파라미터 필수' };
-          const { COMPONENTS_BY_NAME } = await import('../../infra/llm/component-registry');
-          const def = COMPONENTS_BY_NAME.get(name);
-          if (!def) return { success: false, error: `render: 알 수 없는 컴포넌트 "${name}". search_components 로 사용 가능한 이름을 먼저 확인하세요.` };
-          return { success: true, component: def.componentType, props: (props ?? {}) as Record<string, unknown> };
-        }
-        case 'render_html': {
-          // CDN 라이브러리 자동 삽입
-          const cdnMap: Record<string, string> = {
-            d3: '<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>',
-            mermaid: '<script src="https://cdn.jsdelivr.net/npm/mermaid@10"></script>',
-            leaflet: '<link rel="stylesheet" href="https://unpkg.com/leaflet@1/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1/dist/leaflet.js"></script>',
-            threejs: '<script src="https://cdn.jsdelivr.net/npm/three@0.160/build/three.min.js"></script>',
-            animejs: '<script src="https://cdn.jsdelivr.net/npm/animejs@3/lib/anime.min.js"></script>',
-            tailwindcss: '<script src="https://cdn.tailwindcss.com"></script>',
-            katex: '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css"/><script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/contrib/auto-render.min.js"></script>',
-            hljs: '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github.min.css"/><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>',
-            marked: '<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>',
-            cytoscape: '<script src="https://cdn.jsdelivr.net/npm/cytoscape@3/dist/cytoscape.min.js"></script>',
-            mathjax: '<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>',
-            echarts: '<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>',
-            p5: '<script src="https://cdn.jsdelivr.net/npm/p5@1/lib/p5.min.js"></script>',
-            lottie: '<script src="https://cdn.jsdelivr.net/npm/lottie-web@5/build/player/lottie.min.js"></script>',
-            datatables: '<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css"/><script src="https://cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script><script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>',
-            swiper: '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"/><script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>',
-          };
-          const libs = (tc.args.libraries as string[] | undefined) || [];
-          const cdnTags = libs.map(l => cdnMap[l]).filter(Boolean).join('\n');
-          let html = tc.args.html as string;
-          if (cdnTags) {
-            // <head>가 있으면 그 안에, 없으면 html 앞에 삽입
-            if (html.includes('</head>')) {
-              html = html.replace('</head>', `${cdnTags}\n</head>`);
-            } else if (html.includes('<body')) {
-              html = html.replace(/<body/i, `${cdnTags}\n<body`);
-            } else {
-              html = `${cdnTags}\n${html}`;
-            }
-          }
-          return { success: true, htmlContent: html, htmlHeight: tc.args.height || '400px' };
-        }
-        case 'suggest': {
-          // suggest는 프론트엔드에서 처리 — 도구 결과로 확인만 전달
-          return { success: true, displayed: true };
-        }
-        case 'image_gen': {
-          const { prompt, size, quality, filenameHint, aspectRatio, focusPoint } = tc.args as {
-            prompt: string;
-            size?: string;
-            quality?: string;
-            filenameHint?: string;
-            aspectRatio?: string;
-            focusPoint?: 'attention' | 'entropy' | 'center';
-          };
-          const res = await this.core.generateImage({ prompt, size, quality, filenameHint, aspectRatio, focusPoint });
-          if (!res.success || !res.data) return { success: false, error: res.error || '이미지 생성 실패' };
-          const d = res.data;
-          return {
-            success: true,
-            url: d.url,
-            thumbnailUrl: d.thumbnailUrl,
-            variants: d.variants,
-            blurhash: d.blurhash,
-            width: d.width,
-            height: d.height,
-            slug: d.slug,
-            modelId: d.modelId,
-            revisedPrompt: d.revisedPrompt,
-            aspectRatio: d.aspectRatio,
-          };
-        }
-        case 'complete_plan': {
-          // 진행 중 plan 종료 — conversation 의 active_plan_state 클리어 + plan-store 에서도 제거
-          const reason = (tc.args as { reason?: string }).reason || 'AI 판단 완료';
-          if (opts?.conversationId) {
-            const state = await this.core.getActivePlanState(opts.conversationId);
-            if (state && typeof state.planId === 'string') {
-              const { deletePlan } = await import('../../lib/plan-store');
-              deletePlan(state.planId);
-            }
-            await this.core.clearActivePlanState(opts.conversationId);
-          }
-          this.logger.info(`[AiManager] complete_plan: ${reason}`);
-          return { success: true, completed: true, reason };
-        }
-        case 'search_history': {
-          const { query, limit, includeBlocks } = tc.args as { query: string; limit?: number; includeBlocks?: boolean };
-          const owner = opts?.owner ?? 'admin';
-          const topK = typeof limit === 'number' ? limit : 5;
-
-          // 쿼리 리라이트 — AI Assistant 활성화 시 Flash Lite 가 대명사·지시어 해소,
-          // 비활성화 시 직전 유저 발화와 단순 결합 (기존 동작)
-          const prev = this._currentTurnPrevUserQuery;
-          let enrichedQuery = prev && prev !== query
-            ? `${query} ${prev}`.slice(0, 500)
-            : query;
-          if (this.isRouterEnabled()) {
-            try {
-              const router = this.getRouter();
-              const rewritten = await router.generateSearchQuery(query, prev);
-              enrichedQuery = rewritten.query;
-            } catch (e) {
-              this.logger.warn(`[LLMRouter] generateSearchQuery 실패, 단순 결합 사용: ${(e as Error).message}`);
-            }
-          }
-
-          // 재랭킹을 위해 벡터 검색은 topK × 3 (최소 15) 까지 넉넉히 받음
-          const overfetch = this.isRouterEnabled() ? Math.max(topK * 3, 15) : topK;
-          const res = await this.core.searchConversationHistory(owner, enrichedQuery, {
-            currentConvId: opts?.conversationId,
-            limit: overfetch,
-            includeBlocks: includeBlocks === true,
-          });
-          if (!res.success) return { success: false, error: res.error };
-          const rawMatches = (res.data ?? []).map(m => ({
-            convId: m.convId,
-            convTitle: m.convTitle,
-            role: m.role,
-            preview: m.contentPreview,
-            score: Number(m.score.toFixed(3)),
-            isCurrentConv: m.convId === opts?.conversationId,
-            ...(m.blocks ? { blocks: m.blocks } : {}),
-          }));
-
-          // 재랭킹 — AI Assistant 활성화 시 Flash Lite 가 의미적 관련성으로 top-K 선별.
-          // 비활성화 시 벡터 유사도 순서 그대로 앞 topK 개 반환.
-          let matches = rawMatches.slice(0, topK);
-          if (this.isRouterEnabled() && rawMatches.length > topK) {
-            try {
-              const router = this.getRouter();
-              matches = await router.rerankHistory(enrichedQuery, rawMatches, topK);
-            } catch (e) {
-              this.logger.warn(`[LLMRouter] rerankHistory 실패, 벡터 순서 유지: ${(e as Error).message}`);
-            }
-          }
-          return { success: true, matches, count: matches.length, enrichedQuery: enrichedQuery !== query ? enrichedQuery : undefined };
-        }
-        default: {
-          // 1) render_* 정규화 — AI 가 'table', 'render-chart' 등 변형으로 호출해도 자동 매칭
-          const renderName = normalizeRenderName(tc.name);
-          if (renderName && RENDER_TOOL_MAP[renderName]) {
-            const componentType = RENDER_TOOL_MAP[renderName];
-            return { success: true, component: componentType, props: tc.args as Record<string, unknown> };
-          }
-          // 2) 통합 resolver — AI 가 어떤 형태로 호출해도 자동 분기
-          //   - kiwoom / sysmod_kiwoom / sysmod_kakao-talk / kakao_talk → system module
-          //   - mcp_firebat_save_page → MCP 서버 (firebat) 의 도구 (save_page)
-          //   - 외부 MCP 서버 명 → MCP 호출
-          const target = await this.resolveCallTarget(tc.name);
-          if (target?.kind === 'execute') {
-            const res = await this.core.sandboxExecute(target.path, tc.args);
-            if (!res.success) return { success: false, error: res.error };
-            if (res.data?.success === false) return { success: false, error: JSON.stringify(res.data) };
-            return { success: true, data: res.data };
-          }
-          // mcp_{server}_{tool} 접두사 — server 부분만 매칭되고 tool 은 따로 분리 필요
-          if (tc.name.startsWith('mcp_')) {
-            const parts = tc.name.slice(4).split('_');
-            const server = parts[0];
-            const tool = parts.slice(1).join('_');
-            const res = await this.core.callMcpTool(server, tool, tc.args);
-            return res.success ? { success: true, data: res.data } : { success: false, error: res.error };
-          }
-          // resolver 가 mcp 서버 매칭한 경우 (단, tool 이름 추출 불가 — AI 가 이런 식으로 부르면 안 됨)
-          if (target?.kind === 'mcp') {
-            return { success: false, error: `MCP 서버 '${target.server}' 호출 시 도구 이름이 명시돼야 합니다 (예: mcp_${target.server}_{tool} 형태).` };
-          }
-          return { success: false, error: `알 수 없는 도구: ${tc.name}` };
-        }
+      // 2) render_* 변형 정규화 — AI 가 'table' / 'render-chart' 등으로 불러도 매칭.
+      const renderName = normalizeRenderName(tc.name);
+      if (renderName && RENDER_TOOL_MAP[renderName]) {
+        return { success: true, component: RENDER_TOOL_MAP[renderName], props: tc.args as Record<string, unknown> };
       }
+      // 3) 통합 resolver — sysmod / mcp 자동 분기:
+      //    kiwoom / sysmod_kakao-talk / kakao_talk → system module
+      //    mcp_firebat_save_page → MCP 서버(firebat) 도구(save_page)
+      //    외부 MCP 서버명 → MCP 호출
+      const target = await this.resolveCallTarget(tc.name);
+      if (target?.kind === 'execute') {
+        const res = await this.core.sandboxExecute(target.path, tc.args);
+        if (!res.success) return { success: false, error: res.error };
+        if (res.data?.success === false) return { success: false, error: JSON.stringify(res.data) };
+        return { success: true, data: res.data };
+      }
+      // mcp_{server}_{tool} 접두사 — server/tool 분리
+      if (tc.name.startsWith('mcp_')) {
+        const parts = tc.name.slice(4).split('_');
+        const server = parts[0];
+        const tool = parts.slice(1).join('_');
+        const res = await this.core.callMcpTool(server, tool, tc.args);
+        return res.success ? { success: true, data: res.data } : { success: false, error: res.error };
+      }
+      if (target?.kind === 'mcp') {
+        return { success: false, error: `MCP 서버 '${target.server}' 호출 시 도구 이름 명시 필요 (예: mcp_${target.server}_{tool} 형태).` };
+      }
+      return { success: false, error: `알 수 없는 도구: ${tc.name}` };
     } catch (e: any) {
       return { success: false, error: e.message };
     }
   }
+
 
   /**
    * 안전망·보편 도구 2개만 직접 노출 (render_alert/render_callout).
