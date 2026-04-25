@@ -1,5 +1,6 @@
 import './globals.css';
 import type { Metadata, Viewport } from 'next';
+import { getCore } from '../lib/singleton';
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -14,14 +15,22 @@ export const viewport: Viewport = {
 // 동적 페이지 (blog/slug 등) 는 자체 generateMetadata 에서 SEO.siteUrl 기준 override 가능.
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
-export const metadata: Metadata = {
-  metadataBase: new URL(BASE_URL),
-  title: 'Firebat',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const seo = getCore().getSeoSettings();
+  return {
+    metadataBase: new URL(BASE_URL),
+    title: seo.siteTitle,
+    description: seo.siteDescription,
+    // 커스텀 favicon — /user/media/... 또는 외부 URL. 미지정 시 Next.js 기본 (app/icon.svg).
+    ...(seo.faviconUrl ? { icons: { icon: seo.faviconUrl } } : {}),
+  };
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  // SEO 설정 lang — 검색엔진 언어 인식 + 접근성. 미설정 시 'ko'.
+  const seo = getCore().getSeoSettings();
   return (
-    <html lang="ko">
+    <html lang={seo.siteLang || 'ko'}>
       <body className="antialiased bg-white text-gray-900">
         {children}
       </body>

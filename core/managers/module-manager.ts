@@ -147,6 +147,18 @@ export class ModuleManager {
     jsonLdEnabled: boolean;
     jsonLdOrganization: string;
     jsonLdLogoUrl: string;
+    /** HTML lang 속성 — 검색엔진 언어 인식 + 접근성. 기본 'ko'. */
+    siteLang: string;
+    /** Twitter Card 타입 — summary 또는 summary_large_image. 기본 large_image (블로그·랜딩 이미지 잘 표시). */
+    twitterCardType: 'summary' | 'summary_large_image';
+    /** @username 형식 — 사이트 자체의 트위터 계정 (선택) */
+    twitterSite: string;
+    /** @username 형식 — 작성자 트위터 계정 (선택) */
+    twitterCreator: string;
+    /** 자동 canonical URL — 페이지가 head.canonical 미지정 시 siteUrl + slug 자동 생성. 기본 true. */
+    autoCanonical: boolean;
+    /** 커스텀 favicon URL — 미지정 시 Next.js 기본 (app/icon.svg). /user/media/... 또는 외부 URL 가능. */
+    faviconUrl: string;
   } {
     const s = this.getSettings('seo');
     return {
@@ -164,6 +176,12 @@ export class ModuleManager {
       jsonLdEnabled: s.jsonLdEnabled ?? true,
       jsonLdOrganization: s.jsonLdOrganization || 'Firebat',
       jsonLdLogoUrl: s.jsonLdLogoUrl ?? '',
+      siteLang: s.siteLang || 'ko',
+      twitterCardType: (s.twitterCardType === 'summary' ? 'summary' : 'summary_large_image') as 'summary' | 'summary_large_image',
+      twitterSite: s.twitterSite ?? '',
+      twitterCreator: s.twitterCreator ?? '',
+      autoCanonical: s.autoCanonical ?? true,
+      faviconUrl: s.faviconUrl ?? '',
     };
   }
 }

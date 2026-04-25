@@ -89,6 +89,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     ogImage = ready ? head.og.image : fallbackOg;
   }
 
+  // canonical — 사용자가 head.canonical 명시하면 우선, 아니면 SEO 의 autoCanonical 옵션 따라 siteUrl + slug 자동 생성.
+  const canonical = head.canonical
+    ?? (seo.autoCanonical ? `${baseUrl}/${slug}` : undefined);
+
   return {
     // metadataBase override — layout 의 정적 값 대신 동적 resolve 결과 사용 (상대경로 이미지도 이 기준으로 절대화)
     metadataBase: new URL(baseUrl),
@@ -96,12 +100,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     description: head.description ?? '',
     keywords: head.keywords ?? [],
     robots: head.robots ?? 'index, follow',
-    ...(head.canonical ? { alternates: { canonical: head.canonical } } : {}),
+    ...(canonical ? { alternates: { canonical } } : {}),
     openGraph: {
       title: ogTitle,
       description: ogDesc,
       images: [ogImage],
       type: (head.og?.type as any) ?? 'website',
+      url: canonical,
+      siteName: seo.siteTitle,
+    },
+    twitter: {
+      card: seo.twitterCardType,
+      title: ogTitle,
+      description: ogDesc,
+      images: [ogImage],
+      ...(seo.twitterSite ? { site: seo.twitterSite } : {}),
+      ...(seo.twitterCreator ? { creator: seo.twitterCreator } : {}),
     },
     other: Object.fromEntries(
       (head.meta ?? []).map((m: any) => [m.name ?? m.property, m.content])
