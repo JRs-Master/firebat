@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, X } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 import { GalleryPanel } from './GalleryPanel';
@@ -494,16 +494,14 @@ export function Sidebar({
             </button>
           </Tooltip>
         ) : null}
-        {!isMobile && (
-          <Tooltip label="사이드바 접기">
-            <button
-              onClick={closeSidebar}
-              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
-            >
-              <PanelLeftClose size={15} />
-            </button>
-          </Tooltip>
-        )}
+        <Tooltip label={isMobile ? '닫기' : '사이드바 접기'}>
+          <button
+            onClick={closeSidebar}
+            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+          >
+            {isMobile ? <X size={15} /> : <PanelLeftClose size={15} />}
+          </button>
+        </Tooltip>
       </div>
 
       {/* 패널 컨텐츠 */}

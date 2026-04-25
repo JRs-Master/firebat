@@ -202,31 +202,32 @@ function MediaDetailModal({
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-        {/* 헤더 */}
+      {/* 모달 — 고정 크기 (모바일 90vh / PC 85vh). 내부 영역만 자체 스크롤. */}
+      <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[90vh] sm:h-[85vh]" onClick={e => e.stopPropagation()}>
+        {/* 헤더 — sticky-like (shrink-0 으로 항상 상단 고정. 닫기 버튼 잘림 방지) */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50 shrink-0">
           <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 truncate">
             <ImageIcon size={14} className="text-blue-500 shrink-0" />
             <span className="truncate">{item.filenameHint || item.slug}</span>
           </h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 shrink-0">
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 shrink-0 p-1 rounded hover:bg-slate-200" aria-label="닫기">
             <X size={18} />
           </button>
         </div>
 
-        {/* 본문 */}
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col md:flex-row gap-4">
-          {/* 프리뷰 */}
-          <div className="flex-1 min-w-0 bg-slate-50 rounded-lg p-2 flex items-center justify-center">
+        {/* 본문 — 컨테이너만 overflow-hidden. 내부 두 영역(프리뷰/메타) 이 각자 스크롤 */}
+        <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-3 p-3 sm:p-4 overflow-hidden">
+          {/* 프리뷰 — 모바일: shrink-0 + max-h-[35vh] / PC: flex-1 + 자체 overflow */}
+          <div className="shrink-0 md:flex-1 md:min-w-0 max-h-[35vh] md:max-h-full bg-slate-50 rounded-lg p-2 flex items-center justify-center overflow-hidden">
             <img
               src={url}
               alt={item.filenameHint || item.slug}
-              className="max-w-full max-h-[60vh] object-contain rounded"
+              className="max-w-full max-h-full object-contain rounded"
             />
           </div>
 
-          {/* 메타 */}
-          <div className="md:w-64 shrink-0 flex flex-col gap-2 text-[12px]">
+          {/* 메타 — 자체 overflow-y-auto. 프롬프트 길어도 모달 크기 고정 */}
+          <div className="flex-1 md:flex-none md:w-64 md:shrink-0 min-h-0 flex flex-col gap-2 text-[12px] overflow-y-auto pr-1">
             {item.prompt && (
               <div>
                 <div className="flex items-center gap-1 text-slate-400 font-bold uppercase text-[10px] mb-0.5"><Sparkles size={10} /> 프롬프트</div>
