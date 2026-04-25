@@ -331,25 +331,25 @@ function MediaDetailModal({
               )}
             </div>
 
-            {/* 메타 정보 — 위치 고정 */}
+            {/* 메타 정보 — 항상 같은 행 수 (누락은 "—" placeholder). 위치 완전 고정 */}
             <div className="shrink-0 flex flex-col gap-1.5">
               <MetaRow icon={<Calendar size={10} />} label="생성" value={createdStr} />
-              {item.model && <MetaRow label="모델" value={item.model} />}
-              {item.size && <MetaRow label="사이즈" value={item.size} />}
-              {item.quality && <MetaRow label="품질" value={item.quality} />}
-              {(item.width && item.height) && <MetaRow icon={<Ruler size={10} />} label="해상도" value={`${item.width} × ${item.height}`} />}
-              {item.aspectRatio && (
-                <MetaRow
-                  icon={<Crop size={10} />}
-                  label="비율"
-                  value={`${item.aspectRatio}${item.focusPoint ? ` (${typeof item.focusPoint === 'string' ? item.focusPoint : 'xy'})` : ''}`}
-                />
-              )}
+              <MetaRow label="모델" value={item.model || '—'} />
+              <MetaRow label="사이즈" value={item.size || '—'} />
+              <MetaRow label="품질" value={item.quality || '—'} />
+              <MetaRow icon={<Ruler size={10} />} label="해상도" value={(item.width && item.height) ? `${item.width} × ${item.height}` : '—'} />
+              <MetaRow
+                icon={<Crop size={10} />}
+                label="비율"
+                value={item.aspectRatio
+                  ? `${item.aspectRatio}${item.focusPoint ? ` (${typeof item.focusPoint === 'string' ? item.focusPoint : 'xy'})` : ''}`
+                  : '—'}
+              />
               <MetaRow label="원본" value={`${sizeKb} KB · ${item.ext.toUpperCase()}`} />
-              {item.variants && item.variants.length > 0 && (
-                <MetaRow label="Variants" value={`${item.variants.length}개 (${[...new Set(item.variants.map(v => v.format))].join('/')})`} />
-              )}
-              {item.blurhash && <MetaRow label="Blurhash" value="✓ 생성됨" />}
+              <MetaRow label="Variants" value={item.variants && item.variants.length > 0
+                ? `${item.variants.length}개 (${[...new Set(item.variants.map(v => v.format))].join('/')})`
+                : '없음'} />
+              <MetaRow label="Blurhash" value={item.blurhash ? '✓ 생성됨' : '✗'} />
             </div>
 
             {/* 버튼 — 위치 고정 (하단) */}
