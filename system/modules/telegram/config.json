@@ -1,0 +1,58 @@
+{
+  "name": "telegram",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "텔레그램 봇 메시지·미디어 발송. send-message(text 또는 마크다운), send-photo(URL/파일경로), send-document, send-location. 24/7 운영 봇 알림·자동매매 체결 통보·서버 상태 알림에 적합. BotFather 로 토큰 발급 후 chat ID 획득(@get_id_bot 또는 /start 후 getUpdates) → Vault 에 TELEGRAM_BOT_TOKEN 과 TELEGRAM_CHAT_ID 저장. 기본은 단방향 (sendXxx) — 양방향 webhook + 명령은 v1.x.",
+  "runtime": "node",
+  "capability": "notification",
+  "providerType": "api",
+  "secrets": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"],
+  "input": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["send-message", "send-photo", "send-document", "send-location"],
+        "default": "send-message",
+        "description": "API 액션"
+      },
+      "text": {
+        "type": "string",
+        "maxLength": 4096,
+        "description": "[send-message] 본문 (텔레그램 한도 4096자). send-photo/send-document 의 caption 으로도 사용."
+      },
+      "parseMode": {
+        "type": "string",
+        "enum": ["MarkdownV2", "HTML", "Markdown"],
+        "description": "[send-message/send-photo/send-document] 텍스트 포맷. 미지정 시 plain. MarkdownV2 사용 시 특수문자 escape 필요."
+      },
+      "photoUrl": {
+        "type": "string",
+        "description": "[send-photo] 이미지 URL (https://...) 또는 file_id (이전 발송 사진 재사용)."
+      },
+      "documentUrl": {
+        "type": "string",
+        "description": "[send-document] 파일 URL 또는 file_id."
+      },
+      "latitude": {
+        "type": "number",
+        "description": "[send-location] 위도 (-90 ~ 90)."
+      },
+      "longitude": {
+        "type": "number",
+        "description": "[send-location] 경도 (-180 ~ 180)."
+      },
+      "chatId": {
+        "type": "string",
+        "description": "수신자 chat ID. 미지정 시 Vault 의 TELEGRAM_CHAT_ID 사용. 그룹 채팅은 음수 (예: -100123456789)."
+      },
+      "disableNotification": {
+        "type": "boolean",
+        "default": false,
+        "description": "true 면 무음 알림 (silent push)."
+      }
+    },
+    "required": ["action"]
+  }
+}
