@@ -37,6 +37,16 @@ class EventBusSingleton {
     if (this.es) return;
     try {
       this.es = new EventSource('/api/events');
+      // 첫 연결은 무시하고 재연결만 'sidebar:refresh' 강제 emit — 서버 재시작(deploy) 후
+      // 클라이언트 stale state 방지. 처음 연결 시엔 구독자가 자체 초기 fetch 해놨음.
+      let firstOpen = true;
+      this.es.onopen = () => {
+        if (firstOpen) { firstOpen = false; return; }
+        const reconnectEv: ServerEvent = { type: 'sidebar:refresh', data: { reason: 'sse-reconnect' } };
+        for (const l of this.listeners) {
+          try { l(reconnectEv); } catch {}
+        }
+      };
       this.es.onmessage = (e) => {
         try {
           const ev = JSON.parse(e.data) as ServerEvent;
@@ -46,7 +56,7 @@ class EventBusSingleton {
         } catch {}
       };
       this.es.onerror = () => {
-        // 브라우저가 자동 재연결 — 별도 처리 불필요.
+        // 브라우저가 자동 재연결 → 위 onopen 이 다시 발화하여 fetch 트리거.
         // 실제 서비스 중단은 SSE /api/events 자체 keepalive 가 보장.
       };
     } catch {}

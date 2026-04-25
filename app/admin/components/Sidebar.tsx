@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, X } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 import { GalleryPanel } from './GalleryPanel';
@@ -404,8 +404,8 @@ export function Sidebar({
           >
             <MessageSquare size={18} />
             {conversations.length > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-blue-500 text-white text-[8px] font-black rounded-full flex items-center justify-center">
-                {Math.min(conversations.length, 9)}
+              <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 px-1 bg-blue-500 text-white text-[8px] font-black rounded-full flex items-center justify-center">
+                {conversations.length > 9 ? '9+' : conversations.length}
               </span>
             )}
           </button>
@@ -467,8 +467,8 @@ export function Sidebar({
           >
             <MessageSquare size={15} />
             {conversations.length > 0 && tab !== 'chats' && (
-              <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-blue-500 text-white text-[8px] font-black rounded-full flex items-center justify-center">
-                {Math.min(conversations.length, 9)}
+              <span className="absolute -top-0.5 -right-0.5 min-w-3 h-3 px-1 bg-blue-500 text-white text-[8px] font-black rounded-full flex items-center justify-center">
+                {conversations.length > 9 ? '9+' : conversations.length}
               </span>
             )}
           </button>
@@ -494,12 +494,12 @@ export function Sidebar({
             </button>
           </Tooltip>
         ) : null}
-        <Tooltip label={isMobile ? '닫기' : '사이드바 접기'}>
+        <Tooltip label="사이드바 접기">
           <button
             onClick={closeSidebar}
             className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
           >
-            {isMobile ? <X size={15} /> : <PanelLeftClose size={15} />}
+            <PanelLeftClose size={15} />
           </button>
         </Tooltip>
       </div>
