@@ -14,6 +14,7 @@ import { ConversationManager } from './managers/conversation-manager';
 import type { ConversationSummary, ConversationRecord } from './managers/conversation-manager';
 import { ImageManager } from './managers/image-manager';
 import type { GenerateImageInput, GenerateImageResult } from './managers/image-manager';
+import { EventManager } from './managers/event-manager';
 import type { FirebatInfraContainer, ILlmPort, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
@@ -65,6 +66,7 @@ export class FirebatCore {
   private readonly authMgr: AuthManager;
   private readonly conversation: ConversationManager;
   private readonly image: ImageManager;
+  private readonly event: EventManager;
 
   constructor(private readonly infra: FirebatInfraContainer) {
     // 매니저 생성 — 각 매니저는 자기 도메인의 인프라 포트를 직접 받음
@@ -78,6 +80,7 @@ export class FirebatCore {
     this.authMgr = new AuthManager(infra.auth, infra.vault);
     this.conversation = new ConversationManager(infra.database, infra.embedder);
     this.image = new ImageManager(infra.imageGen, infra.media, infra.imageProcessor, infra.vault, infra.log);
+    this.event = new EventManager(infra.log);
 
     // 크로스 도메인 매니저 — Core 참조 필요
     this.task = new TaskManager(this, infra.llm, infra.log);
@@ -485,6 +488,28 @@ export class FirebatCore {
     if (status !== 'done') return false;
     if (!record.bytes || record.bytes <= 0) return false;
     return true;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  이벤트 → EventManager
+  //  lib/events.ts 의 eventBus 위에 wrap. audit log + filtered subscribe 추가.
+  //  기존 호출자 (eventBus.emit) 무수정 — 점진 마이그레이션.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** 디버깅·관리자 UI — 최근 발행된 이벤트 audit log */
+  listEventAuditLog(limit = 50) {
+    return this.event.listAuditLog(limit);
+  }
+
+  /** 외부에서 typed 이벤트 구독 (Backend 컨텍스트). filter:
+   *   - '*' : 모든 이벤트
+   *   - 문자열 배열 : 매칭 type 만
+   *   - 함수 : (event) => boolean */
+  subscribeEvents(
+    filter: '*' | string[] | ((event: import('../lib/events').FirebatEvent) => boolean),
+    handler: (event: import('../lib/events').FirebatEvent) => void,
+  ) {
+    return this.event.subscribe(filter, handler);
   }
 
   // Plan 실행 / 3-stage state (multi-turn 지속) — 대화 수준 JSON 유지
