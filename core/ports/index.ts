@@ -387,8 +387,22 @@ export interface ConditionStep {
   value?: unknown;     // 비교 값 (exists/not_exists는 불필요)
 }
 
-/** 파이프라인 단계 = 5가지 중 하나 */
-export type PipelineStep = ExecuteStep | McpCallStep | NetworkRequestStep | LlmTransformStep | ConditionStep;
+/** SAVE_PAGE — 페이지 발행 (cron 컨텍스트의 자동 발행 전용).
+ *  pipeline 등록 시점에 사용자가 전체 흐름을 승인했으므로 매 트리거마다 재승인 게이트 우회.
+ *  inputMap 으로 직전 LLM_TRANSFORM 결과를 spec.body 등에 매핑하거나,
+ *  step 의 slug/spec 필드에 직접 명시할 수 있다. */
+export interface SavePageStep extends PipelineStepBase {
+  type: 'SAVE_PAGE';
+  /** 페이지 slug. inputMap 으로 동적 생성 (예: "$prev.slug") 도 가능. */
+  slug?: string;
+  /** PageSpec — head + body 등. inputMap 으로 부분 매핑 가능. */
+  spec?: Record<string, unknown>;
+  /** 기존 페이지 덮어쓰기 허용 (기본 false — slug 충돌 시 자동 -N 접미사) */
+  allowOverwrite?: boolean;
+}
+
+/** 파이프라인 단계 = 6가지 중 하나 */
+export type PipelineStep = ExecuteStep | McpCallStep | NetworkRequestStep | LlmTransformStep | ConditionStep | SavePageStep;
 
 /** 파이프라인 단계 타입 리터럴 */
 export type PipelineStepType = PipelineStep['type'];

@@ -1715,7 +1715,35 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 - 크론 형식 "분 시 일 월 요일" (이 타임존 기준 해석됨). 시각이 지났으면 사용자 확인, 자의적 조정 금지.
 
 ## 파이프라인 (특수)
-스텝 5종만 허용: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM, CONDITION.
+스텝 6종만 허용: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM, CONDITION, SAVE_PAGE.
+
+### LLM_TRANSFORM 절대 규칙 — 도구 호출 불가
+LLM_TRANSFORM 은 **텍스트 변환 전용** (askText 만 호출). instruction 안에 도구 워크플로우를 자연어로 적어도 도구는 절대 안 돌아간다.
+
+❌ 잘못된 instruction (검증 거부됨):
+\`\`\`
+"1) sysmod_kiwoom 호출 2) image_gen 으로 이미지 3) save_page 발행..."
+\`\`\`
+→ validatePipeline 이 instruction 안 도구명(sysmod_/save_page/image_gen 등) 감지하면 reject. AI 에게 "도구 호출은 별도 step 으로 분리하세요" 에러 반환.
+
+✅ 올바른 형태 — 각 도구를 별도 step 으로 분리:
+\`\`\`
+[
+  {EXECUTE kiwoom inputData:{action:"price", symbol:"005930"}},
+  {EXECUTE image_gen inputData:{prompt:"...", aspectRatio:"16:9"}},  // image_gen 은 도구로 호출 — pipeline 의 EXECUTE 가 아니라 채팅 도구
+  {LLM_TRANSFORM instruction:"위 데이터를 SEO 블로그 HTML JSON 으로 변환 — {head:..., body:[...]} 구조"},
+  {SAVE_PAGE slug:"stock-blog/2026-04-25-close" inputMap:{spec:"$prev"}}
+]
+\`\`\`
+
+### SAVE_PAGE — cron 자동 발행 전용 step
+정기 블로그 발행 같은 cron 잡에서 페이지 자동 저장 시 사용. **승인 게이트 우회** — pipeline 등록 시점에 사용자가 ✓실행으로 전체 흐름을 한 번에 승인했으므로 매 트리거마다 재승인 없이 발행.
+
+- \`slug\`: 페이지 slug (예: "stock-blog/2026-04-25-close"). 동적 날짜는 LLM_TRANSFORM 결과에서 매핑.
+- \`spec\`: PageSpec 객체 ({head, body, project, status}). 보통 직전 LLM_TRANSFORM 이 JSON 으로 만들어서 \`inputMap:{spec:"$prev"}\` 로 받음.
+- \`allowOverwrite\` (기본 false): 같은 slug 충돌 시 -N 자동 접미사. 매일 같은 slug 로 덮어쓸 때만 true.
+
+**중요**: SAVE_PAGE step type 은 cron pipeline 전용. 채팅에서 사용자가 직접 페이지 만들어달라 할 때는 \`save_page\` 도구 (소문자, MCP) 그대로 사용하라 — 그건 사용자 승인 받음.
 
 ### EXECUTE 인자 규칙 (절대)
 모듈 실행 파라미터(action/symbol/text 등)는 반드시 **inputData 객체** 안에 넣어라. step 평면에 나열하지 말것.
@@ -1820,11 +1848,11 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
     return {
       type: 'object',
       properties: {
-        type: { type: 'string', description: 'EXECUTE | MCP_CALL | NETWORK_REQUEST | LLM_TRANSFORM | CONDITION', enum: ['EXECUTE', 'MCP_CALL', 'NETWORK_REQUEST', 'LLM_TRANSFORM', 'CONDITION'] },
+        type: { type: 'string', description: 'EXECUTE | MCP_CALL | NETWORK_REQUEST | LLM_TRANSFORM | CONDITION | SAVE_PAGE', enum: ['EXECUTE', 'MCP_CALL', 'NETWORK_REQUEST', 'LLM_TRANSFORM', 'CONDITION', 'SAVE_PAGE'] },
         description: { type: 'string', description: '단계 설명' },
         path: { type: 'string', description: 'EXECUTE: 모듈 경로 (예: system/modules/kiwoom/index.mjs)' },
-        inputData: { type: 'object', description: '이 단계(EXECUTE/NETWORK_REQUEST)의 자체 입력. EXECUTE는 거의 항상 필요 (예: {action, symbol}).', additionalProperties: true },
-        inputMap: { type: 'object', description: '$prev 매핑 (예: {"url":"$prev.url"})', additionalProperties: true },
+        inputData: { type: 'object', description: '이 단계의 자체 입력. EXECUTE/SAVE_PAGE 등에서 사용 (예: {action, symbol} 또는 {slug, spec}).', additionalProperties: true },
+        inputMap: { type: 'object', description: '$prev 매핑 (예: {"url":"$prev.url"} 또는 SAVE_PAGE 의 {"spec":"$prev"})', additionalProperties: true },
         server: { type: 'string', description: 'MCP_CALL: 서버 이름' },
         tool: { type: 'string', description: 'MCP_CALL: 도구 이름' },
         arguments: { type: 'object', description: 'MCP_CALL: 도구 인자', additionalProperties: true },
@@ -1832,10 +1860,13 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
         method: { type: 'string', description: 'NETWORK_REQUEST: HTTP 메서드', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
         headers: { type: 'object', description: 'NETWORK_REQUEST: HTTP 헤더', additionalProperties: true },
         body: { type: 'string', description: 'NETWORK_REQUEST: 요청 본문' },
-        instruction: { type: 'string', description: 'LLM_TRANSFORM: 변환 지시문' },
+        instruction: { type: 'string', description: 'LLM_TRANSFORM: 변환 지시문 (텍스트 변환만 — sysmod_/save_page/image_gen 등 도구명 등장 시 거부됨)' },
         field: { type: 'string', description: 'CONDITION: 검사 대상 ($prev, $prev.price 등)' },
         op: { type: 'string', description: 'CONDITION: 비교 연산자', enum: ['==', '!=', '<', '<=', '>', '>=', 'includes', 'not_includes', 'exists', 'not_exists'] },
         value: { type: 'string', description: 'CONDITION: 비교 값 (숫자 또는 문자열)' },
+        slug: { type: 'string', description: 'SAVE_PAGE: 페이지 slug (예: "stock-blog/2026-04-25-close")' },
+        spec: { type: 'object', description: 'SAVE_PAGE: PageSpec 객체 (head + body). 보통 inputMap:{spec:"$prev"} 로 직전 LLM_TRANSFORM 결과 매핑.', additionalProperties: true },
+        allowOverwrite: { type: 'boolean', description: 'SAVE_PAGE: 같은 slug 페이지 덮어쓰기 허용 (기본 false — 충돌 시 -N 접미사 자동)' },
       },
       required: ['type'],
     };

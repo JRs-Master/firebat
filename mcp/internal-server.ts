@@ -509,11 +509,25 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 3) delaySec: N초 후 1회
 
 targetPath + inputData: 단일 모듈 실행.
-pipeline: 복합 작업 (EXECUTE/MCP_CALL/NETWORK_REQUEST/LLM_TRANSFORM/CONDITION 5가지 스텝 조합).
+pipeline: 복합 작업 (EXECUTE/MCP_CALL/NETWORK_REQUEST/LLM_TRANSFORM/CONDITION/SAVE_PAGE 6가지 스텝 조합).
 oneShot: 첫 성공 시 자동 취소 (가격 알림 등 조건부 1회 패턴).
 startAt/endAt: cronTime의 유효 기간 (만료 시 자동 해제).
 
-예: {cronTime:"*/5 9-15 * * 1-5", pipeline:[{type:"EXECUTE",path:"system/modules/kiwoom/index.mjs",inputData:{action:"price",symbol:"005930"}},{type:"CONDITION",field:"$prev.price",op:">=",value:217000},{type:"EXECUTE",path:"system/modules/kakao-talk/index.mjs",inputData:{action:"send-me",text:"삼성전자 217000원 도달"}}], oneShot:true}
+**LLM_TRANSFORM 절대 규칙**: instruction 안에 도구 워크플로우(sysmod_/save_page/image_gen 등) 자연어로 적지 마라. validatePipeline 이 거부한다. LLM_TRANSFORM 은 텍스트 변환만 — 도구 호출은 별도 step.
+
+**SAVE_PAGE step (cron 자동 발행 전용)**: 정기 블로그 잡의 마지막 step. pipeline 등록 시점에 사용자 승인이 곧 매 트리거 발행 동의이므로 매 실행마다 재승인 게이트 우회. {type:"SAVE_PAGE", slug:"...", inputMap:{spec:"$prev"}, allowOverwrite:false}.
+
+예 (조건부 알림):
+{cronTime:"*/5 9-15 * * 1-5", pipeline:[{type:"EXECUTE",path:"system/modules/kiwoom/index.mjs",inputData:{action:"price",symbol:"005930"}},{type:"CONDITION",field:"$prev.price",op:">=",value:217000},{type:"EXECUTE",path:"system/modules/kakao-talk/index.mjs",inputData:{action:"send-me",text:"삼성전자 217000원 도달"}}], oneShot:true}
+
+예 (정기 블로그 자동 발행 — 평일 16:30 장마감):
+{cronTime:"30 16 * * 1-5", pipeline:[
+  {type:"EXECUTE",path:"system/modules/kiwoom/index.mjs",inputData:{action:"price",symbol:"KS11"}},
+  {type:"EXECUTE",path:"system/modules/kiwoom/index.mjs",inputData:{action:"foreign-trade"}},
+  {type:"EXECUTE",path:"system/modules/naver-search/index.mjs",inputData:{action:"news",query:"코스피 마감"}},
+  {type:"LLM_TRANSFORM",instruction:"위 데이터로 SEO 블로그 PageSpec JSON 만들어라. 형식: {head:{title,description,keywords},body:[{type:'Html',props:{content:'<완성 HTML>'}}]}. 본문 1000자+, h2 섹션 4개."},
+  {type:"SAVE_PAGE",slug:"stock-blog/<오늘날짜>-close",inputMap:{spec:"$prev"}}
+]}
 
 주의: 시각이 지났으면 사용자에게 바로 실행할지 확인. 자의적 조정 금지.`,
     {

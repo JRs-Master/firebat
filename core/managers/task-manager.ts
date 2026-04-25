@@ -22,6 +22,13 @@ export class TaskManager {
 
   /** 파이프라인 등록/실행 전 필수 필드 검증 */
   validatePipeline(steps: PipelineStep[]): string | null {
+    // LLM_TRANSFORM instruction 안에 도구 호출 패턴이 보이면 거부 — 흔한 설계 실수
+    // (사용자가 instruction 에 "1) sysmod_kiwoom 호출 2) save_page" 같은 워크플로우를 적어도
+    //  LLM_TRANSFORM 은 askText 만 호출하므로 실제 도구는 안 돌아감)
+    const TOOL_HINTS = [
+      'sysmod_', 'save_page', 'savePage', 'image_gen', 'imageGen', 'mcp_call', 'mcpCall',
+      'schedule_task', 'run_task', 'write_file', 'delete_file', 'render_',
+    ];
     for (let i = 0; i < steps.length; i++) {
       const s = steps[i];
       const n = i + 1;
@@ -36,12 +43,28 @@ export class TaskManager {
         case 'NETWORK_REQUEST':
           if (!s.url) return `[Step ${n}] NETWORK_REQUEST에 url이 없습니다.`;
           break;
-        case 'LLM_TRANSFORM':
+        case 'LLM_TRANSFORM': {
           if (!s.instruction) return `[Step ${n}] LLM_TRANSFORM에 instruction이 없습니다.`;
+          // instruction 안에 도구 이름이 포함되어 있으면 단계 분리 안 된 것 — 거부
+          const lower = s.instruction.toLowerCase();
+          for (const hint of TOOL_HINTS) {
+            if (lower.includes(hint.toLowerCase())) {
+              return `[Step ${n}] LLM_TRANSFORM instruction 안에 도구명 "${hint}" 이 보입니다. LLM_TRANSFORM 은 텍스트 변환만 가능합니다 — 도구 호출은 별도 EXECUTE/MCP_CALL/SAVE_PAGE step 으로 분리하세요.`;
+            }
+          }
           break;
+        }
         case 'CONDITION':
           if (!s.field) return `[Step ${n}] CONDITION에 field가 없습니다.`;
           if (!s.op) return `[Step ${n}] CONDITION에 op가 없습니다.`;
+          break;
+        case 'SAVE_PAGE':
+          if (!s.slug && !s.inputMap?.slug) {
+            return `[Step ${n}] SAVE_PAGE에 slug 가 없습니다 (직접 지정 또는 inputMap.slug 로 매핑 필요).`;
+          }
+          if (!s.spec && !s.inputMap?.spec) {
+            return `[Step ${n}] SAVE_PAGE에 spec 이 없습니다 (직접 지정 또는 inputMap.spec 로 매핑 필요 — 보통 직전 LLM_TRANSFORM 결과를 매핑).`;
+          }
           break;
         default: {
           const _exhaustive: never = s;
@@ -204,6 +227,36 @@ export class TaskManager {
 
             onPipelineStep?.(i, 'done');
             // prev 유지 (CONDITION은 데이터를 변환하지 않음)
+            break;
+          }
+          case 'SAVE_PAGE': {
+            // pipeline 등록 시점에 사용자가 전체 흐름을 승인했으므로 저장 시점 재승인 게이트 우회.
+            // slug / spec 은 step 직접 명시 또는 inputData/inputMap 으로 prev 매핑 → stepInput 에 이미 해석됨.
+            const slug = (stepInput.slug as string | undefined) ?? step.slug;
+            let spec: unknown = stepInput.spec ?? step.spec;
+            // spec 이 LLM_TRANSFORM 결과 텍스트(JSON 문자열)인 경우 파싱
+            if (typeof spec === 'string') {
+              try { spec = JSON.parse(spec); }
+              catch {
+                // JSON 파싱 실패 — body Html 한 덩어리로 fallback (LLM 이 HTML 본문 생성한 경우)
+                spec = { body: [{ type: 'Html', props: { content: spec } }] };
+              }
+            }
+            if (!slug || !spec) {
+              const errMsg = `slug 또는 spec 미지정 (slug=${slug}, spec=${spec ? '있음' : '없음'})`;
+              onPipelineStep?.(i, 'error', errMsg);
+              return { success: false, error: `[Pipeline Step ${i + 1}] SAVE_PAGE 실패: ${errMsg}` };
+            }
+            const allowOverwrite = !!(step.allowOverwrite ?? stepInput.allowOverwrite);
+            const res = await this.core.savePage(slug, spec as Record<string, unknown>, { allowOverwrite });
+            if (!res.success) {
+              onPipelineStep?.(i, 'error', res.error);
+              return { success: false, error: `[Pipeline Step ${i + 1}] SAVE_PAGE 실패: ${res.error}` };
+            }
+            const actualSlug = res.data?.slug ?? slug;
+            this.log.info(`[Pipeline] Step ${i + 1} SAVE_PAGE → slug=${actualSlug} (renamed=${!!res.data?.renamed})`);
+            prev = { slug: actualSlug, renamed: !!res.data?.renamed };
+            onPipelineStep?.(i, 'done');
             break;
           }
           default: {
