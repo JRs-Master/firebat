@@ -90,14 +90,6 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   // CLI 상태
   const [cliStatus, setCliStatus] = useState<{ installed: boolean; loggedIn: boolean; error?: string } | null>(null);
   const [cliChecking, setCliChecking] = useState(false);
-  const [mcpSubTab, setMcpSubTab] = useState<'app' | 'llm'>('app');
-  // 내부 MCP 토큰 (LLM 통신용)
-  const [internalMcpToken, setInternalMcpToken] = useState<{ hasToken: boolean; masked: string }>({ hasToken: false, masked: '' });
-  const [internalMcpTokenRaw, setInternalMcpTokenRaw] = useState<string | null>(null);
-  const [internalMcpCreatedAt, setInternalMcpCreatedAt] = useState<string | null>(null);
-  const [internalMcpLoading, setInternalMcpLoading] = useState(false);
-  const [internalMcpCopied, setInternalMcpCopied] = useState(false);
-  const [internalMcpConfigCopied, setInternalMcpConfigCopied] = useState(false);
 
   // 일반 설정
   const [userTimezone, setUserTimezone] = useState('Asia/Seoul');
@@ -175,7 +167,6 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const [mcpEditArgs, setMcpEditArgs] = useState('');
   const [mcpEditUrl, setMcpEditUrl] = useState('');
   const [mcpEditSaving, setMcpEditSaving] = useState(false);
-  const [mcpTestStatus, setMcpTestStatus] = useState<Record<string, { loading: boolean; result?: { success: boolean; tools?: number; error?: string } }>>({});
   const [mcpAuth, setMcpAuth] = useState<{ server: string; step: 'starting' | 'waiting' | 'done' | 'error'; authUrl?: string; error?: string } | null>(null);
 
   // Firebat MCP 서버 토큰
@@ -367,16 +358,13 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
       });
       if (!res.ok) return;
 
-      setMcpTestStatus(prev => ({ ...prev, [name]: { loading: true } }));
       const testRes = await fetch(`/api/mcp/tools?server=${encodeURIComponent(name)}`);
       const testData = await testRes.json();
 
       if (testData.success) {
-        setMcpTestStatus(prev => ({ ...prev, [name]: { loading: false, result: { success: true, tools: testData.tools?.length ?? 0 } } }));
         setMcpNewName(''); setMcpNewCommand(''); setMcpNewArgs(''); setMcpNewUrl('');
       } else {
         await fetch(`/api/mcp/servers?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
-        setMcpTestStatus(prev => ({ ...prev, [name]: { loading: false, result: { success: false, error: testData.error } } }));
         alert(`연결 실패로 등록이 취소되었습니다.\n\n${testData.error}`);
       }
       fetchMcpServers();
@@ -386,7 +374,6 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const deleteMcpServer = async (name: string) => {
     if (!confirm(`"${name}" MCP 서버를 제거하시겠습니까?`)) return;
     await fetch(`/api/mcp/servers?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
-    setMcpTestStatus(prev => { const next = { ...prev }; delete next[name]; return next; });
     setMcpEditing(null);
     fetchMcpServers();
   };
@@ -497,39 +484,6 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
     setMcpTokenRaw(null);
   };
 
-  // 내부 MCP 토큰 (LLM 통신용)
-  const fetchInternalMcpToken = useCallback(async () => {
-    try {
-      const res = await fetch('/api/mcp-internal/token');
-      const data = await res.json();
-      if (data.success) {
-        setInternalMcpToken(data.token);
-        setInternalMcpCreatedAt(data.createdAt);
-      }
-    } catch {}
-  }, []);
-
-  const generateInternalMcpToken = async () => {
-    if (internalMcpToken.hasToken && !confirm('기존 내부 MCP 토큰이 무효화됩니다. 새로 생성하시겠습니까?')) return;
-    setInternalMcpLoading(true);
-    try {
-      const res = await fetch('/api/mcp-internal/token', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        setInternalMcpTokenRaw(data.token);
-        setInternalMcpToken({ hasToken: true, masked: `${data.token.slice(0, 8)}****${data.token.slice(-4)}` });
-        setInternalMcpCreatedAt(data.createdAt);
-      }
-    } catch {} finally { setInternalMcpLoading(false); }
-  };
-
-  const revokeInternalMcpToken = async () => {
-    if (!confirm('내부 MCP 토큰을 폐기하면 OpenAI/Claude API의 연결이 즉시 차단됩니다.')) return;
-    await fetch('/api/mcp-internal/token', { method: 'DELETE' });
-    setInternalMcpToken({ hasToken: false, masked: '' });
-    setInternalMcpTokenRaw(null);
-    setInternalMcpCreatedAt(null);
-  };
 
   const copyToClipboard = async (text: string, setCopied: (v: boolean) => void) => {
     await navigator.clipboard.writeText(text);
@@ -616,9 +570,9 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   // 탭 전환 시 데이터 로드
   useEffect(() => {
     if (settingsTab === 'secrets') fetchSecrets();
-    if (settingsTab === 'mcp') { fetchMcpServers(); fetchMcpToken(); fetchInternalMcpToken(); }
+    if (settingsTab === 'mcp') { fetchMcpServers(); fetchMcpToken(); }
     if (settingsTab === 'system') fetchSysModules();
-  }, [settingsTab, fetchSecrets, fetchMcpServers, fetchMcpToken, fetchInternalMcpToken, fetchSysModules]);
+  }, [settingsTab, fetchSecrets, fetchMcpServers, fetchMcpToken, fetchSysModules]);
 
   // ── 저장 ───────────────────────────────────────────────────────────────────
   const handleSave = async () => {

@@ -5,6 +5,7 @@ export const AI_MODELS = [
   { value: 'gpt-5.4-nano', label: 'GPT-5.4 Nano (초경량/저렴)' },
   { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini (OpenAI 가성비)' },
   { value: 'gpt-5.4',      label: 'GPT-5.4 (OpenAI 고품질)' },
+  { value: 'gpt-5.5',      label: 'GPT-5.5 (OpenAI 최상위/프로)' },
   // Google AI Studio (OpenAI-compat)
   { value: 'gemini-3-flash-preview',          label: 'Gemini 3 Flash (AI Studio)' },
   { value: 'gemini-3.1-flash-lite-preview',   label: 'Gemini 3.1 Flash Lite (AI Studio)' },
