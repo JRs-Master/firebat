@@ -15,6 +15,8 @@ import type { ConversationSummary, ConversationRecord } from './managers/convers
 import { ImageManager } from './managers/image-manager';
 import type { GenerateImageInput, GenerateImageResult } from './managers/image-manager';
 import { EventManager } from './managers/event-manager';
+import { StatusManager } from './managers/status-manager';
+import type { JobStatus, JobType, JobStatusKind, JobChangeEvent } from './managers/status-manager';
 import type { FirebatInfraContainer, ILlmPort, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, ModuleOutput } from './ports';
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
@@ -67,6 +69,7 @@ export class FirebatCore {
   private readonly conversation: ConversationManager;
   private readonly image: ImageManager;
   private readonly event: EventManager;
+  private readonly statusMgr: StatusManager;
 
   constructor(private readonly infra: FirebatInfraContainer) {
     // 매니저 생성 — 각 매니저는 자기 도메인의 인프라 포트를 직접 받음
@@ -81,6 +84,7 @@ export class FirebatCore {
     this.conversation = new ConversationManager(infra.database, infra.embedder);
     this.image = new ImageManager(infra.imageGen, infra.media, infra.imageProcessor, infra.vault, infra.log);
     this.event = new EventManager(infra.log);
+    this.statusMgr = new StatusManager(infra.log, this.event);
 
     // 크로스 도메인 매니저 — Core 참조 필요
     this.task = new TaskManager(this, infra.llm, infra.log);
@@ -510,6 +514,47 @@ export class FirebatCore {
     handler: (event: import('../lib/events').FirebatEvent) => void,
   ) {
     return this.event.subscribe(filter, handler);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  작업 상태 → StatusManager
+  //  Long-running 작업 (이미지 생성 · pipeline · cron · sandbox 등) 의 진행 상태를
+  //  단일 source 에서 관리. UI 진행도 표시 + AI 비동기 도구 패턴 + Sentry/메트릭 자동 forward 의 backbone.
+  //  Step 1 — backbone facade. Step 2~ ImageManager·TaskManager·ScheduleManager 마이그레이션.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** 작업 시작 등록. id 미지정 시 자동 발급. 반환값의 id 로 후속 update/done/error 호출. */
+  startJob(opts: { id?: string; type: JobType; message?: string; parentJobId?: string; meta?: Record<string, unknown> }): JobStatus {
+    return this.statusMgr.start(opts);
+  }
+  /** 진행도·메시지·메타 갱신 (terminal 상태에 호출 시 무시). */
+  updateJobStatus(id: string, patch: { progress?: number; message?: string; meta?: Record<string, unknown> }): JobStatus | null {
+    return this.statusMgr.update(id, patch);
+  }
+  /** 정상 완료 — result 는 도메인별 (이미지 slug · pipeline 결과 등) */
+  completeJob(id: string, result?: unknown): JobStatus | null {
+    return this.statusMgr.done(id, result);
+  }
+  /** 실패 종료 — error 메시지는 사용자 노출 가능 형태 권장 */
+  failJob(id: string, msg: string): JobStatus | null {
+    return this.statusMgr.error(id, msg);
+  }
+  /** 단일 조회 */
+  getJobStatus(id: string): JobStatus | null {
+    return this.statusMgr.get(id);
+  }
+  /** 활성·과거 작업 조회. filter: type/status/since/parentJobId/limit */
+  listJobs(filter?: { type?: JobType; status?: JobStatusKind | JobStatusKind[]; since?: number; parentJobId?: string; limit?: number }): JobStatus[] {
+    return this.statusMgr.list(filter);
+  }
+  /** 변화 감지 subscribe — Sentry forward·Cost tracker·UI 인디케이터 등이 등록.
+   *  unsubscribe handle 반환. */
+  subscribeJobUpdates(handler: (event: JobChangeEvent) => void): () => void {
+    return this.statusMgr.subscribe(handler);
+  }
+  /** 디버깅·관리자 UI — 현재 메모리 상태 요약 */
+  getJobStats() {
+    return this.statusMgr.getStats();
   }
 
   // Plan 실행 / 3-stage state (multi-turn 지속) — 대화 수준 JSON 유지
