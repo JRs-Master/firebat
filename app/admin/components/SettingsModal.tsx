@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Download, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Download, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign } from 'lucide-react';
 import { GEMINI_MODELS, THINKING_LEVELS, McpServer, getThinkingKind, filterThinkingLevels } from '../types';
 import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
 import { useSetting, writeSetting } from '../hooks/settings-manager';
@@ -15,11 +15,11 @@ type Props = {
   onClose: () => void;
   onSave: () => void;
   onOpenModuleSettings?: (moduleName: string) => void;
-  initialTab?: 'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system';
+  initialTab?: 'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'cost';
 };
 
 export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
-  const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system'>(initialTab ?? 'general');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'cost'>(initialTab ?? 'general');
   // AI 탭: 실행모드(api/cli) + 모드(일반/Vertex) + 프로바이더(openai/google/anthropic)
   // api 모드: 키 기반, pay-per-token (기존)
   // cli 모드: 구독 기반, 자체 인증 (월정액 Claude Pro/Max, ChatGPT Plus, Gemini Advanced 등)
@@ -698,6 +698,13 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
             className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'system' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
             <Cpu size={14} /> 시스템
+          </button>
+          <button
+            onClick={() => switchTab('cost')}
+            data-active={settingsTab === 'cost'}
+            className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'cost' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          >
+            <DollarSign size={14} /> 비용
           </button>
           </div>
         </div>
@@ -1944,6 +1951,8 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
               )}
             </div>
           )}
+
+          {settingsTab === 'cost' && <CostTabContent />}
         </div>
 
         <div className="px-3 sm:px-6 py-2.5 sm:py-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2 sm:gap-3 shrink-0">
@@ -2151,5 +2160,173 @@ function CapabilityTabContent() {
         </div>
       )}
     </>
+  );
+}
+
+// ── 비용 통계 탭 (LLM 호출 누적 추적) ─────────────────────────────────────────
+interface CostRecord {
+  date: string;
+  model: string;
+  calls: number;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  lastCallAt: number;
+}
+interface CostStats {
+  totalCalls: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCostUsd: number;
+  records: CostRecord[];
+}
+
+function CostTabContent() {
+  const [stats, setStats] = useState<CostStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [days, setDays] = useState(30);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    const today = new Date();
+    const fromDate = new Date(today.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
+    const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const params = new URLSearchParams({ fromDate: fmt(fromDate), toDate: fmt(today) });
+    fetch(`/api/llm/cost-stats?${params.toString()}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) setStats(data.data);
+        else setError(data.error || '조회 실패');
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, [days]);
+
+  // 일별 합계 (모델 무관) — 모델별 records 를 date 키로 그루핑
+  const dailyTotals = useMemo(() => {
+    if (!stats) return [];
+    const map = new Map<string, { date: string; calls: number; inputTokens: number; outputTokens: number; costUsd: number }>();
+    for (const r of stats.records) {
+      const exist = map.get(r.date) ?? { date: r.date, calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+      exist.calls += r.calls;
+      exist.inputTokens += r.inputTokens;
+      exist.outputTokens += r.outputTokens;
+      exist.costUsd += r.costUsd;
+      map.set(r.date, exist);
+    }
+    return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date));
+  }, [stats]);
+
+  // 모델별 합계
+  const modelTotals = useMemo(() => {
+    if (!stats) return [];
+    const map = new Map<string, { model: string; calls: number; inputTokens: number; outputTokens: number; costUsd: number }>();
+    for (const r of stats.records) {
+      const exist = map.get(r.model) ?? { model: r.model, calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+      exist.calls += r.calls;
+      exist.inputTokens += r.inputTokens;
+      exist.outputTokens += r.outputTokens;
+      exist.costUsd += r.costUsd;
+      map.set(r.model, exist);
+    }
+    return Array.from(map.values()).sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls);
+  }, [stats]);
+
+  const fmtNum = (n: number) => n.toLocaleString('ko-KR');
+  const fmtUsd = (n: number) => `$${n.toFixed(4)}`;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <p className="text-[13px] text-slate-600">최근 <strong className="text-slate-800">{days}일</strong> LLM 호출 누적. CLI 구독 모델은 cost=0 (token만 추적).</p>
+        <div className="flex gap-1">
+          {[7, 30, 90].map(d => (
+            <button key={d} onClick={() => setDays(d)} className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-colors ${days === d ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
+              {d}일
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading && <div className="text-center py-8 text-slate-400 text-[13px]"><Loader2 size={16} className="inline animate-spin mr-2" />로딩 중...</div>}
+      {error && <div className="text-[13px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>}
+
+      {stats && !loading && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">호출 수</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalCalls)}</p></div>
+            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">입력 토큰</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalInputTokens)}</p></div>
+            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">출력 토큰</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalOutputTokens)}</p></div>
+            <div className="border border-blue-200 bg-blue-50 rounded-lg p-3"><p className="text-[10px] font-bold text-blue-500 uppercase">비용 USD</p><p className="text-[18px] font-bold text-blue-700 tabular-nums">{fmtUsd(stats.totalCostUsd)}</p></div>
+          </div>
+
+          {modelTotals.length > 0 && (
+            <div>
+              <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase mb-2">모델별</p>
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-[12px]">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-bold text-slate-600">모델</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">호출</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">입력</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">출력</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">비용</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {modelTotals.map(r => (
+                      <tr key={r.model} className="border-t border-slate-100">
+                        <td className="px-3 py-2 text-slate-700 font-mono text-[11px]">{r.model}</td>
+                        <td className="px-3 py-2 text-right text-slate-700 tabular-nums">{fmtNum(r.calls)}</td>
+                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums">{fmtNum(r.inputTokens)}</td>
+                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums">{fmtNum(r.outputTokens)}</td>
+                        <td className="px-3 py-2 text-right text-blue-700 font-bold tabular-nums">{fmtUsd(r.costUsd)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {dailyTotals.length > 0 && (
+            <div>
+              <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase mb-2">일별</p>
+              <div className="border border-slate-200 rounded-lg overflow-hidden max-h-[300px] overflow-y-auto">
+                <table className="w-full text-[12px]">
+                  <thead className="bg-slate-50 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-bold text-slate-600">일자</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">호출</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">입력</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">출력</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">비용</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dailyTotals.map(r => (
+                      <tr key={r.date} className="border-t border-slate-100">
+                        <td className="px-3 py-2 text-slate-700 tabular-nums">{r.date}</td>
+                        <td className="px-3 py-2 text-right text-slate-700 tabular-nums">{fmtNum(r.calls)}</td>
+                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums">{fmtNum(r.inputTokens)}</td>
+                        <td className="px-3 py-2 text-right text-slate-500 tabular-nums">{fmtNum(r.outputTokens)}</td>
+                        <td className="px-3 py-2 text-right text-blue-700 font-bold tabular-nums">{fmtUsd(r.costUsd)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {stats.totalCalls === 0 && (
+            <div className="text-center py-8 text-slate-400 text-[13px]">최근 {days}일 LLM 호출 기록 없음</div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
