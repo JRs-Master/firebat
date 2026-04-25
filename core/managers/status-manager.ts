@@ -20,7 +20,7 @@
  *   - 매니저 직접 호출 X — Core facade 의 startJob/updateJobStatus/completeJob/errorJob 경유.
  *
  * Step 1 (현재): backbone 만 — start/update/done/error/get/list/subscribe + SSE emit + GC.
- * Step 2~4 (후속): ImageManager/TaskManager/ScheduleManager 마이그레이션.
+ * Step 2~4 (후속): MediaManager/TaskManager/ScheduleManager 마이그레이션.
  */
 import type { ILogPort } from '../ports';
 import type { EventManager } from './event-manager';

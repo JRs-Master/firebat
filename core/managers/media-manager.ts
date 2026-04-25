@@ -1,18 +1,19 @@
 /**
- * ImageManager — AI 이미지 생성 오케스트레이션 + 후처리 파이프라인.
+ * MediaManager — 미디어 도메인 단일 매니저.
  *
- * 흐름:
- *  1. Vault 에서 선택된 모델 ID 조회 (기본 provider)
- *  2. IImageGenPort → binary 생성
- *  3. IMediaPort.save 로 원본 저장
- *  4. SEO 이미지 설정 읽어서 SharpImageProcessorAdapter 로 variants·thumbnail·blurhash 생성
- *  5. IMediaPort.saveVariant 로 각 variant 저장
- *  6. IMediaPort.updateMeta 로 variants[] + thumbnailUrl + blurhash + width/height 반영
- *  7. 결과 {url, thumbnailUrl, variants, blurhash, ...} 반환 → render_image 에 바로 전달
+ * 책임:
+ *   1) 이미지 생성 오케스트레이션 + 후처리 파이프라인 (이전 ImageManager.generate)
+ *   2) 미디어 CRUD (read/list/remove/stat) — IMediaPort thin wrapper
+ *   3) 갤러리 재생성 (regenerateImageBySlug) — 기존 메타에서 prompt/model/aspectRatio 그대로
+ *   4) 외부 노출 안전성 (isMediaReady) — og:image 등 SNS 캐싱 보호용
+ *   5) 이미지 모델·기본 size/quality 설정 (Vault)
+ *   6) SEO 이미지 후처리 설정 (variants, blurhash, thumbnail 등)
  *
- * SEO 이미지 설정 (system:module:seo:settings 의 image 섹션):
- *   webp, avif, thumbnail, variants[], blurhash, stripExif, progressive, defaultQuality, keepOriginal
- *   미설정 시 합리적 기본값으로 동작.
+ * 향후 확장: 동영상 (generateVideo), 오디오 등도 같은 매니저에서 — generateImage 와 일관 인터페이스.
+ *
+ * BIBLE 준수:
+ *   - SSE 발행 X (Core facade 의 책임 — generateImage/regenerateImage/removeMedia 결과로 emit)
+ *   - 매니저 간 직접 호출 X — Core 가 statusMgr 와 연결
  */
 import type {
   IImageGenPort,
@@ -23,9 +24,11 @@ import type {
   ImageGenOpts,
   ImageModelInfo,
   MediaVariant,
+  MediaFileRecord,
 } from '../ports';
 import type { InfraResult } from '../types';
 import { vkModuleSettings } from '../vault-keys';
+import { parseMediaUrl } from '../../lib/media-url';
 
 const VK_IMAGE_MODEL = 'system:image-model';
 const VK_IMAGE_SIZE = 'system:image-size';
@@ -40,7 +43,7 @@ export interface SeoImageSettings {
   thumbnail: boolean;
   /** 반응형 variants 의 width 목록 — 각 width 마다 webp/avif 쌍 생성 */
   variants: number[];
-  /** blurhash LQIP (Low-Quality Image Placeholder) 생성 — 로딩 중 부드러운 블러 표시 */
+  /** blurhash LQIP — 로딩 중 부드러운 블러 표시 */
   blurhash: boolean;
   /** EXIF 등 메타데이터 제거 — 프라이버시 + 용량 */
   stripExif: boolean;
@@ -113,7 +116,7 @@ export interface GenerateImageResult {
   aspectRatio?: string;
 }
 
-export class ImageManager {
+export class MediaManager {
   constructor(
     private imageGen: IImageGenPort,
     private media: IMediaPort,
@@ -122,37 +125,41 @@ export class ImageManager {
     private logger: ILogPort,
   ) {}
 
-  getModel(): string {
+  // ══════════════════════════════════════════════════════════════════════════
+  //  이미지 모델·기본값 (Vault 영속)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  getImageModel(): string {
     const stored = this.vault.getSecret(VK_IMAGE_MODEL);
     if (stored) return stored;
     return this.imageGen.getModelId();
   }
 
-  setModel(modelId: string): InfraResult<void> {
+  setImageModel(modelId: string): InfraResult<void> {
     const ok = this.vault.setSecret(VK_IMAGE_MODEL, modelId);
     return ok ? { success: true, data: undefined } : { success: false, error: 'Vault 저장 실패' };
   }
 
-  getDefaultSize(): string | null {
+  getImageDefaultSize(): string | null {
     return this.vault.getSecret(VK_IMAGE_SIZE);
   }
-  setDefaultSize(size: string | null): InfraResult<void> {
+  setImageDefaultSize(size: string | null): InfraResult<void> {
     const ok = size === null
       ? this.vault.deleteSecret(VK_IMAGE_SIZE)
       : this.vault.setSecret(VK_IMAGE_SIZE, size);
     return ok ? { success: true, data: undefined } : { success: false, error: 'Vault 저장 실패' };
   }
-  getDefaultQuality(): string | null {
+  getImageDefaultQuality(): string | null {
     return this.vault.getSecret(VK_IMAGE_QUALITY);
   }
-  setDefaultQuality(quality: string | null): InfraResult<void> {
+  setImageDefaultQuality(quality: string | null): InfraResult<void> {
     const ok = quality === null
       ? this.vault.deleteSecret(VK_IMAGE_QUALITY)
       : this.vault.setSecret(VK_IMAGE_QUALITY, quality);
     return ok ? { success: true, data: undefined } : { success: false, error: 'Vault 저장 실패' };
   }
 
-  listModels(): ImageModelInfo[] {
+  listImageModels(): ImageModelInfo[] {
     return this.imageGen.listModels();
   }
 
@@ -193,31 +200,101 @@ export class ImageManager {
     }
   }
 
-  async generate(
+  // ══════════════════════════════════════════════════════════════════════════
+  //  미디어 CRUD (IMediaPort thin wrapper — 도메인 로직 추가 시 여기 확장)
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** /user/media/<slug>.<ext> 파일 서빙용 — slug 로 binary + contentType 반환 */
+  read(slug: string) { return this.media.read(slug); }
+
+  /** 갤러리용 미디어 목록 — scope/검색/페이징 */
+  list(opts?: { scope?: 'user' | 'system' | 'all'; limit?: number; offset?: number; search?: string }) {
+    return this.media.list(opts);
+  }
+
+  /** 메타 단독 조회 (binary 없이) */
+  stat(slug: string) { return this.media.stat(slug); }
+
+  /** 갤러리에서 수동 삭제 (도메인 단순 — Core 가 SSE emit) */
+  async remove(slug: string) { return this.media.remove(slug); }
+
+  /** og:image 등 외부 노출 안전성 판단.
+   *  미디어 URL 이 아니면 항상 true (외부 URL 은 우리 책임 X).
+   *  미디어 URL 이면 status='done' 이고 원본 binary 존재 (bytes>0) 일 때만 ready.
+   *  rendering / error / 미생성 placeholder 는 false → caller 가 자동 OG 폴백.
+   *  legacy (status 미설정) 는 'done' 으로 간주. */
+  async isMediaReady(url: string | undefined | null): Promise<boolean> {
+    if (!url) return false;
+    const parsed = parseMediaUrl(url);
+    if (!parsed) return true;  // 외부 URL — 통과
+    const stat = await this.media.stat(parsed.slug).catch(() => null);
+    if (!stat?.success || !stat.data) return false;
+    const record = stat.data;
+    const status = record.status ?? 'done';
+    if (status !== 'done') return false;
+    if (!record.bytes || record.bytes <= 0) return false;
+    return true;
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  //  이미지 생성·재생성
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** 갤러리에서 재생성 — 기존 메타의 prompt/model/size/quality/aspectRatio 등 그대로 재실행.
+   *  성공 시 새 slug 가 발급되고 기존 slug 정리는 호출자(Core) 가 수행 (SSE emit 과 같이).
+   *  prompt 가 없는 레거시 레코드는 재생성 불가 → error 반환. */
+  async regenerateImageBySlug(
+    slug: string,
+    opts?: { onProgress?: (progress: number, message: string) => void },
+  ): Promise<InfraResult<GenerateImageResult & { regenFrom: string }>> {
+    const stat = await this.media.stat(slug);
+    if (!stat.success) return { success: false, error: stat.error || '메타 조회 실패' };
+    const record = stat.data;
+    if (!record) return { success: false, error: '미디어를 찾을 수 없습니다.' };
+    if (!record.prompt) return { success: false, error: '프롬프트 정보가 없어 재생성할 수 없습니다.' };
+
+    const input: GenerateImageInput = {
+      prompt: record.prompt,
+      ...(record.model ? { model: record.model } : {}),
+      ...(record.size ? { size: record.size } : {}),
+      ...(record.quality ? { quality: record.quality } : {}),
+      ...(record.filenameHint ? { filenameHint: record.filenameHint } : {}),
+      ...(record.scope ? { scope: record.scope } : {}),
+      ...(record.aspectRatio ? { aspectRatio: record.aspectRatio } : {}),
+      ...(record.focusPoint ? { focusPoint: record.focusPoint } : {}),
+    };
+    const res = await this.generateImage(input, opts);
+    if (!res.success || !res.data) return res as InfraResult<GenerateImageResult & { regenFrom: string }>;
+    return { success: true, data: { ...res.data, regenFrom: slug } };
+  }
+
+  /** AI image_gen 도구 → Core.generateImage → 이 메서드 → 생성 + 후처리 + 저장.
+   *  StatusManager·SSE emit 은 Core 가 wrap. 본 메서드는 도메인 로직만. */
+  async generateImage(
     input: GenerateImageInput,
     opts?: { corrId?: string; onProgress?: (progress: number, message: string) => void },
   ): Promise<InfraResult<GenerateImageResult>> {
     const startedAt = Date.now();
     const corrId = opts?.corrId;
     const onProgress = opts?.onProgress;
-    const modelId = input.model ?? this.getModel();
+    const modelId = input.model ?? this.getImageModel();
     const scope = input.scope ?? 'user';
     const settings = this.getImageSettings();
-    const log = (msg: string) => this.logger.info(`[ImageManager]${corrId ? ` [${corrId}]` : ''} [${modelId}] ${msg}`);
+    const log = (msg: string) => this.logger.info(`[MediaManager]${corrId ? ` [${corrId}]` : ''} [${modelId}] ${msg}`);
 
     // 사용자 명령이 우선, 없으면 설정된 기본값 폴백 — 둘 다 없으면 핸들러 기본값 사용
-    const size = input.size ?? this.getDefaultSize() ?? undefined;
-    const quality = input.quality ?? this.getDefaultQuality() ?? undefined;
-    log(`generate 시작: prompt=${input.prompt.slice(0, 100)}${input.prompt.length > 100 ? '…' : ''} size=${size ?? 'handler-default'} quality=${quality ?? 'handler-default'}`);
+    const size = input.size ?? this.getImageDefaultSize() ?? undefined;
+    const quality = input.quality ?? this.getImageDefaultQuality() ?? undefined;
+    log(`generateImage 시작: prompt=${input.prompt.slice(0, 100)}${input.prompt.length > 100 ? '…' : ''} size=${size ?? 'handler-default'} quality=${quality ?? 'handler-default'}`);
 
-    // 진행도 보고 — Core 가 StatusManager 와 연결. ImageManager 는 콜백 호출만.
+    // 진행도 보고 — Core 가 StatusManager 와 연결. MediaManager 는 콜백 호출만.
     onProgress?.(0.05, '이미지 생성 시작...');
 
     // 1) 이미지 생성
     const genRes = await this.imageGen.generate({ ...input, size, quality, model: modelId }, { corrId, model: modelId });
     if (!genRes.success || !genRes.data) {
       const errorMsg = genRes.error || '이미지 생성 실패';
-      this.logger.error(`[ImageManager]${corrId ? ` [${corrId}]` : ''} [${modelId}] 생성 실패: ${errorMsg}`);
+      this.logger.error(`[MediaManager]${corrId ? ` [${corrId}]` : ''} [${modelId}] 생성 실패: ${errorMsg}`);
       // 실패도 갤러리에 기록 — 사용자가 prompt 보고 재시도하거나 삭제 가능.
       // 메타만 status='error' 로 저장 (binary 없음).
       await this.media.saveErrorRecord({
@@ -293,7 +370,7 @@ export class ImageManager {
       ...(appliedAspectRatio ? { aspectRatio: appliedAspectRatio, focusPoint } : {}),
     });
     if (!saveRes.success || !saveRes.data) {
-      this.logger.error(`[ImageManager]${corrId ? ` [${corrId}]` : ''} 저장 실패: ${saveRes.error}`);
+      this.logger.error(`[MediaManager]${corrId ? ` [${corrId}]` : ''} 저장 실패: ${saveRes.error}`);
       return { success: false, error: saveRes.error || '이미지 저장 실패' };
     }
     const saved = saveRes.data;

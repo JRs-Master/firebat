@@ -15,7 +15,7 @@
  *
  * 메타데이터: <slug>.json 별도 저장 (variants·prompt·blurhash 등 포함).
  *
- * 후처리: ImageManager 가 호출 전에 이미 variants·thumbnail·blurhash 생성해 넘김.
+ * 후처리: MediaManager 가 호출 전에 이미 variants·thumbnail·blurhash 생성해 넘김.
  * 이 어댑터는 단순 파일 쓰기/읽기 만 담당 (관심사 분리).
  */
 import fs from 'fs';
@@ -126,7 +126,7 @@ export class LocalMediaAdapter implements IMediaPort {
       await fs.promises.writeFile(filePath, buf);
 
       const url = `/${scope}/media/${slug}.${ext}`;
-      // variants/thumbnail/blurhash 는 ImageManager 에서 sharp 로 별도 생성 후 saveVariant() 로 여기에 기록.
+      // variants/thumbnail/blurhash 는 MediaManager 에서 sharp 로 별도 생성 후 saveVariant() 로 여기에 기록.
       // 이 save() 는 원본만 쓰고, 메타는 initial 상태로 저장.
       const record: MediaFileRecord = {
         slug,

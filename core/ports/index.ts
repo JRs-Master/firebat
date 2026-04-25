@@ -874,7 +874,7 @@ export interface IMediaPort {
 
 // ══════════════════════════════════════════════════════════════════════════
 // Image Processor (후처리 — resize/convert/thumbnail/blurhash). sharp 기반.
-// 원본 이미지를 받아 다양한 포맷·크기 variants 생성. ImageManager 가 파이프라인 조립.
+// 원본 이미지를 받아 다양한 포맷·크기 variants 생성. MediaManager 가 파이프라인 조립.
 // ══════════════════════════════════════════════════════════════════════════
 
 export interface ImageMetadata {
@@ -969,6 +969,6 @@ export interface IImageGenPort {
   getModelId(): string;
   /** 설정 UI 용 모델 목록 — registry 에서 로드된 모든 config */
   listModels(): ImageModelInfo[];
-  /** 이미지 생성 — Core 의 ImageManager 가 이 결과를 IMediaPort 로 저장 */
+  /** 이미지 생성 — Core 의 MediaManager 가 이 결과를 IMediaPort 로 저장 */
   generate(opts: ImageGenOpts, callOpts?: ImageGenCallOpts): Promise<InfraResult<ImageGenResult>>;
 }

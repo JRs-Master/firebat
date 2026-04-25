@@ -12,8 +12,8 @@ import { AuthManager } from './managers/auth-manager';
 import type { ApiTokenInfo } from './managers/auth-manager';
 import { ConversationManager } from './managers/conversation-manager';
 import type { ConversationSummary, ConversationRecord } from './managers/conversation-manager';
-import { ImageManager } from './managers/image-manager';
-import type { GenerateImageInput, GenerateImageResult } from './managers/image-manager';
+import { MediaManager } from './managers/media-manager';
+import type { GenerateImageInput, GenerateImageResult } from './managers/media-manager';
 import { EventManager } from './managers/event-manager';
 import { StatusManager } from './managers/status-manager';
 import type { JobStatus, JobType, JobStatusKind, JobChangeEvent } from './managers/status-manager';
@@ -77,7 +77,7 @@ export class FirebatCore {
   private readonly task: TaskManager;
   private readonly authMgr: AuthManager;
   private readonly conversation: ConversationManager;
-  private readonly image: ImageManager;
+  private readonly media: MediaManager;
   private readonly event: EventManager;
   private readonly statusMgr: StatusManager;
   private readonly cost: CostManager;
@@ -94,7 +94,7 @@ export class FirebatCore {
     this.capability = new CapabilityManager(infra.storage, infra.vault, infra.log);
     this.authMgr = new AuthManager(infra.auth, infra.vault);
     this.conversation = new ConversationManager(infra.database, infra.embedder);
-    this.image = new ImageManager(infra.imageGen, infra.media, infra.imageProcessor, infra.vault, infra.log);
+    this.media = new MediaManager(infra.imageGen, infra.media, infra.imageProcessor, infra.vault, infra.log);
     this.event = new EventManager(infra.log);
     this.statusMgr = new StatusManager(infra.log, this.event);
     // CostManager — LLM 호출 token·비용 누적. 가격 정보는 ILlmPort.getModelPricing 에서 lookup (미구현 어댑터는 null).
@@ -545,23 +545,23 @@ export class FirebatCore {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  //  이미지 생성 → ImageManager / 미디어 조회 → IMediaPort
+  //  미디어 → MediaManager (생성·재생성·CRUD·갤러리·OG 안전성)
+  //  Core facade 의 책임: StatusManager wrap + SSE emit. 도메인 로직은 모두 MediaManager.
   // ══════════════════════════════════════════════════════════════════════════
 
-  /** AI 가 image_gen 도구 호출 → 이 메서드 → 생성 + 서버 저장 + URL 반환.
-   *  성공·실패 모두 갤러리에 기록되므로 양쪽 다 SSE `gallery:refresh` emit.
-   *  StatusManager 와 통합 — 진행도 SSE 'status:update' 자동 발행 (UI 인디케이터). */
+  /** AI image_gen 도구 → 이미지 생성. 성공·실패 모두 갤러리 자동 갱신 (SSE).
+   *  StatusManager 와 통합 — 진행도 'status:update' 자동 발행. */
   async generateImage(input: GenerateImageInput, corrId?: string) {
     const job = this.statusMgr.start({
       type: 'image',
       message: '이미지 생성 시작...',
       meta: {
         promptPreview: input.prompt.slice(0, 80),
-        model: input.model ?? this.image.getModel(),
+        model: input.model ?? this.media.getImageModel(),
         scope: input.scope ?? 'user',
       },
     });
-    const res = await this.image.generate(input, {
+    const res = await this.media.generateImage(input, {
       corrId,
       onProgress: (progress, message) => {
         this.statusMgr.update(job.id, { progress, message });
@@ -578,66 +578,18 @@ export class FirebatCore {
     });
     return res;
   }
-  /** 선택된 이미지 모델 ID (Vault 기반) */
-  getImageModel() {
-    return this.image.getModel();
-  }
-  /** 이미지 모델 변경 (설정 UI 에서 호출) */
-  setImageModel(modelId: string) {
-    return this.image.setModel(modelId);
-  }
-  /** 설정 UI 카스케이드용 — registry 에 등록된 모든 이미지 모델 목록 */
-  getAvailableImageModels() {
-    return this.image.listModels();
-  }
-  /** 기본 이미지 사이즈 — AI 미지정 시 폴백 (사용자 명령 우선) */
-  getImageDefaultSize() { return this.image.getDefaultSize(); }
-  setImageDefaultSize(size: string | null) { return this.image.setDefaultSize(size); }
-  /** 기본 이미지 품질 — AI 미지정 시 폴백 */
-  getImageDefaultQuality() { return this.image.getDefaultQuality(); }
-  setImageDefaultQuality(quality: string | null) { return this.image.setDefaultQuality(quality); }
-  /** /user/media/<slug>.<ext> 에서 파일 서빙용 — slug 로 binary + contentType 반환 */
-  readMedia(slug: string) {
-    return this.infra.media.read(slug);
-  }
-  /** 갤러리용 미디어 목록 — scope/검색/페이징 */
-  listMedia(opts?: { scope?: 'user' | 'system' | 'all'; limit?: number; offset?: number; search?: string }) {
-    return this.infra.media.list(opts);
-  }
-  /** 갤러리에서 수동 삭제. 성공 시 SSE `gallery:refresh` emit. */
-  async removeMedia(slug: string) {
-    const res = await this.infra.media.remove(slug);
-    if (res.success) eventBus.emit({ type: 'gallery:refresh', data: { slug, removed: true } });
-    return res;
-  }
 
-  /** 갤러리에서 재생성 — 기존 메타의 prompt/model/size/quality/aspectRatio 등 그대로 재실행.
-   *  성공 시 새 slug 발급 + 기존 slug 제거 (특히 status='error' 정리).
-   *  prompt 가 없는 레거시 레코드는 재생성 불가 (caller 가 사전 안내 권장). */
+  /** 갤러리에서 재생성 — 기존 메타의 prompt/model/aspectRatio 등 그대로 재실행.
+   *  성공 시 새 slug 발급 + 기존 slug 정리 (status='error' 청소).
+   *  prompt 가 없는 레거시 레코드는 재생성 불가. */
   async regenerateImage(slug: string) {
-    const stat = await this.infra.media.stat(slug);
-    if (!stat.success) return { success: false as const, error: stat.error || '메타 조회 실패' };
-    const record = stat.data;
-    if (!record) return { success: false as const, error: '미디어를 찾을 수 없습니다.' };
-    if (!record.prompt) return { success: false as const, error: '프롬프트 정보가 없어 재생성할 수 없습니다.' };
-
-    const input: GenerateImageInput = {
-      prompt: record.prompt,
-      ...(record.model ? { model: record.model } : {}),
-      ...(record.size ? { size: record.size } : {}),
-      ...(record.quality ? { quality: record.quality } : {}),
-      ...(record.filenameHint ? { filenameHint: record.filenameHint } : {}),
-      ...(record.scope ? { scope: record.scope } : {}),
-      ...(record.aspectRatio ? { aspectRatio: record.aspectRatio } : {}),
-      ...(record.focusPoint ? { focusPoint: record.focusPoint } : {}),
-    };
-    // 재생성도 동일하게 status job 생성 → UI 진행도 가시화
+    // 진행 가시화 — 도메인 로직은 MediaManager 가 처리, Core 는 StatusManager wrap 만.
     const job = this.statusMgr.start({
       type: 'image',
       message: '재생성 시작...',
-      meta: { promptPreview: record.prompt.slice(0, 80), model: input.model ?? this.image.getModel(), regenFrom: slug },
+      meta: { regenFrom: slug },
     });
-    const res = await this.image.generate(input, {
+    const res = await this.media.regenerateImageBySlug(slug, {
       onProgress: (progress, message) => {
         this.statusMgr.update(job.id, { progress, message });
       },
@@ -647,41 +599,46 @@ export class FirebatCore {
     } else {
       this.statusMgr.error(job.id, res.error || '재생성 실패');
     }
-    // 새 slug 가 발급된 경우 기존 슬러그 정리. 새 생성도 실패한 경우 기존 에러 레코드는 유지 (히스토리).
+    // 새 slug 발급된 경우 기존 슬러그 정리 (실패 시 기존 에러 레코드 유지 — 히스토리 보존).
     if (res.success && res.data?.slug && res.data.slug !== slug) {
-      await this.infra.media.remove(slug).catch(() => undefined);
+      await this.media.remove(slug).catch(() => undefined);
     }
     eventBus.emit({
       type: 'gallery:refresh',
       data: res.success
-        ? { slug: res.data?.slug, replacedSlug: slug, scope: record.scope ?? 'user' }
-        : { error: res.error, scope: record.scope ?? 'user' },
+        ? { slug: res.data?.slug, replacedSlug: slug }
+        : { error: res.error },
     });
     return res;
   }
-  /** SEO 이미지 설정 */
-  getImageSettings() {
-    return this.image.getImageSettings();
+
+  /** 이미지 모델·기본값 — 설정 UI 에서 사용 */
+  getImageModel() { return this.media.getImageModel(); }
+  setImageModel(modelId: string) { return this.media.setImageModel(modelId); }
+  getAvailableImageModels() { return this.media.listImageModels(); }
+  getImageDefaultSize() { return this.media.getImageDefaultSize(); }
+  setImageDefaultSize(size: string | null) { return this.media.setImageDefaultSize(size); }
+  getImageDefaultQuality() { return this.media.getImageDefaultQuality(); }
+  setImageDefaultQuality(quality: string | null) { return this.media.setImageDefaultQuality(quality); }
+  getImageSettings() { return this.media.getImageSettings(); }
+
+  /** /user/media/<slug>.<ext> 파일 서빙 — slug 로 binary + contentType */
+  readMedia(slug: string) { return this.media.read(slug); }
+  /** 갤러리용 미디어 목록 — scope/검색/페이징 */
+  listMedia(opts?: { scope?: 'user' | 'system' | 'all'; limit?: number; offset?: number; search?: string }) {
+    return this.media.list(opts);
+  }
+  /** 갤러리에서 수동 삭제. 성공 시 SSE `gallery:refresh` emit. */
+  async removeMedia(slug: string) {
+    const res = await this.media.remove(slug);
+    if (res.success) eventBus.emit({ type: 'gallery:refresh', data: { slug, removed: true } });
+    return res;
   }
 
-  /** og:image 등 외부 노출 (SNS 캐싱·검색엔진 인덱스) 안전성 판단.
-   *  미디어 URL 이 아니면 항상 true (외부 URL 은 우리 책임 X — 그대로 통과).
-   *  미디어 URL 이면 status='done' 이고 원본 binary 존재 (bytes>0) 일 때만 ready.
-   *  rendering / error / 미생성 placeholder 는 false → caller 가 자동 OG 폴백.
-   *  실패 시(메타 조회 오류) conservative true 반환 — 외부 노출 차단보다 표시 우선. */
+  /** og:image 등 외부 노출 안전성 판단 — SNS 캐싱·검색엔진 인덱스 보호.
+   *  미디어 URL 아니면 true (외부 URL 통과). 미디어면 status='done' + bytes>0 만 true. */
   async isMediaReady(url: string | undefined | null): Promise<boolean> {
-    if (!url) return false;
-    // 미디어 URL 이 아니면 외부 리소스 → 우리가 판단할 권한 없음 (그대로 통과)
-    const parsed = (await import('../lib/media-url')).parseMediaUrl(url);
-    if (!parsed) return true;
-    const stat = await this.infra.media.stat(parsed.slug).catch(() => null);
-    if (!stat?.success || !stat.data) return false;
-    const record = stat.data;
-    // status 미설정 (legacy) = 'done' 으로 간주 (이전 데이터 호환)
-    const status = record.status ?? 'done';
-    if (status !== 'done') return false;
-    if (!record.bytes || record.bytes <= 0) return false;
-    return true;
+    return this.media.isMediaReady(url);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -710,7 +667,7 @@ export class FirebatCore {
   //  작업 상태 → StatusManager
   //  Long-running 작업 (이미지 생성 · pipeline · cron · sandbox 등) 의 진행 상태를
   //  단일 source 에서 관리. UI 진행도 표시 + AI 비동기 도구 패턴 + Sentry/메트릭 자동 forward 의 backbone.
-  //  Step 1 — backbone facade. Step 2~ ImageManager·TaskManager·ScheduleManager 마이그레이션.
+  //  Step 1 — backbone facade. Step 2~ MediaManager·TaskManager·ScheduleManager 마이그레이션.
   // ══════════════════════════════════════════════════════════════════════════
 
   /** 작업 시작 등록. id 미지정 시 자동 발급. 반환값의 id 로 후속 update/done/error 호출. */
