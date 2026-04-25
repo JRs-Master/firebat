@@ -303,9 +303,61 @@ export class FirebatCore {
   //  태스크 → TaskManager (파이프라인 즉시 실행)
   // ══════════════════════════════════════════════════════════════════════════
 
-  /** 파이프라인 즉시 실행 (RUN_TASK 액션) */
-  async runTask(pipeline: PipelineStep[], onPipelineStep?: (index: number, status: 'start' | 'done' | 'error', error?: string) => void): Promise<{ success: boolean; data?: unknown; error?: string }> {
-    return this.task.executePipeline(pipeline, onPipelineStep);
+  /** 파이프라인 즉시 실행 (RUN_TASK 액션).
+   *  StatusManager 와 통합 — 각 step start/done 마다 진행도·메시지 갱신.
+   *  parentJobId 옵션: 상위 job (예: cron 트리거) 이 있으면 sub-task 로 등록 → UI hierarchy. */
+  async runTask(
+    pipeline: PipelineStep[],
+    onPipelineStep?: (index: number, status: 'start' | 'done' | 'error', error?: string) => void,
+    opts?: { parentJobId?: string },
+  ): Promise<{ success: boolean; data?: unknown; error?: string }> {
+    const total = pipeline.length;
+    const job = this.statusMgr.start({
+      type: 'pipeline',
+      message: `파이프라인 시작 (${total} steps)`,
+      meta: { totalSteps: total },
+      ...(opts?.parentJobId ? { parentJobId: opts.parentJobId } : {}),
+    });
+    // step detail summary — TaskManager.executePipeline 내부와 같은 형식 (UI 일관)
+    const stepDetail = (step: PipelineStep): string => {
+      switch (step.type) {
+        case 'EXECUTE': return step.path ?? '';
+        case 'MCP_CALL': return `${step.server ?? ''}/${step.tool ?? ''}`;
+        case 'NETWORK_REQUEST': return step.url ?? '';
+        case 'LLM_TRANSFORM': return step.instruction?.slice(0, 60) ?? '';
+        case 'CONDITION': return `${step.field ?? ''} ${step.op ?? ''} ${String(step.value ?? '')}`.trim();
+        case 'SAVE_PAGE': return String(step.slug ?? step.inputMap?.slug ?? '');
+        default: return '';
+      }
+    };
+    const wrappedCallback = (idx: number, status: 'start' | 'done' | 'error', error?: string) => {
+      const step = pipeline[idx];
+      const detail = stepDetail(step);
+      if (status === 'start') {
+        this.statusMgr.update(job.id, {
+          progress: total > 0 ? idx / total : 0,
+          message: `Step ${idx + 1}/${total}: ${step.type}${detail ? ` → ${detail}` : ''}`,
+        });
+      } else if (status === 'done') {
+        this.statusMgr.update(job.id, {
+          progress: total > 0 ? (idx + 1) / total : 1,
+          message: `Step ${idx + 1}/${total} 완료`,
+        });
+      } else if (status === 'error') {
+        // 종료는 아래 res.success 분기에서 처리. 여기선 메시지 갱신만.
+        this.statusMgr.update(job.id, {
+          message: `Step ${idx + 1}/${total} 실패: ${error ?? 'unknown'}`,
+        });
+      }
+      onPipelineStep?.(idx, status, error);
+    };
+    const res = await this.task.executePipeline(pipeline, wrappedCallback);
+    if (res.success) {
+      this.statusMgr.done(job.id, res.data);
+    } else {
+      this.statusMgr.error(job.id, res.error || '파이프라인 실패');
+    }
+    return res;
   }
 
   /** 파이프라인 검증 (ScheduleManager에서도 사용) */
@@ -341,9 +393,25 @@ export class FirebatCore {
   consumeCronNotifications() { return this.schedule.consumeNotifications(); }
 
   /** Cron 비동기 트리거 콜백 — 시각 도달 시 cron 어댑터가 호출.
-   *  Manager 직접 호출 안 하고 Core facade 경유 → SSE emit 단일 지점 (BIBLE 일관성). */
+   *  Manager 직접 호출 안 하고 Core facade 경유 → SSE emit 단일 지점 (BIBLE 일관성).
+   *  StatusManager 통합 — cron 트리거 가시화. pipeline 이 있으면 runTask 가 별도 sub-status 발행. */
   async handleCronTrigger(info: import('./ports').CronTriggerInfo) {
+    const job = this.statusMgr.start({
+      type: 'cron',
+      message: `Cron 트리거: ${info.jobId} (${info.trigger})`,
+      meta: { jobId: info.jobId, trigger: info.trigger, targetPath: info.targetPath, hasPipeline: Boolean(info.pipeline?.length) },
+    });
     const result = await this.schedule.handleTrigger(info);
+    if (result.success) {
+      this.statusMgr.done(job.id, {
+        jobId: result.jobId,
+        durationMs: result.durationMs,
+        ...(result.stepsExecuted != null ? { stepsExecuted: result.stepsExecuted } : {}),
+        ...(result.stepsTotal != null ? { stepsTotal: result.stepsTotal } : {}),
+      });
+    } else {
+      this.statusMgr.error(job.id, result.error || 'Cron 실행 실패');
+    }
     eventBus.emit({ type: 'cron:complete', data: { jobId: result.jobId, success: result.success, durationMs: result.durationMs, error: result.error } });
     eventBus.emit({ type: 'sidebar:refresh', data: {} });
     return result;
