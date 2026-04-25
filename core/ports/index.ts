@@ -781,6 +781,9 @@ export interface MediaSaveOptions {
   aspectRatio?: string;
   /** crop 전략 — 'attention' (자동) / 'entropy' / 'center' / {x,y} */
   focusPoint?: 'attention' | 'entropy' | 'center' | { x: number; y: number };
+  /** 출처 — 'ai-generated' (image_gen 결과, 기본) / 'upload' (사용자 업로드).
+   *  갤러리 필터·표시·향후 분석 (출처별 분석) 에 활용. */
+  source?: 'ai-generated' | 'upload';
 }
 
 export interface MediaVariant {
@@ -843,6 +846,9 @@ export interface MediaFileRecord {
   status?: 'rendering' | 'done' | 'error';
   /** status='error' 일 때 실패 사유 (사용자 표시용) */
   errorMsg?: string;
+  /** 출처 — 'ai-generated' / 'upload'. legacy(미설정) = 'ai-generated' 로 간주.
+   *  갤러리 시각 구분 + 검색 + 향후 분석 (사용자 본인 자산 vs AI 생성). */
+  source?: 'ai-generated' | 'upload';
 }
 
 export interface IMediaPort {

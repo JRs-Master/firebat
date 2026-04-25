@@ -143,6 +143,9 @@ export class LocalMediaAdapter implements IMediaPort {
         ...(opts?.model ? { model: opts.model } : {}),
         ...(opts?.size ? { size: opts.size } : {}),
         ...(opts?.quality ? { quality: opts.quality } : {}),
+        ...(opts?.source ? { source: opts.source } : {}),
+        ...(opts?.aspectRatio ? { aspectRatio: opts.aspectRatio } : {}),
+        ...(opts?.focusPoint ? { focusPoint: opts.focusPoint } : {}),
       };
       await fs.promises.writeFile(this.metaPath(slug, scope), JSON.stringify(record, null, 2));
 
@@ -208,6 +211,7 @@ export class LocalMediaAdapter implements IMediaPort {
         ...(opts.quality ? { quality: opts.quality } : {}),
         ...(opts.aspectRatio ? { aspectRatio: opts.aspectRatio } : {}),
         ...(opts.focusPoint ? { focusPoint: opts.focusPoint } : {}),
+        ...(opts.source ? { source: opts.source } : {}),
       };
       await fs.promises.writeFile(this.metaPath(slug, scope), JSON.stringify(record, null, 2));
       this.logger.info(`[Media] error record saved scope=${scope} slug=${slug} reason="${opts.errorMsg.slice(0, 100)}"`);

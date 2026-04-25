@@ -896,6 +896,10 @@ export default function AdminConsole() {
   const [editingModule, setEditingModule] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [showPlusMenu, setShowPlusMenu] = useState(false);
+  // 첨부 이미지를 갤러리에 저장 — 사용자 명시 클릭 시에만 (자동 저장 X).
+  // 'idle' 기본 → 'saving' 진행 → 'saved' 성공 → 'error' 실패. attachedImage 변경 시 'idle' 리셋.
+  const [attachedSaveState, setAttachedSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [attachedSaveError, setAttachedSaveError] = useState<string>('');
 
   const fetchFileTree = useCallback(async () => {}, []);
 
@@ -917,9 +921,39 @@ export default function AdminConsole() {
     if (!file.type.startsWith('image/')) return;
     if (file.size > 10 * 1024 * 1024) return; // 10MB 제한
     const reader = new FileReader();
-    reader.onload = () => setAttachedImage(reader.result as string);
+    reader.onload = () => {
+      setAttachedImage(reader.result as string);
+      // 새 첨부 — 갤러리 저장 상태 리셋
+      setAttachedSaveState('idle');
+      setAttachedSaveError('');
+    };
     reader.readAsDataURL(file);
   }, [setAttachedImage]);
+
+  /** 첨부 이미지를 갤러리에 저장 — 사용자 명시 클릭. 메시지 전송과 독립.
+   *  결과는 source: 'upload' 메타로 기록되어 갤러리에서 AI 생성과 시각 구분 가능. */
+  const handleSaveAttachedToGallery = useCallback(async () => {
+    if (!attachedImage || attachedSaveState === 'saving' || attachedSaveState === 'saved') return;
+    setAttachedSaveState('saving');
+    setAttachedSaveError('');
+    try {
+      const res = await fetch('/api/media/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataUrl: attachedImage }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.success) {
+        setAttachedSaveState('saved');
+      } else {
+        setAttachedSaveState('error');
+        setAttachedSaveError(json.error || '저장 실패');
+      }
+    } catch (e) {
+      setAttachedSaveState('error');
+      setAttachedSaveError(e instanceof Error ? e.message : '네트워크 오류');
+    }
+  }, [attachedImage, attachedSaveState]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -1091,18 +1125,46 @@ export default function AdminConsole() {
                 onTouchStart={handleCardTouchStart}
                 onTouchMove={handleCardTouchMove}
               >
-                {/* 이미지 미리보기 */}
+                {/* 이미지 미리보기 + 갤러리 저장 토글 */}
                 {attachedImage && (
-                  <div className="px-4 pt-3 pb-1">
+                  <div className="px-4 pt-3 pb-1 flex items-end gap-2">
                     <div className="relative inline-block">
                       <img src={attachedImage} alt="첨부" className="max-h-[120px] max-w-[200px] rounded-xl border border-slate-200 object-cover" />
                       <button
-                        onClick={() => setAttachedImage(null)}
+                        onClick={() => { setAttachedImage(null); setAttachedSaveState('idle'); setAttachedSaveError(''); }}
                         className="absolute -top-2 -right-2 w-5 h-5 bg-slate-800 hover:bg-red-600 text-white rounded-full flex items-center justify-center transition-colors"
                       >
                         <X size={12} />
                       </button>
                     </div>
+                    {/* 갤러리 저장 — 사용자 명시 클릭 시에만. 메시지 전송과 독립. */}
+                    <Tooltip
+                      label={
+                        attachedSaveState === 'saved' ? '갤러리에 저장됨'
+                        : attachedSaveState === 'error' ? `저장 실패: ${attachedSaveError}`
+                        : attachedSaveState === 'saving' ? '저장 중...'
+                        : '이 이미지를 갤러리에 저장 (선택)'
+                      }
+                    >
+                      <button
+                        onClick={handleSaveAttachedToGallery}
+                        disabled={attachedSaveState === 'saving' || attachedSaveState === 'saved'}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-colors disabled:cursor-default ${
+                          attachedSaveState === 'saved' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : attachedSaveState === 'error' ? 'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100'
+                          : attachedSaveState === 'saving' ? 'bg-slate-100 text-slate-500 border border-slate-200'
+                          : 'text-slate-500 hover:text-purple-700 hover:bg-purple-50 border border-slate-200 hover:border-purple-200'
+                        }`}
+                      >
+                        <ImageIcon size={12} />
+                        <span>
+                          {attachedSaveState === 'saved' ? '저장됨 ✓'
+                          : attachedSaveState === 'error' ? '재시도'
+                          : attachedSaveState === 'saving' ? '저장 중'
+                          : '갤러리 저장'}
+                        </span>
+                      </button>
+                    </Tooltip>
                   </div>
                 )}
                 <textarea

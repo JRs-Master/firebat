@@ -304,6 +304,7 @@ export class MediaManager {
         model: modelId,
         size,
         quality,
+        source: 'ai-generated',
         ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
         ...(input.focusPoint ? { focusPoint: input.focusPoint } : {}),
         errorMsg,
@@ -367,6 +368,7 @@ export class MediaManager {
       model: modelId,
       size,
       quality,
+      source: 'ai-generated',
       ...(appliedAspectRatio ? { aspectRatio: appliedAspectRatio, focusPoint } : {}),
     });
     if (!saveRes.success || !saveRes.data) {

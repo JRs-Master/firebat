@@ -641,6 +641,35 @@ export class FirebatCore {
     return this.media.isMediaReady(url);
   }
 
+  /** 사용자 업로드 이미지 → 갤러리 저장. 어드민 채팅의 첨부 토글 ON 상태일 때 호출.
+   *  binary 는 Buffer 또는 base64 data URL 모두 받음. source='upload' 자동 마킹. */
+  async saveUpload(opts: {
+    binary: Buffer | string;  // Buffer 또는 'data:image/png;base64,...'
+    contentType?: string;
+    filenameHint?: string;
+    scope?: 'user' | 'system';
+  }): Promise<import('./types').InfraResult<{ slug: string; url: string }>> {
+    let buf: Buffer;
+    let contentType = opts.contentType ?? 'image/png';
+    if (typeof opts.binary === 'string') {
+      // data URL parse — 'data:image/png;base64,iVBOR...'
+      const m = opts.binary.match(/^data:([^;]+);base64,(.+)$/);
+      if (!m) return { success: false, error: 'data URL 파싱 실패' };
+      contentType = m[1];
+      buf = Buffer.from(m[2], 'base64');
+    } else {
+      buf = opts.binary;
+    }
+    const res = await this.infra.media.save(buf, contentType, {
+      scope: opts.scope ?? 'user',
+      ...(opts.filenameHint ? { filenameHint: opts.filenameHint } : {}),
+      source: 'upload',
+    });
+    if (!res.success || !res.data) return { success: false, error: res.error || '업로드 저장 실패' };
+    eventBus.emit({ type: 'gallery:refresh', data: { slug: res.data.slug, scope: opts.scope ?? 'user', source: 'upload' } });
+    return { success: true, data: { slug: res.data.slug, url: res.data.url } };
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   //  이벤트 → EventManager
   //  lib/events.ts 의 eventBus 위에 wrap. audit log + filtered subscribe 추가.
