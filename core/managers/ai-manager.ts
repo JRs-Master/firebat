@@ -66,7 +66,55 @@ export class AiManager {
     private readonly logger: ILogPort,
     private readonly db: IDatabasePort,
     private readonly routerFactory: ToolRouterFactory,
-  ) {}
+  ) {
+    // ToolManager 등록 — Step 2 마이그레이션 진행 단계.
+    // 등록된 도구는 executeToolCall 첫 줄의 ToolManager 위임으로 자동 dispatch.
+    this.registerStaticToolsToManager();
+  }
+
+  /** 정적 도구를 Core.ToolManager 에 등록 — 부팅 시 1회. 등록된 도구는 executeToolCall 위임됨.
+   *  기존 AiManager.buildToolDefinitions / executeToolCall switch 와 점진 병행 (회귀 방지). */
+  private registerStaticToolsToManager(): void {
+    // render_alert — 안전망 도구 (Schema 가 buildRenderTools 와 일치)
+    this.core.registerTool({
+      name: 'render_alert',
+      source: 'render',
+      description: '경고·주의·위험 박스(빨강/주황 계열). 리스크·오류·경고 메시지 전용. 일반 정보/팁/강조는 render_callout 사용.',
+      parameters: {
+        type: 'object',
+        required: ['message', 'type', 'title'],
+        additionalProperties: false,
+        properties: {
+          message: { type: 'string' },
+          type: { type: 'string', enum: ['warn', 'error'], description: 'warn=주황(주의/경고), error=빨강(위험/오류)' },
+          title: { type: ['string', 'null'], description: '제목 (불필요하면 null)' },
+        },
+      },
+      handler: async (args) => ({ success: true, component: RENDER_TOOL_MAP['render_alert'], props: args }),
+    });
+
+    // render_callout — 일반 정보 박스
+    this.core.registerTool({
+      name: 'render_callout',
+      source: 'render',
+      description: '일반 정보/강조 박스. 배경색으로 의미 구분. 경고/위험은 render_alert 사용.',
+      parameters: {
+        type: 'object',
+        required: ['message', 'type', 'title'],
+        additionalProperties: false,
+        properties: {
+          message: { type: 'string' },
+          type: {
+            type: 'string',
+            enum: ['info', 'success', 'tip', 'accent', 'highlight', 'neutral'],
+            description: 'info=파랑(정보), success=초록(완료/긍정 결과), tip=보라(팁/추천), accent=주황(강조/핵심 포인트), highlight=노랑(주목/하이라이트), neutral=회색(일반/참고 메모)',
+          },
+          title: { type: ['string', 'null'], description: '제목 (불필요하면 null)' },
+        },
+      },
+      handler: async (args) => ({ success: true, component: RENDER_TOOL_MAP['render_callout'], props: args }),
+    });
+  }
 
   private getRouter(modelId?: string): IToolRouterPort {
     // AI Assistant 모델 = User AI 와 별개의 백엔드 서브 AI (도구 라우터 등).
@@ -1170,6 +1218,15 @@ export class AiManager {
   /** 단일 도구 호출 실행 — 결과를 Record<string, unknown>로 반환 */
   private async executeToolCall(tc: ToolCall, opts?: AiRequestOpts): Promise<Record<string, unknown>> {
     try {
+      // ToolManager 위임 — 등록된 도구는 자동 dispatch (점진 마이그레이션 안전망).
+      // 등록 안 된 도구는 fall-through → 기존 switch 처리.
+      if (this.core.getToolDefinition(tc.name)) {
+        return await this.core.executeTool(tc.name, tc.args as Record<string, unknown>, {
+          conversationId: opts?.conversationId,
+          owner: opts?.owner,
+          requestOpts: opts as Record<string, unknown> | undefined,
+        });
+      }
       switch (tc.name) {
         case 'write_file': {
           const { path, content } = tc.args as { path: string; content: string };
