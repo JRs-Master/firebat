@@ -6,7 +6,7 @@
  */
 
 export type FirebatEvent = {
-  type: 'cron:complete' | 'sidebar:refresh' | 'notification';
+  type: 'cron:complete' | 'sidebar:refresh' | 'notification' | 'gallery:refresh';
   data: any;
 };
 

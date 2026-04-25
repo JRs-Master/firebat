@@ -803,6 +803,14 @@ export interface MediaFileRecord {
   thumbnailUrl?: string;
   /** Blurhash (LQIP) */
   blurhash?: string;
+  /** 처리 상태 — 미설정(legacy) = 'done' 으로 간주.
+   *  - 'rendering': v1.0+ 비동기 패턴에서 placeholder 단계 (현재 미사용)
+   *  - 'done': 정상 생성 완료
+   *  - 'error': 생성 실패 — 메타만 존재, 원본 파일 없음. 재생성 가능.
+   *  og:image 가드, 갤러리 시각 분기, 재생성 버튼 표시 등에 사용. */
+  status?: 'rendering' | 'done' | 'error';
+  /** status='error' 일 때 실패 사유 (사용자 표시용) */
+  errorMsg?: string;
 }
 
 export interface IMediaPort {
@@ -819,6 +827,9 @@ export interface IMediaPort {
   ): Promise<InfraResult<string>>;
   /** 메타 JSON 업데이트 — variants[] / thumbnailUrl / blurhash / width·height 반영 */
   updateMeta(slug: string, scope: 'user' | 'system', patch: Partial<MediaFileRecord>): Promise<InfraResult<void>>;
+  /** 실패 기록 저장 — 원본 binary 없이 메타 JSON 만 status='error' 로 기록.
+   *  사용자가 갤러리에서 재생성·삭제 결정할 수 있도록 prompt·model 등 보존. */
+  saveErrorRecord(opts: MediaSaveOptions & { errorMsg: string }): Promise<InfraResult<{ slug: string }>>;
   /** slug 로 파일 경로 + 메타데이터 조회. API route 에서 스트리밍 응답용. */
   read(slug: string): Promise<InfraResult<{ binary: Buffer; contentType: string; record: MediaFileRecord } | null>>;
   /** 메타데이터만 (HEAD 등) */

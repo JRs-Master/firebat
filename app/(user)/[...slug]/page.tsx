@@ -79,8 +79,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const ogTitle = head.og?.title ?? head.title ?? slug;
   const ogDesc = head.og?.description ?? head.description ?? seo.siteDescription;
-  const ogImage = head.og?.image ||
-    `${baseUrl}/api/og?title=${encodeURIComponent(ogTitle)}&description=${encodeURIComponent(ogDesc)}`;
+  // og:image 가드 — head.og.image 가 우리 미디어 URL 이면 처리 완료 여부 확인.
+  // 미완료 (rendering/error/legacy 손상) 시 자동 OG 로 폴백 — SNS·검색엔진이 placeholder 를
+  // 캐싱하지 않도록 보호 (외부 캐시는 회복 어려움).
+  const fallbackOg = `${baseUrl}/api/og?title=${encodeURIComponent(ogTitle)}&description=${encodeURIComponent(ogDesc)}`;
+  let ogImage = fallbackOg;
+  if (head.og?.image) {
+    const ready = await core.isMediaReady(head.og.image);
+    ogImage = ready ? head.og.image : fallbackOg;
+  }
 
   return {
     // metadataBase override — layout 의 정적 값 대신 동적 resolve 결과 사용 (상대경로 이미지도 이 기준으로 절대화)

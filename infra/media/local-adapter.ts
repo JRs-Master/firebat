@@ -135,6 +135,8 @@ export class LocalMediaAdapter implements IMediaPort {
         bytes: buf.length,
         createdAt: Date.now(),
         scope,
+        // 원본 binary 가 저장됐으므로 default 'done'. variants 후처리 실패해도 원본은 살아있음.
+        status: 'done',
         ...(opts?.filenameHint ? { filenameHint: opts.filenameHint } : {}),
         ...(opts?.prompt ? { prompt: opts.prompt } : {}),
         ...(opts?.revisedPrompt ? { revisedPrompt: opts.revisedPrompt } : {}),
@@ -178,6 +180,41 @@ export class LocalMediaAdapter implements IMediaPort {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`[Media] saveVariant 실패: ${msg}`);
+      return { success: false, error: msg };
+    }
+  }
+
+  /** 실패 기록 — 원본 binary 없이 메타만 status='error' 로 저장.
+   *  ext/contentType/bytes 는 placeholder (재생성 시 실제 값으로 갱신).
+   *  사용자가 갤러리에서 prompt 보고 재시도하거나 삭제할 수 있도록 메타 보존. */
+  async saveErrorRecord(opts: MediaSaveOptions & { errorMsg: string }): Promise<InfraResult<{ slug: string }>> {
+    try {
+      const scope = opts.scope ?? 'user';
+      const slug = generateSlug(opts.filenameHint);
+      const record: MediaFileRecord = {
+        slug,
+        ext: 'png',          // placeholder — 재생성 시 실제 ext 로 덮어씀
+        contentType: 'image/png',
+        bytes: 0,
+        createdAt: Date.now(),
+        scope,
+        status: 'error',
+        errorMsg: opts.errorMsg,
+        ...(opts.filenameHint ? { filenameHint: opts.filenameHint } : {}),
+        ...(opts.prompt ? { prompt: opts.prompt } : {}),
+        ...(opts.revisedPrompt ? { revisedPrompt: opts.revisedPrompt } : {}),
+        ...(opts.model ? { model: opts.model } : {}),
+        ...(opts.size ? { size: opts.size } : {}),
+        ...(opts.quality ? { quality: opts.quality } : {}),
+        ...(opts.aspectRatio ? { aspectRatio: opts.aspectRatio } : {}),
+        ...(opts.focusPoint ? { focusPoint: opts.focusPoint } : {}),
+      };
+      await fs.promises.writeFile(this.metaPath(slug, scope), JSON.stringify(record, null, 2));
+      this.logger.info(`[Media] error record saved scope=${scope} slug=${slug} reason="${opts.errorMsg.slice(0, 100)}"`);
+      return { success: true, data: { slug } };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`[Media] saveErrorRecord 실패: ${msg}`);
       return { success: false, error: msg };
     }
   }

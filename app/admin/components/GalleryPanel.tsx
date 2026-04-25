@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Loader2, X, Copy, Check, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Loader2, X, Copy, Check, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Tooltip } from './Tooltip';
+import { useEvents } from '../hooks/events-manager';
 
 interface MediaItem {
   slug: string;
@@ -25,6 +26,9 @@ interface MediaItem {
   blurhash?: string;
   aspectRatio?: string;
   focusPoint?: 'attention' | 'entropy' | 'center' | { x: number; y: number };
+  /** 미설정(legacy) = 'done' 으로 간주 */
+  status?: 'rendering' | 'done' | 'error';
+  errorMsg?: string;
 }
 
 const PAGE_SIZE = 48;
@@ -73,6 +77,13 @@ export function GalleryPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope, search]);
 
+  // SSE `gallery:refresh` 구독 — image_gen 완료·미디어 삭제·재생성 시 자동 갱신.
+  // 현재 scope/search 그대로 유지하면서 첫 페이지로 리셋해 새 이미지 즉시 노출.
+  useEvents(['gallery:refresh'], () => {
+    setOffset(0);
+    fetchList(true);
+  });
+
   const handleLoadMore = () => {
     const newOffset = offset + PAGE_SIZE;
     setOffset(newOffset);
@@ -93,6 +104,24 @@ export function GalleryPanel() {
       }
     } catch (err: any) {
       alert(`삭제 실패: ${err.message}`);
+    }
+  };
+
+  const [regenerating, setRegenerating] = useState(false);
+  const handleRegenerate = async (slug: string) => {
+    setRegenerating(true);
+    try {
+      const res = await fetch(`/api/media/regenerate?slug=${encodeURIComponent(slug)}`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) {
+        alert(`재생성 실패: ${data.error || 'unknown'}`);
+      }
+      // 성공/실패 모두 SSE gallery:refresh 가 자동 갱신. 모달은 닫음.
+      setSelectedIndex(null);
+    } catch (err: any) {
+      alert(`재생성 실패: ${err.message}`);
+    } finally {
+      setRegenerating(false);
     }
   };
 
@@ -139,20 +168,43 @@ export function GalleryPanel() {
         ) : (
           <div className="grid grid-cols-3 gap-1.5">
             {items.map((item, idx) => {
+              const isError = item.status === 'error';
+              const isRendering = item.status === 'rendering';
               const thumbSrc = item.thumbnailUrl || `/${item.scope ?? 'user'}/media/${item.slug}.${item.ext}`;
+              const tooltipLabel = isError
+                ? `생성 실패: ${item.errorMsg?.slice(0, 80) ?? 'unknown'}`
+                : (item.filenameHint || item.slug);
               return (
-                <Tooltip key={`${item.scope}-${item.slug}`} label={item.filenameHint || item.slug}>
+                <Tooltip key={`${item.scope}-${item.slug}`} label={tooltipLabel}>
                 <button
                   onClick={() => setSelectedIndex(idx)}
-                  className="group relative aspect-square bg-slate-100 rounded-md overflow-hidden hover:ring-2 hover:ring-blue-400 transition-all"
+                  className={`group relative aspect-square rounded-md overflow-hidden transition-all ${
+                    isError
+                      ? 'bg-red-50 ring-2 ring-red-300 hover:ring-red-500'
+                      : isRendering
+                        ? 'bg-blue-50 ring-2 ring-blue-200 hover:ring-blue-400'
+                        : 'bg-slate-100 hover:ring-2 hover:ring-blue-400'
+                  }`}
                 >
-                  <img
-                    src={thumbSrc}
-                    alt={item.filenameHint || item.slug}
-                    loading="lazy"
-                    decoding="async"
-                    className="w-full h-full object-cover"
-                  />
+                  {isError ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-red-500">
+                      <AlertTriangle size={20} />
+                      <span className="text-[9px] font-bold">생성 실패</span>
+                    </div>
+                  ) : isRendering ? (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-2 text-blue-500">
+                      <Loader2 size={20} className="animate-spin" />
+                      <span className="text-[9px] font-bold">생성 중</span>
+                    </div>
+                  ) : (
+                    <img
+                      src={thumbSrc}
+                      alt={item.filenameHint || item.slug}
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover"
+                    />
+                  )}
                   {item.scope === 'system' && (
                     <span className="absolute top-1 right-1 bg-amber-500 text-white text-[8px] font-black px-1 py-0.5 rounded">SYS</span>
                   )}
@@ -187,6 +239,8 @@ export function GalleryPanel() {
           onNext={() => setSelectedIndex(i => (i !== null && i < items.length - 1 ? i + 1 : i))}
           onClose={() => setSelectedIndex(null)}
           onDelete={() => handleDelete(selected.slug)}
+          onRegenerate={() => handleRegenerate(selected.slug)}
+          regenerating={regenerating}
         />
       )}
     </div>
@@ -194,7 +248,7 @@ export function GalleryPanel() {
 }
 
 function MediaDetailModal({
-  item, index, total, hasPrev, hasNext, onPrev, onNext, onClose, onDelete,
+  item, index, total, hasPrev, hasNext, onPrev, onNext, onClose, onDelete, onRegenerate, regenerating,
 }: {
   item: MediaItem;
   index: number;
@@ -205,7 +259,11 @@ function MediaDetailModal({
   onNext: () => void;
   onClose: () => void;
   onDelete: () => void;
+  onRegenerate: () => void;
+  regenerating: boolean;
 }) {
+  const isError = item.status === 'error';
+  const canRegenerate = !!item.prompt; // prompt 있어야 재실행 가능
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   // SSR 안전: client 마운트 후에만 portal 활성화
@@ -288,13 +346,29 @@ function MediaDetailModal({
 
         {/* 본문 — 모바일 flex-col / PC flex-row */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-3 p-3 sm:p-4 overflow-hidden">
-          {/* 프리뷰 — 높이 고정 (모바일: viewport 의 1/3 정도, basis 로 자연 비율) */}
-          <div className="relative shrink-0 md:flex-1 md:min-w-0 basis-[30%] md:basis-auto md:h-auto md:max-h-full bg-slate-50 rounded-lg p-2 flex items-center justify-center overflow-hidden">
-            <img
-              src={url}
-              alt={item.filenameHint || item.slug}
-              className="max-w-full max-h-full object-contain rounded"
-            />
+          {/* 프리뷰 — 높이 고정 (모바일: viewport 의 1/3 정도, basis 로 자연 비율).
+              status='error' 면 이미지 자리에 빨간 에러 카드 표시. */}
+          <div className={`relative shrink-0 md:flex-1 md:min-w-0 basis-[30%] md:basis-auto md:h-auto md:max-h-full rounded-lg p-2 flex items-center justify-center overflow-hidden ${
+            isError ? 'bg-red-50 border border-red-200' : 'bg-slate-50'
+          }`}>
+            {isError ? (
+              <div className="flex flex-col items-center gap-2 text-center px-4 py-6">
+                <AlertTriangle size={32} className="text-red-500" />
+                <div className="text-sm font-bold text-red-700">이미지 생성 실패</div>
+                {item.errorMsg && (
+                  <p className="text-[11px] text-red-600 break-words leading-relaxed max-w-xs">{item.errorMsg}</p>
+                )}
+                {item.prompt && (
+                  <p className="text-[10px] text-slate-500 italic mt-1">위 프롬프트로 재생성을 시도할 수 있습니다.</p>
+                )}
+              </div>
+            ) : (
+              <img
+                src={url}
+                alt={item.filenameHint || item.slug}
+                className="max-w-full max-h-full object-contain rounded"
+              />
+            )}
             {/* 모바일 prev/next floating — 모바일 전용 (헤더 화살표는 PC 전용, 중복 회피).
                 hasPrev/Next 항상 렌더해서 위치 안정 — disabled 시 opacity 만 낮춤 (cursor 모양 변경 X) */}
             <button
@@ -357,23 +431,44 @@ function MediaDetailModal({
               <MetaRow label="Blurhash" value={item.blurhash ? '✓ 생성됨' : '✗'} />
             </div>
 
-            {/* 버튼 — 위치 고정 (하단). safe-area-inset-bottom 으로 브라우저 하단 툴바·home indicator 침범 방지 */}
+            {/* 버튼 — 위치 고정 (하단). safe-area-inset-bottom 으로 브라우저 하단 툴바·home indicator 침범 방지.
+                재생성 버튼은 prompt 있을 때만 — 에러 상태면 강조(빨강), 정상 상태면 보조(파랑).
+                URL/마크다운 복사는 실제 파일이 있을 때만 (status!='error'). */}
             <div
               className="shrink-0 flex flex-col gap-1.5 pt-1"
               style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
             >
+              {canRegenerate && (
+                <button
+                  onClick={onRegenerate}
+                  disabled={regenerating}
+                  className={`flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold rounded-lg transition-colors disabled:opacity-50 ${
+                    isError
+                      ? 'bg-red-500 hover:bg-red-600 text-white'
+                      : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200'
+                  }`}
+                >
+                  {regenerating
+                    ? <><Loader2 size={12} className="animate-spin" /> 재생성 중…</>
+                    : <><RefreshCw size={12} /> {isError ? '같은 프롬프트로 재시도' : '재생성'}</>}
+                </button>
+              )}
+              {!isError && (
               <button
                 onClick={() => copy(url, 'url')}
                 className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
               >
                 {copiedField === 'url' ? <><Check size={12} className="text-emerald-600" /> 복사됨</> : <><Copy size={12} /> URL 복사</>}
               </button>
+              )}
+              {!isError && (
               <button
                 onClick={() => copy(`![${item.filenameHint || ''}](${url})`, 'md')}
                 className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
               >
                 {copiedField === 'md' ? <><Check size={12} className="text-emerald-600" /> 복사됨</> : <><Copy size={12} /> 마크다운 복사</>}
               </button>
+              )}
               <button
                 onClick={onDelete}
                 className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-red-50 hover:bg-red-100 text-red-600 border border-red-100 rounded-lg transition-colors"

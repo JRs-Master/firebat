@@ -208,8 +208,22 @@ export class ImageManager {
     // 1) 이미지 생성
     const genRes = await this.imageGen.generate({ ...input, size, quality, model: modelId }, { corrId, model: modelId });
     if (!genRes.success || !genRes.data) {
-      this.logger.error(`[ImageManager]${corrId ? ` [${corrId}]` : ''} [${modelId}] 생성 실패: ${genRes.error}`);
-      return { success: false, error: genRes.error || '이미지 생성 실패' };
+      const errorMsg = genRes.error || '이미지 생성 실패';
+      this.logger.error(`[ImageManager]${corrId ? ` [${corrId}]` : ''} [${modelId}] 생성 실패: ${errorMsg}`);
+      // 실패도 갤러리에 기록 — 사용자가 prompt 보고 재시도하거나 삭제 가능.
+      // 메타만 status='error' 로 저장 (binary 없음).
+      await this.media.saveErrorRecord({
+        filenameHint: input.filenameHint,
+        scope,
+        prompt: input.prompt,
+        model: modelId,
+        size,
+        quality,
+        ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
+        ...(input.focusPoint ? { focusPoint: input.focusPoint } : {}),
+        errorMsg,
+      });
+      return { success: false, error: errorMsg };
     }
     const genResult = genRes.data;
     const genMs = Date.now() - startedAt;

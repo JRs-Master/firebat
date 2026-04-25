@@ -386,9 +386,15 @@ export class FirebatCore {
   //  이미지 생성 → ImageManager / 미디어 조회 → IMediaPort
   // ══════════════════════════════════════════════════════════════════════════
 
-  /** AI 가 image_gen 도구 호출 → 이 메서드 → 생성 + 서버 저장 + URL 반환 */
-  generateImage(input: GenerateImageInput, corrId?: string) {
-    return this.image.generate(input, corrId);
+  /** AI 가 image_gen 도구 호출 → 이 메서드 → 생성 + 서버 저장 + URL 반환.
+   *  성공·실패 모두 갤러리에 기록되므로 양쪽 다 SSE `gallery:refresh` emit. */
+  async generateImage(input: GenerateImageInput, corrId?: string) {
+    const res = await this.image.generate(input, corrId);
+    eventBus.emit({
+      type: 'gallery:refresh',
+      data: res.success ? { slug: res.data?.slug, scope: input.scope ?? 'user' } : { error: res.error, scope: input.scope ?? 'user' },
+    });
+    return res;
   }
   /** 선택된 이미지 모델 ID (Vault 기반) */
   getImageModel() {
@@ -416,13 +422,69 @@ export class FirebatCore {
   listMedia(opts?: { scope?: 'user' | 'system' | 'all'; limit?: number; offset?: number; search?: string }) {
     return this.infra.media.list(opts);
   }
-  /** 갤러리에서 수동 삭제 */
-  removeMedia(slug: string) {
-    return this.infra.media.remove(slug);
+  /** 갤러리에서 수동 삭제. 성공 시 SSE `gallery:refresh` emit. */
+  async removeMedia(slug: string) {
+    const res = await this.infra.media.remove(slug);
+    if (res.success) eventBus.emit({ type: 'gallery:refresh', data: { slug, removed: true } });
+    return res;
+  }
+
+  /** 갤러리에서 재생성 — 기존 메타의 prompt/model/size/quality/aspectRatio 등 그대로 재실행.
+   *  성공 시 새 slug 발급 + 기존 slug 제거 (특히 status='error' 정리).
+   *  prompt 가 없는 레거시 레코드는 재생성 불가 (caller 가 사전 안내 권장). */
+  async regenerateImage(slug: string) {
+    const stat = await this.infra.media.stat(slug);
+    if (!stat.success) return { success: false as const, error: stat.error || '메타 조회 실패' };
+    const record = stat.data;
+    if (!record) return { success: false as const, error: '미디어를 찾을 수 없습니다.' };
+    if (!record.prompt) return { success: false as const, error: '프롬프트 정보가 없어 재생성할 수 없습니다.' };
+
+    const input: GenerateImageInput = {
+      prompt: record.prompt,
+      ...(record.model ? { model: record.model } : {}),
+      ...(record.size ? { size: record.size } : {}),
+      ...(record.quality ? { quality: record.quality } : {}),
+      ...(record.filenameHint ? { filenameHint: record.filenameHint } : {}),
+      ...(record.scope ? { scope: record.scope } : {}),
+      ...(record.aspectRatio ? { aspectRatio: record.aspectRatio } : {}),
+      ...(record.focusPoint ? { focusPoint: record.focusPoint } : {}),
+    };
+    const res = await this.image.generate(input);
+    // 새 slug 가 발급된 경우 기존 슬러그 정리. 새 생성도 실패한 경우 기존 에러 레코드는 유지 (히스토리).
+    if (res.success && res.data?.slug && res.data.slug !== slug) {
+      await this.infra.media.remove(slug).catch(() => undefined);
+    }
+    eventBus.emit({
+      type: 'gallery:refresh',
+      data: res.success
+        ? { slug: res.data?.slug, replacedSlug: slug, scope: record.scope ?? 'user' }
+        : { error: res.error, scope: record.scope ?? 'user' },
+    });
+    return res;
   }
   /** SEO 이미지 설정 */
   getImageSettings() {
     return this.image.getImageSettings();
+  }
+
+  /** og:image 등 외부 노출 (SNS 캐싱·검색엔진 인덱스) 안전성 판단.
+   *  미디어 URL 이 아니면 항상 true (외부 URL 은 우리 책임 X — 그대로 통과).
+   *  미디어 URL 이면 status='done' 이고 원본 binary 존재 (bytes>0) 일 때만 ready.
+   *  rendering / error / 미생성 placeholder 는 false → caller 가 자동 OG 폴백.
+   *  실패 시(메타 조회 오류) conservative true 반환 — 외부 노출 차단보다 표시 우선. */
+  async isMediaReady(url: string | undefined | null): Promise<boolean> {
+    if (!url) return false;
+    // 미디어 URL 이 아니면 외부 리소스 → 우리가 판단할 권한 없음 (그대로 통과)
+    const parsed = (await import('../lib/media-url')).parseMediaUrl(url);
+    if (!parsed) return true;
+    const stat = await this.infra.media.stat(parsed.slug).catch(() => null);
+    if (!stat?.success || !stat.data) return false;
+    const record = stat.data;
+    // status 미설정 (legacy) = 'done' 으로 간주 (이전 데이터 호환)
+    const status = record.status ?? 'done';
+    if (status !== 'done') return false;
+    if (!record.bytes || record.bytes <= 0) return false;
+    return true;
   }
 
   // Plan 실행 / 3-stage state (multi-turn 지속) — 대화 수준 JSON 유지
