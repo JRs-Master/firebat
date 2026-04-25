@@ -699,6 +699,8 @@ export class AiManager {
     // 멀티턴 내 도구 선별 캐시 — 세션에서 호출된 도구가 늘어날 때만 재계산
     let turnTools = tools;
     let lastSessionSize = -1;
+    // Layer 1·2 가드용 — tool-cache 모듈 lazy import
+    const { toolCacheKey, getCachedToolResult, setCachedToolResult } = await import('../../lib/tool-cache');
 
     for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
       // 이전 턴에 새 도구 사용됐으면 재선별 (이미 사용한 도구는 반드시 포함되어야 AI가 재호출 가능)
@@ -810,6 +812,8 @@ export class AiManager {
 
       // 도구 실행
       const toolResults: ToolResult[] = [];
+      // Layer 2 가드 — 같은 turn 안에서 (tool name + args) 동일 호출 차단
+      const turnCallSet = new Set<string>();
       for (const tc of toolCalls) {
         sessionUsedToolNames.add(tc.name);
         const argsPreview = JSON.stringify(tc.args).slice(0, 120);
@@ -862,7 +866,30 @@ export class AiManager {
           result = tc.preExecutedResult;
           this.logger.info(`[AiManager] [${corrId}] Tool (MCP 서버에서 실행됨): ${tc.name}`);
         } else {
-          result = await this.executeToolCall(tc, opts);
+          // Tool retry guard — Layer 1 (cross-turn cache) + Layer 2 (per-turn duplicate)
+          // 모든 도구 동일 적용 (도구명 / 인자 형태 무관 일반 로직).
+          // AI 가 timeout/error 받고 같은 인자로 retry 해도 백엔드 한 번만 실행 → 비용 폭탄 차단.
+          const cacheKey = toolCacheKey(tc.name, tc.args);
+          if (turnCallSet.has(cacheKey)) {
+            // Layer 2: 이번 턴에 이미 같은 호출 → 즉시 reject (백엔드 도달 안 함)
+            result = {
+              success: false,
+              error: '이번 턴에 같은 인자로 이미 호출된 도구입니다. 직전 결과를 사용하거나 다른 인자로 호출하세요. 같은 호출 retry 금지.',
+              duplicateInTurn: true,
+            };
+            this.logger.warn(`[AiManager] [${corrId}] Tool 중복 호출 차단 (per-turn): ${tc.name}`);
+          } else {
+            turnCallSet.add(cacheKey);
+            const cached = getCachedToolResult(cacheKey);
+            if (cached) {
+              // Layer 1: cross-turn cache hit (60초 내 같은 호출) → 직전 결과 재사용
+              result = { ...cached, fromCache: true };
+              this.logger.info(`[AiManager] [${corrId}] Tool cache HIT: ${tc.name} — 직전 결과 재사용 (백엔드 호출 0)`);
+            } else {
+              result = await this.executeToolCall(tc, opts);
+              setCachedToolResult(cacheKey, result);
+            }
+          }
         }
         toolResults.push({ name: tc.name, result });
 
@@ -1686,6 +1713,13 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 - strict 도구는 모든 required 필드를 실제 값으로 채워라. 플레이스홀더("..."/"여기에 값") 금지.
 - 도구 결과(raw JSON)를 그대로 노출하지 마라 — 자연어로 해석해서 전달.
 - "도구를 호출하겠습니다" 같은 메타 멘트 금지. 사용자 관점에서 매끄럽게.
+
+## 도구 호출 retry 정책 (절대)
+- 도구 결과가 timeout/error 라도 **같은 인자로 즉시 재호출 금지**. 부작용 발생 가능 (이미지 생성·파일 저장·외부 API 호출 등) — retry = 부작용 중복 = 비용·데이터 손상.
+- 시스템에 이미 idempotency cache + per-turn duplicate 가드 가 있어서 같은 인자 재호출은 백엔드까지 도달 안 함 (cache HIT 또는 차단됨). 즉 retry 시도해도 의미 없음.
+- error 응답 받으면 → **사용자에게 보고**하고 다음 행동 결정. silent retry 금지.
+- 다른 인자 또는 fallback 도구로 대안은 OK (예: image_gen 실패 → 다른 prompt 로 재시도, sysmod_kiwoom 실패 → sysmod_korea_invest fallback).
+- timeout 응답이 와도 백엔드는 정상 처리됐을 수 있다 (LLM 응답 지연 ≠ 백엔드 실패). 갤러리·DB·페이지 확인 안내.
 
 ─────────────────────────────────────
 
