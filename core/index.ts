@@ -394,9 +394,29 @@ export class FirebatCore {
   // ══════════════════════════════════════════════════════════════════════════
 
   /** AI 가 image_gen 도구 호출 → 이 메서드 → 생성 + 서버 저장 + URL 반환.
-   *  성공·실패 모두 갤러리에 기록되므로 양쪽 다 SSE `gallery:refresh` emit. */
+   *  성공·실패 모두 갤러리에 기록되므로 양쪽 다 SSE `gallery:refresh` emit.
+   *  StatusManager 와 통합 — 진행도 SSE 'status:update' 자동 발행 (UI 인디케이터). */
   async generateImage(input: GenerateImageInput, corrId?: string) {
-    const res = await this.image.generate(input, corrId);
+    const job = this.statusMgr.start({
+      type: 'image',
+      message: '이미지 생성 시작...',
+      meta: {
+        promptPreview: input.prompt.slice(0, 80),
+        model: input.model ?? this.image.getModel(),
+        scope: input.scope ?? 'user',
+      },
+    });
+    const res = await this.image.generate(input, {
+      corrId,
+      onProgress: (progress, message) => {
+        this.statusMgr.update(job.id, { progress, message });
+      },
+    });
+    if (res.success && res.data) {
+      this.statusMgr.done(job.id, { slug: res.data.slug, url: res.data.url });
+    } else {
+      this.statusMgr.error(job.id, res.error || '이미지 생성 실패');
+    }
     eventBus.emit({
       type: 'gallery:refresh',
       data: res.success ? { slug: res.data?.slug, scope: input.scope ?? 'user' } : { error: res.error, scope: input.scope ?? 'user' },
@@ -456,7 +476,22 @@ export class FirebatCore {
       ...(record.aspectRatio ? { aspectRatio: record.aspectRatio } : {}),
       ...(record.focusPoint ? { focusPoint: record.focusPoint } : {}),
     };
-    const res = await this.image.generate(input);
+    // 재생성도 동일하게 status job 생성 → UI 진행도 가시화
+    const job = this.statusMgr.start({
+      type: 'image',
+      message: '재생성 시작...',
+      meta: { promptPreview: record.prompt.slice(0, 80), model: input.model ?? this.image.getModel(), regenFrom: slug },
+    });
+    const res = await this.image.generate(input, {
+      onProgress: (progress, message) => {
+        this.statusMgr.update(job.id, { progress, message });
+      },
+    });
+    if (res.success && res.data) {
+      this.statusMgr.done(job.id, { slug: res.data.slug, url: res.data.url, regenFrom: slug });
+    } else {
+      this.statusMgr.error(job.id, res.error || '재생성 실패');
+    }
     // 새 slug 가 발급된 경우 기존 슬러그 정리. 새 생성도 실패한 경우 기존 에러 레코드는 유지 (히스토리).
     if (res.success && res.data?.slug && res.data.slug !== slug) {
       await this.infra.media.remove(slug).catch(() => undefined);

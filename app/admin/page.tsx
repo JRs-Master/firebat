@@ -11,6 +11,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { SystemModuleSettings } from './components/SystemModuleSettings';
 import { SecretInput } from './components/ChatWidgets';
 import { Tooltip } from './components/Tooltip';
+import { ActiveJobsIndicator } from './components/ActiveJobsIndicator';
 import StockChart from './chat-components/StockChart';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
@@ -1160,6 +1161,8 @@ export default function AdminConsole() {
                       <span>플랜</span>
                     </button>
                     </Tooltip>
+                    {/* StatusManager 활성 작업 인디케이터 — 활성·종료 작업 0이면 자동 숨김 */}
+                    <ActiveJobsIndicator />
                   </div>
                   <Tooltip label={loading ? '생성 중지' : '전송'}>
                   <button

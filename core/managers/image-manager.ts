@@ -193,8 +193,13 @@ export class ImageManager {
     }
   }
 
-  async generate(input: GenerateImageInput, corrId?: string): Promise<InfraResult<GenerateImageResult>> {
+  async generate(
+    input: GenerateImageInput,
+    opts?: { corrId?: string; onProgress?: (progress: number, message: string) => void },
+  ): Promise<InfraResult<GenerateImageResult>> {
     const startedAt = Date.now();
+    const corrId = opts?.corrId;
+    const onProgress = opts?.onProgress;
     const modelId = input.model ?? this.getModel();
     const scope = input.scope ?? 'user';
     const settings = this.getImageSettings();
@@ -204,6 +209,9 @@ export class ImageManager {
     const size = input.size ?? this.getDefaultSize() ?? undefined;
     const quality = input.quality ?? this.getDefaultQuality() ?? undefined;
     log(`generate 시작: prompt=${input.prompt.slice(0, 100)}${input.prompt.length > 100 ? '…' : ''} size=${size ?? 'handler-default'} quality=${quality ?? 'handler-default'}`);
+
+    // 진행도 보고 — Core 가 StatusManager 와 연결. ImageManager 는 콜백 호출만.
+    onProgress?.(0.05, '이미지 생성 시작...');
 
     // 1) 이미지 생성
     const genRes = await this.imageGen.generate({ ...input, size, quality, model: modelId }, { corrId, model: modelId });
@@ -228,6 +236,7 @@ export class ImageManager {
     const genResult = genRes.data;
     const genMs = Date.now() - startedAt;
     log(`binary 수신 (${genMs}ms, ${genResult.binary.length} bytes, ${genResult.contentType})`);
+    onProgress?.(0.55, `이미지 받음 (${(genMs / 1000).toFixed(0)}초). 후처리 중...`);
 
     // 1.5) aspectRatio 지정 시 attention crop 으로 base binary 교체
     //  - 이후 모든 variants/thumbnail/blurhash 가 cropped base 에서 파생되어 일관성 유지
@@ -288,6 +297,7 @@ export class ImageManager {
       return { success: false, error: saveRes.error || '이미지 저장 실패' };
     }
     const saved = saveRes.data;
+    onProgress?.(0.75, 'variants 생성 중...');
 
     // 3) 메타데이터 파싱 — baseBinary 기준 (crop 이 적용됐으면 cropped 치수)
     const metaRes = await this.processor.getMetadata(baseBinary);
@@ -385,6 +395,7 @@ export class ImageManager {
       const bh = await this.processor.blurhash(baseBinary);
       if (bh.success && bh.data) blurhash = bh.data;
     }
+    onProgress?.(0.95, '메타데이터 업데이트 중...');
 
     // 5) 메타 JSON 업데이트 — variants·thumbnailUrl·blurhash·width/height 반영
     await this.media.updateMeta(saved.slug, scope, {
