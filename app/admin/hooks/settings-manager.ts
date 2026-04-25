@@ -24,6 +24,9 @@ export type SettingsSchema = {
   'firebat_active_conv': string;
   'firebat_last_model_by_category': Record<string, string>;
   'firebat_thinking_level': string;
+  /** 입력 모드 — 'text' 면 일반 LLM 채팅, 'image' 면 입력창 텍스트를 prompt 로 직접 image_gen.
+   *  LLM 우회 → 비용 절감 + timeout 위험 0. 갤러리 자동 갱신은 SSE gallery:refresh 가 처리. */
+  'firebat_input_mode': 'text' | 'image';
 };
 
 const DEFAULTS: SettingsSchema = {
@@ -32,6 +35,7 @@ const DEFAULTS: SettingsSchema = {
   'firebat_active_conv': '',
   'firebat_last_model_by_category': {},
   'firebat_thinking_level': 'medium',
+  'firebat_input_mode': 'text',
 };
 
 // ── 직렬화 ─────────────────────────────────────────────────────────────────

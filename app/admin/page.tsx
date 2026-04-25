@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Circle, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks, Share2 } from 'lucide-react';
+import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Circle, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks, Share2, Image as ImageIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -907,6 +907,7 @@ export default function AdminConsole() {
     handleSubmit,
     handleApprovePending, handleRejectPending, handleStop,
     planMode, setPlanMode,
+    inputMode, setInputMode,
     refreshConversations,
   } = useChat(aiModel, fetchFileTree);
 
@@ -1112,7 +1113,7 @@ export default function AdminConsole() {
                   disabled={loading}
                   style={{ touchAction: 'pan-y', overscrollBehavior: 'contain', WebkitUserSelect: 'text', WebkitOverflowScrolling: 'touch' }}
                   className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] px-4 sm:px-5 pt-3 sm:pt-4 pb-1 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50 select-text overflow-y-auto"
-                  placeholder={loading ? '명령 집행 중...' : '무엇을 도와드릴까요?'}
+                  placeholder={loading ? '명령 집행 중...' : (inputMode === 'image' ? '🎨 이미지 프롬프트를 입력하세요 (LLM 우회 — 영어 권장)' : '무엇을 도와드릴까요?')}
                 />
                 <input
                   ref={imageInputRef}
@@ -1146,11 +1147,11 @@ export default function AdminConsole() {
                         </>
                       )}
                     </div>
-                    {/* 플랜모드 토글 */}
-                    <Tooltip label={planMode ? '플랜모드 사용중' : '플랜모드 미사용'}>
+                    {/* 플랜모드 토글 — 이미지 모드일 땐 의미 없음 (비활성) */}
+                    <Tooltip label={inputMode === 'image' ? '이미지 모드에선 사용 안 됨' : (planMode ? '플랜모드 사용중' : '플랜모드 미사용')}>
                     <button
                       onClick={() => setPlanMode(!planMode)}
-                      disabled={loading}
+                      disabled={loading || inputMode === 'image'}
                       className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-colors disabled:opacity-50 ${
                         planMode
                           ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
@@ -1159,6 +1160,21 @@ export default function AdminConsole() {
                     >
                       <ListChecks size={14} />
                       <span>플랜</span>
+                    </button>
+                    </Tooltip>
+                    {/* 이미지 모드 토글 — LLM 우회 직접 image_gen */}
+                    <Tooltip label={inputMode === 'image' ? '이미지 모드 (LLM 우회 직접 생성)' : '이미지 모드로 전환'}>
+                    <button
+                      onClick={() => setInputMode(inputMode === 'image' ? 'text' : 'image')}
+                      disabled={loading}
+                      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-colors disabled:opacity-50 ${
+                        inputMode === 'image'
+                          ? 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
+                          : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 border border-transparent'
+                      }`}
+                    >
+                      <ImageIcon size={14} />
+                      <span>이미지</span>
                     </button>
                     </Tooltip>
                     {/* StatusManager 활성 작업 인디케이터 — 활성·종료 작업 0이면 자동 숨김 */}

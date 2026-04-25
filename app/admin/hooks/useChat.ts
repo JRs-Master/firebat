@@ -49,6 +49,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvIdState] = useState('');
   const [planMode, setPlanMode] = useSetting('firebat_plan_mode');
+  const [inputMode, setInputMode] = useSetting('firebat_input_mode');
 
   // activeConvId 는 훅 밖 useSetting 초기화 타이밍 race 가 있어 useState + 수동 동기화 유지
   const setActiveConvId = useCallback((id: string) => {
@@ -434,6 +435,63 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       dispatch({ type: 'SEND_USER', userId: `u-${id}`, systemId, content: userPrompt, image: imageData || undefined });
     }
 
+    // ── 이미지 모드 (LLM 우회) ─────────────────────────────────────────
+    // inputMode='image' 면 입력 텍스트를 prompt 로 직접 image_gen → /api/media/generate.
+    // suggestion·meta(plan-confirm/plan-revise)·attached image 는 모두 무시 (이미지 모드에선 의미 X).
+    // StatusManager job 은 server 가 발행 → ActiveJobsIndicator 자동 표시.
+    if (inputMode === 'image' && !isSuggestion && !meta?.planExecuteId && !meta?.planReviseId) {
+      setLoading(true);
+      isNearBottomRef.current = true;
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }));
+      try {
+        const ctrl = new AbortController();
+        abortRef.current = ctrl;
+        const res = await fetch('/api/media/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: ctrl.signal,
+          body: JSON.stringify({ prompt: userPrompt }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json.success || !json.data) {
+          dispatch({ type: 'ERROR', id: systemId, error: json.error || `이미지 생성 실패 (${res.status})` });
+        } else {
+          const d = json.data;
+          // render_image 와 동일 포맷 — components.tsx 의 ImageComp 가 variants/blurhash/thumbnailUrl 자동 활용
+          const block = {
+            type: 'Image',
+            src: d.url,
+            alt: userPrompt.slice(0, 80),
+            ...(d.width ? { width: d.width } : {}),
+            ...(d.height ? { height: d.height } : {}),
+            ...(d.variants ? { variants: d.variants } : {}),
+            ...(d.blurhash ? { blurhash: d.blurhash } : {}),
+            ...(d.thumbnailUrl ? { thumbnailUrl: d.thumbnailUrl } : {}),
+          };
+          dispatch({
+            type: 'RESULT',
+            id: systemId,
+            payload: { reply: '', data: { blocks: [block] }, executedActions: ['image_gen'] },
+            hasAnimation: false,
+            lastTextIdx: -1,
+          });
+        }
+      } catch (err: any) {
+        if (err?.name === 'AbortError') {
+          dispatch({ type: 'ABORTED', id: systemId });
+        } else {
+          dispatch({ type: 'NETWORK_ERROR', id: systemId, message: err?.message || '네트워크 오류' });
+        }
+      } finally {
+        dispatch({ type: 'FINALIZE', id: systemId });
+        setLoading(false);
+        abortRef.current = null;
+      }
+      return;
+    }
+
     // 명령 전송 직후엔 무조건 하단으로
     isNearBottomRef.current = true;
     requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -590,7 +648,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         queueMicrotask(() => saveToDbRef.current(convIdForSave2, messagesRef.current));
       }
     }
-  }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage, planMode, setActiveConvId]);
+  }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage, planMode, inputMode, setActiveConvId]);
 
   // 레거시 JSON 모드의 handleConfirmPlan / handleRejectPlan 은 v0.1, 2026-04-22 제거됨.
   // 현재는 propose_plan 도구 → PlanCard (render_* blocks) → suggestions 의 plan-confirm 버튼으로
@@ -639,6 +697,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     handleApprovePending, handleRejectPending,
     handleStop,
     planMode, setPlanMode,
+    inputMode, setInputMode,
     refreshConversations, // 사이드바 펼침·탭 전환 등 on-demand 동기화용
   };
 }
