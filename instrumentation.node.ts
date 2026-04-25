@@ -7,6 +7,29 @@ import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
+// SIGTERM / SIGINT graceful shutdown — Core 작업 완료 대기 + Cost flush.
+// PM2 ecosystem.config.js 의 kill_timeout=30s 와 호환 (Core 는 25s, 5s 여유).
+// 멱등 — 같은 프로세스에서 한 번만 등록.
+const __gShut = globalThis as unknown as { __firebatShutdownWired?: boolean };
+if (!__gShut.__firebatShutdownWired) {
+  __gShut.__firebatShutdownWired = true;
+  let shuttingDown = false;
+  const handler = async (sig: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[Firebat] ${sig} 수신 — graceful shutdown 시작`);
+    try {
+      const { getCore } = await import('./lib/singleton');
+      await getCore().gracefulShutdown(25_000);
+    } catch (err) {
+      console.warn('[Firebat] shutdown 실패:', err);
+    }
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => { void handler('SIGTERM'); });
+  process.on('SIGINT', () => { void handler('SIGINT'); });
+}
+
 async function run(cmd: string): Promise<boolean> {
   try { await execAsync(cmd); return true; } catch { return false; }
 }

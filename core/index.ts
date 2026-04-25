@@ -128,6 +128,45 @@ export class FirebatCore {
     shareCleanupInterval.unref?.();
   }
 
+  /**
+   * Graceful shutdown — SIGTERM / 프로세스 종료 시 호출.
+   *
+   * 1) CostManager dirty 즉시 flush — 통계 손실 방지.
+   * 2) 활성 status 작업 (running) 이 있으면 최대 timeoutMs 까지 대기.
+   *    그 안에 끝나면 정상 종료, 안 끝나면 critical section 으로 간주하고 'error' 마크.
+   * 3) StatusManager / CostManager GC 타이머 정리.
+   *
+   * BIBLE: 매니저 직접 호출 X — Core facade 가 매니저 정리 메서드 호출.
+   * 일반 로직 — 특정 작업 분류별 분기 X. running 이면 동등하게 대기·강제 종료.
+   */
+  async gracefulShutdown(timeoutMs: number = 25_000): Promise<void> {
+    this.infra.log.info('[Core] gracefulShutdown 시작');
+    // 1) Cost flush — Vault 쓰기 동기 (await)
+    try { await this.cost.flushNow(); } catch (err) {
+      this.infra.log.warn(`[Core] cost flush 실패: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    // 2) 활성 작업 대기 — 1초 폴링
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const running = this.statusMgr.list({ status: 'running' });
+      if (running.length === 0) break;
+      this.infra.log.info(`[Core] ${running.length}개 활성 작업 대기 중 (남은 ${Math.ceil((deadline - Date.now()) / 1000)}초)`);
+      await new Promise(r => setTimeout(r, 1000));
+    }
+    // 3) timeout 후에도 남은 작업은 'error' 마크 — restart 후 재실행 결정용
+    const stillRunning = this.statusMgr.list({ status: 'running' });
+    for (const job of stillRunning) {
+      this.statusMgr.error(job.id, 'shutdown timeout — 재시작 시 복구 검토');
+    }
+    if (stillRunning.length > 0) {
+      this.infra.log.warn(`[Core] ${stillRunning.length}개 작업 timeout 으로 error 마크`);
+    }
+    // 4) GC 타이머 정리
+    try { this.statusMgr.shutdown(); } catch {}
+    try { (this.cost as { shutdown?: () => void }).shutdown?.(); } catch {}
+    this.infra.log.info('[Core] gracefulShutdown 완료');
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   //  AI 채팅 → AiManager
   // ══════════════════════════════════════════════════════════════════════════
