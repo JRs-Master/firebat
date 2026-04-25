@@ -2723,9 +2723,15 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
     if (this._toolsCache && (Date.now() - this._toolsCache.ts) < AiManager.TOOLS_CACHE_TTL) {
       return this._toolsCache.tools;
     }
-    const tools = [...this.getCoreToolDefinitions()];
 
-    // 시스템 모듈 → 개별 Function Calling 도구로 자동 등록
+    // 동적 도구 (sysmod_* / mcp_*) 는 매 캐시 갱신 시 ToolManager 에 재등록.
+    // 정적 도구는 constructor 의 registerStaticToolsToManager() 에서 1회 등록 (변경 X).
+    // 기존 동적 등록 클리어 → 모듈/MCP 추가/삭제 반영
+    for (const def of this.core.listTools({ source: ['sysmod', 'mcp'] })) {
+      this.core.unregisterTool(def.name);
+    }
+
+    // 시스템 모듈 → ToolManager 에 sysmod 도구 등록 (handler = sandboxExecute)
     const sysModules = await this.core.listDir('system/modules');
     if (sysModules.success && sysModules.data) {
       for (const d of sysModules.data.filter(e => e.isDirectory)) {
@@ -2734,35 +2740,58 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
         try {
           const cfg = JSON.parse(file.data);
           if (cfg.type !== 'module' || !cfg.input) continue;
-          // 비활성화된 모듈은 도구 목록에서 제외
           const moduleName = cfg.name || d.name;
           if (!this.core.isModuleEnabled(moduleName)) continue;
           const rt = cfg.runtime === 'node' ? 'index.mjs' : cfg.runtime === 'python' ? 'main.py' : 'index.mjs';
           const toolName = `sysmod_${d.name.replace(/-/g, '_')}`;
-          tools.push({
+          const modulePath = `system/modules/${d.name}/${rt}`;
+          this.core.registerTool({
             name: toolName,
+            source: 'sysmod',
             description: `[시스템 모듈] ${cfg.description || d.name}`,
-            parameters: sanitizeSchema(cfg.input) as unknown as JsonSchema,
+            parameters: sanitizeSchema(cfg.input) as unknown as Record<string, unknown>,
+            handler: async (args) => {
+              const res = await this.core.sandboxExecute(modulePath, args);
+              if (!res.success) return { success: false, error: res.error };
+              if (res.data?.success === false) return { success: false, error: JSON.stringify(res.data) };
+              return { success: true, data: res.data };
+            },
+            meta: { path: modulePath, capability: cfg.capability },
           });
-          // 경로 매핑 저장 (executeToolCall에서 사용)
-          this._sysmodPaths.set(toolName, `system/modules/${d.name}/${rt}`);
-          // capability 저장 (ToolSearchIndex 임베딩 힌트)
+          // 경로 매핑·capability 캐시 (ToolSearchIndex 임베딩 힌트)
+          this._sysmodPaths.set(toolName, modulePath);
           if (cfg.capability) this._toolCapabilities.set(toolName, cfg.capability as string);
         } catch { /* config 파싱 실패 — 무시 */ }
       }
     }
 
+    // MCP 외부 도구 → ToolManager 에 등록
     const mcpResult = await this.core.listAllMcpTools();
     if (mcpResult.success && mcpResult.data) {
       for (const t of mcpResult.data) {
-        tools.push({
-          name: `mcp_${t.server}_${t.name}`,
-          description: `[MCP ${t.server}] ${t.description}`,
-          parameters: t.inputSchema ?? { type: 'object', properties: {} },
+        const server = t.server;
+        const toolNameOnly = t.name;
+        this.core.registerTool({
+          name: `mcp_${server}_${toolNameOnly}`,
+          source: 'mcp',
+          description: `[MCP ${server}] ${t.description}`,
+          parameters: (t.inputSchema ?? { type: 'object', properties: {} }) as Record<string, unknown>,
+          handler: async (args) => {
+            const res = await this.core.callMcpTool(server, toolNameOnly, args);
+            return res.success ? { success: true, data: res.data } : { success: false, error: res.error };
+          },
+          meta: { server, tool: toolNameOnly },
         });
       }
     }
 
+    // LLM 용 도구 정의 = ToolManager 의 모든 활성 도구 (정적 + 동적)
+    const built = this.core.buildAiToolDefinitions();
+    const tools: ToolDefinition[] = built.map(b => ({
+      name: b.name,
+      description: b.description,
+      parameters: b.parameters as unknown as JsonSchema,
+    }));
     this._toolsCache = { tools, ts: Date.now() };
     return tools;
   }
