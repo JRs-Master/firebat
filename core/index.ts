@@ -207,10 +207,17 @@ export class FirebatCore {
       return { success: false, error: 'agentPrompt 가 비어있습니다.' };
     }
     try {
+      // 사용자가 어드민에서 설정한 User AI 모델 사용 — 미설정 시 LlmRouter 의 default fallback.
+      // 이 줄 없으면 DEFAULT_MODEL (gpt-5.4-mini) 로 떨어져 인증 안 된 OpenAI 호출 → 실패.
+      const userModel = this.getAiModel();
       const res = await this.ai.processWithTools(
         agentPrompt,
         [], // 빈 history — cron 잡은 독립 실행, 어드민 채팅 컨텍스트 X
-        { cronAgent: { jobId, title }, owner: 'admin' },
+        {
+          cronAgent: { jobId, title },
+          owner: 'admin',
+          ...(userModel ? { model: userModel } : {}),
+        },
       );
       if (!res.success) {
         return { success: false, error: res.error || 'agent 실행 실패', executedActions: res.executedActions };
