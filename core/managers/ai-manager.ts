@@ -1,8 +1,8 @@
 import type { FirebatCore, AiRequestOpts } from '../index';
-import type { ILlmPort, ILogPort, LlmCallOpts, LlmChunk, ChatMessage, PageListItem, ToolDefinition, JsonSchema, ToolCall, ToolResult, ToolExchangeEntry, IDatabasePort, IToolRouterPort, ToolRouterFactory } from '../ports';
+import type { ILlmPort, ILogPort, LlmCallOpts, LlmChunk, ChatMessage, ToolDefinition, JsonSchema, ToolResult, ToolExchangeEntry, IDatabasePort, ToolRouterFactory } from '../ports';
 import { CoreResult, type InfraResult } from '../types';
 import { sanitizeBlock, sanitizeReply, isValidBlock, extractMarkdownStructure } from '../utils/sanitize';
-import { RENDER_TOOL_MAP, normalizeRenderName } from '../../lib/render-map';
+import { RENDER_TOOL_MAP } from '../../lib/render-map';
 import { trimToolResult, slimResultForLLM } from './ai/result-processor';
 import { HistoryResolver } from './ai/history-resolver';
 import { PromptBuilder } from './ai/prompt-builder';

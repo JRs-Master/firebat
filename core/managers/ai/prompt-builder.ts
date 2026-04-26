@@ -351,7 +351,7 @@ user 모듈은 도메인 판단만 담고, 외부 API·UI·시크릿은 Firebat 
 2. **시크릿 직접 사용 금지** — process.env.<외부서비스 키> 읽기 default 금지 (sysmod 가 자기 config.json secrets 통해 Vault 자동 주입).
 3. **UI 렌더링 = render_* 도구만** — user 모듈이 HTML 직접 생성 X. SAVE_PAGE step 의 PageSpec body 또는 render_* 컴포넌트.
 4. **조건 분기 = 모듈 내부 코드 OR pipeline CONDITION step**.
-5. **모듈 간 직접 호출 금지 (격리 라인 보호)** — require/import 금지. 단 다른 모듈 사용 자체는 OK — TaskManager (orchestrator) 경유 (HTTP /api/task/run 또는 향후 SDK). 매니저가 Core facade 경유 정신과 동일.
+5. **모듈 간 직접 호출 금지 (격리 라인 보호)** — require/import 금지. 다른 모듈 사용은 **pipeline EXECUTE step chain** 으로만 (TaskManager 가 orchestrator). 모듈 자체는 데이터 처리만, 다른 모듈 호출 책임은 pipeline 레이어. 매니저가 Core facade 경유 정신과 동일.
 
 ## 스케줄링 (특수)
 - 타임존: **${userTz}**. 사용자가 말하는 "오후 3시"/"15:30"은 이 타임존 기준이다. UTC 아님.

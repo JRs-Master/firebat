@@ -2,25 +2,25 @@
  * ToolManager — 도구 등록·dispatch 단일 source.
  *
  * 배경 (CLAUDE.md "ToolManager 도입 — v1.0 계획"):
- *   현재 도구 정의가 4 곳 분산:
+ *   현재 도구 정의가 3 곳 분산:
  *     - AiManager.buildToolDefinitions (Function Calling 용)
  *     - mcp/server.ts (외부 LLM 용 MCP 서버)
- *     - SDK in sandbox (향후 — 자동 reflection 대상)
  *     - AiManager.executeToolCall (300줄 switch dispatch)
  *
  *   ToolManager 가 한 곳에 응집:
  *     1. registry: Map<name, ToolDefinition> — 도구 정의 source of truth
- *     2. buildAiToolDefinitions / buildMcpToolDescriptions / buildSdkTypes — transport 별 빌드
+ *     2. buildAiToolDefinitions / buildMcpToolDescriptions — transport 별 빌드
  *     3. execute(name, args, ctx) — 통합 dispatch (Strategy 패턴)
  *     4. 자동 reflection — config.json 변경 감지 → registry 갱신
  *
  * Step 1 (현재): backbone 만 — registry + register/unregister/get/list/execute + Core facade.
  *   기존 AiManager.executeToolCall 은 무수정 (마이그레이션은 Step 4).
  *
- * Step 2~4 (후속):
+ * Step 2~5 (후속, AiManager Phase 6c 와 묶음 — Rust/3-Tier 전환 시):
  *   - Step 2: 정적 render_* / Core 도구 등록
  *   - Step 3: 동적 sysmod_* + mcp_* 자동 reflection
  *   - Step 4: AiManager.executeToolCall switch 분산 → ToolManager.execute 위임
+ *   - Step 5: mcp/server.ts 통합 (zod schema 어댑터)
  *
  * BIBLE 준수:
  *   - SSE 발행 X (Core facade 의 책임)
