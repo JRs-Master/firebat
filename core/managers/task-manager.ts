@@ -90,10 +90,12 @@ export class TaskManager {
     if (err) return { success: false, error: err };
 
     let prev: unknown = undefined;
+    /** 모든 step 결과 누적 — $stepN 참조용. LLM_TRANSFORM 이 inputMap 미명시 시 모든 누적 결과 받음 (다중 EXECUTE 결과 환각 방지). */
+    const stepResults: unknown[] = [];
 
     for (let i = 0; i < steps.length; i++) {
       const step = steps[i];
-      const rawInput = this.resolvePipelineInput(step, prev);
+      const rawInput = this.resolvePipelineInput(step, prev, stepResults);
       // EXECUTE/MCP_CALL은 Record<string, unknown>이 필요 — 안전하게 변환
       const stepInput: Record<string, unknown> = (rawInput && typeof rawInput === 'object' && !Array.isArray(rawInput))
         ? rawInput as Record<string, unknown>
@@ -209,7 +211,22 @@ export class TaskManager {
             break;
           }
           case 'LLM_TRANSFORM': {
-            const inputText = typeof prev === 'string' ? prev : JSON.stringify(prev, null, 2);
+            // inputMap / inputData 명시되면 그 결과만 사용 (advanced — 특정 step 결과 매핑 가능).
+            // 미명시 시 모든 누적 step 결과를 context 로 — 다중 EXECUTE 결과 환각 방지.
+            const hasExplicitInput = !!(step.inputMap || step.inputData);
+            let inputText: string;
+            if (hasExplicitInput) {
+              inputText = typeof stepInput === 'string' ? stepInput : JSON.stringify(stepInput, null, 2);
+            } else if (stepResults.length === 0) {
+              inputText = '(이전 step 결과 없음)';
+            } else {
+              // 각 step 결과를 라벨링 + 1500자 trim. LLM 토큰 폭증 방지하면서 모든 데이터 노출.
+              inputText = stepResults.map((r, idx) => {
+                const text = typeof r === 'string' ? r : JSON.stringify(r, null, 2);
+                const trimmed = text.length > 1500 ? text.slice(0, 1500) + '...(생략)' : text;
+                return `[Step ${idx + 1} 결과]\n${trimmed}`;
+              }).join('\n\n');
+            }
             const res = await this.llm.askText(`${step.instruction}\n\n---\n${inputText}\n---`, `너는 데이터 추출·요약 엔진이다. 아래 구분선(---) 안의 원본만 근거로 응답하라.
 
 절대 규칙:
@@ -268,7 +285,9 @@ export class TaskManager {
           case 'SAVE_PAGE': {
             // pipeline 등록 시점에 사용자가 전체 흐름을 승인했으므로 저장 시점 재승인 게이트 우회.
             // slug / spec 은 step 직접 명시 또는 inputData/inputMap 으로 prev 매핑 → stepInput 에 이미 해석됨.
-            const slug = (stepInput.slug as string | undefined) ?? step.slug;
+            // step.slug 도 $stepN/$prev 패턴 가능 — resolveValue 통과시켜 동적 slug 지원
+            const resolvedStepSlug = step.slug ? this.resolveValue(step.slug, prev, stepResults) as string : undefined;
+            const slug = (stepInput.slug as string | undefined) ?? resolvedStepSlug;
             let spec: unknown = stepInput.spec ?? step.spec;
             // spec 이 LLM_TRANSFORM 결과 텍스트(JSON 문자열)인 경우 파싱
             if (typeof spec === 'string') {
@@ -306,6 +325,8 @@ export class TaskManager {
         onPipelineStep?.(i, 'error', e.message);
         return { success: false, error: `[Pipeline Step ${i + 1}] 예외: ${e.message}` };
       }
+      // step 결과 누적 — $stepN 참조 + LLM_TRANSFORM 의 누적 context 용
+      stepResults.push(prev);
     }
 
     return { success: true, data: prev };
@@ -441,60 +462,96 @@ export class TaskManager {
     return cache;
   }
 
-  /** 파이프라인 단계의 입력 결정: inputData(고정값) + inputMap($prev 매핑) 병합, 둘 다 $prev 치환 적용.
+  /** 파이프라인 단계의 입력 결정: inputData(고정값) + inputMap($prev/$stepN 매핑) 병합, 둘 다 치환 적용.
    *  inputMap이 inputData의 동일 키를 덮어쓴다 (매핑이 우선). */
-  private resolvePipelineInput(step: PipelineStep, prev: unknown): Record<string, unknown> | unknown {
+  private resolvePipelineInput(step: PipelineStep, prev: unknown, stepResults?: unknown[]): Record<string, unknown> | unknown {
     if (step.type === 'CONDITION') return prev; // CONDITION은 입력 변환 없음
     const hasData = step.inputData !== undefined;
     const hasMap = !!step.inputMap;
     if (hasData && hasMap) {
-      const fromData = this.resolveValue(step.inputData, prev);
-      const fromMap = this.resolveValue(step.inputMap, prev);
+      const fromData = this.resolveValue(step.inputData, prev, stepResults);
+      const fromMap = this.resolveValue(step.inputMap, prev, stepResults);
       if (fromData && typeof fromData === 'object' && !Array.isArray(fromData) && fromMap && typeof fromMap === 'object' && !Array.isArray(fromMap)) {
         return { ...(fromData as Record<string, unknown>), ...(fromMap as Record<string, unknown>) };
       }
-      return fromData; // 객체가 아니면 inputData 우선 유지
+      return fromData;
     }
-    if (hasData) return this.resolveValue(step.inputData, prev);
-    if (hasMap) return this.resolveValue(step.inputMap, prev);
+    if (hasData) return this.resolveValue(step.inputData, prev, stepResults);
+    if (hasMap) return this.resolveValue(step.inputMap, prev, stepResults);
     return prev;
   }
 
-  /** 임의의 값에서 $prev / $prev.key 치환 (string, object 재귀) */
-  resolveValue(val: unknown, prev: unknown): unknown {
+  /** 임의의 값에서 $prev / $prev.key / $stepN / $stepN.key 치환 (string, object 재귀)
+   *  stepResults 미전달 시 $stepN 패턴은 원본 유지 (backward compat). */
+  resolveValue(val: unknown, prev: unknown, stepResults?: unknown[]): unknown {
+    const getStepResult = (idx: number): unknown => {
+      if (!stepResults || idx < 0 || idx >= stepResults.length) return undefined;
+      return stepResults[idx];
+    };
     if (typeof val === 'string') {
+      // $stepN — 정확 매치 (전체 string 이 단일 reference)
+      const stepExact = val.match(/^\$step(\d+)$/);
+      if (stepExact) {
+        const result = getStepResult(parseInt(stepExact[1], 10));
+        if (result === undefined) return val;
+        return result; // 객체 그대로 반환 (object accept 하는 inputMap 용)
+      }
+      // $stepN.key — 정확 매치 (속성 접근)
+      const stepProp = val.match(/^\$step(\d+)\.(\w+)$/);
+      if (stepProp) {
+        const result = getStepResult(parseInt(stepProp[1], 10));
+        const key = stepProp[2];
+        if (result && typeof result === 'object' && key in result) return (result as Record<string, unknown>)[key];
+        if (typeof result === 'string') return result;
+        return val;
+      }
       if (val === '$prev') return typeof prev === 'string' ? prev : JSON.stringify(prev);
       // $prev.key 속성 접근 (예: $prev.url, $prev.title)
       const propMatch = val.match(/^\$prev\.(\w+)$/);
       if (propMatch) {
         const key = propMatch[1];
         if (prev && typeof prev === 'object' && key in prev) return (prev as Record<string, unknown>)[key];
-        // prev 가 string 인데 .key 로 접근 시도 → 문자열 자체 반환 (LLM_TRANSFORM 결과가 단일 string 일 때 $prev.text 패턴 대응)
         if (typeof prev === 'string') return prev;
-        return val; // 속성 없음 + 문자열 아님 → 원본 유지
+        return val;
       }
-      // 문자열 내 $prev.key 및 $prev 치환
-      if (val.includes('$prev')) {
-        let result = val.replace(/\$prev\.(\w+)/g, (_: string, key: string) => {
+      // 문자열 내 $prev.key / $prev / $stepN.key / $stepN 치환
+      if (val.includes('$prev') || val.includes('$step')) {
+        let result = val;
+        // $stepN.key 치환 (정확 키로)
+        result = result.replace(/\$step(\d+)\.(\w+)/g, (_: string, idx: string, key: string) => {
+          const r = getStepResult(parseInt(idx, 10));
+          if (r && typeof r === 'object' && key in r) {
+            const v = (r as Record<string, unknown>)[key];
+            return v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v);
+          }
+          if (typeof r === 'string') return r;
+          return `$step${idx}.${key}`;
+        });
+        // $stepN 단독 치환
+        result = result.replace(/\$step(\d+)(?!\.\w)/g, (_: string, idx: string) => {
+          const r = getStepResult(parseInt(idx, 10));
+          if (r === undefined) return `$step${idx}`;
+          return typeof r === 'string' ? r : JSON.stringify(r);
+        });
+        // $prev.key 치환
+        result = result.replace(/\$prev\.(\w+)/g, (_: string, key: string) => {
           if (prev && typeof prev === 'object' && key in prev) {
-            // 객체·배열은 JSON.stringify — 그냥 String() 하면 "[object Object]" 가 들어가 다음 step 뻑남
             const v = (prev as Record<string, unknown>)[key];
             return v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v);
           }
-          if (typeof prev === 'string') return prev; // string 폴백 (위와 동일 논리)
+          if (typeof prev === 'string') return prev;
           return `$prev.${key}`;
         });
-        // 단독 $prev 만 치환 — 위 regex 가 preserve 한 "$prev.missing" 의 $prev 부분 덮어쓰기 방지.
-        // negative lookahead (?!\.\w) — $prev 뒤에 .word 가 오지 않을 때만 매칭.
+        // 단독 $prev 만 치환 — preserve 한 "$prev.missing" 의 $prev 부분 덮어쓰기 방지.
         result = result.replace(/\$prev(?!\.\w)/g, typeof prev === 'string' ? prev : JSON.stringify(prev));
         return result;
       }
       return val;
     }
-    if (Array.isArray(val)) return val.map(v => this.resolveValue(v, prev));
+    if (Array.isArray(val)) return val.map(v => this.resolveValue(v, prev, stepResults));
     if (val && typeof val === 'object') {
       const result: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(val)) result[k] = this.resolveValue(v, prev);
+      for (const [k, v] of Object.entries(val)) result[k] = this.resolveValue(v, prev, stepResults);
       return result;
     }
     return val;
