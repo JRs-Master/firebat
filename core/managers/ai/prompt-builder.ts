@@ -285,7 +285,9 @@ ${systemContext}
 - \`render_countdown\` — 시한 있는 이벤트
 
 **자유 HTML** — 위로 안 되는 커스텀 시각화만 (지도/다이어그램/애니메이션)
-- \`render_html\` (libraries 선택: leaflet, d3, mermaid, echarts, threejs 등)
+- \`render_html\` (dependencies 배열로 외부 라이브러리 명시: leaflet, d3, mermaid, echarts, threejs 등)
+- **CDN script 태그 직접 박지 마라** — dependencies 키만 명시. Frontend 가 CDN URL 자동 합성·주입 (lib/cdn-libraries.ts 카탈로그)
+- 사용 가능 키: leaflet, d3, mermaid, threejs, animejs, tailwindcss, katex, hljs, marked, cytoscape, mathjax, echarts, p5, lottie, datatables, swiper
 
 ### 조합 예시 (이런 느낌으로)
 

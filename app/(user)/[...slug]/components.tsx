@@ -54,7 +54,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'Card':          return <CardComp children={p.children ?? []} align={p.align} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;
     case 'AdSlot':        return <AdSlotComp slotId={p.slotId} format={p.format} />;
-    case 'Html':          return <HtmlComp content={p.content ?? ''} />;
+    case 'Html':          return <HtmlComp content={p.content ?? ''} dependencies={p.dependencies as string[] | undefined} />;
     case 'Slider':        return <SliderComp label={p.label} min={p.min} max={p.max} step={p.step} defaultValue={p.defaultValue} unit={p.unit} />;
     case 'Tabs':          return <TabsComp tabs={p.tabs ?? []} />;
     case 'Accordion':     return <AccordionComp items={p.items ?? []} />;
@@ -499,13 +499,19 @@ function AdSlotComp({ slotId, format = 'auto' }: { slotId?: string; format?: str
 }
 
 // ── Html (iframe sandbox) ───────────────────────────────────────────────────
-function HtmlComp({ content }: { content: string }) {
+import { buildCdnTags } from '../../../lib/cdn-libraries';
+
+function HtmlComp({ content, dependencies }: { content: string; dependencies?: string[] }) {
+  // dependencies 명시 시 frontend 가 CDN 태그 합성 후 head 에 주입.
+  // Core 는 라이브러리 키만 다룸 — BIBLE 순수성. legacy 페이지 (content 안에 CDN 태그 직접 박힌 경우) 도 그대로 작동.
+  const cdnTags = buildCdnTags(dependencies);
   // AI 가 자체 body{margin:0; max-width:none} 같은 style 로 default 깨는 패턴 자주.
   // outer wrapper div 로 max-width 강제 — AI 가 어떻게 body style 짜도 layout 영향 X.
   const srcdoc = `<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+${cdnTags}
 <style>
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; min-height: 100%; overflow: auto; }

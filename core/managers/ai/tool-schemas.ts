@@ -369,19 +369,19 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
     ...RENDER_TOOLS,
     {
       name: 'render_html',
-      description: '자유 HTML 인라인 렌더링 (iframe). 정형화된 UI(표·차트·리스트 등)는 search_components 로 찾아서 render(name, props) 로 호출. 경고·알림은 render_alert / render_callout 직접 호출. render_html 은 지도/다이어그램/애니메이션/수학식 등 CDN 라이브러리 필요할 때만. CDN 은 libraries 파라미터로 선택.',
+      description: '자유 HTML 인라인 렌더링 (iframe). 정형화된 UI(표·차트·리스트 등)는 search_components 로 찾아서 render(name, props) 로 호출. 경고·알림은 render_alert / render_callout 직접 호출. render_html 은 지도/다이어그램/애니메이션/수학식 등 CDN 라이브러리 필요할 때만. CDN 라이브러리는 dependencies 배열로 선언만 — Frontend 가 자동 합성. AI 가 <script src="..."> CDN 태그 직접 박지 마라.',
       parameters: {
         type: 'object',
         required: ['html'],
         properties: {
-          html: { type: 'string', description: '렌더링할 HTML (body 내용 또는 완전한 HTML 문서). libraries에서 선택한 CDN은 자동 삽입됨.' },
+          html: { type: 'string', description: '렌더링할 HTML body 내용 (외부 CDN <script>/<link> 태그 X — dependencies 배열로 선언만)' },
           height: { type: 'string', description: 'iframe 높이 (기본 400px). 예: "500px", "60vh"' },
-          libraries: {
+          dependencies: {
             type: 'array',
-            description: '사용할 CDN 라이브러리 목록. 선택하면 자동으로 <script>/<link> 태그가 HTML <head>에 삽입됨.',
+            description: '사용할 CDN 라이브러리 키. Frontend HtmlComp 가 lib/cdn-libraries.ts 카탈로그 보고 <script>/<link> 자동 합성 후 iframe head 에 주입.',
             items: {
               type: 'string',
-              enum: ['d3', 'mermaid', 'leaflet', 'threejs', 'animejs', 'tailwindcss', 'katex', 'hljs', 'marked', 'cytoscape', 'mathjax', 'p5', 'lottie', 'datatables', 'swiper'],
+              enum: ['d3', 'mermaid', 'leaflet', 'threejs', 'animejs', 'tailwindcss', 'katex', 'hljs', 'marked', 'cytoscape', 'mathjax', 'p5', 'lottie', 'datatables', 'swiper', 'echarts'],
             },
           },
         },

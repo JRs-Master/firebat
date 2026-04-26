@@ -283,33 +283,16 @@ export class AiManager {
         return { success: true, component: def.componentType, props: (props ?? {}) as Record<string, unknown> };
       },
       render_html: async (args) => {
-        const cdnMap: Record<string, string> = {
-          d3: '<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>',
-          mermaid: '<script src="https://cdn.jsdelivr.net/npm/mermaid@10"></script>',
-          leaflet: '<link rel="stylesheet" href="https://unpkg.com/leaflet@1/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1/dist/leaflet.js"></script>',
-          threejs: '<script src="https://cdn.jsdelivr.net/npm/three@0.160/build/three.min.js"></script>',
-          animejs: '<script src="https://cdn.jsdelivr.net/npm/animejs@3/lib/anime.min.js"></script>',
-          tailwindcss: '<script src="https://cdn.tailwindcss.com"></script>',
-          katex: '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css"/><script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/contrib/auto-render.min.js"></script>',
-          hljs: '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github.min.css"/><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>',
-          marked: '<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>',
-          cytoscape: '<script src="https://cdn.jsdelivr.net/npm/cytoscape@3/dist/cytoscape.min.js"></script>',
-          mathjax: '<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>',
-          echarts: '<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>',
-          p5: '<script src="https://cdn.jsdelivr.net/npm/p5@1/lib/p5.min.js"></script>',
-          lottie: '<script src="https://cdn.jsdelivr.net/npm/lottie-web@5/build/player/lottie.min.js"></script>',
-          datatables: '<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css"/><script src="https://cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script><script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>',
-          swiper: '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"/><script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>',
+        // BIBLE 정화 — Core 는 CDN URL 다루지 않음. dependencies 배열만 통과.
+        // Frontend HtmlComp (lib/cdn-libraries.ts 카탈로그) 가 srcDoc 합성 시 CDN 태그 주입.
+        // legacy 호환: libraries 필드도 dependencies 로 인식.
+        const deps = ((args.dependencies ?? args.libraries) as string[] | undefined) || [];
+        return {
+          success: true,
+          htmlContent: args.html as string,
+          htmlHeight: (args.height as string) || '400px',
+          ...(deps.length > 0 ? { dependencies: deps } : {}),
         };
-        const libs = (args.libraries as string[] | undefined) || [];
-        const cdnTags = libs.map(l => cdnMap[l]).filter(Boolean).join('\n');
-        let html = args.html as string;
-        if (cdnTags) {
-          if (html.includes('</head>')) html = html.replace('</head>', `${cdnTags}\n</head>`);
-          else if (html.includes('<body')) html = html.replace(/<body/i, `${cdnTags}\n<body`);
-          else html = `${cdnTags}\n${html}`;
-        }
-        return { success: true, htmlContent: html, htmlHeight: args.height || '400px' };
       },
       search_media: async (args) => {
         const { query, scope, source, limit } = args as { query: string; scope?: 'user' | 'system' | 'all'; source?: 'ai-generated' | 'upload'; limit?: number };
@@ -757,7 +740,7 @@ export class AiManager {
     // 인라인 블록 — text/html/component를 순서대로 쌓음 (Claude 스타일 inline 렌더링용)
     const blocks: Array<
       | { type: 'text'; text: string }
-      | { type: 'html'; htmlContent: string; htmlHeight?: string }
+      | { type: 'html'; htmlContent: string; htmlHeight?: string; dependencies?: string[] }
       | { type: 'component'; name: string; props: Record<string, unknown> }
     > = [];
     let finalReply = '';
@@ -984,7 +967,11 @@ export class AiManager {
         }
         // render_html 결과 수집 (프론트엔드에서 iframe 렌더링)
         if (tc.name === 'render_html' && result.success !== false && result.htmlContent) {
-          collectedData.push({ htmlContent: result.htmlContent, htmlHeight: result.htmlHeight });
+          collectedData.push({
+            htmlContent: result.htmlContent,
+            htmlHeight: result.htmlHeight,
+            ...(result.dependencies ? { dependencies: result.dependencies } : {}),
+          });
         }
       }
 
@@ -1009,7 +996,12 @@ export class AiManager {
         const result = toolResults[i]?.result;
         if (!result || result.success === false) continue;
         if (tc.name === 'render_html' && result.htmlContent) {
-          blocks.push({ type: 'html', htmlContent: result.htmlContent as string, htmlHeight: result.htmlHeight as string | undefined });
+          blocks.push({
+            type: 'html',
+            htmlContent: result.htmlContent as string,
+            htmlHeight: result.htmlHeight as string | undefined,
+            ...(result.dependencies ? { dependencies: result.dependencies as string[] } : {}),
+          });
         } else if ((tc.name === 'render' || RENDER_TOOL_MAP[tc.name]) && result.component) {
           blocks.push({ type: 'component', name: result.component as string, props: (result.props as Record<string, unknown>) ?? {} });
         }

@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks, Share2, Image as ImageIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { CDN_LIBRARIES } from '../../lib/cdn-libraries';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Sidebar } from './components/Sidebar';
@@ -318,7 +319,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
 }
 
 // ─── 자동 높이 iframe — 내부 콘텐츠에 맞춰 높이 자동 확장 ──────────────────
-function AutoResizeIframe({ src, initialHeight }: { src: string; initialHeight?: string }) {
+function AutoResizeIframe({ src, initialHeight, dependencies }: { src: string; initialHeight?: string; dependencies?: string[] }) {
   const idRef = useRef('ifr-' + Math.random().toString(36).slice(2, 10));
   const [height, setHeight] = useState(initialHeight || '200px');
 
@@ -326,7 +327,11 @@ function AutoResizeIframe({ src, initialHeight }: { src: string; initialHeight?:
   // 새 srcdoc 문자열을 생성해서 iframe 이 리로드되던 문제 (leaflet 지도 깜빡임 등) 방지
   const srcdoc = useMemo(() => {
     const isFullDoc = src.trim().toLowerCase().startsWith('<!doctype') || src.trim().toLowerCase().startsWith('<html');
-    const baseStyle = `<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" /><style>html,body{overflow:hidden !important;font-family:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important;color:#1e293b;background:#ffffff;-webkit-font-smoothing:antialiased;}body{font-size:14px;line-height:1.6;}h1,h2,h3,h4,h5,h6{font-weight:700;color:#0f172a;letter-spacing:-0.01em;}h1{font-size:20px;}h2{font-size:17px;}h3{font-size:15px;}table{font-size:13px;}canvas,svg{font-family:inherit !important;}</style>`;
+    // dependencies 배열 → CDN 태그 합성 (lib/cdn-libraries.ts 카탈로그). AI 가 직접 박지 말고 키만 선언.
+    const cdnTags = dependencies && dependencies.length > 0
+      ? dependencies.map(k => CDN_LIBRARIES[k]).filter(Boolean).join('\n')
+      : '';
+    const baseStyle = `<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" /><style>html,body{overflow:hidden !important;font-family:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important;color:#1e293b;background:#ffffff;-webkit-font-smoothing:antialiased;}body{font-size:14px;line-height:1.6;}h1,h2,h3,h4,h5,h6{font-weight:700;color:#0f172a;letter-spacing:-0.01em;}h1{font-size:20px;}h2{font-size:17px;}h3{font-size:15px;}table{font-size:13px;}canvas,svg{font-family:inherit !important;}</style>${cdnTags}`;
     const autoScript = `<script>(function(){var id=${JSON.stringify(idRef.current)};var peak=0;function measure(){var b=document.body;if(!b)return 0;return Math.max(b.scrollHeight,b.offsetHeight,Math.ceil(b.getBoundingClientRect().height));}function send(){var h=measure();if(h<=peak)return;peak=h;parent.postMessage({type:'iframe-resize',id:id,height:h},'*');}function attach(){if(!document.body)return;if(window.ResizeObserver)new ResizeObserver(send).observe(document.body);send();}if(document.body)attach();else document.addEventListener('DOMContentLoaded',attach);window.addEventListener('load',send);[100,500,1500,3000].forEach(function(t){setTimeout(send,t);});})();<\/script><script>(function(){var last=null;function toMouse(e){if(!e.touches||e.touches.length!==1)return;var t=e.touches[0];var tg=document.elementFromPoint(t.clientX,t.clientY);if(!tg)return;tg.dispatchEvent(new MouseEvent('mousemove',{clientX:t.clientX,clientY:t.clientY,bubbles:true,cancelable:true,view:window}));last=tg;}document.addEventListener('touchstart',toMouse,{passive:true});document.addEventListener('touchmove',toMouse,{passive:true});document.addEventListener('touchend',function(){if(last){last.dispatchEvent(new MouseEvent('mouseout',{bubbles:true}));last=null;}},{passive:true});})();<\/script>`;
     return isFullDoc
       ? src.replace(/<\/head>/i, baseStyle + '</head>').replace(/<\/body>/i, autoScript + '</body>')
@@ -697,7 +702,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                     // 섹션 경계 (Header / Divider) 앞에 추가 여백 — chat-manager 의 공통 규칙 (share 페이지와 동일)
                     const wrapCls = isSectionStartBlock(b, i) ? 'mt-5' : '';
                     if (b.type === 'text') return <div key={i} className={`text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1 ${wrapCls}`}>{renderMarkdown(b.text)}</div>;
-                    if (b.type === 'html') return <div key={i} className={wrapCls}><AutoResizeIframe src={b.htmlContent as string} initialHeight={b.htmlHeight} /></div>;
+                    if (b.type === 'html') return <div key={i} className={wrapCls}><AutoResizeIframe src={b.htmlContent as string} initialHeight={b.htmlHeight} dependencies={(b as { dependencies?: string[] }).dependencies} /></div>;
                     if (b.type === 'component') return <div key={i} className={wrapCls}><ComponentRenderer components={[{ type: b.name, props: b.props || {} }]} /></div>;
                     return null;
                   })}
@@ -717,7 +722,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                     return htmlItems.length > 0 ? (
                       <div className="space-y-3 mt-2">
                         {htmlItems.map((h: any, i: number) => (
-                          <AutoResizeIframe key={i} src={h.htmlContent as string} initialHeight={h.htmlHeight} />
+                          <AutoResizeIframe key={i} src={h.htmlContent as string} initialHeight={h.htmlHeight} dependencies={h.dependencies} />
                         ))}
                       </div>
                     ) : null;
