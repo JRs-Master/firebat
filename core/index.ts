@@ -26,6 +26,8 @@ import type { CapabilitySettings } from './capabilities';
 import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT, VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_LAST_MODEL_BY_CATEGORY, VK_LLM_ANTHROPIC_CACHE, DEFAULT_AI_ASSISTANT_MODEL, AI_ASSISTANT_MODELS } from './vault-keys';
 import { eventBus } from '../lib/events';
 import { canonicalJson, unwrapJson, unwrapNestedPageSpec } from './utils/json-normalize';
+import { captureException as _captureException } from './utils/error-capture';
+import type { ErrorContext } from './utils/error-capture';
 
 /** AI 요청 옵션 — 요청별 모델/이미지/멀티턴 컨텍스트 지정 */
 export interface AiRequestOpts {
@@ -97,6 +99,23 @@ export class FirebatCore {
     this.media = new MediaManager(infra.imageGen, infra.media, infra.imageProcessor, infra.vault, infra.log);
     this.event = new EventManager(infra.log);
     this.statusMgr = new StatusManager(infra.log, this.event);
+
+    // StatusManager error → 자동 captureException forward.
+    // 일반 메커니즘 — 어떤 도메인 (이미지·cron·pipeline 등) 에서 statusMgr.error 호출되든
+    // 자동으로 jsonl 누적 + (severity critical 일 때) Telegram 발송. 도메인별 enumerate X.
+    this.statusMgr.subscribe((evt) => {
+      if (evt.change !== 'failed') return;
+      const job = evt.job;
+      // severity 자동 결정 — cron·image 같은 사용자 가시 작업은 critical (Telegram), 나머지는 error.
+      const severity: ErrorContext['severity'] = (job.type === 'cron' || job.type === 'image') ? 'critical' : 'error';
+      void _captureException(this, new Error(job.error || 'job failed'), {
+        source: `statusMgr:${job.type}`,
+        identifier: job.id,
+        meta: { jobMessage: job.message, parentJobId: job.parentJobId, ...(job.meta ?? {}) },
+        severity,
+      }).catch(() => { /* 에러 캡처 자체 실패는 silent — recursion 방지 */ });
+    });
+
     // CostManager — LLM 호출 token·비용 누적. 가격 정보는 ILlmPort.getModelPricing 에서 lookup (미구현 어댑터는 null).
     // 일자 키는 사용자 timezone 기준 ISO YYYY-MM-DD.
     this.cost = new CostManager(
@@ -935,6 +954,12 @@ export class FirebatCore {
   /** 디버깅·관리자 UI — 현재 메모리 상태 요약 */
   getJobStats() {
     return this.statusMgr.getStats();
+  }
+
+  /** 에러 캡처 — try/catch 블록·콜백 실패 등 statusMgr 외부 에러도 동일 파이프라인 (jsonl + Telegram).
+   *  StatusManager 통한 자동 forward 가 없는 경로 (예: API route 의 catch, 외부 콜백) 에서 명시 호출. */
+  async captureException(err: unknown, ctx: ErrorContext = {}): Promise<void> {
+    return _captureException(this, err, ctx);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
