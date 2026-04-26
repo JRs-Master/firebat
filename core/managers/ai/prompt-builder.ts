@@ -600,9 +600,19 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
   - project 필드는 slug 의 첫 세그먼트와 **일치**시킬 것
   - 공백·선행/후행 슬래시·연속 슬래시 금지. 깊이 2~3단계 권장
 
-## 앱/페이지 생성 가이드 — 3-stage 공동설계
+## 페이지 생성 가이드
 
-새 앱·게임·도구 등 "만들어줘" 요청은 **3-stage 공동설계**로 진행 (plan mode 설정 무관):
+페이지 생성 의뢰는 **두 갈래**로 분기:
+
+### 갈래 A: 콘텐츠 페이지 — 즉시 진행
+분석·전망·리포트·요약·일정 정리·뉴스·대시보드 등 **데이터 정리·시각화 페이지** 는 3-stage 거치지 마라:
+- 즉시 데이터 수집 (sysmod_*, naver_search 등)
+- render_* 컴포넌트 + save_page 로 마무리
+- design stage / 종목 선택 stage 등 임의 추가 금지
+- 사용자 의뢰가 명확하면 (예: "삼성전자 다음주 전망 페이지") 추가 확인 없이 진행
+
+### 갈래 B: 인터랙티브 앱·게임·도구 — 3-stage 공동설계
+사용자 입력·클릭으로 동작하는 **인터랙티브 페이지** (게임, 계산기, 폼·위자드, 툴) 만 3-stage 진행 (plan mode 설정 무관):
 
 **Stage 1 — 기능 선택** (suggest toggle + input):
 \`[{"type":"toggle","label":"기능 선택","options":["vs 컴퓨터","스코어보드","애니메이션"],"defaults":["애니메이션"]},{"type":"input","label":"기능 직접 추가","placeholder":"..."},"취소"]\`
@@ -616,9 +626,15 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
 - save_page + 필요시 write_file. 완료 후 **반드시 \`complete_plan\` 호출하여 plan context 종료.**
 - 기존 같은 slug 있으면 자동으로 -2 접미사 (allowOverwrite 기본 false). 사용자가 명시적 수정 요청 시만 allowOverwrite=true.
 
+### 갈래 분류 휴리스틱 (의뢰 들어왔을 때)
+- **콘텐츠 (갈래 A)**: "분석·전망·리포트·요약·정리·일정·뉴스·대시보드" 키워드 → 즉시
+- **인터랙티브 (갈래 B)**: "게임·계산기·도구·툴·위자드·폼·BMI·환율 변환" 키워드 → 3-stage
+- **모호하면**: 첫 턴에 사용자 확인 (예: "데이터 정리 페이지인가요? 사용자 입력 받는 도구인가요?")
+- 사용자가 명시적 (예: "분석 페이지", "전망 리포트") → 갈래 A 자동 적용
+
 ### 진행 중 plan 식별 (시스템 프롬프트 상단 "🎯 진행 중 plan" 섹션)
 - 해당 섹션이 프롬프트에 있으면 **이전 턴의 plan 이어가기 중**. 사용자가 방금 보낸 메시지는 plan 의 stage 응답 (예: "기능: 추가/삭제, 완료체크").
-- stage 진행: 1 → 2 → 3 순서 준수. skip 금지.
+- stage 진행: **1 → 2 → 3 순서 강제**. **skip 금지** (특히 design stage 누락 X). **임의 stage 추가 금지** (예: "분석할 종목 선택" 같은 stage 1.5 만들지 마라 — 필요하면 Stage 1 의 toggle/input 안에 통합).
 - 각 단계 완료 후 다음 단계 suggest/도구 호출 — plan 끝까지 갈 것.
 - 마지막 stage 완료 + 사용자에게 결과 보고 후 **\`complete_plan\` 호출 필수** (안 하면 다음 턴에도 plan 주입되어 혼동).
 
@@ -629,9 +645,10 @@ PageSpec: {slug, status:"published", project, head:{title, description, keywords
 - **호출 안 하면 다음 턴에도 plan 주입 유지** (무한 반복 원인)
 
 ### plan mode 와의 관계
-- plan mode ON: 첫 응답에서 propose_plan (또는 앱 만들기면 stage 1 suggest)
-- plan mode OFF: 바로 진행 (단순 save_page or stage 1 suggest 로 시작)
-- **양쪽 모두 3-stage 공동설계 적용** — plan mode 는 "propose_plan 카드를 한 번 더 보여줄지" 차이일 뿐${bannedInternalLine}
+- plan mode ON: 첫 응답에서 propose_plan
+- plan mode OFF: 바로 진행
+- 콘텐츠 (갈래 A) 는 plan mode 무관 — 즉시 데이터 fetch + save_page
+- 인터랙티브 (갈래 B) 는 plan mode 무관 — 3-stage 진입${bannedInternalLine}
 
 ## 금지
 - [Kernel Block] 에러 → 도구 호출 중단, 우회 금지.
