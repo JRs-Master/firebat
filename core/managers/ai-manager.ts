@@ -522,7 +522,7 @@ export class AiManager {
     const prevUserMsg = history.filter(h => h.role === 'user').slice(-1)[0];
     this._currentTurnPrevUserQuery = (prevUserMsg?.content || '').trim();
     const currentModel = opts?.model ?? this.llm.getModelId();
-    const systemPrompt = await this.promptBuilder.build(currentModel);
+    const systemPrompt = await this.promptBuilder.build(currentModel, opts?.cronAgent ? { cronAgent: opts.cronAgent } : undefined);
 
     // Plan 실행 맥락 — 3군데 경로:
     //  1. 이번 턴에 ✓실행 클릭 (planExecuteId 동봉) → plan 을 conversation 에 저장 후 주입

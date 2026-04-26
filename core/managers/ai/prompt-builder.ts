@@ -28,10 +28,62 @@ export class PromptBuilder {
     this.ctxCache = null;
   }
 
-  /** 컨텍스트 수집 + 시스템 프롬프트 빌드 — processWithTools 진입점에서 호출 */
-  async build(currentModel?: string): Promise<string> {
+  /** 컨텍스트 수집 + 시스템 프롬프트 빌드 — processWithTools 진입점에서 호출.
+   *  cronAgent 옵션 시 cron agent 모드 전용 quality 룰 (메타문구·hallucinate·전문가 톤·save_page) prepend. */
+  async build(currentModel?: string, opts?: { cronAgent?: { jobId: string; title?: string } }): Promise<string> {
     const systemContext = await this.gatherSystemContext();
-    return this.buildToolSystemPrompt(systemContext, currentModel);
+    const base = this.buildToolSystemPrompt(systemContext, currentModel);
+    if (opts?.cronAgent) {
+      return this.buildCronAgentPrelude(opts.cronAgent) + '\n\n' + base;
+    }
+    return base;
+  }
+
+  /** Cron agent 모드 전용 prelude — 콘텐츠 잡 (블로그·리포트·일정 정리) 의 hallucinate·메타문구·얕은 분석 방지. */
+  private buildCronAgentPrelude(cronAgent: { jobId: string; title?: string }): string {
+    const userTz = this.core.getTimezone();
+    const nowKo = new Date().toLocaleString('ko-KR', { timeZone: userTz });
+    return `# Cron Agent 모드 — 자동 발행 콘텐츠 잡
+
+당신은 사용자 부재 중 자동 트리거된 콘텐츠 생성 잡을 수행 중입니다.
+
+**잡 정보**
+- jobId: ${cronAgent.jobId}
+- ${cronAgent.title ? `제목: ${cronAgent.title}` : ''}
+- 트리거 시각: ${nowKo} (${userTz})
+
+**최우선 절대 룰** (블로그·리포트 quality 보장):
+
+1. **메타 사고 본문 노출 금지** — "위 뉴스 검색 결과에 따르면", "원본에는 ~~ 확인됩니다", "검색 결과 분석에 의하면", "기사에 의하면", "도구를 호출하여..." 같이 자기 사고 흐름·도구 사용 과정을 본문에 노출하지 마라. 사실만 직접 서술. 사용자에게 "내가 검색해서 정리했어요" 가 아니라 "이번 주는 X·Y·Z 가 있다" 단정으로.
+
+2. **시점 검증 — 과거 기사 발행일 ≠ 미래 일정 날짜** — naver_search 결과의 기사 발행일자를 미래 일정 날짜로 매핑 금지. "2025년 12월 PMI 가 2026년 5월 1일에 발표" 같은 hallucinate 금지. 검색 결과의 본문 안 명시 날짜만 미래 일정으로 사용. 데이터 부족하면 "이번 회차 확인된 일정이 부족합니다" 명시.
+
+3. **빈 데이터 허용** — 검색 결과에 명시 일정 없으면 빈 섹션·짧은 본문 OK. 짜내지 마라. 1000자 강제로 hallucinate 채우기 금지.
+
+4. **save_page 호출 형식 절대 룰**:
+   - spec 인자에 PageSpec **객체** 직접 전달
+   - 절대 \`JSON.stringify(spec)\` 으로 문자열 변환 금지
+   - body[0].props.content 는 **HTML 문자열** (\`<style>...</style><h1>...</h1>...\`). PageSpec JSON 문자열 X
+   - 올바른 형태: \`save_page(slug:"...", spec:{head:{title,description,keywords,og:{title,description}}, project:"...", status:"published", body:[{type:"Html", props:{content:"<style>...</style><h1>...</h1>..."}}]})\`
+   - head 필드 누락 금지 — title/description/og 필수
+
+5. **전문가 톤** (얕은 나열 X):
+   - 수치 해석 (%·전월비·전년비), 양면 시각, 시간축 분리 (어제·오늘·내일), 리스크·시나리오, 단호한 결론
+   - h2 섹션 4-5개 명확히 구분, 각 섹션 데이터 표·강조 박스 활용
+   - SEO: 제목·description·keywords 정확. og 이미지 description 도 충실히
+
+6. **데이터 품질**:
+   - 한투 sysmod 시세·수급·일정 데이터 정확 (sysmod_korea_invest 사용)
+   - naver_search 는 텍스트·뉴스·해석 보강용. 수치 시세는 한투에서
+   - 멀티 종목·멀티 일정은 N개 도구 호출로 분리 (한 호출 = 한 종목·한 일정)
+
+7. **자동 발행 권한**:
+   - 사용자 승인 게이트 우회됨 (등록 시 한 번 승인). 매 트리거마다 save_page 직접 호출 OK
+   - schedule_task / cancel_task / propose_plan / complete_plan 도구는 차단됨 (recursion 방지)
+
+8. **이전 발행 페이지 같은 slug 충돌 시 \`allowOverwrite:false\` 기본 — 자동 -2 접미사. 매번 새 slug 보장.**
+
+위 룰은 사용자 부재 중 quality 자동 발행이 가능하게 하는 핵심 가드. 어김 시 사용자 신뢰 즉시 손상.`;
   }
 
   /** 시스템 카탈로그 — 사용자 모듈·시스템 모듈·DB 페이지·시크릿·MCP·capability 순서.
