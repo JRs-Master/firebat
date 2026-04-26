@@ -1221,7 +1221,7 @@ export default function AdminConsole() {
                             className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-colors disabled:opacity-50 ${planClass}`}
                           >
                             <ListChecks size={14} />
-                            <span>{planLabel}</span>
+                            <span className="inline-block min-w-[42px] text-center">{planLabel}</span>
                           </button>
                         </Tooltip>
                       );
