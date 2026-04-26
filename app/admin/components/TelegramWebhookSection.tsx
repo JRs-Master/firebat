@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Loader2, CheckCircle2, RefreshCw, X } from 'lucide-react';
+import { Loader2, RefreshCw, X } from 'lucide-react';
+import { FeedbackBadge } from './FeedbackBadge';
 
 /**
  * 텔레그램 양방향 봇 webhook 등록 섹션 — SystemModuleSettings 의 telegram 모듈 페이지에서만 노출.
@@ -158,9 +159,10 @@ export function TelegramWebhookSection() {
         )}
       </div>
 
+      {/* 자세한 메시지 (등록 URL 등) — 짧은 결과는 FeedbackBadge 가 표시, 자세한 정보는 별도 표시 */}
       {message && (
-        <div className={`text-[11px] flex items-center gap-1.5 ${message.kind === 'ok' ? 'text-emerald-600' : 'text-red-600'}`}>
-          {message.kind === 'ok' && <CheckCircle2 size={12} />}
+        <div className={`text-[10px] flex items-center gap-1.5 ${message.kind === 'ok' ? 'text-emerald-600' : 'text-red-600'} break-all`}>
+          <FeedbackBadge state={message.kind === 'ok' ? 'ok' : 'err'} okLabel="완료" errLabel="실패" />
           <span>{message.text}</span>
         </div>
       )}

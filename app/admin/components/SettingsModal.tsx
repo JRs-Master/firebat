@@ -146,6 +146,8 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const [moduleSecrets, setModuleSecrets] = useState<{ secretName: string; moduleName: string; hasValue: boolean }[]>([]);
   const [moduleSecretValues, setModuleSecretValues] = useState<Record<string, string>>({});
   const [moduleSecretSaving, setModuleSecretSaving] = useState<string | null>(null);
+  /** 시크릿별 FeedbackBadge 상태 — 'ok'/'err' 1.5초 표시 후 자동 정리 */
+  const [moduleSecretFeedback, setModuleSecretFeedback] = useState<Record<string, 'ok' | 'err' | null>>({});
   const [newSecretName, setNewSecretName] = useState('');
   const [newSecretValue, setNewSecretValue] = useState('');
   const [secretSaving, setSecretSaving] = useState(false);
@@ -282,8 +284,15 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
       const data = await res.json();
       if (data.success) {
         setModuleSecretValues(prev => { const n = { ...prev }; delete n[secretName]; return n; });
+        setModuleSecretFeedback(prev => ({ ...prev, [secretName]: 'ok' }));
         fetchSecrets();
+      } else {
+        setModuleSecretFeedback(prev => ({ ...prev, [secretName]: 'err' }));
       }
+      setTimeout(() => setModuleSecretFeedback(prev => ({ ...prev, [secretName]: null })), 1500);
+    } catch {
+      setModuleSecretFeedback(prev => ({ ...prev, [secretName]: 'err' }));
+      setTimeout(() => setModuleSecretFeedback(prev => ({ ...prev, [secretName]: null })), 1500);
     } finally { setModuleSecretSaving(null); }
   };
 
@@ -1398,8 +1407,9 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                               disabled={!moduleSecretValues[ms.secretName]?.trim() || moduleSecretSaving === ms.secretName}
                               className="px-3 py-1.5 text-[12px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors shrink-0"
                             >
-                              {moduleSecretSaving === ms.secretName ? '...' : '저장'}
+                              저장
                             </button>
+                            <FeedbackBadge state={moduleSecretSaving === ms.secretName ? 'loading' : moduleSecretFeedback[ms.secretName]} loadingLabel="저장 중" />
                             {ms.hasValue && (
                               <button
                                 onClick={() => setModuleSecretValues(prev => { const n = { ...prev }; delete n[ms.secretName]; return n; })}
@@ -1979,6 +1989,7 @@ function CapabilityTabContent() {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [orderFeedback, setOrderFeedback] = useState<'ok' | 'err' | null>(null);
   const [orderChanged, setOrderChanged] = useState(false);
 
   useEffect(() => {
@@ -2030,14 +2041,24 @@ function CapabilityTabContent() {
     if (!selectedCap) return;
     setSaving(true);
     try {
-      await fetch('/api/capabilities', {
+      const res = await fetch('/api/capabilities', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: selectedCap, settings: { providers: providers.map(p => p.moduleName) } }),
       });
-      setOrderChanged(false);
-    } catch {}
-    finally { setSaving(false); }
+      if (res.ok) {
+        setOrderChanged(false);
+        setOrderFeedback('ok');
+      } else {
+        setOrderFeedback('err');
+      }
+    } catch {
+      setOrderFeedback('err');
+    }
+    finally {
+      setSaving(false);
+      setTimeout(() => setOrderFeedback(null), 1800);
+    }
   };
 
   if (loading) {
@@ -2140,14 +2161,19 @@ function CapabilityTabContent() {
               </div>
 
               {/* 순서 저장 */}
-              {providers.length > 1 && orderChanged && (
-                <button
-                  onClick={saveOrder}
-                  disabled={saving}
-                  className="w-full px-3 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
-                >
-                  {saving ? '저장 중...' : '순서 저장'}
-                </button>
+              {providers.length > 1 && (orderChanged || orderFeedback) && (
+                <div className="flex items-center gap-2">
+                  {orderChanged && (
+                    <button
+                      onClick={saveOrder}
+                      disabled={saving}
+                      className="flex-1 px-3 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
+                    >
+                      순서 저장
+                    </button>
+                  )}
+                  <FeedbackBadge state={saving ? 'loading' : orderFeedback} loadingLabel="저장 중" />
+                </div>
               )}
             </>
           )}
