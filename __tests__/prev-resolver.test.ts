@@ -132,4 +132,47 @@ describe('resolveValue — $prev 치환', () => {
       expect(tm.resolveValue('hello', { x: 1 })).toBe('hello');
     });
   });
+
+  describe('array index path — sysmod array 응답 (chk-holiday 등) 일반 메커니즘', () => {
+    const holidayResp = {
+      output: [
+        { bass_dt: '20260427', opnd_yn: 'Y' },
+        { bass_dt: '20260428', opnd_yn: 'Y' },
+        { bass_dt: '20260429', opnd_yn: 'N' },
+      ],
+    };
+
+    it('$prev.output[0].opnd_yn — exact match (객체 응답에서 인덱스 + 키)', () => {
+      expect(tm.resolveValue('$prev.output[0].opnd_yn', holidayResp)).toBe('Y');
+      expect(tm.resolveValue('$prev.output[2].opnd_yn', holidayResp)).toBe('N');
+    });
+
+    it('$prev.output[0] — 인덱스만 (객체 그대로)', () => {
+      expect(tm.resolveValue('$prev.output[0]', holidayResp)).toEqual({ bass_dt: '20260427', opnd_yn: 'Y' });
+    });
+
+    it('$prev.output[-1].opnd_yn — 음수 인덱스 (마지막)', () => {
+      expect(tm.resolveValue('$prev.output[-1].opnd_yn', holidayResp)).toBe('N');
+    });
+
+    it('$stepN.items[0].name — step 결과의 array', () => {
+      const stepResults = [undefined, undefined, { items: [{ name: '삼성전자' }, { name: 'LG' }] }];
+      expect(tm.resolveValue('$step2.items[0].name', undefined, stepResults)).toBe('삼성전자');
+      expect(tm.resolveValue('$step2.items[1].name', undefined, stepResults)).toBe('LG');
+    });
+
+    it('문자열 내 보간 — "오늘 개장: $prev.output[0].opnd_yn"', () => {
+      expect(tm.resolveValue('오늘 개장: $prev.output[0].opnd_yn', holidayResp))
+        .toBe('오늘 개장: Y');
+    });
+
+    it('범위 밖 인덱스 → 패턴 그대로 (preserve)', () => {
+      expect(tm.resolveValue('$prev.output[99].opnd_yn', holidayResp))
+        .toBe('$prev.output[99].opnd_yn');
+    });
+
+    it('점 표기 인덱스도 OK — $prev.output.0.opnd_yn', () => {
+      expect(tm.resolveValue('$prev.output.0.opnd_yn', holidayResp)).toBe('Y');
+    });
+  });
 });

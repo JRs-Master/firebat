@@ -1,5 +1,6 @@
 import type { FirebatCore } from '../index';
 import type { ILlmPort, ILogPort, PipelineStep } from '../ports';
+import { resolveFieldPath } from '../utils/path-resolve';
 
 /**
  * Task Manager — 파이프라인 실행 엔진
@@ -489,6 +490,9 @@ export class TaskManager {
       return stepResults[idx];
     };
     if (typeof val === 'string') {
+      // path 문자 집합 — 단어, 점, 대괄호 인덱스, 음수
+      // 예: output[0].opnd_yn, foo.bar, items[-1].id
+      const PATH_CHARS = '[\\w.\\[\\]\\-]+';
       // $stepN — 정확 매치 (전체 string 이 단일 reference)
       const stepExact = val.match(/^\$step(\d+)$/);
       if (stepExact) {
@@ -496,54 +500,52 @@ export class TaskManager {
         if (result === undefined) return val;
         return result; // 객체 그대로 반환 (object accept 하는 inputMap 용)
       }
-      // $stepN.key — 정확 매치 (속성 접근)
-      const stepProp = val.match(/^\$step(\d+)\.(\w+)$/);
+      // $stepN.path — 정확 매치 (속성 접근, array index 지원)
+      const stepProp = val.match(new RegExp(`^\\$step(\\d+)\\.(${PATH_CHARS})$`));
       if (stepProp) {
         const result = getStepResult(parseInt(stepProp[1], 10));
-        const key = stepProp[2];
-        if (result && typeof result === 'object' && key in result) return (result as Record<string, unknown>)[key];
+        const path = stepProp[2];
+        const v = resolveFieldPath(result, path);
+        if (v !== undefined) return v; // 객체·배열·primitive 모두 그대로 반환
         if (typeof result === 'string') return result;
         return val;
       }
       if (val === '$prev') return typeof prev === 'string' ? prev : JSON.stringify(prev);
-      // $prev.key 속성 접근 (예: $prev.url, $prev.title)
-      const propMatch = val.match(/^\$prev\.(\w+)$/);
+      // $prev.path 속성 접근 (예: $prev.url, $prev.output[0].opnd_yn)
+      const propMatch = val.match(new RegExp(`^\\$prev\\.(${PATH_CHARS})$`));
       if (propMatch) {
-        const key = propMatch[1];
-        if (prev && typeof prev === 'object' && key in prev) return (prev as Record<string, unknown>)[key];
+        const v = resolveFieldPath(prev, propMatch[1]);
+        if (v !== undefined) return v;
         if (typeof prev === 'string') return prev;
         return val;
       }
-      // 문자열 내 $prev.key / $prev / $stepN.key / $stepN 치환
+      // 문자열 내 $prev.path / $prev / $stepN.path / $stepN 치환
       if (val.includes('$prev') || val.includes('$step')) {
         let result = val;
-        // $stepN.key 치환 (정확 키로)
-        result = result.replace(/\$step(\d+)\.(\w+)/g, (_: string, idx: string, key: string) => {
+        const toStr = (v: unknown): string => v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v);
+        // $stepN.path 치환
+        result = result.replace(new RegExp(`\\$step(\\d+)\\.(${PATH_CHARS})`, 'g'), (_: string, idx: string, path: string) => {
           const r = getStepResult(parseInt(idx, 10));
-          if (r && typeof r === 'object' && key in r) {
-            const v = (r as Record<string, unknown>)[key];
-            return v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v);
-          }
+          const v = resolveFieldPath(r, path);
+          if (v !== undefined) return toStr(v);
           if (typeof r === 'string') return r;
-          return `$step${idx}.${key}`;
+          return `$step${idx}.${path}`;
         });
         // $stepN 단독 치환
-        result = result.replace(/\$step(\d+)(?!\.\w)/g, (_: string, idx: string) => {
+        result = result.replace(/\$step(\d+)(?!\.[\w\[])/g, (_: string, idx: string) => {
           const r = getStepResult(parseInt(idx, 10));
           if (r === undefined) return `$step${idx}`;
           return typeof r === 'string' ? r : JSON.stringify(r);
         });
-        // $prev.key 치환
-        result = result.replace(/\$prev\.(\w+)/g, (_: string, key: string) => {
-          if (prev && typeof prev === 'object' && key in prev) {
-            const v = (prev as Record<string, unknown>)[key];
-            return v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v);
-          }
+        // $prev.path 치환
+        result = result.replace(new RegExp(`\\$prev\\.(${PATH_CHARS})`, 'g'), (_: string, path: string) => {
+          const v = resolveFieldPath(prev, path);
+          if (v !== undefined) return toStr(v);
           if (typeof prev === 'string') return prev;
-          return `$prev.${key}`;
+          return `$prev.${path}`;
         });
         // 단독 $prev 만 치환 — preserve 한 "$prev.missing" 의 $prev 부분 덮어쓰기 방지.
-        result = result.replace(/\$prev(?!\.\w)/g, typeof prev === 'string' ? prev : JSON.stringify(prev));
+        result = result.replace(/\$prev(?!\.[\w\[])/g, typeof prev === 'string' ? prev : JSON.stringify(prev));
         return result;
       }
       return val;

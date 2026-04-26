@@ -1,6 +1,7 @@
 import type { FirebatCore } from '../index';
 import type { ICronPort, ILogPort, CronScheduleOptions, CronTriggerInfo, CronJobResult, CronRunWhen, CronNotify } from '../ports';
 import type { InfraResult } from '../types';
+import { resolveFieldPath } from '../utils/path-resolve';
 // SSE emit 은 Core 가 담당 — Manager 는 더 이상 eventBus import 불필요
 
 /**
@@ -180,9 +181,9 @@ export class ScheduleManager {
         result = (result as { data: unknown }).data;
       }
 
-      // field 경로 평가 — '$result.foo' 또는 'foo' 모두 지원
+      // field 경로 평가 — '$result.foo' 또는 'foo' 모두 지원, array index OK ($prev.output[0].opnd_yn)
       const fieldPath = runWhen.field.replace(/^\$result\./, '').replace(/^\$prev\./, '');
-      const actualValue = this.resolveFieldPath(result, fieldPath);
+      const actualValue = resolveFieldPath(result, fieldPath);
       const met = this.evalCondition(actualValue, runWhen.op, runWhen.value);
       const reason = `${runWhen.field} ${runWhen.op} ${runWhen.value ?? ''} → 실제=${JSON.stringify(actualValue)} = ${met}`;
       return { met, reason };
@@ -215,17 +216,6 @@ export class ScheduleManager {
     const inputData: Record<string, unknown> = { action: 'send-message', text };
     if (cfg.chatId) inputData.chatId = cfg.chatId;
     await this.core.sandboxExecute(path, inputData);
-  }
-
-  /** field path 평가 — 'foo.bar.baz' 같은 점 표기 지원 */
-  private resolveFieldPath(obj: unknown, path: string): unknown {
-    if (!path) return obj;
-    let v: unknown = obj;
-    for (const key of path.split('.')) {
-      if (v && typeof v === 'object' && key in v) v = (v as Record<string, unknown>)[key];
-      else return undefined;
-    }
-    return v;
   }
 
   /** condition 평가 — TaskManager.evaluateCondition 과 같은 동작 (재사용 어려워 inline) */
