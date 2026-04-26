@@ -433,8 +433,17 @@ export interface SavePageStep extends PipelineStepBase {
   allowOverwrite?: boolean;
 }
 
-/** 파이프라인 단계 = 6가지 중 하나 */
-export type PipelineStep = ExecuteStep | McpCallStep | NetworkRequestStep | LlmTransformStep | ConditionStep | SavePageStep;
+/** TOOL_CALL — Function Calling 도구 (image_gen / search_history / search_media / render_* 등) 직접 호출.
+ *  EXECUTE 가 모듈 (sandbox 코드) 호출이라면, TOOL_CALL 은 도구 (Core 함수) 호출.
+ *  자동 블로그 발행 시 image_gen 같은 도구를 cron pipeline 에서 활용 가능 — 사용자 채팅 안 거침. */
+export interface ToolCallStep extends PipelineStepBase {
+  type: 'TOOL_CALL';
+  /** 도구 이름 (image_gen / search_history / search_media / render_* 등). ToolDispatcher 가 dispatch. */
+  tool: string;
+}
+
+/** 파이프라인 단계 = 7가지 중 하나 */
+export type PipelineStep = ExecuteStep | McpCallStep | NetworkRequestStep | LlmTransformStep | ConditionStep | SavePageStep | ToolCallStep;
 
 /** 파이프라인 단계 타입 리터럴 */
 export type PipelineStepType = PipelineStep['type'];

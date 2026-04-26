@@ -66,6 +66,11 @@ export class TaskManager {
             return `[Step ${n}] SAVE_PAGE에 spec 이 없습니다 (직접 지정 또는 inputMap.spec 로 매핑 필요 — 보통 직전 LLM_TRANSFORM 결과를 매핑).`;
           }
           break;
+        case 'TOOL_CALL':
+          if (!s.tool || typeof s.tool !== 'string' || !s.tool.trim()) {
+            return `[Step ${n}] TOOL_CALL에 tool 이름이 없습니다 (예: "image_gen", "search_history").`;
+          }
+          break;
         default: {
           const _exhaustive: never = s;
           return `[Step ${n}] 알 수 없는 단계 타입: ${(_exhaustive as PipelineStep).type}`;
@@ -98,6 +103,7 @@ export class TaskManager {
         : step.type === 'NETWORK_REQUEST' ? step.url
         : step.type === 'LLM_TRANSFORM' ? step.instruction?.slice(0, 60)
         : step.type === 'CONDITION' ? `${step.field} ${step.op} ${step.value ?? ''}`
+        : step.type === 'TOOL_CALL' ? step.tool
         : '';
       this.log.info(`[Pipeline] Step ${i + 1}/${steps.length}: ${step.type}${stepDetail ? ` → ${stepDetail}` : ''}`);
       // 입력 가시화 (500자) — 어느 종목·파라미터로 호출됐는지 디버깅 가능
@@ -234,6 +240,29 @@ export class TaskManager {
 
             onPipelineStep?.(i, 'done');
             // prev 유지 (CONDITION은 데이터를 변환하지 않음)
+            break;
+          }
+          case 'TOOL_CALL': {
+            // 도구 직접 호출 — Function Calling 도구 (image_gen / search_history / search_media / render_*)
+            // 를 pipeline 안에서 실행. EXECUTE 가 모듈 (sandbox 코드) 호출이라면 TOOL_CALL 은 도구 (Core 함수) 호출.
+            // 사용 시점: cron 자동 발행에서 image_gen 으로 새 이미지 매번 생성 등.
+            const toolName = step.tool;
+            const result = await this.core.executeTool(toolName, stepInput, {});
+            if (result.success === false) {
+              const errMsg = (result.error as string) || '도구 호출 실패';
+              onPipelineStep?.(i, 'error', errMsg);
+              return { success: false, error: `[Pipeline Step ${i + 1}] TOOL_CALL ${toolName} 실패: ${errMsg}` };
+            }
+            // 결과 가시화 (500자 슬라이스)
+            try {
+              const outputPreview = JSON.stringify(result).slice(0, 500);
+              this.log.info(`[Pipeline] Step ${i + 1} TOOL_CALL ${toolName} output: ${outputPreview}`);
+            } catch {}
+            // 결과를 다음 step 의 $prev 로 전달. result.success 는 떼서 data 만 — 일반 EXECUTE 와 일관.
+            const dataOnly: Record<string, unknown> = { ...result };
+            delete dataOnly.success;
+            prev = Object.keys(dataOnly).length === 1 && 'data' in dataOnly ? dataOnly.data : dataOnly;
+            onPipelineStep?.(i, 'done');
             break;
           }
           case 'SAVE_PAGE': {

@@ -362,7 +362,16 @@ user 모듈은 도메인 판단만 담고, 외부 API·UI·시크릿은 Firebat 
 - 크론 형식 "분 시 일 월 요일" (이 타임존 기준 해석됨). 시각이 지났으면 사용자 확인, 자의적 조정 금지.
 
 ## 파이프라인 (특수)
-스텝 6종만 허용: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM, CONDITION, SAVE_PAGE.
+스텝 7종만 허용: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM, CONDITION, SAVE_PAGE, TOOL_CALL.
+
+### Step type 선택 가이드
+- **EXECUTE** — sandbox 모듈 실행. \`path\` 가 \`system/modules/X/index.mjs\` 또는 \`user/modules/X/index.mjs\`. sysmod_kiwoom·sysmod_telegram 같은 모듈 호출.
+- **TOOL_CALL** — Function Calling 도구 직접 호출. \`tool\` 이 도구 이름. image_gen / search_history / search_media / render_* 같은 **모듈이 아닌 도구**. cron 자동 발행에서 새 이미지 매번 생성하려면 이 step.
+- **MCP_CALL** — 외부 MCP 서버 도구.
+- **NETWORK_REQUEST** — 임의 HTTP 요청.
+- **LLM_TRANSFORM** — 텍스트 변환만 (askText). 도구 호출 불가.
+- **CONDITION** — 조건 분기 (false 면 정상 stop).
+- **SAVE_PAGE** — cron 자동 페이지 발행 (사용자 승인 우회).
 
 ### LLM_TRANSFORM 절대 규칙 — 도구 호출 불가
 LLM_TRANSFORM 은 **텍스트 변환 전용** (askText 만 호출). instruction 안에 도구 워크플로우를 자연어로 적어도 도구는 절대 안 돌아간다.
@@ -373,13 +382,26 @@ LLM_TRANSFORM 은 **텍스트 변환 전용** (askText 만 호출). instruction 
 \`\`\`
 → validatePipeline 이 instruction 안 도구명(sysmod_/save_page/image_gen 등) 감지하면 reject. AI 에게 "도구 호출은 별도 step 으로 분리하세요" 에러 반환.
 
-✅ 올바른 형태 — 각 도구를 별도 step 으로 분리:
+### 매일 자동 새 이미지 + 새 글 발행 패턴 (image_gen 활용)
+\`\`\`
+[
+  {TOOL_CALL tool:"image_gen" inputData:{prompt:"우주 풍경", aspectRatio:"16:9"}},   // 새 이미지 1
+  {TOOL_CALL tool:"image_gen" inputData:{prompt:"지구 클로즈업", aspectRatio:"16:9"}}, // 새 이미지 2
+  {TOOL_CALL tool:"image_gen" inputData:{prompt:"달 표면", aspectRatio:"16:9"}},      // 새 이미지 3
+  {LLM_TRANSFORM instruction:"3개 이미지 url 받아 우주 블로그 PageSpec JSON 생성. body 에 Header + Image + Text 교차 배치. {head:..., body:[...]} 만 출력"},
+  {SAVE_PAGE slug:"space/$date" inputMap:{spec:"$prev"} allowOverwrite:false}
+]
+\`\`\`
+TOOL_CALL 결과는 다음 step 에 \`$prev\` 로 전달 — image_gen 의 경우 {url, slug, thumbnailUrl, ...} 객체.
+
+### 자동매매 패턴 (모듈만 사용)
 \`\`\`
 [
   {EXECUTE kiwoom inputData:{action:"price", symbol:"005930"}},
-  {EXECUTE image_gen inputData:{prompt:"...", aspectRatio:"16:9"}},  // image_gen 은 도구로 호출 — pipeline 의 EXECUTE 가 아니라 채팅 도구
-  {LLM_TRANSFORM instruction:"위 데이터를 SEO 블로그 HTML JSON 으로 변환 — {head:..., body:[...]} 구조"},
-  {SAVE_PAGE slug:"stock-blog/2026-04-25-close" inputMap:{spec:"$prev"}}
+  {EXECUTE user/judge inputData:{priceData:"$prev"}},
+  {CONDITION field:"$prev.shouldExecute" op:"==" value:true},
+  {EXECUTE kiwoom inputData:{action:"buy", symbol:"005930", qty:1}},
+  {EXECUTE telegram inputData:{action:"send-message", text:"$prev"}}
 ]
 \`\`\`
 

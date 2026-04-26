@@ -18,13 +18,13 @@ import { IMAGE_GEN_DESCRIPTION } from '../../../lib/image-gen-prompt';
 export const PIPELINE_STEP_SCHEMA: JsonSchema = {
   type: 'object',
   properties: {
-    type: { type: 'string', description: 'EXECUTE | MCP_CALL | NETWORK_REQUEST | LLM_TRANSFORM | CONDITION | SAVE_PAGE', enum: ['EXECUTE', 'MCP_CALL', 'NETWORK_REQUEST', 'LLM_TRANSFORM', 'CONDITION', 'SAVE_PAGE'] },
+    type: { type: 'string', description: 'EXECUTE | MCP_CALL | NETWORK_REQUEST | LLM_TRANSFORM | CONDITION | SAVE_PAGE | TOOL_CALL', enum: ['EXECUTE', 'MCP_CALL', 'NETWORK_REQUEST', 'LLM_TRANSFORM', 'CONDITION', 'SAVE_PAGE', 'TOOL_CALL'] },
     description: { type: 'string', description: '단계 설명' },
     path: { type: 'string', description: 'EXECUTE: 모듈 경로 (예: system/modules/kiwoom/index.mjs)' },
-    inputData: { type: 'object', description: '이 단계의 자체 입력. EXECUTE/SAVE_PAGE 등에서 사용 (예: {action, symbol} 또는 {slug, spec}).', additionalProperties: true },
+    inputData: { type: 'object', description: '이 단계의 자체 입력. EXECUTE/SAVE_PAGE/TOOL_CALL 등에서 사용 (예: {action, symbol} / {slug, spec} / {prompt, aspectRatio}).', additionalProperties: true },
     inputMap: { type: 'object', description: '$prev 매핑 (예: {"url":"$prev.url"} 또는 SAVE_PAGE 의 {"spec":"$prev"})', additionalProperties: true },
     server: { type: 'string', description: 'MCP_CALL: 서버 이름' },
-    tool: { type: 'string', description: 'MCP_CALL: 도구 이름' },
+    tool: { type: 'string', description: 'MCP_CALL: 도구 이름. TOOL_CALL: Function Calling 도구명 (image_gen / search_history / search_media / render_* 등).' },
     arguments: { type: 'object', description: 'MCP_CALL: 도구 인자', additionalProperties: true },
     url: { type: 'string', description: 'NETWORK_REQUEST: URL' },
     method: { type: 'string', description: 'NETWORK_REQUEST: HTTP 메서드', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] },
