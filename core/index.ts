@@ -549,6 +549,127 @@ export class FirebatCore {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  //  텔레그램 양방향 봇 — webhook 등록·해제·메시지 처리
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** 텔레그램 webhook URL 등록.
+   *  domain = 'https://firebat.co.kr' 형태 — webhook URL = `${domain}/api/telegram/webhook`.
+   *  자동 secret 생성 + Vault 저장. setWebhook 응답 처리. */
+  async setupTelegramWebhook(domain: string): Promise<{ success: boolean; webhookUrl?: string; error?: string }> {
+    const token = this.infra.vault.getSecret('user:TELEGRAM_BOT_TOKEN') || process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) return { success: false, error: 'TELEGRAM_BOT_TOKEN 미설정' };
+    if (!/^https:\/\/.+/.test(domain)) return { success: false, error: 'domain 은 https:// 로 시작해야 합니다 (텔레그램 Bot API 요구)' };
+
+    // secret 자동 생성 — 32자 hex
+    let secret = this.infra.vault.getSecret('user:TELEGRAM_WEBHOOK_SECRET');
+    if (!secret) {
+      secret = Array.from({ length: 32 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+      this.infra.vault.setSecret('user:TELEGRAM_WEBHOOK_SECRET', secret);
+    }
+
+    const webhookUrl = `${domain.replace(/\/$/, '')}/api/telegram/webhook`;
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: webhookUrl,
+          secret_token: secret,
+          allowed_updates: ['message'],
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        return { success: false, error: json.description || `HTTP ${res.status}` };
+      }
+      return { success: true, webhookUrl };
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) };
+    }
+  }
+
+  /** 텔레그램 webhook 해제 + secret 삭제 */
+  async removeTelegramWebhook(): Promise<{ success: boolean; error?: string }> {
+    const token = this.infra.vault.getSecret('user:TELEGRAM_BOT_TOKEN') || process.env.TELEGRAM_BOT_TOKEN;
+    if (!token) return { success: false, error: 'TELEGRAM_BOT_TOKEN 미설정' };
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/deleteWebhook`, { method: 'POST' });
+      const json = await res.json().catch(() => ({}));
+      this.infra.vault.deleteSecret('user:TELEGRAM_WEBHOOK_SECRET');
+      if (!res.ok || !json.ok) {
+        return { success: false, error: json.description || `HTTP ${res.status}` };
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || String(err) };
+    }
+  }
+
+  /** 텔레그램 webhook 현재 상태 조회 — getWebhookInfo + Vault 확인 */
+  async getTelegramWebhookStatus(): Promise<{ active: boolean; url?: string; configured: boolean; ownerCount: number; error?: string }> {
+    const token = this.infra.vault.getSecret('user:TELEGRAM_BOT_TOKEN') || process.env.TELEGRAM_BOT_TOKEN;
+    const ownerIdsRaw = this.infra.vault.getSecret('user:TELEGRAM_OWNER_IDS') || '';
+    const ownerCount = ownerIdsRaw.split(',').map(s => s.trim()).filter(Boolean).length;
+    const configured = !!token && ownerCount > 0;
+    if (!token) return { active: false, configured: false, ownerCount: 0, error: 'TELEGRAM_BOT_TOKEN 미설정' };
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/getWebhookInfo`);
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        return { active: false, configured, ownerCount, error: json.description || `HTTP ${res.status}` };
+      }
+      const url = json.result?.url || '';
+      return { active: !!url, url: url || undefined, configured, ownerCount };
+    } catch (err: any) {
+      return { active: false, configured, ownerCount, error: err.message || String(err) };
+    }
+  }
+
+  /** 텔레그램 user ID 가 owner whitelist 에 있는지 — webhook 진입점 권한 검사. */
+  isTelegramOwner(userId: string | number): boolean {
+    const ownerIdsRaw = this.infra.vault.getSecret('user:TELEGRAM_OWNER_IDS') || '';
+    const owners = ownerIdsRaw.split(',').map(s => s.trim()).filter(Boolean);
+    return owners.includes(String(userId));
+  }
+
+  /** Webhook 보안 토큰 검증용 — X-Telegram-Bot-Api-Secret-Token 헤더와 비교. */
+  getTelegramWebhookSecret(): string | null {
+    return this.infra.vault.getSecret('user:TELEGRAM_WEBHOOK_SECRET');
+  }
+
+  /** 텔레그램 메시지 처리 — AI 호출 + sysmod_telegram 응답 발송.
+   *  Stateless (history 없음 — v1.x 후속에서 chatId 별 conversation 추가 가능). */
+  async processTelegramMessage(text: string, chatId: string | number): Promise<{ success: boolean; reply?: string; error?: string }> {
+    try {
+      // 1. AI 호출 (history 없음, stateless)
+      const aiRes = await this.requestActionWithTools(text, []);
+      if (!aiRes.success) {
+        return { success: false, error: aiRes.error || 'AI 응답 실패' };
+      }
+      const reply = (aiRes.reply || '').trim();
+      if (!reply) {
+        return { success: false, error: 'AI 응답 비어있음' };
+      }
+
+      // 2. sysmod_telegram send-message 로 응답 (chatId 명시)
+      const sendRes = await this.sandboxExecute('system/modules/telegram/index.mjs', {
+        action: 'send-message',
+        chatId: String(chatId),
+        text: reply.slice(0, 4000), // 텔레그램 4096자 한도, 여유 96자
+      });
+      if (!sendRes.success) {
+        this.infra.log.error(`[Telegram] 응답 전송 실패: ${sendRes.error}`);
+        return { success: false, error: sendRes.error };
+      }
+      return { success: true, reply };
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      this.infra.log.error(`[Telegram] processMessage 실패: ${msg}`);
+      return { success: false, error: msg };
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   //  미디어 → MediaManager (생성·재생성·CRUD·갤러리·OG 안전성)
   //  Core facade 의 책임: StatusManager wrap + SSE emit. 도메인 로직은 모두 MediaManager.
   // ══════════════════════════════════════════════════════════════════════════

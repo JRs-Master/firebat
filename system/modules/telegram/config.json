@@ -2,12 +2,12 @@
   "name": "telegram",
   "type": "module",
   "scope": "system",
-  "version": "1.0.0",
-  "description": "텔레그램 봇 메시지·미디어 발송. send-message(text 또는 마크다운), send-photo(URL/파일경로), send-document, send-location. 24/7 운영 봇 알림·자동매매 체결 통보·서버 상태 알림에 적합. BotFather 로 토큰 발급 후 chat ID 획득(@get_id_bot 또는 /start 후 getUpdates) → Vault 에 TELEGRAM_BOT_TOKEN 과 TELEGRAM_CHAT_ID 저장. 기본은 단방향 (sendXxx) — 양방향 webhook + 명령은 v1.x.",
+  "version": "1.1.0",
+  "description": "텔레그램 봇 — 양방향 (webhook + AI 응답) + 단방향 (메시지·미디어 발송). 24/7 운영 봇 알림·자동매매 체결 통보·서버 상태 알림 + 모바일 원격 제어. BotFather 로 토큰 발급 → chat ID 획득(@get_id_bot 또는 /start 후 getUpdates) → Vault 저장 → '웹훅 등록' 버튼으로 활성. owner whitelist 로만 명령 처리 (보안).",
   "runtime": "node",
   "capability": "notification",
   "providerType": "api",
-  "secrets": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"],
+  "secrets": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "TELEGRAM_OWNER_IDS", "TELEGRAM_WEBHOOK_SECRET"],
   "input": {
     "type": "object",
     "properties": {
