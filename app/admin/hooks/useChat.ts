@@ -654,11 +654,17 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   // 현재는 propose_plan 도구 → PlanCard (render_* blocks) → suggestions 의 plan-confirm 버튼으로
   // handleSubmit(text, true, { planExecuteId }) 호출 — 모두 Function Calling 경로.
 
-  // pending 상태 변경 후 DB 저장 — 새로고침 시 status 사라짐 방지
-  const persistAfterDispatch = useCallback(() => {
+  // pending 상태 변경 후 DB 저장 — 새로고침 시 status 사라짐 방지.
+  // dispatch 직후 messagesRef 가 React 재렌더 전이라 stale 가능 → 새 status 를 직접 계산해 즉시 save.
+  const persistPendingChange = useCallback((msgId: string, planId: string, patch: Partial<{ status: 'approved' | 'rejected' | 'past-runat' | 'error'; errorMessage: string; originalRunAt: string }>) => {
     const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
     if (!convId) return;
-    queueMicrotask(() => saveToDbRef.current(convId, messagesRef.current));
+    const updated = messagesRef.current.map(m =>
+      m.id !== msgId
+        ? m
+        : { ...m, pendingActions: m.pendingActions?.map(p => p.planId === planId ? { ...p, ...patch } : p) },
+    );
+    saveToDbRef.current(convId, updated);
   }, [activeConvId]);
 
   // Pending tool 개별 승인
@@ -676,25 +682,26 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         dispatch({ type: 'PENDING_APPROVED', msgId, planId });
         onRefresh();
         window.dispatchEvent(new Event('firebat-refresh'));
-        persistAfterDispatch();
+        persistPendingChange(msgId, planId, { status: 'approved' });
       } else if (data.code === 'PAST_RUNAT') {
         dispatch({ type: 'PENDING_PAST_RUNAT', msgId, planId, originalRunAt: data.originalRunAt });
-        persistAfterDispatch();
+        persistPendingChange(msgId, planId, { status: 'past-runat', originalRunAt: data.originalRunAt });
       } else {
-        dispatch({ type: 'PENDING_ERROR', msgId, planId, errorMessage: data.error || '실행 실패' });
-        persistAfterDispatch();
+        const errorMessage = data.error || '실행 실패';
+        dispatch({ type: 'PENDING_ERROR', msgId, planId, errorMessage });
+        persistPendingChange(msgId, planId, { status: 'error', errorMessage });
       }
     } catch {}
-  }, [onRefresh, persistAfterDispatch]);
+  }, [onRefresh, persistPendingChange]);
 
   // Pending tool 개별 거부
   const handleRejectPending = useCallback(async (msgId: string, planId: string) => {
     try {
       await fetch(`/api/plan/reject?planId=${encodeURIComponent(planId)}`, { method: 'POST' });
       dispatch({ type: 'PENDING_REJECTED', msgId, planId });
-      persistAfterDispatch();
+      persistPendingChange(msgId, planId, { status: 'rejected' });
     } catch {}
-  }, [persistAfterDispatch]);
+  }, [persistPendingChange]);
 
   const convMetas: ConversationMeta[] = conversations.map(({ id, title, createdAt, updatedAt }) => ({ id, title, createdAt, updatedAt }));
 
