@@ -182,6 +182,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   }, [messages]);
 
   // DB 저장 — 명시 호출. union merge 로 안전.
+  // **실패 시 1회 retry + 콘솔 경고** (v0.1, 2026-04-27): silent .catch 로 묻혀서 pending status 손실 진단 불가했던 문제 가시화.
   const saveToDbRef = useRef<(convId: string, msgs: Message[]) => void>(() => {});
   saveToDbRef.current = (convId: string, msgs: Message[]) => {
     if (!convId) return;
@@ -192,11 +193,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       : '새 대화';
     const convMeta = conversations.find(c => c.id === convId);
     const createdAt = convMeta?.createdAt ?? Date.now();
-    fetch('/api/conversations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: convId, title, messages: cleanMsgs, createdAt }),
-      keepalive: true,
+    const body = JSON.stringify({ id: convId, title, messages: cleanMsgs, createdAt });
+    const attempt = (retries: number): Promise<void> => fetch('/api/conversations', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true,
     }).then(res => {
       if (res.status === 409) {
         setConversations(prev => {
@@ -208,8 +207,21 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           setActiveConvId('');
           dispatch({ type: 'LOAD', messages: [INIT_MESSAGE] });
         }
+        return;
       }
-    }).catch(() => {});
+      if (!res.ok && retries > 0) {
+        console.warn(`[Firebat] DB save HTTP ${res.status} — ${retries}회 재시도`);
+        return new Promise<void>(resolve => setTimeout(() => attempt(retries - 1).finally(resolve), 500));
+      }
+      if (!res.ok) console.error(`[Firebat] DB save 최종 실패 HTTP ${res.status} — pending status 손실 위험`);
+    }).catch(err => {
+      if (retries > 0) {
+        console.warn(`[Firebat] DB save network 실패 — ${retries}회 재시도:`, err);
+        return new Promise<void>(resolve => setTimeout(() => attempt(retries - 1).finally(resolve), 500));
+      }
+      console.error('[Firebat] DB save 최종 실패 — pending status 손실 위험:', err);
+    });
+    void attempt(1);
   };
 
   // DB 재조회 — 사이드바 펼침·탭 전환·visibility change 등 여러 지점에서 호출
@@ -656,6 +668,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
 
   // pending 상태 변경 후 DB 저장 — 새로고침 시 status 사라짐 방지.
   // dispatch 직후 messagesRef 가 React 재렌더 전이라 stale 가능 → 새 status 를 직접 계산해 즉시 save.
+  // **이중 저장 + 검증** (v0.1, 2026-04-27): 사용자가 승인 → 리빌드 → 다시 들어가니 버튼 재등장 케이스 방어.
+  // 1) localStorage 즉시 동기 갱신 — useEffect 비동기 갱신 race 우회.
+  // 2) DB POST 응답 await 후 실패 시 콘솔 경고 + 1회 retry — silent .catch 로 묻혔던 문제 가시화.
   const persistPendingChange = useCallback((msgId: string, planId: string, patch: Partial<{ status: 'approved' | 'rejected' | 'past-runat' | 'error'; errorMessage: string; originalRunAt: string }>) => {
     const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
     if (!convId) return;
@@ -664,6 +679,16 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         ? m
         : { ...m, pendingActions: m.pendingActions?.map(p => p.planId === planId ? { ...p, ...patch } : p) },
     );
+    // 1) localStorage 즉시 동기 갱신 — 새로고침 시 로컬 캐시가 우선 로드되므로 status 보존 보장
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('firebat_conversations') : null;
+      if (raw) {
+        const convs = JSON.parse(raw) as Conversation[];
+        const next = convs.map(c => c.id === convId ? { ...c, messages: cleanMessages(updated), updatedAt: Date.now() } : c);
+        localStorage.setItem('firebat_conversations', JSON.stringify(next));
+      }
+    } catch (e) { console.warn('[Firebat] localStorage pending status update 실패:', e); }
+    // 2) DB POST — 실패 시 1회 retry. 그래도 실패면 콘솔 경고 (조용히 묻히지 않게).
     saveToDbRef.current(convId, updated);
   }, [activeConvId]);
 
