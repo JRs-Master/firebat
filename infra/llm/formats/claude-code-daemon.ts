@@ -93,7 +93,11 @@ class RequestState {
 
     if (ev.is_error === true || ev.subtype === 'error') {
       this.errored = true;
-      this.errorMsg = ev.result || 'Claude Code CLI 오류';
+      const detail = ev.result
+        || (ev as unknown as { error?: string }).error
+        || (ev as unknown as { message?: { content?: unknown } }).message?.content
+        || JSON.stringify(ev).slice(0, 300);
+      this.errorMsg = `Claude CLI: ${typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 200)}`;
       return;
     }
 

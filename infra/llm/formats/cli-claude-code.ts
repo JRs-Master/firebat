@@ -356,7 +356,12 @@ export class CliClaudeCodeFormat implements FormatHandler {
 
         if (ev.is_error === true || ev.subtype === 'error') {
           errored = true;
-          errorMsg = ev.result || 'Claude Code CLI 오류';
+          // 실제 에러 정보 가능한 한 노출 — ev.result 우선, 그 외 type/subtype/message·error 필드 폴백
+          const detail = ev.result
+            || (ev as unknown as { error?: string }).error
+            || (ev as unknown as { message?: { content?: unknown } }).message?.content
+            || JSON.stringify(ev).slice(0, 300);
+          errorMsg = `Claude CLI: ${typeof detail === 'string' ? detail : JSON.stringify(detail).slice(0, 200)}`;
           return;
         }
 
