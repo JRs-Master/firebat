@@ -542,6 +542,29 @@ export class FirebatCore {
   clearCronLogs() { this.schedule.clearLogs(); }
   consumeCronNotifications() { return this.schedule.consumeNotifications(); }
 
+  /** 기존 cron 잡을 즉시 1회 트리거 — 정상 cron 발화와 동일 경로 (handleCronTrigger).
+   *  scheduling 변경 없음 (반복 잡은 기존 schedule 그대로 유지). 테스트·수동 발화용. */
+  async runCronJobNow(jobId: string): Promise<InfraResult<{ success: boolean; durationMs: number; error?: string }>> {
+    const jobs = this.schedule.list();
+    const job = jobs.find(j => j.jobId === jobId);
+    if (!job) return { success: false, error: `잡을 찾을 수 없음: ${jobId}` };
+    const info: import('./ports').CronTriggerInfo = {
+      jobId: job.jobId,
+      targetPath: job.targetPath,
+      trigger: 'DELAYED_RUN', // 수동 발화 — 기존 트리거 타입 재사용
+      inputData: job.inputData,
+      pipeline: job.pipeline,
+      runWhen: job.runWhen,
+      retry: job.retry,
+      notify: job.notify,
+      title: job.title,
+      executionMode: job.executionMode,
+      agentPrompt: job.agentPrompt,
+    };
+    const result = await this.handleCronTrigger(info);
+    return { success: true, data: { success: result.success, durationMs: result.durationMs, error: result.error } };
+  }
+
   /** Cron 비동기 트리거 콜백 — 시각 도달 시 cron 어댑터가 호출.
    *  Manager 직접 호출 안 하고 Core facade 경유 → SSE emit 단일 지점 (BIBLE 일관성).
    *  StatusManager 통합 — cron 트리거 가시화. pipeline 이 있으면 runTask 가 별도 sub-status 발행. */

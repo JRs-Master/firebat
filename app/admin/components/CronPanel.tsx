@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Save, Settings } from 'lucide-react';
+import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Save, Settings, Play } from 'lucide-react';
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
@@ -56,6 +56,7 @@ export function CronPanel() {
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [logs, setLogs] = useState<CronLog[]>([]);
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [running, setRunning] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [editing, setEditing] = useState<CronJob | null>(null);
 
@@ -96,6 +97,18 @@ export function CronPanel() {
       fetchCron();
     } finally {
       setCancelling(null);
+    }
+  };
+
+  const handleRunNow = async (jobId: string) => {
+    setRunning(jobId);
+    try {
+      // fire-and-forget — 백엔드가 비동기 트리거. 결과는 cron-logs SSE 로 반영.
+      // setTimeout 으로 spinner 잠깐 보여주고 자동 해제 (UX 안정).
+      await fetch(`/api/cron?action=run&jobId=${encodeURIComponent(jobId)}`, { method: 'POST' });
+      setTimeout(() => setRunning(null), 1500);
+    } catch {
+      setRunning(null);
     }
   };
 
@@ -209,6 +222,15 @@ export function CronPanel() {
                 </p>
               </div>
               <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                <Tooltip label="지금 실행">
+                  <button
+                    onClick={() => handleRunNow(job.jobId)}
+                    disabled={running === job.jobId}
+                    className="p-1 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                  >
+                    {running === job.jobId ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
+                  </button>
+                </Tooltip>
                 <Tooltip label="설정">
                   <button
                     onClick={() => setEditing(job)}
@@ -631,14 +653,14 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
                 onClick={() => setExecutionMode('pipeline')}
                 className={btnCls(executionMode === 'pipeline')}
               >
-                ⚙️ Pipeline
+                Pipeline
               </button>
               <button
                 type="button"
                 onClick={() => setExecutionMode('agent')}
                 className={btnCls(executionMode === 'agent')}
               >
-                🤖 AI Agent
+                AI Agent
               </button>
             </div>
             {executionMode === 'pipeline' ? (
