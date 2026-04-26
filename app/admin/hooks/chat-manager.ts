@@ -157,7 +157,9 @@ export type ChatAction =
   | { type: 'PENDING_APPROVED'; msgId: string; planId: string }
   | { type: 'PENDING_REJECTED'; msgId: string; planId: string }
   | { type: 'PENDING_PAST_RUNAT'; msgId: string; planId: string; originalRunAt?: string }
-  | { type: 'PENDING_ERROR'; msgId: string; planId: string; errorMessage: string };
+  | { type: 'PENDING_ERROR'; msgId: string; planId: string; errorMessage: string }
+  // suggestion 클릭 시 해당 메시지의 suggestions 클리어 — 새로고침 후 재등장 방지
+  | { type: 'CONSUME_SUGGESTIONS'; msgId: string };
 
 // ── 인바리언트 강제 ─────────────────────────────────────────────────────────
 // 터미널 상태인데 visible 콘텐츠 0 이면 자동 fallback 채워넣기.
@@ -361,6 +363,9 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
           p.planId === action.planId ? { ...p, status: 'error' as const, errorMessage: action.errorMessage } : p,
         ),
       });
+
+    case 'CONSUME_SUGGESTIONS':
+      return state.map(m => m.id !== action.msgId ? m : { ...m, suggestions: undefined });
 
     default: {
       const _exhaustive: never = action;

@@ -703,6 +703,20 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     } catch {}
   }, [persistPendingChange]);
 
+  // Suggestion 클릭 시 해당 메시지의 suggestions 클리어 + DB 즉시 저장 — 새로고침 시 카드 재등장 차단
+  const consumeSuggestions = useCallback((msgId: string) => {
+    const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
+    if (!convId) {
+      dispatch({ type: 'CONSUME_SUGGESTIONS', msgId });
+      return;
+    }
+    const updated = messagesRef.current.map(m =>
+      m.id !== msgId ? m : { ...m, suggestions: undefined },
+    );
+    saveToDbRef.current(convId, updated);
+    dispatch({ type: 'CONSUME_SUGGESTIONS', msgId });
+  }, [activeConvId]);
+
   const convMetas: ConversationMeta[] = conversations.map(({ id, title, createdAt, updatedAt }) => ({ id, title, createdAt, updatedAt }));
 
   return {
@@ -712,7 +726,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     chatEndRef, chatContainerRef, handleScroll,
     handleNewConv, handleSelectConv, handleDeleteConv,
     handleSubmit,
-    handleApprovePending, handleRejectPending,
+    handleApprovePending, handleRejectPending, consumeSuggestions,
     handleStop,
     planMode, setPlanMode,
     inputMode, setInputMode,

@@ -633,10 +633,11 @@ function ErrorCollapsible({ error, label }: { error: string; label?: string }) {
 }
 
 // ─── 메시지 버블 ─────────────────────────────────────────────────────────────
-function MessageBubble({ msg, loading, onSuggestion, onApprovePending, onRejectPending, onApprovePendingAction, shareContext }: {
+function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApprovePending, onRejectPending, onApprovePendingAction, shareContext }: {
   msg: Message;
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
+  onConsumeSuggestions?: (msgId: string) => void;
   onApprovePending?: (msgId: string, planId: string) => void;
   onRejectPending?: (msgId: string, planId: string) => void;
   onApprovePendingAction?: (msgId: string, planId: string, action: 'now' | 'reschedule', newRunAt?: string) => void;
@@ -732,7 +733,14 @@ function MessageBubble({ msg, loading, onSuggestion, onApprovePending, onRejectP
               {/* 선택지 버튼 — past-runat pendingAction 있으면 숨김 (즉시/시간변경 버튼과 중복 방지) */}
               {msg.suggestions && msg.suggestions.length > 0
                 && !msg.pendingActions?.some(p => p.status === 'past-runat') && (
-                <SuggestionButtons suggestions={msg.suggestions} loading={loading} onSuggestion={onSuggestion} />
+                <SuggestionButtons
+                  suggestions={msg.suggestions}
+                  loading={loading}
+                  onSuggestion={(text, meta) => {
+                    onConsumeSuggestions?.(msg.id);
+                    onSuggestion?.(text, meta);
+                  }}
+                />
               )}
 
               {/* 시크릿 입력 요청 */}
@@ -894,7 +902,7 @@ export default function AdminConsole() {
     conversations, activeConvId, chatEndRef, chatContainerRef, handleScroll,
     handleNewConv, handleSelectConv, handleDeleteConv,
     handleSubmit,
-    handleApprovePending, handleRejectPending, handleStop,
+    handleApprovePending, handleRejectPending, handleStop, consumeSuggestions,
     planMode, setPlanMode,
     inputMode, setInputMode,
     refreshConversations,
@@ -1086,6 +1094,7 @@ export default function AdminConsole() {
                   msg={msg}
                   loading={loading}
                   onSuggestion={(text, meta) => handleSubmit(text, true, meta)}
+                  onConsumeSuggestions={consumeSuggestions}
                   onApprovePending={handleApprovePending}
                   onApprovePendingAction={(msgId, planId, action, newRunAt) => handleApprovePending(msgId, planId, action, newRunAt)}
                   onRejectPending={handleRejectPending}
