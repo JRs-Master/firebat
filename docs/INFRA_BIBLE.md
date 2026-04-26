@@ -54,7 +54,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
   | format | SDK / 실행 | 용도 |
   |---|---|---|
   | `openai-responses` | `openai` (`client.responses`) | OpenAI Responses API — GPT-5.4 (MCP connector, tool_search + defer_loading, previous_response_id, 24h cache, reasoning.effort) |
-  | `anthropic-messages` | `@anthropic-ai/sdk` (`client.beta.messages`) | Claude 4 Messages API — MCP connector 2025-11-20 (`betas + mcp_toolset` 필수), extended thinking, max_tokens 32K |
+  | `anthropic-messages` | `@anthropic-ai/sdk` (`client.beta.messages`) | Claude 4 Messages API — MCP connector 2025-11-20 (`betas + mcp_toolset` 필수), extended thinking, max_tokens 32K, **prompt caching 토글** (`VK_LLM_ANTHROPIC_CACHE`, 기본 OFF — cache write 25% 비용 회피, 같은 prefix 5분 재호출 시 ON 권장) |
   | `gemini-native` | `@google/genai` (apiKey) | Gemini AI Studio — 네이티브 functionCall/functionResponse 멀티턴 (rawModelParts 보존) |
   | `vertex-gemini` | `@google/genai` (vertexai:true) | GCP Vertex AI — Service Account JSON + OAuth access token 자동 갱신 |
   | `openai-chat` | `openai` (`client.chat.completions`) | OpenAI Chat Completions 호환 (Ollama/OpenRouter/LM Studio 등 예비, 현재 등록 모델 없음) |
@@ -100,8 +100,9 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 ### 7. Database Adapter (`infra/database/`)
 - `IDatabasePort` 구현.
 - `better-sqlite3` 기반 (`data/app.db`).
-- 자동 초기화: `pages` 테이블 `CREATE TABLE IF NOT EXISTS`.
+- 자동 초기화: `pages` / `conversations` / `conversation_embeddings` / `routing_cache` / `media_usage` / `shared_conversations` / `deleted_conversations` / `page_redirects` 테이블 `CREATE TABLE IF NOT EXISTS`.
 - CRUD: `savePage`, `getPage`, `listPages`, `deletePage`, `listPagesByProject`, `deletePagesByProject`.
+- **마이그레이션 runner** (`infra/database/migrations/`, v0.1 2026-04-26): `_db_version` 테이블이 스키마 버전 추적. 부팅 시 `migrations/NNN-name.sql` 파일 검색 → currentVersion 보다 큰 것만 트랜잭션 보호로 순차 적용. 일방향 (up only). 새 변경은 v2+ 부터 (v1 = implicit baseline = 위 CREATE 자동초기화). 자세한 안내: `infra/database/migrations/README.md`.
 
 ### 8. Vault Adapter (`infra/storage/vault-adapter.ts`)
 - `IVaultPort` 구현.

@@ -136,66 +136,82 @@ interface FirebatInfraContainer {
 
 ---
 
-## 제4장: Core 실행 파이프라인
+## 제4장: Core 실행 파이프라인 (Function Calling 모드)
 
-### Step 1. Plan 수립 (Planning)
-사용자 명령을 `ILlmPort`에 전달. JSON Schema 형태로만 응답하도록 System 프롬프트를 강제한다.
+> **2026-04-22 갱신** — 레거시 JSON 모드 (planOnly + executePlan + FirebatActionSchema) 전면 삭제.
+> Function Calling 멀티턴 도구 루프가 **유일 경로**.
 
-### Step 2. 심사 (Validation)
-`ILlmPort` 응답을 `Zod` 스키마로 파싱. 실패 시 최대 3회 재시도 (Self-Correction).
-파싱 후 `description` 필드가 빈 경우 `action.type`으로 자동 폴백.
+### Step 1. 도구 정의 빌드
+`AiManager.buildToolDefinitions()` 가 매 요청마다 도구 목록 생성:
+- 정적 27개 Core 도구 (`render_*`, `image_gen`, `search_history`, `save_page`, `schedule_task` 등 — `core/managers/ai/tool-schemas.ts`)
+- 동적 sysmod 도구 (`sysmod_kiwoom`, `sysmod_naver-search` 등 — config.json description 자동 주입)
+- 외부 MCP 도구 (`mcp_*` 접두사로 서버별 prefix)
 
-### Step 3. 집행 (Execution)
-확정된 Plan의 `actions` 배열을 순회하며 포트를 호출한다:
+### Step 2. 멀티턴 도구 루프
+`ILlmPort.askWithTools()` → AI 가 도구 호출 → `executeToolCall(name, args)` → 결과 → 다시 askWithTools (max 10 turns):
+- 매 turn 의 thinking·도구 호출 SSE 스트리밍 (`onChunk`, `onToolCall`)
+- 멀티턴 종료 = AI 가 도구 호출 없는 텍스트 응답 발행
 
-| 액션 | 호출 포트 |
-|---|---|
-| `WRITE_FILE`, `APPEND_FILE`, `DELETE_FILE`, `READ_FILE`, `LIST_DIR` | `IStoragePort` |
-| `EXECUTE` | `ISandboxPort` |
-| `NETWORK_REQUEST` | `INetworkPort` |
-| `SCHEDULE_TASK`, `CANCEL_TASK`, `LIST_TASKS` | `ICronPort` |
-| `SAVE_PAGE`, `DELETE_PAGE`, `LIST_PAGES`, `DATABASE_QUERY` | `IDatabasePort` |
-| `REQUEST_SECRET`, `SET_SECRET` | `IVaultPort` |
-| `RUN_TASK` | TaskManager (파이프라인 즉시 실행) |
-| `MCP_CALL` | `IMcpClientPort` |
-| `OPEN_URL` | 프론트엔드 반환 (미리보기 버튼) |
+### Step 3. 도구 dispatch
+`AiManager.executeToolCall(name, args)` switch dispatch (Phase 6c 분리 예정):
+- `render_*` → `{component, props}` 반환 (UI block)
+- `image_gen` → MediaManager.generate (StatusManager wrap, gallery:refresh emit)
+- `save_page` → PageManager.save + media_usage 인덱스 갱신
+- `schedule_task` / `run_task` → ScheduleManager / TaskManager (PIPELINE_STEP_SCHEMA 7-step 검증)
+- `sysmod_*` / `mcp_*` → resolveCallTarget 으로 모듈 경로 / MCP 서버 자동 라우팅
 
 ### Step 4. 결과 보고
-`ILogPort.info()`로 최종 결과를 기록하고 프론트엔드에 응답 반환.
+`AiManager.processWithTools()` 반환 = `{success, reply, blocks, executedActions, suggestions, pendingActions}`.
+SSE result 이벤트로 프론트엔드 전달. 학습 데이터 (`data/logs/training-*.jsonl`) 자동 저장.
 
 ---
 
-## 제5장: FirebatPlan 데이터 모델
-
-LLM과 통신하는 유일한 제어 프로토콜.
+## 제5장: 도구 호출 데이터 모델 (Function Calling)
 
 ```typescript
-type FirebatAction =
-  | { type: 'WRITE_FILE', path: string, content: string }
-  | { type: 'APPEND_FILE', path: string, content: string }
-  | { type: 'DELETE_FILE', path: string }
-  | { type: 'READ_FILE', path: string }
-  | { type: 'LIST_DIR', path: string }
-  | { type: 'EXECUTE', path: string, mockData?: any }
-  | { type: 'NETWORK_REQUEST', url: string, method: string, body?: any, headers?: Record<string, string> }
-  | { type: 'RUN_TASK', pipeline: PipelineStep[] }
-  | { type: 'SCHEDULE_TASK', jobId: string, targetPath?: string, cronTime?: string, runAt?: string, delaySec?: number, pipeline?: PipelineStep[] }
-  | { type: 'CANCEL_TASK', jobId: string }
-  | { type: 'LIST_TASKS' }
-  | { type: 'DATABASE_QUERY', query: any }
-  | { type: 'SAVE_PAGE', slug: string, spec: object }
-  | { type: 'DELETE_PAGE', slug: string }
-  | { type: 'LIST_PAGES' }
-  | { type: 'OPEN_URL', url: string }
-  | { type: 'REQUEST_SECRET', key: string, description: string }
-  | { type: 'SET_SECRET', key: string, value: string }
-  | { type: 'MCP_CALL', server: string, tool: string, arguments: any };
-
-interface FirebatPlan {
-  thoughts: string;        // AI의 판단 요약
-  actions: FirebatAction[]; // 실행할 물리적 액션 배열
+// core/ports/index.ts
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: JsonSchema;       // OpenAI/Anthropic/Gemini 모두 호환
+  strict?: boolean;             // OpenAI strict mode (선택)
 }
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface ToolResult {
+  callId: string;
+  result: unknown;              // dispatch 반환값
+}
+
+export interface ToolExchangeEntry {
+  type: 'call' | 'result';
+  data: ToolCall | ToolResult;
+}
+
+// 27 정적 도구 schema → core/managers/ai/tool-schemas.ts
+// 모듈 도구 schema → config.json input/output 에서 동적 추출
+// 외부 MCP 도구 schema → mcp.listTools() 자동 reflection
 ```
+
+**Pipeline (cron + run_task 의 multi-step 정의)** — 7가지 step:
+
+```typescript
+type PipelineStep =
+  | { type: 'EXECUTE', path: string, inputData?, inputMap? }            // 모듈 (sandbox)
+  | { type: 'MCP_CALL', server: string, tool: string, arguments? }      // 외부 MCP
+  | { type: 'NETWORK_REQUEST', url, method, headers?, body? }            // HTTP fetch
+  | { type: 'LLM_TRANSFORM', instruction: string, inputMap? }           // AI 텍스트 변환
+  | { type: 'CONDITION', field, op, value }                              // 분기/early-stop
+  | { type: 'SAVE_PAGE', slug, spec? | inputMap }                        // 페이지 저장
+  | { type: 'TOOL_CALL', tool: string, inputData? }                      // Function Calling 도구 (image_gen 등)
+```
+
+레거시 `FirebatPlan` / `FirebatActionSchema` / `WRITE_FILE` / `OPEN_URL` 등 액션 타입 모두 v0.1 2026-04-22 제거됨.
 
 ---
 
