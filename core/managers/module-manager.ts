@@ -69,6 +69,30 @@ export class ModuleManager {
     return [...services, ...modules];
   }
 
+  /** 유저 모듈 목록 (user/modules/) — 외부 IDE 의 AI 가 기존 모듈 카탈로그 파악용 */
+  async listUserModules(): Promise<SystemEntry[]> {
+    return this.scanDir('user/modules', 'module');
+  }
+
+  /** 모듈 config.json 직접 파싱 응답 — 외부 AI 가 read_file 한 단계 우회.
+   *  scope='system' 이면 system/modules/ + system/services/ 검색. 'user' 면 user/modules/.
+   *  반환: 파싱된 config 객체 또는 null. */
+  async getModuleConfig(scope: 'system' | 'user', name: string): Promise<Record<string, unknown> | null> {
+    if (!name || name.includes('..') || name.includes('/') || name.includes('\\')) return null;
+    const candidates = scope === 'user'
+      ? [`user/modules/${name}/config.json`]
+      : [`system/modules/${name}/config.json`, `system/services/${name}/config.json`];
+    for (const path of candidates) {
+      const file = await this.storage.read(path);
+      if (file.success && file.data) {
+        try {
+          return JSON.parse(file.data) as Record<string, unknown>;
+        } catch {}
+      }
+    }
+    return null;
+  }
+
   /** 디렉토리 스캔 — config.json 읽기 */
   private async scanDir(dirPath: string, defaultType: string): Promise<SystemEntry[]> {
     const result = await this.storage.listDir(dirPath);

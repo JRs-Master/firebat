@@ -363,6 +363,10 @@ export class FirebatCore {
   }
 
   async getSystemModules() { return this.module.listSystem(); }
+  /** 유저 모듈 목록 (user/modules/) — 외부 IDE MCP introspection. */
+  async getUserModules() { return this.module.listUserModules(); }
+  /** 모듈 config.json 파싱 응답 — sysmod / user 모듈 schema 직접 조회 (외부 MCP introspection 용). */
+  async getModuleSchema(scope: 'system' | 'user', name: string) { return this.module.getModuleConfig(scope, name); }
   getModuleSettings(moduleName: string) { return this.module.getSettings(moduleName); }
   async getModuleConfig(moduleName: string) { return this.module.getConfig(moduleName); }
   setModuleSettings(moduleName: string, settings: Record<string, any>) { return this.module.setSettings(moduleName, settings); }
