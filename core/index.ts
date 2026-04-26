@@ -23,7 +23,7 @@ import type { ToolDefinition, ToolListFilter, ToolExecuteContext, ToolExecuteRes
 import type { FirebatInfraContainer, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse } from './ports';
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
-import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT, VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_LAST_MODEL_BY_CATEGORY, DEFAULT_AI_ASSISTANT_MODEL, AI_ASSISTANT_MODELS } from './vault-keys';
+import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT, VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_LAST_MODEL_BY_CATEGORY, VK_LLM_ANTHROPIC_CACHE, DEFAULT_AI_ASSISTANT_MODEL, AI_ASSISTANT_MODELS } from './vault-keys';
 import { eventBus } from '../lib/events';
 import { canonicalJson } from './utils/json-normalize';
 
@@ -895,6 +895,17 @@ export class FirebatCore {
     // 2000자 제한 (토큰 낭비 방지)
     const trimmed = (prompt || '').slice(0, 2000);
     return this.infra.vault.setSecret(VK_SYSTEM_USER_PROMPT, trimmed);
+  }
+
+  /** Anthropic API prompt caching 토글 — Claude API 모드 전용.
+   *  기본 OFF (cache write 25% 비용 회피). 같은 prefix 5분 내 2회+ 호출 패턴일 때만 ON 권장.
+   *  CLI 모드 (Claude Code 등) 는 백엔드 자동 caching → 토글 무관. */
+  getAnthropicCacheEnabled(): boolean {
+    return this.infra.vault.getSecret(VK_LLM_ANTHROPIC_CACHE) === 'true';
+  }
+
+  setAnthropicCacheEnabled(enabled: boolean): boolean {
+    return this.infra.vault.setSecret(VK_LLM_ANTHROPIC_CACHE, enabled ? 'true' : 'false');
   }
 
   /** Sentry DSN — env (SENTRY_DSN) 우선, 없으면 Vault.

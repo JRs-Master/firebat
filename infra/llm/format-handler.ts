@@ -24,6 +24,9 @@ export interface FormatHandlerContext {
   resolveApiKey: () => string | null;
   /** 내부 MCP connector 설정 (OpenAI Responses API hosted MCP 용) */
   resolveMcpConfig?: () => { url: string; token: string } | null;
+  /** Anthropic prompt caching 토글 — Vault `system:llm:anthropic-cache` 가 'true' 일 때만 marker 박음.
+   *  미설정 시 false (cache write 25% 비용 회피). anthropic-messages format 만 참조. */
+  resolveAnthropicCache?: () => boolean;
 }
 
 export interface FormatHandler {

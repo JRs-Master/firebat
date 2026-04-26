@@ -76,6 +76,8 @@ export function getInfra(): FirebatInfraContainer {
         if (!token) return null;
         return { url: `${baseUrl}/api/mcp-internal`, token };
       },
+      // Anthropic prompt caching 토글 — 'true' 일 때만 ON (기본 OFF, cache write 비용 회피)
+      () => vault.getSecret('system:llm:anthropic-cache') === 'true',
     );
 
     const database = new SqliteDatabaseAdapter(DB_PATH);

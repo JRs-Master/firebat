@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
     imageDefaultSize: core.getImageDefaultSize(),
     imageDefaultQuality: core.getImageDefaultQuality(),
     sentry: core.getSentryDsn(),
+    anthropicCacheEnabled: core.getAnthropicCacheEnabled(),
   });
 }
 
@@ -73,6 +74,9 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'DSN 형식 오류 — https:// 로 시작해야 합니다' }, { status: 400 });
       }
     }
+  }
+  if (typeof body.anthropicCacheEnabled === 'boolean') {
+    core.setAnthropicCacheEnabled(body.anthropicCacheEnabled);
   }
 
   return NextResponse.json({ success: true });

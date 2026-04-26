@@ -111,6 +111,9 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const [userPromptSaving, setUserPromptSaving] = useState(false);
   const [userPromptSaved, setUserPromptSaved] = useState(false);
 
+  // Anthropic prompt caching 토글 — Claude API 모드에서만 노출
+  const [anthropicCacheEnabled, setAnthropicCacheEnabled] = useState(false);
+
   // 이미지 생성 모델 (AI 탭 하단 섹션)
   type ImageModelEntry = {
     id: string;
@@ -208,6 +211,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
         if (data.aiAssistantModel) setAiAssistantModel(data.aiAssistantModel);
         if (Array.isArray(data.aiAssistantModels) && data.aiAssistantModels.length > 0) setAiAssistantModels(data.aiAssistantModels);
         if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
+        if (typeof data.anthropicCacheEnabled === 'boolean') setAnthropicCacheEnabled(data.anthropicCacheEnabled);
         if (typeof data.imageModel === 'string') setImageModelState(data.imageModel);
         if (Array.isArray(data.imageModels)) setImageModels(data.imageModels);
         if (typeof data.imageDefaultSize === 'string') setImageDefaultSize(data.imageDefaultSize);
@@ -1008,6 +1012,29 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                 <Field label="모델">
                   <SelectInput value={modelValue} onChange={onAiModelChange} options={modelOptions} />
                 </Field>
+
+                {/* Anthropic prompt caching 토글 — Claude API 모드 전용 (모드=일반 AND 공급자=Anthropic) */}
+                {execMode === 'api' && aiMode === 'general' && aiProvider === 'anthropic' && (
+                  <Field label="Prompt Caching" help="동일 prefix (system/tools) 5분 내 재사용 시 90% 비용 절감 + 응답 가속. 단발 호출이면 cache write 25% 추가 비용. 같은 대화 멀티턴 위주면 ON, 짧은 단발 위주면 OFF.">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={anthropicCacheEnabled}
+                        onChange={async (e) => {
+                          const next = e.target.checked;
+                          setAnthropicCacheEnabled(next);
+                          await fetch('/api/settings', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ anthropicCacheEnabled: next }),
+                          });
+                        }}
+                        className="w-4 h-4 cursor-pointer"
+                      />
+                      <span className="text-[12px] text-slate-700">{anthropicCacheEnabled ? '활성 (cache_control 마커 박음)' : '비활성 (기본)'}</span>
+                    </label>
+                  </Field>
+                )}
 
                 {execMode === 'cli' && (() => {
                   // 현재 공급자별 설치/인증 안내

@@ -31,6 +31,7 @@ export class ConfigDrivenAdapter implements ILlmPort {
     private readonly defaultModelId: string,
     private readonly resolveSecret: (key: string) => string | null,
     private readonly resolveMcpConfig?: () => { url: string; token: string } | null,
+    private readonly resolveAnthropicCache?: () => boolean,
   ) {
     this.handlers = {
       'openai-responses': new OpenAIResponsesFormat(),
@@ -70,6 +71,7 @@ export class ConfigDrivenAdapter implements ILlmPort {
       config,
       resolveApiKey: () => this.resolveSecret(config.apiKeyVaultKey),
       resolveMcpConfig: this.resolveMcpConfig,
+      resolveAnthropicCache: this.resolveAnthropicCache,
     };
   }
 

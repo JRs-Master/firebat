@@ -104,12 +104,16 @@ export class AnthropicMessagesFormat implements FormatHandler {
         authorization_token: mcpConfig!.token,
       }] : undefined;
 
+      // Prompt caching 토글 — Vault 'system:llm:anthropic-cache' 가 'true' 일 때만 marker 박음.
+      // 미설정 시 false (cache write 25% 비용 회피). 어드민 설정 모달 AI 탭에서 토글.
+      const cacheEnabled = ctx.resolveAnthropicCache?.() === true;
+
       // inline tools (MCP 미사용 시) + MCPToolset (MCP 사용 시). 둘은 배타적으로 택일해야 호환.
       const inlineTools: Anthropic.Tool[] = useMcp ? [] : tools.map((t, i) => ({
         name: t.name,
         description: t.description,
         input_schema: t.parameters as any,
-        ...(i === tools.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
+        ...(cacheEnabled && i === tools.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
       }));
       const mcpToolsets = useMcp ? [{ type: 'mcp_toolset' as const, mcp_server_name: MCP_SERVER_NAME }] : [];
       const combinedTools: any[] = [...inlineTools, ...mcpToolsets];
@@ -125,7 +129,7 @@ export class AnthropicMessagesFormat implements FormatHandler {
         : undefined;
 
       const systemBlocks: Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }> = systemPrompt
-        ? [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }]
+        ? [{ type: 'text', text: systemPrompt, ...(cacheEnabled ? { cache_control: { type: 'ephemeral' as const } } : {}) }]
         : [];
 
       // max_tokens: Claude 4 시리즈는 최대 64K output 지원. 분석 응답 truncation 방지.

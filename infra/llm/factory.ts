@@ -44,6 +44,7 @@ export function buildConfigDrivenAdapter(
   defaultModelId: string,
   resolveSecret: (key: string) => string | null,
   resolveMcpConfig?: () => { url: string; token: string } | null,
+  resolveAnthropicCache?: () => boolean,
 ): ILlmPort {
-  return new ConfigDrivenAdapter(registry, defaultModelId, resolveSecret, resolveMcpConfig);
+  return new ConfigDrivenAdapter(registry, defaultModelId, resolveSecret, resolveMcpConfig, resolveAnthropicCache);
 }
