@@ -25,7 +25,7 @@ import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
 import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT, VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_LAST_MODEL_BY_CATEGORY, VK_LLM_ANTHROPIC_CACHE, DEFAULT_AI_ASSISTANT_MODEL, AI_ASSISTANT_MODELS } from './vault-keys';
 import { eventBus } from '../lib/events';
-import { canonicalJson } from './utils/json-normalize';
+import { canonicalJson, unwrapJson, unwrapNestedPageSpec } from './utils/json-normalize';
 
 /** AI 요청 옵션 — 요청별 모델/이미지/멀티턴 컨텍스트 지정 */
 export interface AiRequestOpts {
@@ -289,7 +289,13 @@ export class FirebatCore {
    *  allowOverwrite=false (기본) 시 slug 충돌이면 -2, -3 접미사 자동 할당 → 기존 페이지 보존.
    *  allowOverwrite=true 시 덮어쓰기 — AI 가 사용자의 명시적 "수정" 요청을 처리할 때만 true. */
   async savePage(slug: string, spec: string | Record<string, unknown>, opts?: { allowOverwrite?: boolean }): Promise<InfraResult<{ slug: string; renamed?: boolean }>> {
-    const specStr = canonicalJson(spec);
+    // 1. 외부 입력 정규화 — string 이면 parse, 객체면 그대로
+    let specObj: unknown;
+    try { specObj = unwrapJson(spec); }
+    catch (e: any) { return { success: false, error: `spec JSON 파싱 실패: ${e.message}` }; }
+    // 2. 중첩 PageSpec 자동 평탄화 — AI 가 PageSpec 을 stringify 후 외부 body[0].content 에 박은 케이스
+    specObj = unwrapNestedPageSpec(specObj);
+    const specStr = canonicalJson(specObj);
     let finalSlug = slug;
     let renamed = false;
     if (!opts?.allowOverwrite) {

@@ -62,3 +62,39 @@ export function tryUnwrapJson<T = unknown>(value: unknown, maxDepth = 3): T | nu
   try { return unwrapJson<T>(value, maxDepth); }
   catch { return null; }
 }
+
+/**
+ * 중첩 PageSpec 자동 평탄화 — AI 가 PageSpec 을 JSON.stringify 한 후
+ * 다시 외부 PageSpec body[0].props.content 에 박은 케이스 복구.
+ *
+ * 감지 조건 (전부 만족 시 unwrap):
+ * - spec 이 객체이고 head 누락 (정상 PageSpec 은 head 있음)
+ * - spec.body 가 단일 Html 블록
+ * - body[0].props.content 가 JSON 으로 parse 됐고, 결과에 head 또는 body 가 있음
+ *
+ * 정상 PageSpec (head 있음, content 가 HTML) 은 그대로 통과.
+ * cron agent 모드에서 AI 가 spec 을 객체로 못 넘기고 string wrap 하는 빈번한 실수 fix.
+ */
+export function unwrapNestedPageSpec(spec: unknown): unknown {
+  if (!spec || typeof spec !== 'object') return spec;
+  const s = spec as Record<string, unknown>;
+  // 외부에 head 가 이미 있고 body[0] 의 content 가 정상 HTML 이면 unwrap 불필요
+  if (s.head && typeof s.head === 'object') return spec;
+  const body = s.body;
+  if (!Array.isArray(body) || body.length !== 1) return spec;
+  const block = body[0] as Record<string, unknown> | undefined;
+  if (!block || block.type !== 'Html') return spec;
+  const props = block.props as Record<string, unknown> | undefined;
+  const content = props?.content;
+  if (typeof content !== 'string') return spec;
+  const trimmed = content.trim();
+  if (!trimmed.startsWith('{')) return spec;
+  // PageSpec 모양인지 검사
+  let inner: unknown;
+  try { inner = JSON.parse(trimmed); } catch { return spec; }
+  if (!inner || typeof inner !== 'object') return spec;
+  const innerObj = inner as Record<string, unknown>;
+  if (!innerObj.head && !innerObj.body) return spec;
+  // 재귀 — 3중 wrap 가능성도 평탄화 (안전 장치)
+  return unwrapNestedPageSpec(inner);
+}
