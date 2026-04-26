@@ -75,10 +75,10 @@ export function ActiveJobsIndicator() {
     <div className="relative">
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[12px] font-bold transition-colors"
+        className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold transition-colors"
         aria-label={`실행 중 ${activeJobs.length}개`}
       >
-        <Activity size={12} className={activeJobs.length > 0 ? 'animate-pulse' : ''} />
+        <Activity size={14} className={activeJobs.length > 0 ? 'animate-pulse' : ''} />
         <span>실행 {activeJobs.length}</span>
         {finishedJobs.length > 0 && (
           <span className="text-[10px] text-emerald-600">+{finishedJobs.length}</span>
