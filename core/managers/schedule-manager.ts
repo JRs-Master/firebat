@@ -25,13 +25,21 @@ export class ScheduleManager {
   // ── 크론 CRUD ──
 
   async schedule(jobId: string, targetPath: string, opts: CronScheduleOptions): Promise<InfraResult<void>> {
-    // targetPath 또는 pipeline 중 하나는 반드시 있어야 함 (빈 스케줄 등록 방지)
+    const isAgent = opts.executionMode === 'agent';
     const hasPath = typeof targetPath === 'string' && targetPath.trim() !== '';
     const hasPipeline = Array.isArray(opts.pipeline) && opts.pipeline.length > 0;
-    if (!hasPath && !hasPipeline) {
-      return { success: false, error: 'schedule_task: targetPath 또는 pipeline 중 하나는 반드시 지정하세요.' };
+    const hasAgentPrompt = typeof opts.agentPrompt === 'string' && opts.agentPrompt.trim() !== '';
+    // agent 모드: agentPrompt 필수 (targetPath / pipeline 무시 가능). pipeline 모드: 둘 중 하나 필요.
+    if (isAgent) {
+      if (!hasAgentPrompt) {
+        return { success: false, error: 'schedule_task: agent 모드는 agentPrompt 필수입니다.' };
+      }
+    } else {
+      if (!hasPath && !hasPipeline) {
+        return { success: false, error: 'schedule_task: targetPath 또는 pipeline 중 하나는 반드시 지정하세요. (agent 모드는 agentPrompt 필수)' };
+      }
     }
-    // 파이프라인 사전 검증 — TaskManager에 위임
+    // 파이프라인 사전 검증 — TaskManager에 위임 (agent 모드라도 pipeline 동봉 시 검증)
     if (hasPipeline) {
       const err = this.core.validatePipeline(opts.pipeline!);
       if (err) return { success: false, error: err };

@@ -158,10 +158,17 @@ export class ToolDispatcher {
     const args = tc.args as Record<string, unknown>;
     switch (tc.name) {
       case 'schedule_task': {
+        const isAgent = args.executionMode === 'agent';
         const hasTarget = typeof args.targetPath === 'string' && (args.targetPath as string).trim() !== '';
         const hasPipeline = Array.isArray(args.pipeline) && (args.pipeline as unknown[]).length > 0;
-        if (!hasTarget && !hasPipeline) {
-          return 'schedule_task 인자 누락: targetPath 또는 pipeline 중 하나는 반드시 지정해야 합니다.';
+        const hasAgentPrompt = typeof args.agentPrompt === 'string' && (args.agentPrompt as string).trim() !== '';
+        // agent 모드: agentPrompt 필수. pipeline 모드: targetPath/pipeline 중 하나 필수.
+        if (isAgent) {
+          if (!hasAgentPrompt) {
+            return 'schedule_task 인자 누락: agent 모드는 agentPrompt 필수입니다. 트리거 시 AI 에 전달할 자연어 instruction (잡 목적·필요 데이터·출력 형식·알림) 작성하세요.';
+          }
+        } else if (!hasTarget && !hasPipeline) {
+          return 'schedule_task 인자 누락: targetPath 또는 pipeline 중 하나는 반드시 지정해야 합니다. (agent 모드면 executionMode:"agent" + agentPrompt)';
         }
         const hasWhen = !!args.cronTime || !!args.runAt || args.delaySec != null;
         if (!hasWhen) return 'schedule_task 인자 누락: cronTime / runAt / delaySec 중 하나는 반드시 지정해야 합니다.';
