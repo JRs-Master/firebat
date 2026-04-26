@@ -106,6 +106,9 @@ export function Tooltip({ label, side = 'bottom', delay = 300, disabledOnTouch =
     onMouseLeave: (e: React.MouseEvent) => { hide(); (child.props as any).onMouseLeave?.(e); },
     onFocus: (e: React.FocusEvent) => { show(); (child.props as any).onFocus?.(e); },
     onBlur: (e: React.FocusEvent) => { hide(); (child.props as any).onBlur?.(e); },
+    // 클릭 시 즉시 hide — 클릭 후 등장하는 FeedbackBadge 등이 가려지지 않게.
+    // 사용자가 다시 mouse leave/enter 하면 자연히 재등장.
+    onClick: (e: React.MouseEvent) => { hide(); (child.props as any).onClick?.(e); },
   });
 
   // Portal 은 클라이언트 마운트 후에만

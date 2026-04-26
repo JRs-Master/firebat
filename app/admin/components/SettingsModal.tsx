@@ -541,7 +541,9 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   }, [settingsTab, fetchSecrets, fetchMcpServers, fetchMcpToken, fetchSysModules]);
 
   // ── 저장 ───────────────────────────────────────────────────────────────────
+  const [mainSaveState, setMainSaveState] = useState<'ok' | 'err' | 'loading' | null>(null);
   const handleSave = async () => {
+    setMainSaveState('loading');
     writeSetting('firebat_model', aiModel); // SettingsManager 경유 폴백
 
     await fetch('/api/settings', {
@@ -578,12 +580,16 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
       if (res && !res.ok) {
         const data = await res.json().catch(() => ({}));
         setAdminPwError(data.error ?? '계정 변경에 실패했습니다.');
+        setMainSaveState('err');
+        setTimeout(() => setMainSaveState(null), 2000);
         return;
       }
       setAdminCurrentPw(''); setAdminNewId(''); setAdminNewPw(''); setAdminPwError('');
     }
 
-    onSave();
+    // 저장 완료 — ✓ 표시만, 모달은 유지 (다른 항목 추가 수정 가능). 사용자가 닫기 버튼 클릭 시 명시적 종료.
+    setMainSaveState('ok');
+    setTimeout(() => setMainSaveState(null), 2000);
   };
 
   return (
@@ -1940,16 +1946,19 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
           {settingsTab === 'cost' && <CostTabContent />}
         </div>
 
-        <div className="px-3 sm:px-6 py-2.5 sm:py-5 bg-slate-50 border-t border-slate-100 flex justify-end gap-2 sm:gap-3 shrink-0">
+        <div className="px-3 sm:px-6 py-2.5 sm:py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2 sm:gap-3 shrink-0">
+          <FeedbackBadge state={mainSaveState} okLabel="저장됨" errLabel="저장 실패" loadingLabel="저장 중" />
           <button
             onClick={onClose}
-            className="px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors"
+            disabled={mainSaveState === 'loading'}
+            className="px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
           >
             닫기
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
+            disabled={mainSaveState === 'loading'}
+            className="px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm disabled:bg-slate-300"
           >
             저장
           </button>
