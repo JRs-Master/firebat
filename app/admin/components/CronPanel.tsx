@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Save, Settings, Play } from 'lucide-react';
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { Tooltip } from './Tooltip';
@@ -490,8 +491,10 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
       active ? 'bg-blue-50 border-blue-300 text-blue-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'
     }`;
 
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-stretch justify-center sm:items-center sm:p-4" onClick={onClose}>
+  // Portal 로 document.body 직접 렌더 — 사이드바·CronPanel 부모 stacking context
+  // (transform/overflow/contain) 영향 회피. fixed inset-0 가 viewport 기준 동작.
+  const modalContent = (
+    <div className="fixed inset-0 bg-black/40 z-[60] flex items-stretch justify-center sm:items-center sm:p-4" onClick={onClose}>
       {/* 갤러리와 동일 패턴: 모바일은 inset-0 + items-stretch → viewport unit 의존 없이 자연 높이 채움.
           PC 는 sm:h-[85vh] + p-4 + items-center 로 가운데 카드. */}
       <div
@@ -773,6 +776,9 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
       </div>
     </div>
   );
+
+  if (typeof window === 'undefined') return null;
+  return createPortal(modalContent, document.body);
 }
 
 // ── 유틸 ──────────────────────────────────────────────────────────────────
