@@ -214,6 +214,9 @@ export class AiManager {
       request_secret: async (args) => ({ success: true, requestSecret: true, name: args.name, prompt: args.prompt, helpUrl: args.helpUrl }),
       suggest: async () => ({ success: true, displayed: true }),
       image_gen: async (args) => {
+        // 비동기 패턴 — startImageGeneration 즉시 placeholder URL 반환, 실제 생성은 백그라운드.
+        // CLI HTTP timeout 회피 + AI 가 다음 도구 (save_page) 즉시 진행 가능.
+        // 사용자 페이지 reload 시 placeholder → 실제 이미지로 자동 swap.
         const { prompt, size, quality, filenameHint, aspectRatio, focusPoint } = args as {
           prompt: string;
           size?: string;
@@ -222,21 +225,14 @@ export class AiManager {
           aspectRatio?: string;
           focusPoint?: 'attention' | 'entropy' | 'center';
         };
-        const res = await this.core.generateImage({ prompt, size, quality, filenameHint, aspectRatio, focusPoint });
-        if (!res.success || !res.data) return { success: false, error: res.error || '이미지 생성 실패' };
-        const d = res.data;
+        const res = await this.core.startImageGeneration({ prompt, size, quality, filenameHint, aspectRatio, focusPoint });
+        if (!res.success || !res.data) return { success: false, error: res.error || '이미지 생성 시작 실패' };
         return {
           success: true,
-          url: d.url,
-          thumbnailUrl: d.thumbnailUrl,
-          variants: d.variants,
-          blurhash: d.blurhash,
-          width: d.width,
-          height: d.height,
-          slug: d.slug,
-          modelId: d.modelId,
-          revisedPrompt: d.revisedPrompt,
-          aspectRatio: d.aspectRatio,
+          url: res.data.url,
+          slug: res.data.slug,
+          status: 'rendering',
+          note: '백그라운드 생성 진행 중 — url 을 render_image 에 박고 save_page 즉시 호출하라.',
         };
       },
       complete_plan: async (args, ctx) => {

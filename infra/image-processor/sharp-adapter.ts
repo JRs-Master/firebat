@@ -96,6 +96,26 @@ export class SharpImageProcessorAdapter implements IImageProcessorPort {
     }
   }
 
+  async createPlaceholder(width: number, height: number): Promise<InfraResult<Buffer>> {
+    try {
+      // 단순 회색 사각형 — sharp create 으로 N×N 솔리드 PNG. ~수백 byte.
+      // 텍스트는 안 박음 — 폰트 의존 + locale 다국어 회피. 사용자는 갤러리 카드 + reload swap 으로 진행 인지.
+      const buf = await sharp({
+        create: {
+          width: Math.max(1, Math.min(4096, Math.floor(width))),
+          height: Math.max(1, Math.min(4096, Math.floor(height))),
+          channels: 4,
+          background: { r: 230, g: 230, b: 235, alpha: 1 },
+        },
+      })
+        .png({ compressionLevel: 9 })
+        .toBuffer();
+      return { success: true, data: buf };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
   async blurhash(
     binary: Buffer | Uint8Array,
     components?: { x: number; y: number },

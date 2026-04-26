@@ -772,8 +772,46 @@ export class FirebatCore {
   //  Core facade 의 책임: StatusManager wrap + SSE emit. 도메인 로직은 모두 MediaManager.
   // ══════════════════════════════════════════════════════════════════════════
 
-  /** AI image_gen 도구 → 이미지 생성. 성공·실패 모두 갤러리 자동 갱신 (SSE).
-   *  StatusManager 와 통합 — 진행도 'status:update' 자동 발행. */
+  /** AI image_gen 도구 → 비동기 시작. 즉시 placeholder URL 반환 → AI 가 page spec 박고 save_page 즉시 발행 가능.
+   *  실제 생성은 백그라운드에서 진행 → 완료 시 placeholder 파일이 실제 이미지로 자동 교체 → 사용자 page reload 시 swap.
+   *  StatusManager 통합 — 진행도 SSE + 갤러리 카드 status='rendering' → 'done' 전환.
+   *  이전 sync `generateImage` 는 채팅 이미지 모드 (입력창 토글, /api/media/generate 직접 호출) 전용으로 유지. */
+  async startImageGeneration(input: GenerateImageInput, corrId?: string) {
+    const scope = input.scope ?? 'user';
+    const job = this.statusMgr.start({
+      type: 'image',
+      message: '이미지 생성 시작 (백그라운드)...',
+      meta: {
+        promptPreview: input.prompt.slice(0, 80),
+        model: input.model ?? this.media.getImageModel(),
+        scope,
+        async: true,
+      },
+    });
+    const res = await this.media.startGenerate(input, {
+      corrId,
+      onComplete: (result) => {
+        this.statusMgr.done(job.id, { slug: result.slug, url: result.url });
+        // 백그라운드 완료 시 갤러리·페이지 자동 갱신 — placeholder 카드가 실제 이미지로 swap
+        eventBus.emit({ type: 'gallery:refresh', data: { slug: result.slug, scope } });
+      },
+      onError: (err) => {
+        this.statusMgr.error(job.id, err);
+        eventBus.emit({ type: 'gallery:refresh', data: { error: err, scope } });
+      },
+    });
+    if (res.success && res.data) {
+      // placeholder 등장 즉시 갤러리 갱신 — 사용자가 "렌더링중" 카드 보게
+      eventBus.emit({ type: 'gallery:refresh', data: { slug: res.data.slug, scope } });
+    } else {
+      this.statusMgr.error(job.id, res.error || 'startGenerate 실패');
+    }
+    return res;
+  }
+
+  /** [Legacy / 채팅 이미지 모드 전용] sync 이미지 생성 — 60-90s await.
+   *  AI image_gen 도구는 startImageGeneration 사용 권장 (CLI HTTP timeout 우회).
+   *  /api/media/generate 직접 호출 (입력창 이미지 토글) 만 이 경로 — LLM 우회 흐름이라 사용자가 그 시간 자연스레 기다림. */
   async generateImage(input: GenerateImageInput, corrId?: string) {
     const job = this.statusMgr.start({
       type: 'image',

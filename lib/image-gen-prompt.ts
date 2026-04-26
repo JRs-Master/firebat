@@ -10,7 +10,13 @@
  *   박지 않음. 대신 AI 에게 **어떻게 프롬프트 쓸지** 가이드 주입 → AI 가 상황 판단.
  */
 
-export const IMAGE_GEN_DESCRIPTION = `AI 이미지 생성 + 서버 자동 저장. 반환 URL 을 render_image 의 src 에 바로 넣거나 블로그 포스팅에 첨부.
+export const IMAGE_GEN_DESCRIPTION = `AI 이미지 생성 (비동기) — 즉시 placeholder URL 반환, 실제 생성은 백그라운드 진행.
+
+**핵심 동작 — 반드시 이해**:
+- 호출 즉시 \`{url, slug, status:'rendering'}\` 반환 (1초 미만)
+- 반환된 url 을 render_image src 에 바로 박고 save_page 즉시 호출 — **백그라운드 완료 안 기다림**
+- 실제 이미지 생성은 60-90s 후 완료 → 디스크 파일 자동 swap → 사용자 페이지 reload 시 진짜 이미지 표시
+- 생성중엔 placeholder (회색 박스) 가 보임. 갤러리 카드는 status='rendering' 으로 표시됨
 
 **사용 시점**:
 - 사용자가 '이미지/그림/사진/썸네일/일러스트/로고' 명시 요청
@@ -21,6 +27,11 @@ export const IMAGE_GEN_DESCRIPTION = `AI 이미지 생성 + 서버 자동 저장
 - 데이터 차트 → render_chart (인터랙티브·정확)
 - 표 → render_table
 - 수치 카드 → render_metric
+
+**추가 룰**:
+- 같은 페이지 내에 여러 image_gen 호출해도 OK — 각자 placeholder URL 받고 모두 박으면 됨
+- 이미지 저장 결과 (variants/blurhash/thumbnailUrl) 는 **반환 안 됨** — 백그라운드 완성 후 갤러리에서만 보임
+- render_image 에는 url 만 박으면 충분 — variants 는 안 받았으니 안 넘김
 
 ---
 

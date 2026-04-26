@@ -165,6 +165,44 @@ export class LocalMediaAdapter implements IMediaPort {
     }
   }
 
+  /** 기존 slug 의 base 파일 교체 (비동기 패턴 — placeholder → 실제 이미지 swap).
+   *  meta 의 ext·contentType·bytes 만 업데이트. status 는 caller 가 별도 updateMeta 호출. */
+  async finalizeBase(
+    slug: string,
+    scope: 'user' | 'system',
+    binary: Buffer,
+    contentType: string,
+    extOverride?: string,
+  ): Promise<InfraResult<void>> {
+    try {
+      const newExt = (extOverride ?? extFromContentType(contentType)).replace(/^\./, '');
+      // 기존 메타 읽고 ext 변경 시 옛 파일 삭제 (placeholder.png → real.png 같으면 같은 경로 덮어쓰기, 다르면 정리)
+      const metaPath = this.metaPath(slug, scope);
+      let oldExt: string | null = null;
+      try {
+        if (fs.existsSync(metaPath)) {
+          const meta = JSON.parse(await fs.promises.readFile(metaPath, 'utf-8')) as MediaFileRecord;
+          oldExt = meta.ext;
+        }
+      } catch { /* 메타 손상 — 새로 쓰기 */ }
+      // 새 base 파일 쓰기
+      const newPath = this.slugPath(slug, newExt, scope);
+      await fs.promises.writeFile(newPath, binary);
+      // ext 바뀌었으면 옛 base 파일 정리 (variants 는 별도 — 호출자 책임)
+      if (oldExt && oldExt !== newExt) {
+        try { await fs.promises.unlink(this.slugPath(slug, oldExt, scope)); } catch { /* 이미 없을 수도 */ }
+      }
+      // 메타 업데이트 — bytes / ext / contentType (status 는 별도 updateMeta)
+      await this.updateMeta(slug, scope, { ext: newExt, contentType, bytes: binary.length });
+      this.logger.info(`[Media] finalizeBase scope=${scope} slug=${slug} ext=${newExt} bytes=${binary.length}`);
+      return { success: true };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`[Media] finalizeBase 실패: ${msg}`);
+      return { success: false, error: msg };
+    }
+  }
+
   /** variant / thumbnail binary 를 기존 slug 에 연결해 저장. 메타에도 기록. */
   async saveVariant(
     slug: string,

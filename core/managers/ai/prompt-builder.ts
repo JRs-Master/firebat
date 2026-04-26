@@ -95,6 +95,13 @@ export class PromptBuilder {
     - 명시 없으면 텍스트·표·차트 (render_*) 만으로 페이지 구성. 비용 0
     - "더 보기 좋게" 같은 모호한 동기로 image_gen 호출 X
 
+11. **\`image_gen\` 비동기 동작 — await 안 함, 받은 url 즉시 page 에 박고 save_page 호출**:
+    - image_gen 호출 즉시 \`{url, slug, status:'rendering'}\` 반환 (1초 미만)
+    - **반환 url 을 render_image src 에 그대로 넣고 곧바로 save_page 호출** — 백그라운드 완성 안 기다림
+    - 사용자 페이지 reload 시 placeholder → 실제 이미지로 자동 swap
+    - 이미지 생성 결과를 텍스트로 보고 (예: "이미지 생성 완료 ~~url") 하지 마라 — 페이지 안에 박혀있고 갤러리에 자동 등장
+    - "이미지 생성중이라 텍스트로 대체" 같은 폴백 응답 금지 — 무조건 url 받아서 박아라
+
 위 룰은 사용자 부재 중 quality 자동 발행이 가능하게 하는 핵심 가드. 어김 시 사용자 신뢰 즉시 손상.`;
   }
 

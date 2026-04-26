@@ -295,7 +295,11 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
       focusPoint: z.enum(['attention', 'entropy', 'center']).optional().describe('Crop 전략 (aspectRatio 지정 시만 적용). attention=saliency 자동(기본·권장), entropy=디테일 많은 영역, center=중앙 고정.'),
     },
     async (args) => {
-      const res = await core.generateImage({
+      // **비동기 패턴** — startImageGeneration 즉시 placeholder URL 반환, 실제 생성은 백그라운드.
+      // AI 가 60-90s await 안 함 (CLI HTTP timeout 회피) → URL 즉시 받아 page spec 박고 save_page 발행 가능.
+      // 사용자가 페이지 reload 하면 placeholder → 실제 이미지로 자동 swap (디스크 파일 교체됨).
+      // 이전 sync `core.generateImage` 는 채팅 이미지 모드 (/api/media/generate) 전용으로 유지.
+      const res = await core.startImageGeneration({
         prompt: args.prompt as string,
         size: args.size as string | undefined,
         quality: args.quality as string | undefined,
@@ -304,22 +308,16 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
         focusPoint: args.focusPoint as 'attention' | 'entropy' | 'center' | undefined,
       });
       if (!res.success || !res.data) {
-        return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: res.error || '이미지 생성 실패' }) }] };
+        return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: res.error || '이미지 생성 시작 실패' }) }] };
       }
       const d = res.data;
       return {
         content: [{ type: 'text', text: JSON.stringify({
           success: true,
           url: d.url,
-          thumbnailUrl: d.thumbnailUrl,
-          variants: d.variants,
-          blurhash: d.blurhash,
-          width: d.width,
-          height: d.height,
           slug: d.slug,
-          modelId: d.modelId,
-          revisedPrompt: d.revisedPrompt,
-          aspectRatio: d.aspectRatio,
+          status: 'rendering',
+          note: '백그라운드 생성 진행 중 — 페이지에 url 박고 save_page 즉시 발행하라. 사용자가 페이지 보면 placeholder → 실제 이미지로 자동 swap.',
         }) }],
       };
     },

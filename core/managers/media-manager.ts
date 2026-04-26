@@ -33,6 +33,16 @@ const VK_IMAGE_MODEL = 'system:image-model';
 const VK_IMAGE_SIZE = 'system:image-size';
 const VK_IMAGE_QUALITY = 'system:image-quality';
 
+/** "1024x1024" / "1024" / undefined → [width, height]. 기본 1024x1024 (placeholder 용 — 백그라운드에서 실제 크기로 교체됨). */
+function parseSizeHint(size?: string): [number, number] {
+  if (!size) return [1024, 1024];
+  const m = size.match(/^(\d+)x(\d+)$/);
+  if (m) return [parseInt(m[1], 10), parseInt(m[2], 10)];
+  const single = parseInt(size, 10);
+  if (!isNaN(single) && single > 0) return [single, single];
+  return [1024, 1024];
+}
+
 export interface SeoImageSettings {
   /** WebP variant 생성 — 대부분 브라우저 지원, 원본보다 25~35% 작음 */
   webp: boolean;
@@ -267,11 +277,80 @@ export class MediaManager {
     return { success: true, data: { ...res.data, regenFrom: slug } };
   }
 
+  /** 비동기 image_gen 시작 — 즉시 placeholder 저장 + slug/url 반환, 실제 생성은 백그라운드.
+   *  AI image_gen 도구가 이걸 호출 → 즉시 URL 받아 page spec 박고 save_page 발행 가능 (60-90s await X).
+   *  사용자 페이지 reload 시 placeholder → 실제 이미지로 자동 swap (디스크 파일 교체).
+   *  채팅 이미지 모드 (입력창 토글) 는 sync 유지 — 이건 page/post AI 흐름 전용.
+   *
+   *  콜백:
+   *   - onComplete: 백그라운드 완료 시 — Core 가 gallery:refresh emit 에 활용
+   *   - onError: 백그라운드 실패 시 — Core 가 sse error emit 에 활용 */
+  async startGenerate(
+    input: GenerateImageInput,
+    opts?: {
+      corrId?: string;
+      onComplete?: (result: GenerateImageResult) => void;
+      onError?: (err: string) => void;
+    },
+  ): Promise<InfraResult<{ slug: string; url: string }>> {
+    const corrId = opts?.corrId;
+    const scope = input.scope ?? 'user';
+    const log = (msg: string) => this.logger.info(`[MediaManager]${corrId ? ` [${corrId}]` : ''} ${msg}`);
+    // placeholder 크기 — input.size 우선, 없으면 기본 1024x1024 (정사각). aspectRatio 지정돼도 일단 정사각으로 박고
+    // 백그라운드 generation 후 finalizeBase 시 실제 크기로 교체됨.
+    const [phW, phH] = parseSizeHint(input.size);
+    const phRes = await this.processor.createPlaceholder(phW, phH);
+    if (!phRes.success || !phRes.data) {
+      return { success: false, error: phRes.error || 'placeholder 생성 실패' };
+    }
+    // placeholder save — slug 발급. status='done' 으로 박히지만 직후 'rendering' 으로 덮어씀.
+    const saveRes = await this.media.save(phRes.data, 'image/png', {
+      filenameHint: input.filenameHint,
+      scope,
+      prompt: input.prompt,
+      model: input.model ?? this.getImageModel(),
+      ...(input.size ? { size: input.size } : {}),
+      ...(input.quality ? { quality: input.quality } : {}),
+      source: 'ai-generated',
+      ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
+      ...(input.focusPoint ? { focusPoint: input.focusPoint } : {}),
+    });
+    if (!saveRes.success || !saveRes.data) {
+      return { success: false, error: saveRes.error || 'placeholder 저장 실패' };
+    }
+    const { slug, url } = saveRes.data;
+    // status='rendering' 으로 마킹 — 갤러리 UI 가 spinner + 빨간 테두리 분기 (커밋 2c0a5c1 박힘)
+    await this.media.updateMeta(slug, scope, { status: 'rendering' });
+    log(`startGenerate: placeholder 저장 (slug=${slug}, url=${url}) — 백그라운드 생성 시작`);
+    // 백그라운드 — generateImage 가 existingSlug 모드로 finalize.
+    // setImmediate 로 뿌려서 caller 즉시 반환 (await X). 실패 시 status='error' 자동 마킹.
+    setImmediate(() => {
+      this.generateImage(input, { corrId, existingSlug: slug })
+        .then(res => {
+          if (res.success && res.data) {
+            opts?.onComplete?.(res.data);
+          } else {
+            const errMsg = res.error || '백그라운드 생성 실패';
+            this.media.updateMeta(slug, scope, { status: 'error', errorMsg: errMsg }).catch(() => {});
+            opts?.onError?.(errMsg);
+          }
+        })
+        .catch(err => {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          this.logger.error(`[MediaManager]${corrId ? ` [${corrId}]` : ''} 백그라운드 generateImage 예외: ${errMsg}`);
+          this.media.updateMeta(slug, scope, { status: 'error', errorMsg: errMsg }).catch(() => {});
+          opts?.onError?.(errMsg);
+        });
+    });
+    return { success: true, data: { slug, url } };
+  }
+
   /** AI image_gen 도구 → Core.generateImage → 이 메서드 → 생성 + 후처리 + 저장.
-   *  StatusManager·SSE emit 은 Core 가 wrap. 본 메서드는 도메인 로직만. */
+   *  StatusManager·SSE emit 은 Core 가 wrap. 본 메서드는 도메인 로직만.
+   *  existingSlug 지정 시 — 새 slug 발급 X, 기존 placeholder 파일을 finalizeBase 로 교체 (비동기 패턴 완료 단계). */
   async generateImage(
     input: GenerateImageInput,
-    opts?: { corrId?: string; onProgress?: (progress: number, message: string) => void },
+    opts?: { corrId?: string; onProgress?: (progress: number, message: string) => void; existingSlug?: string },
   ): Promise<InfraResult<GenerateImageResult>> {
     const startedAt = Date.now();
     const corrId = opts?.corrId;
@@ -358,23 +437,45 @@ export class MediaManager {
       }
     }
 
-    // 2) 원본(또는 crop 된) base 저장 — 메타에 prompt/model/size/quality/aspectRatio 포함
-    const saveRes = await this.media.save(baseBinary, baseContentType, {
-      filenameHint: input.filenameHint,
-      scope,
-      prompt: input.prompt,
-      revisedPrompt: genResult.revisedPrompt,
-      model: modelId,
-      size,
-      quality,
-      source: 'ai-generated',
-      ...(appliedAspectRatio ? { aspectRatio: appliedAspectRatio, focusPoint } : {}),
-    });
-    if (!saveRes.success || !saveRes.data) {
-      this.logger.error(`[MediaManager]${corrId ? ` [${corrId}]` : ''} 저장 실패: ${saveRes.error}`);
-      return { success: false, error: saveRes.error || '이미지 저장 실패' };
+    // 2) 원본(또는 crop 된) base 저장 또는 placeholder 교체 (existingSlug 모드).
+    //    - 신규 (existingSlug 미지정): media.save 로 새 slug 발급 + 메타 신설
+    //    - 비동기 finalize (existingSlug 지정): media.finalizeBase 로 placeholder 덮어쓰기 + meta 업데이트.
+    //      이때 prompt·model·size 등은 startGenerate 가 이미 박아둔 상태 — 여기선 revisedPrompt 만 추가 갱신.
+    let saved: { slug: string; url: string };
+    if (opts?.existingSlug) {
+      const fbRes = await this.media.finalizeBase(opts.existingSlug, scope, baseBinary, baseContentType);
+      if (!fbRes.success) {
+        this.logger.error(`[MediaManager]${corrId ? ` [${corrId}]` : ''} finalizeBase 실패: ${fbRes.error}`);
+        return { success: false, error: fbRes.error || 'placeholder 교체 실패' };
+      }
+      // ext 결정 (finalizeBase 내부 로직과 동일) — URL 재구성용
+      const finalExt = baseContentType.includes('jpeg') || baseContentType.includes('jpg') ? 'jpg'
+        : baseContentType.includes('webp') ? 'webp'
+        : baseContentType.includes('avif') ? 'avif'
+        : 'png';
+      saved = { slug: opts.existingSlug, url: `/${scope}/media/${opts.existingSlug}.${finalExt}` };
+      // revisedPrompt 만 추가 갱신 (나머지 메타는 startGenerate 가 박았음). status 는 마지막 updateMeta 에서 'done'.
+      if (genResult.revisedPrompt) {
+        await this.media.updateMeta(opts.existingSlug, scope, { revisedPrompt: genResult.revisedPrompt });
+      }
+    } else {
+      const saveRes = await this.media.save(baseBinary, baseContentType, {
+        filenameHint: input.filenameHint,
+        scope,
+        prompt: input.prompt,
+        revisedPrompt: genResult.revisedPrompt,
+        model: modelId,
+        size,
+        quality,
+        source: 'ai-generated',
+        ...(appliedAspectRatio ? { aspectRatio: appliedAspectRatio, focusPoint } : {}),
+      });
+      if (!saveRes.success || !saveRes.data) {
+        this.logger.error(`[MediaManager]${corrId ? ` [${corrId}]` : ''} 저장 실패: ${saveRes.error}`);
+        return { success: false, error: saveRes.error || '이미지 저장 실패' };
+      }
+      saved = saveRes.data;
     }
-    const saved = saveRes.data;
     onProgress?.(0.75, 'variants 생성 중...');
 
     // 3) 메타데이터 파싱 — baseBinary 기준 (crop 이 적용됐으면 cropped 치수)
@@ -475,8 +576,10 @@ export class MediaManager {
     }
     onProgress?.(0.95, '메타데이터 업데이트 중...');
 
-    // 5) 메타 JSON 업데이트 — variants·thumbnailUrl·blurhash·width/height 반영
+    // 5) 메타 JSON 업데이트 — variants·thumbnailUrl·blurhash·width/height 반영.
+    //    status 'done' 도 명시 — 비동기 finalize 의 placeholder('rendering' 마킹) 도 여기서 'done' 으로 전환됨.
     await this.media.updateMeta(saved.slug, scope, {
+      status: 'done',
       width: originalWidth,
       height: originalHeight,
       ...(variants.length > 0 ? { variants } : {}),

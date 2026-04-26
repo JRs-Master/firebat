@@ -924,6 +924,16 @@ export interface MediaFileRecord {
 export interface IMediaPort {
   /** binary 저장 + URL 발급. 원본만 저장 — variants 는 saveVariant() 로 별도 기록. */
   save(binary: Buffer | Uint8Array, contentType: string, opts?: MediaSaveOptions): Promise<InfraResult<MediaSaveResult>>;
+  /** 기존 slug 의 base 파일을 새 binary 로 교체 (placeholder → 실제 이미지 swap 용).
+   *  비동기 image_gen 패턴 — startGenerate 가 placeholder 박고 reserve 한 slug 를 백그라운드에서 finalize.
+   *  meta 도 함께 업데이트 (bytes/contentType/width/height) — status 는 caller 가 별도 updateMeta 로 'done' 설정. */
+  finalizeBase(
+    slug: string,
+    scope: 'user' | 'system',
+    binary: Buffer,
+    contentType: string,
+    extOverride?: string,
+  ): Promise<InfraResult<void>>;
   /** variant/thumbnail binary 를 기존 slug 에 연결해 저장. suffix 규칙: '480w', 'thumb', 'full' 등 */
   saveVariant(
     slug: string,
@@ -988,6 +998,9 @@ export interface IImageProcessorPort {
   process(binary: Buffer | Uint8Array, opts: ResizeOpts): Promise<InfraResult<Buffer>>;
   /** Blurhash 생성 (LQIP, 32자 내외 문자열) */
   blurhash(binary: Buffer | Uint8Array, components?: { x: number; y: number }): Promise<InfraResult<string>>;
+  /** Placeholder PNG 생성 (비동기 image_gen 의 "렌더링중" 임시 이미지).
+   *  단순 회색 사각형 — 텍스트는 안 박음 (locale·폰트 의존 회피). 사용자는 갤러리 카드 + 페이지 reload 시 swap 으로 진행 인지. */
+  createPlaceholder(width: number, height: number): Promise<InfraResult<Buffer>>;
 }
 
 // ══════════════════════════════════════════════════════════════════════════
