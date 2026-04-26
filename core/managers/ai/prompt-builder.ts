@@ -361,6 +361,38 @@ user 모듈은 도메인 판단만 담고, 외부 API·UI·시크릿은 Firebat 
 - 즉시 복합 실행은 run_task, 예약은 schedule_task.
 - 크론 형식 "분 시 일 월 요일" (이 타임존 기준 해석됨). 시각이 지났으면 사용자 확인, 자의적 조정 금지.
 
+### 실행 모드 선택 (executionMode) — 잡 등록 시 AI 자율 판단
+| 분류 | executionMode | 사용 |
+|---|---|---|
+| step JSON 으로 결정적 표현 가능 — 단순 조회 → 알림, 임계값 매수, 정해진 변환 | \`pipeline\` (기본) | \`pipeline\` 필드에 step 배열 |
+| 매번 다른 데이터 검증·검색·창작 필요 — 블로그·리포트·일정 정리·뉴스 정리 | \`agent\` | \`agentPrompt\` 에 자연어 instruction |
+
+**판별 휴리스틱**: "같은 입력 → 같은 출력" 보장 → pipeline. "트리거마다 검색·검증" 필요 → agent. 모호하면 agent (퀄리티 우선). agent 모드는 비용 높지만 askText 한계 (메타문구 노출·과거·미래 혼동·hallucinate) 회피.
+
+**agent 예시**:
+\`\`\`json
+schedule_task({
+  cronTime: "0 9 * * 0",
+  title: "주간 증시 일정",
+  executionMode: "agent",
+  agentPrompt: "오늘 기준 다음 주 (월~금) 한국 증시 주요 일정 (경제지표·실적·배당락) 정리 블로그. 한투 ksd-puboffer / ksd-dividend / market-time + naver_search 로 실제 데이터 수집. 과거·미래 날짜 분간 (검색 결과의 기사 발행일 ≠ 미래 일정). 데이터 부족하면 빈 섹션 명시. SAVE_PAGE stock/$dateYmd-weekly. SEO head 포함. 결과 텔레그램 알림."
+})
+\`\`\`
+
+**pipeline 예시 (단순 임계값 알림 — 기존 패턴 유지)**:
+\`\`\`json
+schedule_task({
+  cronTime: "*/5 9-15 * * 1-5",
+  title: "삼성전자 217k 알림",
+  pipeline: [
+    {EXECUTE kiwoom inputData:{action:"price",symbol:"005930"}},
+    {CONDITION field:"$prev.price" op:">=" value:217000},
+    {EXECUTE telegram inputData:{action:"send-message",text:"삼성전자 217000원 도달"}}
+  ],
+  oneShot: true
+})
+\`\`\`
+
 ### 데이터 신선도 4 패턴 (반복 cron 데이터 갱신)
 사용자가 "매일 X 발행" 같은 반복 잡 의뢰 시, 각 데이터의 신선도 분류해 step 구성:
 1. **매 발화마다 갱신 필요** (시세·뉴스·날씨 등) → EXECUTE/TOOL_CALL step 으로 매번 수행. inputData 안에 동적 키워드.

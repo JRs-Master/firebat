@@ -52,6 +52,9 @@ export interface AiRequestOpts {
   /** 사용자가 ⚙수정 제안 input 에 피드백 입력 시 동봉되는 planId.
    *  AiManager 가 직전 plan + 사용자 피드백 → propose_plan 재호출 강제. */
   planReviseId?: string;
+  /** cron agent 모드 트리거 표시 — system prompt 에 cron 컨텍스트 주입 +
+   *  schedule_task / propose_plan 등 메타 도구 차단 + 승인 게이트 우회 (save_page 즉시 발행). */
+  cronAgent?: { jobId: string; title?: string };
 }
 
 /**
@@ -187,6 +190,41 @@ export class FirebatCore {
 
   async codeAssist(params: { code: string; language: string; instruction: string; selectedCode?: string }, opts?: AiRequestOpts) {
     return this.ai.codeAssist(params, opts);
+  }
+
+  /** Cron agent 모드 트리거 — server-side Function Calling 한 사이클 실행.
+   *  agentPrompt 를 user message 로 AI 에 전달, 풀 도구 사용 (schedule_task / propose_plan 제외),
+   *  승인 게이트 우회 (save_page 즉시 발행). 결과: {reply, executedActions, blocks, error?}.
+   *  ScheduleManager.handleTrigger 가 호출, 결과를 CronJobResult 로 변환해 cron-logs 에 기록. */
+  async runAgentJob(jobId: string, agentPrompt: string, title?: string): Promise<{
+    success: boolean;
+    reply?: string;
+    executedActions?: string[];
+    blocks?: unknown[];
+    error?: string;
+  }> {
+    if (!agentPrompt || !agentPrompt.trim()) {
+      return { success: false, error: 'agentPrompt 가 비어있습니다.' };
+    }
+    try {
+      const res = await this.ai.processWithTools(
+        agentPrompt,
+        [], // 빈 history — cron 잡은 독립 실행, 어드민 채팅 컨텍스트 X
+        { cronAgent: { jobId, title }, owner: 'admin' },
+      );
+      if (!res.success) {
+        return { success: false, error: res.error || 'agent 실행 실패', executedActions: res.executedActions };
+      }
+      const data = res.data as { blocks?: unknown[] } | undefined;
+      return {
+        success: true,
+        reply: res.reply,
+        executedActions: res.executedActions,
+        blocks: data?.blocks,
+      };
+    } catch (e: any) {
+      return { success: false, error: e?.message ?? String(e) };
+    }
   }
 
   /** AI/pipeline 이 호출한 identifier (서버명·모듈명·sysmod_*·full path) → 실제 dispatch target.

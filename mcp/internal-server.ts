@@ -541,6 +541,8 @@ startAt/endAt: cronTime의 유효 기간 (만료 시 자동 해제).
       pipeline: z.array(z.any()).optional().describe('파이프라인 스텝 배열'),
       title: z.string().optional().describe('잡 제목 (UI/알림용)'),
       oneShot: z.boolean().optional().describe('첫 성공 시 자동 취소'),
+      executionMode: z.enum(['pipeline', 'agent']).optional().describe('실행 모드 (기본 pipeline). pipeline = 미리 짠 step 결정적 실행 (싸고 결정적). agent = 트리거 시 AI Function Calling 사이클로 agentPrompt 실행 (도구 자유 사용·검증·콘텐츠 생성, 비용 ↑). 블로그·리포트·일정 정리는 agent. 단순 알림·시세는 pipeline.'),
+      agentPrompt: z.string().optional().describe('agent 모드 전용 — 트리거 시 AI 에 전달할 자연어 instruction. 잡 목적·필요 데이터·출력 형식 명시. pipeline 모드 시 무시.'),
       runWhen: z.object({
         check: z.object({
           sysmod: z.string(),

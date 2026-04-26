@@ -213,6 +213,15 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
           startAt: { type: 'string', description: '시작 시각 (ISO 8601)' },
           endAt: { type: 'string', description: '종료 시각 (ISO 8601)' },
           oneShot: { type: 'boolean', description: '첫 성공 시 자동 취소. 가격 알림 같은 "조건 충족 후 1회만" 케이스는 반드시 true. CONDITION 스텝 미충족 시에는 취소 안 되고 다음 주기에 재시도.' },
+          executionMode: {
+            type: 'string',
+            enum: ['pipeline', 'agent'],
+            description: '실행 모드 — 트리거 시 처리 방식 결정. pipeline (기본) = 미리 짠 step 흐름 결정적 실행 (askText 단발, 싸고 결정적). 단순 시세 조회·임계값 알림·정해진 데이터 fetch+send. agent = 트리거 시 AI Function Calling 사이클로 agentPrompt 실행 (도구 자유 사용, 검색·검증·콘텐츠 생성 가능, 비용 ↑). 블로그·리포트·일정 정리·매번 다른 데이터 검증 필요한 콘텐츠. **선택 기준**: "step JSON 으로 결정적 표현 가능한가?" Yes → pipeline. No (검증·창작 필요) → agent. agent 사용 시 pipeline 필드 비우고 agentPrompt 작성.',
+          },
+          agentPrompt: {
+            type: 'string',
+            description: 'agent 모드 전용 — 트리거 시 AI 에 user message 로 전달할 자연어 instruction. 한국어 권장. 잡 목적·필요 데이터·출력 형식 명시. 예: "오늘 기준 한국 주식 시장 다음 주 (월~금) 주요 일정 정리. 한투 ksd-puboffer/ksd-dividend + naver-search 로 실제 일정 데이터 확보. 과거·미래 분간하고 hallucinate 금지. SAVE_PAGE stock/$dateYmd-weekly 로 발행, head 에 SEO 메타데이터 포함. 발행 결과 텔레그램 알림."',
+          },
           runWhen: {
             type: 'object',
             description: '발화 전 조건 체크 — 미충족 시 이번 발화 skip (실패 아님). 휴장일 enumerate 하드코딩 금지 — API 호출로 동적 판단.',

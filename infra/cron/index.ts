@@ -1,4 +1,4 @@
-import { ICronPort, CronScheduleOptions, CronJobResult, CronTriggerInfo, CronJobInfo, CronTriggerType, CronLogEntry, ILogPort, PipelineStep, CronRunWhen, CronRetry, CronNotify } from '../../core/ports';
+import { ICronPort, CronScheduleOptions, CronJobResult, CronTriggerInfo, CronJobInfo, CronTriggerType, CronLogEntry, ILogPort, PipelineStep, CronRunWhen, CronRetry, CronNotify, CronExecutionMode } from '../../core/ports';
 import { InfraResult } from '../../core/types';
 import cron, { ScheduledTask } from 'node-cron';
 import fs from 'fs';
@@ -26,6 +26,10 @@ interface CronJobRecord {
   retry?: CronRetry;
   /** 결과 알림 hook */
   notify?: CronNotify;
+  /** 실행 모드 (pipeline 기본) */
+  executionMode?: CronExecutionMode;
+  /** agent 모드 prompt */
+  agentPrompt?: string;
 }
 
 // CronLogEntry는 core/ports에서 import (포트 정의가 정본)
@@ -131,7 +135,7 @@ export class NodeCronAdapter implements ICronPort {
         return { success: false, error: `이미 등록된 잡 ID입니다: ${jobId}` };
       }
 
-      const { cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description, oneShot, runWhen, retry, notify } = opts;
+      const { cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description, oneShot, runWhen, retry, notify, executionMode, agentPrompt } = opts;
 
       // 유효성 검사
       if (!cronTime && !runAt && delaySec == null) {
@@ -156,6 +160,8 @@ export class NodeCronAdapter implements ICronPort {
         ...(runWhen ? { runWhen } : {}),
         ...(retry ? { retry } : {}),
         ...(notify ? { notify } : {}),
+        ...(executionMode ? { executionMode } : {}),
+        ...(agentPrompt ? { agentPrompt } : {}),
         createdAt: now.toISOString(),
         mode: cronTime ? 'cron' : (runAt ? 'once' : 'delay'),
       };
@@ -226,6 +232,8 @@ export class NodeCronAdapter implements ICronPort {
         runWhen: r.runWhen,
         retry: r.retry,
         notify: r.notify,
+        executionMode: r.executionMode,
+        agentPrompt: r.agentPrompt,
       }));
     }
     // 2차: 파일 폴백 — Next.js multi-isolate / boot timing 안전망.
@@ -252,6 +260,8 @@ export class NodeCronAdapter implements ICronPort {
         runWhen: r.runWhen,
         retry: r.retry,
         notify: r.notify,
+        executionMode: r.executionMode,
+        agentPrompt: r.agentPrompt,
       }));
     } catch (e: any) {
       this.log?.error(`[Cron] list() 파일 폴백 실패: ${e.message}`);
@@ -361,6 +371,8 @@ export class NodeCronAdapter implements ICronPort {
         retry: record.retry,
         notify: record.notify,
         title: record.title,
+        executionMode: record.executionMode,
+        agentPrompt: record.agentPrompt,
       });
       const outputSummary = result.output ? ` output=${JSON.stringify(result.output).slice(0, 100)}` : '';
       const stepsSummary = result.stepsTotal != null ? ` steps=${result.stepsExecuted ?? '?'}/${result.stepsTotal}` : '';

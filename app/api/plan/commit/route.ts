@@ -95,6 +95,8 @@ export async function POST(req: NextRequest) {
           runWhen: args.runWhen as import('../../../../core/ports').CronRunWhen | undefined,
           retry: args.retry as import('../../../../core/ports').CronRetry | undefined,
           notify: args.notify as import('../../../../core/ports').CronNotify | undefined,
+          executionMode: args.executionMode as import('../../../../core/ports').CronExecutionMode | undefined,
+          agentPrompt: args.agentPrompt as string | undefined,
         });
         // 과거 시각 에러면 consume 하지 않고 사용자에게 선택지 반환
         if (!r.success && r.error?.includes('과거 시각')) {

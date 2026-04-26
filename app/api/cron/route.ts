@@ -43,7 +43,7 @@ export async function PUT(req: NextRequest) {
   if (isAuthError(auth)) return auth;
   try {
     const body = await req.json();
-    const { jobId, targetPath, cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description, oneShot, runWhen, retry, notify } = body;
+    const { jobId, targetPath, cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description, oneShot, runWhen, retry, notify, executionMode, agentPrompt } = body;
     if (!jobId) {
       return NextResponse.json({ error: 'jobId 필수' }, { status: 400 });
     }
@@ -51,7 +51,7 @@ export async function PUT(req: NextRequest) {
     const core = getCore();
     const result = await core.updateCronJob(jobId, targetPath || '', {
       cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description, oneShot,
-      runWhen, retry, notify,
+      runWhen, retry, notify, executionMode, agentPrompt,
     });
     if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 });
     return NextResponse.json({ success: true });

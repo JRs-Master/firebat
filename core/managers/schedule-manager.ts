@@ -124,7 +124,22 @@ export class ScheduleManager {
     let stepsExecuted: number | undefined;
 
     try {
-      if (info.pipeline && info.pipeline.length > 0) {
+      // ── agent 모드 — Function Calling 사이클로 위임 ──
+      if (info.executionMode === 'agent') {
+        const prompt = info.agentPrompt?.trim() || info.title || `Cron job ${info.jobId} 실행`;
+        this.log.info(`[Cron] agent 실행: ${info.jobId} (${info.trigger}) — prompt 길이 ${prompt.length}`);
+        const res = await this.core.runAgentJob(info.jobId, prompt, info.title);
+        success = res.success;
+        if (!res.success) error = res.error;
+        const actions = res.executedActions ?? [];
+        const blockCount = Array.isArray(res.blocks) ? res.blocks.length : 0;
+        output = {
+          mode: 'agent',
+          ...(actions.length > 0 ? { executedActions: actions } : {}),
+          ...(blockCount > 0 ? { blockCount } : {}),
+          ...(res.reply ? { replyPreview: res.reply.slice(0, 200) } : {}),
+        };
+      } else if (info.pipeline && info.pipeline.length > 0) {
         stepsTotal = info.pipeline.length;
         this.log.info(`[Cron] 파이프라인 실행: ${info.jobId} (${stepsTotal}단계, ${info.trigger})`);
         let lastDoneIdx = -1;

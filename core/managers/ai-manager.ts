@@ -668,9 +668,14 @@ export class AiManager {
     const allToolsRaw = await this.buildToolDefinitions();
     // AI Assistant ON 시: backend 가 자동 search_history 처리 → User AI 도구 목록에서 제외 (중복 방지)
     // 플랜 토글: ON = 무조건 plan 강제 (시스템 프롬프트로), OFF = AI 자유 판단 (도구 그대로 유지)
-    const allTools = this.toolRouter.isEnabled()
+    const allToolsAfterRouter = this.toolRouter.isEnabled()
       ? allToolsRaw.filter(t => t.name !== 'search_history')
       : allToolsRaw;
+    // cron agent 모드: schedule_task / cancel_task / list_tasks / propose_plan / complete_plan 차단
+    // (recursion 방지 + UI 없는 환경이라 plan 카드 의미 X)
+    const allTools = opts?.cronAgent
+      ? allToolsAfterRouter.filter(t => !['schedule_task', 'cancel_task', 'list_tasks', 'propose_plan', 'complete_plan'].includes(t.name))
+      : allToolsAfterRouter;
     // Gemini/Vertex는 사용자 쿼리로 벡터 검색 → 관련 도구만 선별 (토큰 절감)
     // 다른 프로바이더는 allTools 그대로 반환됨
     const sessionUsedToolNames = new Set<string>();
@@ -872,8 +877,9 @@ export class AiManager {
         const argsPreview = JSON.stringify(tc.args).slice(0, 120);
         this.logger.info(`[AiManager] [${corrId}] Tool: ${tc.name} ${argsPreview}`);
 
-        // 사전검증 — AI가 스스로 재시도할 수 있도록 UI에는 노출하지 않고 tool 결과로만 피드백
-        const approvalPeek = await this.dispatcher.checkNeedsApproval(tc);
+        // 사전검증 — AI가 스스로 재시도할 수 있도록 UI에는 노출하지 않고 tool 결과로만 피드백.
+        // cron agent 모드: 승인 게이트 우회 — UI 없는 server-side 실행이라 모든 도구 즉시 실행 (save_page 포함).
+        const approvalPeek = opts?.cronAgent ? null : await this.dispatcher.checkNeedsApproval(tc);
         let preValidError: string | null = null;
         if (approvalPeek) preValidError = this.dispatcher.preValidatePendingArgs(tc);
 

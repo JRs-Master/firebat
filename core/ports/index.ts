@@ -475,6 +475,12 @@ export interface CronNotify {
   onError?: { sysmod: string; chatId?: string; template?: string };
 }
 
+/** 크론 실행 모드.
+ *  pipeline (default): TaskManager 가 미리 짠 step 흐름을 결정적으로 실행. askText 단발. 싸고 결정적.
+ *  agent: 트리거 시 AI Function Calling 사이클 (askWithTools) 로 agentPrompt 실행. 도구 자유 사용,
+ *  검색·검증·콘텐츠 생성 가능. 비싸지만 퀄리티 ↑. 블로그·리포트·일정 정리 등 동적 콘텐츠 잡 전용. */
+export type CronExecutionMode = 'pipeline' | 'agent';
+
 export interface CronScheduleOptions {
   cronTime?: string;
   runAt?: string;
@@ -493,6 +499,11 @@ export interface CronScheduleOptions {
   retry?: CronRetry;
   /** 결과 알림 hook (글로벌 default 도 가능) */
   notify?: CronNotify;
+  /** 실행 모드 (기본 pipeline) */
+  executionMode?: CronExecutionMode;
+  /** agent 모드 전용 — 트리거 시 AI 에 전달할 자연어 instruction.
+   *  agent 모드인데 미설정이면 title 을 fallback prompt 로 사용. */
+  agentPrompt?: string;
 }
 
 /** 크론 실행 로그 */
@@ -529,6 +540,10 @@ export interface CronTriggerInfo {
   notify?: CronNotify;
   /** notify template 치환용 — `{title}` placeholder 에 사용 */
   title?: string;
+  /** 실행 모드 (pipeline 기본) */
+  executionMode?: CronExecutionMode;
+  /** agent 모드 prompt */
+  agentPrompt?: string;
 }
 
 /** 크론 잡 실행 결과 — Core가 실행 후 반환 */
@@ -567,6 +582,8 @@ export interface CronJobInfo {
   runWhen?: CronRunWhen;
   retry?: CronRetry;
   notify?: CronNotify;
+  executionMode?: CronExecutionMode;
+  agentPrompt?: string;
 }
 
 export interface ICronPort {

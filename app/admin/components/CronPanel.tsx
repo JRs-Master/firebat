@@ -34,6 +34,8 @@ interface CronJob {
   runWhen?: CronRunWhen;
   retry?: CronRetry;
   notify?: CronNotify;
+  executionMode?: 'pipeline' | 'agent';
+  agentPrompt?: string;
 }
 
 interface CronLog {
@@ -323,6 +325,8 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
     runWhen?: CronRunWhen;
     retry?: CronRetry;
     notify?: CronNotify;
+    executionMode?: 'pipeline' | 'agent';
+    agentPrompt?: string;
   } | null;
   onClose: () => void;
   onSaved: () => void;
@@ -363,6 +367,10 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
   const [showAdvanced, setShowAdvanced] = useState<boolean>(
     !!(job?.runWhen || job?.retry || job?.notify || job?.oneShot)
   );
+
+  // ── 실행 모드: pipeline / agent ──
+  const [executionMode, setExecutionMode] = useState<'pipeline' | 'agent'>(job?.executionMode || 'pipeline');
+  const [agentPrompt, setAgentPrompt] = useState<string>(job?.agentPrompt || '');
 
   const toggleDow = (d: number) => {
     setFreqDows(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort());
@@ -425,6 +433,19 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
       body.runWhen = runWhenParsed;
       body.retry = retryParsed;
       body.notify = notifyParsed;
+
+      // 실행 모드 + agent prompt
+      body.executionMode = executionMode;
+      if (executionMode === 'agent') {
+        const trimmedPrompt = agentPrompt.trim();
+        if (!trimmedPrompt) {
+          throw new Error('agent 모드는 agentPrompt 필수입니다.');
+        }
+        body.agentPrompt = trimmedPrompt;
+      } else {
+        // pipeline 모드 시 agentPrompt 명시 제거
+        body.agentPrompt = undefined;
+      }
 
       const res = await fetch('/api/cron', {
         method: 'PUT',
@@ -592,6 +613,49 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
               </pre>
             </div>
           )}
+
+          {/* 실행 모드 (pipeline / agent) */}
+          <div>
+            <label className="text-[11px] font-semibold text-slate-500 mb-1.5 block">실행 모드</label>
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => setExecutionMode('pipeline')}
+                className={btnCls(executionMode === 'pipeline')}
+              >
+                ⚙️ Pipeline
+              </button>
+              <button
+                type="button"
+                onClick={() => setExecutionMode('agent')}
+                className={btnCls(executionMode === 'agent')}
+              >
+                🤖 AI Agent
+              </button>
+            </div>
+            {executionMode === 'pipeline' ? (
+              <>
+                <p className="text-[10px] text-slate-400 mt-1.5">미리 짠 step 흐름 결정적 실행 (싸고 결정적). 단순 시세·알림에 사용.</p>
+                {job?.pipeline && (
+                  <pre className="mt-1.5 px-3 py-2 text-[11px] bg-slate-50 border border-slate-200 rounded-lg text-slate-600 overflow-x-auto max-h-32 whitespace-pre-wrap">
+                    {JSON.stringify(job.pipeline, null, 2)}
+                  </pre>
+                )}
+              </>
+            ) : (
+              <div className="mt-1.5 space-y-1">
+                <p className="text-[10px] text-slate-400">트리거마다 AI Function Calling 사이클로 실행. 도구 자유 사용·검증·콘텐츠 생성 가능 (비용 ↑). 블로그·리포트·일정 정리에 사용.</p>
+                <textarea
+                  value={agentPrompt}
+                  onChange={e => setAgentPrompt(e.target.value)}
+                  rows={6}
+                  placeholder={'예: "오늘 기준 다음 주 (월~금) 한국 증시 주요 일정 정리. 한투 ksd-puboffer/ksd-dividend + naver-search 로 실제 데이터 확보. 과거·미래 분간, hallucinate 금지. SAVE_PAGE stock/$dateYmd-weekly 로 발행. 텔레그램 알림."'}
+                  className="w-full px-3 py-2 text-[11px] border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y font-mono"
+                />
+                <p className="text-[10px] text-slate-400">트리거 시 AI 가 user message 로 받음. 잡 목적·필요 데이터·출력 형식·알림 명시.</p>
+              </div>
+            )}
+          </div>
 
           {/* 표준 메커니즘 (runWhen / retry / notify / oneShot) */}
           <div className="pt-1">
