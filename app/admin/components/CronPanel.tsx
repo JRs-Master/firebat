@@ -469,9 +469,17 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
     }`;
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[calc(100vh-2rem)]" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-stretch justify-center sm:items-center sm:p-4" onClick={onClose}>
+      {/* 갤러리와 동일 패턴: 모바일은 inset-0 + items-stretch → viewport unit 의존 없이 자연 높이 채움.
+          PC 는 sm:h-[85vh] + p-4 + items-center 로 가운데 카드. */}
+      <div
+        className="bg-white w-full sm:max-w-md sm:rounded-xl rounded-t-none shadow-2xl flex flex-col h-full sm:h-[85vh] sm:max-h-[85vh] overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        <div
+          className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50 shrink-0"
+          style={{ paddingTop: 'max(env(safe-area-inset-top), 12px)' }}
+        >
           <h3 className="text-sm font-bold text-slate-800">{isNew ? '스케줄 등록' : '스케줄 수정'}</h3>
           <button onClick={onClose} className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors">
             <X size={16} />
@@ -720,7 +728,10 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
           {error && <p className="text-[11px] text-red-500 font-medium">{error}</p>}
         </div>
 
-        <div className="flex items-center justify-between px-5 py-3 border-t border-slate-200 bg-slate-50 shrink-0">
+        <div
+          className="flex items-center justify-between px-5 py-3 border-t border-slate-200 bg-slate-50 shrink-0"
+          style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 12px)' }}
+        >
           {onDelete ? (
             <button onClick={onDelete} className="px-3 py-1.5 text-[12px] font-semibold text-red-500 hover:bg-red-50 rounded-lg transition-colors">
               삭제
