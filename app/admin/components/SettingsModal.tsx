@@ -151,6 +151,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const [newSecretName, setNewSecretName] = useState('');
   const [newSecretValue, setNewSecretValue] = useState('');
   const [secretSaving, setSecretSaving] = useState(false);
+  const [secretFeedback, setSecretFeedback] = useState<'ok' | 'err' | null>(null);
   const [editingSecret, setEditingSecret] = useState<{ name: string; value: string } | null>(null);
 
   // MCP
@@ -167,6 +168,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const [mcpEditArgs, setMcpEditArgs] = useState('');
   const [mcpEditUrl, setMcpEditUrl] = useState('');
   const [mcpEditSaving, setMcpEditSaving] = useState(false);
+  const [mcpEditFeedback, setMcpEditFeedback] = useState<'ok' | 'err' | null>(null);
   const [mcpAuth, setMcpAuth] = useState<{ server: string; step: 'starting' | 'waiting' | 'done' | 'error'; authUrl?: string; error?: string } | null>(null);
 
   // Firebat MCP 서버 토큰
@@ -266,9 +268,18 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
       const data = await res.json();
       if (data.success) {
         setNewSecretName(''); setNewSecretValue('');
+        setSecretFeedback('ok');
         fetchSecrets();
+      } else {
+        setSecretFeedback('err');
       }
-    } finally { setSecretSaving(false); }
+    } catch {
+      setSecretFeedback('err');
+    }
+    finally {
+      setSecretSaving(false);
+      setTimeout(() => setSecretFeedback(null), 1800);
+    }
   };
 
   const saveModuleSecret = async (secretName: string) => {
@@ -372,14 +383,25 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
       } else {
         body.url = mcpEditUrl.trim();
       }
-      await fetch('/api/mcp/servers', {
+      const res = await fetch('/api/mcp/servers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      setMcpEditing(null);
-      fetchMcpServers();
-    } finally { setMcpEditSaving(false); }
+      if (res.ok) {
+        setMcpEditing(null);
+        setMcpEditFeedback('ok');
+        fetchMcpServers();
+      } else {
+        setMcpEditFeedback('err');
+      }
+    } catch {
+      setMcpEditFeedback('err');
+    }
+    finally {
+      setMcpEditSaving(false);
+      setTimeout(() => setMcpEditFeedback(null), 1800);
+    }
   };
 
   const startMcpAuth = async (serverName: string) => {
@@ -1510,8 +1532,9 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     disabled={!newSecretName.trim() || !newSecretValue.trim() || secretSaving}
                     className="px-3 py-2 text-[13px] sm:text-[14px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors shrink-0"
                   >
-                    {secretSaving ? '...' : '추가'}
+                    추가
                   </button>
+                  <FeedbackBadge state={secretSaving ? 'loading' : secretFeedback} okLabel="추가됨" errLabel="실패" loadingLabel="추가 중" />
                 </div>
               </div>
             </>
@@ -1561,14 +1584,17 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                         <code className="flex-1 text-[11px] sm:text-[12px] font-mono bg-white border border-amber-200 rounded px-2 py-1 text-slate-700 break-all select-all">
                           {mcpTokenRaw}
                         </code>
-                        <Tooltip label="복사">
-                          <button
-                            onClick={() => copyToClipboard(mcpTokenRaw, setMcpTokenCopied)}
-                            className="shrink-0 p-1.5 rounded hover:bg-amber-100 transition-colors"
-                          >
-                            {mcpTokenCopied ? <Check size={14} className="text-green-600" /> : <Copy size={14} className="text-amber-600" />}
-                          </button>
-                        </Tooltip>
+                        <div className="relative">
+                          <Tooltip label="복사">
+                            <button
+                              onClick={() => copyToClipboard(mcpTokenRaw, setMcpTokenCopied)}
+                              className="shrink-0 p-1.5 rounded hover:bg-amber-100 transition-colors"
+                            >
+                              <Copy size={14} className="text-amber-600" />
+                            </button>
+                          </Tooltip>
+                          <FeedbackBadge state={mcpTokenCopied ? 'ok' : null} okLabel="복사됨" absolute />
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1624,14 +1650,17 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                           <p className="text-[10px] sm:text-[11px] text-slate-500">
                             VS Code / Cursor MCP 설정에 아래 JSON을 추가하세요.
                           </p>
-                          <Tooltip label="복사">
-                            <button
-                              onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)}
-                              className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
-                            >
-                              {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
-                            </button>
-                          </Tooltip>
+                          <div className="relative">
+                            <Tooltip label="복사">
+                              <button
+                                onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)}
+                                className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
+                              >
+                                <Copy size={12} className="text-slate-400" />
+                              </button>
+                            </Tooltip>
+                            <FeedbackBadge state={mcpJsonCopied ? 'ok' : null} okLabel="복사됨" absolute />
+                          </div>
                         </div>
                         <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">
                           {jsonConfig}
@@ -1658,14 +1687,17 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                           <p className="text-[10px] sm:text-[11px] text-slate-500">
                             SSH를 통해 서버에 직접 접속하여 실행합니다.
                           </p>
-                          <Tooltip label="복사">
-                            <button
-                              onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)}
-                              className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
-                            >
-                              {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
-                            </button>
-                          </Tooltip>
+                          <div className="relative">
+                            <Tooltip label="복사">
+                              <button
+                                onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)}
+                                className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
+                              >
+                                <Copy size={12} className="text-slate-400" />
+                              </button>
+                            </Tooltip>
+                            <FeedbackBadge state={mcpJsonCopied ? 'ok' : null} okLabel="복사됨" absolute />
+                          </div>
                         </div>
                         <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">
                           {jsonConfig}
@@ -1774,8 +1806,9 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                                 disabled={mcpEditSaving}
                                 className="px-2.5 py-1 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded transition-colors"
                               >
-                                {mcpEditSaving ? '저장 중...' : '저장'}
+                                저장
                               </button>
+                              <FeedbackBadge state={mcpEditSaving ? 'loading' : mcpEditFeedback} loadingLabel="저장 중" />
                             </div>
                           </div>
                         )}

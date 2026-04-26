@@ -7,6 +7,7 @@ import { AI_MODELS, THINKING_LEVELS } from '../types';
 import { readSetting } from '../hooks/settings-manager';
 import { tryUnwrapJson } from '../../../core/utils/json-normalize';
 import { Tooltip } from './Tooltip';
+import { FeedbackBadge } from './FeedbackBadge';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
@@ -77,6 +78,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
   const [original, setOriginal] = useState('');
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState<'ok' | 'err' | null>(null);
   const [error, setError]       = useState<string | null>(null);
 
   // PageSpec 전용
@@ -200,6 +202,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
 
     setSaving(true);
     setError(null);
+    let ok = false;
     try {
       if (isPageMode) {
         const parsed = JSON.parse(content);
@@ -209,7 +212,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
           body: JSON.stringify({ slug: pageSlug, spec: parsed }),
         });
         const data = await res.json();
-        if (data.success) { setOriginal(content); onSaved?.(); }
+        if (data.success) { setOriginal(content); onSaved?.(); ok = true; }
         else setError(data.error || '저장 실패');
       } else {
         const res = await fetch('/api/fs/file', {
@@ -218,13 +221,15 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
           body: JSON.stringify({ path: filePath, content }),
         });
         const data = await res.json();
-        if (data.success) { setOriginal(content); onSaved?.(); }
+        if (data.success) { setOriginal(content); onSaved?.(); ok = true; }
         else setError(data.error);
       }
     } catch (e: any) {
       setError(e.message);
     } finally {
       setSaving(false);
+      setSaveFeedback(ok ? 'ok' : 'err');
+      setTimeout(() => setSaveFeedback(null), 1500);
     }
   }, [filePath, pageSlug, content, isDirty, saving, isPageMode, jsonError, onSaved]);
 
@@ -439,12 +444,13 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
             )}
 
             <span className="text-[11px] text-slate-500 font-mono">Ctrl+S</span>
+            <FeedbackBadge state={saving ? 'loading' : saveFeedback} loadingLabel="저장 중" />
             <button
               onClick={handleSave}
               disabled={!isDirty || saving || loading || (isPageMode && !!jsonError)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white text-[13px] font-bold rounded-lg transition-colors"
             >
-              {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+              <Save size={13} />
               저장
             </button>
             <button
