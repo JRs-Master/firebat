@@ -10,10 +10,9 @@
  *   - AI 도구 호출 흐름 추적 불가
  *   - 비용 폭탄 (timeout retry — 진행 status 가시화 됐으면 인지 후 정지 가능)
  *
- * 해법 — 작업 시작·진행·완료를 한 곳에서 관리. 3축 활용:
+ * 해법 — 작업 시작·진행·완료를 한 곳에서 관리. 2축 활용:
  *   1. UI subscribe (EventManager 통한 SSE) — 진행도·취소 버튼
  *   2. AI 비동기 도구 패턴 (start/status polling)
- *   3. Observability hook — Sentry / 메트릭 자동 forward
  *
  * BIBLE 준수:
  *   - SSE 발행은 Core facade 에서. StatusManager 는 EventManager.emit 호출만.
@@ -76,7 +75,7 @@ const GC_INTERVAL_MS = 10 * 60 * 1000;                // 10분마다 GC 스윕
 export class StatusManager {
   /** id → JobStatus 메모리 저장. 종료된 작업은 GC 가 정리 */
   private jobs = new Map<string, JobStatus>();
-  /** 변화 감지 subscriber (UI·Sentry forward·Cost tracker 등) */
+  /** 변화 감지 subscriber (UI·Cost tracker 등) */
   private listeners = new Set<JobChangeListener>();
   private gcTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -187,7 +186,7 @@ export class StatusManager {
     return filter?.limit ? filtered.slice(0, filter.limit) : filtered;
   }
 
-  /** 변화 감지 subscribe — UI 갱신·Sentry forward·Cost tracker 등이 등록.
+  /** 변화 감지 subscribe — UI 갱신·Cost tracker 등이 등록.
    *  unsubscribe handle 반환. */
   subscribe(handler: JobChangeListener): () => void {
     this.listeners.add(handler);
@@ -256,7 +255,7 @@ export class StatusManager {
   /** subscriber + EventManager (SSE) 양쪽으로 변화 fanout.
    *  subscriber 한 명 throw 가 다른 subscriber·SSE 영향 X (try/catch 격리). */
   private notifyChange(job: JobStatus, change: JobChangeKind): void {
-    // 1) 내부 subscriber (Sentry forward·Cost tracker·UI 인디케이터 등)
+    // 1) 내부 subscriber (Cost tracker·UI 인디케이터 등)
     const event: JobChangeEvent = { job, change };
     for (const handler of this.listeners) {
       try {

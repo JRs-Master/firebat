@@ -33,8 +33,6 @@ module.exports = {
       shutdown_with_message: true,
       env: {
         NODE_ENV: 'production',
-        // Sentry DSN — 미설정 시 자동 비활성. 어드민 설정 모달에서 Vault 저장 가능.
-        // SENTRY_DSN: 'https://...@sentry.io/...',
       },
       error_file: 'data/logs/pm2-error.log',
       out_file: 'data/logs/pm2-out.log',

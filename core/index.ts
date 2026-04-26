@@ -50,12 +50,6 @@ export interface AiRequestOpts {
   planReviseId?: string;
 }
 
-/** DSN 마스킹 헬퍼 — UI 노출용 (앞 8자 + ... + 뒤 4자). 토큰 풀 노출 방지. */
-function maskDsn(dsn: string): string {
-  if (!dsn || dsn.length < 16) return '****';
-  return dsn.slice(0, 12) + '...' + dsn.slice(-8);
-}
-
 /**
  * Firebat Core Facade (진입점) — 싱글톤
  *
@@ -705,7 +699,7 @@ export class FirebatCore {
   // ══════════════════════════════════════════════════════════════════════════
   //  작업 상태 → StatusManager
   //  Long-running 작업 (이미지 생성 · pipeline · cron · sandbox 등) 의 진행 상태를
-  //  단일 source 에서 관리. UI 진행도 표시 + AI 비동기 도구 패턴 + Sentry/메트릭 자동 forward 의 backbone.
+  //  단일 source 에서 관리. UI 진행도 표시 + AI 비동기 도구 패턴 + 메트릭 forward 의 backbone.
   //  Step 1 — backbone facade. Step 2~ MediaManager·TaskManager·ScheduleManager 마이그레이션.
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -733,7 +727,7 @@ export class FirebatCore {
   listJobs(filter?: { type?: JobType; status?: JobStatusKind | JobStatusKind[]; since?: number; parentJobId?: string; limit?: number }): JobStatus[] {
     return this.statusMgr.list(filter);
   }
-  /** 변화 감지 subscribe — Sentry forward·Cost tracker·UI 인디케이터 등이 등록.
+  /** 변화 감지 subscribe — Cost tracker·UI 인디케이터 등이 등록.
    *  unsubscribe handle 반환. */
   subscribeJobUpdates(handler: (event: JobChangeEvent) => void): () => void {
     return this.statusMgr.subscribe(handler);
@@ -906,27 +900,6 @@ export class FirebatCore {
 
   setAnthropicCacheEnabled(enabled: boolean): boolean {
     return this.infra.vault.setSecret(VK_LLM_ANTHROPIC_CACHE, enabled ? 'true' : 'false');
-  }
-
-  /** Sentry DSN — env (SENTRY_DSN) 우선, 없으면 Vault.
-   *  설정 변경 시 즉시 반영되지 않음 (런타임 init 됨) — 변경 후 PM2 restart 또는 dev 재시작 필요.
-   *  반환은 마스킹된 형태 (UI 노출용) — 실제 DSN 은 boot 시점에만 사용. */
-  getSentryDsn(): { configured: boolean; source: 'env' | 'vault' | 'none'; preview: string } {
-    const envDsn = process.env.SENTRY_DSN || process.env.NEXT_PUBLIC_SENTRY_DSN;
-    if (envDsn && envDsn.startsWith('https://')) {
-      return { configured: true, source: 'env', preview: maskDsn(envDsn) };
-    }
-    const vaultDsn = this.infra.vault.getSecret('system:sentry-dsn');
-    if (vaultDsn && vaultDsn.startsWith('https://')) {
-      return { configured: true, source: 'vault', preview: maskDsn(vaultDsn) };
-    }
-    return { configured: false, source: 'none', preview: '' };
-  }
-
-  setSentryDsn(dsn: string): boolean {
-    const trimmed = (dsn || '').trim();
-    if (trimmed && !trimmed.startsWith('https://')) return false;
-    return this.infra.vault.setSecret('system:sentry-dsn', trimmed);
   }
 
   /** 설정 모달 "AI 카테고리별 마지막 선택 모델" — 멀티 기기 동기화용 Vault 저장.
