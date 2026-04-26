@@ -3,6 +3,8 @@ import type { ILlmPort, ILogPort, LlmCallOpts, LlmChunk, ChatMessage, PageListIt
 import { CoreResult, type InfraResult } from '../types';
 import { sanitizeBlock, sanitizeReply, isValidBlock, extractMarkdownStructure } from '../utils/sanitize';
 import { RENDER_TOOL_MAP, normalizeRenderName } from '../../lib/render-map';
+import { trimToolResult, slimResultForLLM } from './ai/result-processor';
+import { HistoryResolver } from './ai/history-resolver';
 import { IMAGE_GEN_DESCRIPTION } from '../../lib/image-gen-prompt';
 
 /** Vertex AI Function Calling은 enum 값이 반드시 string이어야 함 — 재귀 변환 */
@@ -60,6 +62,9 @@ export class AiManager {
   /** 현재 turn 의 직전 user 쿼리 — search_history 쿼리 맥락 보강용 */
   private _currentTurnPrevUserQuery = '';
 
+  /** 내부 collaborator — AI 도메인 분리 (ResultProcessor / HistoryResolver / ...) */
+  private readonly history: HistoryResolver;
+
   constructor(
     private readonly core: FirebatCore,
     private readonly llm: ILlmPort,
@@ -67,6 +72,7 @@ export class AiManager {
     private readonly db: IDatabasePort,
     private readonly routerFactory: ToolRouterFactory,
   ) {
+    this.history = new HistoryResolver(core);
     // ToolManager 등록 — Step 2 마이그레이션 진행 단계.
     // 등록된 도구는 executeToolCall 첫 줄의 ToolManager 위임으로 자동 dispatch.
     this.registerStaticToolsToManager();
@@ -453,7 +459,7 @@ export class AiManager {
         const modelParts: unknown[] = exchange.toolCalls.map(tc => ({ functionCall: { name: tc.name, args: tc.args } }));
         contents.push({ role: 'model', parts: modelParts });
         const responseParts: unknown[] = exchange.toolResults.map(tr => ({
-          functionResponse: { name: tr.name, response: this.trimToolResult(tr.result) },
+          functionResponse: { name: tr.name, response: trimToolResult(tr.result) },
         }));
         contents.push({ role: 'user', parts: responseParts });
       }
@@ -469,201 +475,7 @@ export class AiManager {
     }
   }
 
-  /** 도구 결과를 파인튜닝용으로 축소 (최대 2000자) — 토큰 비용 절감 */
-  private trimToolResult(result: Record<string, unknown>): Record<string, unknown> {
-    const str = JSON.stringify(result);
-    if (str.length <= 2000) return result;
-    const trimmed: Record<string, unknown> = { success: result.success };
-    if (result.error) trimmed.error = (result.error as string).slice(0, 500);
-    if (result.content) trimmed.content = (result.content as string).slice(0, 1500);
-    if (result.items && Array.isArray(result.items)) trimmed.items = `[${result.items.length} items]`;
-    if (result.data) {
-      const dataStr = JSON.stringify(result.data);
-      trimmed.data = dataStr.length > 1500 ? dataStr.slice(0, 1500) + '...' : result.data;
-    }
-    return trimmed;
-  }
 
-  /**
-   * LLM 다음 턴 컨텍스트로 넘길 결과 축약.
-   * - render 도구: UI가 이미 blocks에 저장했으므로 AI 입력엔 렌더 여부·요약만 전달 (대용량 props·OHLCV 재전송 방지)
-   * - sysmod/mcp 등 큰 결과: trimToolResult로 2000자 cap
-   */
-  /**
-   * LLM 컨텍스트로 들어갈 tool 결과 축약.
-   *
-   * @param aggressive true 면 render 외 tool (sysmod/mcp/network/execute) 결과도 요약으로 축소.
-   *   멀티턴 루프에서 이전 턴 결과가 매 턴 재전송되는 걸 방지하기 위해, 현재 턴 호출 직전에
-   *   이전 턴들을 aggressive=true 로 재슬림. 현재 턴 결과는 aggressive=false (AI 가 바로 써야 하므로 원본).
-   */
-  private slimResultForLLM(toolName: string, result: Record<string, unknown>, aggressive = false): Record<string, unknown> {
-    if (!result) return result;
-    // render(name, props) 디스패처: 컴포넌트별 요약 처리 — 내부 toolName 을 매핑된 render_* 로 재귀 축약
-    if (toolName === 'render' && typeof result.component === 'string') {
-      const comp = result.component as string;
-      const invMap: Record<string, string> = Object.entries(RENDER_TOOL_MAP)
-        .reduce((acc, [k, v]) => ({ ...acc, [v]: k }), {} as Record<string, string>);
-      const mappedTool = invMap[comp];
-      if (mappedTool) return this.slimResultForLLM(mappedTool, result);
-      return { success: true, component: comp, summary: `${comp} 렌더 완료` };
-    }
-    // render_* 특별 처리: 대용량 props 탈거 + 메타만
-    if (toolName === 'render_stock_chart') {
-      const props = (result.props as Record<string, unknown>) || {};
-      const data = Array.isArray(props.data) ? props.data as Array<Record<string, unknown>> : [];
-      const closes = data.map(d => Number(d.close)).filter(n => Number.isFinite(n));
-      const summary = data.length > 0
-        ? `StockChart 렌더 완료 · ${props.symbol || ''} · ${data.length}개 OHLCV${closes.length ? ` · 최근 종가 ${closes[closes.length - 1]} · 최고 ${Math.max(...closes)} · 최저 ${Math.min(...closes)}` : ''}`
-        : 'StockChart 렌더 완료';
-      return { success: true, component: 'StockChart', summary };
-    }
-    if (toolName === 'render_table') {
-      const props = (result.props as Record<string, unknown>) || {};
-      const rows = Array.isArray(props.rows) ? (props.rows as unknown[]).length : 0;
-      const headers = Array.isArray(props.headers) ? (props.headers as unknown[]).length : 0;
-      return { success: true, component: 'Table', summary: `Table 렌더 완료 · ${headers}열 × ${rows}행` };
-    }
-    if (toolName === 'render_chart') {
-      const props = (result.props as Record<string, unknown>) || {};
-      const dataLen = Array.isArray(props.data) ? (props.data as unknown[]).length : 0;
-      return { success: true, component: 'Chart', summary: `Chart 렌더 완료 · ${dataLen}개 포인트` };
-    }
-    if (toolName === 'render_html') {
-      const len = typeof result.htmlContent === 'string' ? result.htmlContent.length : 0;
-      return { success: true, component: 'Html', summary: `HTML 렌더 완료 · ${len}자` };
-    }
-    // 기타 render_* 도구는 component 이름 정도만 AI에 피드백
-    if (RENDER_TOOL_MAP[toolName]) {
-      return { success: true, component: RENDER_TOOL_MAP[toolName], summary: `${RENDER_TOOL_MAP[toolName]} 렌더 완료` };
-    }
-    // 그 외(sysmod_*, mcp_*, network_request, execute 등):
-    // - 현재 턴: 원본 그대로 (AI 가 이번 턴 응답에서 바로 사용할 수 있도록)
-    // - 이전 턴 (aggressive=true): 요약만 — 매 턴 재전송되는 대용량 데이터 차단 (비용↓)
-    if (aggressive) {
-      return this.aggressiveSummarize(toolName, result);
-    }
-    return result;
-  }
-
-  /** 이전 턴 tool 결과를 LLM 컨텍스트에서 최소 요약으로 축소 */
-  private aggressiveSummarize(toolName: string, result: Record<string, unknown>): Record<string, unknown> {
-    // 실패는 에러 메시지 유지 (AI 가 재시도 판단에 필요)
-    if (result.success === false) {
-      const err = typeof result.error === 'string' ? result.error.slice(0, 300) : 'unknown error';
-      return { success: false, error: err };
-    }
-    // 성공: 상위 필드 키·타입·길이 정도만 노출 + 짧은 프리뷰
-    const out: Record<string, unknown> = { success: true, _note: '이전 턴 결과 (원본은 축약됨). 필요시 해당 도구 재호출.' };
-    const data = result.data;
-    if (data && typeof data === 'object') {
-      const dataStr = JSON.stringify(data);
-      if (dataStr.length <= 500) {
-        out.data = data; // 작으면 그대로
-      } else {
-        // 배열이면 길이와 첫 항목 키, 객체면 필드 키·타입 목록
-        if (Array.isArray(data)) {
-          const first = data[0];
-          const keys = first && typeof first === 'object' ? Object.keys(first as Record<string, unknown>).slice(0, 10) : [];
-          out._summary = `array length=${data.length}${keys.length ? `, item keys=[${keys.join(',')}]` : ''}`;
-        } else {
-          const keys = Object.keys(data as Record<string, unknown>).slice(0, 20);
-          out._summary = `object keys=[${keys.join(',')}]`;
-        }
-        out._preview = dataStr.slice(0, 200) + '...';
-      }
-    } else if (typeof data === 'string') {
-      out._preview = data.slice(0, 300) + (data.length > 300 ? '...' : '');
-    } else if (data !== undefined) {
-      out.data = data; // 숫자·boolean 등은 그대로
-    }
-    // 기타 상위 필드 (content, text 등) 도 짧게만
-    for (const key of ['content', 'text', 'summary', 'message']) {
-      const v = result[key];
-      if (typeof v === 'string' && v.length > 0) {
-        out[key] = v.length <= 300 ? v : v.slice(0, 300) + '...';
-      }
-    }
-    return out;
-  }
-
-  private compressHistory(history: ChatMessage[]): { recentHistory: ChatMessage[]; contextSummary: string } {
-    // 레거시 경로(process/planOnly)용 — Function Calling 경로는 compressHistoryWithSearch 사용
-    const WINDOW_SIZE = 5;
-    if (history.length <= WINDOW_SIZE) return { recentHistory: history, contextSummary: '' };
-
-    const older = history.slice(0, history.length - WINDOW_SIZE);
-    const recentHistory = history.slice(history.length - WINDOW_SIZE);
-    const contextSummary = `[이전 대화 맥락 (${older.length}개)]\n` +
-      older.map(h => {
-        const role = h.role === 'user' ? '사용자' : 'AI';
-        const raw = typeof h.content === 'string' ? h.content : JSON.stringify(h);
-        return `[${role}]: ${raw.slice(0, 120)}${raw.length > 120 ? '...' : ''}`;
-      }).join('\n');
-
-    return { recentHistory, contextSummary };
-  }
-
-  /**
-   * Function Calling 용 히스토리 조립 — 벡터 검색 단일 경로:
-   *  - recent window 없음 (user 질문도 안 남김). 이전 턴의 모든 문맥은
-   *    HistorySearch(spread 판정) 또는 AI의 명시적 search_history 호출로 획득.
-   *  - 효과:
-   *    · topic-shift 쿼리("하이", "다른 거")에 이전 턴 흔적 0
-   *    · 의미적 연속 쿼리("이어서 삼성전자", "또 해줘 그거")는 벡터 검색이 원문 인출
-   *    · 중복 주입 방지 (recent + HistorySearch 이중 유입 차단)
-   *  - 모호한 쿼리("또", "이어서"만)는 spread 약해 주입 0 → AI가 유저에게 역질문
-   */
-  private async compressHistoryWithSearch(
-    history: ChatMessage[],
-    userPrompt: string,
-    opts: { owner?: string; currentConvId?: string },
-  ): Promise<{ recentHistory: ChatMessage[]; contextSummary: string }> {
-    // 기본값: 이전 턴 제외 (주제 전환 오탐 방지).
-    // 라우터가 needs_previous_context=true 판정 시 processWithTools 에서 주입.
-    const recentHistory: ChatMessage[] = [];
-
-    if (!userPrompt.trim() || !opts.owner) return { recentHistory, contextSummary: '' };
-
-    // 벡터 검색 — minScore=0 으로 전체 받아 spread 판정
-    const searchRes = await this.core.searchConversationHistory(opts.owner, userPrompt, {
-      currentConvId: opts.currentConvId,
-      limit: 10,
-      minScore: 0,
-    });
-
-    if (!searchRes.success || !searchRes.data || searchRes.data.length === 0) {
-      return { recentHistory, contextSummary: '' };
-    }
-
-    // 상대 스코어링 (ToolSearch와 동일 로직): top1 - top5 spread 미만이면 신호 없음
-    const matches = searchRes.data;
-    const MIN_SPREAD = 0.030;
-    const CLUSTER_GAP = 0.020;
-    const top1 = matches[0]?.score ?? 0;
-    const refIdx = Math.min(4, matches.length - 1);
-    const refScore = matches[refIdx]?.score ?? top1;
-    const spread = top1 - refScore;
-
-    if (spread < MIN_SPREAD) {
-      process.stderr.write(`[HistorySearch] query="${userPrompt.slice(0, 40)}" matches=${matches.length} spread=${spread.toFixed(3)} → 신호없음\n`);
-      return { recentHistory, contextSummary: '' };
-    }
-
-    const cutoff = top1 - CLUSTER_GAP;
-    const picked = matches.filter(m => m.score >= cutoff).slice(0, 5);
-    if (picked.length === 0) return { recentHistory, contextSummary: '' };
-
-    process.stderr.write(`[HistorySearch] query="${userPrompt.slice(0, 40)}" spread=${spread.toFixed(3)} pick=${picked.length}개\n`);
-
-    const contextSummary = `[관련 과거 대화 (${picked.length}개 매칭)]\n` +
-      picked.map(m => {
-        const roleLabel = m.role === 'user' ? '사용자' : 'AI';
-        const preview = (m.contentPreview || '').slice(0, 200);
-        return `[${roleLabel}]: ${preview}`;
-      }).join('\n');
-
-    return { recentHistory, contextSummary };
-  }
 
   private async gatherSystemContext(): Promise<string> {
     // 캐시 히트 시 바로 반환 (60초 TTL)
@@ -841,7 +653,7 @@ export class AiManager {
     const MAX_TOOL_TURNS = 10;
     const modelId = baseLlmOpts?.model ?? this.llm.getModelId();
 
-    const { recentHistory: baseRecentHistory, contextSummary } = await this.compressHistoryWithSearch(
+    const { recentHistory: baseRecentHistory, contextSummary } = await this.history.compressHistoryWithSearch(
       history,
       prompt,
       { owner: opts?.owner, currentConvId: opts?.conversationId },
@@ -1075,7 +887,7 @@ export class AiManager {
               ...ex,
               toolResults: ex.toolResults.map(tr => ({
                 ...tr,
-                result: this.slimResultForLLM(tr.name, tr.result, true), // aggressive
+                result: slimResultForLLM(tr.name, tr.result, true), // aggressive
               })),
             };
           });
@@ -1286,7 +1098,7 @@ export class AiManager {
       // 교환 히스토리에 추가 (멀티턴 도구 루프용)
       // rawModelParts 보존: Gemini 3는 functionCall에 thought_signature 필수 → 원본 parts 그대로 재전송해야 400 방지
       // LLM 경로는 slimResultForLLM으로 축약 (render 대용량 props·sysmod 긴 결과는 요약·블록/UI는 이미 blocks에 저장됨)
-      const slimResults = toolResults.map(tr => ({ ...tr, result: this.slimResultForLLM(tr.name, tr.result) }));
+      const slimResults = toolResults.map(tr => ({ ...tr, result: slimResultForLLM(tr.name, tr.result) }));
       toolExchanges.push({ toolCalls, toolResults: slimResults, rawModelParts });
 
       // 텍스트 응답이 있으면 누적
