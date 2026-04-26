@@ -40,8 +40,12 @@ export interface AiRequestOpts {
   conversationId?: string;
   /** 대화 소유자 — search_history 실행 시 owner 스코프 */
   owner?: string;
-  /** 플랜모드 — true 면 AI 가 작업 전에 propose_plan 도구로 계획 카드를 먼저 제시 */
-  planMode?: boolean;
+  /** 플랜모드 — 3단계 토글:
+   *   - 'off' (또는 false): AI 자유 판단, plan 강제 X
+   *   - 'auto': AI 자율 판단으로 destructive·복합 작업만 propose_plan, 단순 작업은 즉시
+   *   - 'always' (또는 true): 모든 요청에 propose_plan 강제 (인사·단답 포함)
+   *  레거시 boolean 호환: true → 'always', false → 'off' */
+  planMode?: 'off' | 'auto' | 'always' | boolean;
   /** 사용자가 직전 turn 의 propose_plan 카드에서 ✓실행 클릭 시 동봉되는 planId.
    *  AiManager 가 plan-store 에서 steps 조회 후 시스템 프롬프트에 강제 주입. */
   planExecuteId?: string;

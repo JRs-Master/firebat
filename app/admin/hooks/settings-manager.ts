@@ -20,7 +20,11 @@ import { useCallback, useSyncExternalStore } from 'react';
 // 새 설정 추가 시 이 타입에만 키 추가하면 useSetting / readSetting / writeSetting 이 자동 지원.
 export type SettingsSchema = {
   'firebat_model': string;
-  'firebat_plan_mode': boolean;
+  /** 플랜 모드 3단계:
+   *   - 'off': plan 강제 X. AI 자유 판단.
+   *   - 'auto': destructive·복합 작업만 propose_plan, 단순 read-only 는 즉시
+   *   - 'always': 모든 요청에 propose_plan 강제 (인사·단답 포함) */
+  'firebat_plan_mode': 'off' | 'auto' | 'always';
   'firebat_active_conv': string;
   'firebat_last_model_by_category': Record<string, string>;
   'firebat_thinking_level': string;
@@ -31,7 +35,7 @@ export type SettingsSchema = {
 
 const DEFAULTS: SettingsSchema = {
   'firebat_model': 'gpt-5.4-mini',
-  'firebat_plan_mode': false,
+  'firebat_plan_mode': 'off',
   'firebat_active_conv': '',
   'firebat_last_model_by_category': {},
   'firebat_thinking_level': 'medium',
@@ -49,12 +53,19 @@ function serialize<K extends keyof SettingsSchema>(key: K, value: SettingsSchema
 
 function deserialize<K extends keyof SettingsSchema>(key: K, raw: string): SettingsSchema[K] {
   const def = DEFAULTS[key];
-  if (typeof def === 'boolean') return (raw === 'true') as SettingsSchema[K];
+  // firebat_plan_mode 마이그레이션: 'true'/'false' → 'always'/'off' (이전 boolean 토글 호환)
+  if (key === 'firebat_plan_mode') {
+    if (raw === 'true') return 'always' as unknown as SettingsSchema[K];
+    if (raw === 'false') return 'off' as unknown as SettingsSchema[K];
+    if (raw === 'off' || raw === 'auto' || raw === 'always') return raw as unknown as SettingsSchema[K];
+    return def;
+  }
+  if (typeof def === 'boolean') return (raw === 'true') as unknown as SettingsSchema[K];
   if (typeof def === 'object') {
     try { return JSON.parse(raw) as SettingsSchema[K]; }
     catch { return def; }
   }
-  return raw as SettingsSchema[K];
+  return raw as unknown as SettingsSchema[K];
 }
 
 // ── 즉시 접근 API (훅 밖에서 사용) ──────────────────────────────────────────

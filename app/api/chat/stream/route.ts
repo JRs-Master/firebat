@@ -28,13 +28,19 @@ export async function POST(req: NextRequest) {
     return new Response(JSON.stringify({ error: 'prompt is required' }), { status: 400 });
   }
 
+  // planMode 3단계 지원: 'off'/'auto'/'always'. 레거시 boolean 호환 (true→'always', false→'off').
+  const planModeNormalized: 'off' | 'auto' | 'always' | undefined =
+    planMode === true || planMode === 'always' ? 'always'
+    : planMode === 'auto' ? 'auto'
+    : undefined; // 'off' / false / undefined 모두 미전달 (default off)
+
   const opts = {
     model: config?.model as string | undefined,
     owner: 'admin',
     ...(image ? { image: image as string } : {}),
     ...(previousResponseId ? { previousResponseId: previousResponseId as string } : {}),
     ...(conversationId ? { conversationId: conversationId as string } : {}),
-    ...(planMode === true ? { planMode: true } : {}),
+    ...(planModeNormalized ? { planMode: planModeNormalized } : {}),
     ...(typeof planExecuteId === 'string' && planExecuteId ? { planExecuteId } : {}),
     ...(typeof planReviseId === 'string' && planReviseId ? { planReviseId } : {}),
   };
@@ -53,7 +59,7 @@ function handleToolsMode(
   core: FirebatCore,
   prompt: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
-  opts: { model?: string; owner?: string; image?: string; previousResponseId?: string; conversationId?: string; planMode?: boolean; planExecuteId?: string; planReviseId?: string },
+  opts: { model?: string; owner?: string; image?: string; previousResponseId?: string; conversationId?: string; planMode?: 'off' | 'auto' | 'always'; planExecuteId?: string; planReviseId?: string },
   abortSignal?: AbortSignal,
   saveOpts?: { systemId?: string; userId?: string; userPrompt?: string; image?: string },
 ) {

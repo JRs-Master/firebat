@@ -2223,7 +2223,7 @@ function CostTabContent() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <p className="text-[13px] text-slate-600">최근 <strong className="text-slate-800">{days}일</strong> LLM 호출 누적. CLI 구독 모델은 cost=0 (token만 추적).</p>
+        <p className="text-[13px] text-slate-600">최근 <strong className="text-slate-800 inline-block min-w-[2.5em] tabular-nums">{days}일</strong> LLM 호출 누적. CLI 구독 모델은 cost=0 (token만 추적).</p>
         <div className="flex gap-1">
           {[7, 30, 90].map(d => (
             <button key={d} onClick={() => setDays(d)} className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-colors ${days === d ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>

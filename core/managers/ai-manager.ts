@@ -588,15 +588,21 @@ export class AiManager {
       }
     }
 
-    // 플랜모드 ON = "사용자 협의 모드". 작업 종류별로 협의 방식이 다름:
-    //   - 분석/조사/리포트류 → propose_plan 카드
-    //   - 앱/페이지/모듈 생성 → 3단계 suggest (기능 → 디자인 → 구현)
-    //   - 예외 0건 (인사·단답도 plan 카드 강제)
-    // 시스템 프롬프트 맨 앞에 prepend 해서 우선순위 보장.
-    const planModePrefix = opts?.planMode === true
-      ? `# ⚡ 플랜모드 ON — 사용자 협의 모드 (다른 모든 규칙보다 우선)
+    // 플랜모드 3단계: off / auto / always
+    //   - 'off' (false): plan 강제 X. AI 자유 판단
+    //   - 'auto': destructive·복합 작업만 plan, 단순 작업은 즉시
+    //   - 'always' (true): 모든 요청에 plan 강제 (인사·단답 포함)
+    const planModeValue: 'off' | 'auto' | 'always' = (() => {
+      const v = opts?.planMode;
+      if (v === true || v === 'always') return 'always';
+      if (v === 'auto') return 'auto';
+      return 'off'; // undefined / false / 'off' → off
+    })();
 
-사용자가 플랜모드를 켰습니다. **첫 응답은 작업 종류에 맞는 협의 도구만 호출하고 즉시 턴 종료**.
+    const planModePrefix = planModeValue === 'always'
+      ? `# ⚡ 플랜모드 ALWAYS — 사용자 협의 모드 (다른 모든 규칙보다 우선)
+
+사용자가 플랜모드를 ALWAYS 로 켰습니다. **첫 응답은 작업 종류에 맞는 협의 도구만 호출하고 즉시 턴 종료**.
 
 ## 작업 종류별 협의 방식
 
@@ -610,16 +616,49 @@ export class AiManager {
 **그 외 모든 요청** (조회·분석·예측·시각화·요약·스케줄·인사·잡담 전부) → \`propose_plan\` 도구
 - 인자: { title (작업 요약), steps (3~6단계 {title, description, tool?}), estimatedTime, risks }
 - 호출 후 즉시 턴 종료. 사용자가 "✓ 실행" 누르면 별도 턴에서 실제 작업.
-- **예외 0건** — 사용자가 토글 ON 한 이상 모든 요청에 plan 카드. "단순 조회·인사라 plan 불필요" 같은 자체 판단 **절대 금지**.
+- **예외 0건** — 사용자가 ALWAYS 로 켠 이상 모든 요청에 plan 카드. "단순 조회·인사라 plan 불필요" 같은 자체 판단 **절대 금지**.
 
 **오직 직전 plan 의 ✓실행 직후 follow-up (planExecuteId 동봉된 턴) 만 plan 카드 없이 실제 작업 진행.**
 
 ## 절대 규칙
 - 위 협의 도구 호출 후 **즉시 턴 종료** — 다른 도구·텍스트 응답 금지
-- "단답이라 plan 불필요" / "단순 정치 뉴스라 plan 필요 없었어요" 같은 변명 금지 — **모든 요청에 plan**
+- "단답이라 plan 불필요" 같은 변명 금지 — **모든 요청에 plan**
 - SVG vs Canvas 같은 기술적 접근 먼저 묻기 금지 (3단계 스킵)
 - 긴 텍스트 설명으로 제안 나열 금지 — 반드시 suggest UI 선택지로
 - 시스템 프롬프트 다른 곳의 propose_plan / 3단계 예외 규칙 모두 무력화
+
+─────────────────────────────────────
+
+`
+      : planModeValue === 'auto'
+      ? `# ⚡ 플랜모드 AUTO — 자동 판단 모드
+
+사용자가 플랜모드를 AUTO 로 켰습니다. 작업 종류에 따라 plan 여부 자동 판단:
+
+## propose_plan 또는 3-stage suggest 호출 (협의 필요)
+
+다음 케이스는 **반드시 협의 후 진행**:
+- **앱·페이지·모듈 "만들어줘" 요청** → 3-stage suggest (기능 → 디자인 → 구현)
+- **destructive 작업** — save_page (overwrite 위험) / delete_* / schedule_task (24/7 자동) / sysmod_kiwoom buy·sell (실거래)
+- **복합 흐름 (3 step+)** — 여러 도구 조합·pipeline 등
+- **자동매매·cron 등록** — runAt·cronTime 검증 필수
+
+→ propose_plan 으로 청사진 (title, steps 3~6단계, estimatedTime, risks) 제시 후 ✓실행 대기
+
+## 협의 생략 — 즉시 실행 (단순·read-only)
+
+다음 케이스는 **plan 생략하고 도구 직접 호출**:
+- 단발 정보 조회 (시세·날씨·검색·search_history)
+- 단일 render_* (차트·표·카드 그리기)
+- 단순 대화·인사·단답
+- read-only 도구 (search_*, list_*, get_*)
+- image_gen (단일 도구, 재생성 가능)
+
+## 판단 룰
+- 도구 1개 + read-only → 즉시
+- 도구 1개 + destructive → propose_plan
+- 도구 2개+ 또는 pipeline → propose_plan
+- 모호하면 propose_plan 쪽 (안전 우선)
 
 ─────────────────────────────────────
 
@@ -721,12 +760,11 @@ export class AiManager {
       const llmStart = Date.now();
       // previousResponseId 있으면 history/toolExchanges 재전송 생략 (OpenAI 서버가 유지)
       // 동적 temperature — 도구 호출 턴 (turn 1 ~ 중간) 은 0.2 (스키마 엄수),
-      // 최종 응답 턴 (toolExchanges 가 쌓여있는 상태 = 이번에 tool_choice:none 기대) 은 0.7.
-      // turn 번호만으로 안 건 불확실해서 "이전 턴에 도구 호출이 있었나" 기준:
-      //  - 아직 도구 호출 기록 없음 → 이번 턴도 도구 호출 가능성 높음 (낮은 temp)
-      //  - 도구 호출이 이미 있었음 → 이번엔 summarize turn 일 가능성 (높은 temp)
-      // Heuristic 이라 완벽치 않지만 실험적으로 효과 있음.
-      const dynamicTemp = toolExchanges.length === 0 ? 0.2 : 0.7;
+      // 최종 응답 턴 (글쓰기·요약·해설) 은 0.85 — 자연스럽고 풍부한 표현.
+      //  - 0.2: 도구 호출 가능성 높을 때 — JSON 스키마 정확 준수
+      //  - 0.85: 사용자 노출 텍스트 작성 — 약간 창의적·자연스러운 어휘
+      // turn 번호로 판정 — toolExchanges 비어있으면 첫 turn (도구 호출), 쌓여있으면 summarize turn.
+      const dynamicTemp = toolExchanges.length === 0 ? 0.2 : 0.85;
       const turnLlmOpts: LlmCallOpts = {
         ...baseLlmOpts,
         temperature: dynamicTemp,
@@ -749,9 +787,13 @@ export class AiManager {
               })),
             };
           });
-      // 플랜모드 ON: 첫 턴(toolExchanges 비어있을 때) 의 user 프롬프트 앞에 한 줄 hint 추가 — Gemini 가 시스템 프롬프트 무시 시 fallback
-      const promptForLlm = (opts?.planMode === true && toolExchanges.length === 0)
-        ? `[플랜모드 ON — 모든 요청에 propose_plan 먼저 호출 (예외 0건, 인사·단답도 plan). 앱 만들기만 suggest 3단계. 호출 후 즉시 턴 종료]\n\n${prompt}`
+      // 플랜모드 hint: Gemini 가 시스템 프롬프트 무시 시 fallback
+      const promptForLlm = (toolExchanges.length === 0)
+        ? (planModeValue === 'always'
+          ? `[플랜모드 ALWAYS — 모든 요청에 propose_plan 먼저 호출 (예외 0건, 인사·단답도 plan). 앱 만들기만 suggest 3단계. 호출 후 즉시 턴 종료]\n\n${prompt}`
+          : planModeValue === 'auto'
+          ? `[플랜모드 AUTO — destructive·복합 작업만 propose_plan, 단순 read-only 는 즉시 도구 호출. 앱 만들기는 3-stage suggest]\n\n${prompt}`
+          : prompt)
         : prompt;
       const llmRes = await this.llm.askWithTools(promptForLlm, finalSystemPrompt, turnTools, turnHistory, turnExchanges, turnLlmOpts);
       const llmMs = Date.now() - llmStart;

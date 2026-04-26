@@ -1208,21 +1208,38 @@ export default function AdminConsole() {
                         </>
                       )}
                     </div>
-                    {/* 플랜모드 토글 — 이미지 모드일 땐 의미 없음 (비활성) */}
-                    <Tooltip label={inputMode === 'image' ? '이미지 모드에선 사용 안 됨' : (planMode ? '플랜모드 사용중' : '플랜모드 미사용')}>
-                    <button
-                      onClick={() => setPlanMode(!planMode)}
-                      disabled={loading || inputMode === 'image'}
-                      className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-colors disabled:opacity-50 ${
-                        planMode
-                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
-                          : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 border border-transparent'
-                      }`}
-                    >
-                      <ListChecks size={14} />
-                      <span>플랜</span>
-                    </button>
-                    </Tooltip>
+                    {/* 플랜모드 3단계 토글 — OFF / AUTO / ALWAYS 순환. 이미지 모드일 땐 의미 없음 (비활성) */}
+                    {(() => {
+                      const planTooltip = inputMode === 'image'
+                        ? '이미지 모드에선 사용 안 됨'
+                        : planMode === 'always'
+                          ? '플랜 ALWAYS — 모든 요청에 plan 카드 (클릭 → OFF)'
+                          : planMode === 'auto'
+                            ? '플랜 AUTO — destructive·복합 작업만 plan (클릭 → ALWAYS)'
+                            : '플랜 OFF — AI 자유 판단 (클릭 → AUTO)';
+                      const planLabel = planMode === 'always' ? 'ALWAYS' : planMode === 'auto' ? 'AUTO' : 'OFF';
+                      const planClass = planMode === 'always'
+                        ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+                        : planMode === 'auto'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
+                          : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100 border border-transparent';
+                      const cyclePlan = () => {
+                        const next = planMode === 'off' ? 'auto' : planMode === 'auto' ? 'always' : 'off';
+                        setPlanMode(next);
+                      };
+                      return (
+                        <Tooltip label={planTooltip}>
+                          <button
+                            onClick={cyclePlan}
+                            disabled={loading || inputMode === 'image'}
+                            className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-colors disabled:opacity-50 ${planClass}`}
+                          >
+                            <ListChecks size={14} />
+                            <span>{planLabel}</span>
+                          </button>
+                        </Tooltip>
+                      );
+                    })()}
                     {/* 이미지 모드 토글 — LLM 우회 직접 image_gen */}
                     <Tooltip label={inputMode === 'image' ? '이미지 모드 (LLM 우회 직접 생성)' : '이미지 모드로 전환'}>
                     <button
