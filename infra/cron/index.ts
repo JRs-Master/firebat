@@ -235,58 +235,58 @@ export class NodeCronAdapter implements ICronPort {
   list() {
     // 1차: 메모리 records (정상 boot 후 사용)
     if (this.records.size > 0) {
-      return Array.from(this.records.values()).map(r => ({
-        jobId: r.jobId,
-        targetPath: r.targetPath,
-        title: r.title,
-        description: r.description,
-        cronTime: r.cronTime,
-        runAt: r.runAt,
-        delaySec: r.delaySec,
-        startAt: r.startAt,
-        endAt: r.endAt,
-        inputData: r.inputData,
-        pipeline: r.pipeline,
-        createdAt: r.createdAt,
-        mode: r.mode,
-        runWhen: r.runWhen,
-        retry: r.retry,
-        notify: r.notify,
-        executionMode: r.executionMode,
-        agentPrompt: r.agentPrompt,
-      }));
+      return this.toListEntries(Array.from(this.records.values()));
     }
-    // 2차: 파일 폴백 — Next.js multi-isolate / boot timing 안전망.
-    // records 비어있어도 cron-jobs.json 이 진실의 단일 source 역할
+    // 2차: 메모리 비어있음 → 자동 self-heal 시도. cron tasks 도 비어있으면 (= 이 isolate 가 boot 안 됨)
+    // restore() 재호출해서 메모리 복원 + 트리거 재등록. triggerCallback 미설정 시는 register 만 하고 trigger 무동작 (Core 가 늦게 attach 시 자연 작동).
+    // 이미 cron tasks 있으면 (= boot 됐는데 record 만 비어있는 비정상 상태) 중복 등록 방지 — 파일 폴백만.
+    if (this.cronTasks.size === 0 && this.timers.size === 0) {
+      this.log?.warn(`[Cron] list() records 비어있음 + cron tasks 0 → self-heal restore 시도`);
+      try {
+        this.restore();
+        if (this.records.size > 0) {
+          this.log?.info(`[Cron] self-heal 성공: ${this.records.size}개 복원`);
+          return this.toListEntries(Array.from(this.records.values()));
+        }
+      } catch (e: any) {
+        this.log?.error(`[Cron] self-heal restore 실패: ${e.message}`);
+      }
+    }
+    // 3차: 파일 폴백 — self-heal 도 실패한 경우 (파일 없음·파싱 실패 등) 또는 cron tasks 는 살아있는데 records 만 비정상.
     try {
       if (!fs.existsSync(JOBS_FILE)) return [];
       const raw = fs.readFileSync(JOBS_FILE, 'utf-8');
       const jobs: CronJobRecord[] = JSON.parse(raw);
-      this.log?.warn(`[Cron] list() 메모리 비어있음 → 파일 폴백 (${jobs.length}개)`);
-      return jobs.map(r => ({
-        jobId: r.jobId,
-        targetPath: r.targetPath,
-        title: r.title,
-        description: r.description,
-        cronTime: r.cronTime,
-        runAt: r.runAt,
-        delaySec: r.delaySec,
-        startAt: r.startAt,
-        endAt: r.endAt,
-        inputData: r.inputData,
-        pipeline: r.pipeline,
-        createdAt: r.createdAt,
-        mode: r.mode,
-        runWhen: r.runWhen,
-        retry: r.retry,
-        notify: r.notify,
-        executionMode: r.executionMode,
-        agentPrompt: r.agentPrompt,
-      }));
+      this.log?.warn(`[Cron] list() 파일 폴백 (${jobs.length}개) — self-heal 미작동, root cause 추적 필요`);
+      return this.toListEntries(jobs);
     } catch (e: any) {
       this.log?.error(`[Cron] list() 파일 폴백 실패: ${e.message}`);
       return [];
     }
+  }
+
+  /** 메모리 record / 파일 record → list 응답 entry 변환 (DRY) */
+  private toListEntries(records: CronJobRecord[]) {
+    return records.map(r => ({
+      jobId: r.jobId,
+      targetPath: r.targetPath,
+      title: r.title,
+      description: r.description,
+      cronTime: r.cronTime,
+      runAt: r.runAt,
+      delaySec: r.delaySec,
+      startAt: r.startAt,
+      endAt: r.endAt,
+      inputData: r.inputData,
+      pipeline: r.pipeline,
+      createdAt: r.createdAt,
+      mode: r.mode,
+      runWhen: r.runWhen,
+      retry: r.retry,
+      notify: r.notify,
+      executionMode: r.executionMode,
+      agentPrompt: r.agentPrompt,
+    }));
   }
 
   getLogs(limit: number = 50): CronLogEntry[] {
