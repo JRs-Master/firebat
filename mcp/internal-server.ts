@@ -366,7 +366,19 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
       allowOverwrite: z.boolean().optional().describe('기존 페이지 덮어쓰기 허용 (사용자 명시적 수정 요청 시에만 true)'),
     },
     async ({ slug, spec, allowOverwrite }) => {
-      // 승인 대기 — 기존 페이지 덮어쓰기 방지 + 의도 확인
+      // cron agent 컨텍스트면 승인 우회 (사용자 부재 자동 발행 — 등록 시점에 이미 승인 받음)
+      const cronJobId = (globalThis as Record<string, unknown>)['__firebatCronAgentJobId'];
+      if (cronJobId) {
+        const r = await core.savePage(slug, spec, { allowOverwrite: !!allowOverwrite });
+        if (!r.success) return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: r.error }) }] };
+        const actualSlug = r.data?.slug ?? slug;
+        const renamed = !!r.data?.renamed;
+        return { content: [{ type: 'text', text: JSON.stringify({
+          success: true, slug: actualSlug, url: `/${actualSlug}`,
+          ...(renamed ? { renamed: true, note: `기존 "${slug}" 보존 → "${actualSlug}" 로 저장` } : {}),
+        }) }] };
+      }
+      // 일반 admin 채팅 — 승인 게이트
       const { createPending } = await import('../lib/pending-tools');
       const planId = createPending('save_page', { slug, spec, allowOverwrite: !!allowOverwrite }, `페이지 저장: /${slug}${allowOverwrite ? ' (덮어쓰기)' : ''}`);
       return { content: [{ type: 'text', text: JSON.stringify({

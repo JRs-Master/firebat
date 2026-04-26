@@ -206,6 +206,10 @@ export class FirebatCore {
     if (!agentPrompt || !agentPrompt.trim()) {
       return { success: false, error: 'agentPrompt 가 비어있습니다.' };
     }
+    // cron agent 컨텍스트 globalThis 에 set — MCP 서버 핸들러 (save_page 등) 가 이 flag 보고
+    // createPending 우회하고 직접 DB write. 동시 cron 발화 race 는 단순 jobId 기반으로 인정.
+    const g = globalThis as Record<string, unknown>;
+    g['__firebatCronAgentJobId'] = jobId;
     try {
       // 사용자가 어드민에서 설정한 User AI 모델 사용 — 미설정 시 LlmRouter 의 default fallback.
       // 이 줄 없으면 DEFAULT_MODEL (gpt-5.4-mini) 로 떨어져 인증 안 된 OpenAI 호출 → 실패.
@@ -231,6 +235,10 @@ export class FirebatCore {
       };
     } catch (e: any) {
       return { success: false, error: e?.message ?? String(e) };
+    } finally {
+      // cron agent context 해제 — admin chat 의 후속 save_page 가 영향 받지 않게.
+      const g = globalThis as Record<string, unknown>;
+      if (g['__firebatCronAgentJobId'] === jobId) delete g['__firebatCronAgentJobId'];
     }
   }
 
