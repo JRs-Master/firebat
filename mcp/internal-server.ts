@@ -541,6 +541,24 @@ startAt/endAt: cronTime의 유효 기간 (만료 시 자동 해제).
       pipeline: z.array(z.any()).optional().describe('파이프라인 스텝 배열'),
       title: z.string().optional().describe('잡 제목 (UI/알림용)'),
       oneShot: z.boolean().optional().describe('첫 성공 시 자동 취소'),
+      runWhen: z.object({
+        check: z.object({
+          sysmod: z.string(),
+          action: z.string(),
+          inputData: z.record(z.string(), z.any()).optional(),
+        }),
+        field: z.string(),
+        op: z.enum(['==', '!=', '<', '<=', '>', '>=', 'includes', 'not_includes', 'exists', 'not_exists']),
+        value: z.string().optional(),
+      }).optional().describe('발화 전 조건 체크 (휴장·가드 등). 미충족 시 skip. 휴장일 enumerate 하드코딩 금지 — sysmod API 동적 호출.'),
+      retry: z.object({
+        count: z.number(),
+        delayMs: z.number().optional(),
+      }).optional().describe('자동 retry 정책. 멱등 도구만 사용. 부작용 도구(매수 등)는 금지.'),
+      notify: z.object({
+        onSuccess: z.object({ sysmod: z.string(), chatId: z.string().optional(), template: z.string().optional() }).optional(),
+        onError: z.object({ sysmod: z.string(), chatId: z.string().optional(), template: z.string().optional() }).optional(),
+      }).optional().describe('결과 알림 hook (pipeline step 으로 분리하지 말 것). retry 모두 소진 후 최종 상태로만 onError 발동.'),
     },
     async (args) => {
       // 승인 대기 — 실제 등록은 UI 승인 후. 한 번 Pending 에 올려놓고 AI 에겐 대기 중임을 알림.

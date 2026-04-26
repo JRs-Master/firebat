@@ -92,6 +92,9 @@ export async function POST(req: NextRequest) {
           pipeline: args.pipeline as unknown[] as import('../../../../core/ports').PipelineStep[] | undefined,
           title: args.title as string | undefined,
           oneShot: args.oneShot as boolean | undefined,
+          runWhen: args.runWhen as import('../../../../core/ports').CronRunWhen | undefined,
+          retry: args.retry as import('../../../../core/ports').CronRetry | undefined,
+          notify: args.notify as import('../../../../core/ports').CronNotify | undefined,
         });
         // 과거 시각 에러면 consume 하지 않고 사용자에게 선택지 반환
         if (!r.success && r.error?.includes('과거 시각')) {

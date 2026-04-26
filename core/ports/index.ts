@@ -450,6 +450,31 @@ export type PipelineStepType = PipelineStep['type'];
 
 // ── 크론/스케줄링 ───────────────────────────────────────────────────────
 
+/** 발화 전 조건 체크 — sysmod 호출 결과로 분기. 미충족 시 이번 발화 skip (pipeline 실행 X).
+ *  반복 cron + 특정 조건 제외 패턴의 일반 메커니즘. 휴장일·잔고·부재 모드 등 어떤 조건도 sysmod 결과로 표현. */
+export interface CronRunWhen {
+  /** 조건 체크용 sysmod 호출 */
+  check: { sysmod: string; action: string; inputData?: Record<string, unknown> };
+  /** 결과 객체 안 field 경로 (예: '$result.isTradingDay' 또는 단일 키 'isTradingDay') */
+  field: string;
+  op: '==' | '!=' | '<' | '<=' | '>' | '>=' | 'includes' | 'not_includes' | 'exists' | 'not_exists';
+  value?: string;
+}
+
+/** 자동 retry 정책 — 일시 실패 (네트워크 timeout·rate limit·503 등) 복구용 */
+export interface CronRetry {
+  count: number;       // 1~5 권장. 0 또는 미설정 = retry X
+  delayMs?: number;    // 기본 30000 (30초)
+}
+
+/** cron 발화 후 결과 알림 hook — pipeline 비즈니스 로직과 분리, ScheduleManager 가 처리.
+ *  글로벌 default (Vault 'system:cron:default-notify') 와 잡별 override 지원. */
+export interface CronNotify {
+  onSuccess?: { sysmod: string; chatId?: string; template?: string };
+  /** retry 모두 소진 후 최종 실패 시 발동 */
+  onError?: { sysmod: string; chatId?: string; template?: string };
+}
+
 export interface CronScheduleOptions {
   cronTime?: string;
   runAt?: string;
@@ -462,6 +487,12 @@ export interface CronScheduleOptions {
   description?: string;
   /** 첫 성공 시 자동 취소 (가격 알림 등 조건부 1회 패턴) */
   oneShot?: boolean;
+  /** 발화 전 조건 체크 — 미충족 시 이번 발화 skip */
+  runWhen?: CronRunWhen;
+  /** 자동 retry 정책 */
+  retry?: CronRetry;
+  /** 결과 알림 hook (글로벌 default 도 가능) */
+  notify?: CronNotify;
 }
 
 /** 크론 실행 로그 */
@@ -493,6 +524,11 @@ export interface CronTriggerInfo {
   inputData?: Record<string, unknown>;
   pipeline?: PipelineStep[];
   oneShot?: boolean;
+  runWhen?: CronRunWhen;
+  retry?: CronRetry;
+  notify?: CronNotify;
+  /** notify template 치환용 — `{title}` placeholder 에 사용 */
+  title?: string;
 }
 
 /** 크론 잡 실행 결과 — Core가 실행 후 반환 */
@@ -528,6 +564,9 @@ export interface CronJobInfo {
   pipeline?: PipelineStep[];
   createdAt: string;
   mode: CronJobMode;
+  runWhen?: CronRunWhen;
+  retry?: CronRetry;
+  notify?: CronNotify;
 }
 
 export interface ICronPort {

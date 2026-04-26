@@ -198,7 +198,7 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
     },
     {
       name: 'schedule_task',
-      description: '모듈/파이프라인 예약 실행 등록. 반복(cronTime), 1회(runAt), 지연(delaySec). 가격 알림 등 "조건 충족 시 1회 알림" 패턴은 cronTime + oneShot:true + CONDITION 스텝 조합.',
+      description: '모듈/파이프라인 예약 실행 등록. 반복(cronTime), 1회(runAt), 지연(delaySec). 가격 알림 등 "조건 충족 시 1회 알림" 패턴은 cronTime + oneShot:true + CONDITION 스텝 조합. 휴장·가드 같은 발화 전 체크는 runWhen, 일시 실패 자동 복구는 retry, 결과 알림은 notify 옵션 사용 (pipeline step 안에 박지 마라).',
       parameters: {
         type: 'object',
         required: ['title'],
@@ -213,6 +213,59 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
           startAt: { type: 'string', description: '시작 시각 (ISO 8601)' },
           endAt: { type: 'string', description: '종료 시각 (ISO 8601)' },
           oneShot: { type: 'boolean', description: '첫 성공 시 자동 취소. 가격 알림 같은 "조건 충족 후 1회만" 케이스는 반드시 true. CONDITION 스텝 미충족 시에는 취소 안 되고 다음 주기에 재시도.' },
+          runWhen: {
+            type: 'object',
+            description: '발화 전 조건 체크 — 미충족 시 이번 발화 skip (실패 아님). 휴장일 enumerate 하드코딩 금지 — API 호출로 동적 판단.',
+            required: ['check', 'field', 'op'],
+            properties: {
+              check: {
+                type: 'object',
+                description: '체크용 sysmod 호출. 결과를 field/op/value 로 평가.',
+                required: ['sysmod', 'action'],
+                properties: {
+                  sysmod: { type: 'string', description: 'sysmod 이름 (예: korea-invest)' },
+                  action: { type: 'string', description: '모듈 action (예: is-business-day)' },
+                  inputData: { type: 'object', description: '추가 입력', additionalProperties: true },
+                },
+              },
+              field: { type: 'string', description: '결과 필드 경로 ($prev.isBusinessDay 등)' },
+              op: { type: 'string', description: '비교 연산자', enum: ['==', '!=', '<', '<=', '>', '>=', 'includes', 'not_includes', 'exists', 'not_exists'] },
+              value: { type: 'string', description: '비교 값 (op 가 exists/not_exists 면 생략)' },
+            },
+          },
+          retry: {
+            type: 'object',
+            description: '자동 retry 정책 (timeout·rate limit·503 등 일시 실패 복구). 멱등 도구만 사용 — 매수 주문 같은 부작용 도구는 retry 금지.',
+            required: ['count'],
+            properties: {
+              count: { type: 'number', description: 'retry 횟수 (1~5 권장, 0 = retry X)' },
+              delayMs: { type: 'number', description: 'retry 간격 ms (기본 30000)' },
+            },
+          },
+          notify: {
+            type: 'object',
+            description: '결과 알림 hook — pipeline step 으로 분리하지 말고 이 필드 사용. ScheduleManager 가 발화 결과 단일 source 에서 발사. retry 모두 소진 후 최종 상태로만 onError 발동.',
+            properties: {
+              onSuccess: {
+                type: 'object',
+                required: ['sysmod'],
+                properties: {
+                  sysmod: { type: 'string', description: '알림 sysmod (예: telegram, kakao-talk)' },
+                  chatId: { type: 'string', description: '대상 chat ID (sysmod 별 의미)' },
+                  template: { type: 'string', description: '메시지 템플릿. 변수: {title} {jobId} {durationMs} {error}' },
+                },
+              },
+              onError: {
+                type: 'object',
+                required: ['sysmod'],
+                properties: {
+                  sysmod: { type: 'string' },
+                  chatId: { type: 'string' },
+                  template: { type: 'string' },
+                },
+              },
+            },
+          },
         },
       },
     },

@@ -321,7 +321,7 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 - 도구 결과가 timeout/error 라도 **같은 인자로 즉시 재호출 금지**. 부작용 발생 가능 (이미지 생성·파일 저장·외부 API 호출 등) — retry = 부작용 중복 = 비용·데이터 손상.
 - 시스템에 이미 idempotency cache + per-turn duplicate 가드 가 있어서 같은 인자 재호출은 백엔드까지 도달 안 함 (cache HIT 또는 차단됨). 즉 retry 시도해도 의미 없음.
 - error 응답 받으면 → **사용자에게 보고**하고 다음 행동 결정. silent retry 금지.
-- 다른 인자 또는 fallback 도구로 대안은 OK (예: image_gen 실패 → 다른 prompt 로 재시도, sysmod_kiwoom 실패 → sysmod_korea_invest fallback).
+- 다른 인자 또는 같은 capability 의 다른 provider 로 대안은 OK (capability auto fallback 인프라 활용 — TaskManager 가 자동 처리).
 - timeout 응답이 와도 백엔드는 정상 처리됐을 수 있다 (LLM 응답 지연 ≠ 백엔드 실패). 갤러리·DB·페이지 확인 안내.
 
 ─────────────────────────────────────
@@ -361,11 +361,50 @@ user 모듈은 도메인 판단만 담고, 외부 API·UI·시크릿은 Firebat 
 - 즉시 복합 실행은 run_task, 예약은 schedule_task.
 - 크론 형식 "분 시 일 월 요일" (이 타임존 기준 해석됨). 시각이 지났으면 사용자 확인, 자의적 조정 금지.
 
+### 데이터 신선도 4 패턴 (반복 cron 데이터 갱신)
+사용자가 "매일 X 발행" 같은 반복 잡 의뢰 시, 각 데이터의 신선도 분류해 step 구성:
+1. **매 발화마다 갱신 필요** (시세·뉴스·날씨 등) → EXECUTE/TOOL_CALL step 으로 매번 수행. inputData 안에 동적 키워드.
+2. **첫 등록 시점에 한 번만 가져오면 됨** (기준 가격·임계값 등) → schedule_task 호출 직전에 미리 도구로 조회 → 결과를 \`inputData\` 에 박아 등록. cron pipeline 안엔 안 들어감.
+3. **매 발화마다 동적 식별자** (날짜 포함 slug 등) → \`$dateYmd\` / \`$dateIso\` / \`$jobId\` / \`$ts\` placeholder 사용 (TaskManager 가 트리거 시각 기준 치환). 예: \`slug:"market/$dateYmd-close"\`.
+4. **조건부 데이터 수집** → CONDITION step 으로 분기. 예: 가격이 임계값 미만일 때만 매수.
+
+### Cron 표준 메커니즘 (AI 판단 대신 schedule_task 옵션 활용)
+**휴장일·가드 같은 케이스는 휴장일 enumerate 하지 말고** \`runWhen\` 으로 일반화하라:
+
+\`\`\`
+schedule_task({
+  cronTime: "0 9 * * *",
+  runWhen: {
+    check: { sysmod: "korea-invest", action: "is-business-day" },
+    field: "$prev.isBusinessDay", op: "==", value: true
+  },
+  ...
+})
+\`\`\`
+runWhen 미충족 시 발화 자체 skip (실패 아님). API 가 휴장 여부 알려주는 도구 없으면 사용자에게 안내 — 휴장일 array 하드코딩 금지.
+
+**일시 실패 (네트워크 timeout·rate limit·503)** 는 \`retry\` 로 자동 복구:
+\`\`\`
+retry: { count: 3, delayMs: 30000 }   // 3번까지, 30초 간격
+\`\`\`
+retry count 0 또는 미설정 = 즉시 실패 처리. 멱등(idempotent) 도구만 retry — 매수 주문 같은 부작용 도구는 retry 금지.
+
+**결과 알림** 은 \`notify\` 로 분리 (pipeline step 안에 알림 step 박지 말 것):
+\`\`\`
+notify: {
+  onSuccess: { sysmod: "telegram", template: "✅ {title} 완료 ({durationMs}ms)" },
+  onError:   { sysmod: "telegram", template: "❌ {title} 실패 — {error}" }
+}
+\`\`\`
+ScheduleManager 가 발화 후 결과 단일 source 에서 알림 발사. retry 모두 소진 후 최종 상태로만 onError 발동. 글로벌 default (Vault \`system:cron:default-notify\`) 가 있으면 잡별 미설정 시 자동 적용.
+
+**원칙**: AI 판단 대신 인프라 메커니즘 사용 — runWhen / retry / notify 는 표준 옵션. pipeline step 안에 휴장 체크·재시도·알림 로직을 코딩으로 박지 마라.
+
 ## 파이프라인 (특수)
 스텝 7종만 허용: EXECUTE, MCP_CALL, NETWORK_REQUEST, LLM_TRANSFORM, CONDITION, SAVE_PAGE, TOOL_CALL.
 
 ### Step type 선택 가이드
-- **EXECUTE** — sandbox 모듈 실행. \`path\` 가 \`system/modules/X/index.mjs\` 또는 \`user/modules/X/index.mjs\`. sysmod_kiwoom·sysmod_telegram 같은 모듈 호출.
+- **EXECUTE** — sandbox 모듈 실행. \`path\` 가 \`system/modules/X/index.mjs\` 또는 \`user/modules/X/index.mjs\`. 각 sysmod 의 입출력은 description 참조.
 - **TOOL_CALL** — Function Calling 도구 직접 호출. \`tool\` 이 도구 이름. image_gen / search_history / search_media / render_* 같은 **모듈이 아닌 도구**. cron 자동 발행에서 새 이미지 매번 생성하려면 이 step.
 - **MCP_CALL** — 외부 MCP 서버 도구.
 - **NETWORK_REQUEST** — 임의 HTTP 요청.

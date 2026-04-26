@@ -1,5 +1,5 @@
 import type { FirebatCore } from '../index';
-import type { ICronPort, ILogPort, CronScheduleOptions, CronTriggerInfo, CronJobResult } from '../ports';
+import type { ICronPort, ILogPort, CronScheduleOptions, CronTriggerInfo, CronJobResult, CronRunWhen, CronNotify } from '../ports';
 import type { InfraResult } from '../types';
 // SSE emit 은 Core 가 담당 — Manager 는 더 이상 eventBus import 불필요
 
@@ -67,9 +67,57 @@ export class ScheduleManager {
 
   async handleTrigger(info: CronTriggerInfo): Promise<CronJobResult> {
     const start = Date.now();
+
+    // ── 1. runWhen 체크 — 미충족 시 정상 종료 (skip) ──
+    // 일반 메커니즘: 어떤 조건도 sysmod 호출 결과 + condition 평가로 표현. 휴장일·잔고·부재 모드 등 enumerate X.
+    if (info.runWhen) {
+      const checkRes = await this.evaluateRunWhen(info.runWhen, info.jobId);
+      if (!checkRes.met) {
+        this.log.info(`[Cron] runWhen 미충족 → skip: ${info.jobId} (${checkRes.reason})`);
+        return {
+          jobId: info.jobId, targetPath: info.targetPath, trigger: info.trigger,
+          success: true, // skip 은 정상 종료
+          durationMs: Date.now() - start,
+          output: { skipped: true, reason: checkRes.reason },
+        };
+      }
+    }
+
+    // ── 2. 본 실행 (retry 정책 적용) ──
+    const retryCount = Math.max(0, Math.min(5, info.retry?.count ?? 0));
+    const retryDelay = info.retry?.delayMs ?? 30000;
+    let result: CronJobResult | null = null;
+
+    for (let attempt = 0; attempt <= retryCount; attempt++) {
+      if (attempt > 0) {
+        this.log.warn(`[Cron] retry ${attempt}/${retryCount}: ${info.jobId} (${retryDelay}ms 대기)`);
+        await new Promise(r => setTimeout(r, retryDelay));
+      }
+      result = await this.runOnce(info, start);
+      if (result.success) break; // 성공 시 retry 종료
+    }
+    // result 는 위 loop 에서 반드시 채워짐 (attempt=0 부터 실행)
+    const finalResult = result!;
+
+    // ── 3. 알림 hook — pipeline 외부 처리 (실패하면 fire-and-forget catch) ──
+    if (info.notify) this.fireNotify(info.notify, info, finalResult).catch((e) => {
+      this.log.error(`[Cron] notify 발송 실패: ${info.jobId} — ${e.message}`);
+    });
+
+    // ── 4. oneShot 자동 취소 ──
+    const conditionMet = (finalResult.output as { conditionMet?: boolean } | undefined)?.conditionMet !== false;
+    if (finalResult.success && conditionMet && info.oneShot) {
+      this.log.info(`[Cron] oneShot 성공 → 자동 취소: ${info.jobId}`);
+      await this.cron.cancel(info.jobId);
+    }
+
+    return finalResult;
+  }
+
+  /** 단일 실행 — pipeline 또는 단일 path 모듈/URL. retry loop 가 호출. */
+  private async runOnce(info: CronTriggerInfo, start: number): Promise<CronJobResult> {
     let success = false;
     let error: string | undefined;
-    let conditionMet = true; // CONDITION 스텝 결과 — 조건 미충족 시 false (oneShot 재시도 대기 표시)
     let output: Record<string, unknown> | undefined;
     let stepsTotal: number | undefined;
     let stepsExecuted: number | undefined;
@@ -77,9 +125,7 @@ export class ScheduleManager {
     try {
       if (info.pipeline && info.pipeline.length > 0) {
         stepsTotal = info.pipeline.length;
-        // 파이프라인 실행 → TaskManager에 위임
         this.log.info(`[Cron] 파이프라인 실행: ${info.jobId} (${stepsTotal}단계, ${info.trigger})`);
-        // 진행도 추적용 콜백 — 마지막 'done' 의 index+1 = stepsExecuted
         let lastDoneIdx = -1;
         const pipeResult = await this.core.runTask(info.pipeline, (idx, status) => {
           if (status === 'done') lastDoneIdx = Math.max(lastDoneIdx, idx);
@@ -87,19 +133,13 @@ export class ScheduleManager {
         stepsExecuted = lastDoneIdx + 1;
         success = pipeResult.success;
         if (!pipeResult.success) error = pipeResult.error;
-        // CONDITION 단계에서 미충족이면 data.conditionMet === false
-        const d = pipeResult.data as Record<string, unknown> | undefined;
-        if (d && d.conditionMet === false) conditionMet = false;
-        // 마지막 step 결과 → output 요약 (silent failure 추적 가시화)
         output = this.summarizeFinalOutput(info.pipeline, pipeResult.data);
       } else if (info.targetPath.startsWith('/')) {
-        // 페이지 URL → 알림 파일에 기록
         this.log.info(`[Cron] 잡 실행: ${info.jobId} → ${info.targetPath} (${info.trigger})`);
         this.cron.appendNotify({ jobId: info.jobId, url: info.targetPath, triggeredAt: new Date().toISOString() });
         success = true;
         output = { notified: info.targetPath };
       } else {
-        // 모듈 실행 — Core 경유 (크로스 도메인)
         this.log.info(`[Cron] 잡 실행: ${info.jobId} → ${info.targetPath} (${info.trigger})`);
         const data = info.inputData !== undefined ? info.inputData : { trigger: info.trigger, jobId: info.jobId };
         const res = await this.core.sandboxExecute(info.targetPath, data);
@@ -116,14 +156,6 @@ export class ScheduleManager {
     const stepSummary = stepsTotal != null ? ` steps=${stepsExecuted ?? '?'}/${stepsTotal}` : '';
     this.log[success ? 'info' : 'error'](`[Cron] 잡 ${success ? '완료' : '실패'}: ${info.jobId} (${durationMs}ms)${stepSummary}${outSummary}${error ? ` — ${error}` : ''}`);
 
-    // oneShot: 조건 충족 + 전체 성공 시 자동 취소 (가격 알림 등 조건부 1회 패턴)
-    // CONDITION이 미충족이면 conditionMet=false로 폴링 계속
-    if (success && conditionMet && info.oneShot) {
-      this.log.info(`[Cron] oneShot 성공 → 자동 취소: ${info.jobId}`);
-      await this.cron.cancel(info.jobId);
-    }
-
-    // SSE emit 은 Core.handleCronTrigger 에서 담당 (BIBLE 일관성)
     return {
       jobId: info.jobId, targetPath: info.targetPath, trigger: info.trigger,
       success, durationMs, error,
@@ -131,6 +163,91 @@ export class ScheduleManager {
       ...(stepsExecuted != null ? { stepsExecuted } : {}),
       ...(stepsTotal != null ? { stepsTotal } : {}),
     };
+  }
+
+  /** runWhen 조건 평가 — sysmod 호출 + condition 비교. 일반 메커니즘. */
+  private async evaluateRunWhen(runWhen: CronRunWhen, jobId: string): Promise<{ met: boolean; reason: string }> {
+    try {
+      const target = await this.core.resolveCallTarget(runWhen.check.sysmod);
+      const path = target?.kind === 'execute' ? target.path : `system/modules/${runWhen.check.sysmod}/index.mjs`;
+      const inputData = { action: runWhen.check.action, ...(runWhen.check.inputData ?? {}) };
+      const res = await this.core.sandboxExecute(path, inputData);
+      if (!res.success) return { met: false, reason: `runWhen check 실행 실패: ${res.error}` };
+
+      // 모듈 결과 unwrap — { success, data } wrapper 면 내부 data 사용
+      let result: unknown = res.data;
+      if (result && typeof result === 'object' && 'success' in result && 'data' in result) {
+        result = (result as { data: unknown }).data;
+      }
+
+      // field 경로 평가 — '$result.foo' 또는 'foo' 모두 지원
+      const fieldPath = runWhen.field.replace(/^\$result\./, '').replace(/^\$prev\./, '');
+      const actualValue = this.resolveFieldPath(result, fieldPath);
+      const met = this.evalCondition(actualValue, runWhen.op, runWhen.value);
+      const reason = `${runWhen.field} ${runWhen.op} ${runWhen.value ?? ''} → 실제=${JSON.stringify(actualValue)} = ${met}`;
+      return { met, reason };
+    } catch (e: any) {
+      this.log.warn(`[Cron] runWhen 평가 예외: ${jobId} — ${e.message}`);
+      return { met: false, reason: `runWhen 평가 예외: ${e.message}` };
+    }
+  }
+
+  /** 알림 hook 발동 — sysmod 호출. fire-and-forget 으로 본 결과에 영향 X. */
+  private async fireNotify(notify: CronNotify, info: CronTriggerInfo, result: CronJobResult): Promise<void> {
+    const cfg = result.success ? notify.onSuccess : notify.onError;
+    if (!cfg) return;
+
+    const target = await this.core.resolveCallTarget(cfg.sysmod);
+    const path = target?.kind === 'execute' ? target.path : `system/modules/${cfg.sysmod}/index.mjs`;
+
+    // template 치환 — {title} {jobId} {error} {duration|durationMs} {output} 일반 placeholder
+    const title = info.title ?? info.jobId;
+    const tpl = cfg.template ?? (result.success
+      ? `✓ ${title} 완료 ({durationMs}ms)`
+      : `❌ ${title} 실패: {error}`);
+    const text = tpl
+      .replace(/\{title\}/g, title)
+      .replace(/\{jobId\}/g, info.jobId)
+      .replace(/\{error\}/g, result.error ?? '')
+      .replace(/\{duration(Ms)?\}/g, String(result.durationMs))
+      .replace(/\{output\}/g, result.output ? JSON.stringify(result.output).slice(0, 200) : '');
+
+    const inputData: Record<string, unknown> = { action: 'send-message', text };
+    if (cfg.chatId) inputData.chatId = cfg.chatId;
+    await this.core.sandboxExecute(path, inputData);
+  }
+
+  /** field path 평가 — 'foo.bar.baz' 같은 점 표기 지원 */
+  private resolveFieldPath(obj: unknown, path: string): unknown {
+    if (!path) return obj;
+    let v: unknown = obj;
+    for (const key of path.split('.')) {
+      if (v && typeof v === 'object' && key in v) v = (v as Record<string, unknown>)[key];
+      else return undefined;
+    }
+    return v;
+  }
+
+  /** condition 평가 — TaskManager.evaluateCondition 과 같은 동작 (재사용 어려워 inline) */
+  private evalCondition(actual: unknown, op: string, expected?: string): boolean {
+    if (op === 'exists') return actual !== undefined && actual !== null;
+    if (op === 'not_exists') return actual === undefined || actual === null;
+    const aStr = String(actual ?? '');
+    const eStr = String(expected ?? '');
+    const aNum = Number(aStr);
+    const eNum = Number(eStr);
+    const bothNum = !isNaN(aNum) && !isNaN(eNum);
+    switch (op) {
+      case '==': return aStr === eStr || (bothNum && aNum === eNum);
+      case '!=': return aStr !== eStr && !(bothNum && aNum === eNum);
+      case '<':  return bothNum ? aNum <  eNum : aStr <  eStr;
+      case '<=': return bothNum ? aNum <= eNum : aStr <= eStr;
+      case '>':  return bothNum ? aNum >  eNum : aStr >  eStr;
+      case '>=': return bothNum ? aNum >= eNum : aStr >= eStr;
+      case 'includes':     return aStr.includes(eStr);
+      case 'not_includes': return !aStr.includes(eStr);
+      default: return false;
+    }
   }
 
   /** 마지막 step 결과를 의미있는 output 요약으로 변환.
