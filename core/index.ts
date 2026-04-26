@@ -553,10 +553,15 @@ export class FirebatCore {
    *  Manager 직접 호출 안 하고 Core facade 경유 → SSE emit 단일 지점 (BIBLE 일관성).
    *  StatusManager 통합 — cron 트리거 가시화. pipeline 이 있으면 runTask 가 별도 sub-status 발행. */
   async handleCronTrigger(info: import('./ports').CronTriggerInfo) {
+    // 사용자 가시화 — jobId raw 대신 title (있으면) + trigger 한국어 라벨
+    const triggerLabel = info.trigger === 'CRON_SCHEDULER' ? '예약'
+      : info.trigger === 'SCHEDULED_ONCE' ? '1회 예약'
+      : '즉시 실행';
+    const displayName = info.title || info.jobId;
     const job = this.statusMgr.start({
       type: 'cron',
-      message: `Cron 트리거: ${info.jobId} (${info.trigger})`,
-      meta: { jobId: info.jobId, trigger: info.trigger, targetPath: info.targetPath, hasPipeline: Boolean(info.pipeline?.length) },
+      message: `${displayName} (${triggerLabel})`,
+      meta: { jobId: info.jobId, trigger: info.trigger, targetPath: info.targetPath, hasPipeline: Boolean(info.pipeline?.length), title: info.title },
     });
     const result = await this.schedule.handleTrigger(info);
     if (result.success) {

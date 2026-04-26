@@ -13,7 +13,8 @@
  *   - SSE 만으로 list 유지. 페이지 reload 직후 진행 중이던 작업이 다음 update 이벤트 시
  *     자동으로 list 에 등장 (별도 API 조회 불필요)
  */
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Activity, X } from 'lucide-react';
 import { useEvents } from '../hooks/events-manager';
 
@@ -37,6 +38,25 @@ const FINISHED_RETENTION_MS = 5_000;
 export function ActiveJobsIndicator() {
   const [jobs, setJobs] = useState<Map<string, JobStatus>>(new Map());
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const [coords, setCoords] = useState<{ left: number; bottom: number } | null>(null);
+
+  // dropdown 열릴 때 버튼 위치 → viewport 좌표 계산. 입력창 overflow-hidden 회피용 portal 좌표.
+  useEffect(() => {
+    if (!open) { setCoords(null); return; }
+    const update = () => {
+      const r = btnRef.current?.getBoundingClientRect();
+      if (!r) return;
+      setCoords({ left: r.right, bottom: window.innerHeight - r.top });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [open]);
 
   useEvents(['status:update'], (ev) => {
     const payload = ev.data as { job: JobStatus; change: string } | undefined;
@@ -71,9 +91,39 @@ export function ActiveJobsIndicator() {
   // 활성·종료 모두 0 = 인디케이터 자체 숨김
   if (activeJobs.length === 0 && finishedJobs.length === 0) return null;
 
+  // dropdown — 입력창 overflow-hidden 회피 위해 Portal 로 document.body 직접 마운트.
+  // fixed position + getBoundingClientRect 로 버튼 위에 정확히 anchoring.
+  const dropdown = open && coords && (
+    <>
+      {/* backdrop — 클릭 시 닫힘 */}
+      <div className="fixed inset-0 z-[55]" onClick={() => setOpen(false)} />
+      <div
+        className="fixed z-[60] w-80 max-w-[90vw] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden"
+        style={{
+          right: `${Math.max(8, window.innerWidth - coords.left)}px`,
+          bottom: `${coords.bottom + 8}px`,
+        }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+          <span className="text-[12px] font-bold text-slate-700">작업 상태</span>
+          <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600">
+            <X size={14} />
+          </button>
+        </div>
+        <div className="max-h-80 overflow-y-auto">
+          {[...activeJobs, ...finishedJobs].map(job => (
+            <JobRow key={job.id} job={job} />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+
   return (
-    <div className="relative">
+    <>
       <button
+        ref={btnRef}
         onClick={() => setOpen(o => !o)}
         className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold transition-colors"
         aria-label={`실행 중 ${activeJobs.length}개`}
@@ -84,23 +134,8 @@ export function ActiveJobsIndicator() {
           <span className="text-[10px] text-emerald-600">+{finishedJobs.length}</span>
         )}
       </button>
-
-      {open && (
-        <div className="absolute bottom-full mb-2 right-0 w-80 max-w-[90vw] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden z-30">
-          <div className="px-3 py-2 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-            <span className="text-[12px] font-bold text-slate-700">작업 상태</span>
-            <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600">
-              <X size={14} />
-            </button>
-          </div>
-          <div className="max-h-80 overflow-y-auto">
-            {[...activeJobs, ...finishedJobs].map(job => (
-              <JobRow key={job.id} job={job} />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+      {dropdown && typeof window !== 'undefined' && createPortal(dropdown, document.body)}
+    </>
   );
 }
 
