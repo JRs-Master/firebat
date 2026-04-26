@@ -110,6 +110,12 @@ export async function POST(req: NextRequest) {
         result = r.success ? { success: true, data: { jobId } } : { success: false, error: r.error };
         break;
       }
+      case 'cancel_task': {
+        const { jobId } = args as { jobId: string };
+        const r = await core.cancelCronJob(jobId);
+        result = r.success ? { success: true } : { success: false, error: r.error };
+        break;
+      }
       default:
         result = { success: false, error: `지원하지 않는 도구: ${pending.name}` };
     }

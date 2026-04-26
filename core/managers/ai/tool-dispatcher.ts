@@ -147,6 +147,15 @@ export class ToolDispatcher {
         const when = args.cronTime ?? args.runAt ?? (args.delaySec != null ? `${args.delaySec}초 후` : '');
         return { summary: `예약 등록: ${args.title ?? '(제목 없음)'} (${when})` };
       }
+      case 'cancel_task': {
+        // 스케줄 해제는 되돌리기 어려움 (agentPrompt·runWhen·notify 등 메타 잃음). 항상 승인.
+        const jobId = (tc.args as { jobId?: string }).jobId ?? '(unknown)';
+        // jobId 로 title lookup — UI 가독성 ↑
+        const jobs = this.core.listCronJobs();
+        const job = jobs.find(j => j.jobId === jobId);
+        const label = job?.title ? `${job.title} (${jobId})` : jobId;
+        return { summary: `예약 해제: ${label}` };
+      }
       default:
         return null;
     }
