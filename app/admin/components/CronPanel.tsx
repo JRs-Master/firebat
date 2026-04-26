@@ -469,16 +469,16 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
     }`;
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 overflow-y-auto" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden my-auto" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50">
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md flex flex-col max-h-[calc(100vh-2rem)]" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
           <h3 className="text-sm font-bold text-slate-800">{isNew ? '스케줄 등록' : '스케줄 수정'}</h3>
           <button onClick={onClose} className="p-1 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600 transition-colors">
             <X size={16} />
           </button>
         </div>
 
-        <div className="px-5 py-4 space-y-3 min-h-[380px]">
+        <div className="px-5 py-4 space-y-3 overflow-y-auto flex-1">
           {/* 스케줄 설명 */}
           {(job?.title || job?.description) && (
             <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
@@ -720,7 +720,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
           {error && <p className="text-[11px] text-red-500 font-medium">{error}</p>}
         </div>
 
-        <div className="flex items-center justify-between px-5 py-3 border-t border-slate-200 bg-slate-50">
+        <div className="flex items-center justify-between px-5 py-3 border-t border-slate-200 bg-slate-50 shrink-0">
           {onDelete ? (
             <button onClick={onDelete} className="px-3 py-1.5 text-[12px] font-semibold text-red-500 hover:bg-red-50 rounded-lg transition-colors">
               삭제
