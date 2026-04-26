@@ -6,6 +6,7 @@ import { RENDER_TOOL_MAP, normalizeRenderName } from '../../lib/render-map';
 import { trimToolResult, slimResultForLLM } from './ai/result-processor';
 import { HistoryResolver } from './ai/history-resolver';
 import { PromptBuilder } from './ai/prompt-builder';
+import { ToolRouter } from './ai/tool-router';
 import { IMAGE_GEN_DESCRIPTION } from '../../lib/image-gen-prompt';
 
 /** Vertex AI Function Calling은 enum 값이 반드시 string이어야 함 — 재귀 변환 */
@@ -51,18 +52,13 @@ export class AiManager {
   private _callTargetCache: { map: Map<string, { kind: 'mcp'; server: string } | { kind: 'execute'; path: string }>; ts: number } | null = null;
   private static readonly CALL_TARGET_TTL = 60_000;
 
-  /** LLM 기반 self-learning 라우터 (on-demand lazy 초기화) */
-  private _llmRouter: IToolRouterPort | null = null;
-  /** 직전 턴의 라우팅 cacheId — AI 가 도구 사용했는지 관측해 score 반영 */
-  private _lastRouteCacheIds: { tools?: number; components?: number[] } = {};
-  /** 대화 세션별 직전 라우팅 기록 — 유저 피드백 감지용 (conversationId → {...}) */
-  private _sessionLastRouting = new Map<string, { query: string; toolNames: string[]; cacheId: number; ts: number }>();
   /** 현재 turn 의 직전 user 쿼리 — search_history 쿼리 맥락 보강용 */
   private _currentTurnPrevUserQuery = '';
 
-  /** 내부 collaborator — AI 도메인 분리 (ResultProcessor / HistoryResolver / PromptBuilder / ...) */
+  /** 내부 collaborator — AI 도메인 분리 (ResultProcessor / HistoryResolver / PromptBuilder / ToolRouter / ...) */
   private readonly history: HistoryResolver;
   private readonly promptBuilder: PromptBuilder;
+  private readonly toolRouter: ToolRouter;
 
   constructor(
     private readonly core: FirebatCore,
@@ -73,6 +69,7 @@ export class AiManager {
   ) {
     this.history = new HistoryResolver(core);
     this.promptBuilder = new PromptBuilder(core, llm);
+    this.toolRouter = new ToolRouter(core, logger, routerFactory, this._toolCapabilities);
     // ToolManager 등록 — Step 2 마이그레이션 진행 단계.
     // 등록된 도구는 executeToolCall 첫 줄의 ToolManager 위임으로 자동 dispatch.
     this.registerStaticToolsToManager();
@@ -254,12 +251,12 @@ export class AiManager {
       search_components: async (args) => {
         const { query, limit } = args as { query: string; limit?: number };
         const { COMPONENTS } = await import('../../infra/llm/component-registry');
-        if (this.isRouterEnabled()) {
+        if (this.toolRouter.isEnabled()) {
           try {
-            const router = this.getRouter();
+            const router = this.toolRouter.getRouter();
             const catalog = COMPONENTS.map(c => ({ name: c.name, description: c.description }));
             const result = await router.routeComponents(query, catalog);
-            this._lastRouteCacheIds.components = [...(this._lastRouteCacheIds.components ?? []), result.cacheId].filter(id => id >= 0);
+            this.toolRouter.recordComponentsCacheId(result.cacheId);
             const picked = COMPONENTS.filter(c => result.names.includes(c.name)).slice(0, typeof limit === 'number' ? limit : 5);
             this.logger.info(`[LLMRouter] search_components (${result.source}, cacheId=${result.cacheId}): ${picked.length}개`);
             return { success: true, components: picked.map(c => ({ name: c.name, description: c.description, propsSchema: c.propsSchema })) };
@@ -348,9 +345,9 @@ export class AiManager {
 
         const prev = this._currentTurnPrevUserQuery;
         let enrichedQuery = prev && prev !== query ? `${query} ${prev}`.slice(0, 500) : query;
-        if (this.isRouterEnabled()) {
+        if (this.toolRouter.isEnabled()) {
           try {
-            const router = this.getRouter();
+            const router = this.toolRouter.getRouter();
             const rewritten = await router.generateSearchQuery(query, prev);
             enrichedQuery = rewritten.query;
           } catch (e) {
@@ -358,7 +355,7 @@ export class AiManager {
           }
         }
 
-        const overfetch = this.isRouterEnabled() ? Math.max(topK * 3, 15) : topK;
+        const overfetch = this.toolRouter.isEnabled() ? Math.max(topK * 3, 15) : topK;
         const res = await this.core.searchConversationHistory(owner, enrichedQuery, {
           currentConvId: ctx.conversationId,
           limit: overfetch,
@@ -376,9 +373,9 @@ export class AiManager {
         }));
 
         let matches = rawMatches.slice(0, topK);
-        if (this.isRouterEnabled() && rawMatches.length > topK) {
+        if (this.toolRouter.isEnabled() && rawMatches.length > topK) {
           try {
-            const router = this.getRouter();
+            const router = this.toolRouter.getRouter();
             matches = await router.rerankHistory(enrichedQuery, rawMatches, topK);
           } catch (e) {
             this.logger.warn(`[LLMRouter] rerankHistory 실패, 벡터 순서 유지: ${(e as Error).message}`);
@@ -411,21 +408,6 @@ export class AiManager {
         handler: async (args) => ({ success: true, component: RENDER_TOOL_MAP[renderTool.name], props: args }),
       });
     }
-  }
-
-  private getRouter(modelId?: string): IToolRouterPort {
-    // AI Assistant 모델 = User AI 와 별개의 백엔드 서브 AI (도구 라우터 등).
-    // Core 파사드가 Vault 우선 → DEFAULT_AI_ASSISTANT_MODEL 폴백을 처리.
-    const model = modelId ?? this.core.getAiAssistantModel();
-    if (!this._llmRouter) {
-      this._llmRouter = this.routerFactory(model);
-    }
-    return this._llmRouter;
-  }
-
-  private isRouterEnabled(): boolean {
-    const val = this.core.getGeminiKey('system:ai-router:enabled');
-    return val === 'true' || val === '1';
   }
 
   /**
@@ -649,13 +631,13 @@ export class AiManager {
     const allToolsRaw = await this.buildToolDefinitions();
     // AI Assistant ON 시: backend 가 자동 search_history 처리 → User AI 도구 목록에서 제외 (중복 방지)
     // 플랜 토글: ON = 무조건 plan 강제 (시스템 프롬프트로), OFF = AI 자유 판단 (도구 그대로 유지)
-    const allTools = this.isRouterEnabled()
+    const allTools = this.toolRouter.isEnabled()
       ? allToolsRaw.filter(t => t.name !== 'search_history')
       : allToolsRaw;
     // Gemini/Vertex는 사용자 쿼리로 벡터 검색 → 관련 도구만 선별 (토큰 절감)
     // 다른 프로바이더는 allTools 그대로 반환됨
     const sessionUsedToolNames = new Set<string>();
-    const selectResult = await this.selectToolsForRequest(allTools, prompt, modelId, sessionUsedToolNames, opts?.conversationId);
+    const selectResult = await this.toolRouter.selectTools(allTools, prompt, modelId, sessionUsedToolNames, opts?.conversationId);
     const tools = selectResult.tools;
 
     // 라우터가 이전 턴 맥락 필요하다고 판정 → recent user 1턴 포함
@@ -666,10 +648,10 @@ export class AiManager {
     // AI Assistant ON + needs_previous_context=true → 자동으로 search_history 실행해 결과 prepend
     // (User AI 가 search_history 도구를 호출하지 않아도 backend 가 컨텍스트 보강)
     let autoHistoryContext = '';
-    if (this.isRouterEnabled() && selectResult.needsPreviousContext && opts?.conversationId) {
+    if (this.toolRouter.isEnabled() && selectResult.needsPreviousContext && opts?.conversationId) {
       try {
         const owner = opts?.owner ?? 'admin';
-        const router = this.getRouter();
+        const router = this.toolRouter.getRouter();
         const rewritten = await router.generateSearchQuery(prompt, this._currentTurnPrevUserQuery);
         const enrichedQuery = rewritten.query;
         const res = await this.core.searchConversationHistory(owner, enrichedQuery, {
@@ -734,7 +716,7 @@ export class AiManager {
     for (let turn = 0; turn < MAX_TOOL_TURNS; turn++) {
       // 이전 턴에 새 도구 사용됐으면 재선별 (이미 사용한 도구는 반드시 포함되어야 AI가 재호출 가능)
       if (sessionUsedToolNames.size > lastSessionSize) {
-        const reselect = await this.selectToolsForRequest(allTools, prompt, modelId, sessionUsedToolNames, opts?.conversationId);
+        const reselect = await this.toolRouter.selectTools(allTools, prompt, modelId, sessionUsedToolNames, opts?.conversationId);
         turnTools = reselect.tools;
         lastSessionSize = sessionUsedToolNames.size;
       }
@@ -1004,28 +986,15 @@ export class AiManager {
     const totalMs = Date.now() - startTime;
     this.logger.info(`[AiManager] [${corrId}] [${modelId}] Function Calling 완료 (${executedActions.length}개 도구, ${totalMs}ms)`);
 
-    // 라우터 캐시 score — 보수적 감점 (인프라·AI 판단 노이즈 최소화)
-    //   성공: AI 가 라우팅된 도구 중 1개라도 호출
-    //   감점: 여기선 안 함 (유저 명시 피드백은 다음 턴의 selectToolsForRequest 에서 처리)
-    if (this._llmRouter) {
-      try {
-        const routedTools = turnTools.map(t => t.name);
-        const used = new Set(executedActions);
-        const usedAnyRouted = routedTools.some(n => used.has(n));
-
-        const toolsCacheId = this._lastRouteCacheIds.tools;
-        if (typeof toolsCacheId === 'number' && usedAnyRouted) {
-          await this._llmRouter.recordSuccess(toolsCacheId);
-        }
-        // 컴포넌트: AI 가 render / render_* 1회라도 호출 → success
-        const usedRender = executedActions.some(a => a === 'render' || a.startsWith('render_'));
-        if (usedRender) {
-          for (const cid of this._lastRouteCacheIds.components ?? []) {
-            await this._llmRouter.recordSuccess(cid);
-          }
-        }
-      } catch { /* score 업데이트 실패는 무시 */ }
-      this._lastRouteCacheIds = {};
+    // 라우터 캐시 score — 보수적 감점 (인프라·AI 판단 노이즈 최소화).
+    //   성공 조건: AI 가 라우팅된 도구 중 1개라도 호출 + render 1회라도 호출.
+    //   감점은 안 함 (유저 명시 피드백은 다음 턴의 selectTools 에서 자동 처리).
+    {
+      const routedTools = turnTools.map(t => t.name);
+      const used = new Set(executedActions);
+      const toolsUsed = routedTools.some(n => used.has(n));
+      const renderUsed = executedActions.some(a => a === 'render' || a.startsWith('render_'));
+      await this.toolRouter.recordTurnSuccess({ toolsUsed, renderUsed });
     }
     // 디버깅용: 최종 응답 전체 로깅 (추후 제거 가능)
     if (finalReply) {
@@ -1690,97 +1659,6 @@ scope='all' 기본. source: 'ai-generated' (image_gen 결과) / 'upload' (사용
    * @param modelId 선택된 모델 ID
    * @param sessionUsedToolNames 같은 세션에서 이미 호출된 도구 (멀티턴 드랍 방지)
    */
-  private async selectToolsForRequest(
-    allTools: ToolDefinition[],
-    userQuery: string,
-    modelId: string,
-    sessionUsedToolNames: Set<string>,
-    conversationId?: string,
-  ): Promise<{ tools: ToolDefinition[]; needsPreviousContext?: boolean }> {
-    if (!userQuery.trim()) return { tools: allTools };
-
-    // 도구 필터링은 Gemini API 만 (CLI 는 자체 처리, hosted MCP 는 서버측)
-    // needs_previous_context 판정은 모든 모델 공통 (router ON 시) — history 자동 주입용
-    const isGeminiApi = modelId.startsWith('gemini-');
-
-    const { ALWAYS_INCLUDE } = await import('../../infra/llm/tool-search-index');
-
-    // 1. Self-learning LLM 라우터 경로 (토글 on)
-    if (this.isRouterEnabled()) {
-      try {
-        const router = this.getRouter();
-
-        // 세션 내 직전 라우팅 → 피드백 판정용 컨텍스트
-        const prev = conversationId ? this._sessionLastRouting.get(conversationId) : undefined;
-        const FEEDBACK_WINDOW_MS = 90_000; // 90초 이내면 이전 라우팅 참조
-        const recentContext = prev && (Date.now() - prev.ts) < FEEDBACK_WINDOW_MS
-          ? { previousQuery: prev.query, previousNames: prev.toolNames }
-          : undefined;
-
-        const result = await router.routeTools(userQuery, allTools, [...ALWAYS_INCLUDE, ...sessionUsedToolNames], recentContext);
-
-        // 피드백 반영 — LLM 이 직전 라우팅을 negative 로 판정하면 감점
-        if (prev && result.previousFeedback === 'negative' && prev.cacheId >= 0) {
-          await router.recordFailure(prev.cacheId, 2);
-          this.logger.info(`[LLMRouter] 유저 피드백 negative → cacheId=${prev.cacheId} 감점`);
-        } else if (prev && result.previousFeedback === 'positive' && prev.cacheId >= 0) {
-          await router.recordSuccess(prev.cacheId);
-        }
-
-        this._lastRouteCacheIds.tools = result.cacheId >= 0 ? result.cacheId : undefined;
-
-        // 세션 기록 갱신
-        if (conversationId && result.cacheId >= 0) {
-          this._sessionLastRouting.set(conversationId, {
-            query: userQuery,
-            toolNames: [...result.names].filter(n => !ALWAYS_INCLUDE.has(n)),
-            cacheId: result.cacheId,
-            ts: Date.now(),
-          });
-        }
-
-        // Gemini API 만 도구 필터링 적용. 다른 모델은 모든 도구 유지 (router 는 history 판정용으로만)
-        if (isGeminiApi) {
-          const allowed = new Set(result.names);
-          const selected = allTools.filter(t => allowed.has(t.name));
-          this.logger.info(`[LLMRouter] ${selected.length}/${allTools.length}개 선택 (${result.source}, cacheId=${result.cacheId}${result.previousFeedback ? `, fb=${result.previousFeedback}` : ''}${result.needsPreviousContext ? ', +prev' : ''})`);
-          return {
-            tools: selected.length > 0 ? selected : allTools,
-            needsPreviousContext: result.needsPreviousContext,
-          };
-        }
-        // GPT/Claude API (hosted MCP), CLI 는 도구 그대로 + needs_previous_context 만 활용
-        this.logger.info(`[LLMRouter] (${modelId}) needs_previous_context=${result.needsPreviousContext} (도구 필터링 스킵 — 비-Gemini)`);
-        return {
-          tools: allTools,
-          needsPreviousContext: result.needsPreviousContext,
-        };
-      } catch (e) {
-        this.logger.warn(`[LLMRouter] 실패, 벡터 폴백: ${(e as Error).message}`);
-      }
-    }
-
-    // 2. 벡터 폴백 (토글 off 이거나 LLM 실패 시) — Gemini API 만 적용
-    if (!isGeminiApi) return { tools: allTools };
-    try {
-      const { ToolSearchIndex } = await import('../../infra/llm/tool-search-index');
-      const capabilityOf = (name: string) => this._toolCapabilities.get(name);
-      const { selectedToolNames, matchedCategories } = await ToolSearchIndex.query(userQuery, allTools, {
-        topCategories: 3,
-        topToolsPerCategory: 5,
-        capabilityOf,
-      });
-
-      const allowed = new Set([...ALWAYS_INCLUDE, ...selectedToolNames, ...sessionUsedToolNames]);
-      const selected = allTools.filter(t => allowed.has(t.name));
-      const catSummary = matchedCategories.map(c => `${c.id}:${c.score.toFixed(2)}`).join(',');
-      this.logger.info(`[ToolSearch] ${selected.length}/${allTools.length}개 선택 (categories=[${catSummary}], session=${sessionUsedToolNames.size})`);
-      return { tools: selected.length > 0 ? selected : allTools };
-    } catch (e) {
-      this.logger.warn(`[ToolSearch] 검색 실패, 전체 도구 폴백: ${(e as Error).message}`);
-      return { tools: allTools };
-    }
-  }
 
   /** AI 가 호출한 identifier → 실제 dispatch target 해석.
    *  매칭 우선순위: 정확한 이름 → snake/kebab 변형 → sysmod_ 접두사 / full path → null
