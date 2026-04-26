@@ -618,6 +618,20 @@ startAt/endAt: cronTime의 유효 기간 (만료 시 자동 해제).
   );
 
   server.tool(
+    'run_cron_job',
+    `기존 등록된 cron 잡 즉시 1회 트리거. 정상 cron 발화와 동일 path —
+cron-logs 기록 + agent prelude (블로그 quality 룰) 적용 + retry/notify 동작.
+
+사용자가 "X 잡 한 번 실행해줘" 의뢰 시 list_tasks 로 jobId 찾고 이 도구로 호출.
+save_page / schedule_task 직접 호출 X — 그건 cron 우회라 prelude 미적용 + 로그 안 박힘.`,
+    { jobId: z.string().describe('실행할 cron 잡 ID (list_tasks 결과의 jobId)') },
+    async ({ jobId }) => {
+      const r = await core.runCronJobNow(jobId);
+      return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true, message: '잡 트리거됨. cron-logs 에서 결과 확인.' } : { error: r.error }) }] };
+    },
+  );
+
+  server.tool(
     'run_task',
     `파이프라인 즉시 실행 (예약 아님). 5가지 스텝 타입을 순차 실행:
 - EXECUTE: {type:"EXECUTE", path:"system/modules/xxx/index.mjs", inputData:{...}}

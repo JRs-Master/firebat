@@ -295,6 +295,17 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
       parameters: { type: 'object', properties: {} },
     },
     {
+      name: 'run_cron_job',
+      description: '기존 등록된 cron 잡을 즉시 1회 트리거. 정상 cron 발화와 동일 path (cron-logs 기록 + agent prelude 적용 + retry/notify 동작). 사용자가 "X 잡 한 번 실행해줘" 의뢰 시 list_tasks 로 jobId 찾고 호출. save_page·schedule_task 직접 호출하지 마라 — 그건 cron 우회라 cron-logs 안 박히고 prelude 미적용.',
+      parameters: {
+        type: 'object',
+        required: ['jobId'],
+        properties: {
+          jobId: { type: 'string', description: '실행할 cron 잡 ID' },
+        },
+      },
+    },
+    {
       name: 'database_query',
       description: 'SQL 쿼리 실행.',
       parameters: {

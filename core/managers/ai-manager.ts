@@ -167,6 +167,14 @@ export class AiManager {
         const jobs = this.core.listCronJobs();
         return { success: true, cronJobs: jobs };
       },
+      run_cron_job: async (args) => {
+        const { jobId } = args as { jobId: string };
+        if (!jobId) return { success: false, error: 'run_cron_job: jobId 필수' };
+        const res = await this.core.runCronJobNow(jobId);
+        return res.success
+          ? { success: true, message: `잡 트리거됨: ${jobId}. cron-logs 에서 결과 확인 (정상 cron 경로 — agent prelude 적용).` }
+          : { success: false, error: res.error };
+      },
       run_task: async (args) => {
         const a = args as Record<string, unknown>;
         const pipeline = (a.pipeline ?? a.steps ?? a.tasks) as import('../ports').PipelineStep[] | undefined;
@@ -671,10 +679,10 @@ export class AiManager {
     const allToolsAfterRouter = this.toolRouter.isEnabled()
       ? allToolsRaw.filter(t => t.name !== 'search_history')
       : allToolsRaw;
-    // cron agent 모드: schedule_task / cancel_task / list_tasks / propose_plan / complete_plan 차단
+    // cron agent 모드: schedule_task / cancel_task / list_tasks / run_cron_job / propose_plan / complete_plan 차단
     // (recursion 방지 + UI 없는 환경이라 plan 카드 의미 X)
     const allTools = opts?.cronAgent
-      ? allToolsAfterRouter.filter(t => !['schedule_task', 'cancel_task', 'list_tasks', 'propose_plan', 'complete_plan'].includes(t.name))
+      ? allToolsAfterRouter.filter(t => !['schedule_task', 'cancel_task', 'list_tasks', 'run_cron_job', 'propose_plan', 'complete_plan'].includes(t.name))
       : allToolsAfterRouter;
     // Gemini/Vertex는 사용자 쿼리로 벡터 검색 → 관련 도구만 선별 (토큰 절감)
     // 다른 프로바이더는 allTools 그대로 반환됨
