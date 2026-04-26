@@ -518,7 +518,7 @@ function CopyButton({ text }: { text: string }) {
   }, [text]);
   return (
     <div className="relative inline-flex">
-      <Tooltip label={copied ? '복사됨' : '복사'}>
+      <Tooltip label="복사">
         <button
           onClick={handleCopy}
           className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
@@ -564,7 +564,7 @@ function ShareTurnButton({ messages, conversationId, title, msgId }: { messages:
       : 'text-emerald-600 bg-emerald-50 border-emerald-200';
   return (
     <div className="relative inline-flex">
-      <Tooltip label={status === 'done' ? '공유 링크 복사됨 (24시간 유효)' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중...' : '이 응답 공유 (24h)'}>
+      <Tooltip label="이 응답 공유 (24h)">
         <button
           onClick={handleShare}
           disabled={status === 'sharing'}
