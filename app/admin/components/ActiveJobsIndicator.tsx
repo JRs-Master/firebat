@@ -42,12 +42,18 @@ export function ActiveJobsIndicator() {
   const [coords, setCoords] = useState<{ left: number; bottom: number } | null>(null);
 
   // dropdown 열릴 때 버튼 위치 → viewport 좌표 계산. 입력창 overflow-hidden 회피용 portal 좌표.
+  // viewport 안에 들어오게 left clamp — 모바일에서 dropdown 이 화면 밖으로 나가는 현상 방지.
   useEffect(() => {
     if (!open) { setCoords(null); return; }
     const update = () => {
       const r = btnRef.current?.getBoundingClientRect();
       if (!r) return;
-      setCoords({ left: r.right, bottom: window.innerHeight - r.top });
+      const dropdownWidth = Math.min(320, window.innerWidth - 16); // w-80 (320) 또는 viewport-16 중 작은 것
+      // 버튼 중심 정렬 시도 → 좌우 viewport edge 안에 clamp (8px margin)
+      const center = (r.left + r.right) / 2;
+      const idealLeft = center - dropdownWidth / 2;
+      const left = Math.max(8, Math.min(idealLeft, window.innerWidth - dropdownWidth - 8));
+      setCoords({ left, bottom: window.innerHeight - r.top });
     };
     update();
     window.addEventListener('resize', update);
@@ -98,10 +104,11 @@ export function ActiveJobsIndicator() {
       {/* backdrop — 클릭 시 닫힘 */}
       <div className="fixed inset-0 z-[55]" onClick={() => setOpen(false)} />
       <div
-        className="fixed z-[60] w-80 max-w-[90vw] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden"
+        className="fixed z-[60] bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden"
         style={{
-          right: `${Math.max(8, window.innerWidth - coords.left)}px`,
+          left: `${coords.left}px`,
           bottom: `${coords.bottom + 8}px`,
+          width: `${Math.min(320, window.innerWidth - 16)}px`,
         }}
         onClick={e => e.stopPropagation()}
       >
