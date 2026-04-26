@@ -499,7 +499,7 @@ function AdSlotComp({ slotId, format = 'auto' }: { slotId?: string; format?: str
 }
 
 // ── Html (iframe sandbox) ───────────────────────────────────────────────────
-import { buildCdnTags } from '../../../lib/cdn-libraries';
+import { buildCdnTags, IFRAME_CSP_META } from '../../../lib/cdn-libraries';
 
 function HtmlComp({ content, dependencies }: { content: string; dependencies?: string[] }) {
   // dependencies 명시 시 frontend 가 CDN 태그 합성 후 head 에 주입.
@@ -507,10 +507,13 @@ function HtmlComp({ content, dependencies }: { content: string; dependencies?: s
   const cdnTags = buildCdnTags(dependencies);
   // AI 가 자체 body{margin:0; max-width:none} 같은 style 로 default 깨는 패턴 자주.
   // outer wrapper div 로 max-width 강제 — AI 가 어떻게 body style 짜도 layout 영향 X.
+  // CSP meta — sandbox=allow-scripts 위에 defense-in-depth: script src 화이트리스트 + frame/form/base 차단.
   const srcdoc = `<!DOCTYPE html>
 <html><head>
+${IFRAME_CSP_META}
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
 ${cdnTags}
 <style>
   *, *::before, *::after { box-sizing: border-box; }
@@ -528,6 +531,8 @@ ${cdnTags}
     <iframe
       srcDoc={srcdoc}
       sandbox="allow-scripts"
+      referrerPolicy="no-referrer"
+      loading="lazy"
       className="w-full h-full border-0 bg-white"
       title="Html content"
     />

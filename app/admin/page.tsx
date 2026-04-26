@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks, Share2, Image as ImageIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { CDN_LIBRARIES } from '../../lib/cdn-libraries';
+import { CDN_LIBRARIES, IFRAME_CSP_META } from '../../lib/cdn-libraries';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Sidebar } from './components/Sidebar';
@@ -333,9 +333,14 @@ function AutoResizeIframe({ src, initialHeight, dependencies }: { src: string; i
       : '';
     const baseStyle = `<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" /><style>html,body{overflow:hidden !important;font-family:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important;color:#1e293b;background:#ffffff;-webkit-font-smoothing:antialiased;}body{font-size:14px;line-height:1.6;}h1,h2,h3,h4,h5,h6{font-weight:700;color:#0f172a;letter-spacing:-0.01em;}h1{font-size:20px;}h2{font-size:17px;}h3{font-size:15px;}table{font-size:13px;}canvas,svg{font-family:inherit !important;}</style>${cdnTags}`;
     const autoScript = `<script>(function(){var id=${JSON.stringify(idRef.current)};var peak=0;function measure(){var b=document.body;if(!b)return 0;return Math.max(b.scrollHeight,b.offsetHeight,Math.ceil(b.getBoundingClientRect().height));}function send(){var h=measure();if(h<=peak)return;peak=h;parent.postMessage({type:'iframe-resize',id:id,height:h},'*');}function attach(){if(!document.body)return;if(window.ResizeObserver)new ResizeObserver(send).observe(document.body);send();}if(document.body)attach();else document.addEventListener('DOMContentLoaded',attach);window.addEventListener('load',send);[100,500,1500,3000].forEach(function(t){setTimeout(send,t);});})();<\/script><script>(function(){var last=null;function toMouse(e){if(!e.touches||e.touches.length!==1)return;var t=e.touches[0];var tg=document.elementFromPoint(t.clientX,t.clientY);if(!tg)return;tg.dispatchEvent(new MouseEvent('mousemove',{clientX:t.clientX,clientY:t.clientY,bubbles:true,cancelable:true,view:window}));last=tg;}document.addEventListener('touchstart',toMouse,{passive:true});document.addEventListener('touchmove',toMouse,{passive:true});document.addEventListener('touchend',function(){if(last){last.dispatchEvent(new MouseEvent('mouseout',{bubbles:true}));last=null;}},{passive:true});})();<\/script>`;
+    // CSP meta — sandbox=allow-scripts 위에 defense-in-depth.
+    // isFullDoc 케이스도 CSP 주입 — AI 가 직접 짠 doc 도 동일 보호. 이미 CSP 박혀있으면 중복 무해 (브라우저가 강한 정책 채택).
     return isFullDoc
-      ? src.replace(/<\/head>/i, baseStyle + '</head>').replace(/<\/body>/i, autoScript + '</body>')
-      : `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${baseStyle}<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:4px;max-width:100vw}img,table{max-width:100%!important;height:auto}canvas{max-width:100%}</style></head><body>${src}${autoScript}</body></html>`;
+      ? src
+          .replace(/<head[^>]*>/i, m => `${m}${IFRAME_CSP_META}`)
+          .replace(/<\/head>/i, baseStyle + '</head>')
+          .replace(/<\/body>/i, autoScript + '</body>')
+      : `<!DOCTYPE html><html><head>${IFRAME_CSP_META}<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer">${baseStyle}<style>*,*::before,*::after{box-sizing:border-box}html,body{margin:0;padding:4px;max-width:100vw}img,table{max-width:100%!important;height:auto}canvas{max-width:100%}</style></head><body>${src}${autoScript}</body></html>`;
   }, [src]);
 
   useEffect(() => {

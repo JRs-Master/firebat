@@ -34,3 +34,33 @@ export function buildCdnTags(deps?: string[]): string {
 
 /** AI 에 노출할 사용 가능 라이브러리 키 목록 — prompt 에서 enumerate */
 export const CDN_LIBRARY_KEYS = Object.keys(CDN_LIBRARIES);
+
+/**
+ * Iframe srcdoc 안에서 동작할 CSP — defense-in-depth.
+ *
+ * sandbox="allow-scripts" 가 이미 origin 격리하지만, 추가로 script-src 를 신뢰 CDN 화이트리스트로 제한 →
+ * AI 가 hallucinate 한 외부 도메인 (예: malicious cryptominer CDN) 또는 인젝션 시도된 외부 script 차단.
+ * 'unsafe-inline' 은 CDN 라이브러리 초기화 코드 (mermaid.initialize() 등) 가 inline 으로 들어가야 하므로 허용.
+ *
+ * 화이트리스트 — 위 CDN_LIBRARIES 가 사용하는 호스트만:
+ *   - cdn.jsdelivr.net (대부분), unpkg.com (leaflet), cdnjs.cloudflare.com (예비),
+ *   - cdn.tailwindcss.com (tailwind), cdn.datatables.net (datatables css)
+ *
+ * frame-src 'none' — 중첩 iframe 차단 (clickjacking + 외부 사이트 임베딩 방지).
+ * connect-src https: — D3 fetch 등 데이터 가져오기 허용 (HTTPS 만).
+ * img-src 'self' data: https: — base64 + 외부 이미지 허용.
+ * 일반 로직 — 특정 도구·콘텐츠별 분기 X. 모든 render_html / inline html 통과.
+ */
+export const IFRAME_CSP =
+  "default-src 'none'; " +
+  "script-src 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://cdn.tailwindcss.com https://cdn.datatables.net; " +
+  "style-src 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://cdn.datatables.net https://fonts.googleapis.com; " +
+  "img-src 'self' data: blob: https:; " +
+  "font-src https: data:; " +
+  "connect-src https:; " +
+  "frame-src 'none'; " +
+  "base-uri 'none'; " +
+  "form-action 'none';";
+
+/** CSP meta tag — srcdoc head 에 prepend. */
+export const IFRAME_CSP_META = `<meta http-equiv="Content-Security-Policy" content="${IFRAME_CSP}">`;
