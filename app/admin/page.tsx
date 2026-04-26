@@ -11,6 +11,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { SystemModuleSettings } from './components/SystemModuleSettings';
 import { SecretInput } from './components/ChatWidgets';
 import { Tooltip } from './components/Tooltip';
+import { FeedbackBadge } from './components/FeedbackBadge';
 import { ActiveJobsIndicator } from './components/ActiveJobsIndicator';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
@@ -526,12 +527,7 @@ function CopyButton({ text }: { text: string }) {
           {copied ? <CheckCheck size={14} className="text-emerald-500" /> : <Copy size={14} />}
         </button>
       </Tooltip>
-      {/* PC/모바일 공통 말풍선 피드백 — 모바일 브라우저 중 자동 토스트 없는 기종도 있으므로 항상 표시. absolute 로 레이아웃 shift 없음. */}
-      {copied && (
-        <span className="absolute top-full right-0 mt-1 whitespace-nowrap text-[11px] text-emerald-600 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5 font-medium shadow-sm z-10">
-          복사됨
-        </span>
-      )}
+      <FeedbackBadge state={copied ? 'ok' : null} okLabel="복사됨" absolute />
     </div>
   );
 }
@@ -555,13 +551,8 @@ function ShareTurnButton({ messages, conversationId, title, msgId }: { messages:
     setStatus(ok ? 'done' : 'error');
     setTimeout(() => setStatus('idle'), 2200);
   }, [messages, conversationId, title, status, msgId]);
-  // 통일된 라벨 — 둘 다 "~됨" 형태 (복사됨 / 링크 복사됨)
-  const label = status === 'done' ? '링크 복사됨' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중…' : '';
-  const labelCls = status === 'error'
-    ? 'text-red-600 bg-red-50 border-red-200'
-    : status === 'sharing'
-      ? 'text-slate-500 bg-slate-50 border-slate-200'
-      : 'text-emerald-600 bg-emerald-50 border-emerald-200';
+  const badgeState: 'ok' | 'err' | 'loading' | null =
+    status === 'done' ? 'ok' : status === 'error' ? 'err' : status === 'sharing' ? 'loading' : null;
   return (
     <div className="relative inline-flex">
       <Tooltip label="이 응답 공유 (24h)">
@@ -573,12 +564,7 @@ function ShareTurnButton({ messages, conversationId, title, msgId }: { messages:
           {status === 'done' ? <CheckCheck size={14} className="text-emerald-500" /> : <Share2 size={14} />}
         </button>
       </Tooltip>
-      {/* PC/모바일 공통 — 생성+복사가 한 번에 일어나므로 상태 필수 표시. 아이콘 밑 absolute 배치. */}
-      {label && (
-        <span className={`absolute top-full right-0 mt-1 whitespace-nowrap text-[11px] rounded px-1.5 py-0.5 font-medium shadow-sm z-10 border ${labelCls}`}>
-          {label}
-        </span>
-      )}
+      <FeedbackBadge state={badgeState} okLabel="링크 복사됨" errLabel="공유 실패" loadingLabel="생성 중" absolute />
     </div>
   );
 }

@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Search, Loader2, X, Copy, Check, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Search, Loader2, X, Copy, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Tooltip } from './Tooltip';
+import { FeedbackBadge } from './FeedbackBadge';
 import { useEvents } from '../hooks/events-manager';
 
 interface MediaItem {
@@ -496,20 +497,26 @@ function MediaDetailModal({
                 </button>
               )}
               {!isError && (
-              <button
-                onClick={() => copy(url, 'url')}
-                className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-              >
-                {copiedField === 'url' ? <><Check size={12} className="text-emerald-600" /> 복사됨</> : <><Copy size={12} /> URL 복사</>}
-              </button>
+                <div className="relative">
+                  <button
+                    onClick={() => copy(url, 'url')}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+                  >
+                    <Copy size={12} /> URL 복사
+                  </button>
+                  <FeedbackBadge state={copiedField === 'url' ? 'ok' : null} okLabel="복사됨" absolute />
+                </div>
               )}
               {!isError && (
-              <button
-                onClick={() => copy(`![${item.filenameHint || ''}](${url})`, 'md')}
-                className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
-              >
-                {copiedField === 'md' ? <><Check size={12} className="text-emerald-600" /> 복사됨</> : <><Copy size={12} /> 마크다운 복사</>}
-              </button>
+                <div className="relative">
+                  <button
+                    onClick={() => copy(`![${item.filenameHint || ''}](${url})`, 'md')}
+                    className="w-full flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+                  >
+                    <Copy size={12} /> 마크다운 복사
+                  </button>
+                  <FeedbackBadge state={copiedField === 'md' ? 'ok' : null} okLabel="복사됨" absolute />
+                </div>
               )}
               <button
                 onClick={onDelete}

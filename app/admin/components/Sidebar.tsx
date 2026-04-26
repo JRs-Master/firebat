@@ -6,6 +6,7 @@ import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 import { GalleryPanel } from './GalleryPanel';
 import { Tooltip } from './Tooltip';
+import { FeedbackBadge } from './FeedbackBadge';
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { createShareLink, copyToClipboard } from '../hooks/share-helper';
 
@@ -1077,15 +1078,20 @@ function ShareConvButton({ convId, title }: { convId: string; title: string }) {
       setTimeout(() => setStatus('idle'), 2200);
     }
   };
+  const badgeState: 'ok' | 'err' | 'loading' | null =
+    status === 'done' ? 'ok' : status === 'error' ? 'err' : status === 'sharing' ? 'loading' : null;
   return (
-    <Tooltip label={status === 'done' ? '공유 링크 복사됨 (24시간 유효)' : status === 'error' ? '공유 실패' : status === 'sharing' ? '생성 중...' : '이 대화 공유 (24h)'}>
-    <button
-      onClick={handleShare}
-      disabled={status === 'sharing'}
-      className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 active:bg-blue-100 rounded transition-colors disabled:opacity-50"
-    >
-      {status === 'done' ? <CheckCheck size={11} className="text-emerald-500" /> : <Share2 size={11} />}
-    </button>
-    </Tooltip>
+    <div className="relative inline-flex">
+      <Tooltip label="이 대화 공유 (24h)">
+        <button
+          onClick={handleShare}
+          disabled={status === 'sharing'}
+          className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 active:bg-blue-100 rounded transition-colors disabled:opacity-50"
+        >
+          {status === 'done' ? <CheckCheck size={11} className="text-emerald-500" /> : <Share2 size={11} />}
+        </button>
+      </Tooltip>
+      <FeedbackBadge state={badgeState} okLabel="링크 복사됨" errLabel="공유 실패" loadingLabel="생성 중" absolute />
+    </div>
   );
 }

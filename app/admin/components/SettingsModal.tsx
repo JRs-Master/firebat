@@ -6,6 +6,7 @@ import { GEMINI_MODELS, McpServer, getThinkingKind, filterThinkingLevels } from 
 import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
 import { useSetting, writeSetting } from '../hooks/settings-manager';
 import { Tooltip } from './Tooltip';
+import { FeedbackBadge } from './FeedbackBadge';
 
 interface SystemModule { name: string; description: string; runtime: string; type?: string; enabled?: boolean; }
 
@@ -1149,12 +1150,13 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     </FieldLabel>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-slate-400">{userPrompt.length} / 2000</span>
+                      <FeedbackBadge state={userPromptSaving ? 'loading' : userPromptSaved ? 'ok' : null} okLabel="저장됨" loadingLabel="저장 중" />
                       <button
                         onClick={saveUserPrompt}
                         disabled={userPromptSaving}
                         className="px-2.5 py-1 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-300 text-white text-[11px] font-bold rounded-md transition-colors"
                       >
-                        {userPromptSaving ? '저장 중' : userPromptSaved ? '저장됨 ✓' : '저장'}
+                        저장
                       </button>
                     </div>
                   </div>
