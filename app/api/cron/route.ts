@@ -43,13 +43,16 @@ export async function PUT(req: NextRequest) {
   if (isAuthError(auth)) return auth;
   try {
     const body = await req.json();
-    const { jobId, targetPath, cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description } = body;
+    const { jobId, targetPath, cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description, oneShot, runWhen, retry, notify } = body;
     if (!jobId) {
       return NextResponse.json({ error: 'jobId 필수' }, { status: 400 });
     }
 
     const core = getCore();
-    const result = await core.updateCronJob(jobId, targetPath || '', { cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description });
+    const result = await core.updateCronJob(jobId, targetPath || '', {
+      cronTime, runAt, delaySec, startAt, endAt, inputData, pipeline, title, description, oneShot,
+      runWhen, retry, notify,
+    });
     if (!result.success) return NextResponse.json({ error: result.error }, { status: 400 });
     return NextResponse.json({ success: true });
   } catch (e: any) {

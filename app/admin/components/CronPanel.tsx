@@ -6,6 +6,16 @@ import { useSidebarRefresh } from '../hooks/events-manager';
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
 
+interface CronRunWhen {
+  check: { sysmod: string; action: string; inputData?: Record<string, unknown> };
+  field: string;
+  op: string;
+  value?: string;
+}
+interface CronRetry { count: number; delayMs?: number }
+interface CronNotifyHook { sysmod: string; chatId?: string; template?: string }
+interface CronNotify { onSuccess?: CronNotifyHook; onError?: CronNotifyHook }
+
 interface CronJob {
   jobId: string;
   targetPath: string;
@@ -17,8 +27,13 @@ interface CronJob {
   startAt?: string;
   endAt?: string;
   inputData?: any;
+  pipeline?: any[];
   createdAt: string;
   mode: string;
+  oneShot?: boolean;
+  runWhen?: CronRunWhen;
+  retry?: CronRetry;
+  notify?: CronNotify;
 }
 
 interface CronLog {
@@ -290,7 +305,25 @@ export function CronPanel() {
 
 // ── 스케줄 등록/수정 모달 ──────────────────────────────────────────────
 export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
-  job: { jobId: string; targetPath: string; title?: string; description?: string; pipeline?: any[]; pageSlugs?: string[]; cronTime?: string; runAt?: string; delaySec?: number; startAt?: string; endAt?: string; inputData?: any; mode?: string } | null;
+  job: {
+    jobId: string;
+    targetPath: string;
+    title?: string;
+    description?: string;
+    pipeline?: any[];
+    pageSlugs?: string[];
+    cronTime?: string;
+    runAt?: string;
+    delaySec?: number;
+    startAt?: string;
+    endAt?: string;
+    inputData?: any;
+    mode?: string;
+    oneShot?: boolean;
+    runWhen?: CronRunWhen;
+    retry?: CronRetry;
+    notify?: CronNotify;
+  } | null;
   onClose: () => void;
   onSaved: () => void;
   onDelete?: () => void;
@@ -319,6 +352,17 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
   const [permanent, setPermanent] = useState(!job?.endAt);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  // ── 표준 메커니즘: runWhen / retry / notify (JSON 직접 편집) ──
+  // job 의 기존 값을 JSON 문자열로 직렬화 → textarea 에 표시. 빈 객체면 "" 로 표기.
+  const stringifyOrEmpty = (v: unknown): string => v ? JSON.stringify(v, null, 2) : '';
+  const [oneShot, setOneShot] = useState<boolean>(!!job?.oneShot);
+  const [runWhenText, setRunWhenText] = useState<string>(stringifyOrEmpty(job?.runWhen));
+  const [retryText, setRetryText] = useState<string>(stringifyOrEmpty(job?.retry));
+  const [notifyText, setNotifyText] = useState<string>(stringifyOrEmpty(job?.notify));
+  const [showAdvanced, setShowAdvanced] = useState<boolean>(
+    !!(job?.runWhen || job?.retry || job?.notify || job?.oneShot)
+  );
 
   const toggleDow = (d: number) => {
     setFreqDows(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d].sort());
@@ -350,6 +394,14 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
     return expr;
   };
 
+  // 비어있으면 undefined, 비어있지 않으면 JSON.parse — 실패 시 throw (에러 메시지에 어느 필드인지 명시)
+  const parseOrUndef = (raw: string, label: string): unknown => {
+    const t = raw.trim();
+    if (!t) return undefined;
+    try { return JSON.parse(t); }
+    catch (e: any) { throw new Error(`${label} JSON 파싱 실패: ${e.message}`); }
+  };
+
   const handleSave = async () => {
     if (!jobId) { setError('잡 ID가 없습니다.'); return; }
     setSaving(true);
@@ -364,6 +416,15 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
       if (job?.inputData !== undefined) body.inputData = job.inputData;
       if (job?.title) body.title = job.title;
       if (job?.description) body.description = job.description;
+
+      // 표준 메커니즘 — 비어있으면 명시적으로 null 보내서 기존 값 제거
+      body.oneShot = oneShot || undefined;
+      const runWhenParsed = parseOrUndef(runWhenText, 'runWhen');
+      const retryParsed = parseOrUndef(retryText, 'retry');
+      const notifyParsed = parseOrUndef(notifyText, 'notify');
+      body.runWhen = runWhenParsed;
+      body.retry = retryParsed;
+      body.notify = notifyParsed;
 
       const res = await fetch('/api/cron', {
         method: 'PUT',
@@ -531,6 +592,66 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
               </pre>
             </div>
           )}
+
+          {/* 표준 메커니즘 (runWhen / retry / notify / oneShot) */}
+          <div className="pt-1">
+            <button
+              onClick={() => setShowAdvanced(v => !v)}
+              className="flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700 transition-colors"
+              type="button"
+            >
+              {showAdvanced ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              고급 옵션 (runWhen · retry · notify · oneShot)
+            </button>
+
+            {showAdvanced && (
+              <div className="mt-2 space-y-3 pl-3 border-l-2 border-slate-100">
+                {/* oneShot */}
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={oneShot} onChange={e => setOneShot(e.target.checked)}
+                    className="w-3.5 h-3.5 rounded border-slate-300" />
+                  <span className="text-[11px] text-slate-600">oneShot — 첫 성공 시 자동 취소</span>
+                </label>
+
+                {/* runWhen */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-semibold text-slate-500">runWhen <span className="text-slate-400 font-normal">— 발화 전 조건 체크 (휴장·가드)</span></label>
+                    {runWhenText && <button onClick={() => setRunWhenText('')} type="button" className="text-[10px] text-slate-400 hover:text-red-500 transition-colors">제거</button>}
+                  </div>
+                  <textarea value={runWhenText} onChange={e => setRunWhenText(e.target.value)}
+                    placeholder={'{\n  "check": { "sysmod": "korea-invest", "action": "is-business-day" },\n  "field": "$prev.isBusinessDay",\n  "op": "==",\n  "value": "true"\n}'}
+                    rows={5}
+                    className="w-full px-3 py-2 text-[11px] font-mono border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y" />
+                </div>
+
+                {/* retry */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-semibold text-slate-500">retry <span className="text-slate-400 font-normal">— 멱등 도구만 (매수 등 부작용 도구는 금지)</span></label>
+                    {retryText && <button onClick={() => setRetryText('')} type="button" className="text-[10px] text-slate-400 hover:text-red-500 transition-colors">제거</button>}
+                  </div>
+                  <textarea value={retryText} onChange={e => setRetryText(e.target.value)}
+                    placeholder={'{ "count": 3, "delayMs": 30000 }'}
+                    rows={2}
+                    className="w-full px-3 py-2 text-[11px] font-mono border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y" />
+                </div>
+
+                {/* notify */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-semibold text-slate-500">notify <span className="text-slate-400 font-normal">— 결과 알림 hook (pipeline 외부 처리)</span></label>
+                    {notifyText && <button onClick={() => setNotifyText('')} type="button" className="text-[10px] text-slate-400 hover:text-red-500 transition-colors">제거</button>}
+                  </div>
+                  <textarea value={notifyText} onChange={e => setNotifyText(e.target.value)}
+                    placeholder={'{\n  "onSuccess": { "sysmod": "telegram", "template": "✓ {title} 완료" },\n  "onError": { "sysmod": "telegram", "template": "❌ {title} 실패: {error}" }\n}'}
+                    rows={6}
+                    className="w-full px-3 py-2 text-[11px] font-mono border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y" />
+                  <p className="text-[10px] text-slate-400 mt-1">placeholder: {'{title} {jobId} {error} {durationMs} {output}'}</p>
+                </div>
+              </div>
+            )}
+          </div>
 
           {error && <p className="text-[11px] text-red-500 font-medium">{error}</p>}
         </div>
