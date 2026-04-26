@@ -13,7 +13,7 @@
  *   - SSE 만으로 list 유지. 페이지 reload 직후 진행 중이던 작업이 다음 update 이벤트 시
  *     자동으로 list 에 등장 (별도 API 조회 불필요)
  */
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { Activity, X } from 'lucide-react';
 import { useEvents } from '../hooks/events-manager';
 
@@ -32,46 +32,11 @@ interface JobStatus {
   meta?: Record<string, unknown>;
 }
 
-// 종료 작업 자동 제거까지 시간. dropdown 닫혀있을 때만 카운트. 열려있으면 사용자 인지 중이라 유지.
-const FINISHED_RETENTION_MS = 60_000;
+const FINISHED_RETENTION_MS = 5_000;
 
 export function ActiveJobsIndicator() {
   const [jobs, setJobs] = useState<Map<string, JobStatus>>(new Map());
   const [open, setOpen] = useState(false);
-  const openRef = useRef(open);
-  openRef.current = open;
-  // 종료 작업별 cleanup timer ID — open=false 일 때만 동작. open=true 면 cancel 후 close 시 재예약.
-  const cleanupTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-
-  const scheduleCleanup = (jobId: string) => {
-    const existing = cleanupTimers.current.get(jobId);
-    if (existing) clearTimeout(existing);
-    if (openRef.current) return; // dropdown 열려있으면 보류
-    const t = setTimeout(() => {
-      cleanupTimers.current.delete(jobId);
-      setJobs(prev => {
-        const next = new Map(prev);
-        next.delete(jobId);
-        return next;
-      });
-    }, FINISHED_RETENTION_MS);
-    cleanupTimers.current.set(jobId, t);
-  };
-
-  // dropdown 열림→닫힘 시 종료 작업들에 cleanup 일괄 재예약
-  useEffect(() => {
-    if (open) {
-      // 열림: 진행 중인 cleanup timer 모두 cancel
-      for (const t of cleanupTimers.current.values()) clearTimeout(t);
-      cleanupTimers.current.clear();
-    } else {
-      // 닫힘: 모든 종료 작업에 새 cleanup 예약
-      for (const j of jobs.values()) {
-        if (j.status === 'done' || j.status === 'error') scheduleCleanup(j.id);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
 
   useEvents(['status:update'], (ev) => {
     const payload = ev.data as { job: JobStatus; change: string } | undefined;
@@ -82,8 +47,15 @@ export function ActiveJobsIndicator() {
       next.set(job.id, job);
       return next;
     });
+    // 종료 작업은 retention 후 자동 제거
     if (change === 'completed' || change === 'failed') {
-      scheduleCleanup(job.id);
+      setTimeout(() => {
+        setJobs(prev => {
+          const next = new Map(prev);
+          next.delete(job.id);
+          return next;
+        });
+      }, FINISHED_RETENTION_MS);
     }
   });
 
