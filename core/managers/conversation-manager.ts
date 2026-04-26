@@ -9,6 +9,7 @@
 import type { IDatabasePort, IEmbedderPort } from '../ports';
 import type { InfraResult } from '../types';
 import crypto from 'crypto';
+import { unionMergeMessages } from '../utils/message-merge';
 
 export interface ConversationSummary {
   id: string;
@@ -157,43 +158,10 @@ export class ConversationManager {
     return { success: true };
   }
 
-  /**
-   * 메시지 ID 기준 union merge — 동일 id 는 incoming 우선.
-   * merge 후 id 의 timestamp 로 시간순 정렬 — 다기기 out-of-order 저장 시 순서 꼬임 방지.
-   * (id 형식: "u-${Date.now()}" / "s-${Date.now()}" / "system-init" 등)
-   */
+  /** 메시지 ID 기준 union merge — `core/utils/message-merge.ts` 의 단일 source 호출.
+   *  pure 함수 추출 — 향후 다기기 동기화 다른 위치에서도 재사용 가능. */
   private unionMergeMessages(existing: unknown[], incoming: unknown[]): unknown[] {
-    const getId = (m: unknown): string | null => {
-      if (!m || typeof m !== 'object') return null;
-      const id = (m as Record<string, unknown>).id;
-      return typeof id === 'string' && id ? id : null;
-    };
-    // id 의 숫자 부분 (timestamp) 추출 — "u-1776559416890" → 1776559416890
-    const getTs = (id: string | null): number => {
-      if (!id) return 0;
-      const m = id.match(/(\d{10,})/);
-      return m ? parseInt(m[1], 10) : 0;
-    };
-    // 모든 메시지 union (같은 id 면 incoming 우선)
-    const byId = new Map<string, unknown>();
-    const noIdMsgs: unknown[] = [];
-    for (const m of existing) {
-      const mid = getId(m);
-      if (mid) byId.set(mid, m);
-      else noIdMsgs.push(m);
-    }
-    for (const m of incoming) {
-      const mid = getId(m);
-      if (mid) byId.set(mid, m);
-      else if (!noIdMsgs.includes(m)) noIdMsgs.push(m);
-    }
-    // timestamp 순으로 정렬 (id 에 ts 없으면 맨 앞/뒤 배치)
-    const withId = Array.from(byId.entries())
-      .map(([id, msg]) => ({ id, msg, ts: getTs(id) }))
-      .sort((a, b) => a.ts - b.ts)
-      .map(x => x.msg);
-    // id 없는 메시지는 그대로 뒤에 (순서 불확실하지만 보존)
-    return [...withId, ...noIdMsgs];
+    return unionMergeMessages(existing, incoming);
   }
 
   async delete(owner: string, id: string): Promise<InfraResult<void>> {

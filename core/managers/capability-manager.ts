@@ -57,7 +57,9 @@ export class CapabilityManager {
               this.log.warn(`[Capability] 미등록 capability 자동 등록: ${capId}`);
             }
           }
-        } catch {}
+        } catch (e) {
+          this.log.debug(`[Capability] config 파싱 실패 (silent): ${loc}/${entry.name} — ${e instanceof Error ? e.message : String(e)}`);
+        }
       }
     }
 
@@ -79,7 +81,9 @@ export class CapabilityManager {
           if (mod.capability && !BUILTIN_CAPABILITIES[mod.capability] && !this.dynamicCapabilities[mod.capability]) {
             this.dynamicCapabilities[mod.capability] = { label: mod.capability, description: mod.description || '' };
           }
-        } catch {}
+        } catch (e) {
+          this.log.debug(`[Capability] listWithProviders config 파싱 실패 (silent): ${loc}/${entry.name} — ${e instanceof Error ? e.message : String(e)}`);
+        }
       }
     }
 

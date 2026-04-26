@@ -2,6 +2,7 @@ import type { FirebatCore } from '../index';
 import type { ICronPort, ILogPort, CronScheduleOptions, CronTriggerInfo, CronJobResult, CronRunWhen, CronNotify } from '../ports';
 import type { InfraResult } from '../types';
 import { resolveFieldPath } from '../utils/path-resolve';
+import { evaluateCondition } from '../utils/condition';
 // SSE emit 은 Core 가 담당 — Manager 는 더 이상 eventBus import 불필요
 
 /**
@@ -207,7 +208,7 @@ export class ScheduleManager {
       // field 경로 평가 — '$result.foo' 또는 'foo' 모두 지원, array index OK ($prev.output[0].opnd_yn)
       const fieldPath = runWhen.field.replace(/^\$result\./, '').replace(/^\$prev\./, '');
       const actualValue = resolveFieldPath(result, fieldPath);
-      const met = this.evalCondition(actualValue, runWhen.op, runWhen.value);
+      const met = evaluateCondition(actualValue, runWhen.op, runWhen.value);
       const reason = `${runWhen.field} ${runWhen.op} ${runWhen.value ?? ''} → 실제=${JSON.stringify(actualValue)} = ${met}`;
       return { met, reason };
     } catch (e: any) {
@@ -239,28 +240,6 @@ export class ScheduleManager {
     const inputData: Record<string, unknown> = { action: 'send-message', text };
     if (cfg.chatId) inputData.chatId = cfg.chatId;
     await this.core.sandboxExecute(path, inputData);
-  }
-
-  /** condition 평가 — TaskManager.evaluateCondition 과 같은 동작 (재사용 어려워 inline) */
-  private evalCondition(actual: unknown, op: string, expected?: string): boolean {
-    if (op === 'exists') return actual !== undefined && actual !== null;
-    if (op === 'not_exists') return actual === undefined || actual === null;
-    const aStr = String(actual ?? '');
-    const eStr = String(expected ?? '');
-    const aNum = Number(aStr);
-    const eNum = Number(eStr);
-    const bothNum = !isNaN(aNum) && !isNaN(eNum);
-    switch (op) {
-      case '==': return aStr === eStr || (bothNum && aNum === eNum);
-      case '!=': return aStr !== eStr && !(bothNum && aNum === eNum);
-      case '<':  return bothNum ? aNum <  eNum : aStr <  eStr;
-      case '<=': return bothNum ? aNum <= eNum : aStr <= eStr;
-      case '>':  return bothNum ? aNum >  eNum : aStr >  eStr;
-      case '>=': return bothNum ? aNum >= eNum : aStr >= eStr;
-      case 'includes':     return aStr.includes(eStr);
-      case 'not_includes': return !aStr.includes(eStr);
-      default: return false;
-    }
   }
 
   /** 마지막 step 결과를 의미있는 output 요약으로 변환.

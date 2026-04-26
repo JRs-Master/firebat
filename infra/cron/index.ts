@@ -36,11 +36,16 @@ interface CronJobRecord {
 
 import { CRON_JOBS_FILE, CRON_LOGS_FILE, CRON_NOTIFY_FILE, CRON_MAX_LOGS, CRON_DEFAULT_TIMEZONE, CRON_RECENT_NOTIFY_MS } from '../config';
 
-const JOBS_FILE = CRON_JOBS_FILE;
-const LOGS_FILE = CRON_LOGS_FILE;
-const NOTIFY_FILE = CRON_NOTIFY_FILE;
 const MAX_LOGS = CRON_MAX_LOGS;
 const DEFAULT_TIMEZONE = CRON_DEFAULT_TIMEZONE;
+
+/** 옵션 — 테스트 격리·다중 인스턴스 시 파일 경로 override.
+ *  미지정 시 infra/config 의 기본 경로 (data/cron-*.json) 사용. */
+export interface NodeCronAdapterOptions {
+  jobsFile?: string;
+  logsFile?: string;
+  notifyFile?: string;
+}
 
 export class NodeCronAdapter implements ICronPort {
   private cronTasks: Map<string, ScheduledTask> = new Map();
@@ -49,8 +54,15 @@ export class NodeCronAdapter implements ICronPort {
   private log?: ILogPort;
   private timezone: string = DEFAULT_TIMEZONE;
   private triggerCallback?: (info: CronTriggerInfo) => Promise<CronJobResult>;
+  private readonly jobsFile: string;
+  private readonly logsFile: string;
+  private readonly notifyFile: string;
 
-  constructor() {}
+  constructor(opts?: NodeCronAdapterOptions) {
+    this.jobsFile = opts?.jobsFile ?? CRON_JOBS_FILE;
+    this.logsFile = opts?.logsFile ?? CRON_LOGS_FILE;
+    this.notifyFile = opts?.notifyFile ?? CRON_NOTIFY_FILE;
+  }
 
   /** 타임존 설정 (IANA 형식: Asia/Seoul, America/New_York 등) */
   setTimezone(tz: string) { this.timezone = tz; }
@@ -94,11 +106,13 @@ export class NodeCronAdapter implements ICronPort {
   restore(): void {
     // 부팅 시 쌓인 알림 초기화 (재시작 후 옛 알림이 한꺼번에 뜨는 것 방지)
     try {
-      if (fs.existsSync(NOTIFY_FILE)) fs.writeFileSync(NOTIFY_FILE, '[]');
-    } catch {}
+      if (fs.existsSync(this.notifyFile)) fs.writeFileSync(this.notifyFile, '[]');
+    } catch (e: any) {
+      this.log?.debug(`[Cron] notify 초기화 실패 (silent): ${e?.message ?? String(e)}`);
+    }
     try {
-      if (!fs.existsSync(JOBS_FILE)) return;
-      const raw = fs.readFileSync(JOBS_FILE, 'utf-8');
+      if (!fs.existsSync(this.jobsFile)) return;
+      const raw = fs.readFileSync(this.jobsFile, 'utf-8');
       const jobs: CronJobRecord[] = JSON.parse(raw);
       let restored = 0;
       const now = Date.now();
@@ -199,11 +213,13 @@ export class NodeCronAdapter implements ICronPort {
     // 메모리 비어있으면 파일 폴백 (Next.js multi-isolate 안전망)
     if (!record) {
       try {
-        if (fs.existsSync(JOBS_FILE)) {
-          const jobs: CronJobRecord[] = JSON.parse(fs.readFileSync(JOBS_FILE, 'utf-8'));
+        if (fs.existsSync(this.jobsFile)) {
+          const jobs: CronJobRecord[] = JSON.parse(fs.readFileSync(this.jobsFile, 'utf-8'));
           record = jobs.find(j => j.jobId === jobId);
         }
-      } catch {}
+      } catch (e: any) {
+        this.log?.debug(`[Cron] triggerNow 파일 폴백 실패 (silent): ${e?.message ?? String(e)}`);
+      }
     }
     if (!record) return { success: false, error: `잡을 찾을 수 없음: ${jobId}` };
     // fire-and-forget — fireTrigger 안에서 cron-logs 기록 + triggerCallback 호출
@@ -254,8 +270,8 @@ export class NodeCronAdapter implements ICronPort {
     }
     // 3차: 파일 폴백 — self-heal 도 실패한 경우 (파일 없음·파싱 실패 등) 또는 cron tasks 는 살아있는데 records 만 비정상.
     try {
-      if (!fs.existsSync(JOBS_FILE)) return [];
-      const raw = fs.readFileSync(JOBS_FILE, 'utf-8');
+      if (!fs.existsSync(this.jobsFile)) return [];
+      const raw = fs.readFileSync(this.jobsFile, 'utf-8');
       const jobs: CronJobRecord[] = JSON.parse(raw);
       this.log?.warn(`[Cron] list() 파일 폴백 (${jobs.length}개) — self-heal 미작동, root cause 추적 필요`);
       return this.toListEntries(jobs);
@@ -291,22 +307,22 @@ export class NodeCronAdapter implements ICronPort {
 
   getLogs(limit: number = 50): CronLogEntry[] {
     try {
-      if (!fs.existsSync(LOGS_FILE)) {
-        this.log?.warn(`[Cron] getLogs: LOGS_FILE 없음 (${LOGS_FILE})`);
+      if (!fs.existsSync(this.logsFile)) {
+        this.log?.warn(`[Cron] getLogs: this.logsFile 없음 (${this.logsFile})`);
         return [];
       }
-      const raw = fs.readFileSync(LOGS_FILE, 'utf-8');
+      const raw = fs.readFileSync(this.logsFile, 'utf-8');
       const logs: CronLogEntry[] = JSON.parse(raw);
       return logs.slice(-limit);
     } catch (e: any) {
-      this.log?.error(`[Cron] getLogs 실패: ${e.message} (path=${LOGS_FILE})`);
+      this.log?.error(`[Cron] getLogs 실패: ${e.message} (path=${this.logsFile})`);
       return [];
     }
   }
 
   clearLogs(): void {
     try {
-      if (fs.existsSync(LOGS_FILE)) fs.writeFileSync(LOGS_FILE, '[]');
+      if (fs.existsSync(this.logsFile)) fs.writeFileSync(this.logsFile, '[]');
     } catch {}
   }
 
@@ -414,11 +430,11 @@ export class NodeCronAdapter implements ICronPort {
 
   private persist(): void {
     try {
-      const dir = path.dirname(JOBS_FILE);
+      const dir = path.dirname(this.jobsFile);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       // delay 모드는 저장하지 않음
       const saveable = Array.from(this.records.values()).filter(r => r.mode !== 'delay');
-      fs.writeFileSync(JOBS_FILE, JSON.stringify(saveable, null, 2));
+      fs.writeFileSync(this.jobsFile, JSON.stringify(saveable, null, 2));
     } catch (e: any) {
       this.log?.error(`[Cron] 잡 저장 실패: ${e.message}`);
     }
@@ -427,24 +443,24 @@ export class NodeCronAdapter implements ICronPort {
   /** 특정 잡의 알림 제거 (잡 해제 시) */
   private clearNotificationsFor(jobId: string): void {
     try {
-      if (!fs.existsSync(NOTIFY_FILE)) return;
-      const items = JSON.parse(fs.readFileSync(NOTIFY_FILE, 'utf-8'));
+      if (!fs.existsSync(this.notifyFile)) return;
+      const items = JSON.parse(fs.readFileSync(this.notifyFile, 'utf-8'));
       const filtered = (items as Array<{ jobId: string }>).filter(n => n.jobId !== jobId);
-      fs.writeFileSync(NOTIFY_FILE, JSON.stringify(filtered, null, 2));
+      fs.writeFileSync(this.notifyFile, JSON.stringify(filtered, null, 2));
     } catch {}
   }
 
   /** 알림 조회 후 파일 비우기 (클라이언트가 폴링) */
   consumeNotifications(): { jobId: string; url: string; triggeredAt: string }[] {
     try {
-      if (!fs.existsSync(NOTIFY_FILE)) return [];
-      const raw = fs.readFileSync(NOTIFY_FILE, 'utf-8');
+      if (!fs.existsSync(this.notifyFile)) return [];
+      const raw = fs.readFileSync(this.notifyFile, 'utf-8');
       const items = JSON.parse(raw);
       if (items.length === 0) return [];
       // 30초 이상 된 알림은 버림 (서버 재시작 시 쌓인 알림 방지)
       const now = Date.now();
       const fresh = (items as Array<{ jobId: string; url: string; triggeredAt: string }>).filter(n => now - new Date(n.triggeredAt).getTime() < CRON_RECENT_NOTIFY_MS);
-      fs.writeFileSync(NOTIFY_FILE, '[]');
+      fs.writeFileSync(this.notifyFile, '[]');
       return fresh;
     } catch { return []; }
   }
@@ -452,13 +468,13 @@ export class NodeCronAdapter implements ICronPort {
   appendNotify(entry: { jobId: string; url: string; triggeredAt: string }): void {
     try {
       let items: Array<{ jobId: string; url: string; triggeredAt: string }> = [];
-      if (fs.existsSync(NOTIFY_FILE)) {
-        items = JSON.parse(fs.readFileSync(NOTIFY_FILE, 'utf-8'));
+      if (fs.existsSync(this.notifyFile)) {
+        items = JSON.parse(fs.readFileSync(this.notifyFile, 'utf-8'));
       }
       items.push(entry);
-      const dir = path.dirname(NOTIFY_FILE);
+      const dir = path.dirname(this.notifyFile);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(NOTIFY_FILE, JSON.stringify(items, null, 2));
+      fs.writeFileSync(this.notifyFile, JSON.stringify(items, null, 2));
     } catch (e: any) {
       this.log?.error(`[Cron] 알림 저장 실패: ${e.message}`);
     }
@@ -467,12 +483,12 @@ export class NodeCronAdapter implements ICronPort {
   private appendLog(entry: CronLogEntry): void {
     try {
       let logs: CronLogEntry[] = [];
-      if (fs.existsSync(LOGS_FILE)) {
-        logs = JSON.parse(fs.readFileSync(LOGS_FILE, 'utf-8'));
+      if (fs.existsSync(this.logsFile)) {
+        logs = JSON.parse(fs.readFileSync(this.logsFile, 'utf-8'));
       }
       logs.push(entry);
       if (logs.length > MAX_LOGS) logs = logs.slice(-MAX_LOGS);
-      fs.writeFileSync(LOGS_FILE, JSON.stringify(logs, null, 2));
+      fs.writeFileSync(this.logsFile, JSON.stringify(logs, null, 2));
     } catch (e: any) {
       this.log?.error(`[Cron] 로그 저장 실패: ${e.message}`);
     }

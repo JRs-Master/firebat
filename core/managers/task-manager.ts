@@ -1,6 +1,7 @@
 import type { FirebatCore } from '../index';
 import type { ILlmPort, ILogPort, PipelineStep } from '../ports';
 import { resolveFieldPath } from '../utils/path-resolve';
+import { evaluateCondition as evaluateConditionUtil } from '../utils/condition';
 
 /**
  * Task Manager — 파이프라인 실행 엔진
@@ -333,26 +334,10 @@ export class TaskManager {
     return { success: true, data: prev };
   }
 
-  /** CONDITION 비교 연산 수행 */
+  /** CONDITION 비교 — `core/utils/condition.ts` 의 단일 source 호출.
+   *  schedule-manager.ts 도 동일 헬퍼 사용 (이전엔 inline 중복 구현이라 미묘한 동작 차이 있었음). */
   private evaluateCondition(actual: unknown, op: string, expected?: unknown): boolean {
-    // 숫자 비교 가능하면 숫자로 변환
-    const numActual = Number(actual);
-    const numExpected = Number(expected);
-    const bothNumeric = !isNaN(numActual) && !isNaN(numExpected) && actual !== '' && actual !== null;
-
-    switch (op) {
-      case '==':  return bothNumeric ? numActual === numExpected : String(actual) === String(expected);
-      case '!=':  return bothNumeric ? numActual !== numExpected : String(actual) !== String(expected);
-      case '<':   return bothNumeric ? numActual < numExpected : false;
-      case '<=':  return bothNumeric ? numActual <= numExpected : false;
-      case '>':   return bothNumeric ? numActual > numExpected : false;
-      case '>=':  return bothNumeric ? numActual >= numExpected : false;
-      case 'includes':     return String(actual).includes(String(expected));
-      case 'not_includes': return !String(actual).includes(String(expected));
-      case 'exists':       return actual !== undefined && actual !== null && actual !== '';
-      case 'not_exists':   return actual === undefined || actual === null || actual === '';
-      default: return false;
-    }
+    return evaluateConditionUtil(actual, op, expected);
   }
 
   /** Capability 설정 순서에 따라 preferred provider 경로로 교체 (실행 전) */
