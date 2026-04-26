@@ -34,6 +34,9 @@ interface JobStatus {
 }
 
 const FINISHED_RETENTION_MS = 5_000;
+// running 상태에서 update 이벤트 5분 이상 안 오면 stale 로 간주 — SSE drop (모바일 백그라운드)
+// 시 'completed' 이벤트 놓쳐서 영구 running 으로 박히는 현상 방어. 로봇 사라짐 방지의 enforceInvariant 와 동일 컨셉.
+const STALE_RUNNING_MS = 5 * 60_000;
 
 export function ActiveJobsIndicator() {
   const [jobs, setJobs] = useState<Map<string, JobStatus>>(new Map());
@@ -63,6 +66,32 @@ export function ActiveJobsIndicator() {
       window.removeEventListener('scroll', update, true);
     };
   }, [open]);
+
+  // stale running 잡 청소 — visibilitychange visible 복귀 + 30초 주기 검사.
+  // SSE drop (모바일 백그라운드·네트워크 끊김) 시 'completed' 못 받아서 running 박제 방지.
+  useEffect(() => {
+    const sweep = () => {
+      const now = Date.now();
+      setJobs(prev => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const [id, j] of next) {
+          if ((j.status === 'running' || j.status === 'queued') && (now - j.updatedAt) > STALE_RUNNING_MS) {
+            next.delete(id);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    };
+    const onVisibility = () => { if (document.visibilityState === 'visible') sweep(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    const interval = setInterval(sweep, 30_000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      clearInterval(interval);
+    };
+  }, []);
 
   useEvents(['status:update'], (ev) => {
     const payload = ev.data as { job: JobStatus; change: string } | undefined;
