@@ -597,6 +597,8 @@ export interface ICronPort {
   schedule(jobId: string, targetPath: string, opts: CronScheduleOptions): Promise<InfraResult<void>>;
   /** 스케줄링 해제 */
   cancel(jobId: string): Promise<InfraResult<void>>;
+  /** 기존 잡을 즉시 1회 발화 (스케줄링 변경 X). 정상 cron 발화와 동일 fireTrigger 경유 → cron-logs 기록 보장. */
+  triggerNow(jobId: string): Promise<InfraResult<void>>;
   /** 등록된 잡 목록 조회 */
   list(): CronJobInfo[];
   /** 타임존 설정 */

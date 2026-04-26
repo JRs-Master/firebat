@@ -193,6 +193,26 @@ export class NodeCronAdapter implements ICronPort {
     }
   }
 
+  /** 잡 즉시 발화 — 기존 record 로 fireTrigger 호출. cron-logs 기록 보장. */
+  async triggerNow(jobId: string): Promise<InfraResult<void>> {
+    let record = this.records.get(jobId);
+    // 메모리 비어있으면 파일 폴백 (Next.js multi-isolate 안전망)
+    if (!record) {
+      try {
+        if (fs.existsSync(JOBS_FILE)) {
+          const jobs: CronJobRecord[] = JSON.parse(fs.readFileSync(JOBS_FILE, 'utf-8'));
+          record = jobs.find(j => j.jobId === jobId);
+        }
+      } catch {}
+    }
+    if (!record) return { success: false, error: `잡을 찾을 수 없음: ${jobId}` };
+    // fire-and-forget — fireTrigger 안에서 cron-logs 기록 + triggerCallback 호출
+    this.fireTrigger(record, 'DELAYED_RUN').catch((e: any) => {
+      this.log?.error(`[Cron] triggerNow 실행 실패: ${jobId} — ${e.message}`);
+    });
+    return { success: true };
+  }
+
   async cancel(jobId: string): Promise<InfraResult<void>> {
     try {
       const task = this.cronTasks.get(jobId);
