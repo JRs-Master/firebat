@@ -2,6 +2,7 @@ import type { FirebatCore, AiRequestOpts } from '../index';
 import type { ILlmPort, ILogPort, LlmCallOpts, LlmChunk, ChatMessage, ToolDefinition, JsonSchema, ToolResult, ToolExchangeEntry, IDatabasePort, ToolRouterFactory } from '../ports';
 import { CoreResult, type InfraResult } from '../types';
 import { sanitizeBlock, sanitizeReply, isValidBlock, extractMarkdownStructure } from '../utils/sanitize';
+import { turnContext } from '../utils/turn-context';
 import { RENDER_TOOL_MAP } from '../../lib/render-map';
 import { trimToolResult, slimResultForLLM } from './ai/result-processor';
 import { HistoryResolver } from './ai/history-resolver';
@@ -48,8 +49,7 @@ export class AiManager {
   /** 도구 정의 캐시 (60초 TTL) */
   private _toolsCache: { tools: ToolDefinition[]; ts: number } | null = null;
   private static readonly TOOLS_CACHE_TTL = 60_000;
-  /** 현재 turn 의 직전 user 쿼리 — search_history 쿼리 맥락 보강용 */
-  private _currentTurnPrevUserQuery = '';
+  // 직전 user 쿼리는 turnContext (AsyncLocalStorage) 로 turn-scope 전파 — 동시 요청 race 방어.
 
   /** 내부 collaborator — AI 도메인 분리 (ResultProcessor / HistoryResolver / PromptBuilder / ToolRouter / ToolDispatcher / ...) */
   private readonly history: HistoryResolver;
@@ -349,7 +349,7 @@ export class AiManager {
         const owner = ctx.owner ?? 'admin';
         const topK = typeof limit === 'number' ? limit : 5;
 
-        const prev = this._currentTurnPrevUserQuery;
+        const prev = turnContext.getStore()?.prevUserQuery ?? '';
         let enrichedQuery = prev && prev !== query ? `${query} ${prev}`.slice(0, 500) : query;
         if (this.toolRouter.isEnabled()) {
           try {
@@ -484,8 +484,14 @@ export class AiManager {
     onToolCall?: (info: { name: string; status: 'start' | 'done' | 'error'; error?: string }) => void,
     onChunk?: (chunk: LlmChunk) => void,
   ): Promise<CoreResult> {
+    // turn-scope context 셋업 — instance variable 대신 AsyncLocalStorage 로 전파.
+    // 동시 요청 race 방어: 한 turn 의 prevUserQuery 가 다른 turn 의 tool handler 에 누설 X.
+    const _prevUserMsg = history.filter(h => h.role === 'user').slice(-1)[0];
+    const _prevUserQuery = (_prevUserMsg?.content || '').trim();
+    const _corrId = Math.random().toString(36).slice(2, 10);
+    return turnContext.run({ prevUserQuery: _prevUserQuery, corrId: _corrId }, async () => {
     const thinkingLevel = this.core.getAiThinkingLevel();
-    const corrId = Math.random().toString(36).slice(2, 10);
+    const corrId = _corrId;
     const startTime = Date.now();
 
     // 도구 흐름: text chunk는 필터링 (깜빡임 방지), thinking chunk만 프론트에 전달.
@@ -528,9 +534,7 @@ export class AiManager {
       prompt,
       { owner: opts?.owner, currentConvId: opts?.conversationId },
     );
-    // search_history 맥락 보강용 — 직전 user 발화 저장 (compressHistoryWithSearch 가 비워도 history 에서 직접 추출)
-    const prevUserMsg = history.filter(h => h.role === 'user').slice(-1)[0];
-    this._currentTurnPrevUserQuery = (prevUserMsg?.content || '').trim();
+    // search_history 맥락 보강용 — 직전 user 발화는 turnContext (AsyncLocalStorage) 로 전파됨 (함수 시작 시 셋업).
     const currentModel = opts?.model ?? this.llm.getModelId();
     const systemPrompt = await this.promptBuilder.build(currentModel, opts?.cronAgent ? { cronAgent: opts.cronAgent } : undefined);
 
@@ -693,8 +697,8 @@ export class AiManager {
     const tools = selectResult.tools;
 
     // 라우터가 이전 턴 맥락 필요하다고 판정 → recent user 1턴 포함
-    const recentHistory: ChatMessage[] = selectResult.needsPreviousContext && prevUserMsg
-      ? [prevUserMsg]
+    const recentHistory: ChatMessage[] = selectResult.needsPreviousContext && _prevUserMsg
+      ? [_prevUserMsg]
       : baseRecentHistory;
 
     // AI Assistant ON + needs_previous_context=true → 자동으로 search_history 실행해 결과 prepend
@@ -704,7 +708,7 @@ export class AiManager {
       try {
         const owner = opts?.owner ?? 'admin';
         const router = this.toolRouter.getRouter();
-        const rewritten = await router.generateSearchQuery(prompt, this._currentTurnPrevUserQuery);
+        const rewritten = await router.generateSearchQuery(prompt, turnContext.getStore()?.prevUserQuery ?? '');
         const enrichedQuery = rewritten.query;
         const res = await this.core.searchConversationHistory(owner, enrichedQuery, {
           currentConvId: opts.conversationId,
@@ -1127,6 +1131,7 @@ export class AiManager {
           }
         : undefined,
     };
+    }); // turnContext.run end
   }
 
   /**
