@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { alertDialog } from '../admin/components/Dialog';
 
 export default function Login() {
   const [id, setId] = useState('');
@@ -8,7 +9,8 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, password }) });
-    if (res.ok) { window.location.href = '/admin'; } else { alert('Invalid credentials'); }
+    if (res.ok) { window.location.href = '/admin'; }
+    else { await alertDialog({ title: 'Login failed', message: 'Invalid credentials', danger: true }); }
   };
 
   return (

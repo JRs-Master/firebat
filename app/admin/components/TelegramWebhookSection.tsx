@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { FeedbackBadge } from './FeedbackBadge';
+import { confirmDialog } from './Dialog';
 
 /**
  * 텔레그램 양방향 봇 webhook 등록 섹션 — SystemModuleSettings 의 telegram 모듈 페이지에서만 노출.
@@ -74,7 +75,7 @@ export function TelegramWebhookSection() {
   };
 
   const handleRemove = async () => {
-    if (!confirm('웹훅을 해제하시겠습니까? 텔레그램 명령 수신이 중단됩니다.')) return;
+    if (!await confirmDialog({ title: '웹훅 해제', message: '웹훅을 해제하시겠습니까? 텔레그램 명령 수신이 중단됩니다.', danger: true, okLabel: '해제' })) return;
     setBusy(true);
     setMessage(null);
     try {

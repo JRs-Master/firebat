@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { Search, Loader2, X, Copy, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
+import { confirmDialog, alertDialog } from './Dialog';
 import { useEvents } from '../hooks/events-manager';
 
 interface MediaItem {
@@ -106,9 +107,9 @@ export function GalleryPanel() {
     // 사용처 차등 confirm — 페이지에 박힌 이미지면 빨간 경고 + 페이지 목록.
     const usage = selectedUsage;
     const msg = usage.length > 0
-      ? `⚠️ 이 이미지는 ${usage.length}개 페이지에 사용 중입니다:\n\n${usage.map(u => `  • /${u.pageSlug}`).join('\n')}\n\n삭제하면 해당 페이지의 이미지가 깨집니다. 정말 삭제하시겠어요?`
+      ? `이 이미지는 ${usage.length}개 페이지에 사용 중입니다:\n\n${usage.map(u => `  • /${u.pageSlug}`).join('\n')}\n\n삭제하면 해당 페이지의 이미지가 깨집니다. 정말 삭제하시겠어요?`
       : '이 이미지를 삭제하시겠어요? (원본 + 모든 variants + 썸네일 일괄 삭제)';
-    if (!window.confirm(msg)) return;
+    if (!await confirmDialog({ title: '이미지 삭제', message: msg, danger: true, okLabel: '삭제' })) return;
     try {
       const res = await fetch(`/api/media/list?slug=${encodeURIComponent(slug)}`, { method: 'DELETE' });
       const data = await res.json();
@@ -116,10 +117,10 @@ export function GalleryPanel() {
         setItems(prev => prev.filter(i => i.slug !== slug));
         setSelectedIndex(null);
       } else {
-        alert(`삭제 실패: ${data.error || 'unknown'}`);
+        await alertDialog({ title: '삭제 실패', message: data.error || 'unknown', danger: true });
       }
     } catch (err: any) {
-      alert(`삭제 실패: ${err.message}`);
+      await alertDialog({ title: '삭제 실패', message: err.message, danger: true });
     }
   };
 
@@ -130,12 +131,12 @@ export function GalleryPanel() {
       const res = await fetch(`/api/media/regenerate?slug=${encodeURIComponent(slug)}`, { method: 'POST' });
       const data = await res.json();
       if (!data.success) {
-        alert(`재생성 실패: ${data.error || 'unknown'}`);
+        await alertDialog({ title: '재생성 실패', message: data.error || 'unknown', danger: true });
       }
       // 성공/실패 모두 SSE gallery:refresh 가 자동 갱신. 모달은 닫음.
       setSelectedIndex(null);
     } catch (err: any) {
-      alert(`재생성 실패: ${err.message}`);
+      await alertDialog({ title: '재생성 실패', message: err.message, danger: true });
     } finally {
       setRegenerating(false);
     }

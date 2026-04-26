@@ -6,6 +6,7 @@ import {
   ExternalLink, Trash2, Loader2, Pencil,
 } from 'lucide-react';
 import { Tooltip } from './Tooltip';
+import { confirmDialog, alertDialog } from './Dialog';
 
 export interface TreeNode {
   name: string;
@@ -49,15 +50,15 @@ const TreeNodeComponent = ({ node, depth, onRefresh, onEdit }: NodeProps) => {
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
     const label = node.isDirectory ? `폴더 "${node.name}"` : `파일 "${node.name}"`;
-    if (!confirm(`${label}을(를) 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+    if (!await confirmDialog({ title: '삭제', message: `${label}을(를) 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`, danger: true, okLabel: '삭제' })) return;
     setDeleting(true);
     try {
       const res = await fetch(`/api/fs/delete?path=${encodeURIComponent(node.path)}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) onRefresh?.();
-      else alert(`삭제 실패: ${data.error}`);
+      else await alertDialog({ title: '삭제 실패', message: data.error || '알 수 없는 오류', danger: true });
     } catch (err: any) {
-      alert(`삭제 실패: ${err.message}`);
+      await alertDialog({ title: '삭제 실패', message: err.message, danger: true });
     } finally {
       setDeleting(false);
     }

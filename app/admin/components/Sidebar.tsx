@@ -7,6 +7,7 @@ import { CronPanel, ScheduleModal } from './CronPanel';
 import { GalleryPanel } from './GalleryPanel';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
+import { confirmDialog, alertDialog } from './Dialog';
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { createShareLink, copyToClipboard } from '../hooks/share-helper';
 
@@ -243,7 +244,7 @@ export function Sidebar({
 
   const handleDeleteModule = async (modulePath: string) => {
     const name = modulePath.replace(/^user\/modules\//, '');
-    if (!confirm(`모듈 "${name}" 폴더 전체를 삭제하시겠습니까?`)) return;
+    if (!await confirmDialog({ title: '모듈 삭제', message: `모듈 "${name}" 폴더 전체를 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
     try {
       await fetch(`/api/fs?path=${encodeURIComponent(modulePath)}`, { method: 'DELETE' });
       onRefreshTree();
@@ -252,7 +253,7 @@ export function Sidebar({
   };
 
   const handleDeleteProject = async (name: string) => {
-    if (!confirm(`프로젝트 "${name}"의 모든 파일을 삭제하시겠습니까?\n관련 페이지와 모듈이 모두 삭제됩니다.`)) return;
+    if (!await confirmDialog({ title: '프로젝트 삭제', message: `프로젝트 "${name}"의 모든 파일을 삭제하시겠습니까?\n관련 페이지와 모듈이 모두 삭제됩니다.`, danger: true, okLabel: '삭제' })) return;
     setDeletingProject(name);
     try {
       await fetch(`/api/fs/projects?project=${encodeURIComponent(name)}`, { method: 'DELETE' });
@@ -264,7 +265,7 @@ export function Sidebar({
   };
 
   const handleDeletePage = async (slug: string) => {
-    if (!confirm(`페이지 "${slug}"을(를) 삭제하시겠습니까?`)) return;
+    if (!await confirmDialog({ title: '페이지 삭제', message: `페이지 "${slug}"을(를) 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
     setDeletingPage(slug);
     try {
       await fetch(`/api/pages?slug=${encodeURIComponent(slug)}`, { method: 'DELETE' });
@@ -303,7 +304,7 @@ export function Sidebar({
           body: JSON.stringify({ newSlug: normalized, setRedirect: renameSetRedirect }),
         });
         const data = await res.json();
-        if (!data.success) { alert(data.error || '변경 실패'); return; }
+        if (!data.success) { await alertDialog({ title: '변경 실패', message: data.error || '변경 실패', danger: true }); return; }
       } else {
         const res = await fetch(`/api/fs/projects`, {
           method: 'PATCH',
@@ -311,7 +312,7 @@ export function Sidebar({
           body: JSON.stringify({ action: 'rename', project: renameTarget.current, newName: normalized, setRedirect: renameSetRedirect }),
         });
         const data = await res.json();
-        if (!data.success) { alert(data.error || '변경 실패'); return; }
+        if (!data.success) { await alertDialog({ title: '변경 실패', message: data.error || '변경 실패', danger: true }); return; }
       }
       setRenameTarget(null);
       fetchPages();

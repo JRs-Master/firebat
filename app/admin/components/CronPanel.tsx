@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Save, Settings } from 'lucide-react';
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { Tooltip } from './Tooltip';
+import { confirmDialog } from './Dialog';
 
 interface CronJob {
   jobId: string;
@@ -71,7 +72,7 @@ export function CronPanel() {
   useEffect(() => { fetchCron(); }, [fetchCron]);
 
   const handleCancel = async (jobId: string) => {
-    if (!confirm(`잡 "${jobId}"을(를) 해제하시겠습니까?`)) return;
+    if (!await confirmDialog({ title: '잡 해제', message: `잡 "${jobId}"을(를) 해제하시겠습니까?`, danger: true, okLabel: '해제' })) return;
     setCancelling(jobId);
     try {
       await fetch(`/api/cron?jobId=${encodeURIComponent(jobId)}`, { method: 'DELETE' });
@@ -82,7 +83,7 @@ export function CronPanel() {
   };
 
   const handleClearLogs = async () => {
-    if (!confirm('실행 로그를 전부 삭제하시겠습니까?')) return;
+    if (!await confirmDialog({ title: '로그 삭제', message: '실행 로그를 전부 삭제하시겠습니까?', danger: true, okLabel: '삭제' })) return;
     await fetch('/api/cron?logs=clear', { method: 'DELETE' });
     fetchCron();
   };

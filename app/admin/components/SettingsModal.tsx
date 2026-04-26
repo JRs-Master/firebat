@@ -7,6 +7,7 @@ import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButto
 import { useSetting, writeSetting } from '../hooks/settings-manager';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
+import { confirmDialog, alertDialog } from './Dialog';
 
 interface SystemModule { name: string; description: string; runtime: string; type?: string; enabled?: boolean; }
 
@@ -308,7 +309,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   };
 
   const deleteSecret = async (name: string) => {
-    if (!confirm(`"${name}" 키를 삭제하시겠습니까?`)) return;
+    if (!await confirmDialog({ title: '키 삭제', message: `"${name}" 키를 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
     await fetch(`/api/vault/secrets?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
     fetchSecrets();
   };
@@ -351,14 +352,14 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
         setMcpNewName(''); setMcpNewCommand(''); setMcpNewArgs(''); setMcpNewUrl('');
       } else {
         await fetch(`/api/mcp/servers?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
-        alert(`연결 실패로 등록이 취소되었습니다.\n\n${testData.error}`);
+        await alertDialog({ title: '연결 실패', message: `연결 실패로 등록이 취소되었습니다.\n\n${testData.error}`, danger: true });
       }
       fetchMcpServers();
     } finally { setMcpSaving(false); }
   };
 
   const deleteMcpServer = async (name: string) => {
-    if (!confirm(`"${name}" MCP 서버를 제거하시겠습니까?`)) return;
+    if (!await confirmDialog({ title: 'MCP 서버 제거', message: `"${name}" MCP 서버를 제거하시겠습니까?`, danger: true, okLabel: '제거' })) return;
     await fetch(`/api/mcp/servers?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
     setMcpEditing(null);
     fetchMcpServers();
@@ -462,7 +463,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   }, []);
 
   const generateMcpToken = async () => {
-    if (mcpTokenInfo.exists && !confirm('기존 토큰이 무효화됩니다. 새 토큰을 생성하시겠습니까?')) return;
+    if (mcpTokenInfo.exists && !await confirmDialog({ title: '토큰 재생성', message: '기존 토큰이 무효화됩니다. 새 토큰을 생성하시겠습니까?', danger: true, okLabel: '재생성' })) return;
     setMcpTokenLoading(true);
     try {
       const res = await fetch('/api/mcp/tokens', { method: 'POST' });
@@ -475,7 +476,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   };
 
   const revokeMcpToken = async () => {
-    if (!confirm('토큰을 폐기하면 SSE(API) 연결이 즉시 차단됩니다. 계속하시겠습니까?')) return;
+    if (!await confirmDialog({ title: '토큰 폐기', message: '토큰을 폐기하면 SSE(API) 연결이 즉시 차단됩니다. 계속하시겠습니까?', danger: true, okLabel: '폐기' })) return;
     await fetch('/api/mcp/tokens', { method: 'DELETE' });
     setMcpTokenInfo({ exists: false, hint: null, createdAt: null });
     setMcpTokenRaw(null);

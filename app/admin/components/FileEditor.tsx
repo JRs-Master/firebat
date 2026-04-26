@@ -8,6 +8,7 @@ import { readSetting } from '../hooks/settings-manager';
 import { tryUnwrapJson } from '../../../core/utils/json-normalize';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
+import { confirmDialog } from './Dialog';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
@@ -352,8 +353,8 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
   }, [handleSave, openAiPanel, aiOpen, onClose]);
 
   // 닫기 전 확인
-  const handleClose = () => {
-    if (isDirty && !confirm('저장하지 않은 변경사항이 있습니다. 닫으시겠습니까?')) return;
+  const handleClose = async () => {
+    if (isDirty && !await confirmDialog({ title: '닫기', message: '저장하지 않은 변경사항이 있습니다. 닫으시겠습니까?', danger: true, okLabel: '닫기' })) return;
     onClose();
   };
 

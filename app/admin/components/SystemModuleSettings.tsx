@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, Code, Settings2, ExternalLink, ArrowLeft } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { TelegramWebhookSection } from './TelegramWebhookSection';
+import { confirmDialog } from './Dialog';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
 type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret';
@@ -267,7 +268,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
   }, [moduleName, isMcpApp, isMcpLlm, mcpTokenEndpoint]);
 
   const generateMcpToken = async () => {
-    if (mcpTokenInfo.exists && !confirm('기존 토큰이 무효화됩니다. 새 토큰을 생성하시겠습니까?')) return;
+    if (mcpTokenInfo.exists && !await confirmDialog({ title: '토큰 재생성', message: '기존 토큰이 무효화됩니다. 새 토큰을 생성하시겠습니까?', danger: true, okLabel: '재생성' })) return;
     setMcpTokenLoading(true);
     try {
       const res = await fetch(mcpTokenEndpoint, { method: 'POST' });
@@ -283,7 +284,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
   };
 
   const revokeMcpToken = async () => {
-    if (!confirm('토큰을 폐기하면 해당 연결이 즉시 차단됩니다. 계속하시겠습니까?')) return;
+    if (!await confirmDialog({ title: '토큰 폐기', message: '토큰을 폐기하면 해당 연결이 즉시 차단됩니다. 계속하시겠습니까?', danger: true, okLabel: '폐기' })) return;
     await fetch(mcpTokenEndpoint, { method: 'DELETE' });
     setMcpTokenInfo({ exists: false, hint: null, createdAt: null });
     setMcpTokenRaw(null);
