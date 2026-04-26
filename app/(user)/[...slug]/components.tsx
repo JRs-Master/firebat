@@ -506,8 +506,12 @@ function HtmlComp({ content }: { content: string }) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
   *, *::before, *::after { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; height: 100%; overflow: auto; }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.6; color: #1e293b; }
+  html, body { margin: 0; padding: 0; min-height: 100%; overflow: auto; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 15px; line-height: 1.6; color: #1e293b;
+    max-width: 880px; margin: 0 auto; padding: 24px 16px;
+  }
   img, video { max-width: 100%; height: auto; }
 </style>
 </head><body>${content}</body></html>`;
