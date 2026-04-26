@@ -500,6 +500,8 @@ function AdSlotComp({ slotId, format = 'auto' }: { slotId?: string; format?: str
 
 // ── Html (iframe sandbox) ───────────────────────────────────────────────────
 function HtmlComp({ content }: { content: string }) {
+  // AI 가 자체 body{margin:0; max-width:none} 같은 style 로 default 깨는 패턴 자주.
+  // outer wrapper div 로 max-width 강제 — AI 가 어떻게 body style 짜도 layout 영향 X.
   const srcdoc = `<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8">
@@ -510,11 +512,11 @@ function HtmlComp({ content }: { content: string }) {
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 15px; line-height: 1.6; color: #1e293b;
-    max-width: 880px; margin: 0 auto; padding: 24px 16px;
   }
+  #firebat-wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px; }
   img, video { max-width: 100%; height: auto; }
 </style>
-</head><body>${content}</body></html>`;
+</head><body><div id="firebat-wrap">${content}</div></body></html>`;
 
   return (
     <iframe
