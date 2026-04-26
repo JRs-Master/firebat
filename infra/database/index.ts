@@ -3,6 +3,7 @@ import { InfraResult } from '../../core/types';
 import Database from 'better-sqlite3';
 import { DB_PATH } from '../config';
 import { unwrapJson } from '../../core/utils/json-normalize';
+import { runMigrations } from './migrations/runner';
 
 /**
  * 범용 DB 포트의 1차 구현체 (로컬 SQLite)
@@ -149,6 +150,11 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
       CREATE INDEX IF NOT EXISTS idx_media_usage_page ON media_usage(page_slug);
       CREATE INDEX IF NOT EXISTS idx_media_usage_media ON media_usage(media_slug);
     `);
+
+    // ── 마이그레이션 runner ──
+    // 위 baseline 스키마는 implicit v1. v2+ 변경은 migrations/NNN-name.sql 추가로 자동 적용.
+    // 자세한 안내: infra/database/migrations/README.md
+    runMigrations(this.db);
   }
 
   async query(sql: string, params?: unknown[]): Promise<InfraResult<Record<string, unknown>[]>> {
