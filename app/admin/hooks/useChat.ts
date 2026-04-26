@@ -194,8 +194,13 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     const convMeta = conversations.find(c => c.id === convId);
     const createdAt = convMeta?.createdAt ?? Date.now();
     const body = JSON.stringify({ id: convId, title, messages: cleanMsgs, createdAt });
+    // **CRITICAL**: keepalive: true 는 브라우저 64KB body 한도 강제 — 초과 시 fetch 즉시 TypeError.
+    // 큰 대화 (Html block 누적 시 60KB+ 흔함) 는 keepalive 끄고 일반 fetch 사용.
+    // 한도 안일 때만 keepalive 적용 — 페이지 unload 시점 저장 안전망 유지.
+    const useKeepalive = body.length < 60_000;
     const attempt = (retries: number): Promise<void> => fetch('/api/conversations', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true,
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
+      ...(useKeepalive ? { keepalive: true } : {}),
     }).then(res => {
       if (res.status === 409) {
         setConversations(prev => {
