@@ -102,9 +102,9 @@ interface FirebatInfraContainer {
 | ConversationManager | IDatabasePort, IEmbedderPort | ✗ | 대화 DB 저장/검색 (이미지 메타 인덱스 포함) |
 | MediaManager | IImageGenPort, IMediaPort, IImageProcessorPort, IVaultPort, ILogPort | ✗ | 미디어 도메인 단일 — 생성/재생성/CRUD/갤러리/OG 안전성/이미지 모델 (이전 ImageManager rename) |
 | EventManager | ILogPort | ✗ | SSE 이벤트 발행 + audit log + filtered subscribe |
-| StatusManager | ILogPort, EventManager | ✗ | Long-running job 상태 단일 source (UI / AI / Sentry forward backbone) |
+| StatusManager | ILogPort, EventManager | ✗ | Long-running job 상태 단일 source (UI 진행도 + AI 비동기 도구 backbone). Image/Cron/Task 마이그레이션 완료 |
 | CostManager | IVaultPort, ILogPort | ✗ | LLM 호출 token·비용 누적 (60초 dirty flush) |
-| ToolManager | ILogPort | ✗ | 도구 등록·dispatch 단일 source (Step 1-3 완료 / Step 4-5 v1.x) |
+| ToolManager | ILogPort | ✗ | 도구 등록·dispatch 단일 source (Step 1 backbone 완료 / Step 2-5 AiManager Phase 6c 와 묶음, v1.x) |
 
 **규칙**:
 - 매니저는 자기 도메인의 인프라 포트를 **생성자에서 직접** 받는다.

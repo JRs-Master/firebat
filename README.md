@@ -124,11 +124,11 @@ User prompt
 
 - **Three modes**: recurring (`cron`), one-shot (`runAt`), delay (`delaySec`)
 - **Pipelines**: Pre-compiled composite workflows — "MCP query → LLM summary → module dispatch"
-- **Four pipeline steps**: `EXECUTE`, `MCP_CALL`, `NETWORK_REQUEST`, `LLM_TRANSFORM`
+- **Seven pipeline steps**: `EXECUTE` (sandbox module), `MCP_CALL`, `NETWORK_REQUEST`, `LLM_TRANSFORM`, `CONDITION` (branching/early-stop), `SAVE_PAGE`, `TOOL_CALL` (Function Calling tools like `image_gen` from cron)
 - **Persistence**: Jobs restored automatically on PM2 restart
 - **Dynamic timezone**: Change per installation via settings
 
-> 🇰🇷 **스케줄링 & 자동화** — 반복(`cron`) / 1회 예약(`runAt`) / 딜레이(`delaySec`) 3가지 모드. 복합 작업은 파이프라인(`EXECUTE` / `MCP_CALL` / `NETWORK_REQUEST` / `LLM_TRANSFORM` 4단계)으로 사전 컴파일. PM2 재시작 시 자동 복원, 타임존 동적 변경.
+> 🇰🇷 **스케줄링 & 자동화** — 반복(`cron`) / 1회 예약(`runAt`) / 딜레이(`delaySec`) 3가지 모드. 복합 작업은 파이프라인 7단계 (`EXECUTE` / `MCP_CALL` / `NETWORK_REQUEST` / `LLM_TRANSFORM` / `CONDITION` / `SAVE_PAGE` / `TOOL_CALL`) 로 사전 컴파일. PM2 재시작 시 자동 복원, 타임존 동적 변경.
 
 ### MCP (Model Context Protocol)
 
@@ -152,7 +152,7 @@ User prompt
 }
 ```
 
-Exposes 18 tools: page CRUD, file CRUD, module execution, project management, cron management, nested MCP tool calls, etc.
+Exposes 20+ tools: page CRUD, file CRUD, module execution + introspection (`list_user_modules` / `get_module_schema`), project management, cron management, nested MCP tool calls, etc.
 
 **MCP Client** — Firebat calls out to external MCP servers (Gmail, Slack, KakaoTalk, …). Tools are auto-registered and the AI invokes them without extra wiring.
 
@@ -184,8 +184,9 @@ Group multiple modules that perform the same capability, manage priority and fal
 | `web-scrape` | browser-scrape (local), firecrawl (api) |
 | `web-search` | naver-search (api) |
 | `keyword-analytics` | naver-ads (api) |
-| `stock-trading` | korea-invest (api), kiwoom (api) |
-| `notification` | kakao-talk (api) |
+| `stock-trading` | korea-invest (api), kiwoom (api), upbit (api, crypto) |
+| `notification` | kakao-talk (api), telegram (api, bidirectional bot) |
+| `legal-search` | law-search (api) |
 
 Admins set the provider order in settings; failures cascade to the next provider automatically.
 
@@ -271,9 +272,10 @@ npm run mcp
 firebat/
 ├── core/                    # Pure business logic (no I/O)
 │   ├── index.ts             #   FirebatCore Facade
-│   ├── ports/               #   12 Port interfaces
-│   ├── managers/            #   12 domain managers
-│   ├── types/               #   FirebatPlan, FirebatAction
+│   ├── ports/               #   15 Port interfaces
+│   ├── managers/            #   17 domain managers (+ ai/ collaborator subfolder)
+│   ├── types/               #   CoreResult, AiRequestOpts
+│   ├── utils/               #   sanitize, json-normalize
 │   └── capabilities.ts      #   Capability-Provider registry
 │
 ├── infra/                   # I/O execution layer (adapters)
@@ -281,13 +283,17 @@ firebat/
 │   ├── config.ts            #   Central config constants
 │   ├── storage/             #   Filesystem + Vault
 │   ├── llm/                 #   ConfigDrivenAdapter + 8 format handlers (5 API + 3 CLI)
-│   ├── sandbox/             #   Process sandbox
-│   ├── cron/                #   node-cron scheduler
-│   ├── database/            #   SQLite adapter
-│   ├── log/                 #   4-level logging + JSONL training data
+│   ├── sandbox/             #   Process sandbox (Python/Node/PHP/Shell)
+│   ├── cron/                #   node-cron scheduler (file-fallback for resilience)
+│   ├── database/            #   SQLite adapter + migrations/ (versioned schema)
+│   ├── log/                 #   4-level logging + JSONL training data + token-redactor
 │   ├── network/             #   HTTP client (SSRF-hardened)
 │   ├── mcp-client/          #   External MCP server client
-│   └── auth/                #   Vault-backed session / API tokens
+│   ├── auth/                #   Vault-backed session / API tokens
+│   ├── media/               #   Local media storage (variants, blurhash)
+│   ├── image-processor/     #   sharp adapter (resize, format, blurhash)
+│   ├── image/               #   Config-driven image generation (OpenAI gpt-image, Gemini Flash Image)
+│   └── security/            #   token-redactor (log masking)
 │
 ├── app/                     # Next.js App Router
 │   ├── admin/               #   Admin console (chat, settings, editor)
@@ -308,7 +314,7 @@ firebat/
 │
 ├── system/                  # System area
 │   ├── services/            #   Config-only services (SEO, MCP server)
-│   └── modules/             #   Built-in runnable modules (naver-search, naver-ads, korea-invest, kiwoom, kakao-talk, firecrawl, browser-scrape)
+│   └── modules/             #   Built-in runnable modules (naver-search, naver-ads, korea-invest, kiwoom, upbit, kakao-talk, telegram, firecrawl, browser-scrape, law-search)
 │
 ├── user/                    # User area (modules, data)
 │   └── modules/             #   User-created modules
@@ -334,11 +340,11 @@ firebat/
 
 | Phase | Description | Status |
 |---|---|---|
-| **v0.1** | Core + Infra + 11 Managers + MCP + Scheduling + Vault + Multi-LLM + CLI mode | Done |
-| **v1.0** | 3-Tier Docker (EasyPanel) + Core / Next.js IPC split | Planned |
+| **v0.1** | Core + Infra + 17 Managers + MCP (server + client) + Scheduling + Pipeline (7 steps) + Vault + Multi-LLM (API + CLI) + Telegram bidirectional bot + StatusManager + DB migration runner | Done |
+| **v1.0** | 3-Tier Docker (EasyPanel) + Core / Next.js IPC split + initial setup wizard | Planned |
 | **v2.0** | Rust Core + gRPC + dynamic loading of system modules | Planned |
 
-> 🇰🇷 **로드맵** — v0.1(완료): Core + Infra + 11 매니저 + MCP + 스케줄링 + Vault + 멀티 LLM + CLI 모드. v1.0(예정): 3-Tier Docker(EasyPanel) + Core/Next.js IPC 분리. v2.0(예정): Rust Core + gRPC + 시스템 모듈 동적 로드.
+> 🇰🇷 **로드맵** — v0.1(완료): Core + Infra + 17 매니저 + MCP(서버·클라이언트) + 스케줄링 + 파이프라인(7단계) + Vault + 멀티 LLM(API·CLI) + 텔레그램 양방향 봇 + StatusManager + DB 마이그레이션 runner. v1.0(예정): 3-Tier Docker(EasyPanel) + Core/Next.js IPC 분리 + 초기 위자드. v2.0(예정): Rust Core + gRPC + 시스템 모듈 동적 로드.
 
 ---
 
@@ -353,8 +359,8 @@ Source-available for viewing and study. Redistribution, modification, and produc
 ## Design Documents
 
 - **[FIREBAT_BIBLE.md](docs/FIREBAT_BIBLE.md)** — Top-level constitution (identity, separation of powers, JSON dogma) · 최고 등급 헌법
-- **[CORE_BIBLE.md](docs/CORE_BIBLE.md)** — Core purity, 10 Ports, 11-Manager architecture, Plan-Execute pipeline · Core 설계 규격
-- **[INFRA_BIBLE.md](docs/INFRA_BIBLE.md)** — 10 Adapter specs, bootstrap, config constants · Infra 구현 규격
+- **[CORE_BIBLE.md](docs/CORE_BIBLE.md)** — Core purity, 15 Ports, 17-Manager backend + 3-Manager frontend, Function Calling pipeline · Core 설계 규격
+- **[INFRA_BIBLE.md](docs/INFRA_BIBLE.md)** — 15 Adapter specs, bootstrap, config constants · Infra 구현 규격
 - **[MODULE_BIBLE.md](docs/MODULE_BIBLE.md)** — Module system, Capability-Provider pattern · 모듈 시스템 규격
 - **[PAGESPEC_BIBLE.md](docs/PAGESPEC_BIBLE.md)** — PageSpec schema, built-in components, chat rendering · 페이지·렌더링 규약
 - **[IO_SCHEMA_BIBLE.md](docs/IO_SCHEMA_BIBLE.md)** — Module I/O schema reference · 모듈 I/O 스키마 레퍼런스
