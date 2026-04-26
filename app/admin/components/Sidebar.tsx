@@ -10,6 +10,7 @@ import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { createShareLink, copyToClipboard } from '../hooks/share-helper';
+import { rowActionsClass } from '../utils/row-actions';
 
 interface Project { name: string; paths: string[]; pageSlugs?: string[]; visibility?: string; }
 interface PageInfo { slug: string; title: string; status: string; updatedAt: string; project?: string | null; visibility?: string; }
@@ -564,9 +565,7 @@ export function Sidebar({
                           </Tooltip>
 
                           {/* 액션 아이콘: 열기 + ⋯ 더보기 */}
-                          <span className={`flex items-center gap-0.5 shrink-0 justify-end transition-opacity ${
-                            isMobile ? (isSelected ? 'opacity-100' : 'opacity-0 pointer-events-none') : 'opacity-0 group-hover:opacity-100'
-                          }`}>
+                          <span className={`${rowActionsClass(isSelected)} justify-end`}>
                             {/* visibility 아이콘 (비공개/비밀번호일 때만) */}
                             {(mp.visibility === 'private' || (isSingle && mainSlug && mp.pages[0]?.visibility === 'private')) && (
                               <EyeOff size={10} className="text-slate-400 shrink-0" />
@@ -711,9 +710,7 @@ export function Sidebar({
                                         {pg.slug}
                                       </span>
                                     </Tooltip>
-                                    <span className={`flex items-center gap-0.5 shrink-0 transition-opacity ${
-                                      isMobile ? (pgSelected ? 'opacity-100' : 'opacity-0 pointer-events-none') : 'opacity-0 group-hover:opacity-100'
-                                    }`}>
+                                    <span className={rowActionsClass(pgSelected)}>
                                       {pg.visibility === 'private' && <EyeOff size={9} className="text-slate-400 shrink-0" />}
                                       {pg.visibility === 'password' && <Lock size={9} className="text-slate-400 shrink-0" />}
                                       <Tooltip label="열기">
@@ -800,9 +797,7 @@ export function Sidebar({
                                         {entryFile}
                                       </span>
                                     </Tooltip>
-                                    <span className={`flex items-center gap-0.5 shrink-0 transition-opacity ${
-                                      isMobile ? (modSelected ? 'opacity-100' : 'opacity-0 pointer-events-none') : 'opacity-0 group-hover:opacity-100'
-                                    }`}>
+                                    <span className={rowActionsClass(modSelected)}>
                                       {!isMobile && (
                                         <Tooltip label="편집">
                                           <button
@@ -902,10 +897,8 @@ export function Sidebar({
                         </p>
                         <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(conv.createdAt)}</p>
                       </div>
-                      {/* 공유·삭제 아이콘 묶음: PC=호버, 모바일=선택 시 */}
-                      <span className={`flex items-center gap-0.5 shrink-0 transition-all ${
-                        isMobile ? ((convSelected || conv.id === activeConvId) ? 'opacity-100' : 'opacity-0 pointer-events-none') : 'opacity-0 group-hover:opacity-100'
-                      }`}>
+                      {/* 공유·삭제 아이콘 묶음: PC=호버, 모바일=선택 시 (활성 대화도 force visible) */}
+                      <span className={rowActionsClass(convSelected || conv.id === activeConvId)}>
                         <ShareConvButton convId={conv.id} title={conv.title} />
                         <Tooltip label="삭제">
                           <button

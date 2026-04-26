@@ -6,6 +6,7 @@ import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, Chec
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
+import { rowActionsClass } from '../utils/row-actions';
 
 interface CronRunWhen {
   check: { sysmod: string; action: string; inputData?: Record<string, unknown> };
@@ -60,6 +61,8 @@ export function CronPanel() {
   const [running, setRunning] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
   const [editing, setEditing] = useState<CronJob | null>(null);
+  // 모바일 select-to-show 패턴 — Sidebar 와 동일. PC 에선 무시 (group-hover 가 처리).
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
   const fetchCron = useCallback(async () => {
     try {
@@ -210,10 +213,13 @@ export function CronPanel() {
         <p className="px-3 pb-2 text-[11px] text-slate-400 italic">등록된 잡 없음</p>
       ) : (
         <div className="pb-2 px-2 space-y-0.5">
-          {jobs.map(job => (
+          {jobs.map(job => {
+            const jobSelected = selectedJobId === job.jobId;
+            return (
             <div
               key={job.jobId}
-              className="group flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+              onClick={() => setSelectedJobId(jobSelected ? null : job.jobId)}
+              className={`group flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ${jobSelected ? 'bg-slate-100' : 'hover:bg-slate-100'}`}
             >
               {modeIcon(job.mode)}
               <div className="flex-1 min-w-0">
@@ -222,10 +228,10 @@ export function CronPanel() {
                   {modeLabel(job)}{job.description ? ` · ${job.description}` : ''}
                 </p>
               </div>
-              <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+              <span className={rowActionsClass(jobSelected)}>
                 <Tooltip label="지금 실행">
                   <button
-                    onClick={() => handleRunNow(job.jobId)}
+                    onClick={(e) => { e.stopPropagation(); handleRunNow(job.jobId); setSelectedJobId(null); }}
                     disabled={running === job.jobId}
                     className="p-1 rounded text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
                   >
@@ -234,7 +240,7 @@ export function CronPanel() {
                 </Tooltip>
                 <Tooltip label="설정">
                   <button
-                    onClick={() => setEditing(job)}
+                    onClick={(e) => { e.stopPropagation(); setEditing(job); setSelectedJobId(null); }}
                     className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
                   >
                     <Settings size={11} />
@@ -242,7 +248,7 @@ export function CronPanel() {
                 </Tooltip>
                 <Tooltip label="해제">
                   <button
-                    onClick={() => handleCancel(job.jobId)}
+                    onClick={(e) => { e.stopPropagation(); handleCancel(job.jobId); setSelectedJobId(null); }}
                     disabled={cancelling === job.jobId}
                     className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
                   >
@@ -251,7 +257,8 @@ export function CronPanel() {
                 </Tooltip>
               </span>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
