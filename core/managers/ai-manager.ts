@@ -8,6 +8,7 @@ import { HistoryResolver } from './ai/history-resolver';
 import { PromptBuilder } from './ai/prompt-builder';
 import { ToolRouter } from './ai/tool-router';
 import { buildCoreToolDefinitions, RENDER_TOOLS } from './ai/tool-schemas';
+import { ToolDispatcher } from './ai/tool-dispatcher';
 
 /** Vertex AI Function Calling은 enum 값이 반드시 string이어야 함 — 재귀 변환 */
 function sanitizeSchema(schema: Record<string, unknown>): Record<string, unknown> {
@@ -47,18 +48,14 @@ export class AiManager {
   /** 도구 정의 캐시 (60초 TTL) */
   private _toolsCache: { tools: ToolDefinition[]; ts: number } | null = null;
   private static readonly TOOLS_CACHE_TTL = 60_000;
-  /** AI 가 호출한 identifier (서버명·모듈명·sysmod_*·full path) → 실제 dispatch target.
-   *  AI 가 도구 호출 일관성 부족해도 backend 가 자동 보정 (kakao_talk → system/modules/kakao-talk/index.mjs 등). */
-  private _callTargetCache: { map: Map<string, { kind: 'mcp'; server: string } | { kind: 'execute'; path: string }>; ts: number } | null = null;
-  private static readonly CALL_TARGET_TTL = 60_000;
-
   /** 현재 turn 의 직전 user 쿼리 — search_history 쿼리 맥락 보강용 */
   private _currentTurnPrevUserQuery = '';
 
-  /** 내부 collaborator — AI 도메인 분리 (ResultProcessor / HistoryResolver / PromptBuilder / ToolRouter / ...) */
+  /** 내부 collaborator — AI 도메인 분리 (ResultProcessor / HistoryResolver / PromptBuilder / ToolRouter / ToolDispatcher / ...) */
   private readonly history: HistoryResolver;
   private readonly promptBuilder: PromptBuilder;
   private readonly toolRouter: ToolRouter;
+  private readonly dispatcher: ToolDispatcher;
 
   constructor(
     private readonly core: FirebatCore,
@@ -70,6 +67,7 @@ export class AiManager {
     this.history = new HistoryResolver(core);
     this.promptBuilder = new PromptBuilder(core, llm);
     this.toolRouter = new ToolRouter(core, logger, routerFactory, this._toolCapabilities);
+    this.dispatcher = new ToolDispatcher(core);
     // ToolManager 등록 — Step 2 마이그레이션 진행 단계.
     // 등록된 도구는 executeToolCall 첫 줄의 ToolManager 위임으로 자동 dispatch.
     this.registerStaticToolsToManager();
@@ -833,9 +831,9 @@ export class AiManager {
         this.logger.info(`[AiManager] [${corrId}] Tool: ${tc.name} ${argsPreview}`);
 
         // 사전검증 — AI가 스스로 재시도할 수 있도록 UI에는 노출하지 않고 tool 결과로만 피드백
-        const approvalPeek = await this.checkNeedsApproval(tc);
+        const approvalPeek = await this.dispatcher.checkNeedsApproval(tc);
         let preValidError: string | null = null;
-        if (approvalPeek) preValidError = this.preValidatePendingArgs(tc);
+        if (approvalPeek) preValidError = this.dispatcher.preValidatePendingArgs(tc);
 
         if (preValidError) {
           // UI 미노출: executedActions/onToolCall 스킵, toolResults에만 에러 주입해서 AI가 다음 턴에 재호출하게 함
@@ -899,7 +897,7 @@ export class AiManager {
               result = { ...cached, fromCache: true };
               this.logger.info(`[AiManager] [${corrId}] Tool cache HIT: ${tc.name} — 직전 결과 재사용 (백엔드 호출 0)`);
             } else {
-              result = await this.executeToolCall(tc, opts);
+              result = await this.dispatcher.executeToolCall(tc, opts);
               setCachedToolResult(cacheKey, result);
             }
           }
@@ -1078,185 +1076,12 @@ export class AiManager {
    *  write_file/save_page: 기존 존재 시만 (덮어쓰기=수정)
    *  delete_file/delete_page/schedule_task: 항상
    */
-  private async checkNeedsApproval(tc: ToolCall): Promise<{ summary: string } | null> {
-    switch (tc.name) {
-      case 'write_file': {
-        const path = (tc.args as { path?: string }).path;
-        if (!path) return null;
-        const exists = await this.core.readFile(path);
-        if (!exists.success) return null; // 새 파일은 즉시 작성
-        return { summary: `파일 수정: ${path}` };
-      }
-      case 'save_page': {
-        const slug = (tc.args as { slug?: string }).slug;
-        if (!slug) return null;
-        const exists = await this.core.getPage(slug);
-        if (!exists.success) return null; // 새 페이지는 즉시 저장
-        return { summary: `페이지 수정: /${slug}` };
-      }
-      case 'delete_file': {
-        const path = (tc.args as { path?: string }).path;
-        return { summary: `파일 삭제: ${path ?? '(unknown)'}` };
-      }
-      case 'delete_page': {
-        const slug = (tc.args as { slug?: string }).slug;
-        return { summary: `페이지 삭제: /${slug ?? '(unknown)'}` };
-      }
-      case 'schedule_task': {
-        const args = tc.args as { title?: string; cronTime?: string; runAt?: string; delaySec?: number };
-        const when = args.cronTime ?? args.runAt ?? (args.delaySec != null ? `${args.delaySec}초 후` : '');
-        return { summary: `예약 등록: ${args.title ?? '(제목 없음)'} (${when})` };
-      }
-      default:
-        return null;
-    }
-  }
-
-  /** 승인 대기 도구 인자 사전 검증 — 실패 시 에러 메시지 반환 */
-  private preValidatePendingArgs(tc: ToolCall): string | null {
-    const args = tc.args as Record<string, unknown>;
-    switch (tc.name) {
-      case 'schedule_task': {
-        const hasTarget = typeof args.targetPath === 'string' && (args.targetPath as string).trim() !== '';
-        const hasPipeline = Array.isArray(args.pipeline) && (args.pipeline as unknown[]).length > 0;
-        if (!hasTarget && !hasPipeline) {
-          return 'schedule_task 인자 누락: targetPath 또는 pipeline 중 하나는 반드시 지정해야 합니다.';
-        }
-        const hasWhen = !!args.cronTime || !!args.runAt || args.delaySec != null;
-        if (!hasWhen) return 'schedule_task 인자 누락: cronTime / runAt / delaySec 중 하나는 반드시 지정해야 합니다.';
-        // 파이프라인 있으면 각 step의 필수 필드까지 검증 (type 누락 등)
-        if (hasPipeline) {
-          const pipeline = args.pipeline as unknown[];
-          for (let i = 0; i < pipeline.length; i++) {
-            const step = pipeline[i] as Record<string, unknown> | null;
-            if (!step || typeof step !== 'object') return `[Step ${i + 1}] step이 객체가 아닙니다.`;
-            const t = step.type;
-            if (!t || typeof t !== 'string') return `[Step ${i + 1}] type 누락 — EXECUTE/MCP_CALL/NETWORK_REQUEST/LLM_TRANSFORM/CONDITION 중 하나를 지정하세요.`;
-            if (!['EXECUTE', 'MCP_CALL', 'NETWORK_REQUEST', 'LLM_TRANSFORM', 'CONDITION'].includes(t)) {
-              return `[Step ${i + 1}] 알 수 없는 type: ${t}`;
-            }
-            if (t === 'EXECUTE') {
-              if (!step.path) return `[Step ${i + 1}] EXECUTE에 path 필수 (예: system/modules/kakao-talk/index.mjs).`;
-              const id = step.inputData as Record<string, unknown> | undefined;
-              if (!id || typeof id !== 'object' || Object.keys(id).length === 0) {
-                return `[Step ${i + 1}] EXECUTE 인자 오류: 모듈 실행 파라미터는 step 평면이 아니라 inputData 객체에 넣어야 합니다. 잘못: {type:"EXECUTE",path:"...",action:"price",symbol:"..."} · 올바름: {type:"EXECUTE",path:"...",inputData:{action:"price",symbol:"..."}}`;
-              }
-            }
-            if (t === 'MCP_CALL' && (!step.server || !step.tool)) return `[Step ${i + 1}] MCP_CALL에 server, tool 필수.`;
-            if (t === 'NETWORK_REQUEST' && !step.url) return `[Step ${i + 1}] NETWORK_REQUEST에 url 필수.`;
-            if (t === 'LLM_TRANSFORM' && !step.instruction) return `[Step ${i + 1}] LLM_TRANSFORM에 instruction 필수.`;
-            if (t === 'CONDITION' && (!step.field || !step.op)) return `[Step ${i + 1}] CONDITION에 field, op 필수.`;
-          }
-        }
-        return null;
-      }
-      case 'write_file': {
-        if (typeof args.path !== 'string' || !(args.path as string).trim()) return 'write_file 인자 누락: path 필수.';
-        if (args.content == null) return 'write_file 인자 누락: content 필수.';
-        return null;
-      }
-      case 'save_page': {
-        if (typeof args.slug !== 'string' || !(args.slug as string).trim()) return 'save_page 인자 누락: slug 필수.';
-        if (!args.spec || typeof args.spec !== 'object') return 'save_page 인자 누락: spec 필수.';
-        return null;
-      }
-      default:
-        return null;
-    }
-  }
-
-  /** 단일 도구 호출 실행 — 결과를 Record<string, unknown>로 반환 */
-  private async executeToolCall(tc: ToolCall, opts?: AiRequestOpts): Promise<Record<string, unknown>> {
-    try {
-      // 1) ToolManager 등록 도구 — 정적·동적 모두 단일 dispatch.
-      if (this.core.getToolDefinition(tc.name)) {
-        return await this.core.executeTool(tc.name, tc.args as Record<string, unknown>, {
-          conversationId: opts?.conversationId,
-          owner: opts?.owner,
-          requestOpts: opts as Record<string, unknown> | undefined,
-        });
-      }
-      // 2) render_* 변형 정규화 — AI 가 'table' / 'render-chart' 등으로 불러도 매칭.
-      const renderName = normalizeRenderName(tc.name);
-      if (renderName && RENDER_TOOL_MAP[renderName]) {
-        return { success: true, component: RENDER_TOOL_MAP[renderName], props: tc.args as Record<string, unknown> };
-      }
-      // 3) 통합 resolver — sysmod / mcp 자동 분기:
-      //    kiwoom / sysmod_kakao-talk / kakao_talk → system module
-      //    mcp_firebat_save_page → MCP 서버(firebat) 도구(save_page)
-      //    외부 MCP 서버명 → MCP 호출
-      const target = await this.resolveCallTarget(tc.name);
-      if (target?.kind === 'execute') {
-        const res = await this.core.sandboxExecute(target.path, tc.args);
-        if (!res.success) return { success: false, error: res.error };
-        if (res.data?.success === false) return { success: false, error: JSON.stringify(res.data) };
-        return { success: true, data: res.data };
-      }
-      // mcp_{server}_{tool} 접두사 — server/tool 분리
-      if (tc.name.startsWith('mcp_')) {
-        const parts = tc.name.slice(4).split('_');
-        const server = parts[0];
-        const tool = parts.slice(1).join('_');
-        const res = await this.core.callMcpTool(server, tool, tc.args);
-        return res.success ? { success: true, data: res.data } : { success: false, error: res.error };
-      }
-      if (target?.kind === 'mcp') {
-        return { success: false, error: `MCP 서버 '${target.server}' 호출 시 도구 이름 명시 필요 (예: mcp_${target.server}_{tool} 형태).` };
-      }
-      return { success: false, error: `알 수 없는 도구: ${tc.name}` };
-    } catch (e: any) {
-      return { success: false, error: e.message };
-    }
-  }
 
 
 
-  /** AI 가 호출한 identifier → 실제 dispatch target 해석.
-   *  매칭 우선순위: 정확한 이름 → snake/kebab 변형 → sysmod_ 접두사 / full path → null
-   *  - MCP 서버 명 매칭: { kind:'mcp', server }
-   *  - system/user modules 폴더 명 매칭: { kind:'execute', path }
-   *  AI 가 server='kakao_talk' / path='kakao-talk' / sysmod_kiwoom 등 다양하게 호출해도 자동 분기. */
+  /** Core.resolveCallTarget 이 위임 — ToolDispatcher 가 캐시·매칭 로직 보유. */
   async resolveCallTarget(identifier: string): Promise<{ kind: 'mcp'; server: string } | { kind: 'execute'; path: string } | null> {
-    if (!identifier) return null;
-    const lookup = (id: string, map: Map<string, { kind: 'mcp'; server: string } | { kind: 'execute'; path: string }>) =>
-      map.get(id) ?? map.get(id.replace(/_/g, '-')) ?? map.get(id.replace(/-/g, '_'));
-    if (this._callTargetCache && (Date.now() - this._callTargetCache.ts) < AiManager.CALL_TARGET_TTL) {
-      const hit = lookup(identifier, this._callTargetCache.map);
-      if (hit !== undefined) return hit;
-    }
-    const map = new Map<string, { kind: 'mcp'; server: string } | { kind: 'execute'; path: string }>();
-    // 1) 외부 MCP 서버
-    try {
-      const mcpServers = this.core.listMcpServers();
-      if (Array.isArray(mcpServers)) {
-        for (const s of mcpServers) {
-          if (!s?.name) continue;
-          const target = { kind: 'mcp' as const, server: s.name };
-          map.set(s.name, target);
-          map.set(s.name.replace(/-/g, '_'), target);
-          map.set(s.name.replace(/_/g, '-'), target);
-        }
-      }
-    } catch { /* MCP 미설정 무시 */ }
-    // 2) system + user modules
-    for (const dir of ['system/modules', 'user/modules']) {
-      try {
-        const ls = await this.core.listDir(dir);
-        if (!ls.success || !ls.data) continue;
-        for (const e of ls.data.filter(x => x.isDirectory)) {
-          const path = `${dir}/${e.name}/index.mjs`;
-          const target = { kind: 'execute' as const, path };
-          map.set(e.name, target);
-          map.set(e.name.replace(/-/g, '_'), target);
-          map.set(e.name.replace(/_/g, '-'), target);
-          map.set(`sysmod_${e.name}`, target);
-          map.set(`sysmod_${e.name.replace(/-/g, '_')}`, target);
-          map.set(path, target);
-        }
-      } catch { /* 폴더 없음 무시 */ }
-    }
-    this._callTargetCache = { map, ts: Date.now() };
-    return lookup(identifier, map) ?? null;
+    return this.dispatcher.resolveCallTarget(identifier);
   }
 
   /** 동적 도구 정의 빌드 — Core 정적 도구 + MCP 외부 도구 (60초 캐시) */
