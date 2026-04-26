@@ -518,7 +518,9 @@ export class AiManager {
       ...(onCliSessionId ? { onCliSessionId } : {}),
       ...(opts?.conversationId ? { conversationId: opts.conversationId } : {}),
     };
-    const MAX_TOOL_TURNS = 10;
+    // cron agent 는 자율 발행 (사용자 부재) — 데이터 수집 (sysmod 4-6개) + save_page 까지 여유 있게.
+    // admin chat 은 사용자가 turn 도달 시 follow-up 가능 → 10 으로 충분.
+    const MAX_TOOL_TURNS = opts?.cronAgent ? 25 : 10;
     const modelId = baseLlmOpts?.model ?? this.llm.getModelId();
 
     const { recentHistory: baseRecentHistory, contextSummary } = await this.history.compressHistoryWithSearch(
