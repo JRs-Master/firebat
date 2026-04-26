@@ -136,9 +136,10 @@ app/                    Next.js App Router
   feed.xml/             RSS 2.0 피드
 core/                   엔진 본체 (불가침 구역)
   index.ts              FirebatCore (Core Facade)
-  ports/                14개 Port 인터페이스 + ToolRouterFactory
+  ports/                15개 Port 인터페이스 + ToolRouterFactory
   types/                FirebatAction, Plan 스키마
-  managers/             13개 도메인 매니저 (AI, Storage, Page, Project, Module, Task, Schedule, Secret, MCP, Capability, Auth, Conversation, Image)
+  managers/             17개 도메인 매니저 (AI, Storage, Page, Project, Module, Task, Schedule, Secret, MCP, Capability, Auth, Conversation, Media, Event, Status, Cost, Tool)
+    ai/                 AiManager 내부 collaborator (PromptBuilder / HistoryResolver / ToolRouter / ToolDispatcher / ResultProcessor / tool-schemas)
 infra/                  어댑터 레이어 (불가침 구역)
   boot.ts               어댑터 조립 팩토리
   config.ts             공통 설정 상수

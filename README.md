@@ -63,18 +63,19 @@ Existing tools pick one: LangGraph/CrewAI are agents but not visual/automation. 
 │   ┌────────────────────────────────────────────────────┐   │
 │   │                FirebatCore (Facade)                │   │
 │   │                                                    │   │
-│   │  AI · Storage · Page · Project · Module            │   │
-│   │  Task · Schedule · Secret · MCP · Capability · Auth│   │
-│   │                    12 Managers                     │   │
+│   │  AI · Storage · Page · Project · Module · Task     │   │
+│   │  Schedule · Secret · MCP · Capability · Auth       │   │
+│   │  Conversation · Media · Event · Status · Cost · Tool│  │
+│   │                    17 Managers                     │   │
 │   └────────────────────┬───────────────────────────────┘   │
 │                        │ Ports (Interface)                 │
 │   ┌────────────────────┴───────────────────────────────┐   │
 │   │                 infra/  (Adapters)                 │   │
 │   │                                                    │   │
-│   │  Storage · Log · Sandbox · LLM · Network           │   │
-│   │  Cron · Database · Vault · MCP Client · Auth       │   │
-│   │  Embedder · ToolRouter                             │   │
-│   │                     12 Adapters                    │   │
+│   │  Storage · Log · Sandbox · LLM · Network · Cron    │   │
+│   │  Database · Vault · MCP Client · Auth · Embedder   │   │
+│   │  ToolRouter · Media · ImageProcessor · ImageGen    │   │
+│   │                     15 Adapters                    │   │
 │   └────────────────────────────────────────────────────┘   │
 │                                                            │
 └────────────────────────────────────────────────────────────┘
@@ -85,12 +86,12 @@ Existing tools pick one: LangGraph/CrewAI are agents but not visual/automation. 
 | Principle | Description |
 |---|---|
 | **Core purity** | Core never imports `fs`, `fetch`, DB drivers, or any I/O library directly |
-| **Ports & Adapters** | Core talks to Infra only through 12 interface (Port) definitions |
+| **Ports & Adapters** | Core talks to Infra only through 15 interface (Port) definitions |
 | **Error encapsulation** | Infra never throws — it returns `InfraResult<T>` instead |
 | **Facade pattern** | Every API route goes through the `getCore()` singleton |
 | **Frontend managers** | UI state transitions concentrated in 3 managers (Chat / Events / Settings) — reducer-based invariants prevent whole classes of UI bugs by construction |
 
-> 🇰🇷 **헥사고날 아키텍처** — Core는 순수 비즈니스 로직만 담당하고, 모든 I/O는 Infra 어댑터가 처리합니다. Core는 I/O 라이브러리를 직접 import하지 않고 12개 포트 인터페이스로만 Infra와 통신하며, Infra는 절대 throw하지 않고 `InfraResult<T>`를 반환합니다. 모든 API route는 `getCore()` 싱글톤을 거칩니다. 프론트엔드 UI 상태는 3개 매니저(Chat/Events/Settings)로 분리되어 reducer 기반 인바리언트로 UI 버그를 구조적으로 차단합니다.
+> 🇰🇷 **헥사고날 아키텍처** — Core는 순수 비즈니스 로직만 담당하고, 모든 I/O는 Infra 어댑터가 처리합니다. Core는 I/O 라이브러리를 직접 import하지 않고 15개 포트 인터페이스로만 Infra와 통신하며, Infra는 절대 throw하지 않고 `InfraResult<T>`를 반환합니다. 모든 API route는 `getCore()` 싱글톤을 거칩니다. 프론트엔드 UI 상태는 3개 매니저(Chat/Events/Settings)로 분리되어 reducer 기반 인바리언트로 UI 버그를 구조적으로 차단합니다.
 
 ---
 
