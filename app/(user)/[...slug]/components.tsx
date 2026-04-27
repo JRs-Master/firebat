@@ -537,14 +537,17 @@ ${cdnTags}
     h2 { font-size: 18px !important; }
     h3 { font-size: 16px !important; }
 
-    /* 표 — body padding 16 우회하고 화면 전체 너비 끝까지 확장 */
+    /* 표 — full-bleed 패턴 (어느 nested level 이든 화면 정확히 끝까지) */
     table {
       display: block !important;
       overflow-x: auto !important;
-      width: calc(100% + 32px) !important;
-      max-width: calc(100% + 32px) !important;
-      margin-left: -16px !important;
-      margin-right: -16px !important;
+      width: 100vw !important;
+      max-width: 100vw !important;
+      position: relative !important;
+      left: 50% !important;
+      right: 50% !important;
+      margin-left: -50vw !important;
+      margin-right: -50vw !important;
       font-size: 12px !important;
       -webkit-overflow-scrolling: touch;
     }
