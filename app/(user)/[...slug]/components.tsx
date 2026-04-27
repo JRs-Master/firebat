@@ -503,11 +503,10 @@ import { buildCdnTags, IFRAME_CSP_META } from '../../../lib/cdn-libraries';
 import DOMPurify from 'isomorphic-dompurify';
 
 /** sanitize 허용 정책 — 페이지 본문 inline DOM 용.
- *  허용 명시 (whitelist): 텍스트·구조·표·리스트·링크·이미지·style.
- *  차단: script, iframe, embed, object, form/input/button (interactive), on* 이벤트, javascript: URL.
- *  AI 생성 본문이 admin 만 작성 가능하지만 sanitize 로 defense-in-depth.
- *  ADD_TAGS 모드 대신 ALLOWED_TAGS 명시 — DOMPurify 의 default whitelist 가 style 태그 제외하므로
- *  ADD_TAGS 추가만으로 일관 동작 안 함. whitelist 명시로 디자인 CSS 보존. */
+ *  DOMPurify v3 가 보안 default 로 <style> 태그 자체 차단해 ALLOWED_TAGS 명시해도 제거.
+ *  → style 태그를 본문에서 별도 추출 → CSS 위험 패턴 (expression/javascript:/behavior:/@import)
+ *  검사 후 통과하면 그대로 prepend, body 부분만 DOMPurify 통과.
+ *  AI 생성 본문이 admin 만 작성 가능하지만 sanitize 로 defense-in-depth. */
 const SANITIZE_CONFIG = {
   ALLOWED_TAGS: [
     // 텍스트·구조
@@ -523,8 +522,6 @@ const SANITIZE_CONFIG = {
     'ul', 'ol', 'li', 'dl', 'dt', 'dd',
     // 링크·미디어
     'a', 'img', 'picture', 'source',
-    // CSS
-    'style',
   ],
   ALLOWED_ATTR: [
     'class', 'id', 'style', 'lang', 'dir', 'title',
@@ -537,6 +534,24 @@ const SANITIZE_CONFIG = {
   ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|\/|#|data:image\/)/i,
 };
 
+/** CSS 위험 패턴 — XSS·외부 추적·광고 fraud 차단. */
+const CSS_DANGER_RE = /(?:expression\s*\(|javascript\s*:|behavior\s*:|@import\s|url\s*\(\s*['"]?\s*javascript:)/i;
+
+/** style 태그 별도 추출 + 위험 CSS 차단 + body 만 DOMPurify. */
+function sanitizeHtmlBlock(content: string): string {
+  const styleTags: string[] = [];
+  // 1) <style>...</style> 추출 (다중 + 속성 모두 매칭). 위험 CSS 만 제거.
+  const bodyHtml = content.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (_match, css: string) => {
+    if (CSS_DANGER_RE.test(css)) return '';
+    styleTags.push(`<style>${css}</style>`);
+    return '';
+  });
+  // 2) body 부분만 sanitize (style 태그 없음 → DOMPurify 정상 처리)
+  const sanitizedBody = DOMPurify.sanitize(bodyHtml, SANITIZE_CONFIG);
+  // 3) style 태그 prepend
+  return styleTags.join('') + sanitizedBody;
+}
+
 function HtmlComp({ content, dependencies }: { content: string; dependencies?: string[] }) {
   // 분기 — dependencies 있으면 iframe srcDoc 격리 (Leaflet/Mermaid 등 CDN library 시각화).
   //        없으면 sanitize 후 inline DOM (광고 게재·SEO 인덱싱 정상).
@@ -546,7 +561,7 @@ function HtmlComp({ content, dependencies }: { content: string; dependencies?: s
     // inline DOM — sanitize 후 직접 박음.
     // wrapper class 로 scope 한정 — AI 가 박은 <style> 안 body/html selector 가 페이지 root 영향 주지 않게.
     // 광고·SEO 인덱싱 정상 + iframe height squeeze 문제 자연 해결.
-    const sanitized = DOMPurify.sanitize(content, SANITIZE_CONFIG);
+    const sanitized = sanitizeHtmlBlock(content);
     return (
       <div
         className="firebat-html-block max-w-none"
