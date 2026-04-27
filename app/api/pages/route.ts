@@ -42,7 +42,10 @@ export async function PUT(req: NextRequest) {
     }
 
     const specStr = typeof spec === 'string' ? spec : JSON.stringify(spec);
-    const result = await getCore().savePage(slug, specStr);
+    // REST PUT semantic = update/replace. 어드민이 모나코 에디터 등으로 명시적으로
+    // "이 페이지 수정" 의도라 덮어쓰기 default true. (AI 의 save_page tool 은
+    // allowOverwrite=false default 유지 — 실수성 덮어쓰기 차단, -N 접미사 자동.)
+    const result = await getCore().savePage(slug, specStr, { allowOverwrite: true });
     if (!result.success) {
       return NextResponse.json({ success: false, error: result.error }, { status: 500 });
     }
