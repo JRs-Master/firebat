@@ -33,6 +33,32 @@
   --cms-radius: 8px;
 }
 
+/* ── CMS 본문 콘텐츠 영역 — content-max-width + padding breakpoints 통합.
+   user route [...slug] page.tsx 의 본문 wrapper. 사용자 어드민에서 max-width·padding 변경 시 즉시 반영. */
+.firebat-cms-content {
+  max-width: var(--cms-content-max-width);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: var(--cms-padding-mobile);
+  padding-right: var(--cms-padding-mobile);
+  padding-top: 32px;
+  padding-bottom: 48px;
+}
+@media (min-width: 640px) {
+  .firebat-cms-content {
+    padding-left: var(--cms-padding-tablet);
+    padding-right: var(--cms-padding-tablet);
+    padding-top: 48px;
+    padding-bottom: 64px;
+  }
+}
+@media (min-width: 1024px) {
+  .firebat-cms-content {
+    padding-left: var(--cms-padding-desktop);
+    padding-right: var(--cms-padding-desktop);
+  }
+}
+
 @layer base {
   html {
     font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;

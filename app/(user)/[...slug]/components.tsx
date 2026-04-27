@@ -1248,7 +1248,12 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, alig
   deltaAlign?: 'left' | 'right' | 'center';
   subLabelAlign?: 'left' | 'right' | 'center';
 }) {
-  const deltaColor = deltaType === 'up' ? 'text-red-600' : deltaType === 'down' ? 'text-blue-600' : 'text-gray-500';
+  // up/down 색은 CMS 토큰 사용 (한국 주식 컨벤션 — 사용자가 어드민에서 변경 가능). neutral 만 hardcoded.
+  const deltaStyle: React.CSSProperties =
+    deltaType === 'up' ? { color: 'var(--cms-up)' } :
+    deltaType === 'down' ? { color: 'var(--cms-down)' } :
+    {};
+  const deltaColor = deltaType === 'neutral' || !deltaType ? 'text-gray-500' : '';
   const deltaArrow = deltaType === 'up' ? '▲' : deltaType === 'down' ? '▼' : '';
   const valStr = formatNumberString(value);
 
@@ -1273,7 +1278,7 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, alig
         {unit && <span className="text-sm text-gray-500">{cleanPlainText(unit)}</span>}
       </div>
       {delta != null && (
-        <div className={`text-xs font-bold mt-1 tabular-nums ${deltaColor} ${text(da)}`}>
+        <div className={`text-xs font-bold mt-1 tabular-nums ${deltaColor} ${text(da)}`} style={deltaStyle}>
           {deltaArrow} {formatNumberString(delta)}
         </div>
       )}
