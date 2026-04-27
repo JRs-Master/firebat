@@ -182,10 +182,12 @@ export class ProcessSandboxAdapter implements ISandboxPort {
 
           // __updateSecrets 엄격 검증 후 Vault 저장
           // 형식 요구: { [키: string]: string } — 값이 string 아니면 해당 항목 스킵
-          // 키 화이트리스트: config.json의 secrets 배열에 선언된 이름만 허용 (오염 방지)
+          // 키 화이트리스트: config.json의 secrets 배열 + tokenCache.key 허용 (오염 방지).
+          // tokenCache.key 누락 시 — sysmod 가 받은 토큰을 Vault 저장 못 해 매 호출마다 재발급되는 silent loop 발생.
           if (updateSecretsRaw && typeof updateSecretsRaw === 'object' && !Array.isArray(updateSecretsRaw) && this.vault) {
             const allowedSecrets = new Set<string>(Array.isArray(secretsEnv) ? [] : Object.keys(secretsEnv ?? {}));
             const tc = moduleDir ? this.readTokenCache(moduleDir) : null;
+            if (tc?.key) allowedSecrets.add(tc.key);  // ← tokenCache 키도 허용
             for (const [k, v] of Object.entries(updateSecretsRaw)) {
               if (typeof k !== 'string' || !k.match(/^[A-Z0-9_]+$/)) continue; // 키는 대문자/숫자/언더스코어만
               if (typeof v !== 'string' || v.length > 8192) continue;            // 값은 string + 8KB 제한
