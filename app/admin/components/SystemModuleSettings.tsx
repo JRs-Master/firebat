@@ -59,7 +59,7 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
   'mcp-server-llm': {
     fields: [],  // 커스텀 렌더링 (LLM 통신용 — OpenAI Responses API, Claude API)
   },
-  'seo': {
+  'cms': {
     fields: [
       { key: 'siteTitle', label: '사이트 제목', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'SEO 기본 사이트 제목 (OG, RSS, Sitemap 등에 사용)' },
       { key: 'siteDescription', label: '사이트 설명', type: 'text', tab: '일반', placeholder: 'Just Imagine. Firebat Runs.', description: 'SEO 기본 사이트 설명' },
@@ -114,7 +114,8 @@ interface Props {
 }
 
 export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
-  const manualSchema = MODULE_SETTINGS_SCHEMA[moduleName];
+  // 'seo' 옛 모듈명 → 'cms' fallback (2026-04-28 SEO → CMS rename 호환)
+  const manualSchema = MODULE_SETTINGS_SCHEMA[moduleName] ?? (moduleName === 'seo' ? MODULE_SETTINGS_SCHEMA['cms'] : undefined);
   const [schema, setSchema] = useState<{ title: string; fields: SettingField[] } | null>(null);
   const [settings, setSettings] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
@@ -516,7 +517,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
           ) : (
             <>
             {/* OG 미리보기 */}
-            {activeTab === 'OG' && moduleName === 'seo' && (
+            {activeTab === 'OG' && (moduleName === 'cms' || moduleName === 'seo') && (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs sm:text-sm font-bold text-slate-700">미리보기</label>

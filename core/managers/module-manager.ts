@@ -155,8 +155,18 @@ export class ModuleManager {
     return null;
   }
 
-  /** SEO 서비스 설정 조회 (편의 메서드) */
-  getSeoSettings(): {
+  /** SEO → CMS lazy migration — cms 키 비어있고 seo 키 있으면 1회 복사.
+   *  마이그레이션 후 옛 seo 키는 그대로 둠 (rollback 안전망 — 추후 정리). */
+  private migrateSeoToCms(): void {
+    const cmsRaw = this.vault.getSecret(vkModuleSettings('cms'));
+    if (cmsRaw) return; // 이미 마이그레이션됨 (또는 신규 설치)
+    const seoRaw = this.vault.getSecret(vkModuleSettings('seo'));
+    if (!seoRaw) return; // 옛 데이터 없음
+    this.vault.setSecret(vkModuleSettings('cms'), seoRaw);
+  }
+
+  /** CMS 서비스 설정 조회 (편의 메서드). 이전 SEO 모듈에서 확장 — 사이트 메타·테마·레이아웃·SEO·OG 통합. */
+  getCmsSettings(): {
     sitemapEnabled: boolean;
     rssEnabled: boolean;
     robotsTxt: string;
@@ -187,7 +197,8 @@ export class ModuleManager {
      *  형식: `google.com, pub-XXX, DIRECT, f08c47fec0942fa0` (한 줄 또는 여러 줄). */
     adsTxt: string;
   } {
-    const s = this.getSettings('seo');
+    this.migrateSeoToCms();
+    const s = this.getSettings('cms');
     return {
       sitemapEnabled: s.sitemapEnabled ?? true,
       rssEnabled: s.rssEnabled ?? true,
@@ -211,5 +222,11 @@ export class ModuleManager {
       faviconUrl: s.faviconUrl ?? '',
       adsTxt: s.adsTxt ?? '',
     };
+  }
+
+  /** @deprecated 2026-04-28 — `getCmsSettings()` 사용. SEO 모듈이 CMS 로 확장됨.
+   *  호출처 점진 마이그레이션 위한 alias — 동작 동일. */
+  getSeoSettings() {
+    return this.getCmsSettings();
   }
 }

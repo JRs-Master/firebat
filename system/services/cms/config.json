@@ -1,0 +1,8 @@
+{
+  "name": "cms",
+  "type": "service",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "CMS 설정 (사이트 메타·테마·레이아웃·SEO·OG·스크립트·소유권 인증 파일·태그). 이전 SEO 모듈에서 확장.",
+  "runtime": "none"
+}

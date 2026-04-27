@@ -461,7 +461,10 @@ export class FirebatCore {
   setModuleSettings(moduleName: string, settings: Record<string, any>) { return this.module.setSettings(moduleName, settings); }
   isModuleEnabled(moduleName: string) { return this.module.isEnabled(moduleName); }
   setModuleEnabled(moduleName: string, enabled: boolean) { this.ai.invalidateCache(); return this.module.setEnabled(moduleName, enabled); }
-  getSeoSettings() { return this.module.getSeoSettings(); }
+  /** CMS 설정 조회 — 사이트 메타·테마·레이아웃·SEO·OG 통합. SEO 모듈에서 CMS 로 확장 (2026-04-28). */
+  getCmsSettings() { return this.module.getCmsSettings(); }
+  /** @deprecated 2026-04-28 — `getCmsSettings()` 사용. 호출처 점진 마이그레이션 위한 alias. */
+  getSeoSettings() { return this.module.getCmsSettings(); }
 
   // ══════════════════════════════════════════════════════════════════════════
   //  태스크 → TaskManager (파이프라인 즉시 실행)
