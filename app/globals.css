@@ -67,6 +67,15 @@
    iframe srcDoc 안 동일 CSS 를 .firebat-html-block scope 로 옮김 — design tokens 도입 전 임시 fix.
    향후 CMS Phase 1 (design tokens + 22 컴포넌트 일괄) 도입 시 자연 deprecation. */
 @media (max-width: 640px) {
+  /* AI 가 박은 .firebat-html-block (이전 body) 의 padding/max-width 강제 override.
+     부모 div 가 이미 px-4 (16px) padding 박았으므로 wrapper 자체는 padding 0.
+     AI 가 max-width:860px 박아도 모바일에선 100% 사용 — 부모가 viewport 결정. */
+  .firebat-html-block {
+    padding: 0 !important;
+    max-width: none !important;
+    margin: 0 !important;
+  }
+
   /* h1-h3 폰트 축소 */
   .firebat-html-block h1 { font-size: 22px !important; }
   .firebat-html-block h2 { font-size: 18px !important; }
