@@ -227,6 +227,10 @@ export interface SandboxExecuteOpts {
    *  - meta: object (선택, 모듈 특정 정보)
    *  최종 결과 JSON (마지막 줄) 은 별개 — 이 콜백은 진행 보고 전용. */
   onProgress?: (update: { progress?: number; message?: string; meta?: Record<string, unknown> }) => void;
+  /** 추가 환경변수 — config.json secrets 외에 명시 주입. caller (Core facade 등) 가 timezone, locale,
+   *  사용자 컨텍스트 등 cross-cutting 값을 sysmod 자식 프로세스에 전달할 때 사용.
+   *  ALLOWED_ENV_KEYS 화이트리스트와 무관 — 명시 호출이라 보안 통과. */
+  extraEnv?: Record<string, string>;
 }
 
 export interface ISandboxPort {

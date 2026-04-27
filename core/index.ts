@@ -440,9 +440,15 @@ export class FirebatCore {
 
   /** 경로 지정 직접 실행 (EXECUTE, 파이프라인 등).
    *  opts.onProgress: 모듈 stdout 의 `[STATUS] {progress?, message?, meta?}` 라인 파싱 콜백.
-   *  Caller (Pipeline step·cron 등) 가 StatusManager 와 연결 가능. */
+   *  Caller (Pipeline step·cron 등) 가 StatusManager 와 연결 가능.
+   *  사용자 timezone (TZ + FIREBAT_TZ) 자동 주입 — sysmod 의 today()/daysAgo() 가 KST 기준 동작.
+   *  caller 가 opts.extraEnv 명시하면 그 위에 timezone 추가 (caller 우선 X — timezone 은 Core 정책). */
   async sandboxExecute(targetPath: string, inputData: Record<string, unknown>, opts?: import('./ports').SandboxExecuteOpts) {
-    return this.module.execute(targetPath, inputData, opts);
+    const tz = this.getTimezone();
+    return this.module.execute(targetPath, inputData, {
+      ...opts,
+      extraEnv: { ...(opts?.extraEnv ?? {}), TZ: tz, FIREBAT_TZ: tz },
+    });
   }
 
   async getSystemModules() { return this.module.listSystem(); }

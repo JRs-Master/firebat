@@ -360,10 +360,17 @@ async function callApi(base, token, apiId, params = {}, retry = 2) {
   return await resp.json();
 }
 
-/** 오늘 날짜 YYYYMMDD */
-function today() { return new Date().toISOString().slice(0,10).replace(/-/g,''); }
-/** N일 전 날짜 YYYYMMDD */
-function daysAgo(n) { const d = new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10).replace(/-/g,''); }
+// 사용자 timezone 기준 (Firebat sandbox 가 FIREBAT_TZ env 주입 — 미설정 시 UTC fallback).
+// 이전 toISOString 구현은 UTC 라 자정~09:00 KST 사이 어제 날짜 박힘 → 휴장일·차트 데이터 silent 오류.
+function _tz() { return process.env.FIREBAT_TZ || process.env.TZ || 'UTC'; }
+function _ymd(d) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: _tz(), year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(d).replace(/-/g, '');
+}
+/** 오늘 날짜 YYYYMMDD (사용자 timezone) */
+function today() { return _ymd(new Date()); }
+/** N일 전 날짜 YYYYMMDD (사용자 timezone) */
+function daysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return _ymd(d); }
 
 /** 편의 액션의 기본 파라미터 생성 — 엑셀 Required 필드 기반 디폴트 */
 function buildParams(action, data) {

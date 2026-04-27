@@ -121,11 +121,13 @@ export class ProcessSandboxAdapter implements ISandboxPort {
 
   /** 프로세스 실행 후 stdout 파싱 결과 반환.
    *  onProgress 가 있으면 stdout 의 `[STATUS] {...}` 라인을 실시간 파싱해 호출.
-   *  최종 결과 JSON 은 마지막 줄 (기존 동작 유지). */
+   *  최종 결과 JSON 은 마지막 줄 (기존 동작 유지).
+   *  extraEnv: caller (Core facade) 가 timezone 등 cross-cutting 값 명시 주입. ALLOWED_ENV_KEYS 화이트리스트 무시 (명시 호출이라 보안 통과). */
   private runProcess(
     command: string, args: string[], payload: Record<string, unknown>, timeoutMs: number,
     secretsEnv?: Record<string, string>, moduleDir?: string,
     onProgress?: SandboxExecuteOpts['onProgress'],
+    extraEnv?: Record<string, string>,
   ): Promise<InfraResult<ModuleOutput>> {
     return new Promise((resolve) => {
       // 환경변수 whitelist — Firebat 시스템 env 누설 방지.
@@ -150,10 +152,12 @@ export class ProcessSandboxAdapter implements ISandboxPort {
         if (v !== undefined) baseEnv[key] = v;
       }
       // UTF-8 강제: Windows에서 Python stdin/stdout이 cp949로 처리되는 것을 방지
+      // extraEnv: caller 명시 주입 (timezone 등). 우선순위 — baseEnv < extraEnv < secretsEnv.
       const env: Record<string, string> = {
         ...baseEnv,
         PYTHONIOENCODING: 'utf-8',
         PYTHONUTF8: '1',
+        ...(extraEnv ?? {}),
         ...(secretsEnv ?? {}),
       };
       const child = execFile(command, args, { timeout: timeoutMs, env: env as NodeJS.ProcessEnv }, (error, stdout, stderr) => {
@@ -274,12 +278,13 @@ export class ProcessSandboxAdapter implements ISandboxPort {
     command: string, args: string[], moduleDir: string,
     inputData: Record<string, unknown>, timeoutMs: number,
     onProgress?: SandboxExecuteOpts['onProgress'],
+    extraEnv?: Record<string, string>,
   ): Promise<InfraResult<ModuleOutput>> {
     const MAX_RETRIES = SANDBOX_MAX_RETRIES;
     const secretsEnv = this.loadSecretsEnv(moduleDir);
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      const result = await this.runProcess(command, args, inputData, timeoutMs, secretsEnv, moduleDir, onProgress);
+      const result = await this.runProcess(command, args, inputData, timeoutMs, secretsEnv, moduleDir, onProgress, extraEnv);
 
       // 완전한 성공 (모듈도 success: true)
       if (result.success && result.data?.success !== false) return result;
@@ -436,6 +441,6 @@ export class ProcessSandboxAdapter implements ISandboxPort {
     }
 
     await this.preInstallFromManifest(moduleDir);
-    return this.executeWithAutoInstall(command, args, moduleDir, inputData, timeoutMs, opts?.onProgress);
+    return this.executeWithAutoInstall(command, args, moduleDir, inputData, timeoutMs, opts?.onProgress, opts?.extraEnv);
   }
 }

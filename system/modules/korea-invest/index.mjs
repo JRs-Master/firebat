@@ -421,9 +421,16 @@ async function callApi(base, token, appKey, appSecret, trId, method, url, params
   return await resp.json();
 }
 
-// ─── 오늘 날짜 / 90일전 날짜 헬퍼 ───
-function today() { return new Date().toISOString().slice(0,10).replace(/-/g,''); }
-function daysAgo(n) { const d = new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10).replace(/-/g,''); }
+// ─── 오늘 날짜 / N일전 날짜 헬퍼 — 사용자 timezone 기준 ───
+// Firebat sandbox 가 spawn 시 FIREBAT_TZ / TZ env 주입. 미설정 시 UTC fallback.
+// 이전 구현 (toISOString) 은 UTC 라 자정~09:00 KST 사이 어제 날짜 반환 → chk-holiday 휴장일 오판 silent failure 유발.
+function _tz() { return process.env.FIREBAT_TZ || process.env.TZ || 'UTC'; }
+function _ymd(d) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: _tz(), year: 'numeric', month: '2-digit', day: '2-digit' })
+    .format(d).replace(/-/g, '');
+}
+function today() { return _ymd(new Date()); }
+function daysAgo(n) { const d = new Date(); d.setDate(d.getDate() - n); return _ymd(d); }
 
 // ─── 순위/분석 API FID_COND_SCR_DIV_CODE (엑셀 기준) ───
 const SCR_CODES = {
