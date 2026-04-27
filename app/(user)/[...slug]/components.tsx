@@ -498,12 +498,42 @@ function AdSlotComp({ slotId, format = 'auto' }: { slotId?: string; format?: str
   );
 }
 
-// ── Html (iframe sandbox) ───────────────────────────────────────────────────
+// ── Html (분기: dependencies 유무로 inline DOM vs iframe srcDoc) ─────────────
 import { buildCdnTags, IFRAME_CSP_META } from '../../../lib/cdn-libraries';
+import DOMPurify from 'isomorphic-dompurify';
+
+/** sanitize 허용 정책 — 페이지 본문 inline DOM 용.
+ *  허용: 텍스트·구조 마크업, 표·리스트·링크·이미지, style 태그·style 속성, class·id.
+ *  차단: script, iframe, embed, object, form/input/button (interactive), on* 이벤트, javascript: URL.
+ *  AI 생성 본문이 admin 만 작성 가능하지만 sanitize 로 defense-in-depth. */
+const SANITIZE_CONFIG = {
+  ADD_TAGS: ['style'],
+  ADD_ATTR: ['target', 'rel'],
+  FORBID_TAGS: ['script', 'iframe', 'embed', 'object', 'form', 'input', 'button', 'select', 'textarea'],
+  FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onmouseout', 'onfocus', 'onblur', 'onchange', 'onsubmit'],
+  ALLOW_DATA_ATTR: false,
+  ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|\/|#|data:image\/)/i,
+};
 
 function HtmlComp({ content, dependencies }: { content: string; dependencies?: string[] }) {
-  // dependencies 명시 시 frontend 가 CDN 태그 합성 후 head 에 주입.
-  // Core 는 라이브러리 키만 다룸 — BIBLE 순수성. legacy 페이지 (content 안에 CDN 태그 직접 박힌 경우) 도 그대로 작동.
+  // 분기 — dependencies 있으면 iframe srcDoc 격리 (Leaflet/Mermaid 등 CDN library 시각화).
+  //        없으면 sanitize 후 inline DOM (광고 게재·SEO 인덱싱 정상).
+  const hasDeps = !!(dependencies && dependencies.length > 0);
+
+  if (!hasDeps) {
+    // inline DOM — sanitize 후 직접 박음.
+    // wrapper class 로 scope 한정 — AI 가 박은 <style> 안 body/html selector 가 페이지 root 영향 주지 않게.
+    // 광고·SEO 인덱싱 정상 + iframe height squeeze 문제 자연 해결.
+    const sanitized = DOMPurify.sanitize(content, SANITIZE_CONFIG);
+    return (
+      <div
+        className="firebat-html-block max-w-none"
+        dangerouslySetInnerHTML={{ __html: sanitized }}
+      />
+    );
+  }
+
+  // CDN library 격리 필요 케이스 — iframe srcDoc 유지.
   const cdnTags = buildCdnTags(dependencies);
   // AI 가 자체 body{margin:0; max-width:none} 같은 style 로 default 깨는 패턴 자주.
   // outer wrapper div 로 max-width 강제 — AI 가 어떻게 body style 짜도 layout 영향 X.
@@ -584,7 +614,7 @@ ${cdnTags}
       sandbox="allow-scripts"
       referrerPolicy="no-referrer"
       loading="lazy"
-      className="w-full h-full border-0 bg-white"
+      className="w-full min-h-[500px] h-[500px] border-0 bg-white"
       title="Html content"
     />
   );
