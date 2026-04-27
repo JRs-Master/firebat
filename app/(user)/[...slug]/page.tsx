@@ -177,6 +177,45 @@ export default async function DynamicPage({ params }: Props) {
   const seo = core.getCmsSettings();
   const siteUrl = await resolveBaseUrl(seo.siteUrl);
 
+  // CMS Phase 3 — 프로젝트별 theme override.
+  // user/projects/{name}/config.json 의 theme 가 글로벌 cms theme 위에 override.
+  // 페이지 spec.project 매칭 시 wrapper 에 inline CSS var 박아 :root override.
+  let projectThemeStyle: React.CSSProperties | undefined;
+  let projectCustomCss: string | undefined;
+  let projectH1Style: string | undefined;
+  let projectH2Style: string | undefined;
+  let projectH3Style: string | undefined;
+  if (spec.project) {
+    const projectConfig = await core.getProjectConfig(spec.project);
+    if (projectConfig) {
+      const theme = projectConfig.theme as any;
+      if (theme && typeof theme === 'object') {
+        const vars: Record<string, string> = {};
+        if (theme.colors?.primary) vars['--cms-primary'] = String(theme.colors.primary);
+        if (theme.colors?.accent) vars['--cms-accent'] = String(theme.colors.accent);
+        if (theme.colors?.up) vars['--cms-up'] = String(theme.colors.up);
+        if (theme.colors?.down) vars['--cms-down'] = String(theme.colors.down);
+        if (theme.colors?.text) vars['--cms-text'] = String(theme.colors.text);
+        if (theme.colors?.textMuted) vars['--cms-text-muted'] = String(theme.colors.textMuted);
+        if (theme.colors?.bg) vars['--cms-bg'] = String(theme.colors.bg);
+        if (theme.colors?.bgCard) vars['--cms-bg-card'] = String(theme.colors.bgCard);
+        if (theme.colors?.border) vars['--cms-border'] = String(theme.colors.border);
+        if (theme.fonts?.body) vars['--cms-font-body'] = String(theme.fonts.body);
+        if (theme.fonts?.heading) vars['--cms-font-heading'] = String(theme.fonts.heading);
+        if (theme.layout?.contentMaxWidth) vars['--cms-content-max-width'] = String(theme.layout.contentMaxWidth);
+        if (theme.layout?.paddingMobile) vars['--cms-padding-mobile'] = String(theme.layout.paddingMobile);
+        if (theme.layout?.paddingTablet) vars['--cms-padding-tablet'] = String(theme.layout.paddingTablet);
+        if (theme.layout?.paddingDesktop) vars['--cms-padding-desktop'] = String(theme.layout.paddingDesktop);
+        if (theme.layout?.radius) vars['--cms-radius'] = String(theme.layout.radius);
+        if (Object.keys(vars).length > 0) projectThemeStyle = vars as React.CSSProperties;
+        if (theme.heading?.h1) projectH1Style = String(theme.heading.h1);
+        if (theme.heading?.h2) projectH2Style = String(theme.heading.h2);
+        if (theme.heading?.h3) projectH3Style = String(theme.heading.h3);
+      }
+      if (typeof projectConfig.customCss === 'string') projectCustomCss = projectConfig.customCss;
+    }
+  }
+
   // 페이지별 JSON-LD (WebPage)
   const pageJsonLd = seo.jsonLdEnabled ? {
     '@context': 'https://schema.org',
@@ -209,12 +248,17 @@ export default async function DynamicPage({ params }: Props) {
        *  render_iframe 단독 사용은 cron-agent 프롬프트에서 차단 (반드시 render_* 분리 사용).
        *  firebat-cms-content — Design Tokens 기반 max-width/padding/font.
        *  data-h*-style — heading style 6 옵션 (CSS 분기). */}
+      {/* 프로젝트별 customCss — Phase 3. 글로벌 head/body 스크립트 위에 추가 적용. */}
+      {projectCustomCss && (
+        <style dangerouslySetInnerHTML={{ __html: projectCustomCss }} />
+      )}
       <main className="min-h-screen bg-white">
         <div
           className="firebat-cms-content"
-          data-h1-style={seo.theme.heading.h1}
-          data-h2-style={seo.theme.heading.h2}
-          data-h3-style={seo.theme.heading.h3}
+          data-h1-style={projectH1Style ?? seo.theme.heading.h1}
+          data-h2-style={projectH2Style ?? seo.theme.heading.h2}
+          data-h3-style={projectH3Style ?? seo.theme.heading.h3}
+          style={projectThemeStyle}
         >
           <ComponentRenderer components={body} />
         </div>

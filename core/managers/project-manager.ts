@@ -117,4 +117,34 @@ export class ProjectManager {
     const stored = this.vault.getSecret(vkProjectPassword(project));
     return stored === password;
   }
+
+  /** 프로젝트 설정 조회 — `user/projects/{name}/config.json` 의 theme override / customCss / layoutOverride 등.
+   *  미존재 시 null. CMS Phase 3 — 프로젝트별 디자인 override. 페이지 spec.project 가 이 name 과 매칭되면 적용.
+   *
+   *  config.json 스키마:
+   *    {
+   *      "theme": { ... Partial<DesignTokens> ... },     // 글로벌 CMS theme 위에 override
+   *      "customCss": "...",                              // 프로젝트 페이지에만 적용되는 CSS
+   *      "layoutOverride": { ... }                        // Phase 4 layout 토큰 override (sidebar 위치 등)
+   *    }
+   */
+  async getProjectConfig(name: string): Promise<Record<string, unknown> | null> {
+    if (!name || name.includes('..') || name.includes('/') || name.includes('\\')) return null;
+    const file = await this.storage.read(`user/projects/${name}/config.json`);
+    if (!file.success || !file.data) return null;
+    try {
+      return JSON.parse(file.data);
+    } catch {
+      return null;
+    }
+  }
+
+  /** 프로젝트 설정 저장 — config.json upsert. 어드민 UI 에서 호출. */
+  async setProjectConfig(name: string, config: Record<string, unknown>): Promise<InfraResult<void>> {
+    if (!name || name.includes('..') || name.includes('/') || name.includes('\\')) {
+      return { success: false, error: '잘못된 프로젝트 이름입니다.' };
+    }
+    const json = JSON.stringify(config, null, 2);
+    return this.storage.write(`user/projects/${name}/config.json`, json);
+  }
 }

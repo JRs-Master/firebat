@@ -419,6 +419,17 @@ export class FirebatCore {
     return this.project.getVisibility(project);
   }
 
+  /** 프로젝트 설정 조회 — `user/projects/{name}/config.json` 의 theme override / customCss 등.
+   *  CMS Phase 3 — 프로젝트별 디자인 override. 페이지 spec.project 매칭 시 적용. */
+  async getProjectConfig(project: string) {
+    return this.project.getProjectConfig(project);
+  }
+
+  /** 프로젝트 설정 저장 — config.json upsert. 어드민 UI 에서 호출. */
+  async setProjectConfig(project: string, config: Record<string, unknown>) {
+    return this.project.setProjectConfig(project, config);
+  }
+
   /** 프로젝트 비밀번호 검증 */
   verifyProjectPassword(project: string, password: string) {
     return this.project.verifyPassword(project, password);
