@@ -19,8 +19,9 @@ const BACKUP = `${FILE}.bak.${Date.now()}`;
 
 const RULES = [
   // "본문 1000자+ HTML — h2 섹션 4개+" → "본문 1000자+ — render_header(h2 섹션 4개+, level=2) + render_table/render_chart/render_callout/render_text/render_metric 등 분리"
+  // "1000자 이상" / "1000자+" 둘 다 매칭
   {
-    pattern: /본문 (\d+자\+?) HTML — h2 섹션 (\d+개\+?)/g,
+    pattern: /본문 (\d+자(?: 이상)?\+?) HTML — h2 섹션 (\d+개\+?)/g,
     replacement: '본문 $1 — render_header(h2 섹션 $2, level=2) + render_table/render_chart/render_callout/render_text/render_metric 등 분리',
   },
   // 일반 "HTML 작성" / "HTML —" 표현
