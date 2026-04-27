@@ -529,22 +529,22 @@ ${cdnTags}
      AI 의 inline style·class 가 박아둔 4-grid · width 고정 등을 강제 override.
      향후 design tokens + component-based 전환 시 이 블록 자연 deprecation. */
   @media (max-width: 640px) {
-    /* outer wrap 좌우 padding 6px — 텍스트 영역 좁게. table 은 negative margin 으로 끝까지 */
-    #firebat-wrap { padding: 8px 6px !important; max-width: 100% !important; }
-    body { padding: 0 !important; max-width: 100% !important; }
+    /* mobile padding 16px — 텍스트 들여쓰기 충분, AI body padding 의 자연 크기. table 은 negative margin 으로 끝까지 */
+    #firebat-wrap { padding: 0 !important; max-width: 100% !important; }
+    body { padding: 16px !important; max-width: 100% !important; }
 
     h1 { font-size: 22px !important; }
     h2 { font-size: 18px !important; }
     h3 { font-size: 16px !important; }
 
-    /* 표 — outer padding 6px 무시하고 화면 전체 너비 끝까지 확장 */
+    /* 표 — body padding 16 우회하고 화면 전체 너비 끝까지 확장 */
     table {
       display: block !important;
       overflow-x: auto !important;
-      width: calc(100% + 12px) !important;
-      max-width: calc(100% + 12px) !important;
-      margin-left: -6px !important;
-      margin-right: -6px !important;
+      width: calc(100% + 32px) !important;
+      max-width: calc(100% + 32px) !important;
+      margin-left: -16px !important;
+      margin-right: -16px !important;
       font-size: 12px !important;
       -webkit-overflow-scrolling: touch;
     }
