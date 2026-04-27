@@ -1,6 +1,7 @@
 import type { ISandboxPort, IStoragePort, IVaultPort, ModuleOutput } from '../ports';
 import type { InfraResult } from '../types';
 import { vkModuleSettings } from '../vault-keys';
+import { mergeTokens, type DesignTokens } from '../../lib/design-tokens';
 
 interface SystemEntry {
   name: string;
@@ -204,6 +205,9 @@ export class ModuleManager {
      *  Yandex (`yandex_{code}.html`) 등 모든 인증 서비스 통일. 새 서비스 = 코드 변경 0, 어드민 entry 추가만.
      *  Content-Type 확장자 자동 추론 (.txt/.html/.xml). */
     verifications: Array<{ filename: string; content: string }>;
+    /** Design Tokens — 색·폰트·레이아웃·heading 스타일 통합. 22 컴포넌트 일관 적용.
+     *  미설정 시 lib/design-tokens.ts 의 DEFAULT_TOKENS (Slate Pro + Pretendard + 1200px). */
+    theme: DesignTokens;
   } {
     this.migrateSeoToCms();
     const s = this.getSettings('cms');
@@ -230,6 +234,7 @@ export class ModuleManager {
       faviconUrl: s.faviconUrl ?? '',
       adsTxt: s.adsTxt ?? '',
       verifications: this.resolveVerifications(s),
+      theme: mergeTokens(s.theme),
     };
   }
 

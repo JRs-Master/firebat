@@ -5,6 +5,34 @@
 @source "../user/modules/**/*.{js,ts,jsx,tsx}";
 @source "../user/apps/**/*.{js,ts,jsx,tsx}";
 
+/* CMS Design Tokens — 사이트 전역 디자인 default.
+   user route SSR 시점에 사용자 설정 토큰이 inline <style> 로 :root override.
+   값 정의: lib/design-tokens.ts 의 DEFAULT_TOKENS. */
+:root {
+  /* 색 — Slate Pro 프리셋 */
+  --cms-primary: #2563eb;
+  --cms-accent: #f59e0b;
+  --cms-up: #dc2626;
+  --cms-down: #2563eb;
+  --cms-text: #0f172a;
+  --cms-text-muted: #64748b;
+  --cms-bg: #ffffff;
+  --cms-bg-card: #f8fafc;
+  --cms-border: #e2e8f0;
+
+  /* 폰트 — Pretendard */
+  --cms-font-body: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, sans-serif;
+  --cms-font-heading: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, sans-serif;
+  --cms-font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+
+  /* 레이아웃 */
+  --cms-content-max-width: 1200px;
+  --cms-padding-mobile: 16px;
+  --cms-padding-tablet: 24px;
+  --cms-padding-desktop: 32px;
+  --cms-radius: 8px;
+}
+
 @layer base {
   html {
     font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;

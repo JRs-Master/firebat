@@ -1,11 +1,14 @@
 import { getCore } from '../../lib/singleton';
 import { SeoScripts } from './seo-scripts';
 import { BASE_URL } from '../../infra/config';
+import { tokensToCss } from '../../lib/design-tokens';
 
-/** User 페이지 레이아웃 — SEO head/body 스크립트 + JSON-LD 주입 */
+/** User 페이지 레이아웃 — SEO head/body 스크립트 + JSON-LD + Design Tokens 주입 */
 export default function UserLayout({ children }: { children: React.ReactNode }) {
   const seo = getCore().getCmsSettings();
   const siteUrl = seo.siteUrl || BASE_URL;
+  // 사용자 설정 design tokens → :root CSS var 로 inject. globals.css 의 default 를 override.
+  const themeCss = `:root { ${tokensToCss(seo.theme)} }`;
 
   // JSON-LD 구조화 데이터 (WebSite + Organization)
   const jsonLd = seo.jsonLdEnabled ? {
@@ -36,6 +39,8 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <>
+      {/* Design Tokens — 사용자 설정 토큰을 :root 에 inject. globals.css default override. */}
+      <style dangerouslySetInnerHTML={{ __html: themeCss }} />
       {jsonLd && (
         <script
           type="application/ld+json"
