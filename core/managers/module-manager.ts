@@ -2,6 +2,7 @@ import type { ISandboxPort, IStoragePort, IVaultPort, ModuleOutput } from '../po
 import type { InfraResult } from '../types';
 import { vkModuleSettings } from '../vault-keys';
 import { mergeTokens, COLOR_PRESETS, FONT_PRESETS, type DesignTokens, type HeadingStyle } from '../../lib/design-tokens';
+import { parseNavLinks, DEFAULT_LAYOUT, type LayoutConfig } from '../../lib/cms-layout';
 
 interface SystemEntry {
   name: string;
@@ -208,6 +209,9 @@ export class ModuleManager {
     /** Design Tokens — 색·폰트·레이아웃·heading 스타일 통합. 22 컴포넌트 일관 적용.
      *  미설정 시 lib/design-tokens.ts 의 DEFAULT_TOKENS (Slate Pro + Pretendard + 1200px). */
     theme: DesignTokens;
+    /** Layout 시스템 — header / footer (Phase 4). 사용자 페이지 본문 위·아래에 자연 렌더.
+     *  미설정 시 DEFAULT_LAYOUT (헤더·푸터 둘 다 표시, 단순 텍스트 로고). */
+    layout: LayoutConfig;
   } {
     this.migrateSeoToCms();
     const s = this.getSettings('cms');
@@ -235,6 +239,24 @@ export class ModuleManager {
       adsTxt: s.adsTxt ?? '',
       verifications: this.resolveVerifications(s),
       theme: mergeTokens(this.composeTheme(s)),
+      layout: this.composeLayout(s),
+    };
+  }
+
+  /** flat key (layoutSiteName / layoutNavLinks 등) → LayoutConfig 합성.
+   *  Phase 4 — 미설정 필드는 DEFAULT_LAYOUT 의 값 사용. */
+  private composeLayout(s: Record<string, any>): LayoutConfig {
+    return {
+      header: {
+        show: s.layoutShowHeader !== false, // 기본 true (미설정 = true)
+        siteName: s.layoutSiteName || s.siteTitle || DEFAULT_LAYOUT.header.siteName,
+        logoUrl: s.layoutLogoUrl || '',
+        navLinks: parseNavLinks(s.layoutNavLinks),
+      },
+      footer: {
+        show: s.layoutShowFooter !== false,
+        text: s.layoutFooterText || '',
+      },
     };
   }
 

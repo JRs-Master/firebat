@@ -1,9 +1,11 @@
 import { getCore } from '../../lib/singleton';
 import { SeoScripts } from './seo-scripts';
+import { CmsHeader } from './cms-header';
+import { CmsFooter } from './cms-footer';
 import { BASE_URL } from '../../infra/config';
 import { tokensToCss } from '../../lib/design-tokens';
 
-/** User 페이지 레이아웃 — SEO head/body 스크립트 + JSON-LD + Design Tokens 주입 */
+/** User 페이지 레이아웃 — SEO head/body 스크립트 + JSON-LD + Design Tokens + Header/Footer 주입 */
 export default function UserLayout({ children }: { children: React.ReactNode }) {
   const seo = getCore().getCmsSettings();
   const siteUrl = seo.siteUrl || BASE_URL;
@@ -48,7 +50,9 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
         />
       )}
       <SeoScripts headScripts={seo.headScripts} bodyScripts={seo.bodyScripts} />
+      {seo.layout.header.show && <CmsHeader header={seo.layout.header} />}
       {children}
+      {seo.layout.footer.show && <CmsFooter footer={seo.layout.footer} />}
     </>
   );
 }

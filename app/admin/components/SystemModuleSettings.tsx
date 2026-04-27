@@ -27,6 +27,7 @@ interface SettingField {
 // 탭 정의 (아이콘 + 라벨)
 const TAB_META: Record<string, { label: string; icon: typeof Globe }> = {
   '일반': { label: '일반', icon: Settings2 },
+  '레이아웃': { label: '레이아웃', icon: Server },
   '테마': { label: '테마', icon: Blocks },
   'SEO': { label: 'SEO', icon: Globe },
   '이미지': { label: '이미지', icon: Image },
@@ -73,6 +74,13 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'jsonLdLogoUrl', label: '로고 URL', type: 'text', tab: '일반', placeholder: 'https://example.com/icon.svg', description: 'JSON-LD Organization 로고 이미지 URL' },
       { key: 'siteLang', label: '사이트 언어', type: 'text', tab: '일반', placeholder: 'ko', description: 'HTML lang 속성 — 검색엔진 언어 인식 + 접근성. 기본 ko (en/ja/zh-CN 등)', defaultValue: 'ko' },
       { key: 'faviconUrl', label: 'Favicon URL', type: 'text', tab: '일반', placeholder: '/user/media/...png 또는 https://...', description: '커스텀 favicon. 갤러리 이미지 URL 또는 외부 URL. 비우면 기본 아이콘.' },
+      // ── 레이아웃 — 헤더 / 푸터 (Phase 4). 사용자 페이지 본문 위·아래 자연 등장. ──
+      { key: 'layoutShowHeader', label: '헤더 표시', type: 'toggle', tab: '레이아웃', description: '사용자 페이지 상단 헤더 표시 여부. 기본 ON.', defaultValue: true },
+      { key: 'layoutSiteName', label: '헤더 — 사이트 이름', type: 'text', tab: '레이아웃', placeholder: 'Firebat', description: '헤더 좌측 텍스트 로고. 비우면 일반 탭의 사이트 제목 사용.' },
+      { key: 'layoutLogoUrl', label: '헤더 — 로고 이미지 (선택)', type: 'text', tab: '레이아웃', placeholder: '/user/media/...png 또는 https://...', description: '텍스트 로고 옆에 표시할 이미지 URL. 비우면 텍스트만.' },
+      { key: 'layoutNavLinks', label: '헤더 — 네비 링크', type: 'textarea', tab: '레이아웃', placeholder: '홈 | /\n블로그 | /stock-blog\n소개 | /about\n문의 | /contact', description: '한 줄당 "라벨 | 경로" 형식. 헤더 우측에 가로 나열.' },
+      { key: 'layoutShowFooter', label: '푸터 표시', type: 'toggle', tab: '레이아웃', description: '사용자 페이지 하단 푸터 표시 여부. 기본 ON.', defaultValue: true },
+      { key: 'layoutFooterText', label: '푸터 — 텍스트', type: 'textarea', tab: '레이아웃', placeholder: '© 2026 Firebat. All rights reserved.\n본 사이트는 투자 자문이 아닌 정보 제공 목적입니다.', description: '푸터 텍스트. 저작권 / 법적 고지 / 연락처 등. 줄바꿈 OK. HTML 태그 일부 허용 (<a>, <strong> 등).' },
       // ── 테마 — 색·폰트·layout 토큰. 사용자 변경 즉시 모든 페이지 반영 (CSS var). ──
       { key: 'themePreset', label: '색 프리셋', type: 'color-presets', tab: '테마', description: '클릭 한 번으로 primary/accent/up/down/text/배경/테두리 색 일괄 변경. Light 7 + Dark 3 = 10 프리셋.', defaultValue: 'slate-pro' },
       { key: 'themeFont', label: '폰트 세트', type: 'select', tab: '테마', description: '본문·제목 폰트 통합 변경. Pretendard Variable (한글 최적, 기본) / Noto Sans KR / Inter / Geist / Cal Sans.', defaultValue: 'pretendard', options: [
