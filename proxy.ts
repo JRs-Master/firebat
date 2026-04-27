@@ -50,6 +50,9 @@ export function proxy(request: NextRequest) {
   if (pathname === '/api/health' && request.method === 'GET') return NextResponse.next();
   // Telegram webhook — 텔레그램 Bot API 가 호출. X-Telegram-Bot-Api-Secret-Token 헤더로 자체 검증.
   if (pathname === '/api/telegram/webhook' && request.method === 'POST') return NextResponse.next();
+  // 사이트 소유권 인증 파일 — Google/AdSense/Naver/Bing crawler 가 토큰 없이 접근.
+  // (next.config.mjs rewrites 로 /:file.txt|html|xml → /api/verifications/:file 라우팅)
+  if (pathname.startsWith('/api/verifications/') && request.method === 'GET') return NextResponse.next();
   // 이미지는 /media/ (api 밖) 로 이전되어 여기서 처리 불필요 — nginx 또는 app/media 라우트가 직접 서빙.
 
   // ── /api/* — 쿠키 또는 Bearer 없으면 401 ──

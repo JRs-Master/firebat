@@ -13,7 +13,19 @@ const nextConfig = {
     serverActions: {
       allowedOrigins: ["localhost:3000", "127.0.0.1:3000"]
     }
-  }
+  },
+  /** 사이트 소유권 인증 파일 — CMS verifications 배열로 통합 처리.
+   *  /{filename}.txt|.html|.xml 패턴을 /api/verifications/[file] 로 rewrite.
+   *  정적 routes (/robots.txt, /sitemap*.xml, /feed.xml) 는 Next.js 가 우선 매칭하므로 영향 0.
+   *  user route catch-all 의 page slug 는 보통 확장자 없어 충돌 0. */
+  async rewrites() {
+    return [
+      {
+        source: '/:file(.+\\.(?:txt|html|xml))',
+        destination: '/api/verifications/:file',
+      },
+    ];
+  },
 };
 
 export default nextConfig;

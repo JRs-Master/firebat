@@ -194,8 +194,16 @@ export class ModuleManager {
     /** 커스텀 favicon URL — 미지정 시 Next.js 기본 (app/icon.svg). /user/media/... 또는 외부 URL 가능. */
     faviconUrl: string;
     /** ads.txt 콘텐츠 — `https://{domain}/ads.txt` 로 정적 응답. AdSense / 다른 ad 네트워크 publisher 인증용.
-     *  형식: `google.com, pub-XXX, DIRECT, f08c47fec0942fa0` (한 줄 또는 여러 줄). */
+     *  형식: `google.com, pub-XXX, DIRECT, f08c47fec0942fa0` (한 줄 또는 여러 줄).
+     *  @deprecated 2026-04-28 — `verifications` 배열의 `ads.txt` 항목으로 통합. 호환성 위해 유지. */
     adsTxt: string;
+    /** 사이트 소유권 인증 파일 통합 시스템 — (filename, content) 페어 N개 자유 등록.
+     *  middleware 가 `/{filename}` path 매칭 시 raw 응답.
+     *  AdSense ads.txt / Google site verification (`google{code}.html`) /
+     *  Naver Search Advisor (`naver{code}.html`) / Bing IndexNow (`BingSiteAuth.xml`) /
+     *  Yandex (`yandex_{code}.html`) 등 모든 인증 서비스 통일. 새 서비스 = 코드 변경 0, 어드민 entry 추가만.
+     *  Content-Type 확장자 자동 추론 (.txt/.html/.xml). */
+    verifications: Array<{ filename: string; content: string }>;
   } {
     this.migrateSeoToCms();
     const s = this.getSettings('cms');
@@ -221,7 +229,24 @@ export class ModuleManager {
       autoCanonical: s.autoCanonical ?? true,
       faviconUrl: s.faviconUrl ?? '',
       adsTxt: s.adsTxt ?? '',
+      verifications: this.resolveVerifications(s),
     };
+  }
+
+  /** verifications 배열 해석 — 옛 `adsTxt` 단일 필드와 신규 `verifications` 배열 통합.
+   *  옛 adsTxt 가 비어있지 않고 verifications 에 'ads.txt' 항목 없으면 자동 prepend.
+   *  사용자가 verifications 직접 편집해 'ads.txt' 추가/삭제하면 그 결과가 우선. */
+  private resolveVerifications(s: Record<string, any>): Array<{ filename: string; content: string }> {
+    const explicit: Array<{ filename: string; content: string }> = Array.isArray(s.verifications)
+      ? s.verifications.filter((v: any) => v && typeof v.filename === 'string' && typeof v.content === 'string')
+      : [];
+    const adsTxt = (s.adsTxt ?? '').trim();
+    const hasAdsTxtEntry = explicit.some(v => v.filename === 'ads.txt');
+    if (adsTxt && !hasAdsTxtEntry) {
+      // 옛 adsTxt 자동 변환 — verifications 시스템 단일 source 화
+      return [{ filename: 'ads.txt', content: adsTxt }, ...explicit];
+    }
+    return explicit;
   }
 
   /** @deprecated 2026-04-28 — `getCmsSettings()` 사용. SEO 모듈이 CMS 로 확장됨.
