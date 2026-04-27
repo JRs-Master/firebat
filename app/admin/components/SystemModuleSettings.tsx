@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, Code, Settings2, ExternalLink, ArrowLeft } from 'lucide-react';
+import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, Code, Settings2, ExternalLink, ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { TelegramWebhookSection } from './TelegramWebhookSection';
 import { confirmDialog } from './Dialog';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
-type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret';
+type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'verifications';
 interface SettingField {
   key: string;
   label: string;
@@ -91,7 +91,8 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'ogDomain', label: '도메인 표시', type: 'text', tab: 'OG', placeholder: 'example.com', description: 'OG 이미지 우하단 도메인 텍스트. 비워두면 요청 host 자동 감지.' },
       { key: 'headScripts', label: '<head> 스크립트', type: 'textarea', tab: '스크립트', placeholder: '<!-- Google Analytics 등 -->', description: '모든 페이지 <head>에 삽입할 HTML (SSR 박힘 — crawler 가 인식)' },
       { key: 'bodyScripts', label: '</body> 스크립트', type: 'textarea', tab: '스크립트', placeholder: '<!-- 채팅 위젯 등 -->', description: '모든 페이지 </body> 앞에 삽입할 HTML' },
-      { key: 'adsTxt', label: 'ads.txt', type: 'textarea', tab: '스크립트', placeholder: 'google.com, pub-XXXXXXXX, DIRECT, f08c47fec0942fa0', description: '/ads.txt 응답 내용 — AdSense / 다른 ad 네트워크 publisher 인증용 (IAB 표준)' },
+      { key: 'adsTxt', label: 'ads.txt (legacy — verifications 권장)', type: 'textarea', tab: '스크립트', placeholder: 'google.com, pub-XXXXXXXX, DIRECT, f08c47fec0942fa0', description: '/ads.txt 응답 내용. 이 필드 비워두고 아래 "사이트 인증 파일" 의 ads.txt 항목 사용 권장 (verifications 시스템 통합).' },
+      { key: 'verifications', label: '사이트 인증 파일', type: 'verifications', tab: '스크립트', description: 'Google Search Console (google{code}.html), AdSense (ads.txt), Naver Search Advisor (naverabc.html), Bing IndexNow (BingSiteAuth.xml), Yandex (yandex.html) 등 모든 사이트 소유권 인증 파일 통합 관리. (filename, content) 페어로 N개 등록.' },
     ],
   },
 };
@@ -607,6 +608,13 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
                       <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{field.description}</p>
                     )}
                   </div>
+                ) : field.type === 'verifications' ? (
+                  <VerificationsField
+                    label={field.label}
+                    description={field.description}
+                    value={Array.isArray(settings[field.key]) ? settings[field.key] : []}
+                    onChange={(v) => handleChange(field.key, v)}
+                  />
                 ) : field.type === 'toggle' ? (
                   <label className="flex items-center justify-between cursor-pointer">
                     <div>
@@ -689,5 +697,69 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
         })()}
       </div>
     </div>
+  );
+}
+
+// ── 사이트 인증 파일 편집 — verifications 배열 (filename, content) UI ─────────
+function VerificationsField({ label, description, value, onChange }: {
+  label: string;
+  description?: string;
+  value: Array<{ filename: string; content: string }>;
+  onChange: (v: Array<{ filename: string; content: string }>) => void;
+}) {
+  const addItem = () => onChange([...value, { filename: '', content: '' }]);
+  const removeItem = (i: number) => onChange(value.filter((_, idx) => idx !== i));
+  const updateItem = (i: number, patch: Partial<{ filename: string; content: string }>) => {
+    onChange(value.map((item, idx) => idx === i ? { ...item, ...patch } : item));
+  };
+  return (
+    <>
+      <label className="text-xs sm:text-sm font-bold text-slate-700">{label}</label>
+      {description && (
+        <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{description}</p>
+      )}
+      <div className="flex flex-col gap-2 mt-1">
+        {value.length === 0 && (
+          <p className="text-xs text-slate-400 italic py-2 text-center bg-slate-50 border border-dashed border-slate-200 rounded-lg">
+            등록된 인증 파일이 없습니다.
+          </p>
+        )}
+        {value.map((item, i) => (
+          <div key={i} className="flex flex-col gap-1.5 p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={item.filename}
+                onChange={e => updateItem(i, { filename: e.target.value })}
+                placeholder="google1234567.html / naverabc.html / ads.txt 등"
+                className="flex-1 px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+              />
+              <Tooltip label="삭제">
+                <button
+                  onClick={() => removeItem(i)}
+                  className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
+                  aria-label="삭제"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </Tooltip>
+            </div>
+            <textarea
+              value={item.content}
+              onChange={e => updateItem(i, { content: e.target.value })}
+              placeholder="파일 내용 (예: ads.txt 표준 라인, Google site-verification meta 등)"
+              rows={3}
+              className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono resize-y"
+            />
+          </div>
+        ))}
+        <button
+          onClick={addItem}
+          className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold text-blue-600 hover:bg-blue-50 border border-dashed border-blue-300 rounded-lg transition-colors"
+        >
+          <Plus size={14} /> 인증 파일 추가
+        </button>
+      </div>
+    </>
   );
 }
