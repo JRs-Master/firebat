@@ -61,3 +61,59 @@
     display: none;
   }
 }
+
+/* ── Inline HTML 블록 (HtmlComp 의 dependencies-없음 분기) 모바일 안전망 ─────
+   AI 가 박은 raw HTML 의 4-grid·width 고정·table 큰 너비 등을 모바일에서 강제 override.
+   iframe srcDoc 안 동일 CSS 를 .firebat-html-block scope 로 옮김 — design tokens 도입 전 임시 fix.
+   향후 CMS Phase 1 (design tokens + 22 컴포넌트 일괄) 도입 시 자연 deprecation. */
+@media (max-width: 640px) {
+  /* h1-h3 폰트 축소 */
+  .firebat-html-block h1 { font-size: 22px !important; }
+  .firebat-html-block h2 { font-size: 18px !important; }
+  .firebat-html-block h3 { font-size: 16px !important; }
+
+  /* 표 — full-bleed 패턴 (화면 끝까지 가로 스크롤). 부모 padding 무관 100vw 강제 */
+  .firebat-html-block table {
+    display: block !important;
+    overflow-x: auto !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    position: relative !important;
+    left: 50% !important;
+    right: 50% !important;
+    margin-left: -50vw !important;
+    margin-right: -50vw !important;
+    font-size: 12px !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  .firebat-html-block th,
+  .firebat-html-block td { padding: 4px 6px !important; white-space: nowrap; }
+
+  /* grid (KPI 카드 등) 자동 fallback — 모든 grid 패턴 매칭 */
+  .firebat-html-block [style*='grid-template-columns'],
+  .firebat-html-block [class~='grid'],
+  .firebat-html-block [class*='grid-cols'],
+  .firebat-html-block [class*='kpi'] {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 6px !important;
+  }
+  /* 카드 padding·폰트 축소 — 3개 한 줄도 들어가게 */
+  .firebat-html-block [class~='card'],
+  .firebat-html-block [class*='kpi-card'] { padding: 8px !important; }
+  .firebat-html-block [class~='card'] .value,
+  .firebat-html-block [class*='kpi-card'] .value,
+  .firebat-html-block .card .value { font-size: 15px !important; }
+  .firebat-html-block [class~='card'] .label,
+  .firebat-html-block [class*='kpi-card'] .label,
+  .firebat-html-block .card .label { font-size: 11px !important; }
+}
+
+/* 더 좁은 화면 — 3개 빡빡하면 2개로 fallback */
+@media (max-width: 380px) {
+  .firebat-html-block [style*='grid-template-columns'],
+  .firebat-html-block [class~='grid'],
+  .firebat-html-block [class*='grid-cols'],
+  .firebat-html-block [class*='kpi'] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
