@@ -89,8 +89,9 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'ogBgColor', label: '배경색', type: 'text', tab: 'OG', placeholder: '#f8fafc', description: 'OG 이미지 배경색 (HEX)' },
       { key: 'ogAccentColor', label: '강조색', type: 'text', tab: 'OG', placeholder: '#2563eb', description: '상단 라인, 로고 테두리 색상' },
       { key: 'ogDomain', label: '도메인 표시', type: 'text', tab: 'OG', placeholder: 'example.com', description: 'OG 이미지 우하단 도메인 텍스트. 비워두면 요청 host 자동 감지.' },
-      { key: 'headScripts', label: '<head> 스크립트', type: 'textarea', tab: '스크립트', placeholder: '<!-- Google Analytics 등 -->', description: '모든 페이지 <head>에 삽입할 HTML' },
+      { key: 'headScripts', label: '<head> 스크립트', type: 'textarea', tab: '스크립트', placeholder: '<!-- Google Analytics 등 -->', description: '모든 페이지 <head>에 삽입할 HTML (SSR 박힘 — crawler 가 인식)' },
       { key: 'bodyScripts', label: '</body> 스크립트', type: 'textarea', tab: '스크립트', placeholder: '<!-- 채팅 위젯 등 -->', description: '모든 페이지 </body> 앞에 삽입할 HTML' },
+      { key: 'adsTxt', label: 'ads.txt', type: 'textarea', tab: '스크립트', placeholder: 'google.com, pub-XXXXXXXX, DIRECT, f08c47fec0942fa0', description: '/ads.txt 응답 내용 — AdSense / 다른 ad 네트워크 publisher 인증용 (IAB 표준)' },
     ],
   },
 };

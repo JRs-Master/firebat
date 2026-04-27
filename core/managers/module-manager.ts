@@ -183,6 +183,9 @@ export class ModuleManager {
     autoCanonical: boolean;
     /** 커스텀 favicon URL — 미지정 시 Next.js 기본 (app/icon.svg). /user/media/... 또는 외부 URL 가능. */
     faviconUrl: string;
+    /** ads.txt 콘텐츠 — `https://{domain}/ads.txt` 로 정적 응답. AdSense / 다른 ad 네트워크 publisher 인증용.
+     *  형식: `google.com, pub-XXX, DIRECT, f08c47fec0942fa0` (한 줄 또는 여러 줄). */
+    adsTxt: string;
   } {
     const s = this.getSettings('seo');
     return {
@@ -206,6 +209,7 @@ export class ModuleManager {
       twitterCreator: s.twitterCreator ?? '',
       autoCanonical: s.autoCanonical ?? true,
       faviconUrl: s.faviconUrl ?? '',
+      adsTxt: s.adsTxt ?? '',
     };
   }
 }
