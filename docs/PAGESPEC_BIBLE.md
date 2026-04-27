@@ -165,7 +165,7 @@ PageSpec 컴포넌트와 별도로, 채팅에서만 쓰는 특수 컴포넌트.
 | 상황 | 방식 |
 |---|---|
 | 독립 페이지 (SEO 필요) | `save_page` → PageSpec Component |
-| 채팅 답변 내 시각화 | `render_pagespec`/`render_stock_chart`/`render_html` |
+| 채팅 답변 내 시각화 | `render_pagespec`/`render_stock_chart`/`render_iframe` |
 | 1회성 차트/표 | 채팅 블록 |
 | 재방문용 대시보드 | PageSpec 페이지 |
 
@@ -189,16 +189,17 @@ PageSpec 컴포넌트와 별도로, 채팅에서만 쓰는 특수 컴포넌트.
 |---|---|---|
 | `save_page` | — | PageSpec 페이지 DB 저장 |
 | `render_stock_chart` | component:StockChart | 주식 시각화 (전용) |
-| `render_html` | html | 자유 HTML (iframe, 지도/다이어그램 등) |
+| `render_iframe` | html | 한 섹션 iframe 위젯 (지도/다이어그램 등 CDN 라이브러리 시각화) |
 
 ### 제1항. 우선순위
 1. **주식 관련** → `render_stock_chart`
 2. **정형화된 데이터** (표/카드/뱃지/알림) → `render_pagespec` (추후 구현)
-3. **지도/다이어그램/애니메이션** → `render_html` + CDN 라이브러리
-4. **최후의 수단** → `render_html` 자유 HTML
+3. **지도/다이어그램/애니메이션** → `render_iframe` + CDN 라이브러리
+4. **최후의 수단** → `render_iframe` 자유 HTML (한 섹션, 페이지 본문 통째 아님)
 
 ### 제2항. 금지사항
-- 같은 시각화를 `render_html`로 해놓고 전용 도구가 있는 경우 선택 실수
+- 같은 시각화를 `render_iframe`로 해놓고 전용 도구가 있는 경우 선택 실수
+- 페이지 본문 전체를 `render_iframe` 1개 블록으로 만드는 것 — iframe 안에서 AdSense 광고·SEO 인덱싱 모두 차단됨
 - 코드 블록 ` ```json ` 안에 도구 호출 구조 노출 (서버가 필터링하지만 AI는 애초에 하지 말 것)
 
 ---

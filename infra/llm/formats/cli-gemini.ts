@@ -385,7 +385,7 @@ export class CliGeminiFormat implements FormatHandler {
               const payload = JSON.parse(outputStr) as Record<string, unknown>;
               if (payload.success) {
                 // 1) render_* 결과 → blocks
-                if (pending.name === 'render_html' && typeof payload.htmlContent === 'string') {
+                if (pending.name === 'render_iframe' && typeof payload.htmlContent === 'string') {
                   renderedBlocks.push({ type: 'html', htmlContent: payload.htmlContent, htmlHeight: payload.htmlHeight as string | undefined });
                 } else if (typeof payload.component === 'string' && payload.component.trim()) {
                   // 빈 문자열이면 '지원되지 않는 컴포넌트 ()' 로 렌더되므로 제외 + RENDER_COMPONENT_MAP 폴백으로 넘김

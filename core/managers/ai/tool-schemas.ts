@@ -175,7 +175,7 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
         required: ['slug', 'spec'],
         properties: {
           slug: { type: 'string', description: '페이지 URL 슬러그 (kebab-case)' },
-          spec: { type: 'object', description: 'PageSpec JSON (slug, head, body 포함)', additionalProperties: true },
+          spec: { type: 'object', description: 'PageSpec — { head:{title,description,keywords,og}, project, status:"published", body: render_* 컴포넌트 객체 배열 }. body 는 반드시 [{type:"Header",props:{...}}, {type:"Text",props:{...}}, {type:"Table",props:{...}}, ...] 형태 여러 컴포넌트. **단일 Html 블록 1개로 통째 만들면 페이지가 iframe 안에 들어가 AdSense 광고·SEO 인덱싱 모두 차단**. Html 블록은 Leaflet/Mermaid/KaTeX 같은 특수 시각화 한 섹션에만 사용.', additionalProperties: true },
           allowOverwrite: { type: 'boolean', description: '기존 페이지 덮어쓰기 허용 (명시적 수정 요청 시만 true)' },
         },
       },
@@ -368,8 +368,8 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
     // ── 14개 render_* 도구 (strict 모드로 스키마 엄격 준수 강제) ──
     ...RENDER_TOOLS,
     {
-      name: 'render_html',
-      description: '자유 HTML 인라인 렌더링 (iframe). 정형화된 UI(표·차트·리스트 등)는 search_components 로 찾아서 render(name, props) 로 호출. 경고·알림은 render_alert / render_callout 직접 호출. render_html 은 지도/다이어그램/애니메이션/수학식 등 CDN 라이브러리 필요할 때만. CDN 라이브러리는 dependencies 배열로 선언만 — Frontend 가 자동 합성. AI 가 <script src="..."> CDN 태그 직접 박지 마라.',
+      name: 'render_iframe',
+      description: '한 섹션용 iframe 위젯 — 결과가 sandbox iframe srcDoc 안에서 렌더됨 (페이지 본문 통째 아님). 지도/다이어그램/애니메이션/수학식 같은 CDN 라이브러리 시각화 한 섹션에만 사용. **iframe 안에서는 AdSense 광고 게재·Googlebot 인덱싱 모두 차단되므로 페이지 본문 전체를 이걸로 만들면 광고 수익·검색 노출 0**. 표·차트·리스트·헤더·텍스트·이미지 등은 render_table / render_chart / render_list / render_header / render_text / render_image 등 전용 도구 사용. CDN 라이브러리는 dependencies 배열로 선언만 — Frontend 가 자동 합성. <script src="..."> 태그 직접 박지 마라.',
       parameters: {
         type: 'object',
         required: ['html'],

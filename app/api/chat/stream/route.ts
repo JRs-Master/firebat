@@ -79,7 +79,7 @@ function handleToolsMode(
       case 'run_task': return '파이프라인 실행 중';
       case 'request_secret': return 'API 키 요청';
       case 'suggest': return '선택지 제시';
-      case 'render_html': return 'HTML 렌더링 중';
+      case 'render_iframe': return 'iframe 위젯 렌더링 중';
       case 'list_dir': return '폴더 목록 조회 중';
       case 'list_pages': return '페이지 목록 조회 중';
       case 'get_page': return '페이지 조회 중';

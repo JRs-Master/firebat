@@ -189,8 +189,8 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
   };
 
   server.tool(
-    'render_html',
-    '자유 HTML 인라인 렌더링 (iframe). 정형 UI는 render_component 우선. CDN 필요 시 libraries 배열에 명시 — 자동으로 <head>에 script/link 태그 삽입됨.',
+    'render_iframe',
+    '한 섹션용 iframe 위젯 (sandbox srcDoc). 페이지 본문 통째 아님 — iframe 안에서는 AdSense 광고·SEO 인덱싱 차단됨. 표·차트·텍스트는 render_component 우선. 지도·다이어그램·수식 등 CDN 라이브러리 시각화 한 섹션에만 사용. libraries 배열 명시 시 자동으로 <head>에 script/link 태그 삽입됨.',
     {
       html: z.string().describe('HTML 본문 또는 완전한 HTML'),
       height: z.string().optional().describe('iframe 높이 (기본 400px)'),

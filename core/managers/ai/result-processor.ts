@@ -66,9 +66,9 @@ export function slimResultForLLM(toolName: string, result: Record<string, unknow
     const dataLen = Array.isArray(props.data) ? (props.data as unknown[]).length : 0;
     return { success: true, component: 'Chart', summary: `Chart 렌더 완료 · ${dataLen}개 포인트` };
   }
-  if (toolName === 'render_html') {
+  if (toolName === 'render_iframe') {
     const len = typeof result.htmlContent === 'string' ? result.htmlContent.length : 0;
-    return { success: true, component: 'Html', summary: `HTML 렌더 완료 · ${len}자` };
+    return { success: true, component: 'Html', summary: `iframe 위젯 렌더 완료 · ${len}자` };
   }
   // 기타 render_* 도구는 component 이름 정도만 AI에 피드백
   if (RENDER_TOOL_MAP[toolName]) {

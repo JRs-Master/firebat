@@ -10,7 +10,7 @@
  *
  * 적용 NOT 대상:
  * - render_text.content (마크다운 렌더러가 처리)
- * - render_html.htmlContent (iframe 내부, 독립 DOM)
+ * - render_iframe.htmlContent (iframe 내부, 독립 DOM)
  * - 숫자 배열 (차트 data 등)
  */
 
@@ -88,7 +88,7 @@ export function formatNumber(v: string | number | null | undefined): string {
  *   - 배열: items, rows, children, steps, indicators, buyPoints, sellPoints → 재귀
  *   - object: left, right (Compare), og (PageHead) → 재귀
  *
- *  Markdown 이 허용되는 필드(render_text.content) 와 HTML 이 허용되는 필드(render_html.htmlContent) 는
+ *  Markdown 이 허용되는 필드(render_text.content) 와 HTML 이 허용되는 필드(render_iframe.htmlContent) 는
  *  component name 기반으로 예외 처리.
  */
 const TEXT_FIELDS = new Set([

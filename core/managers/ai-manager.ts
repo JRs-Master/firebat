@@ -278,7 +278,7 @@ export class AiManager {
         if (!def) return { success: false, error: `render: 알 수 없는 컴포넌트 "${name}". search_components 로 사용 가능한 이름을 먼저 확인하세요.` };
         return { success: true, component: def.componentType, props: (props ?? {}) as Record<string, unknown> };
       },
-      render_html: async (args) => {
+      render_iframe: async (args) => {
         // BIBLE 정화 — Core 는 CDN URL 다루지 않음. dependencies 배열만 통과.
         // Frontend HtmlComp (lib/cdn-libraries.ts 카탈로그) 가 srcDoc 합성 시 CDN 태그 주입.
         // legacy 호환: libraries 필드도 dependencies 로 인식.
@@ -961,8 +961,8 @@ export class AiManager {
         if (tc.name === 'propose_plan' && Array.isArray((result as { suggestions?: unknown[] }).suggestions)) {
           suggestions = (result as { suggestions: unknown[] }).suggestions;
         }
-        // render_html 결과 수집 (프론트엔드에서 iframe 렌더링)
-        if (tc.name === 'render_html' && result.success !== false && result.htmlContent) {
+        // render_iframe 결과 수집 (프론트엔드에서 sandbox iframe 렌더링)
+        if (tc.name === 'render_iframe' && result.success !== false && result.htmlContent) {
           collectedData.push({
             htmlContent: result.htmlContent,
             htmlHeight: result.htmlHeight,
@@ -991,7 +991,7 @@ export class AiManager {
         const tc = toolCalls[i];
         const result = toolResults[i]?.result;
         if (!result || result.success === false) continue;
-        if (tc.name === 'render_html' && result.htmlContent) {
+        if (tc.name === 'render_iframe' && result.htmlContent) {
           blocks.push({
             type: 'html',
             htmlContent: result.htmlContent as string,
@@ -1083,7 +1083,7 @@ export class AiManager {
       }
     }
 
-    // 중앙 sanitize — blocks props 의 text·numeric 필드 자동 정제 (render_text/render_html 은 원본 유지)
+    // 중앙 sanitize — blocks props 의 text·numeric 필드 자동 정제 (render_text/render_iframe 은 원본 유지)
     // + isValidBlock 으로 name/text/htmlContent 누락 블록 제거 ('지원되지 않는 컴포넌트 ()' 방지)
     const droppedBlocks = blocks.filter(b => !isValidBlock(b));
     if (droppedBlocks.length > 0) {

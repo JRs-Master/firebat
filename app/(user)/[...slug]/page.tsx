@@ -204,18 +204,14 @@ export default async function DynamicPage({ params }: Props) {
         <link key={i} rel="stylesheet" href={s.href} />
       ))}
 
-      {/* Html 단독 페이지는 여백 없이 풀스크린 */}
-      {body.length === 1 && body[0].type === 'Html' ? (
-        <main className="h-dvh bg-white overflow-hidden">
-          <ComponentRenderer components={body} fullHeight />
-        </main>
-      ) : (
-        <main className="min-h-screen bg-white">
-          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-            <ComponentRenderer components={body} />
-          </div>
-        </main>
-      )}
+      {/* 일반 본문 레이아웃 — Html 단일 블록도 동일 패턴 (이전 풀스크린 srcDoc 분기 제거).
+       *  사유: srcDoc 안엔 AdSense ad script·SEO 인덱싱 모두 차단되어 광고 수익·검색 노출 0.
+       *  render_iframe 단독 사용은 cron-agent 프롬프트에서 차단 (반드시 render_* 분리 사용). */}
+      <main className="min-h-screen bg-white">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+          <ComponentRenderer components={body} />
+        </div>
+      </main>
     </>
   );
 }

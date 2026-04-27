@@ -9,7 +9,7 @@
  *
  * 유지되는 직접 도구 (토큰 비용 수용):
  *   - render_alert, render_callout: 안전망·보편 UX
- *   - render_html: iframe CDN 로직 특수
+ *   - render_iframe: iframe CDN 로직 특수 (sandbox srcDoc + dependencies 자동 합성)
  *   - suggest: 사용자 선택 UI
  */
 import type { JsonSchemaProperty } from '../../core/ports';

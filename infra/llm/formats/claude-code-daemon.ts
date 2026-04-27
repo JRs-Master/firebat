@@ -135,7 +135,7 @@ class RequestState {
               try {
                 const payload = JSON.parse(textPayload) as Record<string, unknown>;
                 if (payload.success) {
-                  if (pending.name === 'render_html' && typeof payload.htmlContent === 'string') {
+                  if (pending.name === 'render_iframe' && typeof payload.htmlContent === 'string') {
                     this.renderedBlocks.push({ type: 'html', htmlContent: payload.htmlContent, htmlHeight: payload.htmlHeight as string | undefined });
                   } else if (typeof payload.component === 'string') {
                     this.renderedBlocks.push({ type: 'component', name: payload.component, props: (payload.props as Record<string, unknown>) ?? {} });

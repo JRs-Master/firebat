@@ -1,7 +1,7 @@
 /**
  * CDN 라이브러리 카탈로그 — Frontend 전용.
  *
- * AI 가 render_html 도구 호출 시 dependencies 배열만 선언 (예: ["d3", "echarts"]).
+ * AI 가 render_iframe 도구 호출 시 dependencies 배열만 선언 (예: ["d3", "echarts"]).
  * Frontend HtmlComp 가 이 카탈로그 보고 CDN script/link 태그 합성 후 iframe srcDoc 에 주입.
  *
  * Core 가 CDN URL 직접 다루지 않음 — BIBLE Core 순수성 원칙. v2.0 Rust 전환 시 이 파일은 frontend 에 그대로 남음.
@@ -49,7 +49,7 @@ export const CDN_LIBRARY_KEYS = Object.keys(CDN_LIBRARIES);
  * frame-src 'none' — 중첩 iframe 차단 (clickjacking + 외부 사이트 임베딩 방지).
  * connect-src https: — D3 fetch 등 데이터 가져오기 허용 (HTTPS 만).
  * img-src 'self' data: https: — base64 + 외부 이미지 허용.
- * 일반 로직 — 특정 도구·콘텐츠별 분기 X. 모든 render_html / inline html 통과.
+ * 일반 로직 — 특정 도구·콘텐츠별 분기 X. 모든 render_iframe / inline html 통과.
  */
 export const IFRAME_CSP =
   "default-src 'none'; " +

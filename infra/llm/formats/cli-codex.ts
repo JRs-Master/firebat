@@ -269,7 +269,7 @@ export class CliCodexFormat implements FormatHandler {
                 if (!payload.success) return;
                 const args = (item.arguments as Record<string, unknown>) ?? {};
                 // 1) render_* → blocks
-                if (toolName === 'render_html' && typeof payload.htmlContent === 'string') {
+                if (toolName === 'render_iframe' && typeof payload.htmlContent === 'string') {
                   renderedBlocks.push({ type: 'html', htmlContent: payload.htmlContent, htmlHeight: payload.htmlHeight as string | undefined });
                 } else if (typeof payload.component === 'string') {
                   renderedBlocks.push({ type: 'component', name: payload.component, props: (payload.props as Record<string, unknown>) ?? {} });

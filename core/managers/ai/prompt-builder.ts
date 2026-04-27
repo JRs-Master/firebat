@@ -60,11 +60,14 @@ export class PromptBuilder {
 
 3. **빈 데이터 허용** — 검색 결과에 명시 일정 없으면 빈 섹션·짧은 본문 OK. 짜내지 마라. 1000자 강제로 hallucinate 채우기 금지.
 
-4. **save_page 호출 형식 절대 룰**:
-   - spec 인자에 PageSpec **객체** 직접 전달
-   - 절대 \`JSON.stringify(spec)\` 으로 문자열 변환 금지
-   - body[0].props.content 는 **HTML 문자열** (\`<style>...</style><h1>...</h1>...\`). PageSpec JSON 문자열 X
-   - 올바른 형태: \`save_page(slug:"...", spec:{head:{title,description,keywords,og:{title,description}}, project:"...", status:"published", body:[{type:"Html", props:{content:"<style>...</style><h1>...</h1>..."}}]})\`
+4. **save_page 호출 형식 절대 룰** — render_* 컴포넌트 배열 강제:
+   - spec 인자에 PageSpec **객체** 직접 전달 (\`JSON.stringify(spec)\` 절대 금지)
+   - **body 는 반드시 render_* 컴포넌트 여러 개 배열** — 절대 단일 Html 블록 1개로 통째 만들지 마라
+   - **단일 Html 블록 금지 사유** — 페이지 본문이 \`<iframe srcDoc>\` 안에 들어가 (1) AdSense 광고 게재 차단 (2) Google SEO 인덱싱 차단 (3) 외부 미리보기 차단. 광고 수익·검색 노출 0
+   - 올바른 구조: \`body: [{type:"Header", props:{text:"제목", level:1}}, {type:"Text", props:{content:"문단 본문..."}}, {type:"Table", props:{headers:[...], rows:[...]}}, {type:"Chart", props:{...}}, {type:"Callout", props:{type:"info", message:"..."}}, ...]\`
+   - 사용 가능 컴포넌트: Header, Text, Table, Chart, StockChart, Image, Metric, KeyValue, Compare, Timeline, List, Callout, Alert, Badge, Card, Grid, Divider, Progress, AdSlot 등 22종
+   - **Html 블록은 최후 수단** — Leaflet 지도·Mermaid 다이어그램·KaTeX 수식 등 다른 컴포넌트로 표현 불가능한 시각화만, 페이지의 한 섹션으로만 사용 (전체 페이지 아님)
+   - 올바른 호출: \`save_page(slug:"...", spec:{head:{title,description,keywords,og:{title,description}}, project:"...", status:"published", body:[Header, Text, Table, ...] })\`
    - head 필드 누락 금지 — title/description/og 필수
 
 5. **전문가 톤** (얕은 나열 X):
@@ -291,8 +294,10 @@ ${systemContext}
 - \`render_badge\` — 단일 커스텀 태그
 - \`render_countdown\` — 시한 있는 이벤트
 
-**자유 HTML** — 위로 안 되는 커스텀 시각화만 (지도/다이어그램/애니메이션)
-- \`render_html\` (dependencies 배열로 외부 라이브러리 명시: leaflet, d3, mermaid, echarts, threejs 등)
+**자유 HTML (iframe 위젯)** — 위로 안 되는 커스텀 시각화만 (지도/다이어그램/애니메이션)
+- \`render_iframe\` (dependencies 배열로 외부 라이브러리 명시: leaflet, d3, mermaid, echarts, threejs 등)
+- 결과가 sandbox iframe srcDoc 안에서 렌더됨 — 한 섹션 위젯, 페이지 본문 통째 아님
+- iframe 안에서는 AdSense 광고·SEO 인덱싱 차단되니 페이지 본문 전체를 이걸로 만들면 안 됨
 - **CDN script 태그 직접 박지 마라** — dependencies 키만 명시. Frontend 가 CDN URL 자동 합성·주입 (lib/cdn-libraries.ts 카탈로그)
 - 사용 가능 키: leaflet, d3, mermaid, threejs, animejs, tailwindcss, katex, hljs, marked, cytoscape, mathjax, echarts, p5, lottie, datatables, swiper
 
@@ -318,14 +323,14 @@ ${systemContext}
 
 "서울 지도" 요청 →
 1. render_header("서울 주요 명소 지도")
-2. render_html(Leaflet + 마커 + 팝업, libraries=["leaflet"])
+2. render_iframe(Leaflet + 마커 + 팝업, libraries=["leaflet"])
 3. render_grid(columns=3, children=[render_metric(label="문화유산", value=4), render_metric(label="공원", value=3), render_metric(label="전망대", value=2)])
 4. render_callout(tip, "추천 동선: 경복궁 → 북촌 → 창덕궁")
 
-### render_html 사용 원칙 (환각·중복 구현 차단)
-**render_html 은 마지막 수단**. 내장 도구로 표현 가능한 것을 render_html 로 재구현하면 UX 불일치·토큰 낭비·중복 투성이 HTML 이 됨.
+### render_iframe 사용 원칙 (환각·중복 구현 차단)
+**render_iframe 은 마지막 수단**. 결과가 iframe srcDoc 안에서 렌더되어 (1) AdSense 광고 게재 차단 (2) Googlebot 인덱싱 차단 (3) 페이지 본문 통째로 만들면 SEO·광고 수익 0. 내장 도구로 표현 가능한 것을 render_iframe 으로 재구현하면 UX 불일치·토큰 낭비·중복 투성이 HTML 이 됨.
 
-**render_html 쓰지 말 것** — 아래는 모두 전용 도구가 있음:
+**render_iframe 쓰지 말 것** — 아래는 모두 전용 도구가 있음:
 - 차트 (막대/선/원/도넛) → \`render_chart\` (type:'bar'|'line'|'pie'|'doughnut')
 - 주식 캔들 → \`render_stock_chart\`
 - 표 → \`render_table\` (\`<table>\` 직접 금지)
@@ -337,9 +342,9 @@ ${systemContext}
 - 카운트다운 → \`render_countdown\`, 타임라인 → \`render_timeline\`, 비교 → \`render_compare\`
 - 본문 텍스트 → \`render_text\`, 제목 → \`render_header\`, 리스트 → \`render_list\`
 
-**render_html 이 정당한 경우만**: Leaflet 지도, Three.js 3D, Mermaid 다이어그램, KaTeX 수식, 복잡 애니메이션, p5 스케치, Cytoscape 그래프 등 **내장 컴포넌트로 불가능한 CDN 라이브러리 시각화**. 이때 \`libraries\` 배열 명시.
+**render_iframe 이 정당한 경우만**: Leaflet 지도, Three.js 3D, Mermaid 다이어그램, KaTeX 수식, 복잡 애니메이션, p5 스케치, Cytoscape 그래프 등 **내장 컴포넌트로 불가능한 CDN 라이브러리 시각화**. 이때 \`libraries\` 배열 명시. **페이지의 한 섹션** 으로만 사용 — 페이지 본문 전체를 render_iframe 1개로 묶지 마라.
 
-**render_html 금지 속성**: \`cursor: crosshair/wait/not-allowed\` 등 불필요한 커서 스타일, \`<style>\` 안에서 우리 브랜드 톤 벗어난 원색 남발, autoplay 미디어.
+**render_iframe 금지 속성**: \`cursor: crosshair/wait/not-allowed\` 등 불필요한 커서 스타일, \`<style>\` 안에서 우리 브랜드 톤 벗어난 원색 남발, autoplay 미디어.
 
 ### 절대 금지 (시스템 동작 보호)
 - **컴포넌트 JSON 을 코드블록(\`\`\`json / \`\`\`js)으로 출력** — 이건 도구 호출이 아니다. 실제 mcp_firebat_render_* tool_use 호출만 유효.
@@ -356,7 +361,7 @@ ${systemContext}
 2. 조회한 데이터로 컴포넌트 채우기 — 위 카탈로그 참조.
 3. 텍스트는 컴포넌트 사이의 해석·판단·문맥만 담기.
 
-### render_html 라이브러리 엄수 원칙 (매우 중요)
+### render_iframe 라이브러리 엄수 원칙 (매우 중요)
 \`libraries\` 배열에 명시한 라이브러리의 API 로만 코드 작성.
 - \`libraries: ["leaflet"]\` → 지도는 \`L.map()\`, \`L.marker()\`, \`L.tileLayer(...)\` 사용. Google Maps/Naver Maps API 절대 금지.
 - \`libraries: ["d3"]\` → \`d3.select\`, \`d3.scaleLinear\` 등 D3 v7 API.
