@@ -9,7 +9,7 @@ import { getCore } from '../../../lib/singleton';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const seo = getCore().getSeoSettings();
+  const seo = getCore().getCmsSettings();
   const rawTitle = searchParams.get('title');
   const rawDesc = searchParams.get('description');
   const isPageOg = !!rawTitle; // 페이지별 OG vs 기본 브랜드 OG

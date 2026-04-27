@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 /** 루트 페이지 SEO 메타데이터 — SEO 모듈 설정에서 로드 */
 export async function generateMetadata(): Promise<Metadata> {
-  const seo = getCore().getSeoSettings();
+  const seo = getCore().getCmsSettings();
   const siteUrl = seo.siteUrl || BASE_URL;
 
   const ogImage = `${siteUrl}/api/og?title=${encodeURIComponent(seo.siteTitle)}&description=${encodeURIComponent(seo.siteDescription)}`;

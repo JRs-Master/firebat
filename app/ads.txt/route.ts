@@ -13,7 +13,7 @@ import { getCore } from '../../lib/singleton';
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
-  const seo = getCore().getSeoSettings();
+  const seo = getCore().getCmsSettings();
   const content = seo.adsTxt || '';
   return new Response(content, {
     status: 200,

@@ -4,7 +4,7 @@ import { BASE_URL } from '../../infra/config';
 
 /** User 페이지 레이아웃 — SEO head/body 스크립트 + JSON-LD 주입 */
 export default function UserLayout({ children }: { children: React.ReactNode }) {
-  const seo = getCore().getSeoSettings();
+  const seo = getCore().getCmsSettings();
   const siteUrl = seo.siteUrl || BASE_URL;
 
   // JSON-LD 구조화 데이터 (WebSite + Organization)

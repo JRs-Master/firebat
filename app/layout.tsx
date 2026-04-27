@@ -16,7 +16,7 @@ export const viewport: Viewport = {
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const seo = getCore().getSeoSettings();
+  const seo = getCore().getCmsSettings();
   return {
     metadataBase: new URL(BASE_URL),
     title: seo.siteTitle,
@@ -28,7 +28,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   // SEO 설정 lang — 검색엔진 언어 인식 + 접근성. 미설정 시 'ko'.
-  const seo = getCore().getSeoSettings();
+  const seo = getCore().getCmsSettings();
   return (
     <html lang={seo.siteLang || 'ko'}>
       <body className="antialiased bg-white text-gray-900">

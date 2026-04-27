@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 /** GET /sitemap.xml — Sitemap Index */
 export async function GET(req: Request) {
   const core = getCore();
-  const seo = core.getSeoSettings();
+  const seo = core.getCmsSettings();
 
   if (!seo.sitemapEnabled) {
     return new Response('Sitemap is disabled', { status: 404 });

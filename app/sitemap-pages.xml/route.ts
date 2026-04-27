@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 /** GET /sitemap-pages.xml — 정적 페이지 사이트맵 */
 export async function GET(req: Request) {
   const core = getCore();
-  const seo = core.getSeoSettings();
+  const seo = core.getCmsSettings();
 
   if (!seo.sitemapEnabled) {
     return new Response('Sitemap is disabled', { status: 404 });

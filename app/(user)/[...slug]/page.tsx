@@ -74,7 +74,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   const head = spec.head ?? {};
-  const seo = core.getSeoSettings();
+  const seo = core.getCmsSettings();
   const baseUrl = await resolveBaseUrl(seo.siteUrl);
 
   const ogTitle = head.og?.title ?? head.title ?? slug;
@@ -174,7 +174,7 @@ export default async function DynamicPage({ params }: Props) {
 
   const head = spec.head ?? {};
   const body = spec.body ?? [];
-  const seo = core.getSeoSettings();
+  const seo = core.getCmsSettings();
   const siteUrl = await resolveBaseUrl(seo.siteUrl);
 
   // 페이지별 JSON-LD (WebPage)

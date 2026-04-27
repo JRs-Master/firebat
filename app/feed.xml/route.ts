@@ -4,7 +4,7 @@ import { getBaseUrl } from '../../lib/base-url';
 /** GET /feed.xml — RSS 2.0 피드 (SEO 모듈 설정 기반) */
 export async function GET(req: Request) {
   const core = getCore();
-  const seo = core.getSeoSettings();
+  const seo = core.getCmsSettings();
 
   if (!seo.rssEnabled) {
     return new Response('RSS feed is disabled', { status: 404 });

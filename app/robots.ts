@@ -7,7 +7,7 @@ import { BASE_URL } from '../infra/config';
  *  Next.js metadata route 는 req 객체 없지만 headers() API 로 요청 host 접근 가능. */
 export default async function robots(): Promise<MetadataRoute.Robots> {
   const core = getCore();
-  const seo = core.getSeoSettings();
+  const seo = core.getCmsSettings();
   const raw = seo.robotsTxt.trim();
 
   // 설정된 robots.txt를 파싱하여 Metadata API 형식으로 변환
