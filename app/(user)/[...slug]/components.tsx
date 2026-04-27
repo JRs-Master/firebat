@@ -501,6 +501,8 @@ function AdSlotComp({ slotId, format = 'auto' }: { slotId?: string; format?: str
 // ── Html (분기: dependencies 유무로 inline DOM vs iframe srcDoc) ─────────────
 import { buildCdnTags, IFRAME_CSP_META } from '../../../lib/cdn-libraries';
 import DOMPurify from 'isomorphic-dompurify';
+import postcss from 'postcss';
+import prefixer from 'postcss-prefix-selector';
 
 /** sanitize 허용 정책 — 페이지 본문 inline DOM 용.
  *  DOMPurify v3 가 보안 default 로 <style> 태그 자체 차단해 ALLOWED_TAGS 명시해도 제거.
@@ -537,13 +539,47 @@ const SANITIZE_CONFIG = {
 /** CSS 위험 패턴 — XSS·외부 추적·광고 fraud 차단. */
 const CSS_DANGER_RE = /(?:expression\s*\(|javascript\s*:|behavior\s*:|@import\s|url\s*\(\s*['"]?\s*javascript:)/i;
 
-/** style 태그 별도 추출 + 위험 CSS 차단 + body 만 DOMPurify. */
+/** AI 가 박은 style 의 selector 를 wrapper class scope 로 한정.
+ *  `body { ... }` 같은 page-level selector 가 사이트 root 영향 주지 못하게 prefix.
+ *  body/html 자체는 wrapper class 로 대체, 그 외는 wrapper 안 nested. */
+const SCOPE_CLASS = '.firebat-html-block';
+function scopeStyleCss(css: string): string {
+  try {
+    const result = postcss()
+      .use(prefixer({
+        prefix: SCOPE_CLASS,
+        transform(prefix, selector) {
+          // body / html selector 자체는 wrapper class 로 대체.
+          if (selector === 'body' || selector === 'html') return prefix;
+          // body / html 로 시작하는 복합 selector 는 prefix 부분만 대체 (예: body > h1 → wrapper > h1)
+          if (selector.startsWith('body ')) return prefix + selector.slice(4);
+          if (selector.startsWith('html ')) return prefix + selector.slice(4);
+          if (selector.startsWith('body>')) return prefix + ' ' + selector.slice(5);
+          if (selector.startsWith('html>')) return prefix + ' ' + selector.slice(5);
+          if (selector.startsWith(':root')) return prefix + selector.slice(5);
+          // 이미 wrapper class 로 시작하는 selector (idempotent) 그대로
+          if (selector.startsWith(prefix)) return selector;
+          // 그 외 — prefix nested
+          return `${prefix} ${selector}`;
+        },
+      }))
+      .process(css, { from: undefined })
+      .css;
+    return result;
+  } catch {
+    // CSS 파싱 실패 — 원본 그대로 반환 (사용자 페이지 깨지지 않게 graceful fallback).
+    return css;
+  }
+}
+
+/** style 태그 별도 추출 + 위험 CSS 차단 + selector scope 한정 + body 만 DOMPurify. */
 function sanitizeHtmlBlock(content: string): string {
   const styleTags: string[] = [];
-  // 1) <style>...</style> 추출 (다중 + 속성 모두 매칭). 위험 CSS 만 제거.
+  // 1) <style>...</style> 추출 (다중 + 속성 모두 매칭). 위험 CSS 만 제거. scope 한정.
   const bodyHtml = content.replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gi, (_match, css: string) => {
     if (CSS_DANGER_RE.test(css)) return '';
-    styleTags.push(`<style>${css}</style>`);
+    const scoped = scopeStyleCss(css);
+    styleTags.push(`<style>${scoped}</style>`);
     return '';
   });
   // 2) body 부분만 sanitize (style 태그 없음 → DOMPurify 정상 처리)
