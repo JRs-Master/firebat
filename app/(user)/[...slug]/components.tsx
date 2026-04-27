@@ -529,19 +529,32 @@ ${cdnTags}
      AI 의 inline style·class 가 박아둔 4-grid · width 고정 등을 강제 override.
      향후 design tokens + component-based 전환 시 이 블록 자연 deprecation. */
   @media (max-width: 640px) {
-    /* outer + AI inner body 둘 다 padding 축소 — 화면 끝까지 활용 */
-    #firebat-wrap { padding: 8px 6px !important; max-width: 100% !important; }
+    /* outer wrap 좌우 padding 12px — 텍스트 영역 일관 들여쓰기. table 은 negative margin 으로 끝까지 */
+    #firebat-wrap { padding: 8px 12px !important; max-width: 100% !important; }
     body { padding: 0 !important; max-width: 100% !important; }
 
+    /* 제목·본문 폰트 축소 + 좌우 padding 일관 (AI 의 좌측 border-left 등 강조 디자인 살림) */
+    h1, h2, h3, h4, h5, h6, p, ul, ol, blockquote {
+      padding-left: 0 !important;
+      padding-right: 0 !important;
+      margin-left: 0 !important;
+      margin-right: 0 !important;
+    }
+    /* h2 의 border-left 강조는 보존 — padding-left 조금만 */
+    h2 { padding-left: 10px !important; }
     h1 { font-size: 22px !important; }
     h2 { font-size: 18px !important; }
     h3 { font-size: 16px !important; }
+    p { font-size: 14px !important; }
 
-    /* 표 가로 스크롤 + 폰트 축소 — 화면 전체 너비 강제 */
+    /* 표 — 화면 전체 너비 (outer padding 무시 — negative margin 으로 끝까지 확장) */
     table {
       display: block !important;
       overflow-x: auto !important;
-      width: 100% !important;
+      width: calc(100% + 24px) !important;
+      max-width: calc(100% + 24px) !important;
+      margin-left: -12px !important;
+      margin-right: -12px !important;
       font-size: 12px !important;
       -webkit-overflow-scrolling: touch;
     }
