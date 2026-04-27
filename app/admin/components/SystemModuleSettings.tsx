@@ -24,6 +24,7 @@ interface SettingField {
 // 탭 정의 (아이콘 + 라벨)
 const TAB_META: Record<string, { label: string; icon: typeof Globe }> = {
   '일반': { label: '일반', icon: Settings2 },
+  '테마': { label: '테마', icon: Blocks },
   'SEO': { label: 'SEO', icon: Globe },
   '이미지': { label: '이미지', icon: Image },
   'OG': { label: 'OG 이미지', icon: Image },
@@ -69,6 +70,12 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'jsonLdLogoUrl', label: '로고 URL', type: 'text', tab: '일반', placeholder: 'https://example.com/icon.svg', description: 'JSON-LD Organization 로고 이미지 URL' },
       { key: 'siteLang', label: '사이트 언어', type: 'text', tab: '일반', placeholder: 'ko', description: 'HTML lang 속성 — 검색엔진 언어 인식 + 접근성. 기본 ko (en/ja/zh-CN 등)', defaultValue: 'ko' },
       { key: 'faviconUrl', label: 'Favicon URL', type: 'text', tab: '일반', placeholder: '/user/media/...png 또는 https://...', description: '커스텀 favicon. 갤러리 이미지 URL 또는 외부 URL. 비우면 기본 아이콘.' },
+      // ── 테마 — 본문 layout 토큰. 사용자 변경 즉시 모든 페이지 반영 (CSS var). ──
+      { key: 'themeContentMaxWidth', label: '본문 최대 폭', type: 'text', tab: '테마', placeholder: '1200px', description: '본문 콘텐츠 영역 폭. px(1200px) / rem(75rem) / 절대값. 기본 1200px (이전 max-w-4xl 56rem ≈ 896px 대비 넓음).', defaultValue: '1200px' },
+      { key: 'themePaddingMobile', label: '모바일 좌우 여백', type: 'text', tab: '테마', placeholder: '16px', description: '≤640px 화면 좌우 여백. 기본 16px. 좁히려면 12px / 8px, 넓히려면 20px.', defaultValue: '16px' },
+      { key: 'themePaddingTablet', label: '태블릿 좌우 여백', type: 'text', tab: '테마', placeholder: '24px', description: '641~1023px 좌우 여백. 기본 24px.', defaultValue: '24px' },
+      { key: 'themePaddingDesktop', label: '데스크톱 좌우 여백', type: 'text', tab: '테마', placeholder: '32px', description: '≥1024px 좌우 여백. 기본 32px.', defaultValue: '32px' },
+      { key: 'themeRadius', label: '카드 모서리 둥글기', type: 'text', tab: '테마', placeholder: '8px', description: '카드·버튼·박스 border-radius. 0px (각진 모던) ~ 16px (둥근 친근). 기본 8px.', defaultValue: '8px' },
       { key: 'sitemapEnabled', label: 'Sitemap 생성', type: 'toggle', tab: 'SEO', description: '/sitemap.xml 자동 생성', defaultValue: true },
       { key: 'rssEnabled', label: 'RSS 피드', type: 'toggle', tab: 'SEO', description: '/feed.xml 자동 생성', defaultValue: true },
       { key: 'robotsTxt', label: 'robots.txt', type: 'textarea', tab: 'SEO', placeholder: 'User-agent: *\nAllow: /\nDisallow: /api\nDisallow: /admin', description: 'robots.txt 내용', defaultValue: 'User-agent: *\nAllow: /\nDisallow: /api\nDisallow: /admin' },

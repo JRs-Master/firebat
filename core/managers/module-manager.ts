@@ -234,8 +234,23 @@ export class ModuleManager {
       faviconUrl: s.faviconUrl ?? '',
       adsTxt: s.adsTxt ?? '',
       verifications: this.resolveVerifications(s),
-      theme: mergeTokens(s.theme),
+      theme: mergeTokens(this.composeTheme(s)),
     };
+  }
+
+  /** flat key (themeContentMaxWidth 등) 또는 nested theme 객체 양쪽 지원. 미설정 필드는 default 적용.
+   *  UI 가 flat 으로 박는 게 단순 (settings flat dictionary 호환), backend 가 여기서 nested 합성. */
+  private composeTheme(s: Record<string, any>): import('../../lib/design-tokens').DesignTokens | undefined {
+    // 옛 형태 — s.theme 가 nested object 이면 그대로 반환 (호환)
+    if (s.theme && typeof s.theme === 'object') return s.theme;
+    // flat key 합성 — 미설정 (undefined) 은 mergeTokens 가 default 로 채움
+    const theme: any = { layout: {}, colors: {}, fonts: {}, heading: {} };
+    if (s.themeContentMaxWidth) theme.layout.contentMaxWidth = s.themeContentMaxWidth;
+    if (s.themePaddingMobile) theme.layout.paddingMobile = s.themePaddingMobile;
+    if (s.themePaddingTablet) theme.layout.paddingTablet = s.themePaddingTablet;
+    if (s.themePaddingDesktop) theme.layout.paddingDesktop = s.themePaddingDesktop;
+    if (s.themeRadius) theme.layout.radius = s.themeRadius;
+    return theme;
   }
 
   /** verifications 배열 해석 — 옛 `adsTxt` 단일 필드와 신규 `verifications` 배열 통합.
