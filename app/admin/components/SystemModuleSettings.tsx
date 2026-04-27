@@ -5,9 +5,11 @@ import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Co
 import { Tooltip } from './Tooltip';
 import { TelegramWebhookSection } from './TelegramWebhookSection';
 import { confirmDialog } from './Dialog';
+import { COLOR_PRESETS } from '../../../lib/design-tokens';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
-type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'verifications';
+type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'verifications' | 'color-presets' | 'select';
+interface SelectOption { value: string; label: string }
 interface SettingField {
   key: string;
   label: string;
@@ -19,6 +21,7 @@ interface SettingField {
   oauthUrl?: string;        // oauth 타입 전용: 인증 시작 URL
   oauthSecrets?: string[];  // oauth 타입 전용: 연동 상태 확인용 시크릿 키
   secretName?: string;      // secret 타입 전용: Vault에 저장할 시크릿 키 이름
+  options?: SelectOption[]; // select 타입 전용: dropdown 옵션
 }
 
 // 탭 정의 (아이콘 + 라벨)
@@ -70,7 +73,39 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'jsonLdLogoUrl', label: '로고 URL', type: 'text', tab: '일반', placeholder: 'https://example.com/icon.svg', description: 'JSON-LD Organization 로고 이미지 URL' },
       { key: 'siteLang', label: '사이트 언어', type: 'text', tab: '일반', placeholder: 'ko', description: 'HTML lang 속성 — 검색엔진 언어 인식 + 접근성. 기본 ko (en/ja/zh-CN 등)', defaultValue: 'ko' },
       { key: 'faviconUrl', label: 'Favicon URL', type: 'text', tab: '일반', placeholder: '/user/media/...png 또는 https://...', description: '커스텀 favicon. 갤러리 이미지 URL 또는 외부 URL. 비우면 기본 아이콘.' },
-      // ── 테마 — 본문 layout 토큰. 사용자 변경 즉시 모든 페이지 반영 (CSS var). ──
+      // ── 테마 — 색·폰트·layout 토큰. 사용자 변경 즉시 모든 페이지 반영 (CSS var). ──
+      { key: 'themePreset', label: '색 프리셋', type: 'color-presets', tab: '테마', description: '클릭 한 번으로 primary/accent/up/down/text/배경/테두리 색 일괄 변경. Light 7 + Dark 3 = 10 프리셋.', defaultValue: 'slate-pro' },
+      { key: 'themeFont', label: '폰트 세트', type: 'select', tab: '테마', description: '본문·제목 폰트 통합 변경. Pretendard Variable (한글 최적, 기본) / Noto Sans KR / Inter / Geist / Cal Sans.', defaultValue: 'pretendard', options: [
+        { value: 'pretendard', label: 'Pretendard Variable (한글, 기본)' },
+        { value: 'noto-sans-kr', label: 'Noto Sans KR' },
+        { value: 'inter', label: 'Inter (라틴)' },
+        { value: 'geist', label: 'Geist (모노크롬)' },
+        { value: 'cal-sans', label: 'Cal Sans (제목 강조)' },
+      ] },
+      { key: 'themeH1Style', label: 'H1 (제목) 스타일', type: 'select', tab: '테마', description: 'h1 제목 디자인. plain (기본 텍스트) / border-bottom (밑줄) / border-left (좌측 accent 바) / underline / bold-bg (강조 박스) / accent-square (accent 사각형 prefix).', defaultValue: 'plain', options: [
+        { value: 'plain', label: 'plain (단순)' },
+        { value: 'border-bottom', label: 'border-bottom (밑줄)' },
+        { value: 'border-left', label: 'border-left (좌측 accent 바)' },
+        { value: 'underline', label: 'underline (텍스트 밑줄)' },
+        { value: 'bold-bg', label: 'bold-bg (강조 배경 박스)' },
+        { value: 'accent-square', label: 'accent-square (사각형 prefix)' },
+      ] },
+      { key: 'themeH2Style', label: 'H2 (소제목) 스타일', type: 'select', tab: '테마', description: 'h2 소제목 디자인. 기본 border-left (좌측 accent 바).', defaultValue: 'border-left', options: [
+        { value: 'plain', label: 'plain (단순)' },
+        { value: 'border-bottom', label: 'border-bottom (밑줄)' },
+        { value: 'border-left', label: 'border-left (좌측 accent 바, 기본)' },
+        { value: 'underline', label: 'underline (텍스트 밑줄)' },
+        { value: 'bold-bg', label: 'bold-bg (강조 배경 박스)' },
+        { value: 'accent-square', label: 'accent-square (사각형 prefix)' },
+      ] },
+      { key: 'themeH3Style', label: 'H3 (소소제목) 스타일', type: 'select', tab: '테마', description: 'h3 소소제목 디자인. 기본 plain.', defaultValue: 'plain', options: [
+        { value: 'plain', label: 'plain (단순, 기본)' },
+        { value: 'border-bottom', label: 'border-bottom (밑줄)' },
+        { value: 'border-left', label: 'border-left (좌측 accent 바)' },
+        { value: 'underline', label: 'underline (텍스트 밑줄)' },
+        { value: 'bold-bg', label: 'bold-bg (강조 배경 박스)' },
+        { value: 'accent-square', label: 'accent-square (사각형 prefix)' },
+      ] },
       { key: 'themeContentMaxWidth', label: '본문 최대 폭', type: 'text', tab: '테마', placeholder: '1200px', description: '본문 콘텐츠 영역 폭. px(1200px) / rem(75rem) / 절대값. 기본 1200px (이전 max-w-4xl 56rem ≈ 896px 대비 넓음).', defaultValue: '1200px' },
       { key: 'themePaddingMobile', label: '모바일 좌우 여백', type: 'text', tab: '테마', placeholder: '16px', description: '≤640px 화면 좌우 여백. 기본 16px. 좁히려면 12px / 8px, 넓히려면 20px.', defaultValue: '16px' },
       { key: 'themePaddingTablet', label: '태블릿 좌우 여백', type: 'text', tab: '테마', placeholder: '24px', description: '641~1023px 좌우 여백. 기본 24px.', defaultValue: '24px' },
@@ -622,6 +657,29 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
                     value={Array.isArray(settings[field.key]) ? settings[field.key] : []}
                     onChange={(v) => handleChange(field.key, v)}
                   />
+                ) : field.type === 'color-presets' ? (
+                  <ColorPresetField
+                    label={field.label}
+                    description={field.description}
+                    value={settings[field.key] ?? field.defaultValue ?? 'slate-pro'}
+                    onChange={(v) => handleChange(field.key, v)}
+                  />
+                ) : field.type === 'select' ? (
+                  <>
+                    <label className="text-xs sm:text-sm font-bold text-slate-700">{field.label}</label>
+                    <select
+                      value={settings[field.key] ?? field.defaultValue ?? ''}
+                      onChange={e => handleChange(field.key, e.target.value)}
+                      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      {(field.options ?? []).map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                    {field.description && (
+                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{field.description}</p>
+                    )}
+                  </>
                 ) : field.type === 'toggle' ? (
                   <label className="flex items-center justify-between cursor-pointer">
                     <div>
@@ -704,6 +762,47 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
         })()}
       </div>
     </div>
+  );
+}
+
+// ── 색 프리셋 button grid — 클릭 한 번으로 primary/accent/up/down 등 일괄 변경 ──
+function ColorPresetField({ label, description, value, onChange }: {
+  label: string;
+  description?: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <>
+      <label className="text-xs sm:text-sm font-bold text-slate-700">{label}</label>
+      {description && (
+        <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{description}</p>
+      )}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
+        {Object.entries(COLOR_PRESETS).map(([key, preset]) => {
+          const active = value === key;
+          return (
+            <button
+              key={key}
+              onClick={() => onChange(key)}
+              className={`flex items-center gap-2 p-2 border rounded-lg text-left transition-colors ${
+                active ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-slate-200 bg-white hover:bg-slate-50'
+              }`}
+            >
+              <div className="flex gap-0.5 shrink-0">
+                <div style={{ background: preset.colors.primary, width: 14, height: 14, borderRadius: 2 }} />
+                <div style={{ background: preset.colors.up, width: 14, height: 14, borderRadius: 2 }} />
+                <div style={{ background: preset.colors.down, width: 14, height: 14, borderRadius: 2 }} />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-[12px] font-bold text-slate-700 truncate">{preset.label}</span>
+                <span className="text-[10px] text-slate-400">{preset.mode}</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
 

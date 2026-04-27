@@ -207,9 +207,15 @@ export default async function DynamicPage({ params }: Props) {
       {/* 일반 본문 레이아웃 — Html 단일 블록도 동일 패턴 (이전 풀스크린 srcDoc 분기 제거).
        *  사유: srcDoc 안엔 AdSense ad script·SEO 인덱싱 모두 차단되어 광고 수익·검색 노출 0.
        *  render_iframe 단독 사용은 cron-agent 프롬프트에서 차단 (반드시 render_* 분리 사용).
-       *  firebat-cms-content — Design Tokens 기반 max-width/padding (CMS 어드민 토큰 변경 시 즉시 반영). */}
+       *  firebat-cms-content — Design Tokens 기반 max-width/padding/font.
+       *  data-h*-style — heading style 6 옵션 (CSS 분기). */}
       <main className="min-h-screen bg-white">
-        <div className="firebat-cms-content">
+        <div
+          className="firebat-cms-content"
+          data-h1-style={seo.theme.heading.h1}
+          data-h2-style={seo.theme.heading.h2}
+          data-h3-style={seo.theme.heading.h3}
+        >
           <ComponentRenderer components={body} />
         </div>
       </main>
