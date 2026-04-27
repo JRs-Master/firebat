@@ -522,8 +522,36 @@ ${cdnTags}
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 15px; line-height: 1.6; color: #1e293b;
   }
-  #firebat-wrap { max-width: 880px; margin: 0 auto; padding: 24px 16px; }
+  #firebat-wrap { max-width: 1024px; margin: 0 auto; padding: 24px 16px; }
   img, video { max-width: 100%; height: auto; }
+
+  /* AI 가 raw HTML 박을 때 mobile 안전망 — design tokens 도입 전 임시 fix.
+     AI 의 inline style·class 가 박아둔 4-grid · width 고정 등을 강제 override.
+     향후 design tokens + component-based 전환 시 이 블록 자연 deprecation. */
+  @media (max-width: 640px) {
+    #firebat-wrap { padding: 12px 8px; max-width: 100%; }
+    h1 { font-size: 22px !important; }
+    h2 { font-size: 18px !important; }
+    h3 { font-size: 16px !important; }
+    /* 표 가로 스크롤 + 폰트 축소 */
+    table {
+      display: block !important;
+      overflow-x: auto !important;
+      width: 100% !important;
+      font-size: 12px !important;
+      -webkit-overflow-scrolling: touch;
+    }
+    th, td { padding: 4px 6px !important; white-space: nowrap; }
+    /* grid (KPI 카드 등) 4·3·2열 → 1·2열 자동 fallback */
+    [style*='grid-template-columns'],
+    [class*='kpi'],
+    [class*='grid-cols'] {
+      grid-template-columns: repeat(2, 1fr) !important;
+      gap: 8px !important;
+    }
+    /* 카드 padding 축소 */
+    [class*='card'], [class*='kpi-card'] { padding: 10px !important; }
+  }
 </style>
 </head><body><div id="firebat-wrap">${content}</div></body></html>`;
 
