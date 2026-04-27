@@ -503,14 +503,36 @@ import { buildCdnTags, IFRAME_CSP_META } from '../../../lib/cdn-libraries';
 import DOMPurify from 'isomorphic-dompurify';
 
 /** sanitize 허용 정책 — 페이지 본문 inline DOM 용.
- *  허용: 텍스트·구조 마크업, 표·리스트·링크·이미지, style 태그·style 속성, class·id.
+ *  허용 명시 (whitelist): 텍스트·구조·표·리스트·링크·이미지·style.
  *  차단: script, iframe, embed, object, form/input/button (interactive), on* 이벤트, javascript: URL.
- *  AI 생성 본문이 admin 만 작성 가능하지만 sanitize 로 defense-in-depth. */
+ *  AI 생성 본문이 admin 만 작성 가능하지만 sanitize 로 defense-in-depth.
+ *  ADD_TAGS 모드 대신 ALLOWED_TAGS 명시 — DOMPurify 의 default whitelist 가 style 태그 제외하므로
+ *  ADD_TAGS 추가만으로 일관 동작 안 함. whitelist 명시로 디자인 CSS 보존. */
 const SANITIZE_CONFIG = {
-  ADD_TAGS: ['style'],
-  ADD_ATTR: ['target', 'rel'],
-  FORBID_TAGS: ['script', 'iframe', 'embed', 'object', 'form', 'input', 'button', 'select', 'textarea'],
-  FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onmouseout', 'onfocus', 'onblur', 'onchange', 'onsubmit'],
+  ALLOWED_TAGS: [
+    // 텍스트·구조
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'span', 'br', 'hr',
+    'strong', 'em', 'b', 'i', 'u', 's', 'small', 'mark', 'sub', 'sup',
+    'code', 'pre', 'blockquote', 'kbd', 'samp', 'q', 'cite',
+    // 시맨틱
+    'section', 'article', 'header', 'footer', 'main', 'nav', 'aside', 'figure', 'figcaption',
+    'details', 'summary', 'time', 'address',
+    // 표
+    'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
+    // 리스트
+    'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+    // 링크·미디어
+    'a', 'img', 'picture', 'source',
+    // CSS
+    'style',
+  ],
+  ALLOWED_ATTR: [
+    'class', 'id', 'style', 'lang', 'dir', 'title',
+    'href', 'target', 'rel',
+    'src', 'alt', 'width', 'height', 'srcset', 'sizes', 'loading',
+    'colspan', 'rowspan', 'scope', 'headers',
+    'datetime',
+  ],
   ALLOW_DATA_ATTR: false,
   ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|\/|#|data:image\/)/i,
 };
