@@ -1210,31 +1210,47 @@ function LineChartInteractive({ data, labels, title, unit, minVal, maxVal }: {
   );
 }
 
-function BarChartInteractive({ data, labels, titleBlock, unit, showValues, barColor, maxVal, fmtVal, type: _type }: {
+function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues, barColor, maxVal, fmtVal, type: _type }: {
   data: number[]; labels: string[]; titleBlock: React.ReactNode; unit?: string; showValues: boolean;
   barColor: string; maxVal: number; fmtVal: (v: number) => string; type: 'bar' | 'line';
 }) {
   // 툴팁 제거 (v0.1, 2026-04-22) — AI 가 잘못 넣은 데이터가 tooltip 의 derived 계산
   // (pct 등) 을 거치면서 증폭됨. showValues inline 값으로 충분.
+  //
+  // 음수 값 처리 (v0.1, 2026-04-29) — 절댓값 기준 width + 음수는 빨강 톤 (financial 표기와 자연 일치).
+  //   부모 ChartComp 의 maxVal 은 `Math.max(...data, 1)` 라 음수 절댓값 무시 → 음수 혼재 시 maxAbs 재계산.
+  //   부호는 fmtVal 결과 ("-1,845억원") + 빨강 색상으로 표시.
+  // 단위 중복 제거 (v0.1, 2026-04-29) — fmtVal 이 이미 unit 포함하므로 별도 unit 추가 X.
+  //   이전: `{fmtVal(v)}{unit||''}` → "3570억원억원" 버그.
+  const hasNegative = data.some(v => v < 0);
+  const maxAbs = hasNegative ? Math.max(...data.map(v => Math.abs(v)), 1) : maxVal;
   return (
     <div className="space-y-3">
       {titleBlock}
       <div className="space-y-2">
-        {data.map((v, i) => (
-          <div
-            key={i}
-            className="flex items-center gap-3 px-1 py-0.5 rounded cursor-default"
-          >
-            <span className="text-xs w-20 truncate text-right text-gray-600">{labels[i] ?? i}</span>
-            <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden relative">
-              <div
-                className={`h-full rounded-full ${barColor} transition-all duration-500 opacity-85`}
-                style={{ width: `${(v / maxVal) * 100}%` }}
-              />
+        {data.map((v, i) => {
+          const isNegative = v < 0;
+          const fillColor = isNegative ? 'bg-red-500' : barColor;
+          return (
+            <div
+              key={i}
+              className="flex items-center gap-3 px-1 py-0.5 rounded cursor-default"
+            >
+              <span className="text-xs w-20 truncate text-right text-gray-600">{labels[i] ?? i}</span>
+              <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden relative">
+                <div
+                  className={`h-full rounded-full ${fillColor} transition-all duration-500 opacity-85`}
+                  style={{ width: `${(Math.abs(v) / maxAbs) * 100}%` }}
+                />
+              </div>
+              {showValues && (
+                <span className={`text-xs font-bold min-w-[3rem] text-right ${isNegative ? 'text-red-600' : 'text-gray-700'}`}>
+                  {fmtVal(v)}
+                </span>
+              )}
             </div>
-            {showValues && <span className="text-xs font-bold text-gray-700 min-w-[3rem] text-right">{fmtVal(v)}{unit || ''}</span>}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
