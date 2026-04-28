@@ -23,7 +23,8 @@ export async function GET(req: Request) {
     `  <url>\n    <loc>${baseUrl}</loc>\n    <lastmod>${new Date().toISOString()}</lastmod>\n    <changefreq>daily</changefreq>\n    <priority>1.0</priority>\n  </url>`,
     // DB 페이지
     ...pages.map(page => {
-      const loc = `${baseUrl}/${encodeURIComponent(page.slug)}`;
+      // 각 segment 만 encode + 슬래시 보존 (stock-blog/2026-04-28-close 등 정상 표시)
+      const loc = `${baseUrl}/${page.slug.split('/').map(encodeURIComponent).join('/')}`;
       const lastmod = page.updatedAt ? new Date(page.updatedAt).toISOString() : new Date().toISOString();
       return `  <url>\n    <loc>${loc}</loc>\n    <lastmod>${lastmod}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.7</priority>\n  </url>`;
     }),

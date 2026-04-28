@@ -20,7 +20,8 @@ export async function GET(req: Request) {
   const entries = staticPages
     .filter(slug => !dbPages.some(p => p.slug === slug))
     .map(slug => {
-      const loc = `${baseUrl}/${encodeURIComponent(slug)}`;
+      // slug 가 'stock-blog/2026-04-28-close' 식 슬래시 포함 — 각 segment 만 encode 하고 슬래시는 보존.
+      const loc = `${baseUrl}/${slug.split('/').map(encodeURIComponent).join('/')}`;
       return `  <url>\n    <loc>${loc}</loc>\n    <lastmod>${new Date().toISOString()}</lastmod>\n    <changefreq>monthly</changefreq>\n    <priority>0.5</priority>\n  </url>`;
     })
     .join('\n');

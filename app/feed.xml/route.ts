@@ -23,7 +23,8 @@ export async function GET(req: Request) {
 
   // DB 동적 페이지
   const items: string[] = pages.map(page => {
-    const url = `${baseUrl}/${encodeURIComponent(page.slug)}`;
+    // 각 segment 만 encode + 슬래시 보존 (stock-blog/2026-04-28-close 등 정상 URL)
+    const url = `${baseUrl}/${page.slug.split('/').map(encodeURIComponent).join('/')}`;
     const pubDate = page.updatedAt ? new Date(page.updatedAt).toUTCString() : new Date().toUTCString();
     return `    <item>
       <title>${escXml(page.title || page.slug)}</title>
@@ -36,7 +37,7 @@ export async function GET(req: Request) {
   // 정적 페이지 (DB 중복 제외)
   for (const slug of staticPages) {
     if (pages.some(p => p.slug === slug)) continue;
-    const url = `${baseUrl}/${encodeURIComponent(slug)}`;
+    const url = `${baseUrl}/${slug.split('/').map(encodeURIComponent).join('/')}`;
     items.push(`    <item>
       <title>${escXml(slug)}</title>
       <link>${escXml(url)}</link>
