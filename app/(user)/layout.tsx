@@ -53,20 +53,15 @@ export default async function UserLayout({ children }: { children: React.ReactNo
         />
       )}
       <SeoScripts headScripts={seo.headScripts} bodyScripts={seo.bodyScripts} />
-      {/* AdSense script — Publisher ID 박혀있을 때만 head 에 자동 inject (Auto Ads + 수동 슬롯 양쪽 활성화) */}
+      {/* AdSense script — Publisher ID 박혀있으면 자동 inject. Auto Ads 활성화는
+       *  AdSense 콘솔 (adsense.google.com → 자동 광고) 에서 결정 — Google bot 이
+       *  사이트 분석 후 광고 자동 게재. 별도 enable_page_level_ads push 코드 불필요
+       *  (2023+ Google 권장 방식). */}
       {seo.adsense.publisherId && (
         <script
           async
           src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${seo.adsense.publisherId}`}
           crossOrigin="anonymous"
-        />
-      )}
-      {/* Auto Ads — Google 자동 광고 위치·형식 결정 */}
-      {seo.adsense.publisherId && seo.adsense.autoAds && (
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(adsbygoogle = window.adsbygoogle || []).push({ google_ad_client: "${seo.adsense.publisherId}", enable_page_level_ads: true });`,
-          }}
         />
       )}
       {seo.layout.showReadingProgress && <CmsReadingProgress />}

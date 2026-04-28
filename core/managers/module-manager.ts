@@ -216,13 +216,12 @@ export class ModuleManager {
     /** 태그 alias 매핑 — CMS Phase 8a Step B. canonical → [synonyms].
      *  /tag/{keyword} URL 매칭 시 normalize 하여 통합. listAllTags() 도 normalize 후 aggregation. */
     tagAliases: TagAliases;
-    /** AdSense 설정 — Phase 4 Step 6. publisher ID 박혀있으면 자동 script inject + Auto Ads.
+    /** AdSense 설정 — Phase 4 Step 6. publisher ID 박혀있으면 자동 script inject.
+     *  Auto Ads 활성화는 AdSense 콘솔 (adsense.google.com → 자동 광고) 에서 결정.
      *  수동 슬롯 4개 (header-bottom / post-top / post-bottom / footer-top) 옵션. */
     adsense: {
       /** Publisher ID — 예: "ca-pub-1234567890123456". 비우면 AdSense 미사용. */
       publisherId: string;
-      /** Auto Ads 활성 — Google 자동 광고 위치 결정. publisherId 박혀있으면 자동 ON 권장. */
-      autoAds: boolean;
       /** 헤더 바로 아래 슬롯 ID (선택). */
       slotHeaderBottom: string;
       /** 본문 시작 위 슬롯 ID (선택). */
@@ -263,7 +262,6 @@ export class ModuleManager {
       tagAliases: parseTagAliases(s.tagAliases),
       adsense: {
         publisherId: s.adsensePublisherId || '',
-        autoAds: s.adsenseAutoAds !== false, // publisher 박혀있고 미설정이면 auto
         slotHeaderBottom: s.adsenseSlotHeaderBottom || '',
         slotPostTop: s.adsenseSlotPostTop || '',
         slotPostBottom: s.adsenseSlotPostBottom || '',

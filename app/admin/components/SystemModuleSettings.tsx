@@ -100,9 +100,8 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
         { value: 'compact', label: 'Compact — 제목+날짜 압축' },
       ] },
       { key: 'pageListPerPage', label: '글 list — 페이지당 개수', type: 'number', tab: '레이아웃', placeholder: '20', description: '한 페이지에 표시할 글 개수. 페이지네이션 (?page=N) 자동.', defaultValue: 20 },
-      // ── 광고 — AdSense Auto Ads + 수동 슬롯 4개 (Phase 4 Step 6). ──
-      { key: 'adsensePublisherId', label: 'AdSense Publisher ID', type: 'text', tab: '광고', placeholder: 'ca-pub-1234567890123456', description: 'Google AdSense Publisher ID. 박혀있으면 head 에 AdSense script 자동 inject. 비우면 광고 미사용.' },
-      { key: 'adsenseAutoAds', label: 'Auto Ads 활성', type: 'toggle', tab: '광고', description: 'Google 이 페이지 자동 분석해 광고 위치·형식 결정. Publisher ID 있으면 기본 ON. 수동 슬롯과 병행 가능.', defaultValue: true },
+      // ── 광고 — AdSense 수동 슬롯 4개 (Phase 4 Step 6). Auto Ads 는 AdSense 콘솔에서 직접 ON ──
+      { key: 'adsensePublisherId', label: 'AdSense Publisher ID', type: 'text', tab: '광고', placeholder: 'ca-pub-1234567890123456', description: 'Google AdSense Publisher ID. 박으면 head 에 AdSense script 자동 inject. Auto Ads 활성화는 AdSense 콘솔 (adsense.google.com → 자동 광고 → 사이트별 ON). Firebat 측에서는 별도 토글 없음 — script 박은 후엔 AdSense 콘솔이 광고 위치·형식 결정.' },
       { key: 'adsenseSlotHeaderBottom', label: '슬롯 — 헤더 아래', type: 'text', tab: '광고', placeholder: '1234567890', description: 'AdSense 광고 단위 ID — 헤더 바로 아래 위치. 비우면 미표시.' },
       { key: 'adsenseSlotPostTop', label: '슬롯 — 본문 위', type: 'text', tab: '광고', placeholder: '1234567890', description: 'AdSense 광고 단위 ID — 본문 시작 위. 비우면 미표시.' },
       { key: 'adsenseSlotPostBottom', label: '슬롯 — 본문 아래', type: 'text', tab: '광고', placeholder: '1234567890', description: 'AdSense 광고 단위 ID — 본문 끝 아래. 비우면 미표시.' },
