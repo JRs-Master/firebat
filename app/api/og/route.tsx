@@ -165,6 +165,12 @@ export async function GET(request: Request) {
     {
       width: 1200,
       height: 630,
+      headers: {
+        // Phase 7 — SNS bot (Facebook/Twitter/카카오) + CDN 1주일 캐싱.
+        // OG 이미지 변경 빈도 낮음 (siteTitle/색 변경 시에만) → 긴 max-age 안전.
+        // 사용자가 cms 설정 변경 시 카드 갱신은 SNS reset (페북 디버거 등) 또는 query string 변경으로.
+        'Cache-Control': 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400',
+      },
     },
   );
 }
