@@ -83,6 +83,16 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'layoutShowFooter', label: '푸터 표시', type: 'toggle', tab: '레이아웃', description: '사용자 페이지 하단 푸터 표시 여부. 기본 ON.', defaultValue: true },
       { key: 'layoutFooterText', label: '푸터 — 텍스트', type: 'textarea', tab: '레이아웃', placeholder: '© 2026 Firebat. All rights reserved.\n본 사이트는 투자 자문이 아닌 정보 제공 목적입니다.', description: '푸터 텍스트. 저작권 / 법적 고지 / 연락처 등. 줄바꿈 OK. HTML 태그 일부 허용 (<a>, <strong> 등).' },
       { key: 'layoutShowReadingProgress', label: '읽기 진행도 표시', type: 'toggle', tab: '레이아웃', description: '페이지 상단에 스크롤 진행도 가로 바 표시. design tokens 의 accent 색 사용. 기본 OFF.', defaultValue: false },
+      // ── Sidebar 레이아웃 ──
+      { key: 'layoutMode', label: '본문 + 사이드바 모드', type: 'select', tab: '레이아웃', description: '본문 영역과 사이드바 배치. full = 사이드바 없음 / right = 우측 사이드바 / left = 좌측 사이드바 / boxed = 사이드바 없음 + 본문 boxed (좁은 max-width + 테두리·그림자). 모바일에선 자동 stacked.', defaultValue: 'full', options: [
+        { value: 'full', label: 'Full — 사이드바 없음 (기본)' },
+        { value: 'right-sidebar', label: 'Right Sidebar — 우측 사이드바' },
+        { value: 'left-sidebar', label: 'Left Sidebar — 좌측 사이드바' },
+        { value: 'boxed', label: 'Boxed — 사이드바 없음 + 본문 boxed' },
+      ] },
+      { key: 'sidebarShowRecentPosts', label: '사이드바 — 최근 글 위젯', type: 'toggle', tab: '레이아웃', description: '사이드바에 최근 글 list 표시. 사이드바 모드 (right/left) 에서만 효과.', defaultValue: true },
+      { key: 'sidebarRecentPostsCount', label: '사이드바 — 최근 글 개수', type: 'number', tab: '레이아웃', placeholder: '5', description: '사이드바 최근 글 개수.', defaultValue: 5 },
+      { key: 'sidebarHtmlWidget', label: '사이드바 — HTML 위젯', type: 'textarea', tab: '레이아웃', placeholder: '<div>광고 코드 / 연락처 / 소개 등</div>', description: '자유 HTML 위젯. sanitize 후 inline DOM. <a> / <strong> / <img> 등 일부 태그 허용. 비우면 미표시.' },
       // ── 광고 — AdSense Auto Ads + 수동 슬롯 4개 (Phase 4 Step 6). ──
       { key: 'adsensePublisherId', label: 'AdSense Publisher ID', type: 'text', tab: '광고', placeholder: 'ca-pub-1234567890123456', description: 'Google AdSense Publisher ID. 박혀있으면 head 에 AdSense script 자동 inject. 비우면 광고 미사용.' },
       { key: 'adsenseAutoAds', label: 'Auto Ads 활성', type: 'toggle', tab: '광고', description: 'Google 이 페이지 자동 분석해 광고 위치·형식 결정. Publisher ID 있으면 기본 ON. 수동 슬롯과 병행 가능.', defaultValue: true },

@@ -176,6 +176,79 @@
   }
 }
 
+/* ── CMS Layout Mode — 본문 + sidebar 4종 배치 (Phase 4 Step 2). ─────────────
+   .firebat-cms-layout-{mode} 가 본문·사이드바 wrapper.
+   data-cms-layout="..." 가 layout.tsx 에서 박힘. 모바일 (<1024px) 에선 자동 stacked. */
+.firebat-cms-layout-full {
+  /* 사이드바 없음 — 기존 firebat-cms-content 그대로 */
+}
+.firebat-cms-layout-right-sidebar,
+.firebat-cms-layout-left-sidebar {
+  display: grid;
+  gap: 32px;
+  max-width: var(--cms-content-max-width);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: var(--cms-padding-mobile);
+  padding-right: var(--cms-padding-mobile);
+  padding-top: 32px;
+  padding-bottom: 48px;
+}
+.firebat-cms-layout-right-sidebar {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+}
+.firebat-cms-layout-left-sidebar {
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+}
+.firebat-cms-layout-boxed {
+  /* boxed — max-width 좁고 테두리·그림자 */
+  max-width: min(900px, 100%);
+  margin: 24px auto;
+  border: 1px solid var(--cms-border);
+  border-radius: var(--cms-radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+  background: var(--cms-bg);
+  overflow: hidden;
+}
+@media (min-width: 640px) {
+  .firebat-cms-layout-right-sidebar,
+  .firebat-cms-layout-left-sidebar {
+    padding-left: var(--cms-padding-tablet);
+    padding-right: var(--cms-padding-tablet);
+    padding-top: 48px;
+    padding-bottom: 64px;
+  }
+}
+@media (min-width: 1024px) {
+  .firebat-cms-layout-right-sidebar,
+  .firebat-cms-layout-left-sidebar {
+    padding-left: var(--cms-padding-desktop);
+    padding-right: var(--cms-padding-desktop);
+  }
+}
+/* 모바일/태블릿 (<1024px) — sidebar grid 해제 → stacked (sidebar 가 본문 아래) */
+@media (max-width: 1023px) {
+  .firebat-cms-layout-right-sidebar,
+  .firebat-cms-layout-left-sidebar {
+    grid-template-columns: 1fr;
+  }
+}
+
+.firebat-cms-sidebar {
+  font-family: var(--cms-font-body);
+  color: var(--cms-text);
+}
+.firebat-cms-sidebar > * + * {
+  margin-top: 24px;
+}
+.firebat-cms-sidebar h3 {
+  font-size: 14px;
+  font-weight: 700;
+  margin: 0 0 12px;
+  color: var(--cms-text);
+  font-family: var(--cms-font-heading);
+}
+
 /* ── Inline HTML 블록 (HtmlComp dependencies-없음 분기) 기본 스타일 ─────
    사용 케이스: 한 섹션 Html 위젯 (page 전체 아님 — 그건 cron-agent prompt rule 4 가 차단).
    페이지 본문 통째 사용은 옛 stock-blog 같은 legacy 케이스 — CMS 패턴 정착 후엔 발생 X.

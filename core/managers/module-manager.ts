@@ -282,6 +282,14 @@ export class ModuleManager {
         text: s.layoutFooterText || '',
       },
       showReadingProgress: s.layoutShowReadingProgress === true,
+      mode: (['full', 'right-sidebar', 'left-sidebar', 'boxed'].includes(s.layoutMode) ? s.layoutMode : 'full'),
+      sidebar: {
+        showRecentPosts: s.sidebarShowRecentPosts !== false, // 기본 true
+        recentPostsCount: typeof s.sidebarRecentPostsCount === 'number'
+          ? s.sidebarRecentPostsCount
+          : (parseInt(s.sidebarRecentPostsCount) || 5),
+        htmlWidget: s.sidebarHtmlWidget || '',
+      },
     };
   }
 

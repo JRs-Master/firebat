@@ -4,11 +4,12 @@ import { CmsHeader } from './cms-header';
 import { CmsFooter } from './cms-footer';
 import { CmsAdSlot } from './cms-ad-slot';
 import { CmsReadingProgress } from './cms-reading-progress';
+import { CmsSidebar } from './cms-sidebar';
 import { BASE_URL } from '../../infra/config';
 import { tokensToCss } from '../../lib/design-tokens';
 
 /** User 페이지 레이아웃 — SEO head/body 스크립트 + JSON-LD + Design Tokens + Header/Footer 주입 */
-export default function UserLayout({ children }: { children: React.ReactNode }) {
+export default async function UserLayout({ children }: { children: React.ReactNode }) {
   const seo = getCore().getCmsSettings();
   const siteUrl = seo.siteUrl || BASE_URL;
   // 사용자 설정 design tokens → :root CSS var 로 inject. globals.css 의 default 를 override.
@@ -76,7 +77,20 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
       {seo.adsense.publisherId && seo.adsense.slotPostTop && (
         <CmsAdSlot publisherId={seo.adsense.publisherId} slotId={seo.adsense.slotPostTop} />
       )}
-      {children}
+      {/* Layout Mode 4종 — full / right-sidebar / left-sidebar / boxed.
+       *  full / boxed: children 만 (sidebar 없음). boxed 는 wrapper class 만 추가.
+       *  right/left-sidebar: grid 컬럼에 children + CmsSidebar. 모바일은 stacked. */}
+      {(seo.layout.mode === 'right-sidebar' || seo.layout.mode === 'left-sidebar') ? (
+        <div className={`firebat-cms-layout-${seo.layout.mode}`}>
+          {seo.layout.mode === 'left-sidebar' && (await CmsSidebar({ sidebar: seo.layout.sidebar }))}
+          <div>{children}</div>
+          {seo.layout.mode === 'right-sidebar' && (await CmsSidebar({ sidebar: seo.layout.sidebar }))}
+        </div>
+      ) : seo.layout.mode === 'boxed' ? (
+        <div className="firebat-cms-layout-boxed">{children}</div>
+      ) : (
+        children
+      )}
       {seo.adsense.publisherId && seo.adsense.slotPostBottom && (
         <CmsAdSlot publisherId={seo.adsense.publisherId} slotId={seo.adsense.slotPostBottom} />
       )}

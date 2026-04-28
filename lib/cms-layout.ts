@@ -30,11 +30,31 @@ export interface FooterConfig {
   text: string;
 }
 
+/** Sidebar 위치 모드 — GP/Astra 식 4종 (both-sidebar 는 v1.x 추후).
+ *  full: sidebar 없음 (본문 풀폭)
+ *  right-sidebar: 본문 좌, sidebar 우
+ *  left-sidebar: sidebar 좌, 본문 우
+ *  boxed: sidebar 없음 + 본문 boxed (좁은 max-width + 테두리·그림자)
+ *  모바일 (<1024px) 에서는 자동 stacked — sidebar 가 본문 아래로. */
+export type LayoutMode = 'full' | 'right-sidebar' | 'left-sidebar' | 'boxed';
+
+export interface SidebarConfig {
+  /** 최근 글 위젯 표시 (default true 단 layoutMode 가 sidebar 일 때만 효과) */
+  showRecentPosts: boolean;
+  /** 최근 글 표시 개수 */
+  recentPostsCount: number;
+  /** 자유 HTML 위젯 — 광고·연락처·소개 등. sanitize 후 inline DOM. */
+  htmlWidget: string;
+}
+
 export interface LayoutConfig {
   header: HeaderConfig;
   footer: FooterConfig;
   /** 읽기 진행도 표시 — 페이지 상단 가로 progress bar (CSS var --cms-accent 색). 기본 false. */
   showReadingProgress: boolean;
+  /** 본문 + sidebar 배치 모드. 기본 'full' (사이드바 없음). */
+  mode: LayoutMode;
+  sidebar: SidebarConfig;
 }
 
 /** "label | href" 줄별 형식 → NavLink[] 파싱.
@@ -65,4 +85,10 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
     text: '',
   },
   showReadingProgress: false,
+  mode: 'full',
+  sidebar: {
+    showRecentPosts: true,
+    recentPostsCount: 5,
+    htmlWidget: '',
+  },
 };
