@@ -515,6 +515,15 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
           size: { type: 'string', enum: ['1024x1024', '1536x1024', '1024x1536', 'auto'], description: '출력 크기 (OpenAI gpt-image 만 유효, Gemini 는 무시). 미지정 시 서버 기본값.' },
           quality: { type: 'string', enum: ['low', 'medium', 'high'], description: '품질 (OpenAI 만 유효). low=$0.011 / medium=$0.042 / high=$0.17.' },
           filenameHint: { type: 'string', description: '파일명 힌트 (로그용 선택). 예: "blog-hero-samsung-2026"' },
+          referenceImage: {
+            type: 'object',
+            description: 'image-to-image 변환용 참조 이미지 (선택). 사용자가 기존 이미지 변환 요청 시 사용. slug/url/base64 중 하나 지정. 자세한 가이드는 도구 description 참조.',
+            properties: {
+              slug: { type: 'string', description: '갤러리 미디어 slug (가장 흔한 케이스, search_media 결과의 slug 사용)' },
+              url: { type: 'string', description: '미디어 URL (`/user/media/<slug>.<ext>`) 또는 외부 https URL' },
+              base64: { type: 'string', description: 'base64 또는 data URI (`data:image/png;base64,...`) — 직접 첨부 base64 보유 시' },
+            },
+          },
         },
       },
     },

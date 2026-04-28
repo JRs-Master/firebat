@@ -1023,6 +1023,14 @@ export interface ImageGenOpts {
   n?: number;
   /** 모델 ID override — 미지정 시 ImageGenCallOpts 의 기본 사용 */
   model?: string;
+  /** 참조 이미지 (image-to-image 변환). MediaManager 가 slug/url/base64 → binary 로 resolve 후 주입.
+   *  - OpenAI: /v1/images/edits 엔드포인트 + multipart 로 전달 (gpt-image-1 지원)
+   *  - Gemini: contents.parts 에 inline_data part 추가 (image-to-image 자연 동작)
+   *  - 미지원 provider 는 에러 반환. */
+  referenceImage?: {
+    binary: Buffer;
+    contentType: string;
+  };
 }
 
 export interface ImageGenCallOpts {

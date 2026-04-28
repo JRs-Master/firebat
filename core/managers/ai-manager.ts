@@ -244,15 +244,20 @@ export class AiManager {
         // 비동기 패턴 — startImageGeneration 즉시 placeholder URL 반환, 실제 생성은 백그라운드.
         // CLI HTTP timeout 회피 + AI 가 다음 도구 (save_page) 즉시 진행 가능.
         // 사용자 페이지 reload 시 placeholder → 실제 이미지로 자동 swap.
-        const { prompt, size, quality, filenameHint, aspectRatio, focusPoint } = args as {
+        // referenceImage 지정 시 image-to-image 변환 (MediaManager 가 slug/url/base64 → binary resolve).
+        const { prompt, size, quality, filenameHint, aspectRatio, focusPoint, referenceImage } = args as {
           prompt: string;
           size?: string;
           quality?: string;
           filenameHint?: string;
           aspectRatio?: string;
           focusPoint?: 'attention' | 'entropy' | 'center';
+          referenceImage?: { slug?: string; url?: string; base64?: string };
         };
-        const res = await this.core.startImageGeneration({ prompt, size, quality, filenameHint, aspectRatio, focusPoint });
+        const res = await this.core.startImageGeneration({
+          prompt, size, quality, filenameHint, aspectRatio, focusPoint,
+          ...(referenceImage ? { referenceImage } : {}),
+        });
         if (!res.success || !res.data) return { success: false, error: res.error || '이미지 생성 시작 실패' };
         return {
           success: true,

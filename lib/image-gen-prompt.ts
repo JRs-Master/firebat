@@ -33,6 +33,16 @@ export const IMAGE_GEN_DESCRIPTION = `AI 이미지 생성 (비동기) — 즉시
 - 이미지 저장 결과 (variants/blurhash/thumbnailUrl) 는 **반환 안 됨** — 백그라운드 완성 후 갤러리에서만 보임
 - render_image 에는 url 만 박으면 충분 — variants 는 안 받았으니 안 넘김
 
+**referenceImage — image-to-image 변환 (선택)**:
+- 사용자가 기존 이미지를 가리키며 "실사로 변환", "스타일 바꿔줘", "이 사진 기반으로" 요청 시 사용
+- 사용 흐름: search_media (또는 search_history) 로 slug 발견 → image_gen 의 \`referenceImage.slug\` 에 그 slug 전달 + prompt 에 변환 의도 명시
+- 형식 (셋 중 하나):
+  - \`referenceImage: { slug: "2026-04-28-0b1a" }\` — 갤러리 slug (가장 흔한 케이스)
+  - \`referenceImage: { url: "/user/media/<slug>.png" }\` — 미디어 URL 또는 외부 https URL
+  - \`referenceImage: { base64: "..." }\` — base64 또는 data URI (직접 첨부 base64 보유 시)
+- prompt 작성: 변환 의도만 명확히 — "Convert to photorealistic style, preserve subject and composition" / "Transform to oil painting style"
+- 지원: OpenAI gpt-image-1 (/v1/images/edits) / Gemini 2.5+ Flash Image. CLI Codex 는 reference 미지원 → reference 무시되고 prompt 만으로 새 이미지 생성됨 (사용자에게 사전 고지 필요).
+
 ---
 
 **프롬프트 작성 원칙** (이미지 품질이 여기서 갈림):

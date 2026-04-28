@@ -36,9 +36,19 @@ export class GeminiNativeImageFormat implements ImageFormatHandler {
       prompt = `${prompt}\n\n(Aspect ratio hint: ${hint}.)`;
     }
 
+    // referenceImage (image-to-image) — Gemini 2.5+ Flash Image 는 multimodal contents 자연 지원.
+    // parts 에 inline_data (image) + text 함께 보내면 image-to-image 변환 동작.
+    // text 가 변환 의도 (스타일 변경 / 실사화 등) 설명하면 됨.
+    const ref = opts.referenceImage;
+    const parts: Array<{ text?: string } | { inline_data?: { mime_type: string; data: string } }> = [];
+    if (ref) {
+      parts.push({ inline_data: { mime_type: ref.contentType, data: ref.binary.toString('base64') } });
+    }
+    parts.push({ text: prompt });
+
     const url = `${ctx.config.endpoint}?key=${encodeURIComponent(apiKey)}`;
     const body = {
-      contents: [{ parts: [{ text: prompt }] }],
+      contents: [{ parts }],
       generationConfig: {
         responseModalities: ['IMAGE'],
       },

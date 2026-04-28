@@ -76,7 +76,7 @@ const DEFAULT_IMAGE_SETTINGS: SeoImageSettings = {
   keepOriginal: true,
 };
 
-export interface GenerateImageInput extends ImageGenOpts {
+export interface GenerateImageInput extends Omit<ImageGenOpts, 'referenceImage'> {
   /** 저장 시 파일명 힌트 (네이밍 규칙에 반영). 예: "blog-hero-samsung" */
   filenameHint?: string;
   /** 저장 scope — 'user' (AI 생성 기본) / 'system' (Firebat 내부용) */
@@ -87,6 +87,16 @@ export interface GenerateImageInput extends ImageGenOpts {
   /** Crop 전략 — 기본 'attention' (인물·제품 자동 감지).
    *  {x, y} 수동 좌표 (0~1 상대) 도 가능. */
   focusPoint?: 'attention' | 'entropy' | 'center' | { x: number; y: number };
+  /** 참조 이미지 (image-to-image 변환) — 사용자/AI 입력 형식.
+   *  - slug: 갤러리 미디어 slug (가장 흔한 케이스, AI 가 search_media 결과의 slug 전달)
+   *  - url: 외부 URL (https://...) 또는 절대/상대 미디어 경로
+   *  - base64: base64 인코딩 raw binary (data: URI prefix 허용)
+   *  MediaManager 가 binary 로 resolve 후 ImageGenOpts.referenceImage 로 변환. */
+  referenceImage?: {
+    slug?: string;
+    url?: string;
+    base64?: string;
+  };
 }
 
 /** "16:9" → [16, 9] / 잘못된 포맷은 null */
@@ -368,8 +378,23 @@ export class MediaManager {
     // 진행도 보고 — Core 가 StatusManager 와 연결. MediaManager 는 콜백 호출만.
     onProgress?.(0.05, '이미지 생성 시작...');
 
-    // 1) 이미지 생성
-    const genRes = await this.imageGen.generate({ ...input, size, quality, model: modelId }, { corrId, model: modelId });
+    // 0.5) referenceImage resolve (image-to-image) — slug/url/base64 → binary
+    //      slug: 갤러리 read / 미디어 URL: parseMediaUrl → slug → read / 외부 URL: fetch / base64: decode
+    //      resolve 실패 시 reference 무시하고 prompt 만으로 진행 (사용자 의도는 잃지만 호출 자체는 실행)
+    const referenceImage = await this.resolveReferenceImage(input.referenceImage);
+    if (input.referenceImage && !referenceImage) {
+      log(`referenceImage resolve 실패 (slug=${input.referenceImage.slug ?? '-'} url=${input.referenceImage.url ?? '-'}) — 무시하고 prompt 만으로 생성`);
+    } else if (referenceImage) {
+      log(`referenceImage resolved (${referenceImage.binary.length} bytes, ${referenceImage.contentType})`);
+    }
+
+    // 1) 이미지 생성 — input 의 referenceImage (slug/url/base64) 는 ImageGenOpts 와 형 다름 → 분리 후
+    //    resolved binary 형태로 교체. eslint-disable-line 으로 underscore 변수 의도 표시.
+    const { referenceImage: _refIn, ...inputRest } = input; // eslint-disable-line @typescript-eslint/no-unused-vars
+    const genRes = await this.imageGen.generate(
+      { ...inputRest, size, quality, model: modelId, ...(referenceImage ? { referenceImage } : {}) },
+      { corrId, model: modelId },
+    );
     if (!genRes.success || !genRes.data) {
       const errorMsg = genRes.error || '이미지 생성 실패';
       this.logger.error(`[MediaManager]${corrId ? ` [${corrId}]` : ''} [${modelId}] 생성 실패: ${errorMsg}`);
@@ -605,5 +630,45 @@ export class MediaManager {
         ...(appliedAspectRatio ? { aspectRatio: appliedAspectRatio } : {}),
       },
     };
+  }
+
+  /** 참조 이미지 resolve — slug / url (미디어 또는 외부) / base64 (data URI 또는 raw) → binary.
+   *  generateImage 가 imageGen.generate 호출 전에 1회 호출. 실패 시 null 반환 (caller 에서 reference 무시).
+   *  - 일반 로직: 모든 입력 형태 동등 처리. 특정 도메인·확장자 하드코딩 X.
+   *  - 미디어 URL 인식은 parseMediaUrl (lib/media-url.ts) 단일 source. */
+  private async resolveReferenceImage(
+    ref?: { slug?: string; url?: string; base64?: string },
+  ): Promise<{ binary: Buffer; contentType: string } | null> {
+    if (!ref) return null;
+    // 1) base64 — data URI ("data:image/png;base64,XXX") 또는 raw base64. 가장 단순·빠름
+    if (ref.base64) {
+      const m = ref.base64.match(/^data:(image\/[\w+-]+);base64,(.+)$/);
+      if (m) return { binary: Buffer.from(m[2], 'base64'), contentType: m[1] };
+      return { binary: Buffer.from(ref.base64, 'base64'), contentType: 'image/png' };
+    }
+    // 2) slug — 갤러리에서 직접 read (user/system 양쪽 자동 검색)
+    if (ref.slug) {
+      const r = await this.media.read(ref.slug);
+      if (r.success && r.data) return { binary: r.data.binary, contentType: r.data.contentType };
+      return null;
+    }
+    // 3) url — 미디어 URL (`/user/media/...` / `/system/media/...`) 또는 외부 URL
+    if (ref.url) {
+      const parsed = parseMediaUrl(ref.url);
+      if (parsed) {
+        const r = await this.media.read(parsed.slug);
+        if (r.success && r.data) return { binary: r.data.binary, contentType: r.data.contentType };
+        return null;
+      }
+      if (/^https?:\/\//i.test(ref.url)) {
+        try {
+          const res = await fetch(ref.url);
+          if (!res.ok) return null;
+          const buf = Buffer.from(await res.arrayBuffer());
+          return { binary: buf, contentType: res.headers.get('content-type') ?? 'image/png' };
+        } catch { return null; }
+      }
+    }
+    return null;
   }
 }

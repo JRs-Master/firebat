@@ -293,12 +293,19 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
       filenameHint: z.string().optional().describe('파일명 힌트 (로그용). 예: "blog-hero-samsung-2026"'),
       aspectRatio: z.string().optional().describe('Aspect ratio 후처리 crop — "16:9"(블로그 히어로), "1:1"(소셜), "4:5"(인스타), "3:2"(일반). 지정 시 sharp 가 인물·제품 자동 감지로 해당 비율 crop. OpenAI/Gemini 가 원하는 비율을 안 지원할 때 유용.'),
       focusPoint: z.enum(['attention', 'entropy', 'center']).optional().describe('Crop 전략 (aspectRatio 지정 시만 적용). attention=saliency 자동(기본·권장), entropy=디테일 많은 영역, center=중앙 고정.'),
+      referenceImage: z.object({
+        slug: z.string().optional().describe('갤러리 미디어 slug (가장 흔한 케이스, search_media 결과의 slug 사용)'),
+        url: z.string().optional().describe('미디어 URL (`/user/media/<slug>.<ext>`) 또는 외부 https URL'),
+        base64: z.string().optional().describe('base64 또는 data URI (`data:image/png;base64,...`)'),
+      }).optional().describe('image-to-image 변환용 참조 이미지 (선택). 사용자가 기존 이미지 변환 요청 시 사용. 자세한 가이드는 도구 description 참조.'),
     },
     async (args) => {
       // **비동기 패턴** — startImageGeneration 즉시 placeholder URL 반환, 실제 생성은 백그라운드.
       // AI 가 60-90s await 안 함 (CLI HTTP timeout 회피) → URL 즉시 받아 page spec 박고 save_page 발행 가능.
       // 사용자가 페이지 reload 하면 placeholder → 실제 이미지로 자동 swap (디스크 파일 교체됨).
       // 이전 sync `core.generateImage` 는 채팅 이미지 모드 (/api/media/generate) 전용으로 유지.
+      // referenceImage 지정 시 image-to-image 변환 (MediaManager 가 slug/url/base64 → binary resolve).
+      const ref = args.referenceImage as { slug?: string; url?: string; base64?: string } | undefined;
       const res = await core.startImageGeneration({
         prompt: args.prompt as string,
         size: args.size as string | undefined,
@@ -306,6 +313,7 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
         filenameHint: args.filenameHint as string | undefined,
         aspectRatio: args.aspectRatio as string | undefined,
         focusPoint: args.focusPoint as 'attention' | 'entropy' | 'center' | undefined,
+        ...(ref ? { referenceImage: ref } : {}),
       });
       if (!res.success || !res.data) {
         return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: res.error || '이미지 생성 시작 실패' }) }] };
