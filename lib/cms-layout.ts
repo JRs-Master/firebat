@@ -33,6 +33,8 @@ export interface FooterConfig {
 export interface LayoutConfig {
   header: HeaderConfig;
   footer: FooterConfig;
+  /** 읽기 진행도 표시 — 페이지 상단 가로 progress bar (CSS var --cms-accent 색). 기본 false. */
+  showReadingProgress: boolean;
 }
 
 /** "label | href" 줄별 형식 → NavLink[] 파싱.
@@ -62,4 +64,5 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
     show: true,
     text: '',
   },
+  showReadingProgress: false,
 };

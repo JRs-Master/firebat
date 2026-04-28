@@ -162,8 +162,17 @@ export default async function DynamicPage({ params }: Props) {
   const spec = result.data;
   const visibility = resolveVisibility(spec);
 
-  // 비공개 페이지 — 404 처리
-  if (visibility === 'private') notFound();
+  // 비공개 페이지 — admin 로그인 상태면 미리보기 허용 (Phase 4 Step 7), 그 외 404
+  let isAdminPreview = false;
+  if (visibility === 'private') {
+    const cookieStore = await cookies();
+    const adminToken = cookieStore.get('firebat_token')?.value || cookieStore.get('firebat_admin_token')?.value;
+    if (adminToken) {
+      isAdminPreview = true;
+    } else {
+      notFound();
+    }
+  }
 
   // 비밀번호 보호 페이지 — 쿠키 검증 후 미인증이면 폼 표시
   if (visibility === 'password') {
@@ -266,6 +275,23 @@ export default async function DynamicPage({ params }: Props) {
       {(head.styles ?? []).map((s: any, i: number) => (
         <link key={i} rel="stylesheet" href={s.href} />
       ))}
+
+      {/* admin preview 배지 — visibility=private 인데 admin 쿠키 보유 시 미리보기 표시. */}
+      {isAdminPreview && (
+        <div
+          style={{
+            background: '#fef3c7',
+            borderBottom: '1px solid #fbbf24',
+            color: '#92400e',
+            padding: '8px 16px',
+            fontSize: '12px',
+            fontWeight: 700,
+            textAlign: 'center',
+          }}
+        >
+          🔒 비공개 페이지 — 관리자 미리보기 (외부 사용자에게는 404 로 보임)
+        </div>
+      )}
 
       {/* 일반 본문 레이아웃 — Html 단일 블록도 동일 패턴 (이전 풀스크린 srcDoc 분기 제거).
        *  사유: srcDoc 안엔 AdSense ad script·SEO 인덱싱 모두 차단되어 광고 수익·검색 노출 0.

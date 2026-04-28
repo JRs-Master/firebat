@@ -3,6 +3,7 @@ import { SeoScripts } from './seo-scripts';
 import { CmsHeader } from './cms-header';
 import { CmsFooter } from './cms-footer';
 import { CmsAdSlot } from './cms-ad-slot';
+import { CmsReadingProgress } from './cms-reading-progress';
 import { BASE_URL } from '../../infra/config';
 import { tokensToCss } from '../../lib/design-tokens';
 
@@ -67,6 +68,7 @@ export default function UserLayout({ children }: { children: React.ReactNode }) 
           }}
         />
       )}
+      {seo.layout.showReadingProgress && <CmsReadingProgress />}
       {seo.layout.header.show && <CmsHeader header={seo.layout.header} />}
       {seo.adsense.publisherId && seo.adsense.slotHeaderBottom && (
         <CmsAdSlot publisherId={seo.adsense.publisherId} slotId={seo.adsense.slotHeaderBottom} />

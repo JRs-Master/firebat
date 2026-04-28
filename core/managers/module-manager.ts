@@ -281,6 +281,7 @@ export class ModuleManager {
         show: s.layoutShowFooter !== false,
         text: s.layoutFooterText || '',
       },
+      showReadingProgress: s.layoutShowReadingProgress === true,
     };
   }
 
