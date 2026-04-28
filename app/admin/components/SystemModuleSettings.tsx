@@ -77,9 +77,9 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'faviconUrl', label: 'Favicon URL', type: 'text', tab: '일반', placeholder: '/user/media/...png 또는 https://...', description: '커스텀 favicon. 갤러리 이미지 URL 또는 외부 URL. 비우면 기본 아이콘.' },
       // ── 레이아웃 — 헤더 / 푸터 (Phase 4). 사용자 페이지 본문 위·아래 자연 등장. ──
       { key: 'layoutShowHeader', label: '헤더 표시', type: 'toggle', tab: '레이아웃', description: '사용자 페이지 상단 헤더 표시 여부. 기본 ON.', defaultValue: true },
-      { key: 'layoutSiteName', label: '헤더 — 사이트 이름', type: 'text', tab: '레이아웃', placeholder: 'Firebat', description: '헤더 좌측 텍스트 로고. 비우면 일반 탭의 사이트 제목 사용.' },
+      { key: 'layoutSiteName', label: '헤더 — 사이트 이름', type: 'text', tab: '레이아웃', placeholder: '(비우면 일반 탭의 사이트 제목 사용)', description: '헤더 좌측 텍스트 로고. 일반 탭 siteTitle 과 다른 값 박을 때만 입력.' },
       { key: 'layoutLogoUrl', label: '헤더 — 로고 이미지 (선택)', type: 'text', tab: '레이아웃', placeholder: '/user/media/...png 또는 https://...', description: '텍스트 로고 옆에 표시할 이미지 URL. 비우면 텍스트만.' },
-      { key: 'layoutNavLinks', label: '헤더 — 네비 링크', type: 'textarea', tab: '레이아웃', placeholder: '홈 | /\n블로그 | /stock-blog\n소개 | /about\n문의 | /contact', description: '한 줄당 "라벨 | 경로" 형식. 헤더 우측에 가로 나열.' },
+      { key: 'layoutNavLinks', label: '헤더 — 네비 링크', type: 'textarea', tab: '레이아웃', placeholder: '홈 | /\n블로그 | /blog\n소개 | /about\n문의 | /contact', description: '한 줄당 "라벨 | 경로" 형식. 헤더 우측에 가로 나열.' },
       { key: 'layoutShowFooter', label: '푸터 표시', type: 'toggle', tab: '레이아웃', description: '사용자 페이지 하단 푸터 표시 여부. 기본 ON.', defaultValue: true },
       { key: 'layoutFooterText', label: '푸터 — 텍스트', type: 'textarea', tab: '레이아웃', placeholder: '© 2026 Firebat. All rights reserved.\n본 사이트는 투자 자문이 아닌 정보 제공 목적입니다.', description: '푸터 텍스트. 저작권 / 법적 고지 / 연락처 등. 줄바꿈 OK. HTML 태그 일부 허용 (<a>, <strong> 등).' },
       { key: 'layoutShowReadingProgress', label: '읽기 진행도 표시', type: 'toggle', tab: '레이아웃', description: '페이지 상단에 스크롤 진행도 가로 바 표시. design tokens 의 accent 색 사용. 기본 OFF.', defaultValue: false },
@@ -152,7 +152,7 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'twitterCardType', label: 'Twitter Card 타입', type: 'text', tab: 'SEO', placeholder: 'summary_large_image', description: 'summary (작은 카드) 또는 summary_large_image (큰 이미지). 블로그·랜딩은 후자 권장.', defaultValue: 'summary_large_image' },
       { key: 'twitterSite', label: 'Twitter 사이트 계정', type: 'text', tab: 'SEO', placeholder: '@firebat', description: '사이트 자체 트위터 계정 (선택). @로 시작.' },
       { key: 'twitterCreator', label: 'Twitter 작성자 계정', type: 'text', tab: 'SEO', placeholder: '@username', description: '작성자 트위터 계정 (선택). @로 시작.' },
-      { key: 'tagAliases', label: '태그 alias (정규화)', type: 'textarea', tab: 'SEO', placeholder: 'AI: ai, 인공지능, artificial-intelligence\n주식: stock, equity', description: 'canonical: alias1, alias2 줄별 매핑. /tag/{keyword} URL 매칭 시 case-insensitive normalize — "ai"·"인공지능" 모두 "AI" 페이지로 통합. listAllTags 도 통합 빈도 카운트.' },
+      { key: 'tagAliases', label: '태그 alias (정규화)', type: 'textarea', tab: 'SEO', placeholder: 'AI: ai, 인공지능, artificial-intelligence\n리뷰: review, 후기', description: 'canonical: alias1, alias2 줄별 매핑. /tag/{keyword} URL 매칭 시 case-insensitive normalize — "ai"·"인공지능" 모두 "AI" 페이지로 통합. listAllTags 도 통합 빈도 카운트.' },
       // 이미지 후처리 (sharp + blurhash) — AI 생성 이미지에 자동 적용
       { key: 'imageWebp', label: 'WebP 변환', type: 'toggle', tab: '이미지', description: '대부분 브라우저 지원, 원본 대비 25~35% 작음', defaultValue: true },
       { key: 'imageAvif', label: 'AVIF 변환', type: 'toggle', tab: '이미지', description: '최신 포맷, WebP 대비 20% 더 작음. Safari 16+, Chrome 85+', defaultValue: true },
@@ -384,7 +384,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
       : '외부 AI 도구(Claude Code, Cursor, VS Code 등)에서 이 파이어뱃 서버에 연결할 수 있습니다.';
     return (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
-        <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
+        <div className="bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
             <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
               {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors mr-1"><ArrowLeft size={18} /></button>}
@@ -539,7 +539,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
   if (!loading && schema && schema.fields.length === 0) {
     return (
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
-        <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
+        <div className="bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
             <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
               {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors mr-1"><ArrowLeft size={18} /></button>}
@@ -567,9 +567,9 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
         </div>
 
-        {/* 탭 바 */}
+        {/* 탭 바 — 가로 스크롤 (8 탭 좁은 화면에서도 wrap 안 함) */}
         {hasTabs && (
-          <div className="flex border-b border-slate-200 px-3 sm:px-6 shrink-0 bg-white">
+          <div className="flex border-b border-slate-200 px-3 sm:px-6 shrink-0 bg-white overflow-x-auto whitespace-nowrap" style={{ scrollbarWidth: 'thin' }}>
             {tabs.map(tab => {
               const meta = TAB_META[tab];
               const Icon = meta?.icon;
@@ -577,7 +577,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`flex items-center gap-1.5 px-3 py-2.5 text-[11px] sm:text-[12px] font-bold transition-colors border-b-2 ${activeTab === tab ? 'text-blue-700 border-blue-500' : 'text-slate-400 border-transparent hover:text-slate-600'}`}
+                  className={`flex items-center gap-1.5 px-3 py-2.5 text-[11px] sm:text-[12px] font-bold transition-colors border-b-2 shrink-0 ${activeTab === tab ? 'text-blue-700 border-blue-500' : 'text-slate-400 border-transparent hover:text-slate-600'}`}
                 >
                   {Icon && <Icon size={13} />} {meta?.label ?? tab}
                 </button>
