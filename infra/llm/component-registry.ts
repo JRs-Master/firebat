@@ -238,13 +238,29 @@ export const COMPONENTS: ComponentDef[] = [
   {
     name: 'card',
     componentType: 'Card',
-    description: '카드 (children에 다른 컴포넌트 배치). 제목+내용+이미지 그룹.',
-    semanticText: '카드 card 블록 박스 그룹 container wrapper 요약 summary 프리뷰',
+    description: '카드 (children에 다른 컴포넌트 배치). 제목+내용+이미지 그룹. image 박으면 상단 hero 이미지, footer 박으면 하단 메타 텍스트, link 박으면 카드 전체 클릭.',
+    semanticText: '카드 card 블록 박스 그룹 container wrapper 요약 summary 프리뷰 썸네일 이미지 hero',
     propsSchema: {
       type: 'object',
       required: ['children'],
       properties: {
         children: { type: 'array', items: nestedChild },
+        image: {
+          type: ['object', 'null'],
+          description: '카드 상단 hero 이미지 (선택).',
+          properties: {
+            src: { type: 'string', description: '이미지 URL — /user/media/... 또는 https://...' },
+            alt: { type: 'string', description: '대체 텍스트 (SEO·접근성)' },
+          },
+        },
+        footer: { type: ['string', 'null'], description: '카드 하단 메타 텍스트 (작성일·읽는시간 등)' },
+        link: {
+          type: ['object', 'null'],
+          description: '카드 전체 클릭 시 이동 (선택).',
+          properties: {
+            href: { type: 'string', description: '이동 URL' },
+          },
+        },
       },
     },
   },

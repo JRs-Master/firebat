@@ -51,7 +51,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'Button':        return <ButtonComp text={p.text ?? ''} href={p.href} variant={p.variant} />;
     case 'Divider':       return <DividerComp />;
     case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} />;
-    case 'Card':          return <CardComp children={p.children ?? []} align={p.align} />;
+    case 'Card':          return <CardComp children={p.children ?? []} align={p.align} image={p.image} footer={p.footer} link={p.link} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;
     case 'AdSlot':        return <AdSlotComp slotId={p.slotId} format={p.format} />;
     case 'Html':          return <HtmlComp content={p.content ?? ''} dependencies={p.dependencies as string[] | undefined} />;
@@ -460,13 +460,38 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
 }
 
 // ── Card ────────────────────────────────────────────────────────────────────
-function CardComp({ children = [], align }: { children: ComponentDef[]; align?: AlignOpt }) {
+function CardComp({ children = [], align, image, footer, link }: {
+  children: ComponentDef[];
+  align?: AlignOpt;
+  /** 카드 상단 이미지 (선택). src + alt. magazine·card 변형 케이스. */
+  image?: { src?: string; alt?: string };
+  /** 카드 하단 텍스트·메타 (선택). 작성일·읽는시간 등. */
+  footer?: string;
+  /** 카드 전체 클릭 link (선택). */
+  link?: { href?: string };
+}) {
   const alignCls = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : '';
-  return (
-    <div className={`bg-white border border-gray-200 rounded-2xl p-6 shadow-sm ${alignCls}`}>
-      <ComponentRenderer components={children} />
-    </div>
+  const cardCls = `bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden ${alignCls} ${link?.href ? 'hover:shadow-md hover:border-gray-300 transition-all cursor-pointer no-underline block' : ''}`;
+  const inner = (
+    <>
+      {image?.src && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={image.src} alt={image.alt ?? ''} className="w-full h-48 object-cover" />
+      )}
+      <div className="p-6">
+        <ComponentRenderer components={children} />
+        {footer && (
+          <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+            {cleanPlainText(footer)}
+          </div>
+        )}
+      </div>
+    </>
   );
+  if (link?.href) {
+    return <a href={link.href} className={cardCls}>{inner}</a>;
+  }
+  return <div className={cardCls}>{inner}</div>;
 }
 
 // ── Grid ────────────────────────────────────────────────────────────────────
