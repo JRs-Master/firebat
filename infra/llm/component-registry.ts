@@ -326,6 +326,7 @@ export const COMPONENTS: ComponentDef[] = [
               title: { type: 'string' },
               description: { type: ['string', 'null'] },
               type: { type: ['string', 'null'], enum: ['default', 'success', 'warning', 'error'], description: '점 색상 구분 (생략 가능)' },
+              href: { type: ['string', 'null'], description: '항목 전체 클릭 시 이동 URL (선택). 박으면 항목이 anchor 로 wrap.' },
             },
           },
         },

@@ -1347,7 +1347,7 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, link
 // ── Timeline ────────────────────────────────────────────────────────────────
 // 연대기 / 이벤트 타임라인. 세로로 점+선+날짜+제목+설명.
 function TimelineComp({ items }: {
-  items: Array<{ date: string; title: string; description?: string; type?: 'default' | 'success' | 'warning' | 'error' }>;
+  items: Array<{ date: string; title: string; description?: string; type?: 'default' | 'success' | 'warning' | 'error'; href?: string }>;
 }) {
   const dotColor: Record<string, string> = {
     default: 'bg-blue-500',
@@ -1359,14 +1359,30 @@ function TimelineComp({ items }: {
     <div className="relative pl-6">
       <div className="absolute left-[11px] top-2 bottom-2 w-px bg-gray-200" />
       <div className="space-y-5">
-        {items.map((item, i) => (
-          <div key={i} className="relative">
-            <div className={`absolute -left-[18px] top-1 w-3 h-3 rounded-full border-2 border-white ${dotColor[item.type ?? 'default']} shadow-sm`} />
-            <div className="text-xs text-gray-500 font-mono mb-0.5">{cleanPlainText(item.date)}</div>
-            <div className="font-bold text-sm text-gray-900">{cleanPlainText(item.title)}</div>
-            {item.description && <div className="text-sm text-gray-600 mt-0.5 leading-relaxed">{cleanPlainText(item.description)}</div>}
-          </div>
-        ))}
+        {items.map((item, i) => {
+          const inner = (
+            <>
+              <div className={`absolute -left-[18px] top-1 w-3 h-3 rounded-full border-2 border-white ${dotColor[item.type ?? 'default']} shadow-sm`} />
+              <div className="text-xs text-gray-500 font-mono mb-0.5">{cleanPlainText(item.date)}</div>
+              <div className="font-bold text-sm text-gray-900">{cleanPlainText(item.title)}</div>
+              {item.description && <div className="text-sm text-gray-600 mt-0.5 leading-relaxed">{cleanPlainText(item.description)}</div>}
+            </>
+          );
+          // href 박혀있으면 항목 전체 anchor wrap (호버 시 미세 강조)
+          if (item.href) {
+            return (
+              <a
+                key={i}
+                href={item.href}
+                className="relative block no-underline hover:opacity-80 transition-opacity"
+                style={{ color: 'inherit' }}
+              >
+                {inner}
+              </a>
+            );
+          }
+          return <div key={i} className="relative">{inner}</div>;
+        })}
       </div>
     </div>
   );
