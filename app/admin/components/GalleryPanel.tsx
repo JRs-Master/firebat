@@ -314,16 +314,20 @@ function MediaDetailModal({
   if (!mounted) return null;
 
   const modalContent = (
-    <div className="fixed inset-0 z-[60] flex items-stretch justify-center sm:items-center sm:p-4 bg-slate-900/60 backdrop-blur-sm" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-[60] flex items-stretch justify-center sm:items-center sm:p-4 bg-slate-900/60 backdrop-blur-sm"
+      style={{ height: '100dvh' }}
+      onClick={onClose}
+    >
       {/*
-        모달 크기 — 모바일은 inset-0 의 자식 flex item 으로 자연스러운 viewport 높이 채움.
-        - 외부 fixed inset-0 + flex items-stretch → 모달이 부모 높이 자동 계산 (viewport unit 의존 X)
-        - viewport unit (vh/dvh/svh) 은 일부 모바일 브라우저(Samsung Internet)에서 부정확 → 사용 회피
-        - 안전을 위해 헤더 paddingTop·버튼 paddingBottom 에 env(safe-area-inset-*) 추가
+        모달 크기 — outer 에 100dvh (visible viewport) 명시 → iOS Safari 주소창 표시 시점에도 정확.
+        - 모바일: modal 이 outer flex container 안에서 flex-1 → 부모 100% 강제 (콘텐츠 따라 자라기 차단)
+        - PC (sm:): flex-none + h-[85vh] 자체 높이
+        - 헤더 paddingTop·버튼 paddingBottom 에 env(safe-area-inset-*) — 노치/홈인디케이터 회피
         Portal 로 document.body 에 직접 렌더 → sidebar 등 부모의 containing block 회피.
       */}
       <div
-        className="bg-white w-full sm:max-w-3xl sm:rounded-2xl rounded-t-none shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-full sm:h-[85vh] sm:max-h-[85vh]"
+        className="bg-white w-full sm:max-w-3xl sm:rounded-2xl rounded-t-none shadow-2xl border border-slate-200 overflow-hidden flex flex-col flex-1 sm:flex-none min-h-0 sm:h-[85vh] sm:max-h-[85vh]"
         onClick={e => e.stopPropagation()}
       >
         {/* 헤더 — N/total 인디케이터 + prev/next + 닫기. safe-area-inset-top 으로 status bar 침범 방지 */}
