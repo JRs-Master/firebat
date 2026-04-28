@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 import { GalleryPanel } from './GalleryPanel';
+import { TemplatesPanel } from './TemplatesPanel';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog, alertDialog } from './Dialog';
@@ -50,7 +51,7 @@ export function Sidebar({
   aiModel, onOpenSettings, onEditFile, onOpenModuleSettings,
   mobileOpen, onMobileOpenChange,
 }: SidebarProps) {
-  const [tab, setTab] = useState<'workspace' | 'chats' | 'gallery'>('workspace');
+  const [tab, setTab] = useState<'workspace' | 'chats' | 'gallery' | 'templates'>('workspace');
   const [collapsed, setCollapsed] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -370,7 +371,7 @@ export function Sidebar({
     onMobileOpenChange?.(false);
   };
 
-  const expand = (t: 'workspace' | 'chats' | 'gallery') => {
+  const expand = (t: 'workspace' | 'chats' | 'gallery' | 'templates') => {
     setTab(t);
     setCollapsed(false);
   };
@@ -419,6 +420,14 @@ export function Sidebar({
             className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors"
           >
             <ImageIcon size={18} />
+          </button>
+        </Tooltip>
+        <Tooltip label="템플릿" side="right">
+          <button
+            onClick={() => expand('templates')}
+            className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors"
+          >
+            <LayoutTemplate size={18} />
           </button>
         </Tooltip>
         <div className="flex-1" />
@@ -486,6 +495,16 @@ export function Sidebar({
             <ImageIcon size={15} />
           </button>
         </Tooltip>
+        <Tooltip label="템플릿">
+          <button
+            onClick={() => setTab('templates')}
+            className={`p-2 rounded-md transition-colors ${
+              tab === 'templates' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
+            }`}
+          >
+            <LayoutTemplate size={15} />
+          </button>
+        </Tooltip>
         <div className="flex-1" />
         {onOpenSettings ? (
           <Tooltip label="설정">
@@ -511,6 +530,8 @@ export function Sidebar({
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {tab === 'gallery' ? (
           <GalleryPanel />
+        ) : tab === 'templates' ? (
+          <TemplatesPanel onEditFile={onEditFile} />
         ) : tab === 'workspace' ? (
           <div className="flex flex-col h-full overflow-y-auto overscroll-contain">
 
