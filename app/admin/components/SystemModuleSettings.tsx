@@ -29,6 +29,7 @@ const TAB_META: Record<string, { label: string; icon: typeof Globe }> = {
   '일반': { label: '일반', icon: Settings2 },
   '레이아웃': { label: '레이아웃', icon: Server },
   '테마': { label: '테마', icon: Blocks },
+  '광고': { label: '광고', icon: ExternalLink },
   'SEO': { label: 'SEO', icon: Globe },
   '이미지': { label: '이미지', icon: Image },
   'OG': { label: 'OG 이미지', icon: Image },
@@ -81,6 +82,13 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'layoutNavLinks', label: '헤더 — 네비 링크', type: 'textarea', tab: '레이아웃', placeholder: '홈 | /\n블로그 | /stock-blog\n소개 | /about\n문의 | /contact', description: '한 줄당 "라벨 | 경로" 형식. 헤더 우측에 가로 나열.' },
       { key: 'layoutShowFooter', label: '푸터 표시', type: 'toggle', tab: '레이아웃', description: '사용자 페이지 하단 푸터 표시 여부. 기본 ON.', defaultValue: true },
       { key: 'layoutFooterText', label: '푸터 — 텍스트', type: 'textarea', tab: '레이아웃', placeholder: '© 2026 Firebat. All rights reserved.\n본 사이트는 투자 자문이 아닌 정보 제공 목적입니다.', description: '푸터 텍스트. 저작권 / 법적 고지 / 연락처 등. 줄바꿈 OK. HTML 태그 일부 허용 (<a>, <strong> 등).' },
+      // ── 광고 — AdSense Auto Ads + 수동 슬롯 4개 (Phase 4 Step 6). ──
+      { key: 'adsensePublisherId', label: 'AdSense Publisher ID', type: 'text', tab: '광고', placeholder: 'ca-pub-1234567890123456', description: 'Google AdSense Publisher ID. 박혀있으면 head 에 AdSense script 자동 inject. 비우면 광고 미사용.' },
+      { key: 'adsenseAutoAds', label: 'Auto Ads 활성', type: 'toggle', tab: '광고', description: 'Google 이 페이지 자동 분석해 광고 위치·형식 결정. Publisher ID 있으면 기본 ON. 수동 슬롯과 병행 가능.', defaultValue: true },
+      { key: 'adsenseSlotHeaderBottom', label: '슬롯 — 헤더 아래', type: 'text', tab: '광고', placeholder: '1234567890', description: 'AdSense 광고 단위 ID — 헤더 바로 아래 위치. 비우면 미표시.' },
+      { key: 'adsenseSlotPostTop', label: '슬롯 — 본문 위', type: 'text', tab: '광고', placeholder: '1234567890', description: 'AdSense 광고 단위 ID — 본문 시작 위. 비우면 미표시.' },
+      { key: 'adsenseSlotPostBottom', label: '슬롯 — 본문 아래', type: 'text', tab: '광고', placeholder: '1234567890', description: 'AdSense 광고 단위 ID — 본문 끝 아래. 비우면 미표시.' },
+      { key: 'adsenseSlotFooterTop', label: '슬롯 — 푸터 위', type: 'text', tab: '광고', placeholder: '1234567890', description: 'AdSense 광고 단위 ID — 푸터 바로 위. 비우면 미표시.' },
       // ── 테마 — 색·폰트·layout 토큰. 사용자 변경 즉시 모든 페이지 반영 (CSS var). ──
       { key: 'themePreset', label: '색 프리셋', type: 'color-presets', tab: '테마', description: '클릭 한 번으로 primary/accent/up/down/text/배경/테두리 색 일괄 변경. Light 7 + Dark 3 = 10 프리셋.', defaultValue: 'slate-pro' },
       { key: 'themeFont', label: '폰트 세트', type: 'select', tab: '테마', description: '본문·제목 폰트 통합 변경. Pretendard Variable (한글 최적, 기본) / Noto Sans KR / Inter / Geist / Cal Sans.', defaultValue: 'pretendard', options: [

@@ -212,6 +212,22 @@ export class ModuleManager {
     /** Layout 시스템 — header / footer (Phase 4). 사용자 페이지 본문 위·아래에 자연 렌더.
      *  미설정 시 DEFAULT_LAYOUT (헤더·푸터 둘 다 표시, 단순 텍스트 로고). */
     layout: LayoutConfig;
+    /** AdSense 설정 — Phase 4 Step 6. publisher ID 박혀있으면 자동 script inject + Auto Ads.
+     *  수동 슬롯 4개 (header-bottom / post-top / post-bottom / footer-top) 옵션. */
+    adsense: {
+      /** Publisher ID — 예: "ca-pub-1234567890123456". 비우면 AdSense 미사용. */
+      publisherId: string;
+      /** Auto Ads 활성 — Google 자동 광고 위치 결정. publisherId 박혀있으면 자동 ON 권장. */
+      autoAds: boolean;
+      /** 헤더 바로 아래 슬롯 ID (선택). */
+      slotHeaderBottom: string;
+      /** 본문 시작 위 슬롯 ID (선택). */
+      slotPostTop: string;
+      /** 본문 끝 아래 슬롯 ID (선택). */
+      slotPostBottom: string;
+      /** 푸터 바로 위 슬롯 ID (선택). */
+      slotFooterTop: string;
+    };
   } {
     this.migrateSeoToCms();
     const s = this.getSettings('cms');
@@ -240,6 +256,14 @@ export class ModuleManager {
       verifications: this.resolveVerifications(s),
       theme: mergeTokens(this.composeTheme(s)),
       layout: this.composeLayout(s),
+      adsense: {
+        publisherId: s.adsensePublisherId || '',
+        autoAds: s.adsenseAutoAds !== false, // publisher 박혀있고 미설정이면 auto
+        slotHeaderBottom: s.adsenseSlotHeaderBottom || '',
+        slotPostTop: s.adsenseSlotPostTop || '',
+        slotPostBottom: s.adsenseSlotPostBottom || '',
+        slotFooterTop: s.adsenseSlotFooterTop || '',
+      },
     };
   }
 
