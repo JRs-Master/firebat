@@ -13,11 +13,13 @@ import type { PageListItem } from '../../core/ports';
 
 export type PageCardVariant = 'list' | 'grid' | 'compact';
 
-function formatDate(s?: string): string {
+function formatDate(s?: string, timeZone: string = 'Asia/Seoul'): string {
   if (!s) return '';
-  const d = new Date(s);
+  // sqlite CURRENT_TIMESTAMP 는 'YYYY-MM-DD HH:MM:SS' UTC 형식 — JS Date 가 안전 parse 하도록 ISO + Z 변환.
+  const iso = s.includes('T') ? s : s.replace(' ', 'T') + 'Z';
+  const d = new Date(iso);
   if (isNaN(d.getTime())) return s;
-  return d.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+  return d.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', timeZone });
 }
 
 export function CmsPageList({ pages, emptyMessage, variant = 'list' }: {

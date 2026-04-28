@@ -18,11 +18,13 @@ const HTML_WIDGET_SANITIZE = {
   ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|\/|#|data:image\/)/i,
 };
 
-function formatDate(s?: string): string {
+function formatDate(s?: string, timeZone: string = 'Asia/Seoul'): string {
   if (!s) return '';
-  const d = new Date(s);
+  // sqlite CURRENT_TIMESTAMP 는 'YYYY-MM-DD HH:MM:SS' UTC — ISO + Z 변환 후 timezone 적용.
+  const iso = s.includes('T') ? s : s.replace(' ', 'T') + 'Z';
+  const d = new Date(iso);
   if (isNaN(d.getTime())) return s;
-  return d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', timeZone });
 }
 
 export async function CmsSidebar({ sidebar }: { sidebar: SidebarConfig }) {
