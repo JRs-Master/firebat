@@ -1411,11 +1411,15 @@ function CompareComp({ title, left, right }: {
         {allKeys.map(k => {
           const lv = leftMap.get(k);
           const rv = rightMap.get(k);
+          // diff highlight — 같은 key 의 left·right 값이 다르면 양쪽 cell 굵게.
+          // null/undefined (한쪽만 박힌 케이스) 도 diff 로 간주.
+          const isDiff = lv !== rv;
+          const cellCls = `p-3 text-sm border-t border-gray-100 first:border-t-0 ${isDiff ? 'font-bold text-gray-900' : 'text-gray-700'}`;
           return (
             <React.Fragment key={k}>
-              <div className="p-3 text-sm text-gray-700 border-t border-gray-100 first:border-t-0">{lv != null ? formatNumberString(lv) : '—'}</div>
+              <div className={cellCls}>{lv != null ? formatNumberString(lv) : '—'}</div>
               <div className="px-3 py-2 text-xs text-gray-400 font-medium flex items-center justify-center bg-gray-50 border-t border-gray-100 first:border-t-0">{cleanPlainText(k)}</div>
-              <div className="p-3 text-sm text-gray-700 border-t border-gray-100 first:border-t-0">{rv != null ? formatNumberString(rv) : '—'}</div>
+              <div className={cellCls}>{rv != null ? formatNumberString(rv) : '—'}</div>
             </React.Fragment>
           );
         })}
