@@ -435,9 +435,11 @@ export class FirebatCore {
 
   // ── 태그 (CMS Phase 8a) ─────────────────────────────────────────────────
   /** 모든 published + public 페이지의 head.keywords 합집합 + 사용 빈도.
-   *  반환: [{ tag, count, slugs }] — count 내림차순.
-   *  alias normalize 는 Step B 에서 추가 — 현재는 raw keyword 그대로. */
+   *  CMS settings.tagAliases 적용 — case-insensitive normalize 후 aggregation.
+   *  반환: [{ tag, count, slugs }] — count 내림차순. tag 는 canonical (alias 통합). */
   async listAllTags(): Promise<Array<{ tag: string; count: number; slugs: string[] }>> {
+    const { normalizeTag } = await import('../lib/tag-utils');
+    const aliases = this.getCmsSettings().tagAliases;
     const listRes = await this.listPages();
     if (!listRes.success || !listRes.data) return [];
     const visiblePages = listRes.data.filter(
@@ -450,10 +452,10 @@ export class FirebatCore {
       const keywords = (pageRes.data.head?.keywords ?? []) as unknown[];
       for (const kw of keywords) {
         if (typeof kw !== 'string') continue;
-        const trimmed = kw.trim();
-        if (!trimmed) continue;
-        if (!tagMap.has(trimmed)) tagMap.set(trimmed, new Set());
-        tagMap.get(trimmed)!.add(p.slug);
+        const canonical = normalizeTag(kw, aliases);
+        if (!canonical) continue;
+        if (!tagMap.has(canonical)) tagMap.set(canonical, new Set());
+        tagMap.get(canonical)!.add(p.slug);
       }
     }
     return [...tagMap.entries()]

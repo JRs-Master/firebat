@@ -9,6 +9,7 @@
 import { notFound } from 'next/navigation';
 import { getCore } from '../../../../lib/singleton';
 import { CmsPageList, CmsPagination } from '../../cms-page-list';
+import { normalizeTag } from '../../../../lib/tag-utils';
 import type { Metadata } from 'next';
 import type { PageListItem } from '../../../../core/ports';
 
@@ -23,41 +24,47 @@ function decodeKeyword(raw: string): string {
   try { return decodeURIComponent(raw); } catch { return raw; }
 }
 
-/** 페이지의 head.keywords 에 매칭되는 keyword 인지 검사. case-insensitive. */
-async function findMatchingPages(keyword: string): Promise<PageListItem[]> {
+/** 페이지의 head.keywords 에 매칭되는 keyword 인지 검사. case-insensitive + alias normalize.
+ *  URL "/tag/ai" → CMS settings 의 tagAliases 보고 "AI" canonical 로 normalize → 그 canonical 매칭 페이지. */
+async function findMatchingPages(keyword: string): Promise<{ pages: PageListItem[]; canonical: string }> {
   const core = getCore();
+  const aliases = core.getCmsSettings().tagAliases;
+  const canonical = normalizeTag(keyword, aliases);
   const allRes = await core.listPages();
   const allPages = allRes.success && allRes.data ? allRes.data : [];
   const visible = allPages.filter(
     (p) => p.status === 'published' && (p.visibility ?? 'public') === 'public',
   );
-  const lowerKw = keyword.toLowerCase();
-  // 각 페이지 spec 의 head.keywords 매칭 — 단순 N+1 (페이지 수 < 100 가정)
   const matched: PageListItem[] = [];
   for (const p of visible) {
     const pageRes = await core.getPage(p.slug);
     if (!pageRes.success || !pageRes.data) continue;
     const keywords = (pageRes.data.head?.keywords ?? []) as string[];
-    if (keywords.some((k) => typeof k === 'string' && k.toLowerCase() === lowerKw)) {
+    // 각 keyword 도 normalize 후 canonical 매칭
+    if (keywords.some((k) => typeof k === 'string' && normalizeTag(k, aliases) === canonical)) {
       matched.push(p);
     }
   }
-  return matched.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+  return {
+    pages: matched.sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '')),
+    canonical,
+  };
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const keyword = decodeKeyword((await params).keyword);
   const seo = getCore().getCmsSettings();
+  const canonical = normalizeTag(keyword, seo.tagAliases);
   return {
-    title: `#${keyword} — ${seo.siteTitle}`,
-    description: `${keyword} 키워드가 포함된 모든 글`,
+    title: `#${canonical} — ${seo.siteTitle}`,
+    description: `${canonical} 키워드가 포함된 모든 글`,
     robots: 'index, follow',
   };
 }
 
 export default async function TagPage({ params, searchParams }: Props) {
-  const keyword = decodeKeyword((await params).keyword);
-  const pages = await findMatchingPages(keyword);
+  const rawKeyword = decodeKeyword((await params).keyword);
+  const { pages, canonical } = await findMatchingPages(rawKeyword);
   if (pages.length === 0) notFound();
 
   const cms = getCore().getCmsSettings();
@@ -77,7 +84,7 @@ export default async function TagPage({ params, searchParams }: Props) {
           className="text-3xl sm:text-4xl font-extrabold tracking-tight m-0"
           style={{ color: 'var(--cms-text)', fontFamily: 'var(--cms-font-heading)' }}
         >
-          #{keyword}
+          #{canonical}
         </h1>
         <p className="mt-2 text-base" style={{ color: 'var(--cms-text-muted)' }}>
           {pages.length}개 글
@@ -85,7 +92,7 @@ export default async function TagPage({ params, searchParams }: Props) {
       </section>
       <section className="firebat-cms-content" style={{ paddingTop: '8px', paddingBottom: '64px' }}>
         <CmsPageList pages={pagedPosts} variant={cms.layout.pageList.cardVariant} />
-        <CmsPagination basePath={`/tag/${encodeURIComponent(keyword)}`} currentPage={currentPage} totalPages={totalPages} />
+        <CmsPagination basePath={`/tag/${encodeURIComponent(canonical)}`} currentPage={currentPage} totalPages={totalPages} />
       </section>
     </main>
   );

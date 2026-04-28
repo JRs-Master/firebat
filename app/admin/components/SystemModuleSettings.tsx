@@ -152,6 +152,7 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'twitterCardType', label: 'Twitter Card 타입', type: 'text', tab: 'SEO', placeholder: 'summary_large_image', description: 'summary (작은 카드) 또는 summary_large_image (큰 이미지). 블로그·랜딩은 후자 권장.', defaultValue: 'summary_large_image' },
       { key: 'twitterSite', label: 'Twitter 사이트 계정', type: 'text', tab: 'SEO', placeholder: '@firebat', description: '사이트 자체 트위터 계정 (선택). @로 시작.' },
       { key: 'twitterCreator', label: 'Twitter 작성자 계정', type: 'text', tab: 'SEO', placeholder: '@username', description: '작성자 트위터 계정 (선택). @로 시작.' },
+      { key: 'tagAliases', label: '태그 alias (정규화)', type: 'textarea', tab: 'SEO', placeholder: 'AI: ai, 인공지능, artificial-intelligence\n주식: stock, equity', description: 'canonical: alias1, alias2 줄별 매핑. /tag/{keyword} URL 매칭 시 case-insensitive normalize — "ai"·"인공지능" 모두 "AI" 페이지로 통합. listAllTags 도 통합 빈도 카운트.' },
       // 이미지 후처리 (sharp + blurhash) — AI 생성 이미지에 자동 적용
       { key: 'imageWebp', label: 'WebP 변환', type: 'toggle', tab: '이미지', description: '대부분 브라우저 지원, 원본 대비 25~35% 작음', defaultValue: true },
       { key: 'imageAvif', label: 'AVIF 변환', type: 'toggle', tab: '이미지', description: '최신 포맷, WebP 대비 20% 더 작음. Safari 16+, Chrome 85+', defaultValue: true },

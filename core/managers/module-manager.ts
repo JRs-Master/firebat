@@ -3,6 +3,7 @@ import type { InfraResult } from '../types';
 import { vkModuleSettings } from '../vault-keys';
 import { mergeTokens, COLOR_PRESETS, FONT_PRESETS, type DesignTokens, type HeadingStyle } from '../../lib/design-tokens';
 import { parseNavLinks, DEFAULT_LAYOUT, type LayoutConfig } from '../../lib/cms-layout';
+import { parseTagAliases, type TagAliases } from '../../lib/tag-utils';
 
 interface SystemEntry {
   name: string;
@@ -212,6 +213,9 @@ export class ModuleManager {
     /** Layout 시스템 — header / footer (Phase 4). 사용자 페이지 본문 위·아래에 자연 렌더.
      *  미설정 시 DEFAULT_LAYOUT (헤더·푸터 둘 다 표시, 단순 텍스트 로고). */
     layout: LayoutConfig;
+    /** 태그 alias 매핑 — CMS Phase 8a Step B. canonical → [synonyms].
+     *  /tag/{keyword} URL 매칭 시 normalize 하여 통합. listAllTags() 도 normalize 후 aggregation. */
+    tagAliases: TagAliases;
     /** AdSense 설정 — Phase 4 Step 6. publisher ID 박혀있으면 자동 script inject + Auto Ads.
      *  수동 슬롯 4개 (header-bottom / post-top / post-bottom / footer-top) 옵션. */
     adsense: {
@@ -256,6 +260,7 @@ export class ModuleManager {
       verifications: this.resolveVerifications(s),
       theme: mergeTokens(this.composeTheme(s)),
       layout: this.composeLayout(s),
+      tagAliases: parseTagAliases(s.tagAliases),
       adsense: {
         publisherId: s.adsensePublisherId || '',
         autoAds: s.adsenseAutoAds !== false, // publisher 박혀있고 미설정이면 auto
