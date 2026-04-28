@@ -34,9 +34,29 @@ export class PromptBuilder {
     const systemContext = await this.gatherSystemContext();
     const base = this.buildToolSystemPrompt(systemContext, currentModel);
     if (opts?.cronAgent) {
-      return this.buildCronAgentPrelude(opts.cronAgent) + '\n\n' + base;
+      // 템플릿 목록 prepend — Phase 8b. 미설정 (0개) 이면 섹션 자체 생략.
+      const templates = await this.core.listTemplates();
+      const templateBlock = templates.length > 0
+        ? this.buildTemplateBlock(templates) + '\n\n'
+        : '';
+      return this.buildCronAgentPrelude(opts.cronAgent) + '\n\n' + templateBlock + base;
     }
     return base;
+  }
+
+  /** 템플릿 카탈로그 — cron-agent prompt 에 주입. AI 가 매칭 시 그 spec.body 그대로 사용. */
+  private buildTemplateBlock(templates: Array<{ slug: string; name: string; description: string; tags: string[] }>): string {
+    const lines: string[] = ['# 사용 가능 템플릿 (페이지 일관 발행 위해 매칭 시 사용)'];
+    for (const t of templates) {
+      const tagStr = t.tags.length > 0 ? ` [${t.tags.join(', ')}]` : '';
+      lines.push(`- \`${t.slug}\`${tagStr}: ${t.description || t.name}`);
+    }
+    lines.push('');
+    lines.push('**템플릿 사용 룰**:');
+    lines.push('- agentPrompt 또는 사용자 의뢰가 위 템플릿 목적과 매칭되면 해당 템플릿 사용 권장');
+    lines.push('- 템플릿 사용 시: `core.getTemplate(slug)` 결과 spec 의 head·body 를 baseline 으로, 변동값(date/수치/특정 종목 등)만 sysmod 호출 결과로 교체. body 컴포넌트 구조는 보존 (일관성).');
+    lines.push('- 매칭 템플릿 없으면 자유 발행 (rule 4 의 render_* 컴포넌트 배열 강제).');
+    return lines.join('\n');
   }
 
   /** Cron agent 모드 전용 prelude — 콘텐츠 잡 (블로그·리포트·일정 정리) 의 hallucinate·메타문구·얕은 분석 방지. */

@@ -140,6 +140,12 @@ export class AiManager {
         const res = await this.core.listPages();
         return res.success ? { success: true, pages: res.data } : { success: false, error: res.error };
       },
+      get_template: async (args) => {
+        const slug = (args.slug as string) || '';
+        const config = await this.core.getTemplate(slug);
+        if (!config) return { success: false, error: `템플릿을 찾을 수 없습니다: ${slug}` };
+        return { success: true, template: config };
+      },
 
       // ── Schedule operations ─────────────────────────────────────────────
       schedule_task: async (args) => {

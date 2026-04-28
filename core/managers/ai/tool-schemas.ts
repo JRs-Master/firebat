@@ -197,6 +197,17 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
       parameters: { type: 'object', properties: {} },
     },
     {
+      name: 'get_template',
+      description: '페이지 템플릿 조회 (CMS Phase 8b) — user/templates/{slug}/template.json. 반환된 spec 의 head·body 를 baseline 으로 변동값만 교체해 save_page 호출. 일관 발행 보장. cron-agent prompt 에 사용 가능 템플릿 목록 자동 주입됨 — 매칭되는 slug 사용.',
+      parameters: {
+        type: 'object',
+        required: ['slug'],
+        properties: {
+          slug: { type: 'string', description: '템플릿 slug (영숫자·하이픈·언더스코어). cron-agent prelude 의 사용 가능 목록에서 선택.' },
+        },
+      },
+    },
+    {
       name: 'schedule_task',
       description: '모듈/파이프라인 예약 실행 등록. 반복(cronTime), 1회(runAt), 지연(delaySec). 가격 알림 등 "조건 충족 시 1회 알림" 패턴은 cronTime + oneShot:true + CONDITION 스텝 조합. 휴장·가드 같은 발화 전 체크는 runWhen, 일시 실패 자동 복구는 retry, 결과 알림은 notify 옵션 사용 (pipeline step 안에 박지 마라).',
       parameters: {

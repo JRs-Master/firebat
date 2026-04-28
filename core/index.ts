@@ -2,6 +2,7 @@ import { AiManager } from './managers/ai-manager';
 import { StorageManager } from './managers/storage-manager';
 import { PageManager } from './managers/page-manager';
 import { ProjectManager } from './managers/project-manager';
+import { TemplateManager, type TemplateConfig, type TemplateEntry } from './managers/template-manager';
 import { ModuleManager } from './managers/module-manager';
 import { ScheduleManager } from './managers/schedule-manager';
 import { SecretManager } from './managers/secret-manager';
@@ -71,6 +72,7 @@ export class FirebatCore {
   private readonly storage: StorageManager;
   private readonly page: PageManager;
   private readonly project: ProjectManager;
+  private readonly template: TemplateManager;
   private readonly module: ModuleManager;
   private readonly schedule: ScheduleManager;
   private readonly secret: SecretManager;
@@ -90,6 +92,7 @@ export class FirebatCore {
     this.storage = new StorageManager(infra.storage);
     this.page = new PageManager(infra.database, infra.storage);
     this.project = new ProjectManager(infra.storage, infra.database, infra.vault);
+    this.template = new TemplateManager(infra.storage);
     this.module = new ModuleManager(infra.sandbox, infra.storage, infra.vault);
     this.secret = new SecretManager(infra.vault, infra.storage);
     this.mcp = new McpManager(infra.mcpClient);
@@ -428,6 +431,24 @@ export class FirebatCore {
   /** 프로젝트 설정 저장 — config.json upsert. 어드민 UI 에서 호출. */
   async setProjectConfig(project: string, config: Record<string, unknown>) {
     return this.project.setProjectConfig(project, config);
+  }
+
+  // ── 템플릿 (CMS Phase 8b) ───────────────────────────────────────────────
+  /** 템플릿 목록 — user/templates 폴더 스캔. */
+  async listTemplates(): Promise<TemplateEntry[]> {
+    return this.template.list();
+  }
+  /** 템플릿 단건 조회 — config 객체 또는 null. */
+  async getTemplate(slug: string): Promise<TemplateConfig | null> {
+    return this.template.get(slug);
+  }
+  /** 템플릿 저장 — upsert. */
+  async saveTemplate(slug: string, config: TemplateConfig) {
+    return this.template.save(slug, config);
+  }
+  /** 템플릿 삭제. */
+  async deleteTemplate(slug: string) {
+    return this.template.delete(slug);
   }
 
   /** 프로젝트 비밀번호 검증 */
