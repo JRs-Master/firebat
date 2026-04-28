@@ -60,8 +60,8 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'Accordion':     return <AccordionComp items={p.items ?? []} />;
     case 'Progress':      return <ProgressComp value={p.value ?? 0} max={p.max} label={p.label} color={p.color} />;
     case 'Badge':         return <BadgeComp text={p.text ?? ''} color={p.color} />;
-    case 'Alert':         return <AlertComp message={p.message ?? ''} type={p.type} title={p.title} />;
-    case 'Callout':       return <AlertComp message={p.message ?? ''} type={p.type ?? 'info'} title={p.title} />;
+    case 'Alert':         return <AlertComp message={p.message ?? ''} type={p.type} title={p.title} action={p.action} />;
+    case 'Callout':       return <AlertComp message={p.message ?? ''} type={p.type ?? 'info'} title={p.title} action={p.action} />;
     case 'List':          return <ListComp items={p.items ?? []} ordered={p.ordered} />;
     case 'Carousel':      return <CarouselComp children={p.children ?? []} autoPlay={p.autoPlay} interval={p.interval} />;
     case 'Countdown':     return <CountdownComp targetDate={p.targetDate ?? ''} label={p.label} />;
@@ -849,7 +849,13 @@ const alertMdComponents = {
   br: () => <br />,
 };
 
-function AlertComp({ message, type = 'info', title }: { message: string; type?: string; title?: string }) {
+function AlertComp({ message, type = 'info', title, action }: {
+  message: string;
+  type?: string;
+  title?: string;
+  /** CTA 버튼 — 박혀있으면 본문 아래에 link 버튼. label 없으면 미렌더. */
+  action?: { label?: string; href?: string };
+}) {
   const styles: Record<string, { bg: string; border: string; text: string; icon: string }> = {
     info:    { bg: 'bg-blue-50',   border: 'border-blue-200',   text: 'text-blue-800',   icon: 'ℹ️' },
     success: { bg: 'bg-green-50',  border: 'border-green-200',  text: 'text-green-800',  icon: '✅' },
@@ -878,6 +884,14 @@ function AlertComp({ message, type = 'info', title }: { message: string; type?: 
         <div className={`text-sm ${s.text} prose-sm break-words`}>
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={alertMdComponents}>{normMessage}</ReactMarkdown>
         </div>
+        {action?.label && action?.href && (
+          <a
+            href={action.href}
+            className={`inline-block mt-2 px-3 py-1.5 text-xs font-bold rounded ${s.text} bg-white/60 hover:bg-white/90 transition-colors no-underline border ${s.border}`}
+          >
+            {action.label} →
+          </a>
+        )}
       </div>
     </div>
   );

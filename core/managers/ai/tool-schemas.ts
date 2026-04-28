@@ -49,12 +49,22 @@ export const RENDER_TOOLS: ToolDefinition[] = [
     strict: true,
     parameters: {
       type: 'object',
-      required: ['message', 'type', 'title'],
+      required: ['message', 'type', 'title', 'action'],
       additionalProperties: false,
       properties: {
         message: { type: 'string' },
         type: { type: 'string', enum: ['warn', 'error'], description: 'warn=주황(주의/경고), error=빨강(위험/오류)' },
         title: { type: ['string', 'null'], description: '제목 (불필요하면 null)' },
+        action: {
+          type: ['object', 'null'],
+          description: 'CTA 버튼 (선택). 박혀있으면 본문 아래에 link 버튼 자동. 미사용 시 null.',
+          required: ['label', 'href'],
+          additionalProperties: false,
+          properties: {
+            label: { type: 'string', description: '버튼 텍스트 (예: "자세히 보기")' },
+            href: { type: 'string', description: '링크 URL — /, https://, mailto:, tel: 등' },
+          },
+        },
       },
     },
   },
@@ -64,7 +74,7 @@ export const RENDER_TOOLS: ToolDefinition[] = [
     strict: true,
     parameters: {
       type: 'object',
-      required: ['message', 'type', 'title'],
+      required: ['message', 'type', 'title', 'action'],
       additionalProperties: false,
       properties: {
         message: { type: 'string' },
@@ -74,6 +84,16 @@ export const RENDER_TOOLS: ToolDefinition[] = [
           description: 'info=파랑(정보), success=초록(완료/긍정 결과), tip=보라(팁/추천), accent=주황(강조/핵심 포인트), highlight=노랑(주목/하이라이트), neutral=회색(일반/참고 메모)',
         },
         title: { type: ['string', 'null'], description: '제목 (불필요하면 null)' },
+        action: {
+          type: ['object', 'null'],
+          description: 'CTA 버튼 (선택). 박혀있으면 본문 아래에 link 버튼 자동. 미사용 시 null.',
+          required: ['label', 'href'],
+          additionalProperties: false,
+          properties: {
+            label: { type: 'string', description: '버튼 텍스트 (예: "자세히 보기")' },
+            href: { type: 'string', description: '링크 URL — /, https://, mailto:, tel: 등' },
+          },
+        },
       },
     },
   },
