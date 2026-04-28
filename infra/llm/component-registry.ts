@@ -265,7 +265,7 @@ export const COMPONENTS: ComponentDef[] = [
   {
     name: 'metric',
     componentType: 'Metric',
-    description: '단일 지표 카드 (라벨 + 값 + 증감 화살표 + 아이콘). KPI 대시보드 구성 시 Grid 안에 여러 개 배치.',
+    description: '단일 지표 카드 (라벨 + 값 + 증감 화살표 + 아이콘). KPI 대시보드 구성 시 Grid 안에 여러 개 배치. link 박으면 카드 전체 클릭 가능 (CTA).',
     semanticText: '지표 수치 카드 KPI 대시보드 현재가 PER PBR 보유율 달성률 점수 변동 증감 상승 하락 메트릭 스탯 stat metric 통계',
     propsSchema: {
       type: 'object',
@@ -279,6 +279,14 @@ export const COMPONENTS: ComponentDef[] = [
         deltaType: { type: ['string', 'null'], enum: ['up', 'down', 'neutral'], description: 'up=빨강, down=파랑, neutral=회색 (생략 가능)' },
         subLabel: { type: ['string', 'null'], description: '보조 설명' },
         icon: { type: ['string', 'null'], description: '이모지 아이콘' },
+        link: {
+          type: ['object', 'null'],
+          description: '카드 전체 클릭 시 이동 (선택). 박으면 카드가 anchor 로 wrap + label 텍스트 하단 표시.',
+          properties: {
+            label: { type: 'string', description: '카드 하단 CTA 텍스트 (예: "자세히 보기")' },
+            href: { type: 'string', description: '이동 URL' },
+          },
+        },
       },
     },
   },

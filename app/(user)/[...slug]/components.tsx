@@ -67,7 +67,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'Countdown':     return <CountdownComp targetDate={p.targetDate ?? ''} label={p.label} />;
     case 'Chart':         return <ChartComp type={p.chartType ?? 'bar'} data={p.data ?? []} labels={p.labels ?? []} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} palette={p.palette} showValues={p.showValues} showPct={p.showPct} />;
     case 'StockChart':    return <StockChart symbol={p.symbol ?? ''} title={p.title} data={p.data ?? []} indicators={p.indicators} buyPoints={p.buyPoints} sellPoints={p.sellPoints} />;
-    case 'Metric':        return <MetricComp label={p.label ?? ''} value={p.value ?? ''} unit={p.unit} delta={p.delta} deltaType={p.deltaType} subLabel={p.subLabel} icon={p.icon} align={p.align} labelAlign={p.labelAlign} valueAlign={p.valueAlign} deltaAlign={p.deltaAlign} subLabelAlign={p.subLabelAlign} />;
+    case 'Metric':        return <MetricComp label={p.label ?? ''} value={p.value ?? ''} unit={p.unit} delta={p.delta} deltaType={p.deltaType} subLabel={p.subLabel} icon={p.icon} link={p.link} align={p.align} labelAlign={p.labelAlign} valueAlign={p.valueAlign} deltaAlign={p.deltaAlign} subLabelAlign={p.subLabelAlign} />;
     case 'Timeline':      return <TimelineComp items={p.items ?? []} />;
     case 'Compare':       return <CompareComp title={p.title} left={p.left ?? { label: 'A', items: [] }} right={p.right ?? { label: 'B', items: [] }} />;
     case 'KeyValue':      return <KeyValueComp title={p.title} items={p.items ?? []} columns={p.columns} />;
@@ -1250,7 +1250,7 @@ function PieChartInteractive({ segments, gradient, titleBlock, unit, showPct = t
 
 // ── Metric ──────────────────────────────────────────────────────────────────
 // 라벨 + 대표값 + 증감(delta) 전용 카드. Card + Text 3개 조합 대체.
-function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, align, labelAlign, valueAlign, deltaAlign, subLabelAlign }: {
+function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, link, align, labelAlign, valueAlign, deltaAlign, subLabelAlign }: {
   label: string;
   value: string | number;
   unit?: string;
@@ -1258,6 +1258,8 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, alig
   deltaType?: 'up' | 'down' | 'neutral';
   subLabel?: string;
   icon?: string;
+  /** 카드 전체 클릭 시 이동할 link (선택). 박혀있으면 카드가 anchor 로 wrap. */
+  link?: { label?: string; href?: string };
   /** 전체 정렬 일괄 지정 (하위 4개 개별 align 이 없으면 이 값 사용). */
   align?: 'left' | 'right' | 'center';
   /** 필드별 정렬 override — 각각 따로 지정 가능. 미지정 시 한국 금융 카드 스타일:
@@ -1286,8 +1288,10 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, alig
   const justify = (a: string) => a === 'center' ? 'justify-center' : a === 'right' ? 'justify-end' : 'justify-start';
   const text    = (a: string) => a === 'center' ? 'text-center'    : a === 'right' ? 'text-right'   : 'text-left';
 
-  return (
-    <div className="bg-white border border-gray-200 rounded-2xl p-4 shadow-sm flex flex-col">
+  // link 박혀있으면 카드 전체 anchor 로 wrap, 없으면 div.
+  const cardCls = `bg-white border border-gray-200 rounded-2xl p-4 shadow-sm flex flex-col ${link?.href ? 'hover:shadow-md hover:border-gray-300 transition-all cursor-pointer no-underline' : ''}`;
+  const inner = (
+    <>
       <div className={`flex items-center gap-1.5 text-xs text-gray-500 mb-1 ${justify(la)}`}>
         {icon && <span>{icon}</span>}
         <span className="font-medium">{cleanPlainText(label)}</span>
@@ -1302,8 +1306,17 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, alig
         </div>
       )}
       {subLabel && <div className={`text-xs text-gray-400 mt-1 ${text(sa)}`}>{cleanPlainText(subLabel)}</div>}
-    </div>
+      {link?.href && link?.label && (
+        <div className="text-[11px] font-bold mt-2 pt-2 border-t border-gray-100" style={{ color: 'var(--cms-primary)' }}>
+          {link.label} →
+        </div>
+      )}
+    </>
   );
+  if (link?.href) {
+    return <a href={link.href} className={cardCls}>{inner}</a>;
+  }
+  return <div className={cardCls}>{inner}</div>;
 }
 
 // ── Timeline ────────────────────────────────────────────────────────────────
