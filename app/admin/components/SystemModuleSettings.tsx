@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, Code, Settings2, ExternalLink, ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, Code, Settings2, ExternalLink, ArrowLeft, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { TelegramWebhookSection } from './TelegramWebhookSection';
 import { confirmDialog } from './Dialog';
@@ -206,6 +206,73 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
 
   // 초기 탭 설정
   useEffect(() => { if (tabs.length > 0 && !activeTab) setActiveTab(tabs[0]); }, [tabs.length]); // eslint-disable-line
+
+  // ── 탭 바 스크롤 (SettingsModal 동일 패턴 — 드래그 + 좌/우 화살표) ─────
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const draggedRef = useRef(false);
+  const [scrollState, setScrollState] = useState({ canLeft: false, canRight: false });
+
+  // PC 마우스 드래그 스크롤
+  useEffect(() => {
+    const bar = tabBarRef.current;
+    if (!bar) return;
+    let isDown = false;
+    let startX = 0;
+    let startScroll = 0;
+    const DRAG_THRESHOLD = 5;
+    const onDown = (e: MouseEvent) => { isDown = true; startX = e.pageX; startScroll = bar.scrollLeft; draggedRef.current = false; };
+    const onMove = (e: MouseEvent) => {
+      if (!isDown) return;
+      const dx = e.pageX - startX;
+      if (!draggedRef.current && Math.abs(dx) < DRAG_THRESHOLD) return;
+      draggedRef.current = true;
+      bar.style.cursor = 'grabbing';
+      e.preventDefault();
+      bar.scrollLeft = startScroll - dx;
+    };
+    const onUp = () => {
+      isDown = false;
+      bar.style.cursor = '';
+      setTimeout(() => { draggedRef.current = false; }, 0);
+    };
+    const onClickCapture = (e: MouseEvent) => {
+      if (draggedRef.current) { e.preventDefault(); e.stopPropagation(); }
+    };
+    bar.addEventListener('mousedown', onDown);
+    bar.addEventListener('click', onClickCapture, true);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      bar.removeEventListener('mousedown', onDown);
+      bar.removeEventListener('click', onClickCapture, true);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+
+  // 좌/우 화살표 가시성 갱신
+  const updateScrollState = useCallback(() => {
+    const bar = tabBarRef.current;
+    if (!bar) return;
+    setScrollState({
+      canLeft: bar.scrollLeft > 2,
+      canRight: bar.scrollLeft + bar.clientWidth < bar.scrollWidth - 2,
+    });
+  }, []);
+  useEffect(() => {
+    const bar = tabBarRef.current;
+    if (!bar) return;
+    updateScrollState();
+    bar.addEventListener('scroll', updateScrollState);
+    const ro = new ResizeObserver(updateScrollState);
+    ro.observe(bar);
+    return () => { bar.removeEventListener('scroll', updateScrollState); ro.disconnect(); };
+  }, [updateScrollState, tabs.length]);
+  const scrollTabs = useCallback((dir: 'left' | 'right') => {
+    const bar = tabBarRef.current;
+    if (!bar) return;
+    bar.scrollBy({ left: dir === 'left' ? -120 : 120, behavior: 'smooth' });
+  }, []);
 
   // 초기 로드 — config.json + settings 동시 조회
   useEffect(() => {
@@ -566,22 +633,40 @@ export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
         </div>
 
-        {/* 탭 바 — 가로 스크롤 (8 탭 좁은 화면에서도 wrap 안 함) */}
+        {/* 탭 바 — SettingsModal 동일 패턴. 모바일은 터치 스크롤, PC는 드래그 + 호버 시 화살표 */}
         {hasTabs && (
-          <div className="flex border-b border-slate-200 px-3 sm:px-6 shrink-0 bg-white overflow-x-auto whitespace-nowrap" style={{ scrollbarWidth: 'thin' }}>
-            {tabs.map(tab => {
-              const meta = TAB_META[tab];
-              const Icon = meta?.icon;
-              return (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`flex items-center gap-1.5 px-3 py-2.5 text-[11px] sm:text-[12px] font-bold transition-colors border-b-2 shrink-0 ${activeTab === tab ? 'text-blue-700 border-blue-500' : 'text-slate-400 border-transparent hover:text-slate-600'}`}
-                >
-                  {Icon && <Icon size={13} />} {meta?.label ?? tab}
-                </button>
-              );
-            })}
+          <div className="relative shrink-0 border-b border-slate-200 bg-white group">
+            {scrollState.canLeft && (
+              <button
+                type="button"
+                onClick={() => scrollTabs('left')}
+                className="hidden sm:flex absolute left-0 top-0 bottom-0 z-20 w-7 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-r from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label="이전 탭"
+              ><ChevronLeft size={16} /></button>
+            )}
+            {scrollState.canRight && (
+              <button
+                type="button"
+                onClick={() => scrollTabs('right')}
+                className="hidden sm:flex absolute right-0 top-0 bottom-0 z-20 w-7 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-l from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label="다음 탭"
+              ><ChevronRight size={16} /></button>
+            )}
+            <div ref={tabBarRef} className="flex px-3 sm:px-6 bg-white overflow-x-auto scrollbar-none select-none cursor-grab">
+              {tabs.map(tab => {
+                const meta = TAB_META[tab];
+                const Icon = meta?.icon;
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${activeTab === tab ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+                  >
+                    {Icon && <Icon size={14} />} {meta?.label ?? tab}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
