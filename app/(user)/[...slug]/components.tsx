@@ -50,7 +50,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'ResultDisplay': return null;
     case 'Button':        return <ButtonComp text={p.text ?? ''} href={p.href} variant={p.variant} />;
     case 'Divider':       return <DividerComp />;
-    case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} align={p.align} cellAlign={p.cellAlign} />;
+    case 'Table':         return <TableComp headers={p.headers ?? []} rows={p.rows ?? []} stickyCol={p.stickyCol} striped={p.striped} align={p.align} cellAlign={p.cellAlign} />;
     case 'Card':          return <CardComp children={p.children ?? []} align={p.align} />;
     case 'Grid':          return <GridComp columns={p.columns} children={p.children ?? []} align={p.align} />;
     case 'AdSlot':        return <AdSlotComp slotId={p.slotId} format={p.format} />;
@@ -366,8 +366,10 @@ function DividerComp() {
 
 // ── Table ───────────────────────────────────────────────────────────────────
 type AlignOpt = 'left' | 'right' | 'center';
-function TableComp({ headers = [], rows = [], stickyCol, align, cellAlign }: {
+function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAlign }: {
   headers: string[]; rows: string[][]; stickyCol?: boolean;
+  /** zebra 행 — 짝수 row 배경 살짝 어둡게. 행 많을 때 가독성 ↑. 기본 false. */
+  striped?: boolean;
   /** 컬럼별 정렬 — AI 명시 가능. 미지정 시 자동(숫자 컬럼→우측, 그 외→좌측). */
   align?: (AlignOpt | null | undefined)[];
   /** 셀별 정렬 override — cellAlign[ri][ci]. 특정 행·셀만 따로 조절할 때 사용. */
@@ -428,7 +430,10 @@ function TableComp({ headers = [], rows = [], stickyCol, align, cellAlign }: {
         </thead>
         <tbody>
           {rows.map((row, ri) => (
-            <tr key={ri} className="hover:bg-gray-50 transition-colors">
+            <tr
+              key={ri}
+              className={`hover:bg-gray-50 transition-colors ${striped && ri % 2 === 1 ? 'bg-gray-50/40' : ''}`}
+            >
               {row.map((cell, ci) => {
                 const isStickyCell = firstColSticky && ci === 0;
                 const s = typeof cell === 'string' ? cell.trim() : String(cell);

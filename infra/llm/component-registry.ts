@@ -100,7 +100,7 @@ export const COMPONENTS: ComponentDef[] = [
   {
     name: 'table',
     componentType: 'Table',
-    description: '표/테이블. 수치 3개 이상 나열·비교 시 필수. 마크다운 |---| 금지. 열 많을 때 stickyCol=true 로 첫 열 고정.',
+    description: '표/테이블. 수치 3개 이상 나열·비교 시 필수. 마크다운 |---| 금지. 열 많을 때 stickyCol=true 로 첫 열 고정. 행 많을 때 striped=true 로 zebra (가독성 ↑), stickyHeader=true 로 헤더 고정 (긴 표 스크롤 시).',
     semanticText: '표 테이블 grid 행 열 헤더 나열 비교 정리 스프레드시트 데이터 목록 항목 필드 매출 지표 순위 리스트',
     propsSchema: {
       type: 'object',
@@ -110,6 +110,8 @@ export const COMPONENTS: ComponentDef[] = [
         headers: { type: 'array', items: { type: 'string' }, description: '열 헤더' },
         rows: { type: 'array', items: { type: 'array', items: { type: 'string' } }, description: '행 데이터 (각 행은 문자열 배열)' },
         stickyCol: { type: ['boolean', 'null'], description: 'true면 첫 열 고정. 기본 false.' },
+        striped: { type: ['boolean', 'null'], description: 'true면 짝수 행 배경 살짝 어둡게 (zebra). 기본 false.' },
+        stickyHeader: { type: ['boolean', 'null'], description: 'true면 헤더 행 sticky (긴 표 세로 스크롤 시 헤더 고정). 기본 false.' },
       },
     },
   },
