@@ -1217,9 +1217,9 @@ function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues
   // 툴팁 제거 (v0.1, 2026-04-22) — AI 가 잘못 넣은 데이터가 tooltip 의 derived 계산
   // (pct 등) 을 거치면서 증폭됨. showValues inline 값으로 충분.
   //
-  // 음수 값 처리 (v0.1, 2026-04-29) — 절댓값 기준 width + 음수는 빨강 톤 (financial 표기와 자연 일치).
-  //   부모 ChartComp 의 maxVal 은 `Math.max(...data, 1)` 라 음수 절댓값 무시 → 음수 혼재 시 maxAbs 재계산.
-  //   부호는 fmtVal 결과 ("-1,845억원") + 빨강 색상으로 표시.
+  // 음수 값 처리 (v0.1, 2026-04-29 v2) — 0 baseline 중앙 + 양수 오른쪽 / 음수 왼쪽 (financial chart 표준).
+  //   데이터 모두 양수면 기존 단방향 (왼쪽→오른쪽), 음수 혼재면 양방향. 일반 로직 — 자동 감지.
+  //   maxAbs 기준 비례 (트랙 절반 영역 활용). 음수 막대는 빨강 + 텍스트도 빨강.
   // 단위 중복 제거 (v0.1, 2026-04-29) — fmtVal 이 이미 unit 포함하므로 별도 unit 추가 X.
   //   이전: `{fmtVal(v)}{unit||''}` → "3570억원억원" 버그.
   const hasNegative = data.some(v => v < 0);
@@ -1231,6 +1231,12 @@ function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues
         {data.map((v, i) => {
           const isNegative = v < 0;
           const fillColor = isNegative ? 'bg-red-500' : barColor;
+          // 양방향 mode: width 는 트랙 절반 영역 (50%) 안에서 비례.
+          // 음수: 가운데부터 왼쪽으로 (right-1/2 + width). 양수: 가운데부터 오른쪽으로 (left-1/2 + width).
+          // 단방향 mode: 기존 동작 (left:0 + width 100% 까지 활용).
+          const widthPct = hasNegative
+            ? (Math.abs(v) / maxAbs) * 50
+            : (Math.abs(v) / maxAbs) * 100;
           return (
             <div
               key={i}
@@ -1238,9 +1244,19 @@ function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues
             >
               <span className="text-xs w-20 truncate text-right text-gray-600">{labels[i] ?? i}</span>
               <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden relative">
+                {hasNegative && (
+                  // 0 baseline 중앙선 — 음수 혼재 모드만 표시
+                  <div className="absolute top-0 bottom-0 left-1/2 w-px bg-gray-400 z-10" />
+                )}
                 <div
-                  className={`h-full rounded-full ${fillColor} transition-all duration-500 opacity-85`}
-                  style={{ width: `${(Math.abs(v) / maxAbs) * 100}%` }}
+                  className={`absolute top-0 bottom-0 ${fillColor} transition-all duration-500 opacity-85 ${
+                    hasNegative
+                      ? isNegative
+                        ? 'right-1/2 rounded-l-full'
+                        : 'left-1/2 rounded-r-full'
+                      : 'left-0 rounded-full'
+                  }`}
+                  style={{ width: `${widthPct}%` }}
                 />
               </div>
               {showValues && (
