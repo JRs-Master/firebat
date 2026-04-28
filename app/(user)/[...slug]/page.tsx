@@ -25,6 +25,7 @@ async function resolveBaseUrl(seoSiteUrl?: string): Promise<string> {
   return BASE_URL;
 }
 import { PasswordGate } from './password-gate';
+import { ProjectRootView } from './project-root';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
@@ -58,7 +59,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const slug = safeDecodeSlug(rawSlug);
   const core = getCore();
   const result = await core.getPage(slug);
-  if (!result.success || !result.data) return { title: 'Not Found' };
+  if (!result.success || !result.data) {
+    // projectRoot fallback — 1-segment URL 이 프로젝트명과 매칭되면 프로젝트 카탈로그 metadata
+    if (!slug.includes('/')) {
+      const projects = await core.scanProjects();
+      if (projects.find((p) => p.name === slug)) {
+        const seo = core.getCmsSettings();
+        return {
+          title: `${slug} — ${seo.siteTitle}`,
+          description: `${slug} 프로젝트의 모든 글`,
+          robots: 'index, follow',
+        };
+      }
+    }
+    return { title: 'Not Found' };
+  }
 
   const spec = result.data;
   const visibility = resolveVisibility(spec);
@@ -132,6 +147,15 @@ export default async function DynamicPage({ params }: Props) {
     // 리디렉트 테이블 확인 — slug 변경/프로젝트 이동된 페이지 자동 이동
     const redirectTo = await core.getPageRedirect(slug);
     if (redirectTo) redirect(`/${redirectTo}`);
+    // projectRoot fallback — 1-segment URL 이고 그 이름이 프로젝트로 등록되어 있으면
+    // 해당 프로젝트의 모든 page list 페이지 렌더 (Phase 4 Step 3).
+    if (!slug.includes('/')) {
+      const projects = await core.scanProjects();
+      const matched = projects.find((p) => p.name === slug);
+      if (matched) {
+        return <ProjectRootView projectName={slug} pageSlugs={matched.pageSlugs} />;
+      }
+    }
     notFound();
   }
 
