@@ -3,12 +3,12 @@
  * TemplatesPanel — Phase 8b-C. 사이드바 TEMPLATES 탭.
  *
  * user/templates/* 의 list 표시 + 클릭 시 모나코 에디터로 template.json 편집.
- * 새 템플릿 만들기 버튼 — 빈 template.json 생성 후 모나코 에디터로 즉시 편집.
+ * 새 템플릿 만들기 — inline 모달 (rename 패턴 차용, native prompt/alert 회피).
  */
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Trash2, FileCode } from 'lucide-react';
 import { Tooltip } from './Tooltip';
-import { confirmDialog } from './Dialog';
+import { confirmDialog, alertDialog } from './Dialog';
 
 interface TemplateEntry {
   slug: string;
@@ -37,6 +37,9 @@ const STARTER_TEMPLATE = {
 export function TemplatesPanel({ onEditFile }: { onEditFile?: (filePath: string) => void }) {
   const [templates, setTemplates] = useState<TemplateEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [newSlug, setNewSlug] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const fetchTemplates = useCallback(async () => {
     try {
@@ -52,30 +55,49 @@ export function TemplatesPanel({ onEditFile }: { onEditFile?: (filePath: string)
     fetchTemplates();
   }, [fetchTemplates]);
 
-  const handleCreate = useCallback(async () => {
-    const slug = prompt('새 템플릿 slug (영숫자·하이픈·언더스코어, 예: weekly-stock-summary):')?.trim();
+  const openCreate = useCallback(() => {
+    setNewSlug('');
+    setCreating(true);
+  }, []);
+
+  const submitCreate = useCallback(async () => {
+    const slug = newSlug.trim();
     if (!slug) return;
     if (!/^[a-zA-Z0-9_-]+$/.test(slug)) {
-      alert('slug 는 영숫자·하이픈·언더스코어만.');
+      await alertDialog({
+        title: '잘못된 slug',
+        message: 'slug 는 영숫자·하이픈·언더스코어만 가능합니다.',
+        danger: true,
+      });
       return;
     }
     if (templates.some(t => t.slug === slug)) {
-      alert(`"${slug}" 템플릿이 이미 존재합니다.`);
+      await alertDialog({
+        title: '중복',
+        message: `"${slug}" 템플릿이 이미 존재합니다.`,
+        danger: true,
+      });
       return;
     }
-    const res = await fetch('/api/templates', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slug, config: STARTER_TEMPLATE }),
-    });
-    const data = await res.json();
-    if (!data.success) {
-      alert(`생성 실패: ${data.error}`);
-      return;
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, config: STARTER_TEMPLATE }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        await alertDialog({ title: '생성 실패', message: data.error || '알 수 없는 오류', danger: true });
+        return;
+      }
+      await fetchTemplates();
+      setCreating(false);
+      onEditFile?.(`user/templates/${slug}/template.json`);
+    } finally {
+      setSubmitting(false);
     }
-    await fetchTemplates();
-    onEditFile?.(`user/templates/${slug}/template.json`);
-  }, [templates, fetchTemplates, onEditFile]);
+  }, [newSlug, templates, fetchTemplates, onEditFile]);
 
   const handleDelete = useCallback(async (slug: string) => {
     if (!await confirmDialog({
@@ -87,7 +109,7 @@ export function TemplatesPanel({ onEditFile }: { onEditFile?: (filePath: string)
     const res = await fetch(`/api/templates/${encodeURIComponent(slug)}`, { method: 'DELETE' });
     const data = await res.json();
     if (!data.success) {
-      alert(`삭제 실패: ${data.error}`);
+      await alertDialog({ title: '삭제 실패', message: data.error || '알 수 없는 오류', danger: true });
       return;
     }
     await fetchTemplates();
@@ -99,7 +121,7 @@ export function TemplatesPanel({ onEditFile }: { onEditFile?: (filePath: string)
         <span className="text-[10px] font-extrabold tracking-widest text-slate-400">TEMPLATES</span>
         <Tooltip label="새 템플릿">
           <button
-            onClick={handleCreate}
+            onClick={openCreate}
             className="p-1 rounded text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
             aria-label="새 템플릿"
           >
@@ -114,7 +136,7 @@ export function TemplatesPanel({ onEditFile }: { onEditFile?: (filePath: string)
           <div className="px-3 py-6 text-center">
             <p className="text-[11px] text-slate-400 mb-2">등록된 템플릿이 없습니다.</p>
             <button
-              onClick={handleCreate}
+              onClick={openCreate}
               className="text-[11px] text-blue-600 font-bold hover:underline"
             >
               + 첫 템플릿 만들기
@@ -147,11 +169,56 @@ export function TemplatesPanel({ onEditFile }: { onEditFile?: (filePath: string)
           </div>
         )}
       </div>
-      <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/50">
-        <p className="text-[10px] text-slate-500 leading-relaxed">
-          템플릿은 cron-agent 가 발행 시 일관 layout 으로 사용. AI 가 매칭 시 spec.head·body 를 baseline 으로 변동값만 교체.
-        </p>
-      </div>
+
+      {/* 새 템플릿 만들기 모달 — rename 패턴 (inline form, ESC/Enter 처리) */}
+      {creating && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+          onMouseDown={(e) => {
+            if (submitting) return;
+            if (e.target === e.currentTarget) setCreating(false);
+          }}
+        >
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden" onMouseDown={e => e.stopPropagation()}>
+            <div className="px-5 py-3 border-b border-slate-200 bg-slate-50">
+              <h3 className="text-sm font-bold text-slate-800">새 템플릿</h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">slug 입력 → 빈 template.json 생성 후 모나코 에디터로 편집</p>
+            </div>
+            <div className="px-5 py-4 flex flex-col gap-3">
+              <input
+                type="text"
+                value={newSlug}
+                onChange={e => setNewSlug(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !submitting) submitCreate();
+                  if (e.key === 'Escape' && !submitting) setCreating(false);
+                }}
+                placeholder="slug (예: weekly-stock-summary)"
+                autoFocus
+                disabled={submitting}
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100"
+              />
+              <p className="text-[10px] text-slate-400">slug 는 영숫자·하이픈·언더스코어만. user/templates/{'{slug}'}/template.json 에 저장.</p>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+              <button
+                onClick={() => setCreating(false)}
+                disabled={submitting}
+                className="px-3 py-1.5 text-[12px] text-slate-600 hover:bg-slate-100 rounded-lg disabled:opacity-40"
+              >
+                취소
+              </button>
+              <button
+                onClick={submitCreate}
+                disabled={submitting || !newSlug.trim()}
+                className="px-3 py-1.5 text-[12px] bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg disabled:bg-slate-300"
+              >
+                {submitting ? '생성 중...' : '만들기'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
