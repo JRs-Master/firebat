@@ -381,6 +381,7 @@ export const COMPONENTS: ComponentDef[] = [
               key: { type: 'string' },
               value: { type: ['string', 'number'] },
               highlight: { type: ['boolean', 'null'] },
+              href: { type: ['string', 'null'], description: '항목 클릭 시 이동 URL (선택). 박으면 row 가 anchor 로 wrap.' },
             },
           },
         },

@@ -1432,7 +1432,7 @@ function CompareComp({ title, left, right }: {
 // 라벨:값 구조적 나열. 종목 정보, 제품 스펙 등.
 function KeyValueComp({ title, items, columns = 2 }: {
   title?: string;
-  items: Array<{ key: string; value: string | number; highlight?: boolean }>;
+  items: Array<{ key: string; value: string | number; highlight?: boolean; href?: string }>;
   columns?: number;
 }) {
   const gridCls: Record<number, string> = {
@@ -1444,14 +1444,21 @@ function KeyValueComp({ title, items, columns = 2 }: {
     <div className="space-y-2">
       {title && <div className="text-sm font-bold text-gray-800">{cleanPlainText(title)}</div>}
       <div className={`grid ${gridCls[columns] ?? gridCls[2]} gap-x-4 gap-y-2`}>
-        {items.map((item, i) => (
-          <div key={i} className="flex items-baseline justify-between gap-3 py-1.5 border-b border-gray-100">
-            <span className="text-xs text-gray-500 shrink-0">{cleanPlainText(item.key)}</span>
-            <span className={`text-sm text-right tabular-nums ${item.highlight ? 'font-bold text-gray-900' : 'text-gray-700'}`}>
-              {formatNumberString(item.value)}
-            </span>
-          </div>
-        ))}
+        {items.map((item, i) => {
+          const rowCls = `flex items-baseline justify-between gap-3 py-1.5 border-b border-gray-100 ${item.href ? 'hover:opacity-80 transition-opacity cursor-pointer no-underline' : ''}`;
+          const inner = (
+            <>
+              <span className="text-xs text-gray-500 shrink-0">{cleanPlainText(item.key)}</span>
+              <span className={`text-sm text-right tabular-nums ${item.highlight ? 'font-bold text-gray-900' : 'text-gray-700'}`}>
+                {formatNumberString(item.value)}
+              </span>
+            </>
+          );
+          if (item.href) {
+            return <a key={i} href={item.href} className={rowCls} style={{ color: 'inherit' }}>{inner}</a>;
+          }
+          return <div key={i} className={rowCls}>{inner}</div>;
+        })}
       </div>
     </div>
   );
