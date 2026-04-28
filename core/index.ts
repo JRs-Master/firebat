@@ -433,6 +433,34 @@ export class FirebatCore {
     return this.project.setProjectConfig(project, config);
   }
 
+  // ── 태그 (CMS Phase 8a) ─────────────────────────────────────────────────
+  /** 모든 published + public 페이지의 head.keywords 합집합 + 사용 빈도.
+   *  반환: [{ tag, count, slugs }] — count 내림차순.
+   *  alias normalize 는 Step B 에서 추가 — 현재는 raw keyword 그대로. */
+  async listAllTags(): Promise<Array<{ tag: string; count: number; slugs: string[] }>> {
+    const listRes = await this.listPages();
+    if (!listRes.success || !listRes.data) return [];
+    const visiblePages = listRes.data.filter(
+      (p) => p.status === 'published' && (p.visibility ?? 'public') === 'public',
+    );
+    const tagMap = new Map<string, Set<string>>();
+    for (const p of visiblePages) {
+      const pageRes = await this.getPage(p.slug);
+      if (!pageRes.success || !pageRes.data) continue;
+      const keywords = (pageRes.data.head?.keywords ?? []) as unknown[];
+      for (const kw of keywords) {
+        if (typeof kw !== 'string') continue;
+        const trimmed = kw.trim();
+        if (!trimmed) continue;
+        if (!tagMap.has(trimmed)) tagMap.set(trimmed, new Set());
+        tagMap.get(trimmed)!.add(p.slug);
+      }
+    }
+    return [...tagMap.entries()]
+      .map(([tag, slugSet]) => ({ tag, count: slugSet.size, slugs: [...slugSet] }))
+      .sort((a, b) => b.count - a.count);
+  }
+
   // ── 템플릿 (CMS Phase 8b) ───────────────────────────────────────────────
   /** 템플릿 목록 — user/templates 폴더 스캔. */
   async listTemplates(): Promise<TemplateEntry[]> {
