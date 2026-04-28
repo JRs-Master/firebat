@@ -208,6 +208,52 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
       },
     },
     {
+      name: 'list_templates',
+      description: '등록된 페이지 템플릿 목록 조회 (CMS Phase 8b). 사용자가 템플릿 보고 관리할 때 사용.',
+      parameters: { type: 'object', properties: {} },
+    },
+    {
+      name: 'save_template',
+      description: '페이지 템플릿 등록·수정 (CMS Phase 8b). 사용자가 자연어로 "주간 시황 템플릿 만들어줘" 같이 요청 시 호출. spec.body 는 render_* 컴포넌트 객체 배열 (Header/Text/Table/Callout/Metric 등). spec.head 는 SEO 메타 (title/description/keywords 자리에 {date} 같은 변수 placeholder 사용 가능 — cron-agent 가 발행 시 교체).',
+      parameters: {
+        type: 'object',
+        required: ['slug', 'config'],
+        properties: {
+          slug: { type: 'string', description: '템플릿 slug (영숫자·하이픈·언더스코어). user/templates/{slug}/template.json 으로 저장.' },
+          config: {
+            type: 'object',
+            required: ['name', 'spec'],
+            additionalProperties: true,
+            properties: {
+              name: { type: 'string', description: '사람 친화 이름 (어드민 UI 표시)' },
+              description: { type: 'string', description: '템플릿 목적·사용 시점. cron-agent 매칭 시 참고.' },
+              tags: { type: 'array', items: { type: 'string' }, description: '분류 태그 (stock / news / report 등)' },
+              spec: {
+                type: 'object',
+                required: ['body'],
+                additionalProperties: true,
+                properties: {
+                  head: { type: 'object', additionalProperties: true, description: 'SEO 메타 — title/description/keywords/og 등' },
+                  body: { type: 'array', description: 'render_* 컴포넌트 객체 배열', items: { type: 'object', additionalProperties: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    {
+      name: 'delete_template',
+      description: '페이지 템플릿 삭제. user/templates/{slug} 폴더 통째 제거.',
+      parameters: {
+        type: 'object',
+        required: ['slug'],
+        properties: {
+          slug: { type: 'string', description: '삭제할 템플릿 slug' },
+        },
+      },
+    },
+    {
       name: 'schedule_task',
       description: '모듈/파이프라인 예약 실행 등록. 반복(cronTime), 1회(runAt), 지연(delaySec). 가격 알림 등 "조건 충족 시 1회 알림" 패턴은 cronTime + oneShot:true + CONDITION 스텝 조합. 휴장·가드 같은 발화 전 체크는 runWhen, 일시 실패 자동 복구는 retry, 결과 알림은 notify 옵션 사용 (pipeline step 안에 박지 마라).',
       parameters: {

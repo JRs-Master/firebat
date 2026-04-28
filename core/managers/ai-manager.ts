@@ -146,6 +146,23 @@ export class AiManager {
         if (!config) return { success: false, error: `템플릿을 찾을 수 없습니다: ${slug}` };
         return { success: true, template: config };
       },
+      list_templates: async () => {
+        const list = await this.core.listTemplates();
+        return { success: true, templates: list };
+      },
+      save_template: async (args) => {
+        const slug = (args.slug as string) || '';
+        const config = args.config as any;
+        if (!slug || !config) return { success: false, error: 'slug 와 config 필수' };
+        const res = await this.core.saveTemplate(slug, config);
+        return res.success ? { success: true, slug } : { success: false, error: res.error };
+      },
+      delete_template: async (args) => {
+        const slug = (args.slug as string) || '';
+        if (!slug) return { success: false, error: 'slug 필수' };
+        const res = await this.core.deleteTemplate(slug);
+        return res.success ? { success: true } : { success: false, error: res.error };
+      },
 
       // ── Schedule operations ─────────────────────────────────────────────
       schedule_task: async (args) => {
