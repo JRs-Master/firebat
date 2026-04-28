@@ -154,16 +154,6 @@ export const COLOR_PRESETS: Record<string, { label: string; mode: 'light' | 'dar
       bg: '#fafaff', bgCard: '#f4f4ff', border: '#e4e4f7',
     },
   },
-  'forest-green': {
-    label: 'Forest Green',
-    mode: 'light',
-    colors: {
-      primary: '#15803d', accent: '#ca8a04',
-      up: '#dc2626', down: '#2563eb',
-      text: '#14532d', textMuted: '#4d7c0f',
-      bg: '#fafdf7', bgCard: '#f0fdf4', border: '#bbf7d0',
-    },
-  },
   'sunset-coral': {
     label: 'Sunset Coral',
     mode: 'light',
@@ -182,16 +172,6 @@ export const COLOR_PRESETS: Record<string, { label: string; mode: 'light' | 'dar
       up: '#dc2626', down: '#1e40af',
       text: '#0c2530', textMuted: '#475569',
       bg: '#f5fbfd', bgCard: '#ecfeff', border: '#a5f3fc',
-    },
-  },
-  'royal-purple': {
-    label: 'Royal Purple',
-    mode: 'light',
-    colors: {
-      primary: '#7e22ce', accent: '#d946ef',
-      up: '#dc2626', down: '#2563eb',
-      text: '#3b0764', textMuted: '#6b21a8',
-      bg: '#fdfaff', bgCard: '#faf5ff', border: '#e9d5ff',
     },
   },
   'dark-slate': {

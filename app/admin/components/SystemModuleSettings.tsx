@@ -816,23 +816,30 @@ function ColorPresetField({ label, description, value, onChange }: {
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-1">
         {Object.entries(COLOR_PRESETS).map(([key, preset]) => {
           const active = value === key;
+          const c = preset.colors;
           return (
             <button
               key={key}
               onClick={() => onChange(key)}
-              className={`flex items-center gap-2 p-2 border rounded-lg text-left transition-colors ${
-                active ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-slate-200 bg-white hover:bg-slate-50'
+              className={`relative flex flex-col gap-1.5 p-2 border rounded-lg text-left transition-all overflow-hidden ${
+                active ? 'border-blue-500 ring-2 ring-blue-200' : 'border-slate-200 hover:border-slate-300'
               }`}
+              style={{ background: c.bgCard, color: c.text }}
             >
-              <div className="flex gap-0.5 shrink-0">
-                <div style={{ background: preset.colors.primary, width: 14, height: 14, borderRadius: 2 }} />
-                <div style={{ background: preset.colors.up, width: 14, height: 14, borderRadius: 2 }} />
-                <div style={{ background: preset.colors.down, width: 14, height: 14, borderRadius: 2 }} />
+              {/* 미니 미리보기 — 'Aa' 본문 + accent line + primary 버튼 sample */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[14px] font-extrabold leading-none" style={{ color: c.text, fontFamily: 'serif' }}>Aa</span>
+                <span className="h-3 w-0.5 shrink-0" style={{ background: c.accent }} />
+                <span className="text-[10px] font-bold leading-none truncate" style={{ color: c.primary }}>{preset.label}</span>
               </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-[12px] font-bold text-slate-700 truncate">{preset.label}</span>
-                <span className="text-[10px] text-slate-400">{preset.mode}</span>
+              {/* 색 칩 — primary / accent / up / down 4 종 */}
+              <div className="flex gap-1 shrink-0">
+                <div style={{ background: c.primary, width: 16, height: 12, borderRadius: 2 }} title="primary" />
+                <div style={{ background: c.accent, width: 16, height: 12, borderRadius: 2 }} title="accent" />
+                <div style={{ background: c.up, width: 16, height: 12, borderRadius: 2 }} title="up" />
+                <div style={{ background: c.down, width: 16, height: 12, borderRadius: 2 }} title="down" />
               </div>
+              <span className="text-[9px] uppercase tracking-wider font-bold opacity-50">{preset.mode}</span>
             </button>
           );
         })}
