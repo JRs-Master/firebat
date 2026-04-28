@@ -150,6 +150,10 @@ export class AiManager {
         const list = await this.core.listTemplates();
         return { success: true, templates: list };
       },
+      list_tags: async () => {
+        const tags = await this.core.listAllTags();
+        return { success: true, tags };
+      },
       save_template: async (args) => {
         const slug = (args.slug as string) || '';
         const config = args.config as any;

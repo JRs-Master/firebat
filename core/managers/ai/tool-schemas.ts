@@ -228,6 +228,11 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
       },
     },
     {
+      name: 'list_tags',
+      description: '모든 public+published 페이지의 head.keywords aggregation + 사용 빈도. CMS settings.tagAliases 적용 — case-insensitive normalize 후 canonical 통합. 사용자가 "어떤 태그 있어?" / "코스피 태그 페이지 몇 개?" 등 질문 시 호출.',
+      parameters: { type: 'object', properties: {} },
+    },
+    {
       name: 'list_templates',
       description: '등록된 페이지 템플릿 목록 조회 (CMS Phase 8b). 사용자가 템플릿 보고 관리할 때 사용.',
       parameters: { type: 'object', properties: {} },
