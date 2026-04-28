@@ -364,13 +364,15 @@ function MediaDetailModal({
           </div>
         </div>
 
-        {/* 본문 — 모바일 flex-col / PC flex-row */}
-        <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-3 p-3 sm:p-4 overflow-hidden">
-          {/* 프리뷰 — 높이 고정 (모바일: viewport 의 1/3 정도, basis 로 자연 비율).
+        {/* 본문 — 모바일 flex-col / PC flex-row.
+            모바일: 본문 자체 overflow-y-auto → 메타·버튼이 viewport 부족 시 잘리지 않고 스크롤로 접근 가능.
+            PC: overflow-hidden 유지 (좌우 컬럼 각자 안에서만 스크롤). */}
+        <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-3 p-3 sm:p-4 overflow-y-auto md:overflow-hidden">
+          {/* 프리뷰 — 모바일은 max-h-[45vh] 로 자연 비율 보존, PC 는 좌측 컬럼 전체 활용.
               status='error' / 'rendering' / 'done' 3 분기. 그리드와 동일 패턴.
               cache busting (?v=bytes) — 모바일 브라우저가 placeholder 단계의 회색 응답을
               cache 한 후 done swap 시 같은 URL 재요청해도 cache hit 으로 회색 박힘 방지. */}
-          <div className={`relative shrink-0 md:flex-1 md:min-w-0 basis-[30%] md:basis-auto md:h-auto md:max-h-full rounded-lg p-2 flex items-center justify-center overflow-hidden ${
+          <div className={`relative shrink-0 md:flex-1 md:min-w-0 max-h-[45vh] md:max-h-full md:h-auto rounded-lg p-2 flex items-center justify-center overflow-hidden ${
             isError ? 'bg-red-50 border border-red-200' : item.status === 'rendering' ? 'bg-blue-50 border border-blue-200' : 'bg-slate-50'
           }`}>
             {isError ? (
@@ -417,10 +419,10 @@ function MediaDetailModal({
             </button>
           </div>
 
-          {/* 우측 컬럼 — 프롬프트만 스크롤, 메타·버튼 고정 */}
-          <div className="flex-1 md:flex-none md:w-64 md:shrink-0 min-h-0 flex flex-col gap-2 text-[12px]">
-            {/* 프롬프트 — 항상 렌더(prompt 없을 때 placeholder). flex-1 유지로 메타·버튼 위치 일정 */}
-            <div className="flex-1 min-h-[60px] overflow-y-auto pr-1 border-b border-slate-100 pb-2">
+          {/* 우측 컬럼 — PC 만 프롬프트 스크롤, 모바일은 자연 흐름 (전체 본문 스크롤로 위임) */}
+          <div className="md:flex-none md:w-64 md:shrink-0 md:min-h-0 flex flex-col gap-2 text-[12px]">
+            {/* 프롬프트 — 항상 렌더(prompt 없을 때 placeholder). PC 만 flex-1 + 자체 스크롤 */}
+            <div className="md:flex-1 md:min-h-[60px] md:overflow-y-auto pr-1 border-b border-slate-100 pb-2">
               {item.prompt && (
                 <div className="mb-2">
                   <div className="flex items-center gap-1 text-slate-400 font-bold uppercase text-[10px] mb-0.5"><Sparkles size={10} /> 프롬프트</div>
