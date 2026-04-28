@@ -367,9 +367,11 @@ function MediaDetailModal({
         {/* 본문 — 모바일 flex-col / PC flex-row */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-3 p-3 sm:p-4 overflow-hidden">
           {/* 프리뷰 — 높이 고정 (모바일: viewport 의 1/3 정도, basis 로 자연 비율).
-              status='error' 면 이미지 자리에 빨간 에러 카드 표시. */}
+              status='error' / 'rendering' / 'done' 3 분기. 그리드와 동일 패턴.
+              cache busting (?v=bytes) — 모바일 브라우저가 placeholder 단계의 회색 응답을
+              cache 한 후 done swap 시 같은 URL 재요청해도 cache hit 으로 회색 박힘 방지. */}
           <div className={`relative shrink-0 md:flex-1 md:min-w-0 basis-[30%] md:basis-auto md:h-auto md:max-h-full rounded-lg p-2 flex items-center justify-center overflow-hidden ${
-            isError ? 'bg-red-50 border border-red-200' : 'bg-slate-50'
+            isError ? 'bg-red-50 border border-red-200' : item.status === 'rendering' ? 'bg-blue-50 border border-blue-200' : 'bg-slate-50'
           }`}>
             {isError ? (
               <div className="flex flex-col items-center gap-2 text-center px-4 py-6">
@@ -382,9 +384,15 @@ function MediaDetailModal({
                   <p className="text-[10px] text-slate-500 italic mt-1">위 프롬프트로 재생성을 시도할 수 있습니다.</p>
                 )}
               </div>
+            ) : item.status === 'rendering' ? (
+              <div className="flex flex-col items-center gap-2 text-center px-4 py-6 text-blue-600">
+                <Loader2 size={32} className="animate-spin" />
+                <div className="text-sm font-bold">이미지 생성 중…</div>
+                <p className="text-[11px] text-slate-500 italic mt-1">완료 후 자동으로 표시됩니다.</p>
+              </div>
             ) : (
               <img
-                src={url}
+                src={`${url}?v=${item.bytes || item.createdAt}`}
                 alt={item.filenameHint || item.slug}
                 className="max-w-full max-h-full object-contain rounded"
               />
