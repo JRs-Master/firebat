@@ -52,7 +52,7 @@ function resolveVisibility(spec: { _visibility?: string; project?: string }): 'p
   return 'public';
 }
 
-type Props = { params: Promise<{ slug: string[] }> };
+type Props = { params: Promise<{ slug: string[] }>; searchParams?: Promise<{ page?: string }> };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const rawSlug = (await params).slug;
@@ -138,7 +138,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function DynamicPage({ params }: Props) {
+export default async function DynamicPage({ params, searchParams }: Props) {
   const rawSlug = (await params).slug;
   const slug = safeDecodeSlug(rawSlug);
   const core = getCore();
@@ -148,12 +148,14 @@ export default async function DynamicPage({ params }: Props) {
     const redirectTo = await core.getPageRedirect(slug);
     if (redirectTo) redirect(`/${redirectTo}`);
     // projectRoot fallback — 1-segment URL 이고 그 이름이 프로젝트로 등록되어 있으면
-    // 해당 프로젝트의 모든 page list 페이지 렌더 (Phase 4 Step 3).
+    // 해당 프로젝트의 모든 page list 페이지 렌더 (Phase 4 Step 3+4).
     if (!slug.includes('/')) {
       const projects = await core.scanProjects();
       const matched = projects.find((p) => p.name === slug);
       if (matched) {
-        return <ProjectRootView projectName={slug} pageSlugs={matched.pageSlugs} />;
+        const sp = searchParams ? await searchParams : {};
+        const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);
+        return <ProjectRootView projectName={slug} pageSlugs={matched.pageSlugs} currentPage={currentPage} />;
       }
     }
     notFound();

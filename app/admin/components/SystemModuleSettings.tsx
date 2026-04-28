@@ -93,6 +93,13 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'sidebarShowRecentPosts', label: '사이드바 — 최근 글 위젯', type: 'toggle', tab: '레이아웃', description: '사이드바에 최근 글 list 표시. 사이드바 모드 (right/left) 에서만 효과.', defaultValue: true },
       { key: 'sidebarRecentPostsCount', label: '사이드바 — 최근 글 개수', type: 'number', tab: '레이아웃', placeholder: '5', description: '사이드바 최근 글 개수.', defaultValue: 5 },
       { key: 'sidebarHtmlWidget', label: '사이드바 — HTML 위젯', type: 'textarea', tab: '레이아웃', placeholder: '<div>광고 코드 / 연락처 / 소개 등</div>', description: '자유 HTML 위젯. sanitize 후 inline DOM. <a> / <strong> / <img> 등 일부 태그 허용. 비우면 미표시.' },
+      // ── 글 list 카드 ──
+      { key: 'pageListCardVariant', label: '글 카드 변형', type: 'select', tab: '레이아웃', description: '홈·프로젝트·태그 페이지의 글 list 표시 방식. list (세로 카드) / grid (격자 2-3열) / compact (제목+날짜 압축).', defaultValue: 'list', options: [
+        { value: 'list', label: 'List — 세로 카드 (기본)' },
+        { value: 'grid', label: 'Grid — 격자 2-3열' },
+        { value: 'compact', label: 'Compact — 제목+날짜 압축' },
+      ] },
+      { key: 'pageListPerPage', label: '글 list — 페이지당 개수', type: 'number', tab: '레이아웃', placeholder: '20', description: '한 페이지에 표시할 글 개수. 페이지네이션 (?page=N) 자동.', defaultValue: 20 },
       // ── 광고 — AdSense Auto Ads + 수동 슬롯 4개 (Phase 4 Step 6). ──
       { key: 'adsensePublisherId', label: 'AdSense Publisher ID', type: 'text', tab: '광고', placeholder: 'ca-pub-1234567890123456', description: 'Google AdSense Publisher ID. 박혀있으면 head 에 AdSense script 자동 inject. 비우면 광고 미사용.' },
       { key: 'adsenseAutoAds', label: 'Auto Ads 활성', type: 'toggle', tab: '광고', description: 'Google 이 페이지 자동 분석해 광고 위치·형식 결정. Publisher ID 있으면 기본 ON. 수동 슬롯과 병행 가능.', defaultValue: true },

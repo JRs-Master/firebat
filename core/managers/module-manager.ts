@@ -290,6 +290,12 @@ export class ModuleManager {
           : (parseInt(s.sidebarRecentPostsCount) || 5),
         htmlWidget: s.sidebarHtmlWidget || '',
       },
+      pageList: {
+        cardVariant: (['list', 'grid', 'compact'].includes(s.pageListCardVariant) ? s.pageListCardVariant : 'list'),
+        perPage: typeof s.pageListPerPage === 'number'
+          ? s.pageListPerPage
+          : (parseInt(s.pageListPerPage) || 20),
+      },
     };
   }
 

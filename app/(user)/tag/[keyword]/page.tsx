@@ -8,7 +8,7 @@
  */
 import { notFound } from 'next/navigation';
 import { getCore } from '../../../../lib/singleton';
-import { CmsPageList } from '../../cms-page-list';
+import { CmsPageList, CmsPagination } from '../../cms-page-list';
 import type { Metadata } from 'next';
 import type { PageListItem } from '../../../../core/ports';
 
@@ -16,6 +16,7 @@ export const dynamic = 'force-dynamic';
 
 interface Props {
   params: Promise<{ keyword: string }>;
+  searchParams?: Promise<{ page?: string }>;
 }
 
 function decodeKeyword(raw: string): string {
@@ -54,10 +55,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function TagPage({ params }: Props) {
+export default async function TagPage({ params, searchParams }: Props) {
   const keyword = decodeKeyword((await params).keyword);
   const pages = await findMatchingPages(keyword);
   if (pages.length === 0) notFound();
+
+  const cms = getCore().getCmsSettings();
+  const sp = searchParams ? await searchParams : {};
+  const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);
+  const perPage = cms.layout.pageList.perPage;
+  const totalPages = Math.max(1, Math.ceil(pages.length / perPage));
+  const pagedPosts = pages.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   return (
     <main className="min-h-screen" style={{ background: 'var(--cms-bg)' }}>
@@ -76,7 +84,8 @@ export default async function TagPage({ params }: Props) {
         </p>
       </section>
       <section className="firebat-cms-content" style={{ paddingTop: '8px', paddingBottom: '64px' }}>
-        <CmsPageList pages={pages} />
+        <CmsPageList pages={pagedPosts} variant={cms.layout.pageList.cardVariant} />
+        <CmsPagination basePath={`/tag/${encodeURIComponent(keyword)}`} currentPage={currentPage} totalPages={totalPages} />
       </section>
     </main>
   );

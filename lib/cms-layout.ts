@@ -47,6 +47,16 @@ export interface SidebarConfig {
   htmlWidget: string;
 }
 
+/** Page card 변형 — 홈·projectRoot·tag 페이지의 글 list 표시 방식. */
+export type PageCardVariant = 'list' | 'grid' | 'compact';
+
+export interface PageListConfig {
+  /** 글 list 카드 변형 — list / grid / compact. 기본 list. */
+  cardVariant: PageCardVariant;
+  /** 페이지당 표시 개수 — 페이지네이션. 기본 20. */
+  perPage: number;
+}
+
 export interface LayoutConfig {
   header: HeaderConfig;
   footer: FooterConfig;
@@ -55,6 +65,8 @@ export interface LayoutConfig {
   /** 본문 + sidebar 배치 모드. 기본 'full' (사이드바 없음). */
   mode: LayoutMode;
   sidebar: SidebarConfig;
+  /** 글 list 표시 (홈·projectRoot·tag) */
+  pageList: PageListConfig;
 }
 
 /** "label | href" 줄별 형식 → NavLink[] 파싱.
@@ -90,5 +102,9 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
     showRecentPosts: true,
     recentPostsCount: 5,
     htmlWidget: '',
+  },
+  pageList: {
+    cardVariant: 'list',
+    perPage: 20,
   },
 };

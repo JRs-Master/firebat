@@ -1,9 +1,13 @@
 import { getCore } from '../../lib/singleton';
 import { BASE_URL } from '../../infra/config';
-import { CmsPageList } from './cms-page-list';
+import { CmsPageList, CmsPagination } from './cms-page-list';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
+
+interface Props {
+  searchParams: Promise<{ page?: string }>;
+}
 
 /** 루트 페이지 SEO 메타데이터 — CMS 모듈 설정에서 로드 */
 export async function generateMetadata(): Promise<Metadata> {
@@ -28,10 +32,14 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /** 홈 페이지 — Hero + 최근 글 목록 + 프로젝트 카탈로그.
- *  Phase 4 Step 3 — CmsHeader / CmsFooter 가 layout.tsx 에서 자연 wrap. */
-export default async function HomePage() {
+ *  Phase 4 Step 3+4 — cardVariant + 페이지네이션. CmsHeader / CmsFooter 가 layout.tsx 에서 자연 wrap. */
+export default async function HomePage({ searchParams }: Props) {
   const core = getCore();
   const cms = core.getCmsSettings();
+  const sp = await searchParams;
+  const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);
+  const perPage = cms.layout.pageList.perPage;
+
   const pagesRes = await core.listPages();
   const allPages = pagesRes.success && pagesRes.data ? pagesRes.data : [];
   // public + published 만, 최근 순
@@ -39,7 +47,8 @@ export default async function HomePage() {
     .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
     .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
 
-  const recentPages = visiblePages.slice(0, 10);
+  const totalPages = Math.max(1, Math.ceil(visiblePages.length / perPage));
+  const pagedPosts = visiblePages.slice((currentPage - 1) * perPage, currentPage * perPage);
 
   // 프로젝트 카탈로그 (페이지 있는 것만 — 빈 프로젝트 제외)
   const projectMap = new Map<string, number>();
@@ -108,7 +117,12 @@ export default async function HomePage() {
         >
           최근 글
         </h2>
-        <CmsPageList pages={recentPages} emptyMessage="아직 발행된 글이 없습니다." />
+        <CmsPageList
+          pages={pagedPosts}
+          emptyMessage="아직 발행된 글이 없습니다."
+          variant={cms.layout.pageList.cardVariant}
+        />
+        <CmsPagination basePath="/" currentPage={currentPage} totalPages={totalPages} />
       </section>
     </main>
   );
