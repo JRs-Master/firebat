@@ -301,6 +301,47 @@ export class AiManager {
         return res.success ? { success: true, deleted: name } : { success: false, error: res.error };
       },
 
+      // ── sysmod 결과 cache (read/grep/aggregate/drop) ──────────────────────
+      cache_read: async (args) => {
+        const { cacheKey, offset, limit, fields } = args as {
+          cacheKey: string;
+          offset?: number;
+          limit?: number;
+          fields?: string[];
+        };
+        const res = await this.core.cacheRead(cacheKey, { offset, limit, fields });
+        return res.success
+          ? { success: true, records: res.data?.records, total: res.data?.total, meta: res.data?.meta }
+          : { success: false, error: res.error };
+      },
+      cache_grep: async (args) => {
+        const { cacheKey, query, limit, fields } = args as {
+          cacheKey: string;
+          query: { field: string; op: string; value: unknown };
+          limit?: number;
+          fields?: string[];
+        };
+        const res = await this.core.cacheGrep(cacheKey, query as { field: string; op: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains' | 'in' | 'regex'; value: unknown }, { limit, fields });
+        return res.success
+          ? { success: true, records: res.data?.records, matched: res.data?.matched, total: res.data?.total }
+          : { success: false, error: res.error };
+      },
+      cache_aggregate: async (args) => {
+        const { cacheKey, op, field, by } = args as {
+          cacheKey: string;
+          op: 'avg' | 'sum' | 'min' | 'max' | 'count';
+          field: string;
+          by?: string;
+        };
+        const res = await this.core.cacheAggregate(cacheKey, op, field, by);
+        return res.success ? { success: true, result: res.data } : { success: false, error: res.error };
+      },
+      cache_drop: async (args) => {
+        const { cacheKey } = args as { cacheKey: string };
+        const res = await this.core.cacheDrop(cacheKey);
+        return res.success ? { success: true, dropped: cacheKey } : { success: false, error: res.error };
+      },
+
       // ── Sub-agent 병렬 — Vault 토글 ON 일 때만 도구 노출 (buildToolDefinitions 단계 검사) ──
       spawn_subagent: async (args) => {
         const { prompt, taskType } = args as { prompt: string; taskType?: string };

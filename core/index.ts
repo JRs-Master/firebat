@@ -483,35 +483,44 @@ export class FirebatCore {
     return { success: true, data: { records: sliced, total: records.length, meta: meta as Record<string, unknown> } };
   }
 
-  /** cache 조건 매칭 — field op value (op: ==, !=, >, <, >=, <=, contains). */
-  async cacheGrep(cacheKey: string, query: { field: string; op: '==' | '!=' | '>' | '<' | '>=' | '<=' | 'contains'; value: string | number }, opts?: { limit?: number; fields?: string[] }): Promise<InfraResult<{ records: unknown[]; matched: number; total: number }>> {
+  /** cache 조건 매칭 — field op value (op: eq/ne/gt/gte/lt/lte/contains/in/regex). */
+  async cacheGrep(cacheKey: string, query: { field: string; op: 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains' | 'in' | 'regex'; value: unknown }, opts?: { limit?: number; fields?: string[] }): Promise<InfraResult<{ records: unknown[]; matched: number; total: number }>> {
     const records = await this.readCacheRecords(cacheKey);
     if (!records) return { success: false, error: `cache 없음 또는 만료: ${cacheKey}` };
 
     const { field, op, value } = query;
-    const numVal = typeof value === 'number' ? value : (isFinite(Number(value)) ? Number(value) : null);
+
+    let regex: RegExp | null = null;
+    if (op === 'regex') {
+      try { regex = new RegExp(String(value)); }
+      catch { return { success: false, error: `regex 패턴 오류: ${value}` }; }
+    }
+    const inSet = op === 'in' && Array.isArray(value) ? new Set(value.map(String)) : null;
+    const numVal = (typeof value === 'number' || (typeof value === 'string' && isFinite(Number(value)))) ? Number(value) : null;
 
     const matches = records.filter(r => {
       if (!r || typeof r !== 'object') return false;
       const v = (r as Record<string, unknown>)[field];
       if (v === undefined || v === null) return false;
       if (op === 'contains') return String(v).includes(String(value));
+      if (op === 'regex') return regex!.test(String(v));
+      if (op === 'in') return inSet ? inSet.has(String(v)) : false;
       if (numVal !== null && typeof v === 'number') {
-        if (op === '==') return v === numVal;
-        if (op === '!=') return v !== numVal;
-        if (op === '>') return v > numVal;
-        if (op === '<') return v < numVal;
-        if (op === '>=') return v >= numVal;
-        if (op === '<=') return v <= numVal;
+        if (op === 'eq') return v === numVal;
+        if (op === 'ne') return v !== numVal;
+        if (op === 'gt') return v > numVal;
+        if (op === 'lt') return v < numVal;
+        if (op === 'gte') return v >= numVal;
+        if (op === 'lte') return v <= numVal;
       }
       const sv = String(v);
       const sval = String(value);
-      if (op === '==') return sv === sval;
-      if (op === '!=') return sv !== sval;
-      if (op === '>') return sv > sval;
-      if (op === '<') return sv < sval;
-      if (op === '>=') return sv >= sval;
-      if (op === '<=') return sv <= sval;
+      if (op === 'eq') return sv === sval;
+      if (op === 'ne') return sv !== sval;
+      if (op === 'gt') return sv > sval;
+      if (op === 'lt') return sv < sval;
+      if (op === 'gte') return sv >= sval;
+      if (op === 'lte') return sv <= sval;
       return false;
     });
 

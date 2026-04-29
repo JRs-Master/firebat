@@ -666,6 +666,92 @@ scope='all' 기본. source: 'ai-generated' (image_gen 결과) / 'upload' (사용
       },
     },
     // ──────────────────────────────────────────────────────────────────────────
+    // sysmod 결과 cache — 큰 응답(yfinance history/DART 공시 등)을 메인 context 안 박지 않고
+    // cacheKey 받아 read/grep/aggregate. sysmod 가 cacheKey 반환하면 그 키로 다음 도구 호출.
+    // ──────────────────────────────────────────────────────────────────────────
+    {
+      name: 'cache_read',
+      description: `Cache 페이징 read — sysmod 가 반환한 cacheKey 로 일부 레코드만 추출.
+
+**호출 시점**: sysmod 응답에 cacheKey 박혀있고 전체 데이터 필요할 때 (예: 10년 history 일별 시계열 2500행).
+
+**호출 금지**:
+- cacheKey 없는 응답 (records 직접 박혀있으면 그대로 사용)
+- 작은 결과 (10행 미만 — 어차피 메인 응답에 박혀있음)`,
+      parameters: {
+        type: 'object',
+        required: ['cacheKey'],
+        properties: {
+          cacheKey: { type: 'string', description: 'sysmod 응답의 cacheKey 필드 값.' },
+          offset: { type: 'number', description: '시작 인덱스 (기본 0).' },
+          limit: { type: 'number', description: '최대 반환 레코드 수 (기본 100).' },
+          fields: { type: 'array', items: { type: 'string' }, description: '추출할 필드 목록 (선택, 미지정 시 전체 필드). 토큰 절감 — date/close 만 필요할 때 ["date","close"].' },
+        },
+      },
+    },
+    {
+      name: 'cache_grep',
+      description: `Cache 필터 — 특정 조건에 맞는 레코드만 추출. eq/ne/gt/gte/lt/lte/contains/in/regex 9 연산자.
+
+**사용 예**:
+- 종가 1만원 이상: cache_grep(cacheKey, {field:"close", op:"gte", value:10000})
+- 종목명에 "삼성" 포함: cache_grep(cacheKey, {field:"name", op:"contains", value:"삼성"})
+- 특정 sectors: cache_grep(cacheKey, {field:"sector", op:"in", value:["반도체","2차전지"]})
+
+**전체 records 수 제한**: 결과 1000개 초과 시 truncated (limit 인자로 줄여서 호출).`,
+      parameters: {
+        type: 'object',
+        required: ['cacheKey', 'query'],
+        properties: {
+          cacheKey: { type: 'string', description: 'sysmod 응답의 cacheKey.' },
+          query: {
+            type: 'object',
+            required: ['field', 'op', 'value'],
+            properties: {
+              field: { type: 'string', description: '검사 대상 필드명.' },
+              op: { type: 'string', enum: ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'contains', 'in', 'regex'], description: '비교 연산자.' },
+              value: { type: ['string', 'number', 'boolean', 'array'], description: '비교 값. eq/ne/gt/...=단일 값, in=배열 (예: ["반도체","2차전지"]), regex=문자열 패턴.' },
+            },
+            additionalProperties: false,
+          },
+          limit: { type: 'number', description: '최대 반환 레코드 수 (기본 100).' },
+          fields: { type: 'array', items: { type: 'string' }, description: '추출할 필드 (선택).' },
+        },
+      },
+    },
+    {
+      name: 'cache_aggregate',
+      description: `Cache 집계 — avg/sum/min/max/count + 선택적 groupBy.
+
+**사용 예**:
+- 평균 종가: cache_aggregate(cacheKey, "avg", "close") → 숫자
+- 섹터별 평균 시총: cache_aggregate(cacheKey, "avg", "marketCap", "sector") → {반도체: ..., 2차전지: ...}
+- 최고가: cache_aggregate(cacheKey, "max", "high") → 숫자
+
+**non-numeric 필드 + count 외 op**: 0 또는 null 반환 (필드 검증 자동).`,
+      parameters: {
+        type: 'object',
+        required: ['cacheKey', 'op', 'field'],
+        properties: {
+          cacheKey: { type: 'string' },
+          op: { type: 'string', enum: ['avg', 'sum', 'min', 'max', 'count'], description: '집계 연산.' },
+          field: { type: 'string', description: '집계 대상 필드.' },
+          by: { type: 'string', description: 'groupBy 필드 (선택). 미지정 시 전체 단일 값 반환.' },
+        },
+      },
+    },
+    {
+      name: 'cache_drop',
+      description: `Cache 명시 삭제 — 더 이상 필요 없는 cache 즉시 정리. TTL 5분 자동 만료되므로 일반적으로 호출 불필요. 큰 데이터 작업 끝났을 때 명시 호출 권장.`,
+      parameters: {
+        type: 'object',
+        required: ['cacheKey'],
+        properties: {
+          cacheKey: { type: 'string' },
+        },
+      },
+    },
+    // ──────────────────────────────────────────────────────────────────────────
     // Sub-agent 병렬 — 큰 작업을 자체 conversation context 의 sub-agent 에 위임.
     // 메인 context 안 더럽힘 + 결과만 받음. 한 turn 안에 여러 spawn_subagent 호출 시 병렬 가능 (Step 2).
     // Vault 토글 'system:llm:sub-agent-enabled' = 'true' 일 때만 도구 노출 (API 비용 폭탄 방지).
