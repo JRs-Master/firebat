@@ -490,9 +490,16 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             const firstT = firstD.match(/(\d{1,2}):(\d{2})/);
             const secondD = n > 1 ? normalizeDate(safeData[1].date) : firstD;
             const sameDate = firstD.slice(0, 10) === secondD.slice(0, 10);
-            const mode: 'minute' | 'hourly' | 'daily' = !firstT
+            let mode: 'minute' | 'hourly' | 'daily' | 'monthly' = !firstT
               ? 'daily'
               : (sameDate ? 'minute' : 'hourly');
+
+            // daily 후보 — 모든 데이터가 다른 월 + 12개+ 면 monthly (매봉 = 1개월).
+            // 매년 1월만 라벨 표시해서 라벨 밀집 회피.
+            if (mode === 'daily' && n >= 12) {
+              const uniqueMonths = new Set(safeData.map(d => normalizeDate(d.date).slice(0, 7))).size;
+              if (uniqueMonths === n) mode = 'monthly';
+            }
 
             if (mode === 'minute') {
               // 매시 정각만 — 같은 hour 첫 봉만 라벨
@@ -511,6 +518,14 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
                 const dn = normalizeDate(safeData[i].date);
                 const date = dn.slice(0, 10);
                 if (date !== prevDate) { indices.push(i); prevDate = date; }
+              }
+            } else if (mode === 'monthly') {
+              // 월봉 — 매년 1월 (또는 그 해 첫 봉) 만 라벨. 라벨 밀집 회피.
+              let prevYear = '';
+              for (let i = 0; i < n; i++) {
+                const dn = normalizeDate(safeData[i].date);
+                const year = dn.slice(0, 4);
+                if (year !== prevYear) { indices.push(i); prevYear = year; }
               }
             } else {
               // 일/주봉 — 매월 첫 거래일 (1일이 휴장이면 그 달 첫 거래일)
@@ -538,6 +553,10 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
               if (mode === 'hourly') {
                 // MM/DD 만 (시간봉은 매일 단위라 시각 라벨 불필요)
                 return shortDate(d);
+              }
+              if (mode === 'monthly') {
+                // YYYY 만 (월봉은 연 단위 라벨로 충분 — hover 시 정확한 월 표시)
+                return dn.slice(0, 4);
               }
               return shortDate(d);
             };

@@ -858,6 +858,12 @@ export class FirebatCore {
    *  caller 가 opts.extraEnv 명시하면 그 위에 timezone 추가 (caller 우선 X — timezone 은 Core 정책). */
   async sandboxExecute(targetPath: string, inputData: Record<string, unknown>, opts?: import('./ports').SandboxExecuteOpts) {
     const tz = this.getTimezone();
+    // 진단 가시화 — Claude CLI 가 MCP 경유라 호출 자체 backend log 안 박힘. 인자 압축 표시 (큰 값 truncate).
+    const argSummary = Object.entries(inputData).map(([k, v]) => {
+      const s = typeof v === 'string' ? v : JSON.stringify(v);
+      return `${k}=${s.length > 60 ? s.slice(0, 57) + '...' : s}`;
+    }).join(' ');
+    this.infra.log.info(`[Sandbox] ${targetPath} ${argSummary}`);
     const res = await this.module.execute(targetPath, inputData, {
       ...opts,
       extraEnv: { ...(opts?.extraEnv ?? {}), TZ: tz, FIREBAT_TZ: tz },
@@ -882,9 +888,14 @@ export class FirebatCore {
           dataObj.cacheRows = cacheRes.data.rows;
           dataObj.cacheColumns = cacheRes.data.columns;
           dataObj.expiresAt = cacheRes.data.expiresAt;
+          this.infra.log.info(`[Sandbox] cache 발동 ${cacheMarker.sysmod}/${cacheMarker.action} → key=${cacheRes.data.cacheKey} rows=${cacheRes.data.rows}`);
         } else {
           this.infra.log.warn(`[Core] sandbox _cache 처리 실패: ${cacheRes.error}`);
         }
+      } else if (res.data.data && Array.isArray((res.data.data as { records?: unknown[] }).records)) {
+        // _cache 없이 records 인라인 반환 — 임계값 미달 case 추적 (debug 로 박아 logs 폭발 회피)
+        const records = (res.data.data as { records: unknown[] }).records;
+        this.infra.log.debug(`[Sandbox] inline records ${records.length}행 (cache 미발동)`);
       }
     }
     return res;
