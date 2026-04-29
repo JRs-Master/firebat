@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
     imageDefaultSize: core.getImageDefaultSize(),
     imageDefaultQuality: core.getImageDefaultQuality(),
     anthropicCacheEnabled: core.getAnthropicCacheEnabled(),
+    subAgentEnabled: core.isSubAgentEnabled(),
   });
 }
 
@@ -67,6 +68,9 @@ export async function PATCH(req: NextRequest) {
   }
   if (typeof body.anthropicCacheEnabled === 'boolean') {
     core.setAnthropicCacheEnabled(body.anthropicCacheEnabled);
+  }
+  if (typeof body.subAgentEnabled === 'boolean') {
+    core.setSubAgentEnabled(body.subAgentEnabled);
   }
 
   return NextResponse.json({ success: true });

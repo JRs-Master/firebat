@@ -115,6 +115,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
 
   // Anthropic prompt caching 토글 — Claude API 모드에서만 노출
   const [anthropicCacheEnabled, setAnthropicCacheEnabled] = useState(false);
+  const [subAgentEnabled, setSubAgentEnabled] = useState(false);
 
   // 이미지 생성 모델 (AI 탭 하단 섹션)
   type ImageModelEntry = {
@@ -212,6 +213,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
         if (Array.isArray(data.aiAssistantModels) && data.aiAssistantModels.length > 0) setAiAssistantModels(data.aiAssistantModels);
         if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
         if (typeof data.anthropicCacheEnabled === 'boolean') setAnthropicCacheEnabled(data.anthropicCacheEnabled);
+        if (typeof data.subAgentEnabled === 'boolean') setSubAgentEnabled(data.subAgentEnabled);
         if (typeof data.imageModel === 'string') setImageModelState(data.imageModel);
         if (Array.isArray(data.imageModels)) setImageModels(data.imageModels);
         if (typeof data.imageDefaultSize === 'string') setImageDefaultSize(data.imageDefaultSize);
@@ -997,6 +999,27 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     </label>
                   </Field>
                 )}
+
+                {/* Sub-agent 병렬 토글 — 모든 모드에 노출. ON 시 spawn_subagent 도구 LLM 한테 노출 */}
+                <Field label="Sub-agent 병렬" help="큰 작업 (다종목 백테스트·여러 분석) 을 sub-agent 에 위임 + 병렬 실행 → 시간 1/N. 단 sub-agent 마다 LLM 호출 추가 (API 모드면 비용 N배, CLI 모드면 한도/메모리 부담). default OFF.">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={subAgentEnabled}
+                      onChange={async (e) => {
+                        const next = e.target.checked;
+                        setSubAgentEnabled(next);
+                        await fetch('/api/settings', {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ subAgentEnabled: next }),
+                        });
+                      }}
+                      className="w-4 h-4 cursor-pointer"
+                    />
+                    <span className="text-[12px] text-slate-700">{subAgentEnabled ? '활성 (spawn_subagent 도구 노출)' : '비활성 (기본 — 도구 자체 미노출)'}</span>
+                  </label>
+                </Field>
 
                 {execMode === 'cli' && (() => {
                   // 현재 공급자별 설치/인증 안내
