@@ -380,8 +380,8 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   // stickyCol: 미지정 시 4열 이상이면 자동 활성 (첫 열 = 행 라벨 추정)
   const firstColSticky = stickyCol ?? (headers.length >= 4);
 
-  // viewport quirk 우회 + 모바일/PC 다른 비율. 모바일 40% — 광고·표 외 터치 영역 확보.
-  const maxHeightPx = useViewportMaxHeight({ mobile: 0.4, desktop: 0.7 });
+  // viewport quirk 우회 + 모바일/PC 다른 비율. 모바일 50% — MUI/Antd 표준 픽셀(400px)의 모바일 평균 환산.
+  const maxHeightPx = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7 });
 
   /** 정렬: AI 가 align 배열로 명시한 값만 사용. 미지정 시 column 전체 left (cells), center (header).
    *  per-cell 자동 감지 제거 — column 안에서 cell 마다 정렬 다르게 보이는 문제 차단. */
