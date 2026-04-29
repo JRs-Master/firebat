@@ -187,8 +187,9 @@ def main():
         # limit 명시 — 마지막 N개 cut
         if isinstance(limit, int) and limit > 0 and len(records) > limit:
             records = records[-limit:]
-        # 100행+ → cache 모드. 이하 → 인라인 records.
-        if len(records) > 100:
+        # 50행+ → cache 모드 (큰 응답 메인 context 안 박음). 이하 → 인라인 records.
+        # 임계값 50 — 행당 ~7 필드 × 평균 60자 = ~420자/행 × 50 = ~21KB. 그 이상이면 cache 가치.
+        if len(records) >= 50:
             return out(True, {
                 'symbol': symbol,
                 'period': period,

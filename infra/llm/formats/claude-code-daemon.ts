@@ -413,8 +413,22 @@ if (!g.__firebatClaudeDaemonMgr) {
 export const claudeDaemonManager = g.__firebatClaudeDaemonMgr!;
 
 /** system prompt + MCP config 해시 — 구성 변경 감지용 (비암호학적, 빠른 FNV-1a) */
+/**
+ * systemPrompt 의 동적 라인 (매 turn 변동) strip — daemon hash 안정화.
+ *
+ * 기존 동작: hashSpawnConfig 가 systemPrompt 전체 hash → "현재 시각: 2026. 4. 30. 오후 2:13:25"
+ * 의 시각이 1초만 변해도 hash 다름 → 매 turn cold spawn → 기억 상실.
+ *
+ * 동적 라인 패턴: prompt-builder.ts line 556 의 "현재 시각: ..." 는 매 호출 변동.
+ * 다른 동적 라인 추가 시 여기 패턴 추가.
+ */
+function stripDynamicPromptLines(s: string): string {
+  return s.replace(/현재 시각:[^\n]*/g, '현재 시각: <dynamic>');
+}
+
 export function hashSpawnConfig(systemPrompt?: string, mcpConfigPath?: string, cliModel?: string, thinkingEffort?: string): string {
-  const s = `${systemPrompt ?? ''}|${mcpConfigPath ? fs.existsSync(mcpConfigPath) ? fs.readFileSync(mcpConfigPath, 'utf8') : mcpConfigPath : ''}|${cliModel ?? ''}|${thinkingEffort ?? ''}`;
+  const stable = stripDynamicPromptLines(systemPrompt ?? '');
+  const s = `${stable}|${mcpConfigPath ? fs.existsSync(mcpConfigPath) ? fs.readFileSync(mcpConfigPath, 'utf8') : mcpConfigPath : ''}|${cliModel ?? ''}|${thinkingEffort ?? ''}`;
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);

@@ -892,10 +892,14 @@ export class FirebatCore {
         } else {
           this.infra.log.warn(`[Core] sandbox _cache 처리 실패: ${cacheRes.error}`);
         }
-      } else if (res.data.data && Array.isArray((res.data.data as { records?: unknown[] }).records)) {
-        // _cache 없이 records 인라인 반환 — 임계값 미달 case 추적 (debug 로 박아 logs 폭발 회피)
-        const records = (res.data.data as { records: unknown[] }).records;
-        this.infra.log.debug(`[Sandbox] inline records ${records.length}행 (cache 미발동)`);
+      } else {
+        // _cache 미박힘 — 응답 사이즈 진단 (cache 가치 측정용. 큰 응답인데 미박힘 = sysmod 코드 문제).
+        const recordsKey = Array.isArray((dataObj as { records?: unknown[] }).records) ? 'records'
+          : Array.isArray((dataObj as { list?: unknown[] }).list) ? 'list' : null;
+        if (recordsKey) {
+          const arr = (dataObj as Record<string, unknown[]>)[recordsKey];
+          this.infra.log.info(`[Sandbox] inline ${recordsKey} ${arr.length}행 (cache 미발동 — _cache 마커 없음)`);
+        }
       }
     }
     return res;
