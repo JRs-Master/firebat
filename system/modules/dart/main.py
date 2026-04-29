@@ -151,6 +151,20 @@ def main():
         records = result.get('list', [])
         # sub-query 적용 (where/fields. limit 은 page_count 로 이미 처리)
         records = apply_subquery(records, fields=data.get('fields'), where=data.get('where'))
+        # 100건+ → cache 모드 (DART 는 sub-query 로 줄이는 게 우선이나 안전망).
+        if len(records) > 100:
+            return out(True, {
+                'corp_code': corp_code,
+                'total_count': result.get('total_count', 0),
+                'total_page': result.get('total_page', 0),
+                '_cache': {
+                    'records': records,
+                    'sysmod': 'dart',
+                    'action': 'list',
+                    'params': {'corp_code': corp_code, 'bgn_de': data.get('bgn_de'), 'end_de': data.get('end_de')},
+                    'ttlSec': 600,
+                },
+            })
         return out(True, {
             'list': records,
             'total_count': result.get('total_count', 0),

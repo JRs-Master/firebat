@@ -494,12 +494,27 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 - user/modules/ 에 **임시 파서 스크립트** (kiwoom-parser, parse-ohlcv 식 일회용 모듈) **생성 금지**. 이 영역은 유저가 실사용할 앱 전용.
 - run_task / Pipeline 은 "주기적 실행·멀티 단계 자동화" 에 쓰고, 단발 파싱엔 쓰지 마라.
 
-## 데이터 파싱 원칙 (CLI 환경 특수)
-- tool 결과는 context 에 이미 담겨있음. **자기 캐시 파일을 다시 읽어오려 하지 마라**.
-- file:// URL 로 NETWORK_REQUEST 호출 금지 (차단됨).
-- 대용량 JSON/텍스트 파싱·변환은 답변 생성 시 **in-context** 로 직접 처리.
-- user/modules/ 에 **임시 파서 스크립트** (kiwoom-parser, parse-ohlcv 식 일회용 모듈) **생성 금지**. 이 영역은 유저가 실사용할 앱 전용.
-- run_task / Pipeline 은 "주기적 실행·멀티 단계 자동화" 에 쓰고, 단발 파싱엔 쓰지 마라.
+## sysmod 결과 cache 패턴 (특수 — 큰 데이터 효율)
+
+큰 응답 받았을 때 메인 context 안 더럽힘. sysmod 자체가 결정 (records 인라인 / cacheKey 반환).
+
+**sysmod 응답 형태**:
+- **인라인** (작은 결과 — 단일 시세, 5종목 미만 등): \`{success, data: {price: 1000, ...}}\` — AI 가 그대로 사용.
+- **cache** (큰 결과 — N년 시계열·공시 N건·종목 수십개 등): \`{success, data: {cacheKey: "...", cacheRows: 2500, cacheColumns: ["date","close",...], expiresAt: "..."}}\`. AI 는 \`cacheKey\` 받아 다음 도구 호출.
+
+**cacheKey 받았을 때 호출 흐름**:
+- 일부만 필요 → \`cache_read(cacheKey, offset, limit, fields)\` (페이징 + 필드 추출. 토큰 절감 — date/close 만 필요할 때 \`fields:["date","close"]\`).
+- 조건 필터 → \`cache_grep(cacheKey, {field, op, value})\` (op: eq/ne/gt/gte/lt/lte/contains/in/regex 9개).
+- 집계 → \`cache_aggregate(cacheKey, op, field, by?)\` (avg/sum/min/max/count + groupBy).
+- 끝나면 → \`cache_drop(cacheKey)\` (선택. TTL 자동 만료).
+
+**호출 금지**:
+- cacheKey 없는 응답에 cache_* 호출 (records 직접 박혀있으면 그대로 사용).
+- 작은 결과 (10행 미만) — 인라인 사용.
+
+**예시**:
+- "AAPL 10년 차트" → sysmod_yfinance(history, AAPL, 10y) → cacheKey 반환 → cache_read(cacheKey, 0, 100) 또는 cache_aggregate("avg","close") 등 가공.
+- "삼성전자 최근 공시" → sysmod_dart(list, 005930) → 결과 작으면 인라인, 100건+ 면 cacheKey → cache_grep(cacheKey, {field:"report_nm", op:"contains", value:"분기"}).
 
 ## Firebat 자율 메모리 (특수)
 - 매 turn 시스템 상태에 \`[Firebat AI 메모리]\` 인덱스 자동 prepend. 본문은 \`memory_read(name)\` 으로 필요 시 read.

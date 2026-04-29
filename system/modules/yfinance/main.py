@@ -178,12 +178,32 @@ def main():
         interval = data.get('interval', '1d')
         start = data.get('start')
         end = data.get('end')
-        limit = data.get('limit', 50)
+        limit = data.get('limit')
         if start or end:
             df = t.history(start=start, end=end, interval=interval)
         else:
             df = t.history(period=period, interval=interval)
-        return out(True, history_records(df, limit))
+        records = history_records(df, limit)
+        # limit 명시 — 마지막 N개 cut
+        if isinstance(limit, int) and limit > 0 and len(records) > limit:
+            records = records[-limit:]
+        # 100행+ → cache 모드. 이하 → 인라인 records.
+        if len(records) > 100:
+            return out(True, {
+                'symbol': symbol,
+                'period': period,
+                'interval': interval,
+                'firstDate': records[0].get('date') if records else None,
+                'lastDate': records[-1].get('date') if records else None,
+                '_cache': {
+                    'records': records,
+                    'sysmod': 'yfinance',
+                    'action': 'history',
+                    'params': {'symbol': symbol, 'period': period, 'interval': interval, 'start': start, 'end': end},
+                    'ttlSec': 600,
+                },
+            })
+        return out(True, {'symbol': symbol, 'records': records})
 
     if action == 'info':
         info = t.info
