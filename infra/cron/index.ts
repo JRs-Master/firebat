@@ -412,22 +412,24 @@ export class NodeCronAdapter implements ICronPort {
 
   /** 트리거 발화 — Core에 실행 위임, 결과를 로그에 기록.
    *  Next.js isolate 분리로 같은 cronTime 에 N isolate 가 발화 시도해도 lock 으로 1회만 진행. */
-  private async fireTrigger(record: CronJobRecord, trigger: CronTriggerType): Promise<void> {
+  private async fireTrigger(record: CronJobRecord, trigger: CronTriggerType, attempt: number = 1): Promise<void> {
     const { jobId, targetPath, title } = record;
     if (!this.triggerCallback) {
       this.log?.error(`[Cron] 트리거 콜백 미등록 — 잡 실행 불가: ${jobId}`);
       return;
     }
 
-    // isolate 중복 발화 차단 — 첫 isolate 만 진행
-    if (!this.acquireFireLock(jobId)) {
+    // isolate 중복 발화 차단 — 첫 isolate 만 진행. 단 attempt > 1 (retry) 은 lock 우회.
+    if (attempt === 1 && !this.acquireFireLock(jobId)) {
       this.log?.info(`[Cron] 발화 skip (다른 isolate 가 같은 분 안에 진행 중): ${jobId}`);
       return;
     }
 
-    this.log?.info(`[Cron] 트리거 발화: ${jobId} → ${targetPath || '(pipeline)'} (${trigger})`);
+    const attemptLabel = attempt > 1 ? ` (retry ${attempt - 1}/${record.retry?.count ?? 0})` : '';
+    this.log?.info(`[Cron] 트리거 발화: ${jobId} → ${targetPath || '(pipeline)'} (${trigger})${attemptLabel}`);
+    let result: CronJobResult | undefined;
     try {
-      const result = await this.triggerCallback({
+      result = await this.triggerCallback({
         jobId,
         targetPath,
         trigger,
@@ -443,7 +445,7 @@ export class NodeCronAdapter implements ICronPort {
       });
       const outputSummary = result.output ? ` output=${JSON.stringify(result.output).slice(0, 100)}` : '';
       const stepsSummary = result.stepsTotal != null ? ` steps=${result.stepsExecuted ?? '?'}/${result.stepsTotal}` : '';
-      this.log?.[result.success ? 'info' : 'error'](`[Cron] 잡 ${result.success ? '완료' : '실패'}: ${jobId} (${result.durationMs}ms)${stepsSummary}${outputSummary}${result.error ? ` — ${result.error}` : ''}`);
+      this.log?.[result.success ? 'info' : 'error'](`[Cron] 잡 ${result.success ? '완료' : '실패'}: ${jobId} (${result.durationMs}ms)${attemptLabel}${stepsSummary}${outputSummary}${result.error ? ` — ${result.error}` : ''}`);
       this.appendLog({
         jobId, targetPath, title, triggeredAt: new Date().toISOString(),
         success: result.success, durationMs: result.durationMs, error: result.error,
@@ -452,8 +454,21 @@ export class NodeCronAdapter implements ICronPort {
         ...(result.stepsTotal != null ? { stepsTotal: result.stepsTotal } : {}),
       });
     } catch (e: any) {
-      this.log?.error(`[Cron] 트리거 콜백 오류: ${jobId} — ${e.message}`);
+      this.log?.error(`[Cron] 트리거 콜백 오류: ${jobId}${attemptLabel} — ${e.message}`);
       this.appendLog({ jobId, targetPath, title, triggeredAt: new Date().toISOString(), success: false, durationMs: 0, error: e.message });
+      result = { jobId, targetPath, trigger, success: false, durationMs: 0, error: e.message };
+    }
+
+    // retry 처리 — result.success === false + retry.count 미소진 시 delayMs 후 재발화.
+    // 진짜 retry 박힘 (이전엔 옵션만 정의되고 작동 X). LLM API 일시 실패·ENOENT 자동 회복.
+    if (result && !result.success && record.retry && record.retry.count > 0 && attempt <= record.retry.count) {
+      const delay = record.retry.delayMs ?? 60000;
+      this.log?.warn(`[Cron] retry 예약 ${attempt}/${record.retry.count} (${delay}ms 후): ${jobId} — ${result.error || '실패'}`);
+      setTimeout(() => {
+        this.fireTrigger(record, trigger, attempt + 1).catch((err) => {
+          this.log?.error(`[Cron] retry 발화 실패: ${jobId} — ${err.message}`);
+        });
+      }, delay).unref();
     }
   }
 
