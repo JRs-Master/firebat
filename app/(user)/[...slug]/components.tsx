@@ -292,7 +292,7 @@ function FormComp({ bindModule, inputs = [], submitText = '실행' }: {
 
   return (
     <div className="space-y-4">
-      <form onSubmit={handleSubmit} className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm space-y-4">
+      <form onSubmit={handleSubmit} className="bg-white border border-gray-100 rounded-xl p-6 shadow-sm space-y-4">
         {inputs.map(input => (
           <div key={input.name} className="flex flex-col gap-1.5">
             <label htmlFor={`f-${input.name}`} className="text-sm font-semibold text-gray-700">
@@ -410,7 +410,7 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   };
 
   return (
-    <div className="overflow-auto rounded-xl border border-gray-200 shadow-sm max-h-[70vh] scrollbar-thin">
+    <div className="overflow-auto rounded-xl border border-gray-100 shadow-sm max-h-[70vh] scrollbar-thin">
       <table className="min-w-full border-separate border-spacing-0">
         <thead>
           <tr>
@@ -422,7 +422,7 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
                   key={i}
                   // border-b 한 줄만 — 이전엔 thead.bg + th.bg + th.border-b + 첫 td.border-b 가
                   // 시각적으로 두 줄처럼 보이던 buf. bg 는 th 만 명시 (thead 의 bg 제거).
-                  className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-200 bg-gray-50 sticky top-0 min-w-[120px] ${headerAlignClass(i, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#e5e7eb]' : 'z-10'}`}
+                  className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-100 bg-gray-50 sticky top-0 min-w-[120px] ${headerAlignClass(i, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#f3f4f6]' : 'z-10'}`}
                 >
                   {headerText}
                 </th>
@@ -473,7 +473,7 @@ function CardComp({ children = [], align, image, footer, link }: {
   link?: { href?: string };
 }) {
   const alignCls = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : '';
-  const cardCls = `bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden ${alignCls} ${link?.href ? 'hover:shadow-md hover:border-gray-300 transition-all cursor-pointer no-underline block' : ''}`;
+  const cardCls = `bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden ${alignCls} ${link?.href ? 'hover:shadow-md hover:border-gray-200 transition-all cursor-pointer no-underline block' : ''}`;
   const inner = (
     <>
       {image?.src && (
@@ -1346,7 +1346,7 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, link
   const text    = (a: string) => a === 'center' ? 'text-center'    : a === 'right' ? 'text-right'   : 'text-left';
 
   // link 박혀있으면 카드 전체 anchor 로 wrap, 없으면 div.
-  const cardCls = `bg-white border border-gray-200 rounded-2xl p-4 shadow-sm flex flex-col ${link?.href ? 'hover:shadow-md hover:border-gray-300 transition-all cursor-pointer no-underline' : ''}`;
+  const cardCls = `bg-white border border-gray-100 rounded-xl p-4 shadow-sm flex flex-col ${link?.href ? 'hover:shadow-md hover:border-gray-200 transition-all cursor-pointer no-underline' : ''}`;
   const inner = (
     <>
       <div className={`flex items-center gap-1.5 text-xs text-gray-500 mb-1 ${justify(la)}`}>
