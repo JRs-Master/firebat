@@ -5,6 +5,33 @@
 @source "../user/modules/**/*.{js,ts,jsx,tsx}";
 @source "../user/apps/**/*.{js,ts,jsx,tsx}";
 
+/* Viewport scrollbar 가 padding 가장자리에 정확히 일치하게 영역 미리 확보.
+   일부 모바일 브라우저(Samsung Internet 등) 가 scrollbar 를 content 와 padding 사이에
+   그리는 quirk 회피 — `[content][padding][scrollbar]` 정상 순서 보장. */
+html {
+  scrollbar-gutter: stable;
+}
+
+/* 얇은 scrollbar 유틸 — Table 같은 inner overflow 컨테이너용. 가로·세로 모두 적용. */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.35);
+}
+
 /* CMS Design Tokens — 사이트 전역 디자인 default.
    user route SSR 시점에 사용자 설정 토큰이 inline <style> 로 :root override.
    값 정의: lib/design-tokens.ts 의 DEFAULT_TOKENS. */

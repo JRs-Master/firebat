@@ -410,9 +410,9 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   };
 
   return (
-    <div className="overflow-auto rounded-xl border border-gray-200 shadow-sm max-h-[70vh]">
+    <div className="overflow-auto rounded-xl border border-gray-200 shadow-sm max-h-[70vh] scrollbar-thin">
       <table className="min-w-full border-separate border-spacing-0">
-        <thead className="bg-gray-50">
+        <thead>
           <tr>
             {headers.map((h, i) => {
               const isStickyCell = firstColSticky && i === 0;
@@ -420,6 +420,8 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
               return (
                 <th
                   key={i}
+                  // border-b 한 줄만 — 이전엔 thead.bg + th.bg + th.border-b + 첫 td.border-b 가
+                  // 시각적으로 두 줄처럼 보이던 buf. bg 는 th 만 명시 (thead 의 bg 제거).
                   className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-200 bg-gray-50 sticky top-0 min-w-[120px] ${headerAlignClass(i, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#e5e7eb]' : 'z-10'}`}
                 >
                   {headerText}
@@ -1246,10 +1248,6 @@ function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues
             >
               <span className="text-xs w-20 truncate text-right text-gray-600">{labels[i] ?? i}</span>
               <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden relative">
-                {hasNegative && (
-                  // 0 baseline 중앙선 — 음수 혼재 모드만 표시
-                  <div className="absolute top-0 bottom-0 left-1/2 w-px bg-gray-400 z-10" />
-                )}
                 <div
                   className={`absolute top-0 bottom-0 ${fillColor} transition-all duration-500 opacity-85 ${
                     hasNegative
