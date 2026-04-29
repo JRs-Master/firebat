@@ -18,6 +18,47 @@ Firebat은 어떤 언어로 작성되었건(불가지론적) 동일한 방식으
 모듈은 JS, Python, PHP, Rust, WASM, Bash 등 어떤 언어로든 작성 가능하다.
 어떤 언어로 작동하건 오직 **표준 입출력(`stdin/stdout`)**으로 시스템과 통신한다.
 
+### Entry point 규약
+
+각 runtime 별 entry 파일명 표준 (모듈 디렉토리 root 에 위치):
+
+| runtime | entry 파일 |
+|---|---|
+| `node` | `index.mjs` (또는 `index.js`) |
+| `python` | `main.py` |
+| `php` | `index.php` |
+| `bash` | `index.sh` |
+
+`config.json` 의 `entry` 필드로 override 가능 (예: `"entry": "run.py"`).
+명시 안 하면 prompt-builder 가 위 표준에 따라 path 박음.
+
+### Multi-file 모듈
+
+entry 파일이 같은 디렉토리의 다른 파일들을 자유 import 가능 — 언어 표준 module
+resolution 따름. sandbox 는 entry 만 spawn, 내부 import 는 간섭 X.
+
+```
+system/modules/<name>/
+├── config.json
+├── main.py             # entry (Python)
+├── helpers.py          # main.py 가 `from helpers import foo` 로 import
+└── utils/
+    ├── __init__.py
+    └── calc.py         # main.py 가 `from utils.calc import bar` 로 import
+```
+
+```
+system/modules/<name>/
+├── config.json
+├── index.mjs           # entry (Node)
+├── helpers.mjs         # index.mjs 가 `import { foo } from './helpers.mjs'`
+└── utils/
+    └── calc.mjs        # `import { bar } from './utils/calc.mjs'`
+```
+
+Python: `sys.path[0]` = entry 의 디렉토리 (자동) — 절대/상대 import 모두 OK.
+Node ESM: `./` 또는 `../` 명시 상대 경로 사용 (예: `./helpers.mjs`).
+
 ---
 
 ## 제2장: 격리와 안정성 (Isolation)
