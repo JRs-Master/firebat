@@ -379,6 +379,22 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   // stickyCol: 미지정 시 4열 이상이면 자동 활성 (첫 열 = 행 라벨 추정)
   const firstColSticky = stickyCol ?? (headers.length >= 4);
 
+  // 모바일 viewport quirk fix — iOS Safari 가 스크롤 시 주소창 자동 숨김
+  // → viewport 늘어남 → vh/svh 단위 모두 흔들림 → 박스 길어지는 quirk.
+  // 첫 렌더 시 innerHeight 측정 + 픽셀 단위 박음. resize 이벤트 (rotation) 만 갱신.
+  // toolbar 자동 변동은 resize 발화 X → 박스 흔들림 0.
+  const [maxHeightPx, setMaxHeightPx] = useState<number | null>(null);
+  useEffect(() => {
+    const measure = () => setMaxHeightPx(Math.floor(window.innerHeight * 0.7));
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('orientationchange', measure);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('orientationchange', measure);
+    };
+  }, []);
+
   /** 정렬: AI 가 align 배열로 명시한 값만 사용. 미지정 시 column 전체 left (cells), center (header).
    *  per-cell 자동 감지 제거 — column 안에서 cell 마다 정렬 다르게 보이는 문제 차단. */
   const alignClass = (ci: number, ri?: number) => {
@@ -410,11 +426,12 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   };
 
   return (
-    // svh = small viewport height (iOS Safari toolbar 표시 시 기준 고정).
-    // 70vh 였을 땐 toolbar 숨김 시 viewport 늘어나면서 박스 갑자기 커지는 quirk.
-    // svh 는 toolbar 보일 때 기준 고정 → 스크롤 중 박스 흔들림 0.
-    // overscroll-behavior 미지정 = default auto → 끝 도달 시 페이지 chain 자연.
-    <div className="overflow-auto rounded-xl border border-gray-100 shadow-sm max-h-[70svh] scrollbar-thin">
+    // 박스 max-height = JS 측정 픽셀 (toolbar 변동 무관). SSR fallback = 70vh.
+    // overscroll-behavior 글로벌 미지정 = default auto → 끝 도달 시 페이지 chain 자연.
+    <div
+      className="overflow-auto rounded-xl border border-gray-100 shadow-sm scrollbar-thin"
+      style={{ maxHeight: maxHeightPx ? `${maxHeightPx}px` : '70vh' }}
+    >
       <table className="min-w-full border-separate border-spacing-0">
         <thead>
           <tr>
