@@ -21,8 +21,8 @@ html,
 }
 html::-webkit-scrollbar,
 .scrollbar-thin::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 3px;
+  height: 3px;
 }
 html::-webkit-scrollbar-track,
 .scrollbar-thin::-webkit-scrollbar-track {
