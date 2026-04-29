@@ -60,6 +60,8 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   };
   // SettingsManager 경유 — 다른 탭에서 변경하면 `storage` 이벤트로 자동 동기화.
   const [lastModelByCategory, setLastModelByCategory] = useSetting('firebat_last_model_by_category');
+  // 모델별 thinking level 기억 — 카테고리별 모델 기억과 같은 패턴.
+  const [lastThinkingByModel, setLastThinkingByModel] = useSetting('firebat_last_thinking_by_model');
   /** 새 카테고리 전환 시 호출 — 마지막 모델 복원, 없으면 첫 모델 fallback. */
   const restoreOrFirst = (newCategory: string, fallbackFirst: string | undefined) => {
     const remembered = lastModelByCategory[newCategory];
@@ -96,6 +98,21 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   // 일반 설정
   const [userTimezone, setUserTimezone] = useState('Asia/Seoul');
   const [thinkingLevel, setThinkingLevel] = useState('low');
+
+  // 모델 변경 시 그 모델에 박힌 thinking 복원. cascade 의 유효성 검증은 기존 흐름이 처리.
+  useEffect(() => {
+    const remembered = lastThinkingByModel[aiModel];
+    if (remembered && remembered !== thinkingLevel) setThinkingLevel(remembered);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiModel]);
+
+  // thinkingLevel 변경 시 현재 모델 키에 저장.
+  useEffect(() => {
+    if (!aiModel || !thinkingLevel) return;
+    if (lastThinkingByModel[aiModel] === thinkingLevel) return;
+    setLastThinkingByModel({ ...lastThinkingByModel, [aiModel]: thinkingLevel });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiModel, thinkingLevel]);
 
   // Provider API 키 (OpenAI / Google AI Studio / Anthropic / Vertex SA)
   const [geminiApiKey, setGeminiApiKey] = useState(''); // OpenAI (기존 이름 유지)

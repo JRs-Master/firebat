@@ -28,6 +28,9 @@ export type SettingsSchema = {
   'firebat_active_conv': string;
   'firebat_last_model_by_category': Record<string, string>;
   'firebat_thinking_level': string;
+  /** 모델별 마지막 thinking level — 카테고리별 모델 기억 (firebat_last_model_by_category) 패턴과 동일.
+   *  모델 전환 후 그 모델 다시 선택 시 이전 thinking 복원. fallback: firebat_thinking_level (글로벌 default). */
+  'firebat_last_thinking_by_model': Record<string, string>;
   /** 입력 모드 — 'text' 면 일반 LLM 채팅, 'image' 면 입력창 텍스트를 prompt 로 직접 image_gen.
    *  LLM 우회 → 비용 절감 + timeout 위험 0. 갤러리 자동 갱신은 SSE gallery:refresh 가 처리. */
   'firebat_input_mode': 'text' | 'image';
@@ -39,6 +42,7 @@ const DEFAULTS: SettingsSchema = {
   'firebat_active_conv': '',
   'firebat_last_model_by_category': {},
   'firebat_thinking_level': 'medium',
+  'firebat_last_thinking_by_model': {},
   'firebat_input_mode': 'text',
 };
 
