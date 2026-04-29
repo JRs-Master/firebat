@@ -13,19 +13,31 @@ export function CmsReadingProgress() {
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    const update = () => {
-      const scrollTop = window.scrollY;
-      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
-      if (docHeight <= 0) { setProgress(0); return; }
-      const pct = Math.min(100, Math.max(0, (scrollTop / docHeight) * 100));
-      setProgress(pct);
+    // 모바일 jank fix — scroll event 매 호출마다 docHeight 읽지 X (forced reflow).
+    // resize 시점에만 cache 갱신. scroll 중엔 raf throttle 로 frame 당 1회 setState.
+    let rafId: number | null = null;
+    let docHeight = 0;
+    const recalc = () => {
+      docHeight = document.documentElement.scrollHeight - window.innerHeight;
     };
+    const update = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (docHeight <= 0) { setProgress(0); return; }
+        const pct = Math.min(100, Math.max(0, (window.scrollY / docHeight) * 100));
+        setProgress(pct);
+      });
+    };
+    const onResize = () => { recalc(); update(); };
+    recalc();
     update();
     window.addEventListener('scroll', update, { passive: true });
-    window.addEventListener('resize', update);
+    window.addEventListener('resize', onResize);
     return () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
       window.removeEventListener('scroll', update);
-      window.removeEventListener('resize', update);
+      window.removeEventListener('resize', onResize);
     };
   }, []);
 
@@ -39,7 +51,7 @@ export function CmsReadingProgress() {
         width: `${progress}%`,
         background: 'var(--cms-accent)',
         zIndex: 9999,
-        transition: 'width 0.1s ease-out',
+        // transition 제거 — raf 마다 부드럽게 갱신되므로 transition 이 오히려 lag 생성
       }}
       aria-hidden="true"
     />
