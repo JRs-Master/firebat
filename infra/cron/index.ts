@@ -253,27 +253,17 @@ export class NodeCronAdapter implements ICronPort {
     if (this.records.size > 0) {
       return this.toListEntries(Array.from(this.records.values()));
     }
-    // 2차: 메모리 비어있음 → 자동 self-heal 시도. cron tasks 도 비어있으면 (= 이 isolate 가 boot 안 됨)
-    // restore() 재호출해서 메모리 복원 + 트리거 재등록. triggerCallback 미설정 시는 register 만 하고 trigger 무동작 (Core 가 늦게 attach 시 자연 작동).
-    // 이미 cron tasks 있으면 (= boot 됐는데 record 만 비어있는 비정상 상태) 중복 등록 방지 — 파일 폴백만.
-    if (this.cronTasks.size === 0 && this.timers.size === 0) {
-      this.log?.warn(`[Cron] list() records 비어있음 + cron tasks 0 → self-heal restore 시도`);
-      try {
-        this.restore();
-        if (this.records.size > 0) {
-          this.log?.info(`[Cron] self-heal 성공: ${this.records.size}개 복원`);
-          return this.toListEntries(Array.from(this.records.values()));
-        }
-      } catch (e: any) {
-        this.log?.error(`[Cron] self-heal restore 실패: ${e.message}`);
-      }
-    }
-    // 3차: 파일 폴백 — self-heal 도 실패한 경우 (파일 없음·파싱 실패 등) 또는 cron tasks 는 살아있는데 records 만 비정상.
+    // 2차: 파일 폴백 — records 비어있으면 cron-jobs.json 직접 읽어 응답.
+    // **self-heal restore() 호출 안 함** — Next.js 16 의 module isolate 분리로 같은 process 안에
+    // N isolate 가 globalThis 별로 분리되어 각자 firebatInfra 만들 수 있음. 각 isolate 가 list()
+    // 호출 시 self-heal restore() 발동하면 그 isolate 에 cron task 추가 등록 → 같은 cronTime 매칭
+    // 시 N번 fireTrigger → 2026-04-29 ENOENT race condition 의 직접 원인.
+    // 발화는 boot 시점 (main isolate) 의 cron task 1개로 충분. 다른 isolate 의 list() 는
+    // file 만 읽어 응답 — cron task 등록 X.
     try {
       if (!fs.existsSync(this.jobsFile)) return [];
       const raw = fs.readFileSync(this.jobsFile, 'utf-8');
       const jobs: CronJobRecord[] = JSON.parse(raw);
-      this.log?.warn(`[Cron] list() 파일 폴백 (${jobs.length}개) — self-heal 미작동, root cause 추적 필요`);
       return this.toListEntries(jobs);
     } catch (e: any) {
       this.log?.error(`[Cron] list() 파일 폴백 실패: ${e.message}`);
@@ -329,6 +319,13 @@ export class NodeCronAdapter implements ICronPort {
   // ── 내부 등록 로직 ──────────────────────────────────────────────────────
 
   private registerCron(record: CronJobRecord): void {
+    // 중복 등록 방지 — restore() / self-heal 다회 호출 시 옛 task 가 node-cron 내부에
+    // 살아남아 cronTime 매칭마다 N번 발화하는 버그 회피. Map.set 만으로는 옛 task stop 안 됨.
+    const existing = this.cronTasks.get(record.jobId);
+    if (existing) {
+      existing.stop();
+      this.cronTasks.delete(record.jobId);
+    }
     const task = cron.schedule(record.cronTime!, async () => {
       const now = Date.now();
 
@@ -386,11 +383,45 @@ export class NodeCronAdapter implements ICronPort {
     this.timers.set(record.jobId, timer);
   }
 
-  /** 트리거 발화 — Core에 실행 위임, 결과를 로그에 기록 */
+  /** 발화 중복 방지 lock — Next.js 16 의 isolate 분리로 같은 PM2 process 안에 N isolate 가
+   *  각자 cron task 등록하면 cronTime 매칭 시 N번 fireTrigger 호출됨. atomic file create
+   *  (flag: 'wx') 로 첫 isolate 만 lock 잡고 발화, 나머지는 throw 받고 skip.
+   *
+   *  lock path 는 분 단위 timestamp 포함 — 매 분마다 새 lock 파일이라 다음 발화는 자연 가능.
+   *  옛 lock 파일은 누적되지만 lockfile 자체 작아 (~10 bytes) 실용 영향 무시. 별도 cleanup
+   *  필요 없음 (사이즈 작고 cron 잡 수 한정).
+   *
+   *  반환: true = lock 잡음 (발화 진행), false = 다른 isolate 가 이미 발화 중 (skip). */
+  private acquireFireLock(jobId: string): boolean {
+    try {
+      const dir = path.dirname(this.jobsFile);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      // 분 단위 timestamp — 같은 분 안에 fireTrigger 재호출은 1번만 통과
+      const minuteKey = Math.floor(Date.now() / 60000);
+      const lockPath = path.join(dir, `.cron-fire-${jobId}-${minuteKey}.lock`);
+      // atomic create — 이미 존재하면 EEXIST throw
+      fs.writeFileSync(lockPath, `${process.pid}@${Date.now()}`, { flag: 'wx' });
+      return true;
+    } catch (e: any) {
+      if (e.code === 'EEXIST') return false;
+      // 다른 에러 (디스크 풀, 권한 등) — 안전 측 lock 잡음으로 간주 (기존 동작 보존)
+      this.log?.warn(`[Cron] fireLock 시도 실패 (${e.code ?? e.message}) — lock 우회하고 발화`);
+      return true;
+    }
+  }
+
+  /** 트리거 발화 — Core에 실행 위임, 결과를 로그에 기록.
+   *  Next.js isolate 분리로 같은 cronTime 에 N isolate 가 발화 시도해도 lock 으로 1회만 진행. */
   private async fireTrigger(record: CronJobRecord, trigger: CronTriggerType): Promise<void> {
     const { jobId, targetPath, title } = record;
     if (!this.triggerCallback) {
       this.log?.error(`[Cron] 트리거 콜백 미등록 — 잡 실행 불가: ${jobId}`);
+      return;
+    }
+
+    // isolate 중복 발화 차단 — 첫 isolate 만 진행
+    if (!this.acquireFireLock(jobId)) {
+      this.log?.info(`[Cron] 발화 skip (다른 isolate 가 같은 분 안에 진행 중): ${jobId}`);
       return;
     }
 
