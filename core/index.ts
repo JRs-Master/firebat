@@ -407,6 +407,220 @@ export class FirebatCore {
     await this.storage.write('data/firebat-memory/index.md', md);
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // Phase 2 — Sub-query cache (sysmod 큰 결과 cache + cache_read/grep/aggregate
+  // 도구로 AI 가 정밀 sub-query). 토큰 효율 결정적.
+  // 저장: data/cache/sysmod-results/<cacheKey>.jsonl + .meta.json
+  // TTL: 5분 (default). LRU: 100 cache 한도.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** sysmod 결과 cache 저장 — JSONL 형식 (1줄 = 1 record).
+   *  반환: { cacheKey, metadata }. AI 가 cacheKey 받아 후속 sub-query. */
+  async cacheData(input: {
+    sysmod: string;
+    action: string;
+    params?: Record<string, unknown>;
+    records: unknown[];
+    ttlSec?: number;
+  }): Promise<InfraResult<{ cacheKey: string; rows: number; columns: string[]; expiresAt: number }>> {
+    if (!Array.isArray(input.records) || input.records.length === 0) {
+      return { success: false, error: 'records 비어있음 — cache 의미 X' };
+    }
+    const ts = Date.now();
+    const cacheKey = `${input.sysmod}-${input.action}-${ts.toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const ttlMs = (input.ttlSec ?? 300) * 1000;  // default 5분
+    const expiresAt = ts + ttlMs;
+
+    // 컬럼 추출 — 첫 record 기준 (record 가 object 가정. 아니면 컬럼 빈 배열)
+    const first = input.records[0];
+    const columns = (first && typeof first === 'object' && !Array.isArray(first)) ? Object.keys(first as object) : [];
+
+    // JSONL 저장 (1줄 = 1 record)
+    const jsonlBody = input.records.map(r => JSON.stringify(r)).join('\n');
+    const writeRes = await this.storage.write(`data/cache/sysmod-results/${cacheKey}.jsonl`, jsonlBody);
+    if (!writeRes.success) return { success: false, error: writeRes.error };
+
+    // 메타 저장
+    const meta = {
+      cacheKey, sysmod: input.sysmod, action: input.action,
+      params: input.params ?? {},
+      rows: input.records.length,
+      columns,
+      createdAt: ts,
+      expiresAt,
+    };
+    const metaRes = await this.storage.write(`data/cache/sysmod-results/${cacheKey}.meta.json`, JSON.stringify(meta));
+    if (!metaRes.success) return { success: false, error: metaRes.error };
+
+    // LRU 자동 정리 — 100 cache 한도 (오래된 거 삭제)
+    this.pruneCacheLru(100).catch(() => undefined);
+
+    return { success: true, data: { cacheKey, rows: input.records.length, columns, expiresAt } };
+  }
+
+  /** cache 페이징 read — offset/limit/fields 옵션. */
+  async cacheRead(cacheKey: string, opts?: { offset?: number; limit?: number; fields?: string[] }): Promise<InfraResult<{ records: unknown[]; total: number; meta: Record<string, unknown> }>> {
+    const meta = await this.readCacheMeta(cacheKey);
+    if (!meta) return { success: false, error: `cache 없음 또는 만료: ${cacheKey}` };
+    const records = await this.readCacheRecords(cacheKey);
+    if (!records) return { success: false, error: `cache 본문 read 실패: ${cacheKey}` };
+
+    const offset = opts?.offset ?? 0;
+    const limit = opts?.limit ?? records.length;
+    let sliced = records.slice(offset, offset + limit);
+
+    // fields 선택
+    if (opts?.fields && opts.fields.length > 0) {
+      sliced = sliced.map(r => {
+        if (!r || typeof r !== 'object') return r;
+        const obj = r as Record<string, unknown>;
+        const picked: Record<string, unknown> = {};
+        for (const f of opts.fields!) picked[f] = obj[f];
+        return picked;
+      });
+    }
+
+    return { success: true, data: { records: sliced, total: records.length, meta: meta as Record<string, unknown> } };
+  }
+
+  /** cache 조건 매칭 — field op value (op: ==, !=, >, <, >=, <=, contains). */
+  async cacheGrep(cacheKey: string, query: { field: string; op: '==' | '!=' | '>' | '<' | '>=' | '<=' | 'contains'; value: string | number }, opts?: { limit?: number; fields?: string[] }): Promise<InfraResult<{ records: unknown[]; matched: number; total: number }>> {
+    const records = await this.readCacheRecords(cacheKey);
+    if (!records) return { success: false, error: `cache 없음 또는 만료: ${cacheKey}` };
+
+    const { field, op, value } = query;
+    const numVal = typeof value === 'number' ? value : (isFinite(Number(value)) ? Number(value) : null);
+
+    const matches = records.filter(r => {
+      if (!r || typeof r !== 'object') return false;
+      const v = (r as Record<string, unknown>)[field];
+      if (v === undefined || v === null) return false;
+      if (op === 'contains') return String(v).includes(String(value));
+      if (numVal !== null && typeof v === 'number') {
+        if (op === '==') return v === numVal;
+        if (op === '!=') return v !== numVal;
+        if (op === '>') return v > numVal;
+        if (op === '<') return v < numVal;
+        if (op === '>=') return v >= numVal;
+        if (op === '<=') return v <= numVal;
+      }
+      const sv = String(v);
+      const sval = String(value);
+      if (op === '==') return sv === sval;
+      if (op === '!=') return sv !== sval;
+      if (op === '>') return sv > sval;
+      if (op === '<') return sv < sval;
+      if (op === '>=') return sv >= sval;
+      if (op === '<=') return sv <= sval;
+      return false;
+    });
+
+    let result = matches;
+    if (opts?.fields && opts.fields.length > 0) {
+      result = result.map(r => {
+        if (!r || typeof r !== 'object') return r;
+        const obj = r as Record<string, unknown>;
+        const picked: Record<string, unknown> = {};
+        for (const f of opts.fields!) picked[f] = obj[f];
+        return picked;
+      });
+    }
+    if (opts?.limit) result = result.slice(0, opts.limit);
+
+    return { success: true, data: { records: result, matched: matches.length, total: records.length } };
+  }
+
+  /** cache 집계 — op (avg/sum/min/max/count) × by (필드 그룹화 또는 'all'). */
+  async cacheAggregate(cacheKey: string, op: 'avg' | 'sum' | 'min' | 'max' | 'count', field: string, by?: string): Promise<InfraResult<Record<string, unknown>>> {
+    const records = await this.readCacheRecords(cacheKey);
+    if (!records) return { success: false, error: `cache 없음 또는 만료: ${cacheKey}` };
+
+    if (op === 'count' && !by) {
+      return { success: true, data: { count: records.length } };
+    }
+
+    const groups: Map<string, number[]> = new Map();
+    for (const r of records) {
+      if (!r || typeof r !== 'object') continue;
+      const obj = r as Record<string, unknown>;
+      const groupKey = by ? String(obj[by] ?? '_null_') : '_all_';
+      const v = obj[field];
+      const num = typeof v === 'number' ? v : Number(v);
+      if (!isFinite(num)) continue;
+      if (!groups.has(groupKey)) groups.set(groupKey, []);
+      groups.get(groupKey)!.push(num);
+    }
+
+    const result: Record<string, number> = {};
+    for (const [k, nums] of groups) {
+      if (op === 'count') result[k] = nums.length;
+      else if (op === 'sum') result[k] = nums.reduce((a, b) => a + b, 0);
+      else if (op === 'avg') result[k] = nums.reduce((a, b) => a + b, 0) / nums.length;
+      else if (op === 'min') result[k] = Math.min(...nums);
+      else if (op === 'max') result[k] = Math.max(...nums);
+    }
+    return { success: true, data: by ? result : { [op]: result['_all_'] } };
+  }
+
+  /** cache 명시 삭제 (TTL 외). */
+  async cacheDrop(cacheKey: string): Promise<InfraResult<void>> {
+    const a = await this.storage.delete(`data/cache/sysmod-results/${cacheKey}.jsonl`);
+    const b = await this.storage.delete(`data/cache/sysmod-results/${cacheKey}.meta.json`);
+    if (a.success || b.success) return { success: true };
+    return { success: false, error: `cache 없음: ${cacheKey}` };
+  }
+
+  /** cache meta read + TTL 검사 — 만료 시 자동 삭제 + null. */
+  private async readCacheMeta(cacheKey: string): Promise<Record<string, unknown> | null> {
+    const res = await this.storage.read(`data/cache/sysmod-results/${cacheKey}.meta.json`);
+    if (!res.success || !res.data) return null;
+    try {
+      const meta = JSON.parse(res.data) as Record<string, unknown>;
+      if (typeof meta.expiresAt === 'number' && meta.expiresAt < Date.now()) {
+        // 만료 — 자동 삭제 + null
+        this.cacheDrop(cacheKey).catch(() => undefined);
+        return null;
+      }
+      return meta;
+    } catch { return null; }
+  }
+
+  /** cache JSONL → records 배열 (TTL 검사 포함). */
+  private async readCacheRecords(cacheKey: string): Promise<unknown[] | null> {
+    const meta = await this.readCacheMeta(cacheKey);
+    if (!meta) return null;
+    const res = await this.storage.read(`data/cache/sysmod-results/${cacheKey}.jsonl`);
+    if (!res.success || !res.data) return null;
+    const records: unknown[] = [];
+    for (const line of res.data.split('\n')) {
+      const t = line.trim();
+      if (!t) continue;
+      try { records.push(JSON.parse(t)); } catch { /* 손상 라인 skip */ }
+    }
+    return records;
+  }
+
+  /** LRU 자동 정리 — meta 파일 createdAt 기준 오래된 거 maxCount 초과분 삭제. */
+  private async pruneCacheLru(maxCount: number): Promise<void> {
+    const list = await this.storage.listDir('data/cache/sysmod-results');
+    if (!list.success || !list.data) return;
+    const metas: Array<{ cacheKey: string; createdAt: number }> = [];
+    for (const e of list.data) {
+      if (e.isDirectory || !e.name.endsWith('.meta.json')) continue;
+      const cacheKey = e.name.replace(/\.meta\.json$/, '');
+      const res = await this.storage.read(`data/cache/sysmod-results/${e.name}`);
+      if (!res.success || !res.data) continue;
+      try {
+        const m = JSON.parse(res.data);
+        if (typeof m.createdAt === 'number') metas.push({ cacheKey, createdAt: m.createdAt });
+      } catch { /* skip */ }
+    }
+    if (metas.length <= maxCount) return;
+    metas.sort((a, b) => a.createdAt - b.createdAt);
+    const toRemove = metas.slice(0, metas.length - maxCount);
+    for (const m of toRemove) await this.cacheDrop(m.cacheKey).catch(() => undefined);
+  }
+
   /** 바이너리 파일 읽기 — base64 로 반환 (read_image MCP 도구용) */
   async readFileBinary(path: string): Promise<InfraResult<{ base64: string; mimeType: string; size: number }>> {
     return this.storage.readBinary(path);

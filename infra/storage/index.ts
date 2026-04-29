@@ -24,13 +24,14 @@ export class LocalStorageAdapter implements IStoragePort {
   }
 
   private canWrite(targetPath: string): boolean {
-    // data/firebat-memory/ — Firebat AI 자율 메모리 영역 (사용자 룰·선호 영속).
+    // data/firebat-memory/ — Firebat AI 자율 메모리 (사용자 룰·선호 영속).
+    // data/cache/sysmod-results/ — Phase 2 sub-query cache (sysmod 결과 JSONL).
     // 다른 data/ 영역은 read/write port 우회 — 매니저가 직접 접근.
-    return this.isInsideZone(targetPath, ['app/(user)', 'user', 'data/firebat-memory']);
+    return this.isInsideZone(targetPath, ['app/(user)', 'user', 'data/firebat-memory', 'data/cache/sysmod-results']);
   }
 
   private canRead(targetPath: string): boolean {
-    return this.isInsideZone(targetPath, ['app/(user)', 'user', 'docs', 'system/guidelines', 'system/modules', 'system/services', 'data/firebat-memory']);
+    return this.isInsideZone(targetPath, ['app/(user)', 'user', 'docs', 'system/guidelines', 'system/modules', 'system/services', 'data/firebat-memory', 'data/cache/sysmod-results']);
   }
 
   async read(targetPath: string): Promise<InfraResult<string>> {
