@@ -410,7 +410,9 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   };
 
   return (
-    <div className="overflow-auto rounded-xl border border-gray-100 shadow-sm max-h-[70vh] scrollbar-thin">
+    // 모바일: 가로 overflow 만 → 세로는 페이지 자연 흐름 (shadcn / Tailwind UI 표준)
+    // 데스크톱(sm:640px+): max-h-70vh + sticky thead 활성 — 큰 화면에서 100% 차지 회피
+    <div className="overflow-x-auto sm:overflow-auto rounded-xl border border-gray-100 shadow-sm sm:max-h-[70vh] scrollbar-thin">
       <table className="min-w-full border-separate border-spacing-0">
         <thead>
           <tr>
@@ -422,7 +424,8 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
                   key={i}
                   // border-b 한 줄만 — 이전엔 thead.bg + th.bg + th.border-b + 첫 td.border-b 가
                   // 시각적으로 두 줄처럼 보이던 buf. bg 는 th 만 명시 (thead 의 bg 제거).
-                  className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-100 bg-gray-50 sticky top-0 min-w-[120px] ${headerAlignClass(i, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#f3f4f6]' : 'z-10'}`}
+                  // sticky top-0 은 sm: 만 — 모바일은 max-h 없어 sticky 의미 X
+                  className={`px-4 py-3 text-[13px] font-bold text-gray-600 uppercase tracking-wider border-b border-gray-100 bg-gray-50 sm:sticky sm:top-0 min-w-[120px] ${headerAlignClass(i, headerText)} ${isStickyCell ? 'left-0 z-20 shadow-[2px_0_0_0_#f3f4f6]' : 'z-10'}`}
                 >
                   {headerText}
                 </th>
