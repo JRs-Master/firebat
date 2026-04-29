@@ -22,9 +22,9 @@ import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
 import { useViewportMaxHeight } from '../../lib/use-viewport-size';
 
-/** 마크다운 table wrapper — viewport quirk 우회 (iOS Safari toolbar 변동 시 박스 흔들림 차단). */
+/** 마크다운 table wrapper — viewport quirk 우회 + 모바일 40% (광고·터치 영역 확보). */
 function MarkdownTableBox(props: any) {
-  const maxH = useViewportMaxHeight(0.7);
+  const maxH = useViewportMaxHeight({ mobile: 0.4, desktop: 0.7 });
   return (
     <div
       className="overflow-auto mb-2 rounded-xl border border-slate-200"

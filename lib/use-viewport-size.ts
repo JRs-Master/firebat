@@ -45,14 +45,30 @@ export function useViewportSize(): { vw: number | null; vh: number | null } {
 }
 
 /**
- * Convenience: viewport height 의 N% 를 픽셀로 반환. SSR 안전 fallback CSS 사용 시 추천.
+ * Convenience: viewport height 의 N% 를 픽셀로 반환.
  *
- * @param ratio 0.0 ~ 1.0 (예: 0.7 = 70%)
- * @returns 픽셀 값 또는 null (SSR 첫 렌더)
+ * **단일 ratio**: 모바일·데스크톱 동일 비율
+ * ```tsx
+ * useViewportMaxHeight(0.7) // 모든 화면 70%
+ * ```
+ *
+ * **분기 ratio**: 모바일·데스크톱 다른 비율 (광고·터치 영역 확보용)
+ * ```tsx
+ * useViewportMaxHeight({ mobile: 0.4, desktop: 0.7 })
+ * // < 768px: 40%, 768px+: 70%
+ * ```
+ *
+ * @returns 픽셀 값 또는 null (SSR 첫 렌더 — fallback CSS 박아 깜빡임 회피)
  */
-export function useViewportMaxHeight(ratio: number): number | null {
-  const { vh } = useViewportSize();
-  return vh != null ? Math.floor(vh * ratio) : null;
+export function useViewportMaxHeight(
+  ratio: number | { mobile: number; desktop: number; breakpoint?: number },
+): number | null {
+  const { vw, vh } = useViewportSize();
+  if (vh == null) return null;
+  if (typeof ratio === 'number') return Math.floor(vh * ratio);
+  const bp = ratio.breakpoint ?? 768;
+  const isMobile = vw != null && vw < bp;
+  return Math.floor(vh * (isMobile ? ratio.mobile : ratio.desktop));
 }
 
 /**
