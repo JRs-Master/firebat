@@ -278,6 +278,91 @@ export class FirebatCore {
     return this.storage.read(path);
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // Firebat 자율 메모리 — data/firebat-memory/ 디렉토리. 사용자 룰·선호·도메인
+  // 컨텍스트 영속 저장. AI 가 자율 호출. 매 turn prompt-builder 가 index.md 자동 prepend.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** 메모리 인덱스 read — index.md (없으면 빈 string). 매 turn prompt-builder 가 호출. */
+  async getMemoryIndex(): Promise<string> {
+    const res = await this.storage.read('data/firebat-memory/index.md');
+    return res.success && res.data ? res.data : '';
+  }
+
+  /** 메모리 본문 read — name 으로 파일 찾음 (4 카테고리 prefix 자동 시도). */
+  async readMemoryFile(name: string): Promise<InfraResult<string>> {
+    for (const cat of ['user', 'feedback', 'project', 'reference']) {
+      const res = await this.storage.read(`data/firebat-memory/${cat}_${name}.md`);
+      if (res.success && res.data) return { success: true, data: res.data };
+    }
+    return { success: false, error: `메모리 없음: ${name}` };
+  }
+
+  /** 메모리 저장 — 본문 + 인덱스 자동 갱신. */
+  async saveMemoryFile(category: 'user' | 'feedback' | 'project' | 'reference', name: string, description: string, content: string): Promise<InfraResult<void>> {
+    const filename = `${category}_${name}.md`;
+    const filepath = `data/firebat-memory/${filename}`;
+    // 본문 저장
+    const body = `---\nname: ${name}\ndescription: ${description}\ncategory: ${category}\n---\n\n${content}\n`;
+    const writeRes = await this.storage.write(filepath, body);
+    if (!writeRes.success) return { success: false, error: writeRes.error };
+    // 인덱스 갱신
+    await this.refreshMemoryIndex();
+    return { success: true };
+  }
+
+  /** 메모리 삭제 — 본문 + 인덱스 갱신. */
+  async deleteMemoryFile(name: string): Promise<InfraResult<void>> {
+    let deleted = false;
+    for (const cat of ['user', 'feedback', 'project', 'reference']) {
+      const res = await this.storage.delete(`data/firebat-memory/${cat}_${name}.md`);
+      if (res.success) { deleted = true; break; }
+    }
+    if (!deleted) return { success: false, error: `메모리 없음: ${name}` };
+    await this.refreshMemoryIndex();
+    return { success: true };
+  }
+
+  /** 인덱스 자동 재생성 — 디렉토리 listing 후 각 파일 frontmatter 읽어서 인덱스 작성. */
+  private async refreshMemoryIndex(): Promise<void> {
+    const list = await this.storage.listDir('data/firebat-memory');
+    if (!list.success || !list.data) return;
+    const entries: Array<{ category: string; name: string; description: string }> = [];
+    for (const e of list.data) {
+      if (e.isDirectory || !e.name.endsWith('.md') || e.name === 'index.md') continue;
+      const res = await this.storage.read(`data/firebat-memory/${e.name}`);
+      if (!res.success || !res.data) continue;
+      // frontmatter 파싱
+      const fm = res.data.match(/^---\nname:\s*(.+)\ndescription:\s*(.+)\ncategory:\s*(.+)\n---/m);
+      if (fm) entries.push({ name: fm[1].trim(), description: fm[2].trim(), category: fm[3].trim() });
+    }
+    // 카테고리별 그룹화
+    const byCategory: Record<string, typeof entries> = { user: [], feedback: [], project: [], reference: [] };
+    for (const e of entries) {
+      if (byCategory[e.category]) byCategory[e.category].push(e);
+    }
+    const labels: Record<string, string> = {
+      user: '사용자 (User)',
+      feedback: '행동 룰 (Feedback)',
+      project: '프로젝트 컨텍스트 (Project)',
+      reference: '외부 참조 (Reference)',
+    };
+    let md = '# Firebat AI Memory Index\n\n';
+    md += '> 매 대화 시작 시 자동 로드. 본문은 `memory_read(name)` 으로 필요 시 read.\n\n';
+    for (const cat of ['user', 'feedback', 'project', 'reference']) {
+      if (byCategory[cat].length === 0) continue;
+      md += `## ${labels[cat]}\n`;
+      for (const e of byCategory[cat]) {
+        md += `- **${e.name}** — ${e.description}\n`;
+      }
+      md += '\n';
+    }
+    if (entries.length === 0) {
+      md += '_아직 저장된 메모리 없음. AI 가 사용자 룰·선호 발견 시 memory_save 자동 호출._\n';
+    }
+    await this.storage.write('data/firebat-memory/index.md', md);
+  }
+
   /** 바이너리 파일 읽기 — base64 로 반환 (read_image MCP 도구용) */
   async readFileBinary(path: string): Promise<InfraResult<{ base64: string; mimeType: string; size: number }>> {
     return this.storage.readBinary(path);

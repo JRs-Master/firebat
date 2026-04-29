@@ -247,6 +247,13 @@ export class PromptBuilder {
       lines.push(`[Capability 순서] ${capSettings.join(', ')}`);
     }
 
+    // Firebat 자율 메모리 인덱스 — 사용자 누적 룰·선호 매 turn 자동 로드.
+    // 본문은 AI 가 필요 판단 시 memory_read(name) 호출.
+    const memoryIndex = await this.core.getMemoryIndex();
+    if (memoryIndex && memoryIndex.trim()) {
+      lines.push(`\n[Firebat AI 메모리 — 사용자 누적 룰·선호 (관련 룰 발견 시 memory_read(name) 으로 본문 확인)]\n${memoryIndex}`);
+    }
+
     const result = lines.join('\n') || '[시스템 상태 조회 실패]';
     this.ctxCache = { text: result, ts: Date.now() };
     return result;
@@ -443,6 +450,18 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 - 대용량 JSON/텍스트 파싱·변환은 답변 생성 시 **in-context** 로 직접 처리.
 - user/modules/ 에 **임시 파서 스크립트** (kiwoom-parser, parse-ohlcv 식 일회용 모듈) **생성 금지**. 이 영역은 유저가 실사용할 앱 전용.
 - run_task / Pipeline 은 "주기적 실행·멀티 단계 자동화" 에 쓰고, 단발 파싱엔 쓰지 마라.
+
+## Firebat 자율 메모리 (특수)
+- 매 turn 시스템 상태에 \`[Firebat AI 메모리]\` 인덱스 자동 prepend. 본문은 \`memory_read(name)\` 으로 필요 시 read.
+- **사용자가 룰·선호·도메인 컨텍스트 명시 시 → memory_save 자동 호출** (사용자 명시 "기억해줘" 안 해도 OK):
+  - "X 회피해줘" / "Y 패턴으로 가" / "Z는 절대 안 함" → category='feedback'
+  - "한국어 존댓말로" / "간결한 응답 선호" → category='user'
+  - "자동매매 1주차 운영 중" / "이번 주 휴장일 X" → category='project'
+  - "API 키는 Vault X" / "회사 정보는 Y 시트" → category='reference'
+- **저장 금지**: 일회성 정보 (오늘 시세·뉴스), CLAUDE.md/git 추적 가능 정보, 명백한 사실, 임시 발언
+- name 은 snake_case (예: avoid_samsung, korean_only, auto_trade_running). 같은 name 재호출 시 덮어씀.
+- 메모리 stale 의심 시 (예: "이 룰 아직 유효하지?") **현재 코드·state 우선** + memory_delete 또는 update 제안.
+- 사용자가 "X 룰 잊어줘" 명시 시 memory_delete 호출.
 
 ## 모듈 작성 (특수)
 - I/O: stdin JSON → stdout 마지막 줄 {"success":true,"data":{...}}. sys.argv 금지.

@@ -267,6 +267,40 @@ export class AiManager {
           note: '백그라운드 생성 진행 중 — url 을 render_image 에 박고 save_page 즉시 호출하라.',
         };
       },
+      // ── Firebat 자율 메모리 ──────────────────────────────────────────
+      memory_save: async (args) => {
+        const { category, name, description, content } = args as {
+          category: 'user' | 'feedback' | 'project' | 'reference';
+          name: string;
+          description: string;
+          content: string;
+        };
+        if (!['user', 'feedback', 'project', 'reference'].includes(category)) {
+          return { success: false, error: 'category 는 user/feedback/project/reference 중 하나' };
+        }
+        if (!name || !/^[a-z0-9_]+$/.test(name)) {
+          return { success: false, error: 'name 은 snake_case 영문 (예: avoid_samsung)' };
+        }
+        const res = await this.core.saveMemoryFile(category, name, description || '', content || '');
+        if (res.success) this.invalidateCache(); // ctx cache 무효화 → 다음 turn 새 메모리 즉시 로드
+        return res.success ? { success: true, saved: `${category}_${name}` } : { success: false, error: res.error };
+      },
+      memory_read: async (args) => {
+        const { name } = args as { name: string };
+        const res = await this.core.readMemoryFile(name);
+        return res.success ? { success: true, content: res.data } : { success: false, error: res.error };
+      },
+      memory_list: async () => {
+        const idx = await this.core.getMemoryIndex();
+        return { success: true, index: idx || '_빈 메모리_' };
+      },
+      memory_delete: async (args) => {
+        const { name } = args as { name: string };
+        const res = await this.core.deleteMemoryFile(name);
+        if (res.success) this.invalidateCache();
+        return res.success ? { success: true, deleted: name } : { success: false, error: res.error };
+      },
+
       complete_plan: async (args, ctx) => {
         const reason = (args as { reason?: string }).reason || 'AI 판단 완료';
         if (ctx.conversationId) {

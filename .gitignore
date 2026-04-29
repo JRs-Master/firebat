@@ -20,6 +20,9 @@ tsconfig.tsbuildinfo
 # Claude Code 작업 기록
 CLAUDE.md
 
+# Firebat AI 자율 메모리 인덱스 (data/firebat-memory/ 본문은 data/ 로 자동 gitignored)
+firebat.md
+
 # 시스템 파일
 .DS_Store
 Thumbs.db

@@ -601,5 +601,69 @@ scope='all' 기본. source: 'ai-generated' (image_gen 결과) / 'upload' (사용
         },
       },
     },
+    // ──────────────────────────────────────────────────────────────────────────
+    // Firebat 자율 메모리 — 사용자 룰·선호·도메인 컨텍스트 영속 저장.
+    // data/firebat-memory/ 디렉토리. 매 turn 시스템 프롬프트에 index.md 자동 prepend.
+    // 본문 (`<category>_<name>.md`) 은 AI 가 필요 판단 시 memory_read 호출.
+    // ──────────────────────────────────────────────────────────────────────────
+    {
+      name: 'memory_save',
+      description: `사용자 룰·선호·도메인 컨텍스트를 영속 저장 — 다음 대화에서 자동 로드되어 일관 적용.
+
+**호출 시점** (자율 판단):
+- 사용자가 명시 룰 설정 ("앞으로 X 회피해줘", "Y 패턴 따라줘", "Z는 절대 안 함")
+- 사용자 선호 발견 ("나는 ~방식 선호", "한국어 존댓말로", "간결한 응답")
+- 진행 중 프로젝트 컨텍스트 ("자동매매 1주차 운영 중", "X 종목 보유")
+- 외부 자원 매핑 ("API 키는 Vault X", "회사 정보는 Y 시트")
+
+**호출 금지**:
+- 일회성 정보 (오늘 시세·뉴스 등 — 시간 지나면 stale)
+- 코드·git 으로 추적 가능한 정보 (CLAUDE.md 또는 prompt-builder 룰 중복)
+- 명백한 사실 (1+1=2, 한국 수도=서울 등)
+- 사용자가 "기억해줘" 명시 안 한 임시 발언
+
+**카테고리** (file 명에 prefix):
+- user: 사용자 정보·역할·언어
+- feedback: 행동 룰 ("X 회피", "Y 우선" 등)
+- project: 진행 컨텍스트 ("자동매매 운영 중", "어떤 단계")
+- reference: 외부 자원 매핑 (시트·API·도메인)`,
+      parameters: {
+        type: 'object',
+        required: ['category', 'name', 'description', 'content'],
+        properties: {
+          category: { type: 'string', enum: ['user', 'feedback', 'project', 'reference'], description: '메모리 카테고리' },
+          name: { type: 'string', description: '메모리 식별자 (snake_case, 예: "korean_only", "avoid_samsung", "auto_trade_running"). 같은 이름 재호출 시 기존 메모리 덮어씀.' },
+          description: { type: 'string', description: '한 줄 요약 (인덱스에 표시. 미래 자기·다른 LLM 이 관련 여부 즉시 판단할 수 있게).' },
+          content: { type: 'string', description: '메모리 본문 (마크다운). 룰의 사유·적용 시점·예외 케이스 명시.' },
+        },
+      },
+    },
+    {
+      name: 'memory_read',
+      description: '메모리 본문 read. 인덱스 description 보고 관련 룰이라 판단되면 본문 read 후 자세한 내용 파악.',
+      parameters: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string', description: '메모리 식별자 (memory_save 시 박은 name).' },
+        },
+      },
+    },
+    {
+      name: 'memory_list',
+      description: '현재 저장된 메모리 인덱스 (전체 목록). 매 turn 시스템 프롬프트에 자동 prepend 되므로 일반적으로 명시 호출 불필요. 디버깅·검토 용.',
+      parameters: { type: 'object', properties: {} },
+    },
+    {
+      name: 'memory_delete',
+      description: '메모리 영구 삭제. 사용자가 명시 요청 시 ("X 룰 잊어줘", "Y 메모리 삭제") 만 호출.',
+      parameters: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string', description: '삭제할 메모리 식별자.' },
+        },
+      },
+    },
   ];
 }
