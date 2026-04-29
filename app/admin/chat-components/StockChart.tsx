@@ -161,14 +161,20 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
     };
   }, []);
 
-  // 차트 치수 (가변)
-  const W = 720; // viewBox 기준 너비
+  // 차트 치수 (가변).
+  // 봉 N 개 > SCROLL_THRESHOLD 이면 SVG 가로 스크롤 모드 — 봉 width 최소 12px 보장.
+  // 그 이하면 기존 viewport-fit 모드 (w-full).
+  const SCROLL_THRESHOLD = 60;
+  const MIN_BAR_PX = 12; // 봉 1개 minimum 가로 픽셀
+  const useHScroll = safeData.length > SCROLL_THRESHOLD;
   const priceH = 280;
   const volH = 80;
   const padLeft = 50;
   const padRight = 56;
   const padTop = 18;
   const padBottom = 24;
+  // viewBox 너비 — 가로 스크롤 모드면 봉 수에 비례 확장. plot 영역도 자동 확장.
+  const W = useHScroll ? Math.max(720, padLeft + padRight + safeData.length * MIN_BAR_PX) : 720;
   const plotW = W - padLeft - padRight;
   const plotH = priceH - padTop - padBottom;
   const volPlotH = volH - 4 - 16;
@@ -392,7 +398,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       {/* 가격 차트 (드래그 팬 + 휠/핀치 줌) */}
       <div
         ref={priceBoxRef}
-        className={`relative select-none ${canPan ? 'cursor-grab active:cursor-grabbing' : ''}`}
+        className={`relative select-none ${canPan && !useHScroll ? 'cursor-grab active:cursor-grabbing' : ''} ${useHScroll ? 'overflow-x-auto scrollbar-thin' : ''}`}
         onPointerMove={handlePointer}
         onPointerLeave={handleLeave}
         onMouseDown={handleMouseDown}
@@ -405,7 +411,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
         onTouchCancel={handleTouchEnd}
         style={{ touchAction: 'pan-y' }}
       >
-        <svg viewBox={`0 0 ${W} ${priceH}`} className="w-full h-auto block" preserveAspectRatio="xMidYMid meet" style={{ touchAction: 'pan-y' }}>
+        <svg
+          viewBox={`0 0 ${W} ${priceH}`}
+          className={useHScroll ? 'h-auto block' : 'w-full h-auto block'}
+          width={useHScroll ? W : undefined}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ touchAction: 'pan-y' }}
+        >
           {/* 가로 그리드 */}
           {priceTicks.map(t => {
             const y = yPrice(t);
