@@ -12,22 +12,28 @@ html {
   scrollbar-gutter: stable;
 }
 
-/* 얇은 scrollbar 유틸 — Table 같은 inner overflow 컨테이너용. 가로·세로 모두 적용. */
+/* 얇은 scrollbar — viewport (html) + inner overflow 컨테이너 (.scrollbar-thin) 통일.
+   가로·세로 모두 4px. Table·페이지 native scrollbar 시각 톤 일관. */
+html,
 .scrollbar-thin {
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
 }
+html::-webkit-scrollbar,
 .scrollbar-thin::-webkit-scrollbar {
   width: 4px;
   height: 4px;
 }
+html::-webkit-scrollbar-track,
 .scrollbar-thin::-webkit-scrollbar-track {
   background: transparent;
 }
+html::-webkit-scrollbar-thumb,
 .scrollbar-thin::-webkit-scrollbar-thumb {
   background: rgba(0, 0, 0, 0.15);
   border-radius: 2px;
 }
+html::-webkit-scrollbar-thumb:hover,
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.3);
 }
