@@ -22,9 +22,9 @@ import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
 import { useViewportMaxHeight } from '../../lib/use-viewport-size';
 
-/** 마크다운 table wrapper — viewport quirk 우회 + 모바일 50% (MUI/Antd 표준 픽셀의 모바일 평균). */
+/** 마크다운 table wrapper — viewport quirk 우회 + MUI/Antd 표준 (400px 캡) + 작은 폰 50%. */
 function MarkdownTableBox(props: any) {
-  const maxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7 });
+  const maxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 400 });
   return (
     <div
       className="overflow-auto mb-2 rounded-xl border border-slate-200"

@@ -47,28 +47,31 @@ export function useViewportSize(): { vw: number | null; vh: number | null } {
 /**
  * Convenience: viewport height 의 N% 를 픽셀로 반환.
  *
- * **단일 ratio**: 모바일·데스크톱 동일 비율
+ * **단일 ratio**:
  * ```tsx
  * useViewportMaxHeight(0.7) // 모든 화면 70%
  * ```
  *
- * **분기 ratio**: 모바일·데스크톱 다른 비율 (광고·터치 영역 확보용)
+ * **분기 ratio + 픽셀 캡** (MUI/Antd 식 표준 — 큰 화면 px 캡 + 작은 폰 ratio 보호):
  * ```tsx
- * useViewportMaxHeight({ mobile: 0.4, desktop: 0.7 })
- * // < 768px: 40%, 768px+: 70%
+ * useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 400 })
+ * // 작은 폰: 50%, 큰 폰/태블릿: min(400px, 50vh) → 400px 캡
  * ```
  *
  * @returns 픽셀 값 또는 null (SSR 첫 렌더 — fallback CSS 박아 깜빡임 회피)
  */
 export function useViewportMaxHeight(
-  ratio: number | { mobile: number; desktop: number; breakpoint?: number },
+  ratio: number | { mobile: number; desktop: number; breakpoint?: number; mobileMaxPx?: number; desktopMaxPx?: number },
 ): number | null {
   const { vw, vh } = useViewportSize();
   if (vh == null) return null;
   if (typeof ratio === 'number') return Math.floor(vh * ratio);
   const bp = ratio.breakpoint ?? 768;
   const isMobile = vw != null && vw < bp;
-  return Math.floor(vh * (isMobile ? ratio.mobile : ratio.desktop));
+  const r = isMobile ? ratio.mobile : ratio.desktop;
+  const cap = isMobile ? ratio.mobileMaxPx : ratio.desktopMaxPx;
+  const computed = Math.floor(vh * r);
+  return cap != null ? Math.min(computed, cap) : computed;
 }
 
 /**
