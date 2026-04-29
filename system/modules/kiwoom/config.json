@@ -61,7 +61,7 @@
       },
       "symbol": {
         "type": "string",
-        "description": "종목코드 (예: 005930=삼성전자)"
+        "description": "종목코드. 보통 6자리 숫자 (005930=삼성전자) — 단 ETN/ETF/일부 신규상장 종목은 영문 포함 6자리 (예: 0011T0=채비). 형식 검증 X — 받은 코드 그대로 API 에 전달."
       },
       "params": {
         "type": "object",

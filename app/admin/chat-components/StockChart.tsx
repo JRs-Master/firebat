@@ -466,24 +466,71 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
             <line x1={hoverX} x2={hoverX} y1={padTop} y2={priceH - padBottom} stroke={FG} strokeWidth={1} strokeDasharray="2 2" opacity={0.35} />
           )}
 
-          {/* X축 라벨: 매월 첫 거래일 + 마지막 날짜 */}
+          {/* X축 라벨 — interval 자동 감지로 단위 분기:
+              - 분봉 (date 에 HH:MM 포함, 같은 날 인접 봉) → 매시 정각 (09:00, 10:00, ...)
+              - 시간봉 (HH:MM 포함, 다른 날 인접 봉) → 매일 첫 봉 (MM/DD HH:MM)
+              - 일/주봉 (HH:MM 없음) → 매월 첫 거래일 (MM/DD)
+              일관 — 매월 1일이 휴장이면 그 달 첫 거래일 자동 표시 (기존 동작 유지). */}
           {(() => {
             const indices: number[] = [];
-            let prevMonth = '';
-            for (let i = 0; i < n; i++) {
-              const dn = normalizeDate(safeData[i].date);
-              const month = dn.slice(0, 7); // YYYY-MM
-              if (month !== prevMonth) { indices.push(i); prevMonth = month; }
+            // 분봉/시간봉 detection
+            const firstD = normalizeDate(safeData[0].date);
+            const firstT = firstD.match(/(\d{1,2}):(\d{2})/);
+            const secondD = n > 1 ? normalizeDate(safeData[1].date) : firstD;
+            const sameDate = firstD.slice(0, 10) === secondD.slice(0, 10);
+            const mode: 'minute' | 'hourly' | 'daily' = !firstT
+              ? 'daily'
+              : (sameDate ? 'minute' : 'hourly');
+
+            if (mode === 'minute') {
+              // 매시 정각만 — 같은 hour 첫 봉만 라벨
+              let prevHour = '';
+              for (let i = 0; i < n; i++) {
+                const dn = normalizeDate(safeData[i].date);
+                const m = dn.match(/(\d{1,2}):(\d{2})/);
+                if (!m) continue;
+                const hour = m[1].padStart(2, '0');
+                if (hour !== prevHour) { indices.push(i); prevHour = hour; }
+              }
+            } else if (mode === 'hourly') {
+              // 매일 첫 봉 — 같은 date 첫 봉만 라벨
+              let prevDate = '';
+              for (let i = 0; i < n; i++) {
+                const dn = normalizeDate(safeData[i].date);
+                const date = dn.slice(0, 10);
+                if (date !== prevDate) { indices.push(i); prevDate = date; }
+              }
+            } else {
+              // 일/주봉 — 매월 첫 거래일 (1일이 휴장이면 그 달 첫 거래일)
+              let prevMonth = '';
+              for (let i = 0; i < n; i++) {
+                const dn = normalizeDate(safeData[i].date);
+                const month = dn.slice(0, 7);
+                if (month !== prevMonth) { indices.push(i); prevMonth = month; }
+              }
             }
             const last = n - 1;
-            // 끝이 빠졌으면 추가. 끝과 직전 라벨이 너무 가까우면 직전 제거 (최소 간격 = 전체의 8%)
+            // 끝 라벨 추가 + 최소 간격 (직전과 너무 가까우면 직전 제거)
             const minGap = Math.max(2, Math.floor(n * 0.08));
             if (indices[indices.length - 1] !== last) {
               if (indices.length > 0 && last - indices[indices.length - 1] < minGap) indices.pop();
               indices.push(last);
             }
+            // 라벨 텍스트 — mode 별 분기
+            const formatLabel = (d: string) => {
+              const dn = normalizeDate(d);
+              if (mode === 'minute') {
+                const m = dn.match(/(\d{1,2}):(\d{2})/);
+                return m ? `${m[1].padStart(2, '0')}:${m[2]}` : shortDate(d);
+              }
+              if (mode === 'hourly') {
+                // MM/DD 만 (시간봉은 매일 단위라 시각 라벨 불필요)
+                return shortDate(d);
+              }
+              return shortDate(d);
+            };
             return indices.map(i => (
-              <text key={'xl' + i} x={xs[i]} y={priceH - 6} fill={MUTED} fontSize="10" textAnchor="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{shortDate(safeData[i].date)}</text>
+              <text key={'xl' + i} x={xs[i]} y={priceH - 6} fill={MUTED} fontSize="10" textAnchor="middle" fontFamily="'Pretendard Variable', Pretendard, sans-serif">{formatLabel(safeData[i].date)}</text>
             ));
           })()}
         </svg>
