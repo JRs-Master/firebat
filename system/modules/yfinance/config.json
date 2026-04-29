@@ -1,0 +1,73 @@
+{
+  "name": "yfinance",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "Yahoo Finance 무료 API — **글로벌 종목 분석·백테스트·재무 시계열·옵션** 전용. API 키 불필요.\n\n**사용 분담** (한투/키움과 보완):\n- yfinance 우선: 글로벌 종목 (미국·일본·유럽 등), 백테스트 (일봉 60+년), 분기/연간 재무 시계열, 옵션 체인, 다종목 batch 다운로드.\n- 한투/키움 우선: 한국 주식 실시간·정밀 시세, 한국 특유 수급 (외국인 보유율·기관 순매수), 매수/매도 주문, 호가, 한국 ETN/ETF (영문 코드 포함).\n- yfinance 도 한국 종목 지원하지만 (.KS=KOSPI, .KQ=KOSDAQ suffix) 15-20분 지연 + 정확도 낮음. 한국 실시간 분석은 한투/키움.\n\n**한 호출 = 종목 1개** (download 액션만 다종목). 다종목이면 N개 EXECUTE step 분리. **Rate limit**: Yahoo 비공식 API 라 분당 ~30 요청 안전선.\n\n**종목 코드 패턴**:\n- 미국: AAPL, MSFT (suffix 없음)\n- KOSPI: 005930.KS=삼성전자, KOSDAQ: 035720.KQ=카카오\n- 일본: 7203.T=도요타, 영국: BARC.L=Barclays\n- 환율: KRW=X (USD/KRW), JPYKRW=X\n- 지수: ^KS11=KOSPI, ^KQ11=KOSDAQ, ^GSPC=S&P500, ^IXIC=Nasdaq\n- 암호화폐: BTC-USD, ETH-USD\n- 코모디티: GC=F (gold), CL=F (crude oil)",
+  "runtime": "python",
+  "capability": "stock-data",
+  "providerType": "api",
+  "packages": ["yfinance==0.2.51"],
+  "secrets": [],
+  "input": {
+    "type": "object",
+    "required": ["action", "symbol"],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["quote", "history", "info", "financials", "dividends", "splits", "recommendations", "options", "holders", "news", "download"],
+        "description": "액션. quote=현재가+핵심 지표 / history=OHLCV 시계열 / info=종목 메타 100+ 필드 / financials=재무제표 / dividends=배당 / splits=액면분할 / recommendations=애널리스트 추천 / options=옵션 체인 / holders=주요·기관 주주 / news=Yahoo 뉴스 / download=다종목 batch (symbols 배열 사용)"
+      },
+      "symbol": {
+        "type": "string",
+        "description": "종목 코드 (예: AAPL, 005930.KS, ^GSPC, BTC-USD). action='download' 시 무시 (symbols 배열 사용)."
+      },
+      "symbols": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "다종목 (action='download' 전용). 예: ['AAPL', 'MSFT', '005930.KS']"
+      },
+      "period": {
+        "type": "string",
+        "enum": ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"],
+        "description": "history/download 기간. interval 별 max 제한: 1m=7일 / 2m·5m·15m·30m·90m=60일 / 60m·1h=730일 / 1d 이상=무제한. 미지정 시 1mo."
+      },
+      "interval": {
+        "type": "string",
+        "enum": ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"],
+        "description": "history/download 봉 단위. 미지정 시 1d (일봉)."
+      },
+      "start": {
+        "type": "string",
+        "description": "history 시작일 (YYYY-MM-DD). period 와 동시 사용 시 start/end 우선."
+      },
+      "end": {
+        "type": "string",
+        "description": "history 종료일 (YYYY-MM-DD). 미지정 시 오늘."
+      },
+      "statement": {
+        "type": "string",
+        "enum": ["income", "balance", "cashflow"],
+        "description": "financials 액션의 재무제표 종류. income=손익계산서 / balance=재무상태표 / cashflow=현금흐름표. 미지정 시 income."
+      },
+      "frequency": {
+        "type": "string",
+        "enum": ["quarterly", "annual"],
+        "description": "financials 빈도. 미지정 시 annual."
+      },
+      "optionDate": {
+        "type": "string",
+        "description": "options 액션의 만기일 (YYYY-MM-DD). 미지정 시 가장 가까운 만기."
+      },
+      "limit": {
+        "type": "integer",
+        "description": "history/dividends/news/recommendations 최대 행 수 (Big timeline cut, 토큰 절약). 미지정 시 50."
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "description": "액션별 결과. action='quote' → {symbol, price, change, changePct, marketCap, peRatio, ...} / action='history' → [{date, open, high, low, close, volume, dividends, stockSplits}, ...] / 액션별 형태 다름."
+  }
+}

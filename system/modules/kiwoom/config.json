@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "키움증권 REST API — 국내주식 **정확한 수치·시세** 전용 (현재가/호가/차트/주문/잔고/순위/재무/업종/ELW/ETF/테마/조건검색 200+ API). 편의 액션 action:'price' symbol:'005930' 또는 apiId로 직접 호출. 한 호출 = 종목 1개 (N종목이면 N개 EXECUTE step 분리). 뉴스·배경·해석 등 텍스트 질문은 naver_search 사용.",
+  "description": "키움증권 REST API — 한국 주식 **정확한 수치·시세 + 한국 특유 수급** 전용 (현재가/호가/차트/주문/잔고/순위/재무/업종/ELW/ETF/테마/조건검색/외국인보유/기관순매수 200+ API). 편의 액션 action:'price' symbol:'005930' 또는 apiId로 직접 호출. 한 호출 = 종목 1개 (N종목이면 N개 EXECUTE step 분리). 뉴스·배경·해석 등 텍스트 질문은 naver_search 사용.\n\n**사용 분담** (yfinance·한투와 보완):\n- 키움 우선: **한국 특유 수급 분석** (외국인 보유율·기관 순매수·섹터별 수급), 거래량/등락률 순위, 상한가 근접주, 테마/업종별 분석, 한국 매수/매도 주문.\n- 한투 우선: 해외 주식 시세·주문, 한국 채권/선물옵션, 예탁원 배당·공모정보.\n- yfinance 우선: 글로벌 종목 분석·백테스트, 분기/연간 재무 시계열, 옵션 체인.",
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",

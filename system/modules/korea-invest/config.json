@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "한국투자증권 Open API — **정확한 수치·시세** 전용 (국내/해외주식, 국내/해외채권, 선물옵션, ETF/ELW, 차트/주문/잔고/순위/재무/예탁원정보 등 300+ API). trId 또는 편의 액션(action:'price'). 한 호출 = 종목 1개 (N종목이면 N개 EXECUTE step 분리). 뉴스·배경은 naver_search 사용. **휴장일 가드 (cron runWhen 용)**: action:'holiday' 호출 시 output 이 배열로 일자별 영업일 정보 반환 — output[0].opnd_yn ('Y'=개장 / 'N'=휴장), bzdy_yn (영업일여부), tr_day_yn (거래일여부). cron runWhen 에 `field:\"$prev.output[0].opnd_yn\" op:\"==\" value:\"Y\"` 박으면 휴장일 자동 skip — 휴장일 array 하드코딩 X.",
+  "description": "한국투자증권 Open API — **한국 주식 실시간·정밀 시세 + 매수/매도 주문** 전용 (국내/해외주식, 국내/해외채권, 선물옵션, ETF/ELW, 차트/주문/잔고/순위/재무/예탁원정보 등 300+ API). trId 또는 편의 액션(action:'price'). 한 호출 = 종목 1개 (N종목이면 N개 EXECUTE step 분리). 뉴스·배경은 naver_search 사용.\n\n**사용 분담** (yfinance·키움과 보완):\n- 한투 우선: 한국 주식 실시간 시세·호가, 매수/매도 주문, 잔고, 한국 ETN/ETF (영문 코드 0011T0 같은 신규 상장 포함), 해외 주식 실시간.\n- yfinance 우선: 글로벌 종목 분석·백테스트 (일봉 60+년), 분기/연간 재무 시계열, 옵션 체인.\n- 키움 우선: 한국 특유 수급 분석 (외국인 보유율·기관 순매수), 거래량/등락률 순위, 섹터별 수급.\n\n**휴장일 가드 (cron runWhen 용)**: action:'holiday' 호출 시 output 이 배열로 일자별 영업일 정보 반환 — output[0].opnd_yn ('Y'=개장 / 'N'=휴장), bzdy_yn (영업일여부), tr_day_yn (거래일여부). cron runWhen 에 `field:\"$prev.output[0].opnd_yn\" op:\"==\" value:\"Y\"` 박으면 휴장일 자동 skip — 휴장일 array 하드코딩 X.",
   "runtime": "node",
   "capability": "stock-trading",
   "providerType": "api",
