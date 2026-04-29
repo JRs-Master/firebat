@@ -496,11 +496,13 @@ function CardComp({ children = [], align, image, footer, link }: {
 
 // ── Grid ────────────────────────────────────────────────────────────────────
 function GridComp({ columns = 2, children = [], align }: { columns?: number; children: ComponentDef[]; align?: AlignOpt }) {
+  // 모바일 baseline 2개 — Metric 카드 8개 같은 케이스에서 한 줄 1개씩 길게 늘어지는 거 방지.
+  // 좁은 화면(< 768px)에서 2개, 태블릿(md, 768+)부터 3개, PC(lg, 1024+)에서 지정 columns.
   const gridCls: Record<number, string> = {
     1: 'grid-cols-1',
-    2: 'grid-cols-1 sm:grid-cols-2',
-    3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
-    4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4',
+    2: 'grid-cols-2',
+    3: 'grid-cols-2 md:grid-cols-3',
+    4: 'grid-cols-2 md:grid-cols-3 lg:grid-cols-4',
   };
   const alignCls = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : '';
   return (
