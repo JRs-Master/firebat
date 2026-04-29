@@ -210,6 +210,50 @@ export class FirebatCore {
     return this.ai.processWithTools(prompt, history, opts, onToolCall, onChunk);
   }
 
+  /** Sub-agent 단일 spawn — 메인 AI 가 spawn_subagent 도구 호출 시 진입. 빈 history (격리).
+   *  자체 도구 사용 가능 (단 spawn_subagent 자기 호출 무한재귀 방지는 도구 schema 에서 — 본 메서드는 prompt 만 전달).
+   *  결과는 메인 turn 의 도구 결과로 반환. 메인 conversation context 안 더럽힘.
+   *  Vault 토글 (system:llm:sub-agent-enabled) 검사는 도구 schema 노출 단계에서 처리 — 본 메서드는 호출 시 무조건 실행. */
+  async spawnSubAgent(prompt: string, opts?: { model?: string; taskType?: string }): Promise<{
+    success: boolean;
+    reply?: string;
+    executedActions?: string[];
+    error?: string;
+  }> {
+    if (!prompt || !prompt.trim()) {
+      return { success: false, error: 'prompt 비어있음' };
+    }
+    try {
+      const res = await this.ai.processWithTools(
+        prompt,
+        [], // 빈 history — sub-agent 는 독립 conversation context
+        {
+          owner: 'admin',
+          ...(opts?.model ? { model: opts.model } : {}),
+        },
+      );
+      if (!res.success) {
+        return { success: false, error: res.error || 'sub-agent 실행 실패', executedActions: res.executedActions };
+      }
+      return {
+        success: true,
+        reply: res.reply,
+        executedActions: res.executedActions,
+      };
+    } catch (e: any) {
+      return { success: false, error: e?.message ?? String(e) };
+    }
+  }
+
+  /** Sub-agent 토글 — Vault `system:llm:sub-agent-enabled` (default false). API 비용 폭탄 방지 안전망. */
+  isSubAgentEnabled(): boolean {
+    return this.infra.vault.getSecret('system:llm:sub-agent-enabled') === 'true';
+  }
+
+  setSubAgentEnabled(enabled: boolean): void {
+    this.infra.vault.setSecret('system:llm:sub-agent-enabled', enabled ? 'true' : 'false');
+  }
+
   async codeAssist(params: { code: string; language: string; instruction: string; selectedCode?: string }, opts?: AiRequestOpts) {
     return this.ai.codeAssist(params, opts);
   }

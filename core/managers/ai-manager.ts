@@ -301,6 +301,23 @@ export class AiManager {
         return res.success ? { success: true, deleted: name } : { success: false, error: res.error };
       },
 
+      // ── Sub-agent 병렬 — Vault 토글 ON 일 때만 도구 노출 (buildToolDefinitions 단계 검사) ──
+      spawn_subagent: async (args) => {
+        const { prompt, taskType } = args as { prompt: string; taskType?: string };
+        if (!prompt || !prompt.trim()) {
+          return { success: false, error: 'prompt 필수' };
+        }
+        // 토글 OFF 인데 호출됐다면 (도구 노출 단계 우회 케이스) → 거부
+        if (!this.core.isSubAgentEnabled()) {
+          return { success: false, error: 'Sub-agent 비활성 — 어드민 AI 탭 토글 ON 후 사용 가능' };
+        }
+        this.logger.info(`[AiManager] spawn_subagent: ${taskType || 'unknown'} — prompt 길이 ${prompt.length}`);
+        const res = await this.core.spawnSubAgent(prompt, { taskType });
+        return res.success
+          ? { success: true, reply: res.reply, executedActions: res.executedActions }
+          : { success: false, error: res.error };
+      },
+
       complete_plan: async (args, ctx) => {
         const reason = (args as { reason?: string }).reason || 'AI 판단 완료';
         if (ctx.conversationId) {
@@ -1270,11 +1287,15 @@ export class AiManager {
 
     // LLM 용 도구 정의 = ToolManager 의 모든 활성 도구 (정적 + 동적)
     const built = this.core.buildAiToolDefinitions();
-    const tools: ToolDefinition[] = built.map(b => ({
+    let tools: ToolDefinition[] = built.map(b => ({
       name: b.name,
       description: b.description,
       parameters: b.parameters as unknown as JsonSchema,
     }));
+    // Sub-agent 토글 OFF 면 spawn_subagent 도구 제외 — API 비용 폭탄 방지 안전망
+    if (!this.core.isSubAgentEnabled()) {
+      tools = tools.filter(t => t.name !== 'spawn_subagent');
+    }
     this._toolsCache = { tools, ts: Date.now() };
     return tools;
   }

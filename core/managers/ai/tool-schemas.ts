@@ -665,5 +665,37 @@ scope='all' 기본. source: 'ai-generated' (image_gen 결과) / 'upload' (사용
         },
       },
     },
+    // ──────────────────────────────────────────────────────────────────────────
+    // Sub-agent 병렬 — 큰 작업을 자체 conversation context 의 sub-agent 에 위임.
+    // 메인 context 안 더럽힘 + 결과만 받음. 한 turn 안에 여러 spawn_subagent 호출 시 병렬 가능 (Step 2).
+    // Vault 토글 'system:llm:sub-agent-enabled' = 'true' 일 때만 도구 노출 (API 비용 폭탄 방지).
+    // ──────────────────────────────────────────────────────────────────────────
+    {
+      name: 'spawn_subagent',
+      description: `큰 작업을 sub-agent 에 위임 — 메인 conversation context 안 더럽힘 + 결과만 받음.
+
+**호출 시점**:
+- "TQQQ 10년 백테스트", "Apple 분기 재무 분석" 같이 자체 도구 호출 다수 + 큰 결과 → sub-agent 에 prompt 전달
+- 한 turn 안에 여러 종목·여러 분석을 동시에 → spawn_subagent N번 호출 = 병렬 처리 (Step 2 박힌 후)
+- 큰 데이터 분석 (백테스트·재무 시계열·옵션 체인 등) — 메인 context 토큰 절감
+
+**호출 금지**:
+- 단순 1-2 step 작업 (어차피 메인 turn 으로 충분, 비용만 ↑)
+- 자기 (spawn_subagent) 재귀 호출 (sub-agent 안에서 또 spawn_subagent — 무한 재귀 차단)
+- 사용자 직접 응답 필요한 대화 (sub-agent 결과는 메인이 받아 종합)
+
+**사용 예**:
+- "TQQQ + Apple + Tesla 10년 백테스트 비교" → spawn_subagent 3번 호출 (각자 백테스트) → 메인이 결과 받아 종합 비교 페이지
+
+**비용**: sub-agent 마다 별도 LLM 호출 (메인 + sub × N). 토글 OFF 면 도구 자체 미노출.`,
+      parameters: {
+        type: 'object',
+        required: ['prompt'],
+        properties: {
+          prompt: { type: 'string', description: 'Sub-agent 가 받을 작업 지시. 자세한 컨텍스트 + 명확한 결과 요구. 메인 context 와 격리되므로 필요한 배경 모두 포함.' },
+          taskType: { type: 'string', description: '작업 유형 라벨 (선택, 로깅 용). 예: "backtest", "financial-analysis", "code-review".' },
+        },
+      },
+    },
   ];
 }
