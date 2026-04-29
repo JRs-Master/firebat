@@ -29,6 +29,9 @@ interface SidebarProps {
   onRefreshTree: () => void;
   conversations: ConversationMeta[];
   activeConvId: string;
+  /** 활성 대화의 실시간 messages (useChat state). 비활성 대화는 server fetch 만, 활성 대화는
+   *  이 prop 우선 사용 — 500ms debounce DB sync race 회피 (채팅 추가 직후 share 시 stale 방지). */
+  activeMessages?: unknown[];
   onSelectConv: (id: string) => void;
   onNewConv: () => void;
   onDeleteConv: (id: string) => void;
@@ -45,7 +48,7 @@ interface SidebarProps {
 
 export function Sidebar({
   onRefreshTree,
-  conversations, activeConvId,
+  conversations, activeConvId, activeMessages,
   onSelectConv, onNewConv, onDeleteConv,
   onRefreshChats,
   aiModel, onOpenSettings, onEditFile, onOpenModuleSettings,
@@ -920,7 +923,11 @@ export function Sidebar({
                       </div>
                       {/* 공유·삭제 아이콘 묶음: PC=호버, 모바일=선택 시 (활성 대화도 force visible) */}
                       <span className={rowActionsClass(convSelected || conv.id === activeConvId)}>
-                        <ShareConvButton convId={conv.id} title={conv.title} />
+                        <ShareConvButton
+                          convId={conv.id}
+                          title={conv.title}
+                          liveMessages={conv.id === activeConvId ? activeMessages : undefined}
+                        />
                         <Tooltip label="삭제">
                           <button
                             onClick={(e) => { e.stopPropagation(); onDeleteConv(conv.id); setSelectedItem(null); }}
@@ -1056,22 +1063,28 @@ export function Sidebar({
 }
 
 /** 대화 전체 공유 버튼 — 클릭 시 DB 에서 메시지 fetch → 공유 생성 → 클립보드 복사 */
-function ShareConvButton({ convId, title }: { convId: string; title: string }) {
+function ShareConvButton({ convId, title, liveMessages }: { convId: string; title: string; liveMessages?: unknown[] }) {
   const [status, setStatus] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
   const handleShare = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (status === 'sharing') return;
     setStatus('sharing');
     try {
-      // 1) 대화 메시지 fetch
-      const convRes = await fetch(`/api/conversations?id=${encodeURIComponent(convId)}`);
-      const convData = await convRes.json();
-      if (!convData.success || !convData.conversation) {
-        setStatus('error');
-        setTimeout(() => setStatus('idle'), 2200);
-        return;
+      // 1) 메시지 source 결정 — 활성 대화면 client state (실시간) 우선, 비활성 대화면 server fetch.
+      //    이전: 항상 server fetch → 500ms debounce DB sync race 로 채팅 추가 직후 stale messages.
+      let messages: Array<{ id?: string; [k: string]: unknown }>;
+      if (liveMessages && liveMessages.length > 0) {
+        messages = (liveMessages as Array<{ id?: string }>).filter((m) => m.id !== 'system-init');
+      } else {
+        const convRes = await fetch(`/api/conversations?id=${encodeURIComponent(convId)}`);
+        const convData = await convRes.json();
+        if (!convData.success || !convData.conversation) {
+          setStatus('error');
+          setTimeout(() => setStatus('idle'), 2200);
+          return;
+        }
+        messages = (convData.conversation.messages || []).filter((m: { id?: string }) => m.id !== 'system-init');
       }
-      const messages = (convData.conversation.messages || []).filter((m: { id?: string }) => m.id !== 'system-init');
       if (messages.length === 0) {
         setStatus('error');
         setTimeout(() => setStatus('idle'), 2200);

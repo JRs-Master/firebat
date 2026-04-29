@@ -1061,6 +1061,7 @@ export default function AdminConsole() {
         onRefreshTree={fetchFileTree}
         conversations={conversations}
         activeConvId={activeConvId}
+        activeMessages={messages}
         onSelectConv={handleSelectConv}
         onNewConv={handleNewConv}
         onDeleteConv={handleDeleteConv}
