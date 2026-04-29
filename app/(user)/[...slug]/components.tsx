@@ -65,7 +65,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'List':          return <ListComp items={p.items ?? []} ordered={p.ordered} />;
     case 'Carousel':      return <CarouselComp children={p.children ?? []} autoPlay={p.autoPlay} interval={p.interval} />;
     case 'Countdown':     return <CountdownComp targetDate={p.targetDate ?? ''} label={p.label} />;
-    case 'Chart':         return <ChartComp type={p.chartType ?? 'bar'} data={p.data ?? []} labels={p.labels ?? []} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} palette={p.palette} showValues={p.showValues} showPct={p.showPct} />;
+    case 'Chart':         return <ChartComp type={p.chartType ?? 'bar'} data={p.data ?? []} labels={p.labels ?? []} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} negColor={p.negColor} palette={p.palette} showValues={p.showValues} showPct={p.showPct} />;
     case 'StockChart':    return <StockChart symbol={p.symbol ?? ''} title={p.title} data={p.data ?? []} indicators={p.indicators} buyPoints={p.buyPoints} sellPoints={p.sellPoints} />;
     case 'Metric':        return <MetricComp label={p.label ?? ''} value={p.value ?? ''} unit={p.unit} delta={p.delta} deltaType={p.deltaType} subLabel={p.subLabel} icon={p.icon} link={p.link} align={p.align} labelAlign={p.labelAlign} valueAlign={p.valueAlign} deltaAlign={p.deltaAlign} subLabelAlign={p.subLabelAlign} />;
     case 'Timeline':      return <TimelineComp items={p.items ?? []} />;
@@ -1075,14 +1075,18 @@ const PALETTE_MAP: Record<string, string[]> = {
   earth:        ['#b45309', '#166534', '#d97706', '#78350f', '#65a30d', '#f59e0b'],
 };
 
-function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, palette, showValues = true, showPct = true }: {
+function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, negColor, palette, showValues = true, showPct = true }: {
   type: 'bar' | 'pie' | 'line' | 'doughnut';
   data: number[];
   labels: string[];
   title?: string;
   subtitle?: string;
   unit?: string;
+  /** 양수 막대 색 — COLOR_MAP key (red/blue/orange/green 등). 단방향 mode 에선 모든 막대에 적용. */
   color?: string;
+  /** 음수 막대 색 — 양방향 mode 에서만 사용. 미지정 시 기본 빨강(글로벌 자산 차트 패턴).
+   *  한국 수급 차트 같이 한국 관습 (양수=빨강, 음수=파랑) 따르려면 AI 가 color='red' + negColor='blue' 명시. */
+  negColor?: string;
   palette?: string;
   showValues?: boolean;
   /** pie/doughnut tooltip 에 자동 계산 pct 표시 여부 (기본 true). data 자체가 이미 퍼센트면 false 권장. */
@@ -1098,6 +1102,8 @@ function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, p
   }
 
   const barColor = (color && COLOR_MAP[color]) ? COLOR_MAP[color].bar : 'bg-blue-500';
+  // 음수 막대 색 — default 빨강 (글로벌 자산 차트). 한국 수급 차트는 AI 가 negColor='blue' 명시.
+  const negBarColor = (negColor && COLOR_MAP[negColor]) ? COLOR_MAP[negColor].bar : 'bg-red-500';
   const pieColors = PALETTE_MAP[palette ?? 'default'] ?? PALETTE_MAP.default;
   const fmtVal = (v: number) => {
     const base = Math.abs(v) >= 10000 ? v.toLocaleString('ko-KR') : v.toString();
@@ -1129,7 +1135,7 @@ function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, p
   }
 
   // bar / line chart — hover 상세 툴팁 포함
-  return <BarChartInteractive data={data} labels={labels} titleBlock={titleBlock} unit={unit} showValues={showValues} barColor={barColor} maxVal={maxVal} fmtVal={fmtVal} type={type} />;
+  return <BarChartInteractive data={data} labels={labels} titleBlock={titleBlock} unit={unit} showValues={showValues} barColor={barColor} negBarColor={negBarColor} maxVal={maxVal} fmtVal={fmtVal} type={type} />;
 }
 
 function LineChartInteractive({ data, labels, title, unit, minVal, maxVal }: {
@@ -1214,9 +1220,9 @@ function LineChartInteractive({ data, labels, title, unit, minVal, maxVal }: {
   );
 }
 
-function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues, barColor, maxVal, fmtVal, type: _type }: {
+function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues, barColor, negBarColor, maxVal, fmtVal, type: _type }: {
   data: number[]; labels: string[]; titleBlock: React.ReactNode; unit?: string; showValues: boolean;
-  barColor: string; maxVal: number; fmtVal: (v: number) => string; type: 'bar' | 'line';
+  barColor: string; negBarColor: string; maxVal: number; fmtVal: (v: number) => string; type: 'bar' | 'line';
 }) {
   // 툴팁 제거 (v0.1, 2026-04-22) — AI 가 잘못 넣은 데이터가 tooltip 의 derived 계산
   // (pct 등) 을 거치면서 증폭됨. showValues inline 값으로 충분.
@@ -1234,21 +1240,16 @@ function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues
       <div className="space-y-2">
         {data.map((v, i) => {
           const isNegative = v < 0;
-          // 한국 주식 관습 — 양수 빨강 (--cms-up), 음수 파랑 (--cms-down). MetricComp deltaType
-          // 색과 동일 token. 사용자 color prop 은 단방향 mode 만 적용 (수급·등락 차트는 관습 강제).
-          const fillStyle = hasNegative
-            ? { backgroundColor: isNegative ? 'var(--cms-down)' : 'var(--cms-up)' }
-            : undefined;
-          const fillCls = hasNegative ? '' : barColor;
+          // 양수 = barColor (사용자 color prop), 음수 = negBarColor (사용자 negColor prop, default 빨강).
+          // 한국 수급 차트면 AI 가 color='red' + negColor='blue' 명시. 글로벌 자산 차트는 default
+          // (color='orange' 등 + 음수 빨강).
+          const fillCls = isNegative ? negBarColor : barColor;
           // 양방향 mode: width 는 트랙 절반 영역 (50%) 안에서 비례.
           // 음수: 가운데부터 왼쪽으로 (right-1/2 + width). 양수: 가운데부터 오른쪽으로 (left-1/2 + width).
           // 단방향 mode: 기존 동작 (left:0 + width 100% 까지 활용).
           const widthPct = hasNegative
             ? (Math.abs(v) / maxAbs) * 50
             : (Math.abs(v) / maxAbs) * 100;
-          const valueColorStyle = hasNegative
-            ? { color: isNegative ? 'var(--cms-down)' : 'var(--cms-up)' }
-            : undefined;
           return (
             <div
               key={i}
@@ -1264,14 +1265,11 @@ function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues
                         : 'left-1/2 rounded-r-full'
                       : 'left-0 rounded-full'
                   }`}
-                  style={{ width: `${widthPct}%`, ...(fillStyle ?? {}) }}
+                  style={{ width: `${widthPct}%` }}
                 />
               </div>
               {showValues && (
-                <span
-                  className={`text-xs font-bold min-w-[3rem] text-right ${hasNegative ? '' : 'text-gray-700'}`}
-                  style={valueColorStyle}
-                >
+                <span className={`text-xs font-bold min-w-[3rem] text-right ${isNegative ? negBarColor.replace('bg-', 'text-').replace('-500', '-600') : 'text-gray-700'}`}>
                   {fmtVal(v)}
                 </span>
               )}
