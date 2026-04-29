@@ -7,6 +7,7 @@ import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useEvents } from '../hooks/events-manager';
+import { useViewportSize } from '../../../lib/use-viewport-size';
 
 interface MediaItem {
   slug: string;
@@ -286,6 +287,10 @@ function MediaDetailModal({
   const canRegenerate = !!item.prompt; // prompt 있어야 재실행 가능
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  // viewport quirk 우회 — iOS toolbar 변동 시 박스 흔들림 차단. md(768px+) 는 max-h-full 유지.
+  const { vw, vh } = useViewportSize();
+  const isMobile = vw != null && vw < 768;
+  const previewMaxH = isMobile && vh != null ? Math.floor(vh * 0.45) : null;
   // SSR 안전: client 마운트 후에만 portal 활성화
   useEffect(() => { setMounted(true); }, []);
   // 키보드 ← → 로 이전/다음, Esc 로 닫기
@@ -372,13 +377,16 @@ function MediaDetailModal({
             모바일: 본문 자체 overflow-y-auto → 메타·버튼이 viewport 부족 시 잘리지 않고 스크롤로 접근 가능.
             PC: overflow-hidden 유지 (좌우 컬럼 각자 안에서만 스크롤). */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row gap-3 p-3 sm:p-4 overflow-y-auto md:overflow-hidden">
-          {/* 프리뷰 — 모바일은 max-h-[45vh] 로 자연 비율 보존, PC 는 좌측 컬럼 전체 활용.
+          {/* 프리뷰 — 모바일: viewport 45% (px 단위 — toolbar 변동 무관), PC: 좌측 컬럼 전체.
               status='error' / 'rendering' / 'done' 3 분기. 그리드와 동일 패턴.
               cache busting (?v=bytes) — 모바일 브라우저가 placeholder 단계의 회색 응답을
               cache 한 후 done swap 시 같은 URL 재요청해도 cache hit 으로 회색 박힘 방지. */}
-          <div className={`relative shrink-0 md:flex-1 md:min-w-0 max-h-[45vh] md:max-h-full md:h-auto rounded-lg p-2 flex items-center justify-center overflow-hidden ${
-            isError ? 'bg-red-50 border border-red-200' : item.status === 'rendering' ? 'bg-blue-50 border border-blue-200' : 'bg-slate-50'
-          }`}>
+          <div
+            className={`relative shrink-0 md:flex-1 md:min-w-0 md:max-h-full md:h-auto rounded-lg p-2 flex items-center justify-center overflow-hidden ${
+              isError ? 'bg-red-50 border border-red-200' : item.status === 'rendering' ? 'bg-blue-50 border border-blue-200' : 'bg-slate-50'
+            }`}
+            style={previewMaxH ? { maxHeight: `${previewMaxH}px` } : undefined}
+          >
             {isError ? (
               <div className="flex flex-col items-center gap-2 text-center px-4 py-6">
                 <AlertTriangle size={32} className="text-red-500" />

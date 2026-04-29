@@ -20,6 +20,20 @@ import { readSetting, writeSetting } from './hooks/settings-manager';
 import { THINKING_STATUS, isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from './hooks/chat-manager';
 import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
+import { useViewportMaxHeight } from '../../lib/use-viewport-size';
+
+/** 마크다운 table wrapper — viewport quirk 우회 (iOS Safari toolbar 변동 시 박스 흔들림 차단). */
+function MarkdownTableBox(props: any) {
+  const maxH = useViewportMaxHeight(0.7);
+  return (
+    <div
+      className="overflow-auto mb-2 rounded-xl border border-slate-200"
+      style={{ maxHeight: maxH ? `${maxH}px` : '70vh' }}
+    >
+      <table className="min-w-full text-[13px] border-separate border-spacing-0" {...props} />
+    </div>
+  );
+}
 
 // ─── 마크다운 커스텀 컴포넌트 ───────────────────────────────────────────────
 const mdComponents = {
@@ -51,11 +65,7 @@ const mdComponents = {
     );
   },
   blockquote: (props: any) => <blockquote className="border-l-3 border-slate-300 pl-3 text-slate-600 italic mb-2" {...props} />,
-  table: (props: any) => (
-    <div className="overflow-auto mb-2 rounded-xl border border-slate-200 max-h-[70vh]">
-      <table className="min-w-full text-[13px] border-separate border-spacing-0" {...props} />
-    </div>
-  ),
+  table: (props: any) => <MarkdownTableBox {...props} />,
   th: (props: any) => <th className="bg-slate-50 px-3 py-1.5 text-left font-bold text-slate-700 sticky top-0 z-10 border-b border-slate-200 min-w-[120px]" {...props} />,
   td: (props: any) => <td className="px-3 py-1.5 text-slate-600 border-b border-slate-100 min-w-[120px] align-top break-words" {...props} />,
   hr: () => <hr className="border-slate-200 my-3" />,

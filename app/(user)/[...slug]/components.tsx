@@ -4,6 +4,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import StockChart from '../../admin/chat-components/StockChart';
+import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
 interface ComponentDef {
@@ -379,21 +380,8 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   // stickyCol: 미지정 시 4열 이상이면 자동 활성 (첫 열 = 행 라벨 추정)
   const firstColSticky = stickyCol ?? (headers.length >= 4);
 
-  // 모바일 viewport quirk fix — iOS Safari 가 스크롤 시 주소창 자동 숨김
-  // → viewport 늘어남 → vh/svh 단위 모두 흔들림 → 박스 길어지는 quirk.
-  // 첫 렌더 시 innerHeight 측정 + 픽셀 단위 박음. resize 이벤트 (rotation) 만 갱신.
-  // toolbar 자동 변동은 resize 발화 X → 박스 흔들림 0.
-  const [maxHeightPx, setMaxHeightPx] = useState<number | null>(null);
-  useEffect(() => {
-    const measure = () => setMaxHeightPx(Math.floor(window.innerHeight * 0.7));
-    measure();
-    window.addEventListener('resize', measure);
-    window.addEventListener('orientationchange', measure);
-    return () => {
-      window.removeEventListener('resize', measure);
-      window.removeEventListener('orientationchange', measure);
-    };
-  }, []);
+  // viewport quirk 우회 — 공용 hook (lib/use-viewport-size.ts) 사용. iOS toolbar 흔들림 차단.
+  const maxHeightPx = useViewportMaxHeight(0.7);
 
   /** 정렬: AI 가 align 배열로 명시한 값만 사용. 미지정 시 column 전체 left (cells), center (header).
    *  per-cell 자동 감지 제거 — column 안에서 cell 마다 정렬 다르게 보이는 문제 차단. */
