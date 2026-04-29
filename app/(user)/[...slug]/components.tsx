@@ -1234,13 +1234,21 @@ function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues
       <div className="space-y-2">
         {data.map((v, i) => {
           const isNegative = v < 0;
-          const fillColor = isNegative ? 'bg-red-500' : barColor;
+          // 한국 주식 관습 — 양수 빨강 (--cms-up), 음수 파랑 (--cms-down). MetricComp deltaType
+          // 색과 동일 token. 사용자 color prop 은 단방향 mode 만 적용 (수급·등락 차트는 관습 강제).
+          const fillStyle = hasNegative
+            ? { backgroundColor: isNegative ? 'var(--cms-down)' : 'var(--cms-up)' }
+            : undefined;
+          const fillCls = hasNegative ? '' : barColor;
           // 양방향 mode: width 는 트랙 절반 영역 (50%) 안에서 비례.
           // 음수: 가운데부터 왼쪽으로 (right-1/2 + width). 양수: 가운데부터 오른쪽으로 (left-1/2 + width).
           // 단방향 mode: 기존 동작 (left:0 + width 100% 까지 활용).
           const widthPct = hasNegative
             ? (Math.abs(v) / maxAbs) * 50
             : (Math.abs(v) / maxAbs) * 100;
+          const valueColorStyle = hasNegative
+            ? { color: isNegative ? 'var(--cms-down)' : 'var(--cms-up)' }
+            : undefined;
           return (
             <div
               key={i}
@@ -1249,18 +1257,21 @@ function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues
               <span className="text-xs w-20 truncate text-right text-gray-600">{labels[i] ?? i}</span>
               <div className="flex-1 h-6 bg-gray-100 rounded-full overflow-hidden relative">
                 <div
-                  className={`absolute top-0 bottom-0 ${fillColor} transition-all duration-500 opacity-85 ${
+                  className={`absolute top-0 bottom-0 ${fillCls} transition-all duration-500 opacity-85 ${
                     hasNegative
                       ? isNegative
                         ? 'right-1/2 rounded-l-full'
                         : 'left-1/2 rounded-r-full'
                       : 'left-0 rounded-full'
                   }`}
-                  style={{ width: `${widthPct}%` }}
+                  style={{ width: `${widthPct}%`, ...(fillStyle ?? {}) }}
                 />
               </div>
               {showValues && (
-                <span className={`text-xs font-bold min-w-[3rem] text-right ${isNegative ? 'text-red-600' : 'text-gray-700'}`}>
+                <span
+                  className={`text-xs font-bold min-w-[3rem] text-right ${hasNegative ? '' : 'text-gray-700'}`}
+                  style={valueColorStyle}
+                >
                   {fmtVal(v)}
                 </span>
               )}
