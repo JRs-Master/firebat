@@ -948,7 +948,24 @@ export class AiManager {
       const toolResults: ToolResult[] = [];
       // Layer 2 가드 — 같은 turn 안에서 (tool name + args) 동일 호출 차단
       const turnCallSet = new Set<string>();
-      for (const tc of toolCalls) {
+
+      // Sub-agent 병렬 batching — spawn_subagent 들만 미리 dispatch 시작 (사전검증·approval 우회).
+      // 기존 sequential loop 가 spawn_subagent 도달 시 미리 시작된 promise await → 시간 1/N.
+      // 다른 도구는 기존 sequential 그대로 (회귀 위험 ↓).
+      // spawn_subagent 는 approval 불필요 도구 (Vault 토글 OFF 면 도구 노출 X 라 별도 검증 X).
+      const preStartedSubAgents: (Promise<Record<string, unknown>> | null)[] = new Array(toolCalls.length).fill(null);
+      for (let _i = 0; _i < toolCalls.length; _i++) {
+        if (toolCalls[_i].name === 'spawn_subagent') {
+          preStartedSubAgents[_i] = this.dispatcher.executeToolCall(toolCalls[_i], opts);
+        }
+      }
+      if (preStartedSubAgents.some(p => p !== null)) {
+        const subCount = preStartedSubAgents.filter(p => p !== null).length;
+        this.logger.info(`[AiManager] [${corrId}] spawn_subagent ${subCount}개 병렬 dispatch (background 실행 중)`);
+      }
+
+      for (let _toolIdx = 0; _toolIdx < toolCalls.length; _toolIdx++) {
+        const tc = toolCalls[_toolIdx];
         sessionUsedToolNames.add(tc.name);
         const argsPreview = JSON.stringify(tc.args).slice(0, 120);
         this.logger.info(`[AiManager] [${corrId}] Tool: ${tc.name} ${argsPreview}`);
@@ -1020,6 +1037,10 @@ export class AiManager {
               // Layer 1: cross-turn cache hit (60초 내 같은 호출) → 직전 결과 재사용
               result = { ...cached, fromCache: true };
               this.logger.info(`[AiManager] [${corrId}] Tool cache HIT: ${tc.name} — 직전 결과 재사용 (백엔드 호출 0)`);
+            } else if (preStartedSubAgents[_toolIdx]) {
+              // 미리 dispatch 시작된 spawn_subagent — promise await (이미 background 실행 중)
+              result = await preStartedSubAgents[_toolIdx]!;
+              setCachedToolResult(cacheKey, result);
             } else {
               result = await this.dispatcher.executeToolCall(tc, opts);
               setCachedToolResult(cacheKey, result);
