@@ -18,6 +18,7 @@
  * Frontend EventsManager 와 충돌 회피: Backend = EventManager, Frontend = EventsManager (이름 다름, 역할 분리).
  */
 import type { ILogPort } from '../ports';
+import type { InfraResult } from '../types';
 import { eventBus, type FirebatEvent } from '../../lib/events';
 
 type EventListener = (event: FirebatEvent) => void;
@@ -93,5 +94,35 @@ export class EventManager {
     if (Array.isArray(filter)) return filter.includes(event.type);
     if (typeof filter === 'function') return filter(event);
     return false;
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // 도메인 메서드 — Core facade 의 boilerplate 제거. 매니저 간 직접 호출 X 원칙
+  // 유지 + 같은 emit 패턴 13+ 곳 hardcoded 됐던 거 한 곳 (이 매니저) 으로 응집.
+  // 새 이벤트 타입 추가 시 도메인 메서드만 추가하면 됨 — Core facade 13곳 수정 X.
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /** 사이드바 갱신 신호 — 페이지·프로젝트·모듈·파일·템플릿 변경 시 호출. */
+  notifySidebar(): void {
+    eventBus.emit({ type: 'sidebar:refresh', data: {} });
+  }
+
+  /** InfraResult 통과 wrap — success 시만 sidebar 갱신, res 그대로 반환.
+   *  사용 패턴: `return this.event.notifySidebarIfSuccess(await this.page.delete(slug));` */
+  notifySidebarIfSuccess<T>(res: InfraResult<T>): InfraResult<T> {
+    if (res.success) this.notifySidebar();
+    return res;
+  }
+
+  /** 갤러리 갱신 신호 — 미디어 생성·재생성·삭제·업로드 시 호출.
+   *  data 는 시점별 다름: { slug } / { error } / { slug, removed } / { slug, source: 'upload' } / { slug, replacedSlug }. */
+  notifyGallery(data: { slug?: string; scope?: 'user' | 'system'; error?: string; removed?: boolean; source?: string; replacedSlug?: string }): void {
+    eventBus.emit({ type: 'gallery:refresh', data });
+  }
+
+  /** 크론 완료 신호 — 결과 메타 + sidebar 갱신 동시 발화 (잡 결과가 페이지 변경 동반 가정). */
+  notifyCronComplete(meta: { jobId: string; success: boolean; durationMs: number; error?: string }): void {
+    eventBus.emit({ type: 'cron:complete', data: meta });
+    this.notifySidebar();
   }
 }

@@ -25,7 +25,6 @@ import type { FirebatInfraContainer, LlmChunk, McpServerConfig, CronScheduleOpti
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
 import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT, VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_LAST_MODEL_BY_CATEGORY, VK_LLM_ANTHROPIC_CACHE, DEFAULT_AI_ASSISTANT_MODEL, AI_ASSISTANT_MODELS } from './vault-keys';
-import { eventBus } from '../lib/events';
 import { canonicalJson, unwrapJson, unwrapNestedPageSpec } from './utils/json-normalize';
 import { captureException as _captureException } from './utils/error-capture';
 import type { ErrorContext } from './utils/error-capture';
@@ -287,7 +286,7 @@ export class FirebatCore {
   async writeFile(path: string, content: string) {
     const res = await this.storage.write(path, content);
     if (res.success) {
-      eventBus.emit({ type: 'sidebar:refresh', data: {} });
+      this.event.notifySidebar();
       // 모듈 config.json 변경 시 AI 캐시 무효화
       if (path.endsWith('/config.json') && (path.includes('modules/') || path.includes('services/'))) {
         this.ai.invalidateCache();
@@ -298,7 +297,7 @@ export class FirebatCore {
 
   async deleteFile(path: string) {
     const res = await this.storage.delete(path);
-    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    if (res.success) this.event.notifySidebar();
     return res;
   }
 
@@ -354,32 +353,32 @@ export class FirebatCore {
         const parsed = JSON.parse(specStr);
         parsed.slug = finalSlug;
         const res = await this.page.save(finalSlug, JSON.stringify(parsed));
-        if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+        if (res.success) this.event.notifySidebar();
         return res.success ? { success: true, data: { slug: finalSlug, renamed: true } } : { success: false, error: res.error };
       } catch (err: any) {
         return { success: false, error: `spec slug 갱신 실패: ${err.message}` };
       }
     }
     const res = await this.page.save(finalSlug, specStr);
-    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    if (res.success) this.event.notifySidebar();
     return res.success ? { success: true, data: { slug: finalSlug, renamed: false } } : { success: false, error: res.error };
   }
 
   async deletePage(slug: string) {
     const res = await this.page.delete(slug);
-    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    if (res.success) this.event.notifySidebar();
     return res;
   }
 
   async renamePage(oldSlug: string, newSlug: string, opts?: { setRedirect?: boolean }) {
     const res = await this.page.rename(oldSlug, newSlug, opts ?? {});
-    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    if (res.success) this.event.notifySidebar();
     return res;
   }
 
   async renameProject(oldName: string, newName: string, opts?: { setRedirect?: boolean }) {
     const res = await this.page.renameProject(oldName, newName, opts ?? {});
-    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    if (res.success) this.event.notifySidebar();
     return res;
   }
 
@@ -395,7 +394,7 @@ export class FirebatCore {
   /** 페이지 visibility 설정 */
   async setPageVisibility(slug: string, visibility: 'public' | 'password' | 'private', password?: string) {
     const res = await this.page.setVisibility(slug, visibility, password);
-    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    if (res.success) this.event.notifySidebar();
     return res;
   }
 
@@ -413,7 +412,7 @@ export class FirebatCore {
   /** 프로젝트 visibility 설정 */
   setProjectVisibility(project: string, visibility: 'public' | 'password' | 'private', password?: string) {
     this.project.setVisibility(project, visibility, password);
-    eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    this.event.notifySidebar();
     return { success: true };
   }
 
@@ -488,7 +487,7 @@ export class FirebatCore {
 
   async deleteProject(project: string) {
     const res = await this.project.delete(project);
-    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    if (res.success) this.event.notifySidebar();
     return res;
   }
 
@@ -620,19 +619,19 @@ export class FirebatCore {
 
   async scheduleCronJob(jobId: string, targetPath: string, opts: CronScheduleOptions) {
     const res = await this.schedule.schedule(jobId, targetPath, opts);
-    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    if (res.success) this.event.notifySidebar();
     return res;
   }
 
   async cancelCronJob(jobId: string) {
     const res = await this.schedule.cancel(jobId);
-    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    if (res.success) this.event.notifySidebar();
     return res;
   }
 
   async updateCronJob(jobId: string, targetPath: string, opts: CronScheduleOptions) {
     const res = await this.schedule.update(jobId, targetPath, opts);
-    if (res.success) eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    if (res.success) this.event.notifySidebar();
     return res;
   }
 
@@ -673,8 +672,7 @@ export class FirebatCore {
     } else {
       this.statusMgr.error(job.id, result.error || 'Cron 실행 실패');
     }
-    eventBus.emit({ type: 'cron:complete', data: { jobId: result.jobId, success: result.success, durationMs: result.durationMs, error: result.error } });
-    eventBus.emit({ type: 'sidebar:refresh', data: {} });
+    this.event.notifyCronComplete({ jobId: result.jobId, success: result.success, durationMs: result.durationMs, ...(result.error ? { error: result.error } : {}) });
     return result;
   }
 
@@ -865,16 +863,16 @@ export class FirebatCore {
       onComplete: (result) => {
         this.statusMgr.done(job.id, { slug: result.slug, url: result.url });
         // 백그라운드 완료 시 갤러리·페이지 자동 갱신 — placeholder 카드가 실제 이미지로 swap
-        eventBus.emit({ type: 'gallery:refresh', data: { slug: result.slug, scope } });
+        this.event.notifyGallery({ slug: result.slug, scope });
       },
       onError: (err) => {
         this.statusMgr.error(job.id, err);
-        eventBus.emit({ type: 'gallery:refresh', data: { error: err, scope } });
+        this.event.notifyGallery({ error: err, scope });
       },
     });
     if (res.success && res.data) {
       // placeholder 등장 즉시 갤러리 갱신 — 사용자가 "렌더링중" 카드 보게
-      eventBus.emit({ type: 'gallery:refresh', data: { slug: res.data.slug, scope } });
+      this.event.notifyGallery({ slug: res.data.slug, scope });
     } else {
       this.statusMgr.error(job.id, res.error || 'startGenerate 실패');
     }
@@ -905,10 +903,11 @@ export class FirebatCore {
     } else {
       this.statusMgr.error(job.id, res.error || '이미지 생성 실패');
     }
-    eventBus.emit({
-      type: 'gallery:refresh',
-      data: res.success ? { slug: res.data?.slug, scope: input.scope ?? 'user' } : { error: res.error, scope: input.scope ?? 'user' },
-    });
+    this.event.notifyGallery(
+      res.success
+        ? { slug: res.data?.slug, scope: input.scope ?? 'user' }
+        : { error: res.error, scope: input.scope ?? 'user' },
+    );
     return res;
   }
 
@@ -936,12 +935,11 @@ export class FirebatCore {
     if (res.success && res.data?.slug && res.data.slug !== slug) {
       await this.media.remove(slug).catch(() => undefined);
     }
-    eventBus.emit({
-      type: 'gallery:refresh',
-      data: res.success
+    this.event.notifyGallery(
+      res.success
         ? { slug: res.data?.slug, replacedSlug: slug }
         : { error: res.error },
-    });
+    );
     return res;
   }
 
@@ -964,7 +962,7 @@ export class FirebatCore {
   /** 갤러리에서 수동 삭제. 성공 시 SSE `gallery:refresh` emit. */
   async removeMedia(slug: string) {
     const res = await this.media.remove(slug);
-    if (res.success) eventBus.emit({ type: 'gallery:refresh', data: { slug, removed: true } });
+    if (res.success) this.event.notifyGallery({ slug, removed: true });
     return res;
   }
 
@@ -999,7 +997,7 @@ export class FirebatCore {
       source: 'upload',
     });
     if (!res.success || !res.data) return { success: false, error: res.error || '업로드 저장 실패' };
-    eventBus.emit({ type: 'gallery:refresh', data: { slug: res.data.slug, scope: opts.scope ?? 'user', source: 'upload' } });
+    this.event.notifyGallery({ slug: res.data.slug, scope: opts.scope ?? 'user', source: 'upload' });
     return { success: true, data: { slug: res.data.slug, url: res.data.url } };
   }
 
