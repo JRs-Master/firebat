@@ -858,10 +858,36 @@ export class FirebatCore {
    *  caller 가 opts.extraEnv 명시하면 그 위에 timezone 추가 (caller 우선 X — timezone 은 Core 정책). */
   async sandboxExecute(targetPath: string, inputData: Record<string, unknown>, opts?: import('./ports').SandboxExecuteOpts) {
     const tz = this.getTimezone();
-    return this.module.execute(targetPath, inputData, {
+    const res = await this.module.execute(targetPath, inputData, {
       ...opts,
       extraEnv: { ...(opts?.extraEnv ?? {}), TZ: tz, FIREBAT_TZ: tz },
     });
+    // sysmod 가 응답 data 안에 `_cache` 박았으면 자동 cacheData → cacheKey 로 치환.
+    // sysmod stdout: {"success": true, "data": { ..., "_cache": { records, sysmod, action, params?, ttlSec? } }}
+    // 후처리 후 ModuleOutput.data = { ..., cacheKey, cacheRows, cacheColumns, expiresAt }
+    if (res.success && res.data?.data) {
+      const dataObj = res.data.data;
+      const cacheMarker = dataObj._cache as { records?: unknown[]; sysmod?: string; action?: string; params?: Record<string, unknown>; ttlSec?: number } | undefined;
+      if (cacheMarker && Array.isArray(cacheMarker.records) && cacheMarker.sysmod && cacheMarker.action) {
+        const cacheRes = await this.cacheData({
+          sysmod: cacheMarker.sysmod,
+          action: cacheMarker.action,
+          params: cacheMarker.params,
+          records: cacheMarker.records,
+          ttlSec: cacheMarker.ttlSec,
+        });
+        if (cacheRes.success && cacheRes.data) {
+          delete dataObj._cache;
+          dataObj.cacheKey = cacheRes.data.cacheKey;
+          dataObj.cacheRows = cacheRes.data.rows;
+          dataObj.cacheColumns = cacheRes.data.columns;
+          dataObj.expiresAt = cacheRes.data.expiresAt;
+        } else {
+          this.infra.log.warn(`[Core] sandbox _cache 처리 실패: ${cacheRes.error}`);
+        }
+      }
+    }
+    return res;
   }
 
   async getSystemModules() { return this.module.listSystem(); }
