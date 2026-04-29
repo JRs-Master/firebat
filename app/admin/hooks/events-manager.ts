@@ -21,11 +21,19 @@ class EventBusSingleton {
   private es: EventSource | null = null;
   private listeners = new Set<Listener>();
   private refCount = 0;
+  private firstOpen = true;
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     this.refCount++;
-    if (this.refCount === 1) this.connect();
+    if (this.refCount === 1) {
+      this.connect();
+      // 백그라운드 → 포그라운드 복귀 시 강제 reconnect — 모바일 일부 브라우저
+      // (Samsung Internet 등) 가 EventSource 자동 재연결 안 하는 quirk 회피.
+      if (typeof document !== 'undefined') {
+        document.addEventListener('visibilitychange', this.handleVisibility);
+      }
+    }
     return () => {
       this.listeners.delete(listener);
       this.refCount--;
@@ -33,15 +41,23 @@ class EventBusSingleton {
     };
   }
 
+  private handleVisibility = () => {
+    if (document.visibilityState !== 'visible') return;
+    // EventSource 가 OPEN 이 아니면 (CLOSED 또는 CONNECTING 정체) 강제 reconnect
+    if (!this.es || this.es.readyState !== EventSource.OPEN) {
+      this.es?.close();
+      this.es = null;
+      this.connect();
+    }
+  };
+
   private connect() {
     if (this.es) return;
     try {
       this.es = new EventSource('/api/events');
-      // 첫 연결은 무시하고 재연결만 'sidebar:refresh' 강제 emit — 서버 재시작(deploy) 후
-      // 클라이언트 stale state 방지. 처음 연결 시엔 구독자가 자체 초기 fetch 해놨음.
-      let firstOpen = true;
       this.es.onopen = () => {
-        if (firstOpen) { firstOpen = false; return; }
+        if (this.firstOpen) { this.firstOpen = false; return; }
+        // 재연결 시 sidebar:refresh 강제 emit — 끊긴 사이 발생한 이벤트 누락 보상.
         const reconnectEv: ServerEvent = { type: 'sidebar:refresh', data: { reason: 'sse-reconnect' } };
         for (const l of this.listeners) {
           try { l(reconnectEv); } catch {}
@@ -56,15 +72,19 @@ class EventBusSingleton {
         } catch {}
       };
       this.es.onerror = () => {
-        // 브라우저가 자동 재연결 → 위 onopen 이 다시 발화하여 fetch 트리거.
-        // 실제 서비스 중단은 SSE /api/events 자체 keepalive 가 보장.
+        // 브라우저 자동 재연결 시도 → onopen 이 다시 발화하여 fetch 트리거.
+        // visibilitychange 핸들러가 stale CLOSED 상태도 catch.
       };
     } catch {}
   }
 
   private disconnect() {
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.handleVisibility);
+    }
     this.es?.close();
     this.es = null;
+    this.firstOpen = true;
   }
 }
 
