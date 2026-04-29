@@ -449,6 +449,13 @@ L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
 - Python은 True/False/None (JSON의 true/false/null 아님).
 - config.json 필수: name, type, scope, runtime, packages, input, output.
 - API 키: config.json secrets 배열 등록 → 환경변수 자동 주입. 하드코딩 금지. 미등록 시 request_secret 선행.
+- **Entry 파일명 표준** (runtime 별):
+  - \`runtime: "node"\` → \`index.mjs\`
+  - \`runtime: "python"\` → \`main.py\`
+  - \`runtime: "php"\` → \`index.php\`
+  - \`runtime: "bash"\` → \`index.sh\`
+  config.json 의 \`entry\` 필드로 override 가능. 미명시 시 위 표준 사용 — 다른 이름 (예: \`run.py\`, \`app.mjs\`) 박지 마라.
+- **Multi-file 모듈 OK**: entry 파일이 같은 디렉토리 다른 파일들 자유 import. Python = \`from helper import foo\` (sys.path 자동), Node = \`import { foo } from './helper.mjs'\` 명시 상대 경로. sandbox 는 entry 만 spawn, 내부 import 간섭 X. 단 다른 user/modules 의 모듈 import 는 금지 (Reusable 5 규칙 5번).
 
 ### Reusable 5 규칙 (user/modules/* — Firebat reuse 모토 보호)
 적용 범위: AI 자율 신규 작성 default. 사용자가 작성한 모듈 검토·수정 시엔 적용 X (사용자 의도 존중). 사용자 명시 우회 시 따름.
