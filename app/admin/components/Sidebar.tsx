@@ -1077,8 +1077,13 @@ function ShareConvButton({ convId, title }: { convId: string; title: string }) {
         setTimeout(() => setStatus('idle'), 2200);
         return;
       }
-      // 2) 공유 생성 — 백엔드 DB 가 dedupKey 기반 재사용 담당
-      const shareRes = await createShareLink({ type: 'full', conversationId: convId, title, messages, dedupKey: `full:${convId}` });
+      // 2) 공유 생성 — dedupKey 에 메시지 개수 + 마지막 메시지 id 포함.
+      //    이전: dedupKey: `full:${convId}` 만 → 채팅 추가돼도 옛 share record 재사용 (사용자 마찰).
+      //    현재: 메시지 추가/변경 감지되면 새 dedupKey → 새 snapshot + 새 link.
+      //    동일 시점 여러 device 에서 같은 turn 공유 시도하면 같은 length+lastId → 재사용 OK.
+      const lastMsg = messages[messages.length - 1] as { id?: string } | undefined;
+      const dedupKey = `full:${convId}:${messages.length}:${lastMsg?.id ?? ''}`;
+      const shareRes = await createShareLink({ type: 'full', conversationId: convId, title, messages, dedupKey });
       if ('error' in shareRes) {
         setStatus('error');
         setTimeout(() => setStatus('idle'), 2200);
