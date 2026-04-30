@@ -14,8 +14,8 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["short", "ultra-now", "ultra-short", "medium-land", "medium-ta", "alerts", "uv-index", "earthquake", "typhoon-list", "typhoon-info", "typhoon-forecast"],
-        "description": "short=단기예보 (3일, 1시간), ultra-now=초단기실황 (현재), ultra-short=초단기예보 (6시간), medium-land=중기 육상예보 (4-10일), medium-ta=중기 기온, alerts=기상특보, uv-index=자외선지수 (생활기상지수), earthquake=지진정보, typhoon-list=태풍 통보문 목록 (발표시각·번호·호수·제목), typhoon-info=태풍정보조회 (발표시각의 위치·진행·풍속·기압·예상문구·경로이미지), typhoon-forecast=태풍예상정보 (발표시각+태풍번호 → 70%확률반경·15m/s강풍반경·진행방향·예상풍속)"
+        "enum": ["short", "ultra-now", "ultra-short", "medium-fcst", "medium-land", "medium-ta", "medium-sea", "alerts", "uv-index", "earthquake", "typhoon-list", "typhoon-info", "typhoon-forecast"],
+        "description": "short=단기예보 (3일, 1시간), ultra-now=초단기실황 (현재), ultra-short=초단기예보 (6시간), medium-fcst=중기 전망 (stnId 필요, wfSv 요약 텍스트), medium-land=중기 육상예보 (regId, 4-10일 강수확률·날씨), medium-ta=중기 기온 (regId, 4-10일 최저·최고 + 상하한범위), medium-sea=중기 해상예보 (regId 12A* 해상코드, 4-10일 날씨·파고), alerts=기상특보, uv-index=자외선지수, earthquake=지진정보, typhoon-list=태풍 통보문 목록, typhoon-info=태풍 통보문 상세 (위치·진행·풍속·기압), typhoon-forecast=태풍 예상정보 (확률반경·강풍반경·진행)"
       },
       "lat": {
         "type": "number",
@@ -35,11 +35,11 @@
       },
       "regId": {
         "type": "string",
-        "description": "[medium-land] 육상 예보 구역 코드. 11B00000=서울·인천·경기, 11D10000=강원영서, 11H10000=충청남도. [medium-ta] 기온 지점 코드 11B10101=서울, 11H20201=부산"
+        "description": "[medium-land] 육상 예보 구역 코드. 11B00000=서울·인천·경기, 11D10000=강원영서, 11H10000=충청남도. [medium-ta] 기온 지점 코드 11B10101=서울, 11H20201=부산. [medium-sea] 해상 예보 구역 코드 12A20000=서해중부, 12B10000=남해서부, 12C00000=동해중부 등"
       },
       "stnId": {
         "type": "string",
-        "description": "[alerts] 발표 관청 코드. 108=전국, 109=서울, 159=부산"
+        "description": "[alerts/medium-fcst] 발표 관청 / 지점 번호. 108=전국, 109=서울·인천·경기, 159=부산"
       },
       "areaNo": {
         "type": "string",

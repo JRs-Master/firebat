@@ -6,8 +6,10 @@
  *   short        — 단기예보 (3일, 1시간 단위) — VilageFcstInfoService_2.0/getVilageFcst
  *   ultra-now    — 초단기실황 (현재) — VilageFcstInfoService_2.0/getUltraSrtNcst
  *   ultra-short  — 초단기예보 (6시간) — VilageFcstInfoService_2.0/getUltraSrtFcst
- *   medium-land  — 중기 육상예보 (4-10일) — MidFcstInfoService/getMidLandFcst
- *   medium-ta    — 중기 기온 — MidFcstInfoService/getMidTa
+ *   medium-fcst  — 중기 전망 (요약 텍스트) — MidFcstInfoService/getMidFcst (stnId)
+ *   medium-land  — 중기 육상예보 (4-10일) — MidFcstInfoService/getMidLandFcst (regId)
+ *   medium-ta    — 중기 기온 — MidFcstInfoService/getMidTa (regId)
+ *   medium-sea   — 중기 해상예보 (날씨·파고) — MidFcstInfoService/getMidSeaFcst (regId 해상)
  *   alerts       — 기상특보 — WthrWrnInfoService/getWthrWrnList
  *   uv-index     — 자외선지수 — LivingWthrIdxServiceV3/getUVIdxV3
  *   earthquake   — 지진정보 — EqkInfoService/getEqkMsg
@@ -231,6 +233,16 @@ async function main() {
       return out(true, { items: r.items, nx, ny, baseDate, baseTime });
     }
 
+    if (action === 'medium-fcst') {
+      if (!stnId) return out(false, undefined, 'medium-fcst 는 stnId 필요 (지점번호, 예: 108=전국, 109=서울·인천·경기)');
+      const t = tmFc || mediumTmFc();
+      const r = await callApi(serviceKey, '/MidFcstInfoService/getMidFcst', {
+        numOfRows: limit, pageNo: 1, stnId, tmFc: t,
+      });
+      if (!r.ok) return out(false, undefined, r.error);
+      return out(true, { items: r.items, stnId, tmFc: t });
+    }
+
     if (action === 'medium-land') {
       if (!regId) return out(false, undefined, 'medium-land 는 regId 필요 (예: 11B00000 서울·인천·경기)');
       const t = tmFc || mediumTmFc();
@@ -245,6 +257,16 @@ async function main() {
       if (!regId) return out(false, undefined, 'medium-ta 는 regId 필요 (예: 11B10101 서울)');
       const t = tmFc || mediumTmFc();
       const r = await callApi(serviceKey, '/MidFcstInfoService/getMidTa', {
+        numOfRows: limit, pageNo: 1, regId, tmFc: t,
+      });
+      if (!r.ok) return out(false, undefined, r.error);
+      return out(true, { items: r.items, regId, tmFc: t });
+    }
+
+    if (action === 'medium-sea') {
+      if (!regId) return out(false, undefined, 'medium-sea 는 regId 필요 (해상 코드, 예: 12A20000 서해중부)');
+      const t = tmFc || mediumTmFc();
+      const r = await callApi(serviceKey, '/MidFcstInfoService/getMidSeaFcst', {
         numOfRows: limit, pageNo: 1, regId, tmFc: t,
       });
       if (!r.ok) return out(false, undefined, r.error);
