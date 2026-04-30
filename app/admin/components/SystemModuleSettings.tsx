@@ -81,7 +81,7 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'layoutLogoUrl', label: '헤더 — 로고 이미지 (선택)', type: 'text', tab: '레이아웃', placeholder: '/user/media/...png 또는 https://...', description: '텍스트 로고 옆에 표시할 이미지 URL. 비우면 텍스트만.' },
       { key: 'layoutNavLinks', label: '헤더 — 네비 링크', type: 'textarea', tab: '레이아웃', placeholder: '홈 | /\n블로그 | /blog\n소개 | /about\n문의 | /contact', description: '한 줄당 "라벨 | 경로" 형식. 헤더 우측에 가로 나열.' },
       { key: 'layoutShowFooter', label: '푸터 표시', type: 'toggle', tab: '레이아웃', description: '사용자 페이지 하단 푸터 표시 여부. 기본 ON.', defaultValue: true },
-      { key: 'layoutFooterText', label: '푸터 — 텍스트', type: 'textarea', tab: '레이아웃', placeholder: '© 2026 Firebat. All rights reserved.\n본 사이트는 투자 자문이 아닌 정보 제공 목적입니다.', description: '푸터 텍스트. 저작권 / 법적 고지 / 연락처 등. 줄바꿈 OK. HTML 태그 일부 허용 (<a>, <strong> 등).' },
+      { key: 'layoutFooterText', label: '푸터 — 텍스트', type: 'textarea', tab: '레이아웃', placeholder: '© 2026 사이트명. All rights reserved.', description: '푸터 텍스트. 저작권 / 연락처 / 법적 고지 등 자유 입력. 줄바꿈 OK. HTML 태그 일부 허용 (<a>, <strong> 등).' },
       { key: 'layoutShowReadingProgress', label: '읽기 진행도 표시', type: 'toggle', tab: '레이아웃', description: '페이지 상단에 스크롤 진행도 가로 바 표시. design tokens 의 accent 색 사용. 기본 OFF.', defaultValue: false },
       // ── Sidebar 레이아웃 ──
       { key: 'layoutMode', label: '본문 + 사이드바 모드', type: 'select', tab: '레이아웃', description: '본문 영역과 사이드바 배치. full = 사이드바 없음 / right = 우측 사이드바 / left = 좌측 사이드바 / boxed = 사이드바 없음 + 본문 boxed (좁은 max-width + 테두리·그림자). 모바일에선 자동 stacked.', defaultValue: 'full', options: [

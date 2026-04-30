@@ -273,16 +273,20 @@ export class ModuleManager {
   /** flat key (layoutSiteName / layoutNavLinks 등) → LayoutConfig 합성.
    *  Phase 4 — 미설정 필드는 DEFAULT_LAYOUT 의 값 사용. */
   private composeLayout(s: Record<string, any>): LayoutConfig {
+    const siteName = s.layoutSiteName || s.siteTitle || DEFAULT_LAYOUT.header.siteName;
+    // footer 텍스트 미설정 시 자동 default — © {year} {siteName}.
+    // 사용자가 footer ON 했는데 텍스트 안 박으면 null 반환되던 버그 fix.
+    const defaultFooterText = `© ${new Date().getFullYear()} ${siteName}. All rights reserved.`;
     return {
       header: {
         show: s.layoutShowHeader !== false, // 기본 true (미설정 = true)
-        siteName: s.layoutSiteName || s.siteTitle || DEFAULT_LAYOUT.header.siteName,
+        siteName,
         logoUrl: s.layoutLogoUrl || '',
         navLinks: parseNavLinks(s.layoutNavLinks),
       },
       footer: {
         show: s.layoutShowFooter !== false,
-        text: s.layoutFooterText || '',
+        text: s.layoutFooterText?.trim() || defaultFooterText,
       },
       showReadingProgress: s.layoutShowReadingProgress === true,
       mode: (['full', 'right-sidebar', 'left-sidebar', 'boxed'].includes(s.layoutMode) ? s.layoutMode : 'full'),
