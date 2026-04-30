@@ -171,13 +171,80 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     align: z.enum(['left','right','center']).optional().describe('그리드 내부 전체 텍스트 정렬. 기본 left.'),
   }, '2D 격자 레이아웃. render_metric 여러 개를 담으면 KPI 대시보드.');
 
+  // 지도 + 마커 + 반경 원 + 범례. 좌표 환각 절대 금지 — sysmod_kakao-map 결과만.
+  const mapMarker = z.object({
+    lat: z.number().describe('위도 — sysmod geocoding 결과만, AI 기억으로 박지 마라'),
+    lon: z.number().describe('경도'),
+    label: z.string().describe('마커 위 짧은 라벨'),
+    popup: z.string().optional().describe('마커 클릭 시 popup 텍스트 (HTML 일부 허용)'),
+    color: z.string().optional().describe('red/blue/green/orange/purple/yellow/gray 또는 hex (#ef4444). 기본 red'),
+    type: z.string().optional().describe('카테고리 — real-estate/weather/poi 등 (UI 그룹화 용)'),
+  });
+  const mapCircle = z.object({
+    lat: z.number(),
+    lon: z.number(),
+    radius: z.number().describe('반경 m (예: 1500 = 1.5km)'),
+    color: z.string().optional().describe('원 색상 (markers color 와 동일 형식). 기본 blue'),
+    style: z.enum(['solid', 'dashed']).optional().describe('실선 / 점선 (기본 dashed)'),
+  });
+  const mapLegend = z.object({
+    color: z.string().describe('마커 color 와 동일 형식'),
+    label: z.string(),
+  });
+  makeRender('render_map', 'Map', {
+    markers: z.array(mapMarker).describe('마커 배열. 부동산·날씨·매장·관광지 위치 시각화'),
+    circles: z.array(mapCircle).optional().describe('반경 원. 1.5km 도보권·학군 권역 등 영역 표시'),
+    legend: z.array(mapLegend).optional().describe('범례 — 우상단 오버레이. 마커 색상 의미 설명'),
+    center: z.object({ lat: z.number(), lon: z.number() }).optional().describe('지도 중심. 미지정 시 markers 평균'),
+    zoom: z.number().optional().describe('줌 레벨 (Leaflet 1-18 / 카카오 level 1-14). 기본 12'),
+    height: z.string().optional().describe('지도 높이 (예: 400px / 60vh). 기본 400px'),
+    provider: z.enum(['auto', 'leaflet', 'kakao']).optional().describe('auto (기본 — 한국 좌표 자동 카카오) / leaflet (한국 외) / kakao (한국 강제)'),
+  }, '지도 + 마커 + 반경 원 + 범례. 한국 좌표 (위도 33-38.7, 경도 124.5-132) + 카카오 JS 키 = 카카오맵, 그 외 = Leaflet+OSM 자동. **좌표 환각 금지** — markers/circles 의 lat·lon 은 sysmod_kakao-map 결과로만 채울 것.');
+
+  makeRender('render_diagram', 'Diagram', {
+    code: z.string().describe('mermaid DSL 코드 (flowchart/sequence/gantt/class 등)'),
+    theme: z.enum(['default', 'dark', 'forest', 'neutral']).optional(),
+  }, 'Mermaid 다이어그램. flowchart·sequence·gantt·classDiagram·stateDiagram·erDiagram 등.');
+
+  makeRender('render_math', 'Math', {
+    expression: z.string().describe('LaTeX 수식 (예: E = mc^2)'),
+    block: z.boolean().optional().describe('block(독립 줄) / inline. 기본 block'),
+  }, 'KaTeX 수식 렌더. 수학·물리·통계 표기.');
+
+  makeRender('render_code', 'Code', {
+    code: z.string().describe('소스 코드'),
+    language: z.string().describe('python/javascript/typescript/bash 등'),
+    showLineNumbers: z.boolean().optional().describe('줄 번호 표시 (기본 true)'),
+    title: z.string().optional().describe('파일명 등 상단 라벨'),
+  }, '코드 블록 (hljs syntax highlight + 줄 번호 + 파일명).');
+
+  makeRender('render_slideshow', 'Slideshow', {
+    images: z.array(z.object({ url: z.string(), caption: z.string().optional() })).describe('슬라이드 이미지 배열'),
+    autoplay: z.boolean().optional(),
+    autoplayDelay: z.number().optional().describe('autoplay 시 다음 슬라이드까지 ms (기본 3000)'),
+    height: z.string().optional(),
+  }, '이미지 슬라이드쇼 (Swiper). 갤러리·포트폴리오·제품 사진.');
+
+  makeRender('render_lottie', 'Lottie', {
+    src: z.string().describe('Lottie JSON URL'),
+    loop: z.boolean().optional().describe('반복 재생 (기본 true)'),
+    autoplay: z.boolean().optional().describe('자동 재생 (기본 true)'),
+    height: z.string().optional(),
+  }, 'Lottie 애니메이션. 마이크로 인터랙션·로딩 표시·축하 효과.');
+
+  makeRender('render_network', 'Network', {
+    nodes: z.array(z.object({ id: z.string(), label: z.string().optional(), color: z.string().optional() })),
+    edges: z.array(z.object({ source: z.string(), target: z.string(), label: z.string().optional() })),
+    height: z.string().optional(),
+  }, '네트워크 그래프 (Cytoscape). 의존 관계·소셜 네트워크·조직도.');
+
   // CDN 카탈로그는 lib/cdn-libraries.ts 단일 source. 전용 render_* 컴포넌트로 흡수된 라이브러리
   // (leaflet/mermaid/katex/hljs/cytoscape/lottie/swiper) 는 거기서 이미 제외됨 → render_iframe 우회 차단.
   const CDN_MAP = CDN_LIBRARIES;
 
   server.tool(
     'render_iframe',
-    '한 섹션용 iframe 위젯 (sandbox srcDoc) — **마지막 수단**. 다음은 모두 전용 도구 있음 → render_iframe 쓰면 안 됨: 지도(render_map) / 다이어그램(render_diagram, mermaid) / 수식(render_math, KaTeX) / 코드(render_code, hljs) / 슬라이드(render_slideshow) / Lottie 애니메이션(render_lottie) / 네트워크(render_network) / 표·차트·리스트·헤더·텍스트·이미지 (전용 render_*). render_iframe 은 d3 자유 시각화·threejs 3D·p5 스케치·echarts·animejs 같이 전용 도구 없는 케이스만. **fake 지도 절대 금지** — "좌표 비례 표시"·"상대 위치 점 찍기"·"그리드에 마커" 같이 render_iframe 으로 진짜 지도 흉내내면 안 됨. 지도는 render_map 만, 실좌표(sysmod_kakao-map geocoding 결과) 없으면 지도 발행 자체 안 함. iframe 안에서는 AdSense 광고·SEO 인덱싱 차단되니 페이지 본문 통째로 만들지 마라. libraries 배열 명시 시 자동으로 <head>에 script/link 태그 삽입됨.',
+    '한 섹션용 iframe 위젯 (sandbox srcDoc) — **마지막 수단**. 다음은 모두 전용 도구 있음 → render_iframe 쓰면 안 됨: 지도(render_map) / 다이어그램(render_diagram, mermaid) / 수식(render_math, KaTeX) / 코드(render_code, hljs) / 슬라이드(render_slideshow) / Lottie 애니메이션(render_lottie) / 네트워크(render_network) / 표·차트·리스트·헤더·텍스트·이미지 (전용 render_*). render_iframe 은 d3 자유 시각화·threejs 3D·p5 스케치·echarts·animejs 같이 전용 도구 없는 케이스만. iframe 안에서는 AdSense 광고·SEO 인덱싱 차단되니 페이지 본문 통째로 만들지 마라. libraries 배열 명시 시 자동으로 <head>에 script/link 태그 삽입됨.',
     {
       html: z.string().describe('HTML 본문 또는 완전한 HTML'),
       height: z.string().optional().describe('iframe 높이 (기본 400px)'),

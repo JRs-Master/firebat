@@ -74,7 +74,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'KeyValue':      return <KeyValueComp title={p.title} items={p.items ?? []} columns={p.columns} />;
     case 'StatusBadge':   return <StatusBadgeComp items={p.items ?? []} />;
     case 'PlanCard':      return <PlanCardComp title={p.title ?? ''} steps={p.steps ?? []} estimatedTime={p.estimatedTime} risks={p.risks} />;
-    case 'Map':           return <MapComp markers={p.markers ?? []} center={p.center} zoom={p.zoom} height={p.height} provider={p.provider} />;
+    case 'Map':           return <MapComp markers={p.markers ?? []} circles={p.circles} legend={p.legend} center={p.center} zoom={p.zoom} height={p.height} provider={p.provider} />;
     case 'Diagram':       return <DiagramComp code={p.code ?? ''} theme={p.theme} />;
     case 'Math':          return <MathComp expression={p.expression ?? ''} block={p.block !== false} />;
     case 'Code':          return <CodeComp code={p.code ?? ''} language={p.language ?? 'plaintext'} showLineNumbers={p.showLineNumbers !== false} title={p.title} />;
@@ -1612,19 +1612,42 @@ type MapMarker = {
   type?: string | null;
 };
 
+type MapCircle = {
+  lat: number;
+  lon: number;
+  /** 반경 m (예: 1500 = 1.5km) */
+  radius: number;
+  color?: string | null;
+  /** 'solid' | 'dashed' (기본 dashed). Leaflet 은 dashArray, 카카오는 strokeStyle */
+  style?: 'solid' | 'dashed' | null;
+};
+
+type MapLegend = {
+  color: string;
+  label: string;
+};
+
 const COLOR_TO_HEX: Record<string, string> = {
   red: '#ef4444', blue: '#3b82f6', green: '#22c55e',
-  orange: '#f97316', purple: '#a855f7',
+  orange: '#f97316', purple: '#a855f7', yellow: '#eab308', gray: '#6b7280',
 };
+
+function colorHex(c?: string | null, fallback = '#3b82f6'): string {
+  if (!c) return fallback;
+  if (c.startsWith('#')) return c;
+  return COLOR_TO_HEX[c] || fallback;
+}
 
 function isKoreaCoord(lat: number, lon: number): boolean {
   return lat >= 33 && lat <= 38.7 && lon >= 124.5 && lon <= 132;
 }
 
 function MapComp({
-  markers, center, zoom, height, provider,
+  markers, circles, legend, center, zoom, height, provider,
 }: {
   markers: MapMarker[];
+  circles?: MapCircle[] | null;
+  legend?: MapLegend[] | null;
   center?: { lat: number; lon: number } | null;
   zoom?: number | null;
   height?: string | null;
@@ -1632,6 +1655,8 @@ function MapComp({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const safeMarkers = Array.isArray(markers) ? markers.filter(m => typeof m?.lat === 'number' && typeof m?.lon === 'number') : [];
+  const safeCircles = Array.isArray(circles) ? circles.filter(c => typeof c?.lat === 'number' && typeof c?.lon === 'number' && typeof c?.radius === 'number' && c.radius > 0) : [];
+  const safeLegend = Array.isArray(legend) ? legend.filter(l => l?.color && l?.label) : [];
   const finalHeight = height || '400px';
   const finalZoom = typeof zoom === 'number' ? zoom : 12;
 
@@ -1664,6 +1689,19 @@ function MapComp({
             center: new w.kakao.maps.LatLng(finalCenter.lat, finalCenter.lon),
             level: Math.max(1, Math.min(14, 15 - finalZoom)),  // Leaflet zoom (12=도시) → kakao level (3=동네)
           });
+          // 반경 원 (circles) — 카카오 strokeStyle: 'dashed' / 'solid'
+          for (const c of safeCircles) {
+            new w.kakao.maps.Circle({
+              center: new w.kakao.maps.LatLng(c.lat, c.lon),
+              radius: c.radius,
+              strokeWeight: 2,
+              strokeColor: colorHex(c.color, '#3b82f6'),
+              strokeOpacity: 0.6,
+              strokeStyle: c.style === 'solid' ? 'solid' : 'dashed',
+              fillColor: colorHex(c.color, '#3b82f6'),
+              fillOpacity: 0.05,
+            }).setMap(map);
+          }
           for (const m of safeMarkers) {
             const marker = new w.kakao.maps.Marker({
               position: new w.kakao.maps.LatLng(m.lat, m.lon),
@@ -1705,8 +1743,21 @@ function MapComp({
           subdomains: 'abcd',
           maxZoom: 19,
         }).addTo(map);
+        // 반경 원 (circles) — Leaflet L.circle, dashArray 로 점선
+        for (const c of safeCircles) {
+          const color = colorHex(c.color, '#3b82f6');
+          L.circle([c.lat, c.lon], {
+            radius: c.radius,
+            color,
+            weight: 2,
+            opacity: 0.6,
+            fillColor: color,
+            fillOpacity: 0.05,
+            ...(c.style === 'solid' ? {} : { dashArray: '6 6' }),
+          }).addTo(map);
+        }
         for (const m of safeMarkers) {
-          const color = m.color && COLOR_TO_HEX[m.color] ? COLOR_TO_HEX[m.color] : '#ef4444';
+          const color = colorHex(m.color, '#ef4444');
           const icon = L.divIcon({
             className: 'firebat-map-marker',
             html: `<div style="background:${color};border:2px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>`,
@@ -1736,14 +1787,32 @@ function MapComp({
         }
       }
     }
-  }, [safeMarkers, finalCenter.lat, finalCenter.lon, finalZoom, provider]);
+  }, [safeMarkers, safeCircles, finalCenter.lat, finalCenter.lon, finalZoom, provider]);
 
   return (
     <div
-      ref={ref}
-      className="rounded-xl border border-gray-100 shadow-sm overflow-hidden"
+      className="relative rounded-xl border border-gray-100 shadow-sm overflow-hidden"
       style={{ height: finalHeight, width: '100%' }}
-    />
+    >
+      <div ref={ref} style={{ height: '100%', width: '100%' }} />
+      {/* 사용자 정의 범례 — 우상단 오버레이. AI 가 카테고리별 색상 의미 명시할 때 사용 */}
+      {safeLegend.length > 0 && (
+        <div
+          className="absolute top-2 right-2 bg-white/95 rounded-md shadow border border-gray-200 px-2 py-1.5 text-[11px] z-[400]"
+          style={{ pointerEvents: 'none' }}
+        >
+          {safeLegend.map((l, i) => (
+            <div key={i} className="flex items-center gap-1.5 leading-tight py-0.5">
+              <span
+                className="inline-block w-2.5 h-2.5 rounded-full"
+                style={{ backgroundColor: colorHex(l.color, '#3b82f6') }}
+              />
+              <span className="text-gray-700">{l.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

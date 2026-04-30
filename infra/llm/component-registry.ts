@@ -572,7 +572,7 @@ export const COMPONENTS: ComponentDef[] = [
   {
     name: 'map',
     componentType: 'Map',
-    description: '지도 + 마커. 부동산 거래·날씨·매장 위치 등 지리 데이터 시각화. **provider 자동 분기**: South Korea 좌표 (위도 33-38.7, 경도 124.5-132) + 카카오 JS 키 박혀있으면 카카오맵, **South Korea 외 지역은 Leaflet+OSM** (CDN 무료, 카카오는 한국만 정밀). 카카오 키 미설정 시 South Korea 좌표도 Leaflet 폴백. **좌표 환각 절대 금지** — markers/center 의 lat·lon 은 반드시 sysmod_kakao-map (action: geocoding · search-keyword · search-address) 결과 또는 sysmod 도구 호출 결과로만 채울 것. AI 학습 기억으로 좌표 박지 마라 — 옆건물·옆동네 표시 위험. **좌표 못 얻으면 render_map 호출 자체 금지** — render_iframe·render_chart scatter 등으로 "좌표 비례 표시" 같은 fake 지도 만들지 마라. 진짜 지도 외 표현은 시도 자체 안 함. 좌표 부재 시 텍스트로만 결과 보고. South Korea 외 지역은 다른 geocoding sysmod 또는 사용자가 명시한 좌표만 사용.',
+    description: '지도 + 마커 + 반경 원 + 범례. 부동산 거래·날씨·매장 위치 등 지리 데이터 시각화. **provider 자동 분기**: South Korea 좌표 (위도 33-38.7, 경도 124.5-132) + 카카오 JS 키 박혀있으면 카카오맵, **South Korea 외 지역은 Leaflet+OSM** (CDN 무료, 카카오는 한국만 정밀). 카카오 키 미설정 시 South Korea 좌표도 Leaflet 폴백. 좌표는 반드시 sysmod (kakao-map geocoding/search-keyword 등) 결과로만 채울 것 — AI 학습 기억으로 박으면 옆건물·옆동네 표시.',
     semanticText: '지도 맵 map 마커 marker 위치 location 좌표 latlng 카카오 kakao leaflet osm 부동산 시세 날씨 매장 South Korea',
     propsSchema: {
       type: 'object',
@@ -589,8 +589,35 @@ export const COMPONENTS: ComponentDef[] = [
               lon: { type: 'number', description: '경도 — sysmod geocoding 결과만 사용. AI 기억으로 박지 마라.' },
               label: { type: 'string', description: '마커 위 짧은 라벨' },
               popup: { type: ['string', 'null'], description: '마커 클릭 시 popup 텍스트 (HTML 일부 허용)' },
-              color: { type: ['string', 'null'], description: 'red / blue / green / orange / purple (기본 red). Leaflet 만 색상 반영 — 카카오는 기본 핀' },
+              color: { type: ['string', 'null'], description: 'red / blue / green / orange / purple / yellow / gray 또는 hex (#ef4444 등). 기본 red.' },
               type: { type: ['string', 'null'], description: '카테고리 분류 — real-estate / weather / poi 등 (UI 그룹화 용)' },
+            },
+          },
+        },
+        circles: {
+          type: ['array', 'null'],
+          description: '반경 원. 강남역 1.5km 반경, 학군 권역 등 영역 표시용. 좌표는 markers 와 동일 — sysmod 결과만.',
+          items: {
+            type: 'object',
+            required: ['lat', 'lon', 'radius'],
+            properties: {
+              lat: { type: 'number' },
+              lon: { type: 'number' },
+              radius: { type: 'number', description: '반경 m (예: 1500 = 1.5km)' },
+              color: { type: ['string', 'null'], description: '원 색상 (markers 의 color 와 동일 형식). 기본 blue.' },
+              style: { type: ['string', 'null'], description: 'solid (실선) / dashed (점선, 기본).' },
+            },
+          },
+        },
+        legend: {
+          type: ['array', 'null'],
+          description: '범례 — 우상단 오버레이. 마커 색상의 의미를 설명할 때 사용 (예: 빨강=아파트, 초록=실거래 매칭).',
+          items: {
+            type: 'object',
+            required: ['color', 'label'],
+            properties: {
+              color: { type: 'string', description: '마커 color 와 동일 형식' },
+              label: { type: 'string' },
             },
           },
         },

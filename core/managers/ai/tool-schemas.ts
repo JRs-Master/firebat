@@ -536,7 +536,7 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
     ...RENDER_TOOLS,
     {
       name: 'render_iframe',
-      description: '한 섹션용 iframe 위젯 — **마지막 수단**. 다음은 모두 전용 도구 있음 → render_iframe 쓰면 안 됨: 지도(render_map) / 다이어그램(render_diagram, mermaid) / 수식(render_math, KaTeX) / 코드(render_code, hljs) / 슬라이드(render_slideshow) / Lottie 애니메이션(render_lottie) / 네트워크 그래프(render_network) / 표·차트·리스트·헤더·텍스트·이미지 (전용 render_*). render_iframe 은 d3 자유 시각화·threejs 3D·p5 스케치·echarts·animejs 같이 전용 도구 없는 케이스만. **fake 지도 절대 금지** — "좌표 비례 표시"·"상대 위치 그리드"·"점 찍어서 위치 흉내" 같이 render_iframe 으로 진짜 지도 흉내내는 패턴 금지. 지도는 render_map 만, 실좌표 없으면 발행 자체 안 함. **iframe 안에서는 AdSense 광고 게재·Googlebot 인덱싱 모두 차단되므로 페이지 본문 전체를 이걸로 만들면 광고 수익·검색 노출 0**. CDN 라이브러리는 dependencies 배열로 선언만 — Frontend 가 자동 합성. <script src="..."> 태그 직접 박지 마라.',
+      description: '한 섹션용 iframe 위젯 — **마지막 수단**. 다음은 모두 전용 도구 있음 → render_iframe 쓰면 안 됨: 지도(render_map) / 다이어그램(render_diagram, mermaid) / 수식(render_math, KaTeX) / 코드(render_code, hljs) / 슬라이드(render_slideshow) / Lottie 애니메이션(render_lottie) / 네트워크 그래프(render_network) / 표·차트·리스트·헤더·텍스트·이미지 (전용 render_*). render_iframe 은 d3 자유 시각화·threejs 3D·p5 스케치·echarts·animejs 같이 전용 도구 없는 케이스만. **iframe 안에서는 AdSense 광고 게재·Googlebot 인덱싱 모두 차단되므로 페이지 본문 전체를 이걸로 만들면 광고 수익·검색 노출 0**. CDN 라이브러리는 dependencies 배열로 선언만 — Frontend 가 자동 합성. <script src="..."> 태그 직접 박지 마라.',
       parameters: {
         type: 'object',
         required: ['html'],
