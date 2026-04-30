@@ -244,12 +244,13 @@ export class CliGeminiFormat implements FormatHandler {
         ? `<SYSTEM_INSTRUCTIONS>\n${options.systemPrompt}\n</SYSTEM_INSTRUCTIONS>\n\n<USER_QUERY>\n${promptBody}\n</USER_QUERY>\n\n위 SYSTEM_INSTRUCTIONS 는 행동 규범. 반복·요약 금지. USER_QUERY 에만 답하세요.`
         : promptBody;
 
-      // 첨부 이미지 — Gemini CLI 는 --image 플래그 없고 stream-json input 도 미지원 (gemini --help 검증).
-      // @<path> 는 read_many_files (text 전용) 호출이라 binary skip — 이미지에 작동 안 함.
-      // 정공법: AI 한테 read_file 도구 (image/audio/PDF 지원) 명시 호출 지시. yolo 모드라 자동 승인.
+      // 첨부 이미지 — Gemini CLI 의 @<path> 구문 (커뮤니티 검증 — addyosmani.com/blog/gemini-cli,
+      // oneuptime.com 멀티모달 가이드 등 다수 사례). 공식 docs 의 "@ = read_many_files (text only)"
+      // 표현은 디렉토리/다중 파일 케이스. 단일 image 파일은 내부적으로 read_file 라우팅되어 vision 작동.
+      // base64 → 임시 파일 → spawn 종료 시 cleanup.
       const tmpImage = writeImageTempFile(options.image, options.imageMimeType);
       const finalPrompt = tmpImage
-        ? `[첨부된 이미지 파일: ${tmpImage.path}]\n\nread_file 도구로 위 이미지 파일을 읽어서 다음 요청에 답변하세요.\n\n${baseFinalPrompt}`
+        ? `@${tmpImage.path}\n\n${baseFinalPrompt}`
         : baseFinalPrompt;
 
       // gemini -p "..." --output-format stream-json --approval-mode yolo
