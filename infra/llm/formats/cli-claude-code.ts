@@ -19,7 +19,6 @@ import path from 'path';
 import type { ChatMessage, LlmCallOpts, LlmJsonResponse, LlmToolResponse, ToolDefinition, ToolExchangeEntry } from '../../../core/ports';
 import type { InfraResult } from '../../../core/types';
 import type { FormatHandler, FormatHandlerContext } from '../format-handler';
-import { claudeDaemonManager, hashSpawnConfig } from './claude-code-daemon';
 
 /** CLI 프로세스 실행 + stream-json 파싱 결과 */
 interface CliRunResult {
@@ -122,50 +121,15 @@ export class CliClaudeCodeFormat implements FormatHandler {
     // Claude Code 가 내부에서 tool use loop 처리 (MCP 서버 통해).
     // 우리는 prompt + systemPrompt + 초기 history 를 넘기고 최종 text 만 받음.
     // toolExchanges 는 CLI 내부 처리이므로 빈 배열 반환.
+    //
+    // 컨텍스트 유지: Codex/Gemini 와 동일 패턴 — 매 turn cold spawn + `--resume <session_id>`.
+    // DB cli_session_id 영속 → 다음 turn 에 CLI 자체가 이전 컨텍스트 보유.
+    // (이전 daemon LRU 패턴은 시각 라인 hash quirk + 메모리 부담으로 폐기, 2026-04-30)
     const resumeSessionId = opts?.cliResumeSessionId;
     // HTTP MCP 우선 — 내부 토큰 있으면 Firebat 메인 프로세스 /api/mcp-internal 에 연결 (즉시)
     const mcpCfg = ctx.resolveMcpConfig?.();
     const mcpConfigPath = this.ensureMcpConfigFile(mcpCfg?.token, mcpCfg?.url?.replace(/\/api\/mcp-internal.*$/, ''));
     const cliModel = ctx.config.cliModel;
-    const thinkingEffort = mapThinkingToEffort(opts?.thinkingLevel) ?? undefined;
-
-    // conversationId 있으면 persistent daemon 경유 — spawn 오버헤드 제거
-    const conversationId = opts?.conversationId;
-    if (conversationId) {
-      const cfgHash = hashSpawnConfig(systemPrompt, mcpConfigPath, cliModel, thinkingEffort);
-      const daemonKey = `${conversationId}:${cfgHash}`;
-      const daemon = claudeDaemonManager.getOrCreate(daemonKey, {
-        systemPrompt,
-        mcpConfigPath,
-        cliModel,
-        thinkingEffort,
-      });
-      // 신규 데몬(첫 send) 이면 UI 의 prior history 를 주입. warm daemon 은 자체 세션 보유 → prompt 만.
-      const daemonPrompt = daemon.isFirstSend()
-        ? this.buildPromptWithHistory(prompt, history)
-        : prompt;
-      const daemonRes = await daemon.send(daemonPrompt, opts?.onChunk);
-      if (daemonRes.error) {
-        // 데몬 실패 시 invalidate + 콜드 경로 폴백 (안정성)
-        claudeDaemonManager.invalidate(conversationId);
-      } else {
-        if (daemonRes.sessionId && !resumeSessionId && opts?.onCliSessionId) {
-          opts.onCliSessionId(daemonRes.sessionId);
-        }
-        return {
-          success: true,
-          data: {
-            text: daemonRes.text,
-            toolCalls: [],
-            responseId: daemonRes.sessionId,
-            internallyUsedTools: daemonRes.usedTools,
-            renderedBlocks: daemonRes.renderedBlocks,
-            pendingActions: daemonRes.pendingActions,
-            suggestions: daemonRes.suggestions,
-          },
-        };
-      }
-    }
 
     const res = await this.runClaude(prompt, {
       systemPrompt,
