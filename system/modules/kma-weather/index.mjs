@@ -11,7 +11,9 @@
  *   alerts       — 기상특보 — WthrWrnInfoService/getWthrWrnList
  *   uv-index     — 자외선지수 — LivingWthrIdxServiceV3/getUVIdxV3
  *   earthquake   — 지진정보 — EqkInfoService/getEqkMsg
- *   typhoon      — 태풍정보 — TyphoonInfoService/getTyphoonInfoList
+ *   typhoon-list — 태풍 통보문 목록 — TyphoonInfoService/getTyphoonInfoList
+ *   typhoon-info — 태풍 통보문 상세 — TyphoonInfoService/getTyphoonInfo
+ *   typhoon-forecast — 태풍 예상 정보 — TyphoonInfoService/getTyphoonFcst
  *
  * 인증: ?serviceKey=<URL-encoded DATA_GO_KR_API_KEY>
  * 응답: dataType=JSON 강제. items 배열 추출 후 반환.
@@ -186,7 +188,7 @@ async function main() {
   catch { return out(false, undefined, 'stdin JSON 파싱 실패'); }
 
   const data = input.data ?? {};
-  const { action, lat, lon, nx: nxIn, ny: nyIn, regId, stnId, areaNo, tmFc, fromTm, toTm, limit = 100 } = data;
+  const { action, lat, lon, nx: nxIn, ny: nyIn, regId, stnId, areaNo, tmFc, typhoonNo, fromTm, toTm, limit = 100 } = data;
 
   const serviceKey = process.env.DATA_GO_KR_API_KEY;
   if (!serviceKey) return out(false, undefined, 'DATA_GO_KR_API_KEY 환경변수 미설정');
@@ -280,7 +282,7 @@ async function main() {
       return out(true, { items: r.items });
     }
 
-    if (action === 'typhoon') {
+    if (action === 'typhoon-list') {
       const fromYmd = fromTm || todayYmd(new Date(Date.now() - 30 * 86400000));
       const toYmd = toTm || todayYmd();
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonInfoList', {
@@ -288,6 +290,25 @@ async function main() {
       });
       if (!r.ok) return out(false, undefined, r.error);
       return out(true, { items: r.items });
+    }
+
+    if (action === 'typhoon-info') {
+      if (!tmFc) return out(false, undefined, 'typhoon-info 는 tmFc 필요 (yyyyMMddHHmm). typhoon-list 결과에서 확인');
+      const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonInfo', {
+        numOfRows: limit, pageNo: 1, tmFc,
+      });
+      if (!r.ok) return out(false, undefined, r.error);
+      return out(true, { items: r.items, tmFc });
+    }
+
+    if (action === 'typhoon-forecast') {
+      if (!tmFc) return out(false, undefined, 'typhoon-forecast 는 tmFc 필요 (yyyyMMddHHmm)');
+      if (!typhoonNo) return out(false, undefined, 'typhoon-forecast 는 typhoonNo 필요 (예: 202515)');
+      const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonFcst', {
+        numOfRows: limit, pageNo: 1, tmFc, typhoonSeq: typhoonNo,
+      });
+      if (!r.ok) return out(false, undefined, r.error);
+      return out(true, { items: r.items, tmFc, typhoonNo });
     }
 
     return out(false, undefined, `알 수 없는 action: ${action}`);

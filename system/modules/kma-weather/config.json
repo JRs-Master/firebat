@@ -14,8 +14,8 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["short", "ultra-now", "ultra-short", "medium-land", "medium-ta", "alerts", "uv-index", "earthquake", "typhoon"],
-        "description": "short=단기예보 (3일, 1시간), ultra-now=초단기실황 (현재), ultra-short=초단기예보 (6시간), medium-land=중기 육상예보 (4-10일), medium-ta=중기 기온, alerts=기상특보, uv-index=자외선지수 (생활기상지수), earthquake=지진정보, typhoon=태풍정보"
+        "enum": ["short", "ultra-now", "ultra-short", "medium-land", "medium-ta", "alerts", "uv-index", "earthquake", "typhoon-list", "typhoon-info", "typhoon-forecast"],
+        "description": "short=단기예보 (3일, 1시간), ultra-now=초단기실황 (현재), ultra-short=초단기예보 (6시간), medium-land=중기 육상예보 (4-10일), medium-ta=중기 기온, alerts=기상특보, uv-index=자외선지수 (생활기상지수), earthquake=지진정보, typhoon-list=태풍 통보문 목록 (발표시각·번호·호수·제목), typhoon-info=태풍정보조회 (발표시각의 위치·진행·풍속·기압·예상문구·경로이미지), typhoon-forecast=태풍예상정보 (발표시각+태풍번호 → 70%확률반경·15m/s강풍반경·진행방향·예상풍속)"
       },
       "lat": {
         "type": "number",
@@ -47,7 +47,11 @@
       },
       "tmFc": {
         "type": "string",
-        "description": "[medium-*/typhoon] 발표시각 yyyyMMddHHmm (06시 또는 18시). 미지정 시 가장 가까운 발표 자동"
+        "description": "[medium-*/typhoon-info/typhoon-forecast] 발표시각 yyyyMMddHHmm. 중기예보=06시·18시 발표. 태풍 통보문은 발표 시점에 따라 다양"
+      },
+      "typhoonNo": {
+        "type": "string",
+        "description": "[typhoon-forecast] 태풍번호 (예: '202515'). typhoon-list 결과에서 확인"
       },
       "fromTm": {
         "type": "string",
