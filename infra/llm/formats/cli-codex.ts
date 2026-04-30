@@ -9,6 +9,7 @@
  * Thinking: --config model_reasoning_effort=<level> (minimal|low|medium|high|xhigh)
  */
 import { spawn, ChildProcessByStdio } from 'child_process';
+import { writeImageTempFile, cleanupTempFile } from './cli-image-helper';
 import type { Readable } from 'stream';
 import fs from 'fs';
 import os from 'os';
@@ -45,6 +46,9 @@ interface RunOptions {
   thinkingLevel?: string;
   resumeSessionId?: string;
   onChunk?: LlmCallOpts['onChunk'];
+  /** 첨부 이미지 (base64 raw 또는 data: URL). Codex CLI 의 `--image <path>` 플래그로 전달. */
+  image?: string;
+  imageMimeType?: string;
 }
 
 /** THINKING_LEVELS → Codex model_reasoning_effort 매핑 (max 미지원, xhigh 모델 의존) */
@@ -60,7 +64,7 @@ export class CliCodexFormat implements FormatHandler {
     const jsonInstruction = opts?.jsonSchema
       ? `\n\n응답은 다음 JSON 스키마를 정확히 따르는 JSON 객체로만 반환 (마크다운·설명 금지):\n${JSON.stringify(opts.jsonSchema)}`
       : '\n\n응답은 JSON 객체로만 반환 (마크다운·설명 금지).';
-    const res = await this.runCodex(prompt + jsonInstruction, { systemPrompt, history, thinkingLevel: opts?.thinkingLevel });
+    const res = await this.runCodex(prompt + jsonInstruction, { systemPrompt, history, thinkingLevel: opts?.thinkingLevel, image: opts?.image, imageMimeType: opts?.imageMimeType });
     if (res.error) return { success: false, error: res.error };
     try { return { success: true, data: JSON.parse(res.text) as LlmJsonResponse }; }
     catch { return { success: true, data: { thoughts: '', reply: res.text, actions: [], suggestions: [] } }; }
@@ -70,7 +74,7 @@ export class CliCodexFormat implements FormatHandler {
     const jsonInstruction = opts?.jsonSchema
       ? `\n\n응답은 다음 JSON 스키마를 정확히 따르는 JSON 객체로만 반환 (마크다운·설명 금지):\n${JSON.stringify(opts.jsonSchema)}`
       : opts?.jsonMode ? '\n\n응답은 JSON 객체로만 반환.' : '';
-    const res = await this.runCodex(prompt + jsonInstruction, { systemPrompt, onChunk: opts?.onChunk, thinkingLevel: opts?.thinkingLevel });
+    const res = await this.runCodex(prompt + jsonInstruction, { systemPrompt, onChunk: opts?.onChunk, thinkingLevel: opts?.thinkingLevel, image: opts?.image, imageMimeType: opts?.imageMimeType });
     if (res.error) return { success: false, error: res.error };
     return { success: true, data: res.text };
   }
@@ -89,6 +93,8 @@ export class CliCodexFormat implements FormatHandler {
       thinkingLevel: opts?.thinkingLevel,
       resumeSessionId,
       onChunk: opts?.onChunk,
+      image: opts?.image,
+      imageMimeType: opts?.imageMimeType,
     });
     if (res.error) return { success: false, error: res.error };
     // 첫 턴에서 session_id 캡처 → 호출자에게 전달
@@ -170,6 +176,11 @@ export class CliCodexFormat implements FormatHandler {
         : ['exec', promptWithSystem, ...securityFlags];
       if (options.cliModel) args.push('--model', options.cliModel);
 
+      // 첨부 이미지 — Codex CLI 의 --image <path> 플래그 사용 (공식 docs 검증).
+      // base64 → 임시 파일 → spawn 종료 시 cleanup.
+      const tmpImage = writeImageTempFile(options.image, options.imageMimeType);
+      if (tmpImage) args.push('--image', tmpImage.path);
+
       const effort = mapThinkingToCodex(options.thinkingLevel);
       if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
 
@@ -186,9 +197,13 @@ export class CliCodexFormat implements FormatHandler {
       try {
         child = spawn('codex', args, { stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
       } catch (e) {
+        cleanupTempFile(tmpImage?.path);
         resolve({ text: '', usedTools: [], renderedBlocks: [], pendingActions: [], suggestions: [], error: `Codex CLI 실행 실패 (codex 명령어 미설치?): ${(e as Error).message}` });
         return;
       }
+      // 자식 프로세스 종료 시 임시 이미지 파일 정리
+      child.on('close', () => cleanupTempFile(tmpImage?.path));
+      child.on('error', () => cleanupTempFile(tmpImage?.path));
 
       let stdoutBuf = '';
       let stderrBuf = '';

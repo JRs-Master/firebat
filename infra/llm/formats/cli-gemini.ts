@@ -10,6 +10,7 @@
  * Thinking: CLI 플래그 미지원 — 모델 내부 자동 처리에 맡김
  */
 import { spawn, ChildProcessByStdio } from 'child_process';
+import { writeImageTempFile, cleanupTempFile } from './cli-image-helper';
 import type { Readable } from 'stream';
 import fs from 'fs';
 import os from 'os';
@@ -48,6 +49,9 @@ interface RunOptions {
   geminiWorkspace?: string;
   resumeSessionId?: string;
   onChunk?: LlmCallOpts['onChunk'];
+  /** 첨부 이미지 (base64 raw 또는 data: URL). Gemini CLI 의 @<path> 구문으로 prompt 에 inject. */
+  image?: string;
+  imageMimeType?: string;
 }
 
 export class CliGeminiFormat implements FormatHandler {
@@ -60,7 +64,7 @@ export class CliGeminiFormat implements FormatHandler {
     const jsonInstruction = opts?.jsonSchema
       ? `\n\n응답은 다음 JSON 스키마를 정확히 따르는 JSON 객체로만 반환 (마크다운·설명 금지):\n${JSON.stringify(opts.jsonSchema)}`
       : '\n\n응답은 JSON 객체로만 반환 (마크다운·설명 금지).';
-    const res = await this.runGemini(prompt + jsonInstruction, { systemPrompt, history });
+    const res = await this.runGemini(prompt + jsonInstruction, { systemPrompt, history, image: opts?.image, imageMimeType: opts?.imageMimeType });
     if (res.error) return { success: false, error: res.error };
     try { return { success: true, data: JSON.parse(res.text) as LlmJsonResponse }; }
     catch { return { success: true, data: { thoughts: '', reply: res.text, actions: [], suggestions: [] } }; }
@@ -70,7 +74,7 @@ export class CliGeminiFormat implements FormatHandler {
     const jsonInstruction = opts?.jsonSchema
       ? `\n\n응답은 다음 JSON 스키마를 정확히 따르는 JSON 객체로만 반환 (마크다운·설명 금지):\n${JSON.stringify(opts.jsonSchema)}`
       : opts?.jsonMode ? '\n\n응답은 JSON 객체로만 반환.' : '';
-    const res = await this.runGemini(prompt + jsonInstruction, { systemPrompt, onChunk: opts?.onChunk });
+    const res = await this.runGemini(prompt + jsonInstruction, { systemPrompt, onChunk: opts?.onChunk, image: opts?.image, imageMimeType: opts?.imageMimeType });
     if (res.error) return { success: false, error: res.error };
     return { success: true, data: res.text };
   }
@@ -92,6 +96,8 @@ export class CliGeminiFormat implements FormatHandler {
       geminiWorkspace,
       resumeSessionId,
       onChunk: opts?.onChunk,
+      image: opts?.image,
+      imageMimeType: opts?.imageMimeType,
     });
     // resume 실패(세션 삭제·workspace 변경 등) → resume 없이 재시도
     if (res.error && resumeSessionId && /Invalid session identifier|Error resuming session/i.test(res.error)) {
@@ -103,6 +109,8 @@ export class CliGeminiFormat implements FormatHandler {
         geminiWorkspace,
         resumeSessionId: undefined,
         onChunk: opts?.onChunk,
+        image: opts?.image,
+        imageMimeType: opts?.imageMimeType,
       });
     }
     if (res.error) return { success: false, error: res.error };
@@ -232,9 +240,16 @@ export class CliGeminiFormat implements FormatHandler {
       //   이 방식 이점: Gemini 기본 시스템 프롬프트와 공존, echo 없음, 깔끔한 레이어링.
       // resume 시 history 주입 생략 — Gemini 세션이 이미 컨텍스트 보유
       const promptBody = options.resumeSessionId ? prompt : this.buildPromptWithHistory(prompt, options.history);
-      const finalPrompt = options.systemPrompt
+      const baseFinalPrompt = options.systemPrompt
         ? `<SYSTEM_INSTRUCTIONS>\n${options.systemPrompt}\n</SYSTEM_INSTRUCTIONS>\n\n<USER_QUERY>\n${promptBody}\n</USER_QUERY>\n\n위 SYSTEM_INSTRUCTIONS 는 행동 규범. 반복·요약 금지. USER_QUERY 에만 답하세요.`
         : promptBody;
+
+      // 첨부 이미지 — Gemini CLI 의 @<path> 구문으로 prompt 에 inject (read_file 도구가 image/audio/PDF 지원).
+      // base64 → 임시 파일 → spawn 종료 시 cleanup.
+      const tmpImage = writeImageTempFile(options.image, options.imageMimeType);
+      const finalPrompt = tmpImage
+        ? `@${tmpImage.path}\n\n${baseFinalPrompt}`
+        : baseFinalPrompt;
 
       // gemini -p "..." --output-format stream-json --approval-mode yolo
       const args: string[] = [
@@ -258,9 +273,13 @@ export class CliGeminiFormat implements FormatHandler {
           ...(options.geminiWorkspace ? { cwd: options.geminiWorkspace } : {}),
         });
       } catch (e) {
+        cleanupTempFile(tmpImage?.path);
         resolve({ text: '', usedTools: [], renderedBlocks: [], pendingActions: [], suggestions: [], error: `Gemini CLI 실행 실패 (gemini 명령어 미설치?): ${(e as Error).message}` });
         return;
       }
+      // 자식 프로세스 종료 시 임시 이미지 파일 정리
+      child.on('close', () => cleanupTempFile(tmpImage?.path));
+      child.on('error', () => cleanupTempFile(tmpImage?.path));
 
       let stdoutBuf = '';
       let stderrBuf = '';

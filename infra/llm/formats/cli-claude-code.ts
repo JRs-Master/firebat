@@ -19,6 +19,7 @@ import path from 'path';
 import type { ChatMessage, LlmCallOpts, LlmJsonResponse, LlmToolResponse, ToolDefinition, ToolExchangeEntry } from '../../../core/ports';
 import type { InfraResult } from '../../../core/types';
 import type { FormatHandler, FormatHandlerContext } from '../format-handler';
+import { extractImageBase64 } from './cli-image-helper';
 
 /** CLI 프로세스 실행 + stream-json 파싱 결과 */
 interface CliRunResult {
@@ -51,6 +52,10 @@ interface RunOptions {
   cliModel?: string;
   thinkingLevel?: string;
   onChunk?: LlmCallOpts['onChunk'];
+  /** 첨부 이미지 (base64 raw 또는 data: URL). stream-json input 모드로 image content block 전달.
+   *  Claude Code 의 Read 도구는 우리 disallowedTools 에 박혀있어 @path 참조 불가 → stream-json 만 작동. */
+  image?: string;
+  imageMimeType?: string;
 }
 
 /** Firebat thinkingLevel → Claude Code CLI --effort 값 (low/medium/high/xhigh/max).
@@ -98,7 +103,7 @@ export class CliClaudeCodeFormat implements FormatHandler {
       : '\n\n응답은 JSON 객체로만 반환 (마크다운·설명 금지).';
     const finalPrompt = prompt + jsonInstruction;
 
-    const res = await this.runClaude(finalPrompt, { systemPrompt, history });
+    const res = await this.runClaude(finalPrompt, { systemPrompt, history, image: opts?.image, imageMimeType: opts?.imageMimeType });
     if (res.error) return { success: false, error: res.error };
     try {
       return { success: true, data: JSON.parse(res.text) as LlmJsonResponse };
@@ -112,7 +117,7 @@ export class CliClaudeCodeFormat implements FormatHandler {
       ? `\n\n응답은 다음 JSON 스키마를 정확히 따르는 JSON 객체로만 반환 (마크다운·설명 금지):\n${JSON.stringify(opts.jsonSchema)}`
       : opts?.jsonMode ? '\n\n응답은 JSON 객체로만 반환 (마크다운·설명 금지).' : '';
     const finalPrompt = prompt + jsonInstruction;
-    const res = await this.runClaude(finalPrompt, { systemPrompt, onChunk: opts?.onChunk });
+    const res = await this.runClaude(finalPrompt, { systemPrompt, onChunk: opts?.onChunk, image: opts?.image, imageMimeType: opts?.imageMimeType });
     if (res.error) return { success: false, error: res.error };
     return { success: true, data: res.text };
   }
@@ -139,6 +144,8 @@ export class CliClaudeCodeFormat implements FormatHandler {
       cliModel,
       thinkingLevel: opts?.thinkingLevel,
       onChunk: opts?.onChunk,
+      image: opts?.image,
+      imageMimeType: opts?.imageMimeType,
     });
 
     if (res.error) return { success: false, error: res.error };
@@ -249,18 +256,31 @@ export class CliClaudeCodeFormat implements FormatHandler {
     return new Promise((resolve) => {
       // resume 없으면 history 를 prompt 에 병합해서 맥락 주입
       const finalPrompt = options.resumeSessionId ? prompt : this.buildPromptWithHistory(prompt, options.history);
-      const args: string[] = [
-        '--print', finalPrompt,
-        '--output-format', 'stream-json',
-        '--verbose',
-        // Firebat MCP 도구만 허용 — Core 내부 checkNeedsApproval 이 위험 작업 승인 처리.
-        // (--dangerously-skip-permissions 는 root 권한에서 차단되므로 whitelist 방식)
-        '--allowed-tools', 'mcp__firebat__*',
-        // Claude Code 내장 도구 차단 — Firebat 맥락에서 불필요한 작업으로 시간 낭비.
-        // 특히 Agent/Task(서브에이전트 spawn), ToolSearch(도구 탐색 에이전트) 는
-        // 수십 초~수분 추가 소요. MCP 기반 Firebat 도구만 사용하도록 전면 제한.
-        '--disallowed-tools', 'Agent,Task,TaskOutput,TaskStop,ToolSearch,SlashCommand,Bash,BashOutput,KillBash,KillShell,Read,Write,Edit,NotebookEdit,Glob,Grep,WebFetch,WebSearch,TodoWrite,EnterPlanMode,ExitPlanMode,EnterWorktree,ExitWorktree,Monitor,PushNotification,RemoteTrigger,ScheduleWakeup,Skill,AskUserQuestion,CronCreate,CronDelete,CronList,ListMcpResources,ReadMcpResource',
-      ];
+      // 첨부 이미지 — Claude Code 는 --image 플래그 없음. stream-json input 으로 base64 image content block 전달.
+      // Read 도구가 disallowedTools 에 박혀있어 @path 참조 불가 → stream-json input 이 유일한 vision 경로.
+      const imageData = extractImageBase64(options.image, options.imageMimeType);
+      const args: string[] = imageData
+        ? [
+            // stream-json input 모드 — stdin 으로 user message 전달. -p (print) 는 query 인자 없이 사용.
+            '-p',
+            '--input-format', 'stream-json',
+            '--output-format', 'stream-json',
+            '--verbose',
+            '--allowed-tools', 'mcp__firebat__*',
+            '--disallowed-tools', 'Agent,Task,TaskOutput,TaskStop,ToolSearch,SlashCommand,Bash,BashOutput,KillBash,KillShell,Read,Write,Edit,NotebookEdit,Glob,Grep,WebFetch,WebSearch,TodoWrite,EnterPlanMode,ExitPlanMode,EnterWorktree,ExitWorktree,Monitor,PushNotification,RemoteTrigger,ScheduleWakeup,Skill,AskUserQuestion,CronCreate,CronDelete,CronList,ListMcpResources,ReadMcpResource',
+          ]
+        : [
+            '--print', finalPrompt,
+            '--output-format', 'stream-json',
+            '--verbose',
+            // Firebat MCP 도구만 허용 — Core 내부 checkNeedsApproval 이 위험 작업 승인 처리.
+            // (--dangerously-skip-permissions 는 root 권한에서 차단되므로 whitelist 방식)
+            '--allowed-tools', 'mcp__firebat__*',
+            // Claude Code 내장 도구 차단 — Firebat 맥락에서 불필요한 작업으로 시간 낭비.
+            // 특히 Agent/Task(서브에이전트 spawn), ToolSearch(도구 탐색 에이전트) 는
+            // 수십 초~수분 추가 소요. MCP 기반 Firebat 도구만 사용하도록 전면 제한.
+            '--disallowed-tools', 'Agent,Task,TaskOutput,TaskStop,ToolSearch,SlashCommand,Bash,BashOutput,KillBash,KillShell,Read,Write,Edit,NotebookEdit,Glob,Grep,WebFetch,WebSearch,TodoWrite,EnterPlanMode,ExitPlanMode,EnterWorktree,ExitWorktree,Monitor,PushNotification,RemoteTrigger,ScheduleWakeup,Skill,AskUserQuestion,CronCreate,CronDelete,CronList,ListMcpResources,ReadMcpResource',
+          ];
 
       if (options.systemPrompt) {
         // --system-prompt 로 완전 교체 — Claude Code 기본 "코딩 도구" 프롬프트 대신
@@ -283,10 +303,30 @@ export class CliClaudeCodeFormat implements FormatHandler {
 
       let child;
       try {
-        child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+        // 이미지 모드 = stream-json input → stdin pipe 필요. 일반 모드 = stdin ignore.
+        child = spawn('claude', args, { stdio: imageData ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'] });
       } catch (e) {
         resolve({ text: '', usedTools: [], renderedBlocks: [], pendingActions: [], suggestions: [], error: `Claude Code CLI 실행 실패 (claude 명령어 미설치?): ${(e as Error).message}` });
         return;
+      }
+
+      // stream-json input 모드 — stdin 에 user message JSON line 전송 후 close.
+      // Anthropic API 형식: image source.type=base64 + media_type + data (raw base64, data: prefix 없음).
+      if (imageData && child.stdin) {
+        const userMessage = {
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: imageData.mediaType, data: imageData.data } },
+              { type: 'text', text: finalPrompt },
+            ],
+          },
+        };
+        try {
+          child.stdin.write(JSON.stringify(userMessage) + '\n');
+          child.stdin.end();
+        } catch { /* stdin 쓰기 실패 시 무시 — close 핸들러가 에러 수집 */ }
       }
 
       let stdoutBuf = '';
@@ -417,14 +457,14 @@ export class CliClaudeCodeFormat implements FormatHandler {
         }
       };
 
-      child.stdout.on('data', (chunk: Buffer) => {
+      child.stdout?.on('data', (chunk: Buffer) => {
         stdoutBuf += chunk.toString();
         const lines = stdoutBuf.split('\n');
         stdoutBuf = lines.pop() || '';
         for (const line of lines) processLine(line);
       });
 
-      child.stderr.on('data', (chunk: Buffer) => {
+      child.stderr?.on('data', (chunk: Buffer) => {
         stderrBuf += chunk.toString();
       });
 
