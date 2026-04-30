@@ -311,15 +311,17 @@ export class CliClaudeCodeFormat implements FormatHandler {
       }
 
       // stream-json input 모드 — stdin 에 user message JSON line 전송 후 close.
-      // Anthropic API 형식: image source.type=base64 + media_type + data (raw base64, data: prefix 없음).
+      // 공식 spec (code.claude.com/docs/agent-sdk/streaming-vs-single-mode):
+      //   { type:'user', message:{ role:'user', content:[{type:'text',...}, {type:'image', source:{type:'base64', media_type, data}}] } }
+      // 순서: text 가 image 앞에 (official 예시 패턴). raw base64 (data: prefix 없음).
       if (imageData && child.stdin) {
         const userMessage = {
           type: 'user',
           message: {
             role: 'user',
             content: [
-              { type: 'image', source: { type: 'base64', media_type: imageData.mediaType, data: imageData.data } },
               { type: 'text', text: finalPrompt },
+              { type: 'image', source: { type: 'base64', media_type: imageData.mediaType, data: imageData.data } },
             ],
           },
         };
