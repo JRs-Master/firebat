@@ -1,0 +1,78 @@
+{
+  "name": "kma-weather",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "기상청 (KMA) 통합 — data.go.kr 6개 서비스 (단기예보 / 중기예보 / 기상특보 / 생활기상지수 / 지진정보 / 태풍정보). 위경도 입력 시 LCC 자동 변환으로 격자 좌표 (nx, ny) 자동 계산. 한국 지역만.",
+  "runtime": "node",
+  "capability": "weather",
+  "providerType": "api",
+  "secrets": ["DATA_GO_KR_API_KEY"],
+  "input": {
+    "type": "object",
+    "required": ["action"],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["short", "ultra-now", "ultra-short", "medium-land", "medium-ta", "alerts", "uv-index", "earthquake", "typhoon"],
+        "description": "short=단기예보 (3일, 1시간), ultra-now=초단기실황 (현재), ultra-short=초단기예보 (6시간), medium-land=중기 육상예보 (4-10일), medium-ta=중기 기온, alerts=기상특보, uv-index=자외선지수 (생활기상지수), earthquake=지진정보, typhoon=태풍정보"
+      },
+      "lat": {
+        "type": "number",
+        "description": "[short/ultra-*] 위도 (예: 37.5665 서울). lon 과 같이 입력. nx/ny 자동 계산."
+      },
+      "lon": {
+        "type": "number",
+        "description": "[short/ultra-*] 경도 (예: 126.9780 서울)."
+      },
+      "nx": {
+        "type": "integer",
+        "description": "[short/ultra-*] 격자 X (lat/lon 미지정 시 직접). 서울=60, 부산=98, 인천=55"
+      },
+      "ny": {
+        "type": "integer",
+        "description": "[short/ultra-*] 격자 Y. 서울=127, 부산=76, 인천=124"
+      },
+      "regId": {
+        "type": "string",
+        "description": "[medium-land] 육상 예보 구역 코드. 11B00000=서울·인천·경기, 11D10000=강원영서, 11H10000=충청남도. [medium-ta] 기온 지점 코드 11B10101=서울, 11H20201=부산"
+      },
+      "stnId": {
+        "type": "string",
+        "description": "[alerts] 발표 관청 코드. 108=전국, 109=서울, 159=부산"
+      },
+      "areaNo": {
+        "type": "string",
+        "description": "[uv-index] 행정구역코드 10자리 (예: 1100000000=서울)"
+      },
+      "tmFc": {
+        "type": "string",
+        "description": "[medium-*/typhoon] 발표시각 yyyyMMddHHmm (06시 또는 18시). 미지정 시 가장 가까운 발표 자동"
+      },
+      "fromTm": {
+        "type": "string",
+        "description": "[earthquake/typhoon] 시작시각 yyyyMMdd. 미지정 시 7일 전"
+      },
+      "toTm": {
+        "type": "string",
+        "description": "[earthquake/typhoon] 종료시각 yyyyMMdd. 미지정 시 오늘"
+      },
+      "limit": {
+        "type": "integer",
+        "default": 100,
+        "description": "최대 결과 수"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "items": { "type": "array" },
+      "nx": { "type": "integer" },
+      "ny": { "type": "integer" },
+      "baseDate": { "type": "string" },
+      "baseTime": { "type": "string" }
+    }
+  }
+}
