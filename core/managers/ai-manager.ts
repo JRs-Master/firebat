@@ -4,6 +4,7 @@ import { CoreResult, type InfraResult } from '../types';
 import { sanitizeBlock, sanitizeReply, isValidBlock, extractMarkdownStructure } from '../utils/sanitize';
 import { turnContext } from '../utils/turn-context';
 import { RENDER_TOOL_MAP } from '../../lib/render-map';
+import { COMPONENTS } from '../../infra/llm/component-registry';
 import { trimToolResult, slimResultForLLM } from './ai/result-processor';
 import { HistoryResolver } from './ai/history-resolver';
 import { PromptBuilder } from './ai/prompt-builder';
@@ -550,14 +551,31 @@ export class AiManager {
       });
     }
 
-    // 2) render_alert / render_callout — 안전망 도구. Schema 는 buildRenderTools 단일 source 재사용.
+    // 2) render_alert / render_callout — strict zod schema (안전망 도구, AI 검증 강화).
+    const strictRenderNames = new Set<string>();
     for (const renderTool of RENDER_TOOLS) {
+      strictRenderNames.add(renderTool.name);
       this.core.registerTool({
         name: renderTool.name,
         source: 'render',
         description: renderTool.description,
         parameters: renderTool.parameters as unknown as Record<string, unknown>,
         handler: async (args) => ({ success: true, component: RENDER_TOOL_MAP[renderTool.name], props: args }),
+      });
+    }
+
+    // 3) component-registry COMPONENTS 자동 iterate — render_table / render_chart / render_map 등 모든 render_*.
+    // 새 컴포넌트는 component-registry.ts 만 수정하면 자동 반영. ToolManager single source.
+    // strict zod 등록된 alert/callout 은 skip (AI 검증 우선).
+    for (const c of COMPONENTS) {
+      const toolName = `render_${c.name}`;
+      if (strictRenderNames.has(toolName)) continue;
+      this.core.registerTool({
+        name: toolName,
+        source: 'render',
+        description: c.description,
+        parameters: c.propsSchema as unknown as Record<string, unknown>,
+        handler: async (args) => ({ success: true, component: c.componentType, props: args }),
       });
     }
   }

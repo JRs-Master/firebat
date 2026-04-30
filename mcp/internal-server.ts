@@ -16,184 +16,25 @@ import { COMPONENTS } from '../infra/llm/component-registry';
 export function createInternalMcpServer(core: FirebatCore): McpServer {
   const server = new McpServer({ name: 'firebat-internal', version: '0.1.0' });
 
-  // ── UI 렌더링 — render_* 도구 ────────────────────────────────────
-  // 수동 makeRender 는 strict zod schema 가 필요한 컴포넌트만 (AI 검증 강화). 그 외는
-  // 파일 끝에서 component-registry 의 COMPONENTS 자동 iterate → 누락 방지.
-  const manuallyRegistered = new Set<string>();
-  const makeRender = (name: string, component: string, schema: Record<string, z.ZodTypeAny>, desc: string) => {
-    manuallyRegistered.add(component);
-    server.tool(name, desc, schema, async (args: Record<string, unknown>) => ({
-      content: [{ type: 'text', text: JSON.stringify({ success: true, component, props: args }) }],
-    }));
-  };
-
-  makeRender('render_stock_chart', 'StockChart', {
-    symbol: z.string().describe('종목 코드 또는 이름 (표시용)'),
-    title: z.string().describe('차트 제목'),
-    data: z.array(z.object({
-      date: z.string().describe('YYYY-MM-DD 또는 시각 문자열'),
-      open: z.number(),
-      high: z.number(),
-      low: z.number(),
-      close: z.number(),
-      volume: z.number(),
-    })).describe('OHLCV 배열 (오름차순 정렬, 날짜 오래된 것부터 최근 순)'),
-    indicators: z.array(z.enum(['MA5','MA10','MA20','MA60'])).optional().describe('이동평균선 겹쳐 그리기'),
-    buyPoints: z.array(z.object({ price: z.number(), label: z.string() })).optional().describe('매수 구간 점선 + 라벨'),
-    sellPoints: z.array(z.object({ price: z.number(), label: z.string() })).optional().describe('매도 구간 점선 + 라벨'),
-  }, '주식 캔들스틱 + 거래량 차트. 팬/줌 지원, 호버 시 OHLC 툴팁.');
-  makeRender('render_table', 'Table', {
-    headers: z.array(z.string()),
-    rows: z.array(z.array(z.string())),
-    /** 컬럼별 정렬. 미지정 시 자동(숫자 컬럼→right, 그 외→left). 짧은 상태·뱃지성 단어는 center 추천. */
-    align: z.array(z.enum(['left', 'right', 'center'])).optional(),
-    // 참고: 셀별 정렬(cellAlign) 은 Gemini CLI 가 중첩 배열 + enum 스키마를 거부해서 MCP 도구 노출에서 제외.
-    // PageSpec body 에서 직접 prop 으로 지정은 여전히 가능 (components.tsx Table 컴포넌트는 cellAlign 지원).
-  }, '표. 수치 3개 이상 시 필수. 기본 정렬은 자동(숫자→우측, 텍스트→좌측). align 로 컬럼별 정렬 지정 가능.');
-  makeRender('render_alert', 'Alert', {
-    message: z.string(),
-    type: z.enum(['info','warn','error','success']).describe('warn=주황, error=빨강, success=초록, info=파랑'),
-    title: z.string().optional(),
-  }, '경고·주의·위험 박스 (리스크·오류 알림 전용). 일반 정보·팁은 render_callout 사용.');
-  makeRender('render_callout', 'Callout', {
-    message: z.string(),
-    type: z.enum(['info','success','tip','accent','highlight','neutral']).optional().describe('tip=보라, accent=주황, highlight=노랑, neutral=회색 (기본 info=파랑)'),
-    title: z.string().optional(),
-  }, '정보 강조 박스 — 팁·핵심 요약·판단 근거·하이라이트. 경고는 render_alert 사용.');
-  makeRender('render_badge', 'Badge', {
-    text: z.string(),
-    color: z.enum(['blue','green','red','yellow','purple','gray','orange']).describe('뱃지 색상'),
-  }, '작은 태그/뱃지 1개. 여러 상태 나열은 render_status_badge 사용.');
-  makeRender('render_progress', 'Progress', {
-    value: z.number().describe('현재 값'),
-    max: z.number().optional().describe('최대 값 (기본 100)'),
-    label: z.string().optional().describe('진행바 제목'),
-    color: z.enum(['blue','green','red','yellow','purple','orange']).optional().describe('바 색상 (기본 blue)'),
-  }, '진행률 바. 달성률·로딩·목표 대비 현황 시각화.');
-  makeRender('render_header', 'Header', {
-    text: z.string(),
-    level: z.number().optional(),
-    align: z.enum(['left','right','center']).optional().describe('기본 left. 히어로 섹션·카드 타이틀은 center.'),
-  }, '섹션 제목.');
-  makeRender('render_text', 'Text', {
-    content: z.string().describe('마크다운 지원 — **굵게** *기울임* `코드` 목록 링크 등. 이 필드만 마크다운 허용.'),
-  }, '본문 텍스트 블록 (마크다운 렌더). 짧은 한 줄·헤딩은 render_header / render_callout 우선.');
-  makeRender('render_list', 'List', {
-    items: z.array(z.string()).describe('각 항목 한 줄 텍스트'),
-    ordered: z.boolean().optional().describe('true=번호 목록(1,2,3), false=불릿(기본)'),
-  }, '순서·비순서 목록. 각 항목 간결한 한 줄씩.');
-  makeRender('render_divider', 'Divider', {}, '섹션 구분선 (수평선). 긴 리포트에서 주제 전환 시 사용.');
-  makeRender('render_countdown', 'Countdown', {
-    targetDate: z.string().describe('ISO 8601 형식 목표 시각. 예: "2026-12-31T23:59:59+09:00"'),
-    label: z.string().optional().describe('카운트다운 제목. 예: "이벤트 종료까지"'),
-  }, '목표 시각까지 남은 일/시/분/초 실시간 카운트다운.');
-  makeRender('render_chart', 'Chart', {
-    chartType: z.enum(['bar','line','pie','doughnut']).describe(
-      'bar=값 크기 비교 (독립 수치). line=시간에 따른 추세. ' +
-      'pie/doughnut=전체에서 차지하는 비율 (부분 합 = 전체 100%). ' +
-      '⚠️ 독립 비율 비교(종목별 외국인 보유율 등)는 합계가 100% 아니므로 pie 금지 — bar 사용.'
-    ),
-    labels: z.array(z.string()).describe('각 항목 라벨. **값·퍼센트 중복 표기 금지** (예: "삼성전자 (49.1%)" → "삼성전자"로).'),
-    data: z.array(z.number()).describe('수치 배열. labels 와 길이 동일.'),
-    title: z.string().optional(),
-    subtitle: z.string().optional().describe('부제목 (데이터 출처·기간 등)'),
-    unit: z.string().optional().describe('값 단위 (예: "원", "%", "건")'),
-    color: z.enum(['blue','green','red','purple','orange','teal','pink','yellow','slate']).optional().describe('bar/line 양수 막대 색 (기본 blue). 한국 수급 차트(투자자별 순매수 등)면 "red" 권장 — 한국 관습 양수=빨강.'),
-    negColor: z.enum(['blue','green','red','purple','orange','teal','pink','yellow','slate']).optional().describe('bar 음수 막대 색 (양방향 mode 만 적용, 기본 red). 한국 수급 차트면 "blue" 명시 — 한국 관습 음수=파랑. 글로벌 자산 변동률 차트는 default(red) 그대로 OK.'),
-    palette: z.enum(['default','pastel','mono-blue','mono-green','red-green','earth']).optional().describe('pie/doughnut 색상 팔레트'),
-    showValues: z.boolean().optional().describe('bar 값 inline 표시 (기본 true)'),
-    showPct: z.boolean().optional().describe('pie/doughnut 범례·툴팁에 자동 계산 % 표시 (기본 true). data 가 이미 퍼센트 값(합≠100)이면 false 로 중복 회피.'),
-  }, '간단 차트. chartType 선택이 중요 — 비율 분해만 pie, 독립 수치 비교는 bar.');
-
-  makeRender('render_metric', 'Metric', {
-    label: z.string().describe('지표명 (예: "현재가", "PER")'),
-    value: z.union([z.string(), z.number()]).describe('대표 수치 — 하나만. 두 개 값 병렬 금지. 숫자는 3자리 콤마 자동.'),
-    unit: z.string().optional().describe('단위 (원, %, 배 등)'),
-    delta: z.union([z.string(), z.number()]).optional().describe('증감치 (예: -1500, "-0.69%"). 숫자 3자리 콤마 자동.'),
-    deltaType: z.enum(['up','down','neutral']).optional().describe('up=빨강, down=파랑, neutral=회색'),
-    subLabel: z.string().optional().describe('보조 설명 — 부가 맥락만. 동등한 값 병렬 표시 금지.'),
-    icon: z.string().optional().describe('이모지 아이콘 (예: "📈")'),
-    align: z.enum(['left','right','center']).optional().describe('전체 정렬 일괄 지정. 미지정 시 기본값: label·subLabel=center, value=(숫자→right / 텍스트→center), delta=right.'),
-    labelAlign: z.enum(['left','right','center']).optional().describe('라벨 정렬만 개별 지정.'),
-    valueAlign: z.enum(['left','right','center']).optional().describe('값 정렬만 개별 지정.'),
-    deltaAlign: z.enum(['left','right','center']).optional().describe('증감 정렬만 개별 지정.'),
-    subLabelAlign: z.enum(['left','right','center']).optional().describe('부연 설명 정렬만 개별 지정.'),
-  }, '단일 지표 카드. 라벨+값+증감. 필드별 정렬 개별 조절 가능.');
-
-  makeRender('render_timeline', 'Timeline', {
-    items: z.array(z.object({
-      date: z.string(),
-      title: z.string(),
-      description: z.string().optional(),
-      type: z.enum(['default','success','warning','error']).optional(),
-    })),
-  }, '연대기 / 이벤트 타임라인. 일정·이력·단계별 진행 표시.');
-
-  makeRender('render_compare', 'Compare', {
-    title: z.string().optional(),
-    left: z.object({ label: z.string(), items: z.array(z.object({ key: z.string(), value: z.string() })) }),
-    right: z.object({ label: z.string(), items: z.array(z.object({ key: z.string(), value: z.string() })) }),
-  }, 'A vs B 대조 표. 두 대상 항목별 비교.');
-
-  makeRender('render_key_value', 'KeyValue', {
-    title: z.string().optional(),
-    items: z.array(z.object({
-      key: z.string(),
-      value: z.union([z.string(), z.number()]),
-      highlight: z.boolean().optional(),
-    })),
-    columns: z.number().optional().describe('1/2/3 (기본 2)'),
-  }, '라벨:값 구조적 나열. 종목 정보·제품 스펙 등.');
-
-  makeRender('render_status_badge', 'StatusBadge', {
-    items: z.array(z.object({
-      label: z.string(),
-      status: z.enum(['positive','negative','neutral','warning','info']),
-    })),
-  }, '의미 기반 상태 뱃지 세트. 예: "정배열"(positive), "과열"(warning), "중립"(neutral).');
-  makeRender('render_image', 'Image', {
-    src: z.string().describe('이미지 URL (http/https 또는 상대 경로). image_gen 결과의 url 을 그대로 전달.'),
-    alt: z.string().optional().describe('대체 텍스트 (접근성·SEO)'),
-    width: z.number().optional().describe('픽셀 단위 너비'),
-    height: z.number().optional().describe('픽셀 단위 높이'),
-    variants: z.array(z.object({
-      width: z.number(),
-      height: z.number().optional(),
-      format: z.string(),
-      url: z.string(),
-      bytes: z.number().optional(),
-    })).optional().describe('반응형 variants (image_gen 결과의 variants 배열 그대로). 있으면 <picture> + srcset 자동 구성.'),
-    blurhash: z.string().optional().describe('Blurhash LQIP 문자열 (image_gen 결과의 blurhash). 로딩 플레이스홀더 표시.'),
-    thumbnailUrl: z.string().optional().describe('썸네일 URL (image_gen 결과의 thumbnailUrl). 갤러리용 보조 필드.'),
-  }, '이미지 블록 (figure + caption). image_gen 결과의 url/variants/blurhash 전부 넘겨주면 <picture> + AVIF/WebP srcset + blur placeholder 자동 구성.');
-  makeRender('render_card', 'Card', {
-    children: z.array(z.any()).describe('카드 안에 넣을 render_* 결과 배열 (컨테이너)'),
-    align: z.enum(['left','right','center']).optional().describe('카드 내부 전체 텍스트 정렬. 기본 left.'),
-  }, '흰 배경·둥근 테두리 카드 컨테이너. 관련 컴포넌트 묶음 용도.');
-  makeRender('render_grid', 'Grid', {
-    columns: z.number().describe('1~4 열. KPI 대시보드는 보통 2~3'),
-    children: z.array(z.any()).describe('각 셀에 배치할 render_* 결과 배열'),
-    align: z.enum(['left','right','center']).optional().describe('그리드 내부 전체 텍스트 정렬. 기본 left.'),
-  }, '2D 격자 레이아웃. render_metric 여러 개를 담으면 KPI 대시보드.');
-
-  // ── component-registry 의 COMPONENTS 자동 iterate ────────────────────
-  // 위에서 makeRender 로 수동 등록된 컴포넌트는 manuallyRegistered set 추적됨.
-  // 누락된 컴포넌트 (예: Map / Diagram / Math / Code / Slideshow / Lottie / Network) 는
-  // 이 loop 에서 자동 등록. 새 컴포넌트 추가 시 component-registry.ts 만 수정하면 자동 반영.
-  // schema 는 z.any() — 검증은 component-registry.ts 의 propsSchema (frontend 가 활용) 가 single source.
-  for (const c of COMPONENTS) {
-    if (manuallyRegistered.has(c.componentType)) continue;
-    const propsSchema: Record<string, z.ZodTypeAny> = {};
-    const required = new Set((c.propsSchema as { required?: string[] })?.required || []);
-    const props = (c.propsSchema as { properties?: Record<string, { description?: string }> })?.properties || {};
+  // ── UI 렌더링 — ToolManager single source ────────────────────────────
+  // render_* 도구는 모두 ToolManager 에 등록됨 (AiManager.registerStaticToolsToManager 가
+  // strict 2개 + COMPONENTS 자동 등록). 여기선 그 결과를 read 해서 server.tool() 등록만.
+  // 새 컴포넌트는 component-registry.ts 만 수정 → 자동 반영.
+  // schema 는 z.any() — 실제 검증은 component-registry 의 propsSchema (frontend) single source.
+  for (const def of core.listTools({ source: 'render' })) {
+    const props = (def.parameters as { properties?: Record<string, { description?: string }> })?.properties || {};
+    const required = new Set((def.parameters as { required?: string[] })?.required || []);
+    const schema: Record<string, z.ZodTypeAny> = {};
     for (const [k, v] of Object.entries(props)) {
       const desc = v.description || '';
-      // 필수면 z.any(), 옵션이면 .optional() — MCP 호출 검증 최소화 (실제 prop 검증은 frontend)
-      propsSchema[k] = required.has(k) ? z.any().describe(desc) : z.any().optional().describe(desc);
+      schema[k] = required.has(k) ? z.any().describe(desc) : z.any().optional().describe(desc);
     }
-    makeRender(`render_${c.name}`, c.componentType, propsSchema, c.description);
+    server.tool(def.name, def.description, schema, async (args: Record<string, unknown>) => {
+      const res = await core.executeTool(def.name, args, {});
+      return { content: [{ type: 'text', text: JSON.stringify(res) }] };
+    });
   }
-
+  // 더 이상 makeRender 수동 호출 X — 모든 render_* 는 ToolManager 단일 source.
   // CDN 카탈로그는 lib/cdn-libraries.ts 단일 source. 전용 render_* 컴포넌트로 흡수된 라이브러리
   // (leaflet/mermaid/katex/hljs/cytoscape/lottie/swiper) 는 거기서 이미 제외됨 → render_iframe 우회 차단.
   const CDN_MAP = CDN_LIBRARIES;
