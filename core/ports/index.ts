@@ -206,6 +206,12 @@ export interface IStoragePort {
   list(path: string): Promise<InfraResult<string[]>>;
   /** 디렉토리 내 항목 목록 조회 (이름 + 디렉토리 여부) */
   listDir(path: string): Promise<InfraResult<Array<{ name: string; isDirectory: boolean }>>>;
+  /** Glob 패턴 매칭 — `**\/*.ts` 같은 파일 경로 검색.
+   *  zone whitelist 활용 (canRead 와 동일 정책). 패턴이 zone 밖 매칭하면 결과 0건.
+   *  결과: 매칭된 파일 절대 경로의 baseDir 상대 경로 배열. */
+  glob(pattern: string, opts?: { limit?: number }): Promise<InfraResult<string[]>>;
+  /** 파일 내용 grep — 패턴 매칭 line 추출. zone whitelist + glob 으로 파일 후보 한정. */
+  grep(pattern: string, opts?: { path?: string; fileType?: string; limit?: number; ignoreCase?: boolean }): Promise<InfraResult<Array<{ file: string; line: number; text: string }>>>;
 }
 
 export interface ILogPort {

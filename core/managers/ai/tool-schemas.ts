@@ -139,6 +139,61 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
       },
     },
     {
+      name: 'glob_files',
+      description: `Glob 패턴으로 파일 경로 검색 — \`**/*.ts\` 같은 와일드카드.
+
+**사용 예**:
+- \`user/modules/*/main.py\` — user 모듈들의 main.py 모두
+- \`**/*.json\` — 전체 JSON 파일
+- \`system/modules/**/config.json\` — 시스템 모듈 config 모두
+- \`data/cache/**/*.jsonl\` — cache 디렉토리 jsonl
+
+**호출 시점**:
+- 파일 경로 모를 때 list_dir 반복 대신 한 번에 검색
+- 특정 패턴 매칭 파일 목록 필요 시 (확장자별, 디렉토리 구조별)
+
+**호출 금지**:
+- 정확한 경로 알 때 (read_file 직접 사용)
+- 콘텐츠 검색 (grep_code 사용)`,
+      parameters: {
+        type: 'object',
+        required: ['pattern'],
+        properties: {
+          pattern: { type: 'string', description: 'Glob 패턴 (예: "**/*.ts", "user/modules/*/main.py")' },
+          limit: { type: 'number', description: '최대 결과 수 (기본 500)' },
+        },
+      },
+    },
+    {
+      name: 'grep_code',
+      description: `파일 내용에서 정규식 매칭 line 추출 — 코드 검색.
+
+**사용 예**:
+- \`grep_code("kiwoom", { path: "user/modules/" })\` — user 모듈에서 "kiwoom" 검색
+- \`grep_code("import.*react", { fileType: "tsx" })\` — tsx 파일에서 react import
+- \`grep_code("TODO", { fileType: "ts", ignoreCase: true })\` — 모든 ts 의 TODO
+
+**호출 시점**:
+- 어떤 파일에 특정 패턴 박혀있는지 모를 때
+- 모듈 디버깅 — 특정 함수·변수 사용처 검색
+- 설정값·magic number 추적
+
+**호출 금지**:
+- 파일 이름 검색 (glob_files 사용)
+- 단일 파일 안 검색 (read_file 후 자체 파싱)`,
+      parameters: {
+        type: 'object',
+        required: ['pattern'],
+        properties: {
+          pattern: { type: 'string', description: '정규식 패턴 (예: "import.*react", "TODO")' },
+          path: { type: 'string', description: '검색 시작 경로 (예: "user/modules/"). 미지정 시 zone 전체.' },
+          fileType: { type: 'string', description: '확장자 필터 (예: "ts", "py", "json"). dot 자동.' },
+          limit: { type: 'number', description: '최대 매칭 line 수 (기본 200)' },
+          ignoreCase: { type: 'boolean', description: '대소문자 무시 (기본 false)' },
+        },
+      },
+    },
+    {
       name: 'append_file',
       description: '파일 끝에 내용 추가.',
       parameters: {

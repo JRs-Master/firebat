@@ -41,6 +41,17 @@ export class StorageManager {
     return this.storage.listDir(path);
   }
 
+  async glob(pattern: string, opts?: { limit?: number }): Promise<InfraResult<string[]>> {
+    return this.storage.glob(pattern, opts);
+  }
+
+  async grep(
+    pattern: string,
+    opts?: { path?: string; fileType?: string; limit?: number; ignoreCase?: boolean },
+  ): Promise<InfraResult<Array<{ file: string; line: number; text: string }>>> {
+    return this.storage.grep(pattern, opts);
+  }
+
   async getFileTree(root: string): Promise<TreeNode[]> {
     const build = async (dir: string): Promise<TreeNode[]> => {
       const result = await this.storage.listDir(dir);

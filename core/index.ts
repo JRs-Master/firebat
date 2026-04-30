@@ -665,6 +665,19 @@ export class FirebatCore {
     return this.storage.getFileTree(root);
   }
 
+  /** Glob 패턴으로 파일 경로 검색 — `**\/*.ts` 같은 와일드카드. */
+  async globFiles(pattern: string, opts?: { limit?: number }) {
+    return this.storage.glob(pattern, opts);
+  }
+
+  /** 파일 내용 grep — 정규식 매칭 line 추출. fileType / path 로 후보 한정 가능. */
+  async grepCode(
+    pattern: string,
+    opts?: { path?: string; fileType?: string; limit?: number; ignoreCase?: boolean },
+  ) {
+    return this.storage.grep(pattern, opts);
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   //  페이지 → PageManager + SSE
   // ══════════════════════════════════════════════════════════════════════════

@@ -104,6 +104,27 @@ export class AiManager {
         const res = await this.core.listFiles(path);
         return res.success ? { success: true, items: res.data } : { success: false, error: res.error };
       },
+      glob_files: async (args) => {
+        const { pattern, limit } = args as { pattern: string; limit?: number };
+        const res = await this.core.globFiles(pattern, { ...(typeof limit === 'number' ? { limit } : {}) });
+        return res.success ? { success: true, files: res.data, count: res.data?.length } : { success: false, error: res.error };
+      },
+      grep_code: async (args) => {
+        const { pattern, path, fileType, limit, ignoreCase } = args as {
+          pattern: string;
+          path?: string;
+          fileType?: string;
+          limit?: number;
+          ignoreCase?: boolean;
+        };
+        const res = await this.core.grepCode(pattern, {
+          ...(path ? { path } : {}),
+          ...(fileType ? { fileType } : {}),
+          ...(typeof limit === 'number' ? { limit } : {}),
+          ...(typeof ignoreCase === 'boolean' ? { ignoreCase } : {}),
+        });
+        return res.success ? { success: true, matches: res.data, count: res.data?.length } : { success: false, error: res.error };
+      },
       append_file: async (args) => {
         const { path, content } = args as { path: string; content: string };
         const readRes = await this.core.readFile(path);

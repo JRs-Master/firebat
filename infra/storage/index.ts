@@ -125,4 +125,86 @@ export class LocalStorageAdapter implements IStoragePort {
       return { success: false, error: err.message };
     }
   }
+
+  /**
+   * Glob 패턴 매칭 — Node 22+ 의 fs/promises.glob (내장) 활용.
+   * 매칭된 파일 중 canRead zone 통과한 것만 반환.
+   * 결과: baseDir 상대 경로 (forward-slash, OS 무관 표시).
+   */
+  async glob(pattern: string, opts?: { limit?: number }): Promise<InfraResult<string[]>> {
+    try {
+      const limit = opts?.limit ?? 500;
+      const results: string[] = [];
+      // Node 24 의 fs/promises.glob — AsyncIterable<string> 반환
+      const iter = (fs as unknown as { glob: (p: string, opts?: { cwd?: string }) => AsyncIterable<string> })
+        .glob(pattern, { cwd: this.baseDir });
+      for await (const file of iter) {
+        // 절대 경로화 후 zone 검증 — fs.glob 가 ../ 같은 반환 안 하지만 안전망
+        const rel = file.replace(/\\/g, '/');
+        if (!this.canRead(rel)) continue;
+        results.push(rel);
+        if (results.length >= limit) break;
+      }
+      return { success: true, data: results };
+    } catch (err: any) {
+      return { success: false, error: `glob 실패: ${err.message}` };
+    }
+  }
+
+  /**
+   * 파일 내용 grep — 정규식 매칭 line 추출.
+   *
+   * 흐름:
+   *   1. opts.path 또는 fileType 으로 파일 후보 결정 (glob 활용)
+   *   2. 각 파일 read + 정규식 매칭
+   *   3. 결과 line 목록 (file/line/text)
+   *
+   * 안전성: 모든 파일은 canRead zone 통과 필요. 큰 파일 (>1MB) 스킵.
+   */
+  async grep(
+    pattern: string,
+    opts?: { path?: string; fileType?: string; limit?: number; ignoreCase?: boolean },
+  ): Promise<InfraResult<Array<{ file: string; line: number; text: string }>>> {
+    try {
+      const limit = opts?.limit ?? 200;
+      // 검색 대상 파일 결정
+      const ext = opts?.fileType ? (opts.fileType.startsWith('.') ? opts.fileType : `.${opts.fileType}`) : null;
+      const baseGlob = opts?.path
+        ? (opts.path.endsWith('/') ? opts.path + '**/*' : opts.path)
+        : '**/*';
+      const finalGlob = ext ? `${baseGlob}${ext}` : baseGlob;
+      const filesRes = await this.glob(finalGlob, { limit: 2000 });
+      if (!filesRes.success || !filesRes.data) return { success: false, error: filesRes.error || 'glob 실패' };
+
+      let regex: RegExp;
+      try {
+        regex = new RegExp(pattern, opts?.ignoreCase ? 'i' : '');
+      } catch (e: any) {
+        return { success: false, error: `정규식 오류: ${e.message}` };
+      }
+
+      const matches: Array<{ file: string; line: number; text: string }> = [];
+      for (const file of filesRes.data) {
+        if (matches.length >= limit) break;
+        const absolutePath = path.resolve(this.baseDir, file);
+        try {
+          const stat = await fs.stat(absolutePath);
+          if (stat.size > 1024 * 1024) continue;  // 1MB+ 스킵
+          if (!stat.isFile()) continue;
+          const content = await fs.readFile(absolutePath, 'utf-8');
+          const lines = content.split('\n');
+          for (let i = 0; i < lines.length; i++) {
+            if (matches.length >= limit) break;
+            if (regex.test(lines[i])) {
+              matches.push({ file, line: i + 1, text: lines[i].slice(0, 300) });
+            }
+          }
+        } catch { /* 개별 파일 읽기 실패 무시 */ }
+      }
+
+      return { success: true, data: matches };
+    } catch (err: any) {
+      return { success: false, error: `grep 실패: ${err.message}` };
+    }
+  }
 }
