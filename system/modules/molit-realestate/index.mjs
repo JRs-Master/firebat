@@ -19,8 +19,8 @@
  *   sh-trade         — RTMSDataSvcSHTrade/getRTMSDataSvcSHTrade (단독·다가구)
  *   sh-rent          — RTMSDataSvcSHRent/getRTMSDataSvcSHRent
  *   land-trade       — RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade
- *   commercial-trade — RTMSDataSvcInduTrade/getRTMSDataSvcInduTrade (상업업무용)
- *   factory-trade    — RTMSDataSvcNrgTrade/getRTMSDataSvcNrgTrade (공장·창고)
+ *   commercial-trade — RTMSDataSvcNrgTrade/getRTMSDataSvcNrgTrade (상업업무용 매매)
+ *   factory-trade    — RTMSDataSvcInduTrade/getRTMSDataSvcInduTrade (공장·창고 매매)
  */
 
 const BASE = 'https://apis.data.go.kr/1613000';
@@ -37,8 +37,8 @@ const ACTION_ENDPOINTS = {
   'sh-trade':         '/RTMSDataSvcSHTrade/getRTMSDataSvcSHTrade',
   'sh-rent':          '/RTMSDataSvcSHRent/getRTMSDataSvcSHRent',
   'land-trade':       '/RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade',
-  'commercial-trade': '/RTMSDataSvcInduTrade/getRTMSDataSvcInduTrade',
-  'factory-trade':    '/RTMSDataSvcNrgTrade/getRTMSDataSvcNrgTrade',
+  'commercial-trade': '/RTMSDataSvcNrgTrade/getRTMSDataSvcNrgTrade',
+  'factory-trade':    '/RTMSDataSvcInduTrade/getRTMSDataSvcInduTrade',
 };
 
 async function callApi(serviceKey, path, params) {
