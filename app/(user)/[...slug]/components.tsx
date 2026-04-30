@@ -1699,8 +1699,11 @@ function MapComp({
         const L = w.L;
         if (!L) return;
         const map = L.map(container).setView([finalCenter.lat, finalCenter.lon], finalZoom);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-          attribution: '© OpenStreetMap',
+        // OSM 공식 타일은 Referer 정책으로 403 차단 — CartoDB light_all 사용 (밝은 톤, OSM 데이터 기반)
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+          attribution: '© OpenStreetMap © CARTO',
+          subdomains: 'abcd',
+          maxZoom: 19,
         }).addTo(map);
         for (const m of safeMarkers) {
           const color = m.color && COLOR_TO_HEX[m.color] ? COLOR_TO_HEX[m.color] : '#ef4444';
