@@ -1,0 +1,57 @@
+{
+  "name": "molit-realestate",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "국토교통부 실거래가 통합 — data.go.kr RTMSDataSvc 13 시리즈 (아파트 매매·전월세·분양권 / 연립다세대 / 오피스텔 / 단독·다가구 / 토지 / 상업업무용 / 공장창고). 시군구 5자리 (LAWD_CD) + 계약년월 6자리 (DEAL_YMD) 입력. 단일 키 (DATA_GO_KR_API_KEY) — kma-weather 와 공유.",
+  "runtime": "node",
+  "capability": "real-estate",
+  "providerType": "api",
+  "secrets": ["DATA_GO_KR_API_KEY"],
+  "input": {
+    "type": "object",
+    "required": ["action", "lawdCd", "dealYmd"],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "apt-trade", "apt-trade-detail", "apt-rent", "apt-pre-trade",
+          "rh-trade", "rh-rent",
+          "offi-trade", "offi-rent",
+          "sh-trade", "sh-rent",
+          "land-trade", "commercial-trade", "factory-trade"
+        ],
+        "description": "apt-trade=아파트 매매, apt-trade-detail=아파트 매매 상세 (층·동), apt-rent=아파트 전월세, apt-pre-trade=아파트 분양권 전매, rh-*=연립다세대, offi-*=오피스텔, sh-*=단독다가구, land-trade=토지, commercial-trade=상업업무용, factory-trade=공장·창고"
+      },
+      "lawdCd": {
+        "type": "string",
+        "description": "시군구 5자리 행정표준코드 (예: 11680=서울 강남구, 11110=서울 종로구). www.code.go.kr 에서 조회"
+      },
+      "dealYmd": {
+        "type": "string",
+        "description": "계약년월 6자리 YYYYMM (예: 202604=2026년 4월). 월별 데이터, 거래 후 30일+ 지연"
+      },
+      "pageNo": {
+        "type": "integer",
+        "default": 1,
+        "description": "페이지 번호. 결과 많으면 페이징"
+      },
+      "limit": {
+        "type": "integer",
+        "default": 1000,
+        "description": "페이지당 결과 수 (최대 1000)"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "items": { "type": "array", "description": "거래 목록. action 별로 필드 다름 (아파트=거래금액·전용면적·층·건축년도·아파트명, 토지=용도지역·지목 등)" },
+      "totalCount": { "type": "integer" },
+      "pageNo": { "type": "integer" },
+      "lawdCd": { "type": "string" },
+      "dealYmd": { "type": "string" }
+    }
+  }
+}
