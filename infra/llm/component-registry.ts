@@ -445,6 +445,131 @@ export const COMPONENTS: ComponentDef[] = [
     },
   },
   {
+    name: 'diagram',
+    componentType: 'Diagram',
+    description: 'Mermaid 다이어그램 — flowchart / sequence / gantt / classDiagram / stateDiagram / mindmap / timeline / pie. text DSL 만 박으면 자동 렌더. iframe + inline JS 보다 token 절감 + 안정.',
+    semanticText: '다이어그램 diagram mermaid flowchart sequence gantt class state mindmap pie 워크플로우 의사결정 트리',
+    propsSchema: {
+      type: 'object',
+      required: ['code'],
+      properties: {
+        code: { type: 'string', description: 'Mermaid DSL (예: "flowchart TD\\n  A-->B"). 공식 문서 https://mermaid.js.org/' },
+        theme: { type: ['string', 'null'], description: 'default / dark / forest / neutral (기본 default)' },
+      },
+    },
+  },
+  {
+    name: 'math',
+    componentType: 'Math',
+    description: 'KaTeX 수식 — LaTeX 문자열 inline 또는 block. 수학·통계·재무 공식 표시. iframe 보다 단순.',
+    semanticText: '수식 math 수학 LaTeX katex 공식 수학식 통계 재무 적분 미분 시그마',
+    propsSchema: {
+      type: 'object',
+      required: ['expression'],
+      properties: {
+        expression: { type: 'string', description: 'LaTeX 수식 (예: "\\\\frac{a}{b}", "\\\\int_0^1 x^2 dx")' },
+        block: { type: ['boolean', 'null'], description: 'true=block (centered, large), false=inline. 기본 true' },
+      },
+    },
+  },
+  {
+    name: 'code',
+    componentType: 'Code',
+    description: '코드 스니펫 — highlight.js syntax highlight 자동. language 명시 시 정확. 블로그·문서·README 자주.',
+    semanticText: '코드 code 스니펫 snippet syntax highlight 프로그래밍 javascript python typescript SQL hljs',
+    propsSchema: {
+      type: 'object',
+      required: ['code', 'language'],
+      properties: {
+        code: { type: 'string', description: '코드 내용 (multi-line OK)' },
+        language: { type: 'string', description: 'javascript / typescript / python / sql / json / bash / html / css 등 hljs 지원 언어' },
+        showLineNumbers: { type: ['boolean', 'null'], description: '줄 번호 표시 (기본 true)' },
+        title: { type: ['string', 'null'], description: '코드 블록 위 제목 (예: "main.py")' },
+      },
+    },
+  },
+  {
+    name: 'slideshow',
+    componentType: 'Slideshow',
+    description: 'Swiper 이미지 슬라이드쇼 — 가로 슬라이드 + 페이지네이션 + 자동재생 옵션. 마케팅·갤러리·히어로 페이지. (children 기반 카드 캐러셀은 render_carousel 별도)',
+    semanticText: '슬라이드 slide 슬라이드쇼 slideshow swiper 갤러리 gallery 이미지 슬라이더 hero 마케팅',
+    propsSchema: {
+      type: 'object',
+      required: ['images'],
+      properties: {
+        images: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['src'],
+            properties: {
+              src: { type: 'string', description: '이미지 URL — /user/media/... 또는 https://...' },
+              alt: { type: ['string', 'null'] },
+              caption: { type: ['string', 'null'], description: '이미지 위 캡션 (선택)' },
+            },
+          },
+        },
+        autoplay: { type: ['boolean', 'null'], description: '자동재생 (기본 false)' },
+        autoplayDelay: { type: ['integer', 'null'], description: '자동재생 간격 ms (기본 3000)' },
+        height: { type: ['string', 'null'], description: '슬라이드 높이 (예: "400px"). 기본 400px' },
+      },
+    },
+  },
+  {
+    name: 'lottie',
+    componentType: 'Lottie',
+    description: 'Lottie JSON 애니메이션 — Adobe After Effects 의 lottie-web 형식. JSON URL 박으면 자동 재생. 마케팅·온보딩·일러스트.',
+    semanticText: 'Lottie 애니메이션 animation 일러스트 illustration JSON 모션 motion graphic AE',
+    propsSchema: {
+      type: 'object',
+      required: ['src'],
+      properties: {
+        src: { type: 'string', description: 'Lottie JSON 파일 URL (lottiefiles.com 또는 자체 호스팅)' },
+        loop: { type: ['boolean', 'null'], description: '루프 재생 (기본 true)' },
+        autoplay: { type: ['boolean', 'null'], description: '자동재생 (기본 true)' },
+        height: { type: ['string', 'null'], description: '높이 (예: "300px"). 기본 300px' },
+      },
+    },
+  },
+  {
+    name: 'network',
+    componentType: 'Network',
+    description: 'Cytoscape 네트워크 그래프 — 노드 + 간선 시각화. 관계도·조직도·데이터 흐름·시스템 아키텍처.',
+    semanticText: '네트워크 network 그래프 graph cytoscape 노드 node 간선 edge 관계도 조직도 의존성 시스템',
+    propsSchema: {
+      type: 'object',
+      required: ['nodes', 'edges'],
+      properties: {
+        nodes: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['id', 'label'],
+            properties: {
+              id: { type: 'string' },
+              label: { type: 'string' },
+              color: { type: ['string', 'null'], description: '노드 색 (red / blue / green / orange / purple)' },
+            },
+          },
+        },
+        edges: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['source', 'target'],
+            properties: {
+              source: { type: 'string', description: 'nodes 의 id' },
+              target: { type: 'string', description: 'nodes 의 id' },
+              label: { type: ['string', 'null'], description: '간선 라벨 (선택)' },
+            },
+          },
+        },
+        layout: { type: ['string', 'null'], description: 'cose (기본, 자동 배치) / circle / grid / breadthfirst' },
+        height: { type: ['string', 'null'], description: '높이 (기본 400px)' },
+      },
+    },
+  },
+  {
     name: 'map',
     componentType: 'Map',
     description: '지도 + 마커. 부동산 거래·날씨·매장 위치 등 지리 데이터 시각화. **provider 자동 분기**: South Korea 좌표 (위도 33-38.7, 경도 124.5-132) + 카카오 JS 키 박혀있으면 카카오맵, **South Korea 외 지역은 Leaflet+OSM** (CDN 무료, 카카오는 한국만 정밀). 카카오 키 미설정 시 South Korea 좌표도 Leaflet 폴백. South Korea 주소 → 정확한 좌표는 sysmod_kakao_map (geocoding) 으로 변환 후 markers 박는 게 정확.',

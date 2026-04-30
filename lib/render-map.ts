@@ -31,6 +31,12 @@ export const RENDER_TOOL_MAP: Record<string, string> = {
   render_key_value: 'KeyValue',
   render_status_badge: 'StatusBadge',
   render_map: 'Map',
+  render_diagram: 'Diagram',
+  render_math: 'Math',
+  render_code: 'Code',
+  render_slideshow: 'Slideshow',
+  render_lottie: 'Lottie',
+  render_network: 'Network',
 };
 
 /** 변형 매칭 helper — AI 가 다양한 형태로 호출해도 자동 정규화.

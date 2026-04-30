@@ -75,6 +75,12 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'StatusBadge':   return <StatusBadgeComp items={p.items ?? []} />;
     case 'PlanCard':      return <PlanCardComp title={p.title ?? ''} steps={p.steps ?? []} estimatedTime={p.estimatedTime} risks={p.risks} />;
     case 'Map':           return <MapComp markers={p.markers ?? []} center={p.center} zoom={p.zoom} height={p.height} provider={p.provider} />;
+    case 'Diagram':       return <DiagramComp code={p.code ?? ''} theme={p.theme} />;
+    case 'Math':          return <MathComp expression={p.expression ?? ''} block={p.block !== false} />;
+    case 'Code':          return <CodeComp code={p.code ?? ''} language={p.language ?? 'plaintext'} showLineNumbers={p.showLineNumbers !== false} title={p.title} />;
+    case 'Slideshow':     return <SlideshowComp images={p.images ?? []} autoplay={p.autoplay} autoplayDelay={p.autoplayDelay} height={p.height} />;
+    case 'Lottie':        return <LottieComp src={p.src ?? ''} loop={p.loop !== false} autoplay={p.autoplay !== false} height={p.height} />;
+    case 'Network':       return <NetworkComp nodes={p.nodes ?? []} edges={p.edges ?? []} layout={p.layout} height={p.height} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
       // (개발자는 console 에서 확인 가능)
@@ -1736,4 +1742,252 @@ function MapComp({
       style={{ height: finalHeight, width: '100%' }}
     />
   );
+}
+
+// ── 동적 CDN 로드 헬퍼 ───────────────────────────────────────────────────────
+/** CDN script + CSS 동적 로드. 이미 박혀있으면 skip. onload 보장. */
+function loadCdn(opts: { js?: string[]; css?: string[]; globalCheck?: () => boolean }): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined') return resolve();
+    if (opts.globalCheck?.()) return resolve();
+    for (const css of opts.css ?? []) {
+      if (!document.querySelector(`link[href="${css}"]`)) {
+        const l = document.createElement('link');
+        l.rel = 'stylesheet'; l.href = css;
+        document.head.appendChild(l);
+      }
+    }
+    const jsList = opts.js ?? [];
+    if (jsList.length === 0) return resolve();
+    let pending = jsList.length;
+    const onDone = () => { pending--; if (pending === 0) resolve(); };
+    for (const js of jsList) {
+      const existing = document.querySelector(`script[src="${js}"]`) as HTMLScriptElement | null;
+      if (existing) {
+        if ((existing as any)._loaded) onDone();
+        else existing.addEventListener('load', onDone);
+      } else {
+        const s = document.createElement('script');
+        s.src = js;
+        s.onload = () => { (s as any)._loaded = true; onDone(); };
+        s.onerror = onDone;
+        document.head.appendChild(s);
+      }
+    }
+  });
+}
+
+// ── Diagram (mermaid) ───────────────────────────────────────────────────────
+function DiagramComp({ code, theme }: { code: string; theme?: string | null }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!ref.current || !code) return;
+    const container = ref.current;
+    container.innerHTML = '';
+    loadCdn({
+      js: ['https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js'],
+      globalCheck: () => !!(window as any).mermaid,
+    }).then(() => {
+      const w = window as any;
+      if (!w.mermaid) return;
+      try {
+        w.mermaid.initialize({ startOnLoad: false, theme: theme || 'default', securityLevel: 'loose' });
+        const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`;
+        w.mermaid.render(id, code).then((res: { svg: string }) => {
+          container.innerHTML = res.svg;
+        }).catch((err: Error) => {
+          container.innerHTML = `<div style="color:#ef4444;padding:12px;font-size:12px">Mermaid 렌더 실패: ${err.message}</div>`;
+        });
+      } catch (e) {
+        container.innerHTML = `<div style="color:#ef4444;padding:12px;font-size:12px">Mermaid 오류: ${(e as Error).message}</div>`;
+      }
+    });
+  }, [code, theme]);
+  return <div ref={ref} className="my-3 rounded-xl border border-gray-100 shadow-sm p-4 bg-white overflow-x-auto" />;
+}
+
+// ── Math (KaTeX) ────────────────────────────────────────────────────────────
+function MathComp({ expression, block }: { expression: string; block: boolean }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!ref.current || !expression) return;
+    const target = ref.current;
+    loadCdn({
+      js: ['https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js'],
+      css: ['https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css'],
+      globalCheck: () => !!(window as any).katex,
+    }).then(() => {
+      const w = window as any;
+      if (!w.katex) return;
+      try {
+        w.katex.render(expression, target, { throwOnError: false, displayMode: block });
+      } catch (e) {
+        target.textContent = `KaTeX 오류: ${(e as Error).message}`;
+      }
+    });
+  }, [expression, block]);
+  if (block) return <div className="my-3 text-center" ref={ref as any} />;
+  return <span ref={ref} />;
+}
+
+// ── Code (highlight.js) ─────────────────────────────────────────────────────
+function CodeComp({ code, language, showLineNumbers, title }: {
+  code: string; language: string; showLineNumbers: boolean; title?: string | null;
+}) {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!ref.current || !code) return;
+    const target = ref.current;
+    loadCdn({
+      js: ['https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js'],
+      css: ['https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github.min.css'],
+      globalCheck: () => !!(window as any).hljs,
+    }).then(() => {
+      const w = window as any;
+      if (!w.hljs) return;
+      try {
+        const langClass = w.hljs.getLanguage(language) ? language : 'plaintext';
+        const result = w.hljs.highlight(code, { language: langClass });
+        target.innerHTML = result.value;
+        target.className = `hljs language-${langClass}`;
+      } catch {
+        target.textContent = code;
+      }
+    });
+  }, [code, language]);
+
+  const lines = showLineNumbers ? code.split('\n') : [];
+  return (
+    <div className="my-3 rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+      {title && (
+        <div className="bg-gray-50 px-4 py-2 text-[12px] font-mono text-gray-600 border-b border-gray-100">
+          {title}
+        </div>
+      )}
+      <div className="flex">
+        {showLineNumbers && (
+          <div className="bg-gray-50 px-3 py-3 text-[12px] font-mono text-gray-400 select-none text-right border-r border-gray-100">
+            {lines.map((_, i) => <div key={i}>{i + 1}</div>)}
+          </div>
+        )}
+        <pre className="flex-1 p-3 text-[13px] overflow-x-auto" style={{ margin: 0 }}>
+          <code ref={ref}>{code}</code>
+        </pre>
+      </div>
+    </div>
+  );
+}
+
+// ── Slideshow (Swiper) ──────────────────────────────────────────────────────
+type SlideImage = { src: string; alt?: string | null; caption?: string | null };
+
+function SlideshowComp({ images, autoplay, autoplayDelay, height }: {
+  images: SlideImage[]; autoplay?: boolean | null; autoplayDelay?: number | null; height?: string | null;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const finalHeight = height || '400px';
+  useEffect(() => {
+    if (!ref.current || images.length === 0) return;
+    const container = ref.current;
+    loadCdn({
+      js: ['https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js'],
+      css: ['https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css'],
+      globalCheck: () => !!(window as any).Swiper,
+    }).then(() => {
+      const w = window as any;
+      if (!w.Swiper) return;
+      try {
+        new w.Swiper(container, {
+          loop: images.length > 1,
+          autoplay: autoplay ? { delay: autoplayDelay || 3000, disableOnInteraction: false } : false,
+          pagination: { el: container.querySelector('.swiper-pagination'), clickable: true },
+          navigation: { nextEl: container.querySelector('.swiper-button-next'), prevEl: container.querySelector('.swiper-button-prev') },
+        });
+      } catch { /* ignore */ }
+    });
+  }, [images, autoplay, autoplayDelay]);
+
+  return (
+    <div ref={ref} className="swiper my-3 rounded-xl border border-gray-100 shadow-sm overflow-hidden" style={{ height: finalHeight }}>
+      <div className="swiper-wrapper">
+        {images.map((img, i) => (
+          <div key={i} className="swiper-slide flex items-center justify-center bg-gray-50 relative">
+            <img src={img.src} alt={img.alt ?? ''} className="max-w-full max-h-full object-contain" />
+            {img.caption && (
+              <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white p-3 text-sm">{img.caption}</div>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="swiper-pagination" />
+      <div className="swiper-button-next" />
+      <div className="swiper-button-prev" />
+    </div>
+  );
+}
+
+// ── Lottie ──────────────────────────────────────────────────────────────────
+function LottieComp({ src, loop, autoplay, height }: {
+  src: string; loop: boolean; autoplay: boolean; height?: string | null;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const finalHeight = height || '300px';
+  useEffect(() => {
+    if (!ref.current || !src) return;
+    const container = ref.current;
+    container.innerHTML = '';
+    loadCdn({
+      js: ['https://cdn.jsdelivr.net/npm/lottie-web@5/build/player/lottie.min.js'],
+      globalCheck: () => !!(window as any).lottie,
+    }).then(() => {
+      const w = window as any;
+      if (!w.lottie) return;
+      try {
+        w.lottie.loadAnimation({ container, renderer: 'svg', loop, autoplay, path: src });
+      } catch (e) {
+        container.innerHTML = `<div style="color:#ef4444;padding:12px;font-size:12px">Lottie 오류: ${(e as Error).message}</div>`;
+      }
+    });
+  }, [src, loop, autoplay]);
+  return <div ref={ref} className="my-3 rounded-xl border border-gray-100 shadow-sm bg-white" style={{ height: finalHeight, width: '100%' }} />;
+}
+
+// ── Network (Cytoscape) ─────────────────────────────────────────────────────
+type NetworkNode = { id: string; label: string; color?: string | null };
+type NetworkEdge = { source: string; target: string; label?: string | null };
+
+function NetworkComp({ nodes, edges, layout, height }: {
+  nodes: NetworkNode[]; edges: NetworkEdge[]; layout?: string | null; height?: string | null;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const finalHeight = height || '400px';
+  useEffect(() => {
+    if (!ref.current || nodes.length === 0) return;
+    const container = ref.current;
+    container.innerHTML = '';
+    loadCdn({
+      js: ['https://cdn.jsdelivr.net/npm/cytoscape@3/dist/cytoscape.min.js'],
+      globalCheck: () => !!(window as any).cytoscape,
+    }).then(() => {
+      const w = window as any;
+      if (!w.cytoscape) return;
+      try {
+        w.cytoscape({
+          container,
+          elements: [
+            ...nodes.map(n => ({ data: { id: n.id, label: n.label }, style: n.color ? { 'background-color': COLOR_TO_HEX[n.color] || n.color } : {} })),
+            ...edges.map(e => ({ data: { id: `${e.source}-${e.target}`, source: e.source, target: e.target, label: e.label || '' } })),
+          ],
+          style: [
+            { selector: 'node', style: { 'background-color': '#3b82f6', 'label': 'data(label)', 'color': '#1e293b', 'font-size': 12, 'text-valign': 'center', 'text-halign': 'center' } },
+            { selector: 'edge', style: { 'width': 2, 'line-color': '#94a3b8', 'target-arrow-color': '#94a3b8', 'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'label': 'data(label)', 'font-size': 10, 'color': '#64748b' } },
+          ],
+          layout: { name: layout || 'cose', animate: false },
+        });
+      } catch (e) {
+        container.innerHTML = `<div style="color:#ef4444;padding:12px;font-size:12px">Cytoscape 오류: ${(e as Error).message}</div>`;
+      }
+    });
+  }, [nodes, edges, layout]);
+  return <div ref={ref} className="my-3 rounded-xl border border-gray-100 shadow-sm bg-white" style={{ height: finalHeight, width: '100%' }} />;
 }
