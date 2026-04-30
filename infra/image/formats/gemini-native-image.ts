@@ -19,6 +19,7 @@
 import type { ImageGenOpts, ImageGenCallOpts, ImageGenResult } from '../../../core/ports';
 import type { InfraResult } from '../../../core/types';
 import type { ImageFormatHandler, ImageFormatHandlerContext } from '../format-handler';
+import { computeImageCost } from '../image-config';
 
 export class GeminiNativeImageFormat implements ImageFormatHandler {
   async generate(
@@ -82,9 +83,15 @@ export class GeminiNativeImageFormat implements ImageFormatHandler {
       const mimeType = imagePart?.inline_data?.mime_type ?? imagePart?.inlineData?.mimeType ?? 'image/png';
       if (!data) return { success: false, error: '응답에 이미지 데이터가 없습니다' };
       const binary = Buffer.from(data, 'base64');
+      // 비용 계산 — Gemini 는 quality 무관 단일 단가 (config.pricing.perImage)
+      const costUsd = computeImageCost(ctx.config, opts.quality);
       return {
         success: true,
-        data: { binary, contentType: mimeType },
+        data: {
+          binary,
+          contentType: mimeType,
+          ...(costUsd != null ? { costUsd } : {}),
+        },
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

@@ -1257,6 +1257,11 @@ export class FirebatCore {
         this.statusMgr.done(job.id, { slug: result.slug, url: result.url });
         // 백그라운드 완료 시 갤러리·페이지 자동 갱신 — placeholder 카드가 실제 이미지로 swap
         this.event.notifyGallery({ slug: result.slug, scope });
+        // 비용 누적 — 어댑터가 config.pricing 으로 산정한 costUsd 가 박혀있으면 LLM 비용 통계에 합류.
+        // 비동기 흐름이라 AiManager 가 받지 못함 (placeholder 즉시 반환) — Core 가 백그라운드 callback 에서 박음.
+        if (typeof result.costUsd === 'number' && result.costUsd > 0) {
+          this.recordLlmCost({ model: result.modelId, costUsd: result.costUsd });
+        }
       },
       onError: (err) => {
         this.statusMgr.error(job.id, err);
@@ -1293,6 +1298,10 @@ export class FirebatCore {
     });
     if (res.success && res.data) {
       this.statusMgr.done(job.id, { slug: res.data.slug, url: res.data.url });
+      // 비용 누적 (sync 경로 — 채팅 이미지 모드 등). 어댑터가 박은 costUsd 사용.
+      if (typeof res.data.costUsd === 'number' && res.data.costUsd > 0) {
+        this.recordLlmCost({ model: res.data.modelId, costUsd: res.data.costUsd });
+      }
     } else {
       this.statusMgr.error(job.id, res.error || '이미지 생성 실패');
     }

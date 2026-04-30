@@ -1049,6 +1049,9 @@ export interface ImageGenResult {
   height?: number;
   /** provider 가 반환한 revised_prompt 등 */
   revisedPrompt?: string;
+  /** 이미지 1장 비용 USD — 어댑터가 config.pricing 으로 산정. 구독 기반 (CLI) 은 0 또는 미설정.
+   *  CostManager 가 이 값을 받아 LLM 비용 통계에 통합 누적 (token 0, costUsd 만 박음). */
+  costUsd?: number;
 }
 
 export interface ImageModelInfo {

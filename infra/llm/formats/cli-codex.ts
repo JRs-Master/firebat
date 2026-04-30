@@ -39,6 +39,9 @@ interface RunOptions {
   history?: ChatMessage[];
   cliModel?: string;
   codexHome?: string;
+  /** MCP bearer token — config.toml 의 `bearer_token_env_var = "FIREBAT_MCP_TOKEN"` 와 짝.
+   *  spawn env.FIREBAT_MCP_TOKEN 으로 박혀 Codex CLI 가 firebat MCP 호출 시 인증 헤더로 사용. */
+  mcpToken?: string;
   thinkingLevel?: string;
   resumeSessionId?: string;
   onChunk?: LlmCallOpts['onChunk'];
@@ -82,6 +85,7 @@ export class CliCodexFormat implements FormatHandler {
       history,
       cliModel,
       codexHome,
+      mcpToken: mcpCfg?.token ?? undefined,
       thinkingLevel: opts?.thinkingLevel,
       resumeSessionId,
       onChunk: opts?.onChunk,
@@ -169,9 +173,14 @@ export class CliCodexFormat implements FormatHandler {
       const effort = mapThinkingToCodex(options.thinkingLevel);
       if (effort) args.push('-c', `model_reasoning_effort="${effort}"`);
 
-      const childEnv: NodeJS.ProcessEnv = options.codexHome
-        ? { ...process.env, CODEX_HOME: options.codexHome }
-        : process.env;
+      // CODEX_HOME 의 config.toml 이 bearer_token_env_var = "FIREBAT_MCP_TOKEN" 명시 →
+      // Codex CLI 가 spawn env 에서 FIREBAT_MCP_TOKEN 읽어 firebat MCP 호출 시 Authorization 헤더로 사용.
+      // 이 env 누락 시 MCP 인증 실패 (403) → 도구 0개 호출 패턴.
+      const childEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        ...(options.codexHome ? { CODEX_HOME: options.codexHome } : {}),
+        ...(options.mcpToken ? { FIREBAT_MCP_TOKEN: options.mcpToken } : {}),
+      };
 
       let child: ChildProcessByStdio<null, Readable, Readable>;
       try {

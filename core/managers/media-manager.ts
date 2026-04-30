@@ -133,6 +133,9 @@ export interface GenerateImageResult {
   modelId: string;
   /** crop 이 적용된 경우 실제 저장된 aspect ratio */
   aspectRatio?: string;
+  /** 이미지 1장 비용 USD — config.pricing 기반. 구독 모드 (CLI Codex) 는 미설정.
+   *  Core facade 가 받아서 recordLlmCost 호출 → 비용 통계에 누적. */
+  costUsd?: number;
 }
 
 export class MediaManager {
@@ -628,6 +631,7 @@ export class MediaManager {
         revisedPrompt: genResult.revisedPrompt,
         modelId,
         ...(appliedAspectRatio ? { aspectRatio: appliedAspectRatio } : {}),
+        ...(typeof genResult.costUsd === 'number' ? { costUsd: genResult.costUsd } : {}),
       },
     };
   }

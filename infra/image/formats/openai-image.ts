@@ -23,6 +23,7 @@
 import type { ImageGenOpts, ImageGenCallOpts, ImageGenResult } from '../../../core/ports';
 import type { InfraResult } from '../../../core/types';
 import type { ImageFormatHandler, ImageFormatHandlerContext } from '../format-handler';
+import { computeImageCost } from '../image-config';
 
 const DEFAULT_SIZE = '1024x1024';
 const DEFAULT_QUALITY = 'medium';
@@ -125,6 +126,8 @@ export class OpenAIImageFormat implements ImageFormatHandler {
       if (!first?.b64_json) return { success: false, error: '응답에 이미지 데이터가 없습니다' };
       const binary = Buffer.from(first.b64_json, 'base64');
       const dims = parseSize(size);
+      // 비용 계산 — config.pricing 의 quality 별 단가 lookup. CostManager 가 누적.
+      const costUsd = computeImageCost(ctx.config, opts.quality);
       return {
         success: true,
         data: {
@@ -133,6 +136,7 @@ export class OpenAIImageFormat implements ImageFormatHandler {
           ...(dims.width ? { width: dims.width } : {}),
           ...(dims.height ? { height: dims.height } : {}),
           ...(first.revised_prompt ? { revisedPrompt: first.revised_prompt } : {}),
+          ...(costUsd != null ? { costUsd } : {}),
         },
       };
     } catch (err: unknown) {
