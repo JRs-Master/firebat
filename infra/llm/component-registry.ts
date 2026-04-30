@@ -447,24 +447,24 @@ export const COMPONENTS: ComponentDef[] = [
   {
     name: 'map',
     componentType: 'Map',
-    description: '지도 + 마커. 부동산 거래·날씨·매장 위치 등 지리 데이터 시각화. provider 자동 분기 — markers 좌표가 한국이면 카카오맵, 그 외는 Leaflet+OSM. 카카오 키 (KAKAO_MAP_JS_KEY) 미설정 시 항상 Leaflet 폴백.',
-    semanticText: '지도 맵 map 마커 marker 위치 location 좌표 latlng 카카오 kakao naver leaflet 부동산 시세 날씨 매장',
+    description: '지도 + 마커. 부동산 거래·날씨·매장 위치 등 지리 데이터 시각화. **provider 자동 분기**: South Korea 좌표 (위도 33-38.7, 경도 124.5-132) + 카카오 JS 키 박혀있으면 카카오맵, **South Korea 외 지역은 Leaflet+OSM** (CDN 무료, 카카오는 한국만 정밀). 카카오 키 미설정 시 South Korea 좌표도 Leaflet 폴백. South Korea 주소 → 정확한 좌표는 sysmod_kakao_map (geocoding) 으로 변환 후 markers 박는 게 정확.',
+    semanticText: '지도 맵 map 마커 marker 위치 location 좌표 latlng 카카오 kakao leaflet osm 부동산 시세 날씨 매장 South Korea',
     propsSchema: {
       type: 'object',
       required: ['markers'],
       properties: {
         markers: {
           type: 'array',
-          description: '마커 배열. 좌표가 한국 (위도 33-38.6, 경도 124.5-132) 이면 카카오, 그 외 Leaflet 자동',
+          description: '마커 배열. 좌표가 South Korea → 카카오 (정밀, JS 키 필요), South Korea 외 → Leaflet+OSM (자동)',
           items: {
             type: 'object',
             required: ['lat', 'lon', 'label'],
             properties: {
-              lat: { type: 'number', description: '위도 (예: 37.5665)' },
-              lon: { type: 'number', description: '경도 (예: 126.9780)' },
+              lat: { type: 'number', description: '위도 (예: 37.5665 서울 / 40.7128 뉴욕)' },
+              lon: { type: 'number', description: '경도 (예: 126.9780 서울 / -74.0060 뉴욕)' },
               label: { type: 'string', description: '마커 위 짧은 라벨' },
               popup: { type: ['string', 'null'], description: '마커 클릭 시 popup 텍스트 (HTML 일부 허용)' },
-              color: { type: ['string', 'null'], description: 'red / blue / green / orange / purple (기본 red)' },
+              color: { type: ['string', 'null'], description: 'red / blue / green / orange / purple (기본 red). Leaflet 만 색상 반영 — 카카오는 기본 핀' },
               type: { type: ['string', 'null'], description: '카테고리 분류 — real-estate / weather / poi 등 (UI 그룹화 용)' },
             },
           },
@@ -477,9 +477,9 @@ export const COMPONENTS: ComponentDef[] = [
             lon: { type: 'number' },
           },
         },
-        zoom: { type: ['integer', 'null'], description: '줌 레벨 (1-18 Leaflet, 1-14 카카오). 기본 12' },
+        zoom: { type: ['integer', 'null'], description: '줌 레벨. Leaflet 1-18 / 카카오 level 1-14. 기본 12' },
         height: { type: ['string', 'null'], description: '지도 높이 (예: "400px"). 기본 400px' },
-        provider: { type: ['string', 'null'], description: 'auto (기본) / leaflet / kakao 강제' },
+        provider: { type: ['string', 'null'], description: 'auto (기본 — South Korea→카카오/South Korea 외→Leaflet) / leaflet (South Korea 외 전용 또는 강제) / kakao (South Korea 강제)' },
       },
     },
   },

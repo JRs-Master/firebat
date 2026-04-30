@@ -938,6 +938,11 @@ export class FirebatCore {
   getCmsSettings() { return this.module.getCmsSettings(); }
   /** @deprecated 2026-04-28 — `getCmsSettings()` 사용. 호출처 점진 마이그레이션 위한 alias. */
   getSeoSettings() { return this.module.getCmsSettings(); }
+  /** 카카오맵 JS 키 — sysmod_kakao-map 의 secret 박힌 곳. render_map 컴포넌트 SSR inject 용.
+   *  미설정 시 null → render_map 이 Leaflet+OSM 폴백. */
+  getKakaoMapJsKey(): string | null {
+    return this.infra.vault.getSecret('user:KAKAO_MAP_JS_KEY') || null;
+  }
 
   // ══════════════════════════════════════════════════════════════════════════
   //  태스크 → TaskManager (파이프라인 즉시 실행)
