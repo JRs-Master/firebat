@@ -29,9 +29,17 @@ export async function generateMetadata(): Promise<Metadata> {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   // SEO 설정 lang — 검색엔진 언어 인식 + 접근성. 미설정 시 'ko'.
   const seo = getCore().getCmsSettings();
+  // 카카오맵 JS 키 — render_map 컴포넌트가 user / admin 양쪽 컨텍스트에서 모두 사용.
+  // (user) layout 만 박으면 admin 채팅 미리보기에서 Leaflet 폴백 됨 → root layout 으로 통합.
+  const kakaoMapJsKey = getCore().getKakaoMapJsKey() || '';
   return (
     <html lang={seo.siteLang || 'ko'}>
       <body className="antialiased bg-white text-gray-900">
+        {kakaoMapJsKey && (
+          <script
+            dangerouslySetInnerHTML={{ __html: `window.__KAKAO_MAP_JS_KEY=${JSON.stringify(kakaoMapJsKey)};` }}
+          />
+        )}
         {children}
       </body>
     </html>

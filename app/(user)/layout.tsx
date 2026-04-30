@@ -42,19 +42,12 @@ export default async function UserLayout({ children }: { children: React.ReactNo
     ],
   } : null;
 
-  // 카카오맵 JS 키 — sysmod_kakao-map 의 secret 박힌 곳에서 받음.
-  // render_map 컴포넌트가 window.__KAKAO_MAP_JS_KEY 로 접근. 미설정 시 Leaflet+OSM 폴백 (해외 전용).
-  const kakaoMapJsKey = getCore().getKakaoMapJsKey() || '';
+  // 카카오맵 JS 키 inject 는 root layout (app/layout.tsx) 으로 이동 — user/admin 양쪽 컨텍스트 통합.
 
   return (
     <>
       {/* Design Tokens — 사용자 설정 토큰을 :root 에 inject. globals.css default override. */}
       <style dangerouslySetInnerHTML={{ __html: themeCss }} />
-      {kakaoMapJsKey && (
-        <script
-          dangerouslySetInnerHTML={{ __html: `window.__KAKAO_MAP_JS_KEY=${JSON.stringify(kakaoMapJsKey)};` }}
-        />
-      )}
       {jsonLd && (
         <script
           type="application/ld+json"
