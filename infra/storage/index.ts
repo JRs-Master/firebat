@@ -34,6 +34,18 @@ export class LocalStorageAdapter implements IStoragePort {
     return this.isInsideZone(targetPath, ['app/(user)', 'user', 'docs', 'system/guidelines', 'system/modules', 'system/services', 'data/firebat-memory', 'data/cache/sysmod-results']);
   }
 
+  /**
+   * glob/grep 검색 노출 zone — read/write 와 분리.
+   *
+   * 차이: data/cache/sysmod-results 제외.
+   * 이유: sysmod 외부 API 응답에 토큰·PII 포함 가능 → 사용자/AI 일반 검색에 노출 차단.
+   * cache 는 별도 도구 (cache_read/grep/aggregate) 로만 접근 — 그 도구는 cacheKey 받아서
+   * 의도된 호출 흐름만 통과.
+   */
+  private canSearch(targetPath: string): boolean {
+    return this.isInsideZone(targetPath, ['app/(user)', 'user', 'docs', 'system/guidelines', 'system/modules', 'system/services', 'data/firebat-memory']);
+  }
+
   async read(targetPath: string): Promise<InfraResult<string>> {
     try {
       if (!this.canRead(targetPath)) {
@@ -128,10 +140,15 @@ export class LocalStorageAdapter implements IStoragePort {
 
   /**
    * Glob 패턴 매칭 — Node 22+ 의 fs/promises.glob (내장) 활용.
-   * 매칭된 파일 중 canRead zone 통과한 것만 반환.
+   * 매칭된 파일 중 canSearch zone 통과한 것만 반환 (cache 디렉토리 제외 — 토큰·PII 노출 차단).
    * 결과: baseDir 상대 경로 (forward-slash, OS 무관 표시).
+   *
+   * 패턴 sanitize: 절대 경로 / .. traversal 거부 (안전망 — fs.glob 자체 cwd 안만 매칭).
    */
   async glob(pattern: string, opts?: { limit?: number }): Promise<InfraResult<string[]>> {
+    if (!pattern || pattern.includes('..') || pattern.startsWith('/') || /^[a-zA-Z]:\\/.test(pattern)) {
+      return { success: false, error: 'glob 패턴 거부: 절대 경로 / .. traversal 금지' };
+    }
     try {
       const limit = opts?.limit ?? 500;
       const results: string[] = [];
@@ -139,9 +156,9 @@ export class LocalStorageAdapter implements IStoragePort {
       const iter = (fs as unknown as { glob: (p: string, opts?: { cwd?: string }) => AsyncIterable<string> })
         .glob(pattern, { cwd: this.baseDir });
       for await (const file of iter) {
-        // 절대 경로화 후 zone 검증 — fs.glob 가 ../ 같은 반환 안 하지만 안전망
+        // 절대 경로화 후 검색 zone 검증 (cache 디렉토리 제외)
         const rel = file.replace(/\\/g, '/');
-        if (!this.canRead(rel)) continue;
+        if (!this.canSearch(rel)) continue;
         results.push(rel);
         if (results.length >= limit) break;
       }

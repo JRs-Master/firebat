@@ -28,6 +28,7 @@ import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK
 import { canonicalJson, unwrapJson, unwrapNestedPageSpec } from './utils/json-normalize';
 import { captureException as _captureException } from './utils/error-capture';
 import type { ErrorContext } from './utils/error-capture';
+import { redactMeta } from '../lib/redactor';
 
 /** AI 요청 옵션 — 요청별 모델/이미지/멀티턴 컨텍스트 지정 */
 export interface AiRequestOpts {
@@ -431,20 +432,25 @@ export class FirebatCore {
     const ttlMs = (input.ttlSec ?? 300) * 1000;  // default 5분
     const expiresAt = ts + ttlMs;
 
+    // 보안 sanitize — sysmod 외부 API 응답에 토큰·세션·PII 박혀있을 가능성. redactMeta 가
+    // 민감 키 이름 (password/token/api-key 등) value 통째 mask + 토큰 패턴 (sk-/eyJ/Bearer 등) 광범위 mask.
+    // cache 자체에 박지 않음 = grep/read 노출되어도 sensitive 데이터 0.
+    const sanitized = redactMeta(input.records);
+
     // 컬럼 추출 — 첫 record 기준 (record 가 object 가정. 아니면 컬럼 빈 배열)
-    const first = input.records[0];
+    const first = sanitized[0];
     const columns = (first && typeof first === 'object' && !Array.isArray(first)) ? Object.keys(first as object) : [];
 
     // JSONL 저장 (1줄 = 1 record)
-    const jsonlBody = input.records.map(r => JSON.stringify(r)).join('\n');
+    const jsonlBody = sanitized.map((r: unknown) => JSON.stringify(r)).join('\n');
     const writeRes = await this.storage.write(`data/cache/sysmod-results/${cacheKey}.jsonl`, jsonlBody);
     if (!writeRes.success) return { success: false, error: writeRes.error };
 
-    // 메타 저장
+    // 메타 저장 — params 에 토큰 박힌 케이스 (refresh_token 호출 등) 도 sanitize
     const meta = {
       cacheKey, sysmod: input.sysmod, action: input.action,
-      params: input.params ?? {},
-      rows: input.records.length,
+      params: redactMeta(input.params ?? {}),
+      rows: sanitized.length,
       columns,
       createdAt: ts,
       expiresAt,
