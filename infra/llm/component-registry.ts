@@ -444,6 +444,45 @@ export const COMPONENTS: ComponentDef[] = [
       },
     },
   },
+  {
+    name: 'map',
+    componentType: 'Map',
+    description: '지도 + 마커. 부동산 거래·날씨·매장 위치 등 지리 데이터 시각화. provider 자동 분기 — markers 좌표가 한국이면 카카오맵, 그 외는 Leaflet+OSM. 카카오 키 (KAKAO_MAP_JS_KEY) 미설정 시 항상 Leaflet 폴백.',
+    semanticText: '지도 맵 map 마커 marker 위치 location 좌표 latlng 카카오 kakao naver leaflet 부동산 시세 날씨 매장',
+    propsSchema: {
+      type: 'object',
+      required: ['markers'],
+      properties: {
+        markers: {
+          type: 'array',
+          description: '마커 배열. 좌표가 한국 (위도 33-38.6, 경도 124.5-132) 이면 카카오, 그 외 Leaflet 자동',
+          items: {
+            type: 'object',
+            required: ['lat', 'lon', 'label'],
+            properties: {
+              lat: { type: 'number', description: '위도 (예: 37.5665)' },
+              lon: { type: 'number', description: '경도 (예: 126.9780)' },
+              label: { type: 'string', description: '마커 위 짧은 라벨' },
+              popup: { type: ['string', 'null'], description: '마커 클릭 시 popup 텍스트 (HTML 일부 허용)' },
+              color: { type: ['string', 'null'], description: 'red / blue / green / orange / purple (기본 red)' },
+              type: { type: ['string', 'null'], description: '카테고리 분류 — real-estate / weather / poi 등 (UI 그룹화 용)' },
+            },
+          },
+        },
+        center: {
+          type: ['object', 'null'],
+          description: '지도 중심 좌표. 미지정 시 markers 평균 자동',
+          properties: {
+            lat: { type: 'number' },
+            lon: { type: 'number' },
+          },
+        },
+        zoom: { type: ['integer', 'null'], description: '줌 레벨 (1-18 Leaflet, 1-14 카카오). 기본 12' },
+        height: { type: ['string', 'null'], description: '지도 높이 (예: "400px"). 기본 400px' },
+        provider: { type: ['string', 'null'], description: 'auto (기본) / leaflet / kakao 강제' },
+      },
+    },
+  },
 ];
 
 /** name → ComponentDef 맵 (render 디스패처에서 사용) */

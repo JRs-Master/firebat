@@ -42,10 +42,19 @@ export default async function UserLayout({ children }: { children: React.ReactNo
     ],
   } : null;
 
+  // 카카오맵 JS 키 — render_map 컴포넌트가 window.__KAKAO_MAP_JS_KEY 로 접근.
+  // 미설정 시 Leaflet+OSM 폴백.
+  const kakaoMapJsKey = (seo as { kakaoMapJsKey?: string }).kakaoMapJsKey || '';
+
   return (
     <>
       {/* Design Tokens — 사용자 설정 토큰을 :root 에 inject. globals.css default override. */}
       <style dangerouslySetInnerHTML={{ __html: themeCss }} />
+      {kakaoMapJsKey && (
+        <script
+          dangerouslySetInnerHTML={{ __html: `window.__KAKAO_MAP_JS_KEY=${JSON.stringify(kakaoMapJsKey)};` }}
+        />
+      )}
       {jsonLd && (
         <script
           type="application/ld+json"

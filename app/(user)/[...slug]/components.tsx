@@ -74,6 +74,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'KeyValue':      return <KeyValueComp title={p.title} items={p.items ?? []} columns={p.columns} />;
     case 'StatusBadge':   return <StatusBadgeComp items={p.items ?? []} />;
     case 'PlanCard':      return <PlanCardComp title={p.title ?? ''} steps={p.steps ?? []} estimatedTime={p.estimatedTime} risks={p.risks} />;
+    case 'Map':           return <MapComp markers={p.markers ?? []} center={p.center} zoom={p.zoom} height={p.height} provider={p.provider} />;
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
       // (개발자는 console 에서 확인 가능)
@@ -1582,5 +1583,157 @@ function PlanCardComp({ title, steps, estimatedTime, risks }: {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Map ─────────────────────────────────────────────────────────────────────
+/**
+ * Map 컴포넌트 — Leaflet (default) + 카카오맵 (provider='kakao' 또는 한국 좌표 자동).
+ *
+ * 흐름:
+ *   1. provider 결정 — 명시 / auto (한국 좌표 → 카카오) / 카카오 키 없으면 leaflet 폴백
+ *   2. Leaflet: CDN script 동적 로드 → L.map() 초기화 → L.marker() 추가
+ *   3. 카카오: window.__KAKAO_MAP_JS_KEY 박혀있으면 SDK 동적 로드 → kakao.maps.Map() → kakao.maps.Marker()
+ *
+ * SSR 안전: useEffect 안에서만 window 접근. 첫 렌더 시 placeholder div.
+ */
+type MapMarker = {
+  lat: number;
+  lon: number;
+  label: string;
+  popup?: string | null;
+  color?: string | null;
+  type?: string | null;
+};
+
+const COLOR_TO_HEX: Record<string, string> = {
+  red: '#ef4444', blue: '#3b82f6', green: '#22c55e',
+  orange: '#f97316', purple: '#a855f7',
+};
+
+function isKoreaCoord(lat: number, lon: number): boolean {
+  return lat >= 33 && lat <= 38.7 && lon >= 124.5 && lon <= 132;
+}
+
+function MapComp({
+  markers, center, zoom, height, provider,
+}: {
+  markers: MapMarker[];
+  center?: { lat: number; lon: number } | null;
+  zoom?: number | null;
+  height?: string | null;
+  provider?: 'auto' | 'leaflet' | 'kakao' | null;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const safeMarkers = Array.isArray(markers) ? markers.filter(m => typeof m?.lat === 'number' && typeof m?.lon === 'number') : [];
+  const finalHeight = height || '400px';
+  const finalZoom = typeof zoom === 'number' ? zoom : 12;
+
+  // 중심 좌표 — center 명시 우선, 없으면 markers 평균
+  const finalCenter = center && typeof center.lat === 'number' && typeof center.lon === 'number'
+    ? center
+    : safeMarkers.length > 0
+      ? {
+          lat: safeMarkers.reduce((a, m) => a + m.lat, 0) / safeMarkers.length,
+          lon: safeMarkers.reduce((a, m) => a + m.lon, 0) / safeMarkers.length,
+        }
+      : { lat: 37.5665, lon: 126.9780 };  // 기본 서울
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const container = ref.current;
+    container.innerHTML = '';
+
+    // provider 결정
+    const kakaoKey = (typeof window !== 'undefined' && (window as any).__KAKAO_MAP_JS_KEY) || '';
+    const wantsKakao = provider === 'kakao' || (provider !== 'leaflet' && isKoreaCoord(finalCenter.lat, finalCenter.lon) && kakaoKey);
+    const useKakao = wantsKakao && kakaoKey;
+
+    if (useKakao) {
+      // 카카오맵 SDK 동적 로드
+      const initKakao = () => {
+        const w = window as any;
+        w.kakao.maps.load(() => {
+          const map = new w.kakao.maps.Map(container, {
+            center: new w.kakao.maps.LatLng(finalCenter.lat, finalCenter.lon),
+            level: Math.max(1, Math.min(14, 15 - finalZoom)),  // Leaflet zoom (12=도시) → kakao level (3=동네)
+          });
+          for (const m of safeMarkers) {
+            const marker = new w.kakao.maps.Marker({
+              position: new w.kakao.maps.LatLng(m.lat, m.lon),
+              title: m.label,
+            });
+            marker.setMap(map);
+            if (m.popup) {
+              const info = new w.kakao.maps.InfoWindow({
+                content: `<div style="padding:6px 10px;font-size:12px;">${m.popup}</div>`,
+              });
+              w.kakao.maps.event.addListener(marker, 'click', () => info.open(map, marker));
+            }
+          }
+        });
+      };
+      const w = window as any;
+      if (w.kakao && w.kakao.maps) {
+        initKakao();
+      } else {
+        const existing = document.querySelector(`script[src*="dapi.kakao.com"]`);
+        if (existing) existing.addEventListener('load', initKakao);
+        else {
+          const s = document.createElement('script');
+          s.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${kakaoKey}&autoload=false`;
+          s.onload = initKakao;
+          document.head.appendChild(s);
+        }
+      }
+    } else {
+      // Leaflet (default fallback)
+      const w = window as any;
+      const initLeaflet = () => {
+        const L = w.L;
+        if (!L) return;
+        const map = L.map(container).setView([finalCenter.lat, finalCenter.lon], finalZoom);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap',
+        }).addTo(map);
+        for (const m of safeMarkers) {
+          const color = m.color && COLOR_TO_HEX[m.color] ? COLOR_TO_HEX[m.color] : '#ef4444';
+          const icon = L.divIcon({
+            className: 'firebat-map-marker',
+            html: `<div style="background:${color};border:2px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>`,
+            iconSize: [18, 18],
+            iconAnchor: [9, 9],
+          });
+          const mk = L.marker([m.lat, m.lon], { icon, title: m.label }).addTo(map);
+          if (m.popup) mk.bindPopup(m.popup);
+        }
+      };
+      if (w.L) initLeaflet();
+      else {
+        const existingCss = document.querySelector(`link[href*="leaflet"]`);
+        if (!existingCss) {
+          const css = document.createElement('link');
+          css.rel = 'stylesheet';
+          css.href = 'https://unpkg.com/leaflet@1/dist/leaflet.css';
+          document.head.appendChild(css);
+        }
+        const existing = document.querySelector(`script[src*="leaflet.js"]`);
+        if (existing) existing.addEventListener('load', initLeaflet);
+        else {
+          const s = document.createElement('script');
+          s.src = 'https://unpkg.com/leaflet@1/dist/leaflet.js';
+          s.onload = initLeaflet;
+          document.head.appendChild(s);
+        }
+      }
+    }
+  }, [safeMarkers, finalCenter.lat, finalCenter.lon, finalZoom, provider]);
+
+  return (
+    <div
+      ref={ref}
+      className="rounded-xl border border-gray-100 shadow-sm overflow-hidden"
+      style={{ height: finalHeight, width: '100%' }}
+    />
   );
 }
