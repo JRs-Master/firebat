@@ -11,7 +11,6 @@ import { z } from 'zod';
 import { FirebatCore } from '../core/index';
 import { IMAGE_GEN_DESCRIPTION } from '../lib/image-gen-prompt';
 import { CDN_LIBRARIES } from '../lib/cdn-libraries';
-import { COMPONENTS } from '../infra/llm/component-registry';
 
 export function createInternalMcpServer(core: FirebatCore): McpServer {
   const server = new McpServer({ name: 'firebat-internal', version: '0.1.0' });
