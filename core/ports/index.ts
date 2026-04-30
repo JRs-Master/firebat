@@ -198,8 +198,13 @@ export interface IStoragePort {
   read(path: string): Promise<InfraResult<string>>;
   /** 바이너리 파일 읽기 → base64 + mimeType + size. 이미지/PDF/기타 바이너리. */
   readBinary(path: string): Promise<InfraResult<{ base64: string; mimeType: string; size: number }>>;
-  /** 파일 쓰기(부모 폴더 자동 생성 포함) */
+  /** 파일 쓰기(부모 폴더 자동 생성 포함) — 사용자/AI 도구 zone (user/, app/(user)/, data/firebat-memory). */
   write(path: string, content: string): Promise<InfraResult<void>>;
+  /** Internal cache 쓰기 — data/cache/sysmod-results 만. Core 의 cacheData 호출 전용.
+   *  AI 도구 (write_file / edit_file) 는 일반 write 만 호출 → cache 자동 차단. */
+  writeCache(path: string, content: string): Promise<InfraResult<void>>;
+  /** Internal cache 삭제 — data/cache/sysmod-results 만. Core 의 cacheDrop 호출 전용. */
+  deleteCache(path: string): Promise<InfraResult<void>>;
   /** 파일 삭제 */
   delete(path: string): Promise<InfraResult<void>>;
   /** 디렉토리 내 파일 목록 조회 (이름 목록) */

@@ -24,10 +24,16 @@ export class LocalStorageAdapter implements IStoragePort {
   }
 
   private canWrite(targetPath: string): boolean {
+    // 사용자/AI 도구 (write_file / edit_file) 통과 zone — cache 제외.
     // data/firebat-memory/ — Firebat AI 자율 메모리 (사용자 룰·선호 영속).
-    // data/cache/sysmod-results/ — Phase 2 sub-query cache (sysmod 결과 JSONL).
     // 다른 data/ 영역은 read/write port 우회 — 매니저가 직접 접근.
-    return this.isInsideZone(targetPath, ['app/(user)', 'user', 'data/firebat-memory', 'data/cache/sysmod-results']);
+    return this.isInsideZone(targetPath, ['app/(user)', 'user', 'data/firebat-memory']);
+  }
+
+  /** Internal cache 쓰기 zone — Core 의 cacheData 만 호출. AI 도구 우회 차단.
+   *  data/cache/sysmod-results/ — Phase 2 sub-query cache (sysmod 결과 JSONL). */
+  private canCacheWrite(targetPath: string): boolean {
+    return this.isInsideZone(targetPath, ['data/cache/sysmod-results']);
   }
 
   private canRead(targetPath: string): boolean {
@@ -82,14 +88,29 @@ export class LocalStorageAdapter implements IStoragePort {
   async write(targetPath: string, content: string): Promise<InfraResult<void>> {
     try {
       if (!this.canWrite(targetPath)) {
-        return { success: false, error: `[Kernel Block] Zero Trust Policy Violation: Attempted to write outside app/user/ or user/ (${targetPath})` };
+        return { success: false, error: `[Kernel Block] Zero Trust Policy Violation: Attempted to write outside user write zone (${targetPath})` };
       }
       const absolutePath = path.resolve(this.baseDir, targetPath);
-      
+
       // 부모 디렉토리가 없다면 자동 생성
       await fs.mkdir(path.dirname(absolutePath), { recursive: true });
       await fs.writeFile(absolutePath, content, 'utf-8');
-      
+
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /** Internal cache 쓰기 — data/cache/sysmod-results 만. AI 도구 우회 차단. */
+  async writeCache(targetPath: string, content: string): Promise<InfraResult<void>> {
+    try {
+      if (!this.canCacheWrite(targetPath)) {
+        return { success: false, error: `[Kernel Block] writeCache: cache zone 외 경로 거부 (${targetPath})` };
+      }
+      const absolutePath = path.resolve(this.baseDir, targetPath);
+      await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+      await fs.writeFile(absolutePath, content, 'utf-8');
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message };
@@ -99,7 +120,21 @@ export class LocalStorageAdapter implements IStoragePort {
   async delete(targetPath: string): Promise<InfraResult<void>> {
     try {
       if (!this.canWrite(targetPath)) {
-        return { success: false, error: `[Kernel Block] Zero Trust Policy Violation: Attempted to delete outside app/user/ or user/ (${targetPath})` };
+        return { success: false, error: `[Kernel Block] Zero Trust Policy Violation: Attempted to delete outside user write zone (${targetPath})` };
+      }
+      const absolutePath = path.resolve(this.baseDir, targetPath);
+      await fs.rm(absolutePath, { recursive: true, force: true });
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  /** Internal cache 삭제 — data/cache/sysmod-results 만. */
+  async deleteCache(targetPath: string): Promise<InfraResult<void>> {
+    try {
+      if (!this.canCacheWrite(targetPath)) {
+        return { success: false, error: `[Kernel Block] deleteCache: cache zone 외 경로 거부 (${targetPath})` };
       }
       const absolutePath = path.resolve(this.baseDir, targetPath);
       await fs.rm(absolutePath, { recursive: true, force: true });

@@ -89,6 +89,28 @@ export class AiManager {
         const res = await this.core.writeFile(path, content);
         return res.success ? { success: true } : { success: false, error: res.error };
       },
+      edit_file: async (args) => {
+        const { path, oldString, newString, replaceAll } = args as {
+          path: string; oldString: string; newString: string; replaceAll?: boolean;
+        };
+        if (!oldString) return { success: false, error: 'oldString 필수' };
+        if (oldString === newString) return { success: false, error: 'oldString 과 newString 이 같음' };
+        const readRes = await this.core.readFile(path);
+        if (!readRes.success || readRes.data == null) {
+          return { success: false, error: readRes.error || '파일 읽기 실패' };
+        }
+        const content = readRes.data;
+        const occurrences = content.split(oldString).length - 1;
+        if (occurrences === 0) {
+          return { success: false, error: 'oldString 미발견 — 정확한 공백·줄바꿈 포함 매칭 필요' };
+        }
+        if (occurrences > 1 && !replaceAll) {
+          return { success: false, error: `oldString 이 ${occurrences}군데 매칭됨. replaceAll:true 명시 또는 더 긴 context 추가 필요` };
+        }
+        const newContent = replaceAll ? content.split(oldString).join(newString) : content.replace(oldString, newString);
+        const writeRes = await this.core.writeFile(path, newContent);
+        return writeRes.success ? { success: true, replaced: occurrences } : { success: false, error: writeRes.error };
+      },
       read_file: async (args) => {
         const { path, lines } = args as { path: string; lines?: number };
         const res = await this.core.readFile(path);

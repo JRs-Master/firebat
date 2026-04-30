@@ -441,9 +441,9 @@ export class FirebatCore {
     const first = sanitized[0];
     const columns = (first && typeof first === 'object' && !Array.isArray(first)) ? Object.keys(first as object) : [];
 
-    // JSONL 저장 (1줄 = 1 record)
+    // JSONL 저장 (1줄 = 1 record). StorageManager.writeCache 경유 — AI 도구의 write_file/edit_file 와 분리된 internal zone.
     const jsonlBody = sanitized.map((r: unknown) => JSON.stringify(r)).join('\n');
-    const writeRes = await this.storage.write(`data/cache/sysmod-results/${cacheKey}.jsonl`, jsonlBody);
+    const writeRes = await this.storage.writeCache(`data/cache/sysmod-results/${cacheKey}.jsonl`, jsonlBody);
     if (!writeRes.success) return { success: false, error: writeRes.error };
 
     // 메타 저장 — params 에 토큰 박힌 케이스 (refresh_token 호출 등) 도 sanitize
@@ -455,7 +455,7 @@ export class FirebatCore {
       createdAt: ts,
       expiresAt,
     };
-    const metaRes = await this.storage.write(`data/cache/sysmod-results/${cacheKey}.meta.json`, JSON.stringify(meta));
+    const metaRes = await this.storage.writeCache(`data/cache/sysmod-results/${cacheKey}.meta.json`, JSON.stringify(meta));
     if (!metaRes.success) return { success: false, error: metaRes.error };
 
     // LRU 자동 정리 — 100 cache 한도 (오래된 거 삭제)
@@ -579,8 +579,8 @@ export class FirebatCore {
 
   /** cache 명시 삭제 (TTL 외). */
   async cacheDrop(cacheKey: string): Promise<InfraResult<void>> {
-    const a = await this.storage.delete(`data/cache/sysmod-results/${cacheKey}.jsonl`);
-    const b = await this.storage.delete(`data/cache/sysmod-results/${cacheKey}.meta.json`);
+    const a = await this.storage.deleteCache(`data/cache/sysmod-results/${cacheKey}.jsonl`);
+    const b = await this.storage.deleteCache(`data/cache/sysmod-results/${cacheKey}.meta.json`);
     if (a.success || b.success) return { success: true };
     return { success: false, error: `cache 없음: ${cacheKey}` };
   }

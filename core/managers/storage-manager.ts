@@ -45,6 +45,16 @@ export class StorageManager {
     return this.storage.glob(pattern, opts);
   }
 
+  /** Internal cache write — Core.cacheData 만 호출. AI 도구 우회 차단. */
+  async writeCache(path: string, content: string): Promise<InfraResult<void>> {
+    return this.storage.writeCache(path, content);
+  }
+
+  /** Internal cache delete — Core.cacheDrop 만 호출. */
+  async deleteCache(path: string): Promise<InfraResult<void>> {
+    return this.storage.deleteCache(path);
+  }
+
   async grep(
     pattern: string,
     opts?: { path?: string; fileType?: string; limit?: number; ignoreCase?: boolean },

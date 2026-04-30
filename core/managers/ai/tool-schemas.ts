@@ -105,13 +105,43 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
   return [
     {
       name: 'write_file',
-      description: '파일 생성/덮어쓰기. user/modules/ 내부만 허용.',
+      description: '파일 생성/덮어쓰기 — 새 파일이거나 전체 재작성. 부분 수정은 edit_file 사용 (token 절감).',
       parameters: {
         type: 'object',
         required: ['path', 'content'],
         properties: {
           path: { type: 'string', description: '저장할 파일 경로 (예: user/modules/weather/main.py)' },
           content: { type: 'string', description: '파일 내용 전체' },
+        },
+      },
+    },
+    {
+      name: 'edit_file',
+      description: `파일 부분 수정 — 정확한 문자열 매칭으로 oldString → newString 교체. **user/ 영역만 수정 가능** (sysmod·core·infra 자동 차단).
+
+**호출 시점**:
+- user/modules/ 의 기존 파일 일부 수정 (write_file 의 token 낭비 회피)
+- bug fix, 코드 한 줄 변경, import 추가 등
+
+**호출 금지**:
+- 새 파일 생성 (write_file 사용)
+- 전체 재작성 (write_file)
+- 5+ 군데 동시 수정 — write_file 더 효율적
+- system/modules/, system/services/, core/, infra/, app/admin/ — Firebat 시스템 영역. canWrite 자동 차단됨.
+
+**규칙**:
+- oldString 정확한 매칭 (공백·들여쓰기·줄바꿈 포함). 1글자 다르면 거부.
+- oldString 미발견 → 에러
+- oldString 중복 매칭 → 기본 거부 (replaceAll:true 명시 필요)
+- newString 다르게 입력 (X 동일하면 의미 X)`,
+      parameters: {
+        type: 'object',
+        required: ['path', 'oldString', 'newString'],
+        properties: {
+          path: { type: 'string', description: '수정할 파일 경로' },
+          oldString: { type: 'string', description: '교체 대상 문자열 — 파일 안 정확한 매칭 필요 (공백·줄바꿈 포함)' },
+          newString: { type: 'string', description: '대체 문자열 (oldString 과 달라야 함)' },
+          replaceAll: { type: 'boolean', description: 'true 면 모든 매칭 교체 (기본 false — 중복 매칭 시 에러)' },
         },
       },
     },

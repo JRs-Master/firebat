@@ -439,7 +439,7 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'write_file',
-    `파일 쓰기 (user/ 영역만). 부모 디렉토리 자동 생성.
+    `파일 생성/덮어쓰기 (user/ 영역만). 부모 디렉토리 자동 생성. 부분 수정은 edit_file 사용 (token 절감).
 **모듈 작성 시 필수 준수:**
 - 경로: user/modules/{모듈명}/main.py 또는 index.mjs
 - config.json 필수: {"name", "type":"utility", "runtime":"python"|"node", "project":"모듈명", "packages":[], "secrets":[], "input":{}, "output":{}}
@@ -454,6 +454,45 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     async ({ path, content }) => {
       const r = await core.writeFile(path, content);
       return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true } : { error: r.error }) }] };
+    },
+  );
+
+  server.tool(
+    'edit_file',
+    `파일 부분 수정 — 정확한 문자열 매칭으로 oldString → newString 교체. **user/ 영역만** (system/core/infra 자동 차단).
+- oldString 정확한 매칭 (공백·들여쓰기·줄바꿈 포함). 1글자 다르면 거부.
+- oldString 미발견 → 에러
+- oldString 중복 매칭 → 기본 거부 (replaceAll:true 명시 필요)
+- 새 파일 생성·전체 재작성·5+ 군데 동시 수정 = write_file 사용
+- 차단 영역 (system/modules/, core/, infra/, app/admin/ 등) 수정 시도 → canWrite 거부`,
+    {
+      path: z.string().describe('수정할 파일 경로'),
+      oldString: z.string().describe('교체 대상 (정확 매칭 필요)'),
+      newString: z.string().describe('대체 문자열 (oldString 과 달라야 함)'),
+      replaceAll: z.boolean().optional().describe('true 면 모든 매칭 교체 (기본 false)'),
+    },
+    async ({ path, oldString, newString, replaceAll }) => {
+      if (oldString === newString) {
+        return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'oldString 과 newString 이 같음' }) }] };
+      }
+      const readRes = await core.readFile(path);
+      if (!readRes.success || readRes.data == null) {
+        return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: readRes.error || '파일 읽기 실패' }) }] };
+      }
+      const content = readRes.data;
+      const occurrences = content.split(oldString).length - 1;
+      if (occurrences === 0) {
+        return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'oldString 미발견 — 정확한 공백·줄바꿈 포함 매칭 필요' }) }] };
+      }
+      if (occurrences > 1 && !replaceAll) {
+        return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `oldString 이 ${occurrences}군데 매칭됨. replaceAll:true 명시 또는 더 긴 context 추가 필요` }) }] };
+      }
+      const newContent = replaceAll ? content.split(oldString).join(newString) : content.replace(oldString, newString);
+      const writeRes = await core.writeFile(path, newContent);
+      if (!writeRes.success) {
+        return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: writeRes.error }) }] };
+      }
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, replaced: occurrences }) }] };
     },
   );
 
