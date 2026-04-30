@@ -14,8 +14,8 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["short", "ultra-now", "ultra-short", "medium-fcst", "medium-land", "medium-ta", "medium-sea", "alerts", "uv-index", "earthquake", "typhoon-list", "typhoon-info", "typhoon-forecast"],
-        "description": "short=단기예보 (3일, 1시간), ultra-now=초단기실황 (현재), ultra-short=초단기예보 (6시간), medium-fcst=중기 전망 (stnId 필요, wfSv 요약 텍스트), medium-land=중기 육상예보 (regId, 4-10일 강수확률·날씨), medium-ta=중기 기온 (regId, 4-10일 최저·최고 + 상하한범위), medium-sea=중기 해상예보 (regId 12A* 해상코드, 4-10일 날씨·파고), alerts=기상특보, uv-index=자외선지수, earthquake=지진정보, typhoon-list=태풍 통보문 목록, typhoon-info=태풍 통보문 상세 (위치·진행·풍속·기압), typhoon-forecast=태풍 예상정보 (확률반경·강풍반경·진행)"
+        "enum": ["short", "ultra-now", "ultra-short", "fcst-version", "medium-fcst", "medium-land", "medium-ta", "medium-sea", "alerts", "alerts-news", "alerts-prelim", "uv-index", "uv-index-v4", "thermal-index", "air-stagnation", "earthquake", "tsunami", "typhoon-list", "typhoon-info", "typhoon-forecast"],
+        "description": "short/ultra-now/ultra-short=단기예보 시리즈, fcst-version=예보 수정버전 조회, medium-fcst=중기 전망 (stnId, wfSv 텍스트), medium-land/ta/sea=중기 육상·기온·해상 (regId), alerts=기상특보 목록 (제목·발표시각), alerts-news=기상속보 본문 (ann 2000자), alerts-prelim=기상 예비특보 (pwn 현황+rem 참고), uv-index=자외선 V3 (areaNo+time), uv-index-v4=자외선 V4 (3시간×75h h0-h75), thermal-index=체감온도 V4 (areaNo+time+requestCode, 5-9월, 1시간×78h h1-h78), air-stagnation=대기정체지수 V4 (areaNo+time, 3시간×78h h3-h78), earthquake=지진통보문 (fromTmFc/toTmFc 8자리, 위도·경도·규모·진도·진앙위치), tsunami=지진해일통보문 (발표시각·발효시각·해당지역·진앙·규모·당부사항), typhoon-list/info/forecast=태풍 시리즈"
       },
       "lat": {
         "type": "number",
@@ -39,11 +39,29 @@
       },
       "stnId": {
         "type": "string",
-        "description": "[alerts/medium-fcst] 발표 관청 / 지점 번호. 108=전국, 109=서울·인천·경기, 159=부산"
+        "description": "[alerts/alerts-news/alerts-prelim/medium-fcst] 발표 관청 / 지점 번호. 108=전국, 109=서울·인천·경기, 159=부산. alerts-news/alerts-prelim 의 stnId 는 옵션 (전체 조회 가능)"
       },
       "areaNo": {
         "type": "string",
-        "description": "[uv-index] 행정구역코드 10자리 (예: 1100000000=서울)"
+        "description": "[uv-index/uv-index-v4/thermal-index/air-stagnation] 행정구역코드 10자리 (예: 1100000000=서울). 공백 시 전체지점 조회"
+      },
+      "ftype": {
+        "type": "string",
+        "enum": ["ODAM", "VSRT", "SHRT"],
+        "description": "[fcst-version] 파일 구분. ODAM=초단기실황, VSRT=초단기예보, SHRT=단기예보"
+      },
+      "basedatetime": {
+        "type": "string",
+        "description": "[fcst-version] 발표일시분 yyyyMMddHHmm (각 base_time 기준)"
+      },
+      "requestCode": {
+        "type": "string",
+        "enum": ["A41", "A42", "A44", "A45", "A46", "A47", "A48", "A49"],
+        "description": "[thermal-index] 대상환경별 코드. A41=노인, A42=어린이, A44=농촌, A45=비닐하우스, A46=취약거주환경, A47=도로, A48=건설현장, A49=조선소"
+      },
+      "time": {
+        "type": "string",
+        "description": "[uv-index/uv-index-v4/thermal-index/air-stagnation] 발표 시각 yyyyMMddHH 10자리. 미지정 시 현재 시각 자동"
       },
       "tmFc": {
         "type": "string",
@@ -55,11 +73,11 @@
       },
       "fromTm": {
         "type": "string",
-        "description": "[earthquake/typhoon] 시작시각 yyyyMMdd. 미지정 시 7일 전"
+        "description": "[alerts/alerts-news/alerts-prelim/earthquake/tsunami/typhoon-list] 시작시각 yyyyMMdd 8자리. 미지정 시 7일 전 (지진/해일/태풍은 30일 전)"
       },
       "toTm": {
         "type": "string",
-        "description": "[earthquake/typhoon] 종료시각 yyyyMMdd. 미지정 시 오늘"
+        "description": "[alerts/alerts-news/alerts-prelim/earthquake/tsunami/typhoon-list] 종료시각 yyyyMMdd 8자리. 미지정 시 오늘"
       },
       "limit": {
         "type": "integer",

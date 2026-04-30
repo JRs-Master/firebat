@@ -10,12 +10,19 @@
  *   medium-land  — 중기 육상예보 (4-10일) — MidFcstInfoService/getMidLandFcst (regId)
  *   medium-ta    — 중기 기온 — MidFcstInfoService/getMidTa (regId)
  *   medium-sea   — 중기 해상예보 (날씨·파고) — MidFcstInfoService/getMidSeaFcst (regId 해상)
- *   alerts       — 기상특보 — WthrWrnInfoService/getWthrWrnList
- *   uv-index     — 자외선지수 — LivingWthrIdxServiceV3/getUVIdxV3
- *   earthquake   — 지진정보 — EqkInfoService/getEqkMsg
- *   typhoon-list — 태풍 통보문 목록 — TyphoonInfoService/getTyphoonInfoList
- *   typhoon-info — 태풍 통보문 상세 — TyphoonInfoService/getTyphoonInfo
- *   typhoon-forecast — 태풍 예상 정보 — TyphoonInfoService/getTyphoonFcst
+ *   fcst-version — 예보 수정버전 — VilageFcstInfoService_2.0/getFcstVersion (ftype + basedatetime)
+ *   alerts       — 기상특보 목록 — WthrWrnInfoService/getWthrWrnList
+ *   alerts-news  — 기상속보 — WthrWrnInfoService/getWthrBrkNews
+ *   alerts-prelim — 기상예비특보 — WthrWrnInfoService/getWthrPwn
+ *   uv-index     — 자외선지수 V3 — LivingWthrIdxServiceV3/getUVIdxV3
+ *   uv-index-v4  — 자외선지수 V4 (3시간×75h) — LivingWthrIdxServiceV4/getUVIdxV4
+ *   thermal-index — 체감온도 V4 (5-9월, 1시간×78h) — LivingWthrIdxServiceV4/getSenTaIdxV4 (areaNo+time+requestCode)
+ *   air-stagnation — 대기정체지수 V4 (3시간×78h) — LivingWthrIdxServiceV4/getAirDiffusionIdxV4
+ *   earthquake   — 지진통보문 — EqkInfoService/getEqkMsg
+ *   tsunami      — 지진해일통보문 — EqkInfoService/getTsunamiMsg
+ *   typhoon-list — 태풍 통보문 목록 — TyphoonInfoService/getTyphoonInfoList (tmFc 단일)
+ *   typhoon-info — 태풍 통보문 상세 — TyphoonInfoService/getTyphoonInfo (fromTmFc/toTmFc)
+ *   typhoon-forecast — 태풍 예상정보 — TyphoonInfoService/getTyphoonFcst (tmFc + typSeq)
  *
  * 인증: ?serviceKey=<URL-encoded DATA_GO_KR_API_KEY>
  * 응답: dataType=JSON 강제. items 배열 추출 후 반환.
@@ -273,20 +280,37 @@ async function main() {
       return out(true, { items: r.items, regId, tmFc: t });
     }
 
-    if (action === 'alerts') {
-      const fromYmd = fromTm || todayYmd(new Date(Date.now() - 7 * 86400000));
-      const toYmd = toTm || todayYmd();
-      const r = await callApi(serviceKey, '/WthrWrnInfoService/getWthrWrnList', {
-        numOfRows: limit, pageNo: 1, stnId: stnId || '108',
-        fromTmFc: `${fromYmd}0000`, toTmFc: `${toYmd}2359`,
+    if (action === 'fcst-version') {
+      const ftypeIn = data.ftype;
+      const baseDt = data.basedatetime;
+      if (!ftypeIn) return out(false, undefined, 'fcst-version 은 ftype 필요 (ODAM/VSRT/SHRT)');
+      if (!baseDt) return out(false, undefined, 'fcst-version 은 basedatetime 필요 (yyyyMMddHHmm)');
+      const r = await callApi(serviceKey, '/VilageFcstInfoService_2.0/getFcstVersion', {
+        numOfRows: limit, pageNo: 1, ftype: ftypeIn, basedatetime: baseDt,
       });
       if (!r.ok) return out(false, undefined, r.error);
       return out(true, { items: r.items });
     }
 
+    // ── 기상특보 시리즈 (WthrWrnInfoService) ──
+    // 모든 endpoint 가 stnId(옵션) + fromTmFc/toTmFc (yyyyMMdd 8자리) 표준
+    if (action === 'alerts' || action === 'alerts-news' || action === 'alerts-prelim') {
+      const fromYmd = fromTm || todayYmd(new Date(Date.now() - 7 * 86400000));
+      const toYmd = toTm || todayYmd();
+      const path = action === 'alerts' ? '/WthrWrnInfoService/getWthrWrnList'
+                 : action === 'alerts-news' ? '/WthrWrnInfoService/getWthrBrkNews'
+                 : '/WthrWrnInfoService/getWthrPwn';
+      const params = { numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd };
+      if (stnId) params.stnId = stnId;
+      const r = await callApi(serviceKey, path, params);
+      if (!r.ok) return out(false, undefined, r.error);
+      return out(true, { items: r.items });
+    }
+
+    // ── 생활기상지수 V3 (uv-index) ──
     if (action === 'uv-index') {
       if (!areaNo) return out(false, undefined, 'uv-index 는 areaNo 필요 (10자리 행정구역코드)');
-      const t = ymdHm().slice(0, 10);  // yyyyMMddHH (시각 단위)
+      const t = data.time || ymdHm().slice(0, 10);
       const r = await callApi(serviceKey, '/LivingWthrIdxServiceV3/getUVIdxV3', {
         numOfRows: limit, pageNo: 1, areaNo, time: t,
       });
@@ -294,40 +318,71 @@ async function main() {
       return out(true, { items: r.items });
     }
 
-    if (action === 'earthquake') {
+    // ── 생활기상지수 V4 시리즈 (uv-index-v4 / thermal-index / air-stagnation) ──
+    if (action === 'uv-index-v4' || action === 'air-stagnation') {
+      if (!areaNo) return out(false, undefined, `${action} 은 areaNo 필요 (10자리 행정구역코드)`);
+      const t = data.time || ymdHm().slice(0, 10);
+      const path = action === 'uv-index-v4' ? '/LivingWthrIdxServiceV4/getUVIdxV4'
+                                            : '/LivingWthrIdxServiceV4/getAirDiffusionIdxV4';
+      const r = await callApi(serviceKey, path, {
+        numOfRows: limit, pageNo: 1, areaNo, time: t,
+      });
+      if (!r.ok) return out(false, undefined, r.error);
+      return out(true, { items: r.items });
+    }
+
+    if (action === 'thermal-index') {
+      if (!areaNo) return out(false, undefined, 'thermal-index 는 areaNo 필요 (10자리 행정구역코드)');
+      const reqCode = data.requestCode;
+      if (!reqCode) return out(false, undefined, 'thermal-index 는 requestCode 필요 (A41=노인, A42=어린이, A44=농촌, A45=비닐하우스, A46=취약, A47=도로, A48=건설, A49=조선소)');
+      const t = data.time || ymdHm().slice(0, 10);
+      const r = await callApi(serviceKey, '/LivingWthrIdxServiceV4/getSenTaIdxV4', {
+        numOfRows: limit, pageNo: 1, areaNo, time: t, requestCode: reqCode,
+      });
+      if (!r.ok) return out(false, undefined, r.error);
+      return out(true, { items: r.items });
+    }
+
+    // ── 지진/해일 시리즈 (EqkInfoService) — fromTmFc/toTmFc 8자리 ──
+    if (action === 'earthquake' || action === 'tsunami') {
       const fromYmd = fromTm || todayYmd(new Date(Date.now() - 30 * 86400000));
       const toYmd = toTm || todayYmd();
-      const r = await callApi(serviceKey, '/EqkInfoService/getEqkMsg', {
+      const path = action === 'earthquake' ? '/EqkInfoService/getEqkMsg' : '/EqkInfoService/getTsunamiMsg';
+      const r = await callApi(serviceKey, path, {
         numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd,
       });
       if (!r.ok) return out(false, undefined, r.error);
       return out(true, { items: r.items });
     }
 
+    // ── 태풍 시리즈 (TyphoonInfoService) — spec 검증 후 정정 ──
+    // typhoon-list: tmFc 단일 (8자리) — fromTmFc/toTmFc 아님
+    // typhoon-info: fromTmFc/toTmFc (8자리) — tmFc 12자리 아님
+    // typhoon-forecast: tmFc (12자리) + typSeq (typhoonSeq 아님)
     if (action === 'typhoon-list') {
-      const fromYmd = fromTm || todayYmd(new Date(Date.now() - 30 * 86400000));
-      const toYmd = toTm || todayYmd();
+      const t = tmFc || todayYmd();
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonInfoList', {
-        numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd,
+        numOfRows: limit, pageNo: 1, tmFc: t,
       });
       if (!r.ok) return out(false, undefined, r.error);
-      return out(true, { items: r.items });
+      return out(true, { items: r.items, tmFc: t });
     }
 
     if (action === 'typhoon-info') {
-      if (!tmFc) return out(false, undefined, 'typhoon-info 는 tmFc 필요 (yyyyMMddHHmm). typhoon-list 결과에서 확인');
+      const fromYmd = fromTm || todayYmd(new Date(Date.now() - 30 * 86400000));
+      const toYmd = toTm || todayYmd();
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonInfo', {
-        numOfRows: limit, pageNo: 1, tmFc,
+        numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd,
       });
       if (!r.ok) return out(false, undefined, r.error);
-      return out(true, { items: r.items, tmFc });
+      return out(true, { items: r.items });
     }
 
     if (action === 'typhoon-forecast') {
-      if (!tmFc) return out(false, undefined, 'typhoon-forecast 는 tmFc 필요 (yyyyMMddHHmm)');
-      if (!typhoonNo) return out(false, undefined, 'typhoon-forecast 는 typhoonNo 필요 (예: 202515)');
+      if (!tmFc) return out(false, undefined, 'typhoon-forecast 는 tmFc 필요 (yyyyMMddHHmm 12자리)');
+      if (!typhoonNo) return out(false, undefined, 'typhoon-forecast 는 typhoonNo 필요 (typSeq, 예: 18)');
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonFcst', {
-        numOfRows: limit, pageNo: 1, tmFc, typhoonSeq: typhoonNo,
+        numOfRows: limit, pageNo: 1, tmFc, typSeq: typhoonNo,
       });
       if (!r.ok) return out(false, undefined, r.error);
       return out(true, { items: r.items, tmFc, typhoonNo });
