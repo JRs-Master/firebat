@@ -319,9 +319,7 @@ export class CliClaudeCodeFormat implements FormatHandler {
 
       let child;
       try {
-        // PATH 보강 — pm2 가 nvm PATH 받지 못한 환경 (cron 발화 등) ENOENT 회피.
-        const env = { ...process.env, PATH: `${path.dirname(process.execPath)}:${process.env.PATH ?? ''}` };
-        child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'], env });
+        child = spawn('claude', args, { stdio: ['ignore', 'pipe', 'pipe'] });
       } catch (e) {
         resolve({ text: '', usedTools: [], renderedBlocks: [], pendingActions: [], suggestions: [], error: `Claude Code CLI 실행 실패 (claude 명령어 미설치?): ${(e as Error).message}` });
         return;

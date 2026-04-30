@@ -228,10 +228,7 @@ class ClaudeCodeDaemon {
     if (spawnOpts.cliModel) args.push('--model', spawnOpts.cliModel);
     if (spawnOpts.thinkingEffort) args.push('--effort', spawnOpts.thinkingEffort);
 
-    // PATH 보강 — pm2 가 시작될 때 nvm PATH 손실되는 환경 대응 (cron 발화 시 ENOENT 회피).
-    // process.execPath = node binary 절대 경로 → 디렉토리 = nvm bin (claude symlink 박혀있음).
-    const env = { ...process.env, PATH: `${path.dirname(process.execPath)}:${process.env.PATH ?? ''}` };
-    this.child = spawn('claude', args, { stdio: ['pipe', 'pipe', 'pipe'], env }) as ChildProcessByStdio<Writable, Readable, Readable>;
+    this.child = spawn('claude', args, { stdio: ['pipe', 'pipe', 'pipe'] }) as ChildProcessByStdio<Writable, Readable, Readable>;
     this.child.stdout.on('data', (chunk: Buffer) => this.onStdout(chunk));
     this.child.stderr.on('data', (chunk: Buffer) => { this.stderrBuf += chunk.toString(); });
     this.child.on('error', (e) => this.onDeath(`프로세스 에러: ${e.message}`));

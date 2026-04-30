@@ -245,11 +245,9 @@ export class CliGeminiFormat implements FormatHandler {
       if (options.cliModel) args.push('-m', options.cliModel);
       if (options.resumeSessionId) args.push('--resume', options.resumeSessionId);
 
-      // PATH 보강 — pm2 nvm PATH 손실 환경 (cron 등) ENOENT 회피.
-      const augmentedPath = `${path.dirname(process.execPath)}:${process.env.PATH ?? ''}`;
       const childEnv: NodeJS.ProcessEnv = options.geminiHome
-        ? { ...process.env, GEMINI_HOME: options.geminiHome, PATH: augmentedPath }
-        : { ...process.env, PATH: augmentedPath };
+        ? { ...process.env, GEMINI_HOME: options.geminiHome }
+        : process.env;
 
       let child: ChildProcessByStdio<null, Readable, Readable>;
       try {
