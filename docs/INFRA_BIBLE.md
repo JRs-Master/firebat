@@ -66,10 +66,11 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
   - DB: `conversations` 테이블 `cli_session_id`, `cli_model` 컬럼. 모델 변경 시 자동 무효화.
   - 플래그: Claude `--resume <uuid>`, Codex `exec resume <id>`, Gemini `--resume <uuid>`
   - resume 시 prompt 에 history 중복 주입 금지 (CLI 세션이 이미 보유)
-- **Claude Code Persistent Daemon** (`claude-code-daemon.ts`):
-  - 대화당 1개 subprocess, LRU max 5, 30분 idle timeout
-  - stdin stream-json 으로 user message 주입, stdout 이벤트 수집
-  - 신규 데몬 첫 send 시 UI history seed, 이후는 prompt 만
+- **CLI 통일 패턴** (Claude/Codex/Gemini 모두 동일 — 2026-04-30 daemon 폐기):
+  - 매 turn cold spawn (자식 프로세스) + `--resume <session_id>` 로 컨텍스트 유지
+  - DB cli_session_id 영속 → 다음 turn 시 CLI 가 이전 컨텍스트 보유
+  - 이전 Claude 전용 daemon (LRU 5 + 30분 idle) 폐기 — 메모리 100-500MB + 코드 400줄 + key hash quirk vs spawn 5-10초 절약 trade-off 에서 단순함 우선
+  - 매 turn 5-10초 spawn 오버헤드 추가 (LLM 응답 30-60초 → 체감 영향 작음)
 - **ConfigDrivenAdapter**: `config.format` → 해당 FormatHandler에 위임. 각 핸들러는 `ask/askText/askWithTools` 시그니처 통일.
 - **Lazy 인증**: API Key/Service Account는 resolver 함수로 첫 호출 시 로드. Vault 변경 시 WeakMap 캐시 무효화.
 - **인증 분리**: API Key (OpenAI/Gemini/Anthropic) vs Service Account JSON (Vertex).

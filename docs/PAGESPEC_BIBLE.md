@@ -227,7 +227,7 @@ PageSpec 컴포넌트와 별도로, 채팅에서만 쓰는 특수 컴포넌트.
 
 ### 제2항. render_* ↔ 컴포넌트 단일 매핑 (v0.1, 2026-04-21)
 
-`lib/render-map.ts` 가 단일 source. 이전엔 5군데 (ai-manager / cli-gemini / cli-claude-code / cli-codex / claude-code-daemon) 에 동일 매핑 hardcode → 모두 import 통합.
+`lib/render-map.ts` 가 단일 source. 이전엔 4군데 (ai-manager / cli-gemini / cli-claude-code / cli-codex) 에 동일 매핑 hardcode → 모두 import 통합.
 
 ```ts
 // lib/render-map.ts

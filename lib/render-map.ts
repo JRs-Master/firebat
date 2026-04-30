@@ -4,8 +4,8 @@
  * AI 가 render_table / render_chart / render_alert 등 호출 시
  * 어떤 컴포넌트로 렌더할지 결정. mcp/internal-server.ts 의 makeRender 호출과 매칭됨.
  *
- * 이전: ai-manager / cli-gemini / cli-claude-code / cli-codex / claude-code-daemon
- *      4~5군데에 동일 매핑 hardcoded → 새 컴포넌트 추가 시 다섯 군데 수정.
+ * 이전: ai-manager / cli-gemini / cli-claude-code / cli-codex
+ *      4군데에 동일 매핑 hardcoded → 새 컴포넌트 추가 시 네 군데 수정.
  * 변경: 이 파일 한 곳만 수정 → 자동 반영.
  */
 
