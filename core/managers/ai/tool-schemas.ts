@@ -536,7 +536,7 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
     ...RENDER_TOOLS,
     {
       name: 'render_iframe',
-      description: '한 섹션용 iframe 위젯 — 결과가 sandbox iframe srcDoc 안에서 렌더됨 (페이지 본문 통째 아님). 지도/다이어그램/애니메이션/수학식 같은 CDN 라이브러리 시각화 한 섹션에만 사용. **iframe 안에서는 AdSense 광고 게재·Googlebot 인덱싱 모두 차단되므로 페이지 본문 전체를 이걸로 만들면 광고 수익·검색 노출 0**. 표·차트·리스트·헤더·텍스트·이미지 등은 render_table / render_chart / render_list / render_header / render_text / render_image 등 전용 도구 사용. CDN 라이브러리는 dependencies 배열로 선언만 — Frontend 가 자동 합성. <script src="..."> 태그 직접 박지 마라.',
+      description: '한 섹션용 iframe 위젯 — **마지막 수단**. 다음은 모두 전용 도구 있음 → render_iframe 쓰면 안 됨: 지도(render_map) / 다이어그램(render_diagram, mermaid) / 수식(render_math, KaTeX) / 코드(render_code, hljs) / 슬라이드(render_slideshow) / Lottie 애니메이션(render_lottie) / 네트워크 그래프(render_network) / 표·차트·리스트·헤더·텍스트·이미지 (전용 render_*). render_iframe 은 d3 자유 시각화·threejs 3D·p5 스케치·echarts·animejs 같이 전용 도구 없는 케이스만. **iframe 안에서는 AdSense 광고 게재·Googlebot 인덱싱 모두 차단되므로 페이지 본문 전체를 이걸로 만들면 광고 수익·검색 노출 0**. CDN 라이브러리는 dependencies 배열로 선언만 — Frontend 가 자동 합성. <script src="..."> 태그 직접 박지 마라.',
       parameters: {
         type: 'object',
         required: ['html'],
@@ -545,10 +545,10 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
           height: { type: 'string', description: 'iframe 높이 (기본 400px). 예: "500px", "60vh"' },
           dependencies: {
             type: 'array',
-            description: '사용할 CDN 라이브러리 키. Frontend HtmlComp 가 lib/cdn-libraries.ts 카탈로그 보고 <script>/<link> 자동 합성 후 iframe head 에 주입.',
+            description: '사용할 CDN 라이브러리 키. Frontend HtmlComp 가 lib/cdn-libraries.ts 카탈로그 보고 <script>/<link> 자동 합성 후 iframe head 에 주입. leaflet/mermaid/katex/hljs/swiper/lottie/cytoscape 는 전용 컴포넌트로 흡수되어 enum 에서 제외 — 해당 라이브러리는 render_map/render_diagram/render_math/render_code/render_slideshow/render_lottie/render_network 사용.',
             items: {
               type: 'string',
-              enum: ['d3', 'mermaid', 'leaflet', 'threejs', 'animejs', 'tailwindcss', 'katex', 'hljs', 'marked', 'cytoscape', 'mathjax', 'p5', 'lottie', 'datatables', 'swiper', 'echarts'],
+              enum: ['d3', 'threejs', 'animejs', 'tailwindcss', 'marked', 'mathjax', 'echarts', 'p5', 'datatables'],
             },
           },
         },

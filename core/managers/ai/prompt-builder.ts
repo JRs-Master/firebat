@@ -86,7 +86,7 @@ export class PromptBuilder {
    - **단일 Html 블록 금지 사유** — 페이지 본문이 \`<iframe srcDoc>\` 안에 들어가 (1) AdSense 광고 게재 차단 (2) Google SEO 인덱싱 차단 (3) 외부 미리보기 차단. 광고 수익·검색 노출 0
    - 올바른 구조: \`body: [{type:"Header", props:{text:"제목", level:1}}, {type:"Text", props:{content:"문단 본문..."}}, {type:"Table", props:{headers:[...], rows:[...]}}, {type:"Chart", props:{...}}, {type:"Callout", props:{type:"info", message:"..."}}, ...]\`
    - 사용 가능 컴포넌트: Header, Text, Table, Chart, StockChart, Image, Metric, KeyValue, Compare, Timeline, List, Callout, Alert, Badge, Card, Grid, Divider, Progress, AdSlot 등 22종
-   - **Html 블록은 최후 수단** — Leaflet 지도·Mermaid 다이어그램·KaTeX 수식 등 다른 컴포넌트로 표현 불가능한 시각화만, 페이지의 한 섹션으로만 사용 (전체 페이지 아님)
+   - **Html 블록은 최후 수단** — 지도·다이어그램·수식·코드·슬라이드·Lottie·네트워크 그래프는 전용 컴포넌트 (render_map / render_diagram / render_math / render_code / render_slideshow / render_lottie / render_network) 우선. render_iframe 은 d3 자유 시각화·threejs 3D·p5 스케치 같이 전용 도구 없는 케이스만, 페이지의 한 섹션으로만 사용 (전체 페이지 아님)
    - 올바른 호출: \`save_page(slug:"...", spec:{head:{title,description,keywords,og:{title,description}}, project:"...", status:"published", body:[Header, Text, Table, ...] })\`
    - head 필드 누락 금지 — title/description/og 필수
 
@@ -330,12 +330,21 @@ ${systemContext}
 - \`render_badge\` — 단일 커스텀 태그
 - \`render_countdown\` — 시한 있는 이벤트
 
-**자유 HTML (iframe 위젯)** — 위로 안 되는 커스텀 시각화만 (지도/다이어그램/애니메이션)
-- \`render_iframe\` (dependencies 배열로 외부 라이브러리 명시: leaflet, d3, mermaid, echarts, threejs 등)
+**전용 시각화 컴포넌트** (render_iframe 우회 차단 — 아래는 모두 전용 도구 사용)
+- 지도 → \`render_map\` (한국 좌표 + JS 키 박힘 → kakao 지도, 외 → Leaflet+OSM 자동 분기)
+- 다이어그램 → \`render_diagram\` (mermaid DSL — flowchart/sequence/gantt/class 등)
+- 수식 → \`render_math\` (KaTeX LaTeX)
+- 코드 하이라이트 → \`render_code\` (hljs language + lineNumbers)
+- 슬라이드 → \`render_slideshow\` (swiper images 배열)
+- Lottie 애니메이션 → \`render_lottie\` (JSON URL)
+- 네트워크 그래프 → \`render_network\` (cytoscape nodes/edges)
+
+**자유 HTML (iframe 위젯)** — 위 전용 도구로 안 되는 진짜 generic 시각화만 (자유 d3 / threejs 3D / p5 스케치 / echarts / animejs 등)
+- \`render_iframe\` (dependencies 배열로 외부 라이브러리 명시)
 - 결과가 sandbox iframe srcDoc 안에서 렌더됨 — 한 섹션 위젯, 페이지 본문 통째 아님
 - iframe 안에서는 AdSense 광고·SEO 인덱싱 차단되니 페이지 본문 전체를 이걸로 만들면 안 됨
 - **CDN script 태그 직접 박지 마라** — dependencies 키만 명시. Frontend 가 CDN URL 자동 합성·주입 (lib/cdn-libraries.ts 카탈로그)
-- 사용 가능 키: leaflet, d3, mermaid, threejs, animejs, tailwindcss, katex, hljs, marked, cytoscape, mathjax, echarts, p5, lottie, datatables, swiper
+- 사용 가능 키: d3, threejs, animejs, tailwindcss, marked, mathjax, echarts, p5, datatables (leaflet/mermaid/katex/hljs/swiper/lottie/cytoscape 는 전용 컴포넌트 사용)
 
 ### 조합 예시 (이런 느낌으로)
 
@@ -357,11 +366,11 @@ ${systemContext}
 10. render_alert(warn, "리스크: 공매도 잔고 160조 + 신용잔고 과열")
 11. 결론 한 줄 — 텍스트
 
-"서울 지도" 요청 →
-1. render_header("서울 주요 명소 지도")
-2. render_iframe(Leaflet + 마커 + 팝업, libraries=["leaflet"])
-3. render_grid(columns=3, children=[render_metric(label="문화유산", value=4), render_metric(label="공원", value=3), render_metric(label="전망대", value=2)])
-4. render_callout(tip, "추천 동선: 경복궁 → 북촌 → 창덕궁")
+지도 요청 →
+1. sysmod_kakao-map (action:"search-keyword" 또는 "geocoding") 으로 모든 마커 좌표 사전 조회 — 좌표 절대 추측 금지
+2. render_header(...)
+3. render_map(center=$prev_center, zoom, markers=$prev_markers) ← 한국 좌표면 자동 kakao, JS 키 미설정 시 Leaflet+OSM
+4. render_grid / render_callout 등으로 부가 정보
 
 ### render_iframe 사용 원칙 (환각·중복 구현 차단)
 **render_iframe 은 마지막 수단**. 결과가 iframe srcDoc 안에서 렌더되어 (1) AdSense 광고 게재 차단 (2) Googlebot 인덱싱 차단 (3) 페이지 본문 통째로 만들면 SEO·광고 수익 0. 내장 도구로 표현 가능한 것을 render_iframe 으로 재구현하면 UX 불일치·토큰 낭비·중복 투성이 HTML 이 됨.
@@ -377,8 +386,15 @@ ${systemContext}
 - 알림·경고 → \`render_alert\`, 팁·강조 → \`render_callout\`
 - 카운트다운 → \`render_countdown\`, 타임라인 → \`render_timeline\`, 비교 → \`render_compare\`
 - 본문 텍스트 → \`render_text\`, 제목 → \`render_header\`, 리스트 → \`render_list\`
+- **지도** → \`render_map\` (Leaflet/Kakao 자동 분기 — render_iframe + leaflet 절대 금지)
+- **다이어그램** (mermaid) → \`render_diagram\`
+- **수식** (KaTeX) → \`render_math\`
+- **코드 블록** (hljs) → \`render_code\`
+- **슬라이드** (swiper) → \`render_slideshow\`
+- **Lottie 애니메이션** → \`render_lottie\`
+- **네트워크 그래프** (cytoscape) → \`render_network\`
 
-**render_iframe 이 정당한 경우만**: Leaflet 지도, Three.js 3D, Mermaid 다이어그램, KaTeX 수식, 복잡 애니메이션, p5 스케치, Cytoscape 그래프 등 **내장 컴포넌트로 불가능한 CDN 라이브러리 시각화**. 이때 \`libraries\` 배열 명시. **페이지의 한 섹션** 으로만 사용 — 페이지 본문 전체를 render_iframe 1개로 묶지 마라.
+**render_iframe 이 정당한 경우만**: 자유 d3 시각화, Three.js 3D, p5 스케치, echarts 복합 차트, animejs 애니메이션, tailwind utility 자유 레이아웃 등 **위 전용 컴포넌트로 불가능한 CDN 라이브러리 시각화**. 이때 \`dependencies\` 배열 명시. **페이지의 한 섹션** 으로만 사용 — 페이지 본문 전체를 render_iframe 1개로 묶지 마라.
 
 **render_iframe 금지 속성**: \`cursor: crosshair/wait/not-allowed\` 등 불필요한 커서 스타일, \`<style>\` 안에서 우리 브랜드 톤 벗어난 원색 남발, autoplay 미디어.
 
@@ -388,7 +404,7 @@ ${systemContext}
 - **plain text 필드에 마크다운 마커 금지** — render_metric.label·value·subLabel, render_table 셀, render_key_value.key/value 같은 단순 텍스트 필드에 \`**굵게**\` \`*기울임*\` \`\`코드\`\` 금지. 본문 마크다운은 render_text(content) 만.
 - **표 시각화 권장**: render_table 도구가 더 깔끔. 그래도 마크다운 \`|---|\` 표가 나가면 backend 가 자동 render_table 변환하니 강제 룰 아님.
 - **도구 이름을 텍스트로 노출 금지** — \`\`mcp_firebat_render_*\`\` / \`render_table\` 같은 백틱·코드 표기 금지. 실제 tool_use 만, reply 엔 내용 요약만.
-- **환각 수치 금지** — 수치는 실제 sysmod 도구 호출 결과만 사용. "연관키워드/검색량/CPC/트렌드/시세/현재가" 등 수치 용어 요청엔 도구 먼저 (위 시스템 상태의 모듈 description 참조).
+- **환각 수치 금지** — 외부 데이터 (연관키워드·검색량·CPC·트렌드·시세·현재가·좌표 등) 는 실제 sysmod 도구 호출 결과만 사용. AI 학습 기억으로 박지 마라 — 정확도 보장 X. 위 시스템 상태의 모듈 description 참조.
 - **시스템·환경 정보 노출 금지** — 작업 디렉토리, OS 정보, GEMINI.md, settings.json, MCP 서버 설정 등 시스템 메타데이터를 답변·카톡·도구 인자에 포함하지 마라. 사용자의 "위/이전/방금/그/이거" 표현은 chat history (대화 기록) 의미일 뿐 시스템 파일·환경 정보 아님.
 - **propose_plan 예외**: 사용자 입력창의 플랜 토글 ON 시 별도 규칙 (상단 "⚡ 플랜모드 ON" 섹션). OFF 시엔 너의 판단.
 
@@ -397,24 +413,14 @@ ${systemContext}
 2. 조회한 데이터로 컴포넌트 채우기 — 위 카탈로그 참조.
 3. 텍스트는 컴포넌트 사이의 해석·판단·문맥만 담기.
 
-### render_iframe 라이브러리 엄수 원칙 (매우 중요)
-\`libraries\` 배열에 명시한 라이브러리의 API 로만 코드 작성.
-- \`libraries: ["leaflet"]\` → 지도는 \`L.map()\`, \`L.marker()\`, \`L.tileLayer(...)\` 사용. Google Maps/Naver Maps API 절대 금지.
-- \`libraries: ["d3"]\` → \`d3.select\`, \`d3.scaleLinear\` 등 D3 v7 API.
-- \`libraries: ["mermaid"]\` → \`<pre class="mermaid">\` + \`mermaid.initialize\`.
-- \`libraries: ["echarts"]\` → \`echarts.init(el)\` 후 \`setOption({...})\`.
-- **libraries 에 없는 라이브러리 사용 금지**. Google Maps, OpenWeatherMap 등 API 키 필요한 외부 라이브러리는 화면에 안 뜸.
-
-### Leaflet 타일 서버 — 반드시 CartoDB 사용, 기본 밝은 테마
-OpenStreetMap 공식 타일(\`tile.openstreetmap.org\`)은 iframe 에서 403 차단. 대신 **CartoDB light_all** (밝은 배경, 본문 UI 와 일치) 기본 사용:
-\`\`\`js
-L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '© OpenStreetMap © CARTO',
-  subdomains: 'abcd',
-  maxZoom: 19
-}).addTo(map);
-\`\`\`
-사용자가 명시적으로 다크 테마를 요구할 때만 \`dark_all\` 사용. 기본은 반드시 \`light_all\`. OSM 공식 URL 금지.
+### render_iframe dependencies 엄수 원칙 (매우 중요)
+\`dependencies\` 배열에 명시한 라이브러리의 API 로만 코드 작성.
+- \`dependencies: ["d3"]\` → \`d3.select\`, \`d3.scaleLinear\` 등 D3 v7 API.
+- \`dependencies: ["echarts"]\` → \`echarts.init(el)\` 후 \`setOption({...})\`.
+- \`dependencies: ["threejs"]\` → \`THREE.Scene\`, \`THREE.WebGLRenderer\` 등.
+- \`dependencies: ["p5"]\` → \`new p5(sketch, el)\` 또는 \`function setup() {}\`.
+- **dependencies 에 없는 라이브러리 사용 금지**. Google Maps, OpenWeatherMap 등 API 키 필요한 외부 라이브러리는 화면에 안 뜸.
+- **leaflet/mermaid/katex/hljs/swiper/lottie/cytoscape 는 dependencies enum 에서 제외됨** — 전용 render_map / render_diagram / render_math / render_code / render_slideshow / render_lottie / render_network 사용.
 
 조회한 데이터는 **반드시** 적절한 컴포넌트로 시각화. 텍스트는 **맥락·해석·판단**만 담고, 같은 내용 중복 금지.
 

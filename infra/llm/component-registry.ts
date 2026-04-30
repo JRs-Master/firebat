@@ -572,7 +572,7 @@ export const COMPONENTS: ComponentDef[] = [
   {
     name: 'map',
     componentType: 'Map',
-    description: '지도 + 마커. 부동산 거래·날씨·매장 위치 등 지리 데이터 시각화. **provider 자동 분기**: South Korea 좌표 (위도 33-38.7, 경도 124.5-132) + 카카오 JS 키 박혀있으면 카카오맵, **South Korea 외 지역은 Leaflet+OSM** (CDN 무료, 카카오는 한국만 정밀). 카카오 키 미설정 시 South Korea 좌표도 Leaflet 폴백. South Korea 주소 → 정확한 좌표는 sysmod_kakao_map (geocoding) 으로 변환 후 markers 박는 게 정확.',
+    description: '지도 + 마커. 부동산 거래·날씨·매장 위치 등 지리 데이터 시각화. **provider 자동 분기**: South Korea 좌표 (위도 33-38.7, 경도 124.5-132) + 카카오 JS 키 박혀있으면 카카오맵, **South Korea 외 지역은 Leaflet+OSM** (CDN 무료, 카카오는 한국만 정밀). 카카오 키 미설정 시 South Korea 좌표도 Leaflet 폴백. **좌표 환각 절대 금지** — markers/center 의 lat·lon 은 반드시 sysmod_kakao_map (action: geocoding · search-keyword · search-address) 결과 또는 sysmod 도구 호출 결과로만 채울 것. AI 학습 기억으로 좌표 박지 마라 — 옆건물·옆동네 표시 위험. South Korea 외 지역은 다른 geocoding sysmod 또는 사용자가 명시한 좌표만 사용.',
     semanticText: '지도 맵 map 마커 marker 위치 location 좌표 latlng 카카오 kakao leaflet osm 부동산 시세 날씨 매장 South Korea',
     propsSchema: {
       type: 'object',
@@ -585,8 +585,8 @@ export const COMPONENTS: ComponentDef[] = [
             type: 'object',
             required: ['lat', 'lon', 'label'],
             properties: {
-              lat: { type: 'number', description: '위도 (예: 37.5665 서울 / 40.7128 뉴욕)' },
-              lon: { type: 'number', description: '경도 (예: 126.9780 서울 / -74.0060 뉴욕)' },
+              lat: { type: 'number', description: '위도 — sysmod geocoding 결과만 사용. AI 기억으로 박지 마라.' },
+              lon: { type: 'number', description: '경도 — sysmod geocoding 결과만 사용. AI 기억으로 박지 마라.' },
               label: { type: 'string', description: '마커 위 짧은 라벨' },
               popup: { type: ['string', 'null'], description: '마커 클릭 시 popup 텍스트 (HTML 일부 허용)' },
               color: { type: ['string', 'null'], description: 'red / blue / green / orange / purple (기본 red). Leaflet 만 색상 반영 — 카카오는 기본 핀' },

@@ -10,6 +10,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { FirebatCore } from '../core/index';
 import { IMAGE_GEN_DESCRIPTION } from '../lib/image-gen-prompt';
+import { CDN_LIBRARIES } from '../lib/cdn-libraries';
 
 export function createInternalMcpServer(core: FirebatCore): McpServer {
   const server = new McpServer({ name: 'firebat-internal', version: '0.1.0' });
@@ -170,32 +171,17 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
     align: z.enum(['left','right','center']).optional().describe('그리드 내부 전체 텍스트 정렬. 기본 left.'),
   }, '2D 격자 레이아웃. render_metric 여러 개를 담으면 KPI 대시보드.');
 
-  const CDN_MAP: Record<string, string> = {
-    d3: '<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>',
-    mermaid: '<script src="https://cdn.jsdelivr.net/npm/mermaid@10"></script>',
-    leaflet: '<link rel="stylesheet" href="https://unpkg.com/leaflet@1/dist/leaflet.css"/><script src="https://unpkg.com/leaflet@1/dist/leaflet.js"></script>',
-    threejs: '<script src="https://cdn.jsdelivr.net/npm/three@0.160/build/three.min.js"></script>',
-    animejs: '<script src="https://cdn.jsdelivr.net/npm/animejs@3/lib/anime.min.js"></script>',
-    tailwindcss: '<script src="https://cdn.tailwindcss.com"></script>',
-    katex: '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.css"/><script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/katex.min.js"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16/dist/contrib/auto-render.min.js"></script>',
-    hljs: '<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github.min.css"/><script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>',
-    marked: '<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>',
-    cytoscape: '<script src="https://cdn.jsdelivr.net/npm/cytoscape@3/dist/cytoscape.min.js"></script>',
-    mathjax: '<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>',
-    echarts: '<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>',
-    p5: '<script src="https://cdn.jsdelivr.net/npm/p5@1/lib/p5.min.js"></script>',
-    lottie: '<script src="https://cdn.jsdelivr.net/npm/lottie-web@5/build/player/lottie.min.js"></script>',
-    datatables: '<link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css"/><script src="https://cdn.jsdelivr.net/npm/jquery@3/dist/jquery.min.js"></script><script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>',
-    swiper: '<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css"/><script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>',
-  };
+  // CDN 카탈로그는 lib/cdn-libraries.ts 단일 source. 전용 render_* 컴포넌트로 흡수된 라이브러리
+  // (leaflet/mermaid/katex/hljs/cytoscape/lottie/swiper) 는 거기서 이미 제외됨 → render_iframe 우회 차단.
+  const CDN_MAP = CDN_LIBRARIES;
 
   server.tool(
     'render_iframe',
-    '한 섹션용 iframe 위젯 (sandbox srcDoc). 페이지 본문 통째 아님 — iframe 안에서는 AdSense 광고·SEO 인덱싱 차단됨. 표·차트·텍스트는 render_component 우선. 지도·다이어그램·수식 등 CDN 라이브러리 시각화 한 섹션에만 사용. libraries 배열 명시 시 자동으로 <head>에 script/link 태그 삽입됨.',
+    '한 섹션용 iframe 위젯 (sandbox srcDoc) — **마지막 수단**. 다음은 모두 전용 도구 있음 → render_iframe 쓰면 안 됨: 지도(render_map) / 다이어그램(render_diagram, mermaid) / 수식(render_math, KaTeX) / 코드(render_code, hljs) / 슬라이드(render_slideshow) / Lottie 애니메이션(render_lottie) / 네트워크(render_network) / 표·차트·리스트·헤더·텍스트·이미지 (전용 render_*). render_iframe 은 d3 자유 시각화·threejs 3D·p5 스케치·echarts·animejs 같이 전용 도구 없는 케이스만. iframe 안에서는 AdSense 광고·SEO 인덱싱 차단되니 페이지 본문 통째로 만들지 마라. libraries 배열 명시 시 자동으로 <head>에 script/link 태그 삽입됨.',
     {
       html: z.string().describe('HTML 본문 또는 완전한 HTML'),
       height: z.string().optional().describe('iframe 높이 (기본 400px)'),
-      libraries: z.array(z.enum(['d3','mermaid','leaflet','threejs','animejs','tailwindcss','katex','hljs','marked','cytoscape','mathjax','p5','lottie','datatables','swiper','echarts'])).optional().describe('사용할 CDN 라이브러리. 선택 시 script/link 태그가 HTML에 자동 주입.'),
+      libraries: z.array(z.enum(['d3','threejs','animejs','tailwindcss','marked','mathjax','echarts','p5','datatables'])).optional().describe('사용할 CDN 라이브러리. leaflet/mermaid/katex/hljs/swiper/lottie/cytoscape 는 전용 render_* 컴포넌트로 흡수되어 enum 에서 제외됨.'),
     },
     async ({ html, height, libraries }) => {
       // CDN 라이브러리 자동 삽입 (API 모드 executeToolCall 과 동일 로직)
