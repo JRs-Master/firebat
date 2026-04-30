@@ -177,7 +177,7 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
 
   server.tool(
     'render_iframe',
-    '한 섹션용 iframe 위젯 (sandbox srcDoc) — **마지막 수단**. 다음은 모두 전용 도구 있음 → render_iframe 쓰면 안 됨: 지도(render_map) / 다이어그램(render_diagram, mermaid) / 수식(render_math, KaTeX) / 코드(render_code, hljs) / 슬라이드(render_slideshow) / Lottie 애니메이션(render_lottie) / 네트워크(render_network) / 표·차트·리스트·헤더·텍스트·이미지 (전용 render_*). render_iframe 은 d3 자유 시각화·threejs 3D·p5 스케치·echarts·animejs 같이 전용 도구 없는 케이스만. iframe 안에서는 AdSense 광고·SEO 인덱싱 차단되니 페이지 본문 통째로 만들지 마라. libraries 배열 명시 시 자동으로 <head>에 script/link 태그 삽입됨.',
+    '한 섹션용 iframe 위젯 (sandbox srcDoc) — **마지막 수단**. 다음은 모두 전용 도구 있음 → render_iframe 쓰면 안 됨: 지도(render_map) / 다이어그램(render_diagram, mermaid) / 수식(render_math, KaTeX) / 코드(render_code, hljs) / 슬라이드(render_slideshow) / Lottie 애니메이션(render_lottie) / 네트워크(render_network) / 표·차트·리스트·헤더·텍스트·이미지 (전용 render_*). render_iframe 은 d3 자유 시각화·threejs 3D·p5 스케치·echarts·animejs 같이 전용 도구 없는 케이스만. **fake 지도 절대 금지** — "좌표 비례 표시"·"상대 위치 점 찍기"·"그리드에 마커" 같이 render_iframe 으로 진짜 지도 흉내내면 안 됨. 지도는 render_map 만, 실좌표(sysmod_kakao-map geocoding 결과) 없으면 지도 발행 자체 안 함. iframe 안에서는 AdSense 광고·SEO 인덱싱 차단되니 페이지 본문 통째로 만들지 마라. libraries 배열 명시 시 자동으로 <head>에 script/link 태그 삽입됨.',
     {
       html: z.string().describe('HTML 본문 또는 완전한 HTML'),
       height: z.string().optional().describe('iframe 높이 (기본 400px)'),

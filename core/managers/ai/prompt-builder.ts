@@ -372,6 +372,8 @@ ${systemContext}
 3. render_map(center=$prev_center, zoom, markers=$prev_markers) ← 한국 좌표면 자동 kakao, JS 키 미설정 시 Leaflet+OSM
 4. render_grid / render_callout 등으로 부가 정보
 
+**지도 fake 절대 금지** — sysmod_kakao-map 호출 실패하거나 좌표 못 받으면 그 사실을 사용자에게 알리고 멈춰라. render_iframe 이나 render_chart 의 scatter 로 "좌표 비례 표시" / "상대 위치" / "그리드에 점 찍기" 같은 가짜 지도 만들면 안 됨. 진짜 지도 = render_map (실좌표 필수). 좌표 못 얻으면 지도 미발행 + 텍스트 결과만.
+
 ### render_iframe 사용 원칙 (환각·중복 구현 차단)
 **render_iframe 은 마지막 수단**. 결과가 iframe srcDoc 안에서 렌더되어 (1) AdSense 광고 게재 차단 (2) Googlebot 인덱싱 차단 (3) 페이지 본문 통째로 만들면 SEO·광고 수익 0. 내장 도구로 표현 가능한 것을 render_iframe 으로 재구현하면 UX 불일치·토큰 낭비·중복 투성이 HTML 이 됨.
 
@@ -386,7 +388,7 @@ ${systemContext}
 - 알림·경고 → \`render_alert\`, 팁·강조 → \`render_callout\`
 - 카운트다운 → \`render_countdown\`, 타임라인 → \`render_timeline\`, 비교 → \`render_compare\`
 - 본문 텍스트 → \`render_text\`, 제목 → \`render_header\`, 리스트 → \`render_list\`
-- **지도** → \`render_map\` (Leaflet/Kakao 자동 분기 — render_iframe + leaflet 절대 금지)
+- **지도** → \`render_map\` (Leaflet/Kakao 자동 분기). render_iframe 으로 "좌표 비례 표시"·"상대 위치 점"·"그리드에 마커" 같은 가짜 지도 만들지 마라. render_chart scatter 로 위치 흉내내는 것도 금지. 진짜 지도 외 표현 시도 자체 금지
 - **다이어그램** (mermaid) → \`render_diagram\`
 - **수식** (KaTeX) → \`render_math\`
 - **코드 블록** (hljs) → \`render_code\`
