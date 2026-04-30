@@ -244,11 +244,10 @@ export class CliGeminiFormat implements FormatHandler {
         ? `<SYSTEM_INSTRUCTIONS>\n${options.systemPrompt}\n</SYSTEM_INSTRUCTIONS>\n\n<USER_QUERY>\n${promptBody}\n</USER_QUERY>\n\n위 SYSTEM_INSTRUCTIONS 는 행동 규범. 반복·요약 금지. USER_QUERY 에만 답하세요.`
         : promptBody;
 
-      // 첨부 이미지 — Gemini CLI 의 @<path> 구문 (커뮤니티 검증 — addyosmani.com/blog/gemini-cli,
-      // oneuptime.com 멀티모달 가이드 등 다수 사례). 공식 docs 의 "@ = read_many_files (text only)"
-      // 표현은 디렉토리/다중 파일 케이스. 단일 image 파일은 내부적으로 read_file 라우팅되어 vision 작동.
-      // base64 → 임시 파일 → spawn 종료 시 cleanup.
-      const tmpImage = writeImageTempFile(options.image, options.imageMimeType);
+      // 첨부 이미지 — Gemini CLI 의 @<path> 구문 (커뮤니티 검증 — addyosmani.com/blog/gemini-cli 등).
+      // **중요**: Gemini CLI 는 workspace (cwd) 외 경로 차단 ("Path not in workspace"). 임시 파일은
+      // workspace 내부 (geminiWorkspace) 에 저장해야 @-syntax 가 작동.
+      const tmpImage = writeImageTempFile(options.image, options.imageMimeType, options.geminiWorkspace);
       const finalPrompt = tmpImage
         ? `@${tmpImage.path}\n\n${baseFinalPrompt}`
         : baseFinalPrompt;

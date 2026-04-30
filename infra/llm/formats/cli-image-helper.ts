@@ -14,7 +14,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-export function writeImageTempFile(image?: string, mimeType?: string): { path: string; mimeType: string } | null {
+/**
+ * 이미지 임시 파일 저장. dirOverride 옵션으로 저장 디렉토리 지정 가능
+ * (Gemini CLI 의 workspace 제약 회피용 — workspace 외 경로는 @-syntax 차단됨).
+ * 미지정 시 os.tmpdir() 사용 (Codex 용).
+ */
+export function writeImageTempFile(image?: string, mimeType?: string, dirOverride?: string): { path: string; mimeType: string } | null {
   if (!image) return null;
   const data = image.includes(',') ? image.split(',')[1] : image;
   const mt = mimeType || image.match(/^data:([^;]+)/)?.[1] || 'image/png';
@@ -23,7 +28,9 @@ export function writeImageTempFile(image?: string, mimeType?: string): { path: s
             : mt.includes('webp') ? 'webp'
             : mt.includes('gif') ? 'gif'
             : 'bin';
-  const tmpPath = path.join(os.tmpdir(), `firebat-attached-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`);
+  const dir = dirOverride || os.tmpdir();
+  fs.mkdirSync(dir, { recursive: true });
+  const tmpPath = path.join(dir, `firebat-attached-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`);
   fs.writeFileSync(tmpPath, Buffer.from(data, 'base64'));
   return { path: tmpPath, mimeType: mt };
 }
