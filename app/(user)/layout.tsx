@@ -11,25 +11,30 @@ import { headers } from 'next/headers';
 import type { LayoutMode } from '../../lib/cms-layout';
 
 /** Page-level layout override 해석 — proxy.ts 가 박은 x-firebat-pathname 으로 spec 조회.
- *  spec.head.layoutMode 박혀있으면 그 값 반환. 없거나 잘못된 값이면 undefined.
- *  /search /tag/{x} 같은 explicit route 는 spec 없으므로 undefined → 글로벌 mode 사용. */
-async function resolvePageLayoutOverride(): Promise<LayoutMode | undefined> {
+ *  spec.head.layoutMode / contentMaxWidth 박혀있으면 페이지별 override.
+ *  /search /tag/{x} 같은 explicit route 는 spec 없으므로 undefined → 글로벌 사용. */
+async function resolvePageOverrides(): Promise<{ layoutMode?: LayoutMode; contentMaxWidth?: string }> {
   try {
     const h = await headers();
     const pathname = h.get('x-firebat-pathname');
-    if (!pathname || pathname === '/' || pathname.startsWith('/api')) return undefined;
-    // slug 추출 — leading / 제거. URL 인코딩 디코드.
+    if (!pathname || pathname === '/' || pathname.startsWith('/api')) return {};
     const slug = decodeURIComponent(pathname.replace(/^\/+/, '').replace(/\/+$/, ''));
-    if (!slug) return undefined;
+    if (!slug) return {};
     const res = await getCore().getPage(slug);
-    if (!res.success || !res.data) return undefined;
-    const m = res.data.head?.layoutMode;
-    if (m && ['full', 'right-sidebar', 'left-sidebar', 'both-sidebar', 'boxed'].includes(m)) {
-      return m as LayoutMode;
+    if (!res.success || !res.data) return {};
+    const head = res.data.head ?? {};
+    const out: { layoutMode?: LayoutMode; contentMaxWidth?: string } = {};
+    if (head.layoutMode && ['full', 'right-sidebar', 'left-sidebar', 'both-sidebar', 'boxed'].includes(head.layoutMode)) {
+      out.layoutMode = head.layoutMode as LayoutMode;
     }
-    return undefined;
+    // contentMaxWidth — 임의 CSS 값 허용 (px/rem/% 등). XSS 방어 — `;` `}` 차단.
+    if (typeof head.contentMaxWidth === 'string' && head.contentMaxWidth.trim()) {
+      const v = head.contentMaxWidth.trim();
+      if (!/[;{}<>]/.test(v) && v.length < 64) out.contentMaxWidth = v;
+    }
+    return out;
   } catch {
-    return undefined;
+    return {};
   }
 }
 
@@ -37,9 +42,10 @@ async function resolvePageLayoutOverride(): Promise<LayoutMode | undefined> {
 export default async function UserLayout({ children }: { children: React.ReactNode }) {
   const seo = getCore().getCmsSettings();
   const siteUrl = seo.siteUrl || BASE_URL;
-  // Page-level layout override — spec.head.layoutMode 박혀있으면 글로벌 무시.
-  const pageLayoutOverride = await resolvePageLayoutOverride();
-  const layoutMode: LayoutMode = pageLayoutOverride ?? seo.layout.mode;
+  // Page-level overrides — spec.head.layoutMode / contentMaxWidth 박혀있으면 글로벌 무시.
+  const pageOverrides = await resolvePageOverrides();
+  const layoutMode: LayoutMode = pageOverrides.layoutMode ?? seo.layout.mode;
+  const pageContentMaxWidth = pageOverrides.contentMaxWidth;
   // 사용자 설정 design tokens → :root CSS var 로 inject. globals.css 의 default 를 override.
   const themeCss = `:root { ${tokensToCss(seo.theme)} }`;
 
@@ -72,10 +78,16 @@ export default async function UserLayout({ children }: { children: React.ReactNo
 
   // 카카오맵 JS 키 inject 는 root layout (app/layout.tsx) 으로 이동 — user/admin 양쪽 컨텍스트 통합.
 
+  // 페이지별 contentMaxWidth override — head.contentMaxWidth 박혀있으면 .firebat-cms-content 의
+  // CSS var 만 그 페이지에서 override. 글로벌 토큰은 그대로 유지.
+  const pageOverrideCss = pageContentMaxWidth
+    ? `body .firebat-cms-content { --cms-content-max-width: ${pageContentMaxWidth}; }`
+    : '';
+
   return (
     <>
       {/* Design Tokens — 사용자 설정 토큰을 :root 에 inject. globals.css default override. */}
-      <style dangerouslySetInnerHTML={{ __html: themeCss }} />
+      <style dangerouslySetInnerHTML={{ __html: themeCss + pageOverrideCss }} />
       {jsonLd && (
         <script
           type="application/ld+json"

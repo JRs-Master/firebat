@@ -353,18 +353,34 @@ function FormComp({ bindModule, inputs = [], submitText = '실행' }: {
 
 // ── Button ──────────────────────────────────────────────────────────────────
 function ButtonComp({ text, href, variant = 'primary' }: { text: string; href?: string; variant?: string }) {
-  const base = 'inline-flex items-center justify-center px-6 py-3 rounded-xl font-bold text-base transition-all shadow-sm';
-  const styles: Record<string, string> = {
-    primary: `${base} bg-blue-600 hover:bg-blue-700 text-white`,
-    secondary: `${base} bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-200`,
-    outline: `${base} bg-white hover:bg-gray-50 text-blue-600 border-2 border-blue-600`,
+  // Design tokens 적용 — primary 색·border·radius 모두 var. hover 는 opacity 로 derive.
+  const base = 'inline-flex items-center justify-center px-6 py-3 font-bold text-base transition-all shadow-sm hover:opacity-90 no-underline';
+  const styles: Record<string, React.CSSProperties> = {
+    primary: {
+      background: 'var(--cms-primary)',
+      color: '#fff',
+      borderRadius: 'var(--cms-radius)',
+      border: '1px solid var(--cms-primary)',
+    },
+    secondary: {
+      background: 'var(--cms-bg-card)',
+      color: 'var(--cms-text)',
+      borderRadius: 'var(--cms-radius)',
+      border: '1px solid var(--cms-border)',
+    },
+    outline: {
+      background: 'transparent',
+      color: 'var(--cms-primary)',
+      borderRadius: 'var(--cms-radius)',
+      border: '2px solid var(--cms-primary)',
+    },
   };
-  const cls = styles[variant] ?? styles.primary;
+  const style = styles[variant] ?? styles.primary;
 
   if (href) {
-    return <a href={href} className={cls}>{text}</a>;
+    return <a href={href} className={base} style={style}>{text}</a>;
   }
-  return <button className={cls}>{text}</button>;
+  return <button className={base} style={style}>{text}</button>;
 }
 
 // ── Divider ─────────────────────────────────────────────────────────────────

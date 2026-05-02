@@ -117,6 +117,9 @@ export interface PageHead {
    *  사용 예: 글로벌은 right-sidebar 인데 hero 풀폭 페이지만 'full' / 단일 글 'boxed' 등.
    *  미설정 시 글로벌 cms layout.mode 사용. */
   layoutMode?: 'full' | 'right-sidebar' | 'left-sidebar' | 'both-sidebar' | 'boxed';
+  /** Container max-width 페이지별 override — 글로벌 cms.layout.contentMaxWidth 무시.
+   *  단위 포함 string ('800px', '90rem' 등). 예: hero 풀폭은 'none' / 단일 글은 '720px'. */
+  contentMaxWidth?: string;
 }
 
 /** PageSpec 컴포넌트 (discriminated union) */
