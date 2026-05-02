@@ -280,7 +280,16 @@ export function buildCoreToolDefinitions(): ToolDefinition[] {
         required: ['slug', 'spec'],
         properties: {
           slug: { type: 'string', description: '페이지 URL 슬러그 (kebab-case)' },
-          spec: { type: 'object', description: 'PageSpec — { head:{title,description,keywords,og}, project, status:"published", body: render_* 컴포넌트 객체 배열 }. body 는 반드시 [{type:"Header",props:{...}}, {type:"Text",props:{...}}, {type:"Table",props:{...}}, ...] 형태 여러 컴포넌트. **단일 Html 블록 1개로 통째 만들면 페이지가 iframe 안에 들어가 AdSense 광고·SEO 인덱싱 모두 차단**. Html 블록은 Leaflet/Mermaid/KaTeX 같은 특수 시각화 한 섹션에만 사용.', additionalProperties: true },
+          spec: { type: 'object', description: `PageSpec — { head:{title,description,keywords,og}, project, status:"published", body: render_* 컴포넌트 객체 배열 }.
+
+**head.description 작성 룰 (SEO meta description, 검색 노출 직결)**:
+- 본문 본질을 압축한 자연어 1-2 문장 (120-160자 권장, 모바일 검색결과 cutoff).
+- 본문 첫 줄 그대로 박지 마라 — 그건 자동 fallback (백엔드가 첫 Text 120자 알아서 추출).
+- 구체 키워드 + 핵심 수치/결론 포함 — 검색결과 클릭 유도 (예: "삼성전자 1Q 영업이익 6.6조 +931% 발표 — 메모리 회복·서버 DRAM 가격 상승 영향").
+- 단순 본문 발췌 X. 본문이 "오늘 코스피 마감" 으로 시작해도 description 은 "코스피 6,605 마감 -0.78%, 외인 1.5조 매도 폭탄에 8거래일째 내림. 삼성전자·SK하이닉스 5%대 하락 주도" 식으로 핵심 요약.
+- 미박힘 시 SEO 메타 비어 검색 노출 약화 — 반드시 박을 것.
+
+body 는 반드시 [{type:"Header",props:{...}}, {type:"Text",props:{...}}, {type:"Table",props:{...}}, ...] 형태 여러 컴포넌트. **단일 Html 블록 1개로 통째 만들면 페이지가 iframe 안에 들어가 AdSense 광고·SEO 인덱싱 모두 차단**. Html 블록은 Leaflet/Mermaid/KaTeX 같은 특수 시각화 한 섹션에만 사용.`, additionalProperties: true },
           allowOverwrite: { type: 'boolean', description: '기존 페이지 덮어쓰기 허용 (명시적 수정 요청 시만 true)' },
         },
       },
