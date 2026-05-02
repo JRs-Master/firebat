@@ -297,6 +297,10 @@ export class ModuleManager {
           content: typeof s[`footerColumn${i}Content`] === 'string' ? s[`footerColumn${i}Content`] : '',
         })),
       },
+      showRelatedPosts: s.layoutShowRelatedPosts !== false, // 기본 true (콘텐츠 engagement)
+      relatedPostsCount: typeof s.layoutRelatedPostsCount === 'number'
+        ? s.layoutRelatedPostsCount
+        : (parseInt(s.layoutRelatedPostsCount) || 5),
       showReadingProgress: s.layoutShowReadingProgress === true,
       mode: (['full', 'right-sidebar', 'left-sidebar', 'boxed'].includes(s.layoutMode) ? s.layoutMode : 'full'),
       sidebar: {

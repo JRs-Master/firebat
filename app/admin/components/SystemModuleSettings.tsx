@@ -92,6 +92,8 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'footerColumn4Heading', label: '푸터 컬럼 4 — 제목', type: 'text', tab: '레이아웃', placeholder: '소셜', description: '네 번째 컬럼 제목.' },
       { key: 'footerColumn4Content', label: '푸터 컬럼 4 — 본문', type: 'textarea', tab: '레이아웃', placeholder: '<a href="https://x.com/me">X</a>', description: '컬럼 4 본문. HTML 허용.' },
       { key: 'layoutShowReadingProgress', label: '읽기 진행도 표시', type: 'toggle', tab: '레이아웃', description: '페이지 상단에 스크롤 진행도 가로 바 표시. design tokens 의 accent 색 사용. 기본 OFF.', defaultValue: false },
+      { key: 'layoutShowRelatedPosts', label: '관련 글 추천', type: 'toggle', tab: '레이아웃', description: '콘텐츠 페이지(project 박힌) 본문 끝에 head.keywords 기반 매칭 글 list 표시. score = 공유 keyword 개수. 키워드 0건 또는 매칭 0건이면 자동 미표시. 기본 ON.', defaultValue: true },
+      { key: 'layoutRelatedPostsCount', label: '관련 글 개수', type: 'number', tab: '레이아웃', placeholder: '5', description: '관련 글 표시 개수 (top N). 빈도 동률 시 updatedAt 최신 우선.', defaultValue: 5 },
       // ── Sidebar 레이아웃 ──
       { key: 'layoutMode', label: '본문 + 사이드바 모드', type: 'select', tab: '레이아웃', description: '본문 영역과 사이드바 배치. full = 사이드바 없음 / right = 우측 사이드바 / left = 좌측 사이드바 / boxed = 사이드바 없음 + 본문 boxed (좁은 max-width + 테두리·그림자). 모바일에선 자동 stacked.', defaultValue: 'full', options: [
         { value: 'full', label: 'Full — 사이드바 없음 (기본)' },

@@ -21,7 +21,7 @@ import { CostManager } from './managers/cost-manager';
 import type { CostStatsFilter, CostStatsSummary } from './managers/cost-manager';
 import { ToolManager } from './managers/tool-manager';
 import type { ToolDefinition, ToolListFilter, ToolExecuteContext, ToolExecuteResult } from './managers/tool-manager';
-import type { FirebatInfraContainer, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse } from './ports';
+import type { FirebatInfraContainer, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, PageListItem } from './ports';
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
 import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT, VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_LAST_MODEL_BY_CATEGORY, VK_LLM_ANTHROPIC_CACHE, DEFAULT_AI_ASSISTANT_MODEL, AI_ASSISTANT_MODELS } from './vault-keys';
@@ -824,6 +824,53 @@ export class FirebatCore {
   /** 프로젝트 설정 저장 — config.json upsert. 어드민 UI 에서 호출. */
   async setProjectConfig(project: string, config: Record<string, unknown>) {
     return this.project.setProjectConfig(project, config);
+  }
+
+  /** 관련 글 — 현재 페이지의 head.keywords 와 교집합 큰 다른 페이지 top N.
+   *  alias normalize 적용 (대소문자·동의어 통합).
+   *  score = 공유 canonical keyword 개수 → 동률 시 updatedAt 최신.
+   *  자기 자신 제외, published+public 만, keywords 0건이면 빈 배열. */
+  async findRelatedPages(slug: string, limit: number = 5): Promise<PageListItem[]> {
+    const { normalizeTag } = await import('../lib/tag-utils');
+    const aliases = this.getCmsSettings().tagAliases;
+    // 현재 페이지의 canonical keyword set
+    const currentRes = await this.getPage(slug);
+    if (!currentRes.success || !currentRes.data) return [];
+    const currentKws = (currentRes.data.head?.keywords ?? []) as unknown[];
+    const currentSet = new Set<string>();
+    for (const kw of currentKws) {
+      if (typeof kw !== 'string') continue;
+      const c = normalizeTag(kw, aliases);
+      if (c) currentSet.add(c);
+    }
+    if (currentSet.size === 0) return [];
+    // 후보 페이지 — published+public, 자기 자신 제외
+    const listRes = await this.listPages();
+    if (!listRes.success || !listRes.data) return [];
+    const candidates = listRes.data.filter(
+      (p) => p.slug !== slug && p.status === 'published' && (p.visibility ?? 'public') === 'public',
+    );
+    const scored: Array<{ p: PageListItem; score: number }> = [];
+    for (const p of candidates) {
+      const r = await this.getPage(p.slug);
+      if (!r.success || !r.data) continue;
+      const kws = (r.data.head?.keywords ?? []) as unknown[];
+      let score = 0;
+      const seen = new Set<string>();
+      for (const kw of kws) {
+        if (typeof kw !== 'string') continue;
+        const c = normalizeTag(kw, aliases);
+        if (!c || seen.has(c)) continue;
+        seen.add(c);
+        if (currentSet.has(c)) score++;
+      }
+      if (score > 0) scored.push({ p, score });
+    }
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return (b.p.updatedAt ?? '').localeCompare(a.p.updatedAt ?? '');
+    });
+    return scored.slice(0, limit).map((x) => x.p);
   }
 
   // ── 태그 (CMS Phase 8a) ─────────────────────────────────────────────────

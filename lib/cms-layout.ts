@@ -79,6 +79,10 @@ export interface PageListConfig {
 export interface LayoutConfig {
   header: HeaderConfig;
   footer: FooterConfig;
+  /** 관련 글 추천 — 콘텐츠 페이지 본문 끝에 head.keywords 매칭 페이지 표시. */
+  showRelatedPosts: boolean;
+  /** 관련 글 표시 개수 (기본 5) */
+  relatedPostsCount: number;
   /** 읽기 진행도 표시 — 페이지 상단 가로 progress bar (CSS var --cms-accent 색). 기본 false. */
   showReadingProgress: boolean;
   /** 본문 + sidebar 배치 모드. 기본 'full' (사이드바 없음). */
@@ -121,6 +125,8 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
       { heading: '', content: '' },
     ],
   },
+  showRelatedPosts: true,
+  relatedPostsCount: 5,
   showReadingProgress: false,
   mode: 'full',
   sidebar: {
