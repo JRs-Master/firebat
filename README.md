@@ -66,7 +66,8 @@ Existing tools pick one: LangGraph/CrewAI are agents but not visual/automation. 
 │   │  AI · Storage · Page · Project · Module · Task     │   │
 │   │  Schedule · Secret · MCP · Capability · Auth       │   │
 │   │  Conversation · Media · Event · Status · Cost · Tool│  │
-│   │                    17 Managers                     │   │
+│   │  Entity · Episodic · Consolidation (Memory)        │   │
+│   │                    21 Managers                     │   │
 │   └────────────────────┬───────────────────────────────┘   │
 │                        │ Ports (Interface)                 │
 │   ┌────────────────────┴───────────────────────────────┐   │
@@ -75,7 +76,8 @@ Existing tools pick one: LangGraph/CrewAI are agents but not visual/automation. 
 │   │  Storage · Log · Sandbox · LLM · Network · Cron    │   │
 │   │  Database · Vault · MCP Client · Auth · Embedder   │   │
 │   │  ToolRouter · Media · ImageProcessor · ImageGen    │   │
-│   │                     15 Adapters                    │   │
+│   │  Entity · Episodic (Memory)                        │   │
+│   │                     17 Adapters                    │   │
 │   └────────────────────────────────────────────────────┘   │
 │                                                            │
 └────────────────────────────────────────────────────────────┘
@@ -86,12 +88,12 @@ Existing tools pick one: LangGraph/CrewAI are agents but not visual/automation. 
 | Principle | Description |
 |---|---|
 | **Core purity** | Core never imports `fs`, `fetch`, DB drivers, or any I/O library directly |
-| **Ports & Adapters** | Core talks to Infra only through 15 interface (Port) definitions |
+| **Ports & Adapters** | Core talks to Infra only through 17 interface (Port) definitions |
 | **Error encapsulation** | Infra never throws — it returns `InfraResult<T>` instead |
 | **Facade pattern** | Every API route goes through the `getCore()` singleton |
 | **Frontend managers** | UI state transitions concentrated in 3 managers (Chat / Events / Settings) — reducer-based invariants prevent whole classes of UI bugs by construction |
 
-> 🇰🇷 **헥사고날 아키텍처** — Core는 순수 비즈니스 로직만 담당하고, 모든 I/O는 Infra 어댑터가 처리합니다. Core는 I/O 라이브러리를 직접 import하지 않고 15개 포트 인터페이스로만 Infra와 통신하며, Infra는 절대 throw하지 않고 `InfraResult<T>`를 반환합니다. 모든 API route는 `getCore()` 싱글톤을 거칩니다. 프론트엔드 UI 상태는 3개 매니저(Chat/Events/Settings)로 분리되어 reducer 기반 인바리언트로 UI 버그를 구조적으로 차단합니다.
+> 🇰🇷 **헥사고날 아키텍처** — Core는 순수 비즈니스 로직만 담당하고, 모든 I/O는 Infra 어댑터가 처리합니다. Core는 I/O 라이브러리를 직접 import하지 않고 17개 포트 인터페이스로만 Infra와 통신하며, Infra는 절대 throw하지 않고 `InfraResult<T>`를 반환합니다. 모든 API route는 `getCore()` 싱글톤을 거칩니다. 프론트엔드 UI 상태는 3개 매니저(Chat/Events/Settings)로 분리되어 reducer 기반 인바리언트로 UI 버그를 구조적으로 차단합니다.
 
 ---
 
@@ -191,6 +193,40 @@ Group multiple modules that perform the same capability, manage priority and fal
 Admins set the provider order in settings; failures cascade to the next provider automatically.
 
 > 🇰🇷 **Capability-Provider 시스템** — 같은 기능을 수행하는 여러 모듈을 `capability`로 묶고, 관리자가 UI에서 provider 실행 순서를 지정합니다. 실패 시 다음 provider로 자동 폴백.
+
+### Memory System (4-tier)
+
+CrewAI / Mem0 식 4-tier memory — **dialogue ends, facts persist**. Continuous operation (auto-trading / blog publishing) accumulates entity timelines without manual save.
+
+| Tier | Role | Implementation |
+|---|---|---|
+| **Short-term** | Active conversation turns | ConversationManager (existing) — embeddings search |
+| **Episodic** | Time-stamped events (auto-trading executions, page publishes, cron triggers, tool calls) | `events` + `event_entities` m2m. Auto-hooks via Core facade (BIBLE-compliant) |
+| **Entity** | Tracked subjects (stocks, people, projects, concepts) + linked timeline facts | `entities` + `entity_facts`. Semantic search + alias matching |
+| **Contextual** | 4-tier merged retrieval | `RetrievalEngine` — every user prompt → parallel search → `<MEMORY_CONTEXT>` auto-prepended to system prompt |
+
+**Auto-accumulation, zero manual work**:
+- Core hooks fire `saveEvent` on every `savePage` / `handleCronTrigger` / `generateImage`.
+- `ConsolidationManager` cron — every 6 hours, inactive conversations auto-extract entity/fact/event JSON via cheap LLM (~$0.001/dialogue).
+- `dedupThreshold=0.92` cosine similarity check — re-running consolidation is naturally idempotent.
+- 5 AI tools (`save_entity` / `save_entity_fact` / `search_entities` / `get_entity_timeline` / `search_entity_facts`) + 3 episodic tools + `consolidate_conversation` — both Function Calling and CLI MCP exposed.
+
+After 1 week of auto-trading, "How did Samsung do?" returns full timeline (recommendations → buys → results) without asking for context. The memory layer fills itself.
+
+> 🇰🇷 **메모리 시스템 4-tier** — 대화는 휘발해도 사실은 영속. 자동매매·블로그 운영 깊어질수록 가치 폭발. Core hook 자동 saveEvent / 6시간 cron 자동 LLM 후처리 / cosine 중복 검출 / RetrievalEngine 자동 prepend — 사용자 명시 호출 0회로도 "삼성전자 1주 전 추천 결과는?" 즉시 답변. (Phase 1-6 박힘, Phase 3 Vector store 는 entity 1000+ 시점 deferred)
+
+### CMS V2 — Widget Builder
+
+Site builder reaches Astra/GP-class depth — header / sidebar / footer all share a unified widget catalog (13 widget types with scope guards: `header-only`, `sidebar-only`, `footer-only`, `header-footer`, `universal`).
+
+- **Header** — left/center/right 3-col widget array (Astra-style slot system, simplified)
+- **Sidebar** — 1D widget array, 4 layout modes (full / right / left / both / boxed)
+- **Footer** — 4-column grid with widget array per column
+- **Live preview** — `/admin/cms` iframe with viewport toggle (1280px / 768px / 375px) + ResizeObserver auto-scale
+- **Page-level overrides** — `head.layoutMode` / `head.contentMaxWidth` per page (proxy header propagation)
+- **Design tokens** — color presets (10) + custom hex / typography (base + scale ratio derives h1-h6) / external font URL / button + link + selection token cascade
+
+> 🇰🇷 **CMS V2 위젯 빌더** — 헤더·사이드바·푸터 통합 widget 카탈로그 (13 종, scope 자동 가드). 새 widget 1개 추가 = 모든 영역 자동 활용. Live preview viewport 토글로 PC/태블릿/모바일 즉시 검증.
 
 ---
 

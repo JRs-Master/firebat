@@ -136,22 +136,26 @@ app/                    Next.js App Router
   feed.xml/             RSS 2.0 피드
 core/                   엔진 본체 (불가침 구역)
   index.ts              FirebatCore (Core Facade)
-  ports/                15개 Port 인터페이스 + ToolRouterFactory
+  ports/                17개 Port 인터페이스 + ToolRouterFactory
   types/                FirebatAction, Plan 스키마
-  managers/             17개 도메인 매니저 (AI, Storage, Page, Project, Module, Task, Schedule, Secret, MCP, Capability, Auth, Conversation, Media, Event, Status, Cost, Tool)
-    ai/                 AiManager 내부 collaborator (PromptBuilder / HistoryResolver / ToolRouter / ToolDispatcher / ResultProcessor / tool-schemas)
+  managers/             21개 도메인 매니저 (AI, Storage, Page, Project, Module, Task, Schedule, Secret, MCP, Capability, Auth, Conversation, Media, Event, Status, Cost, Tool, Entity, Episodic, Consolidation)
+    ai/                 AiManager 내부 collaborator (PromptBuilder / HistoryResolver / RetrievalEngine / ToolRouter / ToolDispatcher / ResultProcessor / tool-schemas)
 infra/                  어댑터 레이어 (불가침 구역)
-  boot.ts               어댑터 조립 팩토리
+  boot.ts               어댑터 조립 팩토리 (17 어댑터)
   config.ts             공통 설정 상수
   storage/              IStoragePort + IVaultPort 구현
-  llm/                  ILlmPort 구현 (ConfigDrivenAdapter + 8 포맷 핸들러: API 5 + CLI 3)
+  llm/                  ILlmPort + IEmbedderPort + IToolRouterPort 구현 (ConfigDrivenAdapter + 8 포맷 핸들러: API 5 + CLI 3)
   sandbox/              ISandboxPort 구현
   log/                  ILogPort 구현
   network/              INetworkPort 구현
   cron/                 ICronPort 구현
-  database/             IDatabasePort 구현
+  database/             IDatabasePort + migration runner (v1 baseline + v2 entity-memory + v3 episodic-memory)
   mcp-client/           IMcpClientPort 구현
   auth/                 IAuthPort 구현 (Vault 기반 세션/API 토큰)
+  media/                IMediaPort 구현 (LocalMediaAdapter)
+  image-processor/      IImageProcessorPort 구현 (sharp + blurhash)
+  entity/               IEntityPort 구현 (메모리 시스템 Entity tier)
+  episodic/             IEpisodicPort 구현 (메모리 시스템 Episodic tier)
 lib/                    Core+Infra 조합 (singleton.ts)
 mcp/                    MCP 서버 (외부 AI → 파이어뱃)
 system/modules/         시스템 모듈 (읽기 전용)
@@ -206,7 +210,55 @@ Firebat의 핵심 차별점: **"만들기 + 운영 + 자동화"**.
 
 ---
 
-## 제11장: 로드맵
+## 제11장: 메모리 시스템 4-tier (2026-05-04 박힘)
+
+CrewAI / Mem0 식 4-tier 메모리 — 자동매매·블로그 운영 깊어질수록 가치 폭발하는 핵심 인프라.
+
+### 제1항. 4-tier 구조
+
+| Tier | 역할 | 구현 |
+|---|---|---|
+| **Short-term** | 진행 중 대화 turn | `ConversationManager` (기존) — `conversations` 테이블 + 임베딩 검색 |
+| **Episodic** | 시간순 사건 (자동매매 실행 / 페이지 발행 / cron / 도구 호출 / 사용자 액션) | `EpisodicManager` (Phase 2) — `events` + `event_entities` m2m, occurred_at 정렬 |
+| **Entity** | 추적 대상 (종목·인물·프로젝트·이벤트·개념) + 그 단위 fact 누적 | `EntityManager` (Phase 1) — `entities` + `entity_facts`, semantic search, alias 통합 |
+| **Contextual** | 4-tier 통합 검색 결과 | `RetrievalEngine` (Phase 5) — 매 user 발화 시 자동 `<MEMORY_CONTEXT>` 시스템 프롬프트 prepend |
+
+### 제2항. 자동 누적 — 사용자 수동 0
+
+- **자동 훅 (Episodic)**: Core facade 의 `savePage` / `handleCronTrigger` / `generateImage` 가 자동 `saveEvent` (BIBLE 일관성, 매니저 직접 호출 X).
+- **Consolidation engine** (Phase 4): 6시간마다 비활성 대화 (1시간+ 미응답) → AI assistant 모델 (gpt-5-nano / gemini-flash-lite) 후처리 → entity / fact / event JSON 추출 → 자동 save. 비용 ~$0.001/대화.
+- **중복 검출**: `dedupThreshold=0.92` cosine 유사도 — 같은 대화 여러 번 정리해도 자연 idempotent.
+
+### 제3항. 자동 retrieve
+
+매 user 발화 → `RetrievalEngine.retrieve(query)` → 4 source 병렬 검색 (search_history + searchEntities + searchEntityFacts + searchEvents) → 통합 `<MEMORY_CONTEXT>` 시스템 프롬프트 prepend.
+
+AI 가 명시 도구 호출 안 해도 관련 entity/fact/event 자동 컨텍스트 — "삼성전자 어떻게 됐지?" 같은 질의에 즉시 답변.
+
+### 제4항. AI 명시 호출 도구 (자율 / 수동)
+
+- `save_entity` / `save_entity_fact` / `search_entities` / `get_entity_timeline` / `search_entity_facts`
+- `save_event` / `search_events` / `list_recent_events`
+- `consolidate_conversation` (사용자 명시 / AI 자율)
+- API + CLI MCP 양쪽 등록.
+
+### 제5항. 어드민 UI
+
+사이드바 5번째 탭 "메모리" (Brain 아이콘):
+- Sub-tab 엔티티 / 사건 토글
+- Stats card (엔티티 / 사실 / 사건 총수)
+- entity 클릭 → expand → timeline (facts) + 관련 사건 통합 표시
+- 인라인 fact 추가 / entity 신규 모달 / 삭제 confirm
+- 사이드바 대화 옆 "메모리 정리" 버튼 (Brain 아이콘) — `POST /api/consolidate`
+
+### 제6항. 어댑터 swap (Phase 3 deferred)
+
+현재 SQLite cosine search — 1만 row 까지 충분 (~50-100ms).
+entity 1000+ 또는 fact 50000+ 누적 시점에 vector store 도입 검토 — `IEntityPort` / `IEpisodicPort` 인터페이스 그대로, 어댑터만 swap (sqlite-vec / Qdrant / pgvector 등).
+
+---
+
+## 제12장: 로드맵
 
 | 항목 | 현재 (v0.x) | 미래 (v2.0) |
 |---|---|---|

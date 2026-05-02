@@ -18,7 +18,11 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 
 ---
 
-## 제2장: 10개 어댑터 구현 규격
+## 제2장: 17개 어댑터 구현 규격 (메모리 시스템 4-tier 추가, 2026-05-04)
+
+10 → 17 어댑터로 확장 — 미디어 4 + 메모리 2 + 임베더 1 추가.
+
+
 
 ### 1. Storage Adapter (`infra/storage/`)
 - `IStoragePort` 구현.
@@ -126,13 +130,67 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - 세션/API 토큰 CRUD: `saveSession`/`getSession`/`deleteSession`/`listSessions`/`deleteSessions`.
 - 만료 검사 포함: `getSession()` 호출 시 `expiresAt` 체크, 만료 시 자동 삭제.
 
+### 11. Embedder Adapter (`infra/llm/embedder-adapter.ts`)
+- `IEmbedderPort` 구현 — multilingual-e5-small 모델 (한국어·영어 OK).
+- `embedQuery` (검색 쿼리용) / `embedPassage` (인덱싱 대상용) — Float32Array 반환.
+- `cosine(a, b)` — 정규화된 벡터 cosine similarity (0~1).
+- `float32ToBuffer` / `bufferToFloat32` — SQLite BLOB 저장 변환.
+- `version` — 모델 변경 감지용 (Phase 3 vector store 도입 시 re-index 트리거).
+
+### 12. Tool Router Adapter (`infra/llm/llm-router.ts`)
+- `IToolRouterPort` 구현 — self-learning 도구·컴포넌트 라우팅. AI Assistant 모델 (gpt-5-nano / gemini-flash-lite) 활용.
+- `ToolRouterFactory(modelId)` 로 lifecycle 생성 (요청별 다른 모델 가능).
+
+### 13. Media Adapter (`infra/media/local-adapter.ts`)
+- `IMediaPort` 구현 — 로컬 파일 저장 (`user/media/`, `system/media/`).
+- `save` / `list` / `remove` / `saveVariant` / `updateMeta` / `saveErrorRecord`.
+- 메타: `<slug>.json` (prompt / model / size / aspectRatio / variants 등).
+
+### 14. Image Processor Adapter (`infra/image-processor/sharp-adapter.ts`)
+- `IImageProcessorPort` 구현 — sharp + blurhash.
+- `process` (resize / format convert / EXIF strip / auto-rotate / attention crop).
+- `blurhash` (32×32 → Base83 LQIP 문자열).
+
+### 15. Image Gen Adapter (`infra/llm/configs/image-*.json` + `image-config-adapter.ts`)
+- `IImageGenPort` 구현 — config-driven (OpenAI gpt-image-2 / Gemini 3 Flash Image).
+- 모델 추가 시 JSON 1개 박으면 됨.
+
+### 16. Entity Adapter (`infra/entity/sqlite-adapter.ts`) — 메모리 Phase 1
+- `IEntityPort` 구현 — entities + entity_facts 테이블 (FK CASCADE, JSON aliases/metadata/tags, BLOB embedding).
+- 자동 임베딩 — saveEntity (name+aliases) / saveFact (content) 시 IEmbedderPort 호출.
+- semantic search — 모든 row scan + cosine (Phase 1 단순). 1만 row 까지 충분, Phase 3 에서 vector store 인덱스화.
+- **dedup 검출** — saveFact 의 dedupThreshold 옵션. 같은 entity 의 기존 fact 들과 cosine ≥ threshold 면 skip + 기존 id 반환.
+
+### 17. Episodic Adapter (`infra/episodic/sqlite-adapter.ts`) — 메모리 Phase 2
+- `IEpisodicPort` 구현 — events + event_entities m2m (FK CASCADE).
+- saveEvent transaction — event INSERT + entity links INSERT OR IGNORE atomic.
+- **dedup 검출** — saveEvent 의 dedupThreshold 옵션. 같은 type + 7일 이내 기존 event 와 cosine ≥ threshold 면 skip (entityIds 박혀있으면 기존 event 에 link 추가).
+
+---
+
+## 제2-A장: DB Migration Runner (`infra/database/migrations/`)
+
+자동 schema 버전 관리. `_db_version` 테이블이 적용된 migration 추적.
+
+| Version | 파일 | 박힘 시점 | 내용 |
+|---|---|---|---|
+| 1 (implicit) | (없음 — `initialize()` 가 baseline 박음) | 초기 | conversations + pages + verifications + page_redirects + media_usage + shared_conversations 등 |
+| 2 | `002-entity-memory.sql` | 2026-05-04 | **메모리 Phase 1** — entities (UNIQUE name+type) + entity_facts (FK CASCADE) + 5 인덱스 |
+| 3 | `003-episodic-memory.sql` | 2026-05-04 | **메모리 Phase 2** — events + event_entities m2m + 4 인덱스 |
+
+새 migration 박을 때:
+1. `infra/database/migrations/NNN-name.sql` 파일 추가 (version prefix `001-` 형태)
+2. SQL idempotent 권장 (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... IF NOT EXISTS`)
+3. 부팅 시 runner 가 자동 적용 + `_db_version` 에 row 추가
+
 ---
 
 ## 제3장: 부트스트랩
 
 ### 제1항. 어댑터 조립 (`infra/boot.ts`)
-`getInfra()` 함수가 10개 어댑터를 1회 조립하여 `globalThis`에 캐시한다.
+`getInfra()` 함수가 17개 어댑터를 1회 조립하여 `globalThis`에 캐시한다.
 LLM 어댑터는 resolver 함수를 받아 lazy 초기화 (API 키 미설정 상태에서도 부팅 가능).
+Entity / Episodic 어댑터는 `database.db` (raw SQLite Database) + Embedder + Log 받아 같은 DB 위에 자기 테이블 박음.
 
 ### 제2항. 서버 초기화
 - `instrumentation.ts`: `NEXT_RUNTIME === 'nodejs'` 조건 하에 `instrumentation.node.ts` 동적 import.
