@@ -942,13 +942,40 @@ export function Sidebar({
                         </p>
                         <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(conv.createdAt)}</p>
                       </div>
-                      {/* 공유·삭제 아이콘 묶음: PC=호버, 모바일=선택 시 (활성 대화도 force visible) */}
+                      {/* 공유·정리·삭제 아이콘 묶음: PC=호버, 모바일=선택 시 (활성 대화도 force visible) */}
                       <span className={rowActionsClass(convSelected || conv.id === activeConvId)}>
                         <ShareConvButton
                           convId={conv.id}
                           title={conv.title}
                           liveMessages={conv.id === activeConvId ? activeMessages : undefined}
                         />
+                        <Tooltip label="메모리에 정리하기 (entity / fact / event 추출)">
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              try {
+                                const res = await fetch('/api/consolidate', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ conversationId: conv.id }),
+                                });
+                                const data = await res.json();
+                                if (!res.ok || !data?.success) {
+                                  alert(`정리 실패: ${data?.error ?? res.statusText}`);
+                                  return;
+                                }
+                                const s = data.saved;
+                                alert(`정리 완료\n• 엔티티 ${s.entities.length}개\n• 사실 ${s.facts.length}개\n• 사건 ${s.events.length}개\n${data.skipped ? `(skipped ${data.skipped})` : ''}`);
+                              } catch (err: any) {
+                                alert(`정리 실패: ${err?.message ?? err}`);
+                              }
+                            }}
+                            className="p-1 text-slate-400 hover:text-purple-600 hover:bg-purple-50 active:bg-purple-100 rounded transition-colors"
+                            aria-label="메모리에 정리하기"
+                          >
+                            <Brain size={11} />
+                          </button>
+                        </Tooltip>
                         <Tooltip label="삭제">
                           <button
                             onClick={(e) => { e.stopPropagation(); onDeleteConv(conv.id); setSelectedItem(null); }}
