@@ -22,7 +22,8 @@ import type { CostStatsFilter, CostStatsSummary } from './managers/cost-manager'
 import { ToolManager } from './managers/tool-manager';
 import type { ToolDefinition, ToolListFilter, ToolExecuteContext, ToolExecuteResult } from './managers/tool-manager';
 import { EntityManager } from './managers/entity-manager';
-import type { FirebatInfraContainer, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, PageListItem, EntityRecord, EntityFactRecord, EntitySearchOpts, FactSearchOpts } from './ports';
+import { EpisodicManager } from './managers/episodic-manager';
+import type { FirebatInfraContainer, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, PageListItem, EntityRecord, EntityFactRecord, EntitySearchOpts, FactSearchOpts, EventRecord, EventSearchOpts } from './ports';
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
 import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT, VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_LAST_MODEL_BY_CATEGORY, VK_LLM_ANTHROPIC_CACHE, DEFAULT_AI_ASSISTANT_MODEL, AI_ASSISTANT_MODELS } from './vault-keys';
@@ -88,6 +89,7 @@ export class FirebatCore {
   private readonly cost: CostManager;
   private readonly tool: ToolManager;
   private readonly entity: EntityManager;
+  private readonly episodic: EpisodicManager;
 
   constructor(private readonly infra: FirebatInfraContainer) {
     // 매니저 생성 — 각 매니저는 자기 도메인의 인프라 포트를 직접 받음
@@ -105,6 +107,7 @@ export class FirebatCore {
     this.event = new EventManager(infra.log);
     this.statusMgr = new StatusManager(infra.log, this.event);
     this.entity = new EntityManager(infra.entity);
+    this.episodic = new EpisodicManager(infra.episodic);
 
     // StatusManager error → 자동 captureException forward.
     // 일반 메커니즘 — 어떤 도메인 (이미지·cron·pipeline 등) 에서 statusMgr.error 호출되든
@@ -955,6 +958,41 @@ export class FirebatCore {
   }
   async cleanupExpiredFacts() {
     return this.entity.cleanupExpired();
+  }
+
+  // ── 메모리 시스템 — Episodic tier (Phase 2) ───────────────────────────────
+  // 시간순 사건 — 자동매매 실행 / 페이지 발행 / cron trigger / 도구 호출 / 사용자 액션 등.
+  // Entity (영속 추적 대상) 와 m2m link.
+
+  async saveEvent(input: { type: string; title: string; description?: string; who?: string; context?: Record<string, unknown>; occurredAt?: number; entityIds?: number[]; sourceConvId?: string; ttlDays?: number }) {
+    return this.episodic.saveEvent(input);
+  }
+  async updateEvent(id: number, patch: { type?: string; title?: string; description?: string; who?: string; context?: Record<string, unknown>; occurredAt?: number; entityIds?: number[]; ttlDays?: number }) {
+    return this.episodic.updateEvent(id, patch);
+  }
+  async deleteEvent(id: number) {
+    return this.episodic.deleteEvent(id);
+  }
+  async getEvent(id: number) {
+    return this.episodic.getEvent(id);
+  }
+  async searchEvents(opts: EventSearchOpts) {
+    return this.episodic.searchEvents(opts);
+  }
+  async listRecentEvents(opts?: { type?: string; who?: string; limit?: number; offset?: number }) {
+    return this.episodic.listRecentEvents(opts);
+  }
+  async listEventsByEntity(entityId: number, opts?: { limit?: number; offset?: number }) {
+    return this.episodic.listEventsByEntity(entityId, opts);
+  }
+  async linkEventEntity(eventId: number, entityId: number) {
+    return this.episodic.linkEntity(eventId, entityId);
+  }
+  async unlinkEventEntity(eventId: number, entityId: number) {
+    return this.episodic.unlinkEntity(eventId, entityId);
+  }
+  async cleanupExpiredEvents() {
+    return this.episodic.cleanupExpired();
   }
 
   // ── 템플릿 (CMS Phase 8b) ───────────────────────────────────────────────

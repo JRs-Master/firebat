@@ -916,6 +916,110 @@ export interface IEntityPort {
   cleanupExpiredFacts(): Promise<InfraResult<{ deleted: number }>>;
 }
 
+/** 메모리 시스템 — Episodic tier (Phase 2 of 4-tier memory).
+ *  시간순 사건 (자동매매 실행 / 페이지 발행 / cron trigger / 도구 호출 / 사용자 액션 등).
+ *
+ *  Entity tier 와 차이:
+ *   - Entity = 추적 대상 (종목·인물·프로젝트). 영속.
+ *   - Event = 발생한 사건 (한 번의 매매·발행·트리거). 시간 stamped, occurred_at 정렬.
+ *   - Event 는 0 ~ N entity 와 link 가능 (event_entities m2m).
+ *
+ *  자동 훅 — PageManager.save / Schedule fire / Media generate / ToolManager dispatch
+ *  등에서 자동 saveEvent 호출 (Phase 2.5). AI 명시 호출도 가능.
+ */
+export interface EventRecord {
+  /** Auto-increment ID */
+  id: number;
+  /** Event 종류 — 'cron_trigger' / 'page_publish' / 'transaction' / 'image_gen' /
+   *  'tool_call' / 'user_action' / 'analysis' / 'alert' 등 자유 분류. */
+  type: string;
+  /** 짧은 요약 — '자동매매봇v1 매수 실행', '주간시황 페이지 발행' 등 */
+  title: string;
+  /** 상세 (선택) — 자연어 설명·결과·log */
+  description?: string;
+  /** 발화자 — 'user' / 'ai' / 'cron:{jobId}' / 'sysmod:{name}' / 'manager:{name}' 등 */
+  who?: string;
+  /** 자유 컨텍스트 (JSON) — ticker / price / jobId / pageSlug / cost 등 메타. */
+  context?: Record<string, unknown>;
+  /** 실제 발생 시각 (ms epoch) — 정렬 기준. createdAt 과 별도 (저장은 나중에 가능). */
+  occurredAt: number;
+  /** 출처 대화 ID (선택) — 사용자 발화가 trigger 였을 때. */
+  sourceConvId?: string;
+  /** 만료 시각 (ms epoch). null/undefined = 영구. */
+  expiresAt?: number;
+  /** 저장 시각 (ms epoch) */
+  createdAt: number;
+  /** Linked entity IDs — JOIN 결과로 자동 채움 (search/get 시). */
+  entityIds?: number[];
+}
+
+export interface EventSearchOpts {
+  /** Semantic search (title + description 임베딩 매칭) */
+  query?: string;
+  queryEmbedding?: Buffer;
+  /** Type 필터 */
+  type?: string;
+  /** Who 필터 (예: 'cron:abc123' 만) */
+  who?: string;
+  /** 시간 범위 — occurredAt */
+  occurredAfter?: number;
+  occurredBefore?: number;
+  /** 특정 entity 의 event 만 (m2m JOIN) */
+  entityId?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface IEpisodicPort {
+  /** Event 저장 — title + description 임베딩 자동 생성. entityIds 박으면 m2m link. */
+  saveEvent(input: {
+    type: string;
+    title: string;
+    description?: string;
+    who?: string;
+    context?: Record<string, unknown>;
+    occurredAt?: number;          // 미박힘 시 now
+    entityIds?: number[];          // m2m link
+    sourceConvId?: string;
+    ttlDays?: number;
+    embedding?: Buffer;
+  }): Promise<InfraResult<{ id: number }>>;
+
+  /** Event 단건 수정 */
+  updateEvent(id: number, patch: {
+    type?: string;
+    title?: string;
+    description?: string;
+    who?: string;
+    context?: Record<string, unknown>;
+    occurredAt?: number;
+    entityIds?: number[];          // 박으면 link 전체 교체
+    ttlDays?: number;
+    embedding?: Buffer;
+  }): Promise<InfraResult<void>>;
+
+  /** Event 삭제 (cascade event_entities 자동) */
+  removeEvent(id: number): Promise<InfraResult<void>>;
+
+  /** 단건 조회 — entityIds JOIN 자동 채움 */
+  getEvent(id: number): Promise<InfraResult<EventRecord | null>>;
+
+  /** 검색 — semantic + 다중 필터 */
+  searchEvents(opts: EventSearchOpts): Promise<InfraResult<EventRecord[]>>;
+
+  /** 최근 events — type 필터 옵션, occurredAt DESC */
+  listRecentEvents(opts?: { type?: string; who?: string; limit?: number; offset?: number }): Promise<InfraResult<EventRecord[]>>;
+
+  /** Entity ↔ event link 추가 */
+  linkEventEntity(eventId: number, entityId: number): Promise<InfraResult<void>>;
+
+  /** Entity ↔ event link 제거 */
+  unlinkEventEntity(eventId: number, entityId: number): Promise<InfraResult<void>>;
+
+  /** 만료된 event 정리 (cron) */
+  cleanupExpiredEvents(): Promise<InfraResult<{ deleted: number }>>;
+}
+
 export type RouteFeedbackSignal = 'positive' | 'negative' | 'neutral';
 
 export interface RouteResult {
@@ -976,6 +1080,8 @@ export interface FirebatInfraContainer {
   imageGen: IImageGenPort;
   /** 메모리 시스템 — Entity tier (Phase 1). Episodic / Vector / Retrieval 은 Phase 2-5 박을 예정. */
   entity: IEntityPort;
+  /** 메모리 시스템 — Episodic tier (Phase 2). 시간순 사건 — 자동매매·발행·trigger 등. */
+  episodic: IEpisodicPort;
   /** Vault 기반 모델명을 매 요청 시 읽어야 해서 factory 로 주입 */
   toolRouter: ToolRouterFactory;
 }
