@@ -93,12 +93,12 @@ export class FirebatCore {
     this.page = new PageManager(infra.database, infra.storage);
     this.project = new ProjectManager(infra.storage, infra.database, infra.vault);
     this.template = new TemplateManager(infra.storage);
-    this.module = new ModuleManager(infra.sandbox, infra.storage, infra.vault);
+    this.module = new ModuleManager(infra.sandbox, infra.storage, infra.vault, infra.log);
     this.secret = new SecretManager(infra.vault, infra.storage);
     this.mcp = new McpManager(infra.mcpClient);
     this.capability = new CapabilityManager(infra.storage, infra.vault, infra.log);
     this.authMgr = new AuthManager(infra.auth, infra.vault);
-    this.conversation = new ConversationManager(infra.database, infra.embedder);
+    this.conversation = new ConversationManager(infra.database, infra.embedder, infra.log);
     this.media = new MediaManager(infra.imageGen, infra.media, infra.imageProcessor, infra.vault, infra.log);
     this.event = new EventManager(infra.log);
     this.statusMgr = new StatusManager(infra.log, this.event);

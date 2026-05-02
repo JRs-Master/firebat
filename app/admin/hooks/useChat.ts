@@ -110,7 +110,9 @@ export function useChat(aiModel: string, onRefresh: () => void) {
               try {
                 const one = await fetch(`/api/conversations?id=${encodeURIComponent(activeId)}`).then(x => x.json());
                 if (one.success && one.conversation) activeMessages = one.conversation.messages ?? [];
-              } catch {}
+              } catch (e) {
+                console.debug(`[useChat] active conversation fetch 실패 (${activeId}):`, e);
+              }
             }
             // cleanMessages 적용 후 conversations + dispatch LOAD 에 동일 값 주입.
             // 두 곳이 다른 값이면 직후 save effect 가 "바뀜" 판정해 updatedAt bump → 목록 최상단으로 올라감 (의도치 않음).

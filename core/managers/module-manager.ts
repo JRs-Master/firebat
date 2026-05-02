@@ -1,4 +1,4 @@
-import type { ISandboxPort, IStoragePort, IVaultPort, ModuleOutput } from '../ports';
+import type { ISandboxPort, IStoragePort, IVaultPort, ILogPort, ModuleOutput } from '../ports';
 import type { InfraResult } from '../types';
 import { vkModuleSettings } from '../vault-keys';
 import { mergeTokens, COLOR_PRESETS, FONT_PRESETS, type DesignTokens, type HeadingStyle } from '../../lib/design-tokens';
@@ -24,6 +24,7 @@ export class ModuleManager {
     private readonly sandbox: ISandboxPort,
     private readonly storage: IStoragePort,
     private readonly vault: IVaultPort,
+    private readonly logger?: ILogPort,
   ) {}
 
   /** 경로 지정 직접 실행 (EXECUTE, 파이프라인 등).
@@ -90,7 +91,9 @@ export class ModuleManager {
       if (file.success && file.data) {
         try {
           return JSON.parse(file.data) as Record<string, unknown>;
-        } catch {}
+        } catch (e) {
+          this.logger?.debug(`[ModuleManager] config.json 파싱 실패 (${path}): ${e instanceof Error ? e.message : String(e)}`);
+        }
       }
     }
     return null;
@@ -117,7 +120,9 @@ export class ModuleManager {
           scope: parsed.scope || 'system',
           enabled: this.isEnabled(moduleName),
         });
-      } catch {}
+      } catch (e) {
+        this.logger?.debug(`[ModuleManager] scanDir config.json 파싱 실패 (${dirPath}/${entry.name}): ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
     return entries;
   }

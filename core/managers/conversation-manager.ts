@@ -6,7 +6,7 @@
  * - 메시지 삭제 시 해당 msg_idx 이상 row 제거
  * - 검색 시 owner + 현재 대화 우선 부스트
  */
-import type { IDatabasePort, IEmbedderPort } from '../ports';
+import type { IDatabasePort, IEmbedderPort, ILogPort } from '../ports';
 import type { InfraResult } from '../types';
 import crypto from 'crypto';
 import { unionMergeMessages } from '../utils/message-merge';
@@ -88,6 +88,7 @@ export class ConversationManager {
   constructor(
     private readonly db: IDatabasePort,
     private readonly embedder: IEmbedderPort,
+    private readonly log?: ILogPort,
   ) {}
 
   async list(owner: string): Promise<InfraResult<ConversationSummary[]>> {
@@ -138,7 +139,9 @@ export class ConversationManager {
       try {
         const existing = JSON.parse((existingRes.data[0].messages as string) || '[]') as unknown[];
         mergedMessages = this.unionMergeMessages(existing, incoming);
-      } catch { /* 파싱 실패 시 incoming 그대로 사용 */ }
+      } catch (e) {
+        this.log?.debug(`[ConversationManager] DB messages JSON 파싱 실패 (${id}): ${e instanceof Error ? e.message : String(e)} — incoming 그대로 사용`);
+      }
     }
 
     const messagesJson = JSON.stringify(mergedMessages);
