@@ -2472,9 +2472,21 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
   );
 }
 
-// 비용 한도 섹션 — Vault 'system:cost:budget' 일/월 USD + 알림 임계 %
+// 비용 한도 섹션 — Vault 'system:cost:budget' 일/월 USD + 호출 수 + 알림 임계 %
+type BudgetState = {
+  dailyUsd: number;
+  monthlyUsd: number;
+  dailyCalls: number;
+  monthlyCalls: number;
+  alertAtPercent: number;
+  dailySpentUsd: number;
+  monthlySpentUsd: number;
+  dailySpentCalls: number;
+  monthlySpentCalls: number;
+};
+
 function CostBudgetSection() {
-  const [budget, setBudget] = useState<{ dailyUsd: number; monthlyUsd: number; alertAtPercent: number; dailySpent: number; monthlySpent: number } | null>(null);
+  const [budget, setBudget] = useState<BudgetState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -2496,7 +2508,11 @@ function CostBudgetSection() {
       const res = await fetch('/api/llm/budget', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dailyUsd: budget.dailyUsd, monthlyUsd: budget.monthlyUsd, alertAtPercent: budget.alertAtPercent }),
+        body: JSON.stringify({
+          dailyUsd: budget.dailyUsd, monthlyUsd: budget.monthlyUsd,
+          dailyCalls: budget.dailyCalls, monthlyCalls: budget.monthlyCalls,
+          alertAtPercent: budget.alertAtPercent,
+        }),
       });
       const data = await res.json();
       if (data.success) { setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2000); void load(); }
@@ -2506,87 +2522,70 @@ function CostBudgetSection() {
 
   if (loading || !budget) return null;
 
-  const dailyPct = budget.dailyUsd > 0 ? Math.min(100, (budget.dailySpent / budget.dailyUsd) * 100) : 0;
-  const monthlyPct = budget.monthlyUsd > 0 ? Math.min(100, (budget.monthlySpent / budget.monthlyUsd) * 100) : 0;
-  const overDaily = budget.dailyUsd > 0 && budget.dailySpent >= budget.dailyUsd;
-  const overMonthly = budget.monthlyUsd > 0 && budget.monthlySpent >= budget.monthlyUsd;
-  const alertDaily = budget.dailyUsd > 0 && dailyPct >= budget.alertAtPercent;
-  const alertMonthly = budget.monthlyUsd > 0 && monthlyPct >= budget.alertAtPercent;
+  // 4개 한도 progress 계산
+  const calc = (limit: number, spent: number) => {
+    if (limit <= 0) return { pct: 0, over: false, alert: false };
+    const pct = Math.min(100, (spent / limit) * 100);
+    return { pct, over: spent >= limit, alert: pct >= budget.alertAtPercent };
+  };
+  const dailyU = calc(budget.dailyUsd, budget.dailySpentUsd);
+  const monthlyU = calc(budget.monthlyUsd, budget.monthlySpentUsd);
+  const dailyC = calc(budget.dailyCalls, budget.dailySpentCalls);
+  const monthlyC = calc(budget.monthlyCalls, budget.monthlySpentCalls);
+  const anyOver = dailyU.over || monthlyU.over || dailyC.over || monthlyC.over;
+
+  const renderProgress = (kind: 'usd' | 'calls', limit: number, spent: number, calc: { pct: number; over: boolean; alert: boolean }) => {
+    if (limit <= 0) return null;
+    const fmt = kind === 'usd' ? (n: number) => `$${n.toFixed(2)}` : (n: number) => `${n.toLocaleString()} 회`;
+    return (
+      <div className="mt-1.5">
+        <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+          <div className={`h-full transition-all ${calc.over ? 'bg-red-500' : calc.alert ? 'bg-orange-500' : 'bg-blue-500'}`} style={{ width: `${calc.pct}%` }} />
+        </div>
+        <p className="text-[10px] text-slate-500 mt-0.5">{fmt(spent)} / {fmt(limit)} ({calc.pct.toFixed(0)}%)</p>
+      </div>
+    );
+  };
 
   return (
     <div className="border border-slate-200 rounded-lg p-3 bg-slate-50">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">비용 한도 (0 = 무제한)</p>
-        {(overDaily || overMonthly) && <span className="text-[11px] font-bold text-red-600">⚠ 한도 초과 — LLM 호출 차단됨</span>}
+        <p className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">한도 (0 = 무제한)</p>
+        {anyOver && <span className="text-[11px] font-bold text-red-600">⚠ 한도 초과 — LLM 호출 차단됨</span>}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <p className="text-[11px] text-slate-500 mb-2">USD 한도 = API 모드 (pay-per-token). 호출 수 한도 = 모든 모드 (CLI 구독 포함).</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1">일일 한도 (USD)</label>
-          <input
-            type="number"
-            min="0"
-            step="0.5"
-            value={budget.dailyUsd}
-            onChange={e => setBudget({ ...budget, dailyUsd: Number(e.target.value) || 0 })}
-            className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded"
-          />
-          {budget.dailyUsd > 0 && (
-            <div className="mt-1.5">
-              <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all ${overDaily ? 'bg-red-500' : alertDaily ? 'bg-orange-500' : 'bg-blue-500'}`}
-                  style={{ width: `${dailyPct}%` }}
-                />
-              </div>
-              <p className="text-[10px] text-slate-500 mt-0.5">${budget.dailySpent.toFixed(2)} / ${budget.dailyUsd.toFixed(2)} ({dailyPct.toFixed(0)}%)</p>
-            </div>
-          )}
+          <label className="text-[11px] text-slate-500 block mb-1">일일 USD</label>
+          <input type="number" min="0" step="0.5" value={budget.dailyUsd} onChange={e => setBudget({ ...budget, dailyUsd: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" />
+          {renderProgress('usd', budget.dailyUsd, budget.dailySpentUsd, dailyU)}
         </div>
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1">월간 한도 (USD)</label>
-          <input
-            type="number"
-            min="0"
-            step="5"
-            value={budget.monthlyUsd}
-            onChange={e => setBudget({ ...budget, monthlyUsd: Number(e.target.value) || 0 })}
-            className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded"
-          />
-          {budget.monthlyUsd > 0 && (
-            <div className="mt-1.5">
-              <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all ${overMonthly ? 'bg-red-500' : alertMonthly ? 'bg-orange-500' : 'bg-blue-500'}`}
-                  style={{ width: `${monthlyPct}%` }}
-                />
-              </div>
-              <p className="text-[10px] text-slate-500 mt-0.5">${budget.monthlySpent.toFixed(2)} / ${budget.monthlyUsd.toFixed(2)} ({monthlyPct.toFixed(0)}%)</p>
-            </div>
-          )}
+          <label className="text-[11px] text-slate-500 block mb-1">월간 USD</label>
+          <input type="number" min="0" step="5" value={budget.monthlyUsd} onChange={e => setBudget({ ...budget, monthlyUsd: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" />
+          {renderProgress('usd', budget.monthlyUsd, budget.monthlySpentUsd, monthlyU)}
         </div>
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1">알림 임계 (%)</label>
-          <input
-            type="number"
-            min="1"
-            max="100"
-            step="5"
-            value={budget.alertAtPercent}
-            onChange={e => setBudget({ ...budget, alertAtPercent: Number(e.target.value) || 80 })}
-            className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded"
-          />
-          <p className="text-[10px] text-slate-400 mt-1">진행률 진해지는 기준 (UI 시각화용)</p>
+          <label className="text-[11px] text-slate-500 block mb-1">일일 호출 수</label>
+          <input type="number" min="0" step="10" value={budget.dailyCalls} onChange={e => setBudget({ ...budget, dailyCalls: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" />
+          {renderProgress('calls', budget.dailyCalls, budget.dailySpentCalls, dailyC)}
+        </div>
+        <div>
+          <label className="text-[11px] text-slate-500 block mb-1">월간 호출 수</label>
+          <input type="number" min="0" step="100" value={budget.monthlyCalls} onChange={e => setBudget({ ...budget, monthlyCalls: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" />
+          {renderProgress('calls', budget.monthlyCalls, budget.monthlySpentCalls, monthlyC)}
         </div>
       </div>
-      <div className="flex justify-end mt-2">
-        <button
-          onClick={save}
-          disabled={saving}
-          className="px-3 py-1.5 text-[12px] bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-50"
-        >
+      <div className="flex items-end gap-3">
+        <div className="flex-1">
+          <label className="text-[11px] text-slate-500 block mb-1">알림 임계 (%) — progress bar 진해지는 기준</label>
+          <input type="number" min="1" max="100" step="5" value={budget.alertAtPercent} onChange={e => setBudget({ ...budget, alertAtPercent: Number(e.target.value) || 80 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" />
+        </div>
+        <button onClick={save} disabled={saving} className="px-3 py-1.5 text-[12px] bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-50">
           {savedFlash ? '✓ 저장됨' : saving ? '저장 중...' : '한도 저장'}
         </button>
       </div>
+      <p className="text-[10px] text-slate-400 mt-2">현재 사용량: 오늘 ${budget.dailySpentUsd.toFixed(2)} / {budget.dailySpentCalls.toLocaleString()} 회 · 이달 ${budget.monthlySpentUsd.toFixed(2)} / {budget.monthlySpentCalls.toLocaleString()} 회</p>
     </div>
   );
 }

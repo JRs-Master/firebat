@@ -20,8 +20,10 @@ export async function GET(req: NextRequest) {
     success: true,
     data: {
       ...budget,
-      dailySpent: check.dailyUsd,
-      monthlySpent: check.monthlyUsd,
+      dailySpentUsd: check.dailyUsd,
+      monthlySpentUsd: check.monthlyUsd,
+      dailySpentCalls: check.dailyCalls,
+      monthlySpentCalls: check.monthlyCalls,
     },
   });
 }
@@ -30,10 +32,13 @@ export async function POST(req: NextRequest) {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
   const body = await req.json();
-  const dailyUsd = Number(body?.dailyUsd) || 0;
-  const monthlyUsd = Number(body?.monthlyUsd) || 0;
-  const alertAtPercent = Number(body?.alertAtPercent) || 80;
   const core = getCore();
-  await core.setCostBudget({ dailyUsd, monthlyUsd, alertAtPercent });
+  await core.setCostBudget({
+    dailyUsd: Number(body?.dailyUsd) || 0,
+    monthlyUsd: Number(body?.monthlyUsd) || 0,
+    dailyCalls: Number(body?.dailyCalls) || 0,
+    monthlyCalls: Number(body?.monthlyCalls) || 0,
+    alertAtPercent: Number(body?.alertAtPercent) || 80,
+  });
   return NextResponse.json({ success: true });
 }
