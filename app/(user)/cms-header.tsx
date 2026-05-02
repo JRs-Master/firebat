@@ -10,6 +10,7 @@
  */
 import type { HeaderConfig } from '../../lib/cms-layout';
 import { HeaderScrollWatcher } from './cms-header-scroll-watcher';
+import { MobileDrawer } from './cms-mobile-drawer';
 
 export function CmsHeader({ header }: { header: HeaderConfig }) {
   // sticky CSS — server-side 결정. transparent-on-top 은 client 가 scroll 추적 후 toggle.
@@ -57,7 +58,8 @@ export function CmsHeader({ header }: { header: HeaderConfig }) {
               {header.siteName}
             </span>
           </a>
-          <nav className="flex items-center gap-3 sm:gap-5 flex-wrap">
+          {/* Desktop nav — sm 이상. mobileDrawer ON 이면 모바일에선 hidden + drawer 사용. */}
+          <nav className={`items-center gap-3 sm:gap-5 ${header.mobileDrawer ? 'hidden sm:flex' : 'flex flex-wrap'}`}>
             {header.navLinks.map((link, i) => (
               <a
                 key={i}
@@ -81,6 +83,9 @@ export function CmsHeader({ header }: { header: HeaderConfig }) {
               </svg>
             </a>
           </nav>
+
+          {/* Mobile drawer — mobileDrawer ON 시 모바일에서만 햄버거 + slide drawer. */}
+          {header.mobileDrawer && <MobileDrawer navLinks={header.navLinks} />}
         </div>
       </div>
       {/* Client-side scroll watcher — transparentOnTop 활성 시 scroll → is-scrolled class. */}

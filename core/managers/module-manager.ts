@@ -290,6 +290,7 @@ export class ModuleManager {
         navLinks: parseNavLinks(s.layoutNavLinks),
         sticky: s.layoutHeaderSticky === true,
         transparentOnTop: s.layoutHeaderTransparentOnTop === true,
+        mobileDrawer: s.layoutHeaderMobileDrawer === true,
       },
       footer: {
         show: s.layoutShowFooter !== false,

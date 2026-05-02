@@ -26,6 +26,9 @@ export interface HeaderConfig {
   /** Transparent on top — 페이지 최상단(0px)일 때 배경 투명, 스크롤 시 배경색 채움.
    *  sticky=true 와 함께 사용 권장. hero 위에 헤더 떠있는 모던 사이트 패턴. 기본 false. */
   transparentOnTop: boolean;
+  /** 모바일 햄버거 drawer — 모바일(sm 미만)에서 nav 링크 → 햄버거 버튼 + slide-in drawer.
+   *  데스크톱은 그대로 horizontal nav. 기본 false (현재처럼 wrap). */
+  mobileDrawer: boolean;
 }
 
 export interface FooterColumn {
@@ -121,6 +124,7 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
     navLinks: [],
     sticky: false,
     transparentOnTop: false,
+    mobileDrawer: false,
   },
   footer: {
     show: true,
