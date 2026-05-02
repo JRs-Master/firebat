@@ -21,6 +21,11 @@ export interface HeaderConfig {
   logoUrl: string;
   /** 네비 링크 목록 */
   navLinks: NavLink[];
+  /** Sticky 헤더 — 스크롤 시에도 상단 유지. position: sticky + z-index. 기본 false. */
+  sticky: boolean;
+  /** Transparent on top — 페이지 최상단(0px)일 때 배경 투명, 스크롤 시 배경색 채움.
+   *  sticky=true 와 함께 사용 권장. hero 위에 헤더 떠있는 모던 사이트 패턴. 기본 false. */
+  transparentOnTop: boolean;
 }
 
 export interface FooterColumn {
@@ -114,6 +119,8 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
     siteName: 'Firebat',
     logoUrl: '',
     navLinks: [],
+    sticky: false,
+    transparentOnTop: false,
   },
   footer: {
     show: true,

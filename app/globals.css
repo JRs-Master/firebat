@@ -291,3 +291,12 @@ html::-webkit-scrollbar-thumb:hover,
      postcss-prefix-selector 가 sanitize 단계에서 처리 (sanitizeHtmlBlock). */
   max-width: 100%;
 }
+
+/* ── Header transparent-on-top — scroll 시 배경색 채움 ──
+   scrollY > 8px 이면 HeaderScrollWatcher 가 [data-cms-header].is-scrolled 추가.
+   transition 은 inline style 의 transition 값 사용 (background/border-color/box-shadow). */
+.cms-header-transparent.is-scrolled {
+  background: var(--cms-bg) !important;
+  border-bottom-color: var(--cms-border) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}

@@ -288,6 +288,8 @@ export class ModuleManager {
         siteName,
         logoUrl: s.layoutLogoUrl || '',
         navLinks: parseNavLinks(s.layoutNavLinks),
+        sticky: s.layoutHeaderSticky === true,
+        transparentOnTop: s.layoutHeaderTransparentOnTop === true,
       },
       footer: {
         show: s.layoutShowFooter !== false,
