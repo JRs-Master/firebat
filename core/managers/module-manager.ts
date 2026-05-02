@@ -292,6 +292,10 @@ export class ModuleManager {
       footer: {
         show: s.layoutShowFooter !== false,
         text: s.layoutFooterText?.trim() || defaultFooterText,
+        columns: [1, 2, 3, 4].map(i => ({
+          heading: typeof s[`footerColumn${i}Heading`] === 'string' ? s[`footerColumn${i}Heading`] : '',
+          content: typeof s[`footerColumn${i}Content`] === 'string' ? s[`footerColumn${i}Content`] : '',
+        })),
       },
       showReadingProgress: s.layoutShowReadingProgress === true,
       mode: (['full', 'right-sidebar', 'left-sidebar', 'boxed'].includes(s.layoutMode) ? s.layoutMode : 'full'),

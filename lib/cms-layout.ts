@@ -23,11 +23,20 @@ export interface HeaderConfig {
   navLinks: NavLink[];
 }
 
+export interface FooterColumn {
+  /** 컬럼 제목 — 비우면 헤딩 미표시 */
+  heading: string;
+  /** 컬럼 본문 (HTML 허용 — sanitize 후 inline DOM). 링크·연락처·문장 자유 입력. */
+  content: string;
+}
+
 export interface FooterConfig {
   /** 표시 여부 — false 면 푸터 미렌더 */
   show: boolean;
-  /** 푸터 텍스트 (HTML 허용 — sanitize 후 inline DOM). 저작권·법적 고지·연락처 등. */
+  /** 푸터 메인 텍스트 (HTML 허용 — sanitize 후 inline DOM). 저작권·법적 고지 등. 컬럼 위에 표시. */
   text: string;
+  /** 4 컬럼 widget — 각 컬럼별 heading + content. 모두 비우면 columns 미표시 (text 만 노출). */
+  columns: FooterColumn[];
 }
 
 /** Sidebar 위치 모드 — GP/Astra 식 4종 (both-sidebar 는 v1.x 추후).
@@ -105,6 +114,12 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
   footer: {
     show: true,
     text: '',
+    columns: [
+      { heading: '', content: '' },
+      { heading: '', content: '' },
+      { heading: '', content: '' },
+      { heading: '', content: '' },
+    ],
   },
   showReadingProgress: false,
   mode: 'full',
