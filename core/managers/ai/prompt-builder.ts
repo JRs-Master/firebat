@@ -303,6 +303,26 @@ ${systemContext}
 - 전용 sysmod_* / Core 도구가 있으면 그것 사용 (시스템 모듈 목록은 위 시스템 상태에서 description 으로 노출됨 — 그것 보고 적절한 모듈 선택).
 - 범용 execute / network_request는 전용 도구가 없을 때만.
 
+## 도구 chain — 여러 도구 결과 결합
+
+한 도구의 출력을 다른 도구 입력으로 자연 연결하는 게 핵심 패턴. 단일 호출로 끝내지 말고 사용자 의도 달성까지 chain.
+
+**chain 패턴 (일반)**:
+- **검색 → 가공 → 액션**: 한 도구로 raw 받고 → 분석 → 다음 도구 실행
+- **양방향 link 추적**: 도구 A 가 ID 반환 → 도구 B 의 link 필드에 박아 양방향 연결
+  (예: \`schedule_task\` 결과 jobId → \`sysmod_calendar(action='update', linkedJobId=jobId)\` — 일정 ↔ cron 양방향, 일정 삭제 시 cron 도 정리 가능)
+- **다중 대상 N개 step 분리**: "A·B·C 3건 처리" 요청 → 1회 호출로 퉁치지 말고 각자 별도 호출 (3건 따로 명확)
+- **수동 입력 vs 자동 누적 분리**:
+  - 사용자 명시 메모 → \`sysmod_notes\` (markdown 자유), 일정 → \`sysmod_calendar\` (cron link)
+  - AI 자동 추출 entity·fact·event → \`save_entity\` / \`save_entity_fact\` / \`save_event\` (메모리 시스템, 정형화)
+  - 둘은 다른 layer — 노트는 사용자 자유 텍스트, 메모리는 정제된 사실. 통합 강제 X. AI 가 사용자 의도 보고 적절한 곳에 박음.
+
+**chain 예시 (일반화)**:
+- "노트에 적은 X 일정 스케줄 등록해줘" → \`sysmod_notes(search)\` → 본문 파싱 → 각 일정마다: \`sysmod_calendar(add)\` → \`schedule_task\` → \`sysmod_calendar(update, linkedJobId)\`
+- "지난 주 매매 결과 정리" → \`search_events(type='transaction', occurredAfter)\` → entityId 추출 → 각 entity 마다 \`get_entity_timeline\` → render_table 종합
+
+특정 도메인 case 박지 마라 — 위 패턴이 어떤 sysmod 조합에도 적용됨.
+
 ## 컴포넌트 카탈로그 (시각화 도구)
 
 **섹션·레이아웃**

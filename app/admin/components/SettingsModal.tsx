@@ -17,11 +17,16 @@ type Props = {
   onClose: () => void;
   onSave: () => void;
   onOpenModuleSettings?: (moduleName: string) => void;
-  initialTab?: 'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'cost' | 'memory';
+  initialTab?: 'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'cost' | 'memory'; // 'cost' / 'memory' 는 호환 — 자동으로 AI 탭 + sub-tab 으로 변환
 };
 
 export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
-  const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'cost' | 'memory'>(initialTab ?? 'general');
+  // 비용·메모리는 AI 탭 하위 sub-tab 으로 통합 — initialTab='cost'/'memory' 면 자동으로 AI 탭 + sub-tab 으로 변환.
+  const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system'>(() => {
+    if (initialTab === 'cost' || initialTab === 'memory') return 'ai';
+    return (initialTab ?? 'general') as any;
+  });
+  // AI 탭 sub-tab 의 cost/memory 는 아래 line 164 에서 type 확장 + initialTab 처리.
   // AI 탭: 실행모드(api/cli) + 모드(일반/Vertex) + 프로바이더(openai/google/anthropic)
   // api 모드: 키 기반, pay-per-token (기존)
   // cli 모드: 구독 기반, 자체 인증 (월정액 Claude Pro/Max, ChatGPT Plus, Gemini Advanced 등)
@@ -150,8 +155,13 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const [imageDefaultSize, setImageDefaultSize] = useState<string>('');
   const [imageDefaultQuality, setImageDefaultQuality] = useState<string>('');
 
-  // AI 탭 서브탭 — LLM(모델 선택) / 프롬프트(사용자 지시사항) / 이미지(생성 모델)
-  const [aiSubTab, setAiSubTab] = useState<'llm' | 'prompt' | 'image'>('llm');
+  // AI 탭 서브탭 — LLM(모델) / 프롬프트(사용자 지시사항) / 이미지(생성 모델) / 비용(한도·통계) / 메모리(AI Recall 메타).
+  // initialTab='cost'/'memory' 는 SettingsModal entry 시점에 settingsTab='ai' + aiSubTab 으로 자동 변환.
+  const [aiSubTab, setAiSubTab] = useState<'llm' | 'prompt' | 'image' | 'cost' | 'memory'>(() => {
+    if (initialTab === 'cost') return 'cost';
+    if (initialTab === 'memory') return 'memory';
+    return 'llm';
+  });
 
   // 관리자 계정 변경
   const [adminCurrentPw, setAdminCurrentPw] = useState('');
@@ -716,20 +726,6 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
           >
             <Cpu size={14} /> 시스템
           </button>
-          <button
-            onClick={() => switchTab('cost')}
-            data-active={settingsTab === 'cost'}
-            className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'cost' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-          >
-            <DollarSign size={14} /> 비용
-          </button>
-          <button
-            onClick={() => switchTab('memory')}
-            data-active={settingsTab === 'memory'}
-            className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'memory' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-          >
-            <Brain size={14} /> 메모리
-          </button>
           </div>
         </div>
 
@@ -865,17 +861,19 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
               : 'Extended Thinking (Claude)';
             return (
               <>
-                {/* AI 서브탭 바 — LLM(모델) / 프롬프트 / 이미지 */}
-                <div className="flex items-center gap-1 border-b border-slate-200 -mt-1 mb-2">
+                {/* AI 서브탭 바 — LLM(모델) / 프롬프트 / 이미지 / 비용 / 메모리 */}
+                <div className="flex items-center gap-1 border-b border-slate-200 -mt-1 mb-2 overflow-x-auto">
                   {([
                     { v: 'llm', label: 'LLM' },
                     { v: 'prompt', label: '프롬프트' },
                     { v: 'image', label: '이미지' },
+                    { v: 'cost', label: '비용' },
+                    { v: 'memory', label: '메모리' },
                   ] as const).map(t => (
                     <button
                       key={t.v}
                       onClick={() => setAiSubTab(t.v)}
-                      className={`px-3 py-1.5 text-[12px] sm:text-[13px] font-bold border-b-2 transition-colors -mb-px ${
+                      className={`px-3 py-1.5 text-[12px] sm:text-[13px] font-bold border-b-2 transition-colors -mb-px whitespace-nowrap ${
                         aiSubTab === t.v
                           ? 'border-blue-500 text-blue-600'
                           : 'border-transparent text-slate-400 hover:text-slate-600'
@@ -885,6 +883,8 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     </button>
                   ))}
                 </div>
+                {aiSubTab === 'cost' && <CostTabContent />}
+                {aiSubTab === 'memory' && <MemoryTabContent />}
                 {aiSubTab === 'llm' && (<>
                 <Field label="실행 모드" help="API: 각 공급자 키 기반 pay-per-token · CLI: Claude Pro/Max, ChatGPT Plus 등 구독 계정 직접 사용 (월정액)">
                   <SegButtons<'api' | 'cli'>
@@ -2034,8 +2034,6 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
             </div>
           )}
 
-          {settingsTab === 'cost' && <CostTabContent />}
-          {settingsTab === 'memory' && <MemoryTabContent />}
         </div>
 
         <div className="px-3 sm:px-6 py-2.5 sm:py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2 sm:gap-3 shrink-0">

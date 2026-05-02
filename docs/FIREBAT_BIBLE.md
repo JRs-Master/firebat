@@ -244,12 +244,12 @@ AI 가 명시 도구 호출 안 해도 관련 entity/fact/event 자동 컨텍스
 
 ### 제5항. 어드민 UI
 
-사이드바 5번째 탭 "메모리" (Brain 아이콘):
+사이드바 "Recall" 탭 (Sparkles 아이콘) — 메모리 시스템의 어드민 UI:
 - Sub-tab 엔티티 / 사건 토글
 - Stats card (엔티티 / 사실 / 사건 총수)
 - entity 클릭 → expand → timeline (facts) + 관련 사건 통합 표시
 - 인라인 fact 추가 / entity 신규 모달 / 삭제 confirm
-- 사이드바 대화 옆 "메모리 정리" 버튼 (Brain 아이콘) — `POST /api/consolidate`
+- 사이드바 대화 옆 "Recall 에 정리" 버튼 (Sparkles 아이콘) — `POST /api/consolidate`
 
 ### 제6항. 어댑터 swap (Phase 3 deferred)
 

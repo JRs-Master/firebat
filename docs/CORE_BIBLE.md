@@ -292,7 +292,7 @@ type PipelineStep =
 - Core 참조 받음 (LLM + entity + episodic 다 호출). 인프라 포트 직접 X.
 - 호출 경로 3가지:
   1. **AI 자율** — `consolidate_conversation` 도구
-  2. **Manual** — 어드민 사이드바 "메모리 정리" 버튼 (Brain 아이콘) → `POST /api/consolidate`
+  2. **Manual** — 어드민 사이드바 "Recall 에 정리" 버튼 (Sparkles 아이콘) → `POST /api/consolidate`
   3. **Cron 자동** — Core 가 6시간마다 `consolidateInactiveConversations()` 호출. 1시간+ 비활성 대화 최대 10개/run 처리 (LLM 비용 폭주 방지).
 - `dedupThreshold=0.92` 박음 — 같은 대화 여러 번 정리해도 fact/event 중복 누적 0 (cosine 유사도 검출).
 

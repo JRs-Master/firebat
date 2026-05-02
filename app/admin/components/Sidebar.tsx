@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 import { GalleryPanel } from './GalleryPanel';
@@ -436,12 +436,12 @@ export function Sidebar({
             <LayoutTemplate size={18} />
           </button>
         </Tooltip>
-        <Tooltip label="메모리 (엔티티 + 사건)" side="right">
+        <Tooltip label="Recall (엔티티 + 사건)" side="right">
           <button
             onClick={() => expand('entities')}
             className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors"
           >
-            <Brain size={18} />
+            <Sparkles size={18} />
           </button>
         </Tooltip>
         <Tooltip label="노트" side="right">
@@ -535,14 +535,14 @@ export function Sidebar({
             <LayoutTemplate size={15} />
           </button>
         </Tooltip>
-        <Tooltip label="메모리">
+        <Tooltip label="Recall">
           <button
             onClick={() => setTab('entities')}
             className={`p-2 rounded-md transition-colors ${
               tab === 'entities' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
             }`}
           >
-            <Brain size={15} />
+            <Sparkles size={15} />
           </button>
         </Tooltip>
         <Tooltip label="노트">
@@ -991,7 +991,7 @@ export function Sidebar({
                           title={conv.title}
                           liveMessages={conv.id === activeConvId ? activeMessages : undefined}
                         />
-                        <Tooltip label="메모리에 정리하기 (entity / fact / event 추출)">
+                        <Tooltip label="Recall 에 정리하기 (entity / fact / event 추출)">
                           <button
                             onClick={async (e) => {
                               e.stopPropagation();
@@ -1013,9 +1013,9 @@ export function Sidebar({
                               }
                             }}
                             className="p-1 text-slate-400 hover:text-purple-600 hover:bg-purple-50 active:bg-purple-100 rounded transition-colors"
-                            aria-label="메모리에 정리하기"
+                            aria-label="Recall 에 정리하기"
                           >
-                            <Brain size={11} />
+                            <Sparkles size={11} />
                           </button>
                         </Tooltip>
                         <Tooltip label="삭제">
