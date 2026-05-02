@@ -7,6 +7,7 @@ import { RENDER_TOOL_MAP } from '../../lib/render-map';
 import { COMPONENTS } from '../../infra/llm/component-registry';
 import { trimToolResult, slimResultForLLM } from './ai/result-processor';
 import { HistoryResolver } from './ai/history-resolver';
+import { RetrievalEngine } from './ai/retrieval-engine';
 import { PromptBuilder } from './ai/prompt-builder';
 import { ToolRouter } from './ai/tool-router';
 import { buildCoreToolDefinitions, RENDER_TOOLS } from './ai/tool-schemas';
@@ -54,6 +55,7 @@ export class AiManager {
 
   /** 내부 collaborator — AI 도메인 분리 (ResultProcessor / HistoryResolver / PromptBuilder / ToolRouter / ToolDispatcher / ...) */
   private readonly history: HistoryResolver;
+  private readonly retrieval: RetrievalEngine;
   private readonly promptBuilder: PromptBuilder;
   private readonly toolRouter: ToolRouter;
   private readonly dispatcher: ToolDispatcher;
@@ -66,6 +68,7 @@ export class AiManager {
     private readonly routerFactory: ToolRouterFactory,
   ) {
     this.history = new HistoryResolver(core);
+    this.retrieval = new RetrievalEngine(core);
     this.promptBuilder = new PromptBuilder(core, llm);
     this.toolRouter = new ToolRouter(core, logger, routerFactory, this._toolCapabilities);
     this.dispatcher = new ToolDispatcher(core);
@@ -911,6 +914,20 @@ export class AiManager {
       prompt,
       { owner: opts?.owner, currentConvId: opts?.conversationId },
     );
+
+    // 4-tier memory retrieve — entity / facts / events 통합. cron-agent 도 사용 (자율 발행 시
+    // 과거 entity/event 컨텍스트 활용). 시간 비용 ~50ms (병렬), 토큰 budget 한도 안.
+    const memRetrieval = await this.retrieval.retrieve({
+      query: prompt,
+      owner: opts?.owner,
+      currentConvId: opts?.conversationId,
+      // history 는 위 HistoryResolver 가 이미 처리 → 여기선 0 (중복 방지)
+      limits: { history: 0, entities: 3, facts: 5, events: 5, factsPerEntity: 3 },
+    });
+    const memoryContext = memRetrieval.contextSummary;
+    if (memoryContext) {
+      this.logger.debug?.(`[AiManager] memory retrieve — entities=${memRetrieval.stats.entities} facts=${memRetrieval.stats.facts} events=${memRetrieval.stats.events}`);
+    }
     // search_history 맥락 보강용 — 직전 user 발화는 turnContext (AsyncLocalStorage) 로 전파됨 (함수 시작 시 셋업).
     const currentModel = opts?.model ?? this.llm.getModelId();
     const systemPrompt = await this.promptBuilder.build(currentModel, opts?.cronAgent ? { cronAgent: opts.cronAgent } : undefined);
@@ -1119,9 +1136,10 @@ export class AiManager {
       }
     }
 
+    const memorySection = memoryContext ? `\n\n${memoryContext}` : '';
     const finalSystemPrompt = contextSummary
-      ? planExecuteRule + planModePrefix + systemPrompt + autoHistoryContext + `\n\n${contextSummary}`
-      : planExecuteRule + planModePrefix + systemPrompt + autoHistoryContext;
+      ? planExecuteRule + planModePrefix + systemPrompt + autoHistoryContext + `\n\n${contextSummary}` + memorySection
+      : planExecuteRule + planModePrefix + systemPrompt + autoHistoryContext + memorySection;
 
     const mcpTokenSet = !!this.core.getGeminiKey('system:internal-mcp-token');
     const toolMode = mcpTokenSet ? 'MCP connector' : `인라인 ${tools.length}개${tools.length < allTools.length ? ` (검색 선별: 전체 ${allTools.length})` : ''}`;
