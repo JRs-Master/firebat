@@ -1,0 +1,95 @@
+{
+  "name": "calendar",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "Firebat 자체 일정 — JSONL file (data/calendar/events.jsonl). 매매·공모주·미팅·청구 일정. Firebat cron·매매·노트 sysmod 와 자연 chain (외부 동기화 X 의도). 예: 공모주 일정 등록 → 상장일에 매도 cron 자동 발화 (linkedJobId 연결). Google Calendar 와 분리 — 통합 자동화 핵심.",
+  "runtime": "node",
+  "capability": "calendar",
+  "providerType": "local",
+  "secrets": [],
+  "input": {
+    "type": "object",
+    "required": ["action"],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["list-upcoming", "list-range", "add", "update", "delete", "find"],
+        "description": "list-upcoming=오늘부터 N일 (기본 7), list-range=fromTm~toTm 범위, add=새 일정 (id 자동 생성), update=id 로 수정 (필드 patch), delete=id 로 soft-delete (deletedAt 기록), find=title/description/tags 검색"
+      },
+      "id": {
+        "type": "string",
+        "description": "[update/delete] 이벤트 ID. add 결과로 받음."
+      },
+      "title": {
+        "type": "string",
+        "description": "[add/update] 일정 제목"
+      },
+      "startAt": {
+        "type": "string",
+        "description": "[add/update] 시작 시각 ISO 8601 (예: 2026-05-04T09:00:00+09:00)"
+      },
+      "endAt": {
+        "type": "string",
+        "description": "[add/update] 종료 시각 ISO (선택). 미지정 = startAt 부터 1시간"
+      },
+      "location": {
+        "type": "string",
+        "description": "[add/update] 장소 (선택)"
+      },
+      "description": {
+        "type": "string",
+        "description": "[add/update] 상세 설명 (선택). 공모주 배정 정보·매매 메모 등 자유 기록"
+      },
+      "tags": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "[add/update] 태그 — ipo / meeting / payment / dividend / earnings 등. find 필터에 활용"
+      },
+      "linkedJobId": {
+        "type": "string",
+        "description": "[add/update] 연동된 cron 잡 ID — 일정에 trigger 박힌 cron 자동 발화. 예: '상장일 매도' 잡과 calendar 이벤트 연결. AI 가 schedule_task 로 cron 등록 후 받은 jobId 를 여기 박음"
+      },
+      "fromTm": {
+        "type": "string",
+        "description": "[list-range] 시작 ISO 일자 (YYYY-MM-DD)"
+      },
+      "toTm": {
+        "type": "string",
+        "description": "[list-range] 종료 ISO 일자"
+      },
+      "days": {
+        "type": "integer",
+        "default": 7,
+        "description": "[list-upcoming] 오늘부터 N일 (기본 7)"
+      },
+      "query": {
+        "type": "string",
+        "description": "[find] 검색어 (title/description/tags full-text)"
+      },
+      "tag": {
+        "type": "string",
+        "description": "[find/list-*] 태그 필터"
+      },
+      "includeDeleted": {
+        "type": "boolean",
+        "default": false,
+        "description": "soft-delete 된 이벤트 포함 여부"
+      },
+      "limit": {
+        "type": "integer",
+        "default": 50,
+        "description": "최대 결과 수"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "items": { "type": "array", "description": "list-* / find 결과 (id, title, startAt, endAt, tags, linkedJobId, ...)" },
+      "event": { "type": "object", "description": "add/update 결과 단일 이벤트" },
+      "deleted": { "type": "boolean", "description": "delete 결과" }
+    }
+  }
+}

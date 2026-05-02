@@ -1,0 +1,62 @@
+{
+  "name": "notes",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "Firebat 자체 노트 — 마크다운 file-based (data/notes/*.md). 매매 일지·아이디어·메모. AI 가 자율 read/write/search. 외부 동기화 없음 (의도). 일정 (sysmod_calendar) 과 같이 통합 사용 — cron·매매 도구와 자연 chain.",
+  "runtime": "node",
+  "capability": "note",
+  "providerType": "local",
+  "secrets": [],
+  "input": {
+    "type": "object",
+    "required": ["action"],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": ["list", "read", "write", "delete", "search"],
+        "description": "list=노트 목록 (옵션 tag 필터), read=slug 로 본문 read, write=새 노트 또는 update (slug 같으면 덮어씀), delete=slug 로 soft-delete (휴지통 X — 즉시 삭제), search=full-text + tag 검색"
+      },
+      "slug": {
+        "type": "string",
+        "description": "[read/write/delete] 노트 식별자. 영문·숫자·_·-. write 시 미지정이면 자동 생성 (YYYY-MM-DD-rand)."
+      },
+      "title": {
+        "type": "string",
+        "description": "[write] 노트 제목 (frontmatter 에 저장)"
+      },
+      "content": {
+        "type": "string",
+        "description": "[write] 노트 본문 (마크다운)"
+      },
+      "tags": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "[write] 태그 배열. [list/search] 필터 (단일 tag 매칭)"
+      },
+      "tag": {
+        "type": "string",
+        "description": "[list/search] 단일 태그 필터"
+      },
+      "query": {
+        "type": "string",
+        "description": "[search] 검색어 (title + content + tag full-text)"
+      },
+      "limit": {
+        "type": "integer",
+        "default": 20,
+        "description": "[list/search] 최대 결과 수"
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "items": { "type": "array", "description": "list/search 결과 (slug, title, tags, createdAt, contentPreview)" },
+      "note": { "type": "object", "description": "read 결과 (slug, title, tags, content, createdAt, updatedAt)" },
+      "slug": { "type": "string", "description": "write 후 저장된 slug" },
+      "deleted": { "type": "boolean", "description": "delete 결과" }
+    }
+  }
+}
