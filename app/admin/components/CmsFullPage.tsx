@@ -131,7 +131,7 @@ export function CmsFullPage({ onClose, onBack }: Props) {
         <div className="w-full md:w-2/5 md:max-w-xl border-r border-slate-200 overflow-hidden flex flex-col bg-white">
           {/* SystemModuleSettings 가 자체 닫기 버튼·헤더 가짐 — 풀페이지 안에선 닫기 onClose 비활성화 (상단바가 처리) */}
           <div className="flex-1 overflow-hidden relative">
-            <SystemModuleSettings moduleName="cms" onClose={() => {}} embeddedInPage />
+            <SystemModuleSettings moduleName="cms" onClose={onClose} embeddedInPage />
           </div>
         </div>
 
