@@ -4,6 +4,7 @@ import { getCore } from '../../../lib/singleton';
 import { ComponentRenderer } from './components';
 import { BASE_URL } from '../../../infra/config';
 import { headers } from 'next/headers';
+import { estimateReadingTime } from '../reading-time';
 
 /** 실제 사용할 base URL 해석 —
  *   1. SEO 설정의 siteUrl (관리자가 Firebat 설정에서 입력, 최우선)
@@ -365,6 +366,25 @@ export default async function DynamicPage({ params, searchParams }: Props) {
           data-h3-style={projectH3Style ?? seo.theme.heading.h3}
           style={projectThemeStyle}
         >
+          {/* Reading time — project 박힌 콘텐츠 페이지만, body 본문 시작 직전 표시.
+           *  text 추출 후 500자/분 산정. 0분이면 미표시 (이미지·차트 위주 페이지). */}
+          {(() => {
+            if (!spec.project) return null;
+            const minutes = estimateReadingTime(body);
+            if (minutes <= 0) return null;
+            return (
+              <div
+                className="flex items-center gap-1.5 mb-4 text-xs"
+                style={{ color: 'var(--cms-text-muted)' }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
+                </svg>
+                <span>{minutes}분 읽기</span>
+              </div>
+            );
+          })()}
           <ComponentRenderer components={body} />
         </div>
       </main>

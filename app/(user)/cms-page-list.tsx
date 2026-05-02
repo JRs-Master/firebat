@@ -135,7 +135,29 @@ export function CmsPageList({ pages, emptyMessage, variant = 'list' }: {
   );
 }
 
-/** 페이지네이션 — 단순 prev/next + 현재 페이지 표시. ?page=N query param 으로 동작. */
+/**
+ * 페이지 번호 목록 계산 — 일반 로직.
+ * - totalPages ≤ 7: 전부 표시
+ * - currentPage 근처 + 양 끝 + ellipsis ('…') 로 압축. 중복 ellipsis 제거.
+ * 반환: 배열 (number = 페이지, '…' = ellipsis 자리표시)
+ */
+function buildPageList(currentPage: number, totalPages: number): (number | '…')[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, i) => i + 1);
+  }
+  const SIBLINGS = 1; // currentPage 양쪽으로 N개씩
+  const result: (number | '…')[] = [];
+  const start = Math.max(2, currentPage - SIBLINGS);
+  const end = Math.min(totalPages - 1, currentPage + SIBLINGS);
+  result.push(1);
+  if (start > 2) result.push('…');
+  for (let p = start; p <= end; p++) result.push(p);
+  if (end < totalPages - 1) result.push('…');
+  result.push(totalPages);
+  return result;
+}
+
+/** 페이지네이션 — prev/next + numbered (smart truncation). ?page=N query param 으로 동작. */
 export function CmsPagination({ basePath, currentPage, totalPages }: {
   basePath: string;
   currentPage: number;
@@ -143,40 +165,58 @@ export function CmsPagination({ basePath, currentPage, totalPages }: {
 }) {
   if (totalPages <= 1) return null;
   const buildHref = (page: number) => `${basePath}?page=${page}`;
+  const pages = buildPageList(currentPage, totalPages);
+
+  const baseBtn = 'px-3 py-1.5 text-sm font-medium border rounded no-underline transition-opacity';
+  const activeStyle = { background: 'var(--cms-primary)', borderColor: 'var(--cms-primary)', color: '#fff' };
+  const idleStyle = { background: 'var(--cms-bg-card)', borderColor: 'var(--cms-border)', color: 'var(--cms-text)' };
+  const disabledStyle = { background: 'var(--cms-bg-card)', borderColor: 'var(--cms-border)', color: 'var(--cms-text-muted)' };
+
   return (
-    <nav className="flex items-center justify-center gap-2 mt-8" aria-label="Pagination">
+    <nav className="flex flex-wrap items-center justify-center gap-1.5 mt-8" aria-label="Pagination">
       {currentPage > 1 ? (
-        <a
-          href={buildHref(currentPage - 1)}
-          className="px-3 py-1.5 text-sm font-medium border rounded no-underline hover:opacity-80 transition-opacity"
-          style={{ background: 'var(--cms-bg-card)', borderColor: 'var(--cms-border)', color: 'var(--cms-text)' }}
-        >
+        <a href={buildHref(currentPage - 1)} className={`${baseBtn} hover:opacity-80`} style={idleStyle}>
           ← 이전
         </a>
       ) : (
-        <span
-          className="px-3 py-1.5 text-sm font-medium border rounded opacity-40"
-          style={{ background: 'var(--cms-bg-card)', borderColor: 'var(--cms-border)', color: 'var(--cms-text-muted)' }}
-        >
+        <span className={`${baseBtn} opacity-40`} style={disabledStyle} aria-disabled="true">
           ← 이전
         </span>
       )}
-      <span className="px-3 py-1.5 text-sm font-bold" style={{ color: 'var(--cms-text)' }}>
-        {currentPage} / {totalPages}
-      </span>
+
+      {pages.map((p, i) =>
+        p === '…' ? (
+          <span key={`e${i}`} className="px-2 py-1.5 text-sm" style={{ color: 'var(--cms-text-muted)' }} aria-hidden="true">
+            …
+          </span>
+        ) : p === currentPage ? (
+          <span
+            key={p}
+            className={`${baseBtn} font-bold tabular-nums`}
+            style={activeStyle}
+            aria-current="page"
+          >
+            {p}
+          </span>
+        ) : (
+          <a
+            key={p}
+            href={buildHref(p)}
+            className={`${baseBtn} hover:opacity-80 tabular-nums`}
+            style={idleStyle}
+            aria-label={`${p} 페이지`}
+          >
+            {p}
+          </a>
+        )
+      )}
+
       {currentPage < totalPages ? (
-        <a
-          href={buildHref(currentPage + 1)}
-          className="px-3 py-1.5 text-sm font-medium border rounded no-underline hover:opacity-80 transition-opacity"
-          style={{ background: 'var(--cms-bg-card)', borderColor: 'var(--cms-border)', color: 'var(--cms-text)' }}
-        >
+        <a href={buildHref(currentPage + 1)} className={`${baseBtn} hover:opacity-80`} style={idleStyle}>
           다음 →
         </a>
       ) : (
-        <span
-          className="px-3 py-1.5 text-sm font-medium border rounded opacity-40"
-          style={{ background: 'var(--cms-bg-card)', borderColor: 'var(--cms-border)', color: 'var(--cms-text-muted)' }}
-        >
+        <span className={`${baseBtn} opacity-40`} style={disabledStyle} aria-disabled="true">
           다음 →
         </span>
       )}
