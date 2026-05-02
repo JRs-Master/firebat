@@ -760,13 +760,37 @@ export class FirebatCore {
       }
     }
     const res = await this.page.save(finalSlug, specStr);
-    if (res.success) this.event.notifySidebar();
+    if (res.success) {
+      this.event.notifySidebar();
+      // Episodic memory hook — page 발행 이벤트 자동 기록.
+      try {
+        const head = (specObj as any)?.head ?? {};
+        const project = (specObj as any)?.project;
+        const title = head?.title ?? finalSlug;
+        await this.episodic.saveEvent({
+          type: 'page_publish',
+          title: `페이지 발행: ${title}`,
+          who: 'core:savePage',
+          context: { slug: finalSlug, title, project, allowOverwrite: !!opts?.allowOverwrite },
+        });
+      } catch { /* episodic hook 실패는 page save 자체 영향 X */ }
+    }
     return res.success ? { success: true, data: { slug: finalSlug, renamed: false } } : { success: false, error: res.error };
   }
 
   async deletePage(slug: string) {
     const res = await this.page.delete(slug);
-    if (res.success) this.event.notifySidebar();
+    if (res.success) {
+      this.event.notifySidebar();
+      try {
+        await this.episodic.saveEvent({
+          type: 'page_delete',
+          title: `페이지 삭제: ${slug}`,
+          who: 'core:deletePage',
+          context: { slug },
+        });
+      } catch { /* hook 실패 무시 */ }
+    }
     return res;
   }
 
@@ -1252,6 +1276,25 @@ export class FirebatCore {
       this.statusMgr.error(job.id, result.error || 'Cron 실행 실패');
     }
     this.event.notifyCronComplete({ jobId: result.jobId, success: result.success, durationMs: result.durationMs, ...(result.error ? { error: result.error } : {}) });
+    // Episodic memory hook — cron 트리거 자동 기록 (성공·실패 모두).
+    try {
+      await this.episodic.saveEvent({
+        type: result.success ? 'cron_trigger' : 'cron_error',
+        title: `Cron: ${displayName} (${triggerLabel})`,
+        description: result.success ? undefined : (result.error || '실패'),
+        who: `cron:${info.jobId}`,
+        context: {
+          jobId: info.jobId,
+          trigger: info.trigger,
+          targetPath: info.targetPath,
+          hasPipeline: Boolean(info.pipeline?.length),
+          durationMs: result.durationMs,
+          stepsExecuted: result.stepsExecuted,
+          stepsTotal: result.stepsTotal,
+          success: result.success,
+        },
+      });
+    } catch { /* hook 실패 무시 */ }
     return result;
   }
 
@@ -1488,6 +1531,21 @@ export class FirebatCore {
       if (typeof res.data.costUsd === 'number' && res.data.costUsd > 0) {
         this.recordLlmCost({ model: res.data.modelId, costUsd: res.data.costUsd });
       }
+      // Episodic memory hook — image_gen 자동 기록.
+      try {
+        await this.episodic.saveEvent({
+          type: 'image_gen',
+          title: `이미지 생성: ${input.prompt.slice(0, 60)}`,
+          who: 'core:generateImage',
+          context: {
+            slug: res.data.slug,
+            model: res.data.modelId,
+            scope: input.scope ?? 'user',
+            promptPreview: input.prompt.slice(0, 200),
+            costUsd: res.data.costUsd,
+          },
+        });
+      } catch { /* hook 실패 무시 */ }
     } else {
       this.statusMgr.error(job.id, res.error || '이미지 생성 실패');
     }

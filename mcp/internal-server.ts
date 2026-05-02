@@ -820,5 +820,111 @@ arguments는 대상 도구의 inputSchema에 맞춰 작성.`,
     },
   );
 
+  // ── Episodic tier (Phase 2) ───────────────────────────────────────────────
+
+  server.tool(
+    'save_event',
+    `메모리 시스템 — 시간순 사건 저장. type / title 필수. entityNames 박으면 자동 entity 조회·생성 + m2m link.`,
+    {
+      type: z.string().describe('자유 분류 — cron_trigger / page_publish / transaction / image_gen / tool_call / user_action / analysis / alert / error'),
+      title: z.string().describe('짧은 요약'),
+      description: z.string().optional(),
+      who: z.string().optional().describe('user / ai / cron:{jobId} / sysmod:{name} 등'),
+      context: z.record(z.string(), z.unknown()).optional().describe('자유 메타 (JSON)'),
+      occurredAt: z.string().optional().describe('ISO 8601'),
+      entityNames: z.array(z.string()).optional(),
+      entityIds: z.array(z.number().int()).optional(),
+      ttlDays: z.number().int().optional(),
+    },
+    async (args) => {
+      const entityIds: number[] = Array.isArray(args.entityIds) ? [...args.entityIds] : [];
+      if (Array.isArray(args.entityNames)) {
+        for (const name of args.entityNames) {
+          if (!name?.trim()) continue;
+          const found = await core.findEntityByName(name);
+          if (found.success && found.data) {
+            entityIds.push(found.data.id);
+          } else {
+            const created = await core.saveEntity({ name, type: 'concept' });
+            if (created.success && created.data) entityIds.push(created.data.id);
+          }
+        }
+      }
+      let occurredAtMs: number | undefined;
+      if (args.occurredAt) {
+        const t = new Date(args.occurredAt).getTime();
+        if (Number.isFinite(t)) occurredAtMs = t;
+      }
+      const res = await core.saveEvent({
+        type: args.type,
+        title: args.title,
+        description: args.description,
+        who: args.who,
+        context: args.context,
+        occurredAt: occurredAtMs,
+        entityIds: entityIds.length > 0 ? entityIds : undefined,
+        ttlDays: args.ttlDays,
+      });
+      if (!res.success) return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: res.error }) }] };
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, eventId: res.data?.id, linkedEntities: entityIds.length }) }] };
+    },
+  );
+
+  server.tool(
+    'search_events',
+    `메모리 시스템 — Event 검색. semantic + type/who/entityName/시간범위 필터.`,
+    {
+      query: z.string().optional(),
+      type: z.string().optional(),
+      who: z.string().optional(),
+      entityName: z.string().optional(),
+      entityId: z.number().int().optional(),
+      occurredAfter: z.string().optional().describe('ISO 8601'),
+      occurredBefore: z.string().optional().describe('ISO 8601'),
+      limit: z.number().int().optional().describe('기본 50'),
+    },
+    async (args) => {
+      let resolvedEntityId = args.entityId;
+      if (!resolvedEntityId && args.entityName) {
+        const found = await core.findEntityByName(args.entityName);
+        if (found.success && found.data) resolvedEntityId = found.data.id;
+      }
+      const occurredAfterMs = args.occurredAfter ? new Date(args.occurredAfter).getTime() : undefined;
+      const occurredBeforeMs = args.occurredBefore ? new Date(args.occurredBefore).getTime() : undefined;
+      const res = await core.searchEvents({
+        query: args.query, type: args.type, who: args.who,
+        entityId: resolvedEntityId,
+        occurredAfter: Number.isFinite(occurredAfterMs) ? occurredAfterMs : undefined,
+        occurredBefore: Number.isFinite(occurredBeforeMs) ? occurredBeforeMs : undefined,
+        limit: args.limit,
+      });
+      if (!res.success) return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: res.error }) }] };
+      const matches = (res.data ?? []).map(e => ({
+        id: e.id, type: e.type, title: e.title, description: e.description, who: e.who,
+        context: e.context, occurredAt: new Date(e.occurredAt).toISOString(), entityIds: e.entityIds,
+      }));
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, matches, count: matches.length }) }] };
+    },
+  );
+
+  server.tool(
+    'list_recent_events',
+    `메모리 시스템 — 최근 events (occurredAt DESC). 운영 모니터링 / "오늘 무슨 일들이 있었지?".`,
+    {
+      type: z.string().optional(),
+      who: z.string().optional(),
+      limit: z.number().int().optional().describe('기본 20'),
+    },
+    async (args) => {
+      const res = await core.listRecentEvents({ type: args.type, who: args.who, limit: args.limit });
+      if (!res.success) return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: res.error }) }] };
+      const matches = (res.data ?? []).map(e => ({
+        id: e.id, type: e.type, title: e.title, description: e.description, who: e.who,
+        occurredAt: new Date(e.occurredAt).toISOString(), entityIds: e.entityIds,
+      }));
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, matches, count: matches.length }) }] };
+    },
+  );
+
   return server;
 }

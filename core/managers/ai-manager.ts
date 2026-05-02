@@ -614,6 +614,96 @@ export class AiManager {
         }));
         return { success: true, matches: facts, count: facts.length };
       },
+      // ── Episodic tier (Phase 2) ──────────────────────────────────────────
+      save_event: async (args, ctx) => {
+        const a = args as {
+          type: string; title: string; description?: string; who?: string;
+          context?: Record<string, unknown>; occurredAt?: string;
+          entityNames?: string[]; entityIds?: number[]; ttlDays?: number;
+        };
+        // entityNames → ID 자동 변환 (자동 생성 폴백)
+        const entityIds: number[] = Array.isArray(a.entityIds) ? [...a.entityIds] : [];
+        if (Array.isArray(a.entityNames)) {
+          for (const name of a.entityNames) {
+            if (!name?.trim()) continue;
+            const found = await this.core.findEntityByName(name);
+            if (found.success && found.data) {
+              entityIds.push(found.data.id);
+            } else {
+              const created = await this.core.saveEntity({ name, type: 'concept' });
+              if (created.success && created.data) entityIds.push(created.data.id);
+            }
+          }
+        }
+        let occurredAtMs: number | undefined;
+        if (a.occurredAt) {
+          const t = new Date(a.occurredAt).getTime();
+          if (Number.isFinite(t)) occurredAtMs = t;
+        }
+        const res = await this.core.saveEvent({
+          type: a.type,
+          title: a.title,
+          description: a.description,
+          who: a.who,
+          context: a.context,
+          occurredAt: occurredAtMs,
+          entityIds: entityIds.length > 0 ? entityIds : undefined,
+          sourceConvId: ctx.conversationId,
+          ttlDays: a.ttlDays,
+        });
+        if (!res.success) return { success: false, error: res.error };
+        return { success: true, eventId: res.data?.id, linkedEntities: entityIds.length };
+      },
+      search_events: async (args) => {
+        const a = args as {
+          query?: string; type?: string; who?: string;
+          entityName?: string; entityId?: number;
+          occurredAfter?: string; occurredBefore?: string; limit?: number;
+        };
+        let resolvedEntityId = a.entityId;
+        if (!resolvedEntityId && a.entityName) {
+          const found = await this.core.findEntityByName(a.entityName);
+          if (found.success && found.data) resolvedEntityId = found.data.id;
+        }
+        const occurredAfterMs = a.occurredAfter ? new Date(a.occurredAfter).getTime() : undefined;
+        const occurredBeforeMs = a.occurredBefore ? new Date(a.occurredBefore).getTime() : undefined;
+        const res = await this.core.searchEvents({
+          query: a.query,
+          type: a.type,
+          who: a.who,
+          entityId: resolvedEntityId,
+          occurredAfter: Number.isFinite(occurredAfterMs) ? occurredAfterMs : undefined,
+          occurredBefore: Number.isFinite(occurredBeforeMs) ? occurredBeforeMs : undefined,
+          limit: a.limit,
+        });
+        if (!res.success) return { success: false, error: res.error };
+        const matches = (res.data ?? []).map(e => ({
+          id: e.id,
+          type: e.type,
+          title: e.title,
+          description: e.description,
+          who: e.who,
+          context: e.context,
+          occurredAt: new Date(e.occurredAt).toISOString(),
+          entityIds: e.entityIds,
+        }));
+        return { success: true, matches, count: matches.length };
+      },
+      list_recent_events: async (args) => {
+        const a = args as { type?: string; who?: string; limit?: number };
+        const res = await this.core.listRecentEvents({ type: a.type, who: a.who, limit: a.limit });
+        if (!res.success) return { success: false, error: res.error };
+        const matches = (res.data ?? []).map(e => ({
+          id: e.id,
+          type: e.type,
+          title: e.title,
+          description: e.description,
+          who: e.who,
+          occurredAt: new Date(e.occurredAt).toISOString(),
+          entityIds: e.entityIds,
+        }));
+        return { success: true, matches, count: matches.length };
+      },
       search_history: async (args, ctx) => {
         const { query, limit, includeBlocks } = args as { query: string; limit?: number; includeBlocks?: boolean };
         const owner = ctx.owner ?? 'admin';
