@@ -141,6 +141,14 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'themeFont_body', label: '본문 폰트 stack (선택 override)', type: 'text', tab: '테마', placeholder: "'Inter', sans-serif", description: '외부 폰트 사용 시 본문 폰트 stack. 비우면 위 "폰트 세트" 프리셋 사용. 예: \"Inter, -apple-system, sans-serif\".' },
       { key: 'themeFont_heading', label: '제목 폰트 stack (선택 override)', type: 'text', tab: '테마', placeholder: "'Cal Sans', sans-serif", description: '제목 폰트 stack. 비우면 프리셋 사용.' },
       { key: 'themeFont_mono', label: 'Mono 폰트 stack (선택 override)', type: 'text', tab: '테마', placeholder: "'JetBrains Mono', monospace", description: '코드·등폭 폰트 stack. 비우면 프리셋 사용.' },
+      // ── Typography 토큰 (P2 디자인 깊이) — 폰트 사이즈 / line-height / letter-spacing.
+      // baseFontSize + scaleRatio 만 조정해도 h1~h6 자동 일관 변경. ──
+      { key: 'themeBaseFontSize', label: '본문 base 폰트 사이즈', type: 'text', tab: '테마', placeholder: '16px', description: '본문 폰트 크기 (px). h1~h6 가 이 값에서 ratio 로 derive. 16-18px 일반.' },
+      { key: 'themeScaleRatio', label: 'Typographic scale ratio', type: 'number', tab: '테마', placeholder: '1.25', description: '제목 크기 비율. 1.125 (Major Second 차분) / 1.2 (Minor Third) / 1.25 (Major Third 기본) / 1.333 (Perfect Fourth 강함). h1=base×ratio⁴.' },
+      { key: 'themeBodyLineHeight', label: '본문 line-height', type: 'number', tab: '테마', placeholder: '1.7', description: '본문 줄 간격 배수. 1.5-1.8 일반 (한국어 권장 1.7+).' },
+      { key: 'themeHeadingLineHeight', label: '제목 line-height', type: 'number', tab: '테마', placeholder: '1.25', description: '제목 줄 간격 배수. 1.0-1.5 (제목은 컴팩트).' },
+      { key: 'themeHeadingLetterSpacing', label: '제목 letter-spacing', type: 'text', tab: '테마', placeholder: '-0.01em', description: '제목 자간. CSS 값 (normal / -0.01em / -0.02em). 음수 = 모던 느낌.' },
+      { key: 'themeBodyLetterSpacing', label: '본문 letter-spacing', type: 'text', tab: '테마', placeholder: 'normal', description: '본문 자간. 보통 normal 또는 약간 양수 (0.01em).' },
       { key: 'themeH1Style', label: 'H1 (제목) 스타일', type: 'select', tab: '테마', description: 'h1 제목 디자인. plain (기본 텍스트) / border-bottom (밑줄) / border-left (좌측 accent 바) / underline / bold-bg (강조 박스) / accent-square (accent 사각형 prefix).', defaultValue: 'plain', options: [
         { value: 'plain', label: 'plain (단순)' },
         { value: 'border-bottom', label: 'border-bottom (밑줄)' },

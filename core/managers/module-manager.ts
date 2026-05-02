@@ -340,7 +340,7 @@ export class ModuleManager {
   private composeTheme(s: Record<string, any>): Partial<DesignTokens> | undefined {
     // 옛 형태 — s.theme 가 nested object 이면 그대로 반환 (호환)
     if (s.theme && typeof s.theme === 'object') return s.theme;
-    const theme: any = { layout: {}, colors: {}, fonts: {}, heading: {} };
+    const theme: any = { layout: {}, colors: {}, fonts: {}, heading: {}, typography: {} };
     // 색 프리셋 — 선택 시 colors 일괄 적용
     if (s.themePreset && COLOR_PRESETS[s.themePreset]) {
       theme.colors = { ...COLOR_PRESETS[s.themePreset].colors };
@@ -379,6 +379,26 @@ export class ModuleManager {
     if (s.themeH1Style && validStyles.includes(s.themeH1Style)) theme.heading.h1 = s.themeH1Style;
     if (s.themeH2Style && validStyles.includes(s.themeH2Style)) theme.heading.h2 = s.themeH2Style;
     if (s.themeH3Style && validStyles.includes(s.themeH3Style)) theme.heading.h3 = s.themeH3Style;
+    // Typography — base 폰트 사이즈 / scale / line-height / letter-spacing.
+    // XSS 방어 — `;{}<>` 차단 + 32자 한도 (CSS 값).
+    const cssGuard = (v: unknown): string | undefined => {
+      if (typeof v !== 'string') return undefined;
+      const t = v.trim();
+      if (!t || t.length > 32 || /[;{}<>]/.test(t)) return undefined;
+      return t;
+    };
+    const baseFontSize = cssGuard(s.themeBaseFontSize);
+    if (baseFontSize) theme.typography.baseFontSize = baseFontSize;
+    const ratio = typeof s.themeScaleRatio === 'number' ? s.themeScaleRatio : parseFloat(s.themeScaleRatio);
+    if (Number.isFinite(ratio) && ratio >= 1.0 && ratio <= 2.0) theme.typography.scaleRatio = ratio;
+    const bodyLh = typeof s.themeBodyLineHeight === 'number' ? s.themeBodyLineHeight : parseFloat(s.themeBodyLineHeight);
+    if (Number.isFinite(bodyLh) && bodyLh >= 1.0 && bodyLh <= 3.0) theme.typography.bodyLineHeight = bodyLh;
+    const headingLh = typeof s.themeHeadingLineHeight === 'number' ? s.themeHeadingLineHeight : parseFloat(s.themeHeadingLineHeight);
+    if (Number.isFinite(headingLh) && headingLh >= 0.8 && headingLh <= 2.0) theme.typography.headingLineHeight = headingLh;
+    const headingLs = cssGuard(s.themeHeadingLetterSpacing);
+    if (headingLs) theme.typography.headingLetterSpacing = headingLs;
+    const bodyLs = cssGuard(s.themeBodyLetterSpacing);
+    if (bodyLs) theme.typography.bodyLetterSpacing = bodyLs;
     return theme;
   }
 

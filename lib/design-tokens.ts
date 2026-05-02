@@ -64,6 +64,24 @@ export interface LayoutTokens {
   radius: string;
 }
 
+/** Typography Tokens — 폰트 사이즈 / line-height / letter-spacing 일관 통제.
+ *  baseFontSize + scaleRatio 로 h1~h6 자동 derive — 사용자가 base/ratio 만 조정해도
+ *  전체 typography 일관 변경. 데스크톱·모바일 둘 다 같은 derived 값 (단일 값, 미디어 쿼리 X). */
+export interface TypographyTokens {
+  /** 본문 base 폰트 사이즈 (px 단위). 16-18px 일반. h1~h6 가 이 값에서 ratio 로 derive. */
+  baseFontSize: string;
+  /** typographic scale ratio. 1.125 (Major Second) ~ 1.333 (Perfect Fourth) 일반. h1=base×ratio^4. */
+  scaleRatio: number;
+  /** 본문 line-height 배수 (ex: 1.7). */
+  bodyLineHeight: number;
+  /** 제목 line-height 배수 (ex: 1.25 — 짧고 컴팩트). */
+  headingLineHeight: number;
+  /** 제목 letter-spacing (CSS 값: 'normal', '-0.01em', '-0.02em' 등). 보통 negative 가 모던 느낌. */
+  headingLetterSpacing: string;
+  /** 본문 letter-spacing (보통 'normal' 또는 약간 양수). */
+  bodyLetterSpacing: string;
+}
+
 /** Heading 스타일 6 옵션 — h1/h2/h3 각자 별도 적용 가능. */
 export type HeadingStyle =
   | 'plain'           // 기본 — 단순 텍스트
@@ -84,6 +102,7 @@ export interface DesignTokens {
   fonts: FontTokens;
   layout: LayoutTokens;
   heading: HeadingTokens;
+  typography: TypographyTokens;
 }
 
 // ── 색 프리셋 10개 (Light 7 + Dark 3) ─────────────────────────────────────────
@@ -261,6 +280,14 @@ export const DEFAULT_TOKENS: DesignTokens = {
     h2: 'border-left',
     h3: 'plain',
   },
+  typography: {
+    baseFontSize: '16px',
+    scaleRatio: 1.25,
+    bodyLineHeight: 1.7,
+    headingLineHeight: 1.25,
+    headingLetterSpacing: '-0.01em',
+    bodyLetterSpacing: 'normal',
+  },
 };
 
 // ── CSS var 변환 유틸 ────────────────────────────────────────────────────────
@@ -269,6 +296,20 @@ export const DEFAULT_TOKENS: DesignTokens = {
  *  globals.css 의 :root 또는 .firebat-cms-block 에 inject 용. */
 export function tokensToCss(tokens: DesignTokens): string {
   const t = tokens;
+  // Typography scale 자동 derive — base × ratio^N. CSS 는 거듭제곱 미지원이라 JS pre-compute.
+  const baseNum = parseFloat(t.typography.baseFontSize) || 16;
+  const ratio = Math.max(1.0, Math.min(2.0, t.typography.scaleRatio || 1.25));
+  const r1 = ratio;
+  const r2 = ratio * ratio;
+  const r3 = r2 * ratio;
+  const r4 = r3 * ratio;
+  const round = (n: number) => `${Math.round(n * 100) / 100}px`;
+  const h1 = round(baseNum * r4);
+  const h2 = round(baseNum * r3);
+  const h3 = round(baseNum * r2);
+  const h4 = round(baseNum * r1);
+  const h5 = round(baseNum);
+  const h6 = round(baseNum * 0.875);
   return `
     --cms-primary: ${t.colors.primary};
     --cms-accent: ${t.colors.accent};
@@ -290,6 +331,17 @@ export function tokensToCss(tokens: DesignTokens): string {
     --cms-padding-tablet: ${t.layout.paddingTablet};
     --cms-padding-desktop: ${t.layout.paddingDesktop};
     --cms-radius: ${t.layout.radius};
+    --cms-text-base: ${t.typography.baseFontSize};
+    --cms-text-h1: ${h1};
+    --cms-text-h2: ${h2};
+    --cms-text-h3: ${h3};
+    --cms-text-h4: ${h4};
+    --cms-text-h5: ${h5};
+    --cms-text-h6: ${h6};
+    --cms-line-body: ${t.typography.bodyLineHeight};
+    --cms-line-heading: ${t.typography.headingLineHeight};
+    --cms-letter-body: ${t.typography.bodyLetterSpacing};
+    --cms-letter-heading: ${t.typography.headingLetterSpacing};
   `.trim();
 }
 
@@ -302,5 +354,6 @@ export function mergeTokens(partial?: Partial<DesignTokens>): DesignTokens {
     fonts: { ...DEFAULT_TOKENS.fonts, ...(partial.fonts ?? {}) },
     layout: { ...DEFAULT_TOKENS.layout, ...(partial.layout ?? {}) },
     heading: { ...DEFAULT_TOKENS.heading, ...(partial.heading ?? {}) },
+    typography: { ...DEFAULT_TOKENS.typography, ...(partial.typography ?? {}) },
   };
 }

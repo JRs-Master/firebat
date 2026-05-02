@@ -357,3 +357,56 @@ html::-webkit-scrollbar-thumb:hover,
 .firebat-cms-content {
   scrollbar-color: var(--cms-border) transparent;
 }
+
+/* ── CMS Typography Tokens (P2 디자인 깊이) ──
+   .firebat-cms-content scope 의 h1..h6 / p / li 에 사용자 typography 토큰 적용.
+   HeaderComp 가 weights 만 박고 사이즈는 여기서 토큰 derive. 사용자가 baseFontSize +
+   scaleRatio 조정하면 모든 heading 자동 일관 변경. */
+.firebat-cms-content {
+  font-size: var(--cms-text-base);
+  line-height: var(--cms-line-body);
+  letter-spacing: var(--cms-letter-body);
+  color: var(--cms-text);
+}
+.firebat-cms-content h1 {
+  font-size: var(--cms-text-h1);
+  line-height: var(--cms-line-heading);
+  letter-spacing: var(--cms-letter-heading);
+  color: var(--cms-text);
+  font-family: var(--cms-font-heading);
+}
+.firebat-cms-content h2 {
+  font-size: var(--cms-text-h2);
+  line-height: var(--cms-line-heading);
+  letter-spacing: var(--cms-letter-heading);
+  color: var(--cms-text);
+  font-family: var(--cms-font-heading);
+}
+.firebat-cms-content h3 {
+  font-size: var(--cms-text-h3);
+  line-height: var(--cms-line-heading);
+  letter-spacing: var(--cms-letter-heading);
+  color: var(--cms-text);
+  font-family: var(--cms-font-heading);
+}
+.firebat-cms-content h4 {
+  font-size: var(--cms-text-h4);
+  line-height: var(--cms-line-heading);
+  letter-spacing: var(--cms-letter-heading);
+  color: var(--cms-text);
+  font-family: var(--cms-font-heading);
+}
+.firebat-cms-content h5 {
+  font-size: var(--cms-text-h5);
+  line-height: var(--cms-line-heading);
+  letter-spacing: var(--cms-letter-heading);
+  color: var(--cms-text);
+  font-family: var(--cms-font-heading);
+}
+.firebat-cms-content h6 {
+  font-size: var(--cms-text-h6);
+  line-height: var(--cms-line-heading);
+  letter-spacing: var(--cms-letter-heading);
+  color: var(--cms-text);
+  font-family: var(--cms-font-heading);
+}

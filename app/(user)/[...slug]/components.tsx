@@ -92,16 +92,18 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
 // ── Header ──────────────────────────────────────────────────────────────────
 function HeaderComp({ text, level = 1, align }: { text: string; level?: number; align?: 'left' | 'right' | 'center' }) {
   const clampedLevel = Math.min(Math.max(level, 1), 6);
-  const sizes: Record<number, string> = {
-    1: 'text-3xl sm:text-4xl font-extrabold',
-    2: 'text-2xl sm:text-3xl font-bold',
-    3: 'text-xl sm:text-2xl font-bold',
-    4: 'text-lg sm:text-xl font-semibold',
-    5: 'text-base font-semibold',
-    6: 'text-sm font-semibold',
+  // 폰트 사이즈/line-height/letter-spacing 은 globals.css 의 .firebat-cms-content h1..h6 토큰 rule 이 적용.
+  // weights 만 컴포넌트 차원에서 명시 (heading 별 강도). 색·정렬은 토큰/className.
+  const weights: Record<number, string> = {
+    1: 'font-extrabold',
+    2: 'font-bold',
+    3: 'font-bold',
+    4: 'font-semibold',
+    5: 'font-semibold',
+    6: 'font-semibold',
   };
   const alignCls = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : '';
-  const cls = `${sizes[clampedLevel] ?? sizes[1]} text-gray-900 leading-tight ${alignCls}`;
+  const cls = `${weights[clampedLevel] ?? weights[1]} ${alignCls}`;
   const clean = cleanPlainText(text);
   if (clampedLevel === 1) return <h1 className={cls}>{clean}</h1>;
   if (clampedLevel === 2) return <h2 className={cls}>{clean}</h2>;
