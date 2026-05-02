@@ -47,13 +47,14 @@ export interface FooterConfig {
   columns: FooterColumn[];
 }
 
-/** Sidebar 위치 모드 — GP/Astra 식 4종 (both-sidebar 는 v1.x 추후).
+/** Sidebar 위치 모드 — GP/Astra 식 5종.
  *  full: sidebar 없음 (본문 풀폭)
  *  right-sidebar: 본문 좌, sidebar 우
  *  left-sidebar: sidebar 좌, 본문 우
+ *  both-sidebar: 좌 sidebar + 본문 + 우 sidebar (양쪽 같은 SidebarConfig 사용)
  *  boxed: sidebar 없음 + 본문 boxed (좁은 max-width + 테두리·그림자)
  *  모바일 (<1024px) 에서는 자동 stacked — sidebar 가 본문 아래로. */
-export type LayoutMode = 'full' | 'right-sidebar' | 'left-sidebar' | 'boxed';
+export type LayoutMode = 'full' | 'right-sidebar' | 'left-sidebar' | 'both-sidebar' | 'boxed';
 
 export interface SidebarConfig {
   /** 검색 박스 위젯 — /search 로 GET. */

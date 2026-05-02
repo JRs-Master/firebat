@@ -216,7 +216,8 @@ html::-webkit-scrollbar-thumb:hover,
   /* 사이드바 없음 — 기존 firebat-cms-content 그대로 */
 }
 .firebat-cms-layout-right-sidebar,
-.firebat-cms-layout-left-sidebar {
+.firebat-cms-layout-left-sidebar,
+.firebat-cms-layout-both-sidebar {
   display: grid;
   gap: 32px;
   max-width: var(--cms-content-max-width);
@@ -233,6 +234,10 @@ html::-webkit-scrollbar-thumb:hover,
 .firebat-cms-layout-left-sidebar {
   grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
 }
+.firebat-cms-layout-both-sidebar {
+  /* 양쪽 사이드바 — 좁은 사이드바(240px) + 본문 + 좁은 사이드바(240px). 본문 영역 충분히 확보. */
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(220px, 260px);
+}
 .firebat-cms-layout-boxed {
   /* boxed — max-width 좁고 테두리·그림자 */
   max-width: min(900px, 100%);
@@ -245,7 +250,8 @@ html::-webkit-scrollbar-thumb:hover,
 }
 @media (min-width: 640px) {
   .firebat-cms-layout-right-sidebar,
-  .firebat-cms-layout-left-sidebar {
+  .firebat-cms-layout-left-sidebar,
+  .firebat-cms-layout-both-sidebar {
     padding-left: var(--cms-padding-tablet);
     padding-right: var(--cms-padding-tablet);
     padding-top: 48px;
@@ -254,7 +260,8 @@ html::-webkit-scrollbar-thumb:hover,
 }
 @media (min-width: 1024px) {
   .firebat-cms-layout-right-sidebar,
-  .firebat-cms-layout-left-sidebar {
+  .firebat-cms-layout-left-sidebar,
+  .firebat-cms-layout-both-sidebar {
     padding-left: var(--cms-padding-desktop);
     padding-right: var(--cms-padding-desktop);
   }
@@ -262,7 +269,8 @@ html::-webkit-scrollbar-thumb:hover,
 /* 모바일/태블릿 (<1024px) — sidebar grid 해제 → stacked (sidebar 가 본문 아래) */
 @media (max-width: 1023px) {
   .firebat-cms-layout-right-sidebar,
-  .firebat-cms-layout-left-sidebar {
+  .firebat-cms-layout-left-sidebar,
+  .firebat-cms-layout-both-sidebar {
     grid-template-columns: 1fr;
   }
 }

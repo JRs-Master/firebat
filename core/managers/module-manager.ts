@@ -305,7 +305,7 @@ export class ModuleManager {
         ? s.layoutRelatedPostsCount
         : (parseInt(s.layoutRelatedPostsCount) || 5),
       showReadingProgress: s.layoutShowReadingProgress === true,
-      mode: (['full', 'right-sidebar', 'left-sidebar', 'boxed'].includes(s.layoutMode) ? s.layoutMode : 'full'),
+      mode: (['full', 'right-sidebar', 'left-sidebar', 'both-sidebar', 'boxed'].includes(s.layoutMode) ? s.layoutMode : 'full'),
       sidebar: {
         showSearchBox: s.sidebarShowSearchBox === true,
         showRecentPosts: s.sidebarShowRecentPosts !== false, // 기본 true

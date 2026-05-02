@@ -74,14 +74,15 @@ export default async function UserLayout({ children }: { children: React.ReactNo
       {seo.adsense.publisherId && seo.adsense.slotPostTop && (
         <CmsAdSlot publisherId={seo.adsense.publisherId} slotId={seo.adsense.slotPostTop} />
       )}
-      {/* Layout Mode 4종 — full / right-sidebar / left-sidebar / boxed.
+      {/* Layout Mode 5종 — full / right-sidebar / left-sidebar / both-sidebar / boxed.
        *  full / boxed: children 만 (sidebar 없음). boxed 는 wrapper class 만 추가.
-       *  right/left-sidebar: grid 컬럼에 children + CmsSidebar. 모바일은 stacked. */}
-      {(seo.layout.mode === 'right-sidebar' || seo.layout.mode === 'left-sidebar') ? (
+       *  right/left-sidebar: grid 2컬럼. both-sidebar: grid 3컬럼 (좌 + 본문 + 우, 같은 SidebarConfig).
+       *  모바일 (<1024px) 은 자동 stacked. */}
+      {(seo.layout.mode === 'right-sidebar' || seo.layout.mode === 'left-sidebar' || seo.layout.mode === 'both-sidebar') ? (
         <div className={`firebat-cms-layout-${seo.layout.mode}`}>
-          {seo.layout.mode === 'left-sidebar' && (await CmsSidebar({ sidebar: seo.layout.sidebar }))}
+          {(seo.layout.mode === 'left-sidebar' || seo.layout.mode === 'both-sidebar') && (await CmsSidebar({ sidebar: seo.layout.sidebar }))}
           <div>{children}</div>
-          {seo.layout.mode === 'right-sidebar' && (await CmsSidebar({ sidebar: seo.layout.sidebar }))}
+          {(seo.layout.mode === 'right-sidebar' || seo.layout.mode === 'both-sidebar') && (await CmsSidebar({ sidebar: seo.layout.sidebar }))}
         </div>
       ) : seo.layout.mode === 'boxed' ? (
         <div className="firebat-cms-layout-boxed">{children}</div>

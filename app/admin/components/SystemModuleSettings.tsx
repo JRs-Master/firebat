@@ -98,10 +98,11 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'layoutShowRelatedPosts', label: '관련 글 추천', type: 'toggle', tab: '레이아웃', description: '콘텐츠 페이지(project 박힌) 본문 끝에 head.keywords 기반 매칭 글 list 표시. score = 공유 keyword 개수. 키워드 0건 또는 매칭 0건이면 자동 미표시. 기본 ON.', defaultValue: true },
       { key: 'layoutRelatedPostsCount', label: '관련 글 개수', type: 'number', tab: '레이아웃', placeholder: '5', description: '관련 글 표시 개수 (top N). 빈도 동률 시 updatedAt 최신 우선.', defaultValue: 5 },
       // ── Sidebar 레이아웃 ──
-      { key: 'layoutMode', label: '본문 + 사이드바 모드', type: 'select', tab: '레이아웃', description: '본문 영역과 사이드바 배치. full = 사이드바 없음 / right = 우측 사이드바 / left = 좌측 사이드바 / boxed = 사이드바 없음 + 본문 boxed (좁은 max-width + 테두리·그림자). 모바일에선 자동 stacked.', defaultValue: 'full', options: [
+      { key: 'layoutMode', label: '본문 + 사이드바 모드', type: 'select', tab: '레이아웃', description: '본문 영역과 사이드바 배치. full = 사이드바 없음 / right = 우측 사이드바 / left = 좌측 사이드바 / both = 양쪽 사이드바 (같은 위젯 양쪽 표시) / boxed = 사이드바 없음 + 본문 boxed (좁은 max-width + 테두리·그림자). 모바일에선 자동 stacked.', defaultValue: 'full', options: [
         { value: 'full', label: 'Full — 사이드바 없음 (기본)' },
         { value: 'right-sidebar', label: 'Right Sidebar — 우측 사이드바' },
         { value: 'left-sidebar', label: 'Left Sidebar — 좌측 사이드바' },
+        { value: 'both-sidebar', label: 'Both Sidebar — 양쪽 사이드바' },
         { value: 'boxed', label: 'Boxed — 사이드바 없음 + 본문 boxed' },
       ] },
       { key: 'sidebarShowSearchBox', label: '사이드바 — 검색 박스', type: 'toggle', tab: '레이아웃', description: '사이드바에 검색 입력창 표시. /search 로 GET. 헤더 검색 아이콘과 별개로 사이드바에도 노출.', defaultValue: false },
