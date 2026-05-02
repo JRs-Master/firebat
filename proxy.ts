@@ -64,9 +64,20 @@ export function proxy(request: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  // 모든 user 페이지 응답에 pathname header 박음 — (user)/layout.tsx 가 spec 의
+  // head.layoutMode override 결정하기 위해 사용. /admin /api 는 layout 무관해도 영향 0.
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set('x-firebat-pathname', pathname);
+  return NextResponse.next({ request: { headers: requestHeaders } });
 }
 
 export const config = {
-  matcher: ['/admin/:path*', '/login', '/api/:path*'],
+  // (user) layout 의 page-level override 를 위해 모든 페이지 매칭. _next/static 등은 제외.
+  matcher: [
+    '/admin/:path*',
+    '/login',
+    '/api/:path*',
+    // 페이지 라우트 — _next, /static, 파일 확장자 (favicon.ico, *.png 등) 제외
+    '/((?!_next/|api/|.*\\.[a-z0-9]+$).*)',
+  ],
 };

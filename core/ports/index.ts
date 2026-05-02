@@ -109,6 +109,10 @@ export interface PageHead {
   meta?: Array<{ name?: string; property?: string; content: string }>;
   scripts?: Array<{ src: string; async?: boolean; crossorigin?: string; 'data-ad-client'?: string }>;
   styles?: Array<{ href: string }>;
+  /** Layout 페이지별 override — 글로벌 layoutMode 무시하고 이 페이지만 다른 모드.
+   *  사용 예: 글로벌은 right-sidebar 인데 hero 풀폭 페이지만 'full' / 단일 글 'boxed' 등.
+   *  미설정 시 글로벌 cms layout.mode 사용. */
+  layoutMode?: 'full' | 'right-sidebar' | 'left-sidebar' | 'both-sidebar' | 'boxed';
 }
 
 /** PageSpec 컴포넌트 (discriminated union) */
