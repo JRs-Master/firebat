@@ -164,7 +164,9 @@ export function CmsPagination({ basePath, currentPage, totalPages }: {
   totalPages: number;
 }) {
   if (totalPages <= 1) return null;
-  const buildHref = (page: number) => `${basePath}?page=${page}`;
+  // basePath 에 이미 ? 가 있으면 & 로 연결, 없으면 ? 로 시작 — `/search?q=foo` 같은 케이스 자연 처리.
+  const sep = basePath.includes('?') ? '&' : '?';
+  const buildHref = (page: number) => `${basePath}${sep}page=${page}`;
   const pages = buildPageList(currentPage, totalPages);
 
   const baseBtn = 'px-3 py-1.5 text-sm font-medium border rounded no-underline transition-opacity';

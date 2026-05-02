@@ -24,6 +24,11 @@ export class PageManager {
     return this.database.listPages();
   }
 
+  /** 검색 — title/description/project/본문 텍스트 매칭. private 페이지 제외. */
+  async search(query: string, limit?: number) {
+    return this.database.searchPages(query, limit);
+  }
+
   async get(slug: string) {
     return this.database.getPage(slug);
   }

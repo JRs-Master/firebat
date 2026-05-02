@@ -48,6 +48,8 @@ export function proxy(request: NextRequest) {
   if (pathname.match(/^\/api\/share\/[^/]+$/) && request.method === 'GET') return NextResponse.next();
   // Health check — 외부 모니터링(UptimeRobot 등)이 토큰 없이 접근. 응답에 민감정보 미노출.
   if (pathname === '/api/health' && request.method === 'GET') return NextResponse.next();
+  // 사이트 내 검색 — 사용자 페이지 접근, 토큰 없이 호출. private 페이지는 DB 레벨에서 제외.
+  if (pathname === '/api/search' && request.method === 'GET') return NextResponse.next();
   // Telegram webhook — 텔레그램 Bot API 가 호출. X-Telegram-Bot-Api-Secret-Token 헤더로 자체 검증.
   if (pathname === '/api/telegram/webhook' && request.method === 'POST') return NextResponse.next();
   // 사이트 소유권 인증 파일 — Google/AdSense/Naver/Bing crawler 가 토큰 없이 접근.

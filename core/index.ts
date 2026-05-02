@@ -711,6 +711,7 @@ export class FirebatCore {
   // ══════════════════════════════════════════════════════════════════════════
 
   async listPages() { return this.page.list(); }
+  async searchPages(query: string, limit?: number) { return this.page.search(query, limit); }
   async getPage(slug: string) { return this.page.get(slug); }
 
   /** spec 은 string (JSON) 이든 object 든 받음 — Core facade 에서 canonical JSON 으로 정규화.

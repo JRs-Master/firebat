@@ -33,20 +33,30 @@ export function CmsHeader({ header }: { header: HeaderConfig }) {
               {header.siteName}
             </span>
           </a>
-          {header.navLinks.length > 0 && (
-            <nav className="flex items-center gap-3 sm:gap-5 flex-wrap">
-              {header.navLinks.map((link, i) => (
-                <a
-                  key={i}
-                  href={link.href}
-                  className="text-[13px] sm:text-sm font-medium hover:opacity-70 transition-opacity no-underline"
-                  style={{ color: 'var(--cms-text)' }}
-                >
-                  {link.label}
-                </a>
-              ))}
-            </nav>
-          )}
+          <nav className="flex items-center gap-3 sm:gap-5 flex-wrap">
+            {header.navLinks.map((link, i) => (
+              <a
+                key={i}
+                href={link.href}
+                className="text-[13px] sm:text-sm font-medium hover:opacity-70 transition-opacity no-underline"
+                style={{ color: 'var(--cms-text)' }}
+              >
+                {link.label}
+              </a>
+            ))}
+            <a
+              href="/search"
+              aria-label="검색"
+              title="검색"
+              className="flex items-center justify-center hover:opacity-70 transition-opacity no-underline p-1 -m-1"
+              style={{ color: 'var(--cms-text)' }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+            </a>
+          </nav>
         </div>
       </div>
     </header>

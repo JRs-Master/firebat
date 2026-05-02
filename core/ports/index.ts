@@ -653,6 +653,8 @@ export interface IDatabasePort {
   listPagesByProject(project: string): Promise<InfraResult<string[]>>;
   /** 프로젝트 단위 일괄 삭제 */
   deletePagesByProject(project: string): Promise<InfraResult<string[]>>;
+  /** 페이지 검색 — title / description / project / 본문 텍스트(spec JSON) 매칭. 공개 페이지만 (visibility != private). */
+  searchPages(query: string, limit?: number): Promise<InfraResult<PageListItem[]>>;
   /** 페이지 visibility 설정 */
   setPageVisibility(slug: string, visibility: 'public' | 'password' | 'private', password?: string): Promise<InfraResult<void>>;
   /** 페이지 비밀번호 검증 */

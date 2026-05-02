@@ -269,6 +269,42 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
     }
   }
 
+  /** 페이지 검색 — title / description / project / 본문 텍스트 매칭.
+   *  spec 컬럼 LIKE 매칭 — JSON 안의 title/description/본문 텍스트 모두 자연 매칭.
+   *  visibility=private 제외 (검색 누출 방지). password 페이지는 포함 (검색 결과 → 클릭 시 게이트). */
+  async searchPages(query: string, limit: number = 50): Promise<InfraResult<PageListItem[]>> {
+    try {
+      const trimmed = (query ?? '').trim();
+      if (!trimmed) return { success: true, data: [] };
+      // SQL injection 방지 — bound parameter + LIKE wildcard escape
+      const escaped = trimmed.replace(/[\\%_]/g, m => `\\${m}`);
+      const pattern = `%${escaped}%`;
+      const rows = this.db.prepare(
+        `SELECT slug, status, spec, visibility, updated_at as updatedAt
+         FROM pages
+         WHERE (visibility IS NULL OR visibility != 'private')
+           AND (slug LIKE ? ESCAPE '\\' OR project LIKE ? ESCAPE '\\' OR spec LIKE ? ESCAPE '\\')
+         ORDER BY updated_at DESC
+         LIMIT ?`
+      ).all(pattern, pattern, pattern, limit) as Array<{ slug: string; status: string; spec: string; visibility: string | null; updatedAt: string }>;
+      const toVisibility = (v: string | null): 'public' | 'password' | 'private' => {
+        if (v === 'password' || v === 'private') return v;
+        return 'public';
+      };
+      const list: PageListItem[] = rows.map(r => {
+        try {
+          const parsed = JSON.parse(r.spec);
+          return { slug: r.slug, status: r.status, title: parsed.head?.title ?? r.slug, project: parsed.project ?? undefined, visibility: toVisibility(r.visibility), updatedAt: r.updatedAt };
+        } catch {
+          return { slug: r.slug, status: r.status, title: r.slug, project: undefined, visibility: toVisibility(r.visibility), updatedAt: r.updatedAt };
+        }
+      });
+      return { success: true, data: list };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  }
+
   /** 특정 프로젝트에 속한 페이지 slug 목록 */
   async listPagesByProject(project: string): Promise<InfraResult<string[]>> {
     try {
