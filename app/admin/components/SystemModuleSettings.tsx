@@ -130,13 +130,17 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       // ── 테마 — 색·폰트·layout 토큰. 사용자 변경 즉시 모든 페이지 반영 (CSS var). ──
       { key: 'themePreset', label: '색 프리셋', type: 'color-presets', tab: '테마', description: '클릭 한 번으로 primary/accent/up/down/text/배경/테두리 색 일괄 변경. Light 7 + Dark 3 = 10 프리셋.', defaultValue: 'slate-pro' },
       { key: '__themeColorOverrides', label: '색 개별 편집 (선택)', type: 'color-overrides', tab: '테마', description: '프리셋 위에 색을 개별 변경하고 싶을 때만 입력. 빈 값 = 프리셋 그대로. 변경한 색만 덮어씀.' },
-      { key: 'themeFont', label: '폰트 세트', type: 'select', tab: '테마', description: '본문·제목 폰트 통합 변경. Pretendard Variable (한글 최적, 기본) / Noto Sans KR / Inter / Geist / Cal Sans.', defaultValue: 'pretendard', options: [
+      { key: 'themeFont', label: '폰트 세트', type: 'select', tab: '테마', description: '본문·제목 폰트 통합 변경. Pretendard Variable (한글 최적, 기본) / Noto Sans KR / Inter / Geist / Cal Sans. 외부 폰트 사용은 아래 "외부 폰트 CSS URL" + "폰트 stack" 활용.', defaultValue: 'pretendard', options: [
         { value: 'pretendard', label: 'Pretendard Variable (한글, 기본)' },
         { value: 'noto-sans-kr', label: 'Noto Sans KR' },
         { value: 'inter', label: 'Inter (라틴)' },
         { value: 'geist', label: 'Geist (모노크롬)' },
         { value: 'cal-sans', label: 'Cal Sans (제목 강조)' },
       ] },
+      { key: 'customFontUrls', label: '외부 폰트 CSS URL', type: 'textarea', tab: '테마', placeholder: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap', description: 'Google Fonts / Adobe Fonts 등 외부 폰트 CSS URL. 줄바꿈 또는 콤마로 여러 URL 박을 수 있음. https:// 만 허용. layout 의 head 에 link rel=stylesheet 자동 inject.' },
+      { key: 'themeFont_body', label: '본문 폰트 stack (선택 override)', type: 'text', tab: '테마', placeholder: "'Inter', sans-serif", description: '외부 폰트 사용 시 본문 폰트 stack. 비우면 위 "폰트 세트" 프리셋 사용. 예: \"Inter, -apple-system, sans-serif\".' },
+      { key: 'themeFont_heading', label: '제목 폰트 stack (선택 override)', type: 'text', tab: '테마', placeholder: "'Cal Sans', sans-serif", description: '제목 폰트 stack. 비우면 프리셋 사용.' },
+      { key: 'themeFont_mono', label: 'Mono 폰트 stack (선택 override)', type: 'text', tab: '테마', placeholder: "'JetBrains Mono', monospace", description: '코드·등폭 폰트 stack. 비우면 프리셋 사용.' },
       { key: 'themeH1Style', label: 'H1 (제목) 스타일', type: 'select', tab: '테마', description: 'h1 제목 디자인. plain (기본 텍스트) / border-bottom (밑줄) / border-left (좌측 accent 바) / underline / bold-bg (강조 박스) / accent-square (accent 사각형 prefix).', defaultValue: 'plain', options: [
         { value: 'plain', label: 'plain (단순)' },
         { value: 'border-bottom', label: 'border-bottom (밑줄)' },

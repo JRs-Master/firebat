@@ -86,6 +86,12 @@ export default async function UserLayout({ children }: { children: React.ReactNo
 
   return (
     <>
+      {/* 외부 폰트 CSS — Google Fonts / Adobe Fonts 등 사용자 입력 URL.
+       *  parseCustomFontUrls 가 https://만 허용 (XSS 방어). preconnect 자동 박지 않음 — 사용자가
+       *  필요시 head 스크립트에 별도 추가 가능. */}
+      {seo.customFontUrls.map((url, i) => (
+        <link key={i} rel="stylesheet" href={url} />
+      ))}
       {/* Design Tokens — 사용자 설정 토큰을 :root 에 inject. globals.css default override. */}
       <style dangerouslySetInnerHTML={{ __html: themeCss + pageOverrideCss }} />
       {jsonLd && (

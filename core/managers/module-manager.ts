@@ -215,6 +215,10 @@ export class ModuleManager {
     /** Design Tokens — 색·폰트·레이아웃·heading 스타일 통합. 22 컴포넌트 일관 적용.
      *  미설정 시 lib/design-tokens.ts 의 DEFAULT_TOKENS (Slate Pro + Pretendard + 1200px). */
     theme: DesignTokens;
+    /** 외부 폰트 CSS URL — Google Fonts / Adobe Fonts 등. 줄바꿈으로 여러 URL 박을 수 있음.
+     *  layout.tsx 가 head 에 link rel=stylesheet 자동 inject. 비우면 미주입.
+     *  사용 예: https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap */
+    customFontUrls: string[];
     /** Layout 시스템 — header / footer (Phase 4). 사용자 페이지 본문 위·아래에 자연 렌더.
      *  미설정 시 DEFAULT_LAYOUT (헤더·푸터 둘 다 표시, 단순 텍스트 로고). */
     layout: LayoutConfig;
@@ -263,6 +267,7 @@ export class ModuleManager {
       adsTxt: s.adsTxt ?? '',
       verifications: this.resolveVerifications(s),
       theme: mergeTokens(this.composeTheme(s)),
+      customFontUrls: this.parseCustomFontUrls(s.customFontUrls),
       layout: this.composeLayout(s),
       tagAliases: parseTagAliases(s.tagAliases),
       adsense: {
@@ -353,6 +358,16 @@ export class ModuleManager {
     if (s.themeFont && FONT_PRESETS[s.themeFont]) {
       theme.fonts = { ...FONT_PRESETS[s.themeFont] };
     }
+    // 폰트 stack 개별 override — 사용자가 Google Fonts / Adobe Fonts 의 stack 직접 박은 경우
+    // 프리셋 위에 override. 예: "Roboto, sans-serif". XSS 방어 — `;{}<>` 차단 + 256자 한도.
+    const fontKeys = ['body', 'heading', 'mono'] as const;
+    for (const k of fontKeys) {
+      const overrideKey = `themeFont_${k}`;
+      const v = s[overrideKey];
+      if (typeof v === 'string' && v.trim() && !/[;{}<>]/.test(v) && v.length < 256) {
+        theme.fonts[k] = v.trim();
+      }
+    }
     // 레이아웃 — 개별 필드
     if (s.themeContentMaxWidth) theme.layout.contentMaxWidth = s.themeContentMaxWidth;
     if (s.themePaddingMobile) theme.layout.paddingMobile = s.themePaddingMobile;
@@ -365,6 +380,14 @@ export class ModuleManager {
     if (s.themeH2Style && validStyles.includes(s.themeH2Style)) theme.heading.h2 = s.themeH2Style;
     if (s.themeH3Style && validStyles.includes(s.themeH3Style)) theme.heading.h3 = s.themeH3Style;
     return theme;
+  }
+
+  /** 외부 폰트 URL 파싱 — 줄바꿈 또는 콤마로 여러 URL 허용. https:// 만 허용 (XSS 방어). */
+  private parseCustomFontUrls(raw: unknown): string[] {
+    if (typeof raw !== 'string' || !raw.trim()) return [];
+    return raw.split(/[\n,]+/)
+      .map(u => u.trim())
+      .filter(u => u.length > 0 && u.length < 1024 && /^https?:\/\//i.test(u));
   }
 
   /** verifications 배열 해석 — 옛 `adsTxt` 단일 필드와 신규 `verifications` 배열 통합.
