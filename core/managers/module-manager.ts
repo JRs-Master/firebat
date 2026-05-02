@@ -288,15 +288,42 @@ export class ModuleManager {
     // 사용자가 footer ON 했는데 텍스트 안 박으면 null 반환되던 버그 fix.
     const defaultFooterText = `© ${new Date().getFullYear()} ${siteName}. All rights reserved.`;
     return {
-      header: {
-        show: s.layoutShowHeader !== false, // 기본 true (미설정 = true)
-        siteName,
-        logoUrl: s.layoutLogoUrl || '',
-        navLinks: parseNavLinks(s.layoutNavLinks),
-        sticky: s.layoutHeaderSticky === true,
-        transparentOnTop: s.layoutHeaderTransparentOnTop === true,
-        mobileDrawer: s.layoutHeaderMobileDrawer === true,
-      },
+      header: (() => {
+        const navLinks = parseNavLinks(s.layoutNavLinks);
+        const left = this.parseWidgetSlots(s.headerWidgetsLeft);
+        const center = this.parseWidgetSlots(s.headerWidgetsCenter);
+        const right = this.parseWidgetSlots(s.headerWidgetsRight);
+        // 사용자가 어느 col 이라도 명시 박았으면 widget 빌더 모드. 셋 다 미박힘 시 derived.
+        const explicitWidgets = (left || center || right)
+          ? {
+              left: left ?? [],
+              center: center ?? [],
+              right: right ?? [],
+            }
+          : undefined;
+        const derivedWidgets = explicitWidgets ?? {
+          // legacy → widget 자동 derive
+          // 좌: 로고(있으면) 또는 사이트명
+          left: [{ type: s.layoutLogoUrl ? 'site-logo' : 'site-name' as const }] as import('../../lib/widget-catalog').WidgetSlot[],
+          center: [],
+          // 우: nav-links + 검색박스 + (모바일 드로어 ON 시) mobile-toggle
+          right: [
+            ...(navLinks.length > 0 ? [{ type: 'nav-links' as const, props: { useGlobalNav: true } }] : []),
+            { type: 'search-box' as const, props: { title: '' } },
+            ...(s.layoutHeaderMobileDrawer === true ? [{ type: 'mobile-toggle' as const }] : []),
+          ] as import('../../lib/widget-catalog').WidgetSlot[],
+        };
+        return {
+          show: s.layoutShowHeader !== false,
+          siteName,
+          logoUrl: s.layoutLogoUrl || '',
+          navLinks,
+          sticky: s.layoutHeaderSticky === true,
+          transparentOnTop: s.layoutHeaderTransparentOnTop === true,
+          mobileDrawer: s.layoutHeaderMobileDrawer === true,
+          widgets: derivedWidgets,
+        };
+      })(),
       footer: {
         show: s.layoutShowFooter !== false,
         text: s.layoutFooterText?.trim() || defaultFooterText,

@@ -85,6 +85,10 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'layoutHeaderSticky', label: '헤더 sticky (스크롤 시 상단 유지)', type: 'toggle', tab: '레이아웃', description: 'position: sticky + top: 0 + z-index: 30. 스크롤 시에도 헤더가 상단에 고정. 기본 OFF.', defaultValue: false },
       { key: 'layoutHeaderTransparentOnTop', label: '헤더 transparent on top', type: 'toggle', tab: '레이아웃', description: '페이지 최상단(스크롤 0)일 때 헤더 배경 투명. 스크롤 시 배경색 채움 + 그림자 (모던 사이트 패턴). sticky=ON 과 함께 사용 권장. 기본 OFF.', defaultValue: false },
       { key: 'layoutHeaderMobileDrawer', label: '모바일 햄버거 drawer', type: 'toggle', tab: '레이아웃', description: '모바일(640px 미만)에서 nav 링크 → 햄버거 버튼 + 우측 슬라이드 drawer. 검색 + 링크 list. 데스크톱은 그대로 horizontal nav. 기본 OFF.', defaultValue: false },
+      // ── 헤더 위젯 빌더 (Phase B) ── 좌/중/우 3 col. 어느 col 이라도 박혀있으면 widget 빌더 모드.
+      { key: 'headerWidgetsLeft', label: '헤더 — 좌 col 위젯', type: 'widget-list', widgetArea: 'header', tab: '레이아웃', description: '헤더 좌측 col 에 배치할 widget 배열. 비우면 기본 (로고 / 사이트명) 자동.' },
+      { key: 'headerWidgetsCenter', label: '헤더 — 중 col 위젯', type: 'widget-list', widgetArea: 'header', tab: '레이아웃', description: '헤더 중앙 col. 비우면 우측 push.' },
+      { key: 'headerWidgetsRight', label: '헤더 — 우 col 위젯', type: 'widget-list', widgetArea: 'header', tab: '레이아웃', description: '헤더 우측 col. 비우면 기본 (네비 + 검색박스 + 햄버거) 자동.' },
       { key: 'layoutShowFooter', label: '푸터 표시', type: 'toggle', tab: '레이아웃', description: '사용자 페이지 하단 푸터 표시 여부. 기본 ON.', defaultValue: true },
       { key: 'layoutFooterText', label: '푸터 — 메인 텍스트', type: 'textarea', tab: '레이아웃', placeholder: '© 2026 사이트명. All rights reserved.', description: '푸터 메인 텍스트. 4 컬럼 아래 단독 line — 저작권·법적 고지 등. HTML 일부 허용 (<a>, <strong>). 비우면 자동 © 표기.' },
       // ── Footer 4 컬럼 widget (옵션) ── 모두 비우면 메인 텍스트만 노출. 컬럼 1개라도 박으면 grid 활성.

@@ -32,19 +32,23 @@ function formatDate(s?: string, timeZone: string = 'Asia/Seoul'): string {
   return d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', timeZone });
 }
 
-/** Widget section wrapper — 사이드바 / 푸터의 widget 박스. 헤더는 별도 (Phase B). */
-function WidgetSection({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+/** Widget section wrapper — 사이드바 / 푸터는 section, 헤더는 inline (제목 hidden). */
+function WidgetSection({ children, area, className = '' }: { children: React.ReactNode; area: WidgetArea; className?: string }) {
+  // 헤더는 inline 렌더 — section element 없이 children 만 (flex 자식 이미 박힘).
+  if (area === 'header') return <>{children}</>;
   return <section className={className}>{children}</section>;
 }
 
-function WidgetTitle({ text }: { text?: string }) {
+function WidgetTitle({ text, area }: { text?: string; area: WidgetArea }) {
+  // 헤더에서는 title 미표시 (horizontal 슬롯, 라벨 어색). 사이드바·푸터는 표시.
+  if (area === 'header') return null;
   if (!text || !text.trim()) return null;
   return <h3>{text}</h3>;
 }
 
 // ── 개별 Widget renderer ──
 
-async function RecentPostsWidget({ count, title }: { count: number; title?: string }) {
+async function RecentPostsWidget({ count, title, area }: { count: number; title?: string; area: WidgetArea }) {
   const allRes = await getCore().listPages();
   const recent = allRes.success && allRes.data
     ? allRes.data
@@ -54,8 +58,8 @@ async function RecentPostsWidget({ count, title }: { count: number; title?: stri
     : [];
   if (recent.length === 0) return null;
   return (
-    <WidgetSection>
-      <WidgetTitle text={title ?? '최근 글'} />
+    <WidgetSection area={area}>
+      <WidgetTitle text={title ?? '최근 글'} area={area} />
       <ul className="list-none p-0 flex flex-col gap-2">
         {recent.map((p) => (
           <li key={p.slug}>
@@ -80,7 +84,7 @@ async function RecentPostsWidget({ count, title }: { count: number; title?: stri
   );
 }
 
-async function CategoryListWidget({ title }: { title?: string }) {
+async function CategoryListWidget({ title, area }: { title?: string; area: WidgetArea }) {
   const allRes = await getCore().listPages();
   const allPages = allRes.success && allRes.data
     ? allRes.data.filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
@@ -93,8 +97,8 @@ async function CategoryListWidget({ title }: { title?: string }) {
   const categories = [...categoryMap.entries()].sort((a, b) => b[1] - a[1]);
   if (categories.length === 0) return null;
   return (
-    <WidgetSection>
-      <WidgetTitle text={title ?? '카테고리'} />
+    <WidgetSection area={area}>
+      <WidgetTitle text={title ?? '카테고리'} area={area} />
       <ul className="list-none p-0 flex flex-col gap-1.5">
         {categories.map(([proj, count]) => (
           <li key={proj}>
@@ -115,14 +119,14 @@ async function CategoryListWidget({ title }: { title?: string }) {
   );
 }
 
-async function TagCloudWidget({ limit, title }: { limit: number; title?: string }) {
+async function TagCloudWidget({ limit, title, area }: { limit: number; title?: string; area: WidgetArea }) {
   const tags = await getCore().listAllTags();
   const top = tags.slice(0, Math.max(1, limit));
   if (top.length === 0) return null;
   const maxCount = top[0].count;
   return (
-    <WidgetSection>
-      <WidgetTitle text={title ?? '태그'} />
+    <WidgetSection area={area}>
+      <WidgetTitle text={title ?? '태그'} area={area} />
       <div className="flex flex-wrap gap-1.5">
         {top.map((t) => {
           const ratio = 0.85 + 0.3 * (t.count / Math.max(1, maxCount));
@@ -149,10 +153,28 @@ async function TagCloudWidget({ limit, title }: { limit: number; title?: string 
   );
 }
 
-function SearchBoxWidget({ placeholder, title }: { placeholder?: string; title?: string }) {
+function SearchBoxWidget({ placeholder, title, area }: { placeholder?: string; title?: string; area: WidgetArea }) {
+  // 헤더 영역에서는 인라인 검색 아이콘 (입력창 X) — 클릭 시 /search 페이지 이동.
+  // form 자체가 작아도 헤더 너비 차지 안 함.
+  if (area === 'header') {
+    return (
+      <a
+        href="/search"
+        aria-label="검색"
+        title="검색"
+        className="flex items-center justify-center hover:opacity-70 transition-opacity no-underline p-1 -m-1"
+        style={{ color: 'var(--cms-text)' }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+      </a>
+    );
+  }
   return (
-    <WidgetSection>
-      <WidgetTitle text={title ?? '검색'} />
+    <WidgetSection area={area}>
+      <WidgetTitle text={title ?? '검색'} area={area} />
       <form method="get" action="/search" className="flex items-stretch gap-1.5">
         <input
           type="search"
@@ -181,10 +203,28 @@ function SearchBoxWidget({ placeholder, title }: { placeholder?: string; title?:
   );
 }
 
-function RssSubscribeWidget({ title }: { title?: string }) {
+function RssSubscribeWidget({ title, area }: { title?: string; area: WidgetArea }) {
+  // 헤더 영역에서는 인라인 RSS 아이콘 (라벨 X).
+  if (area === 'header') {
+    return (
+      <a
+        href="/feed.xml"
+        aria-label="RSS 피드"
+        title="RSS 피드"
+        className="flex items-center justify-center hover:opacity-70 transition-opacity no-underline p-1 -m-1"
+        style={{ color: 'var(--cms-text)' }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M4 11a9 9 0 0 1 9 9" />
+          <path d="M4 4a16 16 0 0 1 16 16" />
+          <circle cx="5" cy="19" r="1" />
+        </svg>
+      </a>
+    );
+  }
   return (
-    <WidgetSection>
-      <WidgetTitle text={title ?? '구독'} />
+    <WidgetSection area={area}>
+      <WidgetTitle text={title ?? '구독'} area={area} />
       <div className="flex flex-col gap-1.5">
         <a
           href="/feed.xml"
@@ -203,12 +243,12 @@ function RssSubscribeWidget({ title }: { title?: string }) {
   );
 }
 
-function HtmlBlockWidget({ content, title }: { content?: string; title?: string }) {
+function HtmlBlockWidget({ content, title, area }: { content?: string; title?: string; area: WidgetArea }) {
   if (!content || !content.trim()) return null;
   const sanitized = DOMPurify.sanitize(content, HTML_WIDGET_SANITIZE);
   return (
-    <WidgetSection>
-      <WidgetTitle text={title} />
+    <WidgetSection area={area}>
+      <WidgetTitle text={title} area={area} />
       <div dangerouslySetInnerHTML={{ __html: sanitized }} />
     </WidgetSection>
   );
@@ -238,8 +278,8 @@ function NavLinksWidget({ useGlobalNav, customLinks, title, area }: {
   // 헤더에서는 horizontal, 사이드바·푸터에서는 vertical
   const horizontal = area === 'header';
   return (
-    <WidgetSection>
-      <WidgetTitle text={title} />
+    <WidgetSection area={area}>
+      <WidgetTitle text={title} area={area} />
       <ul className={`list-none p-0 m-0 ${horizontal ? 'flex items-center gap-3 sm:gap-5 flex-wrap' : 'flex flex-col gap-1.5'}`}>
         {links.map((l, i) => (
           <li key={i}>
@@ -270,8 +310,8 @@ function SocialLinksWidget({ items, title, area }: { items?: string; title?: str
   if (parsed.length === 0) return null;
   // 모든 area 에서 horizontal 한 줄로 표시
   return (
-    <WidgetSection>
-      <WidgetTitle text={title} />
+    <WidgetSection area={area}>
+      <WidgetTitle text={title} area={area} />
       <div className="flex items-center gap-3 flex-wrap">
         {parsed.map((s, i) => (
           <a
@@ -320,38 +360,36 @@ function SocialIcon({ type }: { type: string }) {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>;
 }
 
-function SiteNameWidget() {
+function SiteNameWidget({ area }: { area: WidgetArea }) {
   const cms = getCore().getCmsSettings();
-  return (
-    <WidgetSection>
-      <span
-        className="text-base sm:text-lg font-bold tracking-tight"
-        style={{ color: 'var(--cms-text)', fontFamily: 'var(--cms-font-heading)' }}
-      >
-        {cms.siteTitle}
-      </span>
-    </WidgetSection>
+  // 헤더에서는 홈 링크 wrap (Astra/GP 패턴), 사이드바·푸터는 텍스트만.
+  const inner = (
+    <span
+      className="text-base sm:text-lg font-bold tracking-tight"
+      style={{ color: 'var(--cms-text)', fontFamily: 'var(--cms-font-heading)' }}
+    >
+      {cms.siteTitle}
+    </span>
   );
+  if (area === 'header') {
+    return <a href="/" className="no-underline" style={{ color: 'var(--cms-text)' }}>{inner}</a>;
+  }
+  return <WidgetSection area={area}>{inner}</WidgetSection>;
 }
 
-function SiteLogoWidget() {
+function SiteLogoWidget({ area }: { area: WidgetArea }) {
   const cms = getCore().getCmsSettings();
   const logoUrl = cms.layout.header.logoUrl;
-  if (!logoUrl) {
-    // 폴백 — siteName 텍스트
-    return <SiteNameWidget />;
-  }
+  if (!logoUrl) return <SiteNameWidget area={area} />;
   return (
-    <WidgetSection>
-      <a href="/" className="inline-flex items-center gap-2 no-underline" style={{ color: 'var(--cms-text)' }}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={logoUrl} alt={cms.siteTitle} className="h-7 w-auto" />
-      </a>
-    </WidgetSection>
+    <a href="/" className="inline-flex items-center gap-2 no-underline" style={{ color: 'var(--cms-text)' }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={logoUrl} alt={cms.siteTitle} className="h-7 w-auto" />
+    </a>
   );
 }
 
-function CopyrightWidget({ text }: { text?: string }) {
+function CopyrightWidget({ text, area }: { text?: string; area: WidgetArea }) {
   const cms = getCore().getCmsSettings();
   const finalText = (text && text.trim())
     ? text
@@ -365,7 +403,7 @@ function CopyrightWidget({ text }: { text?: string }) {
     ALLOWED_URI_REGEXP: /^(?:(?:https?|mailto|tel):|\/|#)/i,
   });
   return (
-    <WidgetSection>
+    <WidgetSection area={area}>
       <div
         className="text-[12px] sm:text-[13px] leading-relaxed"
         style={{ color: 'var(--cms-text-muted)', fontFamily: 'var(--cms-font-body)' }}
@@ -375,11 +413,11 @@ function CopyrightWidget({ text }: { text?: string }) {
   );
 }
 
-function AdSlotWidget({ slotId }: { slotId?: string }) {
+function AdSlotWidget({ slotId, area }: { slotId?: string; area: WidgetArea }) {
   const cms = getCore().getCmsSettings();
   if (!slotId || !cms.adsense.publisherId) return null;
   return (
-    <WidgetSection>
+    <WidgetSection area={area}>
       <ins
         className="adsbygoogle"
         style={{ display: 'block' }}
@@ -406,22 +444,22 @@ export async function CmsWidget({ slot, area }: { slot: WidgetSlot; area: Widget
   let inner: React.ReactNode = null;
   switch (slot.type) {
     case 'recent-posts':
-      inner = await RecentPostsWidget({ count: Number(props.count) || 5, title: String(props.title ?? '') });
+      inner = await RecentPostsWidget({ count: Number(props.count) || 5, title: String(props.title ?? ''), area });
       break;
     case 'category-list':
-      inner = await CategoryListWidget({ title: String(props.title ?? '') });
+      inner = await CategoryListWidget({ title: String(props.title ?? ''), area });
       break;
     case 'tag-cloud':
-      inner = await TagCloudWidget({ limit: Number(props.limit) || 20, title: String(props.title ?? '') });
+      inner = await TagCloudWidget({ limit: Number(props.limit) || 20, title: String(props.title ?? ''), area });
       break;
     case 'search-box':
-      inner = SearchBoxWidget({ placeholder: String(props.placeholder ?? ''), title: String(props.title ?? '') });
+      inner = SearchBoxWidget({ placeholder: String(props.placeholder ?? ''), title: String(props.title ?? ''), area });
       break;
     case 'rss-subscribe':
-      inner = RssSubscribeWidget({ title: String(props.title ?? '') });
+      inner = RssSubscribeWidget({ title: String(props.title ?? ''), area });
       break;
     case 'html-block':
-      inner = HtmlBlockWidget({ content: String(props.content ?? ''), title: String(props.title ?? '') });
+      inner = HtmlBlockWidget({ content: String(props.content ?? ''), title: String(props.title ?? ''), area });
       break;
     case 'nav-links':
       inner = NavLinksWidget({
@@ -435,19 +473,21 @@ export async function CmsWidget({ slot, area }: { slot: WidgetSlot; area: Widget
       inner = SocialLinksWidget({ items: String(props.items ?? ''), title: String(props.title ?? ''), area });
       break;
     case 'site-name':
-      inner = SiteNameWidget();
+      inner = SiteNameWidget({ area });
       break;
     case 'site-logo':
-      inner = SiteLogoWidget();
+      inner = SiteLogoWidget({ area });
       break;
     case 'copyright':
-      inner = CopyrightWidget({ text: String(props.text ?? '') });
+      inner = CopyrightWidget({ text: String(props.text ?? ''), area });
       break;
     case 'ad-slot':
-      inner = AdSlotWidget({ slotId: String(props.slotId ?? '') });
+      inner = AdSlotWidget({ slotId: String(props.slotId ?? ''), area });
       break;
     case 'mobile-toggle':
-      // 헤더 전용 — Phase B 에서 박힐 예정. 현재는 미렌더.
+      // 헤더 전용 — header.mobileDrawer 가 ON 인 경우에만 의미. 그 외에는 미렌더 (안전 폴백).
+      // (현재 layout 의 mobileDrawer 토글이 자동 렌더하므로 widget 으로 박지 않아도 자연 동작.
+      //  사용자가 명시 widget 박은 경우에만 추가 표시.)
       inner = null;
       break;
   }

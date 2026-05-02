@@ -29,6 +29,13 @@ export interface HeaderConfig {
   /** 모바일 햄버거 drawer — 모바일(sm 미만)에서 nav 링크 → 햄버거 버튼 + slide-in drawer.
    *  데스크톱은 그대로 horizontal nav. 기본 false (현재처럼 wrap). */
   mobileDrawer: boolean;
+  /** Phase B widget 시스템 — 좌/중/우 3 col 슬롯. 박혀있으면 widget 빌더 우선,
+   *  미박힘 시 legacy (siteName / logoUrl / navLinks) 에서 자동 derive. */
+  widgets?: {
+    left: import('./widget-catalog').WidgetSlot[];
+    center: import('./widget-catalog').WidgetSlot[];
+    right: import('./widget-catalog').WidgetSlot[];
+  };
 }
 
 export interface FooterColumn {
