@@ -48,10 +48,13 @@ export interface FooterColumn {
 export interface FooterConfig {
   /** 표시 여부 — false 면 푸터 미렌더 */
   show: boolean;
-  /** 푸터 메인 텍스트 (HTML 허용 — sanitize 후 inline DOM). 저작권·법적 고지 등. 컬럼 위에 표시. */
+  /** 푸터 메인 텍스트 (HTML 허용 — sanitize 후 inline DOM). 저작권·법적 고지 등. 컬럼 아래 표시. */
   text: string;
-  /** 4 컬럼 widget — 각 컬럼별 heading + content. 모두 비우면 columns 미표시 (text 만 노출). */
+  /** 4 컬럼 (legacy) — 각 컬럼별 heading + content. widgets 미박힘 시 호환 폴백. */
   columns: FooterColumn[];
+  /** Phase C widget 시스템 — 4 col 까지 widget 배열. 어느 col 이라도 박혀있으면 widget 빌더,
+   *  미박힘 시 legacy columns 에서 자동 derive (각 컬럼 = html-block widget). */
+  widgets?: import('./widget-catalog').WidgetSlot[][];
 }
 
 /** Sidebar 위치 모드 — GP/Astra 식 5종.

@@ -324,14 +324,36 @@ export class ModuleManager {
           widgets: derivedWidgets,
         };
       })(),
-      footer: {
-        show: s.layoutShowFooter !== false,
-        text: s.layoutFooterText?.trim() || defaultFooterText,
-        columns: [1, 2, 3, 4].map(i => ({
+      footer: (() => {
+        const columns = [1, 2, 3, 4].map(i => ({
           heading: typeof s[`footerColumn${i}Heading`] === 'string' ? s[`footerColumn${i}Heading`] : '',
           content: typeof s[`footerColumn${i}Content`] === 'string' ? s[`footerColumn${i}Content`] : '',
-        })),
-      },
+        }));
+        const c1 = this.parseWidgetSlots(s.footerWidgetsCol1);
+        const c2 = this.parseWidgetSlots(s.footerWidgetsCol2);
+        const c3 = this.parseWidgetSlots(s.footerWidgetsCol3);
+        const c4 = this.parseWidgetSlots(s.footerWidgetsCol4);
+        const explicitWidgets = (c1 || c2 || c3 || c4)
+          ? [c1 ?? [], c2 ?? [], c3 ?? [], c4 ?? []]
+          : undefined;
+        // legacy columns → derived widgets (각 column 의 heading+content 가 html-block widget)
+        const derivedWidgets = explicitWidgets ?? columns.map((col): import('../../lib/widget-catalog').WidgetSlot[] => {
+          const slots: import('../../lib/widget-catalog').WidgetSlot[] = [];
+          if (col.heading.trim() || col.content.trim()) {
+            slots.push({
+              type: 'html-block',
+              props: { title: col.heading, content: col.content },
+            });
+          }
+          return slots;
+        });
+        return {
+          show: s.layoutShowFooter !== false,
+          text: s.layoutFooterText?.trim() || defaultFooterText,
+          columns,
+          widgets: derivedWidgets,
+        };
+      })(),
       showRelatedPosts: s.layoutShowRelatedPosts !== false, // 기본 true (콘텐츠 engagement)
       relatedPostsCount: typeof s.layoutRelatedPostsCount === 'number'
         ? s.layoutRelatedPostsCount
