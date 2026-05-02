@@ -1642,6 +1642,12 @@ function isKoreaCoord(lat: number, lon: number): boolean {
   return lat >= 33 && lat <= 38.7 && lon >= 124.5 && lon <= 132;
 }
 
+/** Map popup HTML sanitize — dangerous URL (javascript:/data:/vbscript:) 만 차단, https/http/relative 링크 정상 유지. */
+function sanitizePopupHtml(html: string): string {
+  if (!html) return '';
+  return html.replace(/\b(?:href|src)\s*=\s*["']?\s*(?:javascript|data|vbscript):[^"'>\s]*/gi, 'href="#"');
+}
+
 function MapComp({
   markers, circles, legend, center, zoom, height, provider,
 }: {
@@ -1657,7 +1663,8 @@ function MapComp({
   const safeMarkers = Array.isArray(markers) ? markers.filter(m => typeof m?.lat === 'number' && typeof m?.lon === 'number') : [];
   const safeCircles = Array.isArray(circles) ? circles.filter(c => typeof c?.lat === 'number' && typeof c?.lon === 'number' && typeof c?.radius === 'number' && c.radius > 0) : [];
   const safeLegend = Array.isArray(legend) ? legend.filter(l => l?.color && l?.label) : [];
-  const finalHeight = height || '400px';
+  // 모바일 세로 너무 길어지지 않게 cap — 50vh 와 user 지정 height 중 작은 값 (CSS min). 기본 400px.
+  const finalHeight = height || 'min(400px, 50vh)';
   const finalZoom = typeof zoom === 'number' ? zoom : 12;
 
   // 중심 좌표 — center 명시 우선, 없으면 markers 평균
@@ -1717,9 +1724,9 @@ function MapComp({
             if (m.color) opts.image = makeColorMarkerImage(colorHex(m.color, '#ef4444'));
             const marker = new w.kakao.maps.Marker(opts);
             marker.setMap(map);
-            // popup — m.popup 우선, 없으면 m.label. <a> 태그 제거 (kakao place_url javascript:void 회피)
+            // popup — m.popup 우선, 없으면 m.label. dangerous URL (javascript:/data:/vbscript:) 만 sanitize, 정상 https 링크 유지.
             const rawPopup = m.popup ? String(m.popup) : m.label;
-            const popupText = rawPopup.replace(/<a\b[^>]*>/gi, '').replace(/<\/a>/gi, '');
+            const popupText = sanitizePopupHtml(rawPopup);
             if (popupText) {
               const info = new w.kakao.maps.InfoWindow({
                 content: `<div style="padding:6px 10px;font-size:12px;max-width:240px;">${popupText}</div>`,
@@ -1793,9 +1800,9 @@ function MapComp({
             iconAnchor: [9, 9],
           });
           const mk = L.marker([m.lat, m.lon], { icon, title: m.label }).addTo(map);
-          // popup — m.popup 우선, 없으면 m.label. <a> 태그 제거 (외부 링크 → 우리 컨텐츠만)
+          // popup — m.popup 우선, 없으면 m.label. dangerous URL 만 sanitize, 정상 링크 유지.
           const rawPopup = m.popup ? String(m.popup) : m.label;
-          const popupText = rawPopup.replace(/<a\b[^>]*>/gi, '').replace(/<\/a>/gi, '');
+          const popupText = sanitizePopupHtml(rawPopup);
           if (popupText) mk.bindPopup(popupText);
         }
         // 마커 2+ 시 자동 bounds fit — 모든 마커 + 원 보이도록 줌 자동
