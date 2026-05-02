@@ -57,21 +57,24 @@ export interface FooterConfig {
 export type LayoutMode = 'full' | 'right-sidebar' | 'left-sidebar' | 'both-sidebar' | 'boxed';
 
 export interface SidebarConfig {
-  /** 검색 박스 위젯 — /search 로 GET. */
+  /** 신규 widget 시스템 — 박혀있으면 6 toggle 무시. 비어있거나 미박힘 시 6 toggle 호환 폴백.
+   *  Phase A 마이그레이션 점진적. 사용자가 어드민 widget builder 에서 직접 편집 가능. */
+  widgets?: import('./widget-catalog').WidgetSlot[];
+  /** 검색 박스 위젯 — /search 로 GET. (legacy toggle, widgets 미박힘 시) */
   showSearchBox: boolean;
-  /** 최근 글 위젯 표시 (default true 단 layoutMode 가 sidebar 일 때만 효과) */
+  /** 최근 글 위젯 표시 (legacy) */
   showRecentPosts: boolean;
-  /** 최근 글 표시 개수 */
+  /** 최근 글 표시 개수 (legacy) */
   recentPostsCount: number;
-  /** 카테고리(project) 목록 위젯 — published+public 페이지의 project 합집합 + 글 수. */
+  /** 카테고리(project) 목록 위젯 (legacy) */
   showCategoryList: boolean;
-  /** 태그 cloud 위젯 — head.keywords 합집합 + 빈도수, top N. */
+  /** 태그 cloud 위젯 (legacy) */
   showTagCloud: boolean;
-  /** 태그 cloud 표시 개수 (top N) */
+  /** 태그 cloud 표시 개수 (legacy) */
   tagCloudLimit: number;
-  /** 구독 안내 위젯 — RSS feed.xml 링크 + 텔레그램 채널 (옵션). */
+  /** 구독 안내 위젯 (legacy) */
   showSubscribe: boolean;
-  /** 자유 HTML 위젯 — 광고·연락처·소개 등. sanitize 후 inline DOM. */
+  /** 자유 HTML 위젯 (legacy) */
   htmlWidget: string;
 }
 

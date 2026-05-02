@@ -1,19 +1,16 @@
 /**
- * CmsSidebar — Phase 4 Step 2 + 위젯 카탈로그 확장.
+ * CmsSidebar — Phase A widget builder + legacy fallback.
  *
- * 위젯 카탈로그:
- *   - 검색 박스 (showSearchBox) — /search GET form
- *   - 최근 글 (showRecentPosts + recentPostsCount)
- *   - 카테고리 list (showCategoryList) — project 합집합 + 글 수
- *   - 태그 cloud (showTagCloud + tagCloudLimit) — head.keywords 빈도수
- *   - 구독 (showSubscribe) — RSS + 텔레그램 채널 안내
- *   - HTML 자유 위젯 (htmlWidget)
+ * 신규: sidebar.widgets 배열 박혀있으면 widget catalog 시스템 (CmsWidget 렌더). 사용자가
+ * 어드민 widget builder 에서 직접 add/remove/reorder/props/visibility 편집.
+ * Legacy: widgets 미박힘 시 기존 6 toggle (showSearchBox / showRecentPosts / ...) 폴백.
  *
  * RSC — listPages / listAllTags 비동기 fetch. design tokens 적용.
  */
 import { getCore } from '../../lib/singleton';
 import DOMPurify from 'isomorphic-dompurify';
 import type { SidebarConfig } from '../../lib/cms-layout';
+import { CmsWidget } from './cms-widget-renderer';
 
 const HTML_WIDGET_SANITIZE = {
   ALLOWED_TAGS: ['div', 'span', 'p', 'a', 'strong', 'em', 'b', 'i', 'br', 'ul', 'ol', 'li', 'img', 'h3', 'h4', 'small', 'ins', 'script'],
@@ -30,6 +27,17 @@ function formatDate(s?: string, timeZone: string = 'Asia/Seoul'): string {
 }
 
 export async function CmsSidebar({ sidebar }: { sidebar: SidebarConfig }) {
+  // Widget builder 모드 — sidebar.widgets 박혀있으면 catalog 기반 렌더 우선.
+  if (sidebar.widgets && sidebar.widgets.length > 0) {
+    return (
+      <aside className="firebat-cms-sidebar">
+        {sidebar.widgets.map((slot, i) => (
+          <CmsWidget key={i} slot={slot} area="sidebar" />
+        ))}
+      </aside>
+    );
+  }
+  // Legacy fallback — 기존 6 toggle. widgets 빈 배열·미박힘 시 호환.
   const core = getCore();
 
   // 페이지 list — 최근 글 / 카테고리 둘 다 사용. 한 번만 fetch.

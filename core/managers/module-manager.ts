@@ -312,6 +312,7 @@ export class ModuleManager {
       showReadingProgress: s.layoutShowReadingProgress === true,
       mode: (['full', 'right-sidebar', 'left-sidebar', 'both-sidebar', 'boxed'].includes(s.layoutMode) ? s.layoutMode : 'full'),
       sidebar: {
+        widgets: this.parseWidgetSlots(s.sidebarWidgets),
         showSearchBox: s.sidebarShowSearchBox === true,
         showRecentPosts: s.sidebarShowRecentPosts !== false, // 기본 true
         recentPostsCount: typeof s.sidebarRecentPostsCount === 'number'
@@ -400,6 +401,40 @@ export class ModuleManager {
     const bodyLs = cssGuard(s.themeBodyLetterSpacing);
     if (bodyLs) theme.typography.bodyLetterSpacing = bodyLs;
     return theme;
+  }
+
+  /** WidgetSlot 배열 파싱 — settings.sidebarWidgets / headerWidgets / footerWidgets 가 string(JSON)
+   *  또는 배열로 저장됨. 비어있거나 잘못된 형식이면 undefined 반환 → 호출 측이 legacy fallback. */
+  private parseWidgetSlots(raw: unknown): import('../../lib/widget-catalog').WidgetSlot[] | undefined {
+    if (!raw) return undefined;
+    let arr: unknown = raw;
+    if (typeof raw === 'string') {
+      const trimmed = raw.trim();
+      if (!trimmed) return undefined;
+      try { arr = JSON.parse(trimmed); } catch { return undefined; }
+    }
+    if (!Array.isArray(arr) || arr.length === 0) return undefined;
+    const validTypes = new Set([
+      'site-logo', 'mobile-toggle', 'recent-posts', 'tag-cloud', 'category-list',
+      'copyright', 'nav-links', 'social-links', 'site-name', 'search-box',
+      'html-block', 'ad-slot', 'rss-subscribe',
+    ]);
+    const validVisibility = new Set(['all', 'desktop', 'mobile']);
+    const out: import('../../lib/widget-catalog').WidgetSlot[] = [];
+    for (const item of arr) {
+      if (!item || typeof item !== 'object') continue;
+      const o = item as Record<string, unknown>;
+      if (typeof o.type !== 'string' || !validTypes.has(o.type)) continue;
+      const slot: import('../../lib/widget-catalog').WidgetSlot = { type: o.type as any };
+      if (typeof o.visibility === 'string' && validVisibility.has(o.visibility)) {
+        slot.visibility = o.visibility as any;
+      }
+      if (o.props && typeof o.props === 'object' && !Array.isArray(o.props)) {
+        slot.props = o.props as Record<string, unknown>;
+      }
+      out.push(slot);
+    }
+    return out.length > 0 ? out : undefined;
   }
 
   /** 외부 폰트 URL 파싱 — 줄바꿈 또는 콤마로 여러 URL 허용. https:// 만 허용 (XSS 방어). */
