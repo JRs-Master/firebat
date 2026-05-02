@@ -311,21 +311,26 @@ export class ModuleManager {
         : (parseInt(s.layoutRelatedPostsCount) || 5),
       showReadingProgress: s.layoutShowReadingProgress === true,
       mode: (['full', 'right-sidebar', 'left-sidebar', 'both-sidebar', 'boxed'].includes(s.layoutMode) ? s.layoutMode : 'full'),
-      sidebar: {
-        widgets: this.parseWidgetSlots(s.sidebarWidgets),
-        showSearchBox: s.sidebarShowSearchBox === true,
-        showRecentPosts: s.sidebarShowRecentPosts !== false, // 기본 true
-        recentPostsCount: typeof s.sidebarRecentPostsCount === 'number'
-          ? s.sidebarRecentPostsCount
-          : (parseInt(s.sidebarRecentPostsCount) || 5),
-        showCategoryList: s.sidebarShowCategoryList === true,
-        showTagCloud: s.sidebarShowTagCloud === true,
-        tagCloudLimit: typeof s.sidebarTagCloudLimit === 'number'
-          ? s.sidebarTagCloudLimit
-          : (parseInt(s.sidebarTagCloudLimit) || 20),
-        showSubscribe: s.sidebarShowSubscribe === true,
-        htmlWidget: s.sidebarHtmlWidget || '',
-      },
+      sidebar: (() => {
+        // 사용자 widgets 명시 박혀있으면 그것 사용. 미박힘 시 legacy toggle 에서 자동 derive.
+        const explicit = this.parseWidgetSlots(s.sidebarWidgets);
+        const legacy = {
+          showSearchBox: s.sidebarShowSearchBox === true,
+          showRecentPosts: s.sidebarShowRecentPosts !== false, // 기본 true
+          recentPostsCount: typeof s.sidebarRecentPostsCount === 'number'
+            ? s.sidebarRecentPostsCount
+            : (parseInt(s.sidebarRecentPostsCount) || 5),
+          showCategoryList: s.sidebarShowCategoryList === true,
+          showTagCloud: s.sidebarShowTagCloud === true,
+          tagCloudLimit: typeof s.sidebarTagCloudLimit === 'number'
+            ? s.sidebarTagCloudLimit
+            : (parseInt(s.sidebarTagCloudLimit) || 20),
+          showSubscribe: s.sidebarShowSubscribe === true,
+          htmlWidget: s.sidebarHtmlWidget || '',
+        };
+        const widgets = explicit ?? this.deriveWidgetsFromLegacyToggles(legacy);
+        return { widgets, ...legacy };
+      })(),
       pageList: {
         cardVariant: (['list', 'grid', 'compact', 'magazine'].includes(s.pageListCardVariant) ? s.pageListCardVariant : 'list'),
         perPage: typeof s.pageListPerPage === 'number'
@@ -401,6 +406,26 @@ export class ModuleManager {
     const bodyLs = cssGuard(s.themeBodyLetterSpacing);
     if (bodyLs) theme.typography.bodyLetterSpacing = bodyLs;
     return theme;
+  }
+
+  /** Legacy 6 toggle → widget 배열 자동 derive (Phase A.3 마이그레이션).
+   *  사용자가 widgets 명시 박지 않은 상태에서 옛 toggle 켜져있으면 그 활성 위젯들로 widget 배열 생성.
+   *  순서: 검색박스 → 최근글 → 카테고리 → 태그클라우드 → 구독 → HTML. */
+  private deriveWidgetsFromLegacyToggles(legacy: {
+    showSearchBox: boolean; showRecentPosts: boolean; recentPostsCount: number;
+    showCategoryList: boolean; showTagCloud: boolean; tagCloudLimit: number;
+    showSubscribe: boolean; htmlWidget: string;
+  }): import('../../lib/widget-catalog').WidgetSlot[] {
+    const widgets: import('../../lib/widget-catalog').WidgetSlot[] = [];
+    if (legacy.showSearchBox) widgets.push({ type: 'search-box' });
+    if (legacy.showRecentPosts) widgets.push({ type: 'recent-posts', props: { count: legacy.recentPostsCount, title: '최근 글' } });
+    if (legacy.showCategoryList) widgets.push({ type: 'category-list', props: { title: '카테고리' } });
+    if (legacy.showTagCloud) widgets.push({ type: 'tag-cloud', props: { limit: legacy.tagCloudLimit, title: '태그' } });
+    if (legacy.showSubscribe) widgets.push({ type: 'rss-subscribe', props: { title: '구독' } });
+    if (legacy.htmlWidget && legacy.htmlWidget.trim()) {
+      widgets.push({ type: 'html-block', props: { content: legacy.htmlWidget } });
+    }
+    return widgets;
   }
 
   /** WidgetSlot 배열 파싱 — settings.sidebarWidgets / headerWidgets / footerWidgets 가 string(JSON)
