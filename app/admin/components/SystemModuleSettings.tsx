@@ -188,9 +188,11 @@ interface Props {
   moduleName: string;
   onClose: () => void;
   onBack?: () => void;
+  /** 풀페이지(CmsFullPage) 안에 임베드된 경우 — modal chrome (배경 dim, X 버튼) 비활성. 상단바가 닫기 처리. */
+  embeddedInPage?: boolean;
 }
 
-export function SystemModuleSettings({ moduleName, onClose, onBack }: Props) {
+export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPage }: Props) {
   // 'seo' 옛 모듈명 → 'cms' fallback (2026-04-28 SEO → CMS rename 호환)
   const manualSchema = MODULE_SETTINGS_SCHEMA[moduleName] ?? (moduleName === 'seo' ? MODULE_SETTINGS_SCHEMA['cms'] : undefined);
   const [schema, setSchema] = useState<{ title: string; fields: SettingField[] } | null>(null);

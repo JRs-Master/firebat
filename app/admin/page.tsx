@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks, Share2, Image as ImageIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { CDN_LIBRARIES, IFRAME_CSP_META } from '../../lib/cdn-libraries';
@@ -902,6 +903,17 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
 
 // ─── 메인 ────────────────────────────────────────────────────────────────────
 export default function AdminConsole() {
+  const router = useRouter();
+  // CMS 설정 클릭 시 /admin/cms 로 이동 — sessionStorage flag 로 직접 URL 진입 차단.
+  // sysmod 'cms' 만 분기, 그 외는 모달 그대로.
+  const handleOpenModuleSettings = useCallback((name: string) => {
+    if (name === 'cms') {
+      sessionStorage.setItem('firebat_cms_entry', '1');
+      router.push('/admin/cms');
+      return;
+    }
+    setEditingModule(name);
+  }, [router]);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'secrets' | 'mcp' | 'capabilities' | 'system' | undefined>(undefined);
   const [aiModel, setAiModel] = useState('gpt-5.4-mini');
@@ -1079,7 +1091,7 @@ export default function AdminConsole() {
         aiModel={aiModel}
         onOpenSettings={() => setShowSettings(true)}
         onEditFile={(filePath) => setEditingFile(filePath)}
-        onOpenModuleSettings={(name) => setEditingModule(name)}
+        onOpenModuleSettings={handleOpenModuleSettings}
         mobileOpen={mobileMenuOpen}
         onMobileOpenChange={setMobileMenuOpen}
       />
@@ -1314,12 +1326,12 @@ export default function AdminConsole() {
             onAiModelChange={setAiModel}
             onClose={() => { setShowSettings(false); setSettingsInitialTab(undefined); }}
             onSave={() => { setShowSettings(false); setSettingsInitialTab(undefined); }}
-            onOpenModuleSettings={(name) => { setShowSettings(false); setEditingModule(name); }}
+            onOpenModuleSettings={(name) => { setShowSettings(false); handleOpenModuleSettings(name); }}
             initialTab={settingsInitialTab}
           />
         )}
 
-        {/* 시스템 모듈 설정 모달 */}
+        {/* 시스템 모듈 설정 모달 — cms 는 라우트 (/admin/cms) 로 이동, 그 외는 모달 그대로 */}
         {editingModule && (
           <SystemModuleSettings
             moduleName={editingModule}
