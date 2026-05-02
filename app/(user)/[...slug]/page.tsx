@@ -68,10 +68,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       const projects = await core.scanProjects();
       if (projects.find((p) => p.name === slug)) {
         const seo = core.getCmsSettings();
+        // RSS rel=alternate — RSS reader autodiscovery. 사이트 글로벌 + 프로젝트 RSS 둘 다 노출.
+        const projectFeedAlts = seo.rssEnabled ? {
+          types: {
+            'application/rss+xml': [
+              { url: `/${encodeURIComponent(slug)}/feed.xml`, title: `${slug} RSS` },
+              { url: '/feed.xml', title: `${seo.siteTitle} RSS` },
+            ],
+          },
+        } : {};
         return {
           title: `${slug} — ${seo.siteTitle}`,
           description: `${slug} 프로젝트의 모든 글`,
           robots: 'index, follow',
+          alternates: projectFeedAlts,
         };
       }
     }
@@ -111,6 +121,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const canonical = head.canonical
     ?? (seo.autoCanonical ? `${baseUrl}/${slug}` : undefined);
 
+  // RSS rel=alternate — 콘텐츠 페이지의 project RSS + 사이트 글로벌 RSS autodiscovery.
+  // 브라우저·리더가 페이지 방문 시 같은 카테고리 RSS 자동 인식.
+  const rssAlternates = seo.rssEnabled ? [
+    ...(spec.project ? [{ url: `/${encodeURIComponent(spec.project)}/feed.xml`, title: `${spec.project} RSS` }] : []),
+    { url: '/feed.xml', title: `${seo.siteTitle} RSS` },
+  ] : [];
+
   return {
     // metadataBase override — layout 의 정적 값 대신 동적 resolve 결과 사용 (상대경로 이미지도 이 기준으로 절대화)
     metadataBase: new URL(baseUrl),
@@ -118,7 +135,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     description: head.description ?? '',
     keywords: head.keywords ?? [],
     robots: head.robots ?? 'index, follow',
-    ...(canonical ? { alternates: { canonical } } : {}),
+    alternates: {
+      ...(canonical ? { canonical } : {}),
+      ...(rssAlternates.length > 0 ? { types: { 'application/rss+xml': rssAlternates } } : {}),
+    },
     openGraph: {
       title: ogTitle,
       description: ogDesc,

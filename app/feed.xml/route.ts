@@ -3,6 +3,7 @@ import { getBaseUrl } from '../../lib/base-url';
 import { specBodyToHtml, wrapCdata } from '../../lib/spec-to-rss-html';
 
 /** GET /feed.xml — RSS 2.0 피드.
+ *  GET /{project}/feed.xml — 프로젝트별 RSS (next.config.mjs rewrite 로 ?project= 전달).
  *
  *  포함:
  *  - 각 글의 description (head.description) 과 category (head.keywords)
@@ -10,6 +11,7 @@ import { specBodyToHtml, wrapCdata } from '../../lib/spec-to-rss-html';
  *  - channel image (사이트 로고 또는 favicon)
  *  - 최신 순 정렬 (updatedAt desc)
  *  - public + published 만 (visibility 필터)
+ *  - ?project= 파라미터 있으면 그 프로젝트만 (프로젝트별 구독 분리)
  *
  *  N+1: 각 페이지 getPage 로 head.description / keywords 받음. 페이지 ~100 미만 가정.
  *  RSS reader 가 시간당 1 회 정도 fetch 라 부담 없음. */
@@ -23,12 +25,22 @@ export async function GET(req: Request) {
 
   const baseUrl = seo.siteUrl || getBaseUrl(req);
 
+  // ?project= 파라미터 — rewrite 로 /{project}/feed.xml 형태도 여기로 라우팅됨.
+  const url = new URL(req.url);
+  const projectFilter = (url.searchParams.get('project') || '').trim();
+
   const result = await core.listPages();
   const allPages = result.success && result.data ? result.data : [];
-  // 공개 + 발행 페이지만 + 최신 순
+  // 공개 + 발행 페이지만 + 최신 순. project 필터 있으면 매칭만.
   const visiblePages = allPages
     .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
+    .filter((p) => !projectFilter || p.project === projectFilter)
     .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+
+  // 프로젝트별 RSS 인데 매칭 페이지 0건이면 404 — 존재하지 않는 프로젝트 보호.
+  if (projectFilter && visiblePages.length === 0) {
+    return new Response('Project not found', { status: 404 });
+  }
 
   const escXml = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -66,19 +78,33 @@ ${description ? `      <description>${escXml(description)}</description>\n` : ''
     </image>\n`
     : '';
 
+  // 프로젝트별 RSS — channel 제목·설명·self-link 에 프로젝트 컨텍스트 반영.
+  const channelTitle = projectFilter
+    ? `${seo.siteTitle} — ${projectFilter}`
+    : seo.siteTitle;
+  const channelDescription = projectFilter
+    ? `${projectFilter} 카테고리의 글`
+    : seo.siteDescription;
+  const channelLink = projectFilter
+    ? `${baseUrl}/${encodeURIComponent(projectFilter)}`
+    : baseUrl;
+  const selfLink = projectFilter
+    ? `${baseUrl}/${encodeURIComponent(projectFilter)}/feed.xml`
+    : `${baseUrl}/feed.xml`;
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"
      xmlns:atom="http://www.w3.org/2005/Atom"
      xmlns:content="http://purl.org/rss/1.0/modules/content/"
      xmlns:dc="http://purl.org/dc/elements/1.1/">
   <channel>
-    <title>${escXml(seo.siteTitle)}</title>
-    <link>${escXml(baseUrl)}</link>
-    <description>${escXml(seo.siteDescription)}</description>
+    <title>${escXml(channelTitle)}</title>
+    <link>${escXml(channelLink)}</link>
+    <description>${escXml(channelDescription)}</description>
     <language>${escXml(seo.siteLang || 'ko')}</language>
     <lastBuildDate>${new Date().toUTCString()}</lastBuildDate>
     <generator>Firebat CMS</generator>
-    <atom:link href="${escXml(baseUrl)}/feed.xml" rel="self" type="application/rss+xml"/>
+    <atom:link href="${escXml(selfLink)}" rel="self" type="application/rss+xml"/>
 ${imageXml}${itemsXml.join('\n')}
   </channel>
 </rss>`;
