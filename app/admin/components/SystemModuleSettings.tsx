@@ -499,8 +499,9 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
       ? 'OpenAI Responses API (hosted MCP), Claude API 등 외부 LLM이 Firebat의 전체 도구 세트에 접근할 때 사용합니다.'
       : '외부 AI 도구(Claude Code, Cursor, VS Code 등)에서 이 파이어뱃 서버에 연결할 수 있습니다.';
     return (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
-        <div className="bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
+      <div className={embeddedInPage ? 'flex flex-col h-full bg-white overflow-hidden' : 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden'}>
+        <div className={embeddedInPage ? 'flex flex-col h-full w-full overflow-hidden' : 'bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]'}>
+          {!embeddedInPage && (
           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
             <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
               {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors mr-1"><ArrowLeft size={18} /></button>}
@@ -508,6 +509,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
             </h2>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
           </div>
+          )}
 
           <div className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-scroll flex-1 min-h-0">
             <p className="text-[11px] sm:text-[12px] text-slate-400">{descText}</p>
@@ -654,8 +656,9 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   // 로딩 중이거나 설정 필드가 없는 모듈
   if (!loading && schema && schema.fields.length === 0) {
     return (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
-        <div className="bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
+      <div className={embeddedInPage ? 'flex flex-col h-full bg-white overflow-hidden' : 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden'}>
+        <div className={embeddedInPage ? 'flex flex-col h-full w-full overflow-hidden' : 'bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]'}>
+          {!embeddedInPage && (
           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
             <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
               {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors mr-1"><ArrowLeft size={18} /></button>}
@@ -663,6 +666,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
             </h2>
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
           </div>
+          )}
           <div className="p-6 text-center text-slate-500 text-sm flex-1 flex items-center justify-center">
             이 모듈에 대한 설정 항목이 없습니다.
           </div>
@@ -672,9 +676,10 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden">
-      <div className="bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]">
-        {/* 헤더 */}
+    <div className={embeddedInPage ? 'flex flex-col h-full bg-white overflow-hidden' : 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden'}>
+      <div className={embeddedInPage ? 'flex flex-col h-full w-full overflow-hidden' : 'bg-white w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]'}>
+        {/* 헤더 — embeddedInPage 시 풀페이지 wrapper 의 상단 바가 처리하므로 hide */}
+        {!embeddedInPage && (
         <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-5 border-b border-slate-100 bg-slate-50 shrink-0">
           <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
             {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors mr-1"><ArrowLeft size={18} /></button>}
@@ -682,6 +687,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
         </div>
+        )}
 
         {/* 탭 바 — SettingsModal 동일 패턴. 모바일은 터치 스크롤, PC는 드래그 + 호버 시 화살표 */}
         {hasTabs && (
