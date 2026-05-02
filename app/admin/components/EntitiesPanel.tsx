@@ -51,6 +51,12 @@ function formatDate(ms: number): string {
   return new Date(ms).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+interface MemoryStats {
+  entities: { total: number; byType: Array<{ type: string; count: number }> };
+  facts: { total: number; byType: Array<{ factType: string; count: number }> };
+  events: { total: number; byType: Array<{ type: string; count: number }> };
+}
+
 export function EntitiesPanel() {
   const [subTab, setSubTab] = useState<'entities' | 'events'>('entities');
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -58,7 +64,9 @@ export function EntitiesPanel() {
   const [loading, setLoading] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [timeline, setTimeline] = useState<Record<number, Fact[]>>({});
+  const [entityEvents, setEntityEvents] = useState<Record<number, EventItem[]>>({});
   const [showCreate, setShowCreate] = useState(false);
+  const [stats, setStats] = useState<MemoryStats | null>(null);
 
   const fetchEntities = useCallback(async (q: string) => {
     setLoading(true);
@@ -77,6 +85,9 @@ export function EntitiesPanel() {
 
   useEffect(() => {
     fetchEntities('');
+    fetch('/api/memory/stats').then(r => r.ok ? r.json() : null).then(d => {
+      if (d?.success) setStats({ entities: d.entities, facts: d.facts, events: d.events });
+    }).catch(() => {});
   }, [fetchEntities]);
 
   // Debounced search
@@ -95,6 +106,16 @@ export function EntitiesPanel() {
     }
   };
 
+  const fetchEntityEvents = async (entityId: number) => {
+    if (entityEvents[entityId]) return;
+    const res = await fetch(`/api/episodic?entityId=${entityId}&limit=50`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.success) {
+      setEntityEvents(prev => ({ ...prev, [entityId]: data.events ?? [] }));
+    }
+  };
+
   const handleExpand = (id: number) => {
     if (expandedId === id) {
       setExpandedId(null);
@@ -102,6 +123,7 @@ export function EntitiesPanel() {
     }
     setExpandedId(id);
     fetchTimeline(id);
+    fetchEntityEvents(id);
   };
 
   const handleDelete = async (entity: Entity) => {
@@ -126,6 +148,24 @@ export function EntitiesPanel() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {/* Stats — 작은 dashboard (Phase 6.2) */}
+      {stats && (
+        <div className="grid grid-cols-3 gap-1 px-2 pt-2 pb-1.5">
+          <div className="bg-blue-50 border border-blue-100 rounded px-1.5 py-1 text-center">
+            <div className="text-[9px] text-blue-600 font-bold">엔티티</div>
+            <div className="text-[14px] text-blue-700 font-extrabold tabular-nums">{stats.entities.total}</div>
+          </div>
+          <div className="bg-purple-50 border border-purple-100 rounded px-1.5 py-1 text-center">
+            <div className="text-[9px] text-purple-600 font-bold">사실</div>
+            <div className="text-[14px] text-purple-700 font-extrabold tabular-nums">{stats.facts.total}</div>
+          </div>
+          <div className="bg-amber-50 border border-amber-100 rounded px-1.5 py-1 text-center">
+            <div className="text-[9px] text-amber-600 font-bold">사건</div>
+            <div className="text-[14px] text-amber-700 font-extrabold tabular-nums">{stats.events.total}</div>
+          </div>
+        </div>
+      )}
+
       {/* Sub-tabs — Entities / Events */}
       <div className="flex items-center px-2 pt-2 gap-1 border-b border-slate-200/80">
         <button
@@ -256,6 +296,30 @@ export function EntitiesPanel() {
                           fetchEntities(query);
                         }}
                       />
+                      {/* Events — entity 와 link 된 사건 (Phase 6.2 entity ↔ event 시각화) */}
+                      {(() => {
+                        const evs = entityEvents[e.id] ?? [];
+                        if (evs.length === 0) return null;
+                        return (
+                          <div className="mt-2 pt-2 border-t border-slate-200">
+                            <div className="text-[10px] font-bold text-slate-500 mb-1">관련 사건 ({evs.length})</div>
+                            <ul className="list-none p-0 m-0 space-y-1">
+                              {evs.slice(0, 10).map(ev => (
+                                <li key={ev.id} className="bg-amber-50/50 border border-amber-100 rounded p-1.5">
+                                  <div className="flex items-center gap-1 mb-0.5">
+                                    <span className="text-[8px] px-1 rounded bg-amber-100 text-amber-700 font-bold">{ev.type}</span>
+                                    <span className="text-[10px] text-slate-700 font-medium truncate flex-1">{ev.title}</span>
+                                  </div>
+                                  <div className="text-[9px] text-slate-400 tabular-nums">
+                                    {formatDate(ev.occurredAt)}
+                                    {ev.who && ` · ${ev.who}`}
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </li>

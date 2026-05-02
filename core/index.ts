@@ -1095,6 +1095,36 @@ export class FirebatCore {
     return this.consolidation.consolidateConversation(opts);
   }
 
+  /** 메모리 시스템 — 전체 통계 (Phase 6.2 dashboard).
+   *  raw DB count — 빠르고 단순. 큰 set 시 cache 가능 (현재는 매 호출 fresh). */
+  async getMemoryStats(): Promise<{
+    entities: { total: number; byType: Array<{ type: string; count: number }> };
+    facts: { total: number; byType: Array<{ factType: string; count: number }> };
+    events: { total: number; byType: Array<{ type: string; count: number }> };
+  }> {
+    const db = this.infra.database;
+    const entitiesRes = await db.query(`SELECT COUNT(*) as cnt FROM entities`);
+    const entitiesByType = await db.query(`SELECT type, COUNT(*) as cnt FROM entities GROUP BY type ORDER BY cnt DESC`);
+    const factsRes = await db.query(`SELECT COUNT(*) as cnt FROM entity_facts WHERE expires_at IS NULL OR expires_at > ?`, [Date.now()]);
+    const factsByType = await db.query(`SELECT fact_type as ft, COUNT(*) as cnt FROM entity_facts WHERE (expires_at IS NULL OR expires_at > ?) AND fact_type IS NOT NULL GROUP BY fact_type ORDER BY cnt DESC`, [Date.now()]);
+    const eventsRes = await db.query(`SELECT COUNT(*) as cnt FROM events WHERE expires_at IS NULL OR expires_at > ?`, [Date.now()]);
+    const eventsByType = await db.query(`SELECT type, COUNT(*) as cnt FROM events WHERE expires_at IS NULL OR expires_at > ? GROUP BY type ORDER BY cnt DESC`, [Date.now()]);
+    return {
+      entities: {
+        total: Number((entitiesRes.data?.[0] as any)?.cnt ?? 0),
+        byType: ((entitiesByType.data ?? []) as Array<{ type: string; cnt: number }>).map(r => ({ type: r.type, count: Number(r.cnt) })),
+      },
+      facts: {
+        total: Number((factsRes.data?.[0] as any)?.cnt ?? 0),
+        byType: ((factsByType.data ?? []) as Array<{ ft: string; cnt: number }>).map(r => ({ factType: r.ft, count: Number(r.cnt) })),
+      },
+      events: {
+        total: Number((eventsRes.data?.[0] as any)?.cnt ?? 0),
+        byType: ((eventsByType.data ?? []) as Array<{ type: string; cnt: number }>).map(r => ({ type: r.type, count: Number(r.cnt) })),
+      },
+    };
+  }
+
   // ── 템플릿 (CMS Phase 8b) ───────────────────────────────────────────────
   /** 템플릿 목록 — user/templates 폴더 스캔. */
   async listTemplates(): Promise<TemplateEntry[]> {
