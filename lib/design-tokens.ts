@@ -34,6 +34,12 @@ export interface ColorTokens {
   bgCard: string;
   /** 테두리 */
   border: string;
+  /** 링크 색 (선택 override) — 미설정 시 primary 자동 사용. */
+  link?: string;
+  /** 링크 hover 색 (선택 override) — 미설정 시 primary opacity 0.7. */
+  linkHover?: string;
+  /** 텍스트 selection 배경 (선택 override) — 미설정 시 primary 알파 0.25. */
+  selectionBg?: string;
 }
 
 export interface FontTokens {
@@ -273,6 +279,9 @@ export function tokensToCss(tokens: DesignTokens): string {
     --cms-bg: ${t.colors.bg};
     --cms-bg-card: ${t.colors.bgCard};
     --cms-border: ${t.colors.border};
+    ${t.colors.link ? `--cms-link: ${t.colors.link};` : ''}
+    ${t.colors.linkHover ? `--cms-link-hover: ${t.colors.linkHover};` : ''}
+    ${t.colors.selectionBg ? `--cms-selection-bg: ${t.colors.selectionBg};` : ''}
     --cms-font-body: ${t.fonts.body};
     --cms-font-heading: ${t.fonts.heading};
     --cms-font-mono: ${t.fonts.mono};

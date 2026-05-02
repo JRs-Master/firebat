@@ -308,3 +308,52 @@ html::-webkit-scrollbar-thumb:hover,
   border-bottom-color: var(--cms-border) !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
+
+/* ── CMS 링크 / selection / scrollbar 토큰 (P2 디자인 깊이) ──
+   사용자 페이지 영역 (.firebat-cms-content / .firebat-cms-sidebar) 한정.
+   어드민 / dialog 등은 기존 글로벌 hardcoded 유지.
+   --cms-link / --cms-link-hover / --cms-selection-bg 사용자가 명시 override 가능 (선택).
+   미설정 시 primary 색에서 자동 derive. */
+
+/* 본문 인라인 링크 — render_text 안의 markdown 링크, 사용자 inline html 등.
+   기존 nav / 카드 wrapper 의 링크는 className 으로 자체 색 박혀있어 영향 0 (style='color: var(--cms-text)' inline). */
+.firebat-cms-content a {
+  color: var(--cms-link, var(--cms-primary));
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+.firebat-cms-content a:hover {
+  color: var(--cms-link-hover, var(--cms-link, var(--cms-primary)));
+  opacity: 0.75;
+}
+/* render_* 컴포넌트들이 자체 className+style 박혀있는 경우는 inline style 우선 — 영향 X.
+   markdown auto-converted 링크만 자연 적용. */
+
+/* 사이드바 위젯 안 자유 HTML 링크 — htmlWidget 등 */
+.firebat-cms-sidebar a {
+  color: var(--cms-link, var(--cms-primary));
+}
+.firebat-cms-sidebar a:hover {
+  opacity: 0.75;
+}
+
+/* 텍스트 selection 색 — 사용자가 페이지 텍스트 드래그 선택 시.
+   page 영역만 토큰 색, 어드민은 브라우저 default. */
+.firebat-cms-content ::selection {
+  background: var(--cms-selection-bg, color-mix(in srgb, var(--cms-primary) 25%, transparent));
+  color: var(--cms-text);
+}
+
+/* CMS scope scrollbar — overflow 컨테이너만 (Table 가로 스크롤 등). 글로벌 viewport scrollbar 는 기존 유지. */
+.firebat-cms-content *::-webkit-scrollbar-thumb {
+  background: var(--cms-border);
+  border-radius: 4px;
+}
+.firebat-cms-content *::-webkit-scrollbar-thumb:hover {
+  background: var(--cms-text-muted);
+}
+.firebat-cms-content {
+  scrollbar-color: var(--cms-border) transparent;
+}
