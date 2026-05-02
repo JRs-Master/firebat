@@ -434,7 +434,7 @@ export function Sidebar({
             <LayoutTemplate size={18} />
           </button>
         </Tooltip>
-        <Tooltip label="메모리 — 엔티티 (종목·인물·프로젝트)" side="right">
+        <Tooltip label="메모리 (엔티티 + 사건)" side="right">
           <button
             onClick={() => expand('entities')}
             className="p-2 rounded-lg text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition-colors"
@@ -517,7 +517,7 @@ export function Sidebar({
             <LayoutTemplate size={15} />
           </button>
         </Tooltip>
-        <Tooltip label="메모리 — 엔티티">
+        <Tooltip label="메모리">
           <button
             onClick={() => setTab('entities')}
             className={`p-2 rounded-md transition-colors ${

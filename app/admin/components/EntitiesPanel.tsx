@@ -1,14 +1,17 @@
 'use client';
 
 /**
- * EntitiesPanel — 메모리 시스템 Entity tier 의 어드민 UI (Phase 1.5).
+ * EntitiesPanel — 메모리 시스템 어드민 UI (Phase 1.5 + 2.6).
  *
- * 사이드바 ENTITIES 탭에서 사용. list / 검색 / 추가 / 삭제 / timeline 조회.
- * Phase 6 어드민 UI 전체 강화 시 entity browser + episode timeline + memory health
+ * 사이드바 메모리 탭 통합 — Entity (영속 추적 대상) + Event (시간순 사건) 두 sub-tab.
+ * Entity tab: list / 검색 / 추가 / 삭제 / timeline 조회.
+ * Event tab: 시간순 events list, type/who 필터, click → 상세 모달.
+ *
+ * Phase 6 어드민 UI 전체 강화 시 entity 그래프 + episode timeline + memory health
  * dashboard 로 발전.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Plus, Trash2, X, Clock, Tag } from 'lucide-react';
+import { Search, Plus, Trash2, X, Clock, Tag, Activity, Network } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
 
@@ -33,11 +36,23 @@ interface Fact {
   createdAt: number;
 }
 
+interface EventItem {
+  id: number;
+  type: string;
+  title: string;
+  description?: string;
+  who?: string;
+  context?: Record<string, unknown>;
+  occurredAt: number;
+  entityIds?: number[];
+}
+
 function formatDate(ms: number): string {
   return new Date(ms).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
 export function EntitiesPanel() {
+  const [subTab, setSubTab] = useState<'entities' | 'events'>('entities');
   const [entities, setEntities] = useState<Entity[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -111,6 +126,30 @@ export function EntitiesPanel() {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
+      {/* Sub-tabs — Entities / Events */}
+      <div className="flex items-center px-2 pt-2 gap-1 border-b border-slate-200/80">
+        <button
+          onClick={() => setSubTab('entities')}
+          className={`flex items-center gap-1 px-2 py-1.5 text-[11px] font-bold rounded-t-md transition-colors ${
+            subTab === 'entities' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'
+          }`}
+        >
+          <Network size={11} /> 엔티티
+        </button>
+        <button
+          onClick={() => setSubTab('events')}
+          className={`flex items-center gap-1 px-2 py-1.5 text-[11px] font-bold rounded-t-md transition-colors ${
+            subTab === 'events' ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'
+          }`}
+        >
+          <Activity size={11} /> 사건
+        </button>
+      </div>
+
+      {subTab === 'events' ? (
+        <EventsPanel />
+      ) : (
+        <>
       {/* 헤더 — 검색 + 추가 */}
       <div className="px-2 py-2 border-b border-slate-200/80 flex items-center gap-1">
         <div className="flex-1 relative">
@@ -236,7 +275,116 @@ export function EntitiesPanel() {
           }}
         />
       )}
+        </>
+      )}
     </div>
+  );
+}
+
+// ── Events sub-panel ──
+
+function EventsPanel() {
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [typeFilter, setTypeFilter] = useState('');
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const fetchEvents = useCallback(async () => {
+    setLoading(true);
+    try {
+      const url = new URL('/api/episodic', window.location.origin);
+      if (typeFilter.trim()) url.searchParams.set('type', typeFilter.trim());
+      if (query.trim()) url.searchParams.set('query', query.trim());
+      url.searchParams.set('limit', '100');
+      const res = await fetch(url.toString());
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.success) setEvents(data.events ?? []);
+    } finally {
+      setLoading(false);
+    }
+  }, [typeFilter, query]);
+
+  useEffect(() => {
+    const t = setTimeout(fetchEvents, 250);
+    return () => clearTimeout(t);
+  }, [fetchEvents]);
+
+  const handleDelete = async (id: number) => {
+    const ok = await confirmDialog({
+      title: '사건 삭제',
+      message: '이 사건을 삭제하시겠습니까?',
+      okLabel: '삭제',
+      cancelLabel: '취소',
+      danger: true,
+    });
+    if (!ok) return;
+    const res = await fetch(`/api/episodic/${id}`, { method: 'DELETE' });
+    if (res.ok) setEvents(prev => prev.filter(e => e.id !== id));
+  };
+
+  return (
+    <>
+      {/* Filter row */}
+      <div className="px-2 py-2 border-b border-slate-200/80 flex items-center gap-1">
+        <div className="flex-1 relative">
+          <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="검색"
+            className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+        <input
+          type="text"
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          placeholder="type"
+          className="w-20 px-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+      </div>
+
+      {/* List */}
+      <div className="flex-1 overflow-y-auto overscroll-contain">
+        {loading && events.length === 0 ? (
+          <p className="px-3 py-4 text-[11px] text-slate-400">로드 중...</p>
+        ) : events.length === 0 ? (
+          <p className="px-3 py-4 text-[11px] text-slate-400 italic">사건 없음</p>
+        ) : (
+          <ul className="list-none p-0 m-0">
+            {events.map(e => (
+              <li key={e.id} className="border-b border-slate-100 px-2 py-1.5 hover:bg-slate-50">
+                <div className="flex items-center gap-1 mb-1">
+                  <span className="text-[9px] px-1 py-0.5 rounded bg-blue-50 text-blue-700 shrink-0 font-bold">{e.type}</span>
+                  <span className="text-[10px] text-slate-700 font-medium truncate flex-1">{e.title}</span>
+                  <Tooltip label="삭제">
+                    <button
+                      onClick={() => handleDelete(e.id)}
+                      className="p-0.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
+                    >
+                      <Trash2 size={9} />
+                    </button>
+                  </Tooltip>
+                </div>
+                <div className="flex items-center gap-1.5 text-[9px] text-slate-400">
+                  <Clock size={8} />
+                  <span className="tabular-nums">{formatDate(e.occurredAt)}</span>
+                  {e.who && <span>· {e.who}</span>}
+                  {e.entityIds && e.entityIds.length > 0 && (
+                    <span>· {e.entityIds.length} entities</span>
+                  )}
+                </div>
+                {e.description && (
+                  <div className="text-[10px] text-slate-600 mt-0.5 line-clamp-2">{e.description}</div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
   );
 }
 
