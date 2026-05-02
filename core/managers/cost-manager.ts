@@ -159,6 +159,89 @@ export class CostManager {
     this.flushDirty();
   }
 
+  // ── Budget cap ────────────────────────────────────────────────────────
+
+  /** 한도 조회 — Vault `system:cost:budget` JSON. 미설정 시 한도 없음 (모두 0). */
+  async getBudget(): Promise<{ dailyUsd: number; monthlyUsd: number; alertAtPercent: number }> {
+    try {
+      const raw = await this.vault.getSecret('system:cost:budget');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          dailyUsd: Number(parsed.dailyUsd) || 0,
+          monthlyUsd: Number(parsed.monthlyUsd) || 0,
+          alertAtPercent: Number(parsed.alertAtPercent) || 80,
+        };
+      }
+    } catch (e) {
+      this.logger.debug(`[CostManager] budget Vault 파싱 실패: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    return { dailyUsd: 0, monthlyUsd: 0, alertAtPercent: 80 };
+  }
+
+  /** 한도 저장 — 0 = 무제한. */
+  async setBudget(budget: { dailyUsd: number; monthlyUsd: number; alertAtPercent: number }): Promise<void> {
+    await this.vault.setSecret('system:cost:budget', JSON.stringify({
+      dailyUsd: Math.max(0, Number(budget.dailyUsd) || 0),
+      monthlyUsd: Math.max(0, Number(budget.monthlyUsd) || 0),
+      alertAtPercent: Math.min(100, Math.max(1, Number(budget.alertAtPercent) || 80)),
+    }));
+  }
+
+  /** 오늘·이달 누적 비용 (메모리 + Vault). */
+  async getCurrentSpend(): Promise<{ dailyUsd: number; monthlyUsd: number; today: string; month: string }> {
+    const today = this.getDateKey();  // YYYY-MM-DD
+    const month = today.slice(0, 7);    // YYYY-MM
+    const monthFrom = `${month}-01`;
+    const monthTo = `${month}-31`;
+    const stats = this.getStats({ fromDate: monthFrom, toDate: monthTo });
+    let dailyUsd = 0;
+    let monthlyUsd = 0;
+    for (const r of stats.records) {
+      monthlyUsd += r.costUsd;
+      if (r.date === today) dailyUsd += r.costUsd;
+    }
+    return { dailyUsd, monthlyUsd, today, month };
+  }
+
+  /** 한도 체크 — LLM 호출 직전. allowed=false 면 호출 거부. */
+  async checkBudget(): Promise<{
+    allowed: boolean;
+    reason?: string;
+    dailyUsd: number;
+    monthlyUsd: number;
+    dailyLimit: number;
+    monthlyLimit: number;
+  }> {
+    const budget = await this.getBudget();
+    const spend = await this.getCurrentSpend();
+    // 한도 0 = 무제한 → allowed
+    if (budget.dailyUsd === 0 && budget.monthlyUsd === 0) {
+      return { allowed: true, dailyUsd: spend.dailyUsd, monthlyUsd: spend.monthlyUsd, dailyLimit: 0, monthlyLimit: 0 };
+    }
+    if (budget.dailyUsd > 0 && spend.dailyUsd >= budget.dailyUsd) {
+      return {
+        allowed: false,
+        reason: `일일 비용 한도 초과 ($${spend.dailyUsd.toFixed(2)} / $${budget.dailyUsd.toFixed(2)}). 한도 늘리거나 자정까지 대기.`,
+        dailyUsd: spend.dailyUsd, monthlyUsd: spend.monthlyUsd,
+        dailyLimit: budget.dailyUsd, monthlyLimit: budget.monthlyUsd,
+      };
+    }
+    if (budget.monthlyUsd > 0 && spend.monthlyUsd >= budget.monthlyUsd) {
+      return {
+        allowed: false,
+        reason: `월간 비용 한도 초과 ($${spend.monthlyUsd.toFixed(2)} / $${budget.monthlyUsd.toFixed(2)}). 한도 늘리거나 다음 달 대기.`,
+        dailyUsd: spend.dailyUsd, monthlyUsd: spend.monthlyUsd,
+        dailyLimit: budget.dailyUsd, monthlyLimit: budget.monthlyUsd,
+      };
+    }
+    return {
+      allowed: true,
+      dailyUsd: spend.dailyUsd, monthlyUsd: spend.monthlyUsd,
+      dailyLimit: budget.dailyUsd, monthlyLimit: budget.monthlyUsd,
+    };
+  }
+
   /** 테스트·셧다운용 — flush timer 정리 */
   shutdown(): void {
     if (this.flushTimer) {

@@ -2472,6 +2472,125 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
   );
 }
 
+// 비용 한도 섹션 — Vault 'system:cost:budget' 일/월 USD + 알림 임계 %
+function CostBudgetSection() {
+  const [budget, setBudget] = useState<{ dailyUsd: number; monthlyUsd: number; alertAtPercent: number; dailySpent: number; monthlySpent: number } | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savedFlash, setSavedFlash] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/llm/budget');
+      const data = await res.json();
+      if (data.success) setBudget(data.data);
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { void load(); }, []);
+
+  const save = async () => {
+    if (!budget) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/llm/budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dailyUsd: budget.dailyUsd, monthlyUsd: budget.monthlyUsd, alertAtPercent: budget.alertAtPercent }),
+      });
+      const data = await res.json();
+      if (data.success) { setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2000); void load(); }
+      else alert(`저장 실패: ${data.error}`);
+    } finally { setSaving(false); }
+  };
+
+  if (loading || !budget) return null;
+
+  const dailyPct = budget.dailyUsd > 0 ? Math.min(100, (budget.dailySpent / budget.dailyUsd) * 100) : 0;
+  const monthlyPct = budget.monthlyUsd > 0 ? Math.min(100, (budget.monthlySpent / budget.monthlyUsd) * 100) : 0;
+  const overDaily = budget.dailyUsd > 0 && budget.dailySpent >= budget.dailyUsd;
+  const overMonthly = budget.monthlyUsd > 0 && budget.monthlySpent >= budget.monthlyUsd;
+  const alertDaily = budget.dailyUsd > 0 && dailyPct >= budget.alertAtPercent;
+  const alertMonthly = budget.monthlyUsd > 0 && monthlyPct >= budget.alertAtPercent;
+
+  return (
+    <div className="border border-slate-200 rounded-lg p-3 bg-slate-50">
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">비용 한도 (0 = 무제한)</p>
+        {(overDaily || overMonthly) && <span className="text-[11px] font-bold text-red-600">⚠ 한도 초과 — LLM 호출 차단됨</span>}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <label className="text-[11px] text-slate-500 block mb-1">일일 한도 (USD)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.5"
+            value={budget.dailyUsd}
+            onChange={e => setBudget({ ...budget, dailyUsd: Number(e.target.value) || 0 })}
+            className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded"
+          />
+          {budget.dailyUsd > 0 && (
+            <div className="mt-1.5">
+              <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                <div
+                  className={`h-full transition-all ${overDaily ? 'bg-red-500' : alertDaily ? 'bg-orange-500' : 'bg-blue-500'}`}
+                  style={{ width: `${dailyPct}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-slate-500 mt-0.5">${budget.dailySpent.toFixed(2)} / ${budget.dailyUsd.toFixed(2)} ({dailyPct.toFixed(0)}%)</p>
+            </div>
+          )}
+        </div>
+        <div>
+          <label className="text-[11px] text-slate-500 block mb-1">월간 한도 (USD)</label>
+          <input
+            type="number"
+            min="0"
+            step="5"
+            value={budget.monthlyUsd}
+            onChange={e => setBudget({ ...budget, monthlyUsd: Number(e.target.value) || 0 })}
+            className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded"
+          />
+          {budget.monthlyUsd > 0 && (
+            <div className="mt-1.5">
+              <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                <div
+                  className={`h-full transition-all ${overMonthly ? 'bg-red-500' : alertMonthly ? 'bg-orange-500' : 'bg-blue-500'}`}
+                  style={{ width: `${monthlyPct}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-slate-500 mt-0.5">${budget.monthlySpent.toFixed(2)} / ${budget.monthlyUsd.toFixed(2)} ({monthlyPct.toFixed(0)}%)</p>
+            </div>
+          )}
+        </div>
+        <div>
+          <label className="text-[11px] text-slate-500 block mb-1">알림 임계 (%)</label>
+          <input
+            type="number"
+            min="1"
+            max="100"
+            step="5"
+            value={budget.alertAtPercent}
+            onChange={e => setBudget({ ...budget, alertAtPercent: Number(e.target.value) || 80 })}
+            className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded"
+          />
+          <p className="text-[10px] text-slate-400 mt-1">진행률 진해지는 기준 (UI 시각화용)</p>
+        </div>
+      </div>
+      <div className="flex justify-end mt-2">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="px-3 py-1.5 text-[12px] bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-50"
+        >
+          {savedFlash ? '✓ 저장됨' : saving ? '저장 중...' : '한도 저장'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function CostTabContent() {
   const [stats, setStats] = useState<CostStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2530,6 +2649,7 @@ function CostTabContent() {
 
   return (
     <div className="flex flex-col gap-4">
+      <CostBudgetSection />
       <div className="flex items-center justify-between">
         <p className="text-[13px] text-slate-600">최근 <strong className="text-slate-800 inline-block min-w-[2.5em] tabular-nums">{days}일</strong> LLM 호출 누적. CLI 구독 모델은 cost=0 (token만 추적).</p>
         <div className="flex gap-1">

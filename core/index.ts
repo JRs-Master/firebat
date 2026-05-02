@@ -1536,6 +1536,12 @@ export class FirebatCore {
   async flushLlmCost(): Promise<void> {
     return this.cost.flushNow();
   }
+  /** 비용 한도 조회 — 어드민 UI 용 */
+  async getCostBudget() { return this.cost.getBudget(); }
+  /** 비용 한도 저장 — 어드민 UI 용. 0 = 무제한 */
+  async setCostBudget(budget: { dailyUsd: number; monthlyUsd: number; alertAtPercent: number }) { return this.cost.setBudget(budget); }
+  /** 한도 체크 — LLM 호출 직전 진입 지점에서 호출. allowed=false 면 거부. */
+  async checkCostBudget() { return this.cost.checkBudget(); }
 
   // ══════════════════════════════════════════════════════════════════════════
   //  도구 → ToolManager

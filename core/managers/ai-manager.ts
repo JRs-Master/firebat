@@ -978,6 +978,15 @@ export class AiManager {
           ? `[플랜모드 AUTO — destructive·복합 작업만 propose_plan, 단순 read-only 는 즉시 도구 호출. 앱 만들기는 3-stage suggest]\n\n${prompt}`
           : prompt)
         : prompt;
+      // 비용 한도 가드 — turn 1 시작 직전에만 체크 (turn 내 추가 도구 호출은 같은 호출 단위로 취급).
+      // 한도 초과 시 LLM 호출 자체 차단 → 토큰 0 + 비용 0 으로 안전 종료.
+      if (turn === 0) {
+        const budget = await this.core.checkCostBudget();
+        if (!budget.allowed) {
+          this.logger.warn(`[AiManager] [${corrId}] 비용 한도 초과 — LLM 호출 차단: ${budget.reason}`);
+          return { success: false, executedActions, error: `비용 한도 초과: ${budget.reason}` };
+        }
+      }
       const llmRes = await this.llm.askWithTools(promptForLlm, finalSystemPrompt, turnTools, turnHistory, turnExchanges, turnLlmOpts);
       const llmMs = Date.now() - llmStart;
 
