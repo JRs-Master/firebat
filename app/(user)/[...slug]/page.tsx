@@ -251,16 +251,69 @@ export default async function DynamicPage({ params, searchParams }: Props) {
     }
   }
 
-  // 페이지별 JSON-LD (WebPage)
-  const pageJsonLd = seo.jsonLdEnabled ? {
-    '@context': 'https://schema.org',
-    '@type': 'WebPage',
-    '@id': `${siteUrl}/${slug}`,
-    url: `${siteUrl}/${slug}`,
-    name: head.title ?? slug,
-    description: head.description ?? seo.siteDescription,
-    isPartOf: { '@id': `${siteUrl}/#website` },
-  } : null;
+  // 페이지별 JSON-LD — WebPage + BreadcrumbList + Article(콘텐츠 페이지) 통합 @graph.
+  // BreadcrumbList: slug 계층 → Home > project > page (Google rich snippet 빵부스러기 노출)
+  // Article: project 박힌 콘텐츠 페이지만 (datePublished/Modified/headline/author 등 Google rich result)
+  let pageJsonLd: Record<string, unknown> | null = null;
+  if (seo.jsonLdEnabled) {
+    const pageId = `${siteUrl}/${slug}`;
+    const graph: Array<Record<string, unknown>> = [
+      {
+        '@type': 'WebPage',
+        '@id': pageId,
+        url: pageId,
+        name: head.title ?? slug,
+        description: head.description ?? seo.siteDescription,
+        isPartOf: { '@id': `${siteUrl}/#website` },
+      },
+    ];
+
+    // BreadcrumbList — 모든 페이지. slug = 'a/b/c' → 홈 > a > a/b > a/b/c
+    const segments = slug.split('/').filter(Boolean);
+    if (segments.length > 0) {
+      const items = [{ '@type': 'ListItem', position: 1, name: '홈', item: siteUrl }];
+      let acc = '';
+      segments.forEach((seg, i) => {
+        acc += (acc ? '/' : '') + seg;
+        items.push({
+          '@type': 'ListItem',
+          position: i + 2,
+          name: i === segments.length - 1 ? (head.title ?? seg) : seg,
+          item: `${siteUrl}/${acc}`,
+        });
+      });
+      graph.push({ '@type': 'BreadcrumbList', '@id': `${pageId}#breadcrumb`, itemListElement: items });
+    }
+
+    // Article — project 박힌 콘텐츠 페이지만 (홈·태그·프로젝트 루트 등 제외)
+    if (spec.project && spec._createdAt) {
+      const ogImage = head?.og?.image;
+      graph.push({
+        '@type': 'Article',
+        '@id': `${pageId}#article`,
+        headline: head.title ?? slug,
+        description: head.description ?? seo.siteDescription,
+        datePublished: spec._createdAt,
+        dateModified: spec._updatedAt ?? spec._createdAt,
+        author: {
+          '@type': 'Organization',
+          '@id': `${siteUrl}/#organization`,
+        },
+        publisher: {
+          '@type': 'Organization',
+          '@id': `${siteUrl}/#organization`,
+        },
+        mainEntityOfPage: { '@id': pageId },
+        ...(ogImage ? { image: ogImage } : {}),
+        ...(Array.isArray(head.keywords) && head.keywords.length > 0 ? { keywords: head.keywords.join(', ') } : {}),
+      });
+    }
+
+    pageJsonLd = {
+      '@context': 'https://schema.org',
+      '@graph': graph,
+    };
+  }
 
   return (
     <>

@@ -201,12 +201,14 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
 
   async getPage(slug: string): Promise<InfraResult<PageSpec>> {
     try {
-      const row = this.db.prepare(`SELECT spec, visibility, password FROM pages WHERE slug = ?`).get(slug) as { spec: string; visibility: string; password: string | null } | undefined;
+      const row = this.db.prepare(`SELECT spec, visibility, password, created_at as createdAt, updated_at as updatedAt FROM pages WHERE slug = ?`).get(slug) as { spec: string; visibility: string; password: string | null; createdAt: string; updatedAt: string } | undefined;
       if (!row) return { success: false, error: `Page not found: ${slug}` };
       // 과거 double-encoded 저장된 손상 데이터도 자동 복구 — unwrapJson 이 깊이 3까지 재파싱
       const parsed = unwrapJson<Record<string, unknown>>(row.spec);
       parsed._visibility = row.visibility ?? 'public';
       parsed._hasPassword = !!row.password;
+      parsed._createdAt = row.createdAt ?? null;
+      parsed._updatedAt = row.updatedAt ?? null;
       return { success: true, data: parsed as unknown as PageSpec };
     } catch (err: any) {
       return { success: false, error: err.message };

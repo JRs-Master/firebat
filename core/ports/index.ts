@@ -161,6 +161,10 @@ export interface PageSpec {
   body?: PageComponent[];
   project?: string;
   _visibility?: 'public' | 'password' | 'private';
+  /** DB 발행 시각 — JSON-LD Article schema 의 datePublished/dateModified 에 사용 */
+  _createdAt?: string;
+  _updatedAt?: string;
+  _hasPassword?: boolean;
 }
 
 // ── JSON Schema 타입 (config.json input/output) ─────────────────────────
