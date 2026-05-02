@@ -32,7 +32,9 @@ function extractFeaturedAndExcerpt(parsed: any): { featuredImage?: string; excer
  * 몽고디비 등 NoSQL로 향후 변경 시, 이 파일만 갈아끼우면 Core가 즉시 동작합니다.
  */
 export class SqliteDatabaseAdapter implements IDatabasePort {
-  private db: Database.Database;
+  /** 다른 어댑터 (Entity / Episodic 등) 가 같은 DB instance 위에 자기 테이블 박을 수 있게 노출.
+   *  raw Database 가 필요한 새 어댑터만 사용 — 일반 매니저는 IDatabasePort 만 쓰면 됨. */
+  public readonly db: Database.Database;
 
   constructor(dbPath: string = DB_PATH) {
     this.db = new Database(dbPath);

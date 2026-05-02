@@ -19,6 +19,7 @@ import { EmbedderAdapter } from './llm/embedder-adapter';
 import { LlmRouter } from './llm/llm-router';
 import { LocalMediaAdapter } from './media/local-adapter';
 import { SharpImageProcessorAdapter } from './image-processor/sharp-adapter';
+import { SqliteEntityAdapter } from './entity/sqlite-adapter';
 import { buildImageConfigDrivenAdapter, loadImageRegistry, DEFAULT_IMAGE_MODEL } from './image/factory';
 import { DB_PATH, DEFAULT_MODEL } from './config';
 
@@ -79,6 +80,10 @@ export function getInfra(): FirebatInfraContainer {
     const media = new LocalMediaAdapter(log);
     // Image post-processor — sharp + blurhash (resize/convert/variants/blurhash)
     const imageProcessor = new SharpImageProcessorAdapter();
+    // Embedder — query/passage 임베딩 + cosine
+    const embedder = new EmbedderAdapter();
+    // Entity 메모리 — Phase 1 of 4-tier memory (entities + entity_facts on shared DB).
+    const entity = new SqliteEntityAdapter(database.db, embedder, log);
 
     globalForInfra.firebatInfra = {
       storage: new LocalStorageAdapter(),
@@ -91,10 +96,11 @@ export function getInfra(): FirebatInfraContainer {
       mcpClient,
       llm,
       auth: new VaultAuthAdapter(vault),
-      embedder: new EmbedderAdapter(),
+      embedder,
       media,
       imageProcessor,
       imageGen,
+      entity,
       toolRouter: (modelId: string) => new LlmRouter(database, llm, modelId),
     };
 

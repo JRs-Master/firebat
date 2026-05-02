@@ -796,6 +796,126 @@ export interface IEmbedderPort {
   bufferToFloat32(buf: Buffer): Float32Array;
 }
 
+/** 메모리 시스템 4-tier (CrewAI / Mem0 식):
+ *  - Short-term: ConversationManager (현재 박힘) — 진행 중 대화
+ *  - Episodic: events table — 시간순 사건 (Phase 2 박을 예정)
+ *  - Entity: entities + entity_facts — 종목·인물·프로젝트 단위 fact 누적 (Phase 1, 이번)
+ *  - Contextual: RetrievalEngine — 4-tier 통합 검색 후 자동 prepend (Phase 5 박을 예정)
+ *
+ *  Entity = 추적 대상 (종목·인물·프로젝트·개념 등). 1 entity 가 N fact 보유 (timeline).
+ *  Fact = entity 에 link 된 시간 stamped 사실. 추후 Episode 와 cross-link 가능.
+ */
+export interface EntityRecord {
+  /** Auto-increment ID */
+  id: number;
+  /** 정식 명칭 — '삼성전자', '테슬라', '자동매매봇' 등 */
+  name: string;
+  /** Entity 종류 — 'stock' / 'company' / 'person' / 'project' / 'concept' / 'event' 등 자유 분류.
+   *  도구별 enum X (사용자·AI 가 자유 박음). */
+  type: string;
+  /** 별칭 — 같은 entity 의 다른 명칭. 검색 시 통합. */
+  aliases: string[];
+  /** 자유 메타데이터 (JSON 직렬화 가능) — ticker / industry / sector / 부가정보. */
+  metadata?: Record<string, unknown>;
+  /** 첫 발견 대화 ID (선택) */
+  sourceConvId?: string;
+  /** 첫 발견 시각 (ms epoch) */
+  firstSeen: number;
+  /** 마지막 fact 추가·업데이트 시각 (ms epoch) */
+  lastUpdated: number;
+  /** Linked facts 개수 (집계, JOIN 결과 — get/search 시 자동 채움). */
+  factCount?: number;
+}
+
+export interface EntityFactRecord {
+  /** Auto-increment ID */
+  id: number;
+  /** Linked entity ID */
+  entityId: number;
+  /** Fact 본문 — 자연어 1-2 문장 */
+  content: string;
+  /** Fact 종류 — 'recommendation' / 'transaction' / 'observation' / 'analysis' / 'report' 등 자유.
+   *  도구별 enum X. */
+  factType?: string;
+  /** Event 발생 시각 (ms epoch) — content 안의 날짜 (createdAt 과 별도, "2026-04-15 매수" 의 매수 시각). */
+  occurredAt?: number;
+  /** 자유 태그 ['매수', '추천', '리포트' 등] — 다중 카테고리. */
+  tags: string[];
+  /** 출처 대화 ID */
+  sourceConvId?: string;
+  /** 만료 시각 (ms epoch). 0/undefined = 영구. */
+  expiresAt?: number;
+  /** 생성 시각 (ms epoch) */
+  createdAt: number;
+  /** 수정 시각 (ms epoch) */
+  updatedAt: number;
+}
+
+export interface EntitySearchOpts {
+  /** Semantic search query — embedding cosine 매칭. */
+  query?: string;
+  /** Pre-computed embedding (호출 측이 임베딩 했을 때) */
+  queryEmbedding?: Buffer;
+  /** Type filter — 'stock' 만, 'company' 만 등 */
+  type?: string;
+  /** Name LIKE filter (case-insensitive partial) */
+  nameLike?: string;
+  /** 정렬 — 기본 lastUpdated DESC (최근 활성). */
+  orderBy?: 'lastUpdated' | 'firstSeen' | 'factCount' | 'name';
+  limit?: number;
+  offset?: number;
+}
+
+export interface FactSearchOpts {
+  query?: string;
+  queryEmbedding?: Buffer;
+  /** 특정 entity 의 fact 만 */
+  entityId?: number;
+  /** Fact type filter */
+  factType?: string;
+  /** Tag 매칭 (AND or OR — adapter 가 결정, 기본 ANY) */
+  tags?: string[];
+  /** occurredAt 범위 필터 */
+  occurredAfter?: number;
+  occurredBefore?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface IEntityPort {
+  // ── Entity CRUD ──
+  /** Entity 저장 (upsert by name+type). 임베딩 자동 생성. */
+  saveEntity(input: { name: string; type: string; aliases?: string[]; metadata?: Record<string, unknown>; sourceConvId?: string; embedding?: Buffer }): Promise<InfraResult<{ id: number; created: boolean }>>;
+  /** Entity 단건 수정 — id + patch. */
+  updateEntity(id: number, patch: { name?: string; type?: string; aliases?: string[]; metadata?: Record<string, unknown>; embedding?: Buffer }): Promise<InfraResult<void>>;
+  /** Entity 삭제 — cascade 로 entity_facts 도 삭제 (FK ON DELETE CASCADE). */
+  removeEntity(id: number): Promise<InfraResult<void>>;
+  /** 단건 조회 — factCount JOIN 자동 채움. */
+  getEntity(id: number): Promise<InfraResult<EntityRecord | null>>;
+  /** 이름으로 조회 — alias 도 매칭 (canonical name 또는 alias 일치). */
+  findEntityByName(name: string): Promise<InfraResult<EntityRecord | null>>;
+  /** 검색 — query embedding cosine + filter. */
+  searchEntities(opts: EntitySearchOpts): Promise<InfraResult<EntityRecord[]>>;
+
+  // ── Fact CRUD ──
+  /** Fact 저장 (link to entity). 임베딩 자동 생성. */
+  saveFact(input: { entityId: number; content: string; factType?: string; occurredAt?: number; tags?: string[]; sourceConvId?: string; ttlDays?: number; embedding?: Buffer }): Promise<InfraResult<{ id: number }>>;
+  /** Fact 단건 수정 */
+  updateFact(id: number, patch: { content?: string; factType?: string; occurredAt?: number; tags?: string[]; ttlDays?: number; embedding?: Buffer }): Promise<InfraResult<void>>;
+  /** Fact 삭제 */
+  removeFact(id: number): Promise<InfraResult<void>>;
+  /** 단건 조회 */
+  getFact(id: number): Promise<InfraResult<EntityFactRecord | null>>;
+  /** Entity 의 모든 fact (timeline 순) — Phase 5 retrieval 의 핵심. */
+  listFactsByEntity(entityId: number, opts?: { limit?: number; offset?: number; orderBy?: 'occurredAt' | 'createdAt' }): Promise<InfraResult<EntityFactRecord[]>>;
+  /** Fact 검색 — semantic + filter. */
+  searchFacts(opts: FactSearchOpts): Promise<InfraResult<EntityFactRecord[]>>;
+
+  // ── 정리 ──
+  /** 만료된 fact 정리 (cron). expiresAt < now 삭제. */
+  cleanupExpiredFacts(): Promise<InfraResult<{ deleted: number }>>;
+}
+
 export type RouteFeedbackSignal = 'positive' | 'negative' | 'neutral';
 
 export interface RouteResult {
@@ -854,6 +974,8 @@ export interface FirebatInfraContainer {
   media: IMediaPort;
   imageProcessor: IImageProcessorPort;
   imageGen: IImageGenPort;
+  /** 메모리 시스템 — Entity tier (Phase 1). Episodic / Vector / Retrieval 은 Phase 2-5 박을 예정. */
+  entity: IEntityPort;
   /** Vault 기반 모델명을 매 요청 시 읽어야 해서 factory 로 주입 */
   toolRouter: ToolRouterFactory;
 }

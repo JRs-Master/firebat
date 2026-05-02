@@ -21,7 +21,8 @@ import { CostManager } from './managers/cost-manager';
 import type { CostStatsFilter, CostStatsSummary } from './managers/cost-manager';
 import { ToolManager } from './managers/tool-manager';
 import type { ToolDefinition, ToolListFilter, ToolExecuteContext, ToolExecuteResult } from './managers/tool-manager';
-import type { FirebatInfraContainer, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, PageListItem } from './ports';
+import { EntityManager } from './managers/entity-manager';
+import type { FirebatInfraContainer, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, PageListItem, EntityRecord, EntityFactRecord, EntitySearchOpts, FactSearchOpts } from './ports';
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
 import { VK_SYSTEM_TIMEZONE, VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_USER_PROMPT, VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_LAST_MODEL_BY_CATEGORY, VK_LLM_ANTHROPIC_CACHE, DEFAULT_AI_ASSISTANT_MODEL, AI_ASSISTANT_MODELS } from './vault-keys';
@@ -86,6 +87,7 @@ export class FirebatCore {
   private readonly statusMgr: StatusManager;
   private readonly cost: CostManager;
   private readonly tool: ToolManager;
+  private readonly entity: EntityManager;
 
   constructor(private readonly infra: FirebatInfraContainer) {
     // 매니저 생성 — 각 매니저는 자기 도메인의 인프라 포트를 직접 받음
@@ -102,6 +104,7 @@ export class FirebatCore {
     this.media = new MediaManager(infra.imageGen, infra.media, infra.imageProcessor, infra.vault, infra.log);
     this.event = new EventManager(infra.log);
     this.statusMgr = new StatusManager(infra.log, this.event);
+    this.entity = new EntityManager(infra.entity);
 
     // StatusManager error → 자동 captureException forward.
     // 일반 메커니즘 — 어떤 도메인 (이미지·cron·pipeline 등) 에서 statusMgr.error 호출되든
@@ -901,6 +904,57 @@ export class FirebatCore {
     return [...tagMap.entries()]
       .map(([tag, slugSet]) => ({ tag, count: slugSet.size, slugs: [...slugSet] }))
       .sort((a, b) => b.count - a.count);
+  }
+
+  // ── 메모리 시스템 — Entity tier (Phase 1) ─────────────────────────────────
+  // 4-tier memory:
+  //   - Short-term: ConversationManager (이미 박힘) — 진행 중 대화
+  //   - Episodic: events (Phase 2 박을 예정) — 시간순 사건
+  //   - Entity: entities + entity_facts (이 메서드들) — 종목·인물·프로젝트 단위 fact 누적
+  //   - Contextual: RetrievalEngine (Phase 5 박을 예정) — 4-tier 통합 검색 후 자동 prepend
+
+  async saveEntity(input: { name: string; type: string; aliases?: string[]; metadata?: Record<string, unknown>; sourceConvId?: string }) {
+    return this.entity.saveEntity(input);
+  }
+  async updateEntity(id: number, patch: { name?: string; type?: string; aliases?: string[]; metadata?: Record<string, unknown> }) {
+    return this.entity.updateEntity(id, patch);
+  }
+  async deleteEntity(id: number) {
+    return this.entity.deleteEntity(id);
+  }
+  async getEntity(id: number) {
+    return this.entity.getEntity(id);
+  }
+  async findEntityByName(name: string) {
+    return this.entity.findEntityByName(name);
+  }
+  async searchEntities(opts: EntitySearchOpts) {
+    return this.entity.searchEntities(opts);
+  }
+  async saveEntityFact(input: { entityId: number; content: string; factType?: string; occurredAt?: number; tags?: string[]; sourceConvId?: string; ttlDays?: number }) {
+    return this.entity.saveFact(input);
+  }
+  async updateEntityFact(id: number, patch: { content?: string; factType?: string; occurredAt?: number; tags?: string[]; ttlDays?: number }) {
+    return this.entity.updateFact(id, patch);
+  }
+  async deleteEntityFact(id: number) {
+    return this.entity.deleteFact(id);
+  }
+  async getEntityFact(id: number) {
+    return this.entity.getFact(id);
+  }
+  async getEntityTimeline(entityId: number, opts?: { limit?: number; offset?: number; orderBy?: 'occurredAt' | 'createdAt' }) {
+    return this.entity.getEntityTimeline(entityId, opts);
+  }
+  async searchEntityFacts(opts: FactSearchOpts) {
+    return this.entity.searchFacts(opts);
+  }
+  /** 자연어 query → top entity + 그 timeline. Phase 5 RetrievalEngine 의 base. */
+  async retrieveEntityContext(query: string, opts?: { entityLimit?: number; factsPerEntity?: number }) {
+    return this.entity.retrieveContext(query, opts);
+  }
+  async cleanupExpiredFacts() {
+    return this.entity.cleanupExpired();
   }
 
   // ── 템플릿 (CMS Phase 8b) ───────────────────────────────────────────────
