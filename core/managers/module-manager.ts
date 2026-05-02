@@ -322,6 +322,15 @@ export class ModuleManager {
     if (s.themePreset && COLOR_PRESETS[s.themePreset]) {
       theme.colors = { ...COLOR_PRESETS[s.themePreset].colors };
     }
+    // 색 개별 override — 사용자가 색 개별 picker 로 지정한 hex 가 있으면 프리셋 위에 덮어씀.
+    // primary/accent/up/down/text/textMuted/bg/bgCard/border 9 색.
+    const colorKeys = ['primary', 'accent', 'up', 'down', 'text', 'textMuted', 'bg', 'bgCard', 'border'] as const;
+    for (const k of colorKeys) {
+      const overrideKey = `themeColor_${k}`;
+      if (typeof s[overrideKey] === 'string' && /^#[0-9a-fA-F]{6}$/.test(s[overrideKey])) {
+        theme.colors[k] = s[overrideKey];
+      }
+    }
     // 폰트 프리셋 — 선택 시 body/heading/mono 적용
     if (s.themeFont && FONT_PRESETS[s.themeFont]) {
       theme.fonts = { ...FONT_PRESETS[s.themeFont] };

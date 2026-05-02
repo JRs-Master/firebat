@@ -8,7 +8,7 @@ import { confirmDialog } from './Dialog';
 import { COLOR_PRESETS } from '../../../lib/design-tokens';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
-type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'verifications' | 'color-presets' | 'select';
+type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select';
 interface SelectOption { value: string; label: string }
 interface SettingField {
   key: string;
@@ -108,6 +108,7 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'adsenseSlotFooterTop', label: '슬롯 — 푸터 위', type: 'text', tab: '광고', placeholder: '1234567890', description: 'AdSense 광고 단위 ID — 푸터 바로 위. 비우면 미표시.' },
       // ── 테마 — 색·폰트·layout 토큰. 사용자 변경 즉시 모든 페이지 반영 (CSS var). ──
       { key: 'themePreset', label: '색 프리셋', type: 'color-presets', tab: '테마', description: '클릭 한 번으로 primary/accent/up/down/text/배경/테두리 색 일괄 변경. Light 7 + Dark 3 = 10 프리셋.', defaultValue: 'slate-pro' },
+      { key: '__themeColorOverrides', label: '색 개별 편집 (선택)', type: 'color-overrides', tab: '테마', description: '프리셋 위에 색을 개별 변경하고 싶을 때만 입력. 빈 값 = 프리셋 그대로. 변경한 색만 덮어씀.' },
       { key: 'themeFont', label: '폰트 세트', type: 'select', tab: '테마', description: '본문·제목 폰트 통합 변경. Pretendard Variable (한글 최적, 기본) / Noto Sans KR / Inter / Geist / Cal Sans.', defaultValue: 'pretendard', options: [
         { value: 'pretendard', label: 'Pretendard Variable (한글, 기본)' },
         { value: 'noto-sans-kr', label: 'Noto Sans KR' },
@@ -785,6 +786,14 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     value={settings[field.key] ?? field.defaultValue ?? 'slate-pro'}
                     onChange={(v) => handleChange(field.key, v)}
                   />
+                ) : field.type === 'color-overrides' ? (
+                  <ColorOverridesField
+                    label={field.label}
+                    description={field.description}
+                    settings={settings}
+                    presetKey={settings.themePreset ?? 'slate-pro'}
+                    onChange={(k, v) => handleChange(k, v)}
+                  />
                 ) : field.type === 'select' ? (
                   <>
                     <label className="text-xs sm:text-sm font-bold text-slate-700">{field.label}</label>
@@ -927,6 +936,92 @@ function ColorPresetField({ label, description, value, onChange }: {
               </div>
               <span className="text-[9px] uppercase tracking-wider font-bold opacity-50">{preset.mode}</span>
             </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// ── 색 개별 편집 — 9 색 picker (themeColor_<key> Vault 키). 빈 값 = 프리셋 그대로.
+const COLOR_OVERRIDE_FIELDS: Array<{ key: string; label: string; defaultPresetKey: keyof (typeof COLOR_PRESETS)['slate-pro']['colors'] }> = [
+  { key: 'themeColor_primary', label: '주요 색 (primary)', defaultPresetKey: 'primary' },
+  { key: 'themeColor_accent', label: '강조 색 (accent)', defaultPresetKey: 'accent' },
+  { key: 'themeColor_up', label: '상승 색 (up)', defaultPresetKey: 'up' },
+  { key: 'themeColor_down', label: '하락 색 (down)', defaultPresetKey: 'down' },
+  { key: 'themeColor_text', label: '본문 텍스트', defaultPresetKey: 'text' },
+  { key: 'themeColor_textMuted', label: '보조 텍스트', defaultPresetKey: 'textMuted' },
+  { key: 'themeColor_bg', label: '페이지 배경', defaultPresetKey: 'bg' },
+  { key: 'themeColor_bgCard', label: '카드 배경', defaultPresetKey: 'bgCard' },
+  { key: 'themeColor_border', label: '테두리', defaultPresetKey: 'border' },
+];
+
+function ColorOverridesField({ label, description, settings, presetKey, onChange }: {
+  label: string;
+  description?: string;
+  settings: Record<string, any>;
+  presetKey: string;
+  onChange: (key: string, value: string) => void;
+}) {
+  const preset = COLOR_PRESETS[presetKey] ?? COLOR_PRESETS['slate-pro'];
+  const resetAll = () => {
+    for (const f of COLOR_OVERRIDE_FIELDS) onChange(f.key, '');
+  };
+  const hasAnyOverride = COLOR_OVERRIDE_FIELDS.some(f => settings[f.key]);
+  return (
+    <>
+      <div className="flex items-center justify-between">
+        <label className="text-xs sm:text-sm font-bold text-slate-700">{label}</label>
+        {hasAnyOverride && (
+          <button
+            type="button"
+            onClick={resetAll}
+            className="text-[10px] text-slate-500 hover:text-red-500 underline"
+          >
+            모두 프리셋 복원
+          </button>
+        )}
+      </div>
+      {description && (
+        <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{description}</p>
+      )}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1">
+        {COLOR_OVERRIDE_FIELDS.map(f => {
+          const overrideValue = (typeof settings[f.key] === 'string' ? settings[f.key] : '').trim();
+          const presetValue = preset.colors[f.defaultPresetKey] as string;
+          // overrideValue 비어있으면 프리셋 색을 input value 로 (placeholder 효과)
+          const displayValue = overrideValue || presetValue;
+          const isOverridden = !!overrideValue;
+          return (
+            <div key={f.key} className="border border-slate-200 rounded p-2 flex items-center gap-2">
+              <input
+                type="color"
+                value={displayValue}
+                onChange={e => onChange(f.key, e.target.value)}
+                className="w-8 h-8 cursor-pointer border-0 p-0 bg-transparent"
+                style={{ borderRadius: 4 }}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-[11px] font-bold text-slate-600 truncate">{f.label}</p>
+                <input
+                  type="text"
+                  value={overrideValue}
+                  onChange={e => onChange(f.key, e.target.value)}
+                  placeholder={presetValue}
+                  className={`w-full text-[10px] font-mono border-0 bg-transparent focus:outline-none ${isOverridden ? 'text-slate-700' : 'text-slate-400'}`}
+                />
+              </div>
+              {isOverridden && (
+                <button
+                  type="button"
+                  onClick={() => onChange(f.key, '')}
+                  className="text-slate-400 hover:text-red-500 text-[10px]"
+                  title="프리셋 색으로 복원"
+                >
+                  ×
+                </button>
+              )}
+            </div>
           );
         })}
       </div>
