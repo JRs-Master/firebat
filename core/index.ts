@@ -343,6 +343,28 @@ export class FirebatCore {
     return { success: false, error: `메모리 없음: ${name}` };
   }
 
+  /** 메모리 파일 목록 (UI 용 structured list). frontmatter 파싱 + content (frontmatter 제외) 포함. */
+  async listMemoryFiles(): Promise<InfraResult<Array<{ category: string; name: string; description: string; content: string }>>> {
+    const list = await this.storage.listDir('data/firebat-memory');
+    if (!list.success || !list.data) return { success: true, data: [] };
+    const entries: Array<{ category: string; name: string; description: string; content: string }> = [];
+    for (const e of list.data) {
+      if (e.isDirectory || !e.name.endsWith('.md') || e.name === 'index.md') continue;
+      const res = await this.storage.read(`data/firebat-memory/${e.name}`);
+      if (!res.success || !res.data) continue;
+      const fm = res.data.match(/^---\nname:\s*(.+)\ndescription:\s*(.+)\ncategory:\s*(.+)\n---\n\n([\s\S]*)$/m);
+      if (fm) {
+        entries.push({
+          name: fm[1].trim(),
+          description: fm[2].trim(),
+          category: fm[3].trim(),
+          content: fm[4].trim(),
+        });
+      }
+    }
+    return { success: true, data: entries };
+  }
+
   /** 메모리 저장 — 본문 + 인덱스 자동 갱신. */
   async saveMemoryFile(category: 'user' | 'feedback' | 'project' | 'reference', name: string, description: string, content: string): Promise<InfraResult<void>> {
     const filename = `${category}_${name}.md`;

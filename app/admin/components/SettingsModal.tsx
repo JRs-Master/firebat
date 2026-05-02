@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign } from 'lucide-react';
+import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign, Brain, Plus } from 'lucide-react';
 import { GEMINI_MODELS, McpServer, getThinkingKind, filterThinkingLevels } from '../types';
 import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
 import { useSetting, writeSetting } from '../hooks/settings-manager';
@@ -17,11 +17,11 @@ type Props = {
   onClose: () => void;
   onSave: () => void;
   onOpenModuleSettings?: (moduleName: string) => void;
-  initialTab?: 'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'cost';
+  initialTab?: 'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'cost' | 'memory';
 };
 
 export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
-  const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'cost'>(initialTab ?? 'general');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'cost' | 'memory'>(initialTab ?? 'general');
   // AI 탭: 실행모드(api/cli) + 모드(일반/Vertex) + 프로바이더(openai/google/anthropic)
   // api 모드: 키 기반, pay-per-token (기존)
   // cli 모드: 구독 기반, 자체 인증 (월정액 Claude Pro/Max, ChatGPT Plus, Gemini Advanced 등)
@@ -722,6 +722,13 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
             className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'cost' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
             <DollarSign size={14} /> 비용
+          </button>
+          <button
+            onClick={() => switchTab('memory')}
+            data-active={settingsTab === 'memory'}
+            className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'memory' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          >
+            <Brain size={14} /> 메모리
           </button>
           </div>
         </div>
@@ -2028,6 +2035,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
           )}
 
           {settingsTab === 'cost' && <CostTabContent />}
+          {settingsTab === 'memory' && <MemoryTabContent />}
         </div>
 
         <div className="px-3 sm:px-6 py-2.5 sm:py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2 sm:gap-3 shrink-0">
@@ -2273,6 +2281,195 @@ interface CostStats {
   totalOutputTokens: number;
   totalCostUsd: number;
   records: CostRecord[];
+}
+
+// ── Memory tab — Firebat AI 자율 메모리 CRUD ──
+type MemoryItem = { category: string; name: string; description: string; content: string };
+const MEMORY_CATEGORY_LABELS: Record<string, string> = {
+  user: '사용자 (User)',
+  feedback: '행동 룰 (Feedback)',
+  project: '프로젝트 (Project)',
+  reference: '외부 참조 (Reference)',
+};
+
+function MemoryTabContent() {
+  const [items, setItems] = useState<MemoryItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<MemoryItem | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/memory');
+      const data = await res.json();
+      if (data.success) setItems(data.items);
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { void load(); }, []);
+
+  const save = async (item: MemoryItem, isNew: boolean) => {
+    const res = await fetch('/api/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item),
+    });
+    const data = await res.json();
+    if (!data.success) { alert(`저장 실패: ${data.error}`); return; }
+    setEditing(null); setCreating(false);
+    void load();
+  };
+
+  const remove = async (name: string) => {
+    if (!await confirmDialog({ title: '메모리 삭제', message: `"${name}" 메모리를 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
+    const res = await fetch(`/api/memory?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (!data.success) { alert(`삭제 실패: ${data.error}`); return; }
+    void load();
+  };
+
+  const grouped: Record<string, MemoryItem[]> = { user: [], feedback: [], project: [], reference: [] };
+  for (const it of items) {
+    if (grouped[it.category]) grouped[it.category].push(it);
+  }
+
+  if (editing || creating) {
+    const initial: MemoryItem = editing ?? { category: 'user', name: '', description: '', content: '' };
+    return <MemoryEditForm initial={initial} isNew={creating} onSave={save} onCancel={() => { setEditing(null); setCreating(false); }} />;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-[13px] text-slate-500">
+          AI 가 자율 저장하는 사용자 룰·선호·도메인 컨텍스트. 매 대화 시 시스템 프롬프트에 인덱스 자동 prepend.
+        </p>
+        <button
+          onClick={() => setCreating(true)}
+          className="px-3 py-1.5 text-[12px] bg-blue-500 hover:bg-blue-600 text-white rounded flex items-center gap-1"
+        >
+          <Plus size={12} /> 새 메모리
+        </button>
+      </div>
+      {loading ? (
+        <p className="text-[13px] text-slate-400 italic text-center py-8">불러오는 중...</p>
+      ) : items.length === 0 ? (
+        <p className="text-[13px] text-slate-400 italic text-center py-8">
+          아직 저장된 메모리 없음. AI 가 사용자 룰·선호 발견 시 자동 저장합니다.<br />
+          또는 "새 메모리" 버튼으로 직접 추가 가능.
+        </p>
+      ) : (
+        Object.keys(MEMORY_CATEGORY_LABELS).map(cat => grouped[cat].length > 0 && (
+          <div key={cat}>
+            <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase mb-2">
+              {MEMORY_CATEGORY_LABELS[cat]} ({grouped[cat].length})
+            </p>
+            <div className="space-y-1">
+              {grouped[cat].map(it => (
+                <div key={it.name} className="flex items-start gap-3 px-3 py-2.5 rounded-lg border border-slate-200 hover:border-blue-200 hover:bg-blue-50/30 group">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-semibold text-slate-700">{it.name}</p>
+                    <p className="text-[11px] text-slate-500 truncate">{it.description}</p>
+                  </div>
+                  <button
+                    onClick={() => setEditing(it)}
+                    className="text-slate-400 hover:text-blue-500 p-1"
+                    aria-label="편집"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    onClick={() => remove(it.name)}
+                    className="text-slate-400 hover:text-red-500 p-1"
+                    aria-label="삭제"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
+  initial: MemoryItem;
+  isNew: boolean;
+  onSave: (item: MemoryItem, isNew: boolean) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [item, setItem] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const handleSubmit = async () => {
+    if (!item.name.trim() || !item.description.trim()) return;
+    setSaving(true);
+    try { await onSave(item, isNew); } finally { setSaving(false); }
+  };
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <button onClick={onCancel} className="text-slate-600 hover:text-slate-900 p-1">
+          <ChevronLeft size={16} />
+        </button>
+        <h3 className="text-[14px] font-bold">{isNew ? '새 메모리' : `편집: ${item.name}`}</h3>
+      </div>
+      <div>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1">카테고리</label>
+        <select
+          value={item.category}
+          onChange={e => setItem({ ...item, category: e.target.value })}
+          disabled={!isNew}
+          className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded disabled:bg-slate-100"
+        >
+          {Object.entries(MEMORY_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+      </div>
+      <div>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1">이름 (영문, snake_case)</label>
+        <input
+          type="text"
+          value={item.name}
+          onChange={e => setItem({ ...item, name: e.target.value.replace(/[^a-z0-9_-]/gi, '').toLowerCase() })}
+          disabled={!isNew}
+          placeholder="예: trading_style"
+          className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded disabled:bg-slate-100"
+        />
+      </div>
+      <div>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1">짧은 설명 (인덱스에 표시)</label>
+        <input
+          type="text"
+          value={item.description}
+          onChange={e => setItem({ ...item, description: e.target.value })}
+          placeholder="예: 단타 위주, 장기 보유는 하지 않음"
+          className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded"
+        />
+      </div>
+      <div>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1">본문 (마크다운)</label>
+        <textarea
+          value={item.content}
+          onChange={e => setItem({ ...item, content: e.target.value })}
+          rows={12}
+          placeholder="자세한 룰·선호 내용. AI 가 memory_read(name) 으로 read."
+          className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded font-mono resize-y"
+        />
+      </div>
+      <div className="flex justify-end gap-2">
+        <button onClick={onCancel} className="px-4 py-2 text-[13px] text-slate-600 hover:bg-slate-100 rounded">취소</button>
+        <button
+          onClick={handleSubmit}
+          disabled={saving || !item.name.trim() || !item.description.trim()}
+          className="px-4 py-2 text-[13px] bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-50"
+        >
+          {saving ? '저장 중...' : '저장'}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function CostTabContent() {
