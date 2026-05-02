@@ -1702,18 +1702,46 @@ function MapComp({
               fillOpacity: 0.05,
             }).setMap(map);
           }
+          // 마커 — m.color 명시 시 컬러 svg, 없으면 카카오 기본 (한국 사용자에게 익숙).
+          // 클릭 시 항상 우리 popup 표시 (label 또는 m.popup), kakao 기본 place_url javascript:void 링크 회피.
+          const makeColorMarkerImage = (color: string) => {
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="8" fill="${color}" stroke="white" stroke-width="2"/></svg>`;
+            const url = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+            return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(22, 22), { offset: new w.kakao.maps.Point(11, 11) });
+          };
           for (const m of safeMarkers) {
-            const marker = new w.kakao.maps.Marker({
+            const opts: { position: any; title: string; image?: any } = {
               position: new w.kakao.maps.LatLng(m.lat, m.lon),
               title: m.label,
-            });
+            };
+            if (m.color) opts.image = makeColorMarkerImage(colorHex(m.color, '#ef4444'));
+            const marker = new w.kakao.maps.Marker(opts);
             marker.setMap(map);
-            if (m.popup) {
+            // popup — m.popup 우선, 없으면 m.label. <a> 태그 제거 (kakao place_url javascript:void 회피)
+            const rawPopup = m.popup ? String(m.popup) : m.label;
+            const popupText = rawPopup.replace(/<a\b[^>]*>/gi, '').replace(/<\/a>/gi, '');
+            if (popupText) {
               const info = new w.kakao.maps.InfoWindow({
-                content: `<div style="padding:6px 10px;font-size:12px;">${m.popup}</div>`,
+                content: `<div style="padding:6px 10px;font-size:12px;max-width:240px;">${popupText}</div>`,
+                removable: true,
               });
               w.kakao.maps.event.addListener(marker, 'click', () => info.open(map, marker));
             }
+          }
+          // 마커 2+ 시 자동 bounds fit — 모든 마커 + 원 보이도록 줌 자동
+          if (safeMarkers.length + safeCircles.length >= 2) {
+            const bounds = new w.kakao.maps.LatLngBounds();
+            for (const m of safeMarkers) bounds.extend(new w.kakao.maps.LatLng(m.lat, m.lon));
+            for (const c of safeCircles) {
+              // 원의 외곽 4점 추가 (라디안 기준 m → degree 근사)
+              const dLat = c.radius / 111000;
+              const dLon = c.radius / (111000 * Math.cos(c.lat * Math.PI / 180));
+              bounds.extend(new w.kakao.maps.LatLng(c.lat + dLat, c.lon));
+              bounds.extend(new w.kakao.maps.LatLng(c.lat - dLat, c.lon));
+              bounds.extend(new w.kakao.maps.LatLng(c.lat, c.lon + dLon));
+              bounds.extend(new w.kakao.maps.LatLng(c.lat, c.lon - dLon));
+            }
+            if (!bounds.isEmpty()) map.setBounds(bounds);
           }
         });
       };
@@ -1765,7 +1793,27 @@ function MapComp({
             iconAnchor: [9, 9],
           });
           const mk = L.marker([m.lat, m.lon], { icon, title: m.label }).addTo(map);
-          if (m.popup) mk.bindPopup(m.popup);
+          // popup — m.popup 우선, 없으면 m.label. <a> 태그 제거 (외부 링크 → 우리 컨텐츠만)
+          const rawPopup = m.popup ? String(m.popup) : m.label;
+          const popupText = rawPopup.replace(/<a\b[^>]*>/gi, '').replace(/<\/a>/gi, '');
+          if (popupText) mk.bindPopup(popupText);
+        }
+        // 마커 2+ 시 자동 bounds fit — 모든 마커 + 원 보이도록 줌 자동
+        if (safeMarkers.length + safeCircles.length >= 2) {
+          const layers = [
+            ...safeMarkers.map(m => L.latLng(m.lat, m.lon)),
+            ...safeCircles.flatMap(c => {
+              const dLat = c.radius / 111000;
+              const dLon = c.radius / (111000 * Math.cos(c.lat * Math.PI / 180));
+              return [
+                L.latLng(c.lat + dLat, c.lon),
+                L.latLng(c.lat - dLat, c.lon),
+                L.latLng(c.lat, c.lon + dLon),
+                L.latLng(c.lat, c.lon - dLon),
+              ];
+            }),
+          ];
+          if (layers.length > 0) map.fitBounds(L.latLngBounds(layers), { padding: [30, 30] });
         }
       };
       if (w.L) initLeaflet();
