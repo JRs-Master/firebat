@@ -356,6 +356,18 @@ firebat/
 
 ---
 
+## Acknowledgements — Built by 3 LLMs + Human
+
+Firebat is a **3-LLM collaborative project** — designed and written together by humans and three frontier AI models:
+
+- **Claude (Anthropic)** — bulk of the recent codebase, architectural decisions, code review · via [Claude Code](https://claude.com/claude-code) + Anthropic API
+- **GPT (OpenAI)** — co-author of FIREBAT_BIBLE, coding via [Codex CLI](https://github.com/openai/codex)
+- **Gemini (Google)** — initial Firebat prototype + co-author of FIREBAT_BIBLE, coding via [Gemini CLI](https://github.com/google-gemini/gemini-cli)
+
+Firebat itself is an AI-powered VAA — fitting that the platform was built by the same AI ↔ human collaboration it now enables. See [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md) for details.
+
+---
+
 ## Design Documents
 
 - **[FIREBAT_BIBLE.md](docs/FIREBAT_BIBLE.md)** — Top-level constitution (identity, separation of powers, JSON dogma) · 최고 등급 헌법
