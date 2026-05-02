@@ -39,10 +39,20 @@ export interface FooterConfig {
 export type LayoutMode = 'full' | 'right-sidebar' | 'left-sidebar' | 'boxed';
 
 export interface SidebarConfig {
+  /** 검색 박스 위젯 — /search 로 GET. */
+  showSearchBox: boolean;
   /** 최근 글 위젯 표시 (default true 단 layoutMode 가 sidebar 일 때만 효과) */
   showRecentPosts: boolean;
   /** 최근 글 표시 개수 */
   recentPostsCount: number;
+  /** 카테고리(project) 목록 위젯 — published+public 페이지의 project 합집합 + 글 수. */
+  showCategoryList: boolean;
+  /** 태그 cloud 위젯 — head.keywords 합집합 + 빈도수, top N. */
+  showTagCloud: boolean;
+  /** 태그 cloud 표시 개수 (top N) */
+  tagCloudLimit: number;
+  /** 구독 안내 위젯 — RSS feed.xml 링크 + 텔레그램 채널 (옵션). */
+  showSubscribe: boolean;
   /** 자유 HTML 위젯 — 광고·연락처·소개 등. sanitize 후 inline DOM. */
   htmlWidget: string;
 }
@@ -99,8 +109,13 @@ export const DEFAULT_LAYOUT: LayoutConfig = {
   showReadingProgress: false,
   mode: 'full',
   sidebar: {
+    showSearchBox: false,
     showRecentPosts: true,
     recentPostsCount: 5,
+    showCategoryList: false,
+    showTagCloud: false,
+    tagCloudLimit: 20,
+    showSubscribe: false,
     htmlWidget: '',
   },
   pageList: {

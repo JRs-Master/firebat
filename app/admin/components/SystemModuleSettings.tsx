@@ -90,8 +90,13 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
         { value: 'left-sidebar', label: 'Left Sidebar — 좌측 사이드바' },
         { value: 'boxed', label: 'Boxed — 사이드바 없음 + 본문 boxed' },
       ] },
+      { key: 'sidebarShowSearchBox', label: '사이드바 — 검색 박스', type: 'toggle', tab: '레이아웃', description: '사이드바에 검색 입력창 표시. /search 로 GET. 헤더 검색 아이콘과 별개로 사이드바에도 노출.', defaultValue: false },
       { key: 'sidebarShowRecentPosts', label: '사이드바 — 최근 글 위젯', type: 'toggle', tab: '레이아웃', description: '사이드바에 최근 글 list 표시. 사이드바 모드 (right/left) 에서만 효과.', defaultValue: true },
       { key: 'sidebarRecentPostsCount', label: '사이드바 — 최근 글 개수', type: 'number', tab: '레이아웃', placeholder: '5', description: '사이드바 최근 글 개수.', defaultValue: 5 },
+      { key: 'sidebarShowCategoryList', label: '사이드바 — 카테고리 목록', type: 'toggle', tab: '레이아웃', description: '프로젝트(카테고리)별 글 수 표시. 클릭 시 /{프로젝트} 페이지 이동.', defaultValue: false },
+      { key: 'sidebarShowTagCloud', label: '사이드바 — 태그 cloud', type: 'toggle', tab: '레이아웃', description: 'head.keywords 합집합 + 빈도수 기반 태그 cloud. 빈도 큰 태그가 더 큰 폰트.', defaultValue: false },
+      { key: 'sidebarTagCloudLimit', label: '사이드바 — 태그 cloud 개수', type: 'number', tab: '레이아웃', placeholder: '20', description: '태그 cloud 표시 개수 (top N, 빈도 내림차순).', defaultValue: 20 },
+      { key: 'sidebarShowSubscribe', label: '사이드바 — 구독 안내', type: 'toggle', tab: '레이아웃', description: 'RSS feed.xml 링크 표시. 독자 구독 유도.', defaultValue: false },
       { key: 'sidebarHtmlWidget', label: '사이드바 — HTML 위젯', type: 'textarea', tab: '레이아웃', placeholder: '<div>광고 코드 / 연락처 / 소개 등</div>', description: '자유 HTML 위젯. sanitize 후 inline DOM. <a> / <strong> / <img> 등 일부 태그 허용. 비우면 미표시.' },
       // ── 글 list 카드 ──
       { key: 'pageListCardVariant', label: '글 카드 변형', type: 'select', tab: '레이아웃', description: '홈·프로젝트·태그 페이지의 글 list 표시 방식. list (세로 카드) / grid (격자 2-3열) / compact (제목+날짜 압축).', defaultValue: 'list', options: [

@@ -296,10 +296,17 @@ export class ModuleManager {
       showReadingProgress: s.layoutShowReadingProgress === true,
       mode: (['full', 'right-sidebar', 'left-sidebar', 'boxed'].includes(s.layoutMode) ? s.layoutMode : 'full'),
       sidebar: {
+        showSearchBox: s.sidebarShowSearchBox === true,
         showRecentPosts: s.sidebarShowRecentPosts !== false, // 기본 true
         recentPostsCount: typeof s.sidebarRecentPostsCount === 'number'
           ? s.sidebarRecentPostsCount
           : (parseInt(s.sidebarRecentPostsCount) || 5),
+        showCategoryList: s.sidebarShowCategoryList === true,
+        showTagCloud: s.sidebarShowTagCloud === true,
+        tagCloudLimit: typeof s.sidebarTagCloudLimit === 'number'
+          ? s.sidebarTagCloudLimit
+          : (parseInt(s.sidebarTagCloudLimit) || 20),
+        showSubscribe: s.sidebarShowSubscribe === true,
         htmlWidget: s.sidebarHtmlWidget || '',
       },
       pageList: {
