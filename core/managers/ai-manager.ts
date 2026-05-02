@@ -692,6 +692,34 @@ export class AiManager {
         }));
         return { success: true, matches, count: matches.length };
       },
+      consolidate_conversation: async (args, ctx) => {
+        const a = args as { conversationId?: string; owner?: string };
+        const convId = a.conversationId ?? ctx.conversationId;
+        if (!convId) return { success: false, error: 'conversationId 필수 (현재 turn 의 ctx 에 없음)' };
+        try {
+          const outcome = await this.core.consolidateConversation({
+            owner: a.owner ?? ctx.owner ?? 'admin',
+            convId,
+          });
+          return {
+            success: true,
+            extractedCounts: {
+              entities: outcome.extracted.entities.length,
+              facts: outcome.extracted.facts.length,
+              events: outcome.extracted.events.length,
+            },
+            savedCounts: {
+              entities: outcome.saved.entities.length,
+              facts: outcome.saved.facts.length,
+              events: outcome.saved.events.length,
+            },
+            skipped: outcome.skipped,
+            ...(outcome.costUsd ? { costUsd: outcome.costUsd } : {}),
+          };
+        } catch (err: any) {
+          return { success: false, error: err?.message ?? '정리 실패' };
+        }
+      },
       list_recent_events: async (args) => {
         const a = args as { type?: string; who?: string; limit?: number };
         const res = await this.core.listRecentEvents({ type: a.type, who: a.who, limit: a.limit });

@@ -23,6 +23,8 @@ import { ToolManager } from './managers/tool-manager';
 import type { ToolDefinition, ToolListFilter, ToolExecuteContext, ToolExecuteResult } from './managers/tool-manager';
 import { EntityManager } from './managers/entity-manager';
 import { EpisodicManager } from './managers/episodic-manager';
+import { ConsolidationManager } from './managers/consolidation-manager';
+import type { ConsolidationOutcome } from './managers/consolidation-manager';
 import type { FirebatInfraContainer, LlmChunk, McpServerConfig, CronScheduleOptions, PipelineStep, AuthSession, ChatMessage, NetworkRequestOptions, NetworkResponse, PageListItem, EntityRecord, EntityFactRecord, EntitySearchOpts, FactSearchOpts, EventRecord, EventSearchOpts } from './ports';
 import type { InfraResult } from './types';
 import type { CapabilitySettings } from './capabilities';
@@ -90,6 +92,7 @@ export class FirebatCore {
   private readonly tool: ToolManager;
   private readonly entity: EntityManager;
   private readonly episodic: EpisodicManager;
+  private readonly consolidation: ConsolidationManager;
 
   constructor(private readonly infra: FirebatInfraContainer) {
     // 매니저 생성 — 각 매니저는 자기 도메인의 인프라 포트를 직접 받음
@@ -108,6 +111,7 @@ export class FirebatCore {
     this.statusMgr = new StatusManager(infra.log, this.event);
     this.entity = new EntityManager(infra.entity);
     this.episodic = new EpisodicManager(infra.episodic);
+    this.consolidation = new ConsolidationManager(this);
 
     // StatusManager error → 자동 captureException forward.
     // 일반 메커니즘 — 어떤 도메인 (이미지·cron·pipeline 등) 에서 statusMgr.error 호출되든
@@ -1017,6 +1021,23 @@ export class FirebatCore {
   }
   async cleanupExpiredEvents() {
     return this.episodic.cleanupExpired();
+  }
+
+  /** 단순 LLM 텍스트 호출 — ConsolidationManager 등 도구 없이 LLM 만 필요한 매니저용.
+   *  Function Calling 없이 askText 직접. JSON 응답 mode 박을 수도 있음. */
+  async askLlmText(prompt: string, opts?: { model?: string; thinkingLevel?: string; systemPrompt?: string }): Promise<{ text: string; costUsd?: number }> {
+    const llmOpts: import('./ports').LlmCallOpts = {};
+    if (opts?.model) llmOpts.model = opts.model;
+    if (opts?.thinkingLevel) llmOpts.thinkingLevel = opts.thinkingLevel as any;
+    const res = await this.infra.llm.askText(prompt, opts?.systemPrompt ?? '', llmOpts);
+    if (!res.success) throw new Error(res.error || 'LLM 호출 실패');
+    return { text: res.data ?? '', costUsd: undefined /* askText 는 cost 미반환 — 추후 확장 */ };
+  }
+
+  /** 메모리 시스템 — Consolidation (Phase 4): 대화 → LLM 후처리 → entity/fact/event 자동 추출.
+   *  Manual trigger (사용자가 어드민에서 "정리하기" 버튼) 또는 AI 자율 호출 (consolidate_conversation 도구). */
+  async consolidateConversation(opts: { owner: string; convId: string; modelId?: string }): Promise<ConsolidationOutcome> {
+    return this.consolidation.consolidateConversation(opts);
   }
 
   // ── 템플릿 (CMS Phase 8b) ───────────────────────────────────────────────

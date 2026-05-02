@@ -848,6 +848,27 @@ opts 다중 조합 가능. occurredAt DESC 기본 정렬.`,
       },
     },
     {
+      name: 'consolidate_conversation',
+      description: `메모리 시스템 — 현재 또는 지정 대화 의 entity / fact / event 자동 추출 + 저장 (Phase 4).
+LLM 후처리 (AI assistant 모델, ~$0.001) 로 대화 정리 → 결과를 메모리에 누적.
+
+**호출 시점:**
+- 사용자가 "이 대화 정리해줘" / "메모리에 저장해줘" 명시 요청
+- 긴 분석 turn 끝에 AI 자율 호출 (자동 누적 가치 큼)
+
+**주의:** 대화당 1회 권장. 같은 대화 여러 번 호출하면 fact/event 중복 누적 (Phase 4.2 에서 중복
+검출 추가). 현재는 단순 매번 새로 박음.
+
+owner 미박힘 시 'admin' 폴백 (single-user 환경).`,
+      parameters: {
+        type: 'object',
+        properties: {
+          conversationId: { type: 'string', description: '대화 ID. 미박힘 시 현재 turn 의 대화 (ctx 에서 자동).' },
+          owner: { type: 'string', description: '대화 소유자 (기본 admin).' },
+        },
+      },
+    },
+    {
       name: 'list_recent_events',
       description: `메모리 시스템 — 최근 events (occurredAt DESC). 운영 모니터링 / 대시보드 용도.
 "오늘 무슨 일들이 있었지?" / "최근 cron 실행 결과" 같은 timeline 질의.`,
