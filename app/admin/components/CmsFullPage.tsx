@@ -12,8 +12,15 @@
  *   - 저장 시 우측 자동 새로고침 (변경 즉시 확인)
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { RefreshCw, X, ArrowLeft, ExternalLink } from 'lucide-react';
+import { RefreshCw, X, ArrowLeft, ExternalLink, Monitor, Tablet, Smartphone } from 'lucide-react';
 import { SystemModuleSettings } from './SystemModuleSettings';
+
+type Viewport = 'desktop' | 'tablet' | 'mobile';
+const VIEWPORT_CONFIG: Record<Viewport, { width: number; label: string; Icon: typeof Monitor }> = {
+  desktop: { width: 1280, label: 'PC (1280px)', Icon: Monitor },
+  tablet: { width: 768, label: '태블릿 (768px)', Icon: Tablet },
+  mobile: { width: 375, label: '모바일 (375px)', Icon: Smartphone },
+};
 
 interface Props {
   onClose: () => void;
@@ -24,6 +31,20 @@ export function CmsFullPage({ onClose, onBack }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [iframeKey, setIframeKey] = useState(0);  // key 변경으로 강제 새로고침
   const [previewPath, setPreviewPath] = useState('/');
+  const [viewport, setViewport] = useState<Viewport>('desktop');
+  const [containerWidth, setContainerWidth] = useState(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // 컨테이너 폭 측정 — viewport scale ratio 계산용. ResizeObserver 로 자동 추적.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setContainerWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // 저장 시점 감지 — SystemModuleSettings 가 발행하는 'firebat-refresh' 이벤트 수신.
   // CMS 설정 변경·저장 시 useLocalRefresh emitLocalRefresh() 호출 → 여기서 받아 iframe 새로고침.
@@ -51,6 +72,26 @@ export function CmsFullPage({ onClose, onBack }: Props) {
         <div className="font-medium text-slate-900 text-sm">CMS 설정</div>
         <div className="text-xs text-slate-500 ml-2 hidden sm:block">사이트 디자인·레이아웃·SEO 통합</div>
         <div className="flex-1" />
+        {/* Viewport 토글 — PC / 태블릿 / 모바일 (PC 만 노출) */}
+        <div className="hidden md:flex items-center gap-0.5 bg-white border border-slate-300 rounded p-0.5">
+          {(['desktop', 'tablet', 'mobile'] as Viewport[]).map((v) => {
+            const cfg = VIEWPORT_CONFIG[v];
+            const Icon = cfg.Icon;
+            const active = viewport === v;
+            return (
+              <button
+                key={v}
+                onClick={() => setViewport(v)}
+                title={cfg.label}
+                aria-label={cfg.label}
+                aria-pressed={active}
+                className={`flex items-center justify-center px-1.5 py-1 rounded transition-colors ${active ? 'bg-blue-500 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+              >
+                <Icon size={14} />
+              </button>
+            );
+          })}
+        </div>
         {/* 미리보기 path 입력 (PC 만) */}
         <input
           type="text"
@@ -94,16 +135,43 @@ export function CmsFullPage({ onClose, onBack }: Props) {
           </div>
         </div>
 
-        {/* 우측 — iframe (모바일 숨김) */}
-        <div className="hidden md:flex flex-1 bg-slate-50">
-          <iframe
-            ref={iframeRef}
-            key={iframeKey}
-            src={previewPath}
-            className="w-full h-full border-0"
-            title="CMS 라이브 미리보기"
-            sandbox="allow-same-origin allow-scripts allow-forms"
-          />
+        {/* 우측 — iframe (모바일 숨김). viewport 토글 시 width 변경 + scale.
+         *  Desktop = 풀폭. Tablet/Mobile = 고정 너비 + 컨테이너 fit scale (가운데 정렬, 그림자). */}
+        <div ref={containerRef} className="hidden md:flex flex-1 bg-slate-100 items-center justify-center overflow-auto p-4">
+          {(() => {
+            const cfg = VIEWPORT_CONFIG[viewport];
+            const isDesktop = viewport === 'desktop';
+            // 컨테이너 폭 보다 viewport 가 크면 scale down. 작으면 1.0 (실제 크기).
+            const availableWidth = Math.max(0, containerWidth - 32); // padding 빼기
+            const scale = !isDesktop && availableWidth > 0 && cfg.width > availableWidth
+              ? availableWidth / cfg.width
+              : 1;
+            return (
+              <div
+                style={{
+                  width: isDesktop ? '100%' : `${cfg.width}px`,
+                  height: isDesktop ? '100%' : `${Math.round(900 * (isDesktop ? 1 : 1 / scale))}px`,
+                  maxHeight: '100%',
+                  transform: isDesktop ? undefined : `scale(${scale})`,
+                  transformOrigin: 'top center',
+                  background: '#fff',
+                  boxShadow: isDesktop ? 'none' : '0 4px 16px rgba(0, 0, 0, 0.1)',
+                  borderRadius: isDesktop ? 0 : '4px',
+                  overflow: 'hidden',
+                  flexShrink: 0,
+                }}
+              >
+                <iframe
+                  ref={iframeRef}
+                  key={iframeKey}
+                  src={previewPath}
+                  className="w-full h-full border-0 block"
+                  title="CMS 라이브 미리보기"
+                  sandbox="allow-same-origin allow-scripts allow-forms"
+                />
+              </div>
+            );
+          })()}
         </div>
       </div>
     </div>
