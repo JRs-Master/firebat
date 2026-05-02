@@ -898,8 +898,10 @@ export interface IEntityPort {
   searchEntities(opts: EntitySearchOpts): Promise<InfraResult<EntityRecord[]>>;
 
   // ── Fact CRUD ──
-  /** Fact 저장 (link to entity). 임베딩 자동 생성. */
-  saveFact(input: { entityId: number; content: string; factType?: string; occurredAt?: number; tags?: string[]; sourceConvId?: string; ttlDays?: number; embedding?: Buffer }): Promise<InfraResult<{ id: number }>>;
+  /** Fact 저장 (link to entity). 임베딩 자동 생성.
+   *  dedupThreshold (0~1) 박혀있으면 같은 entity 의 기존 fact 들과 cosine 비교 →
+   *  max similarity ≥ threshold 면 새로 박지 않고 기존 fact id 반환 (skipped=true). */
+  saveFact(input: { entityId: number; content: string; factType?: string; occurredAt?: number; tags?: string[]; sourceConvId?: string; ttlDays?: number; embedding?: Buffer; dedupThreshold?: number }): Promise<InfraResult<{ id: number; skipped?: boolean; similarity?: number }>>;
   /** Fact 단건 수정 */
   updateFact(id: number, patch: { content?: string; factType?: string; occurredAt?: number; tags?: string[]; ttlDays?: number; embedding?: Buffer }): Promise<InfraResult<void>>;
   /** Fact 삭제 */
@@ -971,7 +973,9 @@ export interface EventSearchOpts {
 }
 
 export interface IEpisodicPort {
-  /** Event 저장 — title + description 임베딩 자동 생성. entityIds 박으면 m2m link. */
+  /** Event 저장 — title + description 임베딩 자동 생성. entityIds 박으면 m2m link.
+   *  dedupThreshold 박혀있으면 같은 type 의 기존 event 들과 cosine 비교 →
+   *  max similarity ≥ threshold 면 새로 박지 않고 기존 event id 반환 (skipped=true). */
   saveEvent(input: {
     type: string;
     title: string;
@@ -983,7 +987,8 @@ export interface IEpisodicPort {
     sourceConvId?: string;
     ttlDays?: number;
     embedding?: Buffer;
-  }): Promise<InfraResult<{ id: number }>>;
+    dedupThreshold?: number;       // 0~1, 박혀있으면 중복 검출 활성
+  }): Promise<InfraResult<{ id: number; skipped?: boolean; similarity?: number }>>;
 
   /** Event 단건 수정 */
   updateEvent(id: number, patch: {

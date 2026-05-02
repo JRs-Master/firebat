@@ -64,7 +64,8 @@ export class EntityManager {
 
   // ── Fact CRUD ────────────────────────────────────────────────────────────
 
-  /** Fact 저장 — entityId 에 link. 임베딩 자동 생성. */
+  /** Fact 저장 — entityId 에 link. 임베딩 자동 생성.
+   *  dedupThreshold (0~1) 박으면 같은 entity 의 기존 fact 와 cosine 비교 → skip 가능. */
   async saveFact(input: {
     entityId: number;
     content: string;
@@ -73,7 +74,8 @@ export class EntityManager {
     tags?: string[];
     sourceConvId?: string;
     ttlDays?: number;
-  }): Promise<InfraResult<{ id: number }>> {
+    dedupThreshold?: number;
+  }): Promise<InfraResult<{ id: number; skipped?: boolean; similarity?: number }>> {
     return this.entityPort.saveFact(input);
   }
 

@@ -305,7 +305,7 @@ export class SqliteEntityAdapter implements IEntityPort {
 
   // ── Fact CRUD ────────────────────────────────────────────────────────────
 
-  async saveFact(input: { entityId: number; content: string; factType?: string; occurredAt?: number; tags?: string[]; sourceConvId?: string; ttlDays?: number; embedding?: Buffer }): Promise<InfraResult<{ id: number }>> {
+  async saveFact(input: { entityId: number; content: string; factType?: string; occurredAt?: number; tags?: string[]; sourceConvId?: string; ttlDays?: number; embedding?: Buffer; dedupThreshold?: number }): Promise<InfraResult<{ id: number; skipped?: boolean; similarity?: number }>> {
     try {
       const content = input.content.trim();
       if (!content) return { success: false, error: 'content 필수' };
@@ -317,7 +317,7 @@ export class SqliteEntityAdapter implements IEntityPort {
       const expiresAt = input.ttlDays && input.ttlDays > 0 ? now + input.ttlDays * 24 * 60 * 60 * 1000 : null;
       const tags = (input.tags ?? []).filter(Boolean);
 
-      // Embedding
+      // Embedding — 입력 우선, 없으면 자동
       let embedding: Buffer | null = input.embedding ?? null;
       if (!embedding) {
         try {
@@ -325,6 +325,30 @@ export class SqliteEntityAdapter implements IEntityPort {
           embedding = this.embedder.float32ToBuffer(arr);
         } catch (err: any) {
           this.log.debug?.(`[Fact] 임베딩 생성 실패: ${err?.message ?? err}`);
+        }
+      }
+
+      // 중복 검출 — dedupThreshold 박혀있고 새 임베딩 있을 때만.
+      // 같은 entity 의 기존 fact 들 중 cosine ≥ threshold 면 skip + 기존 id 반환.
+      if (input.dedupThreshold && input.dedupThreshold > 0 && embedding) {
+        const existingFacts = this.db.prepare(`
+          SELECT id, embedding FROM entity_facts
+          WHERE entity_id = ? AND embedding IS NOT NULL
+            AND (expires_at IS NULL OR expires_at > ?)
+        `).all(input.entityId, now) as Array<{ id: number; embedding: Buffer }>;
+        let bestId: number | null = null;
+        let bestSimilarity = 0;
+        const newEmb = this.embedder.bufferToFloat32(embedding);
+        for (const row of existingFacts) {
+          const sim = this.embedder.cosine(newEmb, this.embedder.bufferToFloat32(row.embedding));
+          if (sim > bestSimilarity) {
+            bestSimilarity = sim;
+            bestId = row.id;
+          }
+        }
+        if (bestId !== null && bestSimilarity >= input.dedupThreshold) {
+          this.log.debug?.(`[Fact] 중복 검출 skip — entity=${input.entityId} similarity=${bestSimilarity.toFixed(3)} existing_id=${bestId}`);
+          return { success: true, data: { id: bestId, skipped: true, similarity: bestSimilarity } };
         }
       }
 

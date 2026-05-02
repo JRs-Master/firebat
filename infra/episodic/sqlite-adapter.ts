@@ -83,7 +83,8 @@ export class SqliteEpisodicAdapter implements IEpisodicPort {
     type: string; title: string; description?: string; who?: string;
     context?: Record<string, unknown>; occurredAt?: number;
     entityIds?: number[]; sourceConvId?: string; ttlDays?: number; embedding?: Buffer;
-  }): Promise<InfraResult<{ id: number }>> {
+    dedupThreshold?: number;
+  }): Promise<InfraResult<{ id: number; skipped?: boolean; similarity?: number }>> {
     try {
       const type = input.type.trim();
       const title = input.title.trim();
@@ -104,6 +105,38 @@ export class SqliteEpisodicAdapter implements IEpisodicPort {
           embedding = this.embedder.float32ToBuffer(arr);
         } catch (err: any) {
           this.log.debug?.(`[Event] 임베딩 생성 실패: ${err?.message ?? err}`);
+        }
+      }
+
+      // 중복 검출 — dedupThreshold 박혀있고 새 임베딩 있을 때만.
+      // 같은 type 의 최근 기존 event (occurredAt 7일 이내) 와 cosine 비교 — 너무 멀면
+      // 같은 사실의 진짜 발생일 수 있으니 7일 경계 안에서만 검출.
+      if (input.dedupThreshold && input.dedupThreshold > 0 && embedding) {
+        const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+        const existing = this.db.prepare(`
+          SELECT id, embedding FROM events
+          WHERE type = ? AND embedding IS NOT NULL
+            AND occurred_at >= ?
+            AND (expires_at IS NULL OR expires_at > ?)
+        `).all(type, sevenDaysAgo, now) as Array<{ id: number; embedding: Buffer }>;
+        let bestId: number | null = null;
+        let bestSimilarity = 0;
+        const newEmb = this.embedder.bufferToFloat32(embedding);
+        for (const row of existing) {
+          const sim = this.embedder.cosine(newEmb, this.embedder.bufferToFloat32(row.embedding));
+          if (sim > bestSimilarity) {
+            bestSimilarity = sim;
+            bestId = row.id;
+          }
+        }
+        if (bestId !== null && bestSimilarity >= input.dedupThreshold) {
+          this.log.debug?.(`[Event] 중복 검출 skip — type=${type} similarity=${bestSimilarity.toFixed(3)} existing_id=${bestId}`);
+          // entityIds 박혀있으면 기존 event 에 link 추가 (m2m upsert)
+          if (input.entityIds && input.entityIds.length > 0) {
+            const link = this.db.prepare('INSERT OR IGNORE INTO event_entities (event_id, entity_id) VALUES (?, ?)');
+            for (const eid of input.entityIds) link.run(bestId, eid);
+          }
+          return { success: true, data: { id: bestId, skipped: true, similarity: bestSimilarity } };
         }
       }
 

@@ -215,9 +215,14 @@ export class ConsolidationManager {
         occurredAt: occurredAtMs,
         tags: f.tags,
         sourceConvId: opts.convId,
+        dedupThreshold: 0.92, // 같은 entity 의 기존 fact 와 92%+ 유사하면 skip — 중복 누적 방지
       });
       if (r.success && r.data) {
-        savedFacts.push({ id: r.data.id, entityId, content: f.content });
+        if (r.data.skipped) {
+          skipped++; // 중복으로 skip
+        } else {
+          savedFacts.push({ id: r.data.id, entityId, content: f.content });
+        }
       } else {
         skipped++;
       }
@@ -253,9 +258,14 @@ export class ConsolidationManager {
         occurredAt: occurredAtMs,
         entityIds: entityIds.length > 0 ? entityIds : undefined,
         sourceConvId: opts.convId,
+        dedupThreshold: 0.92, // 같은 type + 7일 이내 기존 event 와 92%+ 유사하면 skip
       });
       if (r.success && r.data) {
-        savedEvents.push({ id: r.data.id, type: ev.type, title: ev.title });
+        if (r.data.skipped) {
+          skipped++;
+        } else {
+          savedEvents.push({ id: r.data.id, type: ev.type, title: ev.title });
+        }
       } else {
         skipped++;
       }

@@ -166,6 +166,61 @@ export class FirebatCore {
       catch (e) { this.infra.log.debug(`[Core] session sweep 실패 (silent): ${e instanceof Error ? e.message : String(e)}`); }
     }, 6 * 60 * 60_000);
     sessionSweepInterval.unref?.();
+
+    // 메모리 시스템 — 만료 fact / event 자동 정리. 24시간마다.
+    const memoryExpireInterval = setInterval(() => {
+      Promise.allSettled([this.cleanupExpiredFacts(), this.cleanupExpiredEvents()]).then(results => {
+        const totalDeleted = results.reduce((sum, r) => {
+          if (r.status === 'fulfilled' && r.value.success && r.value.data) return sum + r.value.data.deleted;
+          return sum;
+        }, 0);
+        if (totalDeleted > 0) {
+          this.infra.log.info(`[Memory] 만료 fact+event ${totalDeleted}개 정리`);
+        }
+      }).catch(() => {});
+    }, 24 * 60 * 60_000);
+    memoryExpireInterval.unref?.();
+
+    // 메모리 시스템 — 비활성 대화 자동 consolidation. 매 6시간마다.
+    // 마지막 turn 이 1시간+ 지난 대화 (active 작성 중 X) 만 처리. 이미 정리된 대화 건너뜀
+    // (skipped 비율 ↑면 LLM 호출 비용도 작음). 사용자가 수동 박는 부담 0.
+    const consolidateInterval = setInterval(() => {
+      this.consolidateInactiveConversations().catch((err) => {
+        this.infra.log.debug(`[Memory] 자동 consolidation 실패 (silent): ${err instanceof Error ? err.message : String(err)}`);
+      });
+    }, 6 * 60 * 60_000);
+    consolidateInterval.unref?.();
+  }
+
+  /** 비활성 대화 자동 consolidation — cron 호출용. INACTIVITY_MS (기본 1시간) 지난 대화만.
+   *  LIMIT_PER_RUN (10) 대화까지 — 한 번에 LLM 비용 폭주 방지. 이미 정리된 fact/event 는
+   *  dedup 으로 자동 skip. */
+  async consolidateInactiveConversations(opts?: { inactivityMs?: number; limitPerRun?: number; owner?: string }): Promise<{ processed: number; totalSaved: number; totalSkipped: number }> {
+    const inactivityMs = opts?.inactivityMs ?? 60 * 60_000;
+    const limitPerRun = opts?.limitPerRun ?? 10;
+    const owner = opts?.owner ?? 'admin';
+    const cutoff = Date.now() - inactivityMs;
+    const listRes = await this.listConversations(owner);
+    if (!listRes.success || !listRes.data) return { processed: 0, totalSaved: 0, totalSkipped: 0 };
+    const inactive = listRes.data
+      .filter((c: any) => (c.updatedAt ?? c.createdAt) < cutoff)
+      .sort((a: any, b: any) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt))
+      .slice(0, limitPerRun);
+    let processed = 0;
+    let totalSaved = 0;
+    let totalSkipped = 0;
+    for (const c of inactive) {
+      try {
+        const outcome = await this.consolidateConversation({ owner, convId: c.id });
+        processed++;
+        totalSaved += outcome.saved.entities.length + outcome.saved.facts.length + outcome.saved.events.length;
+        totalSkipped += outcome.skipped;
+      } catch { /* 단일 실패는 다음 대화로 진행 */ }
+    }
+    if (processed > 0) {
+      this.infra.log.info(`[Memory] 자동 consolidation — ${processed}개 대화 처리, saved=${totalSaved} skipped=${totalSkipped}`);
+    }
+    return { processed, totalSaved, totalSkipped };
   }
 
   /**
@@ -962,7 +1017,7 @@ export class FirebatCore {
   async searchEntities(opts: EntitySearchOpts) {
     return this.entity.searchEntities(opts);
   }
-  async saveEntityFact(input: { entityId: number; content: string; factType?: string; occurredAt?: number; tags?: string[]; sourceConvId?: string; ttlDays?: number }) {
+  async saveEntityFact(input: { entityId: number; content: string; factType?: string; occurredAt?: number; tags?: string[]; sourceConvId?: string; ttlDays?: number; dedupThreshold?: number }) {
     return this.entity.saveFact(input);
   }
   async updateEntityFact(id: number, patch: { content?: string; factType?: string; occurredAt?: number; tags?: string[]; ttlDays?: number }) {
@@ -992,7 +1047,7 @@ export class FirebatCore {
   // 시간순 사건 — 자동매매 실행 / 페이지 발행 / cron trigger / 도구 호출 / 사용자 액션 등.
   // Entity (영속 추적 대상) 와 m2m link.
 
-  async saveEvent(input: { type: string; title: string; description?: string; who?: string; context?: Record<string, unknown>; occurredAt?: number; entityIds?: number[]; sourceConvId?: string; ttlDays?: number }) {
+  async saveEvent(input: { type: string; title: string; description?: string; who?: string; context?: Record<string, unknown>; occurredAt?: number; entityIds?: number[]; sourceConvId?: string; ttlDays?: number; dedupThreshold?: number }) {
     return this.episodic.saveEvent(input);
   }
   async updateEvent(id: number, patch: { type?: string; title?: string; description?: string; who?: string; context?: Record<string, unknown>; occurredAt?: number; entityIds?: number[]; ttlDays?: number }) {

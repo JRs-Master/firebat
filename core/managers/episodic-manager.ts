@@ -20,7 +20,8 @@ import type { InfraResult } from '../types';
 export class EpisodicManager {
   constructor(private readonly episodicPort: IEpisodicPort) {}
 
-  /** Event 저장 — title+description 임베딩 자동. entityIds 박으면 m2m link 자동. */
+  /** Event 저장 — title+description 임베딩 자동. entityIds 박으면 m2m link 자동.
+   *  dedupThreshold (0~1) 박으면 같은 type + 7일 이내 기존 event 와 cosine 비교 → skip 가능. */
   async saveEvent(input: {
     type: string;
     title: string;
@@ -31,7 +32,8 @@ export class EpisodicManager {
     entityIds?: number[];
     sourceConvId?: string;
     ttlDays?: number;
-  }): Promise<InfraResult<{ id: number }>> {
+    dedupThreshold?: number;
+  }): Promise<InfraResult<{ id: number; skipped?: boolean; similarity?: number }>> {
     return this.episodicPort.saveEvent(input);
   }
 
