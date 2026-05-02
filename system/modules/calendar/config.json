@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Firebat 자체 일정 — JSONL file (data/calendar/events.jsonl). 매매·공모주·미팅·청구 일정. Firebat cron·매매·노트 sysmod 와 자연 chain (외부 동기화 X 의도). 예: 공모주 일정 등록 → 상장일에 매도 cron 자동 발화 (linkedJobId 연결). Google Calendar 와 분리 — 통합 자동화 핵심.",
+  "description": "Firebat 자체 일정 — JSONL file (data/calendar/events.jsonl). 외부 동기화 없음 (의도). Firebat cron·노트·매매 등 다른 sysmod 와 자연 chain — 일정과 cron 잡을 linkedJobId 로 연결해 양방향 추적 가능.",
   "runtime": "node",
   "capability": "calendar",
   "providerType": "local",
@@ -44,11 +44,11 @@
       "tags": {
         "type": "array",
         "items": { "type": "string" },
-        "description": "[add/update] 태그 — ipo / meeting / payment / dividend / earnings 등. find 필터에 활용"
+        "description": "[add/update] 태그 (자유 문자열). find 필터에 활용"
       },
       "linkedJobId": {
         "type": "string",
-        "description": "[add/update] 연동된 cron 잡 ID — 일정에 trigger 박힌 cron 자동 발화. 예: '상장일 매도' 잡과 calendar 이벤트 연결. AI 가 schedule_task 로 cron 등록 후 받은 jobId 를 여기 박음"
+        "description": "[add/update] 연동된 cron 잡 ID — 일정과 cron 잡 양방향 추적. AI 가 schedule_task 로 cron 등록 후 받은 jobId 를 여기 박으면 일정 update/delete 시 cron 도 같이 정리 가능"
       },
       "fromTm": {
         "type": "string",

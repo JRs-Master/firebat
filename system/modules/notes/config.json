@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Firebat 자체 노트 — 마크다운 file-based (data/notes/*.md). 매매 일지·아이디어·메모. AI 가 자율 read/write/search. 외부 동기화 없음 (의도). 일정 (sysmod_calendar) 과 같이 통합 사용 — cron·매매 도구와 자연 chain.",
+  "description": "Firebat 자체 노트 — 마크다운 file-based (data/notes/*.md). AI 가 자율 read/write/search. 외부 동기화 없음 (의도). sysmod_calendar 와 같이 Firebat 안에서 데이터·도구 chain 으로 통합 사용.",
   "runtime": "node",
   "capability": "note",
   "providerType": "local",
