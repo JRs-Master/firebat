@@ -662,6 +662,129 @@ scope='all' 기본. source: 'ai-generated' (image_gen 결과) / 'upload' (사용
         },
       },
     },
+    // ── 메모리 시스템 — Entity tier (Phase 1 of 4-tier memory) ────────────────
+    // 단기 대화 (search_history) 와 별도 — 종목·인물·프로젝트 단위로 정제된 사실 누적.
+    // 자동매매·블로그 운영 깊어질수록 진짜 가치 폭발. 사용자가 "삼성전자 1주 전 추천 결과는?"
+    // 같은 질의 → search_entity_facts 로 직접 답.
+    {
+      name: 'save_entity',
+      description: `메모리 시스템 — Entity (추적 대상) 저장.
+종목·인물·프로젝트·이벤트·개념 등 모든 추적 대상이 entity. name+type 으로 upsert (같은
+이름·타입 박으면 alias·metadata 업데이트만, 새 row X).
+
+**호출 시점:**
+- 사용자가 새 종목·인물·프로젝트 처음 언급 → 자동 등록 (예: "삼성전자 추천해줘" → save_entity(name='삼성전자', type='stock', metadata={ticker:'005930'}))
+- 기존 entity 의 별칭·메타 추가 (예: alias '삼전' / ticker / 카테고리)
+
+**type 자유 분류 (도구별 enum X)**: stock / company / person / project / concept / event / asset / topic 등 자유.
+
+이후 save_entity_fact 로 그 entity 의 timeline 사실 추가.`,
+      parameters: {
+        type: 'object',
+        required: ['name', 'type'],
+        properties: {
+          name: { type: 'string', description: 'Entity 정식 명칭 (예: "삼성전자", "테슬라", "자동매매봇v1")' },
+          type: { type: 'string', description: '자유 분류 — stock / company / person / project / concept / event 등' },
+          aliases: { type: 'array', items: { type: 'string' }, description: '별칭 (예: ["005930", "삼전"]). 검색 시 통합 매칭.' },
+          metadata: { type: 'object', additionalProperties: true, description: '자유 메타 (ticker / industry / sector / 부가정보 등). JSON 직렬화 가능.' },
+        },
+      },
+    },
+    {
+      name: 'save_entity_fact',
+      description: `메모리 시스템 — Entity 에 fact (시간 stamped 사실) link.
+대화 끝나도 보존되는 정제된 사실. AI 가 사용자 발화에서 중요한 사실 발견 시 자율 호출.
+
+**호출 시점:**
+- 사용자가 종목 매수·매도·추천 명시 (예: "삼성전자 75000원 매수했어" → save_entity_fact(entityName='삼성전자', content='2026-04-15 75000원 매수', factType='transaction', occurredAt=ms epoch))
+- 분석·리포트 결론 (예: "이번주 KOSPI 상승 가능성 높음" → factType='analysis')
+- 자동매매 결과·이벤트 (예: "자동매매봇v1 첫 매수 성공" → factType='event')
+
+**factType 자유 (enum X)**: recommendation / transaction / analysis / observation / event / report 등.
+
+**entityName 또는 entityId 둘 중 하나 필수**: entityName 박으면 backend 가 자동으로 entity 조회·생성 (편의).
+없으면 entityId 명시 (search_entities 로 ID 알아낸 후).
+
+ttlDays 박으면 자동 만료. 영구 보존이면 미박음.`,
+      parameters: {
+        type: 'object',
+        required: ['content'],
+        properties: {
+          entityName: { type: 'string', description: 'Entity 이름 — 없으면 자동 생성 (type=entityType 또는 "concept" 기본).' },
+          entityType: { type: 'string', description: 'entityName 으로 자동 생성 시 type. 미박힘 시 "concept".' },
+          entityId: { type: 'integer', description: 'Entity ID 직접 지정 (search_entities 결과 활용). entityName 보다 우선.' },
+          content: { type: 'string', description: '사실 본문 — 자연어 1-2 문장. 시간·수치 명시 권장.' },
+          factType: { type: 'string', description: 'fact 종류 — recommendation / transaction / analysis / observation / event / report 등 자유.' },
+          occurredAt: { type: 'string', description: '사실 발생 시각 — ISO 8601 형식 (예: "2026-04-15T09:00:00+09:00"). 미박힘 시 createdAt 사용.' },
+          tags: { type: 'array', items: { type: 'string' }, description: '자유 태그 (다중 분류).' },
+          ttlDays: { type: 'integer', description: '만료 일수 (기본 영구). 임시 메모는 30/90 박음.' },
+        },
+      },
+    },
+    {
+      name: 'search_entities',
+      description: `메모리 시스템 — Entity 검색.
+**호출 시점:**
+- 사용자가 종목·인물 언급 → 기존 entity 있는지 확인 (예: "삼성전자에 대해 정리해줘" → search_entities(query='삼성전자') → 매칭되면 fact timeline 가져와서 답변)
+- "최근 추적한 종목들" / "관심 entity 목록" 같은 메타 질의
+
+**옵션:**
+- query: semantic search (임베딩 cosine + alias 매칭). 자연어 OK.
+- type: type 별 필터.
+- nameLike: 이름 부분 매칭 (case-insensitive).
+- 미박힘 시 최근 활성 entity 순 (lastUpdated DESC).`,
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Semantic search 쿼리 (자연어).' },
+          type: { type: 'string', description: 'Type 필터 (예: "stock" 만).' },
+          nameLike: { type: 'string', description: '이름 부분 매칭.' },
+          limit: { type: 'integer', description: '최대 결과 수 (기본 10).' },
+        },
+      },
+    },
+    {
+      name: 'get_entity_timeline',
+      description: `메모리 시스템 — Entity 의 fact timeline (시간순).
+**호출 시점:**
+- 사용자가 특정 종목·프로젝트 의 이력 질의 (예: "삼성전자 추천 이력 보여줘", "자동매매봇v1 결과 정리")
+- AI 가 답변 생성 전에 entity 컨텍스트 자동 retrieve
+
+entityName 또는 entityId 중 하나 필수. entityName 박으면 backend 가 조회 후 timeline 반환.
+0건이면 "기록 없음" 응답 → 사용자에게 entity 자체 없음을 안내.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          entityName: { type: 'string', description: 'Entity 이름 (검색 자동).' },
+          entityId: { type: 'integer', description: 'Entity ID 직접 지정.' },
+          limit: { type: 'integer', description: '최대 fact 수 (기본 20).' },
+          orderBy: { type: 'string', enum: ['occurredAt', 'createdAt'], description: '정렬 — occurredAt (이벤트 발생 시각, 기본) / createdAt (저장 시각).' },
+        },
+      },
+    },
+    {
+      name: 'search_entity_facts',
+      description: `메모리 시스템 — Fact 횡단 검색 (entity 무관, semantic + filter).
+**호출 시점:**
+- "최근 매수 기록 보여줘" → search_entity_facts(factType='transaction')
+- "지난 주 분석 결과들" → search_entity_facts(factType='analysis', occurredAfter=ms epoch)
+- "추천 종목 중 매수 진행된 거" → search_entity_facts(query='매수', tags=['추천'])
+
+자연어 query + factType / tags / 시간 범위 필터 조합 가능.`,
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Semantic search 쿼리.' },
+          entityName: { type: 'string', description: '특정 entity 의 fact 만 (자동 조회).' },
+          entityId: { type: 'integer', description: 'Entity ID 직접 지정.' },
+          factType: { type: 'string', description: 'Fact type 필터.' },
+          tags: { type: 'array', items: { type: 'string' }, description: '태그 매칭 (ANY 일치).' },
+          occurredAfter: { type: 'string', description: 'ISO 8601 — 이 시각 이후 발생 fact 만.' },
+          occurredBefore: { type: 'string', description: 'ISO 8601 — 이 시각 이전 발생 fact 만.' },
+          limit: { type: 'integer', description: '최대 결과 수 (기본 20).' },
+        },
+      },
+    },
     {
       name: 'search_components',
       description: 'UI 컴포넌트 카탈로그 벡터 검색. 표·차트·리스트·카드·카운트다운 등 정형화된 시각화가 필요할 때 호출 → 매칭되는 컴포넌트들의 name·description·propsSchema 반환. 이후 render(name, props) 로 실제 렌더링. render_alert/render_callout은 직접 호출(검색 불필요).',

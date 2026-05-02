@@ -673,5 +673,152 @@ arguments는 대상 도구의 inputSchema에 맞춰 작성.`,
     }
   } catch { /* 시스템 모듈 스캔 실패 무시 */ }
 
+  // ── 메모리 시스템 — Entity tier (Phase 1) ─────────────────────────────────
+  // CLI 모드 (Claude Code / Codex / Gemini CLI) 에서도 동일 도구 사용 가능.
+  // ai-manager handler 와 같은 dispatch — entity 자동 조회·생성, ISO 시각 변환.
+
+  server.tool(
+    'save_entity',
+    `메모리 시스템 — Entity (추적 대상) 저장. name+type 으로 upsert. type 자유 (stock/company/person/project/concept/event 등).`,
+    {
+      name: z.string().describe('Entity 정식 명칭'),
+      type: z.string().describe('자유 분류 — stock / company / person / project / concept / event'),
+      aliases: z.array(z.string()).optional().describe('별칭 (검색 통합 매칭)'),
+      metadata: z.record(z.string(), z.unknown()).optional().describe('자유 메타 (ticker / industry 등)'),
+    },
+    async ({ name, type, aliases, metadata }) => {
+      const res = await core.saveEntity({ name, type, aliases, metadata });
+      if (!res.success) return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: res.error }) }] };
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, id: res.data?.id, created: res.data?.created }) }] };
+    },
+  );
+
+  server.tool(
+    'save_entity_fact',
+    `메모리 시스템 — Entity 에 fact (시간 stamped 사실) link. 대화 끝나도 보존. entityName 박으면 자동 조회·생성.`,
+    {
+      entityName: z.string().optional().describe('Entity 이름 — 없으면 자동 생성'),
+      entityType: z.string().optional().describe('자동 생성 시 type (기본 "concept")'),
+      entityId: z.number().int().optional().describe('Entity ID 직접 지정 (entityName 보다 우선)'),
+      content: z.string().describe('사실 본문 — 자연어 1-2 문장. 시간·수치 명시 권장'),
+      factType: z.string().optional().describe('recommendation / transaction / analysis / observation / event / report 등 자유'),
+      occurredAt: z.string().optional().describe('ISO 8601 (예: "2026-04-15T09:00:00+09:00")'),
+      tags: z.array(z.string()).optional(),
+      ttlDays: z.number().int().optional().describe('만료 일수 (기본 영구)'),
+    },
+    async ({ entityName, entityType, entityId, content, factType, occurredAt, tags, ttlDays }) => {
+      let resolvedId = entityId;
+      if (!resolvedId && entityName) {
+        const found = await core.findEntityByName(entityName);
+        if (found.success && found.data) {
+          resolvedId = found.data.id;
+        } else {
+          const created = await core.saveEntity({ name: entityName, type: entityType || 'concept' });
+          if (!created.success) return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: `entity 생성 실패: ${created.error}` }) }] };
+          resolvedId = created.data?.id;
+        }
+      }
+      if (!resolvedId) return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'entityName 또는 entityId 필수' }) }] };
+      let occurredAtMs: number | undefined;
+      if (occurredAt) {
+        const t = new Date(occurredAt).getTime();
+        if (Number.isFinite(t)) occurredAtMs = t;
+      }
+      const res = await core.saveEntityFact({
+        entityId: resolvedId, content, factType, occurredAt: occurredAtMs, tags, ttlDays,
+      });
+      if (!res.success) return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: res.error }) }] };
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, factId: res.data?.id, entityId: resolvedId }) }] };
+    },
+  );
+
+  server.tool(
+    'search_entities',
+    `메모리 시스템 — Entity 검색. semantic (임베딩 cosine + alias) + type/nameLike 필터.`,
+    {
+      query: z.string().optional().describe('Semantic search 쿼리 (자연어)'),
+      type: z.string().optional().describe('Type 필터 (예: "stock" 만)'),
+      nameLike: z.string().optional().describe('이름 부분 매칭'),
+      limit: z.number().int().optional().describe('최대 결과 수 (기본 10)'),
+    },
+    async (args) => {
+      const res = await core.searchEntities({ query: args.query, type: args.type, nameLike: args.nameLike, limit: args.limit });
+      if (!res.success) return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: res.error }) }] };
+      const matches = (res.data ?? []).map(e => ({
+        id: e.id, name: e.name, type: e.type, aliases: e.aliases, metadata: e.metadata, factCount: e.factCount,
+        firstSeen: new Date(e.firstSeen).toISOString(), lastUpdated: new Date(e.lastUpdated).toISOString(),
+      }));
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, matches, count: matches.length }) }] };
+    },
+  );
+
+  server.tool(
+    'get_entity_timeline',
+    `메모리 시스템 — Entity 의 fact timeline (시간순). entityName 박으면 자동 조회.`,
+    {
+      entityName: z.string().optional(),
+      entityId: z.number().int().optional(),
+      limit: z.number().int().optional().describe('기본 20'),
+      orderBy: z.enum(['occurredAt', 'createdAt']).optional().describe('기본 occurredAt'),
+    },
+    async ({ entityName, entityId, limit, orderBy }) => {
+      let resolvedId = entityId;
+      if (!resolvedId && entityName) {
+        const found = await core.findEntityByName(entityName);
+        if (!found.success || !found.data) return { content: [{ type: 'text', text: JSON.stringify({ success: true, matches: [], count: 0, message: `entity 없음: ${entityName}` }) }] };
+        resolvedId = found.data.id;
+      }
+      if (!resolvedId) return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'entityName 또는 entityId 필수' }) }] };
+      const res = await core.getEntityTimeline(resolvedId, { limit, orderBy });
+      if (!res.success) return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: res.error }) }] };
+      const facts = (res.data ?? []).map(f => ({
+        id: f.id, content: f.content, factType: f.factType, tags: f.tags,
+        occurredAt: f.occurredAt ? new Date(f.occurredAt).toISOString() : undefined,
+        createdAt: new Date(f.createdAt).toISOString(),
+      }));
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, entityId: resolvedId, matches: facts, count: facts.length }) }] };
+    },
+  );
+
+  server.tool(
+    'search_entity_facts',
+    `메모리 시스템 — Fact 횡단 검색 (entity 무관). semantic + factType / tags / 시간 범위 필터.`,
+    {
+      query: z.string().optional(),
+      entityName: z.string().optional(),
+      entityId: z.number().int().optional(),
+      factType: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      occurredAfter: z.string().optional().describe('ISO 8601'),
+      occurredBefore: z.string().optional().describe('ISO 8601'),
+      limit: z.number().int().optional().describe('기본 20'),
+    },
+    async (args) => {
+      let resolvedId = args.entityId;
+      if (!resolvedId && args.entityName) {
+        const found = await core.findEntityByName(args.entityName);
+        if (found.success && found.data) resolvedId = found.data.id;
+      }
+      const occurredAfterMs = args.occurredAfter ? new Date(args.occurredAfter).getTime() : undefined;
+      const occurredBeforeMs = args.occurredBefore ? new Date(args.occurredBefore).getTime() : undefined;
+      const res = await core.searchEntityFacts({
+        query: args.query,
+        entityId: resolvedId,
+        factType: args.factType,
+        tags: args.tags,
+        occurredAfter: Number.isFinite(occurredAfterMs) ? occurredAfterMs : undefined,
+        occurredBefore: Number.isFinite(occurredBeforeMs) ? occurredBeforeMs : undefined,
+        limit: args.limit,
+      });
+      if (!res.success) return { content: [{ type: 'text', text: JSON.stringify({ success: false, error: res.error }) }] };
+      const facts = (res.data ?? []).map(f => ({
+        id: f.id, entityId: f.entityId, content: f.content, factType: f.factType, tags: f.tags,
+        occurredAt: f.occurredAt ? new Date(f.occurredAt).toISOString() : undefined,
+        createdAt: new Date(f.createdAt).toISOString(),
+      }));
+      return { content: [{ type: 'text', text: JSON.stringify({ success: true, matches: facts, count: facts.length }) }] };
+    },
+  );
+
   return server;
 }

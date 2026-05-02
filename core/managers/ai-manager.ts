@@ -491,6 +491,129 @@ export class AiManager {
           }));
         return { success: true, matches: items, count: items.length, total: res.data?.total ?? items.length };
       },
+      // ── 메모리 시스템 — Entity tier (Phase 1) ─────────────────────────────
+      save_entity: async (args) => {
+        const { name, type, aliases, metadata } = args as { name: string; type: string; aliases?: string[]; metadata?: Record<string, unknown> };
+        const res = await this.core.saveEntity({ name, type, aliases, metadata });
+        if (!res.success) return { success: false, error: res.error };
+        return { success: true, id: res.data?.id, created: res.data?.created };
+      },
+      save_entity_fact: async (args, ctx) => {
+        const a = args as {
+          entityName?: string; entityType?: string; entityId?: number;
+          content: string; factType?: string; occurredAt?: string; tags?: string[]; ttlDays?: number;
+        };
+        // entityId 우선, 없으면 entityName 으로 조회·자동 생성.
+        let resolvedId = a.entityId;
+        if (!resolvedId && a.entityName) {
+          const found = await this.core.findEntityByName(a.entityName);
+          if (found.success && found.data) {
+            resolvedId = found.data.id;
+          } else {
+            // 자동 entity 생성 — type 미박힘 시 'concept' 폴백
+            const created = await this.core.saveEntity({
+              name: a.entityName,
+              type: a.entityType || 'concept',
+              sourceConvId: ctx.conversationId,
+            });
+            if (!created.success) return { success: false, error: `entity 생성 실패: ${created.error}` };
+            resolvedId = created.data?.id;
+          }
+        }
+        if (!resolvedId) return { success: false, error: 'entityName 또는 entityId 필수' };
+        // occurredAt ISO → ms epoch 변환
+        let occurredAtMs: number | undefined;
+        if (a.occurredAt) {
+          const t = new Date(a.occurredAt).getTime();
+          if (Number.isFinite(t)) occurredAtMs = t;
+        }
+        const res = await this.core.saveEntityFact({
+          entityId: resolvedId,
+          content: a.content,
+          factType: a.factType,
+          occurredAt: occurredAtMs,
+          tags: a.tags,
+          sourceConvId: ctx.conversationId,
+          ttlDays: a.ttlDays,
+        });
+        if (!res.success) return { success: false, error: res.error };
+        return { success: true, factId: res.data?.id, entityId: resolvedId };
+      },
+      search_entities: async (args) => {
+        const a = args as { query?: string; type?: string; nameLike?: string; limit?: number };
+        const res = await this.core.searchEntities({
+          query: a.query,
+          type: a.type,
+          nameLike: a.nameLike,
+          limit: a.limit,
+        });
+        if (!res.success) return { success: false, error: res.error };
+        const matches = (res.data ?? []).map(e => ({
+          id: e.id,
+          name: e.name,
+          type: e.type,
+          aliases: e.aliases,
+          metadata: e.metadata,
+          factCount: e.factCount,
+          firstSeen: new Date(e.firstSeen).toISOString(),
+          lastUpdated: new Date(e.lastUpdated).toISOString(),
+        }));
+        return { success: true, matches, count: matches.length };
+      },
+      get_entity_timeline: async (args) => {
+        const a = args as { entityName?: string; entityId?: number; limit?: number; orderBy?: 'occurredAt' | 'createdAt' };
+        let resolvedId = a.entityId;
+        if (!resolvedId && a.entityName) {
+          const found = await this.core.findEntityByName(a.entityName);
+          if (!found.success || !found.data) return { success: true, matches: [], count: 0, message: `entity 없음: ${a.entityName}` };
+          resolvedId = found.data.id;
+        }
+        if (!resolvedId) return { success: false, error: 'entityName 또는 entityId 필수' };
+        const res = await this.core.getEntityTimeline(resolvedId, { limit: a.limit, orderBy: a.orderBy });
+        if (!res.success) return { success: false, error: res.error };
+        const facts = (res.data ?? []).map(f => ({
+          id: f.id,
+          content: f.content,
+          factType: f.factType,
+          tags: f.tags,
+          occurredAt: f.occurredAt ? new Date(f.occurredAt).toISOString() : undefined,
+          createdAt: new Date(f.createdAt).toISOString(),
+        }));
+        return { success: true, entityId: resolvedId, matches: facts, count: facts.length };
+      },
+      search_entity_facts: async (args) => {
+        const a = args as {
+          query?: string; entityName?: string; entityId?: number; factType?: string;
+          tags?: string[]; occurredAfter?: string; occurredBefore?: string; limit?: number;
+        };
+        let resolvedId = a.entityId;
+        if (!resolvedId && a.entityName) {
+          const found = await this.core.findEntityByName(a.entityName);
+          if (found.success && found.data) resolvedId = found.data.id;
+        }
+        const occurredAfterMs = a.occurredAfter ? new Date(a.occurredAfter).getTime() : undefined;
+        const occurredBeforeMs = a.occurredBefore ? new Date(a.occurredBefore).getTime() : undefined;
+        const res = await this.core.searchEntityFacts({
+          query: a.query,
+          entityId: resolvedId,
+          factType: a.factType,
+          tags: a.tags,
+          occurredAfter: Number.isFinite(occurredAfterMs) ? occurredAfterMs : undefined,
+          occurredBefore: Number.isFinite(occurredBeforeMs) ? occurredBeforeMs : undefined,
+          limit: a.limit,
+        });
+        if (!res.success) return { success: false, error: res.error };
+        const facts = (res.data ?? []).map(f => ({
+          id: f.id,
+          entityId: f.entityId,
+          content: f.content,
+          factType: f.factType,
+          tags: f.tags,
+          occurredAt: f.occurredAt ? new Date(f.occurredAt).toISOString() : undefined,
+          createdAt: new Date(f.createdAt).toISOString(),
+        }));
+        return { success: true, matches: facts, count: facts.length };
+      },
       search_history: async (args, ctx) => {
         const { query, limit, includeBlocks } = args as { query: string; limit?: number; includeBlocks?: boolean };
         const owner = ctx.owner ?? 'admin';
