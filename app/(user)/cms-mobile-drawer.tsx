@@ -11,6 +11,7 @@
  */
 import { useState, useEffect } from 'react';
 import type { NavLink } from '../../lib/cms-layout';
+import { SearchTrigger } from './cms-search-modal';
 
 export function MobileDrawer({ navLinks }: { navLinks: NavLink[] }) {
   const [open, setOpen] = useState(false);
@@ -99,31 +100,19 @@ export function MobileDrawer({ navLinks }: { navLinks: NavLink[] }) {
           </button>
         </div>
 
-        {/* 검색 form — drawer 상단 */}
-        <form method="get" action="/search" className="p-4 flex items-stretch gap-1.5" onSubmit={() => setOpen(false)}>
-          <input
-            type="search"
-            name="q"
-            placeholder="검색어..."
-            className="flex-1 px-2.5 py-1.5 text-sm border rounded outline-none min-w-0"
-            style={{
-              background: 'var(--cms-bg-card)',
-              borderColor: 'var(--cms-border)',
-              color: 'var(--cms-text)',
-            }}
-          />
-          <button
-            type="submit"
-            className="px-2.5 py-1.5 text-sm font-bold rounded transition-opacity hover:opacity-90 shrink-0 border-0 cursor-pointer"
-            style={{ background: 'var(--cms-primary)', color: '#fff' }}
-            aria-label="검색"
+        {/* 검색 — drawer 상단. 클릭 시 drawer close + 검색 모달 popup */}
+        <div className="p-4">
+          <SearchTrigger
+            ariaLabel="검색 열기"
+            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-sm border rounded outline-none cursor-pointer text-left bg-transparent"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'var(--cms-text-muted)' }}>
               <circle cx="11" cy="11" r="7" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-          </button>
-        </form>
+            <span style={{ color: 'var(--cms-text-muted)' }}>검색어...</span>
+          </SearchTrigger>
+        </div>
 
         {/* Nav 링크 — 세로 list */}
         <nav className="flex-1 overflow-y-auto px-2 pb-4">

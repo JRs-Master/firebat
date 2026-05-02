@@ -17,6 +17,7 @@ import {
   visibilityClass,
   isWidgetAllowed,
 } from '../../lib/widget-catalog';
+import { SearchTrigger } from './cms-search-modal';
 
 const HTML_WIDGET_SANITIZE = {
   ALLOWED_TAGS: ['div', 'span', 'p', 'a', 'strong', 'em', 'b', 'i', 'br', 'ul', 'ol', 'li', 'img', 'h3', 'h4', 'small', 'ins', 'script'],
@@ -154,51 +155,34 @@ async function TagCloudWidget({ limit, title, area }: { limit: number; title?: s
 }
 
 function SearchBoxWidget({ placeholder, title, area }: { placeholder?: string; title?: string; area: WidgetArea }) {
-  // 헤더 영역에서는 인라인 검색 아이콘 (입력창 X) — 클릭 시 /search 페이지 이동.
-  // form 자체가 작아도 헤더 너비 차지 안 함.
+  // 헤더 영역에서는 인라인 검색 아이콘 — 클릭 시 모달 popup (라이브 검색).
   if (area === 'header') {
     return (
-      <a
-        href="/search"
-        aria-label="검색"
-        title="검색"
-        className="flex items-center justify-center hover:opacity-70 transition-opacity no-underline p-1 -m-1"
-        style={{ color: 'var(--cms-text)' }}
+      <SearchTrigger
+        ariaLabel="검색"
+        className="flex items-center justify-center hover:opacity-70 transition-opacity no-underline p-1 -m-1 bg-transparent border-0 cursor-pointer"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'var(--cms-text)' }}>
           <circle cx="11" cy="11" r="7" />
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
-      </a>
+      </SearchTrigger>
     );
   }
+  // 사이드바·푸터 — 입력 박스 클릭 시 모달 popup.
   return (
     <WidgetSection area={area}>
       <WidgetTitle text={title ?? '검색'} area={area} />
-      <form method="get" action="/search" className="flex items-stretch gap-1.5">
-        <input
-          type="search"
-          name="q"
-          placeholder={placeholder ?? '검색어...'}
-          className="flex-1 px-2.5 py-1.5 text-[13px] border rounded outline-none min-w-0"
-          style={{
-            background: 'var(--cms-bg-card)',
-            borderColor: 'var(--cms-border)',
-            color: 'var(--cms-text)',
-          }}
-        />
-        <button
-          type="submit"
-          className="px-2.5 py-1.5 text-[13px] font-bold rounded transition-opacity hover:opacity-90 shrink-0"
-          style={{ background: 'var(--cms-primary)', color: '#fff' }}
-          aria-label="검색"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-        </button>
-      </form>
+      <SearchTrigger
+        ariaLabel="검색 열기"
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[13px] border rounded outline-none cursor-pointer text-left bg-transparent"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: 'var(--cms-text-muted)' }}>
+          <circle cx="11" cy="11" r="7" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        <span style={{ color: 'var(--cms-text-muted)' }}>{placeholder ?? '검색어...'}</span>
+      </SearchTrigger>
     </WidgetSection>
   );
 }
