@@ -20,7 +20,7 @@
   <img src="https://img.shields.io/badge/LLM-Multi--Provider-4285F4" alt="Multi-Provider LLM" />
   <img src="https://img.shields.io/badge/MCP-1.29-purple" alt="MCP" />
   <img src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite" alt="SQLite" />
-  <img src="https://img.shields.io/badge/License-Source--Available-red" alt="License" />
+  <img src="https://img.shields.io/badge/License-AGPL--3.0-blue" alt="License" />
 </p>
 
 ---
@@ -350,9 +350,9 @@ firebat/
 
 ## License
 
-Source-available for viewing and study. Redistribution, modification, and production / commercial use require prior written permission. See [LICENSE](LICENSE) for full terms. The license may be upgraded to a standard open-source license (Apache-2.0, MIT, AGPL-3.0, BSL-1.1, …) in the future.
+[GNU AGPL-3.0-or-later](LICENSE). Free for personal use, study, modification, and self-hosted non-commercial deployment. **Network use (SaaS hosting) requires source disclosure** — if you modify Firebat and offer it as a service, you must release your modifications under AGPL. Commercial entities wanting to host Firebat-derived services without source disclosure should contact the author for a commercial license (dual-licensing).
 
-> 🇰🇷 **라이선스** — 소스 열람/학습 목적으로 공개. 재배포·수정·상용 사용은 사전 서면 허가 필요. 전체 조건은 [LICENSE](LICENSE) 참조. 향후 표준 오픈소스 라이선스(Apache-2.0, MIT, AGPL-3.0, BSL-1.1 등)로 전환 가능.
+> 🇰🇷 **라이선스** — GNU AGPL-3.0. 본인 사용·학습·수정·자체 호스팅 (비영리) 자유. SaaS 호스팅 시 수정 코드 공개 의무 — 비공개로 상용 서비스 운영하려면 별도 commercial license 협상 필요 (dual-licensing).
 
 ---
 
