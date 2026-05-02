@@ -332,6 +332,26 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     };
   }, [activeConvId, conversations, refreshConversations]);
 
+  // fallback 메시지 (TIMEOUT/INVISIBLE/EMPTY_REPLY/NETWORK) 표시 시 DB 자동 polling.
+  // race: SSE 60초 timeout 직후 백엔드 67초에 DB write → visibilitychange 한 번만 발화 시 놓침.
+  // 5초 간격으로 3분간 refreshConversations 호출 → DB 에 응답 들어오면 force LOAD 자동.
+  const fallbackFingerprint = messages
+    .filter(m => m.role === 'system' && !m.isThinking && typeof m.content === 'string'
+      && (m.content === FALLBACK.EMPTY_REPLY || m.content === FALLBACK.INVISIBLE
+          || m.content === FALLBACK.NETWORK || m.content === FALLBACK.TIMEOUT))
+    .map(m => m.id).join(',');
+  useEffect(() => {
+    if (!activeConvId || !fallbackFingerprint) return;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 36;  // 5s × 36 = 3분
+    const interval = setInterval(() => {
+      attempts++;
+      void refreshConversations();
+      if (attempts >= MAX_ATTEMPTS) clearInterval(interval);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [activeConvId, fallbackFingerprint, refreshConversations]);
+
   // ── 스크롤 ─────────────────────────────────────────────────────────────────
   const isNearBottomRef = useRef(true);
   const chatContainerRef = useRef<HTMLDivElement>(null);
