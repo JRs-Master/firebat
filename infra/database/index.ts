@@ -5,6 +5,28 @@ import { DB_PATH } from '../config';
 import { unwrapJson } from '../../core/utils/json-normalize';
 import { runMigrations } from './migrations/runner';
 
+/** spec 에서 featured image + excerpt 자동 추출 — list / search 결과에 포함.
+ *  featured: head.og.image 우선 → body 첫 Image src.
+ *  excerpt: head.description 우선 → body 첫 Text content 120자 truncate. */
+function extractFeaturedAndExcerpt(parsed: any): { featuredImage?: string; excerpt?: string } {
+  const head = parsed?.head || {};
+  let featuredImage: string | undefined = typeof head.og?.image === 'string' ? head.og.image : undefined;
+  let excerpt: string | undefined = typeof head.description === 'string' ? head.description : undefined;
+  if ((!featuredImage || !excerpt) && Array.isArray(parsed?.body)) {
+    for (const block of parsed.body) {
+      if (!featuredImage && block?.type === 'Image' && typeof block.src === 'string') {
+        featuredImage = block.src;
+      }
+      if (!excerpt && block?.type === 'Text' && typeof block.content === 'string') {
+        const compact = block.content.replace(/\s+/g, ' ').trim();
+        if (compact.length > 0) excerpt = compact.length > 120 ? compact.slice(0, 120) + '…' : compact;
+      }
+      if (featuredImage && excerpt) break;
+    }
+  }
+  return { featuredImage, excerpt };
+}
+
 /**
  * 범용 DB 포트의 1차 구현체 (로컬 SQLite)
  * 몽고디비 등 NoSQL로 향후 변경 시, 이 파일만 갈아끼우면 Core가 즉시 동작합니다.
@@ -188,7 +210,8 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
       const list: PageListItem[] = rows.map(r => {
         try {
           const parsed = JSON.parse(r.spec);
-          return { slug: r.slug, status: r.status, title: parsed.head?.title ?? r.slug, project: parsed.project ?? undefined, visibility: toVisibility(r.visibility), updatedAt: r.updatedAt };
+          const { featuredImage, excerpt } = extractFeaturedAndExcerpt(parsed);
+          return { slug: r.slug, status: r.status, title: parsed.head?.title ?? r.slug, project: parsed.project ?? undefined, visibility: toVisibility(r.visibility), updatedAt: r.updatedAt, featuredImage, excerpt };
         } catch {
           return { slug: r.slug, status: r.status, title: r.slug, project: undefined, visibility: toVisibility(r.visibility), updatedAt: r.updatedAt };
         }
@@ -294,7 +317,8 @@ export class SqliteDatabaseAdapter implements IDatabasePort {
       const list: PageListItem[] = rows.map(r => {
         try {
           const parsed = JSON.parse(r.spec);
-          return { slug: r.slug, status: r.status, title: parsed.head?.title ?? r.slug, project: parsed.project ?? undefined, visibility: toVisibility(r.visibility), updatedAt: r.updatedAt };
+          const { featuredImage, excerpt } = extractFeaturedAndExcerpt(parsed);
+          return { slug: r.slug, status: r.status, title: parsed.head?.title ?? r.slug, project: parsed.project ?? undefined, visibility: toVisibility(r.visibility), updatedAt: r.updatedAt, featuredImage, excerpt };
         } catch {
           return { slug: r.slug, status: r.status, title: r.slug, project: undefined, visibility: toVisibility(r.visibility), updatedAt: r.updatedAt };
         }

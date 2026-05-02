@@ -1,17 +1,17 @@
 /**
  * CmsPageList — 페이지 list 렌더 (variant 별 layout).
  *
- * 홈·projectRoot·tag 페이지에서 공유 사용. Phase 4 Step 4 — variant 3 변형 (Phase 5 에서
- * featured image 인프라 후 magazine·card 추가 예정).
+ * 홈·projectRoot·tag·search 페이지에서 공유 사용.
  *
  * variant:
  *  - list (기본): 세로 list, 제목 + 메타 + 프로젝트 라벨
  *  - grid: 격자 카드 (2-3열, 모바일 1열)
  *  - compact: 매우 압축 (제목 + 날짜만, 1줄 truncate)
+ *  - magazine: 잡지 카드 (featured image + 제목 + excerpt + 메타). 첫 카드는 큰 hero, 나머지 2열.
  */
 import type { PageListItem } from '../../core/ports';
 
-export type PageCardVariant = 'list' | 'grid' | 'compact';
+export type PageCardVariant = 'list' | 'grid' | 'compact' | 'magazine';
 
 function formatDate(s?: string, timeZone: string = 'Asia/Seoul'): string {
   if (!s) return '';
@@ -61,6 +61,97 @@ export function CmsPageList({ pages, emptyMessage, variant = 'list' }: {
             >
               {p.title}
             </h3>
+          </a>
+        ))}
+      </div>
+    );
+  }
+
+  if (variant === 'magazine') {
+    // 첫 글: 큰 hero 카드 (col-span 2). 나머지: 2열 카드. featuredImage 없으면 텍스트 카드 폴백.
+    const [hero, ...rest] = pages;
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 list-none p-0 m-0">
+        {hero && (
+          <a
+            key={hero.slug}
+            href={`/${hero.slug}`}
+            className="no-underline block sm:col-span-2 border overflow-hidden transition-shadow hover:shadow-md"
+            style={{
+              background: 'var(--cms-bg-card)',
+              borderColor: 'var(--cms-border)',
+              borderRadius: 'var(--cms-radius)',
+              color: 'var(--cms-text)',
+            }}
+          >
+            {hero.featuredImage && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={hero.featuredImage}
+                alt={hero.title}
+                className="w-full h-48 sm:h-64 object-cover"
+                loading="lazy"
+              />
+            )}
+            <div className="p-5 sm:p-6">
+              <div className="flex items-center gap-2 text-[11px] mb-2" style={{ color: 'var(--cms-text-muted)' }}>
+                {hero.project && <span className="font-bold">{hero.project}</span>}
+                {hero.project && hero.updatedAt && <span>·</span>}
+                {hero.updatedAt && <time dateTime={hero.updatedAt}>{formatDate(hero.updatedAt)}</time>}
+              </div>
+              <h3
+                className="text-xl sm:text-2xl font-extrabold leading-tight m-0"
+                style={{ color: 'var(--cms-text)', fontFamily: 'var(--cms-font-heading)' }}
+              >
+                {hero.title}
+              </h3>
+              {hero.excerpt && (
+                <p className="mt-2 text-sm leading-relaxed line-clamp-3" style={{ color: 'var(--cms-text-muted)' }}>
+                  {hero.excerpt}
+                </p>
+              )}
+            </div>
+          </a>
+        )}
+        {rest.map((p) => (
+          <a
+            key={p.slug}
+            href={`/${p.slug}`}
+            className="no-underline block border overflow-hidden transition-shadow hover:shadow-md"
+            style={{
+              background: 'var(--cms-bg-card)',
+              borderColor: 'var(--cms-border)',
+              borderRadius: 'var(--cms-radius)',
+              color: 'var(--cms-text)',
+            }}
+          >
+            {p.featuredImage && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={p.featuredImage}
+                alt={p.title}
+                className="w-full h-40 object-cover"
+                loading="lazy"
+              />
+            )}
+            <div className="p-4">
+              <div className="flex items-center gap-2 text-[11px] mb-1.5" style={{ color: 'var(--cms-text-muted)' }}>
+                {p.project && <span className="font-bold">{p.project}</span>}
+                {p.project && p.updatedAt && <span>·</span>}
+                {p.updatedAt && <time dateTime={p.updatedAt}>{formatDate(p.updatedAt)}</time>}
+              </div>
+              <h3
+                className="text-base sm:text-lg font-bold leading-snug m-0"
+                style={{ color: 'var(--cms-text)', fontFamily: 'var(--cms-font-heading)' }}
+              >
+                {p.title}
+              </h3>
+              {p.excerpt && (
+                <p className="mt-1.5 text-[13px] leading-relaxed line-clamp-2" style={{ color: 'var(--cms-text-muted)' }}>
+                  {p.excerpt}
+                </p>
+              )}
+            </div>
           </a>
         ))}
       </div>

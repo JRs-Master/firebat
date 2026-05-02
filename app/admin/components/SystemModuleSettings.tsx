@@ -114,10 +114,11 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'sidebarShowSubscribe', label: '사이드바 — 구독 안내', type: 'toggle', tab: '레이아웃', description: 'RSS feed.xml 링크 표시. 독자 구독 유도.', defaultValue: false },
       { key: 'sidebarHtmlWidget', label: '사이드바 — HTML 위젯', type: 'textarea', tab: '레이아웃', placeholder: '<div>광고 코드 / 연락처 / 소개 등</div>', description: '자유 HTML 위젯. sanitize 후 inline DOM. <a> / <strong> / <img> 등 일부 태그 허용. 비우면 미표시.' },
       // ── 글 list 카드 ──
-      { key: 'pageListCardVariant', label: '글 카드 변형', type: 'select', tab: '레이아웃', description: '홈·프로젝트·태그 페이지의 글 list 표시 방식. list (세로 카드) / grid (격자 2-3열) / compact (제목+날짜 압축).', defaultValue: 'list', options: [
+      { key: 'pageListCardVariant', label: '글 카드 변형', type: 'select', tab: '레이아웃', description: '홈·프로젝트·태그·검색 페이지의 글 list 표시 방식. list (세로 카드) / grid (격자 2-3열) / compact (제목+날짜 압축) / magazine (잡지 — 첫 글 hero 큰 이미지 + 나머지 2열 카드, featured image + excerpt 자동 추출).', defaultValue: 'list', options: [
         { value: 'list', label: 'List — 세로 카드 (기본)' },
         { value: 'grid', label: 'Grid — 격자 2-3열' },
         { value: 'compact', label: 'Compact — 제목+날짜 압축' },
+        { value: 'magazine', label: 'Magazine — 잡지 (hero + 2열 카드)' },
       ] },
       { key: 'pageListPerPage', label: '글 list — 페이지당 개수', type: 'number', tab: '레이아웃', placeholder: '20', description: '한 페이지에 표시할 글 개수. 페이지네이션 (?page=N) 자동.', defaultValue: 20 },
       // ── 광고 — AdSense 수동 슬롯 4개 (Phase 4 Step 6). Auto Ads 는 AdSense 콘솔에서 직접 ON ──

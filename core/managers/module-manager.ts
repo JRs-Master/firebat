@@ -321,7 +321,7 @@ export class ModuleManager {
         htmlWidget: s.sidebarHtmlWidget || '',
       },
       pageList: {
-        cardVariant: (['list', 'grid', 'compact'].includes(s.pageListCardVariant) ? s.pageListCardVariant : 'list'),
+        cardVariant: (['list', 'grid', 'compact', 'magazine'].includes(s.pageListCardVariant) ? s.pageListCardVariant : 'list'),
         perPage: typeof s.pageListPerPage === 'number'
           ? s.pageListPerPage
           : (parseInt(s.pageListPerPage) || 20),

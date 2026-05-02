@@ -91,6 +91,10 @@ export interface PageListItem {
   visibility?: 'public' | 'password' | 'private';
   updatedAt?: string;
   createdAt?: string;
+  /** Featured image — head.og.image 또는 body 첫 Image src 자동 추출. 카드 magazine 변형·OG 폴백·검색 결과 미리보기에 사용. 추출 실패 시 undefined. */
+  featuredImage?: string;
+  /** 페이지 description — head.description 또는 첫 Text 블록 발췌 (~120자). 카드 list/magazine 변형에서 미리보기. */
+  excerpt?: string;
 }
 
 /** PageSpec 헤드 */
