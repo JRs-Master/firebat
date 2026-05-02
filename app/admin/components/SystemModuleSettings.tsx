@@ -6,9 +6,10 @@ import { Tooltip } from './Tooltip';
 import { TelegramWebhookSection } from './TelegramWebhookSection';
 import { confirmDialog } from './Dialog';
 import { COLOR_PRESETS } from '../../../lib/design-tokens';
+import { WidgetListField } from './WidgetListField';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
-type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select';
+type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list';
 interface SelectOption { value: string; label: string }
 interface SettingField {
   key: string;
@@ -22,6 +23,7 @@ interface SettingField {
   oauthSecrets?: string[];  // oauth 타입 전용: 연동 상태 확인용 시크릿 키
   secretName?: string;      // secret 타입 전용: Vault에 저장할 시크릿 키 이름
   options?: SelectOption[]; // select 타입 전용: dropdown 옵션
+  widgetArea?: 'header' | 'sidebar' | 'footer'; // widget-list 전용: 영역
 }
 
 // 탭 정의 (아이콘 + 라벨)
@@ -105,14 +107,16 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
         { value: 'both-sidebar', label: 'Both Sidebar — 양쪽 사이드바' },
         { value: 'boxed', label: 'Boxed — 사이드바 없음 + 본문 boxed' },
       ] },
-      { key: 'sidebarShowSearchBox', label: '사이드바 — 검색 박스', type: 'toggle', tab: '레이아웃', description: '사이드바에 검색 입력창 표시. /search 로 GET. 헤더 검색 아이콘과 별개로 사이드바에도 노출.', defaultValue: false },
-      { key: 'sidebarShowRecentPosts', label: '사이드바 — 최근 글 위젯', type: 'toggle', tab: '레이아웃', description: '사이드바에 최근 글 list 표시. 사이드바 모드 (right/left) 에서만 효과.', defaultValue: true },
-      { key: 'sidebarRecentPostsCount', label: '사이드바 — 최근 글 개수', type: 'number', tab: '레이아웃', placeholder: '5', description: '사이드바 최근 글 개수.', defaultValue: 5 },
-      { key: 'sidebarShowCategoryList', label: '사이드바 — 카테고리 목록', type: 'toggle', tab: '레이아웃', description: '프로젝트(카테고리)별 글 수 표시. 클릭 시 /{프로젝트} 페이지 이동.', defaultValue: false },
-      { key: 'sidebarShowTagCloud', label: '사이드바 — 태그 cloud', type: 'toggle', tab: '레이아웃', description: 'head.keywords 합집합 + 빈도수 기반 태그 cloud. 빈도 큰 태그가 더 큰 폰트.', defaultValue: false },
-      { key: 'sidebarTagCloudLimit', label: '사이드바 — 태그 cloud 개수', type: 'number', tab: '레이아웃', placeholder: '20', description: '태그 cloud 표시 개수 (top N, 빈도 내림차순).', defaultValue: 20 },
-      { key: 'sidebarShowSubscribe', label: '사이드바 — 구독 안내', type: 'toggle', tab: '레이아웃', description: 'RSS feed.xml 링크 표시. 독자 구독 유도.', defaultValue: false },
-      { key: 'sidebarHtmlWidget', label: '사이드바 — HTML 위젯', type: 'textarea', tab: '레이아웃', placeholder: '<div>광고 코드 / 연락처 / 소개 등</div>', description: '자유 HTML 위젯. sanitize 후 inline DOM. <a> / <strong> / <img> 등 일부 태그 허용. 비우면 미표시.' },
+      // ── 사이드바 위젯 빌더 (Phase A) ── 박혀있으면 아래 6 toggle 무시. 빈 배열 / 미박힘 시 toggle 호환.
+      { key: 'sidebarWidgets', label: '사이드바 위젯', type: 'widget-list', widgetArea: 'sidebar', tab: '레이아웃', description: '위젯 카탈로그에서 추가·순서 변경·삭제·표시대상(PC/모바일)·props 편집. 박혀있으면 아래 legacy toggle 무시. 빈 상태이면 toggle 호환 폴백.' },
+      { key: 'sidebarShowSearchBox', label: '사이드바 — 검색 박스 (legacy)', type: 'toggle', tab: '레이아웃', description: '[옛 toggle, widgets 미박힘 시] 사이드바에 검색 입력창 표시. /search 로 GET.', defaultValue: false },
+      { key: 'sidebarShowRecentPosts', label: '사이드바 — 최근 글 (legacy)', type: 'toggle', tab: '레이아웃', description: '[옛 toggle] 사이드바에 최근 글 list 표시.', defaultValue: true },
+      { key: 'sidebarRecentPostsCount', label: '사이드바 — 최근 글 개수 (legacy)', type: 'number', tab: '레이아웃', placeholder: '5', description: '[옛 toggle] 최근 글 개수.', defaultValue: 5 },
+      { key: 'sidebarShowCategoryList', label: '사이드바 — 카테고리 목록 (legacy)', type: 'toggle', tab: '레이아웃', description: '[옛 toggle] 프로젝트별 글 수 표시.', defaultValue: false },
+      { key: 'sidebarShowTagCloud', label: '사이드바 — 태그 cloud (legacy)', type: 'toggle', tab: '레이아웃', description: '[옛 toggle] head.keywords 빈도수 기반.', defaultValue: false },
+      { key: 'sidebarTagCloudLimit', label: '사이드바 — 태그 cloud 개수 (legacy)', type: 'number', tab: '레이아웃', placeholder: '20', description: '[옛 toggle] 태그 cloud 표시 개수.', defaultValue: 20 },
+      { key: 'sidebarShowSubscribe', label: '사이드바 — 구독 안내 (legacy)', type: 'toggle', tab: '레이아웃', description: '[옛 toggle] RSS feed.xml 링크 표시.', defaultValue: false },
+      { key: 'sidebarHtmlWidget', label: '사이드바 — HTML 위젯 (legacy)', type: 'textarea', tab: '레이아웃', placeholder: '<div>광고 코드 / 연락처 / 소개 등</div>', description: '[옛 toggle] 자유 HTML 위젯. sanitize 후 inline DOM.' },
       // ── 글 list 카드 ──
       { key: 'pageListCardVariant', label: '글 카드 변형', type: 'select', tab: '레이아웃', description: '홈·프로젝트·태그·검색 페이지의 글 list 표시 방식. list (세로 카드) / grid (격자 2-3열) / compact (제목+날짜 압축) / magazine (잡지 — 첫 글 hero 큰 이미지 + 나머지 2열 카드, featured image + excerpt 자동 추출).', defaultValue: 'list', options: [
         { value: 'list', label: 'List — 세로 카드 (기본)' },
@@ -826,6 +830,14 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     settings={settings}
                     presetKey={settings.themePreset ?? 'slate-pro'}
                     onChange={(k, v) => handleChange(k, v)}
+                  />
+                ) : field.type === 'widget-list' ? (
+                  <WidgetListField
+                    label={field.label}
+                    description={field.description}
+                    area={(field.widgetArea ?? 'sidebar') as 'header' | 'sidebar' | 'footer'}
+                    value={Array.isArray(settings[field.key]) ? settings[field.key] : undefined}
+                    onChange={(next) => handleChange(field.key, next)}
                   />
                 ) : field.type === 'select' ? (
                   <>
