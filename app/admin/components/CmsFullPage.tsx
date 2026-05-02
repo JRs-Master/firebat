@@ -57,7 +57,7 @@ export function CmsFullPage({ onClose, onBack }: Props) {
   const refreshIframe = useCallback(() => setIframeKey(k => k + 1), []);
 
   return (
-    <div className="fixed inset-0 z-40 bg-white flex flex-col">
+    <div className="fixed top-12 left-0 right-0 bottom-0 z-40 bg-white flex flex-col">
       {/* 상단 바 — 뒤로/제목/외부 열기/닫기 */}
       <div className="flex items-center gap-2 px-3 sm:px-4 h-12 border-b border-slate-200 bg-slate-50 flex-shrink-0">
         {onBack && (
