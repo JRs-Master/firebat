@@ -245,6 +245,42 @@ Entity / Episodic 어댑터는 `database.db` (raw SQLite Database) + Embedder + 
 - Defensive regex / 도구명 enum / magic number / 개별 sanitize / 모델별 분기 / timezone hardcode / error message 매칭 7가지 패턴
 - 옛 TS 의 1년+ polished fix 들의 root cause 식별 → Rust 에서 일반 로직으로 작성
 
+### 어댑터 언어 정책 (영구 룰, 2026-05-03 확정)
+
+BIBLE 제2장 "언어 중립성" 의 Core 어댑터 layer 적용. 영구 진화 가능 backbone.
+
+**룰 1. Rust 무조건 장점 → Rust 강제** (비용 고려 X)
+
+| 영역 | Rust 강점 |
+|---|---|
+| Database / Vault | 메모리 안전 (시크릿 leak 방지) + μs hot path |
+| Auth (세션·토큰) | 보안 영역 메모리 안전 강제 |
+| Cron / Schedule | 정밀 ms timing + 영구 실행 안정 |
+| Sandbox sysmod spawn | child process lifecycle / signal 정확함 |
+| Network / Log | 단일 binary 동시성 안전 |
+| MCP server / client | stdio + HTTP protocol 정밀 |
+| LLM API / CLI streaming | reqwest 메모리 효율 + stdio chunk 정밀 |
+| ToolRouter / Embedder API | hot dispatch 빈도 |
+
+**룰 2. Trade-off → 좋은 라이브러리 활용** (언어 중립)
+
+시점별 best 라이브러리 선택. Rust ecosystem 성숙 시 어댑터 단위로 swap.
+
+| 영역 | 시작 시점 (2026-05) | 진화 trigger |
+|---|---|---|
+| **Image 처리** (resize / format / blurhash / attention crop) | **sharp via Node bridge** (1년+ 검증, 색공간 정확) — 또는 image-rs 시작도 OK | Rust crate 의 attention crop / 색공간 처리가 sharp 등가 도달 시 swap |
+| **로컬 임베딩** (BGE-M3 등, 사용 시점에) | onnxruntime-node 또는 ort 평가 후 결정 | 둘 다 충분 — 검증된 동작 우선 |
+| **Playwright (browser-scrape)** | **Node spawn 자연** (Rust 등가 0) | fantoccini / headless_chrome 가 playwright 등가 도달 시 |
+| **Token 카운팅** | tiktoken-rs (Rust) 또는 tiktoken (Node) | 어느 쪽이든 OK |
+| **HTML sanitize** | ammonia (Rust) 또는 isomorphic-dompurify (Node) | 어느 쪽이든 OK |
+
+**룰 3. Hexagonal 보장**
+
+- 어댑터 안 라이브러리 / 언어 변경이 매니저 영향 0
+- port interface 안정성 = 영구 진화 가능
+- swap 시 dual-run (예: Image 어댑터 swap 시 같은 input 의 픽셀 diff) 검증 후 cutover
+- 회귀 위험 어댑터 단위 격리 — 한 어댑터 swap 이 다른 어댑터 영향 0
+
 ### 두 build target (단일 codebase)
 
 ```toml

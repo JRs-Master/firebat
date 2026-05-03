@@ -296,6 +296,16 @@ entity 1000+ 또는 fact 50000+ 누적 시점에 vector store 도입 검토 — 
 
 총 4~5개월 (1인 full-time).
 
+### Core 어댑터 언어 정책 (영구 룰)
+
+Phase B 변환 시 + v1.0 Final 출시 후에도 영구 적용. BIBLE 제2장 "언어 중립성" 의 Core 어댑터 layer 적용:
+
+| 룰 | 적용 |
+|---|---|
+| **룰 1. Rust 무조건 장점 → Rust 강제** | Hot path / 보안 / 정밀 timing / 단일 binary 영역 — Database / Vault / Cron / Auth / 매니저 logic / MCP / LLM (API + CLI streaming) / Sandbox / Network / Log |
+| **룰 2. Trade-off → 좋은 라이브러리 활용** | 시점별 best 선택. Image (sharp via Node bridge ↔ image-rs) / 로컬 임베딩 (onnxruntime-node ↔ ort) / Playwright (Node spawn 자연) |
+| **룰 3. Hexagonal 보장** | 어댑터 안 라이브러리 / 언어 변경이 매니저·Frontend 영향 0. Port interface 안정성 = 영구 진화 가능 |
+
 ### v1.0 Final 출시 후 (v2.0+)
 
 운영 데이터 위에서 진짜 한계 마찰 도달 시만 시작:
@@ -303,6 +313,7 @@ entity 1000+ 또는 fact 50000+ 누적 시점에 vector store 도입 검토 — 
 - Vercel frontend 분산 (지역 분산 도달 시)
 - Core AI 파인튜닝 (삼위일체 AI 자기진화)
 - 모듈 패키징 개편 / 시스템 모듈 동적 로드
+- Trade-off 영역의 라이브러리 swap (Rust ecosystem 성숙 시 자연 진화)
 
 ---
 
