@@ -67,11 +67,18 @@ export function CmsHeader({ header, sidebar }: { header: HeaderConfig; sidebar?:
               <CmsWidget key={`r-${i}`} slot={slot} area="header" />
             ))}
             {/* 모바일 햄버거 drawer — header.mobileDrawer ON 시 자동 inject (widget 시스템과 별도).
-                mobileDrawerIncludeSidebar=ON 이면 drawer 안에 sidebar widgets 도 통합 표시. */}
+                mobileDrawerIncludeSidebar=ON 이면 sidebar widgets 를 server-side 에서 미리 렌더해
+                sidebarSlot prop 으로 전달 (mobile-drawer 는 'use client' 라 server-only 의존성 직접 import 불가). */}
             {header.mobileDrawer && (
               <MobileDrawer
                 navLinks={header.navLinks}
-                sidebar={header.mobileDrawerIncludeSidebar ? sidebar : undefined}
+                sidebarSlot={
+                  header.mobileDrawerIncludeSidebar && sidebar?.widgets && sidebar.widgets.length > 0
+                    ? sidebar.widgets.map((slot, i) => (
+                        <CmsWidget key={`mds-${i}`} slot={slot} area="sidebar" />
+                      ))
+                    : undefined
+                }
               />
             )}
           </div>

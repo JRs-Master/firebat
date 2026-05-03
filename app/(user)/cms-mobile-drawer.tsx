@@ -9,12 +9,17 @@
  *
  * design tokens (var(--cms-bg)/text/border) 일관 적용.
  */
-import { useState, useEffect } from 'react';
-import type { NavLink, SidebarConfig } from '../../lib/cms-layout';
+import { useState, useEffect, type ReactNode } from 'react';
+import type { NavLink } from '../../lib/cms-layout';
 import { SearchTrigger } from './cms-search-modal';
-import { CmsWidget } from './cms-widget-renderer';
 
-export function MobileDrawer({ navLinks, sidebar }: { navLinks: NavLink[]; sidebar?: SidebarConfig }) {
+/**
+ * `sidebarSlot` 은 server-side 에서 미리 렌더된 widgets JSX (ReactNode).
+ * cms-mobile-drawer 는 'use client' 라 server-only 의존성 (getCore 등) 이 있는
+ * `cms-widget-renderer` 를 직접 import 하면 client bundle 에 fs/path 가 끌려와 build fail.
+ * 따라서 cms-header (server) 가 위에서 미리 렌더해 ReactNode 로 prop 전달.
+ */
+export function MobileDrawer({ navLinks, sidebarSlot }: { navLinks: NavLink[]; sidebarSlot?: ReactNode }) {
   const [open, setOpen] = useState(false);
 
   // ESC 닫기 + body scroll lock
@@ -141,35 +146,18 @@ export function MobileDrawer({ navLinks, sidebar }: { navLinks: NavLink[]; sideb
             </nav>
           )}
 
-          {/* Sidebar widgets — header.mobileDrawerIncludeSidebar=ON 일 때만 박힘.
-              검색 / 카테고리 / 최근글 / 태그 cloud 등 모든 사이드바 콘텐츠 통합. */}
-          {sidebar && (sidebar.widgets?.length || hasLegacySidebarContent(sidebar)) ? (
+          {/* Sidebar widgets — header.mobileDrawerIncludeSidebar=ON 일 때 cms-header 가
+              server-side 에서 미리 렌더해 sidebarSlot 으로 전달 (검색 / 카테고리 / 최근글 / 태그 등). */}
+          {sidebarSlot && (
             <div
               className="mt-4 pt-4 border-t flex flex-col gap-4"
               style={{ borderColor: 'var(--cms-border)' }}
             >
-              {/* widgets 박혀있으면 우선 — 사용자가 카탈로그에서 등록한 widget 배열 */}
-              {sidebar.widgets && sidebar.widgets.length > 0 ? (
-                sidebar.widgets.map((slot, i) => (
-                  <CmsWidget key={`sw-${i}`} slot={slot} area="sidebar" />
-                ))
-              ) : (
-                /* legacy fallback — toggle 들이 widget 으로 변환되어 cms-widget-renderer 가 처리.
-                   여기서는 명시적 widget 배열 없는 경우라 별도 처리 안 함 (widgets derive 는 module-manager 에서 진행). */
-                null
-              )}
+              {sidebarSlot}
             </div>
-          ) : null}
+          )}
         </div>
       </aside>
     </>
-  );
-}
-
-/** legacy sidebar config 에 표시할 콘텐츠 있는지 검사 — toggle/legacy 필드 기반 */
-function hasLegacySidebarContent(s: SidebarConfig): boolean {
-  return Boolean(
-    s.showSearchBox || s.showRecentPosts || s.showCategoryList ||
-    s.showTagCloud || s.showSubscribe || (s.htmlWidget && s.htmlWidget.trim())
   );
 }
