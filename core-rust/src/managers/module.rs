@@ -63,6 +63,7 @@ impl ModuleManager {
     }
 
     /// 모듈명으로 실행 — entry 자동 탐색.
+    /// 옛 TS `run(name, input)` 1:1 — listDir 실패 시 한국어 에러 명시.
     pub async fn run(
         &self,
         module_name: &str,
@@ -72,7 +73,11 @@ impl ModuleManager {
             return Err("잘못된 모듈 이름입니다.".into());
         }
         let dir_path = format!("user/modules/{}", module_name);
-        let entries = self.storage.list_dir(&dir_path).await?;
+        let entries = self
+            .storage
+            .list_dir(&dir_path)
+            .await
+            .map_err(|_| format!("모듈을 찾을 수 없습니다: {}", module_name))?;
         let files: Vec<String> = entries
             .iter()
             .filter(|e| !e.is_directory)
@@ -81,7 +86,7 @@ impl ModuleManager {
         let entry = ENTRY_FILES
             .iter()
             .find(|f| files.contains(&f.to_string()))
-            .ok_or_else(|| "모듈 entry 파일을 찾을 수 없습니다.".to_string())?;
+            .ok_or_else(|| format!("모듈 entry 파일을 찾을 수 없습니다: {}", module_name))?;
         let target = format!("{}/{}", dir_path, entry);
         self.sandbox
             .execute(&target, input_data, &SandboxExecuteOpts::default())
@@ -174,7 +179,17 @@ impl ModuleManager {
 
     // ─── private helpers ───
 
-    async fn scan_dir(&self, dir: &str, entry_type: &str, scope: &str) -> Vec<SystemEntry> {
+    /// 디렉토리 스캔 — config.json 박힌 하위 디렉토리 → SystemEntry list.
+    /// 옛 TS `scanDir(dir, defaultType, defaultScope)` 1:1:
+    ///   - config.json 의 `type` / `scope` 박혀있으면 우선 (인자 default 는 fallback)
+    ///   - config.json 안 박힌 디렉토리는 skip
+    /// 정렬 — 옛 TS 는 자연 디렉토리 순서. Rust 도 sort 하지 않음 (silent behavior 차이 fix).
+    async fn scan_dir(
+        &self,
+        dir: &str,
+        default_type: &str,
+        default_scope: &str,
+    ) -> Vec<SystemEntry> {
         let Ok(entries) = self.storage.list_dir(dir).await else {
             return vec![];
         };
@@ -203,17 +218,30 @@ impl ModuleManager {
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
+            // 옛 TS `parsed.type || defaultType` / `parsed.scope || defaultScope` 1:1
+            // (config.json 의 type / scope 가 우선 — 호출자 인자는 fallback)
+            let entry_type = parsed
+                .get("type")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or(default_type)
+                .to_string();
+            let scope = parsed
+                .get("scope")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or(default_scope)
+                .to_string();
             let enabled = self.is_enabled(&name);
             result.push(SystemEntry {
                 name,
                 description,
                 runtime,
-                entry_type: entry_type.to_string(),
-                scope: scope.to_string(),
+                entry_type,
+                scope,
                 enabled,
             });
         }
-        result.sort_by(|a, b| a.name.cmp(&b.name));
         result
     }
 }
@@ -268,10 +296,88 @@ mod tests {
 
         let mods = mgr.list_system_modules().await;
         assert_eq!(mods.len(), 2);
-        assert_eq!(mods[0].name, "kakao-talk");
-        assert_eq!(mods[0].entry_type, "module");
-        assert_eq!(mods[0].scope, "system");
-        assert!(mods[0].enabled);
+        // 정렬 가정 X — 이름 set 으로 매칭 (옛 TS 동등 — 자연 디렉토리 순서)
+        let names: std::collections::HashSet<&str> =
+            mods.iter().map(|m| m.name.as_str()).collect();
+        assert!(names.contains("kakao-talk"));
+        assert!(names.contains("yfinance"));
+        // 모든 entry 의 type/scope default 적용 확인
+        for m in &mods {
+            assert_eq!(m.entry_type, "module");
+            assert_eq!(m.scope, "system");
+            assert!(m.enabled);
+        }
+    }
+
+    #[tokio::test]
+    async fn config_type_scope_override_default_args() {
+        // 옛 TS `parsed.type || defaultType` 1:1 — config.json 의 명시값 우선.
+        let tmp = tempdir().unwrap();
+        let storage = LocalStorageAdapter::new(tmp.path());
+        // user/modules/ 디렉토리에 박음 + config.json 의 scope="system" override
+        storage
+            .write(
+                "user/modules/special/config.json",
+                r#"{"name":"special","description":"override","runtime":"node","type":"service","scope":"system"}"#,
+            )
+            .await
+            .unwrap();
+        let storage_arc: Arc<dyn IStoragePort> = Arc::new(storage);
+        let sandbox: Arc<dyn ISandboxPort> = Arc::new(StubSandboxAdapter {
+            fixed_output: ModuleOutput::default_success(),
+        });
+        let vault: Arc<dyn IVaultPort> = Arc::new(SqliteVaultAdapter::new_in_memory().unwrap());
+        let mgr = ModuleManager::new(sandbox, storage_arc, vault);
+
+        // list_user_modules 호출 시 default = (type=module, scope=user) 박지만
+        // config.json 의 type/scope 가 우선 → service/system 으로 보고
+        let mods = mgr.list_user_modules().await;
+        assert_eq!(mods.len(), 1);
+        assert_eq!(mods[0].name, "special");
+        assert_eq!(mods[0].entry_type, "service"); // override
+        assert_eq!(mods[0].scope, "system"); // override
+    }
+
+    #[tokio::test]
+    async fn run_unknown_module_returns_korean_error() {
+        let tmp = tempdir().unwrap();
+        let mgr = make_manager(tmp.path());
+        // 디렉토리 미존재 → "모듈을 찾을 수 없습니다: ..." 한국어 에러 (옛 TS 1:1)
+        let r = mgr.run("missing-xyz", &serde_json::json!({})).await;
+        assert!(r.is_err());
+        let err = r.unwrap_err();
+        assert!(
+            err.contains("모듈을 찾을 수 없습니다") && err.contains("missing-xyz"),
+            "expected Korean error with module name, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_no_entry_file_returns_korean_error() {
+        let tmp = tempdir().unwrap();
+        let storage = LocalStorageAdapter::new(tmp.path());
+        // 디렉토리는 있지만 entry 파일 없음 (config.json 만)
+        storage
+            .write(
+                "user/modules/no-entry/config.json",
+                r#"{"name":"no-entry","runtime":"node"}"#,
+            )
+            .await
+            .unwrap();
+        let storage_arc: Arc<dyn IStoragePort> = Arc::new(storage);
+        let sandbox: Arc<dyn ISandboxPort> = Arc::new(StubSandboxAdapter {
+            fixed_output: ModuleOutput::default_success(),
+        });
+        let vault: Arc<dyn IVaultPort> = Arc::new(SqliteVaultAdapter::new_in_memory().unwrap());
+        let mgr = ModuleManager::new(sandbox, storage_arc, vault);
+
+        let r = mgr.run("no-entry", &serde_json::json!({})).await;
+        assert!(r.is_err());
+        let err = r.unwrap_err();
+        assert!(
+            err.contains("entry 파일을 찾을 수 없습니다") && err.contains("no-entry"),
+            "expected Korean error with module name, got: {err}"
+        );
     }
 
     #[tokio::test]

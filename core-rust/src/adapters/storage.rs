@@ -95,9 +95,9 @@ impl IStoragePort for LocalStorageAdapter {
 
     async fn list_dir(&self, path: &str) -> InfraResult<Vec<DirEntry>> {
         let safe = self.resolve_safe_path(path)?;
-        if !safe.exists() {
-            return Ok(vec![]); // 디렉토리 없으면 빈 list (옛 TS 패턴)
-        }
+        // 옛 TS LocalStorageAdapter.listDir 1:1 — 미존재 디렉토리는 ENOENT err 반환
+        // (옛 TS `fs.readdir` 가 throw → `{success: false, error: ENOENT}`).
+        // 호출자 (ModuleManager.run 등) 가 err 분기로 "모듈을 찾을 수 없습니다" 메시지 매칭.
         let mut entries = Vec::new();
         let mut read_dir = fs::read_dir(&safe)
             .await
