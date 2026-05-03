@@ -11,11 +11,14 @@
 //! - result processor — sanitizeBlock / sanitizeReply / Markdown 표·헤더 자동 변환
 //! - LLM 8 format 어댑터 와이어링
 
+pub mod prompt_builder;
+
 use std::sync::Arc;
 
-use crate::managers::tool::ToolManager;
+use crate::managers::ai::prompt_builder::PromptBuilder;
+use crate::managers::tool::{ToolListFilter, ToolManager};
 use crate::ports::{
-    ILlmPort, ILogPort, InfraResult, LlmCallOpts, ToolCall, ToolDefinition, ToolResult,
+    ILlmPort, ILogPort, IVaultPort, InfraResult, LlmCallOpts, ToolCall, ToolDefinition, ToolResult,
 };
 
 const MAX_TOOL_TURNS: usize = 10;
@@ -41,6 +44,8 @@ pub struct AiManager {
     llm: Arc<dyn ILlmPort>,
     tools: Arc<ToolManager>,
     log: Arc<dyn ILogPort>,
+    /// 시스템 프롬프트 builder (옵션) — Vault 박힌 채로 박힘. 미박힘 시 base prompt 만.
+    prompt_builder: Option<PromptBuilder>,
 }
 
 impl AiManager {
@@ -49,7 +54,33 @@ impl AiManager {
         tools: Arc<ToolManager>,
         log: Arc<dyn ILogPort>,
     ) -> Self {
-        Self { llm, tools, log }
+        Self {
+            llm,
+            tools,
+            log,
+            prompt_builder: None,
+        }
+    }
+
+    /// PromptBuilder 박은 채로 부팅 — 시스템 프롬프트 자동 주입 활성.
+    pub fn with_prompt_builder(mut self, vault: Arc<dyn IVaultPort>) -> Self {
+        self.prompt_builder = Some(PromptBuilder::new(vault));
+        self
+    }
+
+    /// ToolManager 등록 도구 → ports::ToolDefinition (LLM-facing) 변환.
+    /// 옛 TS buildToolDefinitions Rust port — 정적 27개 + 동적 sysmod_* / mcp_* / render_* 모두 포함.
+    /// 새 도구 추가 시 ToolManager 에 register 만 하면 자동 LLM 에 전달됨 (코드 변경 0).
+    pub fn build_tool_definitions(&self) -> Vec<ToolDefinition> {
+        self.tools
+            .list(&ToolListFilter::default())
+            .into_iter()
+            .map(|t| ToolDefinition {
+                name: t.name,
+                description: t.description,
+                input_schema: Some(t.parameters),
+            })
+            .collect()
     }
 
     /// 단순 텍스트 응답 — 도구 호출 없음 (Code Assistant 등 활용).
@@ -59,13 +90,30 @@ impl AiManager {
     }
 
     /// Function Calling 멀티턴 도구 루프.
-    /// Phase B-16 minimum: ToolManager.dispatch 위임 — Phase B-17+ 에서 실 LLM 도구 호출 박힘.
+    /// 시스템 프롬프트 자동 주입 (PromptBuilder 박힌 경우) + 도구 list 자동 build (tools 빈 배열이면).
     pub async fn process_with_tools(
         &self,
         prompt: &str,
         tools: &[ToolDefinition],
         opts: &LlmCallOpts,
     ) -> InfraResult<AiResponse> {
+        // 도구 list 미전달 시 ToolManager 등록 도구 자동 사용 (옛 TS buildToolDefinitions 동등).
+        let auto_tools: Vec<ToolDefinition>;
+        let effective_tools: &[ToolDefinition] = if tools.is_empty() {
+            auto_tools = self.build_tool_definitions();
+            &auto_tools
+        } else {
+            tools
+        };
+
+        // 시스템 프롬프트 자동 주입 (PromptBuilder 박힌 경우 + opts.system_prompt 미박힘 시).
+        let mut effective_opts = opts.clone();
+        if effective_opts.system_prompt.is_none() {
+            if let Some(pb) = &self.prompt_builder {
+                effective_opts.system_prompt = Some(pb.build(None));
+            }
+        }
+
         let mut prior_results: Vec<ToolResult> = Vec::new();
         let mut executed_actions: Vec<serde_json::Value> = Vec::new();
         let mut last_text = String::new();
@@ -75,7 +123,7 @@ impl AiManager {
         for turn in 0..MAX_TOOL_TURNS {
             let response = self
                 .llm
-                .ask_with_tools(prompt, tools, &prior_results, opts)
+                .ask_with_tools(prompt, effective_tools, &prior_results, &effective_opts)
                 .await?;
             last_text = response.text.clone();
             last_model_id = response.model_id.clone();
