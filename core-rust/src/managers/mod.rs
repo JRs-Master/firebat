@@ -19,3 +19,4 @@ pub mod entity;
 pub mod episodic;
 pub mod consolidation;
 pub mod schedule;
+pub mod task;

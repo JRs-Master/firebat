@@ -19,7 +19,8 @@ use firebat_core::{
         cost::CostManager, entity::EntityManager, episodic::EpisodicManager, event::EventManager,
         mcp::McpManager, module::ModuleManager, page::PageManager, project::ProjectManager,
         schedule::ScheduleManager, secret::SecretManager, status::StatusManager,
-        template::TemplateManager, tool::ToolManager,
+        task::{StubTaskExecutor, TaskExecutor, TaskManager}, template::TemplateManager,
+        tool::ToolManager,
     },
     ports::{
         IAuthPort, IDatabasePort, IEntityPort, IEpisodicPort, ILogPort, IMcpClientPort,
@@ -41,6 +42,7 @@ use firebat_core::{
         schedule_service_server::ScheduleServiceServer,
         secret_service_server::SecretServiceServer,
         status_service_server::StatusServiceServer,
+        task_service_server::TaskServiceServer,
         template_service_server::TemplateServiceServer,
         tool_service_server::ToolServiceServer,
     },
@@ -144,6 +146,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let schedule_manager = Arc::new(ScheduleManager::new(cron_adapter.clone()));
 
+    // Phase B-14 minimum — TaskManager 의 step executor 는 Phase B-16+ 에서 RealExecutor 로 교체.
+    let task_executor: Arc<dyn TaskExecutor> = Arc::new(StubTaskExecutor);
+    let task_manager = Arc::new(TaskManager::new(task_executor, logger.clone()));
+
     // 부팅 시 영속 잡 복원 (cron / once 만 — delay 잡은 시각 부재로 복원 불가)
     schedule_manager.restore().await;
 
@@ -166,6 +172,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let consolidation_service =
         services::consolidation::ConsolidationServiceImpl::new(consolidation_manager);
     let schedule_service = services::schedule::ScheduleServiceImpl::new(schedule_manager);
+    let task_service = services::task::TaskServiceImpl::new(task_manager);
 
     // graceful shutdown — Ctrl+C / SIGTERM
     let shutdown = async {
@@ -191,8 +198,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(EpisodicServiceServer::new(episodic_service))
         .add_service(ConsolidationServiceServer::new(consolidation_service))
         .add_service(ScheduleServiceServer::new(schedule_service))
+        .add_service(TaskServiceServer::new(task_service))
         // Phase B 진행하며 추가:
-        //   .add_service(TaskServiceServer::new(...))
         //   .add_service(MediaServiceServer::new(...))
         //   .add_service(AiServiceServer::new(...))
         //   ... 21 매니저 + cross-cutting 등록
