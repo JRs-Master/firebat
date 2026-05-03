@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Firebat 데스크톱 윈도우의 기본 capability — Tauri 2.x ACL.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-execute",
+    "shell:allow-open",
+    "fs:allow-app-read",
+    "fs:allow-app-write",
+    "process:allow-exit",
+    "process:allow-restart",
+    "dialog:default"
+  ]
+}

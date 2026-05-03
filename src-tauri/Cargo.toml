@@ -1,0 +1,49 @@
+[package]
+name = "firebat-tauri"
+version = "0.0.1"
+edition = "2021"
+description = "Firebat — self-installed desktop (Tauri shell + Rust Core embed + Node sidecar)"
+license = "AGPL-3.0-or-later"
+authors = ["JRs-Master"]
+default-run = "firebat-tauri"
+
+# Phase D self-installed distribution — Tauri 2.x
+# Architecture:
+#   - Rust Core: in-process embed (firebat_core lib crate)
+#   - Frontend: Next.js standalone build (Tauri sidecar 으로 spawn)
+#   - LLM CLI: 첫 실행 시 격리 npm install (Claude Code / Codex / Gemini CLI)
+#   - 데이터: OS app data 또는 portable USB (FIREBAT_DATA_DIR env)
+
+[[bin]]
+name = "firebat-tauri"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# Tauri 2.x — desktop shell + WebView2 / WKWebView / WebKitGTK
+tauri = { version = "2", features = ["devtools", "rustls-tls"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-process = "2"
+
+# Rust Core embed — workspace member 활용 (../core-rust)
+firebat-core = { path = "../core-rust" }
+
+# 표준 의존성
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[features]
+# default — production 빌드 (devtools 비활성)
+default = []
+# dev 빌드 — devtools 활성
+dev = []
+
+# [profile.*] — root Cargo.toml workspace 사용.

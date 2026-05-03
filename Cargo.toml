@@ -1,0 +1,30 @@
+# Cargo workspace root — Phase D 박힘.
+#
+# Two Rust crates:
+#   - core-rust/ — Rust Core (gRPC server + 21 매니저 + 17 어댑터)
+#   - src-tauri/ — Tauri shell (self-installed distribution, Rust Core embed)
+#
+# Self-hosted (Phase C Docker) 빌드 시: `cargo build --release -p firebat-core` (bin 또는 lib)
+# Self-installed (Phase D Tauri) 빌드 시: `cargo tauri build` 또는 `npm run tauri:build`
+#   (Tauri CLI 가 src-tauri/ 의 Cargo.toml 빌드 + frontend bundle 동봉)
+
+[workspace]
+members = [
+    "core-rust",
+    "src-tauri",
+]
+resolver = "2"
+
+# 공통 deps 의 default 버전 — workspace member 가 `<dep>.workspace = true` 로 inherit 가능.
+# (현재는 명시 안 활용 — 향후 정리 시 옮길 수 있음)
+[workspace.package]
+edition = "2021"
+license = "AGPL-3.0-or-later"
+authors = ["JRs-Master"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

@@ -34,3 +34,16 @@ data/
 # lock 파일 제외 (package-lock.json은 유지)
 yarn.lock
 pnpm-lock.yaml
+
+# Cargo workspace target — Phase B (Rust Core) + Phase D (Tauri) 빌드 산출물
+/target/
+core-rust/target/
+src-tauri/target/
+
+# Tauri CLI 자동 생성 산출물
+src-tauri/gen/
+
+# Tauri 아이콘 placement (사용자 박을 자리, README 만 git 추적)
+src-tauri/icons/*.png
+src-tauri/icons/*.icns
+src-tauri/icons/*.ico

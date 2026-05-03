@@ -84,13 +84,5 @@ tonic-build = "0.12"
 # protoc binary 자동 vendored — 사용자 PC / CI 의 protoc 설치 의존성 제거
 protoc-bin-vendored = "3"
 
-[profile.release]
-opt-level = 3
-lto = true              # 정적 링크 + 최적화
-codegen-units = 1       # 최대 최적화
-strip = true            # debug symbol 제거
-panic = "abort"         # 작은 binary
-
-[profile.dev]
-opt-level = 0
-debug = true
+# [profile.*] — root Cargo.toml workspace 의 profile 사용 (Phase D Tauri workspace 박힘).
+# core-rust standalone 빌드 시 cargo 가 root 의 profile 자동 적용.

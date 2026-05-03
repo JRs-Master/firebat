@@ -1,0 +1,90 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Firebat",
+  "version": "0.0.1",
+  "identifier": "co.kr.firebat.desktop",
+  "build": {
+    "frontendDist": "../.next/standalone",
+    "devUrl": "http://localhost:3000",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Firebat",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": true,
+        "transparent": false,
+        "alwaysOnTop": false,
+        "url": "http://localhost:3000"
+      }
+    ],
+    "security": {
+      "csp": null,
+      "capabilities": ["main"]
+    },
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "AI-Powered Visual Automation Agent",
+    "longDescription": "Firebat — self-hosted AI agent + automation + builder. Rust Core + Next.js Frontend + Embedded LLM CLI (Claude Code / Codex / Gemini).",
+    "publisher": "JRs-Master",
+    "copyright": "© 2026 JRs-Master. AGPL-3.0-or-later.",
+    "homepage": "https://github.com/JRs-Master/firebat",
+    "resources": [
+      "scripts/install-cli.js"
+    ],
+    "externalBin": [],
+    "windows": {
+      "wix": {
+        "language": ["en-US", "ko-KR"]
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "linux": {
+      "deb": {
+        "depends": ["nodejs (>= 20)"]
+      }
+    }
+  },
+  "plugins": {
+    "shell": {
+      "all": false,
+      "open": true,
+      "scope": [
+        {
+          "name": "node",
+          "cmd": "node",
+          "args": true
+        },
+        {
+          "name": "npm",
+          "cmd": "npm",
+          "args": true
+        }
+      ]
+    },
+    "fs": {
+      "scope": ["$APPDATA/firebat/**", "$RESOURCE/scripts/**"]
+    }
+  }
+}
