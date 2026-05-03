@@ -15,3 +15,6 @@ pub mod module;
 pub mod page;
 pub mod conversation;
 pub mod mcp;
+pub mod entity;
+pub mod episodic;
+pub mod consolidation;

@@ -10,23 +10,29 @@ use tonic::transport::Server;
 use firebat_core::{
     adapters::{
         auth::VaultAuthAdapter, database::SqliteDatabaseAdapter, log::ConsoleLogAdapter,
-        mcp_client::McpClientFileAdapter, sandbox::ProcessSandboxAdapter,
-        storage::LocalStorageAdapter, vault::SqliteVaultAdapter,
+        mcp_client::McpClientFileAdapter, memory::SqliteMemoryAdapter,
+        sandbox::ProcessSandboxAdapter, storage::LocalStorageAdapter, vault::SqliteVaultAdapter,
     },
     managers::{
-        auth::AuthManager, capability::CapabilityManager, conversation::ConversationManager,
-        cost::CostManager, event::EventManager, mcp::McpManager, module::ModuleManager,
-        page::PageManager, project::ProjectManager, secret::SecretManager, status::StatusManager,
-        template::TemplateManager, tool::ToolManager,
+        auth::AuthManager, capability::CapabilityManager,
+        consolidation::ConsolidationManager, conversation::ConversationManager,
+        cost::CostManager, entity::EntityManager, episodic::EpisodicManager, event::EventManager,
+        mcp::McpManager, module::ModuleManager, page::PageManager, project::ProjectManager,
+        secret::SecretManager, status::StatusManager, template::TemplateManager,
+        tool::ToolManager,
     },
     ports::{
-        IAuthPort, IDatabasePort, ILogPort, IMcpClientPort, ISandboxPort, IStoragePort, IVaultPort,
+        IAuthPort, IDatabasePort, IEntityPort, IEpisodicPort, ILogPort, IMcpClientPort,
+        ISandboxPort, IStoragePort, IVaultPort,
     },
     proto::{
         auth_service_server::AuthServiceServer,
         capability_service_server::CapabilityServiceServer,
+        consolidation_service_server::ConsolidationServiceServer,
         conversation_service_server::ConversationServiceServer,
         cost_service_server::CostServiceServer,
+        entity_service_server::EntityServiceServer,
+        episodic_service_server::EpisodicServiceServer,
         event_service_server::EventServiceServer,
         mcp_service_server::McpServiceServer,
         module_service_server::ModuleServiceServer,
@@ -57,6 +63,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mcp_servers_path = std::env::var("FIREBAT_MCP_SERVERS")
         .map(PathBuf::from)
         .unwrap_or_else(|_| workspace_root.join("data").join("mcp-servers.json"));
+    let memory_db_path = std::env::var("FIREBAT_MEMORY_DB")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| workspace_root.join("data").join("memory.db"));
     let addr = listen_addr.parse()?;
 
     eprintln!(
@@ -80,6 +89,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let sandbox: Arc<dyn ISandboxPort> = Arc::new(ProcessSandboxAdapter::new(workspace_root.clone()));
     let mcp_client: Arc<dyn IMcpClientPort> =
         Arc::new(McpClientFileAdapter::new(mcp_servers_path)?);
+    let memory_adapter = Arc::new(SqliteMemoryAdapter::new(&memory_db_path)?);
+    let entity_port: Arc<dyn IEntityPort> = memory_adapter.clone();
+    let episodic_port: Arc<dyn IEpisodicPort> = memory_adapter.clone();
 
     // 매니저 wiring
     let template_manager = Arc::new(TemplateManager::new(storage.clone()));
@@ -107,6 +119,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let page_manager = Arc::new(PageManager::new(db.clone(), storage.clone()));
     let conversation_manager = Arc::new(ConversationManager::new(db.clone()));
     let mcp_manager = Arc::new(McpManager::new(mcp_client));
+    let entity_manager = Arc::new(EntityManager::new(entity_port));
+    let episodic_manager = Arc::new(EpisodicManager::new(episodic_port));
+    let consolidation_manager = Arc::new(ConsolidationManager::new(
+        entity_manager.clone(),
+        episodic_manager.clone(),
+    ));
 
     // service impls
     let template_service = services::template::TemplateServiceImpl::new(template_manager);
@@ -122,6 +140,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let page_service = services::page::PageServiceImpl::new(page_manager);
     let conversation_service = services::conversation::ConversationServiceImpl::new(conversation_manager);
     let mcp_service = services::mcp::McpServiceImpl::new(mcp_manager);
+    let entity_service = services::entity::EntityServiceImpl::new(entity_manager);
+    let episodic_service = services::episodic::EpisodicServiceImpl::new(episodic_manager);
+    let consolidation_service =
+        services::consolidation::ConsolidationServiceImpl::new(consolidation_manager);
 
     // graceful shutdown — Ctrl+C / SIGTERM
     let shutdown = async {
@@ -143,6 +165,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(PageServiceServer::new(page_service))
         .add_service(ConversationServiceServer::new(conversation_service))
         .add_service(McpServiceServer::new(mcp_service))
+        .add_service(EntityServiceServer::new(entity_service))
+        .add_service(EpisodicServiceServer::new(episodic_service))
+        .add_service(ConsolidationServiceServer::new(consolidation_service))
         // Phase B 진행하며 추가:
         //   .add_service(ScheduleServiceServer::new(...))
         //   .add_service(MediaServiceServer::new(...))

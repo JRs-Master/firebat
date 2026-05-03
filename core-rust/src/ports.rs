@@ -320,3 +320,258 @@ pub trait IMcpClientPort: Send + Sync {
     /// 셧다운 — 모든 stdio 자식 process kill / sse 연결 close.
     async fn disconnect_all(&self);
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Memory 4-tier — Entity (Phase 1) + Episodic (Phase 2) + Consolidation (Phase 4)
+// ──────────────────────────────────────────────────────────────────────────
+
+/// Entity tier — 종목·인물·프로젝트·이벤트 단위 영속 추적 대상.
+/// 옛 TS EntityRecord / EntityFactRecord Rust 재현.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EntityRecord {
+    pub id: i64,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub entity_type: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+    #[serde(rename = "sourceConvId", default, skip_serializing_if = "Option::is_none")]
+    pub source_conv_id: Option<String>,
+    #[serde(rename = "factCount", default)]
+    pub fact_count: i64,
+    #[serde(rename = "createdAt")]
+    pub created_at: i64,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EntityFactRecord {
+    pub id: i64,
+    #[serde(rename = "entityId")]
+    pub entity_id: i64,
+    pub content: String,
+    #[serde(rename = "factType", default, skip_serializing_if = "Option::is_none")]
+    pub fact_type: Option<String>,
+    #[serde(rename = "occurredAt", default, skip_serializing_if = "Option::is_none")]
+    pub occurred_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    #[serde(rename = "sourceConvId", default, skip_serializing_if = "Option::is_none")]
+    pub source_conv_id: Option<String>,
+    #[serde(rename = "expiresAt", default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,
+    #[serde(rename = "createdAt")]
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct EntitySearchOpts {
+    #[serde(default)]
+    pub query: String,
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub entity_type: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub offset: Option<usize>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct FactSearchOpts {
+    #[serde(default)]
+    pub query: String,
+    #[serde(rename = "entityId", default, skip_serializing_if = "Option::is_none")]
+    pub entity_id: Option<i64>,
+    #[serde(rename = "factType", default, skip_serializing_if = "Option::is_none")]
+    pub fact_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    #[serde(rename = "fromTime", default, skip_serializing_if = "Option::is_none")]
+    pub from_time: Option<i64>,
+    #[serde(rename = "toTime", default, skip_serializing_if = "Option::is_none")]
+    pub to_time: Option<i64>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub offset: Option<usize>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SaveEntityInput {
+    pub name: String,
+    pub entity_type: String,
+    pub aliases: Vec<String>,
+    pub metadata: Option<serde_json::Value>,
+    pub source_conv_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UpdateEntityPatch {
+    pub name: Option<String>,
+    pub entity_type: Option<String>,
+    pub aliases: Option<Vec<String>>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SaveFactInput {
+    pub entity_id: i64,
+    pub content: String,
+    pub fact_type: Option<String>,
+    pub occurred_at: Option<i64>,
+    pub tags: Vec<String>,
+    pub source_conv_id: Option<String>,
+    pub ttl_days: Option<i64>,
+    pub dedup_threshold: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UpdateFactPatch {
+    pub content: Option<String>,
+    pub fact_type: Option<String>,
+    pub occurred_at: Option<i64>,
+    pub tags: Option<Vec<String>>,
+    pub ttl_days: Option<i64>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct TimelineOpts {
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub offset: Option<usize>,
+    #[serde(rename = "orderBy", default)]
+    pub order_by: Option<String>, // "occurredAt" | "createdAt"
+}
+
+/// IEntityPort — Phase 1 entity tier port.
+///
+/// 동기 — rusqlite 가 sync (다른 IDatabasePort 와 통일).
+/// Phase B-12 minimum: 임베딩 미박음 (search = name + alias substring 매칭).
+/// Phase B-15+ 에서 IEmbedderPort 박힌 후 cosine search 활성.
+pub trait IEntityPort: Send + Sync {
+    fn save_entity(&self, input: &SaveEntityInput) -> InfraResult<(i64, bool)>;
+    fn update_entity(&self, id: i64, patch: &UpdateEntityPatch) -> InfraResult<()>;
+    fn remove_entity(&self, id: i64) -> InfraResult<()>;
+    fn get_entity(&self, id: i64) -> InfraResult<Option<EntityRecord>>;
+    fn find_entity_by_name(&self, name: &str) -> InfraResult<Option<EntityRecord>>;
+    fn search_entities(&self, opts: &EntitySearchOpts) -> InfraResult<Vec<EntityRecord>>;
+
+    fn save_fact(&self, input: &SaveFactInput) -> InfraResult<(i64, bool, Option<f64>)>;
+    fn update_fact(&self, id: i64, patch: &UpdateFactPatch) -> InfraResult<()>;
+    fn remove_fact(&self, id: i64) -> InfraResult<()>;
+    fn get_fact(&self, id: i64) -> InfraResult<Option<EntityFactRecord>>;
+    fn list_facts_by_entity(
+        &self,
+        entity_id: i64,
+        opts: &TimelineOpts,
+    ) -> InfraResult<Vec<EntityFactRecord>>;
+    fn search_facts(&self, opts: &FactSearchOpts) -> InfraResult<Vec<EntityFactRecord>>;
+    fn cleanup_expired_facts(&self) -> InfraResult<i64>;
+
+    /// 통계 — 매니저 retrieve_context / health stats 에서 활용.
+    fn count_entities(&self) -> InfraResult<i64>;
+    fn count_facts(&self) -> InfraResult<i64>;
+    fn count_entities_by_type(&self) -> InfraResult<Vec<(String, i64)>>;
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EventRecord {
+    pub id: i64,
+    #[serde(rename = "type")]
+    pub event_type: String,
+    pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub who: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<serde_json::Value>,
+    #[serde(rename = "occurredAt")]
+    pub occurred_at: i64,
+    #[serde(rename = "entityIds", default, skip_serializing_if = "Vec::is_empty")]
+    pub entity_ids: Vec<i64>,
+    #[serde(rename = "sourceConvId", default, skip_serializing_if = "Option::is_none")]
+    pub source_conv_id: Option<String>,
+    #[serde(rename = "expiresAt", default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,
+    #[serde(rename = "createdAt")]
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct EventSearchOpts {
+    #[serde(default)]
+    pub query: String,
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub event_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub who: Option<String>,
+    #[serde(rename = "entityId", default, skip_serializing_if = "Option::is_none")]
+    pub entity_id: Option<i64>,
+    #[serde(rename = "fromTime", default, skip_serializing_if = "Option::is_none")]
+    pub from_time: Option<i64>,
+    #[serde(rename = "toTime", default, skip_serializing_if = "Option::is_none")]
+    pub to_time: Option<i64>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub offset: Option<usize>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SaveEventInput {
+    pub event_type: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub who: Option<String>,
+    pub context: Option<serde_json::Value>,
+    pub occurred_at: Option<i64>,
+    pub entity_ids: Vec<i64>,
+    pub source_conv_id: Option<String>,
+    pub ttl_days: Option<i64>,
+    pub dedup_threshold: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UpdateEventPatch {
+    pub event_type: Option<String>,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub who: Option<String>,
+    pub context: Option<serde_json::Value>,
+    pub occurred_at: Option<i64>,
+    pub entity_ids: Option<Vec<i64>>,
+    pub ttl_days: Option<i64>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ListRecentOpts {
+    #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
+    pub event_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub who: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub offset: Option<usize>,
+}
+
+/// IEpisodicPort — Phase 2 episodic tier port.
+pub trait IEpisodicPort: Send + Sync {
+    fn save_event(&self, input: &SaveEventInput) -> InfraResult<(i64, bool, Option<f64>)>;
+    fn update_event(&self, id: i64, patch: &UpdateEventPatch) -> InfraResult<()>;
+    fn remove_event(&self, id: i64) -> InfraResult<()>;
+    fn get_event(&self, id: i64) -> InfraResult<Option<EventRecord>>;
+    fn search_events(&self, opts: &EventSearchOpts) -> InfraResult<Vec<EventRecord>>;
+    fn list_recent_events(&self, opts: &ListRecentOpts) -> InfraResult<Vec<EventRecord>>;
+    fn link_event_entity(&self, event_id: i64, entity_id: i64) -> InfraResult<()>;
+    fn unlink_event_entity(&self, event_id: i64, entity_id: i64) -> InfraResult<()>;
+    fn cleanup_expired_events(&self) -> InfraResult<i64>;
+
+    fn count_events(&self) -> InfraResult<i64>;
+    fn count_events_by_type(&self) -> InfraResult<Vec<(String, i64)>>;
+}
