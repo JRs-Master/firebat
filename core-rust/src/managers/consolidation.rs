@@ -17,7 +17,13 @@ use crate::managers::ai::AiManager;
 use crate::managers::conversation::ConversationManager;
 use crate::managers::entity::EntityManager;
 use crate::managers::episodic::EpisodicManager;
-use crate::ports::{InfraResult, LlmCallOpts, SaveEntityInput, SaveEventInput, SaveFactInput};
+use crate::ports::{
+    IVaultPort, InfraResult, LlmCallOpts, SaveEntityInput, SaveEventInput, SaveFactInput,
+};
+
+/// AI Assistant model 의 default — Vault `system:ai-router:model` 미박힘 시 폴백.
+/// 옛 TS AI_ASSISTANT_MODELS[0] (gemini-3.1-flash-lite-preview / gpt-5-nano 같은 싼 fast 모델).
+const AI_ASSISTANT_DEFAULT_MODEL: &str = "gpt-5-nano";
 
 /// 옛 TS EXTRACTION_PROMPT Rust port — 대화 → entity / fact / event JSON 추출 instruction.
 const EXTRACTION_PROMPT: &str = r#"당신은 대화 메모리 정리 도우미입니다. 다음 대화를 읽고 추적할 가치 있는 정보를 JSON 으로 추출하세요.
@@ -165,11 +171,14 @@ pub struct ConsolidationManager {
     ai_hook: std::sync::Mutex<Option<ConsolidationAiHook>>,
 }
 
-/// AI 의존성 묶음 — ConversationManager (대화 fetch) + AiManager (LLM 호출).
+/// AI 의존성 묶음 — ConversationManager (대화 fetch) + AiManager (LLM 호출) + Vault (AI Assistant
+/// model lookup). consolidate_conversation 의 비용 절감 — 메인 채팅 모델 (Claude Sonnet) 가 아니라
+/// AI Assistant 의 fast/cheap 모델 (gpt-5-nano / gemini-flash-lite, ~$0.001/대화).
 #[derive(Clone)]
 pub struct ConsolidationAiHook {
     pub ai: Arc<AiManager>,
     pub conversation: Arc<ConversationManager>,
+    pub vault: Arc<dyn IVaultPort>,
 }
 
 impl ConsolidationManager {
@@ -183,9 +192,14 @@ impl ConsolidationManager {
 
     /// AI hook 박음 — consolidate_conversation 의 LLM 자동 추출 활성.
     /// AiManager 박힌 후 호출 (Arc 안에서도 OK — Mutex 박힘).
-    pub fn set_ai_hook(&self, ai: Arc<AiManager>, conversation: Arc<ConversationManager>) {
+    pub fn set_ai_hook(
+        &self,
+        ai: Arc<AiManager>,
+        conversation: Arc<ConversationManager>,
+        vault: Arc<dyn IVaultPort>,
+    ) {
         let mut guard = self.ai_hook.lock().unwrap_or_else(|p| p.into_inner());
-        *guard = Some(ConsolidationAiHook { ai, conversation });
+        *guard = Some(ConsolidationAiHook { ai, conversation, vault });
     }
 
     /// 대화 1개 자동 정리 — 옛 TS consolidateConversation 1:1 port.
@@ -208,6 +222,24 @@ impl ConsolidationManager {
             return Err("ConsolidationAiHook 미박음 — set_ai_hook 으로 AiManager + ConversationManager 박아야 LLM 자동 추출 활성".to_string());
         };
 
+        // AI Assistant 토글 검사 — `system:ai-router:enabled` 가 false 면 자동 추출 skip.
+        // 사용자가 의식적으로 끄면 매 6시간 cron 자동 호출도 비활성 (비용 통제 + 의도 존중).
+        // 어드민이 직접 trigger 시 — model_id 명시 박았으면 토글 무시 (manual override).
+        if model_id.is_none() {
+            let enabled = hook
+                .vault
+                .get_secret("system:ai-router:enabled")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false); // default off (옛 TS 와 동일)
+            if !enabled {
+                return Ok(ConsolidationOutcome {
+                    extracted: ExtractionResult::default(),
+                    saved: SavedIds::default(),
+                    skipped: 0,
+                });
+            }
+        }
+
         // 1. 대화 fetch
         let conv = hook
             .conversation
@@ -227,10 +259,19 @@ impl ConsolidationManager {
             return Ok(ConsolidationOutcome::default());
         }
 
-        // 3. LLM 호출
+        // 3. LLM 호출 — model_id 미박힘 시 AI Assistant model 자동 사용 (메인 채팅 모델 X).
+        // Vault `system:ai-router:model` (default gpt-5-nano) → 메인 채팅 모델 (Claude Sonnet 등)
+        // 가 아니라 fast/cheap 모델로 비용 절감 (~$0.001/대화).
+        let resolved_model = model_id.map(String::from).or_else(|| {
+            hook.vault
+                .get_secret("system:ai-router:model")
+                .filter(|v| !v.is_empty())
+        });
         let full_prompt = format!("{}\n{}", EXTRACTION_PROMPT, transcript);
         let opts = LlmCallOpts {
-            model: model_id.map(String::from),
+            model: Some(
+                resolved_model.unwrap_or_else(|| AI_ASSISTANT_DEFAULT_MODEL.to_string()),
+            ),
             thinking_level: Some("minimal".to_string()),
             ..Default::default()
         };

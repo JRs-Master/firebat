@@ -210,9 +210,14 @@ async fn main() -> Result<()> {
             .with_history_resolver(conversation_manager.clone()),
     );
 
-    // ConsolidationManager 의 LLM 자동 추출 활성 — AiManager + ConversationManager 박힌 후.
-    // consolidate_conversation 도구 호출 시 진짜 LLM 추출 동작.
-    consolidation_manager.set_ai_hook(ai_manager.clone(), conversation_manager.clone());
+    // ConsolidationManager 의 LLM 자동 추출 활성 — AiManager + ConversationManager + Vault 박힌 후.
+    // consolidate_conversation 자동 호출 시 AI Assistant 토글 (Vault `system:ai-router:enabled`)
+    // 검사 → 비활성 시 skip. 활성 시 AI Assistant model (gpt-5-nano 등 fast/cheap, 메인 채팅 모델 X).
+    consolidation_manager.set_ai_hook(
+        ai_manager.clone(),
+        conversation_manager.clone(),
+        vault.clone(),
+    );
 
     // Phase B-17a/c — 정적 도구 dispatch 등록 (27 도구). LLM stub 위에서도 도구 호출 e2e 동작.
     firebat_core::tool_registry::register_core_tools(
