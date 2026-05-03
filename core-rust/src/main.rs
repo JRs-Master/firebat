@@ -34,6 +34,10 @@ use firebat_core::{
         ai_service_server::AiServiceServer,
         auth_service_server::AuthServiceServer,
         capability_service_server::CapabilityServiceServer,
+        lifecycle_service_server::LifecycleServiceServer,
+        network_service_server::NetworkServiceServer,
+        settings_service_server::SettingsServiceServer,
+        storage_service_server::StorageServiceServer,
         consolidation_service_server::ConsolidationServiceServer,
         conversation_service_server::ConversationServiceServer,
         cost_service_server::CostServiceServer,
@@ -244,6 +248,33 @@ async fn main() -> Result<()> {
     let media_service = services::media::MediaServiceImpl::new(media_manager);
     let ai_service = services::ai::AiServiceImpl::new(ai_manager);
 
+    // Phase B-17.5 — cross-cutting services (Storage / Settings / Network / Lifecycle).
+    let storage_service = services::storage::StorageServiceImpl::new(storage.clone());
+    let settings_service = services::settings::SettingsServiceImpl::new(vault.clone());
+    let network_service = services::network::NetworkServiceImpl::new();
+    let lifecycle_service = services::lifecycle::LifecycleServiceImpl::new(vec![
+        "AiManager".to_string(),
+        "PageManager".to_string(),
+        "ProjectManager".to_string(),
+        "ModuleManager".to_string(),
+        "TaskManager".to_string(),
+        "ScheduleManager".to_string(),
+        "SecretManager".to_string(),
+        "McpManager".to_string(),
+        "CapabilityManager".to_string(),
+        "AuthManager".to_string(),
+        "ConversationManager".to_string(),
+        "MediaManager".to_string(),
+        "EventManager".to_string(),
+        "StatusManager".to_string(),
+        "CostManager".to_string(),
+        "ToolManager".to_string(),
+        "EntityManager".to_string(),
+        "EpisodicManager".to_string(),
+        "ConsolidationManager".to_string(),
+        "TemplateManager".to_string(),
+    ]);
+
     // graceful shutdown — SIGINT (Ctrl+C) + SIGTERM (Docker / systemd 종료) 통합 listen.
     // Phase B-17b: 옛 ctrl_c() 만 listen 시 SIGTERM 무시 → 즉시 강제 종료 → SQLite WAL 손상 위험.
     // tokio::select! 로 둘 중 먼저 도착하는 시그널 처리. Windows 는 SIGTERM 미지원 → ctrl_c 만.
@@ -299,9 +330,11 @@ async fn main() -> Result<()> {
         .add_service(TaskServiceServer::new(task_service))
         .add_service(MediaServiceServer::new(media_service))
         .add_service(AiServiceServer::new(ai_service))
-        // Phase B 완료 — 19 매니저 service 등록 (Module 까지 포함하면 19/21).
-        // 남은 cross-cutting (Storage / Settings / Network / Cache / Telegram / Database /
-        // Lifecycle 등) 은 Phase B-17+ 후속.
+        .add_service(StorageServiceServer::new(storage_service))
+        .add_service(SettingsServiceServer::new(settings_service))
+        .add_service(NetworkServiceServer::new(network_service))
+        .add_service(LifecycleServiceServer::new(lifecycle_service))
+        // 남은 cross-cutting (Cache / Telegram / Database / Memory) 은 별도 batch.
         .serve_with_shutdown(addr, shutdown)
         .await
         .context("gRPC server 종료 중 에러")?;

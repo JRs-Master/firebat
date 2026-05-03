@@ -23,3 +23,7 @@ pub mod schedule;
 pub mod task;
 pub mod media;
 pub mod ai;
+pub mod storage;
+pub mod settings;
+pub mod network;
+pub mod lifecycle;
