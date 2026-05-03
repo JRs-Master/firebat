@@ -15,6 +15,7 @@ import { SecretInput } from './components/ChatWidgets';
 import { Tooltip } from './components/Tooltip';
 import { FeedbackBadge } from './components/FeedbackBadge';
 import { ActiveJobsIndicator } from './components/ActiveJobsIndicator';
+import { BlockErrorBoundary } from './components/BlockErrorBoundary';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
 import { readSetting, writeSetting } from './hooks/settings-manager';
@@ -717,10 +718,20 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                   {msg.data.blocks.map((b: any, i: number) => {
                     // 섹션 경계 (Header / Divider) 앞에 추가 여백 — chat-manager 의 공통 규칙 (share 페이지와 동일)
                     const wrapCls = isSectionStartBlock(b, i) ? 'mt-5' : '';
-                    if (b.type === 'text') return <div key={i} className={`text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1 ${wrapCls}`}>{renderMarkdown(b.text)}</div>;
-                    if (b.type === 'html') return <div key={i} className={wrapCls}><AutoResizeIframe src={b.htmlContent as string} initialHeight={b.htmlHeight} dependencies={(b as { dependencies?: string[] }).dependencies} /></div>;
-                    if (b.type === 'component') return <div key={i} className={wrapCls}><ComponentRenderer components={[{ type: b.name, props: b.props || {} }]} /></div>;
-                    return null;
+                    // BlockErrorBoundary — 한 block 의 invalid props 가 admin 전역 죽이는 케이스 격리.
+                    // throw 시 그 block 만 inline 에러 카드 + 다른 block / 메시지 정상 동작.
+                    const label = b.type === 'component' ? `${b.name ?? 'unknown'} #${i}` : `${b.type} #${i}`;
+                    return (
+                      <BlockErrorBoundary key={i} label={label}>
+                        {b.type === 'text' ? (
+                          <div className={`text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1 ${wrapCls}`}>{renderMarkdown(b.text)}</div>
+                        ) : b.type === 'html' ? (
+                          <div className={wrapCls}><AutoResizeIframe src={b.htmlContent as string} initialHeight={b.htmlHeight} dependencies={(b as { dependencies?: string[] }).dependencies} /></div>
+                        ) : b.type === 'component' ? (
+                          <div className={wrapCls}><ComponentRenderer components={[{ type: b.name, props: b.props || {} }]} /></div>
+                        ) : null}
+                      </BlockErrorBoundary>
+                    );
                   })}
                 </div>
               ) : (
