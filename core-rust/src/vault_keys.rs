@@ -19,3 +19,13 @@ pub const USER_SECRET_PREFIX: &str = "user:";
 pub fn vk_user_secret(name: &str) -> String {
     format!("{}{}", USER_SECRET_PREFIX, name)
 }
+
+/// Capability 설정 key — `system:capability:<id>:settings` 형식. CapabilityManager 가 사용.
+pub fn vk_capability_settings(cap_id: &str) -> String {
+    format!("system:capability:{}:settings", cap_id)
+}
+
+/// Module 설정 key — `system:module:<name>:settings` 형식. ModuleManager / CapabilityManager 가 활성화 검사 시 사용.
+pub fn vk_module_settings(name: &str) -> String {
+    format!("system:module:{}:settings", name)
+}

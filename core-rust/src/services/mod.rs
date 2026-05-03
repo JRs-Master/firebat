@@ -7,3 +7,4 @@ pub mod template;
 pub mod secret;
 pub mod auth;
 pub mod event;
+pub mod capability;
