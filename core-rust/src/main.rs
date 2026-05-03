@@ -226,6 +226,8 @@ async fn main() -> Result<()> {
     // Phase B-17a — TaskManager 의 step executor 를 RealTaskExecutor 로 wiring.
     // AiManager (ToolManager 위) → RealTaskExecutor (Sandbox/Mcp/Ai/Page/Tool 위) → TaskManager.
     // 의존성 단방향 트리 (AiManager 가 TaskManager 의존 X — cycle 없음).
+    // Capability fallback 박음 — pipeline EXECUTE 실패 시 같은 capability 의 다른 활성 provider
+    // 자동 시도 (옛 TS tryFallbackProvider 패턴).
     let task_executor: Arc<dyn TaskExecutor> = Arc::new(
         firebat_core::task_executor_impl::RealTaskExecutor::new(
             sandbox.clone(),
@@ -234,7 +236,8 @@ async fn main() -> Result<()> {
             page_manager.clone(),
             tool_manager.clone(),
             logger.clone(),
-        ),
+        )
+        .with_capability(capability_manager.clone()),
     );
     // ToolManager 박힌 채로 TaskManager 부팅 — validate_pipeline 의 LLM_TRANSFORM 환각 방어 활성.
     // 등록된 정적 도구 27개 + 동적 sysmod_* / mcp_* 자동으로 hint 매칭.

@@ -264,6 +264,47 @@ impl CapabilityManager {
             .or_else(|| providers.into_iter().next())
     }
 
+    /// 같은 capability 의 다른 활성 provider — pipeline EXECUTE 실패 시 자동 폴백 list.
+    /// 옛 TS task-manager.ts:373-420 tryFallbackProvider Rust port. 사용자 정의 순서 적용 +
+    /// 실패 module 자체 제외. 활성 모듈만 (Vault 의 module settings.enabled).
+    ///
+    /// 매 capability 마다 get_providers 스캔 — failed_module 매칭되는 capability 찾을 때까지.
+    pub async fn fallback_modules(&self, failed_module: &str) -> Vec<CapabilityProvider> {
+        // 빌트인 + 동적 capability id 합집합
+        let mut cap_ids: Vec<String> = builtin_capabilities().keys().cloned().collect();
+        if let Ok(dyn_map) = self.dynamic.lock() {
+            for id in dyn_map.keys() {
+                if !cap_ids.contains(id) {
+                    cap_ids.push(id.clone());
+                }
+            }
+        }
+
+        for cap_id in cap_ids {
+            let providers = self.get_providers(&cap_id).await;
+            if !providers.iter().any(|p| p.module_name == failed_module) {
+                continue;
+            }
+            // 같은 capability 발견 — failed 제외 + 사용자 순서 정렬
+            let mut others: Vec<CapabilityProvider> = providers
+                .into_iter()
+                .filter(|p| p.module_name != failed_module)
+                .collect();
+            let settings = self.get_settings(&cap_id);
+            if !settings.providers.is_empty() {
+                others.sort_by_key(|p| {
+                    settings
+                        .providers
+                        .iter()
+                        .position(|n| n == &p.module_name)
+                        .unwrap_or(usize::MAX)
+                });
+            }
+            return others;
+        }
+        Vec::new()
+    }
+
     /// 모듈 활성화 여부 — Vault 의 module settings 의 `enabled` 필드. 미박힘 시 default 활성.
     /// 옛 TS isModuleEnabled 와 동일 로직 (ModuleManager 와 같은 source — Vault 직접 조회).
     fn is_module_enabled(&self, name: &str) -> bool {
