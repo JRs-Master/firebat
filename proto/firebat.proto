@@ -1,0 +1,69 @@
+// Firebat Core gRPC schema (v1.0 Final Phase A 초안).
+//
+// Phase A: skeleton 만 박음 (5개 sample 메서드 + Empty / Error / 공통 타입).
+// Phase B: 21 매니저 + 17 어댑터 의 모든 RPC 박음. 자동 생성 (tonic-build).
+//
+// 사용 path:
+//  - Rust Core: tonic-build 가 이 .proto 컴파일 → src/proto/ 자동 생성
+//  - TS client (lib/core-client.ts 의 'rust' backend): @grpc/grpc-js + protoc-gen-ts 로 컴파일
+//
+// Phase B 시작 시 매니저별 service 추가:
+//   - service AiService    (process / requestActionWithTools / askLlmText / ...)
+//   - service PageService  (savePage / getPage / listPages / deletePage)
+//   - service ProjectService / ModuleService / TaskService / ScheduleService / ...
+//   - service AuthService / VaultService / MediaService / ToolService / ...
+//   - service EntityService / EpisodicService / ConsolidationService (메모리 4-tier)
+
+syntax = "proto3";
+
+package firebat.v1;
+
+// ──────────────────────────────────────────────────────────────────────────
+// 공통 타입
+// ──────────────────────────────────────────────────────────────────────────
+
+message Empty {}
+
+message Status {
+  bool ok = 1;
+  string error = 2;     // ok=false 시 에러 메시지
+  string error_code = 3; // 일반 enum (e.g. "NOT_FOUND" / "AUTH_FAILED" / "TIMEOUT")
+}
+
+// JSON 임의 객체 — Phase B 에서 매니저별 구체 message 로 대체. Phase A 의 sample 용.
+message JsonValue {
+  string raw = 1;       // serialized JSON
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Phase A sample — health check + Page 매니저 1개 method
+//   Phase B 에서 21 매니저 전부 박음
+// ──────────────────────────────────────────────────────────────────────────
+
+message HealthInfo {
+  string version = 1;
+  int64 uptime_ms = 2;
+  bool ready = 3;
+  repeated string active_managers = 4;
+}
+
+message GetPageRequest {
+  string slug = 1;
+}
+
+message GetPageResponse {
+  Status status = 1;
+  // PageSpec — Phase B 에서 message PageSpec 으로 구체 정의
+  JsonValue spec = 2;
+}
+
+// Firebat Core 단일 service — Phase B 에서 매니저별 분리 (AiService / PageService / ...)
+service Core {
+  // 헬스 체크 — Phase A 에서 동작 (gRPC server skeleton 검증용).
+  rpc Health(Empty) returns (HealthInfo);
+
+  // Page 매니저 — Phase B sample method.
+  rpc GetPage(GetPageRequest) returns (GetPageResponse);
+
+  // ... Phase B 에서 21 매니저 의 모든 method 박힘 (~200+ RPC)
+}

@@ -1,0 +1,49 @@
+[package]
+name = "firebat-core"
+version = "0.0.1"
+edition = "2021"
+description = "Firebat Core — Rust backend (v1.0 Final Phase B target)"
+license = "AGPL-3.0-or-later"
+authors = ["JRs-Master"]
+
+# Phase D self-installed 시 Tauri 안에 lib 으로 embed,
+# self-hosted 시 [[bin]] 으로 단일 binary build — 두 build target 단일 codebase.
+[lib]
+name = "firebat_core"
+crate-type = ["lib", "staticlib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "firebat-core"
+path = "src/main.rs"
+
+[dependencies]
+# Phase B 진행하면서 추가 — 현재는 minimum stub
+# 핵심 dependency 후보:
+#   tokio = { version = "1", features = ["full"] }     # async runtime
+#   tonic = "0.12"                                     # gRPC server/client
+#   prost = "0.13"                                     # protobuf
+#   rusqlite = { version = "0.32", features = ["bundled"] }   # DB / Vault
+#   reqwest = { version = "0.12", features = ["json", "stream"] }  # LLM API
+#   serde = { version = "1", features = ["derive"] }
+#   serde_json = "1"
+#   tracing = "0.1"                                    # 로그
+#   image = "0.25"                                     # Image (또는 Node bridge)
+#   blurhash = "0.2"
+#   cron = "0.12"
+#   ammonia = "4"                                      # HTML sanitize
+#   chrono = { version = "0.4", features = ["serde"] }
+
+[build-dependencies]
+# tonic-build = "0.12"  # proto 컴파일 (Phase B 활성 시)
+
+[profile.release]
+opt-level = 3
+lto = true              # 정적 링크 + 최적화
+codegen-units = 1       # 최대 최적화
+strip = true            # debug symbol 제거
+panic = "abort"         # 작은 binary
+
+[profile.dev]
+opt-level = 0
+debug = true
