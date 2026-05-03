@@ -181,6 +181,45 @@ pub trait IDatabasePort: Send + Sync {
     fn replace_media_usage(&self, page_slug: &str, media_slugs: &[String]) -> bool;
     fn delete_media_usage_for_page(&self, page_slug: &str) -> bool;
     fn find_media_usage(&self, media_slug: &str) -> Vec<MediaUsageEntry>;
+
+    // Conversations
+    fn list_conversations(&self, owner: &str) -> Vec<ConversationSummary>;
+    fn get_conversation(&self, owner: &str, id: &str) -> Option<ConversationRecord>;
+    fn save_conversation(
+        &self,
+        owner: &str,
+        id: &str,
+        title: &str,
+        messages_json: &str,
+        created_at: Option<i64>,
+    ) -> bool;
+    fn delete_conversation(&self, owner: &str, id: &str) -> bool;
+    fn is_conversation_deleted(&self, owner: &str, id: &str) -> bool;
+    fn get_cli_session(&self, conversation_id: &str, current_model: &str) -> Option<String>;
+    fn set_cli_session(&self, conversation_id: &str, session_id: &str, model: &str) -> bool;
+    fn get_active_plan_state(&self, conversation_id: &str) -> Option<String>;
+    fn set_active_plan_state(&self, conversation_id: &str, state: Option<&str>) -> bool;
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ConversationSummary {
+    pub id: String,
+    pub title: String,
+    #[serde(rename = "createdAt")]
+    pub created_at: i64,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ConversationRecord {
+    pub id: String,
+    pub title: String,
+    pub messages: serde_json::Value, // 메시지 배열 (JSON)
+    #[serde(rename = "createdAt")]
+    pub created_at: i64,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: i64,
 }
 
 // ──────────────────────────────────────────────────────────────────────────

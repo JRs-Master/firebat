@@ -8,7 +8,10 @@ use rusqlite::{params, Connection};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::ports::{IDatabasePort, MediaUsageEntry, PageListItem, PageRecord};
+use crate::ports::{
+    ConversationRecord, ConversationSummary, IDatabasePort, MediaUsageEntry, PageListItem,
+    PageRecord,
+};
 
 pub struct SqliteDatabaseAdapter {
     conn: Mutex<Connection>,
@@ -382,6 +385,145 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         let Ok(conn) = self.conn.lock() else { return false };
         conn.execute("DELETE FROM media_usage WHERE page_slug = ?1", params![page_slug])
             .is_ok()
+    }
+
+    fn list_conversations(&self, owner: &str) -> Vec<ConversationSummary> {
+        let Ok(conn) = self.conn.lock() else { return vec![] };
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, title, created_at, updated_at FROM conversations
+             WHERE owner = ?1 ORDER BY updated_at DESC",
+        ) else { return vec![] };
+        let rows = stmt
+            .query_map(params![owner], |row| {
+                Ok(ConversationSummary {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    created_at: row.get(2)?,
+                    updated_at: row.get(3)?,
+                })
+            })
+            .ok();
+        let Some(rows) = rows else { return vec![] };
+        rows.filter_map(|r| r.ok()).collect()
+    }
+
+    fn get_conversation(&self, owner: &str, id: &str) -> Option<ConversationRecord> {
+        let conn = self.conn.lock().ok()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, title, messages, created_at, updated_at FROM conversations
+                 WHERE owner = ?1 AND id = ?2",
+            )
+            .ok()?;
+        stmt.query_row(params![owner, id], |row| {
+            let messages_str: String = row.get(2)?;
+            let messages: serde_json::Value =
+                serde_json::from_str(&messages_str).unwrap_or(serde_json::json!([]));
+            Ok(ConversationRecord {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                messages,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })
+        .ok()
+    }
+
+    fn save_conversation(
+        &self,
+        owner: &str,
+        id: &str,
+        title: &str,
+        messages_json: &str,
+        created_at: Option<i64>,
+    ) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let created = created_at.unwrap_or(now);
+        conn.execute(
+            "INSERT INTO conversations (id, owner, title, messages, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                messages = excluded.messages,
+                updated_at = excluded.updated_at",
+            params![id, owner, title, messages_json, created, now],
+        )
+        .is_ok()
+    }
+
+    fn delete_conversation(&self, owner: &str, id: &str) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        // tombstone 기록 + row 삭제 — 옛 TS 와 동등
+        let r1 = conn.execute(
+            "INSERT OR REPLACE INTO deleted_conversations (id, owner, deleted_at)
+             VALUES (?1, ?2, ?3)",
+            params![id, owner, now],
+        );
+        let r2 = conn.execute(
+            "DELETE FROM conversations WHERE id = ?1 AND owner = ?2",
+            params![id, owner],
+        );
+        r1.is_ok() && r2.is_ok()
+    }
+
+    fn is_conversation_deleted(&self, owner: &str, id: &str) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        conn.query_row(
+            "SELECT 1 FROM deleted_conversations WHERE id = ?1 AND owner = ?2",
+            params![id, owner],
+            |row| row.get::<_, i64>(0),
+        )
+        .is_ok()
+    }
+
+    fn get_cli_session(&self, conversation_id: &str, current_model: &str) -> Option<String> {
+        let conn = self.conn.lock().ok()?;
+        // session_id 와 model 이 모두 일치할 때만 반환 (모델 바뀌면 자동 무효)
+        conn.query_row(
+            "SELECT cli_session_id FROM conversations
+             WHERE id = ?1 AND cli_model = ?2 AND cli_session_id IS NOT NULL",
+            params![conversation_id, current_model],
+            |row| row.get(0),
+        )
+        .ok()
+    }
+
+    fn set_cli_session(&self, conversation_id: &str, session_id: &str, model: &str) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        conn.execute(
+            "UPDATE conversations SET cli_session_id = ?1, cli_model = ?2 WHERE id = ?3",
+            params![session_id, model, conversation_id],
+        )
+        .is_ok()
+    }
+
+    fn get_active_plan_state(&self, conversation_id: &str) -> Option<String> {
+        let conn = self.conn.lock().ok()?;
+        conn.query_row(
+            "SELECT active_plan_state FROM conversations WHERE id = ?1",
+            params![conversation_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .ok()
+        .flatten()
+    }
+
+    fn set_active_plan_state(&self, conversation_id: &str, state: Option<&str>) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        conn.execute(
+            "UPDATE conversations SET active_plan_state = ?1 WHERE id = ?2",
+            params![state, conversation_id],
+        )
+        .is_ok()
     }
 
     fn find_media_usage(&self, media_slug: &str) -> Vec<MediaUsageEntry> {
