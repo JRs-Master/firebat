@@ -34,10 +34,13 @@ use firebat_core::{
         ai_service_server::AiServiceServer,
         auth_service_server::AuthServiceServer,
         capability_service_server::CapabilityServiceServer,
+        cache_service_server::CacheServiceServer,
+        database_service_server::DatabaseServiceServer,
         lifecycle_service_server::LifecycleServiceServer,
         network_service_server::NetworkServiceServer,
         settings_service_server::SettingsServiceServer,
         storage_service_server::StorageServiceServer,
+        telegram_service_server::TelegramServiceServer,
         consolidation_service_server::ConsolidationServiceServer,
         conversation_service_server::ConversationServiceServer,
         cost_service_server::CostServiceServer,
@@ -252,6 +255,19 @@ async fn main() -> Result<()> {
     let storage_service = services::storage::StorageServiceImpl::new(storage.clone());
     let settings_service = services::settings::SettingsServiceImpl::new(vault.clone());
     let network_service = services::network::NetworkServiceImpl::new();
+    // Phase B-17.5b — Cache / Telegram / Database 추가.
+    let cache_dir = workspace_root.join("data").join("cache").join("sysmod-results");
+    let cache_adapter = std::sync::Arc::new(
+        firebat_core::adapters::cache::SysmodCacheAdapter::new(cache_dir)
+            .map_err(anyhow::Error::msg)
+            .context("Cache 디렉토리 초기화 실패")?,
+    );
+    let cache_service = services::cache::CacheServiceImpl::new(cache_adapter);
+    let telegram_service = services::telegram::TelegramServiceImpl::new(vault.clone());
+    let database_service = services::database::DatabaseServiceImpl::new(app_db_path.clone())
+        .map_err(anyhow::Error::msg)
+        .context("Database service 초기화 실패")?;
+
     let lifecycle_service = services::lifecycle::LifecycleServiceImpl::new(vec![
         "AiManager".to_string(),
         "PageManager".to_string(),
@@ -334,7 +350,10 @@ async fn main() -> Result<()> {
         .add_service(SettingsServiceServer::new(settings_service))
         .add_service(NetworkServiceServer::new(network_service))
         .add_service(LifecycleServiceServer::new(lifecycle_service))
-        // 남은 cross-cutting (Cache / Telegram / Database / Memory) 은 별도 batch.
+        .add_service(CacheServiceServer::new(cache_service))
+        .add_service(TelegramServiceServer::new(telegram_service))
+        .add_service(DatabaseServiceServer::new(database_service))
+        // 남은 cross-cutting (Memory file system) 은 별도 batch (Phase B-17.5c).
         .serve_with_shutdown(addr, shutdown)
         .await
         .context("gRPC server 종료 중 에러")?;
