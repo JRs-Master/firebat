@@ -10,12 +10,12 @@ use tonic::transport::Server;
 use firebat_core::{
     adapters::{
         auth::VaultAuthAdapter, cron::TokioCronAdapter, database::SqliteDatabaseAdapter,
-        log::ConsoleLogAdapter, mcp_client::McpClientFileAdapter,
+        llm::StubLlmAdapter, log::ConsoleLogAdapter, mcp_client::McpClientFileAdapter,
         media::LocalMediaAdapter, memory::SqliteMemoryAdapter, sandbox::ProcessSandboxAdapter,
         storage::LocalStorageAdapter, vault::SqliteVaultAdapter,
     },
     managers::{
-        auth::AuthManager, capability::CapabilityManager,
+        ai::AiManager, auth::AuthManager, capability::CapabilityManager,
         consolidation::ConsolidationManager, conversation::ConversationManager,
         cost::CostManager, entity::EntityManager, episodic::EpisodicManager, event::EventManager,
         mcp::McpManager, media::MediaManager, module::ModuleManager, page::PageManager,
@@ -25,10 +25,11 @@ use firebat_core::{
         tool::ToolManager,
     },
     ports::{
-        IAuthPort, IDatabasePort, IEntityPort, IEpisodicPort, ILogPort, IMcpClientPort,
+        IAuthPort, IDatabasePort, IEntityPort, IEpisodicPort, ILlmPort, ILogPort, IMcpClientPort,
         IMediaPort, ISandboxPort, IStoragePort, IVaultPort,
     },
     proto::{
+        ai_service_server::AiServiceServer,
         auth_service_server::AuthServiceServer,
         capability_service_server::CapabilityServiceServer,
         consolidation_service_server::ConsolidationServiceServer,
@@ -115,6 +116,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &default_timezone,
     )?;
     let media: Arc<dyn IMediaPort> = Arc::new(LocalMediaAdapter::new(&workspace_root));
+    // Phase B-16 minimum — StubLlmAdapter. Phase B-17+ ConfigDrivenAdapter (5 API + 3 CLI 핸들러)
+    // 박힌 후 Vault `system:llm:model` 기반 모델 ID 동적 swap.
+    let default_model =
+        std::env::var("FIREBAT_DEFAULT_MODEL").unwrap_or_else(|_| "stub-model".to_string());
+    let llm: Arc<dyn ILlmPort> = Arc::new(StubLlmAdapter::new(default_model));
 
     // 매니저 wiring
     let template_manager = Arc::new(TemplateManager::new(storage.clone()));
@@ -154,6 +160,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let task_executor: Arc<dyn TaskExecutor> = Arc::new(StubTaskExecutor);
     let task_manager = Arc::new(TaskManager::new(task_executor, logger.clone()));
     let media_manager = Arc::new(MediaManager::new(media));
+    let ai_manager = Arc::new(AiManager::new(
+        llm.clone(),
+        tool_manager.clone(),
+        logger.clone(),
+    ));
 
     // 부팅 시 영속 잡 복원 (cron / once 만 — delay 잡은 시각 부재로 복원 불가)
     schedule_manager.restore().await;
@@ -179,6 +190,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let schedule_service = services::schedule::ScheduleServiceImpl::new(schedule_manager);
     let task_service = services::task::TaskServiceImpl::new(task_manager);
     let media_service = services::media::MediaServiceImpl::new(media_manager);
+    let ai_service = services::ai::AiServiceImpl::new(ai_manager);
 
     // graceful shutdown — Ctrl+C / SIGTERM
     let shutdown = async {
@@ -206,9 +218,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(ScheduleServiceServer::new(schedule_service))
         .add_service(TaskServiceServer::new(task_service))
         .add_service(MediaServiceServer::new(media_service))
-        // Phase B 진행하며 추가:
-        //   .add_service(AiServiceServer::new(...))
-        //   ... 21 매니저 + cross-cutting 등록
+        .add_service(AiServiceServer::new(ai_service))
+        // Phase B 완료 — 19 매니저 service 등록 (Module 까지 포함하면 19/21).
+        // 남은 cross-cutting (Storage / Settings / Network / Cache / Telegram / Database /
+        // Lifecycle 등) 은 Phase B-17+ 후속.
         .serve_with_shutdown(addr, shutdown)
         .await?;
 

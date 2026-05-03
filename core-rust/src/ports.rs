@@ -265,6 +265,101 @@ pub trait ISandboxPort: Send + Sync {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// LLM — User AI / Code Assistant / AI Assistant 통합 port
+// ──────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ToolDefinition {
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(rename = "inputSchema", default, skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub arguments: serde_json::Value,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ToolResult {
+    #[serde(rename = "callId")]
+    pub call_id: String,
+    pub name: String,
+    pub result: serde_json::Value,
+    #[serde(default)]
+    pub success: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct LlmCallOpts {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(rename = "thinkingLevel", default, skip_serializing_if = "Option::is_none")]
+    pub thinking_level: Option<String>,
+    #[serde(rename = "systemPrompt", default, skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
+    #[serde(rename = "maxTokens", default, skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LlmTextResponse {
+    pub text: String,
+    #[serde(rename = "modelId")]
+    pub model_id: String,
+    #[serde(rename = "costUsd", default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    #[serde(rename = "tokensIn", default, skip_serializing_if = "Option::is_none")]
+    pub tokens_in: Option<i64>,
+    #[serde(rename = "tokensOut", default, skip_serializing_if = "Option::is_none")]
+    pub tokens_out: Option<i64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LlmToolResponse {
+    #[serde(default)]
+    pub text: String,
+    #[serde(default, rename = "toolCalls")]
+    pub tool_calls: Vec<ToolCall>,
+    #[serde(rename = "modelId")]
+    pub model_id: String,
+    #[serde(rename = "costUsd", default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+    #[serde(rename = "tokensIn", default, skip_serializing_if = "Option::is_none")]
+    pub tokens_in: Option<i64>,
+    #[serde(rename = "tokensOut", default, skip_serializing_if = "Option::is_none")]
+    pub tokens_out: Option<i64>,
+}
+
+/// ILlmPort — 옛 TS ILlmPort Rust port.
+///
+/// Phase B-16 minimum: trait 정의 + Stub 구현체 (실 LLM 호출 없음, dispatch 흐름만 작동).
+/// Phase B-17+ 후속: 5 API format (openai-responses / anthropic-messages / gemini-native /
+/// vertex-gemini / openai-chat) + 3 CLI format (cli-claude-code / cli-codex / cli-gemini)
+/// 실 wiring. ConfigDrivenAdapter 패턴으로 단일 어댑터 + 포맷 핸들러 분기.
+#[async_trait::async_trait]
+pub trait ILlmPort: Send + Sync {
+    fn get_model_id(&self) -> String;
+    async fn ask_text(&self, prompt: &str, opts: &LlmCallOpts) -> InfraResult<LlmTextResponse>;
+    async fn ask_with_tools(
+        &self,
+        prompt: &str,
+        tools: &[ToolDefinition],
+        prior_results: &[ToolResult],
+        opts: &LlmCallOpts,
+    ) -> InfraResult<LlmToolResponse>;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // MCP Client — 외부 MCP 서버 (Gmail, Slack, 카톡 등) 등록·연결·도구 호출
 // ──────────────────────────────────────────────────────────────────────────
 

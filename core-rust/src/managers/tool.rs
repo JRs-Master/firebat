@@ -6,7 +6,21 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex};
+
+use crate::ports::InfraResult;
+
+/// 도구 dispatch handler — args 받아 결과 반환. AiManager 가 등록 → 도구 호출 시 호출.
+pub type ToolHandler = Arc<
+    dyn Fn(
+            serde_json::Value,
+        )
+            -> Pin<Box<dyn Future<Output = InfraResult<serde_json::Value>> + Send>>
+        + Send
+        + Sync,
+>;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolDefinition {
@@ -43,6 +57,9 @@ struct ToolState {
     tools: HashMap<String, ToolDefinition>,
     /// 활성 plan state — conversation_id → JSON. Plan follow-through 패턴.
     active_plan: HashMap<String, serde_json::Value>,
+    /// 도구 핸들러 (등록·dispatch 용). 옛 TS executeToolCall switch 잔여 분기 폐지 (Step 4) —
+    /// Rust 처음부터 ToolManager dispatch 단일 source.
+    handlers: HashMap<String, ToolHandler>,
 }
 
 impl ToolManager {
@@ -138,6 +155,42 @@ impl ToolManager {
         let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         state.active_plan.remove(conversation_id);
     }
+
+    // ─────── 도구 핸들러 — register / dispatch (Step 2/4) ───────
+
+    /// 도구 핸들러 등록. AiManager 부팅 시 정적 27 도구 + 동적 sysmod_* / mcp_* / render_* 모두
+    /// 이 메서드로 등록 → executeToolCall switch 잔여 분기 0 (Rust 처음부터 깔끔).
+    pub fn register_handler(&self, name: &str, handler: ToolHandler) {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        state.handlers.insert(name.to_string(), handler);
+    }
+
+    pub fn unregister_handler(&self, name: &str) -> bool {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        state.handlers.remove(name).is_some()
+    }
+
+    /// 도구 호출 dispatch — handler 등록되어 있으면 그것 호출, 아니면 명시 에러.
+    /// AiManager.process_with_tools 의 도구 호출 결과 처리 단일 진입점.
+    pub async fn dispatch(
+        &self,
+        name: &str,
+        args: &serde_json::Value,
+    ) -> InfraResult<serde_json::Value> {
+        let handler = {
+            let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+            state.handlers.get(name).cloned()
+        };
+        match handler {
+            Some(h) => h(args.clone()).await,
+            None => Err(format!("도구 핸들러 미등록: {name}")),
+        }
+    }
+
+    pub fn handler_count(&self) -> usize {
+        let state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        state.handlers.len()
+    }
 }
 
 impl Default for ToolManager {
@@ -210,5 +263,30 @@ mod tests {
         assert_eq!(got["step"], 1);
         mgr.clear_active_plan("conv-1");
         assert!(mgr.get_active_plan("conv-1").is_none());
+    }
+
+    #[tokio::test]
+    async fn dispatch_calls_registered_handler() {
+        let mgr = ToolManager::new();
+        let handler: ToolHandler = Arc::new(|args: serde_json::Value| {
+            Box::pin(async move {
+                let echoed = serde_json::json!({"echo": args});
+                Ok(echoed)
+            })
+        });
+        mgr.register_handler("echo", handler);
+        assert_eq!(mgr.handler_count(), 1);
+        let result = mgr
+            .dispatch("echo", &serde_json::json!({"x": 1}))
+            .await
+            .unwrap();
+        assert_eq!(result["echo"]["x"], 1);
+    }
+
+    #[tokio::test]
+    async fn dispatch_unknown_returns_error() {
+        let mgr = ToolManager::new();
+        let result = mgr.dispatch("none", &serde_json::json!({})).await;
+        assert!(result.is_err());
     }
 }

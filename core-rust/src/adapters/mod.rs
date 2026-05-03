@@ -12,3 +12,4 @@ pub mod mcp_client;
 pub mod memory;
 pub mod cron;
 pub mod media;
+pub mod llm;
