@@ -4,3 +4,4 @@
 
 pub mod storage;
 pub mod vault;
+pub mod auth;

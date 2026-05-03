@@ -5,3 +5,4 @@
 
 pub mod template;
 pub mod secret;
+pub mod auth;

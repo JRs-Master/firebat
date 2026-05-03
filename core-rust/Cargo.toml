@@ -27,6 +27,9 @@ serde_json = "1"
 async-trait = "0.1"
 # Phase B-3 박힘 (SecretManager + Vault)
 rusqlite = { version = "0.32", features = ["bundled"] }   # SQLite DB / Vault — bundled 정적 링크
+# Phase B-4 박힘 (AuthManager)
+rand = "0.8"        # 보안 토큰 random
+subtle = "2"        # timing-safe 비교 (timing attack 방어)
 
 # Phase B 활성 시 추가 (현재 commented):
 #   reqwest = { version = "0.12", features = ["json", "stream"] }  # LLM API

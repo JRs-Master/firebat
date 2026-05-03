@@ -50,3 +50,49 @@ pub trait IVaultPort: Send + Sync {
     fn list_keys(&self) -> Vec<String>;
     fn list_keys_by_prefix(&self, prefix: &str) -> Vec<String>;
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Auth — 통합 세션 (session + api 토큰)
+// ──────────────────────────────────────────────────────────────────────────
+
+/// AuthSession — 세션 토큰 (24시간 만료) + API 토큰 (만료 없음) 통합 모델.
+/// type='session' = 어드민 로그인 / type='api' = MCP 등 외부 사용.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AuthSession {
+    pub token: String,
+    #[serde(rename = "type")]
+    pub session_type: SessionType,
+    pub role: SessionRole,
+    pub created_at: i64,           // unix ms
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<i64>,   // None = 영구 (api 토큰)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_used_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionType {
+    Session,
+    Api,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SessionRole {
+    Admin,
+}
+
+/// IAuthPort — 세션 저장 (Vault 위에 박힘). 동기 — Vault 와 동일.
+pub trait IAuthPort: Send + Sync {
+    fn save_session(&self, session: &AuthSession) -> bool;
+    /// 만료 검사 후 반환 — 만료된 세션 자동 삭제.
+    fn get_session(&self, token: &str) -> Option<AuthSession>;
+    fn delete_session(&self, token: &str) -> bool;
+    /// 특정 type 의 모든 세션 — 만료된 세션 자동 정리 후 반환 (lazy sweep).
+    fn list_sessions(&self, session_type: SessionType) -> Vec<AuthSession>;
+    /// 특정 type 의 모든 세션 일괄 삭제 — 갯수 반환.
+    fn delete_sessions(&self, session_type: SessionType) -> usize;
+}
