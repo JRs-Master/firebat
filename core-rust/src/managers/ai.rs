@@ -17,6 +17,7 @@ pub mod history_resolver;
 pub mod tool_dispatcher;
 pub mod result_processor;
 pub mod retrieval_engine;
+pub mod tool_router;
 
 use std::sync::Arc;
 
