@@ -861,8 +861,9 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
               : 'Extended Thinking (Claude)';
             return (
               <>
-                {/* AI 서브탭 바 — LLM(모델) / 프롬프트 / 이미지 / 비용 / 메모리 */}
-                <div className="flex items-center gap-1 border-b border-slate-200 -mt-1 mb-2 overflow-x-auto">
+                {/* AI 서브탭 바 — 메인 탭 nav 와 동일 underline 패턴 (border-b-2).
+                    음수 margin 제거 (위로 끌려 가려지는 buggy case 차단). */}
+                <div className="flex items-center gap-1 border-b border-slate-200 mb-3 overflow-x-auto">
                   {([
                     { v: 'llm', label: 'LLM' },
                     { v: 'prompt', label: '프롬프트' },

@@ -273,6 +273,11 @@ html::-webkit-scrollbar-thumb:hover,
   .firebat-cms-layout-both-sidebar {
     grid-template-columns: 1fr;
   }
+  /* mobileDrawerIncludeSidebar=ON 일 때 본문 stacked 사이드바 hide
+     (drawer 안에 같은 widgets 통합 표시되므로 중복 방지) */
+  [data-mobile-drawer-includes-sidebar="1"] > .firebat-cms-sidebar {
+    display: none;
+  }
 }
 
 .firebat-cms-sidebar {

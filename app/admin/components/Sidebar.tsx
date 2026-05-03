@@ -488,8 +488,14 @@ export function Sidebar({
     />
     <div className="fixed top-12 bottom-0 left-0 z-40 w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 shadow-lg overflow-hidden">
 
-      {/* 탭 헤더 — 아이콘 전용 (PC·모바일 공통, 공간 절약) */}
+      {/* 탭 헤더 — 아이콘 전용 (PC·모바일 공통, 공간 절약).
+          탭 ↑ 7개 + 설정·접기 → 좁은 폭에서 잘림. 좌측 탭 영역만 가로 스크롤,
+          우측 설정·접기는 flex-shrink-0 으로 고정. */}
       <div className="flex items-center gap-1.5 px-2 py-2 border-b border-slate-200/80">
+        <div
+          className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto scrollbar-thin"
+          style={{ scrollbarWidth: 'thin' }}
+        >
         <Tooltip label="Workspace">
           <button
             onClick={() => setTab('workspace')}
@@ -565,25 +571,28 @@ export function Sidebar({
             <CalendarIcon size={15} />
           </button>
         </Tooltip>
-        <div className="flex-1" />
-        {onOpenSettings ? (
-          <Tooltip label="설정">
+        </div>
+        {/* 우측 고정 — 탭 스크롤과 분리. flex-shrink-0 보존 */}
+        <div className="flex items-center gap-1.5 flex-shrink-0 pl-1.5 border-l border-slate-200">
+          {onOpenSettings ? (
+            <Tooltip label="설정">
+              <button
+                onClick={() => { onOpenSettings(); if (isMobile) closeSidebar(); }}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
+              >
+                <Settings size={15} />
+              </button>
+            </Tooltip>
+          ) : null}
+          <Tooltip label="사이드바 접기">
             <button
-              onClick={() => { onOpenSettings(); if (isMobile) closeSidebar(); }}
+              onClick={closeSidebar}
               className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
             >
-              <Settings size={15} />
+              <PanelLeftClose size={15} />
             </button>
           </Tooltip>
-        ) : null}
-        <Tooltip label="사이드바 접기">
-          <button
-            onClick={closeSidebar}
-            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-md transition-colors"
-          >
-            <PanelLeftClose size={15} />
-          </button>
-        </Tooltip>
+        </div>
       </div>
 
       {/* 패널 컨텐츠 */}

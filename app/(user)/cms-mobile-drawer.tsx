@@ -10,10 +10,11 @@
  * design tokens (var(--cms-bg)/text/border) 일관 적용.
  */
 import { useState, useEffect } from 'react';
-import type { NavLink } from '../../lib/cms-layout';
+import type { NavLink, SidebarConfig } from '../../lib/cms-layout';
 import { SearchTrigger } from './cms-search-modal';
+import { CmsWidget } from './cms-widget-renderer';
 
-export function MobileDrawer({ navLinks }: { navLinks: NavLink[] }) {
+export function MobileDrawer({ navLinks, sidebar }: { navLinks: NavLink[]; sidebar?: SidebarConfig }) {
   const [open, setOpen] = useState(false);
 
   // ESC 닫기 + body scroll lock
@@ -114,30 +115,61 @@ export function MobileDrawer({ navLinks }: { navLinks: NavLink[] }) {
           </SearchTrigger>
         </div>
 
-        {/* Nav 링크 — 세로 list */}
-        <nav className="flex-1 overflow-y-auto px-2 pb-4">
+        {/* 본문 — Nav 링크 + (옵션) sidebar widgets. 세로 스크롤. */}
+        <div className="flex-1 overflow-y-auto px-2 pb-4">
+          {/* Nav 링크 — drawer 진입 시 가장 먼저 보이는 핵심 navigation */}
           {navLinks.length === 0 ? (
             <p className="text-xs px-2 py-4" style={{ color: 'var(--cms-text-muted)' }}>
               네비게이션 링크가 없습니다.
             </p>
           ) : (
-            <ul className="list-none p-0 m-0 flex flex-col">
-              {navLinks.map((link, i) => (
-                <li key={i}>
-                  <a
-                    href={link.href}
-                    onClick={() => setOpen(false)}
-                    className="block px-3 py-2.5 text-sm font-medium no-underline rounded hover:opacity-80 transition-opacity"
-                    style={{ color: 'var(--cms-text)' }}
-                  >
-                    {link.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
+            <nav>
+              <ul className="list-none p-0 m-0 flex flex-col">
+                {navLinks.map((link, i) => (
+                  <li key={i}>
+                    <a
+                      href={link.href}
+                      onClick={() => setOpen(false)}
+                      className="block px-3 py-2.5 text-sm font-medium no-underline rounded hover:opacity-80 transition-opacity"
+                      style={{ color: 'var(--cms-text)' }}
+                    >
+                      {link.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
           )}
-        </nav>
+
+          {/* Sidebar widgets — header.mobileDrawerIncludeSidebar=ON 일 때만 박힘.
+              검색 / 카테고리 / 최근글 / 태그 cloud 등 모든 사이드바 콘텐츠 통합. */}
+          {sidebar && (sidebar.widgets?.length || hasLegacySidebarContent(sidebar)) ? (
+            <div
+              className="mt-4 pt-4 border-t flex flex-col gap-4"
+              style={{ borderColor: 'var(--cms-border)' }}
+            >
+              {/* widgets 박혀있으면 우선 — 사용자가 카탈로그에서 등록한 widget 배열 */}
+              {sidebar.widgets && sidebar.widgets.length > 0 ? (
+                sidebar.widgets.map((slot, i) => (
+                  <CmsWidget key={`sw-${i}`} slot={slot} area="sidebar" />
+                ))
+              ) : (
+                /* legacy fallback — toggle 들이 widget 으로 변환되어 cms-widget-renderer 가 처리.
+                   여기서는 명시적 widget 배열 없는 경우라 별도 처리 안 함 (widgets derive 는 module-manager 에서 진행). */
+                null
+              )}
+            </div>
+          ) : null}
+        </div>
       </aside>
     </>
+  );
+}
+
+/** legacy sidebar config 에 표시할 콘텐츠 있는지 검사 — toggle/legacy 필드 기반 */
+function hasLegacySidebarContent(s: SidebarConfig): boolean {
+  return Boolean(
+    s.showSearchBox || s.showRecentPosts || s.showCategoryList ||
+    s.showTagCloud || s.showSubscribe || (s.htmlWidget && s.htmlWidget.trim())
   );
 }

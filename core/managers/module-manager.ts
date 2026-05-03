@@ -321,6 +321,7 @@ export class ModuleManager {
           sticky: s.layoutHeaderSticky === true,
           transparentOnTop: s.layoutHeaderTransparentOnTop === true,
           mobileDrawer: s.layoutHeaderMobileDrawer === true,
+          mobileDrawerIncludeSidebar: s.layoutHeaderMobileDrawerIncludeSidebar === true,
           widgets: derivedWidgets,
         };
       })(),

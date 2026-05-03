@@ -29,6 +29,10 @@ export interface HeaderConfig {
   /** 모바일 햄버거 drawer — 모바일(sm 미만)에서 nav 링크 → 햄버거 버튼 + slide-in drawer.
    *  데스크톱은 그대로 horizontal nav. 기본 false (현재처럼 wrap). */
   mobileDrawer: boolean;
+  /** drawer 안에 사이드바 widgets 통합 표시 — mobileDrawer ON 일 때만 의미.
+   *  ON 시 본문 stacked 사이드바 대신 drawer 안에 검색 + 카테고리 + 최근글 등 모두 통합.
+   *  한 번 햄버거 클릭으로 모든 모바일 콘텐츠 접근. 기본 false. */
+  mobileDrawerIncludeSidebar?: boolean;
   /** Phase B widget 시스템 — 좌/중/우 3 col 슬롯. 박혀있으면 widget 빌더 우선,
    *  미박힘 시 legacy (siteName / logoUrl / navLinks) 에서 자동 derive. */
   widgets?: {

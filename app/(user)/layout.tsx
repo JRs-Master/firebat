@@ -113,7 +113,7 @@ export default async function UserLayout({ children }: { children: React.ReactNo
         />
       )}
       {seo.layout.showReadingProgress && <CmsReadingProgress />}
-      {seo.layout.header.show && <CmsHeader header={seo.layout.header} />}
+      {seo.layout.header.show && <CmsHeader header={seo.layout.header} sidebar={seo.layout.sidebar} />}
       {seo.adsense.publisherId && seo.adsense.slotHeaderBottom && (
         <CmsAdSlot publisherId={seo.adsense.publisherId} slotId={seo.adsense.slotHeaderBottom} />
       )}
@@ -126,7 +126,10 @@ export default async function UserLayout({ children }: { children: React.ReactNo
        *  right/left-sidebar: grid 2컬럼. both-sidebar: grid 3컬럼 (좌 + 본문 + 우, 같은 SidebarConfig).
        *  모바일 (<1024px) 은 자동 stacked. */}
       {(layoutMode === 'right-sidebar' || layoutMode === 'left-sidebar' || layoutMode === 'both-sidebar') ? (
-        <div className={`firebat-cms-layout-${layoutMode}`}>
+        <div
+          className={`firebat-cms-layout-${layoutMode}`}
+          data-mobile-drawer-includes-sidebar={seo.layout.header.mobileDrawerIncludeSidebar ? '1' : undefined}
+        >
           {(layoutMode === 'left-sidebar' || layoutMode === 'both-sidebar') && (await CmsSidebar({ sidebar: seo.layout.sidebar }))}
           <div>{children}</div>
           {(layoutMode === 'right-sidebar' || layoutMode === 'both-sidebar') && (await CmsSidebar({ sidebar: seo.layout.sidebar }))}

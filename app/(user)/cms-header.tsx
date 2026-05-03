@@ -8,12 +8,12 @@
  * Transparent on top: scrollY=0 일 때 배경 투명. scroll → 배경색 + border + 그림자 transition.
  *  client-side scroll listener (HeaderScrollWatcher) 가 'is-scrolled' class 토글.
  */
-import type { HeaderConfig } from '../../lib/cms-layout';
+import type { HeaderConfig, SidebarConfig } from '../../lib/cms-layout';
 import { HeaderScrollWatcher } from './cms-header-scroll-watcher';
 import { MobileDrawer } from './cms-mobile-drawer';
 import { CmsWidget } from './cms-widget-renderer';
 
-export function CmsHeader({ header }: { header: HeaderConfig }) {
+export function CmsHeader({ header, sidebar }: { header: HeaderConfig; sidebar?: SidebarConfig }) {
   // sticky CSS — server-side 결정. transparent-on-top 은 client 가 scroll 추적 후 toggle.
   const stickyStyle = header.sticky
     ? { position: 'sticky' as const, top: 0, zIndex: 30 }
@@ -66,8 +66,14 @@ export function CmsHeader({ header }: { header: HeaderConfig }) {
             {widgets.right.map((slot, i) => (
               <CmsWidget key={`r-${i}`} slot={slot} area="header" />
             ))}
-            {/* 모바일 햄버거 drawer — header.mobileDrawer ON 시 자동 inject (widget 시스템과 별도) */}
-            {header.mobileDrawer && <MobileDrawer navLinks={header.navLinks} />}
+            {/* 모바일 햄버거 drawer — header.mobileDrawer ON 시 자동 inject (widget 시스템과 별도).
+                mobileDrawerIncludeSidebar=ON 이면 drawer 안에 sidebar widgets 도 통합 표시. */}
+            {header.mobileDrawer && (
+              <MobileDrawer
+                navLinks={header.navLinks}
+                sidebar={header.mobileDrawerIncludeSidebar ? sidebar : undefined}
+              />
+            )}
           </div>
         </div>
       </div>
