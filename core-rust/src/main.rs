@@ -12,9 +12,10 @@ use tonic::transport::Server;
 use firebat_core::{
     adapters::{
         auth::VaultAuthAdapter, cron::TokioCronAdapter, database::SqliteDatabaseAdapter,
-        log::ConsoleLogAdapter, mcp_client::McpClientFileAdapter,
-        media::LocalMediaAdapter, memory::SqliteMemoryAdapter, sandbox::ProcessSandboxAdapter,
-        storage::LocalStorageAdapter, vault::SqliteVaultAdapter,
+        mcp_client::McpClientFileAdapter, media::LocalMediaAdapter,
+        memory::SqliteMemoryAdapter, sandbox::ProcessSandboxAdapter,
+        storage::LocalStorageAdapter, tracing_log::{init_tracing, TracingLogAdapter},
+        vault::SqliteVaultAdapter,
     },
     managers::{
         ai::AiManager, auth::AuthManager, capability::CapabilityManager,
@@ -33,6 +34,7 @@ use firebat_core::{
     proto::{
         ai_service_server::AiServiceServer,
         auth_service_server::AuthServiceServer,
+        memory_service_server::MemoryServiceServer,
         capability_service_server::CapabilityServiceServer,
         cache_service_server::CacheServiceServer,
         database_service_server::DatabaseServiceServer,
@@ -64,6 +66,10 @@ use firebat_core::{
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
+    // Phase B-17.5c — tracing 초기화 (env RUST_LOG / FIREBAT_LOG_FORMAT=json 토글)
+    init_tracing();
+    tracing::info!(version = firebat_core::version(), "Firebat Core 부팅");
+
     // 환경 변수 — workspace root + listen address + vault DB path
     let workspace_root: PathBuf = std::env::var("FIREBAT_WORKSPACE_ROOT")
         .map(PathBuf::from)
@@ -108,7 +114,8 @@ async fn main() -> Result<()> {
     );
 
     // 어댑터 wiring — InfraResult<T,String> 을 anyhow::Error 로 변환 (with_context 로 원인 역추적).
-    let logger: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
+    // Phase B-17.5c — TracingLogAdapter 로 swap (옛 ConsoleLogAdapter 는 tests/dev 용 보존).
+    let logger: Arc<dyn ILogPort> = Arc::new(TracingLogAdapter::new());
     let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(&workspace_root));
     let vault: Arc<dyn IVaultPort> = Arc::new(
         SqliteVaultAdapter::new(&vault_db_path)
@@ -267,6 +274,7 @@ async fn main() -> Result<()> {
     let database_service = services::database::DatabaseServiceImpl::new(app_db_path.clone())
         .map_err(anyhow::Error::msg)
         .context("Database service 초기화 실패")?;
+    let memory_file_service = services::memory_file::MemoryServiceImpl::new(storage.clone());
 
     let lifecycle_service = services::lifecycle::LifecycleServiceImpl::new(vec![
         "AiManager".to_string(),
@@ -353,7 +361,8 @@ async fn main() -> Result<()> {
         .add_service(CacheServiceServer::new(cache_service))
         .add_service(TelegramServiceServer::new(telegram_service))
         .add_service(DatabaseServiceServer::new(database_service))
-        // 남은 cross-cutting (Memory file system) 은 별도 batch (Phase B-17.5c).
+        .add_service(MemoryServiceServer::new(memory_file_service))
+        // Phase B-17.5 cross-cutting 8개 모두 박힘. 남은 건 Phase D Tauri.
         .serve_with_shutdown(addr, shutdown)
         .await
         .context("gRPC server 종료 중 에러")?;

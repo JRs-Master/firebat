@@ -14,3 +14,4 @@ pub mod cron;
 pub mod media;
 pub mod llm;
 pub mod cache;
+pub mod tracing_log;
