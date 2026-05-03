@@ -8,7 +8,7 @@ use rusqlite::{params, Connection};
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::ports::{IDatabasePort, PageListItem, PageRecord};
+use crate::ports::{IDatabasePort, MediaUsageEntry, PageListItem, PageRecord};
 
 pub struct SqliteDatabaseAdapter {
     conn: Mutex<Connection>,
@@ -87,6 +87,21 @@ impl SqliteDatabaseAdapter {
                 purpose TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_costs_ts ON llm_costs(ts DESC);
+
+            CREATE TABLE IF NOT EXISTS page_redirects (
+                from_slug TEXT PRIMARY KEY,
+                to_slug TEXT NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS media_usage (
+                media_slug TEXT NOT NULL,
+                page_slug TEXT NOT NULL,
+                used_at INTEGER NOT NULL,
+                PRIMARY KEY (media_slug, page_slug)
+            );
+            CREATE INDEX IF NOT EXISTS idx_media_usage_page ON media_usage(page_slug);
+            CREATE INDEX IF NOT EXISTS idx_media_usage_media ON media_usage(media_slug, used_at DESC);
             "#,
         )
         .map_err(|e| format!("DB schema 초기화 실패: {e}"))
@@ -278,6 +293,114 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         // 일괄 삭제
         let _ = conn.execute("DELETE FROM pages WHERE project = ?1", params![project]);
         slugs
+    }
+
+    fn list_pages_by_project(&self, project: &str) -> Vec<String> {
+        let Ok(conn) = self.conn.lock() else {
+            return vec![];
+        };
+        let Ok(mut stmt) = conn.prepare("SELECT slug FROM pages WHERE project = ?1 ORDER BY updated_at DESC")
+        else { return vec![] };
+        let rows = stmt.query_map(params![project], |row| row.get::<_, String>(0)).ok();
+        let Some(rows) = rows else { return vec![] };
+        rows.filter_map(|r| r.ok()).collect()
+    }
+
+    fn set_page_visibility(&self, slug: &str, visibility: &str, password: Option<&str>) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        // password=None 또는 visibility != 'password' 면 password 컬럼 NULL 로 설정
+        let pw = if visibility == "password" { password } else { None };
+        conn.execute(
+            "UPDATE pages SET visibility = ?1, password = ?2 WHERE slug = ?3",
+            params![visibility, pw, slug],
+        )
+        .is_ok()
+    }
+
+    fn verify_page_password(&self, slug: &str, password: &str) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        let stored: Option<String> = conn
+            .query_row(
+                "SELECT password FROM pages WHERE slug = ?1",
+                params![slug],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+        stored.as_deref() == Some(password)
+    }
+
+    fn upsert_page_redirect(&self, from_slug: &str, to_slug: &str) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        conn.execute(
+            "INSERT INTO page_redirects (from_slug, to_slug, created_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(from_slug) DO UPDATE SET
+                to_slug = excluded.to_slug,
+                created_at = excluded.created_at",
+            params![from_slug, to_slug, now],
+        )
+        .is_ok()
+    }
+
+    fn get_page_redirect(&self, from_slug: &str) -> Option<String> {
+        let conn = self.conn.lock().ok()?;
+        conn.query_row(
+            "SELECT to_slug FROM page_redirects WHERE from_slug = ?1",
+            params![from_slug],
+            |row| row.get(0),
+        )
+        .ok()
+    }
+
+    fn replace_media_usage(&self, page_slug: &str, media_slugs: &[String]) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        // 트랜잭션 — 옛 사용처 삭제 + 새 일괄 insert
+        let tx_result: rusqlite::Result<()> = (|| {
+            conn.execute("DELETE FROM media_usage WHERE page_slug = ?1", params![page_slug])?;
+            for media_slug in media_slugs {
+                conn.execute(
+                    "INSERT OR REPLACE INTO media_usage (media_slug, page_slug, used_at)
+                     VALUES (?1, ?2, ?3)",
+                    params![media_slug, page_slug, now],
+                )?;
+            }
+            Ok(())
+        })();
+        tx_result.is_ok()
+    }
+
+    fn delete_media_usage_for_page(&self, page_slug: &str) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        conn.execute("DELETE FROM media_usage WHERE page_slug = ?1", params![page_slug])
+            .is_ok()
+    }
+
+    fn find_media_usage(&self, media_slug: &str) -> Vec<MediaUsageEntry> {
+        let Ok(conn) = self.conn.lock() else { return vec![] };
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT page_slug, used_at FROM media_usage WHERE media_slug = ?1 ORDER BY used_at DESC",
+        ) else {
+            return vec![];
+        };
+        let rows = stmt
+            .query_map(params![media_slug], |row| {
+                Ok(MediaUsageEntry {
+                    page_slug: row.get(0)?,
+                    used_at: row.get(1)?,
+                })
+            })
+            .ok();
+        let Some(rows) = rows else { return vec![] };
+        rows.filter_map(|r| r.ok()).collect()
     }
 
     fn search_pages(&self, query: &str, limit: usize) -> Vec<PageListItem> {

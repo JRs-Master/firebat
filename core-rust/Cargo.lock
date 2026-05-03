@@ -209,6 +209,7 @@ dependencies = [
  "prost",
  "protoc-bin-vendored",
  "rand",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

@@ -14,7 +14,7 @@ use firebat_core::{
     },
     managers::{
         auth::AuthManager, capability::CapabilityManager, cost::CostManager, event::EventManager,
-        module::ModuleManager, project::ProjectManager, secret::SecretManager,
+        module::ModuleManager, page::PageManager, project::ProjectManager, secret::SecretManager,
         status::StatusManager, template::TemplateManager, tool::ToolManager,
     },
     ports::{IAuthPort, IDatabasePort, ILogPort, ISandboxPort, IStoragePort, IVaultPort},
@@ -24,6 +24,7 @@ use firebat_core::{
         cost_service_server::CostServiceServer,
         event_service_server::EventServiceServer,
         module_service_server::ModuleServiceServer,
+        page_service_server::PageServiceServer,
         project_service_server::ProjectServiceServer,
         secret_service_server::SecretServiceServer,
         status_service_server::StatusServiceServer,
@@ -92,6 +93,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         storage.clone(),
         vault.clone(),
     ));
+    let page_manager = Arc::new(PageManager::new(db.clone(), storage.clone()));
 
     // service impls
     let template_service = services::template::TemplateServiceImpl::new(template_manager);
@@ -104,6 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cost_service = services::cost::CostServiceImpl::new(cost_manager);
     let project_service = services::project::ProjectServiceImpl::new(project_manager);
     let module_service = services::module::ModuleServiceImpl::new(module_manager);
+    let page_service = services::page::PageServiceImpl::new(page_manager);
 
     // graceful shutdown — Ctrl+C / SIGTERM
     let shutdown = async {
@@ -122,9 +125,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(CostServiceServer::new(cost_service))
         .add_service(ProjectServiceServer::new(project_service))
         .add_service(ModuleServiceServer::new(module_service))
+        .add_service(PageServiceServer::new(page_service))
         // Phase B 진행하며 추가:
-        //   .add_service(PageServiceServer::new(...))
         //   .add_service(ScheduleServiceServer::new(...))
+        //   .add_service(ConversationServiceServer::new(...))
         //   ... 21 매니저 + cross-cutting 등록
         .serve_with_shutdown(addr, shutdown)
         .await?;

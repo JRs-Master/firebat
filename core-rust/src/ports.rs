@@ -143,11 +143,20 @@ pub struct PageRecord {
     pub updated_at: i64,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MediaUsageEntry {
+    #[serde(rename = "pageSlug")]
+    pub page_slug: String,
+    #[serde(rename = "usedAt")]
+    pub used_at: i64,
+}
+
 /// IDatabasePort — pages / conversations 등 SQL CRUD 통합 port.
 /// 동기 — rusqlite 가 sync, 단순함 우선. 매니저는 tokio task 로 wrap 가능.
 pub trait IDatabasePort: Send + Sync {
     // Pages
     fn list_pages(&self) -> Vec<PageListItem>;
+    fn list_pages_by_project(&self, project: &str) -> Vec<String>;
     fn get_page(&self, slug: &str) -> Option<PageRecord>;
     fn save_page(
         &self,
@@ -161,6 +170,17 @@ pub trait IDatabasePort: Send + Sync {
     fn delete_page(&self, slug: &str) -> bool;
     fn delete_pages_by_project(&self, project: &str) -> Vec<String>;
     fn search_pages(&self, query: &str, limit: usize) -> Vec<PageListItem>;
+    fn set_page_visibility(&self, slug: &str, visibility: &str, password: Option<&str>) -> bool;
+    fn verify_page_password(&self, slug: &str, password: &str) -> bool;
+
+    // Page redirects
+    fn upsert_page_redirect(&self, from_slug: &str, to_slug: &str) -> bool;
+    fn get_page_redirect(&self, from_slug: &str) -> Option<String>;
+
+    // Media usage
+    fn replace_media_usage(&self, page_slug: &str, media_slugs: &[String]) -> bool;
+    fn delete_media_usage_for_page(&self, page_slug: &str) -> bool;
+    fn find_media_usage(&self, media_slug: &str) -> Vec<MediaUsageEntry>;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
