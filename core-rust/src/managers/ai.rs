@@ -14,6 +14,7 @@
 pub mod prompt_builder;
 pub mod system_context;
 pub mod history_resolver;
+pub mod tool_dispatcher;
 
 use std::sync::Arc;
 
