@@ -9,8 +9,8 @@ use tonic::transport::Server;
 
 use firebat_core::{
     adapters::{
-        auth::VaultAuthAdapter, database::SqliteDatabaseAdapter, log::ConsoleLogAdapter,
-        mcp_client::McpClientFileAdapter, memory::SqliteMemoryAdapter,
+        auth::VaultAuthAdapter, cron::TokioCronAdapter, database::SqliteDatabaseAdapter,
+        log::ConsoleLogAdapter, mcp_client::McpClientFileAdapter, memory::SqliteMemoryAdapter,
         sandbox::ProcessSandboxAdapter, storage::LocalStorageAdapter, vault::SqliteVaultAdapter,
     },
     managers::{
@@ -18,8 +18,8 @@ use firebat_core::{
         consolidation::ConsolidationManager, conversation::ConversationManager,
         cost::CostManager, entity::EntityManager, episodic::EpisodicManager, event::EventManager,
         mcp::McpManager, module::ModuleManager, page::PageManager, project::ProjectManager,
-        secret::SecretManager, status::StatusManager, template::TemplateManager,
-        tool::ToolManager,
+        schedule::ScheduleManager, secret::SecretManager, status::StatusManager,
+        template::TemplateManager, tool::ToolManager,
     },
     ports::{
         IAuthPort, IDatabasePort, IEntityPort, IEpisodicPort, ILogPort, IMcpClientPort,
@@ -38,6 +38,7 @@ use firebat_core::{
         module_service_server::ModuleServiceServer,
         page_service_server::PageServiceServer,
         project_service_server::ProjectServiceServer,
+        schedule_service_server::ScheduleServiceServer,
         secret_service_server::SecretServiceServer,
         status_service_server::StatusServiceServer,
         template_service_server::TemplateServiceServer,
@@ -66,6 +67,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let memory_db_path = std::env::var("FIREBAT_MEMORY_DB")
         .map(PathBuf::from)
         .unwrap_or_else(|_| workspace_root.join("data").join("memory.db"));
+    let cron_jobs_path = std::env::var("FIREBAT_CRON_JOBS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| workspace_root.join("data").join("cron-jobs.json"));
+    let cron_logs_path = std::env::var("FIREBAT_CRON_LOGS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| workspace_root.join("data").join("cron-logs.json"));
+    let cron_notifications_path = std::env::var("FIREBAT_CRON_NOTIFICATIONS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| workspace_root.join("data").join("cron-notifications.json"));
+    let default_timezone = std::env::var("FIREBAT_TIMEZONE").unwrap_or_else(|_| "Asia/Seoul".to_string());
     let addr = listen_addr.parse()?;
 
     eprintln!(
@@ -92,6 +103,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let memory_adapter = Arc::new(SqliteMemoryAdapter::new(&memory_db_path)?);
     let entity_port: Arc<dyn IEntityPort> = memory_adapter.clone();
     let episodic_port: Arc<dyn IEpisodicPort> = memory_adapter.clone();
+    let cron_adapter = TokioCronAdapter::new(
+        cron_jobs_path,
+        cron_logs_path,
+        cron_notifications_path,
+        &default_timezone,
+    )?;
 
     // 매니저 wiring
     let template_manager = Arc::new(TemplateManager::new(storage.clone()));
@@ -125,6 +142,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         entity_manager.clone(),
         episodic_manager.clone(),
     ));
+    let schedule_manager = Arc::new(ScheduleManager::new(cron_adapter.clone()));
+
+    // 부팅 시 영속 잡 복원 (cron / once 만 — delay 잡은 시각 부재로 복원 불가)
+    schedule_manager.restore().await;
 
     // service impls
     let template_service = services::template::TemplateServiceImpl::new(template_manager);
@@ -144,6 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let episodic_service = services::episodic::EpisodicServiceImpl::new(episodic_manager);
     let consolidation_service =
         services::consolidation::ConsolidationServiceImpl::new(consolidation_manager);
+    let schedule_service = services::schedule::ScheduleServiceImpl::new(schedule_manager);
 
     // graceful shutdown — Ctrl+C / SIGTERM
     let shutdown = async {
@@ -168,9 +190,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(EntityServiceServer::new(entity_service))
         .add_service(EpisodicServiceServer::new(episodic_service))
         .add_service(ConsolidationServiceServer::new(consolidation_service))
+        .add_service(ScheduleServiceServer::new(schedule_service))
         // Phase B 진행하며 추가:
-        //   .add_service(ScheduleServiceServer::new(...))
+        //   .add_service(TaskServiceServer::new(...))
         //   .add_service(MediaServiceServer::new(...))
+        //   .add_service(AiServiceServer::new(...))
         //   ... 21 매니저 + cross-cutting 등록
         .serve_with_shutdown(addr, shutdown)
         .await?;

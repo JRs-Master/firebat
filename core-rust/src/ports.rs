@@ -560,6 +560,190 @@ pub struct ListRecentOpts {
     pub offset: Option<usize>,
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Cron — 스케줄러 (반복 / 1회 예약 / N초 후)
+// ──────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CronJobMode {
+    Cron,
+    Once,
+    Delay,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CronTriggerType {
+    CronScheduler,
+    ScheduledOnce,
+    DelayedRun,
+}
+
+/// CronScheduleOptions — 스케줄링 등록 옵션.
+/// pipeline / notify / runWhen / retry / agentPrompt 같은 복합 필드는 Phase B-13 minimum 단계에서
+/// `serde_json::Value` 패스스루 — Phase B-14 TaskManager + B-16 AiManager 박힌 후 typed.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct CronScheduleOptions {
+    #[serde(rename = "cronTime", default, skip_serializing_if = "Option::is_none")]
+    pub cron_time: Option<String>,
+    #[serde(rename = "runAt", default, skip_serializing_if = "Option::is_none")]
+    pub run_at: Option<String>,
+    #[serde(rename = "delaySec", default, skip_serializing_if = "Option::is_none")]
+    pub delay_sec: Option<i64>,
+    #[serde(rename = "startAt", default, skip_serializing_if = "Option::is_none")]
+    pub start_at: Option<String>,
+    #[serde(rename = "endAt", default, skip_serializing_if = "Option::is_none")]
+    pub end_at: Option<String>,
+    #[serde(rename = "inputData", default, skip_serializing_if = "Option::is_none")]
+    pub input_data: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pipeline: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(rename = "oneShot", default, skip_serializing_if = "Option::is_none")]
+    pub one_shot: Option<bool>,
+    #[serde(rename = "runWhen", default, skip_serializing_if = "Option::is_none")]
+    pub run_when: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notify: Option<serde_json::Value>,
+    #[serde(rename = "executionMode", default, skip_serializing_if = "Option::is_none")]
+    pub execution_mode: Option<String>,
+    #[serde(rename = "agentPrompt", default, skip_serializing_if = "Option::is_none")]
+    pub agent_prompt: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CronJobInfo {
+    #[serde(rename = "jobId")]
+    pub job_id: String,
+    #[serde(rename = "targetPath")]
+    pub target_path: String,
+    pub mode: CronJobMode,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+    #[serde(flatten)]
+    pub options: CronScheduleOptions,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CronTriggerInfo {
+    #[serde(rename = "jobId")]
+    pub job_id: String,
+    #[serde(rename = "targetPath")]
+    pub target_path: String,
+    pub trigger: CronTriggerType,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(rename = "inputData", default, skip_serializing_if = "Option::is_none")]
+    pub input_data: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pipeline: Option<serde_json::Value>,
+    #[serde(rename = "oneShot", default, skip_serializing_if = "Option::is_none")]
+    pub one_shot: Option<bool>,
+    #[serde(rename = "runWhen", default, skip_serializing_if = "Option::is_none")]
+    pub run_when: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notify: Option<serde_json::Value>,
+    #[serde(rename = "executionMode", default, skip_serializing_if = "Option::is_none")]
+    pub execution_mode: Option<String>,
+    #[serde(rename = "agentPrompt", default, skip_serializing_if = "Option::is_none")]
+    pub agent_prompt: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CronJobResult {
+    #[serde(rename = "jobId")]
+    pub job_id: String,
+    #[serde(rename = "targetPath")]
+    pub target_path: String,
+    pub trigger: CronTriggerType,
+    pub success: bool,
+    #[serde(rename = "durationMs")]
+    pub duration_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<serde_json::Value>,
+    #[serde(rename = "stepsExecuted", default, skip_serializing_if = "Option::is_none")]
+    pub steps_executed: Option<i64>,
+    #[serde(rename = "stepsTotal", default, skip_serializing_if = "Option::is_none")]
+    pub steps_total: Option<i64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CronLogEntry {
+    #[serde(rename = "jobId")]
+    pub job_id: String,
+    #[serde(rename = "targetPath")]
+    pub target_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(rename = "triggeredAt")]
+    pub triggered_at: String,
+    pub success: bool,
+    #[serde(rename = "durationMs")]
+    pub duration_ms: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<serde_json::Value>,
+    #[serde(rename = "stepsExecuted", default, skip_serializing_if = "Option::is_none")]
+    pub steps_executed: Option<i64>,
+    #[serde(rename = "stepsTotal", default, skip_serializing_if = "Option::is_none")]
+    pub steps_total: Option<i64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CronNotification {
+    #[serde(rename = "jobId")]
+    pub job_id: String,
+    pub url: String,
+    #[serde(rename = "triggeredAt")]
+    pub triggered_at: String,
+}
+
+/// 트리거 콜백 — 매니저가 cron 어댑터에 등록. 타이머 발화 시 호출됨.
+/// 매니저 → core.handleCronTrigger 위임 (BIBLE: cron 콜백도 Core facade 경유).
+pub type CronTriggerCallback = std::sync::Arc<
+    dyn Fn(
+            CronTriggerInfo,
+        )
+            -> std::pin::Pin<Box<dyn std::future::Future<Output = CronJobResult> + Send>>
+        + Send
+        + Sync,
+>;
+
+/// ICronPort — 스케줄러 port. 옛 TS infra/cron/index.ts Rust 재현.
+///
+/// 동기 + async 혼합 — list / getLogs / consumeNotifications 는 sync (in-memory),
+/// schedule / cancel / triggerNow 는 async (파일 영속 + tokio task spawn).
+#[async_trait::async_trait]
+pub trait ICronPort: Send + Sync {
+    async fn schedule(
+        &self,
+        job_id: &str,
+        target_path: &str,
+        opts: CronScheduleOptions,
+    ) -> InfraResult<()>;
+    async fn cancel(&self, job_id: &str) -> InfraResult<()>;
+    async fn trigger_now(&self, job_id: &str) -> InfraResult<()>;
+    fn list(&self) -> Vec<CronJobInfo>;
+    fn set_timezone(&self, tz: &str);
+    fn get_timezone(&self) -> String;
+    fn on_trigger(&self, callback: CronTriggerCallback);
+    fn get_logs(&self, limit: Option<usize>) -> Vec<CronLogEntry>;
+    fn clear_logs(&self);
+    fn consume_notifications(&self) -> Vec<CronNotification>;
+    fn append_notify(&self, entry: CronNotification);
+}
+
 /// IEpisodicPort — Phase 2 episodic tier port.
 pub trait IEpisodicPort: Send + Sync {
     fn save_event(&self, input: &SaveEventInput) -> InfraResult<(i64, bool, Option<f64>)>;

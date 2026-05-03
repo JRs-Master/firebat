@@ -32,15 +32,17 @@ rand = "0.8"        # 보안 토큰 random
 subtle = "2"        # timing-safe 비교 (timing attack 방어)
 # Phase B-9 박힘 (PageManager — 미디어 URL 추출)
 regex = "1"
+# Phase B-13 박힘 (ScheduleManager — cron expression parser + chrono timezone)
+cron = "0.12"
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.9"
 
 # Phase B 활성 시 추가 (현재 commented):
 #   reqwest = { version = "0.12", features = ["json", "stream"] }  # LLM API
 #   tracing = "0.1"                                    # 로그
 #   image = "0.25"                                     # Image (또는 Node bridge)
 #   blurhash = "0.2"
-#   cron = "0.12"
 #   ammonia = "4"                                      # HTML sanitize
-#   chrono = { version = "0.4", features = ["serde"] }
 
 [dev-dependencies]
 tempfile = "3"
