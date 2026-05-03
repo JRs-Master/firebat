@@ -32,6 +32,27 @@ const nextConfig = {
       },
     ];
   },
+  /** Headers — /admin 경로의 ETag·304 응답 차단.
+   *  배경: 빌드마다 RSC payload 안의 server action ID 가 새로 발행됨. 사용자 브라우저가
+   *  옛 RSC payload 를 disk cache 에 들고 있으면 새 build 후에도 ETag 비교 시 304 (Not Modified)
+   *  돌아와 옛 payload 그대로 사용 → 옛 server action ID 호출 → 새 build 가 못 찾음 → throw → 500.
+   *  no-store 박으면 매 요청마다 fresh fetch → server action ID 자동 sync. */
+  async headers() {
+    return [
+      {
+        source: '/admin/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, must-revalidate' },
+        ],
+      },
+      {
+        source: '/admin',
+        headers: [
+          { key: 'Cache-Control', value: 'no-store, must-revalidate' },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
