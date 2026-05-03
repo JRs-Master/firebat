@@ -175,14 +175,19 @@ impl AiManager {
             }
         }
 
-        // Phase B-17+ result processor — 모든 LLM 응답을 단일 sanitize 레이어 통과.
-        // 옛 TS sanitize.ts 1:1 port (utils/sanitize.rs). 모델별 quirk fix (Claude unicode escape /
-        // HTML 태그 / 마크다운 마커) 모두 일반 로직으로 처리.
+        // Phase B-17+ result processor — 모든 LLM 응답을 단일 정제 레이어 통과.
+        // 옛 TS sanitize.ts 1:1 port. 모델별 quirk fix 모두 일반 로직으로 처리:
+        // 1. sanitize_reply — Unicode escape / HTML 태그 / 마크다운 강조 마커 제거
+        // 2. extract_markdown_structure — `## 헤더` / `|---|` 표 → render_header / render_table 자동 변환
+        // 3. segments_to_blocks — text segment 만 reply 에 남기고 header/table 은 blocks 로 분리
         let sanitized_reply = crate::utils::sanitize::sanitize_reply(&last_text);
+        let segments = crate::utils::sanitize::extract_markdown_structure(&sanitized_reply);
+        let (clean_reply, extracted_blocks) =
+            crate::utils::sanitize::segments_to_blocks(segments);
 
         Ok(AiResponse {
-            reply: sanitized_reply,
-            blocks: Vec::new(),
+            reply: clean_reply,
+            blocks: extracted_blocks,
             executed_actions,
             suggestions: Vec::new(),
             error: None,

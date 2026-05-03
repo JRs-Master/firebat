@@ -218,6 +218,214 @@ pub fn sanitize_reply(reply: &str) -> String {
     clean_text(reply)
 }
 
+/// Reply segment — markdown 구조 분할 결과.
+#[derive(Debug, Clone)]
+pub enum ReplySegment {
+    Text(String),
+    Header { level: u8, text: String },
+    Table { headers: Vec<String>, rows: Vec<Vec<String>> },
+}
+
+/// AI reply 안 markdown 표·헤더 자동 추출 — 옛 TS extractMarkdownStructure 1:1 port.
+/// AI 가 마크다운 표/헤더 박으면 자동으로 component blocks 으로 변환 가능 (caller 가 segment →
+/// render_header / render_table 매핑).
+///
+/// 결과 segments 순서:
+/// - Text — `## 헤더` 또는 `|---|` 표 사이 일반 텍스트
+/// - Header { level, text } — `# ~ ######` 마커 (level 1-6)
+/// - Table { headers, rows } — `|...| / |---| / |...|` 구조
+///
+/// 일반 메커니즘 — 모든 표/헤더 동일 path 통과. 모델별 분기 0.
+pub fn extract_markdown_structure(reply: &str) -> Vec<ReplySegment> {
+    let mut segments = Vec::new();
+    if reply.is_empty() {
+        return segments;
+    }
+    let lines: Vec<&str> = reply.split('\n').collect();
+    let mut text_buffer: Vec<&str> = Vec::new();
+
+    let flush_text = |buf: &mut Vec<&str>, segments: &mut Vec<ReplySegment>| {
+        if buf.is_empty() {
+            return;
+        }
+        let mut text = buf.join("\n");
+        // \n{3,} → \n\n (옛 TS 동등)
+        while text.contains("\n\n\n") {
+            text = text.replace("\n\n\n", "\n\n");
+        }
+        let trimmed = text.trim().to_string();
+        if !trimmed.is_empty() {
+            segments.push(ReplySegment::Text(trimmed));
+        }
+        buf.clear();
+    };
+
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+
+        // 1. Header (# ~ ######)
+        if let Some((level, text)) = parse_header(line) {
+            flush_text(&mut text_buffer, &mut segments);
+            segments.push(ReplySegment::Header {
+                level,
+                text: clean_inline(&text),
+            });
+            i += 1;
+            continue;
+        }
+
+        // 2. Table — 헤더줄 + 구분줄 + 데이터줄
+        if line.trim().starts_with('|') && i + 2 < lines.len() {
+            if let Some((headers, rows, consumed)) = parse_table(&lines, i) {
+                flush_text(&mut text_buffer, &mut segments);
+                segments.push(ReplySegment::Table {
+                    headers: headers.into_iter().map(|h| clean_inline(&h)).collect(),
+                    rows: rows
+                        .into_iter()
+                        .map(|r| r.into_iter().map(|c| clean_inline(&c)).collect())
+                        .collect(),
+                });
+                i += consumed;
+                continue;
+            }
+        }
+
+        // 3. 일반 텍스트
+        text_buffer.push(line);
+        i += 1;
+    }
+    flush_text(&mut text_buffer, &mut segments);
+    segments
+}
+
+fn parse_header(line: &str) -> Option<(u8, String)> {
+    let trimmed = line.trim_start();
+    let mut hash_count = 0_u8;
+    for c in trimmed.chars() {
+        if c == '#' {
+            hash_count += 1;
+            if hash_count > 6 {
+                return None;
+            }
+        } else {
+            break;
+        }
+    }
+    if hash_count == 0 || hash_count > 6 {
+        return None;
+    }
+    let after = &trimmed[hash_count as usize..];
+    if !after.starts_with(' ') && !after.starts_with('\t') {
+        return None;
+    }
+    let text = after.trim().to_string();
+    if text.is_empty() {
+        return None;
+    }
+    Some((hash_count, text))
+}
+
+/// Table 파싱 — `lines[start]` 가 헤더줄이라 가정. 매칭되면 (headers, rows, lines_consumed).
+fn parse_table(lines: &[&str], start: usize) -> Option<(Vec<String>, Vec<Vec<String>>, usize)> {
+    let header_line = lines[start].trim();
+    let sep_line = lines.get(start + 1)?.trim();
+    if !sep_line.starts_with('|') {
+        return None;
+    }
+
+    let sep_cells: Vec<String> = split_table_cells(sep_line);
+    if sep_cells.is_empty() || !sep_cells.iter().all(is_valid_separator) {
+        return None;
+    }
+    let header_cells: Vec<String> = split_table_cells(header_line);
+    if header_cells.len() != sep_cells.len() {
+        return None;
+    }
+
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut j = start + 2;
+    while j < lines.len() && lines[j].trim().starts_with('|') {
+        let cells = split_table_cells(lines[j].trim());
+        if cells.len() != header_cells.len() {
+            break;
+        }
+        rows.push(cells);
+        j += 1;
+    }
+    if rows.is_empty() {
+        return None;
+    }
+    Some((header_cells, rows, j - start))
+}
+
+fn split_table_cells(line: &str) -> Vec<String> {
+    // |a|b|c| → ["a", "b", "c"]. 첫·끝 빈 cell 제거.
+    let parts: Vec<String> = line.split('|').map(|s| s.trim().to_string()).collect();
+    if parts.len() < 2 {
+        return Vec::new();
+    }
+    parts[1..parts.len() - 1].to_vec()
+}
+
+fn is_valid_separator(cell: &String) -> bool {
+    // ^:?-+:?$ — `:---`, `---:`, `:---:`, `---` 모두 허용
+    let s = cell.trim();
+    if s.is_empty() {
+        return false;
+    }
+    let mut chars = s.chars().peekable();
+    if chars.peek() == Some(&':') {
+        chars.next();
+    }
+    let mut dash_count = 0;
+    while let Some(&c) = chars.peek() {
+        if c == '-' {
+            dash_count += 1;
+            chars.next();
+        } else {
+            break;
+        }
+    }
+    if dash_count == 0 {
+        return false;
+    }
+    if chars.peek() == Some(&':') {
+        chars.next();
+    }
+    chars.next().is_none()
+}
+
+fn clean_inline(s: &str) -> String {
+    strip_markdown_markers(s).trim().to_string()
+}
+
+/// extract_markdown_structure 의 segment → render_* component blocks 변환.
+/// AiManager.process_with_tools 가 sanitize_reply 후 호출 — text segment 만 reply 에 남고
+/// header/table 은 blocks 로 분리.
+pub fn segments_to_blocks(segments: Vec<ReplySegment>) -> (String, Vec<Value>) {
+    let mut text_parts: Vec<String> = Vec::new();
+    let mut blocks: Vec<Value> = Vec::new();
+    for seg in segments {
+        match seg {
+            ReplySegment::Text(t) => text_parts.push(t),
+            ReplySegment::Header { level, text } => {
+                blocks.push(serde_json::json!({
+                    "type": "Header",
+                    "props": {"text": text, "level": level}
+                }));
+            }
+            ReplySegment::Table { headers, rows } => {
+                blocks.push(serde_json::json!({
+                    "type": "Table",
+                    "props": {"columns": headers, "rows": rows}
+                }));
+            }
+        }
+    }
+    (text_parts.join("\n\n"), blocks)
+}
+
 /// Block 단일 정제 — sanitize_value(block, None, None, false).
 pub fn sanitize_block(block: &Value) -> Value {
     sanitize_value(block, None, None, false)
@@ -294,5 +502,75 @@ mod tests {
     #[test]
     fn sanitize_reply_cleans_string() {
         assert_eq!(sanitize_reply("<b>안녕</b> **세계**"), "안녕 세계");
+    }
+
+    #[test]
+    fn extract_header_segment() {
+        let reply = "## 안녕\n\n본문 텍스트";
+        let segments = extract_markdown_structure(reply);
+        assert_eq!(segments.len(), 2);
+        match &segments[0] {
+            ReplySegment::Header { level, text } => {
+                assert_eq!(*level, 2);
+                assert_eq!(text, "안녕");
+            }
+            _ => panic!("first segment 가 Header 아님"),
+        }
+        match &segments[1] {
+            ReplySegment::Text(t) => assert_eq!(t, "본문 텍스트"),
+            _ => panic!("second segment 가 Text 아님"),
+        }
+    }
+
+    #[test]
+    fn extract_table_segment() {
+        let reply = "| 이름 | 가격 |\n|---|---|\n| A | 100 |\n| B | 200 |";
+        let segments = extract_markdown_structure(reply);
+        assert_eq!(segments.len(), 1);
+        match &segments[0] {
+            ReplySegment::Table { headers, rows } => {
+                assert_eq!(headers, &["이름", "가격"]);
+                assert_eq!(rows.len(), 2);
+                assert_eq!(rows[0], vec!["A".to_string(), "100".to_string()]);
+            }
+            _ => panic!("Table 아님"),
+        }
+    }
+
+    #[test]
+    fn segments_to_blocks_separates_text_and_components() {
+        let reply = "도입부\n\n## 헤더\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n결론";
+        let segments = extract_markdown_structure(reply);
+        let (text, blocks) = segments_to_blocks(segments);
+        assert!(text.contains("도입부"));
+        assert!(text.contains("결론"));
+        assert_eq!(blocks.len(), 2);
+        assert_eq!(blocks[0]["type"], "Header");
+        assert_eq!(blocks[1]["type"], "Table");
+    }
+
+    #[test]
+    fn invalid_table_kept_as_text() {
+        // 구분선 없으면 일반 텍스트 (옛 TS 와 동일)
+        let reply = "| a | b |\n| 1 | 2 |";
+        let segments = extract_markdown_structure(reply);
+        assert_eq!(segments.len(), 1);
+        assert!(matches!(&segments[0], ReplySegment::Text(_)));
+    }
+
+    #[test]
+    fn empty_reply_returns_empty_segments() {
+        let segments = extract_markdown_structure("");
+        assert!(segments.is_empty());
+    }
+
+    #[test]
+    fn header_inline_markdown_stripped() {
+        let reply = "# **굵은 헤더**";
+        let segments = extract_markdown_structure(reply);
+        match &segments[0] {
+            ReplySegment::Header { text, .. } => assert_eq!(text, "굵은 헤더"),
+            _ => panic!(),
+        }
     }
 }
