@@ -12,7 +12,7 @@ use tonic::transport::Server;
 use firebat_core::{
     adapters::{
         auth::VaultAuthAdapter, cron::TokioCronAdapter, database::SqliteDatabaseAdapter,
-        llm::StubLlmAdapter, log::ConsoleLogAdapter, mcp_client::McpClientFileAdapter,
+        log::ConsoleLogAdapter, mcp_client::McpClientFileAdapter,
         media::LocalMediaAdapter, memory::SqliteMemoryAdapter, sandbox::ProcessSandboxAdapter,
         storage::LocalStorageAdapter, vault::SqliteVaultAdapter,
     },
@@ -137,11 +137,14 @@ async fn main() -> Result<()> {
     .map_err(anyhow::Error::msg)
     .context("Cron 어댑터 초기화 실패")?;
     let media: Arc<dyn IMediaPort> = Arc::new(LocalMediaAdapter::new(&workspace_root));
-    // Phase B-16 minimum — StubLlmAdapter. Phase B-17+ ConfigDrivenAdapter (5 API + 3 CLI 핸들러)
-    // 박힌 후 Vault `system:llm:model` 기반 모델 ID 동적 swap.
+    // Phase B-17 — ConfigDrivenAdapter. 8 format (5 API + 3 CLI) 핸들러 박힘.
+    // Vault `system:llm:model` 으로 활성 모델 동적 swap. API 키 없으면 핸들러가 명시 에러 반환.
     let default_model =
-        std::env::var("FIREBAT_DEFAULT_MODEL").unwrap_or_else(|_| "stub-model".to_string());
-    let llm: Arc<dyn ILlmPort> = Arc::new(StubLlmAdapter::new(default_model));
+        std::env::var("FIREBAT_DEFAULT_MODEL").unwrap_or_else(|_| "claude-4-sonnet".to_string());
+    let llm: Arc<dyn ILlmPort> = Arc::new(firebat_core::llm::adapter::ConfigDrivenAdapter::new(
+        vault.clone(),
+        default_model,
+    ));
 
     // 매니저 wiring
     let template_manager = Arc::new(TemplateManager::new(storage.clone()));

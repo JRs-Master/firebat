@@ -38,9 +38,13 @@ chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.9"
 # Phase B-17b 박힘 (main.rs graceful shutdown — SIGTERM + Context error trace)
 anyhow = "1"
+# Phase B-17 박힘 (LLM API 5 format + CLI 3 format)
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "multipart"] }
+futures-util = "0.3"
+url = "2"
+base64 = "0.22"
 
 # Phase B 활성 시 추가 (현재 commented):
-#   reqwest = { version = "0.12", features = ["json", "stream"] }  # LLM API
 #   tracing = "0.1"                                    # 로그
 #   image = "0.25"                                     # Image (또는 Node bridge)
 #   blurhash = "0.2"
