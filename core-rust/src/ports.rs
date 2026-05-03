@@ -96,3 +96,16 @@ pub trait IAuthPort: Send + Sync {
     /// 특정 type 의 모든 세션 일괄 삭제 — 갯수 반환.
     fn delete_sessions(&self, session_type: SessionType) -> usize;
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Log
+// ──────────────────────────────────────────────────────────────────────────
+
+/// ILogPort — 옛 TS 의 ILogPort 4 레벨 (info/warn/error/debug) Rust port.
+/// Core 매니저는 stdout/stderr 직접 사용 X. ILogPort 만 거침 (Hexagonal).
+pub trait ILogPort: Send + Sync {
+    fn info(&self, msg: &str);
+    fn warn(&self, msg: &str);
+    fn error(&self, msg: &str);
+    fn debug(&self, msg: &str);
+}

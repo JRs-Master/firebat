@@ -8,11 +8,17 @@ use std::sync::Arc;
 use tonic::transport::Server;
 
 use firebat_core::{
-    adapters::{auth::VaultAuthAdapter, storage::LocalStorageAdapter, vault::SqliteVaultAdapter},
-    managers::{auth::AuthManager, secret::SecretManager, template::TemplateManager},
-    ports::{IAuthPort, IStoragePort, IVaultPort},
+    adapters::{
+        auth::VaultAuthAdapter, log::ConsoleLogAdapter, storage::LocalStorageAdapter,
+        vault::SqliteVaultAdapter,
+    },
+    managers::{
+        auth::AuthManager, event::EventManager, secret::SecretManager, template::TemplateManager,
+    },
+    ports::{IAuthPort, ILogPort, IStoragePort, IVaultPort},
     proto::{
         auth_service_server::AuthServiceServer,
+        event_service_server::EventServiceServer,
         secret_service_server::SecretServiceServer,
         template_service_server::TemplateServiceServer,
     },
@@ -44,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // 어댑터 wiring
+    let logger: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
     let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(&workspace_root));
     let vault: Arc<dyn IVaultPort> = Arc::new(SqliteVaultAdapter::new(&vault_db_path)?);
     let auth_port: Arc<dyn IAuthPort> = Arc::new(VaultAuthAdapter::new(vault.clone()));
@@ -52,11 +59,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let template_manager = Arc::new(TemplateManager::new(storage.clone()));
     let secret_manager = Arc::new(SecretManager::new(vault.clone(), storage.clone()));
     let auth_manager = Arc::new(AuthManager::new(auth_port, vault.clone()));
+    let event_manager = Arc::new(EventManager::new(logger.clone()));
 
     // service impls
     let template_service = services::template::TemplateServiceImpl::new(template_manager);
     let secret_service = services::secret::SecretServiceImpl::new(secret_manager);
     let auth_service = services::auth::AuthServiceImpl::new(auth_manager);
+    let event_service = services::event::EventServiceImpl::new(event_manager);
 
     // graceful shutdown — Ctrl+C / SIGTERM
     let shutdown = async {
@@ -68,6 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(TemplateServiceServer::new(template_service))
         .add_service(SecretServiceServer::new(secret_service))
         .add_service(AuthServiceServer::new(auth_service))
+        .add_service(EventServiceServer::new(event_service))
         // Phase B 진행하며 추가:
         //   .add_service(PageServiceServer::new(...))
         //   .add_service(ScheduleServiceServer::new(...))
