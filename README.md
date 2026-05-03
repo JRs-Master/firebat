@@ -372,15 +372,55 @@ firebat/
 
 ---
 
-## Roadmap
+## Roadmap — v1.0 Final (single milestone, 2026-05-03 confirmed)
 
-| Phase | Description | Status |
+Old v0.1 → v1.0 RC → v1.x → v2.0 phase split is **deprecated**. Replaced with a single v1.0 Final milestone — **Rust Core + Next.js Frontend + two distributions (self-hosted Docker / self-installed Tauri)**.
+
+**Target architecture**:
+
+```
+Frontend  Next.js + React + 22 render_* components  (preserved from v0.1)
+                          ↓
+                callCore()  (lib/core-client.ts abstraction)
+                          ↓
+            ┌─────────────┴─────────────┐
+            ↓                            ↓
+  self-hosted (Docker)          self-installed (Tauri)
+  ─────────────────────         ─────────────────────
+  Rust Core binary              Rust Core (in-process embed)
+  + Next.js standalone          + Node sidecar (Next.js)
+  + nginx                       + LLM CLI auto-install
+  gRPC :50051                   Tauri command (direct)
+```
+
+**Why option 3 (Core-only Rust)** — concept / ops / stability / tech / maintenance evaluation (ROI-independent):
+- **Concept**: matches BIBLE's "Rust Core" vision; preserves the visual strength of 22 render_* components
+- **Stability**: Rust backend safety (memory / type / null / race) + 1-year polished React frontend
+- **Tech**: each layer's strongest libraries — backend (rusqlite / tokio / reqwest, all mature) + frontend (full React ecosystem)
+- **Maintenance**: backend / frontend evolve independently; one layer's limit doesn't impact the other
+
+**Phases**:
+
+| Phase | Scope | Duration |
 |---|---|---|
-| **v0.1** | Core + Infra + 17 Managers + MCP (server + client) + Scheduling + Pipeline (7 steps) + Vault + Multi-LLM (API + CLI) + Telegram bidirectional bot + StatusManager + DB migration runner | Done |
-| **v1.0** | 3-Tier Docker (EasyPanel) + Core / Next.js IPC split + initial setup wizard | Planned |
-| **v2.0** | Rust Core + gRPC + dynamic loading of system modules | Planned |
+| **0. Now** | Operate firebat.co.kr on the legacy v0.1 build. No big changes — fix-only mode. New use-cases (auto-trading / blogs) wait for Rust | ongoing |
+| **A. Design** | gRPC schema + `lib/core-client.ts` abstraction + Cargo workspace + Tauri config + dual-run framework | 1~2 weeks |
+| **B. Rust Core** | 17 adapters + 21 managers + gRPC server + frontend abstraction + dual-run validation. **Hardcoding audit at every conversion** — no 1:1 mapping, every special-case fix promoted to general logic | 3~4 months |
+| **C. self-hosted Docker** | Multi-stage Dockerfile (Rust binary + Next.js standalone) + docker-compose + nginx template | 1~2 weeks |
+| **D. self-installed Tauri** | src-tauri shell + first-run setup (auto-download Node / Python / LLM CLI into the Firebat folder, fully sandboxed) + auto-update pipeline (GitHub Actions → 3 OS builds → in-place update) | 1~2 weeks |
 
-> 🇰🇷 **로드맵** — v0.1(완료): Core + Infra + 17 매니저 + MCP(서버·클라이언트) + 스케줄링 + 파이프라인(7단계) + Vault + 멀티 LLM(API·CLI) + 텔레그램 양방향 봇 + StatusManager + DB 마이그레이션 runner. v1.0(예정): 3-Tier Docker(EasyPanel) + Core/Next.js IPC 분리 + 초기 위자드. v2.0(예정): Rust Core + gRPC + 시스템 모듈 동적 로드.
+**v1.0 Final release gate**:
+- Rust Core dual-run 1~2 weeks no-incident (results match the legacy Node Core)
+- self-hosted Docker compose verified (firebat.co.kr migrated)
+- self-installed verified on Windows / macOS / Linux
+- 1+ week of personal use on Rust without incidents
+- → new use-cases (auto-trading / blogs) start on top of Rust
+
+**Total duration**: ~4~5 months solo full-time / ~6~9 months part-time.
+
+**After v1.0 Final**: natural polished operation. v2.0+ is decided only when real-world friction surfaces (frontend static migration for 10MB Tauri / Vercel frontend distribution / Core AI fine-tuning / module packaging redesign).
+
+> 🇰🇷 **v1.0 Final 로드맵 (2026-05-03 확정)** — 옛 v1.0 RC / v1.x / v2.0 phase 분해 폐기. 단일 v1.0 Final milestone = Rust Core + Next.js Frontend + 두 distribution (self-hosted Docker / self-installed Tauri). Frontend 는 1년+ polished React 보존, Backend 만 Rust 전환. 옵션 3 선택 사유: 컨셉(BIBLE 일치) / 안정(Rust 안전 + React polished) / 기술(각 layer 최강 라이브러리) / 유지(독립 진화) 측면 압도적 best. Phase 0 (현재 운영 유지) → A (설계 1~2주) → B (Rust Core 3~4개월, hardcoding audit 동시) → C (Docker 1~2주) → D (Tauri + 자동 update 1~2주). 총 4~5개월. 출시 후 자동매매·블로그 등 새 use case 는 Rust 위에서 시작.
 
 ---
 

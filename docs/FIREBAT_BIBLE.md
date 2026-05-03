@@ -63,7 +63,7 @@ AI가 생성하는 결과물. `user/modules/`(사용자 모듈)과 `system/modul
 
 ### 제5항. Admin 관제탑
 관리자 콘솔(`/admin`)은 AI와 대화하고 시스템을 제어하는 인터페이스.
-v0.x에서는 Next.js 내부에 동거하며, v2.0에서 별도 컨테이너로 분리 예정.
+v0.1 에서는 Next.js 내부에 동거하며, v1.0 Final 에서 분리 — self-hosted 는 Docker compose 의 별 컨테이너 + gRPC IPC, self-installed 는 Tauri 안에 Rust Core in-process embed + Node sidecar 로 Next.js 띄움.
 
 ---
 
@@ -258,20 +258,51 @@ entity 1000+ 또는 fact 50000+ 누적 시점에 vector store 도입 검토 — 
 
 ---
 
-## 제12장: 로드맵
+## 제12장: 로드맵 — v1.0 Final (2026-05-03 확정)
 
-| 항목 | 현재 (v0.x) | 미래 (v2.0) |
+옛 v0.x → v1.0 RC → v1.x → v2.0 phase 분해 폐기. 단일 v1.0 Final milestone 으로 통합.
+
+**v1.0 Final 비전**: Rust Core + Next.js Frontend + 두 distribution (self-hosted Docker / self-installed Tauri).
+
+| 항목 | 현재 (v0.1) | v1.0 Final |
 |---|---|---|
-| 런타임 | Next.js 내 in-process | 3-Tier Docker (Core/Renderer/Admin) |
-| Core 언어 | TypeScript | Rust (gRPC/IPC 분리) |
-| JSON 검증 | Zod | Serde |
-| LLM | Config-driven 멀티 프로바이더. API 모드(OpenAI / Gemini AI Studio / Anthropic / Vertex AI) + CLI 구독 모드(Claude Code / Codex / Gemini CLI). 핸들러 8종: openai-responses / anthropic-messages / gemini-native / vertex-gemini / openai-chat / cli-claude-code / cli-codex / cli-gemini. 새 모델은 `infra/llm/configs/*.json` 추가만으로 확장. | 자체 파인튜닝 모델 + Core AI 삼위일체 |
-| 모듈 실행 | 자식 프로세스 + `__updateSecrets` 영속 (키 화이트리스트 검증) | 자식 프로세스 + WASM |
-| 어댑터 | `infra/` 내 하드코딩 | `system/modules/` 동적 로드 |
-| 내부 모니터링 | 미구현 | Core AI 피드백 루프 |
-| 미디어 | 미구현 | IMediaPort (S3/R2) |
-| 대화 히스토리 | SQLite `conversations` 테이블 + localStorage 이중 저장 (다기기 동기화) | 분산/클라우드 불필요 |
-| 인증 | IAuthPort + AuthManager (세션 토큰 + API 토큰 통합) | 동일 |
+| **런타임 (self-hosted)** | Next.js 내 in-process | Docker compose: Core / Renderer 2 컨테이너 + nginx (gRPC :50051) |
+| **런타임 (self-installed)** | 미존재 | Tauri shell + Rust Core in-process embed + Node sidecar (Next.js) + LLM CLI 첫 실행 자동 install (시스템 격리) |
+| **Frontend** | Next.js + React + 22 render_* | **동일 — 1년+ polished 보존** |
+| **Core 언어** | TypeScript | Rust (gRPC server + Tauri lib 두 build target) |
+| **JSON 검증** | Zod | Serde |
+| **LLM** | Config-driven 멀티 프로바이더. API 5종 (openai-responses / anthropic-messages / gemini-native / vertex-gemini / openai-chat) + CLI 3종 (cli-claude-code / cli-codex / cli-gemini). 새 모델 = JSON config 추가만 | 동일 패턴 Rust 재구현 (reqwest + tokio::process) |
+| **모듈 실행** | 자식 프로세스 + `__updateSecrets` 영속 | tokio::process::Command — 모듈 코드 0 변경 (Node / Python sysmod 그대로) |
+| **어댑터** | `infra/` 내 17개 어댑터 | `core/adapters/` 17개 — DB(rusqlite) / Cron(cron crate) / LLM(reqwest) / Image(image-rs) / Sandbox(tokio::process) |
+| **변환 룰** | — | **1:1 매핑 X**. 매 매니저 / 어댑터 변환 시 hardcoding audit (defensive regex / 도구명 enum / magic number / 개별 sanitize / 모델별 분기 / timezone hardcode / error message 매칭 7가지 패턴) — 일반 로직으로 정리 |
+| **인증** | IAuthPort + AuthManager (세션 토큰 + API 토큰 통합) | 동일 (Rust 재구현) |
+| **자동 update** | — | Tauri Updater + GitHub Actions (3 OS build) — git tag push 시 사용자 PC 자동 update |
+
+### Phase 분해
+
+| Phase | 작업 | 기간 |
+|---|---|---|
+| 0. 현재 | firebat.co.kr 옛 build 안정 운영. 큰 변경 X. 자동매매 / 블로그 등 새 use case 보류 — Rust 위에서 시작 | ongoing |
+| A. 설계 | gRPC schema + lib/core-client.ts abstraction + Cargo workspace + Tauri config + dual-run framework | 1~2주 |
+| B. Rust Core 구현 | 17 어댑터 + 21 매니저 + gRPC server + Frontend abstraction + dual-run 검증. **hardcoding audit 동시** | 3~4개월 |
+| C. self-hosted Docker | Multi-stage Dockerfile + docker-compose + nginx + Vault 마이그레이션 | 1~2주 |
+| D. self-installed Tauri | src-tauri shell + 첫 실행 setup (Node/Python/LLM CLI 자동 install, Firebat 폴더 격리) + 자동 update pipeline | 1~2주 |
+
+**v1.0 Final 출시 게이트**:
+- Rust Core dual-run 1~2주 무사고 (옛 Node 와 결과 일치)
+- self-hosted / self-installed 3 OS 동작 검증
+- 본인 사용 1주+ 무사고 (Rust 위)
+- → 자동매매 / 블로그 새 use case Rust 위에서 시작 가능
+
+총 4~5개월 (1인 full-time).
+
+### v1.0 Final 출시 후 (v2.0+)
+
+운영 데이터 위에서 진짜 한계 마찰 도달 시만 시작:
+- Frontend 정적 마이그레이션 (10MB Tauri)
+- Vercel frontend 분산 (지역 분산 도달 시)
+- Core AI 파인튜닝 (삼위일체 AI 자기진화)
+- 모듈 패키징 개편 / 시스템 모듈 동적 로드
 
 ---
 

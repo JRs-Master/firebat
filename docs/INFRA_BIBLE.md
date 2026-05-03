@@ -218,20 +218,55 @@ Entity / Episodic 어댑터는 `database.db` (raw SQLite Database) + Embedder + 
 
 ---
 
-## 제5장: 마이그레이션 로드맵 (v2.0)
+## 제5장: 마이그레이션 로드맵 — v1.0 Final (2026-05-03 확정)
 
-현재 `infra/` 내에 직접 존재하는 어댑터를 `system/modules/`로 이전 예정.
+옛 v2.0 의 "infra → system/modules 동적 로드" 노선 폐기. 단일 v1.0 Final milestone 으로 통합 — Rust Core 의 단일 binary 안에 17 어댑터 정적 컴파일.
 
-| 현재 위치 | 마이그레이션 대상 |
-|---|---|
-| `infra/storage/` | `system/modules/local-storage/` |
-| `infra/llm/` | `system/modules/vertex-llm/` |
-| `infra/sandbox/` | `system/modules/process-sandbox/` |
-| `infra/log/` | `system/modules/file-logger/` |
-| `infra/network/` | `system/modules/fetch-network/` |
-| `infra/cron/` | `system/modules/node-cron/` |
-| `infra/database/` | `system/modules/sqlite-db/` |
-| `infra/storage/vault-adapter.ts` | `system/modules/sqlite-vault/` |
-| `infra/mcp-client/` | `system/modules/mcp-client/` |
+### v1.0 Final 의 인프라 변환
 
-마이그레이션 완료 후 `infra/`에는 부트 로더(`boot.ts`)와 설정(`config.ts`)만 남는다.
+| 옛 위치 (TS) | 새 위치 (Rust) | 핵심 crate |
+|---|---|---|
+| `infra/storage/index.ts` | `core/adapters/storage.rs` | `tokio::fs` + path containment |
+| `infra/storage/vault-adapter.ts` | `core/adapters/vault.rs` | `rusqlite` (격리 DB) |
+| `infra/database/index.ts` | `core/adapters/database.rs` | `rusqlite` (WAL + 트랜잭션) |
+| `infra/cron/index.ts` | `core/adapters/cron.rs` | `cron` crate + `tokio::time` |
+| `infra/sandbox/index.ts` | `core/adapters/sandbox.rs` | `tokio::process::Command` (sysmod 코드 0 변경) |
+| `infra/llm/*` | `core/adapters/llm/*` | `reqwest` (API 5종) + `tokio::process` (CLI 3종) |
+| `infra/image/*` | `core/adapters/image/*` | `image-rs` / `fast_image_resize` / blurhash |
+| `infra/mcp-client/index.ts` | `core/adapters/mcp_client.rs` | `rmcp` 또는 직접 구현 |
+| `infra/auth/index.ts` | `core/adapters/auth.rs` | rusqlite + 세션·API 토큰 통합 |
+| `infra/embedder/*` | `core/adapters/embedder.rs` | reqwest + 모델별 strategy |
+| `infra/log/index.ts` | `core/adapters/log.rs` | `tracing` + 파일/JSONL 분리 |
+| `infra/network/index.ts` | `core/adapters/network.rs` | reqwest |
+
+### 변환 핵심 룰 (CLAUDE.md 와 동일)
+
+매 어댑터 변환 시 **1:1 매핑 X**, hardcoding audit 후 일반 로직으로 정리:
+- Defensive regex / 도구명 enum / magic number / 개별 sanitize / 모델별 분기 / timezone hardcode / error message 매칭 7가지 패턴
+- 옛 TS 의 1년+ polished fix 들의 root cause 식별 → Rust 에서 일반 로직으로 작성
+
+### 두 build target (단일 codebase)
+
+```toml
+# core/Cargo.toml
+[lib]      # self-installed 용 — Tauri 안에 in-process embed
+[[bin]]    # self-hosted 용 — gRPC server 단일 binary
+name = "firebat-core"
+```
+
+### Sandbox 의 sysmod 호환
+
+Rust Sandbox adapter 가 Node / Python sysmod 을 절대 경로로 spawn — sysmod 코드 0 변경:
+```rust
+let node_bin = data_dir.join("runtime/node/bin/node");
+let python_bin = data_dir.join("runtime/python/bin/python3");
+tokio::process::Command::new(node_bin).arg(module_entry).spawn()
+```
+
+self-installed 의 첫 실행 setup 이 Node / Python runtime 을 Firebat 폴더 안에 자동 download (시스템 격리). LLM CLI 도 같은 패턴.
+
+### v1.0 Final 출시 후 (v2.0+)
+
+운영 데이터 위에서 진짜 한계 마찰 도달 시만:
+- 시스템 모듈 동적 로드 (`system/modules/` 로 일부 어댑터 이전 — 사용자가 어댑터 갈아끼기)
+- 새 인프라 (Webhook / Memory / Metrics — Notification 은 sysmod_telegram 으로 대체됨)
