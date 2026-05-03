@@ -49,6 +49,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"]
 uuid = { version = "1", features = ["v4"] }
 # Phase B-18 Step 1.5 박힘 — ConversationManager 의 sha1(version:text) cache 무효화 키 + hex 인코딩
 sha1 = "0.10"
+# AiManager A8 박힘 — tool_cache 의 cache key (옛 TS lib/tool-cache.ts 의 sha256 1:1 port)
+sha2 = "0.10"
 hex = "0.4"
 # Phase B-18 Step 2b 박힘 — 이미지 후처리 (옛 TS sharp 1:1 port)
 # image = decode/encode (png/jpeg/webp/gif/bmp/ico — default features 로 충분)

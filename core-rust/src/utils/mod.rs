@@ -5,3 +5,4 @@ pub mod condition;
 pub mod pipeline_resolver;
 pub mod sanitize;
 pub mod render_map;
+pub mod tool_cache;
