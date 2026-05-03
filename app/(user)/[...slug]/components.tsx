@@ -66,7 +66,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'List':          return <ListComp items={p.items ?? []} ordered={p.ordered} />;
     case 'Carousel':      return <CarouselComp children={p.children ?? []} autoPlay={p.autoPlay} interval={p.interval} />;
     case 'Countdown':     return <CountdownComp targetDate={p.targetDate ?? ''} label={p.label} />;
-    case 'Chart':         return <ChartComp type={p.chartType ?? 'bar'} data={p.data ?? []} labels={p.labels ?? []} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} negColor={p.negColor} palette={p.palette} showValues={p.showValues} showPct={p.showPct} />;
+    case 'Chart':         return <ChartComp type={p.chartType ?? 'bar'} data={p.data ?? []} labels={p.labels ?? []} series={p.series} title={p.title} subtitle={p.subtitle} unit={p.unit} color={p.color} negColor={p.negColor} palette={p.palette} showValues={p.showValues} showPct={p.showPct} />;
     case 'StockChart':    return <StockChart symbol={p.symbol ?? ''} title={p.title} data={p.data ?? []} indicators={p.indicators} buyPoints={p.buyPoints} sellPoints={p.sellPoints} />;
     case 'Metric':        return <MetricComp label={p.label ?? ''} value={p.value ?? ''} unit={p.unit} delta={p.delta} deltaType={p.deltaType} subLabel={p.subLabel} icon={p.icon} link={p.link} align={p.align} labelAlign={p.labelAlign} valueAlign={p.valueAlign} deltaAlign={p.deltaAlign} subLabelAlign={p.subLabelAlign} />;
     case 'Timeline':      return <TimelineComp items={p.items ?? []} />;
@@ -1109,10 +1109,33 @@ const PALETTE_MAP: Record<string, string[]> = {
   earth:        ['#b45309', '#166534', '#d97706', '#78350f', '#65a30d', '#f59e0b'],
 };
 
-function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, negColor, palette, showValues = true, showPct = true }: {
+/** Chart series — multi-series line chart 지원 위해 정규화된 형태.
+ *  AI 는 3가지 입력 받음: number[] (single) / { [name]: number[] } (multi 객체) / Series[] (multi 명시 array).
+ *  ChartComp 가 모두 동일 series 배열로 변환 후 처리. */
+type ChartSeries = { name: string; values: number[]; color?: string };
+
+/** data 입력 (3가지 형태) → 정규화된 series 배열 */
+function normalizeChartData(
+  data: number[] | Record<string, number[]> | unknown,
+  explicitSeries?: ChartSeries[]
+): ChartSeries[] {
+  if (Array.isArray(explicitSeries) && explicitSeries.length > 0) return explicitSeries;
+  if (Array.isArray(data)) return [{ name: '', values: data as number[] }];
+  if (data && typeof data === 'object') {
+    return Object.entries(data as Record<string, unknown>)
+      .filter(([, v]) => Array.isArray(v))
+      .map(([name, values]) => ({ name, values: values as number[] }));
+  }
+  return [];
+}
+
+function ChartComp({ type = 'bar', data, labels, series: seriesProp, title, subtitle, unit, color, negColor, palette, showValues = true, showPct = true }: {
   type: 'bar' | 'pie' | 'line' | 'doughnut';
-  data: number[];
+  /** 단일 series: number[] / 다중 series: { [name]: number[] }. 둘 다 받아 자동 정규화. */
+  data: number[] | Record<string, number[]>;
   labels: string[];
+  /** 명시적 multi-series array — color 같이 박을 때 사용. 미지정 시 data 에서 자동 derive. */
+  series?: ChartSeries[];
   title?: string;
   subtitle?: string;
   unit?: string;
@@ -1126,15 +1149,26 @@ function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, n
   /** pie/doughnut tooltip 에 자동 계산 pct 표시 여부 (기본 true). data 자체가 이미 퍼센트면 false 권장. */
   showPct?: boolean;
 }) {
-  if (data.length === 0) return null;
-  const maxVal = Math.max(...data, 1);
-  const minVal = Math.min(...data, 0);
+  const series = normalizeChartData(data, seriesProp);
+  if (series.length === 0 || series.every(s => s.values.length === 0)) return null;
+  // 모든 series 의 모든 값 평탄화 — maxVal / minVal 계산용
+  const flatData = series.flatMap(s => s.values);
+  if (flatData.length === 0) return null;
+  const maxVal = Math.max(...flatData, 1);
+  const minVal = Math.min(...flatData, 0);
+  // 단일 series 의 첫 series.values — bar/pie/doughnut 등 single-series chart 에서 사용
+  const firstSeriesData = series[0].values;
 
-  // line chart
+  // line chart — multi-series 자연 지원
   if (type === 'line') {
-    return <LineChartInteractive data={data} labels={labels} title={title} unit={unit} minVal={minVal} maxVal={maxVal} />;
+    return <LineChartInteractive series={series} labels={labels} title={title} unit={unit} minVal={minVal} maxVal={maxVal} palette={palette} />;
   }
-
+  // bar/pie/doughnut — 현재 single-series 만 지원. multi 시 첫 series 사용 + 콘솔 경고.
+  if (series.length > 1) {
+    console.warn(`[ChartComp] type='${type}' 는 single-series 만 지원 — 첫 series('${series[0].name}') 만 표시. multi-series 시 type='line' 권장.`);
+  }
+  // bar/pie/doughnut 는 single-series chart — series[0].values 만 사용 (multi 시 console.warn 박힘).
+  // 변수명 firstSeriesData 그대로 활용해 의미 명확.
   const barColor = (color && COLOR_MAP[color]) ? COLOR_MAP[color].bar : 'bg-blue-500';
   // 음수 막대 색 — default 빨강 (글로벌 자산 차트). 한국 수급 차트는 AI 가 negColor='blue' 명시.
   const negBarColor = (negColor && COLOR_MAP[negColor]) ? COLOR_MAP[negColor].bar : 'bg-red-500';
@@ -1152,9 +1186,9 @@ function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, n
   );
 
   if (type === 'pie' || type === 'doughnut') {
-    const total = data.reduce((s, v) => s + v, 0) || 1;
+    const total = firstSeriesData.reduce((s, v) => s + v, 0) || 1;
     // 세그먼트 정보 사전 계산 — 호버 툴팁용
-    const segments = data.map((v, i) => {
+    const segments = firstSeriesData.map((v, i) => {
       const pct = (v / total) * 100;
       return { label: labels[i] ?? `#${i}`, value: v, pct, color: pieColors[i % pieColors.length] };
     });
@@ -1168,12 +1202,15 @@ function ChartComp({ type = 'bar', data, labels, title, subtitle, unit, color, n
     return <PieChartInteractive segments={segments} gradient={gradient} titleBlock={titleBlock} unit={unit} showPct={showPct} />;
   }
 
-  // bar / line chart — hover 상세 툴팁 포함
-  return <BarChartInteractive data={data} labels={labels} titleBlock={titleBlock} unit={unit} showValues={showValues} barColor={barColor} negBarColor={negBarColor} maxVal={maxVal} fmtVal={fmtVal} type={type} />;
+  // bar chart — single-series 만 (firstSeriesData 사용).
+  return <BarChartInteractive data={firstSeriesData} labels={labels} titleBlock={titleBlock} unit={unit} showValues={showValues} barColor={barColor} negBarColor={negBarColor} maxVal={maxVal} fmtVal={fmtVal} type={type} />;
 }
 
-function LineChartInteractive({ data, labels, title, unit, minVal, maxVal }: {
-  data: number[]; labels: string[]; title?: string; unit?: string; minVal: number; maxVal: number;
+/** Multi-series line chart — series 1개일 때 single line + area gradient (기존 동작 보존),
+ *  2개 이상일 때 각 series 별 path + 색 (palette) + legend + hover tooltip 에 모든 series 값 표시.
+ *  area gradient 는 single 일 때만 (multi 시 겹쳐 가독성 저하). */
+function LineChartInteractive({ series, labels, title, unit, minVal, maxVal, palette }: {
+  series: ChartSeries[]; labels: string[]; title?: string; unit?: string; minVal: number; maxVal: number; palette?: string;
 }) {
   const [hovered, setHovered] = React.useState<number | null>(null);
   const [cursorPos, setCursorPos] = React.useState<{ x: number; y: number } | null>(null);
@@ -1183,16 +1220,27 @@ function LineChartInteractive({ data, labels, title, unit, minVal, maxVal }: {
   const range = maxVal - minVal || 1;
   const yMin = minVal - range * 0.05;
   const yMax = maxVal + range * 0.05;
-  const xs = data.map((_, i) => padL + (data.length <= 1 ? 0 : (i / (data.length - 1)) * plotW));
-  const ys = data.map(v => padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH);
-  const path = xs.map((x, i) => `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
-  const area = `${path} L ${xs[xs.length - 1].toFixed(1)},${padT + plotH} L ${xs[0].toFixed(1)},${padT + plotH} Z`;
+  // x-축 길이 — 모든 series 공유. 가장 긴 series 의 length 사용 (짧은 series 는 그 길이까지만 그림).
+  const xLen = Math.max(...series.map(s => s.values.length), 1);
+  const xs = Array.from({ length: xLen }, (_, i) => padL + (xLen <= 1 ? 0 : (i / (xLen - 1)) * plotW));
+  // series 별 ys + path 계산
+  const seriesPalette = PALETTE_MAP[palette ?? 'default'] ?? PALETTE_MAP.default;
+  const seriesPaths = series.map((s, si) => {
+    const color = s.color ?? seriesPalette[si % seriesPalette.length];
+    const ys = s.values.map(v => padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH);
+    const path = ys.map((y, i) => `${i === 0 ? 'M' : 'L'} ${xs[i].toFixed(1)},${y.toFixed(1)}`).join(' ');
+    const area = ys.length > 0
+      ? `${path} L ${xs[ys.length - 1].toFixed(1)},${padT + plotH} L ${xs[0].toFixed(1)},${padT + plotH} Z`
+      : '';
+    return { name: s.name, values: s.values, ys, path, area, color };
+  });
+  const isMulti = series.length > 1;
   const ticks = 4;
   const yTicks = Array.from({ length: ticks + 1 }, (_, i) => yMin + (yMax - yMin) * (i / ticks));
-  const xStep = Math.max(1, Math.floor(data.length / 6));
+  const xStep = Math.max(1, Math.floor(xLen / 6));
   const containerRef = React.useRef<HTMLDivElement>(null);
 
-  // 가장 가까운 데이터 포인트 찾기 (SVG viewBox 좌표계 기준)
+  // 가장 가까운 x index 찾기 (SVG viewBox 좌표계 기준)
   const handleMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
@@ -1209,6 +1257,17 @@ function LineChartInteractive({ data, labels, title, unit, minVal, maxVal }: {
   return (
     <div className="space-y-2">
       {title && <div className="text-sm font-bold text-gray-800">{title}</div>}
+      {/* legend — multi-series 일 때만 노출 */}
+      {isMulti && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+          {seriesPaths.map((sp, i) => (
+            <div key={i} className="flex items-center gap-1">
+              <span className="inline-block w-3 h-0.5" style={{ background: sp.color }} />
+              <span className="text-gray-600">{sp.name || `시리즈 ${i + 1}`}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <div
         ref={containerRef}
         className="relative"
@@ -1217,10 +1276,13 @@ function LineChartInteractive({ data, labels, title, unit, minVal, maxVal }: {
       >
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto block">
           <defs>
-            <linearGradient id="line-grad" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
-              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
-            </linearGradient>
+            {/* single series 전용 area gradient — multi 시 겹쳐 가독성 저하라 path/circle 만 사용 */}
+            {!isMulti && seriesPaths[0] && (
+              <linearGradient id="line-grad-single" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor={seriesPaths[0].color} stopOpacity="0.25" />
+                <stop offset="100%" stopColor={seriesPaths[0].color} stopOpacity="0" />
+              </linearGradient>
+            )}
           </defs>
           {yTicks.map((t, i) => {
             const y = padT + plotH - (i / ticks) * plotH;
@@ -1231,10 +1293,17 @@ function LineChartInteractive({ data, labels, title, unit, minVal, maxVal }: {
               </g>
             );
           })}
-          <path d={area} fill="url(#line-grad)" />
-          <path d={path} fill="none" stroke="#3b82f6" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-          {xs.map((x, i) => <circle key={i} cx={x} cy={ys[i]} r={hovered === i ? 5 : 3} fill="#3b82f6" />)}
-          {data.map((_, i) => i % xStep === 0 || i === data.length - 1 ? (
+          {/* single 일 때 area + path, multi 일 때 각 series 의 path 만 (겹침 방지) */}
+          {!isMulti && seriesPaths[0] && (
+            <path d={seriesPaths[0].area} fill="url(#line-grad-single)" />
+          )}
+          {seriesPaths.map((sp, si) => (
+            <g key={si}>
+              <path d={sp.path} fill="none" stroke={sp.color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+              {sp.ys.map((y, i) => <circle key={i} cx={xs[i]} cy={y} r={hovered === i ? 5 : 3} fill={sp.color} />)}
+            </g>
+          ))}
+          {labels.map((_, i) => i % xStep === 0 || i === xLen - 1 ? (
             <text key={i} x={xs[i]} y={H - 8} fill="#94a3b8" fontSize="10" textAnchor="middle">{labels[i] ?? i}</text>
           ) : null)}
         </svg>
@@ -1243,10 +1312,23 @@ function LineChartInteractive({ data, labels, title, unit, minVal, maxVal }: {
             className="absolute pointer-events-none bg-white/95 shadow-lg rounded-lg px-3 py-2 text-center border border-slate-200 z-10"
             style={{ left: cursorPos.x + 14, top: cursorPos.y + 14 }}
           >
-            <div className="text-[11px] font-bold text-slate-800 whitespace-nowrap">{labels[hovered] ?? hovered}</div>
-            <div className="text-[14px] font-extrabold text-slate-900">
-              {data[hovered].toLocaleString('ko-KR')}{unit || ''}
-            </div>
+            <div className="text-[11px] font-bold text-slate-800 whitespace-nowrap mb-0.5">{labels[hovered] ?? hovered}</div>
+            {/* multi-series 시 각 series 별 값 list, single 시 단일 큰 텍스트 */}
+            {isMulti ? (
+              <div className="space-y-0.5 text-left">
+                {seriesPaths.map((sp, si) => sp.values[hovered] !== undefined ? (
+                  <div key={si} className="flex items-center gap-1.5 text-[12px]">
+                    <span className="inline-block w-2 h-2 rounded-sm" style={{ background: sp.color }} />
+                    <span className="text-gray-600">{sp.name || `시리즈 ${si + 1}`}</span>
+                    <span className="font-extrabold text-slate-900 ml-auto">{sp.values[hovered].toLocaleString('ko-KR')}{unit || ''}</span>
+                  </div>
+                ) : null)}
+              </div>
+            ) : (
+              <div className="text-[14px] font-extrabold text-slate-900">
+                {seriesPaths[0]?.values[hovered]?.toLocaleString('ko-KR')}{unit || ''}
+              </div>
+            )}
           </div>
         )}
       </div>
