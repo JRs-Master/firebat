@@ -17,6 +17,7 @@ pub mod services;
 pub mod vault_keys;
 pub mod capabilities;
 pub mod utils;
+pub mod tool_registry;
 
 /// Generated proto module — tonic-build (build.rs) 가 자동 생성.
 /// 21 매니저 + cross-cutting 의 service trait + client stub + message struct 포함.

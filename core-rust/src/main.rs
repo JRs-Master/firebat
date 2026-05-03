@@ -166,6 +166,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         logger.clone(),
     ));
 
+    // Phase B-17a — 정적 도구 dispatch 등록 (10 도구). LLM stub 위에서도 도구 호출 e2e 동작.
+    firebat_core::tool_registry::register_core_tools(
+        &tool_manager,
+        firebat_core::tool_registry::CoreToolHandlers {
+            page: page_manager.clone(),
+            schedule: schedule_manager.clone(),
+            media: media_manager.clone(),
+            conversation: conversation_manager.clone(),
+            storage: storage.clone(),
+        },
+    );
+
     // 부팅 시 영속 잡 복원 (cron / once 만 — delay 잡은 시각 부재로 복원 불가)
     schedule_manager.restore().await;
 

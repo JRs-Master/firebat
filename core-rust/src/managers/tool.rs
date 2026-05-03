@@ -22,6 +22,20 @@ pub type ToolHandler = Arc<
         + Sync,
 >;
 
+/// 도구 핸들러 빌드 헬퍼 — async closure 의 dyn Future cast 자동 처리.
+/// `make_handler(|args| async move { ... })` 형태로 사용. closure 시그니처 명시 안 해도 됨.
+pub fn make_handler<F, Fut>(f: F) -> ToolHandler
+where
+    F: Fn(serde_json::Value) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = InfraResult<serde_json::Value>> + Send + 'static,
+{
+    Arc::new(move |args: serde_json::Value| {
+        let fut = f(args);
+        Box::pin(fut)
+            as Pin<Box<dyn Future<Output = InfraResult<serde_json::Value>> + Send>>
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolDefinition {
     pub name: String,
