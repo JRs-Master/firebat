@@ -236,6 +236,7 @@ async fn main() -> Result<()> {
             consolidation: consolidation_manager.clone(),
             module: module_manager.clone(),
             mcp: mcp_manager.clone(),
+            event: event_manager.clone(),
         },
     );
 
@@ -278,6 +279,7 @@ async fn main() -> Result<()> {
                 log: logger.clone(),
                 episodic: episodic_manager.clone(),
                 status: status_manager.clone(),
+                event: event_manager.clone(),
             },
         ),
     );

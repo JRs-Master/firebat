@@ -12,6 +12,7 @@ use std::sync::Arc;
 use crate::adapters::cron::TokioCronAdapter;
 use crate::managers::ai::AiManager;
 use crate::managers::episodic::EpisodicManager;
+use crate::managers::event::EventManager;
 use crate::managers::status::StatusManager;
 use crate::managers::task::{PipelineStep, TaskManager};
 use crate::managers::tool::ToolManager;
@@ -39,6 +40,8 @@ pub struct ScheduleHooks {
     pub episodic: Arc<EpisodicManager>,
     /// StatusManager — cron job 가시화 (옛 TS core/index.ts:1368 statusMgr.start/done/error 패턴).
     pub status: Arc<StatusManager>,
+    /// EventManager — cron 완료 SSE 발행 (옛 TS core/index.ts:1384 notifyCronComplete 패턴).
+    pub event: Arc<EventManager>,
 }
 
 pub struct ScheduleManager {
@@ -286,6 +289,22 @@ impl ScheduleManager {
                         .unwrap_or_else(|| "Cron 실행 실패".to_string()),
                 );
             }
+        }
+
+        // 7. AI 미개입 자동 hook 3: cron:complete SSE 발행 (옛 TS core/index.ts:1384 1:1).
+        // 어드민 클라이언트의 CronPanel + Sidebar 가 SSE 받아 실시간 갱신.
+        if let Some(hooks) = &self.hooks {
+            let mut meta = serde_json::Map::new();
+            meta.insert("jobId".into(), serde_json::Value::String(info.job_id.clone()));
+            meta.insert("success".into(), serde_json::Value::Bool(final_result.success));
+            meta.insert(
+                "durationMs".into(),
+                serde_json::Value::from(final_result.duration_ms),
+            );
+            if let Some(err) = &final_result.error {
+                meta.insert("error".into(), serde_json::Value::String(err.clone()));
+            }
+            hooks.event.notify_cron_complete(serde_json::Value::Object(meta));
         }
 
         final_result

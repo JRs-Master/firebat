@@ -14,6 +14,7 @@ use crate::managers::consolidation::ConsolidationManager;
 use crate::managers::conversation::ConversationManager;
 use crate::managers::entity::EntityManager;
 use crate::managers::episodic::EpisodicManager;
+use crate::managers::event::EventManager;
 use crate::managers::mcp::McpManager;
 use crate::managers::media::MediaManager;
 use crate::managers::module::ModuleManager;
@@ -37,6 +38,9 @@ pub struct CoreToolHandlers {
     pub consolidation: Arc<ConsolidationManager>,
     pub module: Arc<ModuleManager>,
     pub mcp: Arc<McpManager>,
+    /// SSE 알림 — save_page / delete_page / save_module 등 사이드바 갱신 자동 발행
+    /// (옛 TS core/index.ts:734+ notifySidebar 패턴 1:1).
+    pub event: Arc<EventManager>,
 }
 
 /// 정적 도구 N개 등록. ToolManager.register (메타) + register_handler (closure).
@@ -110,10 +114,12 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         source: "core".to_string(),
     });
     let page = h.page.clone();
+    let event_for_delete_page = h.event.clone();
     tools.register_handler(
         "delete_page",
         make_handler(move |args| {
             let page = page.clone();
+            let event = event_for_delete_page.clone();
             async move {
                 let slug = args
                     .get("slug")
@@ -121,6 +127,8 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     .ok_or_else(|| "slug 누락".to_string())?
                     .to_string();
                 page.delete(&slug)?;
+                // AI 미개입 자동 hook — 사이드바 SSE 갱신 (옛 TS notifySidebar 패턴).
+                event.notify_sidebar();
                 Ok(serde_json::json!({"deleted": slug}))
             }
         }),
@@ -148,11 +156,13 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     });
     let page = h.page.clone();
     let episodic_for_page = h.episodic.clone();
+    let event_for_save_page = h.event.clone();
     tools.register_handler(
         "save_page",
         make_handler(move |args| {
             let page = page.clone();
             let episodic = episodic_for_page.clone();
+            let event = event_for_save_page.clone();
             async move {
                 let slug = args
                     .get("slug")
@@ -173,7 +183,7 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let password = args.get("password").and_then(|v| v.as_str());
                 page.save(&slug, &spec_str, status, project, visibility, password)?;
 
-                // AI 미개입 자동 hook — page_publish event 박음. 실패 시 silent (저장 자체는 성공).
+                // AI 미개입 자동 hook 1: page_publish event 박음. silent fail (page save 성공 보장).
                 if status == "published" {
                     let _ = episodic.save_event(crate::ports::SaveEventInput {
                         event_type: "page_publish".to_string(),
@@ -182,6 +192,8 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         ..Default::default()
                     });
                 }
+                // AI 미개입 자동 hook 2: 사이드바 SSE 갱신 (옛 TS core/index.ts:858 notifySidebar).
+                event.notify_sidebar();
                 Ok(serde_json::json!({"slug": slug, "saved": true}))
             }
         }),
@@ -1058,6 +1070,9 @@ mod tests {
         )
         .unwrap();
         let schedule_mgr = Arc::new(ScheduleManager::new(cron));
+        let log: Arc<dyn crate::ports::ILogPort> =
+            Arc::new(crate::adapters::log::ConsoleLogAdapter::new());
+        let event_mgr = Arc::new(EventManager::new(log));
 
         let tools = Arc::new(ToolManager::new());
         register_core_tools(
@@ -1073,6 +1088,7 @@ mod tests {
                 consolidation: consolidation_mgr,
                 module: module_mgr,
                 mcp: mcp_mgr,
+                event: event_mgr,
             },
         );
         (tools, dir)
