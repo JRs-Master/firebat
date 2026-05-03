@@ -4,3 +4,4 @@
 //! 변환 (Phase B 단계). 이후 매니저별 typed message 박힐 때 generated stub 직접 활용.
 
 pub mod template;
+pub mod secret;

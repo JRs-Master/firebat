@@ -38,3 +38,15 @@ pub trait IStoragePort: Send + Sync {
     /// 파일 존재 여부.
     async fn exists(&self, path: &str) -> bool;
 }
+
+/// IVaultPort — 시크릿 저장. SQLite key/value (옛 TS 의 VaultAdapter Rust 재구현).
+///
+/// Throw 안 함 (BIBLE 의 Infra throw 금지). 실패 시 false / None 반환.
+/// 동기 인터페이스 — rusqlite 가 sync, async wrapping 비용보다 직접 호출이 효율.
+pub trait IVaultPort: Send + Sync {
+    fn get_secret(&self, key: &str) -> Option<String>;
+    fn set_secret(&self, key: &str, value: &str) -> bool;
+    fn delete_secret(&self, key: &str) -> bool;
+    fn list_keys(&self) -> Vec<String>;
+    fn list_keys_by_prefix(&self, prefix: &str) -> Vec<String>;
+}

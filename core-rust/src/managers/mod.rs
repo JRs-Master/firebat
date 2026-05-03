@@ -3,3 +3,4 @@
 //! 매니저는 ports.rs 의 trait 만 의존. 실 I/O 는 adapters/ 가 담당.
 
 pub mod template;
+pub mod secret;

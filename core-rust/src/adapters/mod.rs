@@ -3,3 +3,4 @@
 //! Phase B 진행하며 17 어댑터 박힘.
 
 pub mod storage;
+pub mod vault;
