@@ -14,7 +14,7 @@ use firebat_core::{
         auth::VaultAuthAdapter, cron::TokioCronAdapter, database::SqliteDatabaseAdapter,
         embedder::{E5LocalEmbedderAdapter, StubEmbedderAdapter},
         image_gen::StubImageGenAdapter,
-        image_processor::StubImageProcessorAdapter,
+        image_processor::{ImageRsProcessorAdapter, StubImageProcessorAdapter},
         mcp_client::McpClientFileAdapter, media::LocalMediaAdapter,
         memory::SqliteMemoryAdapter, sandbox::ProcessSandboxAdapter,
         storage::LocalStorageAdapter, tracing_log::{init_tracing, TracingLogAdapter},
@@ -181,13 +181,26 @@ async fn main() -> Result<()> {
     .context("Cron 어댑터 초기화 실패")?;
     let media: Arc<dyn IMediaPort> = Arc::new(LocalMediaAdapter::new(&workspace_root));
 
-    // Phase B-18 Step 2a — IImageProcessorPort + IImageGenPort backbone (Stub).
-    // Step 2b 박힐 어댑터:
-    //   - ImageRsProcessorAdapter (image-rs + fast_image_resize + blurhash crate) — 옛 TS sharp 1:1 port
-    //   - ConfigDrivenImageGenAdapter (4 format handler — openai-image / gemini-native-image /
-    //     cli-codex-image) — 옛 TS infra/image/ ConfigDrivenAdapter 1:1 port
+    // Phase B-18 Step 2 — IImageProcessorPort + IImageGenPort.
+    // env `FIREBAT_IMAGE_PROCESSOR`:
+    //   - `image-rs` (default 권장) — image-rs + fast_image_resize + blurhash crate. 옛 TS sharp 1:1.
+    //   - `stub` — 단위 테스트 용 no-op (1x1 grey PNG / no-op resize).
+    // env `FIREBAT_IMAGE_GEN`:
+    //   - `stub` (default — Step 2c 박힐 ConfigDrivenImageGenAdapter 박히기 전 placeholder)
+    //   - Step 2c 박힐 어댑터: ConfigDrivenImageGenAdapter (4 format — openai/gemini/codex CLI)
     // 어댑터 swap 시 매니저 / tool_registry 코드 변경 0건 (인터페이스 동일).
-    let _image_processor: Arc<dyn IImageProcessorPort> = Arc::new(StubImageProcessorAdapter::new());
+    let processor_kind = std::env::var("FIREBAT_IMAGE_PROCESSOR")
+        .unwrap_or_else(|_| "image-rs".to_string());
+    let _image_processor: Arc<dyn IImageProcessorPort> = match processor_kind.as_str() {
+        "stub" => {
+            tracing::info!("Image processor: stub (no-op, 단위 테스트 용)");
+            Arc::new(StubImageProcessorAdapter::new())
+        }
+        _ => {
+            tracing::info!("Image processor: image-rs (variants/blurhash/placeholder 활성)");
+            Arc::new(ImageRsProcessorAdapter::new())
+        }
+    };
     let _image_gen: Arc<dyn IImageGenPort> = Arc::new(StubImageGenAdapter::new());
     // Phase B-17 — ConfigDrivenAdapter. 8 format (5 API + 3 CLI) 핸들러 박힘.
     // 모델 carousel: builtin 8개 + system/llm/configs/*.json 자동 로드 (사용자 모델 추가).

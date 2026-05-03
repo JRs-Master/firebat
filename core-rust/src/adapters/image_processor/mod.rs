@@ -9,5 +9,7 @@
 //! 향후 어댑터 추가 시 같은 패턴 — 파일 추가 + IImageProcessorPort impl + main.rs env 매칭.
 
 pub mod stub;
+pub mod image_rs;
 
 pub use stub::StubImageProcessorAdapter;
+pub use image_rs::ImageRsProcessorAdapter;
