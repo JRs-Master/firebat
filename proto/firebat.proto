@@ -1,18 +1,20 @@
-// Firebat Core gRPC schema (v1.0 Final Phase A 초안).
+// Firebat Core gRPC schema (v1.0 Final Phase A — skeleton + service 분리).
 //
-// Phase A: skeleton 만 박음 (5개 sample 메서드 + Empty / Error / 공통 타입).
-// Phase B: 21 매니저 + 17 어댑터 의 모든 RPC 박음. 자동 생성 (tonic-build).
+// Phase A: 21 매니저 + cross-cutting service skeleton 박음. RPC list 정의.
+//          message body 는 JsonValue 단일화 — Phase B 에서 매니저별 typed message 로 점진 변환.
+// Phase B: 각 매니저 Rust 구현하면서 typed request/response 박음.
 //
 // 사용 path:
-//  - Rust Core: tonic-build 가 이 .proto 컴파일 → src/proto/ 자동 생성
-//  - TS client (lib/core-client.ts 의 'rust' backend): @grpc/grpc-js + protoc-gen-ts 로 컴파일
+//  - Rust Core: tonic-build (build.rs) 가 .proto 컴파일 → src/proto/ 자동 생성
+//  - TS client (lib/core-client.ts 의 'rust' backend): @grpc/grpc-js + protoc-gen-ts
 //
-// Phase B 시작 시 매니저별 service 추가:
-//   - service AiService    (process / requestActionWithTools / askLlmText / ...)
-//   - service PageService  (savePage / getPage / listPages / deletePage)
-//   - service ProjectService / ModuleService / TaskService / ScheduleService / ...
-//   - service AuthService / VaultService / MediaService / ToolService / ...
-//   - service EntityService / EpisodicService / ConsolidationService (메모리 4-tier)
+// 21 매니저:
+//   AiManager / StorageManager / PageManager / ProjectManager / ModuleManager
+//   TaskManager / ScheduleManager / SecretManager / McpManager / CapabilityManager
+//   AuthManager / ConversationManager / MediaManager / EventManager / StatusManager
+//   CostManager / ToolManager / EntityManager / EpisodicManager / ConsolidationManager / TemplateManager
+//
+// Cross-cutting (Core facade 직속): Settings / Network / Cache / Telegram / Database / Lifecycle / Memory file
 
 syntax = "proto3";
 
@@ -24,22 +26,33 @@ package firebat.v1;
 
 message Empty {}
 
+/** RPC 응답의 ok / error 표준 */
 message Status {
   bool ok = 1;
-  string error = 2;     // ok=false 시 에러 메시지
-  string error_code = 3; // 일반 enum (e.g. "NOT_FOUND" / "AUTH_FAILED" / "TIMEOUT")
+  string error = 2;
+  string error_code = 3;
 }
 
-// JSON 임의 객체 — Phase B 에서 매니저별 구체 message 로 대체. Phase A 의 sample 용.
+/** Phase A: typed message 정의 전 사용. JSON 직렬화 string. Phase B 에서 매니저별 typed 로 swap. */
 message JsonValue {
-  string raw = 1;       // serialized JSON
+  string raw = 1;
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Phase A sample — health check + Page 매니저 1개 method
-//   Phase B 에서 21 매니저 전부 박음
-// ──────────────────────────────────────────────────────────────────────────
+/** 인자 0~N 개 — JsonValue 배열. 단일 객체면 raw=JSON 문자열, 다인자면 array. */
+message JsonArgs {
+  string raw = 1;
+}
 
+/** ID 단일 인자 — string 또는 number 허용 */
+message IdRequest {
+  string id = 1;
+}
+
+message StringRequest { string value = 1; }
+message NumberRequest { int64 value = 1; }
+message BoolRequest { bool value = 1; }
+
+/** 헬스 / 버전 정보 */
 message HealthInfo {
   string version = 1;
   int64 uptime_ms = 2;
@@ -47,23 +60,383 @@ message HealthInfo {
   repeated string active_managers = 4;
 }
 
-message GetPageRequest {
-  string slug = 1;
+// ──────────────────────────────────────────────────────────────────────────
+// 1. AiService — AiManager
+//   process / requestActionWithTools / codeAssist / runAgentJob / resolveCallTarget /
+//   spawnSubAgent / isSubAgentEnabled / setSubAgentEnabled
+// ──────────────────────────────────────────────────────────────────────────
+service AiService {
+  rpc Process(JsonArgs) returns (JsonValue);
+  rpc RequestActionWithTools(JsonArgs) returns (JsonValue);
+  rpc CodeAssist(JsonArgs) returns (JsonValue);
+  rpc RunAgentJob(JsonArgs) returns (JsonValue);
+  rpc ResolveCallTarget(StringRequest) returns (JsonValue);
+  rpc SpawnSubAgent(JsonArgs) returns (JsonValue);
+  rpc IsSubAgentEnabled(Empty) returns (BoolRequest);
+  rpc SetSubAgentEnabled(BoolRequest) returns (Status);
 }
 
-message GetPageResponse {
-  Status status = 1;
-  // PageSpec — Phase B 에서 message PageSpec 으로 구체 정의
-  JsonValue spec = 2;
+// ──────────────────────────────────────────────────────────────────────────
+// 2. StorageService — StorageManager
+// ──────────────────────────────────────────────────────────────────────────
+service StorageService {
+  rpc ReadFile(StringRequest) returns (JsonValue);
+  rpc ReadFileBinary(StringRequest) returns (JsonValue);
+  rpc WriteFile(JsonArgs) returns (Status);
+  rpc DeleteFile(StringRequest) returns (Status);
+  rpc ListDir(StringRequest) returns (JsonValue);
+  rpc ListFiles(StringRequest) returns (JsonValue);
+  rpc GetFileTree(StringRequest) returns (JsonValue);
+  rpc GlobFiles(JsonArgs) returns (JsonValue);
 }
 
-// Firebat Core 단일 service — Phase B 에서 매니저별 분리 (AiService / PageService / ...)
-service Core {
-  // 헬스 체크 — Phase A 에서 동작 (gRPC server skeleton 검증용).
+// ──────────────────────────────────────────────────────────────────────────
+// 3. PageService — PageManager
+// ──────────────────────────────────────────────────────────────────────────
+service PageService {
+  rpc List(Empty) returns (JsonValue);
+  rpc Search(JsonArgs) returns (JsonValue);
+  rpc Get(StringRequest) returns (JsonValue);
+  rpc Save(JsonArgs) returns (JsonValue);
+  rpc Delete(StringRequest) returns (Status);
+  rpc Rename(JsonArgs) returns (Status);
+  rpc GetRedirect(StringRequest) returns (JsonValue);
+  rpc ListStatic(Empty) returns (JsonValue);
+  rpc FindMediaUsage(StringRequest) returns (JsonValue);
+  rpc SetVisibility(JsonArgs) returns (Status);
+  rpc VerifyPassword(JsonArgs) returns (BoolRequest);
+  rpc FindRelated(JsonArgs) returns (JsonValue);
+  rpc ListAllTags(Empty) returns (JsonValue);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 4. ProjectService — ProjectManager
+// ──────────────────────────────────────────────────────────────────────────
+service ProjectService {
+  rpc Scan(Empty) returns (JsonValue);
+  rpc SetVisibility(JsonArgs) returns (Status);
+  rpc GetVisibility(StringRequest) returns (JsonValue);
+  rpc GetConfig(StringRequest) returns (JsonValue);
+  rpc SetConfig(JsonArgs) returns (Status);
+  rpc VerifyPassword(JsonArgs) returns (BoolRequest);
+  rpc Delete(StringRequest) returns (Status);
+  rpc Rename(JsonArgs) returns (Status);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 5. ModuleService — ModuleManager
+// ──────────────────────────────────────────────────────────────────────────
+service ModuleService {
+  rpc Run(JsonArgs) returns (JsonValue);
+  rpc ListSystem(Empty) returns (JsonValue);
+  rpc ListUser(Empty) returns (JsonValue);
+  rpc GetSchema(JsonArgs) returns (JsonValue);
+  rpc GetSettings(StringRequest) returns (JsonValue);
+  rpc GetConfig(StringRequest) returns (JsonValue);
+  rpc SetSettings(JsonArgs) returns (Status);
+  rpc IsEnabled(StringRequest) returns (BoolRequest);
+  rpc SetEnabled(JsonArgs) returns (Status);
+  rpc GetCmsSettings(Empty) returns (JsonValue);
+  rpc GetKakaoMapJsKey(Empty) returns (JsonValue);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 6. TaskService — TaskManager
+// ──────────────────────────────────────────────────────────────────────────
+service TaskService {
+  rpc Run(JsonArgs) returns (JsonValue);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 7. ScheduleService — ScheduleManager
+// ──────────────────────────────────────────────────────────────────────────
+service ScheduleService {
+  rpc ScheduleCron(JsonArgs) returns (Status);
+  rpc CancelCron(StringRequest) returns (Status);
+  rpc UpdateCron(JsonArgs) returns (Status);
+  rpc ListCron(Empty) returns (JsonValue);
+  rpc GetLogs(NumberRequest) returns (JsonValue);
+  rpc ClearLogs(Empty) returns (Status);
+  rpc ConsumeNotifications(Empty) returns (JsonValue);
+  rpc RunNow(StringRequest) returns (Status);
+  rpc ValidatePipeline(JsonArgs) returns (JsonValue);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 8. SecretService — SecretManager
+// ──────────────────────────────────────────────────────────────────────────
+service SecretService {
+  rpc ListUser(Empty) returns (JsonValue);
+  rpc SetUser(JsonArgs) returns (Status);
+  rpc GetUser(StringRequest) returns (JsonValue);
+  rpc DeleteUser(StringRequest) returns (Status);
+  rpc ListUserModuleSecrets(Empty) returns (JsonValue);
+  rpc GetSystem(StringRequest) returns (JsonValue);
+  rpc SetSystem(JsonArgs) returns (Status);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 9. McpService — McpManager (MCP client - 외부 MCP 서버 호출)
+// ──────────────────────────────────────────────────────────────────────────
+service McpService {
+  rpc ListServers(Empty) returns (JsonValue);
+  rpc AddServer(JsonArgs) returns (Status);
+  rpc RemoveServer(StringRequest) returns (Status);
+  rpc ListTools(StringRequest) returns (JsonValue);
+  rpc ListAllTools(Empty) returns (JsonValue);
+  rpc CallTool(JsonArgs) returns (JsonValue);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 10. CapabilityService — CapabilityManager
+// ──────────────────────────────────────────────────────────────────────────
+service CapabilityService {
+  rpc List(Empty) returns (JsonValue);
+  rpc Register(JsonArgs) returns (Status);
+  rpc GetProviders(StringRequest) returns (JsonValue);
+  rpc ListWithProviders(Empty) returns (JsonValue);
+  rpc Resolve(StringRequest) returns (JsonValue);
+  rpc GetSettings(StringRequest) returns (JsonValue);
+  rpc SetSettings(JsonArgs) returns (Status);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 11. AuthService — AuthManager
+// ──────────────────────────────────────────────────────────────────────────
+service AuthService {
+  rpc Login(JsonArgs) returns (JsonValue);
+  rpc Logout(StringRequest) returns (BoolRequest);
+  rpc ValidateSession(StringRequest) returns (JsonValue);
+  rpc ValidateToken(StringRequest) returns (JsonValue);
+  rpc GenerateApiToken(StringRequest) returns (StringRequest);
+  rpc ValidateApiToken(StringRequest) returns (JsonValue);
+  rpc RevokeApiTokens(Empty) returns (NumberRequest);
+  rpc GetApiTokenInfo(Empty) returns (JsonValue);
+  rpc GetAdminCredentials(Empty) returns (JsonValue);
+  rpc SetAdminCredentials(JsonArgs) returns (Status);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 12. ConversationService — ConversationManager (+ Share)
+// ──────────────────────────────────────────────────────────────────────────
+service ConversationService {
+  rpc List(StringRequest) returns (JsonValue);
+  rpc Get(JsonArgs) returns (JsonValue);
+  rpc Save(JsonArgs) returns (Status);
+  rpc Delete(JsonArgs) returns (Status);
+  rpc IsDeleted(JsonArgs) returns (BoolRequest);
+  rpc SearchHistory(JsonArgs) returns (JsonValue);
+  rpc GetCliSession(JsonArgs) returns (JsonValue);
+  rpc SetCliSession(JsonArgs) returns (Status);
+  rpc CreateShare(JsonArgs) returns (JsonValue);
+  rpc GetShare(StringRequest) returns (JsonValue);
+  rpc CleanupExpiredShares(Empty) returns (NumberRequest);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 13. MediaService — MediaManager
+// ──────────────────────────────────────────────────────────────────────────
+service MediaService {
+  rpc Read(StringRequest) returns (JsonValue);
+  rpc List(JsonArgs) returns (JsonValue);
+  rpc Remove(StringRequest) returns (Status);
+  rpc IsReady(StringRequest) returns (BoolRequest);
+  rpc StartGeneration(JsonArgs) returns (JsonValue);
+  rpc Generate(JsonArgs) returns (JsonValue);
+  rpc Regenerate(StringRequest) returns (JsonValue);
+  rpc Save(JsonArgs) returns (JsonValue);
+  rpc GetImageModel(Empty) returns (StringRequest);
+  rpc SetImageModel(StringRequest) returns (Status);
+  rpc GetAvailableImageModels(Empty) returns (JsonValue);
+  rpc GetImageDefaultSize(Empty) returns (JsonValue);
+  rpc SetImageDefaultSize(StringRequest) returns (Status);
+  rpc GetImageDefaultQuality(Empty) returns (JsonValue);
+  rpc SetImageDefaultQuality(StringRequest) returns (Status);
+  rpc GetImageSettings(Empty) returns (JsonValue);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 14. EventService — EventManager (SSE 이벤트 + audit log)
+// ──────────────────────────────────────────────────────────────────────────
+service EventService {
+  rpc ListAuditLog(NumberRequest) returns (JsonValue);
+  // 추후 streaming RPC: rpc Subscribe(JsonArgs) returns (stream JsonValue);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 15. StatusService — StatusManager (long-running job)
+// ──────────────────────────────────────────────────────────────────────────
+service StatusService {
+  rpc Start(JsonArgs) returns (JsonValue);
+  rpc Update(JsonArgs) returns (JsonValue);
+  rpc Complete(JsonArgs) returns (JsonValue);
+  rpc Fail(JsonArgs) returns (JsonValue);
+  rpc Get(StringRequest) returns (JsonValue);
+  rpc List(JsonArgs) returns (JsonValue);
+  rpc Stats(Empty) returns (JsonValue);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 16. CostService — CostManager (LLM 비용 + budget)
+// ──────────────────────────────────────────────────────────────────────────
+service CostService {
+  rpc GetStats(JsonArgs) returns (JsonValue);
+  rpc Flush(Empty) returns (Status);
+  rpc GetBudget(Empty) returns (JsonValue);
+  rpc SetBudget(JsonArgs) returns (Status);
+  rpc CheckBudget(Empty) returns (JsonValue);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 17. ToolService — ToolManager
+// ──────────────────────────────────────────────────────────────────────────
+service ToolService {
+  rpc Register(JsonArgs) returns (Status);
+  rpc RegisterMany(JsonArgs) returns (Status);
+  rpc Unregister(StringRequest) returns (BoolRequest);
+  rpc GetDefinition(StringRequest) returns (JsonValue);
+  rpc List(JsonArgs) returns (JsonValue);
+  rpc Execute(JsonArgs) returns (JsonValue);
+  rpc BuildAiDefinitions(JsonArgs) returns (JsonValue);
+  rpc BuildMcpDescriptions(JsonArgs) returns (JsonValue);
+  rpc GetStats(Empty) returns (JsonValue);
+  rpc GetActivePlanState(StringRequest) returns (JsonValue);
+  rpc SetActivePlanState(JsonArgs) returns (Status);
+  rpc ClearActivePlanState(StringRequest) returns (Status);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 18. EntityService — EntityManager (메모리 4-tier: entity + fact)
+// ──────────────────────────────────────────────────────────────────────────
+service EntityService {
+  rpc Save(JsonArgs) returns (JsonValue);
+  rpc Update(JsonArgs) returns (JsonValue);
+  rpc Delete(NumberRequest) returns (Status);
+  rpc Get(NumberRequest) returns (JsonValue);
+  rpc FindByName(StringRequest) returns (JsonValue);
+  rpc Search(JsonArgs) returns (JsonValue);
+
+  rpc SaveFact(JsonArgs) returns (JsonValue);
+  rpc UpdateFact(JsonArgs) returns (JsonValue);
+  rpc DeleteFact(NumberRequest) returns (Status);
+  rpc GetFact(NumberRequest) returns (JsonValue);
+  rpc GetTimeline(JsonArgs) returns (JsonValue);
+  rpc SearchFacts(JsonArgs) returns (JsonValue);
+  rpc RetrieveContext(JsonArgs) returns (JsonValue);
+  rpc CleanupExpiredFacts(Empty) returns (NumberRequest);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 19. EpisodicService — EpisodicManager (메모리 4-tier: event)
+// ──────────────────────────────────────────────────────────────────────────
+service EpisodicService {
+  rpc SaveEvent(JsonArgs) returns (JsonValue);
+  rpc UpdateEvent(JsonArgs) returns (JsonValue);
+  rpc DeleteEvent(NumberRequest) returns (Status);
+  rpc GetEvent(NumberRequest) returns (JsonValue);
+  rpc SearchEvents(JsonArgs) returns (JsonValue);
+  rpc ListRecent(JsonArgs) returns (JsonValue);
+  rpc ListByEntity(JsonArgs) returns (JsonValue);
+  rpc LinkEntity(JsonArgs) returns (Status);
+  rpc UnlinkEntity(JsonArgs) returns (Status);
+  rpc CleanupExpired(Empty) returns (NumberRequest);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 20. ConsolidationService — ConsolidationManager (메모리 4-tier: consolidate)
+// ──────────────────────────────────────────────────────────────────────────
+service ConsolidationService {
+  rpc AskLlmText(JsonArgs) returns (JsonValue);
+  rpc Consolidate(JsonArgs) returns (JsonValue);
+  rpc ConsolidateInactive(JsonArgs) returns (JsonValue);
+  rpc GetMemoryStats(Empty) returns (JsonValue);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 21. TemplateService — TemplateManager
+// ──────────────────────────────────────────────────────────────────────────
+service TemplateService {
+  rpc List(Empty) returns (JsonValue);
+  rpc Get(StringRequest) returns (JsonValue);
+  rpc Save(JsonArgs) returns (Status);
+  rpc Delete(StringRequest) returns (Status);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Cross-cutting (Core facade 직속)
+// ──────────────────────────────────────────────────────────────────────────
+
+/** Settings — timezone / aiModel / userPrompt / anthropicCache / 등 */
+service SettingsService {
+  rpc GetTimezone(Empty) returns (StringRequest);
+  rpc SetTimezone(StringRequest) returns (BoolRequest);
+  rpc GetAiModel(Empty) returns (JsonValue);
+  rpc SetAiModel(StringRequest) returns (BoolRequest);
+  rpc GetAiThinkingLevel(Empty) returns (StringRequest);
+  rpc SetAiThinkingLevel(StringRequest) returns (BoolRequest);
+  rpc GetUserPrompt(Empty) returns (StringRequest);
+  rpc SetUserPrompt(StringRequest) returns (BoolRequest);
+  rpc GetAnthropicCacheEnabled(Empty) returns (BoolRequest);
+  rpc SetAnthropicCacheEnabled(BoolRequest) returns (BoolRequest);
+  rpc GetLastModelByCategory(Empty) returns (JsonValue);
+  rpc SetLastModelByCategory(JsonArgs) returns (BoolRequest);
+  rpc GetAiAssistantModel(Empty) returns (StringRequest);
+  rpc SetAiAssistantModel(StringRequest) returns (BoolRequest);
+  rpc GetAiAssistantDefault(Empty) returns (StringRequest);
+  rpc GetAvailableAiAssistantModels(Empty) returns (JsonValue);
+}
+
+/** Network — Sandbox 안에서 안전한 외부 fetch */
+service NetworkService {
+  rpc Fetch(JsonArgs) returns (JsonValue);
+}
+
+/** Cache — sysmod 결과 cache 공통 layer */
+service CacheService {
+  rpc Read(JsonArgs) returns (JsonValue);
+  rpc Grep(JsonArgs) returns (JsonValue);
+  rpc Aggregate(JsonArgs) returns (JsonValue);
+  rpc Drop(StringRequest) returns (Status);
+}
+
+/** Telegram — 양방향 봇 + send-only */
+service TelegramService {
+  rpc SetupWebhook(StringRequest) returns (JsonValue);
+  rpc RemoveWebhook(Empty) returns (JsonValue);
+  rpc GetWebhookStatus(Empty) returns (JsonValue);
+  rpc IsOwner(StringRequest) returns (BoolRequest);
+  rpc GetWebhookSecret(Empty) returns (JsonValue);
+  rpc ProcessMessage(JsonArgs) returns (JsonValue);
+}
+
+/** Database — raw query (BIBLE 의 도메인 port 마이그레이션 영역 — Phase B 개선 후보) */
+service DatabaseService {
+  rpc Query(JsonArgs) returns (JsonValue);
+}
+
+/** Memory — Claude memory file 시스템 */
+service MemoryService {
+  rpc GetIndex(Empty) returns (StringRequest);
+  rpc ReadFile(StringRequest) returns (JsonValue);
+  rpc ListFiles(Empty) returns (JsonValue);
+  rpc SaveFile(JsonArgs) returns (Status);
+  rpc DeleteFile(StringRequest) returns (Status);
+}
+
+/** Lifecycle / Health — 헬스 체크 + graceful shutdown 등 */
+service LifecycleService {
   rpc Health(Empty) returns (HealthInfo);
-
-  // Page 매니저 — Phase B sample method.
-  rpc GetPage(GetPageRequest) returns (GetPageResponse);
-
-  // ... Phase B 에서 21 매니저 의 모든 method 박힘 (~200+ RPC)
+  rpc CaptureException(JsonArgs) returns (Status);
+  rpc GracefulShutdown(NumberRequest) returns (Status);
 }
+
+/** ErrorReport — captureException 분리 (선택) */
+// 위 LifecycleService 에 통합됨
+
+// ──────────────────────────────────────────────────────────────────────────
+// Phase B 진행 시 변환 룰:
+//  1. JsonArgs / JsonValue → 매니저별 typed message 로 swap
+//  2. tonic-build 가 Rust 구조체 자동 생성
+//  3. TS client (lib/core-client.ts) 도 generated stub 활용 — typed 안전 보장
+//  4. service 단위 dual-run 검증 (옛 Node 결과 vs Rust 결과 diff)
+// ──────────────────────────────────────────────────────────────────────────
