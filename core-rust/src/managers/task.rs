@@ -15,6 +15,7 @@
 use serde_json::Value;
 use std::sync::Arc;
 
+use crate::managers::status::StatusManager;
 use crate::managers::tool::{ToolListFilter, ToolManager};
 use crate::ports::{ILogPort, InfraResult};
 use crate::utils::condition::evaluate_condition;
@@ -183,6 +184,9 @@ pub struct TaskManager {
     /// 새 도구 추가 시 hint 자동 박힘 (옛 TS 의 hardcoded TOOL_HINTS 12개 enumerate 제거).
     /// None 일 때는 환각 방어 비활성 (테스트 용 또는 ToolManager 없는 경량 wiring).
     tools: Option<Arc<ToolManager>>,
+    /// StatusManager (옵션) — pipeline 실행 가시화 (옛 TS core/index.ts:1252 statusMgr.start/update/
+    /// done/error 패턴 1:1). 어드민 UI 의 ActiveJobsIndicator 자동 표시.
+    status: Option<Arc<StatusManager>>,
 }
 
 impl TaskManager {
@@ -191,12 +195,19 @@ impl TaskManager {
             executor,
             log,
             tools: None,
+            status: None,
         }
     }
 
     /// ToolManager 박힌 채로 부팅 — validate_pipeline 의 LLM_TRANSFORM 환각 방어 활성.
     pub fn with_tools(mut self, tools: Arc<ToolManager>) -> Self {
         self.tools = Some(tools);
+        self
+    }
+
+    /// StatusManager 박힌 채로 부팅 — execute_pipeline 의 자동 status start/update/done 활성.
+    pub fn with_status(mut self, status: Arc<StatusManager>) -> Self {
+        self.status = Some(status);
         self
     }
 
@@ -294,9 +305,9 @@ impl TaskManager {
     }
 
     /// 파이프라인 실행 — 옛 TS executePipeline Rust port.
-    /// Phase B-14 minimum:
-    /// - CONDITION step 은 진짜 평가
-    /// - 그 외 step 은 TaskExecutor trait 위임 (Phase B-16+ 에서 실 구현)
+    /// CONDITION step 은 진짜 평가 / 그 외 step 은 TaskExecutor trait 위임.
+    /// AI 미개입 cross-call hook — StatusManager 박혀있으면 자동 start/update/complete/fail
+    /// (옛 TS core/index.ts:1252 1:1 port).
     pub async fn execute_pipeline(&self, steps: &[PipelineStep]) -> PipelineResult {
         if let Some(err) = self.validate_pipeline(steps) {
             return PipelineResult {
@@ -306,13 +317,37 @@ impl TaskManager {
             };
         }
 
+        // StatusManager 박혀있으면 pipeline job 가시화. 어드민 ActiveJobsIndicator 자동 표시.
+        let status_job_id = self.status.as_ref().map(|s| {
+            let job = s.start(
+                None,
+                "pipeline".to_string(),
+                Some(format!("pipeline 실행 ({} step)", steps.len())),
+                None,
+                serde_json::json!({"stepCount": steps.len()}),
+            );
+            job.id
+        });
+
+        let total = steps.len();
         let mut prev: Value = Value::Null;
         let mut step_results: Vec<Value> = Vec::new();
 
         for (i, step) in steps.iter().enumerate() {
             let n = i + 1;
             self.log
-                .info(&format!("[Pipeline] Step {}/{}: {}", n, steps.len(), step.step_type()));
+                .info(&format!("[Pipeline] Step {}/{}: {}", n, total, step.step_type()));
+
+            // 매 step 시작 시 status 진행도 갱신 (옛 TS update 패턴).
+            if let (Some(s), Some(job_id)) = (&self.status, &status_job_id) {
+                let progress = (i as f64) / (total as f64);
+                let _ = s.update(
+                    job_id,
+                    Some(progress),
+                    Some(format!("Step {}/{}: {}", n, total, step.step_type())),
+                    None,
+                );
+            }
 
             let outcome = self.run_step(step, &prev, &step_results).await;
             match outcome {
@@ -324,8 +359,11 @@ impl TaskManager {
                     // CONDITION 미충족 — 정상 종료, 이후 step skip
                     self.log.info(&format!(
                         "[Pipeline] 조건 미충족 — 파이프라인 정상 종료 (이후 {}단계 스킵)",
-                        steps.len() - i - 1
+                        total - i - 1
                     ));
+                    if let (Some(s), Some(job_id)) = (&self.status, &status_job_id) {
+                        let _ = s.complete(job_id, Some(value.clone()));
+                    }
                     return PipelineResult {
                         success: true,
                         data: Some(value),
@@ -333,15 +371,22 @@ impl TaskManager {
                     };
                 }
                 StepOutcome::Fail(err) => {
+                    let full_err = format!("[Pipeline Step {n}] {}", err);
+                    if let (Some(s), Some(job_id)) = (&self.status, &status_job_id) {
+                        let _ = s.fail(job_id, full_err.clone());
+                    }
                     return PipelineResult {
                         success: false,
                         data: None,
-                        error: Some(format!("[Pipeline Step {n}] {}", err)),
+                        error: Some(full_err),
                     };
                 }
             }
         }
 
+        if let (Some(s), Some(job_id)) = (&self.status, &status_job_id) {
+            let _ = s.complete(&job_id, Some(prev.clone()));
+        }
         PipelineResult {
             success: true,
             data: Some(prev),

@@ -257,8 +257,11 @@ async fn main() -> Result<()> {
     );
     // ToolManager 박힌 채로 TaskManager 부팅 — validate_pipeline 의 LLM_TRANSFORM 환각 방어 활성.
     // 등록된 정적 도구 27개 + 동적 sysmod_* / mcp_* 자동으로 hint 매칭.
+    // StatusManager 박음 — pipeline 실행 가시화 (어드민 ActiveJobsIndicator 자동 표시).
     let task_manager = Arc::new(
-        TaskManager::new(task_executor, logger.clone()).with_tools(tool_manager.clone()),
+        TaskManager::new(task_executor, logger.clone())
+            .with_tools(tool_manager.clone())
+            .with_status(status_manager.clone()),
     );
 
     // ScheduleManager 에 hooks 박음 — handle_trigger 의 4 모드 (agent/pipeline/page url/sandbox)
