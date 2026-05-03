@@ -1,0 +1,23 @@
+# Phase C Docker — 빌드 컨텍스트 최소화.
+# Rust target/ 은 stage 1 builder 에서 자체 생성.
+
+target/
+Cargo.lock.bak
+*.swp
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# Test artifacts
+tests/snapshots/
+*.profraw
+
+# Phase B 작업 산출물 — runtime 데이터 (volume mount 로 받음)
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm

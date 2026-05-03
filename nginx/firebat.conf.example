@@ -1,0 +1,93 @@
+# Phase C nginx 설정 example — 실 도메인 운영 시 firebat.conf 로 복사 후 수정.
+#
+# 이 파일 그대로 docker-compose.yml 의 volume mount path 에 박지 말 것.
+# `cp nginx/firebat.conf.example nginx/firebat.conf` 후 도메인·SSL cert path 수정.
+
+# HTTP → HTTPS redirect
+server {
+    listen 80;
+    server_name firebat.co.kr www.firebat.co.kr;
+
+    # Let's Encrypt webroot challenge (선택)
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# HTTPS 메인 — Next.js renderer 로 reverse proxy
+server {
+    listen 443 ssl http2;
+    server_name firebat.co.kr www.firebat.co.kr;
+
+    # SSL — Let's Encrypt 또는 Cloudflare Origin
+    ssl_certificate     /etc/nginx/certs/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers off;
+
+    # 보안 헤더
+    add_header Strict-Transport-Security "max-age=63072000" always;
+    add_header X-Frame-Options DENY;
+    add_header X-Content-Type-Options nosniff;
+    add_header Referrer-Policy strict-origin-when-cross-origin;
+
+    # 미디어 직접 서빙 — Next.js 우회 (옛 TS 4-26 박힘)
+    location /user/media/ {
+        alias /opt/firebat/user/media/;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header X-Served-By "nginx-static";
+        try_files $uri =404;
+        access_log off;
+    }
+    location /system/media/ {
+        alias /opt/firebat/system/media/;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header X-Served-By "nginx-static";
+        try_files $uri =404;
+        access_log off;
+    }
+
+    # 사이트 인증 파일 (Google / Naver / Bing / ads.txt 등) — verifications 시스템 (옛 TS 박힘)
+    # Phase C 활성 시 verifications/ 디렉토리 mount 후 alias.
+
+    # 메인 — Next.js renderer
+    location / {
+        proxy_pass http://firebat-renderer:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+
+        # SSE keepalive — 옛 TS 4-27 박힘 (60KB body limit fix)
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 600s;
+    }
+
+    # MCP SSE 엔드포인트 — 외부 AI (Claude Code / Cursor) MCP 접속 (옛 TS 박힘)
+    location /api/mcp {
+        proxy_pass http://firebat-renderer:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 86400s;
+    }
+
+    # gRPC Core 직접 접근 차단 — 외부에 노출 X (renderer 만 접근)
+    location /grpc {
+        return 403;
+    }
+
+    client_max_body_size 50M;
+}

@@ -1,0 +1,100 @@
+# Phase C self-hosted Docker compose — Firebat v1.0 Final.
+#
+# 구성:
+#  - firebat-core (Rust gRPC server, port 50051) — Phase B-17 박힘 (26 services + 27 정적 도구 + LLM 8 format)
+#  - firebat-renderer (Next.js standalone, port 3000) — 옛 frontend 재사용. Phase C 박힘 후 dual-run 검증.
+#  - nginx (옵션, port 80/443) — TLS 종료 + reverse proxy. 실 도메인 운영 시 활성.
+#
+# Volume mount:
+#  - ./data → /opt/firebat/data (SQLite DB / Vault / cron jobs / 영속 잡)
+#  - ./user → /opt/firebat/user (사용자 모듈 / 미디어)
+#  - ./system → /opt/firebat/system (시스템 모듈 / 미디어)
+#
+# 운영 명령:
+#  docker compose up -d --build       # 빌드 + 데몬 실행
+#  docker compose logs -f firebat-core
+#  docker compose down                # graceful shutdown (SIGTERM → 30초 대기)
+#  docker compose restart firebat-core
+#
+# 새 서버 cutover 절차 (옛 firebat.co.kr → 새 Ubuntu 26.04):
+#  1. ssh root@firebat "pm2 stop firebat"
+#  2. rsync -av root@firebat:/root/firebat/{data,user/media,system/media}/ ./
+#  3. docker compose up -d --build
+#  4. health check: curl localhost:50051 또는 grpc_health_probe
+#  5. DNS A 레코드 새 서버 IP 로 변경
+
+services:
+  firebat-core:
+    build:
+      context: .
+      dockerfile: core-rust/Dockerfile
+    image: firebat-core:latest
+    container_name: firebat-core
+    restart: unless-stopped
+    stop_grace_period: 30s   # SIGTERM 후 graceful shutdown 시간 (옛 TS 의 25s 활성 작업 대기 + buffer)
+    environment:
+      FIREBAT_WORKSPACE_ROOT: /opt/firebat
+      FIREBAT_CORE_LISTEN: 0.0.0.0:50051
+      FIREBAT_TIMEZONE: Asia/Seoul
+      FIREBAT_DEFAULT_MODEL: claude-4-sonnet
+      RUST_LOG: info
+      RUST_BACKTRACE: "1"
+    volumes:
+      - ./data:/opt/firebat/data
+      - ./user:/opt/firebat/user
+      - ./system:/opt/firebat/system
+    ports:
+      # 외부 노출 안 함 — renderer 만 접근 (compose network 안). 디버깅 시 127.0.0.1:50051 만.
+      - "127.0.0.1:50051:50051"
+    networks:
+      - firebat-net
+    # gRPC health check — Phase B-17.5 LifecycleService.Health 활성화 후 활용.
+    # grpc_health_probe binary 박혀있으면 진짜 health check, 아니면 process-only.
+    healthcheck:
+      test: ["CMD-SHELL", "ls /proc/1/exe || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── Renderer (옛 Next.js frontend) ──
+  # Phase C 박힘 후 옛 frontend 코드를 standalone build 로 박음. dual-run 검증 시 활성.
+  # 현재는 commented — Rust Core 단독 검증부터.
+  # firebat-renderer:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.renderer
+  #   image: firebat-renderer:latest
+  #   container_name: firebat-renderer
+  #   restart: unless-stopped
+  #   environment:
+  #     NODE_ENV: production
+  #     FIREBAT_CORE_BACKEND: rust
+  #     FIREBAT_CORE_GRPC: firebat-core:50051
+  #   ports:
+  #     - "127.0.0.1:3000:3000"
+  #   depends_on:
+  #     firebat-core:
+  #       condition: service_healthy
+  #   networks:
+  #     - firebat-net
+
+  # ── Nginx (옵션) — 실 도메인 운영 시 활성 ──
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: firebat-nginx
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx/firebat.conf:/etc/nginx/conf.d/default.conf:ro
+  #     - ./nginx/certs:/etc/nginx/certs:ro
+  #   depends_on:
+  #     - firebat-renderer
+  #   networks:
+  #     - firebat-net
+
+networks:
+  firebat-net:
+    driver: bridge
