@@ -1,15 +1,15 @@
 /**
- * Core Client Abstraction — v1.0 Final 의 핵심 IPC backbone (Phase A 박힘).
+ * Core Client Abstraction — v1.0 Final 의 핵심 IPC backbone (Phase A 박힘 / Phase B-4 정리).
  *
  * Frontend / API route 에서 Core 를 호출하는 단일 진입점.
  * 환경 변수 `FIREBAT_CORE_BACKEND` 에 따라 자동 분기:
  *
- *   'ts'    (default, 옛 v0.1 path)  — getCore() 직접 호출. 옛 in-process TS Core.
- *   'rust'  (Phase B 활성)             — gRPC client → Rust Core (별 process, port 50051).
- *   'tauri' (Phase D self-installed)   — Tauri invoke → Rust Core (in-process embed).
+ *   'ts'    (legacy fallback, 디버깅용)  — getCore() 직접 호출. 옛 in-process TS Core.
+ *   'rust'  (운영 default — Phase B 박힘) — gRPC client → Rust Core (별 process, port 50051).
+ *   'tauri' (Phase D self-installed)     — Tauri invoke → Rust Core (in-process embed).
  *
- * Phase A 의 첫 commit 단계에선 'ts' 만 동작 (옛 코드 그대로 — 운영 영향 0).
- * 'rust' / 'tauri' 는 Phase B / D 에서 점진 활성.
+ * Tauri 환경 자동 감지 — 그 외엔 env 명시 없으면 'rust' 사용.
+ * 'both' (dual-run) 분기는 폐기 — 사용자 결정: 동시 운영 안 함, cutover 한 번에.
  *
  * 변환 룰 (CLAUDE.md / FIREBAT_BIBLE 박힘):
  *   1. Hot path / 보안 / 정밀 timing 영역 → Rust 강제
@@ -17,20 +17,20 @@
  *   3. Hexagonal port interface 안정성 보장 — 어댑터 안 라이브러리 변경이 매니저·Frontend 영향 0
  */
 
-type CoreBackend = 'ts' | 'rust' | 'tauri' | 'both';
+type CoreBackend = 'ts' | 'rust' | 'tauri';
 
 function detectBackend(): CoreBackend {
   // Tauri 환경 감지 — self-installed 자동 분기
   if (typeof window !== 'undefined' && '__TAURI__' in window) {
     return 'tauri';
   }
-  // env 변수 우선 — self-hosted 운영자가 명시 설정 시
+  // env 변수 우선 — 운영자가 명시 설정 시 (디버깅 시 'ts' 박을 수 있음)
   const envBackend = (typeof process !== 'undefined' ? process.env?.FIREBAT_CORE_BACKEND : undefined) as CoreBackend | undefined;
-  if (envBackend === 'rust' || envBackend === 'tauri' || envBackend === 'ts' || envBackend === 'both') {
+  if (envBackend === 'rust' || envBackend === 'tauri' || envBackend === 'ts') {
     return envBackend;
   }
-  // default — 옛 v0.1 path. 운영 영향 0 보장.
-  return 'ts';
+  // default — Rust Core (Phase B 박힘, 운영 default).
+  return 'rust';
 }
 
 const BACKEND: CoreBackend = detectBackend();
@@ -50,16 +50,12 @@ export async function callCore<T = unknown>(method: string, args?: any): Promise
     // Phase D 활성 — Tauri invoke (Rust Core in-process embed)
     return invokeTauri<T>(method, args);
   }
-  if (BACKEND === 'rust') {
-    // Phase B 활성 — gRPC client (Rust Core 별 process)
-    return callGrpc<T>(method, args);
+  if (BACKEND === 'ts') {
+    // legacy fallback — 디버깅·검증용. 옛 in-process TS Core 직접 호출.
+    return callLegacyCore<T>(method, args);
   }
-  if (BACKEND === 'both') {
-    // dual-run 검증 — ts + rust 둘 다 호출, 결과 diff log. ts 결과 반환.
-    return callDualRun<T>(method, args);
-  }
-  // 'ts' (default) — 옛 v0.1 path. getCore() 직접 호출.
-  return callLegacyCore<T>(method, args);
+  // 'rust' (default) — gRPC client → Rust Core (port 50051)
+  return callGrpc<T>(method, args);
 }
 
 /** 'ts' backend — 옛 in-process TS Core 직접 호출. Phase B cutover 까지 default. */
@@ -93,41 +89,6 @@ async function invokeTauri<T>(method: string, args?: any): Promise<T> {
   });
   // invoke 의 generic 시그니처 — 동적 import 라 타입 추론 필요
   return (tauriCore as any).invoke(method, args) as Promise<T>;
-}
-
-/** 'both' backend — dual-run 검증. ts + rust 동시 호출, 결과 diff log, ts 결과 반환. */
-async function callDualRun<T>(method: string, args?: any): Promise<T> {
-  // ts 결과는 정답 — 반환에 사용. rust 결과는 비교 only (실패해도 main flow 안 막음).
-  const tsResult = await callLegacyCore<T>(method, args);
-  // rust 호출은 비동기로 실행 (await 안 함 — main flow 지연 0)
-  Promise.resolve()
-    .then(() => callGrpc<T>(method, args))
-    .then(rustResult => {
-      const diff = compareResults(tsResult, rustResult);
-      if (diff) {
-        // 차이 발견 — Phase B 의 Rust 매니저 fix 신호
-        // 운영 환경에선 logger 통해 송출. 현재는 console.warn (env 별 hook 추후 박음)
-        console.warn(`[dual-run diff] method=${method} diff=${diff}`);
-      } else {
-        // 결과 일치 — Rust 측 정상 동작 검증
-      }
-    })
-    .catch(err => {
-      console.warn(`[dual-run] rust call failed (ts result still returned): method=${method} err=${err?.message ?? err}`);
-    });
-  return tsResult;
-}
-
-/** 두 결과 비교 — JSON 직렬화 후 string diff. 동일하면 null, 다르면 짧은 description. */
-function compareResults(ts: unknown, rust: unknown): string | null {
-  try {
-    const tsJson = JSON.stringify(ts);
-    const rustJson = JSON.stringify(rust);
-    if (tsJson === rustJson) return null;
-    return `len_ts=${tsJson.length} len_rust=${rustJson.length} sample_ts=${tsJson.slice(0, 200)} sample_rust=${rustJson.slice(0, 200)}`;
-  } catch (e: any) {
-    return `compare error: ${e?.message ?? e}`;
-  }
 }
 
 /** 현재 활성 backend 조회 — debug / health-check 용 */
