@@ -12,6 +12,7 @@ use std::sync::Arc;
 use crate::adapters::cron::TokioCronAdapter;
 use crate::managers::ai::AiManager;
 use crate::managers::episodic::EpisodicManager;
+use crate::managers::status::StatusManager;
 use crate::managers::task::{PipelineStep, TaskManager};
 use crate::managers::tool::ToolManager;
 use crate::ports::{
@@ -36,6 +37,8 @@ pub struct ScheduleHooks {
     pub tools: Arc<ToolManager>,
     pub log: Arc<dyn ILogPort>,
     pub episodic: Arc<EpisodicManager>,
+    /// StatusManager — cron job 가시화 (옛 TS core/index.ts:1368 statusMgr.start/done/error 패턴).
+    pub status: Arc<StatusManager>,
 }
 
 pub struct ScheduleManager {
@@ -138,6 +141,19 @@ impl ScheduleManager {
     pub async fn handle_trigger(self: &Arc<Self>, info: CronTriggerInfo) -> CronJobResult {
         let start = std::time::Instant::now();
 
+        // AI 미개입 cross-call hook — cron job StatusManager 시작 (옛 TS core/index.ts:1368
+        // statusMgr.start 패턴 1:1). 어드민 UI 의 ActiveJobsIndicator 가 자동 표시.
+        let status_job_id = self.hooks.as_ref().map(|h| {
+            let job = h.status.start(
+                Some(format!("cron-{}", info.job_id)),
+                "cron".to_string(),
+                Some(format!("cron 발화: {}", info.job_id)),
+                None,
+                serde_json::json!({"jobId": info.job_id, "trigger": format!("{:?}", info.trigger)}),
+            );
+            job.id
+        });
+
         // 1. runWhen — 미충족 skip
         if let Some(run_when) = &info.run_when {
             if let Some(hooks) = &self.hooks {
@@ -231,7 +247,7 @@ impl ScheduleManager {
             let _ = self.cron.cancel(&info.job_id).await;
         }
 
-        // 5. AI 미개입 자동 hook — cron 발화 사실 자체를 리콜에 박음.
+        // 5. AI 미개입 자동 hook 1: cron 발화 사실 자체를 리콜에 박음.
         // 옛 TS Core facade 의 saveEvent 자동 호출 패턴 1:1. silent 실패 (event 박기 실패해도 cron
         // result 영향 X). type='cron_trigger' / title=jobId / description=success/error 요약.
         if let Some(hooks) = &self.hooks {
@@ -249,6 +265,27 @@ impl ScheduleManager {
                 description: Some(description),
                 ..Default::default()
             });
+        }
+
+        // 6. AI 미개입 자동 hook 2: StatusManager done/error 박음 (옛 TS core/index.ts:1375 패턴).
+        if let (Some(hooks), Some(job_id)) = (&self.hooks, status_job_id) {
+            if final_result.success {
+                let _ = hooks.status.complete(
+                    &job_id,
+                    Some(serde_json::json!({
+                        "durationMs": final_result.duration_ms,
+                        "success": true,
+                    })),
+                );
+            } else {
+                let _ = hooks.status.fail(
+                    &job_id,
+                    final_result
+                        .error
+                        .clone()
+                        .unwrap_or_else(|| "Cron 실행 실패".to_string()),
+                );
+            }
         }
 
         final_result

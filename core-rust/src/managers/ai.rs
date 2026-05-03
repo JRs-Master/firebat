@@ -21,6 +21,7 @@ use crate::managers::ai::history_resolver::HistoryResolver;
 use crate::managers::ai::prompt_builder::PromptBuilder;
 use crate::managers::ai::system_context::SystemContextGatherer;
 use crate::managers::conversation::ConversationManager;
+use crate::managers::cost::CostManager;
 use crate::managers::module::ModuleManager;
 use crate::managers::tool::{ToolListFilter, ToolManager};
 use crate::ports::{
@@ -58,6 +59,9 @@ pub struct AiManager {
     /// History resolver (옵션) — 옛 TS history-resolver.ts Rust port. opts.conversation_id 박혀있으면
     /// 자동 recent N 메시지 컨텍스트 prepend. IEmbedderPort 박힌 후 임베딩 spread 판정 활성.
     history_resolver: Option<HistoryResolver>,
+    /// CostManager (옵션) — LLM 호출 후 자동 비용 누적. 옛 TS ai-manager.ts:1260
+    /// `core.recordLlmCost(usage)` 패턴 1:1 port. 미박힘 시 비용 누적 비활성.
+    cost: Option<Arc<CostManager>>,
 }
 
 impl AiManager {
@@ -73,12 +77,19 @@ impl AiManager {
             prompt_builder: None,
             context_gatherer: None,
             history_resolver: None,
+            cost: None,
         }
     }
 
     /// HistoryResolver 박은 채로 부팅 — opts.conversation_id 박혀있으면 recent N 메시지 자동 prepend.
     pub fn with_history_resolver(mut self, conversation: Arc<ConversationManager>) -> Self {
         self.history_resolver = Some(HistoryResolver::new(conversation));
+        self
+    }
+
+    /// CostManager 박은 채로 부팅 — LLM 호출마다 자동 비용 누적 (옛 TS recordLlmCost 패턴).
+    pub fn with_cost_manager(mut self, cost: Arc<CostManager>) -> Self {
+        self.cost = Some(cost);
         self
     }
 
@@ -181,6 +192,19 @@ impl AiManager {
             last_model_id = response.model_id.clone();
             if let Some(c) = response.cost_usd {
                 total_cost += c;
+            }
+
+            // AI 미개입 cross-call hook — LLM 응답 받을 때마다 자동 비용 누적
+            // (옛 TS ai-manager.ts:1260 core.recordLlmCost(usage) 패턴 1:1 port).
+            if let Some(cost) = &self.cost {
+                let _ = cost.record(
+                    &response.model_id,
+                    response.tokens_in.unwrap_or(0),
+                    response.tokens_out.unwrap_or(0),
+                    0, // cached_tokens — Phase B-17+ Anthropic cache 응답 박힌 후
+                    response.cost_usd.unwrap_or(0.0),
+                    Some("user-ai"),
+                );
             }
 
             if response.tool_calls.is_empty() {

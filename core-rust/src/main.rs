@@ -200,14 +200,17 @@ async fn main() -> Result<()> {
     ));
     let schedule_manager = Arc::new(ScheduleManager::new(cron_adapter.clone()));
     let media_manager = Arc::new(MediaManager::new(media));
-    // PromptBuilder + SystemContextGatherer + HistoryResolver 박힌 채로 — 시스템 프롬프트 자동
-    // 주입 + sysmod/MCP 동적 description + opts.conversation_id 박혀있을 시 recent N 메시지 자동
-    // 주입 활성. Vault `system:user-prompt` 박으면 사용자 정의 prompt 도 prepend.
+    // PromptBuilder + SystemContextGatherer + HistoryResolver + CostManager 박힌 채로:
+    // - 시스템 프롬프트 자동 주입
+    // - sysmod/MCP 동적 description
+    // - opts.conversation_id 박혀있을 시 recent N 메시지 자동 prepend
+    // - LLM 호출마다 자동 비용 누적 (옛 TS recordLlmCost 1:1)
     let ai_manager = Arc::new(
         AiManager::new(llm.clone(), tool_manager.clone(), logger.clone())
             .with_prompt_builder(vault.clone())
             .with_system_context(module_manager.clone(), mcp_manager.clone())
-            .with_history_resolver(conversation_manager.clone()),
+            .with_history_resolver(conversation_manager.clone())
+            .with_cost_manager(cost_manager.clone()),
     );
 
     // ConsolidationManager 의 LLM 자동 추출 활성 — AiManager + ConversationManager + Vault 박힌 후.
@@ -260,7 +263,8 @@ async fn main() -> Result<()> {
 
     // ScheduleManager 에 hooks 박음 — handle_trigger 의 4 모드 (agent/pipeline/page url/sandbox)
     // + runWhen 평가 + retry loop + notify hook + oneShot 자동 취소 활성.
-    // episodic 박음 — cron 발화 사실 자동 리콜 누적 (AI 미개입).
+    // - episodic: cron 발화 사실 자동 리콜 누적 (AI 미개입)
+    // - status: cron job 가시화 (어드민 UI ActiveJobsIndicator 표시)
     let schedule_manager_with_hooks = Arc::new(
         ScheduleManager::new(cron_adapter.clone()).with_hooks(
             firebat_core::managers::schedule::ScheduleHooks {
@@ -270,6 +274,7 @@ async fn main() -> Result<()> {
                 tools: tool_manager.clone(),
                 log: logger.clone(),
                 episodic: episodic_manager.clone(),
+                status: status_manager.clone(),
             },
         ),
     );
