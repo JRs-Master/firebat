@@ -50,6 +50,16 @@ uuid = { version = "1", features = ["v4"] }
 # Phase B-18 Step 1.5 박힘 — ConversationManager 의 sha1(version:text) cache 무효화 키 + hex 인코딩
 sha1 = "0.10"
 hex = "0.4"
+# Phase B-18 Step 1.6 박힘 — E5 로컬 임베딩 (옛 TS Xenova/multilingual-e5-small transformers.js 1:1 port)
+# candle = HuggingFace 공식 pure Rust ML. cpu only (default-features=false 로 cuda/metal 끄고).
+# hf-hub = 모델 자동 다운로드 + 캐싱. tokenizers = HF 공식 토크나이저.
+# 첫 실행 시 ~470MB 모델 다운로드 (intfloat/multilingual-e5-small safetensors).
+# env `FIREBAT_EMBEDDER=e5` 박혀있을 때만 활성 — default 는 StubEmbedderAdapter (가볍게).
+candle-core = { version = "0.8", default-features = false }
+candle-nn = { version = "0.8", default-features = false }
+candle-transformers = { version = "0.8", default-features = false }
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+hf-hub = { version = "0.3", default-features = false, features = ["online", "tokio"] }
 
 # Phase B 활성 시 추가 (현재 commented):
 #   tracing = "0.1"                                    # 로그

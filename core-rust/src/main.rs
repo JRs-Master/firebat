@@ -12,10 +12,11 @@ use tonic::transport::Server;
 use firebat_core::{
     adapters::{
         auth::VaultAuthAdapter, cron::TokioCronAdapter, database::SqliteDatabaseAdapter,
-        embedder::StubEmbedderAdapter, mcp_client::McpClientFileAdapter,
-        media::LocalMediaAdapter, memory::SqliteMemoryAdapter,
-        sandbox::ProcessSandboxAdapter, storage::LocalStorageAdapter,
-        tracing_log::{init_tracing, TracingLogAdapter}, vault::SqliteVaultAdapter,
+        embedder::{E5LocalEmbedderAdapter, StubEmbedderAdapter},
+        mcp_client::McpClientFileAdapter, media::LocalMediaAdapter,
+        memory::SqliteMemoryAdapter, sandbox::ProcessSandboxAdapter,
+        storage::LocalStorageAdapter, tracing_log::{init_tracing, TracingLogAdapter},
+        vault::SqliteVaultAdapter,
     },
     managers::{
         ai::AiManager, auth::AuthManager, capability::CapabilityManager,
@@ -135,10 +136,27 @@ async fn main() -> Result<()> {
             .map_err(anyhow::Error::msg)
             .context("MCP servers 파일 open 실패")?,
     );
-    // Phase B-18 Step 1 — IEmbedderPort. 옛 TS `infra/llm/embedder.ts` 1:1 (E5 prefix 패턴 + 384-dim).
-    // 현재는 StubEmbedderAdapter (FNV-1a hash 결정론적). Step 1.6 batch 에서 candle/ort crate +
-    // `Xenova/multilingual-e5-small` ONNX 로컬 모델 어댑터로 swap (제로 매니저 변경 — 어댑터 1개만).
-    let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
+    // Phase B-18 Step 1 / 1.6 — IEmbedderPort. 옛 TS `infra/llm/embedder.ts` 1:1 패턴 (E5 prefix +
+    // 384-dim). env `FIREBAT_EMBEDDER` 으로 swap:
+    //   - `e5` (운영 default 권장): candle + intfloat/multilingual-e5-small 로컬 추론.
+    //          첫 실행 시 ~470MB 다운로드 (HuggingFace Hub, hf-hub 자동 캐싱).
+    //          진짜 의미 검색 활성 — search_history / search_entities / search_facts / search_events.
+    //   - `stub` (default — CI / 가벼운 dev): FNV-1a hash 결정론, 의미 검색 X.
+    //          모델 다운로드 없이 wiring 검증 + 단위 테스트 가능.
+    // 추후 Gemini API / OpenAI API 어댑터 박을 때도 같은 env 패턴 — `gemini` / `openai-3-small` 등.
+    let embedder_kind = std::env::var("FIREBAT_EMBEDDER").unwrap_or_else(|_| "stub".to_string());
+    let embedder: Arc<dyn IEmbedderPort> = match embedder_kind.as_str() {
+        "e5" => {
+            tracing::info!(
+                "Embedder: E5 local (intfloat/multilingual-e5-small, 384-dim, 첫 호출 시 모델 다운로드)"
+            );
+            Arc::new(E5LocalEmbedderAdapter::new())
+        }
+        _ => {
+            tracing::info!("Embedder: stub (FNV-1a hash, 의미 검색 X — env FIREBAT_EMBEDDER=e5 으로 활성)");
+            Arc::new(StubEmbedderAdapter::new())
+        }
+    };
 
     // Phase B-18 Step 1.5 — SqliteMemoryAdapter 에 embedder 주입 →
     // saveEntity / saveFact / saveEvent 자동 임베딩 + searchEntities/Facts/Events cosine 활성.
