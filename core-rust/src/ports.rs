@@ -656,6 +656,52 @@ pub struct LlmToolResponse {
     pub tokens_out: Option<i64>,
 }
 
+/// 플랜모드 — 옛 TS `AiRequestOpts.planMode` 1:1.
+///
+/// - `Off` — plan 강제 X. AI 자유 판단 (default)
+/// - `Auto` — destructive·복합 작업만 propose_plan, 단순 read-only 는 즉시 도구 호출
+/// - `Always` — 모든 요청에 plan 강제 (인사·단답 포함)
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlanMode {
+    #[default]
+    Off,
+    Auto,
+    Always,
+}
+
+/// AiManager 요청 옵션 — 옛 TS `AiRequestOpts` 1:1 port.
+///
+/// LlmCallOpts 와 분리되는 이유: AiManager 차원 (plan / cron_agent / approval gate)
+/// vs LLM 호출 차원 (model / temperature / system_prompt) 의 책임 경계.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct AiRequestOpts {
+    /// 모델 ID — `LlmCallOpts.model` 로 전파.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// 대화 owner — HistoryResolver / search_history 가 활용. 기본 "admin".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    /// 대화 ID — recent N 메시지 prepend / search_history / CLI session resume.
+    #[serde(rename = "conversationId", default, skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<String>,
+    /// 플랜모드 — off / auto / always.
+    #[serde(rename = "planMode", default)]
+    pub plan_mode: PlanMode,
+    /// Cron agent 모드 — 사용자 부재 자율 발행. MAX_TOOL_TURNS 25 + 승인 게이트 우회.
+    #[serde(rename = "cronAgent", default, skip_serializing_if = "Option::is_none")]
+    pub cron_agent: Option<CronAgentOpts>,
+}
+
+/// Cron agent 컨텍스트 — 옛 TS `AiRequestOpts.cronAgent` 1:1.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CronAgentOpts {
+    #[serde(rename = "jobId")]
+    pub job_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+}
+
 /// ILlmPort — 옛 TS ILlmPort Rust port.
 ///
 /// Phase B-16 minimum: trait 정의 + Stub 구현체 (실 LLM 호출 없음, dispatch 흐름만 작동).
