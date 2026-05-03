@@ -109,3 +109,56 @@ pub trait ILogPort: Send + Sync {
     fn error(&self, msg: &str);
     fn debug(&self, msg: &str);
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Database — pages / conversations 등 SQL 저장
+// ──────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PageListItem {
+    pub slug: String,
+    pub status: String,
+    pub project: Option<String>,
+    pub visibility: Option<String>,
+    pub title: Option<String>,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: i64,
+    #[serde(rename = "createdAt")]
+    pub created_at: i64,
+    #[serde(rename = "featuredImage", skip_serializing_if = "Option::is_none")]
+    pub featured_image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub excerpt: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PageRecord {
+    pub slug: String,
+    pub spec: String, // JSON-stringified PageSpec
+    pub status: String,
+    pub project: Option<String>,
+    pub visibility: Option<String>,
+    pub password: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+/// IDatabasePort — pages / conversations 등 SQL CRUD 통합 port.
+/// 동기 — rusqlite 가 sync, 단순함 우선. 매니저는 tokio task 로 wrap 가능.
+pub trait IDatabasePort: Send + Sync {
+    // Pages
+    fn list_pages(&self) -> Vec<PageListItem>;
+    fn get_page(&self, slug: &str) -> Option<PageRecord>;
+    fn save_page(
+        &self,
+        slug: &str,
+        spec: &str,
+        status: &str,
+        project: Option<&str>,
+        visibility: Option<&str>,
+        password: Option<&str>,
+    ) -> bool;
+    fn delete_page(&self, slug: &str) -> bool;
+    fn delete_pages_by_project(&self, project: &str) -> Vec<String>;
+    fn search_pages(&self, query: &str, limit: usize) -> Vec<PageListItem>;
+}
