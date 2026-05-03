@@ -265,6 +265,70 @@ pub trait ISandboxPort: Send + Sync {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Embedder — 텍스트 → 임베딩 벡터 (E5 prefix 분리 패턴)
+// ──────────────────────────────────────────────────────────────────────────
+
+/// IEmbedderPort — 텍스트 임베딩 변환 port.
+///
+/// 옛 TS `infra/llm/embedder.ts` + `embedder-adapter.ts` 1:1 port.
+/// 모델: `Xenova/multilingual-e5-small` (transformers.js 로컬 ONNX, 384차원, 한국어 retrieval 용).
+/// E5 prefix 패턴 — 쿼리·문서 벡터 분포 분리:
+///   - `embed_query` → `query: ...` prefix (사용자 검색 입력)
+///   - `embed_passage` → `passage: ...` prefix (인덱스 대상 문서)
+///
+/// 사용처: ConversationManager.search_history (cosine 검색) +
+///         EntityManager.search_entities + EpisodicManager.search_events.
+///
+/// ConfigDrivenAdapter 패턴 (LLM 처럼 여러 provider 혼합) 박지 않은 이유 — 옛 TS 가
+/// 단일 로컬 모델만 사용. provider 교체 시점에 확장 검토.
+#[async_trait::async_trait]
+pub trait IEmbedderPort: Send + Sync {
+    /// 모델 버전 — 캐시 무효화 키. 모델 교체 시 값 변경 → 기존 SQLite BLOB 자동 재임베딩 trigger.
+    fn version(&self) -> &str;
+
+    /// 사용자 쿼리 임베딩 (검색 입력) — `query: ...` prefix.
+    async fn embed_query(&self, text: &str) -> InfraResult<Vec<f32>>;
+
+    /// 인덱스 대상 문서 임베딩 (대화 메시지·entity·event content 등) — `passage: ...` prefix.
+    async fn embed_passage(&self, text: &str) -> InfraResult<Vec<f32>>;
+
+    /// 정규화된 벡터 간 cosine similarity = dot product (mean pool + L2 norm 가정).
+    fn cosine(&self, a: &[f32], b: &[f32]) -> f32 {
+        let n = a.len().min(b.len());
+        let mut dot = 0.0;
+        for i in 0..n {
+            dot += a[i] * b[i];
+        }
+        dot
+    }
+
+    /// Vec<f32> → bytes (SQLite BLOB 저장용). little-endian f32 raw 바이트.
+    fn vec_to_bytes(&self, v: &[f32]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(v.len() * 4);
+        for f in v {
+            out.extend_from_slice(&f.to_le_bytes());
+        }
+        out
+    }
+
+    /// bytes → Vec<f32> (SQLite BLOB 복원). 4바이트 단위 little-endian f32.
+    fn bytes_to_vec(&self, b: &[u8]) -> Vec<f32> {
+        let n = b.len() / 4;
+        let mut out = Vec::with_capacity(n);
+        for i in 0..n {
+            let off = i * 4;
+            out.push(f32::from_le_bytes([
+                b[off], b[off + 1], b[off + 2], b[off + 3],
+            ]));
+        }
+        out
+    }
+
+    /// 벡터 차원 — 어댑터별 명시 (E5-small 384). DB schema 호환성 검증용.
+    fn dimension(&self) -> usize;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // LLM — User AI / Code Assistant / AI Assistant 통합 port
 // ──────────────────────────────────────────────────────────────────────────
 

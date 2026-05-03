@@ -12,10 +12,10 @@ use tonic::transport::Server;
 use firebat_core::{
     adapters::{
         auth::VaultAuthAdapter, cron::TokioCronAdapter, database::SqliteDatabaseAdapter,
-        mcp_client::McpClientFileAdapter, media::LocalMediaAdapter,
-        memory::SqliteMemoryAdapter, sandbox::ProcessSandboxAdapter,
-        storage::LocalStorageAdapter, tracing_log::{init_tracing, TracingLogAdapter},
-        vault::SqliteVaultAdapter,
+        embedder::StubEmbedderAdapter, mcp_client::McpClientFileAdapter,
+        media::LocalMediaAdapter, memory::SqliteMemoryAdapter,
+        sandbox::ProcessSandboxAdapter, storage::LocalStorageAdapter,
+        tracing_log::{init_tracing, TracingLogAdapter}, vault::SqliteVaultAdapter,
     },
     managers::{
         ai::AiManager, auth::AuthManager, capability::CapabilityManager,
@@ -28,8 +28,8 @@ use firebat_core::{
         tool::ToolManager,
     },
     ports::{
-        IAuthPort, IDatabasePort, IEntityPort, IEpisodicPort, ILlmPort, ILogPort, IMcpClientPort,
-        IMediaPort, ISandboxPort, IStoragePort, IVaultPort,
+        IAuthPort, IDatabasePort, IEmbedderPort, IEntityPort, IEpisodicPort, ILlmPort, ILogPort,
+        IMcpClientPort, IMediaPort, ISandboxPort, IStoragePort, IVaultPort,
     },
     proto::{
         ai_service_server::AiServiceServer,
@@ -151,6 +151,12 @@ async fn main() -> Result<()> {
     .map_err(anyhow::Error::msg)
     .context("Cron 어댑터 초기화 실패")?;
     let media: Arc<dyn IMediaPort> = Arc::new(LocalMediaAdapter::new(&workspace_root));
+    // Phase B-18 Step 1 — IEmbedderPort. 옛 TS `infra/llm/embedder.ts` 1:1 (E5 prefix 패턴 + 384-dim).
+    // 현재는 StubEmbedderAdapter (FNV-1a hash 결정론적, wiring + 단위 테스트 가능 수준).
+    // Step 1.5 batch — ConversationManager / EntityManager / EpisodicManager 에 with_embedder
+    // builder 박아 cosine 검색 활성. 그 시점에 `_embedder` 의 underscore 떼고 사용.
+    // Step 1.6 batch — `Xenova/multilingual-e5-small` ONNX 로컬 모델 어댑터 swap (candle / ort crate).
+    let _embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
     // Phase B-17 — ConfigDrivenAdapter. 8 format (5 API + 3 CLI) 핸들러 박힘.
     // 모델 carousel: builtin 8개 + system/llm/configs/*.json 자동 로드 (사용자 모델 추가).
     // 새 모델 = JSON 파일 1개 추가 (옛 TS infra/llm/configs/*.json 동등). 코드 변경 0.

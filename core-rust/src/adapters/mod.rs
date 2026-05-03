@@ -15,3 +15,4 @@ pub mod media;
 pub mod llm;
 pub mod cache;
 pub mod tracing_log;
+pub mod embedder;
