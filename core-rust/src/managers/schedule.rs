@@ -11,12 +11,13 @@ use std::sync::Arc;
 
 use crate::adapters::cron::TokioCronAdapter;
 use crate::managers::ai::AiManager;
+use crate::managers::episodic::EpisodicManager;
 use crate::managers::task::{PipelineStep, TaskManager};
 use crate::managers::tool::ToolManager;
 use crate::ports::{
     CronJobInfo, CronJobResult, CronLogEntry, CronNotification, CronScheduleOptions,
     CronTriggerCallback, CronTriggerInfo, ICronPort, ILogPort, ISandboxPort, InfraResult,
-    LlmCallOpts, SandboxExecuteOpts,
+    LlmCallOpts, SandboxExecuteOpts, SaveEventInput,
 };
 use crate::utils::condition::evaluate_condition;
 use crate::utils::path_resolve::resolve_field_path;
@@ -26,6 +27,7 @@ const DEFAULT_RETRY_DELAY_MS: i64 = 30_000;
 
 /// Schedule trigger 의 외부 dependency. `with_hooks()` 박힘 후 handle_trigger 의 4 모드 + runWhen
 /// + notify 활성. 미박힘 시 sandbox-only fallback (page URL 알림 만 동작).
+/// episodic 박힘 시 AI 미개입 자동 hook 활성 — cron 발화 시 save_event(type='cron_trigger') 자동.
 #[derive(Clone)]
 pub struct ScheduleHooks {
     pub task: Arc<TaskManager>,
@@ -33,6 +35,7 @@ pub struct ScheduleHooks {
     pub sandbox: Arc<dyn ISandboxPort>,
     pub tools: Arc<ToolManager>,
     pub log: Arc<dyn ILogPort>,
+    pub episodic: Arc<EpisodicManager>,
 }
 
 pub struct ScheduleManager {
@@ -226,6 +229,26 @@ impl ScheduleManager {
                     .info(&format!("[Cron] oneShot 성공 → 자동 취소: {}", info.job_id));
             }
             let _ = self.cron.cancel(&info.job_id).await;
+        }
+
+        // 5. AI 미개입 자동 hook — cron 발화 사실 자체를 리콜에 박음.
+        // 옛 TS Core facade 의 saveEvent 자동 호출 패턴 1:1. silent 실패 (event 박기 실패해도 cron
+        // result 영향 X). type='cron_trigger' / title=jobId / description=success/error 요약.
+        if let Some(hooks) = &self.hooks {
+            let description = if final_result.success {
+                format!("cron 정상 실행 ({}ms)", final_result.duration_ms)
+            } else {
+                format!(
+                    "cron 실패: {}",
+                    final_result.error.as_deref().unwrap_or("(unknown)")
+                )
+            };
+            let _ = hooks.episodic.save_event(SaveEventInput {
+                event_type: "cron_trigger".to_string(),
+                title: info.job_id.clone(),
+                description: Some(description),
+                ..Default::default()
+            });
         }
 
         final_result

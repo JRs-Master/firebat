@@ -260,6 +260,7 @@ async fn main() -> Result<()> {
 
     // ScheduleManager 에 hooks 박음 — handle_trigger 의 4 모드 (agent/pipeline/page url/sandbox)
     // + runWhen 평가 + retry loop + notify hook + oneShot 자동 취소 활성.
+    // episodic 박음 — cron 발화 사실 자동 리콜 누적 (AI 미개입).
     let schedule_manager_with_hooks = Arc::new(
         ScheduleManager::new(cron_adapter.clone()).with_hooks(
             firebat_core::managers::schedule::ScheduleHooks {
@@ -268,6 +269,7 @@ async fn main() -> Result<()> {
                 sandbox: sandbox.clone(),
                 tools: tool_manager.clone(),
                 log: logger.clone(),
+                episodic: episodic_manager.clone(),
             },
         ),
     );

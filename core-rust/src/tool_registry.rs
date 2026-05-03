@@ -127,6 +127,8 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     );
 
     // save_page — PageSpec JSON 저장 (publish / draft / private). AdSense 글 발행 핵심.
+    // AI 미개입 자동 hook — 페이지 발행 성공 시 EpisodicManager.save_event(type='page_publish') 자동.
+    // 옛 TS Core facade 의 savePage 패턴 1:1 port — sysmod 에 LLM 거치지 않고 결정론적 누적.
     tools.register(ToolDefinition {
         name: "save_page".to_string(),
         description: "페이지 spec 저장 (upsert). slug + spec 필수. status / project / visibility / password 옵션.".to_string(),
@@ -145,10 +147,12 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         source: "core".to_string(),
     });
     let page = h.page.clone();
+    let episodic_for_page = h.episodic.clone();
     tools.register_handler(
         "save_page",
         make_handler(move |args| {
             let page = page.clone();
+            let episodic = episodic_for_page.clone();
             async move {
                 let slug = args
                     .get("slug")
@@ -168,6 +172,16 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let visibility = args.get("visibility").and_then(|v| v.as_str());
                 let password = args.get("password").and_then(|v| v.as_str());
                 page.save(&slug, &spec_str, status, project, visibility, password)?;
+
+                // AI 미개입 자동 hook — page_publish event 박음. 실패 시 silent (저장 자체는 성공).
+                if status == "published" {
+                    let _ = episodic.save_event(crate::ports::SaveEventInput {
+                        event_type: "page_publish".to_string(),
+                        title: slug.clone(),
+                        description: project.map(|p| format!("project={p}")),
+                        ..Default::default()
+                    });
+                }
                 Ok(serde_json::json!({"slug": slug, "saved": true}))
             }
         }),
