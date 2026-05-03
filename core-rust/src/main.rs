@@ -183,7 +183,7 @@ async fn main() -> Result<()> {
         logger.clone(),
     ));
 
-    // Phase B-17a — 정적 도구 dispatch 등록 (12 도구). LLM stub 위에서도 도구 호출 e2e 동작.
+    // Phase B-17a/c — 정적 도구 dispatch 등록 (27 도구). LLM stub 위에서도 도구 호출 e2e 동작.
     firebat_core::tool_registry::register_core_tools(
         &tool_manager,
         firebat_core::tool_registry::CoreToolHandlers {
@@ -192,6 +192,11 @@ async fn main() -> Result<()> {
             media: media_manager.clone(),
             conversation: conversation_manager.clone(),
             storage: storage.clone(),
+            entity: entity_manager.clone(),
+            episodic: episodic_manager.clone(),
+            consolidation: consolidation_manager.clone(),
+            module: module_manager.clone(),
+            mcp: mcp_manager.clone(),
         },
     );
 
