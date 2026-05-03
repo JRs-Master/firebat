@@ -309,6 +309,12 @@ pub struct LlmCallOpts {
     pub max_tokens: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
+    /// 대화 owner — HistoryResolver 가 자동 history 컨텍스트 인출 시 활용. 미박힘 시 기본 "admin".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
+    /// 대화 ID — HistoryResolver 가 recent N 메시지 조회. 미박힘 시 history 컨텍스트 비활성.
+    #[serde(rename = "conversationId", default, skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
