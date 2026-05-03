@@ -72,7 +72,11 @@ impl ConversationService for ConversationServiceImpl {
             Ok(v) => v,
             Err(e) => return Ok(err_status(format!("save args: {e}"))),
         };
-        match self.manager.save(&args.owner, &args.id, &args.title, &args.messages, args.created_at) {
+        match self
+            .manager
+            .save(&args.owner, &args.id, &args.title, &args.messages, args.created_at)
+            .await
+        {
             Ok(()) => Ok(ok_status()),
             Err(e) => Ok(err_status(e)),
         }
@@ -105,10 +109,37 @@ impl ConversationService for ConversationServiceImpl {
 
     async fn search_history(
         &self,
-        _req: Request<JsonArgs>,
+        req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-15+ 후속 — Embedder 어댑터 박힌 후 임베딩 검색 활성
-        json_response(&Vec::<serde_json::Value>::new())
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            owner: String,
+            query: String,
+            #[serde(rename = "currentConvId", default)]
+            current_conv_id: Option<String>,
+            #[serde(default)]
+            limit: Option<usize>,
+            #[serde(rename = "withinDays", default)]
+            within_days: Option<i64>,
+            #[serde(rename = "minScore", default)]
+            min_score: Option<f32>,
+            #[serde(rename = "includeBlocks", default)]
+            include_blocks: bool,
+        }
+        let args: Args = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("search_history args: {e}")))?;
+        let opts = crate::managers::conversation::SearchHistoryOpts {
+            current_conv_id: args.current_conv_id,
+            limit: args.limit,
+            within_days: args.within_days,
+            min_score: args.min_score,
+            include_blocks: args.include_blocks,
+        };
+        match self.manager.search_history(&args.owner, &args.query, opts).await {
+            Ok(matches) => json_response(&matches),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
     }
 
     async fn get_cli_session(

@@ -98,7 +98,7 @@ mod tests {
             {"role": "assistant", "content": "75,000원입니다"},
             {"role": "user", "content": "차트도 보여줘"},
         ]);
-        mgr.save("admin", "c1", "주식 대화", &messages, None).unwrap();
+        mgr.save_sync("admin", "c1", "주식 대화", &messages, None).unwrap();
 
         let resolver = HistoryResolver::new(mgr);
         let ctx = resolver.resolve("admin", Some("c1")).unwrap();
@@ -114,7 +114,7 @@ mod tests {
             {"role": "system", "content": "system init"},
             {"role": "user", "content": "안녕"},
         ]);
-        mgr.save("admin", "c1", "test", &messages, None).unwrap();
+        mgr.save_sync("admin", "c1", "test", &messages, None).unwrap();
         let resolver = HistoryResolver::new(mgr);
         let ctx = resolver.resolve("admin", Some("c1")).unwrap();
         assert!(!ctx.contains("system init"));
@@ -127,7 +127,7 @@ mod tests {
         let messages = serde_json::json!([
             {"role": "system", "content": "init"}
         ]);
-        mgr.save("admin", "c1", "test", &messages, None).unwrap();
+        mgr.save_sync("admin", "c1", "test", &messages, None).unwrap();
         let resolver = HistoryResolver::new(mgr);
         assert!(resolver.resolve("admin", Some("c1")).is_none());
     }
@@ -143,7 +143,7 @@ mod tests {
             }));
         }
         let messages = serde_json::Value::Array(msgs);
-        mgr.save("admin", "c1", "long", &messages, None).unwrap();
+        mgr.save_sync("admin", "c1", "long", &messages, None).unwrap();
         let resolver = HistoryResolver::new(mgr);
         let ctx = resolver.resolve("admin", Some("c1")).unwrap();
         // RECENT_MESSAGE_LIMIT = 5, 가장 처음 메시지 (message 0~4) 는 미포함

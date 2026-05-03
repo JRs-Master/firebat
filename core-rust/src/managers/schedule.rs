@@ -262,12 +262,15 @@ impl ScheduleManager {
                     final_result.error.as_deref().unwrap_or("(unknown)")
                 )
             };
-            let _ = hooks.episodic.save_event(SaveEventInput {
-                event_type: "cron_trigger".to_string(),
-                title: info.job_id.clone(),
-                description: Some(description),
-                ..Default::default()
-            });
+            let _ = hooks
+                .episodic
+                .save_event(SaveEventInput {
+                    event_type: "cron_trigger".to_string(),
+                    title: info.job_id.clone(),
+                    description: Some(description),
+                    ..Default::default()
+                })
+                .await;
         }
 
         // 6. AI 미개입 자동 hook 2: StatusManager done/error 박음 (옛 TS core/index.ts:1375 패턴).

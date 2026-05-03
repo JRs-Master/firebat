@@ -199,6 +199,59 @@ pub trait IDatabasePort: Send + Sync {
     fn set_cli_session(&self, conversation_id: &str, session_id: &str, model: &str) -> bool;
     fn get_active_plan_state(&self, conversation_id: &str) -> Option<String>;
     fn set_active_plan_state(&self, conversation_id: &str, state: Option<&str>) -> bool;
+
+    // Conversation embeddings — 메시지 단위 벡터 (search_history cosine 검색용).
+    // 옛 TS infra/database/index.ts 의 conversation_embeddings 테이블 1:1 port.
+
+    /// 특정 대화의 기존 임베딩 (msg_idx, content_hash) 목록 — sync 시 변경 감지용.
+    fn list_conversation_embeddings(
+        &self,
+        owner: &str,
+        conv_id: &str,
+    ) -> Vec<ConversationEmbeddingMeta>;
+
+    /// 메시지 임베딩 upsert (PRIMARY KEY conv_id+msg_idx 기준).
+    fn upsert_conversation_embedding(&self, row: &ConversationEmbeddingRow) -> bool;
+
+    /// 특정 msg_idx 들 일괄 삭제 (메시지 배열 길이 줄어 사라진 인덱스).
+    fn delete_conversation_embeddings_by_idx(
+        &self,
+        owner: &str,
+        conv_id: &str,
+        msg_idxs: &[i64],
+    ) -> bool;
+
+    /// 대화 전체 임베딩 삭제 — delete_conversation 시 cascade 정리.
+    fn delete_all_conversation_embeddings(&self, owner: &str, conv_id: &str) -> bool;
+
+    /// search_history 후보 row 일괄 로드 — owner + cutoff (created_at >= cutoff).
+    /// LEFT JOIN 으로 conv_title 도 포함. cosine 매칭은 호출자 (ConversationManager) 에서.
+    fn query_conversation_embeddings_since(
+        &self,
+        owner: &str,
+        cutoff_ms: i64,
+    ) -> Vec<ConversationEmbeddingRow>;
+}
+
+/// 임베딩 sync 시 변경 감지용 — content_hash 비교만 필요.
+#[derive(Debug, Clone)]
+pub struct ConversationEmbeddingMeta {
+    pub msg_idx: i64,
+    pub content_hash: String,
+}
+
+/// 임베딩 row 전체 — search_history 후보 조회 + upsert 양쪽 활용.
+#[derive(Debug, Clone)]
+pub struct ConversationEmbeddingRow {
+    pub conv_id: String,
+    pub conv_title: Option<String>,
+    pub owner: String,
+    pub msg_idx: i64,
+    pub role: String,
+    pub content_hash: String,
+    pub content_preview: String,
+    pub embedding: Vec<u8>,
+    pub created_at: i64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -614,18 +667,19 @@ pub struct TimelineOpts {
 
 /// IEntityPort — Phase 1 entity tier port.
 ///
-/// 동기 — rusqlite 가 sync (다른 IDatabasePort 와 통일).
-/// Phase B-12 minimum: 임베딩 미박음 (search = name + alias substring 매칭).
-/// Phase B-15+ 에서 IEmbedderPort 박힌 후 cosine search 활성.
+/// save_entity / save_fact / search_entities / search_facts 4개는 async — IEmbedderPort
+/// async fn (`embed_passage` / `embed_query`) 호출하기 때문. 다른 메서드 (update / remove /
+/// get / find / list / cleanup / count) 는 임베딩 미사용 — sync 유지.
+#[async_trait::async_trait]
 pub trait IEntityPort: Send + Sync {
-    fn save_entity(&self, input: &SaveEntityInput) -> InfraResult<(i64, bool)>;
+    async fn save_entity(&self, input: &SaveEntityInput) -> InfraResult<(i64, bool)>;
     fn update_entity(&self, id: i64, patch: &UpdateEntityPatch) -> InfraResult<()>;
     fn remove_entity(&self, id: i64) -> InfraResult<()>;
     fn get_entity(&self, id: i64) -> InfraResult<Option<EntityRecord>>;
     fn find_entity_by_name(&self, name: &str) -> InfraResult<Option<EntityRecord>>;
-    fn search_entities(&self, opts: &EntitySearchOpts) -> InfraResult<Vec<EntityRecord>>;
+    async fn search_entities(&self, opts: &EntitySearchOpts) -> InfraResult<Vec<EntityRecord>>;
 
-    fn save_fact(&self, input: &SaveFactInput) -> InfraResult<(i64, bool, Option<f64>)>;
+    async fn save_fact(&self, input: &SaveFactInput) -> InfraResult<(i64, bool, Option<f64>)>;
     fn update_fact(&self, id: i64, patch: &UpdateFactPatch) -> InfraResult<()>;
     fn remove_fact(&self, id: i64) -> InfraResult<()>;
     fn get_fact(&self, id: i64) -> InfraResult<Option<EntityFactRecord>>;
@@ -634,7 +688,7 @@ pub trait IEntityPort: Send + Sync {
         entity_id: i64,
         opts: &TimelineOpts,
     ) -> InfraResult<Vec<EntityFactRecord>>;
-    fn search_facts(&self, opts: &FactSearchOpts) -> InfraResult<Vec<EntityFactRecord>>;
+    async fn search_facts(&self, opts: &FactSearchOpts) -> InfraResult<Vec<EntityFactRecord>>;
     fn cleanup_expired_facts(&self) -> InfraResult<i64>;
 
     /// 통계 — 매니저 retrieve_context / health stats 에서 활용.
@@ -1067,12 +1121,16 @@ pub trait IMediaPort: Send + Sync {
 }
 
 /// IEpisodicPort — Phase 2 episodic tier port.
+///
+/// save_event / search_events 2개는 async — IEmbedderPort 호출 (`embed_passage` 자동
+/// 임베딩 + `embed_query` cosine 검색). 나머지는 임베딩 미사용 — sync 유지.
+#[async_trait::async_trait]
 pub trait IEpisodicPort: Send + Sync {
-    fn save_event(&self, input: &SaveEventInput) -> InfraResult<(i64, bool, Option<f64>)>;
+    async fn save_event(&self, input: &SaveEventInput) -> InfraResult<(i64, bool, Option<f64>)>;
     fn update_event(&self, id: i64, patch: &UpdateEventPatch) -> InfraResult<()>;
     fn remove_event(&self, id: i64) -> InfraResult<()>;
     fn get_event(&self, id: i64) -> InfraResult<Option<EventRecord>>;
-    fn search_events(&self, opts: &EventSearchOpts) -> InfraResult<Vec<EventRecord>>;
+    async fn search_events(&self, opts: &EventSearchOpts) -> InfraResult<Vec<EventRecord>>;
     fn list_recent_events(&self, opts: &ListRecentOpts) -> InfraResult<Vec<EventRecord>>;
     fn link_event_entity(&self, event_id: i64, entity_id: i64) -> InfraResult<()>;
     fn unlink_event_entity(&self, event_id: i64, entity_id: i64) -> InfraResult<()>;

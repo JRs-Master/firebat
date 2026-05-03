@@ -185,12 +185,14 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
 
                 // AI 미개입 자동 hook 1: page_publish event 박음. silent fail (page save 성공 보장).
                 if status == "published" {
-                    let _ = episodic.save_event(crate::ports::SaveEventInput {
-                        event_type: "page_publish".to_string(),
-                        title: slug.clone(),
-                        description: project.map(|p| format!("project={p}")),
-                        ..Default::default()
-                    });
+                    let _ = episodic
+                        .save_event(crate::ports::SaveEventInput {
+                            event_type: "page_publish".to_string(),
+                            title: slug.clone(),
+                            description: project.map(|p| format!("project={p}")),
+                            ..Default::default()
+                        })
+                        .await;
                 }
                 // AI 미개입 자동 hook 2: 사이드바 SSE 갱신 (옛 TS core/index.ts:858 notifySidebar).
                 event.notify_sidebar();
@@ -525,13 +527,15 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 }
                 let parsed: Args = serde_json::from_value(args)
                     .map_err(|e| format!("save_entity args: {e}"))?;
-                let (id, created) = entity.save_entity(SaveEntityInput {
-                    name: parsed.name,
-                    entity_type: parsed.entity_type,
-                    aliases: parsed.aliases,
-                    metadata: parsed.metadata,
-                    source_conv_id: None,
-                })?;
+                let (id, created) = entity
+                    .save_entity(SaveEntityInput {
+                        name: parsed.name,
+                        entity_type: parsed.entity_type,
+                        aliases: parsed.aliases,
+                        metadata: parsed.metadata,
+                        source_conv_id: None,
+                    })
+                    .await?;
                 Ok(serde_json::json!({"id": id, "created": created}))
             }
         }),
@@ -588,7 +592,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     ttl_days: args.get("ttlDays").and_then(|v| v.as_i64()),
                     dedup_threshold: args.get("dedupThreshold").and_then(|v| v.as_f64()),
                 };
-                let (id, skipped, sim) = entity.save_fact(parsed)?;
+                let (id, skipped, sim) = entity.save_fact(parsed).await?;
                 Ok(serde_json::json!({"id": id, "skipped": skipped, "similarity": sim}))
             }
         }),
@@ -616,7 +620,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             async move {
                 let opts: EntitySearchOpts = serde_json::from_value(args)
                     .map_err(|e| format!("search_entities args: {e}"))?;
-                let result = entity.search_entities(opts)?;
+                let result = entity.search_entities(opts).await?;
                 Ok(serde_json::to_value(result).unwrap_or_default())
             }
         }),
@@ -690,7 +694,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             async move {
                 let opts: FactSearchOpts = serde_json::from_value(args)
                     .map_err(|e| format!("search_entity_facts args: {e}"))?;
-                let result = entity.search_facts(opts)?;
+                let result = entity.search_facts(opts).await?;
                 Ok(serde_json::to_value(result).unwrap_or_default())
             }
         }),
@@ -739,18 +743,20 @@ fn register_episodic_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 }
                 let parsed: Args = serde_json::from_value(args)
                     .map_err(|e| format!("save_event args: {e}"))?;
-                let (id, skipped, sim) = episodic.save_event(SaveEventInput {
-                    event_type: parsed.event_type,
-                    title: parsed.title,
-                    description: parsed.description,
-                    who: None,
-                    context: None,
-                    occurred_at: parsed.occurred_at,
-                    entity_ids: parsed.entity_ids,
-                    source_conv_id: None,
-                    ttl_days: parsed.ttl_days,
-                    dedup_threshold: parsed.dedup_threshold,
-                })?;
+                let (id, skipped, sim) = episodic
+                    .save_event(SaveEventInput {
+                        event_type: parsed.event_type,
+                        title: parsed.title,
+                        description: parsed.description,
+                        who: None,
+                        context: None,
+                        occurred_at: parsed.occurred_at,
+                        entity_ids: parsed.entity_ids,
+                        source_conv_id: None,
+                        ttl_days: parsed.ttl_days,
+                        dedup_threshold: parsed.dedup_threshold,
+                    })
+                    .await?;
                 Ok(serde_json::json!({"id": id, "skipped": skipped, "similarity": sim}))
             }
         }),
@@ -779,7 +785,7 @@ fn register_episodic_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             async move {
                 let opts: EventSearchOpts = serde_json::from_value(args)
                     .map_err(|e| format!("search_events args: {e}"))?;
-                let result = episodic.search_events(opts)?;
+                let result = episodic.search_events(opts).await?;
                 Ok(serde_json::to_value(result).unwrap_or_default())
             }
         }),

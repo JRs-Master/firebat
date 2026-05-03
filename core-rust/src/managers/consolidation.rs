@@ -290,11 +290,12 @@ impl ConsolidationManager {
 
         // 5. save_extracted 위임 (이미 박힌 메서드)
         self.save_extracted(extracted, Some(conv_id), Some(0.92), Some(0.92))
+            .await
     }
 
     /// 미리 추출된 JSON → entity / fact / event 일괄 save.
     /// LLM 추출은 Phase B-16+ AiManager 박힌 후 활성. 이 메서드는 그 시점에도 그대로 재사용.
-    pub fn save_extracted(
+    pub async fn save_extracted(
         &self,
         extracted: ExtractionResult,
         source_conv_id: Option<&str>,
@@ -311,13 +312,17 @@ impl ConsolidationManager {
                 skipped += 1;
                 continue;
             }
-            match self.entity_mgr.save_entity(SaveEntityInput {
-                name: e.name.clone(),
-                entity_type: e.entity_type.clone(),
-                aliases: e.aliases.clone(),
-                metadata: e.metadata.clone(),
-                source_conv_id: source_conv_id.map(String::from),
-            }) {
+            match self
+                .entity_mgr
+                .save_entity(SaveEntityInput {
+                    name: e.name.clone(),
+                    entity_type: e.entity_type.clone(),
+                    aliases: e.aliases.clone(),
+                    metadata: e.metadata.clone(),
+                    source_conv_id: source_conv_id.map(String::from),
+                })
+                .await
+            {
                 Ok((id, created)) => {
                     entity_id_by_name.insert(e.name.clone(), id);
                     saved.entities.push(SavedEntity {
@@ -350,16 +355,20 @@ impl ConsolidationManager {
                 skipped += 1;
                 continue;
             };
-            match self.entity_mgr.save_fact(SaveFactInput {
-                entity_id,
-                content: f.content.clone(),
-                fact_type: f.fact_type.clone(),
-                occurred_at: f.occurred_at,
-                tags: f.tags.clone(),
-                source_conv_id: source_conv_id.map(String::from),
-                ttl_days: None,
-                dedup_threshold: fact_dedup_threshold,
-            }) {
+            match self
+                .entity_mgr
+                .save_fact(SaveFactInput {
+                    entity_id,
+                    content: f.content.clone(),
+                    fact_type: f.fact_type.clone(),
+                    occurred_at: f.occurred_at,
+                    tags: f.tags.clone(),
+                    source_conv_id: source_conv_id.map(String::from),
+                    ttl_days: None,
+                    dedup_threshold: fact_dedup_threshold,
+                })
+                .await
+            {
                 Ok((id, was_skipped, _)) => {
                     if was_skipped {
                         skipped += 1;
@@ -390,18 +399,22 @@ impl ConsolidationManager {
                     entity_ids.push(rec.id);
                 }
             }
-            match self.episodic_mgr.save_event(SaveEventInput {
-                event_type: ev.event_type.clone(),
-                title: ev.title.clone(),
-                description: ev.description.clone(),
-                who: None,
-                context: None,
-                occurred_at: ev.occurred_at,
-                entity_ids,
-                source_conv_id: source_conv_id.map(String::from),
-                ttl_days: None,
-                dedup_threshold: event_dedup_threshold,
-            }) {
+            match self
+                .episodic_mgr
+                .save_event(SaveEventInput {
+                    event_type: ev.event_type.clone(),
+                    title: ev.title.clone(),
+                    description: ev.description.clone(),
+                    who: None,
+                    context: None,
+                    occurred_at: ev.occurred_at,
+                    entity_ids,
+                    source_conv_id: source_conv_id.map(String::from),
+                    ttl_days: None,
+                    dedup_threshold: event_dedup_threshold,
+                })
+                .await
+            {
                 Ok((id, was_skipped, _)) => {
                     if was_skipped {
                         skipped += 1;
@@ -458,8 +471,8 @@ mod tests {
         ConsolidationManager::new(entity_mgr, episodic_mgr)
     }
 
-    #[test]
-    fn save_extracted_creates_entities_and_facts() {
+    #[tokio::test]
+    async fn save_extracted_creates_entities_and_facts() {
         let mgr = manager();
         let extracted = ExtractionResult {
             entities: vec![ExtractedEntity {
@@ -485,6 +498,7 @@ mod tests {
         };
         let outcome = mgr
             .save_extracted(extracted, Some("c1"), Some(0.92), Some(0.92))
+            .await
             .unwrap();
         assert_eq!(outcome.saved.entities.len(), 1);
         assert_eq!(outcome.saved.facts.len(), 1);
@@ -492,8 +506,8 @@ mod tests {
         assert_eq!(outcome.skipped, 0);
     }
 
-    #[test]
-    fn missing_entity_name_skips_fact() {
+    #[tokio::test]
+    async fn missing_entity_name_skips_fact() {
         let mgr = manager();
         let extracted = ExtractionResult {
             entities: vec![],
@@ -506,13 +520,16 @@ mod tests {
             }],
             events: vec![],
         };
-        let outcome = mgr.save_extracted(extracted, None, None, None).unwrap();
+        let outcome = mgr
+            .save_extracted(extracted, None, None, None)
+            .await
+            .unwrap();
         assert_eq!(outcome.saved.facts.len(), 0);
         assert_eq!(outcome.skipped, 1);
     }
 
-    #[test]
-    fn memory_stats_aggregates() {
+    #[tokio::test]
+    async fn memory_stats_aggregates_async() {
         let mgr = manager();
         let extracted = ExtractionResult {
             entities: vec![
@@ -536,7 +553,9 @@ mod tests {
                 entity_names: vec![],
             }],
         };
-        mgr.save_extracted(extracted, None, None, None).unwrap();
+        mgr.save_extracted(extracted, None, None, None)
+            .await
+            .unwrap();
         let stats = mgr.get_memory_stats().unwrap();
         assert_eq!(stats.entities, 2);
         assert_eq!(stats.events, 1);

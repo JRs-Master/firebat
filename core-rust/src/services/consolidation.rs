@@ -56,12 +56,16 @@ impl ConsolidationService for ConsolidationServiceImpl {
         }
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("consolidate args: {e}")))?;
-        match self.manager.save_extracted(
-            args.extracted,
-            args.source_conv_id.as_deref(),
-            args.fact_dedup_threshold,
-            args.event_dedup_threshold,
-        ) {
+        match self
+            .manager
+            .save_extracted(
+                args.extracted,
+                args.source_conv_id.as_deref(),
+                args.fact_dedup_threshold,
+                args.event_dedup_threshold,
+            )
+            .await
+        {
             Ok(outcome) => json_response(&outcome),
             Err(e) => Err(TonicStatus::internal(e)),
         }

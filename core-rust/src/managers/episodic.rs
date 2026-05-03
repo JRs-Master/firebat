@@ -19,8 +19,11 @@ impl EpisodicManager {
         Self { port }
     }
 
-    pub fn save_event(&self, input: SaveEventInput) -> InfraResult<(i64, bool, Option<f64>)> {
-        self.port.save_event(&input)
+    pub async fn save_event(
+        &self,
+        input: SaveEventInput,
+    ) -> InfraResult<(i64, bool, Option<f64>)> {
+        self.port.save_event(&input).await
     }
 
     pub fn update_event(&self, id: i64, patch: UpdateEventPatch) -> InfraResult<()> {
@@ -35,26 +38,28 @@ impl EpisodicManager {
         self.port.get_event(id)
     }
 
-    pub fn search_events(&self, opts: EventSearchOpts) -> InfraResult<Vec<EventRecord>> {
-        self.port.search_events(&opts)
+    pub async fn search_events(&self, opts: EventSearchOpts) -> InfraResult<Vec<EventRecord>> {
+        self.port.search_events(&opts).await
     }
 
     pub fn list_recent_events(&self, opts: ListRecentOpts) -> InfraResult<Vec<EventRecord>> {
         self.port.list_recent_events(&opts)
     }
 
-    pub fn list_events_by_entity(
+    pub async fn list_events_by_entity(
         &self,
         entity_id: i64,
         limit: Option<usize>,
         offset: Option<usize>,
     ) -> InfraResult<Vec<EventRecord>> {
-        self.port.search_events(&EventSearchOpts {
-            entity_id: Some(entity_id),
-            limit,
-            offset,
-            ..Default::default()
-        })
+        self.port
+            .search_events(&EventSearchOpts {
+                entity_id: Some(entity_id),
+                limit,
+                offset,
+                ..Default::default()
+            })
+            .await
     }
 
     pub fn link_entity(&self, event_id: i64, entity_id: i64) -> InfraResult<()> {
@@ -88,8 +93,8 @@ mod tests {
         EpisodicManager::new(port)
     }
 
-    #[test]
-    fn save_search_recent() {
+    #[tokio::test]
+    async fn save_search_recent() {
         let mgr = manager();
         mgr.save_event(SaveEventInput {
             event_type: "page_publish".to_string(),
@@ -97,6 +102,7 @@ mod tests {
             occurred_at: Some(1_000),
             ..Default::default()
         })
+        .await
         .unwrap();
         mgr.save_event(SaveEventInput {
             event_type: "page_publish".to_string(),
@@ -104,6 +110,7 @@ mod tests {
             occurred_at: Some(2_000),
             ..Default::default()
         })
+        .await
         .unwrap();
         let recent = mgr
             .list_recent_events(ListRecentOpts {

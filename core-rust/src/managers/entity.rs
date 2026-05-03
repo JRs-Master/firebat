@@ -19,8 +19,8 @@ impl EntityManager {
         Self { port }
     }
 
-    pub fn save_entity(&self, input: SaveEntityInput) -> InfraResult<(i64, bool)> {
-        self.port.save_entity(&input)
+    pub async fn save_entity(&self, input: SaveEntityInput) -> InfraResult<(i64, bool)> {
+        self.port.save_entity(&input).await
     }
 
     pub fn update_entity(&self, id: i64, patch: UpdateEntityPatch) -> InfraResult<()> {
@@ -39,12 +39,15 @@ impl EntityManager {
         self.port.find_entity_by_name(name)
     }
 
-    pub fn search_entities(&self, opts: EntitySearchOpts) -> InfraResult<Vec<EntityRecord>> {
-        self.port.search_entities(&opts)
+    pub async fn search_entities(
+        &self,
+        opts: EntitySearchOpts,
+    ) -> InfraResult<Vec<EntityRecord>> {
+        self.port.search_entities(&opts).await
     }
 
-    pub fn save_fact(&self, input: SaveFactInput) -> InfraResult<(i64, bool, Option<f64>)> {
-        self.port.save_fact(&input)
+    pub async fn save_fact(&self, input: SaveFactInput) -> InfraResult<(i64, bool, Option<f64>)> {
+        self.port.save_fact(&input).await
     }
 
     pub fn update_fact(&self, id: i64, patch: UpdateFactPatch) -> InfraResult<()> {
@@ -67,13 +70,16 @@ impl EntityManager {
         self.port.list_facts_by_entity(entity_id, &opts)
     }
 
-    pub fn search_facts(&self, opts: FactSearchOpts) -> InfraResult<Vec<EntityFactRecord>> {
-        self.port.search_facts(&opts)
+    pub async fn search_facts(
+        &self,
+        opts: FactSearchOpts,
+    ) -> InfraResult<Vec<EntityFactRecord>> {
+        self.port.search_facts(&opts).await
     }
 
     /// 자연어 query → 매칭 entity + 해당 entity 의 최근 fact (timeline).
     /// Phase 5 RetrievalEngine 의 base — 현재는 명시 호출 / Phase B-15+ 자동 prepend 패턴.
-    pub fn retrieve_context(
+    pub async fn retrieve_context(
         &self,
         query: &str,
         entity_limit: usize,
@@ -84,11 +90,14 @@ impl EntityManager {
         }
         let entity_limit = entity_limit.clamp(1, 20);
         let facts_per_entity = facts_per_entity.clamp(1, 50);
-        let entities = self.port.search_entities(&EntitySearchOpts {
-            query: query.to_string(),
-            limit: Some(entity_limit),
-            ..Default::default()
-        })?;
+        let entities = self
+            .port
+            .search_entities(&EntitySearchOpts {
+                query: query.to_string(),
+                limit: Some(entity_limit),
+                ..Default::default()
+            })
+            .await?;
         let mut out = Vec::new();
         for entity in entities {
             let timeline = self
@@ -134,8 +143,8 @@ mod tests {
         EntityManager::new(port)
     }
 
-    #[test]
-    fn retrieve_context_links_entity_and_facts() {
+    #[tokio::test]
+    async fn retrieve_context_links_entity_and_facts() {
         let mgr = manager();
         let (eid, _) = mgr
             .save_entity(SaveEntityInput {
@@ -143,6 +152,7 @@ mod tests {
                 entity_type: "stock".to_string(),
                 ..Default::default()
             })
+            .await
             .unwrap();
         mgr.save_fact(SaveFactInput {
             entity_id: eid,
@@ -150,18 +160,19 @@ mod tests {
             occurred_at: Some(1_700_000_000_000),
             ..Default::default()
         })
+        .await
         .unwrap();
 
-        let result = mgr.retrieve_context("삼성", 5, 5).unwrap();
+        let result = mgr.retrieve_context("삼성", 5, 5).await.unwrap();
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].0.name, "삼성전자");
         assert_eq!(result[0].1.len(), 1);
     }
 
-    #[test]
-    fn retrieve_context_empty_query_returns_empty() {
+    #[tokio::test]
+    async fn retrieve_context_empty_query_returns_empty() {
         let mgr = manager();
-        let result = mgr.retrieve_context("   ", 5, 5).unwrap();
+        let result = mgr.retrieve_context("   ", 5, 5).await.unwrap();
         assert!(result.is_empty());
     }
 }

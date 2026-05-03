@@ -135,10 +135,18 @@ async fn main() -> Result<()> {
             .map_err(anyhow::Error::msg)
             .context("MCP servers 파일 open 실패")?,
     );
+    // Phase B-18 Step 1 — IEmbedderPort. 옛 TS `infra/llm/embedder.ts` 1:1 (E5 prefix 패턴 + 384-dim).
+    // 현재는 StubEmbedderAdapter (FNV-1a hash 결정론적). Step 1.6 batch 에서 candle/ort crate +
+    // `Xenova/multilingual-e5-small` ONNX 로컬 모델 어댑터로 swap (제로 매니저 변경 — 어댑터 1개만).
+    let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
+
+    // Phase B-18 Step 1.5 — SqliteMemoryAdapter 에 embedder 주입 →
+    // saveEntity / saveFact / saveEvent 자동 임베딩 + searchEntities/Facts/Events cosine 활성.
     let memory_adapter = Arc::new(
         SqliteMemoryAdapter::new(&memory_db_path)
             .map_err(anyhow::Error::msg)
-            .context("Memory DB open 실패")?,
+            .context("Memory DB open 실패")?
+            .with_embedder(embedder.clone()),
     );
     let entity_port: Arc<dyn IEntityPort> = memory_adapter.clone();
     let episodic_port: Arc<dyn IEpisodicPort> = memory_adapter.clone();
@@ -151,12 +159,6 @@ async fn main() -> Result<()> {
     .map_err(anyhow::Error::msg)
     .context("Cron 어댑터 초기화 실패")?;
     let media: Arc<dyn IMediaPort> = Arc::new(LocalMediaAdapter::new(&workspace_root));
-    // Phase B-18 Step 1 — IEmbedderPort. 옛 TS `infra/llm/embedder.ts` 1:1 (E5 prefix 패턴 + 384-dim).
-    // 현재는 StubEmbedderAdapter (FNV-1a hash 결정론적, wiring + 단위 테스트 가능 수준).
-    // Step 1.5 batch — ConversationManager / EntityManager / EpisodicManager 에 with_embedder
-    // builder 박아 cosine 검색 활성. 그 시점에 `_embedder` 의 underscore 떼고 사용.
-    // Step 1.6 batch — `Xenova/multilingual-e5-small` ONNX 로컬 모델 어댑터 swap (candle / ort crate).
-    let _embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
     // Phase B-17 — ConfigDrivenAdapter. 8 format (5 API + 3 CLI) 핸들러 박힘.
     // 모델 carousel: builtin 8개 + system/llm/configs/*.json 자동 로드 (사용자 모델 추가).
     // 새 모델 = JSON 파일 1개 추가 (옛 TS infra/llm/configs/*.json 동등). 코드 변경 0.
@@ -196,7 +198,13 @@ async fn main() -> Result<()> {
         vault.clone(),
     ));
     let page_manager = Arc::new(PageManager::new(db.clone(), storage.clone()));
-    let conversation_manager = Arc::new(ConversationManager::new(db.clone()));
+    // Phase B-18 Step 1.5 — ConversationManager 에 embedder + log 주입 →
+    // save() 시 메시지 단위 임베딩 자동 sync + search_history cosine 검색 활성.
+    let conversation_manager = Arc::new(
+        ConversationManager::new(db.clone())
+            .with_embedder(embedder.clone())
+            .with_log(logger.clone()),
+    );
     let mcp_manager = Arc::new(McpManager::new(mcp_client));
     let entity_manager = Arc::new(EntityManager::new(entity_port));
     let episodic_manager = Arc::new(EpisodicManager::new(episodic_port));

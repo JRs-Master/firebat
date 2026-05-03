@@ -63,13 +63,16 @@ impl EntityService for EntityServiceImpl {
         }
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("save args: {e}")))?;
-        let result = self.manager.save_entity(SaveEntityInput {
-            name: args.name,
-            entity_type: args.entity_type,
-            aliases: args.aliases,
-            metadata: args.metadata,
-            source_conv_id: args.source_conv_id,
-        });
+        let result = self
+            .manager
+            .save_entity(SaveEntityInput {
+                name: args.name,
+                entity_type: args.entity_type,
+                aliases: args.aliases,
+                metadata: args.metadata,
+                source_conv_id: args.source_conv_id,
+            })
+            .await;
         match result {
             Ok((id, created)) => json_response(&serde_json::json!({"id": id, "created": created})),
             Err(e) => Err(TonicStatus::internal(e)),
@@ -137,7 +140,7 @@ impl EntityService for EntityServiceImpl {
         let raw = req.into_inner().raw;
         let opts: EntitySearchOpts = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("search args: {e}")))?;
-        match self.manager.search_entities(opts) {
+        match self.manager.search_entities(opts).await {
             Ok(list) => json_response(&list),
             Err(e) => Err(TonicStatus::internal(e)),
         }
@@ -168,16 +171,20 @@ impl EntityService for EntityServiceImpl {
         }
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("save_fact args: {e}")))?;
-        match self.manager.save_fact(SaveFactInput {
-            entity_id: args.entity_id,
-            content: args.content,
-            fact_type: args.fact_type,
-            occurred_at: args.occurred_at,
-            tags: args.tags,
-            source_conv_id: args.source_conv_id,
-            ttl_days: args.ttl_days,
-            dedup_threshold: args.dedup_threshold,
-        }) {
+        match self
+            .manager
+            .save_fact(SaveFactInput {
+                entity_id: args.entity_id,
+                content: args.content,
+                fact_type: args.fact_type,
+                occurred_at: args.occurred_at,
+                tags: args.tags,
+                source_conv_id: args.source_conv_id,
+                ttl_days: args.ttl_days,
+                dedup_threshold: args.dedup_threshold,
+            })
+            .await
+        {
             Ok((id, skipped, sim)) => json_response(
                 &serde_json::json!({"id": id, "skipped": skipped, "similarity": sim}),
             ),
@@ -281,7 +288,7 @@ impl EntityService for EntityServiceImpl {
         let raw = req.into_inner().raw;
         let opts: FactSearchOpts = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("search_facts args: {e}")))?;
-        match self.manager.search_facts(opts) {
+        match self.manager.search_facts(opts).await {
             Ok(list) => json_response(&list),
             Err(e) => Err(TonicStatus::internal(e)),
         }
@@ -303,7 +310,11 @@ impl EntityService for EntityServiceImpl {
         fn default_5() -> usize { 5 }
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("retrieve_context args: {e}")))?;
-        match self.manager.retrieve_context(&args.query, args.entity_limit, args.facts_per_entity) {
+        match self
+            .manager
+            .retrieve_context(&args.query, args.entity_limit, args.facts_per_entity)
+            .await
+        {
             Ok(pairs) => {
                 // Vec<(EntityRecord, Vec<EntityFactRecord>)> → JSON array of {entity, recentFacts}
                 let json: Vec<serde_json::Value> = pairs

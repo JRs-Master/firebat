@@ -72,18 +72,22 @@ impl EpisodicService for EpisodicServiceImpl {
         }
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("save_event args: {e}")))?;
-        match self.manager.save_event(SaveEventInput {
-            event_type: args.event_type,
-            title: args.title,
-            description: args.description,
-            who: args.who,
-            context: args.context,
-            occurred_at: args.occurred_at,
-            entity_ids: args.entity_ids,
-            source_conv_id: args.source_conv_id,
-            ttl_days: args.ttl_days,
-            dedup_threshold: args.dedup_threshold,
-        }) {
+        match self
+            .manager
+            .save_event(SaveEventInput {
+                event_type: args.event_type,
+                title: args.title,
+                description: args.description,
+                who: args.who,
+                context: args.context,
+                occurred_at: args.occurred_at,
+                entity_ids: args.entity_ids,
+                source_conv_id: args.source_conv_id,
+                ttl_days: args.ttl_days,
+                dedup_threshold: args.dedup_threshold,
+            })
+            .await
+        {
             Ok((id, skipped, sim)) => json_response(
                 &serde_json::json!({"id": id, "skipped": skipped, "similarity": sim}),
             ),
@@ -165,7 +169,7 @@ impl EpisodicService for EpisodicServiceImpl {
         let raw = req.into_inner().raw;
         let opts: EventSearchOpts = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("search_events args: {e}")))?;
-        match self.manager.search_events(opts) {
+        match self.manager.search_events(opts).await {
             Ok(list) => json_response(&list),
             Err(e) => Err(TonicStatus::internal(e)),
         }
@@ -203,6 +207,7 @@ impl EpisodicService for EpisodicServiceImpl {
         match self
             .manager
             .list_events_by_entity(args.entity_id, args.limit, args.offset)
+            .await
         {
             Ok(list) => json_response(&list),
             Err(e) => Err(TonicStatus::internal(e)),

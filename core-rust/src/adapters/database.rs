@@ -9,8 +9,8 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use crate::ports::{
-    ConversationRecord, ConversationSummary, IDatabasePort, MediaUsageEntry, PageListItem,
-    PageRecord,
+    ConversationEmbeddingMeta, ConversationEmbeddingRow, ConversationRecord, ConversationSummary,
+    IDatabasePort, MediaUsageEntry, PageListItem, PageRecord,
 };
 
 pub struct SqliteDatabaseAdapter {
@@ -105,6 +105,23 @@ impl SqliteDatabaseAdapter {
             );
             CREATE INDEX IF NOT EXISTS idx_media_usage_page ON media_usage(page_slug);
             CREATE INDEX IF NOT EXISTS idx_media_usage_media ON media_usage(media_slug, used_at DESC);
+
+            -- 메시지 단위 벡터 임베딩 — search_history 도구용 (과거 대화 cosine 검색).
+            -- 옛 TS infra/database/index.ts 의 conversation_embeddings 1:1 port.
+            -- content_hash 는 sha1(`${embedder_version}:${text}`) — 모델 교체 시 자동 재임베딩 trigger.
+            CREATE TABLE IF NOT EXISTS conversation_embeddings (
+                conv_id         TEXT NOT NULL,
+                owner           TEXT NOT NULL,
+                msg_idx         INTEGER NOT NULL,
+                role            TEXT NOT NULL,
+                content_hash    TEXT NOT NULL,
+                content_preview TEXT NOT NULL,
+                embedding       BLOB NOT NULL,
+                created_at      INTEGER NOT NULL,
+                PRIMARY KEY (conv_id, msg_idx)
+            );
+            CREATE INDEX IF NOT EXISTS idx_conv_embeddings_owner
+                ON conversation_embeddings(owner, created_at DESC);
             "#,
         )
         .map_err(|e| format!("DB schema 초기화 실패: {e}"))
@@ -462,7 +479,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
-        // tombstone 기록 + row 삭제 — 옛 TS 와 동등
+        // tombstone 기록 + row 삭제 + 임베딩 cascade — 옛 TS 와 동등
         let r1 = conn.execute(
             "INSERT OR REPLACE INTO deleted_conversations (id, owner, deleted_at)
              VALUES (?1, ?2, ?3)",
@@ -470,6 +487,11 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         );
         let r2 = conn.execute(
             "DELETE FROM conversations WHERE id = ?1 AND owner = ?2",
+            params![id, owner],
+        );
+        // conversation_embeddings 도 cascade 정리 (옛 TS 와 동등 — Conv 삭제 시 임베딩도 비움)
+        let _ = conn.execute(
+            "DELETE FROM conversation_embeddings WHERE conv_id = ?1 AND owner = ?2",
             params![id, owner],
         );
         r1.is_ok() && r2.is_ok()
@@ -524,6 +546,128 @@ impl IDatabasePort for SqliteDatabaseAdapter {
             params![state, conversation_id],
         )
         .is_ok()
+    }
+
+    // ── Conversation embeddings (search_history cosine 검색용) ────────────────
+
+    fn list_conversation_embeddings(
+        &self,
+        owner: &str,
+        conv_id: &str,
+    ) -> Vec<ConversationEmbeddingMeta> {
+        let Ok(conn) = self.conn.lock() else { return vec![] };
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT msg_idx, content_hash FROM conversation_embeddings
+             WHERE conv_id = ?1 AND owner = ?2",
+        ) else {
+            return vec![];
+        };
+        let rows = stmt
+            .query_map(params![conv_id, owner], |row| {
+                Ok(ConversationEmbeddingMeta {
+                    msg_idx: row.get(0)?,
+                    content_hash: row.get(1)?,
+                })
+            })
+            .ok();
+        let Some(rows) = rows else { return vec![] };
+        rows.filter_map(|r| r.ok()).collect()
+    }
+
+    fn upsert_conversation_embedding(&self, row: &ConversationEmbeddingRow) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        conn.execute(
+            "INSERT INTO conversation_embeddings
+                (conv_id, owner, msg_idx, role, content_hash, content_preview, embedding, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(conv_id, msg_idx) DO UPDATE SET
+                role = excluded.role,
+                content_hash = excluded.content_hash,
+                content_preview = excluded.content_preview,
+                embedding = excluded.embedding,
+                created_at = excluded.created_at",
+            params![
+                row.conv_id,
+                row.owner,
+                row.msg_idx,
+                row.role,
+                row.content_hash,
+                row.content_preview,
+                row.embedding,
+                row.created_at,
+            ],
+        )
+        .is_ok()
+    }
+
+    fn delete_conversation_embeddings_by_idx(
+        &self,
+        owner: &str,
+        conv_id: &str,
+        msg_idxs: &[i64],
+    ) -> bool {
+        if msg_idxs.is_empty() {
+            return true;
+        }
+        let Ok(conn) = self.conn.lock() else { return false };
+        // IN (?,?,?) — 동적 placeholders. 일반 로직 (msg_idxs 길이 무관)
+        let placeholders = msg_idxs.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "DELETE FROM conversation_embeddings
+             WHERE conv_id = ? AND owner = ? AND msg_idx IN ({})",
+            placeholders
+        );
+        let mut sql_params: Vec<Box<dyn rusqlite::ToSql>> = Vec::with_capacity(msg_idxs.len() + 2);
+        sql_params.push(Box::new(conv_id.to_string()));
+        sql_params.push(Box::new(owner.to_string()));
+        for idx in msg_idxs {
+            sql_params.push(Box::new(*idx));
+        }
+        let refs: Vec<&dyn rusqlite::ToSql> = sql_params.iter().map(|b| b.as_ref()).collect();
+        conn.execute(&sql, refs.as_slice()).is_ok()
+    }
+
+    fn delete_all_conversation_embeddings(&self, owner: &str, conv_id: &str) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        conn.execute(
+            "DELETE FROM conversation_embeddings WHERE conv_id = ?1 AND owner = ?2",
+            params![conv_id, owner],
+        )
+        .is_ok()
+    }
+
+    fn query_conversation_embeddings_since(
+        &self,
+        owner: &str,
+        cutoff_ms: i64,
+    ) -> Vec<ConversationEmbeddingRow> {
+        let Ok(conn) = self.conn.lock() else { return vec![] };
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT e.conv_id, c.title, e.owner, e.msg_idx, e.role,
+                    e.content_hash, e.content_preview, e.embedding, e.created_at
+             FROM conversation_embeddings e
+             LEFT JOIN conversations c ON c.id = e.conv_id
+             WHERE e.owner = ?1 AND e.created_at >= ?2",
+        ) else {
+            return vec![];
+        };
+        let rows = stmt
+            .query_map(params![owner, cutoff_ms], |row| {
+                Ok(ConversationEmbeddingRow {
+                    conv_id: row.get(0)?,
+                    conv_title: row.get(1)?,
+                    owner: row.get(2)?,
+                    msg_idx: row.get(3)?,
+                    role: row.get(4)?,
+                    content_hash: row.get(5)?,
+                    content_preview: row.get(6)?,
+                    embedding: row.get(7)?,
+                    created_at: row.get(8)?,
+                })
+            })
+            .ok();
+        let Some(rows) = rows else { return vec![] };
+        rows.filter_map(|r| r.ok()).collect()
     }
 
     fn find_media_usage(&self, media_slug: &str) -> Vec<MediaUsageEntry> {
