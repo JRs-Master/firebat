@@ -152,13 +152,19 @@ async fn main() -> Result<()> {
     .context("Cron 어댑터 초기화 실패")?;
     let media: Arc<dyn IMediaPort> = Arc::new(LocalMediaAdapter::new(&workspace_root));
     // Phase B-17 — ConfigDrivenAdapter. 8 format (5 API + 3 CLI) 핸들러 박힘.
-    // Vault `system:llm:model` 으로 활성 모델 동적 swap. API 키 없으면 핸들러가 명시 에러 반환.
+    // 모델 carousel: builtin 8개 + system/llm/configs/*.json 자동 로드 (사용자 모델 추가).
+    // 새 모델 = JSON 파일 1개 추가 (옛 TS infra/llm/configs/*.json 동등). 코드 변경 0.
+    // Vault `system:llm:model` 으로 활성 모델 동적 swap.
     let default_model =
         std::env::var("FIREBAT_DEFAULT_MODEL").unwrap_or_else(|_| "claude-4-sonnet".to_string());
-    let llm: Arc<dyn ILlmPort> = Arc::new(firebat_core::llm::adapter::ConfigDrivenAdapter::new(
-        vault.clone(),
-        default_model,
-    ));
+    let llm_configs_dir = workspace_root.join("system").join("llm").join("configs");
+    let llm: Arc<dyn ILlmPort> = Arc::new(
+        firebat_core::llm::adapter::ConfigDrivenAdapter::with_configs_dir(
+            vault.clone(),
+            default_model,
+            Some(&llm_configs_dir),
+        ),
+    );
 
     // 매니저 wiring
     let template_manager = Arc::new(TemplateManager::new(storage.clone()));
@@ -230,7 +236,11 @@ async fn main() -> Result<()> {
             logger.clone(),
         ),
     );
-    let task_manager = Arc::new(TaskManager::new(task_executor, logger.clone()));
+    // ToolManager 박힌 채로 TaskManager 부팅 — validate_pipeline 의 LLM_TRANSFORM 환각 방어 활성.
+    // 등록된 정적 도구 27개 + 동적 sysmod_* / mcp_* 자동으로 hint 매칭.
+    let task_manager = Arc::new(
+        TaskManager::new(task_executor, logger.clone()).with_tools(tool_manager.clone()),
+    );
 
     // 부팅 시 영속 잡 복원 (cron / once 만 — delay 잡은 시각 부재로 복원 불가)
     schedule_manager.restore().await;

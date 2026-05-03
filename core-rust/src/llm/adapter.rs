@@ -4,6 +4,7 @@
 //! 새 모델 도입 시 config 1개 추가만으로 활성 — 어댑터 수정 0.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use crate::llm::config::{builtin_models, LlmModelConfig};
@@ -48,10 +49,27 @@ pub struct ConfigDrivenAdapter {
 
 impl ConfigDrivenAdapter {
     pub fn new(vault: Arc<dyn IVaultPort>, default_model: String) -> Self {
-        let models: HashMap<String, LlmModelConfig> = builtin_models()
+        Self::with_configs_dir(vault, default_model, None)
+    }
+
+    /// configs_dir 박혀있으면 해당 디렉토리의 모든 *.json 로드 후 빌트인 carousel 위에 merge.
+    /// 같은 ID 가 디렉토리에 박혀있으면 디렉토리 우선 (사용자 override).
+    /// 새 모델 = JSON 파일 1개 추가만으로 활성 (옛 TS infra/llm/configs/*.json 동등).
+    pub fn with_configs_dir(
+        vault: Arc<dyn IVaultPort>,
+        default_model: String,
+        configs_dir: Option<&Path>,
+    ) -> Self {
+        let mut models: HashMap<String, LlmModelConfig> = builtin_models()
             .into_iter()
             .map(|m| (m.id.clone(), m))
             .collect();
+
+        if let Some(dir) = configs_dir {
+            for cfg in Self::load_configs_from_dir(dir) {
+                models.insert(cfg.id.clone(), cfg);
+            }
+        }
 
         let mut handlers: HashMap<String, Arc<dyn FormatHandler>> = HashMap::new();
         handlers.insert(
@@ -93,6 +111,37 @@ impl ConfigDrivenAdapter {
             current_model: Mutex::new(default_model),
             handlers,
         }
+    }
+
+    /// 디렉토리 안 *.json 모두 LlmModelConfig 로 deserialize. 잘못된 파일은 silent skip.
+    /// 옛 TS `infra/llm/configs/` 와 같은 디렉토리 구조 + schema.
+    fn load_configs_from_dir(dir: &Path) -> Vec<LlmModelConfig> {
+        let mut out = Vec::new();
+        let entries = match std::fs::read_dir(dir) {
+            Ok(e) => e,
+            Err(_) => return out,
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let raw = match std::fs::read_to_string(&path) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            if let Ok(cfg) = serde_json::from_str::<LlmModelConfig>(&raw) {
+                out.push(cfg);
+            }
+        }
+        out
+    }
+
+    /// 등록된 전체 모델 ID 목록 — 어드민 UI 의 모델 선택 드롭다운 용.
+    pub fn list_model_ids(&self) -> Vec<String> {
+        let mut ids: Vec<String> = self.models.keys().cloned().collect();
+        ids.sort();
+        ids
     }
 
     /// Vault `system:llm:model` 에서 현재 모델 ID 동적 lookup. 없으면 ctor default 사용.

@@ -40,8 +40,8 @@ pub fn compute_cost(config: &LlmModelConfig, tokens_in: i64, tokens_out: i64) ->
     let Some(pricing) = &config.pricing else {
         return 0.0;
     };
-    (tokens_in as f64 / 1_000_000.0) * pricing.input_per_1m
-        + (tokens_out as f64 / 1_000_000.0) * pricing.output_per_1m
+    (tokens_in as f64 / 1_000_000.0) * pricing.input
+        + (tokens_out as f64 / 1_000_000.0) * pricing.output
 }
 
 /// system prompt + user prompt → 단일 messages 배열.

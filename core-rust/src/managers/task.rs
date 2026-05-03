@@ -15,6 +15,7 @@
 use serde_json::Value;
 use std::sync::Arc;
 
+use crate::managers::tool::{ToolListFilter, ToolManager};
 use crate::ports::{ILogPort, InfraResult};
 use crate::utils::condition::evaluate_condition;
 use crate::utils::path_resolve::resolve_field_path;
@@ -178,30 +179,45 @@ pub struct PipelineResult {
 pub struct TaskManager {
     executor: Arc<dyn TaskExecutor>,
     log: Arc<dyn ILogPort>,
+    /// LLM_TRANSFORM instruction 안 도구 호출 환각 방어용. ToolManager 등록 도구 list 동적 조회 →
+    /// 새 도구 추가 시 hint 자동 박힘 (옛 TS 의 hardcoded TOOL_HINTS 12개 enumerate 제거).
+    /// None 일 때는 환각 방어 비활성 (테스트 용 또는 ToolManager 없는 경량 wiring).
+    tools: Option<Arc<ToolManager>>,
 }
 
 impl TaskManager {
     pub fn new(executor: Arc<dyn TaskExecutor>, log: Arc<dyn ILogPort>) -> Self {
-        Self { executor, log }
+        Self {
+            executor,
+            log,
+            tools: None,
+        }
+    }
+
+    /// ToolManager 박힌 채로 부팅 — validate_pipeline 의 LLM_TRANSFORM 환각 방어 활성.
+    pub fn with_tools(mut self, tools: Arc<ToolManager>) -> Self {
+        self.tools = Some(tools);
+        self
+    }
+
+    /// 등록된 도구 이름 (lowercase) — instruction substring 매칭용.
+    /// 새 도구 추가 시 자동 hint — 옛 TS 의 const TOOL_HINTS 12개 hardcode 제거.
+    fn registered_tool_hints(&self) -> Vec<String> {
+        let Some(tools) = &self.tools else {
+            return Vec::new();
+        };
+        tools
+            .list(&ToolListFilter::default())
+            .into_iter()
+            .map(|def| def.name.to_lowercase())
+            .collect()
     }
 
     /// 옛 TS validatePipeline Rust port — 7-step 별 필수 field 검증.
     pub fn validate_pipeline(&self, steps: &[PipelineStep]) -> Option<String> {
-        // LLM_TRANSFORM instruction 안에 도구 호출 패턴이 보이면 거부 — 흔한 설계 실수 방어
-        const TOOL_HINTS: &[&str] = &[
-            "sysmod_",
-            "save_page",
-            "savePage",
-            "image_gen",
-            "imageGen",
-            "mcp_call",
-            "mcpCall",
-            "schedule_task",
-            "run_task",
-            "write_file",
-            "delete_file",
-            "render_",
-        ];
+        // LLM_TRANSFORM instruction 안에 도구 호출 패턴이 보이면 거부 — 흔한 설계 실수 방어.
+        // 옛 TS 의 hardcoded list 12개 → ToolManager 등록 도구 동적 조회로 일반화.
+        let tool_hints = self.registered_tool_hints();
         for (i, s) in steps.iter().enumerate() {
             let n = i + 1;
             match s {
@@ -230,8 +246,8 @@ impl TaskManager {
                         ));
                     }
                     let lower = instruction.to_lowercase();
-                    for hint in TOOL_HINTS {
-                        if lower.contains(&hint.to_lowercase()) {
+                    for hint in &tool_hints {
+                        if lower.contains(hint) {
                             return Some(format!("[Step {n}] LLM_TRANSFORM instruction 안에 도구명 \"{hint}\" 이 보입니다. LLM_TRANSFORM 은 텍스트 변환만 가능합니다 — 도구 호출은 별도 EXECUTE/MCP_CALL/SAVE_PAGE step 으로 분리하세요."));
                         }
                     }
@@ -493,6 +509,7 @@ enum StepOutcome {
     Fail(String),
 }
 
+
 /// `inputData` (고정값) + `inputMap` ($prev/$stepN 매핑) 병합.
 /// 둘 다 있으면 inputMap 이 inputData 동일 키 덮어씀 (매핑 우선).
 fn resolve_pipeline_input(
@@ -587,6 +604,22 @@ mod tests {
         TaskManager::new(executor, log)
     }
 
+    fn manager_with_tools() -> TaskManager {
+        let executor: Arc<dyn TaskExecutor> = Arc::new(StubTaskExecutor);
+        let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
+        let tools = Arc::new(ToolManager::new());
+        // 등록된 도구가 있어야 hint 매칭. 옛 TS 의 hardcode 12개 대신 동적 등록.
+        for name in ["sysmod_kiwoom", "save_page", "image_gen", "render_table"] {
+            tools.register(crate::managers::tool::ToolDefinition {
+                name: name.to_string(),
+                description: String::new(),
+                parameters: serde_json::json!({}),
+                source: "core".to_string(),
+            });
+        }
+        TaskManager::new(executor, log).with_tools(tools)
+    }
+
     #[test]
     fn validate_execute_missing_path() {
         let mgr = manager();
@@ -601,7 +634,9 @@ mod tests {
 
     #[test]
     fn validate_llm_transform_with_tool_hint_rejected() {
-        let mgr = manager();
+        // ToolManager 박힌 채 — 등록 도구 이름이 instruction 안 보이면 reject (옛 TS hardcoded
+        // TOOL_HINTS 12개 대신 동적 등록 도구 list 활용).
+        let mgr = manager_with_tools();
         let steps = vec![PipelineStep::LlmTransform {
             instruction: "1) sysmod_kiwoom 호출 2) save_page".to_string(),
             input_data: None,
@@ -609,6 +644,19 @@ mod tests {
         }];
         let err = mgr.validate_pipeline(&steps).unwrap();
         assert!(err.contains("도구명"));
+    }
+
+    #[test]
+    fn validate_llm_transform_without_tools_skips_hint_check() {
+        // ToolManager 없이 부팅하면 hint 검사 비활성 (테스트 / 경량 wiring 유연성).
+        let mgr = manager();
+        let steps = vec![PipelineStep::LlmTransform {
+            instruction: "1) sysmod_kiwoom 호출 2) save_page".to_string(),
+            input_data: None,
+            input_map: None,
+        }];
+        // hint 비활성 → 다른 검사 (instruction empty 등) 통과
+        assert!(mgr.validate_pipeline(&steps).is_none());
     }
 
     #[test]

@@ -6,6 +6,7 @@
 //!
 //! Phase B-8 의 ModuleManager 가 이 adapter 활용. 실 sysmod 호출 검증은 Phase B 후속.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -15,33 +16,65 @@ use crate::ports::{ISandboxPort, InfraResult, ModuleOutput, SandboxExecuteOpts};
 
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 
+/// Runtime spec — 확장자 → command + 추가 인자.
+/// 새 runtime (Ruby / Bun / Deno / etc) 추가 시 ProcessSandboxAdapter::with_runtime() 또는
+/// ctor 의 default registry 에 박음. 코드 분기 (if-else 체인) 없음.
+#[derive(Debug, Clone)]
+pub struct RuntimeSpec {
+    pub command: String,
+    pub args: Vec<String>,
+}
+
 pub struct ProcessSandboxAdapter {
     workspace_root: PathBuf,
-    /// Node binary 경로 (Phase D 자동 install 시 [data]/runtime/node/bin/node).
-    /// Phase B 에선 시스템 PATH 의 'node' 사용 (default).
-    node_bin: String,
-    /// Python binary 경로 — 같은 패턴.
-    python_bin: String,
+    /// 확장자 → RuntimeSpec 매핑. Default 는 node (mjs/js/cjs/ts) + python (py/py3).
+    /// env 변수로 binary 경로 override (FIREBAT_NODE_BIN / FIREBAT_PYTHON_BIN).
+    runtimes: HashMap<String, RuntimeSpec>,
 }
 
 impl ProcessSandboxAdapter {
     pub fn new(workspace_root: PathBuf) -> Self {
+        let node_bin = std::env::var("FIREBAT_NODE_BIN").unwrap_or_else(|_| "node".to_string());
+        let python_bin =
+            std::env::var("FIREBAT_PYTHON_BIN").unwrap_or_else(|_| "python3".to_string());
+
+        let mut runtimes = HashMap::new();
+        for ext in ["mjs", "js", "cjs", "ts"] {
+            runtimes.insert(
+                ext.to_string(),
+                RuntimeSpec {
+                    command: node_bin.clone(),
+                    args: vec![],
+                },
+            );
+        }
+        for ext in ["py", "py3"] {
+            runtimes.insert(
+                ext.to_string(),
+                RuntimeSpec {
+                    command: python_bin.clone(),
+                    args: vec![],
+                },
+            );
+        }
+
         Self {
             workspace_root,
-            node_bin: std::env::var("FIREBAT_NODE_BIN").unwrap_or_else(|_| "node".to_string()),
-            python_bin: std::env::var("FIREBAT_PYTHON_BIN").unwrap_or_else(|_| "python3".to_string()),
+            runtimes,
         }
     }
 
-    /// 모듈 entry path → 실행할 binary 결정 (확장자 기반).
-    fn resolve_runtime(target_path: &str) -> Option<&'static str> {
-        if target_path.ends_with(".mjs") || target_path.ends_with(".js") || target_path.ends_with(".cjs") {
-            Some("node")
-        } else if target_path.ends_with(".py") {
-            Some("python")
-        } else {
-            None
-        }
+    /// Runtime 등록 — 새 언어 (Ruby / Bun / Deno) 추가 시 ctor 후 호출.
+    /// 코드 분기 추가 없이 dispatch table 확장.
+    pub fn with_runtime(mut self, ext: impl Into<String>, spec: RuntimeSpec) -> Self {
+        self.runtimes.insert(ext.into(), spec);
+        self
+    }
+
+    /// 확장자 → RuntimeSpec lookup. 매칭 안 되면 None.
+    fn resolve_runtime(&self, target_path: &str) -> Option<&RuntimeSpec> {
+        let ext = target_path.rsplit('.').next()?.to_lowercase();
+        self.runtimes.get(&ext)
     }
 }
 
@@ -61,15 +94,14 @@ impl ISandboxPort for ProcessSandboxAdapter {
         if !full_path.exists() {
             return Err(format!("모듈 entry 없음: {}", target_path));
         }
-        let runtime = Self::resolve_runtime(target_path)
+        let runtime = self
+            .resolve_runtime(target_path)
             .ok_or_else(|| format!("지원되지 않는 모듈 확장자: {}", target_path))?;
-        let bin = match runtime {
-            "node" => &self.node_bin,
-            "python" => &self.python_bin,
-            _ => return Err(format!("unknown runtime: {runtime}")),
-        };
 
-        let mut cmd = Command::new(bin);
+        let mut cmd = Command::new(&runtime.command);
+        for arg in &runtime.args {
+            cmd.arg(arg);
+        }
         cmd.arg(&full_path)
             .current_dir(&self.workspace_root)
             .stdin(Stdio::piped())

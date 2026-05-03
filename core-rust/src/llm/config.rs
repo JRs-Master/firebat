@@ -61,19 +61,26 @@ pub struct LlmFeatures {
     /// OpenAI tool_search (Responses API)
     #[serde(rename = "toolSearch", default)]
     pub tool_search: bool,
-    /// 이미지 입력 지원 (multimodal)
-    #[serde(rename = "imageInput", default)]
+    /// 이미지 입력 지원 — 옛 TS 의 vision 필드 alias.
+    #[serde(rename = "imageInput", alias = "vision", default)]
     pub image_input: bool,
+    /// 옛 TS 호환 — temperature 옵션 지원 여부.
+    #[serde(default)]
+    pub temperature: bool,
+    /// 옛 TS 호환 — Anthropic prompt cache 토글 가능.
+    #[serde(rename = "promptCache", default)]
+    pub prompt_cache: bool,
 }
 
+/// 옛 TS LlmPricing 1:1 호환 — pricing.input / output / cachedInput (per 1M).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LlmPricing {
-    #[serde(rename = "inputPer1M", default)]
-    pub input_per_1m: f64,
-    #[serde(rename = "outputPer1M", default)]
-    pub output_per_1m: f64,
-    #[serde(rename = "cachedInputPer1M", default)]
-    pub cached_input_per_1m: f64,
+    #[serde(default)]
+    pub input: f64,
+    #[serde(default)]
+    pub output: f64,
+    #[serde(rename = "cachedInput", default)]
+    pub cached_input: f64,
 }
 
 impl LlmModelConfig {
@@ -117,9 +124,9 @@ pub fn builtin_models() -> Vec<LlmModelConfig> {
             .into_iter()
             .collect(),
             pricing: Some(LlmPricing {
-                input_per_1m: 3.0,
-                output_per_1m: 15.0,
-                cached_input_per_1m: 0.3,
+                input: 3.0,
+                output: 15.0,
+                cached_input: 0.3,
             }),
         },
         // ── OpenAI Responses API ───────────────────────────────────────────
@@ -139,9 +146,9 @@ pub fn builtin_models() -> Vec<LlmModelConfig> {
                 ..Default::default()
             },
             pricing: Some(LlmPricing {
-                input_per_1m: 5.0,
-                output_per_1m: 30.0,
-                cached_input_per_1m: 0.5,
+                input: 5.0,
+                output: 30.0,
+                cached_input: 0.5,
             }),
             ..Default::default()
         },
