@@ -1,8 +1,10 @@
-//! Firebat Core — gRPC server entry (self-hosted distribution, Phase B-2 활성).
+//! Firebat Core — gRPC server entry (self-hosted distribution).
 //!
 //! Phase B 진행하며 21 매니저 + cross-cutting service 등록.
-//! 현재: TemplateService + SecretService 등록 — pattern 정착용.
+//! Phase B-17b: SIGTERM + SIGINT 통합 graceful shutdown — Docker / systemd 운영 시 SQLite WAL
+//! 손상 방지. anyhow Context 로 부팅 실패 원인 역추적 가능.
 
+use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tonic::transport::Server;
@@ -54,7 +56,7 @@ use firebat_core::{
 };
 
 #[tokio::main(flavor = "multi_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<()> {
     // 환경 변수 — workspace root + listen address + vault DB path
     let workspace_root: PathBuf = std::env::var("FIREBAT_WORKSPACE_ROOT")
         .map(PathBuf::from)
@@ -83,7 +85,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(PathBuf::from)
         .unwrap_or_else(|_| workspace_root.join("data").join("cron-notifications.json"));
     let default_timezone = std::env::var("FIREBAT_TIMEZONE").unwrap_or_else(|_| "Asia/Seoul".to_string());
-    let addr = listen_addr.parse()?;
+    let addr = listen_addr.parse().with_context(|| {
+        format!("FIREBAT_CORE_LISTEN '{}' 파싱 실패 — host:port 형식 필요", listen_addr)
+    })?;
 
     eprintln!(
         "Firebat Core v{} — gRPC server starting on {}",
@@ -96,17 +100,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         vault_db_path.display()
     );
 
-    // 어댑터 wiring
+    // 어댑터 wiring — InfraResult<T,String> 을 anyhow::Error 로 변환 (with_context 로 원인 역추적).
     let logger: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
     let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(&workspace_root));
-    let vault: Arc<dyn IVaultPort> = Arc::new(SqliteVaultAdapter::new(&vault_db_path)?);
+    let vault: Arc<dyn IVaultPort> = Arc::new(
+        SqliteVaultAdapter::new(&vault_db_path)
+            .map_err(anyhow::Error::msg)
+            .context("Vault DB open 실패")?,
+    );
     let auth_port: Arc<dyn IAuthPort> = Arc::new(VaultAuthAdapter::new(vault.clone()));
-    let db_concrete = Arc::new(SqliteDatabaseAdapter::new(&app_db_path)?);
+    let db_concrete = Arc::new(
+        SqliteDatabaseAdapter::new(&app_db_path)
+            .map_err(anyhow::Error::msg)
+            .context("App DB open 실패")?,
+    );
     let db: Arc<dyn IDatabasePort> = db_concrete.clone();
     let sandbox: Arc<dyn ISandboxPort> = Arc::new(ProcessSandboxAdapter::new(workspace_root.clone()));
-    let mcp_client: Arc<dyn IMcpClientPort> =
-        Arc::new(McpClientFileAdapter::new(mcp_servers_path)?);
-    let memory_adapter = Arc::new(SqliteMemoryAdapter::new(&memory_db_path)?);
+    let mcp_client: Arc<dyn IMcpClientPort> = Arc::new(
+        McpClientFileAdapter::new(mcp_servers_path)
+            .map_err(anyhow::Error::msg)
+            .context("MCP servers 파일 open 실패")?,
+    );
+    let memory_adapter = Arc::new(
+        SqliteMemoryAdapter::new(&memory_db_path)
+            .map_err(anyhow::Error::msg)
+            .context("Memory DB open 실패")?,
+    );
     let entity_port: Arc<dyn IEntityPort> = memory_adapter.clone();
     let episodic_port: Arc<dyn IEpisodicPort> = memory_adapter.clone();
     let cron_adapter = TokioCronAdapter::new(
@@ -114,7 +133,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cron_logs_path,
         cron_notifications_path,
         &default_timezone,
-    )?;
+    )
+    .map_err(anyhow::Error::msg)
+    .context("Cron 어댑터 초기화 실패")?;
     let media: Arc<dyn IMediaPort> = Arc::new(LocalMediaAdapter::new(&workspace_root));
     // Phase B-16 minimum — StubLlmAdapter. Phase B-17+ ConfigDrivenAdapter (5 API + 3 CLI 핸들러)
     // 박힌 후 Vault `system:llm:model` 기반 모델 ID 동적 swap.
@@ -215,10 +236,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let media_service = services::media::MediaServiceImpl::new(media_manager);
     let ai_service = services::ai::AiServiceImpl::new(ai_manager);
 
-    // graceful shutdown — Ctrl+C / SIGTERM
+    // graceful shutdown — SIGINT (Ctrl+C) + SIGTERM (Docker / systemd 종료) 통합 listen.
+    // Phase B-17b: 옛 ctrl_c() 만 listen 시 SIGTERM 무시 → 즉시 강제 종료 → SQLite WAL 손상 위험.
+    // tokio::select! 로 둘 중 먼저 도착하는 시그널 처리. Windows 는 SIGTERM 미지원 → ctrl_c 만.
     let shutdown = async {
-        let _ = tokio::signal::ctrl_c().await;
-        eprintln!("Firebat Core — graceful shutdown 시작");
+        let ctrl_c = async {
+            let _ = tokio::signal::ctrl_c().await;
+            "SIGINT (Ctrl+C)"
+        };
+        #[cfg(unix)]
+        let terminate = async {
+            match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+                Ok(mut sig) => {
+                    sig.recv().await;
+                    "SIGTERM"
+                }
+                Err(_) => {
+                    // SIGTERM handler 등록 실패 시 영원히 pending — ctrl_c 만 작동
+                    std::future::pending::<&str>().await
+                }
+            }
+        };
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<&str>();
+
+        let signal_name = tokio::select! {
+            n = ctrl_c => n,
+            n = terminate => n,
+        };
+        eprintln!(
+            "Firebat Core — {} 수신 → graceful shutdown 시작 (활성 요청 완료 대기)",
+            signal_name
+        );
     };
 
     Server::builder()
@@ -246,7 +295,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // 남은 cross-cutting (Storage / Settings / Network / Cache / Telegram / Database /
         // Lifecycle 등) 은 Phase B-17+ 후속.
         .serve_with_shutdown(addr, shutdown)
-        .await?;
+        .await
+        .context("gRPC server 종료 중 에러")?;
 
     eprintln!("Firebat Core — shutdown 완료");
     Ok(())

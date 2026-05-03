@@ -36,6 +36,8 @@ regex = "1"
 cron = "0.12"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.9"
+# Phase B-17b 박힘 (main.rs graceful shutdown — SIGTERM + Context error trace)
+anyhow = "1"
 
 # Phase B 활성 시 추가 (현재 commented):
 #   reqwest = { version = "0.12", features = ["json", "stream"] }  # LLM API
