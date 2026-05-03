@@ -21,9 +21,10 @@ path = "src/main.rs"
 # Phase A 박힘 — Phase B 진행하며 추가
 tonic = "0.12"
 prost = "0.13"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+async-trait = "0.1"
 
 # Phase B 활성 시 추가 (현재 commented):
 #   rusqlite = { version = "0.32", features = ["bundled"] }   # DB / Vault
@@ -34,6 +35,10 @@ serde_json = "1"
 #   cron = "0.12"
 #   ammonia = "4"                                      # HTML sanitize
 #   chrono = { version = "0.4", features = ["serde"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["test-util", "rt-multi-thread", "macros", "fs"] }
 
 [build-dependencies]
 tonic-build = "0.12"

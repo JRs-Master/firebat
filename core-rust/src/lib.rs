@@ -4,7 +4,15 @@
 //!  - `lib`        : Phase D self-installed 시 Tauri 안에 in-process embed.
 //!  - `[[bin]]`    : Phase C self-hosted 시 단일 binary (gRPC server, port 50051).
 //!
-//! Phase A (현재) — backbone preparation. 매니저 / 어댑터 stub 만, 실 로직은 Phase B 에서.
+//! Hexagonal architecture:
+//!  - `ports`     : trait (interface) 정의 — 매니저가 의존
+//!  - `adapters`  : trait 의 실 구현 — fs / DB / network / 등 I/O
+//!  - `managers`  : 비즈니스 로직 — port 만 통해 I/O 사용
+//!  - `services`  : gRPC service trait impl — 매니저 wrapping (Phase B-2)
+
+pub mod ports;
+pub mod adapters;
+pub mod managers;
 
 /// Generated proto module — tonic-build (build.rs) 가 자동 생성.
 /// 21 매니저 + cross-cutting 의 service trait + client stub + message struct 포함.
@@ -29,7 +37,6 @@ mod tests {
     #[test]
     fn proto_module_compiles() {
         // proto/firebat.proto 의 service / message 가 정상 컴파일되는지 sanity check.
-        // HealthInfo 같은 message 가 generated 됐으면 lib 도 정상.
         let _info = proto::HealthInfo {
             version: String::from("0.0.1"),
             uptime_ms: 0,
