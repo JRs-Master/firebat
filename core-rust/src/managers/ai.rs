@@ -12,10 +12,13 @@
 //! - LLM 8 format 어댑터 와이어링
 
 pub mod prompt_builder;
+pub mod system_context;
 
 use std::sync::Arc;
 
 use crate::managers::ai::prompt_builder::PromptBuilder;
+use crate::managers::ai::system_context::SystemContextGatherer;
+use crate::managers::module::ModuleManager;
 use crate::managers::tool::{ToolListFilter, ToolManager};
 use crate::ports::{
     ILlmPort, ILogPort, IVaultPort, InfraResult, LlmCallOpts, ToolCall, ToolDefinition, ToolResult,
@@ -46,6 +49,9 @@ pub struct AiManager {
     log: Arc<dyn ILogPort>,
     /// 시스템 프롬프트 builder (옵션) — Vault 박힌 채로 박힘. 미박힘 시 base prompt 만.
     prompt_builder: Option<PromptBuilder>,
+    /// 시스템 컨텍스트 gatherer (옵션) — sysmod / user module / MCP 동적 description 주입.
+    /// 미박힘 시 시스템 프롬프트에 컨텍스트 추가 안 됨 (base prompt 만).
+    context_gatherer: Option<Arc<SystemContextGatherer>>,
 }
 
 impl AiManager {
@@ -59,12 +65,23 @@ impl AiManager {
             tools,
             log,
             prompt_builder: None,
+            context_gatherer: None,
         }
     }
 
     /// PromptBuilder 박은 채로 부팅 — 시스템 프롬프트 자동 주입 활성.
     pub fn with_prompt_builder(mut self, vault: Arc<dyn IVaultPort>) -> Self {
         self.prompt_builder = Some(PromptBuilder::new(vault));
+        self
+    }
+
+    /// SystemContextGatherer 박은 채로 부팅 — 시스템 프롬프트에 sysmod / mcp 동적 description 자동 주입.
+    pub fn with_system_context(
+        mut self,
+        module: Arc<ModuleManager>,
+        mcp: Arc<crate::managers::mcp::McpManager>,
+    ) -> Self {
+        self.context_gatherer = Some(Arc::new(SystemContextGatherer::new(module, mcp)));
         self
     }
 
@@ -107,10 +124,17 @@ impl AiManager {
         };
 
         // 시스템 프롬프트 자동 주입 (PromptBuilder 박힌 경우 + opts.system_prompt 미박힘 시).
+        // SystemContextGatherer 박혀있으면 sysmod / mcp 동적 description 도 주입.
         let mut effective_opts = opts.clone();
         if effective_opts.system_prompt.is_none() {
             if let Some(pb) = &self.prompt_builder {
-                effective_opts.system_prompt = Some(pb.build(None));
+                let extra_ctx = if let Some(g) = &self.context_gatherer {
+                    let ctx = g.gather().await;
+                    if ctx.is_empty() { None } else { Some(ctx) }
+                } else {
+                    None
+                };
+                effective_opts.system_prompt = Some(pb.build(extra_ctx.as_deref()));
             }
         }
 

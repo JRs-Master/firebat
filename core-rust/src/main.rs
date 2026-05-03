@@ -200,10 +200,13 @@ async fn main() -> Result<()> {
     ));
     let schedule_manager = Arc::new(ScheduleManager::new(cron_adapter.clone()));
     let media_manager = Arc::new(MediaManager::new(media));
-    // PromptBuilder 박힌 채로 — 시스템 프롬프트 자동 주입 활성 (Vault `system:user-prompt` 추가 가능).
+    // PromptBuilder + SystemContextGatherer 박힌 채로 — 시스템 프롬프트 자동 주입 +
+    // sysmod / user module / MCP 동적 description 주입 활성.
+    // Vault `system:user-prompt` 박으면 사용자 정의 prompt 도 prepend.
     let ai_manager = Arc::new(
         AiManager::new(llm.clone(), tool_manager.clone(), logger.clone())
-            .with_prompt_builder(vault.clone()),
+            .with_prompt_builder(vault.clone())
+            .with_system_context(module_manager.clone(), mcp_manager.clone()),
     );
 
     // Phase B-17a/c — 정적 도구 dispatch 등록 (27 도구). LLM stub 위에서도 도구 호출 e2e 동작.
