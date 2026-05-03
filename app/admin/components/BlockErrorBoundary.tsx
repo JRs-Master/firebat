@@ -23,6 +23,9 @@ interface State {
   error: Error | null;
 }
 
+/** 재시도 버튼 없음 — children props 가 안 변하면 reset 후 같은 throw 즉시 재발해 "무반응" 체감.
+ *  root cause fix 후 build/restart + hard reload 가 본질. 사용자는 다른 메시지·기능 정상 사용 가능
+ *  (이 block 격리 효과 — admin 통째 안 죽음). 에러 메시지는 진단용으로만 표시. */
 export class BlockErrorBoundary extends Component<Props, State> {
   state: State = { error: null };
 
@@ -35,8 +38,6 @@ export class BlockErrorBoundary extends Component<Props, State> {
     console.error('[BlockErrorBoundary]', this.props.label ?? 'block', error, info.componentStack);
   }
 
-  reset = () => this.setState({ error: null });
-
   render() {
     if (!this.state.error) return this.props.children;
     return (
@@ -44,17 +45,11 @@ export class BlockErrorBoundary extends Component<Props, State> {
         <AlertTriangle size={14} className="mt-0.5 shrink-0 text-amber-600" />
         <div className="flex-1 min-w-0">
           <div className="font-bold">이 항목 표시 중 문제 발생</div>
-          <div className="text-[11px] text-amber-700 mt-0.5 truncate">
+          <div className="text-[11px] text-amber-700 mt-0.5 break-words">
             {this.props.label ? `${this.props.label} — ` : ''}
             {this.state.error.message || String(this.state.error)}
           </div>
         </div>
-        <button
-          onClick={this.reset}
-          className="text-[11px] font-bold text-amber-700 hover:text-amber-900 underline shrink-0"
-        >
-          재시도
-        </button>
       </div>
     );
   }
