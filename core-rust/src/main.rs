@@ -285,13 +285,21 @@ async fn main() -> Result<()> {
     ));
     let schedule_manager = Arc::new(ScheduleManager::new(cron_adapter.clone()));
     // MediaManager — Step 2d 박힘. 이미지 파이프라인 (generate/regenerate/variants/blurhash) 활성.
-    // builders 미박음 시 thin IMediaPort wrapper (단위 테스트 호환).
+    // Step 2 마무리 audit — cross-call hooks (cost/status/event/episodic) 박음 (옛 TS Core facade 1:1):
+    //   - cost: 이미지 cost_usd 자동 record (image_gen purpose)
+    //   - status: rendering → done/error 가시화 (어드민 ActiveJobsIndicator)
+    //   - event: 갤러리 SSE refresh (placeholder 등장 + 백그라운드 swap 시점 모두)
+    //   - episodic: image_gen 사건 자동 리콜 누적 (AI 미개입)
     let media_manager = Arc::new(
         MediaManager::new(media)
             .with_image_gen(image_gen.clone())
             .with_processor(image_processor.clone())
             .with_vault(vault.clone())
-            .with_log(logger.clone()),
+            .with_log(logger.clone())
+            .with_cost(cost_manager.clone())
+            .with_status(status_manager.clone())
+            .with_event(event_manager.clone())
+            .with_episodic(episodic_manager.clone()),
     );
     // PromptBuilder + SystemContextGatherer + HistoryResolver + CostManager 박힌 채로:
     // - 시스템 프롬프트 자동 주입

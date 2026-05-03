@@ -23,11 +23,15 @@ use std::time::SystemTime;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
 
+use crate::managers::cost::CostManager;
+use crate::managers::episodic::EpisodicManager;
+use crate::managers::event::EventManager;
+use crate::managers::status::StatusManager;
 use crate::ports::{
     FitMode, IImageGenPort, IImageProcessorPort, ILogPort, IMediaPort, IVaultPort, ImageFormat,
     ImageGenCallOpts, ImageGenOpts, ImageModelInfo, ImageReferenceImage, InfraResult,
     MediaFileRecord, MediaListOpts, MediaListResult, MediaSaveOptions, MediaSaveResult,
-    MediaScope, MediaVariant, MediaVariantMeta, ResizeOpts,
+    MediaScope, MediaVariant, MediaVariantMeta, ResizeOpts, SaveEventInput,
 };
 use crate::vault_keys::{vk_module_settings, VK_IMAGE_MODEL, VK_IMAGE_QUALITY, VK_IMAGE_SIZE};
 
@@ -252,6 +256,15 @@ pub struct MediaManager {
     processor: Option<Arc<dyn IImageProcessorPort>>,
     vault: Option<Arc<dyn IVaultPort>>,
     log: Option<Arc<dyn ILogPort>>,
+    /// Cross-call hooks (옛 TS Core facade 의 startImageGeneration / generateImage 패턴 1:1):
+    /// - cost: ImageGenResult.cost_usd 박혀있으면 자동 record_llm_cost (CostManager)
+    /// - status: 이미지 생성 시작 → start, 완료 → done, 실패 → fail (StatusManager / 어드민 ActiveJobsIndicator)
+    /// - event: 갤러리 SSE refresh + status 변경 broadcast (EventManager / GalleryPanel)
+    /// - episodic: 'image_gen' 사건 자동 리콜 누적 (EpisodicManager / AI 미개입)
+    cost: Option<Arc<CostManager>>,
+    status: Option<Arc<StatusManager>>,
+    event: Option<Arc<EventManager>>,
+    episodic: Option<Arc<EpisodicManager>>,
 }
 
 impl MediaManager {
@@ -262,6 +275,10 @@ impl MediaManager {
             processor: None,
             vault: None,
             log: None,
+            cost: None,
+            status: None,
+            event: None,
+            episodic: None,
         }
     }
 
@@ -282,6 +299,27 @@ impl MediaManager {
 
     pub fn with_log(mut self, log: Arc<dyn ILogPort>) -> Self {
         self.log = Some(log);
+        self
+    }
+
+    /// Cross-call hooks (옛 TS Core facade 패턴 1:1) — 박히면 자동 forward.
+    pub fn with_cost(mut self, cost: Arc<CostManager>) -> Self {
+        self.cost = Some(cost);
+        self
+    }
+
+    pub fn with_status(mut self, status: Arc<StatusManager>) -> Self {
+        self.status = Some(status);
+        self
+    }
+
+    pub fn with_event(mut self, event: Arc<EventManager>) -> Self {
+        self.event = Some(event);
+        self
+    }
+
+    pub fn with_episodic(mut self, episodic: Arc<EpisodicManager>) -> Self {
+        self.episodic = Some(episodic);
         self
     }
 
@@ -536,6 +574,12 @@ impl MediaManager {
     /// 비동기 image_gen — 즉시 placeholder 저장 + slug/url 반환, 실제 생성은 백그라운드.
     /// AI image_gen 도구가 호출 → 즉시 URL 받아 page spec 박고 save_page 발행 가능.
     /// 사용자 페이지 reload 시 placeholder → 실제 이미지로 swap.
+    ///
+    /// Cross-call hooks (옛 TS Core facade 1:1):
+    ///   - status.start (type='image', meta=async/promptPreview/model/scope)
+    ///   - 백그라운드 완료: status.done + event.notify_gallery + cost.record (cost_usd 박혀있으면)
+    ///   - 백그라운드 실패: status.fail + event.notify_gallery (error)
+    ///   - placeholder 등장 즉시 event.notify_gallery (사용자가 "렌더링중" 카드 봄)
     pub async fn start_generate(
         self: &Arc<Self>,
         input: GenerateImageInput,
@@ -545,6 +589,28 @@ impl MediaManager {
             .as_ref()
             .ok_or_else(|| "image_processor 미박음 — placeholder 생성 불가".to_string())?;
         let scope = input.scope.unwrap_or(MediaScope::User);
+
+        // Cross-call hook 1: status.start — 어드민 ActiveJobsIndicator 가시화 (옛 TS 1:1)
+        let status_job_id: Option<String> = if let Some(status) = &self.status {
+            let prompt_preview: String = input.prompt.chars().take(80).collect();
+            let model = input.model.clone().unwrap_or_else(|| self.get_image_model());
+            let job = status.start(
+                None,
+                "image".to_string(),
+                Some("이미지 생성 시작 (백그라운드)...".to_string()),
+                None,
+                serde_json::json!({
+                    "promptPreview": prompt_preview,
+                    "model": model,
+                    "scope": scope.as_str(),
+                    "async": true,
+                }),
+            );
+            Some(job.id)
+        } else {
+            None
+        };
+
         let (ph_w, ph_h) = parse_size_hint(input.size.as_deref());
         let placeholder = processor.create_placeholder(ph_w, ph_h).await?;
 
@@ -573,6 +639,14 @@ impl MediaManager {
             )
             .await;
 
+        // Cross-call hook: placeholder 등장 즉시 갤러리 SSE — "렌더링중" 카드 가시화 (옛 TS 1:1)
+        if let Some(event) = &self.event {
+            event.notify_gallery(serde_json::json!({
+                "slug": saved.slug,
+                "scope": scope.as_str(),
+            }));
+        }
+
         self.log_info(&format!(
             "[MediaManager] startGenerate: placeholder slug={} url={} — 백그라운드 생성 시작",
             saved.slug, saved.url
@@ -583,25 +657,102 @@ impl MediaManager {
         let bg_input = input.clone();
         let bg_slug = saved.slug.clone();
         let bg_scope = scope;
+        let bg_status_id = status_job_id.clone();
         tokio::spawn(async move {
             let result = mgr.generate_image(bg_input, Some(&bg_slug)).await;
-            if let Err(e) = result {
-                let _ = mgr
-                    .media
-                    .update_meta(
-                        &bg_slug,
-                        &serde_json::json!({"status": "error", "errorMsg": e}),
-                    )
-                    .await;
-                mgr.log_error(&format!(
-                    "[MediaManager] 백그라운드 generate_image 실패 (slug={} scope={}): {e}",
-                    bg_slug,
-                    bg_scope.as_str()
-                ));
+            match result {
+                Ok(success) => {
+                    // Cross-call hook 2: status.complete — 백그라운드 완료 (옛 TS 1:1)
+                    if let (Some(status), Some(jid)) = (&mgr.status, &bg_status_id) {
+                        status.complete(
+                            jid,
+                            Some(serde_json::json!({
+                                "slug": success.slug,
+                                "url": success.url,
+                            })),
+                        );
+                    }
+                    // Cross-call hook 3: event.notify_gallery — placeholder → 실제 이미지 swap 알림
+                    if let Some(event) = &mgr.event {
+                        event.notify_gallery(serde_json::json!({
+                            "slug": success.slug,
+                            "scope": bg_scope.as_str(),
+                        }));
+                    }
+                    // Cross-call hook 4: cost.record — 비동기 흐름 (AiManager 못 받음, MediaManager 가 박음)
+                    if let (Some(cost), Some(usd)) = (&mgr.cost, success.cost_usd) {
+                        if usd > 0.0 {
+                            cost.record(&success.model_id, 0, 0, 0, usd, Some("image_gen"));
+                        }
+                    }
+                    // Cross-call hook 5: episodic.save_event — image_gen 사건 자동 리콜 (AI 미개입)
+                    if let Some(episodic) = &mgr.episodic {
+                        let prompt_preview: String =
+                            mgr.recall_prompt_for(&success.slug).await.unwrap_or_default();
+                        let _ = episodic
+                            .save_event(SaveEventInput {
+                                event_type: "image_gen".to_string(),
+                                title: format!(
+                                    "이미지 생성: {}",
+                                    prompt_preview.chars().take(60).collect::<String>()
+                                ),
+                                description: None,
+                                who: Some("media:start_generate".to_string()),
+                                context: Some(serde_json::json!({
+                                    "slug": success.slug,
+                                    "model": success.model_id,
+                                    "scope": bg_scope.as_str(),
+                                    "promptPreview": prompt_preview.chars().take(200).collect::<String>(),
+                                    "costUsd": success.cost_usd,
+                                })),
+                                occurred_at: None,
+                                entity_ids: vec![],
+                                source_conv_id: None,
+                                ttl_days: None,
+                                dedup_threshold: None,
+                            })
+                            .await;
+                    }
+                }
+                Err(e) => {
+                    // Cross-call hook 2 (실패): status.fail
+                    if let (Some(status), Some(jid)) = (&mgr.status, &bg_status_id) {
+                        status.fail(jid, e.clone());
+                    }
+                    // Cross-call hook 3 (실패): event.notify_gallery error
+                    if let Some(event) = &mgr.event {
+                        event.notify_gallery(serde_json::json!({
+                            "error": e,
+                            "scope": bg_scope.as_str(),
+                        }));
+                    }
+                    let _ = mgr
+                        .media
+                        .update_meta(
+                            &bg_slug,
+                            &serde_json::json!({"status": "error", "errorMsg": e}),
+                        )
+                        .await;
+                    mgr.log_error(&format!(
+                        "[MediaManager] 백그라운드 generate_image 실패 (slug={} scope={}): {e}",
+                        bg_slug,
+                        bg_scope.as_str()
+                    ));
+                }
             }
         });
 
         Ok((saved.slug, saved.url))
+    }
+
+    /// `recall_prompt_for(slug)` — episodic 리콜 시 prompt 메타 추출 (실패 시 빈 string).
+    async fn recall_prompt_for(&self, slug: &str) -> Option<String> {
+        self.media
+            .stat(slug)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|r| r.prompt)
     }
 
     /// AI image_gen 도구 → MediaManager.generate_image → 생성 + 후처리 + 저장.
@@ -935,19 +1086,65 @@ impl MediaManager {
             variants.len()
         ));
 
-        Ok(GenerateImageResult {
-            url: saved.url,
+        let result = GenerateImageResult {
+            url: saved.url.clone(),
             thumbnail_url,
             variants,
             blurhash,
             width: original_width.or(gen_result.width.map(|w| w as i64)),
             height: original_height.or(gen_result.height.map(|h| h as i64)),
-            slug: saved.slug,
-            revised_prompt: gen_result.revised_prompt,
-            model_id,
+            slug: saved.slug.clone(),
+            revised_prompt: gen_result.revised_prompt.clone(),
+            model_id: model_id.clone(),
             aspect_ratio: applied_aspect_ratio,
             cost_usd: gen_result.cost_usd,
-        })
+        };
+
+        // sync 경로 cross-call hooks (옛 TS Core.generateImage 1:1).
+        // existing_slug 박힌 (start_generate 백그라운드) 경로는 caller 가 wrap 하므로 skip —
+        // 본 hook 은 직접 호출 (채팅 이미지 모드 등) 에서만.
+        if existing_slug.is_none() {
+            // event.notify_gallery — 갤러리 즉시 갱신
+            if let Some(event) = &self.event {
+                event.notify_gallery(serde_json::json!({
+                    "slug": result.slug,
+                    "scope": scope.as_str(),
+                }));
+            }
+            // cost.record — costUsd 박혀있으면 LLM 비용 통계 누적 (옛 TS Core.recordLlmCost 1:1)
+            if let (Some(cost), Some(usd)) = (&self.cost, result.cost_usd) {
+                if usd > 0.0 {
+                    cost.record(&result.model_id, 0, 0, 0, usd, Some("image_gen"));
+                }
+            }
+            // episodic.save_event — image_gen 사건 자동 리콜 (AI 미개입)
+            if let Some(episodic) = &self.episodic {
+                let prompt_preview: String = input.prompt.chars().take(60).collect();
+                let prompt_full: String = input.prompt.chars().take(200).collect();
+                let _ = episodic
+                    .save_event(SaveEventInput {
+                        event_type: "image_gen".to_string(),
+                        title: format!("이미지 생성: {prompt_preview}"),
+                        description: None,
+                        who: Some("media:generate_image".to_string()),
+                        context: Some(serde_json::json!({
+                            "slug": result.slug,
+                            "model": result.model_id,
+                            "scope": scope.as_str(),
+                            "promptPreview": prompt_full,
+                            "costUsd": result.cost_usd,
+                        })),
+                        occurred_at: None,
+                        entity_ids: vec![],
+                        source_conv_id: None,
+                        ttl_days: None,
+                        dedup_threshold: None,
+                    })
+                    .await;
+            }
+        }
+
+        Ok(result)
     }
 
     /// reference image resolve — slug / url / base64 → binary.
