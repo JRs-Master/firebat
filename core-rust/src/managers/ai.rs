@@ -175,7 +175,7 @@ impl AiManager {
                 } else {
                     Some(extra_parts.join("\n\n"))
                 };
-                effective_opts.system_prompt = Some(pb.build(extra.as_deref()));
+                effective_opts.system_prompt = Some(pb.build(extra.as_deref(), None));
             }
         }
 
