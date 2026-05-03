@@ -382,6 +382,199 @@ pub trait IEmbedderPort: Send + Sync {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Image Processor — 이미지 후처리 (resize/convert/blurhash/placeholder).
+// 옛 TS `infra/image-processor/sharp-adapter.ts` 1:1 port. Rust 측에서는 image-rs +
+// fast_image_resize + blurhash crate 조합 (sharp = libvips Node binding 의 Rust 등가).
+// ──────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ImageMetadata {
+    pub width: u32,
+    pub height: u32,
+    /// `'png' | 'jpeg' | 'webp' | 'avif' | ...` — 어댑터가 감지한 raw format
+    pub format: String,
+    pub bytes: u64,
+    #[serde(rename = "hasAlpha", default, skip_serializing_if = "Option::is_none")]
+    pub has_alpha: Option<bool>,
+}
+
+/// 크롭 위치 — `cover` / `outside` fit 일 때만 의미.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CropPosition {
+    /// saliency 자동 (인물·제품 자동 중심) — 어댑터별 implementation 다름
+    /// (sharp 는 libvips 내장, image-rs 는 entropy 폴백 권장).
+    Attention,
+    /// 엔트로피 최대 영역 (디테일 많은 곳)
+    Entropy,
+    /// 가운데 (default)
+    Center,
+    /// 0~1 상대 좌표 수동 지정 (0.5, 0.5 = 정중앙)
+    Focus { x: f32, y: f32 },
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FitMode {
+    Contain,
+    Cover,
+    Fill,
+    Inside,
+    Outside,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ImageFormat {
+    Png,
+    Jpeg,
+    Webp,
+    Avif,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ResizeOpts {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fit: Option<FitMode>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<CropPosition>,
+    /// 출력 포맷 — 미지정 시 원본 유지
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<ImageFormat>,
+    /// 품질 (jpeg/webp/avif 만, 0~100)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<u8>,
+    /// progressive encoding (jpeg/webp)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progressive: Option<bool>,
+    /// EXIF 등 메타데이터 제거
+    #[serde(rename = "stripMetadata", default, skip_serializing_if = "Option::is_none")]
+    pub strip_metadata: Option<bool>,
+}
+
+#[async_trait::async_trait]
+pub trait IImageProcessorPort: Send + Sync {
+    /// 이미지 메타데이터 파싱 (포맷 무관). 헤더만 읽어 width/height/format 즉시 반환.
+    async fn get_metadata(&self, binary: &[u8]) -> InfraResult<ImageMetadata>;
+
+    /// 리사이즈 + 포맷 변환. attention/entropy/focus crop 활성 (cover/outside fit 시).
+    async fn process(&self, binary: &[u8], opts: &ResizeOpts) -> InfraResult<Vec<u8>>;
+
+    /// Blurhash LQIP 문자열 (~32자 base83). components 미박음 시 default 4x4.
+    /// 페이지 reload 전 placeholder 로 표시 (PageSpec 의 Image 블록에 자동 박힘).
+    async fn blurhash(
+        &self,
+        binary: &[u8],
+        components: Option<(u32, u32)>,
+    ) -> InfraResult<String>;
+
+    /// Placeholder PNG — 비동기 image_gen "렌더링중" 임시 이미지. 단순 회색 사각형.
+    /// 텍스트 없음 (locale·폰트 의존 회피). 사용자는 갤러리 status='rendering' 카드 + 페이지
+    /// reload 시 swap 으로 진행 인지.
+    async fn create_placeholder(&self, width: u32, height: u32) -> InfraResult<Vec<u8>>;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Image Generation (AI 이미지 생성) — LLM 과 대칭 ConfigDrivenAdapter 패턴.
+// 옛 TS `infra/image/` 1:1 port. format handler 3종: openai-image / gemini-native-image /
+// cli-codex-image. JSON config 4개 (gpt-image-1 / gpt-image-2 / gemini-3-1-flash-image /
+// cli-codex-image). Vault `system:image:model` 으로 활성 모델 swap.
+// ──────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub struct ImageReferenceImage {
+    pub binary: Vec<u8>,
+    pub content_type: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ImageGenOpts {
+    pub prompt: String,
+    /// 출력 크기 — 공식 지원 값 중 하나. 예: `"1024x1024"` / `"1792x1024"`.
+    pub size: Option<String>,
+    /// 품질 — provider 별 해석 (`"standard" | "hd" | "low" | "medium" | "high"` 등).
+    pub quality: Option<String>,
+    /// 스타일 지시 (선택)
+    pub style: Option<String>,
+    /// n 개 생성 (1 권장, 다수 지원 provider 만)
+    pub n: Option<u32>,
+    /// 모델 ID override — 미박음 시 ImageGenCallOpts 의 default
+    pub model: Option<String>,
+    /// 참조 이미지 (image-to-image). MediaManager 가 slug/url/base64 → binary 로 resolve 후 주입.
+    /// - OpenAI: `/v1/images/edits` 엔드포인트 + multipart
+    /// - Gemini: `contents.parts` 에 inline_data part 추가
+    /// - Codex CLI: 미지원 (description 에 명시)
+    pub reference_image: Option<ImageReferenceImage>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ImageGenCallOpts {
+    /// 모델 ID — config-adapter 가 이걸로 config 선택
+    pub model: Option<String>,
+    /// 요청 상관 ID — 로깅 추적
+    pub corr_id: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ImageGenResult {
+    /// 생성된 이미지 binary (PNG/WEBP 등)
+    pub binary: Vec<u8>,
+    pub content_type: String,
+    /// 감지 가능한 경우 해상도
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+    /// provider 가 반환한 revised_prompt 등
+    pub revised_prompt: Option<String>,
+    /// 이미지 1장 비용 USD — 어댑터가 config.pricing 으로 산정.
+    /// 구독 기반 (CLI) 은 `None`. CostManager 가 LLM 비용 통계에 통합 누적.
+    pub cost_usd: Option<f64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ImageModelInfo {
+    pub id: String,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+    pub provider: String,
+    pub format: String,
+    #[serde(
+        rename = "requiresOrganizationVerification",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub requires_organization_verification: Option<bool>,
+    /// 지원 사이즈 목록 — 설정 UI drop-down 노출. `["auto"]` 면 모델 자동.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sizes: Vec<String>,
+    /// 지원 품질 목록 — `["standard"]` 면 품질 고정.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub qualities: Vec<String>,
+    /// CLI 구독 기반 여부 — API 키 불필요, 과금 구독 포함.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subscription: Option<bool>,
+}
+
+#[async_trait::async_trait]
+pub trait IImageGenPort: Send + Sync {
+    /// 현재 활성 모델 ID — Vault `system:image:model` 또는 default.
+    fn get_model_id(&self) -> String;
+
+    /// 설정 UI 용 모델 목록 — registry 에서 로드된 모든 config + builtin carousel.
+    fn list_models(&self) -> Vec<ImageModelInfo>;
+
+    /// 이미지 생성 — Core 의 MediaManager 가 이 결과를 IMediaPort 로 저장 후 후처리.
+    async fn generate(
+        &self,
+        opts: &ImageGenOpts,
+        call_opts: &ImageGenCallOpts,
+    ) -> InfraResult<ImageGenResult>;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // LLM — User AI / Code Assistant / AI Assistant 통합 port
 // ──────────────────────────────────────────────────────────────────────────
 
