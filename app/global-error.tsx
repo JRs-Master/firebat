@@ -17,8 +17,11 @@ import { useEffect, useState } from 'react';
 const RELOAD_KEY = 'firebat_gerror_reloads';
 const MAX_AUTO_RELOAD = 1; // 자동 reload 최대 횟수 — 초과 시 manual 버튼만
 
-/** Reload 로 회복 가능한 transient error 패턴 — Next.js 빌드 산출물 stale 시 흔히 발생 */
-function isTransientError(err: Error): boolean {
+/** Reload 로 회복 가능한 transient error 패턴 — Next.js 빌드 산출물 stale 시 흔히 발생.
+ *  Production 에선 server-side throw 의 message 가 redact 되고 digest 만 client 에 옴 →
+ *  message 패턴 매칭이 fail. digest 만 있으면 server-side error 로 간주해 1회 자동 reload 시도
+ *  (sessionStorage 가드로 무한 루프 방어). chunk load error 는 client-side 라 message 보존. */
+function isTransientError(err: Error & { digest?: string }): boolean {
   const msg = String(err?.message ?? '');
   const name = String(err?.name ?? '');
   return (
@@ -26,7 +29,8 @@ function isTransientError(err: Error): boolean {
     msg.includes('ChunkLoadError') ||
     name === 'ChunkLoadError' ||
     msg.includes('Loading chunk') ||
-    msg.includes('Loading CSS chunk')
+    msg.includes('Loading CSS chunk') ||
+    Boolean(err?.digest)
   );
 }
 

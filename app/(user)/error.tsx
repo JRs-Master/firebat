@@ -15,15 +15,20 @@ import { useEffect, useState } from 'react';
 const RELOAD_KEY = 'firebat_uerror_reloads';
 const MAX_AUTO_RELOAD = 1;
 
-function isTransientError(err: Error): boolean {
+function isTransientError(err: Error & { digest?: string }): boolean {
   const msg = String(err?.message ?? '');
   const name = String(err?.name ?? '');
+  // Next.js production 은 server-side throw 의 message 를 redact 하고 digest 만 client 에 전달.
+  // 그래서 message 패턴 매칭이 항상 fail → digest 만 있으면 server-side error 로 간주해
+  // 1회 자동 reload 는 시도 (sessionStorage 가드로 무한 루프 방어, 이후엔 manual UI).
+  // chunk load error 는 client-side throw 라 message/name 가 보존되므로 패턴 매칭 우선 적용.
   return (
     msg.includes('Failed to find Server Action') ||
     msg.includes('ChunkLoadError') ||
     name === 'ChunkLoadError' ||
     msg.includes('Loading chunk') ||
-    msg.includes('Loading CSS chunk')
+    msg.includes('Loading CSS chunk') ||
+    Boolean(err?.digest)
   );
 }
 
