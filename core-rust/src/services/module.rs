@@ -4,7 +4,6 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::module::ModuleManager;
-use crate::ports::SandboxExecuteOpts;
 use crate::proto::{
     module_service_server::ModuleService, BoolRequest, Empty, JsonArgs, JsonValue, Status,
     StringRequest,

@@ -21,7 +21,7 @@ use firebat_core::{
         mcp::McpManager, media::MediaManager, module::ModuleManager, page::PageManager,
         project::ProjectManager, schedule::ScheduleManager, secret::SecretManager,
         status::StatusManager,
-        task::{StubTaskExecutor, TaskExecutor, TaskManager}, template::TemplateManager,
+        task::{TaskExecutor, TaskManager}, template::TemplateManager,
         tool::ToolManager,
     },
     ports::{
@@ -155,10 +155,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         episodic_manager.clone(),
     ));
     let schedule_manager = Arc::new(ScheduleManager::new(cron_adapter.clone()));
-
-    // Phase B-14 minimum — TaskManager 의 step executor 는 Phase B-16+ 에서 RealExecutor 로 교체.
-    let task_executor: Arc<dyn TaskExecutor> = Arc::new(StubTaskExecutor);
-    let task_manager = Arc::new(TaskManager::new(task_executor, logger.clone()));
     let media_manager = Arc::new(MediaManager::new(media));
     let ai_manager = Arc::new(AiManager::new(
         llm.clone(),
@@ -166,7 +162,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         logger.clone(),
     ));
 
-    // Phase B-17a — 정적 도구 dispatch 등록 (10 도구). LLM stub 위에서도 도구 호출 e2e 동작.
+    // Phase B-17a — 정적 도구 dispatch 등록 (12 도구). LLM stub 위에서도 도구 호출 e2e 동작.
     firebat_core::tool_registry::register_core_tools(
         &tool_manager,
         firebat_core::tool_registry::CoreToolHandlers {
@@ -177,6 +173,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             storage: storage.clone(),
         },
     );
+
+    // Phase B-17a — TaskManager 의 step executor 를 RealTaskExecutor 로 wiring.
+    // AiManager (ToolManager 위) → RealTaskExecutor (Sandbox/Mcp/Ai/Page/Tool 위) → TaskManager.
+    // 의존성 단방향 트리 (AiManager 가 TaskManager 의존 X — cycle 없음).
+    let task_executor: Arc<dyn TaskExecutor> = Arc::new(
+        firebat_core::task_executor_impl::RealTaskExecutor::new(
+            sandbox.clone(),
+            mcp_manager.clone(),
+            ai_manager.clone(),
+            page_manager.clone(),
+            tool_manager.clone(),
+            logger.clone(),
+        ),
+    );
+    let task_manager = Arc::new(TaskManager::new(task_executor, logger.clone()));
 
     // 부팅 시 영속 잡 복원 (cron / once 만 — delay 잡은 시각 부재로 복원 불가)
     schedule_manager.restore().await;

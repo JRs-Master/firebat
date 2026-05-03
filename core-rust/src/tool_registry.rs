@@ -10,7 +10,6 @@
 
 use std::sync::Arc;
 
-use crate::adapters::cron::TokioCronAdapter;
 use crate::managers::conversation::ConversationManager;
 use crate::managers::media::MediaManager;
 use crate::managers::page::PageManager;
@@ -402,6 +401,7 @@ fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::adapters::cron::TokioCronAdapter;
     use crate::adapters::database::SqliteDatabaseAdapter;
     use crate::adapters::media::LocalMediaAdapter;
     use crate::adapters::storage::LocalStorageAdapter;
