@@ -9,8 +9,6 @@
 //!   IToolRouterPort / IMediaPort / IImageProcessorPort / IImageGenPort /
 //!   IEntityPort / IEpisodicPort
 
-use std::path::Path;
-
 /// Infra layer 표준 결과 — InfraResult<T>. 옛 TS 의 패턴 그대로.
 /// success=false 시 error 메시지. throw 안 함 (Infra 의 throw 금지 BIBLE 원칙).
 pub type InfraResult<T> = Result<T, String>;
