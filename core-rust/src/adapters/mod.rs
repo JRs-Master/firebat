@@ -7,3 +7,4 @@ pub mod vault;
 pub mod auth;
 pub mod log;
 pub mod database;
+pub mod sandbox;

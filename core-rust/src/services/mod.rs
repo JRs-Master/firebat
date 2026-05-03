@@ -11,3 +11,5 @@ pub mod capability;
 pub mod status;
 pub mod tool;
 pub mod cost;
+pub mod project;
+pub mod module;

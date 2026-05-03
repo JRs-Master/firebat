@@ -10,18 +10,21 @@ use tonic::transport::Server;
 use firebat_core::{
     adapters::{
         auth::VaultAuthAdapter, database::SqliteDatabaseAdapter, log::ConsoleLogAdapter,
-        storage::LocalStorageAdapter, vault::SqliteVaultAdapter,
+        sandbox::ProcessSandboxAdapter, storage::LocalStorageAdapter, vault::SqliteVaultAdapter,
     },
     managers::{
         auth::AuthManager, capability::CapabilityManager, cost::CostManager, event::EventManager,
-        secret::SecretManager, status::StatusManager, template::TemplateManager, tool::ToolManager,
+        module::ModuleManager, project::ProjectManager, secret::SecretManager,
+        status::StatusManager, template::TemplateManager, tool::ToolManager,
     },
-    ports::{IAuthPort, ILogPort, IStoragePort, IVaultPort},
+    ports::{IAuthPort, IDatabasePort, ILogPort, ISandboxPort, IStoragePort, IVaultPort},
     proto::{
         auth_service_server::AuthServiceServer,
         capability_service_server::CapabilityServiceServer,
         cost_service_server::CostServiceServer,
         event_service_server::EventServiceServer,
+        module_service_server::ModuleServiceServer,
+        project_service_server::ProjectServiceServer,
         secret_service_server::SecretServiceServer,
         status_service_server::StatusServiceServer,
         template_service_server::TemplateServiceServer,
@@ -62,7 +65,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(&workspace_root));
     let vault: Arc<dyn IVaultPort> = Arc::new(SqliteVaultAdapter::new(&vault_db_path)?);
     let auth_port: Arc<dyn IAuthPort> = Arc::new(VaultAuthAdapter::new(vault.clone()));
-    let db = Arc::new(SqliteDatabaseAdapter::new(&app_db_path)?);
+    let db_concrete = Arc::new(SqliteDatabaseAdapter::new(&app_db_path)?);
+    let db: Arc<dyn IDatabasePort> = db_concrete.clone();
+    let sandbox: Arc<dyn ISandboxPort> = Arc::new(ProcessSandboxAdapter::new(workspace_root.clone()));
 
     // 매니저 wiring
     let template_manager = Arc::new(TemplateManager::new(storage.clone()));
@@ -76,7 +81,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let status_manager = Arc::new(StatusManager::new(Some(event_manager.clone())));
     let tool_manager = Arc::new(ToolManager::new());
-    let cost_manager = Arc::new(CostManager::new(db.clone(), vault.clone()));
+    let cost_manager = Arc::new(CostManager::new(db_concrete.clone(), vault.clone()));
+    let project_manager = Arc::new(ProjectManager::new(
+        storage.clone(),
+        db.clone(),
+        vault.clone(),
+    ));
+    let module_manager = Arc::new(ModuleManager::new(
+        sandbox.clone(),
+        storage.clone(),
+        vault.clone(),
+    ));
 
     // service impls
     let template_service = services::template::TemplateServiceImpl::new(template_manager);
@@ -87,6 +102,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let status_service = services::status::StatusServiceImpl::new(status_manager);
     let tool_service = services::tool::ToolServiceImpl::new(tool_manager);
     let cost_service = services::cost::CostServiceImpl::new(cost_manager);
+    let project_service = services::project::ProjectServiceImpl::new(project_manager);
+    let module_service = services::module::ModuleServiceImpl::new(module_manager);
 
     // graceful shutdown — Ctrl+C / SIGTERM
     let shutdown = async {
@@ -103,9 +120,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(StatusServiceServer::new(status_service))
         .add_service(ToolServiceServer::new(tool_service))
         .add_service(CostServiceServer::new(cost_service))
+        .add_service(ProjectServiceServer::new(project_service))
+        .add_service(ModuleServiceServer::new(module_service))
         // Phase B 진행하며 추가:
         //   .add_service(PageServiceServer::new(...))
-        //   .add_service(ProjectServiceServer::new(...))
         //   .add_service(ScheduleServiceServer::new(...))
         //   ... 21 매니저 + cross-cutting 등록
         .serve_with_shutdown(addr, shutdown)

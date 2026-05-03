@@ -162,3 +162,45 @@ pub trait IDatabasePort: Send + Sync {
     fn delete_pages_by_project(&self, project: &str) -> Vec<String>;
     fn search_pages(&self, query: &str, limit: usize) -> Vec<PageListItem>;
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Sandbox — sysmod 자식 process 실행
+// ──────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ModuleOutput {
+    pub success: bool,
+    #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
+    pub data: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stderr: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct SandboxExecuteOpts {
+    /// 추가 환경 변수 (Vault 시크릿 자동 주입 외).
+    #[serde(default)]
+    pub env: std::collections::HashMap<String, String>,
+    /// timeout milliseconds. None = 기본값 (Phase B 진행 시 SANDBOX_TIMEOUT_MS 상수 활용).
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
+}
+
+/// ISandboxPort — sysmod 자식 process spawn (Node / Python / etc).
+///
+/// Phase B 의 minimum stub — 실 sysmod spawn 구현은 후속 phase 에서 박음.
+/// (tokio::process::Command + Vault 시크릿 env 주입 + path containment + timeout)
+#[async_trait::async_trait]
+pub trait ISandboxPort: Send + Sync {
+    /// targetPath 의 모듈 entry 실행. inputData 는 stdin JSON.
+    async fn execute(
+        &self,
+        target_path: &str,
+        input_data: &serde_json::Value,
+        opts: &SandboxExecuteOpts,
+    ) -> InfraResult<ModuleOutput>;
+}

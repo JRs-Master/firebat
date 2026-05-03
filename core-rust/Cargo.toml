@@ -21,7 +21,7 @@ path = "src/main.rs"
 # Phase A / B 박힘 — Phase B 진행하며 추가
 tonic = "0.12"
 prost = "0.13"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs", "process", "io-util", "time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 async-trait = "0.1"
