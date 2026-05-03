@@ -744,6 +744,163 @@ pub trait ICronPort: Send + Sync {
     fn append_notify(&self, entry: CronNotification);
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Media — AI 생성 이미지 / OG / 업로드 공용 인프라
+// ──────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MediaScope {
+    User,
+    System,
+}
+
+impl MediaScope {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            MediaScope::User => "user",
+            MediaScope::System => "system",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct MediaSaveOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ext: Option<String>,
+    #[serde(rename = "filenameHint", default, skip_serializing_if = "Option::is_none")]
+    pub filename_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<MediaScope>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    #[serde(rename = "revisedPrompt", default, skip_serializing_if = "Option::is_none")]
+    pub revised_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<String>,
+    #[serde(rename = "aspectRatio", default, skip_serializing_if = "Option::is_none")]
+    pub aspect_ratio: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>, // "ai-generated" / "upload"
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct MediaVariant {
+    pub width: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<i64>,
+    pub format: String,
+    pub url: String,
+    pub bytes: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MediaSaveResult {
+    pub slug: String,
+    pub url: String,
+    #[serde(rename = "thumbnailUrl", default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<MediaVariant>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blurhash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<i64>,
+    pub bytes: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MediaFileRecord {
+    pub slug: String,
+    pub ext: String,
+    #[serde(rename = "contentType")]
+    pub content_type: String,
+    pub bytes: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<i64>,
+    #[serde(rename = "createdAt")]
+    pub created_at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<MediaScope>,
+    #[serde(rename = "filenameHint", default, skip_serializing_if = "Option::is_none")]
+    pub filename_hint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
+    #[serde(rename = "revisedPrompt", default, skip_serializing_if = "Option::is_none")]
+    pub revised_prompt: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<String>,
+    #[serde(rename = "aspectRatio", default, skip_serializing_if = "Option::is_none")]
+    pub aspect_ratio: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub variants: Vec<MediaVariant>,
+    #[serde(rename = "thumbnailUrl", default, skip_serializing_if = "Option::is_none")]
+    pub thumbnail_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blurhash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>, // 'rendering' | 'done' | 'error'
+    #[serde(rename = "errorMsg", default, skip_serializing_if = "Option::is_none")]
+    pub error_msg: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct MediaListOpts {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope: Option<MediaScope>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub offset: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct MediaListResult {
+    pub items: Vec<MediaFileRecord>,
+    pub total: usize,
+}
+
+/// IMediaPort — Phase B-15 minimum: 원본 binary + meta JSON 영속.
+///
+/// Phase B-15+ 후속:
+/// - saveVariant / updateMeta variants — IImageProcessorPort (sharp/image-rs) 박힌 후 활성
+/// - finalizeBase (placeholder swap) — 비동기 image_gen 패턴 박힌 후
+#[async_trait::async_trait]
+pub trait IMediaPort: Send + Sync {
+    async fn save(
+        &self,
+        binary: &[u8],
+        content_type: &str,
+        opts: &MediaSaveOptions,
+    ) -> InfraResult<MediaSaveResult>;
+    async fn save_error_record(
+        &self,
+        opts: &MediaSaveOptions,
+        error_msg: &str,
+    ) -> InfraResult<String>;
+    async fn read(&self, slug: &str) -> InfraResult<Option<(Vec<u8>, String, MediaFileRecord)>>;
+    async fn stat(&self, slug: &str) -> InfraResult<Option<MediaFileRecord>>;
+    async fn remove(&self, slug: &str) -> InfraResult<()>;
+    async fn list(&self, opts: &MediaListOpts) -> InfraResult<MediaListResult>;
+    async fn update_meta(&self, slug: &str, patch: &serde_json::Value) -> InfraResult<()>;
+}
+
 /// IEpisodicPort — Phase 2 episodic tier port.
 pub trait IEpisodicPort: Send + Sync {
     fn save_event(&self, input: &SaveEventInput) -> InfraResult<(i64, bool, Option<f64>)>;

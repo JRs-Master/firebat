@@ -21,3 +21,4 @@ pub mod episodic;
 pub mod consolidation;
 pub mod schedule;
 pub mod task;
+pub mod media;

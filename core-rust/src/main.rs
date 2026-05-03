@@ -10,21 +10,23 @@ use tonic::transport::Server;
 use firebat_core::{
     adapters::{
         auth::VaultAuthAdapter, cron::TokioCronAdapter, database::SqliteDatabaseAdapter,
-        log::ConsoleLogAdapter, mcp_client::McpClientFileAdapter, memory::SqliteMemoryAdapter,
-        sandbox::ProcessSandboxAdapter, storage::LocalStorageAdapter, vault::SqliteVaultAdapter,
+        log::ConsoleLogAdapter, mcp_client::McpClientFileAdapter,
+        media::LocalMediaAdapter, memory::SqliteMemoryAdapter, sandbox::ProcessSandboxAdapter,
+        storage::LocalStorageAdapter, vault::SqliteVaultAdapter,
     },
     managers::{
         auth::AuthManager, capability::CapabilityManager,
         consolidation::ConsolidationManager, conversation::ConversationManager,
         cost::CostManager, entity::EntityManager, episodic::EpisodicManager, event::EventManager,
-        mcp::McpManager, module::ModuleManager, page::PageManager, project::ProjectManager,
-        schedule::ScheduleManager, secret::SecretManager, status::StatusManager,
+        mcp::McpManager, media::MediaManager, module::ModuleManager, page::PageManager,
+        project::ProjectManager, schedule::ScheduleManager, secret::SecretManager,
+        status::StatusManager,
         task::{StubTaskExecutor, TaskExecutor, TaskManager}, template::TemplateManager,
         tool::ToolManager,
     },
     ports::{
         IAuthPort, IDatabasePort, IEntityPort, IEpisodicPort, ILogPort, IMcpClientPort,
-        ISandboxPort, IStoragePort, IVaultPort,
+        IMediaPort, ISandboxPort, IStoragePort, IVaultPort,
     },
     proto::{
         auth_service_server::AuthServiceServer,
@@ -37,6 +39,7 @@ use firebat_core::{
         event_service_server::EventServiceServer,
         mcp_service_server::McpServiceServer,
         module_service_server::ModuleServiceServer,
+        media_service_server::MediaServiceServer,
         page_service_server::PageServiceServer,
         project_service_server::ProjectServiceServer,
         schedule_service_server::ScheduleServiceServer,
@@ -111,6 +114,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cron_notifications_path,
         &default_timezone,
     )?;
+    let media: Arc<dyn IMediaPort> = Arc::new(LocalMediaAdapter::new(&workspace_root));
 
     // 매니저 wiring
     let template_manager = Arc::new(TemplateManager::new(storage.clone()));
@@ -149,6 +153,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Phase B-14 minimum — TaskManager 의 step executor 는 Phase B-16+ 에서 RealExecutor 로 교체.
     let task_executor: Arc<dyn TaskExecutor> = Arc::new(StubTaskExecutor);
     let task_manager = Arc::new(TaskManager::new(task_executor, logger.clone()));
+    let media_manager = Arc::new(MediaManager::new(media));
 
     // 부팅 시 영속 잡 복원 (cron / once 만 — delay 잡은 시각 부재로 복원 불가)
     schedule_manager.restore().await;
@@ -173,6 +178,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         services::consolidation::ConsolidationServiceImpl::new(consolidation_manager);
     let schedule_service = services::schedule::ScheduleServiceImpl::new(schedule_manager);
     let task_service = services::task::TaskServiceImpl::new(task_manager);
+    let media_service = services::media::MediaServiceImpl::new(media_manager);
 
     // graceful shutdown — Ctrl+C / SIGTERM
     let shutdown = async {
@@ -199,8 +205,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(ConsolidationServiceServer::new(consolidation_service))
         .add_service(ScheduleServiceServer::new(schedule_service))
         .add_service(TaskServiceServer::new(task_service))
+        .add_service(MediaServiceServer::new(media_service))
         // Phase B 진행하며 추가:
-        //   .add_service(MediaServiceServer::new(...))
         //   .add_service(AiServiceServer::new(...))
         //   ... 21 매니저 + cross-cutting 등록
         .serve_with_shutdown(addr, shutdown)
