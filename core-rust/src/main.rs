@@ -201,7 +201,35 @@ async fn main() -> Result<()> {
             Arc::new(ImageRsProcessorAdapter::new())
         }
     };
-    let _image_gen: Arc<dyn IImageGenPort> = Arc::new(StubImageGenAdapter::new());
+    // Image gen — env `FIREBAT_IMAGE_GEN`:
+    //   - `config-driven` (default 권장) — ConfigDrivenImageGenAdapter (3 format: openai-image /
+    //     gemini-native-image / cli-codex-image). Vault `system:image:model` 으로 swap.
+    //     builtin 3 모델 + `system/image/configs/*.json` 사용자 추가 자동 로드.
+    //   - `stub` — 단위 테스트 / 1x1 grey PNG.
+    let image_default_model = std::env::var("FIREBAT_DEFAULT_IMAGE_MODEL")
+        .unwrap_or_else(|_| "gpt-image-1".to_string());
+    let image_configs_dir = workspace_root.join("system").join("image").join("configs");
+    let image_gen_kind = std::env::var("FIREBAT_IMAGE_GEN")
+        .unwrap_or_else(|_| "config-driven".to_string());
+    let _image_gen: Arc<dyn IImageGenPort> = match image_gen_kind.as_str() {
+        "stub" => {
+            tracing::info!("Image gen: stub (1x1 grey PNG)");
+            Arc::new(StubImageGenAdapter::new())
+        }
+        _ => {
+            tracing::info!(
+                default_model = %image_default_model,
+                "Image gen: ConfigDrivenImageGenAdapter (openai-image / gemini-native-image / cli-codex-image)"
+            );
+            Arc::new(
+                firebat_core::image_gen::ConfigDrivenImageGenAdapter::with_configs_dir(
+                    vault.clone(),
+                    image_default_model,
+                    Some(&image_configs_dir),
+                ),
+            )
+        }
+    };
     // Phase B-17 — ConfigDrivenAdapter. 8 format (5 API + 3 CLI) 핸들러 박힘.
     // 모델 carousel: builtin 8개 + system/llm/configs/*.json 자동 로드 (사용자 모델 추가).
     // 새 모델 = JSON 파일 1개 추가 (옛 TS infra/llm/configs/*.json 동등). 코드 변경 0.
