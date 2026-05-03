@@ -175,8 +175,13 @@ impl AiManager {
             }
         }
 
+        // Phase B-17+ result processor — 모든 LLM 응답을 단일 sanitize 레이어 통과.
+        // 옛 TS sanitize.ts 1:1 port (utils/sanitize.rs). 모델별 quirk fix (Claude unicode escape /
+        // HTML 태그 / 마크다운 마커) 모두 일반 로직으로 처리.
+        let sanitized_reply = crate::utils::sanitize::sanitize_reply(&last_text);
+
         Ok(AiResponse {
-            reply: last_text,
+            reply: sanitized_reply,
             blocks: Vec::new(),
             executed_actions,
             suggestions: Vec::new(),

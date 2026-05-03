@@ -3,3 +3,4 @@
 pub mod path_resolve;
 pub mod condition;
 pub mod pipeline_resolver;
+pub mod sanitize;
