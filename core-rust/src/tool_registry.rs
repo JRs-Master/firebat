@@ -807,6 +807,50 @@ fn register_consolidation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) 
             }
         }),
     );
+
+    // consolidate_conversation — LLM 자동 추출 (entity/fact/event 박음).
+    // ConsolidationManager.set_ai_hook 박힌 후 활성.
+    tools.register(ToolDefinition {
+        name: "consolidate_conversation".to_string(),
+        description: "대화 1개 LLM 후처리 → entity/fact/event 자동 추출 + 저장. 메모리 4-tier 자동 누적용.".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string", "default": "admin"},
+                "conversationId": {"type": "string"},
+                "modelId": {"type": "string", "description": "(옵션) AI Assistant 모델 override"}
+            },
+            "required": ["conversationId"]
+        }),
+        source: "core".to_string(),
+    });
+    let consolidation = h.consolidation.clone();
+    tools.register_handler(
+        "consolidate_conversation",
+        make_handler(move |args| {
+            let consolidation = consolidation.clone();
+            async move {
+                let owner = args
+                    .get("owner")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("admin")
+                    .to_string();
+                let conv_id = args
+                    .get("conversationId")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "conversationId 누락".to_string())?
+                    .to_string();
+                let model_id = args
+                    .get("modelId")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+                let outcome = consolidation
+                    .consolidate_conversation(&owner, &conv_id, model_id.as_deref())
+                    .await?;
+                Ok(serde_json::to_value(outcome).unwrap_or_default())
+            }
+        }),
+    );
 }
 
 fn register_module_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
@@ -1093,9 +1137,10 @@ mod tests {
         let (tools, _dir) = make_setup().await;
         let stats = tools.stats();
         // page: 4 (list/get/delete/save) + storage: 4 + schedule: 3 + media: 1 +
-        // conversation: 1 + entity: 5 + episodic: 3 + consolidation: 1 + module: 3 + mcp: 2 = 27
-        assert_eq!(stats.total, 27);
-        assert_eq!(stats.by_source.get("core").copied(), Some(27));
+        // conversation: 1 + entity: 5 + episodic: 3 + consolidation: 2 (stats + consolidate) +
+        // module: 3 + mcp: 2 = 28
+        assert_eq!(stats.total, 28);
+        assert_eq!(stats.by_source.get("core").copied(), Some(28));
     }
 
     #[tokio::test]

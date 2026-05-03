@@ -13,9 +13,53 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::managers::ai::AiManager;
+use crate::managers::conversation::ConversationManager;
 use crate::managers::entity::EntityManager;
 use crate::managers::episodic::EpisodicManager;
-use crate::ports::{InfraResult, SaveEntityInput, SaveEventInput, SaveFactInput};
+use crate::ports::{InfraResult, LlmCallOpts, SaveEntityInput, SaveEventInput, SaveFactInput};
+
+/// 옛 TS EXTRACTION_PROMPT Rust port — 대화 → entity / fact / event JSON 추출 instruction.
+const EXTRACTION_PROMPT: &str = r#"당신은 대화 메모리 정리 도우미입니다. 다음 대화를 읽고 추적할 가치 있는 정보를 JSON 으로 추출하세요.
+
+추출 카테고리:
+1. **entities** (추적 대상): 종목·인물·프로젝트·개념·이벤트. 대화에 명시 등장한 것만.
+   - name: 정식 명칭 (한국어 / 영어 OK)
+   - type: stock / company / person / project / concept / event 자유
+   - aliases: 별칭·약자 (선택, 배열)
+   - metadata: ticker / industry / sector 같은 부가 (선택, 객체)
+
+2. **facts** (사실): entity 에 link 된 시간 stamped 사실.
+   - entityName: 어느 entity 의 fact (entities 의 name 과 일치)
+   - content: 자연어 1-2 문장 — 시간·수치·결과 명시
+   - factType: recommendation / transaction / analysis / observation / event / report 자유
+   - occurredAt: ms epoch (대화에서 명확한 시간 언급 시. 미박혀있으면 미포함)
+   - tags: 자유 태그 (배열)
+
+3. **events** (사건): 시간순 사건. 사용자 액션·자동매매·발행·트리거 등.
+   - type: cron_trigger / page_publish / transaction / user_action / analysis 자유
+   - title: 짧은 요약
+   - description: 상세 (선택)
+   - occurredAt: ms epoch
+   - entityNames: link 할 entity 이름 배열
+
+추출 안 할 것:
+- 잡담·인사·기술 질문
+- 추측·가정 (확인 안 된)
+- 메타 발화 (모델 변경·설정 같은 시스템 운영)
+
+JSON 응답 형식 (정확히 이 구조, 그 외 텍스트 금지):
+{"entities": [...], "facts": [...], "events": [...]}
+
+빈 카테고리는 빈 배열.
+
+대화:
+"#;
+
+/// 메시지 1개당 trim 한도 (옛 TS 와 동일 — 1500자).
+const MESSAGE_TRIM_LIMIT: usize = 1500;
+/// 최소 transcript 길이 — 너무 짧으면 추출 안 함.
+const MIN_TRANSCRIPT_LEN: usize = 50;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ExtractedEntity {
@@ -115,6 +159,17 @@ pub struct MemoryStats {
 pub struct ConsolidationManager {
     entity_mgr: Arc<EntityManager>,
     episodic_mgr: Arc<EpisodicManager>,
+    /// AI hook (옵션, 늦게 박을 수 있게 Mutex) — consolidate_conversation 의 LLM 자동 추출.
+    /// 미박힘 시 LLM 추출 비활성, save_extracted 만 가능.
+    /// AiManager 박힌 후 set_ai_hook 으로 박음 (Arc 안에서도 가능).
+    ai_hook: std::sync::Mutex<Option<ConsolidationAiHook>>,
+}
+
+/// AI 의존성 묶음 — ConversationManager (대화 fetch) + AiManager (LLM 호출).
+#[derive(Clone)]
+pub struct ConsolidationAiHook {
+    pub ai: Arc<AiManager>,
+    pub conversation: Arc<ConversationManager>,
 }
 
 impl ConsolidationManager {
@@ -122,7 +177,78 @@ impl ConsolidationManager {
         Self {
             entity_mgr,
             episodic_mgr,
+            ai_hook: std::sync::Mutex::new(None),
         }
+    }
+
+    /// AI hook 박음 — consolidate_conversation 의 LLM 자동 추출 활성.
+    /// AiManager 박힌 후 호출 (Arc 안에서도 OK — Mutex 박힘).
+    pub fn set_ai_hook(&self, ai: Arc<AiManager>, conversation: Arc<ConversationManager>) {
+        let mut guard = self.ai_hook.lock().unwrap_or_else(|p| p.into_inner());
+        *guard = Some(ConsolidationAiHook { ai, conversation });
+    }
+
+    /// 대화 1개 자동 정리 — 옛 TS consolidateConversation 1:1 port.
+    /// 1. 대화 fetch
+    /// 2. 메시지 → transcript (사용자/AI 만, 1500자 trim)
+    /// 3. AiManager.ask_text(EXTRACTION_PROMPT + transcript) — JSON 응답
+    /// 4. JSON 파싱 (코드 블록 fence 제거)
+    /// 5. save_extracted 위임
+    pub async fn consolidate_conversation(
+        &self,
+        owner: &str,
+        conv_id: &str,
+        model_id: Option<&str>,
+    ) -> InfraResult<ConsolidationOutcome> {
+        let hook = {
+            let guard = self.ai_hook.lock().unwrap_or_else(|p| p.into_inner());
+            guard.clone()
+        };
+        let Some(hook) = hook else {
+            return Err("ConsolidationAiHook 미박음 — set_ai_hook 으로 AiManager + ConversationManager 박아야 LLM 자동 추출 활성".to_string());
+        };
+
+        // 1. 대화 fetch
+        let conv = hook
+            .conversation
+            .get(owner, conv_id)
+            .ok_or_else(|| format!("대화 없음: {}", conv_id))?;
+        let messages = conv
+            .messages
+            .as_array()
+            .ok_or_else(|| "messages 가 array 아님".to_string())?;
+        if messages.len() < 2 {
+            return Ok(ConsolidationOutcome::default());
+        }
+
+        // 2. transcript 변환
+        let transcript = format_transcript(messages);
+        if transcript.len() < MIN_TRANSCRIPT_LEN {
+            return Ok(ConsolidationOutcome::default());
+        }
+
+        // 3. LLM 호출
+        let full_prompt = format!("{}\n{}", EXTRACTION_PROMPT, transcript);
+        let opts = LlmCallOpts {
+            model: model_id.map(String::from),
+            thinking_level: Some("minimal".to_string()),
+            ..Default::default()
+        };
+        let response_text = hook
+            .ai
+            .ask_text(&full_prompt, &opts)
+            .await
+            .map_err(|e| format!("LLM 호출 실패: {e}"))?;
+
+        // 4. JSON 파싱 (코드 블록 fence 제거)
+        let cleaned = strip_json_fence(&response_text);
+        let extracted: ExtractionResult = match serde_json::from_str(&cleaned) {
+            Ok(v) => v,
+            Err(_) => return Ok(ConsolidationOutcome::default()),
+        };
+
+        // 5. save_extracted 위임 (이미 박힌 메서드)
+        self.save_extracted(extracted, Some(conv_id), Some(0.92), Some(0.92))
     }
 
     /// 미리 추출된 JSON → entity / fact / event 일괄 save.
@@ -375,6 +501,48 @@ mod tests {
         assert_eq!(stats.events, 1);
         assert!(stats.entities_by_type.iter().any(|(t, c)| t == "stock" && *c == 1));
     }
+}
+
+/// 메시지 배열 → LLM 입력용 transcript. 사용자/AI 만, 1500자 trim.
+fn format_transcript(messages: &[serde_json::Value]) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    for m in messages {
+        let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("");
+        let role_label = match role {
+            "user" => "사용자",
+            "assistant" => "AI",
+            _ => continue,
+        };
+        let content = m.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        if content.trim().is_empty() {
+            continue;
+        }
+        let truncated = if content.chars().count() > MESSAGE_TRIM_LIMIT {
+            let prefix: String = content.chars().take(MESSAGE_TRIM_LIMIT).collect();
+            format!("{prefix}...(생략)")
+        } else {
+            content.to_string()
+        };
+        lines.push(format!("{role_label}: {truncated}"));
+    }
+    lines.join("\n\n")
+}
+
+/// ```json ... ``` 코드 블록 fence 제거. JSON 파싱 직전 호출.
+fn strip_json_fence(raw: &str) -> String {
+    let trimmed = raw.trim();
+    // ```json ... ``` 또는 ``` ... ``` 매칭
+    if let Some(rest) = trimmed.strip_prefix("```json") {
+        if let Some(inner) = rest.strip_suffix("```") {
+            return inner.trim().to_string();
+        }
+    }
+    if let Some(rest) = trimmed.strip_prefix("```") {
+        if let Some(inner) = rest.strip_suffix("```") {
+            return inner.trim().to_string();
+        }
+    }
+    trimmed.to_string()
 }
 
 impl Default for ExtractedEntity {
