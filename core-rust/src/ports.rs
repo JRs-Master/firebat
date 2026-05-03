@@ -263,3 +263,60 @@ pub trait ISandboxPort: Send + Sync {
         opts: &SandboxExecuteOpts,
     ) -> InfraResult<ModuleOutput>;
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// MCP Client — 외부 MCP 서버 (Gmail, Slack, 카톡 등) 등록·연결·도구 호출
+// ──────────────────────────────────────────────────────────────────────────
+
+/// 옛 TS McpServerConfig Rust 재현. 전송 방식 stdio / sse 두 가지.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct McpServerConfig {
+    pub name: String,
+    pub transport: McpTransport,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub env: std::collections::HashMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum McpTransport {
+    Stdio,
+    Sse,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct McpToolInfo {
+    pub server: String,
+    pub name: String,
+    pub description: String,
+    #[serde(rename = "inputSchema", default, skip_serializing_if = "Option::is_none")]
+    pub input_schema: Option<serde_json::Value>,
+}
+
+/// IMcpClientPort — 옛 TS IMcpClientPort Rust port.
+///
+/// Phase B-11 minimum: listServers / addServer / removeServer 만 박힘 (JSON 파일 영속).
+/// listTools / callTool 은 Phase B-15+ 후속 — `rmcp` crate (stdio + sse) 박힌 후 활성.
+#[async_trait::async_trait]
+pub trait IMcpClientPort: Send + Sync {
+    fn list_servers(&self) -> Vec<McpServerConfig>;
+    async fn add_server(&self, config: McpServerConfig) -> InfraResult<()>;
+    async fn remove_server(&self, name: &str) -> InfraResult<()>;
+    async fn list_tools(&self, server_name: &str) -> InfraResult<Vec<McpToolInfo>>;
+    async fn list_all_tools(&self) -> InfraResult<Vec<McpToolInfo>>;
+    async fn call_tool(
+        &self,
+        server_name: &str,
+        tool_name: &str,
+        args: &serde_json::Value,
+    ) -> InfraResult<serde_json::Value>;
+    /// 셧다운 — 모든 stdio 자식 process kill / sse 연결 close.
+    async fn disconnect_all(&self);
+}

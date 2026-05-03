@@ -8,3 +8,4 @@ pub mod auth;
 pub mod log;
 pub mod database;
 pub mod sandbox;
+pub mod mcp_client;

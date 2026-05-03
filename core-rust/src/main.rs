@@ -10,21 +10,25 @@ use tonic::transport::Server;
 use firebat_core::{
     adapters::{
         auth::VaultAuthAdapter, database::SqliteDatabaseAdapter, log::ConsoleLogAdapter,
-        sandbox::ProcessSandboxAdapter, storage::LocalStorageAdapter, vault::SqliteVaultAdapter,
+        mcp_client::McpClientFileAdapter, sandbox::ProcessSandboxAdapter,
+        storage::LocalStorageAdapter, vault::SqliteVaultAdapter,
     },
     managers::{
         auth::AuthManager, capability::CapabilityManager, conversation::ConversationManager,
-        cost::CostManager, event::EventManager, module::ModuleManager, page::PageManager,
-        project::ProjectManager, secret::SecretManager, status::StatusManager,
+        cost::CostManager, event::EventManager, mcp::McpManager, module::ModuleManager,
+        page::PageManager, project::ProjectManager, secret::SecretManager, status::StatusManager,
         template::TemplateManager, tool::ToolManager,
     },
-    ports::{IAuthPort, IDatabasePort, ILogPort, ISandboxPort, IStoragePort, IVaultPort},
+    ports::{
+        IAuthPort, IDatabasePort, ILogPort, IMcpClientPort, ISandboxPort, IStoragePort, IVaultPort,
+    },
     proto::{
         auth_service_server::AuthServiceServer,
         capability_service_server::CapabilityServiceServer,
         conversation_service_server::ConversationServiceServer,
         cost_service_server::CostServiceServer,
         event_service_server::EventServiceServer,
+        mcp_service_server::McpServiceServer,
         module_service_server::ModuleServiceServer,
         page_service_server::PageServiceServer,
         project_service_server::ProjectServiceServer,
@@ -50,6 +54,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app_db_path = std::env::var("FIREBAT_APP_DB")
         .map(PathBuf::from)
         .unwrap_or_else(|_| workspace_root.join("data").join("app.db"));
+    let mcp_servers_path = std::env::var("FIREBAT_MCP_SERVERS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| workspace_root.join("data").join("mcp-servers.json"));
     let addr = listen_addr.parse()?;
 
     eprintln!(
@@ -71,6 +78,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let db_concrete = Arc::new(SqliteDatabaseAdapter::new(&app_db_path)?);
     let db: Arc<dyn IDatabasePort> = db_concrete.clone();
     let sandbox: Arc<dyn ISandboxPort> = Arc::new(ProcessSandboxAdapter::new(workspace_root.clone()));
+    let mcp_client: Arc<dyn IMcpClientPort> =
+        Arc::new(McpClientFileAdapter::new(mcp_servers_path)?);
 
     // 매니저 wiring
     let template_manager = Arc::new(TemplateManager::new(storage.clone()));
@@ -97,6 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ));
     let page_manager = Arc::new(PageManager::new(db.clone(), storage.clone()));
     let conversation_manager = Arc::new(ConversationManager::new(db.clone()));
+    let mcp_manager = Arc::new(McpManager::new(mcp_client));
 
     // service impls
     let template_service = services::template::TemplateServiceImpl::new(template_manager);
@@ -111,6 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let module_service = services::module::ModuleServiceImpl::new(module_manager);
     let page_service = services::page::PageServiceImpl::new(page_manager);
     let conversation_service = services::conversation::ConversationServiceImpl::new(conversation_manager);
+    let mcp_service = services::mcp::McpServiceImpl::new(mcp_manager);
 
     // graceful shutdown — Ctrl+C / SIGTERM
     let shutdown = async {
@@ -131,9 +142,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_service(ModuleServiceServer::new(module_service))
         .add_service(PageServiceServer::new(page_service))
         .add_service(ConversationServiceServer::new(conversation_service))
+        .add_service(McpServiceServer::new(mcp_service))
         // Phase B 진행하며 추가:
         //   .add_service(ScheduleServiceServer::new(...))
-        //   .add_service(McpServiceServer::new(...))
+        //   .add_service(MediaServiceServer::new(...))
         //   ... 21 매니저 + cross-cutting 등록
         .serve_with_shutdown(addr, shutdown)
         .await?;
