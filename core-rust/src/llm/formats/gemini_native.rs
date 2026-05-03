@@ -9,6 +9,7 @@
 use crate::llm::adapter::FormatHandler;
 use crate::llm::config::LlmModelConfig;
 use crate::llm::formats::common::{compute_cost, http_client, map_reqwest_error, require_api_key};
+use crate::llm::formats::gemini_shared::sanitize_gemini_schema;
 use crate::ports::{
     InfraResult, LlmCallOpts, LlmTextResponse, LlmToolResponse, ToolCall, ToolDefinition,
     ToolResult,
@@ -132,45 +133,6 @@ fn urlencoding(s: &str) -> String {
         .collect()
 }
 
-/// Gemini schema quirk — enum 은 string 배열만, integer/number + enum 조합 금지 → enum 제거.
-/// 옛 TS gemini 공통 스키마 어댑터 Rust port.
-fn sanitize_gemini_schema(schema: &serde_json::Value) -> serde_json::Value {
-    let mut cloned = schema.clone();
-    walk_sanitize(&mut cloned);
-    cloned
-}
-
-fn walk_sanitize(v: &mut serde_json::Value) {
-    if let serde_json::Value::Object(map) = v {
-        // integer/number + enum 조합 금지
-        let ty = map.get("type").and_then(|t| t.as_str()).map(String::from);
-        if matches!(ty.as_deref(), Some("integer") | Some("number")) && map.contains_key("enum") {
-            map.remove("enum");
-        }
-        // enum 값을 string 배열로 강제
-        if let Some(enum_val) = map.get_mut("enum") {
-            if let Some(arr) = enum_val.as_array_mut() {
-                let strs: Vec<serde_json::Value> = arr
-                    .iter()
-                    .map(|v| match v {
-                        serde_json::Value::String(s) => serde_json::Value::String(s.clone()),
-                        _ => serde_json::Value::String(v.to_string()),
-                    })
-                    .collect();
-                *arr = strs;
-            }
-        }
-        // 재귀 — properties / items / additionalProperties
-        for (_k, child) in map.iter_mut() {
-            walk_sanitize(child);
-        }
-    } else if let serde_json::Value::Array(arr) = v {
-        for child in arr.iter_mut() {
-            walk_sanitize(child);
-        }
-    }
-}
-
 #[async_trait::async_trait]
 impl FormatHandler for GeminiNativeHandler {
     async fn ask_text(
@@ -244,31 +206,5 @@ impl FormatHandler for GeminiNativeHandler {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sanitize_removes_enum_on_integer() {
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "n": {"type": "integer", "enum": [1, 2, 3]}
-            }
-        });
-        let cleaned = sanitize_gemini_schema(&schema);
-        assert!(cleaned["properties"]["n"].get("enum").is_none());
-    }
-
-    #[test]
-    fn sanitize_converts_enum_to_strings() {
-        let schema = serde_json::json!({
-            "type": "string",
-            "enum": ["a", "b"]
-        });
-        let cleaned = sanitize_gemini_schema(&schema);
-        let arr = cleaned["enum"].as_array().unwrap();
-        assert_eq!(arr.len(), 2);
-        assert!(arr[0].is_string());
-    }
-}
+// gemini schema sanitize tests 은 `gemini_shared::tests` 에서 8건 cover.
+// gemini_native 가 sanitize_gemini_schema 를 import 해서 build_body 에서 사용함.

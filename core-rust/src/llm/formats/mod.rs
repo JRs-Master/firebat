@@ -3,6 +3,7 @@
 //! 5 API + 3 CLI = 8 핸들러. 각 핸들러는 FormatHandler trait 구현.
 
 pub mod common;
+pub mod gemini_shared;
 pub mod anthropic;
 pub mod openai_responses;
 pub mod openai_chat;

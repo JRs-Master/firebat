@@ -5,6 +5,9 @@
 //!
 //! Phase B-17 minimum: Service Account JWT signing 미박음 — 사용자가 미리 발급한 access_token 을
 //! Vault `system:vertex:access-token` 에 저장. JWT 자동 발급은 Phase B-17.5 (jsonwebtoken crate).
+//!
+//! Phase B-17.5 활성 시 — body 빌드할 때 `crate::llm::formats::gemini_shared::sanitize_gemini_schema`
+//! 를 반드시 호출 (옛 TS `_gemini-shared.ts` 와 같이 native + vertex 양쪽 동일 sanitize).
 
 use crate::llm::adapter::FormatHandler;
 use crate::llm::config::LlmModelConfig;
