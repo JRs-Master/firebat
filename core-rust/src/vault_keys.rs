@@ -29,3 +29,8 @@ pub fn vk_capability_settings(cap_id: &str) -> String {
 pub fn vk_module_settings(name: &str) -> String {
     format!("system:module:{}:settings", name)
 }
+
+// Phase B-18 Step 2d 박힘 — MediaManager 의 이미지 모델·기본값 (옛 TS 1:1).
+pub const VK_IMAGE_MODEL: &str = "system:image-model";
+pub const VK_IMAGE_SIZE: &str = "system:image-size";
+pub const VK_IMAGE_QUALITY: &str = "system:image-quality";

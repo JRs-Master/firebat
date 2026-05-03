@@ -191,7 +191,7 @@ async fn main() -> Result<()> {
     // 어댑터 swap 시 매니저 / tool_registry 코드 변경 0건 (인터페이스 동일).
     let processor_kind = std::env::var("FIREBAT_IMAGE_PROCESSOR")
         .unwrap_or_else(|_| "image-rs".to_string());
-    let _image_processor: Arc<dyn IImageProcessorPort> = match processor_kind.as_str() {
+    let image_processor: Arc<dyn IImageProcessorPort> = match processor_kind.as_str() {
         "stub" => {
             tracing::info!("Image processor: stub (no-op, 단위 테스트 용)");
             Arc::new(StubImageProcessorAdapter::new())
@@ -211,7 +211,7 @@ async fn main() -> Result<()> {
     let image_configs_dir = workspace_root.join("system").join("image").join("configs");
     let image_gen_kind = std::env::var("FIREBAT_IMAGE_GEN")
         .unwrap_or_else(|_| "config-driven".to_string());
-    let _image_gen: Arc<dyn IImageGenPort> = match image_gen_kind.as_str() {
+    let image_gen: Arc<dyn IImageGenPort> = match image_gen_kind.as_str() {
         "stub" => {
             tracing::info!("Image gen: stub (1x1 grey PNG)");
             Arc::new(StubImageGenAdapter::new())
@@ -284,7 +284,15 @@ async fn main() -> Result<()> {
         episodic_manager.clone(),
     ));
     let schedule_manager = Arc::new(ScheduleManager::new(cron_adapter.clone()));
-    let media_manager = Arc::new(MediaManager::new(media));
+    // MediaManager — Step 2d 박힘. 이미지 파이프라인 (generate/regenerate/variants/blurhash) 활성.
+    // builders 미박음 시 thin IMediaPort wrapper (단위 테스트 호환).
+    let media_manager = Arc::new(
+        MediaManager::new(media)
+            .with_image_gen(image_gen.clone())
+            .with_processor(image_processor.clone())
+            .with_vault(vault.clone())
+            .with_log(logger.clone()),
+    );
     // PromptBuilder + SystemContextGatherer + HistoryResolver + CostManager 박힌 채로:
     // - 시스템 프롬프트 자동 주입
     // - sysmod/MCP 동적 description

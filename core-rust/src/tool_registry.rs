@@ -456,6 +456,140 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
             }
         }),
     );
+
+    // image_gen — AI 가 호출하는 비동기 이미지 생성 도구.
+    // start_generate 호출 → 즉시 placeholder slug/url 반환 → AI 가 즉시 save_page 박을 수 있음.
+    // 사용자 페이지 reload 시 placeholder → 실제 이미지로 자동 swap (디스크 파일 교체).
+    // 옛 TS image_gen 도구 1:1 — referenceImage (slug/url/base64) image-to-image 자동 활성.
+    tools.register(ToolDefinition {
+        name: "image_gen".to_string(),
+        description: "AI 이미지 생성 (비동기). 즉시 placeholder URL 반환 → AI 가 save_page 박을 수 있음. \
+                      사용자 페이지 reload 시 실제 이미지로 swap. \
+                      referenceImage (slug/url/base64) 박으면 image-to-image 변환 (OpenAI gpt-image / Gemini 지원).".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "required": ["prompt"],
+            "properties": {
+                "prompt": {"type": "string", "description": "이미지 설명 (영어 권장). 스타일·구도·색감·텍스트 힌트 포함."},
+                "size": {"type": "string", "enum": ["1024x1024", "1536x1024", "1024x1536", "auto"]},
+                "quality": {"type": "string", "enum": ["low", "medium", "high"]},
+                "filenameHint": {"type": "string", "description": "파일명 힌트 (예: 'blog-hero-samsung-2026')"},
+                "aspectRatio": {"type": "string", "description": "16:9 / 1:1 / 4:5 / 3:2 등 — 지정 시 sharp 가 focusPoint 전략으로 crop"},
+                "focusPoint": {"description": "'attention' / 'entropy' / 'center' 또는 {x, y} 객체"},
+                "referenceImage": {
+                    "type": "object",
+                    "description": "image-to-image 변환용 참조 이미지. slug/url/base64 중 하나",
+                    "properties": {
+                        "slug": {"type": "string", "description": "갤러리 미디어 slug (search_media 결과)"},
+                        "url": {"type": "string", "description": "미디어 URL 또는 외부 https URL"},
+                        "base64": {"type": "string", "description": "base64 또는 data URI"}
+                    }
+                }
+            }
+        }),
+        source: "core".to_string(),
+    });
+    let media = h.media.clone();
+    tools.register_handler(
+        "image_gen",
+        make_handler(move |args| {
+            let media = media.clone();
+            async move {
+                let input = parse_generate_image_input(&args)?;
+                let (slug, url) = media.start_generate(input).await?;
+                Ok(serde_json::json!({
+                    "slug": slug,
+                    "url": url,
+                    "status": "rendering",
+                    "message": "이미지 생성 시작됨 — placeholder URL 반환. 페이지 reload 시 실제 이미지로 자동 swap."
+                }))
+            }
+        }),
+    );
+
+    // regenerate_image — 갤러리 슬러그의 메타 (prompt/model/size/aspectRatio) 그대로 재실행.
+    // 옛 TS regenerateImageBySlug 1:1 — sync (existing_slug 미사용, 새 slug 발급).
+    tools.register(ToolDefinition {
+        name: "regenerate_image".to_string(),
+        description: "갤러리 이미지 재생성 — 기존 slug 의 prompt/model/size/aspectRatio 메타 그대로 재실행. \
+                      prompt 미박힌 레거시 레코드는 재생성 불가 (error 반환).".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "required": ["slug"],
+            "properties": {
+                "slug": {"type": "string", "description": "재생성 대상 슬러그 (search_media 결과)"}
+            }
+        }),
+        source: "core".to_string(),
+    });
+    let media = h.media.clone();
+    tools.register_handler(
+        "regenerate_image",
+        make_handler(move |args| {
+            let media = media.clone();
+            async move {
+                let slug = args
+                    .get("slug")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "slug 누락".to_string())?
+                    .to_string();
+                let (result, regen_from) = media.regenerate_image_by_slug(&slug).await?;
+                let mut value = serde_json::to_value(&result).unwrap_or_default();
+                if let serde_json::Value::Object(ref mut map) = value {
+                    map.insert(
+                        "regenFrom".to_string(),
+                        serde_json::Value::String(regen_from),
+                    );
+                }
+                Ok(value)
+            }
+        }),
+    );
+}
+
+/// JSON args → GenerateImageInput. image_gen / regenerate 공통.
+fn parse_generate_image_input(
+    args: &serde_json::Value,
+) -> Result<crate::managers::media::GenerateImageInput, String> {
+    use crate::managers::media::{GenerateImageInput, ReferenceImageInput};
+    let prompt = args
+        .get("prompt")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "prompt 누락".to_string())?
+        .to_string();
+    let size = args.get("size").and_then(|v| v.as_str()).map(String::from);
+    let quality = args
+        .get("quality")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let filename_hint = args
+        .get("filenameHint")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let aspect_ratio = args
+        .get("aspectRatio")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let focus_point = args.get("focusPoint").cloned();
+    let model = args.get("model").and_then(|v| v.as_str()).map(String::from);
+    let reference_image = args.get("referenceImage").and_then(|r| r.as_object()).map(|obj| {
+        ReferenceImageInput {
+            slug: obj.get("slug").and_then(|v| v.as_str()).map(String::from),
+            url: obj.get("url").and_then(|v| v.as_str()).map(String::from),
+            base64: obj.get("base64").and_then(|v| v.as_str()).map(String::from),
+        }
+    });
+    Ok(GenerateImageInput {
+        prompt,
+        size,
+        quality,
+        model,
+        filename_hint,
+        scope: None,
+        aspect_ratio,
+        focus_point,
+        reference_image,
+    })
 }
 
 fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
@@ -1175,8 +1309,9 @@ mod tests {
         // page: 4 (list/get/delete/save) + storage: 4 + schedule: 3 + media: 1 +
         // conversation: 1 + entity: 5 + episodic: 3 + consolidation: 2 (stats + consolidate) +
         // module: 3 + mcp: 2 = 28
-        assert_eq!(stats.total, 28);
-        assert_eq!(stats.by_source.get("core").copied(), Some(28));
+        // Phase B-18 Step 2e — image_gen + regenerate_image 추가 (28 → 30).
+        assert_eq!(stats.total, 30);
+        assert_eq!(stats.by_source.get("core").copied(), Some(30));
     }
 
     #[tokio::test]

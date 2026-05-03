@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ports::{
     IMediaPort, InfraResult, MediaFileRecord, MediaListOpts, MediaListResult, MediaSaveOptions,
-    MediaSaveResult, MediaScope,
+    MediaSaveResult, MediaScope, MediaVariantMeta,
 };
 
 pub struct LocalMediaAdapter {
@@ -322,6 +322,82 @@ impl IMediaPort for LocalMediaAdapter {
             .map_err(|e| format!("patched record 역직렬화: {e}"))?;
         self.write_meta(scope, slug, &updated).await?;
         Ok(())
+    }
+
+    async fn finalize_base(
+        &self,
+        slug: &str,
+        scope: &str,
+        binary: &[u8],
+        content_type: &str,
+        ext_override: Option<&str>,
+    ) -> InfraResult<()> {
+        let scope_enum = MediaScope::from_str_or_user(scope);
+        let new_ext = ext_override
+            .map(String::from)
+            .unwrap_or_else(|| Self::ext_from_content_type(content_type).to_string());
+
+        // 기존 record 로드 — meta 박혀있어야 finalize 가능 (placeholder 가 박은 상태)
+        let Some((found_scope, mut record)) = self.find_record(slug).await else {
+            return Err(format!("finalize_base: media slug={} 미존재", slug));
+        };
+        if found_scope != scope_enum {
+            return Err(format!(
+                "finalize_base: scope mismatch (요청 {} / 실제 {})",
+                scope_enum.as_str(),
+                found_scope.as_str()
+            ));
+        }
+
+        // 옛 ext 가 다르면 옛 파일 삭제 (PNG → WebP 변환 등)
+        if record.ext != new_ext {
+            let old_path = self.binary_path(scope_enum, slug, &record.ext);
+            let _ = tokio::fs::remove_file(&old_path).await;
+        }
+
+        // 새 binary 박음
+        let new_path = self.binary_path(scope_enum, slug, &new_ext);
+        if let Some(parent) = new_path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("finalize_base dir 생성: {e}"))?;
+        }
+        tokio::fs::write(&new_path, binary)
+            .await
+            .map_err(|e| format!("finalize_base binary write: {e}"))?;
+
+        // 메타 갱신 — ext / contentType / bytes (status / width / height 는 caller 의 update_meta 로)
+        record.ext = new_ext;
+        record.content_type = content_type.to_string();
+        record.bytes = binary.len() as i64;
+        self.write_meta(scope_enum, slug, &record).await?;
+        Ok(())
+    }
+
+    async fn save_variant(
+        &self,
+        slug: &str,
+        scope: &str,
+        suffix: &str,
+        format: &str,
+        binary: &[u8],
+        _variant_meta: &MediaVariantMeta,
+    ) -> InfraResult<String> {
+        let scope_enum = MediaScope::from_str_or_user(scope);
+        // 파일명 패턴: `<slug>-<suffix>.<format>` — 옛 TS 1:1.
+        // suffix 예: `'480w'` / `'thumb'` / `'full'` (도메인 결정).
+        let filename = format!("{}-{}.{}", slug, suffix, format);
+        let path = self.scope_dir(scope_enum).join(&filename);
+        if let Some(parent) = path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("variant dir 생성: {e}"))?;
+        }
+        tokio::fs::write(&path, binary)
+            .await
+            .map_err(|e| format!("variant binary write: {e}"))?;
+        // URL 반환 — `/{scope}/media/<slug>-<suffix>.<format>` (옛 TS 1:1)
+        Ok(format!("/{}/media/{}", scope_enum.as_str(), filename))
     }
 }
 

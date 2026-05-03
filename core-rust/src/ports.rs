@@ -1174,6 +1174,14 @@ impl MediaScope {
             MediaScope::System => "system",
         }
     }
+
+    /// `"user"` / `"system"` 외 입력은 `User` 폴백 (옛 TS default 와 동일).
+    pub fn from_str_or_user(s: &str) -> Self {
+        match s {
+            "system" => MediaScope::System,
+            _ => MediaScope::User,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -1288,24 +1296,65 @@ pub struct MediaListResult {
     pub total: usize,
 }
 
-/// IMediaPort — Phase B-15 minimum: 원본 binary + meta JSON 영속.
+/// 단일 variant 메타 — `width / height / format / bytes` (URL 은 save_variant 반환).
+/// `MediaVariant` 와 같은 타입 (i64) 통일 — variants 배열에 직접 push 가능.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct MediaVariantMeta {
+    pub width: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub height: Option<i64>,
+    pub format: String,
+    pub bytes: i64,
+}
+
+/// IMediaPort — 미디어 (이미지) 영속 + 갤러리 + variants + placeholder swap.
 ///
-/// Phase B-15+ 후속:
-/// - saveVariant / updateMeta variants — IImageProcessorPort (sharp/image-rs) 박힌 후 활성
-/// - finalizeBase (placeholder swap) — 비동기 image_gen 패턴 박힌 후
+/// 옛 TS `infra/media/local-adapter.ts` 1:1 port. Phase B-18 Step 2d 박힘:
+///   - save_variant (resize 결과 저장) + finalize_base (비동기 image_gen placeholder swap)
+///   - 모든 메서드 async (FS I/O — tokio::fs)
 #[async_trait::async_trait]
 pub trait IMediaPort: Send + Sync {
+    /// binary 저장 + URL 발급. 원본만 저장 — variants 는 save_variant 로 별도 기록.
     async fn save(
         &self,
         binary: &[u8],
         content_type: &str,
         opts: &MediaSaveOptions,
     ) -> InfraResult<MediaSaveResult>;
+
+    /// 실패 기록 저장 — 원본 binary 없이 메타 JSON 만 `status='error'` 로 기록.
+    /// 사용자가 갤러리에서 재생성·삭제 결정할 수 있도록 prompt·model 등 보존.
     async fn save_error_record(
         &self,
         opts: &MediaSaveOptions,
         error_msg: &str,
     ) -> InfraResult<String>;
+
+    /// 기존 slug 의 base 파일을 새 binary 로 교체 (placeholder → 실제 이미지 swap).
+    /// 비동기 image_gen 패턴 — startGenerate 가 placeholder 박고 reserve 한 slug 를 백그라운드에서 finalize.
+    /// meta 도 함께 업데이트 (bytes/contentType) — status 는 caller 가 별도 update_meta 로 'done' 설정.
+    /// `ext_override` 박혀있으면 새 확장자 (`png` → `webp` 변환 시), 미박음 시 content_type 에서 추론.
+    async fn finalize_base(
+        &self,
+        slug: &str,
+        scope: &str,
+        binary: &[u8],
+        content_type: &str,
+        ext_override: Option<&str>,
+    ) -> InfraResult<()>;
+
+    /// variant / thumbnail binary 를 기존 slug 에 연결해 저장.
+    /// suffix 규칙: `'480w'`, `'thumb'`, `'full'` 등. 반환 = variant URL.
+    async fn save_variant(
+        &self,
+        slug: &str,
+        scope: &str,
+        suffix: &str,
+        format: &str,
+        binary: &[u8],
+        variant_meta: &MediaVariantMeta,
+    ) -> InfraResult<String>;
+
     async fn read(&self, slug: &str) -> InfraResult<Option<(Vec<u8>, String, MediaFileRecord)>>;
     async fn stat(&self, slug: &str) -> InfraResult<Option<MediaFileRecord>>;
     async fn remove(&self, slug: &str) -> InfraResult<()>;
