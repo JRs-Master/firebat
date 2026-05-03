@@ -242,8 +242,33 @@ async fn main() -> Result<()> {
         TaskManager::new(task_executor, logger.clone()).with_tools(tool_manager.clone()),
     );
 
+    // ScheduleManager 에 hooks 박음 — handle_trigger 의 4 모드 (agent/pipeline/page url/sandbox)
+    // + runWhen 평가 + retry loop + notify hook + oneShot 자동 취소 활성.
+    let schedule_manager_with_hooks = Arc::new(
+        ScheduleManager::new(cron_adapter.clone()).with_hooks(
+            firebat_core::managers::schedule::ScheduleHooks {
+                task: task_manager.clone(),
+                ai: ai_manager.clone(),
+                sandbox: sandbox.clone(),
+                tools: tool_manager.clone(),
+                log: logger.clone(),
+            },
+        ),
+    );
+
+    // cron 발화 콜백 등록 — 매 trigger 시 schedule_manager.handle_trigger 호출.
+    let schedule_arc = schedule_manager_with_hooks.clone();
+    let trigger_callback: firebat_core::ports::CronTriggerCallback = std::sync::Arc::new(move |info| {
+        let mgr = schedule_arc.clone();
+        Box::pin(async move { mgr.handle_trigger(info).await })
+    });
+    schedule_manager_with_hooks.on_trigger(trigger_callback);
+
     // 부팅 시 영속 잡 복원 (cron / once 만 — delay 잡은 시각 부재로 복원 불가)
-    schedule_manager.restore().await;
+    schedule_manager_with_hooks.restore().await;
+
+    // schedule_manager 변수 alias — 이후 wiring 동일 이름으로 사용
+    let schedule_manager = schedule_manager_with_hooks;
 
     // service impls
     let template_service = services::template::TemplateServiceImpl::new(template_manager);
