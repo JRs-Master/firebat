@@ -26,6 +26,7 @@ use std::sync::Arc;
 use crate::managers::ai::history_resolver::HistoryResolver;
 use crate::managers::ai::prompt_builder::PromptBuilder;
 use crate::managers::ai::system_context::SystemContextGatherer;
+use crate::managers::ai::tool_dispatcher::ToolDispatcher;
 use crate::managers::conversation::ConversationManager;
 use crate::managers::cost::CostManager;
 use crate::managers::module::ModuleManager;
@@ -34,6 +35,7 @@ use crate::ports::{
     AiRequestOpts, ILlmPort, ILogPort, IVaultPort, InfraResult, LlmCallOpts, ToolCall,
     ToolDefinition, ToolResult,
 };
+use crate::utils::pending_tools::create_pending;
 use crate::utils::render_map::render_tool_map;
 use crate::utils::tool_cache::{
     get_cached_tool_result, set_cached_tool_result, tool_cache_key,
@@ -57,6 +59,11 @@ pub struct AiResponse {
     pub executed_actions: Vec<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub suggestions: Vec<serde_json::Value>,
+    /// 승인 대기 중인 도구 호출 — 옛 TS `pendingActions` 1:1.
+    /// `{planId, name, summary, args, status?, originalRunAt?}` 형식.
+    /// 사용자가 ✓승인 누르면 `consume_pending(planId)` 으로 실제 실행.
+    #[serde(rename = "pendingActions", default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_actions: Vec<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(rename = "modelId", default, skip_serializing_if = "Option::is_none")]
@@ -80,6 +87,11 @@ pub struct AiManager {
     /// CostManager (옵션) — LLM 호출 후 자동 비용 누적. 옛 TS ai-manager.ts:1260
     /// `core.recordLlmCost(usage)` 패턴 1:1 port. 미박힘 시 비용 누적 비활성.
     cost: Option<Arc<CostManager>>,
+    /// ToolDispatcher (옵션) — approval gate (check_needs_approval + pre_validate_pending_args).
+    /// 박혀있으면 destructive 도구 (write_file/save_page 덮어쓰기 / delete_* / schedule_task /
+    /// cancel_task) 호출 시 즉시 실행 X → pending 으로 등록. 옛 TS ai-manager.ts approval flow 1:1.
+    /// 미박힘 시 모든 도구 즉시 실행 (현재 default — 회귀 안전).
+    dispatcher: Option<Arc<ToolDispatcher>>,
 }
 
 impl AiManager {
@@ -96,7 +108,15 @@ impl AiManager {
             context_gatherer: None,
             history_resolver: None,
             cost: None,
+            dispatcher: None,
         }
+    }
+
+    /// ToolDispatcher 박은 채로 부팅 — approval gate (write_file/save_page 덮어쓰기 / delete_* /
+    /// schedule_task / cancel_task) 활성. cron agent 모드는 우회 (server-side 실행).
+    pub fn with_tool_dispatcher(mut self, dispatcher: Arc<ToolDispatcher>) -> Self {
+        self.dispatcher = Some(dispatcher);
+        self
     }
 
     /// HistoryResolver 박은 채로 부팅 — opts.conversation_id 박혀있으면 recent N 메시지 자동 prepend.
@@ -243,9 +263,12 @@ impl AiManager {
         let mut prior_results: Vec<ToolResult> = Vec::new();
         let mut executed_actions: Vec<serde_json::Value> = Vec::new();
         let mut blocks: Vec<serde_json::Value> = Vec::new();
+        let mut pending_actions: Vec<serde_json::Value> = Vec::new();
         let mut last_text = String::new();
         let mut last_model_id = self.llm.get_model_id();
         let mut total_cost: f64 = 0.0;
+        // cron agent 모드는 approval gate 우회 (UI 없는 server-side 자율 발행).
+        let approval_enabled = self.dispatcher.is_some() && ai_opts.cron_agent.is_none();
 
         // Layer 2 per-turn duplicate guard — turn 안에서 같은 (name + args) 두 번째 호출 차단.
         // 옛 TS `turnCallSet` 1:1.
@@ -325,6 +348,104 @@ impl AiManager {
             let mut turn_results: Vec<(ToolCall, ToolResult)> = Vec::new();
 
             for call in response.tool_calls.iter() {
+                // Approval gate (옛 TS ai-manager.ts 1342-1385 1:1) —
+                // 1. cron agent 모드면 우회 (server-side 실행)
+                // 2. ToolDispatcher 박혀있을 때만 작동
+                // 3. check_needs_approval 결과 Some(summary) 면 pre_validate 후 pending 등록
+                // 4. pre_validate 실패 시 UI 미노출 + AI 한테 에러 결과만 → 다음 turn 재시도
+                if approval_enabled {
+                    if let Some(dispatcher) = &self.dispatcher {
+                        if let Some(approval) = dispatcher.check_needs_approval(call).await {
+                            // 사전 검증 — 실패면 UI 미노출 + tool 결과만 에러
+                            if let Some(pre_err) = dispatcher.pre_validate_pending_args(call) {
+                                self.log.warn(&format!(
+                                    "[AiManager] Tool 사전검증 실패 (UI 비노출, 재시도 유도): {} — {}",
+                                    call.name, pre_err
+                                ));
+                                let action = ToolResult {
+                                    call_id: call.id.clone(),
+                                    name: call.name.clone(),
+                                    result: serde_json::json!({
+                                        "success": false,
+                                        "error": pre_err,
+                                    }),
+                                    success: false,
+                                    error: Some(pre_err),
+                                };
+                                turn_results.push((call.clone(), action));
+                                continue;
+                            }
+                            // pending 등록
+                            let plan_id = create_pending(
+                                &call.name,
+                                call.arguments.clone(),
+                                &approval.summary,
+                            );
+                            // schedule_task: runAt 이 이미 과거면 처음부터 past-runat 상태로 내려서
+                            // 승인 버튼 대신 즉시보내기/시간변경 버튼이 뜨도록 유도 (옛 TS 1:1).
+                            let mut pending = serde_json::json!({
+                                "planId": plan_id,
+                                "name": call.name,
+                                "summary": approval.summary,
+                                "args": call.arguments,
+                            });
+                            if call.name == "schedule_task" {
+                                if let Some(run_at) = call
+                                    .arguments
+                                    .get("runAt")
+                                    .and_then(|v| v.as_str())
+                                {
+                                    if is_past_iso(run_at) {
+                                        if let serde_json::Value::Object(map) = &mut pending {
+                                            map.insert(
+                                                "status".to_string(),
+                                                serde_json::Value::String(
+                                                    "past-runat".to_string(),
+                                                ),
+                                            );
+                                            map.insert(
+                                                "originalRunAt".to_string(),
+                                                serde_json::Value::String(run_at.to_string()),
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            pending_actions.push(pending.clone());
+                            self.log.info(&format!(
+                                "[AiManager] Tool 승인 대기: {} (planId={}) — {}",
+                                call.name, plan_id, approval.summary
+                            ));
+                            // executedActions 에는 노출 (UI 배지 표시) — 옛 TS 와 동등
+                            executed_actions.push(serde_json::json!({
+                                "tool": call.name,
+                                "callId": call.id,
+                                "success": true,
+                                "pending": true,
+                                "planId": plan_id,
+                            }));
+                            // tool 결과는 "승인 대기 중" 으로 LLM 에 알림 — 자동 실행 안 됐다는 신호
+                            let action = ToolResult {
+                                call_id: call.id.clone(),
+                                name: call.name.clone(),
+                                result: serde_json::json!({
+                                    "success": true,
+                                    "pending": true,
+                                    "planId": plan_id,
+                                    "message": format!(
+                                        "'{}' — 사용자 승인 대기 중입니다. 자동으로 실행되지 않았습니다.",
+                                        approval.summary
+                                    ),
+                                }),
+                                success: true,
+                                error: None,
+                            };
+                            turn_results.push((call.clone(), action));
+                            continue;
+                        }
+                    }
+                }
+
                 // Layer 1 + 2 retry guard — 모든 도구 동일 적용 (특정 도구 하드코딩 X).
                 let cache_key = tool_cache_key(&call.name, &call.arguments);
                 let action = if turn_call_set.contains(&cache_key) {
@@ -460,6 +581,7 @@ impl AiManager {
             blocks: final_blocks,
             executed_actions,
             suggestions: Vec::new(),
+            pending_actions,
             error: None,
             model_id: Some(last_model_id),
             cost_usd: Some(total_cost),
@@ -522,6 +644,15 @@ fn push_text_block_dedup(blocks: &mut Vec<serde_json::Value>, text: &str) {
     }
 }
 
+/// schedule_task 의 runAt ISO 시각이 이미 과거인지 판정. 옛 TS `Date.parse(runAt) <= Date.now()` 1:1.
+/// 파싱 실패 시 false (보수적 — 안전한 쪽이 안 박힘).
+fn is_past_iso(run_at: &str) -> bool {
+    use chrono::DateTime;
+    DateTime::parse_from_rfc3339(run_at)
+        .map(|t| t.timestamp_millis() <= chrono::Utc::now().timestamp_millis())
+        .unwrap_or(false)
+}
+
 /// 텍스트 → signature (숫자·구두점·공백 제거). 옛 TS `sig` 1:1.
 fn signature(s: &str) -> String {
     s.chars()
@@ -538,12 +669,87 @@ mod tests {
     use super::*;
     use crate::adapters::llm::StubLlmAdapter;
     use crate::adapters::log::ConsoleLogAdapter;
+    use crate::adapters::storage::LocalStorageAdapter;
+    use crate::ports::{IStoragePort, LlmTextResponse, LlmToolResponse};
+    use std::sync::Mutex as StdMutex;
 
     fn manager() -> AiManager {
         let llm: Arc<dyn ILlmPort> = Arc::new(StubLlmAdapter::new("stub"));
         let tools = Arc::new(ToolManager::new());
         let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
         AiManager::new(llm, tools, log)
+    }
+
+    /// 스크립트 LLM — 첫 호출엔 박힌 tool_calls 반환, 이후 turn 엔 빈 tool_calls 로 종료.
+    /// approval gate / pending_actions 흐름 검증용.
+    struct ScriptedLlm {
+        model_id: String,
+        scripted_calls: StdMutex<Vec<ToolCall>>,
+    }
+
+    impl ScriptedLlm {
+        fn new(model_id: &str, calls: Vec<ToolCall>) -> Self {
+            Self {
+                model_id: model_id.to_string(),
+                scripted_calls: StdMutex::new(calls),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ILlmPort for ScriptedLlm {
+        fn get_model_id(&self) -> String {
+            self.model_id.clone()
+        }
+        async fn ask_text(
+            &self,
+            _prompt: &str,
+            _opts: &LlmCallOpts,
+        ) -> InfraResult<LlmTextResponse> {
+            Ok(LlmTextResponse {
+                text: String::new(),
+                model_id: self.model_id.clone(),
+                cost_usd: Some(0.0),
+                tokens_in: Some(0),
+                tokens_out: Some(0),
+            })
+        }
+        async fn ask_with_tools(
+            &self,
+            _prompt: &str,
+            _tools: &[ToolDefinition],
+            _prior_results: &[ToolResult],
+            _opts: &LlmCallOpts,
+        ) -> InfraResult<LlmToolResponse> {
+            // 첫 호출만 scripted calls — 이후 빈 응답 (loop 종료)
+            let calls = std::mem::take(&mut *self.scripted_calls.lock().unwrap());
+            Ok(LlmToolResponse {
+                text: if calls.is_empty() {
+                    "최종 응답".to_string()
+                } else {
+                    String::new()
+                },
+                tool_calls: calls,
+                model_id: self.model_id.clone(),
+                cost_usd: Some(0.0),
+                tokens_in: Some(0),
+                tokens_out: Some(0),
+            })
+        }
+    }
+
+    fn manager_with_dispatcher(
+        scripted_calls: Vec<ToolCall>,
+    ) -> (AiManager, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let llm: Arc<dyn ILlmPort> = Arc::new(ScriptedLlm::new("scripted", scripted_calls));
+        let tools = Arc::new(ToolManager::new());
+        let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
+        let storage: Arc<dyn IStoragePort> =
+            Arc::new(LocalStorageAdapter::new(dir.path().to_path_buf()));
+        let dispatcher = Arc::new(ToolDispatcher::new(storage));
+        let mgr = AiManager::new(llm, tools, log).with_tool_dispatcher(dispatcher);
+        (mgr, dir)
     }
 
     #[tokio::test]
@@ -636,5 +842,137 @@ mod tests {
         let mut blocks = vec![serde_json::json!({"type":"text","text":"안녕"})];
         push_text_block_dedup(&mut blocks, "잘가");
         assert_eq!(blocks.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn approval_gate_creates_pending_for_delete_file() {
+        // delete_file → approval gate 항상 발동 (옛 TS check_needs_approval 동등)
+        let _g = crate::utils::shared_test_lock();
+        let scripted = vec![ToolCall {
+            id: "call-1".to_string(),
+            name: "delete_file".to_string(),
+            arguments: serde_json::json!({"path": "user/test.txt"}),
+        }];
+        let (mgr, _dir) = manager_with_dispatcher(scripted);
+        let response = mgr
+            .process_with_tools_opts(
+                "delete it",
+                &[],
+                &LlmCallOpts::default(),
+                &AiRequestOpts::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.pending_actions.len(), 1);
+        let pending = &response.pending_actions[0];
+        assert_eq!(pending["name"], "delete_file");
+        assert!(pending["summary"].as_str().unwrap().contains("파일 삭제"));
+        assert!(pending["planId"].as_str().unwrap().starts_with("plan-"));
+        // executedActions 에는 pending: true 로 등장
+        let exec = &response.executed_actions[0];
+        assert_eq!(exec["pending"], serde_json::json!(true));
+    }
+
+    #[tokio::test]
+    async fn approval_gate_bypassed_in_cron_agent_mode() {
+        // cron agent 모드 — UI 없는 server-side 자율 발행 → approval gate 우회.
+        let _g = crate::utils::shared_test_lock();
+        let scripted = vec![ToolCall {
+            id: "call-1".to_string(),
+            name: "delete_file".to_string(),
+            arguments: serde_json::json!({"path": "user/test.txt"}),
+        }];
+        let (mgr, _dir) = manager_with_dispatcher(scripted);
+        let ai_opts = AiRequestOpts {
+            cron_agent: Some(crate::ports::CronAgentOpts {
+                job_id: "test-job".to_string(),
+                title: None,
+            }),
+            ..Default::default()
+        };
+        let response = mgr
+            .process_with_tools_opts("delete it", &[], &LlmCallOpts::default(), &ai_opts)
+            .await
+            .unwrap();
+        // cron agent: pending 안 만들어짐 → 직접 dispatch (ToolManager 등록 안 돼서 unknown tool)
+        assert_eq!(response.pending_actions.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn approval_gate_schedule_task_past_runat_marked() {
+        // runAt 이 이미 과거인 schedule_task — pending.status='past-runat' + originalRunAt 포함
+        let _g = crate::utils::shared_test_lock();
+        let past_iso = "2020-01-01T00:00:00+09:00";
+        let scripted = vec![ToolCall {
+            id: "call-1".to_string(),
+            name: "schedule_task".to_string(),
+            arguments: serde_json::json!({
+                "title": "테스트",
+                "runAt": past_iso,
+                "targetPath": "/some/page",
+            }),
+        }];
+        let (mgr, _dir) = manager_with_dispatcher(scripted);
+        let response = mgr
+            .process_with_tools_opts(
+                "schedule",
+                &[],
+                &LlmCallOpts::default(),
+                &AiRequestOpts::default(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.pending_actions.len(), 1);
+        let pending = &response.pending_actions[0];
+        assert_eq!(pending["status"], "past-runat");
+        assert_eq!(pending["originalRunAt"], past_iso);
+    }
+
+    #[tokio::test]
+    async fn approval_gate_pre_validate_failure_no_pending_no_ui() {
+        // schedule_task 의 cronTime / runAt / delaySec 모두 빠진 경우 → pre_validate 실패
+        // → pending 미생성 + executedActions 미노출 + tool 결과만 에러
+        let _g = crate::utils::shared_test_lock();
+        let scripted = vec![ToolCall {
+            id: "call-1".to_string(),
+            name: "schedule_task".to_string(),
+            arguments: serde_json::json!({
+                "title": "테스트",
+                "targetPath": "/x",
+                // cronTime / runAt / delaySec 전부 미박음
+            }),
+        }];
+        let (mgr, _dir) = manager_with_dispatcher(scripted);
+        let response = mgr
+            .process_with_tools_opts(
+                "schedule",
+                &[],
+                &LlmCallOpts::default(),
+                &AiRequestOpts::default(),
+            )
+            .await
+            .unwrap();
+        // pending 미생성
+        assert_eq!(response.pending_actions.len(), 0);
+        // executedActions 도 미노출 (UI 비노출)
+        assert_eq!(response.executed_actions.len(), 0);
+    }
+
+    #[test]
+    fn is_past_iso_recognizes_past_time() {
+        assert!(is_past_iso("2020-01-01T00:00:00+09:00"));
+        assert!(is_past_iso("1990-06-15T12:00:00Z"));
+    }
+
+    #[test]
+    fn is_past_iso_rejects_future_time() {
+        assert!(!is_past_iso("2099-01-01T00:00:00+09:00"));
+    }
+
+    #[test]
+    fn is_past_iso_invalid_returns_false() {
+        // 파싱 실패 시 false (보수적)
+        assert!(!is_past_iso("not-iso"));
+        assert!(!is_past_iso(""));
     }
 }
