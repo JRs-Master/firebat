@@ -744,6 +744,17 @@ pub struct LlmCallOpts {
     /// 옛 TS `previousResponseId` 1:1.
     #[serde(rename = "previousResponseId", default, skip_serializing_if = "Option::is_none")]
     pub previous_response_id: Option<String>,
+    /// 첨부 이미지 — base64 string (data: URL 또는 raw). 멀티모달 LLM 입력용.
+    /// API 모드 (Anthropic / OpenAI / Gemini) 는 message content 에 inline.
+    /// CLI 모드 (Codex / Gemini CLI) 는 cli_image_helper 로 임시 파일 → 인자 / `@<path>` 박음.
+    /// Claude Code CLI 는 stream-json input 으로 base64 직접 전달.
+    /// 옛 TS `LlmCallOpts.image` 1:1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    /// `image` 의 MIME 타입 (e.g. `image/png`). 미지정 시 data: URL 에서 추론 또는 png default.
+    /// 옛 TS `LlmCallOpts.imageMimeType` 1:1.
+    #[serde(rename = "imageMimeType", default, skip_serializing_if = "Option::is_none")]
+    pub image_mime_type: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

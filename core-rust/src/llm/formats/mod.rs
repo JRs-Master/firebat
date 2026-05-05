@@ -4,6 +4,7 @@
 
 pub mod common;
 pub mod gemini_shared;
+pub mod cli_image_helper;
 pub mod anthropic;
 pub mod openai_responses;
 pub mod openai_chat;
