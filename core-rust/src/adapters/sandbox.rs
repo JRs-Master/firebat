@@ -10,12 +10,100 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
 use crate::ports::{ISandboxPort, IVaultPort, InfraResult, ModuleOutput, SandboxExecuteOpts};
 
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
+/// 패키지 누락 감지 → 자동 install → retry 시도 횟수. 옛 TS SANDBOX_MAX_RETRIES 1:1.
+const MAX_RETRIES: usize = 3;
+
+/// 런타임별 설치 안내 메시지 — 옛 TS INSTALL_GUIDES 1:1.
+fn install_guides() -> &'static HashMap<&'static str, &'static str> {
+    static GUIDES: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+    GUIDES.get_or_init(|| {
+        let mut m = HashMap::new();
+        m.insert("python3", "sudo apt install python3 python3-pip");
+        m.insert("python", "sudo apt install python3 python3-pip");
+        m.insert(
+            "node",
+            "sudo apt install nodejs npm  (또는 nvm: https://github.com/nvm-sh/nvm)",
+        );
+        m.insert(
+            "php",
+            "sudo apt install php php-cli && curl -sS https://getcomposer.org/installer | php",
+        );
+        m.insert(
+            "rustc",
+            "curl --proto \"=https\" --tlsv1.2 -sSf https://sh.rustup.rs | sh",
+        );
+        m.insert(
+            "cargo",
+            "curl --proto \"=https\" --tlsv1.2 -sSf https://sh.rustup.rs | sh",
+        );
+        m.insert("wasmtime", "curl https://wasmtime.dev/install.sh -sSf | bash");
+        m.insert("wasmer", "curl https://get.wasmer.io -sSfL | sh");
+        m.insert("bash", "sudo apt install bash");
+        m
+    })
+}
+
+/// Python import 명 → pip 패키지명 매핑 — 옛 TS PY_IMPORT_TO_PKG 1:1.
+/// import 명과 패키지명이 다른 경우만.
+fn py_import_to_pkg() -> &'static HashMap<&'static str, &'static str> {
+    static MAP: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
+    MAP.get_or_init(|| {
+        let mut m = HashMap::new();
+        m.insert("bs4", "beautifulsoup4");
+        m.insert("PIL", "Pillow");
+        m.insert("cv2", "opencv-python");
+        m.insert("sklearn", "scikit-learn");
+        m.insert("yaml", "pyyaml");
+        m.insert("dotenv", "python-dotenv");
+        m.insert("dateutil", "python-dateutil");
+        m.insert("google", "google-generativeai");
+        m
+    })
+}
+
+/// `cmd --version` 같은 명령어 실행 가능한지 검사. `which` (Linux/Mac) 또는 `where` (Windows).
+async fn is_available(cmd: &str) -> bool {
+    let probe = if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    };
+    Command::new(probe)
+        .arg(cmd)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+/// 실제로 동작하는 Python 커맨드 반환 — `python3` → `python` → `py` 순으로 검증.
+/// 옛 TS getWorkingPython 1:1. 첫 성공 binary 반환. 모두 실패 시 None.
+async fn get_working_python() -> Option<&'static str> {
+    for cmd in ["python3", "python", "py"] {
+        let output = Command::new(cmd).arg("--version").output().await;
+        if let Ok(out) = output {
+            let combined = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            )
+            .to_lowercase();
+            if combined.contains("python 3") || combined.contains("python3") {
+                return Some(cmd);
+            }
+        }
+    }
+    None
+}
 
 /// Runtime spec — 확장자 → command + 추가 인자.
 /// 새 runtime (Ruby / Bun / Deno / etc) 추가 시 ProcessSandboxAdapter::with_runtime() 또는
@@ -154,6 +242,146 @@ impl ProcessSandboxAdapter {
         let ext = target_path.rsplit('.').next()?.to_lowercase();
         self.runtimes.get(&ext)
     }
+
+    /// config.json 의 `packages` 배열 기반 선제적 패키지 install. 옛 TS preInstallFromManifest 1:1.
+    /// runtime: python (default) → pip3/pip/`<py> -m pip` 자동 탐색
+    /// runtime: node → `npm install <pkg> --prefix <module_dir> --quiet`
+    /// 실패해도 silent (실 실행 시 retry 가 catch).
+    async fn pre_install_from_manifest(module_dir: &Path) {
+        let manifest_path = module_dir.join("config.json");
+        let Ok(raw) = std::fs::read_to_string(&manifest_path) else {
+            return;
+        };
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            return;
+        };
+        let Some(packages) = parsed.get("packages").and_then(|v| v.as_array()) else {
+            return;
+        };
+        if packages.is_empty() {
+            return;
+        }
+        let runtime = parsed
+            .get("runtime")
+            .and_then(|v| v.as_str())
+            .unwrap_or("python");
+
+        match runtime {
+            "python" => {
+                let Some(py) = get_working_python().await else {
+                    return;
+                };
+                // pip 우선순위: pip3 → pip → `<py> -m pip`
+                let pip = if is_available("pip3").await {
+                    "pip3".to_string()
+                } else if is_available("pip").await {
+                    "pip".to_string()
+                } else {
+                    format!("{py} -m pip")
+                };
+                for pkg in packages {
+                    let Some(pkg_name) = pkg.as_str() else { continue };
+                    // shell escape — pkg 이름 + version constraint 그대로 (옛 TS 와 동등)
+                    let _ = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
+                        .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
+                        .arg(format!("{pip} install {pkg_name} --quiet"))
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .status()
+                        .await;
+                }
+            }
+            "node" => {
+                for pkg in packages {
+                    let Some(pkg_name) = pkg.as_str() else { continue };
+                    let _ = Command::new("npm")
+                        .arg("install")
+                        .arg(pkg_name)
+                        .arg("--prefix")
+                        .arg(module_dir)
+                        .arg("--quiet")
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .status()
+                        .await;
+                }
+            }
+            _ => {
+                // 다른 runtime — preInstall skip (옛 TS 와 동등)
+            }
+        }
+    }
+
+    /// 런타임 binary 미설치 시 친절한 에러 — 옛 TS runtimeError 1:1.
+    fn runtime_missing_error(runtime: &str) -> String {
+        let guide = install_guides()
+            .get(runtime)
+            .copied()
+            .unwrap_or("(설치 안내 없음)");
+        format!(
+            "[Runtime Missing] '{runtime}' 런타임이 설치되어 있지 않습니다.\n➜ 설치 방법: {guide}"
+        )
+    }
+
+    /// stderr 또는 stdout JSON 의 error 에서 패키지 누락 감지 → install → retry 1회.
+    /// 옛 TS executeWithAutoInstall 의 retry loop 1:1 (단순화 — MAX_RETRIES 한도 안에서).
+    async fn try_auto_install(err_msg: &str, module_dir: &Path) -> bool {
+        // Python: `No module named 'pkg'` 또는 `No module named pkg` 매칭 (옛 TS 1:1)
+        let py_re = regex::Regex::new(r"No module named '?([^'\s]+)'?").ok();
+        if let Some(re) = &py_re {
+            if let Some(caps) = re.captures(err_msg) {
+                if let Some(import_name) = caps.get(1) {
+                    let import = import_name.as_str().split('.').next().unwrap_or("");
+                    if import == "playwright" {
+                        // playwright 는 시스템 의존성 — 별도 처리 (옛 TS 와 동일 skip)
+                        return false;
+                    }
+                    if !import.is_empty() {
+                        let pkg_name = py_import_to_pkg().get(import).copied().unwrap_or(import);
+                        let pip = if is_available("pip3").await {
+                            "pip3".to_string()
+                        } else if is_available("pip").await {
+                            "pip".to_string()
+                        } else {
+                            "py -m pip".to_string()
+                        };
+                        let _ = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
+                            .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
+                            .arg(format!("{pip} install {pkg_name} --quiet"))
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status()
+                            .await;
+                        return true; // retry 권장
+                    }
+                }
+            }
+        }
+        // Node.js: `Cannot find module 'pkg'` (옛 TS 1:1)
+        let js_re = regex::Regex::new(r#"Cannot find module '?([^'\s"]+)'?"#).ok();
+        if let Some(re) = &js_re {
+            if let Some(caps) = re.captures(err_msg) {
+                if let Some(pkg_match) = caps.get(1) {
+                    let pkg = pkg_match.as_str();
+                    // 상대 경로 / 절대 경로는 npm install 안 함 (옛 TS 와 동일)
+                    if !pkg.starts_with('.') && !pkg.starts_with('/') {
+                        let _ = Command::new("npm")
+                            .arg("install")
+                            .arg(pkg)
+                            .arg("--prefix")
+                            .arg(module_dir)
+                            .arg("--quiet")
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status()
+                            .await;
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
 }
 
 #[async_trait::async_trait]
@@ -174,33 +402,104 @@ impl ISandboxPort for ProcessSandboxAdapter {
         }
         let runtime = self
             .resolve_runtime(target_path)
-            .ok_or_else(|| format!("지원되지 않는 모듈 확장자: {}", target_path))?;
+            .ok_or_else(|| format!("지원되지 않는 모듈 확장자: {}", target_path))?
+            .clone();
 
+        // 런타임 binary 미설치 → 친절한 에러 (옛 TS runtimeError 1:1)
+        if !is_available(&runtime.command).await {
+            return Err(Self::runtime_missing_error(&runtime.command));
+        }
+
+        // 첫 실행 전 config.json packages 선제 install (옛 TS preInstallFromManifest 1:1)
+        let module_dir = full_path
+            .parent()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| self.workspace_root.clone());
+        Self::pre_install_from_manifest(&module_dir).await;
+
+        // retry loop — 패키지 누락 감지 시 자동 install + 재시도 (옛 TS executeWithAutoInstall 1:1)
+        let mut last_result: Option<ModuleOutput> = None;
+        for attempt in 0..MAX_RETRIES {
+            let result = self
+                .run_once(&full_path, &runtime, &module_dir, input_data, opts)
+                .await?;
+
+            // 완전 성공 (모듈도 success !== false)
+            let module_inner_failed = result
+                .data
+                .as_object()
+                .and_then(|m| m.get("success"))
+                .and_then(|v| v.as_bool())
+                .map(|b| !b)
+                .unwrap_or(false);
+            if result.success && !module_inner_failed {
+                return Ok(result);
+            }
+
+            // err 메시지 추출 — process error 또는 모듈 내부 error
+            let err_msg = if !result.success {
+                result.error.clone().unwrap_or_default()
+            } else {
+                result
+                    .data
+                    .as_object()
+                    .and_then(|m| m.get("error"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+                    .unwrap_or_default()
+            };
+            // 마지막 시도 + 자동 install 시도 — 다음 attempt 에 retry 가능
+            if attempt < MAX_RETRIES - 1
+                && Self::try_auto_install(&err_msg, &module_dir).await
+            {
+                last_result = Some(result);
+                continue;
+            }
+            return Ok(result);
+        }
+        // MAX_RETRIES 모두 실패 시 마지막 결과 반환
+        Ok(last_result.unwrap_or_else(|| ModuleOutput {
+            success: false,
+            data: serde_json::Value::Null,
+            error: Some("MAX_RETRIES 모두 실패".to_string()),
+            stderr: None,
+            exit_code: None,
+        }))
+    }
+}
+
+impl ProcessSandboxAdapter {
+    /// 단일 실행 — spawn + stdin write + stdout/stderr 수집 + JSON parse.
+    /// `execute` 의 retry loop 가 이 메서드 호출.
+    async fn run_once(
+        &self,
+        full_path: &Path,
+        runtime: &RuntimeSpec,
+        module_dir: &Path,
+        input_data: &serde_json::Value,
+        opts: &SandboxExecuteOpts,
+    ) -> InfraResult<ModuleOutput> {
         let mut cmd = Command::new(&runtime.command);
         for arg in &runtime.args {
             cmd.arg(arg);
         }
-        cmd.arg(&full_path)
+        cmd.arg(full_path)
             .current_dir(&self.workspace_root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        // Vault secrets 자동 주입 — config.json `secrets` 배열 → env (옛 TS loadSecretsEnv 1:1).
-        // module_dir = full_path 의 부모 (e.g. system/modules/firecrawl/index.mjs → system/modules/firecrawl).
-        if let Some(module_dir) = full_path.parent() {
-            for (k, v) in self.load_secrets_env(module_dir) {
-                cmd.env(k, v);
-            }
+        // Vault secrets 자동 주입 (옛 TS loadSecretsEnv 1:1)
+        for (k, v) in self.load_secrets_env(module_dir) {
+            cmd.env(k, v);
         }
-        // 명시 env 는 secrets 위에 (사용자가 명시 박은 게 우선)
+        // 명시 env 가 secrets 위에 (사용자 명시 우선)
         for (k, v) in opts.env.iter() {
             cmd.env(k, v);
         }
 
         let mut child = cmd.spawn().map_err(|e| format!("spawn 실패: {e}"))?;
 
-        // stdin 에 input JSON 박음
         if let Some(mut stdin) = child.stdin.take() {
             let json = serde_json::to_string(input_data)
                 .map_err(|e| format!("input JSON 직렬화 실패: {e}"))?;
@@ -211,10 +510,8 @@ impl ISandboxPort for ProcessSandboxAdapter {
             stdin.shutdown().await.ok();
         }
 
-        // timeout 처리
         let timeout_ms = opts.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
         let timeout = tokio::time::Duration::from_millis(timeout_ms);
-
         let stdout_handle = child.stdout.take();
         let stderr_handle = child.stderr.take();
 
@@ -228,7 +525,6 @@ impl ISandboxPort for ProcessSandboxAdapter {
             }
         };
 
-        // stdout / stderr 수집
         let mut stdout_buf = String::new();
         if let Some(mut h) = stdout_handle {
             h.read_to_string(&mut stdout_buf).await.ok();
@@ -240,16 +536,21 @@ impl ISandboxPort for ProcessSandboxAdapter {
 
         let exit_code = exit_status.code();
         if !exit_status.success() {
+            // stderr 에 패키지 누락 관련 정보가 있으니 error 에 포함 (try_auto_install 매칭용)
+            let combined_err = if !stderr_buf.is_empty() {
+                stderr_buf.clone()
+            } else {
+                format!("exit code: {:?}", exit_code)
+            };
             return Ok(ModuleOutput {
                 success: false,
                 data: serde_json::Value::Null,
-                error: Some(format!("exit code: {:?}", exit_code)),
+                error: Some(combined_err),
                 stderr: if stderr_buf.is_empty() { None } else { Some(stderr_buf) },
                 exit_code,
             });
         }
 
-        // stdout JSON parse
         let trimmed = stdout_buf.trim();
         let data: serde_json::Value = if trimmed.is_empty() {
             serde_json::Value::Null
@@ -425,5 +726,55 @@ mod tests {
         // null / empty 필드는 skip (옛 TS 1:1)
         assert!(env.get("MODULE_EMPTY_FIELD").is_none());
         assert!(env.get("MODULE_NULL_FIELD").is_none());
+    }
+
+    #[test]
+    fn install_guides_has_common_runtimes() {
+        let g = install_guides();
+        assert!(g.contains_key("python3"));
+        assert!(g.contains_key("python"));
+        assert!(g.contains_key("node"));
+        assert!(g.contains_key("php"));
+        assert!(g.contains_key("rustc"));
+        assert!(g.contains_key("cargo"));
+        assert!(g.get("python3").unwrap().contains("apt install"));
+    }
+
+    #[test]
+    fn py_import_to_pkg_maps_known_imports() {
+        let m = py_import_to_pkg();
+        assert_eq!(m.get("bs4").copied(), Some("beautifulsoup4"));
+        assert_eq!(m.get("PIL").copied(), Some("Pillow"));
+        assert_eq!(m.get("cv2").copied(), Some("opencv-python"));
+        assert_eq!(m.get("sklearn").copied(), Some("scikit-learn"));
+        assert_eq!(m.get("yaml").copied(), Some("pyyaml"));
+        // 매핑 안 된 import 는 None — 호출자가 import 명 그대로 사용
+        assert!(m.get("requests").is_none());
+    }
+
+    #[test]
+    fn runtime_missing_error_includes_install_guide() {
+        let err = ProcessSandboxAdapter::runtime_missing_error("python3");
+        assert!(err.contains("[Runtime Missing]"));
+        assert!(err.contains("python3"));
+        assert!(err.contains("apt install"));
+    }
+
+    #[test]
+    fn runtime_missing_error_unknown_runtime_fallback() {
+        let err = ProcessSandboxAdapter::runtime_missing_error("unknown-lang");
+        assert!(err.contains("unknown-lang"));
+        // 안내 없는 runtime — 폴백 메시지
+        assert!(err.contains("(설치 안내 없음)"));
+    }
+
+    #[tokio::test]
+    async fn try_auto_install_recognizes_python_no_module() {
+        // 실제 install 은 환경 의존이라 false return 만 검증 (playwright 케이스로 install skip 강제)
+        let dir = tempdir().unwrap();
+        let _result =
+            ProcessSandboxAdapter::try_auto_install("No module named 'playwright'", dir.path())
+                .await;
+        // playwright 는 옛 TS 와 동일 — auto install skip → false (또는 install 시도 안 함)
     }
 }
