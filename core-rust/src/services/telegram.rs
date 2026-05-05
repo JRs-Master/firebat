@@ -9,6 +9,8 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::llm::formats::common::http_client;
+use crate::managers::ai::AiManager;
+use crate::managers::module::ModuleManager;
 use crate::ports::IVaultPort;
 use crate::proto::{
     telegram_service_server::TelegramService, BoolRequest, Empty, JsonArgs, JsonValue,
@@ -17,11 +19,26 @@ use crate::proto::{
 
 pub struct TelegramServiceImpl {
     vault: Arc<dyn IVaultPort>,
+    /// AiManager (옵션) — 박혀있으면 process_message webhook → AI → reply 활성.
+    ai: Option<Arc<AiManager>>,
+    /// ModuleManager (옵션) — sysmod_telegram 으로 reply 발송. ai 와 같이 박혀야 의미 있음.
+    module: Option<Arc<ModuleManager>>,
 }
 
 impl TelegramServiceImpl {
     pub fn new(vault: Arc<dyn IVaultPort>) -> Self {
-        Self { vault }
+        Self {
+            vault,
+            ai: None,
+            module: None,
+        }
+    }
+
+    /// AiManager + ModuleManager 박은 채로 부팅 — process_message 활성.
+    pub fn with_ai_and_module(mut self, ai: Arc<AiManager>, module: Arc<ModuleManager>) -> Self {
+        self.ai = Some(ai);
+        self.module = Some(module);
+        self
     }
 
     fn bot_token(&self) -> Option<String> {
@@ -147,12 +164,83 @@ impl TelegramService for TelegramServiceImpl {
 
     async fn process_message(
         &self,
-        _req: Request<JsonArgs>,
+        req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-17+ — AiManager 와 연동해서 webhook 메시지 → AI 응답 → reply 전송.
-        // 현재는 stub.
-        json_response(&serde_json::json!({
-            "_phase": "B-17+ stub — AiManager 연동 후 활성"
-        }))
+        // 옛 TS Core.processTelegramMessage 1:1 — webhook 메시지 → AI 응답 → reply 전송.
+        // AiManager + ModuleManager 박혀있을 때만 작동.
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            text: String,
+            #[serde(rename = "chatId")]
+            chat_id: serde_json::Value, // string 또는 number
+        }
+        let args: Args = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("process_message args: {e}")))?;
+        let chat_id_str = match &args.chat_id {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Number(n) => n.to_string(),
+            _ => {
+                return Err(TonicStatus::invalid_argument(
+                    "chatId 는 string 또는 number 여야 함",
+                ));
+            }
+        };
+
+        let (Some(ai), Some(module)) = (&self.ai, &self.module) else {
+            return json_response(&serde_json::json!({
+                "success": false,
+                "error": "AiManager + ModuleManager 미박음 — with_ai_and_module 후 활성"
+            }));
+        };
+
+        // 1. AI 호출 (history 없음, stateless — 옛 TS 1:1)
+        let llm_opts = crate::ports::LlmCallOpts::default();
+        let ai_opts = crate::ports::AiRequestOpts::default();
+        let ai_res = ai
+            .process_with_tools_opts(&args.text, &[], &llm_opts, &ai_opts)
+            .await;
+        let response = match ai_res {
+            Ok(r) => r,
+            Err(e) => {
+                return json_response(&serde_json::json!({
+                    "success": false,
+                    "error": format!("AI 응답 실패: {e}")
+                }));
+            }
+        };
+        let reply = response.reply.trim().to_string();
+        if reply.is_empty() {
+            return json_response(&serde_json::json!({
+                "success": false,
+                "error": "AI 응답 비어있음"
+            }));
+        }
+
+        // 2. sysmod_telegram send-message 로 응답 (chatId 명시) — 옛 TS 1:1.
+        // 4000자 cap (텔레그램 4096 한도 + 여유 96).
+        let trimmed_reply: String = reply.chars().take(4000).collect();
+        let send_input = serde_json::json!({
+            "action": "send-message",
+            "chatId": chat_id_str,
+            "text": trimmed_reply,
+        });
+        let send_res = module
+            .execute(
+                "system/modules/telegram/index.mjs",
+                &send_input,
+                &crate::ports::SandboxExecuteOpts::default(),
+            )
+            .await;
+        match send_res {
+            Ok(_) => json_response(&serde_json::json!({
+                "success": true,
+                "reply": reply,
+            })),
+            Err(e) => json_response(&serde_json::json!({
+                "success": false,
+                "error": format!("응답 전송 실패: {e}")
+            })),
+        }
     }
 }

@@ -95,31 +95,105 @@ impl AiService for AiServiceImpl {
 
     async fn run_agent_job(
         &self,
-        _req: Request<JsonArgs>,
+        req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        json_response(&serde_json::json!({
-            "_phase": "B-17+ stub — agent 모드 cron / runAgentJob 활성 시점",
-        }))
+        // 옛 TS Core.runAgentJob 1:1 — cron agent 모드 자율 발행. AiManager.process_with_tools_opts
+        // with cron_agent set → MAX_TOOL_TURNS 25 + approval gate 우회 + jobId 기반 컨텍스트.
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            #[serde(rename = "jobId")]
+            job_id: String,
+            #[serde(rename = "agentPrompt")]
+            agent_prompt: String,
+            #[serde(default)]
+            title: Option<String>,
+            #[serde(default)]
+            model: Option<String>,
+        }
+        let args: Args = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("run_agent_job args: {e}")))?;
+        if args.agent_prompt.trim().is_empty() {
+            return json_response(&serde_json::json!({
+                "success": false,
+                "error": "agentPrompt 가 비어있습니다."
+            }));
+        }
+        let llm_opts = LlmCallOpts {
+            model: args.model.clone(),
+            ..Default::default()
+        };
+        let ai_opts = crate::ports::AiRequestOpts {
+            owner: Some("admin".to_string()),
+            cron_agent: Some(crate::ports::CronAgentOpts {
+                job_id: args.job_id.clone(),
+                title: args.title,
+            }),
+            model: args.model,
+            ..Default::default()
+        };
+        match self
+            .manager
+            .process_with_tools_opts(&args.agent_prompt, &[], &llm_opts, &ai_opts)
+            .await
+        {
+            Ok(res) => json_response(&serde_json::json!({
+                "success": res.error.is_none(),
+                "reply": res.reply,
+                "executedActions": res.executed_actions,
+                "blocks": res.blocks,
+                "error": res.error,
+            })),
+            Err(e) => json_response(&serde_json::json!({
+                "success": false,
+                "error": e,
+            })),
+        }
     }
 
     async fn resolve_call_target(
         &self,
         req: Request<StringRequest>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-17+ — 동적 sysmod / mcp 매칭. 현재는 미박음 표기.
+        // 옛 TS resolveCallTarget 1:1 — ToolDispatcher 박혀있을 때만 활성.
+        // ToolDispatcher 가 AiManager 내부에 박혀있어 AiManager 위임 필요. 현재 풀 wiring 안 됐으면
+        // identifier 만 echo + null kind (이전 stub 동작 유지 — 회귀 안전).
         let identifier = req.into_inner().value;
+        // AiManager 에 dispatcher API 노출 후 활성. 현재는 단순 echo.
         json_response(&serde_json::json!({
-            "_phase": "B-17+ stub",
             "identifier": identifier,
-            "kind": null
+            "kind": serde_json::Value::Null,
+            "note": "ToolDispatcher 풀 wiring 후 활성 — AiManager.resolve_call_target API 노출 필요"
         }))
     }
 
     async fn spawn_sub_agent(
         &self,
-        _req: Request<JsonArgs>,
+        req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        json_response(&serde_json::json!({"_phase": "B-17+ stub"}))
+        // 옛 TS spawn_subagent 도구 — sub-agent 로 별도 task 실행.
+        // 현재 minimum: 단순 process_with_tools 위임 (history 빈 채로 새 컨텍스트).
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            prompt: String,
+            #[serde(default)]
+            model: Option<String>,
+        }
+        let args: Args = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("spawn_sub_agent args: {e}")))?;
+        let llm_opts = LlmCallOpts {
+            model: args.model,
+            ..Default::default()
+        };
+        match self
+            .manager
+            .process_with_tools(&args.prompt, &[], &llm_opts)
+            .await
+        {
+            Ok(res) => json_response(&res),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
     }
 
     async fn is_sub_agent_enabled(

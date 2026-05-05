@@ -454,6 +454,101 @@ impl ConsolidationManager {
         let events = self.episodic_mgr.cleanup_expired()?;
         Ok((facts, events))
     }
+
+    /// 비활성 대화 자동 consolidation — cron 6시간마다 호출.
+    /// 옛 TS Core.consolidateInactiveConversations 1:1 port.
+    ///
+    /// `inactivity_ms` (default 1시간) 지난 대화만 처리. `limit_per_run` (default 10) 까지만 —
+    /// 한 번에 LLM 비용 폭주 방지. 이미 정리된 fact/event 는 dedup 으로 자동 skip.
+    pub async fn consolidate_inactive_conversations(
+        &self,
+        owner: Option<&str>,
+        inactivity_ms: Option<i64>,
+        limit_per_run: Option<usize>,
+    ) -> InactiveConsolidationResult {
+        let owner = owner.unwrap_or("admin");
+        let inactivity = inactivity_ms.unwrap_or(60 * 60_000);
+        let limit = limit_per_run.unwrap_or(10);
+        let cutoff = chrono::Utc::now().timestamp_millis() - inactivity;
+
+        let hook = {
+            let guard = self.ai_hook.lock().unwrap_or_else(|p| p.into_inner());
+            guard.clone()
+        };
+        let Some(hook) = hook else {
+            return InactiveConsolidationResult::default();
+        };
+
+        let mut conversations: Vec<(String, i64)> = hook
+            .conversation
+            .list(owner)
+            .into_iter()
+            .filter_map(|c| {
+                let updated = if c.updated_at > 0 {
+                    c.updated_at
+                } else {
+                    c.created_at
+                };
+                if updated < cutoff {
+                    Some((c.id, updated))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        conversations.sort_by(|a, b| b.1.cmp(&a.1));
+        conversations.truncate(limit);
+
+        let mut processed = 0usize;
+        let mut total_saved = 0usize;
+        let mut total_skipped = 0usize;
+        for (conv_id, _) in conversations {
+            match self.consolidate_conversation(owner, &conv_id, None).await {
+                Ok(outcome) => {
+                    processed += 1;
+                    total_saved += outcome.saved.entities.len()
+                        + outcome.saved.facts.len()
+                        + outcome.saved.events.len();
+                    total_skipped += outcome.skipped as usize;
+                }
+                Err(_) => {
+                    // 단일 실패는 다음 대화로 진행 (옛 TS 1:1)
+                }
+            }
+        }
+
+        InactiveConsolidationResult {
+            processed,
+            total_saved,
+            total_skipped,
+        }
+    }
+
+    /// 일반 LLM text 호출 — 옛 TS Core.askLlmText 1:1 port. AiManager 박혀있을 때만 작동.
+    pub async fn ask_llm_text(
+        &self,
+        prompt: &str,
+        opts: &crate::ports::LlmCallOpts,
+    ) -> InfraResult<String> {
+        let hook = {
+            let guard = self.ai_hook.lock().unwrap_or_else(|p| p.into_inner());
+            guard.clone()
+        };
+        let Some(hook) = hook else {
+            return Err("ConsolidationAiHook 미박음 — set_ai_hook 박은 후 활성".to_string());
+        };
+        hook.ai.ask_text(prompt, opts).await
+    }
+}
+
+/// `consolidate_inactive_conversations` 결과 — 옛 TS 동등 (processed / totalSaved / totalSkipped).
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct InactiveConsolidationResult {
+    pub processed: usize,
+    #[serde(rename = "totalSaved")]
+    pub total_saved: usize,
+    #[serde(rename = "totalSkipped")]
+    pub total_skipped: usize,
 }
 
 #[cfg(test)]

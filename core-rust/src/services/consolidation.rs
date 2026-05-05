@@ -31,10 +31,32 @@ fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, 
 impl ConsolidationService for ConsolidationServiceImpl {
     async fn ask_llm_text(
         &self,
-        _req: Request<JsonArgs>,
+        req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-16+ — AiManager + ILlmPort 박힌 후 활성.
-        json_response(&serde_json::json!({"_phase": "B-16 stub", "text": ""}))
+        // 옛 TS Core.askLlmText 1:1 — set_ai_hook 박혀있을 때만 활성.
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            prompt: String,
+            #[serde(default)]
+            model: Option<String>,
+            #[serde(rename = "thinkingLevel", default)]
+            thinking_level: Option<String>,
+            #[serde(rename = "systemPrompt", default)]
+            system_prompt: Option<String>,
+        }
+        let args: Args = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("ask_llm_text args: {e}")))?;
+        let opts = crate::ports::LlmCallOpts {
+            model: args.model,
+            thinking_level: args.thinking_level,
+            system_prompt: args.system_prompt,
+            ..Default::default()
+        };
+        match self.manager.ask_llm_text(&args.prompt, &opts).await {
+            Ok(text) => json_response(&serde_json::json!({"text": text})),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
     }
 
     /// 미리 추출된 JSON (entity / fact / event) 일괄 save.
@@ -73,10 +95,33 @@ impl ConsolidationService for ConsolidationServiceImpl {
 
     async fn consolidate_inactive(
         &self,
-        _req: Request<JsonArgs>,
+        req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-16+ — 매 6시간 cron 자동 호출. AiManager 박힌 후 활성.
-        json_response(&serde_json::json!({"_phase": "B-16 stub", "consolidated": 0}))
+        // 옛 TS consolidateInactiveConversations 1:1 — 매 6시간 cron 호출.
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize, Default)]
+        struct Args {
+            #[serde(default)]
+            owner: Option<String>,
+            #[serde(rename = "inactivityMs", default)]
+            inactivity_ms: Option<i64>,
+            #[serde(rename = "limitPerRun", default)]
+            limit_per_run: Option<usize>,
+        }
+        let args: Args = if raw.is_empty() {
+            Args::default()
+        } else {
+            serde_json::from_str(&raw).unwrap_or_default()
+        };
+        let result = self
+            .manager
+            .consolidate_inactive_conversations(
+                args.owner.as_deref(),
+                args.inactivity_ms,
+                args.limit_per_run,
+            )
+            .await;
+        json_response(&result)
     }
 
     async fn get_memory_stats(
