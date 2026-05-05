@@ -11,6 +11,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::managers::event::{EventManager, FirebatEvent};
 
+/// 종료된 job 1시간 후 자동 정리 — 옛 TS ACTIVE_JOB_RETENTION_MS 1:1.
+const ACTIVE_JOB_RETENTION_MS: i64 = 60 * 60 * 1000;
+/// 메모리 cap — 오래된 종료 작업 우선 제거. 옛 TS MAX_JOB_HISTORY 1:1.
+const MAX_JOB_HISTORY: usize = 200;
+/// GC trigger threshold — start/update 시점에 jobs.size > GC_TRIGGER_THRESHOLD 면 inline gc.
+/// 옛 TS 는 setInterval 10분 timer — Rust 는 inline 으로 단순화 (Tokio task spawn 회피).
+const GC_TRIGGER_THRESHOLD: usize = 50;
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum JobStatusKind {
@@ -35,6 +43,10 @@ pub struct JobStatus {
     pub started_at: i64,
     #[serde(rename = "updatedAt")]
     pub updated_at: i64,
+    /// 종료 시각 (status=Done | Error | Cancelled). GC retention 비교용.
+    /// 옛 TS doneAt 1:1 — Cancelled 도 종료 상태로 인정.
+    #[serde(rename = "doneAt", skip_serializing_if = "Option::is_none")]
+    pub done_at: Option<i64>,
     #[serde(rename = "parentJobId", skip_serializing_if = "Option::is_none")]
     pub parent_job_id: Option<String>,
     #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
@@ -104,6 +116,7 @@ impl StatusManager {
             message,
             started_at: now,
             updated_at: now,
+            done_at: None,
             parent_job_id,
             meta,
             result: None,
@@ -111,6 +124,10 @@ impl StatusManager {
         };
         let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         state.insert(id, job.clone());
+        // Inline GC — 메모리 cap 초과 / retention 만료 정리. 옛 TS 의 setInterval 대신 opportunistic.
+        if state.len() > GC_TRIGGER_THRESHOLD {
+            Self::gc(&mut state, now);
+        }
         drop(state);
         self.emit_update(&job);
         job
@@ -145,31 +162,84 @@ impl StatusManager {
         Some(snapshot)
     }
 
-    /// Job 완료. status=Done + result 박음.
+    /// Job 완료. status=Done + result + done_at 박음.
     pub fn complete(&self, id: &str, result: Option<serde_json::Value>) -> Option<JobStatus> {
         let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         let job = state.get_mut(id)?;
+        let now = Self::now_ms();
         job.status = JobStatusKind::Done;
         job.progress = Some(1.0);
         job.result = result;
-        job.updated_at = Self::now_ms();
+        job.updated_at = now;
+        job.done_at = Some(now);
         let snapshot = job.clone();
         drop(state);
         self.emit_update(&snapshot);
         Some(snapshot)
     }
 
-    /// Job 실패. status=Error + error 박음.
+    /// Job 실패. status=Error + error + done_at 박음.
     pub fn fail(&self, id: &str, msg: String) -> Option<JobStatus> {
         let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         let job = state.get_mut(id)?;
+        let now = Self::now_ms();
         job.status = JobStatusKind::Error;
         job.error = Some(msg);
-        job.updated_at = Self::now_ms();
+        job.updated_at = now;
+        job.done_at = Some(now);
         let snapshot = job.clone();
         drop(state);
         self.emit_update(&snapshot);
         Some(snapshot)
+    }
+
+    /// 종료된 오래된 작업 정리 + 메모리 cap 적용 — 옛 TS gc() 1:1.
+    /// 1) ACTIVE_JOB_RETENTION_MS 지난 종료 작업 제거
+    /// 2) MAX_JOB_HISTORY 초과 시 가장 오래된 종료 작업 우선 제거 (활성 작업은 유지)
+    fn gc(state: &mut HashMap<String, JobStatus>, now: i64) {
+        // 1) retention 지난 종료 작업
+        let to_remove: Vec<String> = state
+            .iter()
+            .filter(|(_, j)| {
+                let terminal = matches!(
+                    j.status,
+                    JobStatusKind::Done | JobStatusKind::Error | JobStatusKind::Cancelled
+                );
+                terminal
+                    && j.done_at
+                        .map(|d| now - d > ACTIVE_JOB_RETENTION_MS)
+                        .unwrap_or(false)
+            })
+            .map(|(k, _)| k.clone())
+            .collect();
+        for k in to_remove {
+            state.remove(&k);
+        }
+
+        // 2) 메모리 cap 초과 시 오래된 종료 작업 우선 제거
+        if state.len() > MAX_JOB_HISTORY {
+            let mut terminals: Vec<(String, i64)> = state
+                .iter()
+                .filter(|(_, j)| {
+                    matches!(
+                        j.status,
+                        JobStatusKind::Done | JobStatusKind::Error | JobStatusKind::Cancelled
+                    )
+                })
+                .map(|(k, j)| (k.clone(), j.done_at.unwrap_or(j.updated_at)))
+                .collect();
+            terminals.sort_by_key(|(_, t)| *t);
+            let to_remove_count = state.len() - MAX_JOB_HISTORY;
+            for (k, _) in terminals.into_iter().take(to_remove_count) {
+                state.remove(&k);
+            }
+        }
+    }
+
+    /// 디버깅·테스트용 — 강제 GC 실행. opt TS 의 explicit gc 호출 등가.
+    pub fn run_gc(&self) {
+        let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
+        Self::gc(&mut state, Self::now_ms());
     }
 
     pub fn get(&self, id: &str) -> Option<JobStatus> {
@@ -273,5 +343,80 @@ mod tests {
         let stats = mgr.stats();
         assert_eq!(stats.total, 2);
         assert_eq!(stats.done, 1);
+    }
+
+    #[test]
+    fn done_at_set_on_complete_and_fail() {
+        let mgr = StatusManager::new(None);
+        let job1 = mgr.start(None, "tool".to_string(), None, None, serde_json::json!({}));
+        let job2 = mgr.start(None, "tool".to_string(), None, None, serde_json::json!({}));
+
+        let completed = mgr.complete(&job1.id, None).unwrap();
+        assert!(completed.done_at.is_some());
+        assert!(completed.done_at.unwrap() >= completed.started_at);
+
+        let failed = mgr.fail(&job2.id, "error".to_string()).unwrap();
+        assert!(failed.done_at.is_some());
+    }
+
+    #[test]
+    fn gc_removes_old_terminal_jobs_over_cap() {
+        // GC retention 으로는 1시간 검증 어려워 → MAX_JOB_HISTORY cap 검증.
+        let mgr = StatusManager::new(None);
+        // MAX_JOB_HISTORY (200) 초과 — 250개 종료 job 박음
+        for i in 0..250 {
+            let job = mgr.start(
+                Some(format!("job-{i}")),
+                "tool".to_string(),
+                None,
+                None,
+                serde_json::json!({}),
+            );
+            mgr.complete(&job.id, None);
+        }
+        // GC 가 자동 trigger 되어 cap 안으로 줄어듦
+        mgr.run_gc();
+        let stats = mgr.stats();
+        assert!(
+            stats.total <= MAX_JOB_HISTORY,
+            "GC 후 total={} <= MAX={}",
+            stats.total,
+            MAX_JOB_HISTORY
+        );
+    }
+
+    #[test]
+    fn gc_preserves_active_jobs_over_terminal() {
+        // 활성 job 은 cap 초과해도 보존, 종료 job 만 evict.
+        let mgr = StatusManager::new(None);
+        // 활성 5개
+        let active_ids: Vec<String> = (0..5)
+            .map(|i| {
+                mgr.start(
+                    Some(format!("active-{i}")),
+                    "tool".to_string(),
+                    None,
+                    None,
+                    serde_json::json!({}),
+                )
+                .id
+            })
+            .collect();
+        // 종료 250개
+        for i in 0..250 {
+            let job = mgr.start(
+                Some(format!("done-{i}")),
+                "tool".to_string(),
+                None,
+                None,
+                serde_json::json!({}),
+            );
+            mgr.complete(&job.id, None);
+        }
+        mgr.run_gc();
+        // 활성 5개 모두 보존
+        for id in &active_ids {
+            assert!(mgr.get(id).is_some(), "활성 job {id} 보존 됐어야");
+        }
     }
 }
