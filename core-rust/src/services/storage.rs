@@ -6,6 +6,7 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
+use crate::managers::storage::StorageManager;
 use crate::ports::IStoragePort;
 use crate::proto::{
     storage_service_server::StorageService, JsonArgs, JsonValue, Status, StringRequest,
@@ -13,11 +14,15 @@ use crate::proto::{
 
 pub struct StorageServiceImpl {
     storage: Arc<dyn IStoragePort>,
+    /// BIBLE 준수: gRPC service 가 storage adapter 를 직접 호출하지 않고 매니저 경유.
+    /// 옛 TS Core facade → StorageManager 동등.
+    manager: Arc<StorageManager>,
 }
 
 impl StorageServiceImpl {
     pub fn new(storage: Arc<dyn IStoragePort>) -> Self {
-        Self { storage }
+        let manager = Arc::new(StorageManager::new(storage.clone()));
+        Self { storage, manager }
     }
 }
 
@@ -135,10 +140,14 @@ impl StorageService for StorageServiceImpl {
 
     async fn get_file_tree(
         &self,
-        _req: Request<StringRequest>,
+        req: Request<StringRequest>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-17+ — 재귀 트리. 현재는 stub.
-        json_response(&serde_json::json!({"_phase": "B-17+ stub — recursive tree"}))
+        // 옛 TS Core.getFileTree → StorageManager.getFileTree 등가 (BIBLE Core Facade 준수).
+        // root path 받아 재귀 트리 빌드. 빈 string 일 때 default ".".
+        let raw_root = req.into_inner().value;
+        let root = if raw_root.is_empty() { ".".to_string() } else { raw_root };
+        let tree = self.manager.get_file_tree(&root).await;
+        json_response(&tree)
     }
 
     async fn glob_files(
@@ -179,5 +188,32 @@ mod tests {
             .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&read.into_inner().raw).unwrap();
         assert_eq!(parsed["content"], "hi");
+    }
+
+    #[tokio::test]
+    async fn get_file_tree_returns_recursive_structure() {
+        let dir = tempdir().unwrap();
+        let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(dir.path()));
+        let svc = StorageServiceImpl::new(storage);
+
+        // setup: root/sub/file.txt
+        svc.write_file(Request::new(JsonArgs {
+            raw: serde_json::json!({"path": "root/sub/file.txt", "content": "x"}).to_string(),
+        }))
+        .await
+        .unwrap();
+
+        let resp = svc
+            .get_file_tree(Request::new(StringRequest {
+                value: "root".to_string(),
+            }))
+            .await
+            .unwrap();
+        let tree: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
+        // 옛 TS get_file_tree 결과 형식: [{name, path, isDirectory, children}]
+        assert_eq!(tree[0]["name"], "root");
+        assert_eq!(tree[0]["isDirectory"], true);
+        assert_eq!(tree[0]["children"][0]["name"], "sub");
+        assert_eq!(tree[0]["children"][0]["children"][0]["name"], "file.txt");
     }
 }

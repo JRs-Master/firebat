@@ -22,3 +22,4 @@ pub mod schedule;
 pub mod task;
 pub mod media;
 pub mod ai;
+pub mod storage;
