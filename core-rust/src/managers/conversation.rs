@@ -82,8 +82,14 @@ impl ConversationManager {
         self.db.get_conversation(owner, id)
     }
 
-    /// 대화 저장 — JSON 직렬화 + tombstone 검사 + 임베딩 자동 sync (옛 TS save 끝의 fire-and-forget).
-    /// embedder 미박음 시 sync 스킵 — CRUD 만 동작.
+    /// 대화 저장 — 옛 TS save 1:1 port.
+    ///
+    /// 흐름:
+    /// 1. Tombstone 검사 — 다른 기기에서 삭제된 대화면 reject
+    /// 2. **기존 messages 와 union merge** (옛 TS unionMergeMessages 1:1) — 모바일·PC 동시 쓰기 시
+    ///    incoming 으로 단순 덮어쓰면 다른 기기 메시지 유실. id 기준 합집합 + timestamp 정렬.
+    /// 3. JSON 직렬화 + DB 저장
+    /// 4. 임베딩 sync (embedder 박혀있을 때만, fire-and-forget)
     pub async fn save(
         &self,
         owner: &str,
@@ -96,7 +102,30 @@ impl ConversationManager {
         if self.db.is_conversation_deleted(owner, id) {
             return Err(format!("대화 {}는 삭제됨 (tombstone)", id));
         }
-        let messages_json = serde_json::to_string(messages)
+
+        // 기존 messages 읽어 union merge — 옛 TS save:127-145 1:1.
+        // 모바일·PC 동시 쓰기 race 보호. 미존재 / 파싱 실패 시 incoming 그대로.
+        let merged_messages: serde_json::Value = match self.db.get_conversation(owner, id) {
+            Some(existing_record) => {
+                let existing_arr: Vec<serde_json::Value> = existing_record
+                    .messages
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                let incoming_arr: Vec<serde_json::Value> = match messages.as_array() {
+                    Some(arr) => arr.clone(),
+                    None => return Err("messages 가 array 가 아닙니다".to_string()),
+                };
+                let merged = crate::utils::message_merge::union_merge_messages(
+                    &existing_arr,
+                    &incoming_arr,
+                );
+                serde_json::Value::Array(merged)
+            }
+            None => messages.clone(),
+        };
+
+        let messages_json = serde_json::to_string(&merged_messages)
             .map_err(|e| format!("messages 직렬화 실패: {e}"))?;
         if !self.db.save_conversation(owner, id, title, &messages_json, created_at) {
             return Err(format!("대화 저장 실패: {}", id));
@@ -105,7 +134,7 @@ impl ConversationManager {
         // 임베딩 sync — embedder 박혀있고 messages 가 array 일 때만.
         // 옛 TS 는 fire-and-forget (`.catch(()=>{})`) — Rust 도 await 후 실패 무시 (스킵).
         if self.embedder.is_some() {
-            if let Some(arr) = messages.as_array() {
+            if let Some(arr) = merged_messages.as_array() {
                 if let Err(e) = self.sync_embeddings(owner, id, arr).await {
                     if let Some(log) = &self.log {
                         log.debug(&format!(
@@ -599,28 +628,62 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sync_embeddings_removes_dropped_indexes() {
+    async fn sync_embeddings_grow_with_union_merge() {
+        // union_merge_messages 박힌 후 — 메시지는 절대 줄어들지 않고 union 으로 자라기만 함.
+        // 모바일·PC 동시 쓰기 race 보호 (옛 TS 1:1).
+        // 임베딩 cleanup 로직은 defensive 로 유지 (sync_embeddings 가 dropped idx 제거하는 코드는 그대로) —
+        // 실 production 에선 trigger 안 됨 (union merge 가 보장). delete() 만 cleanup 책임.
         let mgr = make_manager_with_embedder();
         let messages = serde_json::json!([
-            {"role": "user", "content": "msg 0"},
-            {"role": "assistant", "content": "msg 1"},
-            {"role": "user", "content": "msg 2"}
+            {"id": "u-1700000000000", "role": "user", "content": "msg 0"},
+            {"id": "s-1700000000001", "role": "assistant", "content": "msg 1"},
+            {"id": "u-1700000000002", "role": "user", "content": "msg 2"}
         ]);
         mgr.save("admin", "c1", "t", &messages, None).await.unwrap();
         assert_eq!(mgr.db.list_conversation_embeddings("admin", "c1").len(), 3);
 
-        // 메시지 길이 줄어듬 — msg_idx 2 사라짐
+        // 두 번째 save — 메시지 1개 추가 (모바일 쪽 새 메시지). union 으로 자람.
         let messages2 = serde_json::json!([
-            {"role": "user", "content": "msg 0"},
-            {"role": "assistant", "content": "msg 1"}
+            {"id": "u-1700000000003", "role": "user", "content": "msg 3 from mobile"}
         ]);
         mgr.save("admin", "c1", "t", &messages2, None).await.unwrap();
         let metas = mgr.db.list_conversation_embeddings("admin", "c1");
-        assert_eq!(metas.len(), 2);
-        let idxs: Vec<i64> = metas.iter().map(|m| m.msg_idx).collect();
-        assert!(idxs.contains(&0));
-        assert!(idxs.contains(&1));
-        assert!(!idxs.contains(&2));
+        // 모든 메시지 보존 (union) → 4개 임베딩
+        assert_eq!(metas.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn save_union_merges_with_existing_messages() {
+        // 옛 TS unionMergeMessages 1:1 동작 — 모바일·PC 동시 쓰기 시 메시지 유실 방지.
+        let mgr = make_manager();
+        // PC 가 메시지 2개 저장
+        let pc_messages = serde_json::json!([
+            {"id": "u-1700000000000", "role": "user", "content": "PC user"},
+            {"id": "s-1700000000001", "role": "assistant", "content": "PC reply"}
+        ]);
+        mgr.save("admin", "c-merge", "t", &pc_messages, None)
+            .await
+            .unwrap();
+
+        // 모바일 이 자기 메시지만 + 새 메시지 추가해서 저장 (PC 두 번째 메시지 모름)
+        let mobile_messages = serde_json::json!([
+            {"id": "u-1700000000000", "role": "user", "content": "PC user"},
+            {"id": "u-1700000000005", "role": "user", "content": "Mobile user"}
+        ]);
+        mgr.save("admin", "c-merge", "t", &mobile_messages, None)
+            .await
+            .unwrap();
+
+        // 결과: 3개 메시지 (PC reply 보존됨)
+        let record = mgr.get("admin", "c-merge").unwrap();
+        let arr = record.messages.as_array().unwrap();
+        assert_eq!(arr.len(), 3);
+        let contents: Vec<&str> = arr
+            .iter()
+            .map(|m| m.get("content").and_then(|v| v.as_str()).unwrap_or(""))
+            .collect();
+        // timestamp 순 정렬: PC user (000) → PC reply (001) → Mobile user (005)
+        assert_eq!(contents, vec!["PC user", "PC reply", "Mobile user"]);
     }
 
     #[tokio::test]
