@@ -409,18 +409,23 @@ async fn main() -> Result<()> {
     let tool_service = services::tool::ToolServiceImpl::new(tool_manager);
     let cost_service = services::cost::CostServiceImpl::new(cost_manager);
     let project_service = services::project::ProjectServiceImpl::new(project_manager);
-    let module_service = services::module::ModuleServiceImpl::new(module_manager);
+    let module_service = services::module::ModuleServiceImpl::new(module_manager.clone());
     let page_service = services::page::PageServiceImpl::new(page_manager);
-    let conversation_service = services::conversation::ConversationServiceImpl::new(conversation_manager);
+    // ConversationService — IDatabasePort 박아 create_share / get_share / cleanup_expired_shares 활성
+    let conversation_service =
+        services::conversation::ConversationServiceImpl::new(conversation_manager)
+            .with_db(db.clone());
     let mcp_service = services::mcp::McpServiceImpl::new(mcp_manager);
     let entity_service = services::entity::EntityServiceImpl::new(entity_manager);
     let episodic_service = services::episodic::EpisodicServiceImpl::new(episodic_manager);
     let consolidation_service =
         services::consolidation::ConsolidationServiceImpl::new(consolidation_manager);
-    let schedule_service = services::schedule::ScheduleServiceImpl::new(schedule_manager);
+    // ScheduleService — TaskManager 박아 validate_pipeline 정밀 검증 활성
+    let schedule_service = services::schedule::ScheduleServiceImpl::new(schedule_manager)
+        .with_task_manager(task_manager.clone());
     let task_service = services::task::TaskServiceImpl::new(task_manager);
     let media_service = services::media::MediaServiceImpl::new(media_manager);
-    let ai_service = services::ai::AiServiceImpl::new(ai_manager);
+    let ai_service = services::ai::AiServiceImpl::new(ai_manager.clone());
 
     // Phase B-17.5 — cross-cutting services (Storage / Settings / Network / Lifecycle).
     let storage_service = services::storage::StorageServiceImpl::new(storage.clone());
@@ -434,7 +439,9 @@ async fn main() -> Result<()> {
             .context("Cache 디렉토리 초기화 실패")?,
     );
     let cache_service = services::cache::CacheServiceImpl::new(cache_adapter);
-    let telegram_service = services::telegram::TelegramServiceImpl::new(vault.clone());
+    // TelegramService — AiManager + ModuleManager 박아 process_message webhook → AI → reply 활성
+    let telegram_service = services::telegram::TelegramServiceImpl::new(vault.clone())
+        .with_ai_and_module(ai_manager.clone(), module_manager.clone());
     let database_service = services::database::DatabaseServiceImpl::new(app_db_path.clone())
         .map_err(anyhow::Error::msg)
         .context("Database service 초기화 실패")?;
