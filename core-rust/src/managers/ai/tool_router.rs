@@ -24,7 +24,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use crate::ports::{IVaultPort, ToolDefinition};
+use crate::llm::tool_search_index::{ToolSearchIndex, ToolSearchOpts, ALWAYS_INCLUDE};
+use crate::ports::{IEmbedderPort, IVaultPort, ToolDefinition};
 
 /// 90초 — 이 안에서만 직전 라우팅 피드백 참조.
 const FEEDBACK_WINDOW_SECS: u64 = 90;
@@ -65,6 +66,9 @@ pub struct ToolRouter {
     session_last_routing: Mutex<HashMap<String, LastRouting>>,
     /// 현재 turn 의 cacheIds — turn 끝나면 reset.
     last_route_cache_ids: Mutex<CacheIds>,
+    /// ToolSearchIndex (옵션) — 박혀있으면 Gemini API 도구 선별 활성. 미박힘 시 fallback (모든 도구).
+    /// AI Assistant 토글 ON 이어도 search_index 미박음 → backbone fallback 동일.
+    search_index: Option<Arc<ToolSearchIndex>>,
 }
 
 impl ToolRouter {
@@ -73,7 +77,15 @@ impl ToolRouter {
             vault,
             session_last_routing: Mutex::new(HashMap::new()),
             last_route_cache_ids: Mutex::new(CacheIds::default()),
+            search_index: None,
         }
+    }
+
+    /// ToolSearchIndex 박은 채로 부팅 — Gemini API 도구 선별 (2-stage 벡터 검색) 활성.
+    /// IEmbedderPort 직접 받아 내부 ToolSearchIndex 빌드.
+    pub fn with_embedder(mut self, embedder: Arc<dyn IEmbedderPort>) -> Self {
+        self.search_index = Some(Arc::new(ToolSearchIndex::new(embedder)));
+        self
     }
 
     /// AI Assistant ON/OFF — Vault `system:ai-router:enabled` 토글.
@@ -102,25 +114,25 @@ impl ToolRouter {
 
     /// turn 시작 시 호출 — 도구 선별 + needs_previous_context 판정.
     ///
-    /// **현재 backbone 상태**:
-    /// - LLM router (IToolRouterPort) 미박음 → fallback path
-    /// - 모든 도구 그대로 반환 + needs_previous_context=None
+    /// **활성 조건** (셋 다 true 일 때만 도구 좁힘):
+    /// 1. AI Assistant 토글 ON (Vault `system:ai-router:enabled`)
+    /// 2. 현재 모델이 Gemini API (hosted MCP 없는 프로바이더 — GPT/Claude 는 hosted MCP 있어 노이즈 적음)
+    /// 3. ToolSearchIndex 박혀있음 (`with_embedder` 호출 후)
     ///
-    /// **LLM router 박힌 후 (별도 batch)**:
-    /// - Vault toggle ON → router.route_tools 호출 → Gemini API 만 도구 좁힘
-    /// - 직전 라우팅 90초 TTL 피드백 → recordSuccess / recordFailure
-    /// - GPT/Claude/CLI: 도구 그대로 + needs_previous_context 만 활용
+    /// **활성 시 흐름** (옛 TS 1:1):
+    /// 1. ToolSearchIndex.query → Stage 1+2 카테고리·도구 cosine 검색
+    /// 2. selected_tool_names (stage 2 통과) ∪ ALWAYS_INCLUDE ∪ session_used (이전 호출 도구)
+    /// 3. all_tools 에서 선별된 이름만 필터 → 좁혀진 도구 반환
+    ///
+    /// **비활성 시 fallback**: 모든 도구 그대로 (옛 TS 와 동일).
     pub async fn select_tools(
         &self,
         all_tools: Vec<ToolDefinition>,
         user_query: &str,
         model_id: &str,
-        _session_used_tool_names: &HashSet<String>,
+        session_used_tool_names: &HashSet<String>,
         _conversation_id: Option<&str>,
     ) -> ToolRouteResult {
-        let _ = model_id; // LLM router 박힌 후 분기에 사용
-        let _ = Self::is_gemini_api;
-        let _ = self.get_assistant_model();
         if user_query.trim().is_empty() {
             return ToolRouteResult {
                 tools: all_tools,
@@ -128,11 +140,58 @@ impl ToolRouter {
             };
         }
 
-        // Phase B-18 backbone — 모든 도구 그대로. AI Assistant 토글 ON 이어도 LLM router 미박음 시 동일.
-        // 별도 batch 에서 IToolRouterPort + ToolSearchIndex 박힌 후 활성.
+        // 활성 조건 검사 — 셋 중 하나라도 false 면 fallback
+        let enabled = self.is_enabled();
+        let is_gemini = Self::is_gemini_api(model_id);
+        let Some(search_index) = self.search_index.as_ref() else {
+            // ToolSearchIndex 미박음 → fallback (옛 TS 의 backbone 동일)
+            return ToolRouteResult {
+                tools: all_tools,
+                needs_previous_context: None,
+            };
+        };
+        if !enabled || !is_gemini {
+            // GPT/Claude/CLI 또는 토글 OFF → fallback (모든 도구 그대로)
+            return ToolRouteResult {
+                tools: all_tools,
+                needs_previous_context: None,
+            };
+        }
+
+        // ToolSearchIndex 호출 — 카테고리·도구 cosine 검색 (옛 TS 1:1)
+        let no_capability = |_: &str| -> Option<String> { None };
+        let search_result = match search_index
+            .query(user_query, &all_tools, ToolSearchOpts::default(), &no_capability)
+            .await
+        {
+            Ok(r) => r,
+            Err(_) => {
+                // 임베딩 실패 → fallback (옛 TS 와 동일 — 안전한 쪽)
+                return ToolRouteResult {
+                    tools: all_tools,
+                    needs_previous_context: None,
+                };
+            }
+        };
+
+        // 선별된 도구 이름 = stage 2 통과 ∪ ALWAYS_INCLUDE ∪ session_used
+        let mut allowed: HashSet<String> = search_result.selected_tool_names.clone();
+        for n in ALWAYS_INCLUDE {
+            allowed.insert(n.to_string());
+        }
+        for n in session_used_tool_names {
+            allowed.insert(n.clone());
+        }
+
+        // all_tools 에서 선별된 이름만 필터
+        let filtered: Vec<ToolDefinition> = all_tools
+            .into_iter()
+            .filter(|t| allowed.contains(&t.name))
+            .collect();
+
         ToolRouteResult {
-            tools: all_tools,
-            needs_previous_context: None,
+            tools: filtered,
+            needs_previous_context: None, // LLM router 박힌 후 활성
         }
     }
 
@@ -307,5 +366,76 @@ mod tests {
         r.cleanup_stale_routings();
         assert!(r.session_last_routing.lock().unwrap().contains_key("c1"));
         // (90초 지난 검증은 unit test 한도 — 실 시간 의존이라 skip. 실 운영에선 자연 expire.)
+    }
+
+    #[tokio::test]
+    async fn select_tools_falls_back_when_search_index_missing() {
+        // ToolSearchIndex 미박음 + 토글 ON + Gemini → fallback (모든 도구 그대로)
+        let (r, _dir) = make_router();
+        r.vault.set_secret(VK_AI_ROUTER_ENABLED, "true");
+        let tools = vec![tool("save_page"), tool("image_gen")];
+        let result = r
+            .select_tools(
+                tools.clone(),
+                "주식 차트 그려줘",
+                "gemini-3-pro",
+                &HashSet::new(),
+                None,
+            )
+            .await;
+        assert_eq!(result.tools.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn select_tools_falls_back_when_toggle_off() {
+        // search_index 박혀있어도 토글 OFF → fallback
+        use crate::adapters::embedder::stub::StubEmbedderAdapter;
+        let _g = crate::utils::shared_test_lock();
+        let dir = tempfile::tempdir().unwrap();
+        unsafe {
+            std::env::set_var("FIREBAT_DATA_DIR", dir.path());
+        }
+        let (r, _vault_dir) = make_router();
+        let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
+        let r = r.with_embedder(embedder);
+        // 토글 미설정 → fallback (모든 도구)
+        let tools = vec![tool("sysmod_kiwoom"), tool("save_page"), tool("image_gen")];
+        let result = r
+            .select_tools(
+                tools.clone(),
+                "주식 차트",
+                "gemini-3-pro",
+                &HashSet::new(),
+                None,
+            )
+            .await;
+        assert_eq!(result.tools.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn select_tools_falls_back_for_non_gemini() {
+        // 토글 ON + search_index 박힘 + GPT 모델 → fallback (Gemini API 만 활성)
+        use crate::adapters::embedder::stub::StubEmbedderAdapter;
+        let _g = crate::utils::shared_test_lock();
+        let dir = tempfile::tempdir().unwrap();
+        unsafe {
+            std::env::set_var("FIREBAT_DATA_DIR", dir.path());
+        }
+        let (r, _vault_dir) = make_router();
+        r.vault.set_secret(VK_AI_ROUTER_ENABLED, "true");
+        let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
+        let r = r.with_embedder(embedder);
+        let tools = vec![tool("save_page"), tool("image_gen")];
+        let result = r
+            .select_tools(
+                tools.clone(),
+                "이미지 만들어줘",
+                "gpt-5",
+                &HashSet::new(),
+                None,
+            )
+            .await;
+        // GPT — fallback (옛 TS hosted MCP 만 도구 좁히지 않음)
+        assert_eq!(result.tools.len(), 2);
     }
 }
