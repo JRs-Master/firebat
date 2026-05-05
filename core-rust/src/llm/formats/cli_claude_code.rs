@@ -12,6 +12,7 @@ use tokio::process::Command;
 
 use crate::llm::adapter::FormatHandler;
 use crate::llm::config::LlmModelConfig;
+use crate::llm::formats::cli_image_helper::extract_image_base64;
 use crate::ports::{
     InfraResult, LlmCallOpts, LlmTextResponse, LlmToolResponse, ToolDefinition, ToolResult,
 };
@@ -24,9 +25,29 @@ impl ClaudeCodeCliHandler {
     }
 
     /// CLI subprocess 실행 — prompt stdin 으로 전달, stdout 캡처.
-    async fn run_cli(binary: &str, prompt: &str, _opts: &LlmCallOpts) -> InfraResult<String> {
-        let mut child = Command::new(binary)
-            .arg("--print") // non-interactive 모드 (옛 TS 패턴)
+    ///
+    /// 이미지 첨부 시 stream-json input 모드 사용 (옛 TS cli-claude-code.ts:259-272 1:1):
+    /// - Claude Code 는 `--image` 플래그 없음
+    /// - Read 도구가 disallowedTools 에 박혀 `@<path>` 참조 불가 → stream-json input 이 유일한 vision 경로
+    /// - stdin 에 `{type:'user', message:{role:'user', content:[{type:'text', text}, {type:'image', source:{type:'base64', media_type, data}}]}}` JSON 박음
+    async fn run_cli(binary: &str, prompt: &str, opts: &LlmCallOpts) -> InfraResult<String> {
+        let image_data = extract_image_base64(opts.image.as_deref(), opts.image_mime_type.as_deref());
+
+        let mut cmd = Command::new(binary);
+        if image_data.is_some() {
+            // stream-json input 모드 — 옛 TS 1:1
+            cmd.arg("-p")
+                .arg("--input-format")
+                .arg("stream-json")
+                .arg("--output-format")
+                .arg("stream-json")
+                .arg("--verbose");
+        } else {
+            // 일반 모드 — `--print` non-interactive
+            cmd.arg("--print");
+        }
+
+        let mut child = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -38,10 +59,26 @@ impl ClaudeCodeCliHandler {
                 )
             })?;
 
-        // stdin 으로 prompt 전달 + close
+        // stdin 으로 prompt 또는 stream-json user message 전달
         if let Some(mut stdin) = child.stdin.take() {
+            let payload = if let Some((data, media_type)) = &image_data {
+                // stream-json user message — 옛 TS cli-claude-code.ts 1:1
+                let msg = serde_json::json!({
+                    "type": "user",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": data}}
+                        ]
+                    }
+                });
+                serde_json::to_string(&msg).unwrap_or_default()
+            } else {
+                prompt.to_string()
+            };
             stdin
-                .write_all(prompt.as_bytes())
+                .write_all(payload.as_bytes())
                 .await
                 .map_err(|e| format!("Claude Code CLI stdin write 실패: {e}"))?;
             drop(stdin);

@@ -8,6 +8,7 @@ use tokio::process::Command;
 
 use crate::llm::adapter::FormatHandler;
 use crate::llm::config::LlmModelConfig;
+use crate::llm::formats::cli_image_helper::{cleanup_temp_file, write_image_temp_file};
 use crate::ports::{
     InfraResult, LlmCallOpts, LlmTextResponse, LlmToolResponse, ToolDefinition, ToolResult,
 };
@@ -19,14 +20,23 @@ impl CodexCliHandler {
         Self
     }
 
-    async fn run_cli(binary: &str, prompt: &str, _opts: &LlmCallOpts) -> InfraResult<String> {
-        let mut child = Command::new(binary)
-            .arg("exec")
+    async fn run_cli(binary: &str, prompt: &str, opts: &LlmCallOpts) -> InfraResult<String> {
+        // 첨부 이미지 임시 파일 — 옛 TS cli-codex.ts:179-182 1:1.
+        // base64 → 임시 파일 저장 → `--image <path>` 인자 박음 → spawn 종료 시 cleanup.
+        let tmp_image = write_image_temp_file(opts.image.as_deref(), opts.image_mime_type.as_deref(), None);
+
+        let mut cmd = Command::new(binary);
+        cmd.arg("exec");
+        if let Some(t) = &tmp_image {
+            cmd.arg("--image").arg(&t.path);
+        }
+        let mut child = cmd
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
             .map_err(|e| {
+                cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
                 format!(
                     "Codex CLI spawn 실패 ({}): {e} — `{}` binary PATH 확인 / `codex login` 한 번 실행했는지 확인",
                     binary, binary
@@ -34,17 +44,23 @@ impl CodexCliHandler {
             })?;
 
         if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(prompt.as_bytes())
-                .await
-                .map_err(|e| format!("Codex CLI stdin write 실패: {e}"))?;
+            if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
+                cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
+                return Err(format!("Codex CLI stdin write 실패: {e}"));
+            }
             drop(stdin);
         }
 
         let output = child
             .wait_with_output()
             .await
-            .map_err(|e| format!("Codex CLI wait 실패: {e}"))?;
+            .map_err(|e| {
+                cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
+                format!("Codex CLI wait 실패: {e}")
+            })?;
+
+        // 첨부 이미지 임시 파일 정리 (spawn 종료 후) — 옛 TS child.on('close', ...) 1:1
+        cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
