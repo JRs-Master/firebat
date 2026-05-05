@@ -20,20 +20,79 @@ pub struct DirEntry {
     pub is_directory: bool,
 }
 
+/// 바이너리 파일 read 결과 — base64 + mime + size. 옛 TS readBinary 1:1.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct BinaryReadResult {
+    pub base64: String,
+    #[serde(rename = "mimeType")]
+    pub mime_type: String,
+    pub size: usize,
+}
+
+/// grep 매치 1건 — file:line:text. 옛 TS grep 결과 1:1.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GrepMatch {
+    pub file: String,
+    pub line: usize,
+    pub text: String,
+}
+
+/// grep 옵션 — path 안에서 검색, fileType 으로 확장자 필터, limit / ignoreCase 옵션.
+#[derive(Debug, Clone, Default)]
+pub struct GrepOpts<'a> {
+    pub path: Option<&'a str>,
+    pub file_type: Option<&'a str>,
+    pub limit: Option<usize>,
+    pub ignore_case: bool,
+}
+
 /// IStoragePort — 파일 시스템 접근. workspace zone 격리 (path traversal 차단).
+///
+/// Phase B-19 확장 — 옛 TS storage adapter 6개 메서드 추가:
+/// - `read_binary` — 미디어 binary read (base64 + mime + size)
+/// - `list` — 파일 이름만 (디렉토리 제외, list_dir 와 다름)
+/// - `glob` — 패턴 매칭 (Node 24 fs.glob 1:1)
+/// - `grep` — 콘텐츠 검색 (ripgrep 동등)
+/// - `write_cache` / `delete_cache` — sysmod 결과 cache pattern (Core 만 호출)
 #[async_trait::async_trait]
 pub trait IStoragePort: Send + Sync {
     /// 텍스트 파일 read (UTF-8).
     async fn read(&self, path: &str) -> InfraResult<String>;
 
+    /// 바이너리 파일 read — base64 인코딩 + mimeType (확장자 추론) + size.
+    /// 옛 TS readBinary 1:1.
+    async fn read_binary(&self, path: &str) -> InfraResult<BinaryReadResult>;
+
     /// 텍스트 파일 write — 디렉토리 자동 생성 (mkdir -p).
     async fn write(&self, path: &str, content: &str) -> InfraResult<()>;
+
+    /// Internal cache write — Core.cacheData 만 호출. AI 도구 우회 차단.
+    /// data/cache/ 안에 박힘. 옛 TS writeCache 1:1.
+    async fn write_cache(&self, path: &str, content: &str) -> InfraResult<()>;
 
     /// 파일 또는 디렉토리 delete (recursive).
     async fn delete(&self, path: &str) -> InfraResult<()>;
 
-    /// 디렉토리 안 entry 나열.
+    /// Internal cache delete — Core.cacheDrop 만 호출. 옛 TS deleteCache 1:1.
+    async fn delete_cache(&self, path: &str) -> InfraResult<()>;
+
+    /// 디렉토리 안 파일 이름만 나열 (디렉토리 제외). 옛 TS list 1:1.
+    /// list_dir 과 다름 — list_dir 은 (name, is_directory) 페어, list 는 이름만.
+    async fn list(&self, path: &str) -> InfraResult<Vec<String>>;
+
+    /// 디렉토리 안 entry 나열 — name + is_directory 페어.
     async fn list_dir(&self, path: &str) -> InfraResult<Vec<DirEntry>>;
+
+    /// glob 패턴 매칭 — `**/*.ts` 같은 패턴으로 파일 검색. 옛 TS glob 1:1.
+    /// limit 미지정 시 default 1000 (대용량 보호).
+    async fn glob(&self, pattern: &str, limit: Option<usize>) -> InfraResult<Vec<String>>;
+
+    /// 콘텐츠 grep — pattern (regex) 으로 파일 텍스트 검색. 옛 TS grep 1:1.
+    async fn grep(
+        &self,
+        pattern: &str,
+        opts: &GrepOpts<'_>,
+    ) -> InfraResult<Vec<GrepMatch>>;
 
     /// 파일 존재 여부.
     async fn exists(&self, path: &str) -> bool;

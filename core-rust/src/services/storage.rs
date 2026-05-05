@@ -63,10 +63,14 @@ impl StorageService for StorageServiceImpl {
 
     async fn read_file_binary(
         &self,
-        _req: Request<StringRequest>,
+        req: Request<StringRequest>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-17+ — base64 인코딩된 binary read. 현재는 stub.
-        json_response(&serde_json::json!({"_phase": "B-17+ stub — base64 binary read"}))
+        // 옛 TS Core.readFileBinary → StorageManager.read_binary (BIBLE Core Facade 준수).
+        let path = req.into_inner().value;
+        match self.manager.read_binary(&path).await {
+            Ok(result) => json_response(&result),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
     }
 
     async fn write_file(
@@ -152,10 +156,25 @@ impl StorageService for StorageServiceImpl {
 
     async fn glob_files(
         &self,
-        _req: Request<JsonArgs>,
+        req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-17+ — glob crate 박힌 후 활성.
-        json_response(&serde_json::json!({"_phase": "B-17+ stub — glob 패턴 매칭"}))
+        // 옛 TS Core.globFiles → StorageManager.glob 등가 (BIBLE Core Facade 준수).
+        // 인자: { pattern: string, limit?: number }
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            pattern: String,
+            #[serde(default)]
+            limit: Option<usize>,
+        }
+        let args: Args = match serde_json::from_str(&raw) {
+            Ok(v) => v,
+            Err(e) => return Err(TonicStatus::invalid_argument(format!("glob args: {e}"))),
+        };
+        match self.manager.glob(&args.pattern, args.limit).await {
+            Ok(matches) => json_response(&matches),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
     }
 }
 

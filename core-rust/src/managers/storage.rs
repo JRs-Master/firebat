@@ -13,7 +13,9 @@
 
 use std::sync::Arc;
 
-use crate::ports::{DirEntry, IStoragePort, InfraResult};
+use crate::ports::{
+    BinaryReadResult, DirEntry, GrepMatch, GrepOpts, IStoragePort, InfraResult,
+};
 
 /// 재귀 디렉토리 트리 노드. 옛 TS `TreeNode` 1:1.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -58,6 +60,41 @@ impl StorageManager {
     /// 파일 존재 여부 — IStoragePort 직접 노출 (옛 TS 의 list 헬퍼 등가성 위해).
     pub async fn exists(&self, path: &str) -> bool {
         self.storage.exists(path).await
+    }
+
+    /// 바이너리 파일 read — base64 + mimeType + size. 옛 TS readBinary 1:1.
+    pub async fn read_binary(&self, path: &str) -> InfraResult<BinaryReadResult> {
+        self.storage.read_binary(path).await
+    }
+
+    /// 디렉토리 안 파일 이름만 — list_dir 와 다름 (디렉토리 제외). 옛 TS list 1:1.
+    pub async fn list(&self, path: &str) -> InfraResult<Vec<String>> {
+        self.storage.list(path).await
+    }
+
+    /// glob 패턴 매칭 — 옛 TS glob 1:1. AI 도구 (glob_files) 가 의존.
+    pub async fn glob(&self, pattern: &str, limit: Option<usize>) -> InfraResult<Vec<String>> {
+        self.storage.glob(pattern, limit).await
+    }
+
+    /// 콘텐츠 grep — 옛 TS grep 1:1. AI 도구 (grep_code) 가 의존.
+    pub async fn grep(
+        &self,
+        pattern: &str,
+        opts: &GrepOpts<'_>,
+    ) -> InfraResult<Vec<GrepMatch>> {
+        self.storage.grep(pattern, opts).await
+    }
+
+    /// Internal cache write — Core.cacheData 만 호출. AI 도구 우회 차단.
+    /// 옛 TS writeCache 1:1.
+    pub async fn write_cache(&self, path: &str, content: &str) -> InfraResult<()> {
+        self.storage.write_cache(path, content).await
+    }
+
+    /// Internal cache delete — Core.cacheDrop 만 호출. 옛 TS deleteCache 1:1.
+    pub async fn delete_cache(&self, path: &str) -> InfraResult<()> {
+        self.storage.delete_cache(path).await
     }
 
     /// 재귀 디렉토리 트리 빌더 — 옛 TS `getFileTree(root)` 1:1.
