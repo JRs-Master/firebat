@@ -19,6 +19,7 @@ pub mod result_processor;
 pub mod retrieval_engine;
 pub mod tool_router;
 pub mod plan_mode;
+pub mod code_assist;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -178,6 +179,19 @@ impl AiManager {
     pub async fn ask_text(&self, prompt: &str, opts: &LlmCallOpts) -> InfraResult<String> {
         let response = self.llm.ask_text(prompt, opts).await?;
         Ok(response.text)
+    }
+
+    /// Monaco 에디터 통합 AI 어시스턴트 — 옛 TS `codeAssist` 1:1.
+    ///
+    /// 두 모드:
+    /// - 설명 모드 (instruction 에 "알려줘/설명/분석/리뷰" 키워드) — 마크다운 응답
+    /// - 코드 모드 (그 외) — raw 코드만, 코드펜스 자동 strip
+    pub async fn code_assist(
+        &self,
+        params: &code_assist::CodeAssistParams<'_>,
+        ai_opts: &AiRequestOpts,
+    ) -> InfraResult<String> {
+        code_assist::code_assist(self.llm.as_ref(), params, ai_opts).await
     }
 
     /// Function Calling 멀티턴 도구 루프 (LlmCallOpts 만 받는 simple 진입점).
