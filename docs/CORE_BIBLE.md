@@ -1,12 +1,21 @@
 # FIREBAT CORE BIBLE — 순수 판독과 지휘의 성역
 
-> 최종 개정: 2026-04-16 (v0.1)
+> 최종 개정: 2026-05-06 (Phase B-4 cutover)
 
 ## 전문(前文)
 
 이 문서는 `core/` 영역의 설계 지침을 규정하는 기술 규격서이다.
 Core는 시스템 전체를 지휘하는 **재판장(Judge)**이자 **오케스트레이터(Orchestrator)**이며,
 물리적 I/O를 직접 수행하지 않는 **순수 비즈니스 로직 계층**이다.
+
+**🔥 Phase B-4 cutover 후 코드 위치 (개념·규칙은 그대로)**:
+- 옛 TS `core/index.ts` (FirebatCore facade) → 폐기. 대신 `core/src/services/*.rs` (gRPC service impl) 가 외부 진입점, `core/src/managers/*.rs` (21 매니저) 가 비즈니스 로직.
+- 옛 TS `core/ports/index.ts` → `core/src/ports.rs` (16 trait)
+- 옛 TS `core/managers/*.ts` → `core/src/managers/*.rs`
+- 옛 TS `core/utils/*.ts` → `core/src/utils/*.rs`
+- 옛 TS `core/capabilities.ts` → `core/src/capabilities.rs`
+- Frontend 의 `lib/singleton.ts` `getCore()` 는 `RustCoreProxy` (Proxy + Reflect → callCore() → gRPC) 를 반환 — 외부 호출 패턴 동일.
+- 본 문서의 모든 TS 경로 reference 는 historical 기록. 새 작업 시 위 매핑 따라 Rust 위치 사용.
 
 ---
 

@@ -1,11 +1,20 @@
 # FIREBAT INFRA BIBLE — 행동 대장 수칙
 
-> 최종 개정: 2026-04-18 (v0.1)
+> 최종 개정: 2026-05-06 (Phase B-4 cutover)
 
 ## 전문(前文)
 
 이 문서는 `infra/` 계층의 설계 및 행동 규격을 정의한다.
 Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템, 프로세스, 네트워크)와 직접 맞닿아 궂은일을 수행하는 **유일한 I/O 실행 계층**이다.
+
+**🔥 Phase B-4 cutover 후 코드 위치 (개념·규칙은 그대로)**:
+- 옛 TS `infra/*/index.ts` → `infra/src/adapters/*.rs` (16 어댑터)
+- 옛 TS `infra/llm/*` → `infra/src/llm/*.rs` (ConfigDrivenAdapter + 8 format handlers)
+- 옛 TS `infra/image/*` → `infra/src/image_gen/*.rs`
+- 옛 TS `infra/boot.ts` (싱글톤 조립) → `infra/src/main.rs` (gRPC server entry — `firebat-core` binary 가 시작 시 어댑터 wiring)
+- 옛 TS `infra/config.ts` → 폐기. 상수는 각 매니저·어댑터 자체 const 또는 Vault. Frontend 측 BASE_URL / SESSION_MAX_AGE 는 `lib/base-url.ts` + `lib/config.ts`.
+- crate 구조: `infra` crate 가 `core` crate 의 trait 만 의존 (단방향 `infra → core`)
+- 본 문서의 모든 TS 경로 reference 는 historical. 새 작업 시 위 매핑 따라 Rust 위치 사용.
 
 ---
 

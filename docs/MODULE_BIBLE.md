@@ -1,11 +1,13 @@
 # FIREBAT MODULE BIBLE — 불가지론적 모듈 작성 수칙
 
-> 최종 개정: 2026-04-13 (v0.1)
+> 최종 개정: 2026-05-06 (Phase B-4 cutover — 모듈 규격 영향 0)
 
 ## 전문(前文)
 
 본 문서는 Firebat에서 사용되는 모든 '모듈(Module)'의 설계 규격을 정의한다.
 Firebat은 어떤 언어로 작성되었건(불가지론적) 동일한 방식으로 모듈을 통제한다.
+
+**🔥 Phase B-4 cutover 후 영향 없음** — sandbox 격리 + config.json + stdin/stdout 통신 + Vault 시크릿 주입 패턴 모두 동일. 차이: backend sandbox 실행자가 옛 Node `child_process` → Rust `tokio::process::Command` (ProcessSandboxAdapter @ `infra/src/adapters/sandbox.rs`). 모듈 작성자 측 변화 0.
 
 모듈은 두 종류로 나뉜다:
 1. **어댑터 모듈** (`type: "adapter"`): Core 포트의 구현체. Infra가 부팅 시 로드.

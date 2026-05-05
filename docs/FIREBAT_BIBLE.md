@@ -1,12 +1,14 @@
 # FIREBAT BIBLE — 헌법
 
-> 최종 개정: 2026-04-22 (v0.1)
+> 최종 개정: 2026-05-06 (Phase B-4 cutover — 옛 TS 폐기, Rust 단일 backend 전환)
 
 ## 전문(前文)
 
 본 문서는 Firebat의 **최고 등급 아키텍처 헌법**이다.
 Firebat은 **AI-Powered Visual Automation Agent (VAA)** — 단독 서버(VPS)에서 동작하는 AI 기반 시각적 자동화 에이전트로, "만들기 + 운영 + 자동화"를 통합한다.
 이 헌법에 명시된 원칙은 모든 코드, 모듈, 컴포넌트, 프롬프트 설계의 기준이 된다.
+
+**🔥 Phase B-4 cutover (2026-05-06) — 정체성·원칙 그대로, 구현 backend 만 전환**: 옛 TS Core/Infra 폐기, Rust multi-crate workspace (`core/` + `infra/` + `src-tauri/`) 로 단번 cutover 완료. Frontend 는 1년+ polished React 그대로. Hexagonal / 단독 점유 / DB-agnostic / 모듈 격리 / AI 자율 등 본 헌법의 모든 원칙은 Rust 위에서도 동일 적용. 코드 위치 매핑은 CORE_BIBLE / INFRA_BIBLE 첫머리 참조.
 
 ---
 

@@ -1,10 +1,17 @@
 # FIREBAT I/O SCHEMA BIBLE — 전 계층 타입 계약서
 
-> 최종 개정: 2026-04-15 (v0.1)
+> 최종 개정: 2026-05-06 (Phase B-4 cutover)
 
 ## 전문(前文)
 
 본 문서는 Firebat의 **모든 통신 경계**에서 오가는 데이터의 타입을 엄격히 정의한다.
+
+**🔥 Phase B-4 cutover 후 타입 single source**: 옛 TS Core 의 `core/types/index.ts` 와 `core/ports/index.ts` 폐기. 새 single source 는:
+1. **proto/firebat.proto** (28 services / 208 RPCs) — gRPC 메시지 schema 가 backend ↔ frontend 통신의 wire format
+2. **core/src/ports.rs** — Rust trait 시그니처 (`InfraResult<T>` / `LlmCallOpts` / `CronJobInfo` 등)
+3. **lib/types/firebat-types.ts** — Frontend type-only 정의 (`PageListItem` / `AuthSession` / `FirebatCore`)
+
+본 문서의 모든 TS interface 정의는 Rust serde struct + proto message 와 1:1. Rust 가 새 SoT, TS 는 매칭 type alias.
 
 ### 3대 철칙
 1. **예외 없음** — 모든 경로가 동일한 타입 규약을 따른다. "이 경우는 특별히..."는 없다.

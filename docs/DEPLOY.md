@@ -1,6 +1,10 @@
 # Firebat v1.0 Final — self-hosted Docker 배포 가이드
 
-Phase C 박힘 (2026-05-04). Rust Core + (옵션) Next.js renderer + nginx TLS.
+Phase C 박힘 (2026-05-04, 2026-05-06 갱신). Rust Core + (옵션) Next.js renderer + nginx TLS.
+
+**🔥 Phase B-4 cutover (2026-05-06) 후 빌드 명령**:
+- 옛 `cargo build -p firebat-core` → **`cargo build --release -p firebat-infra --bin firebat-core`** (Rust workspace 분리 — bin target 이 infra crate 안)
+- 옛 `core-rust/` 디렉토리 → 이제 `core/` + `infra/` 두 crate
 
 ## 시스템 요구사항
 

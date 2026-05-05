@@ -1,6 +1,10 @@
 # PAGESPEC BIBLE — 페이지 및 채팅 렌더링 규약
 
+> 최종 개정: 2026-05-06 (Phase B-4 cutover — PageSpec schema 영향 0)
+>
 > Firebat의 모든 **선언적 UI 렌더링**을 다룬다. AI는 React/TSX를 직접 작성하지 않고, PageSpec JSON 혹은 채팅 블록으로 UI를 선언한다.
+>
+> **🔥 Phase B-4 cutover 후 영향 없음** — PageSpec JSON schema + 27 render_* 컴포넌트 + Frontend (`app/(user)/[...slug]/components.tsx`) 모두 동일. 차이: 페이지 저장 backend 가 옛 TS PageManager → Rust `core/src/managers/page.rs`. JSON shape (head/body/seo) 100% 호환.
 
 ## 제1장: PageSpec 스키마
 

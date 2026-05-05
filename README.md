@@ -234,16 +234,15 @@ Site builder reaches Astra/GP-class depth — header / sidebar / footer all shar
 
 | Layer | Technology |
 |---|---|
-| **Framework** | Next.js 16 (App Router, Turbopack) |
-| **Language** | TypeScript 6 |
-| **Styling** | Tailwind CSS 4 |
+| **Backend** | Rust (tonic 0.12 + tokio + rusqlite + reqwest + cron crate) — `core/` + `infra/` Cargo workspace |
+| **Frontend** | Next.js 16 (App Router, Turbopack) + TypeScript 6 + Tailwind CSS 4 |
+| **IPC** | gRPC (proto/firebat.proto, 28 services / 208 RPCs) — Tauri invoke (in-process) 또는 fetch + gRPC proxy |
 | **AI** | OpenAI · Anthropic · Google Gemini/Vertex (config-driven multi-provider) + CLI subscription mode |
-| **Database** | SQLite (better-sqlite3) |
+| **Database** | SQLite (rusqlite bundled, 정적 링크) |
 | **Editor** | Monaco Editor |
 | **MCP** | @modelcontextprotocol/sdk 1.29 |
-| **Scheduling** | node-cron |
-| **Validation** | Zod |
-| **Deploy** | PM2 + Nginx |
+| **Validation** | Zod (TS) + serde (Rust) |
+| **Deploy** | self-hosted Docker compose (Phase C) 또는 self-installed Tauri (Phase D) |
 
 ---
 
@@ -251,10 +250,12 @@ Site builder reaches Astra/GP-class depth — header / sidebar / footer all shar
 
 ### Prerequisites
 
-- Node.js 20+
-- Python 3.10+ (for module sandbox)
+- **Rust** stable (1.79+) — backend core/infra 빌드
+- **Node.js** 20+ — Next.js frontend
+- **Python** 3.10+ — module sandbox
+- **protoc** 자동 동봉 (protoc-bin-vendored crate, 별도 설치 불필요)
 
-> 🇰🇷 Node.js 20 이상 / Python 3.10 이상 (모듈 샌드박스용).
+> 🇰🇷 Rust stable / Node.js 20 이상 / Python 3.10 이상 / protoc 는 빌드 시 자동 동봉.
 
 ### Installation
 
@@ -262,17 +263,22 @@ Site builder reaches Astra/GP-class depth — header / sidebar / footer all shar
 git clone https://github.com/JRs-Master/firebat.git
 cd firebat
 npm install
+cargo build --release -p firebat-infra --bin firebat-core   # Rust Core 빌드
 ```
 
 ### Development
 
 ```bash
+# Terminal 1: Rust Core gRPC server (port 50051)
+cargo run --bin firebat-core
+
+# Terminal 2: Next.js frontend
 npm run dev
 ```
 
-Open `http://localhost:3000/admin` for the admin console.
+Open `http://localhost:3000/admin` for the admin console. Frontend 가 `RustCoreProxy` → gRPC :50051 로 자동 라우팅.
 
-> 🇰🇷 `http://localhost:3000/admin`에서 어드민 콘솔에 접속합니다.
+> 🇰🇷 Rust Core 와 Next.js 를 두 터미널에서 동시 실행. 어드민 콘솔: `http://localhost:3000/admin`. Frontend 가 `RustCoreProxy` 를 통해 자동으로 gRPC 50051 로 호출.
 
 ### Configuration
 
@@ -304,70 +310,77 @@ npm run mcp
 
 ## Project Structure
 
+Phase B-4 cutover (2026-05-06) 후 — multi-crate Rust workspace (core / infra) + Next.js frontend.
+
 ```
-firebat/
-├── core/                    # Pure business logic (no I/O)
-│   ├── index.ts             #   FirebatCore Facade
-│   ├── ports/               #   15 Port interfaces
-│   ├── managers/            #   17 domain managers (+ ai/ collaborator subfolder)
-│   ├── types/               #   CoreResult, AiRequestOpts
-│   ├── utils/               #   sanitize, json-normalize
-│   └── capabilities.ts      #   Capability-Provider registry
+firebat/                      # Cargo workspace root (Cargo.toml — members: core / infra / src-tauri)
+├── core/                     # Rust crate — managers + services + ports (infra 의존 0건)
+│   ├── Cargo.toml
+│   ├── build.rs              #   tonic-build (proto/ → generated stubs)
+│   └── src/
+│       ├── lib.rs            #   crate root + proto module include
+│       ├── ports.rs          #   16 Port traits
+│       ├── capabilities.rs   #   Capability-Provider registry
+│       ├── vault_keys.rs     #   Vault key constants
+│       ├── tool_registry.rs  #   AiManager 의 정적 도구 등록
+│       ├── task_executor_impl.rs
+│       ├── managers/         #   21 domain managers (+ ai/ collaborator subfolder)
+│       ├── services/         #   28 gRPC service impl
+│       ├── utils/            #   path_resolve / sanitize / http_client / sysmod_cache 등
+│       └── llm/config.rs     #   LlmModelConfig + builtin_models (UI 노출용 메타)
 │
-├── infra/                   # I/O execution layer (adapters)
-│   ├── boot.ts              #   Infra singleton assembly
-│   ├── config.ts            #   Central config constants
-│   ├── storage/             #   Filesystem + Vault
-│   ├── llm/                 #   ConfigDrivenAdapter + 8 format handlers (5 API + 3 CLI)
-│   ├── sandbox/             #   Process sandbox (Python/Node/PHP/Shell)
-│   ├── cron/                #   node-cron scheduler (file-fallback for resilience)
-│   ├── database/            #   SQLite adapter + migrations/ (versioned schema)
-│   ├── log/                 #   4-level logging + JSONL training data + token-redactor
-│   ├── network/             #   HTTP client (SSRF-hardened)
-│   ├── mcp-client/          #   External MCP server client
-│   ├── auth/                #   Vault-backed session / API tokens
-│   ├── media/               #   Local media storage (variants, blurhash)
-│   ├── image-processor/     #   sharp adapter (resize, format, blurhash)
-│   ├── image/               #   Config-driven image generation (OpenAI gpt-image, Gemini Flash Image)
-│   └── security/            #   token-redactor (log masking)
+├── infra/                    # Rust crate — adapters + main binary (firebat → core 단방향 의존)
+│   ├── Cargo.toml
+│   ├── Dockerfile            #   self-hosted multi-stage build
+│   └── src/
+│       ├── lib.rs
+│       ├── main.rs           #   firebat-core binary (gRPC server :50051)
+│       ├── adapters/         #   16 어댑터 (storage / vault / auth / log / database / sandbox / mcp_client / memory / cron / media / llm / embedder / image_gen / image_processor / tracing_log)
+│       ├── llm/              #   ConfigDrivenAdapter + 8 format 핸들러 (5 API + 3 CLI)
+│       └── image_gen/        #   ConfigDrivenImageGenAdapter + 3 format (openai-image / gemini-native-image / cli-codex-image)
 │
-├── app/                     # Next.js App Router
-│   ├── admin/               #   Admin console (chat, settings, editor)
-│   │   └── hooks/           #     Frontend managers: Chat / Events / Settings
-│   ├── (user)/              #   User-facing pages (dynamic render)
-│   └── api/                 #   API routes (Primary Adapter)
+├── src-tauri/                # Rust crate — self-installed Tauri shell (Phase D)
+│   ├── Cargo.toml            #   firebat-infra 의존 (in-process embed)
+│   └── src/
 │
-├── mcp/                     # MCP server (stdio + Streamable HTTP)
-│   ├── server.ts            #   Tool definitions for VSCode/Cursor
-│   ├── stdio.ts             #   stdio entry (external AI)
-│   ├── internal-server.ts   #   User-AI tool set
-│   └── stdio-user-ai.ts     #   stdio entry for CLI-mode User AI
+├── proto/                    # gRPC schema (single source)
+│   └── firebat.proto         #   28 services / 208 RPCs
 │
-├── lib/                     # Utilities
-│   ├── singleton.ts         #   Core singleton factory
-│   ├── auth-guard.ts        #   API route auth guard
-│   └── events.ts            #   SSE event bus
+├── app/                      # Next.js App Router (TS frontend)
+│   ├── admin/                #   Admin console (chat, settings, editor)
+│   │   └── hooks/            #     Frontend managers: Chat / Events / Settings
+│   ├── (user)/               #   User-facing pages (dynamic render)
+│   └── api/                  #   API routes (Primary Adapter — RustCoreProxy 경유)
 │
-├── system/                  # System area
-│   ├── services/            #   Config-only services (SEO, MCP server)
-│   └── modules/             #   Built-in runnable modules (naver-search, naver-ads, korea-invest, kiwoom, upbit, kakao-talk, telegram, firecrawl, browser-scrape, law-search)
+├── lib/                      # TS frontend utilities
+│   ├── singleton.ts          #   getCore() — RustCoreProxy 만 (옛 TS in-process backend 분기 폐기)
+│   ├── rust-core-proxy.ts    #   Proxy + Reflect → callCore() → gRPC
+│   ├── types/firebat-types.ts #  type-only 정의 (PageListItem / AuthSession / FirebatCore)
+│   ├── auth-guard.ts         #   API route 인증 가드
+│   ├── base-url.ts           #   BASE_URL + getBaseUrl(req)
+│   ├── config.ts             #   SESSION_MAX_AGE_SECONDS / OAuth token expiry
+│   └── events.ts             #   SSE 이벤트 버스
 │
-├── user/                    # User area (modules, data)
-│   └── modules/             #   User-created modules
+├── mcp/                      # MCP server — 외부 AI 가 Firebat 조작
+│   ├── server.ts             #   외부용 도구 정의
+│   ├── internal-server.ts    #   User-AI 도구 세트 (CLI 모드 + API hosted MCP)
+│   ├── stdio.ts              #   stdio 진입점
+│   └── stdio-user-ai.ts      #   CLI-mode User AI 용 stdio
 │
-├── docs/                    # Design documents (bibles)
-│   ├── FIREBAT_BIBLE.md     #   Top-level constitution (identity, separation of powers)
-│   ├── CORE_BIBLE.md        #   Core purity, 12 Ports, 12-Manager backend + 3-Manager frontend architecture
-│   ├── INFRA_BIBLE.md       #   12 Adapter specs, bootstrap
-│   ├── MODULE_BIBLE.md      #   Module system, Capability-Provider pattern
-│   ├── PAGESPEC_BIBLE.md    #   PageSpec schema + chat rendering rules
-│   └── IO_SCHEMA_BIBLE.md   #   Module I/O schema reference
+├── system/                   # System area (sandbox 모듈)
+│   ├── services/             #   Config-only services (CMS, MCP server)
+│   └── modules/              #   Built-in runnable modules (naver-search, naver-ads, korea-invest, kiwoom, upbit, kakao-talk, telegram, firecrawl, browser-scrape, law-search, ...)
 │
-└── data/                    # Runtime data (gitignored)
-    ├── app.db               #   Pages DB
-    ├── vault.db             #   Secret store
-    ├── cron-jobs.json       #   Persisted cron jobs
-    └── logs/                #   App logs + JSONL training data
+├── user/                     # User area (modules, data)
+│   └── modules/              #   User-created modules
+│
+├── docs/                     # Design documents (bibles)
+│
+└── data/                     # Runtime data (gitignored)
+    ├── app.db                #   Pages / conversations DB
+    ├── vault.db              #   Secret store
+    ├── cron-jobs.json        #   Persisted cron jobs
+    └── logs/                 #   App logs + JSONL training data
 ```
 
 ---
@@ -399,21 +412,20 @@ Frontend  Next.js + React + 22 render_* components  (preserved from v0.1)
 - **Tech**: each layer's strongest libraries — backend (rusqlite / tokio / reqwest, all mature) + frontend (full React ecosystem)
 - **Maintenance**: backend / frontend evolve independently; one layer's limit doesn't impact the other
 
-**Phases**:
+**Phases** (2026-05-06 갱신):
 
-| Phase | Scope | Duration |
+| Phase | Scope | 상태 |
 |---|---|---|
-| **0. Now** | Operate firebat.co.kr on the legacy v0.1 build. No big changes — fix-only mode. New use-cases (auto-trading / blogs) wait for Rust | ongoing |
-| **A. Design** | gRPC schema + `lib/core-client.ts` abstraction + Cargo workspace + Tauri config + dual-run framework | 1~2 weeks |
-| **B. Rust Core** | 17 adapters + 21 managers + gRPC server + frontend abstraction + dual-run validation. **Hardcoding audit at every conversion** — no 1:1 mapping, every special-case fix promoted to general logic | 3~4 months |
-| **C. self-hosted Docker** | Multi-stage Dockerfile (Rust binary + Next.js standalone) + docker-compose + nginx template | 1~2 weeks |
-| **D. self-installed Tauri** | src-tauri shell + first-run setup (auto-download Node / Python / LLM CLI into the Firebat folder, fully sandboxed) + auto-update pipeline (GitHub Actions → 3 OS builds → in-place update) | 1~2 weeks |
+| **A. Design** | gRPC schema (28 services / 208 RPCs) + Cargo workspace + tonic-build 통합 | ✅ 완료 |
+| **B. Rust Core** | 16 adapters + 21 managers + 28 service impl + frontend RustCoreProxy + multi-crate workspace 분리 (core / infra). **Hardcoding audit 7-pattern** — no 1:1 mapping, every special-case fix promoted to general logic. dual-run 폐기 → 옛 TS 단번 cutover | ✅ 완료 (2026-05-06) |
+| **C. self-hosted Docker** | Multi-stage Dockerfile (Rust binary + Next.js standalone) + docker-compose + nginx 템플릿 + 옛 v0.1 데이터 마이그레이션 runner | 🟡 다음 단계 |
+| **D. self-installed Tauri** | src-tauri shell + 첫 실행 자동 LLM CLI 격리 설치 + auto-update (GitHub Actions → 3 OS builds → in-place) | ⏳ |
 
 **v1.0 Final release gate**:
-- Rust Core dual-run 1~2 weeks no-incident (results match the legacy Node Core)
-- self-hosted Docker compose verified (firebat.co.kr migrated)
-- self-installed verified on Windows / macOS / Linux
-- 1+ week of personal use on Rust without incidents
+- ✅ Rust Core 단번 cutover 완료 (옛 TS 폐기, `cargo check` + `npm run typecheck` 통과)
+- 🟡 self-hosted Docker compose 검증 (firebat.co.kr 마이그레이션 — Phase C)
+- ⏳ self-installed verified on Windows / macOS / Linux (Phase D)
+- ⏳ 1+ week of personal use on Rust without incidents
 - → new use-cases (auto-trading / blogs) start on top of Rust
 
 **Total duration**: ~4~5 months solo full-time / ~6~9 months part-time.
