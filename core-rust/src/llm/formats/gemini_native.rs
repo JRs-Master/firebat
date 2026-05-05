@@ -202,6 +202,7 @@ impl FormatHandler for GeminiNativeHandler {
             cost_usd: Some(cost),
             tokens_in: Some(tokens_in),
             tokens_out: Some(tokens_out),
+            ..Default::default()
         })
     }
 }

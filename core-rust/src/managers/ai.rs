@@ -92,6 +92,10 @@ pub struct AiManager {
     /// cancel_task) 호출 시 즉시 실행 X → pending 으로 등록. 옛 TS ai-manager.ts approval flow 1:1.
     /// 미박힘 시 모든 도구 즉시 실행 (현재 default — 회귀 안전).
     dispatcher: Option<Arc<ToolDispatcher>>,
+    /// ConversationManager (옵션) — CLI session resume 위해 직접 참조. 박혀있고 model 이 `cli-` 로
+    /// 시작 + opts.conversation_id 박혀있으면 자동 resume_session_id 주입 + 첫 응답의 session_id
+    /// 영속화. 옛 TS ai-manager.ts:914-924 1:1.
+    conversation: Option<Arc<ConversationManager>>,
 }
 
 impl AiManager {
@@ -109,6 +113,7 @@ impl AiManager {
             history_resolver: None,
             cost: None,
             dispatcher: None,
+            conversation: None,
         }
     }
 
@@ -116,6 +121,13 @@ impl AiManager {
     /// schedule_task / cancel_task) 활성. cron agent 모드는 우회 (server-side 실행).
     pub fn with_tool_dispatcher(mut self, dispatcher: Arc<ToolDispatcher>) -> Self {
         self.dispatcher = Some(dispatcher);
+        self
+    }
+
+    /// ConversationManager 박은 채로 부팅 — CLI session resume 활성 (model 이 `cli-` 로 시작 + 대화
+    /// ID 박혀있을 때). 옛 TS getCliSession / setCliSession 1:1.
+    pub fn with_conversation_manager(mut self, conversation: Arc<ConversationManager>) -> Self {
+        self.conversation = Some(conversation);
         self
     }
 
@@ -274,13 +286,66 @@ impl AiManager {
         // 옛 TS `turnCallSet` 1:1.
         let mut turn_call_set: HashSet<String>;
 
+        // CLI session resume — model 이 `cli-` 로 시작 + 대화 ID 박혀있으면 DB 에서 직전 session_id 조회.
+        // 옛 TS ai-manager.ts:914-924 1:1. 모델 바뀌면 None 반환되어 새 세션으로 시작 (DB 조건절).
+        let model_for_session = effective_opts
+            .model
+            .clone()
+            .or_else(|| ai_opts.model.clone())
+            .unwrap_or_else(|| self.llm.get_model_id());
+        let conv_id_for_session = ai_opts.conversation_id.clone();
+        if let (Some(conv_mgr), Some(conv_id)) = (&self.conversation, &conv_id_for_session) {
+            if model_for_session.starts_with("cli-") {
+                if let Some(sess) = conv_mgr.get_cli_session(conv_id, &model_for_session) {
+                    self.log.info(&format!(
+                        "[AiManager] CLI session resume: conv={} model={} session_id={}",
+                        conv_id, model_for_session, sess
+                    ));
+                    effective_opts.cli_resume_session_id = Some(sess);
+                }
+            }
+        }
+
         // 첫 turn user prompt — plan_mode hint prefix 자동 주입 (옛 TS promptForLlm 첫 turn 분기 1:1).
         let prompt_with_hint: String = match plan_mode::prompt_hint(ai_opts.plan_mode) {
             Some(hint) => format!("{}\n\n{}", hint, prompt),
             None => prompt.to_string(),
         };
 
+        // OpenAI Responses API previous_response_id — 멀티턴 토큰 절감.
+        // 첫 turn 엔 effective_opts.previous_response_id (사용자 전달 값) 사용. 이후 turn 매번 갱신.
+        let mut current_response_id: Option<String> = effective_opts.previous_response_id.clone();
+
         for turn in 0..max_turns {
+            // Cost budget guard — turn 0 시작 직전에만 체크 (옛 TS ai-manager.ts:1242-1248 1:1).
+            // 한도 초과 시 LLM 호출 자체 차단 → 토큰 0 + 비용 0 으로 안전 종료.
+            // CostManager 박혀있을 때만 작동 — 미박힘 시 한도 무제한 (회귀 안전).
+            if turn == 0 {
+                if let Some(cost) = &self.cost {
+                    let check = cost.check_budget();
+                    if !check.within_budget {
+                        let reason = check
+                            .reason
+                            .clone()
+                            .unwrap_or_else(|| "비용 한도 초과".to_string());
+                        self.log.warn(&format!(
+                            "[AiManager] 비용 한도 초과 — LLM 호출 차단: {}",
+                            reason
+                        ));
+                        return Ok(AiResponse {
+                            reply: String::new(),
+                            blocks: Vec::new(),
+                            executed_actions: Vec::new(),
+                            suggestions: Vec::new(),
+                            pending_actions: Vec::new(),
+                            error: Some(format!("비용 한도 초과: {}", reason)),
+                            model_id: Some(last_model_id.clone()),
+                            cost_usd: Some(0.0),
+                        });
+                    }
+                }
+            }
+
             // Dynamic temperature — toolExchanges 비어있으면 (첫 turn 또는 도구 호출 없음) 0.2,
             // 쌓여있으면 (요약·해설 turn) 0.85. 옛 TS 1:1.
             let dynamic_temp = if prior_results.is_empty() {
@@ -290,6 +355,9 @@ impl AiManager {
             };
             let mut turn_opts = effective_opts.clone();
             turn_opts.temperature = Some(dynamic_temp);
+            // previousResponseId per turn — 첫 turn 부터 갱신되며 매 turn 동일하게 다음 turn 으로 전달.
+            // 옛 TS ai-manager.ts:1213 1:1.
+            turn_opts.previous_response_id = current_response_id.clone();
 
             // 첫 turn 만 prompt hint prefix. 이후 turn 은 prompt 그대로 (옛 TS 와 동일).
             let llm_prompt: &str = if prior_results.is_empty() {
@@ -306,6 +374,30 @@ impl AiManager {
             last_model_id = response.model_id.clone();
             if let Some(c) = response.cost_usd {
                 total_cost += c;
+            }
+
+            // CLI session_id 영속화 — 어댑터가 첫 turn 에서 잡은 session_id 를 DB 에 저장.
+            // 옛 TS onCliSessionId 콜백 1:1. ConversationManager 박혀있고 model 이 cli- 면 작동.
+            if let (Some(conv_mgr), Some(conv_id), Some(sid)) = (
+                &self.conversation,
+                &conv_id_for_session,
+                &response.cli_session_id,
+            ) {
+                if model_for_session.starts_with("cli-") && !sid.is_empty() {
+                    conv_mgr.set_cli_session(conv_id, sid, &model_for_session);
+                    self.log.info(&format!(
+                        "[AiManager] CLI session_id 영속화: conv={} model={} session_id={}",
+                        conv_id, model_for_session, sid
+                    ));
+                }
+            }
+
+            // OpenAI Responses API previous_response_id — 다음 turn 에 server-side history 재사용.
+            // 옛 TS ai-manager.ts:1258 1:1 (`if (responseId) currentResponseId = responseId;`).
+            if let Some(rid) = &response.response_id {
+                if !rid.is_empty() {
+                    current_response_id = Some(rid.clone());
+                }
             }
 
             // AI 미개입 cross-call hook — LLM 응답 받을 때마다 자동 비용 누적
@@ -734,6 +826,7 @@ mod tests {
                 cost_usd: Some(0.0),
                 tokens_in: Some(0),
                 tokens_out: Some(0),
+                ..Default::default()
             })
         }
     }
@@ -974,5 +1067,148 @@ mod tests {
         // 파싱 실패 시 false (보수적)
         assert!(!is_past_iso("not-iso"));
         assert!(!is_past_iso(""));
+    }
+
+    #[tokio::test]
+    async fn cost_budget_guard_blocks_when_exceeded() {
+        // CostManager 박은 채로 한도 초과 상태 만든 뒤 process_with_tools 호출 시 LLM 호출 차단 확인.
+        use crate::adapters::database::SqliteDatabaseAdapter;
+        use crate::adapters::vault::SqliteVaultAdapter;
+        use crate::managers::cost::{CostBudget, CostManager};
+        use crate::ports::IVaultPort;
+
+        let db: Arc<SqliteDatabaseAdapter> =
+            Arc::new(SqliteDatabaseAdapter::new_in_memory().unwrap());
+        let vault: Arc<dyn IVaultPort> = Arc::new(SqliteVaultAdapter::new_in_memory().unwrap());
+        let cost = Arc::new(CostManager::new(db, vault));
+        let budget = CostBudget {
+            daily_usd: 1.0,
+            monthly_usd: 30.0,
+            daily_calls: 100,
+            monthly_calls: 1000,
+            alert_at_percent: 80,
+        };
+        cost.set_budget(&budget);
+        // 한도 초과 — daily USD
+        cost.record("m", 100, 100, 0, 5.0, None);
+
+        let llm: Arc<dyn ILlmPort> = Arc::new(StubLlmAdapter::new("stub"));
+        let tools = Arc::new(ToolManager::new());
+        let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
+        let mgr = AiManager::new(llm, tools, log).with_cost_manager(cost);
+
+        let response = mgr
+            .process_with_tools_opts(
+                "hi",
+                &[],
+                &LlmCallOpts::default(),
+                &AiRequestOpts::default(),
+            )
+            .await
+            .unwrap();
+        // 차단됨 — error 메시지 포함, executed_actions 0
+        assert!(response.error.is_some());
+        assert!(response.error.unwrap().contains("비용 한도 초과"));
+        assert_eq!(response.executed_actions.len(), 0);
+        assert_eq!(response.cost_usd, Some(0.0)); // 호출 안 했으므로 비용 0
+    }
+
+    /// CLI session resume 검증용 — 첫 호출 시 cli_session_id 발급, 이후 호출 시 cli_resume_session_id
+    /// 가 들어왔는지 캡처.
+    struct CliSessionMockLlm {
+        model_id: String,
+        emit_session_id: String,
+        captured_resume: StdMutex<Option<String>>,
+    }
+
+    #[async_trait::async_trait]
+    impl ILlmPort for CliSessionMockLlm {
+        fn get_model_id(&self) -> String {
+            self.model_id.clone()
+        }
+        async fn ask_text(
+            &self,
+            _prompt: &str,
+            _opts: &LlmCallOpts,
+        ) -> InfraResult<LlmTextResponse> {
+            Ok(LlmTextResponse {
+                text: String::new(),
+                model_id: self.model_id.clone(),
+                cost_usd: Some(0.0),
+                tokens_in: Some(0),
+                tokens_out: Some(0),
+            })
+        }
+        async fn ask_with_tools(
+            &self,
+            _prompt: &str,
+            _tools: &[ToolDefinition],
+            _prior_results: &[ToolResult],
+            opts: &LlmCallOpts,
+        ) -> InfraResult<LlmToolResponse> {
+            // resume 값 캡처
+            *self.captured_resume.lock().unwrap() = opts.cli_resume_session_id.clone();
+            Ok(LlmToolResponse {
+                text: "ok".to_string(),
+                tool_calls: Vec::new(),
+                model_id: self.model_id.clone(),
+                cli_session_id: Some(self.emit_session_id.clone()),
+                ..Default::default()
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn cli_session_resume_persists_and_loads() {
+        // model 이 cli- 로 시작 + conversation_id 박혀있을 때:
+        // 첫 호출 — cli_session_id 캡처 → ConversationManager 에 저장
+        // 두 번째 호출 — DB 의 session_id 가 opts.cli_resume_session_id 로 주입
+        use crate::adapters::database::SqliteDatabaseAdapter;
+        use crate::managers::conversation::ConversationManager;
+        use crate::ports::IDatabasePort;
+
+        let _g = crate::utils::shared_test_lock();
+        let db: Arc<SqliteDatabaseAdapter> =
+            Arc::new(SqliteDatabaseAdapter::new_in_memory().unwrap());
+        let conv_mgr = Arc::new(ConversationManager::new(
+            db.clone() as Arc<dyn IDatabasePort>,
+        ));
+        // 대화 row 미리 생성 — set_cli_session 이 UPDATE 라 row 가 존재해야 함.
+        conv_mgr
+            .save_sync("admin", "conv-1", "test", &serde_json::json!([]), None)
+            .unwrap();
+
+        let llm = Arc::new(CliSessionMockLlm {
+            model_id: "cli-claude-code".to_string(),
+            emit_session_id: "sess-uuid-abc".to_string(),
+            captured_resume: StdMutex::new(None),
+        });
+        let llm_arc: Arc<dyn ILlmPort> = llm.clone();
+        let tools = Arc::new(ToolManager::new());
+        let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
+        let mgr = AiManager::new(llm_arc, tools, log)
+            .with_conversation_manager(conv_mgr.clone());
+
+        let ai_opts = AiRequestOpts {
+            conversation_id: Some("conv-1".to_string()),
+            ..Default::default()
+        };
+
+        // 첫 호출 — resume 미박힘 (DB 비어있음)
+        mgr.process_with_tools_opts("hi", &[], &LlmCallOpts::default(), &ai_opts)
+            .await
+            .unwrap();
+        assert!(llm.captured_resume.lock().unwrap().is_none());
+
+        // DB 에 session_id 영속화 됐는지 직접 확인
+        let saved = conv_mgr.get_cli_session("conv-1", "cli-claude-code");
+        assert_eq!(saved.as_deref(), Some("sess-uuid-abc"));
+
+        // 두 번째 호출 — resume 박힘
+        mgr.process_with_tools_opts("hi 2", &[], &LlmCallOpts::default(), &ai_opts)
+            .await
+            .unwrap();
+        let captured = llm.captured_resume.lock().unwrap().clone();
+        assert_eq!(captured.as_deref(), Some("sess-uuid-abc"));
     }
 }

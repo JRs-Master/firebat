@@ -59,6 +59,7 @@ impl ILlmPort for StubLlmAdapter {
             cost_usd: Some(0.0),
             tokens_in: Some(prompt.len() as i64),
             tokens_out: Some(0),
+            ..Default::default()
         })
     }
 }

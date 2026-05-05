@@ -625,6 +625,14 @@ pub struct LlmCallOpts {
     /// 대화 ID — HistoryResolver 가 recent N 메시지 조회. 미박힘 시 history 컨텍스트 비활성.
     #[serde(rename = "conversationId", default, skip_serializing_if = "Option::is_none")]
     pub conversation_id: Option<String>,
+    /// CLI 모드 (Claude Code / Codex / Gemini CLI) 의 resume session_id — 옛 TS `cliResumeSessionId` 1:1.
+    /// 박혀있으면 어댑터가 `--resume <id>` / `exec resume <id>` / `--resume <uuid>` 로 cold spawn.
+    #[serde(rename = "cliResumeSessionId", default, skip_serializing_if = "Option::is_none")]
+    pub cli_resume_session_id: Option<String>,
+    /// OpenAI Responses API 의 previous_response_id — 서버 history persistence (멀티턴 토큰 절감).
+    /// 옛 TS `previousResponseId` 1:1.
+    #[serde(rename = "previousResponseId", default, skip_serializing_if = "Option::is_none")]
+    pub previous_response_id: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -640,13 +648,13 @@ pub struct LlmTextResponse {
     pub tokens_out: Option<i64>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct LlmToolResponse {
     #[serde(default)]
     pub text: String,
     #[serde(default, rename = "toolCalls")]
     pub tool_calls: Vec<ToolCall>,
-    #[serde(rename = "modelId")]
+    #[serde(rename = "modelId", default)]
     pub model_id: String,
     #[serde(rename = "costUsd", default, skip_serializing_if = "Option::is_none")]
     pub cost_usd: Option<f64>,
@@ -654,6 +662,14 @@ pub struct LlmToolResponse {
     pub tokens_in: Option<i64>,
     #[serde(rename = "tokensOut", default, skip_serializing_if = "Option::is_none")]
     pub tokens_out: Option<i64>,
+    /// CLI 모드 어댑터가 첫 turn 에서 잡은 session_id — 옛 TS `onCliSessionId` 콜백 패턴 대신
+    /// response 에 박아 callee (AiManager) 가 직접 DB 영속화. 다음 turn `cli_resume_session_id` 으로 사용.
+    #[serde(rename = "cliSessionId", default, skip_serializing_if = "Option::is_none")]
+    pub cli_session_id: Option<String>,
+    /// OpenAI Responses API 가 발급한 response_id — 다음 turn `previous_response_id` 으로 재사용.
+    /// 옛 TS `responseId` 1:1.
+    #[serde(rename = "responseId", default, skip_serializing_if = "Option::is_none")]
+    pub response_id: Option<String>,
 }
 
 /// 플랜모드 — 옛 TS `AiRequestOpts.planMode` 1:1.
