@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { X, Save, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send, Trash2, User, RotateCcw, Cpu } from 'lucide-react';
 import { AI_MODELS, THINKING_LEVELS } from '../types';
 import { readSetting } from '../hooks/settings-manager';
-import { tryUnwrapJson } from '../../../core/utils/json-normalize';
+import { tryUnwrapJson } from '../../../lib/json-normalize';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog } from './Dialog';

@@ -2,7 +2,7 @@ import { notFound, redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { getCore } from '../../../lib/singleton';
 import { ComponentRenderer } from './components';
-import { BASE_URL } from '../../../infra/config';
+import { BASE_URL } from '../../../lib/base-url';
 import { headers } from 'next/headers';
 import { estimateReadingTime } from '../reading-time';
 import { CmsBreadcrumb } from '../breadcrumb';

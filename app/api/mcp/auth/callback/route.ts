@@ -7,7 +7,7 @@
 import { NextRequest } from 'next/server';
 import { readOAuthKeys, getServiceConfig, getOrigin } from '../route';
 import { requireAuth, isAuthError } from '../../../../../lib/auth-guard';
-import { DEFAULT_OAUTH_TOKEN_EXPIRY_SECONDS } from '../../../../../infra/config';
+import { DEFAULT_OAUTH_TOKEN_EXPIRY_SECONDS } from '../../../../../lib/config';
 
 function getFs(): typeof import('fs') { return require('fs'); }
 function getPath(): typeof import('path') { return require('path'); }

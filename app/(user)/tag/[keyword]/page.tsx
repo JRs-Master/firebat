@@ -11,7 +11,7 @@ import { getCore } from '../../../../lib/singleton';
 import { CmsPageList, CmsPagination } from '../../cms-page-list';
 import { normalizeTag } from '../../../../lib/tag-utils';
 import type { Metadata } from 'next';
-import type { PageListItem } from '../../../../core/ports';
+import type { PageListItem } from '../../../../lib/types/firebat-types';
 
 export const dynamic = 'force-dynamic';
 

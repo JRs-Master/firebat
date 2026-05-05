@@ -5,7 +5,7 @@ import { CmsFooter } from './cms-footer';
 import { CmsAdSlot } from './cms-ad-slot';
 import { CmsReadingProgress } from './cms-reading-progress';
 import { CmsSidebar } from './cms-sidebar';
-import { BASE_URL } from '../../infra/config';
+import { BASE_URL } from '../../lib/base-url';
 import { tokensToCss } from '../../lib/design-tokens';
 import { headers } from 'next/headers';
 import type { LayoutMode } from '../../lib/cms-layout';

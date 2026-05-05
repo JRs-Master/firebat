@@ -8,7 +8,7 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { FirebatCore } from '../core/index';
+import type { FirebatCore } from '../lib/types/firebat-types';
 
 // fs/path는 Turbopack NFT 추적 방지를 위해 함수 내부에서 동적 로드
 let _fs: typeof import('fs') | null = null;

@@ -11,7 +11,7 @@ import { getCore } from '../../../lib/singleton';
 import { CmsPageList, CmsPagination } from '../cms-page-list';
 import { CmsBreadcrumb } from '../breadcrumb';
 import { headers } from 'next/headers';
-import { BASE_URL } from '../../../infra/config';
+import { BASE_URL } from '../../../lib/base-url';
 
 async function resolveBaseUrl(seoSiteUrl?: string): Promise<string> {
   if (seoSiteUrl) return seoSiteUrl.replace(/\/$/, '');

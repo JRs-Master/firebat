@@ -1,0 +1,75 @@
+[package]
+name = "firebat-core"
+version = "0.0.1"
+edition = "2021"
+description = "Firebat Core — managers + services + ports (hexagonal core, infra 의존 0건)"
+license = "AGPL-3.0-or-later"
+authors = ["JRs-Master"]
+
+# Phase B-4 박힘 — managers + services + ports trait 의 단일 lib crate.
+# infra 가 ports trait 을 implement → 의존 방향 infra → core 일방향.
+[lib]
+name = "firebat_core"
+path = "src/lib.rs"
+
+[dependencies]
+# proto / gRPC — services 가 server impl 제공
+tonic = "0.12"
+prost = "0.13"
+
+# async / 비동기 런타임
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs", "process", "io-util", "time"] }
+async-trait = "0.1"
+futures-util = "0.3"
+
+# 직렬화
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 시간 / 타임존 / cron
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.9"
+cron = "0.12"
+
+# 보안
+rand = "0.8"        # 토큰 random
+subtle = "2"        # timing-safe 비교
+
+# HTTP — services (network / telegram) 가 외부 HTTP 직접 호출
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "multipart"] }
+
+# 텍스트 / 인코딩
+regex = "1"
+base64 = "0.22"
+url = "2"
+sha1 = "0.10"       # ConversationManager cache 무효화 키
+sha2 = "0.10"       # tool_cache cache key
+hex = "0.4"
+
+# 에러 / 로그
+anyhow = "1"
+tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
+
+# DB — port 안에서 raw SQL escape hatch (`with_conn`) 노출 위함
+# 실 어댑터 구현은 infra crate. core 는 trait + 일부 도메인 메서드 시그니처만.
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Embedder candle — managers/ai 안의 검색 index 가 embedder port 사용. 어댑터는 infra.
+# core 는 trait 만 의존이라 candle 자체 의존성 없음. 단 옛 infra/embedder 가 옮겨오면서 일시 의존.
+# Phase B-5 cleanup 시 candle 을 infra crate 전속으로 옮길 수 있음.
+
+[features]
+# infra-tests — concrete adapter (firebat-infra) 의존 inline test 활성. 평소엔 비활성 (cyclic dev-dep
+# 회피). 회귀 검증은 `infra/tests/*.rs` integration test 패턴 권장.
+infra-tests = []
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["test-util", "rt-multi-thread", "macros", "fs"] }
+
+[build-dependencies]
+tonic-build = "0.12"
+protoc-bin-vendored = "3"
+
+# [profile.*] — root Cargo.toml workspace 의 profile 사용.

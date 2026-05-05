@@ -1,5 +1,5 @@
 import { getCore } from '../../lib/singleton';
-import { BASE_URL } from '../../infra/config';
+import { BASE_URL } from '../../lib/base-url';
 import { CmsPageList, CmsPagination } from './cms-page-list';
 import type { Metadata } from 'next';
 

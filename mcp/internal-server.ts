@@ -8,7 +8,7 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { FirebatCore } from '../core/index';
+import type { FirebatCore } from '../lib/types/firebat-types';
 import { IMAGE_GEN_DESCRIPTION } from '../lib/image-gen-prompt';
 import { CDN_LIBRARIES } from '../lib/cdn-libraries';
 
@@ -552,7 +552,7 @@ inputMap: {"url":"$prev.url"} 형태로 매핑 가능.
 사용자에게 결과 보여줄 때는 마지막을 LLM_TRANSFORM으로 끝내라.`,
     { pipeline: z.array(z.any()).describe('파이프라인 스텝 배열') },
     async ({ pipeline }) => {
-      const r = await core.runTask(pipeline as import('../core/ports').PipelineStep[]);
+      const r = await core.runTask(pipeline as import('../lib/types/firebat-types').PipelineStep[]);
       return { content: [{ type: 'text', text: JSON.stringify(r.success ? { success: true, data: r.data } : { error: r.error }) }] };
     },
   );

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from './singleton';
-import type { AuthSession } from '../core/ports';
+import type { AuthSession } from './types/firebat-types';
 
 /**
  * API Route 인증 가드

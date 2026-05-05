@@ -1,16 +1,17 @@
-# Cargo workspace root — Phase D 박힘.
+# Cargo workspace root — Phase B-4 cutover (TS 폐기 후 Rust 단일).
 #
-# Two Rust crates:
-#   - core-rust/ — Rust Core (gRPC server + 21 매니저 + 17 어댑터)
-#   - src-tauri/ — Tauri shell (self-installed distribution, Rust Core embed)
+# Three Rust crates (hexagonal — 의존 단방향 infra → core, src-tauri → infra):
+#   - core/    — managers + services + ports trait (infra 의존 0건)
+#   - infra/   — adapters + LLM + image_gen + main binary (firebat-core)
+#   - src-tauri/ — Tauri shell (self-installed distribution, infra crate embed)
 #
-# Self-hosted (Phase C Docker) 빌드 시: `cargo build --release -p firebat-core` (bin 또는 lib)
+# Self-hosted (Phase C Docker) 빌드 시: `cargo build --release -p firebat-infra --bin firebat-core`
 # Self-installed (Phase D Tauri) 빌드 시: `cargo tauri build` 또는 `npm run tauri:build`
-#   (Tauri CLI 가 src-tauri/ 의 Cargo.toml 빌드 + frontend bundle 동봉)
 
 [workspace]
 members = [
-    "core-rust",
+    "core",
+    "infra",
     "src-tauri",
 ]
 resolver = "2"

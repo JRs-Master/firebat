@@ -1,0 +1,85 @@
+[package]
+name = "firebat-infra"
+version = "0.0.1"
+edition = "2021"
+description = "Firebat Infra — adapters + LLM + image_gen (port 구현 + main binary)"
+license = "AGPL-3.0-or-later"
+authors = ["JRs-Master"]
+
+# infra crate 가 binary (firebat-core) 와 lib 둘 다 build target.
+# Phase D self-installed 시 Tauri 안에 lib 으로 embed.
+# Phase C self-hosted 시 [[bin]] 으로 단일 binary build.
+[lib]
+name = "firebat_infra"
+crate-type = ["lib", "staticlib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "firebat-core"
+path = "src/main.rs"
+
+[dependencies]
+# core trait + 도메인 타입 의존 (단방향)
+firebat-core = { path = "../core" }
+
+# proto / gRPC client/server
+tonic = "0.12"
+prost = "0.13"
+
+# async / 비동기 런타임
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs", "process", "io-util", "time"] }
+async-trait = "0.1"
+futures-util = "0.3"
+
+# 직렬화
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 시간 / 타임존 / cron
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.9"
+cron = "0.12"
+
+# DB / Vault — rusqlite (bundled = 정적 링크, OS 의 sqlite3 없어도 동작)
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# 보안
+rand = "0.8"
+subtle = "2"
+
+# 네트워크 / HTTP — LLM API 호출 + image gen
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "multipart"] }
+url = "2"
+base64 = "0.22"
+
+# 텍스트 / 인코딩
+regex = "1"
+sha1 = "0.10"
+sha2 = "0.10"
+hex = "0.4"
+
+# 에러 / 로그
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+uuid = { version = "1", features = ["v4"] }
+
+# 이미지 — image-rs + fast_image_resize + blurhash (옛 TS sharp 1:1)
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "rayon"] }
+fast_image_resize = { version = "5", features = ["image"] }
+blurhash = "0.2"
+
+# 임베딩 — candle pure Rust ML (E5 multilingual). cpu only.
+candle-core = { version = "0.8", default-features = false }
+candle-nn = { version = "0.8", default-features = false }
+candle-transformers = { version = "0.8", default-features = false }
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+hf-hub = { version = "0.3", default-features = false, features = ["online", "tokio"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["test-util", "rt-multi-thread", "macros", "fs"] }
+
+[build-dependencies]
+tonic-build = "0.12"
+protoc-bin-vendored = "3"

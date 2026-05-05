@@ -29,8 +29,10 @@ tauri-plugin-shell = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-process = "2"
 
-# Rust Core embed — workspace member 활용 (../core-rust)
-firebat-core = { path = "../core-rust" }
+# Rust Core embed — Phase B-4 cutover 후 infra crate 가 main + adapters 보유.
+# Tauri 가 in-process embed 하려면 infra crate 필요 (managers + adapters 둘 다).
+firebat-infra = { path = "../infra" }
+firebat-core = { path = "../core" }
 
 # 표준 의존성
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "process", "fs"] }

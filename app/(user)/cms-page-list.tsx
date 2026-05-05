@@ -9,7 +9,7 @@
  *  - compact: 매우 압축 (제목 + 날짜만, 1줄 truncate)
  *  - magazine: 잡지 카드 (featured image + 제목 + excerpt + 메타). 첫 카드는 큰 hero, 나머지 2열.
  */
-import type { PageListItem } from '../../core/ports';
+import type { PageListItem } from '../../lib/types/firebat-types';
 
 export type PageCardVariant = 'list' | 'grid' | 'compact' | 'magazine';
 

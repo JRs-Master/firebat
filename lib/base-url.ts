@@ -1,8 +1,15 @@
 import type { NextRequest } from 'next/server';
-import { BASE_URL } from '../infra/config';
 
 /**
- * 런타임 Base URL 해석
+ * Frontend / API route 의 Base URL 폴백 — 옛 `infra/config.ts` 의존성 제거 (Phase B-4 cutover).
+ *
+ * env 미설정 시 로컬 개발 default. 운영 환경에선 NEXT_PUBLIC_BASE_URL env 또는 nginx
+ * `x-forwarded-host` 로 자동 감지 (`getBaseUrl(req)` 우선 사용).
+ */
+export const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+
+/**
+ * 런타임 Base URL 해석.
  *
  * 우선순위:
  *   1. NEXT_PUBLIC_BASE_URL 환경변수 (명시 설정)

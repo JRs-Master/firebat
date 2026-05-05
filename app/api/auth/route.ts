@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../lib/auth-guard';
-import { SESSION_MAX_AGE_SECONDS } from '../../../infra/config';
+import { SESSION_MAX_AGE_SECONDS } from '../../../lib/config';
 import * as nodeCrypto from 'crypto';
 
 /** rate-limit key — IP 또는 fallback 'unknown'. proxy 뒤일 때 X-Forwarded-For 우선. */

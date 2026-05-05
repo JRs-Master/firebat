@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
-import type { FirebatCore } from '../../../../core';
+import type { FirebatCore } from '../../../../lib/types/firebat-types';
 
 // CLI 모드 (Claude Code 등) 는 초기 MCP 도구 로딩·멀티턴 도구 사용에 수분 소요 가능.
 // Next.js 기본 타임아웃으로 SSE 끊기는 것 방지.

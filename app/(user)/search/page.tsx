@@ -35,7 +35,7 @@ export default async function SearchPage({ searchParams }: Props) {
   const cms = core.getCmsSettings();
   const perPage = cms.layout.pageList.perPage;
 
-  let results: import('../../../core/ports').PageListItem[] = [];
+  let results: import('../../../lib/types/firebat-types').PageListItem[] = [];
   let tooShort = false;
   if (q.length >= 2) {
     const res = await core.searchPages(q, 200);

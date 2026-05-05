@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next';
 import { headers } from 'next/headers';
 import { getCore } from '../lib/singleton';
-import { BASE_URL } from '../infra/config';
+import { BASE_URL } from '../lib/base-url';
 
 /** 동적 robots.txt — SEO 모듈 설정에서 내용 로드.
  *  Next.js metadata route 는 req 객체 없지만 headers() API 로 요청 host 접근 가능. */
