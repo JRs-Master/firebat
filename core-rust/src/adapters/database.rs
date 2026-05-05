@@ -10,7 +10,7 @@ use std::sync::Mutex;
 
 use crate::ports::{
     ConversationEmbeddingMeta, ConversationEmbeddingRow, ConversationRecord, ConversationSummary,
-    IDatabasePort, MediaUsageEntry, PageListItem, PageRecord,
+    IDatabasePort, InfraResult, MediaUsageEntry, PageListItem, PageRecord,
 };
 
 pub struct SqliteDatabaseAdapter {
@@ -122,6 +122,24 @@ impl SqliteDatabaseAdapter {
             );
             CREATE INDEX IF NOT EXISTS idx_conv_embeddings_owner
                 ON conversation_embeddings(owner, created_at DESC);
+
+            -- 공유된 대화 (turn 또는 full) — 외부 URL 으로 공유 가능 (옛 TS shared_conversations 1:1).
+            -- TTL 기반 자동 만료 + dedup_key 기반 재사용 (같은 dedup → 같은 share slug 재발급).
+            CREATE TABLE IF NOT EXISTS shared_conversations (
+                slug            TEXT PRIMARY KEY,
+                type            TEXT NOT NULL,        -- 'turn' | 'full'
+                title           TEXT NOT NULL,
+                messages        TEXT NOT NULL,        -- JSON array
+                owner           TEXT,
+                source_conv_id  TEXT,
+                created_at      INTEGER NOT NULL,
+                expires_at      INTEGER NOT NULL,
+                dedup_key       TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_shares_dedup
+                ON shared_conversations(dedup_key, expires_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_shares_expires
+                ON shared_conversations(expires_at);
             "#,
         )
         .map_err(|e| format!("DB schema 초기화 실패: {e}"))
@@ -735,6 +753,131 @@ impl IDatabasePort for SqliteDatabaseAdapter {
             })
             .collect()
     }
+
+    fn create_share(
+        &self,
+        input: &crate::ports::CreateShareInput,
+    ) -> InfraResult<crate::ports::CreateShareResult> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| format!("DB lock 실패: {e}"))?;
+        let now = chrono::Utc::now().timestamp_millis();
+        let expires_at = now + input.ttl_ms;
+
+        // dedup_key 박혀있고 유효 share 존재 → 재사용 (옛 TS 1:1)
+        if let Some(dedup) = &input.dedup_key {
+            let existing: Option<(String, i64)> = conn
+                .query_row(
+                    "SELECT slug, expires_at FROM shared_conversations
+                     WHERE dedup_key = ?1 AND expires_at > ?2
+                     ORDER BY created_at DESC LIMIT 1",
+                    params![dedup, now],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .ok();
+            if let Some((slug, exp)) = existing {
+                return Ok(crate::ports::CreateShareResult {
+                    slug,
+                    expires_at: exp,
+                    reused: true,
+                });
+            }
+        }
+
+        // 신규 slug 발급 — 8자 base36 random. 5회까지 충돌 재시도 (옛 TS 1:1).
+        let messages_json = serde_json::to_string(&input.messages)
+            .map_err(|e| format!("messages 직렬화 실패: {e}"))?;
+        for _attempt in 0..5 {
+            use rand::RngCore;
+            let mut buf = [0u8; 5];
+            rand::thread_rng().fill_bytes(&mut buf);
+            // 5바이트 → 10 hex char → 8 char prefix
+            let slug = hex::encode(buf);
+            let slug = &slug[..8];
+
+            let result = conn.execute(
+                "INSERT INTO shared_conversations
+                 (slug, type, title, messages, owner, source_conv_id, created_at, expires_at, dedup_key)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    slug,
+                    input.share_type,
+                    input.title,
+                    messages_json,
+                    input.owner,
+                    input.source_conv_id,
+                    now,
+                    expires_at,
+                    input.dedup_key
+                ],
+            );
+            match result {
+                Ok(_) => {
+                    return Ok(crate::ports::CreateShareResult {
+                        slug: slug.to_string(),
+                        expires_at,
+                        reused: false,
+                    });
+                }
+                Err(rusqlite::Error::SqliteFailure(err, _))
+                    if err.code == rusqlite::ErrorCode::ConstraintViolation =>
+                {
+                    continue; // slug 충돌 → 재시도
+                }
+                Err(e) => return Err(format!("create_share 실패: {e}")),
+            }
+        }
+        Err("slug 충돌 5회 — 재시도 포기".to_string())
+    }
+
+    fn get_share(&self, slug: &str) -> Option<crate::ports::SharedConversationRecord> {
+        let conn = self.conn.lock().ok()?;
+        let row: (String, String, String, String, i64, i64) = conn
+            .query_row(
+                "SELECT slug, type, title, messages, created_at, expires_at
+                 FROM shared_conversations WHERE slug = ?1",
+                params![slug],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .ok()?;
+        // 만료 검사 — 옛 TS 1:1, 만료면 None (404 처리용).
+        let now = chrono::Utc::now().timestamp_millis();
+        if row.5 < now {
+            return None;
+        }
+        let messages: Vec<serde_json::Value> = serde_json::from_str(&row.3).unwrap_or_default();
+        Some(crate::ports::SharedConversationRecord {
+            slug: row.0,
+            share_type: row.1,
+            title: row.2,
+            messages,
+            created_at: row.4,
+            expires_at: row.5,
+        })
+    }
+
+    fn cleanup_expired_shares(&self) -> i64 {
+        let Ok(conn) = self.conn.lock() else {
+            return 0;
+        };
+        let now = chrono::Utc::now().timestamp_millis();
+        conn.execute(
+            "DELETE FROM shared_conversations WHERE expires_at < ?1",
+            params![now],
+        )
+        .map(|n| n as i64)
+        .unwrap_or(0)
+    }
 }
 
 #[cfg(test)]
@@ -810,5 +953,108 @@ mod tests {
         assert_eq!(after.status, "published");
         assert!(after.spec.contains("v2"));
         assert_ne!(before.spec, after.spec);
+    }
+
+    #[test]
+    fn create_share_basic() {
+        let db = SqliteDatabaseAdapter::new_in_memory().unwrap();
+        let input = crate::ports::CreateShareInput {
+            share_type: "turn".to_string(),
+            title: "테스트 공유".to_string(),
+            messages: vec![serde_json::json!({"id": "u-1", "content": "test"})],
+            owner: Some("admin".to_string()),
+            source_conv_id: Some("conv-1".to_string()),
+            ttl_ms: 3600 * 1000, // 1시간
+            dedup_key: None,
+        };
+        let result = db.create_share(&input).unwrap();
+        assert_eq!(result.slug.len(), 8);
+        assert!(!result.reused);
+        assert!(result.expires_at > 0);
+
+        let retrieved = db.get_share(&result.slug).unwrap();
+        assert_eq!(retrieved.title, "테스트 공유");
+        assert_eq!(retrieved.share_type, "turn");
+        assert_eq!(retrieved.messages.len(), 1);
+    }
+
+    #[test]
+    fn create_share_dedup_reuses_existing() {
+        let db = SqliteDatabaseAdapter::new_in_memory().unwrap();
+        let input = crate::ports::CreateShareInput {
+            share_type: "full".to_string(),
+            title: "dedup test".to_string(),
+            messages: vec![],
+            owner: None,
+            source_conv_id: None,
+            ttl_ms: 3600 * 1000,
+            dedup_key: Some("conv-123:hash-abc".to_string()),
+        };
+        let r1 = db.create_share(&input).unwrap();
+        assert!(!r1.reused);
+
+        // 같은 dedup_key 재호출 → reused=true + 같은 slug
+        let r2 = db.create_share(&input).unwrap();
+        assert!(r2.reused);
+        assert_eq!(r1.slug, r2.slug);
+    }
+
+    #[test]
+    fn get_share_returns_none_for_expired() {
+        let db = SqliteDatabaseAdapter::new_in_memory().unwrap();
+        let input = crate::ports::CreateShareInput {
+            share_type: "turn".to_string(),
+            title: "만료될 공유".to_string(),
+            messages: vec![],
+            owner: None,
+            source_conv_id: None,
+            ttl_ms: -1, // 이미 만료
+            dedup_key: None,
+        };
+        let result = db.create_share(&input).unwrap();
+        // 만료된 share 는 get 시 None (옛 TS 1:1)
+        assert!(db.get_share(&result.slug).is_none());
+    }
+
+    #[test]
+    fn cleanup_expired_shares_removes_old() {
+        let db = SqliteDatabaseAdapter::new_in_memory().unwrap();
+        // 만료된 share 박음
+        db.create_share(&crate::ports::CreateShareInput {
+            share_type: "turn".to_string(),
+            title: "만료1".to_string(),
+            messages: vec![],
+            owner: None,
+            source_conv_id: None,
+            ttl_ms: -1000,
+            dedup_key: None,
+        })
+        .unwrap();
+        db.create_share(&crate::ports::CreateShareInput {
+            share_type: "turn".to_string(),
+            title: "만료2".to_string(),
+            messages: vec![],
+            owner: None,
+            source_conv_id: None,
+            ttl_ms: -1000,
+            dedup_key: None,
+        })
+        .unwrap();
+        // 유효 share 박음
+        let valid = db
+            .create_share(&crate::ports::CreateShareInput {
+                share_type: "turn".to_string(),
+                title: "유효".to_string(),
+                messages: vec![],
+                owner: None,
+                source_conv_id: None,
+                ttl_ms: 3600 * 1000,
+                dedup_key: None,
+            })
+            .unwrap();
+
+        let deleted = db.cleanup_expired_shares();
+        assert_eq!(deleted, 2);
+        assert!(db.get_share(&valid.slug).is_some()); // 유효 share 보존
     }
 }

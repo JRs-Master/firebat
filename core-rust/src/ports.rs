@@ -290,6 +290,58 @@ pub trait IDatabasePort: Send + Sync {
         owner: &str,
         cutoff_ms: i64,
     ) -> Vec<ConversationEmbeddingRow>;
+
+    // ────────────────────────────────────────────────────────────────────────
+    // 공유된 대화 (turn 또는 full) — 외부 URL 으로 공유 가능. 옛 TS shared_conversations 1:1.
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// 공유 생성 — slug 자동 발급. dedup_key 박혀있고 유효 share 존재 시 재사용 (reused=true).
+    /// 옛 TS createShare 1:1.
+    fn create_share(&self, input: &CreateShareInput) -> InfraResult<CreateShareResult>;
+
+    /// 공유 조회 — 만료 시 None 반환 (404 처리용). 옛 TS getShare 1:1.
+    fn get_share(&self, slug: &str) -> Option<SharedConversationRecord>;
+
+    /// 만료된 공유 정리 — 1시간마다 cron 에서 호출. 삭제된 row 수 반환. 옛 TS cleanupExpiredShares 1:1.
+    fn cleanup_expired_shares(&self) -> i64;
+}
+
+/// 공유 생성 인자 — 옛 TS `createShare(input)` 의 input 1:1.
+#[derive(Debug, Clone)]
+pub struct CreateShareInput {
+    /// 'turn' (한 turn 만) 또는 'full' (전체 대화).
+    pub share_type: String,
+    pub title: String,
+    pub messages: Vec<serde_json::Value>,
+    pub owner: Option<String>,
+    pub source_conv_id: Option<String>,
+    /// TTL milliseconds — now + ttl_ms 가 expires_at.
+    pub ttl_ms: i64,
+    /// 박혀있고 같은 dedup 의 유효 share 존재 시 재사용.
+    pub dedup_key: Option<String>,
+}
+
+/// 공유 생성 결과.
+#[derive(Debug, Clone)]
+pub struct CreateShareResult {
+    pub slug: String,
+    pub expires_at: i64,
+    /// dedup_key 매칭으로 기존 share 재사용된 경우 true.
+    pub reused: bool,
+}
+
+/// 공유 조회 결과 — 옛 TS getShare 의 data 1:1.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SharedConversationRecord {
+    pub slug: String,
+    #[serde(rename = "type")]
+    pub share_type: String,
+    pub title: String,
+    pub messages: Vec<serde_json::Value>,
+    #[serde(rename = "createdAt")]
+    pub created_at: i64,
+    #[serde(rename = "expiresAt")]
+    pub expires_at: i64,
 }
 
 /// 임베딩 sync 시 변경 감지용 — content_hash 비교만 필요.
