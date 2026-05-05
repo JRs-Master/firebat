@@ -11,3 +11,5 @@
 pub mod config;
 pub mod adapter;
 pub mod formats;
+pub mod component_registry;
+pub mod component_search_index;
