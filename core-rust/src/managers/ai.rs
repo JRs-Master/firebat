@@ -279,6 +279,8 @@ impl AiManager {
         let mut last_text = String::new();
         let mut last_model_id = self.llm.get_model_id();
         let mut total_cost: f64 = 0.0;
+        // 학습 로그용 turn 별 (calls, results) 페어 누적 — 옛 TS toolExchanges 1:1.
+        let mut tool_exchanges: Vec<(Vec<ToolCall>, Vec<ToolResult>)> = Vec::new();
         // cron agent 모드는 approval gate 우회 (UI 없는 server-side 자율 발행).
         let approval_enabled = self.dispatcher.is_some() && ai_opts.cron_agent.is_none();
 
@@ -637,6 +639,11 @@ impl AiManager {
             }
 
             // prior_results 누적 — 다음 turn 의 toolExchanges 로 LLM 에 전달.
+            // 학습 로그용 — turn 별 (calls, results) 페어 별도 보존.
+            let turn_calls: Vec<ToolCall> = turn_results.iter().map(|(c, _)| c.clone()).collect();
+            let turn_action_results: Vec<ToolResult> =
+                turn_results.iter().map(|(_, r)| r.clone()).collect();
+            tool_exchanges.push((turn_calls, turn_action_results));
             for (_call, action) in turn_results {
                 prior_results.push(action);
             }
@@ -668,6 +675,11 @@ impl AiManager {
             final_blocks.push(b);
         }
 
+        // Vertex AI 파인튜닝용 학습 데이터 기록 (옛 TS ai-manager.ts:1526 1:1).
+        // contents 형식: user → model(functionCall) → user(functionResponse) → ... → model(text).
+        // logger.info("[USER_AI_TRAINING] {...}") 출력 시 log adapter 가 별도 JSONL 파일로 분기.
+        self.training_log_contents(prompt, &tool_exchanges, &clean_reply);
+
         Ok(AiResponse {
             reply: clean_reply,
             blocks: final_blocks,
@@ -678,6 +690,82 @@ impl AiManager {
             model_id: Some(last_model_id),
             cost_usd: Some(total_cost),
         })
+    }
+
+    /// Vertex AI 파인튜닝 학습 데이터 기록 — 옛 TS `trainingLogContents` 1:1.
+    ///
+    /// contents 형식 (Gemini fine-tuning 호환):
+    /// `user → model(functionCall) → user(functionResponse) → ... → model(text)`
+    ///
+    /// 도구 결과는 `trim_tool_result` 로 2000자 cap (파인튜닝 토큰 비용 절감).
+    /// 실패는 무시 (서비스 영향 없음).
+    fn training_log_contents(
+        &self,
+        prompt: &str,
+        tool_exchanges: &[(Vec<ToolCall>, Vec<ToolResult>)],
+        final_reply: &str,
+    ) {
+        let mut contents: Vec<serde_json::Value> = Vec::new();
+
+        // 1. 사용자 프롬프트 (history 는 별도 batch 에서 추가 — 현재 process_with_tools_opts 가 아직
+        //    history 를 받지 않음. HistoryResolver 가 system_prompt 로 주입하는 구조라 학습 데이터엔 미포함)
+        contents.push(serde_json::json!({
+            "role": "user",
+            "parts": [{"text": prompt}],
+        }));
+
+        // 2. 멀티턴 도구 교환
+        for (calls, results) in tool_exchanges {
+            // model: functionCall parts
+            let model_parts: Vec<serde_json::Value> = calls
+                .iter()
+                .map(|tc| {
+                    serde_json::json!({
+                        "functionCall": {
+                            "name": tc.name,
+                            "args": tc.arguments,
+                        }
+                    })
+                })
+                .collect();
+            if !model_parts.is_empty() {
+                contents.push(serde_json::json!({
+                    "role": "model",
+                    "parts": model_parts,
+                }));
+            }
+            // user: functionResponse parts (trim 적용)
+            let response_parts: Vec<serde_json::Value> = results
+                .iter()
+                .map(|tr| {
+                    serde_json::json!({
+                        "functionResponse": {
+                            "name": tr.name,
+                            "response": crate::managers::ai::result_processor::trim_tool_result(&tr.result),
+                        }
+                    })
+                })
+                .collect();
+            if !response_parts.is_empty() {
+                contents.push(serde_json::json!({
+                    "role": "user",
+                    "parts": response_parts,
+                }));
+            }
+        }
+
+        // 3. 최종 텍스트 응답
+        if !final_reply.is_empty() {
+            contents.push(serde_json::json!({
+                "role": "model",
+                "parts": [{"text": final_reply}],
+            }));
+        }
+
+        let payload = serde_json::json!({"contents": contents});
+        if let Ok(json) = serde_json::to_string(&payload) {
+            self.log.info(&format!("[USER_AI_TRAINING] {}", json));
+        }
     }
 
     /// 도구 호출 dispatch — ToolManager 위임 (Step 2/3 기반).
@@ -1156,6 +1244,89 @@ mod tests {
                 ..Default::default()
             })
         }
+    }
+
+    /// 학습 로그 capture 용 — `[USER_AI_TRAINING]` prefix 가진 info 호출 캡처.
+    struct CapturingLog {
+        captured: StdMutex<Vec<String>>,
+    }
+
+    impl CapturingLog {
+        fn new() -> Self {
+            Self {
+                captured: StdMutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl crate::ports::ILogPort for CapturingLog {
+        fn info(&self, msg: &str) {
+            if msg.contains("[USER_AI_TRAINING]") {
+                self.captured.lock().unwrap().push(msg.to_string());
+            }
+        }
+        fn warn(&self, _msg: &str) {}
+        fn error(&self, _msg: &str) {}
+        fn debug(&self, _msg: &str) {}
+    }
+
+    #[tokio::test]
+    async fn training_log_emitted_with_prompt_and_reply() {
+        // Stub LLM 은 도구 호출 0 → 단순 prompt + reply 만 학습 로그에 박힘.
+        let llm: Arc<dyn ILlmPort> = Arc::new(StubLlmAdapter::new("stub"));
+        let tools = Arc::new(ToolManager::new());
+        let log = Arc::new(CapturingLog::new());
+        let log_clone = log.clone();
+        let mgr = AiManager::new(llm, tools, log_clone as Arc<dyn ILogPort>);
+
+        mgr.process_with_tools_opts(
+            "테스트 프롬프트",
+            &[],
+            &LlmCallOpts::default(),
+            &AiRequestOpts::default(),
+        )
+        .await
+        .unwrap();
+
+        let captured = log.captured.lock().unwrap();
+        assert_eq!(captured.len(), 1);
+        let msg = &captured[0];
+        assert!(msg.contains("[USER_AI_TRAINING]"));
+        assert!(msg.contains("\"role\":\"user\""));
+        assert!(msg.contains("테스트 프롬프트"));
+        assert!(msg.contains("\"role\":\"model\""));
+    }
+
+    #[tokio::test]
+    async fn training_log_includes_tool_exchanges() {
+        // ScriptedLlm 으로 도구 호출 시나리오 만들고 contents 에 functionCall + functionResponse 박힘 확인.
+        let scripted = vec![ToolCall {
+            id: "c1".to_string(),
+            name: "search_history".to_string(),
+            arguments: serde_json::json!({"query": "test"}),
+        }];
+        let llm: Arc<dyn ILlmPort> = Arc::new(ScriptedLlm::new("scripted", scripted));
+        let tools = Arc::new(ToolManager::new());
+        let log = Arc::new(CapturingLog::new());
+        let mgr = AiManager::new(llm, tools, log.clone() as Arc<dyn ILogPort>);
+
+        mgr.process_with_tools_opts(
+            "검색해줘",
+            &[],
+            &LlmCallOpts::default(),
+            &AiRequestOpts::default(),
+        )
+        .await
+        .unwrap();
+
+        let captured = log.captured.lock().unwrap();
+        assert_eq!(captured.len(), 1);
+        let msg = &captured[0];
+        // functionCall 블록 박힘
+        assert!(msg.contains("\"functionCall\""));
+        assert!(msg.contains("search_history"));
+        // functionResponse 블록 박힘
+        assert!(msg.contains("\"functionResponse\""));
     }
 
     #[tokio::test]
