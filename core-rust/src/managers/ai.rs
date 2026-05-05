@@ -132,6 +132,67 @@ impl AiManager {
         self
     }
 
+    /// `search_components(query)` 도구 등록 — 옛 TS search_components handler 1:1.
+    /// IEmbedderPort 박혀있을 때만 호출. ToolManager 에 직접 register_handler.
+    ///
+    /// 사용 예 (Rust):
+    /// ```ignore
+    /// let ai = AiManager::new(llm, tools, log)
+    ///     .register_search_components_tool(embedder.clone());
+    /// // AI 가 `search_components({"query": "주식 차트"})` 호출 시 top-5 컴포넌트 + propsSchema 반환
+    /// ```
+    pub fn register_search_components_tool(
+        self,
+        embedder: Arc<dyn crate::ports::IEmbedderPort>,
+    ) -> Self {
+        let embedder_clone = embedder.clone();
+        let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
+            let embedder = embedder_clone.clone();
+            async move {
+                let query = args
+                    .get("query")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let limit = args
+                    .get("limit")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as usize);
+                let opts = crate::llm::component_search_index::ComponentSearchOpts { limit };
+                let matches =
+                    crate::llm::component_search_index::query(embedder.as_ref(), &query, opts)
+                        .await?;
+                Ok(serde_json::json!({
+                    "components": matches,
+                    "count": matches.len(),
+                }))
+            }
+        });
+        self.tools.register_handler("search_components", handler);
+        // 도구 schema 도 등록 — LLM 에게 노출.
+        self.tools
+            .register(crate::managers::tool::ToolDefinition {
+                name: "search_components".to_string(),
+                description: "사용자 발화 → 관련 render_* 컴포넌트 top-K 반환 (이름 + 설명 + propsSchema). render(name, props) 호출 전에 어떤 컴포넌트가 적합한지 검색 시 사용.".to_string(),
+                parameters: serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "검색 쿼리 (사용자 발화 또는 컴포넌트 의도)",
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "description": "반환 개수 (default 5)",
+                        }
+                    },
+                    "required": ["query"],
+                }),
+                source: "core".to_string(),
+            });
+        self
+    }
+
     /// HistoryResolver 박은 채로 부팅 — opts.conversation_id 박혀있으면 recent N 메시지 자동 prepend.
     pub fn with_history_resolver(mut self, conversation: Arc<ConversationManager>) -> Self {
         self.history_resolver = Some(HistoryResolver::new(conversation));
@@ -1395,5 +1456,52 @@ mod tests {
             .unwrap();
         let captured = llm.captured_resume.lock().unwrap().clone();
         assert_eq!(captured.as_deref(), Some("sess-uuid-abc"));
+    }
+
+    #[tokio::test]
+    async fn search_components_handler_returns_top_k() {
+        // search_components 도구 등록 + ToolManager.dispatch 통한 호출 → 26 components 의 top-5 반환.
+        let _g = crate::utils::shared_test_lock();
+        let dir = tempfile::tempdir().unwrap();
+        unsafe {
+            std::env::set_var("FIREBAT_DATA_DIR", dir.path());
+        }
+        use crate::adapters::embedder::stub::StubEmbedderAdapter;
+        let embedder: Arc<dyn crate::ports::IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
+
+        let llm: Arc<dyn ILlmPort> = Arc::new(StubLlmAdapter::new("stub"));
+        let tools = Arc::new(ToolManager::new());
+        let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
+        let mgr = AiManager::new(llm, tools.clone(), log)
+            .register_search_components_tool(embedder);
+
+        // 도구 등록 됐는지 확인
+        assert!(tools.handler_count() >= 1);
+
+        // ToolManager.dispatch 통해 호출
+        let result = tools
+            .dispatch(
+                "search_components",
+                &serde_json::json!({"query": "주식 차트", "limit": 3}),
+            )
+            .await
+            .unwrap();
+        let components = result["components"].as_array().unwrap();
+        assert_eq!(components.len(), 3);
+        let count = result["count"].as_u64().unwrap();
+        assert_eq!(count, 3);
+        // 첫 번째 결과는 score 가장 높음
+        for w in components.windows(2) {
+            let s1 = w[0]["score"].as_f64().unwrap();
+            let s2 = w[1]["score"].as_f64().unwrap();
+            assert!(s1 >= s2, "결과는 score 내림차순 정렬");
+        }
+        // 각 결과는 name + description + propsSchema 박힘
+        for c in components {
+            assert!(c["name"].is_string());
+            assert!(c["description"].is_string());
+            assert!(c["propsSchema"].is_object());
+        }
+        let _ = mgr;
     }
 }
