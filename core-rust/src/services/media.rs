@@ -7,7 +7,7 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
-use crate::managers::media::MediaManager;
+use crate::managers::media::{GenerateImageInput, MediaManager};
 use crate::ports::{MediaListOpts, MediaSaveOptions};
 use crate::proto::{
     media_service_server::MediaService, BoolRequest, Empty, JsonArgs, JsonValue, Status,
@@ -44,15 +44,6 @@ fn err_status(msg: impl Into<String>) -> Response<Status> {
         error: msg.into(),
         error_code: String::new(),
     })
-}
-
-fn phase_stub<T: serde::Serialize>(label: &str, payload: T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(&serde_json::json!({
-        "_phase": label,
-        "data": payload,
-    }))
-    .map_err(|e| TonicStatus::internal(format!("stub 직렬화: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
 }
 
 #[tonic::async_trait]
@@ -135,27 +126,43 @@ impl MediaService for MediaServiceImpl {
         }
     }
 
-    // ── Phase B-16+ 후속 — IImageGenPort + AiManager 박힌 후 활성 ──
+    // ── Image generation / 모델 설정 — MediaManager 위임 ──
 
     async fn start_generation(
         &self,
-        _req: Request<JsonArgs>,
+        req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        phase_stub("B-16 stub — AiManager 박힌 후 활성", serde_json::json!({"slug": "", "url": ""}))
+        let raw = req.into_inner().raw;
+        let input: GenerateImageInput = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("input 파싱: {e}")))?;
+        match self.manager.start_generate(input).await {
+            Ok((slug, url)) => json_response(&serde_json::json!({"slug": slug, "url": url})),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
     }
 
     async fn generate(
         &self,
-        _req: Request<JsonArgs>,
+        req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        phase_stub("B-16 stub — AiManager 박힌 후 활성", serde_json::Value::Null)
+        let raw = req.into_inner().raw;
+        let input: GenerateImageInput = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("input 파싱: {e}")))?;
+        match self.manager.generate_image(input, None).await {
+            Ok(result) => json_response(&result),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
     }
 
     async fn regenerate(
         &self,
-        _req: Request<StringRequest>,
+        req: Request<StringRequest>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        phase_stub("B-16 stub", serde_json::Value::Null)
+        let slug = req.into_inner().value;
+        match self.manager.regenerate_image_by_slug(&slug).await {
+            Ok((result, _new_slug)) => json_response(&result),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
     }
 
     async fn get_image_model(
@@ -163,62 +170,71 @@ impl MediaService for MediaServiceImpl {
         _req: Request<Empty>,
     ) -> Result<Response<StringRequest>, TonicStatus> {
         Ok(Response::new(StringRequest {
-            value: String::new(),
+            value: self.manager.get_image_model(),
         }))
     }
 
     async fn set_image_model(
         &self,
-        _req: Request<StringRequest>,
+        req: Request<StringRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        Ok(ok_status())
+        let model_id = req.into_inner().value;
+        match self.manager.set_image_model(&model_id) {
+            Ok(()) => Ok(ok_status()),
+            Err(e) => Ok(err_status(e)),
+        }
     }
 
     async fn get_available_image_models(
         &self,
         _req: Request<Empty>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        json_response(&Vec::<String>::new())
+        json_response(&self.manager.list_image_models())
     }
 
     async fn get_image_default_size(
         &self,
         _req: Request<Empty>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        json_response(&serde_json::json!({"size": "1024x1024"}))
+        json_response(&serde_json::json!({"size": self.manager.get_image_default_size()}))
     }
 
     async fn set_image_default_size(
         &self,
-        _req: Request<StringRequest>,
+        req: Request<StringRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        Ok(ok_status())
+        let size = req.into_inner().value;
+        let arg = if size.is_empty() { None } else { Some(size.as_str()) };
+        match self.manager.set_image_default_size(arg) {
+            Ok(()) => Ok(ok_status()),
+            Err(e) => Ok(err_status(e)),
+        }
     }
 
     async fn get_image_default_quality(
         &self,
         _req: Request<Empty>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        json_response(&serde_json::json!({"quality": "standard"}))
+        json_response(&serde_json::json!({"quality": self.manager.get_image_default_quality()}))
     }
 
     async fn set_image_default_quality(
         &self,
-        _req: Request<StringRequest>,
+        req: Request<StringRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        Ok(ok_status())
+        let q = req.into_inner().value;
+        let arg = if q.is_empty() { None } else { Some(q.as_str()) };
+        match self.manager.set_image_default_quality(arg) {
+            Ok(()) => Ok(ok_status()),
+            Err(e) => Ok(err_status(e)),
+        }
     }
 
     async fn get_image_settings(
         &self,
         _req: Request<Empty>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        json_response(&serde_json::json!({
-            "_phase": "B-16 stub",
-            "model": "",
-            "size": "1024x1024",
-            "quality": "standard"
-        }))
+        json_response(&self.manager.get_image_settings())
     }
 }
 

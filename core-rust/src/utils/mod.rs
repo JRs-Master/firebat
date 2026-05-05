@@ -9,6 +9,7 @@ pub mod tool_cache;
 pub mod pending_tools;
 pub mod plan_store;
 pub mod message_merge;
+pub mod tag_utils;
 
 /// 테스트 직렬화용 — `pending_tools` / `plan_store` 가 같은 `FIREBAT_DATA_DIR` env var 를
 /// 변경하므로 cross-module 직렬화 필요. 두 module 의 tests 가 같은 lock 사용.

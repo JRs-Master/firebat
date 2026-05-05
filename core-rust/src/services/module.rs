@@ -155,15 +155,21 @@ impl ModuleService for ModuleServiceImpl {
         &self,
         _req: Request<Empty>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-8 stub — CMS settings 영역은 별 phase (design tokens / cms layout 박힌 후).
-        json_response(&serde_json::json!({"_phase": "B-8 stub — CMS 영역은 후속"}))
+        // CMS module settings — Vault `system:module:cms:settings` (옛 TS 1:1).
+        // ModuleManager.get_settings("cms") 가 default `{enabled: true}` 또는 Vault 박힌 값.
+        json_response(&self.manager.get_settings("cms"))
     }
 
     async fn get_kakao_map_js_key(
         &self,
         _req: Request<Empty>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-8 stub
-        json_response(&serde_json::Value::Null)
+        // CMS settings 안의 kakaoMapJsKey 필드 — render_map (Kakao Map) 위젯이 사용.
+        let settings = self.manager.get_settings("cms");
+        let key = settings
+            .get("kakaoMapJsKey")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        json_response(&serde_json::json!({"key": key}))
     }
 }

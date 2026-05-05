@@ -17,6 +17,14 @@ pub struct RenameResult {
     pub new_slug: String,
 }
 
+/// 태그 사용 요약 — 옛 TS `listAllTags` 반환 1:1.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TagSummary {
+    pub tag: String,
+    pub count: usize,
+    pub slugs: Vec<String>,
+}
+
 /// `/user/media/<slug>...` / `/system/media/<slug>...` URL → slug 추출.
 /// 옛 TS lib/media-url.ts 와 동등 패턴.
 static MEDIA_URL_RE: OnceLock<Regex> = OnceLock::new();
@@ -219,6 +227,126 @@ impl PageManager {
 
     pub fn find_media_usage(&self, media_slug: &str) -> Vec<MediaUsageEntry> {
         self.db.find_media_usage(media_slug)
+    }
+
+    /// 관련 페이지 추천 — `head.keywords` 의 canonical 매칭 score 기반. 옛 TS findRelatedPages 1:1.
+    ///
+    /// 1. 현재 페이지의 head.keywords → canonical set (tag aliases 적용)
+    /// 2. published + public 페이지 중 자기 자신 제외 후보
+    /// 3. 각 후보의 keywords 와 current set 매칭 개수 = score
+    /// 4. score > 0 인 페이지만 score 내림차순 + updated_at 내림차순 정렬
+    /// 5. top-K (default 5) 반환
+    pub fn find_related_pages(
+        &self,
+        slug: &str,
+        limit: usize,
+        aliases: &crate::utils::tag_utils::TagAliases,
+    ) -> Vec<PageListItem> {
+        let limit = if limit == 0 { 5 } else { limit };
+        let Some(current) = self.db.get_page(slug) else {
+            return Vec::new();
+        };
+        let current_set = Self::canonical_keywords(&current.spec, aliases);
+        if current_set.is_empty() {
+            return Vec::new();
+        }
+
+        let candidates: Vec<PageListItem> = self
+            .db
+            .list_pages()
+            .into_iter()
+            .filter(|p| {
+                p.slug != slug
+                    && p.status == "published"
+                    && p.visibility.as_deref().unwrap_or("public") == "public"
+            })
+            .collect();
+
+        let mut scored: Vec<(PageListItem, usize)> = Vec::new();
+        for p in candidates {
+            let Some(rec) = self.db.get_page(&p.slug) else {
+                continue;
+            };
+            let kws = Self::canonical_keywords(&rec.spec, aliases);
+            let score = kws.iter().filter(|k| current_set.contains(*k)).count();
+            if score > 0 {
+                scored.push((p, score));
+            }
+        }
+        scored.sort_by(|a, b| {
+            b.1.cmp(&a.1).then_with(|| {
+                let au = a.0.updated_at;
+                let bu = b.0.updated_at;
+                bu.cmp(&au)
+            })
+        });
+        scored.into_iter().take(limit).map(|(p, _)| p).collect()
+    }
+
+    /// 모든 published + public 페이지의 head.keywords 합집합 + 사용 빈도. 옛 TS listAllTags 1:1.
+    /// `[(tag, count, slugs)]` — count 내림차순. tag 는 canonical (alias 통합).
+    pub fn list_all_tags(
+        &self,
+        aliases: &crate::utils::tag_utils::TagAliases,
+    ) -> Vec<TagSummary> {
+        let mut tag_map: std::collections::HashMap<String, HashSet<String>> = Default::default();
+        let visible: Vec<PageListItem> = self
+            .db
+            .list_pages()
+            .into_iter()
+            .filter(|p| {
+                p.status == "published"
+                    && p.visibility.as_deref().unwrap_or("public") == "public"
+            })
+            .collect();
+        for p in visible {
+            let Some(rec) = self.db.get_page(&p.slug) else {
+                continue;
+            };
+            for k in Self::canonical_keywords(&rec.spec, aliases) {
+                tag_map.entry(k).or_default().insert(p.slug.clone());
+            }
+        }
+        let mut summaries: Vec<TagSummary> = tag_map
+            .into_iter()
+            .map(|(tag, slugs)| {
+                let count = slugs.len();
+                TagSummary {
+                    tag,
+                    count,
+                    slugs: slugs.into_iter().collect(),
+                }
+            })
+            .collect();
+        summaries.sort_by(|a, b| b.count.cmp(&a.count));
+        summaries
+    }
+
+    /// PageSpec JSON 의 head.keywords 추출 → canonical 매핑 + dedup.
+    fn canonical_keywords(
+        spec: &str,
+        aliases: &crate::utils::tag_utils::TagAliases,
+    ) -> HashSet<String> {
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(spec) else {
+            return HashSet::new();
+        };
+        let Some(keywords) = parsed
+            .get("head")
+            .and_then(|h| h.get("keywords"))
+            .and_then(|k| k.as_array())
+        else {
+            return HashSet::new();
+        };
+        let mut set = HashSet::new();
+        for kw in keywords {
+            if let Some(s) = kw.as_str() {
+                let canonical = crate::utils::tag_utils::normalize_tag(s, aliases);
+                if !canonical.is_empty() {
+                    set.insert(canonical);
+                }
+            }
+        }
+        set
     }
 
     // ─── private helpers ───

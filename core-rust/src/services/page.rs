@@ -190,17 +190,38 @@ impl PageService for PageServiceImpl {
 
     async fn find_related(
         &self,
-        _req: Request<JsonArgs>,
+        req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-9 stub — head.keywords 매칭 알고리즘은 별 phase 에서 박힘
-        json_response(&Vec::<serde_json::Value>::new())
+        // 옛 TS findRelatedPages 1:1 — head.keywords canonical 매칭 score 기반 top-K
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            slug: String,
+            #[serde(default)]
+            limit: Option<usize>,
+            /// CMS settings.tagAliases 의 raw textarea (옛 TS 1:1)
+            #[serde(rename = "tagAliasesRaw", default)]
+            tag_aliases_raw: Option<String>,
+        }
+        let args: Args = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("find_related args: {e}")))?;
+        let aliases =
+            crate::utils::tag_utils::parse_tag_aliases(args.tag_aliases_raw.as_deref());
+        let related = self
+            .manager
+            .find_related_pages(&args.slug, args.limit.unwrap_or(5), &aliases);
+        json_response(&related)
     }
 
     async fn list_all_tags(
         &self,
         _req: Request<Empty>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-9 stub — 모든 페이지 head.keywords 빈도 집계는 별 phase
-        json_response(&Vec::<serde_json::Value>::new())
+        // 옛 TS listAllTags 1:1 — 모든 published+public 페이지의 head.keywords 빈도 집계.
+        // tagAliases 는 caller 가 PageService.with_tag_aliases_provider 로 박아야 alias 적용 (현재는 빈 alias).
+        // 후속 batch — ModuleManager.get_settings("cms").tagAliases textarea 자동 로드.
+        let aliases = crate::utils::tag_utils::TagAliases::new();
+        let tags = self.manager.list_all_tags(&aliases);
+        json_response(&tags)
     }
 }

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::schedule::ScheduleManager;
+use crate::managers::task::{PipelineStep, TaskManager};
 use crate::ports::CronScheduleOptions;
 use crate::proto::{
     schedule_service_server::ScheduleService, Empty, JsonArgs, JsonValue, NumberRequest, Status,
@@ -12,11 +13,19 @@ use crate::proto::{
 
 pub struct ScheduleServiceImpl {
     manager: Arc<ScheduleManager>,
+    /// TaskManager (옵션) — validate_pipeline 위임. 미박힘 시 fallback (silent OK).
+    task: Option<Arc<TaskManager>>,
 }
 
 impl ScheduleServiceImpl {
     pub fn new(manager: Arc<ScheduleManager>) -> Self {
-        Self { manager }
+        Self { manager, task: None }
+    }
+
+    /// TaskManager 박은 채로 부팅 — validate_pipeline 정밀 검증 활성.
+    pub fn with_task_manager(mut self, task: Arc<TaskManager>) -> Self {
+        self.task = Some(task);
+        self
     }
 }
 
@@ -141,10 +150,20 @@ impl ScheduleService for ScheduleServiceImpl {
 
     async fn validate_pipeline(
         &self,
-        _req: Request<JsonArgs>,
+        req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-14 TaskManager 박힌 후 활성. 현재는 silent OK 반환 (skip).
-        json_response(&serde_json::json!({"_phase": "B-14 stub", "valid": true}))
+        // TaskManager 박혀있으면 정밀 검증 (옛 TS task-manager.ts:26 validatePipeline 1:1).
+        // 미박힘 시 silent OK fallback.
+        let raw = req.into_inner().raw;
+        let Some(task) = &self.task else {
+            return json_response(&serde_json::json!({"valid": true}));
+        };
+        let steps: Vec<PipelineStep> = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("steps 파싱: {e}")))?;
+        match task.validate_pipeline(&steps) {
+            None => json_response(&serde_json::json!({"valid": true})),
+            Some(err) => json_response(&serde_json::json!({"valid": false, "error": err})),
+        }
     }
 }
 

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::conversation::ConversationManager;
+use crate::ports::IDatabasePort;
 use crate::proto::{
     conversation_service_server::ConversationService, BoolRequest, JsonArgs, JsonValue, NumberRequest,
     Status, StringRequest,
@@ -11,11 +12,23 @@ use crate::proto::{
 
 pub struct ConversationServiceImpl {
     manager: Arc<ConversationManager>,
+    /// IDatabasePort (옵션) — shared_conversations 테이블 RPC (create_share / get_share /
+    /// cleanup_expired_shares). 미박힘 시 stub 반환.
+    db: Option<Arc<dyn IDatabasePort>>,
 }
 
 impl ConversationServiceImpl {
     pub fn new(manager: Arc<ConversationManager>) -> Self {
-        Self { manager }
+        Self {
+            manager,
+            db: None,
+        }
+    }
+
+    /// IDatabasePort 박은 채로 부팅 — 공유 대화 RPC 활성.
+    pub fn with_db(mut self, db: Arc<dyn IDatabasePort>) -> Self {
+        self.db = Some(db);
+        self
     }
 }
 
@@ -175,23 +188,73 @@ impl ConversationService for ConversationServiceImpl {
 
     async fn create_share(
         &self,
-        _req: Request<JsonArgs>,
+        req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-15+ 후속 — shared_conversations 테이블 + dedup_key 패턴
-        json_response(&serde_json::json!({"_phase": "B-15 stub"}))
+        let Some(db) = &self.db else {
+            return Err(TonicStatus::failed_precondition(
+                "create_share: IDatabasePort 미박음",
+            ));
+        };
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            #[serde(rename = "type")]
+            share_type: String,
+            title: String,
+            messages: Vec<serde_json::Value>,
+            #[serde(default)]
+            owner: Option<String>,
+            #[serde(rename = "sourceConvId", default)]
+            source_conv_id: Option<String>,
+            #[serde(rename = "ttlMs")]
+            ttl_ms: i64,
+            #[serde(rename = "dedupKey", default)]
+            dedup_key: Option<String>,
+        }
+        let args: Args = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("create_share args: {e}")))?;
+        let input = crate::ports::CreateShareInput {
+            share_type: args.share_type,
+            title: args.title,
+            messages: args.messages,
+            owner: args.owner,
+            source_conv_id: args.source_conv_id,
+            ttl_ms: args.ttl_ms,
+            dedup_key: args.dedup_key,
+        };
+        match db.create_share(&input) {
+            Ok(result) => json_response(&serde_json::json!({
+                "slug": result.slug,
+                "expiresAt": result.expires_at,
+                "reused": result.reused,
+            })),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
     }
 
     async fn get_share(
         &self,
-        _req: Request<StringRequest>,
+        req: Request<StringRequest>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        json_response(&serde_json::Value::Null)
+        let Some(db) = &self.db else {
+            return json_response(&serde_json::Value::Null);
+        };
+        let slug = req.into_inner().value;
+        match db.get_share(&slug) {
+            Some(record) => json_response(&record),
+            None => json_response(&serde_json::Value::Null),
+        }
     }
 
     async fn cleanup_expired_shares(
         &self,
         _req: Request<crate::proto::Empty>,
     ) -> Result<Response<NumberRequest>, TonicStatus> {
-        Ok(Response::new(NumberRequest { value: 0 }))
+        let Some(db) = &self.db else {
+            return Ok(Response::new(NumberRequest { value: 0 }));
+        };
+        Ok(Response::new(NumberRequest {
+            value: db.cleanup_expired_shares(),
+        }))
     }
 }
