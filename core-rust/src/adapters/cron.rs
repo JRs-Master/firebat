@@ -166,15 +166,40 @@ impl TokioCronAdapter {
         schedule.upcoming(tz).next().map(|d| d.with_timezone(&Utc))
     }
 
-    fn determine_mode(opts: &CronScheduleOptions) -> Result<CronJobMode, String> {
+    fn determine_mode(opts: &CronScheduleOptions, tz_name: &str) -> Result<CronJobMode, String> {
         match (
             opts.cron_time.is_some(),
             opts.run_at.is_some(),
             opts.delay_sec.is_some(),
         ) {
-            (true, _, _) => Ok(CronJobMode::Cron),
-            (false, true, _) => Ok(CronJobMode::Once),
-            (false, false, true) => Ok(CronJobMode::Delay),
+            (true, _, _) => {
+                // cron expression 유효성 검증 — 옛 TS `cron.validate(cronTime)` 1:1.
+                let cron_time = opts.cron_time.as_deref().unwrap_or("");
+                Schedule::from_str(cron_time)
+                    .map_err(|e| format!("잘못된 CRON 표현식: {} ({e})", cron_time))?;
+                Ok(CronJobMode::Cron)
+            }
+            (false, true, _) => {
+                // runAt 과거 시각 검증 — 옛 TS `runTime <= now` 거부 1:1.
+                let run_at = opts.run_at.as_deref().unwrap_or("");
+                if let Some(target) = Self::parse_in_timezone(run_at, tz_name) {
+                    if target.timestamp_millis() <= Utc::now().timestamp_millis() {
+                        return Err(format!("runAt 이 과거 시각입니다: {}", run_at));
+                    }
+                }
+                Ok(CronJobMode::Once)
+            }
+            (false, false, true) => {
+                // delaySec 1~86400 범위 검증 — 옛 TS 1:1 (1초~24시간).
+                let delay = opts.delay_sec.unwrap_or(0);
+                if !(1..=86400).contains(&delay) {
+                    return Err(format!(
+                        "지연 시간은 1~86400초 사이: {}초",
+                        delay
+                    ));
+                }
+                Ok(CronJobMode::Delay)
+            }
             _ => Err("schedule: cronTime / runAt / delaySec 중 하나는 필수".to_string()),
         }
     }
@@ -322,18 +347,71 @@ impl TokioCronAdapter {
     /// 부팅 시 영속 파일에 박혀있던 잡들 task 재시작.
     /// delay 잡은 복원 불가 (시각 정보 부재), cron / once 만 복원.
     pub async fn restore(self: &Arc<Self>) {
-        let job_ids: Vec<String> = {
+        // 부팅 시 옛 알림 초기화 — 재시작 후 옛 알림이 한꺼번에 뜨는 것 방지 (옛 TS 1:1).
+        {
+            let mut notes = self.notifications.lock().unwrap();
+            notes.clear();
+            self.flush_notifications(&notes);
+        }
+
+        let now_ms = Utc::now().timestamp_millis();
+        let tz_name = self.timezone.lock().unwrap().clone();
+
+        // 만료 / 과거 1회 잡은 복원 안 함 (옛 TS restore 의 endAt + once+runAt 검사 1:1).
+        let to_remove: Vec<String> = {
             let jobs = self.jobs.lock().unwrap();
+            jobs.iter()
+                .filter_map(|(id, j)| {
+                    // delay 모드는 메모리 전용 → 복원 불가 (영속 안 됨)
+                    if j.mode == CronJobMode::Delay {
+                        return Some(id.clone());
+                    }
+                    // endAt 만료
+                    if let Some(end_at) = &j.options.end_at {
+                        if let Some(end_dt) = Self::parse_in_timezone(end_at, &tz_name) {
+                            if end_dt.timestamp_millis() <= now_ms {
+                                return Some(id.clone());
+                            }
+                        }
+                    }
+                    // 1회성 + runAt 과거
+                    if j.mode == CronJobMode::Once {
+                        if let Some(run_at) = &j.options.run_at {
+                            if let Some(run_dt) = Self::parse_in_timezone(run_at, &tz_name) {
+                                if run_dt.timestamp_millis() <= now_ms {
+                                    return Some(id.clone());
+                                }
+                            }
+                        }
+                    }
+                    None
+                })
+                .collect()
+        };
+
+        let job_ids: Vec<String> = {
+            let mut jobs = self.jobs.lock().unwrap();
+            // 만료 잡 제거 + 영속화 갱신
+            for id in &to_remove {
+                jobs.remove(id);
+            }
+            if !to_remove.is_empty() {
+                self.flush_jobs(&jobs);
+            }
             jobs.iter()
                 .filter(|(_, j)| j.mode != CronJobMode::Delay)
                 .map(|(id, _)| id.clone())
                 .collect()
         };
+
         let mut tasks = self.tasks.lock().await;
-        for id in job_ids {
+        for id in &job_ids {
             let handle = self.spawn_task(id.clone());
-            tasks.insert(id, handle);
+            tasks.insert(id.clone(), handle);
         }
+        // 로그는 ScheduleManager 가 호출 측에서 박음 (어댑터는 silent).
+        // 만료 정보는 caller 가 알 수 있게 별도 메서드 추가는 후속.
+        let _ = (job_ids, to_remove);
     }
 }
 
@@ -348,7 +426,15 @@ impl ICronPort for TokioCronAdapter {
         if job_id.trim().is_empty() {
             return Err("schedule: jobId 누락".to_string());
         }
-        let mode = TokioCronAdapter::determine_mode(&opts)?;
+        // 중복 jobId 거부 — 옛 TS `cronTasks.has(jobId) || timers.has(jobId)` 1:1.
+        {
+            let jobs = self.jobs.lock().unwrap();
+            if jobs.contains_key(job_id) {
+                return Err(format!("이미 등록된 잡 ID입니다: {}", job_id));
+            }
+        }
+        let tz_name = self.timezone.lock().unwrap().clone();
+        let mode = TokioCronAdapter::determine_mode(&opts, &tz_name)?;
 
         // 기존 task abort
         {
@@ -595,7 +681,8 @@ mod tests {
             "fast",
             "/test",
             CronScheduleOptions {
-                delay_sec: Some(0),
+                // 옛 TS 와 동일하게 1초 이상 (validate 강제 — 1~86400)
+                delay_sec: Some(1),
                 ..Default::default()
             },
         )
@@ -671,5 +758,101 @@ mod tests {
         let list = a2.list();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].job_id, "p");
+    }
+
+    #[tokio::test]
+    async fn schedule_rejects_invalid_cron_expression() {
+        // 옛 TS `cron.validate` 1:1 — 잘못된 cron expression 거부
+        let (a, _dir) = adapter();
+        let result = a
+            .schedule(
+                "bad",
+                "/x",
+                CronScheduleOptions {
+                    cron_time: Some("not a cron".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("CRON 표현식"));
+    }
+
+    #[tokio::test]
+    async fn schedule_rejects_delay_out_of_range() {
+        let (a, _dir) = adapter();
+        // delay_sec 0 거부
+        let r1 = a
+            .schedule(
+                "x",
+                "/x",
+                CronScheduleOptions {
+                    delay_sec: Some(0),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert!(r1.is_err());
+        assert!(r1.unwrap_err().contains("1~86400"));
+
+        // delay_sec 86401 (24시간+1초) 거부
+        let r2 = a
+            .schedule(
+                "y",
+                "/y",
+                CronScheduleOptions {
+                    delay_sec: Some(86401),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert!(r2.is_err());
+    }
+
+    #[tokio::test]
+    async fn schedule_rejects_past_run_at() {
+        let (a, _dir) = adapter();
+        // 과거 시각 — 옛 TS 1:1 거부
+        let result = a
+            .schedule(
+                "past",
+                "/x",
+                CronScheduleOptions {
+                    run_at: Some("2020-01-01T00:00:00+09:00".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("과거"));
+    }
+
+    #[tokio::test]
+    async fn schedule_rejects_duplicate_job_id() {
+        let (a, _dir) = adapter();
+        // 첫 등록 OK
+        a.schedule(
+            "dup",
+            "/x",
+            CronScheduleOptions {
+                cron_time: Some("0 0 * * * *".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        // 같은 jobId 재등록 거부 (옛 TS 1:1)
+        let result = a
+            .schedule(
+                "dup",
+                "/y",
+                CronScheduleOptions {
+                    cron_time: Some("30 0 * * * *".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("이미 등록"));
     }
 }
