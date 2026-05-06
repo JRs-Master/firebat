@@ -17,10 +17,9 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::ports::{IDatabasePort, IVaultPort, LlmCostStatsFilter, LlmCostStatsSummary};
+use crate::utils::timezone::resolve_user_tz;
 
 const VK_COST_BUDGET: &str = "system:cost:budget";
-const VK_TIMEZONE: &str = "system:timezone";
-const DEFAULT_TZ: &str = "Asia/Seoul";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CostBudget {
@@ -89,15 +88,9 @@ impl CostManager {
             .unwrap_or(0)
     }
 
-    /// 사용자 timezone resolve — Vault `system:timezone` 우선, 없으면 `Asia/Seoul` 폴백.
-    /// 잘못된 IANA 문자열도 폴백 (옛 TS 와 동일 — 일반 로직).
+    /// 사용자 timezone resolve — `utils::timezone::resolve_user_tz` 공용 helper 위임.
     fn user_tz(&self) -> Tz {
-        let tz_str = self
-            .vault
-            .get_secret(VK_TIMEZONE)
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| DEFAULT_TZ.to_string());
-        tz_str.parse::<Tz>().unwrap_or(Tz::Asia__Seoul)
+        resolve_user_tz(&self.vault)
     }
 
     /// 사용자 timezone 기준 오늘 (`YYYY-MM-DD`) + 자정 epoch ms (당일 시작) +

@@ -18,6 +18,12 @@ use firebat_core::ports::{ImageGenCallOpts, ImageGenOpts, ImageGenResult, InfraR
 
 const CODEX_TIMEOUT: Duration = Duration::from_secs(300);
 
+// Codex CLI stream-json 프로토콜 식별자 (공식 문서 부재 — 실측 기반).
+// 명명 상수로 묶어 string match 의도 명시 + protocol drift 시 한 곳만 수정.
+const EV_ITEM_COMPLETED: &str = "item.completed";
+const EV_TOOL_RESULT: &str = "tool_result";
+const ITEM_IMAGE_TYPES: &[&str] = &["image", "agent_image", "generated_image"];
+
 pub struct CliCodexImageFormat;
 
 impl CliCodexImageFormat {
@@ -32,10 +38,10 @@ impl CliCodexImageFormat {
         let item = ev.get("item");
 
         // 패턴 1: item.completed + item.type=image/agent_image/generated_image + data(base64) | path
-        if event_type == "item.completed" {
+        if event_type == EV_ITEM_COMPLETED {
             if let Some(item_obj) = item.and_then(|v| v.as_object()) {
                 let item_type = item_obj.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                if matches!(item_type, "image" | "agent_image" | "generated_image") {
+                if ITEM_IMAGE_TYPES.contains(&item_type) {
                     let mime_type = item_obj
                         .get("mime_type")
                         .and_then(|v| v.as_str())
@@ -67,7 +73,7 @@ impl CliCodexImageFormat {
         }
 
         // 패턴 2: tool_result + content 의 .png/.jpg/.webp path 매칭
-        if event_type == "tool_result" {
+        if event_type == EV_TOOL_RESULT {
             if let Some(content) = ev.get("content").and_then(|v| v.as_str()) {
                 if let Some(path) = extract_image_path(content) {
                     return Some(read_image_file(&path, "image/png"));

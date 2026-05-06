@@ -20,10 +20,9 @@ use chrono::{TimeZone, Utc};
 use chrono_tz::Tz;
 
 use crate::ports::IVaultPort;
+use crate::utils::timezone::resolve_user_tz;
 
 const VK_USER_PROMPT: &str = "system:user-prompt";
-const VK_TIMEZONE: &str = "system:timezone";
-const DEFAULT_TZ: &str = "Asia/Seoul";
 
 const TOOL_SYSTEM_TEMPLATE: &str = include_str!("prompt_tool_system.md");
 const CRON_AGENT_TEMPLATE: &str = include_str!("prompt_cron_agent.md");
@@ -44,14 +43,9 @@ impl PromptBuilder {
         Self { vault }
     }
 
-    /// 사용자 timezone resolve — Vault `system:timezone` (default `Asia/Seoul`).
+    /// 사용자 timezone resolve — `utils::timezone::resolve_user_tz` 공용 helper 위임.
     fn user_tz(&self) -> Tz {
-        let tz_str = self
-            .vault
-            .get_secret(VK_TIMEZONE)
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| DEFAULT_TZ.to_string());
-        tz_str.parse::<Tz>().unwrap_or(Tz::Asia__Seoul)
+        resolve_user_tz(&self.vault)
     }
 
     /// 현재 시각 한국어 표시 — 사용자 timezone 기준.
