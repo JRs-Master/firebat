@@ -27,9 +27,16 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 
 ---
 
-## 제2장: 16개 어댑터 구현 규격 (Phase B-4 cutover 후 SysmodCache → core utils 이동)
+## 제2장: 17개 어댑터 구현 규격 (Phase B-post 갱신 — 2026-05-06)
 
-10 → 17 어댑터로 확장 (미디어 4 + 메모리 2 + 임베더 1 추가) → Phase B-4 cutover 시 SysmodCacheAdapter 가 file I/O 만 의존 → `core/src/utils/sysmod_cache.rs` 로 이동 → 16개 어댑터.
+진화 추적:
+- v0.1: 10개 어댑터
+- 2026-05-04: 7개 추가 (미디어 4 + 메모리 2 + 임베더 1) → 17개
+- Phase B-4 cutover (2026-05-06): SysmodCache → core/utils 이동 → 16개
+- Phase B-post Track A5 (2026-05-06): `ReqwestNetworkAdapter` (INetworkPort 구현) 신설 → 17개
+- Phase B-post Track B skeleton (2026-05-06): `LinuxCgroupsSandboxAdapter` skeleton (`#[cfg(target_os = "linux")]`) — Phase C 본격 구현 시점에 17 → 18 (운영 환경 한정)
+
+**현재 17개**: storage / vault / auth / log / tracing_log / database / sandbox (BasicProcess) / mcp_client / memory / cron / media / llm / embedder / image_gen / image_processor / **network (신설)** / sandbox_linux_cgroups (skeleton, Linux 한정).
 
 
 
