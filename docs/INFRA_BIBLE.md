@@ -27,9 +27,9 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 
 ---
 
-## 제2장: 17개 어댑터 구현 규격 (메모리 시스템 4-tier 추가, 2026-05-04)
+## 제2장: 16개 어댑터 구현 규격 (Phase B-4 cutover 후 SysmodCache → core utils 이동)
 
-10 → 17 어댑터로 확장 — 미디어 4 + 메모리 2 + 임베더 1 추가.
+10 → 17 어댑터로 확장 (미디어 4 + 메모리 2 + 임베더 1 추가) → Phase B-4 cutover 시 SysmodCacheAdapter 가 file I/O 만 의존 → `core/src/utils/sysmod_cache.rs` 로 이동 → 16개 어댑터.
 
 
 
@@ -290,25 +290,31 @@ BIBLE 제2장 "언어 중립성" 의 Core 어댑터 layer 적용. 영구 진화 
 - swap 시 dual-run (예: Image 어댑터 swap 시 같은 input 의 픽셀 diff) 검증 후 cutover
 - 회귀 위험 어댑터 단위 격리 — 한 어댑터 swap 이 다른 어댑터 영향 0
 
-### 두 build target (단일 codebase)
+### 단일 build target (Self-hosted Docker)
 
 ```toml
-# core/Cargo.toml
-[lib]      # self-installed 용 — Tauri 안에 in-process embed
-[[bin]]    # self-hosted 용 — gRPC server 단일 binary
+# infra/Cargo.toml
+[[bin]]
 name = "firebat-core"
+path = "src/main.rs"   # gRPC server 단일 binary
 ```
+
+옛 Tauri lib 빌드 target 폐기 — Self-installed Tauri 가 v2.0 이연 (FIREBAT_BIBLE 제12장 참조).
 
 ### Sandbox 의 sysmod 호환
 
-Rust Sandbox adapter 가 Node / Python sysmod 을 절대 경로로 spawn — sysmod 코드 0 변경:
+Rust Sandbox adapter 가 Node / Python sysmod 을 spawn — sysmod 코드 0 변경:
 ```rust
-let node_bin = data_dir.join("runtime/node/bin/node");
-let python_bin = data_dir.join("runtime/python/bin/python3");
-tokio::process::Command::new(node_bin).arg(module_entry).spawn()
+tokio::process::Command::new("node").arg(module_entry).spawn()
+tokio::process::Command::new("python3").arg(module_entry).spawn()
 ```
 
-self-installed 의 첫 실행 setup 이 Node / Python runtime 을 Firebat 폴더 안에 자동 download (시스템 격리). LLM CLI 도 같은 패턴.
+Docker compose 가 Node / Python runtime + LLM CLI (Claude Code / Codex / Gemini CLI) 동봉.
+
+**🚨 Phase B-post Sandbox 강화 (진행 중)**: 옛 `tokio::process::Command` 만으로는 OS 레벨 격리 0 — `os.system("rm -rf /")` 막을 수 없음. BIBLE 의 "격리(Sandbox)" 문구 vs 코드 현실 mismatch. 정정:
+- Linux Docker (Phase C — firebat.co.kr): cgroups v2 + seccomp + network namespace (CPU / memory / fork / syscall whitelist / network deny)
+- 미지원 OS / 개발: 기존 path containment + timeout 폴백 (BasicProcessSandbox)
+- 작업량 ~3일
 
 ### v1.0 Final 출시 후 (v2.0+)
 

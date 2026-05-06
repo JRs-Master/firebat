@@ -236,13 +236,13 @@ Site builder reaches Astra/GP-class depth — header / sidebar / footer all shar
 |---|---|
 | **Backend** | Rust (tonic 0.12 + tokio + rusqlite + reqwest + cron crate) — `core/` + `infra/` Cargo workspace |
 | **Frontend** | Next.js 16 (App Router, Turbopack) + TypeScript 6 + Tailwind CSS 4 |
-| **IPC** | gRPC (proto/firebat.proto, 28 services / 208 RPCs) — Tauri invoke (in-process) 또는 fetch + gRPC proxy |
+| **IPC** | gRPC (proto/firebat.proto, 28 services / 208 RPCs) — fetch + gRPC proxy |
 | **AI** | OpenAI · Anthropic · Google Gemini/Vertex (config-driven multi-provider) + CLI subscription mode |
 | **Database** | SQLite (rusqlite bundled, 정적 링크) |
 | **Editor** | Monaco Editor |
 | **MCP** | @modelcontextprotocol/sdk 1.29 |
 | **Validation** | Zod (TS) + serde (Rust) |
-| **Deploy** | self-hosted Docker compose (Phase C) 또는 self-installed Tauri (Phase D) |
+| **Deploy** | self-hosted Docker compose (Phase C) — 단일 distribution (self-installed Tauri 는 v2.0 이연) |
 
 ---
 
@@ -313,7 +313,7 @@ npm run mcp
 Phase B-4 cutover (2026-05-06) 후 — multi-crate Rust workspace (core / infra) + Next.js frontend.
 
 ```
-firebat/                      # Cargo workspace root (Cargo.toml — members: core / infra / src-tauri)
+firebat/                      # Cargo workspace root (Cargo.toml — members: core / infra)
 ├── core/                     # Rust crate — managers + services + ports (infra 의존 0건)
 │   ├── Cargo.toml
 │   ├── build.rs              #   tonic-build (proto/ → generated stubs)
@@ -338,10 +338,6 @@ firebat/                      # Cargo workspace root (Cargo.toml — members: co
 │       ├── adapters/         #   16 어댑터 (storage / vault / auth / log / database / sandbox / mcp_client / memory / cron / media / llm / embedder / image_gen / image_processor / tracing_log)
 │       ├── llm/              #   ConfigDrivenAdapter + 8 format 핸들러 (5 API + 3 CLI)
 │       └── image_gen/        #   ConfigDrivenImageGenAdapter + 3 format (openai-image / gemini-native-image / cli-codex-image)
-│
-├── src-tauri/                # Rust crate — self-installed Tauri shell (Phase D)
-│   ├── Cargo.toml            #   firebat-infra 의존 (in-process embed)
-│   └── src/
 │
 ├── proto/                    # gRPC schema (single source)
 │   └── firebat.proto         #   28 services / 208 RPCs
@@ -387,30 +383,27 @@ firebat/                      # Cargo workspace root (Cargo.toml — members: co
 
 ## Roadmap — v1.0 Final (single milestone, 2026-05-03 confirmed)
 
-Old v0.1 → v1.0 RC → v1.x → v2.0 phase split is **deprecated**. Replaced with a single v1.0 Final milestone — **Rust Core + Next.js Frontend + two distributions (self-hosted Docker / self-installed Tauri)**.
+Old v0.1 → v1.0 RC → v1.x phase split is **deprecated**. Replaced with single v1.0 Final milestone — **Rust Core + Next.js Frontend + Self-hosted Docker** (단일 distribution). Self-installed Tauri 는 v2.0 이연 (외부 시니어 audit, 2026-05-06).
 
 **Target architecture**:
 
 ```
-Frontend  Next.js + React + 22 render_* components  (preserved from v0.1)
+Frontend  Next.js + React + 27 render_* components
                           ↓
-                callCore()  (lib/core-client.ts abstraction)
+                callCore()  (RustCoreProxy → gRPC)
                           ↓
-            ┌─────────────┴─────────────┐
-            ↓                            ↓
-  self-hosted (Docker)          self-installed (Tauri)
-  ─────────────────────         ─────────────────────
-  Rust Core binary              Rust Core (in-process embed)
-  + Next.js standalone          + Node sidecar (Next.js)
-  + nginx                       + LLM CLI auto-install
-  gRPC :50051                   Tauri command (direct)
+              Self-hosted (Docker)
+              ─────────────────────
+              Rust Core binary (gRPC :50051)
+              + Next.js standalone (:3000)
+              + nginx + LLM CLI containers
 ```
 
-**Why option 3 (Core-only Rust)** — concept / ops / stability / tech / maintenance evaluation (ROI-independent):
-- **Concept**: matches BIBLE's "Rust Core" vision; preserves the visual strength of 22 render_* components
-- **Stability**: Rust backend safety (memory / type / null / race) + 1-year polished React frontend
-- **Tech**: each layer's strongest libraries — backend (rusqlite / tokio / reqwest, all mature) + frontend (full React ecosystem)
-- **Maintenance**: backend / frontend evolve independently; one layer's limit doesn't impact the other
+**Why Self-hosted single distribution** (Self-installed Tauri 폐기 사유):
+- Tauri + Next.js + Node sidecar 50MB 목표 비현실 (실제 150-200MB)
+- Node sidecar UX 폭탄: 좀비 프로세스 / 포트 충돌 / 방화벽 발작 — 어르신 사용자 대응 불가
+- 진짜 가벼운 ~15MB Tauri 앱은 Next.js SPA 추출 + Tauri IPC 큰 frontend 재작업 필요 → v2.0
+- 타겟 유저 (서버 모르는 어르신) 에게는 매니지드 호스팅 (Vultr Docker) 이 더 합리
 
 **Phases** (2026-05-06 갱신):
 
@@ -418,21 +411,23 @@ Frontend  Next.js + React + 22 render_* components  (preserved from v0.1)
 |---|---|---|
 | **A. Design** | gRPC schema (28 services / 208 RPCs) + Cargo workspace + tonic-build 통합 | ✅ 완료 |
 | **B. Rust Core** | 16 adapters + 21 managers + 28 service impl + frontend RustCoreProxy + multi-crate workspace 분리 (core / infra). **Hardcoding audit 7-pattern** — no 1:1 mapping, every special-case fix promoted to general logic. dual-run 폐기 → 옛 TS 단번 cutover | ✅ 완료 (2026-05-06) |
-| **C. self-hosted Docker** | Multi-stage Dockerfile (Rust binary + Next.js standalone) + docker-compose + nginx 템플릿 + 옛 v0.1 데이터 마이그레이션 runner | 🟡 다음 단계 |
-| **D. self-installed Tauri** | src-tauri shell + 첫 실행 자동 LLM CLI 격리 설치 + auto-update (GitHub Actions → 3 OS builds → in-place) | ⏳ |
+| **B-post. Audit cleanup** | INetworkPort 신설 / Sandbox OS 격리 (cgroups + seccomp) / ConsolidationManager 예산 가드 / AI 모델 hardcode 정리 / package.json legacy 청산 | 🟡 진행 (Phase C 진입 전) |
+| **C. Self-hosted Docker** | Multi-stage Dockerfile (Rust binary + Next.js standalone) + docker-compose + nginx 템플릿 + 옛 v0.1 데이터 마이그레이션 runner + firebat.co.kr 마이그레이션 | ⏳ |
+| ~~**D. Self-installed Tauri**~~ | ~~src-tauri shell + Node sidecar~~ | 🚫 **v2.0 이연** (2026-05-06 폐기) |
 
 **v1.0 Final release gate**:
 - ✅ Rust Core 단번 cutover 완료 (옛 TS 폐기, `cargo check` + `npm run typecheck` 통과)
-- 🟡 self-hosted Docker compose 검증 (firebat.co.kr 마이그레이션 — Phase C)
-- ⏳ self-installed verified on Windows / macOS / Linux (Phase D)
-- ⏳ 1+ week of personal use on Rust without incidents
+- ✅ 회귀 검증 그물 복원 (inline tests 40+ 파일 integration 이관, 331 pass)
+- 🟡 Audit cleanup Track A + B 완료 (Phase C 진입 전)
+- 🟡 Self-hosted Docker compose 검증 (firebat.co.kr 마이그레이션 — Phase C)
+- 🟡 1+ week of personal use on Rust without incidents
 - → new use-cases (auto-trading / blogs) start on top of Rust
 
-**Total duration**: ~4~5 months solo full-time / ~6~9 months part-time.
+**Total duration**: ~3~4 months solo full-time / ~5~7 months part-time (Tauri 폐기로 ~1개월 단축).
 
-**After v1.0 Final**: natural polished operation. v2.0+ is decided only when real-world friction surfaces (frontend static migration for 10MB Tauri / Vercel frontend distribution / Core AI fine-tuning / module packaging redesign).
+**After v1.0 Final**: v2.0 시점에 Next.js Static Export + Tauri IPC 박은 진짜 가벼운 데스크톱 앱 (~15MB) 재시작 후보. v2.0+ 결정 트리거 = 운영 데이터 위에서 진짜 한계 도달 시.
 
-> 🇰🇷 **v1.0 Final 로드맵 (2026-05-03 확정)** — 옛 v1.0 RC / v1.x / v2.0 phase 분해 폐기. 단일 v1.0 Final milestone = Rust Core + Next.js Frontend + 두 distribution (self-hosted Docker / self-installed Tauri). Frontend 는 1년+ polished React 보존, Backend 만 Rust 전환. 옵션 3 선택 사유: 컨셉(BIBLE 일치) / 안정(Rust 안전 + React polished) / 기술(각 layer 최강 라이브러리) / 유지(독립 진화) 측면 압도적 best. Phase 0 (현재 운영 유지) → A (설계 1~2주) → B (Rust Core 3~4개월, hardcoding audit 동시) → C (Docker 1~2주) → D (Tauri + 자동 update 1~2주). 총 4~5개월. 출시 후 자동매매·블로그 등 새 use case 는 Rust 위에서 시작.
+> 🇰🇷 **v1.0 Final 로드맵 (2026-05-06 갱신)** — Self-installed Tauri 폐기 결정. 단일 distribution = Self-hosted Docker. Phase 0 (현재 운영 유지) → A (설계 ✅) → B (Rust Core ✅ Phase B-4 cutover 완료) → B-post (audit cleanup) → C (Docker firebat.co.kr 마이그레이션). 총 3~4개월. Tauri 데스크톱 앱은 v2.0 시점에 Next.js SPA 추출 + Tauri IPC 박은 진짜 가벼운 앱 (~15MB) 으로 재시작. 옛 src-tauri/ 디렉토리 + Node sidecar 구조는 어르신 사용자 UX 폭탄 (좀비 프로세스 / 포트 충돌 / 방화벽 발작) 위험 + 50MB 목표 비현실 (실제 150-200MB) 으로 폐기.
 
 ---
 
