@@ -337,12 +337,22 @@ async fn main() -> Result<()> {
     // - sysmod/MCP 동적 description
     // - opts.conversation_id 박혀있을 시 recent N 메시지 자동 prepend
     // - LLM 호출마다 자동 비용 누적 (옛 TS recordLlmCost 1:1)
+    // DynamicToolRegistry — sysmod_* / mcp_* 동적 도구 자동 등록 (60초 cache).
+    // Phase B-post audit E3 (2026-05-06) 박힘 — 옛 TS buildToolDefinitions 1:1 port.
+    let dynamic_tools_registry = Arc::new(
+        firebat_core::managers::ai::dynamic_tools::DynamicToolRegistry::new(
+            tool_manager.clone(),
+            module_manager.clone(),
+            mcp_manager.clone(),
+        ),
+    );
     let ai_manager = Arc::new(
         AiManager::new(llm.clone(), tool_manager.clone(), logger.clone())
             .with_prompt_builder(vault.clone())
             .with_system_context(module_manager.clone(), mcp_manager.clone())
             .with_history_resolver(conversation_manager.clone())
-            .with_cost_manager(cost_manager.clone()),
+            .with_cost_manager(cost_manager.clone())
+            .with_dynamic_tools(dynamic_tools_registry),
     );
 
     // ConsolidationManager 의 LLM 자동 추출 활성 — AiManager + ConversationManager + Vault 박힌 후.

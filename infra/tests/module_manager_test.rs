@@ -27,6 +27,13 @@ impl ISandboxPort for StubSandbox {
     ) -> InfraResult<ModuleOutput> {
         Ok(self.fixed_output.clone())
     }
+
+    fn capabilities(&self) -> firebat_core::ports::SandboxCapabilities {
+        firebat_core::ports::SandboxCapabilities {
+            kind: "stub".to_string(),
+            ..Default::default()
+        }
+    }
 }
 
 fn default_success() -> ModuleOutput {
@@ -36,6 +43,7 @@ fn default_success() -> ModuleOutput {
         error: None,
         stderr: None,
         exit_code: Some(0),
+        ..Default::default()
     }
 }
 
@@ -48,6 +56,7 @@ fn make_manager() -> (ModuleManager, TempDir) {
             error: None,
             stderr: None,
             exit_code: Some(0),
+            ..Default::default()
         },
     });
     let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(dir.path()));

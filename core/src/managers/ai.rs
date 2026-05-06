@@ -24,6 +24,7 @@ pub mod code_assist;
 pub mod component_registry;
 pub mod component_search_index;
 pub mod tool_search_index;
+pub mod dynamic_tools;
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -101,6 +102,10 @@ pub struct AiManager {
     /// 시작 + opts.conversation_id 박혀있으면 자동 resume_session_id 주입 + 첫 응답의 session_id
     /// 영속화. 옛 TS ai-manager.ts:914-924 1:1.
     conversation: Option<Arc<ConversationManager>>,
+    /// DynamicToolRegistry (옵션) — sysmod_* / mcp_* 동적 도구 자동 등록 + 60초 cache.
+    /// 박혀있으면 process_with_tools_opts 시작 시 refresh 호출 — 옛 TS buildToolDefinitions 1:1.
+    /// 미박힘 시 정적 도구 (`tool_registry::register_core_tools`) 만 LLM 노출.
+    dynamic_tools: Option<Arc<dynamic_tools::DynamicToolRegistry>>,
 }
 
 impl AiManager {
@@ -119,7 +124,17 @@ impl AiManager {
             cost: None,
             dispatcher: None,
             conversation: None,
+            dynamic_tools: None,
         }
+    }
+
+    /// DynamicToolRegistry 박은 채로 부팅 — sysmod_* / mcp_* 자동 등록 활성.
+    pub fn with_dynamic_tools(
+        mut self,
+        registry: Arc<dynamic_tools::DynamicToolRegistry>,
+    ) -> Self {
+        self.dynamic_tools = Some(registry);
+        self
     }
 
     /// ToolDispatcher 박은 채로 부팅 — approval gate (write_file/save_page 덮어쓰기 / delete_* /
@@ -296,6 +311,10 @@ impl AiManager {
         // 도구 list 미전달 시 ToolManager 등록 도구 자동 사용 (옛 TS buildToolDefinitions 동등).
         let auto_tools: Vec<ToolDefinition>;
         let effective_tools: &[ToolDefinition] = if tools.is_empty() {
+            // 동적 도구 (sysmod_* / mcp_*) refresh — 60초 cache. 박혀있을 때만.
+            if let Some(dyn_reg) = &self.dynamic_tools {
+                dyn_reg.refresh().await;
+            }
             auto_tools = self.build_tool_definitions();
             &auto_tools
         } else {
