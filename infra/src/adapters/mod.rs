@@ -8,6 +8,8 @@ pub mod auth;
 pub mod log;
 pub mod database;
 pub mod sandbox;
+#[cfg(target_os = "linux")]
+pub mod sandbox_linux_cgroups;
 pub mod mcp_client;
 pub mod memory;
 pub mod cron;

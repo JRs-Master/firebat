@@ -476,6 +476,37 @@ pub trait ISandboxPort: Send + Sync {
         input_data: &serde_json::Value,
         opts: &SandboxExecuteOpts,
     ) -> InfraResult<ModuleOutput>;
+
+    /// Sandbox 격리 능력 — adapter 마다 다름. main.rs / 어드민 UI 가 사용자에게 보여주거나
+    /// 모듈 실행 정책 결정 시 참조.
+    /// Phase B-post audit (2026-05-06) 박힘 — BIBLE Sandbox 정신 + 코드 현실 mismatch 정정 시작점.
+    fn capabilities(&self) -> SandboxCapabilities;
+}
+
+/// Sandbox 어댑터의 격리 능력 명세.
+///
+/// 옛 BIBLE 의 "격리(Sandbox)" 문구는 진짜 OS 레벨 격리를 시사하지만 실 코드 (옛
+/// `tokio::process::Command`) 만으로는 `os.system("rm -rf /")` 차단 0. 진짜 격리 박는 step:
+/// 1. `BasicProcessSandbox` (현재) — fs_readonly: false / network_deny: false / cpu_limit_ms: timeout 만 / memory_limit_mb: 0
+/// 2. `LinuxCgroupsSandbox` (Phase C) — cgroups v2 + seccomp + network namespace
+/// 3. `MacOsSandbox` / `WindowsSandbox` (v2.0+ Tauri 재시작 시점) — App Sandbox / AppContainer
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct SandboxCapabilities {
+    /// 어댑터 식별자 — `"basic-process"` / `"linux-cgroups"` / `"macos-sandbox"` / `"windows-appcontainer"` 등.
+    pub kind: String,
+    /// Filesystem readonly — 모듈이 path containment 외 파일 시스템 쓰기 차단.
+    pub fs_readonly: bool,
+    /// Network deny — 모듈 spawn 시 network namespace 박아 외부 fetch 차단 (sysmod 는 별도 조치).
+    pub network_deny: bool,
+    /// CPU 제한 (ms) — 0 = 미제한. 옛 timeout 과 별도 — runtime 추정 통계 활용.
+    pub cpu_limit_ms: u64,
+    /// Memory 제한 (MB) — 0 = 미제한 (cgroup memory.max 등).
+    pub memory_limit_mb: u64,
+    /// Syscall whitelist 활성 (seccomp). false 면 모든 syscall 허용.
+    pub seccomp_filter: bool,
+    /// 운영자에게 사용자 경고용 메시지 — `BasicProcessSandbox` 면 "OS 격리 0 — Phase C 까지 신뢰된 모듈만" 등.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
 }
 
 // ──────────────────────────────────────────────────────────────────────────

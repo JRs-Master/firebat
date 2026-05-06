@@ -466,6 +466,23 @@ impl ISandboxPort for ProcessSandboxAdapter {
             exit_code: None,
         }))
     }
+
+    fn capabilities(&self) -> firebat_core::ports::SandboxCapabilities {
+        // BasicProcessSandbox — path containment + timeout 만. OS 레벨 격리 0.
+        // Phase C 진입 시 Linux 환경에서 LinuxCgroupsSandbox 로 swap.
+        firebat_core::ports::SandboxCapabilities {
+            kind: "basic-process".to_string(),
+            fs_readonly: false,
+            network_deny: false,
+            cpu_limit_ms: 0,
+            memory_limit_mb: 0,
+            seccomp_filter: false,
+            warning: Some(
+                "BasicProcessSandbox — OS 레벨 격리 0. Phase C 진입 시 LinuxCgroupsSandbox 로 swap."
+                    .to_string(),
+            ),
+        }
+    }
 }
 
 impl ProcessSandboxAdapter {
@@ -584,6 +601,13 @@ impl ISandboxPort for StubSandboxAdapter {
         _opts: &SandboxExecuteOpts,
     ) -> InfraResult<ModuleOutput> {
         Ok(self.fixed_output.clone())
+    }
+
+    fn capabilities(&self) -> firebat_core::ports::SandboxCapabilities {
+        firebat_core::ports::SandboxCapabilities {
+            kind: "stub".to_string(),
+            ..Default::default()
+        }
     }
 }
 
