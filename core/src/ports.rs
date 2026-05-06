@@ -324,6 +324,17 @@ pub trait IDatabasePort: Send + Sync {
 
     /// LLM 비용 통계 조회 — filter 적용 후 SUM/COUNT 집계.
     fn query_llm_cost_stats(&self, filter: &LlmCostStatsFilter) -> LlmCostStatsSummary;
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Raw SELECT escape hatch — gRPC DatabaseService 가 사용 (`services/database.rs`).
+    // SELECT 만 허용. INSERT/UPDATE/DELETE 은 거부 (도메인 메서드 사용).
+    // SQL dialect 는 어댑터별 (sqlite / mariadb / postgres) — 각 어댑터가 dialect 적응.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// Raw SELECT 실행. INSERT/UPDATE/DELETE/DROP/CREATE/ALTER 는 거부 (Err 반환).
+    /// 결과는 column → JsonValue 의 row 배열. NULL → JsonValue::Null,
+    /// integer → Number, real → Number, text → String, blob → base64 string.
+    fn run_select_query(&self, sql: &str) -> InfraResult<Vec<RawSqlRow>>;
 }
 
 /// LLM 비용 통계 filter — 옛 TS getStats 의 input 1:1.
@@ -1618,3 +1629,44 @@ pub trait IEpisodicPort: Send + Sync {
     fn count_events(&self) -> InfraResult<i64>;
     fn count_events_by_type(&self) -> InfraResult<Vec<(String, i64)>>;
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// IMemoryFacadePort — 메모리 4-tier facade.
+//
+// ConsolidationManager 가 EntityManager + EpisodicManager 를 직접 의존하던 BIBLE 위반
+// (매니저 간 직접 호출) 정정. trait 추출로 hexagonal port-adapter 정신 정확 복구.
+// 구현은 `core/src/managers/memory_facade.rs::MemoryFacade` (Entity/Episodic wrapper).
+// ──────────────────────────────────────────────────────────────────────────
+
+#[async_trait::async_trait]
+pub trait IMemoryFacadePort: Send + Sync {
+    // Read / 통계
+    fn count_entities(&self) -> InfraResult<i64>;
+    fn count_facts(&self) -> InfraResult<i64>;
+    fn count_events(&self) -> InfraResult<i64>;
+    fn count_entities_by_type(&self) -> InfraResult<Vec<(String, i64)>>;
+    fn count_events_by_type(&self) -> InfraResult<Vec<(String, i64)>>;
+
+    // 정리
+    fn cleanup_expired_facts(&self) -> InfraResult<i64>;
+    fn cleanup_expired_events(&self) -> InfraResult<i64>;
+
+    // Mutation — ConsolidationManager 의 save_extracted 가 사용 (LLM 추출 결과 일괄 저장).
+    fn find_entity_by_name(&self, name: &str) -> InfraResult<Option<EntityRecord>>;
+    async fn save_entity(&self, input: SaveEntityInput) -> InfraResult<(i64, bool)>;
+    async fn save_fact(&self, input: SaveFactInput) -> InfraResult<(i64, bool, Option<f64>)>;
+    async fn save_event(&self, input: SaveEventInput) -> InfraResult<(i64, bool, Option<f64>)>;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// IDatabasePort — raw SQL escape hatch (Phase C 진입 전 cleanup, 2026-05-06).
+//
+// 옛 services/database.rs 가 rusqlite::Connection 직접 의존하던 BIBLE 위반 (Core 순수성)
+// 정정. SELECT 만 허용 — INSERT/UPDATE/DELETE 는 도메인 메서드 사용 권장.
+// 단일 SQLite 단계에선 escape hatch 단계, MariaDB / PostgreSQL swap 시점에 어댑터별
+// SQL dialect 분리 가능.
+// ──────────────────────────────────────────────────────────────────────────
+
+/// Raw SELECT 쿼리 결과 — 행마다 column → JSON value map.
+pub type RawSqlRow = serde_json::Map<String, serde_json::Value>;
+

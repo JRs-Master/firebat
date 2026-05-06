@@ -8,7 +8,8 @@ use firebat_core::managers::consolidation::{
 };
 use firebat_core::managers::entity::EntityManager;
 use firebat_core::managers::episodic::EpisodicManager;
-use firebat_core::ports::{IEntityPort, IEpisodicPort};
+use firebat_core::managers::memory_facade::MemoryFacade;
+use firebat_core::ports::{IEntityPort, IEpisodicPort, IMemoryFacadePort};
 use firebat_infra::adapters::memory::SqliteMemoryAdapter;
 
 fn make_manager() -> (ConsolidationManager, TempDir) {
@@ -18,7 +19,8 @@ fn make_manager() -> (ConsolidationManager, TempDir) {
     let episodic_port: Arc<dyn IEpisodicPort> = adapter;
     let entity_mgr = Arc::new(EntityManager::new(entity_port));
     let episodic_mgr = Arc::new(EpisodicManager::new(episodic_port));
-    (ConsolidationManager::new(entity_mgr, episodic_mgr), dir)
+    let memory: Arc<dyn IMemoryFacadePort> = Arc::new(MemoryFacade::new(entity_mgr, episodic_mgr));
+    (ConsolidationManager::new(memory), dir)
 }
 
 #[tokio::test]

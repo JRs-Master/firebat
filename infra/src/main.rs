@@ -24,16 +24,16 @@ use firebat_core::{
         ai::AiManager, auth::AuthManager, capability::CapabilityManager,
         consolidation::ConsolidationManager, conversation::ConversationManager,
         cost::CostManager, entity::EntityManager, episodic::EpisodicManager, event::EventManager,
-        mcp::McpManager, media::MediaManager, module::ModuleManager, page::PageManager,
-        project::ProjectManager, schedule::ScheduleManager, secret::SecretManager,
-        status::StatusManager,
+        mcp::McpManager, media::MediaManager, memory_facade::MemoryFacade, module::ModuleManager,
+        page::PageManager, project::ProjectManager, schedule::ScheduleManager,
+        secret::SecretManager, status::StatusManager,
         task::{TaskExecutor, TaskManager}, template::TemplateManager,
         tool::ToolManager,
     },
     ports::{
         IAuthPort, ICronPort, IDatabasePort, IEmbedderPort, IEntityPort, IEpisodicPort,
         IImageGenPort, IImageProcessorPort, ILlmPort, ILogPort, IMcpClientPort, IMediaPort,
-        ISandboxPort, IStoragePort, IVaultPort,
+        IMemoryFacadePort, ISandboxPort, IStoragePort, IVaultPort,
     },
     proto::{
         ai_service_server::AiServiceServer,
@@ -278,10 +278,13 @@ async fn main() -> Result<()> {
     let mcp_manager = Arc::new(McpManager::new(mcp_client));
     let entity_manager = Arc::new(EntityManager::new(entity_port));
     let episodic_manager = Arc::new(EpisodicManager::new(episodic_port));
-    let consolidation_manager = Arc::new(ConsolidationManager::new(
+    // 메모리 4-tier facade — ConsolidationManager 가 EntityManager + EpisodicManager 를 직접
+    // 의존하던 BIBLE 위반 (매니저 간 직접 호출) 정정 (2026-05-06).
+    let memory_facade: Arc<dyn IMemoryFacadePort> = Arc::new(MemoryFacade::new(
         entity_manager.clone(),
         episodic_manager.clone(),
     ));
+    let consolidation_manager = Arc::new(ConsolidationManager::new(memory_facade));
     let schedule_manager = Arc::new(ScheduleManager::new(cron_adapter.clone()));
     // MediaManager — Step 2d 박힘. 이미지 파이프라인 (generate/regenerate/variants/blurhash) 활성.
     // Step 2 마무리 audit — cross-call hooks (cost/status/event/episodic) 박음 (옛 TS Core facade 1:1):
@@ -441,9 +444,9 @@ async fn main() -> Result<()> {
     // TelegramService — AiManager + ModuleManager 박아 process_message webhook → AI → reply 활성
     let telegram_service = services::telegram::TelegramServiceImpl::new(vault.clone())
         .with_ai_and_module(ai_manager.clone(), module_manager.clone());
-    let database_service = services::database::DatabaseServiceImpl::new(app_db_path.clone())
-        .map_err(anyhow::Error::msg)
-        .context("Database service 초기화 실패")?;
+    // DatabaseService — raw SELECT escape hatch. 옛 raw rusqlite::Connection 직접 의존
+    // (BIBLE Core 순수성 위반) → IDatabasePort port 위임으로 정정 (2026-05-06).
+    let database_service = services::database::DatabaseServiceImpl::new(db.clone());
     let memory_file_service = services::memory_file::MemoryServiceImpl::new(storage.clone());
 
     let lifecycle_service = services::lifecycle::LifecycleServiceImpl::new(vec![

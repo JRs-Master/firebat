@@ -7,7 +7,8 @@ use tonic::Request;
 use firebat_core::managers::consolidation::ConsolidationManager;
 use firebat_core::managers::entity::EntityManager;
 use firebat_core::managers::episodic::EpisodicManager;
-use firebat_core::ports::{IEntityPort, IEpisodicPort};
+use firebat_core::managers::memory_facade::MemoryFacade;
+use firebat_core::ports::{IEntityPort, IEpisodicPort, IMemoryFacadePort};
 use firebat_core::proto::{consolidation_service_server::ConsolidationService, Empty, JsonArgs};
 use firebat_core::services::consolidation::ConsolidationServiceImpl;
 use firebat_infra::adapters::memory::SqliteMemoryAdapter;
@@ -19,7 +20,8 @@ fn service() -> (ConsolidationServiceImpl, TempDir) {
     let episodic_port: Arc<dyn IEpisodicPort> = adapter;
     let entity_mgr = Arc::new(EntityManager::new(entity_port));
     let episodic_mgr = Arc::new(EpisodicManager::new(episodic_port));
-    let mgr = Arc::new(ConsolidationManager::new(entity_mgr, episodic_mgr));
+    let memory: Arc<dyn IMemoryFacadePort> = Arc::new(MemoryFacade::new(entity_mgr, episodic_mgr));
+    let mgr = Arc::new(ConsolidationManager::new(memory));
     (ConsolidationServiceImpl::new(mgr), dir)
 }
 

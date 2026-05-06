@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use firebat_core::ports::{
     ConversationEmbeddingMeta, ConversationEmbeddingRow, ConversationRecord, ConversationSummary,
     IDatabasePort, InfraResult, LlmCostStatsFilter, LlmCostStatsSummary, MediaUsageEntry,
-    PageListItem, PageRecord,
+    PageListItem, PageRecord, RawSqlRow,
 };
 
 pub struct SqliteDatabaseAdapter {
@@ -902,6 +902,50 @@ impl IDatabasePort for SqliteDatabaseAdapter {
             )
         })
         .is_ok()
+    }
+
+    fn run_select_query(&self, sql: &str) -> InfraResult<Vec<RawSqlRow>> {
+        // SELECT 만 허용 — 머리부분 첫 키워드 검사 (대소문자 무시).
+        let trimmed = sql.trim_start();
+        let upper = trimmed
+            .chars()
+            .take_while(|c| c.is_alphabetic())
+            .collect::<String>()
+            .to_ascii_uppercase();
+        if upper != "SELECT" && upper != "WITH" {
+            return Err(format!(
+                "raw query 거부: SELECT/WITH 만 허용 (DDL·DML 은 도메인 메서드 사용). got '{}'",
+                upper
+            ));
+        }
+        use base64::Engine;
+        self.with_conn(|conn| {
+            let mut stmt = conn.prepare(sql)?;
+            let column_names: Vec<String> =
+                stmt.column_names().iter().map(|s| s.to_string()).collect();
+            let mut rows = stmt.query([])?;
+            let mut out: Vec<RawSqlRow> = Vec::new();
+            while let Some(row) = rows.next()? {
+                let mut map = serde_json::Map::with_capacity(column_names.len());
+                for (i, name) in column_names.iter().enumerate() {
+                    let v = row.get_ref(i)?;
+                    let json_v = match v {
+                        rusqlite::types::ValueRef::Null => serde_json::Value::Null,
+                        rusqlite::types::ValueRef::Integer(n) => serde_json::Value::from(n),
+                        rusqlite::types::ValueRef::Real(f) => serde_json::json!(f),
+                        rusqlite::types::ValueRef::Text(t) => {
+                            serde_json::Value::String(String::from_utf8_lossy(t).into_owned())
+                        }
+                        rusqlite::types::ValueRef::Blob(b) => serde_json::Value::String(
+                            base64::engine::general_purpose::STANDARD.encode(b),
+                        ),
+                    };
+                    map.insert(name.clone(), json_v);
+                }
+                out.push(map);
+            }
+            Ok(out)
+        })
     }
 
     fn query_llm_cost_stats(&self, filter: &LlmCostStatsFilter) -> LlmCostStatsSummary {

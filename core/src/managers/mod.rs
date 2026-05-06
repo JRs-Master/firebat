@@ -23,3 +23,4 @@ pub mod task;
 pub mod media;
 pub mod ai;
 pub mod storage;
+pub mod memory_facade;

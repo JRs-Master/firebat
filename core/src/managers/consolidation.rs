@@ -15,10 +15,9 @@ use std::sync::Arc;
 
 use crate::managers::ai::AiManager;
 use crate::managers::conversation::ConversationManager;
-use crate::managers::entity::EntityManager;
-use crate::managers::episodic::EpisodicManager;
 use crate::ports::{
-    IVaultPort, InfraResult, LlmCallOpts, SaveEntityInput, SaveEventInput, SaveFactInput,
+    IMemoryFacadePort, IVaultPort, InfraResult, LlmCallOpts, SaveEntityInput, SaveEventInput,
+    SaveFactInput,
 };
 
 /// AI Assistant model 의 default — Vault `system:ai-router:model` 미박힘 시 폴백.
@@ -163,8 +162,9 @@ pub struct MemoryStats {
 }
 
 pub struct ConsolidationManager {
-    entity_mgr: Arc<EntityManager>,
-    episodic_mgr: Arc<EpisodicManager>,
+    /// 메모리 4-tier facade — Entity + Episodic 통합 port (BIBLE 매니저 간 직접 호출 금지 정정).
+    /// 옛 `entity_mgr` + `episodic_mgr` 직접 의존 → trait object 로 추출 (2026-05-06).
+    memory: Arc<dyn IMemoryFacadePort>,
     /// AI hook (옵션, 늦게 박을 수 있게 Mutex) — consolidate_conversation 의 LLM 자동 추출.
     /// 미박힘 시 LLM 추출 비활성, save_extracted 만 가능.
     /// AiManager 박힌 후 set_ai_hook 으로 박음 (Arc 안에서도 가능).
@@ -182,10 +182,9 @@ pub struct ConsolidationAiHook {
 }
 
 impl ConsolidationManager {
-    pub fn new(entity_mgr: Arc<EntityManager>, episodic_mgr: Arc<EpisodicManager>) -> Self {
+    pub fn new(memory: Arc<dyn IMemoryFacadePort>) -> Self {
         Self {
-            entity_mgr,
-            episodic_mgr,
+            memory,
             ai_hook: std::sync::Mutex::new(None),
         }
     }
@@ -313,7 +312,7 @@ impl ConsolidationManager {
                 continue;
             }
             match self
-                .entity_mgr
+                .memory
                 .save_entity(SaveEntityInput {
                     name: e.name.clone(),
                     entity_type: e.entity_type.clone(),
@@ -343,7 +342,7 @@ impl ConsolidationManager {
             }
             let entity_id = match entity_id_by_name.get(&f.entity_name).copied() {
                 Some(id) => Some(id),
-                None => match self.entity_mgr.find_entity_by_name(&f.entity_name) {
+                None => match self.memory.find_entity_by_name(&f.entity_name) {
                     Ok(Some(rec)) => {
                         entity_id_by_name.insert(f.entity_name.clone(), rec.id);
                         Some(rec.id)
@@ -356,7 +355,7 @@ impl ConsolidationManager {
                 continue;
             };
             match self
-                .entity_mgr
+                .memory
                 .save_fact(SaveFactInput {
                     entity_id,
                     content: f.content.clone(),
@@ -394,13 +393,13 @@ impl ConsolidationManager {
             for name in &ev.entity_names {
                 if let Some(id) = entity_id_by_name.get(name).copied() {
                     entity_ids.push(id);
-                } else if let Ok(Some(rec)) = self.entity_mgr.find_entity_by_name(name) {
+                } else if let Ok(Some(rec)) = self.memory.find_entity_by_name(name) {
                     entity_id_by_name.insert(name.clone(), rec.id);
                     entity_ids.push(rec.id);
                 }
             }
             match self
-                .episodic_mgr
+                .memory
                 .save_event(SaveEventInput {
                     event_type: ev.event_type.clone(),
                     title: ev.title.clone(),
@@ -440,18 +439,18 @@ impl ConsolidationManager {
     /// 어드민 health stats — 4-tier 누적 상태 표시용.
     pub fn get_memory_stats(&self) -> InfraResult<MemoryStats> {
         Ok(MemoryStats {
-            entities: self.entity_mgr.count_entities()?,
-            facts: self.entity_mgr.count_facts()?,
-            events: self.episodic_mgr.count_events()?,
-            entities_by_type: self.entity_mgr.count_entities_by_type()?,
-            events_by_type: self.episodic_mgr.count_events_by_type()?,
+            entities: self.memory.count_entities()?,
+            facts: self.memory.count_facts()?,
+            events: self.memory.count_events()?,
+            entities_by_type: self.memory.count_entities_by_type()?,
+            events_by_type: self.memory.count_events_by_type()?,
         })
     }
 
     /// 24시간 cron 호출용 — 만료 fact + event 일괄 정리.
     pub fn cleanup_all_expired(&self) -> InfraResult<(i64, i64)> {
-        let facts = self.entity_mgr.cleanup_expired()?;
-        let events = self.episodic_mgr.cleanup_expired()?;
+        let facts = self.memory.cleanup_expired_facts()?;
+        let events = self.memory.cleanup_expired_events()?;
         Ok((facts, events))
     }
 

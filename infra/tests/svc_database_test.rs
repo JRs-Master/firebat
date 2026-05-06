@@ -1,20 +1,27 @@
-//! DatabaseService gRPC integration test — 옛 core inline tests 이관.
+//! DatabaseService gRPC integration test — Phase B-4 audit cleanup #4 (2026-05-06).
+//!
+//! 옛 raw rusqlite Connection 직접 의존 → IDatabasePort.run_select_query 위임으로 변경.
+//! Service 가 Arc<dyn IDatabasePort> 받음.
 
+use std::sync::Arc;
 use tempfile::tempdir;
 use tonic::Request;
 
+use firebat_core::ports::IDatabasePort;
 use firebat_core::proto::{database_service_server::DatabaseService, JsonArgs};
 use firebat_core::services::database::DatabaseServiceImpl;
 use firebat_infra::adapters::database::SqliteDatabaseAdapter;
 
+fn make_svc() -> (DatabaseServiceImpl, tempfile::TempDir) {
+    let dir = tempdir().unwrap();
+    let db: Arc<dyn IDatabasePort> =
+        Arc::new(SqliteDatabaseAdapter::new(dir.path().join("test.db")).unwrap());
+    (DatabaseServiceImpl::new(db), dir)
+}
+
 #[tokio::test]
 async fn select_returns_rows() {
-    let dir = tempdir().unwrap();
-    let db_path = dir.path().join("test.db");
-    // schema 초기화
-    let _ = SqliteDatabaseAdapter::new(&db_path).unwrap();
-
-    let svc = DatabaseServiceImpl::new(db_path).unwrap();
+    let (svc, _dir) = make_svc();
     let resp = svc
         .query(Request::new(JsonArgs {
             raw: serde_json::json!({"sql": "SELECT COUNT(*) AS cnt FROM pages"}).to_string(),
@@ -28,11 +35,7 @@ async fn select_returns_rows() {
 
 #[tokio::test]
 async fn insert_rejected() {
-    let dir = tempdir().unwrap();
-    let db_path = dir.path().join("test.db");
-    let _ = SqliteDatabaseAdapter::new(&db_path).unwrap();
-
-    let svc = DatabaseServiceImpl::new(db_path).unwrap();
+    let (svc, _dir) = make_svc();
     let resp = svc
         .query(Request::new(JsonArgs {
             raw: serde_json::json!({"sql": "INSERT INTO pages (slug) VALUES ('x')"}).to_string(),

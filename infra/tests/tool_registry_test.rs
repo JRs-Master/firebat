@@ -10,13 +10,14 @@ use firebat_core::managers::episodic::EpisodicManager;
 use firebat_core::managers::event::EventManager;
 use firebat_core::managers::mcp::McpManager;
 use firebat_core::managers::media::MediaManager;
+use firebat_core::managers::memory_facade::MemoryFacade;
 use firebat_core::managers::module::ModuleManager;
 use firebat_core::managers::page::PageManager;
 use firebat_core::managers::schedule::ScheduleManager;
 use firebat_core::managers::tool::ToolManager;
 use firebat_core::ports::{
     ICronPort, IDatabasePort, IEntityPort, IEpisodicPort, ILogPort, IMcpClientPort, IMediaPort,
-    ISandboxPort, IStoragePort, IVaultPort,
+    IMemoryFacadePort, ISandboxPort, IStoragePort, IVaultPort,
 };
 use firebat_core::tool_registry::{register_core_tools, CoreToolHandlers};
 use firebat_infra::adapters::cron::TokioCronAdapter;
@@ -53,8 +54,9 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
     let mcp_mgr = Arc::new(McpManager::new(mcp_client));
     let entity_mgr = Arc::new(EntityManager::new(entity_port));
     let episodic_mgr = Arc::new(EpisodicManager::new(episodic_port));
-    let consolidation_mgr =
-        Arc::new(ConsolidationManager::new(entity_mgr.clone(), episodic_mgr.clone()));
+    let memory_facade: Arc<dyn IMemoryFacadePort> =
+        Arc::new(MemoryFacade::new(entity_mgr.clone(), episodic_mgr.clone()));
+    let consolidation_mgr = Arc::new(ConsolidationManager::new(memory_facade));
 
     let cron: Arc<dyn ICronPort> = TokioCronAdapter::new(
         dir.path().join("cron.json"),
