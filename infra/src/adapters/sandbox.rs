@@ -459,6 +459,7 @@ impl ISandboxPort for ProcessSandboxAdapter {
         }
         // MAX_RETRIES 모두 실패 시 마지막 결과 반환
         Ok(last_result.unwrap_or_else(|| ModuleOutput {
+            protocol_version: firebat_core::ports::MODULE_PROTOCOL_VERSION.to_string(),
             success: false,
             data: serde_json::Value::Null,
             error: Some("MAX_RETRIES 모두 실패".to_string()),
@@ -560,6 +561,7 @@ impl ProcessSandboxAdapter {
                 format!("exit code: {:?}", exit_code)
             };
             return Ok(ModuleOutput {
+                protocol_version: firebat_core::ports::MODULE_PROTOCOL_VERSION.to_string(),
                 success: false,
                 data: serde_json::Value::Null,
                 error: Some(combined_err),
@@ -576,6 +578,7 @@ impl ProcessSandboxAdapter {
         };
 
         Ok(ModuleOutput {
+            protocol_version: firebat_core::ports::MODULE_PROTOCOL_VERSION.to_string(),
             success: true,
             data,
             error: None,

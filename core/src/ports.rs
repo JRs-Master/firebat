@@ -440,8 +440,18 @@ pub struct ConversationRecord {
 // Sandbox — sysmod 자식 process 실행
 // ──────────────────────────────────────────────────────────────────────────
 
+/// 현재 Module I/O envelope schema 버전.
+/// Phase B-post audit E1 (2026-05-06) 박힘 — 미래 break change 방어.
+/// 모듈 stdout JSON 에 `protocolVersion: "1.0"` 박혀있으면 명시 호환 검사.
+/// 미박힘 (옛 모듈) 도 default "1.0" 으로 처리 — 옛 모듈 호환 보장.
+pub const MODULE_PROTOCOL_VERSION: &str = "1.0";
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModuleOutput {
+    /// I/O envelope schema 버전 — 미박힘 시 default "1.0" 폴백 (옛 모듈 호환).
+    /// 명시 박혀있는데 backend 호환 X 면 sandbox 가 warn 로그.
+    #[serde(rename = "protocolVersion", default = "default_protocol_version", skip_serializing_if = "is_default_protocol_version")]
+    pub protocol_version: String,
     pub success: bool,
     #[serde(default, skip_serializing_if = "serde_json::Value::is_null")]
     pub data: serde_json::Value,
@@ -451,6 +461,27 @@ pub struct ModuleOutput {
     pub stderr: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
+}
+
+fn default_protocol_version() -> String {
+    MODULE_PROTOCOL_VERSION.to_string()
+}
+
+fn is_default_protocol_version(v: &str) -> bool {
+    v == MODULE_PROTOCOL_VERSION
+}
+
+impl Default for ModuleOutput {
+    fn default() -> Self {
+        Self {
+            protocol_version: MODULE_PROTOCOL_VERSION.to_string(),
+            success: false,
+            data: serde_json::Value::Null,
+            error: None,
+            stderr: None,
+            exit_code: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
