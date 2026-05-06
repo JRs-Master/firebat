@@ -1670,3 +1670,45 @@ pub trait IMemoryFacadePort: Send + Sync {
 /// Raw SELECT 쿼리 결과 — 행마다 column → JSON value map.
 pub type RawSqlRow = serde_json::Map<String, serde_json::Value>;
 
+// ──────────────────────────────────────────────────────────────────────────
+// INetworkPort — services (network / telegram) 의 외부 HTTP 호출 추상화.
+//
+// 옛 services 가 reqwest 직접 의존하던 BIBLE Core 순수성 위반 정정 (Phase B-post audit, 2026-05-06).
+// 구현은 `infra/src/adapters/network.rs::ReqwestNetworkAdapter` (reqwest 0.12).
+// telegram bot API 호출 / sandbox NETWORK_REQUEST step / network gRPC service 모두 이 port 경유.
+// ──────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NetworkRequest {
+    pub url: String,
+    /// HTTP method — `"GET"` / `"POST"` / `"PUT"` / `"DELETE"` 등. parse 실패 시 어댑터에서 Err.
+    #[serde(default = "default_get_method")]
+    pub method: String,
+    /// Headers map — 미박힘 시 기본값.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub headers: Option<std::collections::HashMap<String, String>>,
+    /// Body — string 이면 raw, object/array 면 JSON serialize.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<serde_json::Value>,
+    /// Timeout ms (default 30s).
+    #[serde(rename = "timeoutMs", default = "default_timeout_ms")]
+    pub timeout_ms: u64,
+}
+
+fn default_get_method() -> String { "GET".to_string() }
+fn default_timeout_ms() -> u64 { 30_000 }
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NetworkResponse {
+    pub status: u16,
+    pub ok: bool,
+    pub headers: std::collections::HashMap<String, String>,
+    /// JSON parsable body 면 parse, 아니면 string.
+    pub body: serde_json::Value,
+}
+
+#[async_trait::async_trait]
+pub trait INetworkPort: Send + Sync {
+    async fn fetch(&self, req: NetworkRequest) -> InfraResult<NetworkResponse>;
+}
+

@@ -15,14 +15,15 @@ use std::sync::Arc;
 
 use crate::managers::ai::AiManager;
 use crate::managers::conversation::ConversationManager;
+use crate::managers::cost::CostManager;
 use crate::ports::{
     IMemoryFacadePort, IVaultPort, InfraResult, LlmCallOpts, SaveEntityInput, SaveEventInput,
     SaveFactInput,
 };
 
-/// AI Assistant model 의 default — Vault `system:ai-router:model` 미박힘 시 폴백.
-/// 옛 TS AI_ASSISTANT_MODELS[0] (gemini-3.1-flash-lite-preview / gpt-5-nano 같은 싼 fast 모델).
-const AI_ASSISTANT_DEFAULT_MODEL: &str = "gpt-5-nano";
+/// AI Assistant model 의 default — `vault_keys::AI_ASSISTANT_DEFAULT_MODEL` single source 사용.
+/// 옛 자체 박힌 const 폐기 (2026-05-06 audit cleanup A3).
+use crate::vault_keys::AI_ASSISTANT_DEFAULT_MODEL;
 
 /// 옛 TS EXTRACTION_PROMPT Rust port — 대화 → entity / fact / event JSON 추출 instruction.
 const EXTRACTION_PROMPT: &str = r#"당신은 대화 메모리 정리 도우미입니다. 다음 대화를 읽고 추적할 가치 있는 정보를 JSON 으로 추출하세요.
@@ -174,11 +175,15 @@ pub struct ConsolidationManager {
 /// AI 의존성 묶음 — ConversationManager (대화 fetch) + AiManager (LLM 호출) + Vault (AI Assistant
 /// model lookup). consolidate_conversation 의 비용 절감 — 메인 채팅 모델 (Claude Sonnet) 가 아니라
 /// AI Assistant 의 fast/cheap 모델 (gpt-5-nano / gemini-flash-lite, ~$0.001/대화).
+///
+/// `cost` (옵션) — 박혀있으면 LLM 호출 전 `check_budget()` 으로 한도 검사. 한도 초과 시 즉시 skip
+/// (백그라운드 cron 의 무한 LLM 폭주 차단). 옵션이라 옛 호환 유지 — 미박힘 시 옛 동작 그대로.
 #[derive(Clone)]
 pub struct ConsolidationAiHook {
     pub ai: Arc<AiManager>,
     pub conversation: Arc<ConversationManager>,
     pub vault: Arc<dyn IVaultPort>,
+    pub cost: Option<Arc<CostManager>>,
 }
 
 impl ConsolidationManager {
@@ -191,14 +196,16 @@ impl ConsolidationManager {
 
     /// AI hook 박음 — consolidate_conversation 의 LLM 자동 추출 활성.
     /// AiManager 박힌 후 호출 (Arc 안에서도 OK — Mutex 박힘).
+    /// `cost` 박혀있으면 LLM 호출 전 한도 검사 (백그라운드 cron 폭주 차단).
     pub fn set_ai_hook(
         &self,
         ai: Arc<AiManager>,
         conversation: Arc<ConversationManager>,
         vault: Arc<dyn IVaultPort>,
+        cost: Option<Arc<CostManager>>,
     ) {
         let mut guard = self.ai_hook.lock().unwrap_or_else(|p| p.into_inner());
-        *guard = Some(ConsolidationAiHook { ai, conversation, vault });
+        *guard = Some(ConsolidationAiHook { ai, conversation, vault, cost });
     }
 
     /// 대화 1개 자동 정리 — 옛 TS consolidateConversation 1:1 port.
@@ -231,6 +238,26 @@ impl ConsolidationManager {
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false); // default off (옛 TS 와 동일)
             if !enabled {
+                return Ok(ConsolidationOutcome {
+                    extracted: ExtractionResult::default(),
+                    saved: SavedIds::default(),
+                    skipped: 0,
+                });
+            }
+        }
+
+        // 예산 가드 — CostManager 박혀있으면 한도 검사. 한도 초과 시 즉시 skip
+        // (백그라운드 cron 6시간마다 LLM 호출 → API 오류 / 환각 무한 재시도 → 토큰 폭주 차단).
+        // 사용자 어드민 trigger (model_id 명시) 도 동일하게 가드 — 비용 폭주는 어떤 trigger 도 동일 위험.
+        if let Some(cost) = &hook.cost {
+            let check = cost.check_budget();
+            if !check.within_budget {
+                tracing::warn!(
+                    reason = check.reason.as_deref().unwrap_or("한도 초과"),
+                    daily_used = check.daily_used_usd,
+                    monthly_used = check.monthly_used_usd,
+                    "ConsolidationManager: 예산 한도 초과 — consolidate_conversation skip"
+                );
                 return Ok(ConsolidationOutcome {
                     extracted: ExtractionResult::default(),
                     saved: SavedIds::default(),

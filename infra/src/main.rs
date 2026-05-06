@@ -15,9 +15,9 @@ use firebat_infra::adapters::{
     image_gen::StubImageGenAdapter,
     image_processor::{ImageRsProcessorAdapter, StubImageProcessorAdapter},
     mcp_client::McpClientFileAdapter, media::LocalMediaAdapter,
-    memory::SqliteMemoryAdapter, sandbox::ProcessSandboxAdapter,
-    storage::LocalStorageAdapter, tracing_log::{init_tracing, TracingLogAdapter},
-    vault::SqliteVaultAdapter,
+    memory::SqliteMemoryAdapter, network::ReqwestNetworkAdapter,
+    sandbox::ProcessSandboxAdapter, storage::LocalStorageAdapter,
+    tracing_log::{init_tracing, TracingLogAdapter}, vault::SqliteVaultAdapter,
 };
 use firebat_core::{
     managers::{
@@ -33,7 +33,7 @@ use firebat_core::{
     ports::{
         IAuthPort, ICronPort, IDatabasePort, IEmbedderPort, IEntityPort, IEpisodicPort,
         IImageGenPort, IImageProcessorPort, ILlmPort, ILogPort, IMcpClientPort, IMediaPort,
-        IMemoryFacadePort, ISandboxPort, IStoragePort, IVaultPort,
+        IMemoryFacadePort, INetworkPort, ISandboxPort, IStoragePort, IVaultPort,
     },
     proto::{
         ai_service_server::AiServiceServer,
@@ -319,10 +319,13 @@ async fn main() -> Result<()> {
     // ConsolidationManager 의 LLM 자동 추출 활성 — AiManager + ConversationManager + Vault 박힌 후.
     // consolidate_conversation 자동 호출 시 AI Assistant 토글 (Vault `system:ai-router:enabled`)
     // 검사 → 비활성 시 skip. 활성 시 AI Assistant model (gpt-5-nano 등 fast/cheap, 메인 채팅 모델 X).
+    // cost 박음 — 6시간 cron LLM 호출 전 check_budget → 한도 초과 시 즉시 skip
+    // (백그라운드 무한 재시도 / 환각 폭주 차단)
     consolidation_manager.set_ai_hook(
         ai_manager.clone(),
         conversation_manager.clone(),
         vault.clone(),
+        Some(cost_manager.clone()),
     );
 
     // Phase B-17a/c — 정적 도구 dispatch 등록 (27 도구). LLM stub 위에서도 도구 호출 e2e 동작.
@@ -430,9 +433,11 @@ async fn main() -> Result<()> {
     let ai_service = services::ai::AiServiceImpl::new(ai_manager.clone());
 
     // Phase B-17.5 — cross-cutting services (Storage / Settings / Network / Lifecycle).
+    // Phase B-post audit A5 (2026-05-06): INetworkPort 박음 — services 의 reqwest 직접 의존 제거.
+    let network_port: Arc<dyn INetworkPort> = Arc::new(ReqwestNetworkAdapter::new());
     let storage_service = services::storage::StorageServiceImpl::new(storage.clone());
     let settings_service = services::settings::SettingsServiceImpl::new(vault.clone());
-    let network_service = services::network::NetworkServiceImpl::new();
+    let network_service = services::network::NetworkServiceImpl::new(network_port.clone());
     // Phase B-17.5b — Cache / Telegram / Database 추가.
     let cache_dir = workspace_root.join("data").join("cache").join("sysmod-results");
     let cache_adapter = std::sync::Arc::new(
@@ -442,7 +447,7 @@ async fn main() -> Result<()> {
     );
     let cache_service = services::cache::CacheServiceImpl::new(cache_adapter);
     // TelegramService — AiManager + ModuleManager 박아 process_message webhook → AI → reply 활성
-    let telegram_service = services::telegram::TelegramServiceImpl::new(vault.clone())
+    let telegram_service = services::telegram::TelegramServiceImpl::new(vault.clone(), network_port.clone())
         .with_ai_and_module(ai_manager.clone(), module_manager.clone());
     // DatabaseService — raw SELECT escape hatch. 옛 raw rusqlite::Connection 직접 의존
     // (BIBLE Core 순수성 위반) → IDatabasePort port 위임으로 정정 (2026-05-06).

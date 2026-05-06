@@ -97,13 +97,13 @@ impl ToolRouter {
         }
     }
 
-    /// AI Assistant 모델 ID — Vault `system:ai-router:model` 또는 default `gpt-5-nano`.
+    /// AI Assistant 모델 ID — Vault `system:ai-router:model` 또는 default (vault_keys 의 single source).
     /// 메인 채팅 모델과 분리 — 빠르고 싼 모델로 router 호출.
     pub fn get_assistant_model(&self) -> String {
         self.vault
             .get_secret(VK_AI_ROUTER_MODEL)
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "gpt-5-nano".to_string())
+            .unwrap_or_else(|| crate::vault_keys::AI_ASSISTANT_DEFAULT_MODEL.to_string())
     }
 
     /// 현재 model 이 Gemini API 인지 — 도구 필터링 적용 여부.

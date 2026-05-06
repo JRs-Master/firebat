@@ -8,10 +8,9 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
-use crate::utils::http_client::http_client;
 use crate::managers::ai::AiManager;
 use crate::managers::module::ModuleManager;
-use crate::ports::IVaultPort;
+use crate::ports::{INetworkPort, IVaultPort, NetworkRequest};
 use crate::proto::{
     telegram_service_server::TelegramService, BoolRequest, Empty, JsonArgs, JsonValue,
     StringRequest,
@@ -19,6 +18,8 @@ use crate::proto::{
 
 pub struct TelegramServiceImpl {
     vault: Arc<dyn IVaultPort>,
+    /// HTTP — Telegram Bot API 호출 (옛 reqwest 직접 의존 → INetworkPort 위임, 2026-05-06 audit A5).
+    network: Arc<dyn INetworkPort>,
     /// AiManager (옵션) — 박혀있으면 process_message webhook → AI → reply 활성.
     ai: Option<Arc<AiManager>>,
     /// ModuleManager (옵션) — sysmod_telegram 으로 reply 발송. ai 와 같이 박혀야 의미 있음.
@@ -26,9 +27,10 @@ pub struct TelegramServiceImpl {
 }
 
 impl TelegramServiceImpl {
-    pub fn new(vault: Arc<dyn IVaultPort>) -> Self {
+    pub fn new(vault: Arc<dyn IVaultPort>, network: Arc<dyn INetworkPort>) -> Self {
         Self {
             vault,
+            network,
             ai: None,
             module: None,
         }
@@ -83,21 +85,22 @@ impl TelegramService for TelegramServiceImpl {
         let secret = self.webhook_secret();
 
         let endpoint = format!("https://api.telegram.org/bot{}/setWebhook", token);
-        let response = http_client()
-            .post(&endpoint)
-            .json(&serde_json::json!({
-                "url": webhook_url,
-                "secret_token": secret,
-                "drop_pending_updates": true,
-            }))
-            .send()
+        let resp = self
+            .network
+            .fetch(NetworkRequest {
+                url: endpoint,
+                method: "POST".to_string(),
+                headers: None,
+                body: Some(serde_json::json!({
+                    "url": webhook_url,
+                    "secret_token": secret,
+                    "drop_pending_updates": true,
+                })),
+                timeout_ms: 30_000,
+            })
             .await
             .map_err(|e| TonicStatus::internal(format!("Telegram setWebhook: {e}")))?;
-        let body: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| TonicStatus::internal(format!("body parse: {e}")))?;
-        json_response(&body)
+        json_response(&resp.body)
     }
 
     async fn remove_webhook(
@@ -108,16 +111,18 @@ impl TelegramService for TelegramServiceImpl {
             .bot_token()
             .ok_or_else(|| TonicStatus::failed_precondition("TELEGRAM_BOT_TOKEN 미설정"))?;
         let endpoint = format!("https://api.telegram.org/bot{}/deleteWebhook", token);
-        let response = http_client()
-            .post(&endpoint)
-            .send()
+        let resp = self
+            .network
+            .fetch(NetworkRequest {
+                url: endpoint,
+                method: "POST".to_string(),
+                headers: None,
+                body: None,
+                timeout_ms: 30_000,
+            })
             .await
             .map_err(|e| TonicStatus::internal(format!("Telegram deleteWebhook: {e}")))?;
-        let body: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| TonicStatus::internal(format!("body parse: {e}")))?;
-        json_response(&body)
+        json_response(&resp.body)
     }
 
     async fn get_webhook_status(
@@ -128,16 +133,18 @@ impl TelegramService for TelegramServiceImpl {
             .bot_token()
             .ok_or_else(|| TonicStatus::failed_precondition("TELEGRAM_BOT_TOKEN 미설정"))?;
         let endpoint = format!("https://api.telegram.org/bot{}/getWebhookInfo", token);
-        let response = http_client()
-            .get(&endpoint)
-            .send()
+        let resp = self
+            .network
+            .fetch(NetworkRequest {
+                url: endpoint,
+                method: "GET".to_string(),
+                headers: None,
+                body: None,
+                timeout_ms: 30_000,
+            })
             .await
             .map_err(|e| TonicStatus::internal(format!("Telegram getWebhookInfo: {e}")))?;
-        let body: serde_json::Value = response
-            .json()
-            .await
-            .map_err(|e| TonicStatus::internal(format!("body parse: {e}")))?;
-        json_response(&body)
+        json_response(&resp.body)
     }
 
     async fn is_owner(
