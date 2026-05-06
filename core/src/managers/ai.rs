@@ -923,6 +923,8 @@ fn signature(s: &str) -> String {
         .collect()
 }
 
+// 본 inline tests 블록은 private fn (`signature`, `push_text_block_dedup`, `is_past_iso`)
+// 다수 사용 + AiManager 의 12+ 매니저 의존성으로 integration test 이관 비용 큼 → inline 유지.
 #[cfg(all(test, feature = "infra-tests"))]
 mod tests {
     use super::*;

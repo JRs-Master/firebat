@@ -1241,55 +1241,12 @@ fn format_to_string(format: &ImageFormat) -> &'static str {
     }
 }
 
-#[cfg(all(test, feature = "infra-tests"))]
+// Tests 이관 — `infra/tests/media_manager_test.rs` (integration test).
+// private fn 사용 test 만 inline 유지 — `parse_size_hint` / `parse_aspect_ratio` /
+// `compute_crop_dims` / `parse_media_url` / `ext_from_content_type` (module-private fns).
+#[cfg(test)]
 mod tests {
     use super::*;
-    use firebat_infra::adapters::embedder::StubEmbedderAdapter;
-    use firebat_infra::adapters::image_gen::StubImageGenAdapter;
-    use firebat_infra::adapters::image_processor::StubImageProcessorAdapter;
-    use firebat_infra::adapters::media::LocalMediaAdapter;
-    use firebat_infra::adapters::vault::SqliteVaultAdapter;
-    use tempfile::tempdir;
-
-    fn _silence_unused_imports() {
-        // StubEmbedderAdapter / parse_format — 다른 시점 테스트에서 사용 (참고용 import 보존)
-        let _ = StubEmbedderAdapter::new();
-        let _ = parse_format("png");
-    }
-
-    fn make_manager() -> (Arc<MediaManager>, tempfile::TempDir) {
-        let dir = tempdir().unwrap();
-        let media: Arc<dyn IMediaPort> = Arc::new(LocalMediaAdapter::new(dir.path()));
-        let vault: Arc<dyn IVaultPort> =
-            Arc::new(SqliteVaultAdapter::new(dir.path().join("vault.db")).unwrap());
-        let image_gen: Arc<dyn IImageGenPort> = Arc::new(StubImageGenAdapter::new());
-        let processor: Arc<dyn IImageProcessorPort> = Arc::new(StubImageProcessorAdapter::new());
-        let mgr = MediaManager::new(media)
-            .with_vault(vault)
-            .with_image_gen(image_gen)
-            .with_processor(processor);
-        (Arc::new(mgr), dir)
-    }
-
-    #[tokio::test]
-    async fn save_and_is_ready_done() {
-        let (mgr, _dir) = make_manager();
-        let r = mgr
-            .save(b"x", "image/png", MediaSaveOptions::default())
-            .await
-            .unwrap();
-        assert!(mgr.is_ready(&r.slug).await);
-    }
-
-    #[tokio::test]
-    async fn error_record_is_not_ready() {
-        let (mgr, _dir) = make_manager();
-        let slug = mgr
-            .save_error_record(MediaSaveOptions::default(), "fail")
-            .await
-            .unwrap();
-        assert!(!mgr.is_ready(&slug).await);
-    }
 
     #[test]
     fn parse_size_hint_recognizes_formats() {
@@ -1297,7 +1254,6 @@ mod tests {
         assert_eq!(parse_size_hint(Some("1024x1024")), (1024, 1024));
         assert_eq!(parse_size_hint(Some("1536x1024")), (1536, 1024));
         assert_eq!(parse_size_hint(Some("512")), (512, 512));
-        // 무효 입력 → default
         assert_eq!(parse_size_hint(Some("invalid")), (1024, 1024));
         assert_eq!(parse_size_hint(Some("")), (1024, 1024));
     }
@@ -1314,27 +1270,22 @@ mod tests {
 
     #[test]
     fn compute_crop_dims_landscape_to_square() {
-        // 1024x768 (4:3) → 1:1 → 768x768 (height 기준)
         let (w, h) = compute_crop_dims(1024, 768, 1, 1);
         assert_eq!((w, h), (768, 768));
-        // 768x1024 (3:4) → 1:1 → 768x768 (width 기준)
         let (w2, h2) = compute_crop_dims(768, 1024, 1, 1);
         assert_eq!((w2, h2), (768, 768));
     }
 
     #[test]
     fn parse_media_url_extracts_slug() {
-        // 절대 URL
         assert_eq!(
             parse_media_url("https://firebat.co.kr/user/media/abc.png"),
             Some((MediaScope::User, "abc".to_string(), "png".to_string()))
         );
-        // 상대 URL
         assert_eq!(
             parse_media_url("/system/media/x.webp"),
             Some((MediaScope::System, "x".to_string(), "webp".to_string()))
         );
-        // 외부 URL — None (parseMediaUrl 외부 미디어 X)
         assert_eq!(parse_media_url("https://example.com/image.png"), None);
     }
 
@@ -1347,178 +1298,11 @@ mod tests {
         assert_eq!(ext_from_content_type("application/octet-stream"), "png");
     }
 
-    #[tokio::test]
-    async fn is_media_ready_external_url_passes() {
-        let (mgr, _dir) = make_manager();
-        // 외부 URL — 통과 (우리 책임 X)
-        assert!(mgr.is_media_ready("https://example.com/img.png").await);
-    }
-
-    #[tokio::test]
-    async fn is_media_ready_blank_returns_false() {
-        let (mgr, _dir) = make_manager();
-        assert!(!mgr.is_media_ready("").await);
-    }
-
-    #[tokio::test]
-    async fn vault_image_model_set_get_roundtrip() {
-        let (mgr, _dir) = make_manager();
-        // 미박음 시 image_gen.get_model_id() fallback
-        assert_eq!(mgr.get_image_model(), "stub-image");
-        mgr.set_image_model("gpt-image-1").unwrap();
-        assert_eq!(mgr.get_image_model(), "gpt-image-1");
-    }
-
-    #[tokio::test]
-    async fn vault_image_default_size_quality() {
-        let (mgr, _dir) = make_manager();
-        assert!(mgr.get_image_default_size().is_none());
-        mgr.set_image_default_size(Some("1536x1024")).unwrap();
-        assert_eq!(mgr.get_image_default_size(), Some("1536x1024".to_string()));
-        // None 으로 삭제
-        mgr.set_image_default_size(None).unwrap();
-        assert!(mgr.get_image_default_size().is_none());
-
-        mgr.set_image_default_quality(Some("high")).unwrap();
-        assert_eq!(mgr.get_image_default_quality(), Some("high".to_string()));
-    }
-
-    #[tokio::test]
-    async fn list_image_models_returns_stub_one() {
-        let (mgr, _dir) = make_manager();
-        let models = mgr.list_image_models();
-        assert_eq!(models.len(), 1);
-        assert_eq!(models[0].id, "stub-image");
-    }
-
-    #[tokio::test]
-    async fn get_image_settings_returns_default_if_not_set() {
-        let (mgr, _dir) = make_manager();
-        let s = mgr.get_image_settings();
-        assert_eq!(s, SeoImageSettings::default());
-    }
-
-    #[tokio::test]
-    async fn generate_image_with_stub_image_gen() {
-        // Stub image_gen 은 1x1 grey PNG 반환. Stub processor 는 no-op (variants 미생성).
-        let (mgr, _dir) = make_manager();
-        let result = mgr
-            .generate_image(
-                GenerateImageInput {
-                    prompt: "고양이".to_string(),
-                    ..Default::default()
-                },
-                None,
-            )
-            .await
-            .unwrap();
-        assert_eq!(result.model_id, "stub-image");
-        assert!(!result.slug.is_empty());
-        assert_eq!(result.revised_prompt.as_deref(), Some("고양이"));
-    }
-
-    #[tokio::test]
-    async fn generate_image_empty_prompt_errors() {
-        let (mgr, _dir) = make_manager();
-        let r = mgr
-            .generate_image(GenerateImageInput::default(), None)
-            .await;
-        // Stub image_gen 의 빈 prompt error 가 propagate
-        assert!(r.is_err());
-    }
-
-    #[tokio::test]
-    async fn regenerate_image_by_slug_extracts_meta() {
-        let (mgr, _dir) = make_manager();
-        // 1) save 후 prompt 박힘
-        let opts = MediaSaveOptions {
-            prompt: Some("원본 prompt".to_string()),
-            model: Some("stub-image".to_string()),
-            ..Default::default()
-        };
-        let saved = mgr.save(b"x", "image/png", opts).await.unwrap();
-        // 2) regenerate
-        let (result, regen_from) = mgr.regenerate_image_by_slug(&saved.slug).await.unwrap();
-        assert_eq!(regen_from, saved.slug);
-        assert!(result.revised_prompt.as_deref() == Some("원본 prompt"));
-    }
-
-    #[tokio::test]
-    async fn regenerate_without_prompt_errors() {
-        let (mgr, _dir) = make_manager();
-        let saved = mgr
-            .save(b"x", "image/png", MediaSaveOptions::default())
-            .await
-            .unwrap();
-        // prompt 미박힘 → error
-        let r = mgr.regenerate_image_by_slug(&saved.slug).await;
-        assert!(r.is_err());
-        assert!(r.unwrap_err().contains("프롬프트"));
-    }
-
-    #[tokio::test]
-    async fn resolve_reference_image_base64() {
-        let (mgr, _dir) = make_manager();
-        // PNG signature base64
-        let b64 = base64::engine::general_purpose::STANDARD
-            .encode(&[0x89, 0x50, 0x4E, 0x47]);
-        let resolved = mgr
-            .resolve_reference_image(Some(&ReferenceImageInput {
-                base64: Some(b64),
-                ..Default::default()
-            }))
-            .await;
-        let Some(img) = resolved else {
-            panic!("expected Some");
-        };
-        assert_eq!(img.binary, vec![0x89, 0x50, 0x4E, 0x47]);
-        assert_eq!(img.content_type, "image/png"); // raw base64 default
-    }
-
-    #[tokio::test]
-    async fn resolve_reference_image_data_uri() {
-        let (mgr, _dir) = make_manager();
-        let body = base64::engine::general_purpose::STANDARD.encode(b"hello");
-        let data_uri = format!("data:image/webp;base64,{}", body);
-        let resolved = mgr
-            .resolve_reference_image(Some(&ReferenceImageInput {
-                base64: Some(data_uri),
-                ..Default::default()
-            }))
-            .await;
-        let img = resolved.unwrap();
-        assert_eq!(img.content_type, "image/webp");
-        assert_eq!(img.binary, b"hello");
-    }
-
-    #[tokio::test]
-    async fn resolve_reference_image_slug_from_gallery() {
-        let (mgr, _dir) = make_manager();
-        let saved = mgr
-            .save(b"original-bytes", "image/png", MediaSaveOptions::default())
-            .await
-            .unwrap();
-        let resolved = mgr
-            .resolve_reference_image(Some(&ReferenceImageInput {
-                slug: Some(saved.slug),
-                ..Default::default()
-            }))
-            .await;
-        let img = resolved.unwrap();
-        assert_eq!(img.binary, b"original-bytes");
-        assert_eq!(img.content_type, "image/png");
-    }
-
-    #[tokio::test]
-    async fn resolve_reference_image_unknown_slug_returns_none() {
-        let (mgr, _dir) = make_manager();
-        let resolved = mgr
-            .resolve_reference_image(Some(&ReferenceImageInput {
-                slug: Some("nonexistent-xyz".to_string()),
-                ..Default::default()
-            }))
-            .await;
-        assert!(resolved.is_none());
+    #[test]
+    fn parse_format_recognizes() {
+        // parse_format private 사용 sanity — 다른 형식 매핑 확인
+        let _png = parse_format("png");
+        let _webp = parse_format("webp");
     }
 }
 

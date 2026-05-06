@@ -133,46 +133,4 @@ impl EntityManager {
     }
 }
 
-#[cfg(all(test, feature = "infra-tests"))]
-mod tests {
-    use super::*;
-    use firebat_infra::adapters::memory::SqliteMemoryAdapter;
-
-    fn manager() -> EntityManager {
-        let port: Arc<dyn IEntityPort> = Arc::new(SqliteMemoryAdapter::new_in_memory().unwrap());
-        EntityManager::new(port)
-    }
-
-    #[tokio::test]
-    async fn retrieve_context_links_entity_and_facts() {
-        let mgr = manager();
-        let (eid, _) = mgr
-            .save_entity(SaveEntityInput {
-                name: "삼성전자".to_string(),
-                entity_type: "stock".to_string(),
-                ..Default::default()
-            })
-            .await
-            .unwrap();
-        mgr.save_fact(SaveFactInput {
-            entity_id: eid,
-            content: "1주 매수".to_string(),
-            occurred_at: Some(1_700_000_000_000),
-            ..Default::default()
-        })
-        .await
-        .unwrap();
-
-        let result = mgr.retrieve_context("삼성", 5, 5).await.unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].0.name, "삼성전자");
-        assert_eq!(result[0].1.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn retrieve_context_empty_query_returns_empty() {
-        let mgr = manager();
-        let result = mgr.retrieve_context("   ", 5, 5).await.unwrap();
-        assert!(result.is_empty());
-    }
-}
+// Tests 이관 — `infra/tests/entity_manager_test.rs` (integration test).

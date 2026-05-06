@@ -534,6 +534,8 @@ impl ToolSearchIndex {
     }
 }
 
+// 본 inline tests 블록은 private fn (`categorize_tool`, `cosine`) 사용 +
+// `crate::utils::shared_test_lock` (pub(crate)) 사용 → inline 유지.
 #[cfg(all(test, feature = "infra-tests"))]
 mod tests {
     use super::*;

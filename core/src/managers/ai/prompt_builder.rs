@@ -113,6 +113,7 @@ impl PromptBuilder {
     }
 }
 
+// 본 inline tests 블록은 private const (`VK_USER_PROMPT`, `VK_TIMEZONE`) 사용 → inline 유지.
 #[cfg(all(test, feature = "infra-tests"))]
 mod tests {
     use super::*;

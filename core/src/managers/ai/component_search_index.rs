@@ -234,6 +234,8 @@ impl ComponentSearchIndex {
     }
 }
 
+// 본 inline tests 블록은 private fn (`cosine`, `sha1_hash`) 사용 + `crate::utils::shared_test_lock`
+// (pub(crate)) 사용 → integration test 비공개. inline 유지.
 #[cfg(all(test, feature = "infra-tests"))]
 mod tests {
     use super::*;

@@ -83,43 +83,4 @@ impl EpisodicManager {
     }
 }
 
-#[cfg(all(test, feature = "infra-tests"))]
-mod tests {
-    use super::*;
-    use firebat_infra::adapters::memory::SqliteMemoryAdapter;
-
-    fn manager() -> EpisodicManager {
-        let port: Arc<dyn IEpisodicPort> = Arc::new(SqliteMemoryAdapter::new_in_memory().unwrap());
-        EpisodicManager::new(port)
-    }
-
-    #[tokio::test]
-    async fn save_search_recent() {
-        let mgr = manager();
-        mgr.save_event(SaveEventInput {
-            event_type: "page_publish".to_string(),
-            title: "p1".to_string(),
-            occurred_at: Some(1_000),
-            ..Default::default()
-        })
-        .await
-        .unwrap();
-        mgr.save_event(SaveEventInput {
-            event_type: "page_publish".to_string(),
-            title: "p2".to_string(),
-            occurred_at: Some(2_000),
-            ..Default::default()
-        })
-        .await
-        .unwrap();
-        let recent = mgr
-            .list_recent_events(ListRecentOpts {
-                event_type: Some("page_publish".to_string()),
-                limit: Some(10),
-                ..Default::default()
-            })
-            .unwrap();
-        assert_eq!(recent.len(), 2);
-        assert!(recent[0].occurred_at >= recent[1].occurred_at);
-    }
-}
+// Tests 이관 — `infra/tests/episodic_manager_test.rs` (integration test).

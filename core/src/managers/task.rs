@@ -764,139 +764,26 @@ fn parse_spec_if_string(spec: Value) -> Value {
     spec
 }
 
-#[cfg(all(test, feature = "infra-tests"))]
+// Tests 이관 — `infra/tests/task_manager_test.rs` (integration test).
+// private fn 사용 test 만 inline 유지 — `unwrap_module_result` / `parse_spec_if_string` /
+// `is_module_level_failure` / `extract_module_error` / `path_to_module_parts` / `try_fallback`.
+#[cfg(test)]
 mod tests {
     use super::*;
-    use firebat_infra::adapters::log::ConsoleLogAdapter;
     use serde_json::json;
+
+    struct NoopLog;
+    impl ILogPort for NoopLog {
+        fn info(&self, _msg: &str) {}
+        fn warn(&self, _msg: &str) {}
+        fn error(&self, _msg: &str) {}
+        fn debug(&self, _msg: &str) {}
+    }
 
     fn manager() -> TaskManager {
         let executor: Arc<dyn TaskExecutor> = Arc::new(StubTaskExecutor);
-        let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
+        let log: Arc<dyn ILogPort> = Arc::new(NoopLog);
         TaskManager::new(executor, log)
-    }
-
-    fn manager_with_tools() -> TaskManager {
-        let executor: Arc<dyn TaskExecutor> = Arc::new(StubTaskExecutor);
-        let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
-        let tools = Arc::new(ToolManager::new());
-        // 등록된 도구가 있어야 hint 매칭. 옛 TS 의 hardcode 12개 대신 동적 등록.
-        for name in ["sysmod_kiwoom", "save_page", "image_gen", "render_table"] {
-            tools.register(crate::managers::tool::ToolDefinition {
-                name: name.to_string(),
-                description: String::new(),
-                parameters: serde_json::json!({}),
-                source: "core".to_string(),
-            });
-        }
-        TaskManager::new(executor, log).with_tools(tools)
-    }
-
-    #[test]
-    fn validate_execute_missing_path() {
-        let mgr = manager();
-        let steps = vec![PipelineStep::Execute {
-            path: String::new(),
-            input_data: None,
-            input_map: None,
-        }];
-        let err = mgr.validate_pipeline(&steps).unwrap();
-        assert!(err.contains("EXECUTE"));
-    }
-
-    #[test]
-    fn validate_llm_transform_with_tool_hint_rejected() {
-        // ToolManager 박힌 채 — 등록 도구 이름이 instruction 안 보이면 reject (옛 TS hardcoded
-        // TOOL_HINTS 12개 대신 동적 등록 도구 list 활용).
-        let mgr = manager_with_tools();
-        let steps = vec![PipelineStep::LlmTransform {
-            instruction: "1) sysmod_kiwoom 호출 2) save_page".to_string(),
-            input_data: None,
-            input_map: None,
-        }];
-        let err = mgr.validate_pipeline(&steps).unwrap();
-        assert!(err.contains("도구명"));
-    }
-
-    #[test]
-    fn validate_llm_transform_without_tools_skips_hint_check() {
-        // ToolManager 없이 부팅하면 hint 검사 비활성 (테스트 / 경량 wiring 유연성).
-        let mgr = manager();
-        let steps = vec![PipelineStep::LlmTransform {
-            instruction: "1) sysmod_kiwoom 호출 2) save_page".to_string(),
-            input_data: None,
-            input_map: None,
-        }];
-        // hint 비활성 → 다른 검사 (instruction empty 등) 통과
-        assert!(mgr.validate_pipeline(&steps).is_none());
-    }
-
-    #[test]
-    fn validate_save_page_requires_slug_and_spec() {
-        let mgr = manager();
-        let steps = vec![PipelineStep::SavePage {
-            slug: None,
-            spec: None,
-            input_data: None,
-            input_map: None,
-            allow_overwrite: None,
-        }];
-        let err = mgr.validate_pipeline(&steps).unwrap();
-        assert!(err.contains("slug"));
-    }
-
-    #[test]
-    fn validate_pass_when_save_page_has_input_map() {
-        let mgr = manager();
-        let steps = vec![PipelineStep::SavePage {
-            slug: None,
-            spec: None,
-            input_data: None,
-            input_map: Some(json!({"slug": "$prev.slug", "spec": "$prev"})),
-            allow_overwrite: None,
-        }];
-        assert!(mgr.validate_pipeline(&steps).is_none());
-    }
-
-    #[tokio::test]
-    async fn condition_met_continues_pipeline() {
-        let mgr = manager();
-        // 단일 CONDITION step + prev=null. field 미존재 → Null vs ==Null 검사
-        let steps = vec![PipelineStep::Condition {
-            field: "missing".to_string(),
-            op: "==".to_string(),
-            value: Some(Value::Null),
-        }];
-        let result = mgr.execute_pipeline(&steps).await;
-        assert!(result.success);
-    }
-
-    #[tokio::test]
-    async fn condition_unmet_returns_early_exit() {
-        let mgr = manager();
-        // CONDITION 단독 — actual=null, 75000 매칭 X → unmet → early exit
-        let steps = vec![PipelineStep::Condition {
-            field: "price".to_string(),
-            op: ">=".to_string(),
-            value: Some(json!(75000)),
-        }];
-        let result = mgr.execute_pipeline(&steps).await;
-        assert!(result.success);
-        let data = result.data.unwrap();
-        assert_eq!(data["conditionMet"], json!(false));
-    }
-
-    #[tokio::test]
-    async fn execute_via_stub_returns_phase_error() {
-        let mgr = manager();
-        let steps = vec![PipelineStep::Execute {
-            path: "system/modules/x/index.mjs".to_string(),
-            input_data: None,
-            input_map: None,
-        }];
-        let result = mgr.execute_pipeline(&steps).await;
-        assert!(!result.success);
-        assert!(result.error.unwrap().contains("Phase B-16+"));
     }
 
     #[test]

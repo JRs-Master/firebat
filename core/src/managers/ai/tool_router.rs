@@ -230,6 +230,9 @@ impl ToolRouter {
     }
 }
 
+// 본 inline tests 블록은 private field (`r.vault`, `r.session_last_routing`,
+// `r.last_route_cache_ids`) + private const (`VK_AI_ROUTER_ENABLED`, `VK_AI_ROUTER_MODEL`) +
+// private struct (`LastRouting`) 사용 → inline 유지.
 #[cfg(all(test, feature = "infra-tests"))]
 mod tests {
     use super::*;

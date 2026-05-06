@@ -1,0 +1,106 @@
+//! TemplateManager integration test — 옛 core inline tests 이관.
+
+use std::sync::Arc;
+use tempfile::TempDir;
+
+use firebat_core::managers::template::{
+    TemplateBlock, TemplateConfig, TemplateManager, TemplateSpec,
+};
+use firebat_core::ports::IStoragePort;
+use firebat_infra::adapters::storage::LocalStorageAdapter;
+
+fn make_manager() -> (TemplateManager, TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(dir.path()));
+    (TemplateManager::new(storage), dir)
+}
+
+fn make_template(name: &str) -> TemplateConfig {
+    TemplateConfig {
+        name: name.to_string(),
+        description: "test template".to_string(),
+        tags: vec!["test".to_string()],
+        spec: TemplateSpec {
+            head: serde_json::json!({}),
+            body: vec![TemplateBlock {
+                block_type: "Text".to_string(),
+                props: serde_json::json!({"content": "hello"}),
+            }],
+        },
+    }
+}
+
+#[tokio::test]
+async fn save_then_get_then_list_then_delete() {
+    let (mgr, _dir) = make_manager();
+
+    // empty list
+    assert_eq!(mgr.list().await.len(), 0);
+
+    // save
+    mgr.save("stock-weekly", &make_template("주간 시황"))
+        .await
+        .unwrap();
+
+    // get
+    let got = mgr.get("stock-weekly").await.unwrap();
+    assert_eq!(got.name, "주간 시황");
+    assert_eq!(got.spec.body.len(), 1);
+
+    // list
+    let list = mgr.list().await;
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].slug, "stock-weekly");
+    assert_eq!(list[0].name, "주간 시황");
+
+    // delete
+    mgr.delete("stock-weekly").await.unwrap();
+    assert!(mgr.get("stock-weekly").await.is_none());
+    assert_eq!(mgr.list().await.len(), 0);
+}
+
+#[tokio::test]
+async fn unsafe_slug_rejected() {
+    let (mgr, _dir) = make_manager();
+
+    assert!(mgr.save("../etc/passwd", &make_template("evil")).await.is_err());
+    assert!(mgr.save("foo/bar", &make_template("evil")).await.is_err());
+    assert!(mgr.save("foo bar", &make_template("evil")).await.is_err());
+    assert!(mgr.save("", &make_template("evil")).await.is_err());
+
+    assert!(mgr.get("../etc/passwd").await.is_none());
+    assert!(mgr.delete("../etc/passwd").await.is_err());
+}
+
+#[tokio::test]
+async fn empty_body_rejected() {
+    let (mgr, _dir) = make_manager();
+
+    let mut bad = make_template("empty");
+    bad.spec.body.clear();
+    assert!(mgr.save("empty", &bad).await.is_err());
+}
+
+#[tokio::test]
+async fn list_silent_skips_invalid_json() {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = LocalStorageAdapter::new(dir.path());
+    // 잘못된 JSON 직접 박음 — list 가 silent skip 해야
+    storage
+        .write("user/templates/broken/template.json", "{ not valid json")
+        .await
+        .unwrap();
+    // 정상 템플릿도 같이 박음
+    let valid_json = serde_json::to_string_pretty(&make_template("valid")).unwrap();
+    storage
+        .write("user/templates/valid/template.json", &valid_json)
+        .await
+        .unwrap();
+
+    let storage_arc: Arc<dyn IStoragePort> = Arc::new(storage);
+    let mgr = TemplateManager::new(storage_arc);
+
+    let list = mgr.list().await;
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].slug, "valid");
+}

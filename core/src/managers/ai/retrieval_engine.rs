@@ -397,6 +397,7 @@ fn slice_chars(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
 }
 
+// 본 inline tests 블록은 private field (`e.entity`, `e.episodic` 직접 access) 사용 → inline 유지.
 #[cfg(all(test, feature = "infra-tests"))]
 mod tests {
     use super::*;
