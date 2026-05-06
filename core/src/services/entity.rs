@@ -340,42 +340,4 @@ impl EntityService for EntityServiceImpl {
     }
 }
 
-#[cfg(all(test, feature = "infra-tests"))]
-mod tests {
-    use super::*;
-    use firebat_infra::adapters::memory::SqliteMemoryAdapter;
-    use crate::ports::IEntityPort;
-
-    fn service() -> EntityServiceImpl {
-        let port: Arc<dyn IEntityPort> = Arc::new(SqliteMemoryAdapter::new_in_memory().unwrap());
-        let mgr = Arc::new(EntityManager::new(port));
-        EntityServiceImpl::new(mgr)
-    }
-
-    #[tokio::test]
-    async fn save_then_search_via_grpc() {
-        let svc = service();
-        let resp = svc
-            .save(Request::new(JsonArgs {
-                raw: serde_json::json!({
-                    "name": "테스트",
-                    "type": "stock",
-                    "aliases": ["t"]
-                })
-                .to_string(),
-            }))
-            .await
-            .unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
-        assert!(parsed["id"].as_i64().unwrap() > 0);
-
-        let search_resp = svc
-            .search(Request::new(JsonArgs {
-                raw: serde_json::json!({"query": "테스트", "limit": 10}).to_string(),
-            }))
-            .await
-            .unwrap();
-        let list: serde_json::Value = serde_json::from_str(&search_resp.into_inner().raw).unwrap();
-        assert_eq!(list.as_array().unwrap().len(), 1);
-    }
-}
+// Tests 이관 — `infra/tests/svc_entity_test.rs` (integration test).

@@ -215,45 +215,4 @@ impl AiService for AiServiceImpl {
     }
 }
 
-#[cfg(all(test, feature = "infra-tests"))]
-mod tests {
-    use super::*;
-    use firebat_infra::adapters::llm::StubLlmAdapter;
-    use firebat_infra::adapters::log::ConsoleLogAdapter;
-    use crate::managers::tool::ToolManager;
-    use crate::ports::{ILlmPort, ILogPort};
-
-    fn service() -> AiServiceImpl {
-        let llm: Arc<dyn ILlmPort> = Arc::new(StubLlmAdapter::new("stub"));
-        let tools = Arc::new(ToolManager::new());
-        let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
-        let mgr = Arc::new(AiManager::new(llm, tools, log));
-        AiServiceImpl::new(mgr)
-    }
-
-    #[tokio::test]
-    async fn process_via_grpc_returns_stub_text() {
-        let svc = service();
-        let resp = svc
-            .process(Request::new(JsonArgs {
-                raw: serde_json::json!({"prompt": "hi"}).to_string(),
-            }))
-            .await
-            .unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
-        assert!(parsed["text"].as_str().unwrap().contains("Phase B-17+"));
-    }
-
-    #[tokio::test]
-    async fn request_action_with_tools_terminates() {
-        let svc = service();
-        let resp = svc
-            .request_action_with_tools(Request::new(JsonArgs {
-                raw: serde_json::json!({"prompt": "hello", "tools": []}).to_string(),
-            }))
-            .await
-            .unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
-        assert_eq!(parsed["modelId"], "stub");
-    }
-}
+// Tests 이관 — `infra/tests/svc_ai_test.rs` (integration test).

@@ -33,39 +33,4 @@ impl EventService for EventServiceImpl {
     }
 }
 
-#[cfg(all(test, feature = "infra-tests"))]
-mod tests {
-    use super::*;
-    use firebat_infra::adapters::log::ConsoleLogAdapter;
-    use crate::managers::event::FirebatEvent;
-    use crate::ports::ILogPort;
-
-    #[tokio::test]
-    async fn list_audit_log_via_grpc() {
-        let logger: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
-        let manager = Arc::new(EventManager::new(logger));
-        let service = EventServiceImpl::new(manager.clone());
-
-        // 이벤트 3개 발행
-        manager.emit(FirebatEvent {
-            event_type: "x".to_string(),
-            data: serde_json::json!({}),
-        });
-        manager.emit(FirebatEvent {
-            event_type: "y".to_string(),
-            data: serde_json::json!({}),
-        });
-        manager.emit(FirebatEvent {
-            event_type: "z".to_string(),
-            data: serde_json::json!({"v": 1}),
-        });
-
-        let resp = service
-            .list_audit_log(Request::new(NumberRequest { value: 10 }))
-            .await
-            .unwrap();
-        let log: Vec<serde_json::Value> = serde_json::from_str(&resp.into_inner().raw).unwrap();
-        assert_eq!(log.len(), 3);
-        assert_eq!(log[2]["event"]["type"], "z");
-    }
-}
+// Tests 이관 — `infra/tests/svc_event_test.rs` (integration test).

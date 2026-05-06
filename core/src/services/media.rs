@@ -317,58 +317,11 @@ fn base64_simple_decode(s: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-#[cfg(all(test, feature = "infra-tests"))]
+// 외부 API 테스트 이관 — `infra/tests/svc_media_test.rs` (integration test).
+// 아래 inline 테스트는 private fn (`base64_simple_encode` / `base64_simple_decode`) 사용이라 유지.
+#[cfg(test)]
 mod tests {
     use super::*;
-    use firebat_infra::adapters::media::LocalMediaAdapter;
-    use crate::ports::IMediaPort;
-    use tempfile::tempdir;
-
-    fn service() -> (MediaServiceImpl, tempfile::TempDir) {
-        let dir = tempdir().unwrap();
-        let port: Arc<dyn IMediaPort> = Arc::new(LocalMediaAdapter::new(dir.path()));
-        let mgr = Arc::new(MediaManager::new(port));
-        (MediaServiceImpl::new(mgr), dir)
-    }
-
-    #[tokio::test]
-    async fn save_then_list_via_grpc() {
-        let (svc, _dir) = service();
-        let body = serde_json::json!({
-            "binaryBase64": base64_simple_encode(b"hello"),
-            "contentType": "image/png",
-            "filenameHint": "h"
-        });
-        let resp = svc
-            .save(Request::new(JsonArgs {
-                raw: body.to_string(),
-            }))
-            .await
-            .unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
-        assert!(parsed["slug"].as_str().is_some());
-
-        let list = svc
-            .list(Request::new(JsonArgs {
-                raw: "{}".to_string(),
-            }))
-            .await
-            .unwrap();
-        let l: serde_json::Value = serde_json::from_str(&list.into_inner().raw).unwrap();
-        assert_eq!(l["total"], 1);
-    }
-
-    #[tokio::test]
-    async fn is_ready_for_unknown_slug_false() {
-        let (svc, _dir) = service();
-        let resp = svc
-            .is_ready(Request::new(StringRequest {
-                value: "missing".to_string(),
-            }))
-            .await
-            .unwrap();
-        assert!(!resp.into_inner().value);
-    }
 
     #[test]
     fn base64_roundtrip() {

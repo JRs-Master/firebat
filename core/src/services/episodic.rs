@@ -269,40 +269,4 @@ impl EpisodicService for EpisodicServiceImpl {
     }
 }
 
-#[cfg(all(test, feature = "infra-tests"))]
-mod tests {
-    use super::*;
-    use firebat_infra::adapters::memory::SqliteMemoryAdapter;
-    use crate::ports::IEpisodicPort;
-
-    #[tokio::test]
-    async fn save_then_search_via_grpc() {
-        let port: Arc<dyn IEpisodicPort> =
-            Arc::new(SqliteMemoryAdapter::new_in_memory().unwrap());
-        let mgr = Arc::new(EpisodicManager::new(port));
-        let svc = EpisodicServiceImpl::new(mgr);
-
-        let resp = svc
-            .save_event(Request::new(JsonArgs {
-                raw: serde_json::json!({
-                    "type": "page_publish",
-                    "title": "test",
-                    "occurredAt": 1000
-                })
-                .to_string(),
-            }))
-            .await
-            .unwrap();
-        let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
-        assert!(parsed["id"].as_i64().unwrap() > 0);
-
-        let recent = svc
-            .list_recent(Request::new(JsonArgs {
-                raw: serde_json::json!({"limit": 10}).to_string(),
-            }))
-            .await
-            .unwrap();
-        let list: serde_json::Value = serde_json::from_str(&recent.into_inner().raw).unwrap();
-        assert_eq!(list.as_array().unwrap().len(), 1);
-    }
-}
+// Tests 이관 — `infra/tests/svc_episodic_test.rs` (integration test).
