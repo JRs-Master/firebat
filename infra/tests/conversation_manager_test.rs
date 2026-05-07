@@ -163,3 +163,52 @@ async fn save_union_merges_with_existing_messages() {
     // timestamp 순 정렬: PC user (000) → PC reply (001) → Mobile user (005)
     assert_eq!(contents, vec!["PC user", "PC reply", "Mobile user"]);
 }
+
+// ── 임베딩 sync (Phase B-post audit E4 — `pub fn list_embeddings` 노출 후 이관) ─────
+
+#[tokio::test]
+async fn save_with_embedder_indexes_messages() {
+    let (mgr, _dir) = make_manager_with_embedder();
+    let messages = serde_json::json!([
+        {"role": "user", "content": "삼성전자 75000원에 매수"},
+        {"role": "assistant", "content": "주문 접수 완료"}
+    ]);
+    mgr.save("admin", "c1", "거래", &messages, None).await.unwrap();
+
+    let metas = mgr.list_embeddings("admin", "c1");
+    assert_eq!(metas.len(), 2);
+}
+
+#[tokio::test]
+async fn sync_embeddings_grow_with_union_merge() {
+    // union_merge_messages 박힌 후 — 메시지는 절대 줄어들지 않고 union 으로 자라기만 함.
+    // 모바일·PC 동시 쓰기 race 보호 (옛 TS 1:1).
+    let (mgr, _dir) = make_manager_with_embedder();
+    let messages = serde_json::json!([
+        {"id": "u-1700000000000", "role": "user", "content": "msg 0"},
+        {"id": "s-1700000000001", "role": "assistant", "content": "msg 1"},
+        {"id": "u-1700000000002", "role": "user", "content": "msg 2"}
+    ]);
+    mgr.save("admin", "c1", "t", &messages, None).await.unwrap();
+    assert_eq!(mgr.list_embeddings("admin", "c1").len(), 3);
+
+    // 두 번째 save — 메시지 1개 추가 (모바일 쪽 새 메시지). union 으로 자람.
+    let messages2 = serde_json::json!([
+        {"id": "u-1700000000003", "role": "user", "content": "msg 3 from mobile"}
+    ]);
+    mgr.save("admin", "c1", "t", &messages2, None).await.unwrap();
+    let metas = mgr.list_embeddings("admin", "c1");
+    // 모든 메시지 보존 (union) → 4개 임베딩
+    assert_eq!(metas.len(), 4);
+}
+
+#[tokio::test]
+async fn delete_cascades_embeddings() {
+    let (mgr, _dir) = make_manager_with_embedder();
+    let messages = serde_json::json!([{"role": "user", "content": "test"}]);
+    mgr.save("admin", "c1", "t", &messages, None).await.unwrap();
+    assert_eq!(mgr.list_embeddings("admin", "c1").len(), 1);
+
+    mgr.delete("admin", "c1").unwrap();
+    assert_eq!(mgr.list_embeddings("admin", "c1").len(), 0);
+}

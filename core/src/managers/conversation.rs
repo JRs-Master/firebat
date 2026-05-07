@@ -181,6 +181,16 @@ impl ConversationManager {
         self.db.is_conversation_deleted(owner, id)
     }
 
+    /// 임베딩 row 메타 목록 — test 또는 진단용. 옛 inline test 가 `mgr.db.list_conversation_embeddings`
+    /// 직접 access 하던 패턴을 도메인 메서드로 노출 (Phase B-post audit E4).
+    pub fn list_embeddings(
+        &self,
+        owner: &str,
+        conv_id: &str,
+    ) -> Vec<crate::ports::ConversationEmbeddingMeta> {
+        self.db.list_conversation_embeddings(owner, conv_id)
+    }
+
     /// CLI 모드 session resume — 같은 모델일 때만 재사용. 모델 바뀌면 자동 무효.
     pub fn get_cli_session(&self, conversation_id: &str, current_model: &str) -> Option<String> {
         self.db.get_cli_session(conversation_id, current_model)
@@ -489,76 +499,12 @@ fn take_chars(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
 }
 
-// Tests 이관 — `infra/tests/conversation_manager_test.rs` (integration test).
-// private 접근 (mgr.db / message_to_text / sha1_hex / take_chars) test 만 inline 유지.
+// Tests 이관 — embedding sync tests (save_with_embedder / sync_embeddings_grow / delete_cascades) 는
+// `infra/tests/conversation_manager_test.rs` (integration). private fn (`message_to_text` /
+// `sha1_hex` / `take_chars`) 사용 unit test 만 inline 유지.
 #[cfg(all(test, feature = "infra-tests"))]
 mod tests {
     use super::*;
-    use firebat_infra::adapters::database::SqliteDatabaseAdapter;
-    use firebat_infra::adapters::embedder::StubEmbedderAdapter;
-
-    fn make_manager() -> ConversationManager {
-        let db: Arc<dyn IDatabasePort> = Arc::new(SqliteDatabaseAdapter::new_in_memory().unwrap());
-        ConversationManager::new(db)
-    }
-
-    fn make_manager_with_embedder() -> ConversationManager {
-        let db: Arc<dyn IDatabasePort> = Arc::new(SqliteDatabaseAdapter::new_in_memory().unwrap());
-        let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
-        ConversationManager::new(db).with_embedder(embedder)
-    }
-
-    // ── 임베딩 sync + search_history 테스트 (Phase B-18 Step 1.5) ──────────────
-
-    #[tokio::test]
-    async fn save_with_embedder_indexes_messages() {
-        let mgr = make_manager_with_embedder();
-        let messages = serde_json::json!([
-            {"role": "user", "content": "삼성전자 75000원에 매수"},
-            {"role": "assistant", "content": "주문 접수 완료"}
-        ]);
-        mgr.save("admin", "c1", "거래", &messages, None).await.unwrap();
-
-        // 임베딩 row 2개 박혔는지 확인
-        let metas = mgr.db.list_conversation_embeddings("admin", "c1");
-        assert_eq!(metas.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn sync_embeddings_grow_with_union_merge() {
-        // union_merge_messages 박힌 후 — 메시지는 절대 줄어들지 않고 union 으로 자라기만 함.
-        // 모바일·PC 동시 쓰기 race 보호 (옛 TS 1:1).
-        // 임베딩 cleanup 로직은 defensive 로 유지 (sync_embeddings 가 dropped idx 제거하는 코드는 그대로) —
-        // 실 production 에선 trigger 안 됨 (union merge 가 보장). delete() 만 cleanup 책임.
-        let mgr = make_manager_with_embedder();
-        let messages = serde_json::json!([
-            {"id": "u-1700000000000", "role": "user", "content": "msg 0"},
-            {"id": "s-1700000000001", "role": "assistant", "content": "msg 1"},
-            {"id": "u-1700000000002", "role": "user", "content": "msg 2"}
-        ]);
-        mgr.save("admin", "c1", "t", &messages, None).await.unwrap();
-        assert_eq!(mgr.db.list_conversation_embeddings("admin", "c1").len(), 3);
-
-        // 두 번째 save — 메시지 1개 추가 (모바일 쪽 새 메시지). union 으로 자람.
-        let messages2 = serde_json::json!([
-            {"id": "u-1700000000003", "role": "user", "content": "msg 3 from mobile"}
-        ]);
-        mgr.save("admin", "c1", "t", &messages2, None).await.unwrap();
-        let metas = mgr.db.list_conversation_embeddings("admin", "c1");
-        // 모든 메시지 보존 (union) → 4개 임베딩
-        assert_eq!(metas.len(), 4);
-    }
-
-    #[tokio::test]
-    async fn delete_cascades_embeddings() {
-        let mgr = make_manager_with_embedder();
-        let messages = serde_json::json!([{"role": "user", "content": "test"}]);
-        mgr.save("admin", "c1", "t", &messages, None).await.unwrap();
-        assert_eq!(mgr.db.list_conversation_embeddings("admin", "c1").len(), 1);
-
-        mgr.delete("admin", "c1").unwrap();
-        assert_eq!(mgr.db.list_conversation_embeddings("admin", "c1").len(), 0);
-    }
 
     #[test]
     fn message_to_text_extracts_content() {

@@ -234,65 +234,12 @@ impl ComponentSearchIndex {
     }
 }
 
-// 본 inline tests 블록은 private fn (`cosine`, `sha1_hash`) 사용 + `crate::utils::shared_test_lock`
-// (pub(crate)) 사용 → integration test 비공개. inline 유지.
+// Tests 이관 — public-API async tests (empty / top_5 / limit) 는
+// `infra/tests/ai_component_search_index_test.rs` (integration) 로 이관. private fn (`cosine`,
+// `sha1_hash`) 사용 unit test 만 inline 유지.
 #[cfg(all(test, feature = "infra-tests"))]
 mod tests {
     use super::*;
-    use firebat_infra::adapters::embedder::stub::StubEmbedderAdapter;
-
-    fn ensure_temp_data_dir() -> tempfile::TempDir {
-        let dir = tempfile::tempdir().unwrap();
-        unsafe {
-            std::env::set_var("FIREBAT_DATA_DIR", dir.path());
-        }
-        dir
-    }
-
-    #[tokio::test]
-    async fn empty_query_returns_empty() {
-        let _g = crate::utils::shared_test_lock();
-        let _dir = ensure_temp_data_dir();
-        let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
-        let idx = ComponentSearchIndex::new(embedder);
-        let result = idx.query("", ComponentSearchOpts::default()).await.unwrap();
-        assert!(result.is_empty());
-    }
-
-    #[tokio::test]
-    async fn query_returns_top_5_default() {
-        let _g = crate::utils::shared_test_lock();
-        let _dir = ensure_temp_data_dir();
-        let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
-        let idx = ComponentSearchIndex::new(embedder);
-        let result = idx
-            .query("주식 차트", ComponentSearchOpts::default())
-            .await
-            .unwrap();
-        assert_eq!(result.len(), 5);
-        // 점수 내림차순
-        for w in result.windows(2) {
-            assert!(w[0].score >= w[1].score);
-        }
-    }
-
-    #[tokio::test]
-    async fn query_respects_limit() {
-        let _g = crate::utils::shared_test_lock();
-        let _dir = ensure_temp_data_dir();
-        let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
-        let idx = ComponentSearchIndex::new(embedder);
-        let result = idx
-            .query(
-                "table 표",
-                ComponentSearchOpts {
-                    limit: Some(3),
-                },
-            )
-            .await
-            .unwrap();
-        assert_eq!(result.len(), 3);
-    }
 
     #[test]
     fn cosine_basic() {

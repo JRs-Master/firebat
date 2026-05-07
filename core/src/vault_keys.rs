@@ -8,6 +8,8 @@ pub const VK_SYSTEM_AI_MODEL: &str = "system:ai-model";
 pub const VK_SYSTEM_AI_THINKING_LEVEL: &str = "system:ai-thinking-level";
 pub const VK_SYSTEM_USER_PROMPT: &str = "system:user-prompt";
 pub const VK_SYSTEM_AI_ASSISTANT_MODEL: &str = "system:ai-router:model";
+/// AI Assistant 토글 — Vault 의 `'true'` / `'1'` 만 ON. ToolRouter 가 이 키 검사.
+pub const VK_SYSTEM_AI_ROUTER_ENABLED: &str = "system:ai-router:enabled";
 /// AI Assistant default 모델 — Vault 미박힘 시 폴백. 옛 hardcode (`gpt-5-nano` literal) 의 single source.
 /// `LlmModelConfig.builtin_models` 의 첫 cli-제외 항목으로 자연 동적화 가능 (v2.0+).
 pub const AI_ASSISTANT_DEFAULT_MODEL: &str = "gpt-5-nano";

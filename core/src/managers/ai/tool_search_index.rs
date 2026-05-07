@@ -534,20 +534,12 @@ impl ToolSearchIndex {
     }
 }
 
-// 본 inline tests 블록은 private fn (`categorize_tool`, `cosine`) 사용 +
-// `crate::utils::shared_test_lock` (pub(crate)) 사용 → inline 유지.
+// Tests 이관 — public-API test (empty_query / list_categories / always_include) 는
+// `infra/tests/ai_tool_search_index_test.rs` (integration) 로 이관. private fn (`categorize_tool`,
+// `cosine`) 사용 test 만 inline 유지.
 #[cfg(all(test, feature = "infra-tests"))]
 mod tests {
     use super::*;
-    use firebat_infra::adapters::embedder::stub::StubEmbedderAdapter;
-
-    fn ensure_temp_data_dir() -> tempfile::TempDir {
-        let dir = tempfile::tempdir().unwrap();
-        unsafe {
-            std::env::set_var("FIREBAT_DATA_DIR", dir.path());
-        }
-        dir
-    }
 
     fn tool(name: &str, desc: &str) -> ToolDefinition {
         ToolDefinition {
@@ -555,24 +547,6 @@ mod tests {
             description: desc.to_string(),
             input_schema: None,
         }
-    }
-
-    fn no_capability(_: &str) -> Option<String> {
-        None
-    }
-
-    #[tokio::test]
-    async fn empty_query_returns_empty() {
-        let _g = crate::utils::shared_test_lock();
-        let _dir = ensure_temp_data_dir();
-        let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
-        let idx = ToolSearchIndex::new(embedder);
-        let tools = vec![tool("sysmod_kiwoom", "주식")];
-        let result = idx
-            .query("", &tools, ToolSearchOpts::default(), &no_capability)
-            .await
-            .unwrap();
-        assert!(result.selected_tool_names.is_empty());
     }
 
     #[test]
@@ -598,27 +572,9 @@ mod tests {
     }
 
     #[test]
-    fn list_categories_returns_11() {
-        let cats = ToolSearchIndex::list_categories();
-        assert_eq!(cats.len(), 10); // 옛 TS 의 11개 → Rust 10개 (mail-read merge 검토 후 옛 TS 와 동일 11개)
-        // 카테고리 id 검증
-        let ids: Vec<&str> = cats.iter().map(|(id, _)| id.as_str()).collect();
-        assert!(ids.contains(&"stock"));
-        assert!(ids.contains(&"crypto"));
-        assert!(ids.contains(&"memory"));
-    }
-
-    #[test]
     fn cosine_dot_product() {
         let a = vec![0.6, 0.8];
         let b = vec![0.6, 0.8];
         assert!((cosine(&a, &b) - 1.0).abs() < 0.0001);
-    }
-
-    #[test]
-    fn always_include_constants() {
-        assert!(ALWAYS_INCLUDE.contains(&"render_alert"));
-        assert!(ALWAYS_INCLUDE.contains(&"render_callout"));
-        assert!(ALWAYS_INCLUDE.contains(&"suggest"));
     }
 }

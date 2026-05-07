@@ -21,8 +21,7 @@ use chrono_tz::Tz;
 
 use crate::ports::IVaultPort;
 use crate::utils::timezone::resolve_user_tz;
-
-const VK_USER_PROMPT: &str = "system:user-prompt";
+use crate::vault_keys::VK_SYSTEM_USER_PROMPT;
 
 const TOOL_SYSTEM_TEMPLATE: &str = include_str!("prompt_tool_system.md");
 const CRON_AGENT_TEMPLATE: &str = include_str!("prompt_cron_agent.md");
@@ -65,7 +64,7 @@ impl PromptBuilder {
         let now_korean = self.now_korean();
         let user_prompt = self
             .vault
-            .get_secret(VK_USER_PROMPT)
+            .get_secret(VK_SYSTEM_USER_PROMPT)
             .filter(|s| !s.trim().is_empty());
         let user_section = match &user_prompt {
             Some(p) => format!(
@@ -107,169 +106,5 @@ impl PromptBuilder {
     }
 }
 
-// 본 inline tests 블록은 private const (`VK_USER_PROMPT`, `VK_TIMEZONE`) 사용 → inline 유지.
-#[cfg(all(test, feature = "infra-tests"))]
-mod tests {
-    use super::*;
-    use firebat_infra::adapters::vault::SqliteVaultAdapter;
-    use tempfile::tempdir;
-
-    fn vault() -> (Arc<dyn IVaultPort>, tempfile::TempDir) {
-        let dir = tempdir().unwrap();
-        let v: Arc<dyn IVaultPort> =
-            Arc::new(SqliteVaultAdapter::new(dir.path().join("vault.db")).unwrap());
-        (v, dir)
-    }
-
-    #[test]
-    fn base_prompt_contains_tool_system_sections() {
-        let (v, _dir) = vault();
-        let pb = PromptBuilder::new(v);
-        let prompt = pb.build(None, None);
-        // 옛 TS prompt 의 핵심 섹션들 존재 검증
-        assert!(prompt.contains("Firebat 도구 사용 시스템"));
-        assert!(prompt.contains("도구 사용 원칙"));
-        assert!(prompt.contains("컴포넌트 카탈로그"));
-        assert!(prompt.contains("Reusable 5 규칙"));
-        assert!(prompt.contains("스케줄링"));
-        assert!(prompt.contains("파이프라인"));
-        assert!(prompt.contains("페이지 생성 가이드"));
-        assert!(prompt.contains("메타 인지 룰"));
-    }
-
-    #[test]
-    fn user_prompt_appended_when_set() {
-        let (v, _dir) = vault();
-        v.set_secret(VK_USER_PROMPT, "당신은 자동매매 전문가입니다.");
-        let pb = PromptBuilder::new(v);
-        let prompt = pb.build(None, None);
-        assert!(prompt.contains("자동매매 전문가"));
-        assert!(prompt.contains("USER_INSTRUCTIONS"));
-        assert!(prompt.contains("사용자 지시사항"));
-    }
-
-    #[test]
-    fn user_prompt_skipped_when_empty() {
-        let (v, _dir) = vault();
-        v.set_secret(VK_USER_PROMPT, "");
-        let pb = PromptBuilder::new(v);
-        let prompt = pb.build(None, None);
-        assert!(!prompt.contains("USER_INSTRUCTIONS"));
-        assert!(!prompt.contains("사용자 지시사항"));
-    }
-
-    #[test]
-    fn timezone_default_seoul_appears_in_prompt() {
-        let (v, _dir) = vault();
-        let pb = PromptBuilder::new(v);
-        let prompt = pb.build(None, None);
-        // Vault 미설정 → Asia/Seoul fallback
-        assert!(prompt.contains("Asia/Seoul"));
-    }
-
-    #[test]
-    fn timezone_override_via_vault() {
-        let (v, _dir) = vault();
-        v.set_secret(VK_TIMEZONE, "America/New_York");
-        let pb = PromptBuilder::new(v);
-        let prompt = pb.build(None, None);
-        assert!(prompt.contains("America/New_York"));
-        // 이전 default Asia/Seoul 안 박힘 (timezone 섹션만)
-        let scheduling_section_idx = prompt.find("타임존:").expect("타임존 섹션 필요");
-        let scheduling_section = &prompt[scheduling_section_idx..scheduling_section_idx + 200];
-        assert!(scheduling_section.contains("America/New_York"));
-    }
-
-    #[test]
-    fn extra_context_replaces_system_context_placeholder() {
-        let (v, _dir) = vault();
-        let pb = PromptBuilder::new(v);
-        let prompt = pb.build(Some("등록된 sysmod: kiwoom, naver-search"), None);
-        assert!(prompt.contains("등록된 sysmod: kiwoom, naver-search"));
-        // placeholder 미치환 검사 (`{system_context}` 글자 그대로 남아있으면 X)
-        assert!(!prompt.contains("{system_context}"));
-    }
-
-    #[test]
-    fn cron_agent_prelude_prepended() {
-        let (v, _dir) = vault();
-        let pb = PromptBuilder::new(v);
-        let prompt = pb.build(
-            None,
-            Some(&CronAgentContext {
-                job_id: "job-2026-04-25-stock-weekly".to_string(),
-                title: Some("주간 증시 일정".to_string()),
-            }),
-        );
-        // cron agent 섹션이 base 앞에 prepend
-        assert!(prompt.contains("Cron Agent 모드"));
-        assert!(prompt.contains("job-2026-04-25-stock-weekly"));
-        assert!(prompt.contains("주간 증시 일정"));
-        assert!(prompt.contains("사용자 부재 중"));
-        // prelude 가 base 보다 앞에 위치
-        let prelude_idx = prompt.find("Cron Agent 모드").unwrap();
-        let base_idx = prompt.find("도구 사용 원칙").unwrap();
-        assert!(prelude_idx < base_idx);
-    }
-
-    #[test]
-    fn cron_agent_without_title_handles_gracefully() {
-        let (v, _dir) = vault();
-        let pb = PromptBuilder::new(v);
-        let prompt = pb.build(
-            None,
-            Some(&CronAgentContext {
-                job_id: "job-id-only".to_string(),
-                title: None,
-            }),
-        );
-        assert!(prompt.contains("job-id-only"));
-        // title 미박음 시 빈 string 처리 (placeholder 안 남음)
-        assert!(!prompt.contains("{job_title_line}"));
-    }
-
-    #[test]
-    fn no_unreplaced_placeholders_in_default_build() {
-        let (v, _dir) = vault();
-        let pb = PromptBuilder::new(v);
-        let prompt = pb.build(Some("ctx"), None);
-        // 모든 `{placeholder}` 패턴 치환 검증 — 옛 TS interpolation 누락 회귀 방지
-        // 단 markdown 안 코드 블록 안 `{...}` 는 의도된 placeholder 가 아닌 예시라 제외.
-        let unreplaced_patterns = ["{system_context}", "{user_tz}", "{now_korean}", "{user_section}"];
-        for pattern in unreplaced_patterns {
-            assert!(
-                !prompt.contains(pattern),
-                "placeholder {} 미치환",
-                pattern
-            );
-        }
-    }
-
-    #[test]
-    fn cron_agent_replaces_all_placeholders() {
-        let (v, _dir) = vault();
-        let pb = PromptBuilder::new(v);
-        let prompt = pb.build(
-            Some("ctx"),
-            Some(&CronAgentContext {
-                job_id: "test-job".to_string(),
-                title: Some("test title".to_string()),
-            }),
-        );
-        let unreplaced_patterns = [
-            "{system_context}",
-            "{user_tz}",
-            "{now_korean}",
-            "{user_section}",
-            "{job_id}",
-            "{job_title_line}",
-        ];
-        for pattern in unreplaced_patterns {
-            assert!(
-                !prompt.contains(pattern),
-                "placeholder {} 미치환",
-                pattern
-            );
-        }
-    }
-}
+// Tests 이관 — `infra/tests/ai_prompt_builder_test.rs` (integration test).
+// Public API 만 사용 (vault_keys::VK_SYSTEM_USER_PROMPT / VK_SYSTEM_TIMEZONE) — inline 유지 0건.
