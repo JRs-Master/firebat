@@ -64,6 +64,9 @@ impl ModuleManager {
 
     /// 모듈명으로 실행 — entry 자동 탐색.
     /// 옛 TS `run(name, input)` 1:1 — listDir 실패 시 한국어 에러 명시.
+    ///
+    /// Track A6 (2026-05-07): config.json 의 input schema 박혀있으면 sandbox spawn 전 validation.
+    /// 실패 시 InfraResult error — 모듈이 받지 못함 (silent corruption 방어).
     pub async fn run(
         &self,
         module_name: &str,
@@ -87,10 +90,35 @@ impl ModuleManager {
             .iter()
             .find(|f| files.contains(&f.to_string()))
             .ok_or_else(|| format!("모듈 entry 파일을 찾을 수 없습니다: {}", module_name))?;
+
+        // Pre-spawn input validation — config.json 의 input schema 기준
+        if let Some(config) = self.get_module_config("user", module_name).await {
+            if let Some(input_schema) = config.get("input") {
+                validate_value(input_data, input_schema)
+                    .map_err(|e| format!("[{}] 입력 검증 실패: {}", module_name, e))?;
+            }
+        }
+
         let target = format!("{}/{}", dir_path, entry);
-        self.sandbox
+        let result = self
+            .sandbox
             .execute(&target, input_data, &SandboxExecuteOpts::default())
-            .await
+            .await?;
+
+        // Post-spawn output validation — config.json 의 output schema 박혀있으면 검사 (선택)
+        if let Some(config) = self.get_module_config("user", module_name).await {
+            if let Some(output_schema) = config.get("output") {
+                if let Err(e) = validate_value(&result.data, output_schema) {
+                    tracing::warn!(
+                        module = module_name,
+                        error = %e,
+                        "[ModuleManager] 출력 schema 위반 — 모듈 stdout 이 config.output 어김"
+                    );
+                }
+            }
+        }
+
+        Ok(result)
     }
 
     /// system/modules/ 시스템 모듈 list.
@@ -243,6 +271,76 @@ impl ModuleManager {
             });
         }
         result
+    }
+}
+
+
+// ─── JSON Schema validation (Track A6, 2026-05-07) ──────────────────────────
+//
+// 시니어 audit 결과 박힌 module I/O contract 강제. config.json 의 input/output schema
+// 형태가 JSON Schema 와 호환 (type/properties/required/enum/etc) 이므로 jsonschema
+// crate 로 검증. 실패 시 명시 에러 (silent corruption 방어).
+
+/// JSON Schema 기준 단일 value 검증. 첫 에러만 사용자에게 노출 (스키마 전체 dump 회피).
+pub(crate) fn validate_value(
+    value: &serde_json::Value,
+    schema: &serde_json::Value,
+) -> Result<(), String> {
+    let compiled = jsonschema::JSONSchema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .compile(schema)
+        .map_err(|e| format!("schema 자체 형식 오류: {}", e))?;
+    if let Err(errors) = compiled.validate(value) {
+        let first = errors
+            .into_iter()
+            .next()
+            .map(|e| format!("{} (path: {})", e, e.instance_path))
+            .unwrap_or_else(|| "알 수 없는 검증 실패".to_string());
+        return Err(first);
+    }
+    Ok(())
+}
+
+/// 모듈 config 자체 well-formedness 검증 — 등록 시점 (또는 dry-run) 호출용.
+/// 실 실행 X — schema 컴파일만 시도해 형식 오류 즉시 catch.
+pub fn validate_module_definition(config: &serde_json::Value) -> Result<(), String> {
+    if let Some(input_schema) = config.get("input") {
+        jsonschema::JSONSchema::options()
+            .with_draft(jsonschema::Draft::Draft7)
+            .compile(input_schema)
+            .map_err(|e| format!("input schema 형식 오류: {}", e))?;
+    }
+    if let Some(output_schema) = config.get("output") {
+        jsonschema::JSONSchema::options()
+            .with_draft(jsonschema::Draft::Draft7)
+            .compile(output_schema)
+            .map_err(|e| format!("output schema 형식 오류: {}", e))?;
+    }
+    Ok(())
+}
+
+impl ModuleManager {
+    /// Dry-run: 모듈 호출 시뮬레이션 — sandbox spawn 안 함.
+    /// config.json 의 well-formedness + input schema 검증만. pipeline 등록 시점 호출 권장.
+    pub async fn dry_run(
+        &self,
+        scope: &str,
+        module_name: &str,
+        input_data: &serde_json::Value,
+    ) -> Result<(), String> {
+        if !is_safe_name(module_name) {
+            return Err("잘못된 모듈 이름입니다.".into());
+        }
+        let config = self
+            .get_module_config(scope, module_name)
+            .await
+            .ok_or_else(|| format!("모듈 config.json 찾을 수 없습니다: {}/{}", scope, module_name))?;
+        validate_module_definition(&config)?;
+        if let Some(input_schema) = config.get("input") {
+            validate_value(input_data, input_schema)
+                .map_err(|e| format!("[{}/{}] 입력 검증 실패: {}", scope, module_name, e))?;
+        }
+        Ok(())
     }
 }
 

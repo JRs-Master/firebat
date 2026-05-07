@@ -51,6 +51,9 @@ anyhow = "1"
 tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
 
+# JSON Schema validation — ModuleManager input/output runtime 검증 (Track A6, 2026-05-07)
+jsonschema = { version = "0.18", default-features = false }
+
 # DB — port 안에서 raw SQL escape hatch (`with_conn`) 노출 위함
 # 실 어댑터 구현은 infra crate. core 는 trait + 일부 도메인 메서드 시그니처만.
 rusqlite = { version = "0.32", features = ["bundled"] }

@@ -365,9 +365,48 @@ panic 또는 OOM 발생해도 PM2 재시작 → 다음 cron trigger / 사용자 
 
 크래시는 노이즈 0 가 아니라 **빠른 fail + 빠른 재시작 + 가시화** 가 BIBLE 의 운영 철학.
 
+### 제6항. API 경계 에러 매핑 — gRPC ServiceError → HTTP (2026-05-07 박힘)
+
+Frontend ↔ Rust Core 사이는 gRPC. 시니어 audit 결과 박힌 정책:
+
+- `lib/api-error.ts` — gRPC status code → HTTP status 표준 매핑 (UNAUTHENTICATED → 401 / NOT_FOUND → 404 / INVALID_ARGUMENT → 400 / DEADLINE_EXCEEDED → 504 / …)
+- `lib/core-grpc-client.ts:invokeCore` — gRPC ServiceError 자동 catch → `ApiError` throw (모든 호출자 자연 혜택)
+- `lib/with-api-error.ts:withApiError(handler)` — Next.js API route wrapper. throw 된 ApiError → `toResponse()` 자동
+- 메시지 redaction — `lib/redactor.ts` 통과 (token / API key / IP / email mask) + 240자 이내 (스택 trace / SQL / 긴 path leak 방어)
+- 도입 demo: `app/api/capabilities/route.ts` + `app/api/module/run/route.ts` — 점진 sweep 가이드
+
+내부 구조 (Rust panic / 파일 path / SQL) 외부 노출 0. 운영 중 Frontend 디버깅 시 status code + 한국어 친화 메시지 + console.error stack (서버 stderr 만) 분리.
+
 ---
 
-## 제13장: 로드맵 — v1.0 Final (2026-05-06 갱신)
+## 제13장: 모듈 입출력 컨트랙트 강제 (2026-05-07 박힘)
+
+시니어 audit 결과 박힌 모듈 시스템 안전망. "Lego 스타일" 자유 조립이 가능하려면 모듈 I/O 가 극도로 예측 가능해야 함.
+
+### 제1항. JSON Schema runtime validation
+
+`system/modules/*/config.json` + `user/modules/*/config.json` 의 `input` / `output` 필드는 JSON Schema (Draft 7). `core/src/managers/module.rs:validate_value()` + `validate_module_definition()` (jsonschema crate 기반):
+- `ModuleManager.run(name, args)` — sandbox spawn **전** input schema validation. 실패 시 `InfraResult::Err("[name] 입력 검증 실패: ...")` — 모듈이 받지 못함 (silent corruption 방어)
+- spawn 후 output validation — config.output 박혀있으면 stdout JSON 검증. 실패 시 `tracing::warn!` (블로킹 X — 운영 중 발견용)
+- schema 자체 형식 오류 (잘못된 `type` 값 등) 도 첫 줄에서 catch
+
+### 제2항. Dry-run 사전 검증
+
+`ModuleManager.dry_run(scope, name, args)` — sandbox spawn 안 함. config 자체 well-formedness + input schema validation 만:
+- pipeline 등록 시점 호출 — EXECUTE step 의 모듈 호출이 schema 어긴 인자 받지 않게 가드
+- `ScheduleManager.validate_pipeline()` 와 함께 — pipeline 등록 시점에 모든 step 의 정합성 검사
+
+### 제3항. ModuleOutput envelope
+
+`core/src/ports.rs::ModuleOutput.protocol_version` (default `"1.0"`) — 미래 break change 방어. 모듈이 새 envelope 박을 때 protocol_version 올림 → Core 가 명시 호환 검사 가능. 옛 모듈 (필드 미박힘) 은 default 1.0 으로 silent passthrough.
+
+### 제4항. 검증 실패 = 모듈 잘못 (운영자 책임)
+
+검증 통과 못한 호출은 사용자에게 명시 에러 — 모듈이 묵묵히 잘못된 입력으로 실행되어 silent corruption 만드는 것보다 안전. 모듈 작성자가 config.json 의 input schema 정확히 박는 것이 contract.
+
+---
+
+## 제14장: 로드맵 — v1.0 Final (2026-05-06 갱신)
 
 옛 v0.x → v1.0 RC → v1.x phase 분해 폐기. 단일 v1.0 Final milestone — **단일 distribution Self-hosted Docker**.
 

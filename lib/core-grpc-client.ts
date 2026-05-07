@@ -100,7 +100,14 @@ export async function pingCore(target?: string): Promise<{ version: string; read
 export async function invokeCore<T = unknown>(method: string, args?: unknown): Promise<T> {
   const { service, rpc } = resolveMethodToRpc(method);
   const request = { raw: JSON.stringify(args ?? null) };  // JsonArgs schema
-  const response: any = await callGrpcMethod(service, rpc, request);
+  let response: any;
+  try {
+    response = await callGrpcMethod(service, rpc, request);
+  } catch (err) {
+    // gRPC ServiceError → ApiError 변환 (status code + redactor 통과 메시지)
+    const { fromGrpcError } = await import('./api-error');
+    throw fromGrpcError(err);
+  }
   // JsonValue.raw → parse
   if (response && typeof response.raw === 'string') {
     return JSON.parse(response.raw) as T;

@@ -219,3 +219,122 @@ async fn run_with_invalid_name_rejected() {
     let result = mgr.run("../etc", &serde_json::json!({})).await;
     assert!(result.is_err());
 }
+
+// ─── JSON Schema validation (Track A6, 2026-05-07) ──────────────────────────
+
+async fn make_manager_with_module(
+    config_json: &str,
+    entry_name: &str,
+) -> (ModuleManager, TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let storage = LocalStorageAdapter::new(dir.path());
+    storage
+        .write("user/modules/sample/config.json", config_json)
+        .await
+        .unwrap();
+    storage
+        .write(&format!("user/modules/sample/{}", entry_name), "// stub")
+        .await
+        .unwrap();
+    let storage_arc: Arc<dyn IStoragePort> = Arc::new(storage);
+    let sandbox: Arc<dyn ISandboxPort> = Arc::new(StubSandbox {
+        fixed_output: ModuleOutput {
+            success: true,
+            data: serde_json::json!({"ok": true, "count": 5}),
+            error: None,
+            stderr: None,
+            exit_code: Some(0),
+            ..Default::default()
+        },
+    });
+    let vault: Arc<dyn IVaultPort> =
+        Arc::new(SqliteVaultAdapter::new(dir.path().join("vault.db")).unwrap());
+    (ModuleManager::new(sandbox, storage_arc, vault), dir)
+}
+
+#[tokio::test]
+async fn run_validates_input_schema_required_field() {
+    // input.required: ["action"] — action 누락 시 spawn 안 함, 명시 에러
+    let config = r#"{
+        "name":"sample","runtime":"node",
+        "input":{"type":"object","properties":{"action":{"type":"string"}},"required":["action"]}
+    }"#;
+    let (mgr, _dir) = make_manager_with_module(config, "index.mjs").await;
+
+    let r = mgr.run("sample", &serde_json::json!({})).await;
+    assert!(r.is_err(), "input.required 위반인데 통과: {:?}", r);
+    let err = r.unwrap_err();
+    assert!(err.contains("입력 검증 실패"), "한국어 에러 메시지 기대: {}", err);
+    assert!(err.contains("sample"), "모듈명 포함 기대: {}", err);
+}
+
+#[tokio::test]
+async fn run_validates_input_schema_enum() {
+    let config = r#"{
+        "name":"sample","runtime":"node",
+        "input":{"type":"object","properties":{"action":{"type":"string","enum":["a","b"]}},"required":["action"]}
+    }"#;
+    let (mgr, _dir) = make_manager_with_module(config, "index.mjs").await;
+
+    // 허용된 enum
+    let ok = mgr
+        .run("sample", &serde_json::json!({"action":"a"}))
+        .await;
+    assert!(ok.is_ok(), "허용 enum 인데 실패: {:?}", ok);
+
+    // 미허용 enum
+    let bad = mgr
+        .run("sample", &serde_json::json!({"action":"z"}))
+        .await;
+    assert!(bad.is_err(), "미허용 enum 인데 통과: {:?}", bad);
+}
+
+#[tokio::test]
+async fn run_no_schema_passes_through() {
+    // input schema 없음 → 검증 skip, sandbox 호출
+    let config = r#"{"name":"sample","runtime":"node"}"#;
+    let (mgr, _dir) = make_manager_with_module(config, "index.mjs").await;
+
+    let r = mgr.run("sample", &serde_json::json!({"anything":"ok"})).await;
+    assert!(r.is_ok(), "schema 없는데 실패: {:?}", r);
+}
+
+#[tokio::test]
+async fn dry_run_validates_without_spawn() {
+    let config = r#"{
+        "name":"sample","runtime":"node",
+        "input":{"type":"object","properties":{"x":{"type":"number"}},"required":["x"]}
+    }"#;
+    let (mgr, _dir) = make_manager_with_module(config, "index.mjs").await;
+
+    // 통과
+    let ok = mgr.dry_run("user", "sample", &serde_json::json!({"x":42})).await;
+    assert!(ok.is_ok(), "dry_run 통과 기대: {:?}", ok);
+
+    // 실패
+    let bad = mgr.dry_run("user", "sample", &serde_json::json!({})).await;
+    assert!(bad.is_err(), "dry_run 실패 기대 (required 누락)");
+
+    // 모듈 자체 없음
+    let missing = mgr.dry_run("user", "missing-xyz", &serde_json::json!({})).await;
+    assert!(missing.is_err());
+}
+
+#[tokio::test]
+async fn dry_run_catches_malformed_schema() {
+    // input schema 자체가 잘못됨 (type 값이 잘못된 식별자)
+    let config = r#"{
+        "name":"sample","runtime":"node",
+        "input":{"type":"invalid_type","properties":{}}
+    }"#;
+    let (mgr, _dir) = make_manager_with_module(config, "index.mjs").await;
+
+    let r = mgr.dry_run("user", "sample", &serde_json::json!({})).await;
+    assert!(r.is_err(), "malformed schema 인데 통과: {:?}", r);
+    let err = r.unwrap_err();
+    assert!(
+        err.contains("schema") || err.contains("형식"),
+        "schema 형식 오류 메시지 기대: {}",
+        err
+    );
+}

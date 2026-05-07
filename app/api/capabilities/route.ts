@@ -1,22 +1,23 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../lib/auth-guard';
+import { withApiError } from '../../../lib/with-api-error';
+import { ApiError } from '../../../lib/api-error';
 
 /** GET /api/capabilities — capability 목록 조회 (각 capability별 provider 수 포함) */
-export async function GET(req: NextRequest) {
+export const GET = withApiError(async (req) => {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
-  const core = getCore();
-  const list = await core.listCapabilitiesWithProviders();
+  const list = await getCore().listCapabilitiesWithProviders();
   return NextResponse.json({ success: true, capabilities: list });
-}
+});
 
-/** GET /api/capabilities?id=web-scrape — 특정 capability의 provider 목록 + 설정 */
-export async function POST(req: NextRequest) {
+/** POST /api/capabilities — 특정 capability의 provider 목록 + 설정 */
+export const POST = withApiError(async (req) => {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
   const { id } = await req.json();
-  if (!id) return NextResponse.json({ success: false, error: 'capability id 필요' }, { status: 400 });
+  if (!id) throw new ApiError(400, 'capability id 필요');
 
   const core = getCore();
   const providers = await core.getCapabilityProviders(id);
@@ -30,14 +31,14 @@ export async function POST(req: NextRequest) {
     providers,
     settings,
   });
-}
+});
 
 /** PATCH /api/capabilities — capability 설정 변경 (모드, 우선순위 등) */
-export async function PATCH(req: NextRequest) {
+export const PATCH = withApiError(async (req) => {
   const auth = requireAuth(req);
   if (isAuthError(auth)) return auth;
   const { id, settings, label, description } = await req.json();
-  if (!id) return NextResponse.json({ success: false, error: 'capability id 필요' }, { status: 400 });
+  if (!id) throw new ApiError(400, 'capability id 필요');
 
   const core = getCore();
 
@@ -54,4 +55,4 @@ export async function PATCH(req: NextRequest) {
   }
 
   return NextResponse.json({ success: true });
-}
+});
