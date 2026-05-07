@@ -122,6 +122,11 @@ pub struct ProcessSandboxAdapter {
     /// Vault — config.json `secrets` 배열의 키를 자동으로 env 에 주입.
     /// 옛 TS setVault / loadSecretsEnv 1:1. 미박힘 시 secrets 주입 스킵.
     vault: Option<Arc<dyn IVaultPort>>,
+    /// Pre-exec hook (Linux 한정) — 자식 프로세스 안에서 fork() 직후 exec() 직전 호출.
+    /// LinuxCgroupsSandboxAdapter 가 박음 — cgroup attach + seccomp install + unshare.
+    /// 미박힘 시 옛 동작 (격리 0). Phase B-post Track B Stage 2+3 박힘 (2026-05-06).
+    #[cfg(target_os = "linux")]
+    pre_exec_hook: Option<Arc<dyn Fn() -> std::io::Result<()> + Send + Sync>>,
 }
 
 impl ProcessSandboxAdapter {
@@ -154,6 +159,8 @@ impl ProcessSandboxAdapter {
             workspace_root,
             runtimes,
             vault: None,
+            #[cfg(target_os = "linux")]
+            pre_exec_hook: None,
         }
     }
 
@@ -168,6 +175,18 @@ impl ProcessSandboxAdapter {
     /// 옛 TS sandbox.setVault 1:1. 미박힘 시 secrets 자동 주입 비활성 (manual env 만 사용).
     pub fn with_vault(mut self, vault: Arc<dyn IVaultPort>) -> Self {
         self.vault = Some(vault);
+        self
+    }
+
+    /// Pre-exec hook 박음 (Linux 한정) — 자식 프로세스 안에서 exec() 직전 실행.
+    /// LinuxCgroupsSandboxAdapter 가 호출 — cgroup attach + seccomp install + unshare 박음.
+    /// hook 안에서 panic 시 자식 프로세스 즉시 종료 (Rust pre_exec safety).
+    #[cfg(target_os = "linux")]
+    pub fn with_pre_exec_hook<F>(mut self, hook: F) -> Self
+    where
+        F: Fn() -> std::io::Result<()> + Send + Sync + 'static,
+    {
+        self.pre_exec_hook = Some(Arc::new(hook));
         self
     }
 
@@ -514,6 +533,20 @@ impl ProcessSandboxAdapter {
         // 명시 env 가 secrets 위에 (사용자 명시 우선)
         for (k, v) in opts.env.iter() {
             cmd.env(k, v);
+        }
+
+        // Pre-exec hook (Linux 한정) — fork() 직후 exec() 직전 자식 프로세스 안에서 실행.
+        // LinuxCgroupsSandboxAdapter 가 박음 — cgroup attach + seccomp install + unshare.
+        // hook 안에서 panic 또는 Err 반환 시 자식 프로세스 즉시 종료 (안전).
+        #[cfg(target_os = "linux")]
+        if let Some(hook) = &self.pre_exec_hook {
+            use std::os::unix::process::CommandExt;
+            let hook_clone = hook.clone();
+            // SAFETY: pre_exec 가 fork() 와 exec() 사이에서 호출 — async-signal-safe operations 만 허용.
+            // hook 안에서 std::fs::write / sys-call wrapper (nix / seccompiler) 사용 — 모두 OK.
+            unsafe {
+                cmd.as_std_mut().pre_exec(move || hook_clone());
+            }
         }
 
         let mut child = cmd.spawn().map_err(|e| format!("spawn 실패: {e}"))?;

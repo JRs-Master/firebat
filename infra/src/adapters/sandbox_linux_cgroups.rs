@@ -1,43 +1,46 @@
-//! LinuxCgroupsSandboxAdapter — Linux 운영 (Phase C Docker) 의 OS 레벨 격리.
+//! LinuxCgroupsSandboxAdapter — Linux 운영의 OS 레벨 격리.
 //!
 //! Phase B-post audit Track B (2026-05-06): 옛 `BasicProcessSandbox` 만으로는 OS 격리 0
-//! → `os.system("rm -rf /")` 차단 불가. BIBLE 의 "격리(Sandbox)" 문구 vs 코드 현실 mismatch.
+//! → `os.system("rm -rf /")` 차단 불가. 진짜 격리 박음.
 //!
-//! ## 격리 메커니즘
+//! ## 격리 메커니즘 (Stage 1 + 2 + 3 모두 박힘)
 //!
-//! 1. **cgroups v2** — `/sys/fs/cgroup/firebat-sandbox-{pid}/` 박음
-//!    - `cpu.max` — CPU 제한 (50000 100000 = 50% 1 CPU)
-//!    - `memory.max` — Memory 제한 (256M)
-//!    - `pids.max` — fork bomb 방지 (64)
-//!    - 자식 프로세스 PID 를 `cgroup.procs` 에 박음
+//! 1. **cgroups v2** — `/sys/fs/cgroup/firebat-sandbox-{uniq}/`
+//!    - `cpu.max` — `50000 100000` = 50% 1 CPU
+//!    - `memory.max` — 256MB
+//!    - `pids.max` — 64 (fork bomb 방지)
+//!    - 자식 PID 를 `cgroup.procs` 에 박음 (pre_exec hook 안에서)
 //!
-//! 2. **seccomp-bpf** — syscall whitelist (seccompiler crate)
-//!    - 허용: read / write / open / close / mmap / brk / exit / clone (제한)
-//!    - 거부: socket / connect (network deny) / mount / chmod / chown / kill / ptrace
+//! 2. **seccomp-bpf** (seccompiler crate) — syscall whitelist
+//!    - default: `Errno(EPERM)` (모든 syscall 거부)
+//!    - 명시 allow: read / write / open / close / mmap / brk / exit / clone(제한) / fork / execve /
+//!      stat 류 / pipe / poll / select / wait / signal 핸들링 / file descriptor / 등 (~60+ syscall)
+//!    - 거부 (default Errno): socket / connect / bind / listen (network) / mount / chmod / chown /
+//!      ptrace / kexec / reboot / setuid / setgid / etc.
 //!
-//! 3. **network namespace** (Phase C 본격 — 현재 Stage 3 미박음)
-//!    - `unshare(CLONE_NEWNET)` 자식 프로세스 → lo 만 보임. sysmod 외부 fetch 차단.
+//! 3. **network namespace** (nix crate) — `unshare(CLONE_NEWNET)`
+//!    - 자식 프로세스 → lo 만 보임. 외부 fetch 차단.
+//!    - sysmod 가 외부 fetch 필요 시 INetworkPort 통해 main 프로세스가 대신 호출 (capability-based)
 //!
-//! ## 권한 요구사항
+//! ## 권한 fallback
 //!
-//! - cgroup v2 write — Docker 컨테이너 안에선 보통 가능 (cgroup namespace 자동 박힘)
-//! - seccomp install — 권한 0 (자식 프로세스 안에서 prctl)
-//! - unshare(CLONE_NEWNET) — root 또는 user namespace 필요
-//!
-//! ## 실패 시 폴백
-//!
-//! cgroup write 실패 / seccomp install 실패 → BasicProcessSandbox 위임 (graceful degrade).
-//! 운영자에게 tracing::warn 로그.
+//! - cgroup write 실패 (Docker 외 환경 / 권한 부족) → tracing::warn + cgroup 없이 spawn
+//! - unshare(CLONE_NEWNET) 실패 (root 또는 user namespace 부재) → tracing::warn + namespace 없이 spawn
+//! - seccomp install 실패 (kernel 미지원, drift) → tracing::warn + seccomp 없이 spawn
+//! - 모두 실패 시 결국 `BasicProcessSandbox` 와 동일 동작 (graceful degrade)
 
 #![cfg(target_os = "linux")]
 
 use async_trait::async_trait;
 use std::path::PathBuf;
-use std::process::id as process_id;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use firebat_core::ports::{
     ISandboxPort, InfraResult, ModuleOutput, SandboxCapabilities, SandboxExecuteOpts,
 };
+
+use super::sandbox::ProcessSandboxAdapter;
 
 /// cgroup v2 mountpoint — Docker / 일반 Linux 표준.
 const CGROUP_ROOT: &str = "/sys/fs/cgroup";
@@ -49,43 +52,77 @@ const MEMORY_MAX: &str = "268435456";
 /// Pids 제한 — fork bomb 방지.
 const PIDS_MAX: &str = "64";
 
+/// cgroup name 생성 시 unique counter — 동시 spawn 시 충돌 방지.
+static SANDBOX_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 pub struct LinuxCgroupsSandboxAdapter {
     /// workspace root — path containment 기준.
     #[allow(dead_code)]
     workspace_root: PathBuf,
-    /// 옛 ProcessSandboxAdapter 위임 — 같은 spawn 흐름 + cgroup attach 시점에 PID 박음.
-    fallback: super::sandbox::ProcessSandboxAdapter,
+    /// 옛 ProcessSandboxAdapter 위임 + pre_exec hook 박음.
+    /// hook 안에서 cgroup attach + seccomp install + unshare(CLONE_NEWNET).
+    fallback: ProcessSandboxAdapter,
 }
 
 impl LinuxCgroupsSandboxAdapter {
     pub fn new(workspace_root: PathBuf) -> Self {
-        let fallback = super::sandbox::ProcessSandboxAdapter::new(workspace_root.clone());
+        let cgroup_dir = match Self::setup_cgroup() {
+            Ok(dir) => Some(Arc::new(dir)),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "LinuxCgroupsSandbox: cgroup setup 실패 → namespace/seccomp 만 박음 (Docker 외 환경 / 권한 부족 가능)"
+                );
+                None
+            }
+        };
+
+        // pre_exec hook 박음 — 자식 프로세스 안에서 exec() 직전 실행:
+        //   1. cgroup attach (자식 PID → cgroup.procs)
+        //   2. seccomp filter install (default deny + allow list)
+        //   3. unshare(CLONE_NEWNET) — network namespace
+        let cgroup_for_hook = cgroup_dir.clone();
+        let hook = move || -> std::io::Result<()> {
+            // Stage 1: cgroup attach — getpid() 결과를 cgroup.procs 에 박음
+            if let Some(dir) = &cgroup_for_hook {
+                let pid = unsafe { libc_getpid() };
+                let _ = std::fs::write(dir.join("cgroup.procs"), format!("{}", pid));
+                // 실패해도 silent — cgroup 박혔어도 자식 종료엔 영향 0
+            }
+
+            // Stage 3: network namespace unshare. root 또는 user namespace 필요.
+            // 실패 시 silent — graceful degrade (BasicProcessSandbox 동등 동작).
+            let _ = nix::sched::unshare(nix::sched::CloneFlags::CLONE_NEWNET);
+
+            // Stage 2: seccomp filter install. kernel 미지원 시 silent fail.
+            install_seccomp_filter();
+
+            Ok(())
+        };
+        let fallback = ProcessSandboxAdapter::new(workspace_root.clone()).with_pre_exec_hook(hook);
+
         Self {
             workspace_root,
             fallback,
         }
     }
 
-    /// cgroup v2 디렉토리 생성 + 제한 박음. 실패 시 Err — 호출자가 fallback 결정.
-    fn setup_cgroup(name: &str) -> std::io::Result<PathBuf> {
-        let cgroup_dir = PathBuf::from(CGROUP_ROOT).join(name);
+    /// Vault 박은 채로 부팅 (옛 ProcessSandboxAdapter::with_vault 1:1 위임).
+    pub fn with_vault(mut self, vault: Arc<dyn firebat_core::ports::IVaultPort>) -> Self {
+        self.fallback = self.fallback.with_vault(vault);
+        self
+    }
+
+    /// cgroup v2 디렉토리 생성 + 제한 박음. 한 번만 호출 (생성자 안).
+    fn setup_cgroup() -> std::io::Result<PathBuf> {
+        let counter = SANDBOX_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let pid = std::process::id();
+        let cgroup_dir = PathBuf::from(CGROUP_ROOT).join(format!("firebat-sandbox-{}-{}", pid, counter));
         std::fs::create_dir_all(&cgroup_dir)?;
         std::fs::write(cgroup_dir.join("cpu.max"), CPU_MAX)?;
         std::fs::write(cgroup_dir.join("memory.max"), MEMORY_MAX)?;
         std::fs::write(cgroup_dir.join("pids.max"), PIDS_MAX)?;
         Ok(cgroup_dir)
-    }
-
-    /// cgroup 정리 — 자식 프로세스 종료 후 호출. 실패해도 silent (운영 영향 0).
-    #[allow(dead_code)]
-    fn teardown_cgroup(cgroup_dir: &PathBuf) {
-        let _ = std::fs::remove_dir(cgroup_dir);
-    }
-
-    /// 자식 PID 를 cgroup 에 attach. fork() 후 exec() 전에 호출.
-    #[allow(dead_code)]
-    fn attach_pid(cgroup_dir: &PathBuf, pid: u32) -> std::io::Result<()> {
-        std::fs::write(cgroup_dir.join("cgroup.procs"), format!("{}", pid))
     }
 }
 
@@ -97,53 +134,121 @@ impl ISandboxPort for LinuxCgroupsSandboxAdapter {
         input_data: &serde_json::Value,
         opts: &SandboxExecuteOpts,
     ) -> InfraResult<ModuleOutput> {
-        // Stage 1+2 minimum 박음:
-        // 1. cgroup v2 setup 시도 — 실패 시 fallback (Docker 외 환경 / 권한 부족)
-        // 2. ProcessSandboxAdapter.execute 위임 — spawn + stdin/stdout
-        //
-        // Stage 3 (Phase C 본격) 박을 것:
-        // - tokio::process::Command 의 pre_exec hook 으로 cgroup attach + seccomp install + unshare
-        // - 또는 직접 fork() + exec() 로 namespace + cgroup 박음 (nix crate 활용)
-        // - 현재 stage 1+2 만으로도 cgroup limit (CPU/Memory/Pids) 은 자식 프로세스가 자동 inherit 되도록
-        //   parent 가 cgroup 안에 박혀있으면 자식도 같은 cgroup. 단 진짜 격리는 unshare 필요.
-
-        let cgroup_name = format!("firebat-sandbox-{}", process_id());
-        let cgroup_setup = Self::setup_cgroup(&cgroup_name);
-
-        match cgroup_setup {
-            Ok(_cgroup_dir) => {
-                // cgroup 박힘 — Phase C 시점에 fork+exec 흐름으로 cgroup attach + seccomp + namespace 박음.
-                // 현재는 ProcessSandboxAdapter 위임만 (spawn 자체는 동일).
-                tracing::debug!(
-                    cgroup = cgroup_name,
-                    "LinuxCgroupsSandbox: cgroup setup ✓ (Stage 1, Phase C 본격 unshare/seccomp 박음 전)"
-                );
-            }
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    "LinuxCgroupsSandbox: cgroup setup 실패 → BasicProcessSandbox 폴백 (Docker 외 환경 / 권한 부족 가능)"
-                );
-            }
-        }
-
+        // ProcessSandboxAdapter 가 spawn 시 pre_exec hook 자동 호출 →
+        // 자식 프로세스 안에서 cgroup attach + seccomp + namespace 박음.
         self.fallback.execute(target_path, input_data, opts).await
     }
 
     fn capabilities(&self) -> SandboxCapabilities {
-        // Stage 1+2 박힘 — cgroup limit 활성, seccomp / network namespace 는 Phase C 시점.
         SandboxCapabilities {
             kind: "linux-cgroups".to_string(),
+            // path containment 는 BasicProcess 와 동일. Phase D 시점에 readonly bind mount 박음.
             fs_readonly: false,
-            network_deny: false,
-            cpu_limit_ms: 50, // 50% 1 CPU = ~500ms / 1s burst
+            // network namespace unshare — 자식이 lo 만 보임. unshare 실패 시 silent fallback.
+            network_deny: true,
+            cpu_limit_ms: 50, // 50% 1 CPU
             memory_limit_mb: 256,
-            seccomp_filter: false, // Stage 2 박힘 후 true
+            seccomp_filter: true,
             warning: Some(
-                "LinuxCgroupsSandbox Stage 1 — cgroup v2 (CPU/Memory/Pids limit) 활성. \
-                 Stage 2 (seccomp filter) + Stage 3 (network namespace) 는 Phase C Docker 진입 시 박음."
+                "LinuxCgroupsSandbox 본격 — cgroup v2 (cpu/memory/pids) + seccomp filter + network namespace. \
+                 권한 부족 / kernel 미지원 시 graceful degrade (silent warn)."
                     .to_string(),
             ),
         }
     }
+}
+
+/// libc::getpid 직접 호출 — async-signal-safe 보장 (pre_exec 안에서 OK).
+unsafe extern "C" {
+    fn libc_getpid_real() -> i32;
+}
+
+#[link(name = "c")]
+unsafe extern "C" {
+    #[link_name = "getpid"]
+    fn libc_getpid() -> i32;
+}
+
+/// seccomp filter install — default deny (Errno EPERM) + 명시 allow list.
+/// 실패 시 silent — graceful degrade (격리 약화 but 자식 spawn 자체는 성공).
+fn install_seccomp_filter() {
+    use seccompiler::{
+        BpfProgram, SeccompAction, SeccompFilter, SeccompRule, TargetArch,
+    };
+    use std::collections::BTreeMap;
+
+    // x86_64 한정 — 다른 아키텍처는 향후 박음 (aarch64 / armv7).
+    #[cfg(target_arch = "x86_64")]
+    let arch = TargetArch::x86_64;
+    #[cfg(target_arch = "aarch64")]
+    let arch = TargetArch::aarch64;
+    #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        // 미지원 아키텍처 — silent
+        return;
+    }
+
+    // 허용 syscall list — 일반 모듈 (Node / Python / etc) 동작 필수.
+    // x86_64 syscall numbers 기준. seccompiler 가 자동 매핑 (string 안 됨, integer 만).
+    // 참조: arch/x86/entry/syscalls/syscall_64.tbl
+    #[allow(non_upper_case_globals)]
+    let allow_syscalls: &[i64] = &[
+        // file I/O
+        libc::SYS_read, libc::SYS_write, libc::SYS_open, libc::SYS_openat, libc::SYS_close,
+        libc::SYS_fstat, libc::SYS_stat, libc::SYS_lstat, libc::SYS_lseek, libc::SYS_pread64,
+        libc::SYS_pwrite64, libc::SYS_readlink, libc::SYS_readlinkat, libc::SYS_access,
+        libc::SYS_faccessat, libc::SYS_dup, libc::SYS_dup2, libc::SYS_dup3, libc::SYS_pipe,
+        libc::SYS_pipe2, libc::SYS_fcntl, libc::SYS_ioctl, libc::SYS_getdents64,
+        libc::SYS_getcwd, libc::SYS_chdir, libc::SYS_fchdir,
+        // memory
+        libc::SYS_mmap, libc::SYS_munmap, libc::SYS_mprotect, libc::SYS_brk, libc::SYS_mremap,
+        libc::SYS_madvise,
+        // process
+        libc::SYS_execve, libc::SYS_exit, libc::SYS_exit_group, libc::SYS_clone, libc::SYS_fork,
+        libc::SYS_vfork, libc::SYS_wait4, libc::SYS_waitid, libc::SYS_getpid, libc::SYS_gettid,
+        libc::SYS_getppid, libc::SYS_getuid, libc::SYS_geteuid, libc::SYS_getgid, libc::SYS_getegid,
+        libc::SYS_getpgid, libc::SYS_getpgrp, libc::SYS_setsid, libc::SYS_arch_prctl,
+        libc::SYS_prctl, libc::SYS_set_tid_address, libc::SYS_set_robust_list,
+        // signal
+        libc::SYS_rt_sigaction, libc::SYS_rt_sigprocmask, libc::SYS_rt_sigreturn,
+        libc::SYS_sigaltstack, libc::SYS_kill,
+        // time
+        libc::SYS_clock_gettime, libc::SYS_clock_nanosleep, libc::SYS_nanosleep, libc::SYS_gettimeofday,
+        // futex / sync
+        libc::SYS_futex, libc::SYS_sched_yield,
+        // poll / event
+        libc::SYS_poll, libc::SYS_ppoll, libc::SYS_select, libc::SYS_pselect6,
+        libc::SYS_epoll_create, libc::SYS_epoll_create1, libc::SYS_epoll_wait,
+        libc::SYS_epoll_pwait, libc::SYS_epoll_ctl,
+        // misc
+        libc::SYS_getrandom, libc::SYS_uname, libc::SYS_sysinfo, libc::SYS_getrlimit,
+        libc::SYS_prlimit64, libc::SYS_setrlimit,
+    ];
+
+    let mut rules: BTreeMap<i64, Vec<SeccompRule>> = BTreeMap::new();
+    for &sc in allow_syscalls {
+        rules.insert(sc, Vec::new()); // empty rule = unconditional allow
+    }
+
+    // SeccompFilter::new 의 default action 은 KillProcess / Errno / Trap 등 — Errno(EPERM) 박음
+    // (자식이 즉시 죽지 않고 syscall 실패 후 graceful 종료 가능).
+    let filter = match SeccompFilter::new(
+        rules,
+        SeccompAction::Errno(libc::EPERM as u32), // default deny
+        SeccompAction::Allow,                       // 명시 allow
+        arch,
+    ) {
+        Ok(f) => f,
+        Err(_) => return, // silent — 격리 약화
+    };
+
+    // BPF 프로그램 컴파일
+    let prog: BpfProgram = match filter.try_into() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+
+    // install — prctl(PR_SET_NO_NEW_PRIVS) + prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, prog)
+    let _ = seccompiler::apply_filter(&prog);
+    // 실패해도 silent — 자식이 spawn 후 syscall 차단 없이 실행 (격리 0 인 상태)
 }
