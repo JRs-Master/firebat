@@ -6,7 +6,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
  * 텔레그램 양방향 봇 webhook 등록·해제·상태 조회 — 어드민 전용.
  *
  * - GET     : 현재 webhook 상태 (활성 / URL / owner 수)
- * - POST    : webhook 등록 — body { domain: 'https://firebat.co.kr' }
+ * - POST    : webhook 등록 — body { domain: 'https://your-domain.com' }
  * - DELETE  : webhook 해제 + secret 정리
  *
  * 텔레그램 Bot API 가 호출하는 webhook 자체는 /api/telegram/webhook (인증 X — secret token 검증).

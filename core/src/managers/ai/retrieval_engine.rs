@@ -1,6 +1,4 @@
-//! RetrievalEngine — 메모리 시스템 4-tier 통합 검색 (Phase 5).
-//!
-//! 옛 TS `core/managers/ai/retrieval-engine.ts` 1:1 Rust port.
+//! RetrievalEngine — 메모리 시스템 4-tier 통합 검색.
 //!
 //! 사용자 query → 병렬 검색 (history + entities + events + entity_facts) → 통합
 //! contextSummary 반환. AiManager 가 시스템 프롬프트에 `<MEMORY_CONTEXT>` 섹션 prepend.
@@ -11,7 +9,7 @@
 //!     포함 후 entity/event/fact 추가.
 //!
 //! Token budget — limits 박혀 있으면 그대로, 미박힘 시 default. 빈 결과 자동 skip.
-//! 일반 로직: 도메인 (자동매매·블로그 etc) 무관 — 4 source 검색 후 통합.
+//! 도메인 무관 — 4 source 검색 후 통합 (사용자 워크플로우 별 추상화 X).
 
 use std::sync::Arc;
 

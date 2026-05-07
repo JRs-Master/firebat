@@ -133,7 +133,7 @@ export function TelegramWebhookSection() {
           type="text"
           value={domain}
           onChange={e => { setDomain(e.target.value); setMessage(null); }}
-          placeholder="https://firebat.co.kr"
+          placeholder="https://your-domain.com"
           disabled={busy}
           className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] sm:text-[13px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50"
         />

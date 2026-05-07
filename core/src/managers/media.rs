@@ -1279,7 +1279,7 @@ mod tests {
     #[test]
     fn parse_media_url_extracts_slug() {
         assert_eq!(
-            parse_media_url("https://firebat.co.kr/user/media/abc.png"),
+            parse_media_url("https://example.com/user/media/abc.png"),
             Some((MediaScope::User, "abc".to_string(), "png".to_string()))
         );
         assert_eq!(

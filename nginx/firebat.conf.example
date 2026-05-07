@@ -2,11 +2,12 @@
 #
 # 이 파일 그대로 docker-compose.yml 의 volume mount path 에 박지 말 것.
 # `cp nginx/firebat.conf.example nginx/firebat.conf` 후 도메인·SSL cert path 수정.
+# server_name 의 your-domain.com 을 실 도메인으로 치환.
 
 # HTTP → HTTPS redirect
 server {
     listen 80;
-    server_name firebat.co.kr www.firebat.co.kr;
+    server_name your-domain.com www.your-domain.com;
 
     # Let's Encrypt webroot challenge (선택)
     location /.well-known/acme-challenge/ {
@@ -21,7 +22,7 @@ server {
 # HTTPS 메인 — Next.js renderer 로 reverse proxy
 server {
     listen 443 ssl http2;
-    server_name firebat.co.kr www.firebat.co.kr;
+    server_name your-domain.com www.your-domain.com;
 
     # SSL — Let's Encrypt 또는 Cloudflare Origin
     ssl_certificate     /etc/nginx/certs/fullchain.pem;

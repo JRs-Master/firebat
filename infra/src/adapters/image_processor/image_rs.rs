@@ -1,12 +1,11 @@
 //! ImageRsProcessorAdapter — image-rs + fast_image_resize + blurhash crate 기반.
 //!
-//! 옛 TS `infra/image-processor/sharp-adapter.ts` (sharp/libvips) 1:1 port.
-//! Rust 측에서는 image-rs (decode/encode) + fast_image_resize (SIMD 가속 resize) +
-//! blurhash crate (Base83 LQIP) 조합. CPU 만 — Windows / Linux / macOS 모두 동작.
+//! image-rs (decode/encode) + fast_image_resize (SIMD 가속 resize) + blurhash crate
+//! (Base83 LQIP) 조합. CPU 만 — Windows / Linux / macOS 모두 동작.
 //!
 //! 지원 포맷 (현재 enabled): png / jpeg / webp.
-//! avif: image-rs 의 avif feature 박는 순간 ravif crate (libdav1d) 빌드 의존성 큼 → 후속 commit
-//! 에서 사용자 트리거 시 (자동매매 운영 중 avif 필요성 도달 시) 박을 예정.
+//! avif: image-rs 의 avif feature 박는 순간 ravif crate (libdav1d) 빌드 의존성 큼 → 후속
+//! commit 에서 운영 중 avif 필요성 도달 시 박을 예정.
 
 use std::io::Cursor;
 

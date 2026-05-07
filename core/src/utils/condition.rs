@@ -1,8 +1,6 @@
-//! CONDITION 평가 — 옛 TS `core/utils/condition.ts` Rust 재현.
+//! CONDITION 평가 — pipeline CONDITION step + cron oneShot 자동 취소 양쪽에서 사용. 단일 source 보장.
 //!
-//! pipeline CONDITION step + cron oneShot 자동 취소 양쪽에서 사용. 단일 source 보장.
-//!
-//! 안전 정책 (자동매매 컨텍스트 우선):
+//! 안전 정책:
 //! - 비숫자 `<`/`<=`/`>`/`>=` 는 false 반환 (string compare 안 함 — undefined 동작 회피)
 //! - 빈 문자열은 'exists' 에서 not exists 로 간주
 //! - 양쪽이 number 로 변환 가능하면 숫자 비교
@@ -131,7 +129,7 @@ mod tests {
 
     #[test]
     fn less_than_non_numeric_returns_false() {
-        // 자동매매 안전 — string compare 회피
+        // 안전 — string compare 회피 (undefined 동작)
         assert!(!evaluate_condition(&json!("abc"), "<", Some(&json!("xyz"))));
     }
 

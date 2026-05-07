@@ -18,8 +18,8 @@ Phase C 박힘 (2026-05-04, 2026-05-06 갱신). Rust Core + (옵션) Next.js ren
 ## 처음 배포
 
 ```bash
-# 1. 코드 clone
-git clone https://github.com/JRs-Master/firebat.git /opt/firebat
+# 1. 코드 clone (your-username 을 GitHub 사용자명으로 치환 — fork 또는 본 저장소)
+git clone https://github.com/your-username/firebat.git /opt/firebat
 cd /opt/firebat
 
 # 2. 데이터 디렉토리 권한 (Docker 사용자 1000:1000)
@@ -31,7 +31,7 @@ cp nginx/firebat.conf.example nginx/firebat.conf
 # firebat.conf 안 server_name / ssl cert path 수정
 
 # 4. SSL cert (Let's Encrypt)
-# certbot --nginx -d firebat.co.kr -d www.firebat.co.kr
+# certbot --nginx -d your-domain.com -d www.your-domain.com
 # 또는 Cloudflare Origin Cert 사용 — /etc/nginx/certs/ 에 fullchain.pem + privkey.pem 박음
 
 # 5. docker-compose.yml 의 renderer / nginx 주석 해제 (옵션)
@@ -43,26 +43,29 @@ docker compose up -d --build
 docker compose logs -f firebat-core
 ```
 
-## 옛 firebat.co.kr → 새 서버 cutover
+## 옛 Node 서버 → 새 Rust + Docker cutover
 
-옛 Node 서버에서 새 Rust + Docker 서버로 무손실 이전. **AdSense 진행 중인 글 안 잃음** —
-도메인 / sitemap URL / 페이지 slug 모두 그대로.
+옛 v0.x TS Core 운영 중인 분이 새 Rust + Docker 로 무손실 이전 시 흐름.
+**도메인 / sitemap URL / 페이지 slug 모두 그대로** — AdSense / 검색 색인 보존.
 
 ```bash
+# 0. 옛 서버 별칭 박음 (~/.ssh/config 의 Host alias 또는 SSH user@host 직접)
+#    아래 예시는 old-server alias 가정.
+
 # 1. 옛 서버에서 PM2 stop
-ssh root@firebat "pm2 stop firebat"
+ssh root@old-server "pm2 stop firebat"
 
 # 2. 데이터 통째 rsync (DB + 미디어 + cron 영속)
 rsync -av --progress \
-  root@firebat:/root/firebat/data/ \
+  root@old-server:/root/firebat/data/ \
   /opt/firebat/data/
 
 rsync -av --progress \
-  root@firebat:/root/firebat/user/ \
+  root@old-server:/root/firebat/user/ \
   /opt/firebat/user/
 
 rsync -av --progress \
-  root@firebat:/root/firebat/system/media/ \
+  root@old-server:/root/firebat/system/media/ \
   /opt/firebat/system/media/
 
 # 3. 권한 (Docker 사용자)
@@ -79,7 +82,7 @@ docker compose logs --tail=50 firebat-core | grep "Firebat Core v"
 docker compose exec firebat-core sh -c \
   'grpcurl -plaintext localhost:50051 firebat.v1.ScheduleService/ListCron'
 
-# 7. DNS A 레코드 새 서버 IP 로 변경 (Vultr / Cloudflare 패널)
+# 7. DNS A 레코드 새 서버 IP 로 변경 (도메인 등록업체 또는 Cloudflare 패널)
 # 8. propagation 5~30분 대기. 옛 서버는 1주 정도 보존 후 종료.
 ```
 

@@ -33,10 +33,10 @@ fn base_prompt_contains_tool_system_sections() {
 #[test]
 fn user_prompt_appended_when_set() {
     let (v, _dir) = vault();
-    v.set_secret(VK_SYSTEM_USER_PROMPT, "당신은 자동매매 전문가입니다.");
+    v.set_secret(VK_SYSTEM_USER_PROMPT, "당신은 도메인 전문가입니다.");
     let pb = PromptBuilder::new(v);
     let prompt = pb.build(None, None);
-    assert!(prompt.contains("자동매매 전문가"));
+    assert!(prompt.contains("도메인 전문가"));
     assert!(prompt.contains("USER_INSTRUCTIONS"));
     assert!(prompt.contains("사용자 지시사항"));
 }

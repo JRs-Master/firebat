@@ -8,7 +8,7 @@ import { getCore } from '../../../../lib/singleton';
  *   1. X-Telegram-Bot-Api-Secret-Token 헤더 검증 (Vault 의 webhook secret 과 비교).
  *      → 인증 없이 호출 시 즉시 401. spoofing 방어.
  *   2. body.message.from.id 가 TELEGRAM_OWNER_IDS whitelist 안에 있는지 확인.
- *      → 외부인은 403, 메시지 무시. 자동매매 매수까지 가능한 권한이라 owner 만 허용.
+ *      → 외부인은 403, 메시지 무시. AI 도구 / 시크릿 / 모듈 실행까지 가능한 권한이라 owner 만 허용.
  *   3. text 가 비어있으면 (이미지·스티커·투표 등) 무시.
  *   4. core.processTelegramMessage 로 위임 — AI 호출 + sysmod_telegram 응답.
  *   5. 텔레그램에 200 응답 — 처리 완료 신호 (실패해도 200, retry 폭탄 방어).

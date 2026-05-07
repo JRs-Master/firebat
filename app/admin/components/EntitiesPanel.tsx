@@ -561,7 +561,7 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="예: 삼성전자, 자동매매봇v1"
+              placeholder="예: 회사명, 봇 v1"
               className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
               autoFocus
             />
