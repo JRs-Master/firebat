@@ -27,20 +27,25 @@ export async function POST(req: NextRequest) {
   const { id, password } = await req.json();
   const core = getCore();
 
-  const result = core.login(id ?? '', password ?? '', attemptKeyFrom(req));
+  const raw = await core.login(id ?? '', password ?? '', attemptKeyFrom(req));
+
+  // Rust 응답 형식 직접 파싱 — { ok: true, session } | { ok: false, error } | { ok: false, locked, retryAfterSec }
+  // RustCoreProxy 의 autoWrap minify 박힌 chunk 에서 동작 안 할 가능성 회피.
+  const r = raw as Record<string, unknown> | null;
   // 잠금
-  if (result && typeof result === 'object' && 'locked' in result && result.locked) {
+  if (r && r.locked === true) {
+    const retryAfterSec = Number(r.retryAfterSec ?? r.retry_after_sec ?? 60);
     return NextResponse.json(
-      { success: false, error: `로그인 시도 한도 초과 — ${result.retryAfterSec}초 후 다시 시도하세요` },
-      { status: 429, headers: { 'Retry-After': String(result.retryAfterSec) } },
+      { success: false, error: `로그인 시도 한도 초과 — ${retryAfterSec}초 후 다시 시도하세요` },
+      { status: 429, headers: { 'Retry-After': String(retryAfterSec) } },
     );
   }
-  // 자격증명 불일치
-  if (!result) {
+  // 실패 (null / undefined / { ok: false })
+  if (!r || r.ok !== true || !r.session) {
     return NextResponse.json({ success: false }, { status: 401 });
   }
-  // 정상 세션 (위에서 locked 분기 처리됐으므로 여기는 AuthSession 단일)
-  const session = result as Exclude<typeof result, { locked: true }>;
+  // 정상 세션
+  const session = r.session as { token: string };
 
   const res = NextResponse.json({ success: true });
 
