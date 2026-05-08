@@ -987,6 +987,7 @@ dependencies = [
  "hex",
  "hf-hub",
  "image",
+ "libc",
  "nix",
  "prost",
  "protoc-bin-vendored",
