@@ -188,7 +188,7 @@ fn cms_defaults() -> serde_json::Value {
     serde_json::json!({
         "enabled": true,
         "siteTitle": "Firebat",
-        "siteDescription": "",
+        "siteDescription": "Just Imagine. Firebat Runs.",
         "siteUrl": "",
         "siteLang": "ko",
         "favicon": "",
