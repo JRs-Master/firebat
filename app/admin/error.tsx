@@ -36,19 +36,13 @@ export default function AdminError({
             오류 ID: {error.digest}
           </p>
         )}
-        <div className="mt-4 flex items-center justify-center gap-2 flex-wrap">
+        <div className="mt-4 flex items-center justify-center">
           <button
             onClick={() => reset()}
             className="px-3 py-1.5 text-sm font-bold bg-blue-500 hover:bg-blue-600 text-white rounded cursor-pointer border-0"
           >
             다시 시도
           </button>
-          <a
-            href="/login"
-            className="px-3 py-1.5 text-sm font-medium bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 rounded no-underline"
-          >
-            로그아웃
-          </a>
         </div>
       </div>
     </div>

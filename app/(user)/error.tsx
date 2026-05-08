@@ -52,7 +52,7 @@ export default function Error({
             오류 ID: {error.digest}
           </p>
         )}
-        <div className="mt-6 flex items-center justify-center gap-2 flex-wrap">
+        <div className="mt-6 flex items-center justify-center">
           <button
             onClick={() => reset()}
             className="px-4 py-2 text-sm font-bold rounded no-underline transition-opacity hover:opacity-90 cursor-pointer border-0"
@@ -60,17 +60,6 @@ export default function Error({
           >
             다시 시도
           </button>
-          <a
-            href="/"
-            className="px-4 py-2 text-sm font-medium rounded border no-underline transition-opacity hover:opacity-80"
-            style={{
-              background: 'var(--cms-bg-card)',
-              borderColor: 'var(--cms-border)',
-              color: 'var(--cms-text)',
-            }}
-          >
-            홈으로
-          </a>
         </div>
       </section>
     </main>
