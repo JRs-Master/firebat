@@ -19,6 +19,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Node 24 강제 — 2026-06-02 부터 default 라 미리 opt-in (deprecation warning 회피)
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   # ────────────────────────────────────────────────────────────────────
   # Rust — cargo check + test
