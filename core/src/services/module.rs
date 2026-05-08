@@ -280,7 +280,12 @@ fn cms_defaults() -> serde_json::Value {
                 "sticky": false,
                 "transparentOnTop": false,
                 "mobileDrawerIncludeSidebar": false,
-                "rows": []
+                "rows": [],
+                "widgets": {
+                    "left": [{"type": "site-name", "props": {}}],
+                    "center": [],
+                    "right": []
+                }
             },
             "sidebar": {
                 "show": false,
@@ -288,7 +293,7 @@ fn cms_defaults() -> serde_json::Value {
             },
             "footer": {
                 "show": true,
-                "text": "",
+                "text": "© Firebat. All rights reserved.",
                 "columns": []
             },
             "pageList": {
