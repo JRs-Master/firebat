@@ -1,0 +1,78 @@
+# Firebat Caddyfile example — 실 도메인 운영 시 Caddyfile 로 복사 후 도메인만 수정.
+#
+# `cp caddy/Caddyfile.example caddy/Caddyfile`
+# 그 후 your-domain.com 을 실 도메인으로 일괄 치환.
+#
+# Caddy 가 자동 처리:
+#   - Let's Encrypt TLS 발급·갱신 (HTTP-01 / TLS-ALPN-01 자동 선택)
+#   - HTTP → HTTPS redirect
+#   - HTTP/2 + HTTP/3 (QUIC) 기본
+#   - SSE / WebSocket proxy 자동
+#   - gzip / zstd 압축
+#
+# 어르신 사용자도 Caddyfile 만 박으면 끝 — certbot / 90일 갱신 cron / SSL 옵션 박을 일 0.
+
+your-domain.com, www.your-domain.com {
+    # 자동 TLS 이메일 (Let's Encrypt 갱신 알림용)
+    tls your-email@example.com
+
+    # 보안 헤더
+    header {
+        Strict-Transport-Security "max-age=63072000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # iframe 차단은 페이지별 X-Frame-Options 활용 — 여기선 글로벌 강제 안 함
+    }
+
+    # 미디어 직접 서빙 — Next.js renderer 우회 (1년 캐시 + immutable)
+    handle_path /user/media/* {
+        root * /opt/firebat/user/media
+        file_server {
+            precompressed gzip
+        }
+        header Cache-Control "public, max-age=31536000, immutable"
+        header X-Served-By "caddy-static"
+    }
+    handle_path /system/media/* {
+        root * /opt/firebat/system/media
+        file_server
+        header Cache-Control "public, max-age=31536000, immutable"
+        header X-Served-By "caddy-static"
+    }
+
+    # 사이트 인증 파일 (verifications 시스템 — Google / Naver / Bing / ads.txt)
+    # Phase C 활성 시 verifications/ 디렉토리 mount 후 alias 박음.
+
+    # gRPC 외부 노출 차단 (firebat-core:50051 은 internal only)
+    handle /grpc* {
+        respond "Not Found" 404
+    }
+
+    # 메인 — Next.js renderer 로 reverse proxy
+    reverse_proxy firebat-renderer:3000 {
+        # SSE keepalive — flush_interval -1 = 즉시 flush
+        flush_interval -1
+        # MCP SSE 엔드포인트 등 long-running 요청
+        transport http {
+            read_timeout 600s
+            write_timeout 600s
+        }
+    }
+
+    # 압축 — Caddy 가 자동 협상 (zstd > gzip)
+    encode zstd gzip
+
+    # 본문 size 한도 (옛 nginx client_max_body_size 50M 동등)
+    request_body {
+        max_size 50MB
+    }
+
+    # 액세스 로그 — JSON 포맷 (운영 모니터링 + tracing 통합)
+    log {
+        output file /var/log/caddy/firebat.log {
+            roll_size 10MB
+            roll_keep 30
+        }
+        format json
+    }
+}

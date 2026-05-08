@@ -79,10 +79,12 @@ hf-hub = { version = "0.3", default-features = false, features = ["online", "tok
 # Linux 한정 — Sandbox OS 격리 (cgroups v2 + seccomp + namespace).
 # Phase B-post audit Track B (2026-05-06) 박힘. macOS / Windows 빌드 시 자동 제외.
 [target.'cfg(target_os = "linux")'.dependencies]
-# nix — unshare / setns / fork / mount syscall wrapper (libc 직접 사용 회피)
+# nix — unshare / setns / fork / mount syscall wrapper
 nix = { version = "0.29", features = ["sched", "fs", "mount", "process", "signal", "user"] }
 # seccompiler — seccomp-bpf JIT (libseccomp 의존성 0, pure Rust)
 seccompiler = "0.5"
+# libc — SYS_* syscall 번호 + EPERM 등 errno 상수 (seccomp filter 박을 때 필수)
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"

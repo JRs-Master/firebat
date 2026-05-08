@@ -1,6 +1,8 @@
 # Firebat v1.0 Final — self-hosted Docker 배포 가이드
 
-Phase C 박힘 (2026-05-04, 2026-05-06 갱신). Rust Core + (옵션) Next.js renderer + nginx TLS.
+Phase C 박힘 (2026-05-04, 2026-05-07 갱신). Rust Core + (옵션) Next.js renderer + **Caddy 자동 TLS**.
+
+**어르신·비-개발자 친화** — Caddy 가 Let's Encrypt 자동 발급·갱신. certbot 설치 / 90일 갱신 cron / SSL 옵션 박을 일 0. Caddyfile 7줄 박고 도메인만 치환하면 끝.
 
 **🔥 Phase B-4 cutover (2026-05-06) 후 빌드 명령**:
 - 옛 `cargo build -p firebat-core` → **`cargo build --release -p firebat-infra --bin firebat-core`** (Rust workspace 분리 — bin target 이 infra crate 안)
@@ -13,7 +15,7 @@ Phase C 박힘 (2026-05-04, 2026-05-06 갱신). Rust Core + (옵션) Next.js ren
 - **RAM**: 1GB+ (CLI 모드 LLM daemon 동시 실행 시 2GB 권장)
 - **Disk**: 5GB+ (DB / 미디어 / 로그)
 - **Docker**: 24.0+ (compose v2 plugin 포함)
-- **포트**: 80/443 (nginx), 50051 (Core gRPC, 외부 노출 X)
+- **포트**: 80/443 (Caddy, HTTP/3 위해 443/udp 도), 50051 (Core gRPC, 외부 노출 X)
 
 ## 처음 배포
 
@@ -26,15 +28,12 @@ cd /opt/firebat
 mkdir -p data user/media system/media
 sudo chown -R 1000:1000 data user system
 
-# 3. nginx 설정 (실 도메인 운영 시)
-cp nginx/firebat.conf.example nginx/firebat.conf
-# firebat.conf 안 server_name / ssl cert path 수정
+# 3. Caddy 설정 (실 도메인 운영 시)
+cp caddy/Caddyfile.example caddy/Caddyfile
+# Caddyfile 안 your-domain.com 을 실 도메인으로 일괄 치환 + tls 이메일 박음
+# 그게 전부. SSL cert 자동 발급·갱신 — certbot 설치 0, 갱신 cron 0.
 
-# 4. SSL cert (Let's Encrypt)
-# certbot --nginx -d your-domain.com -d www.your-domain.com
-# 또는 Cloudflare Origin Cert 사용 — /etc/nginx/certs/ 에 fullchain.pem + privkey.pem 박음
-
-# 5. docker-compose.yml 의 renderer / nginx 주석 해제 (옵션)
+# 4. docker-compose.yml 의 renderer / caddy 주석 해제 (옵션)
 
 # 6. 빌드 + 실행 (첫 빌드 ~5-8분 — Rust 정적 링크 + 모든 deps 컴파일)
 docker compose up -d --build

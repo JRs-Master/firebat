@@ -36,6 +36,12 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      # protoc 명시 install — protoc-bin-vendored 가 동봉이지만 일부 환경 mismatch 회피
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
       # Cargo registry + target 캐시 — push 마다 재빌드 회피 (~70% 시간 절감)
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -45,6 +51,8 @@ jobs:
 
       - name: cargo check
         run: cargo check -p firebat-core -p firebat-infra --all-targets
+        env:
+          CARGO_BUILD_JOBS: 4
 
       - name: cargo test (infra)
         run: cargo test -p firebat-infra --tests
@@ -70,7 +78,8 @@ jobs:
           cache: 'npm'
 
       - name: npm ci
-        run: npm ci
+        # peer deps mismatch (next 16 + react 19 + 기타) 회피
+        run: npm ci --legacy-peer-deps
 
       - name: typecheck
         run: npm run typecheck
@@ -90,6 +99,11 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2

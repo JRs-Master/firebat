@@ -1,9 +1,10 @@
 # Phase C self-hosted Docker compose — Firebat v1.0 Final.
 #
 # 구성:
-#  - firebat-core (Rust gRPC server, port 50051) — Phase B-17 박힘 (26 services + 27 정적 도구 + LLM 8 format)
-#  - firebat-renderer (Next.js standalone, port 3000) — 옛 frontend 재사용. Phase C 박힘 후 dual-run 검증.
-#  - nginx (옵션, port 80/443) — TLS 종료 + reverse proxy. 실 도메인 운영 시 활성.
+#  - firebat-core (Rust gRPC server, port 50051)
+#  - firebat-renderer (Next.js standalone, port 3000)
+#  - caddy (옵션, port 80/443) — 자동 TLS + reverse proxy. 실 도메인 운영 시 활성.
+#    Let's Encrypt 발급·90일 갱신 자동 (certbot 설치 불필요).
 #
 # Volume mount:
 #  - ./data → /opt/firebat/data (SQLite DB / Vault / cron jobs / 영속 잡)
@@ -79,17 +80,24 @@ services:
   #   networks:
   #     - firebat-net
 
-  # ── Nginx (옵션) — 실 도메인 운영 시 활성 ──
-  # nginx:
-  #   image: nginx:alpine
-  #   container_name: firebat-nginx
+  # ── Caddy (옵션) — 실 도메인 운영 시 활성 ──
+  # 자동 TLS (Let's Encrypt) + reverse proxy + SSE keepalive + HTTP/3.
+  # certbot / 90일 갱신 cron 박을 일 0 — Caddy 가 알아서.
+  # caddy:
+  #   image: caddy:2-alpine
+  #   container_name: firebat-caddy
   #   restart: unless-stopped
   #   ports:
   #     - "80:80"
   #     - "443:443"
+  #     - "443:443/udp"   # HTTP/3 (QUIC)
   #   volumes:
-  #     - ./nginx/firebat.conf:/etc/nginx/conf.d/default.conf:ro
-  #     - ./nginx/certs:/etc/nginx/certs:ro
+  #     - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - ./user/media:/opt/firebat/user/media:ro
+  #     - ./system/media:/opt/firebat/system/media:ro
+  #     - caddy-data:/data         # Let's Encrypt cert 영속
+  #     - caddy-config:/config
+  #     - ./data/logs/caddy:/var/log/caddy
   #   depends_on:
   #     - firebat-renderer
   #   networks:
@@ -98,3 +106,8 @@ services:
 networks:
   firebat-net:
     driver: bridge
+
+# Caddy 활성 시 볼륨도 같이 활성:
+# volumes:
+#   caddy-data:    # Let's Encrypt cert + ACME state — 절대 잃으면 안 됨 (rate limit 위험)
+#   caddy-config:
