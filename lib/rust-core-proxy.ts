@@ -86,10 +86,14 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
   searchMedia: (query: string, opts?: unknown) => ({ query, opts }),
   setImageModel: (modelId: string) => ({ modelId }),
 
-  // AuthService
-  login: (username: string, password: string) => ({ username, password }),
+  // AuthService — Rust args: { id, password, attempt_key } (옛 TS 의 username → id rename)
+  login: (id: string, password: string, attemptKey?: string) => ({
+    id,
+    password,
+    attempt_key: attemptKey ?? '',
+  }),
   generateApiToken: (label?: string, expiresAt?: number) => ({ label, expiresAt }),
-  setAdminCredentials: (username: string, password: string) => ({ username, password }),
+  setAdminCredentials: (id: string, password: string) => ({ id, password }),
 
   // CapabilityService
   resolveCapability: (capId: string, opts?: unknown) => ({ capId, opts }),
