@@ -237,6 +237,7 @@ fn cms_defaults() -> serde_json::Value {
             "fontBody": "",
             "fontHeading": "",
             "fontMono": "",
+            "baseFontSize": "16px",
             "fontScaleRatio": 1.2,
             "lineHeightBody": 1.6,
             "lineHeightHeading": 1.2,
@@ -272,15 +273,15 @@ fn cms_defaults() -> serde_json::Value {
                 "show": true,
                 "text": "",
                 "columns": []
+            },
+            "pageList": {
+                "variant": "list",
+                "showFeaturedImage": true,
+                "showExcerpt": true,
+                "showReadingTime": false,
+                "pagination": "numbered",
+                "perPage": 10
             }
-        },
-        "pageCard": {
-            "variant": "list",
-            "showFeaturedImage": true,
-            "showExcerpt": true,
-            "showReadingTime": false,
-            "pagination": "numbered",
-            "perPage": 10
         }
     })
 }

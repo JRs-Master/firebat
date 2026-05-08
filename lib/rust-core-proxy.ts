@@ -133,11 +133,108 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
 };
 
 /**
+ * 옛 TS Core 가 `{success, data, error}` wrap 형식으로 반환하던 메서드.
+ * Rust gRPC 가 raw 값 반환 → RustCoreProxy 가 자동 wrap 박음.
+ *
+ *  - null / undefined → `{success: false, error: 'Not found'}`
+ *  - object (단 'success' 필드 미박힘) → `{success: true, data: <object>}`
+ *  - array → `{success: true, data: <array>}`
+ *  - 이미 'success' 박힌 object → 그대로 (Rust 측에서 wrap 한 응답)
+ */
+const WRAP_METHODS = new Set([
+  // PageService
+  'listPages', 'getPage', 'searchPages', 'getPageRedirect',
+  'listStaticPages', 'findMediaUsage', 'findRelatedPages', 'listAllTags',
+  'savePage', 'deletePage', 'renamePage',
+  // ProjectService
+  'listProjects', 'getProject', 'saveProject', 'deleteProject',
+  'scanProjects', 'getProjectVisibility', 'getProjectConfig', 'setProjectConfig',
+  'renameProject',
+  // ConversationService
+  'listConversations', 'getConversation', 'saveConversation', 'deleteConversation',
+  'searchHistory', 'searchConversationHistory', 'isConversationDeleted',
+  'getCliSession', 'createShare', 'getShare',
+  // EntityService
+  'saveEntity', 'updateEntity', 'deleteEntity', 'getEntity',
+  'findEntityByName', 'searchEntities',
+  'saveEntityFact', 'updateEntityFact', 'deleteEntityFact', 'getEntityFact',
+  'getEntityTimeline', 'searchEntityFacts', 'retrieveContext',
+  // EpisodicService
+  'saveEvent', 'updateEvent', 'deleteEvent', 'getEvent',
+  'searchEvents', 'listRecentEvents', 'listEventsByEntity',
+  'linkEventEntity', 'unlinkEventEntity',
+  // MediaService
+  'listMedia', 'readMedia', 'removeMedia', 'searchMedia',
+  'generateImage', 'startImageGeneration', 'regenerateImage', 'saveUpload',
+  // TemplateService
+  'listTemplates', 'getTemplate', 'saveTemplate', 'deleteTemplate',
+  // CapabilityService
+  'listCapabilities', 'listCapabilitiesWithProviders', 'getCapabilityProviders',
+  'resolveCapability',
+  // McpService
+  'listMcpServers', 'addMcpServer', 'removeMcpServer',
+  'listMcpTools', 'listAllMcpTools', 'callMcpTool',
+  // AuthService
+  'login', 'validateSession', 'validateToken',
+  'generateApiToken', 'validateApiToken',
+  // ScheduleService
+  'listCronJobs', 'scheduleTask', 'scheduleCronJob', 'cancelCronJob',
+  'updateCronJob', 'runCronJobNow', 'getCronLogs', 'consumeCronNotifications',
+  // TaskService
+  'runTask',
+  // ModuleService (Run 만 결과 wrap, Settings 류는 raw)
+  'runModule', 'sandboxExecute',
+  // SecretService (list/get 류만)
+  'listUserSecrets', 'getUserSecret', 'listUserModuleSecrets',
+  // StorageService
+  'readFile', 'readFileBinary', 'writeFile', 'deleteFile',
+  'listDir', 'listFiles', 'getFileTree', 'globFiles',
+  // MemoryService
+  'getMemoryIndex', 'readMemoryFile', 'listMemoryFiles', 'saveMemoryFile', 'deleteMemoryFile',
+  // ToolService
+  'executeTool',
+  // AiService (응답 형식 따라)
+  'codeAssist',
+  // Telegram
+  'getTelegramWebhookStatus',
+  // Cache
+  'cacheRead', 'cacheGrep', 'cacheAggregate',
+  // Database
+  'queryDatabase',
+  // Network
+  'networkFetch',
+  // Status
+  'getJob', 'listActiveJobs', 'getJobStats',
+]);
+
+/** Rust 응답 자동 wrap — 옛 TS `{success, data, error}` 형식 호환. */
+function autoWrap(method: string, result: unknown): unknown {
+  if (!WRAP_METHODS.has(method)) return result;
+  // 이미 success 박힌 응답 (Rust 측에서 wrap 한 경우) → 그대로
+  if (
+    result !== null &&
+    typeof result === 'object' &&
+    'success' in (result as Record<string, unknown>)
+  ) {
+    return result;
+  }
+  // null / undefined → not found
+  if (result === null || result === undefined) {
+    return { success: false, error: 'Not found' };
+  }
+  // raw value → wrap
+  return { success: true, data: result };
+}
+
+/**
  * RustCoreProxy — Proxy + Reflect 패턴.
  * 옛 FirebatCore 와 같은 메서드 호출 인터페이스 → callCore 라우팅.
  *
  * 메서드 미인식 (callCore 내부에서 RPC 매핑 못 찾으면) → fallback Lifecycle service 의
  * PascalCase RPC. table 등록 안 박힌 method 도 동작 시도 (안전망).
+ *
+ * WRAP_METHODS 박힌 메서드는 응답 자동 `{success, data, error}` 형식 wrap.
+ * 옛 TS Core 호환성 유지 — frontend 코드 변경 0.
  */
 export function createRustCoreProxy(): unknown {
   return new Proxy(
@@ -157,7 +254,8 @@ export function createRustCoreProxy(): unknown {
             : args.length === 0
               ? undefined
               : args[0];
-          return callCore(prop, wrappedArgs);
+          const result = await callCore(prop, wrappedArgs);
+          return autoWrap(prop, result);
         };
       },
       // setProperty 차단 — Proxy 는 read-only
