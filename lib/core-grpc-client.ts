@@ -135,6 +135,12 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   searchPages: { service: 'PageService', rpc: 'Search' },
   setPageVisibility: { service: 'PageService', rpc: 'SetVisibility' },
   verifyPagePassword: { service: 'PageService', rpc: 'VerifyPassword' },
+  renamePage: { service: 'PageService', rpc: 'Rename' },
+  getPageRedirect: { service: 'PageService', rpc: 'GetRedirect' },
+  listStaticPages: { service: 'PageService', rpc: 'ListStatic' },
+  findMediaUsage: { service: 'PageService', rpc: 'FindMediaUsage' },
+  findRelatedPages: { service: 'PageService', rpc: 'FindRelated' },
+  listAllTags: { service: 'PageService', rpc: 'ListAllTags' },
 
   // ── ProjectService (ProjectManager) ───────────────────────────
   listProjects: { service: 'ProjectService', rpc: 'List' },
@@ -143,23 +149,39 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   deleteProject: { service: 'ProjectService', rpc: 'Delete' },
   setProjectVisibility: { service: 'ProjectService', rpc: 'SetVisibility' },
   verifyProjectPassword: { service: 'ProjectService', rpc: 'VerifyPassword' },
+  renameProject: { service: 'ProjectService', rpc: 'Rename' },
+  scanProjects: { service: 'ProjectService', rpc: 'Scan' },
+  getProjectVisibility: { service: 'ProjectService', rpc: 'GetVisibility' },
+  getProjectConfig: { service: 'ProjectService', rpc: 'GetConfig' },
+  setProjectConfig: { service: 'ProjectService', rpc: 'SetConfig' },
 
   // ── ModuleService (ModuleManager) ─────────────────────────────
   listSystemModules: { service: 'ModuleService', rpc: 'ListSystem' },
   listUserModules: { service: 'ModuleService', rpc: 'ListUser' },
+  getSystemModules: { service: 'ModuleService', rpc: 'ListSystem' },   // alias
+  getUserModules: { service: 'ModuleService', rpc: 'ListUser' },       // alias
   getModuleSchema: { service: 'ModuleService', rpc: 'GetSchema' },
+  getModuleConfig: { service: 'ModuleService', rpc: 'GetConfig' },
   runModule: { service: 'ModuleService', rpc: 'Run' },
+  sandboxExecute: { service: 'ModuleService', rpc: 'Run' },            // path 기반 실행 — 같은 Run RPC 활용
   setModuleEnabled: { service: 'ModuleService', rpc: 'SetEnabled' },
+  isModuleEnabled: { service: 'ModuleService', rpc: 'IsEnabled' },
   setModuleSettings: { service: 'ModuleService', rpc: 'SetSettings' },
   getModuleSettings: { service: 'ModuleService', rpc: 'GetSettings' },
+  getCmsSettings: { service: 'ModuleService', rpc: 'GetCmsSettings' },
+  getKakaoMapJsKey: { service: 'ModuleService', rpc: 'GetKakaoMapJsKey' },
 
   // ── ScheduleService (ScheduleManager) ─────────────────────────
-  listCronJobs: { service: 'ScheduleService', rpc: 'List' },
-  scheduleTask: { service: 'ScheduleService', rpc: 'Schedule' },
-  cancelCronJob: { service: 'ScheduleService', rpc: 'Cancel' },
+  listCronJobs: { service: 'ScheduleService', rpc: 'ListCron' },
+  scheduleTask: { service: 'ScheduleService', rpc: 'ScheduleCron' },
+  scheduleCronJob: { service: 'ScheduleService', rpc: 'ScheduleCron' },   // alias
+  cancelCronJob: { service: 'ScheduleService', rpc: 'CancelCron' },
+  updateCronJob: { service: 'ScheduleService', rpc: 'UpdateCron' },
+  runCronJobNow: { service: 'ScheduleService', rpc: 'RunNow' },
   getCronLogs: { service: 'ScheduleService', rpc: 'GetLogs' },
-  setTimezone: { service: 'ScheduleService', rpc: 'SetTimezone' },
-  getTimezone: { service: 'ScheduleService', rpc: 'GetTimezone' },
+  clearCronLogs: { service: 'ScheduleService', rpc: 'ClearLogs' },
+  consumeCronNotifications: { service: 'ScheduleService', rpc: 'ConsumeNotifications' },
+  validatePipeline: { service: 'ScheduleService', rpc: 'ValidatePipeline' },
 
   // ── TaskService (TaskManager) ─────────────────────────────────
   runTask: { service: 'TaskService', rpc: 'Run' },
@@ -167,9 +189,13 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   // ── SecretService (SecretManager) ─────────────────────────────
   listUserSecrets: { service: 'SecretService', rpc: 'ListUser' },
   setUserSecret: { service: 'SecretService', rpc: 'SetUser' },
+  getUserSecret: { service: 'SecretService', rpc: 'GetUser' },
   deleteUserSecret: { service: 'SecretService', rpc: 'DeleteUser' },
-  getVertexKey: { service: 'SecretService', rpc: 'GetVertexKey' },
-  setVertexKey: { service: 'SecretService', rpc: 'SetVertexKey' },
+  listUserModuleSecrets: { service: 'SecretService', rpc: 'ListUserModuleSecrets' },
+  getVertexKey: { service: 'SecretService', rpc: 'GetSystem' },     // system:vertex-key Vault key
+  setVertexKey: { service: 'SecretService', rpc: 'SetSystem' },
+  getGeminiKey: { service: 'SecretService', rpc: 'GetSystem' },     // system:gemini-key Vault key
+  setGeminiKey: { service: 'SecretService', rpc: 'SetSystem' },
 
   // ── McpService (McpManager) ───────────────────────────────────
   listMcpServers: { service: 'McpService', rpc: 'ListServers' },
@@ -198,13 +224,13 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   login: { service: 'AuthService', rpc: 'Login' },
   logout: { service: 'AuthService', rpc: 'Logout' },
   validateSession: { service: 'AuthService', rpc: 'ValidateSession' },
+  validateToken: { service: 'AuthService', rpc: 'ValidateToken' },
   generateApiToken: { service: 'AuthService', rpc: 'GenerateApiToken' },
   validateApiToken: { service: 'AuthService', rpc: 'ValidateApiToken' },
   revokeApiTokens: { service: 'AuthService', rpc: 'RevokeApiTokens' },
-  listApiTokens: { service: 'AuthService', rpc: 'ListApiTokens' },
+  getApiTokenInfo: { service: 'AuthService', rpc: 'GetApiTokenInfo' },
   getAdminCredentials: { service: 'AuthService', rpc: 'GetAdminCredentials' },
   setAdminCredentials: { service: 'AuthService', rpc: 'SetAdminCredentials' },
-  sweepExpiredSessions: { service: 'AuthService', rpc: 'SweepExpiredSessions' },
 
   // ── ConversationService (ConversationManager) ─────────────────
   listConversations: { service: 'ConversationService', rpc: 'List' },
@@ -213,6 +239,7 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   deleteConversation: { service: 'ConversationService', rpc: 'Delete' },
   isConversationDeleted: { service: 'ConversationService', rpc: 'IsDeleted' },
   searchHistory: { service: 'ConversationService', rpc: 'SearchHistory' },
+  searchConversationHistory: { service: 'ConversationService', rpc: 'SearchHistory' },  // alias
   getCliSession: { service: 'ConversationService', rpc: 'GetCliSession' },
   setCliSession: { service: 'ConversationService', rpc: 'SetCliSession' },
   createShare: { service: 'ConversationService', rpc: 'CreateShare' },
@@ -220,17 +247,22 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
 
   // ── MediaService (MediaManager — image_gen + 갤러리) ──────────
   generateImage: { service: 'MediaService', rpc: 'Generate' },
-  startImageGeneration: { service: 'MediaService', rpc: 'StartGenerate' },
+  startImageGeneration: { service: 'MediaService', rpc: 'StartGeneration' },
   regenerateImage: { service: 'MediaService', rpc: 'Regenerate' },
   removeMedia: { service: 'MediaService', rpc: 'Remove' },
   readMedia: { service: 'MediaService', rpc: 'Read' },
-  statMedia: { service: 'MediaService', rpc: 'Stat' },
   listMedia: { service: 'MediaService', rpc: 'List' },
-  searchMedia: { service: 'MediaService', rpc: 'Search' },
   isMediaReady: { service: 'MediaService', rpc: 'IsReady' },
-  getImageModel: { service: 'MediaService', rpc: 'GetModel' },
-  setImageModel: { service: 'MediaService', rpc: 'SetModel' },
-  listImageModels: { service: 'MediaService', rpc: 'ListModels' },
+  saveUpload: { service: 'MediaService', rpc: 'Save' },
+  getImageModel: { service: 'MediaService', rpc: 'GetImageModel' },
+  setImageModel: { service: 'MediaService', rpc: 'SetImageModel' },
+  listImageModels: { service: 'MediaService', rpc: 'GetAvailableImageModels' },
+  getAvailableImageModels: { service: 'MediaService', rpc: 'GetAvailableImageModels' },
+  getImageDefaultSize: { service: 'MediaService', rpc: 'GetImageDefaultSize' },
+  setImageDefaultSize: { service: 'MediaService', rpc: 'SetImageDefaultSize' },
+  getImageDefaultQuality: { service: 'MediaService', rpc: 'GetImageDefaultQuality' },
+  setImageDefaultQuality: { service: 'MediaService', rpc: 'SetImageDefaultQuality' },
+  getImageSettings: { service: 'MediaService', rpc: 'GetImageSettings' },
 
   // ── TemplateService (TemplateManager) ─────────────────────────
   listTemplates: { service: 'TemplateService', rpc: 'List' },
@@ -266,65 +298,78 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   // ── ConsolidationService (ConsolidationManager — 메모리 4-tier Phase 4) ─
   consolidateConversation: { service: 'ConsolidationService', rpc: 'Consolidate' },
   consolidateInactive: { service: 'ConsolidationService', rpc: 'ConsolidateInactive' },
-  getMemoryStats: { service: 'ConsolidationService', rpc: 'GetStats' },
+  getMemoryStats: { service: 'ConsolidationService', rpc: 'GetMemoryStats' },
+  askLlmText: { service: 'ConsolidationService', rpc: 'AskLlmText' },
 
   // ── CostService (CostManager) ─────────────────────────────────
-  recordLlmCost: { service: 'CostService', rpc: 'Record' },
-  getCostSummary: { service: 'CostService', rpc: 'GetSummary' },
-  getCostHistory: { service: 'CostService', rpc: 'GetHistory' },
+  getLlmCostStats: { service: 'CostService', rpc: 'GetStats' },
+  flushCost: { service: 'CostService', rpc: 'Flush' },
+  getCostBudget: { service: 'CostService', rpc: 'GetBudget' },
+  setCostBudget: { service: 'CostService', rpc: 'SetBudget' },
+  checkCostBudget: { service: 'CostService', rpc: 'CheckBudget' },
 
   // ── EventService (EventManager — SSE) ─────────────────────────
-  notifySidebar: { service: 'EventService', rpc: 'NotifySidebar' },
-  notifyGallery: { service: 'EventService', rpc: 'NotifyGallery' },
-  notifyCronComplete: { service: 'EventService', rpc: 'NotifyCronComplete' },
-  subscribeEvents: { service: 'EventService', rpc: 'Subscribe' },
+  listAuditLog: { service: 'EventService', rpc: 'ListAuditLog' },
 
   // ── StatusService (StatusManager — long-running 가시화) ───────
   startJob: { service: 'StatusService', rpc: 'Start' },
   updateJob: { service: 'StatusService', rpc: 'Update' },
   completeJob: { service: 'StatusService', rpc: 'Complete' },
   failJob: { service: 'StatusService', rpc: 'Fail' },
-  listActiveJobs: { service: 'StatusService', rpc: 'ListActive' },
   getJob: { service: 'StatusService', rpc: 'Get' },
+  listActiveJobs: { service: 'StatusService', rpc: 'List' },
+  getJobStats: { service: 'StatusService', rpc: 'Stats' },
 
   // ── ToolService (ToolManager — 도구 dispatch) ─────────────────
   listTools: { service: 'ToolService', rpc: 'List' },
   getToolStats: { service: 'ToolService', rpc: 'GetStats' },
-  dispatchTool: { service: 'ToolService', rpc: 'Dispatch' },
+  executeTool: { service: 'ToolService', rpc: 'Execute' },
 
   // ── AiService (AiManager) ─────────────────────────────────────
   requestActionWithTools: { service: 'AiService', rpc: 'RequestActionWithTools' },
   codeAssist: { service: 'AiService', rpc: 'CodeAssist' },
-  getUserPrompt: { service: 'AiService', rpc: 'GetUserPrompt' },
-  setUserPrompt: { service: 'AiService', rpc: 'SetUserPrompt' },
-  getAiAssistantModel: { service: 'AiService', rpc: 'GetAssistantModel' },
-  setAiAssistantModel: { service: 'AiService', rpc: 'SetAssistantModel' },
-  getAvailableAiAssistantModels: {
-    service: 'AiService',
-    rpc: 'GetAvailableAssistantModels',
-  },
+  resolveCallTarget: { service: 'AiService', rpc: 'ResolveCallTarget' },
+  spawnSubAgent: { service: 'AiService', rpc: 'SpawnSubAgent' },
+  isSubAgentEnabled: { service: 'AiService', rpc: 'IsSubAgentEnabled' },
+  setSubAgentEnabled: { service: 'AiService', rpc: 'SetSubAgentEnabled' },
+  runAgentJob: { service: 'AiService', rpc: 'RunAgentJob' },
 
-  // ── StorageService (IStoragePort 직접 — Rust 측 매니저 없음) ──
-  readFile: { service: 'StorageService', rpc: 'Read' },
-  readBinaryFile: { service: 'StorageService', rpc: 'ReadBinary' },
-  writeFile: { service: 'StorageService', rpc: 'Write' },
-  appendFile: { service: 'StorageService', rpc: 'Append' },
-  deleteFile: { service: 'StorageService', rpc: 'Delete' },
+  // ── StorageService (IStoragePort 직접) ───────────────────────
+  readFile: { service: 'StorageService', rpc: 'ReadFile' },
+  readFileBinary: { service: 'StorageService', rpc: 'ReadFileBinary' },
+  writeFile: { service: 'StorageService', rpc: 'WriteFile' },
+  deleteFile: { service: 'StorageService', rpc: 'DeleteFile' },
   listDir: { service: 'StorageService', rpc: 'ListDir' },
-  treeDir: { service: 'StorageService', rpc: 'Tree' },
+  listFiles: { service: 'StorageService', rpc: 'ListFiles' },
+  getFileTree: { service: 'StorageService', rpc: 'GetFileTree' },
+  globFiles: { service: 'StorageService', rpc: 'GlobFiles' },
 
   // ── DatabaseService (IDatabasePort 직접) ──────────────────────
-  dbQuery: { service: 'DatabaseService', rpc: 'Query' },
+  queryDatabase: { service: 'DatabaseService', rpc: 'Query' },
 
   // ── NetworkService (INetworkPort 직접) ────────────────────────
-  networkRequest: { service: 'NetworkService', rpc: 'Request' },
+  networkFetch: { service: 'NetworkService', rpc: 'Fetch' },
 
   // ── SettingsService (Vault flat key 헬퍼) ────────────────────
-  getSettings: { service: 'SettingsService', rpc: 'Get' },
-  setSetting: { service: 'SettingsService', rpc: 'Set' },
+  getTimezone: { service: 'SettingsService', rpc: 'GetTimezone' },
+  setTimezone: { service: 'SettingsService', rpc: 'SetTimezone' },
+  getAiModel: { service: 'SettingsService', rpc: 'GetAiModel' },
+  setAiModel: { service: 'SettingsService', rpc: 'SetAiModel' },
+  getAiThinkingLevel: { service: 'SettingsService', rpc: 'GetAiThinkingLevel' },
+  setAiThinkingLevel: { service: 'SettingsService', rpc: 'SetAiThinkingLevel' },
+  getUserPrompt: { service: 'SettingsService', rpc: 'GetUserPrompt' },
+  setUserPrompt: { service: 'SettingsService', rpc: 'SetUserPrompt' },
+  getAnthropicCacheEnabled: { service: 'SettingsService', rpc: 'GetAnthropicCacheEnabled' },
+  setAnthropicCacheEnabled: { service: 'SettingsService', rpc: 'SetAnthropicCacheEnabled' },
+  getLastModelByCategory: { service: 'SettingsService', rpc: 'GetLastModelByCategory' },
+  setLastModelByCategory: { service: 'SettingsService', rpc: 'SetLastModelByCategory' },
+  getAiAssistantModel: { service: 'SettingsService', rpc: 'GetAiAssistantModel' },
+  setAiAssistantModel: { service: 'SettingsService', rpc: 'SetAiAssistantModel' },
+  getAiAssistantDefault: { service: 'SettingsService', rpc: 'GetAiAssistantDefault' },
+  getAvailableAiAssistantModels: { service: 'SettingsService', rpc: 'GetAvailableAiAssistantModels' },
 
   // ── CacheService (Phase 2 sysmod result cache) ───────────────
-  cacheData: { service: 'CacheService', rpc: 'Data' },
+  cacheData: { service: 'CacheService', rpc: 'Read' },     // proto: 'Read' RPC
   cacheRead: { service: 'CacheService', rpc: 'Read' },
   cacheGrep: { service: 'CacheService', rpc: 'Grep' },
   cacheAggregate: { service: 'CacheService', rpc: 'Aggregate' },
@@ -332,9 +377,36 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
 
   // ── TelegramService (sysmod_telegram bot webhook) ────────────
   processTelegramMessage: { service: 'TelegramService', rpc: 'ProcessMessage' },
+  setupTelegramWebhook: { service: 'TelegramService', rpc: 'SetupWebhook' },
+  removeTelegramWebhook: { service: 'TelegramService', rpc: 'RemoveWebhook' },
+  getTelegramWebhookStatus: { service: 'TelegramService', rpc: 'GetWebhookStatus' },
+  getTelegramWebhookSecret: { service: 'TelegramService', rpc: 'GetWebhookSecret' },
+  isTelegramOwner: { service: 'TelegramService', rpc: 'IsOwner' },
+
+  // ── McpService — 추가 매핑 (옛 entry 보강) ───────────────────
+  addMcpServer: { service: 'McpService', rpc: 'AddServer' },
+  listAllMcpTools: { service: 'McpService', rpc: 'ListAllTools' },
+
+  // ── EpisodicService — 추가 매핑 ───────────────────────────────
+  cleanupExpiredEvents: { service: 'EpisodicService', rpc: 'CleanupExpired' },
+
+  // ── EntityService — 추가 매핑 ─────────────────────────────────
+  getEntityFact: { service: 'EntityService', rpc: 'GetFact' },
+  cleanupExpiredFacts: { service: 'EntityService', rpc: 'CleanupExpiredFacts' },
+
+  // ── MemoryService (memory file) ──────────────────────────────
+  getMemoryIndex: { service: 'MemoryService', rpc: 'GetIndex' },
+  readMemoryFile: { service: 'MemoryService', rpc: 'ReadFile' },
+  listMemoryFiles: { service: 'MemoryService', rpc: 'ListFiles' },
+  saveMemoryFile: { service: 'MemoryService', rpc: 'SaveFile' },
+  deleteMemoryFile: { service: 'MemoryService', rpc: 'DeleteFile' },
+
+  // ── ConversationService — 추가 매핑 ──────────────────────────
+  cleanupExpiredShares: { service: 'ConversationService', rpc: 'CleanupExpiredShares' },
 
   // ── LifecycleService (Health / Shutdown) ─────────────────────
   health: { service: 'LifecycleService', rpc: 'Health' },
+  captureException: { service: 'LifecycleService', rpc: 'CaptureException' },
   gracefulShutdown: { service: 'LifecycleService', rpc: 'GracefulShutdown' },
 };
 
