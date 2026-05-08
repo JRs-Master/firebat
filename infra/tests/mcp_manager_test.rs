@@ -36,8 +36,36 @@ async fn add_list_remove_via_manager() {
 }
 
 #[tokio::test]
-async fn list_all_tools_empty_during_phase_b11() {
+async fn list_all_tools_empty_when_no_servers() {
     let (mgr, _dir) = make_manager();
     let tools = mgr.list_all_tools().await.unwrap();
     assert!(tools.is_empty());
+}
+
+#[tokio::test]
+async fn call_tool_unknown_server_errors() {
+    let (mgr, _dir) = make_manager();
+    let r = mgr.call_tool("missing", "x", &serde_json::json!({})).await;
+    assert!(r.is_err());
+    let err = r.unwrap_err();
+    assert!(err.contains("미등록") || err.contains("missing"), "got: {err}");
+}
+
+#[tokio::test]
+async fn list_tools_disabled_server_errors() {
+    let (mgr, _dir) = make_manager();
+    mgr.add_server(McpServerConfig {
+        name: "off".to_string(),
+        transport: McpTransport::Stdio,
+        command: Some("nonexistent-cmd".to_string()),
+        args: vec![],
+        env: HashMap::new(),
+        url: None,
+        enabled: false,
+    })
+    .await
+    .unwrap();
+    let r = mgr.list_tools("off").await;
+    assert!(r.is_err());
+    assert!(r.unwrap_err().contains("비활성"));
 }

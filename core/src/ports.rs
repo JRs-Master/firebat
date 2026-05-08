@@ -1007,10 +1007,13 @@ pub struct McpToolInfo {
     pub input_schema: Option<serde_json::Value>,
 }
 
-/// IMcpClientPort — 옛 TS IMcpClientPort Rust port.
+/// IMcpClientPort — 외부 MCP 서버 풀 클라이언트.
 ///
-/// Phase B-11 minimum: listServers / addServer / removeServer 만 박힘 (JSON 파일 영속).
-/// listTools / callTool 은 Phase B-15+ 후속 — `rmcp` crate (stdio + sse) 박힌 후 활성.
+/// 박힘 (2026-05-07): stdio + HTTP+SSE 두 transport 박힘 (직접 JSON-RPC 2.0 구현).
+///   - stdio: child process spawn + stdin/stdout line frames (Claude Code / Cursor / 로컬 도구)
+///   - sse: GET text/event-stream → endpoint event → POST JSON-RPC (외부 SaaS)
+///
+/// 영속 — `data/mcp-servers.json` (옛 TS 와 동일 포맷).
 #[async_trait::async_trait]
 pub trait IMcpClientPort: Send + Sync {
     fn list_servers(&self) -> Vec<McpServerConfig>;

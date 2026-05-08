@@ -1111,10 +1111,10 @@ fn register_mcp_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         }),
     );
 
-    // call_mcp_tool — Phase B-15+ rmcp 박힌 후 진짜 호출 (현재 stub error 반환)
+    // call_mcp_tool — 외부 MCP 서버 도구 호출 (stdio + SSE 박힘, 2026-05-07)
     tools.register(ToolDefinition {
         name: "call_mcp_tool".to_string(),
-        description: "외부 MCP 서버의 도구 호출. Phase B-15+ rmcp 박힌 후 활성.".to_string(),
+        description: "외부 MCP 서버의 도구 호출 (stdio 또는 SSE transport).".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
