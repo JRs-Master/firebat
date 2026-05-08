@@ -1,0 +1,18 @@
+# Rust 빌드 병렬도 제한 — 8GB RAM 환경 보호.
+#
+# i5-1135G7 / RAM 8GB 환경: rustc 8개 병렬 spawn → 각 500MB-2GB → 시스템 폭주.
+# jobs=2 로 제한 → 컴파일 2배 느려지지만 PC 멈춤 0.
+#
+# 16GB+ 환경에서 빠른 빌드 원하면 이 파일 삭제 또는 jobs 라인 주석.
+# CI (GitHub Actions Linux runner) 는 이 파일 무시하고 max 병렬도 사용.
+
+[build]
+jobs = 2
+
+# 사용 메모리 더 줄이려면 추가 옵션:
+# [profile.dev]
+# debug = "line-tables-only"   # 디버그 심볼 축소 → binary size + 메모리 ↓
+# split-debuginfo = "unpacked"
+
+# CI 캐시 + sccache 도입 시:
+# rustc-wrapper = "sccache"
