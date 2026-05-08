@@ -44,12 +44,12 @@ function safeDecodeSlug(slugArr: string[] | string): string {
 }
 
 /** 페이지 visibility를 해석 (페이지 자체 → 프로젝트 상속 → 기본 public) */
-function resolveVisibility(spec: { _visibility?: string; project?: string }): 'public' | 'password' | 'private' {
+async function resolveVisibility(spec: { _visibility?: string; project?: string }): Promise<'public' | 'password' | 'private'> {
   const pageVis = spec._visibility;
   if (pageVis === 'private' || pageVis === 'password') return pageVis;
   // 프로젝트 상속
   if (spec.project) {
-    const projectVis = getCore().getProjectVisibility(spec.project);
+    const projectVis = await getCore().getProjectVisibility(spec.project);
     if (projectVis === 'private' || projectVis === 'password') return projectVis;
   }
   return 'public';
@@ -67,7 +67,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     if (!slug.includes('/')) {
       const projects = await core.scanProjects();
       if (projects.find((p) => p.name === slug)) {
-        const seo = core.getCmsSettings();
+        const seo = await core.getCmsSettings();
         // RSS rel=alternate — RSS reader autodiscovery. 사이트 글로벌 + 프로젝트 RSS 둘 다 노출.
         const projectFeedAlts = seo.rssEnabled ? {
           types: {
@@ -89,7 +89,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   const spec = result.data;
-  const visibility = resolveVisibility(spec);
+  const visibility = await resolveVisibility(spec);
 
   // 비공개 페이지는 메타데이터 최소화
   if (visibility === 'private') return { title: 'Not Found' };
@@ -102,7 +102,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   const head = spec.head ?? {};
-  const seo = core.getCmsSettings();
+  const seo = await core.getCmsSettings();
   const baseUrl = await resolveBaseUrl(seo.siteUrl);
 
   const ogTitle = head.og?.title ?? head.title ?? slug;
@@ -185,7 +185,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
   }
 
   const spec = result.data;
-  const visibility = resolveVisibility(spec);
+  const visibility = await resolveVisibility(spec);
 
   // 비공개 페이지 — admin 로그인 상태면 미리보기 허용 (Phase 4 Step 7), 그 외 404
   let isAdminPreview = false;
@@ -232,7 +232,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
 
   const head = spec.head ?? {};
   const body = spec.body ?? [];
-  const seo = core.getCmsSettings();
+  const seo = await core.getCmsSettings();
   const siteUrl = await resolveBaseUrl(seo.siteUrl);
 
   // CMS Phase 3 — 프로젝트별 theme override.

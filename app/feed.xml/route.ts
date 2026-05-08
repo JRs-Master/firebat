@@ -17,7 +17,7 @@ import { specBodyToHtml, wrapCdata } from '../../lib/spec-to-rss-html';
  *  RSS reader 가 시간당 1 회 정도 fetch 라 부담 없음. */
 export async function GET(req: Request) {
   const core = getCore();
-  const seo = core.getCmsSettings();
+  const seo = await core.getCmsSettings();
 
   if (!seo.rssEnabled) {
     return new Response('RSS feed is disabled', { status: 404 });

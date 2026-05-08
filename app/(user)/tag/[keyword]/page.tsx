@@ -28,7 +28,7 @@ function decodeKeyword(raw: string): string {
  *  URL "/tag/ai" → CMS settings 의 tagAliases 보고 "AI" canonical 로 normalize → 그 canonical 매칭 페이지. */
 async function findMatchingPages(keyword: string): Promise<{ pages: PageListItem[]; canonical: string }> {
   const core = getCore();
-  const aliases = core.getCmsSettings().tagAliases;
+  const aliases = (await core.getCmsSettings()).tagAliases;
   const canonical = normalizeTag(keyword, aliases);
   const allRes = await core.listPages();
   const allPages = allRes.success && allRes.data ? allRes.data : [];

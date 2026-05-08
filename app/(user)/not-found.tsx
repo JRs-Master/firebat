@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 export default async function NotFound() {
   // 최근 글 일부를 보여줘 navigation 깊이 ↑ — 막다른 길 회피.
   const core = getCore();
-  const cms = core.getCmsSettings();
+  const cms = await core.getCmsSettings();
   const listRes = await core.listPages();
   const recent = listRes.success && listRes.data
     ? listRes.data

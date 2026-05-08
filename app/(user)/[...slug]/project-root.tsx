@@ -33,7 +33,7 @@ export async function ProjectRootView({ projectName, pageSlugs, currentPage = 1 
   currentPage?: number;
 }) {
   const core = getCore();
-  const cms = core.getCmsSettings();
+  const cms = await core.getCmsSettings();
   const perPage = cms.layout.pageList.perPage;
 
   const allPagesRes = await core.listPages();

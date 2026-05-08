@@ -155,9 +155,12 @@ impl ModuleService for ModuleServiceImpl {
         &self,
         _req: Request<Empty>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // CMS module settings — Vault `system:module:cms:settings` (옛 TS 1:1).
-        // ModuleManager.get_settings("cms") 가 default `{enabled: true}` 또는 Vault 박힌 값.
-        json_response(&self.manager.get_settings("cms"))
+        // CMS module settings — Vault `system:module:cms:settings` 위에 default 박은 객체 merge.
+        // 새 서버 / Vault 빈 시점에도 모든 필드 보장 (frontend 가 `seo.layout.header.navLinks` 같이
+        // 깊은 path 접근 시 undefined crash 회피).
+        let stored = self.manager.get_settings("cms");
+        let merged = merge_with_defaults(stored);
+        json_response(&merged)
     }
 
     async fn get_kakao_map_js_key(
@@ -171,5 +174,134 @@ impl ModuleService for ModuleServiceImpl {
             .and_then(|v| v.as_str())
             .unwrap_or("");
         json_response(&serde_json::json!({"key": key}))
+    }
+}
+
+/// CMS settings default 객체 + Vault 저장값 merge.
+/// 옛 TS `getCmsSettings` 의 default 형태 1:1 port — 새 서버 빈 데이터 시점도 모든 필드 보장.
+fn merge_with_defaults(stored: serde_json::Value) -> serde_json::Value {
+    let defaults = cms_defaults();
+    deep_merge(defaults, stored)
+}
+
+fn cms_defaults() -> serde_json::Value {
+    serde_json::json!({
+        "enabled": true,
+        "siteTitle": "Firebat",
+        "siteDescription": "",
+        "siteUrl": "",
+        "siteLang": "ko",
+        "favicon": "",
+        "jsonLdEnabled": true,
+        "jsonLdOrganization": "",
+        "jsonLdLogoUrl": "",
+        "sitemapEnabled": true,
+        "rssEnabled": true,
+        "robotsTxt": "User-agent: *\nAllow: /\n",
+        "ogBgColor": "#0f172a",
+        "ogAccentColor": "#f59e0b",
+        "ogDomain": "",
+        "twitterCard": "summary_large_image",
+        "twitterSite": "",
+        "autoCanonical": true,
+        "customCss": "",
+        "customFontUrls": [],
+        "headScripts": "",
+        "bodyScripts": "",
+        "verifications": [],
+        "kakaoMapJsKey": "",
+        "tagAliases": {},
+        "imageWebp": true,
+        "imageAvif": false,
+        "imageThumbnail": true,
+        "imageBlurhash": true,
+        "imageVariants": "480, 768, 1024",
+        "imageDefaultQuality": 80,
+        "imageDefaultSize": "1024x1024",
+        "imageStripExif": true,
+        "imageProgressive": true,
+        "imageKeepOriginal": false,
+        "adsense": {
+            "publisherId": "",
+            "autoAds": false,
+            "slotHeaderBottom": "",
+            "slotPostTop": "",
+            "slotPostBottom": "",
+            "slotFooterTop": "",
+            "slotCardFeed": ""
+        },
+        "theme": {
+            "preset": "slate-pro",
+            "primary": "",
+            "accent": "",
+            "fontBody": "",
+            "fontHeading": "",
+            "fontMono": "",
+            "fontScaleRatio": 1.2,
+            "lineHeightBody": 1.6,
+            "lineHeightHeading": 1.2,
+            "letterSpacingBody": "0",
+            "letterSpacingHeading": "-0.01em",
+            "contentMaxWidth": "768px",
+            "paddingMobile": "16px",
+            "paddingTablet": "24px",
+            "paddingDesktop": "32px",
+            "borderRadius": "8px",
+            "headingStyleH1": "plain",
+            "headingStyleH2": "plain",
+            "headingStyleH3": "plain"
+        },
+        "layout": {
+            "mode": "full",
+            "showReadingProgress": false,
+            "header": {
+                "show": true,
+                "logoUrl": "",
+                "siteName": "",
+                "navLinks": [],
+                "sticky": false,
+                "transparentOnTop": false,
+                "mobileDrawerIncludeSidebar": false,
+                "rows": []
+            },
+            "sidebar": {
+                "show": false,
+                "widgets": []
+            },
+            "footer": {
+                "show": true,
+                "text": "",
+                "columns": []
+            }
+        },
+        "pageCard": {
+            "variant": "list",
+            "showFeaturedImage": true,
+            "showExcerpt": true,
+            "showReadingTime": false,
+            "pagination": "numbered",
+            "perPage": 10
+        }
+    })
+}
+
+/// 두 JSON 객체 deep merge — overlay 가 base 위에 박힘. array 는 overlay 우선 (replace 아님 X).
+fn deep_merge(base: serde_json::Value, overlay: serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    match (base, overlay) {
+        (Value::Object(mut base_obj), Value::Object(overlay_obj)) => {
+            for (k, v) in overlay_obj {
+                let merged = match base_obj.remove(&k) {
+                    Some(base_val) => deep_merge(base_val, v),
+                    None => v,
+                };
+                base_obj.insert(k, merged);
+            }
+            Value::Object(base_obj)
+        }
+        // overlay 가 object 가 아니면 그대로 (array / primitive 모두 overlay 우선)
+        (_, overlay) if !matches!(overlay, Value::Null) => overlay,
+        // overlay 가 null 이면 base 유지
+        (base, _) => base,
     }
 }

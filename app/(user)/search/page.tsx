@@ -18,7 +18,7 @@ interface Props {
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const sp = searchParams ? await searchParams : {};
   const q = (sp.q ?? '').trim();
-  const seo = getCore().getCmsSettings();
+  const seo = await getCore().getCmsSettings();
   return {
     title: q ? `"${q}" 검색 결과 — ${seo.siteTitle}` : `검색 — ${seo.siteTitle}`,
     description: q ? `"${q}" 키워드 검색 결과` : '사이트 내 페이지 검색',
@@ -32,7 +32,7 @@ export default async function SearchPage({ searchParams }: Props) {
   const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);
 
   const core = getCore();
-  const cms = core.getCmsSettings();
+  const cms = await core.getCmsSettings();
   const perPage = cms.layout.pageList.perPage;
 
   let results: import('../../../lib/types/firebat-types').PageListItem[] = [];

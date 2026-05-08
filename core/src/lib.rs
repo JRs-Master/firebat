@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 //! Firebat Core — managers + services + ports trait (hexagonal core).
 //!
 //! Phase B-4 cutover (TS 폐기, Rust 단일):

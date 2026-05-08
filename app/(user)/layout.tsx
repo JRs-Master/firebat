@@ -40,7 +40,7 @@ async function resolvePageOverrides(): Promise<{ layoutMode?: LayoutMode; conten
 
 /** User 페이지 레이아웃 — SEO head/body 스크립트 + JSON-LD + Design Tokens + Header/Footer 주입 */
 export default async function UserLayout({ children }: { children: React.ReactNode }) {
-  const seo = getCore().getCmsSettings();
+  const seo = await getCore().getCmsSettings();
   const siteUrl = seo.siteUrl || BASE_URL;
   // Page-level overrides — spec.head.layoutMode / contentMaxWidth 박혀있으면 글로벌 무시.
   const pageOverrides = await resolvePageOverrides();

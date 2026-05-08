@@ -238,13 +238,13 @@ function HtmlBlockWidget({ content, title, area }: { content?: string; title?: s
   );
 }
 
-function NavLinksWidget({ useGlobalNav, customLinks, title, area }: {
+async function NavLinksWidget({ useGlobalNav, customLinks, title, area }: {
   useGlobalNav?: boolean;
   customLinks?: string;
   title?: string;
   area: WidgetArea;
 }) {
-  const cms = getCore().getCmsSettings();
+  const cms = await getCore().getCmsSettings();
   let links = useGlobalNav ? cms.layout.header.navLinks : [];
   if (customLinks && customLinks.trim()) {
     // "label | href" 줄별 파싱
@@ -344,8 +344,8 @@ function SocialIcon({ type }: { type: string }) {
   return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>;
 }
 
-function SiteNameWidget({ area }: { area: WidgetArea }) {
-  const cms = getCore().getCmsSettings();
+async function SiteNameWidget({ area }: { area: WidgetArea }) {
+  const cms = await getCore().getCmsSettings();
   // 헤더에서는 홈 링크 wrap (Astra/GP 패턴), 사이드바·푸터는 텍스트만.
   const inner = (
     <span
@@ -361,8 +361,8 @@ function SiteNameWidget({ area }: { area: WidgetArea }) {
   return <WidgetSection area={area}>{inner}</WidgetSection>;
 }
 
-function SiteLogoWidget({ area }: { area: WidgetArea }) {
-  const cms = getCore().getCmsSettings();
+async function SiteLogoWidget({ area }: { area: WidgetArea }) {
+  const cms = await getCore().getCmsSettings();
   const logoUrl = cms.layout.header.logoUrl;
   if (!logoUrl) return <SiteNameWidget area={area} />;
   return (
@@ -373,8 +373,8 @@ function SiteLogoWidget({ area }: { area: WidgetArea }) {
   );
 }
 
-function CopyrightWidget({ text, area }: { text?: string; area: WidgetArea }) {
-  const cms = getCore().getCmsSettings();
+async function CopyrightWidget({ text, area }: { text?: string; area: WidgetArea }) {
+  const cms = await getCore().getCmsSettings();
   const finalText = (text && text.trim())
     ? text
     : (cms.layout.footer.text && cms.layout.footer.text.trim())
@@ -397,8 +397,8 @@ function CopyrightWidget({ text, area }: { text?: string; area: WidgetArea }) {
   );
 }
 
-function AdSlotWidget({ slotId, area }: { slotId?: string; area: WidgetArea }) {
-  const cms = getCore().getCmsSettings();
+async function AdSlotWidget({ slotId, area }: { slotId?: string; area: WidgetArea }) {
+  const cms = await getCore().getCmsSettings();
   if (!slotId || !cms.adsense.publisherId) return null;
   return (
     <WidgetSection area={area}>
@@ -446,7 +446,7 @@ export async function CmsWidget({ slot, area }: { slot: WidgetSlot; area: Widget
       inner = HtmlBlockWidget({ content: String(props.content ?? ''), title: String(props.title ?? ''), area });
       break;
     case 'nav-links':
-      inner = NavLinksWidget({
+      inner = await NavLinksWidget({
         useGlobalNav: props.useGlobalNav !== false,
         customLinks: String(props.customLinks ?? ''),
         title: String(props.title ?? ''),
@@ -457,16 +457,16 @@ export async function CmsWidget({ slot, area }: { slot: WidgetSlot; area: Widget
       inner = SocialLinksWidget({ items: String(props.items ?? ''), title: String(props.title ?? ''), area });
       break;
     case 'site-name':
-      inner = SiteNameWidget({ area });
+      inner = await SiteNameWidget({ area });
       break;
     case 'site-logo':
-      inner = SiteLogoWidget({ area });
+      inner = await SiteLogoWidget({ area });
       break;
     case 'copyright':
-      inner = CopyrightWidget({ text: String(props.text ?? ''), area });
+      inner = await CopyrightWidget({ text: String(props.text ?? ''), area });
       break;
     case 'ad-slot':
-      inner = AdSlotWidget({ slotId: String(props.slotId ?? ''), area });
+      inner = await AdSlotWidget({ slotId: String(props.slotId ?? ''), area });
       break;
     case 'mobile-toggle':
       // 헤더 전용 — header.mobileDrawer 가 ON 인 경우에만 의미. 그 외에는 미렌더 (안전 폴백).

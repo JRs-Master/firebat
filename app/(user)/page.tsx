@@ -11,7 +11,7 @@ interface Props {
 
 /** 루트 페이지 SEO 메타데이터 — CMS 모듈 설정에서 로드 */
 export async function generateMetadata(): Promise<Metadata> {
-  const seo = getCore().getCmsSettings();
+  const seo = await getCore().getCmsSettings();
   const siteUrl = seo.siteUrl || BASE_URL;
 
   const ogImage = `${siteUrl}/api/og?title=${encodeURIComponent(seo.siteTitle)}&description=${encodeURIComponent(seo.siteDescription)}`;
@@ -35,7 +35,7 @@ export async function generateMetadata(): Promise<Metadata> {
  *  Phase 4 Step 3+4 — cardVariant + 페이지네이션. CmsHeader / CmsFooter 가 layout.tsx 에서 자연 wrap. */
 export default async function HomePage({ searchParams }: Props) {
   const core = getCore();
-  const cms = core.getCmsSettings();
+  const cms = await core.getCmsSettings();
   const sp = await searchParams;
   const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);
   const perPage = cms.layout.pageList.perPage;
