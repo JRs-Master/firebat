@@ -213,6 +213,8 @@ const WRAP_METHODS = new Set([
 
 /** Rust 응답 자동 wrap — 옛 TS `{success, data, error}` 형식 호환. */
 function autoWrap(method: string, result: unknown): unknown {
+  // login — Rust LoginOutcome → 옛 TS 형식 (성공 = session / 실패 = null / 잠금 = {locked, retryAfterSec})
+  if (method === 'login') return unwrapLogin(result);
   if (!WRAP_METHODS.has(method)) return result;
   // 이미 success 박힌 응답 (Rust 측에서 wrap 한 경우) → 그대로
   if (
@@ -228,6 +230,28 @@ function autoWrap(method: string, result: unknown): unknown {
   }
   // raw value → wrap
   return { success: true, data: result };
+}
+
+/** Rust login 응답 → 옛 TS 형식.
+ *  Rust: { ok: true, session } | { ok: false, error, code } | { ok: false, locked: true, retryAfterSec }
+ *  옛 TS: AuthSession 객체 | null (실패) | { locked: true, retryAfterSec } (잠금)
+ *
+ *  **보안 critical** — 실패 시 null 반환 안 박으면 API route 가 모든 비번 통과시킴.
+ */
+function unwrapLogin(result: unknown): unknown {
+  if (result === null || result === undefined) return null;
+  if (typeof result !== 'object') return null;
+  const r = result as Record<string, unknown>;
+  // 잠금 상태
+  if (r.locked === true) {
+    return { locked: true, retryAfterSec: r.retryAfterSec ?? r.retry_after_sec ?? 60 };
+  }
+  // 성공
+  if (r.ok === true && r.session) {
+    return r.session;
+  }
+  // 실패 (ok: false 또는 session 없음) — null 반환 (API route 의 if (!result) 분기 잡힘)
+  return null;
 }
 
 /**
