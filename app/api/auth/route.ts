@@ -29,6 +29,9 @@ export async function POST(req: NextRequest) {
 
   const raw = await core.login(id ?? '', password ?? '', attemptKeyFrom(req));
 
+  // 진짜 root cause 진단 — Rust 응답 raw print
+  console.error('[AUTH-DEBUG] login id=' + id + ' raw=' + JSON.stringify(raw));
+
   // Rust 응답 형식 직접 파싱 — { ok: true, session } | { ok: false, error } | { ok: false, locked, retryAfterSec }
   // RustCoreProxy 의 autoWrap minify 박힌 chunk 에서 동작 안 할 가능성 회피.
   const r = raw as Record<string, unknown> | null;
