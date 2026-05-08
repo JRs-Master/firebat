@@ -232,25 +232,42 @@ fn cms_defaults() -> serde_json::Value {
         },
         "theme": {
             "preset": "slate-pro",
-            "primary": "",
-            "accent": "",
-            "fontBody": "",
-            "fontHeading": "",
-            "fontMono": "",
-            "baseFontSize": "16px",
-            "fontScaleRatio": 1.2,
-            "lineHeightBody": 1.6,
-            "lineHeightHeading": 1.2,
-            "letterSpacingBody": "0",
-            "letterSpacingHeading": "-0.01em",
-            "contentMaxWidth": "768px",
-            "paddingMobile": "16px",
-            "paddingTablet": "24px",
-            "paddingDesktop": "32px",
-            "borderRadius": "8px",
-            "headingStyleH1": "plain",
-            "headingStyleH2": "plain",
-            "headingStyleH3": "plain"
+            "colors": {
+                "primary": "#0f172a",
+                "accent": "#f59e0b",
+                "up": "#ef4444",
+                "down": "#3b82f6",
+                "text": "#0f172a",
+                "textMuted": "#64748b",
+                "bg": "#ffffff",
+                "bgCard": "#f8fafc",
+                "border": "#e2e8f0"
+            },
+            "fonts": {
+                "body": "'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, sans-serif",
+                "heading": "'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, sans-serif",
+                "mono": "'JetBrains Mono', 'Fira Code', Consolas, monospace"
+            },
+            "layout": {
+                "contentMaxWidth": "1200px",
+                "paddingMobile": "16px",
+                "paddingTablet": "24px",
+                "paddingDesktop": "32px",
+                "radius": "8px"
+            },
+            "heading": {
+                "h1": "plain",
+                "h2": "border-left",
+                "h3": "plain"
+            },
+            "typography": {
+                "baseFontSize": "16px",
+                "scaleRatio": 1.25,
+                "bodyLineHeight": 1.7,
+                "headingLineHeight": 1.25,
+                "headingLetterSpacing": "-0.01em",
+                "bodyLetterSpacing": "normal"
+            }
         },
         "layout": {
             "mode": "full",
