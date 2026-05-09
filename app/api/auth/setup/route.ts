@@ -40,15 +40,9 @@ export async function POST(req: NextRequest) {
       ? setupRaw
       : (setupRaw && typeof setupRaw === 'object' && 'value' in setupRaw ? Boolean((setupRaw as { value: unknown }).value) : false);
   if (setupDone) {
-    return NextResponse.json(
-      {
-        success: false,
-        error:
-          '초기 설정이 이미 완료되어 있습니다. 잠시 후 로그인 화면으로 이동합니다. ' +
-          '비밀번호를 모르면 SSH 에서 vault reset 후 재시도 (sqlite3 data/vault.db "DELETE FROM secrets WHERE key LIKE \'FIREBAT_ADMIN%\'" + systemctl restart firebat).',
-      },
-      { status: 403 },
-    );
+    // 메시지는 frontend i18n (t('setup.err_failed')) 에 위임 — ko/en 자동 분기.
+    // 정상 흐름이면 이 분기 자체 트리거 X (frontend GET 의 unwrap 으로 위자드 차단됨).
+    return NextResponse.json({ success: false }, { status: 403 });
   }
 
   const { adminId, adminPassword, siteLang, timezone } = await req.json();

@@ -55,7 +55,7 @@
     "err_password_policy": "Password must be 8+ characters and include at least 3 of: uppercase, lowercase, number, special character.",
     "err_password_same_as_id": "Password cannot be the same as the ID.",
     "err_password_mismatch": "Password confirmation does not match.",
-    "err_failed": "Initial setup failed.",
+    "err_failed": "An error occurred. Please try again.",
     "err_network": "Network error"
   },
   "admin_chat": {
