@@ -371,12 +371,24 @@ message ModuleSecretListPb {
 // 9. McpService — McpManager (MCP client - 외부 MCP 서버 호출)
 // ──────────────────────────────────────────────────────────────────────────
 service McpService {
-  rpc ListServers(Empty) returns (JsonValue);
+  rpc ListServers(Empty) returns (RawJsonPb);
   rpc AddServer(JsonArgs) returns (Status);
   rpc RemoveServer(StringRequest) returns (Status);
-  rpc ListTools(StringRequest) returns (JsonValue);
-  rpc ListAllTools(Empty) returns (JsonValue);
-  rpc CallTool(JsonArgs) returns (JsonValue);
+  rpc ListTools(StringRequest) returns (McpToolListPb);
+  rpc ListAllTools(Empty) returns (McpToolListPb);
+  rpc CallTool(JsonArgs) returns (RawJsonPb);
+}
+
+/** McpToolInfo — MCP 외부 서버 도구 정보. inputSchema 는 JSON Schema 직렬화 문자열. */
+message McpToolInfoPb {
+  string server = 1;
+  string name = 2;
+  string description = 3;
+  optional string input_schema_json = 4;
+}
+
+message McpToolListPb {
+  repeated McpToolInfoPb tools = 1;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
