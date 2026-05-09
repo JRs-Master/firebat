@@ -138,7 +138,8 @@ export function SetupWizard({ onComplete }: Props) {
   })();
 
   return (
-    <div className="w-full max-w-[440px] bg-white border border-[#eaeaea] rounded-xl shadow-sm p-8">
+    <div className="w-full max-w-[440px]">
+    <div className="bg-white border border-[#eaeaea] rounded-xl shadow-sm p-8">
       <div className="mb-6 text-center">
         <h2 className="text-2xl font-bold text-black mb-1 min-h-[32px]">{t('setup.title')}</h2>
         <p className="text-sm text-gray-500 min-h-[44px]">{t('setup.subtitle')}</p>
@@ -248,12 +249,6 @@ export function SetupWizard({ onComplete }: Props) {
           </select>
         </div>
 
-        {error && (
-          <p className="text-[13px] text-red-600 font-medium bg-red-50 border border-red-200 rounded px-3 py-2">
-            {error}
-          </p>
-        )}
-
         <div className="pt-2">
           <button
             type="submit"
@@ -264,6 +259,13 @@ export function SetupWizard({ onComplete }: Props) {
           </button>
         </div>
       </form>
+    </div>
+    {/* error 메시지 — 위자드 박스 밖 아래 (박스 height 변동 0) */}
+    {error && (
+      <p className="mt-3 text-[13px] text-red-600 font-medium bg-red-50 border border-red-200 rounded px-3 py-2">
+        {error}
+      </p>
+    )}
     </div>
   );
 }
