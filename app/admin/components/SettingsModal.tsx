@@ -866,9 +866,11 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
             return (
               <>
                 {/* AI 서브탭 바 — 메인 탭 nav 와 동일 underline 패턴 (border-b-2).
-                    -mb-px 제거 (Tailwind v4 박힘 + flex items 박힘 박혀 div height collapse buggy 차단).
-                    text-[12px] arbitrary value 폐기 → text-xs preset (line-height 일관). */}
-                <div className="flex items-center gap-1 border-b border-slate-200 mb-3 overflow-x-auto min-h-[36px]">
+                    overflow-x-auto 폐기 — root cause: commit 19e2dc4 박은 5 button (3→5) +
+                    overflow-x-auto 추가 박혀 부모 flex flex-col 안 child 박힌 overflow:auto box 가
+                    height collapse (flex 박힘 + overflow 박힘 충돌). 5 button 박힌 width 합 ~290px <
+                    modal sm:max-w-lg 512px 라 overflow-x-auto 불필요. */}
+                <div className="flex items-center gap-1 border-b border-slate-200 mb-3">
                   {([
                     { v: 'llm', label: 'LLM' },
                     { v: 'prompt', label: '프롬프트' },
