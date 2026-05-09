@@ -57,6 +57,11 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
       { key: 'defaultType', label: '기본 메시지 타입', type: 'text', placeholder: 'text', description: 'text | feed | list (기본: text)', defaultValue: 'text' },
     ],
   },
+  'telegram': {
+    fields: [
+      { key: 'bruteForceAlert', label: '로그인 brute force 알림', type: 'toggle', description: '5회 연속 로그인 실패로 60초 잠금 발생 시 텔레그램 즉시 알림. TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID 모두 등록되어 있어야 발송. OFF 면 알림 안 함 (기본).', defaultValue: false },
+    ],
+  },
   'firecrawl': {
     fields: [
       { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '30000', description: '마크다운 결과 최대 글자 수', defaultValue: 30000 },

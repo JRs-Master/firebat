@@ -169,6 +169,26 @@ pub trait ILogPort: Send + Sync {
     fn debug(&self, msg: &str);
 }
 
+/// 알림 우선순위 — adapter 가 채널 선택 / 무음 시간 / rate-limit 결정에 활용.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum NotifyLevel {
+    /// 일반 정보 — 운영 통계 / 배치 완료 등.
+    Info,
+    /// 주의 — brute force 시도 / 일시 lock / 자동 재시도 발생 등.
+    Warn,
+    /// 즉시 대응 필요 — 시스템 다운 / 보안 사건 / 비용 한도 초과 등.
+    Critical,
+}
+
+/// INotifierPort — 외부 알림 채널 추상화 (Telegram / Discord / Email / Slack 등).
+/// Hexagonal — 매니저는 알림 채널 직접 호출 X. 이 trait 만 통과.
+/// Adapter 가 자체 toggle / rate-limit / 채널 선택 책임. 호출 측은 fire-and-forget.
+#[async_trait]
+pub trait INotifierPort: Send + Sync {
+    /// 알림 발송 시도. adapter 자체 toggle 검사 후 실 발송. 실패 silent (운영 차단 X).
+    async fn notify(&self, level: NotifyLevel, title: &str, message: &str);
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Database — pages / conversations 등 SQL 저장
 // ──────────────────────────────────────────────────────────────────────────

@@ -284,7 +284,13 @@ async fn main() -> Result<()> {
     // 매니저 wiring
     let template_manager = Arc::new(TemplateManager::new(storage.clone()));
     let secret_manager = Arc::new(SecretManager::new(vault.clone(), storage.clone()));
-    let auth_manager = Arc::new(AuthManager::new(auth_port, vault.clone()));
+    // INotifierPort — Telegram 어댑터. AuthManager 가 brute force lock 발생 시 호출.
+    // 어댑터 자체가 module settings 의 bruteForceAlert 토글 검사 → OFF 시 silent skip.
+    let notifier: Arc<dyn firebat_core::ports::INotifierPort> =
+        Arc::new(firebat_infra::adapters::notifier_telegram::TelegramNotifierAdapter::new(vault.clone()));
+    let auth_manager = Arc::new(
+        AuthManager::new(auth_port, vault.clone()).with_notifier(notifier.clone()),
+    );
     let event_manager = Arc::new(EventManager::new(logger.clone()));
     let capability_manager = Arc::new(CapabilityManager::new(
         storage.clone(),

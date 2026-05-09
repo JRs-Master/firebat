@@ -21,3 +21,4 @@ pub mod tracing_log;
 pub mod embedder;
 pub mod image_gen;
 pub mod image_processor;
+pub mod notifier_telegram;

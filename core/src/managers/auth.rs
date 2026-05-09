@@ -41,7 +41,9 @@ fn verify_password(stored: &str, candidate: &str) -> bool {
         .is_some()
 }
 
-use crate::ports::{AuthSession, IAuthPort, IVaultPort, SessionRole, SessionType};
+use crate::ports::{
+    AuthSession, IAuthPort, INotifierPort, IVaultPort, NotifyLevel, SessionRole, SessionType,
+};
 use crate::vault_keys::{VK_ADMIN_ID, VK_ADMIN_PASSWORD};
 
 /// 세션 토큰 유효기간 — 24시간.
@@ -89,6 +91,9 @@ pub struct AuthManager {
     vault: Arc<dyn IVaultPort>,
     /// 메모리 — restart 시 reset (영속 X). 1인 운영 OK.
     login_attempts: Mutex<HashMap<String, LoginAttemptState>>,
+    /// 알림 채널 (옵션) — 설정되어 있으면 brute force lock 발생 시 즉시 noti 발송.
+    /// 옵셔널이라 옛 호환 유지 (테스트 / Telegram 미설정 시 영향 0).
+    notifier: Option<Arc<dyn INotifierPort>>,
 }
 
 impl AuthManager {
@@ -97,7 +102,14 @@ impl AuthManager {
             auth,
             vault,
             login_attempts: Mutex::new(HashMap::new()),
+            notifier: None,
         }
+    }
+
+    /// 알림 채널 주입 — brute force lock 발생 시 즉시 notify(Critical) 호출.
+    pub fn with_notifier(mut self, notifier: Arc<dyn INotifierPort>) -> Self {
+        self.notifier = Some(notifier);
+        self
     }
 
     fn now_ms() -> i64 {
@@ -194,13 +206,33 @@ impl AuthManager {
         // 실패 — 카운터 증가
         current.fail_count += 1;
         current.last_attempt_at = now;
-        if current.fail_count >= LOGIN_FAIL_LIMIT {
+        let just_locked = current.fail_count >= LOGIN_FAIL_LIMIT;
+        if just_locked {
             current.locked_until = now + LOGIN_LOCK_MS;
             current.fail_count = 0; // lock 시작 시 reset → 잠금 해제 후 다시 5회 시도 가능
         }
         let now_locked_until = current.locked_until;
         attempts.insert(attempt_key.to_string(), current);
         drop(attempts);
+
+        // brute force lock 발생 = Critical 알림. notifier 어댑터가 자체 toggle 검사 후 발송.
+        // tokio::spawn 으로 fire-and-forget — login response latency 영향 0.
+        if just_locked {
+            if let Some(notifier) = self.notifier.clone() {
+                let key_owned = attempt_key.to_string();
+                tokio::spawn(async move {
+                    notifier
+                        .notify(
+                            NotifyLevel::Critical,
+                            "Firebat 로그인 잠금 발생",
+                            &format!(
+                                "5회 연속 로그인 실패 — attempt_key={key_owned} 차단 (60초). brute force 시도 의심. 어드민 설정에서 비밀번호 강도 점검 권장."
+                            ),
+                        )
+                        .await;
+                });
+            }
+        }
 
         if now_locked_until > now {
             let retry_after_sec = ((now_locked_until - now) + 999) / 1000;
