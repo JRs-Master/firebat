@@ -1,14 +1,14 @@
 //! gRPC TemplateService impl — TemplateManager wrapping.
 //!
-//! Phase B 단계: JsonArgs (raw JSON string) → manager typed args 변환.
-//! 이후 매니저별 typed proto message 박히면 generated stub 직접 활용 (이 wrapper 폐기).
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
+//! TemplateConfig / TemplateEntry 는 동적 spec 포함 도메인 타입 → RawJsonPb.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::template::{TemplateConfig, TemplateManager};
 use crate::proto::{
-    template_service_server::TemplateService, Empty, JsonArgs, JsonValue, Status, StringRequest,
+    template_service_server::TemplateService, Empty, JsonArgs, RawJsonPb, Status, StringRequest,
 };
 
 pub struct TemplateServiceImpl {
@@ -21,14 +21,6 @@ impl TemplateServiceImpl {
     }
 }
 
-/// Helper — JsonValue (raw JSON string) 응답 빌드.
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
-}
-
-/// Helper — Status (ok/error) 응답 빌드.
 fn ok_status() -> Response<Status> {
     Response::new(Status {
         ok: true,
@@ -45,28 +37,30 @@ fn err_status(msg: impl Into<String>) -> Response<Status> {
     })
 }
 
+fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
+    RawJsonPb {
+        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
+    }
+}
+
 #[tonic::async_trait]
 impl TemplateService for TemplateServiceImpl {
-    /// List() → JsonValue (TemplateEntry array)
-    async fn list(&self, _req: Request<Empty>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn list(&self, _req: Request<Empty>) -> Result<Response<RawJsonPb>, TonicStatus> {
         let entries = self.manager.list().await;
-        json_response(&entries)
+        Ok(Response::new(raw_json(&entries)))
     }
 
-    /// Get(slug) → JsonValue (TemplateConfig 또는 null)
     async fn get(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let slug = req.into_inner().value;
         let config = self.manager.get(&slug).await;
-        json_response(&config)
+        Ok(Response::new(raw_json(&config)))
     }
 
-    /// Save(JsonArgs { slug, config }) → Status
     async fn save(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
         let raw = req.into_inner().raw;
-        // JsonArgs 의 raw 가 { slug: string, config: TemplateConfig } 형태
         #[derive(serde::Deserialize)]
         struct SaveArgs {
             slug: String,
@@ -82,7 +76,6 @@ impl TemplateService for TemplateServiceImpl {
         }
     }
 
-    /// Delete(slug) → Status
     async fn delete(
         &self,
         req: Request<StringRequest>,

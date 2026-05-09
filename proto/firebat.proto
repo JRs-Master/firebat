@@ -853,8 +853,8 @@ service ConsolidationService {
 // 21. TemplateService — TemplateManager
 // ──────────────────────────────────────────────────────────────────────────
 service TemplateService {
-  rpc List(Empty) returns (JsonValue);
-  rpc Get(StringRequest) returns (JsonValue);
+  rpc List(Empty) returns (RawJsonPb);
+  rpc Get(StringRequest) returns (RawJsonPb);
   rpc Save(JsonArgs) returns (Status);
   rpc Delete(StringRequest) returns (Status);
 }
