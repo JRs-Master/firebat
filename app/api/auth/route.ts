@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 import { SESSION_MAX_AGE_SECONDS } from '../../../lib/config';
+import { isHttpsRequest } from '../../../lib/cookie-helpers';
 
 /** rate-limit key — IP 또는 fallback 'unknown'. proxy 뒤일 때 X-Forwarded-For 우선. */
 function attemptKeyFrom(req: NextRequest): string {
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest) {
     name: 'firebat_token',
     value: session.token,
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isHttpsRequest(req),
     path: '/',
     sameSite: 'lax',
     maxAge: SESSION_MAX_AGE_SECONDS, // 24시간

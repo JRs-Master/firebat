@@ -14,6 +14,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
 import { SESSION_MAX_AGE_SECONDS } from '../../../../lib/config';
+import { isHttpsRequest } from '../../../../lib/cookie-helpers';
 
 export async function GET(_req: NextRequest) {
   const core = getCore();
@@ -107,7 +108,7 @@ export async function POST(req: NextRequest) {
     name: 'firebat_token',
     value: session.token,
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: isHttpsRequest(req),
     path: '/',
     sameSite: 'lax',
     maxAge: SESSION_MAX_AGE_SECONDS,
