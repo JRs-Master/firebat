@@ -7,6 +7,7 @@ import { TelegramWebhookSection } from './TelegramWebhookSection';
 import { confirmDialog } from './Dialog';
 import { COLOR_PRESETS } from '../../../lib/design-tokens';
 import { WidgetListField } from './WidgetListField';
+import { useTranslations } from '../../../lib/i18n';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
 type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list';
@@ -27,16 +28,16 @@ interface SettingField {
   widgetArea?: 'header' | 'sidebar' | 'footer'; // widget-list 전용: 영역
 }
 
-// 탭 정의 (아이콘 + 라벨)
-const TAB_META: Record<string, { label: string; icon: typeof Globe }> = {
-  '일반': { label: '일반', icon: Settings2 },
-  '레이아웃': { label: '레이아웃', icon: Server },
-  '테마': { label: '테마', icon: Blocks },
-  '광고': { label: '광고', icon: ExternalLink },
-  'SEO': { label: 'SEO', icon: Globe },
-  '이미지': { label: '이미지', icon: Image },
-  'OG': { label: 'OG 이미지', icon: Image },
-  '스크립트': { label: '스크립트', icon: Code },
+// 탭 정의 (아이콘 + i18n 키) — 라벨은 컴포넌트 내부에서 t()로 번역
+const TAB_META: Record<string, { i18nKey: string; icon: typeof Globe }> = {
+  '일반':   { i18nKey: 'system_modules.common.tab_general', icon: Settings2 },
+  '레이아웃': { i18nKey: 'system_modules.common.tab_layout',  icon: Server },
+  '테마':   { i18nKey: 'system_modules.common.tab_theme',   icon: Blocks },
+  '광고':   { i18nKey: 'system_modules.common.tab_ads',     icon: ExternalLink },
+  'SEO':   { i18nKey: 'system_modules.common.tab_seo',     icon: Globe },
+  '이미지': { i18nKey: 'system_modules.common.tab_image',   icon: Image },
+  'OG':    { i18nKey: 'system_modules.common.tab_og',      icon: Image },
+  '스크립트': { i18nKey: 'system_modules.common.tab_scripts', icon: Code },
 };
 
 /**
@@ -247,6 +248,7 @@ interface Props {
 }
 
 export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPage }: Props) {
+  const t = useTranslations();
   // 'seo' 옛 모듈명 → 'cms' fallback (2026-04-28 SEO → CMS rename 호환)
   const manualSchema = MODULE_SETTINGS_SCHEMA[moduleName] ?? (moduleName === 'seo' ? MODULE_SETTINGS_SCHEMA['cms'] : undefined);
   const [schema, setSchema] = useState<{ title: string; fields: SettingField[] } | null>(null);
@@ -500,10 +502,10 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
 
   // ── MCP 서버 커스텀 렌더링 (앱 개발용 / LLM 통신용 공용) ─────────────────────
   if (isMcpApp || isMcpLlm) {
-    const titleText = isMcpLlm ? 'Firebat MCP 서버 (LLM 통신용)' : 'Firebat MCP 서버 (앱 개발용)';
+    const titleText = isMcpLlm ? t('system_modules.common.mcp_llm_title') : t('system_modules.common.mcp_app_title');
     const descText = isMcpLlm
-      ? 'OpenAI Responses API (hosted MCP), Claude API 등 외부 LLM이 Firebat의 전체 도구 세트에 접근할 때 사용합니다.'
-      : '외부 AI 도구(Claude Code, Cursor, VS Code 등)에서 이 파이어뱃 서버에 연결할 수 있습니다.';
+      ? t('system_modules.common.mcp_llm_desc')
+      : t('system_modules.common.mcp_app_desc');
     return (
       <div className={embeddedInPage ? 'flex flex-col h-full bg-white overflow-hidden' : 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden'}>
         <div className={embeddedInPage ? 'flex flex-col h-full w-full overflow-hidden' : 'bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]'}>
@@ -527,21 +529,21 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                   onClick={() => { setMcpJsonTab('api'); setMcpJsonCopied(false); }}
                   className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] sm:text-[12px] font-bold transition-colors ${mcpJsonTab === 'api' ? 'bg-blue-50 text-blue-700 border-b-2 border-blue-500' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                  <Globe size={12} /> SSE (API)
+                  <Globe size={12} /> {t('system_modules.common.mcp_tab_sse')}
                 </button>
                 {isMcpApp && (
                   <button
                     onClick={() => { setMcpJsonTab('stdio'); setMcpJsonCopied(false); }}
                     className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-[11px] sm:text-[12px] font-bold transition-colors ${mcpJsonTab === 'stdio' ? 'bg-green-50 text-green-700 border-b-2 border-green-500' : 'text-slate-400 hover:text-slate-600'}`}
                   >
-                    <Terminal size={12} /> stdio (SSH)
+                    <Terminal size={12} /> {t('system_modules.common.mcp_tab_stdio')}
                   </button>
                 )}
               </div>
 
               {mcpJsonTab === 'api' && (() => {
                 const sseUrl = typeof window !== 'undefined' ? `${window.location.origin}${mcpServerPath}` : mcpServerPath;
-                const tokenValue = mcpTokenRaw || (mcpTokenInfo.exists ? '<생성된 토큰>' : '<토큰을 먼저 생성하세요>');
+                const tokenValue = mcpTokenRaw || (mcpTokenInfo.exists ? t('system_modules.common.token_existing_placeholder') : t('system_modules.common.token_generated_placeholder'));
                 const jsonConfig = isMcpLlm
                   ? JSON.stringify({
                       tools: [{
@@ -560,11 +562,11 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     {/* 인증 토큰 */}
                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col gap-2 min-h-[60px]">
                       <div className="flex items-center justify-between">
-                        <span className="text-[12px] sm:text-[13px] font-bold text-slate-600">인증 토큰</span>
+                        <span className="text-[12px] sm:text-[13px] font-bold text-slate-600">{t('system_modules.common.mcp_auth_token')}</span>
                         <div className="flex items-center gap-1.5">
                           {mcpTokenInfo.exists && (
                             <button onClick={revokeMcpToken} className="text-[10px] sm:text-[11px] px-2 py-0.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors">
-                              폐기
+                              {t('system_modules.common.revoke')}
                             </button>
                           )}
                           <button
@@ -573,19 +575,19 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                             className="text-[10px] sm:text-[11px] px-2.5 py-1 font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded transition-colors flex items-center gap-1"
                           >
                             {mcpTokenLoading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
-                            {mcpTokenInfo.exists ? '재생성' : '토큰 생성'}
+                            {mcpTokenInfo.exists ? t('system_modules.common.regenerate') : t('system_modules.common.generate_token')}
                           </button>
                         </div>
                       </div>
 
                       {mcpTokenRaw && (
                         <div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 flex flex-col gap-1.5">
-                          <p className="text-[10px] sm:text-[11px] font-bold text-amber-700">이 토큰은 다시 볼 수 없습니다. 지금 복사하세요.</p>
+                          <p className="text-[10px] sm:text-[11px] font-bold text-amber-700">{t('system_modules.common.token_warning')}</p>
                           <div className="flex items-center gap-1.5">
                             <code className="flex-1 text-[11px] sm:text-[12px] font-mono bg-white border border-amber-200 rounded px-2 py-1 text-slate-700 break-all select-all">
                               {mcpTokenRaw}
                             </code>
-                            <Tooltip label="복사">
+                            <Tooltip label={t('system_modules.common.copy')}>
                               <button onClick={() => copyToClipboard(mcpTokenRaw, setMcpTokenCopied)} className="shrink-0 p-1.5 rounded hover:bg-amber-100 transition-colors">
                                 {mcpTokenCopied ? <Check size={14} className="text-green-600" /> : <Copy size={14} className="text-amber-600" />}
                               </button>
@@ -598,20 +600,20 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                         <div className="flex items-center gap-2 text-[11px] sm:text-[12px] text-slate-500">
                           <code className="font-mono bg-white border border-slate-200 rounded px-2 py-0.5 text-slate-600">{mcpTokenInfo.hint}</code>
                           {mcpTokenInfo.createdAt && (
-                            <span className="text-slate-400">생성: {new Date(mcpTokenInfo.createdAt).toLocaleDateString('ko-KR')}</span>
+                            <span className="text-slate-400">{t('system_modules.common.token_created_at')}{new Date(mcpTokenInfo.createdAt).toLocaleDateString('ko-KR')}</span>
                           )}
                         </div>
                       )}
 
                       {!mcpTokenInfo.exists && !mcpTokenRaw && (
-                        <p className="text-[10px] sm:text-[11px] text-slate-400">토큰이 없습니다. SSE(API) 연결을 사용하려면 토큰을 생성하세요.</p>
+                        <p className="text-[10px] sm:text-[11px] text-slate-400">{t('system_modules.common.token_none')}</p>
                       )}
                     </div>
 
                     {/* JSON 설정 */}
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] sm:text-[11px] text-slate-500">{isMcpLlm ? 'OpenAI Responses API의 tools에 아래 설정을 추가하세요 (Claude API도 동일 URL 사용).' : 'VS Code / Cursor MCP 설정에 아래 JSON을 추가하세요.'}</p>
-                      <Tooltip label="복사">
+                      <p className="text-[10px] sm:text-[11px] text-slate-500">{isMcpLlm ? t('system_modules.common.mcp_sse_hint_llm') : t('system_modules.common.mcp_sse_hint_app')}</p>
+                      <Tooltip label={t('system_modules.common.copy')}>
                         <button onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)} className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors">
                           {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
                         </button>

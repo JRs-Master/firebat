@@ -196,21 +196,22 @@ mod tests {
     }
 
     #[test]
-    fn list_models_returns_three_builtin() {
-        let (adapter, _tmp) = make_adapter("gpt-image-1");
+    fn list_models_returns_four_builtin() {
+        let (adapter, _tmp) = make_adapter("gpt-image-1.5");
         let models = adapter.list_models();
-        assert_eq!(models.len(), 3);
+        assert_eq!(models.len(), 4);
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
-        assert!(ids.contains(&"gpt-image-1"));
+        assert!(ids.contains(&"gpt-image-1.5"));
+        assert!(ids.contains(&"gpt-image-2"));
         assert!(ids.contains(&"gemini-3.1-flash-image-preview"));
         assert!(ids.contains(&"cli-codex-image"));
     }
 
     #[test]
     fn list_models_extracts_features() {
-        let (adapter, _tmp) = make_adapter("gpt-image-1");
+        let (adapter, _tmp) = make_adapter("gpt-image-1.5");
         let models = adapter.list_models();
-        let gpt = models.iter().find(|m| m.id == "gpt-image-1").unwrap();
+        let gpt = models.iter().find(|m| m.id == "gpt-image-1.5").unwrap();
         assert_eq!(gpt.provider, "openai");
         assert_eq!(gpt.format, "openai-image");
         assert!(gpt.sizes.contains(&"1024x1024".to_string()));
@@ -222,14 +223,14 @@ mod tests {
 
     #[test]
     fn get_model_id_falls_back_to_default() {
-        let (adapter, _tmp) = make_adapter("gpt-image-1");
+        let (adapter, _tmp) = make_adapter("gpt-image-1.5");
         // Vault 미설정 → default
-        assert_eq!(adapter.get_model_id(), "gpt-image-1");
+        assert_eq!(adapter.get_model_id(), "gpt-image-1.5");
     }
 
     #[test]
     fn get_model_id_reads_vault_override() {
-        let (adapter, _tmp) = make_adapter("gpt-image-1");
+        let (adapter, _tmp) = make_adapter("gpt-image-1.5");
         // Vault 설정 → 그 값 우선 (옛 TS 와 동일 패턴 — 사용자가 모델 swap)
         adapter
             .vault
@@ -242,25 +243,27 @@ mod tests {
 
     #[test]
     fn resolve_config_direct_match() {
-        let (adapter, _tmp) = make_adapter("gpt-image-1");
-        let cfg = adapter.resolve_config(Some("gpt-image-1")).unwrap();
-        assert_eq!(cfg.id, "gpt-image-1");
+        let (adapter, _tmp) = make_adapter("gpt-image-1.5");
+        let cfg = adapter.resolve_config(Some("gpt-image-1.5")).unwrap();
+        assert_eq!(cfg.id, "gpt-image-1.5");
     }
 
     #[test]
     fn resolve_config_prefix_match() {
-        let (adapter, _tmp) = make_adapter("gpt-image-1");
-        // "gpt-image" prefix → "gpt-image-1" 매칭 (옛 TS prefix 매칭)
-        let cfg = adapter.resolve_config(Some("gpt-image")).unwrap();
-        assert_eq!(cfg.id, "gpt-image-1");
+        let (adapter, _tmp) = make_adapter("gpt-image-1.5");
+        // "gpt-image-2" 같은 정확 ID 박은 게 prefix 매칭 박은 게 — 새 list 박은 게
+        // 두 OpenAI 모델 (gpt-image-1.5 / gpt-image-2) 박혀 prefix 박은 게 ambiguity.
+        // 정확 ID 박힌 게 우선 매칭 (옛 TS 동일 패턴)
+        let cfg = adapter.resolve_config(Some("gpt-image-2")).unwrap();
+        assert_eq!(cfg.id, "gpt-image-2");
     }
 
     #[test]
     fn resolve_config_unknown_falls_back_to_default() {
-        let (adapter, _tmp) = make_adapter("gpt-image-1");
+        let (adapter, _tmp) = make_adapter("gpt-image-1.5");
         let cfg = adapter.resolve_config(Some("totally-unknown-xyz")).unwrap();
         // default model 설정되었으니 그 쪽으로
-        assert_eq!(cfg.id, "gpt-image-1");
+        assert_eq!(cfg.id, "gpt-image-1.5");
     }
 
     #[tokio::test]
