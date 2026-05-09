@@ -472,7 +472,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   }, [moduleName, isMcpApp, isMcpLlm, mcpTokenEndpoint]);
 
   const generateMcpToken = async () => {
-    if (mcpTokenInfo.exists && !await confirmDialog({ title: '토큰 재생성', message: '기존 토큰이 무효화됩니다. 새 토큰을 생성하시겠습니까?', danger: true, okLabel: '재생성' })) return;
+    if (mcpTokenInfo.exists && !await confirmDialog({ title: t('system_modules.common.token_regenerate_title'), message: t('system_modules.common.token_regenerate_message'), danger: true, okLabel: t('system_modules.common.token_regenerate_ok') })) return;
     setMcpTokenLoading(true);
     try {
       const res = await fetch(mcpTokenEndpoint, { method: 'POST' });
@@ -488,7 +488,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   };
 
   const revokeMcpToken = async () => {
-    if (!await confirmDialog({ title: '토큰 폐기', message: '토큰을 폐기하면 해당 연결이 즉시 차단됩니다. 계속하시겠습니까?', danger: true, okLabel: '폐기' })) return;
+    if (!await confirmDialog({ title: t('system_modules.common.token_revoke_title'), message: t('system_modules.common.token_revoke_message'), danger: true, okLabel: t('system_modules.common.token_revoke_ok') })) return;
     await fetch(mcpTokenEndpoint, { method: 'DELETE' });
     setMcpTokenInfo({ exists: false, hint: null, createdAt: null });
     setMcpTokenRaw(null);
@@ -631,8 +631,8 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                 return (
                   <div className="p-3 flex flex-col gap-2">
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] sm:text-[11px] text-slate-500">SSH를 통해 서버에 직접 접속하여 실행합니다.</p>
-                      <Tooltip label="복사">
+                      <p className="text-[10px] sm:text-[11px] text-slate-500">{t('system_modules.common.mcp_stdio_hint')}</p>
+                      <Tooltip label={t('system_modules.common.copy')}>
                         <button onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)} className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors">
                           {mcpJsonCopied ? <Check size={12} className="text-green-600" /> : <Copy size={12} className="text-slate-400" />}
                         </button>
@@ -640,9 +640,9 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     </div>
                     <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">{jsonConfig}</pre>
                     <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[10px] sm:text-[11px] text-amber-700 flex flex-col gap-1">
-                      <p className="font-bold">SSH 키 필수</p>
-                      <p>stdio 모드는 서버에 SSH 키가 등록되어 있어야 합니다. 서버 관리자에게 SSH 공개키 등록을 요청하세요.</p>
-                      <p className="text-amber-500 mt-0.5">SSH_KEY_PATH, USER, SERVER_IP, firebat 경로를 실제 값으로 변경하세요.</p>
+                      <p className="font-bold">{t('system_modules.common.mcp_stdio_ssh_required_title')}</p>
+                      <p>{t('system_modules.common.mcp_stdio_ssh_required_body')}</p>
+                      <p className="text-amber-500 mt-0.5">{t('system_modules.common.mcp_stdio_ssh_required_note')}</p>
                     </div>
                   </div>
                 );
@@ -653,7 +653,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           {/* 하단 */}
           <div className="px-3 sm:px-6 py-2.5 sm:py-5 bg-slate-50 border-t border-slate-100 flex justify-end shrink-0">
             <button onClick={onClose} className="px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors">
-              닫기
+              {t('system_modules.common.close')}
             </button>
           </div>
         </div>
@@ -676,7 +676,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           </div>
           )}
           <div className="p-6 text-center text-slate-500 text-sm flex-1 flex items-center justify-center">
-            이 모듈에 대한 설정 항목이 없습니다.
+            {t('system_modules.common.no_settings')}
           </div>
         </div>
       </div>
@@ -705,7 +705,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                 type="button"
                 onClick={() => scrollTabs('left')}
                 className="hidden sm:flex absolute left-0 top-0 bottom-0 z-20 w-7 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-r from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
-                aria-label="이전 탭"
+                aria-label={t('system_modules.common.prev_tab')}
               ><ChevronLeft size={16} /></button>
             )}
             {scrollState.canRight && (
@@ -713,20 +713,21 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                 type="button"
                 onClick={() => scrollTabs('right')}
                 className="hidden sm:flex absolute right-0 top-0 bottom-0 z-20 w-7 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-l from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
-                aria-label="다음 탭"
+                aria-label={t('system_modules.common.next_tab')}
               ><ChevronRight size={16} /></button>
             )}
             <div ref={tabBarRef} className="flex px-3 sm:px-6 bg-white overflow-x-auto scrollbar-none select-none cursor-grab">
               {tabs.map(tab => {
                 const meta = TAB_META[tab];
                 const Icon = meta?.icon;
+                const tabLabel = meta ? t(meta.i18nKey) : tab;
                 return (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
                     className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${activeTab === tab ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
                   >
-                    {Icon && <Icon size={14} />} {meta?.label ?? tab}
+                    {Icon && <Icon size={14} />} {tabLabel}
                   </button>
                 );
               })}
@@ -746,14 +747,14 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
             {activeTab === 'OG' && (moduleName === 'cms' || moduleName === 'seo') && (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs sm:text-sm font-bold text-slate-700">미리보기</label>
+                  <label className="text-xs sm:text-sm font-bold text-slate-700">{t('system_modules.common.og_preview')}</label>
                   <a
                     href="/api/og"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 text-[10px] sm:text-[11px] text-blue-500 hover:text-blue-700 font-bold"
                   >
-                    <ExternalLink size={11} /> 원본 보기
+                    <ExternalLink size={11} /> {t('system_modules.common.og_view_original')}
                   </a>
                 </div>
                 <div
@@ -762,11 +763,11 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                 >
                   <img
                     src={`/api/og?_t=${Date.now()}`}
-                    alt="OG 미리보기"
+                    alt={t('system_modules.common.og_preview')}
                     className="w-full h-full object-cover"
                   />
                 </div>
-                <p className="text-[10px] text-slate-400">1200×630px · 설정 저장 후 새로고침하면 반영됩니다</p>
+                <p className="text-[10px] text-slate-400">{t('system_modules.common.og_size_hint')}</p>
               </div>
             )}
 
@@ -788,13 +789,13 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     {secretSaved[field.key] ? (
                       <div className="flex items-center gap-2">
                         <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex-1">
-                          <CheckCircle2 size={15} /> 등록됨
+                          <CheckCircle2 size={15} /> {t('system_modules.common.registered')}
                         </span>
                         <button
                           onClick={() => setSecretSaved(prev => ({ ...prev, [field.key]: false }))}
                           className="px-3 py-2 text-[12px] font-bold text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors shrink-0"
                         >
-                          변경
+                          {t('system_modules.common.change')}
                         </button>
                       </div>
                     ) : (
@@ -811,7 +812,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                           disabled={!secretValues[field.key]?.trim() || secretSaving[field.key]}
                           className="px-3 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors shrink-0"
                         >
-                          {secretSaving[field.key] ? <Loader2 size={14} className="animate-spin" /> : '저장'}
+                          {secretSaving[field.key] ? <Loader2 size={14} className="animate-spin" /> : t('system_modules.common.save')}
                         </button>
                       </div>
                     )}
@@ -825,18 +826,18 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     <div className="flex items-center gap-2">
                       {oauthStatus[field.key] ? (
                         <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex-1">
-                          <CheckCircle2 size={15} /> 연동 완료
+                          <CheckCircle2 size={15} /> {t('system_modules.common.connected')}
                         </span>
                       ) : (
                         <span className="flex items-center gap-1.5 text-slate-400 text-[13px] font-medium px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg flex-1">
-                          <Unlink size={14} /> 미연동
+                          <Unlink size={14} /> {t('system_modules.common.not_connected')}
                         </span>
                       )}
                       <button
                         onClick={() => window.open(field.oauthUrl, 'oauth', 'width=500,height=700,left=200,top=100')}
                         className="flex items-center gap-1.5 px-4 py-2 text-[13px] font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors shadow-sm shrink-0"
                       >
-                        <LinkIcon size={14} /> {oauthStatus[field.key] ? '재연동' : '연동하기'}
+                        <LinkIcon size={14} /> {oauthStatus[field.key] ? t('system_modules.common.reconnect') : t('system_modules.common.connect')}
                       </button>
                     </div>
                     {field.description && (
@@ -946,7 +947,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
               <div>
                 {saved && (
                   <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold">
-                    <CheckCircle2 size={15} /> 저장 완료
+                    <CheckCircle2 size={15} /> {t('system_modules.common.saved')}
                   </span>
                 )}
               </div>
@@ -955,7 +956,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                   onClick={onClose}
                   className="px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors"
                 >
-                  닫기
+                  {t('system_modules.common.close')}
                 </button>
                 {hasNonSecretFields && (
                   <button
@@ -964,7 +965,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     className="flex items-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors shadow-sm"
                   >
                     {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                    {saving ? '저장 중...' : '저장'}
+                    {saving ? t('system_modules.common.saving') : t('system_modules.common.save')}
                   </button>
                 )}
               </div>
@@ -1025,16 +1026,16 @@ function ColorPresetField({ label, description, value, onChange }: {
 }
 
 // ── 색 개별 편집 — 9 색 picker (themeColor_<key> Vault 키). 빈 값 = 프리셋 그대로.
-const COLOR_OVERRIDE_FIELDS: Array<{ key: string; label: string; defaultPresetKey: keyof (typeof COLOR_PRESETS)['slate-pro']['colors'] }> = [
-  { key: 'themeColor_primary', label: '주요 색 (primary)', defaultPresetKey: 'primary' },
-  { key: 'themeColor_accent', label: '강조 색 (accent)', defaultPresetKey: 'accent' },
-  { key: 'themeColor_up', label: '상승 색 (up)', defaultPresetKey: 'up' },
-  { key: 'themeColor_down', label: '하락 색 (down)', defaultPresetKey: 'down' },
-  { key: 'themeColor_text', label: '본문 텍스트', defaultPresetKey: 'text' },
-  { key: 'themeColor_textMuted', label: '보조 텍스트', defaultPresetKey: 'textMuted' },
-  { key: 'themeColor_bg', label: '페이지 배경', defaultPresetKey: 'bg' },
-  { key: 'themeColor_bgCard', label: '카드 배경', defaultPresetKey: 'bgCard' },
-  { key: 'themeColor_border', label: '테두리', defaultPresetKey: 'border' },
+const COLOR_OVERRIDE_FIELDS: Array<{ key: string; i18nKey: string; defaultPresetKey: keyof (typeof COLOR_PRESETS)['slate-pro']['colors'] }> = [
+  { key: 'themeColor_primary',  i18nKey: 'system_modules.color_overrides.primary',   defaultPresetKey: 'primary' },
+  { key: 'themeColor_accent',   i18nKey: 'system_modules.color_overrides.accent',    defaultPresetKey: 'accent' },
+  { key: 'themeColor_up',       i18nKey: 'system_modules.color_overrides.up',        defaultPresetKey: 'up' },
+  { key: 'themeColor_down',     i18nKey: 'system_modules.color_overrides.down',      defaultPresetKey: 'down' },
+  { key: 'themeColor_text',     i18nKey: 'system_modules.color_overrides.text',      defaultPresetKey: 'text' },
+  { key: 'themeColor_textMuted',i18nKey: 'system_modules.color_overrides.text_muted',defaultPresetKey: 'textMuted' },
+  { key: 'themeColor_bg',       i18nKey: 'system_modules.color_overrides.bg',        defaultPresetKey: 'bg' },
+  { key: 'themeColor_bgCard',   i18nKey: 'system_modules.color_overrides.bg_card',   defaultPresetKey: 'bgCard' },
+  { key: 'themeColor_border',   i18nKey: 'system_modules.color_overrides.border',    defaultPresetKey: 'border' },
 ];
 
 /** 색 입력 — hex(#RRGGBB) / rgb(...) / rgba(...) 모두 받아 정규화.
@@ -1082,6 +1083,7 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
   presetKey: string;
   onChange: (key: string, value: string) => void;
 }) {
+  const t = useTranslations();
   const preset = COLOR_PRESETS[presetKey] ?? COLOR_PRESETS['slate-pro'];
   const resetAll = () => {
     for (const f of COLOR_OVERRIDE_FIELDS) onChange(f.key, '');
@@ -1097,7 +1099,7 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
             onClick={resetAll}
             className="text-[10px] text-slate-500 hover:text-red-500 underline"
           >
-            모두 프리셋 복원
+            {t('system_modules.common.reset_all_preset')}
           </button>
         )}
       </div>
@@ -1149,7 +1151,7 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
                 </div>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-bold text-slate-600 truncate">{f.label}</p>
+                <p className="text-[11px] font-bold text-slate-600 truncate">{t(f.i18nKey)}</p>
                 <input
                   type="text"
                   value={overrideValue}
@@ -1166,7 +1168,7 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
                     value={Math.round(displayAlpha * 100)}
                     onChange={e => handleAlphaChange(parseInt(e.target.value, 10))}
                     className="flex-1 h-1 cursor-pointer"
-                    aria-label="투명도 (alpha)"
+                    aria-label={t('system_modules.common.alpha_label')}
                   />
                   <span className="text-[9px] text-slate-400 font-mono w-7 text-right tabular-nums">
                     {Math.round(displayAlpha * 100)}%
@@ -1178,7 +1180,7 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
                   type="button"
                   onClick={() => onChange(f.key, '')}
                   className="text-slate-400 hover:text-red-500 text-[10px] mt-0.5"
-                  title="프리셋 색으로 복원"
+                  title={t('system_modules.common.reset_to_preset')}
                 >
                   ×
                 </button>
@@ -1198,6 +1200,7 @@ function VerificationsField({ label, description, value, onChange }: {
   value: Array<{ filename: string; content: string }>;
   onChange: (v: Array<{ filename: string; content: string }>) => void;
 }) {
+  const t = useTranslations();
   const addItem = () => onChange([...value, { filename: '', content: '' }]);
   const removeItem = (i: number) => onChange(value.filter((_, idx) => idx !== i));
   const updateItem = (i: number, patch: Partial<{ filename: string; content: string }>) => {
@@ -1212,7 +1215,7 @@ function VerificationsField({ label, description, value, onChange }: {
       <div className="flex flex-col gap-2 mt-1">
         {value.length === 0 && (
           <p className="text-xs text-slate-400 italic py-2 text-center bg-slate-50 border border-dashed border-slate-200 rounded-lg">
-            등록된 인증 파일이 없습니다.
+            {t('system_modules.common.verifications_empty')}
           </p>
         )}
         {value.map((item, i) => (
@@ -1222,14 +1225,14 @@ function VerificationsField({ label, description, value, onChange }: {
                 type="text"
                 value={item.filename}
                 onChange={e => updateItem(i, { filename: e.target.value })}
-                placeholder="google1234567.html / naverabc.html / ads.txt 등"
+                placeholder={t('system_modules.common.verifications_filename_placeholder')}
                 className="flex-1 px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
               />
-              <Tooltip label="삭제">
+              <Tooltip label={t('common.delete')}>
                 <button
                   onClick={() => removeItem(i)}
                   className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"
-                  aria-label="삭제"
+                  aria-label={t('common.delete')}
                 >
                   <Trash2 size={14} />
                 </button>
@@ -1238,7 +1241,7 @@ function VerificationsField({ label, description, value, onChange }: {
             <textarea
               value={item.content}
               onChange={e => updateItem(i, { content: e.target.value })}
-              placeholder="파일 내용 (예: ads.txt 표준 라인, Google site-verification meta 등)"
+              placeholder={t('system_modules.common.verifications_content_placeholder')}
               rows={3}
               className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono resize-y"
             />
@@ -1248,7 +1251,7 @@ function VerificationsField({ label, description, value, onChange }: {
           onClick={addItem}
           className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold text-blue-600 hover:bg-blue-50 border border-dashed border-blue-300 rounded-lg transition-colors"
         >
-          <Plus size={14} /> 인증 파일 추가
+          <Plus size={14} /> {t('system_modules.common.verifications_add')}
         </button>
       </div>
     </>
