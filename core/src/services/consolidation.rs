@@ -1,14 +1,16 @@
 //! gRPC ConsolidationService impl — ConsolidationManager wrapping.
 //!
-//! Phase B-12 minimum: save_extracted (consolidate) + get_memory_stats 활성.
-//! AskLlmText / ConsolidateInactive 는 Phase B-16+ AiManager + ILlmPort 설정된 후 활성.
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
+//! AskLlmText → LlmTextResultPb (단순 텍스트), GetMemoryStats → MemoryStatsPb.
+//! Consolidate / ConsolidateInactive → 중첩 구조이므로 RawJsonPb.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::consolidation::{ConsolidationManager, ExtractionResult};
 use crate::proto::{
-    consolidation_service_server::ConsolidationService, Empty, JsonArgs, JsonValue,
+    consolidation_service_server::ConsolidationService, Empty, JsonArgs, LlmTextResultPb,
+    MemoryStatsPb, RawJsonPb,
 };
 
 pub struct ConsolidationServiceImpl {
@@ -21,10 +23,10 @@ impl ConsolidationServiceImpl {
     }
 }
 
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
+fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
+    RawJsonPb {
+        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
+    }
 }
 
 #[tonic::async_trait]
@@ -32,7 +34,7 @@ impl ConsolidationService for ConsolidationServiceImpl {
     async fn ask_llm_text(
         &self,
         req: Request<JsonArgs>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<LlmTextResultPb>, TonicStatus> {
         // 옛 TS Core.askLlmText 1:1 — set_ai_hook 설정되어 있을 때만 활성.
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
@@ -54,7 +56,7 @@ impl ConsolidationService for ConsolidationServiceImpl {
             ..Default::default()
         };
         match self.manager.ask_llm_text(&args.prompt, &opts).await {
-            Ok(text) => json_response(&serde_json::json!({"text": text})),
+            Ok(text) => Ok(Response::new(LlmTextResultPb { text })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -64,7 +66,7 @@ impl ConsolidationService for ConsolidationServiceImpl {
     async fn consolidate(
         &self,
         req: Request<JsonArgs>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {
@@ -88,7 +90,7 @@ impl ConsolidationService for ConsolidationServiceImpl {
             )
             .await
         {
-            Ok(outcome) => json_response(&outcome),
+            Ok(outcome) => Ok(Response::new(raw_json(&outcome))),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -96,7 +98,7 @@ impl ConsolidationService for ConsolidationServiceImpl {
     async fn consolidate_inactive(
         &self,
         req: Request<JsonArgs>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         // 옛 TS consolidateInactiveConversations 1:1 — 매 6시간 cron 호출.
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize, Default)]
@@ -121,15 +123,27 @@ impl ConsolidationService for ConsolidationServiceImpl {
                 args.limit_per_run,
             )
             .await;
-        json_response(&result)
+        Ok(Response::new(raw_json(&result)))
     }
 
     async fn get_memory_stats(
         &self,
         _req: Request<Empty>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<MemoryStatsPb>, TonicStatus> {
         match self.manager.get_memory_stats() {
-            Ok(stats) => json_response(&stats),
+            Ok(stats) => {
+                let entities_by_type_json = serde_json::to_string(&stats.entities_by_type)
+                    .unwrap_or_else(|_| "[]".to_string());
+                let events_by_type_json = serde_json::to_string(&stats.events_by_type)
+                    .unwrap_or_else(|_| "[]".to_string());
+                Ok(Response::new(MemoryStatsPb {
+                    entities: stats.entities,
+                    facts: stats.facts,
+                    events: stats.events,
+                    entities_by_type_json,
+                    events_by_type_json,
+                }))
+            }
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }

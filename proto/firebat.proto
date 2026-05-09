@@ -823,11 +823,25 @@ service EpisodicService {
 // ──────────────────────────────────────────────────────────────────────────
 // 20. ConsolidationService — ConsolidationManager (메모리 4-tier: consolidate)
 // ──────────────────────────────────────────────────────────────────────────
+
+message MemoryStatsPb {
+  int64 entities = 1;
+  int64 facts = 2;
+  int64 events = 3;
+  // entities_by_type / events_by_type: Vec<(String, i64)> → JSON (proto map 값 타입 제약 회피)
+  string entities_by_type_json = 4;
+  string events_by_type_json = 5;
+}
+
+message LlmTextResultPb {
+  string text = 1;
+}
+
 service ConsolidationService {
-  rpc AskLlmText(JsonArgs) returns (JsonValue);
-  rpc Consolidate(JsonArgs) returns (JsonValue);
-  rpc ConsolidateInactive(JsonArgs) returns (JsonValue);
-  rpc GetMemoryStats(Empty) returns (JsonValue);
+  rpc AskLlmText(JsonArgs) returns (LlmTextResultPb);
+  rpc Consolidate(JsonArgs) returns (RawJsonPb);
+  rpc ConsolidateInactive(JsonArgs) returns (RawJsonPb);
+  rpc GetMemoryStats(Empty) returns (MemoryStatsPb);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
