@@ -129,8 +129,14 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
   }),
   cacheDrop: (cacheKey: string) => ({ cacheKey }),
 
-  // AiService
-  requestActionWithTools: (input: unknown, opts?: unknown) => ({ input, opts }),
+  // AiService — Rust args: { prompt, tools, opts } (옛 TS history / callback 인자 무시)
+  // 채팅 streaming 의 진짜 callback 흐름은 gRPC bidirectional streaming 박은 후 재구현 필요 (별 commit).
+  // 우선 unary call — prompt + opts 만 박고 결과 받음 (callback 없이).
+  requestActionWithTools: (prompt: string, _history?: unknown, opts?: unknown) => ({
+    prompt,
+    tools: [],
+    opts: opts ?? {},
+  }),
   codeAssist: (params: unknown, opts?: unknown) => ({ params, opts }),
   setUserPrompt: (prompt: string) => ({ prompt }),
   setAiAssistantModel: (modelId: string) => ({ modelId }),
