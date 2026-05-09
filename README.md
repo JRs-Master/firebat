@@ -425,7 +425,17 @@ Frontend  Next.js + React + 27 render_* components
 
 **Total duration**: ~3~4 months solo full-time / ~5~7 months part-time (Tauri 폐기로 ~1개월 단축).
 
-**After v1.0 Final**: v2.0 시점에 Next.js Static Export + Tauri IPC 박은 진짜 가벼운 데스크톱 앱 (~15MB) 재시작 후보. v2.0+ 결정 트리거 = 운영 데이터 위에서 진짜 한계 도달 시.
+**After v1.0 Final**: 두 distribution 옵션 진행 가능 (둘 다 v1.x / v2.0+ 안건):
+
+1. **Vercel frontend + Self-hosted backend exe** (hybrid Self-installed 부활, 2026-05-10 박힌 안건)
+   - Frontend = `firebat.app` (Vercel 자동 배포) — 사용자 빌드 0
+   - Backend = 사용자 머신 exe (Rust 단일 binary ~30-50MB) — vault / data / 비용 본인 통제
+   - 자동화 흐름: UPnP 자동 포트 매핑 + 공유기 DDNS + Let's Encrypt 자동 HTTPS. CGNAT / UPnP disabled fallback = Cloudflare Tunnel 자동
+   - 옛 Self-installed Tauri (Tauri+Node sidecar 50MB 목표 비현실 + 어르신 UX 폭탄) 폐기 사유와 무관 — frontend 분리라 가벼움
+   - v1.x 의 Vercel frontend 분산 안건과 자연 통합 — 추가 작업 ↓
+
+2. **Next.js Static Export + Tauri IPC 데스크톱 앱** (~15MB, v2.0+ 후보)
+   - 운영 데이터 위에서 진짜 한계 도달 시 시점 박힘
 
 > 🇰🇷 **v1.0 Final 로드맵 (2026-05-06 갱신)** — Self-installed Tauri 폐기 결정. 단일 distribution = Self-hosted Docker. Phase 0 (현재 운영 유지) → A (설계 ✅) → B (Rust Core ✅ Phase B-4 cutover 완료) → B-post (audit cleanup) → C (Docker firebat.co.kr 마이그레이션). 총 3~4개월. Tauri 데스크톱 앱은 v2.0 시점에 Next.js SPA 추출 + Tauri IPC 박은 진짜 가벼운 앱 (~15MB) 으로 재시작. 옛 src-tauri/ 디렉토리 + Node sidecar 구조는 어르신 사용자 UX 폭탄 (좀비 프로세스 / 포트 충돌 / 방화벽 발작) 위험 + 50MB 목표 비현실 (실제 150-200MB) 으로 폐기.
 
