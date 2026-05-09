@@ -41,7 +41,12 @@ export async function POST(req: NextRequest) {
       : (setupRaw && typeof setupRaw === 'object' && 'value' in setupRaw ? Boolean((setupRaw as { value: unknown }).value) : false);
   if (setupDone) {
     return NextResponse.json(
-      { success: false, error: '초기 설정이 이미 완료되었습니다. 변경은 어드민 설정 화면을 이용해 주세요.' },
+      {
+        success: false,
+        error:
+          '초기 설정이 이미 완료되어 있습니다. 잠시 후 로그인 화면으로 이동합니다. ' +
+          '비밀번호를 모르면 SSH 에서 vault reset 후 재시도 (sqlite3 data/vault.db "DELETE FROM secrets WHERE key LIKE \'FIREBAT_ADMIN%\'" + systemctl restart firebat).',
+      },
       { status: 403 },
     );
   }
