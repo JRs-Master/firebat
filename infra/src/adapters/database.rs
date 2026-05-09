@@ -10,7 +10,8 @@ use std::sync::Mutex;
 
 use firebat_core::ports::{
     ConversationEmbeddingMeta, ConversationEmbeddingRow, ConversationRecord, ConversationSummary,
-    IDatabasePort, InfraResult, LlmCostStatsFilter, LlmCostStatsSummary, MediaUsageEntry,
+    IDatabasePort, InfraResult, LlmCostStatsFilter, LlmCostStatsRecord, LlmCostStatsSummary,
+    MediaUsageEntry,
     PageListItem, PageRecord, RawSqlRow,
 };
 
@@ -949,43 +950,86 @@ impl IDatabasePort for SqliteDatabaseAdapter {
     }
 
     fn query_llm_cost_stats(&self, filter: &LlmCostStatsFilter) -> LlmCostStatsSummary {
-        let mut sql = String::from(
+        // 공통 WHERE 절 + bound params — totals / records query 둘 다 동일 filter 적용.
+        let mut where_clause = String::from(" WHERE 1=1");
+        let mut bound: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(since) = filter.since {
+            where_clause.push_str(" AND ts >= ?");
+            bound.push(Box::new(since));
+        }
+        if let Some(until) = filter.until {
+            where_clause.push_str(" AND ts <= ?");
+            bound.push(Box::new(until));
+        }
+        if let Some(model) = &filter.model {
+            where_clause.push_str(" AND model = ?");
+            bound.push(Box::new(model.clone()));
+        }
+        if let Some(purpose) = &filter.purpose {
+            where_clause.push_str(" AND purpose = ?");
+            bound.push(Box::new(purpose.clone()));
+        }
+
+        let totals_sql = format!(
             "SELECT \
                 COALESCE(SUM(input_tokens), 0), \
                 COALESCE(SUM(output_tokens), 0), \
                 COALESCE(SUM(cached_tokens), 0), \
                 COALESCE(SUM(cost_usd), 0.0), \
                 COUNT(*) \
-             FROM llm_costs WHERE 1=1",
+             FROM llm_costs{}",
+            where_clause
         );
-        let mut bound: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
-        if let Some(since) = filter.since {
-            sql.push_str(" AND ts >= ?");
-            bound.push(Box::new(since));
-        }
-        if let Some(until) = filter.until {
-            sql.push_str(" AND ts <= ?");
-            bound.push(Box::new(until));
-        }
-        if let Some(model) = &filter.model {
-            sql.push_str(" AND model = ?");
-            bound.push(Box::new(model.clone()));
-        }
-        if let Some(purpose) = &filter.purpose {
-            sql.push_str(" AND purpose = ?");
-            bound.push(Box::new(purpose.clone()));
-        }
+
+        // ts = ms 단위 (cost.rs Self::now_ms()). SQLite date() 는 sec 박혀 ts/1000 박힘.
+        // 'localtime' modifier 박혀 OS timezone 적용 (systemd FIREBAT_TIMEZONE env 박힘 동기).
+        let records_sql = format!(
+            "SELECT \
+                date(ts/1000, 'unixepoch', 'localtime') AS date, \
+                model, \
+                COUNT(*) AS calls, \
+                COALESCE(SUM(input_tokens), 0) AS input_tokens, \
+                COALESCE(SUM(output_tokens), 0) AS output_tokens, \
+                COALESCE(SUM(cost_usd), 0.0) AS cost_usd \
+             FROM llm_costs{} \
+             GROUP BY date, model \
+             ORDER BY date DESC, cost_usd DESC",
+            where_clause
+        );
+
         self.with_conn(|conn| {
             let refs: Vec<&dyn rusqlite::ToSql> = bound.iter().map(|b| b.as_ref()).collect();
-            conn.query_row(&sql, refs.as_slice(), |row| {
+
+            // Totals
+            let mut summary = conn.query_row(&totals_sql, refs.as_slice(), |row| {
                 Ok(LlmCostStatsSummary {
                     total_input_tokens: row.get(0)?,
                     total_output_tokens: row.get(1)?,
                     total_cached_tokens: row.get(2)?,
                     total_cost_usd: row.get(3)?,
                     call_count: row.get(4)?,
+                    records: Vec::new(),
                 })
-            })
+            })?;
+
+            // Records (per-day / per-model)
+            let mut stmt = conn.prepare(&records_sql)?;
+            let rows = stmt.query_map(refs.as_slice(), |row| {
+                Ok(LlmCostStatsRecord {
+                    date: row.get(0)?,
+                    model: row.get(1)?,
+                    calls: row.get(2)?,
+                    input_tokens: row.get(3)?,
+                    output_tokens: row.get(4)?,
+                    cost_usd: row.get(5)?,
+                })
+            })?;
+            for r in rows {
+                if let Ok(rec) = r {
+                    summary.records.push(rec);
+                }
+            }
+            Ok(summary)
         })
         .unwrap_or_default()
     }

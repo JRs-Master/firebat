@@ -359,6 +359,7 @@ pub trait IDatabasePort: Send + Sync {
 
 /// LLM 비용 통계 filter — 옛 TS getStats 의 input 1:1.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LlmCostStatsFilter {
     pub since: Option<i64>,
     pub until: Option<i64>,
@@ -366,14 +367,34 @@ pub struct LlmCostStatsFilter {
     pub purpose: Option<String>,
 }
 
-/// LLM 비용 통계 결과 — 옛 TS getStats 의 return 1:1.
+/// LLM 비용 단일 row — date / model 별 누적 통계 (frontend 표·차트용).
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmCostStatsRecord {
+    pub date: String,         // YYYY-MM-DD (사용자 timezone 기준)
+    pub model: String,
+    pub calls: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cost_usd: f64,
+}
+
+/// LLM 비용 통계 결과 — 옛 TS getStats 의 return 1:1.
+/// frontend camelCase 호환 — serde rename_all 박혀 응답 자동 totalInputTokens 등.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LlmCostStatsSummary {
     pub total_input_tokens: i64,
     pub total_output_tokens: i64,
     pub total_cached_tokens: i64,
     pub total_cost_usd: f64,
+    /// 옛 frontend `stats.totalCalls` 박힌 호환 — `call_count` 의 camelCase 매핑은 callCount
+    /// 라 옛 totalCalls 와 mismatch. serde rename 박아 응답 totalCalls 박힘.
+    #[serde(rename = "totalCalls")]
     pub call_count: i64,
+    /// per-day / per-model 누적 row (frontend 일별·모델별 표·차트용). default 빈 배열.
+    #[serde(default)]
+    pub records: Vec<LlmCostStatsRecord>,
 }
 
 /// 공유 생성 인자 — 옛 TS `createShare(input)` 의 input 1:1.
