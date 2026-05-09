@@ -36,25 +36,24 @@ const nextConfig = {
       },
     ];
   },
-  /** Headers — /admin 경로의 ETag·304 응답 차단.
-   *  배경: 빌드마다 RSC payload 안의 server action ID 가 새로 발행됨. 사용자 브라우저가
-   *  옛 RSC payload 를 disk cache 에 들고 있으면 새 build 후에도 ETag 비교 시 304 (Not Modified)
-   *  돌아와 옛 payload 그대로 사용 → 옛 server action ID 호출 → 새 build 가 못 찾음 → throw → 500.
-   *  no-store 박으면 매 요청마다 fresh fetch → server action ID 자동 sync. */
+  /** Headers — /admin 경로의 ETag·304 응답 차단 + clickjacking 방어.
+   *  Cache-Control: 빌드마다 RSC payload 안의 server action ID 가 새로 발행됨. 사용자 브라우저가
+   *    옛 RSC payload 를 disk cache 에 들고 있으면 새 build 후에도 ETag 비교 시 304 (Not Modified)
+   *    돌아와 옛 payload 그대로 사용 → 옛 server action ID 호출 → 새 build 가 못 찾음 → throw → 500.
+   *    no-store 적용 시 매 요청마다 fresh fetch → server action ID 자동 sync.
+   *  X-Frame-Options + CSP frame-ancestors: clickjacking 방어 — 어떤 외부 사이트도 admin/login
+   *    페이지를 iframe 으로 임베드 할 수 없게 차단. 사용자 쿠키 자동 첨부로 인한 위장 클릭 사건 차단.
+   *  /login 도 같이 적용 — SetupWizard 단계에서도 동일 위험. */
   async headers() {
+    const securityHeaders = [
+      { key: 'Cache-Control', value: 'no-store, must-revalidate' },
+      { key: 'X-Frame-Options', value: 'DENY' },
+      { key: 'Content-Security-Policy', value: "frame-ancestors 'none'" },
+    ];
     return [
-      {
-        source: '/admin/:path*',
-        headers: [
-          { key: 'Cache-Control', value: 'no-store, must-revalidate' },
-        ],
-      },
-      {
-        source: '/admin',
-        headers: [
-          { key: 'Cache-Control', value: 'no-store, must-revalidate' },
-        ],
-      },
+      { source: '/admin/:path*', headers: securityHeaders },
+      { source: '/admin', headers: securityHeaders },
+      { source: '/login', headers: securityHeaders },
     ];
   },
 };
