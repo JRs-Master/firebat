@@ -808,13 +808,13 @@ service EntityService {
 // 19. EpisodicService — EpisodicManager (메모리 4-tier: event)
 // ──────────────────────────────────────────────────────────────────────────
 service EpisodicService {
-  rpc SaveEvent(JsonArgs) returns (JsonValue);
-  rpc UpdateEvent(JsonArgs) returns (JsonValue);
+  rpc SaveEvent(JsonArgs) returns (FactSaveResultPb);
+  rpc UpdateEvent(JsonArgs) returns (Status);
   rpc DeleteEvent(NumberRequest) returns (Status);
-  rpc GetEvent(NumberRequest) returns (JsonValue);
-  rpc SearchEvents(JsonArgs) returns (JsonValue);
-  rpc ListRecent(JsonArgs) returns (JsonValue);
-  rpc ListByEntity(JsonArgs) returns (JsonValue);
+  rpc GetEvent(NumberRequest) returns (RawJsonPb);
+  rpc SearchEvents(JsonArgs) returns (RawJsonPb);
+  rpc ListRecent(JsonArgs) returns (RawJsonPb);
+  rpc ListByEntity(JsonArgs) returns (RawJsonPb);
   rpc LinkEntity(JsonArgs) returns (Status);
   rpc UnlinkEntity(JsonArgs) returns (Status);
   rpc CleanupExpired(Empty) returns (NumberRequest);
