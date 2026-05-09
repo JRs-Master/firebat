@@ -1,12 +1,15 @@
 //! gRPC ProjectService impl — ProjectManager wrapping.
+//!
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
+//! From impl 박혀 core managers struct ↔ proto generated struct 변환.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
-use crate::managers::project::{ProjectManager, ProjectVisibility};
+use crate::managers::project::{ProjectEntry, ProjectManager, ProjectVisibility};
 use crate::proto::{
-    project_service_server::ProjectService, BoolRequest, Empty, JsonArgs, JsonValue, Status,
-    StringRequest,
+    project_service_server::ProjectService, BoolRequest, Empty, JsonArgs, ProjectConfigPb,
+    ProjectEntryPb, ProjectListPb, ProjectVisibilityPb, Status, StringRequest,
 };
 
 pub struct ProjectServiceImpl {
@@ -17,12 +20,6 @@ impl ProjectServiceImpl {
     pub fn new(manager: Arc<ProjectManager>) -> Self {
         Self { manager }
     }
-}
-
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
 }
 
 fn ok_status() -> Response<Status> {
@@ -41,11 +38,38 @@ fn err_status(msg: impl Into<String>) -> Response<Status> {
     })
 }
 
+// ─── proto ↔ core managers struct 변환 ────────────────────────────────────────
+
+impl From<ProjectEntry> for ProjectEntryPb {
+    fn from(e: ProjectEntry) -> Self {
+        ProjectEntryPb {
+            name: e.name,
+            paths: e.paths,
+            page_slugs: e.page_slugs,
+            visibility: match e.visibility {
+                ProjectVisibility::Public => "public".to_string(),
+                ProjectVisibility::Password => "password".to_string(),
+                ProjectVisibility::Private => "private".to_string(),
+            },
+        }
+    }
+}
+
+fn visibility_to_pb(v: ProjectVisibility) -> ProjectVisibilityPb {
+    ProjectVisibilityPb {
+        visibility: match v {
+            ProjectVisibility::Public => "public".to_string(),
+            ProjectVisibility::Password => "password".to_string(),
+            ProjectVisibility::Private => "private".to_string(),
+        },
+    }
+}
+
 #[tonic::async_trait]
 impl ProjectService for ProjectServiceImpl {
-    async fn scan(&self, _req: Request<Empty>) -> Result<Response<JsonValue>, TonicStatus> {
-        let projects = self.manager.scan().await;
-        json_response(&projects)
+    async fn scan(&self, _req: Request<Empty>) -> Result<Response<ProjectListPb>, TonicStatus> {
+        let projects = self.manager.scan().await.into_iter().map(Into::into).collect();
+        Ok(Response::new(ProjectListPb { projects }))
     }
 
     async fn set_visibility(
@@ -72,19 +96,24 @@ impl ProjectService for ProjectServiceImpl {
     async fn get_visibility(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<ProjectVisibilityPb>, TonicStatus> {
         let project = req.into_inner().value;
-        let visibility = self.manager.get_visibility(&project);
-        json_response(&visibility)
+        Ok(Response::new(visibility_to_pb(
+            self.manager.get_visibility(&project),
+        )))
     }
 
     async fn get_config(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<ProjectConfigPb>, TonicStatus> {
         let name = req.into_inner().value;
         let config = self.manager.get_config(&name).await;
-        json_response(&config)
+        let raw_json = config
+            .as_ref()
+            .and_then(|v| serde_json::to_string(v).ok())
+            .unwrap_or_else(|| "null".to_string());
+        Ok(Response::new(ProjectConfigPb { raw_json }))
     }
 
     async fn set_config(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {

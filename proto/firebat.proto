@@ -173,14 +173,36 @@ service PageService {
   rpc ListAllTags(Empty) returns (TagListPb);
 }
 
+// ─── ProjectService typed messages ───────────────────────────────────────────
+
+message ProjectEntryPb {
+  string name = 1;
+  repeated string paths = 2;
+  repeated string page_slugs = 3;
+  string visibility = 4;   // "public" | "password" | "private"
+}
+
+message ProjectListPb {
+  repeated ProjectEntryPb projects = 1;
+}
+
+message ProjectVisibilityPb {
+  string visibility = 1;   // "public" | "password" | "private"
+}
+
+/** project config.json 내용 — 동적 JSON, raw string 으로 직렬화. */
+message ProjectConfigPb {
+  string raw_json = 1;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 4. ProjectService — ProjectManager
 // ──────────────────────────────────────────────────────────────────────────
 service ProjectService {
-  rpc Scan(Empty) returns (JsonValue);
+  rpc Scan(Empty) returns (ProjectListPb);
   rpc SetVisibility(JsonArgs) returns (Status);
-  rpc GetVisibility(StringRequest) returns (JsonValue);
-  rpc GetConfig(StringRequest) returns (JsonValue);
+  rpc GetVisibility(StringRequest) returns (ProjectVisibilityPb);
+  rpc GetConfig(StringRequest) returns (ProjectConfigPb);
   rpc SetConfig(JsonArgs) returns (Status);
   rpc VerifyPassword(JsonArgs) returns (BoolRequest);
   rpc Delete(StringRequest) returns (Status);
