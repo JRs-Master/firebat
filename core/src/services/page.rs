@@ -1,12 +1,17 @@
 //! gRPC PageService impl — PageManager wrapping.
+//!
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
+//! From impl 박혀 core port struct ↔ proto generated struct 변환.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
-use crate::managers::page::PageManager;
+use crate::managers::page::{PageManager, TagSummary};
+use crate::ports::{MediaUsageEntry, PageListItem, PageRecord};
 use crate::proto::{
-    page_service_server::PageService, BoolRequest, Empty, JsonArgs, JsonValue, Status,
-    StringRequest,
+    page_service_server::PageService, BoolRequest, Empty, JsonArgs, MediaUsageEntryPb,
+    MediaUsageListPb, OptionalStringPb, PageListItemPb, PageListResponsePb, PageRecordPb,
+    PageSaveResultPb, Status, StringListPb, StringRequest, TagListPb, TagSummaryPb,
 };
 
 pub struct PageServiceImpl {
@@ -17,12 +22,6 @@ impl PageServiceImpl {
     pub fn new(manager: Arc<PageManager>) -> Self {
         Self { manager }
     }
-}
-
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
 }
 
 fn ok_status() -> Response<Status> {
@@ -41,13 +40,74 @@ fn err_status(msg: impl Into<String>) -> Response<Status> {
     })
 }
 
+// ─── proto ↔ core port struct 변환 ─────────────────────────────────────────
+
+impl From<PageListItem> for PageListItemPb {
+    fn from(p: PageListItem) -> Self {
+        PageListItemPb {
+            slug: p.slug,
+            status: p.status,
+            project: p.project,
+            visibility: p.visibility,
+            title: p.title,
+            updated_at: p.updated_at,
+            created_at: p.created_at,
+            featured_image: p.featured_image,
+            excerpt: p.excerpt,
+        }
+    }
+}
+
+fn page_list_to_pb(items: Vec<PageListItem>) -> PageListResponsePb {
+    PageListResponsePb {
+        items: items.into_iter().map(Into::into).collect(),
+    }
+}
+
+impl From<PageRecord> for PageRecordPb {
+    fn from(r: PageRecord) -> Self {
+        PageRecordPb {
+            slug: r.slug,
+            spec: r.spec,
+            status: r.status,
+            project: r.project,
+            visibility: r.visibility,
+            password: r.password,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }
+    }
+}
+
+impl From<MediaUsageEntry> for MediaUsageEntryPb {
+    fn from(e: MediaUsageEntry) -> Self {
+        MediaUsageEntryPb {
+            page_slug: e.page_slug,
+            used_at: e.used_at,
+        }
+    }
+}
+
+impl From<TagSummary> for TagSummaryPb {
+    fn from(t: TagSummary) -> Self {
+        TagSummaryPb {
+            tag: t.tag,
+            count: t.count as i64,
+            slugs: t.slugs,
+        }
+    }
+}
+
 #[tonic::async_trait]
 impl PageService for PageServiceImpl {
-    async fn list(&self, _req: Request<Empty>) -> Result<Response<JsonValue>, TonicStatus> {
-        json_response(&self.manager.list())
+    async fn list(&self, _req: Request<Empty>) -> Result<Response<PageListResponsePb>, TonicStatus> {
+        Ok(Response::new(page_list_to_pb(self.manager.list())))
     }
 
-    async fn search(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn search(
+        &self,
+        req: Request<JsonArgs>,
+    ) -> Result<Response<PageListResponsePb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {
@@ -57,15 +117,28 @@ impl PageService for PageServiceImpl {
         }
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("search args: {e}")))?;
-        json_response(&self.manager.search(&args.query, args.limit))
+        Ok(Response::new(page_list_to_pb(
+            self.manager.search(&args.query, args.limit),
+        )))
     }
 
-    async fn get(&self, req: Request<StringRequest>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn get(
+        &self,
+        req: Request<StringRequest>,
+    ) -> Result<Response<PageRecordPb>, TonicStatus> {
         let slug = req.into_inner().value;
-        json_response(&self.manager.get(&slug))
+        Ok(Response::new(
+            self.manager
+                .get(&slug)
+                .map(Into::into)
+                .unwrap_or_default(),
+        ))
     }
 
-    async fn save(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn save(
+        &self,
+        req: Request<JsonArgs>,
+    ) -> Result<Response<PageSaveResultPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {
@@ -80,9 +153,12 @@ impl PageService for PageServiceImpl {
             #[serde(default)]
             password: Option<String>,
         }
-        fn default_published() -> String { "published".into() }
+        fn default_published() -> String {
+            "published".into()
+        }
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("save args: {e}")))?;
+        let slug = args.slug.clone();
         match self.manager.save(
             &args.slug,
             &args.spec,
@@ -91,8 +167,16 @@ impl PageService for PageServiceImpl {
             args.visibility.as_deref(),
             args.password.as_deref(),
         ) {
-            Ok(()) => json_response(&serde_json::json!({"ok": true, "slug": args.slug})),
-            Err(e) => json_response(&serde_json::json!({"ok": false, "error": e})),
+            Ok(()) => Ok(Response::new(PageSaveResultPb {
+                ok: true,
+                slug,
+                error: None,
+            })),
+            Err(e) => Ok(Response::new(PageSaveResultPb {
+                ok: false,
+                slug,
+                error: Some(e),
+            })),
         }
     }
 
@@ -120,7 +204,10 @@ impl PageService for PageServiceImpl {
             Ok(v) => v,
             Err(e) => return Ok(err_status(format!("rename args: {e}"))),
         };
-        match self.manager.rename(&args.old_slug, &args.new_slug, args.set_redirect) {
+        match self
+            .manager
+            .rename(&args.old_slug, &args.new_slug, args.set_redirect)
+        {
             Ok(_) => Ok(ok_status()),
             Err(e) => Ok(err_status(e)),
         }
@@ -129,24 +216,35 @@ impl PageService for PageServiceImpl {
     async fn get_redirect(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<OptionalStringPb>, TonicStatus> {
         let from = req.into_inner().value;
         let to = self.manager.get_redirect(&from);
-        json_response(&to)
+        Ok(Response::new(OptionalStringPb {
+            value: to.clone().unwrap_or_default(),
+            present: to.is_some(),
+        }))
     }
 
-    async fn list_static(&self, _req: Request<Empty>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn list_static(
+        &self,
+        _req: Request<Empty>,
+    ) -> Result<Response<StringListPb>, TonicStatus> {
         let slugs = self.manager.list_static().await;
-        json_response(&slugs)
+        Ok(Response::new(StringListPb { values: slugs }))
     }
 
     async fn find_media_usage(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<MediaUsageListPb>, TonicStatus> {
         let media_slug = req.into_inner().value;
-        let usage = self.manager.find_media_usage(&media_slug);
-        json_response(&usage)
+        let entries = self
+            .manager
+            .find_media_usage(&media_slug)
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        Ok(Response::new(MediaUsageListPb { entries }))
     }
 
     async fn set_visibility(
@@ -165,7 +263,10 @@ impl PageService for PageServiceImpl {
             Ok(v) => v,
             Err(e) => return Ok(err_status(format!("set_visibility args: {e}"))),
         };
-        match self.manager.set_visibility(&args.slug, &args.visibility, args.password.as_deref()) {
+        match self
+            .manager
+            .set_visibility(&args.slug, &args.visibility, args.password.as_deref())
+        {
             Ok(()) => Ok(ok_status()),
             Err(e) => Ok(err_status(e)),
         }
@@ -191,8 +292,7 @@ impl PageService for PageServiceImpl {
     async fn find_related(
         &self,
         req: Request<JsonArgs>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        // 옛 TS findRelatedPages 1:1 — head.keywords canonical 매칭 score 기반 top-K
+    ) -> Result<Response<PageListResponsePb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {
@@ -205,23 +305,26 @@ impl PageService for PageServiceImpl {
         }
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("find_related args: {e}")))?;
-        let aliases =
-            crate::utils::tag_utils::parse_tag_aliases(args.tag_aliases_raw.as_deref());
+        let aliases = crate::utils::tag_utils::parse_tag_aliases(args.tag_aliases_raw.as_deref());
         let related = self
             .manager
             .find_related_pages(&args.slug, args.limit.unwrap_or(5), &aliases);
-        json_response(&related)
+        Ok(Response::new(page_list_to_pb(related)))
     }
 
     async fn list_all_tags(
         &self,
         _req: Request<Empty>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        // 옛 TS listAllTags 1:1 — 모든 published+public 페이지의 head.keywords 빈도 집계.
-        // tagAliases 는 caller 가 PageService.with_tag_aliases_provider 로 설정해야 alias 적용 (현재는 빈 alias).
-        // 후속 batch — ModuleManager.get_settings("cms").tagAliases textarea 자동 로드.
+    ) -> Result<Response<TagListPb>, TonicStatus> {
         let aliases = crate::utils::tag_utils::TagAliases::new();
-        let tags = self.manager.list_all_tags(&aliases);
-        json_response(&tags)
+        let tags = self
+            .manager
+            .list_all_tags(&aliases)
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        Ok(Response::new(TagListPb { tags }))
     }
 }
+
+// Tests 이관 — `infra/tests/svc_page_test.rs` (integration test).
