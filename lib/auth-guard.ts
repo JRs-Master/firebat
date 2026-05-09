@@ -20,22 +20,12 @@ export async function requireAuth(request: NextRequest): Promise<AuthSession | N
     return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
   }
 
-  // 2) Cookie (세션 토큰)
+  // 2) Cookie (세션 토큰) — Vault 검증 필수. 옛 'firebat_admin_token=authenticated'
+  // legacy fallback 폐기 (2026-05-09) — 쿠키 string 만으로 admin 통과되던 보안 결함.
   const cookie = request.cookies.get('firebat_token');
   if (cookie?.value) {
     const session = await core.validateToken(cookie.value);
     if (session) return session as AuthSession;
-  }
-
-  // 3) 레거시 쿠키 호환 (기존 firebat_admin_token)
-  const legacyCookie = request.cookies.get('firebat_admin_token');
-  if (legacyCookie?.value === 'authenticated') {
-    return {
-      token: legacyCookie.value,
-      type: 'session',
-      role: 'admin',
-      createdAt: Date.now(),
-    };
   }
 
   return NextResponse.json({ error: 'Authentication required' }, { status: 401 });

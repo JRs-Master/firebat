@@ -186,6 +186,10 @@ impl AuthManager {
         if token.is_empty() {
             return None;
         }
+        // setup 전 = 모든 세션 무효 (옛 자격증명 변경 / Vault 정리 후 옛 쿠키 우회 차단).
+        if !self.is_admin_setup() {
+            return None;
+        }
         let session = self.auth.get_session(token)?;
         if session.session_type != SessionType::Session {
             return None;
@@ -286,6 +290,10 @@ impl AuthManager {
 
     pub fn validate_token(&self, token: &str) -> Option<AuthSession> {
         if token.is_empty() {
+            return None;
+        }
+        // setup 전 = 모든 토큰 무효 (Session / API 모두). Vault 정리 / setup 시점 옛 쿠키 우회 차단.
+        if !self.is_admin_setup() {
             return None;
         }
         self.auth.get_session(token)
