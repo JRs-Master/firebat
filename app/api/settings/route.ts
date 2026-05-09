@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const core = getCore();
   const [
     routerEnabledRaw, timezone, aiModel, aiThinkingLevel,
-    aiAssistantModel, aiAssistantModels, userPrompt, lastModelByCategory,
+    aiAssistantModel, aiAssistantModels, aiModels, userPrompt, lastModelByCategory,
     imageModel, imageModels, imageDefaultSize, imageDefaultQuality,
     anthropicCacheEnabled, subAgentEnabled, uiLangRaw,
   ] = await Promise.all([
@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
     core.getAiThinkingLevel(),
     core.getAiAssistantModel(),
     core.getAvailableAiAssistantModels(),
+    core.getAvailableAiModels(),       // Step B (2026-05-10) — single source carousel
     core.getUserPrompt(),
     core.getLastModelByCategory(),
     core.getImageModel(),
@@ -40,6 +41,7 @@ export async function GET(req: NextRequest) {
     aiRouterEnabled: routerEnabledRaw === 'true' || routerEnabledRaw === '1',
     aiAssistantModel,
     aiAssistantModels,
+    aiModels,                            // Rust single source carousel
     userPrompt,
     lastModelByCategory,
     imageModel,

@@ -878,6 +878,18 @@ message AiAssistantModelListPb {
   repeated AiAssistantModelPb models = 1;
 }
 
+/** AI 모델 carousel — frontend cascade UI source. id / displayName / provider 박힘. */
+message AvailableAiModelPb {
+  string id = 1;
+  string display_name = 2;
+  string provider = 3;       // "Anthropic" | "Google" | "Vertex" | "OpenAI" | "CLI"
+  string format = 4;         // "anthropic-messages" | "openai-responses" | "gemini-native" | "vertex-gemini" | "cli-claude-code" | "cli-codex" | "cli-gemini"
+}
+
+message AvailableAiModelListPb {
+  repeated AvailableAiModelPb models = 1;
+}
+
 /** key → model name 맵을 JSON string 으로 직렬화 (동적 키 집합, typed map 불가) */
 message LastModelByCategoryPb {
   string raw_json = 1;
@@ -901,6 +913,9 @@ service SettingsService {
   rpc SetAiAssistantModel(StringRequest) returns (BoolRequest);
   rpc GetAiAssistantDefault(Empty) returns (StringRequest);
   rpc GetAvailableAiAssistantModels(Empty) returns (AiAssistantModelListPb);
+  /** AI 모델 carousel — frontend types.ts AI_MODELS 박힌 게 fallback,
+   *  Rust 박은 builtin_models() 박힌 게 single source. */
+  rpc GetAvailableAiModels(Empty) returns (AvailableAiModelListPb);
 }
 
 /** Network — Sandbox 안에서 안전한 외부 fetch */

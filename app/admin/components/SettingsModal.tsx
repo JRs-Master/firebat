@@ -85,7 +85,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   /** 새 카테고리 전환 시 호출 — 마지막 모델 복원, 없으면 첫 모델 fallback. */
   const restoreOrFirst = (newCategory: string, fallbackFirst: string | undefined) => {
     const remembered = lastModelByCategory[newCategory];
-    const isValid = remembered && GEMINI_MODELS.some(m => m.value === remembered) && categoryOf(remembered) === newCategory;
+    const isValid = remembered && aiModelsList.some(m => m.value === remembered) && categoryOf(remembered) === newCategory;
     if (isValid) onAiModelChange(remembered);
     else if (fallbackFirst) onAiModelChange(fallbackFirst);
   };
@@ -146,6 +146,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // Backend `getAvailableAiAssistantModels()` 응답이 truth source — 이 fallback list 는
   // 첫 fetch 전 / API 실패 시점만 사용. 단일 디폴트 (gemini-3.1-flash-lite-preview) 만 저장.
   const [aiAssistantModels, setAiAssistantModels] = useState<string[]>(['gemini-3.1-flash-lite-preview']);
+  // AI 모델 carousel — Rust single source (Step B 2026-05-10).
+  // initial = types.ts AI_MODELS 박힌 게 fallback. useEffect 박은 게 /api/settings 박은 게 fetch
+  // → data.aiModels 박은 게 setAiModelsList. Rust mismatch / 호출 fail 시 fallback 으로 폴백.
+  const [aiModelsList, setAiModelsList] = useState<typeof GEMINI_MODELS>(GEMINI_MODELS);
 
   // 사용자 커스텀 프롬프트 (어드민 채팅·모나코 에디터 공유)
   const [userPrompt, setUserPrompt] = useState('');
@@ -255,6 +259,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         if (typeof data.aiRouterEnabled === 'boolean') setAiRouterEnabled(data.aiRouterEnabled);
         if (data.aiAssistantModel) setAiAssistantModel(data.aiAssistantModel);
         if (Array.isArray(data.aiAssistantModels) && data.aiAssistantModels.length > 0) setAiAssistantModels(data.aiAssistantModels);
+        // Rust single source carousel — types.ts fallback override
+        if (Array.isArray(data.aiModels) && data.aiModels.length > 0) {
+          setAiModelsList(data.aiModels.map((m: { id: string; displayName?: string }) => ({
+            value: m.id,
+            label: m.displayName || m.id,
+          })));
+        }
         if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
         if (typeof data.anthropicCacheEnabled === 'boolean') setAnthropicCacheEnabled(data.anthropicCacheEnabled);
         if (typeof data.subAgentEnabled === 'boolean') setSubAgentEnabled(data.subAgentEnabled);
@@ -842,7 +853,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             };
             // 모델 필터: 실행모드(api/cli) + 모드(일반/Vertex) + 프로바이더
             // 모델 순서는 types.ts 원본 유지 (최신·고품질 순서, ABC 아님)
-            const modelsForProvider = GEMINI_MODELS.filter(m => {
+            const modelsForProvider = aiModelsList.filter(m => {
               const v = m.value;
               if (execMode === 'cli') return v.startsWith(cliProviderPrefix[cliProvider]);
               if (v.startsWith('cli-')) return false;
@@ -915,12 +926,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         if (aiModel.startsWith('cli-')) return;
                         const newCat = `cli-${cliProvider}`;
                         const prefix = cliProviderPrefix[cliProvider];
-                        const firstCli = GEMINI_MODELS.find(mm => mm.value.startsWith(prefix));
+                        const firstCli = aiModelsList.find(mm => mm.value.startsWith(prefix));
                         restoreOrFirst(newCat, firstCli?.value);
                       } else {
                         if (!aiModel.startsWith('cli-')) return;
                         const newCat = aiMode === 'vertex' ? 'vertex-google' : `api-${aiProvider}`;
-                        const firstApi = GEMINI_MODELS.find(mm => {
+                        const firstApi = aiModelsList.find(mm => {
                           const v = mm.value;
                           if (v.startsWith('cli-')) return false;
                           if (aiMode === 'vertex') return v.endsWith('-vertex');
@@ -952,7 +963,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                             : aiModel.startsWith('claude-'));
                       if (fits) return;
                       const newCat = m === 'vertex' ? 'vertex-google' : `api-${nextProvider}`;
-                      const nextModels = GEMINI_MODELS.filter(mm => {
+                      const nextModels = aiModelsList.filter(mm => {
                         const v = mm.value;
                         if (v.startsWith('cli-')) return false;
                         if (m === 'vertex') return v.endsWith('-vertex');
@@ -981,7 +992,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                             : aiModel.startsWith('claude-'));
                       if (fits) return;
                       const newCat = aiMode === 'vertex' ? 'vertex-google' : `api-${p}`;
-                      const nextModels = GEMINI_MODELS.filter(mm => {
+                      const nextModels = aiModelsList.filter(mm => {
                         const v = mm.value;
                         if (v.startsWith('cli-')) return false;
                         if (aiMode === 'vertex') return v.endsWith('-vertex');
@@ -1008,7 +1019,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       const prefix = cliProviderPrefix[p];
                       if (aiModel.startsWith(prefix)) return;
                       const newCat = `cli-${p}`;
-                      const first = GEMINI_MODELS.find(mm => mm.value.startsWith(prefix));
+                      const first = aiModelsList.find(mm => mm.value.startsWith(prefix));
                       restoreOrFirst(newCat, first?.value);
                     }}
                     options={(['claude', 'gemini', 'codex'] as CliProvider[]).map(p => ({ value: p, label: cliProviderLabels[p] }))}

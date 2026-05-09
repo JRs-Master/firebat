@@ -12,7 +12,8 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::ports::IVaultPort;
 use crate::proto::{
     settings_service_server::SettingsService, AiAssistantModelListPb, AiAssistantModelPb,
-    AiModelResponsePb, BoolRequest, Empty, JsonArgs, LastModelByCategoryPb, StringRequest,
+    AiModelResponsePb, AvailableAiModelListPb, AvailableAiModelPb, BoolRequest, Empty, JsonArgs,
+    LastModelByCategoryPb, StringRequest,
 };
 
 pub struct SettingsServiceImpl {
@@ -201,6 +202,24 @@ impl SettingsService for SettingsServiceImpl {
             })
             .collect::<Vec<_>>();
         Ok(Response::new(AiAssistantModelListPb { models }))
+    }
+
+    /// 전체 AI 모델 carousel — frontend cascade UI single source.
+    /// frontend types.ts AI_MODELS 박힌 게 fallback (Rust 호출 fail 시).
+    async fn get_available_ai_models(
+        &self,
+        _req: Request<Empty>,
+    ) -> Result<Response<AvailableAiModelListPb>, TonicStatus> {
+        let models = crate::llm::config::builtin_models()
+            .into_iter()
+            .map(|m| AvailableAiModelPb {
+                id: m.id,
+                display_name: m.display_name,
+                provider: m.provider,
+                format: m.format,
+            })
+            .collect::<Vec<_>>();
+        Ok(Response::new(AvailableAiModelListPb { models }))
     }
 }
 

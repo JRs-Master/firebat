@@ -67,8 +67,8 @@ async fn save_then_list_via_grpc() {
         }))
         .await
         .unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
-    assert!(parsed["slug"].as_str().is_some());
+    let inner = resp.into_inner();
+    assert!(!inner.slug.is_empty());
 
     let list = svc
         .list(Request::new(JsonArgs {
@@ -76,8 +76,8 @@ async fn save_then_list_via_grpc() {
         }))
         .await
         .unwrap();
-    let l: serde_json::Value = serde_json::from_str(&list.into_inner().raw_json).unwrap();
-    assert_eq!(l["total"], 1);
+    let l = list.into_inner();
+    assert_eq!(l.total, 1);
 }
 
 #[tokio::test]
