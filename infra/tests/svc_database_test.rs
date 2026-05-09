@@ -28,7 +28,7 @@ async fn select_returns_rows() {
         }))
         .await
         .unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert!(parsed.is_array());
     assert_eq!(parsed[0]["cnt"], 0);
 }

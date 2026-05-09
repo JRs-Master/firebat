@@ -29,7 +29,7 @@ fn make_service() -> (CapabilityServiceImpl, TempDir) {
 async fn list_returns_builtin_via_grpc() {
     let (service, _dir) = make_service();
     let resp = service.list(Request::new(Empty {})).await.unwrap();
-    let caps: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let caps: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert!(caps.get("web-scrape").is_some());
     assert!(caps.get("notification").is_some());
 }
@@ -54,6 +54,6 @@ async fn settings_roundtrip_via_grpc() {
         }))
         .await
         .unwrap();
-    let settings: CapabilitySettings = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let settings: CapabilitySettings = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert_eq!(settings.providers, vec!["a".to_string(), "b".to_string()]);
 }

@@ -31,7 +31,7 @@ async fn run_condition_only_pipeline_via_grpc() {
         }))
         .await
         .unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     // x 가 prev=null 에 없으므로 unmet → conditionMet=false 결과
     assert_eq!(parsed["success"], json!(true));
     assert_eq!(parsed["data"]["conditionMet"], json!(false));
@@ -51,7 +51,7 @@ async fn run_validate_failure_returns_error() {
         }))
         .await
         .unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert_eq!(parsed["success"], json!(false));
     assert!(parsed["error"].as_str().unwrap().contains("EXECUTE"));
 }

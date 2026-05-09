@@ -33,7 +33,7 @@ async fn login_success_via_grpc() {
         }))
         .await
         .unwrap();
-    let json: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert_eq!(json["ok"], true);
     assert!(json["session"]["token"].as_str().unwrap().starts_with("fbat_"));
 }
@@ -47,7 +47,7 @@ async fn login_wrong_password_returns_failed() {
         }))
         .await
         .unwrap();
-    let json: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert_eq!(json["ok"], false);
     assert_eq!(json["code"], "AUTH_FAILED");
 }
@@ -89,12 +89,12 @@ async fn api_token_grpc_lifecycle() {
         .validate_api_token(Request::new(StringRequest { value: token.clone() }))
         .await
         .unwrap();
-    let session: Option<AuthSession> = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let session: Option<AuthSession> = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert!(session.is_some());
 
     // info
     let resp = service.get_api_token_info(Request::new(Empty {})).await.unwrap();
-    let info: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let info: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert_eq!(info["exists"], true);
 
     // 폐기
@@ -106,6 +106,6 @@ async fn api_token_grpc_lifecycle() {
         .validate_api_token(Request::new(StringRequest { value: token }))
         .await
         .unwrap();
-    let session: Option<AuthSession> = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let session: Option<AuthSession> = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert!(session.is_none());
 }

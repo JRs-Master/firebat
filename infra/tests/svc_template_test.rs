@@ -45,7 +45,7 @@ async fn service_save_list_get_delete_roundtrip() {
 
     // List
     let resp = service.list(Request::new(Empty {})).await.unwrap();
-    let raw = resp.into_inner().raw;
+    let raw = resp.into_inner().raw_json;
     let entries: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["slug"], "weekly");
@@ -57,7 +57,7 @@ async fn service_save_list_get_delete_roundtrip() {
         }))
         .await
         .unwrap();
-    let got: Option<TemplateConfig> = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let got: Option<TemplateConfig> = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert!(got.is_some());
     assert_eq!(got.unwrap().name, "주간 시황");
 
@@ -73,7 +73,7 @@ async fn service_save_list_get_delete_roundtrip() {
     // Verify deleted
     let resp = service.list(Request::new(Empty {})).await.unwrap();
     let entries: Vec<serde_json::Value> =
-        serde_json::from_str(&resp.into_inner().raw).unwrap();
+        serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert_eq!(entries.len(), 0);
 }
 

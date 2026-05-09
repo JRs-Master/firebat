@@ -30,7 +30,7 @@ async fn save_then_search_via_grpc() {
         }))
         .await
         .unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert!(parsed["id"].as_i64().unwrap() > 0);
 
     let recent = svc
@@ -39,6 +39,6 @@ async fn save_then_search_via_grpc() {
         }))
         .await
         .unwrap();
-    let list: serde_json::Value = serde_json::from_str(&recent.into_inner().raw).unwrap();
+    let list: serde_json::Value = serde_json::from_str(&recent.into_inner().raw_json).unwrap();
     assert_eq!(list.as_array().unwrap().len(), 1);
 }

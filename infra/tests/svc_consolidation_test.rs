@@ -41,7 +41,7 @@ async fn consolidate_then_stats_via_grpc() {
         }))
         .await
         .unwrap();
-    let outcome: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let outcome: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert_eq!(outcome["saved"]["entities"].as_array().unwrap().len(), 1);
     assert_eq!(outcome["saved"]["facts"].as_array().unwrap().len(), 1);
 
@@ -49,7 +49,7 @@ async fn consolidate_then_stats_via_grpc() {
         .get_memory_stats(Request::new(Empty {}))
         .await
         .unwrap();
-    let stats: serde_json::Value = serde_json::from_str(&stats_resp.into_inner().raw).unwrap();
+    let stats: serde_json::Value = serde_json::from_str(&stats_resp.into_inner().raw_json).unwrap();
     assert_eq!(stats["entities"], 1);
     assert_eq!(stats["facts"], 1);
 }

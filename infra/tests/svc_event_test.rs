@@ -33,7 +33,7 @@ async fn list_audit_log_via_grpc() {
         .list_audit_log(Request::new(NumberRequest { value: 10 }))
         .await
         .unwrap();
-    let log: Vec<serde_json::Value> = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let log: Vec<serde_json::Value> = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert_eq!(log.len(), 3);
     assert_eq!(log[2]["event"]["type"], "z");
 }

@@ -44,7 +44,7 @@ async fn schedule_then_list_via_grpc() {
         .await
         .unwrap()
         .into_inner();
-    let parsed: serde_json::Value = serde_json::from_str(&list.raw).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&list.raw_json).unwrap();
     assert_eq!(parsed.as_array().unwrap().len(), 1);
 }
 

@@ -67,7 +67,7 @@ async fn save_then_list_via_grpc() {
         }))
         .await
         .unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert!(parsed["slug"].as_str().is_some());
 
     let list = svc
@@ -76,7 +76,7 @@ async fn save_then_list_via_grpc() {
         }))
         .await
         .unwrap();
-    let l: serde_json::Value = serde_json::from_str(&list.into_inner().raw).unwrap();
+    let l: serde_json::Value = serde_json::from_str(&list.into_inner().raw_json).unwrap();
     assert_eq!(l["total"], 1);
 }
 

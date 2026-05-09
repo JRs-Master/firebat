@@ -42,7 +42,7 @@ async fn add_then_list_via_grpc() {
         .await
         .unwrap()
         .into_inner();
-    let parsed: Vec<McpServerConfig> = serde_json::from_str(&list.raw).unwrap();
+    let parsed: Vec<McpServerConfig> = serde_json::from_str(&list.raw_json).unwrap();
     assert_eq!(parsed.len(), 1);
     assert_eq!(parsed[0].name, "g1");
     assert_eq!(parsed[0].transport, McpTransport::Stdio);

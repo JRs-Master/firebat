@@ -31,7 +31,7 @@ async fn save_then_read_roundtrip() {
         }))
         .await
         .unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert_eq!(parsed["content"], "developer");
 }
 
@@ -58,7 +58,7 @@ async fn list_excludes_memory_md_and_non_md() {
     std::fs::write(mem_dir.join("readme.txt"), "z").unwrap(); // 비-md 제외
 
     let resp = svc.list_files(Request::new(Empty {})).await.unwrap();
-    let arr: Vec<String> = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let arr: Vec<String> = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert_eq!(arr.len(), 2);
     assert!(arr.contains(&"user_role.md".to_string()));
     assert!(arr.contains(&"feedback.md".to_string()));

@@ -30,7 +30,7 @@ async fn write_then_read_via_grpc() {
         }))
         .await
         .unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&read.into_inner().raw).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&read.into_inner().raw_json).unwrap();
     assert_eq!(parsed["content"], "hi");
 }
 
@@ -53,7 +53,7 @@ async fn get_file_tree_returns_recursive_structure() {
         }))
         .await
         .unwrap();
-    let tree: serde_json::Value = serde_json::from_str(&resp.into_inner().raw).unwrap();
+    let tree: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     // 옛 TS get_file_tree 결과 형식: [{name, path, isDirectory, children}]
     assert_eq!(tree[0]["name"], "root");
     assert_eq!(tree[0]["isDirectory"], true);
