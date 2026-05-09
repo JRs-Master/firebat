@@ -749,17 +749,24 @@ service CostService {
 // ──────────────────────────────────────────────────────────────────────────
 // 17. ToolService — ToolManager
 // ──────────────────────────────────────────────────────────────────────────
+
+message ToolStatsPb {
+  int64 total = 1;
+  // by_source: name → count (JSON 직렬화 — map 값 다양)
+  string by_source_json = 2;
+}
+
 service ToolService {
   rpc Register(JsonArgs) returns (Status);
   rpc RegisterMany(JsonArgs) returns (Status);
   rpc Unregister(StringRequest) returns (BoolRequest);
-  rpc GetDefinition(StringRequest) returns (JsonValue);
-  rpc List(JsonArgs) returns (JsonValue);
-  rpc Execute(JsonArgs) returns (JsonValue);
-  rpc BuildAiDefinitions(JsonArgs) returns (JsonValue);
-  rpc BuildMcpDescriptions(JsonArgs) returns (JsonValue);
-  rpc GetStats(Empty) returns (JsonValue);
-  rpc GetActivePlanState(StringRequest) returns (JsonValue);
+  rpc GetDefinition(StringRequest) returns (RawJsonPb);
+  rpc List(JsonArgs) returns (RawJsonPb);
+  rpc Execute(JsonArgs) returns (RawJsonPb);
+  rpc BuildAiDefinitions(JsonArgs) returns (RawJsonPb);
+  rpc BuildMcpDescriptions(JsonArgs) returns (RawJsonPb);
+  rpc GetStats(Empty) returns (ToolStatsPb);
+  rpc GetActivePlanState(StringRequest) returns (RawJsonPb);
   rpc SetActivePlanState(JsonArgs) returns (Status);
   rpc ClearActivePlanState(StringRequest) returns (Status);
 }

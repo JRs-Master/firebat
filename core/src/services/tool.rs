@@ -1,11 +1,16 @@
 //! gRPC ToolService impl — ToolManager wrapping.
+//!
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
+//! ToolDefinition.parameters 가 opaque JSON schema 이므로 list/definition 계열은 RawJsonPb.
+//! GetStats 만 ToolStatsPb 으로 typed.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::tool::{ToolDefinition, ToolListFilter, ToolManager};
 use crate::proto::{
-    tool_service_server::ToolService, BoolRequest, Empty, JsonArgs, JsonValue, Status, StringRequest,
+    tool_service_server::ToolService, BoolRequest, Empty, JsonArgs, RawJsonPb, Status,
+    StringRequest, ToolStatsPb,
 };
 
 pub struct ToolServiceImpl {
@@ -16,12 +21,6 @@ impl ToolServiceImpl {
     pub fn new(manager: Arc<ToolManager>) -> Self {
         Self { manager }
     }
-}
-
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
 }
 
 fn ok_status() -> Response<Status> {
@@ -38,6 +37,12 @@ fn err_status(msg: impl Into<String>) -> Response<Status> {
         error: msg.into(),
         error_code: String::new(),
     })
+}
+
+fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
+    RawJsonPb {
+        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
+    }
 }
 
 #[tonic::async_trait]
@@ -78,23 +83,26 @@ impl ToolService for ToolServiceImpl {
     async fn get_definition(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let name = req.into_inner().value;
         let def = self.manager.get_definition(&name);
-        json_response(&def)
+        Ok(Response::new(raw_json(&def)))
     }
 
-    async fn list(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn list(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         let filter: ToolListFilter = serde_json::from_str(&raw).unwrap_or_default();
         let tools = self.manager.list(&filter);
-        json_response(&tools)
+        Ok(Response::new(raw_json(&tools)))
     }
 
-    async fn execute(&self, _req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn execute(
+        &self,
+        _req: Request<JsonArgs>,
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         // Phase B: 도구 dispatch 는 AiManager 변환 시 통합.
-        Ok(Response::new(JsonValue {
-            raw: serde_json::json!({
+        Ok(Response::new(RawJsonPb {
+            raw_json: serde_json::json!({
                 "ok": false,
                 "error": "tool execute — Phase B AiManager 변환 시 통합"
             })
@@ -105,36 +113,40 @@ impl ToolService for ToolServiceImpl {
     async fn build_ai_definitions(
         &self,
         req: Request<JsonArgs>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B: 단순히 list 와 동일 결과 반환 (AI 도구 schema). AiManager 통합 시 확장.
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         let filter: ToolListFilter = serde_json::from_str(&raw).unwrap_or_default();
         let tools = self.manager.list(&filter);
-        json_response(&tools)
+        Ok(Response::new(raw_json(&tools)))
     }
 
     async fn build_mcp_descriptions(
         &self,
         req: Request<JsonArgs>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         let filter: ToolListFilter = serde_json::from_str(&raw).unwrap_or_default();
         let tools = self.manager.list(&filter);
-        json_response(&tools)
+        Ok(Response::new(raw_json(&tools)))
     }
 
-    async fn get_stats(&self, _req: Request<Empty>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn get_stats(&self, _req: Request<Empty>) -> Result<Response<ToolStatsPb>, TonicStatus> {
         let stats = self.manager.stats();
-        json_response(&stats)
+        let by_source_json =
+            serde_json::to_string(&stats.by_source).unwrap_or_else(|_| "{}".to_string());
+        Ok(Response::new(ToolStatsPb {
+            total: stats.total as i64,
+            by_source_json,
+        }))
     }
 
     async fn get_active_plan_state(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let conv_id = req.into_inner().value;
         let state = self.manager.get_active_plan(&conv_id);
-        json_response(&state)
+        Ok(Response::new(raw_json(&state)))
     }
 
     async fn set_active_plan_state(
@@ -165,3 +177,5 @@ impl ToolService for ToolServiceImpl {
         Ok(ok_status())
     }
 }
+
+// Tests 이관 — `infra/tests/svc_tool_test.rs` (integration test).
