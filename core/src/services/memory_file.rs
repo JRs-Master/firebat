@@ -4,6 +4,10 @@
 //! 사용자 / feedback / project / reference 4 type 메모리.
 //!
 //! Phase B-17.5c minimum: 5 RPC (GetIndex / ReadFile / ListFiles / SaveFile / DeleteFile).
+//!
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + RawJsonPb 사용.
+//! ReadFile / ListFiles → RawJsonPb (동적 내용 / 파일명 배열).
+//! GetIndex → StringRequest (기존 유지 — 단순 문자열 반환).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -11,7 +15,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::ports::IStoragePort;
 use crate::proto::{
-    memory_service_server::MemoryService, Empty, JsonArgs, JsonValue, Status, StringRequest,
+    memory_service_server::MemoryService, Empty, JsonArgs, RawJsonPb, Status, StringRequest,
 };
 
 pub struct MemoryServiceImpl {
@@ -43,10 +47,10 @@ impl MemoryServiceImpl {
     }
 }
 
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
+fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
+    RawJsonPb {
+        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
+    }
 }
 
 fn ok_status() -> Response<Status> {
@@ -84,13 +88,13 @@ impl MemoryService for MemoryServiceImpl {
     async fn read_file(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let name = req.into_inner().value;
         let path = self
             .resolve_path(&name)
             .map_err(|e| TonicStatus::invalid_argument(e))?;
         match self.storage.read(&path).await {
-            Ok(content) => json_response(&serde_json::json!({"name": name, "content": content})),
+            Ok(content) => Ok(Response::new(raw_json(&serde_json::json!({"name": name, "content": content})))),
             Err(e) => Err(TonicStatus::not_found(e)),
         }
     }
@@ -98,7 +102,7 @@ impl MemoryService for MemoryServiceImpl {
     async fn list_files(
         &self,
         _req: Request<Empty>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let dir = self.memory_dir.to_string_lossy().to_string();
         let entries = self
             .storage
@@ -111,7 +115,7 @@ impl MemoryService for MemoryServiceImpl {
             .filter(|e| !e.is_directory && e.name.ends_with(".md") && e.name != "MEMORY.md")
             .map(|e| e.name)
             .collect();
-        json_response(&files)
+        Ok(Response::new(raw_json(&files)))
     }
 
     async fn save_file(

@@ -2,6 +2,9 @@
 //!
 //! Phase B-17.5 minimum: ReadFile / WriteFile / DeleteFile / ListDir / ListFiles 활성.
 //! Phase B-17+ 후속: ReadFileBinary (base64) / GetFileTree (재귀 트리) / GlobFiles (glob crate)
+//!
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + RawJsonPb 사용.
+//! ReadFile / ReadFileBinary / ListDir / ListFiles / GetFileTree / GlobFiles → RawJsonPb.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -9,7 +12,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::storage::StorageManager;
 use crate::ports::IStoragePort;
 use crate::proto::{
-    storage_service_server::StorageService, JsonArgs, JsonValue, Status, StringRequest,
+    storage_service_server::StorageService, JsonArgs, RawJsonPb, Status, StringRequest,
 };
 
 pub struct StorageServiceImpl {
@@ -26,10 +29,10 @@ impl StorageServiceImpl {
     }
 }
 
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
+fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
+    RawJsonPb {
+        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
+    }
 }
 
 fn ok_status() -> Response<Status> {
@@ -53,10 +56,10 @@ impl StorageService for StorageServiceImpl {
     async fn read_file(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let path = req.into_inner().value;
         match self.storage.read(&path).await {
-            Ok(content) => json_response(&serde_json::json!({"path": path, "content": content})),
+            Ok(content) => Ok(Response::new(raw_json(&serde_json::json!({"path": path, "content": content})))),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -64,11 +67,11 @@ impl StorageService for StorageServiceImpl {
     async fn read_file_binary(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         // 옛 TS Core.readFileBinary → StorageManager.read_binary (BIBLE Core Facade 준수).
         let path = req.into_inner().value;
         match self.manager.read_binary(&path).await {
-            Ok(result) => json_response(&result),
+            Ok(result) => Ok(Response::new(raw_json(&result))),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -107,7 +110,7 @@ impl StorageService for StorageServiceImpl {
     async fn list_dir(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let path = req.into_inner().value;
         match self.storage.list_dir(&path).await {
             Ok(entries) => {
@@ -117,7 +120,7 @@ impl StorageService for StorageServiceImpl {
                         serde_json::json!({"name": e.name, "isDirectory": e.is_directory})
                     })
                     .collect();
-                json_response(&json)
+                Ok(Response::new(raw_json(&json)))
             }
             Err(e) => Err(TonicStatus::internal(e)),
         }
@@ -126,7 +129,7 @@ impl StorageService for StorageServiceImpl {
     async fn list_files(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         // 디렉토리 안 파일만 (디렉토리 제외) 필터.
         let path = req.into_inner().value;
         match self.storage.list_dir(&path).await {
@@ -136,7 +139,7 @@ impl StorageService for StorageServiceImpl {
                     .filter(|e| !e.is_directory)
                     .map(|e| e.name)
                     .collect();
-                json_response(&files)
+                Ok(Response::new(raw_json(&files)))
             }
             Err(e) => Err(TonicStatus::internal(e)),
         }
@@ -145,19 +148,19 @@ impl StorageService for StorageServiceImpl {
     async fn get_file_tree(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         // 옛 TS Core.getFileTree → StorageManager.getFileTree 등가 (BIBLE Core Facade 준수).
         // root path 받아 재귀 트리 빌드. 빈 string 일 때 default ".".
         let raw_root = req.into_inner().value;
         let root = if raw_root.is_empty() { ".".to_string() } else { raw_root };
         let tree = self.manager.get_file_tree(&root).await;
-        json_response(&tree)
+        Ok(Response::new(raw_json(&tree)))
     }
 
     async fn glob_files(
         &self,
         req: Request<JsonArgs>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         // 옛 TS Core.globFiles → StorageManager.glob 등가 (BIBLE Core Facade 준수).
         // 인자: { pattern: string, limit?: number }
         let raw = req.into_inner().raw;
@@ -172,7 +175,7 @@ impl StorageService for StorageServiceImpl {
             Err(e) => return Err(TonicStatus::invalid_argument(format!("glob args: {e}"))),
         };
         match self.manager.glob(&args.pattern, args.limit).await {
-            Ok(matches) => json_response(&matches),
+            Ok(matches) => Ok(Response::new(raw_json(&matches))),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
