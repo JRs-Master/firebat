@@ -1,0 +1,9 @@
+version: v2
+plugins:
+  - local: protoc-gen-es
+    out: lib/proto-gen
+    opt:
+      - target=ts
+      - import_extension=js
+inputs:
+  - directory: proto

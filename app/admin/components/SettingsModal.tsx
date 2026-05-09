@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign, Brain, Plus } from 'lucide-react';
 import { GEMINI_MODELS, McpServer, getThinkingKind, filterThinkingLevels } from '../types';
 import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
+import { ErrorBoundary } from './ErrorBoundary';
 import { useSetting, writeSetting } from '../hooks/settings-manager';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
@@ -22,7 +23,17 @@ type Props = {
   initialTab?: 'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'cost' | 'memory'; // 'cost' / 'memory' 는 호환 — 자동으로 AI 탭 + sub-tab 으로 변환
 };
 
-export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
+/** SettingsModal — 자체 ErrorBoundary 박혀 modal 안 throw 가 admin tree 통째로 reset 박지 않게 격리.
+ *  옛: cost sub-tab throw → admin/error.tsx 박혀 사이드바 사라짐. 새: modal 안 fallback UI 만 표시 + 사이드바 유지. */
+export function SettingsModal(props: Props) {
+  return (
+    <ErrorBoundary>
+      <SettingsModalInner {...props} />
+    </ErrorBoundary>
+  );
+}
+
+function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
   const t = useTranslations();
   const { lang: uiLang, setLang: setUiLang } = useLang();
   // 비용·메모리는 AI 탭 하위 sub-tab 으로 통합 — initialTab='cost'/'memory' 면 자동으로 AI 탭 + sub-tab 으로 변환.

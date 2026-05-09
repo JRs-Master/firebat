@@ -1,0 +1,3 @@
+# protoc-gen-es 가 생성하는 typed message TS 파일 위치.
+# 사용자 deploy 시 `npm run gen:proto` 실행 → firebat_pb.ts 자동 생성.
+# 생성 결과는 git 에 commit (다른 개발자가 빌드 안 해도 사용 가능).

@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "mcp": "npx tsx mcp/stdio.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "gen:proto": "buf generate"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.14.3",
@@ -34,6 +35,9 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@bufbuild/buf": "^1.49.0",
+    "@bufbuild/protobuf": "^2.6.0",
+    "@bufbuild/protoc-gen-es": "^2.6.0",
     "@tailwindcss/postcss": "^4.2.4",
     "@types/node": "^25.6.0",
     "@types/node-cron": "^3.0.11",
