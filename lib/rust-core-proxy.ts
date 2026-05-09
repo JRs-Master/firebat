@@ -238,25 +238,42 @@ const WRAP_METHODS = new Set([
   'getJob', 'getJobStats',
 ]);
 
+/** Proto wrap envelope 자동 unwrap — BoolRequest / StringRequest / NumberRequest 가
+ *  `{value: T}` 단일 필드 응답. frontend 가 raw T 박힘 받게 자동 변환. autoWrap 보다
+ *  먼저 적용 (envelope unwrap → 그 후 옛 TS success/data wrap 결정).
+ *  단일 필드 'value' 객체 만 unwrap — `{success, data}` 같은 multi-key 박힌 건 그대로. */
+function autoUnwrapProtoEnvelope(result: unknown): unknown {
+  if (result === null || result === undefined) return result;
+  if (typeof result !== 'object') return result;
+  const r = result as Record<string, unknown>;
+  const keys = Object.keys(r);
+  if (keys.length === 1 && keys[0] === 'value') {
+    return r.value;
+  }
+  return result;
+}
+
 /** Rust 응답 자동 wrap — 옛 TS `{success, data, error}` 형식 호환. */
 function autoWrap(method: string, result: unknown): unknown {
+  // proto envelope unwrap 먼저 — BoolRequest/StringRequest/NumberRequest 의 `{value: T}` → T
+  const unwrapped = autoUnwrapProtoEnvelope(result);
   // login — Rust LoginOutcome → 옛 TS 형식 (성공 = session / 실패 = null / 잠금 = {locked, retryAfterSec})
-  if (method === 'login') return unwrapLogin(result);
-  if (!WRAP_METHODS.has(method)) return result;
+  if (method === 'login') return unwrapLogin(unwrapped);
+  if (!WRAP_METHODS.has(method)) return unwrapped;
   // 이미 success 설정된 응답 (Rust 측에서 wrap 한 경우) → 그대로
   if (
-    result !== null &&
-    typeof result === 'object' &&
-    'success' in (result as Record<string, unknown>)
+    unwrapped !== null &&
+    typeof unwrapped === 'object' &&
+    'success' in (unwrapped as Record<string, unknown>)
   ) {
-    return result;
+    return unwrapped;
   }
   // null / undefined → not found
-  if (result === null || result === undefined) {
+  if (unwrapped === null || unwrapped === undefined) {
     return { success: false, error: 'Not found' };
   }
   // raw value → wrap
-  return { success: true, data: result };
+  return { success: true, data: unwrapped };
 }
 
 /** Rust login 응답 → 옛 TS 형식.

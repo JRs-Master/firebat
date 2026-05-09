@@ -18,31 +18,17 @@ import { isHttpsRequest } from '../../../../lib/cookie-helpers';
 
 export async function GET(_req: NextRequest) {
   const core = getCore();
-  // Rust BoolRequest proto 응답 = `{value: bool}` 형태. 단순 boolean 으로 unwrap.
-  // 옛 코드 (`isAdminSetup` 직접 응답) 시 frontend 가 object 자체를 truthy 판정해
-  // SetupWizard 영영 노출 안 되던 버그 fix (2026-05-10).
-  const raw = await core.isAdminSetup();
-  const isAdminSetup =
-    typeof raw === 'boolean'
-      ? raw
-      : (raw && typeof raw === 'object' && 'value' in raw ? Boolean((raw as { value: unknown }).value) : false);
-  return NextResponse.json({ isAdminSetup });
+  // RustCoreProxy 의 autoUnwrapProtoEnvelope 박혀 BoolRequest `{value: bool}` 자동 unwrap.
+  const isAdminSetup = await core.isAdminSetup();
+  return NextResponse.json({ isAdminSetup: Boolean(isAdminSetup) });
 }
 
 export async function POST(req: NextRequest) {
   const core = getCore();
 
-  // 이미 설정됨 = 재실행 거부 (변경은 어드민 설정 모달 경유)
-  // BoolRequest proto unwrap — `{value: bool}` 객체. raw `if (object)` 는 항상 truthy
-  // → 옛 버그: vault 비어있어도 항상 setup 거부. GET handler 와 동일 패턴 적용.
-  const setupRaw = await core.isAdminSetup();
-  const setupDone =
-    typeof setupRaw === 'boolean'
-      ? setupRaw
-      : (setupRaw && typeof setupRaw === 'object' && 'value' in setupRaw ? Boolean((setupRaw as { value: unknown }).value) : false);
-  if (setupDone) {
-    // 메시지는 frontend i18n (t('setup.err_failed')) 에 위임 — ko/en 자동 분기.
-    // 정상 흐름이면 이 분기 자체 트리거 X (frontend GET 의 unwrap 으로 위자드 차단됨).
+  // 이미 설정됨 = 재실행 거부 (변경은 어드민 설정 모달 경유).
+  // RustCoreProxy autoUnwrap 박혀 isAdminSetup 직접 boolean 응답.
+  if (await core.isAdminSetup()) {
     return NextResponse.json({ success: false }, { status: 403 });
   }
 

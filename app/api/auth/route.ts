@@ -78,16 +78,12 @@ export async function PATCH(req: NextRequest) {
   const { currentPassword, newId, newPassword } = await req.json();
   const core = getCore();
 
-  // argon2 hash 검증 — Rust core 가 hash 저장/검증 책임. raw plain text 비교 X.
-  // (옛 broken: timingSafeStringEqual(plain, hash) → 항상 mismatch → 비번 변경 자체 불가)
+  // argon2 hash 검증 — Rust core.verifyAdminPassword 가 hash vs plain 비교.
+  // RustCoreProxy autoUnwrap 박혀 BoolRequest 자동 boolean 박힘.
   if (!currentPassword) {
     return NextResponse.json({ success: false, error: '현재 비밀번호가 틀렸습니다.' }, { status: 401 });
   }
-  const verifyResp = await core.verifyAdminPassword(currentPassword);
-  // BoolRequest proto unwrap — `{value: bool}` 또는 단순 boolean 둘 다 수용
-  const isValid = typeof verifyResp === 'boolean'
-    ? verifyResp
-    : (verifyResp && typeof verifyResp === 'object' && 'value' in verifyResp ? Boolean((verifyResp as { value: unknown }).value) : false);
+  const isValid = Boolean(await core.verifyAdminPassword(currentPassword));
   if (!isValid) {
     return NextResponse.json({ success: false, error: '현재 비밀번호가 틀렸습니다.' }, { status: 401 });
   }

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../lib/auth-guard';
-import { unwrapString, unwrapBool } from '../../../lib/proto-unwrap';
 
 /** GET /api/settings — 시스템 설정 조회 */
 export async function GET(req: NextRequest) {
@@ -30,33 +29,25 @@ export async function GET(req: NextRequest) {
     core.isSubAgentEnabled(),
     core.getGeminiKey('system:ui-lang'),
   ]);
-  // proto wrap envelope unwrap — `{value: 'Asia/Seoul'}` → `'Asia/Seoul'`
-  // (옛 buggy: timezone 객체 그대로 응답 시 frontend select 가 string 옵션과 매칭 못 해
-  //  default 첫 옵션 (Pacific/Midway) 표시. aiThinkingLevel / userPrompt 등도 동일 패턴)
-  const tz = unwrapString(timezone, 'Asia/Seoul');
-  const thinking = unwrapString(aiThinkingLevel, 'medium');
-  const prompt = unwrapString(userPrompt, '');
-  const routerEnabledStr = unwrapString(routerEnabledRaw, '');
-  const cacheEnabled = unwrapBool(anthropicCacheEnabled, false);
-  const subAgent = unwrapBool(subAgentEnabled, false);
-  const uiLang = unwrapString(uiLangRaw, '');
-  const interfaceLang = uiLang === 'en' ? 'en' : 'ko';
+  // RustCoreProxy 의 autoUnwrapProtoEnvelope 박혀 BoolRequest/StringRequest 자동 unwrap.
+  // frontend 가 raw boolean / string 박힘 받음.
+  const interfaceLang = uiLangRaw === 'en' ? 'en' : 'ko';
   return NextResponse.json({
     success: true,
-    timezone: tz,
+    timezone,
     aiModel,
-    aiThinkingLevel: thinking,
-    aiRouterEnabled: routerEnabledStr === 'true' || routerEnabledStr === '1',
+    aiThinkingLevel,
+    aiRouterEnabled: routerEnabledRaw === 'true' || routerEnabledRaw === '1',
     aiAssistantModel,
     aiAssistantModels,
-    userPrompt: prompt,
+    userPrompt,
     lastModelByCategory,
     imageModel,
     imageModels,
     imageDefaultSize,
     imageDefaultQuality,
-    anthropicCacheEnabled: cacheEnabled,
-    subAgentEnabled: subAgent,
+    anthropicCacheEnabled,
+    subAgentEnabled,
     interfaceLang,
   });
 }
