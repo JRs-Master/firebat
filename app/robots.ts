@@ -3,6 +3,9 @@ import { headers } from 'next/headers';
 import { getCore } from '../lib/singleton';
 import { BASE_URL } from '../lib/base-url';
 
+// Rust Core gRPC 호출하므로 prerender 우회 — sitemap/feed 와 같은 패턴.
+export const dynamic = 'force-dynamic';
+
 /** 동적 robots.txt — SEO 모듈 설정에서 내용 로드.
  *  Next.js metadata route 는 req 객체 없지만 headers() API 로 요청 host 접근 가능. */
 export default async function robots(): Promise<MetadataRoute.Robots> {

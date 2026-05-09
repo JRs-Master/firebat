@@ -10,8 +10,6 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "mcp": "npx tsx mcp/stdio.ts",
-    "test": "vitest run",
-    "test:watch": "vitest",
     "gen:proto": "buf generate"
   },
   "dependencies": {
@@ -46,8 +44,7 @@
     "autoprefixer": "^10.5.0",
     "postcss": "^8.5.12",
     "tailwindcss": "^4.2.2",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.5"
+    "typescript": "^6.0.3"
   },
   "overrides": {
     "dompurify": "^3.3.4",

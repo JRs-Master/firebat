@@ -232,7 +232,7 @@ Entity / Episodic 어댑터는 `database.db` (raw SQLite Database) + Embedder + 
 1. **직접 I/O 금지**: `app/api/`에서 `fs`, `child_process`, `fetch`, LLM SDK를 직접 호출하지 않는다.
 2. **Core Singleton 경유**: `getCore()`를 통해 싱글톤 Core를 획득하고, Core 메서드를 호출한다.
 3. **예외**: 인증(`/api/auth`)은 부트스트랩 영역으로 Core 경유 대상에서 제외.
-4. **인증 자격증명**: `FIREBAT_ADMIN_ID` / `FIREBAT_ADMIN_PASSWORD` 환경변수 (미설정 시 `admin`/`admin` 폴백).
+4. **인증 자격증명**: 첫 부팅 시 SetupWizard (`/api/auth/setup`) 가 admin id/password 입력 → Vault 저장. 이후 변경은 `/admin` 설정 모달 경유.
 
 ---
 

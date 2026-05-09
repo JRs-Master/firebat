@@ -364,22 +364,14 @@ impl AuthManager {
     //  관리자 자격증명
     // ══════════════════════════════════════════════════════════════════════════
 
-    /// (id, password) — Vault 저장값 → env → 빈 string 순. 빈 string = setup 전.
+    /// (id, password) — Vault 저장값. 빈 string = setup 전.
     pub fn get_admin_credentials(&self) -> (String, String) {
-        let id = self
-            .vault
-            .get_secret(VK_ADMIN_ID)
-            .or_else(|| std::env::var("FIREBAT_ADMIN_ID").ok())
-            .unwrap_or_default();
-        let password = self
-            .vault
-            .get_secret(VK_ADMIN_PASSWORD)
-            .or_else(|| std::env::var("FIREBAT_ADMIN_PASSWORD").ok())
-            .unwrap_or_default();
+        let id = self.vault.get_secret(VK_ADMIN_ID).unwrap_or_default();
+        let password = self.vault.get_secret(VK_ADMIN_PASSWORD).unwrap_or_default();
         (id, password)
     }
 
-    /// 첫 부팅 setup 완료 여부 — Vault / env 에 admin 자격증명 설정되어 있나.
+    /// 첫 부팅 setup 완료 여부 — Vault 에 admin 자격증명 설정되어 있나.
     /// frontend `/login` 페이지가 호출 → false 면 setup wizard 노출.
     pub fn is_admin_setup(&self) -> bool {
         let (id, password) = self.get_admin_credentials();

@@ -112,6 +112,10 @@ export async function invokeCore<T = unknown>(method: string, args?: unknown): P
   if (response && typeof response.raw === 'string') {
     return JSON.parse(response.raw) as T;
   }
+  // RawJsonPb.raw_json (proto-loader keepCase:false → rawJson) → parse
+  if (response && typeof response.rawJson === 'string') {
+    return JSON.parse(response.rawJson) as T;
+  }
   return response as T;
 }
 
