@@ -6,8 +6,8 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
-use crate::capabilities::{CapabilityProvider, CapabilitySettings, CapabilitySummary};
-use crate::managers::capability::CapabilityManager;
+use crate::capabilities::{CapabilityProvider, CapabilitySettings};
+use crate::managers::capability::{CapabilityManager, CapabilitySummary};
 use crate::proto::{
     capability_service_server::CapabilityService, CapabilityProviderListPb, CapabilityProviderPb,
     CapabilitySettingsPb, CapabilitySummaryListPb, CapabilitySummaryPb, Empty, JsonArgs,

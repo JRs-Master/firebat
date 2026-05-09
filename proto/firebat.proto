@@ -788,7 +788,7 @@ message EntitySaveResultPb {
 message FactSaveResultPb {
   int64 id = 1;
   bool skipped = 2;
-  double similarity = 3;
+  optional double similarity = 3;
 }
 
 service EntityService {
