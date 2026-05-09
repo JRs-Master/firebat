@@ -145,39 +145,91 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
  *  - array → `{success: true, data: <array>}`
  *  - 이미 'success' 박힌 object → 그대로 (Rust 측에서 wrap 한 응답)
  */
-// autoWrap 박을 메서드 — 옛 TS Core 가 진짜 `{success, data, error}` 형식 반환했던 거만.
-// list / scan / find 같이 raw array 반환 메서드는 WRAP 박지 마라 — frontend 가 `.flatMap` /
-// `.map` / `.forEach` 박는 곳에서 wrap 객체로 박히면 'H is not iterable' crash.
+// autoWrap 박을 메서드 — API route 가 `res.success / res.data` 가정 박은 거.
+// 옛 TS Core 의 거의 모든 메서드 wrap 박았음. raw 가정 박은 거 (API route 가 그대로 통과)
+// 만 박지 마라.
 const WRAP_METHODS = new Set([
-  // 옛 TS Core 가 명시 wrap 박은 메서드만:
-  // - savePage / deletePage / renamePage 같이 mutation 류 (성공 / 실패 명시)
-  'savePage', 'deletePage', 'renamePage', 'verifyPagePassword', 'setPageVisibility',
-  'saveProject', 'deleteProject', 'renameProject', 'verifyProjectPassword', 'setProjectVisibility',
-  'saveConversation', 'deleteConversation',
-  'saveEntity', 'updateEntity', 'deleteEntity',
-  'saveEntityFact', 'updateEntityFact', 'deleteEntityFact',
-  'saveEvent', 'updateEvent', 'deleteEvent',
-  'saveTemplate', 'deleteTemplate',
-  'saveMemoryFile', 'deleteMemoryFile',
-  'saveMcpServer', 'addMcpServer', 'removeMcpServer',
-  'saveUpload', 'removeMedia', 'regenerateImage',
-  'generateImage', 'startImageGeneration',
-  'runModule', 'sandboxExecute', 'runTask',
-  'codeAssist',
-  'scheduleTask', 'scheduleCronJob', 'cancelCronJob', 'updateCronJob', 'runCronJobNow',
-  'consumeCronNotifications', 'getCronLogs',
+  // PageService — 거의 모든 wrap (savePage / deletePage / getPage / listPages / searchPages)
+  'savePage', 'deletePage', 'renamePage', 'getPage', 'listPages', 'searchPages',
+  'verifyPagePassword', 'setPageVisibility', 'getPageRedirect',
+  'listStaticPages', 'findMediaUsage', 'findRelatedPages', 'listAllTags',
+
+  // ProjectService — wrap (mutation) + raw (scanProjects / getProjectVisibility / getProjectConfig 일부 raw)
+  'saveProject', 'deleteProject', 'renameProject',
+  'verifyProjectPassword', 'setProjectVisibility',
+
+  // ConversationService — wrap (모두)
+  'listConversations', 'getConversation', 'saveConversation', 'deleteConversation',
+  'searchHistory', 'searchConversationHistory', 'isConversationDeleted',
+  'getCliSession', 'createShare', 'getShare',
+
+  // EntityService — wrap (모두)
+  'saveEntity', 'updateEntity', 'deleteEntity', 'getEntity',
+  'findEntityByName', 'searchEntities',
+  'saveEntityFact', 'updateEntityFact', 'deleteEntityFact', 'getEntityFact',
+  'getEntityTimeline', 'searchEntityFacts', 'retrieveContext',
+
+  // EpisodicService — wrap (모두)
+  'saveEvent', 'updateEvent', 'deleteEvent', 'getEvent',
+  'searchEvents', 'listRecentEvents', 'listEventsByEntity',
+  'linkEventEntity', 'unlinkEventEntity',
+
+  // MediaService — wrap (모두)
+  'listMedia', 'readMedia', 'removeMedia', 'searchMedia', 'isMediaReady',
+  'generateImage', 'startImageGeneration', 'regenerateImage', 'saveUpload',
+
+  // TemplateService — getTemplate / saveTemplate / deleteTemplate wrap. listTemplates 는 raw
+  'getTemplate', 'saveTemplate', 'deleteTemplate',
+
+  // CapabilityService — listCapabilities / getCapabilityProviders raw, mutation 만 wrap
+  // resolveCapability 만 wrap (옛 패턴)
+  'resolveCapability',
+
+  // McpService — listMcpServers / addMcpServer / removeMcpServer raw. token 류 wrap
+  'callMcpTool', 'generateApiToken',
+
+  // AuthService — login / validate / token 류 wrap
   'login', 'validateSession', 'validateToken',
-  'generateApiToken', 'revokeApiTokens',
-  'createShare', 'getShare',
-  'searchHistory', 'searchConversationHistory',
-  'isConversationDeleted',
-  'queryDatabase', 'networkFetch',
-  'callMcpTool', 'executeTool',
-  'cacheRead', 'cacheGrep', 'cacheAggregate',
-  'isMediaReady', 'readMedia',
-  'getCliSession',
-  'verifyPagePassword',
-  'getJob',
+
+  // ScheduleService — scheduleTask / cancelCron 등 mutation wrap. listCronJobs / getCronLogs raw
+  'scheduleTask', 'scheduleCronJob', 'cancelCronJob', 'updateCronJob', 'runCronJobNow',
+
+  // TaskService
+  'runTask',
+
+  // ModuleService — runModule wrap, list 류 raw
+  'runModule', 'sandboxExecute',
+
+  // SecretService — get/set/delete 류 wrap. listUserSecrets raw
+  'getUserSecret', 'setUserSecret', 'deleteUserSecret',
+  'listUserModuleSecrets',
+
+  // StorageService — readFile / writeFile 류 wrap. listDir / listFiles raw
+  'readFile', 'readFileBinary', 'writeFile', 'deleteFile', 'globFiles',
+
+  // MemoryService — wrap (모두)
+  'getMemoryIndex', 'readMemoryFile', 'listMemoryFiles', 'saveMemoryFile', 'deleteMemoryFile',
+
+  // ToolService
+  'executeTool',
+
+  // AiService
+  'codeAssist',
+
+  // Telegram
+  'getTelegramWebhookStatus', 'setupTelegramWebhook', 'removeTelegramWebhook',
+
+  // Cache
+  'cacheRead', 'cacheGrep', 'cacheAggregate', 'cacheData',
+
+  // Database
+  'queryDatabase',
+
+  // Network
+  'networkFetch',
+
+  // Status
+  'getJob', 'getJobStats',
 ]);
 
 /** Rust 응답 자동 wrap — 옛 TS `{success, data, error}` 형식 호환. */
