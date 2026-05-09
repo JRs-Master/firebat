@@ -1,6 +1,9 @@
 //! AuthManager integration test — 옛 core inline tests 이관.
 //!
 //! private fn 사용 test (`timing_safe_eq` / `generate_token`) 는 inline 유지.
+//!
+//! 2026-05-09 정정: admin/admin 디폴트 폴백 폐기 (setup wizard 패턴) — 모든 테스트가
+//! `make_manager` 에서 명시 자격증명 설정 후 시작. vault 미설정 시 모든 로그인 거부.
 
 use std::sync::Arc;
 use tempfile::TempDir;
@@ -10,18 +13,43 @@ use firebat_core::ports::{IAuthPort, IVaultPort, SessionType};
 use firebat_infra::adapters::auth::VaultAuthAdapter;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
 
+/// 명시 자격증명 (testadmin / testpass) 설정 완료 상태로 manager 반환.
+/// 옛 admin/admin 디폴트 의존 테스트 패턴 → 명시 setup 패턴으로 이관.
 fn make_manager() -> (AuthManager, TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let vault: Arc<dyn IVaultPort> =
         Arc::new(SqliteVaultAdapter::new(dir.path().join("vault.db")).unwrap());
     let auth: Arc<dyn IAuthPort> = Arc::new(VaultAuthAdapter::new(vault.clone()));
-    (AuthManager::new(auth, vault), dir)
+    let mgr = AuthManager::new(auth, vault);
+    mgr.set_admin_credentials(Some("testadmin"), Some("testpass"));
+    (mgr, dir)
 }
 
 #[test]
-fn login_with_default_credentials_succeeds() {
+fn login_without_setup_rejects_any_credentials() {
+    // setup 없는 fresh manager — admin/admin 시도 거부 (옛 디폴트 폴백 폐기 검증)
+    let dir = tempfile::tempdir().unwrap();
+    let vault: Arc<dyn IVaultPort> =
+        Arc::new(SqliteVaultAdapter::new(dir.path().join("vault.db")).unwrap());
+    let auth: Arc<dyn IAuthPort> = Arc::new(VaultAuthAdapter::new(vault.clone()));
+    let mgr = AuthManager::new(auth, vault);
+
+    assert!(!mgr.is_admin_setup());
+    assert!(matches!(
+        mgr.login("admin", "admin", "ip"),
+        LoginOutcome::InvalidCredentials
+    ));
+    assert!(matches!(
+        mgr.login("", "", "ip"),
+        LoginOutcome::InvalidCredentials
+    ));
+}
+
+#[test]
+fn login_with_set_credentials_succeeds() {
     let (mgr, _dir) = make_manager();
-    let result = mgr.login("admin", "admin", "test-ip");
+    assert!(mgr.is_admin_setup());
+    let result = mgr.login("testadmin", "testpass", "test-ip");
     match result {
         LoginOutcome::Ok(session) => {
             assert_eq!(session.session_type, SessionType::Session);
@@ -35,7 +63,7 @@ fn login_with_default_credentials_succeeds() {
 #[test]
 fn login_with_wrong_password_fails() {
     let (mgr, _dir) = make_manager();
-    let result = mgr.login("admin", "wrong", "test-ip");
+    let result = mgr.login("testadmin", "wrong", "test-ip");
     assert!(matches!(result, LoginOutcome::InvalidCredentials));
 }
 
@@ -45,12 +73,12 @@ fn login_locked_after_5_failures() {
     // 4번 실패 — InvalidCredentials
     for _ in 0..4 {
         assert!(matches!(
-            mgr.login("admin", "wrong", "ip-lock-test"),
+            mgr.login("testadmin", "wrong", "ip-lock-test"),
             LoginOutcome::InvalidCredentials
         ));
     }
     // 5번째 실패 — Locked
-    let result = mgr.login("admin", "wrong", "ip-lock-test");
+    let result = mgr.login("testadmin", "wrong", "ip-lock-test");
     match result {
         LoginOutcome::Locked { retry_after_sec } => {
             assert!(retry_after_sec > 0 && retry_after_sec <= 60);
@@ -59,12 +87,12 @@ fn login_locked_after_5_failures() {
     }
     // 잠금 중 — 정확한 비밀번호도 거부
     assert!(matches!(
-        mgr.login("admin", "admin", "ip-lock-test"),
+        mgr.login("testadmin", "testpass", "ip-lock-test"),
         LoginOutcome::Locked { .. }
     ));
     // 다른 attempt_key 는 영향 없음
     assert!(matches!(
-        mgr.login("admin", "admin", "different-ip"),
+        mgr.login("testadmin", "testpass", "different-ip"),
         LoginOutcome::Ok(_)
     ));
 }
@@ -72,7 +100,7 @@ fn login_locked_after_5_failures() {
 #[test]
 fn validate_session_returns_session_for_valid_token() {
     let (mgr, _dir) = make_manager();
-    let LoginOutcome::Ok(session) = mgr.login("admin", "admin", "ip") else {
+    let LoginOutcome::Ok(session) = mgr.login("testadmin", "testpass", "ip") else {
         panic!("login failed");
     };
     let validated = mgr.validate_session(&session.token).unwrap();
@@ -92,7 +120,7 @@ fn validate_session_rejects_api_token() {
 #[test]
 fn logout_removes_session() {
     let (mgr, _dir) = make_manager();
-    let LoginOutcome::Ok(session) = mgr.login("admin", "admin", "ip") else {
+    let LoginOutcome::Ok(session) = mgr.login("testadmin", "testpass", "ip") else {
         panic!();
     };
     assert!(mgr.logout(&session.token));
@@ -135,9 +163,9 @@ fn api_token_lifecycle() {
 #[test]
 fn admin_credentials_can_be_changed() {
     let (mgr, _dir) = make_manager();
-    // default 로 로그인 OK
+    // 명시 설정한 testadmin/testpass 로 로그인 OK
     assert!(matches!(
-        mgr.login("admin", "admin", "ip"),
+        mgr.login("testadmin", "testpass", "ip"),
         LoginOutcome::Ok(_)
     ));
 
@@ -146,7 +174,7 @@ fn admin_credentials_can_be_changed() {
 
     // 옛 자격증명 거부
     assert!(matches!(
-        mgr.login("admin", "admin", "ip2"),
+        mgr.login("testadmin", "testpass", "ip2"),
         LoginOutcome::InvalidCredentials
     ));
     // 새 자격증명 OK

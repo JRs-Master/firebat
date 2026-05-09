@@ -81,9 +81,11 @@ jobs:
           node-version: '24'
           cache: 'npm'
 
-      - name: npm ci
-        # peer deps mismatch (next 16 + react 19 + 기타) 회피
-        run: npm ci --legacy-peer-deps
+      - name: npm install
+        # npm ci 는 lock 정확 일치 강제 — Windows (개발자) / Linux (CI) 의 platform-specific
+        # native deps (@emnapi 등) 차이로 mismatch 발생. npm install 로 lock 자동 갱신 허용.
+        # peer deps mismatch (next 16 + react 19 + 기타) 회피.
+        run: npm install --legacy-peer-deps
 
       - name: typecheck
         run: npm run typecheck
