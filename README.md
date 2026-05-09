@@ -215,6 +215,17 @@ After 1 week of auto-trading, "How did Samsung do?" returns full timeline (recom
 
 > 🇰🇷 **메모리 시스템 4-tier** — 대화는 휘발해도 사실은 영속. 자동매매·블로그 운영 깊어질수록 가치 폭발. Core hook 자동 saveEvent / 6시간 cron 자동 LLM 후처리 / cosine 중복 검출 / RetrievalEngine 자동 prepend — 사용자 명시 호출 0회로도 "삼성전자 1주 전 추천 결과는?" 즉시 답변. (Phase 1-6 박힘, Phase 3 Vector store 는 entity 1000+ 시점 deferred)
 
+### i18n — Self-built (ko / en, no dependency)
+
+Custom i18n system in `lib/i18n.tsx` (~100 LOC, no `next-intl` / `react-intl` dep). Two domains separated:
+
+- **Admin UI** (dynamic ko/en toggle) — `useTranslations()` hook + `LangProvider` Context. Active lang resolved from `localStorage('firebat_ui_lang')` → `/api/settings interfaceLang` (vault) → fallback. Toggle in Settings → General → live screen switch (no reload).
+- **Public site** (static per cms.siteLang) — `getServerTranslations(siteLang)` (RSC) + `usePublicTranslations()` (client). siteLang = free-form text in CMS (`ko` / `en` / `ja` / `zh-CN` etc — multi-lang ready, only ko/en messages bundled now).
+
+Messages JSON (`messages/ko.json` + `messages/en.json`) — categories: common / login / setup / admin_chat / settings / page / sidebar. v2.0 Tauri SPA / Vercel frontend hybrid migration unaffected (no Next.js deep-coupling).
+
+> 🇰🇷 **자체 i18n** — `lib/i18n.tsx` 100줄 자체 구현. 어드민 ko/en 동적 토글 (즉시 화면 전환) + 공개 사이트 정적 (cms.siteLang). 의존성 0 — Tauri / SPA 마이그레이션 자유.
+
 ### CMS V2 — Widget Builder
 
 Site builder reaches Astra/GP-class depth — header / sidebar / footer all share a unified widget catalog (13 widget types with scope guards: `header-only`, `sidebar-only`, `footer-only`, `header-footer`, `universal`).
@@ -282,20 +293,54 @@ Open `http://localhost:3000/admin` for the admin console. Frontend 가 `RustCore
 
 ### Configuration
 
+**First boot — SetupWizard** (vault 가 admin 자격증명 미박힘 시 자동 표시):
+1. Open `http://SERVER/login` → SetupWizard 화면
+2. Interface language (ko/en) — navigator 자동 감지, 토글로 즉시 화면 전환
+3. Admin ID + password (8 chars + 3 of upper/lower/digit/special, strength meter + match indicator)
+4. Timezone (browser auto-detect, fallback UTC)
+5. Submit → vault 저장 + 자동 로그인 → `/admin` 진입
+
+**Subsequent settings** (어드민 진입 후):
 1. **AI model**: Settings → AI tab → execution mode (API/CLI) → provider (OpenAI/Google/Anthropic) → model
    - **API mode**: Enter the provider API key (`sk-proj-…`, `AIza…`, `sk-ant-…`) or a Vertex Service Account JSON
    - **CLI mode**: Run `claude auth login` / `codex login` / `gemini auth login` on the server and click **"Check status"**
-2. **Timezone**: Settings → General tab (default `Asia/Seoul`)
-3. **MCP token**: Sidebar → SYSTEM → Firebat MCP Server → generate a bearer token for external AI clients
+2. **Interface language**: Settings → General tab (ko/en toggle, also CMS siteLang free-form text for ja/zh-CN etc)
+3. **Timezone**: Settings → General tab (35 IANA options, shared with SetupWizard via `lib/timezones.ts`)
+4. **Admin credentials change**: Settings → General tab → 현재 비번 검증 (argon2 verify_admin_password RPC) + 새 비번 동일 정책
+5. **MCP token**: Sidebar → SYSTEM → Firebat MCP Server → generate a bearer token for external AI clients
 
-> 🇰🇷 **설정** — AI 탭에서 API/CLI 모드, 공급자, 모델을 고르고 각 공급자의 키 또는 CLI 로그인 상태를 입력합니다. 타임존은 일반 탭에서, MCP 토큰은 사이드바의 SYSTEM > Firebat MCP 서버에서 생성합니다.
+> 🇰🇷 **첫 부팅** — SetupWizard 가 자동 표시 (admin / 언어 / 시간대 입력 → 자동 로그인). **이후 설정** — AI 탭에서 모드·공급자·모델, 일반 탭에서 인터페이스 언어·타임존·관리자 계정 변경, 사이드바 SYSTEM 에서 MCP 토큰 생성.
 
 ### Production
 
+**systemd 두 unit** — Rust core (gRPC :50051) + Next.js frontend (HTTP :3000) 분리 운영:
+
 ```bash
-npm run build
-pm2 start npm --name firebat -- start
+# 1. 디렉 구조 + system 디렉 symlink
+mkdir -p /opt/firebat/{data,user/media,frontend}
+ln -sfn /opt/firebat-src/system /opt/firebat/system
+
+# 2. Rust binary 배치
+# (GHA Actions → CI Rust → release-binary artifact 다운로드 또는 cargo build --release 결과)
+cp target/release/firebat-core /opt/firebat/firebat-core
+chmod +x /opt/firebat/firebat-core
+
+# 3. Next.js standalone build + 배치
+cd /opt/firebat-src
+npm install --legacy-peer-deps && npm run build
+rsync -a .next/standalone/ /opt/firebat/frontend/
+rsync -a .next/static/ /opt/firebat/frontend/.next/static/
+rsync -a messages/ /opt/firebat/frontend/messages/
+
+# 4. systemd unit (예시 — /etc/systemd/system/firebat.service / firebat-frontend.service)
+systemctl daemon-reload
+systemctl enable --now firebat firebat-frontend
+
+# 5. Caddy reverse proxy (자동 HTTPS)
+# /etc/caddy/Caddyfile 에 도메인 + reverse_proxy 127.0.0.1:3000 박기
 ```
+
+**Update flow** — `git pull && npm run build && rsync` (frontend) + binary FTP (Rust 변경 시) + `systemctl restart firebat firebat-frontend`.
 
 ### MCP Server
 
