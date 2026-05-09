@@ -183,7 +183,7 @@ pub enum NotifyLevel {
 /// INotifierPort — 외부 알림 채널 추상화 (Telegram / Discord / Email / Slack 등).
 /// Hexagonal — 매니저는 알림 채널 직접 호출 X. 이 trait 만 통과.
 /// Adapter 가 자체 toggle / rate-limit / 채널 선택 책임. 호출 측은 fire-and-forget.
-#[async_trait]
+#[async_trait::async_trait]
 pub trait INotifierPort: Send + Sync {
     /// 알림 발송 시도. adapter 자체 toggle 검사 후 실 발송. 실패 silent (운영 차단 X).
     async fn notify(&self, level: NotifyLevel, title: &str, message: &str);
