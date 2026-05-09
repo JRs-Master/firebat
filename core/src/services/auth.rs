@@ -1,12 +1,16 @@
 //! gRPC AuthService impl — AuthManager wrapping.
+//!
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
+//! From impl 박혀 core port struct ↔ proto generated struct 변환.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
-use crate::managers::auth::{AuthManager, LoginOutcome};
+use crate::managers::auth::{ApiTokenInfo, AuthManager, LoginOutcome};
+use crate::ports::{AuthSession, SessionRole, SessionType};
 use crate::proto::{
-    auth_service_server::AuthService, BoolRequest, Empty, JsonArgs, JsonValue, NumberRequest,
-    Status, StringRequest,
+    auth_service_server::AuthService, AdminCredentialsPb, ApiTokenInfoPb, AuthSessionPb,
+    BoolRequest, Empty, JsonArgs, LoginResponsePb, NumberRequest, Status, StringRequest,
 };
 
 pub struct AuthServiceImpl {
@@ -17,12 +21,6 @@ impl AuthServiceImpl {
     pub fn new(manager: Arc<AuthManager>) -> Self {
         Self { manager }
     }
-}
-
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
 }
 
 fn ok_status() -> Response<Status> {
@@ -41,9 +39,48 @@ fn err_status(msg: impl Into<String>, code: impl Into<String>) -> Response<Statu
     })
 }
 
+// ─── proto ↔ core port struct 변환 ─────────────────────────────────────────
+
+impl From<AuthSession> for AuthSessionPb {
+    fn from(s: AuthSession) -> Self {
+        AuthSessionPb {
+            token: s.token,
+            session_type: match s.session_type {
+                SessionType::Session => "session".to_string(),
+                SessionType::Api => "api".to_string(),
+            },
+            role: match s.role {
+                SessionRole::Admin => "admin".to_string(),
+            },
+            created_at: s.created_at,
+            expires_at: s.expires_at,
+            last_used_at: s.last_used_at,
+            label: s.label,
+        }
+    }
+}
+
+/// `Option<AuthSession>` → `AuthSessionPb` — None 은 token="" 빈 레코드.
+/// 클라이언트는 `token.is_empty()` 로 미인증 판정.
+fn session_opt_to_pb(opt: Option<AuthSession>) -> AuthSessionPb {
+    opt.map(Into::into).unwrap_or_default()
+}
+
+impl From<ApiTokenInfo> for ApiTokenInfoPb {
+    fn from(i: ApiTokenInfo) -> Self {
+        ApiTokenInfoPb {
+            exists: i.exists,
+            hint: i.hint,
+            label: i.label,
+            created_at: i.created_at,
+            last_used_at: i.last_used_at,
+        }
+    }
+}
+
 #[tonic::async_trait]
 impl AuthService for AuthServiceImpl {
-    async fn login(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn login(&self, req: Request<JsonArgs>) -> Result<Response<LoginResponsePb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct LoginArgs {
@@ -55,23 +92,30 @@ impl AuthService for AuthServiceImpl {
         let args: LoginArgs = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("login args 파싱 실패: {e}")))?;
         let outcome = self.manager.login(&args.id, &args.password, &args.attempt_key);
-        match outcome {
-            LoginOutcome::Ok(session) => json_response(&serde_json::json!({
-                "ok": true,
-                "session": session,
-            })),
-            LoginOutcome::InvalidCredentials => json_response(&serde_json::json!({
-                "ok": false,
-                "error": "invalid credentials",
-                "code": "AUTH_FAILED",
-            })),
-            LoginOutcome::Locked { retry_after_sec } => json_response(&serde_json::json!({
-                "ok": false,
-                "error": "locked",
-                "code": "LOGIN_LOCKED",
-                "retry_after_sec": retry_after_sec,
-            })),
-        }
+        let pb = match outcome {
+            LoginOutcome::Ok(session) => LoginResponsePb {
+                ok: true,
+                session: Some(session.into()),
+                error: None,
+                code: None,
+                retry_after_sec: None,
+            },
+            LoginOutcome::InvalidCredentials => LoginResponsePb {
+                ok: false,
+                session: None,
+                error: Some("invalid credentials".to_string()),
+                code: Some("AUTH_FAILED".to_string()),
+                retry_after_sec: None,
+            },
+            LoginOutcome::Locked { retry_after_sec } => LoginResponsePb {
+                ok: false,
+                session: None,
+                error: Some("locked".to_string()),
+                code: Some("LOGIN_LOCKED".to_string()),
+                retry_after_sec: Some(retry_after_sec),
+            },
+        };
+        Ok(Response::new(pb))
     }
 
     async fn logout(
@@ -87,19 +131,21 @@ impl AuthService for AuthServiceImpl {
     async fn validate_session(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<AuthSessionPb>, TonicStatus> {
         let token = req.into_inner().value;
-        let session = self.manager.validate_session(&token);
-        json_response(&session)
+        Ok(Response::new(session_opt_to_pb(
+            self.manager.validate_session(&token),
+        )))
     }
 
     async fn validate_token(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<AuthSessionPb>, TonicStatus> {
         let token = req.into_inner().value;
-        let session = self.manager.validate_token(&token);
-        json_response(&session)
+        Ok(Response::new(session_opt_to_pb(
+            self.manager.validate_token(&token),
+        )))
     }
 
     async fn generate_api_token(
@@ -118,10 +164,11 @@ impl AuthService for AuthServiceImpl {
     async fn validate_api_token(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<AuthSessionPb>, TonicStatus> {
         let token = req.into_inner().value;
-        let session = self.manager.validate_api_token(&token);
-        json_response(&session)
+        Ok(Response::new(session_opt_to_pb(
+            self.manager.validate_api_token(&token),
+        )))
     }
 
     async fn revoke_api_tokens(
@@ -135,20 +182,16 @@ impl AuthService for AuthServiceImpl {
     async fn get_api_token_info(
         &self,
         _req: Request<Empty>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        let info = self.manager.get_api_token_info();
-        json_response(&info)
+    ) -> Result<Response<ApiTokenInfoPb>, TonicStatus> {
+        Ok(Response::new(self.manager.get_api_token_info().into()))
     }
 
     async fn get_admin_credentials(
         &self,
         _req: Request<Empty>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<AdminCredentialsPb>, TonicStatus> {
         let (id, password) = self.manager.get_admin_credentials();
-        json_response(&serde_json::json!({
-            "id": id,
-            "password": password,
-        }))
+        Ok(Response::new(AdminCredentialsPb { id, password }))
     }
 
     async fn is_admin_setup(

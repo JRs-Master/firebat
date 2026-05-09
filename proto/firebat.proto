@@ -200,19 +200,53 @@ service CapabilityService {
   rpc SetSettings(JsonArgs) returns (Status);
 }
 
+// ─── AuthService typed messages ─────────────────────────────────────────────
+
+message AuthSessionPb {
+  string token = 1;
+  string session_type = 2;   // "session" | "api"
+  string role = 3;           // "admin"
+  int64 created_at = 4;
+  optional int64 expires_at = 5;
+  optional int64 last_used_at = 6;
+  optional string label = 7;
+}
+
+/** login 성공/실패 통합 응답. */
+message LoginResponsePb {
+  bool ok = 1;
+  optional AuthSessionPb session = 2;
+  optional string error = 3;
+  optional string code = 4;
+  optional int64 retry_after_sec = 5;
+}
+
+message ApiTokenInfoPb {
+  bool exists = 1;
+  optional string hint = 2;
+  optional string label = 3;
+  optional string created_at = 4;
+  optional string last_used_at = 5;
+}
+
+message AdminCredentialsPb {
+  string id = 1;
+  string password = 2;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 11. AuthService — AuthManager
 // ──────────────────────────────────────────────────────────────────────────
 service AuthService {
-  rpc Login(JsonArgs) returns (JsonValue);
+  rpc Login(JsonArgs) returns (LoginResponsePb);
   rpc Logout(StringRequest) returns (BoolRequest);
-  rpc ValidateSession(StringRequest) returns (JsonValue);
-  rpc ValidateToken(StringRequest) returns (JsonValue);
+  rpc ValidateSession(StringRequest) returns (AuthSessionPb);
+  rpc ValidateToken(StringRequest) returns (AuthSessionPb);
   rpc GenerateApiToken(StringRequest) returns (StringRequest);
-  rpc ValidateApiToken(StringRequest) returns (JsonValue);
+  rpc ValidateApiToken(StringRequest) returns (AuthSessionPb);
   rpc RevokeApiTokens(Empty) returns (NumberRequest);
-  rpc GetApiTokenInfo(Empty) returns (JsonValue);
-  rpc GetAdminCredentials(Empty) returns (JsonValue);
+  rpc GetApiTokenInfo(Empty) returns (ApiTokenInfoPb);
+  rpc GetAdminCredentials(Empty) returns (AdminCredentialsPb);
   rpc SetAdminCredentials(JsonArgs) returns (Status);
   // 첫 부팅 setup 검출 — frontend `/login` 이 호출, false 면 setup wizard 노출.
   rpc IsAdminSetup(Empty) returns (BoolRequest);
