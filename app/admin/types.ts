@@ -38,12 +38,13 @@ export const AI_MODELS = [
   { value: 'cli-gemini-3-flash', label: 'Gemini CLI (3 Flash)' },
   { value: 'cli-gemini-3.1-pro', label: 'Gemini CLI (3.1 Pro)' },
 
-  // ─── OpenAI Codex CLI ──────────────────────────────────────────────────
+  // ─── OpenAI Codex CLI (ChatGPT 구독 — credit 차감) ──────────────────────
   { value: 'cli-codex-auto', label: 'Codex CLI (Auto)' },
   { value: 'cli-codex-gpt-5.4-mini', label: 'Codex CLI (GPT-5.4 Mini)' },
   { value: 'cli-codex-gpt-5.4', label: 'Codex CLI (GPT-5.4)' },
-  { value: 'cli-codex-5.3-codex', label: 'Codex CLI (5.3-codex)' },
-  { value: 'cli-codex-5.3-codex-spart', label: 'Codex CLI (5.3-codex Sparta)' },
+  { value: 'cli-codex-gpt-5.5', label: 'Codex CLI (GPT-5.5)' },
+  { value: 'cli-codex-5.3-codex', label: 'Codex CLI (5.3-Codex)' },
+  { value: 'cli-codex-5.3-codex-spark', label: 'Codex CLI (5.3-Codex Spark, preview)' },
 ];
 // 기존 이름 호환을 위한 alias
 export const GEMINI_MODELS = AI_MODELS;
