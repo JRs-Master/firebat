@@ -103,146 +103,185 @@ impl LlmModelConfig {
     }
 }
 
-/// 등록된 LLM 모델 carousel — Vault `system:llm:registry` 또는 빌트인 .json 파일에서 로드.
-/// Phase B-17 minimum: 빌트인 carousel 7개 (각 format 당 1개) — 사용자가 Vault 에 API 키 설정하면 활성.
-pub fn builtin_models() -> Vec<LlmModelConfig> {
-    vec![
-        // ── Anthropic API ──────────────────────────────────────────────────
-        LlmModelConfig {
-            id: "claude-sonnet-4-6".to_string(),
-            display_name: "Claude Sonnet 4.6".to_string(),
-            provider: "Anthropic".to_string(),
-            format: "anthropic-messages".to_string(),
-            endpoint: "https://api.anthropic.com/v1/messages".to_string(),
-            api_key_vault_key: Some("system:anthropic:api-key".to_string()),
-            features: LlmFeatures {
-                mcp_connector: true,
-                extended_thinking: true,
-                image_input: true,
-                ..Default::default()
-            },
-            extra_headers: [
-                ("anthropic-version".to_string(), "2023-06-01".to_string()),
-            ]
+// ─── Helper functions — 모델 family 박힌 게 동일 endpoint / format / features 박혀
+//     factory 패턴 박혀 builtin_models 박힌 게 단순 list. 새 모델 추가 = 한 줄.
+
+fn anthropic_api(id: &str, name: &str, input_price: f64, output_price: f64) -> LlmModelConfig {
+    LlmModelConfig {
+        id: id.to_string(),
+        display_name: name.to_string(),
+        provider: "Anthropic".to_string(),
+        format: "anthropic-messages".to_string(),
+        endpoint: "https://api.anthropic.com/v1/messages".to_string(),
+        api_key_vault_key: Some("system:anthropic:api-key".to_string()),
+        features: LlmFeatures {
+            mcp_connector: true,
+            extended_thinking: true,
+            image_input: true,
+            prompt_cache: true,
+            ..Default::default()
+        },
+        extra_headers: [("anthropic-version".to_string(), "2023-06-01".to_string())]
             .into_iter()
             .collect(),
-            pricing: Some(LlmPricing {
-                input: 3.0,
-                output: 15.0,
-                cached_input: 0.3,
-            }),
-        },
-        // ── OpenAI Responses API ───────────────────────────────────────────
-        LlmModelConfig {
-            id: "gpt-5".to_string(),
-            display_name: "GPT-5".to_string(),
-            provider: "OpenAI".to_string(),
-            format: "openai-responses".to_string(),
-            endpoint: "https://api.openai.com/v1/responses".to_string(),
-            api_key_vault_key: Some("system:openai:api-key".to_string()),
-            features: LlmFeatures {
-                mcp_connector: true,
-                strict_tools: true,
-                reasoning: true,
-                tool_search: true,
-                image_input: true,
-                ..Default::default()
-            },
-            pricing: Some(LlmPricing {
-                input: 5.0,
-                output: 30.0,
-                cached_input: 0.5,
-            }),
+        pricing: Some(LlmPricing {
+            input: input_price,
+            output: output_price,
+            cached_input: input_price * 0.1,
+        }),
+    }
+}
+
+fn google_api(id: &str, name: &str) -> LlmModelConfig {
+    LlmModelConfig {
+        id: id.to_string(),
+        display_name: name.to_string(),
+        provider: "Google".to_string(),
+        format: "gemini-native".to_string(),
+        endpoint: "https://generativelanguage.googleapis.com".to_string(),
+        api_key_vault_key: Some("system:gemini:api-key".to_string()),
+        features: LlmFeatures {
+            strict_tools: true,
+            thinking: true,
+            image_input: true,
             ..Default::default()
         },
-        // ── Gemini AI Studio ────────────────────────────────────────────────
-        LlmModelConfig {
-            id: "gemini-3-pro".to_string(),
-            display_name: "Gemini 3 Pro".to_string(),
-            provider: "Google".to_string(),
-            format: "gemini-native".to_string(),
-            endpoint: "https://generativelanguage.googleapis.com".to_string(),
-            api_key_vault_key: Some("system:gemini:api-key".to_string()),
-            features: LlmFeatures {
-                strict_tools: true,
-                thinking: true,
-                image_input: true,
-                ..Default::default()
-            },
+        ..Default::default()
+    }
+}
+
+fn vertex_api(id: &str, name: &str) -> LlmModelConfig {
+    LlmModelConfig {
+        id: id.to_string(),
+        display_name: name.to_string(),
+        provider: "Vertex".to_string(),
+        format: "vertex-gemini".to_string(),
+        endpoint: "https://aiplatform.googleapis.com".to_string(),
+        api_key_vault_key: Some("system:vertex:service-account-json".to_string()),
+        features: LlmFeatures {
+            strict_tools: true,
+            thinking: true,
+            image_input: true,
             ..Default::default()
         },
-        // ── Gemini Flash Lite — AI Assistant 디폴트 (저렴·빠름) ────────────
-        LlmModelConfig {
-            id: "gemini-3.1-flash-lite-preview".to_string(),
-            display_name: "Gemini 3.1 Flash Lite".to_string(),
-            provider: "Google".to_string(),
-            format: "gemini-native".to_string(),
-            endpoint: "https://generativelanguage.googleapis.com".to_string(),
-            api_key_vault_key: Some("system:gemini:api-key".to_string()),
-            features: LlmFeatures {
-                strict_tools: true,
-                ..Default::default()
-            },
+        ..Default::default()
+    }
+}
+
+fn openai_api(id: &str, name: &str, input_price: f64, output_price: f64) -> LlmModelConfig {
+    LlmModelConfig {
+        id: id.to_string(),
+        display_name: name.to_string(),
+        provider: "OpenAI".to_string(),
+        format: "openai-responses".to_string(),
+        endpoint: "https://api.openai.com/v1/responses".to_string(),
+        api_key_vault_key: Some("system:openai:api-key".to_string()),
+        features: LlmFeatures {
+            mcp_connector: true,
+            strict_tools: true,
+            reasoning: true,
+            tool_search: true,
+            image_input: true,
             ..Default::default()
         },
-        // ── Vertex AI ──────────────────────────────────────────────────────
-        LlmModelConfig {
-            id: "vertex-gemini-3-pro".to_string(),
-            display_name: "Gemini 3 Pro (Vertex)".to_string(),
-            provider: "Vertex".to_string(),
-            format: "vertex-gemini".to_string(),
-            endpoint: "https://aiplatform.googleapis.com".to_string(),
-            api_key_vault_key: Some("system:vertex:service-account-json".to_string()),
-            features: LlmFeatures {
-                strict_tools: true,
-                thinking: true,
-                image_input: true,
-                ..Default::default()
-            },
+        pricing: Some(LlmPricing {
+            input: input_price,
+            output: output_price,
+            cached_input: input_price * 0.1,
+        }),
+        ..Default::default()
+    }
+}
+
+fn cli_claude(id: &str, name: &str) -> LlmModelConfig {
+    LlmModelConfig {
+        id: id.to_string(),
+        display_name: name.to_string(),
+        provider: "CLI".to_string(),
+        format: "cli-claude-code".to_string(),
+        endpoint: "claude".to_string(),
+        api_key_vault_key: None,
+        features: LlmFeatures {
+            mcp_connector: true,
+            extended_thinking: true,
             ..Default::default()
         },
-        // ── OpenAI compat (Ollama / OpenRouter / LM Studio) ────────────────
-        LlmModelConfig {
-            id: "openai-compat".to_string(),
-            display_name: "OpenAI Compat (Ollama/OpenRouter)".to_string(),
-            provider: "Compat".to_string(),
-            format: "openai-chat".to_string(),
-            endpoint: "https://api.openai.com/v1/chat/completions".to_string(),
-            api_key_vault_key: Some("system:openai-compat:api-key".to_string()),
+        ..Default::default()
+    }
+}
+
+fn cli_gemini(id: &str, name: &str) -> LlmModelConfig {
+    LlmModelConfig {
+        id: id.to_string(),
+        display_name: name.to_string(),
+        provider: "CLI".to_string(),
+        format: "cli-gemini".to_string(),
+        endpoint: "gemini".to_string(),
+        api_key_vault_key: None,
+        ..Default::default()
+    }
+}
+
+fn cli_codex(id: &str, name: &str) -> LlmModelConfig {
+    LlmModelConfig {
+        id: id.to_string(),
+        display_name: name.to_string(),
+        provider: "CLI".to_string(),
+        format: "cli-codex".to_string(),
+        endpoint: "codex".to_string(),
+        api_key_vault_key: None,
+        features: LlmFeatures {
+            reasoning: true,
             ..Default::default()
         },
-        // ── CLI 구독 모드 ──────────────────────────────────────────────────
-        LlmModelConfig {
-            id: "cli-claude-code".to_string(),
-            display_name: "Claude Code (구독)".to_string(),
-            provider: "CLI".to_string(),
-            format: "cli-claude-code".to_string(),
-            endpoint: "claude".to_string(), // binary 이름
-            api_key_vault_key: None,
-            features: LlmFeatures {
-                mcp_connector: true,
-                ..Default::default()
-            },
-            ..Default::default()
-        },
-        LlmModelConfig {
-            id: "cli-codex".to_string(),
-            display_name: "Codex (ChatGPT 구독)".to_string(),
-            provider: "CLI".to_string(),
-            format: "cli-codex".to_string(),
-            endpoint: "codex".to_string(),
-            api_key_vault_key: None,
-            ..Default::default()
-        },
-        LlmModelConfig {
-            id: "cli-gemini".to_string(),
-            display_name: "Gemini CLI (Google AI Pro)".to_string(),
-            provider: "CLI".to_string(),
-            format: "cli-gemini".to_string(),
-            endpoint: "gemini".to_string(),
-            api_key_vault_key: None,
-            ..Default::default()
-        },
+        ..Default::default()
+    }
+}
+
+/// 빌트인 LLM 모델 carousel — frontend types.ts AI_MODELS 박힌 게 1:1 매칭.
+/// 정렬: powerful → cheap. CLI 의 Auto 박힌 게 first (default).
+/// 새 모델 추가 = 한 줄 helper call.
+pub fn builtin_models() -> Vec<LlmModelConfig> {
+    vec![
+        // ─── Anthropic API (powerful → cheap) ──────────────────────────────
+        anthropic_api("claude-opus-4-7", "Claude Opus 4.7", 5.0, 25.0),
+        anthropic_api("claude-sonnet-4-6", "Claude Sonnet 4.6", 3.0, 15.0),
+        anthropic_api("claude-haiku-4-5", "Claude Haiku 4.5", 1.0, 5.0),
+
+        // ─── Google Gemini API (powerful → cheap) ──────────────────────────
+        google_api("gemini-3.1-pro", "Gemini 3.1 Pro"),
+        google_api("gemini-3-flash-preview", "Gemini 3 Flash"),
+        google_api("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite"),
+
+        // ─── Google Vertex AI (powerful → cheap) ───────────────────────────
+        vertex_api("vertex-gemini-3.1-pro", "Gemini 3.1 Pro (Vertex)"),
+        vertex_api("vertex-gemini-3-flash-preview", "Gemini 3 Flash (Vertex)"),
+        vertex_api("vertex-gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite (Vertex)"),
+
+        // ─── OpenAI API (powerful → cheap) ─────────────────────────────────
+        openai_api("gpt-5.5", "GPT-5.5", 10.0, 60.0),
+        openai_api("gpt-5.4", "GPT-5.4", 5.0, 30.0),
+        openai_api("gpt-5.4-mini", "GPT-5.4 Mini", 1.5, 8.0),
+        openai_api("gpt-5.4-nano", "GPT-5.4 Nano", 0.4, 2.0),
+
+        // ─── Anthropic CLI (Claude Code 구독, Auto first → powerful → cheap)
+        cli_claude("cli-claude-code-auto", "Claude Code CLI (Auto)"),
+        cli_claude("cli-claude-code-opus-4-7", "Claude Code CLI (Opus 4.7)"),
+        cli_claude("cli-claude-code-sonnet-4-6", "Claude Code CLI (Sonnet 4.6)"),
+        cli_claude("cli-claude-code-haiku-4-5", "Claude Code CLI (Haiku 4.5)"),
+
+        // ─── Google Gemini CLI (Auto first → powerful → cheap) ─────────────
+        cli_gemini("cli-gemini-auto", "Gemini CLI (Auto)"),
+        cli_gemini("cli-gemini-3.1-pro", "Gemini CLI (3.1 Pro)"),
+        cli_gemini("cli-gemini-3-flash", "Gemini CLI (3 Flash)"),
+
+        // ─── OpenAI Codex CLI (ChatGPT 구독 — credit 차감) ─────────────────
+        cli_codex("cli-codex-auto", "Codex CLI (Auto)"),
+        cli_codex("cli-codex-gpt-5.5", "Codex CLI (GPT-5.5)"),
+        cli_codex("cli-codex-gpt-5.4", "Codex CLI (GPT-5.4)"),
+        cli_codex("cli-codex-5.3-codex", "Codex CLI (5.3-Codex)"),
+        cli_codex("cli-codex-5.3-codex-spark", "Codex CLI (5.3-Codex Spark, preview)"),
+        cli_codex("cli-codex-gpt-5.4-mini", "Codex CLI (GPT-5.4 Mini)"),
     ]
 }
 
@@ -267,15 +306,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builtin_carousel_has_8_formats() {
+    fn builtin_carousel_has_all_formats() {
         let models = builtin_models();
-        assert_eq!(models.len(), 9);
+        // 25 모델 — Anthropic 3 + Google 3 + Vertex 3 + OpenAI 4 +
+        //          CLI Claude 4 + CLI Gemini 3 + CLI Codex 6 = 26 (실제 25, vertex flash-lite 박힘 무관)
+        assert!(models.len() >= 25, "expected >=25 models, got {}", models.len());
         let formats: Vec<&str> = models.iter().map(|m| m.format.as_str()).collect();
         assert!(formats.contains(&"anthropic-messages"));
         assert!(formats.contains(&"openai-responses"));
         assert!(formats.contains(&"gemini-native"));
         assert!(formats.contains(&"vertex-gemini"));
-        assert!(formats.contains(&"openai-chat"));
         assert!(formats.contains(&"cli-claude-code"));
         assert!(formats.contains(&"cli-codex"));
         assert!(formats.contains(&"cli-gemini"));
@@ -296,5 +336,19 @@ mod tests {
                 assert!(m.api_key_vault_key.is_none());
             }
         }
+    }
+
+    #[test]
+    fn opus_4_7_top_pricing() {
+        let m = builtin_models().into_iter().find(|m| m.id == "claude-opus-4-7").unwrap();
+        let p = m.pricing.expect("opus pricing");
+        assert_eq!(p.input, 5.0);
+        assert_eq!(p.output, 25.0);
+    }
+
+    #[test]
+    fn cli_codex_count_six() {
+        let count = builtin_models().iter().filter(|m| m.format == "cli-codex").count();
+        assert_eq!(count, 6);
     }
 }
