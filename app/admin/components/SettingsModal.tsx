@@ -2616,10 +2616,15 @@ function CostTabContent() {
   }, [days]);
 
   // 일별 합계 (모델 무관) — 모델별 records 를 date 키로 그루핑
+  // Rust port (LlmCostStatsSummary) 박힘 totals 만 응답 — records 박힘 안 됨. graceful 빈 배열.
+  // 향후 Rust 측 records 박힘 추가 시 자동 노출.
+  const records = Array.isArray((stats as { records?: unknown })?.records)
+    ? ((stats as { records: { date: string; model: string; calls: number; inputTokens: number; outputTokens: number; costUsd: number }[] }).records)
+    : [];
   const dailyTotals = useMemo(() => {
-    if (!stats) return [];
+    if (!stats || records.length === 0) return [];
     const map = new Map<string, { date: string; calls: number; inputTokens: number; outputTokens: number; costUsd: number }>();
-    for (const r of stats.records) {
+    for (const r of records) {
       const exist = map.get(r.date) ?? { date: r.date, calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
       exist.calls += r.calls;
       exist.inputTokens += r.inputTokens;
@@ -2628,13 +2633,14 @@ function CostTabContent() {
       map.set(r.date, exist);
     }
     return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stats]);
 
   // 모델별 합계
   const modelTotals = useMemo(() => {
-    if (!stats) return [];
+    if (!stats || records.length === 0) return [];
     const map = new Map<string, { model: string; calls: number; inputTokens: number; outputTokens: number; costUsd: number }>();
-    for (const r of stats.records) {
+    for (const r of records) {
       const exist = map.get(r.model) ?? { model: r.model, calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
       exist.calls += r.calls;
       exist.inputTokens += r.inputTokens;
@@ -2643,6 +2649,7 @@ function CostTabContent() {
       map.set(r.model, exist);
     }
     return Array.from(map.values()).sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stats]);
 
   const fmtNum = (n: number) => n.toLocaleString('ko-KR');
