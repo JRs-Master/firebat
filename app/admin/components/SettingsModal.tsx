@@ -866,8 +866,9 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
             return (
               <>
                 {/* AI 서브탭 바 — 메인 탭 nav 와 동일 underline 패턴 (border-b-2).
-                    음수 margin 제거 (위로 끌려 가려지는 buggy case 차단). */}
-                <div className="flex items-center gap-1 border-b border-slate-200 mb-3 overflow-x-auto">
+                    -mb-px 제거 (Tailwind v4 박힘 + flex items 박힘 박혀 div height collapse buggy 차단).
+                    text-[12px] arbitrary value 폐기 → text-xs preset (line-height 일관). */}
+                <div className="flex items-center gap-1 border-b border-slate-200 mb-3 overflow-x-auto min-h-[36px]">
                   {([
                     { v: 'llm', label: 'LLM' },
                     { v: 'prompt', label: '프롬프트' },
@@ -878,7 +879,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                     <button
                       key={t.v}
                       onClick={() => setAiSubTab(t.v)}
-                      className={`px-3 py-1.5 text-[12px] sm:text-[13px] font-bold border-b-2 transition-colors -mb-px whitespace-nowrap ${
+                      className={`px-3 py-1.5 text-xs sm:text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
                         aiSubTab === t.v
                           ? 'border-blue-500 text-blue-600'
                           : 'border-transparent text-slate-400 hover:text-slate-600'
