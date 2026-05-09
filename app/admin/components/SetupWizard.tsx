@@ -121,15 +121,8 @@ export function SetupWizard({ onComplete }: Props) {
       const data = await res.json();
       if (!res.ok || !data.success) {
         // 403 = 이미 setup 완료 — 정상 흐름이면 위자드 자체 노출 안 됨 (frontend GET 이 unwrap 으로 차단).
-        // 여기 도달 시 = backend / frontend 비일관 상태. 사용자가 잠금 안 박히게 자동 /login redirect.
-        if (res.status === 403) {
-          setError(data.error || t('setup.err_failed'));
-          setTimeout(() => {
-            if (typeof window !== 'undefined') window.location.href = '/login';
-          }, 2000);
-          setSubmitting(false);
-          return;
-        }
+        // 여기 도달 시 = backend / frontend 비일관 상태. /login redirect 무용 (같은 페이지).
+        // 사용자가 잠금 풀 수 있게 SSH vault reset 명령 명시 (backend 메시지에 박힘).
         setError(data.error || t('setup.err_failed'));
         setSubmitting(false);
         return;
@@ -272,7 +265,7 @@ export function SetupWizard({ onComplete }: Props) {
     </div>
     {/* error 메시지 — 위자드 박스 밖 아래 (박스 height 변동 0) */}
     {error && (
-      <p className="mt-3 text-[13px] text-red-600 font-medium bg-red-50 border border-red-200 rounded px-3 py-2">
+      <p className="mt-3 text-[13px] text-red-600 font-medium bg-red-50 border border-red-200 rounded px-3 py-2 whitespace-pre-wrap break-words">
         {error}
       </p>
     )}
