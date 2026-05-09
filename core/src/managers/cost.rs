@@ -39,20 +39,32 @@ pub struct CostBudget {
 pub type CostStatsFilter = LlmCostStatsFilter;
 pub type CostStatsSummary = LlmCostStatsSummary;
 
+/// frontend 호환 — 옛 TS API field 이름 매칭 (`dailyUsd` / `monthlyUsd` 등 짧은 이름).
+/// `daily_used_usd` 같은 긴 이름 → `dailyUsd` 매핑. frontend `/api/llm/budget` 의
+/// `check.dailyUsd` 호출 박힌 게 그대로 동작.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BudgetCheckResult {
     /// 한도 안 (true) — 호출 허용. false 면 LLM 호출 거부.
+    #[serde(rename = "withinBudget")]
     pub within_budget: bool,
     /// `allowed=false` 시 한국어 reason (옛 TS `checkBudget.reason` 1:1).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    #[serde(rename = "dailyUsd")]
     pub daily_used_usd: f64,
+    #[serde(rename = "monthlyUsd")]
     pub monthly_used_usd: f64,
+    #[serde(rename = "dailyCalls")]
     pub daily_calls: i64,
+    #[serde(rename = "monthlyCalls")]
     pub monthly_calls: i64,
+    #[serde(rename = "dailyLimitUsd")]
     pub daily_limit_usd: f64,
+    #[serde(rename = "monthlyLimitUsd")]
     pub monthly_limit_usd: f64,
+    #[serde(rename = "dailyLimitCalls")]
     pub daily_limit_calls: i64,
+    #[serde(rename = "monthlyLimitCalls")]
     pub monthly_limit_calls: i64,
     /// 사전 알림 (`alertAtPercent` 도달 시) 4종 — 한도 초과 reason 과 별도.
     pub alerts: Vec<String>,
@@ -60,6 +72,7 @@ pub struct BudgetCheckResult {
 
 /// 옛 TS `getCurrentSpend()` 1:1 — 일/월 누적.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct CurrentSpend {
     pub daily_usd: f64,
     pub monthly_usd: f64,
