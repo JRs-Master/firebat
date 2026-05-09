@@ -42,7 +42,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 
 ### 1. Storage Adapter (`infra/storage/`)
 - `IStoragePort` 구현.
-- **경로 탐색 공격 차단**: `isInsideZone` + `path.resolve` containment 체크.
+- **경로 탐색 공격 차단** (2026-05-10 갱신): `resolve_safe_path` 박혀 (a) `Path::is_absolute()` 거부 (b) `..` segment 거부 (c) `workspace_root.join(rel_path)` lexical normalize. **`canonicalize()` 박지 않음** — symlink 자동 풀어 self-hosted deploy 의 표준 패턴 (system/modules → src symlink) 박힌 게 workspace zone 밖 판정해 reject buggy. 옛 TS LocalStorageAdapter 의 `path.resolve + isInsideZone` 1:1 매칭. path traversal 방어 유지 + symlink 호환.
 - **쓰기 허용 구역**: `app/(user)/`, `user/`
 - **읽기 허용 구역**: `app/(user)/`, `user/`, `docs/`, `system/modules/`, `system/services/`
 - `listDir(path)`: `{name, isDirectory}[]` 반환.
@@ -121,8 +121,9 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 ### 7. Database Adapter (`infra/database/`)
 - `IDatabasePort` 구현.
 - `better-sqlite3` 기반 (`data/app.db`).
-- 자동 초기화: `pages` / `conversations` / `conversation_embeddings` / `routing_cache` / `media_usage` / `shared_conversations` / `deleted_conversations` / `page_redirects` 테이블 `CREATE TABLE IF NOT EXISTS`.
+- 자동 초기화: `pages` / `conversations` / `conversation_embeddings` / `routing_cache` / `media_usage` / `shared_conversations` / `deleted_conversations` / `page_redirects` / `llm_costs` 테이블 `CREATE TABLE IF NOT EXISTS`.
 - CRUD: `savePage`, `getPage`, `listPages`, `deletePage`, `listPagesByProject`, `deletePagesByProject`.
+- **LLM cost 통계** (2026-05-10 갱신): `query_llm_cost_stats(filter)` 박혀 totals (`LlmCostStatsSummary`) + records (`Vec<LlmCostStatsRecord>` per-day / per-model GROUP BY) 둘 다 응답. records SQL: `date(ts/1000, 'unixepoch', 'localtime') AS date, model, COUNT/SUM`. ts ms 단위 (cost.rs `Self::now_ms()`).
 - **마이그레이션 runner** (`infra/database/migrations/`, v0.1 2026-04-26): `_db_version` 테이블이 스키마 버전 추적. 부팅 시 `migrations/NNN-name.sql` 파일 검색 → currentVersion 보다 큰 것만 트랜잭션 보호로 순차 적용. 일방향 (up only). 새 변경은 v2+ 부터 (v1 = implicit baseline = 위 CREATE 자동초기화). 자세한 안내: `infra/database/migrations/README.md`.
 
 ### 8. Vault Adapter (`infra/storage/vault-adapter.ts`)
@@ -145,6 +146,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - Vault 기반 세션 저장: `auth:session:{token}` 키에 AuthSession JSON 저장.
 - 세션/API 토큰 CRUD: `saveSession`/`getSession`/`deleteSession`/`listSessions`/`deleteSessions`.
 - 만료 검사 포함: `getSession()` 호출 시 `expiresAt` 체크, 만료 시 자동 삭제.
+- **비번 hash** (2026-05-10 박힘): admin password 박힌 게 `set_admin_credentials` 박혀 vault 저장 시 자동 argon2id hash. login + verify_admin_password RPC 박혀 verify. **plain text 박힘 안 됨** — vault.db 유출 시에도 비번 노출 0. SettingsModal 비번 변경 박힌 게 옛 `timingSafeStringEqual(plain, hash)` 박혀 항상 mismatch buggy → `verify_admin_password` 신설 fix.
 
 ### 11. Embedder Adapter (`infra/llm/embedder-adapter.ts`)
 - `IEmbedderPort` 구현 — multilingual-e5-small 모델 (한국어·영어 OK).
