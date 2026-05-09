@@ -141,7 +141,7 @@ export function SetupWizard({ onComplete }: Props) {
     <div className="w-full max-w-[440px] bg-white border border-[#eaeaea] rounded-xl shadow-sm p-8">
       <div className="mb-6 text-center">
         <h2 className="text-2xl font-bold text-black mb-1 min-h-[32px]">{t('setup.title')}</h2>
-        <p className="text-sm text-gray-500 min-h-[40px]">{t('setup.subtitle')}</p>
+        <p className="text-sm text-gray-500 min-h-[44px]">{t('setup.subtitle')}</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -181,53 +181,54 @@ export function SetupWizard({ onComplete }: Props) {
 
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-gray-700 block">{t('setup.password')}</label>
-          <input
-            type="password"
-            value={adminPassword}
-            onChange={(e) => setAdminPassword(e.target.value)}
-            disabled={submitting}
-            className="w-full border border-[#eaeaea] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:bg-slate-50"
-          />
-          {/* strength meter — 항상 영역 reserve (layout shift 방지) */}
-          <div className="flex items-center gap-2 h-4">
+          <div className="relative">
+            <input
+              type="password"
+              value={adminPassword}
+              onChange={(e) => setAdminPassword(e.target.value)}
+              disabled={submitting}
+              className="w-full border border-[#eaeaea] rounded-md pl-3 pr-[110px] py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:bg-slate-50"
+            />
             {adminPassword && (() => {
               const s = passwordStrength(adminPassword);
               const barColor = s === 1 ? 'bg-red-500' : s === 2 ? 'bg-amber-500' : 'bg-green-500';
               const labelColor = s === 1 ? 'text-red-600' : s === 2 ? 'text-amber-600' : 'text-green-600';
               const labelKey = s === 1 ? 'setup.password_strength_weak' : s === 2 ? 'setup.password_strength_medium' : 'setup.password_strength_strong';
               return (
-                <>
-                  <div className="flex-1 h-1 bg-slate-200 rounded overflow-hidden">
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
+                  <div className="w-10 h-1 bg-slate-200 rounded overflow-hidden">
                     <div className={`h-full ${barColor} transition-all`} style={{ width: `${(s / 3) * 100}%` }} />
                   </div>
-                  <span className={`text-[11px] font-medium ${labelColor} min-w-[36px] text-right`}>{t(labelKey)}</span>
-                </>
+                  <span className={`text-[10px] font-medium ${labelColor} w-[52px] text-left`}>{t(labelKey)}</span>
+                </div>
               );
             })()}
           </div>
-          <p className="text-[11px] text-gray-500 min-h-[28px]">{t('setup.password_hint')}</p>
+          <p className="text-[11px] text-gray-500 min-h-[44px]">{t('setup.password_hint')}</p>
         </div>
 
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-gray-700 block">{t('setup.password_confirm')}</label>
-          <input
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            disabled={submitting}
-            className="w-full border border-[#eaeaea] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:bg-slate-50"
-          />
-          {/* match indicator — 항상 영역 reserve */}
-          <p className="text-[11px] font-medium min-h-[16px]">
+          <div className="relative">
+            <input
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              disabled={submitting}
+              className="w-full border border-[#eaeaea] rounded-md pl-3 pr-9 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:bg-slate-50"
+            />
             {confirmPassword && (() => {
               const match = adminPassword === confirmPassword;
               return (
-                <span className={match ? 'text-green-600' : 'text-red-600'}>
-                  {match ? '✓ ' : '✗ '}{t(match ? 'setup.password_match' : 'setup.password_no_match')}
+                <span
+                  className={`absolute right-3 top-1/2 -translate-y-1/2 text-base font-bold pointer-events-none ${match ? 'text-green-600' : 'text-red-600'}`}
+                  aria-label={t(match ? 'setup.password_match' : 'setup.password_no_match')}
+                >
+                  {match ? '✓' : '✗'}
                 </span>
               );
             })()}
-          </p>
+          </div>
         </div>
 
         <div className="space-y-1.5">
