@@ -32,7 +32,7 @@ export default function Login() {
               className="w-full border border-[#eaeaea] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors" />
           </div>
           <div className="pt-2">
-            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium h-10 rounded-md text-sm transition-colors flex items-center justify-center shadow-sm">
+            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium h-10 rounded-md text-sm transition-colors flex items-center justify-center shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-1">
               Continue
             </button>
           </div>

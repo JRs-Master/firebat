@@ -125,7 +125,7 @@ function DialogUI({
           {showCancel && (
             <button
               onClick={() => onClose(false)}
-              className="px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-200 bg-white rounded-lg transition-colors border border-slate-300"
+              className="px-3 py-1.5 text-[13px] font-medium text-slate-600 hover:bg-slate-200 bg-white rounded-lg transition-colors border border-slate-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-1"
             >
               {opts.cancelLabel ?? '취소'}
             </button>
@@ -133,7 +133,7 @@ function DialogUI({
           <button
             ref={okBtnRef}
             onClick={() => onClose(true)}
-            className={`px-3 py-1.5 text-[13px] font-bold text-white rounded-lg transition-colors shadow-sm ${okCls}`}
+            className={`px-3 py-1.5 text-[13px] font-bold text-white rounded-lg transition-colors shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-1 ${okCls}`}
           >
             {opts.okLabel ?? '확인'}
           </button>
