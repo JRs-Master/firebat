@@ -1,7 +1,7 @@
 //! gRPC LifecycleService impl — Health / CaptureException / GracefulShutdown.
 //!
 //! Phase B-17.5 minimum: Health 활성 (uptime + version + active managers list).
-//! CaptureException 은 stub (Phase B-17.5+ tracing + Sentry 박힌 후).
+//! CaptureException 은 stub (Phase B-17.5+ tracing + Sentry 설정된 후).
 //! GracefulShutdown 은 명시 종료 신호 — 어드민이 호출하면 Server::serve_with_shutdown 통과.
 
 use std::sync::OnceLock;

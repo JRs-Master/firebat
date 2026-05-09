@@ -3,7 +3,7 @@
 //! 옛 TS `infra/image/formats/gemini-native-image.ts` 1:1 port.
 //! POST `https://generativelanguage.googleapis.com/v1beta/models/<model>:generateContent`
 //! 인증: `?key=<API_KEY>` query param.
-//! Multimodal contents — reference_image 박혀있으면 inline_data part 자동 추가.
+//! Multimodal contents — reference_image 설정되어 있으면 inline_data part 자동 추가.
 
 use base64::Engine;
 use serde::Deserialize;
@@ -92,7 +92,7 @@ impl ImageFormatHandler for GeminiNativeImageFormat {
             }
         }
 
-        // multimodal contents.parts — reference_image 박혀있으면 inline_data 먼저, 그 다음 text.
+        // multimodal contents.parts — reference_image 설정되어 있으면 inline_data 먼저, 그 다음 text.
         let mut parts: Vec<serde_json::Value> = Vec::new();
         if let Some(ref_img) = &opts.reference_image {
             let b64 = base64::engine::general_purpose::STANDARD.encode(&ref_img.binary);
@@ -144,7 +144,7 @@ impl ImageFormatHandler for GeminiNativeImageFormat {
             .and_then(|c| c.content)
             .and_then(|c| c.parts)
             .and_then(|mut p| {
-                // inline_data 가 박힌 part 우선 (text part 가 먼저 오는 경우 있음)
+                // inline_data 가 설정된 part 우선 (text part 가 먼저 오는 경우 있음)
                 p.drain(..).find(|part| {
                     part.inline_data
                         .as_ref()

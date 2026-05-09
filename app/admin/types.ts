@@ -1,6 +1,6 @@
 import { ConversationMeta } from './components/Sidebar';
 
-// Rust core 의 builtin_models() 박힌 거 1:1 — 운영 시점에 Vault API 키 박으면 활성.
+// Rust core 의 builtin_models() 설정된 거 1:1 — 운영 시점에 Vault API 키 설정하면 활성.
 // AI 어시스턴트 보조용 (잼민이 Flash Lite) 는 별도 list (AI Assistant 모델 풀) — carousel 노출 X.
 export const AI_MODELS = [
   // Anthropic API

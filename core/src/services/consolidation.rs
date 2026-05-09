@@ -1,7 +1,7 @@
 //! gRPC ConsolidationService impl — ConsolidationManager wrapping.
 //!
 //! Phase B-12 minimum: save_extracted (consolidate) + get_memory_stats 활성.
-//! AskLlmText / ConsolidateInactive 는 Phase B-16+ AiManager + ILlmPort 박힌 후 활성.
+//! AskLlmText / ConsolidateInactive 는 Phase B-16+ AiManager + ILlmPort 설정된 후 활성.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -33,7 +33,7 @@ impl ConsolidationService for ConsolidationServiceImpl {
         &self,
         req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // 옛 TS Core.askLlmText 1:1 — set_ai_hook 박혀있을 때만 활성.
+        // 옛 TS Core.askLlmText 1:1 — set_ai_hook 설정되어 있을 때만 활성.
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {

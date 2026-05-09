@@ -1,4 +1,4 @@
-//! StubImageProcessorAdapter — 진짜 image-rs / blurhash 박기 전 wiring 어댑터.
+//! StubImageProcessorAdapter — 진짜 image-rs / blurhash 구현 전 wiring 어댑터.
 //!
 //! Step 2b 에서 ImageRsProcessorAdapter (image-rs + fast_image_resize + blurhash crate) 로 swap.
 //! 그 시점엔 IImageProcessorPort 인터페이스 그대로 — main.rs env 토글 한 줄로 활성.
@@ -9,7 +9,7 @@
 //!   - blurhash: 고정 회색 LQIP 문자열.
 //!   - create_placeholder: 1x1 회색 PNG (최소 valid PNG 바이트).
 //!
-//! 사용처 — wiring 검증 + 단위 테스트. 실 운영에는 ImageRsProcessorAdapter 박을 것.
+//! 사용처 — wiring 검증 + 단위 테스트. 실 운영에는 ImageRsProcessorAdapter 설정할 것.
 
 use firebat_core::ports::{IImageProcessorPort, ImageMetadata, InfraResult, ResizeOpts};
 
@@ -27,13 +27,13 @@ const GREY_1X1_PNG: &[u8] = &[
     0x00, 0x00, 0x00, 0x0C, // IDAT length (12)
     0x49, 0x44, 0x41, 0x54, // "IDAT"
     0x08, 0x99, 0x63, 0xF8, 0xCF, 0xCF, 0xCF, 0x07, 0x00, 0x03, 0x10, 0x01, 0x01, // zlib + grey RGB
-    0xC8, 0xD8, 0x9F, 0x03, // CRC (placeholder — image-rs swap 시 정확 byte 박음)
+    0xC8, 0xD8, 0x9F, 0x03, // CRC (placeholder — image-rs swap 시 정확 byte 적용)
     0x00, 0x00, 0x00, 0x00, // IEND length
     0x49, 0x45, 0x4E, 0x44, // "IEND"
     0xAE, 0x42, 0x60, 0x82, // CRC
 ];
 
-/// Stub blurhash — Step 2b ImageRsProcessorAdapter 박힐 때까지 placeholder.
+/// Stub blurhash — Step 2b ImageRsProcessorAdapter 설정될 때까지 placeholder.
 /// 4x4 base83 회색 (옛 TS `LEHV6nWB2yk8pyo0adR*.7kCMdnj` 같은 형식 흉내).
 const STUB_BLURHASH: &str = "L00000fQfQfQfQfQfQfQfQfQfQfQ";
 
@@ -49,7 +49,7 @@ impl StubImageProcessorAdapter {
 #[async_trait::async_trait]
 impl IImageProcessorPort for StubImageProcessorAdapter {
     async fn get_metadata(&self, binary: &[u8]) -> InfraResult<ImageMetadata> {
-        // bytes 만 알고 width/height/format 미감지 — Step 2b 에서 image::io::Reader 박을 것.
+        // bytes 만 알고 width/height/format 미감지 — Step 2b 에서 image::io::Reader 설정할 것.
         Ok(ImageMetadata {
             width: 0,
             height: 0,
@@ -73,7 +73,7 @@ impl IImageProcessorPort for StubImageProcessorAdapter {
     }
 
     async fn create_placeholder(&self, _width: u32, _height: u32) -> InfraResult<Vec<u8>> {
-        // Stub — 1x1 회색 PNG 반환. Step 2b 에서 실제 width/height 회색 사각형 박음.
+        // Stub — 1x1 회색 PNG 반환. Step 2b 에서 실제 width/height 회색 사각형 저장.
         Ok(GREY_1X1_PNG.to_vec())
     }
 }

@@ -1,11 +1,11 @@
 //! McpManager — 외부 MCP 서버 (Gmail / Slack / 카톡 등) 등록·연결·도구 호출 facade.
 //!
-//! 옛 TS `core/managers/mcp-manager.ts` Rust 재구현. IMcpClientPort 위에 박힌 thin facade —
+//! 옛 TS `core/managers/mcp-manager.ts` Rust 재구현. IMcpClientPort 위에 설정된 thin facade —
 //! Core 매니저는 인프라 직접 호출 X (BIBLE 원칙).
 //!
 //! Phase B-11 minimum:
 //! - listServers / addServer / removeServer 활성 (JSON 파일 영속)
-//! - listTools / callTool 은 어댑터 stub — Phase B-15+ 에서 rmcp crate 박힌 후 활성
+//! - listTools / callTool 은 어댑터 stub — Phase B-15+ 에서 rmcp crate 설정된 후 활성
 
 use std::sync::Arc;
 

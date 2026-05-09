@@ -214,6 +214,8 @@ service AuthService {
   rpc GetApiTokenInfo(Empty) returns (JsonValue);
   rpc GetAdminCredentials(Empty) returns (JsonValue);
   rpc SetAdminCredentials(JsonArgs) returns (Status);
+  // 첫 부팅 setup 검출 — frontend `/login` 이 호출, false 면 setup wizard 노출.
+  rpc IsAdminSetup(Empty) returns (BoolRequest);
 }
 
 // ──────────────────────────────────────────────────────────────────────────

@@ -28,7 +28,7 @@ COPY proto /app/proto
 COPY core-rust/Cargo.toml core-rust/Cargo.lock core-rust/build.rs /app/core-rust/
 
 # Phase B-17 의 protoc-bin-vendored 가 musl static binary 자동 다운로드.
-# 별도 protoc apk install 불필요 — vendored 가 PATH 박음.
+# 별도 protoc apk install 불필요 — vendored 가 PATH 저장.
 
 # 의존성 캐시 layer — Cargo.toml 만 변경 안 됐으면 deps 컴파일 결과 재사용.
 # dummy main.rs 로 deps 만 먼저 빌드 (Cargo 캐시 패턴).
@@ -63,7 +63,7 @@ COPY --from=builder /app/core-rust/target/release/firebat-core /usr/local/bin/fi
 RUN chmod +x /usr/local/bin/firebat-core
 
 # data / 미디어 디렉토리 — docker-compose volume mount.
-# 부팅 시 firebat-core 가 자동으로 sub-dir 생성하지만 권한 사전 박음.
+# 부팅 시 firebat-core 가 자동으로 sub-dir 생성하지만 권한 사전 저장.
 RUN mkdir -p /opt/firebat/data \
              /opt/firebat/user/media \
              /opt/firebat/system/media \
@@ -74,7 +74,7 @@ RUN mkdir -p /opt/firebat/data \
 USER firebat
 
 # 환경 변수 default — docker-compose.yml override 가능.
-# FIREBAT_DEFAULT_MODEL 미박음 (사용자가 어드민 설정 → AI 탭에서 명시 선택 박는 패턴).
+# FIREBAT_DEFAULT_MODEL 미설정 (사용자가 어드민 설정 → AI 탭에서 명시 선택 사용하는 패턴).
 ENV FIREBAT_WORKSPACE_ROOT=/opt/firebat \
     FIREBAT_CORE_LISTEN=0.0.0.0:50051 \
     FIREBAT_TIMEZONE=Asia/Seoul \
@@ -82,7 +82,7 @@ ENV FIREBAT_WORKSPACE_ROOT=/opt/firebat \
 
 EXPOSE 50051
 
-# Phase B-17b 박힘 — SIGTERM 으로 graceful shutdown 정상 작동.
+# Phase B-17b 구현 — SIGTERM 으로 graceful shutdown 정상 작동.
 # Docker 가 SIGTERM 보내고 30초 대기 (--stop-timeout) 후 SIGKILL.
 STOPSIGNAL SIGTERM
 

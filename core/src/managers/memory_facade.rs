@@ -8,7 +8,7 @@
 //! 향후 multi-tenant SaaS / 외부 사용자 진입 시점에 Memory 매니저 차원 단일 facade
 //! (CommandManager) 로 흡수 가능 — trait 그대로 유지.
 //!
-//! 2026-05-06 박힘 (Phase B-4 cutover audit 결과 회색 지대 #3 정리).
+//! 2026-05-06 설정 (Phase B-4 cutover audit 결과 회색 지대 #3 정리).
 //!
 //! WARNING: 의존 그래프상 ConsolidationManager → MemoryFacade → EntityManager + EpisodicManager.
 //! 즉 facade 자체는 Core 내부에서 어댑터처럼 동작 (concrete struct 보유) — 단 ConsolidationManager

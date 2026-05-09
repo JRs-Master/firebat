@@ -46,7 +46,7 @@ struct CachedTargets {
 
 pub struct ToolDispatcher {
     storage: Arc<dyn IStoragePort>,
-    /// 옵션 — 박혀있으면 cancel_task / save_page / 외부 MCP 검증 활성. 미박음 시 검증 skip.
+    /// 옵션 — 설정되어 있으면 cancel_task / save_page / 외부 MCP 검증 활성. 미설정 시 검증 skip.
     page: Option<Arc<PageManager>>,
     schedule: Option<Arc<ScheduleManager>>,
     mcp: Option<Arc<McpManager>>,
@@ -186,7 +186,7 @@ impl ToolDispatcher {
             }
             "save_page" => {
                 let slug = args.get("slug").and_then(|v| v.as_str())?;
-                // page builder 박혀있을 때만 검사 — 미박음 시 conservative 박지 않고 즉시 (옛 TS 동등)
+                // page builder 설정되어 있을 때만 검사 — 미설정 시 conservative 하지 않고 즉시 (옛 TS 동등)
                 let exists = match &self.page {
                     Some(page) => page.get(slug).is_some(),
                     None => false,
@@ -246,7 +246,7 @@ impl ToolDispatcher {
                     .get("jobId")
                     .and_then(|v| v.as_str())
                     .unwrap_or("(unknown)");
-                // jobId 로 title lookup — UI 가독성 ↑ (schedule manager 박혀있을 때만)
+                // jobId 로 title lookup — UI 가독성 ↑ (schedule manager 설정되어 있을 때만)
                 let label = if let Some(schedule) = &self.schedule {
                     let jobs = schedule.list();
                     let job = jobs.iter().find(|j| j.job_id == job_id);

@@ -85,12 +85,12 @@ async fn empty_body_rejected() {
 async fn list_silent_skips_invalid_json() {
     let dir = tempfile::tempdir().unwrap();
     let storage = LocalStorageAdapter::new(dir.path());
-    // 잘못된 JSON 직접 박음 — list 가 silent skip 해야
+    // 잘못된 JSON 직접 저장 — list 가 silent skip 해야
     storage
         .write("user/templates/broken/template.json", "{ not valid json")
         .await
         .unwrap();
-    // 정상 템플릿도 같이 박음
+    // 정상 템플릿도 같이 저장
     let valid_json = serde_json::to_string_pretty(&make_template("valid")).unwrap();
     storage
         .write("user/templates/valid/template.json", &valid_json)

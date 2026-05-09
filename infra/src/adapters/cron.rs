@@ -15,7 +15,7 @@
 //! Phase B-13 minimum:
 //! - schedule / cancel / list / getLogs / consumeNotifications 활성
 //! - cron expression 파싱 (cron crate) + chrono-tz timezone 변환
-//! - on_trigger callback 박음 — Schedule manager 가 등록, 트리거 시 호출
+//! - on_trigger callback 저장 — Schedule manager 가 등록, 트리거 시 호출
 //! - triggerNow / runWhen / retry / oneShot 자동 취소 등은 Schedule manager (manager 차원 책임)
 
 use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
@@ -137,7 +137,7 @@ impl TokioCronAdapter {
     /// 옛 TS parseInTimezone Rust port — "2026-05-04T15:00:00" 처럼 offset 없으면 tz 기준 로컬로 해석.
     fn parse_in_timezone(value: &str, tz_name: &str) -> Option<DateTime<Utc>> {
         let trimmed = value.trim();
-        // 이미 offset 박힘 (Z 또는 +HH:MM)
+        // 이미 offset 설정 (Z 또는 +HH:MM)
         if trimmed.ends_with('Z')
             || trimmed.contains("+")
             || (trimmed.len() > 10 && trimmed[10..].contains('-'))
@@ -528,7 +528,7 @@ impl ICronPort for TokioCronAdapter {
         Ok(())
     }
 
-    /// 부팅 시 영속 파일에 박혀있던 잡들 task 재시작.
+    /// 부팅 시 영속 파일에 설정되어 있던 잡들 task 재시작.
     /// delay 잡은 복원 불가 (시각 정보 부재), cron / once 만 복원.
     async fn restore(self: Arc<Self>) {
         // 부팅 시 옛 알림 초기화 — 재시작 후 옛 알림이 한꺼번에 뜨는 것 방지 (옛 TS 1:1).
@@ -692,7 +692,7 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         assert!(a.list().is_empty());
 
-        // 로그 박힘
+        // 로그 설정
         let logs = a.get_logs(None);
         assert_eq!(logs.len(), 1);
         assert!(logs[0].success);

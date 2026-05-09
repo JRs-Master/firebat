@@ -17,7 +17,7 @@ export interface HeaderConfig {
   show: boolean;
   /** 텍스트 로고 — siteTitle 비어있으면 CMS settings.siteTitle 폴백 */
   siteName: string;
-  /** 이미지 로고 URL (선택). 박혀있으면 텍스트 로고 옆에 표시. */
+  /** 이미지 로고 URL (선택). 설정되어 있으면 텍스트 로고 옆에 표시. */
   logoUrl: string;
   /** 네비 링크 목록 */
   navLinks: NavLink[];
@@ -33,8 +33,8 @@ export interface HeaderConfig {
    *  ON 시 본문 stacked 사이드바 대신 drawer 안에 검색 + 카테고리 + 최근글 등 모두 통합.
    *  한 번 햄버거 클릭으로 모든 모바일 콘텐츠 접근. 기본 false. */
   mobileDrawerIncludeSidebar?: boolean;
-  /** Phase B widget 시스템 — 좌/중/우 3 col 슬롯. 박혀있으면 widget 빌더 우선,
-   *  미박힘 시 legacy (siteName / logoUrl / navLinks) 에서 자동 derive. */
+  /** Phase B widget 시스템 — 좌/중/우 3 col 슬롯. 설정되어 있으면 widget 빌더 우선,
+   *  미설정 시 legacy (siteName / logoUrl / navLinks) 에서 자동 derive. */
   widgets?: {
     left: import('./widget-catalog').WidgetSlot[];
     center: import('./widget-catalog').WidgetSlot[];
@@ -54,10 +54,10 @@ export interface FooterConfig {
   show: boolean;
   /** 푸터 메인 텍스트 (HTML 허용 — sanitize 후 inline DOM). 저작권·법적 고지 등. 컬럼 아래 표시. */
   text: string;
-  /** 4 컬럼 (legacy) — 각 컬럼별 heading + content. widgets 미박힘 시 호환 폴백. */
+  /** 4 컬럼 (legacy) — 각 컬럼별 heading + content. widgets 미설정 시 호환 폴백. */
   columns: FooterColumn[];
-  /** Phase C widget 시스템 — 4 col 까지 widget 배열. 어느 col 이라도 박혀있으면 widget 빌더,
-   *  미박힘 시 legacy columns 에서 자동 derive (각 컬럼 = html-block widget). */
+  /** Phase C widget 시스템 — 4 col 까지 widget 배열. 어느 col 이라도 설정되어 있으면 widget 빌더,
+   *  미설정 시 legacy columns 에서 자동 derive (각 컬럼 = html-block widget). */
   widgets?: import('./widget-catalog').WidgetSlot[][];
 }
 
@@ -71,10 +71,10 @@ export interface FooterConfig {
 export type LayoutMode = 'full' | 'right-sidebar' | 'left-sidebar' | 'both-sidebar' | 'boxed';
 
 export interface SidebarConfig {
-  /** 신규 widget 시스템 — 박혀있으면 6 toggle 무시. 비어있거나 미박힘 시 6 toggle 호환 폴백.
+  /** 신규 widget 시스템 — 설정되어 있으면 6 toggle 무시. 비어있거나 미설정 시 6 toggle 호환 폴백.
    *  Phase A 마이그레이션 점진적. 사용자가 어드민 widget builder 에서 직접 편집 가능. */
   widgets?: import('./widget-catalog').WidgetSlot[];
-  /** 검색 박스 위젯 — /search 로 GET. (legacy toggle, widgets 미박힘 시) */
+  /** 검색 박스 위젯 — /search 로 GET. (legacy toggle, widgets 미설정 시) */
   showSearchBox: boolean;
   /** 최근 글 위젯 표시 (legacy) */
   showRecentPosts: boolean;

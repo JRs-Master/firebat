@@ -1,7 +1,7 @@
 //! AiManager — User AI / Code Assistant / AI Assistant orchestrator.
 //!
 //! 옛 TS `core/managers/ai-manager.ts` (1249줄, 6 collaborator 분리 후) Rust 재구현.
-//! Phase B-16 minimum: shape 박힘 + Function Calling 도구 dispatch 흐름. 실 LLM 호출은 Phase B-17+.
+//! Phase B-16 minimum: shape 설정 + Function Calling 도구 dispatch 흐름. 실 LLM 호출은 Phase B-17+.
 //!
 //! Phase B-17+ 후속:
 //! - 시스템 프롬프트 빌더 (옛 TS prompt-builder.ts)
@@ -20,7 +20,7 @@ pub mod retrieval_engine;
 pub mod tool_router;
 pub mod plan_mode;
 pub mod code_assist;
-// 옛 llm/ 에 박혀있던 순수 검색 index — infra 의존 0건이라 core (managers/ai) 로 이동.
+// 옛 llm/ 에 설정되어 있던 순수 검색 index — infra 의존 0건이라 core (managers/ai) 로 이동.
 pub mod component_registry;
 pub mod component_search_index;
 pub mod tool_search_index;
@@ -83,29 +83,29 @@ pub struct AiManager {
     llm: Arc<dyn ILlmPort>,
     tools: Arc<ToolManager>,
     log: Arc<dyn ILogPort>,
-    /// 시스템 프롬프트 builder (옵션) — Vault 박힌 채로 박힘. 미박힘 시 base prompt 만.
+    /// 시스템 프롬프트 builder (옵션) — Vault 설정된 채로 설정. 미설정 시 base prompt 만.
     prompt_builder: Option<PromptBuilder>,
     /// 시스템 컨텍스트 gatherer (옵션) — sysmod / user module / MCP 동적 description 주입.
-    /// 미박힘 시 시스템 프롬프트에 컨텍스트 추가 안 됨 (base prompt 만).
+    /// 미설정 시 시스템 프롬프트에 컨텍스트 추가 안 됨 (base prompt 만).
     context_gatherer: Option<Arc<SystemContextGatherer>>,
-    /// History resolver (옵션) — 옛 TS history-resolver.ts Rust port. opts.conversation_id 박혀있으면
-    /// 자동 recent N 메시지 컨텍스트 prepend. IEmbedderPort 박힌 후 임베딩 spread 판정 활성.
+    /// History resolver (옵션) — 옛 TS history-resolver.ts Rust port. opts.conversation_id 설정되어 있으면
+    /// 자동 recent N 메시지 컨텍스트 prepend. IEmbedderPort 설정된 후 임베딩 spread 판정 활성.
     history_resolver: Option<HistoryResolver>,
     /// CostManager (옵션) — LLM 호출 후 자동 비용 누적. 옛 TS ai-manager.ts:1260
-    /// `core.recordLlmCost(usage)` 패턴 1:1 port. 미박힘 시 비용 누적 비활성.
+    /// `core.recordLlmCost(usage)` 패턴 1:1 port. 미설정 시 비용 누적 비활성.
     cost: Option<Arc<CostManager>>,
     /// ToolDispatcher (옵션) — approval gate (check_needs_approval + pre_validate_pending_args).
-    /// 박혀있으면 destructive 도구 (write_file/save_page 덮어쓰기 / delete_* / schedule_task /
+    /// 설정되어 있으면 destructive 도구 (write_file/save_page 덮어쓰기 / delete_* / schedule_task /
     /// cancel_task) 호출 시 즉시 실행 X → pending 으로 등록. 옛 TS ai-manager.ts approval flow 1:1.
-    /// 미박힘 시 모든 도구 즉시 실행 (현재 default — 회귀 안전).
+    /// 미설정 시 모든 도구 즉시 실행 (현재 default — 회귀 안전).
     dispatcher: Option<Arc<ToolDispatcher>>,
-    /// ConversationManager (옵션) — CLI session resume 위해 직접 참조. 박혀있고 model 이 `cli-` 로
-    /// 시작 + opts.conversation_id 박혀있으면 자동 resume_session_id 주입 + 첫 응답의 session_id
+    /// ConversationManager (옵션) — CLI session resume 위해 직접 참조. 설정되어 있고 model 이 `cli-` 로
+    /// 시작 + opts.conversation_id 설정되어 있으면 자동 resume_session_id 주입 + 첫 응답의 session_id
     /// 영속화. 옛 TS ai-manager.ts:914-924 1:1.
     conversation: Option<Arc<ConversationManager>>,
     /// DynamicToolRegistry (옵션) — sysmod_* / mcp_* 동적 도구 자동 등록 + 60초 cache.
-    /// 박혀있으면 process_with_tools_opts 시작 시 refresh 호출 — 옛 TS buildToolDefinitions 1:1.
-    /// 미박힘 시 정적 도구 (`tool_registry::register_core_tools`) 만 LLM 노출.
+    /// 설정되어 있으면 process_with_tools_opts 시작 시 refresh 호출 — 옛 TS buildToolDefinitions 1:1.
+    /// 미설정 시 정적 도구 (`tool_registry::register_core_tools`) 만 LLM 노출.
     dynamic_tools: Option<Arc<dynamic_tools::DynamicToolRegistry>>,
 }
 
@@ -129,7 +129,7 @@ impl AiManager {
         }
     }
 
-    /// DynamicToolRegistry 박은 채로 부팅 — sysmod_* / mcp_* 자동 등록 활성.
+    /// DynamicToolRegistry 설정한 채로 부팅 — sysmod_* / mcp_* 자동 등록 활성.
     pub fn with_dynamic_tools(
         mut self,
         registry: Arc<dynamic_tools::DynamicToolRegistry>,
@@ -138,22 +138,22 @@ impl AiManager {
         self
     }
 
-    /// ToolDispatcher 박은 채로 부팅 — approval gate (write_file/save_page 덮어쓰기 / delete_* /
+    /// ToolDispatcher 설정한 채로 부팅 — approval gate (write_file/save_page 덮어쓰기 / delete_* /
     /// schedule_task / cancel_task) 활성. cron agent 모드는 우회 (server-side 실행).
     pub fn with_tool_dispatcher(mut self, dispatcher: Arc<ToolDispatcher>) -> Self {
         self.dispatcher = Some(dispatcher);
         self
     }
 
-    /// ConversationManager 박은 채로 부팅 — CLI session resume 활성 (model 이 `cli-` 로 시작 + 대화
-    /// ID 박혀있을 때). 옛 TS getCliSession / setCliSession 1:1.
+    /// ConversationManager 설정한 채로 부팅 — CLI session resume 활성 (model 이 `cli-` 로 시작 + 대화
+    /// ID 설정되어 있을 때). 옛 TS getCliSession / setCliSession 1:1.
     pub fn with_conversation_manager(mut self, conversation: Arc<ConversationManager>) -> Self {
         self.conversation = Some(conversation);
         self
     }
 
     /// `search_components(query)` 도구 등록 — 옛 TS search_components handler 1:1.
-    /// IEmbedderPort 박혀있을 때만 호출. ToolManager 에 직접 register_handler.
+    /// IEmbedderPort 설정되어 있을 때만 호출. ToolManager 에 직접 register_handler.
     ///
     /// 사용 예 (Rust):
     /// ```ignore
@@ -213,25 +213,25 @@ impl AiManager {
         self
     }
 
-    /// HistoryResolver 박은 채로 부팅 — opts.conversation_id 박혀있으면 recent N 메시지 자동 prepend.
+    /// HistoryResolver 설정한 채로 부팅 — opts.conversation_id 설정되어 있으면 recent N 메시지 자동 prepend.
     pub fn with_history_resolver(mut self, conversation: Arc<ConversationManager>) -> Self {
         self.history_resolver = Some(HistoryResolver::new(conversation));
         self
     }
 
-    /// CostManager 박은 채로 부팅 — LLM 호출마다 자동 비용 누적 (옛 TS recordLlmCost 패턴).
+    /// CostManager 설정한 채로 부팅 — LLM 호출마다 자동 비용 누적 (옛 TS recordLlmCost 패턴).
     pub fn with_cost_manager(mut self, cost: Arc<CostManager>) -> Self {
         self.cost = Some(cost);
         self
     }
 
-    /// PromptBuilder 박은 채로 부팅 — 시스템 프롬프트 자동 주입 활성.
+    /// PromptBuilder 설정한 채로 부팅 — 시스템 프롬프트 자동 주입 활성.
     pub fn with_prompt_builder(mut self, vault: Arc<dyn IVaultPort>) -> Self {
         self.prompt_builder = Some(PromptBuilder::new(vault));
         self
     }
 
-    /// SystemContextGatherer 박은 채로 부팅 — 시스템 프롬프트에 sysmod / mcp 동적 description 자동 주입.
+    /// SystemContextGatherer 설정한 채로 부팅 — 시스템 프롬프트에 sysmod / mcp 동적 description 자동 주입.
     pub fn with_system_context(
         mut self,
         module: Arc<ModuleManager>,
@@ -312,7 +312,7 @@ impl AiManager {
         // 도구 list 미전달 시 ToolManager 등록 도구 자동 사용 (옛 TS buildToolDefinitions 동등).
         let auto_tools: Vec<ToolDefinition>;
         let effective_tools: &[ToolDefinition] = if tools.is_empty() {
-            // 동적 도구 (sysmod_* / mcp_*) refresh — 60초 cache. 박혀있을 때만.
+            // 동적 도구 (sysmod_* / mcp_*) refresh — 60초 cache. 설정되어 있을 때만.
             if let Some(dyn_reg) = &self.dynamic_tools {
                 dyn_reg.refresh().await;
             }
@@ -331,7 +331,7 @@ impl AiManager {
 
         // 시스템 프롬프트 자동 주입 + plan_mode prefix.
         // 옛 TS `finalSystemPrompt = planExecuteRule + planModePrefix + systemPrompt + autoHistoryContext + memorySection`
-        // 1:1. 본 step 에선 planExecuteRule (plan-store) / autoHistoryContext (router) 미박음 — 후속 batch.
+        // 1:1. 본 step 에선 planExecuteRule (plan-store) / autoHistoryContext (router) 미저장 — 후속 batch.
         let mut effective_opts = opts.clone();
         if effective_opts.system_prompt.is_none() {
             if let Some(pb) = &self.prompt_builder {
@@ -387,7 +387,7 @@ impl AiManager {
         // 옛 TS `turnCallSet` 1:1.
         let mut turn_call_set: HashSet<String>;
 
-        // CLI session resume — model 이 `cli-` 로 시작 + 대화 ID 박혀있으면 DB 에서 직전 session_id 조회.
+        // CLI session resume — model 이 `cli-` 로 시작 + 대화 ID 설정되어 있으면 DB 에서 직전 session_id 조회.
         // 옛 TS ai-manager.ts:914-924 1:1. 모델 바뀌면 None 반환되어 새 세션으로 시작 (DB 조건절).
         let model_for_session = effective_opts
             .model
@@ -420,7 +420,7 @@ impl AiManager {
         for turn in 0..max_turns {
             // Cost budget guard — turn 0 시작 직전에만 체크 (옛 TS ai-manager.ts:1242-1248 1:1).
             // 한도 초과 시 LLM 호출 자체 차단 → 토큰 0 + 비용 0 으로 안전 종료.
-            // CostManager 박혀있을 때만 작동 — 미박힘 시 한도 무제한 (회귀 안전).
+            // CostManager 설정되어 있을 때만 작동 — 미설정 시 한도 무제한 (회귀 안전).
             if turn == 0 {
                 if let Some(cost) = &self.cost {
                     let check = cost.check_budget();
@@ -478,7 +478,7 @@ impl AiManager {
             }
 
             // CLI session_id 영속화 — 어댑터가 첫 turn 에서 잡은 session_id 를 DB 에 저장.
-            // 옛 TS onCliSessionId 콜백 1:1. ConversationManager 박혀있고 model 이 cli- 면 작동.
+            // 옛 TS onCliSessionId 콜백 1:1. ConversationManager 설정되어 있고 model 이 cli- 면 작동.
             if let (Some(conv_mgr), Some(conv_id), Some(sid)) = (
                 &self.conversation,
                 &conv_id_for_session,
@@ -508,7 +508,7 @@ impl AiManager {
                     &response.model_id,
                     response.tokens_in.unwrap_or(0),
                     response.tokens_out.unwrap_or(0),
-                    0, // cached_tokens — Phase B-17+ Anthropic cache 응답 박힌 후
+                    0, // cached_tokens — Phase B-17+ Anthropic cache 응답 설정된 후
                     response.cost_usd.unwrap_or(0.0),
                     Some("user-ai"),
                 );
@@ -543,7 +543,7 @@ impl AiManager {
             for call in response.tool_calls.iter() {
                 // Approval gate (옛 TS ai-manager.ts 1342-1385 1:1) —
                 // 1. cron agent 모드면 우회 (server-side 실행)
-                // 2. ToolDispatcher 박혀있을 때만 작동
+                // 2. ToolDispatcher 설정되어 있을 때만 작동
                 // 3. check_needs_approval 결과 Some(summary) 면 pre_validate 후 pending 등록
                 // 4. pre_validate 실패 시 UI 미노출 + AI 한테 에러 결과만 → 다음 turn 재시도
                 if approval_enabled {
@@ -924,7 +924,7 @@ fn push_text_block_dedup(blocks: &mut Vec<serde_json::Value>, text: &str) {
 }
 
 /// schedule_task 의 runAt ISO 시각이 이미 과거인지 판정. 옛 TS `Date.parse(runAt) <= Date.now()` 1:1.
-/// 파싱 실패 시 false (보수적 — 안전한 쪽이 안 박힘).
+/// 파싱 실패 시 false (보수적 — 안전한 쪽이 안 설정).
 fn is_past_iso(run_at: &str) -> bool {
     use chrono::DateTime;
     DateTime::parse_from_rfc3339(run_at)
@@ -956,7 +956,7 @@ mod tests {
     use crate::ports::{IStoragePort, LlmTextResponse, LlmToolResponse};
     use std::sync::Mutex as StdMutex;
 
-    /// 스크립트 LLM — 첫 호출엔 박힌 tool_calls 반환, 이후 turn 엔 빈 tool_calls 로 종료.
+    /// 스크립트 LLM — 첫 호출엔 설정된 tool_calls 반환, 이후 turn 엔 빈 tool_calls 로 종료.
     /// approval gate / pending_actions 흐름 검증용.
     struct ScriptedLlm {
         model_id: String,
@@ -1161,7 +1161,7 @@ mod tests {
             arguments: serde_json::json!({
                 "title": "테스트",
                 "targetPath": "/x",
-                // cronTime / runAt / delaySec 전부 미박음
+                // cronTime / runAt / delaySec 전부 미저장
             }),
         }];
         let (mgr, _dir) = manager_with_dispatcher(scripted);

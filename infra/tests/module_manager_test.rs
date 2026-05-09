@@ -1,6 +1,6 @@
 //! ModuleManager integration test — 옛 core inline tests 이관.
 //!
-//! infra 의 `StubSandboxAdapter` 가 `#[cfg(test)]` 라 integration 안 보임 → 자체 stub 박음.
+//! infra 의 `StubSandboxAdapter` 가 `#[cfg(test)]` 라 integration 안 보임 → 자체 stub 저장.
 
 use std::sync::Arc;
 use tempfile::TempDir;

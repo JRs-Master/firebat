@@ -1,7 +1,7 @@
 //! gRPC AiService impl — AiManager wrapping.
 //!
 //! Phase B-16 minimum: Process / RequestActionWithTools / CodeAssist 활성 (StubLlm 위에).
-//! 실 LLM 호출은 Phase B-17+ (8 format 핸들러 박힌 후).
+//! 실 LLM 호출은 Phase B-17+ (8 format 핸들러 설정된 후).
 //! RunAgentJob / SpawnSubAgent / ResolveCallTarget 는 Phase B-17+ stub.
 
 use std::sync::Arc;
@@ -155,8 +155,8 @@ impl AiService for AiServiceImpl {
         &self,
         req: Request<StringRequest>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // 옛 TS resolveCallTarget 1:1 — ToolDispatcher 박혀있을 때만 활성.
-        // ToolDispatcher 가 AiManager 내부에 박혀있어 AiManager 위임 필요. 현재 풀 wiring 안 됐으면
+        // 옛 TS resolveCallTarget 1:1 — ToolDispatcher 설정되어 있을 때만 활성.
+        // ToolDispatcher 가 AiManager 내부에 설정되어 있어 AiManager 위임 필요. 현재 풀 wiring 안 됐으면
         // identifier 만 echo + null kind (이전 stub 동작 유지 — 회귀 안전).
         let identifier = req.into_inner().value;
         // AiManager 에 dispatcher API 노출 후 활성. 현재는 단순 echo.

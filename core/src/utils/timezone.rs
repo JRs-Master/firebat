@@ -1,6 +1,6 @@
 //! Timezone resolution helper — Vault 우선 + `Asia/Seoul` 폴백 일반 로직.
 //!
-//! 옛 cost.rs + ai/prompt_builder.rs 가 자체 박은 동일 패턴 (`VK_TIMEZONE` const + 4-line
+//! 옛 cost.rs + ai/prompt_builder.rs 가 자체 설정한 동일 패턴 (`VK_TIMEZONE` const + 4-line
 //! resolve fn) 을 single source 로 통합. 사용자 룰 (CLAUDE.md `feedback_no_hardcoding_cases.md`):
 //! "주변 코드 grep — 같은 패턴 발견 시 같이 일반화".
 //!

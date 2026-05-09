@@ -38,7 +38,7 @@ const E5_DIM: usize = 384;
 /// 토크나이저 max_length (옛 TS transformers.js default 와 동일).
 const E5_MAX_LENGTH: usize = 512;
 
-/// 로드된 모델 + 토크나이저 + device. OnceCell 안에 박힘 (한 번만 init).
+/// 로드된 모델 + 토크나이저 + device. OnceCell 안에 설정 (한 번만 init).
 struct E5State {
     model: BertModel,
     tokenizer: Tokenizer,
@@ -46,8 +46,8 @@ struct E5State {
 }
 
 pub struct E5LocalEmbedderAdapter {
-    /// 모델 캐시 디렉토리 override — 미박음 시 hf-hub default (`~/.cache/huggingface/hub/`).
-    /// FIREBAT_EMBEDDER_CACHE env 박혀있으면 사용 (Docker / Tauri portable 시 portable USB).
+    /// 모델 캐시 디렉토리 override — 미설정 시 hf-hub default (`~/.cache/huggingface/hub/`).
+    /// FIREBAT_EMBEDDER_CACHE env 설정되어 있으면 사용 (Docker / Tauri portable 시 portable USB).
     cache_dir: Option<PathBuf>,
     state: OnceCell<Arc<E5State>>,
 }

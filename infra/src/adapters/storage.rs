@@ -147,7 +147,7 @@ impl IStoragePort for LocalStorageAdapter {
     }
 
     async fn write_cache(&self, path: &str, content: &str) -> InfraResult<()> {
-        // Internal cache write — `data/cache/` 안에서만 박힘. 그 외 path 거부.
+        // Internal cache write — `data/cache/` 안에서만 설정. 그 외 path 거부.
         // 옛 TS writeCache 1:1.
         if !path.starts_with("data/cache/") {
             return Err(format!(

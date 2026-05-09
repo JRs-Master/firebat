@@ -7,7 +7,7 @@
  * design tokens 통합. reset() 호출 시 페이지 재시도, 또는 홈으로 이동.
  *
  * 옛 transient 자동 reload 로직 제거 (2026-05-08) — root cause 안 잡힌 채로 무한 새로고침 회피.
- * digest 박힌 에러는 진짜 server-side issue 라 자동 reload 가 회복 못 함. 사용자 명시 클릭으로.
+ * digest 설정된 에러는 진짜 server-side issue 라 자동 reload 가 회복 못 함. 사용자 명시 클릭으로.
  */
 import { useEffect } from 'react';
 

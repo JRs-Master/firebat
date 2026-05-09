@@ -52,8 +52,8 @@ impl ConfigDrivenAdapter {
         Self::with_configs_dir(vault, default_model, None)
     }
 
-    /// configs_dir 박혀있으면 해당 디렉토리의 모든 *.json 로드 후 빌트인 carousel 위에 merge.
-    /// 같은 ID 가 디렉토리에 박혀있으면 디렉토리 우선 (사용자 override).
+    /// configs_dir 설정되어 있으면 해당 디렉토리의 모든 *.json 로드 후 빌트인 carousel 위에 merge.
+    /// 같은 ID 가 디렉토리에 설정되어 있으면 디렉토리 우선 (사용자 override).
     /// 새 모델 = JSON 파일 1개 추가만으로 활성 (옛 TS infra/llm/configs/*.json 동등).
     pub fn with_configs_dir(
         vault: Arc<dyn IVaultPort>,
@@ -200,7 +200,7 @@ impl ILlmPort for ConfigDrivenAdapter {
         let config = self.select_config(opts)?;
         let handler = self
             .handler_for(&config.format)
-            .ok_or_else(|| format!("LLM format 핸들러 미박음: {}", config.format))?;
+            .ok_or_else(|| format!("LLM format 핸들러 미설정: {}", config.format))?;
         let api_key = self.fetch_api_key(&config);
         handler
             .ask_text(&config, api_key.as_deref(), prompt, opts)
@@ -217,7 +217,7 @@ impl ILlmPort for ConfigDrivenAdapter {
         let config = self.select_config(opts)?;
         let handler = self
             .handler_for(&config.format)
-            .ok_or_else(|| format!("LLM format 핸들러 미박음: {}", config.format))?;
+            .ok_or_else(|| format!("LLM format 핸들러 미설정: {}", config.format))?;
         let api_key = self.fetch_api_key(&config);
         handler
             .ask_with_tools(&config, api_key.as_deref(), prompt, tools, prior_results, opts)

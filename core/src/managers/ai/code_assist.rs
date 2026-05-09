@@ -123,7 +123,7 @@ pub fn strip_code_fences(s: &str) -> String {
 
 /// 옛 TS `codeAssist` 1:1 — Monaco 어시스턴트 진입점.
 ///
-/// 호출자 (Frontend / API route) 가 ILlmPort 와 params 박아 호출. 시스템 프롬프트 자동 빌드 +
+/// 호출자 (Frontend / API route) 가 ILlmPort 와 params 설정하여 호출. 시스템 프롬프트 자동 빌드 +
 /// LLM ask_text + 코드모드 시 코드펜스 strip.
 ///
 /// 별도 함수로 분리한 이유: AiManager 의 process_with_tools 와 흐름·도구 모두 다름 (도구 호출 불가).

@@ -1,6 +1,6 @@
 'use client';
 /**
- * CMS AdSlot — Phase 4 Step 6. 어드민이 박은 슬롯 ID 로 AdSense 광고 단위 표시.
+ * CMS AdSlot — Phase 4 Step 6. 어드민이 설정한 슬롯 ID 로 AdSense 광고 단위 표시.
  *
  * `<ins class="adsbygoogle">` + `data-ad-client` (publisher ID) + `data-ad-slot` (슬롯 ID).
  * `useEffect` 로 `(adsbygoogle = window.adsbygoogle || []).push({})` 호출 — 광고 fetch 트리거.

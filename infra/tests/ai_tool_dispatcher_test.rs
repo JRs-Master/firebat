@@ -34,7 +34,7 @@ async fn resolve_with_no_modules_returns_none() {
 async fn resolve_module_with_variants() {
     let tmp = tempfile::tempdir().unwrap();
     let storage_concrete = LocalStorageAdapter::new(tmp.path());
-    // system/modules/kakao-talk + user/modules/my_module 박음
+    // system/modules/kakao-talk + user/modules/my_module 저장
     storage_concrete
         .write("system/modules/kakao-talk/index.mjs", "// stub")
         .await
@@ -213,7 +213,7 @@ fn validate_schedule_task_pipeline_invalid_step() {
 #[test]
 fn validate_pipeline_execute_missing_input_data() {
     let (d, _tmp) = make_dispatcher();
-    // EXECUTE 의 잘못된 평면 인자 (action / symbol step 자체에 박음) — inputData 객체 누락
+    // EXECUTE 의 잘못된 평면 인자 (action / symbol step 자체에 설정) — inputData 객체 누락
     let err = d
         .pre_validate_pending_args(&tool_call(
             "schedule_task",
@@ -300,7 +300,7 @@ fn validate_save_page_missing_spec() {
 #[test]
 fn validate_unknown_tool_passes() {
     let (d, _tmp) = make_dispatcher();
-    // 검증 안 박힌 도구는 None (즉시 실행 OK)
+    // 검증 안 설정된 도구는 None (즉시 실행 OK)
     let r = d.pre_validate_pending_args(&tool_call("render_table", json!({})));
     assert!(r.is_none());
 }

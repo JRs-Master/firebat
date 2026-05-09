@@ -4,9 +4,9 @@
  * BlockErrorBoundary — 메시지 본문의 단일 block 렌더링 throw 격리.
  *
  * 배경: 한 메시지에 20+ render_* blocks (Table / Chart / Grid / Compare / Timeline 등 nested)
- * 가 박힐 수 있고, AI 가 발행한 props 의 invalid 값 (NaN / null array / type mismatch 등) 으로
+ * 가 설정될 수 있고, AI 가 발행한 props 의 invalid 값 (NaN / null array / type mismatch 등) 으로
  * 한 block 이 throw 하면 React 가 부모 tree 통째 unmount → admin 전역이 error.tsx 로 fallback →
- * 사용자가 admin 접근 불능. 격리 박아 그 block 만 inline 에러 카드로 표시.
+ * 사용자가 admin 접근 불능. 격리 설정하여 그 block 만 inline 에러 카드로 표시.
  *
  * Class component (componentDidCatch 가 hook 미지원) 이지만 'use client' 환경이라 정상 작동.
  */

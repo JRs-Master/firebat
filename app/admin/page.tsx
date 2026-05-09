@@ -15,7 +15,6 @@ import { SecretInput } from './components/ChatWidgets';
 import { Tooltip } from './components/Tooltip';
 import { FeedbackBadge } from './components/FeedbackBadge';
 import { ActiveJobsIndicator } from './components/ActiveJobsIndicator';
-import { ForceChangeAdminModal } from './components/ForceChangeAdminModal';
 import { BlockErrorBoundary } from './components/BlockErrorBoundary';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
@@ -340,14 +339,14 @@ function AutoResizeIframe({ src, initialHeight, dependencies }: { src: string; i
   // 새 srcdoc 문자열을 생성해서 iframe 이 리로드되던 문제 (leaflet 지도 깜빡임 등) 방지
   const srcdoc = useMemo(() => {
     const isFullDoc = src.trim().toLowerCase().startsWith('<!doctype') || src.trim().toLowerCase().startsWith('<html');
-    // dependencies 배열 → CDN 태그 합성 (lib/cdn-libraries.ts 카탈로그). AI 가 직접 박지 말고 키만 선언.
+    // dependencies 배열 → CDN 태그 합성 (lib/cdn-libraries.ts 카탈로그). AI 가 직접 하지 말고 키만 선언.
     const cdnTags = dependencies && dependencies.length > 0
       ? dependencies.map(k => CDN_LIBRARIES[k]).filter(Boolean).join('\n')
       : '';
     const baseStyle = `<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" /><style>html,body{overflow:hidden !important;font-family:'Pretendard Variable',Pretendard,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif !important;color:#1e293b;background:#ffffff;-webkit-font-smoothing:antialiased;}body{font-size:14px;line-height:1.6;}h1,h2,h3,h4,h5,h6{font-weight:700;color:#0f172a;letter-spacing:-0.01em;}h1{font-size:20px;}h2{font-size:17px;}h3{font-size:15px;}table{font-size:13px;}canvas,svg{font-family:inherit !important;}</style>${cdnTags}`;
     const autoScript = `<script>(function(){var id=${JSON.stringify(idRef.current)};var peak=0;function measure(){var b=document.body;if(!b)return 0;return Math.max(b.scrollHeight,b.offsetHeight,Math.ceil(b.getBoundingClientRect().height));}function send(){var h=measure();if(h<=peak)return;peak=h;parent.postMessage({type:'iframe-resize',id:id,height:h},'*');}function attach(){if(!document.body)return;if(window.ResizeObserver)new ResizeObserver(send).observe(document.body);send();}if(document.body)attach();else document.addEventListener('DOMContentLoaded',attach);window.addEventListener('load',send);[100,500,1500,3000].forEach(function(t){setTimeout(send,t);});})();<\/script><script>(function(){var last=null;function toMouse(e){if(!e.touches||e.touches.length!==1)return;var t=e.touches[0];var tg=document.elementFromPoint(t.clientX,t.clientY);if(!tg)return;tg.dispatchEvent(new MouseEvent('mousemove',{clientX:t.clientX,clientY:t.clientY,bubbles:true,cancelable:true,view:window}));last=tg;}document.addEventListener('touchstart',toMouse,{passive:true});document.addEventListener('touchmove',toMouse,{passive:true});document.addEventListener('touchend',function(){if(last){last.dispatchEvent(new MouseEvent('mouseout',{bubbles:true}));last=null;}},{passive:true});})();<\/script>`;
     // CSP meta — sandbox=allow-scripts 위에 defense-in-depth.
-    // isFullDoc 케이스도 CSP 주입 — AI 가 직접 짠 doc 도 동일 보호. 이미 CSP 박혀있으면 중복 무해 (브라우저가 강한 정책 채택).
+    // isFullDoc 케이스도 CSP 주입 — AI 가 직접 짠 doc 도 동일 보호. 이미 CSP 설정되어 있으면 중복 무해 (브라우저가 강한 정책 채택).
     return isFullDoc
       ? src
           .replace(/<head[^>]*>/i, m => `${m}${IFRAME_CSP_META}`)
@@ -928,10 +927,8 @@ export default function AdminConsole() {
   }, [router]);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'secrets' | 'mcp' | 'capabilities' | 'system' | undefined>(undefined);
-  // 빈 문자열 디폴트 — 사용자가 인증(API 키 / CLI) + 설정에서 모델 선택 박을 때까지 채팅 차단.
+  // 빈 문자열 디폴트 — 사용자가 인증(API 키 / CLI) + 설정에서 모델 선택 설정할 때까지 채팅 차단.
   const [aiModel, setAiModel] = useState('');
-  // 첫 부팅 admin/admin 디폴트 검출 — true 면 ForceChangeAdminModal 강제 노출.
-  const [isDefaultAdmin, setIsDefaultAdmin] = useState(false);
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [editingModule, setEditingModule] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1063,14 +1060,12 @@ export default function AdminConsole() {
           if (data.lastModelByCategory && typeof data.lastModelByCategory === 'object') {
             writeSetting('firebat_last_model_by_category', data.lastModelByCategory);
           }
-          // admin/admin 디폴트 검출 — 첫 부팅 시 강제 변경 모달 노출.
-          if (data.isDefaultAdmin === true) setIsDefaultAdmin(true);
         }
       } catch {}
       if (!loadedFromServer) {
         const savedModel = readSetting('firebat_model');
-        // 빈 폴백 — 사용자가 인증 박고 설정에서 명시 선택 박지 않은 한 채팅 차단.
-        // 자동 폴백 모델 박으면 사용자가 "어떤 모델 쓰는지 모름" 마찰 발생.
+        // 빈 폴백 — 사용자가 인증 설정하고 설정에서 명시 선택 하지 않은 한 채팅 차단.
+        // 자동 폴백 모델 설정하면 사용자가 "어떤 모델 쓰는지 모름" 마찰 발생.
         setAiModel(savedModel && isValid(savedModel) ? savedModel : '');
       }
     })();
@@ -1218,15 +1213,13 @@ export default function AdminConsole() {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
-                  disabled={loading || !aiModel}
+                  disabled={loading}
                   style={{ touchAction: 'pan-y', overscrollBehavior: 'contain', WebkitUserSelect: 'text', WebkitOverflowScrolling: 'touch' }}
                   className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] px-4 sm:px-5 pt-3 sm:pt-4 pb-1 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50 select-text overflow-y-auto"
                   placeholder={
                     loading
                       ? '명령 집행 중...'
-                      : !aiModel
-                        ? '⚙ 설정 → AI 탭에서 API 키 입력 또는 CLI 인증 박은 후 모델을 선택해 주세요'
-                        : (inputMode === 'image' ? '🎨 이미지 프롬프트를 입력하세요 (LLM 우회 — 영어 권장)' : '무엇을 도와드릴까요?')
+                      : (inputMode === 'image' ? '🎨 이미지 프롬프트를 입력하세요 (LLM 우회 — 영어 권장)' : '무엇을 도와드릴까요?')
                   }
                 />
                 <input
@@ -1333,13 +1326,6 @@ export default function AdminConsole() {
             </div>
           </div>
         </div>
-
-        {/* 첫 부팅 admin/admin 강제 변경 모달 — 변경 완료 시 페이지 reload (세션 갱신) */}
-        {isDefaultAdmin && (
-          <ForceChangeAdminModal
-            onChanged={() => { setIsDefaultAdmin(false); window.location.reload(); }}
-          />
-        )}
 
         {/* 파일 에디터 모달 */}
         {editingFile && (

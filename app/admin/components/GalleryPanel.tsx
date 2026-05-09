@@ -94,7 +94,7 @@ export function GalleryPanel() {
     setTimeout(() => fetchList(false), 0);
   };
 
-  // 선택된 미디어의 사용처 — 모달 열릴 때 fetch. 페이지에 박힌 이미지 삭제 경고 + 메타 표시.
+  // 선택된 미디어의 사용처 — 모달 열릴 때 fetch. 페이지에 설정된 이미지 삭제 경고 + 메타 표시.
   const [selectedUsage, setSelectedUsage] = useState<Array<{ pageSlug: string; usedAt: number }>>([]);
   useEffect(() => {
     if (!selected) { setSelectedUsage([]); return; }
@@ -105,7 +105,7 @@ export function GalleryPanel() {
   }, [selected?.slug]);
 
   const handleDelete = async (slug: string) => {
-    // 사용처 차등 confirm — 페이지에 박힌 이미지면 빨간 경고 + 페이지 목록.
+    // 사용처 차등 confirm — 페이지에 설정된 이미지면 빨간 경고 + 페이지 목록.
     const usage = selectedUsage;
     const msg = usage.length > 0
       ? `이 이미지는 ${usage.length}개 페이지에 사용 중입니다:\n\n${usage.map(u => `  • /${u.pageSlug}`).join('\n')}\n\n삭제하면 해당 페이지의 이미지가 깨집니다. 정말 삭제하시겠어요?`
@@ -380,7 +380,7 @@ function MediaDetailModal({
           {/* 프리뷰 — 모바일: viewport 45% (px 단위 — toolbar 변동 무관), PC: 좌측 컬럼 전체.
               status='error' / 'rendering' / 'done' 3 분기. 그리드와 동일 패턴.
               cache busting (?v=bytes) — 모바일 브라우저가 placeholder 단계의 회색 응답을
-              cache 한 후 done swap 시 같은 URL 재요청해도 cache hit 으로 회색 박힘 방지. */}
+              cache 한 후 done swap 시 같은 URL 재요청해도 cache hit 으로 회색 설정 방지. */}
           <div
             className={`relative shrink-0 md:flex-1 md:min-w-0 md:max-h-full md:h-auto rounded-lg p-2 flex items-center justify-center overflow-hidden ${
               isError ? 'bg-red-50 border border-red-200' : item.status === 'rendering' ? 'bg-blue-50 border border-blue-200' : 'bg-slate-50'
@@ -471,7 +471,7 @@ function MediaDetailModal({
                 ? `${item.variants.length}개 (${[...new Set(item.variants.map(v => v.format))].join('/')})`
                 : '없음'} />
               <MetaRow label="Blurhash" value={item.blurhash ? '✓ 생성됨' : '✗'} />
-              {/* 사용처 — 페이지 PageSpec 안 박힌 곳. 빈 배열 = '사용 안 됨'. */}
+              {/* 사용처 — 페이지 PageSpec 안 설정된 곳. 빈 배열 = '사용 안 됨'. */}
               <div className="flex items-start gap-1.5 text-[11px]">
                 <span className="shrink-0 text-slate-400 font-bold uppercase text-[10px] mt-0.5 min-w-[64px]">사용처</span>
                 {usage.length === 0 ? (

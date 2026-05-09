@@ -2,8 +2,8 @@
 //! 메시지 단위 임베딩 동기 + cosine search_history.
 //!
 //! 옛 TS ConversationManager (`core/managers/conversation-manager.ts`) Rust 1:1 port.
-//! Phase B-18 Step 1.5 — sync_embeddings + search_history 박음.
-//! IEmbedderPort 박혀있을 때만 활성 (with_embedder 빌더 미박음 시 stub — embedding 없이 CRUD 만).
+//! Phase B-18 Step 1.5 — sync_embeddings + search_history 저장.
+//! IEmbedderPort 설정되어 있을 때만 활성 (with_embedder 빌더 미설정 시 stub — embedding 없이 CRUD 만).
 
 use std::sync::Arc;
 
@@ -49,7 +49,7 @@ pub struct SearchHistoryOpts {
 
 pub struct ConversationManager {
     db: Arc<dyn IDatabasePort>,
-    /// IEmbedderPort 옵션 — 박혀있으면 임베딩 sync + 검색 활성. 없으면 stub.
+    /// IEmbedderPort 옵션 — 설정되어 있으면 임베딩 sync + 검색 활성. 없으면 stub.
     embedder: Option<Arc<dyn IEmbedderPort>>,
     log: Option<Arc<dyn ILogPort>>,
 }
@@ -89,7 +89,7 @@ impl ConversationManager {
     /// 2. **기존 messages 와 union merge** (옛 TS unionMergeMessages 1:1) — 모바일·PC 동시 쓰기 시
     ///    incoming 으로 단순 덮어쓰면 다른 기기 메시지 유실. id 기준 합집합 + timestamp 정렬.
     /// 3. JSON 직렬화 + DB 저장
-    /// 4. 임베딩 sync (embedder 박혀있을 때만, fire-and-forget)
+    /// 4. 임베딩 sync (embedder 설정되어 있을 때만, fire-and-forget)
     pub async fn save(
         &self,
         owner: &str,
@@ -131,7 +131,7 @@ impl ConversationManager {
             return Err(format!("대화 저장 실패: {}", id));
         }
 
-        // 임베딩 sync — embedder 박혀있고 messages 가 array 일 때만.
+        // 임베딩 sync — embedder 설정되어 있고 messages 가 array 일 때만.
         // 옛 TS 는 fire-and-forget (`.catch(()=>{})`) — Rust 도 await 후 실패 무시 (스킵).
         if self.embedder.is_some() {
             if let Some(arr) = merged_messages.as_array() {
@@ -223,7 +223,7 @@ impl ConversationManager {
     // ── 임베딩 sync + search_history (Phase B-18 Step 1.5) ────────────────────
 
     /// 메시지 배열 ↔ 기존 임베딩 비교 → 변경·신규만 재임베딩, 사라진 인덱스는 일괄 삭제.
-    /// 옛 TS `syncEmbeddings` 1:1 port. embedder 미박음 시 즉시 반환.
+    /// 옛 TS `syncEmbeddings` 1:1 port. embedder 미설정 시 즉시 반환.
     async fn sync_embeddings(
         &self,
         owner: &str,
@@ -304,7 +304,7 @@ impl ConversationManager {
     }
 
     /// 과거 대화 검색 — query 임베딩 ↔ 저장된 메시지 임베딩 cosine.
-    /// 옛 TS `searchHistory` 1:1 port. embedder 미박음 시 빈 결과.
+    /// 옛 TS `searchHistory` 1:1 port. embedder 미설정 시 빈 결과.
     pub async fn search_history(
         &self,
         owner: &str,

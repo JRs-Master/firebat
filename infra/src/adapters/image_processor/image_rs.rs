@@ -4,8 +4,8 @@
 //! (Base83 LQIP) 조합. CPU 만 — Windows / Linux / macOS 모두 동작.
 //!
 //! 지원 포맷 (현재 enabled): png / jpeg / webp.
-//! avif: image-rs 의 avif feature 박는 순간 ravif crate (libdav1d) 빌드 의존성 큼 → 후속
-//! commit 에서 운영 중 avif 필요성 도달 시 박을 예정.
+//! avif: image-rs 의 avif feature 설정하는 순간 ravif crate (libdav1d) 빌드 의존성 큼 → 후속
+//! commit 에서 운영 중 avif 필요성 도달 시 설정할 예정.
 
 use std::io::Cursor;
 
@@ -86,7 +86,7 @@ impl ImageRsProcessorAdapter {
         // 일반 로직: 모든 position → focus(x, y) 정규화 후 ratio 기반 산정.
         let (fx, fy) = match position {
             Some(CropPosition::Focus { x, y }) => (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0)),
-            // attention / entropy / center / 미박음 → 정중앙 (일반 로직 — 향후 entropy 박을 때 분기)
+            // attention / entropy / center / 미설정 → 정중앙 (일반 로직 — 향후 entropy 설정할 때 분기)
             _ => (0.5, 0.5),
         };
 
@@ -98,7 +98,7 @@ impl ImageRsProcessorAdapter {
     }
 
     /// fast_image_resize 로 RgbaImage → 새 크기 RgbaImage.
-    /// fast_image_resize 의 `image` feature 가 RgbaImage 의 IntoImageView impl 자동 박음.
+    /// fast_image_resize 의 `image` feature 가 RgbaImage 의 IntoImageView impl 자동 저장.
     fn fir_resize(src: &RgbaImage, new_w: u32, new_h: u32) -> Result<RgbaImage, String> {
         let mut dst = FirImage::new(new_w, new_h, PixelType::U8x4);
         let mut resizer = Resizer::new();
@@ -149,7 +149,7 @@ impl IImageProcessorPort for ImageRsProcessorAdapter {
         let mut rgba = img.to_rgba8();
         let (src_w, src_h) = (rgba.width(), rgba.height());
 
-        // resize — width / height 박혔을 때
+        // resize — width / height 설정되었을 때
         let target_w = opts.width;
         let target_h = opts.height;
         if target_w.is_some() || target_h.is_some() {
@@ -182,7 +182,7 @@ impl IImageProcessorPort for ImageRsProcessorAdapter {
 
         // 포맷 변환 + 인코딩
         let format = opts.format.clone().unwrap_or_else(|| {
-            // 미박음 시 원본 포맷 유지 — image-rs format 추정
+            // 미설정 시 원본 포맷 유지 — image-rs format 추정
             let cursor = Cursor::new(binary);
             ImageReader::new(cursor)
                 .with_guessed_format()

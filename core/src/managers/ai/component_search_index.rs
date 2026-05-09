@@ -146,7 +146,7 @@ pub struct ComponentSearchOpts {
 
 /// `search_components(query)` 핵심 로직 — 옛 TS ComponentSearchIndex.query 1:1.
 ///
-/// 빈 query 면 빈 배열 반환. embedder 미박힘 / 임베딩 실패 시 Err.
+/// 빈 query 면 빈 배열 반환. embedder 미설정 / 임베딩 실패 시 Err.
 /// 26개 모두 score 매기고 sort, top-K (default 5) 반환.
 pub async fn query(
     embedder: &dyn IEmbedderPort,

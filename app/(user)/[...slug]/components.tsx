@@ -607,7 +607,7 @@ const SANITIZE_CONFIG = {
 /** CSS 위험 패턴 — XSS·외부 추적·광고 fraud 차단. */
 const CSS_DANGER_RE = /(?:expression\s*\(|javascript\s*:|behavior\s*:|@import\s|url\s*\(\s*['"]?\s*javascript:)/i;
 
-/** AI 가 박은 style 의 selector 를 wrapper class scope 로 한정.
+/** AI 가 설정한 style 의 selector 를 wrapper class scope 로 한정.
  *  `body { ... }` 같은 page-level selector 가 사이트 root 영향 주지 못하게 prefix.
  *  body/html 자체는 wrapper class 로 대체, 그 외는 wrapper 안 nested. */
 const SCOPE_CLASS = '.firebat-html-block';
@@ -662,8 +662,8 @@ function HtmlComp({ content, dependencies }: { content: string; dependencies?: s
   const hasDeps = !!(dependencies && dependencies.length > 0);
 
   if (!hasDeps) {
-    // inline DOM — sanitize 후 직접 박음.
-    // wrapper class 로 scope 한정 — AI 가 박은 <style> 안 body/html selector 가 페이지 root 영향 주지 않게.
+    // inline DOM — sanitize 후 직접 저장.
+    // wrapper class 로 scope 한정 — AI 가 설정한 <style> 안 body/html selector 가 페이지 root 영향 주지 않게.
     // 광고·SEO 인덱싱 정상 + iframe height squeeze 문제 자연 해결.
     const sanitized = sanitizeHtmlBlock(content);
     return (
@@ -696,8 +696,8 @@ ${cdnTags}
   #firebat-wrap { max-width: 1024px; margin: 0 auto; padding: 24px 16px; }
   img, video { max-width: 100%; height: auto; }
 
-  /* AI 가 raw HTML 박을 때 mobile 안전망 — design tokens 도입 전 임시 fix.
-     AI 의 inline style·class 가 박아둔 4-grid · width 고정 등을 강제 override.
+  /* AI 가 raw HTML 설정할 때 mobile 안전망 — design tokens 도입 전 임시 fix.
+     AI 의 inline style·class 가 설정한 4-grid · width 고정 등을 강제 override.
      향후 design tokens + component-based 전환 시 이 블록 자연 deprecation. */
   @media (max-width: 640px) {
     /* mobile padding 16px — 텍스트 들여쓰기 충분, AI body padding 의 자연 크기. table 은 negative margin 으로 끝까지 */
@@ -916,7 +916,7 @@ function AlertComp({ message, type = 'info', title, action }: {
   message: string;
   type?: string;
   title?: string;
-  /** CTA 버튼 — 박혀있으면 본문 아래에 link 버튼. label 없으면 미렌더. */
+  /** CTA 버튼 — 설정되어 있으면 본문 아래에 link 버튼. label 없으면 미렌더. */
   action?: { label?: string; href?: string };
 }) {
   const styles: Record<string, { bg: string; border: string; text: string; icon: string }> = {
@@ -1134,7 +1134,7 @@ function ChartComp({ type = 'bar', data, labels, series: seriesProp, title, subt
   /** 단일 series: number[] / 다중 series: { [name]: number[] }. 둘 다 받아 자동 정규화. */
   data: number[] | Record<string, number[]>;
   labels: string[];
-  /** 명시적 multi-series array — color 같이 박을 때 사용. 미지정 시 data 에서 자동 derive. */
+  /** 명시적 multi-series array — color 같이 설정할 때 사용. 미지정 시 data 에서 자동 derive. */
   series?: ChartSeries[];
   title?: string;
   subtitle?: string;
@@ -1167,7 +1167,7 @@ function ChartComp({ type = 'bar', data, labels, series: seriesProp, title, subt
   if (series.length > 1) {
     console.warn(`[ChartComp] type='${type}' 는 single-series 만 지원 — 첫 series('${series[0].name}') 만 표시. multi-series 시 type='line' 권장.`);
   }
-  // bar/pie/doughnut 는 single-series chart — series[0].values 만 사용 (multi 시 console.warn 박힘).
+  // bar/pie/doughnut 는 single-series chart — series[0].values 만 사용 (multi 시 console.warn 설정).
   // 변수명 firstSeriesData 그대로 활용해 의미 명확.
   const barColor = (color && COLOR_MAP[color]) ? COLOR_MAP[color].bar : 'bg-blue-500';
   // 음수 막대 색 — default 빨강 (글로벌 자산 차트). 한국 수급 차트는 AI 가 negColor='blue' 명시.
@@ -1440,7 +1440,7 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, link
   deltaType?: 'up' | 'down' | 'neutral';
   subLabel?: string;
   icon?: string;
-  /** 카드 전체 클릭 시 이동할 link (선택). 박혀있으면 카드가 anchor 로 wrap. */
+  /** 카드 전체 클릭 시 이동할 link (선택). 설정되어 있으면 카드가 anchor 로 wrap. */
   link?: { label?: string; href?: string };
   /** 전체 정렬 일괄 지정 (하위 4개 개별 align 이 없으면 이 값 사용). */
   align?: 'left' | 'right' | 'center';
@@ -1470,7 +1470,7 @@ function MetricComp({ label, value, unit, delta, deltaType, subLabel, icon, link
   const justify = (a: string) => a === 'center' ? 'justify-center' : a === 'right' ? 'justify-end' : 'justify-start';
   const text    = (a: string) => a === 'center' ? 'text-center'    : a === 'right' ? 'text-right'   : 'text-left';
 
-  // link 박혀있으면 카드 전체 anchor 로 wrap, 없으면 div.
+  // link 설정되어 있으면 카드 전체 anchor 로 wrap, 없으면 div.
   const cardCls = `bg-white border border-gray-100 rounded-xl p-4 shadow-sm flex flex-col ${link?.href ? 'hover:shadow-md hover:border-gray-200 transition-all cursor-pointer no-underline' : ''}`;
   const inner = (
     <>
@@ -1525,7 +1525,7 @@ function TimelineComp({ items }: {
               {item.description && <div className="text-sm text-gray-600 mt-0.5 leading-relaxed">{cleanPlainText(item.description)}</div>}
             </>
           );
-          // href 박혀있으면 항목 전체 anchor wrap (호버 시 미세 강조)
+          // href 설정되어 있으면 항목 전체 anchor wrap (호버 시 미세 강조)
           if (item.href) {
             return (
               <a
@@ -1569,7 +1569,7 @@ function CompareComp({ title, left, right }: {
           const lv = leftMap.get(k);
           const rv = rightMap.get(k);
           // diff highlight — 같은 key 의 left·right 값이 다르면 양쪽 cell 굵게.
-          // null/undefined (한쪽만 박힌 케이스) 도 diff 로 간주.
+          // null/undefined (한쪽만 설정된 케이스) 도 diff 로 간주.
           const isDiff = lv !== rv;
           const cellCls = `p-3 text-sm border-t border-gray-100 first:border-t-0 ${isDiff ? 'font-bold text-gray-900' : 'text-gray-700'}`;
           return (
@@ -1699,7 +1699,7 @@ function PlanCardComp({ title, steps, estimatedTime, risks }: {
  * 흐름:
  *   1. provider 결정 — 명시 / auto (한국 좌표 → 카카오) / 카카오 키 없으면 leaflet 폴백
  *   2. Leaflet: CDN script 동적 로드 → L.map() 초기화 → L.marker() 추가
- *   3. 카카오: window.__KAKAO_MAP_JS_KEY 박혀있으면 SDK 동적 로드 → kakao.maps.Map() → kakao.maps.Marker()
+ *   3. 카카오: window.__KAKAO_MAP_JS_KEY 설정되어 있으면 SDK 동적 로드 → kakao.maps.Map() → kakao.maps.Marker()
  *
  * SSR 안전: useEffect 안에서만 window 접근. 첫 렌더 시 placeholder div.
  */
@@ -1972,7 +1972,7 @@ function MapComp({
 }
 
 // ── 동적 CDN 로드 헬퍼 ───────────────────────────────────────────────────────
-/** CDN script + CSS 동적 로드. 이미 박혀있으면 skip. onload 보장. */
+/** CDN script + CSS 동적 로드. 이미 설정되어 있으면 skip. onload 보장. */
 function loadCdn(opts: { js?: string[]; css?: string[]; globalCheck?: () => boolean }): Promise<void> {
   return new Promise((resolve) => {
     if (typeof window === 'undefined') return resolve();

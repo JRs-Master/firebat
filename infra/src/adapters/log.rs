@@ -1,7 +1,7 @@
 //! ConsoleLogAdapter — ILogPort 의 stderr 구현체.
 //!
 //! Phase B 단계: 단순 stderr eprintln! 출력. tracing crate 도입은 Phase B 후속에서
-//! (구조화 로그 / span / 파일 출력 / JSONL 등 박을 때).
+//! (구조화 로그 / span / 파일 출력 / JSONL 등 설정할 때).
 //!
 //! 옛 TS ConsoleLogAdapter (`infra/log/index.ts`) Rust 재구현 — 4 레벨 + timestamp prefix.
 

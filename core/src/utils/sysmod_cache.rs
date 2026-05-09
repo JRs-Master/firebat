@@ -1,7 +1,7 @@
 //! SysmodCacheAdapter — sysmod 결과 cache JSONL + LRU.
 //!
-//! 옛 TS 4-29 박힘: 큰 sysmod 응답 (yfinance 시계열 100행+ / DART 공시 100건+) 를 메인 context 안
-//! 박지 않고 cacheKey 받아 read/grep/aggregate. JSONL 저장 + meta JSON.
+//! 옛 TS 4-29 설정: 큰 sysmod 응답 (yfinance 시계열 100행+ / DART 공시 100건+) 를 메인 context 안
+//! 하지 않고 cacheKey 받아 read/grep/aggregate. JSONL 저장 + meta JSON.
 //!
 //! Phase B-17.5b minimum:
 //! - cache_data — records[] → JSONL 저장 + meta.json

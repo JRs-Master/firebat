@@ -162,7 +162,7 @@ impl StatusManager {
         Some(snapshot)
     }
 
-    /// Job 완료. status=Done + result + done_at 박음.
+    /// Job 완료. status=Done + result + done_at 저장.
     pub fn complete(&self, id: &str, result: Option<serde_json::Value>) -> Option<JobStatus> {
         let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         let job = state.get_mut(id)?;
@@ -178,7 +178,7 @@ impl StatusManager {
         Some(snapshot)
     }
 
-    /// Job 실패. status=Error + error + done_at 박음.
+    /// Job 실패. status=Error + error + done_at 저장.
     pub fn fail(&self, id: &str, msg: String) -> Option<JobStatus> {
         let mut state = self.state.lock().unwrap_or_else(|p| p.into_inner());
         let job = state.get_mut(id)?;
@@ -363,7 +363,7 @@ mod tests {
     fn gc_removes_old_terminal_jobs_over_cap() {
         // GC retention 으로는 1시간 검증 어려워 → MAX_JOB_HISTORY cap 검증.
         let mgr = StatusManager::new(None);
-        // MAX_JOB_HISTORY (200) 초과 — 250개 종료 job 박음
+        // MAX_JOB_HISTORY (200) 초과 — 250개 종료 job 저장
         for i in 0..250 {
             let job = mgr.start(
                 Some(format!("job-{i}")),

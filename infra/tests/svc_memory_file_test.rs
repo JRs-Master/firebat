@@ -49,7 +49,7 @@ async fn path_traversal_rejected() {
 #[tokio::test]
 async fn list_excludes_memory_md_and_non_md() {
     let (svc, dir) = service();
-    // memory dir 박음
+    // memory dir 저장
     let mem_dir = dir.path().join("data/memory");
     std::fs::create_dir_all(&mem_dir).unwrap();
     std::fs::write(mem_dir.join("MEMORY.md"), "index").unwrap();

@@ -1,10 +1,10 @@
 //! TracingLogAdapter — ILogPort 의 tracing crate 구현체.
 //!
-//! 외부 review #2 (BIBLE 제8장 correlationId + durationMs) 대응 박힘.
+//! 외부 review #2 (BIBLE 제8장 correlationId + durationMs) 대응 설정.
 //! ConsoleLogAdapter 의 stderr eprintln! 대신 tracing::info!() / warn!() / error!() / debug!()
 //! 매크로로 forward. tracing-subscriber 가 env RUST_LOG 기준 filter + JSON 또는 pretty 출력.
 //!
-//! 비동기 컨텍스트에서 매 요청 Span 활성화 시 자동으로 correlation_id 박힘
+//! 비동기 컨텍스트에서 매 요청 Span 활성화 시 자동으로 correlation_id 설정
 //! (spans 내부에서 호출되는 모든 log event 가 inherit).
 
 use firebat_core::ports::ILogPort;

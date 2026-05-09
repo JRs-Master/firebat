@@ -2,7 +2,7 @@
 //!
 //! - **stub** (`StubImageGenAdapter`): 1x1 PNG + 고정 reply. wiring 검증 + 단위 테스트.
 //! - **config_driven** (`ConfigDrivenImageGenAdapter`): LLM 의 ConfigDrivenAdapter 와 대칭 구조.
-//!   format handler 3종 + JSON config carousel. Step 2c 박힐 예정.
+//!   format handler 3종 + JSON config carousel. Step 2c 설정될 예정.
 //!
 //! 옛 TS `infra/image/` 1:1 port. ConfigDrivenAdapter 패턴 — 새 모델 = JSON 1개 추가만 (코드 변경 0).
 //!

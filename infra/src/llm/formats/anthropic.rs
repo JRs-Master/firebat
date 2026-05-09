@@ -3,7 +3,7 @@
 //! 핵심 features:
 //! - extended thinking (low/medium/high/xhigh/max → budget_tokens 매핑)
 //! - MCP connector 2025-11-20 (betas + tools.mcp_toolset)
-//! - prompt caching (Vault 토글) — 옛 TS 4-26 박힘
+//! - prompt caching (Vault 토글) — 옛 TS 4-26 설정
 //! - 멀티턴 tool_use / tool_result (tool_use_id + content blocks)
 //!
 //! Phase B-17 minimum: ask_text + ask_with_tools 단순 호출. extended thinking / MCP / cache 토글은

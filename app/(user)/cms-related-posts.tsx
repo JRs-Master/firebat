@@ -2,7 +2,7 @@
  * Related Posts — head.keywords 매칭 기반 관련 글 추천.
  *
  * Core.findRelatedPages 가 score (공유 keyword 개수) + updatedAt 정렬 후 top N 반환.
- * 콘텐츠 페이지(project 박힌 + keywords 1+ 개) 본문 끝에 표시. 결과 0건이면 미렌더.
+ * 콘텐츠 페이지(project 설정된 + keywords 1+ 개) 본문 끝에 표시. 결과 0건이면 미렌더.
  * 카드 변형: list 패턴 (제목 + 메타 + 프로젝트 라벨).
  */
 import { getCore } from '../../lib/singleton';

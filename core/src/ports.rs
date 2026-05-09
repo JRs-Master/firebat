@@ -3,7 +3,7 @@
 //! Core 매니저는 이 trait 만 의존. 실 I/O 는 adapters/ 의 구현체가 담당.
 //! BIBLE 의 "Core 순수성" 원칙 그대로 — 매니저가 fs / network / DB 직접 사용 X.
 //!
-//! Phase B 진행하며 17 포트 박힘:
+//! Phase B 진행하며 17 포트 설정:
 //!   IStoragePort / IVaultPort / IDatabasePort / ICronPort / ILlmPort / ISandboxPort /
 //!   ILogPort / INetworkPort / IMcpClientPort / IAuthPort / IEmbedderPort /
 //!   IToolRouterPort / IMediaPort / IImageProcessorPort / IImageGenPort /
@@ -67,7 +67,7 @@ pub trait IStoragePort: Send + Sync {
     async fn write(&self, path: &str, content: &str) -> InfraResult<()>;
 
     /// Internal cache write — Core.cacheData 만 호출. AI 도구 우회 차단.
-    /// data/cache/ 안에 박힘. 옛 TS writeCache 1:1.
+    /// data/cache/ 안에 설정. 옛 TS writeCache 1:1.
     async fn write_cache(&self, path: &str, content: &str) -> InfraResult<()>;
 
     /// 파일 또는 디렉토리 delete (recursive).
@@ -144,7 +144,7 @@ pub enum SessionRole {
     Admin,
 }
 
-/// IAuthPort — 세션 저장 (Vault 위에 박힘). 동기 — Vault 와 동일.
+/// IAuthPort — 세션 저장 (Vault 위에 설정). 동기 — Vault 와 동일.
 pub trait IAuthPort: Send + Sync {
     fn save_session(&self, session: &AuthSession) -> bool;
     /// 만료 검사 후 반환 — 만료된 세션 자동 삭제.
@@ -295,7 +295,7 @@ pub trait IDatabasePort: Send + Sync {
     // 공유된 대화 (turn 또는 full) — 외부 URL 으로 공유 가능. 옛 TS shared_conversations 1:1.
     // ────────────────────────────────────────────────────────────────────────
 
-    /// 공유 생성 — slug 자동 발급. dedup_key 박혀있고 유효 share 존재 시 재사용 (reused=true).
+    /// 공유 생성 — slug 자동 발급. dedup_key 설정되어 있고 유효 share 존재 시 재사용 (reused=true).
     /// 옛 TS createShare 1:1.
     fn create_share(&self, input: &CreateShareInput) -> InfraResult<CreateShareResult>;
 
@@ -307,7 +307,7 @@ pub trait IDatabasePort: Send + Sync {
 
     // ────────────────────────────────────────────────────────────────────────
     // LLM cost 누적 — CostManager 가 비용·통계 집계. 도메인 메서드로 노출 (DB-agnostic motto).
-    // 옛 SqliteDatabaseAdapter::with_conn 으로 직접 SQL 박은 거 trait 으로 격리.
+    // 옛 SqliteDatabaseAdapter::with_conn 으로 직접 SQL 설정한 거 trait 으로 격리.
     // ────────────────────────────────────────────────────────────────────────
 
     /// LLM 호출 1건 비용 record — `llm_costs` 테이블 INSERT.
@@ -367,7 +367,7 @@ pub struct CreateShareInput {
     pub source_conv_id: Option<String>,
     /// TTL milliseconds — now + ttl_ms 가 expires_at.
     pub ttl_ms: i64,
-    /// 박혀있고 같은 dedup 의 유효 share 존재 시 재사용.
+    /// 설정되어 있고 같은 dedup 의 유효 share 존재 시 재사용.
     pub dedup_key: Option<String>,
 }
 
@@ -441,15 +441,15 @@ pub struct ConversationRecord {
 // ──────────────────────────────────────────────────────────────────────────
 
 /// 현재 Module I/O envelope schema 버전.
-/// Phase B-post audit E1 (2026-05-06) 박힘 — 미래 break change 방어.
-/// 모듈 stdout JSON 에 `protocolVersion: "1.0"` 박혀있으면 명시 호환 검사.
-/// 미박힘 (옛 모듈) 도 default "1.0" 으로 처리 — 옛 모듈 호환 보장.
+/// Phase B-post audit E1 (2026-05-06) 설정 — 미래 break change 방어.
+/// 모듈 stdout JSON 에 `protocolVersion: "1.0"` 설정되어 있으면 명시 호환 검사.
+/// 미설정 (옛 모듈) 도 default "1.0" 으로 처리 — 옛 모듈 호환 보장.
 pub const MODULE_PROTOCOL_VERSION: &str = "1.0";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ModuleOutput {
-    /// I/O envelope schema 버전 — 미박힘 시 default "1.0" 폴백 (옛 모듈 호환).
-    /// 명시 박혀있는데 backend 호환 X 면 sandbox 가 warn 로그.
+    /// I/O envelope schema 버전 — 미설정 시 default "1.0" 폴백 (옛 모듈 호환).
+    /// 명시 설정되어 있는데 backend 호환 X 면 sandbox 가 warn 로그.
     #[serde(rename = "protocolVersion", default = "default_protocol_version", skip_serializing_if = "is_default_protocol_version")]
     pub protocol_version: String,
     pub success: bool,
@@ -496,7 +496,7 @@ pub struct SandboxExecuteOpts {
 
 /// ISandboxPort — sysmod 자식 process spawn (Node / Python / etc).
 ///
-/// Phase B 의 minimum stub — 실 sysmod spawn 구현은 후속 phase 에서 박음.
+/// Phase B 의 minimum stub — 실 sysmod spawn 구현은 후속 phase 에서 저장.
 /// (tokio::process::Command + Vault 시크릿 env 주입 + path containment + timeout)
 #[async_trait::async_trait]
 pub trait ISandboxPort: Send + Sync {
@@ -510,14 +510,14 @@ pub trait ISandboxPort: Send + Sync {
 
     /// Sandbox 격리 능력 — adapter 마다 다름. main.rs / 어드민 UI 가 사용자에게 보여주거나
     /// 모듈 실행 정책 결정 시 참조.
-    /// Phase B-post audit (2026-05-06) 박힘 — BIBLE Sandbox 정신 + 코드 현실 mismatch 정정 시작점.
+    /// Phase B-post audit (2026-05-06) 설정 — BIBLE Sandbox 정신 + 코드 현실 mismatch 정정 시작점.
     fn capabilities(&self) -> SandboxCapabilities;
 }
 
 /// Sandbox 어댑터의 격리 능력 명세.
 ///
 /// 옛 BIBLE 의 "격리(Sandbox)" 문구는 진짜 OS 레벨 격리를 시사하지만 실 코드 (옛
-/// `tokio::process::Command`) 만으로는 `os.system("rm -rf /")` 차단 0. 진짜 격리 박는 step:
+/// `tokio::process::Command`) 만으로는 `os.system("rm -rf /")` 차단 0. 진짜 격리 설정하는 step:
 /// 1. `BasicProcessSandbox` (현재) — fs_readonly: false / network_deny: false / cpu_limit_ms: timeout 만 / memory_limit_mb: 0
 /// 2. `LinuxCgroupsSandbox` (Phase C) — cgroups v2 + seccomp + network namespace
 /// 3. `MacOsSandbox` / `WindowsSandbox` (v2.0+ Tauri 재시작 시점) — App Sandbox / AppContainer
@@ -527,7 +527,7 @@ pub struct SandboxCapabilities {
     pub kind: String,
     /// Filesystem readonly — 모듈이 path containment 외 파일 시스템 쓰기 차단.
     pub fs_readonly: bool,
-    /// Network deny — 모듈 spawn 시 network namespace 박아 외부 fetch 차단 (sysmod 는 별도 조치).
+    /// Network deny — 모듈 spawn 시 network namespace 설정하여 외부 fetch 차단 (sysmod 는 별도 조치).
     pub network_deny: bool,
     /// CPU 제한 (ms) — 0 = 미제한. 옛 timeout 과 별도 — runtime 추정 통계 활용.
     pub cpu_limit_ms: u64,
@@ -555,7 +555,7 @@ pub struct SandboxCapabilities {
 /// 사용처: ConversationManager.search_history (cosine 검색) +
 ///         EntityManager.search_entities + EpisodicManager.search_events.
 ///
-/// ConfigDrivenAdapter 패턴 (LLM 처럼 여러 provider 혼합) 박지 않은 이유 — 옛 TS 가
+/// ConfigDrivenAdapter 패턴 (LLM 처럼 여러 provider 혼합) 하지 않은 이유 — 옛 TS 가
 /// 단일 로컬 모델만 사용. provider 교체 시점에 확장 검토.
 #[async_trait::async_trait]
 pub trait IEmbedderPort: Send + Sync {
@@ -687,8 +687,8 @@ pub trait IImageProcessorPort: Send + Sync {
     /// 리사이즈 + 포맷 변환. attention/entropy/focus crop 활성 (cover/outside fit 시).
     async fn process(&self, binary: &[u8], opts: &ResizeOpts) -> InfraResult<Vec<u8>>;
 
-    /// Blurhash LQIP 문자열 (~32자 base83). components 미박음 시 default 4x4.
-    /// 페이지 reload 전 placeholder 로 표시 (PageSpec 의 Image 블록에 자동 박힘).
+    /// Blurhash LQIP 문자열 (~32자 base83). components 미설정 시 default 4x4.
+    /// 페이지 reload 전 placeholder 로 표시 (PageSpec 의 Image 블록에 자동 설정).
     async fn blurhash(
         &self,
         binary: &[u8],
@@ -725,7 +725,7 @@ pub struct ImageGenOpts {
     pub style: Option<String>,
     /// n 개 생성 (1 권장, 다수 지원 provider 만)
     pub n: Option<u32>,
-    /// 모델 ID override — 미박음 시 ImageGenCallOpts 의 default
+    /// 모델 ID override — 미설정 시 ImageGenCallOpts 의 default
     pub model: Option<String>,
     /// 참조 이미지 (image-to-image). MediaManager 가 slug/url/base64 → binary 로 resolve 후 주입.
     /// - OpenAI: `/v1/images/edits` 엔드포인트 + multipart
@@ -842,14 +842,14 @@ pub struct LlmCallOpts {
     pub max_tokens: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
-    /// 대화 owner — HistoryResolver 가 자동 history 컨텍스트 인출 시 활용. 미박힘 시 기본 "admin".
+    /// 대화 owner — HistoryResolver 가 자동 history 컨텍스트 인출 시 활용. 미설정 시 기본 "admin".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
-    /// 대화 ID — HistoryResolver 가 recent N 메시지 조회. 미박힘 시 history 컨텍스트 비활성.
+    /// 대화 ID — HistoryResolver 가 recent N 메시지 조회. 미설정 시 history 컨텍스트 비활성.
     #[serde(rename = "conversationId", default, skip_serializing_if = "Option::is_none")]
     pub conversation_id: Option<String>,
     /// CLI 모드 (Claude Code / Codex / Gemini CLI) 의 resume session_id — 옛 TS `cliResumeSessionId` 1:1.
-    /// 박혀있으면 어댑터가 `--resume <id>` / `exec resume <id>` / `--resume <uuid>` 로 cold spawn.
+    /// 설정되어 있으면 어댑터가 `--resume <id>` / `exec resume <id>` / `--resume <uuid>` 로 cold spawn.
     #[serde(rename = "cliResumeSessionId", default, skip_serializing_if = "Option::is_none")]
     pub cli_resume_session_id: Option<String>,
     /// OpenAI Responses API 의 previous_response_id — 서버 history persistence (멀티턴 토큰 절감).
@@ -858,7 +858,7 @@ pub struct LlmCallOpts {
     pub previous_response_id: Option<String>,
     /// 첨부 이미지 — base64 string (data: URL 또는 raw). 멀티모달 LLM 입력용.
     /// API 모드 (Anthropic / OpenAI / Gemini) 는 message content 에 inline.
-    /// CLI 모드 (Codex / Gemini CLI) 는 cli_image_helper 로 임시 파일 → 인자 / `@<path>` 박음.
+    /// CLI 모드 (Codex / Gemini CLI) 는 cli_image_helper 로 임시 파일 → 인자 / `@<path>` 저장.
     /// Claude Code CLI 는 stream-json input 으로 base64 직접 전달.
     /// 옛 TS `LlmCallOpts.image` 1:1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -897,7 +897,7 @@ pub struct LlmToolResponse {
     #[serde(rename = "tokensOut", default, skip_serializing_if = "Option::is_none")]
     pub tokens_out: Option<i64>,
     /// CLI 모드 어댑터가 첫 turn 에서 잡은 session_id — 옛 TS `onCliSessionId` 콜백 패턴 대신
-    /// response 에 박아 callee (AiManager) 가 직접 DB 영속화. 다음 turn `cli_resume_session_id` 으로 사용.
+    /// response 에 설정하여 callee (AiManager) 가 직접 DB 영속화. 다음 turn `cli_resume_session_id` 으로 사용.
     #[serde(rename = "cliSessionId", default, skip_serializing_if = "Option::is_none")]
     pub cli_session_id: Option<String>,
     /// OpenAI Responses API 가 발급한 response_id — 다음 turn `previous_response_id` 으로 재사용.
@@ -1009,7 +1009,7 @@ pub struct McpToolInfo {
 
 /// IMcpClientPort — 외부 MCP 서버 풀 클라이언트.
 ///
-/// 박힘 (2026-05-07): stdio + HTTP+SSE 두 transport 박힘 (직접 JSON-RPC 2.0 구현).
+/// 설정 (2026-05-07): stdio + HTTP+SSE 두 transport 설정 (직접 JSON-RPC 2.0 구현).
 ///   - stdio: child process spawn + stdin/stdout line frames (Claude Code / Cursor / 로컬 도구)
 ///   - sse: GET text/event-stream → endpoint event → POST JSON-RPC (외부 SaaS)
 ///
@@ -1293,7 +1293,7 @@ pub enum CronTriggerType {
 
 /// CronScheduleOptions — 스케줄링 등록 옵션.
 /// pipeline / notify / runWhen / retry / agentPrompt 같은 복합 필드는 Phase B-13 minimum 단계에서
-/// `serde_json::Value` 패스스루 — Phase B-14 TaskManager + B-16 AiManager 박힌 후 typed.
+/// `serde_json::Value` 패스스루 — Phase B-14 TaskManager + B-16 AiManager 설정된 후 typed.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct CronScheduleOptions {
     #[serde(rename = "cronTime", default, skip_serializing_if = "Option::is_none")]
@@ -1463,7 +1463,7 @@ pub trait ICronPort: Send + Sync {
         opts: CronScheduleOptions,
     ) -> InfraResult<()>;
 
-    /// 부팅 시 영속 파일에 박혀있던 잡들 task 재시작.
+    /// 부팅 시 영속 파일에 설정되어 있던 잡들 task 재시작.
     /// delay 잡은 복원 불가 (시각 정보 부재), cron / once 만 복원.
     /// `self: Arc<Self>` — spawn_task 가 Arc::downgrade(self) 필요.
     async fn restore(self: std::sync::Arc<Self>);
@@ -1622,7 +1622,7 @@ pub struct MediaVariantMeta {
 
 /// IMediaPort — 미디어 (이미지) 영속 + 갤러리 + variants + placeholder swap.
 ///
-/// 옛 TS `infra/media/local-adapter.ts` 1:1 port. Phase B-18 Step 2d 박힘:
+/// 옛 TS `infra/media/local-adapter.ts` 1:1 port. Phase B-18 Step 2d 설정:
 ///   - save_variant (resize 결과 저장) + finalize_base (비동기 image_gen placeholder swap)
 ///   - 모든 메서드 async (FS I/O — tokio::fs)
 #[async_trait::async_trait]
@@ -1644,9 +1644,9 @@ pub trait IMediaPort: Send + Sync {
     ) -> InfraResult<String>;
 
     /// 기존 slug 의 base 파일을 새 binary 로 교체 (placeholder → 실제 이미지 swap).
-    /// 비동기 image_gen 패턴 — startGenerate 가 placeholder 박고 reserve 한 slug 를 백그라운드에서 finalize.
+    /// 비동기 image_gen 패턴 — startGenerate 가 placeholder 저장 후 reserve 한 slug 를 백그라운드에서 finalize.
     /// meta 도 함께 업데이트 (bytes/contentType) — status 는 caller 가 별도 update_meta 로 'done' 설정.
-    /// `ext_override` 박혀있으면 새 확장자 (`png` → `webp` 변환 시), 미박음 시 content_type 에서 추론.
+    /// `ext_override` 설정되어 있으면 새 확장자 (`png` → `webp` 변환 시), 미설정 시 content_type 에서 추론.
     async fn finalize_base(
         &self,
         slug: &str,
@@ -1749,7 +1749,7 @@ pub struct NetworkRequest {
     /// HTTP method — `"GET"` / `"POST"` / `"PUT"` / `"DELETE"` 등. parse 실패 시 어댑터에서 Err.
     #[serde(default = "default_get_method")]
     pub method: String,
-    /// Headers map — 미박힘 시 기본값.
+    /// Headers map — 미설정 시 기본값.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headers: Option<std::collections::HashMap<String, String>>,
     /// Body — string 이면 raw, object/array 면 JSON serialize.

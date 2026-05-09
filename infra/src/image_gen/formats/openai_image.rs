@@ -5,7 +5,7 @@
 //!   - image-to-image: POST `/v1/images/edits` + multipart/form-data
 //!
 //! gpt-image-1 / gpt-image-2 양쪽 지원 — config.id 만 다름.
-//! reference_image 박혀있으면 자동 edits endpoint.
+//! reference_image 설정되어 있으면 자동 edits endpoint.
 
 use std::collections::HashSet;
 
@@ -27,7 +27,7 @@ fn supported_sizes() -> HashSet<&'static str> {
         .collect()
 }
 
-/// AI 가 DALL-E 3 시절 사이즈 박으면 gpt-image-1 호환 값으로 매핑.
+/// AI 가 DALL-E 3 시절 사이즈 설정하면 gpt-image-1 호환 값으로 매핑.
 /// 옛 TS `normalizeSize` 1:1 — 일반 로직 (특정 사이즈만 매핑, 나머지는 default).
 fn normalize_size(size: Option<&str>) -> &str {
     match size {
@@ -111,7 +111,7 @@ impl ImageFormatHandler for OpenAiImageFormat {
         let n = opts.n.unwrap_or(1);
 
         // ctx.config.id 우선 — resolveConfig 가 registry 기반 정규화한 값 (권위).
-        // opts.model 은 힌트 (registry 미박힌 ID 박혀도 fallback 으로 호출 가능).
+        // opts.model 은 힌트 (registry 미설정된 ID 설정되어도 fallback 으로 호출 가능).
         let client = crate::llm::formats::common::http_client();
 
         let resp = if let Some(ref_img) = &opts.reference_image {

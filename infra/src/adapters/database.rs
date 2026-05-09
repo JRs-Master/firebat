@@ -146,7 +146,7 @@ impl SqliteDatabaseAdapter {
         .map_err(|e| format!("DB schema 초기화 실패: {e}"))
     }
 
-    /// 다른 어댑터 (CostManager / EntityManager 등) 가 같은 DB 위에 자기 테이블 박을 때 활용.
+    /// 다른 어댑터 (CostManager / EntityManager 등) 가 같은 DB 위에 자기 테이블 설정할 때 활용.
     pub fn with_conn<F, T>(&self, f: F) -> Result<T, String>
     where
         F: FnOnce(&Connection) -> rusqlite::Result<T>,
@@ -766,7 +766,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         let now = chrono::Utc::now().timestamp_millis();
         let expires_at = now + input.ttl_ms;
 
-        // dedup_key 박혀있고 유효 share 존재 → 재사용 (옛 TS 1:1)
+        // dedup_key 설정되어 있고 유효 share 존재 → 재사용 (옛 TS 1:1)
         if let Some(dedup) = &input.dedup_key {
             let existing: Option<(String, i64)> = conn
                 .query_row(
@@ -881,7 +881,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // LLM cost — 옛 SqliteDatabaseAdapter::with_conn 으로 cost.rs 가 직접 박은 SQL trait 으로 격리.
+    // LLM cost — 옛 SqliteDatabaseAdapter::with_conn 으로 cost.rs 가 직접 설정한 SQL trait 으로 격리.
     // ────────────────────────────────────────────────────────────────────────
 
     fn record_llm_cost(
@@ -1130,7 +1130,7 @@ mod tests {
     #[test]
     fn cleanup_expired_shares_removes_old() {
         let db = SqliteDatabaseAdapter::new_in_memory().unwrap();
-        // 만료된 share 박음
+        // 만료된 share 저장
         db.create_share(&firebat_core::ports::CreateShareInput {
             share_type: "turn".to_string(),
             title: "만료1".to_string(),
@@ -1151,7 +1151,7 @@ mod tests {
             dedup_key: None,
         })
         .unwrap();
-        // 유효 share 박음
+        // 유효 share 저장
         let valid = db
             .create_share(&firebat_core::ports::CreateShareInput {
                 share_type: "turn".to_string(),

@@ -5,7 +5,7 @@
 //!   - `format_handler.rs` — ImageFormatHandler trait
 //!   - `formats/` — openai_image / gemini_native_image / cli_codex_image
 //!   - `adapter.rs` — ConfigDrivenImageGenAdapter (IImageGenPort 구현)
-//!   - `configs/*.json` — builtin carousel (빌드 타임 박힘)
+//!   - `configs/*.json` — builtin carousel (빌드 타임 설정)
 //!
 //! 사용:
 //!   ```ignore

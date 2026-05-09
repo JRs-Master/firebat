@@ -2,7 +2,7 @@
 //!
 //! 옛 TS `lib/tag-utils.ts` 1:1 port.
 //!
-//! 사용자가 CMS settings 의 tagAliases textarea 에 박은 줄별 매핑:
+//! 사용자가 CMS settings 의 tagAliases textarea 에 설정한 줄별 매핑:
 //! ```text
 //! AI: ai, 인공지능, artificial-intelligence
 //! 주식: stock, equity

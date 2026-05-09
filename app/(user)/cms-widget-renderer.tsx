@@ -35,7 +35,7 @@ function formatDate(s?: string, timeZone: string = 'Asia/Seoul'): string {
 
 /** Widget section wrapper — 사이드바 / 푸터는 section, 헤더는 inline (제목 hidden). */
 function WidgetSection({ children, area, className = '' }: { children: React.ReactNode; area: WidgetArea; className?: string }) {
-  // 헤더는 inline 렌더 — section element 없이 children 만 (flex 자식 이미 박힘).
+  // 헤더는 inline 렌더 — section element 없이 children 만 (flex 자식 이미 설정).
   if (area === 'header') return <>{children}</>;
   return <section className={className}>{children}</section>;
 }
@@ -470,8 +470,8 @@ export async function CmsWidget({ slot, area }: { slot: WidgetSlot; area: Widget
       break;
     case 'mobile-toggle':
       // 헤더 전용 — header.mobileDrawer 가 ON 인 경우에만 의미. 그 외에는 미렌더 (안전 폴백).
-      // (현재 layout 의 mobileDrawer 토글이 자동 렌더하므로 widget 으로 박지 않아도 자연 동작.
-      //  사용자가 명시 widget 박은 경우에만 추가 표시.)
+      // (현재 layout 의 mobileDrawer 토글이 자동 렌더하므로 widget 으로 하지 않아도 자연 동작.
+      //  사용자가 명시 widget 설정한 경우에만 추가 표시.)
       inner = null;
       break;
   }

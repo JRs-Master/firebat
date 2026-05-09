@@ -5,7 +5,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 /**
  * GET /api/media/usage?slug=<media-slug>
  *
- * 미디어 slug 의 사용처 — 어떤 페이지에 박혀있는지.
+ * 미디어 slug 의 사용처 — 어떤 페이지에 설정되어 있는지.
  * 갤러리 모달 메타 표시 + 삭제 confirm 차등화에 사용.
  *
  * 응답: { success: true, data: [{ pageSlug, usedAt }] }

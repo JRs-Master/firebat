@@ -107,7 +107,7 @@ async fn get_working_python() -> Option<&'static str> {
 
 /// Runtime spec — 확장자 → command + 추가 인자.
 /// 새 runtime (Ruby / Bun / Deno / etc) 추가 시 ProcessSandboxAdapter::with_runtime() 또는
-/// ctor 의 default registry 에 박음. 코드 분기 (if-else 체인) 없음.
+/// ctor 의 default registry 에 저장. 코드 분기 (if-else 체인) 없음.
 #[derive(Debug, Clone)]
 pub struct RuntimeSpec {
     pub command: String,
@@ -120,11 +120,11 @@ pub struct ProcessSandboxAdapter {
     /// env 변수로 binary 경로 override (FIREBAT_NODE_BIN / FIREBAT_PYTHON_BIN).
     runtimes: HashMap<String, RuntimeSpec>,
     /// Vault — config.json `secrets` 배열의 키를 자동으로 env 에 주입.
-    /// 옛 TS setVault / loadSecretsEnv 1:1. 미박힘 시 secrets 주입 스킵.
+    /// 옛 TS setVault / loadSecretsEnv 1:1. 미설정 시 secrets 주입 스킵.
     vault: Option<Arc<dyn IVaultPort>>,
     /// Pre-exec hook (Linux 한정) — 자식 프로세스 안에서 fork() 직후 exec() 직전 호출.
-    /// LinuxCgroupsSandboxAdapter 가 박음 — cgroup attach + seccomp install + unshare.
-    /// 미박힘 시 옛 동작 (격리 0). Phase B-post Track B Stage 2+3 박힘 (2026-05-06).
+    /// LinuxCgroupsSandboxAdapter 가 저장 — cgroup attach + seccomp install + unshare.
+    /// 미설정 시 옛 동작 (격리 0). Phase B-post Track B Stage 2+3 설정 (2026-05-06).
     #[cfg(target_os = "linux")]
     pre_exec_hook: Option<Arc<dyn Fn() -> std::io::Result<()> + Send + Sync>>,
 }
@@ -171,15 +171,15 @@ impl ProcessSandboxAdapter {
         self
     }
 
-    /// Vault 박은 채로 부팅 — sysmod 실행 시 `secrets` 배열의 키를 자동으로 env 에 주입.
-    /// 옛 TS sandbox.setVault 1:1. 미박힘 시 secrets 자동 주입 비활성 (manual env 만 사용).
+    /// Vault 설정한 채로 부팅 — sysmod 실행 시 `secrets` 배열의 키를 자동으로 env 에 주입.
+    /// 옛 TS sandbox.setVault 1:1. 미설정 시 secrets 자동 주입 비활성 (manual env 만 사용).
     pub fn with_vault(mut self, vault: Arc<dyn IVaultPort>) -> Self {
         self.vault = Some(vault);
         self
     }
 
-    /// Pre-exec hook 박음 (Linux 한정) — 자식 프로세스 안에서 exec() 직전 실행.
-    /// LinuxCgroupsSandboxAdapter 가 호출 — cgroup attach + seccomp install + unshare 박음.
+    /// Pre-exec hook 등록 (Linux 한정) — 자식 프로세스 안에서 exec() 직전 실행.
+    /// LinuxCgroupsSandboxAdapter 가 호출 — cgroup attach + seccomp install + unshare 저장.
     /// hook 안에서 panic 시 자식 프로세스 즉시 종료 (Rust pre_exec safety).
     #[cfg(target_os = "linux")]
     pub fn with_pre_exec_hook<F>(mut self, hook: F) -> Self
@@ -195,7 +195,7 @@ impl ProcessSandboxAdapter {
     ///
     /// 흐름:
     /// 1. `<module_dir>/config.json` 파싱 → `secrets: ["KEY1", "KEY2"]` 배열
-    /// 2. 각 키마다 Vault `user:KEY` 조회 → env 박음
+    /// 2. 각 키마다 Vault `user:KEY` 조회 → env 저장
     /// 3. 모듈 settings (`system:module:<name>:settings`) 의 모든 필드 → `MODULE_<KEY>` env 주입
     /// 4. tokenCache 패턴 (옛 TS) — Phase B-19+ 후속
     fn load_secrets_env(&self, module_dir: &Path) -> HashMap<String, String> {
@@ -536,7 +536,7 @@ impl ProcessSandboxAdapter {
         }
 
         // Pre-exec hook (Linux 한정) — fork() 직후 exec() 직전 자식 프로세스 안에서 실행.
-        // LinuxCgroupsSandboxAdapter 가 박음 — cgroup attach + seccomp install + unshare.
+        // LinuxCgroupsSandboxAdapter 가 저장 — cgroup attach + seccomp install + unshare.
         // hook 안에서 panic 또는 Err 반환 시 자식 프로세스 즉시 종료 (안전).
         #[cfg(target_os = "linux")]
         if let Some(hook) = &self.pre_exec_hook {
@@ -621,7 +621,7 @@ impl ProcessSandboxAdapter {
     }
 }
 
-/// Stub adapter — 실 spawn 안 하고 미리 박은 응답 반환. 단위 테스트 용.
+/// Stub adapter — 실 spawn 안 하고 미리 설정한 응답 반환. 단위 테스트 용.
 #[cfg(test)]
 pub struct StubSandboxAdapter {
     pub fixed_output: ModuleOutput,
@@ -681,7 +681,7 @@ mod tests {
     #[tokio::test]
     async fn rejects_unknown_extension() {
         let tmp = tempdir().unwrap();
-        // 빈 파일 박음 (path 존재 검사 통과 위해)
+        // 빈 파일 생성 (path 존재 검사 통과 위해)
         let path = tmp.path().join("foo.exe");
         std::fs::write(&path, "").unwrap();
         let sandbox = ProcessSandboxAdapter::new(tmp.path().to_path_buf());
@@ -698,12 +698,12 @@ mod tests {
         let tmp = tempdir().unwrap();
         let vault: Arc<dyn IVaultPort> =
             Arc::new(SqliteVaultAdapter::new(tmp.path().join("vault.db")).unwrap());
-        // Vault 에 시크릿 미리 박음
+        // Vault 에 시크릿 미리 저장
         vault.set_secret("user:KIWOOM_APP_KEY", "test-app-key");
         vault.set_secret("user:KIWOOM_APP_SECRET", "test-app-secret");
         vault.set_secret("user:UNRELATED_KEY", "skip-me");
 
-        // 모듈 디렉토리 + config.json 박음
+        // 모듈 디렉토리 + config.json 저장
         let module_dir = tmp.path().join("system/modules/kiwoom");
         std::fs::create_dir_all(&module_dir).unwrap();
         let config_json = serde_json::json!({
@@ -719,13 +719,13 @@ mod tests {
         let sandbox =
             ProcessSandboxAdapter::new(tmp.path().to_path_buf()).with_vault(vault);
         let env = sandbox.load_secrets_env(&module_dir);
-        // secrets 배열에 박힌 키만 주입
+        // secrets 배열에 설정된 키만 주입
         assert_eq!(env.get("KIWOOM_APP_KEY").map(|s| s.as_str()), Some("test-app-key"));
         assert_eq!(
             env.get("KIWOOM_APP_SECRET").map(|s| s.as_str()),
             Some("test-app-secret")
         );
-        // secrets 배열에 미박은 키는 주입 안 됨
+        // secrets 배열에 미설정한 키는 주입 안 됨
         assert!(env.get("UNRELATED_KEY").is_none());
     }
 
@@ -741,7 +741,7 @@ mod tests {
         )
         .unwrap();
 
-        // Vault 미박힘 → empty env (회귀 안전)
+        // Vault 미설정 → empty env (회귀 안전)
         let sandbox = ProcessSandboxAdapter::new(tmp.path().to_path_buf());
         let env = sandbox.load_secrets_env(&module_dir);
         assert!(env.is_empty());
@@ -753,7 +753,7 @@ mod tests {
         let tmp = tempdir().unwrap();
         let vault: Arc<dyn IVaultPort> =
             Arc::new(SqliteVaultAdapter::new(tmp.path().join("vault.db")).unwrap());
-        // 모듈 settings 박음 (옛 TS MODULE_<KEY> env 패턴 1:1)
+        // 모듈 settings 주입 (옛 TS MODULE_<KEY> env 패턴 1:1)
         let settings = serde_json::json!({
             "endpoint": "https://api.test.com",
             "timeout_ms": 30000,

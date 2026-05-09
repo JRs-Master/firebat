@@ -64,7 +64,7 @@ fn preserve(component: &str, field: &str) -> bool {
 /// HTML 태그 제거 + 마크다운 강조 마커 제거 + Unicode escape decode.
 /// 옛 TS cleanText 1:1 port.
 pub fn clean_text(s: &str) -> String {
-    // 1. Unicode escape decode (Claude Haiku 가 \\ud83d\\udd1f 같은 escape 박는 케이스)
+    // 1. Unicode escape decode (Claude Haiku 가 \\ud83d\\udd1f 같은 escape 설정하는 케이스)
     let decoded = decode_unicode_escapes(s);
     // 2. HTML 태그 제거 (간단한 regex 없는 walk 방식 — `<...>` 매칭)
     let stripped = strip_html_tags(&decoded);
@@ -227,7 +227,7 @@ pub enum ReplySegment {
 }
 
 /// AI reply 안 markdown 표·헤더 자동 추출 — 옛 TS extractMarkdownStructure 1:1 port.
-/// AI 가 마크다운 표/헤더 박으면 자동으로 component blocks 으로 변환 가능 (caller 가 segment →
+/// AI 가 마크다운 표/헤더 설정하면 자동으로 component blocks 으로 변환 가능 (caller 가 segment →
 /// render_header / render_table 매핑).
 ///
 /// 결과 segments 순서:

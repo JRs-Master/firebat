@@ -1,7 +1,7 @@
 /**
  * 단건 event API.
  * GET /api/episodic/{id}    — 조회 (entityIds 포함)
- * PATCH /api/episodic/{id}  — 수정 (entityIds 박으면 link 전체 교체)
+ * PATCH /api/episodic/{id}  — 수정 (entityIds 설정하면 link 전체 교체)
  * DELETE /api/episodic/{id} — 삭제 (cascade event_entities)
  */
 import { NextRequest, NextResponse } from 'next/server';

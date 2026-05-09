@@ -10,7 +10,7 @@
 //! Slug 네이밍: YYYY-MM-DD-<hint-slug>-<rand4>. 한국어 hint 허용 (UTF-8).
 //!
 //! Phase B-15+ 후속:
-//! - saveVariant / updateMeta 의 variants 처리 — IImageProcessorPort 박힌 후
+//! - saveVariant / updateMeta 의 variants 처리 — IImageProcessorPort 설정된 후
 //! - finalizeBase (placeholder swap) — 비동기 image_gen 패턴
 
 use chrono::Utc;
@@ -247,7 +247,7 @@ impl IMediaPort for LocalMediaAdapter {
         tokio::fs::remove_file(&meta_path)
             .await
             .map_err(|e| format!("media meta 삭제 실패: {e}"))?;
-        // variants 파일도 정리 — Phase B-15+ variant suffix 박힌 후 강화
+        // variants 파일도 정리 — Phase B-15+ variant suffix 설정된 후 강화
         Ok(())
     }
 
@@ -337,7 +337,7 @@ impl IMediaPort for LocalMediaAdapter {
             .map(String::from)
             .unwrap_or_else(|| Self::ext_from_content_type(content_type).to_string());
 
-        // 기존 record 로드 — meta 박혀있어야 finalize 가능 (placeholder 가 박은 상태)
+        // 기존 record 로드 — meta 설정되어 있어야 finalize 가능 (placeholder 가 설정한 상태)
         let Some((found_scope, mut record)) = self.find_record(slug).await else {
             return Err(format!("finalize_base: media slug={} 미존재", slug));
         };
@@ -355,7 +355,7 @@ impl IMediaPort for LocalMediaAdapter {
             let _ = tokio::fs::remove_file(&old_path).await;
         }
 
-        // 새 binary 박음
+        // 새 binary 저장
         let new_path = self.binary_path(scope_enum, slug, &new_ext);
         if let Some(parent) = new_path.parent() {
             tokio::fs::create_dir_all(parent)

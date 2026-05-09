@@ -27,9 +27,9 @@ const LOGIN_FAIL_DECAY_MS: i64 = 10 * 60 * 1000;
 /// `lastUsedAt` throttle — 1분 이내 재갱신 스킵 (Vault write 비용 회피).
 const LAST_USED_THROTTLE_MS: i64 = 60_000;
 
-/// 관리자 자격증명 default — Vault / env 둘 다 미설정 시. 운영 시 사용자가 변경 권장.
-const DEFAULT_ADMIN_ID: &str = "admin";
-const DEFAULT_ADMIN_PASSWORD: &str = "admin";
+// admin/admin 디폴트 폴백 폐기 (2026-05-09) — 첫 부팅 setup wizard 패턴.
+// Vault / env 둘 다 미설정 = `is_admin_setup()` false → frontend `/login` 이 setup form 토글.
+// `login()` 은 vault 설정된 자격증명만 통과 (빈 string 비교는 항상 fail).
 
 /// Login 결과.
 #[derive(Debug)]
@@ -150,9 +150,11 @@ impl AuthManager {
         }
 
         let creds = self.get_admin_credentials();
+        // vault 미설정 (setup 전) = 모든 로그인 거부. 빈 자격증명으로 우회 방지.
         let id_match = Self::timing_safe_eq(id, &creds.0);
         let pw_match = Self::timing_safe_eq(password, &creds.1);
-        let ok = id_match && pw_match;
+        let setup_done = !creds.0.is_empty() && !creds.1.is_empty();
+        let ok = setup_done && id_match && pw_match;
 
         if ok {
             // 성공 시 카운터 reset
@@ -293,19 +295,26 @@ impl AuthManager {
     //  관리자 자격증명
     // ══════════════════════════════════════════════════════════════════════════
 
-    /// (id, password) — Vault 저장값 → env → default 순.
+    /// (id, password) — Vault 저장값 → env → 빈 string 순. 빈 string = setup 전.
     pub fn get_admin_credentials(&self) -> (String, String) {
         let id = self
             .vault
             .get_secret(VK_ADMIN_ID)
             .or_else(|| std::env::var("FIREBAT_ADMIN_ID").ok())
-            .unwrap_or_else(|| DEFAULT_ADMIN_ID.to_string());
+            .unwrap_or_default();
         let password = self
             .vault
             .get_secret(VK_ADMIN_PASSWORD)
             .or_else(|| std::env::var("FIREBAT_ADMIN_PASSWORD").ok())
-            .unwrap_or_else(|| DEFAULT_ADMIN_PASSWORD.to_string());
+            .unwrap_or_default();
         (id, password)
+    }
+
+    /// 첫 부팅 setup 완료 여부 — Vault / env 에 admin 자격증명 설정되어 있나.
+    /// frontend `/login` 페이지가 호출 → false 면 setup wizard 노출.
+    pub fn is_admin_setup(&self) -> bool {
+        let (id, password) = self.get_admin_credentials();
+        !id.is_empty() && !password.is_empty()
     }
 
     pub fn set_admin_credentials(&self, new_id: Option<&str>, new_password: Option<&str>) {

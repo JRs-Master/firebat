@@ -3,7 +3,7 @@
  *
  * JSON-LD BreadcrumbList 와 동일 경로 (홈 > seg1 > seg1/seg2 > ... > 현재 페이지).
  * 마지막 세그먼트는 현재 페이지 제목, 클릭 불가 (aria-current="page").
- * 콘텐츠 페이지(project 박힌)에서 <main> 본문 시작 직전 표시.
+ * 콘텐츠 페이지(project 설정된)에서 <main> 본문 시작 직전 표시.
  */
 
 export function CmsBreadcrumb({ slug, title }: { slug: string; title?: string }) {

@@ -1,7 +1,7 @@
 /**
  * 태그 alias / normalize — CMS Phase 8a Step B.
  *
- * 사용자가 어드민 CMS settings 의 tagAliases textarea 에 박은 줄별 매핑을 파싱:
+ * 사용자가 어드민 CMS settings 의 tagAliases textarea 에 설정한 줄별 매핑을 파싱:
  *   AI: ai, 인공지능, artificial-intelligence
  *   주식: stock, equity
  *

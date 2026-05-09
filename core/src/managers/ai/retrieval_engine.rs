@@ -8,7 +8,7 @@
 //!   - RetrievalEngine: 4-tier 통합 (history + 메모리 시스템). HistoryResolver 결과
 //!     포함 후 entity/event/fact 추가.
 //!
-//! Token budget — limits 박혀 있으면 그대로, 미박힘 시 default. 빈 결과 자동 skip.
+//! Token budget — limits 설정되어 있으면 그대로, 미설정 시 default. 빈 결과 자동 skip.
 //! 도메인 무관 — 4 source 검색 후 통합 (사용자 워크플로우 별 추상화 X).
 
 use std::sync::Arc;
@@ -108,7 +108,7 @@ impl RetrievalEngine {
             return RetrievalResult::default();
         }
 
-        // limits resolve — opts.limits 우선, 미박음 시 default.
+        // limits resolve — opts.limits 우선, 미설정 시 default.
         let lim = ResolvedLimits {
             history: opts.limits.history.unwrap_or(5),
             entities: opts.limits.entities.unwrap_or(3),

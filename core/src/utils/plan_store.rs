@@ -49,7 +49,7 @@ pub struct StoredPlan {
     pub created_at: u64,
 }
 
-/// `store_plan` 인자 — `created_at` 자동 박힘.
+/// `store_plan` 인자 — `created_at` 자동 설정.
 #[derive(Debug, Clone)]
 pub struct PlanInsert {
     pub plan_id: String,
@@ -116,7 +116,7 @@ fn cleanup_expired(map: &mut HashMap<String, StoredPlan>) -> bool {
     changed
 }
 
-/// 옛 TS `storePlan(plan)` 1:1 — created_at 자동 박힘.
+/// 옛 TS `storePlan(plan)` 1:1 — created_at 자동 설정.
 pub fn store_plan(plan: PlanInsert) {
     let Ok(mut map) = store_lock().lock() else {
         return;

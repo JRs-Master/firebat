@@ -3,8 +3,8 @@
 /**
  * Admin route error boundary — admin tree 의 client-side throw 격리.
  *
- * 박지 않으면 admin 안의 어떤 throw 든 root global-error.tsx 까지 bubble up →
- * "치명적인 오류" 풀스크린 → admin 통째 사용 불가. 박아두면 admin tree 만 reset 가능.
+ * 하지 않으면 admin 안의 어떤 throw 든 root global-error.tsx 까지 bubble up →
+ * "치명적인 오류" 풀스크린 → admin 통째 사용 불가. 설정해두면 admin tree 만 reset 가능.
  *
  * 옛 transient 자동 reload 패턴 제거 (2026-05-08) — root cause 안 잡힌 채로 무한 새로고침 회피.
  */

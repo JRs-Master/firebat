@@ -23,7 +23,7 @@ pub mod proto {
     tonic::include_proto!("firebat.v1");
 }
 
-/// Firebat Core 의 진입점 — Phase B 시작 시 매니저 / 어댑터 / gRPC server 박힘.
+/// Firebat Core 의 진입점 — Phase B 시작 시 매니저 / 어댑터 / gRPC server 설정.
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
 }

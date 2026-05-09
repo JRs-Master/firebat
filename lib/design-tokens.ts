@@ -346,7 +346,7 @@ export function tokensToCss(tokens: DesignTokens): string {
 }
 
 /** Partial<DesignTokens> 를 default 와 deep merge — 사용자 일부 override 시 결합.
- *  CMS settings 에서 사용자가 일부 필드만 박은 경우 default 와 병합. */
+ *  CMS settings 에서 사용자가 일부 필드만 설정한 경우 default 와 병합. */
 export function mergeTokens(partial?: Partial<DesignTokens>): DesignTokens {
   if (!partial) return DEFAULT_TOKENS;
   return {

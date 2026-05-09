@@ -1,7 +1,7 @@
 /**
  * CMS Footer — Phase C widget 빌더 + legacy 4 컬럼 자동 derive.
  *
- * widgets 박혀있으면 widget catalog 기반 grid 렌더 (각 col 의 widget 배열).
+ * widgets 설정되어 있으면 widget catalog 기반 grid 렌더 (각 col 의 widget 배열).
  * Legacy 컬럼 (heading+content) 도 composeLayout 가 widgets 로 자동 derive — 단일 path.
  *
  * 레이아웃: 4 col grid (모바일 1열 / 태블릿 2열 / 데스크톱 4열) + 메인 텍스트 (저작권) row.

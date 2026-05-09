@@ -35,14 +35,14 @@ impl GeminiCliHandler {
         // **중요**: Gemini CLI 는 workspace (cwd) 외 경로 차단 ("Path not in workspace") →
         // 임시 파일을 workspace 안에 저장해야 `@-syntax` 작동.
         let workspace = Self::gemini_workspace();
-        // workspace 디렉토리 보장 — 첨부 이미지 안 박혀도 cwd 로 사용
+        // workspace 디렉토리 보장 — 첨부 이미지 안 설정되어도 cwd 로 사용
         let _ = std::fs::create_dir_all(&workspace);
         let tmp_image = write_image_temp_file(
             opts.image.as_deref(),
             opts.image_mime_type.as_deref(),
             Some(&workspace),
         );
-        // `@<path>\n\n<prompt>` 형태로 prompt 앞에 박음 (옛 TS 1:1)
+        // `@<path>\n\n<prompt>` 형태로 prompt 앞에 추가 (옛 TS 1:1)
         let final_prompt = match &tmp_image {
             Some(t) => format!("@{}\n\n{}", t.path, prompt),
             None => prompt.to_string(),
@@ -106,7 +106,7 @@ impl FormatHandler for GeminiCliHandler {
         _prior_results: &[ToolResult],
         _opts: &LlmCallOpts,
     ) -> InfraResult<LlmToolResponse> {
-        Err("Gemini CLI ask_with_tools — Phase B-17.5 settings.json MCP + tool_use 이벤트 박힌 후 활성"
+        Err("Gemini CLI ask_with_tools — Phase B-17.5 settings.json MCP + tool_use 이벤트 설정된 후 활성"
             .to_string())
     }
 }

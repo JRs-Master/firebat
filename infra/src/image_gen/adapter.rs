@@ -33,7 +33,7 @@ pub struct ConfigDrivenImageGenAdapter {
 }
 
 impl ConfigDrivenImageGenAdapter {
-    /// builtin 만 — 사용자 디렉토리 미박음.
+    /// builtin 만 — 사용자 디렉토리 미저장.
     pub fn new(vault: Arc<dyn IVaultPort>, default_model_id: String) -> Self {
         Self::with_configs_dir(vault, default_model_id, None)
     }
@@ -55,7 +55,7 @@ impl ConfigDrivenImageGenAdapter {
             ImageGenFormat::CliCodexImage,
             Arc::new(CliCodexImageFormat::new()),
         );
-        // VertexGeminiImage / StabilityApi — 향후 박을 수 있음. 미지원 시 generate 가 명시 에러.
+        // VertexGeminiImage / StabilityApi — 향후 설정할 수 있음. 미지원 시 generate 가 명시 에러.
         Self {
             vault,
             default_model_id,
@@ -89,7 +89,7 @@ impl ConfigDrivenImageGenAdapter {
 #[async_trait::async_trait]
 impl IImageGenPort for ConfigDrivenImageGenAdapter {
     fn get_model_id(&self) -> String {
-        // Vault `system:image:model` 우선 — 미박음 시 default.
+        // Vault `system:image:model` 우선 — 미설정 시 default.
         // 옛 TS 는 ConfigDrivenAdapter 부팅 시 default 결정 — 여기선 매 호출 lookup (Vault 변경 즉시 반영).
         self.vault
             .get_secret("system:image:model")
@@ -223,14 +223,14 @@ mod tests {
     #[test]
     fn get_model_id_falls_back_to_default() {
         let (adapter, _tmp) = make_adapter("gpt-image-1");
-        // Vault 미박음 → default
+        // Vault 미설정 → default
         assert_eq!(adapter.get_model_id(), "gpt-image-1");
     }
 
     #[test]
     fn get_model_id_reads_vault_override() {
         let (adapter, _tmp) = make_adapter("gpt-image-1");
-        // Vault 박힘 → 그 값 우선 (옛 TS 와 동일 패턴 — 사용자가 모델 swap)
+        // Vault 설정 → 그 값 우선 (옛 TS 와 동일 패턴 — 사용자가 모델 swap)
         adapter
             .vault
             .set_secret("system:image:model", "gemini-3.1-flash-image-preview");
@@ -259,14 +259,14 @@ mod tests {
     fn resolve_config_unknown_falls_back_to_default() {
         let (adapter, _tmp) = make_adapter("gpt-image-1");
         let cfg = adapter.resolve_config(Some("totally-unknown-xyz")).unwrap();
-        // default model 박혔으니 그 쪽으로
+        // default model 설정되었으니 그 쪽으로
         assert_eq!(cfg.id, "gpt-image-1");
     }
 
     #[tokio::test]
     async fn generate_without_api_key_returns_clear_error() {
         let (adapter, _tmp) = make_adapter("gpt-image-1");
-        // Vault 에 API 키 미박음 → handler 가 명시 error
+        // Vault 에 API 키 미설정 → handler 가 명시 error
         let r = adapter
             .generate(
                 &ImageGenOpts {
@@ -287,7 +287,7 @@ mod tests {
     #[tokio::test]
     async fn generate_with_unknown_model_falls_back() {
         let (adapter, _tmp) = make_adapter("gpt-image-1");
-        // unknown model + key 미박음 → fallback model 으로 시도 후 API 키 error
+        // unknown model + key 미설정 → fallback model 으로 시도 후 API 키 error
         let r = adapter
             .generate(
                 &ImageGenOpts {

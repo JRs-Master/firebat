@@ -88,7 +88,7 @@ impl LlmModelConfig {
     pub fn stub() -> Self {
         Self {
             id: "stub-model".to_string(),
-            display_name: "Stub LLM (Phase B-17 미박음)".to_string(),
+            display_name: "Stub LLM (Phase B-17 미구현)".to_string(),
             provider: "Stub".to_string(),
             format: "stub".to_string(),
             endpoint: String::new(),
@@ -101,7 +101,7 @@ impl LlmModelConfig {
 }
 
 /// 등록된 LLM 모델 carousel — Vault `system:llm:registry` 또는 빌트인 .json 파일에서 로드.
-/// Phase B-17 minimum: 빌트인 carousel 7개 (각 format 당 1개) — 사용자가 Vault 에 API 키 박으면 활성.
+/// Phase B-17 minimum: 빌트인 carousel 7개 (각 format 당 1개) — 사용자가 Vault 에 API 키 설정하면 활성.
 pub fn builtin_models() -> Vec<LlmModelConfig> {
     vec![
         // ── Anthropic API ──────────────────────────────────────────────────

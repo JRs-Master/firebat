@@ -155,7 +155,7 @@ impl ModuleService for ModuleServiceImpl {
         &self,
         _req: Request<Empty>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // CMS module settings — Vault `system:module:cms:settings` 위에 default 박은 객체 merge.
+        // CMS module settings — Vault `system:module:cms:settings` 위에 default 설정한 객체 merge.
         // 새 서버 / Vault 빈 시점에도 모든 필드 보장 (frontend 가 `seo.layout.header.navLinks` 같이
         // 깊은 path 접근 시 undefined crash 회피).
         let stored = self.manager.get_settings("cms");
@@ -308,7 +308,7 @@ fn cms_defaults() -> serde_json::Value {
     })
 }
 
-/// 두 JSON 객체 deep merge — overlay 가 base 위에 박힘. array 는 overlay 우선 (replace 아님 X).
+/// 두 JSON 객체 deep merge — overlay 가 base 위에 설정. array 는 overlay 우선 (replace 아님 X).
 fn deep_merge(base: serde_json::Value, overlay: serde_json::Value) -> serde_json::Value {
     use serde_json::Value;
     match (base, overlay) {

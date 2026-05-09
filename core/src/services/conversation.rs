@@ -13,7 +13,7 @@ use crate::proto::{
 pub struct ConversationServiceImpl {
     manager: Arc<ConversationManager>,
     /// IDatabasePort (옵션) — shared_conversations 테이블 RPC (create_share / get_share /
-    /// cleanup_expired_shares). 미박힘 시 stub 반환.
+    /// cleanup_expired_shares). 미설정 시 stub 반환.
     db: Option<Arc<dyn IDatabasePort>>,
 }
 
@@ -25,7 +25,7 @@ impl ConversationServiceImpl {
         }
     }
 
-    /// IDatabasePort 박은 채로 부팅 — 공유 대화 RPC 활성.
+    /// IDatabasePort 설정한 채로 부팅 — 공유 대화 RPC 활성.
     pub fn with_db(mut self, db: Arc<dyn IDatabasePort>) -> Self {
         self.db = Some(db);
         self
@@ -192,7 +192,7 @@ impl ConversationService for ConversationServiceImpl {
     ) -> Result<Response<JsonValue>, TonicStatus> {
         let Some(db) = &self.db else {
             return Err(TonicStatus::failed_precondition(
-                "create_share: IDatabasePort 미박음",
+                "create_share: IDatabasePort 미설정",
             ));
         };
         let raw = req.into_inner().raw;

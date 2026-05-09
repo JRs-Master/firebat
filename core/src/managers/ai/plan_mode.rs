@@ -19,7 +19,7 @@ pub fn prefix(mode: PlanMode) -> &'static str {
     }
 }
 
-/// LLM 호출 직전 user prompt 에 박는 hint — Gemini 가 시스템 프롬프트 무시 시 fallback.
+/// LLM 호출 직전 user prompt 에 설정하는 hint — Gemini 가 시스템 프롬프트 무시 시 fallback.
 /// 옛 TS `promptForLlm` 의 첫 turn 분기 1:1.
 pub fn prompt_hint(mode: PlanMode) -> Option<&'static str> {
     match mode {

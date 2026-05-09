@@ -5,7 +5,7 @@
  * catalog 만 등록 → 모든 영역에서 자동 활용 가능.
  *
  * Phase A: 사이드바부터 widget 배열 시스템으로 마이그레이션. 기존 6 toggle 은
- * 호환 유지 (widgets 배열 박혀있으면 그 우선, 없으면 toggle 폴백).
+ * 호환 유지 (widgets 배열 설정되어 있으면 그 우선, 없으면 toggle 폴백).
  * Phase B/C: 헤더·푸터 도 같은 catalog 활용.
  */
 
@@ -66,7 +66,7 @@ export interface WidgetMeta {
   propsSchema?: WidgetPropField[];
 }
 
-/** Widget 인스턴스 — 사용자가 영역에 박은 widget 1개. */
+/** Widget 인스턴스 — 사용자가 영역에 설정한 widget 1개. */
 export interface WidgetSlot {
   /** Widget 종류 (catalog key) */
   type: WidgetType;

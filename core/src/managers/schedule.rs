@@ -26,9 +26,9 @@ use crate::utils::path_resolve::resolve_field_path;
 const MAX_RETRY_COUNT: i64 = 5;
 const DEFAULT_RETRY_DELAY_MS: i64 = 30_000;
 
-/// Schedule trigger 의 외부 dependency. `with_hooks()` 박힘 후 handle_trigger 의 4 모드 + runWhen
-/// + notify 활성. 미박힘 시 sandbox-only fallback (page URL 알림 만 동작).
-/// episodic 박힘 시 AI 미개입 자동 hook 활성 — cron 발화 시 save_event(type='cron_trigger') 자동.
+/// Schedule trigger 의 외부 dependency. `with_hooks()` 설정 후 handle_trigger 의 4 모드 + runWhen
+/// + notify 활성. 미설정 시 sandbox-only fallback (page URL 알림 만 동작).
+/// episodic 설정 시 AI 미개입 자동 hook 활성 — cron 발화 시 save_event(type='cron_trigger') 자동.
 #[derive(Clone)]
 pub struct ScheduleHooks {
     pub task: Arc<TaskManager>,
@@ -53,7 +53,7 @@ impl ScheduleManager {
         Self { cron, hooks: None }
     }
 
-    /// hooks 박은 ScheduleManager — handle_trigger 의 4 모드 + runWhen + notify 활성.
+    /// hooks 설정한 ScheduleManager — handle_trigger 의 4 모드 + runWhen + notify 활성.
     pub fn with_hooks(mut self, hooks: ScheduleHooks) -> Self {
         self.hooks = Some(hooks);
         self
@@ -65,8 +65,8 @@ impl ScheduleManager {
         target_path: &str,
         opts: CronScheduleOptions,
     ) -> InfraResult<()> {
-        // pipeline 검증은 Phase B-14 TaskManager 박힌 후 Core facade 에서 수행.
-        // agent 모드 검증도 Phase B-16 AiManager 박힌 후 Core facade 에서.
+        // pipeline 검증은 Phase B-14 TaskManager 설정된 후 Core facade 에서 수행.
+        // agent 모드 검증도 Phase B-16 AiManager 설정된 후 Core facade 에서.
         // 매니저 차원에서는 어댑터 위임만.
         if let (None, None, None) = (
             opts.cron_time.as_ref(),
@@ -252,8 +252,8 @@ impl ScheduleManager {
             let _ = self.cron.cancel(&info.job_id).await;
         }
 
-        // 5. AI 미개입 자동 hook 1: cron 발화 사실 자체를 리콜에 박음.
-        // 옛 TS Core facade 의 saveEvent 자동 호출 패턴 1:1. silent 실패 (event 박기 실패해도 cron
+        // 5. AI 미개입 자동 hook 1: cron 발화 사실 자체를 리콜에 저장.
+        // 옛 TS Core facade 의 saveEvent 자동 호출 패턴 1:1. silent 실패 (event 저장 실패해도 cron
         // result 영향 X). type='cron_trigger' / title=jobId / description=success/error 요약.
         if let Some(hooks) = &self.hooks {
             let description = if final_result.success {
@@ -275,7 +275,7 @@ impl ScheduleManager {
                 .await;
         }
 
-        // 6. AI 미개입 자동 hook 2: StatusManager done/error 박음 (옛 TS core/index.ts:1375 패턴).
+        // 6. AI 미개입 자동 hook 2: StatusManager done/error 발행 (옛 TS core/index.ts:1375 패턴).
         if let (Some(hooks), Some(job_id)) = (&self.hooks, status_job_id) {
             if final_result.success {
                 let _ = hooks.status.complete(
@@ -369,7 +369,7 @@ impl ScheduleManager {
                     }
                 }
             } else {
-                error = Some("ScheduleHooks 미박음 — agent 모드 cron 작동 안 함".to_string());
+                error = Some("ScheduleHooks 미저장 — agent 모드 cron 작동 안 함".to_string());
             }
         }
         // Mode 2: pipeline
@@ -398,7 +398,7 @@ impl ScheduleManager {
                 steps_executed = Some(arr.len() as i64); // 단순화 — 실제 진행 추적은 후속
                 output = Self::summarize_final_output(&steps, pipe_result.data.as_ref());
             } else {
-                error = Some("ScheduleHooks 미박음 — pipeline 모드 cron 작동 안 함".to_string());
+                error = Some("ScheduleHooks 미저장 — pipeline 모드 cron 작동 안 함".to_string());
             }
         }
         // Mode 3: page URL 알림 (targetPath 가 / 시작)
@@ -445,7 +445,7 @@ impl ScheduleManager {
                     }
                 }
             } else {
-                error = Some("ScheduleHooks 미박음 — sandbox 모드 cron 작동 안 함".to_string());
+                error = Some("ScheduleHooks 미저장 — sandbox 모드 cron 작동 안 함".to_string());
             }
         }
 

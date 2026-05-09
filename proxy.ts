@@ -38,6 +38,7 @@ export function proxy(request: NextRequest) {
   }
 
   // ── 인증 불필요 엔드포인트 ──
+  // /api/auth/* 전체 면제 — login / logout / setup / kakao OAuth / cli 상태 조회 모두 포함
   if (pathname.startsWith('/api/auth')) return NextResponse.next();
   // OG 이미지 — SNS 크롤러(페북·카톡·트위터)가 GET 해야 함. 공개 리소스.
   if (pathname === '/api/og' && request.method === 'GET') return NextResponse.next();

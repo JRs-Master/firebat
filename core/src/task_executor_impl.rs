@@ -9,7 +9,7 @@
 //! - LLM_TRANSFORM — AiManager.ask_text
 //! - SAVE_PAGE — PageManager.save
 //! - TOOL_CALL — ToolManager.dispatch
-//! - NETWORK_REQUEST — Phase B-17+ stub (INetworkPort + reqwest 박힌 후 활성)
+//! - NETWORK_REQUEST — Phase B-17+ stub (INetworkPort + reqwest 설정된 후 활성)
 
 use std::sync::Arc;
 
@@ -56,7 +56,7 @@ impl RealTaskExecutor {
         }
     }
 
-    /// Capability 박힌 채로 부팅 — execute_module 의 자동 fallback 활성.
+    /// Capability 설정된 채로 부팅 — execute_module 의 자동 fallback 활성.
     pub fn with_capability(mut self, capability: Arc<CapabilityManager>) -> Self {
         self.capability = Some(capability);
         self
@@ -103,7 +103,7 @@ impl TaskExecutor for RealTaskExecutor {
         }
 
         // 실패 → capability fallback (옛 TS task-manager.ts:373 tryFallbackProvider 1:1 port).
-        // CapabilityManager 미박힘 시 fallback 비활성 → 첫 시도 실패 그대로 반환.
+        // CapabilityManager 미설정 시 fallback 비활성 → 첫 시도 실패 그대로 반환.
         if let Some(capability) = &self.capability {
             if let Some(failed_module) = extract_module_name(path) {
                 let fallbacks = capability.fallback_modules(failed_module).await;
@@ -141,7 +141,7 @@ impl TaskExecutor for RealTaskExecutor {
             }
         }
 
-        // 모든 fallback 실패 (또는 capability 미박힘) → 원본 에러 반환
+        // 모든 fallback 실패 (또는 capability 미설정) → 원본 에러 반환
         match result {
             Ok(out) => Err(out
                 .error
@@ -168,9 +168,9 @@ impl TaskExecutor for RealTaskExecutor {
         _body: Option<&serde_json::Value>,
         _headers: Option<&serde_json::Value>,
     ) -> InfraResult<serde_json::Value> {
-        // Phase B-17+ — INetworkPort + reqwest 박힌 후 활성.
+        // Phase B-17+ — INetworkPort + reqwest 설정된 후 활성.
         Err(format!(
-            "NETWORK_REQUEST 미박음 (Phase B-17+ reqwest) — url={}",
+            "NETWORK_REQUEST 미구현 (Phase B-17+ reqwest) — url={}",
             url
         ))
     }

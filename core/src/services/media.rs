@@ -2,7 +2,7 @@
 //!
 //! Phase B-15 minimum: Read / List / Remove / Save / IsReady 활성.
 //! Generate / Regenerate / StartGeneration / 모델 설정 RPC 는 Phase B-16+ stub
-//! (AiManager + IImageGenPort 박힌 후).
+//! (AiManager + IImageGenPort 설정된 후).
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};

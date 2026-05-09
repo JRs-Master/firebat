@@ -1,15 +1,15 @@
 //! ToolRouter — AI Assistant 도구 선별 + 피드백 학습 루프.
 //!
-//! 옛 TS `core/managers/ai/tool-router.ts` (181 LOC) backbone 박음.
+//! 옛 TS `core/managers/ai/tool-router.ts` (181 LOC) backbone 저장.
 //!
 //! 책임:
 //!   1. `select_tools` — 사용자 발화에 맞는 도구 좁히기 (Gemini API 만 적용. needs_previous_context
 //!      판정은 모든 모델 공통).
 //!   2. AI Assistant ON/OFF 라우팅 분기 (Vault `system:ai-router:enabled` 토글).
-//!   3. 피드백 학습 — 직전 라우팅이 negative/positive 면 cache 점수 갱신 (LLM router 박힌 후).
+//!   3. 피드백 학습 — 직전 라우팅이 negative/positive 면 cache 점수 갱신 (LLM router 설정된 후).
 //!   4. turn 종료 시 성공 기록 (`record_turn_success`).
 //!
-//! Phase B-18 backbone — IToolRouterPort + ToolSearchIndex 박힌 후 LLM router 활성.
+//! Phase B-18 backbone — IToolRouterPort + ToolSearchIndex 설정된 후 LLM router 활성.
 //! 현재는:
 //!   - `is_enabled()` Vault 토글 검사 (옛 TS 1:1)
 //!   - `select_tools` 의 fallback path — 모든 도구 그대로 반환 + needs_previous_context=None
@@ -42,7 +42,7 @@ pub struct ToolRouteResult {
 
 /// 직전 라우팅 — 90초 TTL. AI Assistant ON 시 LLM router 의 피드백 컨텍스트로 사용.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Phase B-18 LLM router 박힌 후 활성
+#[allow(dead_code)] // Phase B-18 LLM router 설정된 후 활성
 struct LastRouting {
     pub query: String,
     pub tool_names: Vec<String>,
@@ -52,7 +52,7 @@ struct LastRouting {
 
 /// 현재 turn 의 cacheId — `record_turn_success` 시점에 success/failure 갱신.
 #[derive(Debug, Default, Clone)]
-#[allow(dead_code)] // Phase B-18 LLM router 박힌 후 활성
+#[allow(dead_code)] // Phase B-18 LLM router 설정된 후 활성
 struct CacheIds {
     tools: Option<i64>,
     components: Vec<i64>,
@@ -64,8 +64,8 @@ pub struct ToolRouter {
     session_last_routing: Mutex<HashMap<String, LastRouting>>,
     /// 현재 turn 의 cacheIds — turn 끝나면 reset.
     last_route_cache_ids: Mutex<CacheIds>,
-    /// ToolSearchIndex (옵션) — 박혀있으면 Gemini API 도구 선별 활성. 미박힘 시 fallback (모든 도구).
-    /// AI Assistant 토글 ON 이어도 search_index 미박음 → backbone fallback 동일.
+    /// ToolSearchIndex (옵션) — 설정되어 있으면 Gemini API 도구 선별 활성. 미설정 시 fallback (모든 도구).
+    /// AI Assistant 토글 ON 이어도 search_index 미설정 → backbone fallback 동일.
     search_index: Option<Arc<ToolSearchIndex>>,
 }
 
@@ -79,7 +79,7 @@ impl ToolRouter {
         }
     }
 
-    /// ToolSearchIndex 박은 채로 부팅 — Gemini API 도구 선별 (2-stage 벡터 검색) 활성.
+    /// ToolSearchIndex 설정한 채로 부팅 — Gemini API 도구 선별 (2-stage 벡터 검색) 활성.
     /// IEmbedderPort 직접 받아 내부 ToolSearchIndex 빌드.
     pub fn with_embedder(mut self, embedder: Arc<dyn IEmbedderPort>) -> Self {
         self.search_index = Some(Arc::new(ToolSearchIndex::new(embedder)));
@@ -116,7 +116,7 @@ impl ToolRouter {
     /// **활성 조건** (셋 다 true 일 때만 도구 좁힘):
     /// 1. AI Assistant 토글 ON (Vault `system:ai-router:enabled`)
     /// 2. 현재 모델이 Gemini API (hosted MCP 없는 프로바이더 — GPT/Claude 는 hosted MCP 있어 노이즈 적음)
-    /// 3. ToolSearchIndex 박혀있음 (`with_embedder` 호출 후)
+    /// 3. ToolSearchIndex 설정되어 있음 (`with_embedder` 호출 후)
     ///
     /// **활성 시 흐름** (옛 TS 1:1):
     /// 1. ToolSearchIndex.query → Stage 1+2 카테고리·도구 cosine 검색
@@ -143,7 +143,7 @@ impl ToolRouter {
         let enabled = self.is_enabled();
         let is_gemini = Self::is_gemini_api(model_id);
         let Some(search_index) = self.search_index.as_ref() else {
-            // ToolSearchIndex 미박음 → fallback (옛 TS 의 backbone 동일)
+            // ToolSearchIndex 미설정 → fallback (옛 TS 의 backbone 동일)
             return ToolRouteResult {
                 tools: all_tools,
                 needs_previous_context: None,
@@ -190,7 +190,7 @@ impl ToolRouter {
 
         ToolRouteResult {
             tools: filtered,
-            needs_previous_context: None, // LLM router 박힌 후 활성
+            needs_previous_context: None, // LLM router 설정된 후 활성
         }
     }
 
@@ -211,15 +211,15 @@ impl ToolRouter {
     /// - `tools_used`: AI 가 라우팅된 도구 중 1개라도 호출했으면 true → tools cache success.
     /// - `render_used`: AI 가 render / render_* 1개라도 호출했으면 true → components cache success.
     ///
-    /// **현재 backbone**: cache_ids reset 만. LLM router 박힌 후 recordSuccess 호출 활성.
+    /// **현재 backbone**: cache_ids reset 만. LLM router 설정된 후 recordSuccess 호출 활성.
     pub async fn record_turn_success(&self, _tools_used: bool, _render_used: bool) {
-        // LLM router 박힌 후 활성 — 현재는 cache_ids reset 만
+        // LLM router 설정된 후 활성 — 현재는 cache_ids reset 만
         if let Ok(mut state) = self.last_route_cache_ids.lock() {
             *state = CacheIds::default();
         }
     }
 
-    /// 90초 TTL session 마지막 라우팅 garbage collect — 새 라우팅 박을 때 호출.
+    /// 90초 TTL session 마지막 라우팅 garbage collect — 새 라우팅 설정할 때 호출.
     /// 옛 TS 동등 (90초 지난 항목 자동 무효화).
     pub fn cleanup_stale_routings(&self) {
         let now = Instant::now();
@@ -250,7 +250,7 @@ mod tests {
         let (r, _dir) = make_router();
         r.record_components_cache_id(42);
         r.record_components_cache_id(43);
-        // backbone — record_turn_success 가 reset (LLM router 박힌 후 success 호출 활성)
+        // backbone — record_turn_success 가 reset (LLM router 설정된 후 success 호출 활성)
         r.record_turn_success(true, true).await;
         let state = r.last_route_cache_ids.lock().unwrap();
         assert!(state.components.is_empty());
@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn cleanup_stale_routings_works() {
         let (r, _dir) = make_router();
-        // 직전 라우팅 박음 (직접 — 일반 호출 경로는 LLM router 박힌 후)
+        // 직전 라우팅 저장 (직접 — 일반 호출 경로는 LLM router 설정된 후)
         if let Ok(mut state) = r.session_last_routing.lock() {
             state.insert(
                 "c1".to_string(),

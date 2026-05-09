@@ -65,7 +65,7 @@ impl ModuleManager {
     /// 모듈명으로 실행 — entry 자동 탐색.
     /// 옛 TS `run(name, input)` 1:1 — listDir 실패 시 한국어 에러 명시.
     ///
-    /// Track A6 (2026-05-07): config.json 의 input schema 박혀있으면 sandbox spawn 전 validation.
+    /// Track A6 (2026-05-07): config.json 의 input schema 설정되어 있으면 sandbox spawn 전 validation.
     /// 실패 시 InfraResult error — 모듈이 받지 못함 (silent corruption 방어).
     pub async fn run(
         &self,
@@ -105,7 +105,7 @@ impl ModuleManager {
             .execute(&target, input_data, &SandboxExecuteOpts::default())
             .await?;
 
-        // Post-spawn output validation — config.json 의 output schema 박혀있으면 검사 (선택)
+        // Post-spawn output validation — config.json 의 output schema 설정되어 있으면 검사 (선택)
         if let Some(config) = self.get_module_config("user", module_name).await {
             if let Some(output_schema) = config.get("output") {
                 if let Err(e) = validate_value(&result.data, output_schema) {
@@ -207,10 +207,10 @@ impl ModuleManager {
 
     // ─── private helpers ───
 
-    /// 디렉토리 스캔 — config.json 박힌 하위 디렉토리 → SystemEntry list.
+    /// 디렉토리 스캔 — config.json 설정된 하위 디렉토리 → SystemEntry list.
     /// 옛 TS `scanDir(dir, defaultType, defaultScope)` 1:1:
-    ///   - config.json 의 `type` / `scope` 박혀있으면 우선 (인자 default 는 fallback)
-    ///   - config.json 안 박힌 디렉토리는 skip
+    ///   - config.json 의 `type` / `scope` 설정되어 있으면 우선 (인자 default 는 fallback)
+    ///   - config.json 안 설정된 디렉토리는 skip
     /// 정렬 — 옛 TS 는 자연 디렉토리 순서. Rust 도 sort 하지 않음 (silent behavior 차이 fix).
     async fn scan_dir(
         &self,
@@ -277,7 +277,7 @@ impl ModuleManager {
 
 // ─── JSON Schema validation (Track A6, 2026-05-07) ──────────────────────────
 //
-// 시니어 audit 결과 박힌 module I/O contract 강제. config.json 의 input/output schema
+// 시니어 audit 결과 설정된 module I/O contract 강제. config.json 의 input/output schema
 // 형태가 JSON Schema 와 호환 (type/properties/required/enum/etc) 이므로 jsonschema
 // crate 로 검증. 실패 시 명시 에러 (silent corruption 방어).
 

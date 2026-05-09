@@ -63,8 +63,8 @@ impl HistoryResolver {
     ///
     /// 모호한 쿼리("또", "이어서"만)는 spread 약함 → 주입 0 → AI 가 유저에게 역질문.
     ///
-    /// IEmbedderPort 박힌 ConversationManager (Step 1.5 박힘) 가 search_history 의 cosine
-    /// 검색을 활성화. 미박음 시 search_history 빈 결과 → 빈 contextSummary.
+    /// IEmbedderPort 설정된 ConversationManager (Step 1.5 설정) 가 search_history 의 cosine
+    /// 검색을 활성화. 미설정 시 search_history 빈 결과 → 빈 contextSummary.
     pub async fn compress_history_with_search(
         &self,
         user_prompt: &str,
@@ -162,7 +162,7 @@ impl HistoryResolver {
     /// 자동 history 컨텍스트 합성 (fallback) — 단순 recent N 메시지 prepend.
     /// 옛 TS compressHistoryWithSearch 의 fallback 모드 — 벡터 검색 결과 없을 때 사용.
     ///
-    /// owner 와 conv_id 박혀있으면 그 대화의 recent N 메시지 추출. 미박힘 시 None.
+    /// owner 와 conv_id 설정되어 있으면 그 대화의 recent N 메시지 추출. 미설정 시 None.
     pub fn resolve(&self, owner: &str, conv_id: Option<&str>) -> Option<String> {
         let conv_id = conv_id?;
         let conv = self.conversation.get(owner, conv_id)?;
@@ -201,7 +201,7 @@ impl HistoryResolver {
             }
         }
         if s.lines().count() <= 1 {
-            return None; // 헤더만 박힘 → 의미 없는 컨텍스트
+            return None; // 헤더만 설정 → 의미 없는 컨텍스트
         }
         Some(s)
     }

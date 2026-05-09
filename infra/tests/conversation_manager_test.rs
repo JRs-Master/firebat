@@ -181,7 +181,7 @@ async fn save_with_embedder_indexes_messages() {
 
 #[tokio::test]
 async fn sync_embeddings_grow_with_union_merge() {
-    // union_merge_messages 박힌 후 — 메시지는 절대 줄어들지 않고 union 으로 자라기만 함.
+    // union_merge_messages 설정된 후 — 메시지는 절대 줄어들지 않고 union 으로 자라기만 함.
     // 모바일·PC 동시 쓰기 race 보호 (옛 TS 1:1).
     let (mgr, _dir) = make_manager_with_embedder();
     let messages = serde_json::json!([

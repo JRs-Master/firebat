@@ -10,7 +10,7 @@ pub const VK_SYSTEM_USER_PROMPT: &str = "system:user-prompt";
 pub const VK_SYSTEM_AI_ASSISTANT_MODEL: &str = "system:ai-router:model";
 /// AI Assistant 토글 — Vault 의 `'true'` / `'1'` 만 ON. ToolRouter 가 이 키 검사.
 pub const VK_SYSTEM_AI_ROUTER_ENABLED: &str = "system:ai-router:enabled";
-/// AI Assistant default 모델 — Vault 미박힘 시 폴백. 사용자 결정 (2026-05-09):
+/// AI Assistant default 모델 — Vault 미설정 시 폴백. 사용자 결정 (2026-05-09):
 /// 잼민이 3.1 Flash Lite (저렴·빠름) — Tool Router / search_history 보조용으로 적합.
 /// `LlmModelConfig.builtin_models` 에 등록되어야 함 (config.rs).
 pub const AI_ASSISTANT_DEFAULT_MODEL: &str = "gemini-3.1-flash-lite-preview";
@@ -36,7 +36,7 @@ pub fn vk_module_settings(name: &str) -> String {
     format!("system:module:{}:settings", name)
 }
 
-// Phase B-18 Step 2d 박힘 — MediaManager 의 이미지 모델·기본값 (옛 TS 1:1).
+// Phase B-18 Step 2d 설정 — MediaManager 의 이미지 모델·기본값 (옛 TS 1:1).
 pub const VK_IMAGE_MODEL: &str = "system:image-model";
 pub const VK_IMAGE_SIZE: &str = "system:image-size";
 pub const VK_IMAGE_QUALITY: &str = "system:image-quality";

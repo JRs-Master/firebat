@@ -89,7 +89,7 @@ html::-webkit-scrollbar-thumb:hover,
 }
 
 /* ── Heading 스타일 6 옵션 — h1/h2/h3 각자 별도 적용.
-   layout.tsx 가 data-h1-style="..." 등 attribute 박으면 해당 style 적용. */
+   layout.tsx 가 data-h1-style="..." 등 attribute 설정하면 해당 style 적용. */
 .firebat-cms-content[data-h1-style="border-bottom"] h1 {
   border-bottom: 2px solid var(--cms-border); padding-bottom: 8px; margin-bottom: 16px;
 }
@@ -211,7 +211,7 @@ html::-webkit-scrollbar-thumb:hover,
 
 /* ── CMS Layout Mode — 본문 + sidebar 4종 배치 (Phase 4 Step 2). ─────────────
    .firebat-cms-layout-{mode} 가 본문·사이드바 wrapper.
-   data-cms-layout="..." 가 layout.tsx 에서 박힘. 모바일 (<1024px) 에선 자동 stacked. */
+   data-cms-layout="..." 가 layout.tsx 에서 구현. 모바일 (<1024px) 에선 자동 stacked. */
 .firebat-cms-layout-full {
   /* 사이드바 없음 — 기존 firebat-cms-content 그대로 */
 }
@@ -300,7 +300,7 @@ html::-webkit-scrollbar-thumb:hover,
    페이지 본문 통째 사용은 옛 stock-blog 같은 legacy 케이스 — CMS 패턴 정착 후엔 발생 X.
    호환 가드 deprecate (2026-04-28) — 옛 페이지는 직접 재발행으로 정리. */
 .firebat-html-block {
-  /* AI 가 박은 raw HTML 의 max-width 등이 wrapper 자체로 한정 — globals.css 의 :root 와 cascade 충돌 방지는
+  /* AI 가 렌더한 raw HTML 의 max-width 등이 wrapper 자체로 한정 — globals.css 의 :root 와 cascade 충돌 방지는
      postcss-prefix-selector 가 sanitize 단계에서 처리 (sanitizeHtmlBlock). */
   max-width: 100%;
 }
@@ -321,7 +321,7 @@ html::-webkit-scrollbar-thumb:hover,
    미설정 시 primary 색에서 자동 derive. */
 
 /* 본문 인라인 링크 — render_text 안의 markdown 링크, 사용자 inline html 등.
-   기존 nav / 카드 wrapper 의 링크는 className 으로 자체 색 박혀있어 영향 0 (style='color: var(--cms-text)' inline). */
+   기존 nav / 카드 wrapper 의 링크는 className 으로 자체 색 적용되어 영향 0 (style='color: var(--cms-text)' inline). */
 .firebat-cms-content a {
   color: var(--cms-link, var(--cms-primary));
   text-decoration: underline;
@@ -333,7 +333,7 @@ html::-webkit-scrollbar-thumb:hover,
   color: var(--cms-link-hover, var(--cms-link, var(--cms-primary)));
   opacity: 0.75;
 }
-/* render_* 컴포넌트들이 자체 className+style 박혀있는 경우는 inline style 우선 — 영향 X.
+/* render_* 컴포넌트들이 자체 className+style 구현되어 있는 경우는 inline style 우선 — 영향 X.
    markdown auto-converted 링크만 자연 적용. */
 
 /* 사이드바 위젯 안 자유 HTML 링크 — htmlWidget 등 */
@@ -365,7 +365,7 @@ html::-webkit-scrollbar-thumb:hover,
 
 /* ── CMS Typography Tokens (P2 디자인 깊이) ──
    .firebat-cms-content scope 의 h1..h6 / p / li 에 사용자 typography 토큰 적용.
-   HeaderComp 가 weights 만 박고 사이즈는 여기서 토큰 derive. 사용자가 baseFontSize +
+   HeaderComp 가 weights 만 지정 후 사이즈는 여기서 토큰 derive. 사용자가 baseFontSize +
    scaleRatio 조정하면 모든 heading 자동 일관 변경. */
 .firebat-cms-content {
   font-size: var(--cms-text-base);

@@ -74,8 +74,8 @@ fn assistant_model_default_gemini_flash_lite() {
 #[test]
 fn assistant_model_override_via_vault() {
     let (r, vault, _dir) = make_router_with_vault();
-    vault.set_secret(VK_SYSTEM_AI_ASSISTANT_MODEL, "gemini-3-flash-preview");
-    assert_eq!(r.get_assistant_model(), "gemini-3-flash-preview");
+    vault.set_secret(VK_SYSTEM_AI_ASSISTANT_MODEL, "gemini-3-pro");
+    assert_eq!(r.get_assistant_model(), "gemini-3-pro");
 }
 
 #[test]
@@ -117,7 +117,7 @@ async fn select_tools_empty_query_returns_all() {
 
 #[tokio::test]
 async fn select_tools_falls_back_when_search_index_missing() {
-    // ToolSearchIndex 미박음 + 토글 ON + Gemini → fallback (모든 도구 그대로)
+    // ToolSearchIndex 미설정 + 토글 ON + Gemini → fallback (모든 도구 그대로)
     let (r, vault, _dir) = make_router_with_vault();
     vault.set_secret(VK_SYSTEM_AI_ROUTER_ENABLED, "true");
     let tools = vec![tool("save_page"), tool("image_gen")];
@@ -135,7 +135,7 @@ async fn select_tools_falls_back_when_search_index_missing() {
 
 #[tokio::test]
 async fn select_tools_falls_back_when_toggle_off() {
-    // search_index 박혀있어도 토글 OFF → fallback
+    // search_index 설정되어 있어도 토글 OFF → fallback
     let _g = env_lock();
     let dir = tempfile::tempdir().unwrap();
     unsafe {
@@ -160,7 +160,7 @@ async fn select_tools_falls_back_when_toggle_off() {
 
 #[tokio::test]
 async fn select_tools_falls_back_for_non_gemini() {
-    // 토글 ON + search_index 박힘 + GPT 모델 → fallback (Gemini API 만 활성)
+    // 토글 ON + search_index 설정 + GPT 모델 → fallback (Gemini API 만 활성)
     let _g = env_lock();
     let dir = tempfile::tempdir().unwrap();
     unsafe {

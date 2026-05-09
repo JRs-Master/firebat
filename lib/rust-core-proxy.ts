@@ -1,5 +1,5 @@
 /**
- * RustCoreProxy — Phase B-4 C 박힘.
+ * RustCoreProxy — Phase B-4 C 설정.
  *
  * 옛 in-process FirebatCore 와 같은 메서드 시그니처를 Proxy + Reflect 패턴으로 노출.
  * 메서드 호출 → callCore('methodName', wrapped_args) → gRPC → Rust Core (port 50051).
@@ -15,7 +15,7 @@
  *
  * 다인자 → 단일 객체 wrap 매핑 (ARGS_TABLE):
  *   - 옛 facade method 가 다인자 받는 경우 (예: savePage(slug, spec)) 명시 매핑.
- *   - 매핑 안 박힌 method 는 args[0] 단일 인자 그대로 전달 (옛 옛 default).
+ *   - 매핑 안 설정된 method 는 args[0] 단일 인자 그대로 전달 (옛 옛 default).
  *   - frontend 의 `getCore().writeFile(path, content)` 같은 호출 → wrap 자동.
  *
  * 새 다인자 method 추가 시 본 table 에 entry 추가.
@@ -24,7 +24,7 @@ import { callCore } from './core-client';
 
 /**
  * 다인자 method 의 args → single object wrap 매핑.
- * 매핑 안 박힌 method 는 첫 인자만 그대로 전달.
+ * 매핑 안 설정된 method 는 첫 인자만 그대로 전달.
  *
  * Rust 측 service handler 가 받는 JSON 구조와 1:1 매칭 — handler `JsonArgs.raw` 안 단일 객체.
  */
@@ -130,8 +130,8 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
   cacheDrop: (cacheKey: string) => ({ cacheKey }),
 
   // AiService — Rust args: { prompt, tools, opts } (옛 TS history / callback 인자 무시)
-  // 채팅 streaming 의 진짜 callback 흐름은 gRPC bidirectional streaming 박은 후 재구현 필요 (별 commit).
-  // 우선 unary call — prompt + opts 만 박고 결과 받음 (callback 없이).
+  // 채팅 streaming 의 진짜 callback 흐름은 gRPC bidirectional streaming 설정한 후 재구현 필요 (별 commit).
+  // 우선 unary call — prompt + opts 만 전송 후 결과 받음 (callback 없이).
   requestActionWithTools: (prompt: string, _history?: unknown, opts?: unknown) => ({
     prompt,
     tools: [],
@@ -144,16 +144,16 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
 
 /**
  * 옛 TS Core 가 `{success, data, error}` wrap 형식으로 반환하던 메서드.
- * Rust gRPC 가 raw 값 반환 → RustCoreProxy 가 자동 wrap 박음.
+ * Rust gRPC 가 raw 값 반환 → RustCoreProxy 가 자동 wrap 저장.
  *
  *  - null / undefined → `{success: false, error: 'Not found'}`
- *  - object (단 'success' 필드 미박힘) → `{success: true, data: <object>}`
+ *  - object (단 'success' 필드 미설정) → `{success: true, data: <object>}`
  *  - array → `{success: true, data: <array>}`
- *  - 이미 'success' 박힌 object → 그대로 (Rust 측에서 wrap 한 응답)
+ *  - 이미 'success' 설정된 object → 그대로 (Rust 측에서 wrap 한 응답)
  */
-// autoWrap 박을 메서드 — API route 가 `res.success / res.data` 가정 박은 거.
-// 옛 TS Core 의 거의 모든 메서드 wrap 박았음. raw 가정 박은 거 (API route 가 그대로 통과)
-// 만 박지 마라.
+// autoWrap 설정할 메서드 — API route 가 `res.success / res.data` 가정 설정한 거.
+// 옛 TS Core 의 거의 모든 메서드 wrap 설정했음. raw 가정 설정한 거 (API route 가 그대로 통과)
+// 만 하지 마라.
 const WRAP_METHODS = new Set([
   // PageService — 거의 모든 wrap (savePage / deletePage / getPage / listPages / searchPages)
   'savePage', 'deletePage', 'renamePage', 'getPage', 'listPages', 'searchPages',
@@ -243,7 +243,7 @@ function autoWrap(method: string, result: unknown): unknown {
   // login — Rust LoginOutcome → 옛 TS 형식 (성공 = session / 실패 = null / 잠금 = {locked, retryAfterSec})
   if (method === 'login') return unwrapLogin(result);
   if (!WRAP_METHODS.has(method)) return result;
-  // 이미 success 박힌 응답 (Rust 측에서 wrap 한 경우) → 그대로
+  // 이미 success 설정된 응답 (Rust 측에서 wrap 한 경우) → 그대로
   if (
     result !== null &&
     typeof result === 'object' &&
@@ -263,7 +263,7 @@ function autoWrap(method: string, result: unknown): unknown {
  *  Rust: { ok: true, session } | { ok: false, error, code } | { ok: false, locked: true, retryAfterSec }
  *  옛 TS: AuthSession 객체 | null (실패) | { locked: true, retryAfterSec } (잠금)
  *
- *  **보안 critical** — 실패 시 null 반환 안 박으면 API route 가 모든 비번 통과시킴.
+ *  **보안 critical** — 실패 시 null 반환 안 설정하면 API route 가 모든 비번 통과시킴.
  */
 function unwrapLogin(result: unknown): unknown {
   if (result === null || result === undefined) return null;
@@ -286,9 +286,9 @@ function unwrapLogin(result: unknown): unknown {
  * 옛 FirebatCore 와 같은 메서드 호출 인터페이스 → callCore 라우팅.
  *
  * 메서드 미인식 (callCore 내부에서 RPC 매핑 못 찾으면) → fallback Lifecycle service 의
- * PascalCase RPC. table 등록 안 박힌 method 도 동작 시도 (안전망).
+ * PascalCase RPC. table 등록 안 설정된 method 도 동작 시도 (안전망).
  *
- * WRAP_METHODS 박힌 메서드는 응답 자동 `{success, data, error}` 형식 wrap.
+ * WRAP_METHODS 설정된 메서드는 응답 자동 `{success, data, error}` 형식 wrap.
  * 옛 TS Core 호환성 유지 — frontend 코드 변경 0.
  */
 export function createRustCoreProxy(): unknown {

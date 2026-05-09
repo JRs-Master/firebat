@@ -183,7 +183,7 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let password = args.get("password").and_then(|v| v.as_str());
                 page.save(&slug, &spec_str, status, project, visibility, password)?;
 
-                // AI 미개입 자동 hook 1: page_publish event 박음. silent fail (page save 성공 보장).
+                // AI 미개입 자동 hook 1: page_publish event 저장. silent fail (page save 성공 보장).
                 if status == "published" {
                     let _ = episodic
                         .save_event(crate::ports::SaveEventInput {
@@ -458,14 +458,14 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     );
 
     // image_gen — AI 가 호출하는 비동기 이미지 생성 도구.
-    // start_generate 호출 → 즉시 placeholder slug/url 반환 → AI 가 즉시 save_page 박을 수 있음.
+    // start_generate 호출 → 즉시 placeholder slug/url 반환 → AI 가 즉시 save_page 설정할 수 있음.
     // 사용자 페이지 reload 시 placeholder → 실제 이미지로 자동 swap (디스크 파일 교체).
     // 옛 TS image_gen 도구 1:1 — referenceImage (slug/url/base64) image-to-image 자동 활성.
     tools.register(ToolDefinition {
         name: "image_gen".to_string(),
-        description: "AI 이미지 생성 (비동기). 즉시 placeholder URL 반환 → AI 가 save_page 박을 수 있음. \
+        description: "AI 이미지 생성 (비동기). 즉시 placeholder URL 반환 → AI 가 save_page 설정할 수 있음. \
                       사용자 페이지 reload 시 실제 이미지로 swap. \
-                      referenceImage (slug/url/base64) 박으면 image-to-image 변환 (OpenAI gpt-image / Gemini 지원).".to_string(),
+                      referenceImage (slug/url/base64) 설정하면 image-to-image 변환 (OpenAI gpt-image / Gemini 지원).".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "required": ["prompt"],
@@ -512,7 +512,7 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register(ToolDefinition {
         name: "regenerate_image".to_string(),
         description: "갤러리 이미지 재생성 — 기존 slug 의 prompt/model/size/aspectRatio 메타 그대로 재실행. \
-                      prompt 미박힌 레거시 레코드는 재생성 불가 (error 반환).".to_string(),
+                      prompt 미설정된 레거시 레코드는 재생성 불가 (error 반환).".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "required": ["slug"],
@@ -595,7 +595,7 @@ fn parse_generate_image_input(
 fn register_conversation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     tools.register(ToolDefinition {
         name: "search_history".to_string(),
-        description: "이전 대화 검색. Phase B-17+ 임베딩 박힌 후 의미 검색 활성. 현재는 owner='admin' 의 모든 대화 list.".to_string(),
+        description: "이전 대화 검색. Phase B-17+ 임베딩 설정된 후 의미 검색 활성. 현재는 owner='admin' 의 모든 대화 list.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -675,10 +675,10 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         }),
     );
 
-    // save_entity_fact — entity timeline 박음
+    // save_entity_fact — entity timeline 저장
     tools.register(ToolDefinition {
         name: "save_entity_fact".to_string(),
-        description: "Entity 의 fact 박음 (entityId + content). occurredAt / tags / dedupThreshold 옵션.".to_string(),
+        description: "Entity 의 fact 추가 (entityId + content). occurredAt / tags / dedupThreshold 옵션.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -735,7 +735,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // search_entities
     tools.register(ToolDefinition {
         name: "search_entities".to_string(),
-        description: "Entity 검색 (query + type 필터). Phase B-15+ 임베딩 박힌 후 cosine.".to_string(),
+        description: "Entity 검색 (query + type 필터). Phase B-15+ 임베딩 설정된 후 cosine.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -839,7 +839,7 @@ fn register_episodic_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
     // save_event
     tools.register(ToolDefinition {
         name: "save_event".to_string(),
-        description: "사건 박음 (type + title 필수). entityIds 박으면 m2m link 자동.".to_string(),
+        description: "사건 추가 (type + title 필수). entityIds 설정하면 m2m link 자동.".to_string(),
         parameters: serde_json::json!({
             "type": "object",
             "properties": {
@@ -974,8 +974,8 @@ fn register_consolidation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) 
         }),
     );
 
-    // consolidate_conversation — LLM 자동 추출 (entity/fact/event 박음).
-    // ConsolidationManager.set_ai_hook 박힌 후 활성.
+    // consolidate_conversation — LLM 자동 추출 (entity/fact/event 추가).
+    // ConsolidationManager.set_ai_hook 설정된 후 활성.
     tools.register(ToolDefinition {
         name: "consolidate_conversation".to_string(),
         description: "대화 1개 LLM 후처리 → entity/fact/event 자동 추출 + 저장. 메모리 4-tier 자동 누적용.".to_string(),
@@ -1111,7 +1111,7 @@ fn register_mcp_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
         }),
     );
 
-    // call_mcp_tool — 외부 MCP 서버 도구 호출 (stdio + SSE 박힘, 2026-05-07)
+    // call_mcp_tool — 외부 MCP 서버 도구 호출 (stdio + SSE 설정, 2026-05-07)
     tools.register(ToolDefinition {
         name: "call_mcp_tool".to_string(),
         description: "외부 MCP 서버의 도구 호출 (stdio 또는 SSE transport).".to_string(),

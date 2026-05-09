@@ -104,7 +104,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   const [userTimezone, setUserTimezone] = useState('Asia/Seoul');
   const [thinkingLevel, setThinkingLevel] = useState('low');
 
-  // 모델 변경 시 그 모델에 박힌 thinking 복원. cascade 의 유효성 검증은 기존 흐름이 처리.
+  // 모델 변경 시 그 모델에 설정된 thinking 복원. cascade 의 유효성 검증은 기존 흐름이 처리.
   useEffect(() => {
     const remembered = lastThinkingByModel[aiModel];
     if (remembered && remembered !== thinkingLevel) setThinkingLevel(remembered);
@@ -128,7 +128,9 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
   // AI 어시스턴트 라우터 (Self-learning Flash Lite)
   const [aiRouterEnabled, setAiRouterEnabled] = useState(false);
   const [aiAssistantModel, setAiAssistantModel] = useState('gemini-3.1-flash-lite-preview');
-  const [aiAssistantModels, setAiAssistantModels] = useState<string[]>(['gemini-3.1-flash-lite-preview', 'gpt-5-nano']);
+  // Backend `getAvailableAiAssistantModels()` 응답이 truth source — 이 fallback list 는
+  // 첫 fetch 전 / API 실패 시점만 사용. 단일 디폴트 (gemini-3.1-flash-lite-preview) 만 저장.
+  const [aiAssistantModels, setAiAssistantModels] = useState<string[]>(['gemini-3.1-flash-lite-preview']);
 
   // 사용자 커스텀 프롬프트 (어드민 채팅·모나코 에디터 공유)
   const [userPrompt, setUserPrompt] = useState('');
@@ -1020,7 +1022,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                         }}
                         className="w-4 h-4 cursor-pointer"
                       />
-                      <span className="text-[12px] text-slate-700">{anthropicCacheEnabled ? '활성 (cache_control 마커 박음)' : '비활성 (기본)'}</span>
+                      <span className="text-[12px] text-slate-700">{anthropicCacheEnabled ? '활성 (cache_control 마커 적용)' : '비활성 (기본)'}</span>
                     </label>
                   </Field>
                 )}
@@ -1213,11 +1215,7 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                             onChange={setAiAssistantModel}
                             options={aiAssistantModels.map(id => ({
                               value: id,
-                              label: id === 'gemini-3.1-flash-lite-preview'
-                                ? 'Gemini 3.1 Flash Lite'
-                                : id === 'gpt-5-nano'
-                                  ? 'GPT-5 Nano'
-                                  : id,
+                              label: id === 'gemini-3.1-flash-lite-preview' ? 'Gemini 3.1 Flash Lite' : id,
                             }))}
                           />
                         </Field>

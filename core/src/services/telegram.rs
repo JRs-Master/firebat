@@ -20,9 +20,9 @@ pub struct TelegramServiceImpl {
     vault: Arc<dyn IVaultPort>,
     /// HTTP — Telegram Bot API 호출 (옛 reqwest 직접 의존 → INetworkPort 위임, 2026-05-06 audit A5).
     network: Arc<dyn INetworkPort>,
-    /// AiManager (옵션) — 박혀있으면 process_message webhook → AI → reply 활성.
+    /// AiManager (옵션) — 설정되어 있으면 process_message webhook → AI → reply 활성.
     ai: Option<Arc<AiManager>>,
-    /// ModuleManager (옵션) — sysmod_telegram 으로 reply 발송. ai 와 같이 박혀야 의미 있음.
+    /// ModuleManager (옵션) — sysmod_telegram 으로 reply 발송. ai 와 같이 설정되어야 의미 있음.
     module: Option<Arc<ModuleManager>>,
 }
 
@@ -36,7 +36,7 @@ impl TelegramServiceImpl {
         }
     }
 
-    /// AiManager + ModuleManager 박은 채로 부팅 — process_message 활성.
+    /// AiManager + ModuleManager 설정한 채로 부팅 — process_message 활성.
     pub fn with_ai_and_module(mut self, ai: Arc<AiManager>, module: Arc<ModuleManager>) -> Self {
         self.ai = Some(ai);
         self.module = Some(module);
@@ -174,7 +174,7 @@ impl TelegramService for TelegramServiceImpl {
         req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
         // 옛 TS Core.processTelegramMessage 1:1 — webhook 메시지 → AI 응답 → reply 전송.
-        // AiManager + ModuleManager 박혀있을 때만 작동.
+        // AiManager + ModuleManager 설정되어 있을 때만 작동.
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {
@@ -197,7 +197,7 @@ impl TelegramService for TelegramServiceImpl {
         let (Some(ai), Some(module)) = (&self.ai, &self.module) else {
             return json_response(&serde_json::json!({
                 "success": false,
-                "error": "AiManager + ModuleManager 미박음 — with_ai_and_module 후 활성"
+                "error": "AiManager + ModuleManager 미저장 — with_ai_and_module 후 활성"
             }));
         };
 

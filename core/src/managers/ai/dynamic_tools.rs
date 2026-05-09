@@ -1,6 +1,6 @@
 //! DynamicToolRegistry — sysmod_* / mcp_* 도구 자동 등록 + 60초 cache.
 //!
-//! Phase B-post audit E3 (2026-05-06) 박힘 — 옛 TS `buildToolDefinitions` 의 동적 빌드 부분
+//! Phase B-post audit E3 (2026-05-06) 설정 — 옛 TS `buildToolDefinitions` 의 동적 빌드 부분
 //! Rust port. 정적 도구 (`tool_registry::register_core_tools`) 와 분리:
 //! - **정적**: page / storage / schedule / media / conversation / entity / episodic 등 핸들러
 //!   (부팅 시 1회 등록 — `register_core_tools`)
@@ -151,7 +151,7 @@ impl DynamicToolRegistry {
     }
 }
 
-/// `_unused` 경고 회피 — InfraResult import 만 박힌 상태이지만 향후 확장 시 사용.
+/// `_unused` 경고 회피 — InfraResult import 만 설정된 상태이지만 향후 확장 시 사용.
 #[allow(dead_code)]
 fn _placeholder() -> InfraResult<()> {
     Ok(())

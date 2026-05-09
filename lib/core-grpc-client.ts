@@ -1,5 +1,5 @@
 /**
- * gRPC client (Node side) — Phase A 박힘.
+ * gRPC client (Node side) — Phase A 설정.
  *
  * Next.js API route (app/api/core/[method]/route.ts, 향후) 가 이 client 통해 Rust Core 호출.
  * Frontend 는 fetch → API route → gRPC 패턴이라 browser 에서 gRPC 직접 사용 X.
@@ -8,7 +8,7 @@
  *          간단 + 빠른 prototype. 단 TypeScript 타입은 `any` (Phase B 후속에서 ts-proto 또는
  *          @bufbuild/protoc-gen-es 도입해 typed stub 으로 swap 가능).
  *
- * Phase B: 매니저별 typed message 박힌 후 codegen typed stub 활용 검토.
+ * Phase B: 매니저별 typed message 설정된 후 codegen typed stub 활용 검토.
  */
 
 import * as grpcModule from '@grpc/grpc-js';
@@ -92,7 +92,7 @@ export async function pingCore(target?: string): Promise<{ version: string; read
 /**
  * 단일 진입점 — facade method 명 → service / RPC 매핑 + 호출.
  * Phase A: JsonArgs / JsonValue 단일 schema 라 method 매핑 단순.
- * Phase B: 매니저별 typed RPC 박힐 때 정밀 매핑 도입.
+ * Phase B: 매니저별 typed RPC 설정될 때 정밀 매핑 도입.
  *
  * @param method - facade method (camelCase, 예: 'savePage' / 'login' / 'listConversations')
  * @param args   - JSON-serializable 인자 (단일 객체)
@@ -231,6 +231,7 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   getApiTokenInfo: { service: 'AuthService', rpc: 'GetApiTokenInfo' },
   getAdminCredentials: { service: 'AuthService', rpc: 'GetAdminCredentials' },
   setAdminCredentials: { service: 'AuthService', rpc: 'SetAdminCredentials' },
+  isAdminSetup: { service: 'AuthService', rpc: 'IsAdminSetup' },
 
   // ── ConversationService (ConversationManager) ─────────────────
   listConversations: { service: 'ConversationService', rpc: 'List' },

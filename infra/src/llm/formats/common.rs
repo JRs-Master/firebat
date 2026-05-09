@@ -35,7 +35,7 @@ pub fn compute_cost(config: &LlmModelConfig, tokens_in: i64, tokens_out: i64) ->
 }
 
 /// system prompt + user prompt → 단일 messages 배열.
-/// 옛 TS 의 `LlmCallOpts.systemPrompt` 가 박혀있으면 system role 으로 분리, 없으면 user only.
+/// 옛 TS 의 `LlmCallOpts.systemPrompt` 가 설정되어 있으면 system role 으로 분리, 없으면 user only.
 pub fn build_messages(opts: &LlmCallOpts, user_prompt: &str) -> serde_json::Value {
     if let Some(sp) = opts.system_prompt.as_deref() {
         if !sp.is_empty() {

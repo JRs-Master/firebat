@@ -3,9 +3,9 @@
 //! 옛 TS SqliteEntityAdapter + SqliteEpisodicAdapter Rust 재구현 (Phase B-12 minimum).
 //!
 //! Phase B-12 minimum:
-//! - Entity / Fact / Event / Event-Entity m2m link CRUD 박힘
-//! - Search = name + alias + content substring 매칭 (옛 TS 의 cosine 미박음)
-//! - Phase B-15+ IEmbedderPort 박힌 후 cosine search 활성 (this file 한 곳만 수정)
+//! - Entity / Fact / Event / Event-Entity m2m link CRUD 설정
+//! - Search = name + alias + content substring 매칭 (옛 TS 의 cosine 미설정)
+//! - Phase B-15+ IEmbedderPort 설정된 후 cosine search 활성 (this file 한 곳만 수정)
 //!
 //! Schema: 옛 TS migration v2 (entities + entity_facts) + v3 (events + event_entities) Rust port.
 
@@ -57,7 +57,7 @@ impl SqliteMemoryAdapter {
 
     /// Embedder 주입 — 박히면 saveEntity / saveFact / saveEvent 자동 임베딩 +
     /// search_* cosine 정렬 + dedup_threshold cosine 활성.
-    /// 미박음 시 옛 Phase B-12 substring 매칭 fallback (테스트·embedder 없는 환경 호환).
+    /// 미설정 시 옛 Phase B-12 substring 매칭 fallback (테스트·embedder 없는 환경 호환).
     pub fn with_embedder(mut self, embedder: Arc<dyn IEmbedderPort>) -> Self {
         self.embedder = Some(embedder);
         self
@@ -133,7 +133,7 @@ impl SqliteMemoryAdapter {
         )
         .map_err(|e| format!("Memory schema 초기화 실패: {e}"))?;
 
-        // 마이그레이션 — 옛 (Phase B-12) DB 는 embedding 컬럼 미박음. ALTER TABLE 으로 추가.
+        // 마이그레이션 — 옛 (Phase B-12) DB 는 embedding 컬럼 미저장. ALTER TABLE 으로 추가.
         // SQLite 는 ADD COLUMN IF NOT EXISTS 미지원 — try/catch 로 이미 존재하면 무시 (옛 TS 동등 패턴).
         for stmt in [
             "ALTER TABLE entities ADD COLUMN embedding BLOB",
@@ -213,7 +213,7 @@ impl SqliteMemoryAdapter {
         }
     }
 
-    /// embedder 박혀있으면 embed_passage → bytes, 없거나 실패 시 None.
+    /// embedder 설정되어 있으면 embed_passage → bytes, 없거나 실패 시 None.
     /// 옛 TS 의 try/catch + log.debug 패턴 — 임베딩 실패해도 row 저장 자체는 성공.
     async fn embed_text_passage(&self, text: &str) -> Option<Vec<u8>> {
         let embedder = self.embedder.as_ref()?;
@@ -291,7 +291,7 @@ impl IEntityPort for SqliteMemoryAdapter {
             .ok();
 
         if let Some(id) = existing {
-            // embedding 업데이트 — 새 임베딩 박혔으면 갱신, 미박음이면 기존값 유지 (COALESCE)
+            // embedding 업데이트 — 새 임베딩 설정되었으면 갱신, 미설정이면 기존값 유지 (COALESCE)
             conn.execute(
                 "UPDATE entities SET
                     aliases = ?1,
@@ -441,7 +441,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         let has_query = !opts.query.trim().is_empty();
         let has_embedder = self.embedder.is_some();
 
-        // Cosine 모드 — query 박혀있고 embedder 박혀있으면 후보 row + embedding 가져와 cosine 정렬.
+        // Cosine 모드 — query 설정되어 있고 embedder 설정되어 있으면 후보 row + embedding 가져와 cosine 정렬.
         // 옛 TS searchEntities 의 hasSemanticQuery 분기 1:1.
         if has_query && has_embedder {
             let embedder = self.embedder.as_ref().expect("checked above");
@@ -495,7 +495,7 @@ impl IEntityPort for SqliteMemoryAdapter {
             return Ok(out);
         }
 
-        // Fallback (embedder 미박음 또는 query 빈 string) — substring 매칭 + updated_at DESC.
+        // Fallback (embedder 미설정 또는 query 빈 string) — substring 매칭 + updated_at DESC.
         let conn = self.conn.lock().unwrap();
         let q_pattern = format!("%{}%", opts.query);
         let alias_pattern = format!("%\"{}\"%", opts.query);
@@ -557,11 +557,11 @@ impl IEntityPort for SqliteMemoryAdapter {
             }
         }
 
-        // 임베딩 자동 — content → embed_passage. embedder 미박음 시 None (silent fail OK).
+        // 임베딩 자동 — content → embed_passage. embedder 미설정 시 None (silent fail OK).
         let embedding: Option<Vec<u8>> = self.embed_text_passage(&input.content).await;
 
         // dedup_threshold cosine — 옛 TS 패턴: 같은 entity 의 기존 active fact 와 cosine 비교.
-        // ≥ threshold 면 skip + 기존 id 반환. embedder + 새 임베딩 둘 다 박혔을 때만 활성.
+        // ≥ threshold 면 skip + 기존 id 반환. embedder + 새 임베딩 둘 다 설정되었을 때만 활성.
         if let (Some(threshold), Some(new_blob), Some(embedder)) = (
             input.dedup_threshold,
             embedding.as_ref(),
@@ -739,7 +739,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         let has_embedder = self.embedder.is_some();
 
         // ── 공통 SQL 빌드 (filter conditions). cosine 모드는 LIMIT 없이 후보 전체 가져옴.
-        // tag filter 는 SQL 안 박고 Rust 측 tag JSON 매칭 (LIKE 한계 — 일반 로직).
+        // tag filter 는 SQL 미사용 Rust 측 tag JSON 매칭 (LIKE 한계 — 일반 로직).
         fn build_filters<'a>(
             opts: &'a FactSearchOpts,
             select_embedding: bool,
@@ -773,7 +773,7 @@ impl IEntityPort for SqliteMemoryAdapter {
             (sql, values)
         }
 
-        // ── Cosine 모드 — embedder 박혀있고 query 박혀있을 때
+        // ── Cosine 모드 — embedder 설정되어 있고 query 설정되어 있을 때
         if has_query && has_embedder {
             let embedder = self.embedder.as_ref().expect("checked above");
             let q_vec = embedder
@@ -796,7 +796,7 @@ impl IEntityPort for SqliteMemoryAdapter {
             let mut candidates: Vec<(Vec<u8>, EntityFactRecord)> = Vec::new();
             for r in rows {
                 let (fact, blob) = r.map_err(|e| format!("search facts row: {e}"))?;
-                // tag filter 적용 — 빈 set 시 통과, 박혀있을 시 fact.tags 와 ANY 매칭
+                // tag filter 적용 — 빈 set 시 통과, 설정되어 있을 시 fact.tags 와 ANY 매칭
                 if !opts.tags.is_empty() {
                     let want_lower: Vec<String> = opts.tags.iter().map(|t| t.to_lowercase()).collect();
                     let row_lower: Vec<String> = fact.tags.iter().map(|t| t.to_lowercase()).collect();
@@ -935,7 +935,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
         let embedding: Option<Vec<u8>> = self.embed_text_passage(&passage).await;
 
         // dedup_threshold cosine — 옛 TS 패턴: 같은 type + occurred_at 7일 이내 active event 와 비교.
-        // ≥ threshold 면 skip + 기존 id 반환 (entity_ids 박혀있으면 link 추가).
+        // ≥ threshold 면 skip + 기존 id 반환 (entity_ids 설정되어 있으면 link 추가).
         if let (Some(threshold), Some(new_blob), Some(embedder)) = (
             input.dedup_threshold,
             embedding.as_ref(),
@@ -1075,7 +1075,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
             }
         }
 
-        // entity_ids 박혀있으면 link 전체 교체
+        // entity_ids 설정되어 있으면 link 전체 교체
         if let Some(ids) = &patch.entity_ids {
             conn.execute("DELETE FROM event_entities WHERE event_id = ?1", params![id])
                 .map_err(|e| format!("event_entities clear: {e}"))?;
@@ -1173,7 +1173,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
             (sql, values)
         }
 
-        // ── Cosine 모드 — embedder + query 박혀있을 때
+        // ── Cosine 모드 — embedder + query 설정되어 있을 때
         if has_query && has_embedder {
             let embedder = self.embedder.as_ref().expect("checked above");
             let q_vec = embedder
@@ -1281,7 +1281,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
     }
 
     fn list_recent_events(&self, opts: &ListRecentOpts) -> InfraResult<Vec<EventRecord>> {
-        // sync 유지 — search_events 의 query-empty fallback path 와 동일 SQL 직접 박음.
+        // sync 유지 — search_events 의 query-empty fallback path 와 동일 SQL 직접 저장.
         let limit = opts.limit.unwrap_or(20).min(200) as i64;
         let offset = opts.offset.unwrap_or(0) as i64;
         let conn = self.conn.lock().unwrap();
@@ -1651,7 +1651,7 @@ mod tests {
         assert!(by_type.iter().any(|(t, c)| t == "person" && *c == 1));
     }
 
-    // ── Phase B-18 Step 1.5 — embedder 박힌 cosine 모드 테스트 ──────────────────
+    // ── Phase B-18 Step 1.5 — embedder 설정된 cosine 모드 테스트 ──────────────────
 
     use crate::adapters::embedder::StubEmbedderAdapter;
 
@@ -1672,7 +1672,7 @@ mod tests {
             })
             .await
             .unwrap();
-        // 임베딩 BLOB 이 박혔는지 직접 확인
+        // 임베딩 BLOB 이 설정되었는지 직접 확인
         let conn = a.conn.lock().unwrap();
         let blob: Option<Vec<u8>> = conn
             .query_row(
@@ -1681,7 +1681,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert!(blob.is_some(), "embedder 박혔으면 BLOB 저장됐어야 함");
+        assert!(blob.is_some(), "embedder 설정되었으면 BLOB 저장됐어야 함");
         // Stub embedder = 384-dim x 4 bytes = 1536 bytes
         assert_eq!(blob.unwrap().len(), 384 * 4);
     }
@@ -1703,7 +1703,7 @@ mod tests {
         })
         .await
         .unwrap();
-        // cosine 검색 — substring 미매칭 query 박아도 결과 반환 (cosine 모드 진입 검증)
+        // cosine 검색 — substring 미매칭 query 사용해도 결과 반환 (cosine 모드 진입 검증)
         let result = a
             .search_entities(&EntitySearchOpts {
                 query: "반도체".to_string(),
@@ -1758,7 +1758,7 @@ mod tests {
         // 인 후보들 사이에서만. 새 입력의 occurred_at 는 검사에 미사용.
         let a = adapter_with_embedder();
 
-        // 1) 옛날 (지금 - 8일) 박힌 event — dedup 호출 시점에 cutoff 밖
+        // 1) 옛날 (지금 - 8일) 설정된 event — dedup 호출 시점에 cutoff 밖
         let now = now_ms();
         let old_ts = now - EVENT_DEDUP_WINDOW_MS - 86_400_000; // -8일
         let (id_old, _, _) = a
@@ -1782,7 +1782,7 @@ mod tests {
             })
             .await
             .unwrap();
-        assert!(!skipped, "기존 row 가 7일+ 지나면 윈도우 밖 → 새 row 박아야");
+        assert!(!skipped, "기존 row 가 7일+ 지나면 윈도우 밖 → 새 row 설정해야");
         assert_ne!(id_new, id_old);
 
         // 3) 같은 type + title + dedup threshold + 윈도우 안 — skip

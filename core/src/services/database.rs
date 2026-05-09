@@ -5,7 +5,7 @@
 //! - `port.run_select_query(sql)` 위임 — adapter 가 SELECT/WITH 검증 + dialect 적응
 //! - SELECT/WITH 만 허용. INSERT/UPDATE/DELETE 는 어댑터에서 거부 (port 차원 가드)
 //!
-//! 향후 MariaDB / PostgreSQL adapter 박힐 때 dialect-specific SQL 처리도 어댑터 안에서.
+//! 향후 MariaDB / PostgreSQL adapter 설정될 때 dialect-specific SQL 처리도 어댑터 안에서.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};

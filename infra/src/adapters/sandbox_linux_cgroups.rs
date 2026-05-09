@@ -1,15 +1,15 @@
 //! LinuxCgroupsSandboxAdapter — Linux 운영의 OS 레벨 격리.
 //!
 //! Phase B-post audit Track B (2026-05-06): 옛 `BasicProcessSandbox` 만으로는 OS 격리 0
-//! → `os.system("rm -rf /")` 차단 불가. 진짜 격리 박음.
+//! → `os.system("rm -rf /")` 차단 불가. 진짜 격리 저장.
 //!
-//! ## 격리 메커니즘 (Stage 1 + 2 + 3 모두 박힘)
+//! ## 격리 메커니즘 (Stage 1 + 2 + 3 모두 설정)
 //!
 //! 1. **cgroups v2** — `/sys/fs/cgroup/firebat-sandbox-{uniq}/`
 //!    - `cpu.max` — `50000 100000` = 50% 1 CPU
 //!    - `memory.max` — 256MB
 //!    - `pids.max` — 64 (fork bomb 방지)
-//!    - 자식 PID 를 `cgroup.procs` 에 박음 (pre_exec hook 안에서)
+//!    - 자식 PID 를 `cgroup.procs` 에 추가 (pre_exec hook 안에서)
 //!
 //! 2. **seccomp-bpf** (seccompiler crate) — syscall whitelist
 //!    - default: `Errno(EPERM)` (모든 syscall 거부)
@@ -59,7 +59,7 @@ pub struct LinuxCgroupsSandboxAdapter {
     /// workspace root — path containment 기준.
     #[allow(dead_code)]
     workspace_root: PathBuf,
-    /// 옛 ProcessSandboxAdapter 위임 + pre_exec hook 박음.
+    /// 옛 ProcessSandboxAdapter 위임 + pre_exec hook 저장.
     /// hook 안에서 cgroup attach + seccomp install + unshare(CLONE_NEWNET).
     fallback: ProcessSandboxAdapter,
 }
@@ -71,23 +71,23 @@ impl LinuxCgroupsSandboxAdapter {
             Err(e) => {
                 tracing::warn!(
                     error = %e,
-                    "LinuxCgroupsSandbox: cgroup setup 실패 → namespace/seccomp 만 박음 (Docker 외 환경 / 권한 부족 가능)"
+                    "LinuxCgroupsSandbox: cgroup setup 실패 → namespace/seccomp 만 적용 (Docker 외 환경 / 권한 부족 가능)"
                 );
                 None
             }
         };
 
-        // pre_exec hook 박음 — 자식 프로세스 안에서 exec() 직전 실행:
+        // pre_exec hook 저장 — 자식 프로세스 안에서 exec() 직전 실행:
         //   1. cgroup attach (자식 PID → cgroup.procs)
         //   2. seccomp filter install (default deny + allow list)
         //   3. unshare(CLONE_NEWNET) — network namespace
         let cgroup_for_hook = cgroup_dir.clone();
         let hook = move || -> std::io::Result<()> {
-            // Stage 1: cgroup attach — getpid() 결과를 cgroup.procs 에 박음
+            // Stage 1: cgroup attach — getpid() 결과를 cgroup.procs 에 저장
             if let Some(dir) = &cgroup_for_hook {
                 let pid = unsafe { libc_getpid() };
                 let _ = std::fs::write(dir.join("cgroup.procs"), format!("{}", pid));
-                // 실패해도 silent — cgroup 박혔어도 자식 종료엔 영향 0
+                // 실패해도 silent — cgroup 설정되었어도 자식 종료엔 영향 0
             }
 
             // Stage 3: network namespace unshare. root 또는 user namespace 필요.
@@ -107,13 +107,13 @@ impl LinuxCgroupsSandboxAdapter {
         }
     }
 
-    /// Vault 박은 채로 부팅 (옛 ProcessSandboxAdapter::with_vault 1:1 위임).
+    /// Vault 설정한 채로 부팅 (옛 ProcessSandboxAdapter::with_vault 1:1 위임).
     pub fn with_vault(mut self, vault: Arc<dyn firebat_core::ports::IVaultPort>) -> Self {
         self.fallback = self.fallback.with_vault(vault);
         self
     }
 
-    /// cgroup v2 디렉토리 생성 + 제한 박음. 한 번만 호출 (생성자 안).
+    /// cgroup v2 디렉토리 생성 + 제한 저장. 한 번만 호출 (생성자 안).
     fn setup_cgroup() -> std::io::Result<PathBuf> {
         let counter = SANDBOX_COUNTER.fetch_add(1, Ordering::Relaxed);
         let pid = std::process::id();
@@ -135,14 +135,14 @@ impl ISandboxPort for LinuxCgroupsSandboxAdapter {
         opts: &SandboxExecuteOpts,
     ) -> InfraResult<ModuleOutput> {
         // ProcessSandboxAdapter 가 spawn 시 pre_exec hook 자동 호출 →
-        // 자식 프로세스 안에서 cgroup attach + seccomp + namespace 박음.
+        // 자식 프로세스 안에서 cgroup attach + seccomp + namespace 저장.
         self.fallback.execute(target_path, input_data, opts).await
     }
 
     fn capabilities(&self) -> SandboxCapabilities {
         SandboxCapabilities {
             kind: "linux-cgroups".to_string(),
-            // path containment 는 BasicProcess 와 동일. Phase D 시점에 readonly bind mount 박음.
+            // path containment 는 BasicProcess 와 동일. Phase D 시점에 readonly bind mount 저장.
             fs_readonly: false,
             // network namespace unshare — 자식이 lo 만 보임. unshare 실패 시 silent fallback.
             network_deny: true,
@@ -159,7 +159,7 @@ impl ISandboxPort for LinuxCgroupsSandboxAdapter {
 }
 
 // libc::getpid 직접 호출 — async-signal-safe 보장 (pre_exec 안에서 OK).
-// libc_getpid_real 은 미사용 (libc_getpid 가 #[link_name="getpid"] 으로 직접 박힘).
+// libc_getpid_real 은 미사용 (libc_getpid 가 #[link_name="getpid"] 으로 직접 설정).
 #[link(name = "c")]
 unsafe extern "C" {
     #[link_name = "getpid"]
@@ -174,7 +174,7 @@ fn install_seccomp_filter() {
     };
     use std::collections::BTreeMap;
 
-    // x86_64 한정 — 다른 아키텍처는 향후 박음 (aarch64 / armv7).
+    // x86_64 한정 — 다른 아키텍처는 향후 추가 (aarch64 / armv7).
     #[cfg(target_arch = "x86_64")]
     let arch = TargetArch::x86_64;
     #[cfg(target_arch = "aarch64")]
@@ -227,7 +227,7 @@ fn install_seccomp_filter() {
         rules.insert(sc, Vec::new()); // empty rule = unconditional allow
     }
 
-    // SeccompFilter::new 의 default action 은 KillProcess / Errno / Trap 등 — Errno(EPERM) 박음
+    // SeccompFilter::new 의 default action 은 KillProcess / Errno / Trap 등 — Errno(EPERM) 저장
     // (자식이 즉시 죽지 않고 syscall 실패 후 graceful 종료 가능).
     let filter = match SeccompFilter::new(
         rules,

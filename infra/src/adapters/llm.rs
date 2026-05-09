@@ -35,7 +35,7 @@ impl ILlmPort for StubLlmAdapter {
         // Phase B-17+ 에서 실 LLM 호출. 현재는 prompt 의 첫 200자 echo + Phase 표기.
         let preview: String = prompt.chars().take(200).collect();
         Ok(LlmTextResponse {
-            text: format!("[StubLlm — Phase B-17+ 미박음] prompt preview: {preview}"),
+            text: format!("[StubLlm — Phase B-17+ 미설정] prompt preview: {preview}"),
             model_id: self.model_id.clone(),
             cost_usd: Some(0.0),
             tokens_in: Some(prompt.len() as i64),
@@ -53,7 +53,7 @@ impl ILlmPort for StubLlmAdapter {
         // Phase B-17+ 에서 실 LLM 호출 후 tool_calls 분리. 현재는 빈 도구 호출 + 안내 텍스트 반환.
         let preview: String = prompt.chars().take(200).collect();
         Ok(LlmToolResponse {
-            text: format!("[StubLlm — Phase B-17+ 미박음] prompt preview: {preview}"),
+            text: format!("[StubLlm — Phase B-17+ 미설정] prompt preview: {preview}"),
             tool_calls: Vec::new(),
             model_id: self.model_id.clone(),
             cost_usd: Some(0.0),

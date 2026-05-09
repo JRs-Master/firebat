@@ -6,7 +6,7 @@ license.workspace = true
 authors.workspace = true
 description = "Firebat Core — managers + services + ports (hexagonal core, infra 의존 0건)"
 
-# Phase B-4 박힘 — managers + services + ports trait 의 단일 lib crate.
+# Phase B-4 구현 — managers + services + ports trait 의 단일 lib crate.
 # infra 가 ports trait 을 implement → 의존 방향 infra → core 일방향.
 [lib]
 name = "firebat_core"

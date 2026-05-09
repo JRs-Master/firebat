@@ -133,7 +133,7 @@ impl ProjectService for ProjectServiceImpl {
     }
 
     async fn rename(&self, _req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
-        // Phase B-8 미구현 — Phase B-9 PageManager (DB) 와 함께 박힘 (slug rename + redirect).
-        Ok(err_status("rename — Phase B-9 와 같이 박힘"))
+        // Phase B-8 미구현 — Phase B-9 PageManager (DB) 와 함께 설정 (slug rename + redirect).
+        Ok(err_status("rename — Phase B-9 와 같이 설정"))
     }
 }

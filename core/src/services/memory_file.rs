@@ -1,4 +1,4 @@
-//! gRPC MemoryService impl — Claude memory file system (옛 TS 박힘).
+//! gRPC MemoryService impl — Claude memory file system (옛 TS 설정).
 //!
 //! 위치: `<workspace>/data/memory/` 디렉토리. MEMORY.md 가 index, 그 외 *.md 가 individual entries.
 //! 사용자 / feedback / project / reference 4 type 메모리.

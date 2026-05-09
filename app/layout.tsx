@@ -30,7 +30,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // SEO 설정 lang — 검색엔진 언어 인식 + 접근성. 미설정 시 'ko'.
   const seo = await getCore().getCmsSettings();
   // 카카오맵 JS 키 — render_map 컴포넌트가 user / admin 양쪽 컨텍스트에서 모두 사용.
-  // (user) layout 만 박으면 admin 채팅 미리보기에서 Leaflet 폴백 됨 → root layout 으로 통합.
+  // (user) layout 만 설정하면 admin 채팅 미리보기에서 Leaflet 폴백 됨 → root layout 으로 통합.
   const kakaoMapJsKey = (await getCore().getKakaoMapJsKey()) || '';
   return (
     <html lang={seo.siteLang || 'ko'}>

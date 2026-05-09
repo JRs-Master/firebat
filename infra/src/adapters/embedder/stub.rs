@@ -1,4 +1,4 @@
-//! StubEmbedderAdapter — 진짜 ONNX 모델 박기 전 결정론적 hash 기반 pseudo-embedding.
+//! StubEmbedderAdapter — 진짜 ONNX 모델 구현 전 결정론적 hash 기반 pseudo-embedding.
 //!
 //! 옛 TS 의 `infra/llm/embedder.ts` 는 `Xenova/multilingual-e5-small` (transformers.js
 //! 로컬 ONNX, 384차원) 사용. Rust 1:1 port 시 ONNX runtime (candle / ort crate) +
@@ -10,7 +10,7 @@
 //!   - E5 prefix 패턴만 흉내 (실제 의미 검색 X — wiring + 단위 테스트 가능 수준)
 //!
 //! ConversationManager.search_history / EntityManager.search_entities 의 cosine 검색은
-//! stub 단계에서는 의미 0 — substring 매칭이 실용적. ONNX 박힌 후 자동 활성.
+//! stub 단계에서는 의미 0 — substring 매칭이 실용적. ONNX 설정된 후 자동 활성.
 
 use firebat_core::ports::{IEmbedderPort, InfraResult};
 
@@ -51,7 +51,7 @@ impl StubEmbedderAdapter {
             out.push(v - 0.5); // -0.5 ~ 0.5
         }
 
-        // L2 normalize — 옛 TS E5 모델이 normalize:true 박은 패턴 따라감.
+        // L2 normalize — 옛 TS E5 모델이 normalize:true 설정한 패턴 따라감.
         let norm = out.iter().map(|x| x * x).sum::<f32>().sqrt();
         if norm > f32::EPSILON {
             for x in out.iter_mut() {

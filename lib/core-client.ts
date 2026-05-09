@@ -5,7 +5,7 @@
  * Rust gRPC client → Rust Core (별 process, port 50051) 단일 backend.
  *
  * 옛 'ts' (in-process TS Core) / 'tauri' (self-installed) 분기 폐기 (2026-05-08):
- *   - 'ts' = Phase B-4 cutover 박힌 시점에 옛 TS core/ infra/ 통째 삭제됨
+ *   - 'ts' = Phase B-4 cutover 설정된 시점에 옛 TS core/ infra/ 통째 삭제됨
  *   - 'tauri' = self-installed 폐기 (commit 2b98cb6, 2026-05-06). v2.0 시점에 재시작
  *
  * Frontend 는 직접 호출 X — API route 경유. browser 에서 gRPC 직접 못 함.

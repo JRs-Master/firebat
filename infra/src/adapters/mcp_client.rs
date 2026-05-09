@@ -368,7 +368,7 @@ impl Connection for StdioConnection {
 //   4. Client → POST <endpoint> with JSON-RPC body
 
 struct SseConnection {
-    /// POST endpoint (initialize 후에만 박힘)
+    /// POST endpoint (initialize 후에만 설정)
     post_url: Mutex<Option<String>>,
     next_id: AtomicU64,
     pending: PendingMap,
@@ -555,7 +555,7 @@ impl Connection for SseConnection {
             .lock()
             .await
             .clone()
-            .ok_or_else(|| format!("MCP {} POST endpoint 미박음 (SSE 끊김)", self.server_name))?;
+            .ok_or_else(|| format!("MCP {} POST endpoint 미설정 (SSE 끊김)", self.server_name))?;
 
         let (tx, rx) = oneshot::channel::<JsonRpcResponse>();
         {
@@ -624,7 +624,7 @@ impl Connection for SseConnection {
             .lock()
             .await
             .clone()
-            .ok_or_else(|| format!("MCP {} POST endpoint 미박음", self.server_name))?;
+            .ok_or_else(|| format!("MCP {} POST endpoint 미설정", self.server_name))?;
 
         let resp = self
             .http

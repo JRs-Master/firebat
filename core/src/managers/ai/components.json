@@ -446,7 +446,7 @@
   {
     "name": "card",
     "componentType": "Card",
-    "description": "카드 (children에 다른 컴포넌트 배치). 제목+내용+이미지 그룹. image 박으면 상단 hero 이미지, footer 박으면 하단 메타 텍스트, link 박으면 카드 전체 클릭.",
+    "description": "카드 (children에 다른 컴포넌트 배치). 제목+내용+이미지 그룹. image 설정하면 상단 hero 이미지, footer 설정하면 하단 메타 텍스트, link 설정하면 카드 전체 클릭.",
     "semanticText": "카드 card 블록 박스 그룹 container wrapper 요약 summary 프리뷰 썸네일 이미지 hero",
     "propsSchema": {
       "type": "object",
@@ -554,7 +554,7 @@
   {
     "name": "metric",
     "componentType": "Metric",
-    "description": "단일 지표 카드 (라벨 + 값 + 증감 화살표 + 아이콘). KPI 대시보드 구성 시 Grid 안에 여러 개 배치. link 박으면 카드 전체 클릭 가능 (CTA).",
+    "description": "단일 지표 카드 (라벨 + 값 + 증감 화살표 + 아이콘). KPI 대시보드 구성 시 Grid 안에 여러 개 배치. link 설정하면 카드 전체 클릭 가능 (CTA).",
     "semanticText": "지표 수치 카드 KPI 대시보드 현재가 PER PBR 보유율 달성률 점수 변동 증감 상승 하락 메트릭 스탯 stat metric 통계",
     "propsSchema": {
       "type": "object",
@@ -621,7 +621,7 @@
             "object",
             "null"
           ],
-          "description": "카드 전체 클릭 시 이동 (선택). 박으면 카드가 anchor 로 wrap + label 텍스트 하단 표시.",
+          "description": "카드 전체 클릭 시 이동 (선택). 설정하면 카드가 anchor 로 wrap + label 텍스트 하단 표시.",
           "properties": {
             "label": {
               "type": "string",
@@ -687,7 +687,7 @@
                   "string",
                   "null"
                 ],
-                "description": "항목 전체 클릭 시 이동 URL (선택). 박으면 항목이 anchor 로 wrap."
+                "description": "항목 전체 클릭 시 이동 URL (선택). 설정하면 항목이 anchor 로 wrap."
               }
             }
           }
@@ -822,7 +822,7 @@
                   "string",
                   "null"
                 ],
-                "description": "항목 클릭 시 이동 URL (선택). 박으면 row 가 anchor 로 wrap."
+                "description": "항목 클릭 시 이동 URL (선택). 설정하면 row 가 anchor 로 wrap."
               }
             }
           }
@@ -945,7 +945,7 @@
   {
     "name": "diagram",
     "componentType": "Diagram",
-    "description": "Mermaid 다이어그램 — flowchart / sequence / gantt / classDiagram / stateDiagram / mindmap / timeline / pie. text DSL 만 박으면 자동 렌더. iframe + inline JS 보다 token 절감 + 안정.",
+    "description": "Mermaid 다이어그램 — flowchart / sequence / gantt / classDiagram / stateDiagram / mindmap / timeline / pie. text DSL 만 설정하면 자동 렌더. iframe + inline JS 보다 token 절감 + 안정.",
     "semanticText": "다이어그램 diagram mermaid flowchart sequence gantt class state mindmap pie 워크플로우 의사결정 트리",
     "propsSchema": {
       "type": "object",
@@ -1095,7 +1095,7 @@
   {
     "name": "lottie",
     "componentType": "Lottie",
-    "description": "Lottie JSON 애니메이션 — Adobe After Effects 의 lottie-web 형식. JSON URL 박으면 자동 재생. 마케팅·온보딩·일러스트.",
+    "description": "Lottie JSON 애니메이션 — Adobe After Effects 의 lottie-web 형식. JSON URL 설정하면 자동 재생. 마케팅·온보딩·일러스트.",
     "semanticText": "Lottie 애니메이션 animation 일러스트 illustration JSON 모션 motion graphic AE",
     "propsSchema": {
       "type": "object",
@@ -1215,7 +1215,7 @@
   {
     "name": "map",
     "componentType": "Map",
-    "description": "지도 + 마커 + 반경 원 + 범례. 부동산 거래·날씨·매장 위치 등 지리 데이터 시각화. **provider 자동 분기**: South Korea 좌표 (위도 33-38.7, 경도 124.5-132) + 카카오 JS 키 박혀있으면 카카오맵, **South Korea 외 지역은 Leaflet+OSM** (CDN 무료, 카카오는 한국만 정밀). 카카오 키 미설정 시 South Korea 좌표도 Leaflet 폴백. 좌표는 반드시 sysmod (kakao-map geocoding/search-keyword 등) 결과로만 채울 것 — AI 학습 기억으로 박으면 옆건물·옆동네 표시.",
+    "description": "지도 + 마커 + 반경 원 + 범례. 부동산 거래·날씨·매장 위치 등 지리 데이터 시각화. **provider 자동 분기**: South Korea 좌표 (위도 33-38.7, 경도 124.5-132) + 카카오 JS 키 설정되어 있으면 카카오맵, **South Korea 외 지역은 Leaflet+OSM** (CDN 무료, 카카오는 한국만 정밀). 카카오 키 미설정 시 South Korea 좌표도 Leaflet 폴백. 좌표는 반드시 sysmod (kakao-map geocoding/search-keyword 등) 결과로만 채울 것 — AI 학습 기억으로 채우면 옆건물·옆동네 표시.",
     "semanticText": "지도 맵 map 마커 marker 위치 location 좌표 latlng 카카오 kakao leaflet osm 부동산 시세 날씨 매장 South Korea",
     "propsSchema": {
       "type": "object",
@@ -1236,11 +1236,11 @@
             "properties": {
               "lat": {
                 "type": "number",
-                "description": "위도 — sysmod geocoding 결과만 사용. AI 기억으로 박지 마라."
+                "description": "위도 — sysmod geocoding 결과만 사용. AI 기억으로 하지 마라."
               },
               "lon": {
                 "type": "number",
-                "description": "경도 — sysmod geocoding 결과만 사용. AI 기억으로 박지 마라."
+                "description": "경도 — sysmod geocoding 결과만 사용. AI 기억으로 하지 마라."
               },
               "label": {
                 "type": "string",

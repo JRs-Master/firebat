@@ -104,7 +104,7 @@ async fn compress_empty_prompt_returns_empty() {
 
 #[tokio::test]
 async fn compress_no_embedder_returns_empty() {
-    // embedder 미박은 ConversationManager 의 search_history 는 빈 결과
+    // embedder 미설정한 ConversationManager 의 search_history 는 빈 결과
     // → spread 판정 stage 도달 X → 빈 contextSummary
     let (mgr, _dir) = manager();
     let resolver = HistoryResolver::new(mgr);
@@ -153,7 +153,7 @@ async fn compress_with_embedder_low_spread_returns_empty() {
 
 #[tokio::test]
 async fn compress_with_strong_match_returns_context() {
-    // 동일 query 로 같은 메시지 박은 후 검색 — spread 강함 (자기 매칭 score 1.0 대비 다른 메시지)
+    // 동일 query 로 같은 메시지 설정한 후 검색 — spread 강함 (자기 매칭 score 1.0 대비 다른 메시지)
     let (mgr, _dir) = manager_with_embedder();
     let messages = serde_json::json!([
         {"role": "user", "content": "삼성전자 1주 매수했습니다"},
@@ -175,7 +175,7 @@ async fn compress_with_strong_match_returns_context() {
             },
         )
         .await;
-    // spread 가 MIN_SPREAD 이상이면 context 박힘. Stub embedder 결정론이라 검증 가능.
+    // spread 가 MIN_SPREAD 이상이면 context 설정. Stub embedder 결정론이라 검증 가능.
     // 구조 valid 만 검증
     if !r.context_summary.is_empty() {
         assert!(r.context_summary.contains("[관련 과거 대화"));

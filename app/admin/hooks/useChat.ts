@@ -236,7 +236,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     // 스트리밍·도구 실행 중 여부 — 이 경우 로컬 우선이지만, 모바일 백그라운드 throttling 으로
     // SSE 가 조용히 끊어진 경우 DB 쪽이 진짜 응답 보유. 아래 per-message 비교로 판단.
     const hasInflight = messagesRef.current.some(m => m.isThinking || m.executing || m.streaming);
-    // 로컬 메시지에 에러·빈 응답 fallback 이 박혀있는지 — 있으면 DB 가 진짜 응답일 가능성 높음
+    // 로컬 메시지에 에러·빈 응답 fallback 이 설정되어 있는지 — 있으면 DB 가 진짜 응답일 가능성 높음
     const hasFallback = messagesRef.current.some(m =>
       m.role === 'system' && !m.isThinking && typeof m.content === 'string'
       && (m.content === FALLBACK.EMPTY_REPLY || m.content === FALLBACK.INVISIBLE || m.content === FALLBACK.NETWORK || m.content === FALLBACK.TIMEOUT),
@@ -451,6 +451,23 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   const handleSubmit = useCallback(async (overrideText?: string, isSuggestion?: boolean, meta?: { planExecuteId?: string; planReviseId?: string }) => {
     const text = overrideText ?? input;
     if (!text.trim() || loading) return;
+
+    // AI 모델 미선택 가드 — 사용자 메시지는 표시하되 system bubble 에 안내 에러 즉시 표시.
+    // 채팅창은 활성이라 사용자가 자유롭게 입력 가능, 전송 시점에 안내.
+    if (!aiModel) {
+      const id = Date.now().toString();
+      const systemId = `s-${id}`;
+      dispatch({ type: 'SEND_USER', userId: `u-${id}`, systemId, content: text, image: attachedImage || undefined });
+      dispatch({
+        type: 'ERROR',
+        id: systemId,
+        error: '⚙ 설정 → AI 탭에서 API 키 입력 또는 CLI 인증 후 모델을 선택해 주세요.',
+      });
+      setInput('');
+      setAttachedImage(null);
+      return;
+    }
+
     const userPrompt = text;
     const imageData = attachedImage;
     setInput('');
@@ -643,7 +660,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             //   - 백그라운드 탭 브라우저가 타이머를 1초로 throttle → 25ms 기대 tick 이 사실상 느려짐
             //   - 그 사이 FINALIZE + DB 저장이 blocks[0].text='' 상태로 박제 → 복귀 시 빈 버블
             //   - CLI 모드는 어차피 10~100초 대기 후 한 번에 도착 — "타이핑 느낌" 효과 실익도 적음
-            // → 애니메이션 제거. RESULT 도착 즉시 최종 text 박음. chunk 이벤트 기반 실시간 스트리밍은 유지 (OpenAI API 등).
+            // → 애니메이션 제거. RESULT 도착 즉시 최종 text 저장. chunk 이벤트 기반 실시간 스트리밍은 유지 (OpenAI API 등).
             dispatch({
               type: 'RESULT',
               id: systemId,

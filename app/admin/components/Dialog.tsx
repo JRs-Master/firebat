@@ -72,7 +72,7 @@ function DialogUI({
   const okBtnRef = useRef<HTMLButtonElement>(null);
 
   // 키보드 — Esc = 취소, Enter = 확인. Enter 가 input focus 시엔 무시.
-  // 이전엔 okBtnRef.current?.focus() 박았는데 → 키보드 (Enter) 트리거로 모달 띄울 시
+  // 이전엔 okBtnRef.current?.focus() 설정했는데 → 키보드 (Enter) 트리거로 모달 띄울 시
   // OK 버튼에 focus ring (border) 나와 어색한 UX. document keydown 리스너가 Enter 처리하므로
   // 자동 focus 불필요. Tab 으로 명시적 이동 시에만 ring 노출 (정상 a11y).
   useEffect(() => {

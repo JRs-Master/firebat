@@ -58,7 +58,7 @@ mod tests {
     #[test]
     fn loads_26_components() {
         let comps = components();
-        assert_eq!(comps.len(), 26, "옛 TS 의 26개 컴포넌트 모두 박혀야");
+        assert_eq!(comps.len(), 26, "옛 TS 의 26개 컴포넌트 모두 설정되어야");
     }
 
     #[test]

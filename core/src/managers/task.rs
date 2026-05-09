@@ -5,11 +5,11 @@
 //! Phase B-14 minimum:
 //! - validate_pipeline (7-step EXECUTE/MCP_CALL/NETWORK_REQUEST/LLM_TRANSFORM/CONDITION/SAVE_PAGE/TOOL_CALL)
 //! - execute_pipeline 의 CONDITION step 진짜 평가 + $prev resolver 연동
-//! - 다른 step 은 TaskExecutor trait 위임 — Phase B-16+ Core facade 가 실 구현 박음
+//! - 다른 step 은 TaskExecutor trait 위임 — Phase B-16+ Core facade 가 실 구현 저장
 //!
 //! Phase B-16+ 후속:
 //! - TaskExecutor 의 sandbox / mcp / network / llm / save_page / tool_call 실 wiring
-//! - capability fallback (resolvePreferredProvider + tryFallbackProvider) 박힘 — ModuleManager
+//! - capability fallback (resolvePreferredProvider + tryFallbackProvider) 설정 — ModuleManager
 //!   capability 캐시 + Core facade.
 
 use serde_json::Value;
@@ -103,7 +103,7 @@ impl PipelineStep {
 
 /// TaskExecutor — pipeline step 실행 위임 trait.
 /// Phase B-14 minimum: TaskManager 가 step 실행을 이 trait 에 위임.
-/// Phase B-16+ Core facade 가 실 구현 (sandbox / mcp / llm / save_page) 박음.
+/// Phase B-16+ Core facade 가 실 구현 (sandbox / mcp / llm / save_page) 저장.
 #[async_trait::async_trait]
 pub trait TaskExecutor: Send + Sync {
     async fn execute_module(&self, path: &str, input: &Value) -> InfraResult<Value>;
@@ -125,18 +125,18 @@ pub trait TaskExecutor: Send + Sync {
     async fn execute_tool(&self, tool: &str, input: &Value) -> InfraResult<Value>;
 }
 
-/// Phase B-14 minimum stub executor — 모든 step 이 "Phase B-16+ 미박음" 에러 반환.
+/// Phase B-14 minimum stub executor — 모든 step 이 "Phase B-16+ 미구현" 에러 반환.
 /// Phase B-16 에서 RealExecutor 가 Core facade 를 통해 매니저 메서드 호출.
 pub struct StubTaskExecutor;
 
 #[async_trait::async_trait]
 impl TaskExecutor for StubTaskExecutor {
     async fn execute_module(&self, path: &str, _input: &Value) -> InfraResult<Value> {
-        Err(format!("EXECUTE 미박음 (Phase B-16+) — path={}", path))
+        Err(format!("EXECUTE 미구현 (Phase B-16+) — path={}", path))
     }
     async fn call_mcp_tool(&self, server: &str, tool: &str, _args: &Value) -> InfraResult<Value> {
         Err(format!(
-            "MCP_CALL 미박음 (Phase B-16+) — {}/{}",
+            "MCP_CALL 미구현 (Phase B-16+) — {}/{}",
             server, tool
         ))
     }
@@ -147,10 +147,10 @@ impl TaskExecutor for StubTaskExecutor {
         _body: Option<&Value>,
         _headers: Option<&Value>,
     ) -> InfraResult<Value> {
-        Err(format!("NETWORK_REQUEST 미박음 (Phase B-16+) — url={}", url))
+        Err(format!("NETWORK_REQUEST 미구현 (Phase B-16+) — url={}", url))
     }
     async fn llm_transform(&self, _instruction: &str, _input_text: &str) -> InfraResult<String> {
-        Err("LLM_TRANSFORM 미박음 (Phase B-16+) — AiManager 박힌 후 활성".to_string())
+        Err("LLM_TRANSFORM 미구현 (Phase B-16+) — AiManager 설정된 후 활성".to_string())
     }
     async fn save_page(
         &self,
@@ -159,12 +159,12 @@ impl TaskExecutor for StubTaskExecutor {
         _allow_overwrite: bool,
     ) -> InfraResult<Value> {
         Err(format!(
-            "SAVE_PAGE 미박음 (Phase B-16+) — slug={}",
+            "SAVE_PAGE 미구현 (Phase B-16+) — slug={}",
             slug
         ))
     }
     async fn execute_tool(&self, tool: &str, _input: &Value) -> InfraResult<Value> {
-        Err(format!("TOOL_CALL 미박음 (Phase B-16+) — tool={}", tool))
+        Err(format!("TOOL_CALL 미구현 (Phase B-16+) — tool={}", tool))
     }
 }
 
@@ -181,7 +181,7 @@ pub struct TaskManager {
     executor: Arc<dyn TaskExecutor>,
     log: Arc<dyn ILogPort>,
     /// LLM_TRANSFORM instruction 안 도구 호출 환각 방어용. ToolManager 등록 도구 list 동적 조회 →
-    /// 새 도구 추가 시 hint 자동 박힘 (옛 TS 의 hardcoded TOOL_HINTS 12개 enumerate 제거).
+    /// 새 도구 추가 시 hint 자동 설정 (옛 TS 의 hardcoded TOOL_HINTS 12개 enumerate 제거).
     /// None 일 때는 환각 방어 비활성 (테스트 용 또는 ToolManager 없는 경량 wiring).
     tools: Option<Arc<ToolManager>>,
     /// StatusManager (옵션) — pipeline 실행 가시화 (옛 TS core/index.ts:1252 statusMgr.start/update/
@@ -189,7 +189,7 @@ pub struct TaskManager {
     status: Option<Arc<StatusManager>>,
     /// CapabilityManager (옵션) — EXECUTE step 실패 시 같은 capability 의 대체 provider 자동 폴백.
     /// 옛 TS task-manager.ts:344-420 (resolvePreferredProvider + tryFallbackProvider) 1:1.
-    /// 미박힘 시 fallback 비활성 (단독 EXECUTE = 유저 모듈 테스트 용도라 fallback 없음).
+    /// 미설정 시 fallback 비활성 (단독 EXECUTE = 유저 모듈 테스트 용도라 fallback 없음).
     capability: Option<Arc<crate::managers::capability::CapabilityManager>>,
 }
 
@@ -204,19 +204,19 @@ impl TaskManager {
         }
     }
 
-    /// ToolManager 박힌 채로 부팅 — validate_pipeline 의 LLM_TRANSFORM 환각 방어 활성.
+    /// ToolManager 설정된 채로 부팅 — validate_pipeline 의 LLM_TRANSFORM 환각 방어 활성.
     pub fn with_tools(mut self, tools: Arc<ToolManager>) -> Self {
         self.tools = Some(tools);
         self
     }
 
-    /// StatusManager 박힌 채로 부팅 — execute_pipeline 의 자동 status start/update/done 활성.
+    /// StatusManager 설정된 채로 부팅 — execute_pipeline 의 자동 status start/update/done 활성.
     pub fn with_status(mut self, status: Arc<StatusManager>) -> Self {
         self.status = Some(status);
         self
     }
 
-    /// CapabilityManager 박힌 채로 부팅 — EXECUTE step 실패 시 자동 fallback 활성.
+    /// CapabilityManager 설정된 채로 부팅 — EXECUTE step 실패 시 자동 fallback 활성.
     pub fn with_capability_manager(
         mut self,
         capability: Arc<crate::managers::capability::CapabilityManager>,
@@ -228,7 +228,7 @@ impl TaskManager {
     /// EXECUTE 실패 시 같은 capability 의 대체 provider 자동 폴백 — 옛 TS tryFallbackProvider 1:1.
     ///
     /// 흐름:
-    /// 1. CapabilityManager 미박힘 → 폴백 비활성 (None 반환)
+    /// 1. CapabilityManager 미설정 → 폴백 비활성 (None 반환)
     /// 2. failed_path 에서 module_name + entry filename 추출
     ///    (`system/modules/firecrawl/index.mjs` → name=`firecrawl`, entry=`index.mjs`)
     /// 3. CapabilityManager.fallback_modules(name) → 활성 + 사용자 순서 정렬된 alternatives
@@ -366,7 +366,7 @@ impl TaskManager {
 
     /// 파이프라인 실행 — 옛 TS executePipeline Rust port.
     /// CONDITION step 은 진짜 평가 / 그 외 step 은 TaskExecutor trait 위임.
-    /// AI 미개입 cross-call hook — StatusManager 박혀있으면 자동 start/update/complete/fail
+    /// AI 미개입 cross-call hook — StatusManager 설정되어 있으면 자동 start/update/complete/fail
     /// (옛 TS core/index.ts:1252 1:1 port).
     pub async fn execute_pipeline(&self, steps: &[PipelineStep]) -> PipelineResult {
         if let Some(err) = self.validate_pipeline(steps) {
@@ -377,7 +377,7 @@ impl TaskManager {
             };
         }
 
-        // StatusManager 박혀있으면 pipeline job 가시화. 어드민 ActiveJobsIndicator 자동 표시.
+        // StatusManager 설정되어 있으면 pipeline job 가시화. 어드민 ActiveJobsIndicator 자동 표시.
         let status_job_id = self.status.as_ref().map(|s| {
             let job = s.start(
                 None,
@@ -688,7 +688,7 @@ fn unwrap_module_result(v: Value) -> Value {
 
 /// 모듈 레벨 실패 감지 — 옛 TS `data.success === false` 1:1.
 /// Sandbox 자체 실패와 다름 (그건 Result::Err 로 분기).
-/// `{success: false, error: ...}` 형태면 true. 그 외 (success 미박음 / true / 다른 형태) false.
+/// `{success: false, error: ...}` 형태면 true. 그 외 (success 미설정 / true / 다른 형태) false.
 fn is_module_level_failure(v: &Value) -> bool {
     let Some(map) = v.as_object() else {
         return false;
@@ -845,7 +845,7 @@ mod tests {
 
     #[tokio::test]
     async fn fallback_disabled_when_no_capability_manager() {
-        // capability 미박힘 → try_fallback 즉시 None (옛 TS 단독 EXECUTE = 폴백 없음 동등)
+        // capability 미설정 → try_fallback 즉시 None (옛 TS 단독 EXECUTE = 폴백 없음 동등)
         let mgr = manager();
         let result = mgr
             .try_fallback("system/modules/x/index.mjs", &json!({}))

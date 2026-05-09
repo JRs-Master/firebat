@@ -132,7 +132,7 @@ async fn main() -> Result<()> {
             .map_err(anyhow::Error::msg)
             .context("App DB open 실패")?,
     );
-    // Sandbox 어댑터 — OS 자동 감지. Phase B-post audit Track B (2026-05-06) 박힘.
+    // Sandbox 어댑터 — OS 자동 감지. Phase B-post audit Track B (2026-05-06) 설정.
     // - Linux: LinuxCgroupsSandbox 본격 (cgroup v2 + seccomp + network namespace)
     // - 그 외: BasicProcessSandbox (path containment + timeout 만, OS 격리 0)
     // env `FIREBAT_SANDBOX=basic` 로 강제 BasicProcessSandbox 사용 가능 (debug / 호환).
@@ -177,9 +177,9 @@ async fn main() -> Result<()> {
     //          진짜 의미 검색 활성 — search_history / search_entities / search_facts / search_events.
     //   - `stub` (default — CI / 가벼운 dev): FNV-1a hash 결정론, 의미 검색 X.
     //          모델 다운로드 없이 wiring 검증 + 단위 테스트 가능.
-    // 추후 Gemini API / OpenAI API 어댑터 박을 때도 같은 env 패턴 — `gemini` / `openai-3-small` 등.
+    // 추후 Gemini API / OpenAI API 어댑터 설정할 때도 같은 env 패턴 — `gemini` / `openai-3-small` 등.
     // 디폴트 e5 — 운영 사용자가 search_history / search_components / AI Router / 메모리 검색
-    // 모두 의미 검색 가능. dev/CI 는 명시적으로 `FIREBAT_EMBEDDER=stub` 박으면 됨.
+    // 모두 의미 검색 가능. dev/CI 는 명시적으로 `FIREBAT_EMBEDDER=stub` 설정하면 됨.
     let embedder_kind = std::env::var("FIREBAT_EMBEDDER").unwrap_or_else(|_| "e5".to_string());
     let embedder: Arc<dyn IEmbedderPort> = match embedder_kind.as_str() {
         "e5" => {
@@ -219,8 +219,8 @@ async fn main() -> Result<()> {
     //   - `image-rs` (default 권장) — image-rs + fast_image_resize + blurhash crate. 옛 TS sharp 1:1.
     //   - `stub` — 단위 테스트 용 no-op (1x1 grey PNG / no-op resize).
     // env `FIREBAT_IMAGE_GEN`:
-    //   - `stub` (default — Step 2c 박힐 ConfigDrivenImageGenAdapter 박히기 전 placeholder)
-    //   - Step 2c 박힐 어댑터: ConfigDrivenImageGenAdapter (4 format — openai/gemini/codex CLI)
+    //   - `stub` (default — Step 2c 설정될 ConfigDrivenImageGenAdapter 박히기 전 placeholder)
+    //   - Step 2c 설정될 어댑터: ConfigDrivenImageGenAdapter (4 format — openai/gemini/codex CLI)
     // 어댑터 swap 시 매니저 / tool_registry 코드 변경 0건 (인터페이스 동일).
     let processor_kind = std::env::var("FIREBAT_IMAGE_PROCESSOR")
         .unwrap_or_else(|_| "image-rs".to_string());
@@ -239,7 +239,7 @@ async fn main() -> Result<()> {
     //     gemini-native-image / cli-codex-image). Vault `system:image:model` 으로 swap.
     //     builtin 3 모델 + `system/image/configs/*.json` 사용자 추가 자동 로드.
     //   - `stub` — 단위 테스트 / 1x1 grey PNG.
-    // 디폴트 빈 문자열 — 사용자가 어드민 설정에서 명시 선택 박을 때까지 호출 거부.
+    // 디폴트 빈 문자열 — 사용자가 어드민 설정에서 명시 선택 설정할 때까지 호출 거부.
     // (옛 `gpt-image-1` 폴백 제거 — OPENAI_API_KEY 미설정 사용자에게 silent fail 회피).
     let image_default_model = std::env::var("FIREBAT_DEFAULT_IMAGE_MODEL")
         .unwrap_or_default();
@@ -265,11 +265,11 @@ async fn main() -> Result<()> {
             )
         }
     };
-    // Phase B-17 — ConfigDrivenAdapter. 8 format (5 API + 3 CLI) 핸들러 박힘.
+    // Phase B-17 — ConfigDrivenAdapter. 8 format (5 API + 3 CLI) 핸들러 설정.
     // 모델 carousel: builtin 8개 + system/llm/configs/*.json 자동 로드 (사용자 모델 추가).
     // 새 모델 = JSON 파일 1개 추가 (옛 TS infra/llm/configs/*.json 동등). 코드 변경 0.
     // Vault `system:llm:model` 으로 활성 모델 동적 swap.
-    // 디폴트 빈 문자열 — frontend 가 사용자 명시 선택 박을 때까지 호출 거부.
+    // 디폴트 빈 문자열 — frontend 가 사용자 명시 선택 설정할 때까지 호출 거부.
     // (cron 등 backend-only 호출 시 명시 모델 ID 전달 의무 — silent 폴백 회피).
     let default_model = std::env::var("FIREBAT_DEFAULT_MODEL").unwrap_or_default();
     let llm_configs_dir = workspace_root.join("system").join("llm").join("configs");
@@ -323,8 +323,8 @@ async fn main() -> Result<()> {
     ));
     let consolidation_manager = Arc::new(ConsolidationManager::new(memory_facade));
     let schedule_manager = Arc::new(ScheduleManager::new(cron_adapter.clone()));
-    // MediaManager — Step 2d 박힘. 이미지 파이프라인 (generate/regenerate/variants/blurhash) 활성.
-    // Step 2 마무리 audit — cross-call hooks (cost/status/event/episodic) 박음 (옛 TS Core facade 1:1):
+    // MediaManager — Step 2d 설정. 이미지 파이프라인 (generate/regenerate/variants/blurhash) 활성.
+    // Step 2 마무리 audit — cross-call hooks (cost/status/event/episodic) 등록 (옛 TS Core facade 1:1):
     //   - cost: 이미지 cost_usd 자동 record (image_gen purpose)
     //   - status: rendering → done/error 가시화 (어드민 ActiveJobsIndicator)
     //   - event: 갤러리 SSE refresh (placeholder 등장 + 백그라운드 swap 시점 모두)
@@ -340,13 +340,13 @@ async fn main() -> Result<()> {
             .with_event(event_manager.clone())
             .with_episodic(episodic_manager.clone()),
     );
-    // PromptBuilder + SystemContextGatherer + HistoryResolver + CostManager 박힌 채로:
+    // PromptBuilder + SystemContextGatherer + HistoryResolver + CostManager 설정된 채로:
     // - 시스템 프롬프트 자동 주입
     // - sysmod/MCP 동적 description
-    // - opts.conversation_id 박혀있을 시 recent N 메시지 자동 prepend
+    // - opts.conversation_id 설정되어 있을 시 recent N 메시지 자동 prepend
     // - LLM 호출마다 자동 비용 누적 (옛 TS recordLlmCost 1:1)
     // DynamicToolRegistry — sysmod_* / mcp_* 동적 도구 자동 등록 (60초 cache).
-    // Phase B-post audit E3 (2026-05-06) 박힘 — 옛 TS buildToolDefinitions 1:1 port.
+    // Phase B-post audit E3 (2026-05-06) 설정 — 옛 TS buildToolDefinitions 1:1 port.
     let dynamic_tools_registry = Arc::new(
         firebat_core::managers::ai::dynamic_tools::DynamicToolRegistry::new(
             tool_manager.clone(),
@@ -363,10 +363,11 @@ async fn main() -> Result<()> {
             .with_dynamic_tools(dynamic_tools_registry),
     );
 
-    // ConsolidationManager 의 LLM 자동 추출 활성 — AiManager + ConversationManager + Vault 박힌 후.
+    // ConsolidationManager 의 LLM 자동 추출 활성 — AiManager + ConversationManager + Vault 설정된 후.
     // consolidate_conversation 자동 호출 시 AI Assistant 토글 (Vault `system:ai-router:enabled`)
-    // 검사 → 비활성 시 skip. 활성 시 AI Assistant model (gpt-5-nano 등 fast/cheap, 메인 채팅 모델 X).
-    // cost 박음 — 6시간 cron LLM 호출 전 check_budget → 한도 초과 시 즉시 skip
+    // 검사 → 비활성 시 skip. 활성 시 AI Assistant model (default `vault_keys::AI_ASSISTANT_DEFAULT_MODEL`,
+    // fast/cheap, 메인 채팅 모델 X).
+    // cost 저장 — 6시간 cron LLM 호출 전 check_budget → 한도 초과 시 즉시 skip
     // (백그라운드 무한 재시도 / 환각 폭주 차단)
     consolidation_manager.set_ai_hook(
         ai_manager.clone(),
@@ -396,7 +397,7 @@ async fn main() -> Result<()> {
     // Phase B-17a — TaskManager 의 step executor 를 RealTaskExecutor 로 wiring.
     // AiManager (ToolManager 위) → RealTaskExecutor (Sandbox/Mcp/Ai/Page/Tool 위) → TaskManager.
     // 의존성 단방향 트리 (AiManager 가 TaskManager 의존 X — cycle 없음).
-    // Capability fallback 박음 — pipeline EXECUTE 실패 시 같은 capability 의 다른 활성 provider
+    // Capability fallback 저장 — pipeline EXECUTE 실패 시 같은 capability 의 다른 활성 provider
     // 자동 시도 (옛 TS tryFallbackProvider 패턴).
     let task_executor: Arc<dyn TaskExecutor> = Arc::new(
         firebat_core::task_executor_impl::RealTaskExecutor::new(
@@ -409,16 +410,16 @@ async fn main() -> Result<()> {
         )
         .with_capability(capability_manager.clone()),
     );
-    // ToolManager 박힌 채로 TaskManager 부팅 — validate_pipeline 의 LLM_TRANSFORM 환각 방어 활성.
+    // ToolManager 설정된 채로 TaskManager 부팅 — validate_pipeline 의 LLM_TRANSFORM 환각 방어 활성.
     // 등록된 정적 도구 27개 + 동적 sysmod_* / mcp_* 자동으로 hint 매칭.
-    // StatusManager 박음 — pipeline 실행 가시화 (어드민 ActiveJobsIndicator 자동 표시).
+    // StatusManager 저장 — pipeline 실행 가시화 (어드민 ActiveJobsIndicator 자동 표시).
     let task_manager = Arc::new(
         TaskManager::new(task_executor, logger.clone())
             .with_tools(tool_manager.clone())
             .with_status(status_manager.clone()),
     );
 
-    // ScheduleManager 에 hooks 박음 — handle_trigger 의 4 모드 (agent/pipeline/page url/sandbox)
+    // ScheduleManager 에 hooks 저장 — handle_trigger 의 4 모드 (agent/pipeline/page url/sandbox)
     // + runWhen 평가 + retry loop + notify hook + oneShot 자동 취소 활성.
     // - episodic: cron 발화 사실 자동 리콜 누적 (AI 미개입)
     // - status: cron job 가시화 (어드민 UI ActiveJobsIndicator 표시)
@@ -463,7 +464,7 @@ async fn main() -> Result<()> {
     let project_service = services::project::ProjectServiceImpl::new(project_manager);
     let module_service = services::module::ModuleServiceImpl::new(module_manager.clone());
     let page_service = services::page::PageServiceImpl::new(page_manager);
-    // ConversationService — IDatabasePort 박아 create_share / get_share / cleanup_expired_shares 활성
+    // ConversationService — IDatabasePort 설정하여 create_share / get_share / cleanup_expired_shares 활성
     let conversation_service =
         services::conversation::ConversationServiceImpl::new(conversation_manager)
             .with_db(db.clone());
@@ -472,7 +473,7 @@ async fn main() -> Result<()> {
     let episodic_service = services::episodic::EpisodicServiceImpl::new(episodic_manager);
     let consolidation_service =
         services::consolidation::ConsolidationServiceImpl::new(consolidation_manager);
-    // ScheduleService — TaskManager 박아 validate_pipeline 정밀 검증 활성
+    // ScheduleService — TaskManager 설정하여 validate_pipeline 정밀 검증 활성
     let schedule_service = services::schedule::ScheduleServiceImpl::new(schedule_manager)
         .with_task_manager(task_manager.clone());
     let task_service = services::task::TaskServiceImpl::new(task_manager);
@@ -480,7 +481,7 @@ async fn main() -> Result<()> {
     let ai_service = services::ai::AiServiceImpl::new(ai_manager.clone());
 
     // Phase B-17.5 — cross-cutting services (Storage / Settings / Network / Lifecycle).
-    // Phase B-post audit A5 (2026-05-06): INetworkPort 박음 — services 의 reqwest 직접 의존 제거.
+    // Phase B-post audit A5 (2026-05-06): INetworkPort 저장 — services 의 reqwest 직접 의존 제거.
     let network_port: Arc<dyn INetworkPort> = Arc::new(ReqwestNetworkAdapter::new());
     let storage_service = services::storage::StorageServiceImpl::new(storage.clone());
     let settings_service = services::settings::SettingsServiceImpl::new(vault.clone());
@@ -493,7 +494,7 @@ async fn main() -> Result<()> {
             .context("Cache 디렉토리 초기화 실패")?,
     );
     let cache_service = services::cache::CacheServiceImpl::new(cache_adapter);
-    // TelegramService — AiManager + ModuleManager 박아 process_message webhook → AI → reply 활성
+    // TelegramService — AiManager + ModuleManager 설정하여 process_message webhook → AI → reply 활성
     let telegram_service = services::telegram::TelegramServiceImpl::new(vault.clone(), network_port.clone())
         .with_ai_and_module(ai_manager.clone(), module_manager.clone());
     // DatabaseService — raw SELECT escape hatch. 옛 raw rusqlite::Connection 직접 의존
@@ -587,7 +588,7 @@ async fn main() -> Result<()> {
         .add_service(TelegramServiceServer::new(telegram_service))
         .add_service(DatabaseServiceServer::new(database_service))
         .add_service(MemoryServiceServer::new(memory_file_service))
-        // Phase B-17.5 cross-cutting 8개 모두 박힘. 남은 건 Phase D Tauri.
+        // Phase B-17.5 cross-cutting 8개 모두 설정. 남은 건 Phase D Tauri.
         .serve_with_shutdown(addr, shutdown)
         .await
         .context("gRPC server 종료 중 에러")?;

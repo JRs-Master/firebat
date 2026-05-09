@@ -4,14 +4,14 @@
 //! buildToolSystemPrompt (500+ LOC) + buildCronAgentPrelude (12 룰) + buildTemplateBlock 통합.
 //!
 //! 큰 prompt 본문은 별도 markdown 파일 (`prompt_tool_system.md` / `prompt_cron_agent.md`) 에
-//! `include_str!` 으로 박힘. 동적 placeholder 만 runtime replace.
+//! `include_str!` 으로 설정. 동적 placeholder 만 runtime replace.
 //!
 //! Placeholder 형식:
 //!   - `{system_context}` — gatherSystemContext 결과 (sysmod 동적 description)
 //!   - `{user_tz}` — 사용자 timezone (Vault `system:timezone`)
 //!   - `{now_korean}` — 현재 시각 한국어 표시 (사용자 timezone 기준)
 //!   - `{banned_internal_line}` — 모델별 차단 내부 도구 (옵션)
-//!   - `{user_section}` — Vault `system:user-prompt` 박힘 시 추가 섹션
+//!   - `{user_section}` — Vault `system:user-prompt` 설정 시 추가 섹션
 //!   - cron-agent 만: `{job_id}` / `{job_title_line}`
 
 use std::sync::Arc;
@@ -26,7 +26,7 @@ use crate::vault_keys::VK_SYSTEM_USER_PROMPT;
 const TOOL_SYSTEM_TEMPLATE: &str = include_str!("prompt_tool_system.md");
 const CRON_AGENT_TEMPLATE: &str = include_str!("prompt_cron_agent.md");
 
-/// Cron agent 모드 옵션 — `build` 호출 시 박혀있으면 prelude prepend.
+/// Cron agent 모드 옵션 — `build` 호출 시 설정되어 있으면 prelude prepend.
 #[derive(Debug, Clone)]
 pub struct CronAgentContext {
     pub job_id: String,
@@ -74,12 +74,12 @@ impl PromptBuilder {
             None => String::new(),
         };
 
-        // banned_internal_line 은 모델별 — 박힐 곳 마련. 현재 비워둠 (LLM port 의 trait fn
-        // get_banned_internal_tools 박힌 후 wired up). 옛 TS 의 빈 string fallback 패턴 1:1.
+        // banned_internal_line 은 모델별 — 설정될 곳 마련. 현재 비워둠 (LLM port 의 trait fn
+        // get_banned_internal_tools 설정된 후 wired up). 옛 TS 의 빈 string fallback 패턴 1:1.
         let banned_internal_line = String::new();
 
-        // 시스템 컨텍스트 — extra_context 박혀있으면 그것, 아니면 빈 string
-        let system_context = extra_context.unwrap_or("(시스템 컨텍스트 미박음)");
+        // 시스템 컨텍스트 — extra_context 설정되어 있으면 그것, 아니면 빈 string
+        let system_context = extra_context.unwrap_or("(시스템 컨텍스트 미설정)");
 
         let base = TOOL_SYSTEM_TEMPLATE
             .replace("{system_context}", system_context)
@@ -88,7 +88,7 @@ impl PromptBuilder {
             .replace("{banned_internal_line}", &banned_internal_line)
             .replace("{user_section}", &user_section);
 
-        // Cron agent prelude — 박혀있으면 base 앞에 prepend
+        // Cron agent prelude — 설정되어 있으면 base 앞에 prepend
         if let Some(ctx) = cron_agent {
             let job_title_line = match &ctx.title {
                 Some(t) => format!("제목: {}", t),

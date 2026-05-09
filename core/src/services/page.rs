@@ -218,7 +218,7 @@ impl PageService for PageServiceImpl {
         _req: Request<Empty>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
         // 옛 TS listAllTags 1:1 — 모든 published+public 페이지의 head.keywords 빈도 집계.
-        // tagAliases 는 caller 가 PageService.with_tag_aliases_provider 로 박아야 alias 적용 (현재는 빈 alias).
+        // tagAliases 는 caller 가 PageService.with_tag_aliases_provider 로 설정해야 alias 적용 (현재는 빈 alias).
         // 후속 batch — ModuleManager.get_settings("cms").tagAliases textarea 자동 로드.
         let aliases = crate::utils::tag_utils::TagAliases::new();
         let tags = self.manager.list_all_tags(&aliases);

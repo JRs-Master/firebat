@@ -37,7 +37,7 @@ async fn empty_workspace_returns_empty_string() {
 #[tokio::test]
 async fn system_module_with_description_appears() {
     let (g, dir) = setup().await;
-    // system/modules/test-mod/config.json 박음
+    // system/modules/test-mod/config.json 저장
     let mod_dir = dir.path().join("system/modules/test-mod");
     std::fs::create_dir_all(&mod_dir).unwrap();
     std::fs::write(

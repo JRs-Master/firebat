@@ -10,8 +10,8 @@ import { tokensToCss } from '../../lib/design-tokens';
 import { headers } from 'next/headers';
 import type { LayoutMode } from '../../lib/cms-layout';
 
-/** Page-level layout override 해석 — proxy.ts 가 박은 x-firebat-pathname 으로 spec 조회.
- *  spec.head.layoutMode / contentMaxWidth 박혀있으면 페이지별 override.
+/** Page-level layout override 해석 — proxy.ts 가 설정한 x-firebat-pathname 으로 spec 조회.
+ *  spec.head.layoutMode / contentMaxWidth 설정되어 있으면 페이지별 override.
  *  /search /tag/{x} 같은 explicit route 는 spec 없으므로 undefined → 글로벌 사용. */
 async function resolvePageOverrides(): Promise<{ layoutMode?: LayoutMode; contentMaxWidth?: string }> {
   try {
@@ -42,7 +42,7 @@ async function resolvePageOverrides(): Promise<{ layoutMode?: LayoutMode; conten
 export default async function UserLayout({ children }: { children: React.ReactNode }) {
   const seo = await getCore().getCmsSettings();
   const siteUrl = seo.siteUrl || BASE_URL;
-  // Page-level overrides — spec.head.layoutMode / contentMaxWidth 박혀있으면 글로벌 무시.
+  // Page-level overrides — spec.head.layoutMode / contentMaxWidth 설정되어 있으면 글로벌 무시.
   const pageOverrides = await resolvePageOverrides();
   const layoutMode: LayoutMode = pageOverrides.layoutMode ?? seo.layout.mode;
   const pageContentMaxWidth = pageOverrides.contentMaxWidth;
@@ -78,7 +78,7 @@ export default async function UserLayout({ children }: { children: React.ReactNo
 
   // 카카오맵 JS 키 inject 는 root layout (app/layout.tsx) 으로 이동 — user/admin 양쪽 컨텍스트 통합.
 
-  // 페이지별 contentMaxWidth override — head.contentMaxWidth 박혀있으면 .firebat-cms-content 의
+  // 페이지별 contentMaxWidth override — head.contentMaxWidth 설정되어 있으면 .firebat-cms-content 의
   // CSS var 만 그 페이지에서 override. 글로벌 토큰은 그대로 유지.
   const pageOverrideCss = pageContentMaxWidth
     ? `body .firebat-cms-content { --cms-content-max-width: ${pageContentMaxWidth}; }`
@@ -87,7 +87,7 @@ export default async function UserLayout({ children }: { children: React.ReactNo
   return (
     <>
       {/* 외부 폰트 CSS — Google Fonts / Adobe Fonts 등 사용자 입력 URL.
-       *  parseCustomFontUrls 가 https://만 허용 (XSS 방어). preconnect 자동 박지 않음 — 사용자가
+       *  parseCustomFontUrls 가 https://만 허용 (XSS 방어). preconnect 자동 하지 않음 — 사용자가
        *  필요시 head 스크립트에 별도 추가 가능. */}
       {seo.customFontUrls.map((url, i) => (
         <link key={i} rel="stylesheet" href={url} />
@@ -101,7 +101,7 @@ export default async function UserLayout({ children }: { children: React.ReactNo
         />
       )}
       <SeoScripts headScripts={seo.headScripts} bodyScripts={seo.bodyScripts} />
-      {/* AdSense script — Publisher ID 박혀있으면 자동 inject. Auto Ads 활성화는
+      {/* AdSense script — Publisher ID 설정되어 있으면 자동 inject. Auto Ads 활성화는
        *  AdSense 콘솔 (adsense.google.com → 자동 광고) 에서 결정 — Google bot 이
        *  사이트 분석 후 광고 자동 게재. 별도 enable_page_level_ads push 코드 불필요
        *  (2023+ Google 권장 방식). */}

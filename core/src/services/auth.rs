@@ -151,6 +151,15 @@ impl AuthService for AuthServiceImpl {
         }))
     }
 
+    async fn is_admin_setup(
+        &self,
+        _req: Request<Empty>,
+    ) -> Result<Response<BoolRequest>, TonicStatus> {
+        Ok(Response::new(BoolRequest {
+            value: self.manager.is_admin_setup(),
+        }))
+    }
+
     async fn set_admin_credentials(
         &self,
         req: Request<JsonArgs>,

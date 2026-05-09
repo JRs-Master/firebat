@@ -30,7 +30,7 @@ pub struct PendingTool {
     pub plan_id: String,
     /// 도구 이름 (write_file / delete_file / schedule_task / save_page / delete_page).
     pub name: String,
-    /// 도구 인자 (LLM 이 박은 그대로).
+    /// 도구 인자 (LLM 이 설정한 그대로).
     #[serde(default)]
     pub args: serde_json::Value,
     /// UI 표시용 한 줄 요약.
@@ -296,7 +296,7 @@ mod tests {
         fresh_state(dir.path());
 
         let id = create_pending("write_file", serde_json::json!({"x": 1}), "test");
-        // 파일이 박혔는지 확인
+        // 파일이 설정되었는지 확인
         assert!(dir.path().join("pending-tools.json").exists());
 
         // 메모리 store 강제 비우기 → 파일 폴백으로 복원되어야

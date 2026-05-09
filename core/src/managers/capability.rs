@@ -305,7 +305,7 @@ impl CapabilityManager {
         Vec::new()
     }
 
-    /// 모듈 활성화 여부 — Vault 의 module settings 의 `enabled` 필드. 미박힘 시 default 활성.
+    /// 모듈 활성화 여부 — Vault 의 module settings 의 `enabled` 필드. 미설정 시 default 활성.
     /// 옛 TS isModuleEnabled 와 동일 로직 (ModuleManager 와 같은 source — Vault 직접 조회).
     fn is_module_enabled(&self, name: &str) -> bool {
         let Some(raw) = self.vault.get_secret(&vk_module_settings(name)) else {

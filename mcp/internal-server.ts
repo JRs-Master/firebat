@@ -152,7 +152,7 @@ export async function createInternalMcpServer(core: FirebatCore): Promise<McpSer
     },
     async (args) => {
       // **비동기 패턴** — startImageGeneration 즉시 placeholder URL 반환, 실제 생성은 백그라운드.
-      // AI 가 60-90s await 안 함 (CLI HTTP timeout 회피) → URL 즉시 받아 page spec 박고 save_page 발행 가능.
+      // AI 가 60-90s await 안 함 (CLI HTTP timeout 회피) → URL 즉시 받아 page spec 저장 후 save_page 발행 가능.
       // 사용자가 페이지 reload 하면 placeholder → 실제 이미지로 자동 swap (디스크 파일 교체됨).
       // 이전 sync `core.generateImage` 는 채팅 이미지 모드 (/api/media/generate) 전용으로 유지.
       // referenceImage 지정 시 image-to-image 변환 (MediaManager 가 slug/url/base64 → binary resolve).
@@ -176,7 +176,7 @@ export async function createInternalMcpServer(core: FirebatCore): Promise<McpSer
           url: d.url,
           slug: d.slug,
           status: 'rendering',
-          note: '백그라운드 생성 진행 중 — 페이지에 url 박고 save_page 즉시 발행하라. 사용자가 페이지 보면 placeholder → 실제 이미지로 자동 swap.',
+          note: '백그라운드 생성 진행 중 — 페이지에 url 저장 후 save_page 즉시 발행하라. 사용자가 페이지 보면 placeholder → 실제 이미지로 자동 swap.',
         }) }],
       };
     },
@@ -531,7 +531,7 @@ startAt/endAt: cronTime의 유효 기간 (만료 시 자동 해제).
 cron-logs 기록 + agent prelude (블로그 quality 룰) 적용 + retry/notify 동작.
 
 사용자가 "X 잡 한 번 실행해줘" 의뢰 시 list_tasks 로 jobId 찾고 이 도구로 호출.
-save_page / schedule_task 직접 호출 X — 그건 cron 우회라 prelude 미적용 + 로그 안 박힘.`,
+save_page / schedule_task 직접 호출 X — 그건 cron 우회라 prelude 미적용 + 로그 안 설정.`,
     { jobId: z.string().describe('실행할 cron 잡 ID (list_tasks 결과의 jobId)') },
     async ({ jobId }) => {
       const r = await core.runCronJobNow(jobId);
@@ -696,7 +696,7 @@ arguments는 대상 도구의 inputSchema에 맞춰 작성.`,
 
   server.tool(
     'save_entity_fact',
-    `메모리 시스템 — Entity 에 fact (시간 stamped 사실) link. 대화 끝나도 보존. entityName 박으면 자동 조회·생성.`,
+    `메모리 시스템 — Entity 에 fact (시간 stamped 사실) link. 대화 끝나도 보존. entityName 설정하면 자동 조회·생성.`,
     {
       entityName: z.string().optional().describe('Entity 이름 — 없으면 자동 생성'),
       entityType: z.string().optional().describe('자동 생성 시 type (기본 "concept")'),
@@ -755,7 +755,7 @@ arguments는 대상 도구의 inputSchema에 맞춰 작성.`,
 
   server.tool(
     'get_entity_timeline',
-    `메모리 시스템 — Entity 의 fact timeline (시간순). entityName 박으면 자동 조회.`,
+    `메모리 시스템 — Entity 의 fact timeline (시간순). entityName 설정하면 자동 조회.`,
     {
       entityName: z.string().optional(),
       entityId: z.number().int().optional(),
@@ -825,7 +825,7 @@ arguments는 대상 도구의 inputSchema에 맞춰 작성.`,
 
   server.tool(
     'save_event',
-    `메모리 시스템 — 시간순 사건 저장. type / title 필수. entityNames 박으면 자동 entity 조회·생성 + m2m link.`,
+    `메모리 시스템 — 시간순 사건 저장. type / title 필수. entityNames 설정하면 자동 entity 조회·생성 + m2m link.`,
     {
       type: z.string().describe('자유 분류 — cron_trigger / page_publish / transaction / image_gen / tool_call / user_action / analysis / alert / error'),
       title: z.string().describe('짧은 요약'),

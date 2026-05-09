@@ -65,7 +65,7 @@ async fn is_media_ready_blank_returns_false() {
 #[tokio::test]
 async fn vault_image_model_set_get_roundtrip() {
     let (mgr, _dir) = make_manager();
-    // 미박음 시 image_gen.get_model_id() fallback
+    // 미설정 시 image_gen.get_model_id() fallback
     assert_eq!(mgr.get_image_model(), "stub-image");
     mgr.set_image_model("gpt-image-1").unwrap();
     assert_eq!(mgr.get_image_model(), "gpt-image-1");
@@ -132,7 +132,7 @@ async fn generate_image_empty_prompt_errors() {
 #[tokio::test]
 async fn regenerate_image_by_slug_extracts_meta() {
     let (mgr, _dir) = make_manager();
-    // 1) save 후 prompt 박힘
+    // 1) save 후 prompt 설정
     let opts = MediaSaveOptions {
         prompt: Some("원본 prompt".to_string()),
         model: Some("stub-image".to_string()),
@@ -152,7 +152,7 @@ async fn regenerate_without_prompt_errors() {
         .save(b"x", "image/png", MediaSaveOptions::default())
         .await
         .unwrap();
-    // prompt 미박힘 → error
+    // prompt 미설정 → error
     let r = mgr.regenerate_image_by_slug(&saved.slug).await;
     assert!(r.is_err());
     assert!(r.unwrap_err().contains("프롬프트"));

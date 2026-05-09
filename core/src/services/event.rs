@@ -1,7 +1,7 @@
 //! gRPC EventService impl — EventManager wrapping.
 //!
 //! Phase B: ListAuditLog 만 동작 (audit log 조회). Subscribe streaming RPC 는 추후
-//! 박힘 (proto 의 stream JsonValue Subscribe 추가 필요).
+//! 설정 (proto 의 stream JsonValue Subscribe 추가 필요).
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};

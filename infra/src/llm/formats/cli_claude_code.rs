@@ -4,7 +4,7 @@
 //! stream-json + tool_use / tool_result 파싱 + --resume session_id 영속 + MCP --mcp-config
 //! 같은 advanced features 는 Phase B-17.5 후속.
 //!
-//! 실 동작 조건: `claude` binary PATH 박혀있어야 함 (구독 OAuth 로그인 완료 상태).
+//! 실 동작 조건: `claude` binary PATH 설정되어 있어야 함 (구독 OAuth 로그인 완료 상태).
 //! `claude auth login` 한 번 실행 후 사용 가능.
 
 use tokio::io::AsyncWriteExt;
@@ -28,8 +28,8 @@ impl ClaudeCodeCliHandler {
     ///
     /// 이미지 첨부 시 stream-json input 모드 사용 (옛 TS cli-claude-code.ts:259-272 1:1):
     /// - Claude Code 는 `--image` 플래그 없음
-    /// - Read 도구가 disallowedTools 에 박혀 `@<path>` 참조 불가 → stream-json input 이 유일한 vision 경로
-    /// - stdin 에 `{type:'user', message:{role:'user', content:[{type:'text', text}, {type:'image', source:{type:'base64', media_type, data}}]}}` JSON 박음
+    /// - Read 도구가 disallowedTools 에 설정되어 `@<path>` 참조 불가 → stream-json input 이 유일한 vision 경로
+    /// - stdin 에 `{type:'user', message:{role:'user', content:[{type:'text', text}, {type:'image', source:{type:'base64', media_type, data}}]}}` JSON 저장
     async fn run_cli(binary: &str, prompt: &str, opts: &LlmCallOpts) -> InfraResult<String> {
         let image_data = extract_image_base64(opts.image.as_deref(), opts.image_mime_type.as_deref());
 
@@ -132,7 +132,7 @@ impl FormatHandler for ClaudeCodeCliHandler {
         _opts: &LlmCallOpts,
     ) -> InfraResult<LlmToolResponse> {
         // Phase B-17.5 — stream-json input + --mcp-config + tool_use / tool_result content blocks
-        // 박힌 후 활성. 현재 minimum 은 ask_text 만.
-        Err("Claude Code CLI ask_with_tools — Phase B-17.5 stream-json + MCP 박힌 후 활성".to_string())
+        // 설정된 후 활성. 현재 minimum 은 ask_text 만.
+        Err("Claude Code CLI ask_with_tools — Phase B-17.5 stream-json + MCP 설정된 후 활성".to_string())
     }
 }

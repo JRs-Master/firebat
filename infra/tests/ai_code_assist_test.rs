@@ -100,7 +100,7 @@ async fn code_assist_explain_mode_returns_markdown() {
 
 #[tokio::test]
 async fn code_assist_rewrite_mode_strips_fences() {
-    // ScriptedLlm 처럼 ask_text 가 코드펜스 박힌 응답 반환하면 strip 되는지 확인.
+    // ScriptedLlm 처럼 ask_text 가 코드펜스 설정된 응답 반환하면 strip 되는지 확인.
     // Stub 은 prompt preview 만 반환하므로 직접 strip_code_fences 로 검증.
     let response = "```rust\nfn x() { 42 }\n```";
     assert_eq!(strip_code_fences(response), "fn x() { 42 }");
@@ -108,7 +108,7 @@ async fn code_assist_rewrite_mode_strips_fences() {
 
 #[test]
 fn rewrite_mode_label_added_when_selected_code() {
-    // 코드 모드 + selected_code → "Selected code (modify this):" label 박힘
+    // 코드 모드 + selected_code → "Selected code (modify this):" label 설정
     // (실제 prompt 구성은 code_assist 내부 — 본 test 는 build_system_prompt 가 mode 반영하는지만 확인)
     let explain_p = build_system_prompt("ts", true);
     let rewrite_p = build_system_prompt("ts", false);

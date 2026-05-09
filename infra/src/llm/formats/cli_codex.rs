@@ -22,7 +22,7 @@ impl CodexCliHandler {
 
     async fn run_cli(binary: &str, prompt: &str, opts: &LlmCallOpts) -> InfraResult<String> {
         // 첨부 이미지 임시 파일 — 옛 TS cli-codex.ts:179-182 1:1.
-        // base64 → 임시 파일 저장 → `--image <path>` 인자 박음 → spawn 종료 시 cleanup.
+        // base64 → 임시 파일 저장 → `--image <path>` 인자 추가 → spawn 종료 시 cleanup.
         let tmp_image = write_image_temp_file(opts.image.as_deref(), opts.image_mime_type.as_deref(), None);
 
         let mut cmd = Command::new(binary);
@@ -103,7 +103,7 @@ impl FormatHandler for CodexCliHandler {
         _prior_results: &[ToolResult],
         _opts: &LlmCallOpts,
     ) -> InfraResult<LlmToolResponse> {
-        Err("Codex CLI ask_with_tools — Phase B-17.5 mcp_servers + thread.* 이벤트 박힌 후 활성"
+        Err("Codex CLI ask_with_tools — Phase B-17.5 mcp_servers + thread.* 이벤트 설정된 후 활성"
             .to_string())
     }
 }

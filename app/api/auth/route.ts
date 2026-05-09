@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   const core = getCore();
 
   // RustCoreProxy 의 autoWrap.unwrapLogin 통과 후 형식:
-  //   - 성공 → AuthSession 객체 (token / type / role / createdAt 박힘)
+  //   - 성공 → AuthSession 객체 (token / type / role / createdAt 설정)
   //   - 실패 → null
   //   - 잠금 → { locked: true, retryAfterSec }
   const result = await core.login(id ?? '', password ?? '', attemptKeyFrom(req));
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       { status: 429, headers: { 'Retry-After': String(retryAfterSec) } },
     );
   }
-  // 실패 (null) — token 미박힘 시점도 차단
+  // 실패 (null) — token 미설정 시점도 차단
   if (!result || typeof result !== 'object' || !('token' in result) || !result.token) {
     return NextResponse.json({ success: false }, { status: 401 });
   }

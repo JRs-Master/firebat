@@ -24,7 +24,7 @@ pub struct TreeNode {
     pub path: String,
     #[serde(rename = "isDirectory")]
     pub is_directory: bool,
-    /// 디렉토리만 children 박힘. 파일은 빈 배열.
+    /// 디렉토리만 children 설정. 파일은 빈 배열.
     pub children: Vec<TreeNode>,
 }
 

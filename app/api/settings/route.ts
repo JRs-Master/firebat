@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     routerEnabledRaw, timezone, aiModel, aiThinkingLevel,
     aiAssistantModel, aiAssistantModels, userPrompt, lastModelByCategory,
     imageModel, imageModels, imageDefaultSize, imageDefaultQuality,
-    anthropicCacheEnabled, subAgentEnabled, adminCreds,
+    anthropicCacheEnabled, subAgentEnabled,
   ] = await Promise.all([
     core.getGeminiKey('system:ai-router:enabled'),
     core.getTimezone(),
@@ -27,11 +27,7 @@ export async function GET(req: NextRequest) {
     core.getImageDefaultQuality(),
     core.getAnthropicCacheEnabled(),
     core.isSubAgentEnabled(),
-    core.getAdminCredentials(),
   ]);
-  // 첫 부팅 admin/admin 디폴트 검출 — boolean 만 노출 (평문 password 응답 X).
-  const isDefaultAdmin =
-    adminCreds && adminCreds.id === 'admin' && adminCreds.password === 'admin';
   return NextResponse.json({
     success: true,
     timezone,
@@ -48,7 +44,6 @@ export async function GET(req: NextRequest) {
     imageDefaultQuality,
     anthropicCacheEnabled,
     subAgentEnabled,
-    isDefaultAdmin,
   });
 }
 

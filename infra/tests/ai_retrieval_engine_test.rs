@@ -139,7 +139,7 @@ async fn entity_with_facts_timeline_appended() {
             ..Default::default()
         })
         .await;
-    // entity 라인 안에 timeline fact 들이 박혀있음
+    // entity 라인 안에 timeline fact 들이 설정되어 있음
     assert!(r.context_summary.contains("매수"));
     assert!(r.context_summary.contains("[transaction]"));
 }
@@ -169,7 +169,7 @@ async fn events_match_appears_with_iso_date() {
     assert!(r.context_summary.contains("관련 사건"));
     assert!(r.context_summary.contains("[page_publish]"));
     assert!(r.context_summary.contains("(cron)"));
-    // ISO date 박혀있음 (`2023-11-` prefix — 1_700_000_000_000 = 2023-11-14)
+    // ISO date 설정되어 있음 (`2023-11-` prefix — 1_700_000_000_000 = 2023-11-14)
     assert!(r.context_summary.contains("2023-11-"));
 }
 
@@ -184,7 +184,7 @@ async fn limits_zero_disables_source() {
         })
         .await
         .unwrap();
-    // limits.entities=0 박으면 entity 검색 skip
+    // limits.entities=0 설정하면 entity 검색 skip
     let r = f
         .engine
         .retrieve(&RetrieveOpts {
@@ -205,7 +205,7 @@ async fn limits_zero_disables_source() {
 
 #[tokio::test]
 async fn missing_dependencies_silent_skip() {
-    // 모든 의존성 미박음 — silent fail (옛 TS 동등)
+    // 모든 의존성 미저장 — silent fail (옛 TS 동등)
     let e = RetrievalEngine::new();
     let r = e
         .retrieve(&RetrieveOpts {

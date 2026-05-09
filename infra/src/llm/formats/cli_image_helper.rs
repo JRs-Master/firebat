@@ -162,7 +162,7 @@ mod tests {
         .unwrap();
         assert!(tmp.path.ends_with(".png"));
         assert_eq!(tmp.mime_type, "image/png");
-        // 파일 박힘 확인
+        // 파일 설정 확인
         let bytes = std::fs::read(&tmp.path).unwrap();
         // PNG magic header
         assert_eq!(&bytes[..4], &[0x89, 0x50, 0x4E, 0x47]);

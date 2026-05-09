@@ -15,7 +15,7 @@
 //!
 //! 일반 로직 — 도구 이름·인자 형태·비용 무관. 모든 도구에 동등 적용.
 //!
-//! 본 모듈은 Layer 1 cache 만 박힘 (`get_cached_tool_result` / `set_cached_tool_result`).
+//! 본 모듈은 Layer 1 cache 만 설정 (`get_cached_tool_result` / `set_cached_tool_result`).
 //! Layer 2 는 호출자 (AiManager.process_with_tools) 가 turn-scope `HashSet<String>` 으로 관리.
 
 use std::collections::HashMap;
@@ -233,7 +233,7 @@ mod tests {
 
     #[test]
     fn implicit_success_cached() {
-        // success 필드 미박음 결과도 cache (옛 TS 동작과 일치)
+        // success 필드 미설정 결과도 cache (옛 TS 동작과 일치)
         fresh_state();
         let key = tool_cache_key("read", &serde_json::json!({}));
         let result = serde_json::json!({"data": "abc"});

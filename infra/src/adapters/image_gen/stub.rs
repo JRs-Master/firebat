@@ -1,4 +1,4 @@
-//! StubImageGenAdapter — 진짜 ConfigDrivenImageGenAdapter 박기 전 wiring 어댑터.
+//! StubImageGenAdapter — 진짜 ConfigDrivenImageGenAdapter 구현 전 wiring 어댑터.
 //!
 //! Step 2c 에서 4 format (openai / gemini / codex CLI / 추가 provider) 으로 swap.
 //! 그 시점엔 IImageGenPort 인터페이스 그대로 — main.rs env 토글 한 줄로 활성.
@@ -67,7 +67,7 @@ impl IImageGenPort for StubImageGenAdapter {
             width: Some(1),
             height: Some(1),
             revised_prompt: Some(opts.prompt.clone()),
-            cost_usd: None, // stub = 구독 흉내, 비용 미박음
+            cost_usd: None, // stub = 구독 흉내, 비용 미저장
         })
     }
 }

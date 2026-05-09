@@ -13,7 +13,7 @@ use crate::proto::{
 
 pub struct ScheduleServiceImpl {
     manager: Arc<ScheduleManager>,
-    /// TaskManager (옵션) — validate_pipeline 위임. 미박힘 시 fallback (silent OK).
+    /// TaskManager (옵션) — validate_pipeline 위임. 미설정 시 fallback (silent OK).
     task: Option<Arc<TaskManager>>,
 }
 
@@ -22,7 +22,7 @@ impl ScheduleServiceImpl {
         Self { manager, task: None }
     }
 
-    /// TaskManager 박은 채로 부팅 — validate_pipeline 정밀 검증 활성.
+    /// TaskManager 설정한 채로 부팅 — validate_pipeline 정밀 검증 활성.
     pub fn with_task_manager(mut self, task: Arc<TaskManager>) -> Self {
         self.task = Some(task);
         self
@@ -152,8 +152,8 @@ impl ScheduleService for ScheduleServiceImpl {
         &self,
         req: Request<JsonArgs>,
     ) -> Result<Response<JsonValue>, TonicStatus> {
-        // TaskManager 박혀있으면 정밀 검증 (옛 TS task-manager.ts:26 validatePipeline 1:1).
-        // 미박힘 시 silent OK fallback.
+        // TaskManager 설정되어 있으면 정밀 검증 (옛 TS task-manager.ts:26 validatePipeline 1:1).
+        // 미설정 시 silent OK fallback.
         let raw = req.into_inner().raw;
         let Some(task) = &self.task else {
             return json_response(&serde_json::json!({"valid": true}));

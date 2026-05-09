@@ -1,5 +1,5 @@
 /**
- * Core Singleton Factory — Phase B 박힘 (TS legacy 폐기 후 Rust 단일).
+ * Core Singleton Factory — Phase B 설정 (TS legacy 폐기 후 Rust 단일).
  *
  * Rust Core 가 유일한 backend. Frontend / API route 의 옛 호출 패턴 (`getCore().savePage(...)`)
  * 그대로 동작 — RustCoreProxy 가 메서드 호출을 callCore → gRPC → Rust Core 로 라우팅.

@@ -1,6 +1,6 @@
 //! MediaManager — 미디어 도메인 단일 매니저.
 //!
-//! 옛 TS `core/managers/media-manager.ts` 1:1 port. Phase B-18 Step 2d 박힘.
+//! 옛 TS `core/managers/media-manager.ts` 1:1 port. Phase B-18 Step 2d 설정.
 //!
 //! 책임:
 //!   1) 이미지 생성 오케스트레이션 + 후처리 파이프라인 (resolve reference + imageGen.generate +
@@ -128,7 +128,7 @@ pub struct GenerateImageResult {
 // ── 헬퍼 함수 (옛 TS 1:1) ────────────────────────────────────────────────────
 
 /// `"1024x1024"` / `"1024"` / `None` → `(width, height)`.
-/// 미박음 시 1024x1024 default — placeholder 용 (백그라운드에서 실제 크기로 교체).
+/// 미설정 시 1024x1024 default — placeholder 용 (백그라운드에서 실제 크기로 교체).
 fn parse_size_hint(size: Option<&str>) -> (u32, u32) {
     let s = match size {
         Some(s) => s,
@@ -250,14 +250,14 @@ fn parse_media_url(url: &str) -> Option<(MediaScope, String, String)> {
 
 pub struct MediaManager {
     media: Arc<dyn IMediaPort>,
-    /// IImageGenPort + IImageProcessorPort + IVaultPort + ILogPort — Step 2d 박힘.
+    /// IImageGenPort + IImageProcessorPort + IVaultPort + ILogPort — Step 2d 설정.
     /// 모두 Optional builder — 박히기 전엔 thin wrapper (옛 호환).
     image_gen: Option<Arc<dyn IImageGenPort>>,
     processor: Option<Arc<dyn IImageProcessorPort>>,
     vault: Option<Arc<dyn IVaultPort>>,
     log: Option<Arc<dyn ILogPort>>,
     /// Cross-call hooks (옛 TS Core facade 의 startImageGeneration / generateImage 패턴 1:1):
-    /// - cost: ImageGenResult.cost_usd 박혀있으면 자동 record_llm_cost (CostManager)
+    /// - cost: ImageGenResult.cost_usd 설정되어 있으면 자동 record_llm_cost (CostManager)
     /// - status: 이미지 생성 시작 → start, 완료 → done, 실패 → fail (StatusManager / 어드민 ActiveJobsIndicator)
     /// - event: 갤러리 SSE refresh + status 변경 broadcast (EventManager / GalleryPanel)
     /// - episodic: 'image_gen' 사건 자동 리콜 누적 (EpisodicManager / AI 미개입)
@@ -350,7 +350,7 @@ impl MediaManager {
     }
 
     pub fn set_image_model(&self, model_id: &str) -> InfraResult<()> {
-        let vault = self.vault.as_ref().ok_or_else(|| "Vault 미박음".to_string())?;
+        let vault = self.vault.as_ref().ok_or_else(|| "Vault 미설정".to_string())?;
         if vault.set_secret(VK_IMAGE_MODEL, model_id) {
             Ok(())
         } else {
@@ -366,7 +366,7 @@ impl MediaManager {
     }
 
     pub fn set_image_default_size(&self, size: Option<&str>) -> InfraResult<()> {
-        let vault = self.vault.as_ref().ok_or_else(|| "Vault 미박음".to_string())?;
+        let vault = self.vault.as_ref().ok_or_else(|| "Vault 미설정".to_string())?;
         let ok = match size {
             None => vault.delete_secret(VK_IMAGE_SIZE),
             Some(s) => vault.set_secret(VK_IMAGE_SIZE, s),
@@ -382,7 +382,7 @@ impl MediaManager {
     }
 
     pub fn set_image_default_quality(&self, quality: Option<&str>) -> InfraResult<()> {
-        let vault = self.vault.as_ref().ok_or_else(|| "Vault 미박음".to_string())?;
+        let vault = self.vault.as_ref().ok_or_else(|| "Vault 미설정".to_string())?;
         let ok = match quality {
             None => vault.delete_secret(VK_IMAGE_QUALITY),
             Some(q) => vault.set_secret(VK_IMAGE_QUALITY, q),
@@ -398,7 +398,7 @@ impl MediaManager {
     }
 
     /// SEO 설정 `system:module:seo:settings` 의 image_* 필드 1:1 — 옛 TS getImageSettings.
-    /// 미박음 / 파싱 실패 시 default 폴백.
+    /// 미설정 / 파싱 실패 시 default 폴백.
     pub fn get_image_settings(&self) -> SeoImageSettings {
         let Some(vault) = &self.vault else {
             return SeoImageSettings::default();
@@ -543,7 +543,7 @@ impl MediaManager {
     // ── 이미지 생성·재생성 (옛 TS 1:1) ──────────────────────────────────────
 
     /// 갤러리에서 재생성 — 기존 메타의 prompt/model/size/quality/aspectRatio 재추출 → 재실행.
-    /// prompt 미박음 (legacy record) → error.
+    /// prompt 미설정 (legacy record) → error.
     pub async fn regenerate_image_by_slug(
         self: &Arc<Self>,
         slug: &str,
@@ -572,12 +572,12 @@ impl MediaManager {
     }
 
     /// 비동기 image_gen — 즉시 placeholder 저장 + slug/url 반환, 실제 생성은 백그라운드.
-    /// AI image_gen 도구가 호출 → 즉시 URL 받아 page spec 박고 save_page 발행 가능.
+    /// AI image_gen 도구가 호출 → 즉시 URL 받아 page spec 저장 후 save_page 발행 가능.
     /// 사용자 페이지 reload 시 placeholder → 실제 이미지로 swap.
     ///
     /// Cross-call hooks (옛 TS Core facade 1:1):
     ///   - status.start (type='image', meta=async/promptPreview/model/scope)
-    ///   - 백그라운드 완료: status.done + event.notify_gallery + cost.record (cost_usd 박혀있으면)
+    ///   - 백그라운드 완료: status.done + event.notify_gallery + cost.record (cost_usd 설정되어 있으면)
     ///   - 백그라운드 실패: status.fail + event.notify_gallery (error)
     ///   - placeholder 등장 즉시 event.notify_gallery (사용자가 "렌더링중" 카드 봄)
     pub async fn start_generate(
@@ -587,7 +587,7 @@ impl MediaManager {
         let processor = self
             .processor
             .as_ref()
-            .ok_or_else(|| "image_processor 미박음 — placeholder 생성 불가".to_string())?;
+            .ok_or_else(|| "image_processor 미저장 — placeholder 생성 불가".to_string())?;
         let scope = input.scope.unwrap_or(MediaScope::User);
 
         // Cross-call hook 1: status.start — 어드민 ActiveJobsIndicator 가시화 (옛 TS 1:1)
@@ -679,7 +679,7 @@ impl MediaManager {
                             "scope": bg_scope.as_str(),
                         }));
                     }
-                    // Cross-call hook 4: cost.record — 비동기 흐름 (AiManager 못 받음, MediaManager 가 박음)
+                    // Cross-call hook 4: cost.record — 비동기 흐름 (AiManager 못 받음, MediaManager 가 호출)
                     if let (Some(cost), Some(usd)) = (&mgr.cost, success.cost_usd) {
                         if usd > 0.0 {
                             cost.record(&success.model_id, 0, 0, 0, usd, Some("image_gen"));
@@ -756,7 +756,7 @@ impl MediaManager {
     }
 
     /// AI image_gen 도구 → MediaManager.generate_image → 생성 + 후처리 + 저장.
-    /// existing_slug 박혀있으면 placeholder 파일을 finalize_base 로 교체 (비동기 모드 완료 단계).
+    /// existing_slug 설정되어 있으면 placeholder 파일을 finalize_base 로 교체 (비동기 모드 완료 단계).
     pub async fn generate_image(
         self: &Arc<Self>,
         input: GenerateImageInput,
@@ -766,11 +766,11 @@ impl MediaManager {
         let image_gen = self
             .image_gen
             .as_ref()
-            .ok_or_else(|| "image_gen 미박음 — 이미지 생성 불가".to_string())?;
+            .ok_or_else(|| "image_gen 미저장 — 이미지 생성 불가".to_string())?;
         let processor = self
             .processor
             .as_ref()
-            .ok_or_else(|| "image_processor 미박음 — 후처리 불가".to_string())?;
+            .ok_or_else(|| "image_processor 미저장 — 후처리 불가".to_string())?;
 
         let model_id = input
             .model
@@ -886,7 +886,7 @@ impl MediaManager {
                 .finalize_base(slug, scope.as_str(), &base_binary, &base_content_type, None)
                 .await?;
             let final_ext = ext_from_content_type(&base_content_type);
-            // revised_prompt 만 추가 갱신 — 다른 메타는 startGenerate 가 박음, 마지막 update_meta 에서 status='done'
+            // revised_prompt 만 추가 갱신 — 다른 메타는 startGenerate 가 설정, 마지막 update_meta 에서 status='done'
             if let Some(rp) = &gen_result.revised_prompt {
                 let _ = self
                     .media
@@ -1101,7 +1101,7 @@ impl MediaManager {
         };
 
         // sync 경로 cross-call hooks (옛 TS Core.generateImage 1:1).
-        // existing_slug 박힌 (start_generate 백그라운드) 경로는 caller 가 wrap 하므로 skip —
+        // existing_slug 설정된 (start_generate 백그라운드) 경로는 caller 가 wrap 하므로 skip —
         // 본 hook 은 직접 호출 (채팅 이미지 모드 등) 에서만.
         if existing_slug.is_none() {
             // event.notify_gallery — 갤러리 즉시 갱신
@@ -1111,7 +1111,7 @@ impl MediaManager {
                     "scope": scope.as_str(),
                 }));
             }
-            // cost.record — costUsd 박혀있으면 LLM 비용 통계 누적 (옛 TS Core.recordLlmCost 1:1)
+            // cost.record — costUsd 설정되어 있으면 LLM 비용 통계 누적 (옛 TS Core.recordLlmCost 1:1)
             if let (Some(cost), Some(usd)) = (&self.cost, result.cost_usd) {
                 if usd > 0.0 {
                     cost.record(&result.model_id, 0, 0, 0, usd, Some("image_gen"));

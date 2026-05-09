@@ -237,7 +237,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
 
   // CMS Phase 3 — 프로젝트별 theme override.
   // user/projects/{name}/config.json 의 theme 가 글로벌 cms theme 위에 override.
-  // 페이지 spec.project 매칭 시 wrapper 에 inline CSS var 박아 :root override.
+  // 페이지 spec.project 매칭 시 wrapper 에 inline CSS var 설정하여 :root override.
   let projectThemeStyle: React.CSSProperties | undefined;
   let projectCustomCss: string | undefined;
   let projectH1Style: string | undefined;
@@ -276,7 +276,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
 
   // 페이지별 JSON-LD — WebPage + BreadcrumbList + Article(콘텐츠 페이지) 통합 @graph.
   // BreadcrumbList: slug 계층 → Home > project > page (Google rich snippet 빵부스러기 노출)
-  // Article: project 박힌 콘텐츠 페이지만 (datePublished/Modified/headline/author 등 Google rich result)
+  // Article: project 설정된 콘텐츠 페이지만 (datePublished/Modified/headline/author 등 Google rich result)
   let pageJsonLd: Record<string, unknown> | null = null;
   if (seo.jsonLdEnabled) {
     const pageId = `${siteUrl}/${slug}`;
@@ -308,7 +308,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
       graph.push({ '@type': 'BreadcrumbList', '@id': `${pageId}#breadcrumb`, itemListElement: items });
     }
 
-    // Article — project 박힌 콘텐츠 페이지만 (홈·태그·프로젝트 루트 등 제외)
+    // Article — project 설정된 콘텐츠 페이지만 (홈·태그·프로젝트 루트 등 제외)
     if (spec.project && spec._createdAt) {
       const ogImage = head?.og?.image;
       graph.push({
@@ -388,7 +388,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
           data-h3-style={projectH3Style ?? seo.theme.heading.h3}
           style={projectThemeStyle}
         >
-          {/* 콘텐츠 페이지 (project 박힌) 만 — Breadcrumb + Reading time 표시.
+          {/* 콘텐츠 페이지 (project 설정된) 만 — Breadcrumb + Reading time 표시.
            *  Breadcrumb: JSON-LD BreadcrumbList 와 동일 경로 (홈 > seg1 > ... > 현재).
            *  Reading time: 본문 텍스트 추출 후 500자/분. 0분이면 미표시. */}
           {spec.project && (

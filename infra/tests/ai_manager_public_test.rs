@@ -94,7 +94,7 @@ async fn process_with_tools_opts_cron_agent_extends_max_turns() {
 
 #[tokio::test]
 async fn cost_budget_guard_blocks_when_exceeded() {
-    // CostManager 박은 채로 한도 초과 상태 만든 뒤 process_with_tools 호출 시 LLM 호출 차단 확인.
+    // CostManager 설정한 채로 한도 초과 상태 만든 뒤 process_with_tools 호출 시 LLM 호출 차단 확인.
     let dir = tempfile::tempdir().unwrap();
     let db: Arc<dyn IDatabasePort> =
         Arc::new(SqliteDatabaseAdapter::new(dir.path().join("app.db")).unwrap());
@@ -260,7 +260,7 @@ impl ILogPort for CapturingLog {
 
 #[tokio::test]
 async fn training_log_emitted_with_prompt_and_reply() {
-    // Stub LLM 은 도구 호출 0 → 단순 prompt + reply 만 학습 로그에 박힘.
+    // Stub LLM 은 도구 호출 0 → 단순 prompt + reply 만 학습 로그에 설정.
     let llm: Arc<dyn ILlmPort> = Arc::new(StubLlmAdapter::new("stub"));
     let tools = Arc::new(ToolManager::new());
     let log = Arc::new(CapturingLog::new());
@@ -287,7 +287,7 @@ async fn training_log_emitted_with_prompt_and_reply() {
 
 #[tokio::test]
 async fn training_log_includes_tool_exchanges() {
-    // ScriptedLlm 으로 도구 호출 시나리오 만들고 contents 에 functionCall + functionResponse 박힘 확인.
+    // ScriptedLlm 으로 도구 호출 시나리오 만들고 contents 에 functionCall + functionResponse 설정 확인.
     let scripted = vec![ToolCall {
         id: "c1".to_string(),
         name: "search_history".to_string(),
@@ -310,16 +310,16 @@ async fn training_log_includes_tool_exchanges() {
     let captured = log.captured.lock().unwrap();
     assert_eq!(captured.len(), 1);
     let msg = &captured[0];
-    // functionCall 블록 박힘
+    // functionCall 블록 설정
     assert!(msg.contains("\"functionCall\""));
     assert!(msg.contains("search_history"));
-    // functionResponse 블록 박힘
+    // functionResponse 블록 설정
     assert!(msg.contains("\"functionResponse\""));
 }
 
 #[tokio::test]
 async fn cli_session_resume_persists_and_loads() {
-    // model 이 cli- 로 시작 + conversation_id 박혀있을 때:
+    // model 이 cli- 로 시작 + conversation_id 설정되어 있을 때:
     // 첫 호출 — cli_session_id 캡처 → ConversationManager 에 저장
     // 두 번째 호출 — DB 의 session_id 가 opts.cli_resume_session_id 로 주입
     let _g = env_lock();
@@ -350,7 +350,7 @@ async fn cli_session_resume_persists_and_loads() {
         ..Default::default()
     };
 
-    // 첫 호출 — resume 미박힘 (DB 비어있음)
+    // 첫 호출 — resume 미설정 (DB 비어있음)
     mgr.process_with_tools_opts("hi", &[], &LlmCallOpts::default(), &ai_opts)
         .await
         .unwrap();
@@ -360,7 +360,7 @@ async fn cli_session_resume_persists_and_loads() {
     let saved = conv_mgr.get_cli_session("conv-1", "cli-claude-code");
     assert_eq!(saved.as_deref(), Some("sess-uuid-abc"));
 
-    // 두 번째 호출 — resume 박힘
+    // 두 번째 호출 — resume 설정
     mgr.process_with_tools_opts("hi 2", &[], &LlmCallOpts::default(), &ai_opts)
         .await
         .unwrap();
@@ -404,7 +404,7 @@ async fn search_components_handler_returns_top_k() {
         let s2 = w[1]["score"].as_f64().unwrap();
         assert!(s1 >= s2, "결과는 score 내림차순 정렬");
     }
-    // 각 결과는 name + description + propsSchema 박힘
+    // 각 결과는 name + description + propsSchema 설정
     for c in components {
         assert!(c["name"].is_string());
         assert!(c["description"].is_string());
