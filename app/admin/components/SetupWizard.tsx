@@ -11,7 +11,14 @@
  *   4. /api/auth/setup POST → 모두 Vault 저장 + 자동 로그인 (세션 쿠키 발급)
  *   5. 완료 시 /admin 으로 이동
  *
- * 비밀번호 정책: 대소문자·숫자·특수문자 포함 8자 이상, ID 와 동일 금지.
+ * 디폴트 (브라우저 자동 감지 — 외국인엔 en/UTC, 한국 사용자엔 ko/Asia/Seoul):
+ *   - 언어: navigator.language → 'ko' 시작이면 ko, 그 외 'en'
+ *   - 시간대: Intl.DateTimeFormat().resolvedOptions().timeZone (실패 시 'UTC' 폴백)
+ *
+ * 비밀번호 정책 (절충 — 컴플라이언스 친화 + 사용자 짜증 최소):
+ *   - 8자 이상 필수
+ *   - 4 categories (대문자/소문자/숫자/특수문자) 중 3종류 이상 포함
+ *   - 4종류 모두 = strong / 3종류 = medium / 2종류 이하 또는 8자 미만 = weak
  *
  * Timezone 옵션 — `lib/timezones.ts` 단일 source (어드민 설정과 공유).
  *
@@ -25,20 +32,28 @@ interface Props {
   onComplete: () => void;
 }
 
-const PASSWORD_RE = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]).{8,}$/;
+function countCategories(pw: string): number {
+  let c = 0;
+  if (/[A-Z]/.test(pw)) c++;
+  if (/[a-z]/.test(pw)) c++;
+  if (/\d/.test(pw)) c++;
+  if (/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(pw)) c++;
+  return c;
+}
 
-/** 단순 채점 — 0(빈)·1(weak)·2(medium)·3(strong). 의존성 0. */
+/** 8자 이상 + 4 categories 중 3 이상 — 컴플라이언스·NIST 절충 패턴. */
+function isPasswordValid(pw: string): boolean {
+  return pw.length >= 8 && countCategories(pw) >= 3;
+}
+
+/** 채점 — 0(빈)·1(weak)·2(medium)·3(strong). 8자 미만 = weak / 4종류 = strong / 3종류 = medium. */
 function passwordStrength(pw: string): 0 | 1 | 2 | 3 {
   if (!pw) return 0;
-  let score = 0;
-  if (pw.length >= 8) score++;
-  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
-  if (/\d/.test(pw)) score++;
-  if (/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(pw)) score++;
-  if (pw.length >= 12) score++;
-  if (score <= 2) return 1;
-  if (score <= 3) return 2;
-  return 3;
+  if (pw.length < 8) return 1;
+  const c = countCategories(pw);
+  if (c === 4) return 3;
+  if (c === 3) return 2;
+  return 1;
 }
 
 function detectBrowserTimezone(): string {
@@ -67,10 +82,10 @@ export function SetupWizard({ onComplete }: Props) {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // 첫 마운트 — localStorage 미설정 시 navigator.language 기반 자동 감지
+  // 첫 마운트 — localStorage 미설정 시 navigator.language 자동 감지
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (localStorage.getItem('firebat_ui_lang')) return; // 사용자가 이미 선택
+    if (localStorage.getItem('firebat_ui_lang')) return;
     const detected = detectBrowserLang();
     if (detected !== lang) setLang(detected);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -81,7 +96,7 @@ export function SetupWizard({ onComplete }: Props) {
     setError('');
 
     if (!adminId.trim()) { setError(t('setup.err_id_required')); return; }
-    if (!PASSWORD_RE.test(adminPassword)) {
+    if (!isPasswordValid(adminPassword)) {
       setError(t('setup.err_password_policy'));
       return;
     }
@@ -125,8 +140,8 @@ export function SetupWizard({ onComplete }: Props) {
   return (
     <div className="w-full max-w-[440px] bg-white border border-[#eaeaea] rounded-xl shadow-sm p-8">
       <div className="mb-6 text-center">
-        <h2 className="text-2xl font-bold text-black mb-1">{t('setup.title')}</h2>
-        <p className="text-sm text-gray-500">{t('setup.subtitle')}</p>
+        <h2 className="text-2xl font-bold text-black mb-1 min-h-[32px]">{t('setup.title')}</h2>
+        <p className="text-sm text-gray-500 min-h-[40px]">{t('setup.subtitle')}</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -173,21 +188,24 @@ export function SetupWizard({ onComplete }: Props) {
             disabled={submitting}
             className="w-full border border-[#eaeaea] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:bg-slate-50"
           />
-          {adminPassword && (() => {
-            const s = passwordStrength(adminPassword);
-            const barColor = s === 1 ? 'bg-red-500' : s === 2 ? 'bg-amber-500' : 'bg-green-500';
-            const labelColor = s === 1 ? 'text-red-600' : s === 2 ? 'text-amber-600' : 'text-green-600';
-            const labelKey = s === 1 ? 'setup.password_strength_weak' : s === 2 ? 'setup.password_strength_medium' : 'setup.password_strength_strong';
-            return (
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-1 bg-slate-200 rounded overflow-hidden">
-                  <div className={`h-full ${barColor} transition-all`} style={{ width: `${(s / 3) * 100}%` }} />
-                </div>
-                <span className={`text-[11px] font-medium ${labelColor} min-w-[36px] text-right`}>{t(labelKey)}</span>
-              </div>
-            );
-          })()}
-          <p className="text-[11px] text-gray-500">{t('setup.password_hint')}</p>
+          {/* strength meter — 항상 영역 reserve (layout shift 방지) */}
+          <div className="flex items-center gap-2 h-4">
+            {adminPassword && (() => {
+              const s = passwordStrength(adminPassword);
+              const barColor = s === 1 ? 'bg-red-500' : s === 2 ? 'bg-amber-500' : 'bg-green-500';
+              const labelColor = s === 1 ? 'text-red-600' : s === 2 ? 'text-amber-600' : 'text-green-600';
+              const labelKey = s === 1 ? 'setup.password_strength_weak' : s === 2 ? 'setup.password_strength_medium' : 'setup.password_strength_strong';
+              return (
+                <>
+                  <div className="flex-1 h-1 bg-slate-200 rounded overflow-hidden">
+                    <div className={`h-full ${barColor} transition-all`} style={{ width: `${(s / 3) * 100}%` }} />
+                  </div>
+                  <span className={`text-[11px] font-medium ${labelColor} min-w-[36px] text-right`}>{t(labelKey)}</span>
+                </>
+              );
+            })()}
+          </div>
+          <p className="text-[11px] text-gray-500 min-h-[28px]">{t('setup.password_hint')}</p>
         </div>
 
         <div className="space-y-1.5">
@@ -199,14 +217,17 @@ export function SetupWizard({ onComplete }: Props) {
             disabled={submitting}
             className="w-full border border-[#eaeaea] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:bg-slate-50"
           />
-          {confirmPassword && (() => {
-            const match = adminPassword === confirmPassword;
-            return (
-              <p className={`text-[11px] font-medium ${match ? 'text-green-600' : 'text-red-600'}`}>
-                {match ? '✓ ' : '✗ '}{t(match ? 'setup.password_match' : 'setup.password_no_match')}
-              </p>
-            );
-          })()}
+          {/* match indicator — 항상 영역 reserve */}
+          <p className="text-[11px] font-medium min-h-[16px]">
+            {confirmPassword && (() => {
+              const match = adminPassword === confirmPassword;
+              return (
+                <span className={match ? 'text-green-600' : 'text-red-600'}>
+                  {match ? '✓ ' : '✗ '}{t(match ? 'setup.password_match' : 'setup.password_no_match')}
+                </span>
+              );
+            })()}
+          </p>
         </div>
 
         <div className="space-y-1.5">

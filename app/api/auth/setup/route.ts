@@ -45,10 +45,21 @@ export async function POST(req: NextRequest) {
   if (!adminId || typeof adminId !== 'string' || !adminId.trim()) {
     return NextResponse.json({ success: false, error: '관리자 ID를 입력해 주세요.' }, { status: 400 });
   }
-  const PASSWORD_RE = /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]).{8,}$/;
-  if (!adminPassword || typeof adminPassword !== 'string' || !PASSWORD_RE.test(adminPassword)) {
+  // 8자 이상 + 4 categories 중 3 이상 — 컴플라이언스·NIST 절충 패턴
+  if (!adminPassword || typeof adminPassword !== 'string' || adminPassword.length < 8) {
     return NextResponse.json(
-      { success: false, error: '비밀번호는 대소문자·숫자·특수문자를 포함한 8자 이상이어야 합니다.' },
+      { success: false, error: '비밀번호는 8자 이상이어야 합니다.' },
+      { status: 400 },
+    );
+  }
+  let categories = 0;
+  if (/[A-Z]/.test(adminPassword)) categories++;
+  if (/[a-z]/.test(adminPassword)) categories++;
+  if (/\d/.test(adminPassword)) categories++;
+  if (/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(adminPassword)) categories++;
+  if (categories < 3) {
+    return NextResponse.json(
+      { success: false, error: '비밀번호는 대문자·소문자·숫자·특수문자 중 3종류 이상을 포함해야 합니다.' },
       { status: 400 },
     );
   }
