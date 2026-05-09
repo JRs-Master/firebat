@@ -9,6 +9,7 @@ import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useLang, useTranslations, type Lang } from '../../../lib/i18n';
+import { TIMEZONE_OPTIONS, timezoneLabel } from '../../../lib/timezones';
 
 interface SystemModule { name: string; description: string; runtime: string; type?: string; enabled?: boolean; }
 
@@ -769,40 +770,9 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                   onChange={e => setUserTimezone(e.target.value)}
                   className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
                 >
-                  <option value="Pacific/Midway">(UTC-11:00) 미드웨이</option>
-                  <option value="Pacific/Honolulu">(UTC-10:00) 하와이</option>
-                  <option value="America/Anchorage">(UTC-09:00) 알래스카</option>
-                  <option value="America/Los_Angeles">(UTC-08:00) 태평양 (LA)</option>
-                  <option value="America/Denver">(UTC-07:00) 산악 (덴버)</option>
-                  <option value="America/Chicago">(UTC-06:00) 중부 (시카고)</option>
-                  <option value="America/New_York">(UTC-05:00) 동부 (뉴욕)</option>
-                  <option value="America/Caracas">(UTC-04:30) 카라카스</option>
-                  <option value="America/Halifax">(UTC-04:00) 대서양 (핼리팩스)</option>
-                  <option value="America/St_Johns">(UTC-03:30) 뉴펀들랜드</option>
-                  <option value="America/Sao_Paulo">(UTC-03:00) 브라질리아</option>
-                  <option value="Atlantic/South_Georgia">(UTC-02:00) 사우스조지아</option>
-                  <option value="Atlantic/Azores">(UTC-01:00) 아조레스</option>
-                  <option value="UTC">(UTC+00:00) UTC / 런던</option>
-                  <option value="Europe/Paris">(UTC+01:00) 중앙유럽 (파리)</option>
-                  <option value="Europe/Helsinki">(UTC+02:00) 동유럽 (헬싱키)</option>
-                  <option value="Europe/Moscow">(UTC+03:00) 모스크바</option>
-                  <option value="Asia/Tehran">(UTC+03:30) 테헤란</option>
-                  <option value="Asia/Dubai">(UTC+04:00) 두바이</option>
-                  <option value="Asia/Kabul">(UTC+04:30) 카불</option>
-                  <option value="Asia/Karachi">(UTC+05:00) 카라치</option>
-                  <option value="Asia/Kolkata">(UTC+05:30) 인도 (뭄바이)</option>
-                  <option value="Asia/Kathmandu">(UTC+05:45) 카트만두</option>
-                  <option value="Asia/Dhaka">(UTC+06:00) 다카</option>
-                  <option value="Asia/Yangon">(UTC+06:30) 양곤</option>
-                  <option value="Asia/Bangkok">(UTC+07:00) 방콕</option>
-                  <option value="Asia/Shanghai">(UTC+08:00) 중국 (상하이)</option>
-                  <option value="Asia/Tokyo">(UTC+09:00) 일본 (도쿄)</option>
-                  <option value="Asia/Seoul">(UTC+09:00) 한국 (서울)</option>
-                  <option value="Australia/Adelaide">(UTC+09:30) 애들레이드</option>
-                  <option value="Australia/Sydney">(UTC+10:00) 시드니</option>
-                  <option value="Pacific/Noumea">(UTC+11:00) 누메아</option>
-                  <option value="Pacific/Auckland">(UTC+12:00) 오클랜드</option>
-                  <option value="Pacific/Tongatapu">(UTC+13:00) 통가</option>
+                  {TIMEZONE_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{timezoneLabel(opt, uiLang)}</option>
+                  ))}
                 </select>
                 <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
                   크론 스케줄링과 AI 시간 기준에 반영됩니다

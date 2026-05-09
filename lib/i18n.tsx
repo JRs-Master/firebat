@@ -26,7 +26,7 @@ const MESSAGES: Record<Lang, Record<string, unknown>> = {
   en: enMessages,
 };
 
-const FALLBACK_LANG: Lang = 'ko';
+const FALLBACK_LANG: Lang = 'en';
 
 /** nested key resolver — 'login.title' → messages.login.title */
 function resolveKey(messages: Record<string, unknown>, key: string): string | undefined {
