@@ -17,6 +17,7 @@ pub enum ProjectVisibility {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectEntry {
     pub name: String,
     pub paths: Vec<String>,
@@ -26,6 +27,7 @@ pub struct ProjectEntry {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProjectDeleteResult {
     pub paths: Vec<String>,
     pub pages: Vec<String>,

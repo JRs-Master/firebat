@@ -38,6 +38,7 @@ use crate::vault_keys::{vk_module_settings, VK_IMAGE_MODEL, VK_IMAGE_QUALITY, VK
 // ── SeoImageSettings (옛 TS DEFAULT_IMAGE_SETTINGS 1:1) ────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SeoImageSettings {
     pub webp: bool,
     pub avif: bool,
@@ -69,6 +70,7 @@ impl Default for SeoImageSettings {
 // ── GenerateImageInput / Result (옛 TS 1:1) ────────────────────────────────
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GenerateImageInput {
     pub prompt: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -92,6 +94,7 @@ pub struct GenerateImageInput {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReferenceImageInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub slug: Option<String>,
@@ -102,6 +105,7 @@ pub struct ReferenceImageInput {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GenerateImageResult {
     pub url: String,
     #[serde(rename = "thumbnailUrl", default, skip_serializing_if = "Option::is_none")]

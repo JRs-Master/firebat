@@ -68,6 +68,7 @@ const MESSAGE_TRIM_LIMIT: usize = 1500;
 const MIN_TRANSCRIPT_LEN: usize = 50;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExtractedEntity {
     pub name: String,
     #[serde(rename = "type")]
@@ -79,6 +80,7 @@ pub struct ExtractedEntity {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExtractedFact {
     #[serde(rename = "entityName")]
     pub entity_name: String,
@@ -92,6 +94,7 @@ pub struct ExtractedFact {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExtractedEvent {
     #[serde(rename = "type")]
     pub event_type: String,
@@ -105,6 +108,7 @@ pub struct ExtractedEvent {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExtractionResult {
     #[serde(default)]
     pub entities: Vec<ExtractedEntity>,
@@ -115,6 +119,7 @@ pub struct ExtractionResult {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConsolidationOutcome {
     pub extracted: ExtractionResult,
     pub saved: SavedIds,
@@ -122,6 +127,7 @@ pub struct ConsolidationOutcome {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SavedIds {
     pub entities: Vec<SavedEntity>,
     pub facts: Vec<SavedFact>,
@@ -129,6 +135,7 @@ pub struct SavedIds {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SavedEntity {
     pub id: i64,
     pub name: String,
@@ -136,6 +143,7 @@ pub struct SavedEntity {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SavedFact {
     pub id: i64,
     #[serde(rename = "entityId")]
@@ -144,6 +152,7 @@ pub struct SavedFact {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SavedEvent {
     pub id: i64,
     #[serde(rename = "type")]
@@ -152,6 +161,7 @@ pub struct SavedEvent {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct MemoryStats {
     pub entities: i64,
     pub facts: i64,
@@ -569,6 +579,7 @@ impl ConsolidationManager {
 
 /// `consolidate_inactive_conversations` 결과 — 옛 TS 동등 (processed / totalSaved / totalSkipped).
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InactiveConsolidationResult {
     pub processed: usize,
     #[serde(rename = "totalSaved")]

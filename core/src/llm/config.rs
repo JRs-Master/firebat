@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LlmModelConfig {
     /// 모델 식별자 (예: "claude-sonnet-4-6", "gpt-5", "gemini-3-pro")
     pub id: String,
@@ -42,6 +43,7 @@ pub struct LlmModelConfig {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LlmFeatures {
     /// MCP connector 지원 (Anthropic 2025-11-20 / OpenAI hosted MCP)
     #[serde(rename = "mcpConnector", default)]
@@ -74,6 +76,7 @@ pub struct LlmFeatures {
 
 /// 옛 TS LlmPricing 1:1 호환 — pricing.input / output / cachedInput (per 1M).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LlmPricing {
     #[serde(default)]
     pub input: f64,

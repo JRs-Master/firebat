@@ -19,6 +19,7 @@ const CONTENT_PREVIEW_MAX: usize = 500;
 const SAME_CONV_BOOST: f32 = 0.2;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct HistorySearchMatch {
     #[serde(rename = "convId")]
     pub conv_id: String,

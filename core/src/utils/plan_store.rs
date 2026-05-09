@@ -25,6 +25,7 @@ const MAX_SIZE: usize = 50;
 
 /// propose_plan steps 의 한 단계.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlanStep {
     pub title: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -35,6 +36,7 @@ pub struct PlanStep {
 
 /// 보관된 plan 1건.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StoredPlan {
     #[serde(rename = "planId")]
     pub plan_id: String,

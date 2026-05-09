@@ -37,6 +37,7 @@ where
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ToolDefinition {
     pub name: String,
     pub description: String,
@@ -49,6 +50,7 @@ pub struct ToolDefinition {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ToolListFilter {
     #[serde(default)]
     pub source: Option<String>,
@@ -57,6 +59,7 @@ pub struct ToolListFilter {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ToolStats {
     pub total: usize,
     pub by_source: HashMap<String, usize>,

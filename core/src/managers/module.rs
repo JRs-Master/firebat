@@ -17,6 +17,7 @@ use crate::ports::{ISandboxPort, IStoragePort, IVaultPort, InfraResult, ModuleOu
 use crate::vault_keys::vk_module_settings;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SystemEntry {
     pub name: String,
     pub description: String,

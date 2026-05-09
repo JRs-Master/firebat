@@ -25,6 +25,7 @@ const MAX_SIZE: usize = 100;
 
 /// 승인 대기 도구 1건. JSON 영속 + 메모리 캐시 동일 schema.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PendingTool {
     #[serde(rename = "planId")]
     pub plan_id: String,

@@ -7,12 +7,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CapabilityDef {
     pub label: String,
     pub description: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct CapabilitySettings {
     /// providers 배열 순서가 곧 실행 우선순위.
     #[serde(default)]
@@ -34,6 +36,7 @@ pub enum ProviderLocation {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CapabilityProvider {
     #[serde(rename = "moduleName")]
     pub module_name: String,

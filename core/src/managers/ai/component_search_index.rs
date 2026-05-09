@@ -29,6 +29,7 @@ struct DiskCacheEntry {
 
 /// search_components 결과 — 옛 TS ComponentMatch 1:1.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ComponentMatch {
     pub name: String,
     pub description: String,

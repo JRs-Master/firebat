@@ -22,6 +22,7 @@ use crate::utils::timezone::resolve_user_tz;
 const VK_COST_BUDGET: &str = "system:cost:budget";
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct CostBudget {
     #[serde(rename = "dailyUsd", default)]
     pub daily_usd: f64,
@@ -43,6 +44,7 @@ pub type CostStatsSummary = LlmCostStatsSummary;
 /// `daily_used_usd` 같은 긴 이름 → `dailyUsd` 매핑. frontend `/api/llm/budget` 의
 /// `check.dailyUsd` 호출 박힌 게 그대로 동작.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BudgetCheckResult {
     /// 한도 안 (true) — 호출 허용. false 면 LLM 호출 거부.
     #[serde(rename = "withinBudget")]

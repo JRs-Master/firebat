@@ -15,6 +15,7 @@ use crate::ports::ILogPort;
 
 /// FirebatEvent — 옛 TS lib/events.ts 의 FirebatEvent 와 호환 schema.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FirebatEvent {
     /// 이벤트 type — 'sidebar:refresh' / 'cron:complete' / 'gallery:refresh' / 'status:update' 등
     #[serde(rename = "type")]
@@ -26,6 +27,7 @@ pub struct FirebatEvent {
 
 /// Audit log entry.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuditEntry {
     pub event: FirebatEvent,
     pub emitted_at: i64, // unix ms

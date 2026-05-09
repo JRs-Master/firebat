@@ -25,6 +25,7 @@ use crate::ports::{
 
 /// 매 source 별 limit. 옛 TS `RetrievalLimits` 1:1.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RetrievalLimits {
     /// search_history 매치 (default 5)
     pub history: Option<usize>,
@@ -40,6 +41,7 @@ pub struct RetrievalLimits {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RetrievalStats {
     pub history: usize,
     pub entities: usize,
@@ -48,6 +50,7 @@ pub struct RetrievalStats {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RetrievalResult {
     /// 통합 컨텍스트 — system prompt prepend 용. 빈 문자열이면 모든 source 0.
     #[serde(rename = "contextSummary")]

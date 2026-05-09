@@ -58,6 +58,7 @@ const TEMP_TOOL_TURN: f64 = 0.2;
 const TEMP_FINAL_TURN: f64 = 0.85;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AiResponse {
     pub reply: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

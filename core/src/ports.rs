@@ -22,6 +22,7 @@ pub struct DirEntry {
 
 /// 바이너리 파일 read 결과 — base64 + mime + size. 옛 TS readBinary 1:1.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BinaryReadResult {
     pub base64: String,
     #[serde(rename = "mimeType")]
@@ -31,6 +32,7 @@ pub struct BinaryReadResult {
 
 /// grep 매치 1건 — file:line:text. 옛 TS grep 결과 1:1.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GrepMatch {
     pub file: String,
     pub line: usize,
@@ -117,6 +119,7 @@ pub trait IVaultPort: Send + Sync {
 /// AuthSession — 세션 토큰 (24시간 만료) + API 토큰 (만료 없음) 통합 모델.
 /// type='session' = 어드민 로그인 / type='api' = MCP 등 외부 사용.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuthSession {
     pub token: String,
     #[serde(rename = "type")]
@@ -194,6 +197,7 @@ pub trait INotifierPort: Send + Sync {
 // ──────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PageListItem {
     pub slug: String,
     pub status: String,
@@ -211,6 +215,7 @@ pub struct PageListItem {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PageRecord {
     pub slug: String,
     pub spec: String, // JSON-stringified PageSpec
@@ -223,6 +228,7 @@ pub struct PageRecord {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MediaUsageEntry {
     #[serde(rename = "pageSlug")]
     pub page_slug: String,
@@ -423,6 +429,7 @@ pub struct CreateShareResult {
 
 /// 공유 조회 결과 — 옛 TS getShare 의 data 1:1.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SharedConversationRecord {
     pub slug: String,
     #[serde(rename = "type")]
@@ -457,6 +464,7 @@ pub struct ConversationEmbeddingRow {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConversationSummary {
     pub id: String,
     pub title: String,
@@ -467,6 +475,7 @@ pub struct ConversationSummary {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConversationRecord {
     pub id: String,
     pub title: String,
@@ -488,6 +497,7 @@ pub struct ConversationRecord {
 pub const MODULE_PROTOCOL_VERSION: &str = "1.0";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ModuleOutput {
     /// I/O envelope schema 버전 — 미설정 시 default "1.0" 폴백 (옛 모듈 호환).
     /// 명시 설정되어 있는데 backend 호환 X 면 sandbox 가 warn 로그.
@@ -526,6 +536,7 @@ impl Default for ModuleOutput {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SandboxExecuteOpts {
     /// 추가 환경 변수 (Vault 시크릿 자동 주입 외).
     #[serde(default)]
@@ -563,6 +574,7 @@ pub trait ISandboxPort: Send + Sync {
 /// 2. `LinuxCgroupsSandbox` (Phase C) — cgroups v2 + seccomp + network namespace
 /// 3. `MacOsSandbox` / `WindowsSandbox` (v2.0+ Tauri 재시작 시점) — App Sandbox / AppContainer
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SandboxCapabilities {
     /// 어댑터 식별자 — `"basic-process"` / `"linux-cgroups"` / `"macos-sandbox"` / `"windows-appcontainer"` 등.
     pub kind: String,
@@ -652,6 +664,7 @@ pub trait IEmbedderPort: Send + Sync {
 // ──────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ImageMetadata {
     pub width: u32,
     pub height: u32,
@@ -697,6 +710,7 @@ pub enum ImageFormat {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResizeOpts {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<u32>,
@@ -799,6 +813,7 @@ pub struct ImageGenResult {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ImageModelInfo {
     pub id: String,
     #[serde(rename = "displayName")]
@@ -843,6 +858,7 @@ pub trait IImageGenPort: Send + Sync {
 // ──────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ToolDefinition {
     pub name: String,
     #[serde(default)]
@@ -852,6 +868,7 @@ pub struct ToolDefinition {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ToolCall {
     pub id: String,
     pub name: String,
@@ -860,6 +877,7 @@ pub struct ToolCall {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ToolResult {
     #[serde(rename = "callId")]
     pub call_id: String,
@@ -872,6 +890,7 @@ pub struct ToolResult {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LlmCallOpts {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -911,6 +930,7 @@ pub struct LlmCallOpts {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LlmTextResponse {
     pub text: String,
     #[serde(rename = "modelId")]
@@ -924,6 +944,7 @@ pub struct LlmTextResponse {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LlmToolResponse {
     #[serde(default)]
     pub text: String,
@@ -966,6 +987,7 @@ pub enum PlanMode {
 /// LlmCallOpts 와 분리되는 이유: AiManager 차원 (plan / cron_agent / approval gate)
 /// vs LLM 호출 차원 (model / temperature / system_prompt) 의 책임 경계.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AiRequestOpts {
     /// 모델 ID — `LlmCallOpts.model` 로 전파.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -986,6 +1008,7 @@ pub struct AiRequestOpts {
 
 /// Cron agent 컨텍스트 — 옛 TS `AiRequestOpts.cronAgent` 1:1.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CronAgentOpts {
     #[serde(rename = "jobId")]
     pub job_id: String,
@@ -1018,6 +1041,7 @@ pub trait ILlmPort: Send + Sync {
 
 /// 옛 TS McpServerConfig Rust 재현. 전송 방식 stdio / sse 두 가지.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct McpServerConfig {
     pub name: String,
     pub transport: McpTransport,
@@ -1040,6 +1064,7 @@ pub enum McpTransport {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct McpToolInfo {
     pub server: String,
     pub name: String,
@@ -1079,6 +1104,7 @@ pub trait IMcpClientPort: Send + Sync {
 /// Entity tier — 종목·인물·프로젝트·이벤트 단위 영속 추적 대상.
 /// 옛 TS EntityRecord / EntityFactRecord Rust 재현.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EntityRecord {
     pub id: i64,
     pub name: String,
@@ -1099,6 +1125,7 @@ pub struct EntityRecord {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EntityFactRecord {
     pub id: i64,
     #[serde(rename = "entityId")]
@@ -1119,6 +1146,7 @@ pub struct EntityFactRecord {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EntitySearchOpts {
     #[serde(default)]
     pub query: String,
@@ -1131,6 +1159,7 @@ pub struct EntitySearchOpts {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FactSearchOpts {
     #[serde(default)]
     pub query: String,
@@ -1189,6 +1218,7 @@ pub struct UpdateFactPatch {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TimelineOpts {
     #[serde(default)]
     pub limit: Option<usize>,
@@ -1231,6 +1261,7 @@ pub trait IEntityPort: Send + Sync {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EventRecord {
     pub id: i64,
     #[serde(rename = "type")]
@@ -1255,6 +1286,7 @@ pub struct EventRecord {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EventSearchOpts {
     #[serde(default)]
     pub query: String,
@@ -1301,6 +1333,7 @@ pub struct UpdateEventPatch {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ListRecentOpts {
     #[serde(rename = "type", default, skip_serializing_if = "Option::is_none")]
     pub event_type: Option<String>,
@@ -1336,6 +1369,7 @@ pub enum CronTriggerType {
 /// pipeline / notify / runWhen / retry / agentPrompt 같은 복합 필드는 Phase B-13 minimum 단계에서
 /// `serde_json::Value` 패스스루 — Phase B-14 TaskManager + B-16 AiManager 설정된 후 typed.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CronScheduleOptions {
     #[serde(rename = "cronTime", default, skip_serializing_if = "Option::is_none")]
     pub cron_time: Option<String>,
@@ -1370,6 +1404,7 @@ pub struct CronScheduleOptions {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CronJobInfo {
     #[serde(rename = "jobId")]
     pub job_id: String,
@@ -1383,6 +1418,7 @@ pub struct CronJobInfo {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CronTriggerInfo {
     #[serde(rename = "jobId")]
     pub job_id: String,
@@ -1410,6 +1446,7 @@ pub struct CronTriggerInfo {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CronJobResult {
     #[serde(rename = "jobId")]
     pub job_id: String,
@@ -1430,6 +1467,7 @@ pub struct CronJobResult {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CronLogEntry {
     #[serde(rename = "jobId")]
     pub job_id: String,
@@ -1453,6 +1491,7 @@ pub struct CronLogEntry {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CronNotification {
     #[serde(rename = "jobId")]
     pub job_id: String,
@@ -1539,6 +1578,7 @@ impl MediaScope {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MediaSaveOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ext: Option<String>,
@@ -1563,6 +1603,7 @@ pub struct MediaSaveOptions {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MediaVariant {
     pub width: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1573,6 +1614,7 @@ pub struct MediaVariant {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MediaSaveResult {
     pub slug: String,
     pub url: String,
@@ -1590,6 +1632,7 @@ pub struct MediaSaveResult {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MediaFileRecord {
     pub slug: String,
     pub ext: String,
@@ -1633,6 +1676,7 @@ pub struct MediaFileRecord {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MediaListOpts {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope: Option<MediaScope>,
@@ -1645,6 +1689,7 @@ pub struct MediaListOpts {
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MediaListResult {
     pub items: Vec<MediaFileRecord>,
     pub total: usize,
@@ -1653,6 +1698,7 @@ pub struct MediaListResult {
 /// 단일 variant 메타 — `width / height / format / bytes` (URL 은 save_variant 반환).
 /// `MediaVariant` 와 같은 타입 (i64) 통일 — variants 배열에 직접 push 가능.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MediaVariantMeta {
     pub width: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1785,6 +1831,7 @@ pub type RawSqlRow = serde_json::Map<String, serde_json::Value>;
 // ──────────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NetworkRequest {
     pub url: String,
     /// HTTP method — `"GET"` / `"POST"` / `"PUT"` / `"DELETE"` 등. parse 실패 시 어댑터에서 Err.
@@ -1805,6 +1852,7 @@ fn default_get_method() -> String { "GET".to_string() }
 fn default_timeout_ms() -> u64 { 30_000 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NetworkResponse {
     pub status: u16,
     pub ok: bool,

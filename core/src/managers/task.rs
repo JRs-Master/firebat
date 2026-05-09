@@ -169,6 +169,7 @@ impl TaskExecutor for StubTaskExecutor {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PipelineResult {
     pub success: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]

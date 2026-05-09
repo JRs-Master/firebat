@@ -16,6 +16,7 @@ use crate::ports::{IStoragePort, IVaultPort};
 use crate::vault_keys::{vk_user_secret, USER_SECRET_PREFIX};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ModuleSecretEntry {
     #[serde(rename = "secretName")]
     pub secret_name: String,

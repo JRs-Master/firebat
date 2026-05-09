@@ -13,6 +13,7 @@ use crate::ports::{IStoragePort, InfraResult};
 
 /// 템플릿 spec — 페이지 발행 시 spec.body 의 backbone.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TemplateConfig {
     pub name: String,
     #[serde(default)]
@@ -23,6 +24,7 @@ pub struct TemplateConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TemplateSpec {
     #[serde(default)]
     pub head: serde_json::Value,
@@ -30,6 +32,7 @@ pub struct TemplateSpec {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TemplateBlock {
     #[serde(rename = "type")]
     pub block_type: String,
@@ -38,6 +41,7 @@ pub struct TemplateBlock {
 
 /// 어드민 UI / cron-agent 가 보는 entry — config 전체 X, 메타만.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TemplateEntry {
     pub slug: String,
     pub name: String,

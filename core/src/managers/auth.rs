@@ -76,6 +76,7 @@ struct LoginAttemptState {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ApiTokenInfo {
     pub exists: bool,
     pub hint: Option<String>,

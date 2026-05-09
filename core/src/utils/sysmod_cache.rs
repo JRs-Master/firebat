@@ -23,6 +23,7 @@ const TTL_MS: i64 = 5 * 60 * 1000; // 5분
 const LRU_CAPACITY: usize = 100;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CacheMeta {
     pub key: String,
     pub sysmod: String,

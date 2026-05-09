@@ -20,6 +20,7 @@ use crate::ports::{ILogPort, IStoragePort, IVaultPort};
 use crate::vault_keys::{vk_capability_settings, vk_module_settings};
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CapabilitySummary {
     pub id: String,
     pub label: String,

@@ -19,6 +19,7 @@ use crate::ports::{
 
 /// 재귀 디렉토리 트리 노드. 옛 TS `TreeNode` 1:1.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TreeNode {
     pub name: String,
     pub path: String,

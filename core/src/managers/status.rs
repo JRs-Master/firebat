@@ -30,6 +30,7 @@ pub enum JobStatusKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct JobStatus {
     pub id: String,
     #[serde(rename = "type")]
@@ -58,6 +59,7 @@ pub struct JobStatus {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct JobStats {
     pub queued: usize,
     pub running: usize,

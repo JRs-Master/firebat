@@ -15,6 +15,7 @@ const COMPONENTS_JSON: &str = include_str!("components.json");
 
 /// 1개 component 정의 — 옛 TS `ComponentDef` 1:1.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ComponentDef {
     /// `render(name, ...)` 에서 쓰는 이름 (snake_case).
     pub name: String,

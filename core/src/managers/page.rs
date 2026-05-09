@@ -10,6 +10,7 @@ use std::sync::{Arc, OnceLock};
 use crate::ports::{IDatabasePort, IStoragePort, InfraResult, MediaUsageEntry, PageListItem, PageRecord};
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RenameResult {
     #[serde(rename = "oldSlug")]
     pub old_slug: String,
@@ -19,6 +20,7 @@ pub struct RenameResult {
 
 /// 태그 사용 요약 — 옛 TS `listAllTags` 반환 1:1.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TagSummary {
     pub tag: String,
     pub count: usize,
