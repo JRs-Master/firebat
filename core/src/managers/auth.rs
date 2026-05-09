@@ -9,11 +9,37 @@
 //!  - Brute force 방지 (IP·계정 조합 5회 실패 시 60초 lock)
 //!  - timing-safe 비교 (timing attack 방어)
 
+use argon2::password_hash::{rand_core::OsRng as Argon2Rng, PasswordHash, SaltString};
+use argon2::{Argon2, PasswordHasher, PasswordVerifier};
 use rand::RngCore;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use subtle::ConstantTimeEq;
+
+/// 비밀번호를 argon2id 로 hash. 실패 시 빈 string (저장 차단).
+fn hash_password(plain: &str) -> String {
+    let salt = SaltString::generate(&mut Argon2Rng);
+    Argon2::default()
+        .hash_password(plain.as_bytes(), &salt)
+        .map(|h| h.to_string())
+        .unwrap_or_default()
+}
+
+/// hash 와 plain 비교. hash 가 argon2 형식 아니면 false (옛 plain 호환 차단).
+fn verify_password(stored: &str, candidate: &str) -> bool {
+    if !stored.starts_with("$argon2") {
+        return false;
+    }
+    PasswordHash::new(stored)
+        .ok()
+        .and_then(|h| {
+            Argon2::default()
+                .verify_password(candidate.as_bytes(), &h)
+                .ok()
+        })
+        .is_some()
+}
 
 use crate::ports::{AuthSession, IAuthPort, IVaultPort, SessionRole, SessionType};
 use crate::vault_keys::{VK_ADMIN_ID, VK_ADMIN_PASSWORD};
@@ -151,8 +177,10 @@ impl AuthManager {
 
         let creds = self.get_admin_credentials();
         // vault 미설정 (setup 전) = 모든 로그인 거부. 빈 자격증명으로 우회 방지.
+        // ID 는 timing-safe 평문 비교 (식별자 — hash 불필요).
+        // Password 는 argon2 verify (vault 에 hash 만 저장, 평문 X).
         let id_match = Self::timing_safe_eq(id, &creds.0);
-        let pw_match = Self::timing_safe_eq(password, &creds.1);
+        let pw_match = !creds.1.is_empty() && verify_password(&creds.1, password);
         let setup_done = !creds.0.is_empty() && !creds.1.is_empty();
         let ok = setup_done && id_match && pw_match;
 
@@ -327,12 +355,16 @@ impl AuthManager {
 
     /// 자격증명 변경 = 모든 옛 session 즉시 무효화. API 토큰은 별도 lifecycle 이라 보존
     /// (revoke_api_tokens 가 따로 호출해야 폐기). 비번 변경 후 옛 쿠키 우회 차단 (2026-05-09).
+    /// 비밀번호는 argon2id hash 후 vault 저장 (평문 저장 X — vault.db 유출 시 비번 노출 차단).
     pub fn set_admin_credentials(&self, new_id: Option<&str>, new_password: Option<&str>) {
         if let Some(id) = new_id {
             self.vault.set_secret(VK_ADMIN_ID, id);
         }
         if let Some(pw) = new_password {
-            self.vault.set_secret(VK_ADMIN_PASSWORD, pw);
+            let hashed = hash_password(pw);
+            if !hashed.is_empty() {
+                self.vault.set_secret(VK_ADMIN_PASSWORD, &hashed);
+            }
         }
         // 모든 active session 폐기 — vault 의 auth:session:* record 일괄 삭제.
         let sessions = self.auth.list_sessions(SessionType::Session);

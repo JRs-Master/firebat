@@ -20,6 +20,7 @@ pub struct SqliteVaultAdapter {
 
 impl SqliteVaultAdapter {
     /// 새 어댑터 — DB 파일 경로 (보통 `data/vault.db`). 디렉토리 자동 생성.
+    /// Linux/Unix 환경에선 파일 권한 0600 강제 — 다른 사용자 read 차단 (admin 비번 hash + secret 보호).
     pub fn new(db_path: impl AsRef<Path>) -> Result<Self, String> {
         let path = db_path.as_ref();
         if let Some(parent) = path.parent() {
@@ -37,6 +38,18 @@ impl SqliteVaultAdapter {
             [],
         )
         .map_err(|e| format!("Vault 테이블 생성 실패: {e}"))?;
+
+        // 파일 권한 0600 — owner read/write 만. 다른 user 차단.
+        // Windows 무관 (file ACL 별도 메커니즘).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = std::fs::metadata(path) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o600);
+                let _ = std::fs::set_permissions(path, perms);
+            }
+        }
         Ok(Self {
             conn: Mutex::new(conn),
         })

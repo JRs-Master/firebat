@@ -34,6 +34,7 @@ cron = "0.12"
 # 보안
 rand = "0.8"        # 토큰 random
 subtle = "2"        # timing-safe 비교
+argon2 = "0.5"      # 비밀번호 hash (vault 평문 저장 차단)
 
 # HTTP — services (network / telegram) 가 외부 HTTP 직접 호출
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "multipart"] }

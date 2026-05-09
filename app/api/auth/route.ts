@@ -50,24 +50,18 @@ export async function POST(req: NextRequest) {
 
   const res = NextResponse.json({ success: true });
 
-  // httpOnly 세션 쿠키 (실제 토큰)
+  // httpOnly 세션 쿠키 (실제 토큰).
+  // secure 는 운영 (https) 환경 강제 — http localhost dev 에선 false (cookie 박힘 보장).
+  // sameSite=lax — CSRF 기본 방어 (외부 사이트 cross-origin POST 차단).
+  // 옛 firebat_admin_token=authenticated legacy 쿠키 발급 폐기 (2026-05-09 보안 결함 fix).
   res.cookies.set({
     name: 'firebat_token',
     value: session.token,
     httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
     path: '/',
     sameSite: 'lax',
     maxAge: SESSION_MAX_AGE_SECONDS, // 24시간
-  });
-
-  // 레거시 쿠키도 설정 (마이그레이션 기간)
-  res.cookies.set({
-    name: 'firebat_admin_token',
-    value: 'authenticated',
-    httpOnly: true,
-    path: '/',
-    sameSite: 'lax',
-    maxAge: SESSION_MAX_AGE_SECONDS,
   });
 
   return res;
