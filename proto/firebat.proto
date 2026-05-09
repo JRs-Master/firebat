@@ -395,13 +395,40 @@ message McpToolListPb {
 // 10. CapabilityService — CapabilityManager
 // ──────────────────────────────────────────────────────────────────────────
 service CapabilityService {
-  rpc List(Empty) returns (JsonValue);
+  rpc List(Empty) returns (RawJsonPb);
   rpc Register(JsonArgs) returns (Status);
-  rpc GetProviders(StringRequest) returns (JsonValue);
-  rpc ListWithProviders(Empty) returns (JsonValue);
-  rpc Resolve(StringRequest) returns (JsonValue);
-  rpc GetSettings(StringRequest) returns (JsonValue);
+  rpc GetProviders(StringRequest) returns (CapabilityProviderListPb);
+  rpc ListWithProviders(Empty) returns (CapabilitySummaryListPb);
+  rpc Resolve(StringRequest) returns (CapabilityProviderPb);
+  rpc GetSettings(StringRequest) returns (CapabilitySettingsPb);
   rpc SetSettings(JsonArgs) returns (Status);
+}
+
+message CapabilityProviderPb {
+  bool present = 1;
+  string module_name = 2;
+  string provider_type = 3;
+  string location = 4;
+  string description = 5;
+}
+
+message CapabilityProviderListPb {
+  repeated CapabilityProviderPb providers = 1;
+}
+
+message CapabilitySummaryPb {
+  string id = 1;
+  string label = 2;
+  string description = 3;
+  int64 provider_count = 4;
+}
+
+message CapabilitySummaryListPb {
+  repeated CapabilitySummaryPb summaries = 1;
+}
+
+message CapabilitySettingsPb {
+  repeated string providers = 1;
 }
 
 // ─── AuthService typed messages ─────────────────────────────────────────────

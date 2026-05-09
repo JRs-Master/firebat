@@ -1,13 +1,17 @@
 //! gRPC CapabilityService impl — CapabilityManager wrapping.
+//!
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
+//! From impl 박혀 core capabilities struct ↔ proto generated struct 변환.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
-use crate::capabilities::CapabilitySettings;
+use crate::capabilities::{CapabilityProvider, CapabilitySettings, CapabilitySummary};
 use crate::managers::capability::CapabilityManager;
 use crate::proto::{
-    capability_service_server::CapabilityService, Empty, JsonArgs, JsonValue, Status,
-    StringRequest,
+    capability_service_server::CapabilityService, CapabilityProviderListPb, CapabilityProviderPb,
+    CapabilitySettingsPb, CapabilitySummaryListPb, CapabilitySummaryPb, Empty, JsonArgs,
+    RawJsonPb, Status, StringRequest,
 };
 
 pub struct CapabilityServiceImpl {
@@ -18,12 +22,6 @@ impl CapabilityServiceImpl {
     pub fn new(manager: Arc<CapabilityManager>) -> Self {
         Self { manager }
     }
-}
-
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
 }
 
 fn ok_status() -> Response<Status> {
@@ -42,11 +40,48 @@ fn err_status(msg: impl Into<String>) -> Response<Status> {
     })
 }
 
+fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
+    RawJsonPb {
+        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
+    }
+}
+
+// ─── proto ↔ core capabilities struct 변환 ─────────────────────────────────
+
+impl From<CapabilityProvider> for CapabilityProviderPb {
+    fn from(p: CapabilityProvider) -> Self {
+        CapabilityProviderPb {
+            present: true,
+            module_name: p.module_name,
+            provider_type: format!("{:?}", p.provider_type).to_lowercase(),
+            location: format!("{:?}", p.location).to_lowercase(),
+            description: p.description,
+        }
+    }
+}
+
+impl From<CapabilitySummary> for CapabilitySummaryPb {
+    fn from(s: CapabilitySummary) -> Self {
+        CapabilitySummaryPb {
+            id: s.id,
+            label: s.label,
+            description: s.description,
+            provider_count: s.provider_count as i64,
+        }
+    }
+}
+
+impl From<CapabilitySettings> for CapabilitySettingsPb {
+    fn from(s: CapabilitySettings) -> Self {
+        CapabilitySettingsPb { providers: s.providers }
+    }
+}
+
 #[tonic::async_trait]
 impl CapabilityService for CapabilityServiceImpl {
-    async fn list(&self, _req: Request<Empty>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn list(&self, _req: Request<Empty>) -> Result<Response<RawJsonPb>, TonicStatus> {
         let caps = self.manager.list();
-        json_response(&caps)
+        Ok(Response::new(raw_json(&caps)))
     }
 
     async fn register(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
@@ -69,36 +104,54 @@ impl CapabilityService for CapabilityServiceImpl {
     async fn get_providers(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<CapabilityProviderListPb>, TonicStatus> {
         let cap_id = req.into_inner().value;
-        let providers = self.manager.get_providers(&cap_id).await;
-        json_response(&providers)
+        let providers = self
+            .manager
+            .get_providers(&cap_id)
+            .await
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        Ok(Response::new(CapabilityProviderListPb { providers }))
     }
 
     async fn list_with_providers(
         &self,
         _req: Request<Empty>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        let summary = self.manager.list_with_providers().await;
-        json_response(&summary)
+    ) -> Result<Response<CapabilitySummaryListPb>, TonicStatus> {
+        let summaries = self
+            .manager
+            .list_with_providers()
+            .await
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        Ok(Response::new(CapabilitySummaryListPb { summaries }))
     }
 
     async fn resolve(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<CapabilityProviderPb>, TonicStatus> {
         let cap_id = req.into_inner().value;
         let resolved = self.manager.resolve(&cap_id).await;
-        json_response(&resolved)
+        Ok(Response::new(match resolved {
+            Some(p) => p.into(),
+            None => CapabilityProviderPb {
+                present: false,
+                ..Default::default()
+            },
+        }))
     }
 
     async fn get_settings(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<CapabilitySettingsPb>, TonicStatus> {
         let cap_id = req.into_inner().value;
         let settings = self.manager.get_settings(&cap_id);
-        json_response(&settings)
+        Ok(Response::new(settings.into()))
     }
 
     async fn set_settings(
