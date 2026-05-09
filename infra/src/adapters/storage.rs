@@ -27,33 +27,25 @@ impl LocalStorageAdapter {
         }
     }
 
-    /// path traversal 차단 — 정규화 후 workspace_root 안인지 확인.
+    /// path traversal 차단 — lexical normalize (canonicalize 안 박음 — symlink follow X).
+    /// 옛 broken: canonicalize() 가 symlink 자동 풀어 `/opt/firebat/system/modules → /opt/firebat-src/...`
+    /// 박혀 workspace zone 밖으로 판정 → 모든 sysmod reject. self-hosted deploy 에서 system/modules
+    /// 를 src symlink 로 박는 표준 패턴 broken.
+    /// 새: rel_path 의 `..` segment 만 거부 + 절대 경로 거부. 옛 TS LocalStorageAdapter 의 path.resolve
+    /// + isInsideZone 패턴 1:1.
     fn resolve_safe_path(&self, rel_path: &str) -> InfraResult<PathBuf> {
-        // 절대 경로 거부 — 명시적으로 거부 (Path::is_absolute 체크 후 단순 join 도 안전)
-        let candidate = self.workspace_root.join(rel_path);
-        // 부모 디렉토리 분리 후 정규화 — path 의 .. 모두 처리
-        let canonical = match candidate.parent() {
-            Some(parent) if parent.exists() => {
-                let parent_canonical = parent
-                    .canonicalize()
-                    .map_err(|e| format!("path canonicalize 실패: {e}"))?;
-                let workspace_canonical = self
-                    .workspace_root
-                    .canonicalize()
-                    .map_err(|e| format!("workspace canonicalize 실패: {e}"))?;
-                if !parent_canonical.starts_with(&workspace_canonical) {
-                    return Err(format!(
-                        "workspace zone 밖 path 거부: {}",
-                        rel_path
-                    ));
-                }
-                parent_canonical.join(candidate.file_name().ok_or_else(|| {
-                    "유효하지 않은 path (file_name 추출 실패)".to_string()
-                })?)
+        // 절대 경로 거부
+        if Path::new(rel_path).is_absolute() {
+            return Err(format!("절대 경로 거부: {}", rel_path));
+        }
+        // `..` segment 거부 — workspace 밖 escape 차단
+        for seg in rel_path.split(['/', '\\']) {
+            if seg == ".." {
+                return Err(format!("path traversal 거부 (..): {}", rel_path));
             }
-            _ => candidate, // 부모 디렉토리 없으면 새 디렉토리 → 그대로 (write 시 mkdir_p)
-        };
-        Ok(canonical)
+        }
+        // workspace_root + rel_path lexical join (symlink follow 안 함)
+        Ok(self.workspace_root.join(rel_path))
     }
 }
 
