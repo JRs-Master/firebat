@@ -347,13 +347,24 @@ service ScheduleService {
 // 8. SecretService — SecretManager
 // ──────────────────────────────────────────────────────────────────────────
 service SecretService {
-  rpc ListUser(Empty) returns (JsonValue);
+  rpc ListUser(Empty) returns (StringListPb);
   rpc SetUser(JsonArgs) returns (Status);
-  rpc GetUser(StringRequest) returns (JsonValue);
+  rpc GetUser(StringRequest) returns (OptionalStringPb);
   rpc DeleteUser(StringRequest) returns (Status);
-  rpc ListUserModuleSecrets(Empty) returns (JsonValue);
-  rpc GetSystem(StringRequest) returns (JsonValue);
+  rpc ListUserModuleSecrets(Empty) returns (ModuleSecretListPb);
+  rpc GetSystem(StringRequest) returns (OptionalStringPb);
   rpc SetSystem(JsonArgs) returns (Status);
+}
+
+/** ModuleSecretEntry — 유저 모듈 config.json secrets 배열 항목 + 등록 여부. */
+message ModuleSecretEntryPb {
+  string secret_name = 1;
+  string module_name = 2;
+  bool has_value = 3;
+}
+
+message ModuleSecretListPb {
+  repeated ModuleSecretEntryPb entries = 1;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
