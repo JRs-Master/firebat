@@ -230,7 +230,73 @@ service ModuleService {
 // 6. TaskService — TaskManager
 // ──────────────────────────────────────────────────────────────────────────
 service TaskService {
-  rpc Run(JsonArgs) returns (JsonValue);
+  rpc Run(JsonArgs) returns (PipelineResultPb);
+}
+
+/** PipelineResult — 파이프라인 실행 결과. data 는 마지막 step 출력 JSON 문자열. */
+message PipelineResultPb {
+  bool success = 1;
+  optional string data_json = 2;
+  optional string error = 3;
+}
+
+/** CronJobInfo — options 의 동적 JSON 필드(pipeline/inputData/runWhen/retry/notify)는 JSON 문자열. */
+message CronJobPb {
+  string job_id = 1;
+  string target_path = 2;
+  string mode = 3;
+  string created_at = 4;
+  optional string cron_time = 5;
+  optional string run_at = 6;
+  optional int64 delay_sec = 7;
+  optional string start_at = 8;
+  optional string end_at = 9;
+  optional string input_data_json = 10;
+  optional string pipeline_json = 11;
+  optional string title = 12;
+  optional string description = 13;
+  optional bool one_shot = 14;
+  optional string run_when_json = 15;
+  optional string retry_json = 16;
+  optional string notify_json = 17;
+  optional string execution_mode = 18;
+  optional string agent_prompt = 19;
+}
+
+message CronJobListPb {
+  repeated CronJobPb jobs = 1;
+}
+
+message CronLogEntryPb {
+  string job_id = 1;
+  string target_path = 2;
+  optional string title = 3;
+  string triggered_at = 4;
+  bool success = 5;
+  int64 duration_ms = 6;
+  optional string error = 7;
+  optional string output_json = 8;
+  optional int64 steps_executed = 9;
+  optional int64 steps_total = 10;
+}
+
+message CronLogListPb {
+  repeated CronLogEntryPb entries = 1;
+}
+
+message CronNotificationPb {
+  string job_id = 1;
+  string url = 2;
+  string triggered_at = 3;
+}
+
+message CronNotificationListPb {
+  repeated CronNotificationPb items = 1;
+}
+
+message ValidatePipelineResultPb {
+  bool valid = 1;
+  optional string error = 2;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -240,12 +306,12 @@ service ScheduleService {
   rpc ScheduleCron(JsonArgs) returns (Status);
   rpc CancelCron(StringRequest) returns (Status);
   rpc UpdateCron(JsonArgs) returns (Status);
-  rpc ListCron(Empty) returns (JsonValue);
-  rpc GetLogs(NumberRequest) returns (JsonValue);
+  rpc ListCron(Empty) returns (CronJobListPb);
+  rpc GetLogs(NumberRequest) returns (CronLogListPb);
   rpc ClearLogs(Empty) returns (Status);
-  rpc ConsumeNotifications(Empty) returns (JsonValue);
+  rpc ConsumeNotifications(Empty) returns (CronNotificationListPb);
   rpc RunNow(StringRequest) returns (Status);
-  rpc ValidatePipeline(JsonArgs) returns (JsonValue);
+  rpc ValidatePipeline(JsonArgs) returns (ValidatePipelineResultPb);
 }
 
 // ──────────────────────────────────────────────────────────────────────────

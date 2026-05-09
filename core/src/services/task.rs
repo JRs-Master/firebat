@@ -1,12 +1,13 @@
 //! gRPC TaskService impl — TaskManager wrapping.
 //!
-//! Phase B-14 minimum: Run RPC 활성. CONDITION 까지 진짜 평가, 다른 step 은 Phase B-16+ stub.
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
+//! From impl 박혀 core managers struct ↔ proto generated struct 변환.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
-use crate::managers::task::{PipelineStep, TaskManager};
-use crate::proto::{task_service_server::TaskService, JsonArgs, JsonValue};
+use crate::managers::task::{PipelineResult, PipelineStep, TaskManager};
+use crate::proto::{task_service_server::TaskService, JsonArgs, PipelineResultPb};
 
 pub struct TaskServiceImpl {
     manager: Arc<TaskManager>,
@@ -18,9 +19,24 @@ impl TaskServiceImpl {
     }
 }
 
+// ─── proto ↔ core managers struct 변환 ────────────────────────────────────────
+
+impl From<PipelineResult> for PipelineResultPb {
+    fn from(r: PipelineResult) -> Self {
+        PipelineResultPb {
+            success: r.success,
+            data_json: r.data.as_ref().and_then(|v| serde_json::to_string(v).ok()),
+            error: r.error,
+        }
+    }
+}
+
 #[tonic::async_trait]
 impl TaskService for TaskServiceImpl {
-    async fn run(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn run(
+        &self,
+        req: Request<JsonArgs>,
+    ) -> Result<Response<PipelineResultPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {
@@ -30,9 +46,7 @@ impl TaskService for TaskServiceImpl {
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("run args: {e}")))?;
         let result = self.manager.execute_pipeline(&args.steps).await;
-        let raw = serde_json::to_string(&result)
-            .map_err(|e| TonicStatus::internal(format!("result 직렬화: {e}")))?;
-        Ok(Response::new(JsonValue { raw }))
+        Ok(Response::new(result.into()))
     }
 }
 
