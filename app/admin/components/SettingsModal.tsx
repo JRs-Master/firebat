@@ -808,6 +808,11 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
                 />
                 {adminPwError && <p className="text-[10px] sm:text-xs text-red-500 font-medium">{adminPwError}</p>}
                 <p className="text-[10px] sm:text-xs text-slate-400 font-medium">현재 비밀번호 입력 필수. 빈칸은 기존 유지.</p>
+                <p className="text-[10px] sm:text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 leading-relaxed">
+                  ⚠ 비밀번호 변경 시 기존 로그인 세션은 모두 무효화됩니다.
+                  외부 도구 (MCP / API) 에서 사용 중인 API 토큰은 자동 폐기되지 않으니,
+                  보안 강화를 위해 MCP 탭에서 토큰을 재발급하시는 것을 권장합니다.
+                </p>
               </div>
 
             </>
