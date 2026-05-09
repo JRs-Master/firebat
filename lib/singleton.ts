@@ -14,6 +14,56 @@ const globalForCore = globalThis as unknown as {
 };
 
 /**
+ * Build-mode stub — `next build` 시 generateMetadata / RSC prerender 가 backend 호출 시도.
+ * Rust core 가 안 떠있으면 ECONNREFUSED → /_not-found prerender 실패 → 빌드 통째 멈춤.
+ *
+ * env `FIREBAT_BUILD_MODE=1` 박힌 빌드 시 Proxy 가 모든 메서드 호출 → 정적 fallback 반환.
+ *   - listX / scanX → 빈 배열
+ *   - getX / readX → null
+ *   - getCmsSettings → 정적 fallback (siteTitle/lang 박힘)
+ *   - 기타 → null
+ *
+ * 빌드 명령:
+ *   FIREBAT_BUILD_MODE=1 npm run build
+ *
+ * 운영 (npm start / systemd) 에서는 env 미설정 → 정상 gRPC 호출.
+ */
+const BUILD_MODE_FALLBACKS: Record<string, unknown> = {
+  // CMS — root layout / 페이지 generateMetadata 호출.
+  getCmsSettings: {
+    siteTitle: 'Firebat',
+    siteDescription: 'Just Imagine. Firebat Runs.',
+    siteLang: 'ko',
+    faviconUrl: '',
+    layout: { mode: 'full' },
+    theme: {},
+    verifications: [],
+  },
+  // Page / Project / Tag listing — 빈 배열.
+  listPages: { success: true, data: [] },
+  scanProjects: [],
+  listAllTags: [],
+  listConversations: { success: true, data: [] },
+  listCronJobs: [],
+  listMcpServers: [],
+  listTemplates: [],
+  listMedia: { success: true, data: [] },
+  // 기본값 묶음.
+  getKakaoMapJsKey: '',
+  getTimezone: 'Asia/Seoul',
+  getAiModel: '',
+};
+
+function createBuildModeStub(): FirebatCore {
+  return new Proxy({}, {
+    get: (_target, method) => {
+      if (typeof method !== 'string') return undefined;
+      return async () => BUILD_MODE_FALLBACKS[method] ?? null;
+    },
+  }) as FirebatCore;
+}
+
+/**
  * 기본 진입점 — 옛 호출 패턴 유지:
  *   ```ts
  *   const core = getCore();
@@ -22,6 +72,12 @@ const globalForCore = globalThis as unknown as {
  *   ```
  */
 export function getCore(): FirebatCore {
+  if (process.env.FIREBAT_BUILD_MODE === '1') {
+    if (!globalForCore.firebatCoreProxy) {
+      globalForCore.firebatCoreProxy = createBuildModeStub();
+    }
+    return globalForCore.firebatCoreProxy as FirebatCore;
+  }
   if (!globalForCore.firebatCoreProxy) {
     globalForCore.firebatCoreProxy = createRustCoreProxy();
   }
