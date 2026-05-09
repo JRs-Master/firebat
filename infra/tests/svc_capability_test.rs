@@ -4,7 +4,6 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tonic::Request;
 
-use firebat_core::capabilities::CapabilitySettings;
 use firebat_core::managers::capability::CapabilityManager;
 use firebat_core::ports::{ILogPort, IStoragePort, IVaultPort};
 use firebat_core::proto::{
@@ -54,6 +53,6 @@ async fn settings_roundtrip_via_grpc() {
         }))
         .await
         .unwrap();
-    let settings: CapabilitySettings = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
-    assert_eq!(settings.providers, vec!["a".to_string(), "b".to_string()]);
+    let inner = resp.into_inner();
+    assert_eq!(inner.providers, vec!["a".to_string(), "b".to_string()]);
 }

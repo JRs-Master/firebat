@@ -40,12 +40,13 @@ async fn user_secret_set_get_delete_via_grpc() {
         }))
         .await
         .unwrap();
-    let val: Option<String> = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
-    assert_eq!(val, Some("bar".to_string()));
+    let inner = resp.into_inner();
+    assert!(inner.present);
+    assert_eq!(inner.value, "bar");
 
     // list
     let resp = service.list_user(Request::new(Empty {})).await.unwrap();
-    let names: Vec<String> = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
+    let names = resp.into_inner().values;
     assert_eq!(names, vec!["FOO".to_string()]);
 
     // delete
@@ -59,6 +60,5 @@ async fn user_secret_set_get_delete_via_grpc() {
 
     // verify deleted
     let resp = service.list_user(Request::new(Empty {})).await.unwrap();
-    let names: Vec<String> = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
-    assert_eq!(names.len(), 0);
+    assert_eq!(resp.into_inner().values.len(), 0);
 }

@@ -28,8 +28,8 @@ async fn process_via_grpc_returns_stub_text() {
         }))
         .await
         .unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
-    assert!(parsed["text"].as_str().unwrap().contains("Phase B-17+"));
+    let inner = resp.into_inner();
+    assert!(inner.text.contains("Phase B-17+"));
 }
 
 #[tokio::test]

@@ -49,7 +49,7 @@ async fn consolidate_then_stats_via_grpc() {
         .get_memory_stats(Request::new(Empty {}))
         .await
         .unwrap();
-    let stats: serde_json::Value = serde_json::from_str(&stats_resp.into_inner().raw_json).unwrap();
-    assert_eq!(stats["entities"], 1);
-    assert_eq!(stats["facts"], 1);
+    let stats = stats_resp.into_inner();
+    assert_eq!(stats.entities, 1);
+    assert_eq!(stats.facts, 1);
 }

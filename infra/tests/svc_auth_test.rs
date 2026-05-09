@@ -5,7 +5,7 @@ use tempfile::TempDir;
 use tonic::Request;
 
 use firebat_core::managers::auth::AuthManager;
-use firebat_core::ports::{AuthSession, IAuthPort, IVaultPort};
+use firebat_core::ports::{IAuthPort, IVaultPort};
 use firebat_core::proto::{auth_service_server::AuthService, Empty, JsonArgs, StringRequest};
 use firebat_core::services::auth::AuthServiceImpl;
 use firebat_infra::adapters::auth::VaultAuthAdapter;
@@ -33,9 +33,9 @@ async fn login_success_via_grpc() {
         }))
         .await
         .unwrap();
-    let json: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
-    assert_eq!(json["ok"], true);
-    assert!(json["session"]["token"].as_str().unwrap().starts_with("fbat_"));
+    let inner = resp.into_inner();
+    assert!(inner.ok);
+    assert!(inner.session.unwrap().token.starts_with("fbat_"));
 }
 
 #[tokio::test]
@@ -47,9 +47,9 @@ async fn login_wrong_password_returns_failed() {
         }))
         .await
         .unwrap();
-    let json: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
-    assert_eq!(json["ok"], false);
-    assert_eq!(json["code"], "AUTH_FAILED");
+    let inner = resp.into_inner();
+    assert!(!inner.ok);
+    assert_eq!(inner.code.as_deref(), Some("AUTH_FAILED"));
 }
 
 #[tokio::test]
@@ -89,13 +89,12 @@ async fn api_token_grpc_lifecycle() {
         .validate_api_token(Request::new(StringRequest { value: token.clone() }))
         .await
         .unwrap();
-    let session: Option<AuthSession> = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
-    assert!(session.is_some());
+    // AuthSessionPb — token="" 이면 미인증 (None 에 해당)
+    assert!(!resp.into_inner().token.is_empty());
 
     // info
     let resp = service.get_api_token_info(Request::new(Empty {})).await.unwrap();
-    let info: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
-    assert_eq!(info["exists"], true);
+    assert!(resp.into_inner().exists);
 
     // 폐기
     let resp = service.revoke_api_tokens(Request::new(Empty {})).await.unwrap();
@@ -106,6 +105,6 @@ async fn api_token_grpc_lifecycle() {
         .validate_api_token(Request::new(StringRequest { value: token }))
         .await
         .unwrap();
-    let session: Option<AuthSession> = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
-    assert!(session.is_none());
+    // 폐기 후 — token="" 빈 문자열로 미인증 표시
+    assert!(resp.into_inner().token.is_empty());
 }

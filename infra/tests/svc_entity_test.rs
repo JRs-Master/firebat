@@ -32,8 +32,8 @@ async fn save_then_search_via_grpc() {
         }))
         .await
         .unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
-    assert!(parsed["id"].as_i64().unwrap() > 0);
+    let inner = resp.into_inner();
+    assert!(inner.id > 0);
 
     let search_resp = svc
         .search(Request::new(JsonArgs {
