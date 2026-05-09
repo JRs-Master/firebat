@@ -17,7 +17,14 @@ import { SESSION_MAX_AGE_SECONDS } from '../../../../lib/config';
 
 export async function GET(_req: NextRequest) {
   const core = getCore();
-  const isAdminSetup = await core.isAdminSetup();
+  // Rust BoolRequest proto 응답 = `{value: bool}` 형태. 단순 boolean 으로 unwrap.
+  // 옛 코드 (`isAdminSetup` 직접 응답) 시 frontend 가 object 자체를 truthy 판정해
+  // SetupWizard 영영 노출 안 되던 버그 fix (2026-05-10).
+  const raw = await core.isAdminSetup();
+  const isAdminSetup =
+    typeof raw === 'boolean'
+      ? raw
+      : (raw && typeof raw === 'object' && 'value' in raw ? Boolean((raw as { value: unknown }).value) : false);
   return NextResponse.json({ isAdminSetup });
 }
 
