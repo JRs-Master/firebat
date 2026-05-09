@@ -393,7 +393,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
            *  Reading time: 본문 텍스트 추출 후 500자/분. 0분이면 미표시. */}
           {spec.project && (
             <>
-              <CmsBreadcrumb slug={slug} title={head.title} />
+              <CmsBreadcrumb slug={slug} title={head.title} siteLang={seo.siteLang} />
               {(() => {
                 const minutes = estimateReadingTime(body);
                 if (minutes <= 0) return null;
@@ -406,7 +406,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
                       <circle cx="12" cy="12" r="10" />
                       <polyline points="12 6 12 12 16 14" />
                     </svg>
-                    <span>{minutes}분 읽기</span>
+                    <span>{seo.siteLang === 'en' ? `${minutes} min read` : `${minutes}분 읽기`}</span>
                   </div>
                 );
               })()}
@@ -415,7 +415,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
           <ComponentRenderer components={body} />
           {/* 관련 글 — 콘텐츠 페이지 + showRelatedPosts ON 일 때만. keywords 0건이거나 매칭 0건이면 컴포넌트가 자체 미렌더. */}
           {spec.project && seo.layout.showRelatedPosts && (
-            <CmsRelatedPosts slug={slug} limit={seo.layout.relatedPostsCount || 5} />
+            <CmsRelatedPosts slug={slug} limit={seo.layout.relatedPostsCount || 5} siteLang={seo.siteLang} />
           )}
         </div>
       </main>

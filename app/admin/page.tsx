@@ -19,6 +19,7 @@ import { BlockErrorBoundary } from './components/BlockErrorBoundary';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
 import { readSetting, writeSetting } from './hooks/settings-manager';
+import { useTranslations } from '../../lib/i18n';
 import { THINKING_STATUS, isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from './hooks/chat-manager';
 import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { Message, StepStatus, GEMINI_MODELS } from './types';
@@ -915,6 +916,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
 // ─── 메인 ────────────────────────────────────────────────────────────────────
 export default function AdminConsole() {
   const router = useRouter();
+  const t = useTranslations();
   // CMS 설정 클릭 시 /admin/cms 로 이동 — sessionStorage flag 로 직접 URL 진입 차단.
   // sysmod 'cms' 만 분기, 그 외는 모달 그대로.
   const handleOpenModuleSettings = useCallback((name: string) => {
@@ -1218,8 +1220,8 @@ export default function AdminConsole() {
                   className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] px-4 sm:px-5 pt-3 sm:pt-4 pb-1 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50 select-text overflow-y-auto"
                   placeholder={
                     loading
-                      ? '명령 집행 중...'
-                      : (inputMode === 'image' ? '🎨 이미지 프롬프트를 입력하세요 (LLM 우회 — 영어 권장)' : '무엇을 도와드릴까요?')
+                      ? t('admin_chat.placeholder_loading')
+                      : (inputMode === 'image' ? t('admin_chat.placeholder_image_mode') : t('admin_chat.placeholder_default'))
                   }
                 />
                 <input

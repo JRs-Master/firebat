@@ -321,12 +321,11 @@ html::-webkit-scrollbar-thumb:hover,
    미설정 시 primary 색에서 자동 derive. */
 
 /* 본문 인라인 링크 — render_text 안의 markdown 링크, 사용자 inline html 등.
-   기존 nav / 카드 wrapper 의 링크는 className 으로 자체 색 적용되어 영향 0 (style='color: var(--cms-text)' inline). */
+   기존 nav / 카드 wrapper 의 링크는 className 으로 자체 색 적용되어 영향 0 (style='color: var(--cms-text)' inline).
+   사용자 결정 (2026-05-10): 링크 밑줄 표시 안 함. 색 변경 + hover opacity 만으로 link 식별. */
 .firebat-cms-content a {
   color: var(--cms-link, var(--cms-primary));
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 2px;
+  text-decoration: none;
   transition: color 0.15s ease, opacity 0.15s ease;
 }
 .firebat-cms-content a:hover {

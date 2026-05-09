@@ -6,18 +6,22 @@
  * 카드 변형: list 패턴 (제목 + 메타 + 프로젝트 라벨).
  */
 import { getCore } from '../../lib/singleton';
+import { getServerTranslations, normalizeLang } from '../../lib/i18n';
 
-function formatDate(s?: string, timeZone: string = 'Asia/Seoul'): string {
+function formatDate(s: string | undefined, timeZone: string, lang: 'ko' | 'en'): string {
   if (!s) return '';
   const iso = s.includes('T') ? s : s.replace(' ', 'T') + 'Z';
   const d = new Date(iso);
   if (isNaN(d.getTime())) return s;
-  return d.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', timeZone });
+  const locale = lang === 'en' ? 'en-US' : 'ko-KR';
+  return d.toLocaleDateString(locale, { year: 'numeric', month: 'long', day: 'numeric', timeZone });
 }
 
-export async function CmsRelatedPosts({ slug, limit }: { slug: string; limit: number }) {
+export async function CmsRelatedPosts({ slug, limit, siteLang }: { slug: string; limit: number; siteLang?: string }) {
   const related = await getCore().findRelatedPages(slug, limit);
   if (related.length === 0) return null;
+  const lang = normalizeLang(siteLang);
+  const t = getServerTranslations(siteLang);
 
   return (
     <section
@@ -30,7 +34,7 @@ export async function CmsRelatedPosts({ slug, limit }: { slug: string; limit: nu
         className="text-xl sm:text-2xl font-bold tracking-tight m-0 mb-5"
         style={{ color: 'var(--cms-text)', fontFamily: 'var(--cms-font-heading)' }}
       >
-        관련 글
+        {t('page.related_posts')}
       </h2>
       <ul className="grid grid-cols-1 sm:grid-cols-2 gap-3 list-none p-0 m-0">
         {related.map((p) => (
@@ -51,7 +55,7 @@ export async function CmsRelatedPosts({ slug, limit }: { slug: string; limit: nu
               <div className="flex items-center gap-2 text-[11px] mb-1" style={{ color: 'var(--cms-text-muted)' }}>
                 {p.project && <span className="font-bold">{p.project}</span>}
                 {p.project && p.updatedAt && <span>·</span>}
-                {p.updatedAt && <time dateTime={p.updatedAt}>{formatDate(p.updatedAt)}</time>}
+                {p.updatedAt && <time dateTime={p.updatedAt}>{formatDate(p.updatedAt, 'Asia/Seoul', lang)}</time>}
               </div>
               <h3
                 className="text-[15px] sm:text-base font-bold leading-snug m-0"

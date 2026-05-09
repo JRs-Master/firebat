@@ -8,6 +8,7 @@ import { useSetting, writeSetting } from '../hooks/settings-manager';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog, alertDialog } from './Dialog';
+import { useLang, useTranslations, type Lang } from '../../../lib/i18n';
 
 interface SystemModule { name: string; description: string; runtime: string; type?: string; enabled?: boolean; }
 
@@ -21,6 +22,8 @@ type Props = {
 };
 
 export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
+  const t = useTranslations();
+  const { lang: uiLang, setLang: setUiLang } = useLang();
   // 비용·메모리는 AI 탭 하위 sub-tab 으로 통합 — initialTab='cost'/'memory' 면 자동으로 AI 탭 + sub-tab 으로 변환.
   const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system'>(() => {
     if (initialTab === 'cost' || initialTab === 'memory') return 'ai';
@@ -734,9 +737,33 @@ export function SettingsModal({ aiModel, onAiModelChange, onClose, onSave, onOpe
         <div ref={contentRef} className="p-3 sm:p-6 flex flex-col gap-4 overflow-y-auto min-w-0 flex-1 min-h-0 [scrollbar-gutter:stable_both-edges]">
           {settingsTab === 'general' && (
             <>
+              {/* 인터페이스 언어 */}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs sm:text-sm font-bold text-slate-700">{t('settings.interface_lang')}</label>
+                <div className="flex gap-2">
+                  {(['ko', 'en'] as const).map(l => (
+                    <button
+                      key={l}
+                      type="button"
+                      onClick={() => setUiLang(l as Lang)}
+                      className={`flex-1 py-1.5 sm:py-2 text-[13px] sm:text-[14px] font-medium rounded-lg border transition-colors ${
+                        uiLang === l
+                          ? 'bg-blue-50 border-blue-500 text-blue-700'
+                          : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
+                      }`}
+                    >
+                      {l === 'ko' ? '한국어' : 'English'}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
+                  {t('settings.interface_lang_desc')}
+                </p>
+              </div>
+
               {/* 타임존 */}
               <div className="flex flex-col gap-2">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">타임존</label>
+                <label className="text-xs sm:text-sm font-bold text-slate-700">{t('settings.timezone')}</label>
                 <select
                   value={userTimezone}
                   onChange={e => setUserTimezone(e.target.value)}

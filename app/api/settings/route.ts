@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     routerEnabledRaw, timezone, aiModel, aiThinkingLevel,
     aiAssistantModel, aiAssistantModels, userPrompt, lastModelByCategory,
     imageModel, imageModels, imageDefaultSize, imageDefaultQuality,
-    anthropicCacheEnabled, subAgentEnabled,
+    anthropicCacheEnabled, subAgentEnabled, uiLangRaw,
   ] = await Promise.all([
     core.getGeminiKey('system:ai-router:enabled'),
     core.getTimezone(),
@@ -27,7 +27,9 @@ export async function GET(req: NextRequest) {
     core.getImageDefaultQuality(),
     core.getAnthropicCacheEnabled(),
     core.isSubAgentEnabled(),
+    core.getGeminiKey('system:ui-lang'),
   ]);
+  const interfaceLang = uiLangRaw === 'en' ? 'en' : 'ko';
   return NextResponse.json({
     success: true,
     timezone,
@@ -44,6 +46,7 @@ export async function GET(req: NextRequest) {
     imageDefaultQuality,
     anthropicCacheEnabled,
     subAgentEnabled,
+    interfaceLang,
   });
 }
 
@@ -91,6 +94,10 @@ export async function PATCH(req: NextRequest) {
   }
   if (typeof body.subAgentEnabled === 'boolean') {
     await core.setSubAgentEnabled(body.subAgentEnabled);
+  }
+  if (body.interfaceLang === 'ko' || body.interfaceLang === 'en') {
+    // 어드민 UI 언어 vault 저장 — i18n hook 의 LangProvider 가 fetch 시 활용.
+    await core.setGeminiKey('system:ui-lang', body.interfaceLang);
   }
 
   return NextResponse.json({ success: true });

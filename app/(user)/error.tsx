@@ -10,6 +10,7 @@
  * digest 설정된 에러는 진짜 server-side issue 라 자동 reload 가 회복 못 함. 사용자 명시 클릭으로.
  */
 import { useEffect } from 'react';
+import { usePublicTranslations } from '../../lib/i18n';
 
 export default function Error({
   error,
@@ -18,6 +19,7 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const t = usePublicTranslations();
   useEffect(() => {
     console.error('[user/error]', error);
   }, [error]);
@@ -42,14 +44,14 @@ export default function Error({
           className="text-2xl sm:text-3xl font-bold tracking-tight m-0"
           style={{ color: 'var(--cms-text)', fontFamily: 'var(--cms-font-heading)' }}
         >
-          잠시 문제가 발생했습니다
+          {t('page.error_title')}
         </h1>
         <p className="mt-3 text-base max-w-xl mx-auto" style={{ color: 'var(--cms-text-muted)' }}>
-          요청을 처리하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.
+          {t('page.error_message')}
         </p>
         {error.digest && (
           <p className="mt-2 text-xs font-mono" style={{ color: 'var(--cms-text-muted)' }}>
-            오류 ID: {error.digest}
+            {t('page.error_id')}: {error.digest}
           </p>
         )}
         <div className="mt-6 flex items-center justify-center">
@@ -58,7 +60,7 @@ export default function Error({
             className="px-4 py-2 text-sm font-bold rounded no-underline transition-opacity hover:opacity-90 cursor-pointer border-0"
             style={{ background: 'var(--cms-primary)', color: '#fff' }}
           >
-            다시 시도
+            {t('common.retry')}
           </button>
         </div>
       </section>

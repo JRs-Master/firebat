@@ -68,7 +68,11 @@ export async function POST(req: NextRequest) {
   // 2) 시간대 저장
   await core.setTimezone(timezone);
 
-  // 3) 사용 언어 저장 — CMS settings 의 siteLang patch (전체 덮어쓰기 회피, get + merge + set)
+  // 3) 사용 언어 저장 — 두 vault key 동시 저장:
+  //    - system:ui-lang — 어드민 UI 언어 (i18n 인프라 미박힘, 향후 도입 시 자동 활용)
+  //    - cms.siteLang — 사이트 공개 언어 (HTML lang 속성 + SEO)
+  //    초기엔 같은 값. 어드민 = ko / 사이트 = en 같이 분리하려면 어드민 설정 / CMS 모달에서 별도 변경.
+  await core.setGeminiKey('system:ui-lang', siteLang);
   const cms = await core.getCmsSettings();
   const patched = { ...cms, siteLang };
   await core.setModuleSettings('cms', patched);

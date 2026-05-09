@@ -1,0 +1,109 @@
+# Firebat CI — Rust 변경 시만 trigger.
+#
+# Frontend-only 변경 (app/ lib/ mcp/ messages/ next.config.mjs 등) 시 cargo build/test 생략.
+# 매 push 마다 ~10분 release build 박이 실행되던 부담 제거.
+#
+# Trigger:
+#   - core / infra / proto / Cargo.* 변경 시만 rust + release-binary 실행
+#   - .github/workflows/ci-rust.yml 자체 변경 시도 trigger (workflow 자체 검증)
+
+name: CI Rust
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'core/**'
+      - 'infra/**'
+      - 'proto/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/ci-rust.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'core/**'
+      - 'infra/**'
+      - 'proto/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/ci-rust.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  rust:
+    name: Rust (cargo test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: firebat-rust
+          cache-on-failure: true
+
+      - name: cargo check
+        run: cargo check -p firebat-core -p firebat-infra --all-targets
+        env:
+          CARGO_BUILD_JOBS: 4
+
+      - name: cargo test (infra)
+        run: cargo test -p firebat-infra --tests
+        env:
+          CARGO_BUILD_JOBS: 4
+
+  release-binary:
+    name: Release binary
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.ref == 'refs/heads/main'
+    needs: [rust]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install protoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: firebat-release
+          cache-on-failure: true
+
+      - name: cargo build --release
+        run: cargo build --release -p firebat-infra --bin firebat-core
+        env:
+          CARGO_BUILD_JOBS: 4
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firebat-core-linux-x86_64
+          path: target/release/firebat-core
+          retention-days: 30

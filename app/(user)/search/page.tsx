@@ -7,6 +7,7 @@
  */
 import { getCore } from '../../../lib/singleton';
 import { CmsPageList, CmsPagination } from '../cms-page-list';
+import { getServerTranslations } from '../../../lib/i18n';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
@@ -19,10 +20,11 @@ export async function generateMetadata({ searchParams }: Props): Promise<Metadat
   const sp = searchParams ? await searchParams : {};
   const q = (sp.q ?? '').trim();
   const seo = await getCore().getCmsSettings();
+  const t = getServerTranslations(seo.siteLang);
   return {
-    title: q ? `"${q}" 검색 결과 — ${seo.siteTitle}` : `검색 — ${seo.siteTitle}`,
-    description: q ? `"${q}" 키워드 검색 결과` : '사이트 내 페이지 검색',
-    robots: 'noindex, follow', // 검색 결과 페이지 자체는 색인 X (Google 권장)
+    title: q ? `"${q}" — ${seo.siteTitle}` : `${t('common.search')} — ${seo.siteTitle}`,
+    description: q ? t('page.search_results', { count: 0 }).replace('0', q) : t('common.search'),
+    robots: 'noindex, follow',
   };
 }
 
@@ -33,6 +35,7 @@ export default async function SearchPage({ searchParams }: Props) {
 
   const core = getCore();
   const cms = await core.getCmsSettings();
+  const t = getServerTranslations(cms.siteLang);
   const perPage = cms.layout.pageList.perPage;
 
   let results: import('../../../lib/types/firebat-types').PageListItem[] = [];
@@ -51,13 +54,13 @@ export default async function SearchPage({ searchParams }: Props) {
     <main className="min-h-screen" style={{ background: 'var(--cms-bg)' }}>
       <section className="firebat-cms-content" style={{ paddingTop: '48px', paddingBottom: '24px' }}>
         <div className="text-sm font-bold mb-1" style={{ color: 'var(--cms-text-muted)' }}>
-          검색
+          {t('common.search')}
         </div>
         <h1
           className="text-3xl sm:text-4xl font-extrabold tracking-tight m-0"
           style={{ color: 'var(--cms-text)', fontFamily: 'var(--cms-font-heading)' }}
         >
-          {q ? <>&ldquo;{q}&rdquo; 결과</> : '검색'}
+          {q ? <>&ldquo;{q}&rdquo;</> : t('common.search')}
         </h1>
 
         {/* 검색 form — GET method 로 ?q= 갱신, 페이지 reload */}
@@ -66,7 +69,7 @@ export default async function SearchPage({ searchParams }: Props) {
             type="search"
             name="q"
             defaultValue={q}
-            placeholder="검색어 입력..."
+            placeholder={t('page.search_placeholder')}
             autoFocus
             className="flex-1 px-3 py-2 text-sm border rounded outline-none"
             style={{
@@ -80,18 +83,18 @@ export default async function SearchPage({ searchParams }: Props) {
             className="px-4 py-2 text-sm font-bold rounded transition-opacity hover:opacity-90"
             style={{ background: 'var(--cms-primary)', color: '#fff' }}
           >
-            검색
+            {t('common.search')}
           </button>
         </form>
 
         {q && !tooShort && (
           <p className="mt-3 text-sm" style={{ color: 'var(--cms-text-muted)' }}>
-            {results.length === 0 ? '결과 없음' : `${results.length}개 결과`}
+            {results.length === 0 ? t('page.search_no_results') : t('page.search_results', { count: results.length })}
           </p>
         )}
         {tooShort && (
           <p className="mt-3 text-sm" style={{ color: 'var(--cms-text-muted)' }}>
-            2자 이상 입력해 주세요.
+            {cms.siteLang === 'en' ? 'Please enter at least 2 characters.' : '2자 이상 입력해 주세요.'}
           </p>
         )}
       </section>

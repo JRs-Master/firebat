@@ -14,6 +14,7 @@
  * API 키 / CLI 인증은 위자드에서 받지 않습니다 — 어드민 진입 후 설정 화면에서 별도 등록.
  */
 import { useState } from 'react';
+import { useTranslations } from '../../../lib/i18n';
 
 interface Props {
   onComplete: () => void;
@@ -43,6 +44,7 @@ function detectBrowserTimezone(): string {
 }
 
 export function SetupWizard({ onComplete }: Props) {
+  const t = useTranslations();
   const [adminId, setAdminId] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -55,16 +57,16 @@ export function SetupWizard({ onComplete }: Props) {
     e.preventDefault();
     setError('');
 
-    if (!adminId.trim()) { setError('관리자 ID를 입력해 주세요.'); return; }
+    if (!adminId.trim()) { setError(t('setup.err_id_required')); return; }
     if (!PASSWORD_RE.test(adminPassword)) {
-      setError('비밀번호는 대소문자·숫자·특수문자를 포함한 8자 이상이어야 합니다.');
+      setError(t('setup.err_password_policy'));
       return;
     }
     if (adminPassword.toLowerCase() === adminId.trim().toLowerCase()) {
-      setError('비밀번호는 ID와 동일할 수 없습니다.');
+      setError(t('setup.err_password_same_as_id'));
       return;
     }
-    if (adminPassword !== confirmPassword) { setError('비밀번호 확인이 일치하지 않습니다.'); return; }
+    if (adminPassword !== confirmPassword) { setError(t('setup.err_password_mismatch')); return; }
 
     setSubmitting(true);
     try {
@@ -80,13 +82,13 @@ export function SetupWizard({ onComplete }: Props) {
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
-        setError(data.error || '초기 설정에 실패했습니다.');
+        setError(data.error || t('setup.err_failed'));
         setSubmitting(false);
         return;
       }
       onComplete();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : '네트워크 오류';
+      const msg = err instanceof Error ? err.message : t('setup.err_network');
       setError(msg);
       setSubmitting(false);
     }
@@ -95,13 +97,13 @@ export function SetupWizard({ onComplete }: Props) {
   return (
     <div className="w-full max-w-[440px] bg-white border border-[#eaeaea] rounded-xl shadow-sm p-8">
       <div className="mb-6 text-center">
-        <h2 className="text-2xl font-bold text-black mb-1">Firebat 초기 설정</h2>
-        <p className="text-sm text-gray-500">관리자 계정·언어·시간대를 설정합니다</p>
+        <h2 className="text-2xl font-bold text-black mb-1">{t('setup.title')}</h2>
+        <p className="text-sm text-gray-500">{t('setup.subtitle')}</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-gray-700 block">관리자 ID</label>
+          <label className="text-sm font-medium text-gray-700 block">{t('setup.admin_id')}</label>
           <input
             type="text"
             value={adminId}
@@ -113,7 +115,7 @@ export function SetupWizard({ onComplete }: Props) {
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-gray-700 block">비밀번호</label>
+          <label className="text-sm font-medium text-gray-700 block">{t('setup.password')}</label>
           <input
             type="password"
             value={adminPassword}
@@ -121,11 +123,11 @@ export function SetupWizard({ onComplete }: Props) {
             disabled={submitting}
             className="w-full border border-[#eaeaea] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:bg-slate-50"
           />
-          <p className="text-[11px] text-gray-500">대소문자·숫자·특수문자 포함 8자 이상, ID 와 동일 금지</p>
+          <p className="text-[11px] text-gray-500">{t('setup.password_hint')}</p>
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-gray-700 block">비밀번호 확인</label>
+          <label className="text-sm font-medium text-gray-700 block">{t('setup.password_confirm')}</label>
           <input
             type="password"
             value={confirmPassword}
@@ -136,7 +138,7 @@ export function SetupWizard({ onComplete }: Props) {
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-gray-700 block">인터페이스 언어</label>
+          <label className="text-sm font-medium text-gray-700 block">{t('setup.interface_lang')}</label>
           <div className="flex gap-2">
             {(['ko', 'en'] as const).map(lang => (
               <button
@@ -157,7 +159,7 @@ export function SetupWizard({ onComplete }: Props) {
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-gray-700 block">시간대</label>
+          <label className="text-sm font-medium text-gray-700 block">{t('setup.timezone')}</label>
           <select
             value={timezone}
             onChange={(e) => setTimezone(e.target.value)}
@@ -185,7 +187,7 @@ export function SetupWizard({ onComplete }: Props) {
             disabled={submitting}
             className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium h-10 rounded-md text-sm transition-colors flex items-center justify-center shadow-sm"
           >
-            {submitting ? '설정 진행 중...' : 'Firebat 시작'}
+            {submitting ? t('setup.submitting') : t('setup.submit')}
           </button>
         </div>
       </form>

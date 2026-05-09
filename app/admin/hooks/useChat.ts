@@ -457,12 +457,13 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     if (!aiModel) {
       const id = Date.now().toString();
       const systemId = `s-${id}`;
+      // hook 안 — useTranslations 호출 X (호출은 React Component 안만). localStorage 직접 분기.
+      const lang = (typeof window !== 'undefined' ? localStorage.getItem('firebat_ui_lang') : null) === 'en' ? 'en' : 'ko';
+      const errMsg = lang === 'en'
+        ? '⚙ Open Settings → AI tab, configure an API key or CLI authentication, then select a model.'
+        : '⚙ 설정 → AI 탭에서 API 키 입력 또는 CLI 인증 후 모델을 선택해 주세요.';
       dispatch({ type: 'SEND_USER', userId: `u-${id}`, systemId, content: text, image: attachedImage || undefined });
-      dispatch({
-        type: 'ERROR',
-        id: systemId,
-        error: '⚙ 설정 → AI 탭에서 API 키 입력 또는 CLI 인증 후 모델을 선택해 주세요.',
-      });
+      dispatch({ type: 'ERROR', id: systemId, error: errMsg });
       setInput('');
       setAttachedImage(null);
       return;

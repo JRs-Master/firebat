@@ -6,13 +6,16 @@
  * 콘텐츠 페이지(project 설정된)에서 <main> 본문 시작 직전 표시.
  */
 
-export function CmsBreadcrumb({ slug, title }: { slug: string; title?: string }) {
+import { getServerTranslations } from '../../lib/i18n';
+
+export function CmsBreadcrumb({ slug, title, siteLang }: { slug: string; title?: string; siteLang?: string }) {
+  const t = getServerTranslations(siteLang);
   const segments = slug.split('/').filter(Boolean);
   if (segments.length === 0) return null;
 
   // 누적 경로 — 'a/b/c' → ['a', 'a/b', 'a/b/c']
   const items: Array<{ label: string; href: string | null }> = [
-    { label: '홈', href: '/' },
+    { label: t('page.breadcrumb_home'), href: '/' },
   ];
   let acc = '';
   segments.forEach((seg, i) => {

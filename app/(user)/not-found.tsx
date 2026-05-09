@@ -7,17 +7,23 @@
 import type { Metadata } from 'next';
 import { getCore } from '../../lib/singleton';
 import { CmsPageList } from './cms-page-list';
+import { getServerTranslations } from '../../lib/i18n';
 
-export const metadata: Metadata = {
-  title: '페이지를 찾을 수 없습니다',
-  description: '요청하신 페이지가 존재하지 않거나 이동되었습니다.',
-  robots: 'noindex, nofollow',
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const cms = await getCore().getCmsSettings();
+  const t = getServerTranslations(cms.siteLang);
+  return {
+    title: t('page.not_found_title'),
+    description: t('page.not_found_message'),
+    robots: 'noindex, nofollow',
+  };
+}
 
 export default async function NotFound() {
   // 최근 글 일부를 보여줘 navigation 깊이 ↑ — 막다른 길 회피.
   const core = getCore();
   const cms = await core.getCmsSettings();
+  const t = getServerTranslations(cms.siteLang);
   const listRes = await core.listPages();
   const recent = listRes.success && listRes.data
     ? listRes.data
@@ -45,10 +51,10 @@ export default async function NotFound() {
           className="text-2xl sm:text-3xl font-bold tracking-tight m-0"
           style={{ color: 'var(--cms-text)', fontFamily: 'var(--cms-font-heading)' }}
         >
-          페이지를 찾을 수 없습니다
+          {t('page.not_found_title')}
         </h1>
         <p className="mt-3 text-base max-w-xl mx-auto" style={{ color: 'var(--cms-text-muted)' }}>
-          요청하신 페이지가 존재하지 않거나 이동되었습니다. 주소를 다시 확인하시거나 아래 버튼으로 돌아가세요.
+          {t('page.not_found_message')}
         </p>
         <div className="mt-6 flex items-center justify-center gap-2 flex-wrap">
           <a
@@ -56,7 +62,7 @@ export default async function NotFound() {
             className="px-4 py-2 text-sm font-bold rounded no-underline transition-opacity hover:opacity-90"
             style={{ background: 'var(--cms-primary)', color: '#fff' }}
           >
-            홈으로
+            {t('page.go_home')}
           </a>
           <a
             href="/search"
@@ -67,7 +73,7 @@ export default async function NotFound() {
               color: 'var(--cms-text)',
             }}
           >
-            검색
+            {t('common.search')}
           </a>
         </div>
       </section>
@@ -78,7 +84,7 @@ export default async function NotFound() {
             className="text-base font-bold mb-3"
             style={{ color: 'var(--cms-text-muted)', fontFamily: 'var(--cms-font-heading)' }}
           >
-            최근 글
+            {t('page.recent_posts')}
           </h2>
           <CmsPageList pages={recent} variant={cms.layout.pageList.cardVariant} />
         </section>
