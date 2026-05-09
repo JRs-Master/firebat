@@ -204,6 +204,7 @@ export function SetupWizard({ onComplete }: Props) {
               );
             })()}
           </div>
+          <p className="text-[11px] text-gray-500">{t('setup.password_hint')}</p>
         </div>
 
         <div className="space-y-1.5">
