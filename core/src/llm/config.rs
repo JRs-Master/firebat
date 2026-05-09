@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmModelConfig {
-    /// 모델 식별자 (예: "claude-4-sonnet", "gpt-5-nano", "gemini-3-pro")
+    /// 모델 식별자 (예: "claude-sonnet-4-6", "gpt-5", "gemini-3-pro")
     pub id: String,
 
     /// 사용자 표시명

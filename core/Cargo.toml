@@ -1,10 +1,10 @@
 [package]
 name = "firebat-core"
-version = "0.0.1"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
 description = "Firebat Core — managers + services + ports (hexagonal core, infra 의존 0건)"
-license = "AGPL-3.0-or-later"
-authors = ["JRs-Master"]
 
 # Phase B-4 박힘 — managers + services + ports trait 의 단일 lib crate.
 # infra 가 ports trait 을 implement → 의존 방향 infra → core 일방향.

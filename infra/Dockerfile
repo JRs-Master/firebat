@@ -73,11 +73,11 @@ RUN mkdir -p /opt/firebat/data \
 
 USER firebat
 
-# 환경 변수 default — docker-compose.yml override 가능
+# 환경 변수 default — docker-compose.yml override 가능.
+# FIREBAT_DEFAULT_MODEL 미박음 (사용자가 어드민 설정 → AI 탭에서 명시 선택 박는 패턴).
 ENV FIREBAT_WORKSPACE_ROOT=/opt/firebat \
     FIREBAT_CORE_LISTEN=0.0.0.0:50051 \
     FIREBAT_TIMEZONE=Asia/Seoul \
-    FIREBAT_DEFAULT_MODEL=claude-4-sonnet \
     RUST_LOG=info
 
 EXPOSE 50051

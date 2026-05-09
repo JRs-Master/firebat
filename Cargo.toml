@@ -21,6 +21,7 @@ resolver = "2"
 # 공통 deps 의 default 버전 — workspace member 가 `<dep>.workspace = true` 로 inherit 가능.
 # (현재는 명시 안 활용 — 향후 정리 시 옮길 수 있음)
 [workspace.package]
+version = "1.0.0"
 edition = "2021"
 license = "AGPL-3.0-or-later"
 authors = ["JRs-Master"]

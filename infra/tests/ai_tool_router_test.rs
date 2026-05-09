@@ -83,7 +83,7 @@ fn is_gemini_api_recognizes_prefix() {
     assert!(ToolRouter::is_gemini_api("gemini-3-pro"));
     assert!(ToolRouter::is_gemini_api("gemini-3.1-flash-preview"));
     assert!(!ToolRouter::is_gemini_api("gpt-5"));
-    assert!(!ToolRouter::is_gemini_api("claude-4-sonnet"));
+    assert!(!ToolRouter::is_gemini_api("claude-sonnet-4-6"));
     assert!(!ToolRouter::is_gemini_api("cli-codex"));
 }
 

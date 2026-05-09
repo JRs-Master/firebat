@@ -53,7 +53,7 @@ impl SettingsService for SettingsServiceImpl {
     }
 
     async fn get_ai_model(&self, _req: Request<Empty>) -> Result<Response<JsonValue>, TonicStatus> {
-        let model = self.get_or_default("system:llm:model", "claude-4-sonnet");
+        let model = self.get_or_default("system:llm:model", "claude-sonnet-4-6");
         json_response(&serde_json::json!({"model": model}))
     }
 

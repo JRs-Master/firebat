@@ -158,11 +158,8 @@ impl ISandboxPort for LinuxCgroupsSandboxAdapter {
     }
 }
 
-/// libc::getpid 직접 호출 — async-signal-safe 보장 (pre_exec 안에서 OK).
-unsafe extern "C" {
-    fn libc_getpid_real() -> i32;
-}
-
+// libc::getpid 직접 호출 — async-signal-safe 보장 (pre_exec 안에서 OK).
+// libc_getpid_real 은 미사용 (libc_getpid 가 #[link_name="getpid"] 으로 직접 박힘).
 #[link(name = "c")]
 unsafe extern "C" {
     #[link_name = "getpid"]
