@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, ChevronLeft, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles } from 'lucide-react';
+import { useDragScrollTabs } from '../hooks/useDragScrollTabs';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 import { GalleryPanel } from './GalleryPanel';
@@ -60,6 +61,9 @@ export function Sidebar({
   const [tab, setTab] = useState<'workspace' | 'chats' | 'gallery' | 'templates' | 'entities' | 'notes' | 'calendar'>('workspace');
   const [collapsed, setCollapsed] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+
+  // 탭 바 드래그 스크롤 + 호버 시 좌/우 화살표 (SettingsModal 과 동일 패턴)
+  const { tabBarRef, scrollState, scrollTabs } = useDragScrollTabs();
 
   // 사이드바 펼칠 때 + chats 탭 선택 시 DB 에서 대화 재조회 (모바일↔PC 동기화)
   const refreshChatsRef = useRef(onRefreshChats);
@@ -489,12 +493,29 @@ export function Sidebar({
     <div className="fixed top-12 bottom-0 left-0 z-40 w-72 border-r border-slate-200 bg-white flex flex-col shrink-0 shadow-lg overflow-hidden">
 
       {/* 탭 헤더 — 아이콘 전용 (PC·모바일 공통, 공간 절약).
-          탭 ↑ 7개 + 설정·접기 → 좁은 폭에서 잘림. 좌측 탭 영역만 가로 스크롤,
-          우측 설정·접기는 flex-shrink-0 으로 고정. */}
+          탭 7개 + 설정·접기 → 좁은 폭에서 잘림. 좌측 탭 영역만 드래그 스크롤
+          (SettingsModal 패턴 통일 — scrollbar 없이 PC 호버 시 좌/우 화살표). */}
       <div className="flex items-center gap-1.5 px-2 py-2 border-b border-slate-200/80">
+        <div className="relative flex-1 min-w-0 group">
+        {scrollState.canLeft && (
+          <button
+            type="button"
+            onClick={() => scrollTabs('left')}
+            className="hidden sm:flex absolute left-0 top-0 bottom-0 z-20 w-6 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-r from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
+            aria-label="이전 탭"
+          ><ChevronLeft size={14} /></button>
+        )}
+        {scrollState.canRight && (
+          <button
+            type="button"
+            onClick={() => scrollTabs('right')}
+            className="hidden sm:flex absolute right-0 top-0 bottom-0 z-20 w-6 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-l from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
+            aria-label="다음 탭"
+          ><ChevronRight size={14} /></button>
+        )}
         <div
-          className="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto scrollbar-thin"
-          style={{ scrollbarWidth: 'thin' }}
+          ref={tabBarRef}
+          className="flex items-center gap-1.5 overflow-x-auto scrollbar-none select-none cursor-grab"
         >
         <Tooltip label="Workspace">
           <button
@@ -571,6 +592,7 @@ export function Sidebar({
             <CalendarIcon size={15} />
           </button>
         </Tooltip>
+        </div>
         </div>
         {/* 우측 고정 — 탭 스크롤과 분리. flex-shrink-0 보존 */}
         <div className="flex items-center gap-1.5 flex-shrink-0 pl-1.5 border-l border-slate-200">
