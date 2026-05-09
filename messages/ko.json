@@ -61,7 +61,7 @@
   "admin_chat": {
     "placeholder_default": "무엇을 도와드릴까요?",
     "placeholder_loading": "명령 집행 중...",
-    "placeholder_image_mode": "🎨 이미지 프롬프트를 입력하세요 (LLM 우회 — 영어 권장)",
+    "placeholder_image_mode": "🎨 이미지 프롬프트를 입력하세요",
     "no_model_error": "⚙ 설정 → AI 탭에서 API 키 입력 또는 CLI 인증 후 모델을 선택해 주세요.",
     "send": "전송",
     "stop": "중단"

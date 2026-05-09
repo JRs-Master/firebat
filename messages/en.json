@@ -61,7 +61,7 @@
   "admin_chat": {
     "placeholder_default": "How can I help you?",
     "placeholder_loading": "Running command...",
-    "placeholder_image_mode": "🎨 Enter image prompt (LLM bypass — English recommended)",
+    "placeholder_image_mode": "🎨 Enter image prompt",
     "no_model_error": "⚙ Open Settings → AI tab, configure an API key or CLI authentication, then select a model.",
     "send": "Send",
     "stop": "Stop"
