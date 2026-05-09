@@ -195,16 +195,15 @@ export function SetupWizard({ onComplete }: Props) {
               const labelColor = s === 1 ? 'text-red-600' : s === 2 ? 'text-amber-600' : 'text-green-600';
               const labelKey = s === 1 ? 'setup.password_strength_weak' : s === 2 ? 'setup.password_strength_medium' : 'setup.password_strength_strong';
               return (
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
                   <div className="w-10 h-1 bg-slate-200 rounded overflow-hidden">
                     <div className={`h-full ${barColor} transition-all`} style={{ width: `${(s / 3) * 100}%` }} />
                   </div>
-                  <span className={`text-[10px] font-medium ${labelColor} w-[52px] text-left`}>{t(labelKey)}</span>
+                  <span className={`text-[10px] font-medium ${labelColor}`}>{t(labelKey)}</span>
                 </div>
               );
             })()}
           </div>
-          <p className="text-[11px] text-gray-500 min-h-[44px]">{t('setup.password_hint')}</p>
         </div>
 
         <div className="space-y-1.5">
