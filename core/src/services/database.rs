@@ -5,13 +5,16 @@
 //! - `port.run_select_query(sql)` 위임 — adapter 가 SELECT/WITH 검증 + dialect 적응
 //! - SELECT/WITH 만 허용. INSERT/UPDATE/DELETE 는 어댑터에서 거부 (port 차원 가드)
 //!
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + RawJsonPb 사용.
+//! Query 결과는 동적 row 배열 (스키마 불명) → RawJsonPb.
+//!
 //! 향후 MariaDB / PostgreSQL adapter 설정될 때 dialect-specific SQL 처리도 어댑터 안에서.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::ports::IDatabasePort;
-use crate::proto::{database_service_server::DatabaseService, JsonArgs, JsonValue};
+use crate::proto::{database_service_server::DatabaseService, JsonArgs, RawJsonPb};
 
 pub struct DatabaseServiceImpl {
     db: Arc<dyn IDatabasePort>,
@@ -23,15 +26,15 @@ impl DatabaseServiceImpl {
     }
 }
 
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
+fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
+    RawJsonPb {
+        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
+    }
 }
 
 #[tonic::async_trait]
 impl DatabaseService for DatabaseServiceImpl {
-    async fn query(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn query(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {
@@ -42,8 +45,6 @@ impl DatabaseService for DatabaseServiceImpl {
             // 향후 prepared statement 지원 시 port 시그니처 확장 (`run_select_query_with_params`).
             params: Vec<serde_json::Value>,
         }
-        let _args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("query args: {e}")))?;
         let parsed: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("query args: {e}")))?;
 
@@ -62,7 +63,7 @@ impl DatabaseService for DatabaseServiceImpl {
             .into_iter()
             .map(serde_json::Value::Object)
             .collect();
-        json_response(&json_rows)
+        Ok(Response::new(raw_json(&json_rows)))
     }
 }
 

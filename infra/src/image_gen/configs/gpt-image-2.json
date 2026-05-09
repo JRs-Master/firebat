@@ -1,6 +1,6 @@
 {
-  "id": "gpt-image-1",
-  "displayName": "GPT Image 1",
+  "id": "gpt-image-2",
+  "displayName": "GPT Image 2",
   "provider": "openai",
   "format": "openai-image",
   "endpoint": "https://api.openai.com/v1/images/generations",
@@ -10,5 +10,5 @@
     "sizes": ["1024x1024", "1536x1024", "1024x1536", "auto"],
     "qualities": ["low", "medium", "high"]
   },
-  "pricing": { "lowPerImage": 0.011, "mediumPerImage": 0.042, "highPerImage": 0.167 }
+  "pricing": { "lowPerImage": 0.022, "mediumPerImage": 0.084, "highPerImage": 0.334 }
 }

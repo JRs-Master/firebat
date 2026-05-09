@@ -1,10 +1,14 @@
 //! gRPC StatusService impl — StatusManager wrapping.
+//!
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
+//! Start / Update / Complete / Fail → 갱신된 JobStatus 레코드 (동적 meta 포함) → RawJsonPb.
+//! Get / List / Stats → domain struct 배열 또는 집계 맵 → RawJsonPb.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::status::{JobStatusKind, StatusManager};
-use crate::proto::{status_service_server::StatusService, Empty, JsonArgs, JsonValue, StringRequest};
+use crate::proto::{status_service_server::StatusService, Empty, JsonArgs, RawJsonPb, StringRequest};
 
 pub struct StatusServiceImpl {
     manager: Arc<StatusManager>,
@@ -16,15 +20,15 @@ impl StatusServiceImpl {
     }
 }
 
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
+fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
+    RawJsonPb {
+        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
+    }
 }
 
 #[tonic::async_trait]
 impl StatusService for StatusServiceImpl {
-    async fn start(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn start(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct StartArgs {
@@ -42,10 +46,10 @@ impl StatusService for StatusServiceImpl {
         let args: StartArgs = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("start args: {e}")))?;
         let job = self.manager.start(args.id, args.job_type, args.message, args.parent_job_id, args.meta);
-        json_response(&job)
+        Ok(Response::new(raw_json(&job)))
     }
 
-    async fn update(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn update(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct UpdateArgs {
@@ -60,10 +64,10 @@ impl StatusService for StatusServiceImpl {
         let args: UpdateArgs = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("update args: {e}")))?;
         let result = self.manager.update(&args.id, args.progress, args.message, args.meta);
-        json_response(&result)
+        Ok(Response::new(raw_json(&result)))
     }
 
-    async fn complete(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn complete(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct DoneArgs {
@@ -74,10 +78,10 @@ impl StatusService for StatusServiceImpl {
         let args: DoneArgs = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("complete args: {e}")))?;
         let result = self.manager.complete(&args.id, args.result);
-        json_response(&result)
+        Ok(Response::new(raw_json(&result)))
     }
 
-    async fn fail(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn fail(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct FailArgs {
@@ -87,16 +91,16 @@ impl StatusService for StatusServiceImpl {
         let args: FailArgs = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("fail args: {e}")))?;
         let result = self.manager.fail(&args.id, args.error);
-        json_response(&result)
+        Ok(Response::new(raw_json(&result)))
     }
 
-    async fn get(&self, req: Request<StringRequest>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn get(&self, req: Request<StringRequest>) -> Result<Response<RawJsonPb>, TonicStatus> {
         let id = req.into_inner().value;
         let job = self.manager.get(&id);
-        json_response(&job)
+        Ok(Response::new(raw_json(&job)))
     }
 
-    async fn list(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn list(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize, Default)]
         struct ListFilter {
@@ -119,11 +123,11 @@ impl StatusService for StatusServiceImpl {
             f.parent_job_id.as_deref(),
             f.limit,
         );
-        json_response(&jobs)
+        Ok(Response::new(raw_json(&jobs)))
     }
 
-    async fn stats(&self, _req: Request<Empty>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn stats(&self, _req: Request<Empty>) -> Result<Response<RawJsonPb>, TonicStatus> {
         let stats = self.manager.stats();
-        json_response(&stats)
+        Ok(Response::new(raw_json(&stats)))
     }
 }

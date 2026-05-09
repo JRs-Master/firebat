@@ -73,11 +73,13 @@ pub fn compute_image_cost(config: &ImageGenModelConfig, quality: Option<&str>) -
 }
 
 /// Builtin carousel — 빌드 타임 설정. 사용자 추가 모델은 디렉토리 로드로.
+/// 2026-05-10: gpt-image-1 종료 → gpt-image-1.5 / gpt-image-2 신설.
 pub fn builtin_configs() -> Vec<ImageGenModelConfig> {
-    const GPT_IMAGE_1: &str = include_str!("configs/gpt-image-1.json");
+    const GPT_IMAGE_1_5: &str = include_str!("configs/gpt-image-1-5.json");
+    const GPT_IMAGE_2: &str = include_str!("configs/gpt-image-2.json");
     const GEMINI_FLASH_IMAGE: &str = include_str!("configs/gemini-3-1-flash-image.json");
     const CLI_CODEX_IMAGE: &str = include_str!("configs/cli-codex-image.json");
-    [GPT_IMAGE_1, GEMINI_FLASH_IMAGE, CLI_CODEX_IMAGE]
+    [GPT_IMAGE_1_5, GPT_IMAGE_2, GEMINI_FLASH_IMAGE, CLI_CODEX_IMAGE]
         .iter()
         .filter_map(|raw| serde_json::from_str(raw).ok())
         .collect()
@@ -127,11 +129,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builtin_configs_load_three() {
+    fn builtin_configs_load_four() {
         let configs = builtin_configs();
-        assert_eq!(configs.len(), 3);
+        assert_eq!(configs.len(), 4);
         let ids: Vec<&str> = configs.iter().map(|c| c.id.as_str()).collect();
-        assert!(ids.contains(&"gpt-image-1"));
+        assert!(ids.contains(&"gpt-image-1.5"));
+        assert!(ids.contains(&"gpt-image-2"));
         assert!(ids.contains(&"gemini-3.1-flash-image-preview"));
         assert!(ids.contains(&"cli-codex-image"));
     }
@@ -139,7 +142,7 @@ mod tests {
     #[test]
     fn compute_cost_openai_quality_based() {
         let configs = builtin_configs();
-        let gpt = configs.iter().find(|c| c.id == "gpt-image-1").unwrap();
+        let gpt = configs.iter().find(|c| c.id == "gpt-image-1.5").unwrap();
         assert_eq!(compute_image_cost(gpt, Some("low")), Some(0.011));
         assert_eq!(compute_image_cost(gpt, Some("medium")), Some(0.042));
         assert_eq!(compute_image_cost(gpt, Some("high")), Some(0.167));
@@ -172,14 +175,15 @@ mod tests {
     #[test]
     fn build_registry_without_user_dir() {
         let registry = build_registry(None);
-        assert_eq!(registry.len(), 3);
-        assert!(registry.contains_key("gpt-image-1"));
+        assert_eq!(registry.len(), 4);
+        assert!(registry.contains_key("gpt-image-1.5"));
+        assert!(registry.contains_key("gpt-image-2"));
     }
 
     #[test]
     fn build_registry_with_nonexistent_user_dir() {
         // 디렉토리 없음 → builtin 만 로드 (silent fail, 옛 TS 동등)
         let registry = build_registry(Some(Path::new("nonexistent_xyz_path")));
-        assert_eq!(registry.len(), 3);
+        assert_eq!(registry.len(), 4);
     }
 }

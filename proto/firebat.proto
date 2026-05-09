@@ -85,14 +85,14 @@ service AiService {
 // 2. StorageService — StorageManager
 // ──────────────────────────────────────────────────────────────────────────
 service StorageService {
-  rpc ReadFile(StringRequest) returns (JsonValue);
-  rpc ReadFileBinary(StringRequest) returns (JsonValue);
+  rpc ReadFile(StringRequest) returns (RawJsonPb);
+  rpc ReadFileBinary(StringRequest) returns (RawJsonPb);
   rpc WriteFile(JsonArgs) returns (Status);
   rpc DeleteFile(StringRequest) returns (Status);
-  rpc ListDir(StringRequest) returns (JsonValue);
-  rpc ListFiles(StringRequest) returns (JsonValue);
-  rpc GetFileTree(StringRequest) returns (JsonValue);
-  rpc GlobFiles(JsonArgs) returns (JsonValue);
+  rpc ListDir(StringRequest) returns (RawJsonPb);
+  rpc ListFiles(StringRequest) returns (RawJsonPb);
+  rpc GetFileTree(StringRequest) returns (RawJsonPb);
+  rpc GlobFiles(JsonArgs) returns (RawJsonPb);
 }
 
 // ─── PageService typed messages ──────────────────────────────────────────────
@@ -682,21 +682,21 @@ service MediaService {
 // 14. EventService — EventManager (SSE 이벤트 + audit log)
 // ──────────────────────────────────────────────────────────────────────────
 service EventService {
-  rpc ListAuditLog(NumberRequest) returns (JsonValue);
-  // 추후 streaming RPC: rpc Subscribe(JsonArgs) returns (stream JsonValue);
+  rpc ListAuditLog(NumberRequest) returns (RawJsonPb);
+  // 추후 streaming RPC: rpc Subscribe(JsonArgs) returns (stream RawJsonPb);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // 15. StatusService — StatusManager (long-running job)
 // ──────────────────────────────────────────────────────────────────────────
 service StatusService {
-  rpc Start(JsonArgs) returns (JsonValue);
-  rpc Update(JsonArgs) returns (JsonValue);
-  rpc Complete(JsonArgs) returns (JsonValue);
-  rpc Fail(JsonArgs) returns (JsonValue);
-  rpc Get(StringRequest) returns (JsonValue);
-  rpc List(JsonArgs) returns (JsonValue);
-  rpc Stats(Empty) returns (JsonValue);
+  rpc Start(JsonArgs) returns (RawJsonPb);
+  rpc Update(JsonArgs) returns (RawJsonPb);
+  rpc Complete(JsonArgs) returns (RawJsonPb);
+  rpc Fail(JsonArgs) returns (RawJsonPb);
+  rpc Get(StringRequest) returns (RawJsonPb);
+  rpc List(JsonArgs) returns (RawJsonPb);
+  rpc Stats(Empty) returns (RawJsonPb);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -905,37 +905,37 @@ service SettingsService {
 
 /** Network — Sandbox 안에서 안전한 외부 fetch */
 service NetworkService {
-  rpc Fetch(JsonArgs) returns (JsonValue);
+  rpc Fetch(JsonArgs) returns (RawJsonPb);
 }
 
 /** Cache — sysmod 결과 cache 공통 layer */
 service CacheService {
-  rpc Read(JsonArgs) returns (JsonValue);
-  rpc Grep(JsonArgs) returns (JsonValue);
-  rpc Aggregate(JsonArgs) returns (JsonValue);
+  rpc Read(JsonArgs) returns (RawJsonPb);
+  rpc Grep(JsonArgs) returns (RawJsonPb);
+  rpc Aggregate(JsonArgs) returns (RawJsonPb);
   rpc Drop(StringRequest) returns (Status);
 }
 
 /** Telegram — 양방향 봇 + send-only */
 service TelegramService {
-  rpc SetupWebhook(StringRequest) returns (JsonValue);
-  rpc RemoveWebhook(Empty) returns (JsonValue);
-  rpc GetWebhookStatus(Empty) returns (JsonValue);
+  rpc SetupWebhook(StringRequest) returns (RawJsonPb);
+  rpc RemoveWebhook(Empty) returns (RawJsonPb);
+  rpc GetWebhookStatus(Empty) returns (RawJsonPb);
   rpc IsOwner(StringRequest) returns (BoolRequest);
-  rpc GetWebhookSecret(Empty) returns (JsonValue);
-  rpc ProcessMessage(JsonArgs) returns (JsonValue);
+  rpc GetWebhookSecret(Empty) returns (RawJsonPb);
+  rpc ProcessMessage(JsonArgs) returns (RawJsonPb);
 }
 
 /** Database — raw query (BIBLE 의 도메인 port 마이그레이션 영역 — Phase B 개선 후보) */
 service DatabaseService {
-  rpc Query(JsonArgs) returns (JsonValue);
+  rpc Query(JsonArgs) returns (RawJsonPb);
 }
 
 /** Memory — Claude memory file 시스템 */
 service MemoryService {
   rpc GetIndex(Empty) returns (StringRequest);
-  rpc ReadFile(StringRequest) returns (JsonValue);
-  rpc ListFiles(Empty) returns (JsonValue);
+  rpc ReadFile(StringRequest) returns (RawJsonPb);
+  rpc ListFiles(Empty) returns (RawJsonPb);
   rpc SaveFile(JsonArgs) returns (Status);
   rpc DeleteFile(StringRequest) returns (Status);
 }
