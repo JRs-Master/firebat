@@ -32,7 +32,14 @@ export async function POST(req: NextRequest) {
   const core = getCore();
 
   // 이미 설정됨 = 재실행 거부 (변경은 어드민 설정 모달 경유)
-  if (await core.isAdminSetup()) {
+  // BoolRequest proto unwrap — `{value: bool}` 객체. raw `if (object)` 는 항상 truthy
+  // → 옛 버그: vault 비어있어도 항상 setup 거부. GET handler 와 동일 패턴 적용.
+  const setupRaw = await core.isAdminSetup();
+  const setupDone =
+    typeof setupRaw === 'boolean'
+      ? setupRaw
+      : (setupRaw && typeof setupRaw === 'object' && 'value' in setupRaw ? Boolean((setupRaw as { value: unknown }).value) : false);
+  if (setupDone) {
     return NextResponse.json(
       { success: false, error: '초기 설정이 이미 완료되었습니다. 변경은 어드민 설정 화면을 이용해 주세요.' },
       { status: 403 },
