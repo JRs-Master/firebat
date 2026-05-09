@@ -213,17 +213,46 @@ service ProjectService {
 // 5. ModuleService — ModuleManager
 // ──────────────────────────────────────────────────────────────────────────
 service ModuleService {
-  rpc Run(JsonArgs) returns (JsonValue);
-  rpc ListSystem(Empty) returns (JsonValue);
-  rpc ListUser(Empty) returns (JsonValue);
-  rpc GetSchema(JsonArgs) returns (JsonValue);
-  rpc GetSettings(StringRequest) returns (JsonValue);
-  rpc GetConfig(StringRequest) returns (JsonValue);
+  rpc Run(JsonArgs) returns (ModuleOutputPb);
+  rpc ListSystem(Empty) returns (ModuleListPb);
+  rpc ListUser(Empty) returns (ModuleListPb);
+  rpc GetSchema(JsonArgs) returns (RawJsonPb);
+  rpc GetSettings(StringRequest) returns (RawJsonPb);
+  rpc GetConfig(StringRequest) returns (RawJsonPb);
   rpc SetSettings(JsonArgs) returns (Status);
   rpc IsEnabled(StringRequest) returns (BoolRequest);
   rpc SetEnabled(JsonArgs) returns (Status);
-  rpc GetCmsSettings(Empty) returns (JsonValue);
-  rpc GetKakaoMapJsKey(Empty) returns (JsonValue);
+  rpc GetCmsSettings(Empty) returns (RawJsonPb);
+  rpc GetKakaoMapJsKey(Empty) returns (StringRequest);
+}
+
+/** 임의 JSON 직렬화 blob — 동적 스키마 / 설정값 전달용. raw_json = JSON 문자열 (null 이면 "null"). */
+message RawJsonPb {
+  string raw_json = 1;
+}
+
+/** ModuleOutput — sysmod sandbox 실행 결과. */
+message ModuleOutputPb {
+  bool success = 1;
+  optional string data_json = 2;
+  optional string error = 3;
+  optional string stderr = 4;
+  optional int32 exit_code = 5;
+  string protocol_version = 6;
+}
+
+/** ModuleEntry (SystemEntry) — 시스템·유저 모듈/서비스 항목. */
+message ModuleEntryPb {
+  string name = 1;
+  string description = 2;
+  string runtime = 3;
+  string entry_type = 4;
+  string scope = 5;
+  bool enabled = 6;
+}
+
+message ModuleListPb {
+  repeated ModuleEntryPb entries = 1;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
