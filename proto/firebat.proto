@@ -774,21 +774,33 @@ service ToolService {
 // ──────────────────────────────────────────────────────────────────────────
 // 18. EntityService — EntityManager (메모리 4-tier: entity + fact)
 // ──────────────────────────────────────────────────────────────────────────
-service EntityService {
-  rpc Save(JsonArgs) returns (JsonValue);
-  rpc Update(JsonArgs) returns (JsonValue);
-  rpc Delete(NumberRequest) returns (Status);
-  rpc Get(NumberRequest) returns (JsonValue);
-  rpc FindByName(StringRequest) returns (JsonValue);
-  rpc Search(JsonArgs) returns (JsonValue);
 
-  rpc SaveFact(JsonArgs) returns (JsonValue);
-  rpc UpdateFact(JsonArgs) returns (JsonValue);
+message EntitySaveResultPb {
+  int64 id = 1;
+  bool created = 2;
+}
+
+message FactSaveResultPb {
+  int64 id = 1;
+  bool skipped = 2;
+  double similarity = 3;
+}
+
+service EntityService {
+  rpc Save(JsonArgs) returns (EntitySaveResultPb);
+  rpc Update(JsonArgs) returns (Status);
+  rpc Delete(NumberRequest) returns (Status);
+  rpc Get(NumberRequest) returns (RawJsonPb);
+  rpc FindByName(StringRequest) returns (RawJsonPb);
+  rpc Search(JsonArgs) returns (RawJsonPb);
+
+  rpc SaveFact(JsonArgs) returns (FactSaveResultPb);
+  rpc UpdateFact(JsonArgs) returns (Status);
   rpc DeleteFact(NumberRequest) returns (Status);
-  rpc GetFact(NumberRequest) returns (JsonValue);
-  rpc GetTimeline(JsonArgs) returns (JsonValue);
-  rpc SearchFacts(JsonArgs) returns (JsonValue);
-  rpc RetrieveContext(JsonArgs) returns (JsonValue);
+  rpc GetFact(NumberRequest) returns (RawJsonPb);
+  rpc GetTimeline(JsonArgs) returns (RawJsonPb);
+  rpc SearchFacts(JsonArgs) returns (RawJsonPb);
+  rpc RetrieveContext(JsonArgs) returns (RawJsonPb);
   rpc CleanupExpiredFacts(Empty) returns (NumberRequest);
 }
 
