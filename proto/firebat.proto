@@ -411,26 +411,121 @@ service ConversationService {
   rpc CleanupExpiredShares(Empty) returns (NumberRequest);
 }
 
+message MediaVariantPb {
+  int64 width = 1;
+  optional int64 height = 2;
+  string format = 3;
+  string url = 4;
+  int64 bytes = 5;
+}
+
+message MediaFileRecordPb {
+  string slug = 1;
+  string ext = 2;
+  string content_type = 3;
+  int64 bytes = 4;
+  optional int64 width = 5;
+  optional int64 height = 6;
+  int64 created_at = 7;
+  optional string scope = 8;
+  optional string filename_hint = 9;
+  optional string prompt = 10;
+  optional string revised_prompt = 11;
+  optional string model = 12;
+  optional string size = 13;
+  optional string quality = 14;
+  optional string aspect_ratio = 15;
+  repeated MediaVariantPb variants = 16;
+  optional string thumbnail_url = 17;
+  optional string blurhash = 18;
+  optional string status = 19;
+  optional string error_msg = 20;
+  optional string source = 21;
+}
+
+/** Read 응답 — binary_base64 빈 문자열이면 미존재. */
+message MediaReadPb {
+  string binary_base64 = 1;
+  string content_type = 2;
+  MediaFileRecordPb record = 3;
+}
+
+message MediaListResultPb {
+  repeated MediaFileRecordPb items = 1;
+  int64 total = 2;
+}
+
+message MediaSaveResultPb {
+  string slug = 1;
+  string url = 2;
+  optional string thumbnail_url = 3;
+  repeated MediaVariantPb variants = 4;
+  optional string blurhash = 5;
+  optional int64 width = 6;
+  optional int64 height = 7;
+  int64 bytes = 8;
+}
+
+message GenerateImageResultPb {
+  string url = 1;
+  optional string thumbnail_url = 2;
+  repeated MediaVariantPb variants = 3;
+  optional string blurhash = 4;
+  optional int64 width = 5;
+  optional int64 height = 6;
+  string slug = 7;
+  optional string revised_prompt = 8;
+  string model_id = 9;
+  optional string aspect_ratio = 10;
+  optional double cost_usd = 11;
+}
+
+/** StartGeneration 응답 — slug + placeholder URL. */
+message StartGenerationPb {
+  string slug = 1;
+  string url = 2;
+}
+
+message ImageModelPb {
+  string id = 1;
+  string display_name = 2;
+  string provider = 3;
+  string format = 4;
+  repeated string sizes = 5;
+  repeated string qualities = 6;
+  optional bool subscription = 7;
+  optional bool requires_organization_verification = 8;
+}
+
+message ImageModelListPb {
+  repeated ImageModelPb models = 1;
+}
+
+/** GetImageSettings — 여러 필드를 raw JSON 으로 래핑. */
+message ImageSettingsPb {
+  string raw_json = 1;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 13. MediaService — MediaManager
 // ──────────────────────────────────────────────────────────────────────────
 service MediaService {
-  rpc Read(StringRequest) returns (JsonValue);
-  rpc List(JsonArgs) returns (JsonValue);
+  rpc Read(StringRequest) returns (MediaReadPb);
+  rpc List(JsonArgs) returns (MediaListResultPb);
   rpc Remove(StringRequest) returns (Status);
   rpc IsReady(StringRequest) returns (BoolRequest);
-  rpc StartGeneration(JsonArgs) returns (JsonValue);
-  rpc Generate(JsonArgs) returns (JsonValue);
-  rpc Regenerate(StringRequest) returns (JsonValue);
-  rpc Save(JsonArgs) returns (JsonValue);
+  rpc StartGeneration(JsonArgs) returns (StartGenerationPb);
+  rpc Generate(JsonArgs) returns (GenerateImageResultPb);
+  rpc Regenerate(StringRequest) returns (GenerateImageResultPb);
+  rpc Save(JsonArgs) returns (MediaSaveResultPb);
   rpc GetImageModel(Empty) returns (StringRequest);
   rpc SetImageModel(StringRequest) returns (Status);
-  rpc GetAvailableImageModels(Empty) returns (JsonValue);
-  rpc GetImageDefaultSize(Empty) returns (JsonValue);
+  rpc GetAvailableImageModels(Empty) returns (ImageModelListPb);
+  rpc GetImageDefaultSize(Empty) returns (OptionalStringPb);
   rpc SetImageDefaultSize(StringRequest) returns (Status);
-  rpc GetImageDefaultQuality(Empty) returns (JsonValue);
+  rpc GetImageDefaultQuality(Empty) returns (OptionalStringPb);
   rpc SetImageDefaultQuality(StringRequest) returns (Status);
-  rpc GetImageSettings(Empty) returns (JsonValue);
+  rpc GetImageSettings(Empty) returns (ImageSettingsPb);
 }
 
 // ──────────────────────────────────────────────────────────────────────────

@@ -1,17 +1,19 @@
 //! gRPC MediaService impl — MediaManager wrapping.
 //!
-//! Phase B-15 minimum: Read / List / Remove / Save / IsReady 활성.
-//! Generate / Regenerate / StartGeneration / 모델 설정 RPC 는 Phase B-16+ stub
-//! (AiManager + IImageGenPort 설정된 후).
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
+//! From impl 박혀 core port/manager struct ↔ proto generated struct 변환.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
-use crate::managers::media::{GenerateImageInput, MediaManager};
-use crate::ports::{MediaListOpts, MediaSaveOptions};
+use crate::managers::media::{GenerateImageInput, GenerateImageResult, MediaManager};
+use crate::ports::{
+    ImageModelInfo, MediaFileRecord, MediaListOpts, MediaSaveOptions, MediaSaveResult, MediaVariant,
+};
 use crate::proto::{
-    media_service_server::MediaService, BoolRequest, Empty, JsonArgs, JsonValue, Status,
-    StringRequest,
+    media_service_server::MediaService, BoolRequest, Empty, GenerateImageResultPb, ImageModelListPb,
+    ImageModelPb, ImageSettingsPb, JsonArgs, MediaFileRecordPb, MediaListResultPb, MediaReadPb,
+    MediaSaveResultPb, MediaVariantPb, OptionalStringPb, StartGenerationPb, Status, StringRequest,
 };
 
 pub struct MediaServiceImpl {
@@ -22,12 +24,6 @@ impl MediaServiceImpl {
     pub fn new(manager: Arc<MediaManager>) -> Self {
         Self { manager }
     }
-}
-
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
 }
 
 fn ok_status() -> Response<Status> {
@@ -46,28 +42,120 @@ fn err_status(msg: impl Into<String>) -> Response<Status> {
     })
 }
 
+// ─── proto ↔ core struct 변환 ─────────────────────────────────────────────
+
+impl From<MediaVariant> for MediaVariantPb {
+    fn from(v: MediaVariant) -> Self {
+        MediaVariantPb {
+            width: v.width,
+            height: v.height,
+            format: v.format,
+            url: v.url,
+            bytes: v.bytes,
+        }
+    }
+}
+
+impl From<MediaFileRecord> for MediaFileRecordPb {
+    fn from(r: MediaFileRecord) -> Self {
+        MediaFileRecordPb {
+            slug: r.slug,
+            ext: r.ext,
+            content_type: r.content_type,
+            bytes: r.bytes,
+            width: r.width,
+            height: r.height,
+            created_at: r.created_at,
+            scope: r.scope.map(|s| s.as_str().to_string()),
+            filename_hint: r.filename_hint,
+            prompt: r.prompt,
+            revised_prompt: r.revised_prompt,
+            model: r.model,
+            size: r.size,
+            quality: r.quality,
+            aspect_ratio: r.aspect_ratio,
+            variants: r.variants.into_iter().map(Into::into).collect(),
+            thumbnail_url: r.thumbnail_url,
+            blurhash: r.blurhash,
+            status: r.status,
+            error_msg: r.error_msg,
+            source: r.source,
+        }
+    }
+}
+
+impl From<MediaSaveResult> for MediaSaveResultPb {
+    fn from(r: MediaSaveResult) -> Self {
+        MediaSaveResultPb {
+            slug: r.slug,
+            url: r.url,
+            thumbnail_url: r.thumbnail_url,
+            variants: r.variants.into_iter().map(Into::into).collect(),
+            blurhash: r.blurhash,
+            width: r.width,
+            height: r.height,
+            bytes: r.bytes,
+        }
+    }
+}
+
+impl From<GenerateImageResult> for GenerateImageResultPb {
+    fn from(r: GenerateImageResult) -> Self {
+        GenerateImageResultPb {
+            url: r.url,
+            thumbnail_url: r.thumbnail_url,
+            variants: r.variants.into_iter().map(Into::into).collect(),
+            blurhash: r.blurhash,
+            width: r.width,
+            height: r.height,
+            slug: r.slug,
+            revised_prompt: r.revised_prompt,
+            model_id: r.model_id,
+            aspect_ratio: r.aspect_ratio,
+            cost_usd: r.cost_usd,
+        }
+    }
+}
+
+impl From<ImageModelInfo> for ImageModelPb {
+    fn from(m: ImageModelInfo) -> Self {
+        ImageModelPb {
+            id: m.id,
+            display_name: m.display_name,
+            provider: m.provider,
+            format: m.format,
+            sizes: m.sizes,
+            qualities: m.qualities,
+            subscription: m.subscription,
+            requires_organization_verification: m.requires_organization_verification,
+        }
+    }
+}
+
 #[tonic::async_trait]
 impl MediaService for MediaServiceImpl {
     async fn read(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<MediaReadPb>, TonicStatus> {
         let slug = req.into_inner().value;
         match self.manager.read(&slug).await {
             Ok(Some((binary, content_type, record))) => {
-                let b64 = base64_simple_encode(&binary);
-                json_response(&serde_json::json!({
-                    "binaryBase64": b64,
-                    "contentType": content_type,
-                    "record": record,
+                Ok(Response::new(MediaReadPb {
+                    binary_base64: base64_simple_encode(&binary),
+                    content_type,
+                    record: Some(record.into()),
                 }))
             }
-            Ok(None) => json_response(&serde_json::Value::Null),
+            Ok(None) => Ok(Response::new(MediaReadPb::default())),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
 
-    async fn list(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn list(
+        &self,
+        req: Request<JsonArgs>,
+    ) -> Result<Response<MediaListResultPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         let opts: MediaListOpts = if raw.trim().is_empty() {
             MediaListOpts::default()
@@ -76,7 +164,10 @@ impl MediaService for MediaServiceImpl {
                 .map_err(|e| TonicStatus::invalid_argument(format!("list args: {e}")))?
         };
         match self.manager.list(opts).await {
-            Ok(result) => json_response(&result),
+            Ok(result) => Ok(Response::new(MediaListResultPb {
+                items: result.items.into_iter().map(Into::into).collect(),
+                total: result.total as i64,
+            })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -97,14 +188,52 @@ impl MediaService for MediaServiceImpl {
         req: Request<StringRequest>,
     ) -> Result<Response<BoolRequest>, TonicStatus> {
         let slug = req.into_inner().value;
-        // 미디어 slug 이 아닌 외부 URL 이면 true 반환 (옛 TS isMediaReady 동등) — 단, 매니저는 stat 만.
-        // 외부 URL 검증은 Core facade 차원 (Phase B-16+).
         Ok(Response::new(BoolRequest {
             value: self.manager.is_ready(&slug).await,
         }))
     }
 
-    async fn save(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn start_generation(
+        &self,
+        req: Request<JsonArgs>,
+    ) -> Result<Response<StartGenerationPb>, TonicStatus> {
+        let raw = req.into_inner().raw;
+        let input: GenerateImageInput = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("input 파싱: {e}")))?;
+        match self.manager.start_generate(input).await {
+            Ok((slug, url)) => Ok(Response::new(StartGenerationPb { slug, url })),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
+    }
+
+    async fn generate(
+        &self,
+        req: Request<JsonArgs>,
+    ) -> Result<Response<GenerateImageResultPb>, TonicStatus> {
+        let raw = req.into_inner().raw;
+        let input: GenerateImageInput = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("input 파싱: {e}")))?;
+        match self.manager.generate_image(input, None).await {
+            Ok(result) => Ok(Response::new(result.into())),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
+    }
+
+    async fn regenerate(
+        &self,
+        req: Request<StringRequest>,
+    ) -> Result<Response<GenerateImageResultPb>, TonicStatus> {
+        let slug = req.into_inner().value;
+        match self.manager.regenerate_image_by_slug(&slug).await {
+            Ok((result, _new_slug)) => Ok(Response::new(result.into())),
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
+    }
+
+    async fn save(
+        &self,
+        req: Request<JsonArgs>,
+    ) -> Result<Response<MediaSaveResultPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {
@@ -121,46 +250,7 @@ impl MediaService for MediaServiceImpl {
             TonicStatus::invalid_argument(format!("base64 decode 실패: {e}"))
         })?;
         match self.manager.save(&binary, &args.content_type, args.opts).await {
-            Ok(result) => json_response(&result),
-            Err(e) => Err(TonicStatus::internal(e)),
-        }
-    }
-
-    // ── Image generation / 모델 설정 — MediaManager 위임 ──
-
-    async fn start_generation(
-        &self,
-        req: Request<JsonArgs>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let input: GenerateImageInput = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("input 파싱: {e}")))?;
-        match self.manager.start_generate(input).await {
-            Ok((slug, url)) => json_response(&serde_json::json!({"slug": slug, "url": url})),
-            Err(e) => Err(TonicStatus::internal(e)),
-        }
-    }
-
-    async fn generate(
-        &self,
-        req: Request<JsonArgs>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let input: GenerateImageInput = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("input 파싱: {e}")))?;
-        match self.manager.generate_image(input, None).await {
-            Ok(result) => json_response(&result),
-            Err(e) => Err(TonicStatus::internal(e)),
-        }
-    }
-
-    async fn regenerate(
-        &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        let slug = req.into_inner().value;
-        match self.manager.regenerate_image_by_slug(&slug).await {
-            Ok((result, _new_slug)) => json_response(&result),
+            Ok(result) => Ok(Response::new(result.into())),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -188,15 +278,25 @@ impl MediaService for MediaServiceImpl {
     async fn get_available_image_models(
         &self,
         _req: Request<Empty>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        json_response(&self.manager.list_image_models())
+    ) -> Result<Response<ImageModelListPb>, TonicStatus> {
+        let models = self
+            .manager
+            .list_image_models()
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        Ok(Response::new(ImageModelListPb { models }))
     }
 
     async fn get_image_default_size(
         &self,
         _req: Request<Empty>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        json_response(&serde_json::json!({"size": self.manager.get_image_default_size()}))
+    ) -> Result<Response<OptionalStringPb>, TonicStatus> {
+        let val = self.manager.get_image_default_size();
+        Ok(Response::new(OptionalStringPb {
+            value: val.clone().unwrap_or_default(),
+            present: val.is_some(),
+        }))
     }
 
     async fn set_image_default_size(
@@ -214,8 +314,12 @@ impl MediaService for MediaServiceImpl {
     async fn get_image_default_quality(
         &self,
         _req: Request<Empty>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        json_response(&serde_json::json!({"quality": self.manager.get_image_default_quality()}))
+    ) -> Result<Response<OptionalStringPb>, TonicStatus> {
+        let val = self.manager.get_image_default_quality();
+        Ok(Response::new(OptionalStringPb {
+            value: val.clone().unwrap_or_default(),
+            present: val.is_some(),
+        }))
     }
 
     async fn set_image_default_quality(
@@ -233,8 +337,11 @@ impl MediaService for MediaServiceImpl {
     async fn get_image_settings(
         &self,
         _req: Request<Empty>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        json_response(&self.manager.get_image_settings())
+    ) -> Result<Response<ImageSettingsPb>, TonicStatus> {
+        let settings = self.manager.get_image_settings();
+        let raw_json = serde_json::to_string(&settings)
+            .unwrap_or_else(|_| "{}".to_string());
+        Ok(Response::new(ImageSettingsPb { raw_json }))
     }
 }
 
