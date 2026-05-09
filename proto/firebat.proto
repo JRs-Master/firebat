@@ -341,20 +341,73 @@ service AuthService {
   rpc VerifyAdminPassword(StringRequest) returns (BoolRequest);
 }
 
+message ConversationSummaryPb {
+  string id = 1;
+  string title = 2;
+  int64 created_at = 3;
+  int64 updated_at = 4;
+}
+
+message ConversationListPb {
+  repeated ConversationSummaryPb items = 1;
+}
+
+message ConversationRecordPb {
+  string id = 1;
+  string title = 2;
+  /** messages 배열 — JSON 직렬화 (동적 Message 타입). */
+  string messages_json = 3;
+  int64 created_at = 4;
+  int64 updated_at = 5;
+}
+
+message HistorySearchMatchPb {
+  string conv_id = 1;
+  optional string conv_title = 2;
+  int64 msg_idx = 3;
+  string role = 4;
+  string content_preview = 5;
+  int64 created_at = 6;
+  float score = 7;
+  /** includeBlocks=true 시 AI blocks JSON. */
+  optional string blocks_json = 8;
+}
+
+message HistorySearchResultPb {
+  repeated HistorySearchMatchPb matches = 1;
+}
+
+message ShareResultPb {
+  string slug = 1;
+  int64 expires_at = 2;
+  bool reused = 3;
+}
+
+message SharedConversationPb {
+  /** slug 빈 문자열이면 없음. */
+  string slug = 1;
+  string share_type = 2;
+  string title = 3;
+  /** messages 배열 — JSON 직렬화. */
+  string messages_json = 4;
+  int64 created_at = 5;
+  int64 expires_at = 6;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 12. ConversationService — ConversationManager (+ Share)
 // ──────────────────────────────────────────────────────────────────────────
 service ConversationService {
-  rpc List(StringRequest) returns (JsonValue);
-  rpc Get(JsonArgs) returns (JsonValue);
+  rpc List(StringRequest) returns (ConversationListPb);
+  rpc Get(JsonArgs) returns (ConversationRecordPb);
   rpc Save(JsonArgs) returns (Status);
   rpc Delete(JsonArgs) returns (Status);
   rpc IsDeleted(JsonArgs) returns (BoolRequest);
-  rpc SearchHistory(JsonArgs) returns (JsonValue);
-  rpc GetCliSession(JsonArgs) returns (JsonValue);
+  rpc SearchHistory(JsonArgs) returns (HistorySearchResultPb);
+  rpc GetCliSession(JsonArgs) returns (OptionalStringPb);
   rpc SetCliSession(JsonArgs) returns (Status);
-  rpc CreateShare(JsonArgs) returns (JsonValue);
-  rpc GetShare(StringRequest) returns (JsonValue);
+  rpc CreateShare(JsonArgs) returns (ShareResultPb);
+  rpc GetShare(StringRequest) returns (SharedConversationPb);
   rpc CleanupExpiredShares(Empty) returns (NumberRequest);
 }
 
