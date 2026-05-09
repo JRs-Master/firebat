@@ -284,12 +284,53 @@ service StatusService {
 // ──────────────────────────────────────────────────────────────────────────
 // 16. CostService — CostManager (LLM 비용 + budget)
 // ──────────────────────────────────────────────────────────────────────────
+
+message LlmCostStatsRecordPb {
+  string date = 1;
+  string model = 2;
+  int64 calls = 3;
+  int64 input_tokens = 4;
+  int64 output_tokens = 5;
+  double cost_usd = 6;
+}
+
+message LlmCostStatsSummaryPb {
+  int64 total_input_tokens = 1;
+  int64 total_output_tokens = 2;
+  int64 total_cached_tokens = 3;
+  double total_cost_usd = 4;
+  int64 total_calls = 5;
+  repeated LlmCostStatsRecordPb records = 6;
+}
+
+message CostBudgetPb {
+  double daily_usd = 1;
+  double monthly_usd = 2;
+  int64 daily_calls = 3;
+  int64 monthly_calls = 4;
+  int64 alert_at_percent = 5;
+}
+
+message BudgetCheckResultPb {
+  bool within_budget = 1;
+  optional string reason = 2;
+  double daily_used_usd = 3;
+  double monthly_used_usd = 4;
+  int64 daily_calls = 5;
+  int64 monthly_calls = 6;
+  double daily_limit_usd = 7;
+  double monthly_limit_usd = 8;
+  int64 daily_limit_calls = 9;
+  int64 monthly_limit_calls = 10;
+  repeated string alerts = 11;
+}
+
 service CostService {
-  rpc GetStats(JsonArgs) returns (JsonValue);
+  rpc GetStats(JsonArgs) returns (LlmCostStatsSummaryPb);
   rpc Flush(Empty) returns (Status);
-  rpc GetBudget(Empty) returns (JsonValue);
+  rpc GetBudget(Empty) returns (CostBudgetPb);
   rpc SetBudget(JsonArgs) returns (Status);
-  rpc CheckBudget(Empty) returns (JsonValue);
+  rpc CheckBudget(Empty) returns (BudgetCheckResultPb);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
