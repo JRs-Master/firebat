@@ -27,28 +27,26 @@ export async function POST(req: NextRequest) {
   const { id, password } = await req.json();
   const core = getCore();
 
-  const raw = await core.login(id ?? '', password ?? '', attemptKeyFrom(req));
+  // RustCoreProxy 의 autoWrap.unwrapLogin 통과 후 형식:
+  //   - 성공 → AuthSession 객체 (token / type / role / createdAt 박힘)
+  //   - 실패 → null
+  //   - 잠금 → { locked: true, retryAfterSec }
+  const result = await core.login(id ?? '', password ?? '', attemptKeyFrom(req));
 
-  // 진짜 root cause 진단 — Rust 응답 raw print
-  console.error('[AUTH-DEBUG] login id=' + id + ' raw=' + JSON.stringify(raw));
-
-  // Rust 응답 형식 직접 파싱 — { ok: true, session } | { ok: false, error } | { ok: false, locked, retryAfterSec }
-  // RustCoreProxy 의 autoWrap minify 박힌 chunk 에서 동작 안 할 가능성 회피.
-  const r = raw as Record<string, unknown> | null;
   // 잠금
-  if (r && r.locked === true) {
-    const retryAfterSec = Number(r.retryAfterSec ?? r.retry_after_sec ?? 60);
+  if (result && typeof result === 'object' && 'locked' in result && result.locked) {
+    const retryAfterSec = (result as { retryAfterSec?: number }).retryAfterSec ?? 60;
     return NextResponse.json(
       { success: false, error: `로그인 시도 한도 초과 — ${retryAfterSec}초 후 다시 시도하세요` },
       { status: 429, headers: { 'Retry-After': String(retryAfterSec) } },
     );
   }
-  // 실패 (null / undefined / { ok: false })
-  if (!r || r.ok !== true || !r.session) {
+  // 실패 (null) — token 미박힘 시점도 차단
+  if (!result || typeof result !== 'object' || !('token' in result) || !result.token) {
     return NextResponse.json({ success: false }, { status: 401 });
   }
   // 정상 세션
-  const session = r.session as { token: string };
+  const session = result as { token: string };
 
   const res = NextResponse.json({ success: true });
 
