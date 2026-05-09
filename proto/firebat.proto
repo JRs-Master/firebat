@@ -412,11 +412,31 @@ service TemplateService {
 // Cross-cutting (Core facade 직속)
 // ──────────────────────────────────────────────────────────────────────────
 
+// ─── SettingsService typed messages ────────────────────────────────────────
+
+message AiModelResponsePb {
+  string model = 1;
+}
+
+message AiAssistantModelPb {
+  string id = 1;
+  string display_name = 2;
+}
+
+message AiAssistantModelListPb {
+  repeated AiAssistantModelPb models = 1;
+}
+
+/** key → model name 맵을 JSON string 으로 직렬화 (동적 키 집합, typed map 불가) */
+message LastModelByCategoryPb {
+  string raw_json = 1;
+}
+
 /** Settings — timezone / aiModel / userPrompt / anthropicCache / 등 */
 service SettingsService {
   rpc GetTimezone(Empty) returns (StringRequest);
   rpc SetTimezone(StringRequest) returns (BoolRequest);
-  rpc GetAiModel(Empty) returns (JsonValue);
+  rpc GetAiModel(Empty) returns (AiModelResponsePb);
   rpc SetAiModel(StringRequest) returns (BoolRequest);
   rpc GetAiThinkingLevel(Empty) returns (StringRequest);
   rpc SetAiThinkingLevel(StringRequest) returns (BoolRequest);
@@ -424,12 +444,12 @@ service SettingsService {
   rpc SetUserPrompt(StringRequest) returns (BoolRequest);
   rpc GetAnthropicCacheEnabled(Empty) returns (BoolRequest);
   rpc SetAnthropicCacheEnabled(BoolRequest) returns (BoolRequest);
-  rpc GetLastModelByCategory(Empty) returns (JsonValue);
+  rpc GetLastModelByCategory(Empty) returns (LastModelByCategoryPb);
   rpc SetLastModelByCategory(JsonArgs) returns (BoolRequest);
   rpc GetAiAssistantModel(Empty) returns (StringRequest);
   rpc SetAiAssistantModel(StringRequest) returns (BoolRequest);
   rpc GetAiAssistantDefault(Empty) returns (StringRequest);
-  rpc GetAvailableAiAssistantModels(Empty) returns (JsonValue);
+  rpc GetAvailableAiAssistantModels(Empty) returns (AiAssistantModelListPb);
 }
 
 /** Network — Sandbox 안에서 안전한 외부 fetch */

@@ -2,14 +2,17 @@
 //!
 //! 옛 TS Core facade 의 settings 메서드들 (timezone / aiModel / userPrompt / anthropicCache 등)
 //! Rust 재현. Vault 위 thin wrapper — 어드민 설정 모달 backend.
+//!
+//! Step 3 (typed RPC) — GetAiModel / GetLastModelByCategory / GetAvailableAiAssistantModels
+//! JsonValue 폐기 + typed proto message 사용.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::ports::IVaultPort;
 use crate::proto::{
-    settings_service_server::SettingsService, BoolRequest, Empty, JsonArgs, JsonValue,
-    StringRequest,
+    settings_service_server::SettingsService, AiAssistantModelListPb, AiAssistantModelPb,
+    AiModelResponsePb, BoolRequest, Empty, JsonArgs, LastModelByCategoryPb, StringRequest,
 };
 
 pub struct SettingsServiceImpl {
@@ -29,12 +32,6 @@ impl SettingsServiceImpl {
     }
 }
 
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
-}
-
 #[tonic::async_trait]
 impl SettingsService for SettingsServiceImpl {
     async fn get_timezone(&self, _req: Request<Empty>) -> Result<Response<StringRequest>, TonicStatus> {
@@ -52,9 +49,12 @@ impl SettingsService for SettingsServiceImpl {
         Ok(Response::new(BoolRequest { value: ok }))
     }
 
-    async fn get_ai_model(&self, _req: Request<Empty>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn get_ai_model(
+        &self,
+        _req: Request<Empty>,
+    ) -> Result<Response<AiModelResponsePb>, TonicStatus> {
         let model = self.get_or_default("system:llm:model", "claude-sonnet-4-6");
-        json_response(&serde_json::json!({"model": model}))
+        Ok(Response::new(AiModelResponsePb { model }))
     }
 
     async fn set_ai_model(
@@ -131,11 +131,13 @@ impl SettingsService for SettingsServiceImpl {
     async fn get_last_model_by_category(
         &self,
         _req: Request<Empty>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<LastModelByCategoryPb>, TonicStatus> {
         let raw = self.get_or_default("system:llm:last-by-category", "{}");
-        let parsed: serde_json::Value =
-            serde_json::from_str(&raw).unwrap_or(serde_json::json!({}));
-        json_response(&parsed)
+        // valid JSON 인지 검증만 — 항상 정규화된 JSON 반환
+        let raw_json = serde_json::from_str::<serde_json::Value>(&raw)
+            .map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "{}".to_string()))
+            .unwrap_or_else(|_| "{}".to_string());
+        Ok(Response::new(LastModelByCategoryPb { raw_json }))
     }
 
     async fn set_last_model_by_category(
@@ -188,14 +190,17 @@ impl SettingsService for SettingsServiceImpl {
     async fn get_available_ai_assistant_models(
         &self,
         _req: Request<Empty>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<AiAssistantModelListPb>, TonicStatus> {
         // 빌트인 carousel 에서 cli 제외 (assistant 는 fast/cheap 모델 우선)
         let models = crate::llm::config::builtin_models()
             .into_iter()
             .filter(|m| !m.format.starts_with("cli-"))
-            .map(|m| serde_json::json!({"id": m.id, "displayName": m.display_name}))
+            .map(|m| AiAssistantModelPb {
+                id: m.id,
+                display_name: m.display_name,
+            })
             .collect::<Vec<_>>();
-        json_response(&models)
+        Ok(Response::new(AiAssistantModelListPb { models }))
     }
 }
 
