@@ -385,6 +385,17 @@ impl AuthManager {
         !id.is_empty() && !password.is_empty()
     }
 
+    /// 평문 비밀번호 검증 — argon2 hash vs 입력 비교. set_admin_credentials 가 hash 저장
+    /// 하므로 raw plain text 비교는 항상 false. SettingsModal 의 비번 변경 PATCH 가
+    /// 현재 비번 검증할 때 사용 (login 부작용 — lock counter / 세션 발급 — 회피).
+    pub fn verify_admin_password(&self, plain: &str) -> bool {
+        let (_id, stored) = self.get_admin_credentials();
+        if stored.is_empty() {
+            return false;
+        }
+        verify_password(&stored, plain)
+    }
+
     /// 자격증명 변경 = 모든 옛 session 즉시 무효화. API 토큰은 별도 lifecycle 이라 보존
     /// (revoke_api_tokens 가 따로 호출해야 폐기). 비번 변경 후 옛 쿠키 우회 차단 (2026-05-09).
     /// 비밀번호는 argon2id hash 후 vault 저장 (평문 저장 X — vault.db 유출 시 비번 노출 차단).

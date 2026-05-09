@@ -160,6 +160,16 @@ impl AuthService for AuthServiceImpl {
         }))
     }
 
+    async fn verify_admin_password(
+        &self,
+        req: Request<StringRequest>,
+    ) -> Result<Response<BoolRequest>, TonicStatus> {
+        let plain = req.into_inner().value;
+        Ok(Response::new(BoolRequest {
+            value: self.manager.verify_admin_password(&plain),
+        }))
+    }
+
     async fn set_admin_credentials(
         &self,
         req: Request<JsonArgs>,

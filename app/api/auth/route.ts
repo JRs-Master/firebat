@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 import { SESSION_MAX_AGE_SECONDS } from '../../../lib/config';
-import * as nodeCrypto from 'crypto';
 
 /** rate-limit key — IP 또는 fallback 'unknown'. proxy 뒤일 때 X-Forwarded-For 우선. */
 function attemptKeyFrom(req: NextRequest): string {
@@ -11,15 +10,6 @@ function attemptKeyFrom(req: NextRequest): string {
   const real = req.headers.get('x-real-ip');
   if (real) return real;
   return 'unknown';
-}
-
-/** 시간 안정 문자열 비교 — currentPassword 비교 시 timing attack 방지 */
-function timingSafeStringEqual(a: string, b: string): boolean {
-  const max = Math.max(a.length, b.length, 1);
-  const ab = Buffer.from(a.padEnd(max, '\0'));
-  const bb = Buffer.from(b.padEnd(max, '\0'));
-  if (ab.length !== bb.length) return false;
-  return nodeCrypto.timingSafeEqual(ab, bb) && a.length === b.length;
 }
 
 // 로그인
@@ -86,13 +76,41 @@ export async function PATCH(req: NextRequest) {
 
   const { currentPassword, newId, newPassword } = await req.json();
   const core = getCore();
-  const creds = await core.getAdminCredentials();
 
-  if (!currentPassword || !timingSafeStringEqual(currentPassword, creds.password)) {
+  // argon2 hash 검증 — Rust core 가 hash 저장/검증 책임. raw plain text 비교 X.
+  // (옛 broken: timingSafeStringEqual(plain, hash) → 항상 mismatch → 비번 변경 자체 불가)
+  if (!currentPassword) {
+    return NextResponse.json({ success: false, error: '현재 비밀번호가 틀렸습니다.' }, { status: 401 });
+  }
+  const verifyResp = await core.verifyAdminPassword(currentPassword);
+  // BoolRequest proto unwrap — `{value: bool}` 또는 단순 boolean 둘 다 수용
+  const isValid = typeof verifyResp === 'boolean'
+    ? verifyResp
+    : (verifyResp && typeof verifyResp === 'object' && 'value' in verifyResp ? Boolean((verifyResp as { value: unknown }).value) : false);
+  if (!isValid) {
     return NextResponse.json({ success: false, error: '현재 비밀번호가 틀렸습니다.' }, { status: 401 });
   }
   if (!newId?.trim() && !newPassword?.trim()) {
     return NextResponse.json({ success: false, error: '변경할 ID 또는 비밀번호를 입력해주세요.' }, { status: 400 });
+  }
+
+  // 새 비번 정책 검증 (8자 이상 + 4 categories 중 3 이상) — 위자드와 일관
+  if (newPassword?.trim()) {
+    const pw = newPassword.trim();
+    if (pw.length < 8) {
+      return NextResponse.json({ success: false, error: '비밀번호는 8자 이상이어야 합니다.' }, { status: 400 });
+    }
+    let categories = 0;
+    if (/[A-Z]/.test(pw)) categories++;
+    if (/[a-z]/.test(pw)) categories++;
+    if (/\d/.test(pw)) categories++;
+    if (/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(pw)) categories++;
+    if (categories < 3) {
+      return NextResponse.json(
+        { success: false, error: '비밀번호는 대문자·소문자·숫자·특수문자 중 3종류 이상을 포함해야 합니다.' },
+        { status: 400 },
+      );
+    }
   }
 
   await core.setAdminCredentials(newId?.trim() || undefined, newPassword?.trim() || undefined);

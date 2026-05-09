@@ -216,6 +216,9 @@ service AuthService {
   rpc SetAdminCredentials(JsonArgs) returns (Status);
   // 첫 부팅 setup 검출 — frontend `/login` 이 호출, false 면 setup wizard 노출.
   rpc IsAdminSetup(Empty) returns (BoolRequest);
+  // 평문 비번 검증 — argon2 hash 비교. SettingsModal 의 비번 변경 PATCH 가 사용
+  // (login 부작용 — lock counter / 세션 발급 — 회피).
+  rpc VerifyAdminPassword(StringRequest) returns (BoolRequest);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
