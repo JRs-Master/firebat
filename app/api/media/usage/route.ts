@@ -14,7 +14,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
  *        page delete 시 해당 page_slug 의 사용 관계 일괄 정리.
  */
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
 
   const slug = req.nextUrl.searchParams.get('slug');

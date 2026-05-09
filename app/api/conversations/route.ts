@@ -5,15 +5,15 @@ import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 /**
  * /api/conversations — 관리자 대화 히스토리 CRUD (다기기 동기화)
  */
-function assertAdmin(req: NextRequest) {
-  const auth = requireAuth(req);
+async function assertAdmin(req: NextRequest) {
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   return auth;
 }
 
 /** GET — 전체 목록 또는 ?id=xxx 단건 */
 export async function GET(req: NextRequest) {
-  const auth = assertAdmin(req);
+  const auth = await assertAdmin(req);
   if (auth instanceof NextResponse) return auth;
   const id = req.nextUrl.searchParams.get('id');
   const core = getCore();
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
 
 /** POST — 대화 저장/갱신 (upsert). 삭제된 대화(tombstone) 는 409 로 거부. */
 export async function POST(req: NextRequest) {
-  const auth = assertAdmin(req);
+  const auth = await assertAdmin(req);
   if (auth instanceof NextResponse) return auth;
   try {
     const body = await req.json();
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
 
 /** DELETE — ?id=xxx 삭제 */
 export async function DELETE(req: NextRequest) {
-  const auth = assertAdmin(req);
+  const auth = await assertAdmin(req);
   if (auth instanceof NextResponse) return auth;
   const id = req.nextUrl.searchParams.get('id');
   if (!id) return NextResponse.json({ success: false, error: 'id 필수' }, { status: 400 });

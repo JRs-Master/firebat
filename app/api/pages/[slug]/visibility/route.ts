@@ -18,7 +18,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
 
   const slug = safeDecodeSlug((await params).slug);

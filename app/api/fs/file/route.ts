@@ -3,7 +3,7 @@ import { getCore } from '../../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
 export async function GET(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuth(request);
   if (isAuthError(auth)) return auth;
   const targetPath = new URL(request.url).searchParams.get('path');
   if (!targetPath) {
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuth(request);
   if (isAuthError(auth)) return auth;
   const { path: targetPath, content } = await request.json();
   if (!targetPath || content === undefined) {

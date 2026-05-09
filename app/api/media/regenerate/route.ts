@@ -7,7 +7,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
  *  성공 시 새 slug 발급 + 기존 slug 제거 (Core 가 처리).
  *  관리자 인증 필수. */
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
 
   const slug = req.nextUrl.searchParams.get('slug');

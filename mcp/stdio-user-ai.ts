@@ -16,7 +16,7 @@ import { getCore } from '../lib/singleton';
 async function main() {
   const core = getCore();
   const { createInternalMcpServer } = await import('./internal-server');
-  const server = createInternalMcpServer(core);
+  const server = await createInternalMcpServer(core);
   const transport = new StdioServerTransport();
   await server.connect(transport);
 }

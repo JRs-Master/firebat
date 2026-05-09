@@ -11,7 +11,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const rawSlug = (await params).slug;
   const slug = safeDecodeSlug(rawSlug);
@@ -27,7 +27,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> },
 ) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const rawSlug = (await params).slug;
   const oldSlug = safeDecodeSlug(rawSlug);

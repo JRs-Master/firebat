@@ -1,36 +1,20 @@
 import { ConversationMeta } from './components/Sidebar';
 
+// Rust core 의 builtin_models() 박힌 거 1:1 — 운영 시점에 Vault API 키 박으면 활성.
+// 옛 v0.x 박은 30+ 모델 list 폐기 — Rust port 시점에 carousel 단순화 (7 builtin).
 export const AI_MODELS = [
-  // OpenAI (Responses API)
-  { value: 'gpt-5.4-nano', label: 'GPT-5.4 Nano (초경량/저렴)' },
-  { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini (OpenAI 가성비)' },
-  { value: 'gpt-5.4',      label: 'GPT-5.4 (OpenAI 고품질)' },
-  { value: 'gpt-5.5',      label: 'GPT-5.5 (OpenAI 최상위/프로)' },
-  // Google AI Studio (OpenAI-compat)
-  { value: 'gemini-3-flash-preview',          label: 'Gemini 3 Flash (AI Studio)' },
-  { value: 'gemini-3.1-flash-lite-preview',   label: 'Gemini 3.1 Flash Lite (AI Studio)' },
-  { value: 'gemini-3.1-pro-preview',          label: 'Gemini 3.1 Pro (AI Studio)' },
-  // Google Vertex AI (Service Account)
-  { value: 'gemini-3-flash-preview-vertex',          label: 'Gemini 3 Flash (Vertex)' },
-  { value: 'gemini-3.1-flash-lite-preview-vertex',   label: 'Gemini 3.1 Flash Lite (Vertex)' },
-  { value: 'gemini-3.1-pro-preview-vertex',          label: 'Gemini 3.1 Pro (Vertex)' },
-  // Anthropic
-  { value: 'claude-haiku-4-5',  label: 'Claude Haiku 4.5 (저렴/빠름)' },
-  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6 (균형)' },
-  { value: 'claude-opus-4-7',   label: 'Claude Opus 4.7 (최고급)' },
-  // CLI 모드 (구독 기반, 키 불필요)
-  { value: 'cli-claude-code-auto',   label: 'Claude Code CLI · Auto (플랜 기본값)' },
-  { value: 'cli-claude-code',        label: 'Claude Code CLI · Sonnet 4.6' },
-  { value: 'cli-claude-code-haiku',  label: 'Claude Code CLI · Haiku 4.5 (빠름)' },
-  { value: 'cli-claude-code-opus',   label: 'Claude Code CLI · Opus 4.7 (Max 전용)' },
-  { value: 'cli-codex-auto',         label: 'Codex CLI · Auto (플랜 기본값)' },
-  { value: 'cli-codex',              label: 'Codex CLI · GPT-5.4' },
-  { value: 'cli-codex-mini',         label: 'Codex CLI · GPT-5.4 Mini (가성비)' },
-  { value: 'cli-codex-codex',        label: 'Codex CLI · GPT-5.3 Codex (코딩 특화)' },
-  { value: 'cli-codex-codex-spark',  label: 'Codex CLI · GPT-5.3 Codex Spark (빠름)' },
-  { value: 'cli-gemini-auto',        label: 'Gemini CLI · Auto (Gemini 3)' },
-  { value: 'cli-gemini',             label: 'Gemini CLI · Gemini 3 Pro' },
-  { value: 'cli-gemini-flash',       label: 'Gemini CLI · Gemini 3 Flash (빠름)' },
+  // Anthropic API
+  { value: 'claude-4-sonnet', label: 'Claude 4 Sonnet' },
+  // OpenAI Responses API
+  { value: 'gpt-5', label: 'GPT-5' },
+  // Google Gemini API
+  { value: 'gemini-3-pro', label: 'Gemini 3 Pro' },
+  // Google Vertex AI
+  { value: 'vertex-gemini-3-pro', label: 'Gemini 3 Pro (Vertex)' },
+  // CLI (구독 기반)
+  { value: 'cli-claude-code', label: 'Claude Code CLI' },
+  { value: 'cli-codex', label: 'Codex CLI' },
+  { value: 'cli-gemini', label: 'Gemini CLI' },
 ];
 // 기존 이름 호환을 위한 alias
 export const GEMINI_MODELS = AI_MODELS;

@@ -87,12 +87,12 @@ export async function DELETE(req: NextRequest) {
 
 // 자격증명 변경 (현재 비밀번호 검증 필수)
 export async function PATCH(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
 
   const { currentPassword, newId, newPassword } = await req.json();
   const core = getCore();
-  const creds = core.getAdminCredentials();
+  const creds = await core.getAdminCredentials();
 
   if (!currentPassword || !timingSafeStringEqual(currentPassword, creds.password)) {
     return NextResponse.json({ success: false, error: '현재 비밀번호가 틀렸습니다.' }, { status: 401 });
@@ -101,6 +101,6 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: false, error: '변경할 ID 또는 비밀번호를 입력해주세요.' }, { status: 400 });
   }
 
-  core.setAdminCredentials(newId?.trim() || undefined, newPassword?.trim() || undefined);
+  await core.setAdminCredentials(newId?.trim() || undefined, newPassword?.trim() || undefined);
   return NextResponse.json({ success: true });
 }

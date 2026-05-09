@@ -13,7 +13,7 @@ import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   let body: any;
   try { body = await req.json(); } catch { return NextResponse.json({ success: false, error: 'invalid JSON' }, { status: 400 }); }

@@ -53,7 +53,7 @@ async function findMatchingPages(keyword: string): Promise<{ pages: PageListItem
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const keyword = decodeKeyword((await params).keyword);
-  const seo = getCore().getCmsSettings();
+  const seo = await getCore().getCmsSettings();
   const canonical = normalizeTag(keyword, seo.tagAliases);
   return {
     title: `#${canonical} — ${seo.siteTitle}`,
@@ -67,7 +67,7 @@ export default async function TagPage({ params, searchParams }: Props) {
   const { pages, canonical } = await findMatchingPages(rawKeyword);
   if (pages.length === 0) notFound();
 
-  const cms = getCore().getCmsSettings();
+  const cms = await getCore().getCmsSettings();
   const sp = searchParams ? await searchParams : {};
   const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);
   const perPage = cms.layout.pageList.perPage;

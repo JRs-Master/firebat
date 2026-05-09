@@ -15,7 +15,7 @@ import { getBaseUrl } from '../../../lib/base-url';
  * → { success: true, slug, url, expiresAt }
  */
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   try {
     const body = await req.json();

@@ -211,7 +211,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
     if (savedPw) {
       const pw = decodeURIComponent(savedPw);
       if (isProjectPassword && spec.project) {
-        verified = core.verifyProjectPassword(spec.project, pw);
+        verified = await core.verifyProjectPassword(spec.project, pw);
       } else {
         const res = await core.verifyPagePassword(slug, pw);
         verified = res.success && res.data === true;

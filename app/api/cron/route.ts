@@ -4,7 +4,7 @@ import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 
 /** POST /api/cron?action=run&jobId=xxx — 기존 cron 잡 즉시 1회 트리거 */
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const action = req.nextUrl.searchParams.get('action');
   if (action !== 'run') return NextResponse.json({ error: '지원하지 않는 action — ?action=run 만 허용' }, { status: 400 });
@@ -18,15 +18,15 @@ export async function POST(req: NextRequest) {
 
 /** GET /api/cron — 크론 잡 목록 + 실행 로그 + 페이지 열기 알림 */
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const core = getCore();
-  const jobs = core.listCronJobs();
-  const logs = core.getCronLogs(50);
+  const jobs = await core.listCronJobs();
+  const logs = await core.getCronLogs(50);
 
   // ?notify=poll → 알림 소비 (조회 후 삭제)
   const notifications = req.nextUrl.searchParams.get('notify') === 'poll'
-    ? core.consumeCronNotifications()
+    ? await core.consumeCronNotifications()
     : [];
 
   return NextResponse.json({ jobs, logs, notifications });
@@ -34,12 +34,12 @@ export async function GET(req: NextRequest) {
 
 /** DELETE /api/cron?jobId=xxx — 크론 잡 해제, DELETE /api/cron?logs=clear — 로그 전체 삭제 */
 export async function DELETE(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const core = getCore();
 
   if (req.nextUrl.searchParams.get('logs') === 'clear') {
-    core.clearCronLogs();
+    await core.clearCronLogs();
     return NextResponse.json({ success: true });
   }
 
@@ -53,7 +53,7 @@ export async function DELETE(req: NextRequest) {
 
 /** PUT /api/cron — 크론 잡 수정 (해제 후 재등록) */
 export async function PUT(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   try {
     const body = await req.json();

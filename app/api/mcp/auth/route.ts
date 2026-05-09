@@ -85,7 +85,7 @@ export function getServiceConfig(key: string) {
 
 /** POST — OAuth URL 생성 */
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   try {
     const { serverName } = await req.json();
@@ -147,7 +147,7 @@ export async function POST(req: NextRequest) {
 
 /** DELETE — credentials 삭제 (재인증용) */
 export async function DELETE(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const serverName = req.nextUrl.searchParams.get('server');
   if (!serverName) {

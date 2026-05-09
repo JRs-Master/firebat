@@ -14,6 +14,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'project, password 필수' }, { status: 400 });
   }
 
-  const verified = getCore().verifyProjectPassword(project, password);
+  const verified = await getCore().verifyProjectPassword(project, password);
   return NextResponse.json({ success: true, verified });
 }

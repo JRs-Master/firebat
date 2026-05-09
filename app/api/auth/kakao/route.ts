@@ -12,7 +12,7 @@ import * as nodeCrypto from 'crypto';
  */
 export async function GET(req: NextRequest) {
   const core = getCore();
-  const restApiKey = core.getUserSecret('KAKAO_REST_API_KEY');
+  const restApiKey = await core.getUserSecret('KAKAO_REST_API_KEY');
 
   if (!restApiKey) {
     return NextResponse.json(

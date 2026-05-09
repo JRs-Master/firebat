@@ -3,7 +3,7 @@ import { getCore } from '../../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const projects = await getCore().scanProjects();
   return NextResponse.json({ success: true, projects });
@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
 
 /** PATCH — action 분기: rename (일괄 slug 변경) 또는 visibility 설정 (기본) */
 export async function PATCH(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuth(request);
   if (isAuthError(auth)) return auth;
 
   const body = await request.json();
@@ -39,12 +39,12 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'password 모드에서는 비밀번호 필수' }, { status: 400 });
   }
 
-  const result = getCore().setProjectVisibility(project, visibility as 'public' | 'password' | 'private', password);
+  const result = await getCore().setProjectVisibility(project, visibility as 'public' | 'password' | 'private', password);
   return NextResponse.json(result);
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuth(request);
   if (isAuthError(auth)) return auth;
   const project = new URL(request.url).searchParams.get('project');
   if (!project) {

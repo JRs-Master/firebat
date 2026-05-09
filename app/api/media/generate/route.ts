@@ -19,7 +19,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
  * 관리자 인증 필수.
  */
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
 
   const body = await req.json().catch(() => null);

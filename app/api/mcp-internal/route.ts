@@ -13,12 +13,12 @@ import { createInternalMcpServer } from '../../../mcp/internal-server';
 
 const sessions = new Map<string, { transport: WebStandardStreamableHTTPServerTransport }>();
 
-function validateBearerToken(req: NextRequest): boolean {
+async function validateBearerToken(req: NextRequest): Promise<boolean> {
   const authHeader = req.headers.get('authorization') ?? '';
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) return false;
   const core = getCore();
-  const stored = core.getGeminiKey('system:internal-mcp-token');
+  const stored = await core.getGeminiKey('system:internal-mcp-token');
   return !!stored && stored === match[1];
 }
 
@@ -36,13 +36,13 @@ function serviceDisabledResponse() {
   );
 }
 
-function checkServiceEnabled(): boolean {
-  return getCore().isModuleEnabled('mcp-server-llm');
+async function checkServiceEnabled(): Promise<boolean> {
+  return await getCore().isModuleEnabled('mcp-server-llm');
 }
 
 export async function POST(req: NextRequest) {
-  if (!checkServiceEnabled()) return serviceDisabledResponse();
-  if (!validateBearerToken(req)) return unauthorizedResponse();
+  if (!await checkServiceEnabled()) return serviceDisabledResponse();
+  if (!await validateBearerToken(req)) return unauthorizedResponse();
 
   const sessionId = req.headers.get('mcp-session-id');
   if (sessionId && sessions.has(sessionId)) {
@@ -57,15 +57,15 @@ export async function POST(req: NextRequest) {
   });
 
   const core = getCore();
-  const server = createInternalMcpServer(core);
+  const server = await createInternalMcpServer(core);
   await server.connect(transport);
 
   return transport.handleRequest(req);
 }
 
 export async function GET(req: NextRequest) {
-  if (!checkServiceEnabled()) return serviceDisabledResponse();
-  if (!validateBearerToken(req)) return unauthorizedResponse();
+  if (!await checkServiceEnabled()) return serviceDisabledResponse();
+  if (!await validateBearerToken(req)) return unauthorizedResponse();
   const sessionId = req.headers.get('mcp-session-id');
   if (!sessionId || !sessions.has(sessionId)) {
     return new Response(JSON.stringify({ error: 'Invalid or missing session. POST first to initialize.' }), {
@@ -77,8 +77,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  if (!checkServiceEnabled()) return serviceDisabledResponse();
-  if (!validateBearerToken(req)) return unauthorizedResponse();
+  if (!await checkServiceEnabled()) return serviceDisabledResponse();
+  if (!await validateBearerToken(req)) return unauthorizedResponse();
   const sessionId = req.headers.get('mcp-session-id');
   if (sessionId && sessions.has(sessionId)) {
     const { transport } = sessions.get(sessionId)!;

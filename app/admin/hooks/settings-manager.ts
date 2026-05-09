@@ -37,7 +37,7 @@ export type SettingsSchema = {
 };
 
 const DEFAULTS: SettingsSchema = {
-  'firebat_model': 'gpt-5.4-mini',
+  'firebat_model': 'claude-4-sonnet',
   'firebat_plan_mode': 'off',
   'firebat_active_conv': '',
   'firebat_last_model_by_category': {},

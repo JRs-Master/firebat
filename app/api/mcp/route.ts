@@ -16,13 +16,13 @@ import { createFirebatMcpServer } from '../../../mcp/server';
 const sessions = new Map<string, { transport: WebStandardStreamableHTTPServerTransport }>();
 
 /** Authorization 헤더에서 Bearer 토큰 추출 + 검증 */
-function validateBearerToken(req: NextRequest): boolean {
+async function validateBearerToken(req: NextRequest): Promise<boolean> {
   const authHeader = req.headers.get('authorization') ?? '';
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) return false;
 
   const core = getCore();
-  return !!core.validateApiToken(match[1]);
+  return !!(await core.validateApiToken(match[1]));
 }
 
 function unauthorizedResponse() {
@@ -39,14 +39,14 @@ function serviceDisabledResponse() {
   );
 }
 
-function checkServiceEnabled(): boolean {
-  return getCore().isModuleEnabled('mcp-server-app');
+async function checkServiceEnabled(): Promise<boolean> {
+  return await getCore().isModuleEnabled('mcp-server-app');
 }
 
 /** POST /api/mcp — JSON-RPC 요청 처리 (초기화 + 일반 메시지) */
 export async function POST(req: NextRequest) {
-  if (!checkServiceEnabled()) return serviceDisabledResponse();
-  if (!validateBearerToken(req)) return unauthorizedResponse();
+  if (!await checkServiceEnabled()) return serviceDisabledResponse();
+  if (!await validateBearerToken(req)) return unauthorizedResponse();
 
   const sessionId = req.headers.get('mcp-session-id');
 
@@ -76,8 +76,8 @@ export async function POST(req: NextRequest) {
 
 /** GET /api/mcp — SSE 스트림 (서버→클라이언트 알림용) */
 export async function GET(req: NextRequest) {
-  if (!checkServiceEnabled()) return serviceDisabledResponse();
-  if (!validateBearerToken(req)) return unauthorizedResponse();
+  if (!await checkServiceEnabled()) return serviceDisabledResponse();
+  if (!await validateBearerToken(req)) return unauthorizedResponse();
 
   const sessionId = req.headers.get('mcp-session-id');
   if (!sessionId || !sessions.has(sessionId)) {
@@ -93,8 +93,8 @@ export async function GET(req: NextRequest) {
 
 /** DELETE /api/mcp — 세션 종료 */
 export async function DELETE(req: NextRequest) {
-  if (!checkServiceEnabled()) return serviceDisabledResponse();
-  if (!validateBearerToken(req)) return unauthorizedResponse();
+  if (!await checkServiceEnabled()) return serviceDisabledResponse();
+  if (!await validateBearerToken(req)) return unauthorizedResponse();
 
   const sessionId = req.headers.get('mcp-session-id');
   if (sessionId && sessions.has(sessionId)) {

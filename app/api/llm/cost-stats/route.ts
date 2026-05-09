@@ -10,7 +10,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
  *  응답: { totalCalls, totalInputTokens, totalOutputTokens, totalCostUsd, records: [...] }
  */
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
 
   const url = req.nextUrl;
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   const toDate = url.searchParams.get('toDate') ?? undefined;
   const model = url.searchParams.get('model') ?? undefined;
 
-  const stats = getCore().getLlmCostStats({
+  const stats = await getCore().getLlmCostStats({
     ...(fromDate ? { fromDate } : {}),
     ...(toDate ? { toDate } : {}),
     ...(model ? { model } : {}),

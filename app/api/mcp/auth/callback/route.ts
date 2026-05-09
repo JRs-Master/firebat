@@ -45,7 +45,7 @@ function htmlResponse(title: string, body: string, type: 'success' | 'error' | '
 }
 
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const code = req.nextUrl.searchParams.get('code');
   const state = req.nextUrl.searchParams.get('state');

@@ -14,8 +14,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
-function assertAdmin(req: NextRequest) {
-  const auth = requireAuth(req);
+async function assertAdmin(req: NextRequest) {
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   return auth;
 }
@@ -57,7 +57,7 @@ function probeCli(command: string, timeoutMs: number = 5000): Promise<{ installe
 
 /** GET /api/auth/cli?provider=claude-code|codex|gemini — 설치·로그인 상태 확인 */
 export async function GET(req: NextRequest) {
-  const auth = assertAdmin(req);
+  const auth = await assertAdmin(req);
   if (auth instanceof NextResponse) return auth;
 
   const provider = req.nextUrl.searchParams.get('provider') || 'claude-code';

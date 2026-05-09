@@ -13,14 +13,14 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
  */
 
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const status = await getCore().getTelegramWebhookStatus();
   return NextResponse.json({ success: true, ...status });
 }
 
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const body = await req.json().catch(() => null);
   if (!body || typeof body.domain !== 'string') {
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const result = await getCore().removeTelegramWebhook();
   if (!result.success) {

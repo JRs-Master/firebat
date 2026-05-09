@@ -17,7 +17,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
  * 메타에 source: 'upload' 자동 마킹 — AI 생성 이미지와 시각·필터 구분.
  */
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
 
   const body = await req.json().catch(() => null);

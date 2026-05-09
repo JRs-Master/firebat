@@ -6,7 +6,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
  *  갤러리용 미디어 목록 — 관리자 인증 필수.
  */
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
 
   const url = req.nextUrl;
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
 /** DELETE /api/media/list?slug=2026-04-24-foo-abcd — 갤러리에서 삭제 */
 export async function DELETE(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const slug = req.nextUrl.searchParams.get('slug');
   if (!slug) {

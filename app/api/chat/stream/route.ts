@@ -20,7 +20,7 @@ export const dynamic = 'force-dynamic';
  * 레거시 JSON 모드 (plan 이벤트, corrId 기반 2-step) 는 v0.1, 2026-04-22 삭제됨.
  */
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const { prompt, config, history = [], image, previousResponseId, conversationId, planMode, planExecuteId, planReviseId, systemId, userId } = await req.json();
 

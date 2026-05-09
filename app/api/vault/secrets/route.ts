@@ -4,13 +4,13 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
 /** GET /api/vault/secrets — 사용자 시크릿 키 목록 (값은 마스킹) + 유저 모듈 필요 시크릿 */
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   try {
     const core = getCore();
-    const names = core.listUserSecrets();
-    const secrets = names.map(name => {
-      const value = core.getUserSecret(name);
+    const names = await core.listUserSecrets();
+    const secrets = await Promise.all(names.map(async (name: string) => {
+      const value = await core.getUserSecret(name);
       return {
         name,
         hasValue: !!value,
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
           ? (value.length > 10 ? `${value.substring(0, 4)}...${value.substring(value.length - 4)}` : '***')
           : '',
       };
-    });
+    }));
     // 유저 모듈 config.json에서 필요한 시크릿 자동 수집
     const moduleSecrets = await core.listUserModuleSecrets();
     return NextResponse.json({ success: true, secrets, moduleSecrets });
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
 /** POST /api/vault/secrets — 사용자 시크릿 저장 { name, value } */
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   try {
     const { name, value } = await req.json();
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: '키 이름은 영문, 숫자, -, _ 만 가능합니다.' }, { status: 400 });
     }
     const core = getCore();
-    const saved = core.setUserSecret(name, value);
+    const saved = await core.setUserSecret(name, value);
     return saved
       ? NextResponse.json({ success: true })
       : NextResponse.json({ success: false, error: '저장 실패' }, { status: 500 });
@@ -55,13 +55,13 @@ export async function POST(req: NextRequest) {
 
 /** DELETE /api/vault/secrets?name=xxx — 사용자 시크릿 삭제 */
 export async function DELETE(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const name = req.nextUrl.searchParams.get('name');
   if (!name) return NextResponse.json({ success: false, error: 'name 필요' }, { status: 400 });
 
   const core = getCore();
-  const deleted = core.deleteUserSecret(name);
+  const deleted = await core.deleteUserSecret(name);
   return deleted
     ? NextResponse.json({ success: true })
     : NextResponse.json({ success: false, error: '삭제 실패' }, { status: 500 });

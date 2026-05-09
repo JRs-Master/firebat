@@ -3,7 +3,7 @@ import { getCore } from '../../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
 export async function DELETE(request: NextRequest) {
-  const auth = requireAuth(request);
+  const auth = await requireAuth(request);
   if (isAuthError(auth)) return auth;
   const targetPath = new URL(request.url).searchParams.get('path');
   if (!targetPath) {

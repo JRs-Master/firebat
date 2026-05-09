@@ -927,7 +927,7 @@ export default function AdminConsole() {
   }, [router]);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'secrets' | 'mcp' | 'capabilities' | 'system' | undefined>(undefined);
-  const [aiModel, setAiModel] = useState('gpt-5.4-mini');
+  const [aiModel, setAiModel] = useState('claude-4-sonnet');
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [editingModule, setEditingModule] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1063,7 +1063,9 @@ export default function AdminConsole() {
       } catch {}
       if (!loadedFromServer) {
         const savedModel = readSetting('firebat_model');
-        setAiModel(savedModel && isValid(savedModel) ? savedModel : 'gpt-5.4-mini');
+        // Rust core builtin_models() 의 첫 모델 (claude-4-sonnet) 디폴트 — Vault 미등록 / API key 미입력 시 그대로 노출.
+        // 실제 호출 시 Rust 가 인증 미설정 모델은 명확한 에러 던짐 → 사용자에게 "API 키 박으세요" 메시지 노출.
+        setAiModel(savedModel && isValid(savedModel) ? savedModel : 'claude-4-sonnet');
       }
     })();
   }, []);

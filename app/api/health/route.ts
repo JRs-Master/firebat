@@ -34,18 +34,18 @@ async function checkDb(core: ReturnType<typeof getCore>): Promise<CheckResult> {
   }
 }
 
-function checkCron(core: ReturnType<typeof getCore>): CheckResult {
+async function checkCron(core: ReturnType<typeof getCore>): Promise<CheckResult> {
   try {
-    const jobs = core.listCronJobs();
+    const jobs = await core.listCronJobs();
     return { ok: true, meta: { count: Array.isArray(jobs) ? jobs.length : 0 } };
   } catch (err) {
     return { ok: false, detail: err instanceof Error ? err.message : String(err) };
   }
 }
 
-function checkStatusManager(core: ReturnType<typeof getCore>): CheckResult {
+async function checkStatusManager(core: ReturnType<typeof getCore>): Promise<CheckResult> {
   try {
-    const stats = core.getJobStats();
+    const stats = await core.getJobStats();
     // running > 100 이면 누적 의심 — degraded 알림
     const degraded = stats.running > 100;
     return {
@@ -82,8 +82,8 @@ export async function GET(_req: NextRequest) {
 
   const [db, cron, status, memory] = await Promise.all([
     checkDb(core),
-    Promise.resolve(checkCron(core)),
-    Promise.resolve(checkStatusManager(core)),
+    checkCron(core),
+    checkStatusManager(core),
     Promise.resolve(checkMemory()),
   ]);
 

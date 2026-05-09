@@ -9,7 +9,7 @@ import { ApiError } from '../../../../lib/api-error';
  * Form bindModule 전용 — LLM 우회, Core를 통한 모듈 직접 실행
  */
 export const POST = withApiError(async (req) => {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
 
   const { module: moduleName, data } = await req.json();

@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   const core = getCore();
 
   // 1. Secret token 검증
-  const expectedSecret = core.getTelegramWebhookSecret();
+  const expectedSecret = await core.getTelegramWebhookSecret();
   const incomingSecret = req.headers.get('x-telegram-bot-api-secret-token');
   if (!expectedSecret || incomingSecret !== expectedSecret) {
     return NextResponse.json({ ok: false, error: 'Invalid secret token' }, { status: 401 });
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
   if (!fromUserId || !chatId) {
     return NextResponse.json({ ok: true }); // 비정상 형태 무시
   }
-  if (!core.isTelegramOwner(fromUserId)) {
+  if (!await core.isTelegramOwner(fromUserId)) {
     // 외부인 — 무시 (응답 X). 텔레그램은 200 받아야 webhook 정상.
     return NextResponse.json({ ok: true });
   }

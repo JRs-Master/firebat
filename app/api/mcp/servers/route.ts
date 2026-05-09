@@ -11,11 +11,11 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
 /** GET — 등록된 MCP 서버 목록 */
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   try {
     const core = getCore();
-    const servers = core.listMcpServers();
+    const servers = await core.listMcpServers();
     return NextResponse.json({ success: true, servers });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 
 /** POST — MCP 서버 추가/수정 */
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   try {
     const body = await req.json();
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
 
 /** DELETE — MCP 서버 제거 */
 export async function DELETE(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const name = req.nextUrl.searchParams.get('name');
   if (!name) return NextResponse.json({ success: false, error: 'name 필요' }, { status: 400 });

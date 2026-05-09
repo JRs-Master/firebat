@@ -4,73 +4,93 @@ import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 
 /** GET /api/settings — 시스템 설정 조회 */
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const core = getCore();
-  const routerEnabledRaw = core.getGeminiKey('system:ai-router:enabled');
+  const [
+    routerEnabledRaw, timezone, aiModel, aiThinkingLevel,
+    aiAssistantModel, aiAssistantModels, userPrompt, lastModelByCategory,
+    imageModel, imageModels, imageDefaultSize, imageDefaultQuality,
+    anthropicCacheEnabled, subAgentEnabled,
+  ] = await Promise.all([
+    core.getGeminiKey('system:ai-router:enabled'),
+    core.getTimezone(),
+    core.getAiModel(),
+    core.getAiThinkingLevel(),
+    core.getAiAssistantModel(),
+    core.getAvailableAiAssistantModels(),
+    core.getUserPrompt(),
+    core.getLastModelByCategory(),
+    core.getImageModel(),
+    core.getAvailableImageModels(),
+    core.getImageDefaultSize(),
+    core.getImageDefaultQuality(),
+    core.getAnthropicCacheEnabled(),
+    core.isSubAgentEnabled(),
+  ]);
   return NextResponse.json({
     success: true,
-    timezone: core.getTimezone(),
-    aiModel: core.getAiModel(),
-    aiThinkingLevel: core.getAiThinkingLevel(),
+    timezone,
+    aiModel,
+    aiThinkingLevel,
     aiRouterEnabled: routerEnabledRaw === 'true' || routerEnabledRaw === '1',
-    aiAssistantModel: core.getAiAssistantModel(),
-    aiAssistantModels: core.getAvailableAiAssistantModels(),
-    userPrompt: core.getUserPrompt(),
-    lastModelByCategory: core.getLastModelByCategory(),
-    imageModel: core.getImageModel(),
-    imageModels: core.getAvailableImageModels(),
-    imageDefaultSize: core.getImageDefaultSize(),
-    imageDefaultQuality: core.getImageDefaultQuality(),
-    anthropicCacheEnabled: core.getAnthropicCacheEnabled(),
-    subAgentEnabled: core.isSubAgentEnabled(),
+    aiAssistantModel,
+    aiAssistantModels,
+    userPrompt,
+    lastModelByCategory,
+    imageModel,
+    imageModels,
+    imageDefaultSize,
+    imageDefaultQuality,
+    anthropicCacheEnabled,
+    subAgentEnabled,
   });
 }
 
 /** PATCH /api/settings — 시스템 설정 변경 */
 export async function PATCH(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const body = await req.json();
   const core = getCore();
 
   if (body.timezone) {
-    core.setTimezone(body.timezone);
+    await core.setTimezone(body.timezone);
   }
   if (body.aiModel) {
-    core.setAiModel(body.aiModel);
+    await core.setAiModel(body.aiModel);
   }
   if (body.aiThinkingLevel) {
-    core.setAiThinkingLevel(body.aiThinkingLevel);
+    await core.setAiThinkingLevel(body.aiThinkingLevel);
   }
   if (typeof body.aiRouterEnabled === 'boolean') {
-    core.setGeminiKey('system:ai-router:enabled', body.aiRouterEnabled ? 'true' : 'false');
+    await core.setGeminiKey('system:ai-router:enabled', body.aiRouterEnabled ? 'true' : 'false');
   }
   if (typeof body.aiAssistantModel === 'string' && body.aiAssistantModel) {
-    core.setAiAssistantModel(body.aiAssistantModel);
+    await core.setAiAssistantModel(body.aiAssistantModel);
   }
   if (typeof body.userPrompt === 'string') {
-    core.setUserPrompt(body.userPrompt);
+    await core.setUserPrompt(body.userPrompt);
   }
   if (body.lastModelByCategory && typeof body.lastModelByCategory === 'object') {
-    core.setLastModelByCategory(body.lastModelByCategory as Record<string, string>);
+    await core.setLastModelByCategory(body.lastModelByCategory as Record<string, string>);
   }
   if (typeof body.imageModel === 'string' && body.imageModel) {
-    core.setImageModel(body.imageModel);
+    await core.setImageModel(body.imageModel);
   }
   if ('imageDefaultSize' in body) {
     const v = body.imageDefaultSize;
-    core.setImageDefaultSize(typeof v === 'string' && v ? v : null);
+    await core.setImageDefaultSize(typeof v === 'string' && v ? v : null);
   }
   if ('imageDefaultQuality' in body) {
     const v = body.imageDefaultQuality;
-    core.setImageDefaultQuality(typeof v === 'string' && v ? v : null);
+    await core.setImageDefaultQuality(typeof v === 'string' && v ? v : null);
   }
   if (typeof body.anthropicCacheEnabled === 'boolean') {
-    core.setAnthropicCacheEnabled(body.anthropicCacheEnabled);
+    await core.setAnthropicCacheEnabled(body.anthropicCacheEnabled);
   }
   if (typeof body.subAgentEnabled === 'boolean') {
-    core.setSubAgentEnabled(body.subAgentEnabled);
+    await core.setSubAgentEnabled(body.subAgentEnabled);
   }
 
   return NextResponse.json({ success: true });

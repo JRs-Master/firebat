@@ -11,7 +11,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
 
 /** GET — 도구 목록 */
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   try {
     const core = getCore();
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
 
 /** POST — 도구 실행 */
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   try {
     const { server, tool, arguments: args } = await req.json();

@@ -38,8 +38,8 @@ export async function GET(req: NextRequest) {
   }
 
   const core = getCore();
-  const restApiKey = core.getUserSecret('KAKAO_REST_API_KEY');
-  const clientSecret = core.getUserSecret('KAKAO_CLIENT_SECRET');
+  const restApiKey = await core.getUserSecret('KAKAO_REST_API_KEY');
+  const clientSecret = await core.getUserSecret('KAKAO_CLIENT_SECRET');
 
   if (!restApiKey) {
     return redirectToAdmin('KAKAO_REST_API_KEY가 Vault에 없습니다.', 'error');
@@ -79,9 +79,9 @@ export async function GET(req: NextRequest) {
     }
 
     // Vault에 토큰 저장
-    core.setUserSecret('KAKAO_ACCESS_TOKEN', access_token);
+    await core.setUserSecret('KAKAO_ACCESS_TOKEN', access_token);
     if (refresh_token) {
-      core.setUserSecret('KAKAO_REFRESH_TOKEN', refresh_token);
+      await core.setUserSecret('KAKAO_REFRESH_TOKEN', refresh_token);
     }
 
     const res = redirectToAdmin('카카오톡 연동 완료! 토큰이 저장되었습니다.', 'success');

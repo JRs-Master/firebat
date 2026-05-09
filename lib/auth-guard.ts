@@ -8,23 +8,23 @@ import type { AuthSession } from './types/firebat-types';
  * 쿠키(세션 토큰) 또는 Authorization 헤더(API 토큰)를 확인한다.
  * 유효한 세션이 없으면 401 응답을 반환한다.
  */
-export function requireAuth(request: NextRequest): AuthSession | NextResponse {
+export async function requireAuth(request: NextRequest): Promise<AuthSession | NextResponse> {
   const core = getCore();
 
   // 1) Authorization: Bearer (API 토큰)
   const authHeader = request.headers.get('authorization');
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
-    const session = core.validateToken(token);
-    if (session) return session;
+    const session = await core.validateToken(token);
+    if (session) return session as AuthSession;
     return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
   }
 
   // 2) Cookie (세션 토큰)
   const cookie = request.cookies.get('firebat_token');
   if (cookie?.value) {
-    const session = core.validateToken(cookie.value);
-    if (session) return session;
+    const session = await core.validateToken(cookie.value);
+    if (session) return session as AuthSession;
   }
 
   // 3) 레거시 쿠키 호환 (기존 firebat_admin_token)

@@ -11,7 +11,7 @@ import { consumePending, getPending } from '../../../../lib/pending-tools';
  *  - action=reschedule + body.runAt (schedule_task용): 새 시간으로 재예약
  */
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
 
   // body는 한번만 읽을 수 있으므로 먼저 파싱

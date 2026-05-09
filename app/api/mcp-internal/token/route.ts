@@ -23,11 +23,13 @@ function maskToken(token: string | null): { hasToken: boolean; masked: string } 
 }
 
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const core = getCore();
-  const token = core.getGeminiKey(TOKEN_KEY);
-  const created = core.getGeminiKey(CREATED_KEY);
+  const [token, created] = await Promise.all([
+    core.getGeminiKey(TOKEN_KEY),
+    core.getGeminiKey(CREATED_KEY),
+  ]);
   return NextResponse.json({
     success: true,
     token: maskToken(token),
@@ -36,22 +38,22 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const core = getCore();
   const token = generateToken();
   const now = new Date().toISOString();
-  core.setGeminiKey(TOKEN_KEY, token);
-  core.setGeminiKey(CREATED_KEY, now);
+  await core.setGeminiKey(TOKEN_KEY, token);
+  await core.setGeminiKey(CREATED_KEY, now);
   return NextResponse.json({ success: true, token, createdAt: now });
 }
 
 export async function DELETE(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const core = getCore();
   // secret 삭제는 vault 직접 호출 필요 — setGeminiKey로는 덮어쓰기만
-  core.setGeminiKey(TOKEN_KEY, '');
-  core.setGeminiKey(CREATED_KEY, '');
+  await core.setGeminiKey(TOKEN_KEY, '');
+  await core.setGeminiKey(CREATED_KEY, '');
   return NextResponse.json({ success: true });
 }

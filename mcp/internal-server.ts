@@ -12,7 +12,7 @@ import type { FirebatCore } from '../lib/types/firebat-types';
 import { IMAGE_GEN_DESCRIPTION } from '../lib/image-gen-prompt';
 import { CDN_LIBRARIES } from '../lib/cdn-libraries';
 
-export function createInternalMcpServer(core: FirebatCore): McpServer {
+export async function createInternalMcpServer(core: FirebatCore): Promise<McpServer> {
   const server = new McpServer({ name: 'firebat-internal', version: '0.1.0' });
 
   // ── UI 렌더링 — ToolManager single source ────────────────────────────
@@ -20,7 +20,8 @@ export function createInternalMcpServer(core: FirebatCore): McpServer {
   // strict 2개 + COMPONENTS 자동 등록). 여기선 그 결과를 read 해서 server.tool() 등록만.
   // 새 컴포넌트는 component-registry.ts 만 수정 → 자동 반영.
   // schema 는 z.any() — 실제 검증은 component-registry 의 propsSchema (frontend) single source.
-  for (const def of core.listTools({ source: 'render' })) {
+  const renderTools = await core.listTools({ source: 'render' });
+  for (const def of renderTools) {
     const props = (def.parameters as { properties?: Record<string, { description?: string }> })?.properties || {};
     const required = new Set((def.parameters as { required?: string[] })?.required || []);
     const schema: Record<string, z.ZodTypeAny> = {};
@@ -519,7 +520,7 @@ startAt/endAt: cronTime의 유효 기간 (만료 시 자동 해제).
 반환: [{jobId, targetPath, title?, mode:'cron'|'once'|'delay', cronTime?, runAt?, delaySec?, inputData?, pipeline?, createdAt}]`,
     {},
     async () => {
-      const jobs = core.listCronJobs();
+      const jobs = await core.listCronJobs();
       return { content: [{ type: 'text', text: JSON.stringify({ success: true, cronJobs: jobs }) }] };
     },
   );

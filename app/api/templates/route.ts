@@ -11,14 +11,14 @@ import { requireAuth, isAuthError } from '../../../lib/auth-guard';
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   const list = await getCore().listTemplates();
   return NextResponse.json({ success: true, templates: list });
 }
 
 export async function POST(req: NextRequest) {
-  const auth = requireAuth(req);
+  const auth = await requireAuth(req);
   if (isAuthError(auth)) return auth;
   try {
     const { slug, config } = await req.json();

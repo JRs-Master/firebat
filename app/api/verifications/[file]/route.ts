@@ -32,8 +32,8 @@ export async function GET(
   if (!file || file.includes('/') || file.includes('..')) {
     return new NextResponse('Not Found', { status: 404 });
   }
-  const cms = getCore().getCmsSettings();
-  const match = cms.verifications.find(v => v.filename === file);
+  const cms = await getCore().getCmsSettings();
+  const match = cms.verifications.find((v: { filename: string; content: string }) => v.filename === file);
   if (!match) {
     return new NextResponse('Not Found', { status: 404 });
   }
