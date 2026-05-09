@@ -178,7 +178,9 @@ async fn main() -> Result<()> {
     //   - `stub` (default — CI / 가벼운 dev): FNV-1a hash 결정론, 의미 검색 X.
     //          모델 다운로드 없이 wiring 검증 + 단위 테스트 가능.
     // 추후 Gemini API / OpenAI API 어댑터 박을 때도 같은 env 패턴 — `gemini` / `openai-3-small` 등.
-    let embedder_kind = std::env::var("FIREBAT_EMBEDDER").unwrap_or_else(|_| "stub".to_string());
+    // 디폴트 e5 — 운영 사용자가 search_history / search_components / AI Router / 메모리 검색
+    // 모두 의미 검색 가능. dev/CI 는 명시적으로 `FIREBAT_EMBEDDER=stub` 박으면 됨.
+    let embedder_kind = std::env::var("FIREBAT_EMBEDDER").unwrap_or_else(|_| "e5".to_string());
     let embedder: Arc<dyn IEmbedderPort> = match embedder_kind.as_str() {
         "e5" => {
             tracing::info!(
@@ -237,8 +239,10 @@ async fn main() -> Result<()> {
     //     gemini-native-image / cli-codex-image). Vault `system:image:model` 으로 swap.
     //     builtin 3 모델 + `system/image/configs/*.json` 사용자 추가 자동 로드.
     //   - `stub` — 단위 테스트 / 1x1 grey PNG.
+    // 디폴트 빈 문자열 — 사용자가 어드민 설정에서 명시 선택 박을 때까지 호출 거부.
+    // (옛 `gpt-image-1` 폴백 제거 — OPENAI_API_KEY 미설정 사용자에게 silent fail 회피).
     let image_default_model = std::env::var("FIREBAT_DEFAULT_IMAGE_MODEL")
-        .unwrap_or_else(|_| "gpt-image-1".to_string());
+        .unwrap_or_default();
     let image_configs_dir = workspace_root.join("system").join("image").join("configs");
     let image_gen_kind = std::env::var("FIREBAT_IMAGE_GEN")
         .unwrap_or_else(|_| "config-driven".to_string());
@@ -265,8 +269,9 @@ async fn main() -> Result<()> {
     // 모델 carousel: builtin 8개 + system/llm/configs/*.json 자동 로드 (사용자 모델 추가).
     // 새 모델 = JSON 파일 1개 추가 (옛 TS infra/llm/configs/*.json 동등). 코드 변경 0.
     // Vault `system:llm:model` 으로 활성 모델 동적 swap.
-    let default_model =
-        std::env::var("FIREBAT_DEFAULT_MODEL").unwrap_or_else(|_| "claude-4-sonnet".to_string());
+    // 디폴트 빈 문자열 — frontend 가 사용자 명시 선택 박을 때까지 호출 거부.
+    // (cron 등 backend-only 호출 시 명시 모델 ID 전달 의무 — silent 폴백 회피).
+    let default_model = std::env::var("FIREBAT_DEFAULT_MODEL").unwrap_or_default();
     let llm_configs_dir = workspace_root.join("system").join("llm").join("configs");
     let llm: Arc<dyn ILlmPort> = Arc::new(
         firebat_infra::llm::adapter::ConfigDrivenAdapter::with_configs_dir(

@@ -37,7 +37,8 @@ export type SettingsSchema = {
 };
 
 const DEFAULTS: SettingsSchema = {
-  'firebat_model': 'claude-4-sonnet',
+  // 디폴트 빈 문자열 — 사용자가 설정 → AI 탭에서 명시 선택 + 인증 박을 때까지 채팅 차단.
+  'firebat_model': '',
   'firebat_plan_mode': 'off',
   'firebat_active_conv': '',
   'firebat_last_model_by_category': {},

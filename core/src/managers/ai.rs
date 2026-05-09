@@ -47,9 +47,10 @@ use crate::utils::tool_cache::{
     get_cached_tool_result, set_cached_tool_result, tool_cache_key,
 };
 
-/// 옛 TS `MAX_TOOL_TURNS` — admin 채팅. 사용자가 다음 turn 도달 시 follow-up 가능 → 10 충분.
-const MAX_TOOL_TURNS_ADMIN: usize = 10;
-/// Cron agent — 자율 발행. sysmod 4-6개 + save_page 까지 여유.
+/// admin 채팅 + cron agent 모두 25 동일 (사용자 결정, 2026-05-09).
+/// 옛 TS 의 admin=10 / cron=25 분리 → 25 통일. 큰 작업 (블로그·자동매매·데이터 수집)
+/// 시 admin 도 sysmod 다중 호출 + save_page 충분 보장.
+const MAX_TOOL_TURNS_ADMIN: usize = 25;
 const MAX_TOOL_TURNS_CRON: usize = 25;
 /// 도구 호출 turn — JSON 스키마 정확 준수. 옛 TS 1:1.
 const TEMP_TOOL_TURN: f64 = 0.2;

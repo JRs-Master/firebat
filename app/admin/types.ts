@@ -1,10 +1,10 @@
 import { ConversationMeta } from './components/Sidebar';
 
 // Rust core 의 builtin_models() 박힌 거 1:1 — 운영 시점에 Vault API 키 박으면 활성.
-// 옛 v0.x 박은 30+ 모델 list 폐기 — Rust port 시점에 carousel 단순화 (7 builtin).
+// AI 어시스턴트 보조용 (잼민이 Flash Lite) 는 별도 list (AI Assistant 모델 풀) — carousel 노출 X.
 export const AI_MODELS = [
   // Anthropic API
-  { value: 'claude-4-sonnet', label: 'Claude 4 Sonnet' },
+  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
   // OpenAI Responses API
   { value: 'gpt-5', label: 'GPT-5' },
   // Google Gemini API

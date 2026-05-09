@@ -15,6 +15,7 @@ import { SecretInput } from './components/ChatWidgets';
 import { Tooltip } from './components/Tooltip';
 import { FeedbackBadge } from './components/FeedbackBadge';
 import { ActiveJobsIndicator } from './components/ActiveJobsIndicator';
+import { ForceChangeAdminModal } from './components/ForceChangeAdminModal';
 import { BlockErrorBoundary } from './components/BlockErrorBoundary';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
@@ -927,7 +928,10 @@ export default function AdminConsole() {
   }, [router]);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<'general' | 'secrets' | 'mcp' | 'capabilities' | 'system' | undefined>(undefined);
-  const [aiModel, setAiModel] = useState('claude-4-sonnet');
+  // 빈 문자열 디폴트 — 사용자가 인증(API 키 / CLI) + 설정에서 모델 선택 박을 때까지 채팅 차단.
+  const [aiModel, setAiModel] = useState('');
+  // 첫 부팅 admin/admin 디폴트 검출 — true 면 ForceChangeAdminModal 강제 노출.
+  const [isDefaultAdmin, setIsDefaultAdmin] = useState(false);
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [editingModule, setEditingModule] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1059,13 +1063,15 @@ export default function AdminConsole() {
           if (data.lastModelByCategory && typeof data.lastModelByCategory === 'object') {
             writeSetting('firebat_last_model_by_category', data.lastModelByCategory);
           }
+          // admin/admin 디폴트 검출 — 첫 부팅 시 강제 변경 모달 노출.
+          if (data.isDefaultAdmin === true) setIsDefaultAdmin(true);
         }
       } catch {}
       if (!loadedFromServer) {
         const savedModel = readSetting('firebat_model');
-        // Rust core builtin_models() 의 첫 모델 (claude-4-sonnet) 디폴트 — Vault 미등록 / API key 미입력 시 그대로 노출.
-        // 실제 호출 시 Rust 가 인증 미설정 모델은 명확한 에러 던짐 → 사용자에게 "API 키 박으세요" 메시지 노출.
-        setAiModel(savedModel && isValid(savedModel) ? savedModel : 'claude-4-sonnet');
+        // 빈 폴백 — 사용자가 인증 박고 설정에서 명시 선택 박지 않은 한 채팅 차단.
+        // 자동 폴백 모델 박으면 사용자가 "어떤 모델 쓰는지 모름" 마찰 발생.
+        setAiModel(savedModel && isValid(savedModel) ? savedModel : '');
       }
     })();
   }, []);
@@ -1212,10 +1218,16 @@ export default function AdminConsole() {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
-                  disabled={loading}
+                  disabled={loading || !aiModel}
                   style={{ touchAction: 'pan-y', overscrollBehavior: 'contain', WebkitUserSelect: 'text', WebkitOverflowScrolling: 'touch' }}
                   className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] px-4 sm:px-5 pt-3 sm:pt-4 pb-1 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50 select-text overflow-y-auto"
-                  placeholder={loading ? '명령 집행 중...' : (inputMode === 'image' ? '🎨 이미지 프롬프트를 입력하세요 (LLM 우회 — 영어 권장)' : '무엇을 도와드릴까요?')}
+                  placeholder={
+                    loading
+                      ? '명령 집행 중...'
+                      : !aiModel
+                        ? '⚙ 설정 → AI 탭에서 API 키 입력 또는 CLI 인증 박은 후 모델을 선택해 주세요'
+                        : (inputMode === 'image' ? '🎨 이미지 프롬프트를 입력하세요 (LLM 우회 — 영어 권장)' : '무엇을 도와드릴까요?')
+                  }
                 />
                 <input
                   ref={imageInputRef}
@@ -1321,6 +1333,13 @@ export default function AdminConsole() {
             </div>
           </div>
         </div>
+
+        {/* 첫 부팅 admin/admin 강제 변경 모달 — 변경 완료 시 페이지 reload (세션 갱신) */}
+        {isDefaultAdmin && (
+          <ForceChangeAdminModal
+            onChanged={() => { setIsDefaultAdmin(false); window.location.reload(); }}
+          />
+        )}
 
         {/* 파일 에디터 모달 */}
         {editingFile && (

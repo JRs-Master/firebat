@@ -133,43 +133,5 @@ export function parseNavLinks(raw: string | undefined | null): NavLink[] {
     .filter((x): x is NavLink => x !== null);
 }
 
-/** 기본 layout — 사용자 미설정 시 적용. 헤더·푸터 둘 다 표시, 단순 텍스트 로고. */
-export const DEFAULT_LAYOUT: LayoutConfig = {
-  header: {
-    show: true,
-    siteName: 'Firebat',
-    logoUrl: '',
-    navLinks: [],
-    sticky: false,
-    transparentOnTop: false,
-    mobileDrawer: false,
-  },
-  footer: {
-    show: true,
-    text: '',
-    columns: [
-      { heading: '', content: '' },
-      { heading: '', content: '' },
-      { heading: '', content: '' },
-      { heading: '', content: '' },
-    ],
-  },
-  showRelatedPosts: true,
-  relatedPostsCount: 5,
-  showReadingProgress: false,
-  mode: 'full',
-  sidebar: {
-    showSearchBox: false,
-    showRecentPosts: true,
-    recentPostsCount: 5,
-    showCategoryList: false,
-    showTagCloud: false,
-    tagCloudLimit: 20,
-    showSubscribe: false,
-    htmlWidget: '',
-  },
-  pageList: {
-    cardVariant: 'list',
-    perPage: 20,
-  },
-};
+// DEFAULT_LAYOUT 폐기 — Rust core/services/module.rs 의 cms_defaults() 가 truth source.
+// 옛 v0.x 잔재로 frontend 에서 import 0건 (사용처 모두 type-only). 부정합 회피.

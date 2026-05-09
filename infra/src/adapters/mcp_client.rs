@@ -78,7 +78,10 @@ struct JsonRpcError {
 }
 
 const JSONRPC_VERSION: &str = "2.0";
-const PROTOCOL_VERSION: &str = "2024-11-05";
+/// MCP spec 최신 (2025-11-25) — `modelcontextprotocol.io/specification/2025-11-25`.
+/// 옛 `2024-11-05` → 신 서버 (Gmail/Slack/Notion latest) 와 핸드셰이크 시 downgrade·거부 위험.
+/// spec 변경 시 갱신.
+const PROTOCOL_VERSION: &str = "2025-11-25";
 const CLIENT_NAME: &str = "firebat";
 const CLIENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 

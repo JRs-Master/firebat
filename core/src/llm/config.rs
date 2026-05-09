@@ -106,8 +106,8 @@ pub fn builtin_models() -> Vec<LlmModelConfig> {
     vec![
         // ── Anthropic API ──────────────────────────────────────────────────
         LlmModelConfig {
-            id: "claude-4-sonnet".to_string(),
-            display_name: "Claude 4 Sonnet".to_string(),
+            id: "claude-sonnet-4-6".to_string(),
+            display_name: "Claude Sonnet 4.6".to_string(),
             provider: "Anthropic".to_string(),
             format: "anthropic-messages".to_string(),
             endpoint: "https://api.anthropic.com/v1/messages".to_string(),
@@ -164,6 +164,20 @@ pub fn builtin_models() -> Vec<LlmModelConfig> {
                 strict_tools: true,
                 thinking: true,
                 image_input: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        // ── Gemini Flash Lite — AI Assistant 디폴트 (저렴·빠름) ────────────
+        LlmModelConfig {
+            id: "gemini-3.1-flash-lite-preview".to_string(),
+            display_name: "Gemini 3.1 Flash Lite".to_string(),
+            provider: "Google".to_string(),
+            format: "gemini-native".to_string(),
+            endpoint: "https://generativelanguage.googleapis.com".to_string(),
+            api_key_vault_key: Some("system:gemini:api-key".to_string()),
+            features: LlmFeatures {
+                strict_tools: true,
                 ..Default::default()
             },
             ..Default::default()
@@ -252,7 +266,7 @@ mod tests {
     #[test]
     fn builtin_carousel_has_8_formats() {
         let models = builtin_models();
-        assert_eq!(models.len(), 8);
+        assert_eq!(models.len(), 9);
         let formats: Vec<&str> = models.iter().map(|m| m.format.as_str()).collect();
         assert!(formats.contains(&"anthropic-messages"));
         assert!(formats.contains(&"openai-responses"));
@@ -266,7 +280,7 @@ mod tests {
 
     #[test]
     fn anthropic_config_has_mcp_and_extended_thinking() {
-        let m = builtin_models().into_iter().find(|m| m.id == "claude-4-sonnet").unwrap();
+        let m = builtin_models().into_iter().find(|m| m.id == "claude-sonnet-4-6").unwrap();
         assert!(m.features.mcp_connector);
         assert!(m.features.extended_thinking);
         assert_eq!(m.extra_headers.get("anthropic-version").map(String::as_str), Some("2023-06-01"));

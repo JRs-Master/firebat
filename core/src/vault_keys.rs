@@ -10,9 +10,10 @@ pub const VK_SYSTEM_USER_PROMPT: &str = "system:user-prompt";
 pub const VK_SYSTEM_AI_ASSISTANT_MODEL: &str = "system:ai-router:model";
 /// AI Assistant 토글 — Vault 의 `'true'` / `'1'` 만 ON. ToolRouter 가 이 키 검사.
 pub const VK_SYSTEM_AI_ROUTER_ENABLED: &str = "system:ai-router:enabled";
-/// AI Assistant default 모델 — Vault 미박힘 시 폴백. 옛 hardcode (`gpt-5-nano` literal) 의 single source.
-/// `LlmModelConfig.builtin_models` 의 첫 cli-제외 항목으로 자연 동적화 가능 (v2.0+).
-pub const AI_ASSISTANT_DEFAULT_MODEL: &str = "gpt-5-nano";
+/// AI Assistant default 모델 — Vault 미박힘 시 폴백. 사용자 결정 (2026-05-09):
+/// 잼민이 3.1 Flash Lite (저렴·빠름) — Tool Router / search_history 보조용으로 적합.
+/// `LlmModelConfig.builtin_models` 에 등록되어야 함 (config.rs).
+pub const AI_ASSISTANT_DEFAULT_MODEL: &str = "gemini-3.1-flash-lite-preview";
 pub const VK_LLM_ANTHROPIC_CACHE: &str = "system:llm:anthropic-cache";
 pub const VK_SYSTEM_LAST_MODEL_BY_CATEGORY: &str = "system:last-model-by-category";
 pub const VK_ADMIN_ID: &str = "FIREBAT_ADMIN_ID";

@@ -160,7 +160,10 @@ impl SettingsService for SettingsServiceImpl {
         _req: Request<Empty>,
     ) -> Result<Response<StringRequest>, TonicStatus> {
         Ok(Response::new(StringRequest {
-            value: self.get_or_default("system:ai-router:model", "gemini-3-pro"),
+            value: self.get_or_default(
+                crate::vault_keys::VK_SYSTEM_AI_ASSISTANT_MODEL,
+                crate::vault_keys::AI_ASSISTANT_DEFAULT_MODEL,
+            ),
         }))
     }
 
