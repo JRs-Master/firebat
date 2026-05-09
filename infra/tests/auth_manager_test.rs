@@ -161,6 +161,38 @@ fn api_token_lifecycle() {
 }
 
 #[test]
+fn changing_credentials_invalidates_all_sessions() {
+    // 회귀 방지 — 비번 변경 후 옛 쿠키로 우회되는 보안 결함 (2026-05-09 fix) 재발 차단.
+    let (mgr, _dir) = make_manager();
+    // 기존 자격증명으로 로그인 → token 발급 + vault 에 session record 저장
+    let LoginOutcome::Ok(session) = mgr.login("testadmin", "testpass", "ip") else {
+        panic!("login failed");
+    };
+    // 발급 직후 token 유효
+    assert!(mgr.validate_session(&session.token).is_some());
+    assert!(mgr.validate_token(&session.token).is_some());
+
+    // 비번 변경 — 모든 active session 즉시 무효화 (set_admin_credentials 안 가드)
+    mgr.set_admin_credentials(None, Some("new-password"));
+
+    // 옛 token 거부 — vault 의 auth:session:* record 일괄 삭제됨
+    assert!(
+        mgr.validate_session(&session.token).is_none(),
+        "옛 session token 이 비번 변경 후에도 통과 — 보안 결함 회귀"
+    );
+    assert!(
+        mgr.validate_token(&session.token).is_none(),
+        "옛 token 이 비번 변경 후에도 통과 — 보안 결함 회귀"
+    );
+
+    // 새 비번으로 정상 로그인
+    assert!(matches!(
+        mgr.login("testadmin", "new-password", "ip2"),
+        LoginOutcome::Ok(_)
+    ));
+}
+
+#[test]
 fn admin_credentials_can_be_changed() {
     let (mgr, _dir) = make_manager();
     // 명시 설정한 testadmin/testpass 로 로그인 OK

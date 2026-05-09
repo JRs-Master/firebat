@@ -325,12 +325,19 @@ impl AuthManager {
         !id.is_empty() && !password.is_empty()
     }
 
+    /// 자격증명 변경 = 모든 옛 session 즉시 무효화. API 토큰은 별도 lifecycle 이라 보존
+    /// (revoke_api_tokens 가 따로 호출해야 폐기). 비번 변경 후 옛 쿠키 우회 차단 (2026-05-09).
     pub fn set_admin_credentials(&self, new_id: Option<&str>, new_password: Option<&str>) {
         if let Some(id) = new_id {
             self.vault.set_secret(VK_ADMIN_ID, id);
         }
         if let Some(pw) = new_password {
             self.vault.set_secret(VK_ADMIN_PASSWORD, pw);
+        }
+        // 모든 active session 폐기 — vault 의 auth:session:* record 일괄 삭제.
+        let sessions = self.auth.list_sessions(SessionType::Session);
+        for s in sessions {
+            self.auth.delete_session(&s.token);
         }
     }
 
