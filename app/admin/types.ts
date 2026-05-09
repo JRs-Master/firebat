@@ -20,8 +20,10 @@ export const AI_MODELS = [
   { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash' },
   { value: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
 
-  // ─── Google Vertex AI ──────────────────────────────────────────────────
+  // ─── Google Vertex AI (powerful → cheap) ───────────────────────────────
   { value: 'vertex-gemini-3.1-pro', label: 'Gemini 3.1 Pro (Vertex)' },
+  { value: 'vertex-gemini-3-flash-preview', label: 'Gemini 3 Flash (Vertex)' },
+  { value: 'vertex-gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite (Vertex)' },
 
   // ─── OpenAI API (powerful → cheap) ─────────────────────────────────────
   { value: 'gpt-5.5', label: 'GPT-5.5' },
