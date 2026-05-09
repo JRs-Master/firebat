@@ -31,10 +31,12 @@ async fn run_condition_only_pipeline_via_grpc() {
         }))
         .await
         .unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
+    let inner = resp.into_inner();
     // x 가 prev=null 에 없으므로 unmet → conditionMet=false 결과
-    assert_eq!(parsed["success"], json!(true));
-    assert_eq!(parsed["data"]["conditionMet"], json!(false));
+    assert!(inner.success);
+    let data: serde_json::Value =
+        serde_json::from_str(&inner.data_json.unwrap_or_default()).unwrap();
+    assert_eq!(data["conditionMet"], json!(false));
 }
 
 #[tokio::test]
@@ -51,7 +53,7 @@ async fn run_validate_failure_returns_error() {
         }))
         .await
         .unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
-    assert_eq!(parsed["success"], json!(false));
-    assert!(parsed["error"].as_str().unwrap().contains("EXECUTE"));
+    let inner = resp.into_inner();
+    assert!(!inner.success);
+    assert!(inner.error.unwrap_or_default().contains("EXECUTE"));
 }
