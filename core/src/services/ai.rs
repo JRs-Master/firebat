@@ -1,8 +1,8 @@
 //! gRPC AiService impl — AiManager wrapping.
 //!
-//! Phase B-16 minimum: Process / RequestActionWithTools / CodeAssist 활성 (StubLlm 위에).
-//! 실 LLM 호출은 Phase B-17+ (8 format 핸들러 설정된 후).
-//! RunAgentJob / SpawnSubAgent / ResolveCallTarget 는 Phase B-17+ stub.
+//! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
+//! Process / CodeAssist → AiTextResultPb (단순 텍스트 반환).
+//! RequestActionWithTools / RunAgentJob / SpawnSubAgent / ResolveCallTarget → RawJsonPb (복잡 응답).
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -10,7 +10,8 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::ai::AiManager;
 use crate::ports::{LlmCallOpts, ToolDefinition};
 use crate::proto::{
-    ai_service_server::AiService, BoolRequest, Empty, JsonArgs, JsonValue, Status, StringRequest,
+    ai_service_server::AiService, AiTextResultPb, BoolRequest, Empty, JsonArgs, RawJsonPb, Status,
+    StringRequest,
 };
 
 pub struct AiServiceImpl {
@@ -23,15 +24,18 @@ impl AiServiceImpl {
     }
 }
 
-fn json_response<T: serde::Serialize>(value: &T) -> Result<Response<JsonValue>, TonicStatus> {
-    let raw = serde_json::to_string(value)
-        .map_err(|e| TonicStatus::internal(format!("JSON 직렬화 실패: {e}")))?;
-    Ok(Response::new(JsonValue { raw }))
+fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
+    RawJsonPb {
+        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
+    }
 }
 
 #[tonic::async_trait]
 impl AiService for AiServiceImpl {
-    async fn process(&self, req: Request<JsonArgs>) -> Result<Response<JsonValue>, TonicStatus> {
+    async fn process(
+        &self,
+        req: Request<JsonArgs>,
+    ) -> Result<Response<AiTextResultPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {
@@ -42,7 +46,7 @@ impl AiService for AiServiceImpl {
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("process args: {e}")))?;
         match self.manager.ask_text(&args.prompt, &args.opts).await {
-            Ok(text) => json_response(&serde_json::json!({"text": text})),
+            Ok(text) => Ok(Response::new(AiTextResultPb { text })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -50,7 +54,7 @@ impl AiService for AiServiceImpl {
     async fn request_action_with_tools(
         &self,
         req: Request<JsonArgs>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {
@@ -67,7 +71,7 @@ impl AiService for AiServiceImpl {
             .process_with_tools(&args.prompt, &args.tools, &args.opts)
             .await
         {
-            Ok(response) => json_response(&response),
+            Ok(response) => Ok(Response::new(raw_json(&response))),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -75,9 +79,7 @@ impl AiService for AiServiceImpl {
     async fn code_assist(
         &self,
         req: Request<JsonArgs>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        // Phase B-16 minimum — Code Assistant 자체 시스템 프롬프트는 Phase B-17+ 에서 prompt-builder
-        // 분리 후 활성. 현재는 ask_text 그대로.
+    ) -> Result<Response<AiTextResultPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {
@@ -88,7 +90,7 @@ impl AiService for AiServiceImpl {
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("code_assist args: {e}")))?;
         match self.manager.ask_text(&args.prompt, &args.opts).await {
-            Ok(text) => json_response(&serde_json::json!({"text": text})),
+            Ok(text) => Ok(Response::new(AiTextResultPb { text })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -96,9 +98,7 @@ impl AiService for AiServiceImpl {
     async fn run_agent_job(
         &self,
         req: Request<JsonArgs>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        // 옛 TS Core.runAgentJob 1:1 — cron agent 모드 자율 발행. AiManager.process_with_tools_opts
-        // with cron_agent set → MAX_TOOL_TURNS 25 + approval gate 우회 + jobId 기반 컨텍스트.
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {
@@ -114,10 +114,10 @@ impl AiService for AiServiceImpl {
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("run_agent_job args: {e}")))?;
         if args.agent_prompt.trim().is_empty() {
-            return json_response(&serde_json::json!({
+            return Ok(Response::new(raw_json(&serde_json::json!({
                 "success": false,
                 "error": "agentPrompt 가 비어있습니다."
-            }));
+            }))));
         }
         let llm_opts = LlmCallOpts {
             model: args.model.clone(),
@@ -137,42 +137,36 @@ impl AiService for AiServiceImpl {
             .process_with_tools_opts(&args.agent_prompt, &[], &llm_opts, &ai_opts)
             .await
         {
-            Ok(res) => json_response(&serde_json::json!({
+            Ok(res) => Ok(Response::new(raw_json(&serde_json::json!({
                 "success": res.error.is_none(),
                 "reply": res.reply,
                 "executedActions": res.executed_actions,
                 "blocks": res.blocks,
                 "error": res.error,
-            })),
-            Err(e) => json_response(&serde_json::json!({
+            })))),
+            Err(e) => Ok(Response::new(raw_json(&serde_json::json!({
                 "success": false,
                 "error": e,
-            })),
+            })))),
         }
     }
 
     async fn resolve_call_target(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        // 옛 TS resolveCallTarget 1:1 — ToolDispatcher 설정되어 있을 때만 활성.
-        // ToolDispatcher 가 AiManager 내부에 설정되어 있어 AiManager 위임 필요. 현재 풀 wiring 안 됐으면
-        // identifier 만 echo + null kind (이전 stub 동작 유지 — 회귀 안전).
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let identifier = req.into_inner().value;
-        // AiManager 에 dispatcher API 노출 후 활성. 현재는 단순 echo.
-        json_response(&serde_json::json!({
+        Ok(Response::new(raw_json(&serde_json::json!({
             "identifier": identifier,
             "kind": serde_json::Value::Null,
             "note": "ToolDispatcher 풀 wiring 후 활성 — AiManager.resolve_call_target API 노출 필요"
-        }))
+        }))))
     }
 
     async fn spawn_sub_agent(
         &self,
         req: Request<JsonArgs>,
-    ) -> Result<Response<JsonValue>, TonicStatus> {
-        // 옛 TS spawn_subagent 도구 — sub-agent 로 별도 task 실행.
-        // 현재 minimum: 단순 process_with_tools 위임 (history 빈 채로 새 컨텍스트).
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
         #[derive(serde::Deserialize)]
         struct Args {
@@ -191,7 +185,7 @@ impl AiService for AiServiceImpl {
             .process_with_tools(&args.prompt, &[], &llm_opts)
             .await
         {
-            Ok(res) => json_response(&res),
+            Ok(res) => Ok(Response::new(raw_json(&res))),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }

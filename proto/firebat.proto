@@ -65,13 +65,18 @@ message HealthInfo {
 //   process / requestActionWithTools / codeAssist / runAgentJob / resolveCallTarget /
 //   spawnSubAgent / isSubAgentEnabled / setSubAgentEnabled
 // ──────────────────────────────────────────────────────────────────────────
+// AiService typed messages
+message AiTextResultPb {
+  string text = 1;
+}
+
 service AiService {
-  rpc Process(JsonArgs) returns (JsonValue);
-  rpc RequestActionWithTools(JsonArgs) returns (JsonValue);
-  rpc CodeAssist(JsonArgs) returns (JsonValue);
-  rpc RunAgentJob(JsonArgs) returns (JsonValue);
-  rpc ResolveCallTarget(StringRequest) returns (JsonValue);
-  rpc SpawnSubAgent(JsonArgs) returns (JsonValue);
+  rpc Process(JsonArgs) returns (AiTextResultPb);
+  rpc RequestActionWithTools(JsonArgs) returns (RawJsonPb);
+  rpc CodeAssist(JsonArgs) returns (AiTextResultPb);
+  rpc RunAgentJob(JsonArgs) returns (RawJsonPb);
+  rpc ResolveCallTarget(StringRequest) returns (RawJsonPb);
+  rpc SpawnSubAgent(JsonArgs) returns (RawJsonPb);
   rpc IsSubAgentEnabled(Empty) returns (BoolRequest);
   rpc SetSubAgentEnabled(BoolRequest) returns (Status);
 }
