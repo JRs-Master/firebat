@@ -145,70 +145,39 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
  *  - array → `{success: true, data: <array>}`
  *  - 이미 'success' 박힌 object → 그대로 (Rust 측에서 wrap 한 응답)
  */
+// autoWrap 박을 메서드 — 옛 TS Core 가 진짜 `{success, data, error}` 형식 반환했던 거만.
+// list / scan / find 같이 raw array 반환 메서드는 WRAP 박지 마라 — frontend 가 `.flatMap` /
+// `.map` / `.forEach` 박는 곳에서 wrap 객체로 박히면 'H is not iterable' crash.
 const WRAP_METHODS = new Set([
-  // PageService
-  'listPages', 'getPage', 'searchPages', 'getPageRedirect',
-  'listStaticPages', 'findMediaUsage', 'findRelatedPages', 'listAllTags',
-  'savePage', 'deletePage', 'renamePage',
-  // ProjectService
-  'listProjects', 'getProject', 'saveProject', 'deleteProject',
-  'scanProjects', 'getProjectVisibility', 'getProjectConfig', 'setProjectConfig',
-  'renameProject',
-  // ConversationService
-  'listConversations', 'getConversation', 'saveConversation', 'deleteConversation',
-  'searchHistory', 'searchConversationHistory', 'isConversationDeleted',
-  'getCliSession', 'createShare', 'getShare',
-  // EntityService
-  'saveEntity', 'updateEntity', 'deleteEntity', 'getEntity',
-  'findEntityByName', 'searchEntities',
-  'saveEntityFact', 'updateEntityFact', 'deleteEntityFact', 'getEntityFact',
-  'getEntityTimeline', 'searchEntityFacts', 'retrieveContext',
-  // EpisodicService
-  'saveEvent', 'updateEvent', 'deleteEvent', 'getEvent',
-  'searchEvents', 'listRecentEvents', 'listEventsByEntity',
-  'linkEventEntity', 'unlinkEventEntity',
-  // MediaService
-  'listMedia', 'readMedia', 'removeMedia', 'searchMedia',
-  'generateImage', 'startImageGeneration', 'regenerateImage', 'saveUpload',
-  // TemplateService
-  'listTemplates', 'getTemplate', 'saveTemplate', 'deleteTemplate',
-  // CapabilityService
-  'listCapabilities', 'listCapabilitiesWithProviders', 'getCapabilityProviders',
-  'resolveCapability',
-  // McpService
-  'listMcpServers', 'addMcpServer', 'removeMcpServer',
-  'listMcpTools', 'listAllMcpTools', 'callMcpTool',
-  // AuthService
-  'login', 'validateSession', 'validateToken',
-  'generateApiToken', 'validateApiToken',
-  // ScheduleService
-  'listCronJobs', 'scheduleTask', 'scheduleCronJob', 'cancelCronJob',
-  'updateCronJob', 'runCronJobNow', 'getCronLogs', 'consumeCronNotifications',
-  // TaskService
-  'runTask',
-  // ModuleService (Run 만 결과 wrap, Settings 류는 raw)
-  'runModule', 'sandboxExecute',
-  // SecretService (list/get 류만)
-  'listUserSecrets', 'getUserSecret', 'listUserModuleSecrets',
-  // StorageService
-  'readFile', 'readFileBinary', 'writeFile', 'deleteFile',
-  'listDir', 'listFiles', 'getFileTree', 'globFiles',
-  // MemoryService
-  'getMemoryIndex', 'readMemoryFile', 'listMemoryFiles', 'saveMemoryFile', 'deleteMemoryFile',
-  // ToolService
-  'executeTool',
-  // AiService (응답 형식 따라)
+  // 옛 TS Core 가 명시 wrap 박은 메서드만:
+  // - savePage / deletePage / renamePage 같이 mutation 류 (성공 / 실패 명시)
+  'savePage', 'deletePage', 'renamePage', 'verifyPagePassword', 'setPageVisibility',
+  'saveProject', 'deleteProject', 'renameProject', 'verifyProjectPassword', 'setProjectVisibility',
+  'saveConversation', 'deleteConversation',
+  'saveEntity', 'updateEntity', 'deleteEntity',
+  'saveEntityFact', 'updateEntityFact', 'deleteEntityFact',
+  'saveEvent', 'updateEvent', 'deleteEvent',
+  'saveTemplate', 'deleteTemplate',
+  'saveMemoryFile', 'deleteMemoryFile',
+  'saveMcpServer', 'addMcpServer', 'removeMcpServer',
+  'saveUpload', 'removeMedia', 'regenerateImage',
+  'generateImage', 'startImageGeneration',
+  'runModule', 'sandboxExecute', 'runTask',
   'codeAssist',
-  // Telegram
-  'getTelegramWebhookStatus',
-  // Cache
+  'scheduleTask', 'scheduleCronJob', 'cancelCronJob', 'updateCronJob', 'runCronJobNow',
+  'consumeCronNotifications', 'getCronLogs',
+  'login', 'validateSession', 'validateToken',
+  'generateApiToken', 'revokeApiTokens',
+  'createShare', 'getShare',
+  'searchHistory', 'searchConversationHistory',
+  'isConversationDeleted',
+  'queryDatabase', 'networkFetch',
+  'callMcpTool', 'executeTool',
   'cacheRead', 'cacheGrep', 'cacheAggregate',
-  // Database
-  'queryDatabase',
-  // Network
-  'networkFetch',
-  // Status
-  'getJob', 'listActiveJobs', 'getJobStats',
+  'isMediaReady', 'readMedia',
+  'getCliSession',
+  'verifyPagePassword',
+  'getJob',
 ]);
 
 /** Rust 응답 자동 wrap — 옛 TS `{success, data, error}` 형식 호환. */
