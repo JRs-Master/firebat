@@ -56,7 +56,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   };
   const inferModeProvider = (model: string): { execMode: 'api' | 'cli'; mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic'; cliProvider: CliProvider } => {
     if (model.startsWith('cli-')) return { execMode: 'cli', mode: 'general', provider: 'anthropic', cliProvider: inferCliProvider(model) };
-    if (model.endsWith('-vertex')) return { execMode: 'api', mode: 'vertex', provider: 'google', cliProvider: 'claude' };
+    if (model.startsWith('vertex-')) return { execMode: 'api', mode: 'vertex', provider: 'google', cliProvider: 'claude' };
     if (model.startsWith('gpt-')) return { execMode: 'api', mode: 'general', provider: 'openai', cliProvider: 'claude' };
     if (model.startsWith('claude-')) return { execMode: 'api', mode: 'general', provider: 'anthropic', cliProvider: 'claude' };
     if (model.startsWith('gemini-')) return { execMode: 'api', mode: 'general', provider: 'google', cliProvider: 'claude' };
@@ -74,7 +74,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     if (model.startsWith('cli-claude-code')) return 'cli-claude';
     if (model.startsWith('cli-codex')) return 'cli-codex';
     if (model.startsWith('cli-gemini')) return 'cli-gemini';
-    if (model.endsWith('-vertex')) return 'vertex-google';
+    if (model.startsWith('vertex-')) return 'vertex-google';
     if (model.startsWith('gpt-')) return 'api-openai';
     if (model.startsWith('gemini-')) return 'api-google';
     if (model.startsWith('claude-')) return 'api-anthropic';
@@ -853,8 +853,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               const v = m.value;
               if (execMode === 'cli') return v.startsWith(cliProviderPrefix[cliProvider]);
               if (v.startsWith('cli-')) return false;
-              if (aiMode === 'vertex') return v.endsWith('-vertex');
-              if (v.endsWith('-vertex')) return false; // vertex 모델은 일반 모드 제외
+              if (aiMode === 'vertex') return v.startsWith('vertex-');
+              if (v.startsWith('vertex-')) return false; // vertex 모델은 일반 모드 제외
               if (effectiveProvider === 'openai') return v.startsWith('gpt-');
               if (effectiveProvider === 'google') return v.startsWith('gemini-');
               if (effectiveProvider === 'anthropic') return v.startsWith('claude-');
@@ -930,8 +930,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         const firstApi = aiModelsList.find(mm => {
                           const v = mm.value;
                           if (v.startsWith('cli-')) return false;
-                          if (aiMode === 'vertex') return v.endsWith('-vertex');
-                          if (v.endsWith('-vertex')) return false;
+                          if (aiMode === 'vertex') return v.startsWith('vertex-');
+                          if (v.startsWith('vertex-')) return false;
                           if (aiProvider === 'openai') return v.startsWith('gpt-');
                           if (aiProvider === 'google') return v.startsWith('gemini-');
                           return v.startsWith('claude-');
@@ -953,7 +953,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       const nextProviders = providersByMode[m];
                       const nextProvider = nextProviders.includes(aiProvider) ? aiProvider : nextProviders[0];
                       setAiProvider(nextProvider);
-                      const fits = (m === 'vertex' ? aiModel.endsWith('-vertex') : !aiModel.endsWith('-vertex'))
+                      const fits = (m === 'vertex' ? aiModel.startsWith('vertex-') : !aiModel.startsWith('vertex-'))
                         && (nextProvider === 'openai' ? aiModel.startsWith('gpt-')
                             : nextProvider === 'google' ? aiModel.startsWith('gemini-')
                             : aiModel.startsWith('claude-'));
@@ -962,8 +962,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       const nextModels = aiModelsList.filter(mm => {
                         const v = mm.value;
                         if (v.startsWith('cli-')) return false;
-                        if (m === 'vertex') return v.endsWith('-vertex');
-                        if (v.endsWith('-vertex')) return false;
+                        if (m === 'vertex') return v.startsWith('vertex-');
+                        if (v.startsWith('vertex-')) return false;
                         if (nextProvider === 'openai') return v.startsWith('gpt-');
                         if (nextProvider === 'google') return v.startsWith('gemini-');
                         return v.startsWith('claude-');
@@ -982,7 +982,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     onChange={(p) => {
                       if (p === effectiveProvider) return;
                       setAiProvider(p);
-                      const fits = (aiMode === 'vertex' ? aiModel.endsWith('-vertex') : !aiModel.endsWith('-vertex'))
+                      const fits = (aiMode === 'vertex' ? aiModel.startsWith('vertex-') : !aiModel.startsWith('vertex-'))
                         && (p === 'openai' ? aiModel.startsWith('gpt-')
                             : p === 'google' ? aiModel.startsWith('gemini-')
                             : aiModel.startsWith('claude-'));
@@ -991,8 +991,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       const nextModels = aiModelsList.filter(mm => {
                         const v = mm.value;
                         if (v.startsWith('cli-')) return false;
-                        if (aiMode === 'vertex') return v.endsWith('-vertex');
-                        if (v.endsWith('-vertex')) return false;
+                        if (aiMode === 'vertex') return v.startsWith('vertex-');
+                        if (v.startsWith('vertex-')) return false;
                         if (p === 'openai') return v.startsWith('gpt-');
                         if (p === 'google') return v.startsWith('gemini-');
                         return v.startsWith('claude-');
