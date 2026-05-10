@@ -1,4 +1,7 @@
 import './globals.css';
+// Pretendard self-host — Edge/Brave Tracking Prevention 에 막히던 jsdelivr CDN 대체.
+// Next.js 가 woff2 hash + /_next/static/ 자동 처리.
+import 'pretendard/dist/web/variable/pretendardvariable.css';
 import type { Metadata, Viewport } from 'next';
 import { getCore } from '../lib/singleton';
 

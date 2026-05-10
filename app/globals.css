@@ -1,4 +1,6 @@
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@latest/dist/web/variable/pretendardvariable.min.css');
+/* Pretendard 는 layout.tsx 에서 npm 패키지 (node_modules/pretendard/...) self-host import.
+   옛 jsdelivr CDN @import 는 Edge/Brave 의 Tracking Prevention 에 차단돼 폰트 미적용
+   현상 발생 → 2026-05-11 폐기. */
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
