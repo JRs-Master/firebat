@@ -99,14 +99,26 @@ impl FormatHandler for GeminiCliHandler {
 
     async fn ask_with_tools(
         &self,
-        _config: &LlmModelConfig,
-        _api_key: Option<&str>,
-        _prompt: &str,
-        _tools: &[ToolDefinition],
+        config: &LlmModelConfig,
+        api_key: Option<&str>,
+        prompt: &str,
+        tools: &[ToolDefinition],
         _prior_results: &[ToolResult],
-        _opts: &LlmCallOpts,
+        opts: &LlmCallOpts,
     ) -> InfraResult<LlmToolResponse> {
-        Err("Gemini CLI ask_with_tools — Phase B-17.5 settings.json MCP + tool_use 이벤트 설정된 후 활성"
-            .to_string())
+        if tools.is_empty() {
+            let r = self.ask_text(config, api_key, prompt, opts).await?;
+            return Ok(LlmToolResponse {
+                text: r.text,
+                tool_calls: vec![],
+                model_id: r.model_id,
+                cost_usd: r.cost_usd,
+                tokens_in: r.tokens_in,
+                tokens_out: r.tokens_out,
+                cli_session_id: None,
+                response_id: None,
+            });
+        }
+        Err("Gemini CLI 도구 호출 미구현 — 단순 채팅은 동작. 도구 사용은 API 모드 권장.".to_string())
     }
 }

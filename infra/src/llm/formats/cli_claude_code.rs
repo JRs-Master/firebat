@@ -124,15 +124,29 @@ impl FormatHandler for ClaudeCodeCliHandler {
 
     async fn ask_with_tools(
         &self,
-        _config: &LlmModelConfig,
-        _api_key: Option<&str>,
-        _prompt: &str,
-        _tools: &[ToolDefinition],
+        config: &LlmModelConfig,
+        api_key: Option<&str>,
+        prompt: &str,
+        tools: &[ToolDefinition],
         _prior_results: &[ToolResult],
-        _opts: &LlmCallOpts,
+        opts: &LlmCallOpts,
     ) -> InfraResult<LlmToolResponse> {
-        // Phase B-17.5 — stream-json input + --mcp-config + tool_use / tool_result content blocks
-        // 설정된 후 활성. 현재 minimum 은 ask_text 만.
-        Err("Claude Code CLI ask_with_tools — Phase B-17.5 stream-json + MCP 설정된 후 활성".to_string())
+        // 도구 0건 (단순 텍스트 채팅) — ask_text 로 위임. 사용자가 가장 흔히 사용하는 경로.
+        if tools.is_empty() {
+            let r = self.ask_text(config, api_key, prompt, opts).await?;
+            return Ok(LlmToolResponse {
+                text: r.text,
+                tool_calls: vec![],
+                model_id: r.model_id,
+                cost_usd: r.cost_usd,
+                tokens_in: r.tokens_in,
+                tokens_out: r.tokens_out,
+                cli_session_id: None,
+                response_id: None,
+            });
+        }
+        // 도구 호출 — stream-json input + --mcp-config + tool_use/tool_result content blocks
+        // 후속 구현 필요. 도구 사용은 API 모드 (claude-* / gpt-* / gemini-*) 권장.
+        Err("Claude Code CLI 도구 호출 미구현 — 단순 채팅은 동작. 도구 사용은 API 모드 권장.".to_string())
     }
 }
