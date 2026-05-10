@@ -289,10 +289,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         let Ok(conn) = self.conn.lock() else {
             return false;
         };
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
+        let now = firebat_core::utils::time::now_ms();
         conn.execute(
             "INSERT INTO pages (slug, spec, status, project, visibility, password, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)
@@ -372,10 +369,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
 
     fn upsert_page_redirect(&self, from_slug: &str, to_slug: &str) -> bool {
         let Ok(conn) = self.conn.lock() else { return false };
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
+        let now = firebat_core::utils::time::now_ms();
         conn.execute(
             "INSERT INTO page_redirects (from_slug, to_slug, created_at)
              VALUES (?1, ?2, ?3)
@@ -399,10 +393,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
 
     fn replace_media_usage(&self, page_slug: &str, media_slugs: &[String]) -> bool {
         let Ok(conn) = self.conn.lock() else { return false };
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
+        let now = firebat_core::utils::time::now_ms();
         // 트랜잭션 — 옛 사용처 삭제 + 새 일괄 insert
         let tx_result: rusqlite::Result<()> = (|| {
             conn.execute("DELETE FROM media_usage WHERE page_slug = ?1", params![page_slug])?;
@@ -476,10 +467,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         created_at: Option<i64>,
     ) -> bool {
         let Ok(conn) = self.conn.lock() else { return false };
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
+        let now = firebat_core::utils::time::now_ms();
         let created = created_at.unwrap_or(now);
         conn.execute(
             "INSERT INTO conversations (id, owner, title, messages, created_at, updated_at)
@@ -495,10 +483,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
 
     fn delete_conversation(&self, owner: &str, id: &str) -> bool {
         let Ok(conn) = self.conn.lock() else { return false };
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
+        let now = firebat_core::utils::time::now_ms();
         // tombstone 기록 + row 삭제 + 임베딩 cascade — 옛 TS 와 동등
         let r1 = conn.execute(
             "INSERT OR REPLACE INTO deleted_conversations (id, owner, deleted_at)

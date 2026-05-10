@@ -13,6 +13,8 @@ pub mod tag_utils;
 pub mod http_client;
 pub mod sysmod_cache;
 pub mod timezone;
+pub mod time;
+pub mod vault_json;
 
 /// 테스트 직렬화용 — `pending_tools` / `plan_store` 가 같은 `FIREBAT_DATA_DIR` env var 를
 /// 변경하므로 cross-module 직렬화 필요. 두 module 의 tests 가 같은 lock 사용.

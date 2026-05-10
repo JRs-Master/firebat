@@ -6,8 +6,7 @@
 use std::sync::Arc;
 
 use firebat_core::ports::{AuthSession, IAuthPort, IVaultPort, SessionType};
-
-const SESSION_PREFIX: &str = "auth:session:";
+use firebat_core::vault_keys::AUTH_SESSION_PREFIX as SESSION_PREFIX;
 
 pub struct VaultAuthAdapter {
     vault: Arc<dyn IVaultPort>,
@@ -22,12 +21,9 @@ impl VaultAuthAdapter {
         format!("{}{}", SESSION_PREFIX, token)
     }
 
-    /// 현재 unix epoch ms — 만료 검사용
+    /// 현재 unix epoch ms — 만료 검사용. utils::time::now_ms 위임.
     fn now_ms() -> i64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0)
+        firebat_core::utils::time::now_ms()
     }
 
     /// 세션 만료 여부.

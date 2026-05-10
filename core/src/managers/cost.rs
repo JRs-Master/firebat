@@ -14,12 +14,10 @@ use chrono::{Datelike, Duration, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::ports::{IDatabasePort, IVaultPort, LlmCostStatsFilter, LlmCostStatsSummary};
 use crate::utils::timezone::resolve_user_tz;
-
-const VK_COST_BUDGET: &str = "system:cost:budget";
+use crate::vault_keys::VK_COST_BUDGET;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -97,10 +95,7 @@ impl CostManager {
     }
 
     fn now_ms() -> i64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0)
+        crate::utils::time::now_ms()
     }
 
     /// 사용자 timezone resolve — `utils::timezone::resolve_user_tz` 공용 helper 위임.

@@ -146,11 +146,9 @@ impl SqliteMemoryAdapter {
     }
 }
 
+// memory.rs 안 사용처가 다수 — 별 alias 보존 + utils::time::now_ms 위임.
 fn now_ms() -> i64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
+    firebat_core::utils::time::now_ms()
 }
 
 fn parse_str_array(raw: Option<String>) -> Vec<String> {

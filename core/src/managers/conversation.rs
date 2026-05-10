@@ -242,10 +242,7 @@ impl ConversationManager {
             .map(|m| (m.msg_idx, m.content_hash))
             .collect();
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
+        let now = crate::utils::time::now_ms();
 
         let mut keep_idx: std::collections::HashSet<i64> = std::collections::HashSet::new();
 
@@ -324,10 +321,7 @@ impl ConversationManager {
         let within_days = opts.within_days.unwrap_or(60).max(0);
         let min_score = opts.min_score.unwrap_or(0.25);
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
+        let now = crate::utils::time::now_ms();
         let cutoff = now - within_days * 86_400_000;
 
         let rows = self.db.query_conversation_embeddings_since(owner, cutoff);

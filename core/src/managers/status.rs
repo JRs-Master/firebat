@@ -7,7 +7,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::managers::event::{EventManager, FirebatEvent};
 
@@ -84,10 +83,7 @@ impl StatusManager {
     }
 
     fn now_ms() -> i64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0)
+        crate::utils::time::now_ms()
     }
 
     fn emit_update(&self, job: &JobStatus) {

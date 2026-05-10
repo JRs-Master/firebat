@@ -9,7 +9,6 @@
 //! (notify_sidebar / notify_gallery / notify_cron_complete) 호출. emit() 자체는 일반화 path.
 
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::ports::ILogPort;
 
@@ -75,10 +74,7 @@ impl EventManager {
     }
 
     fn now_ms() -> i64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0)
+        crate::utils::time::now_ms()
     }
 
     /// 이벤트 발행 — 모든 구독자 fanout + audit log 기록.

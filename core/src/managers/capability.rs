@@ -51,13 +51,15 @@ impl CapabilityManager {
         }
     }
 
+    /// dynamic registry 잠금 — Mutex poison 자동 회복 (panic 후에도 데이터 사용 가능).
+    fn lock_dynamic(&self) -> std::sync::MutexGuard<'_, BTreeMap<String, CapabilityDef>> {
+        self.dynamic.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
     /// 전체 capability 목록 (빌트인 + 동적 등록).
     pub fn list(&self) -> BTreeMap<String, CapabilityDef> {
         let mut map = builtin_capabilities();
-        let dynamic = match self.dynamic.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let dynamic = self.lock_dynamic();
         for (k, v) in dynamic.iter() {
             map.entry(k.clone()).or_insert_with(|| v.clone());
         }
@@ -66,10 +68,7 @@ impl CapabilityManager {
 
     /// 새 capability 수동 등록.
     pub fn register(&self, id: &str, label: &str, description: &str) {
-        let mut dynamic = match self.dynamic.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
+        let mut dynamic = self.lock_dynamic();
         dynamic.insert(
             id.to_string(),
             CapabilityDef {
@@ -133,10 +132,7 @@ impl CapabilityManager {
 
                 // 미등록 capability 자동 등록
                 if !builtin_capabilities().contains_key(cap_id) {
-                    let mut dynamic = match self.dynamic.lock() {
-                        Ok(g) => g,
-                        Err(p) => p.into_inner(),
-                    };
+                    let mut dynamic = self.lock_dynamic();
                     if !dynamic.contains_key(cap_id) {
                         dynamic.insert(
                             cap_id.to_string(),
@@ -186,10 +182,7 @@ impl CapabilityManager {
                     continue;
                 };
                 if !builtin_capabilities().contains_key(capability) {
-                    let mut dynamic = match self.dynamic.lock() {
-                        Ok(g) => g,
-                        Err(p) => p.into_inner(),
-                    };
+                    let mut dynamic = self.lock_dynamic();
                     if !dynamic.contains_key(capability) {
                         let description = parsed
                             .get("description")
@@ -222,21 +215,22 @@ impl CapabilityManager {
         result
     }
 
-    /// capability 설정 조회 (Vault).
+    /// capability 설정 조회 (Vault). 미존재 또는 파싱 실패 시 default.
     pub fn get_settings(&self, cap_id: &str) -> CapabilitySettings {
-        let raw = self.vault.get_secret(&vk_capability_settings(cap_id));
-        let Some(json) = raw else {
-            return CapabilitySettings::default();
-        };
-        serde_json::from_str(&json).unwrap_or_default()
+        crate::utils::vault_json::vault_get_json::<CapabilitySettings>(
+            &*self.vault,
+            &vk_capability_settings(cap_id),
+        )
     }
 
     /// capability 설정 저장 (Vault).
     pub fn set_settings(&self, cap_id: &str, settings: &CapabilitySettings) -> bool {
-        let Ok(json) = serde_json::to_string(settings) else {
-            return false;
-        };
-        self.vault.set_secret(&vk_capability_settings(cap_id), &json)
+        crate::utils::vault_json::vault_set_json(
+            &*self.vault,
+            &vk_capability_settings(cap_id),
+            settings,
+        )
+        .is_ok()
     }
 
     /// 설정 기준 provider 해석 — providers 배열 순서대로 시도. 미설정 시 api 우선.
@@ -273,7 +267,8 @@ impl CapabilityManager {
     pub async fn fallback_modules(&self, failed_module: &str) -> Vec<CapabilityProvider> {
         // 빌트인 + 동적 capability id 합집합
         let mut cap_ids: Vec<String> = builtin_capabilities().keys().cloned().collect();
-        if let Ok(dyn_map) = self.dynamic.lock() {
+        {
+            let dyn_map = self.lock_dynamic();
             for id in dyn_map.keys() {
                 if !cap_ids.contains(id) {
                     cap_ids.push(id.clone());

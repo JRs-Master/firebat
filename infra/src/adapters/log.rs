@@ -22,11 +22,7 @@ impl ConsoleLogAdapter {
 
     fn timestamp() -> String {
         // 단순 unix epoch ms — chrono 도입 전 stub. 추후 ISO 8601 로 교체.
-        let ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
-        format!("{ms}")
+        format!("{}", firebat_core::utils::time::now_ms())
     }
 }
 

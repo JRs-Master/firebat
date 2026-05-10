@@ -14,7 +14,6 @@ use argon2::{Argon2, PasswordHasher, PasswordVerifier};
 use rand::RngCore;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 use subtle::ConstantTimeEq;
 
 /// 비밀번호를 argon2id 로 hash. 실패 시 빈 string (저장 차단).
@@ -114,10 +113,7 @@ impl AuthManager {
     }
 
     fn now_ms() -> i64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0)
+        crate::utils::time::now_ms()
     }
 
     /// `fbat_` + 32자 hex (16 byte random).

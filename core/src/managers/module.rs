@@ -172,20 +172,21 @@ impl ModuleManager {
         None
     }
 
-    /// 모듈 settings (Vault).
+    /// 모듈 settings (Vault). 미존재 또는 파싱 실패 시 빈 object.
     pub fn get_settings(&self, module_name: &str) -> serde_json::Value {
-        let raw = self.vault.get_secret(&vk_module_settings(module_name));
-        match raw {
-            Some(json) => serde_json::from_str(&json).unwrap_or(serde_json::json!({})),
-            None => serde_json::json!({}),
-        }
+        crate::utils::vault_json::vault_get_json::<serde_json::Value>(
+            &*self.vault,
+            &vk_module_settings(module_name),
+        )
     }
 
     pub fn set_settings(&self, module_name: &str, settings: &serde_json::Value) -> bool {
-        let Ok(json) = serde_json::to_string(settings) else {
-            return false;
-        };
-        self.vault.set_secret(&vk_module_settings(module_name), &json)
+        crate::utils::vault_json::vault_set_json(
+            &*self.vault,
+            &vk_module_settings(module_name),
+            settings,
+        )
+        .is_ok()
     }
 
     /// 활성화 여부 — settings.enabled (default true).

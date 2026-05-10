@@ -29,6 +29,12 @@ pub const DEFAULT_THINKING_LEVEL: &str = "medium";
 /// 사용자 지시사항 최대 글자 수 — settings.rs + frontend SettingsModal 공통 single source.
 pub const USER_PROMPT_MAX_CHARS: usize = 2000;
 
+/// LLM 비용 예산 설정 — 일/월 한도 + 알림 threshold. CostManager.
+pub const VK_COST_BUDGET: &str = "system:cost:budget";
+
+/// 세션 토큰 Vault key 접두사 — `auth:session:<token>` 형식. AuthManager / VaultAuthAdapter.
+pub const AUTH_SESSION_PREFIX: &str = "auth:session:";
+
 pub const USER_SECRET_PREFIX: &str = "user:";
 
 /// 사용자 시크릿 key — `user:<name>` 형식. AI 가 모듈 호출 시 이 prefix 의 시크릿 자동 주입.
