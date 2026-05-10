@@ -47,25 +47,25 @@ const TAB_META: Record<string, { i18nKey: string; icon: typeof Globe }> = {
 const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingField[] }> = {
   'browser-scrape': {
     fields: [
-      { key: 'timeout', label: '타임아웃 (ms)', type: 'number', placeholder: '30000', description: '페이지 로딩 제한 시간', defaultValue: 30000 },
-      { key: 'headless', label: 'Headless 모드', type: 'toggle', description: '브라우저 UI 없이 실행', defaultValue: true },
-      { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '50000', description: '추출 텍스트 최대 글자 수', defaultValue: 50000 },
+      { key: 'timeout', label: '타임아웃 (ms)', type: 'number', placeholder: '30000', description: '페이지 로딩 제한 시간입니다.', defaultValue: 30000 },
+      { key: 'headless', label: 'Headless 모드', type: 'toggle', description: '브라우저 UI 없이 실행합니다.', defaultValue: true },
+      { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '50000', description: '추출 텍스트의 최대 글자 수입니다.', defaultValue: 50000 },
     ],
   },
   'kakao-talk': {
     fields: [
       { key: 'kakaoOAuth', label: '카카오 계정 연동', type: 'oauth', oauthUrl: '/api/auth/oauth/kakao', oauthSecrets: ['KAKAO_ACCESS_TOKEN'], description: '키 등록 후 연동하면 액세스 토큰이 자동 발급됩니다.' },
-      { key: 'defaultType', label: '기본 메시지 타입', type: 'text', placeholder: 'text', description: 'text | feed | list (기본: text)', defaultValue: 'text' },
+      { key: 'defaultType', label: '기본 메시지 타입', type: 'text', placeholder: 'text', description: 'text · feed · list 중에서 선택합니다 (기본: text).', defaultValue: 'text' },
     ],
   },
   'telegram': {
     fields: [
-      { key: 'bruteForceAlert', label: '로그인 brute force 알림', type: 'toggle', description: '5회 연속 로그인 실패로 60초 잠금 발생 시 텔레그램 즉시 알림. TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID 모두 등록되어 있어야 발송. OFF 면 알림 안 함 (기본).', defaultValue: false },
+      { key: 'bruteForceAlert', label: '로그인 brute force 알림', type: 'toggle', description: '5회 연속 로그인 실패로 60초 잠금이 발생하면 텔레그램으로 즉시 알림이 발송됩니다. TELEGRAM_BOT_TOKEN 과 TELEGRAM_CHAT_ID 가 모두 등록되어 있어야 발송됩니다. OFF 면 알림이 발송되지 않습니다 (기본값).', defaultValue: false },
     ],
   },
   'firecrawl': {
     fields: [
-      { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '30000', description: '마크다운 결과 최대 글자 수', defaultValue: 30000 },
+      { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '30000', description: '마크다운 결과의 최대 글자 수입니다.', defaultValue: 30000 },
     ],
   },
   'mcp-server-app': {
@@ -76,14 +76,14 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
   },
   'cms': {
     fields: [
-      { key: 'siteTitle', label: '사이트 제목', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'SEO 기본 사이트 제목 (OG, RSS, Sitemap 등에 사용)' },
-      { key: 'siteDescription', label: '사이트 설명', type: 'text', tab: '일반', placeholder: 'Just Imagine. Firebat Runs.', description: 'SEO 기본 사이트 설명' },
-      { key: 'siteUrl', label: '사이트 URL', type: 'text', tab: '일반', placeholder: 'https://example.com', description: 'JSON-LD, Sitemap 등에 사용되는 기본 URL. 비워두면 요청 host 자동 감지.' },
-      { key: 'jsonLdEnabled', label: 'JSON-LD 구조화 데이터', type: 'toggle', tab: '일반', description: 'WebSite + Organization 스키마 자동 삽입', defaultValue: true },
-      { key: 'jsonLdOrganization', label: '조직/브랜드명', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'JSON-LD Organization name' },
-      { key: 'jsonLdLogoUrl', label: '로고 URL', type: 'text', tab: '일반', placeholder: 'https://example.com/icon.svg', description: 'JSON-LD Organization 로고 이미지 URL' },
-      { key: 'siteLang', label: '사이트 언어', type: 'text', tab: '일반', placeholder: 'ko', description: 'HTML lang 속성 — 검색엔진 언어 인식 + 접근성. 기본 ko (en/ja/zh-CN 등)', defaultValue: 'ko' },
-      { key: 'faviconUrl', label: 'Favicon URL', type: 'text', tab: '일반', placeholder: '/user/media/...png 또는 https://...', description: '커스텀 favicon. 갤러리 이미지 URL 또는 외부 URL. 비우면 기본 아이콘.' },
+      { key: 'siteTitle', label: '사이트 제목', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'SEO 기본 사이트 제목입니다 (OG, RSS, Sitemap 등에 사용됩니다).' },
+      { key: 'siteDescription', label: '사이트 설명', type: 'text', tab: '일반', placeholder: 'Just Imagine. Firebat Runs.', description: 'SEO 기본 사이트 설명입니다.' },
+      { key: 'siteUrl', label: '사이트 URL', type: 'text', tab: '일반', placeholder: 'https://example.com', description: 'JSON-LD, Sitemap 등에 사용되는 기본 URL 입니다. 비워두면 요청 host 가 자동 감지됩니다.' },
+      { key: 'jsonLdEnabled', label: 'JSON-LD 구조화 데이터', type: 'toggle', tab: '일반', description: 'WebSite + Organization 스키마가 자동 삽입됩니다.', defaultValue: true },
+      { key: 'jsonLdOrganization', label: '조직/브랜드명', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'JSON-LD Organization name 으로 사용됩니다.' },
+      { key: 'jsonLdLogoUrl', label: '로고 URL', type: 'text', tab: '일반', placeholder: 'https://example.com/icon.svg', description: 'JSON-LD Organization 로고 이미지 URL 입니다.' },
+      { key: 'siteLang', label: '사이트 언어', type: 'text', tab: '일반', placeholder: 'ko', description: 'HTML lang 속성으로 사용됩니다. 검색엔진 언어 인식과 접근성에 영향이 있습니다. 기본값은 ko 이며 en / ja / zh-CN 등도 사용할 수 있습니다.', defaultValue: 'ko' },
+      { key: 'faviconUrl', label: 'Favicon URL', type: 'text', tab: '일반', placeholder: '/user/media/...png 또는 https://...', description: '커스텀 favicon 입니다. 갤러리 이미지 URL 또는 외부 URL 을 입력해 주세요. 비우면 기본 아이콘이 사용됩니다.' },
       // ── 레이아웃 — 헤더 그룹 ──
       { key: 'layoutShowHeader', label: '헤더 표시', type: 'toggle', tab: '레이아웃', group: '헤더', description: '사용자 페이지 상단 헤더 표시 여부. 기본 ON.', defaultValue: true },
       { key: 'layoutSiteName', label: '사이트 이름', type: 'text', tab: '레이아웃', group: '헤더', placeholder: '(비우면 일반 탭의 사이트 제목 사용)', description: '헤더 좌측 텍스트 로고. 일반 탭 siteTitle 과 다른 값 설정할 때만 입력.' },
