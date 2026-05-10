@@ -112,14 +112,25 @@ impl FormatHandler for AnthropicMessagesHandler {
         let key = require_api_key(config, api_key)?;
         let headers = Self::build_headers(config, &key)?;
 
+        let cache_enabled = opts.anthropic_cache_enabled.unwrap_or(false);
         let mut body = serde_json::json!({
             "model": config.id,
             "max_tokens": opts.max_tokens.unwrap_or(4096),
             "messages": [{"role": "user", "content": prompt}],
         });
+        // system block — cache 토글 ON 시 `[{type:'text', text, cache_control:{type:'ephemeral'}}]`
+        // 형식으로 박음. OFF 시 단순 string. 옛 TS anthropic-messages.ts 1:1.
         if let Some(sp) = opts.system_prompt.as_deref() {
             if !sp.is_empty() {
-                body["system"] = serde_json::Value::String(sp.to_string());
+                if cache_enabled {
+                    body["system"] = serde_json::json!([{
+                        "type": "text",
+                        "text": sp,
+                        "cache_control": { "type": "ephemeral" }
+                    }]);
+                } else {
+                    body["system"] = serde_json::Value::String(sp.to_string());
+                }
             }
         }
         if let Some(t) = opts.temperature {
@@ -169,11 +180,16 @@ impl FormatHandler for AnthropicMessagesHandler {
     ) -> InfraResult<LlmToolResponse> {
         let key = require_api_key(config, api_key)?;
         let headers = Self::build_headers(config, &key)?;
+        let cache_enabled = opts.anthropic_cache_enabled.unwrap_or(false);
 
-        // 도구 정의 → Anthropic schema { name, description, input_schema }
+        // 도구 정의 → Anthropic schema { name, description, input_schema }.
+        // cache 토글 ON 시 마지막 tool 에 `cache_control: { type:'ephemeral' }` 마커 박음.
+        // 옛 TS anthropic-messages.ts:116 1:1 (`cacheEnabled && i === tools.length - 1`).
+        let tools_len = tools.len();
         let tool_defs: Vec<serde_json::Value> = tools
             .iter()
-            .map(|t| {
+            .enumerate()
+            .map(|(i, t)| {
                 let mut def = serde_json::json!({
                     "name": t.name,
                     "description": t.description,
@@ -182,6 +198,9 @@ impl FormatHandler for AnthropicMessagesHandler {
                     def["input_schema"] = schema.clone();
                 } else {
                     def["input_schema"] = serde_json::json!({"type": "object", "properties": {}});
+                }
+                if cache_enabled && i + 1 == tools_len {
+                    def["cache_control"] = serde_json::json!({ "type": "ephemeral" });
                 }
                 def
             })
@@ -235,9 +254,18 @@ impl FormatHandler for AnthropicMessagesHandler {
             "messages": messages,
             "tools": tool_defs,
         });
+        // system block — cache 토글 ON 시 `[{type:'text', text, cache_control}]` 형식.
         if let Some(sp) = opts.system_prompt.as_deref() {
             if !sp.is_empty() {
-                body["system"] = serde_json::Value::String(sp.to_string());
+                if cache_enabled {
+                    body["system"] = serde_json::json!([{
+                        "type": "text",
+                        "text": sp,
+                        "cache_control": { "type": "ephemeral" }
+                    }]);
+                } else {
+                    body["system"] = serde_json::Value::String(sp.to_string());
+                }
             }
         }
 

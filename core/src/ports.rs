@@ -990,6 +990,12 @@ pub struct LlmCallOpts {
     /// 미설정 시 CLI 기본 모델 사용. 옛 TS `ctx.config.cliModel` 1:1.
     #[serde(rename = "cliModel", default, skip_serializing_if = "Option::is_none")]
     pub cli_model: Option<String>,
+    /// Anthropic prompt cache 토글 — Vault `system:llm:anthropic-cache` 값.
+    /// ON 시 anthropic 어댑터가 system block + 마지막 tool 에 `cache_control: ephemeral` 마커 박음.
+    /// 옛 TS `ctx.resolveAnthropicCache()` 1:1. ConfigDrivenAdapter 가 anthropic-messages format 호출 시
+    /// Vault 조회 후 자동 박음. 호출자 (AiManager) 직접 박을 필요 없음.
+    #[serde(rename = "anthropicCacheEnabled", default, skip_serializing_if = "Option::is_none")]
+    pub anthropic_cache_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

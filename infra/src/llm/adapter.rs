@@ -198,8 +198,9 @@ impl ILlmPort for ConfigDrivenAdapter {
             .handler_for(&config.format)
             .ok_or_else(|| format!("LLM format 핸들러 미설정: {}", config.format))?;
         let api_key = self.fetch_api_key(&config);
+        let enriched_opts = self.enrich_opts_for_format(&config, opts);
         handler
-            .ask_text(&config, api_key.as_deref(), prompt, opts)
+            .ask_text(&config, api_key.as_deref(), prompt, &enriched_opts)
             .await
     }
 
@@ -215,9 +216,32 @@ impl ILlmPort for ConfigDrivenAdapter {
             .handler_for(&config.format)
             .ok_or_else(|| format!("LLM format 핸들러 미설정: {}", config.format))?;
         let api_key = self.fetch_api_key(&config);
+        let enriched_opts = self.enrich_opts_for_format(&config, opts);
         handler
-            .ask_with_tools(&config, api_key.as_deref(), prompt, tools, prior_results, opts)
+            .ask_with_tools(&config, api_key.as_deref(), prompt, tools, prior_results, &enriched_opts)
             .await
+    }
+}
+
+impl ConfigDrivenAdapter {
+    /// format 별 옵션 enrichment — 호출자 (AiManager) 가 직접 Vault 조회 안 박아도 어댑터가 자동 채움.
+    /// 옛 TS `FormatHandlerContext.resolveXxx()` 패턴 1:1 — ctx 없이 어댑터 안에서 처리.
+    fn enrich_opts_for_format(&self, config: &LlmModelConfig, opts: &LlmCallOpts) -> LlmCallOpts {
+        let mut enriched = opts.clone();
+        // Anthropic prompt cache 토글 — system block + 마지막 tool 에 cache_control 마커 자동 박음.
+        // 모델이 prompt_cache feature 활성된 anthropic-messages 일 때만 Vault 조회.
+        if config.format == "anthropic-messages"
+            && config.features.prompt_cache
+            && enriched.anthropic_cache_enabled.is_none()
+        {
+            let cache_enabled = self
+                .vault
+                .get_secret(firebat_core::vault_keys::VK_LLM_ANTHROPIC_CACHE)
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false);
+            enriched.anthropic_cache_enabled = Some(cache_enabled);
+        }
+        enriched
     }
 }
 
