@@ -14,7 +14,7 @@
 //! 멀티턴 / 이미지 / thinking 처리는 gemini_native 와 1:1 동일 (`build_contents` / `build_body` 공유 로직).
 
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::llm::adapter::FormatHandler;
 use crate::llm::formats::common::{compute_cost, http_client, map_reqwest_error};

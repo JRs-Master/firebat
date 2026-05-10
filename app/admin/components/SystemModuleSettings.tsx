@@ -39,7 +39,15 @@ interface SettingField {
  * resolveConfigField() 가 활성 lang 기준 i18n 영역에서 label/description/placeholder 결정.
  * fallback chain: i18n[lang] → i18n[en] → i18n[ko] → field.label (raw).
  */
-interface ConfigI18nText { label?: string; description?: string; placeholder?: string }
+interface ConfigI18nText {
+  label?: string;
+  description?: string;
+  placeholder?: string;
+  /** 그룹 헤더 라벨 (현재 lang). 미설정 시 cf.group raw 사용. 같은 그룹의 여러 필드에 반복 작성 가능 (resolver 가 마지막 우선) */
+  group?: string;
+  /** select options 의 lang 별 라벨 — cf.options 와 같은 길이의 병렬 배열 (i 인덱스 매칭) */
+  options?: string[];
+}
 interface ConfigSettingField {
   key: string;
   type: FieldType;
@@ -71,6 +79,16 @@ function resolveConfigField(cf: ConfigSettingField, lang: Lang): SettingField {
   const i18n = cf.i18n ?? {};
   const primary = i18n[lang] ?? {};
   const fallback = i18n['en'] ?? i18n['ko'] ?? {};
+
+  // select options 라벨 i18n 적용 — primary.options[i] / fallback.options[i] 우선, 미설정 시 raw label 유지
+  let resolvedOptions = cf.options;
+  if (cf.options && (primary.options || fallback.options)) {
+    resolvedOptions = cf.options.map((opt, i) => ({
+      ...opt,
+      label: primary.options?.[i] ?? fallback.options?.[i] ?? opt.label,
+    }));
+  }
+
   return {
     key: cf.key,
     type: cf.type,
@@ -79,11 +97,11 @@ function resolveConfigField(cf: ConfigSettingField, lang: Lang): SettingField {
     label: primary.label ?? fallback.label ?? cf.key,
     description: primary.description ?? fallback.description,
     tab: cf.tab,
-    group: cf.group,
+    group: primary.group ?? fallback.group ?? cf.group,
     oauthUrl: cf.oauthUrl,
     oauthSecrets: cf.oauthSecrets,
     secretName: cf.secretName,
-    options: cf.options,
+    options: resolvedOptions,
     widgetArea: cf.widgetArea,
   };
 }
@@ -104,11 +122,11 @@ const TAB_META: Record<string, { i18nKey: string; icon: typeof Globe }> = {
  * 특수 설정이 필요한 모듈만 등록 (oauth, 커스텀 필드 등).
  * 일반 secret 필드는 config.json의 secrets 배열에서 자동 생성됨.
  *
- * **C 옵션 마이그레이션 진행 중 (2026-05-10):** 옛 hardcoded 한국어 schema 들이 점진적으로
- * 모듈의 config.json 의 `settings_fields` (i18n.ko/en 자기완결) 으로 이전됨. config.json 에
- * settings_fields 가 정의된 모듈은 이 hardcoded schema 보다 우선 적용됨 (resolveFieldsFromConfig).
- * 4 모듈 이전 완료: browser-scrape / kakao-talk / telegram / firecrawl.
- * cms / mcp-server-* 는 이전 진행 중.
+ * **C 옵션 마이그레이션 (2026-05-10):** 옛 hardcoded 한국어 schema 들이 모듈 config.json 의
+ * `settings_fields` (i18n.ko/en 자기완결) 으로 이전 완료. config.json 에 settings_fields 가
+ * 정의된 모듈은 이 hardcoded schema 보다 우선 적용됨 (resolveFieldsFromConfig).
+ * 5 모듈 이전 완료: browser-scrape / kakao-talk / telegram / firecrawl / cms.
+ * mcp-server-app / mcp-server-llm 는 fields:[] (커스텀 렌더링) 만 유지 — 이전 불필요.
  */
 const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingField[] }> = {
   // browser-scrape / kakao-talk / telegram / firecrawl 폐기 — config.json settings_fields 로 이전됨.
@@ -117,158 +135,6 @@ const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingFi
   },
   'mcp-server-llm': {
     fields: [],  // 커스텀 렌더링 (LLM 통신용 — OpenAI Responses API, Claude API)
-  },
-  'cms': {
-    fields: [
-      { key: 'siteTitle', label: '사이트 제목', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'SEO 기본 사이트 제목입니다 (OG, RSS, Sitemap 등에 사용됩니다).' },
-      { key: 'siteDescription', label: '사이트 설명', type: 'text', tab: '일반', placeholder: 'Just Imagine. Firebat Runs.', description: 'SEO 기본 사이트 설명입니다.' },
-      { key: 'siteUrl', label: '사이트 URL', type: 'text', tab: '일반', placeholder: 'https://example.com', description: 'JSON-LD, Sitemap 등에 사용되는 기본 URL 입니다. 비워두면 요청 host 가 자동 감지됩니다.' },
-      { key: 'jsonLdEnabled', label: 'JSON-LD 구조화 데이터', type: 'toggle', tab: '일반', description: 'WebSite + Organization 스키마가 자동 삽입됩니다.', defaultValue: true },
-      { key: 'jsonLdOrganization', label: '조직/브랜드명', type: 'text', tab: '일반', placeholder: 'Firebat', description: 'JSON-LD Organization name 으로 사용됩니다.' },
-      { key: 'jsonLdLogoUrl', label: '로고 URL', type: 'text', tab: '일반', placeholder: 'https://example.com/icon.svg', description: 'JSON-LD Organization 로고 이미지 URL 입니다.' },
-      { key: 'siteLang', label: '사이트 언어', type: 'text', tab: '일반', placeholder: 'ko', description: 'HTML lang 속성으로 사용됩니다. 검색엔진 언어 인식과 접근성에 영향이 있습니다. 기본값은 ko 이며 en / ja / zh-CN 등도 사용할 수 있습니다.', defaultValue: 'ko' },
-      { key: 'faviconUrl', label: 'Favicon URL', type: 'text', tab: '일반', placeholder: '/user/media/...png 또는 https://...', description: '커스텀 favicon 입니다. 갤러리 이미지 URL 또는 외부 URL 을 입력해 주세요. 비우면 기본 아이콘이 사용됩니다.' },
-      // ── 레이아웃 — 헤더 그룹 ──
-      { key: 'layoutShowHeader', label: '헤더 표시', type: 'toggle', tab: '레이아웃', group: '헤더', description: '사용자 페이지 상단 헤더 표시 여부. 기본 ON.', defaultValue: true },
-      { key: 'layoutSiteName', label: '사이트 이름', type: 'text', tab: '레이아웃', group: '헤더', placeholder: '(비우면 일반 탭의 사이트 제목 사용)', description: '헤더 좌측 텍스트 로고. 일반 탭 siteTitle 과 다른 값 설정할 때만 입력.' },
-      { key: 'layoutLogoUrl', label: '로고 이미지 (선택)', type: 'text', tab: '레이아웃', group: '헤더', placeholder: '/user/media/...png 또는 https://...', description: '텍스트 로고 옆에 표시할 이미지 URL. 비우면 텍스트만.' },
-      { key: 'layoutNavLinks', label: '네비 링크', type: 'textarea', tab: '레이아웃', group: '헤더', placeholder: '홈 | /\n블로그 | /blog\n소개 | /about\n문의 | /contact', description: '한 줄당 "라벨 | 경로" 형식. 헤더 우측에 가로 나열.' },
-      { key: 'layoutHeaderSticky', label: 'Sticky (스크롤 시 상단 유지)', type: 'toggle', tab: '레이아웃', group: '헤더', description: 'position: sticky + top: 0 + z-index: 30. 스크롤 시에도 헤더가 상단에 고정. 기본 OFF.', defaultValue: false },
-      { key: 'layoutHeaderTransparentOnTop', label: 'Transparent on top', type: 'toggle', tab: '레이아웃', group: '헤더', description: '페이지 최상단(스크롤 0)일 때 헤더 배경 투명. 스크롤 시 배경색 채움 + 그림자 (모던 사이트 패턴). sticky=ON 과 함께 사용 권장. 기본 OFF.', defaultValue: false },
-      { key: 'layoutHeaderMobileDrawer', label: '모바일 햄버거 drawer', type: 'toggle', tab: '레이아웃', group: '헤더', description: '모바일(640px 미만)에서 nav 링크 → 햄버거 버튼 + 우측 슬라이드 drawer. 검색 + 링크 list + (옵션) 사이드바 widgets. 데스크톱은 그대로 horizontal nav. 기본 OFF.', defaultValue: false },
-      { key: 'layoutHeaderMobileDrawerIncludeSidebar', label: '모바일 drawer 안에 사이드바 widgets 포함', type: 'toggle', tab: '레이아웃', group: '헤더', description: '햄버거 drawer ON 일 때 본문 stacked 사이드바 대신 drawer 안에 사이드바 widgets 통합 표시. 한 곳에서 모든 모바일 콘텐츠 (검색 / 카테고리 / 최근글 / 태그 / nav). 기본 OFF.', defaultValue: false },
-      // 헤더 위젯 빌더 (좌/중/우 3 col)
-      { key: 'headerWidgetsLeft', label: '좌 col 위젯', type: 'widget-list', widgetArea: 'header', tab: '레이아웃', group: '헤더', description: '헤더 좌측 col 에 배치할 widget 배열. 비우면 기본 (로고 / 사이트명) 자동.' },
-      { key: 'headerWidgetsCenter', label: '중 col 위젯', type: 'widget-list', widgetArea: 'header', tab: '레이아웃', group: '헤더', description: '헤더 중앙 col. 비우면 우측 push.' },
-      { key: 'headerWidgetsRight', label: '우 col 위젯', type: 'widget-list', widgetArea: 'header', tab: '레이아웃', group: '헤더', description: '헤더 우측 col. 비우면 기본 (네비 + 검색박스 + 햄버거) 자동.' },
-
-      // ── 사이드바 그룹 ──
-      { key: 'layoutMode', label: '본문 + 사이드바 모드', type: 'select', tab: '레이아웃', group: '사이드바', description: '본문 영역과 사이드바 배치. full = 사이드바 없음 / right = 우측 사이드바 / left = 좌측 사이드바 / both = 양쪽 사이드바 (같은 위젯 양쪽 표시) / boxed = 사이드바 없음 + 본문 boxed (좁은 max-width + 테두리·그림자). 모바일에선 자동 stacked.', defaultValue: 'full', options: [
-        { value: 'full', label: 'Full — 사이드바 없음 (기본)' },
-        { value: 'right-sidebar', label: 'Right Sidebar — 우측 사이드바' },
-        { value: 'left-sidebar', label: 'Left Sidebar — 좌측 사이드바' },
-        { value: 'both-sidebar', label: 'Both Sidebar — 양쪽 사이드바' },
-        { value: 'boxed', label: 'Boxed — 사이드바 없음 + 본문 boxed' },
-      ] },
-      { key: 'sidebarWidgets', label: '사이드바 위젯', type: 'widget-list', widgetArea: 'sidebar', tab: '레이아웃', group: '사이드바', description: '위젯 카탈로그에서 추가·순서 변경·삭제·표시대상(PC/모바일)·props 편집. 설정되어 있으면 아래 legacy toggle 무시. 빈 상태이면 toggle 호환 폴백.' },
-      { key: 'sidebarShowSearchBox', label: '검색 박스 (legacy)', type: 'toggle', tab: '레이아웃', group: '사이드바', description: '[옛 toggle, widgets 미설정 시] 사이드바에 검색 입력창 표시. /search 로 GET.', defaultValue: false },
-      { key: 'sidebarShowRecentPosts', label: '최근 글 (legacy)', type: 'toggle', tab: '레이아웃', group: '사이드바', description: '[옛 toggle] 사이드바에 최근 글 list 표시.', defaultValue: true },
-      { key: 'sidebarRecentPostsCount', label: '최근 글 개수 (legacy)', type: 'number', tab: '레이아웃', group: '사이드바', placeholder: '5', description: '[옛 toggle] 최근 글 개수.', defaultValue: 5 },
-      { key: 'sidebarShowCategoryList', label: '카테고리 목록 (legacy)', type: 'toggle', tab: '레이아웃', group: '사이드바', description: '[옛 toggle] 프로젝트별 글 수 표시.', defaultValue: false },
-      { key: 'sidebarShowTagCloud', label: '태그 cloud (legacy)', type: 'toggle', tab: '레이아웃', group: '사이드바', description: '[옛 toggle] head.keywords 빈도수 기반.', defaultValue: false },
-      { key: 'sidebarTagCloudLimit', label: '태그 cloud 개수 (legacy)', type: 'number', tab: '레이아웃', group: '사이드바', placeholder: '20', description: '[옛 toggle] 태그 cloud 표시 개수.', defaultValue: 20 },
-      { key: 'sidebarShowSubscribe', label: '구독 안내 (legacy)', type: 'toggle', tab: '레이아웃', group: '사이드바', description: '[옛 toggle] RSS feed.xml 링크 표시.', defaultValue: false },
-      { key: 'sidebarHtmlWidget', label: 'HTML 위젯 (legacy)', type: 'textarea', tab: '레이아웃', group: '사이드바', placeholder: '<div>광고 코드 / 연락처 / 소개 등</div>', description: '[옛 toggle] 자유 HTML 위젯. sanitize 후 inline DOM.' },
-
-      // ── 푸터 그룹 ──
-      { key: 'layoutShowFooter', label: '푸터 표시', type: 'toggle', tab: '레이아웃', group: '푸터', description: '사용자 페이지 하단 푸터 표시 여부. 기본 ON.', defaultValue: true },
-      { key: 'layoutFooterText', label: '메인 텍스트', type: 'textarea', tab: '레이아웃', group: '푸터', placeholder: '© 2026 사이트명. All rights reserved.', description: '푸터 메인 텍스트. 4 컬럼 아래 단독 line — 저작권·법적 고지 등. HTML 일부 허용 (<a>, <strong>). 비우면 자동 © 표기.' },
-      { key: 'footerWidgetsCol1', label: 'Col 1 위젯', type: 'widget-list', widgetArea: 'footer', tab: '레이아웃', group: '푸터', description: '푸터 첫 컬럼 widget 배열.' },
-      { key: 'footerWidgetsCol2', label: 'Col 2 위젯', type: 'widget-list', widgetArea: 'footer', tab: '레이아웃', group: '푸터', description: '푸터 두 번째 컬럼.' },
-      { key: 'footerWidgetsCol3', label: 'Col 3 위젯', type: 'widget-list', widgetArea: 'footer', tab: '레이아웃', group: '푸터', description: '푸터 세 번째 컬럼.' },
-      { key: 'footerWidgetsCol4', label: 'Col 4 위젯', type: 'widget-list', widgetArea: 'footer', tab: '레이아웃', group: '푸터', description: '푸터 네 번째 컬럼.' },
-      { key: 'footerColumn1Heading', label: '컬럼 1 — 제목 (legacy)', type: 'text', tab: '레이아웃', group: '푸터', placeholder: '회사 소개', description: '[legacy] widgets 미설정 시 자동 widget 으로 변환.' },
-      { key: 'footerColumn1Content', label: '컬럼 1 — 본문 (legacy)', type: 'textarea', tab: '레이아웃', group: '푸터', placeholder: '<a href="/about">소개</a><br><a href="/contact">연락처</a>', description: '[legacy] HTML 허용.' },
-      { key: 'footerColumn2Heading', label: '컬럼 2 — 제목 (legacy)', type: 'text', tab: '레이아웃', group: '푸터', placeholder: '카테고리', description: '[legacy]' },
-      { key: 'footerColumn2Content', label: '컬럼 2 — 본문 (legacy)', type: 'textarea', tab: '레이아웃', group: '푸터', placeholder: '<a href="/blog">블로그</a>', description: '[legacy] HTML 허용.' },
-      { key: 'footerColumn3Heading', label: '컬럼 3 — 제목 (legacy)', type: 'text', tab: '레이아웃', group: '푸터', placeholder: '구독', description: '[legacy]' },
-      { key: 'footerColumn3Content', label: '컬럼 3 — 본문 (legacy)', type: 'textarea', tab: '레이아웃', group: '푸터', placeholder: '<a href="/feed.xml">RSS</a>', description: '[legacy] HTML 허용.' },
-      { key: 'footerColumn4Heading', label: '컬럼 4 — 제목 (legacy)', type: 'text', tab: '레이아웃', group: '푸터', placeholder: '소셜', description: '[legacy]' },
-      { key: 'footerColumn4Content', label: '컬럼 4 — 본문 (legacy)', type: 'textarea', tab: '레이아웃', group: '푸터', placeholder: '<a href="https://x.com/me">X</a>', description: '[legacy] HTML 허용.' },
-
-      // ── 본문 / 글 list 그룹 ──
-      { key: 'pageListCardVariant', label: '글 카드 변형', type: 'select', tab: '레이아웃', group: '본문 · 글 list', description: '홈·프로젝트·태그·검색 페이지의 글 list 표시 방식. list (세로 카드) / grid (격자 2-3열) / compact (제목+날짜 압축) / magazine (잡지 — 첫 글 hero 큰 이미지 + 나머지 2열 카드, featured image + excerpt 자동 추출).', defaultValue: 'list', options: [
-        { value: 'list', label: 'List — 세로 카드 (기본)' },
-        { value: 'grid', label: 'Grid — 격자 2-3열' },
-        { value: 'compact', label: 'Compact — 제목+날짜 압축' },
-        { value: 'magazine', label: 'Magazine — 잡지 (hero + 2열 카드)' },
-      ] },
-      { key: 'pageListPerPage', label: '페이지당 개수', type: 'number', tab: '레이아웃', group: '본문 · 글 list', placeholder: '20', description: '한 페이지에 표시할 글 개수. 페이지네이션 (?page=N) 자동.', defaultValue: 20 },
-      { key: 'layoutShowReadingProgress', label: '읽기 진행도 표시', type: 'toggle', tab: '레이아웃', group: '본문 · 글 list', description: '페이지 상단에 스크롤 진행도 가로 바 표시. design tokens 의 accent 색 사용. 기본 OFF.', defaultValue: false },
-      { key: 'layoutShowRelatedPosts', label: '관련 글 추천', type: 'toggle', tab: '레이아웃', group: '본문 · 글 list', description: '콘텐츠 페이지(project 설정된) 본문 끝에 head.keywords 기반 매칭 글 list 표시. score = 공유 keyword 개수. 키워드 0건 또는 매칭 0건이면 자동 미표시. 기본 ON.', defaultValue: true },
-      { key: 'layoutRelatedPostsCount', label: '관련 글 개수', type: 'number', tab: '레이아웃', group: '본문 · 글 list', placeholder: '5', description: '관련 글 표시 개수 (top N). 빈도 동률 시 updatedAt 최신 우선.', defaultValue: 5 },
-      // ── 광고 — AdSense 수동 슬롯 4개 (Phase 4 Step 6). Auto Ads 는 AdSense 콘솔에서 직접 ON ──
-      { key: 'adsensePublisherId', label: 'AdSense Publisher ID', type: 'text', tab: '광고', placeholder: 'ca-pub-1234567890123456', description: 'Google AdSense Publisher ID. 설정하면 head 에 AdSense script 자동 inject. Auto Ads 활성화는 AdSense 콘솔 (adsense.google.com → 자동 광고 → 사이트별 ON). Firebat 측에서는 별도 토글 없음 — script 설정한 후엔 AdSense 콘솔이 광고 위치·형식 결정.' },
-      { key: 'adsenseSlotHeaderBottom', label: '슬롯 — 헤더 아래', type: 'text', tab: '광고', placeholder: '1234567890', description: 'AdSense 광고 단위 ID — 헤더 바로 아래 위치. 비우면 미표시.' },
-      { key: 'adsenseSlotPostTop', label: '슬롯 — 본문 위', type: 'text', tab: '광고', placeholder: '1234567890', description: 'AdSense 광고 단위 ID — 본문 시작 위. 비우면 미표시.' },
-      { key: 'adsenseSlotPostBottom', label: '슬롯 — 본문 아래', type: 'text', tab: '광고', placeholder: '1234567890', description: 'AdSense 광고 단위 ID — 본문 끝 아래. 비우면 미표시.' },
-      { key: 'adsenseSlotFooterTop', label: '슬롯 — 푸터 위', type: 'text', tab: '광고', placeholder: '1234567890', description: 'AdSense 광고 단위 ID — 푸터 바로 위. 비우면 미표시.' },
-      // ── 테마 — 색·폰트·layout 토큰. 사용자 변경 즉시 모든 페이지 반영 (CSS var). ──
-      { key: 'themePreset', label: '색 프리셋', type: 'color-presets', tab: '테마', group: '색', description: '클릭 한 번으로 primary/accent/up/down/text/배경/테두리 색 일괄 변경. Light 7 + Dark 3 = 10 프리셋.', defaultValue: 'slate-pro' },
-      { key: '__themeColorOverrides', label: '색 개별 편집 (선택)', type: 'color-overrides', tab: '테마', group: '색', description: '프리셋 위에 색을 개별 변경하고 싶을 때만 입력. 빈 값 = 프리셋 그대로. 변경한 색만 덮어씀. RGBA (투명도) 지원 — alpha 슬라이더로 0-100% 조절.' },
-      { key: 'themeFont', label: '폰트 세트', type: 'select', tab: '테마', group: '폰트', description: '본문·제목 폰트 통합 변경. Pretendard Variable (한글 최적, 기본) / Noto Sans KR / Inter / Geist / Cal Sans. 외부 폰트 사용은 아래 "외부 폰트 CSS URL" + "폰트 stack" 활용.', defaultValue: 'pretendard', options: [
-        { value: 'pretendard', label: 'Pretendard Variable (한글, 기본)' },
-        { value: 'noto-sans-kr', label: 'Noto Sans KR' },
-        { value: 'inter', label: 'Inter (라틴)' },
-        { value: 'geist', label: 'Geist (모노크롬)' },
-        { value: 'cal-sans', label: 'Cal Sans (제목 강조)' },
-      ] },
-      { key: 'customFontUrls', label: '외부 폰트 CSS URL', type: 'textarea', tab: '테마', group: '폰트', placeholder: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap', description: 'Google Fonts / Adobe Fonts 등 외부 폰트 CSS URL. 줄바꿈 또는 콤마로 여러 URL 설정할 수 있음. https:// 만 허용. layout 의 head 에 link rel=stylesheet 자동 inject.' },
-      { key: 'themeFont_body', label: '본문 폰트 stack (선택 override)', type: 'text', tab: '테마', group: '폰트', placeholder: "'Inter', sans-serif", description: '외부 폰트 사용 시 본문 폰트 stack. 비우면 위 "폰트 세트" 프리셋 사용. 예: \"Inter, -apple-system, sans-serif\".' },
-      { key: 'themeFont_heading', label: '제목 폰트 stack (선택 override)', type: 'text', tab: '테마', group: '폰트', placeholder: "'Cal Sans', sans-serif", description: '제목 폰트 stack. 비우면 프리셋 사용.' },
-      { key: 'themeFont_mono', label: 'Mono 폰트 stack (선택 override)', type: 'text', tab: '테마', group: '폰트', placeholder: "'JetBrains Mono', monospace", description: '코드·등폭 폰트 stack. 비우면 프리셋 사용.' },
-      // Typography 토큰 — baseFontSize + scaleRatio 만 조정해도 h1~h6 자동 일관 변경.
-      { key: 'themeBaseFontSize', label: '본문 base 폰트 사이즈', type: 'text', tab: '테마', group: '타이포그래피', placeholder: '16px', description: '본문 폰트 크기 (px). h1~h6 가 이 값에서 ratio 로 derive. 16-18px 일반.' },
-      { key: 'themeScaleRatio', label: 'Typographic scale ratio', type: 'number', tab: '테마', group: '타이포그래피', placeholder: '1.25', description: '제목 크기 비율. 1.125 (Major Second 차분) / 1.2 (Minor Third) / 1.25 (Major Third 기본) / 1.333 (Perfect Fourth 강함). h1=base×ratio⁴.' },
-      { key: 'themeBodyLineHeight', label: '본문 line-height', type: 'number', tab: '테마', group: '타이포그래피', placeholder: '1.7', description: '본문 줄 간격 배수. 1.5-1.8 일반 (한국어 권장 1.7+).' },
-      { key: 'themeHeadingLineHeight', label: '제목 line-height', type: 'number', tab: '테마', group: '타이포그래피', placeholder: '1.25', description: '제목 줄 간격 배수. 1.0-1.5 (제목은 컴팩트).' },
-      { key: 'themeHeadingLetterSpacing', label: '제목 letter-spacing', type: 'text', tab: '테마', group: '타이포그래피', placeholder: '-0.01em', description: '제목 자간. CSS 값 (normal / -0.01em / -0.02em). 음수 = 모던 느낌.' },
-      { key: 'themeBodyLetterSpacing', label: '본문 letter-spacing', type: 'text', tab: '테마', group: '타이포그래피', placeholder: 'normal', description: '본문 자간. 보통 normal 또는 약간 양수 (0.01em).' },
-      { key: 'themeH1Style', label: 'H1 (제목) 스타일', type: 'select', tab: '테마', group: '제목 스타일', description: 'h1 제목 디자인. plain (기본 텍스트) / border-bottom (밑줄) / border-left (좌측 accent 바) / underline / bold-bg (강조 박스) / accent-square (accent 사각형 prefix).', defaultValue: 'plain', options: [
-        { value: 'plain', label: 'plain (단순)' },
-        { value: 'border-bottom', label: 'border-bottom (밑줄)' },
-        { value: 'border-left', label: 'border-left (좌측 accent 바)' },
-        { value: 'underline', label: 'underline (텍스트 밑줄)' },
-        { value: 'bold-bg', label: 'bold-bg (강조 배경 박스)' },
-        { value: 'accent-square', label: 'accent-square (사각형 prefix)' },
-      ] },
-      { key: 'themeH2Style', label: 'H2 (소제목) 스타일', type: 'select', tab: '테마', group: '제목 스타일', description: 'h2 소제목 디자인. 기본 border-left (좌측 accent 바).', defaultValue: 'border-left', options: [
-        { value: 'plain', label: 'plain (단순)' },
-        { value: 'border-bottom', label: 'border-bottom (밑줄)' },
-        { value: 'border-left', label: 'border-left (좌측 accent 바, 기본)' },
-        { value: 'underline', label: 'underline (텍스트 밑줄)' },
-        { value: 'bold-bg', label: 'bold-bg (강조 배경 박스)' },
-        { value: 'accent-square', label: 'accent-square (사각형 prefix)' },
-      ] },
-      { key: 'themeH3Style', label: 'H3 (소소제목) 스타일', type: 'select', tab: '테마', group: '제목 스타일', description: 'h3 소소제목 디자인. 기본 plain.', defaultValue: 'plain', options: [
-        { value: 'plain', label: 'plain (단순, 기본)' },
-        { value: 'border-bottom', label: 'border-bottom (밑줄)' },
-        { value: 'border-left', label: 'border-left (좌측 accent 바)' },
-        { value: 'underline', label: 'underline (텍스트 밑줄)' },
-        { value: 'bold-bg', label: 'bold-bg (강조 배경 박스)' },
-        { value: 'accent-square', label: 'accent-square (사각형 prefix)' },
-      ] },
-      { key: 'themeContentMaxWidth', label: '본문 최대 폭', type: 'text', tab: '테마', group: '본문 폭 · 여백 · 모서리', placeholder: '1200px', description: '본문 콘텐츠 영역 폭. px(1200px) / rem(75rem) / 절대값. 기본 1200px (이전 max-w-4xl 56rem ≈ 896px 대비 넓음).', defaultValue: '1200px' },
-      { key: 'themePaddingMobile', label: '모바일 좌우 여백', type: 'text', tab: '테마', group: '본문 폭 · 여백 · 모서리', placeholder: '16px', description: '≤640px 화면 좌우 여백. 기본 16px. 좁히려면 12px / 8px, 넓히려면 20px.', defaultValue: '16px' },
-      { key: 'themePaddingTablet', label: '태블릿 좌우 여백', type: 'text', tab: '테마', group: '본문 폭 · 여백 · 모서리', placeholder: '24px', description: '641~1023px 좌우 여백. 기본 24px.', defaultValue: '24px' },
-      { key: 'themePaddingDesktop', label: '데스크톱 좌우 여백', type: 'text', tab: '테마', group: '본문 폭 · 여백 · 모서리', placeholder: '32px', description: '≥1024px 좌우 여백. 기본 32px.', defaultValue: '32px' },
-      { key: 'themeRadius', label: '카드 모서리 둥글기', type: 'text', tab: '테마', group: '본문 폭 · 여백 · 모서리', placeholder: '8px', description: '카드·버튼·박스 border-radius. 0px (각진 모던) ~ 16px (둥근 친근). 기본 8px.', defaultValue: '8px' },
-      { key: 'sitemapEnabled', label: 'Sitemap 생성', type: 'toggle', tab: 'SEO', description: '/sitemap.xml 자동 생성', defaultValue: true },
-      { key: 'rssEnabled', label: 'RSS 피드', type: 'toggle', tab: 'SEO', description: '/feed.xml 자동 생성', defaultValue: true },
-      { key: 'robotsTxt', label: 'robots.txt', type: 'textarea', tab: 'SEO', placeholder: 'User-agent: *\nAllow: /\nDisallow: /api\nDisallow: /admin', description: 'robots.txt 내용', defaultValue: 'User-agent: *\nAllow: /\nDisallow: /api\nDisallow: /admin' },
-      { key: 'autoCanonical', label: '자동 Canonical URL', type: 'toggle', tab: 'SEO', description: '페이지 head.canonical 미지정 시 siteUrl + slug 으로 자동 생성. 중복 콘텐츠 방지.', defaultValue: true },
-      { key: 'twitterCardType', label: 'Twitter Card 타입', type: 'text', tab: 'SEO', placeholder: 'summary_large_image', description: 'summary (작은 카드) 또는 summary_large_image (큰 이미지). 블로그·랜딩은 후자 권장.', defaultValue: 'summary_large_image' },
-      { key: 'twitterSite', label: 'Twitter 사이트 계정', type: 'text', tab: 'SEO', placeholder: '@firebat', description: '사이트 자체 트위터 계정 (선택). @로 시작.' },
-      { key: 'twitterCreator', label: 'Twitter 작성자 계정', type: 'text', tab: 'SEO', placeholder: '@username', description: '작성자 트위터 계정 (선택). @로 시작.' },
-      { key: 'tagAliases', label: '태그 alias (정규화)', type: 'textarea', tab: 'SEO', placeholder: 'AI: ai, 인공지능, artificial-intelligence\n리뷰: review, 후기', description: 'canonical: alias1, alias2 줄별 매핑. /tag/{keyword} URL 매칭 시 case-insensitive normalize — "ai"·"인공지능" 모두 "AI" 페이지로 통합. listAllTags 도 통합 빈도 카운트.' },
-      // 이미지 후처리 (sharp + blurhash) — AI 생성 이미지에 자동 적용
-      { key: 'imageWebp', label: 'WebP 변환', type: 'toggle', tab: '이미지', description: '대부분 브라우저 지원, 원본 대비 25~35% 작음', defaultValue: true },
-      { key: 'imageAvif', label: 'AVIF 변환', type: 'toggle', tab: '이미지', description: '최신 포맷, WebP 대비 20% 더 작음. Safari 16+, Chrome 85+', defaultValue: true },
-      { key: 'imageThumbnail', label: '썸네일 생성 (256px)', type: 'toggle', tab: '이미지', description: '갤러리 썸네일 — <slug>-thumb.webp', defaultValue: true },
-      { key: 'imageBlurhash', label: 'Blurhash LQIP', type: 'toggle', tab: '이미지', description: '로딩 중 부드러운 블러 플레이스홀더 (LCP 개선, 32자 문자열)', defaultValue: true },
-      { key: 'imageVariants', label: '반응형 너비 (CSV)', type: 'text', tab: '이미지', placeholder: '480, 768, 1024', description: '각 너비마다 WebP/AVIF 쌍 생성 — srcset 자동 반영', defaultValue: '480, 768, 1024' },
-      { key: 'imageDefaultQuality', label: '기본 품질 (1~100)', type: 'number', tab: '이미지', placeholder: '85', description: 'WebP/AVIF/JPEG 압축 품질. 85 권장', defaultValue: 85 },
-      { key: 'imageStripExif', label: 'EXIF 제거', type: 'toggle', tab: '이미지', description: '촬영 위치·장비 등 메타데이터 제거 (프라이버시·용량)', defaultValue: true },
-      { key: 'imageProgressive', label: 'Progressive 인코딩', type: 'toggle', tab: '이미지', description: 'JPEG/WebP 점진 표시 — 느린 네트워크에서 UX 개선', defaultValue: true },
-      { key: 'imageKeepOriginal', label: '원본 파일 유지', type: 'toggle', tab: '이미지', description: '끄면 variants 만 보관 (용량 절약, 권장: 켜둠)', defaultValue: true },
-      { key: 'ogBgColor', label: '배경색', type: 'text', tab: 'OG', placeholder: '#f8fafc', description: 'OG 이미지 배경색 (HEX)' },
-      { key: 'ogAccentColor', label: '강조색', type: 'text', tab: 'OG', placeholder: '#2563eb', description: '상단 라인, 로고 테두리 색상' },
-      { key: 'ogDomain', label: '도메인 표시', type: 'text', tab: 'OG', placeholder: 'example.com', description: 'OG 이미지 우하단 도메인 텍스트. 비워두면 요청 host 자동 감지.' },
-      { key: 'headScripts', label: '<head> 스크립트', type: 'textarea', tab: '스크립트', placeholder: '<!-- Google Analytics 등 -->', description: '모든 페이지 <head>에 삽입할 HTML (SSR 설정 — crawler 가 인식)' },
-      { key: 'bodyScripts', label: '</body> 스크립트', type: 'textarea', tab: '스크립트', placeholder: '<!-- 채팅 위젯 등 -->', description: '모든 페이지 </body> 앞에 삽입할 HTML' },
-      { key: 'adsTxt', label: 'ads.txt (legacy — verifications 권장)', type: 'textarea', tab: '스크립트', placeholder: 'google.com, pub-XXXXXXXX, DIRECT, f08c47fec0942fa0', description: '/ads.txt 응답 내용. 이 필드 비워두고 아래 "사이트 인증 파일" 의 ads.txt 항목 사용 권장 (verifications 시스템 통합).' },
-      { key: 'verifications', label: '사이트 인증 파일', type: 'verifications', tab: '스크립트', description: 'Google Search Console (google{code}.html), AdSense (ads.txt), Naver Search Advisor (naverabc.html), Bing IndexNow (BingSiteAuth.xml), Yandex (yandex.html) 등 모든 사이트 소유권 인증 파일 통합 관리. (filename, content) 페어로 N개 등록.' },
-    ],
   },
 };
 

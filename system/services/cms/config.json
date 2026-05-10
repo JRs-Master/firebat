@@ -4,5 +4,1253 @@
   "scope": "system",
   "version": "1.0.0",
   "description": "CMS 설정 (사이트 메타·테마·레이아웃·SEO·OG·스크립트·소유권 인증 파일·태그). 이전 SEO 모듈에서 확장.",
-  "runtime": "none"
+  "runtime": "none",
+  "settings_fields": [
+    {
+      "key": "siteTitle",
+      "type": "text",
+      "tab": "일반",
+      "placeholder": "Firebat",
+      "i18n": {
+        "ko": { "label": "사이트 제목", "description": "SEO 기본 사이트 제목입니다 (OG, RSS, Sitemap 등에 사용됩니다)." },
+        "en": { "label": "Site title", "description": "Default site title used by SEO (OG, RSS, Sitemap, etc.)." }
+      }
+    },
+    {
+      "key": "siteDescription",
+      "type": "text",
+      "tab": "일반",
+      "placeholder": "Just Imagine. Firebat Runs.",
+      "i18n": {
+        "ko": { "label": "사이트 설명", "description": "SEO 기본 사이트 설명입니다." },
+        "en": { "label": "Site description", "description": "Default site description used by SEO." }
+      }
+    },
+    {
+      "key": "siteUrl",
+      "type": "text",
+      "tab": "일반",
+      "placeholder": "https://example.com",
+      "i18n": {
+        "ko": { "label": "사이트 URL", "description": "JSON-LD, Sitemap 등에 사용되는 기본 URL 입니다. 비워두면 요청 host 가 자동 감지됩니다." },
+        "en": { "label": "Site URL", "description": "Base URL used by JSON-LD, Sitemap, etc. Leave blank to auto-detect from the request host." }
+      }
+    },
+    {
+      "key": "jsonLdEnabled",
+      "type": "toggle",
+      "tab": "일반",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "JSON-LD 구조화 데이터", "description": "WebSite + Organization 스키마가 자동 삽입됩니다." },
+        "en": { "label": "JSON-LD structured data", "description": "Auto-injects WebSite + Organization schema." }
+      }
+    },
+    {
+      "key": "jsonLdOrganization",
+      "type": "text",
+      "tab": "일반",
+      "placeholder": "Firebat",
+      "i18n": {
+        "ko": { "label": "조직/브랜드명", "description": "JSON-LD Organization name 으로 사용됩니다." },
+        "en": { "label": "Organization / brand name", "description": "Used as JSON-LD Organization name." }
+      }
+    },
+    {
+      "key": "jsonLdLogoUrl",
+      "type": "text",
+      "tab": "일반",
+      "placeholder": "https://example.com/icon.svg",
+      "i18n": {
+        "ko": { "label": "로고 URL", "description": "JSON-LD Organization 로고 이미지 URL 입니다." },
+        "en": { "label": "Logo URL", "description": "Logo image URL for JSON-LD Organization." }
+      }
+    },
+    {
+      "key": "siteLang",
+      "type": "text",
+      "tab": "일반",
+      "placeholder": "ko",
+      "defaultValue": "ko",
+      "i18n": {
+        "ko": { "label": "사이트 언어", "description": "HTML lang 속성으로 사용됩니다. 검색엔진 언어 인식과 접근성에 영향이 있습니다. 기본값은 ko 이며 en / ja / zh-CN 등도 사용할 수 있습니다." },
+        "en": { "label": "Site language", "description": "Used as the HTML lang attribute. Affects search-engine language detection and accessibility. Default is ko; en / ja / zh-CN are also supported." }
+      }
+    },
+    {
+      "key": "faviconUrl",
+      "type": "text",
+      "tab": "일반",
+      "placeholder": "/user/media/...png 또는 https://...",
+      "i18n": {
+        "ko": { "label": "Favicon URL", "description": "커스텀 favicon 입니다. 갤러리 이미지 URL 또는 외부 URL 을 입력해 주세요. 비우면 기본 아이콘이 사용됩니다." },
+        "en": { "label": "Favicon URL", "description": "Custom favicon. Enter a gallery image URL or external URL. Leave blank to use the default icon.", "placeholder": "/user/media/...png or https://..." }
+      }
+    },
+
+    {
+      "key": "layoutShowHeader",
+      "type": "toggle",
+      "tab": "레이아웃",
+      "group": "헤더",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "헤더 표시", "description": "사용자 페이지 상단 헤더 표시 여부입니다. 기본 ON.", "group": "헤더" },
+        "en": { "label": "Show header", "description": "Whether to render the top header on user pages. Default ON.", "group": "Header" }
+      }
+    },
+    {
+      "key": "layoutSiteName",
+      "type": "text",
+      "tab": "레이아웃",
+      "group": "헤더",
+      "placeholder": "(비우면 일반 탭의 사이트 제목 사용)",
+      "i18n": {
+        "ko": { "label": "사이트 이름", "description": "헤더 좌측 텍스트 로고입니다. 일반 탭의 siteTitle 과 다른 값을 설정할 때만 입력해 주세요.", "group": "헤더" },
+        "en": { "label": "Site name", "description": "Text logo shown on the left of the header. Fill in only when you want a value different from the General tab's siteTitle.", "placeholder": "(leave blank to use the General tab site title)", "group": "Header" }
+      }
+    },
+    {
+      "key": "layoutLogoUrl",
+      "type": "text",
+      "tab": "레이아웃",
+      "group": "헤더",
+      "placeholder": "/user/media/...png 또는 https://...",
+      "i18n": {
+        "ko": { "label": "로고 이미지 (선택)", "description": "텍스트 로고 옆에 표시할 이미지 URL 입니다. 비우면 텍스트만 표시됩니다.", "group": "헤더" },
+        "en": { "label": "Logo image (optional)", "description": "Image URL shown next to the text logo. Leave blank to show text only.", "placeholder": "/user/media/...png or https://...", "group": "Header" }
+      }
+    },
+    {
+      "key": "layoutNavLinks",
+      "type": "textarea",
+      "tab": "레이아웃",
+      "group": "헤더",
+      "placeholder": "홈 | /\n블로그 | /blog\n소개 | /about\n문의 | /contact",
+      "i18n": {
+        "ko": { "label": "네비 링크", "description": "한 줄당 \"라벨 | 경로\" 형식입니다. 헤더 우측에 가로로 나열됩니다.", "group": "헤더" },
+        "en": { "label": "Nav links", "description": "One line per \"label | path\". Rendered horizontally on the right of the header.", "placeholder": "Home | /\nBlog | /blog\nAbout | /about\nContact | /contact", "group": "Header" }
+      }
+    },
+    {
+      "key": "layoutHeaderSticky",
+      "type": "toggle",
+      "tab": "레이아웃",
+      "group": "헤더",
+      "defaultValue": false,
+      "i18n": {
+        "ko": { "label": "Sticky (스크롤 시 상단 유지)", "description": "position: sticky + top: 0 + z-index: 30. 스크롤 시에도 헤더가 상단에 고정됩니다. 기본 OFF.", "group": "헤더" },
+        "en": { "label": "Sticky (pin to top on scroll)", "description": "position: sticky + top: 0 + z-index: 30. The header stays pinned to the top while scrolling. Default OFF.", "group": "Header" }
+      }
+    },
+    {
+      "key": "layoutHeaderTransparentOnTop",
+      "type": "toggle",
+      "tab": "레이아웃",
+      "group": "헤더",
+      "defaultValue": false,
+      "i18n": {
+        "ko": { "label": "Transparent on top", "description": "페이지 최상단(스크롤 0)일 때 헤더 배경이 투명해집니다. 스크롤 시 배경색과 그림자가 채워지는 모던 사이트 패턴입니다. sticky=ON 과 함께 사용하는 것을 권장합니다. 기본 OFF.", "group": "헤더" },
+        "en": { "label": "Transparent on top", "description": "Makes the header background transparent at the very top (scroll 0). On scroll, background and shadow fill in (modern site pattern). Recommended to combine with sticky=ON. Default OFF.", "group": "Header" }
+      }
+    },
+    {
+      "key": "layoutHeaderMobileDrawer",
+      "type": "toggle",
+      "tab": "레이아웃",
+      "group": "헤더",
+      "defaultValue": false,
+      "i18n": {
+        "ko": { "label": "모바일 햄버거 drawer", "description": "모바일(640px 미만)에서 nav 링크를 햄버거 버튼 + 우측 슬라이드 drawer 로 전환합니다. 검색 + 링크 list + (옵션) 사이드바 widgets 가 함께 표시됩니다. 데스크톱은 그대로 horizontal nav 입니다. 기본 OFF.", "group": "헤더" },
+        "en": { "label": "Mobile hamburger drawer", "description": "On mobile (<640px), replaces nav links with a hamburger button and a right-slide drawer. The drawer can include search, link list, and optional sidebar widgets. Desktop keeps horizontal nav. Default OFF.", "group": "Header" }
+      }
+    },
+    {
+      "key": "layoutHeaderMobileDrawerIncludeSidebar",
+      "type": "toggle",
+      "tab": "레이아웃",
+      "group": "헤더",
+      "defaultValue": false,
+      "i18n": {
+        "ko": { "label": "모바일 drawer 안에 사이드바 widgets 포함", "description": "햄버거 drawer 가 ON 일 때 본문 stacked 사이드바 대신 drawer 안에 사이드바 widgets 를 통합 표시합니다. 한 곳에서 모든 모바일 콘텐츠 (검색 / 카테고리 / 최근글 / 태그 / nav) 가 모입니다. 기본 OFF.", "group": "헤더" },
+        "en": { "label": "Include sidebar widgets in mobile drawer", "description": "When the hamburger drawer is ON, displays sidebar widgets inside the drawer instead of the stacked body sidebar. Centralizes all mobile content (search / categories / recent posts / tags / nav). Default OFF.", "group": "Header" }
+      }
+    },
+    {
+      "key": "headerWidgetsLeft",
+      "type": "widget-list",
+      "widgetArea": "header",
+      "tab": "레이아웃",
+      "group": "헤더",
+      "i18n": {
+        "ko": { "label": "좌 col 위젯", "description": "헤더 좌측 col 에 배치할 widget 배열입니다. 비우면 기본 (로고 / 사이트명) 이 자동 사용됩니다.", "group": "헤더" },
+        "en": { "label": "Left column widgets", "description": "Widget array placed in the left header column. Defaults to (logo / site name) when empty.", "group": "Header" }
+      }
+    },
+    {
+      "key": "headerWidgetsCenter",
+      "type": "widget-list",
+      "widgetArea": "header",
+      "tab": "레이아웃",
+      "group": "헤더",
+      "i18n": {
+        "ko": { "label": "중 col 위젯", "description": "헤더 중앙 col 입니다. 비우면 우측으로 push 됩니다.", "group": "헤더" },
+        "en": { "label": "Center column widgets", "description": "The center header column. Pushes to the right when empty.", "group": "Header" }
+      }
+    },
+    {
+      "key": "headerWidgetsRight",
+      "type": "widget-list",
+      "widgetArea": "header",
+      "tab": "레이아웃",
+      "group": "헤더",
+      "i18n": {
+        "ko": { "label": "우 col 위젯", "description": "헤더 우측 col 입니다. 비우면 기본 (네비 + 검색박스 + 햄버거) 이 자동 사용됩니다.", "group": "헤더" },
+        "en": { "label": "Right column widgets", "description": "The right header column. Defaults to (nav + search box + hamburger) when empty.", "group": "Header" }
+      }
+    },
+
+    {
+      "key": "layoutMode",
+      "type": "select",
+      "tab": "레이아웃",
+      "group": "사이드바",
+      "defaultValue": "full",
+      "options": [
+        { "value": "full", "label": "Full — 사이드바 없음 (기본)" },
+        { "value": "right-sidebar", "label": "Right Sidebar — 우측 사이드바" },
+        { "value": "left-sidebar", "label": "Left Sidebar — 좌측 사이드바" },
+        { "value": "both-sidebar", "label": "Both Sidebar — 양쪽 사이드바" },
+        { "value": "boxed", "label": "Boxed — 사이드바 없음 + 본문 boxed" }
+      ],
+      "i18n": {
+        "ko": {
+          "label": "본문 + 사이드바 모드",
+          "description": "본문 영역과 사이드바 배치입니다. full = 사이드바 없음 / right = 우측 사이드바 / left = 좌측 사이드바 / both = 양쪽 사이드바 (같은 위젯 양쪽 표시) / boxed = 사이드바 없음 + 본문 boxed (좁은 max-width + 테두리·그림자). 모바일에선 자동 stacked 입니다.",
+          "group": "사이드바",
+          "options": [
+            "Full — 사이드바 없음 (기본)",
+            "Right Sidebar — 우측 사이드바",
+            "Left Sidebar — 좌측 사이드바",
+            "Both Sidebar — 양쪽 사이드바",
+            "Boxed — 사이드바 없음 + 본문 boxed"
+          ]
+        },
+        "en": {
+          "label": "Body + sidebar mode",
+          "description": "Layout of the body area and sidebar. full = no sidebar / right = right sidebar / left = left sidebar / both = sidebars on both sides (same widgets mirrored) / boxed = no sidebar + boxed body (narrow max-width with border and shadow). Auto-stacked on mobile.",
+          "group": "Sidebar",
+          "options": [
+            "Full — no sidebar (default)",
+            "Right Sidebar",
+            "Left Sidebar",
+            "Both Sidebar — sidebars on both sides",
+            "Boxed — no sidebar, boxed body"
+          ]
+        }
+      }
+    },
+    {
+      "key": "sidebarWidgets",
+      "type": "widget-list",
+      "widgetArea": "sidebar",
+      "tab": "레이아웃",
+      "group": "사이드바",
+      "i18n": {
+        "ko": { "label": "사이드바 위젯", "description": "위젯 카탈로그에서 추가·순서 변경·삭제·표시 대상(PC/모바일)·props 편집이 가능합니다. 설정되어 있으면 아래 legacy toggle 은 무시됩니다. 빈 상태이면 toggle 호환 폴백이 사용됩니다.", "group": "사이드바" },
+        "en": { "label": "Sidebar widgets", "description": "Add / reorder / remove / set visibility (desktop / mobile) / edit props from the widget catalog. When set, the legacy toggles below are ignored. When empty, falls back to the legacy toggles.", "group": "Sidebar" }
+      }
+    },
+    {
+      "key": "sidebarShowSearchBox",
+      "type": "toggle",
+      "tab": "레이아웃",
+      "group": "사이드바",
+      "defaultValue": false,
+      "i18n": {
+        "ko": { "label": "검색 박스 (legacy)", "description": "[옛 toggle, widgets 미설정 시] 사이드바에 검색 입력창을 표시합니다. /search 로 GET.", "group": "사이드바" },
+        "en": { "label": "Search box (legacy)", "description": "[Legacy toggle — used only when widgets are unset] Shows a search input in the sidebar. GET to /search.", "group": "Sidebar" }
+      }
+    },
+    {
+      "key": "sidebarShowRecentPosts",
+      "type": "toggle",
+      "tab": "레이아웃",
+      "group": "사이드바",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "최근 글 (legacy)", "description": "[옛 toggle] 사이드바에 최근 글 list 를 표시합니다.", "group": "사이드바" },
+        "en": { "label": "Recent posts (legacy)", "description": "[Legacy toggle] Shows a recent-posts list in the sidebar.", "group": "Sidebar" }
+      }
+    },
+    {
+      "key": "sidebarRecentPostsCount",
+      "type": "number",
+      "tab": "레이아웃",
+      "group": "사이드바",
+      "placeholder": "5",
+      "defaultValue": 5,
+      "i18n": {
+        "ko": { "label": "최근 글 개수 (legacy)", "description": "[옛 toggle] 최근 글 개수입니다.", "group": "사이드바" },
+        "en": { "label": "Recent posts count (legacy)", "description": "[Legacy toggle] Number of recent posts.", "group": "Sidebar" }
+      }
+    },
+    {
+      "key": "sidebarShowCategoryList",
+      "type": "toggle",
+      "tab": "레이아웃",
+      "group": "사이드바",
+      "defaultValue": false,
+      "i18n": {
+        "ko": { "label": "카테고리 목록 (legacy)", "description": "[옛 toggle] 프로젝트별 글 수를 표시합니다.", "group": "사이드바" },
+        "en": { "label": "Category list (legacy)", "description": "[Legacy toggle] Shows post counts per project.", "group": "Sidebar" }
+      }
+    },
+    {
+      "key": "sidebarShowTagCloud",
+      "type": "toggle",
+      "tab": "레이아웃",
+      "group": "사이드바",
+      "defaultValue": false,
+      "i18n": {
+        "ko": { "label": "태그 cloud (legacy)", "description": "[옛 toggle] head.keywords 빈도수를 기반으로 합니다.", "group": "사이드바" },
+        "en": { "label": "Tag cloud (legacy)", "description": "[Legacy toggle] Based on head.keywords frequency.", "group": "Sidebar" }
+      }
+    },
+    {
+      "key": "sidebarTagCloudLimit",
+      "type": "number",
+      "tab": "레이아웃",
+      "group": "사이드바",
+      "placeholder": "20",
+      "defaultValue": 20,
+      "i18n": {
+        "ko": { "label": "태그 cloud 개수 (legacy)", "description": "[옛 toggle] 태그 cloud 표시 개수입니다.", "group": "사이드바" },
+        "en": { "label": "Tag cloud size (legacy)", "description": "[Legacy toggle] Number of tags shown in the cloud.", "group": "Sidebar" }
+      }
+    },
+    {
+      "key": "sidebarShowSubscribe",
+      "type": "toggle",
+      "tab": "레이아웃",
+      "group": "사이드바",
+      "defaultValue": false,
+      "i18n": {
+        "ko": { "label": "구독 안내 (legacy)", "description": "[옛 toggle] RSS feed.xml 링크를 표시합니다.", "group": "사이드바" },
+        "en": { "label": "Subscribe widget (legacy)", "description": "[Legacy toggle] Shows an RSS feed.xml link.", "group": "Sidebar" }
+      }
+    },
+    {
+      "key": "sidebarHtmlWidget",
+      "type": "textarea",
+      "tab": "레이아웃",
+      "group": "사이드바",
+      "placeholder": "<div>광고 코드 / 연락처 / 소개 등</div>",
+      "i18n": {
+        "ko": { "label": "HTML 위젯 (legacy)", "description": "[옛 toggle] 자유 HTML 위젯입니다. sanitize 후 inline DOM 으로 삽입됩니다.", "group": "사이드바" },
+        "en": { "label": "HTML widget (legacy)", "description": "[Legacy toggle] Free-form HTML widget. Sanitized and inserted as inline DOM.", "placeholder": "<div>Ad code / contact / about / etc.</div>", "group": "Sidebar" }
+      }
+    },
+
+    {
+      "key": "layoutShowFooter",
+      "type": "toggle",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "푸터 표시", "description": "사용자 페이지 하단 푸터 표시 여부입니다. 기본 ON.", "group": "푸터" },
+        "en": { "label": "Show footer", "description": "Whether to render the bottom footer on user pages. Default ON.", "group": "Footer" }
+      }
+    },
+    {
+      "key": "layoutFooterText",
+      "type": "textarea",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "placeholder": "© 2026 사이트명. All rights reserved.",
+      "i18n": {
+        "ko": { "label": "메인 텍스트", "description": "푸터 메인 텍스트입니다. 4 컬럼 아래 단독 line 으로 저작권·법적 고지 등에 사용됩니다. HTML 일부 (<a>, <strong>) 가 허용됩니다. 비우면 자동으로 © 표기가 추가됩니다.", "group": "푸터" },
+        "en": { "label": "Main text", "description": "Footer main text. A standalone line under the 4 columns, used for copyright / legal notices. Limited HTML allowed (<a>, <strong>). Leave blank for an automatic © line.", "placeholder": "© 2026 Site Name. All rights reserved.", "group": "Footer" }
+      }
+    },
+    {
+      "key": "footerWidgetsCol1",
+      "type": "widget-list",
+      "widgetArea": "footer",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "i18n": {
+        "ko": { "label": "Col 1 위젯", "description": "푸터 첫 번째 컬럼의 widget 배열입니다.", "group": "푸터" },
+        "en": { "label": "Col 1 widgets", "description": "Widget array for the first footer column.", "group": "Footer" }
+      }
+    },
+    {
+      "key": "footerWidgetsCol2",
+      "type": "widget-list",
+      "widgetArea": "footer",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "i18n": {
+        "ko": { "label": "Col 2 위젯", "description": "푸터 두 번째 컬럼입니다.", "group": "푸터" },
+        "en": { "label": "Col 2 widgets", "description": "The second footer column.", "group": "Footer" }
+      }
+    },
+    {
+      "key": "footerWidgetsCol3",
+      "type": "widget-list",
+      "widgetArea": "footer",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "i18n": {
+        "ko": { "label": "Col 3 위젯", "description": "푸터 세 번째 컬럼입니다.", "group": "푸터" },
+        "en": { "label": "Col 3 widgets", "description": "The third footer column.", "group": "Footer" }
+      }
+    },
+    {
+      "key": "footerWidgetsCol4",
+      "type": "widget-list",
+      "widgetArea": "footer",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "i18n": {
+        "ko": { "label": "Col 4 위젯", "description": "푸터 네 번째 컬럼입니다.", "group": "푸터" },
+        "en": { "label": "Col 4 widgets", "description": "The fourth footer column.", "group": "Footer" }
+      }
+    },
+    {
+      "key": "footerColumn1Heading",
+      "type": "text",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "placeholder": "회사 소개",
+      "i18n": {
+        "ko": { "label": "컬럼 1 — 제목 (legacy)", "description": "[legacy] widgets 미설정 시 자동 widget 으로 변환됩니다.", "group": "푸터" },
+        "en": { "label": "Col 1 — heading (legacy)", "description": "[Legacy] Auto-converted to a widget when widgets are unset.", "placeholder": "About", "group": "Footer" }
+      }
+    },
+    {
+      "key": "footerColumn1Content",
+      "type": "textarea",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "placeholder": "<a href=\"/about\">소개</a><br><a href=\"/contact\">연락처</a>",
+      "i18n": {
+        "ko": { "label": "컬럼 1 — 본문 (legacy)", "description": "[legacy] HTML 이 허용됩니다.", "group": "푸터" },
+        "en": { "label": "Col 1 — content (legacy)", "description": "[Legacy] HTML allowed.", "placeholder": "<a href=\"/about\">About</a><br><a href=\"/contact\">Contact</a>", "group": "Footer" }
+      }
+    },
+    {
+      "key": "footerColumn2Heading",
+      "type": "text",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "placeholder": "카테고리",
+      "i18n": {
+        "ko": { "label": "컬럼 2 — 제목 (legacy)", "description": "[legacy]", "group": "푸터" },
+        "en": { "label": "Col 2 — heading (legacy)", "description": "[Legacy]", "placeholder": "Categories", "group": "Footer" }
+      }
+    },
+    {
+      "key": "footerColumn2Content",
+      "type": "textarea",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "placeholder": "<a href=\"/blog\">블로그</a>",
+      "i18n": {
+        "ko": { "label": "컬럼 2 — 본문 (legacy)", "description": "[legacy] HTML 이 허용됩니다.", "group": "푸터" },
+        "en": { "label": "Col 2 — content (legacy)", "description": "[Legacy] HTML allowed.", "placeholder": "<a href=\"/blog\">Blog</a>", "group": "Footer" }
+      }
+    },
+    {
+      "key": "footerColumn3Heading",
+      "type": "text",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "placeholder": "구독",
+      "i18n": {
+        "ko": { "label": "컬럼 3 — 제목 (legacy)", "description": "[legacy]", "group": "푸터" },
+        "en": { "label": "Col 3 — heading (legacy)", "description": "[Legacy]", "placeholder": "Subscribe", "group": "Footer" }
+      }
+    },
+    {
+      "key": "footerColumn3Content",
+      "type": "textarea",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "placeholder": "<a href=\"/feed.xml\">RSS</a>",
+      "i18n": {
+        "ko": { "label": "컬럼 3 — 본문 (legacy)", "description": "[legacy] HTML 이 허용됩니다.", "group": "푸터" },
+        "en": { "label": "Col 3 — content (legacy)", "description": "[Legacy] HTML allowed.", "group": "Footer" }
+      }
+    },
+    {
+      "key": "footerColumn4Heading",
+      "type": "text",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "placeholder": "소셜",
+      "i18n": {
+        "ko": { "label": "컬럼 4 — 제목 (legacy)", "description": "[legacy]", "group": "푸터" },
+        "en": { "label": "Col 4 — heading (legacy)", "description": "[Legacy]", "placeholder": "Social", "group": "Footer" }
+      }
+    },
+    {
+      "key": "footerColumn4Content",
+      "type": "textarea",
+      "tab": "레이아웃",
+      "group": "푸터",
+      "placeholder": "<a href=\"https://x.com/me\">X</a>",
+      "i18n": {
+        "ko": { "label": "컬럼 4 — 본문 (legacy)", "description": "[legacy] HTML 이 허용됩니다.", "group": "푸터" },
+        "en": { "label": "Col 4 — content (legacy)", "description": "[Legacy] HTML allowed.", "group": "Footer" }
+      }
+    },
+
+    {
+      "key": "pageListCardVariant",
+      "type": "select",
+      "tab": "레이아웃",
+      "group": "본문 · 글 list",
+      "defaultValue": "list",
+      "options": [
+        { "value": "list", "label": "List — 세로 카드 (기본)" },
+        { "value": "grid", "label": "Grid — 격자 2-3열" },
+        { "value": "compact", "label": "Compact — 제목+날짜 압축" },
+        { "value": "magazine", "label": "Magazine — 잡지 (hero + 2열 카드)" }
+      ],
+      "i18n": {
+        "ko": {
+          "label": "글 카드 변형",
+          "description": "홈·프로젝트·태그·검색 페이지의 글 list 표시 방식입니다. list (세로 카드) / grid (격자 2-3열) / compact (제목+날짜 압축) / magazine (잡지 — 첫 글 hero 큰 이미지 + 나머지 2열 카드, featured image + excerpt 자동 추출).",
+          "group": "본문 · 글 list",
+          "options": [
+            "List — 세로 카드 (기본)",
+            "Grid — 격자 2-3열",
+            "Compact — 제목+날짜 압축",
+            "Magazine — 잡지 (hero + 2열 카드)"
+          ]
+        },
+        "en": {
+          "label": "Post-card variant",
+          "description": "How post lists are displayed on the home / project / tag / search pages. list (vertical cards) / grid (2-3 column grid) / compact (title + date) / magazine (first post as a hero with large image, others as 2-column cards; featured image and excerpt are auto-extracted).",
+          "group": "Content · Post list",
+          "options": [
+            "List — vertical cards (default)",
+            "Grid — 2-3 column grid",
+            "Compact — title + date",
+            "Magazine — hero + 2-column cards"
+          ]
+        }
+      }
+    },
+    {
+      "key": "pageListPerPage",
+      "type": "number",
+      "tab": "레이아웃",
+      "group": "본문 · 글 list",
+      "placeholder": "20",
+      "defaultValue": 20,
+      "i18n": {
+        "ko": { "label": "페이지당 개수", "description": "한 페이지에 표시할 글 개수입니다. 페이지네이션 (?page=N) 이 자동으로 적용됩니다.", "group": "본문 · 글 list" },
+        "en": { "label": "Posts per page", "description": "Number of posts shown per page. Pagination (?page=N) is applied automatically.", "group": "Content · Post list" }
+      }
+    },
+    {
+      "key": "layoutShowReadingProgress",
+      "type": "toggle",
+      "tab": "레이아웃",
+      "group": "본문 · 글 list",
+      "defaultValue": false,
+      "i18n": {
+        "ko": { "label": "읽기 진행도 표시", "description": "페이지 상단에 스크롤 진행도 가로 바를 표시합니다. design tokens 의 accent 색이 사용됩니다. 기본 OFF.", "group": "본문 · 글 list" },
+        "en": { "label": "Show reading progress", "description": "Shows a horizontal scroll-progress bar at the top of the page using the accent color from the design tokens. Default OFF.", "group": "Content · Post list" }
+      }
+    },
+    {
+      "key": "layoutShowRelatedPosts",
+      "type": "toggle",
+      "tab": "레이아웃",
+      "group": "본문 · 글 list",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "관련 글 추천", "description": "콘텐츠 페이지(project 가 설정된) 본문 끝에 head.keywords 기반 매칭 글 list 를 표시합니다. score = 공유 keyword 개수입니다. 키워드가 0건이거나 매칭 0건이면 자동으로 미표시됩니다. 기본 ON.", "group": "본문 · 글 list" },
+        "en": { "label": "Related posts", "description": "Shows a related-post list at the end of content pages (with project set), matched on head.keywords. Score = number of shared keywords. Auto-hidden when there are no keywords or no matches. Default ON.", "group": "Content · Post list" }
+      }
+    },
+    {
+      "key": "layoutRelatedPostsCount",
+      "type": "number",
+      "tab": "레이아웃",
+      "group": "본문 · 글 list",
+      "placeholder": "5",
+      "defaultValue": 5,
+      "i18n": {
+        "ko": { "label": "관련 글 개수", "description": "관련 글 표시 개수 (top N) 입니다. 빈도가 동률이면 updatedAt 최신이 우선됩니다.", "group": "본문 · 글 list" },
+        "en": { "label": "Related posts count", "description": "Number of related posts shown (top N). Ties are broken by most recent updatedAt.", "group": "Content · Post list" }
+      }
+    },
+
+    {
+      "key": "adsensePublisherId",
+      "type": "text",
+      "tab": "광고",
+      "placeholder": "ca-pub-1234567890123456",
+      "i18n": {
+        "ko": { "label": "AdSense Publisher ID", "description": "Google AdSense Publisher ID 입니다. 설정하면 head 에 AdSense script 가 자동으로 inject 됩니다. Auto Ads 활성화는 AdSense 콘솔 (adsense.google.com → 자동 광고 → 사이트별 ON) 에서 진행해 주세요. Firebat 측에서는 별도 토글이 없으며, script 가 설정된 후엔 AdSense 콘솔이 광고 위치·형식을 결정합니다." },
+        "en": { "label": "AdSense Publisher ID", "description": "Google AdSense Publisher ID. When set, the AdSense script is auto-injected into the head. Enable Auto Ads from the AdSense console (adsense.google.com → Auto ads → per-site ON). There is no separate toggle here — once the script is in place, the AdSense console controls ad placement and format." }
+      }
+    },
+    {
+      "key": "adsenseSlotHeaderBottom",
+      "type": "text",
+      "tab": "광고",
+      "placeholder": "1234567890",
+      "i18n": {
+        "ko": { "label": "슬롯 — 헤더 아래", "description": "AdSense 광고 단위 ID — 헤더 바로 아래 위치입니다. 비우면 미표시됩니다." },
+        "en": { "label": "Slot — below header", "description": "AdSense ad-unit ID for the slot directly below the header. Hidden when empty." }
+      }
+    },
+    {
+      "key": "adsenseSlotPostTop",
+      "type": "text",
+      "tab": "광고",
+      "placeholder": "1234567890",
+      "i18n": {
+        "ko": { "label": "슬롯 — 본문 위", "description": "AdSense 광고 단위 ID — 본문 시작 위 위치입니다. 비우면 미표시됩니다." },
+        "en": { "label": "Slot — above content", "description": "AdSense ad-unit ID placed just above the content. Hidden when empty." }
+      }
+    },
+    {
+      "key": "adsenseSlotPostBottom",
+      "type": "text",
+      "tab": "광고",
+      "placeholder": "1234567890",
+      "i18n": {
+        "ko": { "label": "슬롯 — 본문 아래", "description": "AdSense 광고 단위 ID — 본문 끝 아래 위치입니다. 비우면 미표시됩니다." },
+        "en": { "label": "Slot — below content", "description": "AdSense ad-unit ID placed just below the content. Hidden when empty." }
+      }
+    },
+    {
+      "key": "adsenseSlotFooterTop",
+      "type": "text",
+      "tab": "광고",
+      "placeholder": "1234567890",
+      "i18n": {
+        "ko": { "label": "슬롯 — 푸터 위", "description": "AdSense 광고 단위 ID — 푸터 바로 위 위치입니다. 비우면 미표시됩니다." },
+        "en": { "label": "Slot — above footer", "description": "AdSense ad-unit ID placed just above the footer. Hidden when empty." }
+      }
+    },
+
+    {
+      "key": "themePreset",
+      "type": "color-presets",
+      "tab": "테마",
+      "group": "색",
+      "defaultValue": "slate-pro",
+      "i18n": {
+        "ko": { "label": "색 프리셋", "description": "클릭 한 번으로 primary/accent/up/down/text/배경/테두리 색이 일괄 변경됩니다. Light 7 + Dark 3 = 10 프리셋입니다.", "group": "색" },
+        "en": { "label": "Color preset", "description": "One-click swap of primary / accent / up / down / text / background / border colors. 7 light + 3 dark = 10 presets.", "group": "Color" }
+      }
+    },
+    {
+      "key": "__themeColorOverrides",
+      "type": "color-overrides",
+      "tab": "테마",
+      "group": "색",
+      "i18n": {
+        "ko": { "label": "색 개별 편집 (선택)", "description": "프리셋 위에 색을 개별 변경하고 싶을 때만 입력해 주세요. 빈 값은 프리셋 그대로 유지되며, 변경한 색만 덮어씁니다. RGBA (투명도) 가 지원되며 alpha 슬라이더로 0~100% 조절할 수 있습니다.", "group": "색" },
+        "en": { "label": "Per-color overrides (optional)", "description": "Fill in only the colors you want to override on top of the preset. Empty values keep the preset; only changed colors are overridden. RGBA (alpha) is supported via the 0-100% alpha slider.", "group": "Color" }
+      }
+    },
+    {
+      "key": "themeFont",
+      "type": "select",
+      "tab": "테마",
+      "group": "폰트",
+      "defaultValue": "pretendard",
+      "options": [
+        { "value": "pretendard", "label": "Pretendard Variable (한글, 기본)" },
+        { "value": "noto-sans-kr", "label": "Noto Sans KR" },
+        { "value": "inter", "label": "Inter (라틴)" },
+        { "value": "geist", "label": "Geist (모노크롬)" },
+        { "value": "cal-sans", "label": "Cal Sans (제목 강조)" }
+      ],
+      "i18n": {
+        "ko": {
+          "label": "폰트 세트",
+          "description": "본문·제목 폰트를 통합 변경합니다. Pretendard Variable (한글 최적, 기본) / Noto Sans KR / Inter / Geist / Cal Sans. 외부 폰트는 아래 \"외부 폰트 CSS URL\" + \"폰트 stack\" 을 활용해 주세요.",
+          "group": "폰트",
+          "options": [
+            "Pretendard Variable (한글, 기본)",
+            "Noto Sans KR",
+            "Inter (라틴)",
+            "Geist (모노크롬)",
+            "Cal Sans (제목 강조)"
+          ]
+        },
+        "en": {
+          "label": "Font set",
+          "description": "Switches the body and heading fonts together. Pretendard Variable (Korean-optimized, default) / Noto Sans KR / Inter / Geist / Cal Sans. For external fonts, use \"External font CSS URLs\" + \"Font stack\" below.",
+          "group": "Font",
+          "options": [
+            "Pretendard Variable (Korean, default)",
+            "Noto Sans KR",
+            "Inter (Latin)",
+            "Geist (monochrome)",
+            "Cal Sans (headline)"
+          ]
+        }
+      }
+    },
+    {
+      "key": "customFontUrls",
+      "type": "textarea",
+      "tab": "테마",
+      "group": "폰트",
+      "placeholder": "https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap",
+      "i18n": {
+        "ko": { "label": "외부 폰트 CSS URL", "description": "Google Fonts / Adobe Fonts 등 외부 폰트 CSS URL 입니다. 줄바꿈 또는 콤마로 여러 URL 을 설정할 수 있으며 https:// 만 허용됩니다. layout 의 head 에 link rel=stylesheet 가 자동으로 inject 됩니다.", "group": "폰트" },
+        "en": { "label": "External font CSS URLs", "description": "External font CSS URLs (Google Fonts / Adobe Fonts / etc.). Multiple URLs are accepted, separated by newline or comma; only https:// is allowed. A link rel=stylesheet tag is auto-injected into the layout head.", "group": "Font" }
+      }
+    },
+    {
+      "key": "themeFont_body",
+      "type": "text",
+      "tab": "테마",
+      "group": "폰트",
+      "placeholder": "'Inter', sans-serif",
+      "i18n": {
+        "ko": { "label": "본문 폰트 stack (선택 override)", "description": "외부 폰트 사용 시 본문 폰트 stack 입니다. 비우면 위의 \"폰트 세트\" 프리셋이 사용됩니다. 예: \"Inter, -apple-system, sans-serif\".", "group": "폰트" },
+        "en": { "label": "Body font stack (optional override)", "description": "Body font stack when using an external font. Falls back to the \"Font set\" preset when blank. Example: \"Inter, -apple-system, sans-serif\".", "group": "Font" }
+      }
+    },
+    {
+      "key": "themeFont_heading",
+      "type": "text",
+      "tab": "테마",
+      "group": "폰트",
+      "placeholder": "'Cal Sans', sans-serif",
+      "i18n": {
+        "ko": { "label": "제목 폰트 stack (선택 override)", "description": "제목 폰트 stack 입니다. 비우면 프리셋이 사용됩니다.", "group": "폰트" },
+        "en": { "label": "Heading font stack (optional override)", "description": "Heading font stack. Falls back to the preset when blank.", "group": "Font" }
+      }
+    },
+    {
+      "key": "themeFont_mono",
+      "type": "text",
+      "tab": "테마",
+      "group": "폰트",
+      "placeholder": "'JetBrains Mono', monospace",
+      "i18n": {
+        "ko": { "label": "Mono 폰트 stack (선택 override)", "description": "코드·등폭 폰트 stack 입니다. 비우면 프리셋이 사용됩니다.", "group": "폰트" },
+        "en": { "label": "Mono font stack (optional override)", "description": "Monospace / code font stack. Falls back to the preset when blank.", "group": "Font" }
+      }
+    },
+
+    {
+      "key": "themeBaseFontSize",
+      "type": "text",
+      "tab": "테마",
+      "group": "타이포그래피",
+      "placeholder": "16px",
+      "i18n": {
+        "ko": { "label": "본문 base 폰트 사이즈", "description": "본문 폰트 크기 (px) 입니다. h1~h6 가 이 값에서 ratio 로 derive 됩니다. 16~18px 가 일반적입니다.", "group": "타이포그래피" },
+        "en": { "label": "Body base font size", "description": "Body font size in px. h1~h6 are derived from this value using the scale ratio. 16~18px is typical.", "group": "Typography" }
+      }
+    },
+    {
+      "key": "themeScaleRatio",
+      "type": "number",
+      "tab": "테마",
+      "group": "타이포그래피",
+      "placeholder": "1.25",
+      "i18n": {
+        "ko": { "label": "Typographic scale ratio", "description": "제목 크기 비율입니다. 1.125 (Major Second 차분) / 1.2 (Minor Third) / 1.25 (Major Third 기본) / 1.333 (Perfect Fourth 강함). h1=base×ratio⁴.", "group": "타이포그래피" },
+        "en": { "label": "Typographic scale ratio", "description": "Heading scale ratio. 1.125 (Major Second, subtle) / 1.2 (Minor Third) / 1.25 (Major Third, default) / 1.333 (Perfect Fourth, strong). h1 = base × ratio⁴.", "group": "Typography" }
+      }
+    },
+    {
+      "key": "themeBodyLineHeight",
+      "type": "number",
+      "tab": "테마",
+      "group": "타이포그래피",
+      "placeholder": "1.7",
+      "i18n": {
+        "ko": { "label": "본문 line-height", "description": "본문 줄 간격 배수입니다. 1.5~1.8 이 일반적이며 한국어는 1.7+ 를 권장합니다.", "group": "타이포그래피" },
+        "en": { "label": "Body line-height", "description": "Body line-height multiplier. 1.5~1.8 is typical; 1.7+ is recommended for Korean text.", "group": "Typography" }
+      }
+    },
+    {
+      "key": "themeHeadingLineHeight",
+      "type": "number",
+      "tab": "테마",
+      "group": "타이포그래피",
+      "placeholder": "1.25",
+      "i18n": {
+        "ko": { "label": "제목 line-height", "description": "제목 줄 간격 배수입니다. 1.0~1.5 (제목은 컴팩트).", "group": "타이포그래피" },
+        "en": { "label": "Heading line-height", "description": "Heading line-height multiplier. 1.0~1.5 (headings are compact).", "group": "Typography" }
+      }
+    },
+    {
+      "key": "themeHeadingLetterSpacing",
+      "type": "text",
+      "tab": "테마",
+      "group": "타이포그래피",
+      "placeholder": "-0.01em",
+      "i18n": {
+        "ko": { "label": "제목 letter-spacing", "description": "제목 자간입니다. CSS 값 (normal / -0.01em / -0.02em). 음수 = 모던 느낌.", "group": "타이포그래피" },
+        "en": { "label": "Heading letter-spacing", "description": "Heading letter-spacing. CSS value (normal / -0.01em / -0.02em). Negative values = modern feel.", "group": "Typography" }
+      }
+    },
+    {
+      "key": "themeBodyLetterSpacing",
+      "type": "text",
+      "tab": "테마",
+      "group": "타이포그래피",
+      "placeholder": "normal",
+      "i18n": {
+        "ko": { "label": "본문 letter-spacing", "description": "본문 자간입니다. 보통 normal 또는 약간 양수 (0.01em).", "group": "타이포그래피" },
+        "en": { "label": "Body letter-spacing", "description": "Body letter-spacing. Usually normal or a small positive value (0.01em).", "group": "Typography" }
+      }
+    },
+
+    {
+      "key": "themeH1Style",
+      "type": "select",
+      "tab": "테마",
+      "group": "제목 스타일",
+      "defaultValue": "plain",
+      "options": [
+        { "value": "plain", "label": "plain (단순)" },
+        { "value": "border-bottom", "label": "border-bottom (밑줄)" },
+        { "value": "border-left", "label": "border-left (좌측 accent 바)" },
+        { "value": "underline", "label": "underline (텍스트 밑줄)" },
+        { "value": "bold-bg", "label": "bold-bg (강조 배경 박스)" },
+        { "value": "accent-square", "label": "accent-square (사각형 prefix)" }
+      ],
+      "i18n": {
+        "ko": {
+          "label": "H1 (제목) 스타일",
+          "description": "h1 제목 디자인입니다. plain (기본 텍스트) / border-bottom (밑줄) / border-left (좌측 accent 바) / underline / bold-bg (강조 박스) / accent-square (accent 사각형 prefix).",
+          "group": "제목 스타일",
+          "options": [
+            "plain (단순)",
+            "border-bottom (밑줄)",
+            "border-left (좌측 accent 바)",
+            "underline (텍스트 밑줄)",
+            "bold-bg (강조 배경 박스)",
+            "accent-square (사각형 prefix)"
+          ]
+        },
+        "en": {
+          "label": "H1 (heading) style",
+          "description": "h1 heading design. plain (plain text) / border-bottom (underline) / border-left (left accent bar) / underline (text underline) / bold-bg (highlighted box) / accent-square (accent square prefix).",
+          "group": "Heading style",
+          "options": [
+            "plain (simple)",
+            "border-bottom (underline)",
+            "border-left (left accent bar)",
+            "underline (text underline)",
+            "bold-bg (highlighted box)",
+            "accent-square (square prefix)"
+          ]
+        }
+      }
+    },
+    {
+      "key": "themeH2Style",
+      "type": "select",
+      "tab": "테마",
+      "group": "제목 스타일",
+      "defaultValue": "border-left",
+      "options": [
+        { "value": "plain", "label": "plain (단순)" },
+        { "value": "border-bottom", "label": "border-bottom (밑줄)" },
+        { "value": "border-left", "label": "border-left (좌측 accent 바, 기본)" },
+        { "value": "underline", "label": "underline (텍스트 밑줄)" },
+        { "value": "bold-bg", "label": "bold-bg (강조 배경 박스)" },
+        { "value": "accent-square", "label": "accent-square (사각형 prefix)" }
+      ],
+      "i18n": {
+        "ko": {
+          "label": "H2 (소제목) 스타일",
+          "description": "h2 소제목 디자인입니다. 기본 border-left (좌측 accent 바).",
+          "group": "제목 스타일",
+          "options": [
+            "plain (단순)",
+            "border-bottom (밑줄)",
+            "border-left (좌측 accent 바, 기본)",
+            "underline (텍스트 밑줄)",
+            "bold-bg (강조 배경 박스)",
+            "accent-square (사각형 prefix)"
+          ]
+        },
+        "en": {
+          "label": "H2 (subheading) style",
+          "description": "h2 subheading design. Default border-left (left accent bar).",
+          "group": "Heading style",
+          "options": [
+            "plain (simple)",
+            "border-bottom (underline)",
+            "border-left (left accent bar, default)",
+            "underline (text underline)",
+            "bold-bg (highlighted box)",
+            "accent-square (square prefix)"
+          ]
+        }
+      }
+    },
+    {
+      "key": "themeH3Style",
+      "type": "select",
+      "tab": "테마",
+      "group": "제목 스타일",
+      "defaultValue": "plain",
+      "options": [
+        { "value": "plain", "label": "plain (단순, 기본)" },
+        { "value": "border-bottom", "label": "border-bottom (밑줄)" },
+        { "value": "border-left", "label": "border-left (좌측 accent 바)" },
+        { "value": "underline", "label": "underline (텍스트 밑줄)" },
+        { "value": "bold-bg", "label": "bold-bg (강조 배경 박스)" },
+        { "value": "accent-square", "label": "accent-square (사각형 prefix)" }
+      ],
+      "i18n": {
+        "ko": {
+          "label": "H3 (소소제목) 스타일",
+          "description": "h3 소소제목 디자인입니다. 기본 plain.",
+          "group": "제목 스타일",
+          "options": [
+            "plain (단순, 기본)",
+            "border-bottom (밑줄)",
+            "border-left (좌측 accent 바)",
+            "underline (텍스트 밑줄)",
+            "bold-bg (강조 배경 박스)",
+            "accent-square (사각형 prefix)"
+          ]
+        },
+        "en": {
+          "label": "H3 (sub-subheading) style",
+          "description": "h3 design. Default plain.",
+          "group": "Heading style",
+          "options": [
+            "plain (simple, default)",
+            "border-bottom (underline)",
+            "border-left (left accent bar)",
+            "underline (text underline)",
+            "bold-bg (highlighted box)",
+            "accent-square (square prefix)"
+          ]
+        }
+      }
+    },
+
+    {
+      "key": "themeContentMaxWidth",
+      "type": "text",
+      "tab": "테마",
+      "group": "본문 폭 · 여백 · 모서리",
+      "placeholder": "1200px",
+      "defaultValue": "1200px",
+      "i18n": {
+        "ko": { "label": "본문 최대 폭", "description": "본문 콘텐츠 영역 폭입니다. px(1200px) / rem(75rem) / 절대값. 기본 1200px (이전 max-w-4xl 56rem ≈ 896px 대비 넓음).", "group": "본문 폭 · 여백 · 모서리" },
+        "en": { "label": "Content max width", "description": "Width of the body content area. px(1200px) / rem(75rem) / absolute. Default 1200px (wider than the legacy max-w-4xl 56rem ≈ 896px).", "group": "Width · padding · radius" }
+      }
+    },
+    {
+      "key": "themePaddingMobile",
+      "type": "text",
+      "tab": "테마",
+      "group": "본문 폭 · 여백 · 모서리",
+      "placeholder": "16px",
+      "defaultValue": "16px",
+      "i18n": {
+        "ko": { "label": "모바일 좌우 여백", "description": "≤640px 화면 좌우 여백입니다. 기본 16px. 좁히려면 12px / 8px, 넓히려면 20px.", "group": "본문 폭 · 여백 · 모서리" },
+        "en": { "label": "Mobile horizontal padding", "description": "Horizontal padding on screens ≤640px. Default 16px. Narrower: 12px / 8px. Wider: 20px.", "group": "Width · padding · radius" }
+      }
+    },
+    {
+      "key": "themePaddingTablet",
+      "type": "text",
+      "tab": "테마",
+      "group": "본문 폭 · 여백 · 모서리",
+      "placeholder": "24px",
+      "defaultValue": "24px",
+      "i18n": {
+        "ko": { "label": "태블릿 좌우 여백", "description": "641~1023px 좌우 여백입니다. 기본 24px.", "group": "본문 폭 · 여백 · 모서리" },
+        "en": { "label": "Tablet horizontal padding", "description": "Horizontal padding for 641~1023px. Default 24px.", "group": "Width · padding · radius" }
+      }
+    },
+    {
+      "key": "themePaddingDesktop",
+      "type": "text",
+      "tab": "테마",
+      "group": "본문 폭 · 여백 · 모서리",
+      "placeholder": "32px",
+      "defaultValue": "32px",
+      "i18n": {
+        "ko": { "label": "데스크톱 좌우 여백", "description": "≥1024px 좌우 여백입니다. 기본 32px.", "group": "본문 폭 · 여백 · 모서리" },
+        "en": { "label": "Desktop horizontal padding", "description": "Horizontal padding for ≥1024px. Default 32px.", "group": "Width · padding · radius" }
+      }
+    },
+    {
+      "key": "themeRadius",
+      "type": "text",
+      "tab": "테마",
+      "group": "본문 폭 · 여백 · 모서리",
+      "placeholder": "8px",
+      "defaultValue": "8px",
+      "i18n": {
+        "ko": { "label": "카드 모서리 둥글기", "description": "카드·버튼·박스 border-radius 입니다. 0px (각진 모던) ~ 16px (둥근 친근). 기본 8px.", "group": "본문 폭 · 여백 · 모서리" },
+        "en": { "label": "Card corner radius", "description": "border-radius for cards / buttons / boxes. 0px (sharp modern) ~ 16px (round friendly). Default 8px.", "group": "Width · padding · radius" }
+      }
+    },
+
+    {
+      "key": "sitemapEnabled",
+      "type": "toggle",
+      "tab": "SEO",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "Sitemap 생성", "description": "/sitemap.xml 이 자동 생성됩니다." },
+        "en": { "label": "Generate sitemap", "description": "Auto-generates /sitemap.xml." }
+      }
+    },
+    {
+      "key": "rssEnabled",
+      "type": "toggle",
+      "tab": "SEO",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "RSS 피드", "description": "/feed.xml 이 자동 생성됩니다." },
+        "en": { "label": "RSS feed", "description": "Auto-generates /feed.xml." }
+      }
+    },
+    {
+      "key": "robotsTxt",
+      "type": "textarea",
+      "tab": "SEO",
+      "placeholder": "User-agent: *\nAllow: /\nDisallow: /api\nDisallow: /admin",
+      "defaultValue": "User-agent: *\nAllow: /\nDisallow: /api\nDisallow: /admin",
+      "i18n": {
+        "ko": { "label": "robots.txt", "description": "robots.txt 내용입니다." },
+        "en": { "label": "robots.txt", "description": "Content of robots.txt." }
+      }
+    },
+    {
+      "key": "autoCanonical",
+      "type": "toggle",
+      "tab": "SEO",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "자동 Canonical URL", "description": "페이지 head.canonical 미지정 시 siteUrl + slug 으로 자동 생성됩니다. 중복 콘텐츠 방지에 도움이 됩니다." },
+        "en": { "label": "Auto canonical URL", "description": "When a page has no head.canonical, one is auto-generated from siteUrl + slug. Helps prevent duplicate content." }
+      }
+    },
+    {
+      "key": "twitterCardType",
+      "type": "text",
+      "tab": "SEO",
+      "placeholder": "summary_large_image",
+      "defaultValue": "summary_large_image",
+      "i18n": {
+        "ko": { "label": "Twitter Card 타입", "description": "summary (작은 카드) 또는 summary_large_image (큰 이미지) 입니다. 블로그·랜딩은 후자를 권장합니다." },
+        "en": { "label": "Twitter Card type", "description": "summary (small card) or summary_large_image (large image). The latter is recommended for blogs and landing pages." }
+      }
+    },
+    {
+      "key": "twitterSite",
+      "type": "text",
+      "tab": "SEO",
+      "placeholder": "@firebat",
+      "i18n": {
+        "ko": { "label": "Twitter 사이트 계정", "description": "사이트 자체 트위터 계정 (선택) 입니다. @ 로 시작합니다." },
+        "en": { "label": "Twitter site account", "description": "The site's own Twitter handle (optional). Starts with @." }
+      }
+    },
+    {
+      "key": "twitterCreator",
+      "type": "text",
+      "tab": "SEO",
+      "placeholder": "@username",
+      "i18n": {
+        "ko": { "label": "Twitter 작성자 계정", "description": "작성자 트위터 계정 (선택) 입니다. @ 로 시작합니다." },
+        "en": { "label": "Twitter creator account", "description": "The creator's Twitter handle (optional). Starts with @." }
+      }
+    },
+    {
+      "key": "tagAliases",
+      "type": "textarea",
+      "tab": "SEO",
+      "placeholder": "AI: ai, 인공지능, artificial-intelligence\n리뷰: review, 후기",
+      "i18n": {
+        "ko": { "label": "태그 alias (정규화)", "description": "canonical: alias1, alias2 형식으로 줄별 매핑입니다. /tag/{keyword} URL 매칭 시 case-insensitive normalize 가 적용되어 \"ai\"·\"인공지능\" 모두 \"AI\" 페이지로 통합됩니다. listAllTags 도 통합 빈도 카운트로 처리됩니다." },
+        "en": { "label": "Tag aliases (normalization)", "description": "Per-line mapping in the format canonical: alias1, alias2. Case-insensitive normalization is applied when matching /tag/{keyword} URLs, so \"ai\" and \"인공지능\" both resolve to the \"AI\" page. listAllTags also reports merged frequency counts.", "placeholder": "AI: ai, artificial-intelligence\nReview: review, 후기" }
+      }
+    },
+
+    {
+      "key": "imageWebp",
+      "type": "toggle",
+      "tab": "이미지",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "WebP 변환", "description": "대부분 브라우저에서 지원되며 원본 대비 25~35% 작아집니다." },
+        "en": { "label": "WebP conversion", "description": "Supported by most browsers; 25~35% smaller than the original." }
+      }
+    },
+    {
+      "key": "imageAvif",
+      "type": "toggle",
+      "tab": "이미지",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "AVIF 변환", "description": "최신 포맷이며 WebP 대비 20% 더 작습니다. Safari 16+, Chrome 85+." },
+        "en": { "label": "AVIF conversion", "description": "Modern format ~20% smaller than WebP. Safari 16+, Chrome 85+." }
+      }
+    },
+    {
+      "key": "imageThumbnail",
+      "type": "toggle",
+      "tab": "이미지",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "썸네일 생성 (256px)", "description": "갤러리 썸네일 — <slug>-thumb.webp." },
+        "en": { "label": "Generate thumbnail (256px)", "description": "Gallery thumbnail — <slug>-thumb.webp." }
+      }
+    },
+    {
+      "key": "imageBlurhash",
+      "type": "toggle",
+      "tab": "이미지",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "Blurhash LQIP", "description": "로딩 중 부드러운 블러 플레이스홀더 (LCP 개선, 32자 문자열)." },
+        "en": { "label": "Blurhash LQIP", "description": "Soft blur placeholder shown while loading (improves LCP; 32-char string)." }
+      }
+    },
+    {
+      "key": "imageVariants",
+      "type": "text",
+      "tab": "이미지",
+      "placeholder": "480, 768, 1024",
+      "defaultValue": "480, 768, 1024",
+      "i18n": {
+        "ko": { "label": "반응형 너비 (CSV)", "description": "각 너비마다 WebP/AVIF 쌍이 생성됩니다 — srcset 에 자동 반영됩니다." },
+        "en": { "label": "Responsive widths (CSV)", "description": "Generates WebP/AVIF pairs at each width — auto-applied to srcset." }
+      }
+    },
+    {
+      "key": "imageDefaultQuality",
+      "type": "number",
+      "tab": "이미지",
+      "placeholder": "85",
+      "defaultValue": 85,
+      "i18n": {
+        "ko": { "label": "기본 품질 (1~100)", "description": "WebP/AVIF/JPEG 압축 품질입니다. 85 권장." },
+        "en": { "label": "Default quality (1~100)", "description": "WebP/AVIF/JPEG compression quality. 85 recommended." }
+      }
+    },
+    {
+      "key": "imageStripExif",
+      "type": "toggle",
+      "tab": "이미지",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "EXIF 제거", "description": "촬영 위치·장비 등 메타데이터를 제거합니다 (프라이버시·용량)." },
+        "en": { "label": "Strip EXIF", "description": "Removes capture location / device metadata (privacy and file size)." }
+      }
+    },
+    {
+      "key": "imageProgressive",
+      "type": "toggle",
+      "tab": "이미지",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "Progressive 인코딩", "description": "JPEG/WebP 점진 표시 — 느린 네트워크에서 UX 가 개선됩니다." },
+        "en": { "label": "Progressive encoding", "description": "Progressive JPEG/WebP display — improves UX on slow networks." }
+      }
+    },
+    {
+      "key": "imageKeepOriginal",
+      "type": "toggle",
+      "tab": "이미지",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "원본 파일 유지", "description": "끄면 variants 만 보관됩니다 (용량 절약, 권장: 켜둠)." },
+        "en": { "label": "Keep original file", "description": "When OFF, only variants are kept (saves space; recommended ON)." }
+      }
+    },
+
+    {
+      "key": "ogBgColor",
+      "type": "text",
+      "tab": "OG",
+      "placeholder": "#f8fafc",
+      "i18n": {
+        "ko": { "label": "배경색", "description": "OG 이미지 배경색 (HEX) 입니다." },
+        "en": { "label": "Background color", "description": "OG image background color (HEX)." }
+      }
+    },
+    {
+      "key": "ogAccentColor",
+      "type": "text",
+      "tab": "OG",
+      "placeholder": "#2563eb",
+      "i18n": {
+        "ko": { "label": "강조색", "description": "상단 라인과 로고 테두리 색상입니다." },
+        "en": { "label": "Accent color", "description": "Color for the top line and logo border." }
+      }
+    },
+    {
+      "key": "ogDomain",
+      "type": "text",
+      "tab": "OG",
+      "placeholder": "example.com",
+      "i18n": {
+        "ko": { "label": "도메인 표시", "description": "OG 이미지 우하단 도메인 텍스트입니다. 비워두면 요청 host 가 자동 감지됩니다." },
+        "en": { "label": "Domain label", "description": "Domain text shown at the bottom-right of the OG image. Leave blank to auto-detect from the request host." }
+      }
+    },
+
+    {
+      "key": "headScripts",
+      "type": "textarea",
+      "tab": "스크립트",
+      "placeholder": "<!-- Google Analytics 등 -->",
+      "i18n": {
+        "ko": { "label": "<head> 스크립트", "description": "모든 페이지 <head> 에 삽입할 HTML 입니다 (SSR 설정 — crawler 가 인식)." },
+        "en": { "label": "<head> scripts", "description": "HTML inserted into every page's <head> (SSR — visible to crawlers).", "placeholder": "<!-- Google Analytics, etc. -->" }
+      }
+    },
+    {
+      "key": "bodyScripts",
+      "type": "textarea",
+      "tab": "스크립트",
+      "placeholder": "<!-- 채팅 위젯 등 -->",
+      "i18n": {
+        "ko": { "label": "</body> 스크립트", "description": "모든 페이지 </body> 앞에 삽입할 HTML 입니다." },
+        "en": { "label": "</body> scripts", "description": "HTML inserted just before every page's </body>.", "placeholder": "<!-- Chat widget, etc. -->" }
+      }
+    },
+    {
+      "key": "adsTxt",
+      "type": "textarea",
+      "tab": "스크립트",
+      "placeholder": "google.com, pub-XXXXXXXX, DIRECT, f08c47fec0942fa0",
+      "i18n": {
+        "ko": { "label": "ads.txt (legacy — verifications 권장)", "description": "/ads.txt 응답 내용입니다. 이 필드는 비워두고 아래 \"사이트 인증 파일\" 의 ads.txt 항목 사용을 권장합니다 (verifications 시스템 통합)." },
+        "en": { "label": "ads.txt (legacy — verifications recommended)", "description": "Response body for /ads.txt. Prefer leaving this empty and using the ads.txt entry under \"Site verification files\" below (unified verifications system)." }
+      }
+    },
+    {
+      "key": "verifications",
+      "type": "verifications",
+      "tab": "스크립트",
+      "i18n": {
+        "ko": { "label": "사이트 인증 파일", "description": "Google Search Console (google{code}.html), AdSense (ads.txt), Naver Search Advisor (naverabc.html), Bing IndexNow (BingSiteAuth.xml), Yandex (yandex.html) 등 모든 사이트 소유권 인증 파일을 통합 관리합니다. (filename, content) 페어로 N개 등록 가능합니다." },
+        "en": { "label": "Site verification files", "description": "Unified management of every site-ownership file — Google Search Console (google{code}.html), AdSense (ads.txt), Naver Search Advisor (naverabc.html), Bing IndexNow (BingSiteAuth.xml), Yandex (yandex.html), and more. Register N (filename, content) pairs as needed." }
+      }
+    }
+  ]
 }
