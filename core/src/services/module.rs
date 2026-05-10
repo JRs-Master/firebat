@@ -162,9 +162,12 @@ impl ModuleService for ModuleServiceImpl {
         &self,
         req: Request<StringRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        // 호환 — getModuleConfig 의 user scope.
+        // 옛 TS `Core.getModuleConfig(name)` 1:1 — `ModuleManager.getConfig(name)` 호출.
+        // system/modules → system/services → user/modules 순서. 호출자 (e.g. /api/settings/modules)
+        // 가 scope 모를 때 첫 hit 반환. 옛 코드 user scope 만 시도해 system 모듈 (browser-scrape /
+        // kakao-talk / kiwoom 등) 의 secrets 자동 UI 생성 안 되던 버그 (2026-05-10 발견 후 fix).
         let name = req.into_inner().value;
-        let config = self.manager.get_module_config("user", &name).await;
+        let config = self.manager.get_config_any_scope(&name).await;
         Ok(Response::new(raw_json(&config)))
     }
 

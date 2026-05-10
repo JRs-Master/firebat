@@ -172,6 +172,26 @@ impl ModuleManager {
         None
     }
 
+    /// `getConfig(name)` 옛 TS 1:1 — scope 무관 system/modules → system/services → user/modules 순서로 첫 hit 반환.
+    /// `/api/settings/modules?name=xxx` 같이 호출자가 scope 를 모를 때 사용. 옛 TS `ModuleManager.getConfig` 1:1.
+    pub async fn get_config_any_scope(&self, name: &str) -> Option<serde_json::Value> {
+        if !is_safe_name(name) {
+            return None;
+        }
+        for path in [
+            format!("system/modules/{}/config.json", name),
+            format!("system/services/{}/config.json", name),
+            format!("user/modules/{}/config.json", name),
+        ] {
+            if let Ok(content) = self.storage.read(&path).await {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                    return Some(parsed);
+                }
+            }
+        }
+        None
+    }
+
     /// 모듈 settings (Vault). 미존재 또는 파싱 실패 시 빈 object.
     pub fn get_settings(&self, module_name: &str) -> serde_json::Value {
         crate::utils::vault_json::vault_get_json::<serde_json::Value>(
