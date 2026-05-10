@@ -336,6 +336,27 @@ impl AiManager {
         opts: &LlmCallOpts,
         ai_opts: &AiRequestOpts,
     ) -> InfraResult<AiResponse> {
+        // Cost budget guard — fast path 보다 먼저. fast path 도 LLM 호출 박음 → 한도 초과 시 차단.
+        if let Some(cost) = &self.cost {
+            let check = cost.check_budget();
+            if !check.within_budget {
+                let reason = check
+                    .reason
+                    .clone()
+                    .unwrap_or_else(|| "비용 한도 초과".to_string());
+                self.log.warn(&format!(
+                    "[AiManager] 비용 한도 초과 — LLM 호출 차단: {}",
+                    reason
+                ));
+                return Ok(AiResponse {
+                    error: Some(format!("비용 한도 초과: {}", reason)),
+                    model_id: Some(self.llm.get_model_id()),
+                    cost_usd: Some(0.0),
+                    ..Default::default()
+                });
+            }
+        }
+
         // Fast path — 단순 인사·짧은 잡담은 도구 list 채우지 않고 ask_text 위임.
         // 옛 TS isSimpleChat 1:1 — 토큰 절감 + CLI handler 의 도구 호출 stub 회피.
         if tools.is_empty() && is_simple_chat(prompt) {

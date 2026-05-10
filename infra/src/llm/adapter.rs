@@ -89,10 +89,6 @@ impl ConfigDrivenAdapter {
             Arc::new(formats::vertex_gemini::VertexGeminiHandler::new()),
         );
         handlers.insert(
-            "openai-chat".to_string(),
-            Arc::new(formats::openai_chat::OpenAiChatHandler::new()),
-        );
-        handlers.insert(
             "cli-claude-code".to_string(),
             Arc::new(formats::cli_claude_code::ClaudeCodeCliHandler::new()),
         );

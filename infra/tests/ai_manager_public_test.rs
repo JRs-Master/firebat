@@ -267,8 +267,9 @@ async fn training_log_emitted_with_prompt_and_reply() {
     let log_clone = log.clone();
     let mgr = AiManager::new(llm, tools, log_clone as Arc<dyn ILogPort>);
 
+    // 작업 키워드("작성") 포함 — isSimpleChat fast path 회피
     mgr.process_with_tools_opts(
-        "테스트 프롬프트",
+        "테스트 프롬프트 작성해줘",
         &[],
         &LlmCallOpts::default(),
         &AiRequestOpts::default(),
@@ -350,8 +351,8 @@ async fn cli_session_resume_persists_and_loads() {
         ..Default::default()
     };
 
-    // 첫 호출 — resume 미설정 (DB 비어있음)
-    mgr.process_with_tools_opts("hi", &[], &LlmCallOpts::default(), &ai_opts)
+    // 첫 호출 — resume 미설정 (DB 비어있음). 작업 키워드 포함 — fast path 회피.
+    mgr.process_with_tools_opts("긴 작업 분석 처리", &[], &LlmCallOpts::default(), &ai_opts)
         .await
         .unwrap();
     assert!(llm.captured_resume.lock().unwrap().is_none());
@@ -360,8 +361,8 @@ async fn cli_session_resume_persists_and_loads() {
     let saved = conv_mgr.get_cli_session("conv-1", "cli-claude-code");
     assert_eq!(saved.as_deref(), Some("sess-uuid-abc"));
 
-    // 두 번째 호출 — resume 설정
-    mgr.process_with_tools_opts("hi 2", &[], &LlmCallOpts::default(), &ai_opts)
+    // 두 번째 호출 — resume 설정. 작업 키워드 포함.
+    mgr.process_with_tools_opts("두 번째 분석 작업", &[], &LlmCallOpts::default(), &ai_opts)
         .await
         .unwrap();
     let captured = llm.captured_resume.lock().unwrap().clone();

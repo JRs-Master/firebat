@@ -18,7 +18,7 @@ pub struct LlmModelConfig {
     pub provider: String,
 
     /// 핸들러 분기 키.
-    /// API: "openai-responses" | "anthropic-messages" | "gemini-native" | "vertex-gemini" | "openai-chat"
+    /// API: "openai-responses" | "anthropic-messages" | "gemini-native" | "vertex-gemini"
     /// CLI: "cli-claude-code" | "cli-codex" | "cli-gemini"
     pub format: String,
 
