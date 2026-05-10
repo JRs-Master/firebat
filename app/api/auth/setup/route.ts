@@ -18,7 +18,7 @@ import { isHttpsRequest } from '../../../../lib/cookie-helpers';
 
 export async function GET(_req: NextRequest) {
   const core = getCore();
-  // RustCoreProxy 의 autoUnwrapProtoEnvelope 박혀 BoolRequest `{value: bool}` 자동 unwrap.
+  // RustCoreProxy 의 autoUnwrapProtoEnvelope 통해 BoolRequest `{value: bool}` 자동 unwrap.
   const isAdminSetup = await core.isAdminSetup();
   return NextResponse.json({ isAdminSetup: Boolean(isAdminSetup) });
 }
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
   const core = getCore();
 
   // 이미 설정됨 = 재실행 거부 (변경은 어드민 설정 모달 경유).
-  // RustCoreProxy autoUnwrap 박혀 isAdminSetup 직접 boolean 응답.
+  // RustCoreProxy autoUnwrap 통해 isAdminSetup 직접 boolean 응답.
   if (await core.isAdminSetup()) {
     return NextResponse.json({ success: false }, { status: 403 });
   }
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
   await core.setTimezone(timezone);
 
   // 3) 사용 언어 저장 — 두 vault key 동시 저장:
-  //    - system:ui-lang — 어드민 UI 언어 (i18n 인프라 미박힘, 향후 도입 시 자동 활용)
+  //    - system:ui-lang — 어드민 UI 언어 (i18n 인프라 미설정, 향후 도입 시 자동 활용)
   //    - cms.siteLang — 사이트 공개 언어 (HTML lang 속성 + SEO)
   //    초기엔 같은 값. 어드민 = ko / 사이트 = en 같이 분리하려면 어드민 설정 / CMS 모달에서 별도 변경.
   await core.setGeminiKey('system:ui-lang', siteLang);

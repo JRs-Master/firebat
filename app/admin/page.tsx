@@ -1045,7 +1045,7 @@ export default function AdminConsole() {
   }, [chatContainerRef]);
 
   // 초기화 — 서버(Vault) 설정을 localStorage 에 sync. DB 가 진실의 원천, localStorage 는 fast path cache.
-  // valid 모델 list 도 같은 응답 (data.aiModels — Rust core::llm::config::builtin_models()) 박힘.
+  // valid 모델 list 도 같은 응답 (data.aiModels — Rust core::llm::config::builtin_models()) 에 포함.
   useEffect(() => {
     (async () => {
       let loadedFromServer = false;

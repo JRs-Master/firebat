@@ -4,8 +4,8 @@ const nextConfig = {
   transpilePackages: [],
   allowedDevOrigins: ['127.0.0.1', 'localhost'],
   // Standalone build — `.next/standalone/` 에 self-contained server.js + 최소 node_modules.
-  // 운영 디렉토리 (/opt/firebat/frontend/) 에 cp 만 박으면 끝, source 박을 필요 0.
-  // Phase C Docker 시점에도 이 산출물 만 박힘 → 작은 image (~250MB).
+  // 운영 디렉토리 (/opt/firebat/frontend/) 에 cp 만 하면 끝, source 동봉 불필요.
+  // Phase C Docker 시점에도 이 산출물만 사용 → 작은 image (~250MB).
   output: 'standalone',
   // TypeScript 체크는 별도 step (npm run typecheck) — `next build` 시 skip.
   // 이유: 작은 VPS (1~2GB RAM) 에서 build worker 가 tsc + Next bundling 동시 메모리 폭주 → OOM kill.

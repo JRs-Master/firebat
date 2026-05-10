@@ -127,7 +127,7 @@ export function SetupWizard({ onComplete }: Props) {
       if (!res.ok || !data.success) {
         // 403 = 이미 setup 완료 — 정상 흐름이면 위자드 자체 노출 안 됨 (frontend GET 이 unwrap 으로 차단).
         // 여기 도달 시 = backend / frontend 비일관 상태. /login redirect 무용 (같은 페이지).
-        // 사용자가 잠금 풀 수 있게 SSH vault reset 명령 명시 (backend 메시지에 박힘).
+        // 사용자가 잠금 풀 수 있게 SSH vault reset 명령 명시 (backend 메시지에 포함).
         setError(data.error || t('setup.err_failed'));
         setSubmitting(false);
         return;

@@ -66,7 +66,7 @@ export function proxy(request: NextRequest) {
     }
   }
 
-  // 모든 user 페이지 응답에 pathname header 박음 — (user)/layout.tsx 가 spec 의
+  // 모든 user 페이지 응답에 pathname header 추가 — (user)/layout.tsx 가 spec 의
   // head.layoutMode override 결정하기 위해 사용. /admin /api 는 layout 무관해도 영향 0.
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set('x-firebat-pathname', pathname);

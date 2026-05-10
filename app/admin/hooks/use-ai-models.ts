@@ -1,7 +1,7 @@
 /**
  * AI 모델 list — Rust core::llm::config::builtin_models() 단일 source.
  *
- * frontend 가 매 사용처 hardcoded 25 entry 박지 않고, GET /api/settings 응답의
+ * frontend 의 매 사용처 hardcoded 25 entry 중복 회피 — GET /api/settings 응답의
  * `aiModels` 배열을 module-level cache + 1-shot fetch 패턴으로 공유.
  *
  * 사용:
@@ -36,7 +36,7 @@ async function fetchAiModels(): Promise<AiModelEntry[]> {
         return list;
       }
     } catch {
-      // fetch 실패 시 빈 list — UI 가 dropdown 0 표시. error toast 별도 안 박음 (silent).
+      // fetch 실패 시 빈 list — UI 가 dropdown 0 표시. error toast 별도 안 띄움 (silent).
     }
     cache = [];
     return cache;
@@ -68,7 +68,7 @@ export function useAiModels(): { models: AiModelEntry[]; ready: boolean } {
   return { models, ready };
 }
 
-/** 동기 helper — cache 박혀있을 때만 정확. 미박힘 시 빈 array. */
+/** 동기 helper — cache hit 시점만 정확. 미설정 시 빈 array. */
 export function readAiModels(): AiModelEntry[] {
   return cache ?? [];
 }

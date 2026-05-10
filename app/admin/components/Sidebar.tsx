@@ -439,7 +439,7 @@ export function Sidebar({
             )}
           </button>
         );
-        // 활성 탭(panel 펼친 상태)은 tooltip 박지 마라 — 헤더에 라벨 박힘 + 펼침 상태에서 hover 시 잔영 회피.
+        // 활성 탭(panel 펼친 상태)은 tooltip 표시하지 않음 — 헤더에 라벨 이미 노출 + 펼침 상태에서 hover 시 잔영 회피.
         return isActive ? button : (
           <Tooltip key={t.id} label={t.tooltip} side="right">
             {button}
@@ -1097,8 +1097,8 @@ export function Sidebar({
       {renderActivityBar()}
       {!collapsed && (
         <>
-          {/* invisible click-catcher — 활동 바(z-50) / panel(z-40) 박지 않은 영역 만 click 받음.
-              bg dim 박지 마라 — 사용자 시각 방해 0. */}
+          {/* invisible click-catcher — 활동 바(z-50) / panel(z-40) 외 영역만 click 받음.
+              bg dim 사용 X — 사용자 시각 방해 0. */}
           <div
             className="fixed top-12 inset-x-0 bottom-0 z-30"
             onClick={() => setCollapsed(true)}

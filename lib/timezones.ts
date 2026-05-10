@@ -2,7 +2,7 @@
  * Timezone 옵션 — 위자드 + 어드민 설정 공통 source.
  *
  * lang === 'ko' → labelKo 표시, 그 외 → label (영어).
- * IANA timezone identifier 는 value 에 그대로. UTC offset 순서대로 박힘.
+ * IANA timezone identifier 는 value 에 그대로. UTC offset 순서대로 정렬.
  */
 
 export interface TimezoneOption {

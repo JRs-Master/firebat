@@ -30,8 +30,8 @@ export async function GET(req: NextRequest) {
     core.isSubAgentEnabled(),
     core.getGeminiKey('system:ui-lang'),
   ]);
-  // RustCoreProxy 의 autoUnwrapProtoEnvelope 박혀 BoolRequest/StringRequest 자동 unwrap.
-  // frontend 가 raw boolean / string 박힘 받음.
+  // RustCoreProxy 의 autoUnwrapProtoEnvelope 통해 BoolRequest/StringRequest 자동 unwrap.
+  // frontend 는 raw boolean / string 직접 수신.
   const interfaceLang = uiLangRaw === 'en' ? 'en' : 'ko';
   return NextResponse.json({
     success: true,

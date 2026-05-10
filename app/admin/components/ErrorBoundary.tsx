@@ -3,7 +3,7 @@
 /**
  * ErrorBoundary — React class component 기반 자체 boundary.
  *
- * SettingsModal 같은 sub-tree throw 가 admin tree 통째로 reset 박지 않게 격리.
+ * SettingsModal 같은 sub-tree throw 가 admin tree 통째로 reset 되지 않게 격리.
  * `app/admin/error.tsx` (admin route boundary) 보다 우선 catch — 자식 throw 시
  * 자체 fallback UI 표시 + 사이드바 영향 0.
  *

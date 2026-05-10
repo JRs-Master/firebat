@@ -6,7 +6,7 @@
  *   2. SystemModuleSettings 의 oauth 필드에서 `oauthUrl: '/api/auth/oauth/<id>'` 사용
  *
  * Generic route (`/api/auth/oauth/[provider]/route.ts` + `[provider]/callback/route.ts`) 가
- * 본 registry 를 read 해서 동작. provider-specific route 박지 마라.
+ * 본 registry 를 read 해서 동작. provider-specific route 추가하지 마라.
  */
 
 export type OAuthProviderConfig = {
@@ -24,7 +24,7 @@ export type OAuthProviderConfig = {
   apiKeyVaultKey: string;
   /** Vault user secret key (옵션) — client_secret. 일부 provider 만 (kakao confidential 옵션). */
   clientSecretVaultKey?: string;
-  /** Vault 저장 — token 응답의 access_token 박음 위치. 예: 'KAKAO_ACCESS_TOKEN'. */
+  /** Vault 저장 — token 응답의 access_token 보관 위치. 예: 'KAKAO_ACCESS_TOKEN'. */
   accessTokenVaultKey: string;
   /** Vault 저장 — token 응답의 refresh_token (없으면 미저장). */
   refreshTokenVaultKey?: string;

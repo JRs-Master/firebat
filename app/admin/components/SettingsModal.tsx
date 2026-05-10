@@ -35,8 +35,8 @@ type Props = {
   initialTab?: 'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'cost' | 'memory'; // 'cost' / 'memory' 는 호환 — 자동으로 AI 탭 + sub-tab 으로 변환
 };
 
-/** SettingsModal — 자체 ErrorBoundary 박혀 modal 안 throw 가 admin tree 통째로 reset 박지 않게 격리.
- *  옛: cost sub-tab throw → admin/error.tsx 박혀 사이드바 사라짐. 새: modal 안 fallback UI 만 표시 + 사이드바 유지. */
+/** SettingsModal — 자체 ErrorBoundary 추가하여 modal 안 throw 가 admin tree 통째로 reset 되지 않게 격리.
+ *  옛: cost sub-tab throw → admin/error.tsx 발동 → 사이드바 사라짐. 새: modal 안 fallback UI 만 표시 + 사이드바 유지. */
 export function SettingsModal(props: Props) {
   return (
     <ErrorBoundary>
@@ -267,7 +267,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         if (typeof data.aiRouterEnabled === 'boolean') setAiRouterEnabled(data.aiRouterEnabled);
         if (data.aiAssistantModel) setAiAssistantModel(data.aiAssistantModel);
         if (Array.isArray(data.aiAssistantModels) && data.aiAssistantModels.length > 0) setAiAssistantModels(data.aiAssistantModels);
-        // aiModels 박은 게 useAiModels hook 이 별도 fetch + cache 박음 — 본 useEffect 무관.
+        // aiModels 자체는 useAiModels hook 이 별도 fetch + cache 처리 — 본 useEffect 무관.
         if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
         if (typeof data.anthropicCacheEnabled === 'boolean') setAnthropicCacheEnabled(data.anthropicCacheEnabled);
         if (typeof data.subAgentEnabled === 'boolean') setSubAgentEnabled(data.subAgentEnabled);
@@ -890,9 +890,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             return (
               <>
                 {/* AI 서브탭 바 — 메인 탭 nav 와 동일 underline 패턴 (border-b-2).
-                    overflow-x-auto 폐기 — root cause: commit 19e2dc4 박은 5 button (3→5) +
-                    overflow-x-auto 추가 박혀 부모 flex flex-col 안 child 박힌 overflow:auto box 가
-                    height collapse (flex 박힘 + overflow 박힘 충돌). 5 button 박힌 width 합 ~290px <
+                    overflow-x-auto 폐기 — root cause: commit 19e2dc4 가 5 button (3→5) +
+                    overflow-x-auto 추가하여 부모 flex flex-col 안 child 의 overflow:auto box 가
+                    height collapse (flex + overflow 충돌). 5 button width 합 ~290px <
                     modal sm:max-w-lg 512px 라 overflow-x-auto 불필요. */}
                 <div className="flex items-center gap-1 border-b border-slate-200 mb-3">
                   {([

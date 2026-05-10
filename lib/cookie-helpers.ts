@@ -11,7 +11,7 @@
 import { NextRequest } from 'next/server';
 
 export function isHttpsRequest(req: NextRequest): boolean {
-  // reverse proxy 뒤 — Caddy / nginx 가 X-Forwarded-Proto 박음
+  // reverse proxy 뒤 — Caddy / nginx 가 X-Forwarded-Proto 헤더 설정
   const xfp = req.headers.get('x-forwarded-proto');
   if (xfp) return xfp.toLowerCase().includes('https');
   // 직접 접속 — req.url 의 scheme
