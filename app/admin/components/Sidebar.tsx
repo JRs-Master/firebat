@@ -911,13 +911,19 @@ export function Sidebar({
                               });
                               const data = await res.json();
                               if (!res.ok || !data?.success) {
-                                alert(`정리 실패: ${data?.error ?? res.statusText}`);
+                                await alertDialog({ title: '정리 실패', message: data?.error ?? res.statusText ?? '알 수 없는 오류', danger: true });
                                 return;
                               }
                               const s = data.saved;
-                              alert(`정리 완료\n• 엔티티 ${s.entities.length}개\n• 사실 ${s.facts.length}개\n• 사건 ${s.events.length}개\n${data.skipped ? `(skipped ${data.skipped})` : ''}`);
+                              const lines = [
+                                `엔티티 ${s.entities.length}개`,
+                                `사실 ${s.facts.length}개`,
+                                `사건 ${s.events.length}개`,
+                              ];
+                              if (data.skipped) lines.push(`(skipped ${data.skipped})`);
+                              await alertDialog({ title: '정리 완료', message: lines.join('\n') });
                             } catch (err: any) {
-                              alert(`정리 실패: ${err?.message ?? err}`);
+                              await alertDialog({ title: '정리 실패', message: err?.message ?? String(err), danger: true });
                             }
                           }}
                           className="p-1 text-slate-400 hover:text-purple-600 hover:bg-purple-50 active:bg-purple-100 rounded transition-colors"

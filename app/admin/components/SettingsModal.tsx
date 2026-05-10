@@ -102,25 +102,21 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     else if (fallbackFirst) onAiModelChange(fallbackFirst);
   };
 
-  // aiModel이 외부에서 바뀌면(상위에서 저장값 로드 등) 모드/공급자도 재추론
+  // aiModel 이 외부에서 바뀌면(상위 저장값 로드 등) 모드/공급자 재추론.
+  //
+  // ⚠ lastModelByCategory 자동 갱신은 의도적으로 제거 (2026-05-10 사용자 보고).
+  // 옛 동작: cascade 탭(execMode / aiMode / aiProvider / cliProvider) 클릭 → restoreOrFirst
+  //         → onAiModelChange 즉시 호출 → 본 useEffect 발동 → lastModelByCategory[cat] 즉시 갱신.
+  //         사용자가 "탭 미리보기" 의도로 클릭만 해도 silent 갱신되어 다음 카테고리 전환 시
+  //         예상 못 한 모델이 복원됐음.
+  // 새 동작: lastModelByCategory 갱신은 메인 "저장" 버튼 시점에만 (handleSave 안). cascade
+  //         탭 클릭은 활성 모델 preview (즉시 변경) 만 하고 카테고리 기억은 안 건드림.
   useEffect(() => {
     const mp = inferModeProvider(aiModel);
     setExecMode(mp.execMode);
     setAiMode(mp.mode);
     setAiProvider(mp.provider);
     setCliProvider(mp.cliProvider);
-    // 현재 모델을 카테고리 기억에 저장
-    const cat = categoryOf(aiModel);
-    if (cat && lastModelByCategory[cat] !== aiModel) {
-      const next = { ...lastModelByCategory, [cat]: aiModel };
-      setLastModelByCategory(next);
-      // DB 동기화 (비동기, 실패해도 localStorage 에는 저장됨) — 멀티 기기 공유
-      fetch('/api/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lastModelByCategory: next }),
-      }).catch(() => {});
-    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiModel]);
   // CLI 상태
@@ -2345,7 +2341,7 @@ function MemoryTabContent() {
       body: JSON.stringify(item),
     });
     const data = await res.json();
-    if (!data.success) { alert(`저장 실패: ${data.error}`); return; }
+    if (!data.success) { await alertDialog({ title: '저장 실패', message: data.error ?? '알 수 없는 오류', danger: true }); return; }
     setEditing(null); setCreating(false);
     void load();
   };
@@ -2354,7 +2350,7 @@ function MemoryTabContent() {
     if (!await confirmDialog({ title: '메모리 삭제', message: `"${name}" 메모리를 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
     const res = await fetch(`/api/memory?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
     const data = await res.json();
-    if (!data.success) { alert(`삭제 실패: ${data.error}`); return; }
+    if (!data.success) { await alertDialog({ title: '삭제 실패', message: data.error ?? '알 수 없는 오류', danger: true }); return; }
     void load();
   };
 

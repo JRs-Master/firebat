@@ -13,7 +13,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Plus, Trash2, X, MapPin, Link as LinkIcon, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { Tooltip } from './Tooltip';
-import { confirmDialog } from './Dialog';
+import { confirmDialog, alertDialog } from './Dialog';
 
 interface CalEvent {
   id: string;
@@ -173,7 +173,7 @@ export function CalendarPanel() {
       await callCalendar('delete', { id: e.id });
       setEvents(prev => prev.filter(x => x.id !== e.id));
     } catch (err: any) {
-      alert(`삭제 실패: ${err.message}`);
+      await alertDialog({ title: '삭제 실패', message: err?.message ?? String(err), danger: true });
     }
   };
 

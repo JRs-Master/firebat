@@ -9,7 +9,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Search, Plus, Trash2, X, NotebookText } from 'lucide-react';
 import { Tooltip } from './Tooltip';
-import { confirmDialog } from './Dialog';
+import { confirmDialog, alertDialog } from './Dialog';
 
 interface Note {
   slug: string;
@@ -103,7 +103,7 @@ export function NotesPanel() {
         return next;
       });
     } catch (err: any) {
-      alert(`삭제 실패: ${err.message}`);
+      await alertDialog({ title: '삭제 실패', message: err?.message ?? String(err), danger: true });
     }
   };
 
