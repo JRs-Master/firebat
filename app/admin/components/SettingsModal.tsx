@@ -14,7 +14,17 @@ import { useLang, useTranslations, type Lang } from '../../../lib/i18n';
 import { TIMEZONE_OPTIONS, timezoneLabel } from '../../../lib/timezones';
 import { USER_PROMPT_MAX_CHARS } from '../../../lib/config';
 
-interface SystemModule { name: string; description: string; runtime: string; type?: string; enabled?: boolean; }
+// Rust ModuleEntryPb.entry_type → proto-loader keepCase:false → entryType.
+// 옛 type 필드명 호환 위해 둘 다 받음.
+interface SystemModule {
+  name: string;
+  description: string;
+  runtime: string;
+  entryType?: string;
+  type?: string; // legacy alias — entryType 우선
+  scope?: string;
+  enabled?: boolean;
+}
 
 type Props = {
   aiModel: string;
@@ -1993,11 +2003,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           {settingsTab === 'system' && (
             <div className="flex flex-col gap-4">
               {/* 서비스 */}
-              {sysModules.filter(m => m.type === 'service').length > 0 && (
+              {sysModules.filter(m => (m.entryType ?? m.type) === 'service').length > 0 && (
                 <div>
                   <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5 mb-2"><Wrench size={11} /> 서비스</p>
                   <div className="space-y-1">
-                    {sysModules.filter(m => m.type === 'service').map(m => (
+                    {sysModules.filter(m => (m.entryType ?? m.type) === 'service').map(m => (
                       <div key={m.name} className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors group ${m.enabled === false ? 'border-slate-100 bg-slate-50/50 opacity-60' : 'border-slate-200 hover:border-blue-200 hover:bg-blue-50/50'}`}>
                         <button onClick={() => onOpenModuleSettings?.(m.name)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                           <Server size={16} className="text-emerald-500 shrink-0" />
@@ -2022,11 +2032,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               )}
 
               {/* 모듈 */}
-              {sysModules.filter(m => m.type !== 'service').length > 0 && (
+              {sysModules.filter(m => (m.entryType ?? m.type) !== 'service').length > 0 && (
                 <div>
                   <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5 mb-2"><Blocks size={11} /> 모듈</p>
                   <div className="space-y-1">
-                    {sysModules.filter(m => m.type !== 'service').map(m => (
+                    {sysModules.filter(m => (m.entryType ?? m.type) !== 'service').map(m => (
                       <div key={m.name} className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors group ${m.enabled === false ? 'border-slate-100 bg-slate-50/50 opacity-60' : 'border-slate-200 hover:border-blue-200 hover:bg-blue-50/50'}`}>
                         <button onClick={() => onOpenModuleSettings?.(m.name)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                           <Blocks size={16} className="text-indigo-500 shrink-0" />
