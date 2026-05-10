@@ -339,7 +339,7 @@ Rust Core 전환의 핵심 운영 철학. Phase B-4 cutover 후 자연 박힘:
 - 모든 매니저 / 어댑터 가 `tracing::{info, warn, error, debug}` 매크로 사용
 - 구조화 fields — `error = %e` / `cgroup = name` / `daily_used = 0.85` 등 query 가능 형태
 - correlation ID — uuid v4 기반 (각 요청 / cron trigger / sandbox spawn 별 추적)
-- production: PM2 가 stdout / stderr 캡처 → 일별 회전 (옛 v0.1) 또는 Docker logging driver (Phase C)
+- production: systemd `journald` 가 stdout / stderr 캡처 → `journalctl -u firebat` 조회 + 디스크 회전 자동 또는 Docker logging driver (Phase C)
 
 옛 `console.log` 패턴 금지 — 모두 `tracing` 통과.
 
@@ -363,19 +363,23 @@ Sandbox / cgroup / seccomp / namespace 박는 단계마다 실패 시 **자식 s
 
 운영자가 어드민 UI 의 `ISandboxPort.capabilities()` 결과 확인 → 현재 격리 수준 가시화. 진짜 격리 약화 위험 시점 (예: kernel drift / Docker 외 환경) 자동 발견.
 
-### 제4항. PM2 무중단 + 메모리 폭주 방지
+### 제4항. systemd 무중단 + 메모리 폭주 방지
 
-`ecosystem.config.js` 박힘 (Phase 0 / Phase C 공통):
-- `max_memory_restart: 500M` — 메모리 leak 또는 candle 임베딩 폭주 시 자동 재시작
-- `kill_timeout: 30000` (30s) — graceful shutdown 시간 보장 (SQLite WAL flush + cron job 마무리)
-- `restart_delay: 5000` — crash loop 회피
-- `instances: 1` — 단일 인스턴스 (BIBLE 단독 점유 원칙)
+systemd unit 2개 (Phase 0 / Phase C 공통):
+- `firebat-frontend.service` — Next.js (port 3000)
+- `firebat.service` — Rust Core gRPC (port 50051)
 
-Rust binary 자체는 SIGTERM 받으면 `tokio::signal` 으로 graceful shutdown — 25초 활성 작업 대기 + Cost flush + DB close + cron task abort. PM2 의 30s 안에 자연 종료.
+운영 옵션:
+- `Restart=always` — 크래시 시 자동 재시작
+- `MemoryMax` / `MemoryHigh` — 메모리 leak 또는 candle 임베딩 폭주 시 자동 재시작
+- `TimeoutStopSec=30` — graceful shutdown 시간 보장 (SQLite WAL flush + cron job 마무리)
+- 단일 인스턴스 (BIBLE 단독 점유 원칙)
+
+Rust binary 자체는 SIGTERM 받으면 `tokio::signal` 으로 graceful shutdown — 25초 활성 작업 대기 + Cost flush + DB close + cron task abort. systemd 의 30s 안에 자연 종료.
 
 ### 제5항. 시스템은 크래시 허용 — 관제는 지속
 
-panic 또는 OOM 발생해도 PM2 재시작 → 다음 cron trigger / 사용자 요청 정상 처리. 단:
+panic 또는 OOM 발생해도 systemd 재시작 → 다음 cron trigger / 사용자 요청 정상 처리. 단:
 - 매니저 코드 안 panic 금지 (어댑터 throw 0 정신과 같음)
 - `unwrap_or_else(|p| p.into_inner())` 패턴으로 mutex poison 도 graceful 처리
 - 진짜 panic 발생 시 (가설: 외부 lib bug) tracing capture → Telegram 또는 jsonl 기록 → 운영자 알림

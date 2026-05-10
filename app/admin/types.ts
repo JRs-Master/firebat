@@ -46,9 +46,9 @@ export const AI_MODELS = [
   { value: 'cli-codex-auto', label: 'Codex CLI (Auto)' },
   { value: 'cli-codex-gpt-5.5', label: 'Codex CLI (GPT-5.5)' },
   { value: 'cli-codex-gpt-5.4', label: 'Codex CLI (GPT-5.4)' },
+  { value: 'cli-codex-gpt-5.4-mini', label: 'Codex CLI (GPT-5.4 Mini)' },
   { value: 'cli-codex-5.3-codex', label: 'Codex CLI (5.3-Codex)' },
   { value: 'cli-codex-5.3-codex-spark', label: 'Codex CLI (5.3-Codex Spark, preview)' },
-  { value: 'cli-codex-gpt-5.4-mini', label: 'Codex CLI (GPT-5.4 Mini)' },
 ];
 // 기존 이름 호환을 위한 alias
 export const GEMINI_MODELS = AI_MODELS;

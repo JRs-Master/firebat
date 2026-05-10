@@ -51,8 +51,8 @@ docker compose logs -f firebat-core
 # 0. 옛 서버 별칭 박음 (~/.ssh/config 의 Host alias 또는 SSH user@host 직접)
 #    아래 예시는 old-server alias 가정.
 
-# 1. 옛 서버에서 PM2 stop
-ssh root@old-server "pm2 stop firebat"
+# 1. 옛 서버에서 systemd stop
+ssh root@old-server "systemctl stop firebat firebat-frontend"
 
 # 2. 데이터 통째 rsync (DB + 미디어 + cron 영속)
 rsync -av --progress \
@@ -177,7 +177,7 @@ CI/CD 에서 layer 캐시 활성화 권장:
 - **포트 50051 충돌**: 다른 컨테이너가 점유. `lsof -i :50051` 후 종료.
 - **권한 에러 (data dir)**: `sudo chown -R 1000:1000 /opt/firebat/{data,user,system}`
 - **빌드 OOM**: 메모리 1GB 이하 VPS. Cargo profile dev 로 빌드 후 swap 박기 또는 외부 빌드 서버 사용.
-- **SQLite locked**: 옛 서버 PM2 안 멈췄거나 다른 process 가 잡고 있음. `lsof data/app.db`.
+- **SQLite locked**: 옛 서버 systemd unit 안 멈췄거나 다른 process 가 잡고 있음. `lsof data/app.db`.
 - **grpc 호출 안 받음**: nginx 가 외부에 50051 노출 시 차단. `127.0.0.1:50051` 만 매핑 필수.
 
 ## 성능

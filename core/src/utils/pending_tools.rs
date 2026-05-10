@@ -5,7 +5,7 @@
 //! AI 가 write_file(덮어쓰기) / save_page(덮어쓰기) / delete_file / delete_page / schedule_task
 //! 호출 시 즉시 실행하지 않고 여기 저장. 사용자 승인 시 `consume_pending` 으로 실제 실행.
 //!
-//! **파일 영속화** (`data/pending-tools.json`) — PM2 재시작·서버 리빌드 후에도 planId 유효.
+//! **파일 영속화** (`data/pending-tools.json`) — systemd 재시작·서버 리빌드 후에도 planId 유효.
 //! - in-memory `RwLock<HashMap>` 1차 캐시 + 파일 영속.
 //! - `get_pending` 도 파일 폴백 (멀티 isolate 안전망).
 //! - 60초마다 expire 도 파일 영속까지 같이 정리 (불러올 때마다 expired 자동 drop).
@@ -58,7 +58,7 @@ fn store_lock() -> &'static Mutex<HashMap<String, PendingTool>> {
     static STORE: OnceLock<Mutex<HashMap<String, PendingTool>>> = OnceLock::new();
     STORE.get_or_init(|| {
         let mut map = HashMap::new();
-        // 부팅 시 파일에서 복원 (PM2 재시작 후에도 pending 유지)
+        // 부팅 시 파일에서 복원 (systemd 재시작 후에도 pending 유지)
         if let Ok(raw) = std::fs::read_to_string(store_file_path()) {
             if let Ok(arr) = serde_json::from_str::<Vec<PendingTool>>(&raw) {
                 let now = now_ms();

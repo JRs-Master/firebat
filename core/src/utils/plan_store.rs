@@ -5,7 +5,7 @@
 //! AI 가 propose_plan 호출 → planId 발급 + steps 저장. 사용자가 ✓실행 누르면 다음 chat 요청에
 //! `planExecuteId` 동봉 → AiManager 가 조회 후 시스템 프롬프트에 강제 주입.
 //!
-//! **파일 영속화** (`data/plan-store.json`) — PM2 재시작·서버 재부팅 후에도 plan 유지.
+//! **파일 영속화** (`data/plan-store.json`) — systemd 재시작·서버 재부팅 후에도 plan 유지.
 //! - in-memory `Mutex<HashMap>` 1차 캐시 + 파일 영속.
 //! - `get_plan` 도 파일 폴백 (멀티 isolate 안전망).
 //! - 옛 TS 와 동일 — TTL 3시간, max 50.

@@ -112,7 +112,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - `ICronPort` 구현.
 - `node-cron` 기반 백그라운드 스케줄러.
 - **싱글톤**: `globalThis` 캐싱 (Next.js 핫리로드 시 중복 방지).
-- **영속 저장**: `data/cron-jobs.json`에 잡 설정 저장, PM2 재시작 시 자동 복원.
+- **영속 저장**: `data/cron-jobs.json`에 잡 설정 저장, systemd 재시작 시 자동 복원.
 - **3가지 모드**: `cronTime`(반복), `runAt`(1회 예약), `delaySec`(N초 후 1회).
 - **기간 한정**: `startAt`/`endAt`으로 반복 기간 제한, 만료 시 자동 해제.
 - **동적 타임존**: Vault `system:timezone` 키로 저장, `setTimezone()`/`getTimezone()` 지원.

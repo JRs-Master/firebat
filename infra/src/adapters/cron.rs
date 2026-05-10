@@ -8,7 +8,7 @@
 //! - delay: delaySec N초 후 1회 발화
 //!
 //! 영속:
-//! - data/cron-jobs.json — 등록된 잡 (PM2 재시작 시 cron/once 자동 복원, delay 잡 복원 불가)
+//! - data/cron-jobs.json — 등록된 잡 (systemd 재시작 시 cron/once 자동 복원, delay 잡 복원 불가)
 //! - data/cron-logs.json — 실행 로그 (최대 200건 LRU)
 //! - data/cron-notifications.json — 페이지 URL 알림 (소비 후 정리)
 //!

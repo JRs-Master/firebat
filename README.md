@@ -127,10 +127,10 @@ User prompt
 - **Three modes**: recurring (`cron`), one-shot (`runAt`), delay (`delaySec`)
 - **Pipelines**: Pre-compiled composite workflows — "MCP query → LLM summary → module dispatch"
 - **Seven pipeline steps**: `EXECUTE` (sandbox module), `MCP_CALL`, `NETWORK_REQUEST`, `LLM_TRANSFORM`, `CONDITION` (branching/early-stop), `SAVE_PAGE`, `TOOL_CALL` (Function Calling tools like `image_gen` from cron)
-- **Persistence**: Jobs restored automatically on PM2 restart
+- **Persistence**: Jobs restored automatically on systemd restart
 - **Dynamic timezone**: Change per installation via settings
 
-> 🇰🇷 **스케줄링 & 자동화** — 반복(`cron`) / 1회 예약(`runAt`) / 딜레이(`delaySec`) 3가지 모드. 복합 작업은 파이프라인 7단계 (`EXECUTE` / `MCP_CALL` / `NETWORK_REQUEST` / `LLM_TRANSFORM` / `CONDITION` / `SAVE_PAGE` / `TOOL_CALL`) 로 사전 컴파일. PM2 재시작 시 자동 복원, 타임존 동적 변경.
+> 🇰🇷 **스케줄링 & 자동화** — 반복(`cron`) / 1회 예약(`runAt`) / 딜레이(`delaySec`) 3가지 모드. 복합 작업은 파이프라인 7단계 (`EXECUTE` / `MCP_CALL` / `NETWORK_REQUEST` / `LLM_TRANSFORM` / `CONDITION` / `SAVE_PAGE` / `TOOL_CALL`) 로 사전 컴파일. systemd 재시작 시 자동 복원, 타임존 동적 변경.
 
 ### MCP (Model Context Protocol)
 

@@ -8,7 +8,7 @@ import { promisify } from 'util';
 const execAsync = promisify(exec);
 
 // SIGTERM / SIGINT graceful shutdown — Core 작업 완료 대기 + Cost flush.
-// PM2 ecosystem.config.js 의 kill_timeout=30s 와 호환 (Core 는 25s, 5s 여유).
+// systemd unit TimeoutStopSec=30s 와 호환 (Core 는 25s, 5s 여유).
 // 멱등 — 같은 프로세스에서 한 번만 등록.
 const __gShut = globalThis as unknown as { __firebatShutdownWired?: boolean };
 if (!__gShut.__firebatShutdownWired) {

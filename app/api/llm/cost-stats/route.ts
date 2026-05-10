@@ -18,10 +18,18 @@ export async function GET(req: NextRequest) {
   const toDate = url.searchParams.get('toDate') ?? undefined;
   const model = url.searchParams.get('model') ?? undefined;
 
-  const stats = await getCore().getLlmCostStats({
-    ...(fromDate ? { fromDate } : {}),
-    ...(toDate ? { toDate } : {}),
-    ...(model ? { model } : {}),
-  });
-  return NextResponse.json({ success: true, data: stats });
+  try {
+    const stats = await getCore().getLlmCostStats({
+      ...(fromDate ? { fromDate } : {}),
+      ...(toDate ? { toDate } : {}),
+      ...(model ? { model } : {}),
+    });
+    return NextResponse.json({ success: true, data: stats });
+  } catch (err) {
+    console.error('[cost-stats] getLlmCostStats failed:', err);
+    return NextResponse.json(
+      { success: false, error: err instanceof Error ? err.message : String(err) },
+      { status: 500 }
+    );
+  }
 }

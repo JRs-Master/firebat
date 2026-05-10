@@ -6,10 +6,10 @@
 #   ./scripts/restore.sh data/backups/firebat-20260415-030000.tar.gz
 #
 # 복구 흐름:
-#   1) PM2 서비스 중지 (있으면).
+#   1) systemd 서비스 중지 (있으면).
 #   2) 기존 data/*.db, data/*.json, user/media, user/modules, system/media 백업 (data/restore-backup-<ts>/ 로 이동).
 #   3) tar.gz 해제 → 원위치 복원.
-#   4) PM2 서비스 재시작.
+#   4) systemd 서비스 재시작.
 #
 # 주의: 복구 전 항상 현재 상태가 자동 백업됨 (실수 복구 가능).
 #
@@ -36,12 +36,10 @@ echo "[restore] 시작: $ARCHIVE"
 echo "[restore] 안전 백업: $SAFE_DIR (롤백용)"
 mkdir -p "$SAFE_DIR"
 
-# 1) PM2 중지 (있으면)
-if command -v pm2 >/dev/null 2>&1; then
-  if pm2 status firebat >/dev/null 2>&1; then
-    echo "[restore] PM2 firebat 중지"
-    pm2 stop firebat || true
-  fi
+# 1) systemd 중지 (있으면)
+if command -v systemctl >/dev/null 2>&1; then
+  echo "[restore] systemd firebat / firebat-frontend 중지"
+  systemctl stop firebat firebat-frontend 2>/dev/null || true
 fi
 
 # 2) 기존 상태 보존
@@ -75,11 +73,10 @@ fi
 [ -d "$TMP_DIR/modules" ] && mkdir -p user && cp -r "$TMP_DIR/modules" user/    || true
 
 # 4) 재시작
-if command -v pm2 >/dev/null 2>&1; then
-  if [ -f ecosystem.config.js ]; then
-    echo "[restore] PM2 재시작"
-    pm2 start ecosystem.config.js || pm2 reload firebat || true
-  fi
+if command -v systemctl >/dev/null 2>&1; then
+  echo "[restore] systemd 재시작 (firebat + firebat-frontend)"
+  systemctl restart firebat 2>/dev/null || true
+  systemctl restart firebat-frontend 2>/dev/null || true
 fi
 
 echo "[restore] 완료. 롤백 필요 시: $SAFE_DIR 에서 수동 복원."

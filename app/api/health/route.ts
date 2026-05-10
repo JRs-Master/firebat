@@ -63,7 +63,7 @@ function checkMemory(): CheckResult {
     const m = process.memoryUsage();
     const rssMb = Math.round(m.rss / 1024 / 1024);
     const heapMb = Math.round(m.heapUsed / 1024 / 1024);
-    // 600MB rss 초과 — degraded (PM2 max_memory_restart=500MB 와 안전 마진).
+    // 600MB rss 초과 — degraded (systemd MemoryMax 500MB 와 안전 마진).
     // 일반 로직: 임계값 단일 상수, 도메인별 분기 X.
     const degraded = rssMb > 600;
     return {

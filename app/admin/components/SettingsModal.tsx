@@ -2628,7 +2628,15 @@ function CostTabContent() {
     const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const params = new URLSearchParams({ fromDate: fmt(fromDate), toDate: fmt(today) });
     fetch(`/api/llm/cost-stats?${params.toString()}`)
-      .then(r => r.json())
+      .then(async r => {
+        const text = await r.text();
+        if (!text) throw new Error(`HTTP ${r.status} (빈 응답)`);
+        try {
+          return JSON.parse(text);
+        } catch {
+          throw new Error(`HTTP ${r.status} (JSON 파싱 실패: ${text.slice(0, 100)})`);
+        }
+      })
       .then(data => {
         if (data.success) setStats(data.data);
         else setError(data.error || '조회 실패');

@@ -279,9 +279,9 @@ pub fn builtin_models() -> Vec<LlmModelConfig> {
         cli_codex("cli-codex-auto", "Codex CLI (Auto)"),
         cli_codex("cli-codex-gpt-5.5", "Codex CLI (GPT-5.5)"),
         cli_codex("cli-codex-gpt-5.4", "Codex CLI (GPT-5.4)"),
+        cli_codex("cli-codex-gpt-5.4-mini", "Codex CLI (GPT-5.4 Mini)"),
         cli_codex("cli-codex-5.3-codex", "Codex CLI (5.3-Codex)"),
         cli_codex("cli-codex-5.3-codex-spark", "Codex CLI (5.3-Codex Spark, preview)"),
-        cli_codex("cli-codex-gpt-5.4-mini", "Codex CLI (GPT-5.4 Mini)"),
     ]
 }
 

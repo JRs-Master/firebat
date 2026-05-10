@@ -18,7 +18,7 @@
 #  docker compose restart firebat-core
 #
 # 새 서버 cutover 절차 (옛 firebat.co.kr → 새 Ubuntu 26.04):
-#  1. ssh root@firebat "pm2 stop firebat"
+#  1. ssh root@firebat "systemctl stop firebat firebat-frontend"
 #  2. rsync -av root@firebat:/root/firebat/{data,user/media,system/media}/ ./
 #  3. docker compose up -d --build
 #  4. health check: curl localhost:50051 또는 grpc_health_probe
