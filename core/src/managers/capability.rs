@@ -83,78 +83,62 @@ impl CapabilityManager {
     /// capability 별 provider 목록. 모듈 스캔 — system/modules + user/modules.
     pub async fn get_providers(&self, cap_id: &str) -> Vec<CapabilityProvider> {
         let mut providers = Vec::new();
-        for loc in ["system/modules", "user/modules"] {
-            let location = if loc.starts_with("system/") {
+        for entry in crate::utils::mod_scan::scan_module_configs(&*self.storage).await {
+            let Some(capability) = entry.config.get("capability").and_then(|v| v.as_str()) else {
+                continue;
+            };
+            if capability != cap_id {
+                continue;
+            }
+            let module_name = entry
+                .config
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&entry.dir_name)
+                .to_string();
+            if !self.is_module_enabled(&module_name) {
+                continue;
+            }
+            let provider_type = match entry.config.get("providerType").and_then(|v| v.as_str()) {
+                Some("api") => ProviderType::Api,
+                _ => ProviderType::Local,
+            };
+            let description = entry
+                .config
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let location = if entry.location.starts_with("system/") {
                 ProviderLocation::System
             } else {
                 ProviderLocation::User
             };
-            let Ok(entries) = self.storage.list_dir(loc).await else {
-                continue;
-            };
-            for entry in entries {
-                if !entry.is_directory {
-                    continue;
-                }
-                let path = format!("{}/{}/config.json", loc, entry.name);
-                let Ok(content) = self.storage.read(&path).await else {
-                    continue;
-                };
-                let Ok(parsed): Result<serde_json::Value, _> = serde_json::from_str(&content)
-                else {
-                    self.log
-                        .debug(&format!("[Capability] config 파싱 실패 (silent): {}", path));
-                    continue;
-                };
-                let Some(capability) = parsed.get("capability").and_then(|v| v.as_str()) else {
-                    continue;
-                };
-                if capability != cap_id {
-                    continue;
-                }
-                let module_name = parsed
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or(&entry.name)
-                    .to_string();
-                if !self.is_module_enabled(&module_name) {
-                    continue;
-                }
-                let provider_type = match parsed.get("providerType").and_then(|v| v.as_str()) {
-                    Some("api") => ProviderType::Api,
-                    _ => ProviderType::Local,
-                };
-                let description = parsed
-                    .get("description")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .to_string();
 
-                // 미등록 capability 자동 등록
-                if !builtin_capabilities().contains_key(cap_id) {
-                    let mut dynamic = self.lock_dynamic();
-                    if !dynamic.contains_key(cap_id) {
-                        dynamic.insert(
-                            cap_id.to_string(),
-                            CapabilityDef {
-                                label: cap_id.to_string(),
-                                description: description.clone(),
-                            },
-                        );
-                        self.log.warn(&format!(
-                            "[Capability] 미등록 capability 자동 등록: {}",
-                            cap_id
-                        ));
-                    }
+            // 미등록 capability 자동 등록
+            if !builtin_capabilities().contains_key(cap_id) {
+                let mut dynamic = self.lock_dynamic();
+                if !dynamic.contains_key(cap_id) {
+                    dynamic.insert(
+                        cap_id.to_string(),
+                        CapabilityDef {
+                            label: cap_id.to_string(),
+                            description: description.clone(),
+                        },
+                    );
+                    self.log.warn(&format!(
+                        "[Capability] 미등록 capability 자동 등록: {}",
+                        cap_id
+                    ));
                 }
-
-                providers.push(CapabilityProvider {
-                    module_name,
-                    provider_type,
-                    location: location.clone(),
-                    description,
-                });
             }
+
+            providers.push(CapabilityProvider {
+                module_name,
+                provider_type,
+                location,
+                description,
+            });
         }
         providers
     }
@@ -162,41 +146,26 @@ impl CapabilityManager {
     /// 전체 capability 별 provider 수 요약 — 어드민 UI 용.
     pub async fn list_with_providers(&self) -> Vec<CapabilitySummary> {
         // 모든 모듈 1차 스캔 — 미등록 capability 자동 등록
-        for loc in ["system/modules", "user/modules"] {
-            let Ok(entries) = self.storage.list_dir(loc).await else {
+        for entry in crate::utils::mod_scan::scan_module_configs(&*self.storage).await {
+            let Some(capability) = entry.config.get("capability").and_then(|v| v.as_str()) else {
                 continue;
             };
-            for entry in entries {
-                if !entry.is_directory {
-                    continue;
-                }
-                let path = format!("{}/{}/config.json", loc, entry.name);
-                let Ok(content) = self.storage.read(&path).await else {
-                    continue;
-                };
-                let Ok(parsed): Result<serde_json::Value, _> = serde_json::from_str(&content)
-                else {
-                    continue;
-                };
-                let Some(capability) = parsed.get("capability").and_then(|v| v.as_str()) else {
-                    continue;
-                };
-                if !builtin_capabilities().contains_key(capability) {
-                    let mut dynamic = self.lock_dynamic();
-                    if !dynamic.contains_key(capability) {
-                        let description = parsed
-                            .get("description")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string();
-                        dynamic.insert(
-                            capability.to_string(),
-                            CapabilityDef {
-                                label: capability.to_string(),
-                                description,
-                            },
-                        );
-                    }
+            if !builtin_capabilities().contains_key(capability) {
+                let mut dynamic = self.lock_dynamic();
+                if !dynamic.contains_key(capability) {
+                    let description = entry
+                        .config
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    dynamic.insert(
+                        capability.to_string(),
+                        CapabilityDef {
+                            label: capability.to_string(),
+                            description,
+                        },
+                    );
                 }
             }
         }
