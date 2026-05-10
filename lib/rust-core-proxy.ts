@@ -55,7 +55,16 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
   setModuleSettings: (name: string, settings: unknown) => ({ name, settings }),
 
   // ConversationService
+  getConversation: (owner: string, id: string) => ({ owner, id }),
+  saveConversation: (
+    owner: string,
+    id: string,
+    title: string,
+    messages: unknown[],
+    createdAt?: number,
+  ) => ({ owner, id, title, messages, createdAt }),
   deleteConversation: (owner: string, id: string) => ({ owner, id }),
+  isConversationDeleted: (owner: string, id: string) => ({ owner, id }),
   searchHistory: (owner: string, query: string, opts?: unknown) => ({ owner, query, opts }),
 
   // StorageService
