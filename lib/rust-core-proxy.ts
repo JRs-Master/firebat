@@ -186,9 +186,14 @@ const WRAP_METHODS = new Set([
   'saveProject', 'deleteProject', 'renameProject',
   'verifyProjectPassword', 'setProjectVisibility',
 
-  // ConversationService — wrap (모두)
+  // ConversationService — wrap (대부분)
+  // isConversationDeleted 제외 — Rust BoolRequest({value: bool}) → autoUnwrapProtoEnvelope 가 raw
+  // boolean 으로 풀어냄. WRAP 거치면 {success:true, data:bool} 객체가 되어 route.ts:44 의 `if
+  // (await core.isConversationDeleted(...))` 가 객체 자체로 truthy → Rust 가 false 반환해도
+  // 무조건 if 통과 → 무조건 409. backend 의 [DEBUG isDeleted] log 로 false 확정 후 진짜 root
+  // cause 입증됨 (2026-05-11).
   'listConversations', 'getConversation', 'saveConversation', 'deleteConversation',
-  'searchHistory', 'searchConversationHistory', 'isConversationDeleted',
+  'searchHistory', 'searchConversationHistory',
   'getCliSession', 'createShare', 'getShare',
 
   // EntityService — wrap (모두)
