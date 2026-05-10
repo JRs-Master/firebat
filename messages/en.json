@@ -191,6 +191,29 @@
       "bg": "Page background",
       "bg_card": "Card background",
       "border": "Border"
+    },
+    "browser_scrape": {
+      "fields": {
+        "timeout": { "label": "Timeout (ms)", "description": "Maximum page-load duration." },
+        "headless": { "label": "Headless mode", "description": "Run the browser without a UI." },
+        "maxTextLength": { "label": "Max text length", "description": "Maximum characters of extracted text." }
+      }
+    },
+    "kakao_talk": {
+      "fields": {
+        "kakaoOAuth": { "label": "Kakao account link", "description": "After registering keys, linking will issue an access token automatically." },
+        "defaultType": { "label": "Default message type", "description": "Choose one of text, feed, or list (default: text)." }
+      }
+    },
+    "telegram": {
+      "fields": {
+        "bruteForceAlert": { "label": "Login brute-force alert", "description": "When 5 consecutive login failures trigger a 60-second lock, an alert is sent to Telegram immediately. Both TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be registered for delivery. When OFF (default), no alert is sent." }
+      }
+    },
+    "firecrawl": {
+      "fields": {
+        "maxTextLength": { "label": "Max text length", "description": "Maximum characters of the markdown result." }
+      }
     }
   }
 }

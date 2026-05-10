@@ -47,25 +47,25 @@ const TAB_META: Record<string, { i18nKey: string; icon: typeof Globe }> = {
 const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingField[] }> = {
   'browser-scrape': {
     fields: [
-      { key: 'timeout', label: '타임아웃 (ms)', type: 'number', placeholder: '30000', description: '페이지 로딩 제한 시간입니다.', defaultValue: 30000 },
-      { key: 'headless', label: 'Headless 모드', type: 'toggle', description: '브라우저 UI 없이 실행합니다.', defaultValue: true },
-      { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '50000', description: '추출 텍스트의 최대 글자 수입니다.', defaultValue: 50000 },
+      { key: 'timeout', label: 'system_modules.browser_scrape.fields.timeout.label', type: 'number', placeholder: '30000', description: 'system_modules.browser_scrape.fields.timeout.description', defaultValue: 30000 },
+      { key: 'headless', label: 'system_modules.browser_scrape.fields.headless.label', type: 'toggle', description: 'system_modules.browser_scrape.fields.headless.description', defaultValue: true },
+      { key: 'maxTextLength', label: 'system_modules.browser_scrape.fields.maxTextLength.label', type: 'number', placeholder: '50000', description: 'system_modules.browser_scrape.fields.maxTextLength.description', defaultValue: 50000 },
     ],
   },
   'kakao-talk': {
     fields: [
-      { key: 'kakaoOAuth', label: '카카오 계정 연동', type: 'oauth', oauthUrl: '/api/auth/oauth/kakao', oauthSecrets: ['KAKAO_ACCESS_TOKEN'], description: '키 등록 후 연동하면 액세스 토큰이 자동 발급됩니다.' },
-      { key: 'defaultType', label: '기본 메시지 타입', type: 'text', placeholder: 'text', description: 'text · feed · list 중에서 선택합니다 (기본: text).', defaultValue: 'text' },
+      { key: 'kakaoOAuth', label: 'system_modules.kakao_talk.fields.kakaoOAuth.label', type: 'oauth', oauthUrl: '/api/auth/oauth/kakao', oauthSecrets: ['KAKAO_ACCESS_TOKEN'], description: 'system_modules.kakao_talk.fields.kakaoOAuth.description' },
+      { key: 'defaultType', label: 'system_modules.kakao_talk.fields.defaultType.label', type: 'text', placeholder: 'text', description: 'system_modules.kakao_talk.fields.defaultType.description', defaultValue: 'text' },
     ],
   },
   'telegram': {
     fields: [
-      { key: 'bruteForceAlert', label: '로그인 brute force 알림', type: 'toggle', description: '5회 연속 로그인 실패로 60초 잠금이 발생하면 텔레그램으로 즉시 알림이 발송됩니다. TELEGRAM_BOT_TOKEN 과 TELEGRAM_CHAT_ID 가 모두 등록되어 있어야 발송됩니다. OFF 면 알림이 발송되지 않습니다 (기본값).', defaultValue: false },
+      { key: 'bruteForceAlert', label: 'system_modules.telegram.fields.bruteForceAlert.label', type: 'toggle', description: 'system_modules.telegram.fields.bruteForceAlert.description', defaultValue: false },
     ],
   },
   'firecrawl': {
     fields: [
-      { key: 'maxTextLength', label: '최대 텍스트 길이', type: 'number', placeholder: '30000', description: '마크다운 결과의 최대 글자 수입니다.', defaultValue: 30000 },
+      { key: 'maxTextLength', label: 'system_modules.firecrawl.fields.maxTextLength.label', type: 'number', placeholder: '30000', description: 'system_modules.firecrawl.fields.maxTextLength.description', defaultValue: 30000 },
     ],
   },
   'mcp-server-app': {
@@ -785,7 +785,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                 <div className="flex flex-col gap-1.5 mb-1">
                 {field.type === 'secret' ? (
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs sm:text-sm font-bold text-slate-700">{field.label}</label>
+                    <label className="text-xs sm:text-sm font-bold text-slate-700">{t(field.label)}</label>
                     {secretSaved[field.key] ? (
                       <div className="flex items-center gap-2">
                         <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex-1">
@@ -817,12 +817,12 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                       </div>
                     )}
                     {field.description && (
-                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{field.description}</p>
+                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{t(field.description)}</p>
                     )}
                   </div>
                 ) : field.type === 'oauth' ? (
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs sm:text-sm font-bold text-slate-700">{field.label}</label>
+                    <label className="text-xs sm:text-sm font-bold text-slate-700">{t(field.label)}</label>
                     <div className="flex items-center gap-2">
                       {oauthStatus[field.key] ? (
                         <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex-1">
@@ -841,42 +841,42 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                       </button>
                     </div>
                     {field.description && (
-                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{field.description}</p>
+                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{t(field.description)}</p>
                     )}
                   </div>
                 ) : field.type === 'verifications' ? (
                   <VerificationsField
-                    label={field.label}
-                    description={field.description}
+                    label={t(field.label)}
+                    description={t(field.description)}
                     value={Array.isArray(settings[field.key]) ? settings[field.key] : []}
                     onChange={(v) => handleChange(field.key, v)}
                   />
                 ) : field.type === 'color-presets' ? (
                   <ColorPresetField
-                    label={field.label}
-                    description={field.description}
+                    label={t(field.label)}
+                    description={t(field.description)}
                     value={settings[field.key] ?? field.defaultValue ?? 'slate-pro'}
                     onChange={(v) => handleChange(field.key, v)}
                   />
                 ) : field.type === 'color-overrides' ? (
                   <ColorOverridesField
-                    label={field.label}
-                    description={field.description}
+                    label={t(field.label)}
+                    description={t(field.description)}
                     settings={settings}
                     presetKey={settings.themePreset ?? 'slate-pro'}
                     onChange={(k, v) => handleChange(k, v)}
                   />
                 ) : field.type === 'widget-list' ? (
                   <WidgetListField
-                    label={field.label}
-                    description={field.description}
+                    label={t(field.label)}
+                    description={t(field.description)}
                     area={(field.widgetArea ?? 'sidebar') as 'header' | 'sidebar' | 'footer'}
                     value={Array.isArray(settings[field.key]) ? settings[field.key] : undefined}
                     onChange={(next) => handleChange(field.key, next)}
                   />
                 ) : field.type === 'select' ? (
                   <>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700">{field.label}</label>
+                    <label className="text-xs sm:text-sm font-bold text-slate-700">{t(field.label)}</label>
                     <select
                       value={settings[field.key] ?? field.defaultValue ?? ''}
                       onChange={e => handleChange(field.key, e.target.value)}
@@ -887,15 +887,15 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                       ))}
                     </select>
                     {field.description && (
-                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{field.description}</p>
+                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{t(field.description)}</p>
                     )}
                   </>
                 ) : field.type === 'toggle' ? (
                   <label className="flex items-center justify-between cursor-pointer">
                     <div>
-                      <span className="text-xs sm:text-sm font-bold text-slate-700">{field.label}</span>
+                      <span className="text-xs sm:text-sm font-bold text-slate-700">{t(field.label)}</span>
                       {field.description && (
-                        <p className="text-[10px] sm:text-xs text-slate-400 font-medium mt-0.5">{field.description}</p>
+                        <p className="text-[10px] sm:text-xs text-slate-400 font-medium mt-0.5">{t(field.description)}</p>
                       )}
                     </div>
                     <button
@@ -907,7 +907,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                   </label>
                 ) : (
                   <>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700">{field.label}</label>
+                    <label className="text-xs sm:text-sm font-bold text-slate-700">{t(field.label)}</label>
                     {field.type === 'textarea' ? (
                       <textarea
                         value={settings[field.key] ?? ''}
@@ -926,7 +926,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                       />
                     )}
                     {field.description && (
-                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{field.description}</p>
+                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{t(field.description)}</p>
                     )}
                   </>
                 )}
