@@ -414,29 +414,35 @@ export function Sidebar({
 
   /* ── VSCode activity bar — 항상 표시 (PC: inline, 모바일: slide-in 안). ── */
   const renderActivityBar = () => (
-    <div className="w-12 bg-white flex flex-col items-center py-3 gap-2 shrink-0 border-r border-slate-200 z-20">
+    // z-50 — 펼친 panel(z-40) 위로. 활동 바 항상 클릭 가능 + 다른 탭 즉시 전환.
+    <div className="w-12 bg-white flex flex-col items-center py-3 gap-2 shrink-0 border-r border-slate-200 relative z-50">
       {TABS.map(t => {
         const isActive = tab === t.id && !collapsed;
         const Icon = t.Icon;
-        return (
+        const button = (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => toggleTab(t.id)}
+            className={`relative p-2 rounded-lg transition-colors ${
+              isActive
+                ? 'bg-slate-800 text-white'
+                : 'text-slate-500 hover:bg-slate-200 hover:text-slate-800'
+            }`}
+            aria-label={t.tooltip}
+          >
+            <Icon size={18} className="w-[18px] h-[18px] shrink-0" />
+            {t.id === 'chats' && conversations.length > 0 && !isActive && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 px-1 bg-blue-500 text-white text-[8px] font-black rounded-full flex items-center justify-center">
+                {conversations.length > 9 ? '9+' : conversations.length}
+              </span>
+            )}
+          </button>
+        );
+        // 활성 탭(panel 펼친 상태)은 tooltip 박지 마라 — 헤더에 라벨 박힘 + 펼침 상태에서 hover 시 잔영 회피.
+        return isActive ? button : (
           <Tooltip key={t.id} label={t.tooltip} side="right">
-            <button
-              type="button"
-              onClick={() => toggleTab(t.id)}
-              className={`relative p-2 rounded-lg transition-colors ${
-                isActive
-                  ? 'bg-slate-800 text-white'
-                  : 'text-slate-500 hover:bg-slate-200 hover:text-slate-800'
-              }`}
-              aria-label={t.tooltip}
-            >
-              <Icon size={18} />
-              {t.id === 'chats' && conversations.length > 0 && !isActive && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 px-1 bg-blue-500 text-white text-[8px] font-black rounded-full flex items-center justify-center">
-                  {conversations.length > 9 ? '9+' : conversations.length}
-                </span>
-              )}
-            </button>
+            {button}
           </Tooltip>
         );
       })}
@@ -469,8 +475,9 @@ export function Sidebar({
   /* ── Panel 헤더 — 활성 탭 아이콘 + 타이틀 + 접기 (PC 한정). ── */
   const renderPanelHeader = () => (
     <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-200/80 shrink-0">
-      <ActiveIcon size={15} className="text-slate-700 shrink-0" />
-      <span className="text-sm font-semibold text-slate-800 truncate flex-1">{activeTab.label}</span>
+      {/* width/height fixed — svg path 따라 폭 변동 + 옆 텍스트 layout shift (떨림) 방지 */}
+      <ActiveIcon size={15} className="w-[15px] h-[15px] text-slate-700 shrink-0" />
+      <span className="text-sm font-semibold text-slate-800 truncate flex-1 antialiased">{activeTab.label}</span>
       {!isMobile && (
         <Tooltip label="패널 접기">
           <button
@@ -1078,22 +1085,15 @@ export function Sidebar({
     );
   }
 
-  /* ── PC: activity bar inline + panel inline (collapsed=false 시 panel 등장). ── */
+  /* ── PC: activity bar inline + panel fixed (backdrop 박지 마라 — 활동 바 항상 동작). ── */
   return (
     <>
       {renderActivityBar()}
       {!collapsed && (
-        <>
-          {/* backdrop — 펼침 시 대화 영역 dim */}
-          <div
-            className="fixed top-12 inset-x-0 bottom-0 bg-black/30 z-30 touch-none"
-            onClick={closeSidebar}
-          />
-          <div className="fixed top-12 bottom-0 left-12 z-40 w-72 bg-white flex flex-col shrink-0 overflow-hidden border-r border-slate-200 shadow-lg">
-            {renderPanelHeader()}
-            {panelBody}
-          </div>
-        </>
+        <div className="fixed top-12 bottom-0 left-12 z-40 w-72 bg-white flex flex-col shrink-0 overflow-hidden border-r border-slate-200 shadow-lg">
+          {renderPanelHeader()}
+          {panelBody}
+        </div>
       )}
       {externalModals}
     </>
