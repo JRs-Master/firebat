@@ -57,7 +57,33 @@ const TEMP_TOOL_TURN: f64 = 0.2;
 /// 최종 응답 turn — 자연스럽고 풍부한 표현. 옛 TS 1:1.
 const TEMP_FINAL_TURN: f64 = 0.85;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// 단순 인사·짧은 잡담 판별 — fast path (도구 list 채우지 않고 ask_text 위임).
+///
+/// 판별 기준 (옛 TS isSimpleChat 1:1):
+/// - 길이 ≤ 50자
+/// - 작업 키워드 미포함 (저장 / 삭제 / 생성 / 만들 / 그려 / 발송 / 예약 / 발행 / 조회 / 분석
+///   / 작성 / 검색 / 찾 / save / delete / create / generate / scrape / fetch)
+/// - 코드/경로 패턴 미포함 (`/`, `\`, ```, `function`, `import`)
+fn is_simple_chat(prompt: &str) -> bool {
+    let p = prompt.trim();
+    if p.chars().count() > 50 {
+        return false;
+    }
+    const TASK_KEYWORDS: &[&str] = &[
+        "저장", "삭제", "생성", "만들", "그려", "발송", "예약", "발행", "조회", "분석",
+        "작성", "쓰", "전송", "보내", "검색", "찾",
+        "save", "delete", "create", "generate", "scrape", "fetch", "send", "schedule",
+    ];
+    if TASK_KEYWORDS.iter().any(|k| p.contains(k)) {
+        return false;
+    }
+    if p.contains('/') || p.contains('\\') || p.contains("```") || p.contains("function") || p.contains("import") {
+        return false;
+    }
+    true
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AiResponse {
     pub reply: String,
@@ -310,6 +336,18 @@ impl AiManager {
         opts: &LlmCallOpts,
         ai_opts: &AiRequestOpts,
     ) -> InfraResult<AiResponse> {
+        // Fast path — 단순 인사·짧은 잡담은 도구 list 채우지 않고 ask_text 위임.
+        // 옛 TS isSimpleChat 1:1 — 토큰 절감 + CLI handler 의 도구 호출 stub 회피.
+        if tools.is_empty() && is_simple_chat(prompt) {
+            let resp = self.llm.ask_text(prompt, opts).await?;
+            return Ok(AiResponse {
+                reply: resp.text,
+                model_id: Some(resp.model_id),
+                cost_usd: resp.cost_usd,
+                ..Default::default()
+            });
+        }
+
         // 도구 list 미전달 시 ToolManager 등록 도구 자동 사용 (옛 TS buildToolDefinitions 동등).
         let auto_tools: Vec<ToolDefinition>;
         let effective_tools: &[ToolDefinition] = if tools.is_empty() {
