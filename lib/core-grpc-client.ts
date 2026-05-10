@@ -99,7 +99,16 @@ export async function pingCore(target?: string): Promise<{ version: string; read
  */
 export async function invokeCore<T = unknown>(method: string, args?: unknown): Promise<T> {
   const { service, rpc } = resolveMethodToRpc(method);
-  const request = { raw: JSON.stringify(args ?? null) };  // JsonArgs schema
+  // Request 빌드 — Rust handler 의 input message type 별 자동 분기:
+  //  - JsonArgs ({raw: string})    — object / array 인자 (대부분 다인자 method)
+  //  - StringRequest ({value: string}) — 단일 string 인자 (예: listConversations('admin'))
+  //  - NumberRequest ({value: number}) — 단일 number 인자
+  //  - BoolRequest   ({value: bool})   — 단일 bool 인자
+  //  - Empty ({})                   — 인자 없음
+  // proto-loader 가 input message type 의 field 만 인식 → JsonArgs 로 모두 보내면 StringRequest
+  // 받는 RPC 가 raw field 무시하고 value=default("") 호출 → silent fail (예: listConversations
+  // 가 빈 배열 반환). type 일치가 정공.
+  const request = buildRpcRequest(args);
   let response: any;
   try {
     response = await callGrpcMethod(service, rpc, request);
@@ -117,6 +126,17 @@ export async function invokeCore<T = unknown>(method: string, args?: unknown): P
     return JSON.parse(response.rawJson) as T;
   }
   return response as T;
+}
+
+/** args type → Rust input message type 별 request 자동 매핑.
+ *  JsonArgs / StringRequest / NumberRequest / BoolRequest / Empty 자동 분기. */
+function buildRpcRequest(args: unknown): unknown {
+  if (args === undefined || args === null) return {};
+  if (typeof args === 'string') return { value: args };
+  if (typeof args === 'number') return { value: args };
+  if (typeof args === 'boolean') return { value: args };
+  // object / array → JsonArgs
+  return { raw: JSON.stringify(args) };
 }
 
 /**
