@@ -172,7 +172,7 @@ impl GeminiCliHandler {
         } else {
             Self::build_prompt_with_history(prompt, &opts.history)
         };
-        // system_prompt 는 GEMINI.md 로 이동 — with_tools 면 prompt 에 안 박음. text 모드 (no GEMINI.md) 는 inline.
+        // system_prompt 는 GEMINI.md 로 이동 — with_tools 면 prompt 에 미포함. text 모드 (no GEMINI.md) 는 inline.
         let base_final_prompt = if with_tools {
             prompt_body
         } else {
@@ -499,8 +499,8 @@ impl FormatHandler for GeminiCliHandler {
         prompt: &str,
         opts: &LlmCallOpts,
     ) -> InfraResult<LlmTextResponse> {
-        // text 모드 — workspace 박지 X (system_prompt 는 inline). 단 첨부 이미지가 있으면 workspace 박힌 임시 dir 필요.
-        // 옛 TS 도 text 모드에서 GEMINI.md 안 박음 → systemPrompt 가 prompt 에 inline. 단 workspace dir 자체는 항상 보장.
+        // text 모드 — workspace 사용 X (system_prompt 는 inline). 단 첨부 이미지가 있으면 workspace 안 임시 dir 필요.
+        // 옛 TS 도 text 모드에서 GEMINI.md 미생성 → systemPrompt 가 prompt 에 inline. 단 workspace dir 자체는 항상 보장.
         let workspace = Self::workspace_dir();
         let _ = std::fs::create_dir_all(&workspace);
         let outcome = Self::run_cli(&config.endpoint, prompt, opts, false, false).await?;

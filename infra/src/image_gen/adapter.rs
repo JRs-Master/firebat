@@ -252,9 +252,9 @@ mod tests {
     #[test]
     fn resolve_config_prefix_match() {
         let (adapter, _tmp) = make_adapter("gpt-image-1.5");
-        // "gpt-image-2" 같은 정확 ID 박은 게 prefix 매칭 박은 게 — 새 list 박은 게
-        // 두 OpenAI 모델 (gpt-image-1.5 / gpt-image-2) 박혀 prefix 박은 게 ambiguity.
-        // 정확 ID 박힌 게 우선 매칭 (옛 TS 동일 패턴)
+        // "gpt-image-2" 같은 정확 ID 와 prefix 매칭 — 새 list 추가 시
+        // 두 OpenAI 모델 (gpt-image-1.5 / gpt-image-2) 가 prefix 매칭에서 ambiguity 발생.
+        // 정확 ID 가 우선 매칭 (옛 TS 동일 패턴)
         let cfg = adapter.resolve_config(Some("gpt-image-2")).unwrap();
         assert_eq!(cfg.id, "gpt-image-2");
     }

@@ -40,7 +40,7 @@ pub type CostStatsSummary = LlmCostStatsSummary;
 
 /// frontend 호환 — 옛 TS API field 이름 매칭 (`dailyUsd` / `monthlyUsd` 등 짧은 이름).
 /// `daily_used_usd` 같은 긴 이름 → `dailyUsd` 매핑. frontend `/api/llm/budget` 의
-/// `check.dailyUsd` 호출 박힌 게 그대로 동작.
+/// `check.dailyUsd` 호출이 그대로 동작.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BudgetCheckResult {

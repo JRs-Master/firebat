@@ -386,7 +386,7 @@ pub struct LlmCostStatsRecord {
 }
 
 /// LLM 비용 통계 결과 — 옛 TS getStats 의 return 1:1.
-/// frontend camelCase 호환 — serde rename_all 박혀 응답 자동 totalInputTokens 등.
+/// frontend camelCase 호환 — serde rename_all 적용으로 응답 자동 totalInputTokens 등.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmCostStatsSummary {
@@ -394,8 +394,8 @@ pub struct LlmCostStatsSummary {
     pub total_output_tokens: i64,
     pub total_cached_tokens: i64,
     pub total_cost_usd: f64,
-    /// 옛 frontend `stats.totalCalls` 박힌 호환 — `call_count` 의 camelCase 매핑은 callCount
-    /// 라 옛 totalCalls 와 mismatch. serde rename 박아 응답 totalCalls 박힘.
+    /// 옛 frontend `stats.totalCalls` 호환 — `call_count` 의 camelCase 매핑은 callCount
+    /// 라 옛 totalCalls 와 mismatch. serde rename 으로 응답 totalCalls 통일.
     #[serde(rename = "totalCalls")]
     pub call_count: i64,
     /// per-day / per-model 누적 row (frontend 일별·모델별 표·차트용). default 빈 배열.
@@ -979,7 +979,7 @@ pub struct LlmCallOpts {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<ChatMessage>,
     /// MCP bearer token (CLI 모드 전용) — 옛 TS `ctx.resolveMcpConfig().token` 1:1.
-    /// CLI 어댑터가 mcp 설정 파일 (Claude `--mcp-config`, Codex `CODEX_HOME`, Gemini `workspace/.gemini/settings.json`) 박을 때 사용.
+    /// CLI 어댑터가 mcp 설정 파일 (Claude `--mcp-config`, Codex `CODEX_HOME`, Gemini `workspace/.gemini/settings.json`) 생성 시 사용.
     #[serde(rename = "mcpToken", default, skip_serializing_if = "Option::is_none")]
     pub mcp_token: Option<String>,
     /// MCP 메인 프로세스 base URL (e.g. `http://127.0.0.1:3000`). CLI 모드 전용.
@@ -991,9 +991,9 @@ pub struct LlmCallOpts {
     #[serde(rename = "cliModel", default, skip_serializing_if = "Option::is_none")]
     pub cli_model: Option<String>,
     /// Anthropic prompt cache 토글 — Vault `system:llm:anthropic-cache` 값.
-    /// ON 시 anthropic 어댑터가 system block + 마지막 tool 에 `cache_control: ephemeral` 마커 박음.
+    /// ON 시 anthropic 어댑터가 system block + 마지막 tool 에 `cache_control: ephemeral` 마커 추가.
     /// 옛 TS `ctx.resolveAnthropicCache()` 1:1. ConfigDrivenAdapter 가 anthropic-messages format 호출 시
-    /// Vault 조회 후 자동 박음. 호출자 (AiManager) 직접 박을 필요 없음.
+    /// Vault 자동 조회. 호출자 (AiManager) 직접 조회 불필요.
     #[serde(rename = "anthropicCacheEnabled", default, skip_serializing_if = "Option::is_none")]
     pub anthropic_cache_enabled: Option<bool>,
 }

@@ -119,7 +119,7 @@ impl FormatHandler for AnthropicMessagesHandler {
             "messages": [{"role": "user", "content": prompt}],
         });
         // system block — cache 토글 ON 시 `[{type:'text', text, cache_control:{type:'ephemeral'}}]`
-        // 형식으로 박음. OFF 시 단순 string. 옛 TS anthropic-messages.ts 1:1.
+        // 형식 사용. OFF 시 단순 string. 옛 TS anthropic-messages.ts 1:1.
         if let Some(sp) = opts.system_prompt.as_deref() {
             if !sp.is_empty() {
                 if cache_enabled {
@@ -183,7 +183,7 @@ impl FormatHandler for AnthropicMessagesHandler {
         let cache_enabled = opts.anthropic_cache_enabled.unwrap_or(false);
 
         // 도구 정의 → Anthropic schema { name, description, input_schema }.
-        // cache 토글 ON 시 마지막 tool 에 `cache_control: { type:'ephemeral' }` 마커 박음.
+        // cache 토글 ON 시 마지막 tool 에 `cache_control: { type:'ephemeral' }` 마커 추가.
         // 옛 TS anthropic-messages.ts:116 1:1 (`cacheEnabled && i === tools.length - 1`).
         let tools_len = tools.len();
         let tool_defs: Vec<serde_json::Value> = tools

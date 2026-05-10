@@ -74,7 +74,7 @@ pub fn compute_image_cost(config: &ImageGenModelConfig, quality: Option<&str>) -
 
 /// Builtin carousel — 빌드 타임 설정. 사용자 추가 모델은 디렉토리 로드로.
 /// 2026-05-10: gpt-image-1 종료 → gpt-image-1.5 / gpt-image-2 신설.
-/// 2026-05-10: gemini-3-pro-image-preview (Nano Banana Pro) 추가 — Google 공식 docs 박힘.
+/// 2026-05-10: gemini-3-pro-image-preview (Nano Banana Pro) 추가 — Google 공식 docs 기반.
 pub fn builtin_configs() -> Vec<ImageGenModelConfig> {
     const GPT_IMAGE_1_5: &str = include_str!("configs/gpt-image-1-5.json");
     const GPT_IMAGE_2: &str = include_str!("configs/gpt-image-2.json");

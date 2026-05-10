@@ -224,11 +224,11 @@ impl ILlmPort for ConfigDrivenAdapter {
 }
 
 impl ConfigDrivenAdapter {
-    /// format 별 옵션 enrichment — 호출자 (AiManager) 가 직접 Vault 조회 안 박아도 어댑터가 자동 채움.
+    /// format 별 옵션 enrichment — 호출자 (AiManager) 가 직접 Vault 조회 안 해도 어댑터가 자동 채움.
     /// 옛 TS `FormatHandlerContext.resolveXxx()` 패턴 1:1 — ctx 없이 어댑터 안에서 처리.
     fn enrich_opts_for_format(&self, config: &LlmModelConfig, opts: &LlmCallOpts) -> LlmCallOpts {
         let mut enriched = opts.clone();
-        // Anthropic prompt cache 토글 — system block + 마지막 tool 에 cache_control 마커 자동 박음.
+        // Anthropic prompt cache 토글 — system block + 마지막 tool 에 cache_control 마커 자동 추가.
         // 모델이 prompt_cache feature 활성된 anthropic-messages 일 때만 Vault 조회.
         if config.format == "anthropic-messages"
             && config.features.prompt_cache

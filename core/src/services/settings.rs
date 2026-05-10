@@ -208,7 +208,7 @@ impl SettingsService for SettingsServiceImpl {
     }
 
     /// 전체 AI 모델 carousel — frontend cascade UI single source.
-    /// frontend types.ts AI_MODELS 박힌 게 fallback (Rust 호출 fail 시).
+    /// frontend types.ts AI_MODELS 가 fallback (Rust 호출 fail 시 사용).
     async fn get_available_ai_models(
         &self,
         _req: Request<Empty>,

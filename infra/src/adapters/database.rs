@@ -966,8 +966,8 @@ impl IDatabasePort for SqliteDatabaseAdapter {
             where_clause
         );
 
-        // ts = ms 단위 (cost.rs Self::now_ms()). SQLite date() 는 sec 박혀 ts/1000 박힘.
-        // 'localtime' modifier 박혀 OS timezone 적용 (systemd FIREBAT_TIMEZONE env 박힘 동기).
+        // ts = ms 단위 (cost.rs Self::now_ms()). SQLite date() 는 sec 단위라 ts/1000 으로 변환.
+        // 'localtime' modifier 사용 → OS timezone 적용 (systemd FIREBAT_TIMEZONE env 와 동기).
         let records_sql = format!(
             "SELECT \
                 date(ts/1000, 'unixepoch', 'localtime') AS date, \

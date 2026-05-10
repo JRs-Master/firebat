@@ -336,7 +336,7 @@ impl AiManager {
         opts: &LlmCallOpts,
         ai_opts: &AiRequestOpts,
     ) -> InfraResult<AiResponse> {
-        // Cost budget guard — fast path 보다 먼저. fast path 도 LLM 호출 박음 → 한도 초과 시 차단.
+        // Cost budget guard — fast path 보다 먼저. fast path 도 LLM 호출 발생 → 한도 초과 시 차단.
         if let Some(cost) = &self.cost {
             let check = cost.check_budget();
             if !check.within_budget {
@@ -435,13 +435,13 @@ impl AiManager {
         let mut executed_actions: Vec<serde_json::Value> = Vec::new();
         let mut blocks: Vec<serde_json::Value> = Vec::new();
         let mut pending_actions: Vec<serde_json::Value> = Vec::new();
-        // CLI 자체 MCP loop 가 호출한 suggest / propose_plan 결과 누적 — 함수 끝 AiResponse.suggestions 박힘.
+        // CLI 자체 MCP loop 가 호출한 suggest / propose_plan 결과 누적 — 함수 끝 AiResponse.suggestions 에 포함.
         let mut cli_suggestions: Vec<serde_json::Value> = Vec::new();
         let mut last_text = String::new();
         let mut last_model_id = self.llm.get_model_id();
         let mut total_cost: f64 = 0.0;
         // 학습 로그 + 다음 turn Gemini thought_signature echo 용 — 옛 TS `toolExchanges` 1:1.
-        // ToolExchangeEntry 에 tool_calls + tool_results + raw_model_parts 동시 박힘 →
+        // ToolExchangeEntry 에 tool_calls + tool_results + raw_model_parts 동시 보존 →
         // 다음 turn `opts.tool_exchanges` 로 어댑터에 echo (Gemini thought_signature 보존 필수).
         let mut tool_exchanges: Vec<crate::ports::ToolExchangeEntry> = Vec::new();
         // cron agent 모드는 approval gate 우회 (UI 없는 server-side 자율 발행).
@@ -579,7 +579,7 @@ impl AiManager {
             }
 
             // CLI 자체 MCP loop 결과 흡수 — 어댑터 (cli_claude_code / cli_codex / cli_gemini) 가
-            // 자체 MCP 호출 → render_* / pending / suggestions / used_tools 추출해서 LlmToolResponse 에 박음.
+            // 자체 MCP 호출 → render_* / pending / suggestions / used_tools 추출해서 LlmToolResponse 에 포함.
             // AiManager 는 그대로 outcome 에 extend (옛 TS `internallyUsedTools / renderedBlocks /
             // pendingActions / suggestions` 흡수 1:1).
             if !response.rendered_blocks.is_empty() {

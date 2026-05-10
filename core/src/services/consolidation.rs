@@ -63,8 +63,8 @@ impl ConsolidationService for ConsolidationServiceImpl {
 
     /// 두 entry point union — 옛 TS 의 `Core.consolidateConversation({owner, convId})` (LLM 자동 추출)
     /// + `ConsolidationManager.saveExtracted({extracted})` (미리 추출된 save 전용) 를 한 RPC 에 흡수.
-    /// frontend "이 대화 정리" 버튼은 `{conversationId, owner}` 만 박음 → LLM 자동 추출 분기.
-    /// AI 도구 (consolidate_conversation) 도 같은 분기. extracted 박힌 호출은 save 전용 분기.
+    /// frontend "이 대화 정리" 버튼은 `{conversationId, owner}` 만 전달 → LLM 자동 추출 분기.
+    /// AI 도구 (consolidate_conversation) 도 같은 분기. extracted 가 포함된 호출은 save 전용 분기.
     async fn consolidate(
         &self,
         req: Request<JsonArgs>,
@@ -92,7 +92,7 @@ impl ConsolidationService for ConsolidationServiceImpl {
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("consolidate args: {e}")))?;
 
-        // 분기 1: conversationId 박힌 자동 추출 (LLM 호출) — frontend "이 대화 정리" 버튼 + AI 도구
+        // 분기 1: conversationId 가 포함된 자동 추출 (LLM 호출) — frontend "이 대화 정리" 버튼 + AI 도구
         if let Some(conv_id) = args.conversation_id {
             let owner = args.owner.unwrap_or_else(|| "admin".to_string());
             return match self
@@ -104,7 +104,7 @@ impl ConsolidationService for ConsolidationServiceImpl {
                 Err(e) => Err(TonicStatus::internal(e)),
             };
         }
-        // 분기 2: extracted 박힌 save 전용
+        // 분기 2: extracted 가 포함된 save 전용
         let Some(extracted) = args.extracted else {
             return Err(TonicStatus::invalid_argument(
                 "consolidate args: conversationId 또는 extracted 필요",

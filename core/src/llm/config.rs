@@ -103,8 +103,8 @@ impl LlmModelConfig {
     }
 }
 
-// ─── Helper functions — 모델 family 박힌 게 동일 endpoint / format / features 박혀
-//     factory 패턴 박혀 builtin_models 박힌 게 단순 list. 새 모델 추가 = 한 줄.
+// ─── Helper functions — 모델 family 가 동일 endpoint / format / features 공유
+//     factory 패턴으로 builtin_models 는 단순 list. 새 모델 추가 = 한 줄.
 
 fn anthropic_api(id: &str, name: &str, input_price: f64, output_price: f64) -> LlmModelConfig {
     LlmModelConfig {
@@ -238,8 +238,8 @@ fn cli_codex(id: &str, name: &str) -> LlmModelConfig {
     }
 }
 
-/// 빌트인 LLM 모델 carousel — frontend types.ts AI_MODELS 박힌 게 1:1 매칭.
-/// 정렬: powerful → cheap. CLI 의 Auto 박힌 게 first (default).
+/// 빌트인 LLM 모델 carousel — frontend types.ts AI_MODELS 와 1:1 매칭.
+/// 정렬: powerful → cheap. CLI 의 Auto 가 first (default).
 /// 새 모델 추가 = 한 줄 helper call.
 pub fn builtin_models() -> Vec<LlmModelConfig> {
     vec![
@@ -309,7 +309,7 @@ mod tests {
     fn builtin_carousel_has_all_formats() {
         let models = builtin_models();
         // 25 모델 — Anthropic 3 + Google 3 + Vertex 3 + OpenAI 4 +
-        //          CLI Claude 4 + CLI Gemini 3 + CLI Codex 6 = 26 (실제 25, vertex flash-lite 박힘 무관)
+        //          CLI Claude 4 + CLI Gemini 3 + CLI Codex 6 = 26 (실제 25, vertex flash-lite 무관)
         assert!(models.len() >= 25, "expected >=25 models, got {}", models.len());
         let formats: Vec<&str> = models.iter().map(|m| m.format.as_str()).collect();
         assert!(formats.contains(&"anthropic-messages"));

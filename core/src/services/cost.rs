@@ -1,7 +1,7 @@
 //! gRPC CostService impl — CostManager wrapping.
 //!
 //! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
-//! From impl 박혀 core port struct ↔ proto generated struct 변환.
+//! From impl 정의 — core port struct ↔ proto generated struct 변환.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};

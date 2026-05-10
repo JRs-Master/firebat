@@ -460,7 +460,7 @@ struct CliRunOutcome {
     suggestions: Vec<serde_json::Value>,
 }
 
-// codex 의 mcp_tool_call 은 item.completed 한 이벤트에 server/tool/arguments/result 다 박혀 있어
+// codex 의 mcp_tool_call 은 item.completed 한 이벤트에 server/tool/arguments/result 모두 포함되어
 // pending → completed 매칭 불필요. Claude/Gemini 와 다른 점.
 
 #[async_trait::async_trait]

@@ -120,7 +120,7 @@ impl AuthManager {
     /// 중 3 이상. 컴플라이언스·NIST 절충 패턴.
     ///
     /// 추가 규칙:
-    ///   - `forbidden_id` 박혀있으면 비번이 그것과 동일 (case-insensitive) 시 거부.
+    ///   - `forbidden_id` 가 설정되어 있으면 비번이 그것과 동일 (case-insensitive) 시 거부.
     ///
     /// frontend SetupWizard 의 `isPasswordValid` / `passwordStrength` 시각화 함수가
     /// 같은 정책을 미러링 (사용자가 입력 중 strength meter 노출). 정책 변경 시 양쪽 sync 필수.

@@ -27,10 +27,10 @@ impl LocalStorageAdapter {
         }
     }
 
-    /// path traversal 차단 — lexical normalize (canonicalize 안 박음 — symlink follow X).
+    /// path traversal 차단 — lexical normalize (canonicalize 미사용 — symlink follow X).
     /// 옛 broken: canonicalize() 가 symlink 자동 풀어 `/opt/firebat/system/modules → /opt/firebat-src/...`
-    /// 박혀 workspace zone 밖으로 판정 → 모든 sysmod reject. self-hosted deploy 에서 system/modules
-    /// 를 src symlink 로 박는 표준 패턴 broken.
+    /// 변환 → workspace zone 밖으로 판정 → 모든 sysmod reject. self-hosted deploy 에서 system/modules
+    /// 를 src symlink 로 사용하는 표준 패턴 broken.
     /// 새: rel_path 의 `..` segment 만 거부 + 절대 경로 거부. 옛 TS LocalStorageAdapter 의 path.resolve
     /// + isInsideZone 패턴 1:1.
     fn resolve_safe_path(&self, rel_path: &str) -> InfraResult<PathBuf> {
