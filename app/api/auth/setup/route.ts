@@ -34,30 +34,20 @@ export async function POST(req: NextRequest) {
 
   const { adminId, adminPassword, siteLang, timezone } = await req.json();
 
-  // 검증 — frontend 검증과 동일 정책 (server-side 재검증).
+  // ID 검증 — 빈 문자열 차단
   if (!adminId || typeof adminId !== 'string' || !adminId.trim()) {
     return NextResponse.json({ success: false, error: '관리자 ID를 입력해 주세요.' }, { status: 400 });
   }
-  // 8자 이상 + 4 categories 중 3 이상 — 컴플라이언스·NIST 절충 패턴
-  if (!adminPassword || typeof adminPassword !== 'string' || adminPassword.length < 8) {
+  if (!adminPassword || typeof adminPassword !== 'string') {
+    return NextResponse.json({ success: false, error: '비밀번호를 입력해 주세요.' }, { status: 400 });
+  }
+  // 비번 정책 검증 — Rust core.validatePasswordPolicy single source (8자 + 3 카테고리 + ID 동일 금지).
+  const policy = await core.validatePasswordPolicy(adminPassword, adminId.trim());
+  if (!policy?.ok) {
     return NextResponse.json(
-      { success: false, error: '비밀번호는 8자 이상이어야 합니다.' },
+      { success: false, error: policy?.error ?? '비밀번호 정책 위반' },
       { status: 400 },
     );
-  }
-  let categories = 0;
-  if (/[A-Z]/.test(adminPassword)) categories++;
-  if (/[a-z]/.test(adminPassword)) categories++;
-  if (/\d/.test(adminPassword)) categories++;
-  if (/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(adminPassword)) categories++;
-  if (categories < 3) {
-    return NextResponse.json(
-      { success: false, error: '비밀번호는 대문자·소문자·숫자·특수문자 중 3종류 이상을 포함해야 합니다.' },
-      { status: 400 },
-    );
-  }
-  if (adminPassword.toLowerCase() === adminId.trim().toLowerCase()) {
-    return NextResponse.json({ success: false, error: '비밀번호는 ID와 동일할 수 없습니다.' }, { status: 400 });
   }
   if (!siteLang || (siteLang !== 'ko' && siteLang !== 'en')) {
     return NextResponse.json({ success: false, error: '언어는 ko 또는 en 이어야 합니다.' }, { status: 400 });

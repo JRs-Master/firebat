@@ -91,20 +91,13 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: false, error: '변경할 ID 또는 비밀번호를 입력해주세요.' }, { status: 400 });
   }
 
-  // 새 비번 정책 검증 (8자 이상 + 4 categories 중 3 이상) — 위자드와 일관
+  // 비번 정책 검증 — Rust core.validatePasswordPolicy single source.
   if (newPassword?.trim()) {
     const pw = newPassword.trim();
-    if (pw.length < 8) {
-      return NextResponse.json({ success: false, error: '비밀번호는 8자 이상이어야 합니다.' }, { status: 400 });
-    }
-    let categories = 0;
-    if (/[A-Z]/.test(pw)) categories++;
-    if (/[a-z]/.test(pw)) categories++;
-    if (/\d/.test(pw)) categories++;
-    if (/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>/?]/.test(pw)) categories++;
-    if (categories < 3) {
+    const policy = await core.validatePasswordPolicy(pw);
+    if (!policy?.ok) {
       return NextResponse.json(
-        { success: false, error: '비밀번호는 대문자·소문자·숫자·특수문자 중 3종류 이상을 포함해야 합니다.' },
+        { success: false, error: policy?.error ?? '비밀번호 정책 위반' },
         { status: 400 },
       );
     }

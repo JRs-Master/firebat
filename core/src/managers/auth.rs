@@ -116,6 +116,50 @@ impl AuthManager {
         crate::utils::time::now_ms()
     }
 
+    /// 비밀번호 정책 단일 source — 8자 이상 + 4 카테고리 (대문자/소문자/숫자/특수)
+    /// 중 3 이상. 컴플라이언스·NIST 절충 패턴.
+    ///
+    /// 추가 규칙:
+    ///   - `forbidden_id` 박혀있으면 비번이 그것과 동일 (case-insensitive) 시 거부.
+    ///
+    /// frontend SetupWizard 의 `isPasswordValid` / `passwordStrength` 시각화 함수가
+    /// 같은 정책을 미러링 (사용자가 입력 중 strength meter 노출). 정책 변경 시 양쪽 sync 필수.
+    pub fn validate_password_policy(
+        password: &str,
+        forbidden_id: Option<&str>,
+    ) -> Result<(), String> {
+        if password.len() < 8 {
+            return Err("비밀번호는 8자 이상이어야 합니다.".to_string());
+        }
+        let mut categories = 0u8;
+        if password.chars().any(|c| c.is_ascii_uppercase()) {
+            categories += 1;
+        }
+        if password.chars().any(|c| c.is_ascii_lowercase()) {
+            categories += 1;
+        }
+        if password.chars().any(|c| c.is_ascii_digit()) {
+            categories += 1;
+        }
+        if password
+            .chars()
+            .any(|c| "!@#$%^&*()_+-=[]{};':\"\\|,.<>/?".contains(c))
+        {
+            categories += 1;
+        }
+        if categories < 3 {
+            return Err(
+                "비밀번호는 대문자·소문자·숫자·특수문자 중 3종류 이상을 포함해야 합니다.".to_string(),
+            );
+        }
+        if let Some(id) = forbidden_id {
+            if password.to_lowercase() == id.trim().to_lowercase() {
+                return Err("비밀번호는 ID와 동일할 수 없습니다.".to_string());
+            }
+        }
+        Ok(())
+    }
+
     /// `fbat_` + 32자 hex (16 byte random).
     fn generate_token(prefix: &str) -> String {
         let mut bytes = [0u8; 16];

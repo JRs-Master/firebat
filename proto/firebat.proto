@@ -498,6 +498,10 @@ service AuthService {
   // 평문 비번 검증 — argon2 hash 비교. SettingsModal 의 비번 변경 PATCH 가 사용
   // (login 부작용 — lock counter / 세션 발급 — 회피).
   rpc VerifyAdminPassword(StringRequest) returns (BoolRequest);
+  // 비번 정책 검증 — 8자 이상 + 4 categories 중 3 이상 + (옵션) ID 동일 금지.
+  // 입력: {password: string, id?: string}. 응답: Status (ok/error/error_code).
+  // SetupWizard / 비번 변경 PATCH / setup POST 모두 단일 source.
+  rpc ValidatePasswordPolicy(JsonArgs) returns (Status);
 }
 
 message ConversationSummaryPb {

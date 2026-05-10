@@ -243,6 +243,8 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   getAdminCredentials: { service: 'AuthService', rpc: 'GetAdminCredentials' },
   setAdminCredentials: { service: 'AuthService', rpc: 'SetAdminCredentials' },
   isAdminSetup: { service: 'AuthService', rpc: 'IsAdminSetup' },
+  verifyAdminPassword: { service: 'AuthService', rpc: 'VerifyAdminPassword' },
+  validatePasswordPolicy: { service: 'AuthService', rpc: 'ValidatePasswordPolicy' },
 
   // ── ConversationService (ConversationManager) ─────────────────
   listConversations: { service: 'ConversationService', rpc: 'List' },

@@ -213,6 +213,36 @@ impl AuthService for AuthServiceImpl {
         }))
     }
 
+    async fn validate_password_policy(
+        &self,
+        req: Request<JsonArgs>,
+    ) -> Result<Response<Status>, TonicStatus> {
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            password: String,
+            #[serde(default)]
+            id: Option<String>,
+        }
+        let args: Args = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("validate_password_policy: {e}")))?;
+        match crate::managers::auth::AuthManager::validate_password_policy(
+            &args.password,
+            args.id.as_deref(),
+        ) {
+            Ok(_) => Ok(Response::new(Status {
+                ok: true,
+                error: String::new(),
+                error_code: String::new(),
+            })),
+            Err(e) => Ok(Response::new(Status {
+                ok: false,
+                error: e,
+                error_code: "POLICY_VIOLATION".to_string(),
+            })),
+        }
+    }
+
     async fn set_admin_credentials(
         &self,
         req: Request<JsonArgs>,

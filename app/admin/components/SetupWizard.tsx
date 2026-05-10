@@ -41,7 +41,12 @@ function countCategories(pw: string): number {
   return c;
 }
 
-/** 8자 이상 + 4 categories 중 3 이상 — 컴플라이언스·NIST 절충 패턴. */
+/** 8자 이상 + 4 categories 중 3 이상 — 컴플라이언스·NIST 절충 패턴.
+ *
+ *  ⚠ Rust `core::managers::auth::AuthManager::validate_password_policy` 가
+ *  authoritative single source — 이 함수는 입력 중 strength meter 시각화 전용 미러.
+ *  실 검증은 server-side (`/api/auth/setup` POST + `/api/auth` PATCH) 가 RPC 호출.
+ *  정책 변경 시 양쪽 (Rust + 본 함수) 모두 sync 필수. */
 function isPasswordValid(pw: string): boolean {
   return pw.length >= 8 && countCategories(pw) >= 3;
 }

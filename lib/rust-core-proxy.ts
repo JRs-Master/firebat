@@ -141,6 +141,10 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
   setUserPrompt: (prompt: string) => ({ prompt }),
   setAiAssistantModel: (modelId: string) => ({ modelId }),
 
+  // ── 비번 정책 검증 (다인자) — id 옵셔널 (PATCH credentials 변경 시 X) ──
+  validatePasswordPolicy: (password: string, id?: string) =>
+    id !== undefined ? { password, id } : { password },
+
   // ── Pending tools / Plan store (다인자 매핑) ────────────────────────────
   createPending: (name: string, args: Record<string, unknown>, summary: string) => ({
     name,
