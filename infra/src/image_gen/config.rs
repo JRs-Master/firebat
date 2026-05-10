@@ -74,15 +74,23 @@ pub fn compute_image_cost(config: &ImageGenModelConfig, quality: Option<&str>) -
 
 /// Builtin carousel — 빌드 타임 설정. 사용자 추가 모델은 디렉토리 로드로.
 /// 2026-05-10: gpt-image-1 종료 → gpt-image-1.5 / gpt-image-2 신설.
+/// 2026-05-10: gemini-3-pro-image-preview (Nano Banana Pro) 추가 — Google 공식 docs 박힘.
 pub fn builtin_configs() -> Vec<ImageGenModelConfig> {
     const GPT_IMAGE_1_5: &str = include_str!("configs/gpt-image-1-5.json");
     const GPT_IMAGE_2: &str = include_str!("configs/gpt-image-2.json");
     const GEMINI_FLASH_IMAGE: &str = include_str!("configs/gemini-3-1-flash-image.json");
+    const GEMINI_PRO_IMAGE: &str = include_str!("configs/gemini-3-pro-image.json");
     const CLI_CODEX_IMAGE: &str = include_str!("configs/cli-codex-image.json");
-    [GPT_IMAGE_1_5, GPT_IMAGE_2, GEMINI_FLASH_IMAGE, CLI_CODEX_IMAGE]
-        .iter()
-        .filter_map(|raw| serde_json::from_str(raw).ok())
-        .collect()
+    [
+        GPT_IMAGE_1_5,
+        GPT_IMAGE_2,
+        GEMINI_FLASH_IMAGE,
+        GEMINI_PRO_IMAGE,
+        CLI_CODEX_IMAGE,
+    ]
+    .iter()
+    .filter_map(|raw| serde_json::from_str(raw).ok())
+    .collect()
 }
 
 /// 디렉토리에서 `*.json` 자동 로드 (사용자 추가 모델). 옛 TS `loadImageGenRegistry` 1:1.
@@ -129,13 +137,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn builtin_configs_load_four() {
+    fn builtin_configs_load_five() {
         let configs = builtin_configs();
-        assert_eq!(configs.len(), 4);
+        assert_eq!(configs.len(), 5);
         let ids: Vec<&str> = configs.iter().map(|c| c.id.as_str()).collect();
         assert!(ids.contains(&"gpt-image-1.5"));
         assert!(ids.contains(&"gpt-image-2"));
         assert!(ids.contains(&"gemini-3.1-flash-image-preview"));
+        assert!(ids.contains(&"gemini-3-pro-image-preview"));
         assert!(ids.contains(&"cli-codex-image"));
     }
 
@@ -175,7 +184,7 @@ mod tests {
     #[test]
     fn build_registry_without_user_dir() {
         let registry = build_registry(None);
-        assert_eq!(registry.len(), 4);
+        assert_eq!(registry.len(), 5);
         assert!(registry.contains_key("gpt-image-1.5"));
         assert!(registry.contains_key("gpt-image-2"));
     }
@@ -184,6 +193,6 @@ mod tests {
     fn build_registry_with_nonexistent_user_dir() {
         // 디렉토리 없음 → builtin 만 로드 (silent fail, 옛 TS 동등)
         let registry = build_registry(Some(Path::new("nonexistent_xyz_path")));
-        assert_eq!(registry.len(), 4);
+        assert_eq!(registry.len(), 5);
     }
 }

@@ -1,0 +1,17 @@
+{
+  "id": "gemini-3-pro-image-preview",
+  "displayName": "Gemini 3 Pro Image (Nano Banana Pro)",
+  "provider": "google",
+  "format": "gemini-native-image",
+  "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent",
+  "apiKeyVaultKey": "GEMINI_API_KEY",
+  "features": {
+    "multilingualText": true,
+    "conversationalEditing": true,
+    "characterConsistency": true,
+    "highResolution": true,
+    "sizes": ["auto"],
+    "qualities": ["standard"]
+  },
+  "pricing": { "perImage": 0.134 }
+}

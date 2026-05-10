@@ -196,14 +196,15 @@ mod tests {
     }
 
     #[test]
-    fn list_models_returns_four_builtin() {
+    fn list_models_returns_five_builtin() {
         let (adapter, _tmp) = make_adapter("gpt-image-1.5");
         let models = adapter.list_models();
-        assert_eq!(models.len(), 4);
+        assert_eq!(models.len(), 5);
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
         assert!(ids.contains(&"gpt-image-1.5"));
         assert!(ids.contains(&"gpt-image-2"));
         assert!(ids.contains(&"gemini-3.1-flash-image-preview"));
+        assert!(ids.contains(&"gemini-3-pro-image-preview"));
         assert!(ids.contains(&"cli-codex-image"));
     }
 
