@@ -61,16 +61,27 @@ impl ConsolidationService for ConsolidationServiceImpl {
         }
     }
 
-    /// 미리 추출된 JSON (entity / fact / event) 일괄 save.
-    /// AI Phase B-16+ 에서는 LLM 호출 후 같은 메서드 흐름으로 합류.
+    /// 두 entry point union — 옛 TS 의 `Core.consolidateConversation({owner, convId})` (LLM 자동 추출)
+    /// + `ConsolidationManager.saveExtracted({extracted})` (미리 추출된 save 전용) 를 한 RPC 에 흡수.
+    /// frontend "이 대화 정리" 버튼은 `{conversationId, owner}` 만 박음 → LLM 자동 추출 분기.
+    /// AI 도구 (consolidate_conversation) 도 같은 분기. extracted 박힌 호출은 save 전용 분기.
     async fn consolidate(
         &self,
         req: Request<JsonArgs>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
         let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
+        #[derive(serde::Deserialize, Default)]
         struct Args {
-            extracted: ExtractionResult,
+            /// 자동 추출 분기 — 사용자 "리콜 버튼" + AI 도구. 옛 TS Core.consolidateConversation 1:1.
+            #[serde(rename = "conversationId", default)]
+            conversation_id: Option<String>,
+            #[serde(default)]
+            owner: Option<String>,
+            #[serde(rename = "modelId", default)]
+            model_id: Option<String>,
+            /// 미리 추출 save 분기 — Phase B-16+ LLM 호출 후 같은 흐름으로 합류.
+            #[serde(default)]
+            extracted: Option<ExtractionResult>,
             #[serde(rename = "sourceConvId", default)]
             source_conv_id: Option<String>,
             #[serde(rename = "factDedupThreshold", default)]
@@ -80,10 +91,29 @@ impl ConsolidationService for ConsolidationServiceImpl {
         }
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("consolidate args: {e}")))?;
+
+        // 분기 1: conversationId 박힌 자동 추출 (LLM 호출) — frontend "이 대화 정리" 버튼 + AI 도구
+        if let Some(conv_id) = args.conversation_id {
+            let owner = args.owner.unwrap_or_else(|| "admin".to_string());
+            return match self
+                .manager
+                .consolidate_conversation(&owner, &conv_id, args.model_id.as_deref())
+                .await
+            {
+                Ok(outcome) => Ok(Response::new(raw_json(&outcome))),
+                Err(e) => Err(TonicStatus::internal(e)),
+            };
+        }
+        // 분기 2: extracted 박힌 save 전용
+        let Some(extracted) = args.extracted else {
+            return Err(TonicStatus::invalid_argument(
+                "consolidate args: conversationId 또는 extracted 필요",
+            ));
+        };
         match self
             .manager
             .save_extracted(
-                args.extracted,
+                extracted,
                 args.source_conv_id.as_deref(),
                 args.fact_dedup_threshold,
                 args.event_dedup_threshold,

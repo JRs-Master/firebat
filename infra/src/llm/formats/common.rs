@@ -7,14 +7,13 @@ use firebat_core::ports::LlmCallOpts;
 /// re-export 로 옛 호출부 호환.
 pub use firebat_core::utils::http_client::http_client;
 
-/// API 키 또는 명시 에러.
+/// API 키 또는 명시 에러. 사용자 친화 메시지 — 내부 Vault key 노출 X (사용자가 어디서 입력하는지 모름).
 pub fn require_api_key(config: &LlmModelConfig, api_key: Option<&str>) -> Result<String, String> {
     match api_key {
         Some(k) if !k.is_empty() => Ok(k.to_string()),
         _ => Err(format!(
-            "{} API 키 미설정 — Vault `{}` 박으세요",
-            config.id,
-            config.api_key_vault_key.as_deref().unwrap_or("(미정의)")
+            "{} API 키를 입력해주세요 (설정 → AI 탭 또는 API 키 탭).",
+            config.display_name
         )),
     }
 }
