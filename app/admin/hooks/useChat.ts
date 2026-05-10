@@ -699,10 +699,15 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       dispatch({ type: 'FINALIZE', id: systemId });
       abortRef.current = null;
       setLoading(false);
-      // 저장 시점 2: AI 응답 완료 직후 DB 반영 (최신 messages ref 로)
+      // 저장 시점 2: AI 응답 완료 직후 DB 반영.
+      // ⚠️ 직전 dispatch(FINALIZE) 는 React batched commit 이라 microtask 보다 늦게 적용될 수 있음.
+      // queueMicrotask 안에서 messagesRef.current 가 pre-FINALIZE 라 system 메시지가 아직 streaming:true →
+      // cleanMessages 필터링 → DB 에 user 만 박혀 AI 답변 영구 손실. (2026-05-11 진단)
+      // chatReducer 를 동기 호출해 finalized snapshot 을 만들어 race 차단.
       const convIdForSave2 = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
       if (convIdForSave2) {
-        queueMicrotask(() => saveToDbRef.current(convIdForSave2, messagesRef.current));
+        const finalizedMsgs = chatReducer(messagesRef.current, { type: 'FINALIZE', id: systemId });
+        saveToDbRef.current(convIdForSave2, finalizedMsgs);
       }
     }
   }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage, planMode, inputMode, setActiveConvId]);
