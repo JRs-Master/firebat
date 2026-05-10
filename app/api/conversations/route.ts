@@ -19,9 +19,21 @@ export async function GET(req: NextRequest) {
   const core = getCore();
   if (id) {
     const res = await core.getConversation('admin', id);
-    return res.success
-      ? NextResponse.json({ success: true, conversation: res.data })
-      : NextResponse.json({ success: false, error: res.error }, { status: 404 });
+    if (!res.success) {
+      return NextResponse.json({ success: false, error: res.error }, { status: 404 });
+    }
+    // Rust ConversationRecordPb 가 messages_json (string) 필드로 응답 — frontend 옛 형식
+    // (messages array) 으로 변환. messages 미존재 시 빈 배열.
+    const raw = res.data as Record<string, unknown> | undefined;
+    const messagesJson = (raw?.messages_json ?? raw?.messagesJson) as string | undefined;
+    let messages: unknown[] = [];
+    if (typeof messagesJson === 'string') {
+      try { messages = JSON.parse(messagesJson) as unknown[]; } catch { messages = []; }
+    }
+    return NextResponse.json({
+      success: true,
+      conversation: { ...(raw ?? {}), messages },
+    });
   }
   const res = await core.listConversations('admin');
   return res.success
