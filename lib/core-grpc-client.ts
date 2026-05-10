@@ -175,6 +175,13 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   getCmsSettings: { service: 'ModuleService', rpc: 'GetCmsSettings' },
   getKakaoMapJsKey: { service: 'ModuleService', rpc: 'GetKakaoMapJsKey' },
 
+  // ── AiService 의 Pending / Plan store (옛 TS lib/{pending-tools,plan-store}.ts 통합) ──
+  createPending: { service: 'AiService', rpc: 'CreatePending' },
+  getPending: { service: 'AiService', rpc: 'GetPending' },
+  consumePending: { service: 'AiService', rpc: 'ConsumePending' },
+  rejectPending: { service: 'AiService', rpc: 'RejectPending' },
+  storePlan: { service: 'AiService', rpc: 'StorePlan' },
+
   // ── ScheduleService (ScheduleManager) ─────────────────────────
   listCronJobs: { service: 'ScheduleService', rpc: 'ListCron' },
   scheduleTask: { service: 'ScheduleService', rpc: 'ScheduleCron' },

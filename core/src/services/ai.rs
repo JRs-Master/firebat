@@ -207,6 +207,83 @@ impl AiService for AiServiceImpl {
             error_code: String::new(),
         }))
     }
+
+    // ── Pending tools (옛 TS lib/pending-tools.ts 통합) ────────────────────
+    async fn create_pending(
+        &self,
+        req: Request<JsonArgs>,
+    ) -> Result<Response<StringRequest>, TonicStatus> {
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            name: String,
+            #[serde(default)]
+            args: serde_json::Value,
+            #[serde(default)]
+            summary: String,
+        }
+        let a: Args = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("create_pending args: {e}")))?;
+        let plan_id = crate::utils::pending_tools::create_pending(&a.name, a.args, &a.summary);
+        Ok(Response::new(StringRequest { value: plan_id }))
+    }
+
+    async fn get_pending(
+        &self,
+        req: Request<StringRequest>,
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let plan_id = req.into_inner().value;
+        let result = crate::utils::pending_tools::get_pending(&plan_id);
+        Ok(Response::new(raw_json(&result)))
+    }
+
+    async fn consume_pending(
+        &self,
+        req: Request<StringRequest>,
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let plan_id = req.into_inner().value;
+        let result = crate::utils::pending_tools::consume_pending(&plan_id);
+        Ok(Response::new(raw_json(&result)))
+    }
+
+    async fn reject_pending(
+        &self,
+        req: Request<StringRequest>,
+    ) -> Result<Response<BoolRequest>, TonicStatus> {
+        let plan_id = req.into_inner().value;
+        let had = crate::utils::pending_tools::reject_pending(&plan_id);
+        Ok(Response::new(BoolRequest { value: had }))
+    }
+
+    // ── Plan store (옛 TS lib/plan-store.ts 통합) ──────────────────────────
+    async fn store_plan(
+        &self,
+        req: Request<JsonArgs>,
+    ) -> Result<Response<Empty>, TonicStatus> {
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            #[serde(rename = "planId")]
+            plan_id: String,
+            title: String,
+            #[serde(default)]
+            steps: Vec<crate::utils::plan_store::PlanStep>,
+            #[serde(rename = "estimatedTime", default)]
+            estimated_time: Option<String>,
+            #[serde(default)]
+            risks: Option<Vec<String>>,
+        }
+        let a: Args = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("store_plan args: {e}")))?;
+        crate::utils::plan_store::store_plan(crate::utils::plan_store::PlanInsert {
+            plan_id: a.plan_id,
+            title: a.title,
+            steps: a.steps,
+            estimated_time: a.estimated_time,
+            risks: a.risks,
+        });
+        Ok(Response::new(Empty {}))
+    }
 }
 
 // Tests 이관 — `infra/tests/svc_ai_test.rs` (integration test).

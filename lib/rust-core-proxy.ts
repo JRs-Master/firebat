@@ -140,6 +140,15 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
   codeAssist: (params: unknown, opts?: unknown) => ({ params, opts }),
   setUserPrompt: (prompt: string) => ({ prompt }),
   setAiAssistantModel: (modelId: string) => ({ modelId }),
+
+  // ── Pending tools / Plan store (다인자 매핑) ────────────────────────────
+  createPending: (name: string, args: Record<string, unknown>, summary: string) => ({
+    name,
+    args,
+    summary,
+  }),
+  // getPending / consumePending / rejectPending — 단일 string (planId) 자동 매핑
+  storePlan: (plan: unknown) => plan, // 단일 객체 그대로 (planId / title / steps / ...)
 };
 
 /**
@@ -238,18 +247,26 @@ const WRAP_METHODS = new Set([
   'getJob', 'getJobStats',
 ]);
 
-/** Proto wrap envelope 자동 unwrap — BoolRequest / StringRequest / NumberRequest 가
- *  `{value: T}` 단일 필드 응답. frontend 가 raw T 박힘 받게 자동 변환. autoWrap 보다
- *  먼저 적용 (envelope unwrap → 그 후 옛 TS success/data wrap 결정).
- *  단일 필드 'value' 객체 만 unwrap — `{success, data}` 같은 multi-key 박힌 건 그대로. */
+/** Proto wrap envelope 자동 unwrap — typed message 의 단일 필드 응답을 raw value 로 변환.
+ *  frontend 가 옛 in-process Core 시절 직접 받던 형식 그대로 받게 일반화 unwrap.
+ *
+ *  대상 (단일 필드 message 모두 자동 인식 — proto 신규 추가 시 코드 수정 0):
+ *  - `{value: T}` — BoolRequest / StringRequest / NumberRequest (primitive scalar)
+ *  - `{<list>: [...]}` — ProjectListPb / PageListResponsePb / TagListPb 등 (typed list)
+ *
+ *  `{success, data}` 같은 multi-key 응답은 그대로 (옛 TS wrap 패턴 보존).
+ *  autoWrap 보다 먼저 적용. */
 function autoUnwrapProtoEnvelope(result: unknown): unknown {
   if (result === null || result === undefined) return result;
   if (typeof result !== 'object') return result;
   const r = result as Record<string, unknown>;
   const keys = Object.keys(r);
-  if (keys.length === 1 && keys[0] === 'value') {
-    return r.value;
-  }
+  if (keys.length !== 1) return result;
+  const onlyKey = keys[0];
+  // 'value' — primitive scalar wrapper (BoolRequest / StringRequest / NumberRequest)
+  if (onlyKey === 'value') return r.value;
+  // 단일 array field — typed list message (ProjectListPb / PageListResponsePb / ...)
+  if (Array.isArray(r[onlyKey])) return r[onlyKey];
   return result;
 }
 

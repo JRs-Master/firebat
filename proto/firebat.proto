@@ -79,6 +79,15 @@ service AiService {
   rpc SpawnSubAgent(JsonArgs) returns (RawJsonPb);
   rpc IsSubAgentEnabled(Empty) returns (BoolRequest);
   rpc SetSubAgentEnabled(BoolRequest) returns (Status);
+
+  // Pending tools — 승인 대기 도구 (옛 TS lib/pending-tools.ts 통합)
+  rpc CreatePending(JsonArgs) returns (StringRequest);   // {name,args,summary} → planId
+  rpc GetPending(StringRequest) returns (RawJsonPb);      // planId → PendingTool|null
+  rpc ConsumePending(StringRequest) returns (RawJsonPb);  // planId → PendingTool|null
+  rpc RejectPending(StringRequest) returns (BoolRequest); // planId → had
+
+  // Plan store — propose_plan steps (옛 TS lib/plan-store.ts 통합)
+  rpc StorePlan(JsonArgs) returns (Empty);                // {planId,title,steps,...}
 }
 
 // ──────────────────────────────────────────────────────────────────────────
