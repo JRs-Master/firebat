@@ -300,20 +300,23 @@ impl ConversationService for ConversationServiceImpl {
             owner: Option<String>,
             #[serde(rename = "sourceConvId", default)]
             source_conv_id: Option<String>,
-            #[serde(rename = "ttlMs")]
-            ttl_ms: i64,
+            /// 옛 TS Core.createShare 1:1 — `ttlMs` 미지정 시 24h default.
+            /// 호출자 (frontend share-helper.ts) 가 ttlMs 안 보내도 정상 작동.
+            #[serde(rename = "ttlMs", default)]
+            ttl_ms: Option<i64>,
             #[serde(rename = "dedupKey", default)]
             dedup_key: Option<String>,
         }
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("create_share args: {e}")))?;
+        const DEFAULT_SHARE_TTL_MS: i64 = 24 * 60 * 60 * 1000;
         let input = crate::ports::CreateShareInput {
             share_type: args.share_type,
             title: args.title,
             messages: args.messages,
             owner: args.owner,
             source_conv_id: args.source_conv_id,
-            ttl_ms: args.ttl_ms,
+            ttl_ms: args.ttl_ms.unwrap_or(DEFAULT_SHARE_TTL_MS),
             dedup_key: args.dedup_key,
         };
         match db.create_share(&input) {
