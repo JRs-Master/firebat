@@ -785,7 +785,7 @@ function SliderComp({ label, min = 0, max = 100, step = 1, defaultValue, unit = 
         step={step}
         value={value}
         onChange={e => setValue(Number(e.target.value))}
-        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" name="value" autoComplete="off"
       />
       {!label && <div className="text-right text-sm font-bold text-blue-600">{value}{unit}</div>}
     </div>
