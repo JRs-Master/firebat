@@ -186,9 +186,12 @@ const WRAP_METHODS = new Set([
   'saveProject', 'deleteProject', 'renameProject',
   'verifyProjectPassword', 'setProjectVisibility',
 
-  // ConversationService — wrap (모두)
+  // ConversationService — wrap (대부분)
+  // isConversationDeleted 제외 — Rust BoolRequest({value: bool}) → autoUnwrapProtoEnvelope 가 raw boolean
+  // 으로 풀어냄. WRAP 거치면 {success:true, data:bool} 객체가 되고 route.ts 의 `if (await core...)`
+  // 가 객체 자체로 truthy 가 되어 항상 409 떨어지는 회귀. raw boolean 반환이 정확.
   'listConversations', 'getConversation', 'saveConversation', 'deleteConversation',
-  'searchHistory', 'searchConversationHistory', 'isConversationDeleted',
+  'searchHistory', 'searchConversationHistory',
   'getCliSession', 'createShare', 'getShare',
 
   // EntityService — wrap (모두)
