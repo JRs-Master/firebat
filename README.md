@@ -213,7 +213,7 @@ CrewAI / Mem0 식 4-tier memory — **dialogue ends, facts persist**. Continuous
 
 After 1 week of auto-trading, "How did Samsung do?" returns full timeline (recommendations → buys → results) without asking for context. The memory layer fills itself.
 
-> 🇰🇷 **메모리 시스템 4-tier** — 대화는 휘발해도 사실은 영속. 자동매매·블로그 운영 깊어질수록 가치 폭발. Core hook 자동 saveEvent / 6시간 cron 자동 LLM 후처리 / cosine 중복 검출 / RetrievalEngine 자동 prepend — 사용자 명시 호출 0회로도 "삼성전자 1주 전 추천 결과는?" 즉시 답변. (Phase 1-6 박힘, Phase 3 Vector store 는 entity 1000+ 시점 deferred)
+> 🇰🇷 **메모리 시스템 4-tier** — 대화는 휘발해도 사실은 영속. 자동매매·블로그 운영 깊어질수록 가치 폭발. Core hook 자동 saveEvent / 6시간 cron 자동 LLM 후처리 / cosine 중복 검출 / RetrievalEngine 자동 prepend — 사용자 명시 호출 0회로도 "삼성전자 1주 전 추천 결과는?" 즉시 답변. (Phase 1-6 완료, Phase 3 Vector store 는 entity 1000+ 시점 deferred)
 
 ### i18n — Self-built (ko / en, no dependency)
 
@@ -293,7 +293,7 @@ Open `http://localhost:3000/admin` for the admin console. Frontend 가 `RustCore
 
 ### Configuration
 
-**First boot — SetupWizard** (vault 가 admin 자격증명 미박힘 시 자동 표시):
+**First boot — SetupWizard** (vault 에 admin 자격증명 미설정 시 자동 표시):
 1. Open `http://SERVER/login` → SetupWizard 화면
 2. Interface language (ko/en) — navigator 자동 감지, 토글로 즉시 화면 전환
 3. Admin ID + password (8 chars + 3 of upper/lower/digit/special, strength meter + match indicator)
@@ -472,7 +472,7 @@ Frontend  Next.js + React + 27 render_* components
 
 **After v1.0 Final**: 두 distribution 옵션 진행 가능 (둘 다 v1.x / v2.0+ 안건):
 
-1. **Vercel frontend + Self-hosted backend exe** (hybrid Self-installed 부활, 2026-05-10 박힌 안건)
+1. **Vercel frontend + Self-hosted backend exe** (hybrid Self-installed 부활, 2026-05-10 도입 검토)
    - Frontend = `firebat.app` (Vercel 자동 배포) — 사용자 빌드 0
    - Backend = 사용자 머신 exe (Rust 단일 binary ~30-50MB) — vault / data / 비용 본인 통제
    - 자동화 흐름: UPnP 자동 포트 매핑 + 공유기 DDNS + Let's Encrypt 자동 HTTPS. CGNAT / UPnP disabled fallback = Cloudflare Tunnel 자동
@@ -480,9 +480,9 @@ Frontend  Next.js + React + 27 render_* components
    - v1.x 의 Vercel frontend 분산 안건과 자연 통합 — 추가 작업 ↓
 
 2. **Next.js Static Export + Tauri IPC 데스크톱 앱** (~15MB, v2.0+ 후보)
-   - 운영 데이터 위에서 진짜 한계 도달 시 시점 박힘
+   - 운영 데이터 위에서 진짜 한계 도달 시점에 진행
 
-> 🇰🇷 **v1.0 Final 로드맵 (2026-05-06 갱신)** — Self-installed Tauri 폐기 결정. 단일 distribution = Self-hosted Docker. Phase 0 (현재 운영 유지) → A (설계 ✅) → B (Rust Core ✅ Phase B-4 cutover 완료) → B-post (audit cleanup) → C (Docker firebat.co.kr 마이그레이션). 총 3~4개월. Tauri 데스크톱 앱은 v2.0 시점에 Next.js SPA 추출 + Tauri IPC 박은 진짜 가벼운 앱 (~15MB) 으로 재시작. 옛 src-tauri/ 디렉토리 + Node sidecar 구조는 어르신 사용자 UX 폭탄 (좀비 프로세스 / 포트 충돌 / 방화벽 발작) 위험 + 50MB 목표 비현실 (실제 150-200MB) 으로 폐기.
+> 🇰🇷 **v1.0 Final 로드맵 (2026-05-06 갱신)** — Self-installed Tauri 폐기 결정. 단일 distribution = Self-hosted Docker. Phase 0 (현재 운영 유지) → A (설계 ✅) → B (Rust Core ✅ Phase B-4 cutover 완료) → B-post (audit cleanup) → C (Docker firebat.co.kr 마이그레이션). 총 3~4개월. Tauri 데스크톱 앱은 v2.0 시점에 Next.js SPA 추출 + Tauri IPC 통합한 진짜 가벼운 앱 (~15MB) 으로 재시작. 옛 src-tauri/ 디렉토리 + Node sidecar 구조는 어르신 사용자 UX 폭탄 (좀비 프로세스 / 포트 충돌 / 방화벽 발작) 위험 + 50MB 목표 비현실 (실제 150-200MB) 으로 폐기.
 
 ---
 

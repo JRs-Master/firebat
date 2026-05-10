@@ -1035,7 +1035,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
                 {/* Anthropic prompt caching 토글 — Claude API 모드 전용 (모드=일반 AND 공급자=Anthropic) */}
                 {execMode === 'api' && aiMode === 'general' && aiProvider === 'anthropic' && (
-                  <Field label="Prompt Caching" help="동일 prefix (system/tools) 5분 내 재사용 시 90% 비용 절감 + 응답 가속. 단발 호출이면 cache write 25% 추가 비용. 같은 대화 멀티턴 위주면 ON, 짧은 단발 위주면 OFF.">
+                  <Field label="Prompt Caching" help="동일 prefix (system/tools) 를 5분 내 재사용하면 90% 비용이 절감되고 응답이 가속됩니다. 단발 호출이면 cache write 25% 추가 비용이 발생합니다. 같은 대화 멀티턴 위주면 ON, 짧은 단발 위주면 OFF 를 권장합니다.">
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
@@ -1057,7 +1057,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 )}
 
                 {/* Sub-agent 병렬 토글 — 모든 모드에 노출. ON 시 spawn_subagent 도구 LLM 한테 노출 */}
-                <Field label="Sub-agent 병렬" help="큰 작업 (다종목 백테스트·여러 분석) 을 sub-agent 에 위임 + 병렬 실행 → 시간 1/N. 단 sub-agent 마다 LLM 호출 추가 (API 모드면 비용 N배, CLI 모드면 한도/메모리 부담). default OFF.">
+                <Field label="Sub-agent 병렬" help="큰 작업 (다종목 백테스트·여러 분석) 을 sub-agent 에 위임하고 병렬 실행하여 시간이 1/N 로 단축됩니다. 단 sub-agent 마다 LLM 호출이 추가되어 API 모드면 비용이 N배 증가하고 CLI 모드면 한도/메모리 부담이 늘어납니다. 기본값은 OFF 입니다.">
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
@@ -1277,11 +1277,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     value={userPrompt}
                     onChange={(v) => setUserPrompt(v.slice(0, USER_PROMPT_MAX_CHARS))}
                     rows={6}
-                    placeholder="원하는 톤·언어·도메인 지식·포맷 선호 등을 자유롭게 입력 (선택사항)"
+                    placeholder="원하는 톤·언어·도메인 지식·포맷 선호 등을 자유롭게 입력해 주세요 (선택 사항입니다)"
                   />
                   <HelpText>
-                    User AI (어드민 채팅) 시스템 프롬프트 뒤에 주입. 비어두면 미주입 — 모델 본연의 응답.
-                    Code Assistant·AI Assistant 에는 적용 안 됨.
+                    User AI (어드민 채팅) 시스템 프롬프트 뒤에 주입됩니다. 비어두면 주입되지 않으며 모델 본연의 응답이 사용됩니다.
+                    Code Assistant·AI Assistant 에는 적용되지 않습니다.
                   </HelpText>
                 </div>
                 )}
@@ -1291,7 +1291,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 <div>
                   <FieldLabel>이미지 생성 모델</FieldLabel>
                   <HelpText>
-                    AI 가 image_gen 도구 호출 시 사용할 모델. 서버에 자동 저장되어 /api/media URL 반환됨 — render_image·블로그 포스팅 등에 재사용.
+                    AI 가 image_gen 도구 호출 시 사용할 모델입니다. 서버에 자동 저장되어 /api/media URL 이 반환되며 render_image·블로그 포스팅 등에 재사용됩니다.
                   </HelpText>
                   {(() => {
                     // Mode 판정: format prefix 로 API/CLI 구분
@@ -1408,7 +1408,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           />
                         </Field>
                         {currentModel?.sizes && currentModel.sizes.length > 0 && (
-                          <Field label="기본 사이즈" help="사용자 명령이 우선. 미지정 시 이 값으로 폴백.">
+                          <Field label="기본 사이즈" help="사용자 명령이 우선합니다. 미지정 시 이 값으로 폴백됩니다.">
                             <SelectInput
                               value={imageDefaultSize || (currentModel.sizes.includes('auto') ? 'auto' : currentModel.sizes[0])}
                               onChange={saveSize}
@@ -1417,7 +1417,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           </Field>
                         )}
                         {currentModel?.qualities && currentModel.qualities.length > 0 && (
-                          <Field label="기본 품질" help="사용자 명령이 우선. 미지정 시 이 값으로 폴백.">
+                          <Field label="기본 품질" help="사용자 명령이 우선합니다. 미지정 시 이 값으로 폴백됩니다.">
                             <SelectInput
                               value={imageDefaultQuality || (currentModel.qualities.includes('medium') ? 'medium' : currentModel.qualities[0])}
                               onChange={saveQuality}
@@ -2480,7 +2480,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
           value={item.content}
           onChange={e => setItem({ ...item, content: e.target.value })}
           rows={12}
-          placeholder="자세한 룰·선호 내용. AI 가 memory_read(name) 으로 read."
+          placeholder="자세한 룰·선호 내용을 입력해 주세요. AI 가 memory_read(name) 으로 조회합니다."
           className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded font-mono resize-y"
         />
       </div>
