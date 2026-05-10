@@ -26,7 +26,14 @@ const MESSAGES: Record<Lang, Record<string, unknown>> = {
   en: enMessages,
 };
 
+/** 누락 키 폴백 — 어느 언어에서 못 찾을 때 마지막으로 시도할 언어. */
 const FALLBACK_LANG: Lang = 'en';
+
+/** SSR + 첫 client render (hydration) 의 default 언어.
+ *  ⚠️ localStorage 읽기는 useEffect 안에서만 — lazy useState init 에 박으면 server 는
+ *  FALLBACK 으로 영문 렌더, client 는 localStorage 의 'ko' 로 한국어 렌더 → text node
+ *  mismatch → React #418. server / client 가 같은 값 반환하도록 'ko' 통일. */
+const INITIAL_LANG: Lang = 'ko';
 
 /** nested key resolver — 'login.title' → messages.login.title */
 function resolveKey(messages: Record<string, unknown>, key: string): string | undefined {
@@ -83,7 +90,7 @@ interface LangContextValue {
 }
 
 const LangContext = createContext<LangContextValue>({
-  lang: FALLBACK_LANG,
+  lang: INITIAL_LANG,
   setLang: () => {},
 });
 
@@ -94,33 +101,35 @@ function isValidLang(v: unknown): v is Lang {
 }
 
 /** 어드민 LangProvider — root 또는 admin layout 안에 렌더.
- *  초기값: localStorage 우선 → 없으면 'ko'. 마운트 후 /api/settings 동기화. */
+ *  초기값: server / client hydration 일치를 위해 INITIAL_LANG 고정 (또는 명시 prop).
+ *  마운트 후 useEffect 안에서 localStorage → /api/settings 순으로 실제 값 동기화. */
 export function LangProvider({ children, initial }: { children: React.ReactNode; initial?: Lang }) {
   const [lang, setLangState] = useState<Lang>(() => {
     if (initial && isValidLang(initial)) return initial;
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (isValidLang(saved)) return saved;
-    }
-    return FALLBACK_LANG;
+    return INITIAL_LANG;
   });
 
-  // 마운트 후 서버 settings 동기화 (DB 우선 — 멀티기기 일관성)
+  // 마운트 후 동기화 — localStorage 즉시 + DB (멀티기기 일관성)
   useEffect(() => {
     let cancelled = false;
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (isValidLang(saved) && saved !== lang) setLangState(saved);
+    }
     (async () => {
       try {
         const res = await fetch('/api/settings');
         const data = await res.json();
         if (cancelled || !data.success) return;
         const remote: unknown = data.interfaceLang;
-        if (isValidLang(remote) && remote !== lang) {
+        if (isValidLang(remote)) {
           setLangState(remote);
           if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, remote);
         }
       } catch { /* fetch 실패 → localStorage / 디폴트 유지 */ }
     })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // 첫 마운트 시 1회만
 
   const setLang = useCallback((next: Lang) => {
@@ -153,12 +162,12 @@ export function useLang(): { lang: Lang; setLang: (next: Lang) => void } {
 
 /** (user) 영역의 Client Component 용 — `<html lang>` 따라 자동 결정.
  *  LangProvider 없이도 작동 (admin 영역과 분리). siteLang 은 server (user)/layout.tsx 가
- *  설정한 `<html lang={siteLang}>` 값 그대로 활용. */
+ *  설정한 `<html lang={siteLang}>` 값 그대로 활용.
+ *
+ *  ⚠️ hydration safety — 첫 렌더는 server / client 모두 INITIAL_LANG 으로 통일.
+ *  document.documentElement.lang 읽기는 useEffect 안에서만 (마운트 후). */
 export function usePublicTranslations(): (key: string, params?: Record<string, string | number>) => string {
-  const [lang, setLangState] = useState<Lang>(() => {
-    if (typeof document === 'undefined') return FALLBACK_LANG;
-    return document.documentElement.lang === 'en' ? 'en' : 'ko';
-  });
+  const [lang, setLangState] = useState<Lang>(INITIAL_LANG);
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const next = document.documentElement.lang === 'en' ? 'en' : 'ko';
