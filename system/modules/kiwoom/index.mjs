@@ -361,7 +361,7 @@ async function callApi(base, token, apiId, params = {}, retry = 2) {
 }
 
 // 사용자 timezone 기준 (Firebat sandbox 가 FIREBAT_TZ env 주입 — 미설정 시 UTC fallback).
-// 이전 toISOString 구현은 UTC 라 자정~09:00 KST 사이 어제 날짜 박힘 → 휴장일·차트 데이터 silent 오류.
+// 이전 toISOString 구현은 UTC 라 자정~09:00 KST 사이 어제 날짜 반환 → 휴장일·차트 데이터 silent 오류.
 function _tz() { return process.env.FIREBAT_TZ || process.env.TZ || 'UTC'; }
 function _ymd(d) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: _tz(), year: 'numeric', month: '2-digit', day: '2-digit' })

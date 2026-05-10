@@ -3,15 +3,15 @@
  * Firebat 일정 sysmod — JSONL file-based.
  *
  * 저장: data/calendar/events.jsonl
- *   한 줄 = 한 이벤트 JSON. soft-delete (deletedAt 박힘) — 추가만 빠르게 (파일 끝에 append).
- *   update = 기존 라인 → 새 라인 append (마지막이 우선). delete = deletedAt 박은 라인 append.
+ *   한 줄 = 한 이벤트 JSON. soft-delete (deletedAt 설정) — 추가만 빠르게 (파일 끝에 append).
+ *   update = 기존 라인 → 새 라인 append (마지막이 우선). delete = deletedAt 추가한 라인 append.
  *
  * 필드:
  *   id (자동 생성), title, startAt, endAt, location, description, tags[], linkedJobId,
  *   createdAt, updatedAt, deletedAt?
  *
  * 통합 사용:
- *   - cron 의 linkedJobId 와 연결 (예: "상장일 매도" cron 잡 ID 박음)
+ *   - cron 의 linkedJobId 와 연결 (예: "상장일 매도" cron 잡 ID 참조)
  *   - sysmod_naver_search/dart 결과로 일정 add (공모주 일정 자동 등록)
  *   - sysmod_notes 와 chain (배정 정보 → 노트 동시 기록)
  */
@@ -47,7 +47,7 @@ function genId() {
   return `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** events.jsonl 읽고 id 별 최신 상태 (마지막 라인 우선) 반환. soft-deleted 는 deletedAt 박혀있음. */
+/** events.jsonl 읽고 id 별 최신 상태 (마지막 라인 우선) 반환합니다. soft-deleted 는 deletedAt 가 설정됩니다. */
 function loadEvents() {
   ensureFile();
   const raw = readFileSync(EVENTS_FILE, 'utf-8');

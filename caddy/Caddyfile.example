@@ -10,7 +10,7 @@
 #   - SSE / WebSocket proxy 자동
 #   - gzip / zstd 압축
 #
-# 어르신 사용자도 Caddyfile 만 박으면 끝 — certbot / 90일 갱신 cron / SSL 옵션 박을 일 0.
+# 어르신 사용자도 Caddyfile 만 작성하면 끝 — certbot / 90일 갱신 cron / SSL 옵션 작업이 필요하지 않습니다.
 
 your-domain.com, www.your-domain.com {
     # 자동 TLS 이메일 (Let's Encrypt 갱신 알림용)
@@ -41,7 +41,7 @@ your-domain.com, www.your-domain.com {
     }
 
     # 사이트 인증 파일 (verifications 시스템 — Google / Naver / Bing / ads.txt)
-    # Phase C 활성 시 verifications/ 디렉토리 mount 후 alias 박음.
+    # Phase C 활성 시 verifications/ 디렉토리 mount 후 alias 정의합니다.
 
     # gRPC 외부 노출 차단 (firebat-core:50051 은 internal only)
     handle /grpc* {

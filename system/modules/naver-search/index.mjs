@@ -227,7 +227,7 @@ async function datalabApi(ctx, path, body) {
 }
 
 // 사용자 timezone 기준 (Firebat sandbox 가 FIREBAT_TZ env 주입). 미설정 시 UTC fallback.
-// 데이터랩 API 의 startDate/endDate 가 KST 기준 일자라 toISOString (UTC) 사용 시 자정~09:00 KST 구간 어제 날짜 박힘.
+// 데이터랩 API 의 startDate/endDate 가 KST 기준 일자라 toISOString (UTC) 사용 시 자정~09:00 KST 구간이 어제 날짜로 반환됩니다.
 function _tz() { return process.env.FIREBAT_TZ || process.env.TZ || 'UTC'; }
 function _ymd(d) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: _tz(), year: 'numeric', month: '2-digit', day: '2-digit' })

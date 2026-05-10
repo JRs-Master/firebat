@@ -5,7 +5,7 @@
 #   - infra/   — adapters + LLM + image_gen + main binary (firebat-core)
 #
 # 단일 distribution: Self-hosted Docker (Phase C — firebat.co.kr).
-# Self-installed Tauri 는 v2.0 이연 — Next.js SPA 추출 후 진짜 가벼운 데스크톱 앱 (~15MB) 박을 시점.
+# Self-installed Tauri 는 v2.0 이연 — Next.js SPA 추출 후 진짜 가벼운 데스크톱 앱 (~15MB) 도입 시점.
 # 옛 src-tauri/ 디렉토리 + Node sidecar 구조 폐기 (어르신 사용자 UX 파탄 위험 — 좀비 프로세스 /
 # 포트 충돌 / 방화벽 발작). 매니지드 호스팅 (Vultr Docker) 가 더 합리.
 #

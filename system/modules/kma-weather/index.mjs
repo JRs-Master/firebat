@@ -202,7 +202,7 @@ async function main() {
   const serviceKey = process.env.DATA_GO_KR_API_KEY;
   if (!serviceKey) return out(false, undefined, 'DATA_GO_KR_API_KEY 환경변수 미설정');
 
-  // 위경도 → 격자 변환 (lat/lon 박혀있고 nx/ny 미지정 시)
+  // 위경도 → 격자 변환 (lat/lon 정의되어 있고 nx/ny 미지정 시)
   let nx = nxIn, ny = nyIn;
   if (typeof lat === 'number' && typeof lon === 'number' && (nx == null || ny == null)) {
     const g = latLonToGrid(lat, lon);

@@ -50,7 +50,7 @@ services:
     networks:
       - firebat-net
     # gRPC health check — Phase B-17.5 LifecycleService.Health 활성화 후 활용.
-    # grpc_health_probe binary 박혀있으면 진짜 health check, 아니면 process-only.
+    # grpc_health_probe binary 가 있으면 진짜 health check, 아니면 process-only.
     healthcheck:
       test: ["CMD-SHELL", "ls /proc/1/exe || exit 1"]
       interval: 30s
@@ -59,7 +59,7 @@ services:
       start_period: 10s
 
   # ── Renderer (옛 Next.js frontend) ──
-  # Phase C 박힘 후 옛 frontend 코드를 standalone build 로 박음. dual-run 검증 시 활성.
+  # Phase C 도입 후 옛 frontend 코드를 standalone build 로 전환합니다. dual-run 검증 시 활성.
   # 현재는 commented — Rust Core 단독 검증부터.
   # firebat-renderer:
   #   build:
@@ -82,7 +82,7 @@ services:
 
   # ── Caddy (옵션) — 실 도메인 운영 시 활성 ──
   # 자동 TLS (Let's Encrypt) + reverse proxy + SSE keepalive + HTTP/3.
-  # certbot / 90일 갱신 cron 박을 일 0 — Caddy 가 알아서.
+  # certbot / 90일 갱신 cron 작업이 필요하지 않습니다 — Caddy 가 알아서 처리합니다.
   # caddy:
   #   image: caddy:2-alpine
   #   container_name: firebat-caddy

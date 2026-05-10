@@ -1,8 +1,8 @@
 // Firebat Core gRPC schema (v1.0 Final Phase A — skeleton + service 분리).
 //
-// Phase A: 21 매니저 + cross-cutting service skeleton 박음. RPC list 정의.
+// Phase A: 21 매니저 + cross-cutting service skeleton 정의. RPC list 작성.
 //          message body 는 JsonValue 단일화 — Phase B 에서 매니저별 typed message 로 점진 변환.
-// Phase B: 각 매니저 Rust 구현하면서 typed request/response 박음.
+// Phase B: 각 매니저 Rust 구현하면서 typed request/response 정의.
 //
 // 사용 path:
 //  - Rust Core: tonic-build (build.rs) 가 .proto 컴파일 → src/proto/ 자동 생성
@@ -891,7 +891,7 @@ message AiAssistantModelListPb {
   repeated AiAssistantModelPb models = 1;
 }
 
-/** AI 모델 carousel — frontend cascade UI source. id / displayName / provider 박힘. */
+/** AI 모델 carousel — frontend cascade UI source. id / displayName / provider 정의. */
 message AvailableAiModelPb {
   string id = 1;
   string display_name = 2;
@@ -926,8 +926,8 @@ service SettingsService {
   rpc SetAiAssistantModel(StringRequest) returns (BoolRequest);
   rpc GetAiAssistantDefault(Empty) returns (StringRequest);
   rpc GetAvailableAiAssistantModels(Empty) returns (AiAssistantModelListPb);
-  /** AI 모델 carousel — frontend types.ts AI_MODELS 박힌 게 fallback,
-   *  Rust 박은 builtin_models() 박힌 게 single source. */
+  /** AI 모델 carousel — frontend types.ts AI_MODELS 가 fallback,
+   *  Rust builtin_models() 가 single source. */
   rpc GetAvailableAiModels(Empty) returns (AvailableAiModelListPb);
 }
 

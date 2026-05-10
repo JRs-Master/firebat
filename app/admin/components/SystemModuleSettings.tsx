@@ -395,8 +395,8 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           const configSettingsFields = (config?.settings_fields as ConfigSettingField[] | undefined) ?? [];
           const configFields = configSettingsFields.map(cf => resolveConfigField(cf, lang));
 
-          // 옛 hardcoded MODULE_SETTINGS_SCHEMA — config.json 미박힌 모듈 fallback (cms / mcp-server-* 등).
-          // settings_fields 박힌 모듈은 manual 무시.
+          // 옛 hardcoded MODULE_SETTINGS_SCHEMA — config.json 미정의 모듈 fallback (cms / mcp-server-* 등).
+          // settings_fields 가 정의된 모듈은 manual 무시.
           const manualFields = configFields.length > 0 ? [] : (manualSchema?.fields ?? []);
           const autoSecretNames = new Set(configSecrets);
           const filteredManual = manualFields.filter(f => !(f.type === 'secret' && f.secretName && autoSecretNames.has(f.secretName)));

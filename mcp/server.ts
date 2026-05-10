@@ -680,7 +680,7 @@ config.json 안 \`settings_fields\` 영역 — 어드민 설정 모달이 자동
 
 ## 핵심 원칙
 
-1. **모듈 자기완결 i18n** — messages/ko.json / en.json 별도 entry 미박음. config.json 안에 ko + en 동시 작성
+1. **모듈 자기완결 i18n** — messages/ko.json / en.json 별도 entry 미작성. config.json 안에 ko + en 동시 작성
 2. **사용자 노출 텍스트 = 습니다체** — 단정형 / 명사 종결 금지 (예: "최대 글자 수" → "최대 글자 수입니다.")
 3. **lang 자동 결정** — 어드민 UI lang 변경 시 자동 전환 (ko → ko entry, en → en entry)
 
