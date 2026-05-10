@@ -8,6 +8,18 @@
   "capability": "web-scrape",
   "providerType": "api",
   "secrets": ["FIRECRAWL_API_KEY"],
+  "settings_fields": [
+    {
+      "key": "maxTextLength",
+      "type": "number",
+      "placeholder": "30000",
+      "defaultValue": 30000,
+      "i18n": {
+        "ko": { "label": "최대 텍스트 길이", "description": "마크다운 결과의 최대 글자 수입니다." },
+        "en": { "label": "Max text length", "description": "Maximum characters of the markdown result." }
+      }
+    }
+  ],
   "input": {
     "type": "object",
     "properties": {

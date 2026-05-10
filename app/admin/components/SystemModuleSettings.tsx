@@ -7,7 +7,8 @@ import { TelegramWebhookSection } from './TelegramWebhookSection';
 import { confirmDialog } from './Dialog';
 import { COLOR_PRESETS } from '../../../lib/design-tokens';
 import { WidgetListField } from './WidgetListField';
-import { useTranslations } from '../../../lib/i18n';
+import { useTranslations, useLang } from '../../../lib/i18n';
+import type { Lang } from '../../../lib/i18n';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
 type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list';
@@ -28,6 +29,65 @@ interface SettingField {
   widgetArea?: 'header' | 'sidebar' | 'footer'; // widget-list 전용: 영역
 }
 
+/**
+ * config.json 의 `settings_fields` 영역 — 모듈 자기완결 i18n.
+ *
+ * **옵션 C 패턴 (2026-05-10 도입):** 모듈의 config.json 에 settings_fields 정의 시
+ * 본 SystemModuleSettings 컴포넌트가 우선 사용. 외부 AI (Claude Code / Cursor 등) 가
+ * VSCode MCP 통해 새 모듈 만들 때 ko/en 동시 작성 자연. messages/*.json 분리 entry 미필요.
+ *
+ * resolveConfigField() 가 활성 lang 기준 i18n 영역에서 label/description/placeholder 결정.
+ * fallback chain: i18n[lang] → i18n[en] → i18n[ko] → field.label (raw).
+ */
+interface ConfigI18nText { label?: string; description?: string; placeholder?: string }
+interface ConfigSettingField {
+  key: string;
+  type: FieldType;
+  placeholder?: string;
+  defaultValue?: any;
+  tab?: string;
+  group?: string;
+  oauthUrl?: string;
+  oauthSecrets?: string[];
+  secretName?: string;
+  options?: SelectOption[];
+  widgetArea?: 'header' | 'sidebar' | 'footer';
+  i18n?: Partial<Record<Lang, ConfigI18nText>>;
+}
+
+/** i18n key 형태 ('system_modules.X.Y') 면 t() lookup, 그 외 raw 반환 (legacy hardcoded 한국어).
+ *  config.json 의 settings_fields 가 풀어진 string + 옛 hardcoded MODULE_SETTINGS_SCHEMA 의
+ *  한국어 raw label/description 모두 console warn 없이 그대로 표시. */
+function localize(
+  t: (k: string, params?: Record<string, string | number>) => string,
+  s: string | undefined,
+): string {
+  if (!s) return '';
+  if (s.startsWith('system_modules.')) return t(s);
+  return s;
+}
+
+function resolveConfigField(cf: ConfigSettingField, lang: Lang): SettingField {
+  const i18n = cf.i18n ?? {};
+  const primary = i18n[lang] ?? {};
+  const fallback = i18n['en'] ?? i18n['ko'] ?? {};
+  return {
+    key: cf.key,
+    type: cf.type,
+    placeholder: primary.placeholder ?? fallback.placeholder ?? cf.placeholder,
+    defaultValue: cf.defaultValue,
+    label: primary.label ?? fallback.label ?? cf.key,
+    description: primary.description ?? fallback.description,
+    tab: cf.tab,
+    group: cf.group,
+    oauthUrl: cf.oauthUrl,
+    oauthSecrets: cf.oauthSecrets,
+    secretName: cf.secretName,
+    options: cf.options,
+    widgetArea: cf.widgetArea,
+  };
+}
+
 // 탭 정의 (아이콘 + i18n 키) — 라벨은 컴포넌트 내부에서 t()로 번역
 const TAB_META: Record<string, { i18nKey: string; icon: typeof Globe }> = {
   '일반':   { i18nKey: 'system_modules.common.tab_general', icon: Settings2 },
@@ -41,33 +101,17 @@ const TAB_META: Record<string, { i18nKey: string; icon: typeof Globe }> = {
 };
 
 /**
- * 특수 설정이 필요한 모듈만 등록 (oauth, 커스텀 필드 등)
- * 일반 secret 필드는 config.json의 secrets 배열에서 자동 생성됨
+ * 특수 설정이 필요한 모듈만 등록 (oauth, 커스텀 필드 등).
+ * 일반 secret 필드는 config.json의 secrets 배열에서 자동 생성됨.
+ *
+ * **C 옵션 마이그레이션 진행 중 (2026-05-10):** 옛 hardcoded 한국어 schema 들이 점진적으로
+ * 모듈의 config.json 의 `settings_fields` (i18n.ko/en 자기완결) 으로 이전됨. config.json 에
+ * settings_fields 가 정의된 모듈은 이 hardcoded schema 보다 우선 적용됨 (resolveFieldsFromConfig).
+ * 4 모듈 이전 완료: browser-scrape / kakao-talk / telegram / firecrawl.
+ * cms / mcp-server-* 는 이전 진행 중.
  */
 const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingField[] }> = {
-  'browser-scrape': {
-    fields: [
-      { key: 'timeout', label: 'system_modules.browser_scrape.fields.timeout.label', type: 'number', placeholder: '30000', description: 'system_modules.browser_scrape.fields.timeout.description', defaultValue: 30000 },
-      { key: 'headless', label: 'system_modules.browser_scrape.fields.headless.label', type: 'toggle', description: 'system_modules.browser_scrape.fields.headless.description', defaultValue: true },
-      { key: 'maxTextLength', label: 'system_modules.browser_scrape.fields.maxTextLength.label', type: 'number', placeholder: '50000', description: 'system_modules.browser_scrape.fields.maxTextLength.description', defaultValue: 50000 },
-    ],
-  },
-  'kakao-talk': {
-    fields: [
-      { key: 'kakaoOAuth', label: 'system_modules.kakao_talk.fields.kakaoOAuth.label', type: 'oauth', oauthUrl: '/api/auth/oauth/kakao', oauthSecrets: ['KAKAO_ACCESS_TOKEN'], description: 'system_modules.kakao_talk.fields.kakaoOAuth.description' },
-      { key: 'defaultType', label: 'system_modules.kakao_talk.fields.defaultType.label', type: 'text', placeholder: 'text', description: 'system_modules.kakao_talk.fields.defaultType.description', defaultValue: 'text' },
-    ],
-  },
-  'telegram': {
-    fields: [
-      { key: 'bruteForceAlert', label: 'system_modules.telegram.fields.bruteForceAlert.label', type: 'toggle', description: 'system_modules.telegram.fields.bruteForceAlert.description', defaultValue: false },
-    ],
-  },
-  'firecrawl': {
-    fields: [
-      { key: 'maxTextLength', label: 'system_modules.firecrawl.fields.maxTextLength.label', type: 'number', placeholder: '30000', description: 'system_modules.firecrawl.fields.maxTextLength.description', defaultValue: 30000 },
-    ],
-  },
+  // browser-scrape / kakao-talk / telegram / firecrawl 폐기 — config.json settings_fields 로 이전됨.
   'mcp-server-app': {
     fields: [],  // 커스텀 렌더링 (앱 개발용 — Claude Code, Cursor, VS Code)
   },
@@ -249,6 +293,7 @@ interface Props {
 
 export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPage }: Props) {
   const t = useTranslations();
+  const { lang } = useLang();
   // 'seo' 옛 모듈명 → 'cms' fallback (2026-04-28 SEO → CMS rename 호환)
   const manualSchema = MODULE_SETTINGS_SCHEMA[moduleName] ?? (moduleName === 'seo' ? MODULE_SETTINGS_SCHEMA['cms'] : undefined);
   const [schema, setSchema] = useState<{ title: string; fields: SettingField[] } | null>(null);
@@ -332,7 +377,8 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
     bar.scrollBy({ left: dir === 'left' ? -120 : 120, behavior: 'smooth' });
   }, []);
 
-  // 초기 로드 — config.json + settings 동시 조회
+  // 초기 로드 — config.json + settings 동시 조회.
+  // lang 변경 시 schema 재계산 (config.json 의 i18n 영역에서 lang 별 label/description 다시 resolve).
   useEffect(() => {
     setLoading(true);
     fetch(`/api/settings/modules?name=${encodeURIComponent(moduleName)}`)
@@ -344,13 +390,19 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           const configSecrets = (config?.secrets as string[] | undefined) ?? [];
           const autoFields = secretsToFields(configSecrets);
 
-          // 수동 스키마의 secret 필드 중 config.json secrets에 이미 있는 것은 제외 (자동 생성으로 대체)
-          const manualFields = manualSchema?.fields ?? [];
+          // 옵션 C — config.json 의 settings_fields 우선 (모듈 자기완결 i18n).
+          // 활성 lang 기준 i18n 영역에서 label/description/placeholder 자동 결정.
+          const configSettingsFields = (config?.settings_fields as ConfigSettingField[] | undefined) ?? [];
+          const configFields = configSettingsFields.map(cf => resolveConfigField(cf, lang));
+
+          // 옛 hardcoded MODULE_SETTINGS_SCHEMA — config.json 미박힌 모듈 fallback (cms / mcp-server-* 등).
+          // settings_fields 박힌 모듈은 manual 무시.
+          const manualFields = configFields.length > 0 ? [] : (manualSchema?.fields ?? []);
           const autoSecretNames = new Set(configSecrets);
           const filteredManual = manualFields.filter(f => !(f.type === 'secret' && f.secretName && autoSecretNames.has(f.secretName)));
 
-          // 병합: 자동 secret 필드 먼저, 수동 필드 뒤에
-          const allFields = [...autoFields, ...filteredManual];
+          // 병합: 자동 secret + config.json fields + (legacy manual fallback)
+          const allFields = [...autoFields, ...configFields, ...filteredManual];
           const title = manualSchema?.title || moduleName;
           setSchema({ title, fields: allFields });
 
@@ -370,7 +422,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [moduleName]); // eslint-disable-line
+  }, [moduleName, lang]); // eslint-disable-line
 
   // OAuth 연동 상태 + 시크릿 값 로드
   const [oauthStatus, setOauthStatus] = useState<Record<string, boolean>>({});
@@ -785,7 +837,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                 <div className="flex flex-col gap-1.5 mb-1">
                 {field.type === 'secret' ? (
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs sm:text-sm font-bold text-slate-700">{t(field.label)}</label>
+                    <label className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</label>
                     {secretSaved[field.key] ? (
                       <div className="flex items-center gap-2">
                         <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex-1">
@@ -817,12 +869,12 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                       </div>
                     )}
                     {field.description && (
-                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{t(field.description)}</p>
+                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{localize(t, field.description)}</p>
                     )}
                   </div>
                 ) : field.type === 'oauth' ? (
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs sm:text-sm font-bold text-slate-700">{t(field.label)}</label>
+                    <label className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</label>
                     <div className="flex items-center gap-2">
                       {oauthStatus[field.key] ? (
                         <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex-1">
@@ -841,42 +893,42 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                       </button>
                     </div>
                     {field.description && (
-                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{t(field.description)}</p>
+                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{localize(t, field.description)}</p>
                     )}
                   </div>
                 ) : field.type === 'verifications' ? (
                   <VerificationsField
-                    label={t(field.label)}
-                    description={t(field.description)}
+                    label={localize(t, field.label)}
+                    description={localize(t, field.description)}
                     value={Array.isArray(settings[field.key]) ? settings[field.key] : []}
                     onChange={(v) => handleChange(field.key, v)}
                   />
                 ) : field.type === 'color-presets' ? (
                   <ColorPresetField
-                    label={t(field.label)}
-                    description={t(field.description)}
+                    label={localize(t, field.label)}
+                    description={localize(t, field.description)}
                     value={settings[field.key] ?? field.defaultValue ?? 'slate-pro'}
                     onChange={(v) => handleChange(field.key, v)}
                   />
                 ) : field.type === 'color-overrides' ? (
                   <ColorOverridesField
-                    label={t(field.label)}
-                    description={t(field.description)}
+                    label={localize(t, field.label)}
+                    description={localize(t, field.description)}
                     settings={settings}
                     presetKey={settings.themePreset ?? 'slate-pro'}
                     onChange={(k, v) => handleChange(k, v)}
                   />
                 ) : field.type === 'widget-list' ? (
                   <WidgetListField
-                    label={t(field.label)}
-                    description={t(field.description)}
+                    label={localize(t, field.label)}
+                    description={localize(t, field.description)}
                     area={(field.widgetArea ?? 'sidebar') as 'header' | 'sidebar' | 'footer'}
                     value={Array.isArray(settings[field.key]) ? settings[field.key] : undefined}
                     onChange={(next) => handleChange(field.key, next)}
                   />
                 ) : field.type === 'select' ? (
                   <>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700">{t(field.label)}</label>
+                    <label className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</label>
                     <select
                       value={settings[field.key] ?? field.defaultValue ?? ''}
                       onChange={e => handleChange(field.key, e.target.value)}
@@ -887,15 +939,15 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                       ))}
                     </select>
                     {field.description && (
-                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{t(field.description)}</p>
+                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{localize(t, field.description)}</p>
                     )}
                   </>
                 ) : field.type === 'toggle' ? (
                   <label className="flex items-center justify-between cursor-pointer">
                     <div>
-                      <span className="text-xs sm:text-sm font-bold text-slate-700">{t(field.label)}</span>
+                      <span className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</span>
                       {field.description && (
-                        <p className="text-[10px] sm:text-xs text-slate-400 font-medium mt-0.5">{t(field.description)}</p>
+                        <p className="text-[10px] sm:text-xs text-slate-400 font-medium mt-0.5">{localize(t, field.description)}</p>
                       )}
                     </div>
                     <button
@@ -907,7 +959,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                   </label>
                 ) : (
                   <>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700">{t(field.label)}</label>
+                    <label className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</label>
                     {field.type === 'textarea' ? (
                       <textarea
                         value={settings[field.key] ?? ''}
@@ -926,7 +978,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                       />
                     )}
                     {field.description && (
-                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{t(field.description)}</p>
+                      <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{localize(t, field.description)}</p>
                     )}
                   </>
                 )}

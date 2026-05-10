@@ -8,6 +8,37 @@
   "capability": "web-scrape",
   "providerType": "local",
   "packages": ["playwright==1.59.1"],
+  "settings_fields": [
+    {
+      "key": "timeout",
+      "type": "number",
+      "placeholder": "30000",
+      "defaultValue": 30000,
+      "i18n": {
+        "ko": { "label": "타임아웃 (ms)", "description": "페이지 로딩 제한 시간입니다." },
+        "en": { "label": "Timeout (ms)", "description": "Maximum page-load duration." }
+      }
+    },
+    {
+      "key": "headless",
+      "type": "toggle",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "Headless 모드", "description": "브라우저 UI 없이 실행합니다." },
+        "en": { "label": "Headless mode", "description": "Run the browser without a UI." }
+      }
+    },
+    {
+      "key": "maxTextLength",
+      "type": "number",
+      "placeholder": "50000",
+      "defaultValue": 50000,
+      "i18n": {
+        "ko": { "label": "최대 텍스트 길이", "description": "추출 텍스트의 최대 글자 수입니다." },
+        "en": { "label": "Max text length", "description": "Maximum characters of extracted text." }
+      }
+    }
+  ],
   "input": {
     "type": "object",
     "required": ["url"],

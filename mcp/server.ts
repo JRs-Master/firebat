@@ -665,6 +665,87 @@ slug에 접미사: weather-app, weather-app-settings, weather-app-history
     }),
   );
 
+  // 모듈 i18n + settings_fields 가이드 — 외부 AI 가 새 모듈 작성 시 ko/en 동시 작성
+  server.resource(
+    'module-i18n',
+    'firebat://guides/module-i18n',
+    { description: '모듈 config.json 의 settings_fields + i18n.ko/en — 어드민 설정 모달 자동 렌더', mimeType: 'text/markdown' },
+    async () => ({
+      contents: [{
+        uri: 'firebat://guides/module-i18n',
+        mimeType: 'text/markdown',
+        text: `# 모듈 settings_fields + i18n 가이드
+
+config.json 안 \`settings_fields\` 영역 — 어드민 설정 모달이 자동 렌더 + 한·영 동시 노출.
+
+## 핵심 원칙
+
+1. **모듈 자기완결 i18n** — messages/ko.json / en.json 별도 entry 미박음. config.json 안에 ko + en 동시 작성
+2. **사용자 노출 텍스트 = 습니다체** — 단정형 / 명사 종결 금지 (예: "최대 글자 수" → "최대 글자 수입니다.")
+3. **lang 자동 결정** — 어드민 UI lang 변경 시 자동 전환 (ko → ko entry, en → en entry)
+
+## 형식
+
+\`\`\`json
+{
+  "name": "my-module",
+  "type": "module",
+  "scope": "system",
+  "secrets": ["MY_API_KEY"],
+  "settings_fields": [
+    {
+      "key": "timeout",
+      "type": "number",
+      "placeholder": "30000",
+      "defaultValue": 30000,
+      "i18n": {
+        "ko": { "label": "타임아웃 (ms)", "description": "API 호출 제한 시간입니다." },
+        "en": { "label": "Timeout (ms)", "description": "API call timeout duration." }
+      }
+    },
+    {
+      "key": "useCache",
+      "type": "toggle",
+      "defaultValue": true,
+      "i18n": {
+        "ko": { "label": "캐시 사용", "description": "활성화 시 5분간 캐시된 응답을 재사용합니다." },
+        "en": { "label": "Use cache", "description": "When enabled, cached responses are reused for 5 minutes." }
+      }
+    }
+  ],
+  "input": { ... },
+  "output": { ... }
+}
+\`\`\`
+
+## type 옵션
+
+| type | 용도 | 추가 필드 |
+|---|---|---|
+| \`text\` | 짧은 텍스트 입력 | placeholder |
+| \`number\` | 숫자 입력 | placeholder, defaultValue |
+| \`toggle\` | 토글 (ON/OFF) | defaultValue (true/false) |
+| \`textarea\` | 긴 텍스트 입력 | placeholder, rows |
+| \`select\` | 드롭다운 | options: [{value, label}] |
+| \`secret\` | API 키 (자동 Vault) | secretName (보통 secrets 배열에서 자동 생성) |
+| \`oauth\` | OAuth 연동 | oauthUrl, oauthSecrets |
+
+## fallback chain
+
+활성 lang 의 i18n entry 없으면 \`en\` → \`ko\` → \`field.key\` 순서로 fallback.
+
+## 작성 시 주의
+
+- ko + en 둘 다 작성 (외국 사용자 마찰 0)
+- description 끝 마침표 (\`.\` 또는 \`다.\`) 일관 유지
+- 영어 description 도 \`.\` 으로 끝맺음
+- placeholder 는 보통 i18n 미필요 (예시 값 그대로)
+- defaultValue 는 필요 시만 (placeholder 만으로 충분하면 생략)
+`,
+      }],
+    }),
+  );
+
   // ══════════════════════════════════════════════════════════════════════════
   //  프롬프트 — 파이어뱃 앱 생성 가이드
   // ══════════════════════════════════════════════════════════════════════════
