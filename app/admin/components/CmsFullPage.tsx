@@ -99,7 +99,7 @@ export function CmsFullPage({ onClose, onBack }: Props) {
           onChange={(e) => setPreviewPath(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') refreshIframe(); }}
           placeholder="/"
-          className="hidden md:block px-2 py-1 text-xs border border-slate-300 rounded w-40"
+          className="hidden md:block px-2 py-1 text-xs border border-slate-300 rounded w-40" name="previewPath" autoComplete="off"
         />
         <button
           onClick={refreshIframe}

@@ -177,7 +177,7 @@ export function WidgetListField({
                       <select
                         value={slot.visibility ?? 'all'}
                         onChange={(e) => updateSlot(i, { visibility: e.target.value as WidgetSlot['visibility'] })}
-                        className="text-[11px] px-2 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        className="text-[11px] px-2 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="all"
                       >
                         <option value="all">{t('system_modules.widget_list.visibility_all')}</option>
                         <option value="desktop">{t('system_modules.widget_list.visibility_desktop')}</option>
@@ -215,7 +215,7 @@ export function WidgetListField({
                                   onChange={(e) => updateProp(i, p.key, e.target.value)}
                                   placeholder={p.placeholder}
                                   rows={3}
-                                  className="text-[11px] px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono"
+                                  className="text-[11px] px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono" name="eff" autoComplete="off"
                                 />
                               ) : (
                                 <input
@@ -223,7 +223,7 @@ export function WidgetListField({
                                   value={eff == null ? '' : String(eff)}
                                   onChange={(e) => updateProp(i, p.key, p.type === 'number' ? Number(e.target.value) : e.target.value)}
                                   placeholder={p.placeholder}
-                                  className="text-[11px] px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  className="text-[11px] px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="Stringeff" autoComplete="off"
                                 />
                               )}
                               {p.description && (

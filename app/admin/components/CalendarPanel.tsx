@@ -470,29 +470,29 @@ function CalendarModal({ existing, defaultDate, onClose, onSaved }: { existing: 
         <div className="px-4 py-3 space-y-3">
           <div>
             <label className="text-[11px] font-bold text-slate-600 block mb-1">제목</label>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="일정 제목" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" autoFocus />
+            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="일정 제목" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" autoFocus name="title" autoComplete="off" />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-[11px] font-bold text-slate-600 block mb-1">시작</label>
-              <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="startAt" autoComplete="off" />
             </div>
             <div>
               <label className="text-[11px] font-bold text-slate-600 block mb-1">종료 (선택)</label>
-              <input type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
+              <input type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="endAt" autoComplete="off" />
             </div>
           </div>
           <div>
             <label className="text-[11px] font-bold text-slate-600 block mb-1">장소 (선택)</label>
-            <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="예: 강남, Zoom 링크" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="예: 강남, Zoom 링크" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="location" autoComplete="off" />
           </div>
           <div>
             <label className="text-[11px] font-bold text-slate-600 block mb-1">설명 (선택)</label>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="상세 메모" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" />
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="상세 메모" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" name="description" autoComplete="off" />
           </div>
           <div>
             <label className="text-[11px] font-bold text-slate-600 block mb-1">태그 (콤마 분리)</label>
-            <input type="text" value={tagsRaw} onChange={(e) => setTagsRaw(e.target.value)} placeholder="공모주, 매매, 미팅" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            <input type="text" value={tagsRaw} onChange={(e) => setTagsRaw(e.target.value)} placeholder="공모주, 매매, 미팅" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="tagsRaw" autoComplete="off" />
           </div>
           {error && <p className="text-[11px] text-red-600">{error}</p>}
         </div>

@@ -798,7 +798,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     <select
                       value={settings[field.key] ?? field.defaultValue ?? ''}
                       onChange={e => handleChange(field.key, e.target.value)}
-                      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="field798"
                     >
                       {(field.options ?? []).map(opt => (
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -832,7 +832,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                         onChange={e => handleChange(field.key, e.target.value)}
                         placeholder={field.placeholder}
                         rows={4}
-                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono resize-y"
+                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono resize-y" name="field830" autoComplete="off"
                       />
                     ) : (
                       <input
@@ -840,7 +840,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                         value={settings[field.key] ?? ''}
                         onChange={e => handleChange(field.key, field.type === 'number' ? Number(e.target.value) : e.target.value)}
                         placeholder={field.placeholder}
-                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="field838" autoComplete="off"
                       />
                     )}
                     {field.description && (
@@ -1060,7 +1060,7 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
                     type="color"
                     value={displayHex}
                     onChange={e => handleHexChange(e.target.value)}
-                    className="absolute inset-0 w-full h-full cursor-pointer border-0 p-0 opacity-0"
+                    className="absolute inset-0 w-full h-full cursor-pointer border-0 p-0 opacity-0" name="displayHex" autoComplete="off"
                   />
                   <div
                     className="absolute inset-0"
@@ -1075,7 +1075,7 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
                   value={overrideValue}
                   onChange={e => handleTextChange(e.target.value)}
                   placeholder={presetValue}
-                  className={`w-full text-[10px] font-mono border-0 bg-transparent focus:outline-none ${isOverridden ? 'text-slate-700' : 'text-slate-400'}`}
+                  className={`w-full text-[10px] font-mono border-0 bg-transparent focus:outline-none ${isOverridden ? 'text-slate-700' : 'text-slate-400'}`} name="overrideValue" autoComplete="off"
                 />
                 {/* Alpha slider — hex picker 와 별도 (native color picker 가 alpha 미지원) */}
                 <div className="flex items-center gap-1.5 mt-0.5">
@@ -1086,7 +1086,7 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
                     value={Math.round(displayAlpha * 100)}
                     onChange={e => handleAlphaChange(parseInt(e.target.value, 10))}
                     className="flex-1 h-1 cursor-pointer"
-                    aria-label={t('system_modules.common.alpha_label')}
+                    aria-label={t('system_modules.common.alpha_label')} name="rounddisplayAlpha100" autoComplete="off"
                   />
                   <span className="text-[9px] text-slate-400 font-mono w-7 text-right tabular-nums">
                     {Math.round(displayAlpha * 100)}%
@@ -1144,7 +1144,7 @@ function VerificationsField({ label, description, value, onChange }: {
                 value={item.filename}
                 onChange={e => updateItem(i, { filename: e.target.value })}
                 placeholder={t('system_modules.common.verifications_filename_placeholder')}
-                className="flex-1 px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                className="flex-1 px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono" name="filename" autoComplete="off"
               />
               <Tooltip label={t('common.delete')}>
                 <button
@@ -1161,7 +1161,7 @@ function VerificationsField({ label, description, value, onChange }: {
               onChange={e => updateItem(i, { content: e.target.value })}
               placeholder={t('system_modules.common.verifications_content_placeholder')}
               rows={3}
-              className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono resize-y"
+              className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono resize-y" name="content" autoComplete="off"
             />
           </div>
         ))}
