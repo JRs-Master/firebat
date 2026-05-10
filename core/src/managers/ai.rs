@@ -435,11 +435,15 @@ impl AiManager {
         let mut executed_actions: Vec<serde_json::Value> = Vec::new();
         let mut blocks: Vec<serde_json::Value> = Vec::new();
         let mut pending_actions: Vec<serde_json::Value> = Vec::new();
+        // CLI 자체 MCP loop 가 호출한 suggest / propose_plan 결과 누적 — 함수 끝 AiResponse.suggestions 박힘.
+        let mut cli_suggestions: Vec<serde_json::Value> = Vec::new();
         let mut last_text = String::new();
         let mut last_model_id = self.llm.get_model_id();
         let mut total_cost: f64 = 0.0;
-        // 학습 로그용 turn 별 (calls, results) 페어 누적 — 옛 TS toolExchanges 1:1.
-        let mut tool_exchanges: Vec<(Vec<ToolCall>, Vec<ToolResult>)> = Vec::new();
+        // 학습 로그 + 다음 turn Gemini thought_signature echo 용 — 옛 TS `toolExchanges` 1:1.
+        // ToolExchangeEntry 에 tool_calls + tool_results + raw_model_parts 동시 박힘 →
+        // 다음 turn `opts.tool_exchanges` 로 어댑터에 echo (Gemini thought_signature 보존 필수).
+        let mut tool_exchanges: Vec<crate::ports::ToolExchangeEntry> = Vec::new();
         // cron agent 모드는 approval gate 우회 (UI 없는 server-side 자율 발행).
         let approval_enabled = self.dispatcher.is_some() && ai_opts.cron_agent.is_none();
 
@@ -574,6 +578,28 @@ impl AiManager {
                 );
             }
 
+            // CLI 자체 MCP loop 결과 흡수 — 어댑터 (cli_claude_code / cli_codex / cli_gemini) 가
+            // 자체 MCP 호출 → render_* / pending / suggestions / used_tools 추출해서 LlmToolResponse 에 박음.
+            // AiManager 는 그대로 outcome 에 extend (옛 TS `internallyUsedTools / renderedBlocks /
+            // pendingActions / suggestions` 흡수 1:1).
+            if !response.rendered_blocks.is_empty() {
+                blocks.extend(response.rendered_blocks.iter().cloned());
+            }
+            if !response.pending_actions.is_empty() {
+                pending_actions.extend(response.pending_actions.iter().cloned());
+            }
+            if !response.suggestions.is_empty() {
+                cli_suggestions.extend(response.suggestions.iter().cloned());
+            }
+            if !response.internally_used_tools.is_empty() {
+                // CLI 가 자체 처리한 도구 → executed_actions 에 메타 push (UI 표시용)
+                for tool_name in &response.internally_used_tools {
+                    executed_actions.push(serde_json::json!({
+                        "name": tool_name,
+                        "internally": true,
+                    }));
+                }
+            }
             // propose_plan turn 감지 — 호출됐으면 trailing text drop + break (옛 TS 1:1).
             // PlanCard + suggestions 가 이미 완전 → "위 카드에서..." 사족 drop.
             let is_propose_plan_turn = response
@@ -798,11 +824,17 @@ impl AiManager {
             }
 
             // prior_results 누적 — 다음 turn 의 toolExchanges 로 LLM 에 전달.
-            // 학습 로그용 — turn 별 (calls, results) 페어 별도 보존.
+            // 학습 로그용 + Gemini thought_signature echo 용 — turn 별 entry 보존.
             let turn_calls: Vec<ToolCall> = turn_results.iter().map(|(c, _)| c.clone()).collect();
             let turn_action_results: Vec<ToolResult> =
                 turn_results.iter().map(|(_, r)| r.clone()).collect();
-            tool_exchanges.push((turn_calls, turn_action_results));
+            tool_exchanges.push(crate::ports::ToolExchangeEntry {
+                tool_calls: turn_calls,
+                tool_results: turn_action_results,
+                raw_model_parts: response.raw_model_parts.clone(),
+            });
+            // 다음 turn opts 에 누적 entries 통째 echo — Gemini 어댑터가 raw_model_parts 활용해 thought_signature 보존.
+            effective_opts.tool_exchanges = tool_exchanges.clone();
             for (_call, action) in turn_results {
                 prior_results.push(action);
             }
@@ -843,7 +875,7 @@ impl AiManager {
             reply: clean_reply,
             blocks: final_blocks,
             executed_actions,
-            suggestions: Vec::new(),
+            suggestions: cli_suggestions,
             pending_actions,
             error: None,
             model_id: Some(last_model_id),
@@ -861,7 +893,7 @@ impl AiManager {
     fn training_log_contents(
         &self,
         prompt: &str,
-        tool_exchanges: &[(Vec<ToolCall>, Vec<ToolResult>)],
+        tool_exchanges: &[crate::ports::ToolExchangeEntry],
         final_reply: &str,
     ) {
         let mut contents: Vec<serde_json::Value> = Vec::new();
@@ -874,9 +906,10 @@ impl AiManager {
         }));
 
         // 2. 멀티턴 도구 교환
-        for (calls, results) in tool_exchanges {
+        for ex in tool_exchanges {
             // model: functionCall parts
-            let model_parts: Vec<serde_json::Value> = calls
+            let model_parts: Vec<serde_json::Value> = ex
+                .tool_calls
                 .iter()
                 .map(|tc| {
                     serde_json::json!({
@@ -894,7 +927,8 @@ impl AiManager {
                 }));
             }
             // user: functionResponse parts (trim 적용)
-            let response_parts: Vec<serde_json::Value> = results
+            let response_parts: Vec<serde_json::Value> = ex
+                .tool_results
                 .iter()
                 .map(|tr| {
                     serde_json::json!({

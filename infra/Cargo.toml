@@ -52,6 +52,10 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "str
 url = "2"
 base64 = "0.22"
 
+# JWT — Vertex AI Service Account → access_token 자동 발급 (RS256, jwk 미사용).
+# 옛 TS @google/genai SDK 의 googleAuthOptions.credentials 자동 갱신과 동등.
+jsonwebtoken = "9"
+
 # 텍스트 / 인코딩
 regex = "1"
 sha1 = "0.10"

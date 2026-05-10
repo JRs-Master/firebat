@@ -1,21 +1,31 @@
-//! Claude Code CLI — `claude` 자식 프로세스 (옛 TS cli-claude-code.ts).
+//! Claude Code CLI — `claude` 자식 프로세스 (옛 TS `cli-claude-code.ts` 1:1 port).
 //!
-//! Phase B-17 minimum: cold spawn + stdin prompt + stdout 파싱 (단순 텍스트 응답).
-//! stream-json + tool_use / tool_result 파싱 + --resume session_id 영속 + MCP --mcp-config
-//! 같은 advanced features 는 Phase B-17.5 후속.
-//!
-//! 실 동작 조건: `claude` binary PATH 설정되어 있어야 함 (구독 OAuth 로그인 완료 상태).
-//! `claude auth login` 한 번 실행 후 사용 가능.
+//! 핵심 기능:
+//! - cold spawn 매 turn (옛 daemon LRU 폐기, 2026-04-30 결정)
+//! - `--resume <session_id>` (DB 영속 cli_session_id 활용 — 멀티턴 컨텍스트)
+//! - `--mcp-config <file>` 로 Firebat MCP 서버 연결 (HTTP streamable 우선, stdio fallback)
+//! - `--allowed-tools mcp__firebat__*` + `--disallowed-tools <Claude Code 내장 도구>` (MCP 만 허용)
+//! - `--system-prompt <Firebat User AI 페르소나>` (Claude Code 기본 코딩 프롬프트 교체)
+//! - `--effort <low|medium|high|xhigh|max>` (extended thinking — opts.thinking_level 매핑)
+//! - stream-json output 파싱: assistant.text/thinking/tool_use, user.tool_result, result/error
+//! - tool_use_id 매칭 → render_* / pending_actions / suggestions 추출
+//! - 첫 turn session_id 캡처 → response.cli_session_id 로 반환 (AiManager 가 DB 영속화)
+//! - 종료 후 `~/.claude/projects/*/tool-results/` 10분+ 캐시 청소 (디스크 누적 방지)
+//! - 첨부 이미지: stream-json input 모드 (Claude Code 는 `--image` 플래그 없음, Read 도구도 차단되어 있어 stream-json 이 유일한 vision 경로)
 
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::process::Stdio;
 use tokio::io::AsyncWriteExt;
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 
 use crate::llm::adapter::FormatHandler;
-use firebat_core::llm::config::LlmModelConfig;
 use crate::llm::formats::cli_image_helper::extract_image_base64;
+use firebat_core::llm::config::LlmModelConfig;
 use firebat_core::ports::{
     InfraResult, LlmCallOpts, LlmTextResponse, LlmToolResponse, ToolDefinition, ToolResult,
 };
+use firebat_core::utils::render_map::render_tool_map;
 
 pub struct ClaudeCodeCliHandler;
 
@@ -24,83 +34,522 @@ impl ClaudeCodeCliHandler {
         Self
     }
 
-    /// CLI subprocess 실행 — prompt stdin 으로 전달, stdout 캡처.
-    ///
-    /// 이미지 첨부 시 stream-json input 모드 사용 (옛 TS cli-claude-code.ts:259-272 1:1):
-    /// - Claude Code 는 `--image` 플래그 없음
-    /// - Read 도구가 disallowedTools 에 설정되어 `@<path>` 참조 불가 → stream-json input 이 유일한 vision 경로
-    /// - stdin 에 `{type:'user', message:{role:'user', content:[{type:'text', text}, {type:'image', source:{type:'base64', media_type, data}}]}}` JSON 저장
-    async fn run_cli(binary: &str, prompt: &str, opts: &LlmCallOpts) -> InfraResult<String> {
-        let image_data = extract_image_base64(opts.image.as_deref(), opts.image_mime_type.as_deref());
+    /// Firebat thinking level → Claude Code `--effort` 값.
+    /// 옛 TS `mapThinkingToEffort` 1:1. minimal/none 미지원 (플래그 생략).
+    fn map_thinking_to_effort(level: Option<&str>) -> Option<&'static str> {
+        match level {
+            Some("low") => Some("low"),
+            Some("medium") => Some("medium"),
+            Some("high") => Some("high"),
+            Some("xhigh") => Some("xhigh"),
+            Some("max") => Some("max"),
+            _ => None, // none / minimal / unknown → 플래그 생략
+        }
+    }
 
-        let mut cmd = Command::new(binary);
-        if image_data.is_some() {
-            // stream-json input 모드 — 옛 TS 1:1
-            cmd.arg("-p")
-                .arg("--input-format")
-                .arg("stream-json")
-                .arg("--output-format")
-                .arg("stream-json")
-                .arg("--verbose");
+    /// `mcp__firebat__render_stock_chart` → `render_stock_chart` (옛 TS `stripMcpPrefix` 1:1).
+    fn strip_mcp_prefix(name: &str) -> &str {
+        // Pattern: `mcp__<server>__<tool>` — 첫 두 `__` 사이 server 이름 무시.
+        if let Some(stripped) = name.strip_prefix("mcp__") {
+            if let Some(idx) = stripped.find("__") {
+                return &stripped[(idx + 2)..];
+            }
+        }
+        name
+    }
+
+    /// MCP config 파일 박기 — HTTP streamable 우선 (즉시 도구 사용), stdio fallback (옛 TS `ensureMcpConfigFile` 1:1).
+    ///
+    /// HTTP streamable: Firebat 메인 프로세스의 `/api/mcp-internal` 에 직접 연결.
+    /// 매 spawn 마다 Firebat Core 를 서브프로세스로 재부팅 (~수초) 하지 않고 즉시 도구 사용 가능.
+    fn ensure_mcp_config_file(
+        internal_mcp_token: Option<&str>,
+        base_url: Option<&str>,
+    ) -> Option<PathBuf> {
+        let dir = std::env::temp_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let config_path = dir.join("firebat-claude-mcp-config.json");
+
+        let config = if let Some(token) = internal_mcp_token {
+            let url = format!(
+                "{}/api/mcp-internal",
+                base_url.unwrap_or("http://127.0.0.1:3000")
+            );
+            serde_json::json!({
+                "mcpServers": {
+                    "firebat": {
+                        "type": "http",
+                        "url": url,
+                        "headers": { "Authorization": format!("Bearer {}", token) }
+                    }
+                }
+            })
         } else {
-            // 일반 모드 — `--print` non-interactive
-            cmd.arg("--print");
+            // stdio fallback — 토큰 미설정 시. 매번 Firebat Core 재부팅하므로 초기 호출 느림.
+            let project_dir = std::env::current_dir().ok()?;
+            let stdio_path = project_dir.join("mcp").join("stdio-user-ai.ts");
+            serde_json::json!({
+                "mcpServers": {
+                    "firebat": {
+                        "command": "npx",
+                        "args": ["tsx", stdio_path.to_string_lossy().to_string()],
+                        "cwd": project_dir.to_string_lossy().to_string()
+                    }
+                }
+            })
+        };
+
+        let payload = serde_json::to_string_pretty(&config).ok()?;
+        std::fs::write(&config_path, payload).ok()?;
+        Some(config_path)
+    }
+
+    /// resume 미사용 시 history 를 prompt 앞에 병합 (최근 10턴, 옛 TS `buildPromptWithHistory` 1:1).
+    fn build_prompt_with_history(
+        prompt: &str,
+        history: &[firebat_core::ports::ChatMessage],
+    ) -> String {
+        if history.is_empty() {
+            return prompt.to_string();
+        }
+        let recent_start = history.len().saturating_sub(10);
+        let mut hist_lines: Vec<String> = Vec::new();
+        for h in &history[recent_start..] {
+            let role = if h.role == "assistant" { "AI" } else { "사용자" };
+            let content_str = match &h.content {
+                serde_json::Value::String(s) if !s.trim().is_empty() => s.clone(),
+                v => serde_json::to_string(v).unwrap_or_default(),
+            };
+            hist_lines.push(format!("{}: {}", role, content_str));
+        }
+        format!(
+            "[이전 대화]\n{}\n\n[현재 요청]\n{}",
+            hist_lines.join("\n\n"),
+            prompt
+        )
+    }
+
+    /// `~/.claude/projects/*/tool-results/` 의 10분 이전 파일 청소 — 옛 TS `cleanupClaudeCacheFiles` 1:1.
+    /// 디스크 누적 방지. 현재 실행 중 참조 방지를 위해 10분+ 만 제거.
+    async fn cleanup_claude_cache_files() {
+        let home = match std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+            Some(h) => PathBuf::from(h),
+            None => return,
+        };
+        let claude_projects_dir = home.join(".claude").join("projects");
+        if !claude_projects_dir.exists() {
+            return;
+        }
+        let ten_min_ago = std::time::SystemTime::now()
+            .checked_sub(std::time::Duration::from_secs(600))
+            .unwrap_or(std::time::UNIX_EPOCH);
+        let entries = match std::fs::read_dir(&claude_projects_dir) {
+            Ok(e) => e,
+            Err(_) => return,
+        };
+        for proj in entries.flatten() {
+            let tool_results_dir = proj.path().join("tool-results");
+            if !tool_results_dir.exists() {
+                continue;
+            }
+            let files = match std::fs::read_dir(&tool_results_dir) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            for f in files.flatten() {
+                let fp = f.path();
+                if let Ok(meta) = std::fs::metadata(&fp) {
+                    if let Ok(mt) = meta.modified() {
+                        if mt < ten_min_ago {
+                            let _ = std::fs::remove_file(&fp);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// 도구 호출 인자 빌더 — opts + system prompt + history + MCP / resume / model / effort.
+    fn build_args(
+        prompt: &str,
+        opts: &LlmCallOpts,
+        has_image: bool,
+        mcp_config_path: Option<&str>,
+        with_tools: bool,
+    ) -> Vec<String> {
+        let mut args: Vec<String> = Vec::new();
+        // Claude Code 내장 도구 차단 — Firebat MCP 만 허용. 옛 TS 1:1.
+        const ALLOWED_TOOLS: &str = "mcp__firebat__*";
+        const DISALLOWED_TOOLS: &str = "Agent,Task,TaskOutput,TaskStop,ToolSearch,SlashCommand,Bash,BashOutput,KillBash,KillShell,Read,Write,Edit,NotebookEdit,Glob,Grep,WebFetch,WebSearch,TodoWrite,EnterPlanMode,ExitPlanMode,EnterWorktree,ExitWorktree,Monitor,PushNotification,RemoteTrigger,ScheduleWakeup,Skill,AskUserQuestion,CronCreate,CronDelete,CronList,ListMcpResources,ReadMcpResource";
+
+        if has_image {
+            // stream-json input 모드 — stdin 으로 user message 전달. -p (print) 는 query 인자 없이 사용.
+            args.push("-p".to_string());
+            args.push("--input-format".to_string());
+            args.push("stream-json".to_string());
+            args.push("--output-format".to_string());
+            args.push("stream-json".to_string());
+            args.push("--verbose".to_string());
+        } else {
+            args.push("--print".to_string());
+            args.push(prompt.to_string());
+            args.push("--output-format".to_string());
+            args.push("stream-json".to_string());
+            args.push("--verbose".to_string());
         }
 
-        let mut child = cmd
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                format!(
-                    "Claude Code CLI spawn 실패 ({}): {e} — `{}` binary PATH 확인 / `claude auth login` 한 번 실행했는지 확인",
-                    binary, binary
-                )
-            })?;
+        if with_tools {
+            args.push("--allowed-tools".to_string());
+            args.push(ALLOWED_TOOLS.to_string());
+            args.push("--disallowed-tools".to_string());
+            args.push(DISALLOWED_TOOLS.to_string());
+        }
 
-        // stdin 으로 prompt 또는 stream-json user message 전달
-        if let Some(mut stdin) = child.stdin.take() {
-            let payload = if let Some((data, media_type)) = &image_data {
-                // stream-json user message — 옛 TS cli-claude-code.ts 1:1
-                let msg = serde_json::json!({
+        if let Some(sp) = opts.system_prompt.as_deref() {
+            if !sp.is_empty() {
+                args.push("--system-prompt".to_string());
+                args.push(sp.to_string());
+            }
+        }
+        if let Some(rid) = opts.cli_resume_session_id.as_deref() {
+            if !rid.is_empty() {
+                args.push("--resume".to_string());
+                args.push(rid.to_string());
+            }
+        }
+        if let Some(p) = mcp_config_path {
+            args.push("--mcp-config".to_string());
+            args.push(p.to_string());
+        }
+        if let Some(m) = opts.cli_model.as_deref() {
+            if !m.is_empty() {
+                args.push("--model".to_string());
+                args.push(m.to_string());
+            }
+        }
+        if let Some(effort) = Self::map_thinking_to_effort(opts.thinking_level.as_deref()) {
+            args.push("--effort".to_string());
+            args.push(effort.to_string());
+        }
+        args
+    }
+
+    /// stream-json line 파싱 + tool 결과 매칭 → 풍부 메타 누적.
+    /// 옛 TS `processLine` + `runClaude` 1:1 port (onChunk 콜백 제외 — Rust streaming infra 후속).
+    async fn run_cli(
+        binary: &str,
+        prompt: &str,
+        opts: &LlmCallOpts,
+        with_tools: bool,
+        mcp_config_path: Option<&str>,
+    ) -> InfraResult<CliRunOutcome> {
+        let image_data = extract_image_base64(opts.image.as_deref(), opts.image_mime_type.as_deref());
+        let has_image = image_data.is_some();
+        // resume 미사용 시 history 주입 (옛 TS 1:1)
+        let final_prompt = if opts.cli_resume_session_id.is_some() {
+            prompt.to_string()
+        } else {
+            Self::build_prompt_with_history(prompt, &opts.history)
+        };
+        let args = Self::build_args(&final_prompt, opts, has_image, mcp_config_path, with_tools);
+
+        let mut cmd = Command::new(binary);
+        cmd.args(&args);
+        if has_image {
+            cmd.stdin(Stdio::piped());
+        } else {
+            cmd.stdin(Stdio::null());
+        }
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+
+        let mut child: Child = cmd.spawn().map_err(|e| {
+            format!(
+                "Claude Code CLI spawn 실패 ({}): {e} — `{}` binary PATH 확인 / `claude auth login` 한 번 실행했는지 확인",
+                binary, binary
+            )
+        })?;
+
+        // stream-json input 모드 — stdin 에 user message JSON line 전송 후 close.
+        if has_image {
+            if let (Some((data, media_type)), Some(mut stdin)) = (image_data, child.stdin.take()) {
+                let user_msg = serde_json::json!({
                     "type": "user",
                     "message": {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": prompt},
+                            {"type": "text", "text": final_prompt},
                             {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": data}}
                         ]
                     }
                 });
-                serde_json::to_string(&msg).unwrap_or_default()
-            } else {
-                prompt.to_string()
-            };
-            stdin
-                .write_all(payload.as_bytes())
-                .await
-                .map_err(|e| format!("Claude Code CLI stdin write 실패: {e}"))?;
-            drop(stdin);
+                let payload = serde_json::to_string(&user_msg).unwrap_or_default() + "\n";
+                let _ = stdin.write_all(payload.as_bytes()).await;
+                drop(stdin);
+            }
         }
 
-        let output = child
-            .wait_with_output()
-            .await
-            .map_err(|e| format!("Claude Code CLI wait 실패: {e}"))?;
+        let output = child.wait_with_output().await.map_err(|e| {
+            format!("Claude Code CLI wait 실패: {e}")
+        })?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!(
-                "Claude Code CLI 종료 코드 {:?}: {}",
-                output.status.code(),
-                stderr.trim()
-            ));
-        }
+        // 종료 후 캐시 청소 — silent. 옛 TS child.on('close', ...) 1:1.
+        Self::cleanup_claude_cache_files().await;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        Ok(stdout)
+        let stderr_buf = String::from_utf8_lossy(&output.stderr).to_string();
+
+        let mut outcome = CliRunOutcome::default();
+        let mut current_text = String::new();
+        let mut pending_tool_uses: HashMap<String, PendingToolUse> = HashMap::new();
+        let mut errored = false;
+        let mut error_msg: Option<String> = None;
+
+        for line in stdout.lines() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let ev: serde_json::Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            // session_id 캡처 (init 또는 첫 응답)
+            if outcome.session_id.is_none() {
+                if let Some(sid) = ev.get("session_id").and_then(|v| v.as_str()) {
+                    outcome.session_id = Some(sid.to_string());
+                }
+            }
+
+            // 에러 이벤트
+            let is_error = ev.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+            let subtype = ev.get("subtype").and_then(|v| v.as_str()).unwrap_or("");
+            if is_error || subtype == "error" {
+                errored = true;
+                let detail = ev
+                    .get("result")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+                    .or_else(|| ev.get("error").and_then(|v| v.as_str()).map(String::from))
+                    .or_else(|| {
+                        ev.get("message")
+                            .and_then(|m| m.get("content"))
+                            .map(|c| c.to_string())
+                    })
+                    .unwrap_or_else(|| ev.to_string().chars().take(300).collect());
+                error_msg = Some(format!("Claude CLI: {}", detail));
+                continue;
+            }
+
+            let ev_type = ev.get("type").and_then(|v| v.as_str()).unwrap_or("");
+
+            // assistant: text / thinking / tool_use
+            if ev_type == "assistant" {
+                if let Some(content) = ev
+                    .get("message")
+                    .and_then(|m| m.get("content"))
+                    .and_then(|c| c.as_array())
+                {
+                    for c in content {
+                        let c_type = c.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                        match c_type {
+                            "text" => {
+                                if let Some(t) = c.get("text").and_then(|v| v.as_str()) {
+                                    current_text.push_str(t);
+                                }
+                            }
+                            "thinking" => {
+                                // Extended thinking 블록 — 본문 누적 X (UI thinking 표시는 별도 streaming 채널, 후속).
+                            }
+                            "tool_use" => {
+                                let raw_name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                                if raw_name.is_empty() {
+                                    continue;
+                                }
+                                let bare = Self::strip_mcp_prefix(raw_name).to_string();
+                                outcome.used_tools.push(bare.clone());
+                                let tool_use_id =
+                                    c.get("id").and_then(|v| v.as_str()).map(String::from);
+                                if let Some(id) = tool_use_id {
+                                    pending_tool_uses.insert(
+                                        id,
+                                        PendingToolUse {
+                                            name: bare,
+                                            input: c.get("input").cloned().unwrap_or(serde_json::json!({})),
+                                        },
+                                    );
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            // user: tool_result — render_* / pending / suggestions 추출
+            if ev_type == "user" {
+                if let Some(content) = ev
+                    .get("message")
+                    .and_then(|m| m.get("content"))
+                    .and_then(|c| c.as_array())
+                {
+                    for c in content {
+                        if c.get("type").and_then(|v| v.as_str()) != Some("tool_result") {
+                            continue;
+                        }
+                        let tool_use_id =
+                            c.get("tool_use_id").and_then(|v| v.as_str()).map(String::from);
+                        let pending = match tool_use_id.as_deref() {
+                            Some(id) => pending_tool_uses.remove(id),
+                            None => None,
+                        };
+                        let Some(pending) = pending else { continue };
+                        // content: array[{type:'text', text: '<json>'}]
+                        let text_payload = c
+                            .get("content")
+                            .and_then(|v| v.as_array())
+                            .and_then(|arr| arr.first())
+                            .and_then(|first| first.get("text").and_then(|t| t.as_str()))
+                            .map(String::from)
+                            .or_else(|| c.get("content").and_then(|v| v.as_str()).map(String::from));
+                        let Some(text_payload) = text_payload else { continue };
+                        let payload: serde_json::Value =
+                            match serde_json::from_str(&text_payload) {
+                                Ok(v) => v,
+                                Err(_) => continue,
+                            };
+                        if !payload.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+                            continue;
+                        }
+                        // 1) render_* 결과 → blocks
+                        let html_content =
+                            payload.get("htmlContent").and_then(|v| v.as_str()).map(String::from);
+                        let component =
+                            payload.get("component").and_then(|v| v.as_str()).map(String::from);
+                        if pending.name == "render_iframe" && html_content.is_some() {
+                            let html = html_content.unwrap();
+                            let mut block = serde_json::json!({
+                                "type": "html",
+                                "htmlContent": html,
+                            });
+                            if let Some(h) =
+                                payload.get("htmlHeight").and_then(|v| v.as_str())
+                            {
+                                block["htmlHeight"] = serde_json::Value::String(h.to_string());
+                            }
+                            outcome.rendered_blocks.push(block);
+                        } else if let Some(comp) = component {
+                            outcome.rendered_blocks.push(serde_json::json!({
+                                "type": "component",
+                                "name": comp,
+                                "props": payload.get("props").cloned().unwrap_or(serde_json::json!({}))
+                            }));
+                        } else if let Some(comp_name) = render_tool_map().get(pending.name.as_str()) {
+                            outcome.rendered_blocks.push(serde_json::json!({
+                                "type": "component",
+                                "name": *comp_name,
+                                "props": pending.input.clone()
+                            }));
+                        }
+                        // 2) 승인 대기 도구 → pendingActions
+                        let pending_flag =
+                            payload.get("pending").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let plan_id =
+                            payload.get("planId").and_then(|v| v.as_str()).map(String::from);
+                        if pending_flag {
+                            if let Some(pid) = plan_id {
+                                let summary = payload
+                                    .get("summary")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or(&pending.name)
+                                    .to_string();
+                                let mut action = serde_json::json!({
+                                    "planId": pid,
+                                    "name": pending.name.clone(),
+                                    "summary": summary,
+                                    "args": pending.input.clone(),
+                                });
+                                if payload.get("status").and_then(|v| v.as_str()) == Some("past-runat") {
+                                    action["status"] = serde_json::Value::String("past-runat".to_string());
+                                }
+                                if let Some(ora) = payload
+                                    .get("originalRunAt")
+                                    .and_then(|v| v.as_str())
+                                {
+                                    action["originalRunAt"] =
+                                        serde_json::Value::String(ora.to_string());
+                                }
+                                outcome.pending_actions.push(action);
+                            }
+                        }
+                        // 3) suggest / propose_plan → suggestions
+                        if (pending.name == "suggest" || pending.name == "propose_plan")
+                            && payload.get("suggestions").and_then(|v| v.as_array()).is_some()
+                        {
+                            for s in payload.get("suggestions").unwrap().as_array().unwrap() {
+                                outcome.suggestions.push(s.clone());
+                            }
+                        }
+                    }
+                }
+            }
+
+            // result — 실행 종료, 최종 text 결정
+            if ev_type == "result" {
+                let result_is_err =
+                    ev.get("is_error").and_then(|v| v.as_bool()).unwrap_or(false);
+                if result_is_err {
+                    errored = true;
+                    let r = ev
+                        .get("result")
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                        .unwrap_or_else(|| "실행 오류".to_string());
+                    error_msg = Some(r);
+                } else {
+                    outcome.text = std::mem::take(&mut current_text);
+                }
+                let cost_usd = ev
+                    .get("total_cost_usd")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                outcome.cost_usd = cost_usd;
+            }
+        }
+
+        if errored {
+            return Err(error_msg.unwrap_or_else(|| "Claude Code CLI 알 수 없는 에러".to_string()));
+        }
+        // result 이벤트 없이 종료 → current_text 가 최종
+        if outcome.text.is_empty() && !current_text.is_empty() {
+            outcome.text = current_text;
+        }
+        // exit code 비정상
+        if !output.status.success() {
+            return Err(format!(
+                "Claude Code 비정상 종료 (exit {:?}): {}",
+                output.status.code(),
+                stderr_buf.chars().take(500).collect::<String>()
+            ));
+        }
+        Ok(outcome)
     }
+}
+
+#[derive(Default)]
+struct CliRunOutcome {
+    text: String,
+    session_id: Option<String>,
+    used_tools: Vec<String>,
+    rendered_blocks: Vec<serde_json::Value>,
+    pending_actions: Vec<serde_json::Value>,
+    suggestions: Vec<serde_json::Value>,
+    cost_usd: f64,
+}
+
+struct PendingToolUse {
+    name: String,
+    input: serde_json::Value,
 }
 
 #[async_trait::async_trait]
@@ -112,11 +561,12 @@ impl FormatHandler for ClaudeCodeCliHandler {
         prompt: &str,
         opts: &LlmCallOpts,
     ) -> InfraResult<LlmTextResponse> {
-        let text = Self::run_cli(&config.endpoint, prompt, opts).await?;
+        // 단순 텍스트 — MCP / 도구 미설정. system_prompt 만 활용.
+        let outcome = Self::run_cli(&config.endpoint, prompt, opts, false, None).await?;
         Ok(LlmTextResponse {
-            text,
+            text: outcome.text,
             model_id: config.id.clone(),
-            cost_usd: Some(0.0), // CLI 구독 모드 — 호출 단위 비용 0 (월정액)
+            cost_usd: Some(outcome.cost_usd),
             tokens_in: None,
             tokens_out: None,
         })
@@ -131,7 +581,7 @@ impl FormatHandler for ClaudeCodeCliHandler {
         _prior_results: &[ToolResult],
         opts: &LlmCallOpts,
     ) -> InfraResult<LlmToolResponse> {
-        // 도구 0건 (단순 텍스트 채팅) — ask_text 로 위임. 사용자가 가장 흔히 사용하는 경로.
+        // 도구 0건 (단순 텍스트) — ask_text 위임. 가장 흔한 경로.
         if tools.is_empty() {
             let r = self.ask_text(config, api_key, prompt, opts).await?;
             return Ok(LlmToolResponse {
@@ -143,10 +593,135 @@ impl FormatHandler for ClaudeCodeCliHandler {
                 tokens_out: r.tokens_out,
                 cli_session_id: None,
                 response_id: None,
+                ..Default::default()
             });
         }
-        // 도구 호출 — stream-json input + --mcp-config + tool_use/tool_result content blocks
-        // 후속 구현 필요. 도구 사용은 API 모드 (claude-* / gpt-* / gemini-*) 권장.
-        Err("Claude Code CLI 도구 호출 미구현 — 단순 채팅은 동작. 도구 사용은 API 모드 권장.".to_string())
+        // MCP config 박기 — opts.mcp_token 우선, 없으면 stdio fallback.
+        let mcp_config_path = Self::ensure_mcp_config_file(
+            opts.mcp_token.as_deref(),
+            opts.mcp_base_url.as_deref(),
+        );
+        let mcp_path_str = mcp_config_path
+            .as_ref()
+            .map(|p| p.to_string_lossy().to_string());
+        let outcome = Self::run_cli(
+            &config.endpoint,
+            prompt,
+            opts,
+            true,
+            mcp_path_str.as_deref(),
+        )
+        .await?;
+        Ok(LlmToolResponse {
+            text: outcome.text,
+            tool_calls: vec![], // CLI 가 자체 MCP loop 처리 — 외부 dispatch 없음
+            model_id: config.id.clone(),
+            cost_usd: Some(outcome.cost_usd),
+            tokens_in: None,
+            tokens_out: None,
+            cli_session_id: outcome.session_id.clone(),
+            response_id: outcome.session_id, // CLI 는 session_id 를 response_id 자리에도 노출
+            internally_used_tools: outcome.used_tools,
+            rendered_blocks: outcome.rendered_blocks,
+            pending_actions: outcome.pending_actions,
+            suggestions: outcome.suggestions,
+            raw_model_parts: None,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_mcp_prefix_basic() {
+        assert_eq!(
+            ClaudeCodeCliHandler::strip_mcp_prefix("mcp__firebat__render_chart"),
+            "render_chart"
+        );
+        assert_eq!(
+            ClaudeCodeCliHandler::strip_mcp_prefix("mcp__gmail__send_email"),
+            "send_email"
+        );
+    }
+
+    #[test]
+    fn strip_mcp_prefix_passthrough() {
+        assert_eq!(
+            ClaudeCodeCliHandler::strip_mcp_prefix("render_chart"),
+            "render_chart"
+        );
+        assert_eq!(ClaudeCodeCliHandler::strip_mcp_prefix(""), "");
+    }
+
+    #[test]
+    fn map_thinking_to_effort_known_levels() {
+        assert_eq!(
+            ClaudeCodeCliHandler::map_thinking_to_effort(Some("low")),
+            Some("low")
+        );
+        assert_eq!(
+            ClaudeCodeCliHandler::map_thinking_to_effort(Some("max")),
+            Some("max")
+        );
+    }
+
+    #[test]
+    fn map_thinking_to_effort_unsupported_returns_none() {
+        assert_eq!(ClaudeCodeCliHandler::map_thinking_to_effort(Some("none")), None);
+        assert_eq!(
+            ClaudeCodeCliHandler::map_thinking_to_effort(Some("minimal")),
+            None
+        );
+        assert_eq!(ClaudeCodeCliHandler::map_thinking_to_effort(None), None);
+    }
+
+    #[test]
+    fn build_prompt_with_history_empty_returns_prompt() {
+        let p = ClaudeCodeCliHandler::build_prompt_with_history("hi", &[]);
+        assert_eq!(p, "hi");
+    }
+
+    #[test]
+    fn build_prompt_with_history_appends_recent() {
+        let history = vec![
+            firebat_core::ports::ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::Value::String("first".to_string()),
+                image: None,
+                image_mime_type: None,
+            },
+            firebat_core::ports::ChatMessage {
+                role: "assistant".to_string(),
+                content: serde_json::Value::String("answer".to_string()),
+                image: None,
+                image_mime_type: None,
+            },
+        ];
+        let p = ClaudeCodeCliHandler::build_prompt_with_history("now", &history);
+        assert!(p.contains("[이전 대화]"));
+        assert!(p.contains("사용자: first"));
+        assert!(p.contains("AI: answer"));
+        assert!(p.contains("[현재 요청]\nnow"));
+    }
+
+    #[test]
+    fn build_prompt_with_history_truncates_to_10() {
+        let mut history = Vec::new();
+        for i in 0..15 {
+            history.push(firebat_core::ports::ChatMessage {
+                role: "user".to_string(),
+                content: serde_json::Value::String(format!("msg {}", i)),
+                image: None,
+                image_mime_type: None,
+            });
+        }
+        let p = ClaudeCodeCliHandler::build_prompt_with_history("now", &history);
+        // 처음 5개는 truncate, 마지막 10개만 포함
+        assert!(!p.contains("msg 0"));
+        assert!(!p.contains("msg 4"));
+        assert!(p.contains("msg 5"));
+        assert!(p.contains("msg 14"));
     }
 }

@@ -1,17 +1,29 @@
-//! Codex CLI — `codex exec` 자식 프로세스 (옛 TS cli-codex.ts).
+//! Codex CLI — `codex exec` 자식 프로세스 (옛 TS `cli-codex.ts` 1:1 port).
 //!
-//! Phase B-17 minimum: `codex exec` non-interactive 모드 + prompt stdin + stdout 캡처.
-//! thread_id resume + mcp_servers config.toml + item.completed 이벤트 파싱은 Phase B-17.5 후속.
+//! 핵심 기능:
+//! - `codex exec <prompt>` non-interactive
+//! - `--json --skip-git-repo-check --sandbox read-only --ask-for-approval never`
+//! - `--image <path>` (첨부 이미지)
+//! - `--model <id>`
+//! - `-c model_reasoning_effort="<level>"` (thinking)
+//! - `exec resume <session_id> <prompt>` (멀티턴 resume)
+//! - `CODEX_HOME` env + `config.toml` (`[mcp_servers.firebat] url + bearer_token_env_var`)
+//! - `FIREBAT_MCP_TOKEN` env (config.toml `bearer_token_env_var` 와 짝)
+//! - 기존 `~/.codex/auth.json` 복사 (구독 OAuth 세션 유지)
+//! - stream-json output: `thread.started` / `turn.failed` / `item.completed (agent_message / mcp_tool_call)`
+//! - `mcp_tool_call` 결과 → render_* / pending / suggestions 추출
 
-use tokio::io::AsyncWriteExt;
+use std::path::PathBuf;
+use std::process::Stdio;
 use tokio::process::Command;
 
 use crate::llm::adapter::FormatHandler;
-use firebat_core::llm::config::LlmModelConfig;
 use crate::llm::formats::cli_image_helper::{cleanup_temp_file, write_image_temp_file};
+use firebat_core::llm::config::LlmModelConfig;
 use firebat_core::ports::{
     InfraResult, LlmCallOpts, LlmTextResponse, LlmToolResponse, ToolDefinition, ToolResult,
 };
+use firebat_core::utils::render_map::render_tool_map;
 
 pub struct CodexCliHandler;
 
@@ -20,60 +32,436 @@ impl CodexCliHandler {
         Self
     }
 
-    async fn run_cli(binary: &str, prompt: &str, opts: &LlmCallOpts) -> InfraResult<String> {
-        // 첨부 이미지 임시 파일 — 옛 TS cli-codex.ts:179-182 1:1.
-        // base64 → 임시 파일 저장 → `--image <path>` 인자 추가 → spawn 종료 시 cleanup.
-        let tmp_image = write_image_temp_file(opts.image.as_deref(), opts.image_mime_type.as_deref(), None);
+    /// Firebat thinking level → Codex `model_reasoning_effort` 값.
+    /// 옛 TS `mapThinkingToCodex` 1:1. max → xhigh 매핑 (Codex 는 max 미지원).
+    fn map_thinking_to_codex(level: Option<&str>) -> Option<&'static str> {
+        match level {
+            Some("none") | None => None,
+            Some("max") => Some("xhigh"),
+            Some("minimal") => Some("minimal"),
+            Some("low") => Some("low"),
+            Some("medium") => Some("medium"),
+            Some("high") => Some("high"),
+            Some("xhigh") => Some("xhigh"),
+            Some(_) => None,
+        }
+    }
+
+    /// CODEX_HOME 디렉토리 박기 + config.toml + auth.json 복사.
+    /// 옛 TS `ensureCodexHome` 1:1. HTTP MCP (`experimental_use_rmcp_client = true`) + `bearer_token_env_var`.
+    fn ensure_codex_home(internal_mcp_token: Option<&str>, base_url: Option<&str>) -> Option<PathBuf> {
+        let codex_home = std::env::temp_dir().join("firebat-codex-home");
+        std::fs::create_dir_all(&codex_home).ok()?;
+
+        // 기존 ~/.codex/auth.json 복사 (로그인 세션 유지)
+        if let Some(home) =
+            std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))
+        {
+            let real_auth = PathBuf::from(home).join(".codex").join("auth.json");
+            let tmp_auth = codex_home.join("auth.json");
+            if real_auth.exists() && !tmp_auth.exists() {
+                let _ = std::fs::copy(&real_auth, &tmp_auth);
+            }
+        }
+
+        let mut toml = String::new();
+        if let Some(_token) = internal_mcp_token {
+            let url = format!(
+                "{}/api/mcp-internal",
+                base_url.unwrap_or("http://127.0.0.1:3000")
+            );
+            toml.push_str("[features]\nexperimental_use_rmcp_client = true\n\n");
+            toml.push_str("[mcp_servers.firebat]\n");
+            toml.push_str(&format!("url = \"{}\"\n", url));
+            toml.push_str("bearer_token_env_var = \"FIREBAT_MCP_TOKEN\"\n");
+        } else {
+            // stdio fallback — Firebat Core 매번 재부팅. 토큰 미설정 시.
+            let project_dir = std::env::current_dir().ok()?;
+            let stdio_path = project_dir.join("mcp").join("stdio-user-ai.ts");
+            let stdio_str = stdio_path.to_string_lossy().replace('\\', "\\\\");
+            let cwd_str = project_dir.to_string_lossy().replace('\\', "\\\\");
+            toml.push_str("[mcp_servers.firebat]\n");
+            toml.push_str("command = \"npx\"\n");
+            toml.push_str(&format!("args = [\"tsx\", \"{}\"]\n", stdio_str));
+            toml.push_str(&format!("cwd = \"{}\"\n", cwd_str));
+        }
+        std::fs::write(codex_home.join("config.toml"), toml).ok()?;
+        Some(codex_home)
+    }
+
+    /// resume 미사용 시 history 를 prompt 앞에 병합 (최근 10턴, 옛 TS `buildPromptWithHistory` 1:1).
+    fn build_prompt_with_history(
+        prompt: &str,
+        history: &[firebat_core::ports::ChatMessage],
+    ) -> String {
+        if history.is_empty() {
+            return prompt.to_string();
+        }
+        let recent_start = history.len().saturating_sub(10);
+        let mut hist_lines: Vec<String> = Vec::new();
+        for h in &history[recent_start..] {
+            let role = if h.role == "assistant" { "AI" } else { "사용자" };
+            let content_str = match &h.content {
+                serde_json::Value::String(s) if !s.trim().is_empty() => s.clone(),
+                v => serde_json::to_string(v).unwrap_or_default(),
+            };
+            hist_lines.push(format!("{}: {}", role, content_str));
+        }
+        format!(
+            "[이전 대화]\n{}\n\n[현재 요청]\n{}",
+            hist_lines.join("\n\n"),
+            prompt
+        )
+    }
+
+    /// 도구 호출 인자 빌더.
+    fn build_args(
+        prompt: &str,
+        opts: &LlmCallOpts,
+        tmp_image_path: Option<&str>,
+    ) -> Vec<String> {
+        let mut args: Vec<String> = Vec::new();
+        let security_flags = [
+            "--json",
+            "--skip-git-repo-check",
+            "--sandbox",
+            "read-only",
+            "--ask-for-approval",
+            "never",
+        ];
+
+        // resume 시 서브커맨드: `codex exec resume <session_id> <prompt>`
+        if let Some(rid) = opts.cli_resume_session_id.as_deref() {
+            if !rid.is_empty() {
+                args.push("exec".to_string());
+                args.push("resume".to_string());
+                args.push(rid.to_string());
+                args.push(prompt.to_string());
+                for f in security_flags {
+                    args.push(f.to_string());
+                }
+                if let Some(m) = opts.cli_model.as_deref() {
+                    if !m.is_empty() {
+                        args.push("--model".to_string());
+                        args.push(m.to_string());
+                    }
+                }
+                if let Some(p) = tmp_image_path {
+                    args.push("--image".to_string());
+                    args.push(p.to_string());
+                }
+                if let Some(eff) =
+                    Self::map_thinking_to_codex(opts.thinking_level.as_deref())
+                {
+                    args.push("-c".to_string());
+                    args.push(format!("model_reasoning_effort=\"{}\"", eff));
+                }
+                return args;
+            }
+        }
+        // 일반: `codex exec <prompt>`
+        args.push("exec".to_string());
+        args.push(prompt.to_string());
+        for f in security_flags {
+            args.push(f.to_string());
+        }
+        if let Some(m) = opts.cli_model.as_deref() {
+            if !m.is_empty() {
+                args.push("--model".to_string());
+                args.push(m.to_string());
+            }
+        }
+        if let Some(p) = tmp_image_path {
+            args.push("--image".to_string());
+            args.push(p.to_string());
+        }
+        if let Some(eff) = Self::map_thinking_to_codex(opts.thinking_level.as_deref()) {
+            args.push("-c".to_string());
+            args.push(format!("model_reasoning_effort=\"{}\"", eff));
+        }
+        args
+    }
+
+    /// stream-json (one event per line) 파싱 + render/pending/suggestions 추출.
+    /// 옛 TS `runCodex` + `processLine` 1:1 (onChunk 콜백 제외).
+    async fn run_cli(
+        binary: &str,
+        prompt: &str,
+        opts: &LlmCallOpts,
+        with_tools: bool,
+    ) -> InfraResult<CliRunOutcome> {
+        // 첨부 이미지 임시 파일
+        let tmp_image =
+            write_image_temp_file(opts.image.as_deref(), opts.image_mime_type.as_deref(), None);
+        let tmp_image_path = tmp_image.as_ref().map(|t| t.path.as_str());
+
+        // resume 미사용 시 history 주입 + system_prompt prepend
+        let final_prompt = if opts.cli_resume_session_id.is_some() {
+            prompt.to_string()
+        } else {
+            Self::build_prompt_with_history(prompt, &opts.history)
+        };
+        let prompt_with_system = match opts.system_prompt.as_deref() {
+            Some(sp) if !sp.is_empty() => format!("{}\n\n{}", sp, final_prompt),
+            _ => final_prompt,
+        };
+
+        let args = Self::build_args(&prompt_with_system, opts, tmp_image_path);
+
+        // CODEX_HOME 박기 (도구 호출 모드만)
+        let codex_home = if with_tools {
+            Self::ensure_codex_home(opts.mcp_token.as_deref(), opts.mcp_base_url.as_deref())
+        } else {
+            None
+        };
 
         let mut cmd = Command::new(binary);
-        cmd.arg("exec");
-        if let Some(t) = &tmp_image {
-            cmd.arg("--image").arg(&t.path);
+        cmd.args(&args);
+        cmd.stdin(Stdio::null());
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+        if let Some(p) = &codex_home {
+            cmd.env("CODEX_HOME", p);
         }
-        let mut child = cmd
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|e| {
-                cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
-                format!(
-                    "Codex CLI spawn 실패 ({}): {e} — `{}` binary PATH 확인 / `codex login` 한 번 실행했는지 확인",
-                    binary, binary
-                )
-            })?;
+        if let Some(token) = opts.mcp_token.as_deref() {
+            cmd.env("FIREBAT_MCP_TOKEN", token);
+        }
 
-        if let Some(mut stdin) = child.stdin.take() {
-            if let Err(e) = stdin.write_all(prompt.as_bytes()).await {
-                cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
-                return Err(format!("Codex CLI stdin write 실패: {e}"));
+        let child = cmd.spawn().map_err(|e| {
+            cleanup_temp_file(tmp_image_path);
+            format!(
+                "Codex CLI spawn 실패 ({}): {e} — `{}` binary PATH 확인 / `codex login` 한 번 실행했는지 확인",
+                binary, binary
+            )
+        })?;
+
+        let output = child.wait_with_output().await.map_err(|e| {
+            cleanup_temp_file(tmp_image_path);
+            format!("Codex CLI wait 실패: {e}")
+        })?;
+
+        cleanup_temp_file(tmp_image_path);
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+        let stderr_buf = String::from_utf8_lossy(&output.stderr).to_string();
+
+        let mut outcome = CliRunOutcome::default();
+        let mut text_parts: Vec<String> = Vec::new();
+        let mut errored = false;
+        let mut error_msg: Option<String> = None;
+
+        for line in stdout.lines() {
+            if line.trim().is_empty() {
+                continue;
             }
-            drop(stdin);
+            let ev: serde_json::Value = match serde_json::from_str(line) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            let ev_type = ev.get("type").and_then(|v| v.as_str()).unwrap_or("");
+
+            match ev_type {
+                "thread.started" => {
+                    if outcome.session_id.is_none() {
+                        if let Some(tid) = ev.get("thread_id").and_then(|v| v.as_str()) {
+                            outcome.session_id = Some(tid.to_string());
+                        }
+                    }
+                }
+                "turn.failed" => {
+                    errored = true;
+                    let err_msg = ev
+                        .get("error")
+                        .and_then(|e| e.get("message"))
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                        .or_else(|| {
+                            ev.get("error").map(|e| {
+                                serde_json::to_string(e).unwrap_or_default()
+                            })
+                        })
+                        .unwrap_or_else(|| "Codex turn 실패".to_string());
+                    error_msg = Some(err_msg);
+                }
+                "error" => {
+                    errored = true;
+                    error_msg = Some(
+                        ev.get("message")
+                            .and_then(|v| v.as_str())
+                            .map(String::from)
+                            .unwrap_or_else(|| "Codex 오류".to_string()),
+                    );
+                }
+                "turn.started" | "turn.completed" => {
+                    // 통계만 — 무시
+                }
+                "item.started" | "item.completed" | "item.updated" => {
+                    let Some(item) = ev.get("item") else { continue };
+                    let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    // agent_message: 최종 텍스트 (completed 만)
+                    if item_type == "agent_message" && ev_type == "item.completed" {
+                        if let Some(t) = item.get("text").and_then(|v| v.as_str()) {
+                            text_parts.push(t.to_string());
+                        }
+                        continue;
+                    }
+                    // reasoning: thinking 누적 (UI 별도 채널 후속)
+                    if item_type == "reasoning" {
+                        continue;
+                    }
+                    // mcp_tool_call: 도구 호출 + 결과
+                    if item_type == "mcp_tool_call" {
+                        let server =
+                            item.get("server").and_then(|v| v.as_str()).unwrap_or("");
+                        let tool_name =
+                            item.get("tool").and_then(|v| v.as_str()).unwrap_or("");
+                        if tool_name.is_empty() {
+                            continue;
+                        }
+                        if ev_type == "item.started" {
+                            outcome.used_tools.push(tool_name.to_string());
+                            continue;
+                        }
+                        if ev_type == "item.completed" && server == "firebat" {
+                            let result_obj = item.get("result");
+                            let text_payload = result_obj
+                                .and_then(|r| r.get("content"))
+                                .and_then(|c| c.as_array())
+                                .and_then(|arr| arr.first())
+                                .and_then(|first| first.get("text").and_then(|t| t.as_str()))
+                                .map(String::from);
+                            let Some(text_payload) = text_payload else { continue };
+                            let payload: serde_json::Value =
+                                match serde_json::from_str(&text_payload) {
+                                    Ok(v) => v,
+                                    Err(_) => continue,
+                                };
+                            if !payload.get("success").and_then(|v| v.as_bool()).unwrap_or(false)
+                            {
+                                continue;
+                            }
+                            let args = item.get("arguments").cloned().unwrap_or(serde_json::json!({}));
+                            // 1) render_* → blocks
+                            let html_content = payload
+                                .get("htmlContent")
+                                .and_then(|v| v.as_str())
+                                .map(String::from);
+                            let component = payload
+                                .get("component")
+                                .and_then(|v| v.as_str())
+                                .map(String::from);
+                            if tool_name == "render_iframe" && html_content.is_some() {
+                                let mut block = serde_json::json!({
+                                    "type": "html",
+                                    "htmlContent": html_content.unwrap(),
+                                });
+                                if let Some(h) =
+                                    payload.get("htmlHeight").and_then(|v| v.as_str())
+                                {
+                                    block["htmlHeight"] = serde_json::Value::String(h.to_string());
+                                }
+                                outcome.rendered_blocks.push(block);
+                            } else if let Some(comp) = component {
+                                outcome.rendered_blocks.push(serde_json::json!({
+                                    "type": "component",
+                                    "name": comp,
+                                    "props": payload.get("props").cloned().unwrap_or(serde_json::json!({})),
+                                }));
+                            } else if let Some(comp_name) = render_tool_map().get(tool_name) {
+                                outcome.rendered_blocks.push(serde_json::json!({
+                                    "type": "component",
+                                    "name": *comp_name,
+                                    "props": args.clone(),
+                                }));
+                            }
+                            // 2) pending
+                            let pending_flag = payload
+                                .get("pending")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            if pending_flag {
+                                if let Some(pid) =
+                                    payload.get("planId").and_then(|v| v.as_str())
+                                {
+                                    let summary = payload
+                                        .get("summary")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or(tool_name)
+                                        .to_string();
+                                    let mut action = serde_json::json!({
+                                        "planId": pid,
+                                        "name": tool_name,
+                                        "summary": summary,
+                                        "args": args.clone(),
+                                    });
+                                    if payload.get("status").and_then(|v| v.as_str())
+                                        == Some("past-runat")
+                                    {
+                                        action["status"] =
+                                            serde_json::Value::String("past-runat".to_string());
+                                    }
+                                    if let Some(ora) = payload
+                                        .get("originalRunAt")
+                                        .and_then(|v| v.as_str())
+                                    {
+                                        action["originalRunAt"] =
+                                            serde_json::Value::String(ora.to_string());
+                                    }
+                                    outcome.pending_actions.push(action);
+                                }
+                            }
+                            // 3) suggest / propose_plan → suggestions
+                            if (tool_name == "suggest" || tool_name == "propose_plan")
+                                && payload.get("suggestions").and_then(|v| v.as_array()).is_some()
+                            {
+                                for s in payload
+                                    .get("suggestions")
+                                    .unwrap()
+                                    .as_array()
+                                    .unwrap()
+                                {
+                                    outcome.suggestions.push(s.clone());
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    // item.error — 비치명적 도구 오류, thinking 으로 (현재 스킵)
+                    if item_type == "error" {
+                        continue;
+                    }
+                }
+                _ => {}
+            }
         }
 
-        let output = child
-            .wait_with_output()
-            .await
-            .map_err(|e| {
-                cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
-                format!("Codex CLI wait 실패: {e}")
-            })?;
-
-        // 첨부 이미지 임시 파일 정리 (spawn 종료 후) — 옛 TS child.on('close', ...) 1:1
-        cleanup_temp_file(tmp_image.as_ref().map(|t| t.path.as_str()));
-
+        if errored {
+            return Err(error_msg.unwrap_or_else(|| "Codex CLI 알 수 없는 에러".to_string()));
+        }
+        outcome.text = text_parts.join("");
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!(
-                "Codex CLI 종료 코드 {:?}: {}",
+                "Codex 비정상 종료 (exit {:?}): {}",
                 output.status.code(),
-                stderr.trim()
+                stderr_buf.chars().take(500).collect::<String>()
             ));
         }
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        Ok(outcome)
     }
 }
+
+#[derive(Default)]
+struct CliRunOutcome {
+    text: String,
+    session_id: Option<String>,
+    used_tools: Vec<String>,
+    rendered_blocks: Vec<serde_json::Value>,
+    pending_actions: Vec<serde_json::Value>,
+    suggestions: Vec<serde_json::Value>,
+}
+
+// codex 의 mcp_tool_call 은 item.completed 한 이벤트에 server/tool/arguments/result 다 박혀 있어
+// pending → completed 매칭 불필요. Claude/Gemini 와 다른 점.
 
 #[async_trait::async_trait]
 impl FormatHandler for CodexCliHandler {
@@ -84,9 +472,9 @@ impl FormatHandler for CodexCliHandler {
         prompt: &str,
         opts: &LlmCallOpts,
     ) -> InfraResult<LlmTextResponse> {
-        let text = Self::run_cli(&config.endpoint, prompt, opts).await?;
+        let outcome = Self::run_cli(&config.endpoint, prompt, opts, false).await?;
         Ok(LlmTextResponse {
-            text,
+            text: outcome.text,
             model_id: config.id.clone(),
             cost_usd: Some(0.0), // 구독 모드
             tokens_in: None,
@@ -114,8 +502,61 @@ impl FormatHandler for CodexCliHandler {
                 tokens_out: r.tokens_out,
                 cli_session_id: None,
                 response_id: None,
+                ..Default::default()
             });
         }
-        Err("Codex CLI 도구 호출 미구현 — 단순 채팅은 동작. 도구 사용은 API 모드 권장.".to_string())
+        let outcome = Self::run_cli(&config.endpoint, prompt, opts, true).await?;
+        Ok(LlmToolResponse {
+            text: outcome.text,
+            tool_calls: vec![], // Codex 자체 MCP loop 처리 — 외부 dispatch 없음
+            model_id: config.id.clone(),
+            cost_usd: Some(0.0),
+            tokens_in: None,
+            tokens_out: None,
+            cli_session_id: outcome.session_id.clone(),
+            response_id: outcome.session_id,
+            internally_used_tools: outcome.used_tools,
+            rendered_blocks: outcome.rendered_blocks,
+            pending_actions: outcome.pending_actions,
+            suggestions: outcome.suggestions,
+            raw_model_parts: None,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_thinking_known_levels() {
+        assert_eq!(CodexCliHandler::map_thinking_to_codex(Some("low")), Some("low"));
+        assert_eq!(
+            CodexCliHandler::map_thinking_to_codex(Some("max")),
+            Some("xhigh")
+        );
+        assert_eq!(
+            CodexCliHandler::map_thinking_to_codex(Some("minimal")),
+            Some("minimal")
+        );
+    }
+
+    #[test]
+    fn map_thinking_none_returns_none() {
+        assert_eq!(CodexCliHandler::map_thinking_to_codex(Some("none")), None);
+        assert_eq!(CodexCliHandler::map_thinking_to_codex(None), None);
+    }
+
+    #[test]
+    fn build_prompt_with_history_prepends_block() {
+        let history = vec![firebat_core::ports::ChatMessage {
+            role: "user".to_string(),
+            content: serde_json::Value::String("hi".to_string()),
+            image: None,
+            image_mime_type: None,
+        }];
+        let p = CodexCliHandler::build_prompt_with_history("now", &history);
+        assert!(p.contains("[이전 대화]"));
+        assert!(p.contains("사용자: hi"));
     }
 }

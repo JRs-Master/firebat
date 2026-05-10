@@ -889,6 +889,43 @@ pub struct ToolResult {
     pub error: Option<String>,
 }
 
+/// 멀티턴 도구 교환 한 turn 단위 — 옛 TS `ToolExchangeEntry` 1:1 port.
+///
+/// Gemini (native + Vertex) 의 thought_signature 보존을 위해 어댑터가 첫 turn 에서 받은
+/// `rawModelParts` (functionCall + thought 포함) 를 다음 turn `contents` 에 그대로 echo 해야 함.
+/// `rawModelParts` 미설정 시 어댑터는 `tool_calls` 로 functionCall part 합성 fallback.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolExchangeEntry {
+    #[serde(default, rename = "toolCalls")]
+    pub tool_calls: Vec<ToolCall>,
+    #[serde(default, rename = "toolResults")]
+    pub tool_results: Vec<ToolResult>,
+    /// Gemini 가 첫 turn 에서 응답한 candidates[0].content.parts 원본.
+    /// 다음 turn 의 `contents` 에 `{role:'model', parts: rawModelParts}` 형식으로 echo.
+    /// thought_signature / thinkingConfig 호환성 유지에 필수.
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "rawModelParts")]
+    pub raw_model_parts: Option<serde_json::Value>,
+}
+
+/// 대화 메시지 — 옛 TS `ChatMessage` 1:1 port.
+///
+/// CLI 어댑터의 `buildPromptWithHistory` 가 resume session 미사용 시 prompt 앞에 history 주입할 때 사용.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessage {
+    /// `"user"` / `"assistant"` / `"system"` 등.
+    pub role: String,
+    /// 메시지 본문. JSON 객체일 수도 있어 `serde_json::Value` 로 받음.
+    #[serde(default)]
+    pub content: serde_json::Value,
+    /// 첨부 이미지 (옵션) — base64 또는 data URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "imageMimeType")]
+    pub image_mime_type: Option<String>,
+}
+
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmCallOpts {
@@ -927,6 +964,32 @@ pub struct LlmCallOpts {
     /// 옛 TS `LlmCallOpts.imageMimeType` 1:1.
     #[serde(rename = "imageMimeType", default, skip_serializing_if = "Option::is_none")]
     pub image_mime_type: Option<String>,
+    /// 멀티턴 도구 교환 누적 — 옛 TS `LlmCallOpts.toolExchanges` 1:1.
+    ///
+    /// Gemini API (native + Vertex) 가 thought_signature 보존을 위해 매 turn `rawModelParts` echo 필요.
+    /// 우리 `prior_results` 인자만으로는 첫 turn 의 functionCall 원본 args 가 유실 → 어댑터가
+    /// thought_signature 손실. `tool_exchanges` 에 (calls, results, rawModelParts) 누적해서 어댑터가
+    /// 정확한 멀티턴 contents 빌드.
+    ///
+    /// 비어있으면 어댑터는 `prior_results` 에서 fallback (Anthropic / OpenAI 호환 유지).
+    #[serde(rename = "toolExchanges", default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_exchanges: Vec<ToolExchangeEntry>,
+    /// 대화 history — 옛 TS `LlmCallOpts.history` 1:1. CLI 어댑터의 `buildPromptWithHistory` 가
+    /// resume session 미사용 시 prompt 앞에 [이전 대화] 블록으로 주입.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub history: Vec<ChatMessage>,
+    /// MCP bearer token (CLI 모드 전용) — 옛 TS `ctx.resolveMcpConfig().token` 1:1.
+    /// CLI 어댑터가 mcp 설정 파일 (Claude `--mcp-config`, Codex `CODEX_HOME`, Gemini `workspace/.gemini/settings.json`) 박을 때 사용.
+    #[serde(rename = "mcpToken", default, skip_serializing_if = "Option::is_none")]
+    pub mcp_token: Option<String>,
+    /// MCP 메인 프로세스 base URL (e.g. `http://127.0.0.1:3000`). CLI 모드 전용.
+    /// 옛 TS `ctx.resolveMcpConfig().url.replace(/\/api\/mcp-internal.*$/, '')` 1:1.
+    #[serde(rename = "mcpBaseUrl", default, skip_serializing_if = "Option::is_none")]
+    pub mcp_base_url: Option<String>,
+    /// CLI 전용 모델 ID (예: `sonnet-4-5`). 어댑터가 `--model <id>` 인자로 전달.
+    /// 미설정 시 CLI 기본 모델 사용. 옛 TS `ctx.config.cliModel` 1:1.
+    #[serde(rename = "cliModel", default, skip_serializing_if = "Option::is_none")]
+    pub cli_model: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -966,6 +1029,26 @@ pub struct LlmToolResponse {
     /// 옛 TS `responseId` 1:1.
     #[serde(rename = "responseId", default, skip_serializing_if = "Option::is_none")]
     pub response_id: Option<String>,
+    /// CLI 가 자체 MCP loop 안에서 호출한 도구 이름 목록 — 옛 TS `internallyUsedTools` 1:1.
+    /// AiManager 가 외부 dispatch 가 아니라 CLI 내부 처리임을 인지하고 UI executedActions 에 표시.
+    #[serde(rename = "internallyUsedTools", default, skip_serializing_if = "Vec::is_empty")]
+    pub internally_used_tools: Vec<String>,
+    /// CLI 가 자체 MCP loop 에서 받은 render_* 도구 결과 → UI 컴포넌트 블록.
+    /// 옛 TS `renderedBlocks` 1:1. 형식: `{type:'text'|'html'|'component', ...}` JSON value.
+    #[serde(rename = "renderedBlocks", default, skip_serializing_if = "Vec::is_empty")]
+    pub rendered_blocks: Vec<serde_json::Value>,
+    /// CLI 가 자체 MCP loop 에서 호출한 승인 대기 도구 (schedule_task / save_page 등) → UI pending 카드.
+    /// 옛 TS `pendingActions` 1:1. 형식: `{planId, name, summary, args, status?, originalRunAt?}` JSON value.
+    #[serde(rename = "pendingActions", default, skip_serializing_if = "Vec::is_empty")]
+    pub pending_actions: Vec<serde_json::Value>,
+    /// CLI 가 자체 MCP loop 에서 호출한 `suggest` / `propose_plan` 도구 결과 suggestions.
+    /// 옛 TS `suggestions` 1:1. 임의 JSON value (string / `{type, label, ...}`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub suggestions: Vec<serde_json::Value>,
+    /// Gemini API 가 응답한 candidates[0].content.parts 원본 — 옛 TS `rawModelParts` 1:1.
+    /// AiManager 가 다음 turn `tool_exchanges` 에 echo → thought_signature 보존.
+    #[serde(rename = "rawModelParts", default, skip_serializing_if = "Option::is_none")]
+    pub raw_model_parts: Option<serde_json::Value>,
 }
 
 /// 플랜모드 — 옛 TS `AiRequestOpts.planMode` 1:1.
