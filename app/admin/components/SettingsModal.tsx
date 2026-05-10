@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign, Brain, Plus } from 'lucide-react';
-import { GEMINI_MODELS, McpServer, getThinkingKind, filterThinkingLevels } from '../types';
+import { McpServer, getThinkingKind, filterThinkingLevels } from '../types';
+import { useAiModels } from '../hooks/use-ai-models';
 import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
 import { ErrorBoundary } from './ErrorBoundary';
 import { useSetting, writeSetting } from '../hooks/settings-manager';
@@ -147,10 +148,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // Backend `getAvailableAiAssistantModels()` 응답이 truth source — 이 fallback list 는
   // 첫 fetch 전 / API 실패 시점만 사용. 단일 디폴트 (gemini-3.1-flash-lite-preview) 만 저장.
   const [aiAssistantModels, setAiAssistantModels] = useState<string[]>(['gemini-3.1-flash-lite-preview']);
-  // AI 모델 carousel — Rust single source (Step B 2026-05-10).
-  // initial = types.ts AI_MODELS 박힌 게 fallback. useEffect 박은 게 /api/settings 박은 게 fetch
-  // → data.aiModels 박은 게 setAiModelsList. Rust mismatch / 호출 fail 시 fallback 으로 폴백.
-  const [aiModelsList, setAiModelsList] = useState<typeof GEMINI_MODELS>(GEMINI_MODELS);
+  // AI 모델 carousel — Rust core::llm::config::builtin_models() 단일 source.
+  // useAiModels hook 이 module-level cache + 1-shot fetch (`/api/settings` 의 aiModels).
+  // 매 사용처가 hook 호출해도 cache hit 시 즉시 반환.
+  const { models: aiModelsList } = useAiModels();
 
   // 사용자 커스텀 프롬프트 (어드민 채팅·모나코 에디터 공유)
   const [userPrompt, setUserPrompt] = useState('');
@@ -260,13 +261,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         if (typeof data.aiRouterEnabled === 'boolean') setAiRouterEnabled(data.aiRouterEnabled);
         if (data.aiAssistantModel) setAiAssistantModel(data.aiAssistantModel);
         if (Array.isArray(data.aiAssistantModels) && data.aiAssistantModels.length > 0) setAiAssistantModels(data.aiAssistantModels);
-        // Rust single source carousel — types.ts fallback override
-        if (Array.isArray(data.aiModels) && data.aiModels.length > 0) {
-          setAiModelsList(data.aiModels.map((m: { id: string; displayName?: string }) => ({
-            value: m.id,
-            label: m.displayName || m.id,
-          })));
-        }
+        // aiModels 박은 게 useAiModels hook 이 별도 fetch + cache 박음 — 본 useEffect 무관.
         if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
         if (typeof data.anthropicCacheEnabled === 'boolean') setAnthropicCacheEnabled(data.anthropicCacheEnabled);
         if (typeof data.subAgentEnabled === 'boolean') setSubAgentEnabled(data.subAgentEnabled);

@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { X, Save, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send, Trash2, User, RotateCcw, Cpu } from 'lucide-react';
-import { AI_MODELS, THINKING_LEVELS } from '../types';
+import { THINKING_LEVELS } from '../types';
+import { useAiModels } from '../hooks/use-ai-models';
 import { readSetting } from '../hooks/settings-manager';
 import { tryUnwrapJson } from '../../../lib/json-normalize';
 import { Tooltip } from './Tooltip';
@@ -75,6 +76,8 @@ interface FileEditorProps {
 
 export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: FileEditorProps) {
   const isPageMode = !!pageSlug;
+  // Rust core::llm::config::builtin_models() 단일 source — fetch + module-cache.
+  const { models: AI_MODELS } = useAiModels();
   const [content, setContent]   = useState('');
   const [original, setOriginal] = useState('');
   const [loading, setLoading]   = useState(true);

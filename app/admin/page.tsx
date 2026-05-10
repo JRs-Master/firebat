@@ -22,7 +22,7 @@ import { readSetting, writeSetting } from './hooks/settings-manager';
 import { useTranslations } from '../../lib/i18n';
 import { THINKING_STATUS, isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from './hooks/chat-manager';
 import { createShareLink, copyToClipboard } from './hooks/share-helper';
-import { Message, StepStatus, GEMINI_MODELS } from './types';
+import { Message, StepStatus } from './types';
 import { useViewportMaxHeight } from '../../lib/use-viewport-size';
 
 /** 마크다운 table wrapper — viewport quirk 우회 + MUI/Antd 표준 (400px 캡) + 작은 폰 50%. */
@@ -1045,14 +1045,21 @@ export default function AdminConsole() {
   }, [chatContainerRef]);
 
   // 초기화 — 서버(Vault) 설정을 localStorage 에 sync. DB 가 진실의 원천, localStorage 는 fast path cache.
+  // valid 모델 list 도 같은 응답 (data.aiModels — Rust core::llm::config::builtin_models()) 박힘.
   useEffect(() => {
-    const isValid = (m: string) => GEMINI_MODELS.some(x => x.value === m);
     (async () => {
       let loadedFromServer = false;
+      let validIds: Set<string> | null = null;
       try {
         const res = await fetch('/api/settings');
         const data = await res.json();
         if (data.success) {
+          if (Array.isArray(data.aiModels)) {
+            validIds = new Set<string>(
+              data.aiModels.map((m: { id: string }) => m.id),
+            );
+          }
+          const isValid = (m: string) => validIds === null || validIds.has(m);
           if (data.aiModel && isValid(data.aiModel)) {
             setAiModel(data.aiModel);
             writeSetting('firebat_model', data.aiModel); // localStorage cache sync
@@ -1068,6 +1075,7 @@ export default function AdminConsole() {
         const savedModel = readSetting('firebat_model');
         // 빈 폴백 — 사용자가 인증 설정하고 설정에서 명시 선택 하지 않은 한 채팅 차단.
         // 자동 폴백 모델 설정하면 사용자가 "어떤 모델 쓰는지 모름" 마찰 발생.
+        const isValid = (m: string) => validIds === null || validIds.has(m);
         setAiModel(savedModel && isValid(savedModel) ? savedModel : '');
       }
     })();

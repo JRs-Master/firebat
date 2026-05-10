@@ -1,57 +1,8 @@
 import { ConversationMeta } from './components/Sidebar';
 
-// Rust core 의 builtin_models() 설정된 거 1:1 — 운영 시점에 Vault API 키 설정하면 활성.
-// AI 어시스턴트 보조용 (잼민이 Flash Lite) 는 별도 list (AI Assistant 모델 풀) — carousel 노출 X.
-//
-// 정렬 = powerful (최신·고성능) → cheap (저성능·저렴) 순. CLI 의 Auto 는 첫번째 (default).
-//
-// 모델 ID convention (cascade filter 가 startsWith / endsWith 로 자동 매칭):
-//   - claude-* / cli-claude-code-* = Anthropic API / CLI
-//   - gemini-* / cli-gemini-* = Google API / CLI (vertex-* = Vertex AI)
-//   - gpt-* / cli-codex-* = OpenAI API / CLI
-export const AI_MODELS = [
-  // ─── Anthropic API (powerful → cheap) ──────────────────────────────────
-  { value: 'claude-opus-4-7', label: 'Claude Opus 4.7' },
-  { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-  { value: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
-
-  // ─── Google Gemini API (powerful → cheap) ──────────────────────────────
-  { value: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' },
-  { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash' },
-  { value: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite' },
-
-  // ─── Google Vertex AI (powerful → cheap) ───────────────────────────────
-  { value: 'vertex-gemini-3.1-pro', label: 'Gemini 3.1 Pro (Vertex)' },
-  { value: 'vertex-gemini-3-flash-preview', label: 'Gemini 3 Flash (Vertex)' },
-  { value: 'vertex-gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash Lite (Vertex)' },
-
-  // ─── OpenAI API (powerful → cheap) ─────────────────────────────────────
-  { value: 'gpt-5.5', label: 'GPT-5.5' },
-  { value: 'gpt-5.4', label: 'GPT-5.4' },
-  { value: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
-  { value: 'gpt-5.4-nano', label: 'GPT-5.4 Nano' },
-
-  // ─── Anthropic CLI (Claude Code 구독, Auto first → powerful → cheap) ──
-  { value: 'cli-claude-code-auto', label: 'Claude Code CLI (Auto)' },
-  { value: 'cli-claude-code-opus-4-7', label: 'Claude Code CLI (Opus 4.7)' },
-  { value: 'cli-claude-code-sonnet-4-6', label: 'Claude Code CLI (Sonnet 4.6)' },
-  { value: 'cli-claude-code-haiku-4-5', label: 'Claude Code CLI (Haiku 4.5)' },
-
-  // ─── Google Gemini CLI (Auto first → powerful → cheap) ─────────────────
-  { value: 'cli-gemini-auto', label: 'Gemini CLI (Auto)' },
-  { value: 'cli-gemini-3.1-pro', label: 'Gemini CLI (3.1 Pro)' },
-  { value: 'cli-gemini-3-flash', label: 'Gemini CLI (3 Flash)' },
-
-  // ─── OpenAI Codex CLI (Auto first → powerful → cheap, ChatGPT credit) ──
-  { value: 'cli-codex-auto', label: 'Codex CLI (Auto)' },
-  { value: 'cli-codex-gpt-5.5', label: 'Codex CLI (GPT-5.5)' },
-  { value: 'cli-codex-gpt-5.4', label: 'Codex CLI (GPT-5.4)' },
-  { value: 'cli-codex-gpt-5.4-mini', label: 'Codex CLI (GPT-5.4 Mini)' },
-  { value: 'cli-codex-5.3-codex', label: 'Codex CLI (5.3-Codex)' },
-  { value: 'cli-codex-5.3-codex-spark', label: 'Codex CLI (5.3-Codex Spark, preview)' },
-];
-// 기존 이름 호환을 위한 alias
-export const GEMINI_MODELS = AI_MODELS;
+// AI 모델 list 는 Rust core::llm::config::builtin_models() 단일 source.
+// frontend 는 GET /api/settings 응답의 aiModels 배열을 useAiModels hook 으로 받음.
+// 옛 hardcoded AI_MODELS / GEMINI_MODELS 통째 폐기 (2026-05-10) — duplicate 청산.
 
 // 통합 Thinking/Reasoning 레벨 (none/minimal/low/medium/high/xhigh/max)
 export const THINKING_LEVELS = [
