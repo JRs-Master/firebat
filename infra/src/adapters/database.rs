@@ -503,13 +503,20 @@ impl IDatabasePort for SqliteDatabaseAdapter {
     }
 
     fn is_conversation_deleted(&self, owner: &str, id: &str) -> bool {
-        let Ok(conn) = self.conn.lock() else { return false };
-        conn.query_row(
+        let Ok(conn) = self.conn.lock() else {
+            eprintln!("[DEBUG isDeleted] lock fail owner={owner} id={id} → false");
+            return false;
+        };
+        let result = conn.query_row(
             "SELECT 1 FROM deleted_conversations WHERE id = ?1 AND owner = ?2",
             params![id, owner],
             |row| row.get::<_, i64>(0),
-        )
-        .is_ok()
+        );
+        let is_deleted = result.is_ok();
+        eprintln!(
+            "[DEBUG isDeleted] owner={owner} id={id} query_result={result:?} is_deleted={is_deleted}"
+        );
+        is_deleted
     }
 
     fn get_cli_session(&self, conversation_id: &str, current_model: &str) -> Option<String> {
