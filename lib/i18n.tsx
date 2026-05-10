@@ -45,24 +45,46 @@ const LangContext = createContext<LangContextValue>({
   setLang: () => {},
 });
 
+/** lang 저장소 key — localStorage / cookie 공용. cookie 는 1년 만료. */
 const STORAGE_KEY = 'firebat_ui_lang';
+const COOKIE_MAX_AGE = 365 * 24 * 60 * 60; // 1년
+
+function writeLangCookie(lang: Lang) {
+  if (typeof document === 'undefined') return;
+  // path=/ 전 영역. samesite=lax — 일반 navigation 에 포함, csrf 안전.
+  document.cookie = `${STORAGE_KEY}=${lang}; path=/; max-age=${COOKIE_MAX_AGE}; samesite=lax`;
+}
 
 /** 어드민 LangProvider — root 또는 admin layout 안에 렌더.
- *  초기값: server / client hydration 일치를 위해 INITIAL_LANG 고정 (또는 명시 prop).
- *  마운트 후 useEffect 안에서 localStorage → /api/settings 순으로 실제 값 동기화. */
-export function LangProvider({ children, initial }: { children: React.ReactNode; initial?: Lang }) {
+ *  초기값: server 가 cookie 읽어 `initial` prop 으로 전달 (Option C — hydration mismatch
+ *  + UX flash 영구 해결). prop 없으면 INITIAL_LANG ('en') 으로 fallback.
+ *
+ *  마운트 후 동기화:
+ *  - localStorage 가 cookie 와 다르면 localStorage 값으로 보강 (cross-tab 갱신 대응)
+ *  - `enableServerSync` true 일 때만 /api/settings fetch (멀티기기 일관성).
+ *    인증 무관 영역 (login / public) 에선 false → 401 콘솔 더럽힘 방지. */
+export function LangProvider({
+  children,
+  initial,
+  enableServerSync = false,
+}: {
+  children: React.ReactNode;
+  initial?: Lang;
+  enableServerSync?: boolean;
+}) {
   const [lang, setLangState] = useState<Lang>(() => {
     if (initial && isValidLang(initial)) return initial;
     return INITIAL_LANG;
   });
 
-  // 마운트 후 동기화 — localStorage 즉시 + DB (멀티기기 일관성)
+  // 마운트 후 동기화
   useEffect(() => {
     let cancelled = false;
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (isValidLang(saved) && saved !== lang) setLangState(saved);
     }
+    if (!enableServerSync) return;
     (async () => {
       try {
         const res = await fetch('/api/settings');
@@ -71,24 +93,32 @@ export function LangProvider({ children, initial }: { children: React.ReactNode;
         const remote: unknown = data.interfaceLang;
         if (isValidLang(remote)) {
           setLangState(remote);
-          if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, remote);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(STORAGE_KEY, remote);
+            writeLangCookie(remote);
+          }
         }
       } catch { /* fetch 실패 → localStorage / 디폴트 유지 */ }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // 첫 마운트 시 1회만
+  }, [enableServerSync]); // enableServerSync 변경 시 재발화 (보통 mount 1회)
 
   const setLang = useCallback((next: Lang) => {
     setLangState(next);
-    if (typeof window !== 'undefined') localStorage.setItem(STORAGE_KEY, next);
-    // 서버 동기화 — 실패 silent (다음 fetch 가 갱신)
-    fetch('/api/settings', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ interfaceLang: next }),
-    }).catch(() => {});
-  }, []);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, next);
+      writeLangCookie(next); // 다음 SSR 의 initial 값 확정 — flash 0
+    }
+    // 서버 동기화 — enableServerSync 영역에서만. 실패 silent.
+    if (enableServerSync) {
+      fetch('/api/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interfaceLang: next }),
+      }).catch(() => {});
+    }
+  }, [enableServerSync]);
 
   return <LangContext.Provider value={{ lang, setLang }}>{children}</LangContext.Provider>;
 }
