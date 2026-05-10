@@ -48,12 +48,14 @@ export function LoginInner() {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-gray-700 block">{t('login.username')}</label>
-              <input type="text" value={id} onChange={(e) => setId(e.target.value)}
+              <input id="login-username" name="username" type="text" autoComplete="username"
+                value={id} onChange={(e) => setId(e.target.value)}
                 className="w-full border border-[#eaeaea] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors" />
             </div>
             <div className="space-y-1.5">
               <label className="text-sm font-medium text-gray-700 block">{t('login.password')}</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              <input id="login-password" name="password" type="password" autoComplete="current-password"
+                value={password} onChange={(e) => setPassword(e.target.value)}
                 className="w-full border border-[#eaeaea] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors" />
             </div>
             <div className="pt-2">

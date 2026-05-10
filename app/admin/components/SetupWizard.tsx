@@ -179,7 +179,10 @@ export function SetupWizard({ onComplete }: Props) {
         <div className="space-y-1.5">
           <label className="text-sm font-medium text-gray-700 block">{t('setup.admin_id')}</label>
           <input
+            id="setup-admin-id"
+            name="username"
             type="text"
+            autoComplete="username"
             value={adminId}
             onChange={(e) => setAdminId(e.target.value)}
             disabled={submitting}
@@ -192,7 +195,10 @@ export function SetupWizard({ onComplete }: Props) {
           <label className="text-sm font-medium text-gray-700 block">{t('setup.password')}</label>
           <div className="relative">
             <input
+              id="setup-admin-password"
+              name="new-password"
               type="password"
+              autoComplete="new-password"
               value={adminPassword}
               onChange={(e) => setAdminPassword(e.target.value)}
               disabled={submitting}
@@ -220,7 +226,10 @@ export function SetupWizard({ onComplete }: Props) {
           <label className="text-sm font-medium text-gray-700 block">{t('setup.password_confirm')}</label>
           <div className="relative">
             <input
+              id="setup-admin-password-confirm"
+              name="new-password-confirm"
               type="password"
+              autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               disabled={submitting}
