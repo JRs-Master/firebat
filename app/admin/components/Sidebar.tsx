@@ -1085,15 +1085,23 @@ export function Sidebar({
     );
   }
 
-  /* ── PC: activity bar inline + panel fixed (backdrop 박지 마라 — 활동 바 항상 동작). ── */
+  /* ── PC: activity bar inline + panel fixed. invisible backdrop — chat 영역 click 시 close. ── */
   return (
     <>
       {renderActivityBar()}
       {!collapsed && (
-        <div className="fixed top-12 bottom-0 left-12 z-40 w-72 bg-white flex flex-col shrink-0 overflow-hidden border-r border-slate-200 shadow-lg">
-          {renderPanelHeader()}
-          {panelBody}
-        </div>
+        <>
+          {/* invisible click-catcher — 활동 바(z-50) / panel(z-40) 박지 않은 영역 만 click 받음.
+              bg dim 박지 마라 — 사용자 시각 방해 0. */}
+          <div
+            className="fixed top-12 inset-x-0 bottom-0 z-30"
+            onClick={() => setCollapsed(true)}
+          />
+          <div className="fixed top-12 bottom-0 left-12 z-40 w-72 bg-white flex flex-col shrink-0 overflow-hidden border-r border-slate-200 shadow-lg">
+            {renderPanelHeader()}
+            {panelBody}
+          </div>
+        </>
       )}
       {externalModals}
     </>
