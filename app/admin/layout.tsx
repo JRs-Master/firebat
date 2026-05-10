@@ -59,7 +59,7 @@ function ConsoleLayoutInner({ children }: { children: React.ReactNode }) {
           </h1>
         </div>
         <button onClick={handleLogout} className="text-[12px] border border-[#eaeaea] bg-white rounded-md px-2.5 py-1 font-medium text-gray-500 hover:text-black hover:bg-gray-50 transition-colors shadow-sm">
-          {t('common.close')}
+          {t('common.logout')}
         </button>
       </header>
       <main className="flex-1 flex overflow-hidden">

@@ -381,6 +381,7 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   setAiAssistantModel: { service: 'SettingsService', rpc: 'SetAiAssistantModel' },
   getAiAssistantDefault: { service: 'SettingsService', rpc: 'GetAiAssistantDefault' },
   getAvailableAiAssistantModels: { service: 'SettingsService', rpc: 'GetAvailableAiAssistantModels' },
+  getAvailableAiModels: { service: 'SettingsService', rpc: 'GetAvailableAiModels' },
 
   // ── CacheService (Phase 2 sysmod result cache) ───────────────
   cacheData: { service: 'CacheService', rpc: 'Read' },     // proto: 'Read' RPC
