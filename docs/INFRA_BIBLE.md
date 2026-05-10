@@ -42,7 +42,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 
 ### 1. Storage Adapter (`infra/storage/`)
 - `IStoragePort` 구현.
-- **경로 탐색 공격 차단** (2026-05-10 갱신): `resolve_safe_path` 박혀 (a) `Path::is_absolute()` 거부 (b) `..` segment 거부 (c) `workspace_root.join(rel_path)` lexical normalize. **`canonicalize()` 박지 않음** — symlink 자동 풀어 self-hosted deploy 의 표준 패턴 (system/modules → src symlink) 박힌 게 workspace zone 밖 판정해 reject buggy. 옛 TS LocalStorageAdapter 의 `path.resolve + isInsideZone` 1:1 매칭. path traversal 방어 유지 + symlink 호환.
+- **경로 탐색 공격 차단** (2026-05-10 갱신): `resolve_safe_path` 가 (a) `Path::is_absolute()` 거부 (b) `..` segment 거부 (c) `workspace_root.join(rel_path)` lexical normalize. **`canonicalize()` 미사용** — symlink 자동 풀어 self-hosted deploy 의 표준 패턴 (system/modules → src symlink) 이 workspace zone 밖 판정해 reject buggy. 옛 TS LocalStorageAdapter 의 `path.resolve + isInsideZone` 1:1 매칭. path traversal 방어 유지 + symlink 호환.
 - **쓰기 허용 구역**: `app/(user)/`, `user/`
 - **읽기 허용 구역**: `app/(user)/`, `user/`, `docs/`, `system/modules/`, `system/services/`
 - `listDir(path)`: `{name, isDirectory}[]` 반환.
@@ -123,7 +123,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - `better-sqlite3` 기반 (`data/app.db`).
 - 자동 초기화: `pages` / `conversations` / `conversation_embeddings` / `routing_cache` / `media_usage` / `shared_conversations` / `deleted_conversations` / `page_redirects` / `llm_costs` 테이블 `CREATE TABLE IF NOT EXISTS`.
 - CRUD: `savePage`, `getPage`, `listPages`, `deletePage`, `listPagesByProject`, `deletePagesByProject`.
-- **LLM cost 통계** (2026-05-10 갱신): `query_llm_cost_stats(filter)` 박혀 totals (`LlmCostStatsSummary`) + records (`Vec<LlmCostStatsRecord>` per-day / per-model GROUP BY) 둘 다 응답. records SQL: `date(ts/1000, 'unixepoch', 'localtime') AS date, model, COUNT/SUM`. ts ms 단위 (cost.rs `Self::now_ms()`).
+- **LLM cost 통계** (2026-05-10 갱신): `query_llm_cost_stats(filter)` 가 totals (`LlmCostStatsSummary`) + records (`Vec<LlmCostStatsRecord>` per-day / per-model GROUP BY) 둘 다 응답. records SQL: `date(ts/1000, 'unixepoch', 'localtime') AS date, model, COUNT/SUM`. ts ms 단위 (cost.rs `Self::now_ms()`).
 - **마이그레이션 runner** (`infra/database/migrations/`, v0.1 2026-04-26): `_db_version` 테이블이 스키마 버전 추적. 부팅 시 `migrations/NNN-name.sql` 파일 검색 → currentVersion 보다 큰 것만 트랜잭션 보호로 순차 적용. 일방향 (up only). 새 변경은 v2+ 부터 (v1 = implicit baseline = 위 CREATE 자동초기화). 자세한 안내: `infra/database/migrations/README.md`.
 
 ### 8. Vault Adapter (`infra/storage/vault-adapter.ts`)
@@ -146,7 +146,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - Vault 기반 세션 저장: `auth:session:{token}` 키에 AuthSession JSON 저장.
 - 세션/API 토큰 CRUD: `saveSession`/`getSession`/`deleteSession`/`listSessions`/`deleteSessions`.
 - 만료 검사 포함: `getSession()` 호출 시 `expiresAt` 체크, 만료 시 자동 삭제.
-- **비번 hash** (2026-05-10 박힘): admin password 박힌 게 `set_admin_credentials` 박혀 vault 저장 시 자동 argon2id hash. login + verify_admin_password RPC 박혀 verify. **plain text 박힘 안 됨** — vault.db 유출 시에도 비번 노출 0. SettingsModal 비번 변경 박힌 게 옛 `timingSafeStringEqual(plain, hash)` 박혀 항상 mismatch buggy → `verify_admin_password` 신설 fix.
+- **비번 hash** (2026-05-10 도입): admin password 가 `set_admin_credentials` 호출 시 vault 저장 단계에서 자동 argon2id hash. login + verify_admin_password RPC 가 verify. **plain text 저장 X** — vault.db 유출 시에도 비번 노출 0. SettingsModal 비번 변경의 옛 `timingSafeStringEqual(plain, hash)` 패턴이 항상 mismatch buggy → `verify_admin_password` 신설 fix.
 
 ### 11. Embedder Adapter (`infra/llm/embedder-adapter.ts`)
 - `IEmbedderPort` 구현 — multilingual-e5-small 모델 (한국어·영어 OK).
@@ -182,7 +182,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 ### 17. Episodic Adapter (`infra/episodic/sqlite-adapter.ts`) — 메모리 Phase 2
 - `IEpisodicPort` 구현 — events + event_entities m2m (FK CASCADE).
 - saveEvent transaction — event INSERT + entity links INSERT OR IGNORE atomic.
-- **dedup 검출** — saveEvent 의 dedupThreshold 옵션. 같은 type + 7일 이내 기존 event 와 cosine ≥ threshold 면 skip (entityIds 박혀있으면 기존 event 에 link 추가).
+- **dedup 검출** — saveEvent 의 dedupThreshold 옵션. 같은 type + 7일 이내 기존 event 와 cosine ≥ threshold 면 skip (entityIds 가 설정되어 있으면 기존 event 에 link 추가).
 
 ---
 
@@ -190,13 +190,13 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 
 자동 schema 버전 관리. `_db_version` 테이블이 적용된 migration 추적.
 
-| Version | 파일 | 박힘 시점 | 내용 |
+| Version | 파일 | 도입 시점 | 내용 |
 |---|---|---|---|
-| 1 (implicit) | (없음 — `initialize()` 가 baseline 박음) | 초기 | conversations + pages + verifications + page_redirects + media_usage + shared_conversations 등 |
+| 1 (implicit) | (없음 — `initialize()` 가 baseline 생성) | 초기 | conversations + pages + verifications + page_redirects + media_usage + shared_conversations 등 |
 | 2 | `002-entity-memory.sql` | 2026-05-04 | **메모리 Phase 1** — entities (UNIQUE name+type) + entity_facts (FK CASCADE) + 5 인덱스 |
 | 3 | `003-episodic-memory.sql` | 2026-05-04 | **메모리 Phase 2** — events + event_entities m2m + 4 인덱스 |
 
-새 migration 박을 때:
+새 migration 추가 절차:
 1. `infra/database/migrations/NNN-name.sql` 파일 추가 (version prefix `001-` 형태)
 2. SQL idempotent 권장 (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... IF NOT EXISTS`)
 3. 부팅 시 runner 가 자동 적용 + `_db_version` 에 row 추가
@@ -208,7 +208,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 ### 제1항. 어댑터 조립 (`infra/boot.ts`)
 `getInfra()` 함수가 17개 어댑터를 1회 조립하여 `globalThis`에 캐시한다.
 LLM 어댑터는 resolver 함수를 받아 lazy 초기화 (API 키 미설정 상태에서도 부팅 가능).
-Entity / Episodic 어댑터는 `database.db` (raw SQLite Database) + Embedder + Log 받아 같은 DB 위에 자기 테이블 박음.
+Entity / Episodic 어댑터는 `database.db` (raw SQLite Database) + Embedder + Log 받아 같은 DB 위에 자기 테이블 생성.
 
 ### 제2항. 서버 초기화
 - `instrumentation.ts`: `NEXT_RUNTIME === 'nodejs'` 조건 하에 `instrumentation.node.ts` 동적 import.

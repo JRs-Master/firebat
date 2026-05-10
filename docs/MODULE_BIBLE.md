@@ -32,7 +32,7 @@ Firebat은 어떤 언어로 작성되었건(불가지론적) 동일한 방식으
 | `bash` | `index.sh` |
 
 `config.json` 의 `entry` 필드로 override 가능 (예: `"entry": "run.py"`).
-명시 안 하면 prompt-builder 가 위 표준에 따라 path 박음.
+명시 안 하면 prompt-builder 가 위 표준에 따라 path 결정.
 
 ### Multi-file 모듈
 

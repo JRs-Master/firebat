@@ -1,8 +1,8 @@
 # Firebat v1.0 Final — self-hosted Docker 배포 가이드
 
-Phase C 박힘 (2026-05-04, 2026-05-07 갱신). Rust Core + (옵션) Next.js renderer + **Caddy 자동 TLS**.
+Phase C 진입 (2026-05-04, 2026-05-07 갱신). Rust Core + (옵션) Next.js renderer + **Caddy 자동 TLS**.
 
-**어르신·비-개발자 친화** — Caddy 가 Let's Encrypt 자동 발급·갱신. certbot 설치 / 90일 갱신 cron / SSL 옵션 박을 일 0. Caddyfile 7줄 박고 도메인만 치환하면 끝.
+**어르신·비-개발자 친화** — Caddy 가 Let's Encrypt 자동 발급·갱신. certbot 설치 / 90일 갱신 cron / SSL 옵션 작업 0. Caddyfile 7줄 작성 후 도메인만 치환하면 끝.
 
 **🔥 Phase B-4 cutover (2026-05-06) 후 빌드 명령**:
 - 옛 `cargo build -p firebat-core` → **`cargo build --release -p firebat-infra --bin firebat-core`** (Rust workspace 분리 — bin target 이 infra crate 안)
@@ -30,7 +30,7 @@ sudo chown -R 1000:1000 data user system
 
 # 3. Caddy 설정 (실 도메인 운영 시)
 cp caddy/Caddyfile.example caddy/Caddyfile
-# Caddyfile 안 your-domain.com 을 실 도메인으로 일괄 치환 + tls 이메일 박음
+# Caddyfile 안 your-domain.com 을 실 도메인으로 일괄 치환 + tls 이메일 입력
 # 그게 전부. SSL cert 자동 발급·갱신 — certbot 설치 0, 갱신 cron 0.
 
 # 4. docker-compose.yml 의 renderer / caddy 주석 해제 (옵션)
@@ -48,7 +48,7 @@ docker compose logs -f firebat-core
 **도메인 / sitemap URL / 페이지 slug 모두 그대로** — AdSense / 검색 색인 보존.
 
 ```bash
-# 0. 옛 서버 별칭 박음 (~/.ssh/config 의 Host alias 또는 SSH user@host 직접)
+# 0. 옛 서버 별칭 등록 (~/.ssh/config 의 Host alias 또는 SSH user@host 직접)
 #    아래 예시는 old-server alias 가정.
 
 # 1. 옛 서버에서 systemd stop
@@ -116,9 +116,9 @@ environment:
   RUST_BACKTRACE: 1                            # 패닉 시 스택 트레이스
 ```
 
-## API 키 박기
+## API 키 등록
 
-LLM 호출은 Vault 에 API 키 박혀있어야 활성 (없으면 핸들러가 명시 에러 반환):
+LLM 호출은 Vault 에 API 키가 등록되어야 활성 (없으면 핸들러가 명시 에러 반환):
 
 ```bash
 # Anthropic Claude
@@ -127,10 +127,10 @@ docker compose exec firebat-core sh -c \
    firebat.v1.SecretService/SetUser \
    -d '"'"'{"key": "system:anthropic:api-key", "value": "sk-ant-..."}'"'"
 
-# 또는 어드민 설정 모달에서 GUI 박음 (Phase B-17.5+ 활성)
+# 또는 어드민 설정 모달에서 GUI 입력 (Phase B-17.5+ 활성)
 ```
 
-빌트인 모델 carousel (Vault 키 박으면 활성):
+빌트인 모델 carousel (Vault 키 등록 시 활성):
 - `claude-4-sonnet` ← `system:anthropic:api-key`
 - `gpt-5` ← `system:openai:api-key`
 - `gemini-3-pro` ← `system:gemini:api-key`
@@ -141,7 +141,7 @@ docker compose exec firebat-core sh -c \
 
 ```bash
 docker compose down              # SIGTERM → 30초 대기 → SIGKILL
-# Phase B-17b 박힘 — SIGINT (ctrl+c) + SIGTERM 둘 다 listen, SQLite WAL 손상 방어.
+# Phase B-17b 도입 — SIGINT (ctrl+c) + SIGTERM 둘 다 listen, SQLite WAL 손상 방어.
 ```
 
 ## 백업 / 복구

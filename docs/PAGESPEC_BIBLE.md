@@ -36,7 +36,7 @@
 
 ### 제1-1항. Page-level layout override (v0.1, 2026-05-03)
 
-`head` 안에 layout override 옵션 박을 수 있음 — 글로벌 CMS 설정 무시하고 이 페이지만 다른 모드:
+`head` 안에 layout override 옵션 추가 가능 — 글로벌 CMS 설정 무시하고 이 페이지만 다른 모드:
 
 ```json
 {
@@ -51,7 +51,7 @@
 - `layoutMode`: 글로벌 CMS layout 모드 무시. 사용 예 — 글로벌 right-sidebar 인데 hero 페이지만 'full', 단일 글만 'boxed'.
 - `contentMaxWidth`: 글로벌 max-width 무시. 페이지별 다른 폭 (XSS 가드 — `;{}<>` 차단 + 64자 한도).
 
-middleware (`proxy.ts`) 가 `x-firebat-pathname` header 박음 → `(user)/layout.tsx` 가 spec.head 조회 후 자동 적용.
+middleware (`proxy.ts`) 가 `x-firebat-pathname` header 추가 → `(user)/layout.tsx` 가 spec.head 조회 후 자동 적용.
 
 ### 제2항. slug 규칙
 - 한글/영문/숫자/하이픈 허용
