@@ -7,7 +7,7 @@
 import type { Metadata } from 'next';
 import { getCore } from '../../lib/singleton';
 import { CmsPageList } from './cms-page-list';
-import { getServerTranslations } from '../../lib/i18n';
+import { getServerTranslations } from '../../lib/i18n-server';
 
 export async function generateMetadata(): Promise<Metadata> {
   const cms = await getCore().getCmsSettings();

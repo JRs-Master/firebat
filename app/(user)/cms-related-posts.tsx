@@ -6,7 +6,7 @@
  * 카드 변형: list 패턴 (제목 + 메타 + 프로젝트 라벨).
  */
 import { getCore } from '../../lib/singleton';
-import { getServerTranslations, normalizeLang } from '../../lib/i18n';
+import { getServerTranslations, normalizeLang } from '../../lib/i18n-server';
 
 function formatDate(s: string | undefined, timeZone: string, lang: 'ko' | 'en'): string {
   if (!s) return '';

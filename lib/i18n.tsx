@@ -1,14 +1,18 @@
 /**
- * i18n — 자체 단순 구현 (의존성 0, v2.0 Tauri / SPA 호환).
+ * i18n client — LangProvider + 3 hook (useTranslations / usePublicTranslations / useLang).
  *
  * 두 영역 분리:
  *   - **어드민 UI** = useTranslations() hook + LangProvider (Client Component)
- *     활성 언어 결정: localStorage `firebat_ui_lang` → fetch /api/settings 의 interfaceLang → 'ko'
- *   - **공개 사이트** = getServerTranslations(siteLang) (Server Component)
+ *     활성 언어 결정: localStorage `firebat_ui_lang` → fetch /api/settings 의 interfaceLang → INITIAL_LANG
+ *   - **공개 사이트 (RSC)** = `lib/i18n-server.ts` 의 getServerTranslations(siteLang)
  *     활성 언어 = cms.siteLang 그대로
  *
  * 키 형식: nested ('login.title' / 'page.reading_time'). 미발견 시 key 자체 반환 + console warn.
  * Placeholder: '{count}분 읽기' → t('page.reading_time', {count: 5}) → '5분 읽기'.
+ *
+ * pure logic (translate / normalizeLang / FALLBACK_LANG / INITIAL_LANG) 은 `lib/i18n-shared.ts`
+ * 에 분리 — server / client 양쪽이 import 가능하도록. 이 파일은 `'use client'` 라 RSC 에서
+ * 직접 import 불가.
  *
  * v2.0 Tauri / SPA 마이그레이션 시 — Provider + hook 그대로 사용. messages JSON 그대로.
  */
@@ -16,71 +20,16 @@
 'use client';
 
 import { createContext, useContext, useCallback, useEffect, useState } from 'react';
-import koMessages from '../messages/ko.json';
-import enMessages from '../messages/en.json';
+import {
+  type Lang,
+  INITIAL_LANG,
+  isValidLang,
+  translate,
+} from './i18n-shared';
 
-export type Lang = 'ko' | 'en';
-
-const MESSAGES: Record<Lang, Record<string, unknown>> = {
-  ko: koMessages,
-  en: enMessages,
-};
-
-/** 누락 키 폴백 — 어느 언어에서 못 찾을 때 마지막으로 시도할 언어. */
-const FALLBACK_LANG: Lang = 'en';
-
-/** SSR + 첫 client render (hydration) 의 default 언어.
- *  ⚠️ localStorage 읽기는 useEffect 안에서만 — lazy useState init 에 박으면 server 는
- *  FALLBACK 으로 영문 렌더, client 는 localStorage 의 'ko' 로 한국어 렌더 → text node
- *  mismatch → React #418. server / client 가 같은 값 반환하도록 통일.
- *  값 = 'en' — SetupWizard / FALLBACK 과 동일한 글로벌 default. 한국어 사용자는
- *  localStorage 'ko' 박혀있어 마운트 직후 useEffect 에서 즉시 전환 (한 프레임 flash). */
-const INITIAL_LANG: Lang = 'en';
-
-/** nested key resolver — 'login.title' → messages.login.title */
-function resolveKey(messages: Record<string, unknown>, key: string): string | undefined {
-  const parts = key.split('.');
-  let cur: unknown = messages;
-  for (const p of parts) {
-    if (cur && typeof cur === 'object' && p in (cur as Record<string, unknown>)) {
-      cur = (cur as Record<string, unknown>)[p];
-    } else {
-      return undefined;
-    }
-  }
-  return typeof cur === 'string' ? cur : undefined;
-}
-
-/** placeholder 치환 — '{count}분 읽기' + {count: 5} → '5분 읽기' */
-function interpolate(template: string, params?: Record<string, string | number>): string {
-  if (!params) return template;
-  return template.replace(/\{(\w+)\}/g, (_, key) => {
-    const v = params[key];
-    return v === undefined ? `{${key}}` : String(v);
-  });
-}
-
-/** 활성 언어 + raw messages 응답 (key 없으면 fallback lang 시도 → 그것도 없으면 key 자체) */
-export function translate(
-  lang: Lang,
-  key: string,
-  params?: Record<string, string | number>,
-): string {
-  const primary = resolveKey(MESSAGES[lang] || {}, key);
-  if (primary !== undefined) return interpolate(primary, params);
-  // fallback chain — 다른 언어에서 시도 (영어 → 한국어 또는 그 역)
-  const fallback = lang === FALLBACK_LANG ? undefined : resolveKey(MESSAGES[FALLBACK_LANG] || {}, key);
-  if (fallback !== undefined && fallback !== null) {
-    if (typeof console !== 'undefined') {
-      console.warn(`[i18n] missing key '${key}' in lang '${lang}', using '${FALLBACK_LANG}' fallback`);
-    }
-    return interpolate(fallback, params);
-  }
-  if (typeof console !== 'undefined') {
-    console.warn(`[i18n] missing key '${key}' in all languages — returning raw key`);
-  }
-  return key;
-}
+// 타입 + 상수 re-export — 기존 import 호환.
+export type { Lang } from './i18n-shared';
+export { translate, normalizeLang, FALLBACK_LANG, INITIAL_LANG } from './i18n-shared';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Client (어드민) — Context + Provider + hook
@@ -97,10 +46,6 @@ const LangContext = createContext<LangContextValue>({
 });
 
 const STORAGE_KEY = 'firebat_ui_lang';
-
-function isValidLang(v: unknown): v is Lang {
-  return v === 'ko' || v === 'en';
-}
 
 /** 어드민 LangProvider — root 또는 admin layout 안에 렌더.
  *  초기값: server / client hydration 일치를 위해 INITIAL_LANG 고정 (또는 명시 prop).
@@ -179,25 +124,4 @@ export function usePublicTranslations(): (key: string, params?: Record<string, s
     (key: string, params?: Record<string, string | number>) => translate(lang, key, params),
     [lang],
   );
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Server (공개 사이트) — 단순 함수 (RSC 안에서 사용)
-// ──────────────────────────────────────────────────────────────────────────
-
-/** Server Component 안에서 사용 — siteLang 받아 t() 함수 응답.
- *  사용 예:
- *    const t = getServerTranslations(cms.siteLang);
- *    <h1>{t('page.not_found_title')}</h1>
- */
-export function getServerTranslations(
-  siteLang?: string | null,
-): (key: string, params?: Record<string, string | number>) => string {
-  const lang: Lang = isValidLang(siteLang) ? siteLang : FALLBACK_LANG;
-  return (key, params) => translate(lang, key, params);
-}
-
-/** lang 정규화 — 외부 입력 (e.g. cms settings) 의 lang string → Lang 또는 fallback. */
-export function normalizeLang(lang?: string | null): Lang {
-  return isValidLang(lang) ? lang : FALLBACK_LANG;
 }

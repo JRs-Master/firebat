@@ -7,7 +7,7 @@
  */
 import { getCore } from '../../../lib/singleton';
 import { CmsPageList, CmsPagination } from '../cms-page-list';
-import { getServerTranslations } from '../../../lib/i18n';
+import { getServerTranslations } from '../../../lib/i18n-server';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';

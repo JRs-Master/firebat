@@ -6,7 +6,7 @@
  * 콘텐츠 페이지(project 설정된)에서 <main> 본문 시작 직전 표시.
  */
 
-import { getServerTranslations } from '../../lib/i18n';
+import { getServerTranslations } from '../../lib/i18n-server';
 
 export function CmsBreadcrumb({ slug, title, siteLang }: { slug: string; title?: string; siteLang?: string }) {
   const t = getServerTranslations(siteLang);
