@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from './singleton';
+import { SESSION_COOKIE_NAME } from './config';
 import type { AuthSession } from './types/firebat-types';
 
 /**
@@ -22,7 +23,7 @@ export async function requireAuth(request: NextRequest): Promise<AuthSession | N
 
   // 2) Cookie (세션 토큰) — Vault 검증 필수. 옛 'firebat_admin_token=authenticated'
   // legacy fallback 폐기 (2026-05-09) — 쿠키 string 만으로 admin 통과되던 보안 결함.
-  const cookie = request.cookies.get('firebat_token');
+  const cookie = request.cookies.get(SESSION_COOKIE_NAME);
   if (cookie?.value) {
     const session = await core.validateToken(cookie.value);
     if (session) return session as AuthSession;

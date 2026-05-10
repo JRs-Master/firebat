@@ -4,20 +4,30 @@
 //! Phase B 진행하며 매니저별 key 추가.
 
 pub const VK_SYSTEM_TIMEZONE: &str = "system:timezone";
-pub const VK_SYSTEM_AI_MODEL: &str = "system:ai-model";
-pub const VK_SYSTEM_AI_THINKING_LEVEL: &str = "system:ai-thinking-level";
+/// LLM 메인 모델 — 실 Vault 저장 키 `system:llm:model`.
+pub const VK_SYSTEM_AI_MODEL: &str = "system:llm:model";
+/// LLM 사고 깊이 — 실 Vault 저장 키 `system:llm:thinking-level`.
+pub const VK_SYSTEM_AI_THINKING_LEVEL: &str = "system:llm:thinking-level";
 pub const VK_SYSTEM_USER_PROMPT: &str = "system:user-prompt";
 pub const VK_SYSTEM_AI_ASSISTANT_MODEL: &str = "system:ai-router:model";
 /// AI Assistant 토글 — Vault 의 `'true'` / `'1'` 만 ON. ToolRouter 가 이 키 검사.
 pub const VK_SYSTEM_AI_ROUTER_ENABLED: &str = "system:ai-router:enabled";
 /// AI Assistant default 모델 — Vault 미설정 시 폴백. 사용자 결정 (2026-05-09):
-/// 잼민이 3.1 Flash Lite (저렴·빠름) — Tool Router / search_history 보조용으로 적합.
+/// Gemini 3.1 Flash Lite (저렴·빠름) — Tool Router / search_history 보조용으로 적합.
 /// `LlmModelConfig.builtin_models` 에 등록되어야 함 (config.rs).
 pub const AI_ASSISTANT_DEFAULT_MODEL: &str = "gemini-3.1-flash-lite-preview";
 pub const VK_LLM_ANTHROPIC_CACHE: &str = "system:llm:anthropic-cache";
-pub const VK_SYSTEM_LAST_MODEL_BY_CATEGORY: &str = "system:last-model-by-category";
+/// 카테고리별 마지막 선택 모델 — 실 Vault 저장 키 `system:llm:last-by-category`.
+pub const VK_SYSTEM_LAST_MODEL_BY_CATEGORY: &str = "system:llm:last-by-category";
 pub const VK_ADMIN_ID: &str = "FIREBAT_ADMIN_ID";
 pub const VK_ADMIN_PASSWORD: &str = "FIREBAT_ADMIN_PASSWORD";
+
+/// 메인 LLM 모델 미설정 시 폴백 — settings.rs get_ai_model 기본값 single source.
+pub const DEFAULT_LLM_MODEL_FALLBACK: &str = "claude-sonnet-4-6";
+/// 사고 수준 미설정 시 폴백 — settings.rs get_ai_thinking_level 기본값 single source.
+pub const DEFAULT_THINKING_LEVEL: &str = "medium";
+/// 사용자 지시사항 최대 글자 수 — settings.rs + frontend SettingsModal 공통 single source.
+pub const USER_PROMPT_MAX_CHARS: usize = 2000;
 
 pub const USER_SECRET_PREFIX: &str = "user:";
 

@@ -15,6 +15,12 @@ use crate::proto::{
     AiModelResponsePb, AvailableAiModelListPb, AvailableAiModelPb, BoolRequest, Empty, JsonArgs,
     LastModelByCategoryPb, StringRequest,
 };
+use crate::vault_keys::{
+    AI_ASSISTANT_DEFAULT_MODEL, DEFAULT_LLM_MODEL_FALLBACK, DEFAULT_THINKING_LEVEL,
+    USER_PROMPT_MAX_CHARS, VK_LLM_ANTHROPIC_CACHE, VK_SYSTEM_AI_ASSISTANT_MODEL,
+    VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_LAST_MODEL_BY_CATEGORY,
+    VK_SYSTEM_TIMEZONE, VK_SYSTEM_USER_PROMPT,
+};
 
 pub struct SettingsServiceImpl {
     vault: Arc<dyn IVaultPort>,
@@ -37,7 +43,7 @@ impl SettingsServiceImpl {
 impl SettingsService for SettingsServiceImpl {
     async fn get_timezone(&self, _req: Request<Empty>) -> Result<Response<StringRequest>, TonicStatus> {
         Ok(Response::new(StringRequest {
-            value: self.get_or_default("system:timezone", "Asia/Seoul"),
+            value: self.get_or_default(VK_SYSTEM_TIMEZONE, "Asia/Seoul"),
         }))
     }
 
@@ -46,7 +52,7 @@ impl SettingsService for SettingsServiceImpl {
         req: Request<StringRequest>,
     ) -> Result<Response<BoolRequest>, TonicStatus> {
         let tz = req.into_inner().value;
-        let ok = self.vault.set_secret("system:timezone", &tz);
+        let ok = self.vault.set_secret(VK_SYSTEM_TIMEZONE, &tz);
         Ok(Response::new(BoolRequest { value: ok }))
     }
 
@@ -54,7 +60,7 @@ impl SettingsService for SettingsServiceImpl {
         &self,
         _req: Request<Empty>,
     ) -> Result<Response<AiModelResponsePb>, TonicStatus> {
-        let model = self.get_or_default("system:llm:model", "claude-sonnet-4-6");
+        let model = self.get_or_default(VK_SYSTEM_AI_MODEL, DEFAULT_LLM_MODEL_FALLBACK);
         Ok(Response::new(AiModelResponsePb { model }))
     }
 
@@ -63,7 +69,7 @@ impl SettingsService for SettingsServiceImpl {
         req: Request<StringRequest>,
     ) -> Result<Response<BoolRequest>, TonicStatus> {
         let model = req.into_inner().value;
-        let ok = self.vault.set_secret("system:llm:model", &model);
+        let ok = self.vault.set_secret(VK_SYSTEM_AI_MODEL, &model);
         Ok(Response::new(BoolRequest { value: ok }))
     }
 
@@ -72,7 +78,7 @@ impl SettingsService for SettingsServiceImpl {
         _req: Request<Empty>,
     ) -> Result<Response<StringRequest>, TonicStatus> {
         Ok(Response::new(StringRequest {
-            value: self.get_or_default("system:llm:thinking-level", "medium"),
+            value: self.get_or_default(VK_SYSTEM_AI_THINKING_LEVEL, DEFAULT_THINKING_LEVEL),
         }))
     }
 
@@ -81,7 +87,7 @@ impl SettingsService for SettingsServiceImpl {
         req: Request<StringRequest>,
     ) -> Result<Response<BoolRequest>, TonicStatus> {
         let level = req.into_inner().value;
-        let ok = self.vault.set_secret("system:llm:thinking-level", &level);
+        let ok = self.vault.set_secret(VK_SYSTEM_AI_THINKING_LEVEL, &level);
         Ok(Response::new(BoolRequest { value: ok }))
     }
 
@@ -90,7 +96,7 @@ impl SettingsService for SettingsServiceImpl {
         _req: Request<Empty>,
     ) -> Result<Response<StringRequest>, TonicStatus> {
         Ok(Response::new(StringRequest {
-            value: self.get_or_default("system:user-prompt", ""),
+            value: self.get_or_default(VK_SYSTEM_USER_PROMPT, ""),
         }))
     }
 
@@ -99,11 +105,11 @@ impl SettingsService for SettingsServiceImpl {
         req: Request<StringRequest>,
     ) -> Result<Response<BoolRequest>, TonicStatus> {
         let prompt = req.into_inner().value;
-        // 옛 TS 와 동일 — 2000자 제한
-        if prompt.chars().count() > 2000 {
+        // 옛 TS 와 동일 — USER_PROMPT_MAX_CHARS (2000자) 제한
+        if prompt.chars().count() > USER_PROMPT_MAX_CHARS {
             return Ok(Response::new(BoolRequest { value: false }));
         }
-        let ok = self.vault.set_secret("system:user-prompt", &prompt);
+        let ok = self.vault.set_secret(VK_SYSTEM_USER_PROMPT, &prompt);
         Ok(Response::new(BoolRequest { value: ok }))
     }
 
@@ -113,7 +119,7 @@ impl SettingsService for SettingsServiceImpl {
     ) -> Result<Response<BoolRequest>, TonicStatus> {
         let enabled = self
             .vault
-            .get_secret("system:llm:anthropic-cache")
+            .get_secret(VK_LLM_ANTHROPIC_CACHE)
             .map(|v| v == "true" || v == "1")
             .unwrap_or(false);
         Ok(Response::new(BoolRequest { value: enabled }))
@@ -125,7 +131,7 @@ impl SettingsService for SettingsServiceImpl {
     ) -> Result<Response<BoolRequest>, TonicStatus> {
         let enabled = req.into_inner().value;
         let value = if enabled { "true" } else { "false" };
-        let ok = self.vault.set_secret("system:llm:anthropic-cache", value);
+        let ok = self.vault.set_secret(VK_LLM_ANTHROPIC_CACHE, value);
         Ok(Response::new(BoolRequest { value: ok }))
     }
 
@@ -133,7 +139,7 @@ impl SettingsService for SettingsServiceImpl {
         &self,
         _req: Request<Empty>,
     ) -> Result<Response<LastModelByCategoryPb>, TonicStatus> {
-        let raw = self.get_or_default("system:llm:last-by-category", "{}");
+        let raw = self.get_or_default(VK_SYSTEM_LAST_MODEL_BY_CATEGORY, "{}");
         // valid JSON 인지 검증만 — 항상 정규화된 JSON 반환
         let raw_json = serde_json::from_str::<serde_json::Value>(&raw)
             .map(|v| serde_json::to_string(&v).unwrap_or_else(|_| "{}".to_string()))
@@ -152,7 +158,7 @@ impl SettingsService for SettingsServiceImpl {
             Err(_) => return Ok(Response::new(BoolRequest { value: false })),
         };
         let ok = self.vault.set_secret(
-            "system:llm:last-by-category",
+            VK_SYSTEM_LAST_MODEL_BY_CATEGORY,
             &serde_json::to_string(&parsed).unwrap_or_default(),
         );
         Ok(Response::new(BoolRequest { value: ok }))
@@ -163,10 +169,7 @@ impl SettingsService for SettingsServiceImpl {
         _req: Request<Empty>,
     ) -> Result<Response<StringRequest>, TonicStatus> {
         Ok(Response::new(StringRequest {
-            value: self.get_or_default(
-                crate::vault_keys::VK_SYSTEM_AI_ASSISTANT_MODEL,
-                crate::vault_keys::AI_ASSISTANT_DEFAULT_MODEL,
-            ),
+            value: self.get_or_default(VK_SYSTEM_AI_ASSISTANT_MODEL, AI_ASSISTANT_DEFAULT_MODEL),
         }))
     }
 
@@ -175,7 +178,7 @@ impl SettingsService for SettingsServiceImpl {
         req: Request<StringRequest>,
     ) -> Result<Response<BoolRequest>, TonicStatus> {
         let model = req.into_inner().value;
-        let ok = self.vault.set_secret("system:ai-router:model", &model);
+        let ok = self.vault.set_secret(VK_SYSTEM_AI_ASSISTANT_MODEL, &model);
         Ok(Response::new(BoolRequest { value: ok }))
     }
 
@@ -184,7 +187,7 @@ impl SettingsService for SettingsServiceImpl {
         _req: Request<Empty>,
     ) -> Result<Response<StringRequest>, TonicStatus> {
         Ok(Response::new(StringRequest {
-            value: "gemini-3-pro".to_string(),
+            value: AI_ASSISTANT_DEFAULT_MODEL.to_string(),
         }))
     }
 

@@ -23,7 +23,9 @@ use crate::ports::{
 
 /// AI Assistant model 의 default — `vault_keys::AI_ASSISTANT_DEFAULT_MODEL` single source 사용.
 /// 옛 자체 설정된 const 폐기 (2026-05-06 audit cleanup A3).
-use crate::vault_keys::AI_ASSISTANT_DEFAULT_MODEL;
+use crate::vault_keys::{
+    AI_ASSISTANT_DEFAULT_MODEL, VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_AI_ROUTER_ENABLED,
+};
 
 /// 옛 TS EXTRACTION_PROMPT Rust port — 대화 → entity / fact / event JSON 추출 instruction.
 const EXTRACTION_PROMPT: &str = r#"당신은 대화 메모리 정리 도우미입니다. 다음 대화를 읽고 추적할 가치 있는 정보를 JSON 으로 추출하세요.
@@ -244,7 +246,7 @@ impl ConsolidationManager {
         if model_id.is_none() {
             let enabled = hook
                 .vault
-                .get_secret("system:ai-router:enabled")
+                .get_secret(VK_SYSTEM_AI_ROUTER_ENABLED)
                 .map(|v| v == "true" || v == "1")
                 .unwrap_or(false); // default off (옛 TS 와 동일)
             if !enabled {
@@ -300,7 +302,7 @@ impl ConsolidationManager {
         // → 메인 채팅 모델 (Claude Sonnet 등) 이 아닌 fast/cheap 모델로 비용 절감 (~$0.001/대화).
         let resolved_model = model_id.map(String::from).or_else(|| {
             hook.vault
-                .get_secret("system:ai-router:model")
+                .get_secret(VK_SYSTEM_AI_ASSISTANT_MODEL)
                 .filter(|v| !v.is_empty())
         });
         let full_prompt = format!("{}\n{}", EXTRACTION_PROMPT, transcript);

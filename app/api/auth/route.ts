@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../lib/auth-guard';
-import { SESSION_MAX_AGE_SECONDS } from '../../../lib/config';
+import { SESSION_MAX_AGE_SECONDS, SESSION_COOKIE_NAME } from '../../../lib/config';
 import { isHttpsRequest } from '../../../lib/cookie-helpers';
 
 /** rate-limit key — IP 또는 fallback 'unknown'. proxy 뒤일 때 X-Forwarded-For 우선. */
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
   // sameSite=lax — CSRF 기본 방어 (외부 사이트 cross-origin POST 차단).
   // 옛 firebat_admin_token=authenticated legacy 쿠키 발급 폐기 (2026-05-09 보안 결함 fix).
   res.cookies.set({
-    name: 'firebat_token',
+    name: SESSION_COOKIE_NAME,
     value: session.token,
     httpOnly: true,
     secure: isHttpsRequest(req),
@@ -61,11 +61,11 @@ export async function POST(req: NextRequest) {
 // 로그아웃
 export async function DELETE(req: NextRequest) {
   const core = getCore();
-  const token = req.cookies.get('firebat_token')?.value;
+  const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
   if (token) core.logout(token);
 
   const res = NextResponse.json({ success: true });
-  res.cookies.delete('firebat_token');
+  res.cookies.delete(SESSION_COOKIE_NAME);
   res.cookies.delete('firebat_admin_token');
   return res;
 }

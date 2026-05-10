@@ -11,6 +11,7 @@ import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useLang, useTranslations, type Lang } from '../../../lib/i18n';
 import { TIMEZONE_OPTIONS, timezoneLabel } from '../../../lib/timezones';
+import { USER_PROMPT_MAX_CHARS } from '../../../lib/config';
 
 interface SystemModule { name: string; description: string; runtime: string; type?: string; enabled?: boolean; }
 
@@ -1260,7 +1261,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       사용자 지시사항 <span className="text-[10px] font-normal text-slate-400">(User AI 전용)</span>
                     </FieldLabel>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-slate-400">{userPrompt.length} / 2000</span>
+                      <span className="text-[10px] text-slate-400">{userPrompt.length} / {USER_PROMPT_MAX_CHARS}</span>
                       <FeedbackBadge state={userPromptSaving ? 'loading' : userPromptSaved ? 'ok' : null} okLabel="저장됨" loadingLabel="저장 중" />
                       <button
                         onClick={saveUserPrompt}
@@ -1273,7 +1274,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   </div>
                   <Textarea
                     value={userPrompt}
-                    onChange={(v) => setUserPrompt(v.slice(0, 2000))}
+                    onChange={(v) => setUserPrompt(v.slice(0, USER_PROMPT_MAX_CHARS))}
                     rows={6}
                     placeholder="원하는 톤·언어·도메인 지식·포맷 선호 등을 자유롭게 입력 (선택사항)"
                   />

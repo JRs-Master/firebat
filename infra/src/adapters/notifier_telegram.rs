@@ -17,8 +17,8 @@ use async_trait::async_trait;
 use std::sync::Arc;
 
 use firebat_core::ports::{INotifierPort, IVaultPort, NotifyLevel};
+use firebat_core::vault_keys::vk_module_settings;
 
-const VK_TELEGRAM_MODULE_SETTINGS: &str = "system:module:telegram:settings";
 const VK_TELEGRAM_BOT_TOKEN: &str = "user:TELEGRAM_BOT_TOKEN";
 const VK_TELEGRAM_CHAT_ID: &str = "user:TELEGRAM_CHAT_ID";
 
@@ -41,7 +41,7 @@ impl TelegramNotifierAdapter {
     /// 토글 검사 — settings JSON 의 `bruteForceAlert: true` 또는 `bruteForceAlert: "true"` 일 때만 발송.
     /// 미설정 / false / 다른 값 = silent skip.
     fn brute_force_alert_enabled(&self) -> bool {
-        let raw = match self.vault.get_secret(VK_TELEGRAM_MODULE_SETTINGS) {
+        let raw = match self.vault.get_secret(&vk_module_settings("telegram")) {
             Some(s) if !s.is_empty() => s,
             _ => return false,
         };

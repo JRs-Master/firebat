@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { getCore } from '../../../lib/singleton';
 import { ComponentRenderer } from './components';
 import { BASE_URL } from '../../../lib/base-url';
+import { SESSION_COOKIE_NAME } from '../../../lib/config';
 import { headers } from 'next/headers';
 import { estimateReadingTime } from '../reading-time';
 import { CmsBreadcrumb } from '../breadcrumb';
@@ -191,7 +192,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
   let isAdminPreview = false;
   if (visibility === 'private') {
     const cookieStore = await cookies();
-    const adminToken = cookieStore.get('firebat_token')?.value || cookieStore.get('firebat_admin_token')?.value;
+    const adminToken = cookieStore.get(SESSION_COOKIE_NAME)?.value || cookieStore.get('firebat_admin_token')?.value;
     if (adminToken) {
       isAdminPreview = true;
     } else {

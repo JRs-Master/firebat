@@ -234,7 +234,7 @@ impl ProcessSandboxAdapter {
                     .unwrap_or("unknown")
                     .to_string()
             });
-        let settings_key = format!("system:module:{module_name}:settings");
+        let settings_key = firebat_core::vault_keys::vk_module_settings(&module_name);
         if let Some(settings_raw) = vault.get_secret(&settings_key) {
             if let Ok(settings) = serde_json::from_str::<serde_json::Value>(&settings_raw) {
                 if let Some(map) = settings.as_object() {

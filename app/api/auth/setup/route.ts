@@ -13,7 +13,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
-import { SESSION_MAX_AGE_SECONDS } from '../../../../lib/config';
+import { SESSION_MAX_AGE_SECONDS, SESSION_COOKIE_NAME } from '../../../../lib/config';
 import { isHttpsRequest } from '../../../../lib/cookie-helpers';
 
 export async function GET(_req: NextRequest) {
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
 
   const res = NextResponse.json({ success: true, autoLogin: true });
   res.cookies.set({
-    name: 'firebat_token',
+    name: SESSION_COOKIE_NAME,
     value: session.token,
     httpOnly: true,
     secure: isHttpsRequest(req),
