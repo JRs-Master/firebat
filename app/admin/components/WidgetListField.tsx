@@ -19,6 +19,7 @@ import {
   widgetsForArea,
   resolveSlotProps,
 } from '../../../lib/widget-catalog';
+import { useTranslations } from '../../../lib/i18n';
 
 export function WidgetListField({
   label,
@@ -33,6 +34,7 @@ export function WidgetListField({
   value: WidgetSlot[] | undefined;
   onChange: (next: WidgetSlot[]) => void;
 }) {
+  const t = useTranslations();
   const widgets = Array.isArray(value) ? value : [];
   const available = widgetsForArea(area);
   const [addPickerOpen, setAddPickerOpen] = useState(false);
@@ -94,7 +96,7 @@ export function WidgetListField({
 
       {widgets.length === 0 ? (
         <div className="text-center py-6 border border-dashed border-slate-300 rounded-lg text-xs text-slate-400">
-          등록된 위젯 없음. 아래 버튼으로 추가
+          {t('system_modules.widget_list.empty')}
         </div>
       ) : (
         <div className="flex flex-col gap-1.5">
@@ -119,7 +121,7 @@ export function WidgetListField({
                     <span className="text-xs font-bold text-slate-700">{meta?.label ?? slot.type}</span>
                     {slot.visibility && slot.visibility !== 'all' && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
-                        {slot.visibility === 'desktop' ? 'PC만' : '모바일만'}
+                        {slot.visibility === 'desktop' ? t('system_modules.widget_list.visibility_pc_only') : t('system_modules.widget_list.visibility_mobile_only')}
                       </span>
                     )}
                   </button>
@@ -128,8 +130,8 @@ export function WidgetListField({
                     type="button"
                     onClick={() => moveUp(i)}
                     disabled={i === 0}
-                    title="위로"
-                    aria-label="위로"
+                    title={t('system_modules.widget_list.move_up')}
+                    aria-label={t('system_modules.widget_list.move_up')}
                     className="p-1 hover:bg-slate-100 rounded disabled:opacity-30 disabled:cursor-not-allowed bg-transparent border-0 cursor-pointer"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -140,8 +142,8 @@ export function WidgetListField({
                     type="button"
                     onClick={() => moveDown(i)}
                     disabled={i === widgets.length - 1}
-                    title="아래로"
-                    aria-label="아래로"
+                    title={t('system_modules.widget_list.move_down')}
+                    aria-label={t('system_modules.widget_list.move_down')}
                     className="p-1 hover:bg-slate-100 rounded disabled:opacity-30 disabled:cursor-not-allowed bg-transparent border-0 cursor-pointer"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -152,8 +154,8 @@ export function WidgetListField({
                   <button
                     type="button"
                     onClick={() => removeAt(i)}
-                    title="삭제"
-                    aria-label="삭제"
+                    title={t('common.delete')}
+                    aria-label={t('common.delete')}
                     className="p-1 hover:bg-red-50 rounded text-red-600 bg-transparent border-0 cursor-pointer"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -171,15 +173,15 @@ export function WidgetListField({
                     )}
                     {/* Visibility */}
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-bold text-slate-600 shrink-0">표시 대상:</span>
+                      <span className="text-[11px] font-bold text-slate-600 shrink-0">{t('system_modules.widget_list.visibility_label')}:</span>
                       <select
                         value={slot.visibility ?? 'all'}
                         onChange={(e) => updateSlot(i, { visibility: e.target.value as WidgetSlot['visibility'] })}
                         className="text-[11px] px-2 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                       >
-                        <option value="all">PC + 모바일</option>
-                        <option value="desktop">PC 만 (sm 이상)</option>
-                        <option value="mobile">모바일 만 (sm 미만)</option>
+                        <option value="all">{t('system_modules.widget_list.visibility_all')}</option>
+                        <option value="desktop">{t('system_modules.widget_list.visibility_desktop')}</option>
+                        <option value="mobile">{t('system_modules.widget_list.visibility_mobile')}</option>
                       </select>
                     </div>
                     {/* Props 편집 */}
@@ -232,7 +234,7 @@ export function WidgetListField({
                         })}
                       </div>
                     ) : (
-                      <p className="text-[11px] text-slate-400 italic">편집 가능한 속성 없음</p>
+                      <p className="text-[11px] text-slate-400 italic">{t('system_modules.widget_list.no_props')}</p>
                     )}
                   </div>
                 )}
@@ -249,7 +251,7 @@ export function WidgetListField({
           onClick={() => setAddPickerOpen(!addPickerOpen)}
           className="w-full px-3 py-2 text-xs font-bold border-2 border-dashed border-slate-300 hover:border-blue-500 hover:text-blue-600 rounded-lg text-slate-600 transition-colors bg-white cursor-pointer"
         >
-          + 위젯 추가
+          {t('system_modules.widget_list.add')}
         </button>
         {addPickerOpen && (
           <>

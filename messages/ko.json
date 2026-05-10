@@ -191,6 +191,19 @@
       "bg": "페이지 배경",
       "bg_card": "카드 배경",
       "border": "테두리"
+    },
+    "widget_list": {
+      "empty": "등록된 위젯이 없습니다. 아래 버튼으로 추가해 주세요.",
+      "visibility_label": "표시 대상",
+      "visibility_pc_only": "PC만",
+      "visibility_mobile_only": "모바일만",
+      "visibility_all": "PC + 모바일",
+      "visibility_desktop": "PC 만 (sm 이상)",
+      "visibility_mobile": "모바일 만 (sm 미만)",
+      "no_props": "편집 가능한 속성이 없습니다.",
+      "add": "+ 위젯 추가",
+      "move_up": "위로",
+      "move_down": "아래로"
     }
   }
 }

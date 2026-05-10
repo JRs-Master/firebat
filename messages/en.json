@@ -191,6 +191,19 @@
       "bg": "Page background",
       "bg_card": "Card background",
       "border": "Border"
+    },
+    "widget_list": {
+      "empty": "No widgets registered. Add one with the button below.",
+      "visibility_label": "Visibility",
+      "visibility_pc_only": "PC only",
+      "visibility_mobile_only": "Mobile only",
+      "visibility_all": "PC + Mobile",
+      "visibility_desktop": "PC only (sm+)",
+      "visibility_mobile": "Mobile only (<sm)",
+      "no_props": "No editable properties.",
+      "add": "+ Add widget",
+      "move_up": "Move up",
+      "move_down": "Move down"
     }
   }
 }
