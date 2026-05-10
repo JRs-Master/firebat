@@ -11,6 +11,22 @@ async function assertAdmin(req: NextRequest) {
   return auth;
 }
 
+/**
+ * proto-loader 가 i64 → JS string 으로 변환 (`longs: String`).
+ * frontend 가 `new Date(ts)` 박으면 string ("1778425752563") 은 Invalid Date.
+ * createdAt / updatedAt 만 number 로 강제 변환 — undefined / 이미 number 면 그대로.
+ */
+function normalizeTimestamps(rec: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...rec };
+  for (const key of ['createdAt', 'updatedAt', 'created_at', 'updated_at']) {
+    const v = out[key];
+    if (typeof v === 'string' && /^\d+$/.test(v)) {
+      out[key] = Number(v);
+    }
+  }
+  return out;
+}
+
 /** GET — 전체 목록 또는 ?id=xxx 단건 */
 export async function GET(req: NextRequest) {
   const auth = await assertAdmin(req);
@@ -32,13 +48,18 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json({
       success: true,
-      conversation: { ...(raw ?? {}), messages },
+      conversation: normalizeTimestamps({ ...(raw ?? {}), messages }),
     });
   }
   const res = await core.listConversations('admin');
-  return res.success
-    ? NextResponse.json({ success: true, conversations: res.data ?? [] })
-    : NextResponse.json({ success: false, error: res.error }, { status: 500 });
+  if (!res.success) {
+    return NextResponse.json({ success: false, error: res.error }, { status: 500 });
+  }
+  const items = (res.data ?? []) as Array<Record<string, unknown>>;
+  return NextResponse.json({
+    success: true,
+    conversations: items.map(normalizeTimestamps),
+  });
 }
 
 /** POST — 대화 저장/갱신 (upsert). 삭제된 대화(tombstone) 는 409 로 거부. */

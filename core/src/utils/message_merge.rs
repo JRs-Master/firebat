@@ -6,14 +6,20 @@
 //! - `ConversationManager.save` — 모바일·PC 동시 쓰기 시 incoming 으로 단순 덮어쓰면 다른 기기 메시지 유실
 //! - 향후 임의 다기기 동기화 위치에서도 재사용
 //!
-//! 정렬: id 안의 숫자 부분 (timestamp) 추출해 시간순.
+//! 정렬: id 안의 숫자 부분 (timestamp) 추출해 시간순. **stable sort** 라
+//! 동일 timestamp 면 입력 순서 유지 — `u-{Date.now()}` / `s-{Date.now()}` 가
+//! 같은 ts 일 때 user → system 순서가 그대로 보존된다 (frontend 가 그렇게 push).
 //! id 형식 가정 — `u-{Date.now()}` / `s-{Date.now()}` / `system-init`.
 //! id 에 timestamp 없으면 맨 앞 (ts=0). id 없는 메시지는 따로 모아 뒤에 append.
 //!
 //! 일반 로직 — 메시지 도메인 분기 X, role/content 무관 id 기반 merge 만.
+//!
+//! ⚠️ **insertion order 필수** (2026-05-11) — 옛 `BTreeMap<String, Value>` 는 key 알파벳 정렬
+//! ('s' < 'u') 라 같은 ts 일 때 `s-X` 가 먼저 나와 stable sort 거쳐도 system → user 역전 발생.
+//! Vec + HashMap<id, idx> 패턴으로 입력 순서 보존.
 
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 /// 메시지에서 `id` 필드 추출 (string 일 때만).
 fn get_id(m: &Value) -> Option<String> {
@@ -51,24 +57,30 @@ fn get_ts(id: &str) -> u64 {
 /// id 없는 메시지는 incoming 의 순서대로 뒤에 append (PartialEq 비교).
 /// 옛 TS `unionMergeMessages` 1:1.
 pub fn union_merge_messages(existing: &[Value], incoming: &[Value]) -> Vec<Value> {
-    // BTreeMap<id, value> — insertion order 무관, key 기준 lookup
-    let mut by_id: BTreeMap<String, Value> = BTreeMap::new();
+    // (id, value) Vec — 입력 순서 보존이 truth. HashMap 은 idx 검색만.
+    let mut ordered: Vec<(String, Value)> = Vec::with_capacity(existing.len() + incoming.len());
+    let mut idx_by_id: HashMap<String, usize> = HashMap::new();
     let mut no_id_msgs: Vec<Value> = Vec::new();
+
+    let upsert = |id: String, val: Value, ordered: &mut Vec<(String, Value)>, idx_by_id: &mut HashMap<String, usize>| {
+        if let Some(&i) = idx_by_id.get(&id) {
+            // 같은 id — incoming 우선 (덮어쓰기)
+            ordered[i].1 = val;
+        } else {
+            idx_by_id.insert(id.clone(), ordered.len());
+            ordered.push((id, val));
+        }
+    };
 
     for m in existing {
         match get_id(m) {
-            Some(id) => {
-                by_id.insert(id, m.clone());
-            }
+            Some(id) => upsert(id, m.clone(), &mut ordered, &mut idx_by_id),
             None => no_id_msgs.push(m.clone()),
         }
     }
     for m in incoming {
         match get_id(m) {
-            Some(id) => {
-                // incoming 우선 — 같은 id 면 덮어쓰기
-                by_id.insert(id, m.clone());
-            }
+            Some(id) => upsert(id, m.clone(), &mut ordered, &mut idx_by_id),
             None => {
                 if !no_id_msgs.contains(m) {
                     no_id_msgs.push(m.clone());
@@ -77,8 +89,8 @@ pub fn union_merge_messages(existing: &[Value], incoming: &[Value]) -> Vec<Value
         }
     }
 
-    // timestamp 순 정렬 — id 에 timestamp 없으면 ts=0 (맨 앞)
-    let mut with_id: Vec<(u64, Value)> = by_id
+    // timestamp 순 stable sort — 같은 ts 는 입력 순서 유지 → u-X 먼저, s-X 나중 (frontend push 순서).
+    let mut with_id: Vec<(u64, Value)> = ordered
         .into_iter()
         .map(|(id, msg)| (get_ts(&id), msg))
         .collect();
@@ -186,6 +198,24 @@ mod tests {
         assert_eq!(out[0]["text"], "원래 메시지");
         assert_eq!(out[1]["text"], "PC 추가");
         assert_eq!(out[2]["text"], "모바일 추가");
+    }
+
+    #[test]
+    fn same_ts_user_then_system_order_preserved() {
+        // 회귀 방지 (2026-05-11) — frontend SEND_USER reducer 가
+        // [...state, user, system] push 한 후 같은 timestamp 로 저장 → BTreeMap 알파벳 정렬
+        // ('s' < 'u') 이라 system 이 먼저 나와 순서 역전됐던 버그.
+        let ts = "1778425752563";
+        let user_id = format!("u-{}", ts);
+        let system_id = format!("s-{}", ts);
+        let incoming = vec![
+            json!({"id": user_id, "role": "user", "content": "안녕"}),
+            json!({"id": system_id, "role": "system", "content": "하이"}),
+        ];
+        let out = union_merge_messages(&[], &incoming);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0]["role"], "user", "user 메시지가 먼저 나와야 함");
+        assert_eq!(out[1]["role"], "system", "system 메시지가 나중 나와야 함");
     }
 
     #[test]
