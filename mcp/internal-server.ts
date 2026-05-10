@@ -101,10 +101,9 @@ export async function createInternalMcpServer(core: FirebatCore): Promise<McpSer
       risks: z.array(z.string()).optional().describe('주의사항·리스크'),
     },
     async (args) => {
-      // planId 발급 + plan-store 저장 → ✓실행 시 backend 가 조회해 다음 턴 prompt 에 강제 주입
-      const { storePlan } = await import('../lib/plan-store');
+      // planId 발급 + Rust core 의 plan-store 저장 → ✓실행 시 backend 가 조회해 다음 턴 prompt 에 강제 주입
       const planId = 'plan-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6);
-      storePlan({
+      await core.storePlan({
         planId,
         title: args.title as string,
         steps: args.steps as Array<{ title: string; description?: string; tool?: string }>,
@@ -236,8 +235,7 @@ export async function createInternalMcpServer(core: FirebatCore): Promise<McpSer
         }) }] };
       }
       // 일반 admin 채팅 — 승인 게이트
-      const { createPending } = await import('../lib/pending-tools');
-      const planId = createPending('save_page', { slug, spec, allowOverwrite: !!allowOverwrite }, `페이지 저장: /${slug}${allowOverwrite ? ' (덮어쓰기)' : ''}`);
+      const planId = await core.createPending('save_page', { slug, spec, allowOverwrite: !!allowOverwrite }, `페이지 저장: /${slug}${allowOverwrite ? ' (덮어쓰기)' : ''}`);
       return { content: [{ type: 'text', text: JSON.stringify({
         success: true, pending: true, planId, summary: `페이지 저장: /${slug}`,
         message: '사용자 승인 대기 중입니다. Firebat UI 에서 승인 버튼 클릭 시 실제 저장됩니다.',
@@ -251,8 +249,7 @@ export async function createInternalMcpServer(core: FirebatCore): Promise<McpSer
 주의: 복구 불가. 프로젝트 전체 삭제는 별도 도구.`,
     { slug: z.string().describe('삭제할 페이지 slug') },
     async ({ slug }) => {
-      const { createPending } = await import('../lib/pending-tools');
-      const planId = createPending('delete_page', { slug }, `페이지 삭제: /${slug}`);
+      const planId = await core.createPending('delete_page', { slug }, `페이지 삭제: /${slug}`);
       return { content: [{ type: 'text', text: JSON.stringify({
         success: true, pending: true, planId, summary: `페이지 삭제: /${slug}`,
         message: '사용자 승인 대기 중입니다.',
@@ -352,8 +349,7 @@ export async function createInternalMcpServer(core: FirebatCore): Promise<McpSer
 디렉토리 삭제 시 하위 전체 삭제.`,
     { path: z.string().describe('삭제 경로') },
     async ({ path }) => {
-      const { createPending } = await import('../lib/pending-tools');
-      const planId = createPending('delete_file', { path }, `파일 삭제: ${path}`);
+      const planId = await core.createPending('delete_file', { path }, `파일 삭제: ${path}`);
       return { content: [{ type: 'text', text: JSON.stringify({
         success: true, pending: true, planId, summary: `파일 삭제: ${path}`,
         message: '사용자 승인 대기 중입니다.',
@@ -473,14 +469,13 @@ startAt/endAt: cronTime의 유효 기간 (만료 시 자동 해제).
     async (args) => {
       // 승인 대기 — 실제 등록은 UI 승인 후. 한 번 Pending 에 올려놓고 AI 에겐 대기 중임을 알림.
       // cli-claude-code.ts 핸들러가 tool_result 를 파싱해 Firebat UI pendingActions 로 전달.
-      const { createPending } = await import('../lib/pending-tools');
       const title = args.title || '예약 등록';
       const when = args.cronTime ? `cron: ${args.cronTime}`
         : args.runAt ? `1회: ${args.runAt}`
         : args.delaySec != null ? `${args.delaySec}초 후`
         : '시각 미지정';
       const summary = `${title} (${when})`;
-      const planId = createPending('schedule_task', args as Record<string, unknown>, summary);
+      const planId = await core.createPending('schedule_task', args as Record<string, unknown>, summary);
       // 과거 runAt 감지 → 승인 버튼 대신 '즉시 발송 / 시간 변경' UI 유도
       let status: 'past-runat' | undefined;
       let originalRunAt: string | undefined;

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getCore } from '../../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
-import { rejectPending } from '../../../../lib/pending-tools';
 
 /**
  * POST /api/plan/reject?planId=xxx
@@ -13,6 +13,6 @@ export async function POST(req: NextRequest) {
   const planId = req.nextUrl.searchParams.get('planId') || (await req.json().catch(() => ({}))).planId;
   if (!planId) return NextResponse.json({ success: false, error: 'planId required' }, { status: 400 });
 
-  const ok = rejectPending(planId);
+  const ok = await getCore().rejectPending(planId);
   return NextResponse.json({ success: ok });
 }

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
-import { consumePending, getPending } from '../../../../lib/pending-tools';
 
 /**
  * POST /api/plan/commit?planId=xxx
@@ -21,11 +20,11 @@ export async function POST(req: NextRequest) {
   const overrideRunAt = (body.runAt as string | undefined) || undefined;
   if (!planId) return NextResponse.json({ success: false, error: 'planId required' }, { status: 400 });
 
+  const core = getCore();
   // 성공 전까지는 consume하지 않음 — 실패 시 재시도 가능
-  const pending = getPending(planId);
+  const pending = await core.getPending(planId);
   if (!pending) return NextResponse.json({ success: false, error: 'Plan not found or expired' }, { status: 404 });
 
-  const core = getCore();
   try {
     let result: { success: boolean; data?: unknown; error?: string };
     const args = pending.args;
@@ -121,7 +120,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 성공 시에만 pending 소비 (실패 시 재시도 가능)
-    if (result.success) consumePending(planId);
+    if (result.success) await core.consumePending(planId);
     return NextResponse.json(result);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
