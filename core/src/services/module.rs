@@ -92,7 +92,20 @@ impl ModuleService for ModuleServiceImpl {
         }
         let args: Args = serde_json::from_str(&raw)
             .map_err(|e| TonicStatus::invalid_argument(format!("run args: {e}")))?;
-        match self.manager.run(&args.module, &args.data).await {
+        // module field 가 path 형태 (`/` 포함) 면 sandboxExecute (직접 경로 실행), 아니면 run (모듈 이름 + entry 자동 탐색).
+        // 옛 TS 의 두 API 경로를 단일 RPC 로 통합하면서 자동 분기 — frontend wrapper 가 둘 다 같은 RPC 호출.
+        let result = if args.module.contains('/') || args.module.contains('\\') {
+            self.manager
+                .execute(
+                    &args.module,
+                    &args.data,
+                    &crate::ports::SandboxExecuteOpts::default(),
+                )
+                .await
+        } else {
+            self.manager.run(&args.module, &args.data).await
+        };
+        match result {
             Ok(output) => Ok(Response::new(output.into())),
             Err(e) => Ok(Response::new(ModuleOutputPb {
                 success: false,
