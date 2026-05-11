@@ -126,6 +126,9 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
   // deserialize 실패 박혀 Vault 저장 0 되던 root cause fix (2026-05-11).
   setUserSecret: (name: string, value: string) => ({ name, value }),
   setVertexKey: (key: string, value: string) => ({ key, value }),
+  // SetSystem 매핑 — 옛 wrapper 누락이라 args[0] 만 전송 → Rust { key, value } 와 mismatch
+  // → silent fail (MCP 토큰 / Anthropic cache 등 system secret 저장 0 되던 root cause).
+  setGeminiKey: (key: string, value: string) => ({ key, value }),
 
   // TemplateService
   saveTemplate: (template: unknown) => template,
