@@ -295,6 +295,13 @@ function autoUnwrapProtoEnvelope(result: unknown): unknown {
   if (typeof result !== 'object') return result;
   const r = result as Record<string, unknown>;
   const keys = Object.keys(r);
+  // OptionalStringPb 같은 `{value, present}` 박힌 거 — present=false 면 null,
+  // true 면 value 만. 옛 TS 의 `Option<String>` → `string | null` 패턴 1:1.
+  // MCP 토큰 / Vault 키 등 get_* 응답이 이 패턴 → present 무시 시 `{value, present}` object
+  // 가 frontend 까지 흘러가 truthy 처리되어 maskToken 등에서 silent fail.
+  if (keys.length === 2 && 'value' in r && 'present' in r) {
+    return r.present ? r.value : null;
+  }
   if (keys.length !== 1) return result;
   const onlyKey = keys[0];
   // 'value' — primitive scalar wrapper (BoolRequest / StringRequest / NumberRequest)
