@@ -503,6 +503,19 @@ impl AiManager {
                 prompt
             };
 
+            // 진단 — LLM 에 전달되는 도구 schema 검증 (2026-05-11).
+            // sysmod 도구 누락 → LLM hallucination ("Gmail/Calendar/Drive 만 박혀있음" 등) 추적용.
+            self.log.info(&format!(
+                "[DEBUG_LLM_TOOLS] count={} names=[{}]",
+                effective_tools.len(),
+                effective_tools
+                    .iter()
+                    .take(10)
+                    .map(|t| t.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+
             let response = self
                 .llm
                 .ask_with_tools(llm_prompt, effective_tools, &prior_results, &turn_opts)
