@@ -59,36 +59,20 @@ const TEMP_FINAL_TURN: f64 = 0.85;
 
 /// 단순 인사·짧은 잡담 판별 — fast path (도구 list 채우지 않고 ask_text 위임).
 ///
-/// 판별 기준 (옛 TS isSimpleChat 1:1 + 자연 query 패턴 보강 — 2026-05-11):
+/// 판별 기준 (옛 TS isSimpleChat 1:1):
 /// - 길이 ≤ 50자
-/// - 작업 키워드 미포함 (저장 / 삭제 / 생성 / 조회 / 검색 / 분석 등 + 시세·가격·날씨·뉴스 등
-///   sysmod 매칭 자연 query 패턴 + 묻는 어미 "얼마" / "어디" / "언제")
-/// - 코드/경로 패턴 미포함
-/// - 물음표 `?` 박힌 query 도 fast path X — LLM 이 도구 활용 검토할 기회
+/// - 작업 키워드 미포함 (저장 / 삭제 / 생성 / 만들 / 그려 / 발송 / 예약 / 발행 / 조회 / 분석
+///   / 작성 / 검색 / 찾 / save / delete / create / generate / scrape / fetch)
+/// - 코드/경로 패턴 미포함 (`/`, `\`, ```, `function`, `import`)
 fn is_simple_chat(prompt: &str) -> bool {
     let p = prompt.trim();
     if p.chars().count() > 50 {
         return false;
     }
-    // 묻는 어미 / 의문 패턴 — 자연 사용자 query 자주 박는 거. fast path 회피.
-    if p.contains('?') || p.contains('?') {
-        return false;
-    }
     const TASK_KEYWORDS: &[&str] = &[
-        // CRUD / 명시 작업
         "저장", "삭제", "생성", "만들", "그려", "발송", "예약", "발행", "조회", "분석",
         "작성", "쓰", "전송", "보내", "검색", "찾",
-        // 자연 query — sysmod 매칭 가능 (주식·환율·날씨·뉴스·지도·캘린더 등)
-        "현재가", "주가", "시세", "가격", "종가", "환율", "원화", "달러",
-        "날씨", "기온", "강수", "예보", "뉴스", "기사",
-        "지도", "위치", "주소", "거리", "경로",
-        "일정", "약속", "휴장",
-        "잔고", "포트폴리오", "수익", "수익률", "차트", "지수",
-        // 묻는 어미
-        "얼마", "어디", "언제", "몇 ", "몇개", "몇 개",
-        // 영문
         "save", "delete", "create", "generate", "scrape", "fetch", "send", "schedule",
-        "price", "quote", "stock", "ticker", "weather", "news", "map", "search",
     ];
     if TASK_KEYWORDS.iter().any(|k| p.contains(k)) {
         return false;
