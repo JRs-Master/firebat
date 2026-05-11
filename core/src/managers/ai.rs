@@ -57,31 +57,10 @@ const TEMP_TOOL_TURN: f64 = 0.2;
 /// 최종 응답 turn — 자연스럽고 풍부한 표현. 옛 TS 1:1.
 const TEMP_FINAL_TURN: f64 = 0.85;
 
-/// 단순 인사·짧은 잡담 판별 — fast path (도구 list 채우지 않고 ask_text 위임).
-///
-/// 판별 기준 (옛 TS isSimpleChat 1:1):
-/// - 길이 ≤ 50자
-/// - 작업 키워드 미포함 (저장 / 삭제 / 생성 / 만들 / 그려 / 발송 / 예약 / 발행 / 조회 / 분석
-///   / 작성 / 검색 / 찾 / save / delete / create / generate / scrape / fetch)
-/// - 코드/경로 패턴 미포함 (`/`, `\`, ```, `function`, `import`)
-fn is_simple_chat(prompt: &str) -> bool {
-    let p = prompt.trim();
-    if p.chars().count() > 50 {
-        return false;
-    }
-    const TASK_KEYWORDS: &[&str] = &[
-        "저장", "삭제", "생성", "만들", "그려", "발송", "예약", "발행", "조회", "분석",
-        "작성", "쓰", "전송", "보내", "검색", "찾",
-        "save", "delete", "create", "generate", "scrape", "fetch", "send", "schedule",
-    ];
-    if TASK_KEYWORDS.iter().any(|k| p.contains(k)) {
-        return false;
-    }
-    if p.contains('/') || p.contains('\\') || p.contains("```") || p.contains("function") || p.contains("import") {
-        return false;
-    }
-    true
-}
+// 옛 is_simple_chat fast path 폐기 (2026-05-11) — 길이 / 키워드 휴리스틱 박은 거 일반 fix
+// 못 박음. 짧은 query 가 fast path 박혀 도구 schema 누락 → "삼성전자 현재가 얼마야" 같은
+// 자연 query 가 sysmod 호출 못 하던 root cause. 새 keyword 추가는 또 다른 개별 fix.
+// 진짜 일반 = 도구 schema 항상 박고 LLM 자체 판단 위임. 토큰 비용 약간 ↑ 단 정확성 ↑.
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -357,17 +336,10 @@ impl AiManager {
             }
         }
 
-        // Fast path — 단순 인사·짧은 잡담은 도구 list 채우지 않고 ask_text 위임.
-        // 옛 TS isSimpleChat 1:1 — 토큰 절감 + CLI handler 의 도구 호출 stub 회피.
-        if tools.is_empty() && is_simple_chat(prompt) {
-            let resp = self.llm.ask_text(prompt, opts).await?;
-            return Ok(AiResponse {
-                reply: resp.text,
-                model_id: Some(resp.model_id),
-                cost_usd: resp.cost_usd,
-                ..Default::default()
-            });
-        }
+        // 옛 fast path (is_simple_chat 박은 휴리스틱) 폐기 (2026-05-11).
+        // 짧은 query 가 fast path 박혀 sysmod 도구 누락 → "삼성전자 현재가 얼마야" 같은
+        // 자연 query 가 도구 호출 못 하던 root cause. LLM 자체 판단 위임 (단순 인사 박은
+        // 거도 도구 schema 박혀가지만 LLM 이 자체 응답).
 
         // 도구 list 미전달 시 ToolManager 등록 도구 자동 사용 (옛 TS buildToolDefinitions 동등).
         let auto_tools: Vec<ToolDefinition>;
