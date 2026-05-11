@@ -366,7 +366,8 @@ async fn main() -> Result<()> {
             .with_system_context(module_manager.clone(), mcp_manager.clone())
             .with_history_resolver(conversation_manager.clone())
             .with_cost_manager(cost_manager.clone())
-            .with_dynamic_tools(dynamic_tools_registry),
+            .with_dynamic_tools(dynamic_tools_registry)
+            .with_vault(vault.clone()),
     );
 
     // ConsolidationManager 의 LLM 자동 추출 활성 — AiManager + ConversationManager + Vault 설정된 후.

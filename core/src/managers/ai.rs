@@ -113,6 +113,10 @@ pub struct AiManager {
     /// 설정되어 있으면 process_with_tools_opts 시작 시 refresh 호출 — 옛 TS buildToolDefinitions 1:1.
     /// 미설정 시 정적 도구 (`tool_registry::register_core_tools`) 만 LLM 노출.
     dynamic_tools: Option<Arc<dynamic_tools::DynamicToolRegistry>>,
+    /// Vault 참조 (옵션) — process_with_tools_opts 진입 시점에 `system:internal-mcp-token`
+    /// 자동 조회해 LlmCallOpts.mcp_token 주입. CLI 모델 (Claude Code / Codex / Gemini) 이
+    /// 자체 MCP loop 에서 Firebat MCP server 인증할 때 사용. 미설정 시 토큰 주입 없음.
+    vault: Option<Arc<dyn IVaultPort>>,
 }
 
 impl AiManager {
@@ -132,7 +136,17 @@ impl AiManager {
             dispatcher: None,
             conversation: None,
             dynamic_tools: None,
+            vault: None,
         }
+    }
+
+    /// Vault 설정 — process_with_tools_opts 진입 시점에 `system:internal-mcp-token` 자동
+    /// 조회해 LlmCallOpts.mcp_token 주입. CLI 3종 (Claude Code / Codex / Gemini) +
+    /// MCP connector 지원 API (Anthropic / OpenAI Responses) 가 자체 MCP loop 에서
+    /// Firebat MCP server 인증할 때 사용. 미설정 시 토큰 주입 없음.
+    pub fn with_vault(mut self, vault: Arc<dyn IVaultPort>) -> Self {
+        self.vault = Some(vault);
+        self
     }
 
     /// DynamicToolRegistry 설정한 채로 부팅 — sysmod_* / mcp_* 자동 등록 활성.
@@ -365,6 +379,39 @@ impl AiManager {
         // 옛 TS `finalSystemPrompt = planExecuteRule + planModePrefix + systemPrompt + autoHistoryContext + memorySection`
         // 1:1. 본 step 에선 planExecuteRule (plan-store) / autoHistoryContext (router) 미저장 — 후속 batch.
         let mut effective_opts = opts.clone();
+
+        // MCP 토큰 자동 주입 — vault 에서 `system:internal-mcp-token` 가져와 LlmCallOpts 에 박음.
+        // CLI 3종 (Claude Code / Codex / Gemini) 의 자체 MCP loop + Anthropic / OpenAI Responses API
+        // 의 hosted MCP connector 가 Firebat MCP server (`/api/mcp-internal`) 인증할 때 사용.
+        // caller (frontend) 가 박지 않으면 vault 에서 자동 가져옴 — silent stdio fallback 차단.
+        if effective_opts.mcp_token.is_none() {
+            if let Some(vault) = &self.vault {
+                let token = vault.get_secret("system:internal-mcp-token");
+                if let Some(t) = token.filter(|s| !s.is_empty()) {
+                    effective_opts.mcp_token = Some(t);
+                }
+            }
+        }
+
+        // CLI 모델 (model_id 가 `cli-` 시작) 인데 토큰 없으면 즉시 명시 에러 응답 — silent
+        // stdio fallback 박혀 LLM 이 "도구 없음" hallucinate 박는 root cause 차단.
+        // 2단계 (별도 plan) — features.mcp_connector 기반 정확한 분기 (Anthropic API / OpenAI Responses 까지).
+        let model_id = effective_opts
+            .model
+            .clone()
+            .unwrap_or_else(|| self.llm.get_model_id());
+        if model_id.starts_with("cli-") && effective_opts.mcp_token.is_none() {
+            return Ok(AiResponse {
+                error: Some(
+                    "MCP 토큰이 등록되어 있지 않습니다. 설정 - 시스템 - mcp-server-llm 에서 토큰을 생성해 주세요."
+                        .to_string(),
+                ),
+                model_id: Some(model_id),
+                cost_usd: Some(0.0),
+                ..Default::default()
+            });
+        }
+
         if effective_opts.system_prompt.is_none() {
             if let Some(pb) = &self.prompt_builder {
                 let mut extra_parts: Vec<String> = Vec::new();
@@ -502,19 +549,6 @@ impl AiManager {
             } else {
                 prompt
             };
-
-            // 진단 — LLM 에 전달되는 도구 schema 검증 (2026-05-11).
-            // sysmod 도구 누락 → LLM hallucination ("Gmail/Calendar/Drive 만 박혀있음" 등) 추적용.
-            self.log.info(&format!(
-                "[DEBUG_LLM_TOOLS] count={} names=[{}]",
-                effective_tools.len(),
-                effective_tools
-                    .iter()
-                    .take(10)
-                    .map(|t| t.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ));
 
             let response = self
                 .llm

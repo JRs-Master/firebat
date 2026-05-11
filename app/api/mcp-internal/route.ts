@@ -24,14 +24,14 @@ async function validateBearerToken(req: NextRequest): Promise<boolean> {
 
 function unauthorizedResponse() {
   return new Response(
-    JSON.stringify({ error: 'Unauthorized — 내부 MCP 토큰 필요. 사이드바 > SYSTEM > 서비스 > mcp-server-llm에서 생성.' }),
+    JSON.stringify({ error: 'Unauthorized — 내부 MCP 토큰이 필요합니다. 설정 - 시스템 - mcp-server-llm 에서 토큰을 생성해 주세요.' }),
     { status: 401, headers: { 'Content-Type': 'application/json' } },
   );
 }
 
 function serviceDisabledResponse() {
   return new Response(
-    JSON.stringify({ error: 'Firebat MCP 서버(LLM 통신용)가 비활성화되어 있습니다. 사이드바 > SYSTEM > 서비스 > mcp-server-llm에서 활성화하세요.' }),
+    JSON.stringify({ error: 'Firebat MCP 서버(LLM 통신용)가 비활성화되어 있습니다. 설정 - 시스템 - mcp-server-llm 에서 활성화해 주세요.' }),
     { status: 503, headers: { 'Content-Type': 'application/json' } },
   );
 }
