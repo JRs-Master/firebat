@@ -50,7 +50,11 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
   verifyProjectPassword: (project: string, password: string) => ({ project, password }),
 
   // ModuleService
-  runModule: (path: string, input: unknown, opts?: unknown) => ({ path, input, opts }),
+  // Rust ModuleService.Run 의 Args { module, data } 와 일치. 옛 wrapper 의 field 명
+  // mismatch ({path, input} 전송) → serde EOF silent fail. sandboxExecute 도 같은 RPC 라
+  // 동일 wrapper 사용. 2026-05-11 정정 (sysmod 도구 호출 모두 실패하던 root cause).
+  runModule: (path: string, input: unknown, opts?: unknown) => ({ module: path, data: input, opts }),
+  sandboxExecute: (path: string, input: unknown, opts?: unknown) => ({ module: path, data: input, opts }),
   setModuleEnabled: (name: string, enabled: boolean) => ({ name, enabled }),
   setModuleSettings: (name: string, settings: unknown) => ({ name, settings }),
 
