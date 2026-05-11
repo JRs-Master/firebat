@@ -666,14 +666,10 @@ impl AiManager {
                                 "[AiManager] Tool 승인 대기: {} (planId={}) — {}",
                                 call.name, plan_id, approval.summary
                             ));
-                            // executedActions 에는 노출 (UI 배지 표시) — 옛 TS 와 동등
-                            executed_actions.push(serde_json::json!({
-                                "tool": call.name,
-                                "callId": call.id,
-                                "success": true,
-                                "pending": true,
-                                "planId": plan_id,
-                            }));
+                            // executedActions 에는 도구 이름 (string) 만 — frontend ActionTags 가
+                            // string[] 기대. object 들어가면 React #31. callId/pending/planId 등
+                            // 메타는 frontend 가 어디서도 사용 안 함 (옛 TS 1:1).
+                            executed_actions.push(serde_json::Value::String(call.name.clone()));
                             // tool 결과는 "승인 대기 중" 으로 LLM 에 알림 — 자동 실행 안 됐다는 신호
                             let action = ToolResult {
                                 call_id: call.id.clone(),
@@ -743,12 +739,8 @@ impl AiManager {
                     }
                 };
 
-                executed_actions.push(serde_json::json!({
-                    "tool": call.name,
-                    "callId": call.id,
-                    "success": action.success,
-                    "error": action.error,
-                }));
+                // ActionTags 는 string[] 만 받음 — 옛 TS 와 동일하게 도구 이름만.
+                executed_actions.push(serde_json::Value::String(call.name.clone()));
                 turn_results.push((call.clone(), action));
             }
 
@@ -1155,9 +1147,10 @@ mod tests {
         assert_eq!(pending["name"], "delete_file");
         assert!(pending["summary"].as_str().unwrap().contains("파일 삭제"));
         assert!(pending["planId"].as_str().unwrap().starts_with("plan-"));
-        // executedActions 에는 pending: true 로 등장
+        // executedActions 는 도구 이름 (string) 만 — frontend ActionTags 가 string[] 기대.
+        // pending / planId 등 메타는 pending_actions 쪽에서 별도 노출.
         let exec = &response.executed_actions[0];
-        assert_eq!(exec["pending"], serde_json::json!(true));
+        assert_eq!(exec, &serde_json::Value::String("delete_file".to_string()));
     }
 
     #[tokio::test]
