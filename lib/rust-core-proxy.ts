@@ -122,7 +122,9 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
   cancelCronJob: (id: string) => ({ id }),
 
   // SecretService
-  setUserSecret: (key: string, value: string) => ({ key, value }),
+  // Rust 의 set_user 가 박는 거 { name, value } — 옛 { key, value } 박혀있던 거 silent
+  // deserialize 실패 박혀 Vault 저장 0 되던 root cause fix (2026-05-11).
+  setUserSecret: (name: string, value: string) => ({ name, value }),
   setVertexKey: (key: string, value: string) => ({ key, value }),
 
   // TemplateService
