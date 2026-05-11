@@ -691,6 +691,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
                 reply: fullReply,
                 thoughts: ev.data.thoughts,
                 executedActions: ev.data.executedActions,
+                toolResults: ev.data.toolResults,
                 data: ev.data.data,
                 error: ev.data.error,
                 suggestions: ev.data.suggestions,

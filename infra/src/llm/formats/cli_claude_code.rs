@@ -426,6 +426,24 @@ impl ClaudeCodeCliHandler {
                                 Ok(v) => v,
                                 Err(_) => continue,
                             };
+                        // 도구 결과 요약 — 성공/실패 모두 Frontend 에러 뱃지 UI 채널로 push.
+                        // 옛 TS 의 에러 뱃지 표시 메커니즘 1:1.
+                        {
+                            let success = payload
+                                .get("success")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+                            let error_msg = payload
+                                .get("error")
+                                .and_then(|v| v.as_str())
+                                .map(String::from);
+                            outcome.tool_results.push(firebat_core::ports::ToolResultSummary {
+                                name: pending.name.clone(),
+                                success,
+                                error: error_msg,
+                                input: Some(pending.input.clone()),
+                            });
+                        }
                         if !payload.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
                             continue;
                         }
@@ -549,6 +567,7 @@ struct CliRunOutcome {
     text: String,
     session_id: Option<String>,
     used_tools: Vec<String>,
+    tool_results: Vec<firebat_core::ports::ToolResultSummary>,
     rendered_blocks: Vec<serde_json::Value>,
     pending_actions: Vec<serde_json::Value>,
     suggestions: Vec<serde_json::Value>,
@@ -636,6 +655,7 @@ impl FormatHandler for ClaudeCodeCliHandler {
             pending_actions: outcome.pending_actions,
             suggestions: outcome.suggestions,
             raw_model_parts: None,
+            tool_results: outcome.tool_results,
         })
     }
 }

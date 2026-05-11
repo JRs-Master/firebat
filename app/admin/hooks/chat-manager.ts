@@ -128,6 +128,7 @@ export type ResultPayload = {
   reply?: string;
   thoughts?: string;
   executedActions?: string[];
+  toolResults?: Message['toolResults'];
   data?: any;
   error?: string;
   suggestions?: Message['suggestions'];
@@ -247,6 +248,7 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
               ? m.content
               : (action.hasAnimation ? '' : (p.reply ?? m.content)),
             executedActions: p.executedActions || [],
+            toolResults: p.toolResults && p.toolResults.length > 0 ? p.toolResults : undefined,
             data: newData,
             error: p.error,
             suggestions: p.suggestions && p.suggestions.length > 0 ? p.suggestions : undefined,

@@ -83,6 +83,10 @@ pub struct AiResponse {
     pub model_id: Option<String>,
     #[serde(rename = "costUsd", default, skip_serializing_if = "Option::is_none")]
     pub cost_usd: Option<f64>,
+    /// 도구 호출 결과 요약 (성공/실패 모두) — Frontend 에러 뱃지 UI 채널.
+    /// 옛 TS 의 에러 뱃지 표시 메커니즘 1:1 — executedActions (이름만) 보완.
+    #[serde(rename = "toolResults", default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_results: Vec<crate::ports::ToolResultSummary>,
 }
 
 pub struct AiManager {
@@ -462,6 +466,7 @@ impl AiManager {
 
         let mut prior_results: Vec<ToolResult> = Vec::new();
         let mut executed_actions: Vec<serde_json::Value> = Vec::new();
+        let mut tool_results_summary: Vec<crate::ports::ToolResultSummary> = Vec::new();
         let mut blocks: Vec<serde_json::Value> = Vec::new();
         let mut pending_actions: Vec<serde_json::Value> = Vec::new();
         // CLI 자체 MCP loop 가 호출한 suggest / propose_plan 결과 누적 — 함수 끝 AiResponse.suggestions 에 포함.
@@ -535,6 +540,7 @@ impl AiManager {
                             error: Some(format!("비용 한도 초과: {}", reason)),
                             model_id: Some(last_model_id.clone()),
                             cost_usd: Some(0.0),
+                            tool_results: Vec::new(),
                         });
                     }
                 }
@@ -627,6 +633,10 @@ impl AiManager {
                 for tool_name in &response.internally_used_tools {
                     executed_actions.push(serde_json::Value::String(tool_name.clone()));
                 }
+            }
+            // 도구 결과 요약 (성공/실패 모두) — Frontend 에러 뱃지 UI 채널.
+            if !response.tool_results.is_empty() {
+                tool_results_summary.extend(response.tool_results.iter().cloned());
             }
             // propose_plan turn 감지 — 호출됐으면 trailing text drop + break (옛 TS 1:1).
             // PlanCard + suggestions 가 이미 완전 → "위 카드에서..." 사족 drop.
@@ -900,6 +910,7 @@ impl AiManager {
             error: None,
             model_id: Some(last_model_id),
             cost_usd: Some(total_cost),
+            tool_results: tool_results_summary,
         })
     }
 

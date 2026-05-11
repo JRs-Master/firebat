@@ -593,7 +593,7 @@ function ShareTurnButton({ messages, conversationId, title, msgId }: { messages:
 }
 
 // ─── 액션 태그 (에러 시 빨간색 + 클릭 펼침) ──────────────────────────────────
-function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[] }) {
+function ActionTags({ actions, steps, toolResults }: { actions: string[]; steps?: StepStatus[]; toolResults?: import('./types').ToolResultSummary[] }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
   // 같은 도구 중복은 하나로 합치고 호출 횟수를 xN으로 표시
   const counts = new Map<string, number>();
@@ -602,12 +602,18 @@ function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[
     if (!counts.has(a)) order.push(a);
     counts.set(a, (counts.get(a) || 0) + 1);
   }
+  // 도구 이름 → CLI 자체 MCP loop 의 toolResults 안의 실패 결과 매칭 (옛 TS 의 에러 뱃지 메커니즘 1:1).
+  const errorFromTool = (action: string): string | null => {
+    const t = toolResults?.find(r => r.name === action && !r.success);
+    return t?.error || null;
+  };
   return (
     <div className="flex flex-col gap-1">
       <div className="flex flex-wrap gap-2">
         {order.map((action, i) => {
           const step = steps?.find(s => s.type === action && s.status === 'error');
-          const isError = !!step;
+          const toolErr = errorFromTool(action);
+          const isError = !!step || !!toolErr;
           const n = counts.get(action) || 1;
           return (
             <div
@@ -624,9 +630,11 @@ function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[
       {openIdx !== null && (() => {
         const action = order[openIdx];
         const step = steps?.find(s => s.type === action && s.status === 'error');
-        return step?.error ? (
+        const toolErr = errorFromTool(action);
+        const msg = step?.error || toolErr;
+        return msg ? (
           <div className="px-3 py-2 bg-red-50/50 border border-red-100 rounded-md text-[12px] font-mono text-red-600 leading-relaxed break-all">
-            {step.error}
+            {msg}
           </div>
         ) : null;
       })()}
@@ -888,7 +896,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
 
               {/* 실행 완료된 액션 태그 — 최하단, 미니멀 */}
               {msg.executedActions && msg.executedActions.length > 0 && (
-                <ActionTags actions={msg.executedActions} steps={msg.steps} />
+                <ActionTags actions={msg.executedActions} steps={msg.steps} toolResults={msg.toolResults} />
               )}
             </div>
           )}

@@ -1066,6 +1066,22 @@ pub struct LlmToolResponse {
     /// AiManager 가 다음 turn `tool_exchanges` 에 echo → thought_signature 보존.
     #[serde(rename = "rawModelParts", default, skip_serializing_if = "Option::is_none")]
     pub raw_model_parts: Option<serde_json::Value>,
+    /// CLI 가 자체 MCP loop 에서 받은 도구 결과 요약 (성공/실패 모두) — Frontend 에러 뱃지 UI 용.
+    /// 옛 TS 의 에러 뱃지 표시 채널 1:1 port. `internallyUsedTools` 가 도구 이름만 전달하던 한계 보완.
+    /// 형식: `{name: string, success: bool, error?: string, input?: object}`.
+    #[serde(rename = "toolResults", default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_results: Vec<ToolResultSummary>,
+}
+
+/// CLI 자체 MCP loop 안에서 호출된 도구 한 건의 결과 요약. Frontend 에러 뱃지 표시 용.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ToolResultSummary {
+    pub name: String,
+    pub success: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<serde_json::Value>,
 }
 
 /// 플랜모드 — 옛 TS `AiRequestOpts.planMode` 1:1.

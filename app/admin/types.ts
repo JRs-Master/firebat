@@ -54,12 +54,20 @@ export type PendingAction = {
   errorMessage?: string;  // status==='error'일 때 실패 사유
 };
 
+export type ToolResultSummary = {
+  name: string;
+  success: boolean;
+  error?: string;
+  input?: Record<string, unknown>;
+};
+
 export type Message = {
   id: string;
   role: 'user' | 'system';
   content?: string;
   thoughts?: string;
   executedActions?: string[];
+  toolResults?: ToolResultSummary[];
   data?: any;
   error?: string;
   isThinking?: boolean;
