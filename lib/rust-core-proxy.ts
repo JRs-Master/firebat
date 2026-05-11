@@ -66,6 +66,11 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
   deleteConversation: (owner: string, id: string) => ({ owner, id }),
   isConversationDeleted: (owner: string, id: string) => ({ owner, id }),
   searchHistory: (owner: string, query: string, opts?: unknown) => ({ owner, query, opts }),
+  restoreConversation: (owner: string, id: string) => ({ owner, id }),
+  permanentDeleteConversation: (owner: string, id: string) => ({ owner, id }),
+
+  // MediaService
+  saveTempAttachment: (dataUrl: string) => ({ dataUrl }),
 
   // StorageService
   writeFile: (path: string, content: string) => ({ path, content }),
@@ -195,6 +200,8 @@ const WRAP_METHODS = new Set([
   'listConversations', 'getConversation', 'saveConversation', 'deleteConversation',
   'searchHistory', 'searchConversationHistory',
   'getCliSession', 'createShare', 'getShare',
+  // 휴지통 (2026-05-11) — wrap
+  'listDeletedConversations', 'restoreConversation', 'permanentDeleteConversation',
 
   // EntityService — wrap (모두)
   'saveEntity', 'updateEntity', 'deleteEntity', 'getEntity',
@@ -210,6 +217,8 @@ const WRAP_METHODS = new Set([
   // MediaService — wrap (모두)
   'listMedia', 'readMedia', 'removeMedia', 'searchMedia', 'isMediaReady',
   'generateImage', 'startImageGeneration', 'regenerateImage', 'saveUpload',
+  // 임시 첨부 (2026-05-11) — wrap. RawJsonPb 응답이 {slug, url} 객체
+  'saveTempAttachment',
 
   // TemplateService — getTemplate / saveTemplate / deleteTemplate wrap. listTemplates 는 raw
   'getTemplate', 'saveTemplate', 'deleteTemplate',

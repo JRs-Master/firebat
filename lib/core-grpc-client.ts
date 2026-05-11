@@ -278,6 +278,11 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   setCliSession: { service: 'ConversationService', rpc: 'SetCliSession' },
   createShare: { service: 'ConversationService', rpc: 'CreateShare' },
   getShare: { service: 'ConversationService', rpc: 'GetShare' },
+  // 휴지통 — soft delete + restore + permanent delete + list (2026-05-11)
+  listDeletedConversations: { service: 'ConversationService', rpc: 'ListDeleted' },
+  restoreConversation: { service: 'ConversationService', rpc: 'Restore' },
+  permanentDeleteConversation: { service: 'ConversationService', rpc: 'PermanentDelete' },
+  cleanupOldDeletedConversations: { service: 'ConversationService', rpc: 'CleanupOldDeleted' },
 
   // ── MediaService (MediaManager — image_gen + 갤러리) ──────────
   generateImage: { service: 'MediaService', rpc: 'Generate' },
@@ -297,6 +302,9 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   getImageDefaultQuality: { service: 'MediaService', rpc: 'GetImageDefaultQuality' },
   setImageDefaultQuality: { service: 'MediaService', rpc: 'SetImageDefaultQuality' },
   getImageSettings: { service: 'MediaService', rpc: 'GetImageSettings' },
+  // 채팅 첨부 이미지 임시 저장 — sharp 0, /user/attachments/<slug>.<ext> (2026-05-11)
+  saveTempAttachment: { service: 'MediaService', rpc: 'SaveTempAttachment' },
+  cleanupOldAttachments: { service: 'MediaService', rpc: 'CleanupOldAttachments' },
 
   // ── TemplateService (TemplateManager) ─────────────────────────
   listTemplates: { service: 'TemplateService', rpc: 'List' },
