@@ -70,14 +70,15 @@ impl SqliteDatabaseAdapter {
                 cli_session_id TEXT,
                 cli_model TEXT,
                 active_plan_state TEXT,
-                -- soft-delete 타임스탬프 (ms epoch). NULL = 활성, 박힘 = 휴지통.
+                -- soft-delete 타임스탬프 (ms epoch). NULL = 활성, 휴지통 = 박힘.
                 -- 30일 후 internal cleanup cron 이 cascade hard delete.
+                -- ⚠️ 옛 DB 호환 — IF NOT EXISTS 라 옛 schema 그대로면 이 컬럼 무시됨.
+                -- 아래 ALTER migration 이 옛 DB 에도 컬럼 추가 (idempotent).
                 deleted_at INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_conversations_owner_updated
                 ON conversations(owner, updated_at DESC);
-            CREATE INDEX IF NOT EXISTS idx_conversations_deleted_at
-                ON conversations(deleted_at);
+            -- idx_conversations_deleted_at 은 ALTER migration 뒤에 (옛 DB 호환).
 
             CREATE TABLE IF NOT EXISTS deleted_conversations (
                 id TEXT NOT NULL,
