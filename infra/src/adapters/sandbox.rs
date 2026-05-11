@@ -552,7 +552,14 @@ impl ProcessSandboxAdapter {
         let mut child = cmd.spawn().map_err(|e| format!("spawn 실패: {e}"))?;
 
         if let Some(mut stdin) = child.stdin.take() {
-            let json = serde_json::to_string(input_data)
+            // 모듈 stdin protocol — `{correlationId, data}` wrap. main.py / index.mjs 가
+            // `payload.get('data')` / `const { data } = JSON.parse(raw)` 로 data field
+            // 안에서 입력 읽음 (옛 TS sandbox 1:1). wrap 없으면 빈 dict → action='' silent fail.
+            let payload = serde_json::json!({
+                "correlationId": uuid::Uuid::new_v4().to_string(),
+                "data": input_data,
+            });
+            let json = serde_json::to_string(&payload)
                 .map_err(|e| format!("input JSON 직렬화 실패: {e}"))?;
             stdin
                 .write_all(json.as_bytes())
