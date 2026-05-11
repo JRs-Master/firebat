@@ -1,3 +1,9 @@
+// force-dynamic — build 시 Rust core (50051) 미접근. layout 박힌 모든 (user) 페이지
+// 매 요청 시 SSR (cms.siteLang / spec / theme 박는 거 동적 데이터라 정적 prerender 불가).
+// 박지 않으면 NotFound (/_not-found) prerender 시 layout 박혀가 getCore connection
+// refused → build fail (2026-05-11).
+export const dynamic = 'force-dynamic';
+
 import { getCore } from '../../lib/singleton';
 import { SeoScripts } from './seo-scripts';
 import { CmsHeader } from './cms-header';
