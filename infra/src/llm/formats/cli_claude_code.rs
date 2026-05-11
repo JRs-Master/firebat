@@ -203,12 +203,14 @@ impl ClaudeCodeCliHandler {
             args.push(ALLOWED_TOOLS.to_string());
             args.push("--disallowed-tools".to_string());
             args.push(DISALLOWED_TOOLS.to_string());
-            // 권한 모드 — non-interactive subprocess 환경. default 박은 모든 도구 사용 전
-            // 사용자 prompt → stream-json output 박혀 prompt 미노출 → LLM 이 "권한 승인" 응답으로
+            // 권한 모드 — non-interactive subprocess 환경. default 의 모든 도구 사용 전
+            // 사용자 prompt → stream-json output 으로 prompt 미노출 → LLM 이 "권한 승인" 응답으로
             // 우회 시도 → sysmod 도구 호출 silent skip. Firebat 자체 approval gate (destructive
-            // 도구 검증) 박혀있어 CLI 권한 모드 우회 정공.
+            // 도구 검증) 가 있어 CLI 권한 모드 우회 정공.
+            // bypassPermissions 는 root/sudo 거부 → acceptEdits 사용 (file edit 자동 승인 +
+            // mcp 도구 자동 호출 + Firebat approval gate 여전히 동작).
             args.push("--permission-mode".to_string());
-            args.push("bypassPermissions".to_string());
+            args.push("acceptEdits".to_string());
         }
 
         if let Some(sp) = opts.system_prompt.as_deref() {
