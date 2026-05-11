@@ -3,6 +3,12 @@ import './globals.css';
 // Next.js 가 woff2 hash + /_next/static/ 자동 처리.
 import 'pretendard/dist/web/variable/pretendardvariable.css';
 import type { Metadata, Viewport } from 'next';
+
+// force-dynamic — build 시 Rust core (127.0.0.1:50051) 미접근. root layout 의
+// generateMetadata + RootLayout 박는 거 모두 getCore() 박음 → prerender 시도 시
+// connection refused → build fail (NotFound + 모든 자식 페이지 영향).
+// runtime (production server) 에 Rust core 박혀있어 정상 응답.
+export const dynamic = 'force-dynamic';
 import { getCore } from '../lib/singleton';
 
 export const viewport: Viewport = {
