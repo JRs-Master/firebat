@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 import { GalleryPanel } from './GalleryPanel';
@@ -73,14 +73,72 @@ export function Sidebar({
   const [collapsed, setCollapsed] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
 
-  // 사이드바 펼칠 때 + chats 탭 선택 시 DB 에서 대화 재조회 (모바일↔PC 동기화)
+  // ── 휴지통 — chats 탭 안 토글 섹션 ──
+  // 30일 retention 후 internal cron 자동 삭제. 복원 / 영구 삭제 가능.
+  const [trashConvs, setTrashConvs] = useState<ConversationMeta[]>([]);
+  const [trashOpen, setTrashOpen] = useState(false);
+
+  const reloadTrash = useCallback(async () => {
+    try {
+      const res = await fetch('/api/conversations/trash');
+      const data = await res.json();
+      if (data?.success && Array.isArray(data.conversations)) {
+        setTrashConvs(data.conversations as ConversationMeta[]);
+      }
+    } catch { /* silent — 다음 trigger 시 재시도 */ }
+  }, []);
+
+  const handleRestoreConv = useCallback(async (id: string) => {
+    try {
+      const res = await fetch('/api/conversations/restore', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) {
+        await alertDialog({ title: '복원 실패', message: data?.error ?? '알 수 없는 오류', danger: true });
+        return;
+      }
+      await reloadTrash();
+      onRefreshChats?.();
+    } catch (e: any) {
+      await alertDialog({ title: '복원 실패', message: e?.message ?? String(e), danger: true });
+    }
+  }, [reloadTrash, onRefreshChats]);
+
+  const handlePermanentDeleteConv = useCallback(async (id: string, title: string) => {
+    const ok = await confirmDialog({
+      title: '영구 삭제',
+      message: `"${title}" 대화를 영구 삭제합니다. 복원할 수 없습니다.`,
+      danger: true,
+      okLabel: '영구 삭제',
+    });
+    if (!ok) return;
+    try {
+      const res = await fetch('/api/conversations/permanent-delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) {
+        await alertDialog({ title: '영구 삭제 실패', message: data?.error ?? '알 수 없는 오류', danger: true });
+        return;
+      }
+      await reloadTrash();
+    } catch (e: any) {
+      await alertDialog({ title: '영구 삭제 실패', message: e?.message ?? String(e), danger: true });
+    }
+  }, [reloadTrash]);
+
+  // 사이드바 펼칠 때 + chats 탭 선택 시 DB 에서 대화 재조회 (모바일↔PC 동기화) + 휴지통 reload
   const refreshChatsRef = useRef(onRefreshChats);
   refreshChatsRef.current = onRefreshChats;
   useEffect(() => {
     if (!collapsed && tab === 'chats') {
       refreshChatsRef.current?.();
+      reloadTrash();
     }
-  }, [collapsed, tab]);
+  }, [collapsed, tab, reloadTrash]);
 
   useEffect(() => {
     const checkMobile = () => window.innerWidth < 768;
@@ -945,6 +1003,60 @@ export function Sidebar({
                 </div>
               );
             })}
+            {/* ── 휴지통 섹션 — 30일 retention. 복원 / 영구 삭제 가능. ── */}
+            <div className="mt-2 border-t border-slate-200/60 pt-1">
+              <button
+                onClick={() => setTrashOpen(o => !o)}
+                className="w-full flex items-center justify-between px-3 py-2 text-[11px] font-bold tracking-widest text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded transition-colors"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Trash2 size={11} /> 휴지통
+                  {trashConvs.length > 0 && (
+                    <span className="px-1.5 py-0.5 bg-slate-200 text-slate-600 text-[9px] font-black rounded-full">
+                      {trashConvs.length > 9 ? '9+' : trashConvs.length}
+                    </span>
+                  )}
+                </span>
+                {trashOpen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              </button>
+              {trashOpen && (
+                <div className="px-1 pb-2 space-y-0.5">
+                  {trashConvs.length === 0 && (
+                    <p className="text-[11px] text-slate-400 text-center py-3">휴지통이 비어있습니다.</p>
+                  )}
+                  {trashConvs.map(conv => (
+                    <div
+                      key={conv.id}
+                      className="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-slate-50 border border-transparent"
+                    >
+                      <Trash2 size={11} className="mt-0.5 shrink-0 text-slate-400" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[12px] font-medium truncate text-slate-600">{conv.title}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">30일 후 자동 삭제</p>
+                      </div>
+                      <span className={rowActionsClass(false)}>
+                        <Tooltip label="복원">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleRestoreConv(conv.id); }}
+                            className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100 rounded transition-colors"
+                          >
+                            <RotateCcw size={11} />
+                          </button>
+                        </Tooltip>
+                        <Tooltip label="영구 삭제">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handlePermanentDeleteConv(conv.id, conv.title); }}
+                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 active:bg-red-100 rounded transition-colors"
+                          >
+                            <X size={11} />
+                          </button>
+                        </Tooltip>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
