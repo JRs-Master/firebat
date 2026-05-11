@@ -106,7 +106,9 @@ const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
     password,
     attempt_key: attemptKey ?? '',
   }),
-  generateApiToken: (label?: string, expiresAt?: number) => ({ label, expiresAt }),
+  // Rust generate_api_token 는 StringRequest 단일 인자 — 옛 {label, expiresAt} object
+  // 박혀있던 거 silent (label 무시 → 빈 라벨 토큰 생성). expiresAt 은 새 proto 에 없음.
+  generateApiToken: (label?: string) => label ?? '',
   setAdminCredentials: (id: string, password: string) => ({ id, password }),
 
   // CapabilityService
