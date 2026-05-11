@@ -203,12 +203,48 @@ async fn sync_embeddings_grow_with_union_merge() {
 }
 
 #[tokio::test]
-async fn delete_cascades_embeddings() {
+async fn soft_delete_preserves_embeddings_for_restore() {
+    // 2026-05-11 부터 delete = soft delete (휴지통 30일 retention). 임베딩 보존 →
+    // 사용자가 휴지통에서 복원 시 search_history 정상 동작 유지.
     let (mgr, _dir) = make_manager_with_embedder();
     let messages = serde_json::json!([{"role": "user", "content": "test"}]);
     mgr.save("admin", "c1", "t", &messages, None).await.unwrap();
     assert_eq!(mgr.list_embeddings("admin", "c1").len(), 1);
 
     mgr.delete("admin", "c1").unwrap();
+    // soft delete — 임베딩 그대로 (cascade hard delete X).
+    assert_eq!(mgr.list_embeddings("admin", "c1").len(), 1);
+    // tombstone 박힘 (다기기 stale POST 차단).
+    assert!(mgr.is_deleted("admin", "c1"));
+    // 휴지통 목록에 박힘.
+    assert_eq!(mgr.list_deleted("admin").len(), 1);
+}
+
+#[tokio::test]
+async fn permanent_delete_cascades_embeddings() {
+    // 영구 삭제 — row + 임베딩 cascade. 사용자가 휴지통에서 명시 클릭 또는 30일
+    // retention cleanup cron 이 호출.
+    let (mgr, _dir) = make_manager_with_embedder();
+    let messages = serde_json::json!([{"role": "user", "content": "test"}]);
+    mgr.save("admin", "c1", "t", &messages, None).await.unwrap();
+    mgr.delete("admin", "c1").unwrap();
+    assert_eq!(mgr.list_embeddings("admin", "c1").len(), 1); // soft 단계 보존
+    mgr.permanent_delete("admin", "c1").unwrap();
+    // hard delete — 임베딩 cascade.
     assert_eq!(mgr.list_embeddings("admin", "c1").len(), 0);
+}
+
+#[tokio::test]
+async fn restore_removes_tombstone_and_returns_to_active() {
+    let (mgr, _dir) = make_manager_with_embedder();
+    let messages = serde_json::json!([{"role": "user", "content": "test"}]);
+    mgr.save("admin", "c1", "t", &messages, None).await.unwrap();
+    mgr.delete("admin", "c1").unwrap();
+    assert!(mgr.is_deleted("admin", "c1"));
+
+    mgr.restore("admin", "c1").unwrap();
+    // tombstone 제거 + 활성 목록 복귀.
+    assert!(!mgr.is_deleted("admin", "c1"));
+    assert_eq!(mgr.list_deleted("admin").len(), 0);
+    assert_eq!(mgr.list("admin").len(), 1);
 }

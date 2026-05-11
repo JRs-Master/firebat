@@ -739,11 +739,14 @@ impl IDatabasePort for SqliteDatabaseAdapter {
     ) -> Vec<ConversationEmbeddingRow> {
         let Ok(conn) = self.conn.lock() else { return vec![] };
         let Ok(mut stmt) = conn.prepare(
+            // c.deleted_at IS NULL — 휴지통 (soft-deleted) 대화의 임베딩 검색 결과에서 제외.
+            // restore 시 다시 검색 가능 (deleted_at NULL 박힘).
             "SELECT e.conv_id, c.title, e.owner, e.msg_idx, e.role,
                     e.content_hash, e.content_preview, e.embedding, e.created_at
              FROM conversation_embeddings e
              LEFT JOIN conversations c ON c.id = e.conv_id
-             WHERE e.owner = ?1 AND e.created_at >= ?2",
+             WHERE e.owner = ?1 AND e.created_at >= ?2
+               AND (c.deleted_at IS NULL OR c.id IS NULL)",
         ) else {
             return vec![];
         };
