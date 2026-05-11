@@ -13,7 +13,8 @@ use crate::ports::{
 use crate::proto::{
     media_service_server::MediaService, BoolRequest, Empty, GenerateImageResultPb, ImageModelListPb,
     ImageModelPb, ImageSettingsPb, JsonArgs, MediaFileRecordPb, MediaListResultPb, MediaReadPb,
-    MediaSaveResultPb, MediaVariantPb, OptionalStringPb, StartGenerationPb, Status, StringRequest,
+    MediaSaveResultPb, MediaVariantPb, NumberRequest, OptionalStringPb, RawJsonPb,
+    StartGenerationPb, Status, StringRequest,
 };
 
 pub struct MediaServiceImpl {
@@ -342,6 +343,48 @@ impl MediaService for MediaServiceImpl {
         let raw_json = serde_json::to_string(&settings)
             .unwrap_or_else(|_| "{}".to_string());
         Ok(Response::new(ImageSettingsPb { raw_json }))
+    }
+
+    async fn save_temp_attachment(
+        &self,
+        req: Request<JsonArgs>,
+    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            #[serde(rename = "dataUrl")]
+            data_url: String,
+        }
+        let args: Args = serde_json::from_str(&raw)
+            .map_err(|e| TonicStatus::invalid_argument(format!("save_temp_attachment args: {e}")))?;
+        match self.manager.save_temp_attachment(&args.data_url).await {
+            Ok(url) => {
+                // slug 추출 — /user/attachments/<slug>.<ext>
+                let slug = url
+                    .rsplit('/')
+                    .next()
+                    .and_then(|f| f.rsplit_once('.'))
+                    .map(|(s, _)| s.to_string())
+                    .unwrap_or_default();
+                let body = serde_json::json!({ "slug": slug, "url": url });
+                Ok(Response::new(RawJsonPb {
+                    raw_json: body.to_string(),
+                }))
+            }
+            Err(e) => Err(TonicStatus::internal(e)),
+        }
+    }
+
+    async fn cleanup_old_attachments(
+        &self,
+        _req: Request<Empty>,
+    ) -> Result<Response<NumberRequest>, TonicStatus> {
+        // 30일 retention — internal cron 이 호출. 응답: 삭제된 파일 개수.
+        const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+        match self.manager.cleanup_old_attachments(RETENTION_MS).await {
+            Ok(n) => Ok(Response::new(NumberRequest { value: n })),
+            Err(_) => Ok(Response::new(NumberRequest { value: 0 })),
+        }
     }
 }
 

@@ -565,6 +565,34 @@ async fn main() -> Result<()> {
         );
     };
 
+    // ── 30일 retention internal cron — 6h 마다 휴지통 + 임시 첨부 cascade cleanup ──
+    // 사용자 cron 과 별개 (ScheduleManager 의 cron-jobs.json 무관). main binary 의 background task.
+    // 첫 tick = 부팅 직후 즉시 발화 → 다음부터 6h interval.
+    {
+        let conv_mgr = conversation_manager.clone();
+        let media_mgr = media_manager.clone();
+        tokio::spawn(async move {
+            const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+            const INTERVAL_SECS: u64 = 6 * 60 * 60;
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(INTERVAL_SECS));
+            loop {
+                ticker.tick().await;
+                let removed_convs = conv_mgr.cleanup_old_deleted(RETENTION_MS);
+                let removed_atts = media_mgr
+                    .cleanup_old_attachments(RETENTION_MS)
+                    .await
+                    .unwrap_or(0);
+                if removed_convs > 0 || removed_atts > 0 {
+                    tracing::info!(
+                        removed_convs,
+                        removed_atts,
+                        "[30d cleanup] 휴지통 + 임시 첨부 cascade 삭제 완료"
+                    );
+                }
+            }
+        });
+    }
+
     Server::builder()
         .add_service(TemplateServiceServer::new(template_service))
         .add_service(SecretServiceServer::new(secret_service))

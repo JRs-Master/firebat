@@ -219,6 +219,31 @@ fn parse_focus_point(v: &serde_json::Value) -> crate::ports::CropPosition {
     CropPosition::Attention
 }
 
+/// 이미지 magic byte 검증 — JPEG / PNG / WebP / GIF 만 허용.
+/// SVG / HTML / SWF 등 XSS 위험 형식 차단. 응답: 확장자 (jpg / png / webp / gif).
+fn detect_image_ext(binary: &[u8]) -> Option<&'static str> {
+    if binary.len() < 12 {
+        return None;
+    }
+    // JPEG — FF D8 FF
+    if binary[0] == 0xFF && binary[1] == 0xD8 && binary[2] == 0xFF {
+        return Some("jpg");
+    }
+    // PNG — 89 50 4E 47 0D 0A 1A 0A
+    if &binary[..8] == b"\x89PNG\r\n\x1a\n" {
+        return Some("png");
+    }
+    // GIF — 47 49 46 38 (37|39) 61
+    if &binary[..6] == b"GIF87a" || &binary[..6] == b"GIF89a" {
+        return Some("gif");
+    }
+    // WebP — RIFF....WEBP
+    if &binary[..4] == b"RIFF" && &binary[8..12] == b"WEBP" {
+        return Some("webp");
+    }
+    None
+}
+
 /// `lib/media-url.ts` `parseMediaUrl` 1:1 — `/user/media/<slug>.<ext>` 형식 파싱.
 /// 절대 URL 도 path 추출 후 동일 로직.
 fn parse_media_url(url: &str) -> Option<(MediaScope, String, String)> {
@@ -478,6 +503,52 @@ impl MediaManager {
         opts: MediaSaveOptions,
     ) -> InfraResult<MediaSaveResult> {
         self.media.save(binary, content_type, &opts).await
+    }
+
+    /// 채팅 첨부 이미지 임시 저장 — sharp 0 (raw). 보안 검증 박은 후 IMediaPort 위임.
+    /// Args: dataUrl (`data:image/...;base64,...`). Response: `/user/attachments/<slug>.<ext>` URL.
+    /// 30일 후 cleanup_old_attachments 가 자동 삭제. 갤러리 (`/user/media/`) 와 분리.
+    pub async fn save_temp_attachment(&self, data_url: &str) -> InfraResult<String> {
+        // dataUrl 파싱 — "data:image/png;base64,..."
+        if !data_url.starts_with("data:") {
+            return Err("dataUrl 가 data URL 형식이 아닙니다".to_string());
+        }
+        let comma = data_url
+            .find(',')
+            .ok_or_else(|| "dataUrl 에 , 가 없음".to_string())?;
+        let header = &data_url[5..comma]; // "image/png;base64"
+        let b64 = &data_url[comma + 1..];
+
+        // content-type 추출
+        let semicolon = header.find(';').unwrap_or(header.len());
+        let content_type = &header[..semicolon];
+        if !content_type.starts_with("image/") {
+            return Err(format!("이미지 MIME 만 허용: {content_type}"));
+        }
+
+        // base64 → binary
+        use base64::Engine;
+        let binary = base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .map_err(|e| format!("base64 decode 실패: {e}"))?;
+
+        // 크기 제한 — 10MB
+        const MAX_BYTES: usize = 10 * 1024 * 1024;
+        if binary.len() > MAX_BYTES {
+            return Err(format!("첨부 이미지 크기 초과 (max 10MB, 박힌 {}KB)", binary.len() / 1024));
+        }
+
+        // magic byte 검증 — JPEG / PNG / WebP / GIF 만. SVG 차단 (XSS 가드).
+        let ext = detect_image_ext(&binary)
+            .ok_or_else(|| "지원하지 않는 이미지 형식 (JPEG / PNG / WebP / GIF 만)".to_string())?;
+
+        self.media.save_temp_attachment(&binary, ext).await
+    }
+
+    /// 30일 retention cleanup — internal cron 이 6h 마다 호출.
+    pub async fn cleanup_old_attachments(&self, retention_ms: i64) -> InfraResult<i64> {
+        let cutoff = crate::utils::time::now_ms() - retention_ms;
+        self.media.cleanup_old_attachments(cutoff).await
     }
 
     pub async fn save_error_record(

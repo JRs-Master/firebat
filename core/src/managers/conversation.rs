@@ -170,6 +170,9 @@ impl ConversationManager {
         }
     }
 
+    /// 삭제 — soft delete. conversations.deleted_at 박음 + tombstone 기록.
+    /// 30일 후 cleanup_old_deleted 가 cascade hard delete (row + 임베딩).
+    /// 사용자가 휴지통에서 복원하면 restore() 가 deleted_at NULL 박음.
     pub fn delete(&self, owner: &str, id: &str) -> InfraResult<()> {
         if self.db.delete_conversation(owner, id) {
             Ok(())
@@ -180,6 +183,40 @@ impl ConversationManager {
 
     pub fn is_deleted(&self, owner: &str, id: &str) -> bool {
         self.db.is_conversation_deleted(owner, id)
+    }
+
+    /// 휴지통 목록 — soft-deleted conversations (deleted_at IS NOT NULL).
+    /// 최신 삭제 순.
+    pub fn list_deleted(&self, owner: &str) -> Vec<ConversationSummary> {
+        self.db.list_deleted_conversations(owner)
+    }
+
+    /// 휴지통에서 복원 — deleted_at NULL 박음 + tombstone 제거.
+    /// 다기기 동기화 정상화 (tombstone 박힌 대화 부활 차단 해제).
+    pub fn restore(&self, owner: &str, id: &str) -> InfraResult<()> {
+        if self.db.restore_conversation(owner, id) {
+            Ok(())
+        } else {
+            Err(format!("대화 복원 실패: {}", id))
+        }
+    }
+
+    /// 영구 삭제 — hard delete. row + 임베딩 cascade. tombstone 박힌 그대로.
+    /// 휴지통에서 명시 클릭 또는 30일 retention cron 이 호출.
+    pub fn permanent_delete(&self, owner: &str, id: &str) -> InfraResult<()> {
+        if self.db.permanent_delete_conversation(owner, id) {
+            Ok(())
+        } else {
+            Err(format!("대화 영구 삭제 실패: {}", id))
+        }
+    }
+
+    /// 30일 retention cleanup — `retention_ms` (예: 30 * 24 * 3600 * 1000) 보다
+    /// 오래 박힌 휴지통 대화 일괄 hard delete. internal 30d cron 이 6h 마다 호출.
+    /// 응답: 삭제된 conversation 개수.
+    pub fn cleanup_old_deleted(&self, retention_ms: i64) -> i64 {
+        let cutoff = crate::utils::time::now_ms() - retention_ms;
+        self.db.cleanup_old_deleted_conversations(cutoff)
     }
 
     /// 임베딩 row 메타 목록 — test 또는 진단용. 옛 inline test 가 `mgr.db.list_conversation_embeddings`

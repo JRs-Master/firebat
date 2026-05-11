@@ -278,8 +278,19 @@ pub trait IDatabasePort: Send + Sync {
         messages_json: &str,
         created_at: Option<i64>,
     ) -> bool;
+    /// 삭제 — soft delete. conversations.deleted_at 박음 + tombstone 기록.
+    /// 30일 후 cleanup_old_deleted 가 cascade hard delete.
     fn delete_conversation(&self, owner: &str, id: &str) -> bool;
     fn is_conversation_deleted(&self, owner: &str, id: &str) -> bool;
+    /// 휴지통 목록 — deleted_at IS NOT NULL 인 conversations. 최신 삭제 순.
+    fn list_deleted_conversations(&self, owner: &str) -> Vec<ConversationSummary>;
+    /// 휴지통에서 복원 — deleted_at NULL 박음. tombstone 도 제거 (다기기 동기화).
+    fn restore_conversation(&self, owner: &str, id: &str) -> bool;
+    /// 영구 삭제 — row 자체 + 임베딩 cascade. tombstone 박힌 그대로 (다기기 stale POST 차단).
+    fn permanent_delete_conversation(&self, owner: &str, id: &str) -> bool;
+    /// 30일 retention cleanup — `cutoff_ms` 보다 이전에 삭제된 거 일괄 hard delete.
+    /// 응답: 삭제된 conversation 개수.
+    fn cleanup_old_deleted_conversations(&self, cutoff_ms: i64) -> i64;
     fn get_cli_session(&self, conversation_id: &str, current_model: &str) -> Option<String>;
     fn set_cli_session(&self, conversation_id: &str, session_id: &str, model: &str) -> bool;
     fn get_active_plan_state(&self, conversation_id: &str) -> Option<String>;
@@ -1849,6 +1860,16 @@ pub trait IMediaPort: Send + Sync {
     async fn remove(&self, slug: &str) -> InfraResult<()>;
     async fn list(&self, opts: &MediaListOpts) -> InfraResult<MediaListResult>;
     async fn update_meta(&self, slug: &str, patch: &serde_json::Value) -> InfraResult<()>;
+
+    /// 채팅 첨부 이미지 임시 저장 — sharp variants 0, raw 그대로. 별도 디렉토리 (`user/attachments/`).
+    /// 갤러리 (`user/media/`) 와 분리 — 1회성 첨부 누적 차단 + 30일 후 cleanup cron 이 자동 삭제.
+    /// 응답: `/user/attachments/<slug>.<ext>` URL.
+    /// 보안: caller (MediaManager) 가 magic byte 검증 + 크기 제한 박은 후 호출.
+    async fn save_temp_attachment(&self, binary: &[u8], ext: &str) -> InfraResult<String>;
+
+    /// 30일 retention cleanup — `cutoff_ms` 보다 mtime 이 오래된 임시 첨부 일괄 삭제.
+    /// 응답: 삭제된 파일 개수.
+    async fn cleanup_old_attachments(&self, cutoff_ms: i64) -> InfraResult<i64>;
 }
 
 /// IEpisodicPort — Phase 2 episodic tier port.

@@ -399,6 +399,56 @@ impl IMediaPort for LocalMediaAdapter {
         // URL 반환 — `/{scope}/media/<slug>-<suffix>.<format>` (옛 TS 1:1)
         Ok(format!("/{}/media/{}", scope_enum.as_str(), filename))
     }
+
+    /// 채팅 첨부 이미지 임시 저장 — sharp 0, raw. 별도 디렉토리 `<root>/user/attachments/`.
+    /// 갤러리와 분리 — 30일 후 cleanup_old_attachments 가 자동 삭제.
+    async fn save_temp_attachment(&self, binary: &[u8], ext: &str) -> InfraResult<String> {
+        let slug = Self::make_slug(None);
+        let attachments_dir = self.root.join("user").join("attachments");
+        tokio::fs::create_dir_all(&attachments_dir)
+            .await
+            .map_err(|e| format!("attachments dir 생성: {e}"))?;
+        let filename = format!("{slug}.{ext}");
+        let path = attachments_dir.join(&filename);
+        tokio::fs::write(&path, binary)
+            .await
+            .map_err(|e| format!("attachment write: {e}"))?;
+        Ok(format!("/user/attachments/{filename}"))
+    }
+
+    /// 30일 retention cleanup — `cutoff_ms` 보다 mtime 이 오래된 파일 일괄 삭제.
+    /// 응답: 삭제된 파일 개수.
+    async fn cleanup_old_attachments(&self, cutoff_ms: i64) -> InfraResult<i64> {
+        let attachments_dir = self.root.join("user").join("attachments");
+        if !attachments_dir.exists() {
+            return Ok(0);
+        }
+        let mut removed = 0i64;
+        let mut entries = tokio::fs::read_dir(&attachments_dir)
+            .await
+            .map_err(|e| format!("attachments read_dir: {e}"))?;
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| format!("attachments read_dir entry: {e}"))?
+        {
+            let path = entry.path();
+            let Ok(meta) = entry.metadata().await else { continue };
+            if !meta.is_file() {
+                continue;
+            }
+            let Ok(mtime) = meta.modified() else { continue };
+            let Ok(elapsed) = mtime.elapsed() else { continue };
+            let mtime_ms = chrono::Utc::now().timestamp_millis()
+                - (elapsed.as_millis() as i64);
+            if mtime_ms < cutoff_ms {
+                if tokio::fs::remove_file(&path).await.is_ok() {
+                    removed += 1;
+                }
+            }
+        }
+        Ok(removed)
+    }
 }
 
 #[cfg(test)]

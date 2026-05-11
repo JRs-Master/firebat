@@ -69,10 +69,15 @@ impl SqliteDatabaseAdapter {
                 updated_at INTEGER NOT NULL,
                 cli_session_id TEXT,
                 cli_model TEXT,
-                active_plan_state TEXT
+                active_plan_state TEXT,
+                -- soft-delete 타임스탬프 (ms epoch). NULL = 활성, 박힘 = 휴지통.
+                -- 30일 후 internal cleanup cron 이 cascade hard delete.
+                deleted_at INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_conversations_owner_updated
                 ON conversations(owner, updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_conversations_deleted_at
+                ON conversations(deleted_at);
 
             CREATE TABLE IF NOT EXISTS deleted_conversations (
                 id TEXT NOT NULL,
@@ -144,7 +149,24 @@ impl SqliteDatabaseAdapter {
                 ON shared_conversations(expires_at);
             "#,
         )
-        .map_err(|e| format!("DB schema 초기화 실패: {e}"))
+        .map_err(|e| format!("DB schema 초기화 실패: {e}"))?;
+
+        // ── migration — 옛 DB 에 conversations.deleted_at 컬럼 추가 ──
+        // CREATE TABLE IF NOT EXISTS 는 옛 schema 보존 → 새 컬럼 자동 안 박힘.
+        // ALTER 박은 후 컬럼 이미 박혀있으면 SQLite 가 에러 — .ok() 로 무시 (idempotent).
+        // soft-delete (휴지통 30일 retention) 위한 필수 컬럼. 2026-05-11 도입.
+        conn.execute(
+            "ALTER TABLE conversations ADD COLUMN deleted_at INTEGER",
+            [],
+        )
+        .ok();
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_conversations_deleted_at \
+             ON conversations(deleted_at)",
+            [],
+        )
+        .ok();
+        Ok(())
     }
 
     /// 다른 어댑터 (CostManager / EntityManager 등) 가 같은 DB 위에 자기 테이블 설정할 때 활용.
@@ -417,9 +439,10 @@ impl IDatabasePort for SqliteDatabaseAdapter {
 
     fn list_conversations(&self, owner: &str) -> Vec<ConversationSummary> {
         let Ok(conn) = self.conn.lock() else { return vec![] };
+        // deleted_at IS NULL — 휴지통 (soft-deleted) 제외, 활성 대화만.
         let Ok(mut stmt) = conn.prepare(
             "SELECT id, title, created_at, updated_at FROM conversations
-             WHERE owner = ?1 ORDER BY updated_at DESC",
+             WHERE owner = ?1 AND deleted_at IS NULL ORDER BY updated_at DESC",
         ) else { return vec![] };
         let rows = stmt
             .query_map(params![owner], |row| {
@@ -437,10 +460,11 @@ impl IDatabasePort for SqliteDatabaseAdapter {
 
     fn get_conversation(&self, owner: &str, id: &str) -> Option<ConversationRecord> {
         let conn = self.conn.lock().ok()?;
+        // deleted_at IS NULL — 휴지통 검색은 별도 메서드. 활성 대화만 응답.
         let mut stmt = conn
             .prepare(
                 "SELECT id, title, messages, created_at, updated_at FROM conversations
-                 WHERE owner = ?1 AND id = ?2",
+                 WHERE owner = ?1 AND id = ?2 AND deleted_at IS NULL",
             )
             .ok()?;
         stmt.query_row(params![owner, id], |row| {
@@ -484,20 +508,17 @@ impl IDatabasePort for SqliteDatabaseAdapter {
     fn delete_conversation(&self, owner: &str, id: &str) -> bool {
         let Ok(conn) = self.conn.lock() else { return false };
         let now = firebat_core::utils::time::now_ms();
-        // tombstone 기록 + row 삭제 + 임베딩 cascade — 옛 TS 와 동등
+        // soft delete — conversations.deleted_at 박음 + tombstone 기록 (다기기 stale POST 차단).
+        // 30일 후 cleanup_old_deleted_conversations 가 cascade hard delete (row + 임베딩).
+        // 임베딩은 여기서 보존 — restore 시 살아있어야 함.
         let r1 = conn.execute(
             "INSERT OR REPLACE INTO deleted_conversations (id, owner, deleted_at)
              VALUES (?1, ?2, ?3)",
             params![id, owner, now],
         );
         let r2 = conn.execute(
-            "DELETE FROM conversations WHERE id = ?1 AND owner = ?2",
-            params![id, owner],
-        );
-        // conversation_embeddings 도 cascade 정리 (옛 TS 와 동등 — Conv 삭제 시 임베딩도 비움)
-        let _ = conn.execute(
-            "DELETE FROM conversation_embeddings WHERE conv_id = ?1 AND owner = ?2",
-            params![id, owner],
+            "UPDATE conversations SET deleted_at = ?1 WHERE id = ?2 AND owner = ?3",
+            params![now, id, owner],
         );
         r1.is_ok() && r2.is_ok()
     }
@@ -510,6 +531,76 @@ impl IDatabasePort for SqliteDatabaseAdapter {
             |row| row.get::<_, i64>(0),
         )
         .is_ok()
+    }
+
+    fn list_deleted_conversations(&self, owner: &str) -> Vec<ConversationSummary> {
+        let Ok(conn) = self.conn.lock() else { return vec![] };
+        // deleted_at 박힌 대화만. 최신 삭제 순.
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, title, created_at, updated_at FROM conversations
+             WHERE owner = ?1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+        ) else { return vec![] };
+        let rows = stmt
+            .query_map(params![owner], |row| {
+                Ok(ConversationSummary {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    created_at: row.get(2)?,
+                    updated_at: row.get(3)?,
+                })
+            })
+            .ok();
+        let Some(rows) = rows else { return vec![] };
+        rows.filter_map(|r| r.ok()).collect()
+    }
+
+    fn restore_conversation(&self, owner: &str, id: &str) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        // deleted_at NULL 박음 + tombstone 제거 — 다기기에서 정상 동기화 가능.
+        let r1 = conn.execute(
+            "UPDATE conversations SET deleted_at = NULL WHERE id = ?1 AND owner = ?2",
+            params![id, owner],
+        );
+        let _ = conn.execute(
+            "DELETE FROM deleted_conversations WHERE id = ?1 AND owner = ?2",
+            params![id, owner],
+        );
+        r1.is_ok()
+    }
+
+    fn permanent_delete_conversation(&self, owner: &str, id: &str) -> bool {
+        let Ok(conn) = self.conn.lock() else { return false };
+        // hard delete — row + 임베딩 cascade. tombstone 박힌 그대로 (다기기 stale POST 차단).
+        let r1 = conn.execute(
+            "DELETE FROM conversations WHERE id = ?1 AND owner = ?2",
+            params![id, owner],
+        );
+        let _ = conn.execute(
+            "DELETE FROM conversation_embeddings WHERE conv_id = ?1 AND owner = ?2",
+            params![id, owner],
+        );
+        r1.is_ok()
+    }
+
+    fn cleanup_old_deleted_conversations(&self, cutoff_ms: i64) -> i64 {
+        let Ok(conn) = self.conn.lock() else { return 0 };
+        // cutoff_ms 보다 이전에 삭제된 거 일괄 hard delete. cascade — 임베딩도 같이.
+        // 응답: 삭제된 row 수.
+        let r = conn.execute(
+            "DELETE FROM conversation_embeddings WHERE conv_id IN (
+                SELECT id FROM conversations
+                 WHERE deleted_at IS NOT NULL AND deleted_at < ?1
+             )",
+            params![cutoff_ms],
+        );
+        let _ = r;
+        match conn.execute(
+            "DELETE FROM conversations WHERE deleted_at IS NOT NULL AND deleted_at < ?1",
+            params![cutoff_ms],
+        ) {
+            Ok(n) => n as i64,
+            Err(_) => 0,
+        }
     }
 
     fn get_cli_session(&self, conversation_id: &str, current_model: &str) -> Option<String> {

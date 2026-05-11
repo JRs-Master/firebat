@@ -564,14 +564,24 @@ service ConversationService {
   rpc List(StringRequest) returns (ConversationListPb);
   rpc Get(JsonArgs) returns (ConversationRecordPb);
   rpc Save(JsonArgs) returns (Status);
+  /// 삭제 — soft delete. conversations.deleted_at 박음. 30일 후 cleanup cron 이 cascade 삭제.
   rpc Delete(JsonArgs) returns (Status);
   rpc IsDeleted(JsonArgs) returns (BoolRequest);
+  /// 휴지통 (soft-deleted) 목록 — owner 기준. 최신 삭제 순.
+  rpc ListDeleted(StringRequest) returns (ConversationListPb);
+  /// 휴지통에서 복원 — deleted_at NULL 로 박음. 30일 cleanup 대상에서 제외.
+  rpc Restore(JsonArgs) returns (Status);
+  /// 영구 삭제 — DB row + 첨부 이미지 cascade. 휴지통에서도 사라짐.
+  rpc PermanentDelete(JsonArgs) returns (Status);
   rpc SearchHistory(JsonArgs) returns (HistorySearchResultPb);
   rpc GetCliSession(JsonArgs) returns (OptionalStringPb);
   rpc SetCliSession(JsonArgs) returns (Status);
   rpc CreateShare(JsonArgs) returns (ShareResultPb);
   rpc GetShare(StringRequest) returns (SharedConversationPb);
   rpc CleanupExpiredShares(Empty) returns (NumberRequest);
+  /// 30일 retention cleanup — soft-deleted conversations + 임시 첨부 이미지 cascade.
+  /// internal cron 이 6h 마다 호출.
+  rpc CleanupOldDeleted(Empty) returns (NumberRequest);
 }
 
 message MediaVariantPb {
@@ -689,6 +699,13 @@ service MediaService {
   rpc GetImageDefaultQuality(Empty) returns (OptionalStringPb);
   rpc SetImageDefaultQuality(StringRequest) returns (Status);
   rpc GetImageSettings(Empty) returns (ImageSettingsPb);
+  /// 채팅 첨부 이미지 임시 저장 — sharp 0 (raw 그대로). /user/attachments/<slug>.<ext> 응답.
+  /// 30일 후 cleanup cron 이 자동 삭제. 사용자 명시 갤러리 저장 (Save) 은 별도.
+  /// Args: {dataUrl: 'data:image/...;base64,...'}. Response: {slug, url}.
+  rpc SaveTempAttachment(JsonArgs) returns (RawJsonPb);
+  /// 30일 retention cleanup — 임시 첨부 영역 (user/attachments/) 의 오래된 파일 삭제.
+  /// internal cron 이 6h 마다 호출.
+  rpc CleanupOldAttachments(Empty) returns (NumberRequest);
 }
 
 // ──────────────────────────────────────────────────────────────────────────

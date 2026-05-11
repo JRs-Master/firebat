@@ -355,4 +355,66 @@ impl ConversationService for ConversationServiceImpl {
             value: db.cleanup_expired_shares(),
         }))
     }
+
+    async fn list_deleted(
+        &self,
+        req: Request<StringRequest>,
+    ) -> Result<Response<ConversationListPb>, TonicStatus> {
+        let owner = req.into_inner().value;
+        let items = self
+            .manager
+            .list_deleted(&owner)
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        Ok(Response::new(ConversationListPb { items }))
+    }
+
+    async fn restore(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            owner: String,
+            id: String,
+        }
+        let args: Args = match serde_json::from_str(&raw) {
+            Ok(v) => v,
+            Err(e) => return Ok(err_status(format!("restore args: {e}"))),
+        };
+        match self.manager.restore(&args.owner, &args.id) {
+            Ok(()) => Ok(ok_status()),
+            Err(e) => Ok(err_status(e)),
+        }
+    }
+
+    async fn permanent_delete(
+        &self,
+        req: Request<JsonArgs>,
+    ) -> Result<Response<Status>, TonicStatus> {
+        let raw = req.into_inner().raw;
+        #[derive(serde::Deserialize)]
+        struct Args {
+            owner: String,
+            id: String,
+        }
+        let args: Args = match serde_json::from_str(&raw) {
+            Ok(v) => v,
+            Err(e) => return Ok(err_status(format!("permanent_delete args: {e}"))),
+        };
+        match self.manager.permanent_delete(&args.owner, &args.id) {
+            Ok(()) => Ok(ok_status()),
+            Err(e) => Ok(err_status(e)),
+        }
+    }
+
+    async fn cleanup_old_deleted(
+        &self,
+        _req: Request<Empty>,
+    ) -> Result<Response<NumberRequest>, TonicStatus> {
+        // 30일 retention — internal cron 이 호출. 응답: 삭제된 conversation 개수.
+        const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+        Ok(Response::new(NumberRequest {
+            value: self.manager.cleanup_old_deleted(RETENTION_MS),
+        }))
+    }
 }
