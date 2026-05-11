@@ -1125,6 +1125,15 @@ pub struct CronAgentOpts {
 #[async_trait::async_trait]
 pub trait ILlmPort: Send + Sync {
     fn get_model_id(&self) -> String;
+    /// MCP 자체 처리 모델 여부 — CLI 3종 (Claude Code / Codex / Gemini) +
+    /// Anthropic API (Claude messages) + OpenAI Responses API 가 hosted MCP connector
+    /// 또는 자체 MCP loop 박혀 Firebat MCP server (`/api/mcp-internal`) 인증 토큰
+    /// (`opts.mcp_token`) 만 있으면 도구 schema 별도 전달 불필요.
+    /// false 응답 모델 (Gemini native / Vertex / 옛 OpenAI Chat) 은 ai.rs 의
+    /// effective_tools schema 박혀가야 함 (Function Calling 표준).
+    /// opts.model 박혀있으면 그 모델 기준, 없으면 current default 기준.
+    /// 미구현 implementor 는 default false (안전한 쪽).
+    fn supports_hosted_mcp(&self, _opts: &LlmCallOpts) -> bool { false }
     async fn ask_text(&self, prompt: &str, opts: &LlmCallOpts) -> InfraResult<LlmTextResponse>;
     async fn ask_with_tools(
         &self,

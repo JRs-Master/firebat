@@ -355,10 +355,53 @@ impl AiManager {
         // 자연 query 가 도구 호출 못 하던 root cause. LLM 자체 판단 위임 (단순 인사 박은
         // 거도 도구 schema 박혀가지만 LLM 이 자체 응답).
 
-        // 도구 list 미전달 시 ToolManager 등록 도구 자동 사용 (옛 TS buildToolDefinitions 동등).
+        let mut effective_opts = opts.clone();
+
+        // MCP 토큰 자동 주입 — vault 에서 `system:internal-mcp-token` 가져와 LlmCallOpts 에 추가.
+        // hosted MCP 모델 (CLI 3종 / Anthropic API / OpenAI Responses API) 이 Firebat MCP
+        // server (`/api/mcp-internal`) 인증할 때 사용. caller 가 안 주면 vault 에서 자동 조회.
+        if effective_opts.mcp_token.is_none() {
+            if let Some(vault) = &self.vault {
+                let token = vault.get_secret("system:internal-mcp-token");
+                if let Some(t) = token.filter(|s| !s.is_empty()) {
+                    effective_opts.mcp_token = Some(t);
+                }
+            }
+        }
+
+        // hosted MCP 지원 모델 분기 — features.mcp_connector 기반 (CLI 3종 + Anthropic API +
+        // OpenAI Responses). 토큰 없으면 즉시 명시 에러 (silent stdio fallback → "도구 없음"
+        // hallucinate 차단). MCP 미지원 모델 (Gemini native / Vertex 등) 은 ai.rs 의
+        // effective_tools schema 가 정공 (Function Calling 표준).
+        let supports_mcp = self.llm.supports_hosted_mcp(&effective_opts);
+        if supports_mcp && effective_opts.mcp_token.is_none() {
+            let model_id = effective_opts
+                .model
+                .clone()
+                .unwrap_or_else(|| self.llm.get_model_id());
+            return Ok(AiResponse {
+                error: Some(
+                    "MCP 토큰이 등록되어 있지 않습니다. 설정 - 시스템 - mcp-server-llm 에서 토큰을 생성해 주세요."
+                        .to_string(),
+                ),
+                model_id: Some(model_id),
+                cost_usd: Some(0.0),
+                ..Default::default()
+            });
+        }
+
+        // 도구 list 결정:
+        // - MCP 지원 모델 → 빈 배열 (자체 MCP loop 또는 hosted connector 가 직접 조회)
+        // - MCP 미지원 모델 + caller 가 tools 안 주면 → ToolManager 등록 도구 전체
+        // - caller 가 tools 명시하면 → 그대로 사용
         let auto_tools: Vec<ToolDefinition>;
-        let effective_tools: &[ToolDefinition] = if tools.is_empty() {
-            // 동적 도구 (sysmod_* / mcp_*) refresh — 60초 cache. 설정되어 있을 때만.
+        let effective_tools: &[ToolDefinition] = if supports_mcp {
+            // hosted MCP 모델 — schema 전달 불필요. 동적 도구 refresh 도 skip
+            // (어차피 LLM handler 가 무시 → 비용 + 토큰 절감).
+            auto_tools = Vec::new();
+            &auto_tools
+        } else if tools.is_empty() {
+            // MCP 미지원 모델 — 동적 도구 (sysmod_* / mcp_*) refresh + ToolManager 전체.
             if let Some(dyn_reg) = &self.dynamic_tools {
                 dyn_reg.refresh().await;
             }
@@ -378,39 +421,6 @@ impl AiManager {
         // 시스템 프롬프트 자동 주입 + plan_mode prefix.
         // 옛 TS `finalSystemPrompt = planExecuteRule + planModePrefix + systemPrompt + autoHistoryContext + memorySection`
         // 1:1. 본 step 에선 planExecuteRule (plan-store) / autoHistoryContext (router) 미저장 — 후속 batch.
-        let mut effective_opts = opts.clone();
-
-        // MCP 토큰 자동 주입 — vault 에서 `system:internal-mcp-token` 가져와 LlmCallOpts 에 박음.
-        // CLI 3종 (Claude Code / Codex / Gemini) 의 자체 MCP loop + Anthropic / OpenAI Responses API
-        // 의 hosted MCP connector 가 Firebat MCP server (`/api/mcp-internal`) 인증할 때 사용.
-        // caller (frontend) 가 박지 않으면 vault 에서 자동 가져옴 — silent stdio fallback 차단.
-        if effective_opts.mcp_token.is_none() {
-            if let Some(vault) = &self.vault {
-                let token = vault.get_secret("system:internal-mcp-token");
-                if let Some(t) = token.filter(|s| !s.is_empty()) {
-                    effective_opts.mcp_token = Some(t);
-                }
-            }
-        }
-
-        // CLI 모델 (model_id 가 `cli-` 시작) 인데 토큰 없으면 즉시 명시 에러 응답 — silent
-        // stdio fallback 박혀 LLM 이 "도구 없음" hallucinate 박는 root cause 차단.
-        // 2단계 (별도 plan) — features.mcp_connector 기반 정확한 분기 (Anthropic API / OpenAI Responses 까지).
-        let model_id = effective_opts
-            .model
-            .clone()
-            .unwrap_or_else(|| self.llm.get_model_id());
-        if model_id.starts_with("cli-") && effective_opts.mcp_token.is_none() {
-            return Ok(AiResponse {
-                error: Some(
-                    "MCP 토큰이 등록되어 있지 않습니다. 설정 - 시스템 - mcp-server-llm 에서 토큰을 생성해 주세요."
-                        .to_string(),
-                ),
-                model_id: Some(model_id),
-                cost_usd: Some(0.0),
-                ..Default::default()
-            });
-        }
 
         if effective_opts.system_prompt.is_none() {
             if let Some(pb) = &self.prompt_builder {

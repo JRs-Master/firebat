@@ -218,6 +218,10 @@ fn cli_gemini(id: &str, name: &str) -> LlmModelConfig {
         format: "cli-gemini".to_string(),
         endpoint: "gemini".to_string(),
         api_key_vault_key: None,
+        features: LlmFeatures {
+            mcp_connector: true,
+            ..Default::default()
+        },
         ..Default::default()
     }
 }
@@ -231,6 +235,7 @@ fn cli_codex(id: &str, name: &str) -> LlmModelConfig {
         endpoint: "codex".to_string(),
         api_key_vault_key: None,
         features: LlmFeatures {
+            mcp_connector: true,
             reasoning: true,
             ..Default::default()
         },

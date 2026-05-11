@@ -188,6 +188,13 @@ impl ILlmPort for ConfigDrivenAdapter {
         self.resolve_current_model()
     }
 
+    /// opts.model 또는 current default 모델의 config.features.mcp_connector 반환.
+    fn supports_hosted_mcp(&self, opts: &LlmCallOpts) -> bool {
+        self.select_config(opts)
+            .map(|c| c.features.mcp_connector)
+            .unwrap_or(false)
+    }
+
     async fn ask_text(
         &self,
         prompt: &str,
