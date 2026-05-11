@@ -9,8 +9,10 @@ use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::tool::{ToolDefinition, ToolListFilter, ToolManager};
 use crate::proto::{
-    tool_service_server::ToolService, BoolRequest, Empty, JsonArgs, RawJsonPb, Status,
-    StringRequest, ToolStatsPb,
+    tool_service_server::ToolService, BoolRequest, Empty, RawJsonPb, Status, StringRequest,
+    ToolBuildAiDefinitionsRequest, ToolBuildMcpDescriptionsRequest, ToolExecuteRequest,
+    ToolListRequest, ToolRegisterManyRequest, ToolRegisterRequest, ToolSetActivePlanStateRequest,
+    ToolStatsPb,
 };
 
 pub struct ToolServiceImpl {
@@ -47,11 +49,11 @@ fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
 
 #[tonic::async_trait]
 impl ToolService for ToolServiceImpl {
-    async fn register(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let def: ToolDefinition = match serde_json::from_str(&raw) {
+    async fn register(&self, req: Request<ToolRegisterRequest>) -> Result<Response<Status>, TonicStatus> {
+        let args = req.into_inner();
+        let def: ToolDefinition = match serde_json::from_str(&args.definition_json) {
             Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("register args: {e}"))),
+            Err(e) => return Ok(err_status(format!("register definition_json: {e}"))),
         };
         self.manager.register(def);
         Ok(ok_status())
@@ -59,12 +61,12 @@ impl ToolService for ToolServiceImpl {
 
     async fn register_many(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ToolRegisterManyRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let defs: Vec<ToolDefinition> = match serde_json::from_str(&raw) {
+        let args = req.into_inner();
+        let defs: Vec<ToolDefinition> = match serde_json::from_str(&args.definitions_json) {
             Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("register_many args: {e}"))),
+            Err(e) => return Ok(err_status(format!("register_many definitions_json: {e}"))),
         };
         self.manager.register_many(defs);
         Ok(ok_status())
@@ -89,16 +91,19 @@ impl ToolService for ToolServiceImpl {
         Ok(Response::new(raw_json(&def)))
     }
 
-    async fn list(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let filter: ToolListFilter = serde_json::from_str(&raw).unwrap_or_default();
+    async fn list(&self, req: Request<ToolListRequest>) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let args = req.into_inner();
+        let filter = ToolListFilter {
+            source: args.source_filter,
+            ..Default::default()
+        };
         let tools = self.manager.list(&filter);
         Ok(Response::new(raw_json(&tools)))
     }
 
     async fn execute(
         &self,
-        _req: Request<JsonArgs>,
+        _req: Request<ToolExecuteRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
         // Phase B: 도구 dispatch 는 AiManager 변환 시 통합.
         Ok(Response::new(RawJsonPb {
@@ -112,20 +117,26 @@ impl ToolService for ToolServiceImpl {
 
     async fn build_ai_definitions(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ToolBuildAiDefinitionsRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let filter: ToolListFilter = serde_json::from_str(&raw).unwrap_or_default();
+        let args = req.into_inner();
+        let filter = ToolListFilter {
+            source: args.source_filter,
+            ..Default::default()
+        };
         let tools = self.manager.list(&filter);
         Ok(Response::new(raw_json(&tools)))
     }
 
     async fn build_mcp_descriptions(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ToolBuildMcpDescriptionsRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let filter: ToolListFilter = serde_json::from_str(&raw).unwrap_or_default();
+        let args = req.into_inner();
+        let filter = ToolListFilter {
+            source: args.source_filter,
+            ..Default::default()
+        };
         let tools = self.manager.list(&filter);
         Ok(Response::new(raw_json(&tools)))
     }
@@ -151,20 +162,15 @@ impl ToolService for ToolServiceImpl {
 
     async fn set_active_plan_state(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ToolSetActivePlanStateRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct SetArgs {
-            conversation_id: String,
-            #[serde(default)]
-            state: Option<serde_json::Value>,
-        }
-        let args: SetArgs = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("set_active_plan args: {e}"))),
+        let args = req.into_inner();
+        let state = if args.state_json.is_empty() {
+            None
+        } else {
+            serde_json::from_str(&args.state_json).ok()
         };
-        self.manager.set_active_plan(&args.conversation_id, args.state);
+        self.manager.set_active_plan(&args.conversation_id, state);
         Ok(ok_status())
     }
 

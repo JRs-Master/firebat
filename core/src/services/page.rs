@@ -9,9 +9,11 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::page::{PageManager, TagSummary};
 use crate::ports::{MediaUsageEntry, PageListItem, PageRecord};
 use crate::proto::{
-    page_service_server::PageService, BoolRequest, Empty, JsonArgs, MediaUsageEntryPb,
-    MediaUsageListPb, OptionalStringPb, PageListItemPb, PageListResponsePb, PageRecordPb,
-    PageSaveResultPb, Status, StringListPb, StringRequest, TagListPb, TagSummaryPb,
+    page_service_server::PageService, BoolRequest, Empty, MediaUsageEntryPb, MediaUsageListPb,
+    OptionalStringPb, PageFindRelatedRequest, PageListItemPb, PageListResponsePb, PageRecordPb,
+    PageRenameRequest, PageSaveRequest, PageSaveResultPb, PageSearchRequest,
+    PageSetVisibilityRequest, PageVerifyPasswordRequest, Status, StringListPb, StringRequest,
+    TagListPb, TagSummaryPb,
 };
 
 pub struct PageServiceImpl {
@@ -106,19 +108,11 @@ impl PageService for PageServiceImpl {
 
     async fn search(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<PageSearchRequest>,
     ) -> Result<Response<PageListResponsePb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            query: String,
-            #[serde(default)]
-            limit: Option<usize>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("search args: {e}")))?;
+        let args = req.into_inner();
         Ok(Response::new(page_list_to_pb(
-            self.manager.search(&args.query, args.limit),
+            self.manager.search(&args.query, args.limit.map(|v| v as usize)),
         )))
     }
 
@@ -137,32 +131,15 @@ impl PageService for PageServiceImpl {
 
     async fn save(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<PageSaveRequest>,
     ) -> Result<Response<PageSaveResultPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            slug: String,
-            spec: String,
-            #[serde(default = "default_published")]
-            status: String,
-            #[serde(default)]
-            project: Option<String>,
-            #[serde(default)]
-            visibility: Option<String>,
-            #[serde(default)]
-            password: Option<String>,
-        }
-        fn default_published() -> String {
-            "published".into()
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("save args: {e}")))?;
+        let args = req.into_inner();
         let slug = args.slug.clone();
+        let status = args.status.unwrap_or_else(|| "published".to_string());
         match self.manager.save(
             &args.slug,
             &args.spec,
-            &args.status,
+            &status,
             args.project.as_deref(),
             args.visibility.as_deref(),
             args.password.as_deref(),
@@ -191,22 +168,11 @@ impl PageService for PageServiceImpl {
         }
     }
 
-    async fn rename(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            old_slug: String,
-            new_slug: String,
-            #[serde(default)]
-            set_redirect: bool,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("rename args: {e}"))),
-        };
+    async fn rename(&self, req: Request<PageRenameRequest>) -> Result<Response<Status>, TonicStatus> {
+        let args = req.into_inner();
         match self
             .manager
-            .rename(&args.old_slug, &args.new_slug, args.set_redirect)
+            .rename(&args.old_slug, &args.new_slug, args.set_redirect.unwrap_or(false))
         {
             Ok(_) => Ok(ok_status()),
             Err(e) => Ok(err_status(e)),
@@ -249,20 +215,9 @@ impl PageService for PageServiceImpl {
 
     async fn set_visibility(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<PageSetVisibilityRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            slug: String,
-            visibility: String,
-            #[serde(default)]
-            password: Option<String>,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("set_visibility args: {e}"))),
-        };
+        let args = req.into_inner();
         match self
             .manager
             .set_visibility(&args.slug, &args.visibility, args.password.as_deref())
@@ -274,16 +229,9 @@ impl PageService for PageServiceImpl {
 
     async fn verify_password(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<PageVerifyPasswordRequest>,
     ) -> Result<Response<BoolRequest>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            slug: String,
-            password: String,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("verify args: {e}")))?;
+        let args = req.into_inner();
         Ok(Response::new(BoolRequest {
             value: self.manager.verify_password(&args.slug, &args.password),
         }))
@@ -291,24 +239,14 @@ impl PageService for PageServiceImpl {
 
     async fn find_related(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<PageFindRelatedRequest>,
     ) -> Result<Response<PageListResponsePb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            slug: String,
-            #[serde(default)]
-            limit: Option<usize>,
-            /// CMS settings.tagAliases 의 raw textarea (옛 TS 1:1)
-            #[serde(rename = "tagAliasesRaw", default)]
-            tag_aliases_raw: Option<String>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("find_related args: {e}")))?;
+        let args = req.into_inner();
         let aliases = crate::utils::tag_utils::parse_tag_aliases(args.tag_aliases_raw.as_deref());
+        let limit = args.limit.map(|v| v as usize).unwrap_or(5);
         let related = self
             .manager
-            .find_related_pages(&args.slug, args.limit.unwrap_or(5), &aliases);
+            .find_related_pages(&args.slug, limit, &aliases);
         Ok(Response::new(page_list_to_pb(related)))
     }
 

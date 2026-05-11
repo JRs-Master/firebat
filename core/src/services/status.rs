@@ -8,7 +8,10 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::status::{JobStatusKind, StatusManager};
-use crate::proto::{status_service_server::StatusService, Empty, JsonArgs, RawJsonPb, StringRequest};
+use crate::proto::{
+    status_service_server::StatusService, Empty, RawJsonPb, StatusCompleteRequest,
+    StatusFailRequest, StatusListRequest, StatusStartRequest, StatusUpdateRequest, StringRequest,
+};
 
 pub struct StatusServiceImpl {
     manager: Arc<StatusManager>,
@@ -26,70 +29,47 @@ fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
     }
 }
 
+fn parse_opt_json(raw: &str) -> serde_json::Value {
+    if raw.is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::from_str(raw).unwrap_or(serde_json::Value::Null)
+    }
+}
+
 #[tonic::async_trait]
 impl StatusService for StatusServiceImpl {
-    async fn start(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct StartArgs {
-            #[serde(default)]
-            id: Option<String>,
-            #[serde(rename = "type")]
-            job_type: String,
-            #[serde(default)]
-            message: Option<String>,
-            #[serde(rename = "parentJobId", default)]
-            parent_job_id: Option<String>,
-            #[serde(default)]
-            meta: serde_json::Value,
-        }
-        let args: StartArgs = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("start args: {e}")))?;
-        let job = self.manager.start(args.id, args.job_type, args.message, args.parent_job_id, args.meta);
+    async fn start(&self, req: Request<StatusStartRequest>) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let args = req.into_inner();
+        let meta = parse_opt_json(&args.meta_json);
+        let job = self.manager.start(args.id, args.job_type, args.message, args.parent_job_id, meta);
         Ok(Response::new(raw_json(&job)))
     }
 
-    async fn update(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct UpdateArgs {
-            id: String,
-            #[serde(default)]
-            progress: Option<f64>,
-            #[serde(default)]
-            message: Option<String>,
-            #[serde(default)]
-            meta: Option<serde_json::Value>,
-        }
-        let args: UpdateArgs = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("update args: {e}")))?;
-        let result = self.manager.update(&args.id, args.progress, args.message, args.meta);
+    async fn update(&self, req: Request<StatusUpdateRequest>) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let args = req.into_inner();
+        let meta = args
+            .meta_json
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|s| serde_json::from_str(s).ok());
+        let result = self.manager.update(&args.id, args.progress, args.message, meta);
         Ok(Response::new(raw_json(&result)))
     }
 
-    async fn complete(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct DoneArgs {
-            id: String,
-            #[serde(default)]
-            result: Option<serde_json::Value>,
-        }
-        let args: DoneArgs = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("complete args: {e}")))?;
-        let result = self.manager.complete(&args.id, args.result);
+    async fn complete(&self, req: Request<StatusCompleteRequest>) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let args = req.into_inner();
+        let result_val = args
+            .result_json
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|s| serde_json::from_str(s).ok());
+        let result = self.manager.complete(&args.id, result_val);
         Ok(Response::new(raw_json(&result)))
     }
 
-    async fn fail(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct FailArgs {
-            id: String,
-            error: String,
-        }
-        let args: FailArgs = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("fail args: {e}")))?;
+    async fn fail(&self, req: Request<StatusFailRequest>) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let args = req.into_inner();
         let result = self.manager.fail(&args.id, args.error);
         Ok(Response::new(raw_json(&result)))
     }
@@ -100,28 +80,18 @@ impl StatusService for StatusServiceImpl {
         Ok(Response::new(raw_json(&job)))
     }
 
-    async fn list(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize, Default)]
-        struct ListFilter {
-            #[serde(rename = "type", default)]
-            job_type: Option<String>,
-            #[serde(default)]
-            status: Option<JobStatusKind>,
-            #[serde(default)]
-            since: Option<i64>,
-            #[serde(rename = "parentJobId", default)]
-            parent_job_id: Option<String>,
-            #[serde(default)]
-            limit: Option<usize>,
-        }
-        let f: ListFilter = serde_json::from_str(&raw).unwrap_or_default();
+    async fn list(&self, req: Request<StatusListRequest>) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let args = req.into_inner();
+        let status: Option<JobStatusKind> = args
+            .status
+            .as_deref()
+            .and_then(|s| serde_json::from_value(serde_json::Value::String(s.to_string())).ok());
         let jobs = self.manager.list(
-            f.job_type.as_deref(),
-            f.status,
-            f.since,
-            f.parent_job_id.as_deref(),
-            f.limit,
+            args.job_type.as_deref(),
+            status,
+            args.since,
+            args.parent_job_id.as_deref(),
+            args.limit.map(|v| v as usize),
         );
         Ok(Response::new(raw_json(&jobs)))
     }

@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::ports::IDatabasePort;
-use crate::proto::{database_service_server::DatabaseService, JsonArgs, RawJsonPb};
+use crate::proto::{database_service_server::DatabaseService, DatabaseQueryRequest, RawJsonPb};
 
 pub struct DatabaseServiceImpl {
     db: Arc<dyn IDatabasePort>,
@@ -34,23 +34,15 @@ fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
 
 #[tonic::async_trait]
 impl DatabaseService for DatabaseServiceImpl {
-    async fn query(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            sql: String,
-            #[serde(default)]
-            #[allow(dead_code)]
-            // params 는 Phase B-17.5 minimum 단계에선 unused — adapter 가 raw SELECT 만 받음.
-            // 향후 prepared statement 지원 시 port 시그니처 확장 (`run_select_query_with_params`).
-            params: Vec<serde_json::Value>,
-        }
-        let parsed: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("query args: {e}")))?;
+    async fn query(&self, req: Request<DatabaseQueryRequest>) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let args = req.into_inner();
+        // params 는 Phase B-17.5 minimum 단계에선 unused — adapter 가 raw SELECT 만 받음.
+        // 향후 prepared statement 지원 시 port 시그니처 확장 (`run_select_query_with_params`).
+        let _params_unused = args.params_json;
 
         let rows = self
             .db
-            .run_select_query(&parsed.sql)
+            .run_select_query(&args.sql)
             .map_err(|e| {
                 if e.starts_with("raw query 거부") {
                     TonicStatus::permission_denied(e)

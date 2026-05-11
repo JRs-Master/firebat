@@ -12,7 +12,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::ports::IVaultPort;
 use crate::proto::{
     settings_service_server::SettingsService, AiAssistantModelListPb, AiAssistantModelPb,
-    AiModelResponsePb, AvailableAiModelListPb, AvailableAiModelPb, BoolRequest, Empty, JsonArgs,
+    AiModelResponsePb, AvailableAiModelListPb, AvailableAiModelPb, BoolRequest, Empty, SettingsSetLastModelByCategoryRequest,
     LastModelByCategoryPb, StringRequest,
 };
 use crate::vault_keys::{
@@ -149,11 +149,11 @@ impl SettingsService for SettingsServiceImpl {
 
     async fn set_last_model_by_category(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<SettingsSetLastModelByCategoryRequest>,
     ) -> Result<Response<BoolRequest>, TonicStatus> {
-        let raw = req.into_inner().raw;
+        let args = req.into_inner();
         // valid JSON 검증 후 저장
-        let parsed: serde_json::Value = match serde_json::from_str(&raw) {
+        let parsed: serde_json::Value = match serde_json::from_str(&args.by_category_json) {
             Ok(v) => v,
             Err(_) => return Ok(Response::new(BoolRequest { value: false })),
         };

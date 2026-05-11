@@ -9,8 +9,9 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::auth::{ApiTokenInfo, AuthManager, LoginOutcome};
 use crate::ports::{AuthSession, SessionRole, SessionType};
 use crate::proto::{
-    auth_service_server::AuthService, AdminCredentialsPb, ApiTokenInfoPb, AuthSessionPb,
-    BoolRequest, Empty, JsonArgs, LoginResponsePb, NumberRequest, Status, StringRequest,
+    auth_service_server::AuthService, AdminCredentialsPb, ApiTokenInfoPb, AuthLoginRequest,
+    AuthSessionPb, AuthSetAdminCredentialsRequest, AuthValidatePasswordPolicyRequest, BoolRequest,
+    Empty, LoginResponsePb, NumberRequest, Status, StringRequest,
 };
 
 pub struct AuthServiceImpl {
@@ -80,18 +81,10 @@ impl From<ApiTokenInfo> for ApiTokenInfoPb {
 
 #[tonic::async_trait]
 impl AuthService for AuthServiceImpl {
-    async fn login(&self, req: Request<JsonArgs>) -> Result<Response<LoginResponsePb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct LoginArgs {
-            id: String,
-            password: String,
-            #[serde(default)]
-            attempt_key: String,
-        }
-        let args: LoginArgs = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("login args 파싱 실패: {e}")))?;
-        let outcome = self.manager.login(&args.id, &args.password, &args.attempt_key);
+    async fn login(&self, req: Request<AuthLoginRequest>) -> Result<Response<LoginResponsePb>, TonicStatus> {
+        let args = req.into_inner();
+        let attempt_key = args.attempt_key.unwrap_or_default();
+        let outcome = self.manager.login(&args.id, &args.password, &attempt_key);
         let pb = match outcome {
             LoginOutcome::Ok(session) => LoginResponsePb {
                 ok: true,
@@ -215,17 +208,9 @@ impl AuthService for AuthServiceImpl {
 
     async fn validate_password_policy(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<AuthValidatePasswordPolicyRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            password: String,
-            #[serde(default)]
-            id: Option<String>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("validate_password_policy: {e}")))?;
+        let args = req.into_inner();
         match crate::managers::auth::AuthManager::validate_password_policy(
             &args.password,
             args.id.as_deref(),
@@ -245,25 +230,9 @@ impl AuthService for AuthServiceImpl {
 
     async fn set_admin_credentials(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<AuthSetAdminCredentialsRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct SetCredArgs {
-            #[serde(default)]
-            id: Option<String>,
-            #[serde(default)]
-            password: Option<String>,
-        }
-        let args: SetCredArgs = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => {
-                return Ok(err_status(
-                    format!("set_admin_credentials 파싱 실패: {e}"),
-                    "INVALID_ARGS",
-                ));
-            }
-        };
+        let args = req.into_inner();
         self.manager
             .set_admin_credentials(args.id.as_deref(), args.password.as_deref());
         Ok(ok_status())

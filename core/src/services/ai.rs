@@ -10,8 +10,9 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::ai::AiManager;
 use crate::ports::{LlmCallOpts, ToolDefinition};
 use crate::proto::{
-    ai_service_server::AiService, AiTextResultPb, BoolRequest, Empty, JsonArgs, RawJsonPb, Status,
-    StringRequest,
+    ai_service_server::AiService, AiCodeAssistRequest, AiCreatePendingRequest, AiProcessRequest,
+    AiRequestActionWithToolsRequest, AiRunAgentJobRequest, AiSpawnSubAgentRequest,
+    AiStorePlanRequest, AiTextResultPb, BoolRequest, Empty, RawJsonPb, Status, StringRequest,
 };
 
 pub struct AiServiceImpl {
@@ -30,22 +31,40 @@ fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
     }
 }
 
+/// LlmCallOptsPb (string opts_json) → LlmCallOpts struct. None / empty 면 default.
+fn parse_opts(opts: Option<crate::proto::LlmCallOptsPb>) -> LlmCallOpts {
+    opts.and_then(|o| {
+        if o.opts_json.is_empty() {
+            None
+        } else {
+            serde_json::from_str(&o.opts_json).ok()
+        }
+    })
+    .unwrap_or_default()
+}
+
+/// ToolDefinitionsPb (string tools_json) → Vec<ToolDefinition>. None / empty 면 빈 배열.
+fn parse_tools(tools: Option<crate::proto::ToolDefinitionsPb>) -> Vec<ToolDefinition> {
+    tools
+        .and_then(|t| {
+            if t.tools_json.is_empty() {
+                None
+            } else {
+                serde_json::from_str(&t.tools_json).ok()
+            }
+        })
+        .unwrap_or_default()
+}
+
 #[tonic::async_trait]
 impl AiService for AiServiceImpl {
     async fn process(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<AiProcessRequest>,
     ) -> Result<Response<AiTextResultPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            prompt: String,
-            #[serde(default)]
-            opts: LlmCallOpts,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("process args: {e}")))?;
-        match self.manager.ask_text(&args.prompt, &args.opts).await {
+        let args = req.into_inner();
+        let opts = parse_opts(args.opts);
+        match self.manager.ask_text(&args.prompt, &opts).await {
             Ok(text) => Ok(Response::new(AiTextResultPb { text })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
@@ -53,22 +72,14 @@ impl AiService for AiServiceImpl {
 
     async fn request_action_with_tools(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<AiRequestActionWithToolsRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            prompt: String,
-            #[serde(default)]
-            tools: Vec<ToolDefinition>,
-            #[serde(default)]
-            opts: LlmCallOpts,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("rwt args: {e}")))?;
+        let args = req.into_inner();
+        let opts = parse_opts(args.opts);
+        let tools = parse_tools(args.tools);
         match self
             .manager
-            .process_with_tools(&args.prompt, &args.tools, &args.opts)
+            .process_with_tools(&args.prompt, &tools, &opts)
             .await
         {
             Ok(response) => Ok(Response::new(raw_json(&response))),
@@ -78,18 +89,11 @@ impl AiService for AiServiceImpl {
 
     async fn code_assist(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<AiCodeAssistRequest>,
     ) -> Result<Response<AiTextResultPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            prompt: String,
-            #[serde(default)]
-            opts: LlmCallOpts,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("code_assist args: {e}")))?;
-        match self.manager.ask_text(&args.prompt, &args.opts).await {
+        let args = req.into_inner();
+        let opts = parse_opts(args.opts);
+        match self.manager.ask_text(&args.prompt, &opts).await {
             Ok(text) => Ok(Response::new(AiTextResultPb { text })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
@@ -97,22 +101,9 @@ impl AiService for AiServiceImpl {
 
     async fn run_agent_job(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<AiRunAgentJobRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            #[serde(rename = "jobId")]
-            job_id: String,
-            #[serde(rename = "agentPrompt")]
-            agent_prompt: String,
-            #[serde(default)]
-            title: Option<String>,
-            #[serde(default)]
-            model: Option<String>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("run_agent_job args: {e}")))?;
+        let args = req.into_inner();
         if args.agent_prompt.trim().is_empty() {
             return Ok(Response::new(raw_json(&serde_json::json!({
                 "success": false,
@@ -165,17 +156,9 @@ impl AiService for AiServiceImpl {
 
     async fn spawn_sub_agent(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<AiSpawnSubAgentRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            prompt: String,
-            #[serde(default)]
-            model: Option<String>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("spawn_sub_agent args: {e}")))?;
+        let args = req.into_inner();
         let llm_opts = LlmCallOpts {
             model: args.model,
             ..Default::default()
@@ -211,20 +194,15 @@ impl AiService for AiServiceImpl {
     // ── Pending tools (옛 TS lib/pending-tools.ts 통합) ────────────────────
     async fn create_pending(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<AiCreatePendingRequest>,
     ) -> Result<Response<StringRequest>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            name: String,
-            #[serde(default)]
-            args: serde_json::Value,
-            #[serde(default)]
-            summary: String,
-        }
-        let a: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("create_pending args: {e}")))?;
-        let plan_id = crate::utils::pending_tools::create_pending(&a.name, a.args, &a.summary);
+        let args = req.into_inner();
+        let parsed_args: serde_json::Value = if args.args_json.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::from_str(&args.args_json).unwrap_or(serde_json::Value::Null)
+        };
+        let plan_id = crate::utils::pending_tools::create_pending(&args.name, parsed_args, &args.summary);
         Ok(Response::new(StringRequest { value: plan_id }))
     }
 
@@ -258,29 +236,31 @@ impl AiService for AiServiceImpl {
     // ── Plan store (옛 TS lib/plan-store.ts 통합) ──────────────────────────
     async fn store_plan(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<AiStorePlanRequest>,
     ) -> Result<Response<Empty>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            #[serde(rename = "planId")]
-            plan_id: String,
-            title: String,
-            #[serde(default)]
-            steps: Vec<crate::utils::plan_store::PlanStep>,
-            #[serde(rename = "estimatedTime", default)]
-            estimated_time: Option<String>,
-            #[serde(default)]
-            risks: Option<Vec<String>>,
-        }
-        let a: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("store_plan args: {e}")))?;
+        let args = req.into_inner();
+        let steps: Vec<crate::utils::plan_store::PlanStep> = args
+            .steps
+            .into_iter()
+            .filter_map(|s| {
+                if s.step_json.is_empty() {
+                    None
+                } else {
+                    serde_json::from_str(&s.step_json).ok()
+                }
+            })
+            .collect();
+        let risks = if args.risks.is_empty() {
+            None
+        } else {
+            Some(args.risks)
+        };
         crate::utils::plan_store::store_plan(crate::utils::plan_store::PlanInsert {
-            plan_id: a.plan_id,
-            title: a.title,
-            steps: a.steps,
-            estimated_time: a.estimated_time,
-            risks: a.risks,
+            plan_id: args.plan_id,
+            title: args.title,
+            steps,
+            estimated_time: args.estimated_time,
+            risks,
         });
         Ok(Response::new(Empty {}))
     }

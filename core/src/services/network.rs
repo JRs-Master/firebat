@@ -10,7 +10,9 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::ports::{INetworkPort, NetworkRequest};
-use crate::proto::{network_service_server::NetworkService, JsonArgs, RawJsonPb};
+use crate::proto::{
+    network_service_server::NetworkService, NetworkFetchRequest as NetworkFetchPb, RawJsonPb,
+};
 
 pub struct NetworkServiceImpl {
     network: Arc<dyn INetworkPort>,
@@ -30,10 +32,23 @@ fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
 
 #[tonic::async_trait]
 impl NetworkService for NetworkServiceImpl {
-    async fn fetch(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let parsed: NetworkRequest = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("fetch args: {e}")))?;
+    async fn fetch(&self, req: Request<NetworkFetchPb>) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let args = req.into_inner();
+        let headers = args
+            .headers_json
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|s| serde_json::from_str(s).ok());
+        let body = args
+            .body
+            .map(serde_json::Value::String);
+        let parsed = NetworkRequest {
+            url: args.url,
+            method: args.method.unwrap_or_else(|| "GET".to_string()),
+            headers,
+            body,
+            timeout_ms: args.timeout_ms.map(|v| v as u64).unwrap_or(30_000),
+        };
 
         let response = self
             .network

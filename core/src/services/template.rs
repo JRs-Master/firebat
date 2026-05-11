@@ -8,7 +8,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::template::{TemplateConfig, TemplateManager};
 use crate::proto::{
-    template_service_server::TemplateService, Empty, JsonArgs, RawJsonPb, Status, StringRequest,
+    template_service_server::TemplateService, Empty, RawJsonPb, Status, StringRequest, TemplateSaveRequest,
 };
 
 pub struct TemplateServiceImpl {
@@ -59,18 +59,13 @@ impl TemplateService for TemplateServiceImpl {
         Ok(Response::new(raw_json(&config)))
     }
 
-    async fn save(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct SaveArgs {
-            slug: String,
-            config: TemplateConfig,
-        }
-        let args: SaveArgs = match serde_json::from_str(&raw) {
+    async fn save(&self, req: Request<TemplateSaveRequest>) -> Result<Response<Status>, TonicStatus> {
+        let args = req.into_inner();
+        let config: TemplateConfig = match serde_json::from_str(&args.config_json) {
             Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("save args 파싱 실패: {e}"))),
+            Err(e) => return Ok(err_status(format!("save config_json 파싱: {e}"))),
         };
-        match self.manager.save(&args.slug, &args.config).await {
+        match self.manager.save(&args.slug, &config).await {
             Ok(()) => Ok(ok_status()),
             Err(e) => Ok(err_status(e)),
         }

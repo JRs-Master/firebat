@@ -9,7 +9,7 @@ use std::time::Instant;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::proto::{
-    lifecycle_service_server::LifecycleService, Empty, HealthInfo, JsonArgs, NumberRequest, Status,
+    lifecycle_service_server::LifecycleService, Empty, HealthInfo, LifecycleCaptureExceptionRequest, NumberRequest, Status,
 };
 
 /// 부팅 시각 — 한 번만 set, 매 health 호출 시 uptime 계산.
@@ -43,11 +43,16 @@ impl LifecycleService for LifecycleServiceImpl {
 
     async fn capture_exception(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<LifecycleCaptureExceptionRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
         // Phase B-17.5+ — tracing / Sentry 통합 후 활성. 현재는 stderr 로그만.
-        let raw = req.into_inner().raw;
-        eprintln!("[CaptureException] {}", raw);
+        let args = req.into_inner();
+        eprintln!(
+            "[CaptureException] {} severity={} stack={:?}",
+            args.message,
+            args.severity.unwrap_or_else(|| "error".to_string()),
+            args.stack
+        );
         Ok(Response::new(Status {
             ok: true,
             error: String::new(),

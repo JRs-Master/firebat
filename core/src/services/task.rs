@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::task::{PipelineResult, PipelineStep, TaskManager};
-use crate::proto::{task_service_server::TaskService, JsonArgs, PipelineResultPb};
+use crate::proto::{task_service_server::TaskService, PipelineResultPb, TaskRunRequest};
 
 pub struct TaskServiceImpl {
     manager: Arc<TaskManager>,
@@ -35,17 +35,16 @@ impl From<PipelineResult> for PipelineResultPb {
 impl TaskService for TaskServiceImpl {
     async fn run(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<TaskRunRequest>,
     ) -> Result<Response<PipelineResultPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            #[serde(default)]
-            steps: Vec<PipelineStep>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("run args: {e}")))?;
-        let result = self.manager.execute_pipeline(&args.steps).await;
+        let args = req.into_inner();
+        let steps: Vec<PipelineStep> = if args.pipeline_json.is_empty() {
+            Vec::new()
+        } else {
+            serde_json::from_str(&args.pipeline_json)
+                .map_err(|e| TonicStatus::invalid_argument(format!("pipeline_json: {e}")))?
+        };
+        let result = self.manager.execute_pipeline(&steps).await;
         Ok(Response::new(result.into()))
     }
 }

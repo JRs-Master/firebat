@@ -9,8 +9,9 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::module::{ModuleManager, SystemEntry};
 use crate::ports::ModuleOutput;
 use crate::proto::{
-    module_service_server::ModuleService, BoolRequest, Empty, JsonArgs, ModuleEntryPb,
-    ModuleListPb, ModuleOutputPb, RawJsonPb, Status, StringRequest,
+    module_service_server::ModuleService, BoolRequest, Empty, ModuleEntryPb, ModuleGetSchemaRequest,
+    ModuleListPb, ModuleOutputPb, ModuleRunRequest, ModuleSetEnabledRequest, ModuleSetSettingsRequest,
+    RawJsonPb, Status, StringRequest,
 };
 
 pub struct ModuleServiceImpl {
@@ -81,29 +82,27 @@ impl From<ModuleOutput> for ModuleOutputPb {
 impl ModuleService for ModuleServiceImpl {
     async fn run(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ModuleRunRequest>,
     ) -> Result<Response<ModuleOutputPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            module: String,
-            #[serde(default)]
-            data: serde_json::Value,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("run args: {e}")))?;
+        let args = req.into_inner();
+        let data: serde_json::Value = if args.data_json.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::from_str(&args.data_json)
+                .map_err(|e| TonicStatus::invalid_argument(format!("run data: {e}")))?
+        };
         // module field 가 path 형태 (`/` 포함) 면 sandboxExecute (직접 경로 실행), 아니면 run (모듈 이름 + entry 자동 탐색).
-        // 옛 TS 의 두 API 경로를 단일 RPC 로 통합하면서 자동 분기 — frontend wrapper 가 둘 다 같은 RPC 호출.
+        // 두 API 경로를 단일 RPC 로 통합하면서 자동 분기 — frontend wrapper 가 둘 다 같은 RPC 호출.
         let result = if args.module.contains('/') || args.module.contains('\\') {
             self.manager
                 .execute(
                     &args.module,
-                    &args.data,
+                    &data,
                     &crate::ports::SandboxExecuteOpts::default(),
                 )
                 .await
         } else {
-            self.manager.run(&args.module, &args.data).await
+            self.manager.run(&args.module, &data).await
         };
         match result {
             Ok(output) => Ok(Response::new(output.into())),
@@ -148,16 +147,9 @@ impl ModuleService for ModuleServiceImpl {
 
     async fn get_schema(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ModuleGetSchemaRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            scope: String,
-            name: String,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("get_schema args: {e}")))?;
+        let args = req.into_inner();
         let config = self.manager.get_module_config(&args.scope, &args.name).await;
         Ok(Response::new(raw_json(&config)))
     }
@@ -186,19 +178,14 @@ impl ModuleService for ModuleServiceImpl {
 
     async fn set_settings(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ModuleSetSettingsRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            name: String,
-            settings: serde_json::Value,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
+        let args = req.into_inner();
+        let settings: serde_json::Value = match serde_json::from_str(&args.settings_json) {
             Ok(v) => v,
             Err(e) => return Ok(err_status(format!("set_settings args: {e}"))),
         };
-        if self.manager.set_settings(&args.name, &args.settings) {
+        if self.manager.set_settings(&args.name, &settings) {
             Ok(ok_status())
         } else {
             Ok(err_status("set_settings 실패"))
@@ -217,18 +204,9 @@ impl ModuleService for ModuleServiceImpl {
 
     async fn set_enabled(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ModuleSetEnabledRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            name: String,
-            enabled: bool,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("set_enabled args: {e}"))),
-        };
+        let args = req.into_inner();
         if self.manager.set_enabled(&args.name, args.enabled) {
             Ok(ok_status())
         } else {

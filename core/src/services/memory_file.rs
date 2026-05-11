@@ -15,7 +15,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::ports::IStoragePort;
 use crate::proto::{
-    memory_service_server::MemoryService, Empty, JsonArgs, RawJsonPb, Status, StringRequest,
+    memory_service_server::MemoryService, Empty, MemorySaveFileRequest, RawJsonPb, Status, StringRequest,
 };
 
 pub struct MemoryServiceImpl {
@@ -120,18 +120,9 @@ impl MemoryService for MemoryServiceImpl {
 
     async fn save_file(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<MemorySaveFileRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            name: String,
-            content: String,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("save_file args: {e}"))),
-        };
+        let args = req.into_inner();
         let path = match self.resolve_path(&args.name) {
             Ok(p) => p,
             Err(e) => return Ok(err_status(e)),

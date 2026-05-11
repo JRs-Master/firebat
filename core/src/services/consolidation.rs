@@ -9,8 +9,9 @@ use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::consolidation::{ConsolidationManager, ExtractionResult};
 use crate::proto::{
-    consolidation_service_server::ConsolidationService, Empty, JsonArgs, LlmTextResultPb,
-    MemoryStatsPb, RawJsonPb,
+    consolidation_service_server::ConsolidationService, ConsolidationAskLlmTextRequest,
+    ConsolidationConsolidateInactiveRequest, ConsolidationConsolidateRequest, Empty,
+    LlmTextResultPb, MemoryStatsPb, RawJsonPb,
 };
 
 pub struct ConsolidationServiceImpl {
@@ -33,22 +34,9 @@ fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
 impl ConsolidationService for ConsolidationServiceImpl {
     async fn ask_llm_text(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ConsolidationAskLlmTextRequest>,
     ) -> Result<Response<LlmTextResultPb>, TonicStatus> {
-        // 옛 TS Core.askLlmText 1:1 — set_ai_hook 설정되어 있을 때만 활성.
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            prompt: String,
-            #[serde(default)]
-            model: Option<String>,
-            #[serde(rename = "thinkingLevel", default)]
-            thinking_level: Option<String>,
-            #[serde(rename = "systemPrompt", default)]
-            system_prompt: Option<String>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("ask_llm_text args: {e}")))?;
+        let args = req.into_inner();
         let opts = crate::ports::LlmCallOpts {
             model: args.model,
             thinking_level: args.thinking_level,
@@ -67,32 +55,10 @@ impl ConsolidationService for ConsolidationServiceImpl {
     /// AI 도구 (consolidate_conversation) 도 같은 분기. extracted 가 포함된 호출은 save 전용 분기.
     async fn consolidate(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ConsolidationConsolidateRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize, Default)]
-        struct Args {
-            /// 자동 추출 분기 — 사용자 "리콜 버튼" + AI 도구. 옛 TS Core.consolidateConversation 1:1.
-            #[serde(rename = "conversationId", default)]
-            conversation_id: Option<String>,
-            #[serde(default)]
-            owner: Option<String>,
-            #[serde(rename = "modelId", default)]
-            model_id: Option<String>,
-            /// 미리 추출 save 분기 — Phase B-16+ LLM 호출 후 같은 흐름으로 합류.
-            #[serde(default)]
-            extracted: Option<ExtractionResult>,
-            #[serde(rename = "sourceConvId", default)]
-            source_conv_id: Option<String>,
-            #[serde(rename = "factDedupThreshold", default)]
-            fact_dedup_threshold: Option<f64>,
-            #[serde(rename = "eventDedupThreshold", default)]
-            event_dedup_threshold: Option<f64>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("consolidate args: {e}")))?;
-
-        // 분기 1: conversationId 가 포함된 자동 추출 (LLM 호출) — frontend "이 대화 정리" 버튼 + AI 도구
+        let args = req.into_inner();
+        // 분기 1: conversation_id 가 포함된 자동 추출 (LLM 호출) — frontend "이 대화 정리" 버튼 + AI 도구
         if let Some(conv_id) = args.conversation_id {
             let owner = args.owner.unwrap_or_else(|| "admin".to_string());
             return match self
@@ -105,9 +71,14 @@ impl ConsolidationService for ConsolidationServiceImpl {
             };
         }
         // 분기 2: extracted 가 포함된 save 전용
-        let Some(extracted) = args.extracted else {
+        let extracted: Option<ExtractionResult> = args
+            .extracted_json
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|s| serde_json::from_str(s).ok());
+        let Some(extracted) = extracted else {
             return Err(TonicStatus::invalid_argument(
-                "consolidate args: conversationId 또는 extracted 필요",
+                "consolidate args: conversation_id 또는 extracted_json 필요",
             ));
         };
         match self
@@ -127,30 +98,15 @@ impl ConsolidationService for ConsolidationServiceImpl {
 
     async fn consolidate_inactive(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ConsolidationConsolidateInactiveRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        // 옛 TS consolidateInactiveConversations 1:1 — 매 6시간 cron 호출.
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize, Default)]
-        struct Args {
-            #[serde(default)]
-            owner: Option<String>,
-            #[serde(rename = "inactivityMs", default)]
-            inactivity_ms: Option<i64>,
-            #[serde(rename = "limitPerRun", default)]
-            limit_per_run: Option<usize>,
-        }
-        let args: Args = if raw.is_empty() {
-            Args::default()
-        } else {
-            serde_json::from_str(&raw).unwrap_or_default()
-        };
+        let args = req.into_inner();
         let result = self
             .manager
             .consolidate_inactive_conversations(
                 args.owner.as_deref(),
                 args.inactivity_ms,
-                args.limit_per_run,
+                args.limit_per_run.map(|v| v as usize),
             )
             .await;
         Ok(Response::new(raw_json(&result)))

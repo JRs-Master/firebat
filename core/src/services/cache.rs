@@ -6,8 +6,11 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
+use crate::proto::{
+    cache_service_server::CacheService, CacheAggregateRequest, CacheGrepRequest, CacheReadRequest,
+    RawJsonPb, Status, StringRequest,
+};
 use crate::utils::sysmod_cache::SysmodCacheAdapter;
-use crate::proto::{cache_service_server::CacheService, JsonArgs, RawJsonPb, Status, StringRequest};
 
 pub struct CacheServiceImpl {
     cache: Arc<SysmodCacheAdapter>,
@@ -27,37 +30,25 @@ fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
 
 #[tonic::async_trait]
 impl CacheService for CacheServiceImpl {
-    async fn read(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            key: String,
-            #[serde(default)]
-            offset: usize,
-            #[serde(default = "default_limit")]
-            limit: usize,
-        }
-        fn default_limit() -> usize { 100 }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("read args: {e}")))?;
-        match self.cache.read(&args.key, args.offset, args.limit) {
+    async fn read(&self, req: Request<CacheReadRequest>) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let args = req.into_inner();
+        let offset = args.offset.map(|v| v as usize).unwrap_or(0);
+        let limit = args.limit.map(|v| v as usize).unwrap_or(100);
+        match self.cache.read(&args.key, offset, limit) {
             Ok(v) => Ok(Response::new(raw_json(&v))),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
 
-    async fn grep(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            key: String,
-            field: String,
-            op: String,
-            value: serde_json::Value,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("grep args: {e}")))?;
-        match self.cache.grep(&args.key, &args.field, &args.op, &args.value) {
+    async fn grep(&self, req: Request<CacheGrepRequest>) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let args = req.into_inner();
+        let value: serde_json::Value = if args.value_json.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::from_str(&args.value_json)
+                .map_err(|e| TonicStatus::invalid_argument(format!("value_json: {e}")))?
+        };
+        match self.cache.grep(&args.key, &args.field, &args.op, &value) {
             Ok(v) => Ok(Response::new(raw_json(&v))),
             Err(e) => Err(TonicStatus::internal(e)),
         }
@@ -65,17 +56,9 @@ impl CacheService for CacheServiceImpl {
 
     async fn aggregate(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<CacheAggregateRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            key: String,
-            field: String,
-            op: String,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("aggregate args: {e}")))?;
+        let args = req.into_inner();
         match self.cache.aggregate(&args.key, &args.field, &args.op) {
             Ok(v) => Ok(Response::new(raw_json(&v))),
             Err(e) => Err(TonicStatus::internal(e)),

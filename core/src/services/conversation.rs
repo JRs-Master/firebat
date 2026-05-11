@@ -9,10 +9,12 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::conversation::{ConversationManager, HistorySearchMatch};
 use crate::ports::{ConversationRecord, ConversationSummary, IDatabasePort, SharedConversationRecord};
 use crate::proto::{
-    conversation_service_server::ConversationService, BoolRequest, ConversationListPb,
-    ConversationRecordPb, ConversationSummaryPb, Empty, HistorySearchMatchPb,
-    HistorySearchResultPb, JsonArgs, NumberRequest, OptionalStringPb, ShareResultPb,
-    SharedConversationPb, Status, StringRequest,
+    conversation_service_server::ConversationService, BoolRequest, ConversationCreateShareRequest,
+    ConversationGetCliSessionRequest, ConversationListPb, ConversationOwnerIdRequest,
+    ConversationRecordPb, ConversationSaveRequest, ConversationSearchHistoryRequest,
+    ConversationSetCliSessionRequest, ConversationSummaryPb, Empty, HistorySearchMatchPb,
+    HistorySearchResultPb, NumberRequest, OptionalStringPb, ShareResultPb, SharedConversationPb,
+    Status, StringRequest,
 };
 
 pub struct ConversationServiceImpl {
@@ -124,16 +126,9 @@ impl ConversationService for ConversationServiceImpl {
 
     async fn get(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ConversationOwnerIdRequest>,
     ) -> Result<Response<ConversationRecordPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            owner: String,
-            id: String,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("get args: {e}")))?;
+        let args = req.into_inner();
         Ok(Response::new(
             self.manager
                 .get(&args.owner, &args.id)
@@ -142,24 +137,15 @@ impl ConversationService for ConversationServiceImpl {
         ))
     }
 
-    async fn save(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            owner: String,
-            id: String,
-            title: String,
-            messages: serde_json::Value,
-            #[serde(default, rename = "createdAt")]
-            created_at: Option<i64>,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
+    async fn save(&self, req: Request<ConversationSaveRequest>) -> Result<Response<Status>, TonicStatus> {
+        let args = req.into_inner();
+        let messages: serde_json::Value = match serde_json::from_str(&args.messages_json) {
             Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("save args: {e}"))),
+            Err(e) => return Ok(err_status(format!("save messages_json: {e}"))),
         };
         match self
             .manager
-            .save(&args.owner, &args.id, &args.title, &args.messages, args.created_at)
+            .save(&args.owner, &args.id, &args.title, &messages, args.created_at)
             .await
         {
             Ok(()) => Ok(ok_status()),
@@ -167,17 +153,8 @@ impl ConversationService for ConversationServiceImpl {
         }
     }
 
-    async fn delete(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            owner: String,
-            id: String,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("delete args: {e}"))),
-        };
+    async fn delete(&self, req: Request<ConversationOwnerIdRequest>) -> Result<Response<Status>, TonicStatus> {
+        let args = req.into_inner();
         match self.manager.delete(&args.owner, &args.id) {
             Ok(()) => Ok(ok_status()),
             Err(e) => Ok(err_status(e)),
@@ -186,16 +163,9 @@ impl ConversationService for ConversationServiceImpl {
 
     async fn is_deleted(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ConversationOwnerIdRequest>,
     ) -> Result<Response<BoolRequest>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            owner: String,
-            id: String,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("is_deleted args: {e}")))?;
+        let args = req.into_inner();
         Ok(Response::new(BoolRequest {
             value: self.manager.is_deleted(&args.owner, &args.id),
         }))
@@ -203,32 +173,15 @@ impl ConversationService for ConversationServiceImpl {
 
     async fn search_history(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ConversationSearchHistoryRequest>,
     ) -> Result<Response<HistorySearchResultPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            owner: String,
-            query: String,
-            #[serde(rename = "currentConvId", default)]
-            current_conv_id: Option<String>,
-            #[serde(default)]
-            limit: Option<usize>,
-            #[serde(rename = "withinDays", default)]
-            within_days: Option<i64>,
-            #[serde(rename = "minScore", default)]
-            min_score: Option<f32>,
-            #[serde(rename = "includeBlocks", default)]
-            include_blocks: bool,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("search_history args: {e}")))?;
+        let args = req.into_inner();
         let opts = crate::managers::conversation::SearchHistoryOpts {
             current_conv_id: args.current_conv_id,
-            limit: args.limit,
+            limit: args.limit.map(|v| v as usize),
             within_days: args.within_days,
-            min_score: args.min_score,
-            include_blocks: args.include_blocks,
+            min_score: args.min_score.map(|v| v as f32),
+            include_blocks: args.include_blocks.unwrap_or(false),
         };
         match self.manager.search_history(&args.owner, &args.query, opts).await {
             Ok(matches) => {
@@ -241,16 +194,9 @@ impl ConversationService for ConversationServiceImpl {
 
     async fn get_cli_session(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ConversationGetCliSessionRequest>,
     ) -> Result<Response<OptionalStringPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            conversation_id: String,
-            current_model: String,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("args: {e}")))?;
+        let args = req.into_inner();
         let session_id = self.manager.get_cli_session(&args.conversation_id, &args.current_model);
         Ok(Response::new(OptionalStringPb {
             value: session_id.clone().unwrap_or_default(),
@@ -260,19 +206,9 @@ impl ConversationService for ConversationServiceImpl {
 
     async fn set_cli_session(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ConversationSetCliSessionRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            conversation_id: String,
-            session_id: String,
-            model: String,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("args: {e}"))),
-        };
+        let args = req.into_inner();
         if self.manager.set_cli_session(&args.conversation_id, &args.session_id, &args.model) {
             Ok(ok_status())
         } else {
@@ -282,38 +218,23 @@ impl ConversationService for ConversationServiceImpl {
 
     async fn create_share(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ConversationCreateShareRequest>,
     ) -> Result<Response<ShareResultPb>, TonicStatus> {
         let Some(db) = &self.db else {
             return Err(TonicStatus::failed_precondition(
                 "create_share: IDatabasePort 미설정",
             ));
         };
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            #[serde(rename = "type")]
-            share_type: String,
-            title: String,
-            messages: Vec<serde_json::Value>,
-            #[serde(default)]
-            owner: Option<String>,
-            #[serde(rename = "sourceConvId", default)]
-            source_conv_id: Option<String>,
-            /// 옛 TS Core.createShare 1:1 — `ttlMs` 미지정 시 24h default.
-            /// 호출자 (frontend share-helper.ts) 가 ttlMs 안 보내도 정상 작동.
-            #[serde(rename = "ttlMs", default)]
-            ttl_ms: Option<i64>,
-            #[serde(rename = "dedupKey", default)]
-            dedup_key: Option<String>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("create_share args: {e}")))?;
+        let args = req.into_inner();
+        let messages: Vec<serde_json::Value> = match serde_json::from_str(&args.messages_json) {
+            Ok(v) => v,
+            Err(e) => return Err(TonicStatus::invalid_argument(format!("create_share messages_json: {e}"))),
+        };
         const DEFAULT_SHARE_TTL_MS: i64 = 24 * 60 * 60 * 1000;
         let input = crate::ports::CreateShareInput {
             share_type: args.share_type,
             title: args.title,
-            messages: args.messages,
+            messages,
             owner: args.owner,
             source_conv_id: args.source_conv_id,
             ttl_ms: args.ttl_ms.unwrap_or(DEFAULT_SHARE_TTL_MS),
@@ -370,17 +291,8 @@ impl ConversationService for ConversationServiceImpl {
         Ok(Response::new(ConversationListPb { items }))
     }
 
-    async fn restore(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            owner: String,
-            id: String,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("restore args: {e}"))),
-        };
+    async fn restore(&self, req: Request<ConversationOwnerIdRequest>) -> Result<Response<Status>, TonicStatus> {
+        let args = req.into_inner();
         match self.manager.restore(&args.owner, &args.id) {
             Ok(()) => Ok(ok_status()),
             Err(e) => Ok(err_status(e)),
@@ -389,18 +301,9 @@ impl ConversationService for ConversationServiceImpl {
 
     async fn permanent_delete(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ConversationOwnerIdRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            owner: String,
-            id: String,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("permanent_delete args: {e}"))),
-        };
+        let args = req.into_inner();
         match self.manager.permanent_delete(&args.owner, &args.id) {
             Ok(()) => Ok(ok_status()),
             Err(e) => Ok(err_status(e)),

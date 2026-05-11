@@ -8,8 +8,8 @@ use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::secret::{ModuleSecretEntry, SecretManager};
 use crate::proto::{
-    secret_service_server::SecretService, Empty, JsonArgs, ModuleSecretEntryPb,
-    ModuleSecretListPb, OptionalStringPb, Status, StringListPb, StringRequest,
+    secret_service_server::SecretService, Empty, ModuleSecretEntryPb, ModuleSecretListPb,
+    OptionalStringPb, SecretSetSystemRequest, SecretSetUserRequest, Status, StringListPb, StringRequest,
 };
 
 pub struct SecretServiceImpl {
@@ -60,17 +60,8 @@ impl SecretService for SecretServiceImpl {
         Ok(Response::new(StringListPb { values }))
     }
 
-    async fn set_user(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct SetUserArgs {
-            name: String,
-            value: String,
-        }
-        let args: SetUserArgs = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("set_user args 파싱 실패: {e}"))),
-        };
+    async fn set_user(&self, req: Request<SecretSetUserRequest>) -> Result<Response<Status>, TonicStatus> {
+        let args = req.into_inner();
         if self.manager.set_user(&args.name, &args.value) {
             Ok(ok_status())
         } else {
@@ -128,17 +119,8 @@ impl SecretService for SecretServiceImpl {
         }))
     }
 
-    async fn set_system(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct SetSystemArgs {
-            key: String,
-            value: String,
-        }
-        let args: SetSystemArgs = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("set_system args 파싱 실패: {e}"))),
-        };
+    async fn set_system(&self, req: Request<SecretSetSystemRequest>) -> Result<Response<Status>, TonicStatus> {
+        let args = req.into_inner();
         if self.manager.set_system(&args.key, &args.value) {
             Ok(ok_status())
         } else {

@@ -13,8 +13,10 @@ use crate::ports::{
     UpdateEntityPatch, UpdateFactPatch,
 };
 use crate::proto::{
-    entity_service_server::EntityService, Empty, EntitySaveResultPb, FactSaveResultPb, JsonArgs,
-    NumberRequest, RawJsonPb, Status, StringRequest,
+    entity_service_server::EntityService, Empty, EntityFactSaveRequest, EntityFactUpdateRequest,
+    EntityRetrieveContextRequest, EntitySaveRequest, EntitySaveResultPb, EntitySearchFactsRequest,
+    EntitySearchRequest, EntityTimelineRequest, EntityUpdateRequest, FactSaveResultPb, NumberRequest,
+    RawJsonPb, Status, StringRequest,
 };
 
 pub struct EntityServiceImpl {
@@ -53,30 +55,21 @@ fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
 impl EntityService for EntityServiceImpl {
     async fn save(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<EntitySaveRequest>,
     ) -> Result<Response<EntitySaveResultPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            name: String,
-            #[serde(rename = "type")]
-            entity_type: String,
-            #[serde(default)]
-            aliases: Vec<String>,
-            #[serde(default)]
-            metadata: Option<serde_json::Value>,
-            #[serde(rename = "sourceConvId", default)]
-            source_conv_id: Option<String>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("save args: {e}")))?;
+        let args = req.into_inner();
+        let metadata = args
+            .metadata_json
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|s| serde_json::from_str(s).ok());
         let result = self
             .manager
             .save_entity(SaveEntityInput {
                 name: args.name,
                 entity_type: args.entity_type,
                 aliases: args.aliases,
-                metadata: args.metadata,
+                metadata,
                 source_conv_id: args.source_conv_id,
             })
             .await;
@@ -86,29 +79,25 @@ impl EntityService for EntityServiceImpl {
         }
     }
 
-    async fn update(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            id: i64,
-            #[serde(default)]
-            name: Option<String>,
-            #[serde(rename = "type", default)]
-            entity_type: Option<String>,
-            #[serde(default)]
-            aliases: Option<Vec<String>>,
-            #[serde(default)]
-            metadata: Option<serde_json::Value>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("update args: {e}")))?;
+    async fn update(&self, req: Request<EntityUpdateRequest>) -> Result<Response<Status>, TonicStatus> {
+        let args = req.into_inner();
+        let aliases = args
+            .aliases_json
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|s| serde_json::from_str(s).ok());
+        let metadata = args
+            .metadata_json
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|s| serde_json::from_str(s).ok());
         match self.manager.update_entity(
             args.id,
             UpdateEntityPatch {
                 name: args.name,
                 entity_type: args.entity_type,
-                aliases: args.aliases,
-                metadata: args.metadata,
+                aliases,
+                metadata,
             },
         ) {
             Ok(()) => Ok(ok_status()),
@@ -143,10 +132,14 @@ impl EntityService for EntityServiceImpl {
         }
     }
 
-    async fn search(&self, req: Request<JsonArgs>) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let opts: EntitySearchOpts = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("search args: {e}")))?;
+    async fn search(&self, req: Request<EntitySearchRequest>) -> Result<Response<RawJsonPb>, TonicStatus> {
+        let args = req.into_inner();
+        let opts: EntitySearchOpts = if args.opts_json.is_empty() {
+            EntitySearchOpts::default()
+        } else {
+            serde_json::from_str(&args.opts_json)
+                .map_err(|e| TonicStatus::invalid_argument(format!("opts_json: {e}")))?
+        };
         match self.manager.search_entities(opts).await {
             Ok(list) => Ok(Response::new(raw_json(&list))),
             Err(e) => Err(TonicStatus::internal(e)),
@@ -155,29 +148,9 @@ impl EntityService for EntityServiceImpl {
 
     async fn save_fact(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<EntityFactSaveRequest>,
     ) -> Result<Response<FactSaveResultPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            #[serde(rename = "entityId")]
-            entity_id: i64,
-            content: String,
-            #[serde(rename = "factType", default)]
-            fact_type: Option<String>,
-            #[serde(rename = "occurredAt", default)]
-            occurred_at: Option<i64>,
-            #[serde(default)]
-            tags: Vec<String>,
-            #[serde(rename = "sourceConvId", default)]
-            source_conv_id: Option<String>,
-            #[serde(rename = "ttlDays", default)]
-            ttl_days: Option<i64>,
-            #[serde(rename = "dedupThreshold", default)]
-            dedup_threshold: Option<f64>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("save_fact args: {e}")))?;
+        let args = req.into_inner();
         match self
             .manager
             .save_fact(SaveFactInput {
@@ -203,32 +176,21 @@ impl EntityService for EntityServiceImpl {
 
     async fn update_fact(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<EntityFactUpdateRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            id: i64,
-            #[serde(default)]
-            content: Option<String>,
-            #[serde(rename = "factType", default)]
-            fact_type: Option<String>,
-            #[serde(rename = "occurredAt", default)]
-            occurred_at: Option<i64>,
-            #[serde(default)]
-            tags: Option<Vec<String>>,
-            #[serde(rename = "ttlDays", default)]
-            ttl_days: Option<i64>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("update_fact args: {e}")))?;
+        let args = req.into_inner();
+        let tags = args
+            .tags_json
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|s| serde_json::from_str(s).ok());
         match self.manager.update_fact(
             args.id,
             UpdateFactPatch {
                 content: args.content,
                 fact_type: args.fact_type,
                 occurred_at: args.occurred_at,
-                tags: args.tags,
+                tags,
                 ttl_days: args.ttl_days,
             },
         ) {
@@ -261,27 +223,14 @@ impl EntityService for EntityServiceImpl {
 
     async fn get_timeline(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<EntityTimelineRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            #[serde(rename = "entityId")]
-            entity_id: i64,
-            #[serde(default)]
-            limit: Option<usize>,
-            #[serde(default)]
-            offset: Option<usize>,
-            #[serde(rename = "orderBy", default)]
-            order_by: Option<String>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("get_timeline args: {e}")))?;
+        let args = req.into_inner();
         match self.manager.get_entity_timeline(
             args.entity_id,
             TimelineOpts {
-                limit: args.limit,
-                offset: args.offset,
+                limit: args.limit.map(|v| v as usize),
+                offset: args.offset.map(|v| v as usize),
                 order_by: args.order_by,
             },
         ) {
@@ -292,11 +241,15 @@ impl EntityService for EntityServiceImpl {
 
     async fn search_facts(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<EntitySearchFactsRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let opts: FactSearchOpts = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("search_facts args: {e}")))?;
+        let args = req.into_inner();
+        let opts: FactSearchOpts = if args.opts_json.is_empty() {
+            FactSearchOpts::default()
+        } else {
+            serde_json::from_str(&args.opts_json)
+                .map_err(|e| TonicStatus::invalid_argument(format!("opts_json: {e}")))?
+        };
         match self.manager.search_facts(opts).await {
             Ok(list) => Ok(Response::new(raw_json(&list))),
             Err(e) => Err(TonicStatus::internal(e)),
@@ -305,25 +258,14 @@ impl EntityService for EntityServiceImpl {
 
     async fn retrieve_context(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<EntityRetrieveContextRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            query: String,
-            #[serde(rename = "entityLimit", default = "default_5")]
-            entity_limit: usize,
-            #[serde(rename = "factsPerEntity", default = "default_5")]
-            facts_per_entity: usize,
-        }
-        fn default_5() -> usize {
-            5
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("retrieve_context args: {e}")))?;
+        let args = req.into_inner();
+        let entity_limit = args.entity_limit.map(|v| v as usize).unwrap_or(5);
+        let facts_per_entity = args.facts_per_entity.map(|v| v as usize).unwrap_or(5);
         match self
             .manager
-            .retrieve_context(&args.query, args.entity_limit, args.facts_per_entity)
+            .retrieve_context(&args.query, entity_limit, facts_per_entity)
             .await
         {
             Ok(pairs) => {

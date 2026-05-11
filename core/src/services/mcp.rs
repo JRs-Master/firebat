@@ -9,7 +9,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::mcp::McpManager;
 use crate::ports::McpToolInfo;
 use crate::proto::{
-    mcp_service_server::McpService, Empty, JsonArgs, McpToolInfoPb, McpToolListPb, RawJsonPb,
+    mcp_service_server::McpService, Empty, McpAddServerRequest, McpCallToolRequest, McpToolInfoPb, McpToolListPb, RawJsonPb,
     Status, StringRequest,
 };
 
@@ -70,11 +70,27 @@ impl McpService for McpServiceImpl {
         Ok(Response::new(raw_json(&self.manager.list_servers())))
     }
 
-    async fn add_server(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let config: crate::ports::McpServerConfig = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("add_server config: {e}"))),
+    async fn add_server(&self, req: Request<McpAddServerRequest>) -> Result<Response<Status>, TonicStatus> {
+        let args = req.into_inner();
+        let transport = match args.transport.as_str() {
+            "stdio" => crate::ports::McpTransport::Stdio,
+            "sse" => crate::ports::McpTransport::Sse,
+            other => return Ok(err_status(format!("unknown transport: {other}"))),
+        };
+        let env: std::collections::HashMap<String, String> = if args.env_json.is_empty() {
+            std::collections::HashMap::new()
+        } else {
+            serde_json::from_str(&args.env_json)
+                .map_err(|e| TonicStatus::invalid_argument(format!("env_json: {e}")))?
+        };
+        let config = crate::ports::McpServerConfig {
+            name: args.name,
+            transport,
+            command: args.command,
+            args: args.args,
+            env,
+            url: args.url,
+            enabled: args.enabled,
         };
         match self.manager.add_server(config).await {
             Ok(()) => Ok(ok_status()),
@@ -122,21 +138,18 @@ impl McpService for McpServiceImpl {
 
     async fn call_tool(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<McpCallToolRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            server: String,
-            tool: String,
-            #[serde(default)]
-            args: serde_json::Value,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("call_tool args: {e}")))?;
+        let args = req.into_inner();
+        let arguments: serde_json::Value = if args.arguments_json.is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::from_str(&args.arguments_json)
+                .map_err(|e| TonicStatus::invalid_argument(format!("arguments_json: {e}")))?
+        };
         match self
             .manager
-            .call_tool(&args.server, &args.tool, &args.args)
+            .call_tool(&args.server, &args.tool, &arguments)
             .await
         {
             Ok(value) => Ok(Response::new(raw_json(&value))),

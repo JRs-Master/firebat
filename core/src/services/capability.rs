@@ -10,8 +10,8 @@ use crate::capabilities::{CapabilityProvider, CapabilitySettings};
 use crate::managers::capability::{CapabilityManager, CapabilitySummary};
 use crate::proto::{
     capability_service_server::CapabilityService, CapabilityProviderListPb, CapabilityProviderPb,
-    CapabilitySettingsPb, CapabilitySummaryListPb, CapabilitySummaryPb, Empty, JsonArgs,
-    RawJsonPb, Status, StringRequest,
+    CapabilityRegisterRequest, CapabilitySetSettingsRequest, CapabilitySettingsPb,
+    CapabilitySummaryListPb, CapabilitySummaryPb, Empty, RawJsonPb, Status, StringRequest,
 };
 
 pub struct CapabilityServiceImpl {
@@ -84,18 +84,8 @@ impl CapabilityService for CapabilityServiceImpl {
         Ok(Response::new(raw_json(&caps)))
     }
 
-    async fn register(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct RegArgs {
-            id: String,
-            label: String,
-            description: String,
-        }
-        let args: RegArgs = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("register args 파싱 실패: {e}"))),
-        };
+    async fn register(&self, req: Request<CapabilityRegisterRequest>) -> Result<Response<Status>, TonicStatus> {
+        let args = req.into_inner();
         self.manager
             .register(&args.id, &args.label, &args.description);
         Ok(ok_status())
@@ -156,19 +146,13 @@ impl CapabilityService for CapabilityServiceImpl {
 
     async fn set_settings(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<CapabilitySetSettingsRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct SetArgs {
-            cap_id: String,
-            settings: CapabilitySettings,
-        }
-        let args: SetArgs = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("set_settings args 파싱 실패: {e}"))),
+        let args = req.into_inner();
+        let settings = CapabilitySettings {
+            providers: args.providers,
         };
-        if self.manager.set_settings(&args.cap_id, &args.settings) {
+        if self.manager.set_settings(&args.cap_id, &settings) {
             Ok(ok_status())
         } else {
             Ok(err_status("set_settings 저장 실패"))

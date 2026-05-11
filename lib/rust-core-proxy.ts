@@ -4,398 +4,492 @@
  * 옛 in-process FirebatCore 와 같은 메서드 시그니처를 Proxy + Reflect 패턴으로 노출.
  * 메서드 호출 → callCore('methodName', wrapped_args) → gRPC → Rust Core (port 50051).
  *
- * 사용 패턴:
+ * 2026-05-12 정공 변환:
+ *   - proto schema 의 93+ untyped RPC (JsonArgs) → typed Request message 으로 변환됨.
+ *   - ARGS_TABLE 의 모든 wrapper 가 새 typed Request 의 field 명과 1:1 매칭 (camelCase, proto-loader keepCase:false 호환).
+ *   - 사용자 후속: `npm run gen:proto` 으로 protoc-gen-es 자동 생성 후 점진 typed client cutover.
+ *
+ * 사용 패턴 (호출 site 변경 0):
  *   ```ts
- *   const core = new RustCoreProxy() as any;  // FirebatCore-shaped
- *   await core.savePage(slug, spec);          // → callCore('savePage', { slug, spec })
- *   await core.listPages();                   // → callCore('listPages')
+ *   const core = new RustCoreProxy() as any;
+ *   await core.savePage(slug, spec);
+ *   await core.listPages();
  *   ```
- *
- * Frontend route 의 `getCore()` 호출자 코드 변경 0건 — 옛 시그니처 그대로.
- *
- * 다인자 → 단일 객체 wrap 매핑 (ARGS_TABLE):
- *   - 옛 facade method 가 다인자 받는 경우 (예: savePage(slug, spec)) 명시 매핑.
- *   - 매핑 안 설정된 method 는 args[0] 단일 인자 그대로 전달 (옛 옛 default).
- *   - frontend 의 `getCore().writeFile(path, content)` 같은 호출 → wrap 자동.
- *
- * 새 다인자 method 추가 시 본 table 에 entry 추가.
  */
 import { callCore } from './core-client';
 
 /**
- * 다인자 method 의 args → single object wrap 매핑.
+ * 다인자 method 의 args → typed Request 매핑.
  * 매핑 안 설정된 method 는 첫 인자만 그대로 전달.
  *
- * Rust 측 service handler 가 받는 JSON 구조와 1:1 매칭 — handler `JsonArgs.raw` 안 단일 객체.
+ * 새 proto schema 의 typed Request field 명 (camelCase) 과 1:1 매칭.
  */
 const ARGS_TABLE: Record<string, (...args: any[]) => unknown> = {
-  // PageService
-  savePage: (slug: string, spec: unknown, opts?: unknown) => ({ slug, spec, opts }),
+  // ── PageService ─────────────────────────────────────────────────────────
+  // PageSaveRequest { slug, spec, status?, project?, visibility?, password? }
+  savePage: (slug: string, spec: unknown, opts?: { status?: string; project?: string; visibility?: string; password?: string }) => {
+    const o = opts ?? {};
+    return { slug, spec, status: o.status, project: o.project, visibility: o.visibility, password: o.password };
+  },
   searchPages: (query: string, limit?: number) => ({ query, limit }),
-  renamePage: (oldSlug: string, newSlug: string, opts?: unknown) => ({ oldSlug, newSlug, opts }),
-  setPageVisibility: (slug: string, visibility: string, password?: string) => ({
-    slug,
-    visibility,
-    password,
+  // PageRenameRequest { oldSlug, newSlug, setRedirect? }
+  renamePage: (oldSlug: string, newSlug: string, opts?: { setRedirect?: boolean }) => ({
+    oldSlug, newSlug, setRedirect: opts?.setRedirect,
   }),
+  setPageVisibility: (slug: string, visibility: string, password?: string) => ({ slug, visibility, password }),
   verifyPagePassword: (slug: string, password: string) => ({ slug, password }),
+  // PageFindRelatedRequest { slug, limit?, tagAliasesRaw? }
+  findRelatedPages: (slug: string, limit?: number, tagAliasesRaw?: string) => ({ slug, limit, tagAliasesRaw }),
 
-  // ProjectService
-  renameProject: (oldName: string, newName: string, opts?: unknown) => ({ oldName, newName, opts }),
-  setProjectVisibility: (project: string, visibility: string, password?: string) => ({
-    project,
-    visibility,
-    password,
-  }),
+  // ── ProjectService ──────────────────────────────────────────────────────
+  // ProjectRenameRequest { oldName, newName }
+  renameProject: (oldName: string, newName: string) => ({ oldName, newName }),
+  setProjectVisibility: (project: string, visibility: string, password?: string) => ({ project, visibility, password }),
+  // ProjectSetConfigRequest { project, configJson }
+  setProjectConfig: (project: string, config: unknown) => ({ project, configJson: JSON.stringify(config ?? null) }),
   verifyProjectPassword: (project: string, password: string) => ({ project, password }),
 
-  // ModuleService
-  // Rust ModuleService.Run 의 Args { module, data } 와 일치. 옛 wrapper 의 field 명
-  // mismatch ({path, input} 전송) → serde EOF silent fail. sandboxExecute 도 같은 RPC 라
-  // 동일 wrapper 사용. 2026-05-11 정정 (sysmod 도구 호출 모두 실패하던 root cause).
-  runModule: (path: string, input: unknown, opts?: unknown) => ({ module: path, data: input, opts }),
-  sandboxExecute: (path: string, input: unknown, opts?: unknown) => ({ module: path, data: input, opts }),
+  // ── ModuleService ───────────────────────────────────────────────────────
+  // ModuleRunRequest { module, dataJson } — module 이 path 형태 ('/' 포함) 면 Rust 가 sandboxExecute 분기.
+  runModule: (path: string, input: unknown) => ({ module: path, dataJson: JSON.stringify(input ?? {}) }),
+  sandboxExecute: (path: string, input: unknown) => ({ module: path, dataJson: JSON.stringify(input ?? {}) }),
+  // ModuleGetSchemaRequest { scope, name }
+  getModuleSchema: (scope: string, name: string) => ({ scope, name }),
+  // ModuleSetSettingsRequest { name, settingsJson }
+  setModuleSettings: (name: string, settings: unknown) => ({ name, settingsJson: JSON.stringify(settings ?? {}) }),
   setModuleEnabled: (name: string, enabled: boolean) => ({ name, enabled }),
-  setModuleSettings: (name: string, settings: unknown) => ({ name, settings }),
 
-  // ConversationService
+  // ── TaskService ─────────────────────────────────────────────────────────
+  // TaskRunRequest { pipelineJson }
+  runTask: (steps: unknown[]) => ({ pipelineJson: JSON.stringify(steps ?? []) }),
+
+  // ── ScheduleService ─────────────────────────────────────────────────────
+  // ScheduleCronRequest — flat field, 동적 JSON field 는 string 으로 직렬화.
+  scheduleCronJob: (input: any) => makeScheduleRequest(input),
+  updateCronJob: (input: any) => makeScheduleRequest(input),
+  // ValidatePipelineRequest { pipelineJson }
+  validatePipeline: (steps: unknown[]) => ({ pipelineJson: JSON.stringify(steps ?? []) }),
+
+  // ── SecretService ───────────────────────────────────────────────────────
+  // SecretSetUserRequest { name, value } / SecretSetSystemRequest { key, value }
+  setUserSecret: (name: string, value: string) => ({ name, value }),
+  setSystemSecret: (key: string, value: string) => ({ key, value }),
+  // 옛 호출자 호환 — Vertex / Gemini / Anthropic 등 system secret 박힌 게 setSystemSecret 으로 통합.
+  setVertexKey: (key: string, value: string) => ({ key, value }),
+  setGeminiKey: (key: string, value: string) => ({ key, value }),
+
+  // ── McpService ──────────────────────────────────────────────────────────
+  // McpAddServerRequest { name, transport, command?, args, envJson, url?, enabled }
+  saveMcpServer: (server: any) => ({
+    name: server.name,
+    transport: server.transport,
+    command: server.command,
+    args: server.args ?? [],
+    envJson: JSON.stringify(server.env ?? {}),
+    url: server.url,
+    enabled: server.enabled ?? true,
+  }),
+  // McpCallToolRequest { server, tool, argumentsJson }
+  callMcpTool: (server: string, tool: string, args?: unknown) => ({
+    server, tool, argumentsJson: JSON.stringify(args ?? {}),
+  }),
+
+  // ── CapabilityService ───────────────────────────────────────────────────
+  // CapabilityRegisterRequest { id, label, description }
+  registerCapability: (id: string, label: string, description: string) => ({ id, label, description }),
+  // CapabilitySetSettingsRequest { capId, providers[] }
+  setCapabilitySettings: (capId: string, settings: { providers: string[] }) => ({
+    capId, providers: settings?.providers ?? [],
+  }),
+
+  // ── AuthService ─────────────────────────────────────────────────────────
+  // AuthLoginRequest { id, password, attemptKey? }
+  login: (id: string, password: string, attemptKey?: string) => ({ id, password, attemptKey }),
+  // GenerateApiToken: StringRequest 단일 (label)
+  generateApiToken: (label?: string) => label ?? '',
+  // AuthSetAdminCredentialsRequest { id?, password? }
+  setAdminCredentials: (id?: string, password?: string) => ({ id, password }),
+  // AuthValidatePasswordPolicyRequest { password, id? }
+  validatePasswordPolicy: (password: string, id?: string) => (id !== undefined ? { password, id } : { password }),
+
+  // ── ConversationService ─────────────────────────────────────────────────
+  // ConversationOwnerIdRequest { owner, id }
   getConversation: (owner: string, id: string) => ({ owner, id }),
-  saveConversation: (
-    owner: string,
-    id: string,
-    title: string,
-    messages: unknown[],
-    createdAt?: number,
-  ) => ({ owner, id, title, messages, createdAt }),
   deleteConversation: (owner: string, id: string) => ({ owner, id }),
   isConversationDeleted: (owner: string, id: string) => ({ owner, id }),
-  searchHistory: (owner: string, query: string, opts?: unknown) => ({ owner, query, opts }),
   restoreConversation: (owner: string, id: string) => ({ owner, id }),
   permanentDeleteConversation: (owner: string, id: string) => ({ owner, id }),
+  // ConversationSaveRequest { owner, id, title, messagesJson, createdAt? }
+  saveConversation: (owner: string, id: string, title: string, messages: unknown[], createdAt?: number) => ({
+    owner, id, title, messagesJson: JSON.stringify(messages ?? []), createdAt,
+  }),
+  // ConversationSearchHistoryRequest { owner, query, currentConvId?, limit?, withinDays?, minScore?, includeBlocks? }
+  searchHistory: (owner: string, query: string, opts?: any) => ({
+    owner, query,
+    currentConvId: opts?.currentConvId,
+    limit: opts?.limit,
+    withinDays: opts?.withinDays,
+    minScore: opts?.minScore,
+    includeBlocks: opts?.includeBlocks,
+  }),
+  // ConversationGetCliSessionRequest { conversationId, currentModel }
+  getCliSession: (conversationId: string, currentModel: string) => ({ conversationId, currentModel }),
+  // ConversationSetCliSessionRequest { conversationId, sessionId, model }
+  setCliSession: (conversationId: string, sessionId: string, model: string) => ({ conversationId, sessionId, model }),
+  // ConversationCreateShareRequest { shareType, title, messagesJson, owner?, sourceConvId?, ttlMs?, dedupKey? }
+  createShare: (input: any) => ({
+    shareType: input?.shareType ?? input?.type,
+    title: input?.title,
+    messagesJson: JSON.stringify(input?.messages ?? []),
+    owner: input?.owner,
+    sourceConvId: input?.sourceConvId,
+    ttlMs: input?.ttlMs,
+    dedupKey: input?.dedupKey,
+  }),
 
-  // MediaService
-  saveTempAttachment: (dataUrl: string) => ({ dataUrl }),
+  // ── EntityService ───────────────────────────────────────────────────────
+  // EntitySaveRequest { name, entityType, aliases[], metadataJson?, sourceConvId? }
+  saveEntity: (input: any) => ({
+    name: input?.name,
+    entityType: input?.type ?? input?.entityType,
+    aliases: input?.aliases ?? [],
+    metadataJson: input?.metadata !== undefined ? JSON.stringify(input.metadata) : undefined,
+    sourceConvId: input?.sourceConvId,
+  }),
+  // EntityUpdateRequest { id, name?, entityType?, aliasesJson?, metadataJson? }
+  updateEntity: (id: number, patch: any) => ({
+    id,
+    name: patch?.name,
+    entityType: patch?.type ?? patch?.entityType,
+    aliasesJson: patch?.aliases !== undefined ? JSON.stringify(patch.aliases) : undefined,
+    metadataJson: patch?.metadata !== undefined ? JSON.stringify(patch.metadata) : undefined,
+  }),
+  // EntitySearchRequest { optsJson }
+  searchEntities: (opts: unknown) => ({ optsJson: JSON.stringify(opts ?? {}) }),
+  // EntityFactSaveRequest { entityId, content, factType?, occurredAt?, tags[], sourceConvId?, ttlDays?, dedupThreshold? }
+  saveEntityFact: (input: any) => ({
+    entityId: input?.entityId,
+    content: input?.content,
+    factType: input?.factType,
+    occurredAt: input?.occurredAt,
+    tags: input?.tags ?? [],
+    sourceConvId: input?.sourceConvId,
+    ttlDays: input?.ttlDays,
+    dedupThreshold: input?.dedupThreshold,
+  }),
+  // EntityFactUpdateRequest { id, content?, factType?, occurredAt?, tagsJson?, ttlDays? }
+  updateEntityFact: (id: number, patch: any) => ({
+    id,
+    content: patch?.content,
+    factType: patch?.factType,
+    occurredAt: patch?.occurredAt,
+    tagsJson: patch?.tags !== undefined ? JSON.stringify(patch.tags) : undefined,
+    ttlDays: patch?.ttlDays,
+  }),
+  // EntityTimelineRequest { entityId, limit?, offset?, orderBy? }
+  getEntityTimeline: (entityId: number, opts?: any) => ({
+    entityId, limit: opts?.limit, offset: opts?.offset, orderBy: opts?.orderBy,
+  }),
+  searchEntityFacts: (opts: unknown) => ({ optsJson: JSON.stringify(opts ?? {}) }),
+  // EntityRetrieveContextRequest { query, entityLimit?, factsPerEntity? }
+  retrieveContext: (query: string, opts?: any) => ({
+    query, entityLimit: opts?.entityLimit, factsPerEntity: opts?.factsPerEntity,
+  }),
 
-  // StorageService
-  writeFile: (path: string, content: string) => ({ path, content }),
-  appendFile: (path: string, content: string) => ({ path, content }),
-
-  // EntityService
-  searchEntities: (opts: unknown) => opts, // 단일 객체 — 그대로
-  updateEntity: (id: number, patch: unknown) => ({ id, patch }),
-  getEntityTimeline: (entityId: number, opts?: unknown) => ({ entityId, opts }),
-  updateEntityFact: (id: number, patch: unknown) => ({ id, patch }),
-  searchEntityFacts: (opts: unknown) => opts,
-  retrieveContext: (query: string, opts?: unknown) => ({ query, opts }),
-  findRelatedPages: (slug: string, limit?: number) => ({ slug, limit }),
-
-  // EpisodicService
-  updateEvent: (id: number, patch: unknown) => ({ id, patch }),
-  searchEvents: (opts: unknown) => opts,
-  listEventsByEntity: (entityId: number, opts?: unknown) => ({ entityId, opts }),
+  // ── EpisodicService ─────────────────────────────────────────────────────
+  // EpisodicSaveEventRequest — flat field, context 가 동적 JSON.
+  saveEvent: (input: any) => ({
+    eventType: input?.type ?? input?.eventType,
+    title: input?.title,
+    description: input?.description,
+    who: input?.who,
+    contextJson: input?.context !== undefined ? JSON.stringify(input.context) : undefined,
+    occurredAt: input?.occurredAt,
+    entityIds: input?.entityIds ?? [],
+    sourceConvId: input?.sourceConvId,
+    ttlDays: input?.ttlDays,
+    dedupThreshold: input?.dedupThreshold,
+  }),
+  updateEvent: (id: number, patch: any) => ({
+    id,
+    eventType: patch?.type ?? patch?.eventType,
+    title: patch?.title,
+    description: patch?.description,
+    who: patch?.who,
+    contextJson: patch?.context !== undefined ? JSON.stringify(patch.context) : undefined,
+    occurredAt: patch?.occurredAt,
+    entityIdsJson: patch?.entityIds !== undefined ? JSON.stringify(patch.entityIds) : undefined,
+    ttlDays: patch?.ttlDays,
+  }),
+  searchEvents: (opts: unknown) => ({ optsJson: JSON.stringify(opts ?? {}) }),
+  listRecentEvents: (opts: unknown) => ({ optsJson: JSON.stringify(opts ?? {}) }),
+  listEventsByEntity: (entityId: number, opts?: any) => ({
+    entityId, limit: opts?.limit, offset: opts?.offset,
+  }),
   linkEventEntity: (eventId: number, entityId: number) => ({ eventId, entityId }),
   unlinkEventEntity: (eventId: number, entityId: number) => ({ eventId, entityId }),
 
-  // MediaService
-  generateImage: (input: unknown, opts?: unknown) => ({ input, opts }),
-  startImageGeneration: (input: unknown, opts?: unknown) => ({ input, opts }),
-  regenerateImage: (slug: string, opts?: unknown) => ({ slug, opts }),
-  listMedia: (opts: unknown) => opts,
-  searchMedia: (query: string, opts?: unknown) => ({ query, opts }),
-  setImageModel: (modelId: string) => ({ modelId }),
-
-  // AuthService — Rust args: { id, password, attempt_key } (옛 TS 의 username → id rename)
-  login: (id: string, password: string, attemptKey?: string) => ({
-    id,
-    password,
-    attempt_key: attemptKey ?? '',
+  // ── MediaService ────────────────────────────────────────────────────────
+  // MediaListRequest { optsJson }
+  listMedia: (opts: unknown) => ({ optsJson: JSON.stringify(opts ?? {}) }),
+  // MediaStartGenerationRequest / MediaGenerateRequest { inputJson }
+  generateImage: (input: unknown) => ({ inputJson: JSON.stringify(input ?? {}) }),
+  startImageGeneration: (input: unknown) => ({ inputJson: JSON.stringify(input ?? {}) }),
+  // MediaSaveRequest { binaryBase64, contentType, optsJson }
+  saveUpload: (binaryBase64: string, contentType: string, opts?: unknown) => ({
+    binaryBase64, contentType, optsJson: JSON.stringify(opts ?? {}),
   }),
-  // Rust generate_api_token 는 StringRequest 단일 인자 — 옛 {label, expiresAt} object
-  // 박혀있던 거 silent (label 무시 → 빈 라벨 토큰 생성). expiresAt 은 새 proto 에 없음.
-  generateApiToken: (label?: string) => label ?? '',
-  setAdminCredentials: (id: string, password: string) => ({ id, password }),
+  // MediaSaveTempAttachmentRequest { dataUrl }
+  saveTempAttachment: (dataUrl: string) => ({ dataUrl }),
+  setImageModel: (modelId: string) => modelId,
 
-  // CapabilityService
-  resolveCapability: (capId: string, opts?: unknown) => ({ capId, opts }),
-  setCapabilitySettings: (capId: string, settings: unknown) => ({ capId, settings }),
+  // ── StorageService ──────────────────────────────────────────────────────
+  // StorageWriteFileRequest { path, content }
+  writeFile: (path: string, content: string) => ({ path, content }),
+  // StorageGlobFilesRequest { pattern, limit? }
+  globFiles: (pattern: string, limit?: number) => ({ pattern, limit }),
 
-  // McpService
-  saveMcpServer: (server: unknown) => server,
-  callMcpTool: (server: string, tool: string, args?: unknown) => ({ server, tool, args }),
-
-  // ScheduleService
-  scheduleTask: (input: unknown) => input,
-  cancelCronJob: (id: string) => ({ id }),
-
-  // SecretService
-  // Rust 의 set_user 가 박는 거 { name, value } — 옛 { key, value } 박혀있던 거 silent
-  // deserialize 실패 박혀 Vault 저장 0 되던 root cause fix (2026-05-11).
-  setUserSecret: (name: string, value: string) => ({ name, value }),
-  setVertexKey: (key: string, value: string) => ({ key, value }),
-  // SetSystem 매핑 — 옛 wrapper 누락이라 args[0] 만 전송 → Rust { key, value } 와 mismatch
-  // → silent fail (MCP 토큰 / Anthropic cache 등 system secret 저장 0 되던 root cause).
-  setGeminiKey: (key: string, value: string) => ({ key, value }),
-
-  // TemplateService
-  saveTemplate: (template: unknown) => template,
-
-  // CostService
-  recordLlmCost: (input: unknown) => input,
-
-  // CacheService
-  cacheData: (input: unknown) => input,
-  cacheRead: (cacheKey: string, opts?: unknown) => ({ cacheKey, opts }),
-  cacheGrep: (cacheKey: string, query: unknown, opts?: unknown) => ({ cacheKey, query, opts }),
-  cacheAggregate: (cacheKey: string, op: string, field: string, by?: string) => ({
-    cacheKey,
-    op,
-    field,
-    by,
-  }),
-  cacheDrop: (cacheKey: string) => ({ cacheKey }),
-
-  // AiService — Rust args: { prompt, tools, opts } (옛 TS history / callback 인자 무시)
-  // 채팅 streaming 의 진짜 callback 흐름은 gRPC bidirectional streaming 설정한 후 재구현 필요 (별 commit).
-  // 우선 unary call — prompt + opts 만 전송 후 결과 받음 (callback 없이).
+  // ── AiService ───────────────────────────────────────────────────────────
+  // AiProcessRequest / AiCodeAssistRequest { prompt, opts: { optsJson } }
+  // AiRequestActionWithToolsRequest { prompt, tools: { toolsJson }, opts: { optsJson } }
   requestActionWithTools: (prompt: string, _history?: unknown, opts?: unknown) => ({
     prompt,
-    tools: [],
-    opts: opts ?? {},
+    tools: { toolsJson: '[]' },
+    opts: { optsJson: JSON.stringify(opts ?? {}) },
   }),
-  codeAssist: (params: unknown, opts?: unknown) => ({ params, opts }),
-  setUserPrompt: (prompt: string) => ({ prompt }),
-  setAiAssistantModel: (modelId: string) => ({ modelId }),
-
-  // ── 비번 정책 검증 (다인자) — id 옵셔널 (PATCH credentials 변경 시 X) ──
-  validatePasswordPolicy: (password: string, id?: string) =>
-    id !== undefined ? { password, id } : { password },
-
-  // ── Pending tools / Plan store (다인자 매핑) ────────────────────────────
+  codeAssist: (prompt: string, opts?: unknown) => ({
+    prompt,
+    opts: { optsJson: JSON.stringify(opts ?? {}) },
+  }),
+  // AiCreatePendingRequest { name, argsJson, summary }
   createPending: (name: string, args: Record<string, unknown>, summary: string) => ({
-    name,
-    args,
-    summary,
+    name, argsJson: JSON.stringify(args ?? {}), summary,
   }),
-  // getPending / consumePending / rejectPending — 단일 string (planId) 자동 매핑
-  storePlan: (plan: unknown) => plan, // 단일 객체 그대로 (planId / title / steps / ...)
+  // AiStorePlanRequest { planId, title, steps: [{stepJson}], estimatedTime?, risks[] }
+  storePlan: (plan: any) => ({
+    planId: plan?.planId,
+    title: plan?.title,
+    steps: (plan?.steps ?? []).map((s: unknown) => ({ stepJson: JSON.stringify(s) })),
+    estimatedTime: plan?.estimatedTime,
+    risks: plan?.risks ?? [],
+  }),
+
+  // ── SettingsService ─────────────────────────────────────────────────────
+  // SettingsSetLastModelByCategoryRequest { byCategoryJson }
+  setLastModelByCategory: (byCategory: Record<string, string>) => ({
+    byCategoryJson: JSON.stringify(byCategory ?? {}),
+  }),
+  setAiAssistantModel: (modelId: string) => modelId,
+
+  // ── TemplateService ─────────────────────────────────────────────────────
+  // TemplateSaveRequest { slug, configJson }
+  saveTemplate: (slug: string, config: unknown) => ({ slug, configJson: JSON.stringify(config ?? {}) }),
+
+  // ── CostService ─────────────────────────────────────────────────────────
+  // CostGetStatsRequest { since?, until?, model?, purpose? }
+  getCostStats: (filter?: any) => ({
+    since: filter?.since, until: filter?.until, model: filter?.model, purpose: filter?.purpose,
+  }),
+  // CostSetBudgetRequest { dailyUsd, monthlyUsd, dailyCalls, monthlyCalls, alertAtPercent }
+  setCostBudget: (budget: any) => ({
+    dailyUsd: budget?.dailyUsd ?? 0,
+    monthlyUsd: budget?.monthlyUsd ?? 0,
+    dailyCalls: budget?.dailyCalls ?? 0,
+    monthlyCalls: budget?.monthlyCalls ?? 0,
+    alertAtPercent: budget?.alertAtPercent ?? 80,
+  }),
+
+  // ── ToolService ─────────────────────────────────────────────────────────
+  // ToolRegisterRequest { definitionJson }
+  registerTool: (def: unknown) => ({ definitionJson: JSON.stringify(def ?? {}) }),
+  registerToolsMany: (defs: unknown[]) => ({ definitionsJson: JSON.stringify(defs ?? []) }),
+  // ToolListRequest { sourceFilter? }
+  listTools: (opts?: any) => ({ sourceFilter: opts?.source }),
+  // ToolExecuteRequest { name, argsJson }
+  executeTool: (name: string, args?: unknown) => ({ name, argsJson: JSON.stringify(args ?? {}) }),
+  // ToolBuildAi/McpDefinitions { sourceFilter? }
+  buildAiToolDefinitions: (opts?: any) => ({ sourceFilter: opts?.source }),
+  buildMcpToolDescriptions: (opts?: any) => ({ sourceFilter: opts?.source }),
+  // ToolSetActivePlanStateRequest { conversationId, stateJson }
+  setActivePlanState: (conversationId: string, state: unknown) => ({
+    conversationId, stateJson: JSON.stringify(state ?? null),
+  }),
+
+  // ── StatusService ───────────────────────────────────────────────────────
+  // StatusStartRequest { id?, jobType, message?, parentJobId?, metaJson }
+  startJob: (input: any) => ({
+    id: input?.id,
+    jobType: input?.type ?? input?.jobType,
+    message: input?.message,
+    parentJobId: input?.parentJobId,
+    metaJson: input?.meta !== undefined ? JSON.stringify(input.meta) : '',
+  }),
+  // StatusUpdateRequest { id, progress?, message?, metaJson? }
+  updateJob: (input: any) => ({
+    id: input?.id,
+    progress: input?.progress,
+    message: input?.message,
+    metaJson: input?.meta !== undefined ? JSON.stringify(input.meta) : undefined,
+  }),
+  // StatusCompleteRequest { id, resultJson? }
+  completeJob: (id: string, result?: unknown) => ({
+    id, resultJson: result !== undefined ? JSON.stringify(result) : undefined,
+  }),
+  // StatusFailRequest { id, error }
+  failJob: (id: string, error: string) => ({ id, error }),
+  // StatusListRequest { jobType?, status?, since?, parentJobId?, limit? }
+  listJobs: (filter?: any) => ({
+    jobType: filter?.type ?? filter?.jobType,
+    status: filter?.status,
+    since: filter?.since,
+    parentJobId: filter?.parentJobId,
+    limit: filter?.limit,
+  }),
+
+  // ── CacheService ────────────────────────────────────────────────────────
+  // CacheReadRequest { key, offset?, limit? }
+  cacheRead: (key: string, opts?: any) => ({ key, offset: opts?.offset, limit: opts?.limit }),
+  // CacheGrepRequest { key, field, op, valueJson }
+  cacheGrep: (key: string, field: string, op: string, value: unknown) => ({
+    key, field, op, valueJson: JSON.stringify(value),
+  }),
+  // CacheAggregateRequest { key, field, op }
+  cacheAggregate: (key: string, field: string, op: string) => ({ key, field, op }),
+
+  // ── TelegramService ─────────────────────────────────────────────────────
+  // TelegramProcessMessageRequest { text, chatId }
+  processTelegramMessage: (text: string, chatId: string | number) => ({ text, chatId: String(chatId) }),
+
+  // ── DatabaseService ─────────────────────────────────────────────────────
+  // DatabaseQueryRequest { sql, paramsJson }
+  queryDatabase: (sql: string, params?: unknown[]) => ({
+    sql, paramsJson: JSON.stringify(params ?? []),
+  }),
+
+  // ── MemoryService ───────────────────────────────────────────────────────
+  // MemorySaveFileRequest { name, content }
+  saveMemoryFile: (name: string, content: string) => ({ name, content }),
+
+  // ── LifecycleService ────────────────────────────────────────────────────
+  // LifecycleCaptureExceptionRequest { message, stack?, severity?, metaJson? }
+  captureException: (input: any) => ({
+    message: input?.message ?? String(input),
+    stack: input?.stack,
+    severity: input?.severity,
+    metaJson: input?.meta !== undefined ? JSON.stringify(input.meta) : undefined,
+  }),
+
+  // ── NetworkService ──────────────────────────────────────────────────────
+  // NetworkFetchRequest { url, method?, headersJson?, body?, timeoutMs? }
+  networkFetch: (input: any) => ({
+    url: input?.url,
+    method: input?.method,
+    headersJson: input?.headers ? JSON.stringify(input.headers) : undefined,
+    body: typeof input?.body === 'string' ? input.body : (input?.body !== undefined ? JSON.stringify(input.body) : undefined),
+    timeoutMs: input?.timeoutMs,
+  }),
 };
 
 /**
- * 옛 TS Core 가 `{success, data, error}` wrap 형식으로 반환하던 메서드.
- * Rust gRPC 가 raw 값 반환 → RustCoreProxy 가 자동 wrap 저장.
- *
- *  - null / undefined → `{success: false, error: 'Not found'}`
- *  - object (단 'success' 필드 미설정) → `{success: true, data: <object>}`
- *  - array → `{success: true, data: <array>}`
- *  - 이미 'success' 설정된 object → 그대로 (Rust 측에서 wrap 한 응답)
+ * ScheduleCronRequest 빌더 — 동적 JSON field (inputData / pipeline / runWhen / retry / notify) 를 string 으로 직렬화.
  */
-// autoWrap 설정할 메서드 — API route 가 `res.success / res.data` 가정 설정한 거.
-// 옛 TS Core 의 거의 모든 메서드 wrap 설정했음. raw 가정 설정한 거 (API route 가 그대로 통과)
-// 만 하지 마라.
+function makeScheduleRequest(input: any): unknown {
+  if (!input) return {};
+  return {
+    jobId: input.jobId ?? input.id,
+    targetPath: input.targetPath ?? '',
+    mode: input.mode ?? 'cron',
+    cronTime: input.cronTime,
+    runAt: input.runAt,
+    delaySec: input.delaySec,
+    startAt: input.startAt,
+    endAt: input.endAt,
+    inputDataJson: input.inputData !== undefined ? JSON.stringify(input.inputData) : undefined,
+    pipelineJson: input.pipeline !== undefined ? JSON.stringify(input.pipeline) : undefined,
+    title: input.title,
+    description: input.description,
+    oneShot: input.oneShot,
+    runWhenJson: input.runWhen !== undefined ? JSON.stringify(input.runWhen) : undefined,
+    retryJson: input.retry !== undefined ? JSON.stringify(input.retry) : undefined,
+    notifyJson: input.notify !== undefined ? JSON.stringify(input.notify) : undefined,
+    executionMode: input.executionMode,
+    agentPrompt: input.agentPrompt,
+  };
+}
+
+/**
+ * autoWrap 설정할 메서드 — API route 가 `res.success / res.data` 가정 설정.
+ */
 const WRAP_METHODS = new Set([
-  // PageService — 거의 모든 wrap (savePage / deletePage / getPage / listPages / searchPages)
   'savePage', 'deletePage', 'renamePage', 'getPage', 'listPages', 'searchPages',
   'verifyPagePassword', 'setPageVisibility', 'getPageRedirect',
   'listStaticPages', 'findMediaUsage', 'findRelatedPages', 'listAllTags',
-
-  // ProjectService — wrap (mutation) + raw (scanProjects / getProjectVisibility / getProjectConfig 일부 raw)
   'saveProject', 'deleteProject', 'renameProject',
   'verifyProjectPassword', 'setProjectVisibility',
-
-  // ConversationService — wrap (대부분)
-  // isConversationDeleted 제외 — Rust BoolRequest({value: bool}) → autoUnwrapProtoEnvelope 가 raw
-  // boolean 으로 풀어냄. WRAP 거치면 {success:true, data:bool} 객체가 되어 route.ts:44 의 `if
-  // (await core.isConversationDeleted(...))` 가 객체 자체로 truthy → Rust 가 false 반환해도
-  // 무조건 if 통과 → 무조건 409. backend 의 [DEBUG isDeleted] log 로 false 확정 후 진짜 root
-  // cause 입증됨 (2026-05-11).
   'listConversations', 'getConversation', 'saveConversation', 'deleteConversation',
   'searchHistory', 'searchConversationHistory',
   'getCliSession', 'createShare', 'getShare',
-  // 휴지통 (2026-05-11) — wrap
   'listDeletedConversations', 'restoreConversation', 'permanentDeleteConversation',
-
-  // EntityService — wrap (모두)
   'saveEntity', 'updateEntity', 'deleteEntity', 'getEntity',
   'findEntityByName', 'searchEntities',
   'saveEntityFact', 'updateEntityFact', 'deleteEntityFact', 'getEntityFact',
   'getEntityTimeline', 'searchEntityFacts', 'retrieveContext',
-
-  // EpisodicService — wrap (모두)
   'saveEvent', 'updateEvent', 'deleteEvent', 'getEvent',
   'searchEvents', 'listRecentEvents', 'listEventsByEntity',
   'linkEventEntity', 'unlinkEventEntity',
-
-  // MediaService — wrap (모두)
   'listMedia', 'readMedia', 'removeMedia', 'searchMedia', 'isMediaReady',
   'generateImage', 'startImageGeneration', 'regenerateImage', 'saveUpload',
-  // 임시 첨부 (2026-05-11) — wrap. RawJsonPb 응답이 {slug, url} 객체
   'saveTempAttachment',
-
-  // TemplateService — getTemplate / saveTemplate / deleteTemplate wrap. listTemplates 는 raw
   'getTemplate', 'saveTemplate', 'deleteTemplate',
-
-  // CapabilityService — listCapabilities / getCapabilityProviders raw, mutation 만 wrap
-  // resolveCapability 만 wrap (옛 패턴)
   'resolveCapability',
-
-  // McpService — listMcpServers / addMcpServer / removeMcpServer raw. token 류 wrap
   'callMcpTool', 'generateApiToken',
-
-  // AuthService — login / validate / token 류 wrap
   'login', 'validateSession', 'validateToken',
-
-  // ScheduleService — scheduleTask / cancelCron 등 mutation wrap. listCronJobs / getCronLogs raw
   'scheduleTask', 'scheduleCronJob', 'cancelCronJob', 'updateCronJob', 'runCronJobNow',
-
-  // TaskService
   'runTask',
-
-  // ModuleService — runModule wrap, list 류 raw
   'runModule', 'sandboxExecute',
-
-  // SecretService — get/set/delete 류 wrap. listUserSecrets raw
   'getUserSecret', 'setUserSecret', 'deleteUserSecret',
   'listUserModuleSecrets',
-
-  // StorageService — readFile / writeFile 류 wrap. listDir / listFiles raw
   'readFile', 'readFileBinary', 'writeFile', 'deleteFile', 'globFiles',
-
-  // MemoryService — wrap (모두)
   'getMemoryIndex', 'readMemoryFile', 'listMemoryFiles', 'saveMemoryFile', 'deleteMemoryFile',
-
-  // ToolService
   'executeTool',
-
-  // AiService
   'codeAssist',
-
-  // Telegram
   'getTelegramWebhookStatus', 'setupTelegramWebhook', 'removeTelegramWebhook',
-
-  // Cache
   'cacheRead', 'cacheGrep', 'cacheAggregate', 'cacheData',
-
-  // Database
   'queryDatabase',
-
-  // Network
-  'networkFetch',
-
-  // Status
-  'getJob', 'getJobStats',
 ]);
 
-/** Proto wrap envelope 자동 unwrap — typed message 의 단일 필드 응답을 raw value 로 변환.
- *  frontend 가 옛 in-process Core 시절 직접 받던 형식 그대로 받게 일반화 unwrap.
- *
- *  대상 (단일 필드 message 모두 자동 인식 — proto 신규 추가 시 코드 수정 0):
- *  - `{value: T}` — BoolRequest / StringRequest / NumberRequest (primitive scalar)
- *  - `{<list>: [...]}` — ProjectListPb / PageListResponsePb / TagListPb 등 (typed list)
- *
- *  `{success, data}` 같은 multi-key 응답은 그대로 (옛 TS wrap 패턴 보존).
- *  autoWrap 보다 먼저 적용. */
-function autoUnwrapProtoEnvelope(result: unknown): unknown {
-  if (result === null || result === undefined) return result;
-  if (typeof result !== 'object') return result;
-  const r = result as Record<string, unknown>;
-  const keys = Object.keys(r);
-  // OptionalStringPb 같은 `{value, present}` 박힌 거 — present=false 면 null,
-  // true 면 value 만. 옛 TS 의 `Option<String>` → `string | null` 패턴 1:1.
-  // MCP 토큰 / Vault 키 등 get_* 응답이 이 패턴 → present 무시 시 `{value, present}` object
-  // 가 frontend 까지 흘러가 truthy 처리되어 maskToken 등에서 silent fail.
-  if (keys.length === 2 && 'value' in r && 'present' in r) {
-    return r.present ? r.value : null;
-  }
-  if (keys.length !== 1) return result;
-  const onlyKey = keys[0];
-  // 'value' — primitive scalar wrapper (BoolRequest / StringRequest / NumberRequest)
-  if (onlyKey === 'value') return r.value;
-  // 단일 array field — typed list message (ProjectListPb / PageListResponsePb / ...)
-  if (Array.isArray(r[onlyKey])) return r[onlyKey];
-  return result;
-}
-
-/** Rust 응답 자동 wrap — 옛 TS `{success, data, error}` 형식 호환. */
-function autoWrap(method: string, result: unknown): unknown {
-  // proto envelope unwrap 먼저 — BoolRequest/StringRequest/NumberRequest 의 `{value: T}` → T
-  const unwrapped = autoUnwrapProtoEnvelope(result);
-  // login — Rust LoginOutcome → 옛 TS 형식 (성공 = session / 실패 = null / 잠금 = {locked, retryAfterSec})
-  if (method === 'login') return unwrapLogin(unwrapped);
-  if (!WRAP_METHODS.has(method)) return unwrapped;
-  // 이미 success 설정된 응답 (Rust 측에서 wrap 한 경우) → 그대로
-  if (
-    unwrapped !== null &&
-    typeof unwrapped === 'object' &&
-    'success' in (unwrapped as Record<string, unknown>)
-  ) {
-    return unwrapped;
-  }
-  // null / undefined → not found
-  if (unwrapped === null || unwrapped === undefined) {
-    return { success: false, error: 'Not found' };
-  }
-  // raw value → wrap
-  return { success: true, data: unwrapped };
-}
-
-/** Rust login 응답 → 옛 TS 형식.
- *  Rust: { ok: true, session } | { ok: false, error, code } | { ok: false, locked: true, retryAfterSec }
- *  옛 TS: AuthSession 객체 | null (실패) | { locked: true, retryAfterSec } (잠금)
- *
- *  **보안 critical** — 실패 시 null 반환 안 설정하면 API route 가 모든 비번 통과시킴.
+/**
+ * 결과를 `{success, data, error}` 형식으로 자동 wrap.
  */
-function unwrapLogin(result: unknown): unknown {
-  if (result === null || result === undefined) return null;
-  if (typeof result !== 'object') return null;
-  const r = result as Record<string, unknown>;
-  // 잠금 상태
-  if (r.locked === true) {
-    return { locked: true, retryAfterSec: r.retryAfterSec ?? r.retry_after_sec ?? 60 };
-  }
-  // 성공
-  if (r.ok === true && r.session) {
-    return r.session;
-  }
-  // 실패 (ok: false 또는 session 없음) — null 반환 (API route 의 if (!result) 분기 잡힘)
-  return null;
+function autoWrapResult(method: string, result: any): any {
+  if (!WRAP_METHODS.has(method)) return result;
+  if (result === null || result === undefined) return { success: false, error: 'Not found' };
+  if (typeof result === 'object' && 'success' in result) return result;
+  return { success: true, data: result };
 }
 
 /**
- * RustCoreProxy — Proxy + Reflect 패턴.
- * 옛 FirebatCore 와 같은 메서드 호출 인터페이스 → callCore 라우팅.
- *
- * 메서드 미인식 (callCore 내부에서 RPC 매핑 못 찾으면) → fallback Lifecycle service 의
- * PascalCase RPC. table 등록 안 설정된 method 도 동작 시도 (안전망).
- *
- * WRAP_METHODS 설정된 메서드는 응답 자동 `{success, data, error}` 형식 wrap.
- * 옛 TS Core 호환성 유지 — frontend 코드 변경 0.
+ * RustCoreProxy 생성자 — 옛 FirebatCore method 호출을 gRPC RPC 로 forward.
+ * Proxy + Reflect 패턴이라 class 가 아닌 factory 로 export.
  */
 export function createRustCoreProxy(): unknown {
-  return new Proxy(
-    {},
-    {
-      get(_target, prop: string | symbol) {
-        if (typeof prop !== 'string') return undefined;
-        // promise 패턴 호환 — `core.then` 등은 undefined 반환 (Proxy 가 thenable 로 잘못 인식 방지)
-        if (prop === 'then' || prop === 'catch' || prop === 'finally') {
-          return undefined;
-        }
-        // method call 캡처
-        return async (...args: unknown[]) => {
-          const wrapper = ARGS_TABLE[prop];
-          const wrappedArgs = wrapper
-            ? wrapper(...args)
-            : args.length === 0
-              ? undefined
-              : args[0];
-          const result = await callCore(prop, wrappedArgs);
-          return autoWrap(prop, result);
-        };
-      },
-      // setProperty 차단 — Proxy 는 read-only
-      set() {
-        return false;
-      },
+  const target = {};
+  return new Proxy(target, {
+    get: (_target, prop) => {
+      if (typeof prop !== 'string') return undefined;
+      return async (...args: unknown[]) => {
+        const wrapper = ARGS_TABLE[prop];
+        const wrappedArgs = wrapper ? wrapper(...args) : args[0];
+        const result = await callCore(prop, wrappedArgs);
+        return autoWrapResult(prop, result);
+      };
     },
-  );
+  });
+}
+
+/** @deprecated — `createRustCoreProxy()` 사용. */
+export class RustCoreProxy {
+  constructor() {
+    return createRustCoreProxy() as RustCoreProxy;
+  }
 }

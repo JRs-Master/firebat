@@ -11,8 +11,8 @@ use crate::managers::task::{PipelineStep, TaskManager};
 use crate::ports::{CronJobInfo, CronLogEntry, CronNotification, CronScheduleOptions};
 use crate::proto::{
     schedule_service_server::ScheduleService, CronJobListPb, CronJobPb, CronLogEntryPb,
-    CronLogListPb, CronNotificationListPb, CronNotificationPb, Empty, JsonArgs, NumberRequest,
-    Status, StringRequest, ValidatePipelineResultPb,
+    CronLogListPb, CronNotificationListPb, CronNotificationPb, Empty, NumberRequest,
+    ScheduleCronRequest, Status, StringRequest, ValidatePipelineRequest, ValidatePipelineResultPb,
 };
 
 pub struct ScheduleServiceImpl {
@@ -49,14 +49,37 @@ fn err_status(msg: impl Into<String>) -> Response<Status> {
     })
 }
 
-#[derive(serde::Deserialize)]
-struct ScheduleArgs {
-    #[serde(rename = "jobId")]
-    job_id: String,
-    #[serde(rename = "targetPath", default)]
-    target_path: String,
-    #[serde(flatten)]
-    opts: CronScheduleOptions,
+/// ScheduleCronRequest → (job_id, target_path, CronScheduleOptions) 변환.
+/// 동적 JSON field (input_data / pipeline / run_when / retry / notify) 는 string 으로
+/// 전달되므로 serde_json::from_str 으로 Value 복원.
+fn parse_schedule_request(
+    req: ScheduleCronRequest,
+) -> Result<(String, String, CronScheduleOptions), String> {
+    let parse_value = |raw: Option<String>| -> Result<Option<serde_json::Value>, String> {
+        match raw {
+            None => Ok(None),
+            Some(s) if s.is_empty() => Ok(None),
+            Some(s) => serde_json::from_str(&s).map(Some).map_err(|e| e.to_string()),
+        }
+    };
+    let opts = CronScheduleOptions {
+        cron_time: req.cron_time,
+        run_at: req.run_at,
+        delay_sec: req.delay_sec,
+        start_at: req.start_at,
+        end_at: req.end_at,
+        input_data: parse_value(req.input_data_json)?,
+        pipeline: parse_value(req.pipeline_json)?,
+        title: req.title,
+        description: req.description,
+        one_shot: req.one_shot,
+        run_when: parse_value(req.run_when_json)?,
+        retry: parse_value(req.retry_json)?,
+        notify: parse_value(req.notify_json)?,
+        execution_mode: req.execution_mode,
+        agent_prompt: req.agent_prompt,
+    };
+    Ok((req.job_id.unwrap_or_default(), req.target_path, opts))
 }
 
 // ─── proto ↔ core port struct 변환 ─────────────────────────────────────────
@@ -134,18 +157,13 @@ impl From<CronNotification> for CronNotificationPb {
 impl ScheduleService for ScheduleServiceImpl {
     async fn schedule_cron(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ScheduleCronRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let args: ScheduleArgs = match serde_json::from_str(&raw) {
+        let (job_id, target_path, opts) = match parse_schedule_request(req.into_inner()) {
             Ok(v) => v,
             Err(e) => return Ok(err_status(format!("schedule args: {e}"))),
         };
-        match self
-            .manager
-            .schedule(&args.job_id, &args.target_path, args.opts)
-            .await
-        {
+        match self.manager.schedule(&job_id, &target_path, opts).await {
             Ok(()) => Ok(ok_status()),
             Err(e) => Ok(err_status(e)),
         }
@@ -164,18 +182,13 @@ impl ScheduleService for ScheduleServiceImpl {
 
     async fn update_cron(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ScheduleCronRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let args: ScheduleArgs = match serde_json::from_str(&raw) {
+        let (job_id, target_path, opts) = match parse_schedule_request(req.into_inner()) {
             Ok(v) => v,
             Err(e) => return Ok(err_status(format!("update args: {e}"))),
         };
-        match self
-            .manager
-            .update(&args.job_id, &args.target_path, args.opts)
-            .await
-        {
+        match self.manager.update(&job_id, &target_path, opts).await {
             Ok(()) => Ok(ok_status()),
             Err(e) => Ok(err_status(e)),
         }
@@ -230,16 +243,14 @@ impl ScheduleService for ScheduleServiceImpl {
 
     async fn validate_pipeline(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<ValidatePipelineRequest>,
     ) -> Result<Response<ValidatePipelineResultPb>, TonicStatus> {
-        // TaskManager 설정되어 있으면 정밀 검증 (옛 TS task-manager.ts:26 validatePipeline 1:1).
-        // 미설정 시 silent OK fallback.
-        let raw = req.into_inner().raw;
+        let args = req.into_inner();
         let Some(task) = &self.task else {
             return Ok(Response::new(ValidatePipelineResultPb { valid: true, error: None }));
         };
-        let steps: Vec<PipelineStep> = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("steps 파싱: {e}")))?;
+        let steps: Vec<PipelineStep> = serde_json::from_str(&args.pipeline_json)
+            .map_err(|e| TonicStatus::invalid_argument(format!("pipeline_json: {e}")))?;
         match task.validate_pipeline(&steps) {
             None => Ok(Response::new(ValidatePipelineResultPb { valid: true, error: None })),
             Some(err) => Ok(Response::new(ValidatePipelineResultPb {

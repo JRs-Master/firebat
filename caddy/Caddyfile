@@ -1,0 +1,63 @@
+# Firebat Caddy reverse proxy — 자동 TLS (Let's Encrypt) + HTTP/3 + SSE 호환 keepalive.
+#
+# 운영 절차:
+#  1. 아래 YOUR_DOMAIN_HERE / YOUR_EMAIL_HERE 두 항목을 실 도메인 / 이메일로 치환.
+#  2. DNS A 레코드를 서버 IP 로 설정 (TLS 발급 전 필수).
+#  3. docker compose up -d caddy → Caddy 가 첫 부팅 시 Let's Encrypt 인증서 자동 발급 (~30초).
+#  4. 90일 갱신은 Caddy 가 자체 처리 (certbot / cron 불필요).
+#
+# 추가 도메인 (예: api.firebat.example.com) 은 같은 형식으로 추가 블록 작성.
+# 정적 파일 (미디어) 직접 서빙은 /opt/firebat/user/media / system/media 마운트 활용.
+
+{
+  email YOUR_EMAIL_HERE
+  # 개발 시 Let's Encrypt staging 사용 (rate limit 회피):
+  # acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+}
+
+YOUR_DOMAIN_HERE {
+  encode gzip zstd
+
+  # 미디어 정적 파일 직접 서빙 — Renderer 경유 X (성능).
+  handle_path /media/user/* {
+    root * /opt/firebat/user/media
+    file_server
+    header Cache-Control "public, max-age=31536000, immutable"
+  }
+  handle_path /media/system/* {
+    root * /opt/firebat/system/media
+    file_server
+    header Cache-Control "public, max-age=31536000, immutable"
+  }
+
+  # 그 외 모든 요청 → Next renderer
+  reverse_proxy firebat-renderer:3000 {
+    # SSE / streaming 호환 — flush_interval -1 = 즉시 flush.
+    flush_interval -1
+    transport http {
+      keepalive 30s
+      keepalive_idle_conns 64
+      # SSE 의 긴 대기 (최대 10분 LLM 응답) 호환
+      response_header_timeout 10m
+      read_buffer 64KB
+    }
+  }
+
+  # 로그 — JSON 형식, /var/log/caddy (compose 의 volume mount)
+  log {
+    output file /var/log/caddy/access.log {
+      roll_size 100mb
+      roll_keep 10
+    }
+    format json
+    level INFO
+  }
+
+  # 보안 헤더
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options nosniff
+    Referrer-Policy strict-origin-when-cross-origin
+    -Server
+  }
+}

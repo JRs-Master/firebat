@@ -10,7 +10,9 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::episodic::EpisodicManager;
 use crate::ports::{EventSearchOpts, ListRecentOpts, SaveEventInput, UpdateEventPatch};
 use crate::proto::{
-    episodic_service_server::EpisodicService, Empty, FactSaveResultPb, JsonArgs, NumberRequest,
+    episodic_service_server::EpisodicService, Empty, EpisodicLinkEntityRequest,
+    EpisodicListByEntityRequest, EpisodicListRecentRequest, EpisodicSaveEventRequest,
+    EpisodicSearchEventsRequest, EpisodicUpdateEventRequest, FactSaveResultPb, NumberRequest,
     RawJsonPb, Status,
 };
 
@@ -50,33 +52,14 @@ fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
 impl EpisodicService for EpisodicServiceImpl {
     async fn save_event(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<EpisodicSaveEventRequest>,
     ) -> Result<Response<FactSaveResultPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            #[serde(rename = "type")]
-            event_type: String,
-            title: String,
-            #[serde(default)]
-            description: Option<String>,
-            #[serde(default)]
-            who: Option<String>,
-            #[serde(default)]
-            context: Option<serde_json::Value>,
-            #[serde(rename = "occurredAt", default)]
-            occurred_at: Option<i64>,
-            #[serde(rename = "entityIds", default)]
-            entity_ids: Vec<i64>,
-            #[serde(rename = "sourceConvId", default)]
-            source_conv_id: Option<String>,
-            #[serde(rename = "ttlDays", default)]
-            ttl_days: Option<i64>,
-            #[serde(rename = "dedupThreshold", default)]
-            dedup_threshold: Option<f64>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("save_event args: {e}")))?;
+        let args = req.into_inner();
+        let context = args
+            .context_json
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|s| serde_json::from_str(s).ok());
         match self
             .manager
             .save_event(SaveEventInput {
@@ -84,7 +67,7 @@ impl EpisodicService for EpisodicServiceImpl {
                 title: args.title,
                 description: args.description,
                 who: args.who,
-                context: args.context,
+                context,
                 occurred_at: args.occurred_at,
                 entity_ids: args.entity_ids,
                 source_conv_id: args.source_conv_id,
@@ -104,31 +87,19 @@ impl EpisodicService for EpisodicServiceImpl {
 
     async fn update_event(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<EpisodicUpdateEventRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            id: i64,
-            #[serde(rename = "type", default)]
-            event_type: Option<String>,
-            #[serde(default)]
-            title: Option<String>,
-            #[serde(default)]
-            description: Option<String>,
-            #[serde(default)]
-            who: Option<String>,
-            #[serde(default)]
-            context: Option<serde_json::Value>,
-            #[serde(rename = "occurredAt", default)]
-            occurred_at: Option<i64>,
-            #[serde(rename = "entityIds", default)]
-            entity_ids: Option<Vec<i64>>,
-            #[serde(rename = "ttlDays", default)]
-            ttl_days: Option<i64>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("update_event args: {e}")))?;
+        let args = req.into_inner();
+        let context = args
+            .context_json
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|s| serde_json::from_str(s).ok());
+        let entity_ids = args
+            .entity_ids_json
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .and_then(|s| serde_json::from_str(s).ok());
         match self.manager.update_event(
             args.id,
             UpdateEventPatch {
@@ -136,9 +107,9 @@ impl EpisodicService for EpisodicServiceImpl {
                 title: args.title,
                 description: args.description,
                 who: args.who,
-                context: args.context,
+                context,
                 occurred_at: args.occurred_at,
-                entity_ids: args.entity_ids,
+                entity_ids,
                 ttl_days: args.ttl_days,
             },
         ) {
@@ -171,11 +142,15 @@ impl EpisodicService for EpisodicServiceImpl {
 
     async fn search_events(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<EpisodicSearchEventsRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let opts: EventSearchOpts = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("search_events args: {e}")))?;
+        let args = req.into_inner();
+        let opts: EventSearchOpts = if args.opts_json.is_empty() {
+            EventSearchOpts::default()
+        } else {
+            serde_json::from_str(&args.opts_json)
+                .map_err(|e| TonicStatus::invalid_argument(format!("opts_json: {e}")))?
+        };
         match self.manager.search_events(opts).await {
             Ok(list) => Ok(Response::new(raw_json(&list))),
             Err(e) => Err(TonicStatus::internal(e)),
@@ -184,11 +159,15 @@ impl EpisodicService for EpisodicServiceImpl {
 
     async fn list_recent(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<EpisodicListRecentRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let opts: ListRecentOpts = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("list_recent args: {e}")))?;
+        let args = req.into_inner();
+        let opts: ListRecentOpts = if args.opts_json.is_empty() {
+            ListRecentOpts::default()
+        } else {
+            serde_json::from_str(&args.opts_json)
+                .map_err(|e| TonicStatus::invalid_argument(format!("opts_json: {e}")))?
+        };
         match self.manager.list_recent_events(opts) {
             Ok(list) => Ok(Response::new(raw_json(&list))),
             Err(e) => Err(TonicStatus::internal(e)),
@@ -197,23 +176,16 @@ impl EpisodicService for EpisodicServiceImpl {
 
     async fn list_by_entity(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<EpisodicListByEntityRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            #[serde(rename = "entityId")]
-            entity_id: i64,
-            #[serde(default)]
-            limit: Option<usize>,
-            #[serde(default)]
-            offset: Option<usize>,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("list_by_entity args: {e}")))?;
+        let args = req.into_inner();
         match self
             .manager
-            .list_events_by_entity(args.entity_id, args.limit, args.offset)
+            .list_events_by_entity(
+                args.entity_id,
+                args.limit.map(|v| v as usize),
+                args.offset.map(|v| v as usize),
+            )
             .await
         {
             Ok(list) => Ok(Response::new(raw_json(&list))),
@@ -223,20 +195,9 @@ impl EpisodicService for EpisodicServiceImpl {
 
     async fn link_entity(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<EpisodicLinkEntityRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            #[serde(rename = "eventId")]
-            event_id: i64,
-            #[serde(rename = "entityId")]
-            entity_id: i64,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("link_entity args: {e}"))),
-        };
+        let args = req.into_inner();
         match self.manager.link_entity(args.event_id, args.entity_id) {
             Ok(()) => Ok(ok_status()),
             Err(e) => Ok(err_status(e)),
@@ -245,20 +206,9 @@ impl EpisodicService for EpisodicServiceImpl {
 
     async fn unlink_entity(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<EpisodicLinkEntityRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            #[serde(rename = "eventId")]
-            event_id: i64,
-            #[serde(rename = "entityId")]
-            entity_id: i64,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("unlink_entity args: {e}"))),
-        };
+        let args = req.into_inner();
         match self.manager.unlink_entity(args.event_id, args.entity_id) {
             Ok(()) => Ok(ok_status()),
             Err(e) => Ok(err_status(e)),

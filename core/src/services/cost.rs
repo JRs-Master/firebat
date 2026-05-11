@@ -9,8 +9,8 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::cost::{CostBudget, CostManager, CostStatsFilter};
 use crate::ports::{LlmCostStatsRecord, LlmCostStatsSummary};
 use crate::proto::{
-    cost_service_server::CostService, BudgetCheckResultPb, CostBudgetPb, Empty, JsonArgs,
-    LlmCostStatsRecordPb, LlmCostStatsSummaryPb, Status,
+    cost_service_server::CostService, BudgetCheckResultPb, CostBudgetPb, CostGetStatsRequest,
+    CostSetBudgetRequest, Empty, LlmCostStatsRecordPb, LlmCostStatsSummaryPb, Status,
 };
 
 pub struct CostServiceImpl {
@@ -101,10 +101,15 @@ impl From<crate::managers::cost::BudgetCheckResult> for BudgetCheckResultPb {
 impl CostService for CostServiceImpl {
     async fn get_stats(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<CostGetStatsRequest>,
     ) -> Result<Response<LlmCostStatsSummaryPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let filter: CostStatsFilter = serde_json::from_str(&raw).unwrap_or_default();
+        let args = req.into_inner();
+        let filter = CostStatsFilter {
+            since: args.since,
+            until: args.until,
+            model: args.model,
+            purpose: args.purpose,
+        };
         let stats = self.manager.get_stats(&filter);
         Ok(Response::new(stats.into()))
     }
@@ -122,11 +127,14 @@ impl CostService for CostServiceImpl {
         Ok(Response::new(budget.into()))
     }
 
-    async fn set_budget(&self, req: Request<JsonArgs>) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let budget: CostBudget = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("set_budget: {e}"))),
+    async fn set_budget(&self, req: Request<CostSetBudgetRequest>) -> Result<Response<Status>, TonicStatus> {
+        let args = req.into_inner();
+        let budget = CostBudget {
+            daily_usd: args.daily_usd,
+            monthly_usd: args.monthly_usd,
+            daily_calls: args.daily_calls,
+            monthly_calls: args.monthly_calls,
+            alert_at_percent: args.alert_at_percent,
         };
         if self.manager.set_budget(&budget) {
             Ok(ok_status())

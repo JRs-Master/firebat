@@ -1,14 +1,13 @@
 # Phase C self-hosted Docker compose — Firebat v1.0 Final.
 #
 # 구성:
-#  - firebat-core (Rust gRPC server, port 50051)
-#  - firebat-renderer (Next.js standalone, port 3000)
-#  - caddy (옵션, port 80/443) — 자동 TLS + reverse proxy. 실 도메인 운영 시 활성.
-#    Let's Encrypt 발급·90일 갱신 자동 (certbot 설치 불필요).
+#  - firebat-core (Rust gRPC server, port 50051) — sysmod 호출 / DB / Vault / cron 등 모든 도메인.
+#  - firebat-renderer (Next.js standalone, port 3000) — 어드민 / 사용자 UI + MCP HTTP server.
+#  - caddy (port 80/443) — 자동 TLS (Let's Encrypt) + reverse proxy + HTTP/3.
 #
 # Volume mount:
 #  - ./data → /opt/firebat/data (SQLite DB / Vault / cron jobs / 영속 잡)
-#  - ./user → /opt/firebat/user (사용자 모듈 / 미디어)
+#  - ./user → /opt/firebat/user (사용자 모듈 / 미디어 / 첨부)
 #  - ./system → /opt/firebat/system (시스템 모듈 / 미디어)
 #
 # 운영 명령:
@@ -16,28 +15,27 @@
 #  docker compose logs -f firebat-core
 #  docker compose down                # graceful shutdown (SIGTERM → 30초 대기)
 #  docker compose restart firebat-core
+#  docker compose pull && docker compose up -d --build   # 코드 update 후 재시작
 #
-# 새 서버 cutover 절차 (옛 firebat.co.kr → 새 Ubuntu 26.04):
-#  1. ssh root@firebat "systemctl stop firebat firebat-frontend"
-#  2. rsync -av root@firebat:/root/firebat/{data,user/media,system/media}/ ./
-#  3. docker compose up -d --build
-#  4. health check: curl localhost:50051 또는 grpc_health_probe
-#  5. DNS A 레코드 새 서버 IP 로 변경
+# 새 서버 cutover 절차 (옛 systemd 운영 → 새 Docker compose):
+#  ./scripts/migrate-v0-to-v1.sh   # 자동 (옛 데이터 백업 + 권한 + 빌드 + 시작)
 
 services:
   firebat-core:
     build:
       context: .
-      dockerfile: core-rust/Dockerfile
+      dockerfile: Dockerfile.core
     image: firebat-core:latest
     container_name: firebat-core
     restart: unless-stopped
-    stop_grace_period: 30s   # SIGTERM 후 graceful shutdown 시간 (옛 TS 의 25s 활성 작업 대기 + buffer)
+    stop_grace_period: 30s   # SIGTERM 후 graceful shutdown 시간
     environment:
       FIREBAT_WORKSPACE_ROOT: /opt/firebat
       FIREBAT_CORE_LISTEN: 0.0.0.0:50051
       FIREBAT_TIMEZONE: Asia/Seoul
-      FIREBAT_DEFAULT_MODEL: claude-4-sonnet
+      FIREBAT_DEFAULT_MODEL: claude-sonnet-4-6
+      # Container 자체가 격리 — LinuxCgroupsSandboxAdapter 무관. main.rs:140 의 분기로 BasicProcessSandbox.
+      FIREBAT_SANDBOX: basic
       RUST_LOG: info
       RUST_BACKTRACE: "1"
     volumes:
@@ -45,12 +43,10 @@ services:
       - ./user:/opt/firebat/user
       - ./system:/opt/firebat/system
     ports:
-      # 외부 노출 안 함 — renderer 만 접근 (compose network 안). 디버깅 시 127.0.0.1:50051 만.
+      # 외부 노출 안 함 — renderer 만 compose network 안에서 접근.
       - "127.0.0.1:50051:50051"
     networks:
       - firebat-net
-    # gRPC health check — Phase B-17.5 LifecycleService.Health 활성화 후 활용.
-    # grpc_health_probe binary 가 있으면 진짜 health check, 아니면 process-only.
     healthcheck:
       test: ["CMD-SHELL", "ls /proc/1/exe || exit 1"]
       interval: 30s
@@ -58,56 +54,55 @@ services:
       retries: 3
       start_period: 10s
 
-  # ── Renderer (옛 Next.js frontend) ──
-  # Phase C 도입 후 옛 frontend 코드를 standalone build 로 전환합니다. dual-run 검증 시 활성.
-  # 현재는 commented — Rust Core 단독 검증부터.
-  # firebat-renderer:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.renderer
-  #   image: firebat-renderer:latest
-  #   container_name: firebat-renderer
-  #   restart: unless-stopped
-  #   environment:
-  #     NODE_ENV: production
-  #     FIREBAT_CORE_BACKEND: rust
-  #     FIREBAT_CORE_GRPC: firebat-core:50051
-  #   ports:
-  #     - "127.0.0.1:3000:3000"
-  #   depends_on:
-  #     firebat-core:
-  #       condition: service_healthy
-  #   networks:
-  #     - firebat-net
+  firebat-renderer:
+    build:
+      context: .
+      dockerfile: Dockerfile.renderer
+    image: firebat-renderer:latest
+    container_name: firebat-renderer
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # Renderer 의 gRPC 호출 대상 — compose network 안 firebat-core 서비스명 으로 DNS 해석.
+      FIREBAT_CORE_GRPC: firebat-core:50051
+      # MCP HTTP server 내부 토큰 — host firebat-core 의 Vault `system:internal-mcp-token` 와 동일해야 함.
+      # 실 운영에서는 .env 파일로 분리 권장.
+    volumes:
+      # MCP server 가 system/modules 안 config.json 스캔 — renderer 도 system 디렉토리 접근.
+      - ./system:/app/system:ro
+      - ./user:/app/user:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      firebat-core:
+        condition: service_healthy
+    networks:
+      - firebat-net
 
-  # ── Caddy (옵션) — 실 도메인 운영 시 활성 ──
-  # 자동 TLS (Let's Encrypt) + reverse proxy + SSE keepalive + HTTP/3.
-  # certbot / 90일 갱신 cron 작업이 필요하지 않습니다 — Caddy 가 알아서 처리합니다.
-  # caddy:
-  #   image: caddy:2-alpine
-  #   container_name: firebat-caddy
-  #   restart: unless-stopped
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #     - "443:443/udp"   # HTTP/3 (QUIC)
-  #   volumes:
-  #     - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-  #     - ./user/media:/opt/firebat/user/media:ro
-  #     - ./system/media:/opt/firebat/system/media:ro
-  #     - caddy-data:/data         # Let's Encrypt cert 영속
-  #     - caddy-config:/config
-  #     - ./data/logs/caddy:/var/log/caddy
-  #   depends_on:
-  #     - firebat-renderer
-  #   networks:
-  #     - firebat-net
+  caddy:
+    image: caddy:2-alpine
+    container_name: firebat-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3 (QUIC)
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./user/media:/opt/firebat/user/media:ro
+      - ./system/media:/opt/firebat/system/media:ro
+      - caddy-data:/data         # Let's Encrypt cert 영속 — 절대 잃으면 안 됨 (rate limit 위험)
+      - caddy-config:/config
+      - ./data/logs/caddy:/var/log/caddy
+    depends_on:
+      - firebat-renderer
+    networks:
+      - firebat-net
 
 networks:
   firebat-net:
     driver: bridge
 
-# Caddy 활성 시 볼륨도 같이 활성:
-# volumes:
-#   caddy-data:    # Let's Encrypt cert + ACME state — 절대 잃으면 안 됨 (rate limit 위험)
-#   caddy-config:
+volumes:
+  caddy-data:    # Let's Encrypt cert + ACME state — 잃으면 rate limit 위험
+  caddy-config:

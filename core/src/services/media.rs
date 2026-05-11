@@ -12,7 +12,9 @@ use crate::ports::{
 };
 use crate::proto::{
     media_service_server::MediaService, BoolRequest, Empty, GenerateImageResultPb, ImageModelListPb,
-    ImageModelPb, ImageSettingsPb, JsonArgs, MediaFileRecordPb, MediaListResultPb, MediaReadPb,
+    ImageModelPb, ImageSettingsPb, MediaFileRecordPb, MediaGenerateRequest, MediaListRequest,
+    MediaListResultPb, MediaReadPb, MediaSaveRequest, MediaSaveTempAttachmentRequest,
+    MediaStartGenerationRequest,
     MediaSaveResultPb, MediaVariantPb, NumberRequest, OptionalStringPb, RawJsonPb,
     StartGenerationPb, Status, StringRequest,
 };
@@ -155,14 +157,14 @@ impl MediaService for MediaServiceImpl {
 
     async fn list(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<MediaListRequest>,
     ) -> Result<Response<MediaListResultPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let opts: MediaListOpts = if raw.trim().is_empty() {
+        let args = req.into_inner();
+        let opts: MediaListOpts = if args.opts_json.trim().is_empty() {
             MediaListOpts::default()
         } else {
-            serde_json::from_str(&raw)
-                .map_err(|e| TonicStatus::invalid_argument(format!("list args: {e}")))?
+            serde_json::from_str(&args.opts_json)
+                .map_err(|e| TonicStatus::invalid_argument(format!("opts_json: {e}")))?
         };
         match self.manager.list(opts).await {
             Ok(result) => Ok(Response::new(MediaListResultPb {
@@ -196,11 +198,11 @@ impl MediaService for MediaServiceImpl {
 
     async fn start_generation(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<MediaStartGenerationRequest>,
     ) -> Result<Response<StartGenerationPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let input: GenerateImageInput = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("input 파싱: {e}")))?;
+        let args = req.into_inner();
+        let input: GenerateImageInput = serde_json::from_str(&args.input_json)
+            .map_err(|e| TonicStatus::invalid_argument(format!("input_json: {e}")))?;
         match self.manager.start_generate(input).await {
             Ok((slug, url)) => Ok(Response::new(StartGenerationPb { slug, url })),
             Err(e) => Err(TonicStatus::internal(e)),
@@ -209,11 +211,11 @@ impl MediaService for MediaServiceImpl {
 
     async fn generate(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<MediaGenerateRequest>,
     ) -> Result<Response<GenerateImageResultPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        let input: GenerateImageInput = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("input 파싱: {e}")))?;
+        let args = req.into_inner();
+        let input: GenerateImageInput = serde_json::from_str(&args.input_json)
+            .map_err(|e| TonicStatus::invalid_argument(format!("input_json: {e}")))?;
         match self.manager.generate_image(input, None).await {
             Ok(result) => Ok(Response::new(result.into())),
             Err(e) => Err(TonicStatus::internal(e)),
@@ -233,24 +235,19 @@ impl MediaService for MediaServiceImpl {
 
     async fn save(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<MediaSaveRequest>,
     ) -> Result<Response<MediaSaveResultPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            #[serde(rename = "binaryBase64")]
-            binary_base64: String,
-            #[serde(rename = "contentType")]
-            content_type: String,
-            #[serde(default, flatten)]
-            opts: MediaSaveOptions,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("save args: {e}")))?;
+        let args = req.into_inner();
+        let opts: MediaSaveOptions = if args.opts_json.is_empty() {
+            MediaSaveOptions::default()
+        } else {
+            serde_json::from_str(&args.opts_json)
+                .map_err(|e| TonicStatus::invalid_argument(format!("opts_json: {e}")))?
+        };
         let binary = base64_simple_decode(&args.binary_base64).map_err(|e| {
             TonicStatus::invalid_argument(format!("base64 decode 실패: {e}"))
         })?;
-        match self.manager.save(&binary, &args.content_type, args.opts).await {
+        match self.manager.save(&binary, &args.content_type, opts).await {
             Ok(result) => Ok(Response::new(result.into())),
             Err(e) => Err(TonicStatus::internal(e)),
         }
@@ -347,16 +344,9 @@ impl MediaService for MediaServiceImpl {
 
     async fn save_temp_attachment(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<MediaSaveTempAttachmentRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            #[serde(rename = "dataUrl")]
-            data_url: String,
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("save_temp_attachment args: {e}")))?;
+        let args = req.into_inner();
         match self.manager.save_temp_attachment(&args.data_url).await {
             Ok(url) => {
                 // slug 추출 — /user/attachments/<slug>.<ext>

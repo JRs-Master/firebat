@@ -70,24 +70,94 @@ message AiTextResultPb {
   string text = 1;
 }
 
+/** LlmCallOpts — 옵션 전달 (model / temperature / system_prompt / mcp_token 등 다수 field).
+    동적 schema 라 JSON 문자열 raw 으로 직렬화. Rust 가 serde_json::from_str 으로 LlmCallOpts struct 로 deserialize. */
+message LlmCallOptsPb {
+  string opts_json = 1;
+}
+
+/** ToolDefinition list — 도구 schema 배열. 동적 JSON. */
+message ToolDefinitionsPb {
+  string tools_json = 1;
+}
+
+/** PendingTool entry — args 는 임의 JSON. */
+message PendingToolPb {
+  string name = 1;
+  string args_json = 2;
+  string summary = 3;
+}
+
+/** propose_plan step — 동적 schema (EXECUTE / MCP_CALL / NETWORK_REQUEST 등). */
+message PlanStepPb {
+  string step_json = 1;
+}
+
+// Typed Request messages — AiService
+message AiProcessRequest {
+  string prompt = 1;
+  LlmCallOptsPb opts = 2;
+}
+message AiRequestActionWithToolsRequest {
+  string prompt = 1;
+  ToolDefinitionsPb tools = 2;
+  LlmCallOptsPb opts = 3;
+}
+message AiCodeAssistRequest {
+  string prompt = 1;
+  LlmCallOptsPb opts = 2;
+}
+message AiRunAgentJobRequest {
+  string job_id = 1;
+  string agent_prompt = 2;
+  optional string title = 3;
+  optional string model = 4;
+}
+message AiSpawnSubAgentRequest {
+  string prompt = 1;
+  optional string model = 2;
+}
+message AiCreatePendingRequest {
+  string name = 1;
+  string args_json = 2;
+  string summary = 3;
+}
+message AiStorePlanRequest {
+  string plan_id = 1;
+  string title = 2;
+  repeated PlanStepPb steps = 3;
+  optional string estimated_time = 4;
+  repeated string risks = 5;
+}
+
 service AiService {
-  rpc Process(JsonArgs) returns (AiTextResultPb);
-  rpc RequestActionWithTools(JsonArgs) returns (RawJsonPb);
-  rpc CodeAssist(JsonArgs) returns (AiTextResultPb);
-  rpc RunAgentJob(JsonArgs) returns (RawJsonPb);
+  rpc Process(AiProcessRequest) returns (AiTextResultPb);
+  rpc RequestActionWithTools(AiRequestActionWithToolsRequest) returns (RawJsonPb);
+  rpc CodeAssist(AiCodeAssistRequest) returns (AiTextResultPb);
+  rpc RunAgentJob(AiRunAgentJobRequest) returns (RawJsonPb);
   rpc ResolveCallTarget(StringRequest) returns (RawJsonPb);
-  rpc SpawnSubAgent(JsonArgs) returns (RawJsonPb);
+  rpc SpawnSubAgent(AiSpawnSubAgentRequest) returns (RawJsonPb);
   rpc IsSubAgentEnabled(Empty) returns (BoolRequest);
   rpc SetSubAgentEnabled(BoolRequest) returns (Status);
 
   // Pending tools — 승인 대기 도구 (옛 TS lib/pending-tools.ts 통합)
-  rpc CreatePending(JsonArgs) returns (StringRequest);   // {name,args,summary} → planId
+  rpc CreatePending(AiCreatePendingRequest) returns (StringRequest);   // → planId
   rpc GetPending(StringRequest) returns (RawJsonPb);      // planId → PendingTool|null
   rpc ConsumePending(StringRequest) returns (RawJsonPb);  // planId → PendingTool|null
   rpc RejectPending(StringRequest) returns (BoolRequest); // planId → had
 
   // Plan store — propose_plan steps (옛 TS lib/plan-store.ts 통합)
-  rpc StorePlan(JsonArgs) returns (Empty);                // {planId,title,steps,...}
+  rpc StorePlan(AiStorePlanRequest) returns (Empty);
+}
+
+// ─── StorageService typed Request messages ──────────────────────────────────
+message StorageWriteFileRequest {
+  string path = 1;
+  string content = 2;
+}
+message StorageGlobFilesRequest {
+  string pattern = 1;
+  optional int64 limit = 2;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -96,12 +166,12 @@ service AiService {
 service StorageService {
   rpc ReadFile(StringRequest) returns (RawJsonPb);
   rpc ReadFileBinary(StringRequest) returns (RawJsonPb);
-  rpc WriteFile(JsonArgs) returns (Status);
+  rpc WriteFile(StorageWriteFileRequest) returns (Status);
   rpc DeleteFile(StringRequest) returns (Status);
   rpc ListDir(StringRequest) returns (RawJsonPb);
   rpc ListFiles(StringRequest) returns (RawJsonPb);
   rpc GetFileTree(StringRequest) returns (RawJsonPb);
-  rpc GlobFiles(JsonArgs) returns (RawJsonPb);
+  rpc GlobFiles(StorageGlobFilesRequest) returns (RawJsonPb);
 }
 
 // ─── PageService typed messages ──────────────────────────────────────────────
@@ -168,22 +238,56 @@ message TagListPb {
   repeated TagSummaryPb tags = 1;
 }
 
+// ─── PageService typed Request messages ─────────────────────────────────────
+message PageSearchRequest {
+  string query = 1;
+  optional int64 limit = 2;
+}
+message PageSaveRequest {
+  string slug = 1;
+  string spec = 2;
+  optional string status = 3;       // 미지정 시 "published" default
+  optional string project = 4;
+  optional string visibility = 5;
+  optional string password = 6;
+}
+message PageRenameRequest {
+  string old_slug = 1;
+  string new_slug = 2;
+  optional bool set_redirect = 3;
+}
+message PageSetVisibilityRequest {
+  string slug = 1;
+  string visibility = 2;
+  optional string password = 3;
+}
+message PageVerifyPasswordRequest {
+  string slug = 1;
+  string password = 2;
+}
+message PageFindRelatedRequest {
+  string slug = 1;
+  optional int64 limit = 2;
+  // CMS settings.tagAliases textarea — 옛 패턴 1:1.
+  optional string tag_aliases_raw = 3;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 3. PageService — PageManager
 // ──────────────────────────────────────────────────────────────────────────
 service PageService {
   rpc List(Empty) returns (PageListResponsePb);
-  rpc Search(JsonArgs) returns (PageListResponsePb);
+  rpc Search(PageSearchRequest) returns (PageListResponsePb);
   rpc Get(StringRequest) returns (PageRecordPb);
-  rpc Save(JsonArgs) returns (PageSaveResultPb);
+  rpc Save(PageSaveRequest) returns (PageSaveResultPb);
   rpc Delete(StringRequest) returns (Status);
-  rpc Rename(JsonArgs) returns (Status);
+  rpc Rename(PageRenameRequest) returns (Status);
   rpc GetRedirect(StringRequest) returns (OptionalStringPb);
   rpc ListStatic(Empty) returns (StringListPb);
   rpc FindMediaUsage(StringRequest) returns (MediaUsageListPb);
-  rpc SetVisibility(JsonArgs) returns (Status);
-  rpc VerifyPassword(JsonArgs) returns (BoolRequest);
-  rpc FindRelated(JsonArgs) returns (PageListResponsePb);
+  rpc SetVisibility(PageSetVisibilityRequest) returns (Status);
+  rpc VerifyPassword(PageVerifyPasswordRequest) returns (BoolRequest);
+  rpc FindRelated(PageFindRelatedRequest) returns (PageListResponsePb);
   rpc ListAllTags(Empty) returns (TagListPb);
 }
 
@@ -209,33 +313,72 @@ message ProjectConfigPb {
   string raw_json = 1;
 }
 
+// ─── ProjectService typed Request messages ──────────────────────────────────
+message ProjectSetVisibilityRequest {
+  string project = 1;
+  string visibility = 2;
+  optional string password = 3;
+}
+message ProjectSetConfigRequest {
+  string project = 1;
+  string config_json = 2;
+}
+message ProjectVerifyPasswordRequest {
+  string project = 1;
+  string password = 2;
+}
+message ProjectRenameRequest {
+  string old_name = 1;
+  string new_name = 2;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 4. ProjectService — ProjectManager
 // ──────────────────────────────────────────────────────────────────────────
 service ProjectService {
   rpc Scan(Empty) returns (ProjectListPb);
-  rpc SetVisibility(JsonArgs) returns (Status);
+  rpc SetVisibility(ProjectSetVisibilityRequest) returns (Status);
   rpc GetVisibility(StringRequest) returns (ProjectVisibilityPb);
   rpc GetConfig(StringRequest) returns (ProjectConfigPb);
-  rpc SetConfig(JsonArgs) returns (Status);
-  rpc VerifyPassword(JsonArgs) returns (BoolRequest);
+  rpc SetConfig(ProjectSetConfigRequest) returns (Status);
+  rpc VerifyPassword(ProjectVerifyPasswordRequest) returns (BoolRequest);
   rpc Delete(StringRequest) returns (Status);
-  rpc Rename(JsonArgs) returns (Status);
+  rpc Rename(ProjectRenameRequest) returns (Status);
+}
+
+// ─── ModuleService typed Request messages ───────────────────────────────────
+message ModuleRunRequest {
+  // path 형태 (`system/modules/xxx/main.py`) 면 직접 경로 실행. 단순 이름 (`xxx`) 면 entry 자동 탐색.
+  string module = 1;
+  // 모듈 입력 (동적 schema) — JSON 직렬화 raw.
+  string data_json = 2;
+}
+message ModuleGetSchemaRequest {
+  string scope = 1;
+  string name = 2;
+}
+message ModuleSetSettingsRequest {
+  string name = 1;
+  string settings_json = 2;
+}
+message ModuleSetEnabledRequest {
+  string name = 1;
+  bool enabled = 2;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // 5. ModuleService — ModuleManager
 // ──────────────────────────────────────────────────────────────────────────
 service ModuleService {
-  rpc Run(JsonArgs) returns (ModuleOutputPb);
+  rpc Run(ModuleRunRequest) returns (ModuleOutputPb);
   rpc ListSystem(Empty) returns (ModuleListPb);
   rpc ListUser(Empty) returns (ModuleListPb);
-  rpc GetSchema(JsonArgs) returns (RawJsonPb);
+  rpc GetSchema(ModuleGetSchemaRequest) returns (RawJsonPb);
   rpc GetSettings(StringRequest) returns (RawJsonPb);
   rpc GetConfig(StringRequest) returns (RawJsonPb);
-  rpc SetSettings(JsonArgs) returns (Status);
+  rpc SetSettings(ModuleSetSettingsRequest) returns (Status);
   rpc IsEnabled(StringRequest) returns (BoolRequest);
-  rpc SetEnabled(JsonArgs) returns (Status);
+  rpc SetEnabled(ModuleSetEnabledRequest) returns (Status);
   rpc GetCmsSettings(Empty) returns (RawJsonPb);
   rpc GetKakaoMapJsKey(Empty) returns (StringRequest);
 }
@@ -269,11 +412,17 @@ message ModuleListPb {
   repeated ModuleEntryPb entries = 1;
 }
 
+// ─── TaskService typed Request messages ─────────────────────────────────────
+message TaskRunRequest {
+  // 파이프라인 step 배열 — 동적 schema. JSON 직렬화 raw.
+  string pipeline_json = 1;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 6. TaskService — TaskManager
 // ──────────────────────────────────────────────────────────────────────────
 service TaskService {
-  rpc Run(JsonArgs) returns (PipelineResultPb);
+  rpc Run(TaskRunRequest) returns (PipelineResultPb);
 }
 
 /** PipelineResult — 파이프라인 실행 결과. data 는 마지막 step 출력 JSON 문자열. */
@@ -342,19 +491,55 @@ message ValidatePipelineResultPb {
   optional string error = 2;
 }
 
+// ─── ScheduleService typed Request messages ─────────────────────────────────
+// CronJob 등록/수정 — options 의 동적 필드 (pipeline/inputData/runWhen/retry/notify) 는 JSON 문자열 보존.
+message ScheduleCronRequest {
+  optional string job_id = 1;
+  string target_path = 2;
+  string mode = 3;                     // "cron" / "once" / "interval" / "agent"
+  optional string cron_time = 4;
+  optional string run_at = 5;
+  optional int64 delay_sec = 6;
+  optional string start_at = 7;
+  optional string end_at = 8;
+  optional string input_data_json = 9;
+  optional string pipeline_json = 10;
+  optional string title = 11;
+  optional string description = 12;
+  optional bool one_shot = 13;
+  optional string run_when_json = 14;
+  optional string retry_json = 15;
+  optional string notify_json = 16;
+  optional string execution_mode = 17;
+  optional string agent_prompt = 18;
+}
+message ValidatePipelineRequest {
+  string pipeline_json = 1;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 7. ScheduleService — ScheduleManager
 // ──────────────────────────────────────────────────────────────────────────
 service ScheduleService {
-  rpc ScheduleCron(JsonArgs) returns (Status);
+  rpc ScheduleCron(ScheduleCronRequest) returns (Status);
   rpc CancelCron(StringRequest) returns (Status);
-  rpc UpdateCron(JsonArgs) returns (Status);
+  rpc UpdateCron(ScheduleCronRequest) returns (Status);
   rpc ListCron(Empty) returns (CronJobListPb);
   rpc GetLogs(NumberRequest) returns (CronLogListPb);
   rpc ClearLogs(Empty) returns (Status);
   rpc ConsumeNotifications(Empty) returns (CronNotificationListPb);
   rpc RunNow(StringRequest) returns (Status);
-  rpc ValidatePipeline(JsonArgs) returns (ValidatePipelineResultPb);
+  rpc ValidatePipeline(ValidatePipelineRequest) returns (ValidatePipelineResultPb);
+}
+
+// ─── SecretService typed Request messages ───────────────────────────────────
+message SecretSetUserRequest {
+  string name = 1;
+  string value = 2;
+}
+message SecretSetSystemRequest {
+  string key = 1;
+  string value = 2;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -362,12 +547,12 @@ service ScheduleService {
 // ──────────────────────────────────────────────────────────────────────────
 service SecretService {
   rpc ListUser(Empty) returns (StringListPb);
-  rpc SetUser(JsonArgs) returns (Status);
+  rpc SetUser(SecretSetUserRequest) returns (Status);
   rpc GetUser(StringRequest) returns (OptionalStringPb);
   rpc DeleteUser(StringRequest) returns (Status);
   rpc ListUserModuleSecrets(Empty) returns (ModuleSecretListPb);
   rpc GetSystem(StringRequest) returns (OptionalStringPb);
-  rpc SetSystem(JsonArgs) returns (Status);
+  rpc SetSystem(SecretSetSystemRequest) returns (Status);
 }
 
 /** ModuleSecretEntry — 유저 모듈 config.json secrets 배열 항목 + 등록 여부. */
@@ -381,16 +566,32 @@ message ModuleSecretListPb {
   repeated ModuleSecretEntryPb entries = 1;
 }
 
+// ─── McpService typed Request messages ──────────────────────────────────────
+message McpAddServerRequest {
+  string name = 1;
+  string transport = 2;                  // "stdio" / "sse"
+  optional string command = 3;
+  repeated string args = 4;
+  string env_json = 5;                   // env 객체 JSON
+  optional string url = 6;
+  bool enabled = 7;
+}
+message McpCallToolRequest {
+  string server = 1;
+  string tool = 2;
+  string arguments_json = 3;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 9. McpService — McpManager (MCP client - 외부 MCP 서버 호출)
 // ──────────────────────────────────────────────────────────────────────────
 service McpService {
   rpc ListServers(Empty) returns (RawJsonPb);
-  rpc AddServer(JsonArgs) returns (Status);
+  rpc AddServer(McpAddServerRequest) returns (Status);
   rpc RemoveServer(StringRequest) returns (Status);
   rpc ListTools(StringRequest) returns (McpToolListPb);
   rpc ListAllTools(Empty) returns (McpToolListPb);
-  rpc CallTool(JsonArgs) returns (RawJsonPb);
+  rpc CallTool(McpCallToolRequest) returns (RawJsonPb);
 }
 
 /** McpToolInfo — MCP 외부 서버 도구 정보. inputSchema 는 JSON Schema 직렬화 문자열. */
@@ -405,17 +606,28 @@ message McpToolListPb {
   repeated McpToolInfoPb tools = 1;
 }
 
+// ─── CapabilityService typed Request messages ───────────────────────────────
+message CapabilityRegisterRequest {
+  string id = 1;
+  string label = 2;
+  string description = 3;
+}
+message CapabilitySetSettingsRequest {
+  string cap_id = 1;
+  repeated string providers = 2;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 10. CapabilityService — CapabilityManager
 // ──────────────────────────────────────────────────────────────────────────
 service CapabilityService {
   rpc List(Empty) returns (RawJsonPb);
-  rpc Register(JsonArgs) returns (Status);
+  rpc Register(CapabilityRegisterRequest) returns (Status);
   rpc GetProviders(StringRequest) returns (CapabilityProviderListPb);
   rpc ListWithProviders(Empty) returns (CapabilitySummaryListPb);
   rpc Resolve(StringRequest) returns (CapabilityProviderPb);
   rpc GetSettings(StringRequest) returns (CapabilitySettingsPb);
-  rpc SetSettings(JsonArgs) returns (Status);
+  rpc SetSettings(CapabilitySetSettingsRequest) returns (Status);
 }
 
 message CapabilityProviderPb {
@@ -479,11 +691,28 @@ message AdminCredentialsPb {
   string password = 2;
 }
 
+// ─── AuthService typed Request messages ─────────────────────────────────────
+message AuthLoginRequest {
+  string id = 1;
+  string password = 2;
+  // IP / cookie 기반 lock counter 키 (rate limit). 빈 string 이면 lock 없음.
+  optional string attempt_key = 3;
+}
+message AuthSetAdminCredentialsRequest {
+  // 부분 변경 가능 — setup wizard 는 둘 다, 비번 변경 PATCH 는 password 만.
+  optional string id = 1;
+  optional string password = 2;
+}
+message AuthValidatePasswordPolicyRequest {
+  string password = 1;
+  optional string id = 2;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 11. AuthService — AuthManager
 // ──────────────────────────────────────────────────────────────────────────
 service AuthService {
-  rpc Login(JsonArgs) returns (LoginResponsePb);
+  rpc Login(AuthLoginRequest) returns (LoginResponsePb);
   rpc Logout(StringRequest) returns (BoolRequest);
   rpc ValidateSession(StringRequest) returns (AuthSessionPb);
   rpc ValidateToken(StringRequest) returns (AuthSessionPb);
@@ -492,16 +721,16 @@ service AuthService {
   rpc RevokeApiTokens(Empty) returns (NumberRequest);
   rpc GetApiTokenInfo(Empty) returns (ApiTokenInfoPb);
   rpc GetAdminCredentials(Empty) returns (AdminCredentialsPb);
-  rpc SetAdminCredentials(JsonArgs) returns (Status);
+  rpc SetAdminCredentials(AuthSetAdminCredentialsRequest) returns (Status);
   // 첫 부팅 setup 검출 — frontend `/login` 이 호출, false 면 setup wizard 노출.
   rpc IsAdminSetup(Empty) returns (BoolRequest);
   // 평문 비번 검증 — argon2 hash 비교. SettingsModal 의 비번 변경 PATCH 가 사용
   // (login 부작용 — lock counter / 세션 발급 — 회피).
   rpc VerifyAdminPassword(StringRequest) returns (BoolRequest);
   // 비번 정책 검증 — 8자 이상 + 4 categories 중 3 이상 + (옵션) ID 동일 금지.
-  // 입력: {password: string, id?: string}. 응답: Status (ok/error/error_code).
+  // 입력: {password, id?}. 응답: Status (ok/error/error_code).
   // SetupWizard / 비번 변경 PATCH / setup POST 모두 단일 source.
-  rpc ValidatePasswordPolicy(JsonArgs) returns (Status);
+  rpc ValidatePasswordPolicy(AuthValidatePasswordPolicyRequest) returns (Status);
 }
 
 message ConversationSummaryPb {
@@ -557,26 +786,69 @@ message SharedConversationPb {
   int64 expires_at = 6;
 }
 
+// ─── ConversationService typed Request messages ─────────────────────────────
+message ConversationOwnerIdRequest {
+  string owner = 1;
+  string id = 2;
+}
+message ConversationSaveRequest {
+  string owner = 1;
+  string id = 2;
+  string title = 3;
+  // messages 배열 JSON 문자열 (동적 Message 타입)
+  string messages_json = 4;
+  optional int64 created_at = 5;
+}
+message ConversationSearchHistoryRequest {
+  string owner = 1;
+  string query = 2;
+  optional string current_conv_id = 3;
+  optional int64 limit = 4;
+  optional int64 within_days = 5;
+  optional double min_score = 6;
+  optional bool include_blocks = 7;
+}
+message ConversationSetCliSessionRequest {
+  string conversation_id = 1;
+  string session_id = 2;
+  string model = 3;
+}
+message ConversationGetCliSessionRequest {
+  string conversation_id = 1;
+  string current_model = 2;
+}
+message ConversationCreateShareRequest {
+  string share_type = 1;
+  string title = 2;
+  // messages 배열 JSON 문자열.
+  string messages_json = 3;
+  optional string owner = 4;
+  optional string source_conv_id = 5;
+  // 미지정 시 24h default.
+  optional int64 ttl_ms = 6;
+  optional string dedup_key = 7;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 12. ConversationService — ConversationManager (+ Share)
 // ──────────────────────────────────────────────────────────────────────────
 service ConversationService {
   rpc List(StringRequest) returns (ConversationListPb);
-  rpc Get(JsonArgs) returns (ConversationRecordPb);
-  rpc Save(JsonArgs) returns (Status);
-  /// 삭제 — soft delete. conversations.deleted_at 박음. 30일 후 cleanup cron 이 cascade 삭제.
-  rpc Delete(JsonArgs) returns (Status);
-  rpc IsDeleted(JsonArgs) returns (BoolRequest);
+  rpc Get(ConversationOwnerIdRequest) returns (ConversationRecordPb);
+  rpc Save(ConversationSaveRequest) returns (Status);
+  /// 삭제 — soft delete. conversations.deleted_at 추가. 30일 후 cleanup cron 이 cascade 삭제.
+  rpc Delete(ConversationOwnerIdRequest) returns (Status);
+  rpc IsDeleted(ConversationOwnerIdRequest) returns (BoolRequest);
   /// 휴지통 (soft-deleted) 목록 — owner 기준. 최신 삭제 순.
   rpc ListDeleted(StringRequest) returns (ConversationListPb);
-  /// 휴지통에서 복원 — deleted_at NULL 로 박음. 30일 cleanup 대상에서 제외.
-  rpc Restore(JsonArgs) returns (Status);
+  /// 휴지통에서 복원 — deleted_at NULL. 30일 cleanup 대상에서 제외.
+  rpc Restore(ConversationOwnerIdRequest) returns (Status);
   /// 영구 삭제 — DB row + 첨부 이미지 cascade. 휴지통에서도 사라짐.
-  rpc PermanentDelete(JsonArgs) returns (Status);
-  rpc SearchHistory(JsonArgs) returns (HistorySearchResultPb);
-  rpc GetCliSession(JsonArgs) returns (OptionalStringPb);
-  rpc SetCliSession(JsonArgs) returns (Status);
-  rpc CreateShare(JsonArgs) returns (ShareResultPb);
+  rpc PermanentDelete(ConversationOwnerIdRequest) returns (Status);
+  rpc SearchHistory(ConversationSearchHistoryRequest) returns (HistorySearchResultPb);
+  rpc GetCliSession(ConversationGetCliSessionRequest) returns (OptionalStringPb);
+  rpc SetCliSession(ConversationSetCliSessionRequest) returns (Status);
+  rpc CreateShare(ConversationCreateShareRequest) returns (ShareResultPb);
   rpc GetShare(StringRequest) returns (SharedConversationPb);
   rpc CleanupExpiredShares(Empty) returns (NumberRequest);
   /// 30일 retention cleanup — soft-deleted conversations + 임시 첨부 이미지 cascade.
@@ -679,18 +951,40 @@ message ImageSettingsPb {
   string raw_json = 1;
 }
 
+// ─── MediaService typed Request messages ────────────────────────────────────
+// 동적 MediaListOpts JSON. 빈 string 이면 default.
+message MediaListRequest {
+  string opts_json = 1;
+}
+// 동적 GenerateImageInput JSON.
+message MediaStartGenerationRequest {
+  string input_json = 1;
+}
+message MediaGenerateRequest {
+  string input_json = 1;
+}
+message MediaSaveRequest {
+  // binary base64 + content type + 동적 MediaSaveOptions JSON.
+  string binary_base64 = 1;
+  string content_type = 2;
+  string opts_json = 3;
+}
+message MediaSaveTempAttachmentRequest {
+  string data_url = 1;                // "data:image/...;base64,..."
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 13. MediaService — MediaManager
 // ──────────────────────────────────────────────────────────────────────────
 service MediaService {
   rpc Read(StringRequest) returns (MediaReadPb);
-  rpc List(JsonArgs) returns (MediaListResultPb);
+  rpc List(MediaListRequest) returns (MediaListResultPb);
   rpc Remove(StringRequest) returns (Status);
   rpc IsReady(StringRequest) returns (BoolRequest);
-  rpc StartGeneration(JsonArgs) returns (StartGenerationPb);
-  rpc Generate(JsonArgs) returns (GenerateImageResultPb);
+  rpc StartGeneration(MediaStartGenerationRequest) returns (StartGenerationPb);
+  rpc Generate(MediaGenerateRequest) returns (GenerateImageResultPb);
   rpc Regenerate(StringRequest) returns (GenerateImageResultPb);
-  rpc Save(JsonArgs) returns (MediaSaveResultPb);
+  rpc Save(MediaSaveRequest) returns (MediaSaveResultPb);
   rpc GetImageModel(Empty) returns (StringRequest);
   rpc SetImageModel(StringRequest) returns (Status);
   rpc GetAvailableImageModels(Empty) returns (ImageModelListPb);
@@ -701,8 +995,8 @@ service MediaService {
   rpc GetImageSettings(Empty) returns (ImageSettingsPb);
   /// 채팅 첨부 이미지 임시 저장 — sharp 0 (raw 그대로). /user/attachments/<slug>.<ext> 응답.
   /// 30일 후 cleanup cron 이 자동 삭제. 사용자 명시 갤러리 저장 (Save) 은 별도.
-  /// Args: {dataUrl: 'data:image/...;base64,...'}. Response: {slug, url}.
-  rpc SaveTempAttachment(JsonArgs) returns (RawJsonPb);
+  /// Response: {slug, url}.
+  rpc SaveTempAttachment(MediaSaveTempAttachmentRequest) returns (RawJsonPb);
   /// 30일 retention cleanup — 임시 첨부 영역 (user/attachments/) 의 오래된 파일 삭제.
   /// internal cron 이 6h 마다 호출.
   rpc CleanupOldAttachments(Empty) returns (NumberRequest);
@@ -716,16 +1010,49 @@ service EventService {
   // 추후 streaming RPC: rpc Subscribe(JsonArgs) returns (stream RawJsonPb);
 }
 
+// ─── StatusService typed Request messages ───────────────────────────────────
+message StatusStartRequest {
+  optional string id = 1;
+  string job_type = 2;
+  optional string message = 3;
+  optional string parent_job_id = 4;
+  // 동적 메타 (관련 slug / model 등) JSON. 빈 string 이면 null.
+  string meta_json = 5;
+}
+message StatusUpdateRequest {
+  string id = 1;
+  optional double progress = 2;
+  optional string message = 3;
+  // 동적 메타 JSON. 빈 string 이면 None (변경 안 함).
+  optional string meta_json = 4;
+}
+message StatusCompleteRequest {
+  string id = 1;
+  // 동적 결과 JSON. 빈 string 이면 None.
+  optional string result_json = 2;
+}
+message StatusFailRequest {
+  string id = 1;
+  string error = 2;
+}
+message StatusListRequest {
+  optional string job_type = 1;
+  optional string status = 2;
+  optional int64 since = 3;
+  optional string parent_job_id = 4;
+  optional int64 limit = 5;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // 15. StatusService — StatusManager (long-running job)
 // ──────────────────────────────────────────────────────────────────────────
 service StatusService {
-  rpc Start(JsonArgs) returns (RawJsonPb);
-  rpc Update(JsonArgs) returns (RawJsonPb);
-  rpc Complete(JsonArgs) returns (RawJsonPb);
-  rpc Fail(JsonArgs) returns (RawJsonPb);
+  rpc Start(StatusStartRequest) returns (RawJsonPb);
+  rpc Update(StatusUpdateRequest) returns (RawJsonPb);
+  rpc Complete(StatusCompleteRequest) returns (RawJsonPb);
+  rpc Fail(StatusFailRequest) returns (RawJsonPb);
   rpc Get(StringRequest) returns (RawJsonPb);
-  rpc List(JsonArgs) returns (RawJsonPb);
+  rpc List(StatusListRequest) returns (RawJsonPb);
   rpc Stats(Empty) returns (RawJsonPb);
 }
 
@@ -773,11 +1100,26 @@ message BudgetCheckResultPb {
   repeated string alerts = 11;
 }
 
+// ─── CostService typed Request messages ─────────────────────────────────────
+message CostGetStatsRequest {
+  optional int64 since = 1;           // unix ms
+  optional int64 until = 2;
+  optional string model = 3;
+  optional string purpose = 4;
+}
+message CostSetBudgetRequest {
+  double daily_usd = 1;
+  double monthly_usd = 2;
+  int64 daily_calls = 3;
+  int64 monthly_calls = 4;
+  int64 alert_at_percent = 5;
+}
+
 service CostService {
-  rpc GetStats(JsonArgs) returns (LlmCostStatsSummaryPb);
+  rpc GetStats(CostGetStatsRequest) returns (LlmCostStatsSummaryPb);
   rpc Flush(Empty) returns (Status);
   rpc GetBudget(Empty) returns (CostBudgetPb);
-  rpc SetBudget(JsonArgs) returns (Status);
+  rpc SetBudget(CostSetBudgetRequest) returns (Status);
   rpc CheckBudget(Empty) returns (BudgetCheckResultPb);
 }
 
@@ -791,18 +1133,45 @@ message ToolStatsPb {
   string by_source_json = 2;
 }
 
+// ─── ToolService typed Request messages ─────────────────────────────────────
+message ToolRegisterRequest {
+  // ToolDefinition JSON (name / description / inputSchema / source 등)
+  string definition_json = 1;
+}
+message ToolRegisterManyRequest {
+  // ToolDefinition 배열 JSON
+  string definitions_json = 1;
+}
+message ToolListRequest {
+  optional string source_filter = 1;   // "sysmod" / "mcp" / "internal" 등
+}
+message ToolExecuteRequest {
+  string name = 1;
+  string args_json = 2;
+}
+message ToolBuildAiDefinitionsRequest {
+  optional string source_filter = 1;
+}
+message ToolBuildMcpDescriptionsRequest {
+  optional string source_filter = 1;
+}
+message ToolSetActivePlanStateRequest {
+  string conversation_id = 1;
+  string state_json = 2;
+}
+
 service ToolService {
-  rpc Register(JsonArgs) returns (Status);
-  rpc RegisterMany(JsonArgs) returns (Status);
+  rpc Register(ToolRegisterRequest) returns (Status);
+  rpc RegisterMany(ToolRegisterManyRequest) returns (Status);
   rpc Unregister(StringRequest) returns (BoolRequest);
   rpc GetDefinition(StringRequest) returns (RawJsonPb);
-  rpc List(JsonArgs) returns (RawJsonPb);
-  rpc Execute(JsonArgs) returns (RawJsonPb);
-  rpc BuildAiDefinitions(JsonArgs) returns (RawJsonPb);
-  rpc BuildMcpDescriptions(JsonArgs) returns (RawJsonPb);
+  rpc List(ToolListRequest) returns (RawJsonPb);
+  rpc Execute(ToolExecuteRequest) returns (RawJsonPb);
+  rpc BuildAiDefinitions(ToolBuildAiDefinitionsRequest) returns (RawJsonPb);
+  rpc BuildMcpDescriptions(ToolBuildMcpDescriptionsRequest) returns (RawJsonPb);
   rpc GetStats(Empty) returns (ToolStatsPb);
   rpc GetActivePlanState(StringRequest) returns (RawJsonPb);
-  rpc SetActivePlanState(JsonArgs) returns (Status);
+  rpc SetActivePlanState(ToolSetActivePlanStateRequest) returns (Status);
   rpc ClearActivePlanState(StringRequest) returns (Status);
 }
 
@@ -821,37 +1190,135 @@ message FactSaveResultPb {
   optional double similarity = 3;
 }
 
+// ─── EntityService typed Request messages ───────────────────────────────────
+message EntitySaveRequest {
+  string name = 1;
+  string entity_type = 2;
+  repeated string aliases = 3;
+  // 임의 메타 JSON. 빈 string 이면 None.
+  optional string metadata_json = 4;
+  optional string source_conv_id = 5;
+}
+message EntityUpdateRequest {
+  int64 id = 1;
+  optional string name = 2;
+  optional string entity_type = 3;
+  // Some(Vec) replace, None = 변경 X. 빈 string array json = clear.
+  optional string aliases_json = 4;
+  optional string metadata_json = 5;
+}
+message EntitySearchRequest {
+  // 동적 EntitySearchOpts JSON — 매니저가 직접 deserialize.
+  string opts_json = 1;
+}
+message EntityFactSaveRequest {
+  int64 entity_id = 1;
+  string content = 2;
+  optional string fact_type = 3;
+  optional int64 occurred_at = 4;
+  repeated string tags = 5;
+  optional string source_conv_id = 6;
+  optional int64 ttl_days = 7;
+  optional double dedup_threshold = 8;
+}
+message EntityFactUpdateRequest {
+  int64 id = 1;
+  optional string content = 2;
+  optional string fact_type = 3;
+  optional int64 occurred_at = 4;
+  // None = 변경 X. 빈 array json = clear.
+  optional string tags_json = 5;
+  optional int64 ttl_days = 6;
+}
+message EntityTimelineRequest {
+  int64 entity_id = 1;
+  optional int64 limit = 2;
+  optional int64 offset = 3;
+  optional string order_by = 4;
+}
+message EntitySearchFactsRequest {
+  // 동적 FactSearchOpts JSON.
+  string opts_json = 1;
+}
+message EntityRetrieveContextRequest {
+  string query = 1;
+  optional int64 entity_limit = 2;
+  optional int64 facts_per_entity = 3;
+}
+
 service EntityService {
-  rpc Save(JsonArgs) returns (EntitySaveResultPb);
-  rpc Update(JsonArgs) returns (Status);
+  rpc Save(EntitySaveRequest) returns (EntitySaveResultPb);
+  rpc Update(EntityUpdateRequest) returns (Status);
   rpc Delete(NumberRequest) returns (Status);
   rpc Get(NumberRequest) returns (RawJsonPb);
   rpc FindByName(StringRequest) returns (RawJsonPb);
-  rpc Search(JsonArgs) returns (RawJsonPb);
+  rpc Search(EntitySearchRequest) returns (RawJsonPb);
 
-  rpc SaveFact(JsonArgs) returns (FactSaveResultPb);
-  rpc UpdateFact(JsonArgs) returns (Status);
+  rpc SaveFact(EntityFactSaveRequest) returns (FactSaveResultPb);
+  rpc UpdateFact(EntityFactUpdateRequest) returns (Status);
   rpc DeleteFact(NumberRequest) returns (Status);
   rpc GetFact(NumberRequest) returns (RawJsonPb);
-  rpc GetTimeline(JsonArgs) returns (RawJsonPb);
-  rpc SearchFacts(JsonArgs) returns (RawJsonPb);
-  rpc RetrieveContext(JsonArgs) returns (RawJsonPb);
+  rpc GetTimeline(EntityTimelineRequest) returns (RawJsonPb);
+  rpc SearchFacts(EntitySearchFactsRequest) returns (RawJsonPb);
+  rpc RetrieveContext(EntityRetrieveContextRequest) returns (RawJsonPb);
   rpc CleanupExpiredFacts(Empty) returns (NumberRequest);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // 19. EpisodicService — EpisodicManager (메모리 4-tier: event)
 // ──────────────────────────────────────────────────────────────────────────
+// ─── EpisodicService typed Request messages ─────────────────────────────────
+message EpisodicSaveEventRequest {
+  string event_type = 1;
+  string title = 2;
+  optional string description = 3;
+  optional string who = 4;
+  // 동적 context JSON. 빈 string 이면 None.
+  optional string context_json = 5;
+  optional int64 occurred_at = 6;
+  repeated int64 entity_ids = 7;
+  optional string source_conv_id = 8;
+  optional int64 ttl_days = 9;
+  optional double dedup_threshold = 10;
+}
+message EpisodicUpdateEventRequest {
+  int64 id = 1;
+  optional string event_type = 2;
+  optional string title = 3;
+  optional string description = 4;
+  optional string who = 5;
+  optional string context_json = 6;
+  optional int64 occurred_at = 7;
+  // None = 변경 안 함. 빈 array json = clear.
+  optional string entity_ids_json = 8;
+  optional int64 ttl_days = 9;
+}
+message EpisodicSearchEventsRequest {
+  string opts_json = 1;        // EventSearchOpts JSON
+}
+message EpisodicListRecentRequest {
+  string opts_json = 1;        // ListRecentOpts JSON
+}
+message EpisodicListByEntityRequest {
+  int64 entity_id = 1;
+  optional int64 limit = 2;
+  optional int64 offset = 3;
+}
+message EpisodicLinkEntityRequest {
+  int64 event_id = 1;
+  int64 entity_id = 2;
+}
+
 service EpisodicService {
-  rpc SaveEvent(JsonArgs) returns (FactSaveResultPb);
-  rpc UpdateEvent(JsonArgs) returns (Status);
+  rpc SaveEvent(EpisodicSaveEventRequest) returns (FactSaveResultPb);
+  rpc UpdateEvent(EpisodicUpdateEventRequest) returns (Status);
   rpc DeleteEvent(NumberRequest) returns (Status);
   rpc GetEvent(NumberRequest) returns (RawJsonPb);
-  rpc SearchEvents(JsonArgs) returns (RawJsonPb);
-  rpc ListRecent(JsonArgs) returns (RawJsonPb);
-  rpc ListByEntity(JsonArgs) returns (RawJsonPb);
-  rpc LinkEntity(JsonArgs) returns (Status);
-  rpc UnlinkEntity(JsonArgs) returns (Status);
+  rpc SearchEvents(EpisodicSearchEventsRequest) returns (RawJsonPb);
+  rpc ListRecent(EpisodicListRecentRequest) returns (RawJsonPb);
+  rpc ListByEntity(EpisodicListByEntityRequest) returns (RawJsonPb);
+  rpc LinkEntity(EpisodicLinkEntityRequest) returns (Status);
+  rpc UnlinkEntity(EpisodicLinkEntityRequest) returns (Status);
   rpc CleanupExpired(Empty) returns (NumberRequest);
 }
 
@@ -872,11 +1339,42 @@ message LlmTextResultPb {
   string text = 1;
 }
 
+// ─── ConsolidationService typed Request messages ────────────────────────────
+message ConsolidationAskLlmTextRequest {
+  string prompt = 1;
+  optional string model = 2;
+  optional string thinking_level = 3;
+  optional string system_prompt = 4;
+}
+message ConsolidationConsolidateRequest {
+  // 자동 추출: conversation_id 기반.
+  optional string conversation_id = 1;
+  optional string owner = 2;
+  optional string model_id = 3;
+  // 미리 추출된 결과 save (LLM 호출 후 흐름 합류). 빈 string 이면 None.
+  optional string extracted_json = 4;
+  optional string source_conv_id = 5;
+  optional double fact_dedup_threshold = 6;
+  optional double event_dedup_threshold = 7;
+}
+message ConsolidationConsolidateInactiveRequest {
+  optional string owner = 1;
+  optional int64 inactivity_ms = 2;
+  optional int64 limit_per_run = 3;
+}
+
 service ConsolidationService {
-  rpc AskLlmText(JsonArgs) returns (LlmTextResultPb);
-  rpc Consolidate(JsonArgs) returns (RawJsonPb);
-  rpc ConsolidateInactive(JsonArgs) returns (RawJsonPb);
+  rpc AskLlmText(ConsolidationAskLlmTextRequest) returns (LlmTextResultPb);
+  rpc Consolidate(ConsolidationConsolidateRequest) returns (RawJsonPb);
+  rpc ConsolidateInactive(ConsolidationConsolidateInactiveRequest) returns (RawJsonPb);
   rpc GetMemoryStats(Empty) returns (MemoryStatsPb);
+}
+
+// ─── TemplateService typed Request messages ─────────────────────────────────
+message TemplateSaveRequest {
+  string slug = 1;
+  // 동적 TemplateConfig JSON.
+  string config_json = 2;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -885,7 +1383,7 @@ service ConsolidationService {
 service TemplateService {
   rpc List(Empty) returns (RawJsonPb);
   rpc Get(StringRequest) returns (RawJsonPb);
-  rpc Save(JsonArgs) returns (Status);
+  rpc Save(TemplateSaveRequest) returns (Status);
   rpc Delete(StringRequest) returns (Status);
 }
 
@@ -925,6 +1423,12 @@ message LastModelByCategoryPb {
   string raw_json = 1;
 }
 
+// ─── SettingsService typed Request messages ─────────────────────────────────
+message SettingsSetLastModelByCategoryRequest {
+  // {category_id: model_id} 형식 JSON. 동적 키 집합 — proto map 회피.
+  string by_category_json = 1;
+}
+
 /** Settings — timezone / aiModel / userPrompt / anthropicCache / 등 */
 service SettingsService {
   rpc GetTimezone(Empty) returns (StringRequest);
@@ -938,7 +1442,7 @@ service SettingsService {
   rpc GetAnthropicCacheEnabled(Empty) returns (BoolRequest);
   rpc SetAnthropicCacheEnabled(BoolRequest) returns (BoolRequest);
   rpc GetLastModelByCategory(Empty) returns (LastModelByCategoryPb);
-  rpc SetLastModelByCategory(JsonArgs) returns (BoolRequest);
+  rpc SetLastModelByCategory(SettingsSetLastModelByCategoryRequest) returns (BoolRequest);
   rpc GetAiAssistantModel(Empty) returns (StringRequest);
   rpc SetAiAssistantModel(StringRequest) returns (BoolRequest);
   rpc GetAiAssistantDefault(Empty) returns (StringRequest);
@@ -948,17 +1452,52 @@ service SettingsService {
   rpc GetAvailableAiModels(Empty) returns (AvailableAiModelListPb);
 }
 
+// ─── NetworkService typed Request messages ──────────────────────────────────
+message NetworkFetchRequest {
+  string url = 1;
+  optional string method = 2;        // GET / POST / PUT / PATCH / DELETE / HEAD / OPTIONS
+  // headers 동적 string→string map — JSON 직렬화.
+  optional string headers_json = 3;
+  optional string body = 4;
+  optional int64 timeout_ms = 5;
+}
+
 /** Network — Sandbox 안에서 안전한 외부 fetch */
 service NetworkService {
-  rpc Fetch(JsonArgs) returns (RawJsonPb);
+  rpc Fetch(NetworkFetchRequest) returns (RawJsonPb);
+}
+
+// ─── CacheService typed Request messages ────────────────────────────────────
+message CacheReadRequest {
+  string key = 1;
+  optional int64 offset = 2;
+  optional int64 limit = 3;
+}
+message CacheGrepRequest {
+  string key = 1;
+  string field = 2;
+  string op = 3;
+  string value_json = 4;
+}
+message CacheAggregateRequest {
+  string key = 1;
+  string field = 2;
+  string op = 3;
 }
 
 /** Cache — sysmod 결과 cache 공통 layer */
 service CacheService {
-  rpc Read(JsonArgs) returns (RawJsonPb);
-  rpc Grep(JsonArgs) returns (RawJsonPb);
-  rpc Aggregate(JsonArgs) returns (RawJsonPb);
+  rpc Read(CacheReadRequest) returns (RawJsonPb);
+  rpc Grep(CacheGrepRequest) returns (RawJsonPb);
+  rpc Aggregate(CacheAggregateRequest) returns (RawJsonPb);
   rpc Drop(StringRequest) returns (Status);
+}
+
+// ─── TelegramService typed Request messages ─────────────────────────────────
+message TelegramProcessMessageRequest {
+  string text = 1;
+  // Telegram chat id — string 또는 number. service 가 두 형식 다 받기 위해 string.
+  string chat_id = 2;
 }
 
 /** Telegram — 양방향 봇 + send-only */
@@ -968,12 +1507,25 @@ service TelegramService {
   rpc GetWebhookStatus(Empty) returns (RawJsonPb);
   rpc IsOwner(StringRequest) returns (BoolRequest);
   rpc GetWebhookSecret(Empty) returns (RawJsonPb);
-  rpc ProcessMessage(JsonArgs) returns (RawJsonPb);
+  rpc ProcessMessage(TelegramProcessMessageRequest) returns (RawJsonPb);
+}
+
+// ─── DatabaseService typed Request messages ─────────────────────────────────
+message DatabaseQueryRequest {
+  string sql = 1;
+  // params 배열 JSON — 동적 typed.
+  string params_json = 2;
 }
 
 /** Database — raw query (BIBLE 의 도메인 port 마이그레이션 영역 — Phase B 개선 후보) */
 service DatabaseService {
-  rpc Query(JsonArgs) returns (RawJsonPb);
+  rpc Query(DatabaseQueryRequest) returns (RawJsonPb);
+}
+
+// ─── MemoryService typed Request messages ───────────────────────────────────
+message MemorySaveFileRequest {
+  string name = 1;
+  string content = 2;
 }
 
 /** Memory — Claude memory file 시스템 */
@@ -981,14 +1533,23 @@ service MemoryService {
   rpc GetIndex(Empty) returns (StringRequest);
   rpc ReadFile(StringRequest) returns (RawJsonPb);
   rpc ListFiles(Empty) returns (RawJsonPb);
-  rpc SaveFile(JsonArgs) returns (Status);
+  rpc SaveFile(MemorySaveFileRequest) returns (Status);
   rpc DeleteFile(StringRequest) returns (Status);
+}
+
+// ─── LifecycleService typed Request messages ────────────────────────────────
+message LifecycleCaptureExceptionRequest {
+  string message = 1;
+  optional string stack = 2;
+  optional string severity = 3;       // "error" / "warn" / "info"
+  // 임의 추가 메타 JSON.
+  optional string meta_json = 4;
 }
 
 /** Lifecycle / Health — 헬스 체크 + graceful shutdown 등 */
 service LifecycleService {
   rpc Health(Empty) returns (HealthInfo);
-  rpc CaptureException(JsonArgs) returns (Status);
+  rpc CaptureException(LifecycleCaptureExceptionRequest) returns (Status);
   rpc GracefulShutdown(NumberRequest) returns (Status);
 }
 

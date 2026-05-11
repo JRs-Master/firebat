@@ -15,7 +15,7 @@ use crate::managers::ai::AiManager;
 use crate::managers::module::ModuleManager;
 use crate::ports::{INetworkPort, IVaultPort, NetworkRequest};
 use crate::proto::{
-    telegram_service_server::TelegramService, BoolRequest, Empty, JsonArgs, RawJsonPb,
+    telegram_service_server::TelegramService, BoolRequest, Empty, RawJsonPb, TelegramProcessMessageRequest,
     StringRequest,
 };
 
@@ -174,28 +174,10 @@ impl TelegramService for TelegramServiceImpl {
 
     async fn process_message(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<TelegramProcessMessageRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        // 옛 TS Core.processTelegramMessage 1:1 — webhook 메시지 → AI 응답 → reply 전송.
-        // AiManager + ModuleManager 설정되어 있을 때만 작동.
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            text: String,
-            #[serde(rename = "chatId")]
-            chat_id: serde_json::Value, // string 또는 number
-        }
-        let args: Args = serde_json::from_str(&raw)
-            .map_err(|e| TonicStatus::invalid_argument(format!("process_message args: {e}")))?;
-        let chat_id_str = match &args.chat_id {
-            serde_json::Value::String(s) => s.clone(),
-            serde_json::Value::Number(n) => n.to_string(),
-            _ => {
-                return Err(TonicStatus::invalid_argument(
-                    "chatId 는 string 또는 number 여야 함",
-                ));
-            }
-        };
+        let args = req.into_inner();
+        let chat_id_str = args.chat_id;
 
         let (Some(ai), Some(module)) = (&self.ai, &self.module) else {
             return Ok(Response::new(raw_json(&serde_json::json!({

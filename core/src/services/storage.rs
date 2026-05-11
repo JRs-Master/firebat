@@ -12,7 +12,8 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::storage::StorageManager;
 use crate::ports::IStoragePort;
 use crate::proto::{
-    storage_service_server::StorageService, JsonArgs, RawJsonPb, Status, StringRequest,
+    storage_service_server::StorageService, RawJsonPb, Status, StorageGlobFilesRequest,
+    StorageWriteFileRequest, StringRequest,
 };
 
 pub struct StorageServiceImpl {
@@ -78,18 +79,9 @@ impl StorageService for StorageServiceImpl {
 
     async fn write_file(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<StorageWriteFileRequest>,
     ) -> Result<Response<Status>, TonicStatus> {
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            path: String,
-            content: String,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("write_file args: {e}"))),
-        };
+        let args = req.into_inner();
         match self.storage.write(&args.path, &args.content).await {
             Ok(()) => Ok(ok_status()),
             Err(e) => Ok(err_status(e)),
@@ -159,22 +151,14 @@ impl StorageService for StorageServiceImpl {
 
     async fn glob_files(
         &self,
-        req: Request<JsonArgs>,
+        req: Request<StorageGlobFilesRequest>,
     ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        // 옛 TS Core.globFiles → StorageManager.glob 등가 (BIBLE Core Facade 준수).
-        // 인자: { pattern: string, limit?: number }
-        let raw = req.into_inner().raw;
-        #[derive(serde::Deserialize)]
-        struct Args {
-            pattern: String,
-            #[serde(default)]
-            limit: Option<usize>,
-        }
-        let args: Args = match serde_json::from_str(&raw) {
-            Ok(v) => v,
-            Err(e) => return Err(TonicStatus::invalid_argument(format!("glob args: {e}"))),
-        };
-        match self.manager.glob(&args.pattern, args.limit).await {
+        let args = req.into_inner();
+        match self
+            .manager
+            .glob(&args.pattern, args.limit.map(|v| v as usize))
+            .await
+        {
             Ok(matches) => Ok(Response::new(raw_json(&matches))),
             Err(e) => Err(TonicStatus::internal(e)),
         }
