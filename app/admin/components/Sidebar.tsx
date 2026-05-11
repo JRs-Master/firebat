@@ -1105,10 +1105,10 @@ export function Sidebar({
                 placeholder={renameTarget.type === 'page' ? '새 slug (예: bitcoin/2026-04-20-review)' : '새 프로젝트 이름 (예: bitcoin-reviews)'}
                 autoFocus
                 disabled={renaming}
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100" name="renameInput" autoComplete="off"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100" name="renameInput" autoComplete="off" id="renameInput"
               />
               <label className="flex items-center gap-2 text-[12px] text-slate-700 cursor-pointer">
-                <input type="checkbox" checked={renameSetRedirect} onChange={e => setRenameSetRedirect(e.target.checked)} disabled={renaming} name="renameSetRedirect" autoComplete="off" />
+                <input type="checkbox" checked={renameSetRedirect} onChange={e => setRenameSetRedirect(e.target.checked)} disabled={renaming} name="renameSetRedirect" autoComplete="off" id="renameSetRedirect" />
                 <span>구 URL → 새 URL 리디렉트 등록 (권장, 외부 공유된 링크 유지)</span>
               </label>
               <p className="text-[10px] text-slate-400">

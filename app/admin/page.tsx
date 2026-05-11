@@ -294,7 +294,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
                       rows={1}
                       style={{ resize: 'none', overflow: 'hidden' }}
                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; }}
-                      className={`flex-1 px-3 py-1.5 border rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 bg-white ${borderCls}`} name="val" autoComplete="off"
+                      className={`flex-1 px-3 py-1.5 border rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 bg-white ${borderCls}`} name="val" autoComplete="off" id="val"
                     />
                     {rows.length > 1 && (
                       <Tooltip label="이 칸 삭제">
@@ -1230,14 +1230,14 @@ export default function AdminConsole() {
                     loading
                       ? t('admin_chat.placeholder_loading')
                       : (inputMode === 'image' ? t('admin_chat.placeholder_image_mode') : t('admin_chat.placeholder_default'))
-                  } name="input" autoComplete="off"
+                  } name="input" autoComplete="off" id="input"
                 />
                 <input
                   ref={imageInputRef}
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); e.target.value = ''; }} name="field1235" autoComplete="off"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); e.target.value = ''; }} name="field1235" autoComplete="off" id="field1235"
                 />
                 <div className="flex items-center justify-between px-2 sm:px-3 py-2">
                   <div className="flex items-center gap-1">

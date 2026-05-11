@@ -154,7 +154,7 @@ export function GalleryPanel() {
             placeholder="프롬프트·파일명·모델로 검색"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-7 pr-2 py-1.5 text-[12px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="search" autoComplete="off"
+            className="w-full pl-7 pr-2 py-1.5 text-[12px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="search" autoComplete="off" id="search"
           />
         </div>
         <div className="flex gap-1">

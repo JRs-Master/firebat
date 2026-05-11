@@ -118,7 +118,7 @@ export function NotesPanel() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="노트 검색"
-            className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="query" autoComplete="off"
+            className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="query" autoComplete="off" id="query"
           />
         </div>
         <Tooltip label="노트 추가">
@@ -268,7 +268,7 @@ function NoteModal({ existing, onClose, onSaved }: { existing: Note | null; onCl
               onChange={(e) => setTitle(e.target.value)}
               placeholder="노트 제목"
               className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus name="title" autoComplete="off"
+              autoFocus name="title" autoComplete="off" id="title"
             />
           </div>
           <div>
@@ -278,7 +278,7 @@ function NoteModal({ existing, onClose, onSaved }: { existing: Note | null; onCl
               onChange={(e) => setContent(e.target.value)}
               rows={10}
               placeholder="# 제목&#10;본문..."
-              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono resize-none" name="content" autoComplete="off"
+              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono resize-none" name="content" autoComplete="off" id="content"
             />
           </div>
           <div>
@@ -288,7 +288,7 @@ function NoteModal({ existing, onClose, onSaved }: { existing: Note | null; onCl
               value={tagsRaw}
               onChange={(e) => setTagsRaw(e.target.value)}
               placeholder="아이디어, todo, 매매"
-              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="tagsRaw" autoComplete="off"
+              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="tagsRaw" autoComplete="off" id="tagsRaw"
             />
           </div>
           {error && <p className="text-[11px] text-red-600">{error}</p>}

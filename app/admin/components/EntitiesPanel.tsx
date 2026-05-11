@@ -199,7 +199,7 @@ export function EntitiesPanel() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="검색 (자연어 OK)"
-            className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="query-197" autoComplete="off"
+            className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="query-197" autoComplete="off" id="query-197"
           />
         </div>
         <Tooltip label="엔티티 추가">
@@ -398,7 +398,7 @@ function EventsPanel() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="검색"
-            className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="query" autoComplete="off"
+            className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="query" autoComplete="off" id="query"
           />
         </div>
         <input
@@ -406,7 +406,7 @@ function EventsPanel() {
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
           placeholder="type"
-          className="w-20 px-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="typeFilter" autoComplete="off"
+          className="w-20 px-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="typeFilter" autoComplete="off" id="typeFilter"
         />
       </div>
 
@@ -484,7 +484,7 @@ function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated
         onChange={(e) => setContent(e.target.value)}
         rows={2}
         placeholder="자연어 1-2 문장 (시간·수치 명시 권장)"
-        className="w-full text-[10px] px-1.5 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" name="content" autoComplete="off"
+        className="w-full text-[10px] px-1.5 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" name="content" autoComplete="off" id="content"
       />
       <div className="flex items-center gap-1 mt-1">
         <input
@@ -492,7 +492,7 @@ function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated
           value={factType}
           onChange={(e) => setFactType(e.target.value)}
           placeholder="type (선택, 예: transaction)"
-          className="flex-1 text-[10px] px-1.5 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="factType" autoComplete="off"
+          className="flex-1 text-[10px] px-1.5 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="factType" autoComplete="off" id="factType"
         />
         <button
           onClick={submit}
@@ -563,7 +563,7 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
               onChange={(e) => setName(e.target.value)}
               placeholder="예: 회사명, 봇 v1"
               className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus name="name" autoComplete="off"
+              autoFocus name="name" autoComplete="off" id="name"
             />
           </div>
           <div>
@@ -573,7 +573,7 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
               value={type}
               onChange={(e) => setType(e.target.value)}
               placeholder="stock / company / person / project / concept / event 등"
-              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="type" autoComplete="off"
+              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="type" autoComplete="off" id="type"
             />
           </div>
           <div>
@@ -583,7 +583,7 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
               onChange={(e) => setAliases(e.target.value)}
               rows={2}
               placeholder="줄바꿈 또는 콤마 분리. 예: 005930, 삼전"
-              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" name="aliases" autoComplete="off"
+              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" name="aliases" autoComplete="off" id="aliases"
             />
           </div>
           {error && <p className="text-[11px] text-red-600">{error}</p>}

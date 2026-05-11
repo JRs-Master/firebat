@@ -177,7 +177,7 @@ export function SetupWizard({ onComplete }: Props) {
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-gray-700 block">{t('setup.admin_id')}</label>
+          <label className="text-sm font-medium text-gray-700 block" htmlFor="setup-admin-id">{t('setup.admin_id')}</label>
           <input
             id="setup-admin-id"
             name="username"
@@ -255,7 +255,7 @@ export function SetupWizard({ onComplete }: Props) {
             value={timezone}
             onChange={(e) => setTimezone(e.target.value)}
             disabled={submitting}
-            className="w-full border border-[#eaeaea] rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:bg-slate-50" name="timezone"
+            className="w-full border border-[#eaeaea] rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors disabled:bg-slate-50" name="timezone" id="timezone"
           >
             {browserTz && (
               <option value={browserTz}>{browserTz} {t('setup.tz_browser_detected')}</option>

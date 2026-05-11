@@ -130,7 +130,7 @@ function SearchModal({ onClose }: { onClose: () => void }) {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="검색어 입력..."
               className="flex-1 bg-transparent border-0 outline-none text-base"
-              style={{ color: 'var(--cms-text)' }} name="query" autoComplete="off"
+              style={{ color: 'var(--cms-text)' }} name="query" autoComplete="off" id="query"
             />
             {loading && (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin" style={{ color: 'var(--cms-text-muted)' }} aria-hidden="true">
