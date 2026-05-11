@@ -589,8 +589,10 @@ impl FormatHandler for ClaudeCodeCliHandler {
         _prior_results: &[ToolResult],
         opts: &LlmCallOpts,
     ) -> InfraResult<LlmToolResponse> {
-        // 도구 0건 (단순 텍스트) — ask_text 위임. 가장 흔한 경로.
-        if tools.is_empty() {
+        // 도구 0건 (단순 텍스트) — ask_text 위임. 단 hosted MCP / CLI 자체 loop 모델
+        // (features.mcp_connector=true) 은 빈 tools 여도 MCP config + 권한 모드가 필요하므로
+        // ask_text 위임 금지 (ai.rs 가 hosted MCP 모델은 effective_tools 빈 배열로 호출).
+        if tools.is_empty() && !config.features.mcp_connector {
             let r = self.ask_text(config, api_key, prompt, opts).await?;
             return Ok(LlmToolResponse {
                 text: r.text,

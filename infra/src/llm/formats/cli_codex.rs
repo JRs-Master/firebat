@@ -491,7 +491,9 @@ impl FormatHandler for CodexCliHandler {
         _prior_results: &[ToolResult],
         opts: &LlmCallOpts,
     ) -> InfraResult<LlmToolResponse> {
-        if tools.is_empty() {
+        // hosted MCP / CLI 자체 loop 모델 (features.mcp_connector=true) 은 빈 tools 여도
+        // MCP config 가 필요하므로 ask_text 위임 금지.
+        if tools.is_empty() && !config.features.mcp_connector {
             let r = self.ask_text(config, api_key, prompt, opts).await?;
             return Ok(LlmToolResponse {
                 text: r.text,
