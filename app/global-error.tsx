@@ -6,11 +6,8 @@
  * Next.js 규칙: global-error.tsx 는 자체 <html><body> 출력 필수 (root layout 무사용 상태).
  * 평소 에러는 (user)/error.tsx 또는 admin 자체 try/catch 가 처리. 이건 최종 안전망.
  *
- * UX 정책 (2026-05-11 단순화):
- *   - 버튼 / 자동 reload 카운트다운 폐기 — 사용자가 직접 F5 / 브라우저 뒤로 가기 결정
- *   - 메시지 + 오류 ID 만 표시 (디버깅 매칭용)
+ * UX 정책 (2026-05-11): 순수 에러 안내만 — 버튼 / 자동 새로고침 / console.error 모두 없음.
  */
-import { useEffect } from 'react';
 
 export default function GlobalError({
   error,
@@ -18,10 +15,6 @@ export default function GlobalError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  useEffect(() => {
-    console.error('[global-error]', error);
-  }, [error]);
-
   return (
     <html>
       <body

@@ -8,19 +8,12 @@
  *
  * 옛 transient 자동 reload 패턴 제거 (2026-05-08) — root cause 안 잡힌 채로 무한 새로고침 회피.
  */
-import { useEffect } from 'react';
-
 export default function AdminError({
   error,
-  reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  useEffect(() => {
-    console.error('[admin/error]', error);
-  }, [error]);
-
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-4 bg-white">
       <div className="text-center max-w-md">
