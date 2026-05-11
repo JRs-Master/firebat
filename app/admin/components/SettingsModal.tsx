@@ -788,7 +788,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
               {/* 타임존 */}
               <div className="flex flex-col gap-2">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">{t('settings.timezone')}</label>
+                <label className="text-xs sm:text-sm font-bold text-slate-700" htmlFor="userTimezone">{t('settings.timezone')}</label>
                 <select
                   value={userTimezone}
                   onChange={e => setUserTimezone(e.target.value)}
@@ -1931,7 +1931,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
               {/* 새 MCP 서버 추가 */}
               <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
-                <label className="text-xs sm:text-sm font-bold text-slate-700 pt-1">서버 추가</label>
+                <label className="text-xs sm:text-sm font-bold text-slate-700 pt-1" htmlFor="mcpNewName">서버 추가</label>
                 <input
                   type="text"
                   value={mcpNewName}
@@ -2443,7 +2443,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
         <h3 className="text-[14px] font-bold">{isNew ? '새 메모리' : `편집: ${item.name}`}</h3>
       </div>
       <div>
-        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1">카테고리</label>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor="category">카테고리</label>
         <select
           value={item.category}
           onChange={e => setItem({ ...item, category: e.target.value })}
@@ -2454,7 +2454,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
         </select>
       </div>
       <div>
-        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1">이름 (영문, snake_case)</label>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor="name">이름 (영문, snake_case)</label>
         <input
           type="text"
           value={item.name}
@@ -2465,7 +2465,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
         />
       </div>
       <div>
-        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1">짧은 설명 (인덱스에 표시)</label>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor="description">짧은 설명 (인덱스에 표시)</label>
         <input
           type="text"
           value={item.description}
@@ -2475,7 +2475,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
         />
       </div>
       <div>
-        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1">본문 (마크다운)</label>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor="content">본문 (마크다운)</label>
         <textarea
           value={item.content}
           onChange={e => setItem({ ...item, content: e.target.value })}
@@ -2582,29 +2582,29 @@ function CostBudgetSection() {
       <p className="text-[11px] text-slate-500 mb-2">USD 한도 = API 모드 (pay-per-token). 호출 수 한도 = 모든 모드 (CLI 구독 포함).</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1">일일 USD</label>
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor="dailyUsd">일일 USD</label>
           <input type="number" min="0" step="0.5" value={budget.dailyUsd} onChange={e => setBudget({ ...budget, dailyUsd: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="dailyUsd" autoComplete="off" id="dailyUsd" />
           {renderProgress('usd', budget.dailyUsd, budget.dailySpentUsd, dailyU)}
         </div>
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1">월간 USD</label>
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor="monthlyUsd">월간 USD</label>
           <input type="number" min="0" step="5" value={budget.monthlyUsd} onChange={e => setBudget({ ...budget, monthlyUsd: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="monthlyUsd" autoComplete="off" id="monthlyUsd" />
           {renderProgress('usd', budget.monthlyUsd, budget.monthlySpentUsd, monthlyU)}
         </div>
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1">일일 호출 수</label>
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor="dailyCalls">일일 호출 수</label>
           <input type="number" min="0" step="10" value={budget.dailyCalls} onChange={e => setBudget({ ...budget, dailyCalls: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="dailyCalls" autoComplete="off" id="dailyCalls" />
           {renderProgress('calls', budget.dailyCalls, budget.dailySpentCalls, dailyC)}
         </div>
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1">월간 호출 수</label>
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor="monthlyCalls">월간 호출 수</label>
           <input type="number" min="0" step="100" value={budget.monthlyCalls} onChange={e => setBudget({ ...budget, monthlyCalls: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="monthlyCalls" autoComplete="off" id="monthlyCalls" />
           {renderProgress('calls', budget.monthlyCalls, budget.monthlySpentCalls, monthlyC)}
         </div>
       </div>
       <div className="flex items-end gap-3">
         <div className="flex-1">
-          <label className="text-[11px] text-slate-500 block mb-1">알림 임계 (%) — progress bar 진해지는 기준</label>
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor="alertAtPercent">알림 임계 (%) — progress bar 진해지는 기준</label>
           <input type="number" min="1" max="100" step="5" value={budget.alertAtPercent} onChange={e => setBudget({ ...budget, alertAtPercent: Number(e.target.value) || 80 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="alertAtPercent" autoComplete="off" id="alertAtPercent" />
         </div>
         <button onClick={save} disabled={saving} className="px-3 py-1.5 text-[12px] bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-50">

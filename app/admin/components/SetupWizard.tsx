@@ -192,7 +192,7 @@ export function SetupWizard({ onComplete }: Props) {
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-gray-700 block">{t('setup.password')}</label>
+          <label className="text-sm font-medium text-gray-700 block" htmlFor="setup-admin-password">{t('setup.password')}</label>
           <div className="relative">
             <input
               id="setup-admin-password"
@@ -223,7 +223,7 @@ export function SetupWizard({ onComplete }: Props) {
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-gray-700 block">{t('setup.password_confirm')}</label>
+          <label className="text-sm font-medium text-gray-700 block" htmlFor="setup-admin-password-confirm">{t('setup.password_confirm')}</label>
           <div className="relative">
             <input
               id="setup-admin-password-confirm"
@@ -250,7 +250,7 @@ export function SetupWizard({ onComplete }: Props) {
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-gray-700 block">{t('setup.timezone')}</label>
+          <label className="text-sm font-medium text-gray-700 block" htmlFor="timezone">{t('setup.timezone')}</label>
           <select
             value={timezone}
             onChange={(e) => setTimezone(e.target.value)}

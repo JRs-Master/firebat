@@ -556,7 +556,7 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
         </div>
         <div className="px-4 py-3 space-y-3">
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1">이름</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="name">이름</label>
             <input
               type="text"
               value={name}
@@ -567,7 +567,7 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
             />
           </div>
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1">Type</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="type">Type</label>
             <input
               type="text"
               value={type}
@@ -577,7 +577,7 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
             />
           </div>
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1">별칭 (선택)</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="aliases">별칭 (선택)</label>
             <textarea
               value={aliases}
               onChange={(e) => setAliases(e.target.value)}

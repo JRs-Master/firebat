@@ -611,7 +611,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
 
           {mode === 'once' && (
             <div>
-              <label className="text-[11px] font-semibold text-slate-500 mb-1 block">실행 시각</label>
+              <label className="text-[11px] font-semibold text-slate-500 mb-1 block" htmlFor="runAt">실행 시각</label>
               <input type="datetime-local" value={runAt} onChange={e => setRunAt(e.target.value)}
                 className="w-full px-3 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none focus:border-blue-400" name="runAt" autoComplete="off" id="runAt" />
             </div>
@@ -619,7 +619,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
 
           {mode === 'delay' && (
             <div className="flex items-center gap-2">
-              <label className="text-[11px] font-semibold text-slate-500 shrink-0">지연</label>
+              <label className="text-[11px] font-semibold text-slate-500 shrink-0" htmlFor="delaySec">지연</label>
               <input type="number" min={1} value={delaySec} onChange={e => setDelaySec(e.target.value)}
                 placeholder="300" className="w-20 px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none text-center" name="delaySec" autoComplete="off" id="delaySec" />
               <span className="text-[12px] text-slate-600">초 후 실행</span>
@@ -630,7 +630,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
           {mode === 'cron' && (
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <label className="text-[11px] font-semibold text-slate-500">종료 시각</label>
+                <label className="text-[11px] font-semibold text-slate-500" htmlFor="permanent">종료 시각</label>
                 <label className="flex items-center gap-1 cursor-pointer">
                   <input type="checkbox" checked={permanent} onChange={e => setPermanent(e.target.checked)}
                     className="w-3 h-3 rounded border-slate-300" name="permanent" autoComplete="off" id="permanent" />

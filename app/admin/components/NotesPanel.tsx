@@ -261,7 +261,7 @@ function NoteModal({ existing, onClose, onSaved }: { existing: Note | null; onCl
         </div>
         <div className="px-4 py-3 space-y-3">
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1">제목</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="title">제목</label>
             <input
               type="text"
               value={title}
@@ -272,7 +272,7 @@ function NoteModal({ existing, onClose, onSaved }: { existing: Note | null; onCl
             />
           </div>
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1">본문 (markdown OK)</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="content">본문 (markdown OK)</label>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
@@ -282,7 +282,7 @@ function NoteModal({ existing, onClose, onSaved }: { existing: Note | null; onCl
             />
           </div>
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1">태그 (콤마 분리)</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="tagsRaw">태그 (콤마 분리)</label>
             <input
               type="text"
               value={tagsRaw}

@@ -794,7 +794,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                   />
                 ) : field.type === 'select' ? (
                   <>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</label>
+                    <label className="text-xs sm:text-sm font-bold text-slate-700" htmlFor="field798">{localize(t, field.label)}</label>
                     <select
                       value={settings[field.key] ?? field.defaultValue ?? ''}
                       onChange={e => handleChange(field.key, e.target.value)}
