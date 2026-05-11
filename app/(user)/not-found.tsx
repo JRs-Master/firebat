@@ -4,6 +4,10 @@
  * (user) layout 의 header/footer/sidebar 자동 적용. design tokens 통합.
  * Next.js 가 metadata 자동 처리 (status 404 + noindex). 별도 generateMetadata 불필요.
  */
+// force-dynamic — build 시 Rust core (50051) 미접근. 매 요청 시 server render
+// (cms.siteLang / 최근 글 목록 박는 거 동적 데이터라 정적 prerender 불가).
+export const dynamic = 'force-dynamic';
+
 import type { Metadata } from 'next';
 import { getCore } from '../../lib/singleton';
 import { CmsPageList } from './cms-page-list';
