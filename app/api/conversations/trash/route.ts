@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     success: true,
     conversations: items.map(r => {
       const out = { ...r };
-      for (const key of ['createdAt', 'updatedAt', 'created_at', 'updated_at']) {
+      for (const key of ['createdAt', 'updatedAt']) {
         const v = out[key];
         if (typeof v === 'string' && /^\d+$/.test(v)) out[key] = Number(v);
       }

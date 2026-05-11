@@ -13,12 +13,13 @@ async function assertAdmin(req: NextRequest) {
 
 /**
  * proto-loader 가 i64 → JS string 으로 변환 (`longs: String`).
- * frontend 가 `new Date(ts)` 박으면 string ("1778425752563") 은 Invalid Date.
- * createdAt / updatedAt 만 number 로 강제 변환 — undefined / 이미 number 면 그대로.
+ * frontend 가 `new Date(ts)` 호출 시 string ("1778425752563") 은 Invalid Date.
+ * createdAt / updatedAt 만 number 로 변환 — undefined / 이미 number 면 그대로.
+ * proto-loader 의 `keepCase: false` 설정이라 camelCase 키만 사용.
  */
 function normalizeTimestamps(rec: Record<string, unknown>): Record<string, unknown> {
   const out = { ...rec };
-  for (const key of ['createdAt', 'updatedAt', 'created_at', 'updated_at']) {
+  for (const key of ['createdAt', 'updatedAt']) {
     const v = out[key];
     if (typeof v === 'string' && /^\d+$/.test(v)) {
       out[key] = Number(v);
@@ -38,10 +39,10 @@ export async function GET(req: NextRequest) {
     if (!res.success) {
       return NextResponse.json({ success: false, error: res.error }, { status: 404 });
     }
-    // Rust ConversationRecordPb 가 messages_json (string) 필드로 응답 — frontend 옛 형식
-    // (messages array) 으로 변환. messages 미존재 시 빈 배열.
+    // Rust ConversationRecordPb 의 messages_json (string) 필드 → frontend messages array 로 변환.
+    // proto-loader `keepCase: false` 라 camelCase (messagesJson) 만 응답. 미존재 시 빈 배열.
     const raw = res.data as Record<string, unknown> | undefined;
-    const messagesJson = (raw?.messages_json ?? raw?.messagesJson) as string | undefined;
+    const messagesJson = raw?.messagesJson as string | undefined;
     let messages: unknown[] = [];
     if (typeof messagesJson === 'string') {
       try { messages = JSON.parse(messagesJson) as unknown[]; } catch { messages = []; }

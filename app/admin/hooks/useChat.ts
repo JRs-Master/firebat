@@ -470,11 +470,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     }
 
     const userPrompt = text;
-    // 첨부 이미지 — base64 dataUrl 그대로 박으면 messages body 크기 ↑ → keepalive 64KB 한도 초과
-    // → 모바일 첨부 첫 시도 실패 (2026-05-11 root cause). 임시 영역 (/user/attachments/) 에 박은
-    // 후 slug URL 만 메시지에 박음 → body 작음 + keepalive 안정. 30일 후 cleanup cron 이 자동 삭제.
-    // upload 실패 시 base64 fallback (콘솔 경고) — 동작 영향 0 (옛 방식).
-    let imageData = attachedImage;
+    // 첨부 이미지 — 임시 영역 (/user/attachments/) 업로드 후 slug URL 만 메시지에 사용.
+    // base64 dataUrl 그대로 사용하면 messages body 크기 ↑ → keepalive 64KB 한도 초과 →
+    // 모바일 첨부 첫 시도 실패 (옛 root cause). 30일 후 cleanup cron 이 자동 삭제.
+    // 업로드 실패 시 base64 fallback 폐기 — 옛 root cause 복원 차단. 사용자에게 에러 표시.
+    let imageData: string | null = attachedImage;
     if (imageData && imageData.startsWith('data:') && inputMode !== 'image') {
       try {
         const upRes = await fetch('/api/media/attach-temp', {
@@ -485,10 +485,12 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         if (upRes.ok && upJson?.success && upJson?.data?.url) {
           imageData = upJson.data.url as string;
         } else {
-          console.warn('[useChat] 임시 첨부 업로드 실패, base64 fallback:', upJson?.error);
+          alert(`첨부 이미지 업로드 실패: ${upJson?.error ?? `HTTP ${upRes.status}`}`);
+          return;
         }
       } catch (err) {
-        console.warn('[useChat] 임시 첨부 업로드 network 실패, base64 fallback:', err);
+        alert(`첨부 이미지 업로드 실패 (네트워크): ${err instanceof Error ? err.message : String(err)}`);
+        return;
       }
     }
     setInput('');
