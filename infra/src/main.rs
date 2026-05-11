@@ -470,9 +470,10 @@ async fn main() -> Result<()> {
     let project_service = services::project::ProjectServiceImpl::new(project_manager);
     let module_service = services::module::ModuleServiceImpl::new(module_manager.clone());
     let page_service = services::page::PageServiceImpl::new(page_manager);
-    // ConversationService — IDatabasePort 설정하여 create_share / get_share / cleanup_expired_shares 활성
+    // ConversationService — IDatabasePort 설정하여 create_share / get_share / cleanup_expired_shares 활성.
+    // .clone() — internal 30d cleanup cron (Server::builder 직전) 도 같은 manager 참조.
     let conversation_service =
-        services::conversation::ConversationServiceImpl::new(conversation_manager)
+        services::conversation::ConversationServiceImpl::new(conversation_manager.clone())
             .with_db(db.clone());
     let mcp_service = services::mcp::McpServiceImpl::new(mcp_manager);
     let entity_service = services::entity::EntityServiceImpl::new(entity_manager);
@@ -483,7 +484,8 @@ async fn main() -> Result<()> {
     let schedule_service = services::schedule::ScheduleServiceImpl::new(schedule_manager)
         .with_task_manager(task_manager.clone());
     let task_service = services::task::TaskServiceImpl::new(task_manager);
-    let media_service = services::media::MediaServiceImpl::new(media_manager);
+    // .clone() — internal 30d cleanup cron 박은 거 같은 manager 참조.
+    let media_service = services::media::MediaServiceImpl::new(media_manager.clone());
     let ai_service = services::ai::AiServiceImpl::new(ai_manager.clone());
 
     // Phase B-17.5 — cross-cutting services (Storage / Settings / Network / Lifecycle).
