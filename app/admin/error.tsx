@@ -36,14 +36,6 @@ export default function AdminError({
             오류 ID: {error.digest}
           </p>
         )}
-        <div className="mt-4 flex items-center justify-center">
-          <button
-            onClick={() => reset()}
-            className="px-3 py-1.5 text-sm font-bold bg-blue-500 hover:bg-blue-600 text-white rounded cursor-pointer border-0"
-          >
-            다시 시도
-          </button>
-        </div>
       </div>
     </div>
   );

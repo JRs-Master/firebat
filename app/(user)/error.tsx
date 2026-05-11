@@ -54,15 +54,6 @@ export default function Error({
             {t('page.error_id')}: {error.digest}
           </p>
         )}
-        <div className="mt-6 flex items-center justify-center">
-          <button
-            onClick={() => reset()}
-            className="px-4 py-2 text-sm font-bold rounded no-underline transition-opacity hover:opacity-90 cursor-pointer border-0"
-            style={{ background: 'var(--cms-primary)', color: '#fff' }}
-          >
-            {t('common.retry')}
-          </button>
-        </div>
       </section>
     </main>
   );
