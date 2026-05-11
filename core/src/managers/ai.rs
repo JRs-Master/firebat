@@ -564,12 +564,11 @@ impl AiManager {
                 cli_suggestions.extend(response.suggestions.iter().cloned());
             }
             if !response.internally_used_tools.is_empty() {
-                // CLI 가 자체 처리한 도구 → executed_actions 에 메타 push (UI 표시용)
+                // CLI 가 자체 처리한 도구 → executed_actions 에 도구 이름 (string) 추가.
+                // ⚠️ Frontend ActionTags 가 string[] 기대 — object 들어가면 React #31 (object as child).
+                // 옛 TS 와 동일하게 단순 string 만. "internally" 메타 구분 필요해지면 별도 channel.
                 for tool_name in &response.internally_used_tools {
-                    executed_actions.push(serde_json::json!({
-                        "name": tool_name,
-                        "internally": true,
-                    }));
+                    executed_actions.push(serde_json::Value::String(tool_name.clone()));
                 }
             }
             // propose_plan turn 감지 — 호출됐으면 trailing text drop + break (옛 TS 1:1).

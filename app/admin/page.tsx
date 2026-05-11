@@ -593,12 +593,19 @@ function ShareTurnButton({ messages, conversationId, title, msgId }: { messages:
 }
 
 // ─── 액션 태그 (에러 시 빨간색 + 클릭 펼침) ──────────────────────────────────
-function ActionTags({ actions, steps }: { actions: string[]; steps?: StepStatus[] }) {
+function ActionTags({ actions, steps }: { actions: unknown[]; steps?: StepStatus[] }) {
   const [openIdx, setOpenIdx] = useState<number | null>(null);
-  // 같은 도구 중복은 하나로 합치고 호출 횟수를 xN으로 표시
+  // 같은 도구 중복은 하나로 합치고 호출 횟수를 xN으로 표시.
+  // ⚠️ Defensive — actions 안에 옛 형식 ({name, internally}) object 있을 수 있어 normalize.
+  // Object 그대로 JSX child 로 들어가면 React #31. 항상 string 으로 변환.
+  const normalized: string[] = actions.map(a => {
+    if (typeof a === 'string') return a;
+    if (a && typeof a === 'object' && 'name' in a) return String((a as { name: unknown }).name);
+    return String(a);
+  });
   const counts = new Map<string, number>();
   const order: string[] = [];
-  for (const a of actions) {
+  for (const a of normalized) {
     if (!counts.has(a)) order.push(a);
     counts.set(a, (counts.get(a) || 0) + 1);
   }
