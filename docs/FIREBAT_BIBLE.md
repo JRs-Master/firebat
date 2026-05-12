@@ -208,8 +208,8 @@ infra/                  어댑터 레이어 (불가침 구역)
   image-processor/      IImageProcessorPort 구현 (sharp + blurhash)
   entity/               IEntityPort 구현 (메모리 시스템 Entity tier)
   episodic/             IEpisodicPort 구현 (메모리 시스템 Episodic tier)
-lib/                    Core+Infra 조합 (singleton.ts)
-mcp/                    MCP 서버 (외부 AI → 파이어뱃)
+lib/                    Frontend 조합 (singleton.ts + grpc-typed-client.ts + proto-gen/)
+                        Phase E (2026-05-12) — 옛 mcp/ 디렉토리 폐기. Rust 단일 binary 안 MCP server (infra/src/mcp_server.rs) 가 대체.
 system/modules/         시스템 모듈 (읽기 전용)
 user/modules/           사용자 모듈 (AI 쓰기 공간)
 data/                   영구 저장소 (app.db, vault.db, logs/)
@@ -220,11 +220,13 @@ docs/                   바이블 및 기술 문서
 
 ## 제8장: MCP 연동
 
-### 제1항. MCP 서버 (외부 AI → 파이어뱃)
+### 제1항. MCP 서버 (외부 AI → 파이어뱃) — Phase E (2026-05-12) Rust cutover
 외부 AI 도구(Claude Code, Cursor 등)가 user 영역의 페이지/모듈을 CRUD할 수 있게 한다.
-stdio 모드(`npx tsx mcp/stdio.ts`)와 Streamable HTTP 모드(`/api/mcp`)를 지원한다.
-MCP 서버는 Primary Adapter와 동급이며, Core 메서드만 호출한다.
-CLI 모드 User AI는 별도 전용 stdio 진입점(`mcp/stdio-user-ai.ts` → `internal-server.ts`)을 통해 내부 도구 세트를 노출한다.
+**Rust 단일 binary 안 통합** — `infra/src/mcp_server.rs` 의 axum HTTP server (:50052) + stdio transport.
+- stdio 모드: `firebat-core --mcp-stdio` — Claude Desktop / Cursor 의 stdio 진입.
+- HTTP 모드: `/api/mcp` (외부 AI, Bearer token 검증) / `/api/mcp-internal` (CLI User AI). Frontend route 는 `firebat-core:50052/mcp` reverse proxy.
+MCP 서버는 Primary Adapter와 동급이며, Core 매니저만 호출한다. sysmod / render_* / 30+ builtin 도구 자동 등록.
+인증: Vault `system:internal-mcp-token` (내부 호출) + AuthManager API token (외부 사용자) 두 source 동시 검증.
 
 ### 제2항. MCP 클라이언트 (파이어뱃 → 외부 서비스)
 외부 MCP 서버(Gmail, Slack 등)에 접속하여 도구를 호출한다.
@@ -375,11 +377,11 @@ systemd unit 2개 (Phase 0 / Phase C 공통):
 - `TimeoutStopSec=30` — graceful shutdown 시간 보장 (SQLite WAL flush + cron job 마무리)
 - 단일 인스턴스 (BIBLE 단독 점유 원칙)
 
-Rust binary 자체는 SIGTERM 받으면 `tokio::signal` 으로 graceful shutdown — 25초 활성 작업 대기 + Cost flush + DB close + cron task abort. systemd 의 30s 안에 자연 종료.
+Rust binary 자체는 SIGTERM 받으면 `tokio::signal` 으로 graceful shutdown — 25초 활성 작업 대기 + Cost flush + DB close + cron task abort. Docker compose 의 `stop_grace_period: 30s` 안에 자연 종료.
 
 ### 제5항. 시스템은 크래시 허용 — 관제는 지속
 
-panic 또는 OOM 발생해도 systemd 재시작 → 다음 cron trigger / 사용자 요청 정상 처리. 단:
+panic 또는 OOM 발생해도 Docker `restart: unless-stopped` 정책으로 컨테이너 자동 재시작 → 다음 cron trigger / 사용자 요청 정상 처리. 단:
 - 매니저 코드 안 panic 금지 (어댑터 throw 0 정신과 같음)
 - `unwrap_or_else(|p| p.into_inner())` 패턴으로 mutex poison 도 graceful 처리
 - 진짜 panic 발생 시 (가설: 외부 lib bug) tracing capture → Telegram 또는 jsonl 기록 → 운영자 알림
@@ -391,7 +393,7 @@ panic 또는 OOM 발생해도 systemd 재시작 → 다음 cron trigger / 사용
 Frontend ↔ Rust Core 사이는 gRPC. 시니어 audit 결과 도입한 정책:
 
 - `lib/api-error.ts` — gRPC status code → HTTP status 표준 매핑 (UNAUTHENTICATED → 401 / NOT_FOUND → 404 / INVALID_ARGUMENT → 400 / DEADLINE_EXCEEDED → 504 / …)
-- `lib/core-grpc-client.ts:invokeCore` — gRPC ServiceError 자동 catch → `ApiError` throw (모든 호출자 자연 혜택)
+- `lib/grpc-typed-client.ts:callTypedClient` — @connectrpc/connect-node typed client. ConnectError → `ApiError` 매핑 처리 (Phase B-typed cutover 후 옛 `lib/core-grpc-client.ts:invokeCore` layer 폐기)
 - `lib/with-api-error.ts:withApiError(handler)` — Next.js API route wrapper. throw 된 ApiError → `toResponse()` 자동
 - 메시지 redaction — `lib/redactor.ts` 통과 (token / API key / IP / email mask) + 240자 이내 (스택 trace / SQL / 긴 path leak 방어)
 - 도입 demo: `app/api/capabilities/route.ts` + `app/api/module/run/route.ts` — 점진 sweep 가이드
@@ -435,7 +437,7 @@ Frontend ↔ Rust Core 사이는 gRPC. 시니어 audit 결과 도입한 정책:
 
 | 항목 | 현재 (v0.1) | v1.0 Final |
 |---|---|---|
-| **런타임** | Next.js 내 in-process | Docker compose: Core / Renderer 2 컨테이너 + nginx (gRPC :50051) |
+| **런타임** | Next.js 내 in-process | Docker compose: Core (gRPC :50051 + MCP HTTP :50052) / Renderer (:3000) / Caddy (자동 TLS :80/:443) 3 컨테이너 |
 | **Frontend** | Next.js + React + 27 render_* | **동일 — 1년+ polished 보존** |
 | **Core 언어** | TypeScript | Rust (gRPC server, 단일 binary) |
 | **JSON 검증** | Zod | Serde |
@@ -454,7 +456,7 @@ Frontend ↔ Rust Core 사이는 gRPC. 시니어 audit 결과 도입한 정책:
 | A. 설계 | gRPC schema + Cargo workspace + tonic-build 통합 | ✅ 완료 |
 | B. Rust Core 구현 | 16 어댑터 + 21 매니저 + 28 gRPC service + frontend RustCoreProxy + multi-crate workspace 분리. **hardcoding audit 7-pattern**. dual-run 폐기 → 옛 TS 단번 cutover | ✅ 완료 (2026-05-06) |
 | B-post. Audit cleanup | INetworkPort 신설 / Sandbox OS 격리 (cgroups + seccomp) / ConsolidationManager 예산 가드 / AI 모델 hardcode 정리 / package.json legacy 청산 | 🟡 진행 |
-| C. Self-hosted Docker | Multi-stage Dockerfile + docker-compose + nginx + Vault 마이그레이션 + firebat.co.kr 마이그레이션 | ⏳ |
+| C. Self-hosted Docker | Multi-stage Dockerfile (Rust core + Next.js renderer) + docker-compose + Caddy 자동 TLS + Vault 마이그레이션 + firebat.co.kr 마이그레이션 (`scripts/migrate-v0-to-v1.sh`) | ✅ 코드 정렬 완료 — 검증 게이트 대기 |
 | ~~D. Self-installed Tauri~~ | ~~src-tauri shell + Node sidecar~~ | 🚫 v2.0 이연 (2026-05-06 폐기) |
 
 **v1.0 Final 출시 게이트**:

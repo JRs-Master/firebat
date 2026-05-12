@@ -127,10 +127,10 @@ User prompt
 - **Three modes**: recurring (`cron`), one-shot (`runAt`), delay (`delaySec`)
 - **Pipelines**: Pre-compiled composite workflows — "MCP query → LLM summary → module dispatch"
 - **Seven pipeline steps**: `EXECUTE` (sandbox module), `MCP_CALL`, `NETWORK_REQUEST`, `LLM_TRANSFORM`, `CONDITION` (branching/early-stop), `SAVE_PAGE`, `TOOL_CALL` (Function Calling tools like `image_gen` from cron)
-- **Persistence**: Jobs restored automatically on systemd restart
+- **Persistence**: Jobs restored automatically on container/process restart (`data/cron-jobs.json`)
 - **Dynamic timezone**: Change per installation via settings
 
-> 🇰🇷 **스케줄링 & 자동화** — 반복(`cron`) / 1회 예약(`runAt`) / 딜레이(`delaySec`) 3가지 모드. 복합 작업은 파이프라인 7단계 (`EXECUTE` / `MCP_CALL` / `NETWORK_REQUEST` / `LLM_TRANSFORM` / `CONDITION` / `SAVE_PAGE` / `TOOL_CALL`) 로 사전 컴파일. systemd 재시작 시 자동 복원, 타임존 동적 변경.
+> 🇰🇷 **스케줄링 & 자동화** — 반복(`cron`) / 1회 예약(`runAt`) / 딜레이(`delaySec`) 3가지 모드. 복합 작업은 파이프라인 7단계 (`EXECUTE` / `MCP_CALL` / `NETWORK_REQUEST` / `LLM_TRANSFORM` / `CONDITION` / `SAVE_PAGE` / `TOOL_CALL`) 로 사전 컴파일. 컨테이너 재시작 시 `data/cron-jobs.json` 으로 자동 복원, 타임존 동적 변경.
 
 ### MCP (Model Context Protocol)
 
@@ -251,7 +251,7 @@ Site builder reaches Astra/GP-class depth — header / sidebar / footer all shar
 | **AI** | OpenAI · Anthropic · Google Gemini/Vertex (config-driven multi-provider) + CLI subscription mode |
 | **Database** | SQLite (rusqlite bundled, 정적 링크) |
 | **Editor** | Monaco Editor |
-| **MCP** | @modelcontextprotocol/sdk 1.29 |
+| **MCP** | Rust 자체 구현 (axum + JSON-RPC 2.0, HTTP :50052 + stdio) — Phase E (2026-05-12) 단일 binary 안 통합 |
 | **Validation** | Zod (TS) + serde (Rust) |
 | **Deploy** | self-hosted Docker compose (Phase C) — 단일 distribution (self-installed Tauri 는 v2.0 이연) |
 
@@ -311,44 +311,42 @@ Open `http://localhost:3000/admin` for the admin console. Frontend 가 `RustCore
 
 > 🇰🇷 **첫 부팅** — SetupWizard 가 자동 표시 (admin / 언어 / 시간대 입력 → 자동 로그인). **이후 설정** — AI 탭에서 모드·공급자·모델, 일반 탭에서 인터페이스 언어·타임존·관리자 계정 변경, 사이드바 SYSTEM 에서 MCP 토큰 생성.
 
-### Production
+### Production — self-hosted Docker compose (Phase C)
 
-**systemd 두 unit** — Rust core (gRPC :50051) + Next.js frontend (HTTP :3000) 분리 운영:
+Rust core (gRPC :50051 + MCP HTTP :50052) + Next.js renderer (:3000) + Caddy (자동 TLS) 3 컨테이너 분리 운영.
 
 ```bash
-# 1. 디렉 구조 + system 디렉 symlink
-mkdir -p /opt/firebat/{data,user/media,frontend}
-ln -sfn /opt/firebat-src/system /opt/firebat/system
+# 1. 소스 clone + 디렉 구조
+git clone <repo> /opt/firebat && cd /opt/firebat
+mkdir -p data user/media user/attachments system/media data/logs/caddy
+chown -R 1000:1000 data user
 
-# 2. Rust binary 배치
-# (GHA Actions → CI Rust → release-binary artifact 다운로드 또는 cargo build --release 결과)
-cp target/release/firebat-core /opt/firebat/firebat-core
-chmod +x /opt/firebat/firebat-core
+# 2. Caddy 도메인 / 이메일 설정
+cp caddy/Caddyfile.example caddy/Caddyfile
+# caddy/Caddyfile 안 YOUR_DOMAIN_HERE / YOUR_EMAIL_HERE 실 값 으로 일괄 치환
 
-# 3. Next.js standalone build + 배치
-cd /opt/firebat-src
-npm install --legacy-peer-deps && npm run build
-rsync -a .next/standalone/ /opt/firebat/frontend/
-rsync -a .next/static/ /opt/firebat/frontend/.next/static/
-rsync -a messages/ /opt/firebat/frontend/messages/
+# 3. Docker compose build + up (5~10분 — Rust + Python pip + playwright chromium)
+docker compose build
+docker compose up -d
 
-# 4. systemd unit (예시 — /etc/systemd/system/firebat.service / firebat-frontend.service)
-systemctl daemon-reload
-systemctl enable --now firebat firebat-frontend
-
-# 5. Caddy reverse proxy (자동 HTTPS)
-# /etc/caddy/Caddyfile 에 도메인 + reverse_proxy 127.0.0.1:3000 박기
+# 4. 로그 / 상태 확인
+docker compose logs -f firebat-core
+docker compose ps
 ```
 
-**Update flow** — `git pull && npm run build && rsync` (frontend) + binary FTP (Rust 변경 시) + `systemctl restart firebat firebat-frontend`.
+**Update flow** — `git pull && docker compose build && docker compose up -d` (전체) 또는 컨테이너 별 `docker compose restart firebat-core`.
 
-### MCP Server
+**옛 v0.1 systemd 운영 → v1.0 Docker 마이그레이션**: `sudo ./scripts/migrate-v0-to-v1.sh` (자동 백업 + 빌드 + 기동).
+
+### MCP Server (Rust 단일 binary 안 박힘)
 
 ```bash
-# stdio mode (local)
-npm run mcp
+# stdio mode — Claude Desktop / Cursor / 외부 AI client 진입
+firebat-core --mcp-stdio                # Docker 외부 호출 시
+docker compose exec firebat-core firebat-core --mcp-stdio   # 컨테이너 안
 
-# HTTP mode — generate a token in settings, then use /api/mcp
+# HTTP mode (자동) — firebat-core 기동 시 :50052 자동 listen.
+# /api/mcp (외부 AI) / /api/mcp-internal (CLI User AI) 모두 frontend 가 reverse proxy 처리.
 ```
 
 ---
@@ -394,19 +392,18 @@ firebat/                      # Cargo workspace root (Cargo.toml — members: co
 │   └── api/                  #   API routes (Primary Adapter — RustCoreProxy 경유)
 │
 ├── lib/                      # TS frontend utilities
-│   ├── singleton.ts          #   getCore() — RustCoreProxy 만 (옛 TS in-process backend 분기 폐기)
-│   ├── rust-core-proxy.ts    #   Proxy + Reflect → callCore() → gRPC
+│   ├── singleton.ts          #   getCore() — RustCoreProxy thin wrapper (transparent cutover layer)
+│   ├── rust-core-proxy.ts    #   ARGS_TABLE → callTypedClient() → @connectrpc typed client (Phase B-typed)
+│   ├── grpc-typed-client.ts  #   28 service typed clients + METHOD_TABLE (protoc-gen-es 자동 생성 기반)
+│   ├── proto-gen/            #   protoc-gen-es 산출 (firebat_pb.ts ~7268 LOC, gen:proto 으로 재생성)
 │   ├── types/firebat-types.ts #  type-only 정의 (PageListItem / AuthSession / FirebatCore)
 │   ├── auth-guard.ts         #   API route 인증 가드
 │   ├── base-url.ts           #   BASE_URL + getBaseUrl(req)
 │   ├── config.ts             #   SESSION_MAX_AGE_SECONDS / OAuth token expiry
 │   └── events.ts             #   SSE 이벤트 버스
 │
-├── mcp/                      # MCP server — 외부 AI 가 Firebat 조작
-│   ├── server.ts             #   외부용 도구 정의
-│   ├── internal-server.ts    #   User-AI 도구 세트 (CLI 모드 + API hosted MCP)
-│   ├── stdio.ts              #   stdio 진입점
-│   └── stdio-user-ai.ts      #   CLI-mode User AI 용 stdio
+│   # Phase E (2026-05-12) — 옛 Node `mcp/` 디렉토리 전체 폐기. Rust 단일 binary 안 MCP server (axum) 가 대체.
+│   # Frontend 의 `/api/mcp` / `/api/mcp-internal` route 는 firebat-core:50052 reverse proxy 박힘.
 │
 ├── system/                   # System area (sandbox 모듈)
 │   ├── services/             #   Config-only services (CMS, MCP server)
@@ -435,13 +432,13 @@ Old v0.1 → v1.0 RC → v1.x phase split is **deprecated**. Replaced with singl
 ```
 Frontend  Next.js + React + 27 render_* components
                           ↓
-                callCore()  (RustCoreProxy → gRPC)
+                RustCoreProxy → @connectrpc typed client → gRPC (Phase B-typed)
                           ↓
-              Self-hosted (Docker)
-              ─────────────────────
-              Rust Core binary (gRPC :50051)
+              Self-hosted (Docker compose)
+              ─────────────────────────────
+              Rust Core binary (gRPC :50051 + MCP HTTP :50052)
               + Next.js standalone (:3000)
-              + nginx + LLM CLI containers
+              + Caddy (자동 TLS, :80/:443)
 ```
 
 **Why Self-hosted single distribution** (Self-installed Tauri 폐기 사유):
@@ -457,7 +454,7 @@ Frontend  Next.js + React + 27 render_* components
 | **A. Design** | gRPC schema (28 services / 208 RPCs) + Cargo workspace + tonic-build 통합 | ✅ 완료 |
 | **B. Rust Core** | 16 adapters + 21 managers + 28 service impl + frontend RustCoreProxy + multi-crate workspace 분리 (core / infra). **Hardcoding audit 7-pattern** — no 1:1 mapping, every special-case fix promoted to general logic. dual-run 폐기 → 옛 TS 단번 cutover | ✅ 완료 (2026-05-06) |
 | **B-post. Audit cleanup** | INetworkPort 신설 / Sandbox OS 격리 (cgroups + seccomp) / ConsolidationManager 예산 가드 / AI 모델 hardcode 정리 / package.json legacy 청산 | 🟡 진행 (Phase C 진입 전) |
-| **C. Self-hosted Docker** | Multi-stage Dockerfile (Rust binary + Next.js standalone) + docker-compose + nginx 템플릿 + 옛 v0.1 데이터 마이그레이션 runner + firebat.co.kr 마이그레이션 | ⏳ |
+| **C. Self-hosted Docker** | Multi-stage Dockerfile (Rust binary + Next.js standalone) + docker-compose + Caddy 자동 TLS + 옛 v0.1 데이터 마이그레이션 runner (`scripts/migrate-v0-to-v1.sh`) + firebat.co.kr 마이그레이션 | ✅ 코드 정렬 완료 — 검증 게이트 대기 |
 | ~~**D. Self-installed Tauri**~~ | ~~src-tauri shell + Node sidecar~~ | 🚫 **v2.0 이연** (2026-05-06 폐기) |
 
 **v1.0 Final release gate**:
