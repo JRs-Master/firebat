@@ -16,7 +16,7 @@
  *   await core.listPages();
  *   ```
  */
-import { callCore } from './core-client';
+import { callTypedClient } from './grpc-typed-client';
 
 /**
  * 다인자 method 의 args → typed Request 매핑.
@@ -469,8 +469,9 @@ function autoWrapResult(method: string, result: any): any {
 }
 
 /**
- * RustCoreProxy 생성자 — 옛 FirebatCore method 호출을 gRPC RPC 로 forward.
+ * RustCoreProxy 생성자 — 옛 FirebatCore method 호출을 typed client RPC 로 forward.
  * Proxy + Reflect 패턴이라 class 가 아닌 factory 로 export.
+ * 옛 callCore / invokeCore layer 폐기 — typed client 직접 호출.
  */
 export function createRustCoreProxy(): unknown {
   const target = {};
@@ -478,9 +479,12 @@ export function createRustCoreProxy(): unknown {
     get: (_target, prop) => {
       if (typeof prop !== 'string') return undefined;
       return async (...args: unknown[]) => {
+        if (typeof window !== 'undefined') {
+          throw new Error('[RustCoreProxy] Node side 전용 — Frontend 에서 직접 호출 X. API route 경유 필요');
+        }
         const wrapper = ARGS_TABLE[prop];
         const wrappedArgs = wrapper ? wrapper(...args) : args[0];
-        const result = await callCore(prop, wrappedArgs);
+        const result = await callTypedClient(prop, wrappedArgs);
         return autoWrapResult(prop, result);
       };
     },
