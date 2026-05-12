@@ -88,11 +88,15 @@ RUN mkdir -p /opt/firebat/data /opt/firebat/user/media /opt/firebat/system/media
 ENV FIREBAT_SANDBOX=basic
 ENV FIREBAT_WORKSPACE_ROOT=/opt/firebat
 ENV FIREBAT_CORE_LISTEN=0.0.0.0:50051
+# MCP HTTP server (Phase E) — renderer container 의 /api/mcp* route 가 이 endpoint reverse proxy.
+# 0.0.0.0 으로 listen 해야 compose network 안 renderer container DNS (firebat-core:50052) 로 접근 가능.
+ENV FIREBAT_MCP_ENABLED=true
+ENV FIREBAT_MCP_LISTEN=0.0.0.0:50052
 ENV FIREBAT_TIMEZONE=Asia/Seoul
 ENV RUST_LOG=info
 ENV RUST_BACKTRACE=1
 
-EXPOSE 50051
+EXPOSE 50051 50052
 
 # tini = PID 1, signal 정확히 forward (SIGTERM → graceful shutdown 30s)
 ENTRYPOINT ["/usr/bin/tini", "--"]
