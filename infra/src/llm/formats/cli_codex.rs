@@ -66,9 +66,12 @@ impl CodexCliHandler {
 
         let mut toml = String::new();
         if let Some(_token) = internal_mcp_token {
+            let mcp_path = std::env::var("FIREBAT_MCP_PATH")
+                .unwrap_or_else(|_| "/api/mcp-internal".to_string());
             let url = format!(
-                "{}/api/mcp-internal",
-                base_url.unwrap_or("http://127.0.0.1:3000")
+                "{}{}",
+                base_url.unwrap_or("http://127.0.0.1:3000"),
+                mcp_path
             );
             toml.push_str("[features]\nexperimental_use_rmcp_client = true\n\n");
             toml.push_str("[mcp_servers.firebat]\n");

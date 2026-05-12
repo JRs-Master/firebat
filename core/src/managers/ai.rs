@@ -363,12 +363,31 @@ impl AiManager {
 
         // MCP 토큰 자동 주입 — vault 에서 `system:internal-mcp-token` 가져와 LlmCallOpts 에 추가.
         // hosted MCP 모델 (CLI 3종 / Anthropic API / OpenAI Responses API) 이 Firebat MCP
-        // server (`/api/mcp-internal`) 인증할 때 사용. caller 가 안 주면 vault 에서 자동 조회.
+        // server 인증할 때 사용. caller 가 안 주면 vault 에서 자동 조회.
         if effective_opts.mcp_token.is_none() {
             if let Some(vault) = &self.vault {
                 let token = vault.get_secret("system:internal-mcp-token");
                 if let Some(t) = token.filter(|s| !s.is_empty()) {
                     effective_opts.mcp_token = Some(t);
+                }
+            }
+        }
+        // MCP base URL 결정 — FIREBAT_MCP_BASE_URL env 또는 Vault `system:mcp-base-url` 우선,
+        // 미설정 시 Next.js 폴백 (`http://127.0.0.1:3000`). 새 Rust MCP endpoint 으로 전환 시
+        // env 또는 Vault 에 `http://127.0.0.1:50052` (default FIREBAT_MCP_LISTEN) 박음.
+        if effective_opts.mcp_base_url.is_none() {
+            if let Ok(env_url) = std::env::var("FIREBAT_MCP_BASE_URL") {
+                if !env_url.is_empty() {
+                    effective_opts.mcp_base_url = Some(env_url);
+                }
+            }
+            if effective_opts.mcp_base_url.is_none() {
+                if let Some(vault) = &self.vault {
+                    if let Some(v) = vault.get_secret("system:mcp-base-url") {
+                        if !v.is_empty() {
+                            effective_opts.mcp_base_url = Some(v);
+                        }
+                    }
                 }
             }
         }

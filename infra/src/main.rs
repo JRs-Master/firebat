@@ -461,7 +461,7 @@ async fn main() -> Result<()> {
 
     // service impls
     let template_service = services::template::TemplateServiceImpl::new(template_manager);
-    let secret_service = services::secret::SecretServiceImpl::new(secret_manager);
+    let secret_service = services::secret::SecretServiceImpl::new(secret_manager.clone());
     let auth_service = services::auth::AuthServiceImpl::new(auth_manager);
     let event_service = services::event::EventServiceImpl::new(event_manager);
     let capability_service = services::capability::CapabilityServiceImpl::new(capability_manager);
@@ -470,21 +470,21 @@ async fn main() -> Result<()> {
     let cost_service = services::cost::CostServiceImpl::new(cost_manager);
     let project_service = services::project::ProjectServiceImpl::new(project_manager);
     let module_service = services::module::ModuleServiceImpl::new(module_manager.clone());
-    let page_service = services::page::PageServiceImpl::new(page_manager);
+    let page_service = services::page::PageServiceImpl::new(page_manager.clone());
     // ConversationService — IDatabasePort 설정하여 create_share / get_share / cleanup_expired_shares 활성.
     // .clone() — internal 30d cleanup cron (Server::builder 직전) 도 같은 manager 참조.
     let conversation_service =
         services::conversation::ConversationServiceImpl::new(conversation_manager.clone())
             .with_db(db.clone());
-    let mcp_service = services::mcp::McpServiceImpl::new(mcp_manager);
-    let entity_service = services::entity::EntityServiceImpl::new(entity_manager);
-    let episodic_service = services::episodic::EpisodicServiceImpl::new(episodic_manager);
+    let mcp_service = services::mcp::McpServiceImpl::new(mcp_manager.clone());
+    let entity_service = services::entity::EntityServiceImpl::new(entity_manager.clone());
+    let episodic_service = services::episodic::EpisodicServiceImpl::new(episodic_manager.clone());
     let consolidation_service =
         services::consolidation::ConsolidationServiceImpl::new(consolidation_manager);
     // ScheduleService — TaskManager 설정하여 validate_pipeline 정밀 검증 활성
-    let schedule_service = services::schedule::ScheduleServiceImpl::new(schedule_manager)
+    let schedule_service = services::schedule::ScheduleServiceImpl::new(schedule_manager.clone())
         .with_task_manager(task_manager.clone());
-    let task_service = services::task::TaskServiceImpl::new(task_manager);
+    let task_service = services::task::TaskServiceImpl::new(task_manager.clone());
     // .clone() — internal 30d cleanup cron 박은 거 같은 manager 참조.
     let media_service = services::media::MediaServiceImpl::new(media_manager.clone());
     let ai_service = services::ai::AiServiceImpl::new(ai_manager.clone());
@@ -609,7 +609,30 @@ async fn main() -> Result<()> {
         firebat_infra::mcp_server::register_sysmod_tools(&mcp_state, module_manager.clone()).await;
         // render_* 도구 등록 — ToolManager 의 source=render 자동 dispatch.
         firebat_infra::mcp_server::register_render_tools(&mcp_state, tool_manager.clone()).await;
-        // 추가 builtin 도구 등록 (메모리 / pending / search_history / etc.) 는 후속 batch.
+        // 30+ builtin 도구 일괄 등록 (page / storage / module / schedule / task / secret /
+        // mcp / entity / episodic / conversation / media / network / AI 메타).
+        // 옛 mcp/internal-server.ts 의 server.tool 1:1 port.
+        let storage_manager = Arc::new(firebat_core::managers::storage::StorageManager::new(
+            storage.clone(),
+        ));
+        firebat_infra::mcp_server::register_builtin_tools(
+            &mcp_state,
+            firebat_infra::mcp_server::BuiltinDeps {
+                page: page_manager.clone(),
+                storage: storage_manager,
+                module: module_manager.clone(),
+                schedule: schedule_manager.clone(),
+                task: task_manager.clone(),
+                secret: secret_manager.clone(),
+                mcp: mcp_manager.clone(),
+                entity: entity_manager.clone(),
+                episodic: episodic_manager.clone(),
+                conversation: conversation_manager.clone(),
+                media: media_manager.clone(),
+                network: network_port.clone(),
+            },
+        )
+        .await;
         tokio::spawn(async move {
             if let Err(e) = firebat_infra::mcp_server::serve(mcp_state).await {
                 tracing::error!("MCP server 종료: {e}");

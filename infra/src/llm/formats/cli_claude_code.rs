@@ -71,9 +71,13 @@ impl ClaudeCodeCliHandler {
         let config_path = dir.join("firebat-claude-mcp-config.json");
 
         let config = if let Some(token) = internal_mcp_token {
+            // path 결정 — FIREBAT_MCP_PATH env override (새 Rust endpoint = `/mcp`, 옛 Next.js = `/api/mcp-internal`).
+            let mcp_path = std::env::var("FIREBAT_MCP_PATH")
+                .unwrap_or_else(|_| "/api/mcp-internal".to_string());
             let url = format!(
-                "{}/api/mcp-internal",
-                base_url.unwrap_or("http://127.0.0.1:3000")
+                "{}{}",
+                base_url.unwrap_or("http://127.0.0.1:3000"),
+                mcp_path
             );
             serde_json::json!({
                 "mcpServers": {
