@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
+use firebat_core::managers::module::ModuleManager;
 use firebat_core::ports::IVaultPort;
 
 /// MCP 도구 등록 항목 — 옛 TS `server.tool(name, description, schema, handler)` 1:1.
@@ -259,6 +260,102 @@ pub fn build_router(state: Arc<McpServerState>) -> Router {
     Router::new()
         .route("/mcp", post(handle_rpc).get(handle_sse))
         .with_state(state)
+}
+
+/// SysmodToolHandler — system/modules 의 sysmod 자동 등록. 옛 mcp/internal-server.ts:589-668 1:1.
+/// ModuleManager.run(name, data) 위임 — Rust ModuleService.Run 의 단순 분기 활용 (path 형태는 sandboxExecute).
+pub struct SysmodToolHandler {
+    pub module_name: String,
+    pub module_manager: Arc<ModuleManager>,
+}
+
+#[async_trait::async_trait]
+impl McpToolHandler for SysmodToolHandler {
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        let data = if args.is_null() {
+            Value::Object(Default::default())
+        } else {
+            args
+        };
+        match self.module_manager.run(&self.module_name, &data).await {
+            Ok(output) => {
+                if output.success {
+                    Ok(serde_json::json!({ "success": true, "data": output.data }))
+                } else {
+                    Ok(serde_json::json!({
+                        "success": false,
+                        "error": output.error.unwrap_or_else(|| "module failed".to_string()),
+                    }))
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+}
+
+/// system/modules 의 config.json 스캔 → sysmod_<name> 도구 자동 등록.
+/// 옛 TS mcp/internal-server.ts:589-668 의 동적 노출 1:1.
+pub async fn register_sysmod_tools(
+    state: &Arc<McpServerState>,
+    module_manager: Arc<ModuleManager>,
+) {
+    let entries = module_manager.list_system().await;
+    for entry in entries {
+        let config = match module_manager
+            .get_module_config("system", &entry.name)
+            .await
+        {
+            Some(c) => c,
+            None => continue,
+        };
+        // sysmod_<name> — '-' → '_' 정규화 (옛 TS 1:1).
+        let tool_name = format!("sysmod_{}", entry.name.replace('-', "_"));
+        let description = build_sysmod_description(&entry.name, &config);
+        // inputSchema — config.input.properties 그대로 JSON Schema 으로 전달.
+        let input_schema = config
+            .get("input")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}}));
+        let tool = McpTool {
+            name: tool_name.clone(),
+            description,
+            input_schema,
+            handler: Arc::new(SysmodToolHandler {
+                module_name: entry.name.clone(),
+                module_manager: module_manager.clone(),
+            }),
+        };
+        state.register(tool).await;
+    }
+}
+
+fn build_sysmod_description(name: &str, config: &Value) -> String {
+    let base = config
+        .get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or(name)
+        .to_string();
+    let cap = config
+        .get("capability")
+        .and_then(|v| v.as_str())
+        .map(|c| format!("\ncapability: {c}"))
+        .unwrap_or_default();
+    let secrets = config
+        .get("secrets")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            let names: Vec<String> = arr
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+            if names.is_empty() {
+                String::new()
+            } else {
+                format!("\n필요 시크릿: {} (미설정 시 request_secret 호출)", names.join(", "))
+            }
+        })
+        .unwrap_or_default();
+    format!("[시스템 모듈] {base}{cap}{secrets}")
 }
 
 /// MCP server 부팅 — port 바인딩 + axum serve.

@@ -605,7 +605,9 @@ async fn main() -> Result<()> {
         let mcp_state = std::sync::Arc::new(firebat_infra::mcp_server::McpServerState::new(
             vault.clone(),
         ));
-        // 초기 도구 등록은 후속 — 현재는 skeleton 만 (initialize / tools/list 빈 배열 반환).
+        // sysmod 자동 등록 — system/modules/*/config.json 스캔 → sysmod_<name>.
+        firebat_infra::mcp_server::register_sysmod_tools(&mcp_state, module_manager.clone()).await;
+        // 추가 builtin 도구 등록 (render_* / 메모리 / pending / search_history) 는 후속 batch.
         tokio::spawn(async move {
             if let Err(e) = firebat_infra::mcp_server::serve(mcp_state).await {
                 tracing::error!("MCP server 종료: {e}");
