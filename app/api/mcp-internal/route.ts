@@ -1,89 +1,47 @@
 /**
- * MCP Internal Endpoint — LLM 통신용 MCP 서버
+ * MCP Internal Endpoint — Rust MCP HTTP server reverse proxy.
  *
- * OpenAI Responses API (hosted MCP connector), Claude API 등 외부 LLM이 연결.
- * 외부용(/api/mcp)과 별도 토큰 (system:internal-mcp-token) 사용.
+ * Phase E cutover (2026-05-12) — 옛 Node @modelcontextprotocol/sdk 폐기.
+ * 모든 도구 (sysmod / render_* / page / file / schedule / entity / episodic / search_history /
+ * image_gen / network_request 등 60+) 가 Rust firebat-core binary 의 axum endpoint
+ * (default 127.0.0.1:50052) 에 박혀있음. 본 route 는 frontend 의 `/api/mcp-internal`
+ * 경로 호출을 그 endpoint 으로 그대로 전달 — 옛 호출자 (CLI 어댑터 / OpenAI Responses) 호환.
  *
- * Authorization: Bearer <token> 필수.
+ * FIREBAT_MCP_BASE_URL env (default http://127.0.0.1:50052) + FIREBAT_MCP_PATH env (default /mcp).
  */
 import { NextRequest } from 'next/server';
-import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
-import { getCore } from '../../../lib/singleton';
-import { createInternalMcpServer } from '../../../mcp/internal-server';
 
-const sessions = new Map<string, { transport: WebStandardStreamableHTTPServerTransport }>();
+const TARGET_BASE = process.env.FIREBAT_MCP_BASE_URL || 'http://127.0.0.1:50052';
+const TARGET_PATH = process.env.FIREBAT_MCP_PATH || '/mcp';
+const TARGET = `${TARGET_BASE}${TARGET_PATH}`;
 
-async function validateBearerToken(req: NextRequest): Promise<boolean> {
-  const authHeader = req.headers.get('authorization') ?? '';
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) return false;
-  const core = getCore();
-  const stored = await core.getGeminiKey('system:internal-mcp-token');
-  return !!stored && stored === match[1];
-}
-
-function unauthorizedResponse() {
-  return new Response(
-    JSON.stringify({ error: 'Unauthorized — 내부 MCP 토큰이 필요합니다. 설정 - 시스템 - mcp-server-llm 에서 토큰을 생성해 주세요.' }),
-    { status: 401, headers: { 'Content-Type': 'application/json' } },
-  );
-}
-
-function serviceDisabledResponse() {
-  return new Response(
-    JSON.stringify({ error: 'Firebat MCP 서버(LLM 통신용)가 비활성화되어 있습니다. 설정 - 시스템 - mcp-server-llm 에서 활성화해 주세요.' }),
-    { status: 503, headers: { 'Content-Type': 'application/json' } },
-  );
-}
-
-async function checkServiceEnabled(): Promise<boolean> {
-  return await getCore().isModuleEnabled('mcp-server-llm');
-}
-
-export async function POST(req: NextRequest) {
-  if (!await checkServiceEnabled()) return serviceDisabledResponse();
-  if (!await validateBearerToken(req)) return unauthorizedResponse();
-
-  const sessionId = req.headers.get('mcp-session-id');
-  if (sessionId && sessions.has(sessionId)) {
-    const { transport } = sessions.get(sessionId)!;
-    return transport.handleRequest(req);
-  }
-
-  const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: () => crypto.randomUUID(),
-    onsessioninitialized: (id) => { sessions.set(id, { transport }); },
-    onsessionclosed: (id) => { sessions.delete(id); },
-  });
-
-  const core = getCore();
-  const server = await createInternalMcpServer(core);
-  await server.connect(transport);
-
-  return transport.handleRequest(req);
-}
-
-export async function GET(req: NextRequest) {
-  if (!await checkServiceEnabled()) return serviceDisabledResponse();
-  if (!await validateBearerToken(req)) return unauthorizedResponse();
-  const sessionId = req.headers.get('mcp-session-id');
-  if (!sessionId || !sessions.has(sessionId)) {
-    return new Response(JSON.stringify({ error: 'Invalid or missing session. POST first to initialize.' }), {
-      status: 400, headers: { 'Content-Type': 'application/json' },
+async function proxy(req: NextRequest): Promise<Response> {
+  const headers = new Headers(req.headers);
+  headers.delete('host');
+  headers.delete('connection');
+  const init: RequestInit = {
+    method: req.method,
+    headers,
+    body: req.method === 'GET' || req.method === 'HEAD' ? undefined : await req.arrayBuffer(),
+  };
+  try {
+    const upstream = await fetch(TARGET, init);
+    return new Response(upstream.body, {
+      status: upstream.status,
+      headers: upstream.headers,
     });
+  } catch (err) {
+    return new Response(
+      JSON.stringify({
+        error: 'Rust MCP server 연결 실패. FIREBAT_MCP_ENABLED=true + restart 확인.',
+        target: TARGET,
+        detail: String(err),
+      }),
+      { status: 502, headers: { 'Content-Type': 'application/json' } },
+    );
   }
-  const { transport } = sessions.get(sessionId)!;
-  return transport.handleRequest(req);
 }
 
-export async function DELETE(req: NextRequest) {
-  if (!await checkServiceEnabled()) return serviceDisabledResponse();
-  if (!await validateBearerToken(req)) return unauthorizedResponse();
-  const sessionId = req.headers.get('mcp-session-id');
-  if (sessionId && sessions.has(sessionId)) {
-    const { transport } = sessions.get(sessionId)!;
-    await transport.close();
-    sessions.delete(sessionId);
-  }
-  return new Response(null, { status: 204 });
-}
+export const POST = proxy;
+export const GET = proxy;
+export const DELETE = proxy;
