@@ -99,33 +99,59 @@ export async function pingCore(target?: string): Promise<{ version: string; read
  */
 export async function invokeCore<T = unknown>(method: string, args?: unknown): Promise<T> {
   const { service, rpc } = resolveMethodToRpc(method);
-  // Request 빌드 — Rust handler 의 input message type 별 자동 분기:
-  //  - JsonArgs ({raw: string})    — object / array 인자 (대부분 다인자 method)
-  //  - StringRequest ({value: string}) — 단일 string 인자 (예: listConversations('admin'))
-  //  - NumberRequest ({value: number}) — 단일 number 인자
-  //  - BoolRequest   ({value: bool})   — 단일 bool 인자
-  //  - Empty ({})                   — 인자 없음
-  // proto-loader 가 input message type 의 field 만 인식 → JsonArgs 로 모두 보내면 StringRequest
-  // 받는 RPC 가 raw field 무시하고 value=default("") 호출 → silent fail (예: listConversations
-  // 가 빈 배열 반환). type 일치가 정공.
-  const request = buildRpcRequest(args);
+  // 2026-05-12 정공 cutover — typed client routing (@connectrpc/connect-node).
+  // 옛 proto-loader dynamic schema 폐기. ARGS_TABLE 의 wrapper output 이 이미 새 typed
+  // Request 의 camelCase field 명과 1:1 매핑이라 그대로 전달 (msgpack / JSON-serialize 자동).
   let response: any;
   try {
-    response = await callGrpcMethod(service, rpc, request);
+    response = await callTypedClient(service, rpc, args);
   } catch (err) {
-    // gRPC ServiceError → ApiError 변환 (status code + redactor 통과 메시지)
     const { fromGrpcError } = await import('./api-error');
     throw fromGrpcError(err);
   }
-  // JsonValue.raw → parse
-  if (response && typeof response.raw === 'string') {
-    return JSON.parse(response.raw) as T;
-  }
-  // RawJsonPb.raw_json (proto-loader keepCase:false → rawJson) → parse
+  // RawJsonPb.rawJson — 동적 schema 응답 자동 unwrap.
   if (response && typeof response.rawJson === 'string') {
     return JSON.parse(response.rawJson) as T;
   }
+  // JsonValue.raw fallback.
+  if (response && typeof response.raw === 'string') {
+    return JSON.parse(response.raw) as T;
+  }
   return response as T;
+}
+
+/**
+ * typed client routing — service + rpc (PascalCase) → camelCase method 호출.
+ * args 자동 매핑:
+ *   - undefined / null → 빈 Request (Empty / 단일 typed 자동)
+ *   - string → StringRequest { value }
+ *   - number → NumberRequest { value }
+ *   - boolean → BoolRequest { value }
+ *   - object → typed Request 직접 (field 명 그대로)
+ */
+async function callTypedClient(service: string, rpc: string, args: unknown): Promise<any> {
+  const clients = await import('./grpc-typed-client');
+  // service 명 → client 인스턴스 매핑 (PascalCase Service → camelCase Client).
+  const clientKey =
+    service.charAt(0).toLowerCase() + service.slice(1).replace(/Service$/, 'Client');
+  const client = (clients as any)[clientKey];
+  if (!client) {
+    throw new Error(`[invokeCore] typed client 없음: ${service} → ${clientKey}`);
+  }
+  // RPC 명 (PascalCase) → method 명 (camelCase).
+  const methodName = rpc.charAt(0).toLowerCase() + rpc.slice(1);
+  const method = client[methodName];
+  if (typeof method !== 'function') {
+    throw new Error(`[invokeCore] typed client method 없음: ${service}.${methodName}`);
+  }
+  // args 매핑.
+  let request: any;
+  if (args === undefined || args === null) request = {};
+  else if (typeof args === 'string') request = { value: args };
+  else if (typeof args === 'number') request = { value: args };
+  else if (typeof args === 'boolean') request = { value: args };
+  else request = args; // object — typed Request field 그대로
+  return await method.call(client, request);
 }
 
 /** args type → Rust input message type 별 request 자동 매핑.
