@@ -28,6 +28,7 @@ use serde_json::Value;
 use tokio::sync::RwLock;
 
 use firebat_core::managers::module::ModuleManager;
+use firebat_core::managers::tool::{ToolListFilter, ToolManager};
 use firebat_core::ports::IVaultPort;
 
 /// MCP 도구 등록 항목 — 옛 TS `server.tool(name, description, schema, handler)` 1:1.
@@ -324,6 +325,43 @@ pub async fn register_sysmod_tools(
                 module_name: entry.name.clone(),
                 module_manager: module_manager.clone(),
             }),
+        };
+        state.register(tool).await;
+    }
+}
+
+/// RenderToolHandler — render_* 도구 호출 시 args 그대로 pass-through 반환.
+/// Frontend (Claude CLI / Codex / Gemini CLI) 가 결과를 UI 컴포넌트로 직접 렌더.
+/// 옛 TS mcp/internal-server.ts 의 render_* 패턴 1:1.
+pub struct RenderToolHandler;
+
+#[async_trait::async_trait]
+impl McpToolHandler for RenderToolHandler {
+    async fn call(&self, args: Value) -> Result<Value, String> {
+        // args 그대로 success 응답 — Frontend 가 component / htmlContent / props 등 읽어 렌더.
+        let mut out = match args {
+            Value::Object(m) => m,
+            _ => serde_json::Map::new(),
+        };
+        out.insert("success".to_string(), Value::Bool(true));
+        Ok(Value::Object(out))
+    }
+}
+
+/// ToolManager 의 등록된 도구 중 source=render 인 항목 → MCP 도구로 등록.
+/// Frontend 의 옛 `core.listTools({source:'render'})` 패턴 1:1.
+pub async fn register_render_tools(state: &Arc<McpServerState>, tool_manager: Arc<ToolManager>) {
+    let filter = ToolListFilter {
+        source: Some("render".to_string()),
+        name_prefix: None,
+    };
+    let defs = tool_manager.list(&filter);
+    for def in defs {
+        let tool = McpTool {
+            name: def.name.clone(),
+            description: def.description.clone(),
+            input_schema: def.parameters.clone(),
+            handler: Arc::new(RenderToolHandler),
         };
         state.register(tool).await;
     }

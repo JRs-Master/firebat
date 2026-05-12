@@ -466,7 +466,7 @@ async fn main() -> Result<()> {
     let event_service = services::event::EventServiceImpl::new(event_manager);
     let capability_service = services::capability::CapabilityServiceImpl::new(capability_manager);
     let status_service = services::status::StatusServiceImpl::new(status_manager);
-    let tool_service = services::tool::ToolServiceImpl::new(tool_manager);
+    let tool_service = services::tool::ToolServiceImpl::new(tool_manager.clone());
     let cost_service = services::cost::CostServiceImpl::new(cost_manager);
     let project_service = services::project::ProjectServiceImpl::new(project_manager);
     let module_service = services::module::ModuleServiceImpl::new(module_manager.clone());
@@ -607,7 +607,9 @@ async fn main() -> Result<()> {
         ));
         // sysmod 자동 등록 — system/modules/*/config.json 스캔 → sysmod_<name>.
         firebat_infra::mcp_server::register_sysmod_tools(&mcp_state, module_manager.clone()).await;
-        // 추가 builtin 도구 등록 (render_* / 메모리 / pending / search_history) 는 후속 batch.
+        // render_* 도구 등록 — ToolManager 의 source=render 자동 dispatch.
+        firebat_infra::mcp_server::register_render_tools(&mcp_state, tool_manager.clone()).await;
+        // 추가 builtin 도구 등록 (메모리 / pending / search_history / etc.) 는 후속 batch.
         tokio::spawn(async move {
             if let Err(e) = firebat_infra::mcp_server::serve(mcp_state).await {
                 tracing::error!("MCP server 종료: {e}");
