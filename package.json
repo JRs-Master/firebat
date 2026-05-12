@@ -13,7 +13,6 @@
     "gen:proto": "buf generate"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
     "@monaco-editor/react": "^4.7.0",
     "@xenova/transformers": "^2.17.2",
     "blurhash": "^2.0.5",

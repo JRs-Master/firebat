@@ -27,6 +27,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
+use firebat_core::managers::auth::AuthManager;
 use firebat_core::managers::conversation::{ConversationManager, SearchHistoryOpts};
 use firebat_core::managers::entity::EntityManager;
 use firebat_core::managers::episodic::EpisodicManager;
@@ -59,10 +60,12 @@ pub trait McpToolHandler: Send + Sync {
     async fn call(&self, args: Value) -> Result<Value, String>;
 }
 
-/// MCP server state — 도구 registry + Vault (토큰 검증).
+/// MCP server state — 도구 registry + Vault (internal token) + AuthManager (외부 API token).
 pub struct McpServerState {
     pub tools: RwLock<HashMap<String, McpTool>>,
     pub vault: Arc<dyn IVaultPort>,
+    /// AuthManager — 외부 사용자 API token 검증. 미설정 시 internal token only 모드.
+    pub auth: Option<Arc<AuthManager>>,
 }
 
 impl McpServerState {
@@ -70,7 +73,14 @@ impl McpServerState {
         Self {
             tools: RwLock::new(HashMap::new()),
             vault,
+            auth: None,
         }
+    }
+
+    /// 외부 사용자 API token 검증 활성 — AuthManager 설정.
+    pub fn with_auth(mut self, auth: Arc<AuthManager>) -> Self {
+        self.auth = Some(auth);
+        self
     }
 
     pub async fn register(&self, tool: McpTool) {
@@ -129,25 +139,37 @@ struct ContentBlock {
     text: String,
 }
 
-/// Bearer token 검증 — Vault `system:internal-mcp-token` 와 비교.
-fn verify_token(headers: &HeaderMap, vault: &Arc<dyn IVaultPort>) -> Result<(), StatusCode> {
-    let stored = vault
-        .get_secret("system:internal-mcp-token")
-        .unwrap_or_default();
-    if stored.is_empty() {
-        // 토큰 미설정 — 모든 호출 거부 (silent stdio fallback 차단)
-        return Err(StatusCode::UNAUTHORIZED);
-    }
+/// Bearer token 검증 — 두 source 받음 (옛 frontend mcp-internal + mcp-app 통합):
+///   1. Vault `system:internal-mcp-token` (옛 internal MCP 토큰 — Frontend / CLI 어댑터)
+///   2. AuthManager.validate_api_token (옛 외부 MCP 토큰 — Claude desktop / Cursor 등)
+fn verify_token(state: &Arc<McpServerState>, headers: &HeaderMap) -> Result<(), StatusCode> {
     let auth = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
-    let expected = format!("Bearer {}", stored);
-    let eq: bool = subtle::ConstantTimeEq::ct_eq(auth.as_bytes(), expected.as_bytes()).into();
-    if !eq {
+    let token = auth.strip_prefix("Bearer ").unwrap_or("");
+    if token.is_empty() {
         return Err(StatusCode::UNAUTHORIZED);
     }
-    Ok(())
+    // 1. internal token 매칭 (constant-time 비교)
+    let stored = state
+        .vault
+        .get_secret("system:internal-mcp-token")
+        .unwrap_or_default();
+    if !stored.is_empty() {
+        let eq: bool =
+            subtle::ConstantTimeEq::ct_eq(token.as_bytes(), stored.as_bytes()).into();
+        if eq {
+            return Ok(());
+        }
+    }
+    // 2. 외부 사용자 API token 매칭 (AuthManager.validate_api_token).
+    if let Some(auth_mgr) = &state.auth {
+        if auth_mgr.validate_api_token(token).is_some() {
+            return Ok(());
+        }
+    }
+    Err(StatusCode::UNAUTHORIZED)
 }
 
 async fn handle_rpc(
@@ -155,7 +177,7 @@ async fn handle_rpc(
     headers: HeaderMap,
     Json(req): Json<JsonRpcRequest>,
 ) -> impl IntoResponse {
-    if let Err(status) = verify_token(&headers, &state.vault) {
+    if let Err(status) = verify_token(&state, &headers) {
         return (status, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
     }
     if req.jsonrpc != "2.0" {
@@ -261,7 +283,7 @@ async fn handle_sse(
     State(state): State<Arc<McpServerState>>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    if let Err(status) = verify_token(&headers, &state.vault) {
+    if let Err(status) = verify_token(&state, &headers) {
         return (status, "unauthorized").into_response();
     }
     // SSE streaming — 추후 박음 (listChanged 알림 등).

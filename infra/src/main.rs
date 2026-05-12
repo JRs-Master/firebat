@@ -462,7 +462,7 @@ async fn main() -> Result<()> {
     // service impls
     let template_service = services::template::TemplateServiceImpl::new(template_manager);
     let secret_service = services::secret::SecretServiceImpl::new(secret_manager.clone());
-    let auth_service = services::auth::AuthServiceImpl::new(auth_manager);
+    let auth_service = services::auth::AuthServiceImpl::new(auth_manager.clone());
     let event_service = services::event::EventServiceImpl::new(event_manager);
     let capability_service = services::capability::CapabilityServiceImpl::new(capability_manager);
     let status_service = services::status::StatusServiceImpl::new(status_manager);
@@ -604,9 +604,10 @@ async fn main() -> Result<()> {
     // stdio MCP 모드 — 외부 사용자 (Claude desktop / Cursor / npm run mcp) 진입.
     // argv 에 `--mcp-stdio` 박혀있으면 gRPC server 부팅 X, stdio MCP server 만 실행 후 종료.
     if std::env::args().any(|a| a == "--mcp-stdio") {
-        let mcp_state = std::sync::Arc::new(firebat_infra::mcp_server::McpServerState::new(
-            vault.clone(),
-        ));
+        let mcp_state = std::sync::Arc::new(
+            firebat_infra::mcp_server::McpServerState::new(vault.clone())
+                .with_auth(auth_manager.clone()),
+        );
         firebat_infra::mcp_server::register_sysmod_tools(&mcp_state, module_manager.clone()).await;
         firebat_infra::mcp_server::register_render_tools(&mcp_state, tool_manager.clone()).await;
         let storage_manager_stdio = Arc::new(firebat_core::managers::storage::StorageManager::new(
@@ -637,9 +638,10 @@ async fn main() -> Result<()> {
     }
 
     if mcp_enabled {
-        let mcp_state = std::sync::Arc::new(firebat_infra::mcp_server::McpServerState::new(
-            vault.clone(),
-        ));
+        let mcp_state = std::sync::Arc::new(
+            firebat_infra::mcp_server::McpServerState::new(vault.clone())
+                .with_auth(auth_manager.clone()),
+        );
         // sysmod 자동 등록 — system/modules/*/config.json 스캔 → sysmod_<name>.
         firebat_infra::mcp_server::register_sysmod_tools(&mcp_state, module_manager.clone()).await;
         // render_* 도구 등록 — ToolManager 의 source=render 자동 dispatch.
