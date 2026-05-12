@@ -1,183 +1,26 @@
 /**
- * gRPC client (Node side) — Phase A 설정.
+ * gRPC client (Node side) — Phase B-typed cutover 후 정공 (2026-05-12).
  *
- * Next.js API route (app/api/core/[method]/route.ts, 향후) 가 이 client 통해 Rust Core 호출.
- * Frontend 는 fetch → API route → gRPC 패턴이라 browser 에서 gRPC 직접 사용 X.
+ * 옛 proto-loader dynamic schema 폐기. 자동 생성 typed client (lib/grpc-typed-client.ts) 위임.
+ * METHOD_TABLE 은 옛 facade method 명 (`savePage`) → {service, rpc} 매핑만 유지 (호출 site 호환).
  *
- * Phase A: dynamic proto loading (`@grpc/proto-loader`) — codegen 없이 runtime 파싱.
- *          간단 + 빠른 prototype. 단 TypeScript 타입은 `any` (Phase B 후속에서 ts-proto 또는
- *          @bufbuild/protoc-gen-es 도입해 typed stub 으로 swap 가능).
+ * 호출 흐름:
+ *   getCore().savePage(slug, spec, opts)
+ *   → RustCoreProxy (ARGS_TABLE wrapper — slug/spec/status/project/visibility/password 매핑)
+ *   → invokeCore('savePage', wrappedArgs)
+ *   → resolveMethodToRpc → {service: 'PageService', rpc: 'Save'}
+ *   → pageClient.save(wrappedArgs)  // @connectrpc/connect-node typed client
+ *   → Rust PageService.Save(PageSaveRequest)
  *
- * Phase B: 매니저별 typed message 설정된 후 codegen typed stub 활용 검토.
+ * Frontend 는 직접 호출 X — API route 경유. browser 에서 gRPC 직접 못 함.
  */
 
-import * as grpcModule from '@grpc/grpc-js';
-import * as protoLoaderModule from '@grpc/proto-loader';
-import path from 'path';
-
-type GrpcClient = any;
-
-let cachedRoot: any = null;
-let cachedClients: Map<string, GrpcClient> = new Map();
-
-const PROTO_PATH = path.resolve(process.cwd(), 'proto/firebat.proto');
-const DEFAULT_TARGET = process.env.FIREBAT_CORE_GRPC_TARGET ?? 'localhost:50051';
-
-function loadProto(): any {
-  if (cachedRoot) return cachedRoot;
-  const packageDef = protoLoaderModule.loadSync(PROTO_PATH, {
-    keepCase: false,
-    longs: String,
-    enums: String,
-    defaults: true,
-    oneofs: true,
-  });
-  cachedRoot = grpcModule.loadPackageDefinition(packageDef) as any;
-  return cachedRoot;
-}
-
 /**
- * 매니저별 service client 생성. 캐시 — 같은 service 의 client 재사용.
- *
- * @param serviceName - proto 의 service 이름 (예: 'AiService' / 'PageService' / 'AuthService')
- * @param target      - gRPC 서버 주소 (default: localhost:50051 또는 FIREBAT_CORE_GRPC_TARGET env)
- */
-export function getGrpcClient(serviceName: string, target: string = DEFAULT_TARGET): GrpcClient {
-  const cacheKey = `${serviceName}@${target}`;
-  const hit = cachedClients.get(cacheKey);
-  if (hit) return hit;
-
-  const root = loadProto();
-  const ServiceCtor = root?.firebat?.v1?.[serviceName];
-  if (!ServiceCtor) {
-    throw new Error(`[core-grpc-client] unknown service: firebat.v1.${serviceName}`);
-  }
-  const client = new ServiceCtor(target, grpcModule.credentials.createInsecure());
-  cachedClients.set(cacheKey, client);
-  return client;
-}
-
-/**
- * RPC 호출 — promise 기반 wrapper.
- * @param serviceName - proto service 이름
- * @param methodName  - RPC method (camelCase, generated stub 의 method 명 그대로)
- * @param request     - request message (JsonArgs / JsonValue 등)
- */
-export function callGrpcMethod<T = any>(
-  serviceName: string,
-  methodName: string,
-  request: any,
-  target?: string
-): Promise<T> {
-  const client = getGrpcClient(serviceName, target);
-  return new Promise((resolve, reject) => {
-    if (typeof client[methodName] !== 'function') {
-      reject(new Error(`[core-grpc-client] unknown method: ${serviceName}.${methodName}`));
-      return;
-    }
-    client[methodName](request, (err: any, response: T) => {
-      if (err) reject(err);
-      else resolve(response);
-    });
-  });
-}
-
-/**
- * 헬스 체크 — Phase A 검증용. Rust gRPC server 가 띄워져 있을 때 동작 확인.
- */
-export async function pingCore(target?: string): Promise<{ version: string; ready: boolean; uptime_ms: number }> {
-  return callGrpcMethod('LifecycleService', 'Health', {}, target);
-}
-
-/**
- * 단일 진입점 — facade method 명 → service / RPC 매핑 + 호출.
- * Phase A: JsonArgs / JsonValue 단일 schema 라 method 매핑 단순.
- * Phase B: 매니저별 typed RPC 설정될 때 정밀 매핑 도입.
- *
- * @param method - facade method (camelCase, 예: 'savePage' / 'login' / 'listConversations')
- * @param args   - JSON-serializable 인자 (단일 객체)
- */
-export async function invokeCore<T = unknown>(method: string, args?: unknown): Promise<T> {
-  const { service, rpc } = resolveMethodToRpc(method);
-  // 2026-05-12 정공 cutover — typed client routing (@connectrpc/connect-node).
-  // 옛 proto-loader dynamic schema 폐기. ARGS_TABLE 의 wrapper output 이 이미 새 typed
-  // Request 의 camelCase field 명과 1:1 매핑이라 그대로 전달 (msgpack / JSON-serialize 자동).
-  let response: any;
-  try {
-    response = await callTypedClient(service, rpc, args);
-  } catch (err) {
-    const { fromGrpcError } = await import('./api-error');
-    throw fromGrpcError(err);
-  }
-  // RawJsonPb.rawJson — 동적 schema 응답 자동 unwrap.
-  if (response && typeof response.rawJson === 'string') {
-    return JSON.parse(response.rawJson) as T;
-  }
-  // JsonValue.raw fallback.
-  if (response && typeof response.raw === 'string') {
-    return JSON.parse(response.raw) as T;
-  }
-  return response as T;
-}
-
-/**
- * typed client routing — service + rpc (PascalCase) → camelCase method 호출.
- * args 자동 매핑:
- *   - undefined / null → 빈 Request (Empty / 단일 typed 자동)
- *   - string → StringRequest { value }
- *   - number → NumberRequest { value }
- *   - boolean → BoolRequest { value }
- *   - object → typed Request 직접 (field 명 그대로)
- */
-async function callTypedClient(service: string, rpc: string, args: unknown): Promise<any> {
-  const clients = await import('./grpc-typed-client');
-  // service 명 → client 인스턴스 매핑 (PascalCase Service → camelCase Client).
-  const clientKey =
-    service.charAt(0).toLowerCase() + service.slice(1).replace(/Service$/, 'Client');
-  const client = (clients as any)[clientKey];
-  if (!client) {
-    throw new Error(`[invokeCore] typed client 없음: ${service} → ${clientKey}`);
-  }
-  // RPC 명 (PascalCase) → method 명 (camelCase).
-  const methodName = rpc.charAt(0).toLowerCase() + rpc.slice(1);
-  const method = client[methodName];
-  if (typeof method !== 'function') {
-    throw new Error(`[invokeCore] typed client method 없음: ${service}.${methodName}`);
-  }
-  // args 매핑.
-  let request: any;
-  if (args === undefined || args === null) request = {};
-  else if (typeof args === 'string') request = { value: args };
-  else if (typeof args === 'number') request = { value: args };
-  else if (typeof args === 'boolean') request = { value: args };
-  else request = args; // object — typed Request field 그대로
-  return await method.call(client, request);
-}
-
-/** args type → Rust input message type 별 request 자동 매핑.
- *  JsonArgs / StringRequest / NumberRequest / BoolRequest / Empty 자동 분기. */
-function buildRpcRequest(args: unknown): unknown {
-  if (args === undefined || args === null) return {};
-  if (typeof args === 'string') return { value: args };
-  if (typeof args === 'number') return { value: args };
-  if (typeof args === 'boolean') return { value: args };
-  // object / array → JsonArgs
-  return { raw: JSON.stringify(args) };
-}
-
-/**
- * facade method (예: 'savePage') → { service, rpc } 매핑.
- *
- * 명시 매핑 table — 옛 TS Core facade 의 21 매니저 모든 메서드 1:1.
- * Phase B-4 에서 sample prefix 추정 → 명시 table 으로 swap (정확성 ↑).
- *
- * 새 facade method 추가 시:
- *   1. 매니저별 RPC 정의 (proto 추가)
- *   2. 본 table 에 entry 추가
- *   3. 옛 in-process Core method 그대로 사용 — 호출자 코드 변경 0
+ * 옛 facade method (예: 'savePage') → { service, rpc } 매핑.
+ * Phase B-4 까지 명시 매핑 — Phase B-typed cutover 후 호출 site 가 typed client 직접 사용 시 점진 폐기.
  */
 const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
-  // ── PageService (PageManager) ─────────────────────────────────
+  // ── PageService ─────────────────────────────────────────────
   savePage: { service: 'PageService', rpc: 'Save' },
   getPage: { service: 'PageService', rpc: 'Get' },
   listPages: { service: 'PageService', rpc: 'List' },
@@ -192,28 +35,26 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   findRelatedPages: { service: 'PageService', rpc: 'FindRelated' },
   listAllTags: { service: 'PageService', rpc: 'ListAllTags' },
 
-  // ── ProjectService (ProjectManager) ───────────────────────────
-  listProjects: { service: 'ProjectService', rpc: 'List' },
-  getProject: { service: 'ProjectService', rpc: 'Get' },
-  saveProject: { service: 'ProjectService', rpc: 'Save' },
-  deleteProject: { service: 'ProjectService', rpc: 'Delete' },
-  setProjectVisibility: { service: 'ProjectService', rpc: 'SetVisibility' },
-  verifyProjectPassword: { service: 'ProjectService', rpc: 'VerifyPassword' },
-  renameProject: { service: 'ProjectService', rpc: 'Rename' },
+  // ── ProjectService ──────────────────────────────────────────
+  listProjects: { service: 'ProjectService', rpc: 'Scan' },
   scanProjects: { service: 'ProjectService', rpc: 'Scan' },
   getProjectVisibility: { service: 'ProjectService', rpc: 'GetVisibility' },
+  setProjectVisibility: { service: 'ProjectService', rpc: 'SetVisibility' },
   getProjectConfig: { service: 'ProjectService', rpc: 'GetConfig' },
   setProjectConfig: { service: 'ProjectService', rpc: 'SetConfig' },
+  verifyProjectPassword: { service: 'ProjectService', rpc: 'VerifyPassword' },
+  deleteProject: { service: 'ProjectService', rpc: 'Delete' },
+  renameProject: { service: 'ProjectService', rpc: 'Rename' },
 
-  // ── ModuleService (ModuleManager) ─────────────────────────────
+  // ── ModuleService ───────────────────────────────────────────
   listSystemModules: { service: 'ModuleService', rpc: 'ListSystem' },
   listUserModules: { service: 'ModuleService', rpc: 'ListUser' },
-  getSystemModules: { service: 'ModuleService', rpc: 'ListSystem' },   // alias
-  getUserModules: { service: 'ModuleService', rpc: 'ListUser' },       // alias
+  getSystemModules: { service: 'ModuleService', rpc: 'ListSystem' },
+  getUserModules: { service: 'ModuleService', rpc: 'ListUser' },
   getModuleSchema: { service: 'ModuleService', rpc: 'GetSchema' },
   getModuleConfig: { service: 'ModuleService', rpc: 'GetConfig' },
   runModule: { service: 'ModuleService', rpc: 'Run' },
-  sandboxExecute: { service: 'ModuleService', rpc: 'Run' },            // path 기반 실행 — 같은 Run RPC 활용
+  sandboxExecute: { service: 'ModuleService', rpc: 'Run' },
   setModuleEnabled: { service: 'ModuleService', rpc: 'SetEnabled' },
   isModuleEnabled: { service: 'ModuleService', rpc: 'IsEnabled' },
   setModuleSettings: { service: 'ModuleService', rpc: 'SetSettings' },
@@ -221,17 +62,11 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   getCmsSettings: { service: 'ModuleService', rpc: 'GetCmsSettings' },
   getKakaoMapJsKey: { service: 'ModuleService', rpc: 'GetKakaoMapJsKey' },
 
-  // ── AiService 의 Pending / Plan store (옛 TS lib/{pending-tools,plan-store}.ts 통합) ──
-  createPending: { service: 'AiService', rpc: 'CreatePending' },
-  getPending: { service: 'AiService', rpc: 'GetPending' },
-  consumePending: { service: 'AiService', rpc: 'ConsumePending' },
-  rejectPending: { service: 'AiService', rpc: 'RejectPending' },
-  storePlan: { service: 'AiService', rpc: 'StorePlan' },
-
-  // ── ScheduleService (ScheduleManager) ─────────────────────────
+  // ── TaskService / ScheduleService ───────────────────────────
+  runTask: { service: 'TaskService', rpc: 'Run' },
   listCronJobs: { service: 'ScheduleService', rpc: 'ListCron' },
   scheduleTask: { service: 'ScheduleService', rpc: 'ScheduleCron' },
-  scheduleCronJob: { service: 'ScheduleService', rpc: 'ScheduleCron' },   // alias
+  scheduleCronJob: { service: 'ScheduleService', rpc: 'ScheduleCron' },
   cancelCronJob: { service: 'ScheduleService', rpc: 'CancelCron' },
   updateCronJob: { service: 'ScheduleService', rpc: 'UpdateCron' },
   runCronJobNow: { service: 'ScheduleService', rpc: 'RunNow' },
@@ -240,44 +75,36 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   consumeCronNotifications: { service: 'ScheduleService', rpc: 'ConsumeNotifications' },
   validatePipeline: { service: 'ScheduleService', rpc: 'ValidatePipeline' },
 
-  // ── TaskService (TaskManager) ─────────────────────────────────
-  runTask: { service: 'TaskService', rpc: 'Run' },
-
-  // ── SecretService (SecretManager) ─────────────────────────────
+  // ── SecretService ──────────────────────────────────────────
   listUserSecrets: { service: 'SecretService', rpc: 'ListUser' },
   setUserSecret: { service: 'SecretService', rpc: 'SetUser' },
   getUserSecret: { service: 'SecretService', rpc: 'GetUser' },
   deleteUserSecret: { service: 'SecretService', rpc: 'DeleteUser' },
   listUserModuleSecrets: { service: 'SecretService', rpc: 'ListUserModuleSecrets' },
-  getVertexKey: { service: 'SecretService', rpc: 'GetSystem' },     // system:vertex-key Vault key
+  getVertexKey: { service: 'SecretService', rpc: 'GetSystem' },
   setVertexKey: { service: 'SecretService', rpc: 'SetSystem' },
-  getGeminiKey: { service: 'SecretService', rpc: 'GetSystem' },     // system:gemini-key Vault key
+  getGeminiKey: { service: 'SecretService', rpc: 'GetSystem' },
   setGeminiKey: { service: 'SecretService', rpc: 'SetSystem' },
 
-  // ── McpService (McpManager) ───────────────────────────────────
+  // ── McpService ─────────────────────────────────────────────
   listMcpServers: { service: 'McpService', rpc: 'ListServers' },
-  saveMcpServer: { service: 'McpService', rpc: 'SaveServer' },
+  saveMcpServer: { service: 'McpService', rpc: 'AddServer' },
+  addMcpServer: { service: 'McpService', rpc: 'AddServer' },
   removeMcpServer: { service: 'McpService', rpc: 'RemoveServer' },
   listMcpTools: { service: 'McpService', rpc: 'ListTools' },
+  listAllMcpTools: { service: 'McpService', rpc: 'ListAllTools' },
   callMcpTool: { service: 'McpService', rpc: 'CallTool' },
-  generateMcpToken: { service: 'McpService', rpc: 'GenerateToken' },
-  validateMcpToken: { service: 'McpService', rpc: 'ValidateToken' },
-  revokeMcpToken: { service: 'McpService', rpc: 'RevokeToken' },
-  getMcpTokenInfo: { service: 'McpService', rpc: 'GetTokenInfo' },
 
-  // ── CapabilityService (CapabilityManager) ─────────────────────
+  // ── CapabilityService ──────────────────────────────────────
   listCapabilities: { service: 'CapabilityService', rpc: 'List' },
   getCapabilityProviders: { service: 'CapabilityService', rpc: 'GetProviders' },
-  listCapabilitiesWithProviders: {
-    service: 'CapabilityService',
-    rpc: 'ListWithProviders',
-  },
+  listCapabilitiesWithProviders: { service: 'CapabilityService', rpc: 'ListWithProviders' },
   resolveCapability: { service: 'CapabilityService', rpc: 'Resolve' },
   registerCapability: { service: 'CapabilityService', rpc: 'Register' },
   getCapabilitySettings: { service: 'CapabilityService', rpc: 'GetSettings' },
   setCapabilitySettings: { service: 'CapabilityService', rpc: 'SetSettings' },
 
-  // ── AuthService (AuthManager) ─────────────────────────────────
+  // ── AuthService ────────────────────────────────────────────
   login: { service: 'AuthService', rpc: 'Login' },
   logout: { service: 'AuthService', rpc: 'Logout' },
   validateSession: { service: 'AuthService', rpc: 'ValidateSession' },
@@ -292,25 +119,25 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   verifyAdminPassword: { service: 'AuthService', rpc: 'VerifyAdminPassword' },
   validatePasswordPolicy: { service: 'AuthService', rpc: 'ValidatePasswordPolicy' },
 
-  // ── ConversationService (ConversationManager) ─────────────────
+  // ── ConversationService ────────────────────────────────────
   listConversations: { service: 'ConversationService', rpc: 'List' },
   getConversation: { service: 'ConversationService', rpc: 'Get' },
   saveConversation: { service: 'ConversationService', rpc: 'Save' },
   deleteConversation: { service: 'ConversationService', rpc: 'Delete' },
   isConversationDeleted: { service: 'ConversationService', rpc: 'IsDeleted' },
   searchHistory: { service: 'ConversationService', rpc: 'SearchHistory' },
-  searchConversationHistory: { service: 'ConversationService', rpc: 'SearchHistory' },  // alias
+  searchConversationHistory: { service: 'ConversationService', rpc: 'SearchHistory' },
   getCliSession: { service: 'ConversationService', rpc: 'GetCliSession' },
   setCliSession: { service: 'ConversationService', rpc: 'SetCliSession' },
   createShare: { service: 'ConversationService', rpc: 'CreateShare' },
   getShare: { service: 'ConversationService', rpc: 'GetShare' },
-  // 휴지통 — soft delete + restore + permanent delete + list (2026-05-11)
   listDeletedConversations: { service: 'ConversationService', rpc: 'ListDeleted' },
   restoreConversation: { service: 'ConversationService', rpc: 'Restore' },
   permanentDeleteConversation: { service: 'ConversationService', rpc: 'PermanentDelete' },
   cleanupOldDeletedConversations: { service: 'ConversationService', rpc: 'CleanupOldDeleted' },
+  cleanupExpiredShares: { service: 'ConversationService', rpc: 'CleanupExpiredShares' },
 
-  // ── MediaService (MediaManager — image_gen + 갤러리) ──────────
+  // ── MediaService ───────────────────────────────────────────
   generateImage: { service: 'MediaService', rpc: 'Generate' },
   startImageGeneration: { service: 'MediaService', rpc: 'StartGeneration' },
   regenerateImage: { service: 'MediaService', rpc: 'Regenerate' },
@@ -319,6 +146,8 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   listMedia: { service: 'MediaService', rpc: 'List' },
   isMediaReady: { service: 'MediaService', rpc: 'IsReady' },
   saveUpload: { service: 'MediaService', rpc: 'Save' },
+  saveTempAttachment: { service: 'MediaService', rpc: 'SaveTempAttachment' },
+  cleanupOldAttachments: { service: 'MediaService', rpc: 'CleanupOldAttachments' },
   getImageModel: { service: 'MediaService', rpc: 'GetImageModel' },
   setImageModel: { service: 'MediaService', rpc: 'SetImageModel' },
   listImageModels: { service: 'MediaService', rpc: 'GetAvailableImageModels' },
@@ -328,17 +157,34 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   getImageDefaultQuality: { service: 'MediaService', rpc: 'GetImageDefaultQuality' },
   setImageDefaultQuality: { service: 'MediaService', rpc: 'SetImageDefaultQuality' },
   getImageSettings: { service: 'MediaService', rpc: 'GetImageSettings' },
-  // 채팅 첨부 이미지 임시 저장 — sharp 0, /user/attachments/<slug>.<ext> (2026-05-11)
-  saveTempAttachment: { service: 'MediaService', rpc: 'SaveTempAttachment' },
-  cleanupOldAttachments: { service: 'MediaService', rpc: 'CleanupOldAttachments' },
 
-  // ── TemplateService (TemplateManager) ─────────────────────────
-  listTemplates: { service: 'TemplateService', rpc: 'List' },
-  getTemplate: { service: 'TemplateService', rpc: 'Get' },
-  saveTemplate: { service: 'TemplateService', rpc: 'Save' },
-  deleteTemplate: { service: 'TemplateService', rpc: 'Delete' },
+  // ── AiService ──────────────────────────────────────────────
+  processAi: { service: 'AiService', rpc: 'Process' },
+  requestActionWithTools: { service: 'AiService', rpc: 'RequestActionWithTools' },
+  codeAssist: { service: 'AiService', rpc: 'CodeAssist' },
+  runAgentJob: { service: 'AiService', rpc: 'RunAgentJob' },
+  resolveCallTarget: { service: 'AiService', rpc: 'ResolveCallTarget' },
+  spawnSubAgent: { service: 'AiService', rpc: 'SpawnSubAgent' },
+  isSubAgentEnabled: { service: 'AiService', rpc: 'IsSubAgentEnabled' },
+  setSubAgentEnabled: { service: 'AiService', rpc: 'SetSubAgentEnabled' },
+  createPending: { service: 'AiService', rpc: 'CreatePending' },
+  getPending: { service: 'AiService', rpc: 'GetPending' },
+  consumePending: { service: 'AiService', rpc: 'ConsumePending' },
+  rejectPending: { service: 'AiService', rpc: 'RejectPending' },
+  storePlan: { service: 'AiService', rpc: 'StorePlan' },
 
-  // ── EntityService (EntityManager — 메모리 4-tier Phase 1) ─────
+  // ── StorageService ─────────────────────────────────────────
+  readFile: { service: 'StorageService', rpc: 'ReadFile' },
+  readFileBinary: { service: 'StorageService', rpc: 'ReadFileBinary' },
+  writeFile: { service: 'StorageService', rpc: 'WriteFile' },
+  appendFile: { service: 'StorageService', rpc: 'WriteFile' },
+  deleteFile: { service: 'StorageService', rpc: 'DeleteFile' },
+  listDir: { service: 'StorageService', rpc: 'ListDir' },
+  listFiles: { service: 'StorageService', rpc: 'ListFiles' },
+  getFileTree: { service: 'StorageService', rpc: 'GetFileTree' },
+  globFiles: { service: 'StorageService', rpc: 'GlobFiles' },
+
+  // ── EntityService ──────────────────────────────────────────
   saveEntity: { service: 'EntityService', rpc: 'Save' },
   updateEntity: { service: 'EntityService', rpc: 'Update' },
   deleteEntity: { service: 'EntityService', rpc: 'Delete' },
@@ -348,77 +194,37 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   saveEntityFact: { service: 'EntityService', rpc: 'SaveFact' },
   updateEntityFact: { service: 'EntityService', rpc: 'UpdateFact' },
   deleteEntityFact: { service: 'EntityService', rpc: 'DeleteFact' },
+  getEntityFact: { service: 'EntityService', rpc: 'GetFact' },
   getEntityTimeline: { service: 'EntityService', rpc: 'GetTimeline' },
   searchEntityFacts: { service: 'EntityService', rpc: 'SearchFacts' },
   retrieveContext: { service: 'EntityService', rpc: 'RetrieveContext' },
+  cleanupExpiredFacts: { service: 'EntityService', rpc: 'CleanupExpiredFacts' },
 
-  // ── EpisodicService (EpisodicManager — 메모리 4-tier Phase 2) ─
-  saveEvent: { service: 'EpisodicService', rpc: 'Save' },
-  updateEvent: { service: 'EpisodicService', rpc: 'Update' },
-  deleteEvent: { service: 'EpisodicService', rpc: 'Delete' },
-  getEvent: { service: 'EpisodicService', rpc: 'Get' },
-  searchEvents: { service: 'EpisodicService', rpc: 'Search' },
+  // ── EpisodicService ────────────────────────────────────────
+  saveEvent: { service: 'EpisodicService', rpc: 'SaveEvent' },
+  updateEvent: { service: 'EpisodicService', rpc: 'UpdateEvent' },
+  deleteEvent: { service: 'EpisodicService', rpc: 'DeleteEvent' },
+  getEvent: { service: 'EpisodicService', rpc: 'GetEvent' },
+  searchEvents: { service: 'EpisodicService', rpc: 'SearchEvents' },
   listRecentEvents: { service: 'EpisodicService', rpc: 'ListRecent' },
   listEventsByEntity: { service: 'EpisodicService', rpc: 'ListByEntity' },
   linkEventEntity: { service: 'EpisodicService', rpc: 'LinkEntity' },
   unlinkEventEntity: { service: 'EpisodicService', rpc: 'UnlinkEntity' },
+  cleanupExpiredEvents: { service: 'EpisodicService', rpc: 'CleanupExpired' },
 
-  // ── ConsolidationService (ConsolidationManager — 메모리 4-tier Phase 4) ─
-  consolidateConversation: { service: 'ConsolidationService', rpc: 'Consolidate' },
+  // ── ConsolidationService ──────────────────────────────────
+  askLlmText: { service: 'ConsolidationService', rpc: 'AskLlmText' },
+  consolidate: { service: 'ConsolidationService', rpc: 'Consolidate' },
   consolidateInactive: { service: 'ConsolidationService', rpc: 'ConsolidateInactive' },
   getMemoryStats: { service: 'ConsolidationService', rpc: 'GetMemoryStats' },
-  askLlmText: { service: 'ConsolidationService', rpc: 'AskLlmText' },
 
-  // ── CostService (CostManager) ─────────────────────────────────
-  getLlmCostStats: { service: 'CostService', rpc: 'GetStats' },
-  flushCost: { service: 'CostService', rpc: 'Flush' },
-  getCostBudget: { service: 'CostService', rpc: 'GetBudget' },
-  setCostBudget: { service: 'CostService', rpc: 'SetBudget' },
-  checkCostBudget: { service: 'CostService', rpc: 'CheckBudget' },
+  // ── TemplateService ───────────────────────────────────────
+  listTemplates: { service: 'TemplateService', rpc: 'List' },
+  getTemplate: { service: 'TemplateService', rpc: 'Get' },
+  saveTemplate: { service: 'TemplateService', rpc: 'Save' },
+  deleteTemplate: { service: 'TemplateService', rpc: 'Delete' },
 
-  // ── EventService (EventManager — SSE) ─────────────────────────
-  listAuditLog: { service: 'EventService', rpc: 'ListAuditLog' },
-
-  // ── StatusService (StatusManager — long-running 가시화) ───────
-  startJob: { service: 'StatusService', rpc: 'Start' },
-  updateJob: { service: 'StatusService', rpc: 'Update' },
-  completeJob: { service: 'StatusService', rpc: 'Complete' },
-  failJob: { service: 'StatusService', rpc: 'Fail' },
-  getJob: { service: 'StatusService', rpc: 'Get' },
-  listActiveJobs: { service: 'StatusService', rpc: 'List' },
-  getJobStats: { service: 'StatusService', rpc: 'Stats' },
-
-  // ── ToolService (ToolManager — 도구 dispatch) ─────────────────
-  listTools: { service: 'ToolService', rpc: 'List' },
-  getToolStats: { service: 'ToolService', rpc: 'GetStats' },
-  executeTool: { service: 'ToolService', rpc: 'Execute' },
-
-  // ── AiService (AiManager) ─────────────────────────────────────
-  requestActionWithTools: { service: 'AiService', rpc: 'RequestActionWithTools' },
-  codeAssist: { service: 'AiService', rpc: 'CodeAssist' },
-  resolveCallTarget: { service: 'AiService', rpc: 'ResolveCallTarget' },
-  spawnSubAgent: { service: 'AiService', rpc: 'SpawnSubAgent' },
-  isSubAgentEnabled: { service: 'AiService', rpc: 'IsSubAgentEnabled' },
-  setSubAgentEnabled: { service: 'AiService', rpc: 'SetSubAgentEnabled' },
-  runAgentJob: { service: 'AiService', rpc: 'RunAgentJob' },
-
-  // ── StorageService (IStoragePort 직접) ───────────────────────
-  readFile: { service: 'StorageService', rpc: 'ReadFile' },
-  readFileBinary: { service: 'StorageService', rpc: 'ReadFileBinary' },
-  writeFile: { service: 'StorageService', rpc: 'WriteFile' },
-  deleteFile: { service: 'StorageService', rpc: 'DeleteFile' },
-  listDir: { service: 'StorageService', rpc: 'ListDir' },
-  listFiles: { service: 'StorageService', rpc: 'ListFiles' },
-  getFileTree: { service: 'StorageService', rpc: 'GetFileTree' },
-  globFiles: { service: 'StorageService', rpc: 'GlobFiles' },
-
-  // ── DatabaseService (IDatabasePort 직접) ──────────────────────
-  queryDatabase: { service: 'DatabaseService', rpc: 'Query' },
-
-  // ── NetworkService (INetworkPort 직접) ────────────────────────
-  networkFetch: { service: 'NetworkService', rpc: 'Fetch' },
-
-  // ── SettingsService (Vault flat key 헬퍼) ────────────────────
+  // ── Cross-cutting ─────────────────────────────────────────
   getTimezone: { service: 'SettingsService', rpc: 'GetTimezone' },
   setTimezone: { service: 'SettingsService', rpc: 'SetTimezone' },
   getAiModel: { service: 'SettingsService', rpc: 'GetAiModel' },
@@ -436,56 +242,118 @@ const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
   getAiAssistantDefault: { service: 'SettingsService', rpc: 'GetAiAssistantDefault' },
   getAvailableAiAssistantModels: { service: 'SettingsService', rpc: 'GetAvailableAiAssistantModels' },
   getAvailableAiModels: { service: 'SettingsService', rpc: 'GetAvailableAiModels' },
-
-  // ── CacheService (Phase 2 sysmod result cache) ───────────────
-  cacheData: { service: 'CacheService', rpc: 'Read' },     // proto: 'Read' RPC
+  networkFetch: { service: 'NetworkService', rpc: 'Fetch' },
   cacheRead: { service: 'CacheService', rpc: 'Read' },
   cacheGrep: { service: 'CacheService', rpc: 'Grep' },
   cacheAggregate: { service: 'CacheService', rpc: 'Aggregate' },
   cacheDrop: { service: 'CacheService', rpc: 'Drop' },
-
-  // ── TelegramService (sysmod_telegram bot webhook) ────────────
-  processTelegramMessage: { service: 'TelegramService', rpc: 'ProcessMessage' },
   setupTelegramWebhook: { service: 'TelegramService', rpc: 'SetupWebhook' },
   removeTelegramWebhook: { service: 'TelegramService', rpc: 'RemoveWebhook' },
   getTelegramWebhookStatus: { service: 'TelegramService', rpc: 'GetWebhookStatus' },
-  getTelegramWebhookSecret: { service: 'TelegramService', rpc: 'GetWebhookSecret' },
   isTelegramOwner: { service: 'TelegramService', rpc: 'IsOwner' },
-
-  // ── McpService — 추가 매핑 (옛 entry 보강) ───────────────────
-  addMcpServer: { service: 'McpService', rpc: 'AddServer' },
-  listAllMcpTools: { service: 'McpService', rpc: 'ListAllTools' },
-
-  // ── EpisodicService — 추가 매핑 ───────────────────────────────
-  cleanupExpiredEvents: { service: 'EpisodicService', rpc: 'CleanupExpired' },
-
-  // ── EntityService — 추가 매핑 ─────────────────────────────────
-  getEntityFact: { service: 'EntityService', rpc: 'GetFact' },
-  cleanupExpiredFacts: { service: 'EntityService', rpc: 'CleanupExpiredFacts' },
-
-  // ── MemoryService (memory file) ──────────────────────────────
+  getTelegramWebhookSecret: { service: 'TelegramService', rpc: 'GetWebhookSecret' },
+  processTelegramMessage: { service: 'TelegramService', rpc: 'ProcessMessage' },
+  queryDatabase: { service: 'DatabaseService', rpc: 'Query' },
   getMemoryIndex: { service: 'MemoryService', rpc: 'GetIndex' },
   readMemoryFile: { service: 'MemoryService', rpc: 'ReadFile' },
   listMemoryFiles: { service: 'MemoryService', rpc: 'ListFiles' },
   saveMemoryFile: { service: 'MemoryService', rpc: 'SaveFile' },
   deleteMemoryFile: { service: 'MemoryService', rpc: 'DeleteFile' },
-
-  // ── ConversationService — 추가 매핑 ──────────────────────────
-  cleanupExpiredShares: { service: 'ConversationService', rpc: 'CleanupExpiredShares' },
-
-  // ── LifecycleService (Health / Shutdown) ─────────────────────
   health: { service: 'LifecycleService', rpc: 'Health' },
   captureException: { service: 'LifecycleService', rpc: 'CaptureException' },
   gracefulShutdown: { service: 'LifecycleService', rpc: 'GracefulShutdown' },
+  getCostStats: { service: 'CostService', rpc: 'GetStats' },
+  flushCost: { service: 'CostService', rpc: 'Flush' },
+  getCostBudget: { service: 'CostService', rpc: 'GetBudget' },
+  setCostBudget: { service: 'CostService', rpc: 'SetBudget' },
+  checkCostBudget: { service: 'CostService', rpc: 'CheckBudget' },
+  registerTool: { service: 'ToolService', rpc: 'Register' },
+  registerToolsMany: { service: 'ToolService', rpc: 'RegisterMany' },
+  unregisterTool: { service: 'ToolService', rpc: 'Unregister' },
+  getToolDefinition: { service: 'ToolService', rpc: 'GetDefinition' },
+  listTools: { service: 'ToolService', rpc: 'List' },
+  executeTool: { service: 'ToolService', rpc: 'Execute' },
+  buildAiToolDefinitions: { service: 'ToolService', rpc: 'BuildAiDefinitions' },
+  buildMcpToolDescriptions: { service: 'ToolService', rpc: 'BuildMcpDescriptions' },
+  getToolStats: { service: 'ToolService', rpc: 'GetStats' },
+  getActivePlanState: { service: 'ToolService', rpc: 'GetActivePlanState' },
+  setActivePlanState: { service: 'ToolService', rpc: 'SetActivePlanState' },
+  clearActivePlanState: { service: 'ToolService', rpc: 'ClearActivePlanState' },
+  listAuditLog: { service: 'EventService', rpc: 'ListAuditLog' },
+  startJob: { service: 'StatusService', rpc: 'Start' },
+  updateJob: { service: 'StatusService', rpc: 'Update' },
+  completeJob: { service: 'StatusService', rpc: 'Complete' },
+  failJob: { service: 'StatusService', rpc: 'Fail' },
+  getJob: { service: 'StatusService', rpc: 'Get' },
+  listJobs: { service: 'StatusService', rpc: 'List' },
+  getJobStats: { service: 'StatusService', rpc: 'Stats' },
 };
 
 function resolveMethodToRpc(method: string): { service: string; rpc: string } {
-  const direct = METHOD_TABLE[method];
-  if (direct) return direct;
-  // fallback — table 미등록 method. PascalCase 으로 LifecycleService 폴백.
-  // 새 facade method 추가 시 본 table 에 등록 필요 — 폴백은 안전망.
-  return {
-    service: 'LifecycleService',
-    rpc: method.charAt(0).toUpperCase() + method.slice(1),
-  };
+  const entry = METHOD_TABLE[method];
+  if (!entry) {
+    throw new Error(`[invokeCore] unknown facade method: ${method}`);
+  }
+  return entry;
+}
+
+/**
+ * Core 메서드 단일 진입점 — typed client routing.
+ *
+ * Phase B-typed (2026-05-12) — proto-loader dynamic schema 폐기. 자동 생성 typed client 사용.
+ * 호출 site 변경 0 (transparent cutover).
+ */
+export async function invokeCore<T = unknown>(method: string, args?: unknown): Promise<T> {
+  const { service, rpc } = resolveMethodToRpc(method);
+  let response: any;
+  try {
+    response = await callTypedClient(service, rpc, args);
+  } catch (err) {
+    const { fromGrpcError } = await import('./api-error');
+    throw fromGrpcError(err);
+  }
+  // RawJsonPb.rawJson — 동적 schema 응답 자동 unwrap.
+  if (response && typeof response.rawJson === 'string') {
+    return JSON.parse(response.rawJson) as T;
+  }
+  // OptionalStringPb {value, present} — get_* RPC 의 옵셔널 응답.
+  if (response && typeof response === 'object' && 'present' in response && 'value' in response) {
+    return (response.present ? response.value : null) as T;
+  }
+  // StringRequest / NumberRequest / BoolRequest — 단순 wrapper 자동 unwrap.
+  if (response && typeof response === 'object' && Object.keys(response).length === 1 && 'value' in response) {
+    return response.value as T;
+  }
+  return response as T;
+}
+
+/**
+ * typed client routing — service + rpc (PascalCase) → camelCase method 호출.
+ * args 자동 분기:
+ *   - undefined / null → Empty
+ *   - string → StringRequest
+ *   - number → NumberRequest
+ *   - boolean → BoolRequest
+ *   - object → typed Request 직접 (field 명 camelCase 매핑)
+ */
+async function callTypedClient(service: string, rpc: string, args: unknown): Promise<any> {
+  const clients = await import('./grpc-typed-client');
+  const clientKey =
+    service.charAt(0).toLowerCase() + service.slice(1).replace(/Service$/, 'Client');
+  const client = (clients as any)[clientKey];
+  if (!client) {
+    throw new Error(`[invokeCore] typed client 없음: ${service} → ${clientKey}`);
+  }
+  const methodName = rpc.charAt(0).toLowerCase() + rpc.slice(1);
+  const method = client[methodName];
+  if (typeof method !== 'function') {
+    throw new Error(`[invokeCore] typed client method 없음: ${service}.${methodName}`);
+  }
+  let request: any;
+  if (args === undefined || args === null) request = {};
+  else if (typeof args === 'string') request = { value: args };
+  else if (typeof args === 'number') request = { value: args };
+  else if (typeof args === 'boolean') request = { value: args };
+  else request = args;
+  return await method.call(client, request);
 }
