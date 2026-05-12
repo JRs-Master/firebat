@@ -9,6 +9,7 @@
 pub mod adapters;
 pub mod llm;
 pub mod image_gen;
+pub mod mcp_server;
 
 /// Generated proto module — `firebat_core::proto` 의 re-export.
 /// infra 는 자체 build.rs 없음 — core 가 proto 컴파일 담당.

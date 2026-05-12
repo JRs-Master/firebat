@@ -68,6 +68,13 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 uuid = { version = "1", features = ["v4"] }
 
+# MCP HTTP server — firebat-core binary 안 axum endpoint 으로 통합 (Phase E, 2026-05-12).
+# Claude CLI / Codex / Gemini CLI 의 `--mcp-config http://127.0.0.1:50052/mcp` 가 직접 연결.
+# Node 의 mcp/internal-server.ts 점진 폐기 영역.
+axum = { version = "0.7", features = ["json"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
 # 이미지 — image-rs + fast_image_resize + blurhash (옛 TS sharp 1:1)
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "rayon"] }
 fast_image_resize = { version = "5", features = ["image"] }

@@ -596,6 +596,23 @@ async fn main() -> Result<()> {
         });
     }
 
+    // MCP HTTP server (Phase E, 2026-05-12) — firebat-core binary 안 별도 axum endpoint.
+    // FIREBAT_MCP_ENABLED=false 로 비활성 (Node mcp/internal-server.ts 와 dual-run 시점 용).
+    let mcp_enabled = std::env::var("FIREBAT_MCP_ENABLED")
+        .map(|v| v != "false" && v != "0")
+        .unwrap_or(false);
+    if mcp_enabled {
+        let mcp_state = std::sync::Arc::new(firebat_infra::mcp_server::McpServerState::new(
+            vault.clone(),
+        ));
+        // 초기 도구 등록은 후속 — 현재는 skeleton 만 (initialize / tools/list 빈 배열 반환).
+        tokio::spawn(async move {
+            if let Err(e) = firebat_infra::mcp_server::serve(mcp_state).await {
+                tracing::error!("MCP server 종료: {e}");
+            }
+        });
+    }
+
     Server::builder()
         .add_service(TemplateServiceServer::new(template_service))
         .add_service(SecretServiceServer::new(secret_service))
