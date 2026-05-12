@@ -34,7 +34,7 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - 2026-05-04: 7개 추가 (미디어 4 + 메모리 2 + 임베더 1) → 17개
 - Phase B-4 cutover (2026-05-06): SysmodCache → core/utils 이동 → 16개
 - Phase B-post Track A5 (2026-05-06): `ReqwestNetworkAdapter` (INetworkPort 구현) 신설 → 17개
-- Phase B-post Track B skeleton (2026-05-06): `LinuxCgroupsSandboxAdapter` skeleton (`#[cfg(target_os = "linux")]`) — Phase C 본격 구현 시점에 17 → 18 (운영 환경 한정)
+- Phase B-post Track B skeleton (2026-05-06): `LinuxCgroupsSandboxAdapter` skeleton (`#[cfg(target_os = "linux")]`) — 운영 미사용 (sysmod libuv / encodings / CLONE_NEWNET 차단 이슈로 `FIREBAT_SANDBOX=basic` 으로 BasicProcessSandbox 사용)
 
 **현재 17개**: storage / vault / auth / log / tracing_log / database / sandbox (BasicProcess) / mcp_client / memory / cron / media / llm / embedder / image_gen / image_processor / **network (신설)** / sandbox_linux_cgroups (skeleton, Linux 한정).
 
@@ -299,16 +299,14 @@ BIBLE 제2장 "언어 중립성" 의 Core 어댑터 layer 적용. 영구 진화 
 - swap 시 dual-run (예: Image 어댑터 swap 시 같은 input 의 픽셀 diff) 검증 후 cutover
 - 회귀 위험 어댑터 단위 격리 — 한 어댑터 swap 이 다른 어댑터 영향 0
 
-### 단일 build target (Self-hosted Docker)
+### 단일 build target
 
 ```toml
 # infra/Cargo.toml
 [[bin]]
 name = "firebat-core"
-path = "src/main.rs"   # gRPC server 단일 binary
+path = "src/main.rs"   # gRPC server + MCP HTTP + stdio MCP — 단일 binary
 ```
-
-옛 Tauri lib 빌드 target 폐기 — Self-installed Tauri 가 v2.0 이연 (FIREBAT_BIBLE 제12장 참조).
 
 ### Sandbox 의 sysmod 호환
 
@@ -318,12 +316,9 @@ tokio::process::Command::new("node").arg(module_entry).spawn()
 tokio::process::Command::new("python3").arg(module_entry).spawn()
 ```
 
-Docker compose 가 Node / Python runtime + LLM CLI (Claude Code / Codex / Gemini CLI) 동봉.
+Vultr 호스트에 Node / Python runtime + LLM CLI (Claude Code / Codex / Gemini CLI) 직접 설치.
 
-**🚨 Phase B-post Sandbox 강화 (진행 중)**: 옛 `tokio::process::Command` 만으로는 OS 레벨 격리 0 — `os.system("rm -rf /")` 막을 수 없음. BIBLE 의 "격리(Sandbox)" 문구 vs 코드 현실 mismatch. 정정:
-- Linux Docker (Phase C — firebat.co.kr): cgroups v2 + seccomp + network namespace (CPU / memory / fork / syscall whitelist / network deny)
-- 미지원 OS / 개발: 기존 path containment + timeout 폴백 (BasicProcessSandbox)
-- 작업량 ~3일
+**Sandbox 운영 결정**: `FIREBAT_SANDBOX=basic` (BasicProcessSandbox) 사용. `tokio::process::Command` + path containment + timeout. `LinuxCgroupsSandboxAdapter` (cgroups + seccomp + namespace) 는 코드 잔존하지만 sysmod libuv / encodings / CLONE_NEWNET 차단 이슈로 미사용. 향후 multi-tenant / 외부 사용자 격리 필요 시점에 seccomp allow list 확장 + 재활성 검토.
 
 ### v1.0 Final 출시 후 (v2.0+)
 

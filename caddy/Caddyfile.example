@@ -41,15 +41,15 @@ your-domain.com, www.your-domain.com {
     }
 
     # 사이트 인증 파일 (verifications 시스템 — Google / Naver / Bing / ads.txt)
-    # Phase C 활성 시 verifications/ 디렉토리 mount 후 alias 정의합니다.
+    # Next.js rewrites 가 자동 처리하므로 별도 설정 불필요.
 
-    # gRPC 외부 노출 차단 (firebat-core:50051 은 internal only)
+    # gRPC 외부 노출 차단 (firebat-core gRPC :50051 은 localhost 만)
     handle /grpc* {
         respond "Not Found" 404
     }
 
-    # 메인 — Next.js renderer 로 reverse proxy
-    reverse_proxy firebat-renderer:3000 {
+    # 메인 — Next.js frontend (systemd unit `firebat-frontend`) 로 reverse proxy
+    reverse_proxy 127.0.0.1:3000 {
         # SSE keepalive — flush_interval -1 = 즉시 flush
         flush_interval -1
         # MCP SSE 엔드포인트 등 long-running 요청

@@ -253,7 +253,7 @@ Site builder reaches Astra/GP-class depth — header / sidebar / footer all shar
 | **Editor** | Monaco Editor |
 | **MCP** | Rust 자체 구현 (axum + JSON-RPC 2.0, HTTP :50052 + stdio) — Phase E (2026-05-12) 단일 binary 안 통합 |
 | **Validation** | Zod (TS) + serde (Rust) |
-| **Deploy** | self-hosted Docker compose (Phase C) — 단일 distribution (self-installed Tauri 는 v2.0 이연) |
+| **Deploy** | Vultr systemd 2 unit (`firebat` Rust core + `firebat-frontend` Next.js standalone) + Caddy 자동 TLS reverse proxy |
 
 ---
 
@@ -311,39 +311,43 @@ Open `http://localhost:3000/admin` for the admin console. Frontend 가 `RustCore
 
 > 🇰🇷 **첫 부팅** — SetupWizard 가 자동 표시 (admin / 언어 / 시간대 입력 → 자동 로그인). **이후 설정** — AI 탭에서 모드·공급자·모델, 일반 탭에서 인터페이스 언어·타임존·관리자 계정 변경, 사이드바 SYSTEM 에서 MCP 토큰 생성.
 
-### Production — self-hosted Docker compose (Phase C)
+### Production — Vultr systemd 2 unit + Caddy
 
-Rust core (gRPC :50051 + MCP HTTP :50052) + Next.js renderer (:3000) + Caddy (자동 TLS) 3 컨테이너 분리 운영.
+Rust core (gRPC :50051 + MCP HTTP :50052) + Next.js standalone (:3000) — systemd 별도 unit 운영. Caddy 가 reverse proxy + Let's Encrypt 자동 TLS.
 
 ```bash
-# 1. 소스 clone + 디렉 구조
-git clone <repo> /opt/firebat && cd /opt/firebat
-mkdir -p data user/media user/attachments system/media data/logs/caddy
-chown -R 1000:1000 data user
+# 1. 디렉 구조 + system 디렉 symlink
+mkdir -p /opt/firebat/{data,user/media,frontend}
+ln -sfn /opt/firebat-src/system /opt/firebat/system
 
-# 2. Caddy 도메인 / 이메일 설정
-cp caddy/Caddyfile.example caddy/Caddyfile
-# caddy/Caddyfile 안 YOUR_DOMAIN_HERE / YOUR_EMAIL_HERE 실 값 으로 일괄 치환
+# 2. Rust binary 배치 (GHA artifact 또는 `cargo build --release` 결과)
+cp target/release/firebat-core /opt/firebat/firebat-core
+chmod +x /opt/firebat/firebat-core
 
-# 3. Docker compose build + up (5~10분 — Rust + Python pip + playwright chromium)
-docker compose build
-docker compose up -d
+# 3. Next.js standalone build + 배치
+cd /opt/firebat-src
+npm install --legacy-peer-deps && npm run build
+rsync -a .next/standalone/ /opt/firebat/frontend/
+rsync -a .next/static/ /opt/firebat/frontend/.next/static/
+rsync -a messages/ /opt/firebat/frontend/messages/
 
-# 4. 로그 / 상태 확인
-docker compose logs -f firebat-core
-docker compose ps
+# 4. systemd unit 등록 (`/etc/systemd/system/firebat.service` + `firebat-frontend.service`)
+systemctl daemon-reload
+systemctl enable --now firebat firebat-frontend
+
+# 5. Caddy reverse proxy (자동 HTTPS)
+cp caddy/Caddyfile.example /etc/caddy/Caddyfile
+# /etc/caddy/Caddyfile 안 your-domain.com / 이메일 실 값 치환 후
+systemctl reload caddy
 ```
 
-**Update flow** — `git pull && docker compose build && docker compose up -d` (전체) 또는 컨테이너 별 `docker compose restart firebat-core`.
+**Update flow** — `git pull && npm run build && rsync` (frontend) + binary FTP / `cargo build` (Rust 변경 시) + `systemctl restart firebat firebat-frontend`.
 
-**옛 v0.1 systemd 운영 → v1.0 Docker 마이그레이션**: `sudo ./scripts/migrate-v0-to-v1.sh` (자동 백업 + 빌드 + 기동).
-
-### MCP Server (Rust 단일 binary 안 박힘)
+### MCP Server (Rust 단일 binary 안 통합)
 
 ```bash
 # stdio mode — Claude Desktop / Cursor / 외부 AI client 진입
-firebat-core --mcp-stdio                # Docker 외부 호출 시
-docker compose exec firebat-core firebat-core --mcp-stdio   # 컨테이너 안
+firebat-core --mcp-stdio
 
 # HTTP mode (자동) — firebat-core 기동 시 :50052 자동 listen.
 # /api/mcp (외부 AI) / /api/mcp-internal (CLI User AI) 모두 frontend 가 reverse proxy 처리.
@@ -374,7 +378,6 @@ firebat/                      # Cargo workspace root (Cargo.toml — members: co
 │
 ├── infra/                    # Rust crate — adapters + main binary (firebat → core 단방향 의존)
 │   ├── Cargo.toml
-│   ├── Dockerfile            #   self-hosted multi-stage build
 │   └── src/
 │       ├── lib.rs
 │       ├── main.rs           #   firebat-core binary (gRPC server :50051)
@@ -403,7 +406,7 @@ firebat/                      # Cargo workspace root (Cargo.toml — members: co
 │   └── events.ts             #   SSE 이벤트 버스
 │
 │   # Phase E (2026-05-12) — 옛 Node `mcp/` 디렉토리 전체 폐기. Rust 단일 binary 안 MCP server (axum) 가 대체.
-│   # Frontend 의 `/api/mcp` / `/api/mcp-internal` route 는 firebat-core:50052 reverse proxy 박힘.
+│   # Frontend 의 `/api/mcp` / `/api/mcp-internal` route 는 127.0.0.1:50052 reverse proxy.
 │
 ├── system/                   # System area (sandbox 모듈)
 │   ├── services/             #   Config-only services (CMS, MCP server)
@@ -423,9 +426,9 @@ firebat/                      # Cargo workspace root (Cargo.toml — members: co
 
 ---
 
-## Roadmap — v1.0 Final (single milestone, 2026-05-03 confirmed)
+## Roadmap — v1.0 Final
 
-Old v0.1 → v1.0 RC → v1.x phase split is **deprecated**. Replaced with single v1.0 Final milestone — **Rust Core + Next.js Frontend + Self-hosted Docker** (단일 distribution). Self-installed Tauri 는 v2.0 이연 (외부 시니어 audit, 2026-05-06).
+Single v1.0 Final milestone — **Rust Core + Next.js Frontend, Vultr systemd + Caddy 운영**. 본인 사용 안정성이 release gate.
 
 **Target architecture**:
 
@@ -434,52 +437,33 @@ Frontend  Next.js + React + 27 render_* components
                           ↓
                 RustCoreProxy → @connectrpc typed client → gRPC (Phase B-typed)
                           ↓
-              Self-hosted (Docker compose)
-              ─────────────────────────────
-              Rust Core binary (gRPC :50051 + MCP HTTP :50052)
-              + Next.js standalone (:3000)
-              + Caddy (자동 TLS, :80/:443)
+              Vultr VPS (systemd)
+              ────────────────────
+              Rust Core binary (gRPC :50051 + MCP HTTP :50052) — systemd unit `firebat`
+              + Next.js standalone (:3000) — systemd unit `firebat-frontend`
+              + Caddy (자동 TLS, :80/:443) — reverse proxy
 ```
 
-**Why Self-hosted single distribution** (Self-installed Tauri 폐기 사유):
-- Tauri + Next.js + Node sidecar 50MB 목표 비현실 (실제 150-200MB)
-- Node sidecar UX 폭탄: 좀비 프로세스 / 포트 충돌 / 방화벽 발작 — 어르신 사용자 대응 불가
-- 진짜 가벼운 ~15MB Tauri 앱은 Next.js SPA 추출 + Tauri IPC 큰 frontend 재작업 필요 → v2.0
-- 타겟 유저 (서버 모르는 어르신) 에게는 매니지드 호스팅 (Vultr Docker) 이 더 합리
-
-**Phases** (2026-05-06 갱신):
+**Phases**:
 
 | Phase | Scope | 상태 |
 |---|---|---|
 | **A. Design** | gRPC schema (28 services / 208 RPCs) + Cargo workspace + tonic-build 통합 | ✅ 완료 |
-| **B. Rust Core** | 16 adapters + 21 managers + 28 service impl + frontend RustCoreProxy + multi-crate workspace 분리 (core / infra). **Hardcoding audit 7-pattern** — no 1:1 mapping, every special-case fix promoted to general logic. dual-run 폐기 → 옛 TS 단번 cutover | ✅ 완료 (2026-05-06) |
-| **B-post. Audit cleanup** | INetworkPort 신설 / Sandbox OS 격리 (cgroups + seccomp) / ConsolidationManager 예산 가드 / AI 모델 hardcode 정리 / package.json legacy 청산 | 🟡 진행 (Phase C 진입 전) |
-| **C. Self-hosted Docker** | Multi-stage Dockerfile (Rust binary + Next.js standalone) + docker-compose + Caddy 자동 TLS + 옛 v0.1 데이터 마이그레이션 runner (`scripts/migrate-v0-to-v1.sh`) + firebat.co.kr 마이그레이션 | ✅ 코드 정렬 완료 — 검증 게이트 대기 |
-| ~~**D. Self-installed Tauri**~~ | ~~src-tauri shell + Node sidecar~~ | 🚫 **v2.0 이연** (2026-05-06 폐기) |
+| **B. Rust Core** | 16 adapters + 21 managers + 28 service impl + frontend RustCoreProxy + multi-crate workspace 분리 (core / infra). **Hardcoding audit 7-pattern** — no 1:1 mapping, every special-case fix promoted to general logic | ✅ 완료 (2026-05-06) |
+| **B-LLM** | 5 LLM handler 본격 이식 (CLI 3종 + API 2종 + Vertex Service Account JWT) | ✅ 완료 (2026-05-10) |
+| **B-typed** | 93 untyped RPC → typed Request message + protoc-gen-es 자동 생성 + 옛 proto-loader / @grpc/grpc-js 의존성 폐기 | ✅ 완료 (2026-05-12) |
+| **E. MCP Rust cutover** | axum HTTP :50052 + stdio (`firebat-core --mcp-stdio`) + Node `mcp/` 디렉토리 / `@modelcontextprotocol/sdk` 의존성 완전 폐기 | ✅ 완료 (2026-05-12) |
 
 **v1.0 Final release gate**:
-- ✅ Rust Core 단번 cutover 완료 (옛 TS 폐기, `cargo check` + `npm run typecheck` 통과)
-- ✅ 회귀 검증 그물 복원 (inline tests 40+ 파일 integration 이관, 331 pass)
-- 🟡 Audit cleanup Track A + B 완료 (Phase C 진입 전)
-- 🟡 Self-hosted Docker compose 검증 (firebat.co.kr 마이그레이션 — Phase C)
+- ✅ Rust Core cutover 완료
+- ✅ 회귀 검증 그물 복원 (integration tests 331 pass)
+- ✅ 5 LLM handler 본격 구현
+- ✅ 93 RPC typed 정공 + 옛 proto-loader 폐기
+- ✅ MCP Rust 단일 binary 통합
 - 🟡 1+ week of personal use on Rust without incidents
-- → new use-cases (auto-trading / blogs) start on top of Rust
+- 🟡 자동매매 실측 시작
 
-**Total duration**: ~3~4 months solo full-time / ~5~7 months part-time (Tauri 폐기로 ~1개월 단축).
-
-**After v1.0 Final**: 두 distribution 옵션 진행 가능 (둘 다 v1.x / v2.0+ 안건):
-
-1. **Vercel frontend + Self-hosted backend exe** (hybrid Self-installed 부활, 2026-05-10 도입 검토)
-   - Frontend = `firebat.app` (Vercel 자동 배포) — 사용자 빌드 0
-   - Backend = 사용자 머신 exe (Rust 단일 binary ~30-50MB) — vault / data / 비용 본인 통제
-   - 자동화 흐름: UPnP 자동 포트 매핑 + 공유기 DDNS + Let's Encrypt 자동 HTTPS. CGNAT / UPnP disabled fallback = Cloudflare Tunnel 자동
-   - 옛 Self-installed Tauri (Tauri+Node sidecar 50MB 목표 비현실 + 어르신 UX 폭탄) 폐기 사유와 무관 — frontend 분리라 가벼움
-   - v1.x 의 Vercel frontend 분산 안건과 자연 통합 — 추가 작업 ↓
-
-2. **Next.js Static Export + Tauri IPC 데스크톱 앱** (~15MB, v2.0+ 후보)
-   - 운영 데이터 위에서 진짜 한계 도달 시점에 진행
-
-> 🇰🇷 **v1.0 Final 로드맵 (2026-05-06 갱신)** — Self-installed Tauri 폐기 결정. 단일 distribution = Self-hosted Docker. Phase 0 (현재 운영 유지) → A (설계 ✅) → B (Rust Core ✅ Phase B-4 cutover 완료) → B-post (audit cleanup) → C (Docker firebat.co.kr 마이그레이션). 총 3~4개월. Tauri 데스크톱 앱은 v2.0 시점에 Next.js SPA 추출 + Tauri IPC 통합한 진짜 가벼운 앱 (~15MB) 으로 재시작. 옛 src-tauri/ 디렉토리 + Node sidecar 구조는 어르신 사용자 UX 폭탄 (좀비 프로세스 / 포트 충돌 / 방화벽 발작) 위험 + 50MB 목표 비현실 (실제 150-200MB) 으로 폐기.
+> 🇰🇷 **v1.0 Final 로드맵** — Rust Core + Next.js Frontend, Vultr systemd 2 unit + Caddy 자동 TLS. 본인 사용 안정성이 release gate. 자동매매 / 블로그 / 일상 사용 실측 1주+ 무사고 도달 시 v1.0 Final 출시. 외부 사용자 진입 / 멀티 distribution / 데스크톱 앱 같은 안건은 v2.0+ 영역.
 
 ---
 
