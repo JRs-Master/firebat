@@ -7,7 +7,7 @@ use tonic::Request;
 use firebat_core::managers::schedule::ScheduleManager;
 use firebat_core::ports::ICronPort;
 use firebat_core::proto::{
-    schedule_service_server::ScheduleService, Empty, JsonArgs, StringRequest,
+    schedule_service_server::ScheduleService, Empty, ScheduleCronRequest, StringRequest,
 };
 use firebat_core::services::schedule::ScheduleServiceImpl;
 use firebat_infra::adapters::cron::TokioCronAdapter;
@@ -27,13 +27,25 @@ fn service() -> (ScheduleServiceImpl, tempfile::TempDir) {
 async fn schedule_then_list_via_grpc() {
     let (svc, _dir) = service();
     let resp = svc
-        .schedule_cron(Request::new(JsonArgs {
-            raw: serde_json::json!({
-                "jobId": "g1",
-                "targetPath": "/p",
-                "cronTime": "0 0 * * * *"
-            })
-            .to_string(),
+        .schedule_cron(Request::new(ScheduleCronRequest {
+            job_id: Some("g1".to_string()),
+            target_path: "/p".to_string(),
+            mode: "cron".to_string(),
+            cron_time: Some("0 0 * * * *".to_string()),
+            run_at: None,
+            delay_sec: None,
+            start_at: None,
+            end_at: None,
+            input_data_json: None,
+            pipeline_json: None,
+            title: None,
+            description: None,
+            one_shot: None,
+            run_when_json: None,
+            retry_json: None,
+            notify_json: None,
+            execution_mode: None,
+            agent_prompt: None,
         }))
         .await
         .unwrap();

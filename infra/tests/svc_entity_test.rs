@@ -6,7 +6,7 @@ use tonic::Request;
 
 use firebat_core::managers::entity::EntityManager;
 use firebat_core::ports::IEntityPort;
-use firebat_core::proto::{entity_service_server::EntityService, JsonArgs};
+use firebat_core::proto::{entity_service_server::EntityService, EntitySaveRequest, EntitySearchRequest};
 use firebat_core::services::entity::EntityServiceImpl;
 use firebat_infra::adapters::memory::SqliteMemoryAdapter;
 
@@ -22,13 +22,12 @@ fn service() -> (EntityServiceImpl, TempDir) {
 async fn save_then_search_via_grpc() {
     let (svc, _dir) = service();
     let resp = svc
-        .save(Request::new(JsonArgs {
-            raw: serde_json::json!({
-                "name": "테스트",
-                "type": "stock",
-                "aliases": ["t"]
-            })
-            .to_string(),
+        .save(Request::new(EntitySaveRequest {
+            name: "테스트".to_string(),
+            entity_type: "stock".to_string(),
+            aliases: vec!["t".to_string()],
+            metadata_json: None,
+            source_conv_id: None,
         }))
         .await
         .unwrap();
@@ -36,8 +35,8 @@ async fn save_then_search_via_grpc() {
     assert!(inner.id > 0);
 
     let search_resp = svc
-        .search(Request::new(JsonArgs {
-            raw: serde_json::json!({"query": "테스트", "limit": 10}).to_string(),
+        .search(Request::new(EntitySearchRequest {
+            opts_json: serde_json::json!({"query": "테스트", "limit": 10}).to_string(),
         }))
         .await
         .unwrap();

@@ -6,7 +6,7 @@ use tonic::Request;
 
 use firebat_core::managers::template::{TemplateBlock, TemplateConfig, TemplateManager, TemplateSpec};
 use firebat_core::ports::IStoragePort;
-use firebat_core::proto::{template_service_server::TemplateService, Empty, JsonArgs, StringRequest};
+use firebat_core::proto::{template_service_server::TemplateService, Empty, StringRequest, TemplateSaveRequest};
 use firebat_core::services::template::TemplateServiceImpl;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 
@@ -34,10 +34,10 @@ async fn service_save_list_get_delete_roundtrip() {
 
     // Save
     let cfg = make_template("주간 시황");
-    let save_args = serde_json::json!({ "slug": "weekly", "config": cfg });
     let resp = service
-        .save(Request::new(JsonArgs {
-            raw: save_args.to_string(),
+        .save(Request::new(TemplateSaveRequest {
+            slug: "weekly".to_string(),
+            config_json: serde_json::to_string(&cfg).unwrap(),
         }))
         .await
         .unwrap();
@@ -85,12 +85,13 @@ async fn service_save_invalid_args_returns_error_status() {
     let service = TemplateServiceImpl::new(manager);
 
     let resp = service
-        .save(Request::new(JsonArgs {
-            raw: "{ not valid json".to_string(),
+        .save(Request::new(TemplateSaveRequest {
+            slug: "broken".to_string(),
+            config_json: "{ not valid json".to_string(),
         }))
         .await
         .unwrap();
     let status = resp.into_inner();
     assert!(!status.ok);
-    assert!(status.error.contains("파싱 실패"));
+    assert!(status.error.contains("파싱"));
 }

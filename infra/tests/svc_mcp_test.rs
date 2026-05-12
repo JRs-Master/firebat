@@ -6,7 +6,7 @@ use tonic::Request;
 
 use firebat_core::managers::mcp::McpManager;
 use firebat_core::ports::{IMcpClientPort, McpServerConfig, McpTransport};
-use firebat_core::proto::{mcp_service_server::McpService, Empty, JsonArgs};
+use firebat_core::proto::{mcp_service_server::McpService, Empty, McpAddServerRequest};
 use firebat_core::services::mcp::McpServiceImpl;
 use firebat_infra::adapters::mcp_client::McpClientFileAdapter;
 
@@ -22,16 +22,15 @@ fn make_service() -> (McpServiceImpl, tempfile::TempDir) {
 async fn add_then_list_via_grpc() {
     let (svc, _dir) = make_service();
 
-    let cfg = serde_json::json!({
-        "name": "g1",
-        "transport": "stdio",
-        "command": "npx",
-        "args": ["server"],
-        "enabled": true
-    });
     let resp = svc
-        .add_server(Request::new(JsonArgs {
-            raw: cfg.to_string(),
+        .add_server(Request::new(McpAddServerRequest {
+            name: "g1".to_string(),
+            transport: "stdio".to_string(),
+            command: Some("npx".to_string()),
+            args: vec!["server".to_string()],
+            env_json: "{}".to_string(),
+            url: None,
+            enabled: true,
         }))
         .await
         .unwrap();
@@ -52,12 +51,18 @@ async fn add_then_list_via_grpc() {
 async fn add_invalid_config_returns_error_status() {
     let (svc, _dir) = make_service();
     let resp = svc
-        .add_server(Request::new(JsonArgs {
-            raw: "not-json".to_string(),
+        .add_server(Request::new(McpAddServerRequest {
+            name: "g1".to_string(),
+            transport: "invalid_transport".to_string(),
+            command: None,
+            args: vec![],
+            env_json: "{}".to_string(),
+            url: None,
+            enabled: true,
         }))
         .await
         .unwrap();
     let status = resp.into_inner();
     assert!(!status.ok);
-    assert!(status.error.contains("config"));
+    assert!(status.error.contains("transport"));
 }

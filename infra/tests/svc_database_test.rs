@@ -8,7 +8,7 @@ use tempfile::tempdir;
 use tonic::Request;
 
 use firebat_core::ports::IDatabasePort;
-use firebat_core::proto::{database_service_server::DatabaseService, JsonArgs};
+use firebat_core::proto::{database_service_server::DatabaseService, DatabaseQueryRequest};
 use firebat_core::services::database::DatabaseServiceImpl;
 use firebat_infra::adapters::database::SqliteDatabaseAdapter;
 
@@ -23,8 +23,9 @@ fn make_svc() -> (DatabaseServiceImpl, tempfile::TempDir) {
 async fn select_returns_rows() {
     let (svc, _dir) = make_svc();
     let resp = svc
-        .query(Request::new(JsonArgs {
-            raw: serde_json::json!({"sql": "SELECT COUNT(*) AS cnt FROM pages"}).to_string(),
+        .query(Request::new(DatabaseQueryRequest {
+            sql: "SELECT COUNT(*) AS cnt FROM pages".to_string(),
+            params_json: "[]".to_string(),
         }))
         .await
         .unwrap();
@@ -37,8 +38,9 @@ async fn select_returns_rows() {
 async fn insert_rejected() {
     let (svc, _dir) = make_svc();
     let resp = svc
-        .query(Request::new(JsonArgs {
-            raw: serde_json::json!({"sql": "INSERT INTO pages (slug) VALUES ('x')"}).to_string(),
+        .query(Request::new(DatabaseQueryRequest {
+            sql: "INSERT INTO pages (slug) VALUES ('x')".to_string(),
+            params_json: "[]".to_string(),
         }))
         .await;
     assert!(resp.is_err());

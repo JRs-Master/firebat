@@ -6,7 +6,10 @@ use tonic::Request;
 use firebat_core::managers::ai::AiManager;
 use firebat_core::managers::tool::ToolManager;
 use firebat_core::ports::{ILlmPort, ILogPort};
-use firebat_core::proto::{ai_service_server::AiService, JsonArgs};
+use firebat_core::proto::{
+    ai_service_server::AiService, AiProcessRequest, AiRequestActionWithToolsRequest, LlmCallOptsPb,
+    ToolDefinitionsPb,
+};
 use firebat_core::services::ai::AiServiceImpl;
 use firebat_infra::adapters::llm::StubLlmAdapter;
 use firebat_infra::adapters::log::ConsoleLogAdapter;
@@ -23,8 +26,9 @@ fn service() -> AiServiceImpl {
 async fn process_via_grpc_returns_stub_text() {
     let svc = service();
     let resp = svc
-        .process(Request::new(JsonArgs {
-            raw: serde_json::json!({"prompt": "hi"}).to_string(),
+        .process(Request::new(AiProcessRequest {
+            prompt: "hi".to_string(),
+            opts: Some(LlmCallOptsPb { opts_json: String::new() }),
         }))
         .await
         .unwrap();
@@ -36,8 +40,10 @@ async fn process_via_grpc_returns_stub_text() {
 async fn request_action_with_tools_terminates() {
     let svc = service();
     let resp = svc
-        .request_action_with_tools(Request::new(JsonArgs {
-            raw: serde_json::json!({"prompt": "hello", "tools": []}).to_string(),
+        .request_action_with_tools(Request::new(AiRequestActionWithToolsRequest {
+            prompt: "hello".to_string(),
+            tools: Some(ToolDefinitionsPb { tools_json: "[]".to_string() }),
+            opts: Some(LlmCallOptsPb { opts_json: String::new() }),
         }))
         .await
         .unwrap();

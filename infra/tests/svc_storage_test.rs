@@ -5,7 +5,7 @@ use tempfile::tempdir;
 use tonic::Request;
 
 use firebat_core::ports::IStoragePort;
-use firebat_core::proto::{storage_service_server::StorageService, JsonArgs, StringRequest};
+use firebat_core::proto::{storage_service_server::StorageService, StorageWriteFileRequest, StringRequest};
 use firebat_core::services::storage::StorageServiceImpl;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 
@@ -15,10 +15,10 @@ async fn write_then_read_via_grpc() {
     let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(dir.path()));
     let svc = StorageServiceImpl::new(storage);
 
-    let body = serde_json::json!({"path": "test.txt", "content": "hi"});
     let resp = svc
-        .write_file(Request::new(JsonArgs {
-            raw: body.to_string(),
+        .write_file(Request::new(StorageWriteFileRequest {
+            path: "test.txt".to_string(),
+            content: "hi".to_string(),
         }))
         .await
         .unwrap();
@@ -41,8 +41,9 @@ async fn get_file_tree_returns_recursive_structure() {
     let svc = StorageServiceImpl::new(storage);
 
     // setup: root/sub/file.txt
-    svc.write_file(Request::new(JsonArgs {
-        raw: serde_json::json!({"path": "root/sub/file.txt", "content": "x"}).to_string(),
+    svc.write_file(Request::new(StorageWriteFileRequest {
+        path: "root/sub/file.txt".to_string(),
+        content: "x".to_string(),
     }))
     .await
     .unwrap();

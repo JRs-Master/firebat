@@ -6,7 +6,7 @@ use tonic::Request;
 
 use firebat_core::managers::auth::AuthManager;
 use firebat_core::ports::{IAuthPort, IVaultPort};
-use firebat_core::proto::{auth_service_server::AuthService, Empty, JsonArgs, StringRequest};
+use firebat_core::proto::{auth_service_server::AuthService, AuthLoginRequest, Empty, StringRequest};
 use firebat_core::services::auth::AuthServiceImpl;
 use firebat_infra::adapters::auth::VaultAuthAdapter;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
@@ -28,8 +28,10 @@ fn make_service() -> (AuthServiceImpl, TempDir) {
 async fn login_success_via_grpc() {
     let (service, _dir) = make_service();
     let resp = service
-        .login(Request::new(JsonArgs {
-            raw: r#"{"id":"testadmin","password":"testpass","attempt_key":"test"}"#.to_string(),
+        .login(Request::new(AuthLoginRequest {
+            id: "testadmin".to_string(),
+            password: "testpass".to_string(),
+            attempt_key: Some("test".to_string()),
         }))
         .await
         .unwrap();
@@ -42,8 +44,10 @@ async fn login_success_via_grpc() {
 async fn login_wrong_password_returns_failed() {
     let (service, _dir) = make_service();
     let resp = service
-        .login(Request::new(JsonArgs {
-            raw: r#"{"id":"testadmin","password":"wrong"}"#.to_string(),
+        .login(Request::new(AuthLoginRequest {
+            id: "testadmin".to_string(),
+            password: "wrong".to_string(),
+            attempt_key: None,
         }))
         .await
         .unwrap();

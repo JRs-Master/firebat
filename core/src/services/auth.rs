@@ -32,14 +32,6 @@ fn ok_status() -> Response<Status> {
     })
 }
 
-fn err_status(msg: impl Into<String>, code: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: code.into(),
-    })
-}
-
 // ─── proto ↔ core port struct 변환 ─────────────────────────────────────────
 
 impl From<AuthSession> for AuthSessionPb {

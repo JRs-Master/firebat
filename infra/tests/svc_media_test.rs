@@ -8,7 +8,9 @@ use tonic::Request;
 
 use firebat_core::managers::media::MediaManager;
 use firebat_core::ports::IMediaPort;
-use firebat_core::proto::{media_service_server::MediaService, JsonArgs, StringRequest};
+use firebat_core::proto::{
+    media_service_server::MediaService, MediaListRequest, MediaSaveRequest, StringRequest,
+};
 use firebat_core::services::media::MediaServiceImpl;
 use firebat_infra::adapters::media::LocalMediaAdapter;
 
@@ -56,14 +58,11 @@ fn base64_simple_encode(bytes: &[u8]) -> String {
 #[tokio::test]
 async fn save_then_list_via_grpc() {
     let (svc, _dir) = service();
-    let body = serde_json::json!({
-        "binaryBase64": base64_simple_encode(b"hello"),
-        "contentType": "image/png",
-        "filenameHint": "h"
-    });
     let resp = svc
-        .save(Request::new(JsonArgs {
-            raw: body.to_string(),
+        .save(Request::new(MediaSaveRequest {
+            binary_base64: base64_simple_encode(b"hello"),
+            content_type: "image/png".to_string(),
+            opts_json: serde_json::json!({"filenameHint": "h"}).to_string(),
         }))
         .await
         .unwrap();
@@ -71,8 +70,8 @@ async fn save_then_list_via_grpc() {
     assert!(!inner.slug.is_empty());
 
     let list = svc
-        .list(Request::new(JsonArgs {
-            raw: "{}".to_string(),
+        .list(Request::new(MediaListRequest {
+            opts_json: "{}".to_string(),
         }))
         .await
         .unwrap();

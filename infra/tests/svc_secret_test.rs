@@ -6,7 +6,7 @@ use tonic::Request;
 
 use firebat_core::managers::secret::SecretManager;
 use firebat_core::ports::{IStoragePort, IVaultPort};
-use firebat_core::proto::{secret_service_server::SecretService, Empty, JsonArgs, StringRequest};
+use firebat_core::proto::{secret_service_server::SecretService, Empty, SecretSetUserRequest, StringRequest};
 use firebat_core::services::secret::SecretServiceImpl;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
@@ -26,8 +26,9 @@ async fn user_secret_set_get_delete_via_grpc() {
 
     // set
     let resp = service
-        .set_user(Request::new(JsonArgs {
-            raw: r#"{"name":"FOO","value":"bar"}"#.to_string(),
+        .set_user(Request::new(SecretSetUserRequest {
+            name: "FOO".to_string(),
+            value: "bar".to_string(),
         }))
         .await
         .unwrap();

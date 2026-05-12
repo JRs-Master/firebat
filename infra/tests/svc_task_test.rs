@@ -6,7 +6,7 @@ use tonic::Request;
 
 use firebat_core::managers::task::{StubTaskExecutor, TaskExecutor, TaskManager};
 use firebat_core::ports::ILogPort;
-use firebat_core::proto::{task_service_server::TaskService, JsonArgs};
+use firebat_core::proto::{task_service_server::TaskService, TaskRunRequest};
 use firebat_core::services::task::TaskServiceImpl;
 use firebat_infra::adapters::log::ConsoleLogAdapter;
 
@@ -20,14 +20,12 @@ fn service() -> TaskServiceImpl {
 #[tokio::test]
 async fn run_condition_only_pipeline_via_grpc() {
     let svc = service();
-    let body = json!({
-        "steps": [
-            {"type": "CONDITION", "field": "x", "op": "exists"}
-        ]
-    });
+    let steps = json!([
+        {"type": "CONDITION", "field": "x", "op": "exists"}
+    ]);
     let resp = svc
-        .run(Request::new(JsonArgs {
-            raw: body.to_string(),
+        .run(Request::new(TaskRunRequest {
+            pipeline_json: steps.to_string(),
         }))
         .await
         .unwrap();
@@ -42,14 +40,12 @@ async fn run_condition_only_pipeline_via_grpc() {
 #[tokio::test]
 async fn run_validate_failure_returns_error() {
     let svc = service();
-    let body = json!({
-        "steps": [
-            {"type": "EXECUTE", "path": ""}
-        ]
-    });
+    let steps = json!([
+        {"type": "EXECUTE", "path": ""}
+    ]);
     let resp = svc
-        .run(Request::new(JsonArgs {
-            raw: body.to_string(),
+        .run(Request::new(TaskRunRequest {
+            pipeline_json: steps.to_string(),
         }))
         .await
         .unwrap();

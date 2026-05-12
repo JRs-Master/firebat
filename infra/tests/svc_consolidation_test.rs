@@ -9,7 +9,9 @@ use firebat_core::managers::entity::EntityManager;
 use firebat_core::managers::episodic::EpisodicManager;
 use firebat_core::managers::memory_facade::MemoryFacade;
 use firebat_core::ports::{IEntityPort, IEpisodicPort, IMemoryFacadePort};
-use firebat_core::proto::{consolidation_service_server::ConsolidationService, Empty, JsonArgs};
+use firebat_core::proto::{
+    consolidation_service_server::ConsolidationService, ConsolidationConsolidateRequest, Empty,
+};
 use firebat_core::services::consolidation::ConsolidationServiceImpl;
 use firebat_infra::adapters::memory::SqliteMemoryAdapter;
 
@@ -28,16 +30,20 @@ fn service() -> (ConsolidationServiceImpl, TempDir) {
 #[tokio::test]
 async fn consolidate_then_stats_via_grpc() {
     let (svc, _dir) = service();
-    let extracted_args = serde_json::json!({
-        "extracted": {
-            "entities": [{"name": "X", "type": "stock"}],
-            "facts": [{"entityName": "X", "content": "1주 매수"}],
-            "events": []
-        }
+    let extracted = serde_json::json!({
+        "entities": [{"name": "X", "type": "stock"}],
+        "facts": [{"entityName": "X", "content": "1주 매수"}],
+        "events": []
     });
     let resp = svc
-        .consolidate(Request::new(JsonArgs {
-            raw: extracted_args.to_string(),
+        .consolidate(Request::new(ConsolidationConsolidateRequest {
+            conversation_id: None,
+            owner: None,
+            model_id: None,
+            extracted_json: Some(extracted.to_string()),
+            source_conv_id: None,
+            fact_dedup_threshold: None,
+            event_dedup_threshold: None,
         }))
         .await
         .unwrap();

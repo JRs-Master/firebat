@@ -7,7 +7,7 @@ use tonic::Request;
 use firebat_core::managers::capability::CapabilityManager;
 use firebat_core::ports::{ILogPort, IStoragePort, IVaultPort};
 use firebat_core::proto::{
-    capability_service_server::CapabilityService, Empty, JsonArgs, StringRequest,
+    capability_service_server::CapabilityService, CapabilitySetSettingsRequest, Empty, StringRequest,
 };
 use firebat_core::services::capability::CapabilityServiceImpl;
 use firebat_infra::adapters::log::ConsoleLogAdapter;
@@ -39,8 +39,9 @@ async fn settings_roundtrip_via_grpc() {
 
     // set
     let resp = service
-        .set_settings(Request::new(JsonArgs {
-            raw: r#"{"cap_id":"notification","settings":{"providers":["a","b"]}}"#.to_string(),
+        .set_settings(Request::new(CapabilitySetSettingsRequest {
+            cap_id: "notification".to_string(),
+            providers: vec!["a".to_string(), "b".to_string()],
         }))
         .await
         .unwrap();

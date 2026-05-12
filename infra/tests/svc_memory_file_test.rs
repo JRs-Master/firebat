@@ -5,7 +5,7 @@ use tempfile::tempdir;
 use tonic::Request;
 
 use firebat_core::ports::IStoragePort;
-use firebat_core::proto::{memory_service_server::MemoryService, Empty, JsonArgs, StringRequest};
+use firebat_core::proto::{memory_service_server::MemoryService, Empty, MemorySaveFileRequest, StringRequest};
 use firebat_core::services::memory_file::MemoryServiceImpl;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 
@@ -18,9 +18,9 @@ fn service() -> (MemoryServiceImpl, tempfile::TempDir) {
 #[tokio::test]
 async fn save_then_read_roundtrip() {
     let (svc, _dir) = service();
-    let body = serde_json::json!({"name": "user_role", "content": "developer"});
-    svc.save_file(Request::new(JsonArgs {
-        raw: body.to_string(),
+    svc.save_file(Request::new(MemorySaveFileRequest {
+        name: "user_role".to_string(),
+        content: "developer".to_string(),
     }))
     .await
     .unwrap();
