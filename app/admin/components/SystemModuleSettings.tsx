@@ -544,7 +544,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
 
               {mcpJsonTab === 'stdio' && (() => {
                 const jsonConfig = JSON.stringify({
-                  mcpServers: { firebat: { command: 'ssh', args: ['-i', '<SSH_KEY_PATH>', '<USER>@<SERVER_IP>', 'cd /path/to/firebat && npx tsx mcp/stdio.ts'] } },
+                  mcpServers: { firebat: { command: 'ssh', args: ['-i', '<SSH_KEY_PATH>', '<USER>@<SERVER_IP>', 'firebat-core --mcp-stdio'] } },
                 }, null, 2);
                 return (
                   <div className="p-3 flex flex-col gap-2">

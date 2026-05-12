@@ -1753,7 +1753,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       mcpServers: {
                         firebat: {
                           command: 'ssh',
-                          args: ['-i', '<SSH_KEY_PATH>', '<USER>@<SERVER_IP>', 'cd /path/to/firebat && npx tsx mcp/stdio.ts'],
+                          args: ['-i', '<SSH_KEY_PATH>', '<USER>@<SERVER_IP>', 'firebat-core --mcp-stdio'],
                         },
                       },
                     }, null, 2);

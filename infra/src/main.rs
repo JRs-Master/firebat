@@ -601,6 +601,41 @@ async fn main() -> Result<()> {
     let mcp_enabled = std::env::var("FIREBAT_MCP_ENABLED")
         .map(|v| v != "false" && v != "0")
         .unwrap_or(false);
+    // stdio MCP 모드 — 외부 사용자 (Claude desktop / Cursor / npm run mcp) 진입.
+    // argv 에 `--mcp-stdio` 박혀있으면 gRPC server 부팅 X, stdio MCP server 만 실행 후 종료.
+    if std::env::args().any(|a| a == "--mcp-stdio") {
+        let mcp_state = std::sync::Arc::new(firebat_infra::mcp_server::McpServerState::new(
+            vault.clone(),
+        ));
+        firebat_infra::mcp_server::register_sysmod_tools(&mcp_state, module_manager.clone()).await;
+        firebat_infra::mcp_server::register_render_tools(&mcp_state, tool_manager.clone()).await;
+        let storage_manager_stdio = Arc::new(firebat_core::managers::storage::StorageManager::new(
+            storage.clone(),
+        ));
+        firebat_infra::mcp_server::register_builtin_tools(
+            &mcp_state,
+            firebat_infra::mcp_server::BuiltinDeps {
+                page: page_manager.clone(),
+                storage: storage_manager_stdio,
+                module: module_manager.clone(),
+                schedule: schedule_manager.clone(),
+                task: task_manager.clone(),
+                secret: secret_manager.clone(),
+                mcp: mcp_manager.clone(),
+                entity: entity_manager.clone(),
+                episodic: episodic_manager.clone(),
+                conversation: conversation_manager.clone(),
+                media: media_manager.clone(),
+                network: network_port.clone(),
+            },
+        )
+        .await;
+        firebat_infra::mcp_server::serve_stdio(mcp_state)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        return Ok(());
+    }
+
     if mcp_enabled {
         let mcp_state = std::sync::Arc::new(firebat_infra::mcp_server::McpServerState::new(
             vault.clone(),

@@ -1231,3 +1231,159 @@ pub async fn serve(state: Arc<McpServerState>) -> Result<(), String> {
         .map_err(|e| format!("MCP serve 실패: {e}"))?;
     Ok(())
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// stdio MCP transport — 외부 사용자 진입용 (Claude desktop / Cursor / npm run mcp 등).
+// JSON-RPC 2.0 over stdin/stdout. HTTP transport 와 같은 도구 registry 공유.
+// ════════════════════════════════════════════════════════════════════════════
+
+/// stdio MCP server 부팅 — Bearer token 검증 X (stdio 자체가 신뢰 경계 — 외부 사용자가 spawn).
+/// 도구 호출 패턴은 HTTP 와 동일 (initialize / tools/list / tools/call).
+pub async fn serve_stdio(state: Arc<McpServerState>) -> Result<(), String> {
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    tracing::info!("MCP stdio server 시작 (외부 사용자 진입용)");
+    let stdin = tokio::io::stdin();
+    let mut stdout = tokio::io::stdout();
+    let mut reader = BufReader::new(stdin).lines();
+
+    while let Ok(Some(line)) = reader.next_line().await {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let req: JsonRpcRequest = match serde_json::from_str(&line) {
+            Ok(r) => r,
+            Err(e) => {
+                let err = JsonRpcError {
+                    jsonrpc: "2.0",
+                    id: Value::Null,
+                    error: JsonRpcErrorBody {
+                        code: -32700,
+                        message: format!("parse error: {e}"),
+                        data: None,
+                    },
+                };
+                write_stdio(&mut stdout, &err).await?;
+                continue;
+            }
+        };
+        if req.jsonrpc != "2.0" {
+            let err = JsonRpcError {
+                jsonrpc: "2.0",
+                id: req.id.unwrap_or(Value::Null),
+                error: JsonRpcErrorBody {
+                    code: -32600,
+                    message: "Invalid Request".to_string(),
+                    data: None,
+                },
+            };
+            write_stdio(&mut stdout, &err).await?;
+            continue;
+        }
+        let id = req.id.clone().unwrap_or(Value::Null);
+        let result = dispatch_method(&state, &req.method, &req.params).await;
+        match result {
+            Ok(Some(body)) => {
+                let resp = JsonRpcResponse {
+                    jsonrpc: "2.0",
+                    id,
+                    result: body,
+                };
+                write_stdio(&mut stdout, &resp).await?;
+            }
+            Ok(None) => {
+                // notifications (id 없음) — 응답 안 함.
+            }
+            Err((code, message)) => {
+                let err = JsonRpcError {
+                    jsonrpc: "2.0",
+                    id,
+                    error: JsonRpcErrorBody {
+                        code,
+                        message,
+                        data: None,
+                    },
+                };
+                write_stdio(&mut stdout, &err).await?;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn write_stdio<T: serde::Serialize>(
+    stdout: &mut tokio::io::Stdout,
+    payload: &T,
+) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+    let mut buf = serde_json::to_vec(payload).map_err(|e| e.to_string())?;
+    buf.push(b'\n');
+    stdout.write_all(&buf).await.map_err(|e| e.to_string())?;
+    stdout.flush().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// HTTP 와 stdio 공통 method dispatch — JSON-RPC 처리 로직 단일 source.
+async fn dispatch_method(
+    state: &Arc<McpServerState>,
+    method: &str,
+    params: &Value,
+) -> Result<Option<Value>, (i32, String)> {
+    match method {
+        "initialize" => Ok(Some(serde_json::json!({
+            "protocolVersion": "2025-06-18",
+            "capabilities": { "tools": { "listChanged": false } },
+            "serverInfo": { "name": "firebat", "version": env!("CARGO_PKG_VERSION") },
+        }))),
+        "tools/list" => {
+            let tools = state.tools.read().await;
+            let items: Vec<ToolListItem> = tools
+                .values()
+                .map(|t| ToolListItem {
+                    name: t.name.clone(),
+                    description: t.description.clone(),
+                    input_schema: t.input_schema.clone(),
+                })
+                .collect();
+            Ok(Some(serde_json::json!({ "tools": items })))
+        }
+        "tools/call" => {
+            let name = params
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let args = params
+                .get("arguments")
+                .cloned()
+                .unwrap_or(Value::Object(Default::default()));
+            if name.is_empty() {
+                return Err((-32602, "missing 'name' parameter".to_string()));
+            }
+            let handler = {
+                let tools = state.tools.read().await;
+                tools.get(&name).map(|t| t.handler.clone())
+            };
+            let Some(handler) = handler else {
+                return Err((-32601, format!("tool not found: {}", name)));
+            };
+            match handler.call(args).await {
+                Ok(result) => {
+                    let text = serde_json::to_string(&result).unwrap_or_else(|_| "null".to_string());
+                    Ok(Some(serde_json::json!({
+                        "content": [{ "type": "text", "text": text }],
+                        "isError": false
+                    })))
+                }
+                Err(err) => {
+                    let text = serde_json::json!({ "error": err }).to_string();
+                    Ok(Some(serde_json::json!({
+                        "content": [{ "type": "text", "text": text }],
+                        "isError": true
+                    })))
+                }
+            }
+        }
+        "notifications/initialized" => Ok(None),
+        other => Err((-32601, format!("method not found: {}", other))),
+    }
+}

@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "mcp": "npx tsx mcp/stdio.ts",
+    "mcp": "firebat-core --mcp-stdio",
     "gen:proto": "buf generate"
   },
   "dependencies": {
