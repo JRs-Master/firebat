@@ -2,12 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useQuery } from '@tanstack/react-query';
 import { Search, Loader2, X, Copy, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useEvents } from '../hooks/events-manager';
 import { useViewportSize } from '../../../lib/use-viewport-size';
+import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
 
 interface MediaItem {
   slug: string;
@@ -56,14 +58,14 @@ export function GalleryPanel() {
       params.set('limit', String(PAGE_SIZE));
       params.set('offset', String(reset ? 0 : offset));
       if (search) params.set('search', search);
-      const res = await fetch(`/api/media/list?${params.toString()}`);
-      const data = await res.json();
-      if (data.success) {
+      const data = await apiGet<{ success: boolean; items: MediaItem[]; total?: number }>(
+        `/api/media/list?${params.toString()}`,
+        { category: 'gallery' },
+      ).catch(() => null);
+      if (data?.success) {
         setItems(prev => reset ? data.items : [...prev, ...data.items]);
         setTotal(data.total || 0);
       }
-    } catch {
-      // silent
     } finally {
       setLoading(false);
     }
@@ -94,15 +96,17 @@ export function GalleryPanel() {
     setTimeout(() => fetchList(false), 0);
   };
 
-  // 선택된 미디어의 사용처 — 모달 열릴 때 fetch. 페이지에 설정된 이미지 삭제 경고 + 메타 표시.
-  const [selectedUsage, setSelectedUsage] = useState<Array<{ pageSlug: string; usedAt: number }>>([]);
-  useEffect(() => {
-    if (!selected) { setSelectedUsage([]); return; }
-    fetch(`/api/media/usage?slug=${encodeURIComponent(selected.slug)}`)
-      .then(r => r.json())
-      .then(j => { if (j.success) setSelectedUsage(j.data ?? []); })
-      .catch(() => {});
-  }, [selected?.slug]);
+  // 선택된 미디어의 사용처 — React Query 로 캐시 + 자동 refetch.
+  const { data: usageData } = useQuery({
+    queryKey: ['media-usage', selected?.slug],
+    queryFn: () =>
+      apiGet<{ success: boolean; data?: Array<{ pageSlug: string; usedAt: number }> }>(
+        `/api/media/usage?slug=${encodeURIComponent(selected!.slug)}`,
+        { category: 'gallery' },
+      ),
+    enabled: !!selected,
+  });
+  const selectedUsage = usageData?.success ? (usageData.data ?? []) : [];
 
   const handleDelete = async (slug: string) => {
     // 사용처 차등 confirm — 페이지에 설정된 이미지면 빨간 경고 + 페이지 목록.
@@ -112,8 +116,10 @@ export function GalleryPanel() {
       : '이 이미지를 삭제하시겠어요? (원본 + 모든 variants + 썸네일 일괄 삭제)';
     if (!await confirmDialog({ title: '이미지 삭제', message: msg, danger: true, okLabel: '삭제' })) return;
     try {
-      const res = await fetch(`/api/media/list?slug=${encodeURIComponent(slug)}`, { method: 'DELETE' });
-      const data = await res.json();
+      const data = await apiDelete<{ success: boolean; error?: string }>(
+        `/api/media/list?slug=${encodeURIComponent(slug)}`,
+        { category: 'gallery' },
+      );
       if (data.success) {
         setItems(prev => prev.filter(i => i.slug !== slug));
         setSelectedIndex(null);
@@ -129,8 +135,11 @@ export function GalleryPanel() {
   const handleRegenerate = async (slug: string) => {
     setRegenerating(true);
     try {
-      const res = await fetch(`/api/media/regenerate?slug=${encodeURIComponent(slug)}`, { method: 'POST' });
-      const data = await res.json();
+      const data = await apiPost<{ success: boolean; error?: string }>(
+        `/api/media/regenerate?slug=${encodeURIComponent(slug)}`,
+        undefined,
+        { category: 'gallery' },
+      );
       if (!data.success) {
         await alertDialog({ title: '재생성 실패', message: data.error || 'unknown', danger: true });
       }

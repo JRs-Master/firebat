@@ -5,10 +5,12 @@
  * user/templates/* 의 list 표시 + 클릭 시 모나코 에디터로 template.json 편집.
  * 새 템플릿 만들기 — inline 모달 (rename 패턴 차용, native prompt/alert 회피).
  */
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, FileCode } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
+import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
 
 interface TemplateEntry {
   slug: string;
@@ -35,25 +37,22 @@ const STARTER_TEMPLATE = {
 };
 
 export function TemplatesPanel({ onEditFile }: { onEditFile?: (filePath: string) => void }) {
-  const [templates, setTemplates] = useState<TemplateEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [newSlug, setNewSlug] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const fetchTemplates = useCallback(async () => {
-    try {
-      const res = await fetch('/api/templates');
-      const data = await res.json();
-      if (data.success) setTemplates(data.templates);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchTemplates();
-  }, [fetchTemplates]);
+  const { data, isLoading } = useQuery({
+    queryKey: ['templates'],
+    queryFn: () =>
+      apiGet<{ success: boolean; templates: TemplateEntry[] }>('/api/templates', { category: 'templates' }),
+  });
+  const templates = data?.templates ?? [];
+  const loading = isLoading;
+  const invalidate = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['templates'] }),
+    [queryClient],
+  );
 
   const openCreate = useCallback(() => {
     setNewSlug('');
@@ -81,23 +80,22 @@ export function TemplatesPanel({ onEditFile }: { onEditFile?: (filePath: string)
     }
     setSubmitting(true);
     try {
-      const res = await fetch('/api/templates', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ slug, config: STARTER_TEMPLATE }),
-      });
-      const data = await res.json();
-      if (!data.success) {
-        await alertDialog({ title: '생성 실패', message: data.error || '알 수 없는 오류', danger: true });
+      const res = await apiPost<{ success: boolean; error?: string }>(
+        '/api/templates',
+        { slug, config: STARTER_TEMPLATE },
+        { category: 'templates' },
+      );
+      if (!res.success) {
+        await alertDialog({ title: '생성 실패', message: res.error || '알 수 없는 오류', danger: true });
         return;
       }
-      await fetchTemplates();
+      await invalidate();
       setCreating(false);
       onEditFile?.(`user/templates/${slug}/template.json`);
     } finally {
       setSubmitting(false);
     }
-  }, [newSlug, templates, fetchTemplates, onEditFile]);
+  }, [newSlug, templates, invalidate, onEditFile]);
 
   const handleDelete = useCallback(async (slug: string) => {
     if (!await confirmDialog({
@@ -106,14 +104,16 @@ export function TemplatesPanel({ onEditFile }: { onEditFile?: (filePath: string)
       danger: true,
       okLabel: '삭제',
     })) return;
-    const res = await fetch(`/api/templates/${encodeURIComponent(slug)}`, { method: 'DELETE' });
-    const data = await res.json();
-    if (!data.success) {
-      await alertDialog({ title: '삭제 실패', message: data.error || '알 수 없는 오류', danger: true });
+    const res = await apiDelete<{ success: boolean; error?: string }>(
+      `/api/templates/${encodeURIComponent(slug)}`,
+      { category: 'templates' },
+    );
+    if (!res.success) {
+      await alertDialog({ title: '삭제 실패', message: res.error || '알 수 없는 오류', danger: true });
       return;
     }
-    await fetchTemplates();
-  }, [fetchTemplates]);
+    await invalidate();
+  }, [invalidate]);
 
   return (
     <div className="flex flex-col h-full">
