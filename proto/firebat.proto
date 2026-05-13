@@ -425,6 +425,45 @@ service TaskService {
   rpc Run(TaskRunRequest) returns (PipelineResultPb);
 }
 
+/**
+ * Cron RunWhen — 사전 조건 평가 (sysmod 호출 결과 의 field 비교).
+ * 2026-05-13 A1-full Phase typed (옛 JSON Value 폐기).
+ */
+message CronRunWhenPb {
+  CronRunWhenCheckPb check = 1;
+  string field = 2;
+  string op = 3;
+  optional string value_json = 4;  // 동적 type (string/number/bool) — JSON string. truthy 등은 미설정.
+}
+
+message CronRunWhenCheckPb {
+  string sysmod = 1;
+  string action = 2;
+  optional string input_data_json = 3;  // sysmod inputData — 동적 schema JSON string.
+}
+
+/**
+ * Cron Retry — 실패 시 retry 정책. 2026-05-13 typed 박힘.
+ */
+message CronRetryPb {
+  int64 count = 1;
+  optional int64 delay_ms = 2;
+}
+
+/**
+ * Cron Notify — 성공/실패 시 sysmod 호출 hook. 2026-05-13 typed 박힘.
+ */
+message CronNotifyPb {
+  optional CronNotifyHookPb on_success = 1;
+  optional CronNotifyHookPb on_error = 2;
+}
+
+message CronNotifyHookPb {
+  string sysmod = 1;
+  optional string template = 2;
+  optional string chat_id = 3;
+}
+
 /** PipelineResult — 파이프라인 실행 결과. data 는 마지막 step 출력 JSON 문자열. */
 message PipelineResultPb {
   bool success = 1;

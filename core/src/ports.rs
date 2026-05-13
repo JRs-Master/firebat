@@ -1531,9 +1531,72 @@ pub enum CronTriggerType {
     DelayedRun,
 }
 
+/// runWhen 의 cron pre-condition 평가 — sysmod 호출 결과 의 특정 field 비교.
+/// schema: `{ check: { sysmod, action, inputData? }, field, op, value }`. 2026-05-13 typed 박힘 (옛 JSON Value).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CronRunWhen {
+    /// 평가 대상 — sysmod action 호출 결과의 field 검사.
+    pub check: CronRunWhenCheck,
+    /// 검사할 field path — `$prev.X` 또는 `X.Y` 형태. utils::condition.rs 가 평가.
+    pub field: String,
+    /// 비교 연산자 — `==` / `!=` / `>` / `<` / `>=` / `<=` / `contains` / `truthy` 등.
+    pub op: String,
+    /// 비교 값. truthy 등 인자 0 op 은 None.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CronRunWhenCheck {
+    /// sysmod 이름 (예: "korea-invest").
+    pub sysmod: String,
+    /// sysmod action 이름 (예: "is-business-day").
+    pub action: String,
+    /// sysmod 호출 inputData — 비어있으면 omit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_data: Option<serde_json::Value>,
+}
+
+/// 실행 실패 시 retry 정책 — `{ count, delayMs? }`. 2026-05-13 typed 박힘.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CronRetry {
+    /// 재시도 횟수 (0 = 안 함). MAX_RETRY_COUNT 로 clamp.
+    pub count: i64,
+    /// 재시도 간 대기 시간 ms — 미설정 시 DEFAULT_RETRY_DELAY_MS.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delay_ms: Option<i64>,
+}
+
+/// 알림 hook — 성공/실패 시 sysmod 호출 + template 치환. 2026-05-13 typed 박힘.
+/// schema: `{ onSuccess?: { sysmod, template?, chatId? }, onError?: {...} }`.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CronNotify {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_success: Option<CronNotifyHook>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_error: Option<CronNotifyHook>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CronNotifyHook {
+    /// 호출 sysmod (예: "telegram").
+    pub sysmod: String,
+    /// template (예: "✓ {title} 완료 ({durationMs}ms)") — 미설정 시 default template.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
+    /// chat ID (예: 텔레그램 chat_id). sysmod 별 의미 다름.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_id: Option<String>,
+}
+
 /// CronScheduleOptions — 스케줄링 등록 옵션.
-/// pipeline / notify / runWhen / retry / agentPrompt 같은 복합 필드는 Phase B-13 minimum 단계에서
-/// `serde_json::Value` 패스스루 — Phase B-14 TaskManager + B-16 AiManager 설정된 후 typed.
+/// 2026-05-13 A1-full Phase typed: runWhen / retry / notify 가 typed struct.
+/// pipeline / inputData 는 동적 schema 영역 — serde_json::Value 유지.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CronScheduleOptions {
