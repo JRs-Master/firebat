@@ -246,13 +246,14 @@ Site builder reaches Astra/GP-class depth — header / sidebar / footer all shar
 | Layer | Technology |
 |---|---|
 | **Backend** | Rust (tonic 0.12 + tokio + rusqlite + reqwest + cron crate) — `core/` + `infra/` Cargo workspace |
-| **Frontend** | Next.js 16 (App Router, Turbopack) + TypeScript 6 + Tailwind CSS 4 |
-| **IPC** | gRPC (proto/firebat.proto, 28 services / 208 RPCs) — fetch + gRPC proxy |
-| **AI** | OpenAI · Anthropic · Google Gemini/Vertex (config-driven multi-provider) + CLI subscription mode |
+| **Frontend** | Next.js 16 (App Router, Turbopack) + TypeScript 6 + Tailwind CSS 4 + React Query (TanStack Query 5) |
+| **IPC** | gRPC (proto/firebat.proto, 28 services / 208 RPCs) — @connectrpc/connect-node typed client |
+| **AI** | OpenAI · Anthropic · Google Gemini/Vertex (config-driven multi-provider, JSON registry `infra/data/llm-models.json`) + CLI subscription mode |
 | **Database** | SQLite (rusqlite bundled, 정적 링크) |
 | **Editor** | Monaco Editor |
 | **MCP** | Rust 자체 구현 (axum + JSON-RPC 2.0, HTTP :50052 + stdio) — Phase E (2026-05-12) 단일 binary 안 통합 |
-| **Validation** | Zod (TS) + serde (Rust) |
+| **Validation** | Zod (TS) + serde (Rust) — `lib/form-validation.ts` 통합 framework |
+| **Codegen** | `npm run gen:proto` — protoc-gen-es (typed gRPC client) + adapter tables (`proto/adapter-overrides.json`) + vault keys (`proto/vault-keys.json`). 새 RPC / vault key 추가 시 JSON 만 수정 |
 | **Deploy** | Vultr systemd 2 unit (`firebat` Rust core + `firebat-frontend` Next.js standalone) + Caddy 자동 TLS reverse proxy |
 
 ---
