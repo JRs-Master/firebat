@@ -9,6 +9,7 @@ export function LoginInner() {
   const t = useTranslations();
   const [id, setId] = useState('');
   const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   // setupState: 'checking' (초기) / 'needed' (SetupWizard 노출) / 'done' (정상 login form)
   const [setupState, setSetupState] = useState<'checking' | 'needed' | 'done'>('checking');
 
@@ -26,9 +27,15 @@ export function LoginInner() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, password }) });
-    if (res.ok) { window.location.href = '/admin'; }
-    else { await alertDialog({ title: t('login.failed_title'), message: t('login.failed_message'), danger: true }); }
+    if (submitting) return; // alertDialog open 중 또는 fetch 진행 중 재제출 → backdrop 누적 차단
+    setSubmitting(true);
+    try {
+      const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, password }) });
+      if (res.ok) { window.location.href = '/admin'; return; }
+      await alertDialog({ title: t('login.failed_title'), message: t('login.failed_message'), danger: true });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -59,7 +66,7 @@ export function LoginInner() {
                 className="w-full border border-[#eaeaea] rounded-md px-3 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors" />
             </div>
             <div className="pt-2">
-              <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium h-10 rounded-md text-sm transition-colors flex items-center justify-center shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-1">
+              <button type="submit" disabled={submitting} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed text-white font-medium h-10 rounded-md text-sm transition-colors flex items-center justify-center shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 focus-visible:ring-offset-1">
                 {t('login.continue')}
               </button>
             </div>

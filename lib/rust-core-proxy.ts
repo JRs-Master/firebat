@@ -443,7 +443,7 @@ const WRAP_METHODS = new Set([
   'getTemplate', 'saveTemplate', 'deleteTemplate',
   'resolveCapability',
   'callMcpTool', 'generateApiToken',
-  'login', 'validateSession', 'validateToken',
+  'validateSession', 'validateToken',
   'scheduleTask', 'scheduleCronJob', 'cancelCronJob', 'updateCronJob', 'runCronJobNow',
   'runTask',
   'runModule', 'sandboxExecute',
@@ -485,6 +485,14 @@ export function createRustCoreProxy(): unknown {
         const wrapper = ARGS_TABLE[prop];
         const wrappedArgs = wrapper ? wrapper(...args) : args[0];
         const result = await callTypedClient(prop, wrappedArgs);
+        // login 은 LoginResponsePb {ok, session, error, code, retryAfterSec} 반환 — 호출자 (api/auth/route.ts) 형식 으로 unwrap.
+        // 성공 → AuthSession, 실패 → null, 잠금 → {locked, retryAfterSec}
+        if (prop === 'login') {
+          const r = result as { ok?: boolean; session?: unknown; code?: string; retryAfterSec?: number } | null;
+          if (r?.ok && r.session) return r.session;
+          if (r && r.code === 'LOGIN_LOCKED') return { locked: true, retryAfterSec: r.retryAfterSec ?? 60 };
+          return null;
+        }
         return autoWrapResult(prop, result);
       };
     },
