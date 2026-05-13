@@ -222,7 +222,7 @@ Custom i18n system in `lib/i18n.tsx` (~100 LOC, no `next-intl` / `react-intl` de
 - **Admin UI** (dynamic ko/en toggle) — `useTranslations()` hook + `LangProvider` Context. Active lang resolved from `localStorage('firebat_ui_lang')` → `/api/settings interfaceLang` (vault) → fallback. Toggle in Settings → General → live screen switch (no reload).
 - **Public site** (static per cms.siteLang) — `getServerTranslations(siteLang)` (RSC) + `usePublicTranslations()` (client). siteLang = free-form text in CMS (`ko` / `en` / `ja` / `zh-CN` etc — multi-lang ready, only ko/en messages bundled now).
 
-Messages JSON (`messages/ko.json` + `messages/en.json`) — categories: common / login / setup / admin_chat / settings / page / sidebar. v2.0 Tauri SPA / Vercel frontend hybrid migration unaffected (no Next.js deep-coupling).
+Messages JSON (`language/ko.json` + `language/en.json`) — categories: common / login / setup / admin_chat / settings / page / sidebar. v2.0 Tauri SPA / Vercel frontend hybrid migration unaffected (no Next.js deep-coupling).
 
 > 🇰🇷 **자체 i18n** — `lib/i18n.tsx` 100줄 자체 구현. 어드민 ko/en 동적 토글 (즉시 화면 전환) + 공개 사이트 정적 (cms.siteLang). 의존성 0 — Tauri / SPA 마이그레이션 자유.
 
@@ -330,7 +330,7 @@ cd /opt/firebat-src
 npm install --legacy-peer-deps && npm run build
 rsync -a .next/standalone/ /opt/firebat/frontend/
 rsync -a .next/static/ /opt/firebat/frontend/.next/static/
-rsync -a messages/ /opt/firebat/frontend/messages/
+rsync -a language/ /opt/firebat/frontend/language/
 
 # 4. systemd unit 등록 (`/etc/systemd/system/firebat.service` + `firebat-frontend.service`)
 systemctl daemon-reload

@@ -1,8 +1,9 @@
-# Firebat CI — Frontend (Next.js + lib + mcp + messages) 변경 시만 trigger.
+# Firebat CI — Frontend (Next.js + lib + language) 변경 시만 trigger.
 #
 # Rust-only 변경 (core/ infra/ proto/) 시 npm install + tsc 생략.
 #
-# Trigger: app / lib / mcp / messages / package*.json / next.config.* / tsconfig.json 변경 시.
+# Trigger: app / lib / language / package*.json / next.config.* / tsconfig.json 변경 시.
+# mcp/ 는 Phase E 완전 폐기됨 (2026-05-12, Rust 단일 binary 안 통합) — paths 에서 제외.
 
 name: CI Frontend
 
@@ -12,8 +13,7 @@ on:
     paths:
       - 'app/**'
       - 'lib/**'
-      - 'mcp/**'
-      - 'messages/**'
+      - 'language/**'
       - 'package.json'
       - 'package-lock.json'
       - 'next.config.mjs'
@@ -25,8 +25,7 @@ on:
     paths:
       - 'app/**'
       - 'lib/**'
-      - 'mcp/**'
-      - 'messages/**'
+      - 'language/**'
       - 'package.json'
       - 'package-lock.json'
       - 'next.config.mjs'

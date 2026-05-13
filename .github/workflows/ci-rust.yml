@@ -1,6 +1,6 @@
 # Firebat CI — Rust 변경 시만 trigger.
 #
-# Frontend-only 변경 (app/ lib/ mcp/ messages/ next.config.mjs 등) 시 cargo build/test 생략.
+# Frontend-only 변경 (app/ lib/ language/ next.config.mjs 등) 시 cargo build/test 생략.
 # 매 push 마다 ~10분 release build 박이 실행되던 부담 제거.
 #
 # Trigger:
