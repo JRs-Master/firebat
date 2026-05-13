@@ -19,6 +19,7 @@
 
 import { createClient } from "@connectrpc/connect";
 import { createGrpcTransport } from "@connectrpc/connect-node";
+import { METHOD_TABLE_AUTO } from "./proto-gen/adapter-tables";
 import {
   AiService,
   AuthService,
@@ -72,246 +73,6 @@ const transport = createGrpcTransport({
 // METHOD_TABLE 박지 않고 service × method 명 직접 매핑 — 일반 로직.
 // ────────────────────────────────────────────────────────────────────────────
 
-/**
- * 옛 facade method (예: 'savePage') → { service, rpc } 매핑.
- * Phase B-typed cutover (2026-05-12) — 호출 site 변경 0 으로 옛 패턴 유지.
- */
-const METHOD_TABLE: Record<string, { service: string; rpc: string }> = {
-  savePage: { service: 'PageService', rpc: 'Save' },
-  getPage: { service: 'PageService', rpc: 'Get' },
-  listPages: { service: 'PageService', rpc: 'List' },
-  deletePage: { service: 'PageService', rpc: 'Delete' },
-  searchPages: { service: 'PageService', rpc: 'Search' },
-  setPageVisibility: { service: 'PageService', rpc: 'SetVisibility' },
-  verifyPagePassword: { service: 'PageService', rpc: 'VerifyPassword' },
-  renamePage: { service: 'PageService', rpc: 'Rename' },
-  getPageRedirect: { service: 'PageService', rpc: 'GetRedirect' },
-  listStaticPages: { service: 'PageService', rpc: 'ListStatic' },
-  findMediaUsage: { service: 'PageService', rpc: 'FindMediaUsage' },
-  findRelatedPages: { service: 'PageService', rpc: 'FindRelated' },
-  listAllTags: { service: 'PageService', rpc: 'ListAllTags' },
-  listProjects: { service: 'ProjectService', rpc: 'Scan' },
-  scanProjects: { service: 'ProjectService', rpc: 'Scan' },
-  getProjectVisibility: { service: 'ProjectService', rpc: 'GetVisibility' },
-  setProjectVisibility: { service: 'ProjectService', rpc: 'SetVisibility' },
-  getProjectConfig: { service: 'ProjectService', rpc: 'GetConfig' },
-  setProjectConfig: { service: 'ProjectService', rpc: 'SetConfig' },
-  verifyProjectPassword: { service: 'ProjectService', rpc: 'VerifyPassword' },
-  deleteProject: { service: 'ProjectService', rpc: 'Delete' },
-  renameProject: { service: 'ProjectService', rpc: 'Rename' },
-  listSystemModules: { service: 'ModuleService', rpc: 'ListSystem' },
-  listUserModules: { service: 'ModuleService', rpc: 'ListUser' },
-  getSystemModules: { service: 'ModuleService', rpc: 'ListSystem' },
-  getUserModules: { service: 'ModuleService', rpc: 'ListUser' },
-  getModuleSchema: { service: 'ModuleService', rpc: 'GetSchema' },
-  getModuleConfig: { service: 'ModuleService', rpc: 'GetConfig' },
-  runModule: { service: 'ModuleService', rpc: 'Run' },
-  sandboxExecute: { service: 'ModuleService', rpc: 'Run' },
-  setModuleEnabled: { service: 'ModuleService', rpc: 'SetEnabled' },
-  isModuleEnabled: { service: 'ModuleService', rpc: 'IsEnabled' },
-  setModuleSettings: { service: 'ModuleService', rpc: 'SetSettings' },
-  getModuleSettings: { service: 'ModuleService', rpc: 'GetSettings' },
-  getCmsSettings: { service: 'ModuleService', rpc: 'GetCmsSettings' },
-  getKakaoMapJsKey: { service: 'ModuleService', rpc: 'GetKakaoMapJsKey' },
-  runTask: { service: 'TaskService', rpc: 'Run' },
-  listCronJobs: { service: 'ScheduleService', rpc: 'ListCron' },
-  scheduleTask: { service: 'ScheduleService', rpc: 'ScheduleCron' },
-  scheduleCronJob: { service: 'ScheduleService', rpc: 'ScheduleCron' },
-  cancelCronJob: { service: 'ScheduleService', rpc: 'CancelCron' },
-  updateCronJob: { service: 'ScheduleService', rpc: 'UpdateCron' },
-  runCronJobNow: { service: 'ScheduleService', rpc: 'RunNow' },
-  getCronLogs: { service: 'ScheduleService', rpc: 'GetLogs' },
-  clearCronLogs: { service: 'ScheduleService', rpc: 'ClearLogs' },
-  consumeCronNotifications: { service: 'ScheduleService', rpc: 'ConsumeNotifications' },
-  validatePipeline: { service: 'ScheduleService', rpc: 'ValidatePipeline' },
-  listUserSecrets: { service: 'SecretService', rpc: 'ListUser' },
-  setUserSecret: { service: 'SecretService', rpc: 'SetUser' },
-  getUserSecret: { service: 'SecretService', rpc: 'GetUser' },
-  deleteUserSecret: { service: 'SecretService', rpc: 'DeleteUser' },
-  listUserModuleSecrets: { service: 'SecretService', rpc: 'ListUserModuleSecrets' },
-  getVertexKey: { service: 'SecretService', rpc: 'GetSystem' },
-  setVertexKey: { service: 'SecretService', rpc: 'SetSystem' },
-  getGeminiKey: { service: 'SecretService', rpc: 'GetSystem' },
-  setGeminiKey: { service: 'SecretService', rpc: 'SetSystem' },
-  listMcpServers: { service: 'McpService', rpc: 'ListServers' },
-  saveMcpServer: { service: 'McpService', rpc: 'AddServer' },
-  addMcpServer: { service: 'McpService', rpc: 'AddServer' },
-  removeMcpServer: { service: 'McpService', rpc: 'RemoveServer' },
-  listMcpTools: { service: 'McpService', rpc: 'ListTools' },
-  listAllMcpTools: { service: 'McpService', rpc: 'ListAllTools' },
-  callMcpTool: { service: 'McpService', rpc: 'CallTool' },
-  listCapabilities: { service: 'CapabilityService', rpc: 'List' },
-  getCapabilityProviders: { service: 'CapabilityService', rpc: 'GetProviders' },
-  listCapabilitiesWithProviders: { service: 'CapabilityService', rpc: 'ListWithProviders' },
-  resolveCapability: { service: 'CapabilityService', rpc: 'Resolve' },
-  registerCapability: { service: 'CapabilityService', rpc: 'Register' },
-  getCapabilitySettings: { service: 'CapabilityService', rpc: 'GetSettings' },
-  setCapabilitySettings: { service: 'CapabilityService', rpc: 'SetSettings' },
-  login: { service: 'AuthService', rpc: 'Login' },
-  logout: { service: 'AuthService', rpc: 'Logout' },
-  validateSession: { service: 'AuthService', rpc: 'ValidateSession' },
-  validateToken: { service: 'AuthService', rpc: 'ValidateToken' },
-  generateApiToken: { service: 'AuthService', rpc: 'GenerateApiToken' },
-  validateApiToken: { service: 'AuthService', rpc: 'ValidateApiToken' },
-  revokeApiTokens: { service: 'AuthService', rpc: 'RevokeApiTokens' },
-  getApiTokenInfo: { service: 'AuthService', rpc: 'GetApiTokenInfo' },
-  getAdminCredentials: { service: 'AuthService', rpc: 'GetAdminCredentials' },
-  setAdminCredentials: { service: 'AuthService', rpc: 'SetAdminCredentials' },
-  isAdminSetup: { service: 'AuthService', rpc: 'IsAdminSetup' },
-  verifyAdminPassword: { service: 'AuthService', rpc: 'VerifyAdminPassword' },
-  validatePasswordPolicy: { service: 'AuthService', rpc: 'ValidatePasswordPolicy' },
-  listConversations: { service: 'ConversationService', rpc: 'List' },
-  getConversation: { service: 'ConversationService', rpc: 'Get' },
-  saveConversation: { service: 'ConversationService', rpc: 'Save' },
-  deleteConversation: { service: 'ConversationService', rpc: 'Delete' },
-  isConversationDeleted: { service: 'ConversationService', rpc: 'IsDeleted' },
-  searchHistory: { service: 'ConversationService', rpc: 'SearchHistory' },
-  searchConversationHistory: { service: 'ConversationService', rpc: 'SearchHistory' },
-  getCliSession: { service: 'ConversationService', rpc: 'GetCliSession' },
-  setCliSession: { service: 'ConversationService', rpc: 'SetCliSession' },
-  createShare: { service: 'ConversationService', rpc: 'CreateShare' },
-  getShare: { service: 'ConversationService', rpc: 'GetShare' },
-  listDeletedConversations: { service: 'ConversationService', rpc: 'ListDeleted' },
-  restoreConversation: { service: 'ConversationService', rpc: 'Restore' },
-  permanentDeleteConversation: { service: 'ConversationService', rpc: 'PermanentDelete' },
-  cleanupOldDeletedConversations: { service: 'ConversationService', rpc: 'CleanupOldDeleted' },
-  cleanupExpiredShares: { service: 'ConversationService', rpc: 'CleanupExpiredShares' },
-  generateImage: { service: 'MediaService', rpc: 'Generate' },
-  startImageGeneration: { service: 'MediaService', rpc: 'StartGeneration' },
-  regenerateImage: { service: 'MediaService', rpc: 'Regenerate' },
-  removeMedia: { service: 'MediaService', rpc: 'Remove' },
-  readMedia: { service: 'MediaService', rpc: 'Read' },
-  listMedia: { service: 'MediaService', rpc: 'List' },
-  isMediaReady: { service: 'MediaService', rpc: 'IsReady' },
-  saveUpload: { service: 'MediaService', rpc: 'Save' },
-  saveTempAttachment: { service: 'MediaService', rpc: 'SaveTempAttachment' },
-  cleanupOldAttachments: { service: 'MediaService', rpc: 'CleanupOldAttachments' },
-  getImageModel: { service: 'MediaService', rpc: 'GetImageModel' },
-  setImageModel: { service: 'MediaService', rpc: 'SetImageModel' },
-  listImageModels: { service: 'MediaService', rpc: 'GetAvailableImageModels' },
-  getAvailableImageModels: { service: 'MediaService', rpc: 'GetAvailableImageModels' },
-  getImageDefaultSize: { service: 'MediaService', rpc: 'GetImageDefaultSize' },
-  setImageDefaultSize: { service: 'MediaService', rpc: 'SetImageDefaultSize' },
-  getImageDefaultQuality: { service: 'MediaService', rpc: 'GetImageDefaultQuality' },
-  setImageDefaultQuality: { service: 'MediaService', rpc: 'SetImageDefaultQuality' },
-  getImageSettings: { service: 'MediaService', rpc: 'GetImageSettings' },
-  processAi: { service: 'AiService', rpc: 'Process' },
-  requestActionWithTools: { service: 'AiService', rpc: 'RequestActionWithTools' },
-  codeAssist: { service: 'AiService', rpc: 'CodeAssist' },
-  runAgentJob: { service: 'AiService', rpc: 'RunAgentJob' },
-  resolveCallTarget: { service: 'AiService', rpc: 'ResolveCallTarget' },
-  spawnSubAgent: { service: 'AiService', rpc: 'SpawnSubAgent' },
-  isSubAgentEnabled: { service: 'AiService', rpc: 'IsSubAgentEnabled' },
-  setSubAgentEnabled: { service: 'AiService', rpc: 'SetSubAgentEnabled' },
-  createPending: { service: 'AiService', rpc: 'CreatePending' },
-  getPending: { service: 'AiService', rpc: 'GetPending' },
-  consumePending: { service: 'AiService', rpc: 'ConsumePending' },
-  rejectPending: { service: 'AiService', rpc: 'RejectPending' },
-  storePlan: { service: 'AiService', rpc: 'StorePlan' },
-  readFile: { service: 'StorageService', rpc: 'ReadFile' },
-  readFileBinary: { service: 'StorageService', rpc: 'ReadFileBinary' },
-  writeFile: { service: 'StorageService', rpc: 'WriteFile' },
-  appendFile: { service: 'StorageService', rpc: 'WriteFile' },
-  deleteFile: { service: 'StorageService', rpc: 'DeleteFile' },
-  listDir: { service: 'StorageService', rpc: 'ListDir' },
-  listFiles: { service: 'StorageService', rpc: 'ListFiles' },
-  getFileTree: { service: 'StorageService', rpc: 'GetFileTree' },
-  globFiles: { service: 'StorageService', rpc: 'GlobFiles' },
-  saveEntity: { service: 'EntityService', rpc: 'Save' },
-  updateEntity: { service: 'EntityService', rpc: 'Update' },
-  deleteEntity: { service: 'EntityService', rpc: 'Delete' },
-  getEntity: { service: 'EntityService', rpc: 'Get' },
-  findEntityByName: { service: 'EntityService', rpc: 'FindByName' },
-  searchEntities: { service: 'EntityService', rpc: 'Search' },
-  saveEntityFact: { service: 'EntityService', rpc: 'SaveFact' },
-  updateEntityFact: { service: 'EntityService', rpc: 'UpdateFact' },
-  deleteEntityFact: { service: 'EntityService', rpc: 'DeleteFact' },
-  getEntityFact: { service: 'EntityService', rpc: 'GetFact' },
-  getEntityTimeline: { service: 'EntityService', rpc: 'GetTimeline' },
-  searchEntityFacts: { service: 'EntityService', rpc: 'SearchFacts' },
-  retrieveContext: { service: 'EntityService', rpc: 'RetrieveContext' },
-  cleanupExpiredFacts: { service: 'EntityService', rpc: 'CleanupExpiredFacts' },
-  saveEvent: { service: 'EpisodicService', rpc: 'SaveEvent' },
-  updateEvent: { service: 'EpisodicService', rpc: 'UpdateEvent' },
-  deleteEvent: { service: 'EpisodicService', rpc: 'DeleteEvent' },
-  getEvent: { service: 'EpisodicService', rpc: 'GetEvent' },
-  searchEvents: { service: 'EpisodicService', rpc: 'SearchEvents' },
-  listRecentEvents: { service: 'EpisodicService', rpc: 'ListRecent' },
-  listEventsByEntity: { service: 'EpisodicService', rpc: 'ListByEntity' },
-  linkEventEntity: { service: 'EpisodicService', rpc: 'LinkEntity' },
-  unlinkEventEntity: { service: 'EpisodicService', rpc: 'UnlinkEntity' },
-  cleanupExpiredEvents: { service: 'EpisodicService', rpc: 'CleanupExpired' },
-  askLlmText: { service: 'ConsolidationService', rpc: 'AskLlmText' },
-  consolidate: { service: 'ConsolidationService', rpc: 'Consolidate' },
-  consolidateInactive: { service: 'ConsolidationService', rpc: 'ConsolidateInactive' },
-  getMemoryStats: { service: 'ConsolidationService', rpc: 'GetMemoryStats' },
-  listTemplates: { service: 'TemplateService', rpc: 'List' },
-  getTemplate: { service: 'TemplateService', rpc: 'Get' },
-  saveTemplate: { service: 'TemplateService', rpc: 'Save' },
-  deleteTemplate: { service: 'TemplateService', rpc: 'Delete' },
-  getTimezone: { service: 'SettingsService', rpc: 'GetTimezone' },
-  setTimezone: { service: 'SettingsService', rpc: 'SetTimezone' },
-  getAiModel: { service: 'SettingsService', rpc: 'GetAiModel' },
-  setAiModel: { service: 'SettingsService', rpc: 'SetAiModel' },
-  getAiThinkingLevel: { service: 'SettingsService', rpc: 'GetAiThinkingLevel' },
-  setAiThinkingLevel: { service: 'SettingsService', rpc: 'SetAiThinkingLevel' },
-  getUserPrompt: { service: 'SettingsService', rpc: 'GetUserPrompt' },
-  setUserPrompt: { service: 'SettingsService', rpc: 'SetUserPrompt' },
-  getAnthropicCacheEnabled: { service: 'SettingsService', rpc: 'GetAnthropicCacheEnabled' },
-  setAnthropicCacheEnabled: { service: 'SettingsService', rpc: 'SetAnthropicCacheEnabled' },
-  getLastModelByCategory: { service: 'SettingsService', rpc: 'GetLastModelByCategory' },
-  setLastModelByCategory: { service: 'SettingsService', rpc: 'SetLastModelByCategory' },
-  getAiAssistantModel: { service: 'SettingsService', rpc: 'GetAiAssistantModel' },
-  setAiAssistantModel: { service: 'SettingsService', rpc: 'SetAiAssistantModel' },
-  getAiAssistantDefault: { service: 'SettingsService', rpc: 'GetAiAssistantDefault' },
-  getAvailableAiAssistantModels: { service: 'SettingsService', rpc: 'GetAvailableAiAssistantModels' },
-  getAvailableAiModels: { service: 'SettingsService', rpc: 'GetAvailableAiModels' },
-  networkFetch: { service: 'NetworkService', rpc: 'Fetch' },
-  cacheRead: { service: 'CacheService', rpc: 'Read' },
-  cacheGrep: { service: 'CacheService', rpc: 'Grep' },
-  cacheAggregate: { service: 'CacheService', rpc: 'Aggregate' },
-  cacheDrop: { service: 'CacheService', rpc: 'Drop' },
-  setupTelegramWebhook: { service: 'TelegramService', rpc: 'SetupWebhook' },
-  removeTelegramWebhook: { service: 'TelegramService', rpc: 'RemoveWebhook' },
-  getTelegramWebhookStatus: { service: 'TelegramService', rpc: 'GetWebhookStatus' },
-  isTelegramOwner: { service: 'TelegramService', rpc: 'IsOwner' },
-  getTelegramWebhookSecret: { service: 'TelegramService', rpc: 'GetWebhookSecret' },
-  processTelegramMessage: { service: 'TelegramService', rpc: 'ProcessMessage' },
-  queryDatabase: { service: 'DatabaseService', rpc: 'Query' },
-  getMemoryIndex: { service: 'MemoryService', rpc: 'GetIndex' },
-  readMemoryFile: { service: 'MemoryService', rpc: 'ReadFile' },
-  listMemoryFiles: { service: 'MemoryService', rpc: 'ListFiles' },
-  saveMemoryFile: { service: 'MemoryService', rpc: 'SaveFile' },
-  deleteMemoryFile: { service: 'MemoryService', rpc: 'DeleteFile' },
-  health: { service: 'LifecycleService', rpc: 'Health' },
-  captureException: { service: 'LifecycleService', rpc: 'CaptureException' },
-  gracefulShutdown: { service: 'LifecycleService', rpc: 'GracefulShutdown' },
-  getCostStats: { service: 'CostService', rpc: 'GetStats' },
-  flushCost: { service: 'CostService', rpc: 'Flush' },
-  getCostBudget: { service: 'CostService', rpc: 'GetBudget' },
-  setCostBudget: { service: 'CostService', rpc: 'SetBudget' },
-  checkCostBudget: { service: 'CostService', rpc: 'CheckBudget' },
-  registerTool: { service: 'ToolService', rpc: 'Register' },
-  registerToolsMany: { service: 'ToolService', rpc: 'RegisterMany' },
-  unregisterTool: { service: 'ToolService', rpc: 'Unregister' },
-  getToolDefinition: { service: 'ToolService', rpc: 'GetDefinition' },
-  listTools: { service: 'ToolService', rpc: 'List' },
-  executeTool: { service: 'ToolService', rpc: 'Execute' },
-  buildAiToolDefinitions: { service: 'ToolService', rpc: 'BuildAiDefinitions' },
-  buildMcpToolDescriptions: { service: 'ToolService', rpc: 'BuildMcpDescriptions' },
-  getToolStats: { service: 'ToolService', rpc: 'GetStats' },
-  getActivePlanState: { service: 'ToolService', rpc: 'GetActivePlanState' },
-  setActivePlanState: { service: 'ToolService', rpc: 'SetActivePlanState' },
-  clearActivePlanState: { service: 'ToolService', rpc: 'ClearActivePlanState' },
-  listAuditLog: { service: 'EventService', rpc: 'ListAuditLog' },
-  startJob: { service: 'StatusService', rpc: 'Start' },
-  updateJob: { service: 'StatusService', rpc: 'Update' },
-  completeJob: { service: 'StatusService', rpc: 'Complete' },
-  failJob: { service: 'StatusService', rpc: 'Fail' },
-  getJob: { service: 'StatusService', rpc: 'Get' },
-  listJobs: { service: 'StatusService', rpc: 'List' },
-  getJobStats: { service: 'StatusService', rpc: 'Stats' },
-};
 
 const CLIENT_MAP: Record<string, any> = {};
 
@@ -326,65 +87,14 @@ function getClient(service: string): any {
 }
 
 /**
- * Hexagonal adapter — response unwrap table (B 옵션 정공, 2026-05-13).
+ * facade method (예: 'savePage') → typed client method 직접 호출.
  *
- * 옛 generic heuristic (단일 array field 자동 unwrap) 폐기 — silent bug 위험.
- * 명시적 매핑 = wrap/unwrap symmetric pair (proto wrap ↔ adapter unwrap).
- * 새 list RPC 추가 시 본 table 1줄 추가 강제 (silent 패스 차단).
- *
- * 추가 가이드:
- *   - proto 의 `*ListPb` / `*ResponsePb` 가 단일 `repeated` 필드면 → table 에 facade method → field name 매핑
- *   - 단일 `string` / 의미 있는 field (예: ProjectVisibilityPb.visibility) 도 같은 패턴
- *   - 다중 field (예: MediaListResultPb {items, total}) 는 unwrap X — 호출자가 모든 field 필요
- *   - RawJsonPb / OptionalStringPb / {value} wrapper 는 별도 generic 처리 (아래)
+ * Phase 4 정공 (2026-05-13) — 옛 manual METHOD_TABLE + RESPONSE_UNWRAP_TABLE 폐기.
+ * `METHOD_TABLE_AUTO` (lib/proto-gen/adapter-tables.ts) = single source. proto schema
+ * 가 source of truth, 자동 생성됨. 새 RPC 추가 시 `npm run gen:adapter` 만 박으면 됨.
  */
-const RESPONSE_UNWRAP_TABLE: Record<string, string> = {
-  // PageService
-  listPages: 'items',
-  searchPages: 'items',
-  listStaticPages: 'values',
-  findMediaUsage: 'entries',
-  findRelatedPages: 'items',
-  listAllTags: 'tags',
-  // ProjectService
-  scanProjects: 'projects',
-  listProjects: 'projects',
-  getProjectVisibility: 'visibility',
-  // ModuleService
-  listSystemModules: 'entries',
-  getSystemModules: 'entries',
-  listUserModules: 'entries',
-  getUserModules: 'entries',
-  // ScheduleService
-  listCronJobs: 'jobs',
-  getCronLogs: 'entries',
-  consumeCronNotifications: 'items',
-  // SecretService
-  listUserSecrets: 'values',
-  listUserModuleSecrets: 'entries',
-  // McpService
-  listMcpTools: 'tools',
-  listAllMcpTools: 'tools',
-  // CapabilityService
-  getCapabilityProviders: 'providers',
-  listCapabilitiesWithProviders: 'summaries',
-  getCapabilitySettings: 'providers',
-  // ConversationService
-  listConversations: 'items',
-  listDeletedConversations: 'items',
-  searchHistory: 'matches',
-  searchConversationHistory: 'matches',
-  // MediaService
-  listImageModels: 'models',
-  getAvailableImageModels: 'models',
-  // SettingsService
-  getAvailableAiAssistantModels: 'models',
-  getAvailableAiModels: 'models',
-};
-
-/** facade method (예: 'savePage') → typed client method 직접 호출. */
 export async function callTypedClient<T = unknown>(method: string, args: unknown): Promise<T> {
-  const entry = METHOD_TABLE[method];
+  const entry = METHOD_TABLE_AUTO[method];
   if (!entry) throw new Error(`[callTypedClient] unknown facade method: ${method}`);
   const client = getClient(entry.service);
   const methodName = entry.rpc.charAt(0).toLowerCase() + entry.rpc.slice(1);
@@ -420,8 +130,8 @@ export async function callTypedClient<T = unknown>(method: string, args: unknown
   ) {
     return response.value as T;
   }
-  // Explicit unwrap table — RESPONSE_UNWRAP_TABLE (Hexagonal adapter).
-  const unwrapField = RESPONSE_UNWRAP_TABLE[method];
+  // 자동 unwrap — METHOD_TABLE_AUTO entry.unwrapField (codegen 산출, proto schema 기반).
+  const unwrapField = entry.unwrapField;
   if (unwrapField && response && typeof response === 'object' && unwrapField in response) {
     return (response as Record<string, unknown>)[unwrapField] as T;
   }

@@ -17,6 +17,7 @@
  *   ```
  */
 import { callTypedClient } from './grpc-typed-client';
+import { METHOD_TABLE_AUTO } from './proto-gen/adapter-tables';
 
 /**
  * 다인자 method 의 args → typed Request 매핑.
@@ -418,51 +419,14 @@ function makeScheduleRequest(input: any): unknown {
 }
 
 /**
- * autoWrap 설정할 메서드 — API route 가 `res.success / res.data` 가정 설정.
- */
-const WRAP_METHODS = new Set([
-  'savePage', 'deletePage', 'renamePage', 'getPage', 'listPages', 'searchPages',
-  'verifyPagePassword', 'setPageVisibility', 'getPageRedirect',
-  'listStaticPages', 'findMediaUsage', 'findRelatedPages', 'listAllTags',
-  'saveProject', 'deleteProject', 'renameProject',
-  'verifyProjectPassword', 'setProjectVisibility',
-  'listConversations', 'getConversation', 'saveConversation', 'deleteConversation',
-  'searchHistory', 'searchConversationHistory',
-  'getCliSession', 'createShare', 'getShare',
-  'listDeletedConversations', 'restoreConversation', 'permanentDeleteConversation',
-  'saveEntity', 'updateEntity', 'deleteEntity', 'getEntity',
-  'findEntityByName', 'searchEntities',
-  'saveEntityFact', 'updateEntityFact', 'deleteEntityFact', 'getEntityFact',
-  'getEntityTimeline', 'searchEntityFacts', 'retrieveContext',
-  'saveEvent', 'updateEvent', 'deleteEvent', 'getEvent',
-  'searchEvents', 'listRecentEvents', 'listEventsByEntity',
-  'linkEventEntity', 'unlinkEventEntity',
-  'listMedia', 'readMedia', 'removeMedia', 'searchMedia', 'isMediaReady',
-  'generateImage', 'startImageGeneration', 'regenerateImage', 'saveUpload',
-  'saveTempAttachment',
-  'getTemplate', 'saveTemplate', 'deleteTemplate',
-  'resolveCapability',
-  'callMcpTool', 'generateApiToken',
-  'validateSession', 'validateToken',
-  'scheduleTask', 'scheduleCronJob', 'cancelCronJob', 'updateCronJob', 'runCronJobNow',
-  'runTask',
-  'runModule', 'sandboxExecute',
-  'getUserSecret', 'setUserSecret', 'deleteUserSecret',
-  'listUserModuleSecrets',
-  'readFile', 'readFileBinary', 'writeFile', 'deleteFile', 'globFiles',
-  'getMemoryIndex', 'readMemoryFile', 'listMemoryFiles', 'saveMemoryFile', 'deleteMemoryFile',
-  'executeTool',
-  'codeAssist',
-  'getTelegramWebhookStatus', 'setupTelegramWebhook', 'removeTelegramWebhook',
-  'cacheRead', 'cacheGrep', 'cacheAggregate', 'cacheData',
-  'queryDatabase',
-]);
-
-/**
  * 결과를 `{success, data, error}` 형식으로 자동 wrap.
+ *
+ * Phase 4 정공 (2026-05-13) — 옛 manual WRAP_METHODS Set 폐기. METHOD_TABLE_AUTO[method].wrap
+ * (codegen 산출, proto/adapter-overrides.json 의 wrap 배열 기반) single source.
  */
 function autoWrapResult(method: string, result: any): any {
-  if (!WRAP_METHODS.has(method)) return result;
+  const entry = METHOD_TABLE_AUTO[method];
+  if (!entry?.wrap) return result;
   if (result === null || result === undefined) return { success: false, error: 'Not found' };
   if (typeof result === 'object' && 'success' in result) return result;
   return { success: true, data: result };

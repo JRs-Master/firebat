@@ -10,7 +10,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "mcp": "firebat-core --mcp-stdio",
-    "gen:proto": "buf generate"
+    "gen:proto": "buf generate && node scripts/gen-adapter-tables.mjs",
+    "gen:adapter": "node scripts/gen-adapter-tables.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
