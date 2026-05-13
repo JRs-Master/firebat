@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../lib/auth-guard';
-import { safeJsonParse } from '../../../lib/util';
+import { safeJsonParse, normalizeTimestamps } from '../../../lib/util';
 
 /**
  * /api/conversations — 관리자 대화 히스토리 CRUD (다기기 동기화)
@@ -12,22 +12,7 @@ async function assertAdmin(req: NextRequest) {
   return auth;
 }
 
-/**
- * proto-loader 가 i64 → JS string 으로 변환 (`longs: String`).
- * frontend 가 `new Date(ts)` 호출 시 string ("1778425752563") 은 Invalid Date.
- * createdAt / updatedAt 만 number 로 변환 — undefined / 이미 number 면 그대로.
- * proto-loader 의 `keepCase: false` 설정이라 camelCase 키만 사용.
- */
-function normalizeTimestamps(rec: Record<string, unknown>): Record<string, unknown> {
-  const out = { ...rec };
-  for (const key of ['createdAt', 'updatedAt']) {
-    const v = out[key];
-    if (typeof v === 'string' && /^\d+$/.test(v)) {
-      out[key] = Number(v);
-    }
-  }
-  return out;
-}
+// normalizeTimestamps — proto i64 → number 변환 (createdAt / updatedAt). lib/util/normalize.ts 통합.
 
 /** GET — 전체 목록 또는 ?id=xxx 단건 */
 export async function GET(req: NextRequest) {
@@ -57,7 +42,7 @@ export async function GET(req: NextRequest) {
   const items = (res.data ?? []) as Array<Record<string, unknown>>;
   return NextResponse.json({
     success: true,
-    conversations: items.map(normalizeTimestamps),
+    conversations: items.map(item => normalizeTimestamps(item)),
   });
 }
 
