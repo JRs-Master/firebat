@@ -1,19 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
+import { withAuth } from '../../../../lib/with-api-error';
 
-export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const GET = withAuth(async () => {
   const projects = await getCore().scanProjects();
   return NextResponse.json({ success: true, projects });
-}
+});
 
 /** PATCH — action 분기: rename (일괄 slug 변경) 또는 visibility 설정 (기본) */
-export async function PATCH(request: NextRequest) {
-  const auth = await requireAuth(request);
-  if (isAuthError(auth)) return auth;
-
+export const PATCH = withAuth(async (request: NextRequest) => {
   const body = await request.json();
   const { action, project } = body as { action?: string; project?: string };
 
@@ -41,19 +36,16 @@ export async function PATCH(request: NextRequest) {
 
   const result = await getCore().setProjectVisibility(project, visibility as 'public' | 'password' | 'private', password);
   return NextResponse.json(result);
-}
+});
 
-export async function DELETE(request: NextRequest) {
-  const auth = await requireAuth(request);
-  if (isAuthError(auth)) return auth;
+export const DELETE = withAuth(async (request: NextRequest) => {
   const project = new URL(request.url).searchParams.get('project');
   if (!project) {
     return NextResponse.json({ success: false, error: 'project 파라미터가 필요합니다.' }, { status: 400 });
   }
-
   const result = await getCore().deleteProject(project);
   if (!result.success) {
     return NextResponse.json({ success: false, error: result.error }, { status: 404 });
   }
   return NextResponse.json({ success: true, deleted: result.data });
-}
+});

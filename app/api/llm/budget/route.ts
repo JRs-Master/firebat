@@ -8,11 +8,9 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
+import { withAuth } from '../../../../lib/with-api-error';
 
-export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const GET = withAuth(async () => {
   const core = getCore();
   const budget = await core.getCostBudget();
   const check = await core.checkCostBudget();
@@ -26,14 +24,11 @@ export async function GET(req: NextRequest) {
       monthlySpentCalls: check.monthlyCalls,
     },
   });
-}
+});
 
-export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const POST = withAuth(async (req: NextRequest) => {
   const body = await req.json();
-  const core = getCore();
-  await core.setCostBudget({
+  await getCore().setCostBudget({
     dailyUsd: Number(body?.dailyUsd) || 0,
     monthlyUsd: Number(body?.monthlyUsd) || 0,
     dailyCalls: Number(body?.dailyCalls) || 0,
@@ -41,4 +36,4 @@ export async function POST(req: NextRequest) {
     alertAtPercent: Number(body?.alertAtPercent) || 80,
   });
   return NextResponse.json({ success: true });
-}
+});
