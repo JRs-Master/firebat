@@ -8,6 +8,7 @@
 import { cookies } from 'next/headers';
 import { LangProvider } from '../../lib/i18n';
 import { isValidLang, INITIAL_LANG, type Lang } from '../../lib/i18n-shared';
+import { FirebatQueryProvider } from '../../lib/query-client';
 import { ConsoleLayoutInner } from './layout-client';
 
 const COOKIE_NAME = 'firebat_ui_lang';
@@ -18,7 +19,9 @@ export default async function ConsoleLayout({ children }: { children: React.Reac
   const initial: Lang = isValidLang(cookieLang) ? cookieLang : INITIAL_LANG;
   return (
     <LangProvider initial={initial} enableServerSync>
-      <ConsoleLayoutInner>{children}</ConsoleLayoutInner>
+      <FirebatQueryProvider>
+        <ConsoleLayoutInner>{children}</ConsoleLayoutInner>
+      </FirebatQueryProvider>
     </LangProvider>
   );
 }

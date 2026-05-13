@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
+    "@tanstack/react-query": "^5.100.10",
+    "@tanstack/react-query-devtools": "^5.100.10",
     "blurhash": "^2.0.5",
     "isomorphic-dompurify": "^3.10.0",
     "lucide-react": "^1.11.0",
