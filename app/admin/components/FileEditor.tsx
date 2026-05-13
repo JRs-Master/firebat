@@ -12,6 +12,7 @@ import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog } from './Dialog';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiPut } from '../../../lib/api-fetch';
+import { safeJsonParse } from '../../../lib/util';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
@@ -113,11 +114,8 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
 
   // 대화 복원 — 파일 로드 시 해당 파일의 대화 기록 가져옴
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(chatStorageKey);
-      if (raw) setChat(JSON.parse(raw));
-      else setChat([]);
-    } catch { setChat([]); }
+    const raw = localStorage.getItem(chatStorageKey);
+    setChat(safeJsonParse<ChatTurn[]>(raw, []));
   }, [chatStorageKey]);
 
   // 대화 저장 — 변경 시마다 debounced 없이 즉시 (파일당 최대 수십 턴이라 부담 없음)

@@ -15,6 +15,7 @@ import { TIMEZONE_OPTIONS, timezoneLabel } from '../../../lib/timezones';
 import { logger } from '../../../lib/util/logger';
 import { USER_PROMPT_MAX_CHARS } from '../../../lib/config';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
+import { TIME } from '../../../lib/util/time';
 
 // Rust ModuleEntryPb.entry_type → proto-loader keepCase:false → entryType.
 // 옛 type 필드명 호환 위해 둘 다 받음.
@@ -2606,7 +2607,7 @@ function CostTabContent() {
     setLoading(true);
     setError(null);
     const today = new Date();
-    const fromDate = new Date(today.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
+    const fromDate = new Date(today.getTime() - (days - 1) * TIME.DAY_MS);
     const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const params = new URLSearchParams({ fromDate: fmt(fromDate), toDate: fmt(today) });
     apiGet<{ success: boolean; data?: CostStats; error?: string }>(

@@ -12,6 +12,7 @@
  */
 import { Component, type ReactNode, type ErrorInfo } from 'react';
 import { AlertTriangle } from 'lucide-react';
+import { logger } from '../../../lib/util/logger';
 
 interface Props {
   children: ReactNode;
@@ -35,7 +36,7 @@ export class BlockErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     // 진단용 — 콘솔에 label / error / componentStack 출력. root cause 추적 시 활용.
-    console.error('[BlockErrorBoundary]', this.props.label ?? 'block', error, info.componentStack);
+    logger.error('block-boundary', `${this.props.label ?? 'block'}: ${error.message}`, { stack: info.componentStack });
   }
 
   render() {

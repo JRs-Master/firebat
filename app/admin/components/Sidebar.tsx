@@ -17,6 +17,7 @@ import { createShareLink, copyToClipboard } from '../hooks/share-helper';
 import { rowActionsClass } from '../utils/row-actions';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
+import { TIME } from '../../../lib/util/time';
 
 interface Project { name: string; paths: string[]; pageSlugs?: string[]; visibility?: string; }
 interface PageInfo { slug: string; title: string; status: string; updatedAt: string; project?: string | null; visibility?: string; }
@@ -455,7 +456,7 @@ export function Sidebar({
   const formatDate = (ts: number) => {
     const d = new Date(ts);
     const now = new Date();
-    const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400000);
+    const diffDays = Math.floor((now.getTime() - d.getTime()) / TIME.DAY_MS);
     if (diffDays === 0) return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
     if (diffDays === 1) return '어제';
     if (diffDays < 7) return `${diffDays}일 전`;

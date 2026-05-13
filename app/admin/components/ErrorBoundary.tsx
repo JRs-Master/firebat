@@ -15,6 +15,7 @@
  * fallback prop 으로 커스텀 UI 가능. reset 호출 시 자식 재마운트.
  */
 import React from 'react';
+import { logger } from '../../../lib/util/logger';
 
 interface State {
   hasError: boolean;
@@ -36,9 +37,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    if (typeof console !== 'undefined') {
-      console.error('[ErrorBoundary]', error, info.componentStack);
-    }
+    logger.error('error-boundary', error.message, { stack: info.componentStack });
     this.props.onError?.(error, info);
   }
 

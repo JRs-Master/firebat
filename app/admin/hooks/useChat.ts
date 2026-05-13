@@ -152,7 +152,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         setActiveConvId(active.id);
         dispatch({ type: 'LOAD', messages: cleanMessages(active.messages) });
       } catch (e) {
-        console.warn('[useChat] localStorage 폴백 파싱 실패:', e);
+        logger.warn('useChat', 'localStorage 폴백 파싱 실패', { error: e });
         localStorage.removeItem('firebat_conversations');
       }
     })();
@@ -222,16 +222,16 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         return;
       }
       if (!res.ok && retries > 0) {
-        console.warn(`[Firebat] DB save HTTP ${res.status} — ${retries}회 재시도`);
+        logger.warn('useChat', `DB save HTTP ${res.status} — ${retries}회 재시도`);
         return new Promise<void>(resolve => setTimeout(() => attempt(retries - 1).finally(resolve), 500));
       }
-      if (!res.ok) console.error(`[Firebat] DB save 최종 실패 HTTP ${res.status} — pending status 손실 위험`);
+      if (!res.ok) logger.error('useChat', `DB save 최종 실패 HTTP ${res.status} — pending status 손실 위험`, null);
     }).catch(err => {
       if (retries > 0) {
-        console.warn(`[Firebat] DB save network 실패 — ${retries}회 재시도:`, err);
+        logger.warn('useChat', `DB save network 실패 — ${retries}회 재시도`, { error: err });
         return new Promise<void>(resolve => setTimeout(() => attempt(retries - 1).finally(resolve), 500));
       }
-      console.error('[Firebat] DB save 최종 실패 — pending status 손실 위험:', err);
+      logger.error('useChat', 'DB save 최종 실패 — pending status 손실 위험', err);
     });
     void attempt(1);
   };
@@ -766,7 +766,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         const next = convs.map(c => c.id === convId ? { ...c, messages: cleanMessages(updated), updatedAt: Date.now() } : c);
         localStorage.setItem('firebat_conversations', JSON.stringify(next));
       }
-    } catch (e) { console.warn('[Firebat] localStorage pending status update 실패:', e); }
+    } catch (e) { logger.warn('useChat', 'localStorage pending status update 실패', { error: e }); }
     // 2) DB POST — 실패 시 1회 retry. 그래도 실패면 콘솔 경고 (조용히 묻히지 않게).
     saveToDbRef.current(convId, updated);
   }, [activeConvId]);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
+import { logger } from '../../../../lib/util/logger';
 
 /**
  * POST /api/telegram/webhook — 텔레그램 Bot API 가 호출하는 진입점.
@@ -61,7 +62,7 @@ export async function POST(req: NextRequest) {
   //    텔레그램에 빨리 200 응답해야 retry 안 일어남 → 처리는 비동기 fire-and-forget.
   //    실패는 logger 에 기록 (사용자 알림은 X — 무한 응답 루프 방지).
   core.processTelegramMessage(text, chatId).catch((err: any) => {
-    console.error('[Telegram webhook] processMessage 실패:', err?.message || err);
+    logger.error('telegram', 'processMessage 실패', err);
   });
 
   return NextResponse.json({ ok: true });

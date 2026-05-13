@@ -6,6 +6,8 @@ import remarkGfm from 'remark-gfm';
 import StockChart from '../../admin/chat-components/StockChart';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
 import { apiPost } from '../../../lib/api-fetch';
+import { logger } from '../../../lib/util/logger';
+import { TIME } from '../../../lib/util/time';
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
 interface ComponentDef {
@@ -85,7 +87,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     default:
       // 알 수 없는 component type 은 silent skip — '지원되지 않는' 노란 박스 표시하지 않음
       // (개발자는 console 에서 확인 가능)
-      if (typeof console !== 'undefined') console.warn('[ComponentSwitch] 알 수 없는 컴포넌트 type:', type, comp);
+      logger.warn('component-switch', `알 수 없는 컴포넌트 type: ${type}`, { comp });
       return null;
   }
 }
@@ -1042,10 +1044,10 @@ function CountdownComp({ targetDate, label }: { targetDate: string; label?: stri
       const diff = new Date(targetDate).getTime() - Date.now();
       if (diff <= 0) { setExpired(true); return; }
       setRemaining({
-        days: Math.floor(diff / 86400000),
-        hours: Math.floor((diff % 86400000) / 3600000),
-        minutes: Math.floor((diff % 3600000) / 60000),
-        seconds: Math.floor((diff % 60000) / 1000),
+        days: Math.floor(diff / TIME.DAY_MS),
+        hours: Math.floor((diff % TIME.DAY_MS) / TIME.HOUR_MS),
+        minutes: Math.floor((diff % TIME.HOUR_MS) / TIME.MINUTE_MS),
+        seconds: Math.floor((diff % TIME.MINUTE_MS) / TIME.SECOND_MS),
       });
     };
     update();
@@ -1165,7 +1167,7 @@ function ChartComp({ type = 'bar', data, labels, series: seriesProp, title, subt
   }
   // bar/pie/doughnut — 현재 single-series 만 지원. multi 시 첫 series 사용 + 콘솔 경고.
   if (series.length > 1) {
-    console.warn(`[ChartComp] type='${type}' 는 single-series 만 지원 — 첫 series('${series[0].name}') 만 표시. multi-series 시 type='line' 권장.`);
+    logger.warn('chart', `type='${type}' 는 single-series 만 지원 — 첫 series('${series[0].name}') 만 표시. multi-series 시 type='line' 권장.`);
   }
   // bar/pie/doughnut 는 single-series chart — series[0].values 만 사용 (multi 시 console.warn 설정).
   // 변수명 firstSeriesData 그대로 활용해 의미 명확.
