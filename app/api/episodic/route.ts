@@ -9,13 +9,11 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../lib/auth-guard';
+import { withAuth } from '../../../lib/with-api-error';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const GET = withAuth(async (req: NextRequest) => {
   const url = new URL(req.url);
   const query = url.searchParams.get('query') ?? undefined;
   const type = url.searchParams.get('type') ?? undefined;
@@ -39,13 +37,10 @@ export async function GET(req: NextRequest) {
     : await getCore().listRecentEvents({ limit });
   if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   return NextResponse.json({ success: true, events: res.data ?? [] });
-}
+});
 
-export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
-  let body: any;
-  try { body = await req.json(); } catch { return NextResponse.json({ success: false, error: 'invalid JSON' }, { status: 400 }); }
+export const POST = withAuth(async (req: NextRequest) => {
+  const body = await req.json().catch(() => null);
   if (!body?.type || !body?.title) return NextResponse.json({ success: false, error: 'type + title 필수' }, { status: 400 });
   let occurredAtMs: number | undefined;
   if (body.occurredAt) {
@@ -64,4 +59,4 @@ export async function POST(req: NextRequest) {
   });
   if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   return NextResponse.json({ success: true, id: res.data?.id });
-}
+});

@@ -1,6 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
+import { withAuth } from '../../../../lib/with-api-error';
+import { normalizeTimestamps } from '../../../../lib/util';
 
 /**
  * GET /api/conversations/trash
@@ -10,25 +11,14 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
  *
  * 응답: { success: true, conversations: [{ id, title, createdAt, updatedAt }] }
  */
-export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
-  const core = getCore();
-  const res = await core.listDeletedConversations('admin');
+export const GET = withAuth(async () => {
+  const res = await getCore().listDeletedConversations('admin');
   if (!res.success) {
     return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   }
   const items = (res.data ?? []) as Array<Record<string, unknown>>;
-  // proto-loader i64 → string 변환 정규화 (createdAt/updatedAt) — 옛 /api/conversations 와 동일
   return NextResponse.json({
     success: true,
-    conversations: items.map(r => {
-      const out = { ...r };
-      for (const key of ['createdAt', 'updatedAt']) {
-        const v = out[key];
-        if (typeof v === 'string' && /^\d+$/.test(v)) out[key] = Number(v);
-      }
-      return out;
-    }),
+    conversations: items.map(item => normalizeTimestamps(item)),
   });
-}
+});

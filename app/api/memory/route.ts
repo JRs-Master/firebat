@@ -9,20 +9,15 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../lib/auth-guard';
+import { withAuth } from '../../../lib/with-api-error';
 
-export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
-  const core = getCore();
-  const res = await core.listMemoryFiles();
+export const GET = withAuth(async () => {
+  const res = await getCore().listMemoryFiles();
   if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   return NextResponse.json({ success: true, items: res.data });
-}
+});
 
-export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const POST = withAuth(async (req: NextRequest) => {
   const body = await req.json();
   const { category, name, description, content } = body || {};
   if (!category || !['user', 'feedback', 'project', 'reference'].includes(category)) {
@@ -37,19 +32,15 @@ export async function POST(req: NextRequest) {
   if (typeof content !== 'string') {
     return NextResponse.json({ success: false, error: 'content 필수' }, { status: 400 });
   }
-  const core = getCore();
-  const res = await core.saveMemoryFile(category, name.trim(), description, content);
+  const res = await getCore().saveMemoryFile(category, name.trim(), description, content);
   if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   return NextResponse.json({ success: true });
-}
+});
 
-export async function DELETE(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const DELETE = withAuth(async (req: NextRequest) => {
   const name = req.nextUrl.searchParams.get('name');
   if (!name) return NextResponse.json({ success: false, error: 'name 필요' }, { status: 400 });
-  const core = getCore();
-  const res = await core.deleteMemoryFile(name);
+  const res = await getCore().deleteMemoryFile(name);
   if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   return NextResponse.json({ success: true });
-}
+});

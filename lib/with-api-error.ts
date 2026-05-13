@@ -26,11 +26,18 @@
 import type { NextRequest, NextResponse } from 'next/server';
 import { apiErrorResponse } from './api-error';
 import { requireAuth, isAuthError } from './auth-guard';
+import type { AuthSession } from './types/firebat-types';
 import { logger } from './util/logger';
 
 type ApiHandler<TCtx = unknown> = (
   req: NextRequest,
   ctx: TCtx,
+) => Promise<NextResponse> | NextResponse;
+
+type AuthApiHandler<TCtx = unknown> = (
+  req: NextRequest,
+  ctx: TCtx,
+  auth: AuthSession,
 ) => Promise<NextResponse> | NextResponse;
 
 /** 에러 자동 wrap (auth 없음). 공개 endpoint 또는 인증 자체 endpoint 용. */
@@ -61,12 +68,12 @@ export function withApiError<TCtx = unknown>(handler: ApiHandler<TCtx>): ApiHand
  *     // ... body, auth 이미 검증됨
  *   });
  */
-export function withAuth<TCtx = unknown>(handler: ApiHandler<TCtx>): ApiHandler<TCtx> {
+export function withAuth<TCtx = unknown>(handler: AuthApiHandler<TCtx>): ApiHandler<TCtx> {
   return async (req, ctx) => {
     try {
       const auth = await requireAuth(req);
       if (isAuthError(auth)) return auth;
-      return await handler(req, ctx);
+      return await handler(req, ctx, auth);
     } catch (err) {
       logger.error('api', '[api-error]', err);
       return apiErrorResponse(err);

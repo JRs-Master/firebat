@@ -4,15 +4,13 @@
  * GET /api/tags — 모든 public+published 페이지의 head.keywords 합집합 + 사용 빈도 + 매칭 slugs.
  * 인증 필수 (어드민 UI 가 사용).
  */
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../lib/auth-guard';
+import { withAuth } from '../../../lib/with-api-error';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const GET = withAuth(async () => {
   const tags = await getCore().listAllTags();
   return NextResponse.json({ success: true, tags });
-}
+});
