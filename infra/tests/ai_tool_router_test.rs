@@ -68,7 +68,7 @@ fn is_enabled_false_for_other_values() {
 #[test]
 fn assistant_model_default_gemini_flash_lite() {
     let (r, _v, _dir) = make_router_with_vault();
-    assert_eq!(r.get_assistant_model(), "gemini-3.1-flash-lite-preview");
+    assert_eq!(r.get_assistant_model(), "gemini-3.1-flash-lite");
 }
 
 #[test]
