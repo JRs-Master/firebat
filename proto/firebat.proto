@@ -1412,6 +1412,19 @@ message AvailableAiModelPb {
   string display_name = 2;
   string provider = 3;       // "Anthropic" | "Google" | "Vertex" | "OpenAI" | "CLI"
   string format = 4;         // "anthropic-messages" | "openai-responses" | "gemini-native" | "vertex-gemini" | "cli-claude-code" | "cli-codex" | "cli-gemini"
+  // thinking / reasoning 모드 — 미지원 모델은 미설정.
+  ThinkingConfigPb thinking = 5;
+}
+
+/** 모델별 thinking 모드 + 허용 레벨. */
+message ThinkingConfigPb {
+  string kind = 1;          // "reasoning" | "thinking" | "extendedThinking"
+  repeated ThinkingLevelPb levels = 2;
+}
+
+message ThinkingLevelPb {
+  string value = 1;                       // "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
+  map<string, string> labels = 2;         // { "ko": "...", "en": "..." } — i18n
 }
 
 message AvailableAiModelListPb {

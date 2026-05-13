@@ -12,7 +12,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::ports::IVaultPort;
 use crate::proto::{
     settings_service_server::SettingsService, AiAssistantModelListPb, AiAssistantModelPb,
-    AiModelResponsePb, AvailableAiModelListPb, AvailableAiModelPb, BoolRequest, Empty, SettingsSetLastModelByCategoryRequest,
+    AiModelResponsePb, AvailableAiModelListPb, AvailableAiModelPb, BoolRequest, Empty, SettingsSetLastModelByCategoryRequest, ThinkingConfigPb, ThinkingLevelPb,
     LastModelByCategoryPb, StringRequest,
 };
 use crate::vault_keys::{
@@ -223,6 +223,17 @@ impl SettingsService for SettingsServiceImpl {
                 display_name: m.display_name,
                 provider: m.provider,
                 format: m.format,
+                thinking: m.thinking.map(|t| ThinkingConfigPb {
+                    kind: t.kind,
+                    levels: t
+                        .levels
+                        .into_iter()
+                        .map(|l| ThinkingLevelPb {
+                            value: l.value,
+                            labels: l.labels,
+                        })
+                        .collect(),
+                }),
             })
             .collect::<Vec<_>>();
         Ok(Response::new(AvailableAiModelListPb { models }))

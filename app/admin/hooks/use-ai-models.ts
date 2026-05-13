@@ -4,11 +4,14 @@
  * frontend 의 매 사용처 hardcoded 25 entry 중복 회피 — GET /api/settings 응답의
  * `aiModels` 배열을 React Query 단일 cache 로 공유 (Phase 7 정공).
  *
+ * thinking 정보 포함 (2026-05-13 확장) — 옛 types.ts hardcoded
+ * THINKING_LEVELS / getThinkingKind / filterThinkingLevels 폐기. 각 모델의
+ * `thinking.kind` + `thinking.levels[i].labels[lang]` 직접 사용.
+ *
  * 사용:
  *   const { models, ready } = useAiModels();
- *
- *   readAiModels() — useEffect 밖 동기 접근 (cache hit 시점만 정확).
- *   invalidateAiModelsCache() — 모델 list 변경 시점 (현재 미사용 — 제공만).
+ *   const m = models.find(x => x.value === currentModel);
+ *   if (m?.thinking) { /* dropdown render */ /* }
  */
 
 'use client';
@@ -16,10 +19,29 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiGet } from '../../../lib/api-fetch';
 
-export type AiModelEntry = { value: string; label: string };
+export type AiModelThinkingLevel = {
+  value: string;
+  labels: Record<string, string>; // { ko: '...', en: '...' }
+};
+
+export type AiModelThinking = {
+  kind: 'reasoning' | 'thinking' | 'extendedThinking';
+  levels: AiModelThinkingLevel[];
+};
+
+export type AiModelEntry = {
+  value: string;
+  label: string;
+  /** 미지원 모델은 undefined. */
+  thinking?: AiModelThinking;
+};
 
 type SettingsAiModelsPayload = {
-  aiModels?: Array<{ id: string; displayName?: string }>;
+  aiModels?: Array<{
+    id: string;
+    displayName?: string;
+    thinking?: AiModelThinking;
+  }>;
 };
 
 const QUERY_KEY = ['ai-models'] as const;
@@ -30,6 +52,7 @@ async function fetchAiModels(): Promise<AiModelEntry[]> {
   return data.aiModels.map((m) => ({
     value: m.id,
     label: m.displayName || m.id,
+    ...(m.thinking ? { thinking: m.thinking } : {}),
   }));
 }
 
@@ -57,4 +80,9 @@ export function readAiModels(queryClient?: ReturnType<typeof useQueryClient>): A
 /** cache 강제 리셋 — 모델 list 변경 시점 (현재 미사용 — 제공만). */
 export function invalidateAiModelsCache(queryClient: ReturnType<typeof useQueryClient>): void {
   queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+}
+
+/** 활성 lang 으로 label lookup. fallback chain: lang → en → ko → value raw. */
+export function thinkingLevelLabel(level: AiModelThinkingLevel, lang: string): string {
+  return level.labels[lang] || level.labels.en || level.labels.ko || level.value;
 }

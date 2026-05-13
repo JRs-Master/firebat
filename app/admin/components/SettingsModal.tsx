@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign, Brain, Plus } from 'lucide-react';
-import { McpServer, getThinkingKind, filterThinkingLevels } from '../types';
-import { useAiModels } from '../hooks/use-ai-models';
+import { McpServer } from '../types';
+import { useAiModels, thinkingLevelLabel } from '../hooks/use-ai-models';
 import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
 import { ErrorBoundary } from './ErrorBoundary';
 import { useSetting, writeSetting } from '../hooks/settings-manager';
@@ -901,9 +901,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               ? modelsForProvider.map(m => ({ value: m.value, label: m.label }))
               : [{ value: '', label: '사용 가능한 모델 없음' }];
             const modelValue = modelsForProvider.some(m => m.value === aiModel) ? aiModel : (modelsForProvider[0]?.value ?? '');
-            // Thinking 필터 — 현재 실제 선택된 모델(modelValue) 기준, aiModel(stale) 아님
-            const thinkingKind = getThinkingKind(modelValue);
-            const thinkingOptions = filterThinkingLevels(thinkingKind);
+            // Thinking — JSON registry single source. 옛 hardcoded prefix 기반 polices 폐기 (2026-05-13).
+            const modelEntry = aiModelsList.find(m => m.value === modelValue);
+            const thinkingKind = modelEntry?.thinking?.kind;
+            const thinkingOptions = (modelEntry?.thinking?.levels ?? []).map(l => ({
+              value: l.value,
+              label: thinkingLevelLabel(l, uiLang),
+            }));
             const thinkingValid = thinkingOptions.some(l => l.value === thinkingLevel);
             const thinkingValue = thinkingValid ? thinkingLevel : (thinkingOptions[0]?.value ?? 'medium');
             const thinkingLabel = thinkingKind === 'reasoning' ? 'Reasoning (OpenAI)'

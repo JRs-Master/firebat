@@ -3,44 +3,13 @@ import { ConversationMeta } from './components/Sidebar';
 // AI 모델 list 는 Rust core::llm::config::builtin_models() 단일 source.
 // frontend 는 GET /api/settings 응답의 aiModels 배열을 useAiModels hook 으로 받음.
 // 옛 hardcoded AI_MODELS / GEMINI_MODELS 통째 폐기 (2026-05-10) — duplicate 청산.
+//
+// Thinking 모드 — 옛 THINKING_LEVELS / getThinkingKind / filterThinkingLevels (hardcoded prefix
+// 기반) 폐기 (2026-05-13). 각 모델 entry 의 `thinking` 필드 (JSON registry single source) 사용.
+// frontend: `model.thinking?.kind` + `model.thinking?.levels[i].labels[lang]`.
 
-// 통합 Thinking/Reasoning 레벨 (none/minimal/low/medium/high/xhigh/max)
-export const THINKING_LEVELS = [
-  { value: 'none',    label: 'None (추론 없음, 최저 지연)' },
-  { value: 'minimal', label: 'Minimal (최소, 빠름)' },
-  { value: 'low',     label: 'Low (낮음)' },
-  { value: 'medium',  label: 'Medium (중간, 기본)' },
-  { value: 'high',    label: 'High (높음)' },
-  { value: 'xhigh',   label: 'Extra High (더 높음)' },
-  { value: 'max',     label: 'Max (최대 예산)' },
-];
-
-/** 모델 thinking 지원 종류 — null이면 Thinking 옵션 UI 비노출 */
-export type ThinkingKind = 'reasoning' | 'thinking' | 'extendedThinking' | null;
-
-export function getThinkingKind(model: string): ThinkingKind {
-  if (model.startsWith('gpt-')) return 'reasoning';              // OpenAI reasoning.effort
-  if (model.startsWith('claude-')) return 'extendedThinking';    // Anthropic enabled/disabled
-  if (model.startsWith('cli-claude-code')) return 'extendedThinking'; // Claude Code CLI --effort
-  if (model.startsWith('cli-codex')) return 'reasoning';          // Codex CLI --config model_reasoning_effort
-  if (model.startsWith('cli-gemini')) return null;                // Gemini CLI 는 thinking 플래그 미지원 (CLI 내부 자동)
-  if (model.startsWith('gemini-')) {
-    if (model.includes('flash-lite')) return null;                // Lite는 thinking 미지원
-    return 'thinking';                                             // Gemini thinkingLevel
-  }
-  return null;
-}
-
-/** 각 종류별 허용 레벨 필터 */
-export function filterThinkingLevels(kind: ThinkingKind): { value: string; label: string }[] {
-  if (!kind) return [];
-  // OpenAI reasoning.effort: minimal/low/medium/high + xhigh(gpt-5.4+) + none(끄기)
-  if (kind === 'reasoning') return THINKING_LEVELS.filter(l => l.value !== 'max');
-  // Gemini thinkingLevel: minimal/low/medium/high
-  if (kind === 'thinking') return THINKING_LEVELS.filter(l => ['minimal', 'low', 'medium', 'high'].includes(l.value));
-  // Claude extended thinking: budget_tokens로 제어 — low/medium/high/xhigh/max 로 맵핑
-  return THINKING_LEVELS.filter(l => ['low', 'medium', 'high', 'xhigh', 'max'].includes(l.value));
-}
+/** 모델 thinking 지원 종류 — Rust LlmModelConfig.thinking.kind 와 1:1. */
+export type ThinkingKind = 'reasoning' | 'thinking' | 'extendedThinking';
 
 export type StepStatus = { index: number; total: number; type: string; status: 'start' | 'done' | 'error'; error?: string; description?: string };
 

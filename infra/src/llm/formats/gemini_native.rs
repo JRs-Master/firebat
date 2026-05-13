@@ -363,6 +363,7 @@ mod tests {
             extra_headers: std::collections::HashMap::new(),
             features: firebat_core::llm::config::LlmFeatures::default(),
             pricing: None,
+            thinking: None,
         }
     }
 

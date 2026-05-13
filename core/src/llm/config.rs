@@ -40,6 +40,31 @@ pub struct LlmModelConfig {
     /// 비용 (1M 토큰 USD) — input / output / cached
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pricing: Option<LlmPricing>,
+
+    /// thinking / reasoning 모드 + 허용 레벨. 미지원 모델은 omit.
+    /// Phase 5 확장 (2026-05-13) — frontend types.ts 의 hardcoded THINKING_LEVELS / getThinkingKind /
+    /// filterThinkingLevels 폐기 → JSON 단일 source. 새 모델 / 레벨 변경 시 JSON 수정만.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<ThinkingConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThinkingConfig {
+    /// "reasoning" (OpenAI effort) / "thinking" (Gemini level) / "extendedThinking" (Anthropic budget).
+    pub kind: String,
+    /// 허용 thinking 레벨 — frontend dropdown 그대로 표시.
+    pub levels: Vec<ThinkingLevel>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThinkingLevel {
+    /// 백엔드에 전달되는 값 ("none" / "minimal" / "low" / "medium" / "high" / "xhigh" / "max").
+    pub value: String,
+    /// 언어별 표시 라벨 — `{ "ko": "Medium (중간, 기본)", "en": "Medium (balanced)" }`.
+    /// frontend 의 활성 lang 으로 lookup, fallback chain = en → ko → value raw.
+    /// sysmod `settings_fields.i18n` 패턴과 일관 — JSON 1 file 자기완결, language/*.json 추가 수정 0.
+    pub labels: std::collections::HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -99,6 +124,7 @@ impl LlmModelConfig {
             features: LlmFeatures::default(),
             extra_headers: Default::default(),
             pricing: None,
+            thinking: None,
         }
     }
 }
@@ -129,6 +155,7 @@ fn anthropic_api(id: &str, name: &str, input_price: f64, output_price: f64) -> L
             output: output_price,
             cached_input: input_price * 0.1,
         }),
+        thinking: None,
     }
 }
 
@@ -279,6 +306,7 @@ impl Default for LlmModelConfig {
             features: LlmFeatures::default(),
             extra_headers: Default::default(),
             pricing: None,
+            thinking: None,
         }
     }
 }

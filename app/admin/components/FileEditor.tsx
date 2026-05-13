@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { X, Save, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send, Trash2, User, RotateCcw, Cpu } from 'lucide-react';
-import { THINKING_LEVELS } from '../types';
-import { useAiModels } from '../hooks/use-ai-models';
+import { useAiModels, thinkingLevelLabel } from '../hooks/use-ai-models';
+import { useLang } from '../../../lib/i18n';
 import { readSetting } from '../hooks/settings-manager';
 import { tryUnwrapJson } from '../../../lib/json-normalize';
 import { Tooltip } from './Tooltip';
@@ -81,6 +81,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
   const isPageMode = !!pageSlug;
   // Rust core::llm::config::builtin_models() 단일 source — fetch + module-cache.
   const { models: AI_MODELS } = useAiModels();
+  const { lang: thinkingLang } = useLang();
   const [content, setContent]   = useState('');
   const [original, setOriginal] = useState('');
   const [loading, setLoading]   = useState(true);
@@ -760,21 +761,30 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                       ))}
                     </div>
                   )}
-                  {slashOpen === 'thinking' && (
-                    <div>
-                      <div className="px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-700/60">추론 강도</div>
-                      {THINKING_LEVELS.map(l => (
-                        <button
-                          key={l.value}
-                          onClick={() => { setLocalThinking(l.value); setAiInstruction(''); setSlashOpen(null); }}
-                          className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-violet-600/30 transition-colors"
-                        >
-                          {localThinking === l.value && <Check size={11} className="text-violet-400" />}
-                          <span className="text-slate-200">{l.label}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  {slashOpen === 'thinking' && (() => {
+                    // 현재 선택된 모델 (localModel → aiModel 폴백) 의 thinking.levels 만 표시.
+                    // 모델 미지원 / 미선택 시 빈 dropdown — 옛 hardcoded THINKING_LEVELS 폐기 (2026-05-13).
+                    const activeModelId = localModel ?? aiModel;
+                    const activeModel = AI_MODELS.find(m => m.value === activeModelId);
+                    const levels = activeModel?.thinking?.levels ?? [];
+                    return (
+                      <div>
+                        <div className="px-3 py-1.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-700/60">추론 강도</div>
+                        {levels.length === 0 ? (
+                          <div className="px-3 py-2 text-[10px] text-slate-500 italic">선택된 모델은 thinking 미지원</div>
+                        ) : levels.map(l => (
+                          <button
+                            key={l.value}
+                            onClick={() => { setLocalThinking(l.value); setAiInstruction(''); setSlashOpen(null); }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[11.5px] hover:bg-violet-600/30 transition-colors"
+                          >
+                            {localThinking === l.value && <Check size={11} className="text-violet-400" />}
+                            <span className="text-slate-200">{thinkingLevelLabel(l, thinkingLang)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 

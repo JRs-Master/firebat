@@ -494,6 +494,7 @@ mod tests {
             extra_headers: extra,
             features: firebat_core::llm::config::LlmFeatures::default(),
             pricing: None,
+            thinking: None,
         }
     }
 

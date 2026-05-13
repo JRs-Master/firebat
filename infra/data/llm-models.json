@@ -10,7 +10,17 @@
       "apiKeyVaultKey": "system:anthropic:api-key",
       "features": { "mcpConnector": true, "extendedThinking": true, "imageInput": true, "promptCache": true },
       "extraHeaders": { "anthropic-version": "2023-06-01" },
-      "pricing": { "input": 5.0, "output": 25.0, "cachedInput": 0.5 }
+      "pricing": { "input": 5.0, "output": 25.0, "cachedInput": 0.5 },
+      "thinking": {
+        "kind": "extendedThinking",
+        "levels": [
+          { "value": "low",    "labels": { "ko": "Low (낮음)",          "en": "Low" } },
+          { "value": "medium", "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" } },
+          { "value": "high",   "labels": { "ko": "High (높음)",         "en": "High" } },
+          { "value": "xhigh",  "labels": { "ko": "Extra High (더 높음)", "en": "Extra High" } },
+          { "value": "max",    "labels": { "ko": "Max (최대 예산)",     "en": "Max (highest budget)" } }
+        ]
+      }
     },
     {
       "id": "claude-sonnet-4-6",
@@ -21,7 +31,17 @@
       "apiKeyVaultKey": "system:anthropic:api-key",
       "features": { "mcpConnector": true, "extendedThinking": true, "imageInput": true, "promptCache": true },
       "extraHeaders": { "anthropic-version": "2023-06-01" },
-      "pricing": { "input": 3.0, "output": 15.0, "cachedInput": 0.3 }
+      "pricing": { "input": 3.0, "output": 15.0, "cachedInput": 0.3 },
+      "thinking": {
+        "kind": "extendedThinking",
+        "levels": [
+          { "value": "low",    "labels": { "ko": "Low (낮음)",          "en": "Low" } },
+          { "value": "medium", "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" } },
+          { "value": "high",   "labels": { "ko": "High (높음)",         "en": "High" } },
+          { "value": "xhigh",  "labels": { "ko": "Extra High (더 높음)", "en": "Extra High" } },
+          { "value": "max",    "labels": { "ko": "Max (최대 예산)",     "en": "Max (highest budget)" } }
+        ]
+      }
     },
     {
       "id": "claude-haiku-4-5",
@@ -32,7 +52,17 @@
       "apiKeyVaultKey": "system:anthropic:api-key",
       "features": { "mcpConnector": true, "extendedThinking": true, "imageInput": true, "promptCache": true },
       "extraHeaders": { "anthropic-version": "2023-06-01" },
-      "pricing": { "input": 1.0, "output": 5.0, "cachedInput": 0.1 }
+      "pricing": { "input": 1.0, "output": 5.0, "cachedInput": 0.1 },
+      "thinking": {
+        "kind": "extendedThinking",
+        "levels": [
+          { "value": "low",    "labels": { "ko": "Low (낮음)",          "en": "Low" } },
+          { "value": "medium", "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" } },
+          { "value": "high",   "labels": { "ko": "High (높음)",         "en": "High" } },
+          { "value": "xhigh",  "labels": { "ko": "Extra High (더 높음)", "en": "Extra High" } },
+          { "value": "max",    "labels": { "ko": "Max (최대 예산)",     "en": "Max (highest budget)" } }
+        ]
+      }
     },
 
     {
@@ -42,7 +72,16 @@
       "format": "gemini-native",
       "endpoint": "https://generativelanguage.googleapis.com",
       "apiKeyVaultKey": "system:gemini:api-key",
-      "features": { "strictTools": true, "thinking": true, "imageInput": true }
+      "features": { "strictTools": true, "thinking": true, "imageInput": true },
+      "thinking": {
+        "kind": "thinking",
+        "levels": [
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)", "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",         "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",        "en": "High" } }
+        ]
+      }
     },
     {
       "id": "gemini-3-flash-preview",
@@ -51,7 +90,16 @@
       "format": "gemini-native",
       "endpoint": "https://generativelanguage.googleapis.com",
       "apiKeyVaultKey": "system:gemini:api-key",
-      "features": { "strictTools": true, "thinking": true, "imageInput": true }
+      "features": { "strictTools": true, "thinking": true, "imageInput": true },
+      "thinking": {
+        "kind": "thinking",
+        "levels": [
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)", "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",         "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",        "en": "High" } }
+        ]
+      }
     },
     {
       "id": "gemini-3.1-flash-lite",
@@ -70,7 +118,16 @@
       "format": "vertex-gemini",
       "endpoint": "https://aiplatform.googleapis.com",
       "apiKeyVaultKey": "system:vertex:service-account-json",
-      "features": { "strictTools": true, "thinking": true, "imageInput": true }
+      "features": { "strictTools": true, "thinking": true, "imageInput": true },
+      "thinking": {
+        "kind": "thinking",
+        "levels": [
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)", "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",         "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",        "en": "High" } }
+        ]
+      }
     },
     {
       "id": "vertex-gemini-3-flash-preview",
@@ -79,7 +136,16 @@
       "format": "vertex-gemini",
       "endpoint": "https://aiplatform.googleapis.com",
       "apiKeyVaultKey": "system:vertex:service-account-json",
-      "features": { "strictTools": true, "thinking": true, "imageInput": true }
+      "features": { "strictTools": true, "thinking": true, "imageInput": true },
+      "thinking": {
+        "kind": "thinking",
+        "levels": [
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)", "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",         "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",        "en": "High" } }
+        ]
+      }
     },
     {
       "id": "vertex-gemini-3.1-flash-lite",
@@ -99,7 +165,18 @@
       "endpoint": "https://api.openai.com/v1/responses",
       "apiKeyVaultKey": "system:openai:api-key",
       "features": { "mcpConnector": true, "strictTools": true, "reasoning": true, "toolSearch": true, "imageInput": true },
-      "pricing": { "input": 10.0, "output": 60.0, "cachedInput": 1.0 }
+      "pricing": { "input": 10.0, "output": 60.0, "cachedInput": 1.0 },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          { "value": "none",    "labels": { "ko": "None (추론 없음, 최저 지연)", "en": "None (no reasoning, lowest latency)" } },
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)",       "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",                "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)",        "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",               "en": "High" } },
+          { "value": "xhigh",   "labels": { "ko": "Extra High (더 높음)",       "en": "Extra High" } }
+        ]
+      }
     },
     {
       "id": "gpt-5.4",
@@ -109,7 +186,18 @@
       "endpoint": "https://api.openai.com/v1/responses",
       "apiKeyVaultKey": "system:openai:api-key",
       "features": { "mcpConnector": true, "strictTools": true, "reasoning": true, "toolSearch": true, "imageInput": true },
-      "pricing": { "input": 5.0, "output": 30.0, "cachedInput": 0.5 }
+      "pricing": { "input": 5.0, "output": 30.0, "cachedInput": 0.5 },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          { "value": "none",    "labels": { "ko": "None (추론 없음, 최저 지연)", "en": "None (no reasoning, lowest latency)" } },
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)",       "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",                "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)",        "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",               "en": "High" } },
+          { "value": "xhigh",   "labels": { "ko": "Extra High (더 높음)",       "en": "Extra High" } }
+        ]
+      }
     },
     {
       "id": "gpt-5.4-mini",
@@ -119,7 +207,18 @@
       "endpoint": "https://api.openai.com/v1/responses",
       "apiKeyVaultKey": "system:openai:api-key",
       "features": { "mcpConnector": true, "strictTools": true, "reasoning": true, "toolSearch": true, "imageInput": true },
-      "pricing": { "input": 1.5, "output": 8.0, "cachedInput": 0.15 }
+      "pricing": { "input": 1.5, "output": 8.0, "cachedInput": 0.15 },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          { "value": "none",    "labels": { "ko": "None (추론 없음, 최저 지연)", "en": "None (no reasoning, lowest latency)" } },
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)",       "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",                "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)",        "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",               "en": "High" } },
+          { "value": "xhigh",   "labels": { "ko": "Extra High (더 높음)",       "en": "Extra High" } }
+        ]
+      }
     },
     {
       "id": "gpt-5.4-nano",
@@ -129,7 +228,18 @@
       "endpoint": "https://api.openai.com/v1/responses",
       "apiKeyVaultKey": "system:openai:api-key",
       "features": { "mcpConnector": true, "strictTools": true, "reasoning": true, "toolSearch": true, "imageInput": true },
-      "pricing": { "input": 0.4, "output": 2.0, "cachedInput": 0.04 }
+      "pricing": { "input": 0.4, "output": 2.0, "cachedInput": 0.04 },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          { "value": "none",    "labels": { "ko": "None (추론 없음, 최저 지연)", "en": "None (no reasoning, lowest latency)" } },
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)",       "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",                "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)",        "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",               "en": "High" } },
+          { "value": "xhigh",   "labels": { "ko": "Extra High (더 높음)",       "en": "Extra High" } }
+        ]
+      }
     },
 
     {
@@ -138,7 +248,17 @@
       "provider": "CLI",
       "format": "cli-claude-code",
       "endpoint": "claude",
-      "features": { "mcpConnector": true, "extendedThinking": true }
+      "features": { "mcpConnector": true, "extendedThinking": true },
+      "thinking": {
+        "kind": "extendedThinking",
+        "levels": [
+          { "value": "low",    "labels": { "ko": "Low (낮음)",          "en": "Low" } },
+          { "value": "medium", "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" } },
+          { "value": "high",   "labels": { "ko": "High (높음)",         "en": "High" } },
+          { "value": "xhigh",  "labels": { "ko": "Extra High (더 높음)", "en": "Extra High" } },
+          { "value": "max",    "labels": { "ko": "Max (최대 예산)",     "en": "Max (highest budget)" } }
+        ]
+      }
     },
     {
       "id": "cli-claude-code-opus-4-7",
@@ -146,7 +266,17 @@
       "provider": "CLI",
       "format": "cli-claude-code",
       "endpoint": "claude",
-      "features": { "mcpConnector": true, "extendedThinking": true }
+      "features": { "mcpConnector": true, "extendedThinking": true },
+      "thinking": {
+        "kind": "extendedThinking",
+        "levels": [
+          { "value": "low",    "labels": { "ko": "Low (낮음)",          "en": "Low" } },
+          { "value": "medium", "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" } },
+          { "value": "high",   "labels": { "ko": "High (높음)",         "en": "High" } },
+          { "value": "xhigh",  "labels": { "ko": "Extra High (더 높음)", "en": "Extra High" } },
+          { "value": "max",    "labels": { "ko": "Max (최대 예산)",     "en": "Max (highest budget)" } }
+        ]
+      }
     },
     {
       "id": "cli-claude-code-sonnet-4-6",
@@ -154,7 +284,17 @@
       "provider": "CLI",
       "format": "cli-claude-code",
       "endpoint": "claude",
-      "features": { "mcpConnector": true, "extendedThinking": true }
+      "features": { "mcpConnector": true, "extendedThinking": true },
+      "thinking": {
+        "kind": "extendedThinking",
+        "levels": [
+          { "value": "low",    "labels": { "ko": "Low (낮음)",          "en": "Low" } },
+          { "value": "medium", "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" } },
+          { "value": "high",   "labels": { "ko": "High (높음)",         "en": "High" } },
+          { "value": "xhigh",  "labels": { "ko": "Extra High (더 높음)", "en": "Extra High" } },
+          { "value": "max",    "labels": { "ko": "Max (최대 예산)",     "en": "Max (highest budget)" } }
+        ]
+      }
     },
     {
       "id": "cli-claude-code-haiku-4-5",
@@ -162,7 +302,17 @@
       "provider": "CLI",
       "format": "cli-claude-code",
       "endpoint": "claude",
-      "features": { "mcpConnector": true, "extendedThinking": true }
+      "features": { "mcpConnector": true, "extendedThinking": true },
+      "thinking": {
+        "kind": "extendedThinking",
+        "levels": [
+          { "value": "low",    "labels": { "ko": "Low (낮음)",          "en": "Low" } },
+          { "value": "medium", "labels": { "ko": "Medium (중간, 기본)", "en": "Medium (default)" } },
+          { "value": "high",   "labels": { "ko": "High (높음)",         "en": "High" } },
+          { "value": "xhigh",  "labels": { "ko": "Extra High (더 높음)", "en": "Extra High" } },
+          { "value": "max",    "labels": { "ko": "Max (최대 예산)",     "en": "Max (highest budget)" } }
+        ]
+      }
     },
 
     {
@@ -196,7 +346,18 @@
       "provider": "CLI",
       "format": "cli-codex",
       "endpoint": "codex",
-      "features": { "mcpConnector": true, "reasoning": true }
+      "features": { "mcpConnector": true, "reasoning": true },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          { "value": "none",    "labels": { "ko": "None (추론 없음, 최저 지연)", "en": "None (no reasoning, lowest latency)" } },
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)",       "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",                "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)",        "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",               "en": "High" } },
+          { "value": "xhigh",   "labels": { "ko": "Extra High (더 높음)",       "en": "Extra High" } }
+        ]
+      }
     },
     {
       "id": "cli-codex-gpt-5.5",
@@ -204,7 +365,18 @@
       "provider": "CLI",
       "format": "cli-codex",
       "endpoint": "codex",
-      "features": { "mcpConnector": true, "reasoning": true }
+      "features": { "mcpConnector": true, "reasoning": true },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          { "value": "none",    "labels": { "ko": "None (추론 없음, 최저 지연)", "en": "None (no reasoning, lowest latency)" } },
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)",       "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",                "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)",        "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",               "en": "High" } },
+          { "value": "xhigh",   "labels": { "ko": "Extra High (더 높음)",       "en": "Extra High" } }
+        ]
+      }
     },
     {
       "id": "cli-codex-gpt-5.4",
@@ -212,7 +384,18 @@
       "provider": "CLI",
       "format": "cli-codex",
       "endpoint": "codex",
-      "features": { "mcpConnector": true, "reasoning": true }
+      "features": { "mcpConnector": true, "reasoning": true },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          { "value": "none",    "labels": { "ko": "None (추론 없음, 최저 지연)", "en": "None (no reasoning, lowest latency)" } },
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)",       "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",                "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)",        "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",               "en": "High" } },
+          { "value": "xhigh",   "labels": { "ko": "Extra High (더 높음)",       "en": "Extra High" } }
+        ]
+      }
     },
     {
       "id": "cli-codex-gpt-5.4-mini",
@@ -220,7 +403,18 @@
       "provider": "CLI",
       "format": "cli-codex",
       "endpoint": "codex",
-      "features": { "mcpConnector": true, "reasoning": true }
+      "features": { "mcpConnector": true, "reasoning": true },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          { "value": "none",    "labels": { "ko": "None (추론 없음, 최저 지연)", "en": "None (no reasoning, lowest latency)" } },
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)",       "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",                "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)",        "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",               "en": "High" } },
+          { "value": "xhigh",   "labels": { "ko": "Extra High (더 높음)",       "en": "Extra High" } }
+        ]
+      }
     },
     {
       "id": "cli-codex-5.3-codex",
@@ -228,7 +422,18 @@
       "provider": "CLI",
       "format": "cli-codex",
       "endpoint": "codex",
-      "features": { "mcpConnector": true, "reasoning": true }
+      "features": { "mcpConnector": true, "reasoning": true },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          { "value": "none",    "labels": { "ko": "None (추론 없음, 최저 지연)", "en": "None (no reasoning, lowest latency)" } },
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)",       "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",                "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)",        "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",               "en": "High" } },
+          { "value": "xhigh",   "labels": { "ko": "Extra High (더 높음)",       "en": "Extra High" } }
+        ]
+      }
     },
     {
       "id": "cli-codex-5.3-codex-spark",
@@ -236,7 +441,18 @@
       "provider": "CLI",
       "format": "cli-codex",
       "endpoint": "codex",
-      "features": { "mcpConnector": true, "reasoning": true }
+      "features": { "mcpConnector": true, "reasoning": true },
+      "thinking": {
+        "kind": "reasoning",
+        "levels": [
+          { "value": "none",    "labels": { "ko": "None (추론 없음, 최저 지연)", "en": "None (no reasoning, lowest latency)" } },
+          { "value": "minimal", "labels": { "ko": "Minimal (최소, 빠름)",       "en": "Minimal (fastest)" } },
+          { "value": "low",     "labels": { "ko": "Low (낮음)",                "en": "Low" } },
+          { "value": "medium",  "labels": { "ko": "Medium (중간, 기본)",        "en": "Medium (default)" } },
+          { "value": "high",    "labels": { "ko": "High (높음)",               "en": "High" } },
+          { "value": "xhigh",   "labels": { "ko": "Extra High (더 높음)",       "en": "Extra High" } }
+        ]
+      }
     }
   ]
 }
