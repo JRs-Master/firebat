@@ -4,6 +4,6 @@ plugins:
     out: lib/proto-gen
     opt:
       - target=ts
-      - import_extension=js
+      - import_extension=none
 inputs:
   - directory: proto

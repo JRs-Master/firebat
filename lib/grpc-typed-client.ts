@@ -48,7 +48,7 @@ import {
   TelegramService,
   TemplateService,
   ToolService,
-} from "./proto-gen/firebat_pb.js";
+} from "./proto-gen/firebat_pb";
 
 /**
  * gRPC transport — firebat-core Rust binary (default 127.0.0.1:50051).
