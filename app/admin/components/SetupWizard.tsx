@@ -25,8 +25,11 @@
  * API 키 / CLI 인증은 위자드에서 받지 않습니다 — 어드민 진입 후 설정 화면에서 별도 등록.
  */
 import { useEffect, useState } from 'react';
+import { z } from 'zod';
 import { useTranslations, useLang, type Lang } from '../../../lib/i18n';
 import { TIMEZONE_OPTIONS, timezoneLabel } from '../../../lib/timezones';
+import { apiPost } from '../../../lib/api-fetch';
+import { validateForm } from '../../../lib/form-validation';
 
 interface Props {
   onComplete: () => void;
@@ -96,38 +99,48 @@ export function SetupWizard({ onComplete }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /** zod schema — 위 isPasswordValid / 자료 검증을 zod refine 으로 통합. Rust validate_password_policy 미러. */
+  const setupSchema = z.object({
+    adminId: z.string().trim().min(1, t('setup.err_id_required')),
+    adminPassword: z.string().refine(isPasswordValid, { message: t('setup.err_password_policy') }),
+    confirmPassword: z.string(),
+    timezone: z.string(),
+  })
+    .refine((v) => v.adminPassword.toLowerCase() !== v.adminId.toLowerCase(), {
+      message: t('setup.err_password_same_as_id'),
+      path: ['adminPassword'],
+    })
+    .refine((v) => v.adminPassword === v.confirmPassword, {
+      message: t('setup.err_password_mismatch'),
+      path: ['confirmPassword'],
+    });
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (!adminId.trim()) { setError(t('setup.err_id_required')); return; }
-    if (!isPasswordValid(adminPassword)) {
-      setError(t('setup.err_password_policy'));
+    const result = validateForm(setupSchema, { adminId, adminPassword, confirmPassword, timezone });
+    if (!result.success) {
+      const first = Object.values(result.errors)[0];
+      if (first) setError(first);
       return;
     }
-    if (adminPassword.toLowerCase() === adminId.trim().toLowerCase()) {
-      setError(t('setup.err_password_same_as_id'));
-      return;
-    }
-    if (adminPassword !== confirmPassword) { setError(t('setup.err_password_mismatch')); return; }
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/auth/setup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          adminId: adminId.trim(),
-          adminPassword,
+      const data = await apiPost<{ success: boolean; error?: string }>(
+        '/api/auth/setup',
+        {
+          adminId: result.data.adminId,
+          adminPassword: result.data.adminPassword,
           siteLang: lang,
-          timezone,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
+          timezone: result.data.timezone,
+        },
+        { category: 'setup' },
+      );
+      if (!data.success) {
         // 403 = 이미 setup 완료 — 정상 흐름이면 위자드 자체 노출 안 됨 (frontend GET 이 unwrap 으로 차단).
-        // 여기 도달 시 = backend / frontend 비일관 상태. /login redirect 무용 (같은 페이지).
-        // 사용자가 잠금 풀 수 있게 SSH vault reset 명령 명시 (backend 메시지에 포함).
+        // 여기 도달 시 = backend / frontend 비일관 상태. SSH vault reset 명령 명시 (backend 메시지에 포함).
         setError(data.error || t('setup.err_failed'));
         setSubmitting(false);
         return;
