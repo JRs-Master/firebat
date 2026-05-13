@@ -14,6 +14,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Plus, Trash2, X, MapPin, Link as LinkIcon, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
+import { apiPost } from '../../../lib/api-fetch';
+import { logger } from '../../../lib/util/logger';
 
 interface CalEvent {
   id: string;
@@ -27,13 +29,11 @@ interface CalEvent {
 }
 
 async function callCalendar(action: string, data: Record<string, unknown>): Promise<any> {
-  const res = await fetch('/api/module/run', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ module: 'calendar', data: { action, ...data } }),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json = await res.json();
+  const json = await apiPost<{ success: boolean; data?: unknown; error?: string }>(
+    '/api/module/run',
+    { module: 'calendar', data: { action, ...data } },
+    { category: 'calendar' },
+  );
   if (!json.success) throw new Error(json.error || 'sysmod_calendar 실패');
   return json.data;
 }
@@ -80,8 +80,8 @@ export function CalendarPanel() {
       // 한 번에 1년치 + 과거 30일 fetch. 실 조회량 적어 부담 없음.
       const result = await callCalendar('list-upcoming', { days: 400, includePast: 30, limit: 1000 });
       setEvents((result?.items ?? []) as CalEvent[]);
-    } catch (err: any) {
-      console.error('[CalendarPanel] fetch fail', err);
+    } catch (err) {
+      logger.error('calendar', 'fetch 실패', err);
     } finally {
       setLoading(false);
     }

@@ -10,6 +10,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Search, Plus, Trash2, X, NotebookText } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
+import { apiPost } from '../../../lib/api-fetch';
+import { logger } from '../../../lib/util/logger';
 
 interface Note {
   slug: string;
@@ -22,13 +24,11 @@ interface Note {
 }
 
 async function callNotes(action: string, data: Record<string, unknown>): Promise<any> {
-  const res = await fetch('/api/module/run', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ module: 'notes', data: { action, ...data } }),
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json = await res.json();
+  const json = await apiPost<{ success: boolean; data?: unknown; error?: string }>(
+    '/api/module/run',
+    { module: 'notes', data: { action, ...data } },
+    { category: 'notes' },
+  );
   if (!json.success) throw new Error(json.error || 'sysmod_notes 실패');
   return json.data;
 }
@@ -55,8 +55,8 @@ export function NotesPanel() {
         ? await callNotes('search', { query: q.trim(), limit: 100 })
         : await callNotes('list', { limit: 100 });
       setNotes((result?.items ?? []) as Note[]);
-    } catch (err: any) {
-      console.error('[NotesPanel] fetch fail', err);
+    } catch (err) {
+      logger.error('notes', 'fetch 실패', err);
     } finally {
       setLoading(false);
     }

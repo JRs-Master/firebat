@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
+import { apiDelete } from '../../../lib/api-fetch';
 
 export interface TreeNode {
   name: string;
@@ -53,8 +54,10 @@ const TreeNodeComponent = ({ node, depth, onRefresh, onEdit }: NodeProps) => {
     if (!await confirmDialog({ title: '삭제', message: `${label}을(를) 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`, danger: true, okLabel: '삭제' })) return;
     setDeleting(true);
     try {
-      const res = await fetch(`/api/fs/delete?path=${encodeURIComponent(node.path)}`, { method: 'DELETE' });
-      const data = await res.json();
+      const data = await apiDelete<{ success: boolean; error?: string }>(
+        `/api/fs/delete?path=${encodeURIComponent(node.path)}`,
+        { category: 'fs' },
+      );
       if (data.success) onRefresh?.();
       else await alertDialog({ title: '삭제 실패', message: data.error || '알 수 없는 오류', danger: true });
     } catch (err: any) {

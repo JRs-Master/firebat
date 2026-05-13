@@ -5,6 +5,7 @@ import { Loader2, RefreshCw, X } from 'lucide-react';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog } from './Dialog';
 import { logger } from '../../../lib/util/logger';
+import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
 
 /**
  * 텔레그램 양방향 봇 webhook 등록 섹션 — SystemModuleSettings 의 telegram 모듈 페이지에서만 노출.
@@ -31,8 +32,14 @@ export function TelegramWebhookSection() {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/telegram/setup');
-      const data = await res.json();
+      const data = await apiGet<{
+        success: boolean;
+        active: boolean;
+        url?: string;
+        configured: boolean;
+        ownerCount: number;
+        error?: string;
+      }>('/api/telegram/setup', { category: 'telegram' });
       if (data.success) {
         setStatus({
           active: data.active,
@@ -41,7 +48,6 @@ export function TelegramWebhookSection() {
           ownerCount: data.ownerCount,
           error: data.error,
         });
-        // 처음 로드 시 도메인 자동 추정 — 현재 호스트 기반
         if (typeof window !== 'undefined' && !domain) {
           setDomain(`${window.location.protocol}//${window.location.host}`);
         }
@@ -56,12 +62,11 @@ export function TelegramWebhookSection() {
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch('/api/telegram/setup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ domain: domain.trim() }),
-      });
-      const data = await res.json();
+      const data = await apiPost<{ success: boolean; webhookUrl?: string; error?: string }>(
+        '/api/telegram/setup',
+        { domain: domain.trim() },
+        { category: 'telegram' },
+      );
       if (data.success) {
         setMessage({ kind: 'ok', text: `등록 완료 — ${data.webhookUrl}` });
         await refresh();
@@ -80,8 +85,10 @@ export function TelegramWebhookSection() {
     setBusy(true);
     setMessage(null);
     try {
-      const res = await fetch('/api/telegram/setup', { method: 'DELETE' });
-      const data = await res.json();
+      const data = await apiDelete<{ success: boolean; error?: string }>(
+        '/api/telegram/setup',
+        { category: 'telegram' },
+      );
       if (data.success) {
         setMessage({ kind: 'ok', text: '해제 완료' });
         await refresh();
