@@ -18,6 +18,7 @@ import { rowActionsClass } from '../utils/row-actions';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
 import { TIME } from '../../../lib/util/time';
+import { findModuleEntryWithFallback } from '../../../lib/util/module';
 
 interface Project { name: string; paths: string[]; pageSlugs?: string[]; visibility?: string; }
 interface PageInfo { slug: string; title: string; status: string; updatedAt: string; project?: string | null; visibility?: string; }
@@ -177,8 +178,6 @@ export function Sidebar({
   const [pwModal, setPwModal] = useState<{ type: 'page' | 'project'; target: string } | null>(null);
   const [pwInput, setPwInput] = useState('');
 
-  const ENTRY_FILES = ['main.py', 'index.js', 'index.mjs', 'main.php', 'main.sh'];
-
   const fetchProjects = useCallback(async () => {
     try {
       const data = await apiGet<{ success: boolean; projects?: Project[] }>(
@@ -202,8 +201,7 @@ export function Sidebar({
                 if (!n.isDirectory) files.push(n.name);
               }
             }
-            const entry = ENTRY_FILES.find(e => files.includes(e));
-            entries[p] = entry || files.find(f => f !== 'config.json') || 'config.json';
+            entries[p] = findModuleEntryWithFallback(files);
           } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
         }));
         setModuleEntries(entries);
