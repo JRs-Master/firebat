@@ -26,6 +26,7 @@ import {
   isValidLang,
   translate,
 } from './i18n-shared';
+import { LANG_COOKIE_MAX_AGE_SECONDS as COOKIE_MAX_AGE } from './config';
 
 // 타입 + 상수 re-export — 기존 import 호환.
 export type { Lang } from './i18n-shared';
@@ -45,9 +46,8 @@ const LangContext = createContext<LangContextValue>({
   setLang: () => {},
 });
 
-/** lang 저장소 key — localStorage / cookie 공용. cookie 는 1년 만료. */
+/** lang 저장소 key — localStorage / cookie 공용. cookie 만료 = lib/config LANG_COOKIE_MAX_AGE_SECONDS (1년). */
 const STORAGE_KEY = 'firebat_ui_lang';
-const COOKIE_MAX_AGE = 365 * 24 * 60 * 60; // 1년
 
 function writeLangCookie(lang: Lang) {
   if (typeof document === 'undefined') return;

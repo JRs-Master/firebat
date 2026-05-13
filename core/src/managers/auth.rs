@@ -43,16 +43,17 @@ fn verify_password(stored: &str, candidate: &str) -> bool {
 use crate::ports::{
     AuthSession, IAuthPort, INotifierPort, IVaultPort, NotifyLevel, SessionRole, SessionType,
 };
+use crate::utils::time::{DAY_MS, MINUTE_MS};
 use crate::vault_keys::{VK_ADMIN_ID, VK_ADMIN_PASSWORD};
 
 /// 세션 토큰 유효기간 — 24시간.
-const SESSION_TTL_MS: i64 = 24 * 60 * 60 * 1000;
+const SESSION_TTL_MS: i64 = DAY_MS;
 /// Brute force 한도 — N회 실패 시 lock.
 const LOGIN_FAIL_LIMIT: u32 = 5;
-const LOGIN_LOCK_MS: i64 = 60 * 1000;
-const LOGIN_FAIL_DECAY_MS: i64 = 10 * 60 * 1000;
+const LOGIN_LOCK_MS: i64 = MINUTE_MS;
+const LOGIN_FAIL_DECAY_MS: i64 = 10 * MINUTE_MS;
 /// `lastUsedAt` throttle — 1분 이내 재갱신 스킵 (Vault write 비용 회피).
-const LAST_USED_THROTTLE_MS: i64 = 60_000;
+const LAST_USED_THROTTLE_MS: i64 = MINUTE_MS;
 
 // admin/admin 디폴트 폴백 폐기 (2026-05-09) — 첫 부팅 setup wizard 패턴.
 // Vault / env 둘 다 미설정 = `is_admin_setup()` false → frontend `/login` 이 setup form 토글.

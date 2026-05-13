@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../lib/auth-guard';
+import { safeJsonParse } from '../../../lib/util';
 
 /**
  * /api/conversations — 관리자 대화 히스토리 CRUD (다기기 동기화)
@@ -43,10 +44,7 @@ export async function GET(req: NextRequest) {
     // proto-loader `keepCase: false` 라 camelCase (messagesJson) 만 응답. 미존재 시 빈 배열.
     const raw = res.data as Record<string, unknown> | undefined;
     const messagesJson = raw?.messagesJson as string | undefined;
-    let messages: unknown[] = [];
-    if (typeof messagesJson === 'string') {
-      try { messages = JSON.parse(messagesJson) as unknown[]; } catch { messages = []; }
-    }
+    const messages = safeJsonParse<unknown[]>(messagesJson, []);
     return NextResponse.json({
       success: true,
       conversation: normalizeTimestamps({ ...(raw ?? {}), messages }),

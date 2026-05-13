@@ -17,6 +17,7 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Activity, X } from 'lucide-react';
 import { useEvents } from '../hooks/events-manager';
+import { STALE_RUNNING_MS } from '../../../lib/config';
 
 interface JobStatus {
   id: string;
@@ -34,9 +35,8 @@ interface JobStatus {
 }
 
 const FINISHED_RETENTION_MS = 5_000;
-// running 상태에서 update 이벤트 5분 이상 안 오면 stale 로 간주 — SSE drop (모바일 백그라운드)
-// 시 'completed' 이벤트 놓쳐서 영구 running 으로 박히는 현상 방어. 로봇 사라짐 방지의 enforceInvariant 와 동일 컨셉.
-const STALE_RUNNING_MS = 5 * 60_000;
+// STALE_RUNNING_MS = 5분 (lib/config.ts). SSE drop (모바일 백그라운드) 시 'completed' 이벤트
+// 놓쳐서 영구 running 으로 박히는 현상 방어. 로봇 사라짐 방지의 enforceInvariant 와 동일 컨셉.
 
 export function ActiveJobsIndicator() {
   const [jobs, setJobs] = useState<Map<string, JobStatus>>(new Map());

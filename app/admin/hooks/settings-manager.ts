@@ -15,6 +15,7 @@
 'use client';
 
 import { useCallback, useSyncExternalStore } from 'react';
+import { safeJsonParse } from '../../../lib/util';
 
 // ── 스키마 정의 ─────────────────────────────────────────────────────────────
 // 새 설정 추가 시 이 타입에만 키 추가하면 useSetting / readSetting / writeSetting 이 자동 지원.
@@ -67,8 +68,7 @@ function deserialize<K extends keyof SettingsSchema>(key: K, raw: string): Setti
   }
   if (typeof def === 'boolean') return (raw === 'true') as unknown as SettingsSchema[K];
   if (typeof def === 'object') {
-    try { return JSON.parse(raw) as SettingsSchema[K]; }
-    catch { return def; }
+    return safeJsonParse<SettingsSchema[K]>(raw, def);
   }
   return raw as unknown as SettingsSchema[K];
 }

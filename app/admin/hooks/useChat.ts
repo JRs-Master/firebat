@@ -18,6 +18,8 @@ import { ConversationMeta } from '../components/Sidebar';
 import { chatReducer, cleanMessages, FALLBACK } from './chat-manager';
 import { useSetting } from './settings-manager';
 import { useWakeLock } from './use-wake-lock';
+import { CHAT_WATCHDOG_IDLE_MS, KEEPALIVE_BODY_LIMIT_BYTES } from '../../../lib/config';
+import { safeJsonParse } from '../../../lib/util';
 
 // SSE 이벤트 파서 — buffer에서 완성된 이벤트만 파싱, 나머지는 반환
 function parseSSE(buffer: string): { events: { event: string; data: any }[]; remaining: string } {
@@ -80,14 +82,13 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     watchdogOnFireRef.current = null;
   };
   // idle timeout — SSE 이벤트가 이 시간 동안 안 오면 죽은 연결로 간주.
-  // 이미지 생성은 20~30초/장, 3장이면 ~90초 → 여유롭게 120초.
+  // CHAT_WATCHDOG_IDLE_MS = 2분 (lib/config.ts). 이미지 생성은 20~30초/장, 3장이면 ~90초.
   // 총 응답 시간 제한이 아니라 "조용한 시간" 제한이므로 이벤트만 꾸준히 오면 계속 연장됨.
-  const WATCHDOG_IDLE_MS = 2 * 60_000;
   const resetWatchdog = () => {
     if (watchdogRef.current) clearTimeout(watchdogRef.current);
     const onFire = watchdogOnFireRef.current;
     if (!onFire) return;
-    watchdogRef.current = setTimeout(onFire, WATCHDOG_IDLE_MS);
+    watchdogRef.current = setTimeout(onFire, CHAT_WATCHDOG_IDLE_MS);
   };
 
   // ── 초기화: DB 우선 로드 (다기기 동기화 보장). 실패 시에만 localStorage 폴백 ──
@@ -138,7 +139,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       const raw = localStorage.getItem('firebat_conversations');
       if (!raw) return;
       try {
-        const convs: Conversation[] = JSON.parse(raw);
+        const convs = safeJsonParse<Conversation[]>(raw, []);
         if (convs.length === 0) return;
         setConversations(convs);
         const savedActiveId = localStorage.getItem('firebat_active_conv') ?? '';
@@ -199,7 +200,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     // **CRITICAL**: keepalive: true 는 브라우저 64KB body 한도 강제 — 초과 시 fetch 즉시 TypeError.
     // 큰 대화 (Html block 누적 시 60KB+ 흔함) 는 keepalive 끄고 일반 fetch 사용.
     // 한도 안일 때만 keepalive 적용 — 페이지 unload 시점 저장 안전망 유지.
-    const useKeepalive = body.length < 60_000;
+    const useKeepalive = body.length < KEEPALIVE_BODY_LIMIT_BYTES;
     const attempt = (retries: number): Promise<void> => fetch('/api/conversations', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body,
       ...(useKeepalive ? { keepalive: true } : {}),
@@ -756,7 +757,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     try {
       const raw = typeof window !== 'undefined' ? localStorage.getItem('firebat_conversations') : null;
       if (raw) {
-        const convs = JSON.parse(raw) as Conversation[];
+        const convs = safeJsonParse<Conversation[]>(raw, []);
         const next = convs.map(c => c.id === convId ? { ...c, messages: cleanMessages(updated), updatedAt: Date.now() } : c);
         localStorage.setItem('firebat_conversations', JSON.stringify(next));
       }
