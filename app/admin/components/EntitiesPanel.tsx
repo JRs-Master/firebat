@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Search, Plus, Trash2, X, Clock, Tag, Activity, Network } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
+import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
 
 interface Entity {
   id: number;
@@ -71,13 +72,14 @@ export function EntitiesPanel() {
   const fetchEntities = useCallback(async (q: string) => {
     setLoading(true);
     try {
-      const url = new URL('/api/entities', window.location.origin);
-      if (q.trim()) url.searchParams.set('query', q.trim());
-      url.searchParams.set('limit', '100');
-      const res = await fetch(url.toString());
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.success) setEntities(data.entities ?? []);
+      const params = new URLSearchParams();
+      if (q.trim()) params.set('query', q.trim());
+      params.set('limit', '100');
+      const data = await apiGet<{ success: boolean; entities?: Entity[] }>(
+        `/api/entities?${params.toString()}`,
+        { category: 'entities' },
+      ).catch(() => null);
+      if (data?.success) setEntities(data.entities ?? []);
     } finally {
       setLoading(false);
     }
@@ -85,9 +87,11 @@ export function EntitiesPanel() {
 
   useEffect(() => {
     fetchEntities('');
-    fetch('/api/memory/stats').then(r => r.ok ? r.json() : null).then(d => {
-      if (d?.success) setStats({ entities: d.entities, facts: d.facts, events: d.events });
-    }).catch(() => {});
+    apiGet<{ success: boolean } & MemoryStats>('/api/memory/stats', { category: 'entities' })
+      .then(d => {
+        if (d?.success) setStats({ entities: d.entities, facts: d.facts, events: d.events });
+      })
+      .catch(() => {});
   }, [fetchEntities]);
 
   // Debounced search
@@ -98,20 +102,22 @@ export function EntitiesPanel() {
 
   const fetchTimeline = async (entityId: number) => {
     if (timeline[entityId]) return;
-    const res = await fetch(`/api/entities/${entityId}/timeline?limit=50`);
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.success) {
+    const data = await apiGet<{ success: boolean; facts?: Fact[] }>(
+      `/api/entities/${entityId}/timeline?limit=50`,
+      { category: 'entities' },
+    ).catch(() => null);
+    if (data?.success) {
       setTimeline(prev => ({ ...prev, [entityId]: data.facts ?? [] }));
     }
   };
 
   const fetchEntityEvents = async (entityId: number) => {
     if (entityEvents[entityId]) return;
-    const res = await fetch(`/api/episodic?entityId=${entityId}&limit=50`);
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.success) {
+    const data = await apiGet<{ success: boolean; events?: EventItem[] }>(
+      `/api/episodic?entityId=${entityId}&limit=50`,
+      { category: 'entities' },
+    ).catch(() => null);
+    if (data?.success) {
       setEntityEvents(prev => ({ ...prev, [entityId]: data.events ?? [] }));
     }
   };
@@ -135,14 +141,16 @@ export function EntitiesPanel() {
       danger: true,
     });
     if (!ok) return;
-    const res = await fetch(`/api/entities/${entity.id}`, { method: 'DELETE' });
-    if (res.ok) {
+    try {
+      await apiDelete(`/api/entities/${entity.id}`, { category: 'entities' });
       setEntities(prev => prev.filter(e => e.id !== entity.id));
       setTimeline(prev => {
         const next = { ...prev };
         delete next[entity.id];
         return next;
       });
+    } catch {
+      // silent — UI 가 그대로 노출 (다음 fetch 에서 정정)
     }
   };
 
@@ -288,11 +296,11 @@ export function EntitiesPanel() {
                         entityId={e.id}
                         onCreated={async () => {
                           // refetch timeline + factCount
-                          const r = await fetch(`/api/entities/${e.id}/timeline?limit=50`);
-                          if (r.ok) {
-                            const d = await r.json();
-                            if (d.success) setTimeline(prev => ({ ...prev, [e.id]: d.facts ?? [] }));
-                          }
+                          const d = await apiGet<{ success: boolean; facts?: Fact[] }>(
+                            `/api/entities/${e.id}/timeline?limit=50`,
+                            { category: 'entities' },
+                          ).catch(() => null);
+                          if (d?.success) setTimeline(prev => ({ ...prev, [e.id]: d.facts ?? [] }));
                           fetchEntities(query);
                         }}
                       />
@@ -356,14 +364,15 @@ function EventsPanel() {
   const fetchEvents = useCallback(async () => {
     setLoading(true);
     try {
-      const url = new URL('/api/episodic', window.location.origin);
-      if (typeFilter.trim()) url.searchParams.set('type', typeFilter.trim());
-      if (query.trim()) url.searchParams.set('query', query.trim());
-      url.searchParams.set('limit', '100');
-      const res = await fetch(url.toString());
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.success) setEvents(data.events ?? []);
+      const params = new URLSearchParams();
+      if (typeFilter.trim()) params.set('type', typeFilter.trim());
+      if (query.trim()) params.set('query', query.trim());
+      params.set('limit', '100');
+      const data = await apiGet<{ success: boolean; events?: EventItem[] }>(
+        `/api/episodic?${params.toString()}`,
+        { category: 'entities' },
+      ).catch(() => null);
+      if (data?.success) setEvents(data.events ?? []);
     } finally {
       setLoading(false);
     }
@@ -383,8 +392,12 @@ function EventsPanel() {
       danger: true,
     });
     if (!ok) return;
-    const res = await fetch(`/api/episodic/${id}`, { method: 'DELETE' });
-    if (res.ok) setEvents(prev => prev.filter(e => e.id !== id));
+    try {
+      await apiDelete(`/api/episodic/${id}`, { category: 'entities' });
+      setEvents(prev => prev.filter(e => e.id !== id));
+    } catch {
+      // silent
+    }
   };
 
   return (
@@ -461,16 +474,16 @@ function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated
     if (!content.trim()) return;
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/entities/${entityId}/timeline`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, factType: factType.trim() || undefined }),
-      });
-      if (res.ok) {
-        setContent('');
-        setFactType('');
-        onCreated();
-      }
+      await apiPost(
+        `/api/entities/${entityId}/timeline`,
+        { content, factType: factType.trim() || undefined },
+        { category: 'entities' },
+      );
+      setContent('');
+      setFactType('');
+      onCreated();
+    } catch {
+      // silent
     } finally {
       setSubmitting(false);
     }
@@ -522,21 +535,22 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
     setSubmitting(true);
     try {
       const aliasList = aliases.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-      const res = await fetch('/api/entities', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await apiPost<{ success: boolean; error?: string }>(
+        '/api/entities',
+        {
           name: name.trim(),
           type: type.trim(),
           aliases: aliasList.length > 0 ? aliasList : undefined,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
+        },
+        { category: 'entities' },
+      );
+      if (!data.success) {
         setError(data.error || '실패');
         return;
       }
       onCreated();
+    } catch (e: any) {
+      setError(e?.message || '실패');
     } finally {
       setSubmitting(false);
     }
