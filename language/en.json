@@ -65,7 +65,12 @@
     "placeholder_image_mode": "🎨 Enter image prompt",
     "no_model_error": "⚙ Open Settings → AI tab, configure an API key or CLI authentication, then select a model.",
     "send": "Send",
-    "stop": "Stop"
+    "stop": "Stop",
+    "fallback_empty_reply": "No response received. Please try again.",
+    "fallback_invisible": "Response is empty (possibly SSE disconnect)",
+    "fallback_timeout": "Server didn't respond in 2 minutes. Possibly SSE disconnect — please retry.",
+    "fallback_network": "Lost server network connection.",
+    "fallback_aborted": "Aborted."
   },
   "settings": {
     "general": "General",

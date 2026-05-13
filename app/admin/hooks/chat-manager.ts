@@ -16,15 +16,48 @@
  */
 
 import type { Message, StepStatus, PendingAction } from '../types';
+import koMessages from '../../../language/ko.json';
+import enMessages from '../../../language/en.json';
 
-// ── Fallback 문구 — 한 곳에서만 관리 ────────────────────────────────────────
-export const FALLBACK = {
-  EMPTY_REPLY: '응답을 받지 못했습니다. 다시 시도해주세요.',
-  INVISIBLE: '응답이 비어있습니다 (SSE 연결 누락 가능성)',
-  TIMEOUT: '서버에서 2분 넘게 응답이 없습니다. SSE 연결 끊김 가능성 — 다시 시도해주세요.',
-  NETWORK: '서버 네트워크 연결이 끊어졌습니다.',
-  ABORTED: '중단되었습니다.',
+// ── Fallback i18n keys — language/*.json 단일 source (2026-05-13) ───────────
+// 사용자가 useTranslations 으로 변환 (useChat hook 안). reducer pure 영역에서는
+// 한국어 폴백 FALLBACK 객체 사용 (옛 동작 유지) — isFallbackContent 가 ko + en 양쪽 매칭.
+export const FALLBACK_I18N_KEYS = {
+  EMPTY_REPLY: 'admin_chat.fallback_empty_reply',
+  INVISIBLE: 'admin_chat.fallback_invisible',
+  TIMEOUT: 'admin_chat.fallback_timeout',
+  NETWORK: 'admin_chat.fallback_network',
+  ABORTED: 'admin_chat.fallback_aborted',
 } as const;
+
+// reducer / pure module 영역의 폴백 — t() 호출 불가. ko 기본값 박힘. isFallbackContent 가 lang 무관 매칭.
+export const FALLBACK = {
+  EMPTY_REPLY: (koMessages as any).admin_chat.fallback_empty_reply,
+  INVISIBLE: (koMessages as any).admin_chat.fallback_invisible,
+  TIMEOUT: (koMessages as any).admin_chat.fallback_timeout,
+  NETWORK: (koMessages as any).admin_chat.fallback_network,
+  ABORTED: (koMessages as any).admin_chat.fallback_aborted,
+} as const;
+
+// 비교용 — 모든 lang 의 fallback 값 합집합. 사용자가 lang 변경해도 옛 cache 메시지 식별 가능.
+const FALLBACK_VALUE_SET = (() => {
+  const set = new Set<string>();
+  const langFiles: any[] = [koMessages, enMessages];
+  const keys = ['fallback_empty_reply', 'fallback_invisible', 'fallback_timeout', 'fallback_network', 'fallback_aborted'];
+  for (const file of langFiles) {
+    const chat = file?.admin_chat;
+    if (!chat) continue;
+    for (const k of keys) {
+      if (typeof chat[k] === 'string') set.add(chat[k]);
+    }
+  }
+  return set;
+})();
+
+/** lang 무관 fallback 메시지 식별 — opt cache (옛 lang 메시지) 도 정확히 매칭. */
+export function isFallbackContent(content: unknown): boolean {
+  return typeof content === 'string' && FALLBACK_VALUE_SET.has(content);
+}
 
 // ── 상태 라벨 (thinkingText 값) — ThinkingBlock 이 sentinel 비교로 분기. 단일 source ────
 export const THINKING_STATUS = {

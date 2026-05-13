@@ -15,7 +15,8 @@
 import { useReducer, useState, useRef, useEffect, useCallback } from 'react';
 import { Message, Conversation, INIT_MESSAGE, makeConv, PendingAction } from '../types';
 import { ConversationMeta } from '../components/Sidebar';
-import { chatReducer, cleanMessages, FALLBACK } from './chat-manager';
+import { chatReducer, cleanMessages, FALLBACK_I18N_KEYS, isFallbackContent } from './chat-manager';
+import { useTranslations } from '../../../lib/i18n';
 import { useSetting } from './settings-manager';
 import { useWakeLock } from './use-wake-lock';
 import { CHAT_WATCHDOG_IDLE_MS, KEEPALIVE_BODY_LIMIT_BYTES } from '../../../lib/config';
@@ -39,6 +40,7 @@ function parseSSE(buffer: string): { events: { event: string; data: any }[]; rem
 }
 
 export function useChat(aiModel: string, onRefresh: () => void) {
+  const t = useTranslations();
   const [messages, dispatch] = useReducer(chatReducer, [INIT_MESSAGE]);
   // 최신 messages ref — queueMicrotask / async 콜백에서 stale closure 회피
   const messagesRef = useRef<Message[]>([INIT_MESSAGE]);
@@ -243,8 +245,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     const hasInflight = messagesRef.current.some(m => m.isThinking || m.executing || m.streaming);
     // 로컬 메시지에 에러·빈 응답 fallback 이 설정되어 있는지 — 있으면 DB 가 진짜 응답일 가능성 높음
     const hasFallback = messagesRef.current.some(m =>
-      m.role === 'system' && !m.isThinking && typeof m.content === 'string'
-      && (m.content === FALLBACK.EMPTY_REPLY || m.content === FALLBACK.INVISIBLE || m.content === FALLBACK.NETWORK || m.content === FALLBACK.TIMEOUT),
+      m.role === 'system' && !m.isThinking && isFallbackContent(m.content),
     );
     // 1) 대화 목록 재조회 — 타기기에서 삭제된 대화를 로컬에서도 제거
     try {
@@ -287,8 +288,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         const local = messagesRef.current.find(lm => lm.id === rm.id);
         if (!local) return false;
         const localEmpty = !local.content?.trim() && !(local.data as any)?.blocks?.length;
-        const localIsError = typeof local.content === 'string'
-          && (local.content === FALLBACK.EMPTY_REPLY || local.content === FALLBACK.INVISIBLE || local.content === FALLBACK.NETWORK || local.content === FALLBACK.TIMEOUT);
+        const localIsError = isFallbackContent(local.content);
         const localInflight = local.isThinking || local.executing || local.streaming;
         const remoteHasContent = (typeof rm.content === 'string' && rm.content.trim().length > 0) || ((rm.data as any)?.blocks?.length ?? 0) > 0;
         return (localEmpty || localIsError || localInflight) && remoteHasContent;
@@ -345,9 +345,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   // race: SSE 60초 timeout 직후 백엔드 67초에 DB write → visibilitychange 한 번만 발화 시 놓침.
   // 5초 간격으로 3분간 refreshConversations 호출 → DB 에 응답 들어오면 force LOAD 자동.
   const fallbackFingerprint = messages
-    .filter(m => m.role === 'system' && !m.isThinking && typeof m.content === 'string'
-      && (m.content === FALLBACK.EMPTY_REPLY || m.content === FALLBACK.INVISIBLE
-          || m.content === FALLBACK.NETWORK || m.content === FALLBACK.TIMEOUT))
+    .filter(m => m.role === 'system' && !m.isThinking && isFallbackContent(m.content))
     .map(m => m.id).join(',');
   useEffect(() => {
     if (!activeConvId || !fallbackFingerprint) return;
@@ -676,7 +674,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
             const fullReply: string = ev.data.reply
               || (ev.data.error ? ''
                 : hasAnyOutput ? '실행이 완료되었습니다.'
-                : FALLBACK.EMPTY_REPLY);
+                : t(FALLBACK_I18N_KEYS.EMPTY_REPLY));
             const shouldAnimate = !!fullReply && !ev.data.error;
             const lastTextIdx = hasBlocks ? (() => {
               for (let i = blocksData!.length - 1; i >= 0; i--) if (blocksData![i].type === 'text') return i;
