@@ -256,9 +256,26 @@ impl ConfigDrivenAdapter {
 mod tests {
     use super::*;
     use crate::adapters::vault::SqliteVaultAdapter;
+    use crate::llm::registry_loader;
+    use std::sync::Once;
     use tempfile::tempdir;
 
+    static INIT_REGISTRY: Once = Once::new();
+
+    /// 테스트 setup — LLM registry 1회 초기화. Phase 5 (commit 5aed3a1) 이후 builtin_models 가
+    /// OnceLock 폴백 (빈 list) 라 테스트에서 직접 init 해야 모델 검색 가능.
+    /// CARGO_MANIFEST_DIR = infra crate 경로 → data/llm-models.json absolute path 박음.
+    fn ensure_registry() {
+        INIT_REGISTRY.call_once(|| {
+            let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("data/llm-models.json");
+            std::env::set_var("FIREBAT_LLM_MODELS_PATH", path);
+            registry_loader::init_from_file();
+        });
+    }
+
     fn vault() -> (Arc<dyn IVaultPort>, tempfile::TempDir) {
+        ensure_registry();
         let dir = tempdir().unwrap();
         let v: Arc<dyn IVaultPort> =
             Arc::new(SqliteVaultAdapter::new(dir.path().join("vault.db")).unwrap());
