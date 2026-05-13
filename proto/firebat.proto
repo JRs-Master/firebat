@@ -1414,6 +1414,12 @@ message AvailableAiModelPb {
   string format = 4;         // "anthropic-messages" | "openai-responses" | "gemini-native" | "vertex-gemini" | "cli-claude-code" | "cli-codex" | "cli-gemini"
   // thinking / reasoning 모드 — 미지원 모델은 미설정.
   ThinkingConfigPb thinking = 5;
+  // 실행 모드 — "api" (pay-per-token) 또는 "cli" (구독 기반).
+  string exec_mode = 6;
+  // CLI provider sub-category — "claude" / "codex" / "gemini". API 모델은 빈 string.
+  string cli_provider = 7;
+  // UI 분류 키 — "cli-claude" / "vertex-google" / "api-openai" 등.
+  string category = 8;
 }
 
 /** 모델별 thinking 모드 + 허용 레벨. */

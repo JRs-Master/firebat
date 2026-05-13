@@ -63,14 +63,27 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // api 모드: 키 기반, pay-per-token (기존)
   // cli 모드: 구독 기반, 자체 인증 (월정액 Claude Pro/Max, ChatGPT Plus, Gemini Advanced 등)
   type CliProvider = 'claude' | 'codex' | 'gemini';
-  const inferCliProvider = (model: string): CliProvider => {
-    if (model.startsWith('cli-claude-code')) return 'claude';
-    if (model.startsWith('cli-codex')) return 'codex';
-    if (model.startsWith('cli-gemini')) return 'gemini';
-    return 'claude';
+  // 모델 분류 — JSON registry (infra/data/llm-models.json) 단일 source. entry 의 execMode/cliProvider/category 직접 read.
+  // 옛 prefix 분기 (model.startsWith('cli-') 등) 폐기 (2026-05-13).
+  // useAiModels React Query 첫 마운트 시점 = entry 미준비 → prefix 폴백 (safety, entry 준비 후 useEffect 으로 sync).
+  const inferModeProviderFromEntry = (entry: typeof aiModelsList[number]): { execMode: 'api' | 'cli'; mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic'; cliProvider: CliProvider } => {
+    if (entry.execMode === 'cli') {
+      return { execMode: 'cli', mode: 'general', provider: 'anthropic', cliProvider: (entry.cliProvider ?? 'claude') };
+    }
+    if (entry.category === 'vertex-google') return { execMode: 'api', mode: 'vertex', provider: 'google', cliProvider: 'claude' };
+    if (entry.category === 'api-openai') return { execMode: 'api', mode: 'general', provider: 'openai', cliProvider: 'claude' };
+    if (entry.category === 'api-anthropic') return { execMode: 'api', mode: 'general', provider: 'anthropic', cliProvider: 'claude' };
+    if (entry.category === 'api-google') return { execMode: 'api', mode: 'general', provider: 'google', cliProvider: 'claude' };
+    return { execMode: 'api', mode: 'general', provider: 'openai', cliProvider: 'claude' };
   };
+  // 폴백 — useAiModels 첫 마운트 시 entry 미준비. 옛 prefix 분기 동작 (안전망).
   const inferModeProvider = (model: string): { execMode: 'api' | 'cli'; mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic'; cliProvider: CliProvider } => {
-    if (model.startsWith('cli-')) return { execMode: 'cli', mode: 'general', provider: 'anthropic', cliProvider: inferCliProvider(model) };
+    const entry = aiModelsList.find(m => m.value === model);
+    if (entry) return inferModeProviderFromEntry(entry);
+    // entry 미준비 폴백 — id prefix 로 추정. entry 준비 후 useEffect 가 sync.
+    if (model.startsWith('cli-claude-code')) return { execMode: 'cli', mode: 'general', provider: 'anthropic', cliProvider: 'claude' };
+    if (model.startsWith('cli-codex')) return { execMode: 'cli', mode: 'general', provider: 'anthropic', cliProvider: 'codex' };
+    if (model.startsWith('cli-gemini')) return { execMode: 'cli', mode: 'general', provider: 'anthropic', cliProvider: 'gemini' };
     if (model.startsWith('vertex-')) return { execMode: 'api', mode: 'vertex', provider: 'google', cliProvider: 'claude' };
     if (model.startsWith('gpt-')) return { execMode: 'api', mode: 'general', provider: 'openai', cliProvider: 'claude' };
     if (model.startsWith('claude-')) return { execMode: 'api', mode: 'general', provider: 'anthropic', cliProvider: 'claude' };
@@ -84,8 +97,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [cliProvider, setCliProvider] = useState<CliProvider>(_initMp.cliProvider);
 
   /** 카테고리별 마지막 선택 모델 — 공급자/모드 전환 시 첫 모델(auto) 대신 직전 선택 복원.
-   *  카테고리 키: cli-claude / cli-codex / cli-gemini / vertex-google / api-openai / api-google / api-anthropic */
+   *  카테고리 키 = JSON registry entry.category 직접 read. 폴백 = 옛 prefix 분기 (entry 미준비 시점).
+   *  카테고리: cli-claude / cli-codex / cli-gemini / vertex-google / api-openai / api-google / api-anthropic */
   const categoryOf = (model: string): string => {
+    const entry = aiModelsList.find(m => m.value === model);
+    if (entry?.category) return entry.category;
+    // entry 미준비 폴백
     if (model.startsWith('cli-claude-code')) return 'cli-claude';
     if (model.startsWith('cli-codex')) return 'cli-codex';
     if (model.startsWith('cli-gemini')) return 'cli-gemini';

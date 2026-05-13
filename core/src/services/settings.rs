@@ -234,6 +234,9 @@ impl SettingsService for SettingsServiceImpl {
                         })
                         .collect(),
                 }),
+                exec_mode: m.exec_mode,
+                cli_provider: m.cli_provider.unwrap_or_default(),
+                category: m.category,
             })
             .collect::<Vec<_>>();
         Ok(Response::new(AvailableAiModelListPb { models }))

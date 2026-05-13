@@ -46,6 +46,23 @@ pub struct LlmModelConfig {
     /// filterThinkingLevels 폐기 → JSON 단일 source. 새 모델 / 레벨 변경 시 JSON 수정만.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking: Option<ThinkingConfig>,
+
+    /// 실행 모드 — "api" (pay-per-token) 또는 "cli" (구독 기반, 자체 인증).
+    /// frontend SettingsModal 의 옛 prefix 분기 (`startsWith('cli-')` 등) 폐기 → entry lookup.
+    /// 2026-05-13 확장.
+    #[serde(default, rename = "execMode")]
+    pub exec_mode: String,
+
+    /// CLI 모델의 provider sub-category — "claude" / "codex" / "gemini". API 모델은 omit.
+    /// frontend 의 inferCliProvider 옛 prefix 분기 폐기 → entry lookup.
+    #[serde(default, rename = "cliProvider", skip_serializing_if = "Option::is_none")]
+    pub cli_provider: Option<String>,
+
+    /// UI 분류 키 — "cli-claude" / "cli-codex" / "cli-gemini" / "vertex-google" / "api-openai" /
+    /// "api-google" / "api-anthropic". `firebat_last_model_by_category` Vault key 분류.
+    /// frontend 의 categoryOf 옛 prefix 분기 폐기 → entry lookup.
+    #[serde(default)]
+    pub category: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -125,6 +142,9 @@ impl LlmModelConfig {
             extra_headers: Default::default(),
             pricing: None,
             thinking: None,
+            exec_mode: "api".to_string(),
+            cli_provider: None,
+            category: String::new(),
         }
     }
 }
@@ -156,6 +176,9 @@ fn anthropic_api(id: &str, name: &str, input_price: f64, output_price: f64) -> L
             cached_input: input_price * 0.1,
         }),
         thinking: None,
+        exec_mode: "api".to_string(),
+        cli_provider: None,
+        category: "api-anthropic".to_string(),
     }
 }
 
@@ -307,6 +330,9 @@ impl Default for LlmModelConfig {
             extra_headers: Default::default(),
             pricing: None,
             thinking: None,
+            exec_mode: "api".to_string(),
+            cli_provider: None,
+            category: String::new(),
         }
     }
 }

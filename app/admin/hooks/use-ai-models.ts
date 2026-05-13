@@ -34,6 +34,12 @@ export type AiModelEntry = {
   label: string;
   /** 미지원 모델은 undefined. */
   thinking?: AiModelThinking;
+  /** 실행 모드 — "api" (pay-per-token) 또는 "cli" (구독). 옛 frontend prefix 분기 폐기 (2026-05-13). */
+  execMode: 'api' | 'cli';
+  /** CLI provider sub-category. API 모델은 undefined. */
+  cliProvider?: 'claude' | 'codex' | 'gemini';
+  /** UI 분류 키 — "cli-claude" / "vertex-google" / "api-openai" 등. firebat_last_model_by_category 분류. */
+  category: string;
 };
 
 type SettingsAiModelsPayload = {
@@ -41,6 +47,9 @@ type SettingsAiModelsPayload = {
     id: string;
     displayName?: string;
     thinking?: AiModelThinking;
+    execMode?: string;
+    cliProvider?: string;
+    category?: string;
   }>;
 };
 
@@ -52,6 +61,9 @@ async function fetchAiModels(): Promise<AiModelEntry[]> {
   return data.aiModels.map((m) => ({
     value: m.id,
     label: m.displayName || m.id,
+    execMode: (m.execMode === 'cli' ? 'cli' : 'api') as 'api' | 'cli',
+    category: m.category ?? '',
+    ...(m.cliProvider ? { cliProvider: m.cliProvider as 'claude' | 'codex' | 'gemini' } : {}),
     ...(m.thinking ? { thinking: m.thinking } : {}),
   }));
 }
