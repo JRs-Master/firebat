@@ -11,12 +11,11 @@
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
 use crate::managers::ai::component_registry::{components, ComponentDef};
-use crate::ports::{IEmbedderPort, InfraResult};
+use crate::ports::{IEmbedderCachePort, IEmbedderPort, InfraResult};
 
 /// 옛 TS EMBED_VERSION 1:1. 모델 교체 시 값 변경 → hash 불일치로 재임베딩 trigger.
 const EMBED_VERSION: &str = "e5-small-v1";
@@ -41,10 +40,7 @@ pub struct ComponentMatch {
 /// 캐시된 vector — name → embedding (한번 빌드 후 process 메모리에 영속).
 static VECTOR_CACHE: OnceCell<HashMap<String, Vec<f32>>> = OnceCell::const_new();
 
-fn cache_file_path() -> PathBuf {
-    let dir = std::env::var("FIREBAT_DATA_DIR").unwrap_or_else(|_| "data".to_string());
-    PathBuf::from(dir).join("component-embeddings.json")
-}
+const CACHE_FILENAME: &str = "component-embeddings.json";
 
 fn sha1_hash(s: &str) -> String {
     let mut hasher = Sha1::new();
@@ -52,20 +48,16 @@ fn sha1_hash(s: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-fn load_disk_cache() -> HashMap<String, DiskCacheEntry> {
-    match std::fs::read_to_string(cache_file_path()) {
-        Ok(raw) => serde_json::from_str(&raw).unwrap_or_default(),
-        Err(_) => HashMap::new(),
+fn load_disk_cache(cache_port: &dyn IEmbedderCachePort) -> HashMap<String, DiskCacheEntry> {
+    match cache_port.load(CACHE_FILENAME) {
+        Some(raw) => serde_json::from_str(&raw).unwrap_or_default(),
+        None => HashMap::new(),
     }
 }
 
-fn save_disk_cache(cache: &HashMap<String, DiskCacheEntry>) {
-    let path = cache_file_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    if let Ok(json) = serde_json::to_string(&cache) {
-        let _ = std::fs::write(&path, json);
+fn save_disk_cache(cache_port: &dyn IEmbedderCachePort, cache: &HashMap<String, DiskCacheEntry>) {
+    if let Ok(json) = serde_json::to_string(cache) {
+        cache_port.save(CACHE_FILENAME, &json);
     }
 }
 
@@ -90,8 +82,9 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
 /// Index 빌드 — 디스크 캐시 reuse + 변경된 컴포넌트만 재임베딩. 옛 TS ensureIndex 1:1.
 async fn ensure_index(
     embedder: &dyn IEmbedderPort,
+    cache_port: &dyn IEmbedderCachePort,
 ) -> InfraResult<HashMap<String, Vec<f32>>> {
-    let disk = load_disk_cache();
+    let disk = load_disk_cache(cache_port);
     let mut result: HashMap<String, Vec<f32>> = HashMap::new();
     let mut fresh: HashMap<String, DiskCacheEntry> = HashMap::new();
     let mut reused = 0usize;
@@ -129,7 +122,7 @@ async fn ensure_index(
             }
         }
     }
-    save_disk_cache(&fresh);
+    save_disk_cache(cache_port, &fresh);
     eprintln!(
         "[ComponentSearch] 인덱스 빌드: {}개 (재사용 {}, 임베딩 {})",
         components().len(),
@@ -151,6 +144,7 @@ pub struct ComponentSearchOpts {
 /// 26개 모두 score 매기고 sort, top-K (default 5) 반환.
 pub async fn query(
     embedder: &dyn IEmbedderPort,
+    cache_port: &dyn IEmbedderCachePort,
     user_query: &str,
     opts: ComponentSearchOpts,
 ) -> InfraResult<Vec<ComponentMatch>> {
@@ -160,7 +154,7 @@ pub async fn query(
     let limit = opts.limit.unwrap_or(5);
 
     let vectors = VECTOR_CACHE
-        .get_or_try_init(|| async { ensure_index(embedder).await })
+        .get_or_try_init(|| async { ensure_index(embedder, cache_port).await })
         .await?;
 
     let q = embedder.embed_query(user_query).await?;
@@ -192,13 +186,15 @@ pub fn invalidate() {
 /// builder 형태도 제공.
 pub struct ComponentSearchIndex {
     embedder: Arc<dyn IEmbedderPort>,
+    cache_port: Arc<dyn IEmbedderCachePort>,
     vectors: tokio::sync::OnceCell<HashMap<String, Vec<f32>>>,
 }
 
 impl ComponentSearchIndex {
-    pub fn new(embedder: Arc<dyn IEmbedderPort>) -> Self {
+    pub fn new(embedder: Arc<dyn IEmbedderPort>, cache_port: Arc<dyn IEmbedderCachePort>) -> Self {
         Self {
             embedder,
+            cache_port,
             vectors: tokio::sync::OnceCell::new(),
         }
     }
@@ -214,7 +210,7 @@ impl ComponentSearchIndex {
         let limit = opts.limit.unwrap_or(5);
         let vectors = self
             .vectors
-            .get_or_try_init(|| async { ensure_index(self.embedder.as_ref()).await })
+            .get_or_try_init(|| async { ensure_index(self.embedder.as_ref(), self.cache_port.as_ref()).await })
             .await?;
         let q = self.embedder.embed_query(user_query).await?;
         let mut scored: Vec<ComponentMatch> = Vec::with_capacity(components().len());

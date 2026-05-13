@@ -378,11 +378,14 @@ async fn search_components_handler_returns_top_k() {
         std::env::set_var("FIREBAT_DATA_DIR", dir.path());
     }
     let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
+    let cache_port: Arc<dyn firebat_core::ports::IEmbedderCachePort> = Arc::new(
+        firebat_infra::adapters::embedder_cache::FileEmbedderCacheAdapter::new(dir.path()),
+    );
 
     let llm: Arc<dyn ILlmPort> = Arc::new(StubLlmAdapter::new("stub"));
     let tools = Arc::new(ToolManager::new());
     let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
-    let mgr = AiManager::new(llm, tools.clone(), log).register_search_components_tool(embedder);
+    let mgr = AiManager::new(llm, tools.clone(), log).register_search_components_tool(embedder, cache_port);
 
     // 도구 등록 됐는지 확인
     assert!(tools.handler_count() >= 1);

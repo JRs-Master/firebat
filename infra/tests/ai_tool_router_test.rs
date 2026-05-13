@@ -143,7 +143,10 @@ async fn select_tools_falls_back_when_toggle_off() {
     }
     let (r, _vault, _vault_dir) = make_router_with_vault();
     let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
-    let r = r.with_embedder(embedder);
+    let cache_port: Arc<dyn firebat_core::ports::IEmbedderCachePort> = Arc::new(
+        firebat_infra::adapters::embedder_cache::FileEmbedderCacheAdapter::new(dir.path()),
+    );
+    let r = r.with_embedder(embedder, cache_port);
     // 토글 미설정 → fallback (모든 도구)
     let tools = vec![tool("sysmod_kiwoom"), tool("save_page"), tool("image_gen")];
     let result = r
@@ -169,7 +172,10 @@ async fn select_tools_falls_back_for_non_gemini() {
     let (r, vault, _vault_dir) = make_router_with_vault();
     vault.set_secret(VK_SYSTEM_AI_ROUTER_ENABLED, "true");
     let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
-    let r = r.with_embedder(embedder);
+    let cache_port: Arc<dyn firebat_core::ports::IEmbedderCachePort> = Arc::new(
+        firebat_infra::adapters::embedder_cache::FileEmbedderCacheAdapter::new(dir.path()),
+    );
+    let r = r.with_embedder(embedder, cache_port);
     let tools = vec![tool("save_page"), tool("image_gen")];
     let result = r
         .select_tools(

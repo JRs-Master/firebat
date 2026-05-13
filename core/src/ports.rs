@@ -1198,6 +1198,29 @@ pub struct McpToolInfo {
     pub input_schema: Option<serde_json::Value>,
 }
 
+/// IEmbedderCachePort — embedding vector disk 영속화.
+///
+/// 옛 component_search_index / tool_search_index 가 std::fs / std::env 직접 호출하던 영역을
+/// Hexagonal 정공 박힌 port 로 추상화 (2026-05-13).
+///
+/// Core 가 fs / env 호출 0 — `infra::adapters::embedder_cache::FileEmbedderCacheAdapter` 가 file I/O 담당.
+/// cache_name = "component-embeddings.json" / "tool-embeddings.json" 등 파일명. 디렉토리는 adapter resolve.
+pub trait IEmbedderCachePort: Send + Sync {
+    /// 캐시 read — 미존재 또는 read 실패 시 None.
+    fn load(&self, cache_name: &str) -> Option<String>;
+    /// 캐시 write — 디렉토리 자동 생성. 실패는 silent (운영 cache 라 panic 회피).
+    fn save(&self, cache_name: &str, json: &str);
+}
+
+/// IConfigPort — env / config 영역 추상화.
+///
+/// 옛 std::env::var 직접 호출하던 영역 (FIREBAT_MCP_BASE_URL 등) Hexagonal 정공 박힘 (2026-05-13).
+/// adapter = `infra::adapters::config::EnvConfigAdapter` — std::env::var 래핑.
+pub trait IConfigPort: Send + Sync {
+    /// config key (예: "FIREBAT_MCP_BASE_URL") → 값 또는 None.
+    fn get(&self, key: &str) -> Option<String>;
+}
+
 /// IPromptLoaderPort — 시스템 prompt 외부 .md 파일 매 호출 시 read.
 ///
 /// **운영 의도** (2026-05-13): 옛 `include_str!` 으로 컴파일 시점 박혀있던 prompt 를 runtime 외부화.

@@ -80,9 +80,13 @@ impl ToolRouter {
     }
 
     /// ToolSearchIndex 설정한 채로 부팅 — Gemini API 도구 선별 (2-stage 벡터 검색) 활성.
-    /// IEmbedderPort 직접 받아 내부 ToolSearchIndex 빌드.
-    pub fn with_embedder(mut self, embedder: Arc<dyn IEmbedderPort>) -> Self {
-        self.search_index = Some(Arc::new(ToolSearchIndex::new(embedder)));
+    /// IEmbedderPort + IEmbedderCachePort 직접 받아 내부 ToolSearchIndex 빌드 (Hexagonal 정공 2026-05-13).
+    pub fn with_embedder(
+        mut self,
+        embedder: Arc<dyn IEmbedderPort>,
+        cache_port: Arc<dyn crate::ports::IEmbedderCachePort>,
+    ) -> Self {
+        self.search_index = Some(Arc::new(ToolSearchIndex::new(embedder, cache_port)));
         self
     }
 

@@ -188,10 +188,13 @@ impl AiManager {
     pub fn register_search_components_tool(
         self,
         embedder: Arc<dyn crate::ports::IEmbedderPort>,
+        cache_port: Arc<dyn crate::ports::IEmbedderCachePort>,
     ) -> Self {
         let embedder_clone = embedder.clone();
+        let cache_clone = cache_port.clone();
         let handler = crate::managers::tool::make_handler(move |args: serde_json::Value| {
             let embedder = embedder_clone.clone();
+            let cache = cache_clone.clone();
             async move {
                 let query = args
                     .get("query")
@@ -204,7 +207,7 @@ impl AiManager {
                     .map(|n| n as usize);
                 let opts = crate::managers::ai::component_search_index::ComponentSearchOpts { limit };
                 let matches =
-                    crate::managers::ai::component_search_index::query(embedder.as_ref(), &query, opts)
+                    crate::managers::ai::component_search_index::query(embedder.as_ref(), cache.as_ref(), &query, opts)
                         .await?;
                 Ok(serde_json::json!({
                     "components": matches,

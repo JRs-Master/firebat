@@ -8,8 +8,9 @@ use std::sync::{Mutex, OnceLock};
 use std::sync::Arc;
 
 use firebat_core::managers::ai::tool_search_index::{ToolSearchIndex, ToolSearchOpts, ALWAYS_INCLUDE};
-use firebat_core::ports::{IEmbedderPort, ToolDefinition};
+use firebat_core::ports::{IEmbedderCachePort, IEmbedderPort, ToolDefinition};
 use firebat_infra::adapters::embedder::stub::StubEmbedderAdapter;
+use firebat_infra::adapters::embedder_cache::FileEmbedderCacheAdapter;
 
 /// FIREBAT_DATA_DIR env var 직렬화 — 한 binary 안 모든 test 가 같은 lock 사용.
 fn env_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -42,9 +43,10 @@ fn no_capability(_: &str) -> Option<String> {
 #[tokio::test]
 async fn empty_query_returns_empty() {
     let _g = env_lock();
-    let _dir = ensure_temp_data_dir();
+    let dir = ensure_temp_data_dir();
     let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
-    let idx = ToolSearchIndex::new(embedder);
+    let cache_port: Arc<dyn IEmbedderCachePort> = Arc::new(FileEmbedderCacheAdapter::new(dir.path()));
+    let idx = ToolSearchIndex::new(embedder, cache_port);
     let tools = vec![tool("sysmod_kiwoom", "주식")];
     let result = idx
         .query("", &tools, ToolSearchOpts::default(), &no_capability)

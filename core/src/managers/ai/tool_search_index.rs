@@ -15,11 +15,10 @@
 use serde::{Deserialize, Serialize};
 use sha1::{Digest, Sha1};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::ports::{IEmbedderPort, InfraResult, ToolDefinition};
+use crate::ports::{IEmbedderCachePort, IEmbedderPort, InfraResult, ToolDefinition};
 
 const EMBED_VERSION: &str = "e5-small-v1";
 
@@ -153,10 +152,7 @@ struct DiskCacheEntry {
     vector: Vec<f32>,
 }
 
-fn cache_file_path() -> PathBuf {
-    let dir = std::env::var("FIREBAT_DATA_DIR").unwrap_or_else(|_| "data".to_string());
-    PathBuf::from(dir).join("tool-embeddings.json")
-}
+const CACHE_FILENAME: &str = "tool-embeddings.json";
 
 fn sha1_hash(s: &str) -> String {
     let mut hasher = Sha1::new();
@@ -164,20 +160,16 @@ fn sha1_hash(s: &str) -> String {
     hex::encode(hasher.finalize())
 }
 
-fn load_disk_cache() -> HashMap<String, DiskCacheEntry> {
-    match std::fs::read_to_string(cache_file_path()) {
-        Ok(raw) => serde_json::from_str(&raw).unwrap_or_default(),
-        Err(_) => HashMap::new(),
+fn load_disk_cache(cache_port: &dyn IEmbedderCachePort) -> HashMap<String, DiskCacheEntry> {
+    match cache_port.load(CACHE_FILENAME) {
+        Some(raw) => serde_json::from_str(&raw).unwrap_or_default(),
+        None => HashMap::new(),
     }
 }
 
-fn save_disk_cache(cache: &HashMap<String, DiskCacheEntry>) {
-    let path = cache_file_path();
-    if let Some(parent) = path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
+fn save_disk_cache(cache_port: &dyn IEmbedderCachePort, cache: &HashMap<String, DiskCacheEntry>) {
     if let Ok(json) = serde_json::to_string(cache) {
-        let _ = std::fs::write(&path, json);
+        cache_port.save(CACHE_FILENAME, &json);
     }
 }
 
@@ -262,6 +254,7 @@ impl Default for ToolSearchOpts {
 /// 옛 TS module-singleton 패턴 → Rust struct + Arc 로 변경 (테스트 격리 + DI 용이).
 pub struct ToolSearchIndex {
     embedder: Arc<dyn IEmbedderPort>,
+    cache_port: Arc<dyn IEmbedderCachePort>,
     /// 카테고리 vector — 부팅 1회 build, 카테고리 정의 변경 시 재임베딩.
     category_vectors: Mutex<Option<Vec<(String, Vec<f32>)>>>,
     /// 도구 vector — 도구 정의 변경 시 재임베딩 (hash 비교).
@@ -269,9 +262,10 @@ pub struct ToolSearchIndex {
 }
 
 impl ToolSearchIndex {
-    pub fn new(embedder: Arc<dyn IEmbedderPort>) -> Self {
+    pub fn new(embedder: Arc<dyn IEmbedderPort>, cache_port: Arc<dyn IEmbedderCachePort>) -> Self {
         Self {
             embedder,
+            cache_port,
             category_vectors: Mutex::new(None),
             tool_vectors: Mutex::new(HashMap::new()),
         }
@@ -279,7 +273,7 @@ impl ToolSearchIndex {
 
     /// 카테고리 vector 인덱스 빌드 — 부팅 1회. 옛 TS buildCategoryIndex 1:1.
     async fn build_category_index(&self) -> InfraResult<Vec<(String, Vec<f32>)>> {
-        let disk = load_disk_cache();
+        let disk = load_disk_cache(self.cache_port.as_ref());
         let mut result: Vec<(String, Vec<f32>)> = Vec::new();
         let mut new_cache: HashMap<String, DiskCacheEntry> = HashMap::new();
         let mut reused = 0usize;
@@ -308,7 +302,7 @@ impl ToolSearchIndex {
                 }
             }
         }
-        save_disk_cache(&new_cache);
+        save_disk_cache(self.cache_port.as_ref(), &new_cache);
         eprintln!(
             "[ToolSearch] 카테고리 인덱스 빌드: {}개 (재사용 {}, 임베딩 {})",
             CATEGORIES.len(),
@@ -325,7 +319,7 @@ impl ToolSearchIndex {
         capability_of: &dyn Fn(&str) -> Option<String>,
     ) -> HashMap<String, (String, Vec<f32>)> {
         let mut tool_vecs = self.tool_vectors.lock().await;
-        let mut disk_cache = load_disk_cache();
+        let mut disk_cache = load_disk_cache(self.cache_port.as_ref());
         let mut reused = 0usize;
         let mut embedded = 0usize;
 
@@ -383,7 +377,7 @@ impl ToolSearchIndex {
         }
 
         if embedded > 0 {
-            save_disk_cache(&disk_cache);
+            save_disk_cache(self.cache_port.as_ref(), &disk_cache);
             eprintln!(
                 "[ToolSearch] 도구 인덱스 업데이트: 재사용 {}, 임베딩 {}",
                 reused, embedded
