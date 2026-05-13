@@ -16,7 +16,7 @@ use crate::proto::{
     LastModelByCategoryPb, StringRequest,
 };
 use crate::vault_keys::{
-    AI_ASSISTANT_DEFAULT_MODEL, DEFAULT_LLM_MODEL_FALLBACK, DEFAULT_THINKING_LEVEL,
+    DEFAULT_LLM_MODEL_FALLBACK, DEFAULT_THINKING_LEVEL,
     USER_PROMPT_MAX_CHARS, VK_LLM_ANTHROPIC_CACHE, VK_SYSTEM_AI_ASSISTANT_MODEL,
     VK_SYSTEM_AI_MODEL, VK_SYSTEM_AI_THINKING_LEVEL, VK_SYSTEM_LAST_MODEL_BY_CATEGORY,
     VK_SYSTEM_TIMEZONE, VK_SYSTEM_USER_PROMPT,
@@ -169,7 +169,10 @@ impl SettingsService for SettingsServiceImpl {
         _req: Request<Empty>,
     ) -> Result<Response<StringRequest>, TonicStatus> {
         Ok(Response::new(StringRequest {
-            value: self.get_or_default(VK_SYSTEM_AI_ASSISTANT_MODEL, AI_ASSISTANT_DEFAULT_MODEL),
+            value: self.get_or_default(
+                VK_SYSTEM_AI_ASSISTANT_MODEL,
+                crate::llm::registry::assistant_default_model(),
+            ),
         }))
     }
 
@@ -187,7 +190,7 @@ impl SettingsService for SettingsServiceImpl {
         _req: Request<Empty>,
     ) -> Result<Response<StringRequest>, TonicStatus> {
         Ok(Response::new(StringRequest {
-            value: AI_ASSISTANT_DEFAULT_MODEL.to_string(),
+            value: crate::llm::registry::assistant_default_model().to_string(),
         }))
     }
 

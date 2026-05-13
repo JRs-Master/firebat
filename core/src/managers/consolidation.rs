@@ -21,11 +21,9 @@ use crate::ports::{
     SaveFactInput,
 };
 
-/// AI Assistant model 의 default — `vault_keys::AI_ASSISTANT_DEFAULT_MODEL` single source 사용.
-/// 옛 자체 설정된 const 폐기 (2026-05-06 audit cleanup A3).
-use crate::vault_keys::{
-    AI_ASSISTANT_DEFAULT_MODEL, VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_AI_ROUTER_ENABLED,
-};
+/// AI Assistant model 의 default — `llm::registry::assistant_default_model()` (JSON 산출).
+/// 옛 `vault_keys::AI_ASSISTANT_DEFAULT_MODEL` const → JSON registry 로 이동 (Phase 5, 2026-05-13).
+use crate::vault_keys::{VK_SYSTEM_AI_ASSISTANT_MODEL, VK_SYSTEM_AI_ROUTER_ENABLED};
 
 /// 옛 TS EXTRACTION_PROMPT Rust port — 대화 → entity / fact / event JSON 추출 instruction.
 const EXTRACTION_PROMPT: &str = r#"당신은 대화 메모리 정리 도우미입니다. 다음 대화를 읽고 추적할 가치 있는 정보를 JSON 으로 추출하세요.
@@ -308,7 +306,9 @@ impl ConsolidationManager {
         let full_prompt = format!("{}\n{}", EXTRACTION_PROMPT, transcript);
         let opts = LlmCallOpts {
             model: Some(
-                resolved_model.unwrap_or_else(|| AI_ASSISTANT_DEFAULT_MODEL.to_string()),
+                resolved_model.unwrap_or_else(|| {
+                    crate::llm::registry::assistant_default_model().to_string()
+                }),
             ),
             thinking_level: Some("minimal".to_string()),
             ..Default::default()

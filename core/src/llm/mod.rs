@@ -4,3 +4,4 @@
 //! UI 노출용으로 직접 사용. 실제 API 호출 (format handlers) 는 infra crate 에 남음.
 
 pub mod config;
+pub mod registry;

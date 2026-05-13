@@ -34,7 +34,8 @@ mod tests {
 
     #[test]
     fn version_returns_pkg_version() {
-        assert_eq!(version(), "0.0.1");
+        // Cargo.toml 의 [package].version 자동 추적 (env!("CARGO_PKG_VERSION")).
+        assert_eq!(version(), env!("CARGO_PKG_VERSION"));
     }
 
     #[test]

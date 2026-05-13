@@ -12,10 +12,9 @@ pub const VK_SYSTEM_USER_PROMPT: &str = "system:user-prompt";
 pub const VK_SYSTEM_AI_ASSISTANT_MODEL: &str = "system:ai-router:model";
 /// AI Assistant 토글 — Vault 의 `'true'` / `'1'` 만 ON. ToolRouter 가 이 키 검사.
 pub const VK_SYSTEM_AI_ROUTER_ENABLED: &str = "system:ai-router:enabled";
-/// AI Assistant default 모델 — Vault 미설정 시 폴백. 사용자 결정 (2026-05-09):
-/// Gemini 3.1 Flash Lite (저렴·빠름) — Tool Router / search_history 보조용으로 적합.
-/// `LlmModelConfig.builtin_models` 에 등록되어야 함 (config.rs).
-pub const AI_ASSISTANT_DEFAULT_MODEL: &str = "gemini-3.1-flash-lite";
+// Phase 5 정공 (2026-05-13) — AI_ASSISTANT_DEFAULT_MODEL const 폐기.
+// JSON 산출물 (`infra/data/llm-models.json` 의 `defaultAssistantModel`) 가 single source.
+// 호출: `crate::llm::registry::assistant_default_model()`.
 pub const VK_LLM_ANTHROPIC_CACHE: &str = "system:llm:anthropic-cache";
 /// 카테고리별 마지막 선택 모델 — 실 Vault 저장 키 `system:llm:last-by-category`.
 pub const VK_SYSTEM_LAST_MODEL_BY_CATEGORY: &str = "system:llm:last-by-category";

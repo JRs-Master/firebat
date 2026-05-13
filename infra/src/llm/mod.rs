@@ -12,3 +12,4 @@
 // infra 는 format handlers + ConfigDrivenAdapter 만 보유.
 pub mod adapter;
 pub mod formats;
+pub mod registry_loader;

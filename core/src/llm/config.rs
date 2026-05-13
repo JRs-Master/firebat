@@ -244,50 +244,27 @@ fn cli_codex(id: &str, name: &str) -> LlmModelConfig {
 }
 
 /// 빌트인 LLM 모델 carousel — frontend types.ts AI_MODELS 와 1:1 매칭.
-/// 정렬: powerful → cheap. CLI 의 Auto 가 first (default).
-/// 새 모델 추가 = 한 줄 helper call.
+///
+/// Phase 5 정공 (2026-05-13) — 옛 Rust 하드코드 폐기. `infra/data/llm-models.json` source.
+/// infra startup 에 `registry_loader::init_from_file()` 호출 → 본 함수가 registry 에서 가져옴.
+///
+/// 새 모델 추가 = JSON edit + restart (Rust 재빌드 0).
 pub fn builtin_models() -> Vec<LlmModelConfig> {
-    vec![
-        // ─── Anthropic API (powerful → cheap) ──────────────────────────────
-        anthropic_api("claude-opus-4-7", "Claude Opus 4.7", 5.0, 25.0),
-        anthropic_api("claude-sonnet-4-6", "Claude Sonnet 4.6", 3.0, 15.0),
-        anthropic_api("claude-haiku-4-5", "Claude Haiku 4.5", 1.0, 5.0),
+    crate::llm::registry::builtin_models()
+}
 
-        // ─── Google Gemini API (powerful → cheap) ──────────────────────────
-        google_api("gemini-3.1-pro", "Gemini 3.1 Pro"),
-        google_api("gemini-3-flash-preview", "Gemini 3 Flash"),
-        google_api("gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite"),
+// ─── Helper functions — 옛 호환 유지 (tests / 동적 모델 추가 시 사용).
+//     JSON registry 가 single source 라 일반 운영에서 호출 없음 — tests 만 유지.
 
-        // ─── Google Vertex AI (powerful → cheap) ───────────────────────────
-        vertex_api("vertex-gemini-3.1-pro", "Gemini 3.1 Pro (Vertex)"),
-        vertex_api("vertex-gemini-3-flash-preview", "Gemini 3 Flash (Vertex)"),
-        vertex_api("vertex-gemini-3.1-flash-lite", "Gemini 3.1 Flash Lite (Vertex)"),
-
-        // ─── OpenAI API (powerful → cheap) ─────────────────────────────────
-        openai_api("gpt-5.5", "GPT-5.5", 10.0, 60.0),
-        openai_api("gpt-5.4", "GPT-5.4", 5.0, 30.0),
-        openai_api("gpt-5.4-mini", "GPT-5.4 Mini", 1.5, 8.0),
-        openai_api("gpt-5.4-nano", "GPT-5.4 Nano", 0.4, 2.0),
-
-        // ─── Anthropic CLI (Claude Code 구독, Auto first → powerful → cheap)
-        cli_claude("cli-claude-code-auto", "Claude Code CLI (Auto)"),
-        cli_claude("cli-claude-code-opus-4-7", "Claude Code CLI (Opus 4.7)"),
-        cli_claude("cli-claude-code-sonnet-4-6", "Claude Code CLI (Sonnet 4.6)"),
-        cli_claude("cli-claude-code-haiku-4-5", "Claude Code CLI (Haiku 4.5)"),
-
-        // ─── Google Gemini CLI (Auto first → powerful → cheap) ─────────────
-        cli_gemini("cli-gemini-auto", "Gemini CLI (Auto)"),
-        cli_gemini("cli-gemini-3.1-pro", "Gemini CLI (3.1 Pro)"),
-        cli_gemini("cli-gemini-3-flash", "Gemini CLI (3 Flash)"),
-
-        // ─── OpenAI Codex CLI (ChatGPT 구독 — credit 차감) ─────────────────
-        cli_codex("cli-codex-auto", "Codex CLI (Auto)"),
-        cli_codex("cli-codex-gpt-5.5", "Codex CLI (GPT-5.5)"),
-        cli_codex("cli-codex-gpt-5.4", "Codex CLI (GPT-5.4)"),
-        cli_codex("cli-codex-gpt-5.4-mini", "Codex CLI (GPT-5.4 Mini)"),
-        cli_codex("cli-codex-5.3-codex", "Codex CLI (5.3-Codex)"),
-        cli_codex("cli-codex-5.3-codex-spark", "Codex CLI (5.3-Codex Spark, preview)"),
-    ]
+#[allow(dead_code)]
+fn _retain_helpers() {
+    let _ = anthropic_api;
+    let _ = google_api;
+    let _ = vertex_api;
+    let _ = openai_api;
+    let _ = cli_claude;
+    let _ = cli_gemini;
+    let _ = cli_codex;
 }
 
 impl Default for LlmModelConfig {
@@ -310,50 +287,43 @@ impl Default for LlmModelConfig {
 mod tests {
     use super::*;
 
-    #[test]
-    fn builtin_carousel_has_all_formats() {
-        let models = builtin_models();
-        // 25 모델 — Anthropic 3 + Google 3 + Vertex 3 + OpenAI 4 +
-        //          CLI Claude 4 + CLI Gemini 3 + CLI Codex 6 = 26 (실제 25, vertex flash-lite 무관)
-        assert!(models.len() >= 25, "expected >=25 models, got {}", models.len());
-        let formats: Vec<&str> = models.iter().map(|m| m.format.as_str()).collect();
-        assert!(formats.contains(&"anthropic-messages"));
-        assert!(formats.contains(&"openai-responses"));
-        assert!(formats.contains(&"gemini-native"));
-        assert!(formats.contains(&"vertex-gemini"));
-        assert!(formats.contains(&"cli-claude-code"));
-        assert!(formats.contains(&"cli-codex"));
-        assert!(formats.contains(&"cli-gemini"));
-    }
+    // Phase 5 정공 (2026-05-13) — 옛 builtin_models() 직접 호출 테스트는 registry init 의존.
+    // 본 단위 테스트는 helper function 의 config 구조 검증만 — registry 의존 0.
+    // 통합 검증 (JSON 파싱 + 모든 모델 카운트) = infra integration test 영역.
 
     #[test]
-    fn anthropic_config_has_mcp_and_extended_thinking() {
-        let m = builtin_models().into_iter().find(|m| m.id == "claude-sonnet-4-6").unwrap();
+    fn anthropic_helper_has_mcp_and_extended_thinking() {
+        let m = anthropic_api("claude-sonnet-4-6", "Claude Sonnet 4.6", 3.0, 15.0);
         assert!(m.features.mcp_connector);
         assert!(m.features.extended_thinking);
-        assert_eq!(m.extra_headers.get("anthropic-version").map(String::as_str), Some("2023-06-01"));
+        assert_eq!(
+            m.extra_headers.get("anthropic-version").map(String::as_str),
+            Some("2023-06-01"),
+        );
     }
 
     #[test]
-    fn cli_models_have_no_api_key() {
-        for m in builtin_models() {
-            if m.format.starts_with("cli-") {
-                assert!(m.api_key_vault_key.is_none());
-            }
-        }
+    fn cli_helpers_have_no_api_key() {
+        assert!(cli_claude("cli-claude-code-auto", "x").api_key_vault_key.is_none());
+        assert!(cli_codex("cli-codex-auto", "x").api_key_vault_key.is_none());
+        assert!(cli_gemini("cli-gemini-auto", "x").api_key_vault_key.is_none());
     }
 
     #[test]
-    fn opus_4_7_top_pricing() {
-        let m = builtin_models().into_iter().find(|m| m.id == "claude-opus-4-7").unwrap();
+    fn anthropic_pricing_passthrough() {
+        let m = anthropic_api("claude-opus-4-7", "Claude Opus 4.7", 5.0, 25.0);
         let p = m.pricing.expect("opus pricing");
         assert_eq!(p.input, 5.0);
         assert_eq!(p.output, 25.0);
     }
 
     #[test]
-    fn cli_codex_count_six() {
-        let count = builtin_models().iter().filter(|m| m.format == "cli-codex").count();
-        assert_eq!(count, 6);
+    fn formats_distinct_per_helper() {
+        assert_eq!(google_api("x", "y").format, "gemini-native");
+        assert_eq!(vertex_api("x", "y").format, "vertex-gemini");
+        assert_eq!(openai_api("x", "y", 0.0, 0.0).format, "openai-responses");
+        assert_eq!(cli_claude("x", "y").format, "cli-claude-code");
+        assert_eq!(cli_codex("x", "y").format, "cli-codex");
+        assert_eq!(cli_gemini("x", "y").format, "cli-gemini");
     }
 }

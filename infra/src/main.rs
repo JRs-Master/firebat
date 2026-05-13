@@ -74,6 +74,10 @@ async fn main() -> Result<()> {
     init_tracing();
     tracing::info!(version = firebat_core::version(), "Firebat Core 부팅");
 
+    // Phase 5 정공 — LLM model registry JSON 로드. 옛 builtin_models() Rust 하드코드 폐기.
+    // 파일 미발견 시 stub 폴백 (panic X). FIREBAT_LLM_MODELS_PATH env 으로 위치 override.
+    firebat_infra::llm::registry_loader::init_from_file();
+
     // 환경 변수 — workspace root + listen address + vault DB path
     let workspace_root: PathBuf = std::env::var("FIREBAT_WORKSPACE_ROOT")
         .map(PathBuf::from)

@@ -101,7 +101,7 @@ impl ToolRouter {
         self.vault
             .get_secret(VK_SYSTEM_AI_ASSISTANT_MODEL)
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| crate::vault_keys::AI_ASSISTANT_DEFAULT_MODEL.to_string())
+            .unwrap_or_else(|| crate::llm::registry::assistant_default_model().to_string())
     }
 
     /// 현재 model 이 Gemini API 인지 — 도구 필터링 적용 여부.
