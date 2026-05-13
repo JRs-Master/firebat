@@ -6,7 +6,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../../../lib/auth-guard';
+import { withAuth } from '../../../../../lib/with-api-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,9 +17,7 @@ function parseId(s: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-export async function GET(req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const GET = withAuth(async (req: NextRequest, { params }: Ctx) => {
   const id = parseId((await params).id);
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
   const url = new URL(req.url);
@@ -29,15 +27,12 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   const res = await getCore().getEntityTimeline(id, { limit, orderBy });
   if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   return NextResponse.json({ success: true, facts: res.data ?? [] });
-}
+});
 
-export async function POST(req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const POST = withAuth(async (req: NextRequest, { params }: Ctx) => {
   const id = parseId((await params).id);
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
-  let body: any;
-  try { body = await req.json(); } catch { return NextResponse.json({ success: false, error: 'invalid JSON' }, { status: 400 }); }
+  const body = await req.json().catch(() => null);
   if (!body?.content) return NextResponse.json({ success: false, error: 'content 필수' }, { status: 400 });
   let occurredAtMs: number | undefined;
   if (body.occurredAt) {
@@ -54,4 +49,4 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   });
   if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   return NextResponse.json({ success: true, factId: res.data?.id });
-}
+});

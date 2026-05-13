@@ -6,7 +6,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
+import { withAuth } from '../../../../lib/with-api-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,24 +17,19 @@ function parseId(s: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-export async function GET(req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const GET = withAuth(async (_req: NextRequest, { params }: Ctx) => {
   const id = parseId((await params).id);
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
   const res = await getCore().getEntity(id);
   if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   if (!res.data) return NextResponse.json({ success: false, error: 'not found' }, { status: 404 });
   return NextResponse.json({ success: true, entity: res.data });
-}
+});
 
-export async function PATCH(req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const PATCH = withAuth(async (req: NextRequest, { params }: Ctx) => {
   const id = parseId((await params).id);
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
-  let body: any;
-  try { body = await req.json(); } catch { return NextResponse.json({ success: false, error: 'invalid JSON' }, { status: 400 }); }
+  const body = await req.json().catch(() => null);
   const patch: { name?: string; type?: string; aliases?: string[]; metadata?: Record<string, unknown> } = {};
   if (typeof body?.name === 'string') patch.name = body.name;
   if (typeof body?.type === 'string') patch.type = body.type;
@@ -43,14 +38,12 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   const res = await getCore().updateEntity(id, patch);
   if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   return NextResponse.json({ success: true });
-}
+});
 
-export async function DELETE(req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const DELETE = withAuth(async (_req: NextRequest, { params }: Ctx) => {
   const id = parseId((await params).id);
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
   const res = await getCore().deleteEntity(id);
   if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   return NextResponse.json({ success: true });
-}
+});

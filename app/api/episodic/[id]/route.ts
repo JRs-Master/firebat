@@ -6,7 +6,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
+import { withAuth } from '../../../../lib/with-api-error';
 
 export const dynamic = 'force-dynamic';
 
@@ -17,24 +17,19 @@ function parseId(s: string): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-export async function GET(req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const GET = withAuth(async (_req: NextRequest, { params }: Ctx) => {
   const id = parseId((await params).id);
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
   const res = await getCore().getEvent(id);
   if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   if (!res.data) return NextResponse.json({ success: false, error: 'not found' }, { status: 404 });
   return NextResponse.json({ success: true, event: res.data });
-}
+});
 
-export async function PATCH(req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const PATCH = withAuth(async (req: NextRequest, { params }: Ctx) => {
   const id = parseId((await params).id);
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
-  let body: any;
-  try { body = await req.json(); } catch { return NextResponse.json({ success: false, error: 'invalid JSON' }, { status: 400 }); }
+  const body = await req.json().catch(() => null);
   const patch: { type?: string; title?: string; description?: string; who?: string; context?: Record<string, unknown>; occurredAt?: number; entityIds?: number[]; ttlDays?: number } = {};
   if (typeof body?.type === 'string') patch.type = body.type;
   if (typeof body?.title === 'string') patch.title = body.title;
@@ -50,14 +45,12 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   const res = await getCore().updateEvent(id, patch);
   if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   return NextResponse.json({ success: true });
-}
+});
 
-export async function DELETE(req: NextRequest, { params }: Ctx) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const DELETE = withAuth(async (_req: NextRequest, { params }: Ctx) => {
   const id = parseId((await params).id);
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
   const res = await getCore().deleteEvent(id);
   if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
   return NextResponse.json({ success: true });
-}
+});
