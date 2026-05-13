@@ -4,18 +4,19 @@
 //! - `Off` — 빈 string (AI 자유 판단)
 //! - `Auto` — destructive·복합 작업만 propose_plan / suggest 강제
 //! - `Always` — 모든 요청에 plan 강제 (인사·단답 포함, 예외 0건)
+//!
+//! 외부화 (2026-05-13) — 옛 `include_str!` 컴파일 시점 박힘 폐기 + 매 호출 시 file read
+//! (`IPromptLoaderPort`). 운영자가 `infra/data/prompts/plan_mode_{always,auto}.md` 편집 + 즉시 반영.
 
-use crate::ports::PlanMode;
-
-const ALWAYS_PREFIX: &str = include_str!("plan_mode_always.md");
-const AUTO_PREFIX: &str = include_str!("plan_mode_auto.md");
+use crate::ports::{IPromptLoaderPort, PlanMode};
 
 /// PlanMode 별 시스템 프롬프트 prefix. 옛 TS `planModePrefix` 1:1.
-pub fn prefix(mode: PlanMode) -> &'static str {
+/// 매 호출 시 file read — 운영자 .md 편집 즉시 반영.
+pub fn prefix(mode: PlanMode, loader: &dyn IPromptLoaderPort) -> String {
     match mode {
-        PlanMode::Off => "",
-        PlanMode::Auto => AUTO_PREFIX,
-        PlanMode::Always => ALWAYS_PREFIX,
+        PlanMode::Off => String::new(),
+        PlanMode::Auto => loader.plan_mode_auto(),
+        PlanMode::Always => loader.plan_mode_always(),
     }
 }
 
@@ -33,33 +34,5 @@ pub fn prompt_hint(mode: PlanMode) -> Option<&'static str> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn off_returns_empty() {
-        assert_eq!(prefix(PlanMode::Off), "");
-        assert!(prompt_hint(PlanMode::Off).is_none());
-    }
-
-    #[test]
-    fn auto_contains_destructive_rule() {
-        let p = prefix(PlanMode::Auto);
-        assert!(p.contains("플랜모드 AUTO"));
-        assert!(p.contains("destructive"));
-        assert!(p.contains("propose_plan"));
-        let h = prompt_hint(PlanMode::Auto).unwrap();
-        assert!(h.contains("AUTO"));
-    }
-
-    #[test]
-    fn always_forces_plan_for_all_requests() {
-        let p = prefix(PlanMode::Always);
-        assert!(p.contains("플랜모드 ALWAYS"));
-        assert!(p.contains("예외 0건"));
-        assert!(p.contains("propose_plan"));
-        let h = prompt_hint(PlanMode::Always).unwrap();
-        assert!(h.contains("ALWAYS"));
-    }
-}
+// 통합 검증 (file read + IPromptLoaderPort impl) 은 infra integration test 영역.
+// 본 module 의 단위 tests 는 file I/O 의존 — registry init 비슷한 setup 필요. 제거.

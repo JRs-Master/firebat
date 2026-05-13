@@ -22,3 +22,4 @@ pub mod embedder;
 pub mod image_gen;
 pub mod image_processor;
 pub mod notifier_telegram;
+pub mod prompt_loader;

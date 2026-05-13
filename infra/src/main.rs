@@ -364,9 +364,14 @@ async fn main() -> Result<()> {
             mcp_manager.clone(),
         ),
     );
+    // FilePromptLoader — Phase prompt 외부화 (2026-05-13). 매 PromptBuilder.build() 시 file read.
+    // 운영자가 infra/data/prompts/{tool_system,cron_agent}.md 편집 + 다음 LLM 호출 시 즉시 반영.
+    let prompt_loader: Arc<dyn firebat_core::ports::IPromptLoaderPort> = Arc::new(
+        firebat_infra::adapters::prompt_loader::FilePromptLoader::discover(),
+    );
     let ai_manager = Arc::new(
         AiManager::new(llm.clone(), tool_manager.clone(), logger.clone())
-            .with_prompt_builder(vault.clone())
+            .with_prompt_builder(vault.clone(), prompt_loader.clone())
             .with_system_context(module_manager.clone(), mcp_manager.clone())
             .with_history_resolver(conversation_manager.clone())
             .with_cost_manager(cost_manager.clone())

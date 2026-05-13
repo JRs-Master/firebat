@@ -4,8 +4,9 @@
 use std::sync::Arc;
 
 use firebat_core::managers::ai::prompt_builder::{CronAgentContext, PromptBuilder};
-use firebat_core::ports::IVaultPort;
+use firebat_core::ports::{IPromptLoaderPort, IVaultPort};
 use firebat_core::vault_keys::{VK_SYSTEM_TIMEZONE, VK_SYSTEM_USER_PROMPT};
+use firebat_infra::adapters::prompt_loader::FilePromptLoader;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
 
 fn vault() -> (Arc<dyn IVaultPort>, tempfile::TempDir) {
@@ -15,10 +16,21 @@ fn vault() -> (Arc<dyn IVaultPort>, tempfile::TempDir) {
     (v, dir)
 }
 
+/// 테스트용 prompt loader — CARGO_MANIFEST_DIR/../infra/data/prompts/ 기준.
+/// (이 test 가 infra crate 의 integration test 라 MANIFEST_DIR = infra/, prompts = infra/data/prompts/).
+fn prompt_loader() -> Arc<dyn IPromptLoaderPort> {
+    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data/prompts");
+    Arc::new(FilePromptLoader::new(dir))
+}
+
+fn pb(v: Arc<dyn IVaultPort>) -> PromptBuilder {
+    PromptBuilder::new(v, prompt_loader())
+}
+
 #[test]
 fn base_prompt_contains_tool_system_sections() {
     let (v, _dir) = vault();
-    let pb = PromptBuilder::new(v);
+    let pb = pb(v);
     let prompt = pb.build(None, None);
     assert!(prompt.contains("Firebat 도구 사용 시스템"));
     assert!(prompt.contains("도구 사용 원칙"));
@@ -34,7 +46,7 @@ fn base_prompt_contains_tool_system_sections() {
 fn user_prompt_appended_when_set() {
     let (v, _dir) = vault();
     v.set_secret(VK_SYSTEM_USER_PROMPT, "당신은 도메인 전문가입니다.");
-    let pb = PromptBuilder::new(v);
+    let pb = pb(v);
     let prompt = pb.build(None, None);
     assert!(prompt.contains("도메인 전문가"));
     assert!(prompt.contains("USER_INSTRUCTIONS"));
@@ -45,7 +57,7 @@ fn user_prompt_appended_when_set() {
 fn user_prompt_skipped_when_empty() {
     let (v, _dir) = vault();
     v.set_secret(VK_SYSTEM_USER_PROMPT, "");
-    let pb = PromptBuilder::new(v);
+    let pb = pb(v);
     let prompt = pb.build(None, None);
     assert!(!prompt.contains("USER_INSTRUCTIONS"));
     assert!(!prompt.contains("사용자 지시사항"));
@@ -54,7 +66,7 @@ fn user_prompt_skipped_when_empty() {
 #[test]
 fn timezone_default_seoul_appears_in_prompt() {
     let (v, _dir) = vault();
-    let pb = PromptBuilder::new(v);
+    let pb = pb(v);
     let prompt = pb.build(None, None);
     // Vault 미설정 → Asia/Seoul fallback
     assert!(prompt.contains("Asia/Seoul"));
@@ -64,7 +76,7 @@ fn timezone_default_seoul_appears_in_prompt() {
 fn timezone_override_via_vault() {
     let (v, _dir) = vault();
     v.set_secret(VK_SYSTEM_TIMEZONE, "America/New_York");
-    let pb = PromptBuilder::new(v);
+    let pb = pb(v);
     let prompt = pb.build(None, None);
     assert!(prompt.contains("America/New_York"));
     let scheduling_section_idx = prompt.find("타임존:").expect("타임존 섹션 필요");
@@ -75,7 +87,7 @@ fn timezone_override_via_vault() {
 #[test]
 fn extra_context_replaces_system_context_placeholder() {
     let (v, _dir) = vault();
-    let pb = PromptBuilder::new(v);
+    let pb = pb(v);
     let prompt = pb.build(Some("등록된 sysmod: kiwoom, naver-search"), None);
     assert!(prompt.contains("등록된 sysmod: kiwoom, naver-search"));
     assert!(!prompt.contains("{system_context}"));
@@ -84,7 +96,7 @@ fn extra_context_replaces_system_context_placeholder() {
 #[test]
 fn cron_agent_prelude_prepended() {
     let (v, _dir) = vault();
-    let pb = PromptBuilder::new(v);
+    let pb = pb(v);
     let prompt = pb.build(
         None,
         Some(&CronAgentContext {
@@ -104,7 +116,7 @@ fn cron_agent_prelude_prepended() {
 #[test]
 fn cron_agent_without_title_handles_gracefully() {
     let (v, _dir) = vault();
-    let pb = PromptBuilder::new(v);
+    let pb = pb(v);
     let prompt = pb.build(
         None,
         Some(&CronAgentContext {
@@ -119,7 +131,7 @@ fn cron_agent_without_title_handles_gracefully() {
 #[test]
 fn no_unreplaced_placeholders_in_default_build() {
     let (v, _dir) = vault();
-    let pb = PromptBuilder::new(v);
+    let pb = pb(v);
     let prompt = pb.build(Some("ctx"), None);
     let unreplaced_patterns = ["{system_context}", "{user_tz}", "{now_korean}", "{user_section}"];
     for pattern in unreplaced_patterns {
@@ -130,7 +142,7 @@ fn no_unreplaced_placeholders_in_default_build() {
 #[test]
 fn cron_agent_replaces_all_placeholders() {
     let (v, _dir) = vault();
-    let pb = PromptBuilder::new(v);
+    let pb = pb(v);
     let prompt = pb.build(
         Some("ctx"),
         Some(&CronAgentContext {

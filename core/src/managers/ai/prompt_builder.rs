@@ -3,8 +3,9 @@
 //! 옛 TS `core/managers/ai/prompt-builder.ts` 1:1 port (823 LOC).
 //! buildToolSystemPrompt (500+ LOC) + buildCronAgentPrelude (12 룰) + buildTemplateBlock 통합.
 //!
-//! 큰 prompt 본문은 별도 markdown 파일 (`prompt_tool_system.md` / `prompt_cron_agent.md`) 에
-//! `include_str!` 으로 설정. 동적 placeholder 만 runtime replace.
+//! Prompt 본문은 외부 .md 파일 (`infra/data/prompts/{tool_system,cron_agent}.md`) 에서
+//! 매 build 시 file read (`IPromptLoaderPort`). 운영자가 직접 편집 + 다음 LLM 호출 시 즉시 반영.
+//! systemctl restart 0. 옛 `include_str!` 컴파일 시점 박힘 폐기 (2026-05-13).
 //!
 //! Placeholder 형식:
 //!   - `{system_context}` — gatherSystemContext 결과 (sysmod 동적 description)
@@ -19,12 +20,9 @@ use std::sync::Arc;
 use chrono::{TimeZone, Utc};
 use chrono_tz::Tz;
 
-use crate::ports::IVaultPort;
+use crate::ports::{IPromptLoaderPort, IVaultPort};
 use crate::utils::timezone::resolve_user_tz;
 use crate::vault_keys::VK_SYSTEM_USER_PROMPT;
-
-const TOOL_SYSTEM_TEMPLATE: &str = include_str!("prompt_tool_system.md");
-const CRON_AGENT_TEMPLATE: &str = include_str!("prompt_cron_agent.md");
 
 /// Cron agent 모드 옵션 — `build` 호출 시 설정되어 있으면 prelude prepend.
 #[derive(Debug, Clone)]
@@ -35,16 +33,22 @@ pub struct CronAgentContext {
 
 pub struct PromptBuilder {
     vault: Arc<dyn IVaultPort>,
+    loader: Arc<dyn IPromptLoaderPort>,
 }
 
 impl PromptBuilder {
-    pub fn new(vault: Arc<dyn IVaultPort>) -> Self {
-        Self { vault }
+    pub fn new(vault: Arc<dyn IVaultPort>, loader: Arc<dyn IPromptLoaderPort>) -> Self {
+        Self { vault, loader }
     }
 
     /// 사용자 timezone resolve — `utils::timezone::resolve_user_tz` 공용 helper 위임.
     fn user_tz(&self) -> Tz {
         resolve_user_tz(&self.vault)
+    }
+
+    /// PlanMode prefix — loader 통해 plan_mode_{always,auto}.md 매 호출 read.
+    pub fn plan_prefix(&self, mode: crate::ports::PlanMode) -> String {
+        super::plan_mode::prefix(mode, &*self.loader)
     }
 
     /// 현재 시각 한국어 표시 — 사용자 timezone 기준.
@@ -81,7 +85,9 @@ impl PromptBuilder {
         // 시스템 컨텍스트 — extra_context 설정되어 있으면 그것, 아니면 빈 string
         let system_context = extra_context.unwrap_or("(시스템 컨텍스트 미설정)");
 
-        let base = TOOL_SYSTEM_TEMPLATE
+        // 매 build 시 file read — IPromptLoaderPort 가 file system 또는 fallback stub 반환.
+        let tool_template = self.loader.tool_system();
+        let base = tool_template
             .replace("{system_context}", system_context)
             .replace("{user_tz}", user_tz_str)
             .replace("{now_korean}", &now_korean)
@@ -94,7 +100,8 @@ impl PromptBuilder {
                 Some(t) => format!("제목: {}", t),
                 None => String::new(),
             };
-            let prelude = CRON_AGENT_TEMPLATE
+            let cron_template = self.loader.cron_agent();
+            let prelude = cron_template
                 .replace("{job_id}", &ctx.job_id)
                 .replace("{job_title_line}", &job_title_line)
                 .replace("{user_tz}", user_tz_str)

@@ -250,8 +250,12 @@ impl AiManager {
     }
 
     /// PromptBuilder 설정한 채로 부팅 — 시스템 프롬프트 자동 주입 활성.
-    pub fn with_prompt_builder(mut self, vault: Arc<dyn IVaultPort>) -> Self {
-        self.prompt_builder = Some(PromptBuilder::new(vault));
+    pub fn with_prompt_builder(
+        mut self,
+        vault: Arc<dyn IVaultPort>,
+        loader: Arc<dyn crate::ports::IPromptLoaderPort>,
+    ) -> Self {
+        self.prompt_builder = Some(PromptBuilder::new(vault, loader));
         self
     }
 
@@ -474,7 +478,7 @@ impl AiManager {
                     Some(extra_parts.join("\n\n"))
                 };
                 let base_prompt = pb.build(extra.as_deref(), None);
-                let plan_prefix = plan_mode::prefix(ai_opts.plan_mode);
+                let plan_prefix = pb.plan_prefix(ai_opts.plan_mode);
                 effective_opts.system_prompt = Some(if plan_prefix.is_empty() {
                     base_prompt
                 } else {
