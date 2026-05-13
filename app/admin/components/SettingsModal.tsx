@@ -14,6 +14,7 @@ import { useLang, useTranslations, type Lang } from '../../../lib/i18n';
 import { TIMEZONE_OPTIONS, timezoneLabel } from '../../../lib/timezones';
 import { logger } from '../../../lib/util/logger';
 import { USER_PROMPT_MAX_CHARS } from '../../../lib/config';
+import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
 
 // Rust ModuleEntryPb.entry_type → proto-loader keepCase:false → entryType.
 // 옛 type 필드명 호환 위해 둘 다 받음.
@@ -242,8 +243,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [sysModules, setSysModules] = useState<SystemModule[]>([]);
   const fetchSysModules = useCallback(async () => {
     try {
-      const res = await fetch('/api/fs/system-modules');
-      const data = await res.json();
+      const data = await apiGet<{ success: boolean; modules?: SystemModule[] }>(
+        '/api/fs/system-modules',
+        { category: 'settings' },
+      );
       if (data.success) setSysModules(data.modules ?? []);
     } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); }
   }, []);
@@ -251,7 +254,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     // 낙관적 UI 업데이트
     setSysModules(prev => prev.map(m => m.name === name ? { ...m, enabled } : m));
     try {
-      await fetch('/api/settings/modules', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, enabled }) });
+      await apiPost('/api/settings/modules', { name, enabled }, { category: 'settings' });
     } catch {
       // 실패 시 롤백
       setSysModules(prev => prev.map(m => m.name === name ? { ...m, enabled: !enabled } : m));
@@ -261,55 +264,53 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // ── 데이터 로드 ────────────────────────────────────────────────────────────
   useEffect(() => {
     // 타임존 + thinking level
-    fetch('/api/settings').then(r => r.json()).then(data => {
-      if (data.success) {
-        if (data.timezone) setUserTimezone(data.timezone);
-        if (data.aiThinkingLevel) setThinkingLevel(data.aiThinkingLevel);
-        if (typeof data.aiRouterEnabled === 'boolean') setAiRouterEnabled(data.aiRouterEnabled);
-        if (data.aiAssistantModel) setAiAssistantModel(data.aiAssistantModel);
-        if (Array.isArray(data.aiAssistantModels) && data.aiAssistantModels.length > 0) setAiAssistantModels(data.aiAssistantModels);
-        // aiModels 자체는 useAiModels hook 이 별도 fetch + cache 처리 — 본 useEffect 무관.
-        if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
-        if (typeof data.anthropicCacheEnabled === 'boolean') setAnthropicCacheEnabled(data.anthropicCacheEnabled);
-        if (typeof data.subAgentEnabled === 'boolean') setSubAgentEnabled(data.subAgentEnabled);
-        if (typeof data.imageModel === 'string') setImageModelState(data.imageModel);
-        if (Array.isArray(data.imageModels)) setImageModels(data.imageModels);
-        if (typeof data.imageDefaultSize === 'string') setImageDefaultSize(data.imageDefaultSize);
-        if (typeof data.imageDefaultQuality === 'string') setImageDefaultQuality(data.imageDefaultQuality);
-      }
-    }).catch(() => {});
+    apiGet<any>('/api/settings', { category: 'settings' })
+      .then(data => {
+        if (data.success) {
+          if (data.timezone) setUserTimezone(data.timezone);
+          if (data.aiThinkingLevel) setThinkingLevel(data.aiThinkingLevel);
+          if (typeof data.aiRouterEnabled === 'boolean') setAiRouterEnabled(data.aiRouterEnabled);
+          if (data.aiAssistantModel) setAiAssistantModel(data.aiAssistantModel);
+          if (Array.isArray(data.aiAssistantModels) && data.aiAssistantModels.length > 0) setAiAssistantModels(data.aiAssistantModels);
+          if (typeof data.userPrompt === 'string') setUserPrompt(data.userPrompt);
+          if (typeof data.anthropicCacheEnabled === 'boolean') setAnthropicCacheEnabled(data.anthropicCacheEnabled);
+          if (typeof data.subAgentEnabled === 'boolean') setSubAgentEnabled(data.subAgentEnabled);
+          if (typeof data.imageModel === 'string') setImageModelState(data.imageModel);
+          if (Array.isArray(data.imageModels)) setImageModels(data.imageModels);
+          if (typeof data.imageDefaultSize === 'string') setImageDefaultSize(data.imageDefaultSize);
+          if (typeof data.imageDefaultQuality === 'string') setImageDefaultQuality(data.imageDefaultQuality);
+        }
+      })
+      .catch(() => {});
 
     // Vault 키
-    fetch('/api/vault').then(r => r.json()).then(data => {
-      if (!data.success) return;
-      if (data.keys?.openai_api_key?.hasKey) setGeminiApiKey(data.keys.openai_api_key.maskedKey);
-      if (data.keys?.gemini_api_key?.hasKey) setGoogleApiKey(data.keys.gemini_api_key.maskedKey);
-      if (data.keys?.anthropic_api_key?.hasKey) setAnthropicApiKey(data.keys.anthropic_api_key.maskedKey);
-      if (data.keys?.google_service_account_json?.hasKey) setVertexSaJson(data.keys.google_service_account_json.maskedKey);
-    }).catch(() => {});
+    apiGet<{ success?: boolean; keys?: Record<string, { hasKey?: boolean; maskedKey?: string }> }>('/api/vault', { category: 'settings' })
+      .then(data => {
+        if (!data?.success) return;
+        if (data.keys?.openai_api_key?.hasKey) setGeminiApiKey(data.keys.openai_api_key.maskedKey ?? '');
+        if (data.keys?.gemini_api_key?.hasKey) setGoogleApiKey(data.keys.gemini_api_key.maskedKey ?? '');
+        if (data.keys?.anthropic_api_key?.hasKey) setAnthropicApiKey(data.keys.anthropic_api_key.maskedKey ?? '');
+        if (data.keys?.google_service_account_json?.hasKey) setVertexSaJson(data.keys.google_service_account_json.maskedKey ?? '');
+      })
+      .catch(() => {});
   }, []);
 
   // 사용자 커스텀 프롬프트 저장
   const saveUserPrompt = useCallback(async () => {
     setUserPromptSaving(true);
     try {
-      const res = await fetch('/api/settings', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userPrompt }),
-      });
-      if (res.ok) {
-        setUserPromptSaved(true);
-        setTimeout(() => setUserPromptSaved(false), 1500);
-      }
+      await apiPatch('/api/settings', { userPrompt }, { category: 'settings' });
+      setUserPromptSaved(true);
+      setTimeout(() => setUserPromptSaved(false), 1500);
+    } catch {
+      // silent — UI 가 stale state 그대로
     } finally { setUserPromptSaving(false); }
   }, [userPrompt]);
 
   // 시크릿
   const fetchSecrets = useCallback(async () => {
     try {
-      const res = await fetch('/api/vault/secrets');
-      const data = await res.json();
+      const data = await apiGet<any>('/api/vault/secrets', { category: 'settings' });
       if (data.success) {
         setUserSecrets(data.secrets ?? []);
         setModuleSecrets(data.moduleSecrets ?? []);
@@ -321,12 +322,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     if (!newSecretName.trim() || !newSecretValue.trim()) return;
     setSecretSaving(true);
     try {
-      const res = await fetch('/api/vault/secrets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newSecretName.trim(), value: newSecretValue.trim() }),
-      });
-      const data = await res.json();
+      const data = await apiPost<{ success: boolean }>(
+        '/api/vault/secrets',
+        { name: newSecretName.trim(), value: newSecretValue.trim() },
+        { category: 'settings' },
+      );
       if (data.success) {
         setNewSecretName(''); setNewSecretValue('');
         setSecretFeedback('ok');
@@ -348,12 +348,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     if (!value) return;
     setModuleSecretSaving(secretName);
     try {
-      const res = await fetch('/api/vault/secrets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: secretName, value }),
-      });
-      const data = await res.json();
+      const data = await apiPost<{ success: boolean }>(
+        '/api/vault/secrets',
+        { name: secretName, value },
+        { category: 'settings' },
+      );
       if (data.success) {
         setModuleSecretValues(prev => { const n = { ...prev }; delete n[secretName]; return n; });
         setModuleSecretFeedback(prev => ({ ...prev, [secretName]: 'ok' }));
@@ -370,7 +369,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   const deleteSecret = async (name: string) => {
     if (!await confirmDialog({ title: '키 삭제', message: `"${name}" 키를 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
-    await fetch(`/api/vault/secrets?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+    await apiDelete(`/api/vault/secrets?name=${encodeURIComponent(name)}`, { category: 'settings' });
     fetchSecrets();
   };
 
@@ -379,8 +378,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const fetchMcpServers = useCallback(async () => {
     if (!mcpLoaded.current) setMcpLoading(true);
     try {
-      const res = await fetch('/api/mcp/servers');
-      const data = await res.json();
+      const data = await apiGet<{ success: boolean; servers?: McpServer[] }>(
+        '/api/mcp/servers',
+        { category: 'settings' },
+      );
       if (data.success) setMcpServers(data.servers ?? []);
       mcpLoaded.current = true;
     } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); } finally { setMcpLoading(false); }
@@ -398,20 +399,21 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       } else {
         body.url = mcpNewUrl.trim();
       }
-      const res = await fetch('/api/mcp/servers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) return;
+      try {
+        await apiPost('/api/mcp/servers', body, { category: 'settings' });
+      } catch {
+        return;
+      }
 
-      const testRes = await fetch(`/api/mcp/tools?server=${encodeURIComponent(name)}`);
-      const testData = await testRes.json();
+      const testData = await apiGet<{ success: boolean; error?: string }>(
+        `/api/mcp/tools?server=${encodeURIComponent(name)}`,
+        { category: 'settings' },
+      ).catch(() => ({ success: false, error: 'fetch 실패' }));
 
       if (testData.success) {
         setMcpNewName(''); setMcpNewCommand(''); setMcpNewArgs(''); setMcpNewUrl('');
       } else {
-        await fetch(`/api/mcp/servers?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+        await apiDelete(`/api/mcp/servers?name=${encodeURIComponent(name)}`, { category: 'settings' });
         await alertDialog({ title: '연결 실패', message: `연결 실패로 등록이 취소되었습니다.\n\n${testData.error}`, danger: true });
       }
       fetchMcpServers();
@@ -420,7 +422,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
   const deleteMcpServer = async (name: string) => {
     if (!await confirmDialog({ title: 'MCP 서버 제거', message: `"${name}" MCP 서버를 제거하시겠습니까?`, danger: true, okLabel: '제거' })) return;
-    await fetch(`/api/mcp/servers?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
+    await apiDelete(`/api/mcp/servers?name=${encodeURIComponent(name)}`, { category: 'settings' });
     setMcpEditing(null);
     fetchMcpServers();
   };
@@ -436,7 +438,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     setMcpEditSaving(true);
     try {
       // 삭제 후 재등록 (서버 설정 업데이트 API가 없으므로)
-      await fetch(`/api/mcp/servers?name=${encodeURIComponent(server.name)}`, { method: 'DELETE' });
+      await apiDelete(`/api/mcp/servers?name=${encodeURIComponent(server.name)}`, { category: 'settings' });
       const body: any = { name: server.name, transport: server.transport, enabled: true };
       if (server.transport === 'stdio') {
         body.command = mcpEditCommand.trim();
@@ -444,16 +446,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       } else {
         body.url = mcpEditUrl.trim();
       }
-      const res = await fetch('/api/mcp/servers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
+      try {
+        await apiPost('/api/mcp/servers', body, { category: 'settings' });
         setMcpEditing(null);
         setMcpEditFeedback('ok');
         fetchMcpServers();
-      } else {
+      } catch {
         setMcpEditFeedback('err');
       }
     } catch {
@@ -468,12 +466,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const startMcpAuth = async (serverName: string) => {
     setMcpAuth({ server: serverName, step: 'starting' });
     try {
-      const res = await fetch('/api/mcp/auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ serverName }),
-      });
-      const data = await res.json();
+      const data = await apiPost<{ success: boolean; alreadyAuthenticated?: boolean; authUrl?: string; error?: string }>(
+        '/api/mcp/auth',
+        { serverName },
+        { category: 'settings' },
+      );
       if (data.success && data.alreadyAuthenticated) {
         setMcpAuth({ server: serverName, step: 'done' });
       } else if (data.success && data.authUrl) {
@@ -516,9 +513,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // Firebat MCP 토큰
   const fetchMcpToken = useCallback(async () => {
     try {
-      const res = await fetch('/api/mcp/tokens');
-      const data = await res.json();
-      if (data.success) setMcpTokenInfo({ exists: data.exists, hint: data.hint, createdAt: data.createdAt });
+      const data = await apiGet<{ success: boolean; exists?: boolean; hint?: string | null; createdAt?: string | null }>(
+        '/api/mcp/tokens',
+        { category: 'settings' },
+      );
+      if (data.success) setMcpTokenInfo({ exists: !!data.exists, hint: data.hint ?? null, createdAt: data.createdAt ?? null });
     } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); }
   }, []);
 
@@ -526,18 +525,21 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     if (mcpTokenInfo.exists && !await confirmDialog({ title: '토큰 재생성', message: '기존 토큰이 무효화됩니다. 새 토큰을 생성하시겠습니까?', danger: true, okLabel: '재생성' })) return;
     setMcpTokenLoading(true);
     try {
-      const res = await fetch('/api/mcp/tokens', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
+      const data = await apiPost<{ success: boolean; token?: string; hint?: string; createdAt?: string }>(
+        '/api/mcp/tokens',
+        undefined,
+        { category: 'settings' },
+      );
+      if (data.success && data.token) {
         setMcpTokenRaw(data.token);
-        setMcpTokenInfo({ exists: true, hint: data.hint, createdAt: data.createdAt });
+        setMcpTokenInfo({ exists: true, hint: data.hint ?? null, createdAt: data.createdAt ?? null });
       }
     } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); } finally { setMcpTokenLoading(false); }
   };
 
   const revokeMcpToken = async () => {
     if (!await confirmDialog({ title: '토큰 폐기', message: '토큰을 폐기하면 SSE(API) 연결이 즉시 차단됩니다. 계속하시겠습니까?', danger: true, okLabel: '폐기' })) return;
-    await fetch('/api/mcp/tokens', { method: 'DELETE' });
+    await apiDelete('/api/mcp/tokens', { category: 'settings' });
     setMcpTokenInfo({ exists: false, hint: null, createdAt: null });
     setMcpTokenRaw(null);
   };
@@ -638,25 +640,21 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     setMainSaveState('loading');
     writeSetting('firebat_model', aiModel); // SettingsManager 경유 폴백
 
-    await fetch('/api/settings', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    await apiPatch(
+      '/api/settings',
+      {
         timezone: userTimezone,
         aiModel,
         aiThinkingLevel: thinkingLevel,
         aiRouterEnabled,
         aiAssistantModel,
-      }),
-    }).catch(() => {});
+      },
+      { category: 'settings' },
+    ).catch(() => {});
 
     const saveProviderKey = async (provider: 'openai' | 'gemini' | 'anthropic' | 'vertex', value: string) => {
       if (!value || value.includes('...') || value === '***') return;
-      await fetch('/api/vault', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, apiKey: value }),
-      }).catch(() => {});
+      await apiPost('/api/vault', { provider, apiKey: value }, { category: 'settings' }).catch(() => {});
     };
     await saveProviderKey('openai', geminiApiKey);
     await saveProviderKey('gemini', googleApiKey);
@@ -664,19 +662,19 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     await saveProviderKey('vertex', vertexSaJson);
 
     if (adminCurrentPw && (adminNewId.trim() || adminNewPw.trim())) {
-      const res = await fetch('/api/auth', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentPassword: adminCurrentPw, newId: adminNewId, newPassword: adminNewPw }),
-      }).catch(() => null);
-      if (res && !res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setAdminPwError(data.error ?? '계정 변경에 실패했습니다.');
+      try {
+        await apiPatch(
+          '/api/auth',
+          { currentPassword: adminCurrentPw, newId: adminNewId, newPassword: adminNewPw },
+          { category: 'settings' },
+        );
+        setAdminCurrentPw(''); setAdminNewId(''); setAdminNewPw(''); setAdminPwError('');
+      } catch (err: any) {
+        setAdminPwError(err?.responseBody?.error ?? err?.message ?? '계정 변경에 실패했습니다.');
         setMainSaveState('err');
         setTimeout(() => setMainSaveState(null), 2000);
         return;
       }
-      setAdminCurrentPw(''); setAdminNewId(''); setAdminNewPw(''); setAdminPwError('');
     }
 
     // 저장 완료 — ✓ 표시만, 모달은 유지 (다른 항목 추가 수정 가능). 사용자가 닫기 버튼 클릭 시 명시적 종료.
@@ -1044,11 +1042,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         onChange={async (e) => {
                           const next = e.target.checked;
                           setAnthropicCacheEnabled(next);
-                          await fetch('/api/settings', {
-                            method: 'PATCH',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ anthropicCacheEnabled: next }),
-                          });
+                          await apiPatch('/api/settings', { anthropicCacheEnabled: next }, { category: 'settings' });
                         }}
                         className="w-4 h-4 cursor-pointer" name="anthropicCacheEnabled" autoComplete="off" id="anthropicCacheEnabled"
                       />
@@ -1066,11 +1060,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       onChange={async (e) => {
                         const next = e.target.checked;
                         setSubAgentEnabled(next);
-                        await fetch('/api/settings', {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ subAgentEnabled: next }),
-                        });
+                        await apiPatch('/api/settings', { subAgentEnabled: next }, { category: 'settings' });
                       }}
                       className="w-4 h-4 cursor-pointer" name="subAgentEnabled" autoComplete="off" id="subAgentEnabled"
                     />
@@ -1120,8 +1110,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         onClick={async () => {
                           setCliChecking(true);
                           try {
-                            const res = await fetch(`/api/auth/cli?provider=${g.apiProvider}`);
-                            const data = await res.json();
+                            const data = await apiGet<any>(`/api/auth/cli?provider=${g.apiProvider}`, { category: 'settings' });
                             setCliStatus({ installed: !!data.installed, loggedIn: !!data.loggedIn, error: data.error });
                           } catch (e) {
                             setCliStatus({ installed: false, loggedIn: false, error: (e as Error).message });
@@ -1311,11 +1300,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     const currentModel = currentModelEntry || modelsForProvider[0];
 
                     const savePartial = (patch: Record<string, unknown>) => {
-                      fetch('/api/settings', {
-                        method: 'PATCH',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(patch),
-                      }).catch(() => {});
+                      apiPatch('/api/settings', patch, { category: 'settings' }).catch(() => {});
                     };
                     const saveImageModel = (modelId: string) => {
                       setImageModelState(modelId);
@@ -1544,7 +1529,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                 autoFocus
                                 onKeyDown={async e => {
                                   if (e.key === 'Enter' && editingSecret.value.trim()) {
-                                    await fetch('/api/vault/secrets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: s.name, value: editingSecret.value.trim() }) });
+                                    await apiPost('/api/vault/secrets', { name: s.name, value: editingSecret.value.trim() }, { category: 'settings' });
                                     setEditingSecret(null); fetchSecrets();
                                   }
                                   if (e.key === 'Escape') setEditingSecret(null);
@@ -1554,7 +1539,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                               <button
                                 onClick={async () => {
                                   if (!editingSecret.value.trim()) return;
-                                  await fetch('/api/vault/secrets', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: s.name, value: editingSecret.value.trim() }) });
+                                  await apiPost('/api/vault/secrets', { name: s.name, value: editingSecret.value.trim() }, { category: 'settings' });
                                   setEditingSecret(null); fetchSecrets();
                                 }}
                                 disabled={!editingSecret.value.trim()}
@@ -2102,8 +2087,7 @@ function CapabilityTabContent() {
   const [orderChanged, setOrderChanged] = useState(false);
 
   useEffect(() => {
-    fetch('/api/capabilities')
-      .then(r => r.json())
+    apiGet<any>('/api/capabilities', { category: 'capabilities' })
       .then(data => { if (data.success) setCaps(data.capabilities ?? []); })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -2114,12 +2098,7 @@ function CapabilityTabContent() {
     setDetailLoading(true);
     setOrderChanged(false);
     try {
-      const res = await fetch('/api/capabilities', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      });
-      const data = await res.json();
+      const data = await apiPost<any>('/api/capabilities', { id }, { category: 'capabilities' });
       if (data.success) {
         const provs: ProviderInfo[] = data.providers ?? [];
         const savedOrder: string[] = data.settings?.providers ?? [];
@@ -2150,17 +2129,13 @@ function CapabilityTabContent() {
     if (!selectedCap) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/capabilities', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: selectedCap, settings: { providers: providers.map(p => p.moduleName) } }),
-      });
-      if (res.ok) {
-        setOrderChanged(false);
-        setOrderFeedback('ok');
-      } else {
-        setOrderFeedback('err');
-      }
+      await apiPatch(
+        '/api/capabilities',
+        { id: selectedCap, settings: { providers: providers.map(p => p.moduleName) } },
+        { category: 'capabilities' },
+      );
+      setOrderChanged(false);
+      setOrderFeedback('ok');
     } catch {
       setOrderFeedback('err');
     }
@@ -2328,20 +2303,21 @@ function MemoryTabContent() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/memory');
-      const data = await res.json();
+      const data = await apiGet<{ success: boolean; items: MemoryItem[] }>(
+        '/api/memory',
+        { category: 'memory' },
+      );
       if (data.success) setItems(data.items);
     } finally { setLoading(false); }
   };
   useEffect(() => { void load(); }, []);
 
   const save = async (item: MemoryItem, isNew: boolean) => {
-    const res = await fetch('/api/memory', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(item),
-    });
-    const data = await res.json();
+    const data = await apiPost<{ success: boolean; error?: string }>(
+      '/api/memory',
+      item,
+      { category: 'memory' },
+    );
     if (!data.success) { await alertDialog({ title: '저장 실패', message: data.error ?? '알 수 없는 오류', danger: true }); return; }
     setEditing(null); setCreating(false);
     void load();
@@ -2349,8 +2325,10 @@ function MemoryTabContent() {
 
   const remove = async (name: string) => {
     if (!await confirmDialog({ title: '메모리 삭제', message: `"${name}" 메모리를 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
-    const res = await fetch(`/api/memory?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
-    const data = await res.json();
+    const data = await apiDelete<{ success: boolean; error?: string }>(
+      `/api/memory?name=${encodeURIComponent(name)}`,
+      { category: 'memory' },
+    );
     if (!data.success) { await alertDialog({ title: '삭제 실패', message: data.error ?? '알 수 없는 오류', danger: true }); return; }
     void load();
   };
@@ -2521,8 +2499,10 @@ function CostBudgetSection() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/llm/budget');
-      const data = await res.json();
+      const data = await apiGet<{ success: boolean; data: typeof budget }>(
+        '/api/llm/budget',
+        { category: 'budget' },
+      );
       if (data.success) setBudget(data.data);
     } finally { setLoading(false); }
   };
@@ -2532,18 +2512,17 @@ function CostBudgetSection() {
     if (!budget) return;
     setSaving(true);
     try {
-      const res = await fetch('/api/llm/budget', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await apiPost<{ success: boolean; error?: string }>(
+        '/api/llm/budget',
+        {
           dailyUsd: budget.dailyUsd, monthlyUsd: budget.monthlyUsd,
           dailyCalls: budget.dailyCalls, monthlyCalls: budget.monthlyCalls,
           alertAtPercent: budget.alertAtPercent,
-        }),
-      });
-      const data = await res.json();
+        },
+        { category: 'budget' },
+      );
       if (data.success) { setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2000); void load(); }
-      else alert(`저장 실패: ${data.error}`);
+      else await alertDialog({ title: '저장 실패', message: data.error ?? '알 수 없는 오류', danger: true });
     } finally { setSaving(false); }
   };
 
@@ -2630,18 +2609,12 @@ function CostTabContent() {
     const fromDate = new Date(today.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
     const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const params = new URLSearchParams({ fromDate: fmt(fromDate), toDate: fmt(today) });
-    fetch(`/api/llm/cost-stats?${params.toString()}`)
-      .then(async r => {
-        const text = await r.text();
-        if (!text) throw new Error(`HTTP ${r.status} (빈 응답)`);
-        try {
-          return JSON.parse(text);
-        } catch {
-          throw new Error(`HTTP ${r.status} (JSON 파싱 실패: ${text.slice(0, 100)})`);
-        }
-      })
+    apiGet<{ success: boolean; data?: CostStats; error?: string }>(
+      `/api/llm/cost-stats?${params.toString()}`,
+      { category: 'cost-stats' },
+    )
       .then(data => {
-        if (data.success) setStats(data.data);
+        if (data.success) setStats(data.data ?? null);
         else setError(data.error || '조회 실패');
       })
       .catch(e => setError(e.message))

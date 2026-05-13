@@ -11,6 +11,7 @@ import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog } from './Dialog';
 import { logger } from '../../../lib/util/logger';
+import { apiGet, apiPost, apiPut } from '../../../lib/api-fetch';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
@@ -161,8 +162,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
       ? `/api/pages/${encodeURIComponent(pageSlug!)}`
       : `/api/fs/file?path=${encodeURIComponent(filePath!)}`;
 
-    fetch(url)
-      .then(r => r.json())
+    apiGet<{ success: boolean; spec?: unknown; content?: string; error?: string }>(url, { category: 'file-editor' })
       .then(data => {
         if (data.success) {
           let text: string;
@@ -177,7 +177,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
               setError('PageSpec JSON 손상 — 수동 편집 또는 AI 로 복구하세요');
             }
           } else {
-            text = data.content;
+            text = data.content ?? '';
           }
           setContent(text);
           setOriginal(text);
@@ -211,23 +211,21 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
     try {
       if (isPageMode) {
         const parsed = JSON.parse(content);
-        const res = await fetch('/api/pages', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ slug: pageSlug, spec: parsed }),
-        });
-        const data = await res.json();
+        const data = await apiPut<{ success: boolean; error?: string }>(
+          '/api/pages',
+          { slug: pageSlug, spec: parsed },
+          { category: 'file-editor' },
+        );
         if (data.success) { setOriginal(content); onSaved?.(); ok = true; }
         else setError(data.error || '저장 실패');
       } else {
-        const res = await fetch('/api/fs/file', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path: filePath, content }),
-        });
-        const data = await res.json();
+        const data = await apiPut<{ success: boolean; error?: string }>(
+          '/api/fs/file',
+          { path: filePath, content },
+          { category: 'file-editor' },
+        );
         if (data.success) { setOriginal(content); onSaved?.(); ok = true; }
-        else setError(data.error);
+        else setError(data.error || '저장 실패');
       }
     } catch (e: any) {
       setError(e.message);
@@ -295,17 +293,16 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
     if (localThinking) config.thinkingLevel = localThinking;
 
     try {
-      const res  = await fetch('/api/ai/code-assist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: content, language: lang, instruction: sentInstruction, selectedCode, config }),
-      });
-      const data = await res.json();
+      const data = await apiPost<{ success: boolean; suggestion?: string; error?: string }>(
+        '/api/ai/code-assist',
+        { code: content, language: lang, instruction: sentInstruction, selectedCode, config },
+        { category: 'file-editor' },
+      );
       if (data.success) {
         const assistantTurn: ChatTurn = {
           id: `a-${turnId}`,
           role: 'assistant',
-          content: data.suggestion,
+          content: data.suggestion ?? '',
           mode,
           applied: false,
         };
