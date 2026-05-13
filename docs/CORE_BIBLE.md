@@ -60,6 +60,12 @@ Core가 Infra에게 요구하는 17개 포트 인터페이스. 모두 `core/src/
 | 15 | `IImageGenPort` | 이미지 생성 (OpenAI gpt-image / Gemini 3 Image) |
 | 16 | `IEntityPort` | 메모리 시스템 — Entity tier (entities + entity_facts CRUD, semantic search, dedup threshold) |
 | 17 | `IEpisodicPort` | 메모리 시스템 — Episodic tier (events + event_entities m2m CRUD, 시간순 사건 검색, dedup threshold) |
+| 18 | `IPromptLoaderPort` | 시스템 prompt 외부 .md 파일 매 호출 read (`tool_system` / `cron_agent` / `plan_mode_always` / `plan_mode_auto`). 운영자 편집 + 즉시 반영 (restart 0). 2026-05-13 도입. |
+
+**🟠 Known Issue — 미완성 포트 영역** (2026-05-13 점검):
+- `core/src/managers/ai/component_search_index.rs` + `tool_search_index.rs` 가 std::fs / std::env 직접 호출 — 벡터 캐시 (`component-embeddings.json` / `tool-search-embeddings.json`) 영속화 추상화 부재. `IEmbedderCachePort` 신설 가치 영역.
+- `core/src/utils/pending_tools.rs` + `core/src/managers/ai.rs` (FIREBAT_MCP_BASE_URL) — env 직접 호출. `IConfigPort` 신설 가치 영역.
+- BIBLE Hexagonal 정공에는 위반 — fix 우선순위는 마찰 발생 시점 또는 v2.0 시점 한꺼번에 정리.
 
 모든 포트 반환값은 `InfraResult<T>` 형태 (throw 금지, `{ success, data?, error? }` 반환).
 예외: `ILogPort`는 리턴값 없음, `IVaultPort`와 `ICronPort.list()`는 동기 반환, `IEmbedderPort`는 Float32Array 반환.
