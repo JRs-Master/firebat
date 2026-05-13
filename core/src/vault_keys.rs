@@ -15,7 +15,7 @@ pub const VK_SYSTEM_AI_ROUTER_ENABLED: &str = "system:ai-router:enabled";
 /// AI Assistant default 모델 — Vault 미설정 시 폴백. 사용자 결정 (2026-05-09):
 /// Gemini 3.1 Flash Lite (저렴·빠름) — Tool Router / search_history 보조용으로 적합.
 /// `LlmModelConfig.builtin_models` 에 등록되어야 함 (config.rs).
-pub const AI_ASSISTANT_DEFAULT_MODEL: &str = "gemini-3.1-flash-lite-preview";
+pub const AI_ASSISTANT_DEFAULT_MODEL: &str = "gemini-3.1-flash-lite";
 pub const VK_LLM_ANTHROPIC_CACHE: &str = "system:llm:anthropic-cache";
 /// 카테고리별 마지막 선택 모델 — 실 Vault 저장 키 `system:llm:last-by-category`.
 pub const VK_SYSTEM_LAST_MODEL_BY_CATEGORY: &str = "system:llm:last-by-category";
