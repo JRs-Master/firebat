@@ -13,11 +13,13 @@
  *   - SSE 만으로 list 유지. 페이지 reload 직후 진행 중이던 작업이 다음 update 이벤트 시
  *     자동으로 list 에 등장 (별도 API 조회 불필요)
  */
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Activity, X } from 'lucide-react';
 import { useEvents } from '../hooks/events-manager';
 import { STALE_RUNNING_MS } from '../../../lib/config';
+import { usePolling } from '../../../lib/hooks/use-polling';
+import { TIME } from '../../../lib/util/time';
 
 interface JobStatus {
   id: string;
@@ -69,29 +71,23 @@ export function ActiveJobsIndicator() {
 
   // stale running 잡 청소 — visibilitychange visible 복귀 + 30초 주기 검사.
   // SSE drop (모바일 백그라운드·네트워크 끊김) 시 'completed' 못 받아서 running 박제 방지.
-  useEffect(() => {
-    const sweep = () => {
-      const now = Date.now();
-      setJobs(prev => {
-        let changed = false;
-        const next = new Map(prev);
-        for (const [id, j] of next) {
-          if ((j.status === 'running' || j.status === 'queued') && (now - j.updatedAt) > STALE_RUNNING_MS) {
-            next.delete(id);
-            changed = true;
-          }
+  const sweepStale = useCallback(() => {
+    const now = Date.now();
+    setJobs(prev => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const [id, j] of next) {
+        if ((j.status === 'running' || j.status === 'queued') && (now - j.updatedAt) > STALE_RUNNING_MS) {
+          next.delete(id);
+          changed = true;
         }
-        return changed ? next : prev;
-      });
-    };
-    const onVisibility = () => { if (document.visibilityState === 'visible') sweep(); };
-    document.addEventListener('visibilitychange', onVisibility);
-    const interval = setInterval(sweep, 30_000);
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      clearInterval(interval);
-    };
+      }
+      return changed ? next : prev;
+    });
   }, []);
+
+  // 30s 주기 sweep — usePolling 의 pauseOnHidden 이 visibilitychange resume 와 동시에 자연스레 sweep 실행.
+  usePolling({ interval: 30 * TIME.SECOND_MS, onTick: sweepStale });
 
   useEvents(['status:update'], (ev) => {
     const payload = ev.data as { job: JobStatus; change: string } | undefined;

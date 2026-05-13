@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Save, Settings, Play } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
 import { rowActionsClass } from '../utils/row-actions';
 import { logger } from '../../../lib/util/logger';
+import { apiGet, apiPost, apiDelete, apiPut } from '../../../lib/api-fetch';
+import { usePolling } from '../../../lib/hooks/use-polling';
+import { TIME } from '../../../lib/util/time';
 
 interface CronRunWhen {
   check: { sysmod: string; action: string; inputData?: Record<string, unknown> };
@@ -56,8 +60,7 @@ interface CronLog {
 }
 
 export function CronPanel() {
-  const [jobs, setJobs] = useState<CronJob[]>([]);
-  const [logs, setLogs] = useState<CronLog[]>([]);
+  const queryClient = useQueryClient();
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [running, setRunning] = useState<string | null>(null);
   const [showLogs, setShowLogs] = useState(false);
@@ -65,41 +68,42 @@ export function CronPanel() {
   // 모바일 select-to-show 패턴 — Sidebar 와 동일. PC 에선 무시 (group-hover 가 처리).
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
-  const fetchCron = useCallback(async () => {
-    try {
-      const res = await fetch('/api/cron');
-      const data = await res.json();
-      setJobs(data.jobs ?? []);
-      setLogs(data.logs ?? []);
-    } catch (e) { logger.debug('cron', 'operation 실패', { error: e }); }
-  }, []);
+  const { data: cronData } = useQuery({
+    queryKey: ['cron'],
+    queryFn: () =>
+      apiGet<{ jobs?: CronJob[]; logs?: CronLog[] }>('/api/cron', { category: 'cron' }).catch((e) => {
+        logger.debug('cron', 'fetch 실패', { error: e });
+        return { jobs: [], logs: [] };
+      }),
+  });
+  const jobs = cronData?.jobs ?? [];
+  const logs = cronData?.logs ?? [];
+  const invalidateCron = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: ['cron'] }),
+    [queryClient],
+  );
 
   // SSE (cron:complete / sidebar:refresh) + window 'firebat-refresh' 통합 수신
   // EventsManager 싱글톤이 EventSource 1개만 유지 — Sidebar 와 공유.
-  useSidebarRefresh(fetchCron);
+  useSidebarRefresh(invalidateCron);
 
-  // 알림 폴링 (페이지 열기용, 30초 간격)
-  useEffect(() => {
-    const poll = async () => {
+  // 알림 폴링 (페이지 열기용, 30초 간격). 탭 백그라운드 시 자동 일시정지.
+  usePolling({
+    interval: 30 * TIME.SECOND_MS,
+    onTick: async () => {
       try {
-        const nRes = await fetch('/api/cron?notify=poll');
-        const nData = await nRes.json();
-        const notifs = nData.notifications ?? [];
-        for (const n of notifs) window.open(n.url, '_blank');
-      } catch (e) { logger.debug('cron', 'operation 실패', { error: e }); }
-    };
-    const id = setInterval(poll, 30000);
-    return () => clearInterval(id);
-  }, []);
-
-  useEffect(() => { fetchCron(); }, [fetchCron]);
+        const nData = await apiGet<{ notifications?: Array<{ url: string }> }>('/api/cron?notify=poll', { category: 'cron' });
+        for (const n of nData.notifications ?? []) window.open(n.url, '_blank');
+      } catch (e) { logger.debug('cron', 'notify poll 실패', { error: e }); }
+    },
+  });
 
   const handleCancel = async (jobId: string) => {
     if (!await confirmDialog({ title: '잡 해제', message: `잡 "${jobId}"을(를) 해제하시겠습니까?`, danger: true, okLabel: '해제' })) return;
     setCancelling(jobId);
     try {
-      await fetch(`/api/cron?jobId=${encodeURIComponent(jobId)}`, { method: 'DELETE' });
-      fetchCron();
+      await apiDelete(`/api/cron?jobId=${encodeURIComponent(jobId)}`, { category: 'cron' });
+      invalidateCron();
     } finally {
       setCancelling(null);
     }
@@ -110,7 +114,7 @@ export function CronPanel() {
     try {
       // fire-and-forget — 백엔드가 비동기 트리거. 결과는 cron-logs SSE 로 반영.
       // setTimeout 으로 spinner 잠깐 보여주고 자동 해제 (UX 안정).
-      await fetch(`/api/cron?action=run&jobId=${encodeURIComponent(jobId)}`, { method: 'POST' });
+      await apiPost(`/api/cron?action=run&jobId=${encodeURIComponent(jobId)}`, undefined, { category: 'cron' });
       setTimeout(() => setRunning(null), 1500);
     } catch {
       setRunning(null);
@@ -119,8 +123,8 @@ export function CronPanel() {
 
   const handleClearLogs = async () => {
     if (!await confirmDialog({ title: '로그 삭제', message: '실행 로그를 전부 삭제하시겠습니까?', danger: true, okLabel: '삭제' })) return;
-    await fetch('/api/cron?logs=clear', { method: 'DELETE' });
-    fetchCron();
+    await apiDelete('/api/cron?logs=clear', { category: 'cron' });
+    invalidateCron();
   };
 
   const formatCron = (expr: string) => {
@@ -328,7 +332,7 @@ export function CronPanel() {
         <ScheduleModal
           job={editing}
           onClose={() => setEditing(null)}
-          onSaved={() => { setEditing(null); fetchCron(); }}
+          onSaved={() => { setEditing(null); invalidateCron(); }}
           onDelete={() => { handleCancel(editing.jobId); setEditing(null); }}
         />
       )}
@@ -478,14 +482,13 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
         body.agentPrompt = undefined;
       }
 
-      const res = await fetch('/api/cron', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error || '저장 실패'); return; }
-      onSaved();
+      try {
+        await apiPut('/api/cron', body, { category: 'cron' });
+        onSaved();
+      } catch (e: any) {
+        setError(e?.message || '저장 실패');
+        return;
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
