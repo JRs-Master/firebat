@@ -363,6 +363,15 @@ export async function callTypedClient<T = unknown>(method: string, args: unknown
   ) {
     return response.value as T;
   }
+  // 옛 ProjectListPb {projects} / ConversationListPb {conversations} 등 — 단일 array field 자동 unwrap.
+  // proto 의 repeated 필드 message 가 호출자 입장에선 array 자체로 보여야 자연 — 호출 site cutover 부담 0.
+  if (response && typeof response === 'object') {
+    const keys = Object.keys(response);
+    if (keys.length === 1) {
+      const onlyVal = (response as Record<string, unknown>)[keys[0]!];
+      if (Array.isArray(onlyVal)) return onlyVal as T;
+    }
+  }
   return response as T;
 }
 
