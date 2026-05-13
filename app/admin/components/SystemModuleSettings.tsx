@@ -9,6 +9,7 @@ import { COLOR_PRESETS } from '../../../lib/design-tokens';
 import { WidgetListField } from './WidgetListField';
 import { useTranslations, useLang } from '../../../lib/i18n';
 import type { Lang } from '../../../lib/i18n';
+import { logger } from '../../../lib/util/logger';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
 type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list';
@@ -320,7 +321,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
         sStatus[field.key] = secretNames.includes(field.secretName!);
       }
       setSecretSaved(sStatus);
-    } catch {}
+    } catch (e) { logger.debug('system-module', 'operation 실패', { error: e }); }
   }, [schema]);
 
   useEffect(() => { loadSecretsAndOauth(); }, [loadSecretsAndOauth]);
@@ -338,7 +339,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
       });
       setSecretSaved(prev => ({ ...prev, [field.key]: true }));
       setSecretValues(prev => ({ ...prev, [field.key]: '' }));
-    } catch {}
+    } catch (e) { logger.debug('system-module', 'operation 실패', { error: e }); }
     finally { setSecretSaving(prev => ({ ...prev, [field.key]: false })); }
   };
 
@@ -357,7 +358,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
       });
       const data = await res.json();
       if (data.success) setSaved(true);
-    } catch {}
+    } catch (e) { logger.debug('system-module', 'operation 실패', { error: e }); }
     finally { setSaving(false); }
   };
 
@@ -402,7 +403,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           : data.hint;
         setMcpTokenInfo({ exists: true, hint, createdAt: data.createdAt });
       }
-    } catch {} finally { setMcpTokenLoading(false); }
+    } catch (e) { logger.debug('system-module', 'operation 실패', { error: e }); } finally { setMcpTokenLoading(false); }
   };
 
   const revokeMcpToken = async () => {

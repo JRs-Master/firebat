@@ -19,7 +19,7 @@ import { chatReducer, cleanMessages, FALLBACK } from './chat-manager';
 import { useSetting } from './settings-manager';
 import { useWakeLock } from './use-wake-lock';
 import { CHAT_WATCHDOG_IDLE_MS, KEEPALIVE_BODY_LIMIT_BYTES } from '../../../lib/config';
-import { safeJsonParse } from '../../../lib/util';
+import { safeJsonParse, logger } from '../../../lib/util';
 
 // SSE 이벤트 파서 — buffer에서 완성된 이벤트만 파싱, 나머지는 반환
 function parseSSE(buffer: string): { events: { event: string; data: any }[]; remaining: string } {
@@ -31,7 +31,7 @@ function parseSSE(buffer: string): { events: { event: string; data: any }[]; rem
     const eventMatch = block.match(/^event:\s*(.+)$/m);
     const dataMatch = block.match(/^data:\s*(.+)$/m);
     if (eventMatch && dataMatch) {
-      try { events.push({ event: eventMatch[1], data: JSON.parse(dataMatch[1]) }); } catch {}
+      try { events.push({ event: eventMatch[1], data: JSON.parse(dataMatch[1]) }); } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
     }
   }
   return { events, remaining };
@@ -262,7 +262,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           });
         }
       }
-    } catch {}
+    } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
     // 2) 현재 활성 conv 단일 갱신 — 다른 기기에서 이어 쓴 메시지 반영 / 백엔드 최종 응답 복구
     if (!activeConvId) return;
     const convMeta = conversations.find(c => c.id === activeConvId);
@@ -302,7 +302,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         localStorage.setItem('firebat_conversations', JSON.stringify(updated));
         return updated;
       });
-    } catch {}
+    } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
   }, [activeConvId, conversations]);
 
   // visibilitychange=hidden 안전망 / visible 재조회
@@ -319,7 +319,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       const createdAt = convMeta?.createdAt ?? Date.now();
       const body = JSON.stringify({ id: activeConvId, title, messages: cleanMsgs, createdAt });
       const blob = new Blob([body], { type: 'application/json' });
-      try { navigator.sendBeacon('/api/conversations', blob); } catch {}
+      try { navigator.sendBeacon('/api/conversations', blob); } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
     };
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') flush();
@@ -425,7 +425,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
           localStorage.setItem('firebat_conversations', JSON.stringify(updated));
           return updated;
         });
-      } catch {}
+      } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
     })();
   }, [activeConvId, conversations, setActiveConvId]);
 
@@ -790,7 +790,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
         dispatch({ type: 'PENDING_ERROR', msgId, planId, errorMessage });
         persistPendingChange(msgId, planId, { status: 'error', errorMessage });
       }
-    } catch {}
+    } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
   }, [onRefresh, persistPendingChange]);
 
   // Pending tool 개별 거부
@@ -799,7 +799,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       await fetch(`/api/plan/reject?planId=${encodeURIComponent(planId)}`, { method: 'POST' });
       dispatch({ type: 'PENDING_REJECTED', msgId, planId });
       persistPendingChange(msgId, planId, { status: 'rejected' });
-    } catch {}
+    } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
   }, [persistPendingChange]);
 
   // Suggestion 클릭 시 해당 메시지의 suggestions 클리어 + DB 즉시 저장 — 새로고침 시 카드 재등장 차단

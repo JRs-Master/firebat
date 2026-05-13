@@ -7,6 +7,7 @@ import { useSidebarRefresh } from '../hooks/events-manager';
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
 import { rowActionsClass } from '../utils/row-actions';
+import { logger } from '../../../lib/util/logger';
 
 interface CronRunWhen {
   check: { sysmod: string; action: string; inputData?: Record<string, unknown> };
@@ -70,7 +71,7 @@ export function CronPanel() {
       const data = await res.json();
       setJobs(data.jobs ?? []);
       setLogs(data.logs ?? []);
-    } catch {}
+    } catch (e) { logger.debug('cron', 'operation 실패', { error: e }); }
   }, []);
 
   // SSE (cron:complete / sidebar:refresh) + window 'firebat-refresh' 통합 수신
@@ -85,7 +86,7 @@ export function CronPanel() {
         const nData = await nRes.json();
         const notifs = nData.notifications ?? [];
         for (const n of notifs) window.open(n.url, '_blank');
-      } catch {}
+      } catch (e) { logger.debug('cron', 'operation 실패', { error: e }); }
     };
     const id = setInterval(poll, 30000);
     return () => clearInterval(id);

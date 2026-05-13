@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog } from './Dialog';
+import { logger } from '../../../lib/util/logger';
 
 /**
  * 텔레그램 양방향 봇 webhook 등록 섹션 — SystemModuleSettings 의 telegram 모듈 페이지에서만 노출.
@@ -45,7 +46,7 @@ export function TelegramWebhookSection() {
           setDomain(`${window.location.protocol}//${window.location.host}`);
         }
       }
-    } catch {}
+    } catch (e) { logger.debug('telegram', 'operation 실패', { error: e }); }
   }, [domain]);
 
   useEffect(() => { refresh(); }, [refresh]);

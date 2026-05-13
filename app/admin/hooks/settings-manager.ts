@@ -15,7 +15,7 @@
 'use client';
 
 import { useCallback, useSyncExternalStore } from 'react';
-import { safeJsonParse } from '../../../lib/util';
+import { safeJsonParse, logger } from '../../../lib/util';
 
 // ── 스키마 정의 ─────────────────────────────────────────────────────────────
 // 새 설정 추가 시 이 타입에만 키 추가하면 useSetting / readSetting / writeSetting 이 자동 지원.
@@ -92,7 +92,7 @@ export function writeSetting<K extends keyof SettingsSchema>(key: K, value: Sett
     // 훅 밖에서 직접 호출 시에도 snapshot 캐시 무효화 + 구독자 알림 — hook 의 notify 와 동일 효과
     invalidateSnapshot(key as string);
     notify(key as string);
-  } catch {}
+  } catch (e) { logger.debug('settings', `localStorage write 실패 (${String(key)})`, { error: e }); }
 }
 
 // ── useSetting 훅 ───────────────────────────────────────────────────────────

@@ -14,3 +14,4 @@ export * from './json';
 export * from './time';
 export * from './id';
 export * from './url';
+export * from './logger';

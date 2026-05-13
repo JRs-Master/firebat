@@ -12,6 +12,7 @@ import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useLang, useTranslations, type Lang } from '../../../lib/i18n';
 import { TIMEZONE_OPTIONS, timezoneLabel } from '../../../lib/timezones';
+import { logger } from '../../../lib/util/logger';
 import { USER_PROMPT_MAX_CHARS } from '../../../lib/config';
 
 // Rust ModuleEntryPb.entry_type → proto-loader keepCase:false → entryType.
@@ -244,7 +245,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       const res = await fetch('/api/fs/system-modules');
       const data = await res.json();
       if (data.success) setSysModules(data.modules ?? []);
-    } catch {}
+    } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); }
   }, []);
   const toggleModuleEnabled = useCallback(async (name: string, enabled: boolean) => {
     // 낙관적 UI 업데이트
@@ -313,7 +314,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         setUserSecrets(data.secrets ?? []);
         setModuleSecrets(data.moduleSecrets ?? []);
       }
-    } catch {}
+    } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); }
   }, []);
 
   const addSecret = async () => {
@@ -382,7 +383,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       const data = await res.json();
       if (data.success) setMcpServers(data.servers ?? []);
       mcpLoaded.current = true;
-    } catch {} finally { setMcpLoading(false); }
+    } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); } finally { setMcpLoading(false); }
   }, []);
 
   const addMcpServer = async () => {
@@ -518,7 +519,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       const res = await fetch('/api/mcp/tokens');
       const data = await res.json();
       if (data.success) setMcpTokenInfo({ exists: data.exists, hint: data.hint, createdAt: data.createdAt });
-    } catch {}
+    } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); }
   }, []);
 
   const generateMcpToken = async () => {
@@ -531,7 +532,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         setMcpTokenRaw(data.token);
         setMcpTokenInfo({ exists: true, hint: data.hint, createdAt: data.createdAt });
       }
-    } catch {} finally { setMcpTokenLoading(false); }
+    } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); } finally { setMcpTokenLoading(false); }
   };
 
   const revokeMcpToken = async () => {
@@ -2132,7 +2133,7 @@ function CapabilityTabContent() {
         }
         setProviders(provs);
       }
-    } catch {}
+    } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); }
     finally { setDetailLoading(false); }
   };
 

@@ -15,6 +15,7 @@ import { confirmDialog, alertDialog } from './Dialog';
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { createShareLink, copyToClipboard } from '../hooks/share-helper';
 import { rowActionsClass } from '../utils/row-actions';
+import { logger } from '../../../lib/util/logger';
 
 interface Project { name: string; paths: string[]; pageSlugs?: string[]; visibility?: string; }
 interface PageInfo { slug: string; title: string; status: string; updatedAt: string; project?: string | null; visibility?: string; }
@@ -195,11 +196,11 @@ export function Sidebar({
             }
             const entry = ENTRY_FILES.find(e => files.includes(e));
             entries[p] = entry || files.find(f => f !== 'config.json') || 'config.json';
-          } catch {}
+          } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
         }));
         setModuleEntries(entries);
       }
-    } catch {}
+    } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
   }, []);
 
   const [pages, setPages] = useState<PageInfo[]>([]);
@@ -212,7 +213,7 @@ export function Sidebar({
       const res = await fetch('/api/pages');
       const data = await res.json();
       if (data.success) setPages(data.pages ?? []);
-    } catch {}
+    } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
   }, []);
 
   const refreshAllRef = useRef(() => {});
@@ -263,7 +264,7 @@ export function Sidebar({
         body: JSON.stringify({ visibility: vis }),
       });
       fetchPages();
-    } catch {}
+    } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
     setOpenMenu(null);
     setSelectedItem(null);
   };
@@ -284,7 +285,7 @@ export function Sidebar({
         body: JSON.stringify({ project: name, visibility: vis }),
       });
       refreshAll();
-    } catch {}
+    } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
     setOpenMenu(null);
     setSelectedItem(null);
   };
@@ -308,7 +309,7 @@ export function Sidebar({
         });
         refreshAll();
       }
-    } catch {}
+    } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
     setPwModal(null);
     setPwInput('');
   };
@@ -327,7 +328,7 @@ export function Sidebar({
       await fetch(`/api/fs?path=${encodeURIComponent(modulePath)}`, { method: 'DELETE' });
       onRefreshTree();
       refreshAll();
-    } catch {}
+    } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
   };
 
   const handleDeleteProject = async (name: string) => {

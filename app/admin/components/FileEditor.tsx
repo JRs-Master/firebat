@@ -10,6 +10,7 @@ import { tryUnwrapJson } from '../../../lib/json-normalize';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog } from './Dialog';
+import { logger } from '../../../lib/util/logger';
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), {
   ssr: false,
@@ -122,12 +123,12 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
   useEffect(() => {
     try {
       if (chat.length > 0) localStorage.setItem(chatStorageKey, JSON.stringify(chat));
-    } catch {}
+    } catch (e) { logger.debug('editor', 'operation 실패', { error: e }); }
   }, [chat, chatStorageKey]);
 
   const clearChat = useCallback(() => {
     setChat([]);
-    try { localStorage.removeItem(chatStorageKey); } catch {}
+    try { localStorage.removeItem(chatStorageKey); } catch (e) { logger.debug('editor', 'operation 실패', { error: e }); }
   }, [chatStorageKey]);
 
   // 세션 로컬 override — null 이면 어드민 기본값(aiModel prop) 사용

@@ -13,6 +13,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { logger } from '../../../lib/util/logger';
 
 type ServerEvent = { type: string; data?: any };
 type Listener = (ev: ServerEvent) => void;
@@ -60,22 +61,24 @@ class EventBusSingleton {
         // 재연결 시 sidebar:refresh 강제 emit — 끊긴 사이 발생한 이벤트 누락 보상.
         const reconnectEv: ServerEvent = { type: 'sidebar:refresh', data: { reason: 'sse-reconnect' } };
         for (const l of this.listeners) {
-          try { l(reconnectEv); } catch {}
+          try { l(reconnectEv); }
+          catch (e) { logger.warn('sse', 'reconnect listener 실패', { error: e }); }
         }
       };
       this.es.onmessage = (e) => {
         try {
           const ev = JSON.parse(e.data) as ServerEvent;
           for (const l of this.listeners) {
-            try { l(ev); } catch {}
+            try { l(ev); }
+            catch (le) { logger.warn('sse', 'event listener 실패', { error: le, eventType: ev.type }); }
           }
-        } catch {}
+        } catch (parseErr) { logger.debug('sse', 'event parse 실패', { error: parseErr }); }
       };
       this.es.onerror = () => {
         // 브라우저 자동 재연결 시도 → onopen 이 다시 발화하여 fetch 트리거.
         // visibilitychange 핸들러가 stale CLOSED 상태도 catch.
       };
-    } catch {}
+    } catch (e) { logger.warn('sse', 'EventSource 생성 실패', { error: e }); }
   }
 
   private disconnect() {

@@ -24,6 +24,7 @@ import { THINKING_STATUS, isSuggestionClickUserMessage, isSectionStartBlock, esc
 import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { Message, StepStatus } from './types';
 import { useViewportMaxHeight } from '../../lib/use-viewport-size';
+import { logger } from '../../lib/util/logger';
 
 /** 마크다운 table wrapper — viewport quirk 우회 + MUI/Antd 표준 (400px 캡) + 작은 폰 50%. */
 function MarkdownTableBox(props: any) {
@@ -1078,7 +1079,7 @@ export default function AdminConsole() {
             writeSetting('firebat_last_model_by_category', data.lastModelByCategory);
           }
         }
-      } catch {}
+      } catch (e) { logger.debug('admin-page', 'settings 초기 sync 실패', { error: e }); }
       if (!loadedFromServer) {
         const savedModel = readSetting('firebat_model');
         // 빈 폴백 — 사용자가 인증 설정하고 설정에서 명시 선택 하지 않은 한 채팅 차단.
