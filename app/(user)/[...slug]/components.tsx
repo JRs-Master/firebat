@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import StockChart from '../../admin/chat-components/StockChart';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
+import { apiPost } from '../../../lib/api-fetch';
 
 // ── 타입 ────────────────────────────────────────────────────────────────────
 interface ComponentDef {
@@ -282,12 +283,11 @@ function FormComp({ bindModule, inputs = [], submitText = '실행' }: {
         else payload[input.name] = val;
       }
 
-      const res = await fetch('/api/module/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ module: bindModule, data: payload }),
-      });
-      const data = await res.json();
+      const data = await apiPost<{ success: boolean; data?: any; error?: string }>(
+        '/api/module/run',
+        { module: bindModule, data: payload },
+        { category: 'module-run' },
+      );
       if (data.success && data.data) {
         setResult(data.data?.data ?? data.data);
       } else {

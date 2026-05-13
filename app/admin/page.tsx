@@ -25,6 +25,7 @@ import { createShareLink, copyToClipboard } from './hooks/share-helper';
 import { Message, StepStatus } from './types';
 import { useViewportMaxHeight } from '../../lib/use-viewport-size';
 import { logger } from '../../lib/util/logger';
+import { apiGet, apiPost } from '../../lib/api-fetch';
 
 /** 마크다운 table wrapper — viewport quirk 우회 + MUI/Antd 표준 (400px 캡) + 작은 폰 50%. */
 function MarkdownTableBox(props: any) {
@@ -985,13 +986,12 @@ export default function AdminConsole() {
     setAttachedSaveState('saving');
     setAttachedSaveError('');
     try {
-      const res = await fetch('/api/media/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dataUrl: attachedImage }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (res.ok && json.success) {
+      const json = await apiPost<{ success: boolean; error?: string }>(
+        '/api/media/upload',
+        { dataUrl: attachedImage },
+        { category: 'media-upload' },
+      );
+      if (json.success) {
         setAttachedSaveState('saved');
       } else {
         setAttachedSaveState('error');
@@ -1060,8 +1060,7 @@ export default function AdminConsole() {
       let loadedFromServer = false;
       let validIds: Set<string> | null = null;
       try {
-        const res = await fetch('/api/settings');
-        const data = await res.json();
+        const data = await apiGet<any>('/api/settings', { category: 'page' });
         if (data.success) {
           if (Array.isArray(data.aiModels)) {
             validIds = new Set<string>(

@@ -20,6 +20,7 @@ import { useSetting } from './settings-manager';
 import { useWakeLock } from './use-wake-lock';
 import { CHAT_WATCHDOG_IDLE_MS, KEEPALIVE_BODY_LIMIT_BYTES } from '../../../lib/config';
 import { safeJsonParse, logger } from '../../../lib/util';
+import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
 
 // SSE 이벤트 파서 — buffer에서 완성된 이벤트만 파싱, 나머지는 반환
 function parseSSE(buffer: string): { events: { event: string; data: any }[]; remaining: string } {
@@ -96,42 +97,45 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     let cancelled = false;
     (async () => {
       try {
-        const listRes = await fetch('/api/conversations');
-        if (listRes.ok) {
-          const listData = await listRes.json();
-          if (listData.success && !cancelled) {
-            const remote: Array<{ id: string; title: string; createdAt: number; updatedAt: number }> = listData.conversations ?? [];
-            remote.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+        const listData = await apiGet<{ success?: boolean; conversations?: Array<{ id: string; title: string; createdAt: number; updatedAt: number }> }>(
+          '/api/conversations',
+          { category: 'useChat' },
+        ).catch(() => null);
+        if (listData?.success && !cancelled) {
+          const remote = listData.conversations ?? [];
+          remote.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
 
-            const savedActiveId = localStorage.getItem('firebat_active_conv') ?? '';
-            const activeId = remote.find(r => r.id === savedActiveId)?.id ?? remote[0]?.id ?? '';
+          const savedActiveId = localStorage.getItem('firebat_active_conv') ?? '';
+          const activeId = remote.find(r => r.id === savedActiveId)?.id ?? remote[0]?.id ?? '';
 
-            let activeMessages: Message[] = [];
-            if (activeId) {
-              try {
-                const one = await fetch(`/api/conversations?id=${encodeURIComponent(activeId)}`).then(x => x.json());
-                if (one.success && one.conversation) activeMessages = one.conversation.messages ?? [];
-              } catch (e) {
-                console.debug(`[useChat] active conversation fetch 실패 (${activeId}):`, e);
-              }
+          let activeMessages: Message[] = [];
+          if (activeId) {
+            try {
+              const one = await apiGet<{ success?: boolean; conversation?: { messages?: Message[] } }>(
+                `/api/conversations?id=${encodeURIComponent(activeId)}`,
+                { category: 'useChat' },
+              );
+              if (one.success && one.conversation) activeMessages = one.conversation.messages ?? [];
+            } catch (e) {
+              logger.debug('useChat', `active conversation fetch 실패 (${activeId})`, { error: e });
             }
-            // cleanMessages 적용 후 conversations + dispatch LOAD 에 동일 값 주입.
-            // 두 곳이 다른 값이면 직후 save effect 가 "바뀜" 판정해 updatedAt bump → 목록 최상단으로 올라감 (의도치 않음).
-            const cleanedActive = cleanMessages(activeMessages);
-
-            const fullList: Conversation[] = remote.map(r => ({
-              id: r.id, title: r.title, createdAt: r.createdAt, updatedAt: r.updatedAt,
-              messages: r.id === activeId ? cleanedActive : [],
-            }));
-
-            setConversations(fullList);
-            localStorage.setItem('firebat_conversations', JSON.stringify(fullList));
-            if (activeId) {
-              setActiveConvId(activeId);
-              dispatch({ type: 'LOAD', messages: cleanedActive });
-            }
-            return;
           }
+          // cleanMessages 적용 후 conversations + dispatch LOAD 에 동일 값 주입.
+          // 두 곳이 다른 값이면 직후 save effect 가 "바뀜" 판정해 updatedAt bump → 목록 최상단으로 올라감 (의도치 않음).
+          const cleanedActive = cleanMessages(activeMessages);
+
+          const fullList: Conversation[] = remote.map(r => ({
+            id: r.id, title: r.title, createdAt: r.createdAt, updatedAt: r.updatedAt,
+            messages: r.id === activeId ? cleanedActive : [],
+          }));
+
+          setConversations(fullList);
+          localStorage.setItem('firebat_conversations', JSON.stringify(fullList));
+          if (activeId) {
+            setActiveConvId(activeId);
+            dispatch({ type: 'LOAD', messages: cleanedActive });
+          }
+          return;
         }
       } catch { /* DB 실패 → offline 폴백 */ }
 
@@ -244,23 +248,23 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     );
     // 1) 대화 목록 재조회 — 타기기에서 삭제된 대화를 로컬에서도 제거
     try {
-      const listRes = await fetch('/api/conversations');
-      if (listRes.ok) {
-        const listData = await listRes.json();
-        if (listData.success && Array.isArray(listData.conversations)) {
-          const remoteIds = new Set<string>(listData.conversations.map((r: { id: string }) => r.id));
-          setConversations(prev => {
-            const filtered = prev.filter(c => {
-              if (remoteIds.has(c.id)) return true;
-              if (c.id === activeConvId) return true;
-              const hasRealMessages = c.messages && c.messages.some(m => m.id !== 'system-init' && m.role === 'user');
-              return !hasRealMessages;
-            });
-            if (filtered.length === prev.length) return prev;
-            localStorage.setItem('firebat_conversations', JSON.stringify(filtered));
-            return filtered;
+      const listData = await apiGet<{ success?: boolean; conversations?: Array<{ id: string }> }>(
+        '/api/conversations',
+        { category: 'useChat' },
+      );
+      if (listData.success && Array.isArray(listData.conversations)) {
+        const remoteIds = new Set<string>(listData.conversations.map(r => r.id));
+        setConversations(prev => {
+          const filtered = prev.filter(c => {
+            if (remoteIds.has(c.id)) return true;
+            if (c.id === activeConvId) return true;
+            const hasRealMessages = c.messages && c.messages.some(m => m.id !== 'system-init' && m.role === 'user');
+            return !hasRealMessages;
           });
-        }
+          if (filtered.length === prev.length) return prev;
+          localStorage.setItem('firebat_conversations', JSON.stringify(filtered));
+          return filtered;
+        });
       }
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
     // 2) 현재 활성 conv 단일 갱신 — 다른 기기에서 이어 쓴 메시지 반영 / 백엔드 최종 응답 복구
@@ -269,9 +273,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     if (!convMeta) return;
     const localUpdatedAt = convMeta.updatedAt ?? convMeta.createdAt ?? 0;
     try {
-      const res = await fetch(`/api/conversations?id=${encodeURIComponent(activeConvId)}`);
-      if (!res.ok) return;
-      const data = await res.json();
+      const data = await apiGet<{ success?: boolean; conversation?: { messages?: Message[]; updatedAt?: number } }>(
+        `/api/conversations?id=${encodeURIComponent(activeConvId)}`,
+        { category: 'useChat' },
+      ).catch(() => null);
+      if (!data) return;
       if (!data.success || !data.conversation) return;
       const remoteUpdatedAt = data.conversation.updatedAt ?? 0;
       const remoteMsgs = cleanMessages(data.conversation.messages ?? []);
@@ -397,9 +403,10 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     const localRealMsgCount = conv.messages.filter(m => m.id !== 'system-init').length;
     (async () => {
       try {
-        const res = await fetch(`/api/conversations?id=${encodeURIComponent(id)}`);
-        if (!res.ok) return;
-        const data = await res.json();
+        const data = await apiGet<{ success?: boolean; conversation?: { messages?: Message[]; updatedAt?: number } }>(
+          `/api/conversations?id=${encodeURIComponent(id)}`,
+          { category: 'useChat' },
+        );
         if (!data.success || !data.conversation) return;
         const remoteUpdatedAt = data.conversation.updatedAt ?? 0;
         const remoteMsgs = cleanMessages(data.conversation.messages ?? []);
@@ -430,7 +437,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   }, [activeConvId, conversations, setActiveConvId]);
 
   const handleDeleteConv = useCallback((id: string) => {
-    fetch(`/api/conversations?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+    apiDelete(`/api/conversations?id=${encodeURIComponent(id)}`, { category: 'useChat' }).catch(() => {});
     setConversations(prev => {
       const updated = prev.filter(c => c.id !== id);
       localStorage.setItem('firebat_conversations', JSON.stringify(updated));
@@ -478,15 +485,15 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     let imageData: string | null = attachedImage;
     if (imageData && imageData.startsWith('data:') && inputMode !== 'image') {
       try {
-        const upRes = await fetch('/api/media/attach-temp', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ dataUrl: imageData }),
-        });
-        const upJson = await upRes.json().catch(() => null);
-        if (upRes.ok && upJson?.success && upJson?.data?.url) {
-          imageData = upJson.data.url as string;
+        const upJson = await apiPost<{ success?: boolean; data?: { url?: string }; error?: string }>(
+          '/api/media/attach-temp',
+          { dataUrl: imageData },
+          { category: 'useChat' },
+        );
+        if (upJson?.success && upJson?.data?.url) {
+          imageData = upJson.data.url;
         } else {
-          alert(`첨부 이미지 업로드 실패: ${upJson?.error ?? `HTTP ${upRes.status}`}`);
+          alert(`첨부 이미지 업로드 실패: ${upJson?.error ?? '응답 오류'}`);
           return;
         }
       } catch (err) {
@@ -528,15 +535,13 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       try {
         const ctrl = new AbortController();
         abortRef.current = ctrl;
-        const res = await fetch('/api/media/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: ctrl.signal,
-          body: JSON.stringify({ prompt: userPrompt }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json.success || !json.data) {
-          dispatch({ type: 'ERROR', id: systemId, error: json.error || `이미지 생성 실패 (${res.status})` });
+        const json: { success?: boolean; data?: any; error?: string } = await apiPost<{ success?: boolean; data?: any; error?: string }>(
+          '/api/media/generate',
+          { prompt: userPrompt },
+          { signal: ctrl.signal, category: 'useChat' },
+        ).catch((err: any) => ({ success: false, error: err?.message ?? '네트워크 오류' }));
+        if (!json.success || !json.data) {
+          dispatch({ type: 'ERROR', id: systemId, error: json.error || '이미지 생성 실패' });
         } else {
           const d = json.data;
           // render_image 와 동일 포맷 — components.tsx 의 ImageComp 가 variants/blurhash/thumbnailUrl 자동 활용
@@ -771,12 +776,11 @@ export function useChat(aiModel: string, onRefresh: () => void) {
     try {
       const qs = new URLSearchParams({ planId });
       if (action) qs.set('action', action);
-      const res = await fetch(`/api/plan/commit?${qs.toString()}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newRunAt ? { runAt: newRunAt } : {}),
-      });
-      const data = await res.json();
+      const data: { success: boolean; code?: string; error?: string; originalRunAt?: string } = await apiPost<{ success: boolean; code?: string; error?: string; originalRunAt?: string }>(
+        `/api/plan/commit?${qs.toString()}`,
+        newRunAt ? { runAt: newRunAt } : {},
+        { category: 'useChat' },
+      ).catch((err: any) => ({ success: false, error: err?.message ?? '실행 실패' }));
       if (data.success) {
         dispatch({ type: 'PENDING_APPROVED', msgId, planId });
         onRefresh();
@@ -796,7 +800,7 @@ export function useChat(aiModel: string, onRefresh: () => void) {
   // Pending tool 개별 거부
   const handleRejectPending = useCallback(async (msgId: string, planId: string) => {
     try {
-      await fetch(`/api/plan/reject?planId=${encodeURIComponent(planId)}`, { method: 'POST' });
+      await apiPost(`/api/plan/reject?planId=${encodeURIComponent(planId)}`, undefined, { category: 'useChat' });
       dispatch({ type: 'PENDING_REJECTED', msgId, planId });
       persistPendingChange(msgId, planId, { status: 'rejected' });
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }

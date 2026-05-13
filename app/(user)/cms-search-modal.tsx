@@ -9,6 +9,7 @@
  * 결과 클릭 시 모달 close + 페이지 navigation. 모든 페이지 검색 (private 제외, password 포함).
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { apiGet } from '../../lib/api-fetch';
 
 interface SearchResult {
   slug: string;
@@ -71,13 +72,12 @@ function SearchModal({ onClose }: { onClose: () => void }) {
     setTooShort(false);
     setLoading(true);
     try {
-      const url = new URL('/api/search', window.location.origin);
-      url.searchParams.set('q', q);
-      url.searchParams.set('limit', '20');
-      const res = await fetch(url.toString(), { signal });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data?.success) setResults((data.results ?? []) as SearchResult[]);
+      const params = new URLSearchParams({ q, limit: '20' });
+      const data = await apiGet<{ success?: boolean; results?: SearchResult[] }>(
+        `/api/search?${params.toString()}`,
+        { signal, category: 'cms-search' },
+      );
+      if (data?.success) setResults(data.results ?? []);
     } catch (err: any) {
       if (err?.name !== 'AbortError') setResults([]);
     } finally {
