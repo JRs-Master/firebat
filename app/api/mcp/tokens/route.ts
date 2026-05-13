@@ -5,25 +5,18 @@
  * POST   /api/mcp/tokens — 새 토큰 생성 (원본 1회 반환)
  * DELETE /api/mcp/tokens — 토큰 폐기
  */
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
+import { withAuth } from '../../../../lib/with-api-error';
 
 /** 토큰 정보 조회 (마스킹된 힌트 + 생성일) */
-export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
-
-  const core = getCore();
-  const info = await core.getApiTokenInfo();
+export const GET = withAuth(async () => {
+  const info = await getCore().getApiTokenInfo();
   return NextResponse.json({ success: true, ...info });
-}
+});
 
 /** 새 토큰 생성 — 기존 토큰 무효화, 원본은 이 응답에서만 노출 */
-export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
-
+export const POST = withAuth(async () => {
   const core = getCore();
   const token = await core.generateApiToken('MCP API');
   const info = await core.getApiTokenInfo();
@@ -33,14 +26,10 @@ export async function POST(req: NextRequest) {
     hint: info.hint,
     createdAt: info.createdAt,
   });
-}
+});
 
 /** 토큰 폐기 */
-export async function DELETE(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
-
-  const core = getCore();
-  await core.revokeApiTokens();
+export const DELETE = withAuth(async () => {
+  await getCore().revokeApiTokens();
   return NextResponse.json({ success: true });
-}
+});

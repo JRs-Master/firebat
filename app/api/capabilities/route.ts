@@ -1,21 +1,16 @@
 import { NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../lib/auth-guard';
-import { withApiError } from '../../../lib/with-api-error';
+import { withAuth } from '../../../lib/with-api-error';
 import { ApiError } from '../../../lib/api-error';
 
 /** GET /api/capabilities — capability 목록 조회 (각 capability별 provider 수 포함) */
-export const GET = withApiError(async (req) => {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const GET = withAuth(async () => {
   const list = await getCore().listCapabilitiesWithProviders();
   return NextResponse.json({ success: true, capabilities: list });
 });
 
 /** POST /api/capabilities — 특정 capability의 provider 목록 + 설정 */
-export const POST = withApiError(async (req) => {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const POST = withAuth(async (req) => {
   const { id } = await req.json();
   if (!id) throw new ApiError(400, 'capability id 필요');
 
@@ -34,9 +29,7 @@ export const POST = withApiError(async (req) => {
 });
 
 /** PATCH /api/capabilities — capability 설정 변경 (모드, 우선순위 등) */
-export const PATCH = withApiError(async (req) => {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const PATCH = withAuth(async (req) => {
   const { id, settings, label, description } = await req.json();
   if (!id) throw new ApiError(400, 'capability id 필요');
 

@@ -7,46 +7,30 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
+import { withAuth } from '../../../../lib/with-api-error';
 
 /** GET — 도구 목록 */
-export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
-  try {
-    const core = getCore();
-    const serverName = req.nextUrl.searchParams.get('server');
+export const GET = withAuth(async (req: NextRequest) => {
+  const core = getCore();
+  const serverName = req.nextUrl.searchParams.get('server');
 
-    const result = serverName
-      ? await core.listMcpTools(serverName)
-      : await core.listAllMcpTools();
+  const result = serverName
+    ? await core.listMcpTools(serverName)
+    : await core.listAllMcpTools();
 
-    return result.success
-      ? NextResponse.json({ success: true, tools: result.data })
-      : NextResponse.json({ success: false, error: result.error }, { status: 500 });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
-  }
-}
+  return result.success
+    ? NextResponse.json({ success: true, tools: result.data })
+    : NextResponse.json({ success: false, error: result.error }, { status: 500 });
+});
 
 /** POST — 도구 실행 */
-export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
-  try {
-    const { server, tool, arguments: args } = await req.json();
-
-    if (!server || !tool) {
-      return NextResponse.json({ success: false, error: 'server, tool 필수' }, { status: 400 });
-    }
-
-    const core = getCore();
-    const result = await core.callMcpTool(server, tool, args ?? {});
-
-    return result.success
-      ? NextResponse.json({ success: true, data: result.data })
-      : NextResponse.json({ success: false, error: result.error }, { status: 500 });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
+export const POST = withAuth(async (req: NextRequest) => {
+  const { server, tool, arguments: args } = await req.json();
+  if (!server || !tool) {
+    return NextResponse.json({ success: false, error: 'server, tool 필수' }, { status: 400 });
   }
-}
+  const result = await getCore().callMcpTool(server, tool, args ?? {});
+  return result.success
+    ? NextResponse.json({ success: true, data: result.data })
+    : NextResponse.json({ success: false, error: result.error }, { status: 500 });
+});
