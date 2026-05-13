@@ -16,6 +16,7 @@ import { useSidebarRefresh } from '../hooks/events-manager';
 import { createShareLink, copyToClipboard } from '../hooks/share-helper';
 import { rowActionsClass } from '../utils/row-actions';
 import { logger } from '../../../lib/util/logger';
+import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
 
 interface Project { name: string; paths: string[]; pageSlugs?: string[]; visibility?: string; }
 interface PageInfo { slug: string; title: string; status: string; updatedAt: string; project?: string | null; visibility?: string; }
@@ -81,22 +82,24 @@ export function Sidebar({
 
   const reloadTrash = useCallback(async () => {
     try {
-      const res = await fetch('/api/conversations/trash');
-      const data = await res.json();
+      const data = await apiGet<{ success?: boolean; conversations?: ConversationMeta[] }>(
+        '/api/conversations/trash',
+        { category: 'sidebar' },
+      );
       if (data?.success && Array.isArray(data.conversations)) {
-        setTrashConvs(data.conversations as ConversationMeta[]);
+        setTrashConvs(data.conversations);
       }
     } catch { /* silent — 다음 trigger 시 재시도 */ }
   }, []);
 
   const handleRestoreConv = useCallback(async (id: string) => {
     try {
-      const res = await fetch('/api/conversations/restore', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.success) {
+      const data = await apiPost<{ success?: boolean; error?: string }>(
+        '/api/conversations/restore',
+        { id },
+        { category: 'sidebar' },
+      );
+      if (!data?.success) {
         await alertDialog({ title: '복원 실패', message: data?.error ?? '알 수 없는 오류', danger: true });
         return;
       }
@@ -116,12 +119,12 @@ export function Sidebar({
     });
     if (!ok) return;
     try {
-      const res = await fetch('/api/conversations/permanent-delete', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.success) {
+      const data = await apiPost<{ success?: boolean; error?: string }>(
+        '/api/conversations/permanent-delete',
+        { id },
+        { category: 'sidebar' },
+      );
+      if (!data?.success) {
         await alertDialog({ title: '영구 삭제 실패', message: data?.error ?? '알 수 없는 오류', danger: true });
         return;
       }
@@ -177,17 +180,21 @@ export function Sidebar({
 
   const fetchProjects = useCallback(async () => {
     try {
-      const res = await fetch('/api/fs/projects');
-      const data = await res.json();
+      const data = await apiGet<{ success: boolean; projects?: Project[] }>(
+        '/api/fs/projects',
+        { category: 'sidebar' },
+      );
       if (data.success) {
-        setProjects(data.projects);
-        // 각 모듈의 엔트리 파일 탐색
-        const allPaths = (data.projects as Project[]).flatMap(p => p.paths);
+        const projectList = data.projects ?? [];
+        setProjects(projectList);
+        const allPaths = projectList.flatMap(p => p.paths);
         const entries: Record<string, string> = {};
         await Promise.all(allPaths.map(async (p) => {
           try {
-            const treeRes = await fetch(`/api/fs/tree?root=${encodeURIComponent(p)}`);
-            const treeData = await treeRes.json();
+            const treeData = await apiGet<{ success?: boolean; tree?: Array<{ children?: Array<{ name: string; isDirectory: boolean }> }> }>(
+              `/api/fs/tree?root=${encodeURIComponent(p)}`,
+              { category: 'sidebar' },
+            );
             const files: string[] = [];
             if (treeData.success && treeData.tree?.[0]?.children) {
               for (const n of treeData.tree[0].children) {
@@ -210,8 +217,10 @@ export function Sidebar({
 
   const fetchPages = useCallback(async () => {
     try {
-      const res = await fetch('/api/pages');
-      const data = await res.json();
+      const data = await apiGet<{ success: boolean; pages?: PageInfo[] }>(
+        '/api/pages',
+        { category: 'sidebar' },
+      );
       if (data.success) setPages(data.pages ?? []);
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
   }, []);
@@ -258,11 +267,7 @@ export function Sidebar({
       return;
     }
     try {
-      await fetch(`/api/pages/${encodeURIComponent(slug)}/visibility`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ visibility: vis }),
-      });
+      await apiPatch(`/api/pages/${encodeURIComponent(slug)}/visibility`, { visibility: vis }, { category: 'sidebar' });
       fetchPages();
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
     setOpenMenu(null);
@@ -279,11 +284,7 @@ export function Sidebar({
       return;
     }
     try {
-      await fetch('/api/fs/projects', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ project: name, visibility: vis }),
-      });
+      await apiPatch('/api/fs/projects', { project: name, visibility: vis }, { category: 'sidebar' });
       refreshAll();
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
     setOpenMenu(null);
@@ -295,18 +296,10 @@ export function Sidebar({
     if (!pwModal || !pwInput.trim()) return;
     try {
       if (pwModal.type === 'page') {
-        await fetch(`/api/pages/${encodeURIComponent(pwModal.target)}/visibility`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ visibility: 'password', password: pwInput }),
-        });
+        await apiPatch(`/api/pages/${encodeURIComponent(pwModal.target)}/visibility`, { visibility: 'password', password: pwInput }, { category: 'sidebar' });
         fetchPages();
       } else {
-        await fetch('/api/fs/projects', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project: pwModal.target, visibility: 'password', password: pwInput }),
-        });
+        await apiPatch('/api/fs/projects', { project: pwModal.target, visibility: 'password', password: pwInput }, { category: 'sidebar' });
         refreshAll();
       }
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
@@ -325,7 +318,7 @@ export function Sidebar({
     const name = modulePath.replace(/^user\/modules\//, '');
     if (!await confirmDialog({ title: '모듈 삭제', message: `모듈 "${name}" 폴더 전체를 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
     try {
-      await fetch(`/api/fs?path=${encodeURIComponent(modulePath)}`, { method: 'DELETE' });
+      await apiDelete(`/api/fs?path=${encodeURIComponent(modulePath)}`, { category: 'sidebar' });
       onRefreshTree();
       refreshAll();
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
@@ -335,7 +328,7 @@ export function Sidebar({
     if (!await confirmDialog({ title: '프로젝트 삭제', message: `프로젝트 "${name}"의 모든 파일을 삭제하시겠습니까?\n관련 페이지와 모듈이 모두 삭제됩니다.`, danger: true, okLabel: '삭제' })) return;
     setDeletingProject(name);
     try {
-      await fetch(`/api/fs/projects?project=${encodeURIComponent(name)}`, { method: 'DELETE' });
+      await apiDelete(`/api/fs/projects?project=${encodeURIComponent(name)}`, { category: 'sidebar' });
       onRefreshTree();
       refreshAll();
     } finally {
@@ -347,7 +340,7 @@ export function Sidebar({
     if (!await confirmDialog({ title: '페이지 삭제', message: `페이지 "${slug}"을(를) 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
     setDeletingPage(slug);
     try {
-      await fetch(`/api/pages?slug=${encodeURIComponent(slug)}`, { method: 'DELETE' });
+      await apiDelete(`/api/pages?slug=${encodeURIComponent(slug)}`, { category: 'sidebar' });
       fetchPages();
     } finally {
       setDeletingPage(null);
@@ -377,20 +370,18 @@ export function Sidebar({
     setRenaming(true);
     try {
       if (renameTarget.type === 'page') {
-        const res = await fetch(`/api/pages/${encodeURIComponent(renameTarget.current)}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ newSlug: normalized, setRedirect: renameSetRedirect }),
-        });
-        const data = await res.json();
+        const data = await apiPatch<{ success: boolean; error?: string }>(
+          `/api/pages/${encodeURIComponent(renameTarget.current)}`,
+          { newSlug: normalized, setRedirect: renameSetRedirect },
+          { category: 'sidebar' },
+        );
         if (!data.success) { await alertDialog({ title: '변경 실패', message: data.error || '변경 실패', danger: true }); return; }
       } else {
-        const res = await fetch(`/api/fs/projects`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'rename', project: renameTarget.current, newName: normalized, setRedirect: renameSetRedirect }),
-        });
-        const data = await res.json();
+        const data = await apiPatch<{ success: boolean; error?: string }>(
+          '/api/fs/projects',
+          { action: 'rename', project: renameTarget.current, newName: normalized, setRedirect: renameSetRedirect },
+          { category: 'sidebar' },
+        );
         if (!data.success) { await alertDialog({ title: '변경 실패', message: data.error || '변경 실패', danger: true }); return; }
       }
       setRenameTarget(null);
@@ -963,17 +954,16 @@ export function Sidebar({
                           onClick={async (e) => {
                             e.stopPropagation();
                             try {
-                              const res = await fetch('/api/consolidate', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ conversationId: conv.id }),
-                              });
-                              const data = await res.json();
-                              if (!res.ok || !data?.success) {
-                                await alertDialog({ title: '정리 실패', message: data?.error ?? res.statusText ?? '알 수 없는 오류', danger: true });
+                              const data = await apiPost<{ success?: boolean; saved?: { entities: unknown[]; facts: unknown[]; events: unknown[] }; skipped?: number; error?: string }>(
+                                '/api/consolidate',
+                                { conversationId: conv.id },
+                                { category: 'sidebar' },
+                              );
+                              if (!data?.success) {
+                                await alertDialog({ title: '정리 실패', message: data?.error ?? '알 수 없는 오류', danger: true });
                                 return;
                               }
-                              const s = data.saved;
+                              const s = data.saved!;
                               const lines = [
                                 `엔티티 ${s.entities.length}개`,
                                 `사실 ${s.facts.length}개`,
@@ -1241,9 +1231,11 @@ function ShareConvButton({ convId, title, liveMessages }: { convId: string; titl
       if (liveMessages && liveMessages.length > 0) {
         messages = (liveMessages as Array<{ id?: string }>).filter((m) => m.id !== 'system-init');
       } else {
-        const convRes = await fetch(`/api/conversations?id=${encodeURIComponent(convId)}`);
-        const convData = await convRes.json();
-        if (!convData.success || !convData.conversation) {
+        const convData = await apiGet<{ success: boolean; conversation?: { messages?: Array<{ id?: string }> } }>(
+          `/api/conversations?id=${encodeURIComponent(convId)}`,
+          { category: 'sidebar' },
+        ).catch(() => null);
+        if (!convData?.success || !convData.conversation) {
           setStatus('error');
           setTimeout(() => setStatus('idle'), 2200);
           return;

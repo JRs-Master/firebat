@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { apiPost } from '../../../lib/api-fetch';
 
 interface Props {
   slug: string;
@@ -33,12 +34,7 @@ export function PasswordGate({ slug, title, isProjectPassword, projectName }: Pr
         ? { project: projectName, password }
         : { password };
 
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
+      const data = await apiPost<{ verified?: boolean }>(url, body, { category: 'password-gate' });
 
       if (data.verified) {
         // 쿠키에 인증 토큰 저장 후 새로고침

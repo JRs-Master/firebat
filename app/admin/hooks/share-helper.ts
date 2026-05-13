@@ -5,6 +5,8 @@
  * POST /api/share → URL 받아 클립보드 복사 + 토스트 알림.
  */
 
+import { apiPost } from '../../../lib/api-fetch';
+
 type ShareInput = {
   type: 'turn' | 'full';
   conversationId?: string;
@@ -16,14 +18,13 @@ type ShareInput = {
 
 export async function createShareLink(input: ShareInput): Promise<{ url: string; expiresAt: number; reused?: boolean } | { error: string }> {
   try {
-    const res = await fetch('/api/share', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    });
-    const data = await res.json();
-    if (!data.success) return { error: data.error || '공유 생성 실패' };
-    return { url: data.url, expiresAt: data.expiresAt, reused: data.reused };
+    const data = await apiPost<{ success: boolean; url?: string; expiresAt?: number; reused?: boolean; error?: string }>(
+      '/api/share',
+      input,
+      { category: 'share' },
+    );
+    if (!data.success || !data.url) return { error: data.error || '공유 생성 실패' };
+    return { url: data.url, expiresAt: data.expiresAt ?? 0, reused: data.reused };
   } catch (err: unknown) {
     return { error: err instanceof Error ? err.message : String(err) };
   }

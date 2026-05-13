@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslations } from '../../lib/i18n';
+import { apiPost } from '../../lib/api-fetch';
 
 export function ConsoleLayoutInner({ children }: { children: React.ReactNode }) {
   const t = useTranslations();
@@ -15,7 +16,11 @@ export function ConsoleLayoutInner({ children }: { children: React.ReactNode }) 
   }, []);
 
   const handleLogout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    try {
+      await apiPost('/api/auth/logout', undefined, { category: 'auth' });
+    } catch {
+      // 실패해도 로그아웃 진행
+    }
     window.location.href = '/login';
   };
 

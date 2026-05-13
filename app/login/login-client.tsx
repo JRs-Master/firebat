@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { alertDialog } from '../admin/components/Dialog';
 import { SetupWizard } from '../admin/components/SetupWizard';
 import { useTranslations } from '../../lib/i18n';
+import { apiGet, apiPost, ApiError } from '../../lib/api-fetch';
 
 export function LoginInner() {
   const t = useTranslations();
@@ -16,8 +17,7 @@ export function LoginInner() {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch('/api/auth/setup');
-        const data = await res.json();
+        const data = await apiGet<{ isAdminSetup: boolean }>('/api/auth/setup', { category: 'login' });
         setSetupState(data.isAdminSetup === false ? 'needed' : 'done');
       } catch {
         setSetupState('done'); // 네트워크 실패 시 일반 login form 노출 (안전한 fallback)
@@ -30,9 +30,12 @@ export function LoginInner() {
     if (submitting) return; // alertDialog open 중 또는 fetch 진행 중 재제출 → backdrop 누적 차단
     setSubmitting(true);
     try {
-      const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, password }) });
-      if (res.ok) { window.location.href = '/admin'; return; }
-      await alertDialog({ title: t('login.failed_title'), message: t('login.failed_message'), danger: true });
+      await apiPost('/api/auth', { id, password }, { category: 'login' });
+      window.location.href = '/admin';
+    } catch (err) {
+      if (err instanceof ApiError) {
+        await alertDialog({ title: t('login.failed_title'), message: t('login.failed_message'), danger: true });
+      }
     } finally {
       setSubmitting(false);
     }

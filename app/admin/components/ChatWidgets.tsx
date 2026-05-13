@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Plug, KeyRound, CheckCircle2 } from 'lucide-react';
+import { apiPost } from '../../../lib/api-fetch';
 
 /** MCP 결과 접기/펼치기 컴포넌트 */
 export function McpResultCollapsible({ data }: { data: any[] }) {
@@ -39,17 +40,12 @@ export function SecretInput({ name, prompt, helpUrl }: { name: string; prompt: s
     if (!value.trim()) return;
     setStatus('saving');
     try {
-      const res = await fetch('/api/vault/secrets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, value: value.trim() }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setStatus('saved');
-      } else {
-        setStatus('error');
-      }
+      const data = await apiPost<{ success: boolean }>(
+        '/api/vault/secrets',
+        { name, value: value.trim() },
+        { category: 'chat-widgets' },
+      );
+      setStatus(data.success ? 'saved' : 'error');
     } catch {
       setStatus('error');
     }

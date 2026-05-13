@@ -10,6 +10,7 @@ import { WidgetListField } from './WidgetListField';
 import { useTranslations, useLang } from '../../../lib/i18n';
 import type { Lang } from '../../../lib/i18n';
 import { logger } from '../../../lib/util/logger';
+import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
 type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list';
@@ -248,8 +249,10 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   // lang 변경 시 schema 재계산 (config.json 의 i18n 영역에서 lang 별 label/description 다시 resolve).
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/settings/modules?name=${encodeURIComponent(moduleName)}`)
-      .then(r => r.json())
+    apiGet<{ success: boolean; settings?: Record<string, unknown>; config?: Record<string, unknown> | null }>(
+      `/api/settings/modules?name=${encodeURIComponent(moduleName)}`,
+      { category: 'system-module' },
+    )
       .then(data => {
         if (data.success) {
           // config.json에서 secrets 자동 생성
@@ -302,8 +305,10 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
     const hasSecretOrOauth = schema.fields.some(f => f.type === 'oauth' || f.type === 'secret');
     if (!hasSecretOrOauth) return;
     try {
-      const res = await fetch('/api/vault/secrets');
-      const data = await res.json();
+      const data = await apiGet<{ success: boolean; secrets?: { name: string; hasValue: boolean }[] }>(
+        '/api/vault/secrets',
+        { category: 'system-module' },
+      );
       if (!data.success) return;
       const secrets: { name: string; hasValue: boolean }[] = data.secrets ?? [];
       const secretNames = secrets.map(s => s.name);
@@ -332,11 +337,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
     if (!value?.trim()) return;
     setSecretSaving(prev => ({ ...prev, [field.key]: true }));
     try {
-      await fetch('/api/vault/secrets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: field.secretName, value }),
-      });
+      await apiPost('/api/vault/secrets', { name: field.secretName, value }, { category: 'system-module' });
       setSecretSaved(prev => ({ ...prev, [field.key]: true }));
       setSecretValues(prev => ({ ...prev, [field.key]: '' }));
     } catch (e) { logger.debug('system-module', 'operation 실패', { error: e }); }
@@ -351,12 +352,11 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch('/api/settings/modules', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: moduleName, settings }),
-      });
-      const data = await res.json();
+      const data = await apiPatch<{ success: boolean }>(
+        '/api/settings/modules',
+        { name: moduleName, settings },
+        { category: 'system-module' },
+      );
       if (data.success) setSaved(true);
     } catch (e) { logger.debug('system-module', 'operation 실패', { error: e }); }
     finally { setSaving(false); }
@@ -378,37 +378,47 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
 
   useEffect(() => {
     if (!isMcpApp && !isMcpLlm) return;
-    fetch(mcpTokenEndpoint).then(r => r.json()).then(data => {
-      if (data.success) {
-        if (isMcpLlm) {
-          // /api/mcp-internal/token 응답 형식: { token: {hasToken, masked}, createdAt }
-          setMcpTokenInfo({ exists: data.token?.hasToken ?? false, hint: data.token?.masked ?? null, createdAt: data.createdAt ?? null });
-        } else {
-          setMcpTokenInfo({ exists: data.exists, hint: data.hint, createdAt: data.createdAt });
+    apiGet<{
+      success: boolean;
+      exists?: boolean;
+      hint?: string | null;
+      createdAt?: string | null;
+      token?: { hasToken?: boolean; masked?: string | null };
+    }>(mcpTokenEndpoint, { category: 'mcp-token' })
+      .then(data => {
+        if (data.success) {
+          if (isMcpLlm) {
+            setMcpTokenInfo({ exists: data.token?.hasToken ?? false, hint: data.token?.masked ?? null, createdAt: data.createdAt ?? null });
+          } else {
+            setMcpTokenInfo({ exists: data.exists ?? false, hint: data.hint ?? null, createdAt: data.createdAt ?? null });
+          }
         }
-      }
-    }).catch(() => {});
+      })
+      .catch(() => {});
   }, [moduleName, isMcpApp, isMcpLlm, mcpTokenEndpoint]);
 
   const generateMcpToken = async () => {
     if (mcpTokenInfo.exists && !await confirmDialog({ title: t('system_modules.common.token_regenerate_title'), message: t('system_modules.common.token_regenerate_message'), danger: true, okLabel: t('system_modules.common.token_regenerate_ok') })) return;
     setMcpTokenLoading(true);
     try {
-      const res = await fetch(mcpTokenEndpoint, { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
+      const data = await apiPost<{ success: boolean; token?: string; hint?: string; createdAt?: string }>(
+        mcpTokenEndpoint,
+        undefined,
+        { category: 'mcp-token' },
+      );
+      if (data.success && data.token) {
         setMcpTokenRaw(data.token);
         const hint = isMcpLlm
-          ? `${(data.token as string).slice(0, 8)}****${(data.token as string).slice(-4)}`
-          : data.hint;
-        setMcpTokenInfo({ exists: true, hint, createdAt: data.createdAt });
+          ? `${data.token.slice(0, 8)}****${data.token.slice(-4)}`
+          : (data.hint ?? null);
+        setMcpTokenInfo({ exists: true, hint, createdAt: data.createdAt ?? null });
       }
     } catch (e) { logger.debug('system-module', 'operation 실패', { error: e }); } finally { setMcpTokenLoading(false); }
   };
 
   const revokeMcpToken = async () => {
     if (!await confirmDialog({ title: t('system_modules.common.token_revoke_title'), message: t('system_modules.common.token_revoke_message'), danger: true, okLabel: t('system_modules.common.token_revoke_ok') })) return;
-    await fetch(mcpTokenEndpoint, { method: 'DELETE' });
+    await apiDelete(mcpTokenEndpoint, { category: 'mcp-token' });
     setMcpTokenInfo({ exists: false, hint: null, createdAt: null });
     setMcpTokenRaw(null);
   };
