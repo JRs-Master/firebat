@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
 import { SESSION_MAX_AGE_SECONDS, SESSION_COOKIE_NAME } from '../../../../lib/config';
 import { isHttpsRequest } from '../../../../lib/cookie-helpers';
+import { VK_SYSTEM_UI_LANG } from '../../../../lib/proto-gen/vault-keys';
 
 export async function GET(_req: NextRequest) {
   const core = getCore();
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
   //    - system:ui-lang — 어드민 UI 언어 (i18n 인프라 미설정, 향후 도입 시 자동 활용)
   //    - cms.siteLang — 사이트 공개 언어 (HTML lang 속성 + SEO)
   //    초기엔 같은 값. 어드민 = ko / 사이트 = en 같이 분리하려면 어드민 설정 / CMS 모달에서 별도 변경.
-  await core.setGeminiKey('system:ui-lang', siteLang);
+  await core.setGeminiKey(VK_SYSTEM_UI_LANG, siteLang);
   const cms = await core.getCmsSettings();
   const patched = { ...cms, siteLang };
   await core.setModuleSettings('cms', patched);

@@ -7,9 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
-
-const TOKEN_KEY = 'system:internal-mcp-token';
-const CREATED_KEY = 'system:internal-mcp-token-created';
+import { VK_INTERNAL_MCP_TOKEN as TOKEN_KEY, VK_INTERNAL_MCP_TOKEN_CREATED as CREATED_KEY } from '../../../../lib/proto-gen/vault-keys';
 
 function generateToken(): string {
   const bytes = new Uint8Array(32);

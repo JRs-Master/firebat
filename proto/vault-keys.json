@@ -1,0 +1,71 @@
+{
+  "_comment": "Vault key registry — Phase 6 정공 (2026-05-13). scripts/gen-vault-keys.mjs 가 본 파일 → core/src/vault_keys.rs + lib/proto-gen/vault-keys.ts 자동 생성. 새 vault key 추가 시 본 파일만 수정.",
+  "_constants_doc": "고정 key. Rust = pub const VK_XXX: &str. TS = export const VK_XXX.",
+  "_templates_doc": "동적 key (prefix + 변수). Rust = pub fn vk_xxx(arg). TS = export function vkXxx(arg).",
+  "_defaults_doc": "기본값 (모델명 / 한도 등) — vault 미설정 시 폴백. settings.rs / SettingsModal 양쪽 single source.",
+
+  "constants": {
+    "VK_SYSTEM_TIMEZONE": "system:timezone",
+    "VK_SYSTEM_AI_MODEL": "system:llm:model",
+    "VK_SYSTEM_AI_THINKING_LEVEL": "system:llm:thinking-level",
+    "VK_SYSTEM_USER_PROMPT": "system:user-prompt",
+    "VK_SYSTEM_AI_ASSISTANT_MODEL": "system:ai-router:model",
+    "VK_SYSTEM_AI_ROUTER_ENABLED": "system:ai-router:enabled",
+    "VK_LLM_ANTHROPIC_CACHE": "system:llm:anthropic-cache",
+    "VK_SYSTEM_LAST_MODEL_BY_CATEGORY": "system:llm:last-by-category",
+    "VK_ADMIN_ID": "FIREBAT_ADMIN_ID",
+    "VK_ADMIN_PASSWORD": "FIREBAT_ADMIN_PASSWORD",
+    "VK_COST_BUDGET": "system:cost:budget",
+    "VK_IMAGE_MODEL": "system:image-model",
+    "VK_IMAGE_SIZE": "system:image-size",
+    "VK_IMAGE_QUALITY": "system:image-quality",
+    "VK_SYSTEM_UI_LANG": "system:ui-lang",
+    "VK_INTERNAL_MCP_TOKEN": "system:internal-mcp-token",
+    "VK_INTERNAL_MCP_TOKEN_CREATED": "system:internal-mcp-token-created"
+  },
+
+  "prefixes": {
+    "AUTH_SESSION_PREFIX": "auth:session:",
+    "USER_SECRET_PREFIX": "user:"
+  },
+
+  "templates": {
+    "vk_user_secret": {
+      "rust": "user:{name}",
+      "ts": "user:${name}",
+      "args": [{ "name": "name", "type": "string" }],
+      "doc": "사용자 시크릿 key — `user:<name>` 형식. AI 가 모듈 호출 시 이 prefix 의 시크릿 자동 주입."
+    },
+    "vk_capability_settings": {
+      "rust": "system:capability:{cap_id}:settings",
+      "ts": "system:capability:${capId}:settings",
+      "args": [{ "name": "cap_id", "tsName": "capId", "type": "string" }],
+      "doc": "Capability 설정 key — `system:capability:<id>:settings` 형식. CapabilityManager 가 사용."
+    },
+    "vk_module_settings": {
+      "rust": "system:module:{name}:settings",
+      "ts": "system:module:${name}:settings",
+      "args": [{ "name": "name", "type": "string" }],
+      "doc": "Module 설정 key — `system:module:<name>:settings` 형식. ModuleManager / CapabilityManager 활성화 검사 시 사용."
+    }
+  },
+
+  "defaults": {
+    "DEFAULT_LLM_MODEL_FALLBACK": {
+      "value": "claude-sonnet-4-6",
+      "type": "string",
+      "doc": "메인 LLM 모델 미설정 시 폴백 — settings.rs get_ai_model 기본값 single source."
+    },
+    "DEFAULT_THINKING_LEVEL": {
+      "value": "medium",
+      "type": "string",
+      "doc": "사고 수준 미설정 시 폴백 — settings.rs get_ai_thinking_level 기본값 single source."
+    },
+    "USER_PROMPT_MAX_CHARS": {
+      "value": 2000,
+      "type": "usize",
+      "tsType": "number",
+      "doc": "사용자 지시사항 최대 글자 수 — settings.rs + frontend SettingsModal 공통 single source."
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../lib/auth-guard';
+import { VK_SYSTEM_AI_ROUTER_ENABLED, VK_SYSTEM_UI_LANG } from '../../../lib/proto-gen/vault-keys';
 
 /** GET /api/settings — 시스템 설정 조회 */
 export async function GET(req: NextRequest) {
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest) {
     imageModel, imageModels, imageDefaultSize, imageDefaultQuality,
     anthropicCacheEnabled, subAgentEnabled, uiLangRaw,
   ] = await Promise.all([
-    core.getGeminiKey('system:ai-router:enabled'),
+    core.getGeminiKey(VK_SYSTEM_AI_ROUTER_ENABLED),
     core.getTimezone(),
     core.getAiModel(),
     core.getAiThinkingLevel(),
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
     core.getImageDefaultQuality(),
     core.getAnthropicCacheEnabled(),
     core.isSubAgentEnabled(),
-    core.getGeminiKey('system:ui-lang'),
+    core.getGeminiKey(VK_SYSTEM_UI_LANG),
   ]);
   // RustCoreProxy 의 autoUnwrapProtoEnvelope 통해 BoolRequest/StringRequest 자동 unwrap.
   // frontend 는 raw boolean / string 직접 수신.
@@ -71,7 +72,7 @@ export async function PATCH(req: NextRequest) {
     await core.setAiThinkingLevel(body.aiThinkingLevel);
   }
   if (typeof body.aiRouterEnabled === 'boolean') {
-    await core.setGeminiKey('system:ai-router:enabled', body.aiRouterEnabled ? 'true' : 'false');
+    await core.setGeminiKey(VK_SYSTEM_AI_ROUTER_ENABLED, body.aiRouterEnabled ? 'true' : 'false');
   }
   if (typeof body.aiAssistantModel === 'string' && body.aiAssistantModel) {
     await core.setAiAssistantModel(body.aiAssistantModel);
@@ -101,7 +102,7 @@ export async function PATCH(req: NextRequest) {
   }
   if (body.interfaceLang === 'ko' || body.interfaceLang === 'en') {
     // 어드민 UI 언어 vault 저장 — i18n hook 의 LangProvider 가 fetch 시 활용.
-    await core.setGeminiKey('system:ui-lang', body.interfaceLang);
+    await core.setGeminiKey(VK_SYSTEM_UI_LANG, body.interfaceLang);
   }
 
   return NextResponse.json({ success: true });
