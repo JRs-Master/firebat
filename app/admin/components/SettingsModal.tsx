@@ -16,6 +16,8 @@ import { logger } from '../../../lib/util/logger';
 import { USER_PROMPT_MAX_CHARS } from '../../../lib/config';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
 import { TIME } from '../../../lib/util/time';
+import { z } from 'zod';
+import { validateForm } from '../../../lib/form-validation';
 
 // Rust ModuleEntryPb.entry_type → proto-loader keepCase:false → entryType.
 // 옛 type 필드명 호환 위해 둘 다 받음.
@@ -662,11 +664,31 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     await saveProviderKey('anthropic', anthropicApiKey);
     await saveProviderKey('vertex', vertexSaJson);
 
-    if (adminCurrentPw && (adminNewId.trim() || adminNewPw.trim())) {
+    // 계정 변경 — currentPassword 입력 시점에만 trigger. server validate_password_policy 가 authoritative.
+    if (adminCurrentPw) {
+      const adminPwSchema = z.object({
+        currentPassword: z.string().min(1),
+        newId: z.string(),
+        newPassword: z.string(),
+      }).refine((v) => v.newId.trim().length > 0 || v.newPassword.trim().length > 0, {
+        message: '새 ID 또는 새 비밀번호 중 하나는 입력해야 합니다.',
+        path: ['newPassword'],
+      });
+      const parsed = validateForm(adminPwSchema, {
+        currentPassword: adminCurrentPw,
+        newId: adminNewId,
+        newPassword: adminNewPw,
+      });
+      if (!parsed.success) {
+        setAdminPwError(Object.values(parsed.errors)[0] ?? '입력 오류');
+        setMainSaveState('err');
+        setTimeout(() => setMainSaveState(null), 2000);
+        return;
+      }
       try {
         await apiPatch(
           '/api/auth',
-          { currentPassword: adminCurrentPw, newId: adminNewId, newPassword: adminNewPw },
+          { currentPassword: parsed.data.currentPassword, newId: parsed.data.newId, newPassword: parsed.data.newPassword },
           { category: 'settings' },
         );
         setAdminCurrentPw(''); setAdminNewId(''); setAdminNewPw(''); setAdminPwError('');

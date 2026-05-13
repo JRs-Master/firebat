@@ -12,6 +12,8 @@ import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
+import { z } from 'zod';
+import { validateForm } from '../../../lib/form-validation';
 
 interface Note {
   slug: string;
@@ -229,9 +231,18 @@ function NoteModal({ existing, onClose, onSaved }: { existing: Note | null; onCl
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  const noteSchema = z.object({
+    title: z.string(),
+    content: z.string(),
+  }).refine((v) => v.title.trim().length > 0 || v.content.trim().length > 0, {
+    message: '제목 또는 본문 필수',
+    path: ['title'],
+  });
+
   const submit = async () => {
-    if (!title.trim() && !content.trim()) {
-      setError('제목 또는 본문 필수');
+    const parsed = validateForm(noteSchema, { title, content });
+    if (!parsed.success) {
+      setError(Object.values(parsed.errors)[0] ?? '제목 또는 본문 필수');
       return;
     }
     setError('');
@@ -240,8 +251,8 @@ function NoteModal({ existing, onClose, onSaved }: { existing: Note | null; onCl
       const tags = tagsRaw.split(/[,\n]+/).map(s => s.trim()).filter(Boolean);
       await callNotes('write', {
         slug: existing?.slug,
-        title: title.trim(),
-        content,
+        title: parsed.data.title.trim(),
+        content: parsed.data.content,
         tags: tags.length > 0 ? tags : undefined,
       });
       onSaved();

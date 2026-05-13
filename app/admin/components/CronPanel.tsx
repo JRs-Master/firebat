@@ -12,6 +12,8 @@ import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiDelete, apiPut } from '../../../lib/api-fetch';
 import { usePolling } from '../../../lib/hooks/use-polling';
 import { TIME } from '../../../lib/util/time';
+import { z } from 'zod';
+import { validateForm } from '../../../lib/form-validation';
 
 interface CronRunWhen {
   check: { sysmod: string; action: string; inputData?: Record<string, unknown> };
@@ -437,20 +439,51 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
     return expr;
   };
 
-  // 비어있으면 undefined, 비어있지 않으면 JSON.parse — 실패 시 throw (에러 메시지에 어느 필드인지 명시)
-  const parseOrUndef = (raw: string, label: string): unknown => {
-    const t = raw.trim();
-    if (!t) return undefined;
-    try { return JSON.parse(t); }
-    catch (e: any) { throw new Error(`${label} JSON 파싱 실패: ${e.message}`); }
-  };
+  // JSON 텍스트 → object | undefined (빈 문자열 = undefined). z.NEVER 로 검증 실패 신호.
+  const jsonField = (label: string) =>
+    z.string().transform((raw, ctx) => {
+      const t = raw.trim();
+      if (!t) return undefined;
+      try { return JSON.parse(t); }
+      catch (e: any) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${label} JSON 파싱 실패: ${e.message}` });
+        return z.NEVER;
+      }
+    });
+
+  const scheduleSchema = z.object({
+    jobId: z.string().min(1, '잡 ID가 없습니다.'),
+    executionMode: z.enum(['pipeline', 'agent']),
+    agentPrompt: z.string(),
+    runWhen: jsonField('runWhen'),
+    retry: jsonField('retry'),
+    notify: jsonField('notify'),
+  }).refine((v) => v.executionMode !== 'agent' || v.agentPrompt.trim().length > 0, {
+    message: 'agent 모드는 agentPrompt 필수입니다.',
+    path: ['agentPrompt'],
+  });
 
   const handleSave = async () => {
-    if (!jobId) { setError('잡 ID가 없습니다.'); return; }
     setSaving(true);
     setError('');
+
+    const parsed = validateForm(scheduleSchema, {
+      jobId,
+      executionMode,
+      agentPrompt,
+      runWhen: runWhenText,
+      retry: retryText,
+      notify: notifyText,
+    });
+    if (!parsed.success) {
+      const first = Object.values(parsed.errors)[0];
+      if (first) setError(first);
+      setSaving(false);
+      return;
+    }
+
     try {
-      const body: any = { jobId, targetPath: targetPath || '' };
+      const body: any = { jobId: parsed.data.jobId, targetPath: targetPath || '' };
       if (job?.pipeline) body.pipeline = job.pipeline;
       if (mode === 'cron') body.cronTime = buildCronTime();
       if (mode === 'once' && runAt) body.runAt = new Date(runAt).toISOString();
@@ -462,32 +495,19 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
 
       // 표준 메커니즘 — 비어있으면 명시적으로 null 보내서 기존 값 제거
       body.oneShot = oneShot || undefined;
-      const runWhenParsed = parseOrUndef(runWhenText, 'runWhen');
-      const retryParsed = parseOrUndef(retryText, 'retry');
-      const notifyParsed = parseOrUndef(notifyText, 'notify');
-      body.runWhen = runWhenParsed;
-      body.retry = retryParsed;
-      body.notify = notifyParsed;
+      body.runWhen = parsed.data.runWhen;
+      body.retry = parsed.data.retry;
+      body.notify = parsed.data.notify;
 
       // 실행 모드 + agent prompt
-      body.executionMode = executionMode;
-      if (executionMode === 'agent') {
-        const trimmedPrompt = agentPrompt.trim();
-        if (!trimmedPrompt) {
-          throw new Error('agent 모드는 agentPrompt 필수입니다.');
-        }
-        body.agentPrompt = trimmedPrompt;
-      } else {
-        // pipeline 모드 시 agentPrompt 명시 제거
-        body.agentPrompt = undefined;
-      }
+      body.executionMode = parsed.data.executionMode;
+      body.agentPrompt = parsed.data.executionMode === 'agent' ? parsed.data.agentPrompt.trim() : undefined;
 
       try {
         await apiPut('/api/cron', body, { category: 'cron' });
         onSaved();
       } catch (e: any) {
         setError(e?.message || '저장 실패');
-        return;
       }
     } catch (e: any) {
       setError(e.message);

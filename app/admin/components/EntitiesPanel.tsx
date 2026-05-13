@@ -15,6 +15,8 @@ import { Search, Plus, Trash2, X, Clock, Tag, Activity, Network } from 'lucide-r
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
+import { z } from 'zod';
+import { validateForm } from '../../../lib/form-validation';
 
 interface Entity {
   id: number;
@@ -526,9 +528,15 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  const entitySchema = z.object({
+    name: z.string().trim().min(1, '이름과 type 필수'),
+    type: z.string().trim().min(1, '이름과 type 필수'),
+  });
+
   const submit = async () => {
-    if (!name.trim() || !type.trim()) {
-      setError('이름과 type 필수');
+    const parsed = validateForm(entitySchema, { name, type });
+    if (!parsed.success) {
+      setError(Object.values(parsed.errors)[0] ?? '이름과 type 필수');
       return;
     }
     setError('');
@@ -538,8 +546,8 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
       const data = await apiPost<{ success: boolean; error?: string }>(
         '/api/entities',
         {
-          name: name.trim(),
-          type: type.trim(),
+          name: parsed.data.name,
+          type: parsed.data.type,
           aliases: aliasList.length > 0 ? aliasList : undefined,
         },
         { category: 'entities' },
