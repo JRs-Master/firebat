@@ -325,6 +325,63 @@ function getClient(service: string): any {
   return client;
 }
 
+/**
+ * Hexagonal adapter — response unwrap table (B 옵션 정공, 2026-05-13).
+ *
+ * 옛 generic heuristic (단일 array field 자동 unwrap) 폐기 — silent bug 위험.
+ * 명시적 매핑 = wrap/unwrap symmetric pair (proto wrap ↔ adapter unwrap).
+ * 새 list RPC 추가 시 본 table 1줄 추가 강제 (silent 패스 차단).
+ *
+ * 추가 가이드:
+ *   - proto 의 `*ListPb` / `*ResponsePb` 가 단일 `repeated` 필드면 → table 에 facade method → field name 매핑
+ *   - 단일 `string` / 의미 있는 field (예: ProjectVisibilityPb.visibility) 도 같은 패턴
+ *   - 다중 field (예: MediaListResultPb {items, total}) 는 unwrap X — 호출자가 모든 field 필요
+ *   - RawJsonPb / OptionalStringPb / {value} wrapper 는 별도 generic 처리 (아래)
+ */
+const RESPONSE_UNWRAP_TABLE: Record<string, string> = {
+  // PageService
+  listPages: 'items',
+  searchPages: 'items',
+  listStaticPages: 'values',
+  findMediaUsage: 'entries',
+  findRelatedPages: 'items',
+  listAllTags: 'tags',
+  // ProjectService
+  scanProjects: 'projects',
+  listProjects: 'projects',
+  getProjectVisibility: 'visibility',
+  // ModuleService
+  listSystemModules: 'entries',
+  getSystemModules: 'entries',
+  listUserModules: 'entries',
+  getUserModules: 'entries',
+  // ScheduleService
+  listCronJobs: 'jobs',
+  getCronLogs: 'entries',
+  consumeCronNotifications: 'items',
+  // SecretService
+  listUserSecrets: 'values',
+  listUserModuleSecrets: 'entries',
+  // McpService
+  listMcpTools: 'tools',
+  listAllMcpTools: 'tools',
+  // CapabilityService
+  getCapabilityProviders: 'providers',
+  listCapabilitiesWithProviders: 'summaries',
+  getCapabilitySettings: 'providers',
+  // ConversationService
+  listConversations: 'items',
+  listDeletedConversations: 'items',
+  searchHistory: 'matches',
+  searchConversationHistory: 'matches',
+  // MediaService
+  listImageModels: 'models',
+  getAvailableImageModels: 'models',
+  // SettingsService
+  getAvailableAiAssistantModels: 'models',
+  getAvailableAiModels: 'models',
+};
+
 /** facade method (예: 'savePage') → typed client method 직접 호출. */
 export async function callTypedClient<T = unknown>(method: string, args: unknown): Promise<T> {
   const entry = METHOD_TABLE[method];
@@ -348,7 +405,7 @@ export async function callTypedClient<T = unknown>(method: string, args: unknown
     const { fromGrpcError } = await import('./api-error');
     throw fromGrpcError(err);
   }
-  // RawJsonPb / OptionalStringPb / 단일 value wrapper 자동 unwrap.
+  // RawJsonPb / OptionalStringPb / {value} wrapper — generic 처리 (proto schema 표준).
   if (response && typeof response.rawJson === 'string') {
     return JSON.parse(response.rawJson) as T;
   }
@@ -363,14 +420,10 @@ export async function callTypedClient<T = unknown>(method: string, args: unknown
   ) {
     return response.value as T;
   }
-  // 옛 ProjectListPb {projects} / ConversationListPb {conversations} 등 — 단일 array field 자동 unwrap.
-  // proto 의 repeated 필드 message 가 호출자 입장에선 array 자체로 보여야 자연 — 호출 site cutover 부담 0.
-  if (response && typeof response === 'object') {
-    const keys = Object.keys(response);
-    if (keys.length === 1) {
-      const onlyVal = (response as Record<string, unknown>)[keys[0]!];
-      if (Array.isArray(onlyVal)) return onlyVal as T;
-    }
+  // Explicit unwrap table — RESPONSE_UNWRAP_TABLE (Hexagonal adapter).
+  const unwrapField = RESPONSE_UNWRAP_TABLE[method];
+  if (unwrapField && response && typeof response === 'object' && unwrapField in response) {
+    return (response as Record<string, unknown>)[unwrapField] as T;
   }
   return response as T;
 }
