@@ -121,6 +121,9 @@ pub struct AiManager {
     /// 자동 조회해 LlmCallOpts.mcp_token 주입. CLI 모델 (Claude Code / Codex / Gemini) 이
     /// 자체 MCP loop 에서 Firebat MCP server 인증할 때 사용. 미설정 시 토큰 주입 없음.
     vault: Option<Arc<dyn IVaultPort>>,
+    /// IConfigPort (옵션) — std::env::var 직접 호출 추상화 (2026-05-13 Hexagonal 정공).
+    /// FIREBAT_MCP_BASE_URL 등 env 영역 read. 미설정 시 env 조회 안 함 (Vault / hardcoded fallback 동작).
+    config_port: Option<Arc<dyn crate::ports::IConfigPort>>,
 }
 
 impl AiManager {
@@ -141,7 +144,15 @@ impl AiManager {
             conversation: None,
             dynamic_tools: None,
             vault: None,
+            config_port: None,
         }
+    }
+
+    /// IConfigPort 설정 — std::env::var 직접 호출 추상화 (2026-05-13 Hexagonal 정공).
+    /// FIREBAT_MCP_BASE_URL 등 env 영역 read. 미설정 시 env 무관 (Vault / hardcoded fallback 만 동작).
+    pub fn with_config_port(mut self, config: Arc<dyn crate::ports::IConfigPort>) -> Self {
+        self.config_port = Some(config);
+        self
     }
 
     /// Vault 설정 — process_with_tools_opts 진입 시점에 `system:internal-mcp-token` 자동
@@ -383,9 +394,11 @@ impl AiManager {
         // 미설정 시 Next.js 폴백 (`http://127.0.0.1:3000`). 새 Rust MCP endpoint 으로 전환 시
         // env 또는 Vault 에 `http://127.0.0.1:50052` (default FIREBAT_MCP_LISTEN) 박음.
         if effective_opts.mcp_base_url.is_none() {
-            if let Ok(env_url) = std::env::var("FIREBAT_MCP_BASE_URL") {
-                if !env_url.is_empty() {
-                    effective_opts.mcp_base_url = Some(env_url);
+            if let Some(cfg) = &self.config_port {
+                if let Some(env_url) = cfg.get("FIREBAT_MCP_BASE_URL") {
+                    if !env_url.is_empty() {
+                        effective_opts.mcp_base_url = Some(env_url);
+                    }
                 }
             }
             if effective_opts.mcp_base_url.is_none() {

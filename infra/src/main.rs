@@ -369,9 +369,14 @@ async fn main() -> Result<()> {
     let prompt_loader: Arc<dyn firebat_core::ports::IPromptLoaderPort> = Arc::new(
         firebat_infra::adapters::prompt_loader::FilePromptLoader::discover(),
     );
+    // EnvConfigAdapter — std::env::var 직접 호출 추상화 (2026-05-13 Hexagonal 정공).
+    let config_port: Arc<dyn firebat_core::ports::IConfigPort> = Arc::new(
+        firebat_infra::adapters::config::EnvConfigAdapter::new(),
+    );
     let ai_manager = Arc::new(
         AiManager::new(llm.clone(), tool_manager.clone(), logger.clone())
             .with_prompt_builder(vault.clone(), prompt_loader.clone())
+            .with_config_port(config_port.clone())
             .with_system_context(module_manager.clone(), mcp_manager.clone())
             .with_history_resolver(conversation_manager.clone())
             .with_cost_manager(cost_manager.clone())
