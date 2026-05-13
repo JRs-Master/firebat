@@ -495,6 +495,9 @@ mod tests {
             features: firebat_core::llm::config::LlmFeatures::default(),
             pricing: None,
             thinking: None,
+            exec_mode: "api".to_string(),
+            cli_provider: None,
+            category: "vertex-google".to_string(),
         }
     }
 

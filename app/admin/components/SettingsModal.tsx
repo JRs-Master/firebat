@@ -53,6 +53,8 @@ export function SettingsModal(props: Props) {
 function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
   const t = useTranslations();
   const { lang: uiLang, setLang: setUiLang } = useLang();
+  // useAiModels 컴포넌트 상단 호출 — inferModeProvider / categoryOf 가 aiModelsList 참조하므로 hoist 보장.
+  const { models: aiModelsList } = useAiModels();
   // 비용·메모리는 AI 탭 하위 sub-tab 으로 통합 — initialTab='cost'/'memory' 면 자동으로 AI 탭 + sub-tab 으로 변환.
   const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system'>(() => {
     if (initialTab === 'cost' || initialTab === 'memory') return 'ai';
@@ -63,10 +65,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // api 모드: 키 기반, pay-per-token (기존)
   // cli 모드: 구독 기반, 자체 인증 (월정액 Claude Pro/Max, ChatGPT Plus, Gemini Advanced 등)
   type CliProvider = 'claude' | 'codex' | 'gemini';
-  // 모델 분류 — JSON registry (infra/data/llm-models.json) 단일 source. entry 의 execMode/cliProvider/category 직접 read.
-  // 옛 prefix 분기 (model.startsWith('cli-') 등) 폐기 (2026-05-13).
-  // useAiModels React Query 첫 마운트 시점 = entry 미준비 → prefix 폴백 (safety, entry 준비 후 useEffect 으로 sync).
-  const inferModeProviderFromEntry = (entry: typeof aiModelsList[number]): { execMode: 'api' | 'cli'; mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic'; cliProvider: CliProvider } => {
+  // 모델 분류 — JSON registry (infra/data/llm-models.json) 단일 source. entry.execMode/cliProvider/category 만 read.
+  // 옛 prefix 분기 (model.startsWith('cli-') 등) 폐기 (2026-05-13). entry 미준비 시점 = 기본값 + useEffect sync.
+  const inferModeProvider = (model: string): { execMode: 'api' | 'cli'; mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic'; cliProvider: CliProvider } => {
+    const entry = aiModelsList.find(m => m.value === model);
+    if (!entry) return { execMode: 'api', mode: 'general', provider: 'openai', cliProvider: 'claude' };
     if (entry.execMode === 'cli') {
       return { execMode: 'cli', mode: 'general', provider: 'anthropic', cliProvider: (entry.cliProvider ?? 'claude') };
     }
@@ -76,41 +79,30 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
     if (entry.category === 'api-google') return { execMode: 'api', mode: 'general', provider: 'google', cliProvider: 'claude' };
     return { execMode: 'api', mode: 'general', provider: 'openai', cliProvider: 'claude' };
   };
-  // 폴백 — useAiModels 첫 마운트 시 entry 미준비. 옛 prefix 분기 동작 (안전망).
-  const inferModeProvider = (model: string): { execMode: 'api' | 'cli'; mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic'; cliProvider: CliProvider } => {
-    const entry = aiModelsList.find(m => m.value === model);
-    if (entry) return inferModeProviderFromEntry(entry);
-    // entry 미준비 폴백 — id prefix 로 추정. entry 준비 후 useEffect 가 sync.
-    if (model.startsWith('cli-claude-code')) return { execMode: 'cli', mode: 'general', provider: 'anthropic', cliProvider: 'claude' };
-    if (model.startsWith('cli-codex')) return { execMode: 'cli', mode: 'general', provider: 'anthropic', cliProvider: 'codex' };
-    if (model.startsWith('cli-gemini')) return { execMode: 'cli', mode: 'general', provider: 'anthropic', cliProvider: 'gemini' };
-    if (model.startsWith('vertex-')) return { execMode: 'api', mode: 'vertex', provider: 'google', cliProvider: 'claude' };
-    if (model.startsWith('gpt-')) return { execMode: 'api', mode: 'general', provider: 'openai', cliProvider: 'claude' };
-    if (model.startsWith('claude-')) return { execMode: 'api', mode: 'general', provider: 'anthropic', cliProvider: 'claude' };
-    if (model.startsWith('gemini-')) return { execMode: 'api', mode: 'general', provider: 'google', cliProvider: 'claude' };
-    return { execMode: 'api', mode: 'general', provider: 'openai', cliProvider: 'claude' };
-  };
   const _initMp = inferModeProvider(aiModel);
   const [execMode, setExecMode] = useState<'api' | 'cli'>(_initMp.execMode);
   const [aiMode, setAiMode] = useState<'general' | 'vertex'>(_initMp.mode);
   const [aiProvider, setAiProvider] = useState<'openai' | 'google' | 'anthropic'>(_initMp.provider);
   const [cliProvider, setCliProvider] = useState<CliProvider>(_initMp.cliProvider);
 
+  // useAiModels React Query ready 시점 entry 준비 — useState 가 옛 기본값에 박힌 상태면 sync.
+  // 매 마운트 시 첫 render 는 aiModelsList 빈 list → 기본값 (api/openai/general) → ready 후 자동 갱신.
+  // aiModel 변경 시점에도 같이 동작 (e.g. 다른 탭에서 model 바꾼 후 SettingsModal 열기).
+  useEffect(() => {
+    if (aiModelsList.length === 0) return;
+    const mp = inferModeProvider(aiModel);
+    setExecMode(mp.execMode);
+    setAiMode(mp.mode);
+    setAiProvider(mp.provider);
+    setCliProvider(mp.cliProvider);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiModelsList, aiModel]);
+
   /** 카테고리별 마지막 선택 모델 — 공급자/모드 전환 시 첫 모델(auto) 대신 직전 선택 복원.
-   *  카테고리 키 = JSON registry entry.category 직접 read. 폴백 = 옛 prefix 분기 (entry 미준비 시점).
+   *  카테고리 키 = JSON registry entry.category 단일 source. 옛 prefix 분기 폐기 (2026-05-13).
    *  카테고리: cli-claude / cli-codex / cli-gemini / vertex-google / api-openai / api-google / api-anthropic */
   const categoryOf = (model: string): string => {
-    const entry = aiModelsList.find(m => m.value === model);
-    if (entry?.category) return entry.category;
-    // entry 미준비 폴백
-    if (model.startsWith('cli-claude-code')) return 'cli-claude';
-    if (model.startsWith('cli-codex')) return 'cli-codex';
-    if (model.startsWith('cli-gemini')) return 'cli-gemini';
-    if (model.startsWith('vertex-')) return 'vertex-google';
-    if (model.startsWith('gpt-')) return 'api-openai';
-    if (model.startsWith('gemini-')) return 'api-google';
-    if (model.startsWith('claude-')) return 'api-anthropic';
-    return '';
+    return aiModelsList.find(m => m.value === model)?.category ?? '';
   };
   // SettingsManager 경유 — 다른 탭에서 변경하면 `storage` 이벤트로 자동 동기화.
   const [lastModelByCategory, setLastModelByCategory] = useSetting('firebat_last_model_by_category');
@@ -176,10 +168,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // Backend `getAvailableAiAssistantModels()` 응답이 truth source — 이 fallback list 는
   // 첫 fetch 전 / API 실패 시점만 사용. 단일 디폴트 (gemini-3.1-flash-lite-preview) 만 저장.
   const [aiAssistantModels, setAiAssistantModels] = useState<string[]>(['gemini-3.1-flash-lite-preview']);
-  // AI 모델 carousel — Rust core::llm::config::builtin_models() 단일 source.
-  // useAiModels hook 이 module-level cache + 1-shot fetch (`/api/settings` 의 aiModels).
-  // 매 사용처가 hook 호출해도 cache hit 시 즉시 반환.
-  const { models: aiModelsList } = useAiModels();
+  // AI 모델 carousel — useAiModels 컴포넌트 상단 (L57) 에서 호출. 중복 hoist 회피 — 단일 reference.
 
   // 사용자 커스텀 프롬프트 (어드민 채팅·모나코 에디터 공유)
   const [userPrompt, setUserPrompt] = useState('');
