@@ -1,0 +1,242 @@
+{
+  "defaultAssistantModel": "gemini-3.1-flash-lite",
+  "models": [
+    {
+      "id": "claude-opus-4-7",
+      "displayName": "Claude Opus 4.7",
+      "provider": "Anthropic",
+      "format": "anthropic-messages",
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "apiKeyVaultKey": "system:anthropic:api-key",
+      "features": { "mcpConnector": true, "extendedThinking": true, "imageInput": true, "promptCache": true },
+      "extraHeaders": { "anthropic-version": "2023-06-01" },
+      "pricing": { "input": 5.0, "output": 25.0, "cachedInput": 0.5 }
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "displayName": "Claude Sonnet 4.6",
+      "provider": "Anthropic",
+      "format": "anthropic-messages",
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "apiKeyVaultKey": "system:anthropic:api-key",
+      "features": { "mcpConnector": true, "extendedThinking": true, "imageInput": true, "promptCache": true },
+      "extraHeaders": { "anthropic-version": "2023-06-01" },
+      "pricing": { "input": 3.0, "output": 15.0, "cachedInput": 0.3 }
+    },
+    {
+      "id": "claude-haiku-4-5",
+      "displayName": "Claude Haiku 4.5",
+      "provider": "Anthropic",
+      "format": "anthropic-messages",
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "apiKeyVaultKey": "system:anthropic:api-key",
+      "features": { "mcpConnector": true, "extendedThinking": true, "imageInput": true, "promptCache": true },
+      "extraHeaders": { "anthropic-version": "2023-06-01" },
+      "pricing": { "input": 1.0, "output": 5.0, "cachedInput": 0.1 }
+    },
+
+    {
+      "id": "gemini-3.1-pro",
+      "displayName": "Gemini 3.1 Pro",
+      "provider": "Google",
+      "format": "gemini-native",
+      "endpoint": "https://generativelanguage.googleapis.com",
+      "apiKeyVaultKey": "system:gemini:api-key",
+      "features": { "strictTools": true, "thinking": true, "imageInput": true }
+    },
+    {
+      "id": "gemini-3-flash-preview",
+      "displayName": "Gemini 3 Flash",
+      "provider": "Google",
+      "format": "gemini-native",
+      "endpoint": "https://generativelanguage.googleapis.com",
+      "apiKeyVaultKey": "system:gemini:api-key",
+      "features": { "strictTools": true, "thinking": true, "imageInput": true }
+    },
+    {
+      "id": "gemini-3.1-flash-lite",
+      "displayName": "Gemini 3.1 Flash Lite",
+      "provider": "Google",
+      "format": "gemini-native",
+      "endpoint": "https://generativelanguage.googleapis.com",
+      "apiKeyVaultKey": "system:gemini:api-key",
+      "features": { "strictTools": true, "thinking": true, "imageInput": true }
+    },
+
+    {
+      "id": "vertex-gemini-3.1-pro",
+      "displayName": "Gemini 3.1 Pro (Vertex)",
+      "provider": "Vertex",
+      "format": "vertex-gemini",
+      "endpoint": "https://aiplatform.googleapis.com",
+      "apiKeyVaultKey": "system:vertex:service-account-json",
+      "features": { "strictTools": true, "thinking": true, "imageInput": true }
+    },
+    {
+      "id": "vertex-gemini-3-flash-preview",
+      "displayName": "Gemini 3 Flash (Vertex)",
+      "provider": "Vertex",
+      "format": "vertex-gemini",
+      "endpoint": "https://aiplatform.googleapis.com",
+      "apiKeyVaultKey": "system:vertex:service-account-json",
+      "features": { "strictTools": true, "thinking": true, "imageInput": true }
+    },
+    {
+      "id": "vertex-gemini-3.1-flash-lite",
+      "displayName": "Gemini 3.1 Flash Lite (Vertex)",
+      "provider": "Vertex",
+      "format": "vertex-gemini",
+      "endpoint": "https://aiplatform.googleapis.com",
+      "apiKeyVaultKey": "system:vertex:service-account-json",
+      "features": { "strictTools": true, "thinking": true, "imageInput": true }
+    },
+
+    {
+      "id": "gpt-5.5",
+      "displayName": "GPT-5.5",
+      "provider": "OpenAI",
+      "format": "openai-responses",
+      "endpoint": "https://api.openai.com/v1/responses",
+      "apiKeyVaultKey": "system:openai:api-key",
+      "features": { "mcpConnector": true, "strictTools": true, "reasoning": true, "toolSearch": true, "imageInput": true },
+      "pricing": { "input": 10.0, "output": 60.0, "cachedInput": 1.0 }
+    },
+    {
+      "id": "gpt-5.4",
+      "displayName": "GPT-5.4",
+      "provider": "OpenAI",
+      "format": "openai-responses",
+      "endpoint": "https://api.openai.com/v1/responses",
+      "apiKeyVaultKey": "system:openai:api-key",
+      "features": { "mcpConnector": true, "strictTools": true, "reasoning": true, "toolSearch": true, "imageInput": true },
+      "pricing": { "input": 5.0, "output": 30.0, "cachedInput": 0.5 }
+    },
+    {
+      "id": "gpt-5.4-mini",
+      "displayName": "GPT-5.4 Mini",
+      "provider": "OpenAI",
+      "format": "openai-responses",
+      "endpoint": "https://api.openai.com/v1/responses",
+      "apiKeyVaultKey": "system:openai:api-key",
+      "features": { "mcpConnector": true, "strictTools": true, "reasoning": true, "toolSearch": true, "imageInput": true },
+      "pricing": { "input": 1.5, "output": 8.0, "cachedInput": 0.15 }
+    },
+    {
+      "id": "gpt-5.4-nano",
+      "displayName": "GPT-5.4 Nano",
+      "provider": "OpenAI",
+      "format": "openai-responses",
+      "endpoint": "https://api.openai.com/v1/responses",
+      "apiKeyVaultKey": "system:openai:api-key",
+      "features": { "mcpConnector": true, "strictTools": true, "reasoning": true, "toolSearch": true, "imageInput": true },
+      "pricing": { "input": 0.4, "output": 2.0, "cachedInput": 0.04 }
+    },
+
+    {
+      "id": "cli-claude-code-auto",
+      "displayName": "Claude Code CLI (Auto)",
+      "provider": "CLI",
+      "format": "cli-claude-code",
+      "endpoint": "claude",
+      "features": { "mcpConnector": true, "extendedThinking": true }
+    },
+    {
+      "id": "cli-claude-code-opus-4-7",
+      "displayName": "Claude Code CLI (Opus 4.7)",
+      "provider": "CLI",
+      "format": "cli-claude-code",
+      "endpoint": "claude",
+      "features": { "mcpConnector": true, "extendedThinking": true }
+    },
+    {
+      "id": "cli-claude-code-sonnet-4-6",
+      "displayName": "Claude Code CLI (Sonnet 4.6)",
+      "provider": "CLI",
+      "format": "cli-claude-code",
+      "endpoint": "claude",
+      "features": { "mcpConnector": true, "extendedThinking": true }
+    },
+    {
+      "id": "cli-claude-code-haiku-4-5",
+      "displayName": "Claude Code CLI (Haiku 4.5)",
+      "provider": "CLI",
+      "format": "cli-claude-code",
+      "endpoint": "claude",
+      "features": { "mcpConnector": true, "extendedThinking": true }
+    },
+
+    {
+      "id": "cli-gemini-auto",
+      "displayName": "Gemini CLI (Auto)",
+      "provider": "CLI",
+      "format": "cli-gemini",
+      "endpoint": "gemini",
+      "features": { "mcpConnector": true }
+    },
+    {
+      "id": "cli-gemini-3.1-pro",
+      "displayName": "Gemini CLI (3.1 Pro)",
+      "provider": "CLI",
+      "format": "cli-gemini",
+      "endpoint": "gemini",
+      "features": { "mcpConnector": true }
+    },
+    {
+      "id": "cli-gemini-3-flash",
+      "displayName": "Gemini CLI (3 Flash)",
+      "provider": "CLI",
+      "format": "cli-gemini",
+      "endpoint": "gemini",
+      "features": { "mcpConnector": true }
+    },
+
+    {
+      "id": "cli-codex-auto",
+      "displayName": "Codex CLI (Auto)",
+      "provider": "CLI",
+      "format": "cli-codex",
+      "endpoint": "codex",
+      "features": { "mcpConnector": true, "reasoning": true }
+    },
+    {
+      "id": "cli-codex-gpt-5.5",
+      "displayName": "Codex CLI (GPT-5.5)",
+      "provider": "CLI",
+      "format": "cli-codex",
+      "endpoint": "codex",
+      "features": { "mcpConnector": true, "reasoning": true }
+    },
+    {
+      "id": "cli-codex-gpt-5.4",
+      "displayName": "Codex CLI (GPT-5.4)",
+      "provider": "CLI",
+      "format": "cli-codex",
+      "endpoint": "codex",
+      "features": { "mcpConnector": true, "reasoning": true }
+    },
+    {
+      "id": "cli-codex-gpt-5.4-mini",
+      "displayName": "Codex CLI (GPT-5.4 Mini)",
+      "provider": "CLI",
+      "format": "cli-codex",
+      "endpoint": "codex",
+      "features": { "mcpConnector": true, "reasoning": true }
+    },
+    {
+      "id": "cli-codex-5.3-codex",
+      "displayName": "Codex CLI (5.3-Codex)",
+      "provider": "CLI",
+      "format": "cli-codex",
+      "endpoint": "codex",
+      "features": { "mcpConnector": true, "reasoning": true }
+    },
+    {
+      "id": "cli-codex-5.3-codex-spark",
+      "displayName": "Codex CLI (5.3-Codex Spark, preview)",
+      "provider": "CLI",
+      "format": "cli-codex",
+      "endpoint": "codex",
+      "features": { "mcpConnector": true, "reasoning": true }
+    }
+  ]
+}

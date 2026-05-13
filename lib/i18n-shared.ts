@@ -12,8 +12,8 @@
  *   - server side: `lib/i18n-server.ts` (getServerTranslations) 가 import
  */
 
-import koMessages from '../messages/ko.json';
-import enMessages from '../messages/en.json';
+import koMessages from '../language/ko.json';
+import enMessages from '../language/en.json';
 
 export type Lang = 'ko' | 'en';
 
