@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
+import { withAuth } from '../../../../lib/with-api-error';
 
 /**
  * POST /api/plan/commit?planId=xxx
@@ -9,11 +9,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
  *  - action=now (schedule_task용): 예약 시간 무시하고 즉시 실행
  *  - action=reschedule + body.runAt (schedule_task용): 새 시간으로 재예약
  */
-export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
-
-  // body는 한번만 읽을 수 있으므로 먼저 파싱
+export const POST = withAuth(async (req: NextRequest) => {
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
   const planId = req.nextUrl.searchParams.get('planId') || (body.planId as string | undefined);
   const action = req.nextUrl.searchParams.get('action') || (body.action as string | undefined) || '';
@@ -126,4 +122,4 @@ export async function POST(req: NextRequest) {
     const msg = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ success: false, error: msg }, { status: 500 });
   }
-}
+});

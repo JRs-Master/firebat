@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
+import { withAuth } from '../../../../lib/with-api-error';
 
 /**
  * GET /api/media/usage?slug=<media-slug>
@@ -13,14 +13,11 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
  * 인덱스: PageManager.save 시 PageSpec 안 미디어 URL 자동 추출 → media_usage 테이블 갱신.
  *        page delete 시 해당 page_slug 의 사용 관계 일괄 정리.
  */
-export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
-
+export const GET = withAuth(async (req: NextRequest) => {
   const slug = req.nextUrl.searchParams.get('slug');
   if (!slug) {
     return NextResponse.json({ success: false, error: 'slug 파라미터 필요' }, { status: 400 });
   }
   const usage = await getCore().findMediaUsage(slug);
   return NextResponse.json({ success: true, data: usage });
-}
+});

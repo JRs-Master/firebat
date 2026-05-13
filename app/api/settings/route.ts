@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../lib/auth-guard';
+import { withAuth } from '../../../lib/with-api-error';
 import { VK_SYSTEM_AI_ROUTER_ENABLED, VK_SYSTEM_UI_LANG } from '../../../lib/proto-gen/vault-keys';
 
 /** GET /api/settings — 시스템 설정 조회 */
-export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const GET = withAuth(async (_req: NextRequest) => {
   const core = getCore();
   const [
     routerEnabledRaw, timezone, aiModel, aiThinkingLevel,
@@ -53,12 +51,10 @@ export async function GET(req: NextRequest) {
     subAgentEnabled,
     interfaceLang,
   });
-}
+});
 
 /** PATCH /api/settings — 시스템 설정 변경 */
-export async function PATCH(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const PATCH = withAuth(async (req: NextRequest) => {
   const body = await req.json();
   const core = getCore();
 
@@ -106,4 +102,4 @@ export async function PATCH(req: NextRequest) {
   }
 
   return NextResponse.json({ success: true });
-}
+});

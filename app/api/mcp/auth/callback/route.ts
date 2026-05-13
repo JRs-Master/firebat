@@ -6,7 +6,7 @@
  */
 import { NextRequest } from 'next/server';
 import { readOAuthKeys, getServiceConfig, getOrigin } from '../route';
-import { requireAuth, isAuthError } from '../../../../../lib/auth-guard';
+import { withAuth } from '../../../../../lib/with-api-error';
 import { DEFAULT_OAUTH_TOKEN_EXPIRY_SECONDS } from '../../../../../lib/config';
 
 function getFs(): typeof import('fs') { return require('fs'); }
@@ -44,9 +44,7 @@ function htmlResponse(title: string, body: string, type: 'success' | 'error' | '
   });
 }
 
-export async function GET(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
+export const GET = withAuth(async (req: NextRequest) => {
   const code = req.nextUrl.searchParams.get('code');
   const state = req.nextUrl.searchParams.get('state');
   const error = req.nextUrl.searchParams.get('error');
@@ -123,4 +121,4 @@ export async function GET(req: NextRequest) {
   } catch (err: any) {
     return htmlResponse('오류 발생', err.message, 'error');
   }
-}
+});

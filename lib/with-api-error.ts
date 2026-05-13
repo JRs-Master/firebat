@@ -29,16 +29,18 @@ import { requireAuth, isAuthError } from './auth-guard';
 import type { AuthSession } from './types/firebat-types';
 import { logger } from './util/logger';
 
+type ApiResponse = NextResponse | Response;
+
 type ApiHandler<TCtx = unknown> = (
   req: NextRequest,
   ctx: TCtx,
-) => Promise<NextResponse> | NextResponse;
+) => Promise<ApiResponse> | ApiResponse;
 
 type AuthApiHandler<TCtx = unknown> = (
   req: NextRequest,
   ctx: TCtx,
   auth: AuthSession,
-) => Promise<NextResponse> | NextResponse;
+) => Promise<ApiResponse> | ApiResponse;
 
 /** 에러 자동 wrap (auth 없음). 공개 endpoint 또는 인증 자체 endpoint 용. */
 export function withApiError<TCtx = unknown>(handler: ApiHandler<TCtx>): ApiHandler<TCtx> {

@@ -12,13 +12,7 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
-import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
-
-async function assertAdmin(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
-  return auth;
-}
+import { withAuth } from '../../../../lib/with-api-error';
 
 /** CLI 명령어를 --version 또는 --help 로 가볍게 실행해서 설치·로그인 여부 판정 */
 function probeCli(command: string, timeoutMs: number = 5000): Promise<{ installed: boolean; loggedIn: boolean; error?: string }> {
@@ -56,10 +50,7 @@ function probeCli(command: string, timeoutMs: number = 5000): Promise<{ installe
 }
 
 /** GET /api/auth/cli?provider=claude-code|codex|gemini — 설치·로그인 상태 확인 */
-export async function GET(req: NextRequest) {
-  const auth = await assertAdmin(req);
-  if (auth instanceof NextResponse) return auth;
-
+export const GET = withAuth(async (req: NextRequest) => {
   const provider = req.nextUrl.searchParams.get('provider') || 'claude-code';
   const command =
     provider === 'claude-code' ? 'claude' :
@@ -80,4 +71,4 @@ export async function GET(req: NextRequest) {
     loggedIn: status.loggedIn,
     error: status.error,
   });
-}
+});

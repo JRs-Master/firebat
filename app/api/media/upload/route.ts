@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCore } from '../../../../lib/singleton';
-import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
+import { withAuth } from '../../../../lib/with-api-error';
 
 /**
  * POST /api/media/upload
@@ -16,10 +16,7 @@ import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
  * 갤러리 자동 갱신: gallery:refresh emit (Core.saveUpload 가 처리).
  * 메타에 source: 'upload' 자동 마킹 — AI 생성 이미지와 시각·필터 구분.
  */
-export async function POST(req: NextRequest) {
-  const auth = await requireAuth(req);
-  if (isAuthError(auth)) return auth;
-
+export const POST = withAuth(async (req: NextRequest) => {
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== 'object') {
     return NextResponse.json({ success: false, error: 'JSON body 필요' }, { status: 400 });
@@ -38,4 +35,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, error: result.error }, { status: 500 });
   }
   return NextResponse.json({ success: true, data: result.data });
-}
+});
