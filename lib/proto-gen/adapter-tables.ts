@@ -400,6 +400,7 @@ export const METHOD_TABLE_AUTO: Record<string, AdapterMethodEntry> = {
   setCliSession: { service: 'ConversationService', rpc: 'SetCliSession', requestType: 'ConversationSetCliSessionRequest', responseType: 'Status', wrap: false, unwrapField: null },
   createShare: { service: 'ConversationService', rpc: 'CreateShare', requestType: 'ConversationCreateShareRequest', responseType: 'ShareResultPb', wrap: false, unwrapField: null },
   getShare: { service: 'ConversationService', rpc: 'GetShare', requestType: 'StringRequest', responseType: 'SharedConversationPb', wrap: false, unwrapField: null },
+  login: { service: 'AuthService', rpc: 'Login', requestType: 'AuthLoginRequest', responseType: 'LoginResponsePb', wrap: false, unwrapField: null },
   logout: { service: 'AuthService', rpc: 'Logout', requestType: 'StringRequest', responseType: 'BoolRequest', wrap: false, unwrapField: null },
   validateSession: { service: 'AuthService', rpc: 'ValidateSession', requestType: 'StringRequest', responseType: 'AuthSessionPb', wrap: true, unwrapField: null },
   validateToken: { service: 'AuthService', rpc: 'ValidateToken', requestType: 'StringRequest', responseType: 'AuthSessionPb', wrap: true, unwrapField: null },

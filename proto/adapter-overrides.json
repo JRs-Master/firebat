@@ -197,6 +197,7 @@
     "createShare": "ConversationService.CreateShare",
     "getShare": "ConversationService.GetShare",
     "restoreConversation": "ConversationService.Restore",
+    "login": "AuthService.Login",
     "logout": "AuthService.Logout",
     "validateSession": "AuthService.ValidateSession",
     "validateToken": "AuthService.ValidateToken",
