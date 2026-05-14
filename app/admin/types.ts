@@ -75,5 +75,10 @@ export function makeConv(messages: Message[] = [INIT_MESSAGE]): Conversation {
     ? firstUser.content.slice(0, 28) + (firstUser.content.length > 28 ? '…' : '')
     : '새 대화';
   const now = Date.now();
-  return { id: now.toString(), title, createdAt: now, updatedAt: now, messages };
+  // 옛 id=now.toString() 폐기 — Date.now() 충돌 시 deleted_conversations tombstone
+  // 과 매칭 → POST /api/conversations 409 false positive. 2026-05-14 fix.
+  // 운영 환경 옛 데이터의 tombstone (permanent_delete 후에도 다기기 stale POST 차단 위해 보존)
+  // 과 우연 충돌 방지 — Date.now() + random 4 hex (crypto.randomUUID() 폴백).
+  const id = `conv-${now}-${Math.random().toString(36).slice(2, 8)}`;
+  return { id, title, createdAt: now, updatedAt: now, messages };
 }
