@@ -105,7 +105,9 @@ async fn main() -> Result<()> {
     let cron_notifications_path = std::env::var("FIREBAT_CRON_NOTIFICATIONS")
         .map(PathBuf::from)
         .unwrap_or_else(|_| workspace_root.join("data").join("cron-notifications.json"));
-    let default_timezone = std::env::var("FIREBAT_TIMEZONE").unwrap_or_else(|_| "Asia/Seoul".to_string());
+    // 옛 FIREBAT_TIMEZONE env 박은 분기 폐기 → vault single source (아래 vault 선언 후 결정).
+    // 옛 위치 (L108) 의 결정은 vault 미선언 → vault.get_secret 호출 불가. cron adapter (L215)
+    // 직전으로 이동.
     let addr = listen_addr.parse().with_context(|| {
         format!("FIREBAT_CORE_LISTEN '{}' 파싱 실패 — host:port 형식 필요", listen_addr)
     })?;
@@ -208,6 +210,20 @@ async fn main() -> Result<()> {
     );
     let entity_port: Arc<dyn IEntityPort> = memory_adapter.clone();
     let episodic_port: Arc<dyn IEpisodicPort> = memory_adapter.clone();
+    // Timezone single source — vault (SetupWizard 박은 값) 우선, env fallback, default Asia/Seoul.
+    // 2026-05-14: 옛 systemd unit 의 FIREBAT_TIMEZONE env 박은 패턴 폐기 가능 → vault single source.
+    // child sysmod 가 process.env.FIREBAT_TZ / TZ 자동 inherit (sandbox spawn 시 부모 env 전달).
+    // 변경 시점에 systemctl restart 필요 (env 변경은 부팅 시점에만 박힘 — main thread 안전).
+    let default_timezone = vault
+        .get_secret(firebat_core::vault_keys::VK_SYSTEM_TIMEZONE)
+        .filter(|s| !s.is_empty())
+        .or_else(|| std::env::var("FIREBAT_TIMEZONE").ok())
+        .unwrap_or_else(|| "Asia/Seoul".to_string());
+    // SAFETY: main 부팅 시점 single-thread — std::env::set_var multi-thread race 0.
+    unsafe {
+        std::env::set_var("FIREBAT_TZ", &default_timezone);
+        std::env::set_var("TZ", &default_timezone);
+    }
     let cron_adapter: Arc<dyn ICronPort> = TokioCronAdapter::new(
         cron_jobs_path,
         cron_logs_path,
