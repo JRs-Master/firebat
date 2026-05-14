@@ -135,25 +135,59 @@ impl PendingActionArgs {
             PendingActionArgs::CancelTask(_) => "cancel_task",
         }
     }
+
+    /// LLM 이 보낸 raw `name` + `arguments` 를 typed 으로 parse.
+    /// 실패 시 caller 가 LLM 한테 schema 에러 반환 + retry 유도.
+    pub fn from_call(name: &str, args: &serde_json::Value) -> Result<Self, String> {
+        let mut merged = match args {
+            serde_json::Value::Object(_) => args.clone(),
+            serde_json::Value::Null => serde_json::Value::Object(serde_json::Map::new()),
+            _ => {
+                return Err(format!(
+                    "PendingActionArgs: 인자가 객체여야 합니다 (도구={}, 받음={})",
+                    name,
+                    args
+                ));
+            }
+        };
+        if let serde_json::Value::Object(map) = &mut merged {
+            map.insert(
+                "name".to_string(),
+                serde_json::Value::String(name.to_string()),
+            );
+        }
+        serde_json::from_value(merged).map_err(|e| {
+            format!(
+                "PendingActionArgs parse 실패 (도구={}): {}",
+                name, e
+            )
+        })
+    }
 }
 
 /// 승인 대기 도구 1건. JSON 영속 + 메모리 캐시 동일 schema.
+/// 2026-05-14 A1-full Step 2b: 옛 `name + args(Value)` → typed `PendingActionArgs` (tagged enum).
+/// args 가 `{ "name": "write_file", "path": "...", ... }` 형태로 serialize — frontend 가 `args.name` 으로 분기.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingTool {
     #[serde(rename = "planId")]
     pub plan_id: String,
-    /// 도구 이름 (write_file / delete_file / schedule_task / save_page / delete_page).
-    pub name: String,
-    /// 도구 인자 (LLM 이 설정한 그대로).
-    #[serde(default)]
-    pub args: serde_json::Value,
+    /// 도구 인자 (typed). 6 destructive 도구의 oneof.
+    pub args: PendingActionArgs,
     /// UI 표시용 한 줄 요약.
     #[serde(default)]
     pub summary: String,
     /// epoch ms — 영속 시 JS 의 `Date.now()` 와 동일 단위.
     #[serde(rename = "createdAt")]
     pub created_at: u64,
+}
+
+impl PendingTool {
+    /// 도구 이름 — args.name() 의 wrapper. 로그 / 영속화 용 편의.
+    pub fn name(&self) -> &'static str {
+        self.args.name()
+    }
 }
 
 fn now_ms() -> u64 {
@@ -221,7 +255,9 @@ fn rand4() -> String {
 }
 
 /// 옛 TS `createPending` 1:1 — `plan-<base36(now)>-<rand4>` planId 발급.
-pub fn create_pending(name: &str, args: serde_json::Value, summary: &str) -> String {
+/// 2026-05-14 A1-full Step 2b: args 가 typed `PendingActionArgs`. 호출 site 는 raw LLM 인자 →
+/// `PendingActionArgs::from_call(name, value)` 로 먼저 parse 후 이 함수 호출.
+pub fn create_pending(args: PendingActionArgs, summary: &str) -> String {
     let mut map = match store_lock().lock() {
         Ok(g) => g,
         Err(_) => return String::new(),
@@ -247,7 +283,6 @@ pub fn create_pending(name: &str, args: serde_json::Value, summary: &str) -> Str
         plan_id.clone(),
         PendingTool {
             plan_id: plan_id.clone(),
-            name: name.to_string(),
             args,
             summary: summary.to_string(),
             created_at: now,
@@ -336,14 +371,21 @@ mod tests {
         let _ = std::fs::remove_file(temp_dir.join("pending-tools.json"));
     }
 
+    fn write_args(path: &str) -> PendingActionArgs {
+        PendingActionArgs::WriteFile(WriteFileArgs {
+            path: path.to_string(),
+            content: String::new(),
+        })
+    }
+
     #[test]
     fn create_returns_unique_plan_id() {
         let _g = crate::utils::shared_test_lock();
         let dir = tempfile::tempdir().unwrap();
         fresh_state(dir.path());
 
-        let id1 = create_pending("write_file", serde_json::json!({"path": "a.txt"}), "write a.txt");
-        let id2 = create_pending("write_file", serde_json::json!({"path": "b.txt"}), "write b.txt");
+        let id1 = create_pending(write_args("a.txt"), "write a.txt");
+        let id2 = create_pending(write_args("b.txt"), "write b.txt");
         assert!(id1.starts_with("plan-"));
         assert!(id2.starts_with("plan-"));
         assert_ne!(id1, id2);
@@ -356,12 +398,13 @@ mod tests {
         fresh_state(dir.path());
 
         let id = create_pending(
-            "delete_file",
-            serde_json::json!({"path": "x.txt"}),
+            PendingActionArgs::DeleteFile(DeleteFileArgs {
+                path: "x.txt".to_string(),
+            }),
             "delete x.txt",
         );
         let p = get_pending(&id).unwrap();
-        assert_eq!(p.name, "delete_file");
+        assert_eq!(p.name(), "delete_file");
         assert_eq!(p.summary, "delete x.txt");
     }
 
@@ -371,7 +414,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fresh_state(dir.path());
 
-        let id = create_pending("save_page", serde_json::json!({"slug": "test"}), "save");
+        let id = create_pending(
+            PendingActionArgs::SavePage(SavePageArgs {
+                slug: "test".to_string(),
+                spec: serde_json::json!({}),
+                allow_overwrite: None,
+            }),
+            "save",
+        );
         let p = consume_pending(&id);
         assert!(p.is_some());
         // 두 번째 consume 은 None
@@ -384,7 +434,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fresh_state(dir.path());
 
-        let id = create_pending("delete_page", serde_json::json!({}), "delete");
+        let id = create_pending(
+            PendingActionArgs::DeletePage(DeletePageArgs {
+                slug: "page-a".to_string(),
+            }),
+            "delete",
+        );
         assert!(reject_pending(&id));
         // 두 번째 reject 은 false
         assert!(!reject_pending(&id));
@@ -407,7 +462,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fresh_state(dir.path());
 
-        let id = create_pending("write_file", serde_json::json!({"x": 1}), "test");
+        let id = create_pending(write_args("a.txt"), "test");
         // 파일이 설정되었는지 확인
         assert!(dir.path().join("pending-tools.json").exists());
 
@@ -415,6 +470,34 @@ mod tests {
         clear_pending_in_memory();
         let p = get_pending(&id);
         assert!(p.is_some());
-        assert_eq!(p.unwrap().name, "write_file");
+        assert_eq!(p.unwrap().name(), "write_file");
+    }
+
+    #[test]
+    fn from_call_parses_write_file() {
+        let args = serde_json::json!({"path": "a.txt", "content": "hello"});
+        let parsed = PendingActionArgs::from_call("write_file", &args).unwrap();
+        match parsed {
+            PendingActionArgs::WriteFile(w) => {
+                assert_eq!(w.path, "a.txt");
+                assert_eq!(w.content, "hello");
+            }
+            _ => panic!("variant 불일치"),
+        }
+    }
+
+    #[test]
+    fn from_call_rejects_unknown_tool() {
+        let args = serde_json::json!({"x": 1});
+        let err = PendingActionArgs::from_call("unknown_tool", &args).unwrap_err();
+        assert!(err.contains("unknown_tool"));
+    }
+
+    #[test]
+    fn from_call_rejects_missing_field() {
+        // write_file 은 path + content 필수 — content 누락 시 fail.
+        let args = serde_json::json!({"path": "a.txt"});
+        let err = PendingActionArgs::from_call("write_file", &args).unwrap_err();
+        assert!(err.contains("write_file"));
     }
 }

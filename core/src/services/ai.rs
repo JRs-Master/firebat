@@ -197,12 +197,15 @@ impl AiService for AiServiceImpl {
         req: Request<AiCreatePendingRequest>,
     ) -> Result<Response<StringRequest>, TonicStatus> {
         let args = req.into_inner();
-        let parsed_args: serde_json::Value = if args.args_json.is_empty() {
+        let raw_args: serde_json::Value = if args.args_json.is_empty() {
             serde_json::Value::Null
         } else {
-            serde_json::from_str(&args.args_json).unwrap_or(serde_json::Value::Null)
+            serde_json::from_str(&args.args_json)
+                .map_err(|e| TonicStatus::invalid_argument(format!("argsJson 파싱 실패: {}", e)))?
         };
-        let plan_id = crate::utils::pending_tools::create_pending(&args.name, parsed_args, &args.summary);
+        let typed = crate::utils::pending_tools::PendingActionArgs::from_call(&args.name, &raw_args)
+            .map_err(TonicStatus::invalid_argument)?;
+        let plan_id = crate::utils::pending_tools::create_pending(typed, &args.summary);
         Ok(Response::new(StringRequest { value: plan_id }))
     }
 

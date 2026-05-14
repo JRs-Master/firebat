@@ -23,11 +23,14 @@ export const POST = withAuth(async (req: NextRequest) => {
 
   try {
     let result: { success: boolean; data?: unknown; error?: string };
-    const args = pending.args;
+    // 2026-05-14 A1-full Step 2b: pending.args 가 typed PendingActionArgs tagged enum.
+    // discriminator `name` 이 args 안에 박힘 (옛 top-level pending.name 폐기).
+    const args = pending.args as unknown as Record<string, unknown> & { name: string };
 
-    switch (pending.name) {
+    switch (args.name) {
       case 'write_file': {
-        const { path, content } = args as { path: string; content: string };
+        const path = args.path as string;
+        const content = args.content as string;
         const r = await core.writeFile(path, content);
         result = r.success ? { success: true } : { success: false, error: r.error };
         break;
@@ -35,7 +38,9 @@ export const POST = withAuth(async (req: NextRequest) => {
       case 'save_page': {
         // spec 타입 검사 제거 — Core.savePage 가 canonicalJson 으로 정규화 (string/object 모두 허용)
         // allowOverwrite=false (기본) 면 slug 충돌 시 자동 -N 접미사 → 기존 페이지 보존
-        const { slug, spec, allowOverwrite } = args as { slug: string; spec: Record<string, unknown> | string; allowOverwrite?: boolean };
+        const slug = args.slug as string;
+        const spec = args.spec as Record<string, unknown> | string;
+        const allowOverwrite = args.allowOverwrite as boolean | undefined;
         const r = await core.savePage(slug, spec, { allowOverwrite: !!allowOverwrite });
         if (!r.success) { result = { success: false, error: r.error }; break; }
         const actualSlug = r.data?.slug ?? slug;
@@ -51,13 +56,13 @@ export const POST = withAuth(async (req: NextRequest) => {
         break;
       }
       case 'delete_file': {
-        const { path } = args as { path: string };
+        const path = args.path as string;
         const r = await core.deleteFile(path);
         result = r.success ? { success: true } : { success: false, error: r.error };
         break;
       }
       case 'delete_page': {
-        const { slug } = args as { slug: string };
+        const slug = args.slug as string;
         const r = await core.deletePage(slug);
         result = r.success ? { success: true } : { success: false, error: r.error };
         break;
@@ -106,13 +111,13 @@ export const POST = withAuth(async (req: NextRequest) => {
         break;
       }
       case 'cancel_task': {
-        const { jobId } = args as { jobId: string };
+        const jobId = args.jobId as string;
         const r = await core.cancelCronJob(jobId);
         result = r.success ? { success: true } : { success: false, error: r.error };
         break;
       }
       default:
-        result = { success: false, error: `지원하지 않는 도구: ${pending.name}` };
+        result = { success: false, error: `지원하지 않는 도구: ${args.name}` };
     }
 
     // 성공 시에만 pending 소비 (실패 시 재시도 가능)

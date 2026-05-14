@@ -731,19 +731,43 @@ impl AiManager {
                                 turn_results.push((call.clone(), action));
                                 continue;
                             }
-                            // pending 등록
-                            let plan_id = create_pending(
+                            // pending 등록 — typed parse 가 schema 검증 역할.
+                            // parse 실패 시 LLM 에게 에러 회신 + retry 유도 (pre_validate 와 동일 패턴).
+                            let typed_args = match crate::utils::pending_tools::PendingActionArgs::from_call(
                                 &call.name,
-                                call.arguments.clone(),
-                                &approval.summary,
-                            );
+                                &call.arguments,
+                            ) {
+                                Ok(t) => t,
+                                Err(parse_err) => {
+                                    self.log.warn(&format!(
+                                        "[AiManager] Tool 인자 schema 불일치 (UI 비노출, 재시도 유도): {} — {}",
+                                        call.name, parse_err
+                                    ));
+                                    let action = ToolResult {
+                                        call_id: call.id.clone(),
+                                        name: call.name.clone(),
+                                        result: serde_json::json!({
+                                            "success": false,
+                                            "error": parse_err,
+                                        }),
+                                        success: false,
+                                        error: Some(parse_err),
+                                    };
+                                    turn_results.push((call.clone(), action));
+                                    continue;
+                                }
+                            };
+                            // typed args 를 그대로 serialize → frontend pending JSON 에 들어감 (name field 자동 박힘).
+                            let args_json = serde_json::to_value(&typed_args)
+                                .unwrap_or(serde_json::Value::Null);
+                            let plan_id = create_pending(typed_args, &approval.summary);
                             // schedule_task: runAt 이 이미 과거면 처음부터 past-runat 상태로 내려서
                             // 승인 버튼 대신 즉시보내기/시간변경 버튼이 뜨도록 유도 (옛 TS 1:1).
                             let mut pending = serde_json::json!({
                                 "planId": plan_id,
                                 "name": call.name,
                                 "summary": approval.summary,
-                                "args": call.arguments,
+                                "args": args_json,
                             });
                             if call.name == "schedule_task" {
                                 if let Some(run_at) = call
