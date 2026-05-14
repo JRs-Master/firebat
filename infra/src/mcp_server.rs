@@ -39,7 +39,8 @@ use firebat_core::managers::schedule::ScheduleManager;
 use firebat_core::managers::secret::SecretManager;
 use firebat_core::managers::storage::StorageManager;
 use firebat_core::managers::task::{PipelineStep, TaskManager};
-use firebat_core::managers::tool::{ToolListFilter, ToolManager};
+// ToolManager / ToolListFilter — 옛 register_render_tools 가 사용했으나 2026-05-14 폐기 후
+// 단일 RenderUnifiedHandler 로 통합 → 이 모듈에서는 직접 import 불필요.
 use firebat_core::ports::{
     CronScheduleOptions, EntitySearchOpts, EventSearchOpts, FactSearchOpts, IVaultPort,
     ListRecentOpts, SaveEntityInput, SaveEventInput, SaveFactInput, TimelineOpts,
@@ -365,41 +366,104 @@ pub async fn register_sysmod_tools(
     }
 }
 
-/// RenderToolHandler — render_* 도구 호출 시 args 그대로 pass-through 반환.
-/// Frontend (Claude CLI / Codex / Gemini CLI) 가 결과를 UI 컴포넌트로 직접 렌더.
-/// 옛 TS mcp/internal-server.ts 의 render_* 패턴 1:1.
-pub struct RenderToolHandler;
+/// RenderUnifiedHandler — 단일 `render` 도구 (옵션 E hybrid, 2026-05-14).
+///
+/// 옛 26개 render_* 도구 폐기 → 단일 `render({ blocks: [{type, props}] })` 로 통합.
+/// type 별 propsSchema 검증 (components.json) — 실패 시 LLM 에게 에러 회신 + retry 유도.
+/// 결과는 `{ success: true, blocks: [{type:"component", name, props}] }` — Frontend ChatBubble 가
+/// 그대로 렌더.
+///
+/// 장점: LLM tool list 토큰 ~70% 절감 + 새 컴포넌트 추가 시 components.json 만 수정.
+pub struct RenderUnifiedHandler;
 
 #[async_trait::async_trait]
-impl McpToolHandler for RenderToolHandler {
+impl McpToolHandler for RenderUnifiedHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
-        // args 그대로 success 응답 — Frontend 가 component / htmlContent / props 등 읽어 렌더.
-        let mut out = match args {
-            Value::Object(m) => m,
-            _ => serde_json::Map::new(),
-        };
-        out.insert("success".to_string(), Value::Bool(true));
-        Ok(Value::Object(out))
+        let blocks = args
+            .get("blocks")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "render: 'blocks' (array) 가 필요합니다".to_string())?;
+        if blocks.is_empty() {
+            return Err("render: 'blocks' 가 비어있습니다 (최소 1개 필요)".to_string());
+        }
+
+        let mut rendered = Vec::with_capacity(blocks.len());
+        for (idx, block) in blocks.iter().enumerate() {
+            let block_type = block
+                .get("type")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| format!("blocks[{idx}]: 'type' (string) 가 필요합니다"))?;
+            let props = block
+                .get("props")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!({}));
+
+            let comp = firebat_core::managers::ai::component_registry::find_component(block_type)
+                .ok_or_else(|| {
+                    format!(
+                        "blocks[{idx}]: 알 수 없는 컴포넌트 '{}'. components.json 의 26 종 중 하나여야",
+                        block_type
+                    )
+                })?;
+
+            // propsSchema 검증 — 실패 시 LLM 이 schema 맞춰 retry.
+            firebat_core::managers::module::validate_value(&props, &comp.props_schema).map_err(
+                |e| format!("blocks[{idx}] ({}) props 검증 실패: {}", block_type, e),
+            )?;
+
+            rendered.push(serde_json::json!({
+                "type": "component",
+                "name": comp.component_type,
+                "props": props,
+            }));
+        }
+
+        Ok(serde_json::json!({
+            "success": true,
+            "blocks": rendered,
+        }))
     }
 }
 
-/// ToolManager 의 등록된 도구 중 source=render 인 항목 → MCP 도구로 등록.
-/// Frontend 의 옛 `core.listTools({source:'render'})` 패턴 1:1.
-pub async fn register_render_tools(state: &Arc<McpServerState>, tool_manager: Arc<ToolManager>) {
-    let filter = ToolListFilter {
-        source: Some("render".to_string()),
-        name_prefix: None,
+/// 단일 `render` MCP 도구 등록 — 옛 register_render_tools 의 26개 분리 등록 폐기.
+/// blocks 안 type 은 components.json 안 컴포넌트 이름 enum (LLM 이 schema 로 좁힘).
+pub async fn register_render_tools(state: &Arc<McpServerState>) {
+    let names: Vec<Value> = firebat_core::managers::ai::component_registry::component_names()
+        .iter()
+        .map(|n| Value::String((*n).to_string()))
+        .collect();
+    let description = "UI 컴포넌트 렌더링 — 한 번에 여러 blocks 배열로 렌더. \
+        각 block 은 `type` (컴포넌트 이름, 26 종 enum) + `props` (해당 컴포넌트 schema 에 맞는 데이터). \
+        propsSchema 는 search_components(query) 또는 시스템 프롬프트의 컴포넌트 카탈로그 참조. \
+        실패 시 schema 에러 반환 — LLM 이 props 맞춰 재호출."
+        .to_string();
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "blocks": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": { "type": "string", "enum": names },
+                        "props": { "type": "object" }
+                    },
+                    "required": ["type", "props"],
+                    "additionalProperties": false
+                }
+            }
+        },
+        "required": ["blocks"],
+        "additionalProperties": false
+    });
+    let tool = McpTool {
+        name: "render".to_string(),
+        description,
+        input_schema: schema,
+        handler: Arc::new(RenderUnifiedHandler),
     };
-    let defs = tool_manager.list(&filter);
-    for def in defs {
-        let tool = McpTool {
-            name: def.name.clone(),
-            description: def.description.clone(),
-            input_schema: def.parameters.clone(),
-            handler: Arc::new(RenderToolHandler),
-        };
-        state.register(tool).await;
-    }
+    state.register(tool).await;
 }
 
 fn build_sysmod_description(name: &str, config: &Value) -> String {

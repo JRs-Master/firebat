@@ -623,7 +623,7 @@ async fn main() -> Result<()> {
                 .with_auth(auth_manager.clone()),
         );
         firebat_infra::mcp_server::register_sysmod_tools(&mcp_state, module_manager.clone()).await;
-        firebat_infra::mcp_server::register_render_tools(&mcp_state, tool_manager.clone()).await;
+        firebat_infra::mcp_server::register_render_tools(&mcp_state).await;
         let storage_manager_stdio = Arc::new(firebat_core::managers::storage::StorageManager::new(
             storage.clone(),
         ));
@@ -659,7 +659,7 @@ async fn main() -> Result<()> {
         // sysmod 자동 등록 — system/modules/*/config.json 스캔 → sysmod_<name>.
         firebat_infra::mcp_server::register_sysmod_tools(&mcp_state, module_manager.clone()).await;
         // render_* 도구 등록 — ToolManager 의 source=render 자동 dispatch.
-        firebat_infra::mcp_server::register_render_tools(&mcp_state, tool_manager.clone()).await;
+        firebat_infra::mcp_server::register_render_tools(&mcp_state).await;
         // 30+ builtin 도구 일괄 등록 (page / storage / module / schedule / task / secret /
         // mcp / entity / episodic / conversation / media / network / AI 메타).
         // 옛 mcp/internal-server.ts 의 server.tool 1:1 port.

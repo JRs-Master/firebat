@@ -304,7 +304,7 @@ impl ModuleManager {
 // crate 로 검증. 실패 시 명시 에러 (silent corruption 방어).
 
 /// JSON Schema 기준 단일 value 검증. 첫 에러만 사용자에게 노출 (스키마 전체 dump 회피).
-pub(crate) fn validate_value(
+pub fn validate_value(
     value: &serde_json::Value,
     schema: &serde_json::Value,
 ) -> Result<(), String> {
