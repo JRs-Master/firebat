@@ -611,10 +611,12 @@ async fn main() -> Result<()> {
     }
 
     // MCP HTTP server (Phase E, 2026-05-12) — firebat-core binary 안 별도 axum endpoint.
-    // FIREBAT_MCP_ENABLED=false 로 비활성 (Node mcp/internal-server.ts 와 dual-run 시점 용).
+    // 2026-05-14 default true 박힘 — 옛 dual-run 의도 (Node mcp/internal-server.ts 와 같이)
+    // Phase E 완전 cutover 후 의미 사라짐. 매 운영 unit 마다 env 박는 부담 + 신규 설치 누락
+    // silent 발생 (자체 sysmod LLM 노출 안 됨) 해소. FIREBAT_MCP_ENABLED=false 명시 시만 비활성.
     let mcp_enabled = std::env::var("FIREBAT_MCP_ENABLED")
         .map(|v| v != "false" && v != "0")
-        .unwrap_or(false);
+        .unwrap_or(true);
     // stdio MCP 모드 — 외부 사용자 (Claude desktop / Cursor / npm run mcp) 진입.
     // argv 에 `--mcp-stdio` 박혀있으면 gRPC server 부팅 X, stdio MCP server 만 실행 후 종료.
     if std::env::args().any(|a| a == "--mcp-stdio") {

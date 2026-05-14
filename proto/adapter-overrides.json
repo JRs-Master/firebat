@@ -224,6 +224,7 @@
     "verifyProjectPassword", "setProjectVisibility",
     "listConversations", "getConversation", "saveConversation", "deleteConversation",
     "listDeletedConversations", "restoreConversation", "permanentDeleteConversation",
+    "createShare",
     "saveEntity", "updateEntity", "deleteEntity", "getEntity",
     "findEntityByName", "searchEntities",
     "saveEntityFact", "updateEntityFact", "deleteEntityFact", "getEntityFact",

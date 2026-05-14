@@ -120,7 +120,7 @@ export const METHOD_TABLE_AUTO: Record<string, AdapterMethodEntry> = {
   searchHistory: { service: 'ConversationService', rpc: 'SearchHistory', requestType: 'ConversationSearchHistoryRequest', responseType: 'HistorySearchResultPb', wrap: false, unwrapField: 'matches' },
   getCliSession: { service: 'ConversationService', rpc: 'GetCliSession', requestType: 'ConversationGetCliSessionRequest', responseType: 'OptionalStringPb', wrap: false, unwrapField: null },
   setCliSession: { service: 'ConversationService', rpc: 'SetCliSession', requestType: 'ConversationSetCliSessionRequest', responseType: 'Status', wrap: false, unwrapField: null },
-  createShare: { service: 'ConversationService', rpc: 'CreateShare', requestType: 'ConversationCreateShareRequest', responseType: 'ShareResultPb', wrap: false, unwrapField: null },
+  createShare: { service: 'ConversationService', rpc: 'CreateShare', requestType: 'ConversationCreateShareRequest', responseType: 'ShareResultPb', wrap: true, unwrapField: null },
   getShare: { service: 'ConversationService', rpc: 'GetShare', requestType: 'StringRequest', responseType: 'SharedConversationPb', wrap: false, unwrapField: null },
   cleanupExpiredShares: { service: 'ConversationService', rpc: 'CleanupExpiredShares', requestType: 'Empty', responseType: 'NumberRequest', wrap: false, unwrapField: 'value' },
   cleanupOldDeleted: { service: 'ConversationService', rpc: 'CleanupOldDeleted', requestType: 'Empty', responseType: 'NumberRequest', wrap: false, unwrapField: 'value' },
