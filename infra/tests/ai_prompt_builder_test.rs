@@ -34,7 +34,7 @@ fn base_prompt_contains_tool_system_sections() {
     let prompt = pb.build(None, None);
     assert!(prompt.contains("Firebat 도구 사용 시스템"));
     assert!(prompt.contains("도구 사용 원칙"));
-    assert!(prompt.contains("컴포넌트 카탈로그"));
+    assert!(prompt.contains("컴포넌트 렌더링"));
     assert!(prompt.contains("Reusable 5 규칙"));
     assert!(prompt.contains("스케줄링"));
     assert!(prompt.contains("파이프라인"));
