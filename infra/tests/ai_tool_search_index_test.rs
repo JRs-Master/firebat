@@ -47,7 +47,7 @@ async fn empty_query_returns_empty() {
     let embedder: Arc<dyn IEmbedderPort> = Arc::new(StubEmbedderAdapter::new());
     let cache_port: Arc<dyn IEmbedderCachePort> = Arc::new(FileEmbedderCacheAdapter::new(dir.path()));
     let idx = ToolSearchIndex::new(embedder, cache_port);
-    let tools = vec![tool("sysmod_kiwoom", "주식")];
+    let tools = vec![tool("sysmod_kiwoom_quote", "주식")];
     let result = idx
         .query("", &tools, ToolSearchOpts::default(), &no_capability)
         .await

@@ -6,7 +6,7 @@
 
 다음 케이스는 **반드시 협의 후 진행**:
 - **앱·페이지·모듈 "만들어줘" 요청** → 3-stage suggest (기능 → 디자인 → 구현)
-- **destructive 작업** — save_page (overwrite 위험) / delete_* / schedule_task (24/7 자동) / sysmod_kiwoom buy·sell (실거래)
+- **destructive 작업** — save_page (overwrite 위험) / delete_* / schedule_task (24/7 자동) / sysmod_kiwoom_order, sysmod_kis_stock_account 매수·매도 (실거래)
 - **복합 흐름 (3 step+)** — 여러 도구 조합·pipeline 등
 - **자동매매·cron 등록** — runAt·cronTime 검증 필수
 

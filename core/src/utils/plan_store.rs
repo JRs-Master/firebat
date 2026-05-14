@@ -330,7 +330,7 @@ mod tests {
                 PlanStep {
                     title: "데이터 수집".to_string(),
                     description: Some("kiwoom".to_string()),
-                    tool: Some("sysmod_kiwoom".to_string()),
+                    tool: Some("sysmod_kiwoom_quote".to_string()),
                 },
             ],
             estimated_time: None,
@@ -340,7 +340,7 @@ mod tests {
         let inst = plan_to_instruction(&plan, Some("매일 오전 9시에 시황 발행"));
         assert!(inst.contains("주식 시황 발행"));
         assert!(inst.contains("데이터 수집"));
-        assert!(inst.contains("sysmod_kiwoom"));
+        assert!(inst.contains("sysmod_kiwoom_quote"));
         assert!(inst.contains("매일 오전 9시에 시황 발행"));
         assert!(inst.contains("schedule_task"));
     }

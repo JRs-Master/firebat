@@ -148,7 +148,7 @@ async fn select_tools_falls_back_when_toggle_off() {
     );
     let r = r.with_embedder(embedder, cache_port);
     // 토글 미설정 → fallback (모든 도구)
-    let tools = vec![tool("sysmod_kiwoom"), tool("save_page"), tool("image_gen")];
+    let tools = vec![tool("sysmod_kiwoom_quote"), tool("save_page"), tool("image_gen")];
     let result = r
         .select_tools(
             tools.clone(),

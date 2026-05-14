@@ -22,7 +22,7 @@ fn make_manager_with_tools() -> TaskManager {
     let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
     let tools = Arc::new(ToolManager::new());
     // 등록된 도구가 있어야 hint 매칭. 옛 TS 의 hardcode 12개 대신 동적 등록.
-    for name in ["sysmod_kiwoom", "save_page", "image_gen", "render_table"] {
+    for name in ["sysmod_kiwoom_quote", "save_page", "image_gen", "render_table"] {
         tools.register(ToolDefinition {
             name: name.to_string(),
             description: String::new(),
@@ -49,7 +49,7 @@ fn validate_execute_missing_path() {
 fn validate_llm_transform_with_tool_hint_rejected() {
     let mgr = make_manager_with_tools();
     let steps = vec![PipelineStep::LlmTransform {
-        instruction: "1) sysmod_kiwoom 호출 2) save_page".to_string(),
+        instruction: "1) sysmod_kiwoom_quote 호출 2) save_page".to_string(),
         input_data: None,
         input_map: None,
     }];
@@ -61,7 +61,7 @@ fn validate_llm_transform_with_tool_hint_rejected() {
 fn validate_llm_transform_without_tools_skips_hint_check() {
     let mgr = make_manager();
     let steps = vec![PipelineStep::LlmTransform {
-        instruction: "1) sysmod_kiwoom 호출 2) save_page".to_string(),
+        instruction: "1) sysmod_kiwoom_quote 호출 2) save_page".to_string(),
         input_data: None,
         input_map: None,
     }];

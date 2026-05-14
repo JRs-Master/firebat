@@ -476,7 +476,7 @@ mod tests {
             "success": true,
             "data": {"price": 75000, "volume": 1000000}
         });
-        let slim = slim_result_for_llm("sysmod_kiwoom", &r, false);
+        let slim = slim_result_for_llm("sysmod_kiwoom_quote", &r, false);
         // 원본 그대로
         assert_eq!(slim, r);
     }
@@ -487,7 +487,7 @@ mod tests {
             "success": true,
             "data": {"x": "a".repeat(1000)}
         });
-        let slim = slim_result_for_llm("sysmod_kiwoom", &r, true);
+        let slim = slim_result_for_llm("sysmod_kiwoom_quote", &r, true);
         // 축약됨
         assert!(slim.get("_note").is_some());
         assert!(slim.get("_summary").is_some() || slim.get("_preview").is_some());

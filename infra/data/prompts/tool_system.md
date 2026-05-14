@@ -249,10 +249,11 @@ user 모듈은 도메인 판단만 담고, 외부 API·UI·시크릿은 Firebat 
 ```
 schedule_task({
   cronTime: "0 9 * * *",
-  runWhen: { check: { sysmod: "korea-invest", action: "is-business-day" }, field: "$prev.isBusinessDay", op: "==", value: true },
+  runWhen: { check: { sysmod: "kis-stock-quote", action: "국내주식-040", inputData: { query: { BASS_DT: "20260514", CTX_AREA_NK: "", CTX_AREA_FK: "" } } }, field: "$prev.output[0].opnd_yn", op: "==", value: "Y" },
   ...
 })
 ```
+참고: 옛 단일 sysmod 의 편의 alias (is-business-day 등) 폐기. 새 도메인 sysmod 는 API ID 직접 호출 — 한투 휴장일 = `kis-stock-quote` 의 `국내주식-040` (CTCA0903R).
 runWhen 미충족 시 발화 자체 skip (실패 아님). 휴장일 array 하드코딩 금지.
 
 **일시 실패 (네트워크 timeout·rate limit·503)** 는 `retry` 로 자동 복구:
@@ -291,12 +292,12 @@ LLM_TRANSFORM 은 **텍스트 변환 전용** (askText 만 호출). instruction 
 
 ❌ 잘못된 형태:
 ```
-{"type":"EXECUTE", "path":"system/modules/kiwoom/index.mjs", "action":"price", "symbol":"005930"}
+{"type":"EXECUTE", "path":"system/modules/kiwoom-quote/index.mjs", "action":"ka10001", "stk_cd":"005930"}
 ```
 
 ✅ 올바른 형태:
 ```
-{"type":"EXECUTE", "path":"system/modules/kiwoom/index.mjs", "inputData":{"action":"price","symbol":"005930"}}
+{"type":"EXECUTE", "path":"system/modules/kiwoom-quote/index.mjs", "inputData":{"action":"ka10001","params":{"stk_cd":"005930"}}}
 ```
 
 - $prev / $prev.속성명 / inputMap으로 이전 단계 결과 참조.

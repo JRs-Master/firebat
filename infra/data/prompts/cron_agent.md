@@ -31,7 +31,7 @@
    - SEO: 제목·description·keywords 정확. og 이미지 description 도 충실히
 
 6. **데이터 품질**:
-   - 한투 sysmod 시세·수급·일정 데이터 정확 (sysmod_korea_invest 사용)
+   - 한투 sysmod 시세·수급·일정 데이터 정확 (sysmod_kis_stock_quote / sysmod_kis_stock_analysis 사용 — 도메인별 분리됨)
    - naver_search 는 텍스트·뉴스·해석 보강용. 수치 시세는 한투에서
    - 멀티 종목·멀티 일정은 N개 도구 호출로 분리 (한 호출 = 한 종목·한 일정)
 
