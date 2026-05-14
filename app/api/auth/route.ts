@@ -22,17 +22,7 @@ export async function POST(req: NextRequest) {
   //   - 성공 → AuthSession 객체 (token / type / role / createdAt 설정)
   //   - 실패 → null
   //   - 잠금 → { locked: true, retryAfterSec }
-  let result: unknown;
-  try {
-    result = await core.login(id ?? '', password ?? '', attemptKeyFrom(req));
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
-    console.error('[/api/auth] login throw:', err);
-    return NextResponse.json(
-      { success: false, error: `login RPC 실패: ${msg}` },
-      { status: 500 },
-    );
-  }
+  const result = await core.login(id ?? '', password ?? '', attemptKeyFrom(req));
 
   // 잠금
   if (result && typeof result === 'object' && 'locked' in result && result.locked) {
