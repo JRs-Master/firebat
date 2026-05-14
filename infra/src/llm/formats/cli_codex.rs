@@ -361,7 +361,18 @@ impl CodexCliHandler {
                             {
                                 continue;
                             }
-                            // 1) render_* → blocks
+                            // 1a) 단일 render 도구 (옵션 E hybrid, 2026-05-14) — payload.blocks 그대로 push.
+                            if tool_name == "render" {
+                                if let Some(blocks) =
+                                    payload.get("blocks").and_then(|v| v.as_array())
+                                {
+                                    for b in blocks {
+                                        outcome.rendered_blocks.push(b.clone());
+                                    }
+                                    continue;
+                                }
+                            }
+                            // 1b) 옛 render_* / render_iframe / component fallback (legacy 호환).
                             let html_content = payload
                                 .get("htmlContent")
                                 .and_then(|v| v.as_str())
