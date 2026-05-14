@@ -122,16 +122,13 @@ export async function callTypedClient<T = unknown>(method: string, args: unknown
   if (response && typeof response === 'object' && 'present' in response && 'value' in response) {
     return (response.present ? response.value : null) as T;
   }
-  // BoolRequest / StringRequest / NumberRequest / IdRequest 같은 단일 value field wrapper unwrap.
-  // 2026-05-14 회귀 fix: protoc-gen-es 의 Message base 가 `$typeName` 같은 메타 키 박음 →
-  // 옛 `Object.keys.length === 1` 검사가 length ≥ 2 false → unwrap 실패 → 객체 자체 반환 →
-  // route.ts 의 `if (await core.isConversationDeleted(...))` 가 객체 truthy → 무조건 409.
-  // protobuf field name 에 `$` 금지 (syntax 제약) — 메타 키 안전 제외.
-  if (response && typeof response === 'object' && 'value' in response) {
-    const userKeys = Object.keys(response).filter((k) => !k.startsWith('$'));
-    if (userKeys.length === 1) {
-      return (response as Record<string, unknown>).value as T;
-    }
+  if (
+    response &&
+    typeof response === 'object' &&
+    Object.keys(response).length === 1 &&
+    'value' in response
+  ) {
+    return response.value as T;
   }
   // 자동 unwrap — METHOD_TABLE_AUTO entry.unwrapField (codegen 산출, proto schema 기반).
   const unwrapField = entry.unwrapField;
