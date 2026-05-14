@@ -101,14 +101,21 @@ jobs:
         env:
           CARGO_BUILD_JOBS: 4
 
+      - name: Stage artifact (binary + data 평면화)
+        # zip 안 path 가 target/release/firebat-core 형태로 박히면 사용자가 두 번
+        # unzip 작업 (target/release/ 들어가서 binary + infra/data/ 별도) → 부담.
+        # stage 디렉토리에 평면화해 unzip 즉시 rsync 가능.
+        run: |
+          mkdir -p artifact/infra
+          cp target/release/firebat-core artifact/
+          cp -r infra/data artifact/infra/
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: firebat-core-linux-x86_64
-          # Phase 5 (2026-05-13) 외부화 후 infra/data/ 도 같이 배포 — llm-models.json
-          # 미배포 시 stub registry (모델 0) → frontend CLI/AI 모델 노출 안 됨.
-          # 외부화 prompts (infra/data/prompts/), stock-apis JSON 도 동시 동봉.
-          path: |
-            target/release/firebat-core
-            infra/data/**
+          # zip 구조: firebat-core (top) + infra/data/{prompts,llm-models.json,stock-apis-*.json}
+          # Phase 5 (2026-05-13) 외부화 후 infra/data/ 미배포 시 stub registry / prompt
+          # → frontend CLI/AI 모델 노출 안 됨 + LLM 어색.
+          path: artifact/**
           retention-days: 30
