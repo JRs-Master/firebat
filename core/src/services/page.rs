@@ -12,7 +12,7 @@ use crate::proto::{
     page_service_server::PageService, BoolRequest, Empty, MediaUsageEntryPb, MediaUsageListPb,
     OptionalStringPb, PageFindRelatedRequest, PageListItemPb, PageListResponsePb, PageRecordPb,
     PageRenameRequest, PageSaveRequest, PageSaveResultPb, PageSearchRequest,
-    PageSetVisibilityRequest, PageVerifyPasswordRequest, Status, StringListPb, StringRequest,
+    PageSetVisibilityRequest, PageVerifyPasswordRequest, StringListPb, StringRequest,
     TagListPb, TagSummaryPb,
 };
 
@@ -24,22 +24,6 @@ impl PageServiceImpl {
     pub fn new(manager: Arc<PageManager>) -> Self {
         Self { manager }
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 // ─── proto ↔ core port struct 변환 ─────────────────────────────────────────
@@ -160,23 +144,20 @@ impl PageService for PageServiceImpl {
     async fn delete(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let slug = req.into_inner().value;
-        match self.manager.delete(&slug) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .delete(&slug)
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
-    async fn rename(&self, req: Request<PageRenameRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn rename(&self, req: Request<PageRenameRequest>) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        match self
-            .manager
+        self.manager
             .rename(&args.old_slug, &args.new_slug, args.set_redirect.unwrap_or(false))
-        {
-            Ok(_) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn get_redirect(
@@ -216,15 +197,12 @@ impl PageService for PageServiceImpl {
     async fn set_visibility(
         &self,
         req: Request<PageSetVisibilityRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        match self
-            .manager
+        self.manager
             .set_visibility(&args.slug, &args.visibility, args.password.as_deref())
-        {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn verify_password(

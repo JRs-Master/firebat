@@ -9,7 +9,7 @@ use std::time::Instant;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::proto::{
-    lifecycle_service_server::LifecycleService, Empty, HealthInfo, LifecycleCaptureExceptionRequest, NumberRequest, Status,
+    lifecycle_service_server::LifecycleService, Empty, HealthInfo, LifecycleCaptureExceptionRequest, NumberRequest,
 };
 
 /// 부팅 시각 — 한 번만 set, 매 health 호출 시 uptime 계산.
@@ -44,7 +44,7 @@ impl LifecycleService for LifecycleServiceImpl {
     async fn capture_exception(
         &self,
         req: Request<LifecycleCaptureExceptionRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         // Phase B-17.5+ — tracing / Sentry 통합 후 활성. 현재는 stderr 로그만.
         let args = req.into_inner();
         eprintln!(
@@ -53,27 +53,18 @@ impl LifecycleService for LifecycleServiceImpl {
             args.severity.unwrap_or_else(|| "error".to_string()),
             args.stack
         );
-        Ok(Response::new(Status {
-            ok: true,
-            error: String::new(),
-            error_code: String::new(),
-        }))
+        Ok(Response::new(Empty {}))
     }
 
     async fn graceful_shutdown(
         &self,
         _req: Request<NumberRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         // 명시 shutdown 트리거. main.rs 의 SIGTERM/SIGINT listen 외 추가 trigger.
         // Phase B-17.5+ — 활성 작업 대기 + Cost flush + GC 등 옛 TS Core.gracefulShutdown 패턴.
         // 현재 minimum 은 stderr 로그만 — 실 종료는 SIGTERM 권장.
         eprintln!("[Lifecycle] graceful_shutdown 요청 — SIGTERM 권장");
-        Ok(Response::new(Status {
-            ok: true,
-            error: "graceful_shutdown 트리거됨 (Phase B-17.5+ 활성 — 현재는 SIGTERM 사용 권장)"
-                .to_string(),
-            error_code: String::new(),
-        }))
+        Ok(Response::new(Empty {}))
     }
 }
 

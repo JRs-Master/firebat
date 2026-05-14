@@ -15,7 +15,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::ports::IStoragePort;
 use crate::proto::{
-    memory_service_server::MemoryService, Empty, MemorySaveFileRequest, RawJsonPb, Status, StringRequest,
+    memory_service_server::MemoryService, Empty, MemorySaveFileRequest, RawJsonPb, StringRequest,
 };
 
 pub struct MemoryServiceImpl {
@@ -51,22 +51,6 @@ fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
     RawJsonPb {
         raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 #[tonic::async_trait]
@@ -121,31 +105,31 @@ impl MemoryService for MemoryServiceImpl {
     async fn save_file(
         &self,
         req: Request<MemorySaveFileRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        let path = match self.resolve_path(&args.name) {
-            Ok(p) => p,
-            Err(e) => return Ok(err_status(e)),
-        };
-        match self.storage.write(&path, &args.content).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        let path = self
+            .resolve_path(&args.name)
+            .map_err(TonicStatus::invalid_argument)?;
+        self.storage
+            .write(&path, &args.content)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn delete_file(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let name = req.into_inner().value;
-        let path = match self.resolve_path(&name) {
-            Ok(p) => p,
-            Err(e) => return Ok(err_status(e)),
-        };
-        match self.storage.delete(&path).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        let path = self
+            .resolve_path(&name)
+            .map_err(TonicStatus::invalid_argument)?;
+        self.storage
+            .delete(&path)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 }
 

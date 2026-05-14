@@ -16,7 +16,7 @@ use crate::proto::{
     MediaListResultPb, MediaReadPb, MediaSaveRequest, MediaSaveTempAttachmentRequest,
     MediaStartGenerationRequest,
     MediaSaveResultPb, MediaVariantPb, NumberRequest, OptionalStringPb, RawJsonPb,
-    StartGenerationPb, Status, StringRequest,
+    StartGenerationPb, StringRequest,
 };
 
 pub struct MediaServiceImpl {
@@ -27,22 +27,6 @@ impl MediaServiceImpl {
     pub fn new(manager: Arc<MediaManager>) -> Self {
         Self { manager }
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 // ─── proto ↔ core struct 변환 ─────────────────────────────────────────────
@@ -178,12 +162,13 @@ impl MediaService for MediaServiceImpl {
     async fn remove(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let slug = req.into_inner().value;
-        match self.manager.remove(&slug).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .remove(&slug)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn is_ready(
@@ -265,12 +250,12 @@ impl MediaService for MediaServiceImpl {
     async fn set_image_model(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let model_id = req.into_inner().value;
-        match self.manager.set_image_model(&model_id) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .set_image_model(&model_id)
+            .map_err(TonicStatus::invalid_argument)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn get_available_image_models(
@@ -300,13 +285,13 @@ impl MediaService for MediaServiceImpl {
     async fn set_image_default_size(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let size = req.into_inner().value;
         let arg = if size.is_empty() { None } else { Some(size.as_str()) };
-        match self.manager.set_image_default_size(arg) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .set_image_default_size(arg)
+            .map_err(TonicStatus::invalid_argument)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn get_image_default_quality(
@@ -323,13 +308,13 @@ impl MediaService for MediaServiceImpl {
     async fn set_image_default_quality(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let q = req.into_inner().value;
         let arg = if q.is_empty() { None } else { Some(q.as_str()) };
-        match self.manager.set_image_default_quality(arg) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .set_image_default_quality(arg)
+            .map_err(TonicStatus::invalid_argument)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn get_image_settings(

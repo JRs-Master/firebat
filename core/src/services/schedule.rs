@@ -15,7 +15,7 @@ use crate::ports::{
 use crate::proto::{
     schedule_service_server::ScheduleService, CronJobListPb, CronJobPb, CronLogEntryPb,
     CronLogListPb, CronNotificationListPb, CronNotificationPb, Empty, NumberRequest,
-    ScheduleCronRequest, Status, StringRequest, ValidatePipelineRequest, ValidatePipelineResultPb,
+    ScheduleCronRequest, StringRequest, ValidatePipelineRequest, ValidatePipelineResultPb,
 };
 
 pub struct ScheduleServiceImpl {
@@ -34,22 +34,6 @@ impl ScheduleServiceImpl {
         self.task = Some(task);
         self
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 /// ScheduleCronRequest → (job_id, target_path, CronScheduleOptions) 변환.
@@ -172,40 +156,39 @@ impl ScheduleService for ScheduleServiceImpl {
     async fn schedule_cron(
         &self,
         req: Request<ScheduleCronRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
-        let (job_id, target_path, opts) = match parse_schedule_request(req.into_inner()) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("schedule args: {e}"))),
-        };
-        match self.manager.schedule(&job_id, &target_path, opts).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+    ) -> Result<Response<Empty>, TonicStatus> {
+        let (job_id, target_path, opts) = parse_schedule_request(req.into_inner())
+            .map_err(|e| TonicStatus::invalid_argument(format!("schedule args: {e}")))?;
+        self.manager
+            .schedule(&job_id, &target_path, opts)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn cancel_cron(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let job_id = req.into_inner().value;
-        match self.manager.cancel(&job_id).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .cancel(&job_id)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn update_cron(
         &self,
         req: Request<ScheduleCronRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
-        let (job_id, target_path, opts) = match parse_schedule_request(req.into_inner()) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("update args: {e}"))),
-        };
-        match self.manager.update(&job_id, &target_path, opts).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+    ) -> Result<Response<Empty>, TonicStatus> {
+        let (job_id, target_path, opts) = parse_schedule_request(req.into_inner())
+            .map_err(|e| TonicStatus::invalid_argument(format!("update args: {e}")))?;
+        self.manager
+            .update(&job_id, &target_path, opts)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn list_cron(
@@ -226,9 +209,9 @@ impl ScheduleService for ScheduleServiceImpl {
         Ok(Response::new(CronLogListPb { entries }))
     }
 
-    async fn clear_logs(&self, _req: Request<Empty>) -> Result<Response<Status>, TonicStatus> {
+    async fn clear_logs(&self, _req: Request<Empty>) -> Result<Response<Empty>, TonicStatus> {
         self.manager.clear_logs();
-        Ok(ok_status())
+        Ok(Response::new(Empty {}))
     }
 
     async fn consume_notifications(
@@ -247,12 +230,13 @@ impl ScheduleService for ScheduleServiceImpl {
     async fn run_now(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let job_id = req.into_inner().value;
-        match self.manager.trigger_now(&job_id).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .trigger_now(&job_id)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn validate_pipeline(

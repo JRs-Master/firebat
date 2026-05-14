@@ -8,7 +8,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::template::{TemplateConfig, TemplateManager};
 use crate::proto::{
-    template_service_server::TemplateService, Empty, RawJsonPb, Status, StringRequest, TemplateSaveRequest,
+    template_service_server::TemplateService, Empty, RawJsonPb, StringRequest, TemplateSaveRequest,
 };
 
 pub struct TemplateServiceImpl {
@@ -19,22 +19,6 @@ impl TemplateServiceImpl {
     pub fn new(manager: Arc<TemplateManager>) -> Self {
         Self { manager }
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
@@ -59,27 +43,27 @@ impl TemplateService for TemplateServiceImpl {
         Ok(Response::new(raw_json(&config)))
     }
 
-    async fn save(&self, req: Request<TemplateSaveRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn save(&self, req: Request<TemplateSaveRequest>) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        let config: TemplateConfig = match serde_json::from_str(&args.config_json) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("save config_json 파싱: {e}"))),
-        };
-        match self.manager.save(&args.slug, &config).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        let config: TemplateConfig = serde_json::from_str(&args.config_json)
+            .map_err(|e| TonicStatus::invalid_argument(format!("save config_json 파싱: {e}")))?;
+        self.manager
+            .save(&args.slug, &config)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn delete(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let slug = req.into_inner().value;
-        match self.manager.delete(&slug).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .delete(&slug)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 }
 

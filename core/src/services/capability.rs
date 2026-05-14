@@ -11,7 +11,7 @@ use crate::managers::capability::{CapabilityManager, CapabilitySummary};
 use crate::proto::{
     capability_service_server::CapabilityService, CapabilityProviderListPb, CapabilityProviderPb,
     CapabilityRegisterRequest, CapabilitySetSettingsRequest, CapabilitySettingsPb,
-    CapabilitySummaryListPb, CapabilitySummaryPb, Empty, RawJsonPb, Status, StringRequest,
+    CapabilitySummaryListPb, CapabilitySummaryPb, Empty, RawJsonPb, StringRequest,
 };
 
 pub struct CapabilityServiceImpl {
@@ -22,22 +22,6 @@ impl CapabilityServiceImpl {
     pub fn new(manager: Arc<CapabilityManager>) -> Self {
         Self { manager }
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
@@ -84,11 +68,11 @@ impl CapabilityService for CapabilityServiceImpl {
         Ok(Response::new(raw_json(&caps)))
     }
 
-    async fn register(&self, req: Request<CapabilityRegisterRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn register(&self, req: Request<CapabilityRegisterRequest>) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         self.manager
             .register(&args.id, &args.label, &args.description);
-        Ok(ok_status())
+        Ok(Response::new(Empty {}))
     }
 
     async fn get_providers(
@@ -147,15 +131,15 @@ impl CapabilityService for CapabilityServiceImpl {
     async fn set_settings(
         &self,
         req: Request<CapabilitySetSettingsRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         let settings = CapabilitySettings {
             providers: args.providers,
         };
         if self.manager.set_settings(&args.cap_id, &settings) {
-            Ok(ok_status())
+            Ok(Response::new(Empty {}))
         } else {
-            Ok(err_status("set_settings 저장 실패"))
+            Err(TonicStatus::internal("set_settings 저장 실패"))
         }
     }
 }

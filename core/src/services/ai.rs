@@ -12,7 +12,7 @@ use crate::ports::{LlmCallOpts, ToolDefinition};
 use crate::proto::{
     ai_service_server::AiService, AiCodeAssistRequest, AiCreatePendingRequest, AiProcessRequest,
     AiRequestActionWithToolsRequest, AiRunAgentJobRequest, AiSpawnSubAgentRequest,
-    AiStorePlanRequest, AiTextResultPb, BoolRequest, Empty, RawJsonPb, Status, StringRequest,
+    AiStorePlanRequest, AiTextResultPb, BoolRequest, Empty, RawJsonPb, StringRequest,
 };
 
 pub struct AiServiceImpl {
@@ -183,12 +183,8 @@ impl AiService for AiServiceImpl {
     async fn set_sub_agent_enabled(
         &self,
         _req: Request<BoolRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
-        Ok(Response::new(Status {
-            ok: true,
-            error: String::new(),
-            error_code: String::new(),
-        }))
+    ) -> Result<Response<Empty>, TonicStatus> {
+        Ok(Response::new(Empty {}))
     }
 
     // ── Pending tools (옛 TS lib/pending-tools.ts 통합) ────────────────────

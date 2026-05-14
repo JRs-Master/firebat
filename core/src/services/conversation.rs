@@ -14,7 +14,7 @@ use crate::proto::{
     ConversationRecordPb, ConversationSaveRequest, ConversationSearchHistoryRequest,
     ConversationSetCliSessionRequest, ConversationSummaryPb, Empty, HistorySearchMatchPb,
     HistorySearchResultPb, NumberRequest, OptionalStringPb, ShareResultPb, SharedConversationPb,
-    Status, StringRequest,
+    StringRequest,
 };
 
 pub struct ConversationServiceImpl {
@@ -37,22 +37,6 @@ impl ConversationServiceImpl {
         self.db = Some(db);
         self
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 // ─── proto ↔ core struct 변환 ─────────────────────────────────────────────
@@ -137,28 +121,23 @@ impl ConversationService for ConversationServiceImpl {
         ))
     }
 
-    async fn save(&self, req: Request<ConversationSaveRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn save(&self, req: Request<ConversationSaveRequest>) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        let messages: serde_json::Value = match serde_json::from_str(&args.messages_json) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("save messages_json: {e}"))),
-        };
-        match self
-            .manager
+        let messages: serde_json::Value = serde_json::from_str(&args.messages_json)
+            .map_err(|e| TonicStatus::invalid_argument(format!("save messages_json: {e}")))?;
+        self.manager
             .save(&args.owner, &args.id, &args.title, &messages, args.created_at)
             .await
-        {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
-    async fn delete(&self, req: Request<ConversationOwnerIdRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn delete(&self, req: Request<ConversationOwnerIdRequest>) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        match self.manager.delete(&args.owner, &args.id) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .delete(&args.owner, &args.id)
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn is_deleted(
@@ -207,12 +186,12 @@ impl ConversationService for ConversationServiceImpl {
     async fn set_cli_session(
         &self,
         req: Request<ConversationSetCliSessionRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         if self.manager.set_cli_session(&args.conversation_id, &args.session_id, &args.model) {
-            Ok(ok_status())
+            Ok(Response::new(Empty {}))
         } else {
-            Ok(err_status("set_cli_session 실패"))
+            Err(TonicStatus::internal("set_cli_session 실패"))
         }
     }
 
@@ -291,23 +270,23 @@ impl ConversationService for ConversationServiceImpl {
         Ok(Response::new(ConversationListPb { items }))
     }
 
-    async fn restore(&self, req: Request<ConversationOwnerIdRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn restore(&self, req: Request<ConversationOwnerIdRequest>) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        match self.manager.restore(&args.owner, &args.id) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .restore(&args.owner, &args.id)
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn permanent_delete(
         &self,
         req: Request<ConversationOwnerIdRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        match self.manager.permanent_delete(&args.owner, &args.id) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .permanent_delete(&args.owner, &args.id)
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn cleanup_old_deleted(

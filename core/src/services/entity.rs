@@ -16,7 +16,7 @@ use crate::proto::{
     entity_service_server::EntityService, Empty, EntityFactSaveRequest, EntityFactUpdateRequest,
     EntityRetrieveContextRequest, EntitySaveRequest, EntitySaveResultPb, EntitySearchFactsRequest,
     EntitySearchRequest, EntityTimelineRequest, EntityUpdateRequest, FactSaveResultPb, NumberRequest,
-    RawJsonPb, Status, StringRequest,
+    RawJsonPb, StringRequest,
 };
 
 pub struct EntityServiceImpl {
@@ -27,22 +27,6 @@ impl EntityServiceImpl {
     pub fn new(manager: Arc<EntityManager>) -> Self {
         Self { manager }
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
@@ -79,7 +63,7 @@ impl EntityService for EntityServiceImpl {
         }
     }
 
-    async fn update(&self, req: Request<EntityUpdateRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn update(&self, req: Request<EntityUpdateRequest>) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         let aliases = args
             .aliases_json
@@ -91,26 +75,26 @@ impl EntityService for EntityServiceImpl {
             .as_deref()
             .filter(|s| !s.is_empty())
             .and_then(|s| serde_json::from_str(s).ok());
-        match self.manager.update_entity(
-            args.id,
-            UpdateEntityPatch {
-                name: args.name,
-                entity_type: args.entity_type,
-                aliases,
-                metadata,
-            },
-        ) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .update_entity(
+                args.id,
+                UpdateEntityPatch {
+                    name: args.name,
+                    entity_type: args.entity_type,
+                    aliases,
+                    metadata,
+                },
+            )
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
-    async fn delete(&self, req: Request<NumberRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn delete(&self, req: Request<NumberRequest>) -> Result<Response<Empty>, TonicStatus> {
         let id = req.into_inner().value;
-        match self.manager.delete_entity(id) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .delete_entity(id)
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn get(&self, req: Request<NumberRequest>) -> Result<Response<RawJsonPb>, TonicStatus> {
@@ -177,37 +161,37 @@ impl EntityService for EntityServiceImpl {
     async fn update_fact(
         &self,
         req: Request<EntityFactUpdateRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         let tags = args
             .tags_json
             .as_deref()
             .filter(|s| !s.is_empty())
             .and_then(|s| serde_json::from_str(s).ok());
-        match self.manager.update_fact(
-            args.id,
-            UpdateFactPatch {
-                content: args.content,
-                fact_type: args.fact_type,
-                occurred_at: args.occurred_at,
-                tags,
-                ttl_days: args.ttl_days,
-            },
-        ) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .update_fact(
+                args.id,
+                UpdateFactPatch {
+                    content: args.content,
+                    fact_type: args.fact_type,
+                    occurred_at: args.occurred_at,
+                    tags,
+                    ttl_days: args.ttl_days,
+                },
+            )
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn delete_fact(
         &self,
         req: Request<NumberRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let id = req.into_inner().value;
-        match self.manager.delete_fact(id) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .delete_fact(id)
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn get_fact(

@@ -11,7 +11,7 @@ use crate::ports::{AuthSession, SessionRole, SessionType};
 use crate::proto::{
     auth_service_server::AuthService, AdminCredentialsPb, ApiTokenInfoPb, AuthLoginRequest,
     AuthSessionPb, AuthSetAdminCredentialsRequest, AuthValidatePasswordPolicyRequest, BoolRequest,
-    Empty, LoginResponsePb, NumberRequest, Status, StringRequest,
+    Empty, LoginResponsePb, NumberRequest, StringRequest,
 };
 
 pub struct AuthServiceImpl {
@@ -22,14 +22,6 @@ impl AuthServiceImpl {
     pub fn new(manager: Arc<AuthManager>) -> Self {
         Self { manager }
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
 }
 
 // ─── proto ↔ core port struct 변환 ─────────────────────────────────────────
@@ -201,33 +193,24 @@ impl AuthService for AuthServiceImpl {
     async fn validate_password_policy(
         &self,
         req: Request<AuthValidatePasswordPolicyRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        match crate::managers::auth::AuthManager::validate_password_policy(
+        crate::managers::auth::AuthManager::validate_password_policy(
             &args.password,
             args.id.as_deref(),
-        ) {
-            Ok(_) => Ok(Response::new(Status {
-                ok: true,
-                error: String::new(),
-                error_code: String::new(),
-            })),
-            Err(e) => Ok(Response::new(Status {
-                ok: false,
-                error: e,
-                error_code: "POLICY_VIOLATION".to_string(),
-            })),
-        }
+        )
+        .map_err(TonicStatus::invalid_argument)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn set_admin_credentials(
         &self,
         req: Request<AuthSetAdminCredentialsRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         self.manager
             .set_admin_credentials(args.id.as_deref(), args.password.as_deref());
-        Ok(ok_status())
+        Ok(Response::new(Empty {}))
     }
 }
 

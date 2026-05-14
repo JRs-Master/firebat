@@ -13,7 +13,7 @@ use crate::proto::{
     episodic_service_server::EpisodicService, Empty, EpisodicLinkEntityRequest,
     EpisodicListByEntityRequest, EpisodicListRecentRequest, EpisodicSaveEventRequest,
     EpisodicSearchEventsRequest, EpisodicUpdateEventRequest, FactSaveResultPb, NumberRequest,
-    RawJsonPb, Status,
+    RawJsonPb,
 };
 
 pub struct EpisodicServiceImpl {
@@ -24,22 +24,6 @@ impl EpisodicServiceImpl {
     pub fn new(manager: Arc<EpisodicManager>) -> Self {
         Self { manager }
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
@@ -88,7 +72,7 @@ impl EpisodicService for EpisodicServiceImpl {
     async fn update_event(
         &self,
         req: Request<EpisodicUpdateEventRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         let context = args
             .context_json
@@ -100,33 +84,33 @@ impl EpisodicService for EpisodicServiceImpl {
             .as_deref()
             .filter(|s| !s.is_empty())
             .and_then(|s| serde_json::from_str(s).ok());
-        match self.manager.update_event(
-            args.id,
-            UpdateEventPatch {
-                event_type: args.event_type,
-                title: args.title,
-                description: args.description,
-                who: args.who,
-                context,
-                occurred_at: args.occurred_at,
-                entity_ids,
-                ttl_days: args.ttl_days,
-            },
-        ) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .update_event(
+                args.id,
+                UpdateEventPatch {
+                    event_type: args.event_type,
+                    title: args.title,
+                    description: args.description,
+                    who: args.who,
+                    context,
+                    occurred_at: args.occurred_at,
+                    entity_ids,
+                    ttl_days: args.ttl_days,
+                },
+            )
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn delete_event(
         &self,
         req: Request<NumberRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let id = req.into_inner().value;
-        match self.manager.delete_event(id) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .delete_event(id)
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn get_event(
@@ -196,23 +180,23 @@ impl EpisodicService for EpisodicServiceImpl {
     async fn link_entity(
         &self,
         req: Request<EpisodicLinkEntityRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        match self.manager.link_entity(args.event_id, args.entity_id) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .link_entity(args.event_id, args.entity_id)
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn unlink_entity(
         &self,
         req: Request<EpisodicLinkEntityRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        match self.manager.unlink_entity(args.event_id, args.entity_id) {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .unlink_entity(args.event_id, args.entity_id)
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn cleanup_expired(

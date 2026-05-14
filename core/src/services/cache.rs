@@ -8,7 +8,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::proto::{
     cache_service_server::CacheService, CacheAggregateRequest, CacheGrepRequest, CacheReadRequest,
-    RawJsonPb, Status, StringRequest,
+    Empty, RawJsonPb, StringRequest,
 };
 use crate::utils::sysmod_cache::SysmodCacheAdapter;
 
@@ -65,19 +65,9 @@ impl CacheService for CacheServiceImpl {
         }
     }
 
-    async fn drop(&self, req: Request<StringRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn drop(&self, req: Request<StringRequest>) -> Result<Response<Empty>, TonicStatus> {
         let key = req.into_inner().value;
-        match self.cache.drop_key(&key) {
-            Ok(()) => Ok(Response::new(Status {
-                ok: true,
-                error: String::new(),
-                error_code: String::new(),
-            })),
-            Err(e) => Ok(Response::new(Status {
-                ok: false,
-                error: e,
-                error_code: String::new(),
-            })),
-        }
+        self.cache.drop_key(&key).map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 }

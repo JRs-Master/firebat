@@ -10,7 +10,7 @@ use crate::managers::project::{ProjectEntry, ProjectManager, ProjectVisibility};
 use crate::proto::{
     project_service_server::ProjectService, BoolRequest, Empty, ProjectConfigPb, ProjectEntryPb,
     ProjectListPb, ProjectRenameRequest, ProjectSetConfigRequest, ProjectSetVisibilityRequest,
-    ProjectVerifyPasswordRequest, ProjectVisibilityPb, Status, StringRequest,
+    ProjectVerifyPasswordRequest, ProjectVisibilityPb, StringRequest,
 };
 
 pub struct ProjectServiceImpl {
@@ -21,22 +21,6 @@ impl ProjectServiceImpl {
     pub fn new(manager: Arc<ProjectManager>) -> Self {
         Self { manager }
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 // ─── proto ↔ core managers struct 변환 ────────────────────────────────────────
@@ -76,17 +60,21 @@ impl ProjectService for ProjectServiceImpl {
     async fn set_visibility(
         &self,
         req: Request<ProjectSetVisibilityRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         let visibility = match args.visibility.as_str() {
             "public" => ProjectVisibility::Public,
             "password" => ProjectVisibility::Password,
             "private" => ProjectVisibility::Private,
-            other => return Ok(err_status(format!("unknown visibility: {other}"))),
+            other => {
+                return Err(TonicStatus::invalid_argument(format!(
+                    "unknown visibility: {other}"
+                )))
+            }
         };
         self.manager
             .set_visibility(&args.project, visibility, args.password.as_deref());
-        Ok(ok_status())
+        Ok(Response::new(Empty {}))
     }
 
     async fn get_visibility(
@@ -112,16 +100,15 @@ impl ProjectService for ProjectServiceImpl {
         Ok(Response::new(ProjectConfigPb { raw_json }))
     }
 
-    async fn set_config(&self, req: Request<ProjectSetConfigRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn set_config(&self, req: Request<ProjectSetConfigRequest>) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        let config: serde_json::Value = match serde_json::from_str(&args.config_json) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("set_config json: {e}"))),
-        };
-        match self.manager.set_config(&args.project, &config).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        let config: serde_json::Value = serde_json::from_str(&args.config_json)
+            .map_err(|e| TonicStatus::invalid_argument(format!("set_config json: {e}")))?;
+        self.manager
+            .set_config(&args.project, &config)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn verify_password(
@@ -137,16 +124,17 @@ impl ProjectService for ProjectServiceImpl {
     async fn delete(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let project = req.into_inner().value;
-        match self.manager.delete(&project).await {
-            Ok(_) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .delete(&project)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
-    async fn rename(&self, _req: Request<ProjectRenameRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn rename(&self, _req: Request<ProjectRenameRequest>) -> Result<Response<Empty>, TonicStatus> {
         // Phase B-8 미구현 — Phase B-9 PageManager (DB) 와 함께 (slug rename + redirect).
-        Ok(err_status("rename — Phase B-9 와 같이 진행"))
+        Err(TonicStatus::unimplemented("rename — Phase B-9 와 같이 진행"))
     }
 }

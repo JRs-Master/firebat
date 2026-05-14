@@ -26,13 +26,6 @@ package firebat.v1;
 
 message Empty {}
 
-/** RPC 응답의 ok / error 표준 */
-message Status {
-  bool ok = 1;
-  string error = 2;
-  string error_code = 3;
-}
-
 /** Phase A: typed message 정의 전 사용. JSON 직렬화 string. Phase B 에서 매니저별 typed 로 swap. */
 message JsonValue {
   string raw = 1;
@@ -138,7 +131,7 @@ service AiService {
   rpc ResolveCallTarget(StringRequest) returns (RawJsonPb);
   rpc SpawnSubAgent(AiSpawnSubAgentRequest) returns (RawJsonPb);
   rpc IsSubAgentEnabled(Empty) returns (BoolRequest);
-  rpc SetSubAgentEnabled(BoolRequest) returns (Status);
+  rpc SetSubAgentEnabled(BoolRequest) returns (Empty);
 
   // Pending tools — 승인 대기 도구 (옛 TS lib/pending-tools.ts 통합)
   rpc CreatePending(AiCreatePendingRequest) returns (StringRequest);   // → planId
@@ -166,8 +159,8 @@ message StorageGlobFilesRequest {
 service StorageService {
   rpc ReadFile(StringRequest) returns (RawJsonPb);
   rpc ReadFileBinary(StringRequest) returns (RawJsonPb);
-  rpc WriteFile(StorageWriteFileRequest) returns (Status);
-  rpc DeleteFile(StringRequest) returns (Status);
+  rpc WriteFile(StorageWriteFileRequest) returns (Empty);
+  rpc DeleteFile(StringRequest) returns (Empty);
   rpc ListDir(StringRequest) returns (RawJsonPb);
   rpc ListFiles(StringRequest) returns (RawJsonPb);
   rpc GetFileTree(StringRequest) returns (RawJsonPb);
@@ -280,12 +273,12 @@ service PageService {
   rpc Search(PageSearchRequest) returns (PageListResponsePb);
   rpc Get(StringRequest) returns (PageRecordPb);
   rpc Save(PageSaveRequest) returns (PageSaveResultPb);
-  rpc Delete(StringRequest) returns (Status);
-  rpc Rename(PageRenameRequest) returns (Status);
+  rpc Delete(StringRequest) returns (Empty);
+  rpc Rename(PageRenameRequest) returns (Empty);
   rpc GetRedirect(StringRequest) returns (OptionalStringPb);
   rpc ListStatic(Empty) returns (StringListPb);
   rpc FindMediaUsage(StringRequest) returns (MediaUsageListPb);
-  rpc SetVisibility(PageSetVisibilityRequest) returns (Status);
+  rpc SetVisibility(PageSetVisibilityRequest) returns (Empty);
   rpc VerifyPassword(PageVerifyPasswordRequest) returns (BoolRequest);
   rpc FindRelated(PageFindRelatedRequest) returns (PageListResponsePb);
   rpc ListAllTags(Empty) returns (TagListPb);
@@ -337,13 +330,13 @@ message ProjectRenameRequest {
 // ──────────────────────────────────────────────────────────────────────────
 service ProjectService {
   rpc Scan(Empty) returns (ProjectListPb);
-  rpc SetVisibility(ProjectSetVisibilityRequest) returns (Status);
+  rpc SetVisibility(ProjectSetVisibilityRequest) returns (Empty);
   rpc GetVisibility(StringRequest) returns (ProjectVisibilityPb);
   rpc GetConfig(StringRequest) returns (ProjectConfigPb);
-  rpc SetConfig(ProjectSetConfigRequest) returns (Status);
+  rpc SetConfig(ProjectSetConfigRequest) returns (Empty);
   rpc VerifyPassword(ProjectVerifyPasswordRequest) returns (BoolRequest);
-  rpc Delete(StringRequest) returns (Status);
-  rpc Rename(ProjectRenameRequest) returns (Status);
+  rpc Delete(StringRequest) returns (Empty);
+  rpc Rename(ProjectRenameRequest) returns (Empty);
 }
 
 // ─── ModuleService typed Request messages ───────────────────────────────────
@@ -376,9 +369,9 @@ service ModuleService {
   rpc GetSchema(ModuleGetSchemaRequest) returns (RawJsonPb);
   rpc GetSettings(StringRequest) returns (RawJsonPb);
   rpc GetConfig(StringRequest) returns (RawJsonPb);
-  rpc SetSettings(ModuleSetSettingsRequest) returns (Status);
+  rpc SetSettings(ModuleSetSettingsRequest) returns (Empty);
   rpc IsEnabled(StringRequest) returns (BoolRequest);
-  rpc SetEnabled(ModuleSetEnabledRequest) returns (Status);
+  rpc SetEnabled(ModuleSetEnabledRequest) returns (Empty);
   rpc GetCmsSettings(Empty) returns (RawJsonPb);
   rpc GetKakaoMapJsKey(Empty) returns (StringRequest);
 }
@@ -560,14 +553,14 @@ message ValidatePipelineRequest {
 // 7. ScheduleService — ScheduleManager
 // ──────────────────────────────────────────────────────────────────────────
 service ScheduleService {
-  rpc ScheduleCron(ScheduleCronRequest) returns (Status);
-  rpc CancelCron(StringRequest) returns (Status);
-  rpc UpdateCron(ScheduleCronRequest) returns (Status);
+  rpc ScheduleCron(ScheduleCronRequest) returns (Empty);
+  rpc CancelCron(StringRequest) returns (Empty);
+  rpc UpdateCron(ScheduleCronRequest) returns (Empty);
   rpc ListCron(Empty) returns (CronJobListPb);
   rpc GetLogs(NumberRequest) returns (CronLogListPb);
-  rpc ClearLogs(Empty) returns (Status);
+  rpc ClearLogs(Empty) returns (Empty);
   rpc ConsumeNotifications(Empty) returns (CronNotificationListPb);
-  rpc RunNow(StringRequest) returns (Status);
+  rpc RunNow(StringRequest) returns (Empty);
   rpc ValidatePipeline(ValidatePipelineRequest) returns (ValidatePipelineResultPb);
 }
 
@@ -586,12 +579,12 @@ message SecretSetSystemRequest {
 // ──────────────────────────────────────────────────────────────────────────
 service SecretService {
   rpc ListUser(Empty) returns (StringListPb);
-  rpc SetUser(SecretSetUserRequest) returns (Status);
+  rpc SetUser(SecretSetUserRequest) returns (Empty);
   rpc GetUser(StringRequest) returns (OptionalStringPb);
-  rpc DeleteUser(StringRequest) returns (Status);
+  rpc DeleteUser(StringRequest) returns (Empty);
   rpc ListUserModuleSecrets(Empty) returns (ModuleSecretListPb);
   rpc GetSystem(StringRequest) returns (OptionalStringPb);
-  rpc SetSystem(SecretSetSystemRequest) returns (Status);
+  rpc SetSystem(SecretSetSystemRequest) returns (Empty);
 }
 
 /** ModuleSecretEntry — 유저 모듈 config.json secrets 배열 항목 + 등록 여부. */
@@ -626,8 +619,8 @@ message McpCallToolRequest {
 // ──────────────────────────────────────────────────────────────────────────
 service McpService {
   rpc ListServers(Empty) returns (RawJsonPb);
-  rpc AddServer(McpAddServerRequest) returns (Status);
-  rpc RemoveServer(StringRequest) returns (Status);
+  rpc AddServer(McpAddServerRequest) returns (Empty);
+  rpc RemoveServer(StringRequest) returns (Empty);
   rpc ListTools(StringRequest) returns (McpToolListPb);
   rpc ListAllTools(Empty) returns (McpToolListPb);
   rpc CallTool(McpCallToolRequest) returns (RawJsonPb);
@@ -661,12 +654,12 @@ message CapabilitySetSettingsRequest {
 // ──────────────────────────────────────────────────────────────────────────
 service CapabilityService {
   rpc List(Empty) returns (RawJsonPb);
-  rpc Register(CapabilityRegisterRequest) returns (Status);
+  rpc Register(CapabilityRegisterRequest) returns (Empty);
   rpc GetProviders(StringRequest) returns (CapabilityProviderListPb);
   rpc ListWithProviders(Empty) returns (CapabilitySummaryListPb);
   rpc Resolve(StringRequest) returns (CapabilityProviderPb);
   rpc GetSettings(StringRequest) returns (CapabilitySettingsPb);
-  rpc SetSettings(CapabilitySetSettingsRequest) returns (Status);
+  rpc SetSettings(CapabilitySetSettingsRequest) returns (Empty);
 }
 
 message CapabilityProviderPb {
@@ -760,16 +753,16 @@ service AuthService {
   rpc RevokeApiTokens(Empty) returns (NumberRequest);
   rpc GetApiTokenInfo(Empty) returns (ApiTokenInfoPb);
   rpc GetAdminCredentials(Empty) returns (AdminCredentialsPb);
-  rpc SetAdminCredentials(AuthSetAdminCredentialsRequest) returns (Status);
+  rpc SetAdminCredentials(AuthSetAdminCredentialsRequest) returns (Empty);
   // 첫 부팅 setup 검출 — frontend `/login` 이 호출, false 면 setup wizard 노출.
   rpc IsAdminSetup(Empty) returns (BoolRequest);
   // 평문 비번 검증 — argon2 hash 비교. SettingsModal 의 비번 변경 PATCH 가 사용
   // (login 부작용 — lock counter / 세션 발급 — 회피).
   rpc VerifyAdminPassword(StringRequest) returns (BoolRequest);
   // 비번 정책 검증 — 8자 이상 + 4 categories 중 3 이상 + (옵션) ID 동일 금지.
-  // 입력: {password, id?}. 응답: Status (ok/error/error_code).
+  // 입력: {password, id?}. 응답: Empty (실패 시 InvalidArgument 에러 — error_code 메시지).
   // SetupWizard / 비번 변경 PATCH / setup POST 모두 단일 source.
-  rpc ValidatePasswordPolicy(AuthValidatePasswordPolicyRequest) returns (Status);
+  rpc ValidatePasswordPolicy(AuthValidatePasswordPolicyRequest) returns (Empty);
 }
 
 message ConversationSummaryPb {
@@ -874,19 +867,19 @@ message ConversationCreateShareRequest {
 service ConversationService {
   rpc List(StringRequest) returns (ConversationListPb);
   rpc Get(ConversationOwnerIdRequest) returns (ConversationRecordPb);
-  rpc Save(ConversationSaveRequest) returns (Status);
+  rpc Save(ConversationSaveRequest) returns (Empty);
   /// 삭제 — soft delete. conversations.deleted_at 추가. 30일 후 cleanup cron 이 cascade 삭제.
-  rpc Delete(ConversationOwnerIdRequest) returns (Status);
+  rpc Delete(ConversationOwnerIdRequest) returns (Empty);
   rpc IsDeleted(ConversationOwnerIdRequest) returns (BoolRequest);
   /// 휴지통 (soft-deleted) 목록 — owner 기준. 최신 삭제 순.
   rpc ListDeleted(StringRequest) returns (ConversationListPb);
   /// 휴지통에서 복원 — deleted_at NULL. 30일 cleanup 대상에서 제외.
-  rpc Restore(ConversationOwnerIdRequest) returns (Status);
+  rpc Restore(ConversationOwnerIdRequest) returns (Empty);
   /// 영구 삭제 — DB row + 첨부 이미지 cascade. 휴지통에서도 사라짐.
-  rpc PermanentDelete(ConversationOwnerIdRequest) returns (Status);
+  rpc PermanentDelete(ConversationOwnerIdRequest) returns (Empty);
   rpc SearchHistory(ConversationSearchHistoryRequest) returns (HistorySearchResultPb);
   rpc GetCliSession(ConversationGetCliSessionRequest) returns (OptionalStringPb);
-  rpc SetCliSession(ConversationSetCliSessionRequest) returns (Status);
+  rpc SetCliSession(ConversationSetCliSessionRequest) returns (Empty);
   rpc CreateShare(ConversationCreateShareRequest) returns (ShareResultPb);
   rpc GetShare(StringRequest) returns (SharedConversationPb);
   rpc CleanupExpiredShares(Empty) returns (NumberRequest);
@@ -1018,19 +1011,19 @@ message MediaSaveTempAttachmentRequest {
 service MediaService {
   rpc Read(StringRequest) returns (MediaReadPb);
   rpc List(MediaListRequest) returns (MediaListResultPb);
-  rpc Remove(StringRequest) returns (Status);
+  rpc Remove(StringRequest) returns (Empty);
   rpc IsReady(StringRequest) returns (BoolRequest);
   rpc StartGeneration(MediaStartGenerationRequest) returns (StartGenerationPb);
   rpc Generate(MediaGenerateRequest) returns (GenerateImageResultPb);
   rpc Regenerate(StringRequest) returns (GenerateImageResultPb);
   rpc Save(MediaSaveRequest) returns (MediaSaveResultPb);
   rpc GetImageModel(Empty) returns (StringRequest);
-  rpc SetImageModel(StringRequest) returns (Status);
+  rpc SetImageModel(StringRequest) returns (Empty);
   rpc GetAvailableImageModels(Empty) returns (ImageModelListPb);
   rpc GetImageDefaultSize(Empty) returns (OptionalStringPb);
-  rpc SetImageDefaultSize(StringRequest) returns (Status);
+  rpc SetImageDefaultSize(StringRequest) returns (Empty);
   rpc GetImageDefaultQuality(Empty) returns (OptionalStringPb);
-  rpc SetImageDefaultQuality(StringRequest) returns (Status);
+  rpc SetImageDefaultQuality(StringRequest) returns (Empty);
   rpc GetImageSettings(Empty) returns (ImageSettingsPb);
   /// 채팅 첨부 이미지 임시 저장 — sharp 0 (raw 그대로). /user/attachments/<slug>.<ext> 응답.
   /// 30일 후 cleanup cron 이 자동 삭제. 사용자 명시 갤러리 저장 (Save) 은 별도.
@@ -1156,9 +1149,9 @@ message CostSetBudgetRequest {
 
 service CostService {
   rpc GetStats(CostGetStatsRequest) returns (LlmCostStatsSummaryPb);
-  rpc Flush(Empty) returns (Status);
+  rpc Flush(Empty) returns (Empty);
   rpc GetBudget(Empty) returns (CostBudgetPb);
-  rpc SetBudget(CostSetBudgetRequest) returns (Status);
+  rpc SetBudget(CostSetBudgetRequest) returns (Empty);
   rpc CheckBudget(Empty) returns (BudgetCheckResultPb);
 }
 
@@ -1200,8 +1193,8 @@ message ToolSetActivePlanStateRequest {
 }
 
 service ToolService {
-  rpc Register(ToolRegisterRequest) returns (Status);
-  rpc RegisterMany(ToolRegisterManyRequest) returns (Status);
+  rpc Register(ToolRegisterRequest) returns (Empty);
+  rpc RegisterMany(ToolRegisterManyRequest) returns (Empty);
   rpc Unregister(StringRequest) returns (BoolRequest);
   rpc GetDefinition(StringRequest) returns (RawJsonPb);
   rpc List(ToolListRequest) returns (RawJsonPb);
@@ -1210,8 +1203,8 @@ service ToolService {
   rpc BuildMcpDescriptions(ToolBuildMcpDescriptionsRequest) returns (RawJsonPb);
   rpc GetStats(Empty) returns (ToolStatsPb);
   rpc GetActivePlanState(StringRequest) returns (RawJsonPb);
-  rpc SetActivePlanState(ToolSetActivePlanStateRequest) returns (Status);
-  rpc ClearActivePlanState(StringRequest) returns (Status);
+  rpc SetActivePlanState(ToolSetActivePlanStateRequest) returns (Empty);
+  rpc ClearActivePlanState(StringRequest) returns (Empty);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1287,15 +1280,15 @@ message EntityRetrieveContextRequest {
 
 service EntityService {
   rpc Save(EntitySaveRequest) returns (EntitySaveResultPb);
-  rpc Update(EntityUpdateRequest) returns (Status);
-  rpc Delete(NumberRequest) returns (Status);
+  rpc Update(EntityUpdateRequest) returns (Empty);
+  rpc Delete(NumberRequest) returns (Empty);
   rpc Get(NumberRequest) returns (RawJsonPb);
   rpc FindByName(StringRequest) returns (RawJsonPb);
   rpc Search(EntitySearchRequest) returns (RawJsonPb);
 
   rpc SaveFact(EntityFactSaveRequest) returns (FactSaveResultPb);
-  rpc UpdateFact(EntityFactUpdateRequest) returns (Status);
-  rpc DeleteFact(NumberRequest) returns (Status);
+  rpc UpdateFact(EntityFactUpdateRequest) returns (Empty);
+  rpc DeleteFact(NumberRequest) returns (Empty);
   rpc GetFact(NumberRequest) returns (RawJsonPb);
   rpc GetTimeline(EntityTimelineRequest) returns (RawJsonPb);
   rpc SearchFacts(EntitySearchFactsRequest) returns (RawJsonPb);
@@ -1350,14 +1343,14 @@ message EpisodicLinkEntityRequest {
 
 service EpisodicService {
   rpc SaveEvent(EpisodicSaveEventRequest) returns (FactSaveResultPb);
-  rpc UpdateEvent(EpisodicUpdateEventRequest) returns (Status);
-  rpc DeleteEvent(NumberRequest) returns (Status);
+  rpc UpdateEvent(EpisodicUpdateEventRequest) returns (Empty);
+  rpc DeleteEvent(NumberRequest) returns (Empty);
   rpc GetEvent(NumberRequest) returns (RawJsonPb);
   rpc SearchEvents(EpisodicSearchEventsRequest) returns (RawJsonPb);
   rpc ListRecent(EpisodicListRecentRequest) returns (RawJsonPb);
   rpc ListByEntity(EpisodicListByEntityRequest) returns (RawJsonPb);
-  rpc LinkEntity(EpisodicLinkEntityRequest) returns (Status);
-  rpc UnlinkEntity(EpisodicLinkEntityRequest) returns (Status);
+  rpc LinkEntity(EpisodicLinkEntityRequest) returns (Empty);
+  rpc UnlinkEntity(EpisodicLinkEntityRequest) returns (Empty);
   rpc CleanupExpired(Empty) returns (NumberRequest);
 }
 
@@ -1422,8 +1415,8 @@ message TemplateSaveRequest {
 service TemplateService {
   rpc List(Empty) returns (RawJsonPb);
   rpc Get(StringRequest) returns (RawJsonPb);
-  rpc Save(TemplateSaveRequest) returns (Status);
-  rpc Delete(StringRequest) returns (Status);
+  rpc Save(TemplateSaveRequest) returns (Empty);
+  rpc Delete(StringRequest) returns (Empty);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -1548,7 +1541,7 @@ service CacheService {
   rpc Read(CacheReadRequest) returns (RawJsonPb);
   rpc Grep(CacheGrepRequest) returns (RawJsonPb);
   rpc Aggregate(CacheAggregateRequest) returns (RawJsonPb);
-  rpc Drop(StringRequest) returns (Status);
+  rpc Drop(StringRequest) returns (Empty);
 }
 
 // ─── TelegramService typed Request messages ─────────────────────────────────
@@ -1591,8 +1584,8 @@ service MemoryService {
   rpc GetIndex(Empty) returns (StringRequest);
   rpc ReadFile(StringRequest) returns (RawJsonPb);
   rpc ListFiles(Empty) returns (RawJsonPb);
-  rpc SaveFile(MemorySaveFileRequest) returns (Status);
-  rpc DeleteFile(StringRequest) returns (Status);
+  rpc SaveFile(MemorySaveFileRequest) returns (Empty);
+  rpc DeleteFile(StringRequest) returns (Empty);
 }
 
 // ─── LifecycleService typed Request messages ────────────────────────────────
@@ -1607,8 +1600,8 @@ message LifecycleCaptureExceptionRequest {
 /** Lifecycle / Health — 헬스 체크 + graceful shutdown 등 */
 service LifecycleService {
   rpc Health(Empty) returns (HealthInfo);
-  rpc CaptureException(LifecycleCaptureExceptionRequest) returns (Status);
-  rpc GracefulShutdown(NumberRequest) returns (Status);
+  rpc CaptureException(LifecycleCaptureExceptionRequest) returns (Empty);
+  rpc GracefulShutdown(NumberRequest) returns (Empty);
 }
 
 /** ErrorReport — captureException 분리 (선택) */

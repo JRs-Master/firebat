@@ -112,8 +112,21 @@ export async function callTypedClient<T = unknown>(method: string, args: unknown
   try {
     response = await fn.call(client, request);
   } catch (err) {
+    // Phase B 이후 임시 호환 layer (Option 2 정공 — 2026-05-15).
+    // 옛 Rust impl 의 `Ok(Status{ok:false,..})` 반환 패턴이 `Err(tonic::Status)` 으로 변경되어
+    // gRPC error throw → 옛 caller 의 `res.success` / `res.ok` 검사 분기 불통.
+    // 임시: gRPC error → 옛 caller 호환 형태 (`{ok, success, error, error_code}`) 변환.
+    // 사용처 종료 (`lib/api-gen/*.ts` 로 caller migration 완료 시점) 시 본 layer + 함수
+    // 자체 폐기 예정 (Phase E).
     const { fromGrpcError } = await import('./api-error');
-    throw fromGrpcError(err);
+    const apiErr = fromGrpcError(err);
+    const msg = apiErr.userMessage ?? apiErr.message ?? String(err);
+    return {
+      ok: false,
+      success: false,
+      error: msg,
+      error_code: apiErr.grpcCode != null ? String(apiErr.grpcCode) : '',
+    } as T;
   }
   // RawJsonPb / OptionalStringPb / {value} wrapper — generic 처리 (proto schema 표준).
   if (response && typeof response.rawJson === 'string') {

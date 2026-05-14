@@ -10,7 +10,7 @@ use crate::managers::mcp::McpManager;
 use crate::ports::McpToolInfo;
 use crate::proto::{
     mcp_service_server::McpService, Empty, McpAddServerRequest, McpCallToolRequest, McpToolInfoPb, McpToolListPb, RawJsonPb,
-    Status, StringRequest,
+    StringRequest,
 };
 
 pub struct McpServiceImpl {
@@ -21,22 +21,6 @@ impl McpServiceImpl {
     pub fn new(manager: Arc<McpManager>) -> Self {
         Self { manager }
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
@@ -70,12 +54,16 @@ impl McpService for McpServiceImpl {
         Ok(Response::new(raw_json(&self.manager.list_servers())))
     }
 
-    async fn add_server(&self, req: Request<McpAddServerRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn add_server(&self, req: Request<McpAddServerRequest>) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         let transport = match args.transport.as_str() {
             "stdio" => crate::ports::McpTransport::Stdio,
             "sse" => crate::ports::McpTransport::Sse,
-            other => return Ok(err_status(format!("unknown transport: {other}"))),
+            other => {
+                return Err(TonicStatus::invalid_argument(format!(
+                    "unknown transport: {other}"
+                )));
+            }
         };
         let env: std::collections::HashMap<String, String> = if args.env_json.is_empty() {
             std::collections::HashMap::new()
@@ -92,21 +80,23 @@ impl McpService for McpServiceImpl {
             url: args.url,
             enabled: args.enabled,
         };
-        match self.manager.add_server(config).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .add_server(config)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn remove_server(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let name = req.into_inner().value;
-        match self.manager.remove_server(&name).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.manager
+            .remove_server(&name)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn list_tools(

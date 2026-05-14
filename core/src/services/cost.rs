@@ -10,7 +10,7 @@ use crate::managers::cost::{CostBudget, CostManager, CostStatsFilter};
 use crate::ports::{LlmCostStatsRecord, LlmCostStatsSummary};
 use crate::proto::{
     cost_service_server::CostService, BudgetCheckResultPb, CostBudgetPb, CostGetStatsRequest,
-    CostSetBudgetRequest, Empty, LlmCostStatsRecordPb, LlmCostStatsSummaryPb, Status,
+    CostSetBudgetRequest, Empty, LlmCostStatsRecordPb, LlmCostStatsSummaryPb,
 };
 
 pub struct CostServiceImpl {
@@ -21,22 +21,6 @@ impl CostServiceImpl {
     pub fn new(manager: Arc<CostManager>) -> Self {
         Self { manager }
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 // ─── proto ↔ core port struct 변환 ─────────────────────────────────────────
@@ -114,9 +98,9 @@ impl CostService for CostServiceImpl {
         Ok(Response::new(stats.into()))
     }
 
-    async fn flush(&self, _req: Request<Empty>) -> Result<Response<Status>, TonicStatus> {
+    async fn flush(&self, _req: Request<Empty>) -> Result<Response<Empty>, TonicStatus> {
         // Rust 에선 즉시 INSERT 라 별도 flush 불필요. ok 반환 (호환성).
-        Ok(ok_status())
+        Ok(Response::new(Empty {}))
     }
 
     async fn get_budget(
@@ -127,7 +111,7 @@ impl CostService for CostServiceImpl {
         Ok(Response::new(budget.into()))
     }
 
-    async fn set_budget(&self, req: Request<CostSetBudgetRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn set_budget(&self, req: Request<CostSetBudgetRequest>) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         let budget = CostBudget {
             daily_usd: args.daily_usd,
@@ -137,9 +121,9 @@ impl CostService for CostServiceImpl {
             alert_at_percent: args.alert_at_percent,
         };
         if self.manager.set_budget(&budget) {
-            Ok(ok_status())
+            Ok(Response::new(Empty {}))
         } else {
-            Ok(err_status("set_budget 실패"))
+            Err(TonicStatus::internal("set_budget 실패"))
         }
     }
 

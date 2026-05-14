@@ -9,7 +9,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::secret::{ModuleSecretEntry, SecretManager};
 use crate::proto::{
     secret_service_server::SecretService, Empty, ModuleSecretEntryPb, ModuleSecretListPb,
-    OptionalStringPb, SecretSetSystemRequest, SecretSetUserRequest, Status, StringListPb, StringRequest,
+    OptionalStringPb, SecretSetSystemRequest, SecretSetUserRequest, StringListPb, StringRequest,
 };
 
 pub struct SecretServiceImpl {
@@ -20,22 +20,6 @@ impl SecretServiceImpl {
     pub fn new(manager: Arc<SecretManager>) -> Self {
         Self { manager }
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 // ─── proto ↔ core managers struct 변환 ────────────────────────────────────────
@@ -60,12 +44,12 @@ impl SecretService for SecretServiceImpl {
         Ok(Response::new(StringListPb { values }))
     }
 
-    async fn set_user(&self, req: Request<SecretSetUserRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn set_user(&self, req: Request<SecretSetUserRequest>) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         if self.manager.set_user(&args.name, &args.value) {
-            Ok(ok_status())
+            Ok(Response::new(Empty {}))
         } else {
-            Ok(err_status("set_user 실패"))
+            Err(TonicStatus::internal("set_user 실패"))
         }
     }
 
@@ -84,12 +68,12 @@ impl SecretService for SecretServiceImpl {
     async fn delete_user(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let name = req.into_inner().value;
         if self.manager.delete_user(&name) {
-            Ok(ok_status())
+            Ok(Response::new(Empty {}))
         } else {
-            Ok(err_status("delete_user 실패"))
+            Err(TonicStatus::not_found("delete_user 실패"))
         }
     }
 
@@ -119,12 +103,12 @@ impl SecretService for SecretServiceImpl {
         }))
     }
 
-    async fn set_system(&self, req: Request<SecretSetSystemRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn set_system(&self, req: Request<SecretSetSystemRequest>) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         if self.manager.set_system(&args.key, &args.value) {
-            Ok(ok_status())
+            Ok(Response::new(Empty {}))
         } else {
-            Ok(err_status("set_system 실패"))
+            Err(TonicStatus::internal("set_system 실패"))
         }
     }
 }

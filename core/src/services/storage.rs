@@ -12,7 +12,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::storage::StorageManager;
 use crate::ports::IStoragePort;
 use crate::proto::{
-    storage_service_server::StorageService, RawJsonPb, Status, StorageGlobFilesRequest,
+    storage_service_server::StorageService, Empty, RawJsonPb, StorageGlobFilesRequest,
     StorageWriteFileRequest, StringRequest,
 };
 
@@ -34,22 +34,6 @@ fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
     RawJsonPb {
         raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 #[tonic::async_trait]
@@ -80,23 +64,22 @@ impl StorageService for StorageServiceImpl {
     async fn write_file(
         &self,
         req: Request<StorageWriteFileRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        match self.storage.write(&args.path, &args.content).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.storage
+            .write(&args.path, &args.content)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn delete_file(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let path = req.into_inner().value;
-        match self.storage.delete(&path).await {
-            Ok(()) => Ok(ok_status()),
-            Err(e) => Ok(err_status(e)),
-        }
+        self.storage.delete(&path).await.map_err(TonicStatus::internal)?;
+        Ok(Response::new(Empty {}))
     }
 
     async fn list_dir(

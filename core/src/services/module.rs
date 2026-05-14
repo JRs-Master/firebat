@@ -11,7 +11,7 @@ use crate::ports::ModuleOutput;
 use crate::proto::{
     module_service_server::ModuleService, BoolRequest, Empty, ModuleEntryPb, ModuleGetSchemaRequest,
     ModuleListPb, ModuleOutputPb, ModuleRunRequest, ModuleSetEnabledRequest, ModuleSetSettingsRequest,
-    RawJsonPb, Status, StringRequest,
+    RawJsonPb, StringRequest,
 };
 
 pub struct ModuleServiceImpl {
@@ -22,22 +22,6 @@ impl ModuleServiceImpl {
     pub fn new(manager: Arc<ModuleManager>) -> Self {
         Self { manager }
     }
-}
-
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
 }
 
 fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
@@ -179,16 +163,14 @@ impl ModuleService for ModuleServiceImpl {
     async fn set_settings(
         &self,
         req: Request<ModuleSetSettingsRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        let settings: serde_json::Value = match serde_json::from_str(&args.settings_json) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("set_settings args: {e}"))),
-        };
+        let settings: serde_json::Value = serde_json::from_str(&args.settings_json)
+            .map_err(|e| TonicStatus::invalid_argument(format!("set_settings args: {e}")))?;
         if self.manager.set_settings(&args.name, &settings) {
-            Ok(ok_status())
+            Ok(Response::new(Empty {}))
         } else {
-            Ok(err_status("set_settings 실패"))
+            Err(TonicStatus::internal("set_settings 실패"))
         }
     }
 
@@ -205,12 +187,12 @@ impl ModuleService for ModuleServiceImpl {
     async fn set_enabled(
         &self,
         req: Request<ModuleSetEnabledRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         if self.manager.set_enabled(&args.name, args.enabled) {
-            Ok(ok_status())
+            Ok(Response::new(Empty {}))
         } else {
-            Ok(err_status("set_enabled 실패"))
+            Err(TonicStatus::internal("set_enabled 실패"))
         }
     }
 

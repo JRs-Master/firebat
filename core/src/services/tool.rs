@@ -9,7 +9,7 @@ use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::tool::{ToolDefinition, ToolListFilter, ToolManager};
 use crate::proto::{
-    tool_service_server::ToolService, BoolRequest, Empty, RawJsonPb, Status, StringRequest,
+    tool_service_server::ToolService, BoolRequest, Empty, RawJsonPb, StringRequest,
     ToolBuildAiDefinitionsRequest, ToolBuildMcpDescriptionsRequest, ToolExecuteRequest,
     ToolListRequest, ToolRegisterManyRequest, ToolRegisterRequest, ToolSetActivePlanStateRequest,
     ToolStatsPb,
@@ -25,22 +25,6 @@ impl ToolServiceImpl {
     }
 }
 
-fn ok_status() -> Response<Status> {
-    Response::new(Status {
-        ok: true,
-        error: String::new(),
-        error_code: String::new(),
-    })
-}
-
-fn err_status(msg: impl Into<String>) -> Response<Status> {
-    Response::new(Status {
-        ok: false,
-        error: msg.into(),
-        error_code: String::new(),
-    })
-}
-
 fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
     RawJsonPb {
         raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
@@ -49,27 +33,23 @@ fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
 
 #[tonic::async_trait]
 impl ToolService for ToolServiceImpl {
-    async fn register(&self, req: Request<ToolRegisterRequest>) -> Result<Response<Status>, TonicStatus> {
+    async fn register(&self, req: Request<ToolRegisterRequest>) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        let def: ToolDefinition = match serde_json::from_str(&args.definition_json) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("register definition_json: {e}"))),
-        };
+        let def: ToolDefinition = serde_json::from_str(&args.definition_json)
+            .map_err(|e| TonicStatus::invalid_argument(format!("register definition_json: {e}")))?;
         self.manager.register(def);
-        Ok(ok_status())
+        Ok(Response::new(Empty {}))
     }
 
     async fn register_many(
         &self,
         req: Request<ToolRegisterManyRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
-        let defs: Vec<ToolDefinition> = match serde_json::from_str(&args.definitions_json) {
-            Ok(v) => v,
-            Err(e) => return Ok(err_status(format!("register_many definitions_json: {e}"))),
-        };
+        let defs: Vec<ToolDefinition> = serde_json::from_str(&args.definitions_json)
+            .map_err(|e| TonicStatus::invalid_argument(format!("register_many definitions_json: {e}")))?;
         self.manager.register_many(defs);
-        Ok(ok_status())
+        Ok(Response::new(Empty {}))
     }
 
     async fn unregister(
@@ -163,7 +143,7 @@ impl ToolService for ToolServiceImpl {
     async fn set_active_plan_state(
         &self,
         req: Request<ToolSetActivePlanStateRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let args = req.into_inner();
         let state = if args.state_json.is_empty() {
             None
@@ -171,16 +151,16 @@ impl ToolService for ToolServiceImpl {
             serde_json::from_str(&args.state_json).ok()
         };
         self.manager.set_active_plan(&args.conversation_id, state);
-        Ok(ok_status())
+        Ok(Response::new(Empty {}))
     }
 
     async fn clear_active_plan_state(
         &self,
         req: Request<StringRequest>,
-    ) -> Result<Response<Status>, TonicStatus> {
+    ) -> Result<Response<Empty>, TonicStatus> {
         let conv_id = req.into_inner().value;
         self.manager.clear_active_plan(&conv_id);
-        Ok(ok_status())
+        Ok(Response::new(Empty {}))
     }
 }
 
