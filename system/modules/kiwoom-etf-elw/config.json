@@ -1,0 +1,72 @@
+{
+  "name": "kiwoom-etf-elw",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "키움증권 ETF + ELW (수익률·민감도·괴리율·조건검색)",
+  "runtime": "node",
+  "capability": "stock-trading",
+  "providerType": "api",
+  "secrets": [
+    "KIWOOM_APP_KEY",
+    "KIWOOM_APP_SECRET"
+  ],
+  "tokenCache": {
+    "secretName": "KIWOOM_ACCESS_TOKEN",
+    "ttlHours": 23
+  },
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "ka10048",
+          "ka10050",
+          "ka30001",
+          "ka30002",
+          "ka30003",
+          "ka30004",
+          "ka30005",
+          "ka30009",
+          "ka30010",
+          "ka30011",
+          "ka30012",
+          "ka40001",
+          "ka40002",
+          "ka40003",
+          "ka40004",
+          "ka40006",
+          "ka40007",
+          "ka40008",
+          "ka40009",
+          "ka40010"
+        ],
+        "description": "키움 API ID 직접 호출. 본 sysmod 가 지원하는 API:\n  ka10048 — ELW일별민감도지표요청\n  ka10050 — ELW민감도지표요청\n  ka30001 — ELW가격급등락요청\n  ka30002 — 거래원별ELW순매매상위요청\n  ka30003 — ELWLP보유일별추이요청\n  ka30004 — ELW괴리율요청\n  ka30005 — ELW조건검색요청\n  ka30009 — ELW등락율순위요청\n  ka30010 — ELW잔량순위요청\n  ka30011 — ELW근접율요청\n  ka30012 — ELW종목상세정보요청\n  ka40001 — ETF수익율요청\n  ka40002 — ETF종목정보요청\n  ka40003 — ETF일별추이요청\n  ka40004 — ETF전체시세요청\n  ka40006 — ETF시간대별추이요청\n  ka40007 — ETF시간대별체결요청\n  ka40008 — ETF일자별체결요청\n  ka40009 — ETF시간대별체결요청\n  ka40010 — ETF시간대별추이요청"
+      },
+      "params": {
+        "type": "object",
+        "description": "키움 API request body 의 모든 필드를 그대로 전달. 각 API 의 필드는 키움 REST API 문서 또는 위 action 설명 참조."
+      },
+      "mock": {
+        "type": "boolean",
+        "description": "true 면 모의투자 도메인 (mockapi.kiwoom.com) 호출. 기본 false (실전)."
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "apiId": {
+        "type": "string"
+      },
+      "action": {
+        "type": "string"
+      }
+    }
+  }
+}

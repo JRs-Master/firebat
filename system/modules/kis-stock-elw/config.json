@@ -1,0 +1,78 @@
+{
+  "name": "kis-stock-elw",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "한국투자증권 국내주식 ELW 시세 (현재가·민감도·변동성·기초자산·조건검색 22개)",
+  "runtime": "node",
+  "capability": "stock-trading",
+  "providerType": "api",
+  "secrets": [
+    "KIS_APP_KEY",
+    "KIS_APP_SECRET"
+  ],
+  "tokenCache": {
+    "secretName": "KIS_ACCESS_TOKEN",
+    "ttlHours": 23
+  },
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "v1_국내주식-014",
+          "국내주식-181",
+          "국내주식-173",
+          "국내주식-170",
+          "국내주식-186",
+          "국내주식-166",
+          "국내주식-179",
+          "국내주식-177",
+          "국내주식-171",
+          "국내주식-174",
+          "국내주식-185",
+          "국내주식-178",
+          "국내주식-168",
+          "국내주식-169",
+          "국내주식-172",
+          "국내주식-167",
+          "국내주식-176",
+          "국내주식-183",
+          "국내주식-184",
+          "국내주식-182",
+          "국내주식-175",
+          "국내주식-180"
+        ],
+        "description": "한투 API ID 직접 호출 (예: v1_국내주식-008). 본 sysmod 가 지원하는 API:\n  v1_국내주식-014 (TR_ID: FHKEW15010000) — ELW 현재가 시세\n  국내주식-181 (TR_ID: FHKEW154800C0) — ELW 신규상장종목\n  국내주식-173 (TR_ID: FHPEW02740200) — ELW 투자지표추이(일별)\n  국내주식-170 (TR_ID: FHPEW02850000) — ELW 민감도 순위\n  국내주식-186 (TR_ID: FHKEW154101C0) — ELW 기초자산별 종목시세\n  국내주식-166 (TR_ID: FHKEW15100000) — ELW 종목검색\n  국내주식-179 (TR_ID: FHPEW02840300) — ELW 변동성 추이(분별)\n  국내주식-177 (TR_ID: FHPEW02840100) — ELW 변동성추이(체결)\n  국내주식-171 (TR_ID: FHPEW02870000) — ELW 당일급변종목\n  국내주식-174 (TR_ID: FHPEW02740300) — ELW 투자지표추이(분별)\n  국내주식-185 (TR_ID: FHKEW154100C0) — ELW 기초자산 목록조회\n  국내주식-178 (TR_ID: FHPEW02840200) — ELW 변동성 추이(일별)\n  국내주식-168 (TR_ID: FHPEW02780000) — ELW 거래량순위\n  국내주식-169 (TR_ID: FHPEW02790000) — ELW 지표순위\n  국내주식-172 (TR_ID: FHPEW02740100) — ELW 투자지표추이(체결)\n  국내주식-167 (TR_ID: FHPEW02770000) — ELW 상승률순위\n  국내주식-176 (TR_ID: FHPEW02830200) — ELW 민감도 추이(일별)\n  국내주식-183 (TR_ID: FHKEW151701C0) — ELW 비교대상종목조회\n  국내주식-184 (TR_ID: FHKEW154700C0) — ELW 만기예정/만기종목\n  국내주식-182 (TR_ID: FHPEW03760000) — ELW LP매매추이\n  국내주식-175 (TR_ID: FHPEW02830100) — ELW 민감도 추이(체결)\n  국내주식-180 (TR_ID: FHPEW02840400) — ELW 변동성 추이(틱)"
+      },
+      "query": {
+        "type": "object",
+        "description": "한투 API request query parameter (GET API 의 필수). 각 API 의 필드는 한투 OPEN API 문서 또는 위 action 설명 참조."
+      },
+      "body": {
+        "type": "object",
+        "description": "한투 API request body (POST API 의 필수). 각 API 의 필드는 한투 OPEN API 문서 또는 위 action 설명 참조."
+      },
+      "mock": {
+        "type": "boolean",
+        "description": "true 면 모의투자 도메인 (openapivts.koreainvestment.com:29443) 호출. 기본 false (실전)."
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "apiId": {
+        "type": "string"
+      },
+      "trId": {
+        "type": "string"
+      }
+    }
+  }
+}

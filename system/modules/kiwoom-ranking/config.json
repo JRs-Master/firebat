@@ -1,0 +1,75 @@
+{
+  "name": "kiwoom-ranking",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "키움증권 실시간 순위정보 (등락률·거래량·호가잔량·외인·신용비율 등 23종)",
+  "runtime": "node",
+  "capability": "stock-quote",
+  "providerType": "api",
+  "secrets": [
+    "KIWOOM_APP_KEY",
+    "KIWOOM_APP_SECRET"
+  ],
+  "tokenCache": {
+    "secretName": "KIWOOM_ACCESS_TOKEN",
+    "ttlHours": 23
+  },
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "ka10020",
+          "ka10021",
+          "ka10022",
+          "ka10023",
+          "ka10027",
+          "ka10029",
+          "ka10030",
+          "ka10031",
+          "ka10032",
+          "ka10033",
+          "ka10034",
+          "ka10035",
+          "ka10036",
+          "ka10037",
+          "ka10038",
+          "ka10039",
+          "ka10040",
+          "ka10042",
+          "ka10053",
+          "ka10062",
+          "ka10065",
+          "ka10098",
+          "ka90009"
+        ],
+        "description": "키움 API ID 직접 호출. 본 sysmod 가 지원하는 API:\n  ka10020 — 호가잔량상위요청\n  ka10021 — 호가잔량급증요청\n  ka10022 — 잔량율급증요청\n  ka10023 — 거래량급증요청\n  ka10027 — 전일대비등락률상위요청\n  ka10029 — 예상체결등락률상위요청\n  ka10030 — 당일거래량상위요청\n  ka10031 — 전일거래량상위요청\n  ka10032 — 거래대금상위요청\n  ka10033 — 신용비율상위요청\n  ka10034 — 외인기간별매매상위요청\n  ka10035 — 외인연속순매매상위요청\n  ka10036 — 외인한도소진율증가상위\n  ka10037 — 외국계창구매매상위요청\n  ka10038 — 종목별증권사순위요청\n  ka10039 — 증권사별매매상위요청\n  ka10040 — 당일주요거래원요청\n  ka10042 — 순매수거래원순위요청\n  ka10053 — 당일상위이탈원요청\n  ka10062 — 동일순매매순위요청\n  ka10065 — 장중투자자별매매상위요청\n  ka10098 — 시간외단일가등락율순위요청\n  ka90009 — 외국인기관매매상위요청"
+      },
+      "params": {
+        "type": "object",
+        "description": "키움 API request body 의 모든 필드를 그대로 전달. 각 API 의 필드는 키움 REST API 문서 또는 위 action 설명 참조."
+      },
+      "mock": {
+        "type": "boolean",
+        "description": "true 면 모의투자 도메인 (mockapi.kiwoom.com) 호출. 기본 false (실전)."
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "apiId": {
+        "type": "string"
+      },
+      "action": {
+        "type": "string"
+      }
+    }
+  }
+}

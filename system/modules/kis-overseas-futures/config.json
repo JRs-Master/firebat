@@ -1,0 +1,87 @@
+{
+  "name": "kis-overseas-futures",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "한국투자증권 해외선물옵션 (시세 + 주문/계좌 31개)",
+  "runtime": "node",
+  "capability": "stock-trading",
+  "providerType": "api",
+  "secrets": [
+    "KIS_APP_KEY",
+    "KIS_APP_SECRET"
+  ],
+  "tokenCache": {
+    "secretName": "KIS_ACCESS_TOKEN",
+    "ttlHours": 23
+  },
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "v1_해외선물-001",
+          "v1_해외선물-002, 003",
+          "v1_해외선물-004",
+          "v1_해외선물-005",
+          "v1_해외선물-006",
+          "해외선물-010",
+          "해외선물-011",
+          "해외선물-012",
+          "해외선물-013",
+          "해외선물-014",
+          "해외선물-032",
+          "v1_해외선물-009",
+          "v1_해외선물-008",
+          "해외선물-031",
+          "해외선물-016",
+          "해외선물-019",
+          "해외선물-017",
+          "해외선물-018",
+          "해외선물-020",
+          "해외선물-023",
+          "해외선물-029",
+          "해외선물-035",
+          "해외선물-034",
+          "해외선물-033",
+          "해외선물-040",
+          "해외선물-038",
+          "해외선물-037",
+          "해외선물-036",
+          "해외선물-039",
+          "해외선물-041",
+          "해외선물-030"
+        ],
+        "description": "한투 API ID 직접 호출 (예: v1_국내주식-008). 본 sysmod 가 지원하는 API:\n  v1_해외선물-001 (TR_ID: OTFM3001U ) — 해외선물옵션 주문\n  v1_해외선물-002, 003 (TR_ID: (정정) OTFM3002U (취소) OTFM3003U) — 해외선물옵션 정정취소주문\n  v1_해외선물-004 (TR_ID: OTFM3116R) — 해외선물옵션 당일주문내역조회\n  v1_해외선물-005 (TR_ID: OTFM1412R) — 해외선물옵션 미결제내역조회(잔고)\n  v1_해외선물-006 (TR_ID: OTFM3304R) — 해외선물옵션 주문가능조회\n  해외선물-010 (TR_ID: OTFM3118R) — 해외선물옵션 기간계좌손익 일별\n  해외선물-011 (TR_ID: OTFM3122R) — 해외선물옵션 일별 체결내역\n  해외선물-012 (TR_ID: OTFM1411R) — 해외선물옵션 예수금현황\n  해외선물-013 (TR_ID: OTFM3120R) — 해외선물옵션 일별 주문내역\n  해외선물-014 (TR_ID: OTFM3114R) — 해외선물옵션 기간계좌거래내역\n  해외선물-032 (TR_ID: OTFM3115R) — 해외선물옵션 증거금상세\n  v1_해외선물-009 (TR_ID: HHDFC55010000) — 해외선물종목현재가\n  v1_해외선물-008 (TR_ID: HHDFC55010100) — 해외선물종목상세\n  해외선물-031 (TR_ID: HHDFC86000000) — 해외선물 호가\n  해외선물-016 (TR_ID: HHDFC55020400) — 해외선물 분봉조회\n  해외선물-019 (TR_ID: HHDFC55020200) — 해외선물 체결추이(틱)\n  해외선물-017 (TR_ID: HHDFC55020000) — 해외선물 체결추이(주간)\n  해외선물-018 (TR_ID: HHDFC55020100) — 해외선물 체결추이(일간)\n  해외선물-020 (TR_ID: HHDFC55020300) — 해외선물 체결추이(월간)\n  해외선물-023 (TR_ID: HHDFC55200000) — 해외선물 상품기본정보\n  해외선물-029 (TR_ID: HHDDB95030000) — 해외선물 미결제추이\n  해외선물-035 (TR_ID: HHDFO55010000) — 해외옵션종목현재가\n  해외선물-034 (TR_ID: HHDFO55010100) — 해외옵션종목상세\n  해외선물-033 (TR_ID: HHDFO86000000) — 해외옵션 호가\n  해외선물-040 (TR_ID: HHDFO55020400) — 해외옵션 분봉조회\n  해외선물-038 (TR_ID: HHDFO55020200) — 해외옵션 체결추이(틱)\n  해외선물-037 (TR_ID: HHDFO55020100) — 해외옵션 체결추이(일간)\n  해외선물-036 (TR_ID: HHDFO55020000) — 해외옵션 체결추이(주간)\n  해외선물-039 (TR_ID: HHDFO55020300) — 해외옵션 체결추이(월간)\n  해외선물-041 (TR_ID: HHDFO55200000) — 해외옵션 상품기본정보\n  해외선물-030 (TR_ID: OTFM2229R) — 해외선물옵션 장운영시간"
+      },
+      "query": {
+        "type": "object",
+        "description": "한투 API request query parameter (GET API 의 필수). 각 API 의 필드는 한투 OPEN API 문서 또는 위 action 설명 참조."
+      },
+      "body": {
+        "type": "object",
+        "description": "한투 API request body (POST API 의 필수). 각 API 의 필드는 한투 OPEN API 문서 또는 위 action 설명 참조."
+      },
+      "mock": {
+        "type": "boolean",
+        "description": "true 면 모의투자 도메인 (openapivts.koreainvestment.com:29443) 호출. 기본 false (실전)."
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "apiId": {
+        "type": "string"
+      },
+      "trId": {
+        "type": "string"
+      }
+    }
+  }
+}

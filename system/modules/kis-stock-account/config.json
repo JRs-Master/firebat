@@ -1,0 +1,79 @@
+{
+  "name": "kis-stock-account",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "한국투자증권 국내주식 주문/계좌 (잔고·매수가능·정정취소·예약주문·수익현황 23개)",
+  "runtime": "node",
+  "capability": "stock-trading",
+  "providerType": "api",
+  "secrets": [
+    "KIS_APP_KEY",
+    "KIS_APP_SECRET"
+  ],
+  "tokenCache": {
+    "secretName": "KIS_ACCESS_TOKEN",
+    "ttlHours": 23
+  },
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "국내주식-211",
+          "v1_국내주식-048",
+          "v1_국내주식-035",
+          "v1_국내주식-018,019",
+          "v1_국내주식-042",
+          "국내주식-191",
+          "v1_국내주식-033",
+          "v1_국내주식-060",
+          "v1_국내주식-003",
+          "v1_국내주식-020",
+          "v1_국내주식-034",
+          "v1_국내주식-006",
+          "v1_국내주식-032",
+          "v1_국내주식-007",
+          "v1_국내주식-052",
+          "v1_국내주식-001",
+          "국내주식-165",
+          "v1_국내주식-005",
+          "v1_국내주식-004",
+          "v1_국내주식-017",
+          "v1_국내주식-002",
+          "v1_국내주식-036",
+          "v1_국내주식-041"
+        ],
+        "description": "한투 API ID 직접 호출 (예: v1_국내주식-008). 본 sysmod 가 지원하는 API:\n  국내주식-211 (TR_ID: CTRGA011R) — 기간별계좌권리현황조회\n  v1_국내주식-048 (TR_ID: CTRP6548R) — 투자계좌자산현황조회\n  v1_국내주식-035 (TR_ID: TTTC0506R) — 퇴직연금 예수금조회\n  v1_국내주식-018,019 (TR_ID: (예약취소) CTSC0009U (예약정정) CTSC0013U) — 주식예약주문정정취소\n  v1_국내주식-042 (TR_ID: TTTC8909R) — 신용매수가능조회\n  국내주식-191 (TR_ID: TTTC0869R) — 주식통합증거금 현황\n  v1_국내주식-033 (TR_ID: TTTC2201R(기존 KRX만 가능), TTTC2210R (KRX,NXT/SOR)) — 퇴직연금 미체결내역\n  v1_국내주식-060 (TR_ID: TTTC8715R) — 기간별매매손익현황조회\n  v1_국내주식-003 (TR_ID: TTTC0013U) — 주식주문(정정취소)\n  v1_국내주식-020 (TR_ID: CTSC0004R) — 주식예약주문조회\n  v1_국내주식-034 (TR_ID: TTTC0503R) — 퇴직연금 매수가능조회\n  v1_국내주식-006 (TR_ID: TTTC8434R) — 주식잔고조회\n  v1_국내주식-032 (TR_ID: TTTC2202R) — 퇴직연금 체결기준잔고\n  v1_국내주식-007 (TR_ID: TTTC8908R) — 매수가능조회\n  v1_국내주식-052 (TR_ID: TTTC8708R) — 기간별손익일별합산조회\n  v1_국내주식-001 (TR_ID: (매도) TTTC0011U (매수) TTTC0012U) — 주식주문(현금)\n  국내주식-165 (TR_ID: TTTC8408R) — 매도가능수량조회\n  v1_국내주식-005 (TR_ID: (3개월이내) TTTC0081R (3개월이전) CTSC9215R) — 주식일별주문체결조회\n  v1_국내주식-004 (TR_ID: TTTC0084R) — 주식정정취소가능주문조회\n  v1_국내주식-017 (TR_ID: CTSC0008U) — 주식예약주문\n  v1_국내주식-002 (TR_ID: (매도) TTTC0051U (매수) TTTC0052U) — 주식주문(신용)\n  v1_국내주식-036 (TR_ID: TTTC2208R) — 퇴직연금 잔고조회\n  v1_국내주식-041 (TR_ID: TTTC8494R) — 주식잔고조회_실현손익"
+      },
+      "query": {
+        "type": "object",
+        "description": "한투 API request query parameter (GET API 의 필수). 각 API 의 필드는 한투 OPEN API 문서 또는 위 action 설명 참조."
+      },
+      "body": {
+        "type": "object",
+        "description": "한투 API request body (POST API 의 필수). 각 API 의 필드는 한투 OPEN API 문서 또는 위 action 설명 참조."
+      },
+      "mock": {
+        "type": "boolean",
+        "description": "true 면 모의투자 도메인 (openapivts.koreainvestment.com:29443) 호출. 기본 false (실전)."
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "apiId": {
+        "type": "string"
+      },
+      "trId": {
+        "type": "string"
+      }
+    }
+  }
+}

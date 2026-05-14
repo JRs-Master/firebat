@@ -1,0 +1,80 @@
+{
+  "name": "kis-futures",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "한국투자증권 국내선물옵션 (시세 + 주문/계좌 24개) — 야간 포함",
+  "runtime": "node",
+  "capability": "stock-trading",
+  "providerType": "api",
+  "secrets": [
+    "KIS_APP_KEY",
+    "KIS_APP_SECRET"
+  ],
+  "tokenCache": {
+    "secretName": "KIS_ACCESS_TOKEN",
+    "ttlHours": 23
+  },
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "국내선물-024",
+          "v1_국내선물-014",
+          "v1_국내선물-017",
+          "국내선물-010",
+          "v1_국내선물-004",
+          "v1_국내선물-001",
+          "v1_국내선물-015",
+          "선물옵션 증거금률",
+          "v1_국내선물-002",
+          "v1_국내선물-003",
+          "국내선물-009",
+          "국내선물-011",
+          "v1_국내선물-013",
+          "v1_국내선물-005",
+          "v1_국내선물-016",
+          "v1_국내선물-006",
+          "국내선물-021",
+          "국내선물-018",
+          "v1_국내선물-008",
+          "국내선물-023",
+          "v1_국내선물-012",
+          "국내선물-020",
+          "v1_국내선물-007",
+          "국내선물-022"
+        ],
+        "description": "한투 API ID 직접 호출 (예: v1_국내주식-008). 본 sysmod 가 지원하는 API:\n  국내선물-024 (TR_ID: (구) JTCE6003R (신) CTFN7107R) — (야간)선물옵션 증거금 상세\n  v1_국내선물-014 (TR_ID: CTRP6550R) — 선물옵션 총자산현황\n  v1_국내선물-017 (TR_ID: CTFO6119R) — 선물옵션기간약정수수료일별\n  국내선물-010 (TR_ID: (구) JTCE6001R (신) CTFN6118R) — (야간)선물옵션 잔고현황\n  v1_국내선물-004 (TR_ID: CTFO6118R) — 선물옵션 잔고현황\n  v1_국내선물-001 (TR_ID: (주간 매수/매도) TTTO1101U (야간 매수/매도) (구) JTCE1001U (신) STTN1101U) — 선물옵션 주문\n  v1_국내선물-015 (TR_ID: CTFO6159R) — 선물옵션 잔고평가손익내역\n  선물옵션 증거금률 (TR_ID: TTTO6032R) — 선물옵션 증거금률\n  v1_국내선물-002 (TR_ID: (주간 정정/취소) TTTO1103U (야간 정정/취소) (구) JTCE1002U (신) STTN1103U) — 선물옵션 정정취소주문\n  v1_국내선물-003 (TR_ID: TTTO5201R) — 선물옵션 주문체결내역조회\n  국내선물-009 (TR_ID: (구) JTCE5005R (신) STTN5201R) — (야간)선물옵션 주문체결 내역조회\n  국내선물-011 (TR_ID: (구) JTCE1004R (신) STTN5105R) — (야간)선물옵션 주문가능 조회\n  v1_국내선물-013 (TR_ID: CTFO6117R) — 선물옵션 잔고정산손익내역\n  v1_국내선물-005 (TR_ID: TTTO5105R) — 선물옵션 주문가능\n  v1_국내선물-016 (TR_ID: CTFO5139R) — 선물옵션 기준일체결내역\n  v1_국내선물-006 (TR_ID: FHMIF10000000) — 선물옵션 시세\n  국내선물-021 (TR_ID: FHPIF05030000) — 국내선물 기초자산 시세\n  국내선물-018 (TR_ID: FHPIF05110100) — 선물옵션 일중예상체결추이\n  v1_국내선물-008 (TR_ID: FHKIF03020100) — 선물옵션기간별시세(일/주/월/년)\n  국내선물-023 (TR_ID: FHPIF05030200) — 국내옵션전광판_선물\n  v1_국내선물-012 (TR_ID: FHKIF03020200) — 선물옵션 분봉조회\n  국내선물-020 (TR_ID: FHPIO056104C0) — 국내옵션전광판_옵션월물리스트\n  v1_국내선물-007 (TR_ID: FHMIF10010000) — 선물옵션 시세호가\n  국내선물-022 (TR_ID: FHPIF05030100) — 국내옵션전광판_콜풋"
+      },
+      "query": {
+        "type": "object",
+        "description": "한투 API request query parameter (GET API 의 필수). 각 API 의 필드는 한투 OPEN API 문서 또는 위 action 설명 참조."
+      },
+      "body": {
+        "type": "object",
+        "description": "한투 API request body (POST API 의 필수). 각 API 의 필드는 한투 OPEN API 문서 또는 위 action 설명 참조."
+      },
+      "mock": {
+        "type": "boolean",
+        "description": "true 면 모의투자 도메인 (openapivts.koreainvestment.com:29443) 호출. 기본 false (실전)."
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "apiId": {
+        "type": "string"
+      },
+      "trId": {
+        "type": "string"
+      }
+    }
+  }
+}

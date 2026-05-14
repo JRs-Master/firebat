@@ -1,0 +1,78 @@
+{
+  "name": "kis-stock-ranking",
+  "type": "module",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "한국투자증권 국내주식 순위분석 (거래량·등락률·시가총액·수익자산지표 등 22개)",
+  "runtime": "node",
+  "capability": "stock-quote",
+  "providerType": "api",
+  "secrets": [
+    "KIS_APP_KEY",
+    "KIS_APP_SECRET"
+  ],
+  "tokenCache": {
+    "secretName": "KIS_ACCESS_TOKEN",
+    "ttlHours": 23
+  },
+  "input": {
+    "type": "object",
+    "required": [
+      "action"
+    ],
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "v1_국내주식-103",
+          "국내주식-089",
+          "국내주식-109",
+          "국내주식-139",
+          "국내주식-106",
+          "v1_국내주식-093",
+          "국내주식-133",
+          "v1_국내주식-095",
+          "국내주식-214",
+          "v1_국내주식-047",
+          "v1_국내주식-090",
+          "v1_국내주식-105",
+          "v1_국내주식-094",
+          "국내주식-107",
+          "v1_국내주식-092",
+          "v1_국내주식-091",
+          "v1_국내주식-104",
+          "v1_국내주식-088",
+          "v1_국내주식-096",
+          "v1_국내주식-102",
+          "v1_국내주식-101",
+          "국내주식-138"
+        ],
+        "description": "한투 API ID 직접 호출 (예: v1_국내주식-008). 본 sysmod 가 지원하는 API:\n  v1_국내주식-103 (TR_ID: FHPST01820000) — 국내주식 예상체결 상승/하락상위\n  국내주식-089 (TR_ID: FHPST01720000) — 국내주식 호가잔량 순위\n  국내주식-109 (TR_ID: FHKST17010000) — 국내주식 신용잔고 상위\n  국내주식-139 (TR_ID: FHPST02350000) — 국내주식 시간외거래량순위\n  국내주식-106 (TR_ID: HHKDB13470100) — 국내주식 배당률 상위\n  v1_국내주식-093 (TR_ID: FHPST01760000) — 국내주식 시간외잔량 순위\n  국내주식-133 (TR_ID: FHPST04820000) — 국내주식 공매도 상위종목\n  v1_국내주식-095 (TR_ID: FHPST01780000) — 국내주식 이격도 순위\n  국내주식-214 (TR_ID: HHMCM000100C0) — HTS조회상위20종목\n  v1_국내주식-047 (TR_ID: FHPST01710000) — 거래량순위\n  v1_국내주식-090 (TR_ID: FHPST01730000) — 국내주식 수익자산지표 순위\n  v1_국내주식-105 (TR_ID: FHPST01870000) — 국내주식 신고/신저근접종목 상위\n  v1_국내주식-094 (TR_ID: FHPST01770000) — 국내주식 우선주/괴리율 상위\n  국내주식-107 (TR_ID: FHKST190900C0) — 국내주식 대량체결건수 상위\n  v1_국내주식-092 (TR_ID: FHPST01750000) — 국내주식 재무비율 순위\n  v1_국내주식-091 (TR_ID: FHPST01740000) — 국내주식 시가총액 상위\n  v1_국내주식-104 (TR_ID: FHPST01860000) — 국내주식 당사매매종목 상위\n  v1_국내주식-088 (TR_ID: FHPST01700000) — 국내주식 등락률 순위\n  v1_국내주식-096 (TR_ID: FHPST01790000) — 국내주식 시장가치 순위\n  v1_국내주식-102 (TR_ID: FHPST01800000) — 국내주식 관심종목등록 상위\n  v1_국내주식-101 (TR_ID: FHPST01680000) — 국내주식 체결강도 상위\n  국내주식-138 (TR_ID: FHPST02340000) — 국내주식 시간외등락율순위"
+      },
+      "query": {
+        "type": "object",
+        "description": "한투 API request query parameter (GET API 의 필수). 각 API 의 필드는 한투 OPEN API 문서 또는 위 action 설명 참조."
+      },
+      "body": {
+        "type": "object",
+        "description": "한투 API request body (POST API 의 필수). 각 API 의 필드는 한투 OPEN API 문서 또는 위 action 설명 참조."
+      },
+      "mock": {
+        "type": "boolean",
+        "description": "true 면 모의투자 도메인 (openapivts.koreainvestment.com:29443) 호출. 기본 false (실전)."
+      }
+    },
+    "additionalProperties": false
+  },
+  "output": {
+    "type": "object",
+    "properties": {
+      "apiId": {
+        "type": "string"
+      },
+      "trId": {
+        "type": "string"
+      }
+    }
+  }
+}
