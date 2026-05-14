@@ -26,6 +26,9 @@ firebat-core = { path = "../core" }
 tonic = "0.12"
 prost = "0.13"
 
+# gRPC reflection — grpcurl 등 도구로 schema inspection. 운영 환경 dev ergonomics.
+tonic-reflection = "0.12"
+
 # async / 비동기 런타임
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs", "process", "io-util", "time"] }
 async-trait = "0.1"

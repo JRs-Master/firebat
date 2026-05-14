@@ -23,6 +23,10 @@ pub mod proto {
     tonic::include_proto!("firebat.v1");
 }
 
+/// file_descriptor_set — tonic-reflection 의 reflection service 가 사용.
+/// grpcurl / grpcui 같은 도구가 binary 의 schema 직접 inspect 가능 (dev ergonomics).
+pub const FILE_DESCRIPTOR_SET: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/firebat_descriptor.bin"));
+
 /// Firebat Core 의 진입점 — Phase B 시작 시 매니저 / 어댑터 / gRPC server 설정.
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")

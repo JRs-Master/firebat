@@ -1,0 +1,66 @@
+# Firebat CI — Proto (buf lint + breaking detection) 변경 시만 trigger.
+#
+# Phase F (Option 2 정공) 도입 (2026-05-15).
+#
+# Trigger: proto/ 변경 시.
+# - main push: buf lint 만 (formatting / convention 검증)
+# - PR: buf lint + buf breaking (main branch 와 비교 — backward-incompatible 변경 차단)
+
+name: CI Proto
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'proto/**'
+      - 'buf.yaml'
+      - 'buf.gen.yaml'
+      - '.github/workflows/ci-proto.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'proto/**'
+      - 'buf.yaml'
+      - 'buf.gen.yaml'
+      - '.github/workflows/ci-proto.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: buf lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: buf lint
+        run: buf lint
+
+  breaking:
+    name: buf breaking
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup buf
+        uses: bufbuild/buf-setup-action@v1
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: buf breaking against main
+        run: buf breaking --against ".git#branch=origin/main"

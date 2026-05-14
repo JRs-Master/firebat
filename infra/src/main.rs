@@ -709,7 +709,15 @@ async fn main() -> Result<()> {
         });
     }
 
+    // gRPC reflection service — grpcurl / grpcui 등 도구가 schema inspection (dev ergonomics).
+    // file_descriptor_set 는 core/build.rs 가 OUT_DIR 에 생성.
+    let reflection_service = tonic_reflection::server::Builder::configure()
+        .register_encoded_file_descriptor_set(firebat_core::FILE_DESCRIPTOR_SET)
+        .build_v1()
+        .context("gRPC reflection service 설정 실패")?;
+
     Server::builder()
+        .add_service(reflection_service)
         .add_service(TemplateServiceServer::new(template_service))
         .add_service(SecretServiceServer::new(secret_service))
         .add_service(AuthServiceServer::new(auth_service))
