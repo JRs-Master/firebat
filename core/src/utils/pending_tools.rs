@@ -20,8 +20,122 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use crate::managers::task::PipelineStep;
+use crate::ports::{CronNotify, CronRetry, CronRunWhen};
+
 const PENDING_EXPIRE: Duration = Duration::from_secs(10 * 60); // 10분
 const MAX_SIZE: usize = 100;
+
+// ── PendingActionArgs — 6 destructive 도구의 typed oneof ─────────────
+// 2026-05-14 A1-full Step 2a: 옛 serde_json::Value args 의 typed 대체.
+// name discriminator (write_file / save_page / delete_file / delete_page /
+// schedule_task / cancel_task) 로 variant 분기. 호출 site 마이그는 Step 2b.
+
+/// write_file 도구 인자 — 파일 절대 경로 + 내용.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteFileArgs {
+    pub path: String,
+    pub content: String,
+}
+
+/// save_page 도구 인자 — slug + PageSpec + 덮어쓰기 허용.
+/// spec 은 동적 PageSpec schema (24+ block 종류) — serde_json::Value 유지.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavePageArgs {
+    pub slug: String,
+    pub spec: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allow_overwrite: Option<bool>,
+}
+
+/// delete_file 도구 인자.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeleteFileArgs {
+    pub path: String,
+}
+
+/// delete_page 도구 인자.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeletePageArgs {
+    pub slug: String,
+}
+
+/// schedule_task 도구 인자 — `CronScheduleOptions` 와 동일 schema + targetPath.
+/// pipeline / runWhen / retry / notify 모두 typed.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleTaskArgs {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cron_time: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delay_sec: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_data: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pipeline: Option<Vec<PipelineStep>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub one_shot: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_when: Option<CronRunWhen>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<CronRetry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notify: Option<CronNotify>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub execution_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_prompt: Option<String>,
+}
+
+/// cancel_task 도구 인자 — jobId 한 개.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CancelTaskArgs {
+    pub job_id: String,
+}
+
+/// 6 destructive 도구의 typed 인자 oneof — name discriminator.
+/// Step 2b 에서 `PendingTool.args` 가 `serde_json::Value` → 이 enum 으로 교체.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "name", rename_all = "snake_case")]
+pub enum PendingActionArgs {
+    WriteFile(WriteFileArgs),
+    SavePage(SavePageArgs),
+    DeleteFile(DeleteFileArgs),
+    DeletePage(DeletePageArgs),
+    ScheduleTask(ScheduleTaskArgs),
+    CancelTask(CancelTaskArgs),
+}
+
+impl PendingActionArgs {
+    /// 도구 이름 (write_file / save_page / 등) 반환 — frontend / 로그 / 영속화 용.
+    pub fn name(&self) -> &'static str {
+        match self {
+            PendingActionArgs::WriteFile(_) => "write_file",
+            PendingActionArgs::SavePage(_) => "save_page",
+            PendingActionArgs::DeleteFile(_) => "delete_file",
+            PendingActionArgs::DeletePage(_) => "delete_page",
+            PendingActionArgs::ScheduleTask(_) => "schedule_task",
+            PendingActionArgs::CancelTask(_) => "cancel_task",
+        }
+    }
+}
 
 /// 승인 대기 도구 1건. JSON 영속 + 메모리 캐시 동일 schema.
 #[derive(Debug, Clone, Serialize, Deserialize)]
