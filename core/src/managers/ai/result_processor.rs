@@ -78,8 +78,29 @@ pub fn slim_result_for_llm(tool_name: &str, result: &Value, aggressive: bool) ->
     }
     let map = render_tool_map();
 
-    // render(name, props) dispatcher — result.component → 매핑된 render_* 로 재귀
+    // render(blocks=[{type, props}]) — 옵션 E hybrid (2026-05-14).
+    // RenderUnifiedHandler 결과: { success: true, blocks: [{type:"component", name, props}, ...] }
+    // 각 block 의 component 이름만 합쳐서 요약. props 탈거 (다음 turn LLM 컨텍스트 절감).
     if tool_name == "render" {
+        if let Some(blocks) = result.get("blocks").and_then(Value::as_array) {
+            let comp_names: Vec<String> = blocks
+                .iter()
+                .filter_map(|b| b.get("name").and_then(Value::as_str))
+                .map(String::from)
+                .collect();
+            let summary = if comp_names.is_empty() {
+                "render 완료 (blocks 비어있음)".to_string()
+            } else {
+                format!("{} 렌더 완료 ({} 블록)", comp_names.join(", "), comp_names.len())
+            };
+            return json!({
+                "success": true,
+                "blockCount": comp_names.len(),
+                "components": comp_names,
+                "summary": summary,
+            });
+        }
+        // 옛 single render(name, props) dispatcher 형식 (legacy 호환) — result.component → 매핑.
         if let Some(comp) = result.get("component").and_then(Value::as_str) {
             let inv = render_tool_inverse_map();
             if let Some(mapped_tool) = inv.get(comp) {
@@ -411,6 +432,27 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("iframe 위젯 렌더 완료"));
+    }
+
+    #[test]
+    fn slim_render_unified_blocks_summarized() {
+        // 옵션 E hybrid — RenderUnifiedHandler 응답: blocks 배열.
+        let r = json!({
+            "success": true,
+            "blocks": [
+                {"type": "component", "name": "Table", "props": {"headers": ["A"], "rows": []}},
+                {"type": "component", "name": "Chart", "props": {"data": [1, 2, 3]}}
+            ]
+        });
+        let slim = slim_result_for_llm("render", &r, false);
+        assert_eq!(slim["blockCount"], json!(2));
+        assert_eq!(slim["components"], json!(["Table", "Chart"]));
+        assert!(slim["summary"]
+            .as_str()
+            .unwrap()
+            .contains("Table, Chart"));
+        // props 탈거 검증
+        assert!(slim.get("blocks").is_none());
     }
 
     #[test]
