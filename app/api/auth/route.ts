@@ -18,15 +18,11 @@ export async function POST(req: NextRequest) {
   const { id, password } = await req.json();
   const core = getCore();
 
-  // ID 는 trim — setup/PATCH 의 adminId.trim() 과 일관성 보장.
-  // 비번은 raw 그대로 — 사용자 의도 공백 보존 (trim 시 setup 의 raw 저장과 mismatch).
-  const trimmedId = typeof id === 'string' ? id.trim() : '';
-
   // RustCoreProxy 의 autoWrap.unwrapLogin 통과 후 형식:
   //   - 성공 → AuthSession 객체 (token / type / role / createdAt 설정)
   //   - 실패 → null
   //   - 잠금 → { locked: true, retryAfterSec }
-  const result = await core.login(trimmedId, password ?? '', attemptKeyFrom(req));
+  const result = await core.login(id ?? '', password ?? '', attemptKeyFrom(req));
 
   // 잠금
   if (result && typeof result === 'object' && 'locked' in result && result.locked) {
@@ -96,11 +92,9 @@ export async function PATCH(req: NextRequest) {
   }
 
   // 비번 정책 검증 — Rust core.validatePasswordPolicy single source.
-  // 비번은 raw 그대로 검증 + 저장 (trim 박지 마라). setup/login 의 raw 와 일관 — 사용자가
-  // 의도적으로 leading/trailing 공백 박은 비번 보존. 옛 trim 박힘 (2026-05-14 이전) 시
-  // SettingsModal 비번 변경 후 login 깨지던 root cause — 변경 시 trim, login 시 raw mismatch.
-  if (newPassword && typeof newPassword === 'string' && newPassword.length > 0) {
-    const policy = await core.validatePasswordPolicy(newPassword);
+  if (newPassword?.trim()) {
+    const pw = newPassword.trim();
+    const policy = await core.validatePasswordPolicy(pw);
     if (!policy?.ok) {
       return NextResponse.json(
         { success: false, error: policy?.error ?? '비밀번호 정책 위반' },
@@ -109,9 +103,6 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
-  await core.setAdminCredentials(
-    newId?.trim() || undefined,
-    newPassword && newPassword.length > 0 ? newPassword : undefined,
-  );
+  await core.setAdminCredentials(newId?.trim() || undefined, newPassword?.trim() || undefined);
   return NextResponse.json({ success: true });
 }
