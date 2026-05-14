@@ -14,16 +14,7 @@ import { usePolling } from '../../../lib/hooks/use-polling';
 import { TIME } from '../../../lib/util/time';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
-
-interface CronRunWhen {
-  check: { sysmod: string; action: string; inputData?: Record<string, unknown> };
-  field: string;
-  op: string;
-  value?: string;
-}
-interface CronRetry { count: number; delayMs?: number }
-interface CronNotifyHook { sysmod: string; chatId?: string; template?: string }
-interface CronNotify { onSuccess?: CronNotifyHook; onError?: CronNotifyHook }
+import type { CronRunWhen, CronRetry, CronNotify } from '../../../lib/types/firebat-types';
 
 interface CronJob {
   jobId: string;

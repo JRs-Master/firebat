@@ -65,13 +65,52 @@ export interface AuthSession {
  */
 export type FirebatCore = any;
 
-// ── 파이프라인 / Cron — 옛 core/ports 의 TS interface 들 ─────────────
+// ── 파이프라인 / Cron — Rust core/ports.rs 의 typed struct 와 1:1 ─────
 //
-// Frontend 는 backend 가 결정한 JSON shape 그대로 forward — Rust serde 가 single source.
-// 따라서 type alias 로 noop 적용 (Phase B-4 cutover 단계, 후속에서 정밀 type 으로 교체 가능).
+// 2026-05-14 A1-full Step 4: 옛 `type X = unknown` 폐기. Rust serde rename_all="camelCase"
+// + tagged enum 정확히 mirror. 새 step type / 새 op 추가 시 Rust + TS 양쪽 동시 갱신 강제.
 
-export type PipelineStep = unknown;
-export type CronRunWhen = unknown;
-export type CronRetry = unknown;
-export type CronNotify = unknown;
-export type CronExecutionMode = unknown;
+/** Pipeline step — Rust `PipelineStep` (tagged "type" + SCREAMING_SNAKE_CASE) 1:1. */
+export type PipelineStep =
+  | { type: 'EXECUTE'; path: string; inputData?: unknown; inputMap?: unknown }
+  | { type: 'MCP_CALL'; server: string; tool: string; arguments?: unknown; inputData?: unknown; inputMap?: unknown }
+  | { type: 'NETWORK_REQUEST'; url: string; method?: string; body?: unknown; headers?: unknown }
+  | { type: 'LLM_TRANSFORM'; instruction: string; inputData?: unknown; inputMap?: unknown }
+  | { type: 'CONDITION'; field: string; op: string; value?: unknown }
+  | { type: 'SAVE_PAGE'; slug?: string; spec?: unknown; inputData?: unknown; inputMap?: unknown; allowOverwrite?: boolean }
+  | { type: 'TOOL_CALL'; tool: string; inputData?: unknown; inputMap?: unknown };
+
+/** Cron `runWhen` pre-condition — sysmod 호출 결과 의 field 비교. */
+export interface CronRunWhenCheck {
+  sysmod: string;
+  action: string;
+  inputData?: unknown;
+}
+
+export interface CronRunWhen {
+  check: CronRunWhenCheck;
+  field: string;
+  op: string;
+  value?: unknown;
+}
+
+/** Cron retry 정책 — count 회 반복, delayMs 간격. */
+export interface CronRetry {
+  count: number;
+  delayMs?: number;
+}
+
+/** Cron notify hook — onSuccess / onError sysmod 호출 + template 치환. */
+export interface CronNotifyHook {
+  sysmod: string;
+  template?: string;
+  chatId?: string;
+}
+
+export interface CronNotify {
+  onSuccess?: CronNotifyHook;
+  onError?: CronNotifyHook;
+}
+
+/** executionMode — agent 모드 (LLM 직접) / 미설정 (pipeline 또는 sandbox). */
+export type CronExecutionMode = 'agent' | string;
