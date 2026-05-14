@@ -5,10 +5,13 @@
  * private 페이지 제외 (DB 레벨). password 페이지 포함 (클릭 시 게이트).
  * 빈 쿼리·결과 없음·일반 매칭 모두 같은 페이지에서 처리.
  */
-import { getCore } from '../../../lib/singleton';
+import { getCmsSettings } from '../../../lib/api-gen/module';
+import { searchPages } from '../../../lib/api-gen/page';
 import { CmsPageList, CmsPagination } from '../cms-page-list';
 import { getServerTranslations } from '../../../lib/i18n-server';
+import { toPageListItem } from '../../../lib/util/page-pb-convert';
 import type { Metadata } from 'next';
+import type { PageListItem } from '../../../lib/types/firebat-types';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,7 +22,8 @@ interface Props {
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const sp = searchParams ? await searchParams : {};
   const q = (sp.q ?? '').trim();
-  const seo = await getCore().getCmsSettings();
+  const seoRes = await getCmsSettings();
+  const seo = (seoRes.ok ? seoRes.data : {}) as any;
   const t = getServerTranslations(seo.siteLang);
   return {
     title: q ? `"${q}" — ${seo.siteTitle}` : `${t('common.search')} — ${seo.siteTitle}`,
@@ -33,16 +37,16 @@ export default async function SearchPage({ searchParams }: Props) {
   const q = (sp.q ?? '').trim();
   const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);
 
-  const core = getCore();
-  const cms = await core.getCmsSettings();
+  const cmsRes = await getCmsSettings();
+  const cms = (cmsRes.ok ? cmsRes.data : {}) as any;
   const t = getServerTranslations(cms.siteLang);
-  const perPage = cms.layout.pageList.perPage;
+  const perPage = cms.layout?.pageList?.perPage ?? 10;
 
-  let results: import('../../../lib/types/firebat-types').PageListItem[] = [];
+  let results: PageListItem[] = [];
   let tooShort = false;
   if (q.length >= 2) {
-    const res = await core.searchPages(q, 200);
-    if (res.success && res.data) results = res.data;
+    const res = await searchPages({ query: q, limit: 200n } as any);
+    if (res.ok) results = (res.data.items ?? []).map(toPageListItem);
   } else if (q.length === 1) {
     tooShort = true;
   }
@@ -101,7 +105,7 @@ export default async function SearchPage({ searchParams }: Props) {
 
       {q && !tooShort && results.length > 0 && (
         <section className="firebat-cms-content" style={{ paddingTop: '8px', paddingBottom: '64px' }}>
-          <CmsPageList pages={paged} variant={cms.layout.pageList.cardVariant} />
+          <CmsPageList pages={paged} variant={cms.layout?.pageList?.cardVariant} />
           <CmsPagination
             basePath={`/search?q=${encodeURIComponent(q)}`}
             currentPage={currentPage}

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
 import { withAuth } from '../../../../lib/with-api-error';
+import { getPending, consumePending } from '../../../../lib/api-gen/ai';
+import { writeFile, deleteFile } from '../../../../lib/api-gen/storage';
+import { savePage, deletePage } from '../../../../lib/api-gen/page';
+import { scheduleCronJob, cancelCronJob } from '../../../../lib/api-gen/schedule';
 
 /**
  * POST /api/plan/commit?planId=xxx
@@ -16,23 +19,25 @@ export const POST = withAuth(async (req: NextRequest) => {
   const overrideRunAt = (body.runAt as string | undefined) || undefined;
   if (!planId) return NextResponse.json({ success: false, error: 'planId required' }, { status: 400 });
 
-  const core = getCore();
   // 성공 전까지는 consume하지 않음 — 실패 시 재시도 가능
-  const pending = await core.getPending(planId);
-  if (!pending) return NextResponse.json({ success: false, error: 'Plan not found or expired' }, { status: 404 });
+  const pendingRes = await getPending({ value: planId });
+  if (!pendingRes.ok || !pendingRes.data) {
+    return NextResponse.json({ success: false, error: 'Plan not found or expired' }, { status: 404 });
+  }
+  const pending = pendingRes.data as { args?: unknown };
 
   try {
     let result: { success: boolean; data?: unknown; error?: string };
     // 2026-05-14 A1-full Step 2b: pending.args 가 typed PendingActionArgs tagged enum.
-    // discriminator `name` 이 args 안에 박힘 (옛 top-level pending.name 폐기).
+    // discriminator `name` 이 args 안에 있음 (옛 top-level pending.name 폐기).
     const args = pending.args as unknown as Record<string, unknown> & { name: string };
 
     switch (args.name) {
       case 'write_file': {
         const path = args.path as string;
         const content = args.content as string;
-        const r = await core.writeFile(path, content);
-        result = r.success ? { success: true } : { success: false, error: r.error };
+        const r = await writeFile({ path, content });
+        result = r.ok ? { success: true } : { success: false, error: r.message };
         break;
       }
       case 'save_page': {
@@ -40,11 +45,11 @@ export const POST = withAuth(async (req: NextRequest) => {
         // allowOverwrite=false (기본) 면 slug 충돌 시 자동 -N 접미사 → 기존 페이지 보존
         const slug = args.slug as string;
         const spec = args.spec as Record<string, unknown> | string;
-        const allowOverwrite = args.allowOverwrite as boolean | undefined;
-        const r = await core.savePage(slug, spec, { allowOverwrite: !!allowOverwrite });
-        if (!r.success) { result = { success: false, error: r.error }; break; }
+        const specStr = typeof spec === 'string' ? spec : JSON.stringify(spec);
+        const r = await savePage({ slug, spec: specStr });
+        if (!r.ok) { result = { success: false, error: r.message }; break; }
         const actualSlug = r.data?.slug ?? slug;
-        const renamed = !!r.data?.renamed;
+        const renamed = actualSlug !== slug;
         result = {
           success: true,
           data: {
@@ -57,14 +62,14 @@ export const POST = withAuth(async (req: NextRequest) => {
       }
       case 'delete_file': {
         const path = args.path as string;
-        const r = await core.deleteFile(path);
-        result = r.success ? { success: true } : { success: false, error: r.error };
+        const r = await deleteFile({ value: path });
+        result = r.ok ? { success: true } : { success: false, error: r.message };
         break;
       }
       case 'delete_page': {
         const slug = args.slug as string;
-        const r = await core.deletePage(slug);
-        result = r.success ? { success: true } : { success: false, error: r.error };
+        const r = await deletePage({ value: slug });
+        result = r.ok ? { success: true } : { success: false, error: r.message };
         break;
       }
       case 'schedule_task': {
@@ -82,38 +87,46 @@ export const POST = withAuth(async (req: NextRequest) => {
         }
 
         const jobId = `cron-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        const r = await core.scheduleCronJob(jobId, (args.targetPath as string) ?? '', {
+        const inputData = args.inputData as Record<string, unknown> | undefined;
+        const pipeline = args.pipeline as unknown[] | undefined;
+        const runWhen = args.runWhen as unknown;
+        const retry = args.retry as unknown;
+        const notify = args.notify as unknown;
+        const r = await scheduleCronJob({
+          jobId,
+          targetPath: (args.targetPath as string) ?? '',
+          mode: 'cron',
           cronTime: args.cronTime as string | undefined,
           runAt: effRunAt,
-          delaySec: effDelaySec,
+          delaySec: effDelaySec !== undefined ? BigInt(effDelaySec) : undefined,
           startAt: args.startAt as string | undefined,
           endAt: args.endAt as string | undefined,
-          inputData: args.inputData as Record<string, unknown> | undefined,
-          pipeline: args.pipeline as unknown[] as import('../../../../lib/types/firebat-types').PipelineStep[] | undefined,
+          inputDataJson: inputData !== undefined ? JSON.stringify(inputData) : undefined,
+          pipelineJson: pipeline !== undefined ? JSON.stringify(pipeline) : undefined,
           title: args.title as string | undefined,
           oneShot: args.oneShot as boolean | undefined,
-          runWhen: args.runWhen as import('../../../../lib/types/firebat-types').CronRunWhen | undefined,
-          retry: args.retry as import('../../../../lib/types/firebat-types').CronRetry | undefined,
-          notify: args.notify as import('../../../../lib/types/firebat-types').CronNotify | undefined,
-          executionMode: args.executionMode as import('../../../../lib/types/firebat-types').CronExecutionMode | undefined,
+          runWhenJson: runWhen !== undefined ? JSON.stringify(runWhen) : undefined,
+          retryJson: retry !== undefined ? JSON.stringify(retry) : undefined,
+          notifyJson: notify !== undefined ? JSON.stringify(notify) : undefined,
+          executionMode: args.executionMode as string | undefined,
           agentPrompt: args.agentPrompt as string | undefined,
         });
         // 과거 시각 에러면 consume 하지 않고 사용자에게 선택지 반환
-        if (!r.success && r.error?.includes('과거 시각')) {
+        if (!r.ok && r.message?.includes('과거 시각')) {
           return NextResponse.json({
             success: false,
             code: 'PAST_RUNAT',
-            error: r.error,
+            error: r.message,
             originalRunAt: args.runAt,
           });
         }
-        result = r.success ? { success: true, data: { jobId } } : { success: false, error: r.error };
+        result = r.ok ? { success: true, data: { jobId } } : { success: false, error: r.message };
         break;
       }
       case 'cancel_task': {
         const jobId = args.jobId as string;
-        const r = await core.cancelCronJob(jobId);
-        result = r.success ? { success: true } : { success: false, error: r.error };
+        const r = await cancelCronJob({ value: jobId });
+        result = r.ok ? { success: true } : { success: false, error: r.message };
         break;
       }
       default:
@@ -121,7 +134,7 @@ export const POST = withAuth(async (req: NextRequest) => {
     }
 
     // 성공 시에만 pending 소비 (실패 시 재시도 가능)
-    if (result.success) await core.consumePending(planId);
+    if (result.success) await consumePending({ value: planId });
     return NextResponse.json(result);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

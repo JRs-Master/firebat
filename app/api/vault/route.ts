@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../lib/singleton';
 import { withAuth } from '../../../lib/with-api-error';
+import { getGeminiKey, setGeminiKey } from '../../../lib/api-gen/secret';
 
 // 프로바이더별 Vault 키
 const PROVIDER_KEYS = {
@@ -20,11 +20,14 @@ function maskKey(key: string | null): { hasKey: boolean; maskedKey: string } {
 
 // 프로바이더 키 현황 조회 (OpenAI / Gemini / Anthropic)
 export const GET = withAuth(async () => {
-  const core = getCore();
   const keys: Record<string, { hasKey: boolean; maskedKey: string }> = {};
   const entries = Object.entries(PROVIDER_KEYS);
-  const values = await Promise.all(entries.map(([, vaultKey]) => core.getGeminiKey(vaultKey)));
-  entries.forEach(([field], i) => { keys[field] = maskKey(values[i] ?? null); });
+  const values = await Promise.all(entries.map(([, vaultKey]) => getGeminiKey({ value: vaultKey })));
+  entries.forEach(([field], i) => {
+    const v = values[i];
+    const raw = v && v.ok ? v.data : null;
+    keys[field] = maskKey(raw ?? null);
+  });
   return NextResponse.json({ success: true, keys });
 });
 
@@ -46,8 +49,8 @@ export const POST = withAuth(async (req: NextRequest) => {
     return NextResponse.json({ success: false, error: `Unknown provider: ${provider}` }, { status: 400 });
   }
 
-  const saved = await getCore().setGeminiKey(vaultKey, apiKey);
-  return saved
+  const res = await setGeminiKey({ key: vaultKey, value: apiKey });
+  return res.ok
     ? NextResponse.json({ success: true })
-    : NextResponse.json({ success: false, error: 'Database save failed' }, { status: 500 });
+    : NextResponse.json({ success: false, error: res.message || 'Database save failed' }, { status: 500 });
 });

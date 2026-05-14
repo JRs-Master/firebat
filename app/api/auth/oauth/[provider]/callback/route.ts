@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../../../lib/singleton';
+import { getUser as getUserSecret, setUser as setUserSecret } from '../../../../../../lib/api-gen/secret';
 import { getOAuthProvider } from '../../../../../../lib/oauth-providers';
 import * as nodeCrypto from 'crypto';
 
@@ -44,14 +44,17 @@ export async function GET(
     return redirectToAdmin('OAuth state 검증 실패 — CSRF 의심. 다시 시도해주세요.', 'error');
   }
 
-  const core = getCore();
-  const apiKey = await core.getUserSecret(config.apiKeyVaultKey);
-  if (!apiKey) {
+  const apiKeyRes = await getUserSecret({ value: config.apiKeyVaultKey });
+  if (!apiKeyRes.ok || !apiKeyRes.data) {
     return redirectToAdmin(`${config.apiKeyVaultKey} 가 Vault 에 없습니다.`, 'error');
   }
-  const clientSecret = config.clientSecretVaultKey
-    ? await core.getUserSecret(config.clientSecretVaultKey)
-    : null;
+  const apiKey = apiKeyRes.data;
+
+  let clientSecret: string | null = null;
+  if (config.clientSecretVaultKey) {
+    const secretRes = await getUserSecret({ value: config.clientSecretVaultKey });
+    clientSecret = secretRes.ok ? secretRes.data : null;
+  }
 
   const host = req.headers.get('host') || 'localhost:3000';
   const protocol = host.startsWith('localhost') ? 'http' : 'https';
@@ -87,9 +90,12 @@ export async function GET(
       return redirectToAdmin('액세스 토큰이 응답에 없습니다.', 'error');
     }
 
-    await core.setUserSecret(config.accessTokenVaultKey, access_token);
+    const setAccessRes = await setUserSecret({ name: config.accessTokenVaultKey, value: access_token });
+    if (!setAccessRes.ok) {
+      return redirectToAdmin(`액세스 토큰 저장 실패: ${setAccessRes.message}`, 'error');
+    }
     if (refresh_token && config.refreshTokenVaultKey) {
-      await core.setUserSecret(config.refreshTokenVaultKey, refresh_token);
+      await setUserSecret({ name: config.refreshTokenVaultKey, value: refresh_token });
     }
 
     const res = redirectToAdmin(config.successMessage, 'success');

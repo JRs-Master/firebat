@@ -12,24 +12,26 @@
  *   - proxy.ts 가 두 endpoint 인증 면제 처리.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
+import { isAdminSetup, validatePasswordPolicy, setAdminCredentials, login } from '../../../../lib/api-gen/auth';
+import { setTimezone } from '../../../../lib/api-gen/settings';
+import { setSystem as setSystemSecret } from '../../../../lib/api-gen/secret';
+import { getCmsSettings, setModuleSettings } from '../../../../lib/api-gen/module';
 import { SESSION_MAX_AGE_SECONDS, SESSION_COOKIE_NAME } from '../../../../lib/config';
 import { isHttpsRequest } from '../../../../lib/cookie-helpers';
 import { VK_SYSTEM_UI_LANG } from '../../../../lib/proto-gen/vault-keys';
 
 export async function GET(_req: NextRequest) {
-  const core = getCore();
-  // RustCoreProxy 의 autoUnwrapProtoEnvelope 통해 BoolRequest `{value: bool}` 자동 unwrap.
-  const isAdminSetup = await core.isAdminSetup();
-  return NextResponse.json({ isAdminSetup: Boolean(isAdminSetup) });
+  const res = await isAdminSetup();
+  if (!res.ok) {
+    return NextResponse.json({ isAdminSetup: false });
+  }
+  return NextResponse.json({ isAdminSetup: Boolean(res.data) });
 }
 
 export async function POST(req: NextRequest) {
-  const core = getCore();
-
   // 이미 설정됨 = 재실행 거부 (변경은 어드민 설정 모달 경유).
-  // RustCoreProxy autoUnwrap 통해 isAdminSetup 직접 boolean 응답.
-  if (await core.isAdminSetup()) {
+  const setupRes = await isAdminSetup();
+  if (setupRes.ok && setupRes.data === true) {
     return NextResponse.json({ success: false }, { status: 403 });
   }
 
@@ -42,11 +44,11 @@ export async function POST(req: NextRequest) {
   if (!adminPassword || typeof adminPassword !== 'string') {
     return NextResponse.json({ success: false, error: '비밀번호를 입력해 주세요.' }, { status: 400 });
   }
-  // 비번 정책 검증 — Rust core.validatePasswordPolicy single source (8자 + 3 카테고리 + ID 동일 금지).
-  const policy = await core.validatePasswordPolicy(adminPassword, adminId.trim());
-  if (!policy?.ok) {
+  // 비번 정책 검증 — Rust validatePasswordPolicy single source (8자 + 3 카테고리 + ID 동일 금지).
+  const policy = await validatePasswordPolicy({ password: adminPassword, id: adminId.trim() });
+  if (!policy.ok) {
     return NextResponse.json(
-      { success: false, error: policy?.error ?? '비밀번호 정책 위반' },
+      { success: false, error: policy.message || '비밀번호 정책 위반' },
       { status: 400 },
     );
   }
@@ -58,27 +60,47 @@ export async function POST(req: NextRequest) {
   }
 
   // 1) 관리자 자격증명 저장
-  await core.setAdminCredentials(adminId.trim(), adminPassword);
+  const credRes = await setAdminCredentials({ id: adminId.trim(), password: adminPassword });
+  if (!credRes.ok) {
+    return NextResponse.json({ success: false, error: credRes.message }, { status: 500 });
+  }
 
   // 2) 시간대 저장
-  await core.setTimezone(timezone);
+  const tzRes = await setTimezone({ value: timezone });
+  if (!tzRes.ok) {
+    return NextResponse.json({ success: false, error: tzRes.message }, { status: 500 });
+  }
 
   // 3) 사용 언어 저장 — 두 vault key 동시 저장:
   //    - system:ui-lang — 어드민 UI 언어 (i18n 인프라 미설정, 향후 도입 시 자동 활용)
   //    - cms.siteLang — 사이트 공개 언어 (HTML lang 속성 + SEO)
   //    초기엔 같은 값. 어드민 = ko / 사이트 = en 같이 분리하려면 어드민 설정 / CMS 모달에서 별도 변경.
-  await core.setGeminiKey(VK_SYSTEM_UI_LANG, siteLang);
-  const cms = await core.getCmsSettings();
+  const uiLangRes = await setSystemSecret({ key: VK_SYSTEM_UI_LANG, value: siteLang });
+  if (!uiLangRes.ok) {
+    return NextResponse.json({ success: false, error: uiLangRes.message }, { status: 500 });
+  }
+  const cmsRes = await getCmsSettings();
+  if (!cmsRes.ok) {
+    return NextResponse.json({ success: false, error: cmsRes.message }, { status: 500 });
+  }
+  const cms = cmsRes.data as Record<string, unknown>;
   const patched = { ...cms, siteLang };
-  await core.setModuleSettings('cms', patched);
+  const moduleRes = await setModuleSettings({ name: 'cms', settingsJson: JSON.stringify(patched) });
+  if (!moduleRes.ok) {
+    return NextResponse.json({ success: false, error: moduleRes.message }, { status: 500 });
+  }
 
   // 4) 자동 로그인 — setAdminCredentials 직후 동일 자격증명으로 로그인 → 세션 토큰 발급
-  const result = await core.login(adminId.trim(), adminPassword, 'setup');
-  if (!result || typeof result !== 'object' || !('token' in result) || !result.token) {
+  const loginRes = await login({ id: adminId.trim(), password: adminPassword, attemptKey: 'setup' });
+  if (!loginRes.ok) {
+    return NextResponse.json({ success: true, autoLogin: false });
+  }
+  const lr = loginRes.data;
+  if (!lr.ok || !lr.session || !lr.session.token) {
     // 직후 호출이라 거의 무조건 성공이지만 안전망 (Vault write 실패 등)
     return NextResponse.json({ success: true, autoLogin: false });
   }
-  const session = result as { token: string };
+  const session = lr.session;
 
   const res = NextResponse.json({ success: true, autoLogin: true });
   res.cookies.set({

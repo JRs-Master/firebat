@@ -5,10 +5,11 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  StringRequest,
-  TemplateSaveRequest,
+  StringRequestSchema,
+  TemplateSaveRequestSchema,
   TemplateService,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
@@ -24,7 +25,7 @@ export async function list(): Promise<RpcResult<unknown>> {
   }
 }
 
-export async function get(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function get(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await templateClient.get(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -33,7 +34,7 @@ export async function get(args: StringRequest): Promise<RpcResult<unknown>> {
   }
 }
 
-export async function save(args: TemplateSaveRequest): Promise<RpcResult<void>> {
+export async function save(args: MessageInitShape<typeof TemplateSaveRequestSchema>): Promise<RpcResult<void>> {
   try {
       await templateClient.save(args ?? {});
       return { ok: true, data: undefined };
@@ -42,7 +43,7 @@ export async function save(args: TemplateSaveRequest): Promise<RpcResult<void>> 
   }
 }
 
-export async function deleteTemplate(args: StringRequest): Promise<RpcResult<void>> {
+export async function deleteTemplate(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
   try {
       await templateClient.delete(args ?? {});
       return { ok: true, data: undefined };

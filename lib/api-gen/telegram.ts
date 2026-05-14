@@ -5,17 +5,18 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  StringRequest,
-  TelegramProcessMessageRequest,
+  StringRequestSchema,
+  TelegramProcessMessageRequestSchema,
   TelegramService,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const telegramClient = createClient(TelegramService, transport);
 
-export async function setupWebhook(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function setupWebhook(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await telegramClient.setupWebhook(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -42,7 +43,7 @@ export async function getWebhookStatus(): Promise<RpcResult<unknown>> {
   }
 }
 
-export async function isOwner(args: StringRequest): Promise<RpcResult<boolean>> {
+export async function isOwner(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await telegramClient.isOwner(args ?? {});
       return { ok: true, data: response.value };
@@ -60,7 +61,7 @@ export async function getWebhookSecret(): Promise<RpcResult<unknown>> {
   }
 }
 
-export async function processMessage(args: TelegramProcessMessageRequest): Promise<RpcResult<unknown>> {
+export async function processMessage(args: MessageInitShape<typeof TelegramProcessMessageRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await telegramClient.processMessage(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };

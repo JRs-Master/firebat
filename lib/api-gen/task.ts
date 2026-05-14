@@ -6,16 +6,17 @@
 
 import {
   PipelineResultPb,
-  TaskRunRequest,
+  TaskRunRequestSchema,
   TaskService,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const taskClient = createClient(TaskService, transport);
 
-export async function run(args: TaskRunRequest): Promise<RpcResult<PipelineResultPb>> {
+export async function run(args: MessageInitShape<typeof TaskRunRequestSchema>): Promise<RpcResult<PipelineResultPb>> {
   try {
       const response = await taskClient.run(args ?? {});
       return { ok: true, data: response };

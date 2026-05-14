@@ -7,7 +7,9 @@
  *  - RSS 구독 버튼 (project feed)
  *  - JSON-LD CollectionPage (Google rich result, item list)
  */
-import { getCore } from '../../../lib/singleton';
+import { listPages } from '../../../lib/api-gen/page';
+import { getCmsSettings } from '../../../lib/api-gen/module';
+import { toPageListItem } from '../../../lib/util/page-pb-convert';
 import { CmsPageList, CmsPagination } from '../cms-page-list';
 import { CmsBreadcrumb } from '../breadcrumb';
 import { headers } from 'next/headers';
@@ -32,12 +34,12 @@ export async function ProjectRootView({ projectName, pageSlugs, currentPage = 1 
   pageSlugs: string[];
   currentPage?: number;
 }) {
-  const core = getCore();
-  const cms = await core.getCmsSettings();
-  const perPage = cms.layout.pageList.perPage;
+  const cmsRes = await getCmsSettings();
+  const cms = (cmsRes.ok ? cmsRes.data : {}) as any;
+  const perPage = cms.layout?.pageList?.perPage ?? 10;
 
-  const allPagesRes = await core.listPages();
-  const allPages = allPagesRes.success && allPagesRes.data ? allPagesRes.data : [];
+  const allPagesRes = await listPages();
+  const allPages = allPagesRes.ok ? (allPagesRes.data.items ?? []).map(toPageListItem) : [];
   const projectPages = allPages
     .filter((p) => pageSlugs.includes(p.slug))
     .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
@@ -133,7 +135,7 @@ export async function ProjectRootView({ projectName, pageSlugs, currentPage = 1 
           <CmsPageList
             pages={pagedPosts}
             emptyMessage="이 프로젝트엔 아직 발행된 글이 없습니다."
-            variant={cms.layout.pageList.cardVariant}
+            variant={cms.layout?.pageList?.cardVariant}
           />
           <CmsPagination basePath={`/${projectName}`} currentPage={currentPage} totalPages={totalPages} />
         </section>

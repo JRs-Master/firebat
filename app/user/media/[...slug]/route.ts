@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
+import { read as readMedia } from '../../../../lib/api-gen/media';
 
 /**
  * GET /user/media/<slug>.<ext> — 유저 AI 생성 이미지 공개 서빙.
@@ -28,21 +28,21 @@ export async function GET(
     const dotIdx = filename.lastIndexOf('.');
     const slug = dotIdx > 0 ? filename.slice(0, dotIdx) : filename;
 
-    const core = getCore();
-    const res = await core.readMedia(slug);
-    if (!res.success) return new NextResponse(res.error || '서버 오류', { status: 500 });
-    if (!res.data) return new NextResponse('Not found', { status: 404 });
+    const res = await readMedia({ value: slug });
+    if (!res.ok) return new NextResponse(res.message || '서버 오류', { status: 500 });
+    const payload = res.data;
+    if (!payload || !payload.binaryBase64) return new NextResponse('Not found', { status: 404 });
     // scope 검증 — /user/media/ URL 로 system scope 파일 요청 시 404
-    if (res.data.record.scope && res.data.record.scope !== 'user') {
+    if (payload.record?.scope && payload.record.scope !== 'user') {
       return new NextResponse('Not found', { status: 404 });
     }
 
-    const { binary, contentType } = res.data;
+    const binary = Buffer.from(payload.binaryBase64, 'base64');
     const uint8 = new Uint8Array(binary);
     return new NextResponse(uint8, {
       status: 200,
       headers: {
-        'Content-Type': contentType,
+        'Content-Type': payload.contentType,
         'Cache-Control': 'public, max-age=31536000, immutable',
         'Content-Length': String(binary.length),
       },

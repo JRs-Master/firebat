@@ -4,10 +4,12 @@
  * Phase A: 사이드바 영역만 (수직 list 패턴). Phase B/C 에서 헤더(horizontal nav row)·
  * 푸터(column 또는 row) 패턴 추가.
  *
- * 각 widget type 은 데이터 fetch (Core listPages / listAllTags 등) 필요 시 server-side.
+ * 각 widget type 은 데이터 fetch (listPages / listAllTags 등) 필요 시 server-side.
  * RSC — async 렌더 자연 작동.
  */
-import { getCore } from '../../lib/singleton';
+import { listPages, listAllTags } from '../../lib/api-gen/page';
+import { getCmsSettings } from '../../lib/api-gen/module';
+import { toPageListItem } from '../../lib/util/page-pb-convert';
 import DOMPurify from 'isomorphic-dompurify';
 import {
   type WidgetSlot,
@@ -50,13 +52,12 @@ function WidgetTitle({ text, area }: { text?: string; area: WidgetArea }) {
 // ── 개별 Widget renderer ──
 
 async function RecentPostsWidget({ count, title, area }: { count: number; title?: string; area: WidgetArea }) {
-  const allRes = await getCore().listPages();
-  const recent = allRes.success && allRes.data
-    ? allRes.data
-        .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
-        .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
-        .slice(0, Math.max(1, count))
-    : [];
+  const allRes = await listPages();
+  const allItems = allRes.ok ? (allRes.data.items ?? []).map(toPageListItem) : [];
+  const recent = allItems
+    .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
+    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+    .slice(0, Math.max(1, count));
   if (recent.length === 0) return null;
   return (
     <WidgetSection area={area}>
@@ -86,9 +87,9 @@ async function RecentPostsWidget({ count, title, area }: { count: number; title?
 }
 
 async function CategoryListWidget({ title, area }: { title?: string; area: WidgetArea }) {
-  const allRes = await getCore().listPages();
-  const allPages = allRes.success && allRes.data
-    ? allRes.data.filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
+  const allRes = await listPages();
+  const allPages = allRes.ok
+    ? (allRes.data.items ?? []).map(toPageListItem).filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
     : [];
   const categoryMap = new Map<string, number>();
   for (const p of allPages) {
@@ -121,16 +122,18 @@ async function CategoryListWidget({ title, area }: { title?: string; area: Widge
 }
 
 async function TagCloudWidget({ limit, title, area }: { limit: number; title?: string; area: WidgetArea }) {
-  const tags = await getCore().listAllTags();
+  const tagsRes = await listAllTags();
+  const tags = tagsRes.ok ? (tagsRes.data.tags ?? []) : [];
   const top = tags.slice(0, Math.max(1, limit));
   if (top.length === 0) return null;
-  const maxCount = top[0].count;
+  const maxCount = Number(top[0].count ?? 1n);
   return (
     <WidgetSection area={area}>
       <WidgetTitle text={title ?? '태그'} area={area} />
       <div className="flex flex-wrap gap-1.5">
         {top.map((t) => {
-          const ratio = 0.85 + 0.3 * (t.count / Math.max(1, maxCount));
+          const count = Number(t.count ?? 0n);
+          const ratio = 0.85 + 0.3 * (count / Math.max(1, maxCount));
           return (
             <a
               key={t.tag}
@@ -143,7 +146,7 @@ async function TagCloudWidget({ limit, title, area }: { limit: number; title?: s
                 fontSize: `${ratio}rem`,
                 lineHeight: 1.4,
               }}
-              title={`${t.count}개 글`}
+              title={`${count}개 글`}
             >
               #{t.tag}
             </a>
@@ -244,8 +247,9 @@ async function NavLinksWidget({ useGlobalNav, customLinks, title, area }: {
   title?: string;
   area: WidgetArea;
 }) {
-  const cms = await getCore().getCmsSettings();
-  let links = useGlobalNav ? cms.layout.header.navLinks : [];
+  const cmsRes = await getCmsSettings();
+  const cms = (cmsRes.ok ? cmsRes.data : {}) as any;
+  let links = useGlobalNav ? (cms.layout?.header?.navLinks ?? []) : [];
   if (customLinks && customLinks.trim()) {
     // "label | href" 줄별 파싱
     const parsed = customLinks.split('\n')
@@ -265,7 +269,7 @@ async function NavLinksWidget({ useGlobalNav, customLinks, title, area }: {
     <WidgetSection area={area}>
       <WidgetTitle text={title} area={area} />
       <ul className={`list-none p-0 m-0 ${horizontal ? 'flex items-center gap-3 sm:gap-5 flex-wrap' : 'flex flex-col gap-1.5'}`}>
-        {links.map((l, i) => (
+        {links.map((l: { label: string; href: string }, i: number) => (
           <li key={i}>
             <a
               href={l.href}
@@ -345,7 +349,8 @@ function SocialIcon({ type }: { type: string }) {
 }
 
 async function SiteNameWidget({ area }: { area: WidgetArea }) {
-  const cms = await getCore().getCmsSettings();
+  const cmsRes = await getCmsSettings();
+  const cms = (cmsRes.ok ? cmsRes.data : {}) as any;
   // 헤더에서는 홈 링크 wrap (Astra/GP 패턴), 사이드바·푸터는 텍스트만.
   const inner = (
     <span
@@ -362,8 +367,9 @@ async function SiteNameWidget({ area }: { area: WidgetArea }) {
 }
 
 async function SiteLogoWidget({ area }: { area: WidgetArea }) {
-  const cms = await getCore().getCmsSettings();
-  const logoUrl = cms.layout.header.logoUrl;
+  const cmsRes = await getCmsSettings();
+  const cms = (cmsRes.ok ? cmsRes.data : {}) as any;
+  const logoUrl = cms.layout?.header?.logoUrl;
   if (!logoUrl) return <SiteNameWidget area={area} />;
   return (
     <a href="/" className="inline-flex items-center gap-2 no-underline" style={{ color: 'var(--cms-text)' }}>
@@ -374,12 +380,13 @@ async function SiteLogoWidget({ area }: { area: WidgetArea }) {
 }
 
 async function CopyrightWidget({ text, area }: { text?: string; area: WidgetArea }) {
-  const cms = await getCore().getCmsSettings();
+  const cmsRes = await getCmsSettings();
+  const cms = (cmsRes.ok ? cmsRes.data : {}) as any;
   const finalText = (text && text.trim())
     ? text
-    : (cms.layout.footer.text && cms.layout.footer.text.trim())
+    : (cms.layout?.footer?.text && cms.layout.footer.text.trim())
       ? cms.layout.footer.text
-      : `© ${new Date().getFullYear()} ${cms.siteTitle}. All rights reserved.`;
+      : `© ${new Date().getFullYear()} ${cms.siteTitle ?? ''}. All rights reserved.`;
   const html = finalText.replace(/\n/g, '<br>');
   const sanitized = DOMPurify.sanitize(html, {
     ALLOWED_TAGS: ['a', 'strong', 'em', 'b', 'i', 'br', 'span', 'small'],
@@ -398,8 +405,9 @@ async function CopyrightWidget({ text, area }: { text?: string; area: WidgetArea
 }
 
 async function AdSlotWidget({ slotId, area }: { slotId?: string; area: WidgetArea }) {
-  const cms = await getCore().getCmsSettings();
-  if (!slotId || !cms.adsense.publisherId) return null;
+  const cmsRes = await getCmsSettings();
+  const cms = (cmsRes.ok ? cmsRes.data : {}) as any;
+  if (!slotId || !cms.adsense?.publisherId) return null;
   return (
     <WidgetSection area={area}>
       <ins

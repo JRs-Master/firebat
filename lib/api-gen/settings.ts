@@ -7,11 +7,12 @@
 import {
   AiAssistantModelListPb,
   AvailableAiModelListPb,
-  BoolRequest,
+  BoolRequestSchema,
   SettingsService,
-  SettingsSetLastModelByCategoryRequest,
-  StringRequest,
+  SettingsSetLastModelByCategoryRequestSchema,
+  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
@@ -27,7 +28,7 @@ export async function getTimezone(): Promise<RpcResult<string>> {
   }
 }
 
-export async function setTimezone(args: StringRequest): Promise<RpcResult<boolean>> {
+export async function setTimezone(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await settingsClient.setTimezone(args ?? {});
       return { ok: true, data: response.value };
@@ -45,7 +46,7 @@ export async function getAiModel(): Promise<RpcResult<string>> {
   }
 }
 
-export async function setAiModel(args: StringRequest): Promise<RpcResult<boolean>> {
+export async function setAiModel(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await settingsClient.setAiModel(args ?? {});
       return { ok: true, data: response.value };
@@ -63,7 +64,7 @@ export async function getAiThinkingLevel(): Promise<RpcResult<string>> {
   }
 }
 
-export async function setAiThinkingLevel(args: StringRequest): Promise<RpcResult<boolean>> {
+export async function setAiThinkingLevel(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await settingsClient.setAiThinkingLevel(args ?? {});
       return { ok: true, data: response.value };
@@ -81,7 +82,7 @@ export async function getUserPrompt(): Promise<RpcResult<string>> {
   }
 }
 
-export async function setUserPrompt(args: StringRequest): Promise<RpcResult<boolean>> {
+export async function setUserPrompt(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await settingsClient.setUserPrompt(args ?? {});
       return { ok: true, data: response.value };
@@ -99,7 +100,7 @@ export async function getAnthropicCacheEnabled(): Promise<RpcResult<boolean>> {
   }
 }
 
-export async function setAnthropicCacheEnabled(args: BoolRequest): Promise<RpcResult<boolean>> {
+export async function setAnthropicCacheEnabled(args: MessageInitShape<typeof BoolRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await settingsClient.setAnthropicCacheEnabled(args ?? {});
       return { ok: true, data: response.value };
@@ -117,7 +118,7 @@ export async function getLastModelByCategory(): Promise<RpcResult<string>> {
   }
 }
 
-export async function setLastModelByCategory(args: SettingsSetLastModelByCategoryRequest): Promise<RpcResult<boolean>> {
+export async function setLastModelByCategory(args: MessageInitShape<typeof SettingsSetLastModelByCategoryRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await settingsClient.setLastModelByCategory(args ?? {});
       return { ok: true, data: response.value };
@@ -135,7 +136,7 @@ export async function getAiAssistantModel(): Promise<RpcResult<string>> {
   }
 }
 
-export async function setAiAssistantModel(args: StringRequest): Promise<RpcResult<boolean>> {
+export async function setAiAssistantModel(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await settingsClient.setAiAssistantModel(args ?? {});
       return { ok: true, data: response.value };

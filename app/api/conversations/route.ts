@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../lib/singleton';
+import {
+  getConversation,
+  listConversations,
+  saveConversation,
+  deleteConversation,
+  isConversationDeleted,
+} from '../../../lib/api-gen/conversation';
 import { withAuth } from '../../../lib/with-api-error';
 import { safeJsonParse, normalizeTimestamps } from '../../../lib/util';
 
@@ -12,14 +18,13 @@ import { safeJsonParse, normalizeTimestamps } from '../../../lib/util';
 /** GET — 전체 목록 또는 ?id=xxx 단건 */
 export const GET = withAuth(async (req: NextRequest) => {
   const id = req.nextUrl.searchParams.get('id');
-  const core = getCore();
   if (id) {
-    const res = await core.getConversation('admin', id);
-    if (!res.success) {
-      return NextResponse.json({ success: false, error: res.error }, { status: 404 });
+    const res = await getConversation({ owner: 'admin', id });
+    if (!res.ok) {
+      return NextResponse.json({ success: false, error: res.message }, { status: 404 });
     }
     // Rust ConversationRecordPb 의 messages_json (string) 필드 → frontend messages array 로 변환.
-    // proto-loader `keepCase: false` 라 camelCase (messagesJson) 만 응답. 미존재 시 빈 배열.
+    // 미존재 시 빈 배열.
     const raw = res.data as Record<string, unknown> | undefined;
     const messagesJson = raw?.messagesJson as string | undefined;
     const messages = safeJsonParse<unknown[]>(messagesJson, []);
@@ -28,11 +33,11 @@ export const GET = withAuth(async (req: NextRequest) => {
       conversation: normalizeTimestamps({ ...(raw ?? {}), messages }),
     });
   }
-  const res = await core.listConversations('admin');
-  if (!res.success) {
-    return NextResponse.json({ success: false, error: res.error }, { status: 500 });
+  const res = await listConversations({ value: 'admin' });
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   }
-  const items = (res.data ?? []) as Array<Record<string, unknown>>;
+  const items = ((res.data?.items ?? []) as unknown) as Array<Record<string, unknown>>;
   return NextResponse.json({
     success: true,
     conversations: items.map(item => normalizeTimestamps(item)),
@@ -46,23 +51,29 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (!id || !title || !Array.isArray(messages)) {
     return NextResponse.json({ success: false, error: 'id, title, messages 필수' }, { status: 400 });
   }
-  const core = getCore();
   // tombstone 체크 — 한 기기에서 삭제한 대화를 다른 기기의 stale POST 가 되살리는 것 방지
-  if (await core.isConversationDeleted('admin', id)) {
+  const isDeleted = await isConversationDeleted({ owner: 'admin', id });
+  if (isDeleted.ok && isDeleted.data) {
     return NextResponse.json({ success: false, error: 'deleted', deleted: true }, { status: 409 });
   }
-  const res = await core.saveConversation('admin', id, title, messages, createdAt);
-  return res.success
+  const res = await saveConversation({
+    owner: 'admin',
+    id,
+    title,
+    messagesJson: JSON.stringify(messages ?? []),
+    createdAt: createdAt !== undefined ? BigInt(createdAt) : undefined,
+  } as any);
+  return res.ok
     ? NextResponse.json({ success: true })
-    : NextResponse.json({ success: false, error: res.error }, { status: 500 });
+    : NextResponse.json({ success: false, error: res.message }, { status: 500 });
 });
 
 /** DELETE — ?id=xxx 삭제 */
 export const DELETE = withAuth(async (req: NextRequest) => {
   const id = req.nextUrl.searchParams.get('id');
   if (!id) return NextResponse.json({ success: false, error: 'id 필수' }, { status: 400 });
-  const res = await getCore().deleteConversation('admin', id);
-  return res.success
+  const res = await deleteConversation({ owner: 'admin', id });
+  return res.ok
     ? NextResponse.json({ success: true })
-    : NextResponse.json({ success: false, error: res.error }, { status: 500 });
+    : NextResponse.json({ success: false, error: res.message }, { status: 500 });
 });

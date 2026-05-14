@@ -7,11 +7,12 @@
 import {
   ModuleSecretListPb,
   SecretService,
-  SecretSetSystemRequest,
-  SecretSetUserRequest,
+  SecretSetSystemRequestSchema,
+  SecretSetUserRequestSchema,
   StringListPb,
-  StringRequest,
+  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
@@ -27,7 +28,7 @@ export async function listUser(): Promise<RpcResult<StringListPb>> {
   }
 }
 
-export async function setUser(args: SecretSetUserRequest): Promise<RpcResult<void>> {
+export async function setUser(args: MessageInitShape<typeof SecretSetUserRequestSchema>): Promise<RpcResult<void>> {
   try {
       await secretClient.setUser(args ?? {});
       return { ok: true, data: undefined };
@@ -36,7 +37,7 @@ export async function setUser(args: SecretSetUserRequest): Promise<RpcResult<voi
   }
 }
 
-export async function getUser(args: StringRequest): Promise<RpcResult<string | null>> {
+export async function getUser(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<string | null>> {
   try {
       const response = await secretClient.getUser(args ?? {});
       return { ok: true, data: response.present ? response.value : null };
@@ -45,7 +46,7 @@ export async function getUser(args: StringRequest): Promise<RpcResult<string | n
   }
 }
 
-export async function deleteUser(args: StringRequest): Promise<RpcResult<void>> {
+export async function deleteUser(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
   try {
       await secretClient.deleteUser(args ?? {});
       return { ok: true, data: undefined };
@@ -63,7 +64,7 @@ export async function listUserModuleSecrets(): Promise<RpcResult<ModuleSecretLis
   }
 }
 
-export async function getSystem(args: StringRequest): Promise<RpcResult<string | null>> {
+export async function getSystem(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<string | null>> {
   try {
       const response = await secretClient.getSystem(args ?? {});
       return { ok: true, data: response.present ? response.value : null };
@@ -72,7 +73,7 @@ export async function getSystem(args: StringRequest): Promise<RpcResult<string |
   }
 }
 
-export async function setSystem(args: SecretSetSystemRequest): Promise<RpcResult<void>> {
+export async function setSystem(args: MessageInitShape<typeof SecretSetSystemRequestSchema>): Promise<RpcResult<void>> {
   try {
       await secretClient.setSystem(args ?? {});
       return { ok: true, data: undefined };

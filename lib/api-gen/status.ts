@@ -5,21 +5,22 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  StatusCompleteRequest,
-  StatusFailRequest,
-  StatusListRequest,
+  StatusCompleteRequestSchema,
+  StatusFailRequestSchema,
+  StatusListRequestSchema,
   StatusService,
-  StatusStartRequest,
-  StatusUpdateRequest,
-  StringRequest,
+  StatusStartRequestSchema,
+  StatusUpdateRequestSchema,
+  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const statusClient = createClient(StatusService, transport);
 
-export async function start(args: StatusStartRequest): Promise<RpcResult<unknown>> {
+export async function start(args: MessageInitShape<typeof StatusStartRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await statusClient.start(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -28,7 +29,7 @@ export async function start(args: StatusStartRequest): Promise<RpcResult<unknown
   }
 }
 
-export async function update(args: StatusUpdateRequest): Promise<RpcResult<unknown>> {
+export async function update(args: MessageInitShape<typeof StatusUpdateRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await statusClient.update(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -37,7 +38,7 @@ export async function update(args: StatusUpdateRequest): Promise<RpcResult<unkno
   }
 }
 
-export async function complete(args: StatusCompleteRequest): Promise<RpcResult<unknown>> {
+export async function complete(args: MessageInitShape<typeof StatusCompleteRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await statusClient.complete(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -46,7 +47,7 @@ export async function complete(args: StatusCompleteRequest): Promise<RpcResult<u
   }
 }
 
-export async function fail(args: StatusFailRequest): Promise<RpcResult<unknown>> {
+export async function fail(args: MessageInitShape<typeof StatusFailRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await statusClient.fail(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -55,7 +56,7 @@ export async function fail(args: StatusFailRequest): Promise<RpcResult<unknown>>
   }
 }
 
-export async function get(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function get(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await statusClient.get(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -64,7 +65,7 @@ export async function get(args: StringRequest): Promise<RpcResult<unknown>> {
   }
 }
 
-export async function list(args: StatusListRequest): Promise<RpcResult<unknown>> {
+export async function list(args: MessageInitShape<typeof StatusListRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await statusClient.list(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };

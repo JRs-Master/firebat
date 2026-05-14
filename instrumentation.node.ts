@@ -19,8 +19,8 @@ if (!__gShut.__firebatShutdownWired) {
     shuttingDown = true;
     console.log(`[Firebat] ${sig} 수신 — graceful shutdown 시작`);
     try {
-      const { getCore } = await import('./lib/singleton');
-      await getCore().gracefulShutdown(25_000);
+      const { gracefulShutdown } = await import('./lib/api-gen/lifecycle');
+      await gracefulShutdown({ value: 25_000n });
     } catch (err) {
       console.warn('[Firebat] shutdown 실패:', err);
     }

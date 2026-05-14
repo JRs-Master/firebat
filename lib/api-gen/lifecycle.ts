@@ -6,10 +6,11 @@
 
 import {
   HealthInfo,
-  LifecycleCaptureExceptionRequest,
+  LifecycleCaptureExceptionRequestSchema,
   LifecycleService,
-  NumberRequest,
+  NumberRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
@@ -25,7 +26,7 @@ export async function health(): Promise<RpcResult<HealthInfo>> {
   }
 }
 
-export async function captureException(args: LifecycleCaptureExceptionRequest): Promise<RpcResult<void>> {
+export async function captureException(args: MessageInitShape<typeof LifecycleCaptureExceptionRequestSchema>): Promise<RpcResult<void>> {
   try {
       await lifecycleClient.captureException(args ?? {});
       return { ok: true, data: undefined };
@@ -34,7 +35,7 @@ export async function captureException(args: LifecycleCaptureExceptionRequest): 
   }
 }
 
-export async function gracefulShutdown(args: NumberRequest): Promise<RpcResult<void>> {
+export async function gracefulShutdown(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<void>> {
   try {
       await lifecycleClient.gracefulShutdown(args ?? {});
       return { ok: true, data: undefined };

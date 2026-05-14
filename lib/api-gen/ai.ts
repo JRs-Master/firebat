@@ -5,24 +5,25 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  AiCodeAssistRequest,
-  AiCreatePendingRequest,
-  AiProcessRequest,
-  AiRequestActionWithToolsRequest,
-  AiRunAgentJobRequest,
+  AiCodeAssistRequestSchema,
+  AiCreatePendingRequestSchema,
+  AiProcessRequestSchema,
+  AiRequestActionWithToolsRequestSchema,
+  AiRunAgentJobRequestSchema,
   AiService,
-  AiSpawnSubAgentRequest,
-  AiStorePlanRequest,
-  BoolRequest,
-  StringRequest,
+  AiSpawnSubAgentRequestSchema,
+  AiStorePlanRequestSchema,
+  BoolRequestSchema,
+  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const aiClient = createClient(AiService, transport);
 
-export async function process(args: AiProcessRequest): Promise<RpcResult<string>> {
+export async function process(args: MessageInitShape<typeof AiProcessRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await aiClient.process(args ?? {});
       return { ok: true, data: response.text };
@@ -31,7 +32,7 @@ export async function process(args: AiProcessRequest): Promise<RpcResult<string>
   }
 }
 
-export async function requestActionWithTools(args: AiRequestActionWithToolsRequest): Promise<RpcResult<unknown>> {
+export async function requestActionWithTools(args: MessageInitShape<typeof AiRequestActionWithToolsRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await aiClient.requestActionWithTools(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -40,7 +41,7 @@ export async function requestActionWithTools(args: AiRequestActionWithToolsReque
   }
 }
 
-export async function codeAssist(args: AiCodeAssistRequest): Promise<RpcResult<string>> {
+export async function codeAssist(args: MessageInitShape<typeof AiCodeAssistRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await aiClient.codeAssist(args ?? {});
       return { ok: true, data: response.text };
@@ -49,7 +50,7 @@ export async function codeAssist(args: AiCodeAssistRequest): Promise<RpcResult<s
   }
 }
 
-export async function runAgentJob(args: AiRunAgentJobRequest): Promise<RpcResult<unknown>> {
+export async function runAgentJob(args: MessageInitShape<typeof AiRunAgentJobRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await aiClient.runAgentJob(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -58,7 +59,7 @@ export async function runAgentJob(args: AiRunAgentJobRequest): Promise<RpcResult
   }
 }
 
-export async function resolveCallTarget(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function resolveCallTarget(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await aiClient.resolveCallTarget(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -67,7 +68,7 @@ export async function resolveCallTarget(args: StringRequest): Promise<RpcResult<
   }
 }
 
-export async function spawnSubAgent(args: AiSpawnSubAgentRequest): Promise<RpcResult<unknown>> {
+export async function spawnSubAgent(args: MessageInitShape<typeof AiSpawnSubAgentRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await aiClient.spawnSubAgent(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -85,7 +86,7 @@ export async function isSubAgentEnabled(): Promise<RpcResult<boolean>> {
   }
 }
 
-export async function setSubAgentEnabled(args: BoolRequest): Promise<RpcResult<void>> {
+export async function setSubAgentEnabled(args: MessageInitShape<typeof BoolRequestSchema>): Promise<RpcResult<void>> {
   try {
       await aiClient.setSubAgentEnabled(args ?? {});
       return { ok: true, data: undefined };
@@ -94,7 +95,7 @@ export async function setSubAgentEnabled(args: BoolRequest): Promise<RpcResult<v
   }
 }
 
-export async function createPending(args: AiCreatePendingRequest): Promise<RpcResult<string>> {
+export async function createPending(args: MessageInitShape<typeof AiCreatePendingRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await aiClient.createPending(args ?? {});
       return { ok: true, data: response.value };
@@ -103,7 +104,7 @@ export async function createPending(args: AiCreatePendingRequest): Promise<RpcRe
   }
 }
 
-export async function getPending(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function getPending(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await aiClient.getPending(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -112,7 +113,7 @@ export async function getPending(args: StringRequest): Promise<RpcResult<unknown
   }
 }
 
-export async function consumePending(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function consumePending(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await aiClient.consumePending(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -121,7 +122,7 @@ export async function consumePending(args: StringRequest): Promise<RpcResult<unk
   }
 }
 
-export async function rejectPending(args: StringRequest): Promise<RpcResult<boolean>> {
+export async function rejectPending(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await aiClient.rejectPending(args ?? {});
       return { ok: true, data: response.value };
@@ -130,7 +131,7 @@ export async function rejectPending(args: StringRequest): Promise<RpcResult<bool
   }
 }
 
-export async function storePlan(args: AiStorePlanRequest): Promise<RpcResult<void>> {
+export async function storePlan(args: MessageInitShape<typeof AiStorePlanRequestSchema>): Promise<RpcResult<void>> {
   try {
       await aiClient.storePlan(args ?? {});
       return { ok: true, data: undefined };

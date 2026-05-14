@@ -11,7 +11,7 @@
  * 미매칭 시 404.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
+import { getCmsSettings } from '../../../../lib/api-gen/module';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,8 +32,13 @@ export async function GET(
   if (!file || file.includes('/') || file.includes('..')) {
     return new NextResponse('Not Found', { status: 404 });
   }
-  const cms = await getCore().getCmsSettings();
-  const match = cms.verifications.find((v: { filename: string; content: string }) => v.filename === file);
+  const cmsRes = await getCmsSettings();
+  if (!cmsRes.ok) {
+    return new NextResponse('Not Found', { status: 404 });
+  }
+  const cms = cmsRes.data as { verifications?: Array<{ filename: string; content: string }> };
+  const verifications = Array.isArray(cms?.verifications) ? cms.verifications : [];
+  const match = verifications.find((v) => v.filename === file);
   if (!match) {
     return new NextResponse('Not Found', { status: 404 });
   }

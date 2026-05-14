@@ -5,19 +5,20 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  ConsolidationAskLlmTextRequest,
-  ConsolidationConsolidateInactiveRequest,
-  ConsolidationConsolidateRequest,
+  ConsolidationAskLlmTextRequestSchema,
+  ConsolidationConsolidateInactiveRequestSchema,
+  ConsolidationConsolidateRequestSchema,
   ConsolidationService,
   MemoryStatsPb,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const consolidationClient = createClient(ConsolidationService, transport);
 
-export async function askLlmText(args: ConsolidationAskLlmTextRequest): Promise<RpcResult<string>> {
+export async function askLlmText(args: MessageInitShape<typeof ConsolidationAskLlmTextRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await consolidationClient.askLlmText(args ?? {});
       return { ok: true, data: response.text };
@@ -26,7 +27,7 @@ export async function askLlmText(args: ConsolidationAskLlmTextRequest): Promise<
   }
 }
 
-export async function consolidate(args: ConsolidationConsolidateRequest): Promise<RpcResult<unknown>> {
+export async function consolidate(args: MessageInitShape<typeof ConsolidationConsolidateRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await consolidationClient.consolidate(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -35,7 +36,7 @@ export async function consolidate(args: ConsolidationConsolidateRequest): Promis
   }
 }
 
-export async function consolidateInactive(args: ConsolidationConsolidateInactiveRequest): Promise<RpcResult<unknown>> {
+export async function consolidateInactive(args: MessageInitShape<typeof ConsolidationConsolidateInactiveRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await consolidationClient.consolidateInactive(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };

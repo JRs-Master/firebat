@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../lib/singleton';
+import { queryDatabase } from '../../../lib/api-gen/database';
+import { listCron } from '../../../lib/api-gen/schedule';
+import { stats as getJobStats } from '../../../lib/api-gen/status';
 
 /**
  * GET /api/health — 외부 모니터링 (UptimeRobot 등) 진입점.
@@ -21,11 +23,12 @@ interface CheckResult {
   meta?: Record<string, unknown>;
 }
 
-async function checkDb(core: ReturnType<typeof getCore>): Promise<CheckResult> {
+async function checkDb(): Promise<CheckResult> {
   try {
     // SQLite 간단 ping — 1 row select
-    const res = await core.queryDatabase('SELECT 1 AS ok', []);
-    if (res.success && Array.isArray(res.data) && res.data.length > 0) {
+    const res = await queryDatabase({ sql: 'SELECT 1 AS ok', paramsJson: JSON.stringify([]) });
+    if (!res.ok) return { ok: false, detail: res.message };
+    if (Array.isArray(res.data) && res.data.length > 0) {
       return { ok: true };
     }
     return { ok: false, detail: 'unexpected response' };
@@ -34,24 +37,29 @@ async function checkDb(core: ReturnType<typeof getCore>): Promise<CheckResult> {
   }
 }
 
-async function checkCron(core: ReturnType<typeof getCore>): Promise<CheckResult> {
+async function checkCron(): Promise<CheckResult> {
   try {
-    const jobs = await core.listCronJobs();
-    return { ok: true, meta: { count: Array.isArray(jobs) ? jobs.length : 0 } };
+    const res = await listCron();
+    if (!res.ok) return { ok: false, detail: res.message };
+    const jobs = res.data.jobs ?? [];
+    return { ok: true, meta: { count: jobs.length } };
   } catch (err) {
     return { ok: false, detail: err instanceof Error ? err.message : String(err) };
   }
 }
 
-async function checkStatusManager(core: ReturnType<typeof getCore>): Promise<CheckResult> {
+async function checkStatusManager(): Promise<CheckResult> {
   try {
-    const stats = await core.getJobStats();
+    const res = await getJobStats();
+    if (!res.ok) return { ok: false, detail: res.message };
+    const stats = res.data as { running?: number } & Record<string, unknown>;
+    const running = typeof stats.running === 'number' ? stats.running : 0;
     // running > 100 이면 누적 의심 — degraded 알림
-    const degraded = stats.running > 100;
+    const degraded = running > 100;
     return {
       ok: !degraded,
-      ...(degraded ? { detail: `running jobs accumulating (${stats.running})` } : {}),
-      meta: stats as unknown as Record<string, unknown>,
+      ...(degraded ? { detail: `running jobs accumulating (${running})` } : {}),
+      meta: stats as Record<string, unknown>,
     };
   } catch (err) {
     return { ok: false, detail: err instanceof Error ? err.message : String(err) };
@@ -77,13 +85,12 @@ function checkMemory(): CheckResult {
 }
 
 export async function GET(_req: NextRequest) {
-  const core = getCore();
   const startedAt = process.uptime ? Math.floor(process.uptime()) : 0;
 
   const [db, cron, status, memory] = await Promise.all([
-    checkDb(core),
-    checkCron(core),
-    checkStatusManager(core),
+    checkDb(),
+    checkCron(),
+    checkStatusManager(),
     Promise.resolve(checkMemory()),
   ]);
 

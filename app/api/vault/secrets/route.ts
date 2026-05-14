@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
 import { withAuth } from '../../../../lib/with-api-error';
+import {
+  listUserSecrets, getUserSecret, setUserSecret, deleteUserSecret,
+  listUserModuleSecrets,
+} from '../../../../lib/api-gen/secret';
 
 /** GET /api/vault/secrets — 사용자 시크릿 키 목록 (값은 마스킹) + 유저 모듈 필요 시크릿 */
 export const GET = withAuth(async () => {
-  const core = getCore();
-  const names = await core.listUserSecrets();
+  const listRes = await listUserSecrets();
+  if (!listRes.ok) {
+    return NextResponse.json({ success: false, error: listRes.message }, { status: 500 });
+  }
+  const names = listRes.data.values ?? [];
   const secrets = await Promise.all(names.map(async (name: string) => {
-    const value = await core.getUserSecret(name);
+    const valRes = await getUserSecret({ value: name });
+    const value = valRes.ok ? valRes.data : null;
     return {
       name,
       hasValue: !!value,
@@ -17,7 +24,8 @@ export const GET = withAuth(async () => {
     };
   }));
   // 유저 모듈 config.json에서 필요한 시크릿 자동 수집
-  const moduleSecrets = await core.listUserModuleSecrets();
+  const moduleRes = await listUserModuleSecrets();
+  const moduleSecrets = moduleRes.ok ? moduleRes.data : null;
   return NextResponse.json({ success: true, secrets, moduleSecrets });
 });
 
@@ -34,10 +42,10 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (!/^[a-zA-Z0-9_-]+$/.test(name)) {
     return NextResponse.json({ success: false, error: '키 이름은 영문, 숫자, -, _ 만 가능합니다.' }, { status: 400 });
   }
-  const saved = await getCore().setUserSecret(name, value);
-  return saved
+  const res = await setUserSecret({ name, value });
+  return res.ok
     ? NextResponse.json({ success: true })
-    : NextResponse.json({ success: false, error: '저장 실패' }, { status: 500 });
+    : NextResponse.json({ success: false, error: res.message || '저장 실패' }, { status: 500 });
 });
 
 /** DELETE /api/vault/secrets?name=xxx — 사용자 시크릿 삭제 */
@@ -45,8 +53,8 @@ export const DELETE = withAuth(async (req: NextRequest) => {
   const name = req.nextUrl.searchParams.get('name');
   if (!name) return NextResponse.json({ success: false, error: 'name 필요' }, { status: 400 });
 
-  const deleted = await getCore().deleteUserSecret(name);
-  return deleted
+  const res = await deleteUserSecret({ value: name });
+  return res.ok
     ? NextResponse.json({ success: true })
-    : NextResponse.json({ success: false, error: '삭제 실패' }, { status: 500 });
+    : NextResponse.json({ success: false, error: res.message || '삭제 실패' }, { status: 500 });
 });

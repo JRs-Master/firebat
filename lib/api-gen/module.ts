@@ -5,22 +5,23 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  ModuleGetSchemaRequest,
+  ModuleGetSchemaRequestSchema,
   ModuleListPb,
   ModuleOutputPb,
-  ModuleRunRequest,
+  ModuleRunRequestSchema,
   ModuleService,
-  ModuleSetEnabledRequest,
-  ModuleSetSettingsRequest,
-  StringRequest,
+  ModuleSetEnabledRequestSchema,
+  ModuleSetSettingsRequestSchema,
+  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const moduleClient = createClient(ModuleService, transport);
 
-export async function run(args: ModuleRunRequest): Promise<RpcResult<ModuleOutputPb>> {
+export async function run(args: MessageInitShape<typeof ModuleRunRequestSchema>): Promise<RpcResult<ModuleOutputPb>> {
   try {
       const response = await moduleClient.run(args ?? {});
       return { ok: true, data: response };
@@ -47,7 +48,7 @@ export async function listUser(): Promise<RpcResult<ModuleListPb>> {
   }
 }
 
-export async function getSchema(args: ModuleGetSchemaRequest): Promise<RpcResult<unknown>> {
+export async function getSchema(args: MessageInitShape<typeof ModuleGetSchemaRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await moduleClient.getSchema(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -56,7 +57,7 @@ export async function getSchema(args: ModuleGetSchemaRequest): Promise<RpcResult
   }
 }
 
-export async function getSettings(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function getSettings(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await moduleClient.getSettings(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -65,7 +66,7 @@ export async function getSettings(args: StringRequest): Promise<RpcResult<unknow
   }
 }
 
-export async function getConfig(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function getConfig(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await moduleClient.getConfig(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -74,7 +75,7 @@ export async function getConfig(args: StringRequest): Promise<RpcResult<unknown>
   }
 }
 
-export async function setSettings(args: ModuleSetSettingsRequest): Promise<RpcResult<void>> {
+export async function setSettings(args: MessageInitShape<typeof ModuleSetSettingsRequestSchema>): Promise<RpcResult<void>> {
   try {
       await moduleClient.setSettings(args ?? {});
       return { ok: true, data: undefined };
@@ -83,7 +84,7 @@ export async function setSettings(args: ModuleSetSettingsRequest): Promise<RpcRe
   }
 }
 
-export async function isEnabled(args: StringRequest): Promise<RpcResult<boolean>> {
+export async function isEnabled(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await moduleClient.isEnabled(args ?? {});
       return { ok: true, data: response.value };
@@ -92,7 +93,7 @@ export async function isEnabled(args: StringRequest): Promise<RpcResult<boolean>
   }
 }
 
-export async function setEnabled(args: ModuleSetEnabledRequest): Promise<RpcResult<void>> {
+export async function setEnabled(args: MessageInitShape<typeof ModuleSetEnabledRequestSchema>): Promise<RpcResult<void>> {
   try {
       await moduleClient.setEnabled(args ?? {});
       return { ok: true, data: undefined };

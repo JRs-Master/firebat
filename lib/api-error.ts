@@ -9,8 +9,9 @@
  * 사용 패턴:
  *   ```ts
  *   try {
- *     const r = await getCore().savePage(args);
- *     return NextResponse.json({ success: true, ...r });
+ *     const r = await savePage(args);
+ *     if (!r.ok) return NextResponse.json({ success: false, error: r.message }, { status: 400 });
+ *     return NextResponse.json({ success: true, ...r.data });
  *   } catch (err) {
  *     return apiErrorResponse(err);   // 자동 매핑 + sanitize
  *   }

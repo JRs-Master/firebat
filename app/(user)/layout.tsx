@@ -1,10 +1,11 @@
-// force-dynamic — build 시 Rust core (50051) 미접근. layout 박힌 모든 (user) 페이지
-// 매 요청 시 SSR (cms.siteLang / spec / theme 박는 거 동적 데이터라 정적 prerender 불가).
-// 박지 않으면 NotFound (/_not-found) prerender 시 layout 박혀가 getCore connection
+// force-dynamic — build 시 Rust core (50051) 미접근. layout 이 모든 (user) 페이지
+// 매 요청 시 SSR (cms.siteLang / spec / theme 가 동적 데이터라 정적 prerender 불가).
+// 이 설정 없으면 NotFound (/_not-found) prerender 시 layout 가 typed client connection
 // refused → build fail (2026-05-11).
 export const dynamic = 'force-dynamic';
 
-import { getCore } from '../../lib/singleton';
+import { getCmsSettings } from '../../lib/api-gen/module';
+import { get as getPageRpc } from '../../lib/api-gen/page';
 import { SeoScripts } from './seo-scripts';
 import { CmsHeader } from './cms-header';
 import { CmsFooter } from './cms-footer';
@@ -15,6 +16,7 @@ import { BASE_URL } from '../../lib/base-url';
 import { tokensToCss } from '../../lib/design-tokens';
 import { headers } from 'next/headers';
 import type { LayoutMode } from '../../lib/cms-layout';
+import { parsePageRecord } from '../../lib/util/page-pb-convert';
 
 /** Page-level layout override 해석 — proxy.ts 가 설정한 x-firebat-pathname 으로 spec 조회.
  *  spec.head.layoutMode / contentMaxWidth 설정되어 있으면 페이지별 override.
@@ -26,9 +28,10 @@ async function resolvePageOverrides(): Promise<{ layoutMode?: LayoutMode; conten
     if (!pathname || pathname === '/' || pathname.startsWith('/api')) return {};
     const slug = decodeURIComponent(pathname.replace(/^\/+/, '').replace(/\/+$/, ''));
     if (!slug) return {};
-    const res = await getCore().getPage(slug);
-    if (!res.success || !res.data) return {};
-    const head = res.data.head ?? {};
+    const res = await getPageRpc({ value: slug });
+    if (!res.ok || !res.data) return {};
+    const parsed = parsePageRecord(res.data);
+    const head = parsed.head ?? {};
     const out: { layoutMode?: LayoutMode; contentMaxWidth?: string } = {};
     if (head.layoutMode && ['full', 'right-sidebar', 'left-sidebar', 'both-sidebar', 'boxed'].includes(head.layoutMode)) {
       out.layoutMode = head.layoutMode as LayoutMode;
@@ -46,11 +49,12 @@ async function resolvePageOverrides(): Promise<{ layoutMode?: LayoutMode; conten
 
 /** User 페이지 레이아웃 — SEO head/body 스크립트 + JSON-LD + Design Tokens + Header/Footer 주입 */
 export default async function UserLayout({ children }: { children: React.ReactNode }) {
-  const seo = await getCore().getCmsSettings();
+  const seoRes = await getCmsSettings();
+  const seo = (seoRes.ok ? seoRes.data : {}) as any;
   const siteUrl = seo.siteUrl || BASE_URL;
   // Page-level overrides — spec.head.layoutMode / contentMaxWidth 설정되어 있으면 글로벌 무시.
   const pageOverrides = await resolvePageOverrides();
-  const layoutMode: LayoutMode = pageOverrides.layoutMode ?? seo.layout.mode;
+  const layoutMode: LayoutMode = pageOverrides.layoutMode ?? seo.layout?.mode;
   const pageContentMaxWidth = pageOverrides.contentMaxWidth;
   // 사용자 설정 design tokens → :root CSS var 로 inject. globals.css 의 default 를 override.
   const themeCss = `:root { ${tokensToCss(seo.theme)} }`;
@@ -95,7 +99,7 @@ export default async function UserLayout({ children }: { children: React.ReactNo
       {/* 외부 폰트 CSS — Google Fonts / Adobe Fonts 등 사용자 입력 URL.
        *  parseCustomFontUrls 가 https://만 허용 (XSS 방어). preconnect 자동 하지 않음 — 사용자가
        *  필요시 head 스크립트에 별도 추가 가능. */}
-      {seo.customFontUrls.map((url, i) => (
+      {(seo.customFontUrls ?? []).map((url: string, i: number) => (
         <link key={i} rel="stylesheet" href={url} />
       ))}
       {/* Design Tokens — 사용자 설정 토큰을 :root 에 inject. globals.css default override. */}
@@ -111,19 +115,19 @@ export default async function UserLayout({ children }: { children: React.ReactNo
        *  AdSense 콘솔 (adsense.google.com → 자동 광고) 에서 결정 — Google bot 이
        *  사이트 분석 후 광고 자동 게재. 별도 enable_page_level_ads push 코드 불필요
        *  (2023+ Google 권장 방식). */}
-      {seo.adsense.publisherId && (
+      {seo.adsense?.publisherId && (
         <script
           async
           src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${seo.adsense.publisherId}`}
           crossOrigin="anonymous"
         />
       )}
-      {seo.layout.showReadingProgress && <CmsReadingProgress />}
-      {seo.layout.header.show && <CmsHeader header={seo.layout.header} sidebar={seo.layout.sidebar} />}
-      {seo.adsense.publisherId && seo.adsense.slotHeaderBottom && (
+      {seo.layout?.showReadingProgress && <CmsReadingProgress />}
+      {seo.layout?.header?.show && <CmsHeader header={seo.layout.header} sidebar={seo.layout.sidebar} />}
+      {seo.adsense?.publisherId && seo.adsense.slotHeaderBottom && (
         <CmsAdSlot publisherId={seo.adsense.publisherId} slotId={seo.adsense.slotHeaderBottom} />
       )}
-      {seo.adsense.publisherId && seo.adsense.slotPostTop && (
+      {seo.adsense?.publisherId && seo.adsense.slotPostTop && (
         <CmsAdSlot publisherId={seo.adsense.publisherId} slotId={seo.adsense.slotPostTop} />
       )}
       {/* Layout Mode 5종 — full / right-sidebar / left-sidebar / both-sidebar / boxed.
@@ -134,7 +138,7 @@ export default async function UserLayout({ children }: { children: React.ReactNo
       {(layoutMode === 'right-sidebar' || layoutMode === 'left-sidebar' || layoutMode === 'both-sidebar') ? (
         <div
           className={`firebat-cms-layout-${layoutMode}`}
-          data-mobile-drawer-includes-sidebar={seo.layout.header.mobileDrawerIncludeSidebar ? '1' : undefined}
+          data-mobile-drawer-includes-sidebar={seo.layout?.header?.mobileDrawerIncludeSidebar ? '1' : undefined}
         >
           {(layoutMode === 'left-sidebar' || layoutMode === 'both-sidebar') && (await CmsSidebar({ sidebar: seo.layout.sidebar }))}
           <div>{children}</div>
@@ -145,13 +149,13 @@ export default async function UserLayout({ children }: { children: React.ReactNo
       ) : (
         children
       )}
-      {seo.adsense.publisherId && seo.adsense.slotPostBottom && (
+      {seo.adsense?.publisherId && seo.adsense.slotPostBottom && (
         <CmsAdSlot publisherId={seo.adsense.publisherId} slotId={seo.adsense.slotPostBottom} />
       )}
-      {seo.adsense.publisherId && seo.adsense.slotFooterTop && (
+      {seo.adsense?.publisherId && seo.adsense.slotFooterTop && (
         <CmsAdSlot publisherId={seo.adsense.publisherId} slotId={seo.adsense.slotFooterTop} />
       )}
-      {seo.layout.footer.show && <CmsFooter footer={seo.layout.footer} />}
+      {seo.layout?.footer?.show && <CmsFooter footer={seo.layout.footer} />}
     </>
   );
 }

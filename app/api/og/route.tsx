@@ -5,11 +5,12 @@
  * GET /api/og?title=제목&description=설명 → 페이지별 OG 이미지
  */
 import { ImageResponse } from 'next/og';
-import { getCore } from '../../../lib/singleton';
+import { getCmsSettings } from '../../../lib/api-gen/module';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const seo = await getCore().getCmsSettings();
+  const res = await getCmsSettings();
+  const seo = (res.ok ? res.data : null) as Record<string, string | undefined> | null ?? {};
   const rawTitle = searchParams.get('title');
   const rawDesc = searchParams.get('description');
   const isPageOg = !!rawTitle; // 페이지별 OG vs 기본 브랜드 OG

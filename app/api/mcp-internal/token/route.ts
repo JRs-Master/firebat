@@ -5,9 +5,9 @@
  * DELETE: 토큰 폐기
  */
 import { NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
 import { withAuth } from '../../../../lib/with-api-error';
 import { VK_INTERNAL_MCP_TOKEN as TOKEN_KEY, VK_INTERNAL_MCP_TOKEN_CREATED as CREATED_KEY } from '../../../../lib/proto-gen/vault-keys';
+import { getGeminiKey, setGeminiKey } from '../../../../lib/api-gen/secret';
 
 function generateToken(): string {
   const bytes = new Uint8Array(32);
@@ -21,11 +21,12 @@ function maskToken(token: string | null): { hasToken: boolean; masked: string } 
 }
 
 export const GET = withAuth(async () => {
-  const core = getCore();
-  const [token, created] = await Promise.all([
-    core.getGeminiKey(TOKEN_KEY),
-    core.getGeminiKey(CREATED_KEY),
+  const [tokenRes, createdRes] = await Promise.all([
+    getGeminiKey({ value: TOKEN_KEY }),
+    getGeminiKey({ value: CREATED_KEY }),
   ]);
+  const token = tokenRes.ok ? tokenRes.data : null;
+  const created = createdRes.ok ? createdRes.data : null;
   return NextResponse.json({
     success: true,
     token: maskToken(token),
@@ -34,18 +35,16 @@ export const GET = withAuth(async () => {
 });
 
 export const POST = withAuth(async () => {
-  const core = getCore();
   const token = generateToken();
   const now = new Date().toISOString();
-  await core.setGeminiKey(TOKEN_KEY, token);
-  await core.setGeminiKey(CREATED_KEY, now);
+  await setGeminiKey({ key: TOKEN_KEY, value: token });
+  await setGeminiKey({ key: CREATED_KEY, value: now });
   return NextResponse.json({ success: true, token, createdAt: now });
 });
 
 export const DELETE = withAuth(async () => {
-  const core = getCore();
   // secret 삭제는 vault 직접 호출 필요 — setGeminiKey로는 덮어쓰기만
-  await core.setGeminiKey(TOKEN_KEY, '');
-  await core.setGeminiKey(CREATED_KEY, '');
+  await setGeminiKey({ key: TOKEN_KEY, value: '' });
+  await setGeminiKey({ key: CREATED_KEY, value: '' });
   return NextResponse.json({ success: true });
 });

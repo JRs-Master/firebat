@@ -5,27 +5,28 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  ConversationCreateShareRequest,
-  ConversationGetCliSessionRequest,
+  ConversationCreateShareRequestSchema,
+  ConversationGetCliSessionRequestSchema,
   ConversationListPb,
-  ConversationOwnerIdRequest,
+  ConversationOwnerIdRequestSchema,
   ConversationRecordPb,
-  ConversationSaveRequest,
-  ConversationSearchHistoryRequest,
+  ConversationSaveRequestSchema,
+  ConversationSearchHistoryRequestSchema,
   ConversationService,
-  ConversationSetCliSessionRequest,
+  ConversationSetCliSessionRequestSchema,
   HistorySearchResultPb,
   ShareResultPb,
   SharedConversationPb,
-  StringRequest,
+  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const conversationClient = createClient(ConversationService, transport);
 
-export async function list(args: StringRequest): Promise<RpcResult<ConversationListPb>> {
+export async function list(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<ConversationListPb>> {
   try {
       const response = await conversationClient.list(args ?? {});
       return { ok: true, data: response };
@@ -34,7 +35,7 @@ export async function list(args: StringRequest): Promise<RpcResult<ConversationL
   }
 }
 
-export async function get(args: ConversationOwnerIdRequest): Promise<RpcResult<ConversationRecordPb>> {
+export async function get(args: MessageInitShape<typeof ConversationOwnerIdRequestSchema>): Promise<RpcResult<ConversationRecordPb>> {
   try {
       const response = await conversationClient.get(args ?? {});
       return { ok: true, data: response };
@@ -43,7 +44,7 @@ export async function get(args: ConversationOwnerIdRequest): Promise<RpcResult<C
   }
 }
 
-export async function save(args: ConversationSaveRequest): Promise<RpcResult<void>> {
+export async function save(args: MessageInitShape<typeof ConversationSaveRequestSchema>): Promise<RpcResult<void>> {
   try {
       await conversationClient.save(args ?? {});
       return { ok: true, data: undefined };
@@ -52,7 +53,7 @@ export async function save(args: ConversationSaveRequest): Promise<RpcResult<voi
   }
 }
 
-export async function deleteConversation(args: ConversationOwnerIdRequest): Promise<RpcResult<void>> {
+export async function deleteConversation(args: MessageInitShape<typeof ConversationOwnerIdRequestSchema>): Promise<RpcResult<void>> {
   try {
       await conversationClient.delete(args ?? {});
       return { ok: true, data: undefined };
@@ -61,7 +62,7 @@ export async function deleteConversation(args: ConversationOwnerIdRequest): Prom
   }
 }
 
-export async function isDeleted(args: ConversationOwnerIdRequest): Promise<RpcResult<boolean>> {
+export async function isDeleted(args: MessageInitShape<typeof ConversationOwnerIdRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await conversationClient.isDeleted(args ?? {});
       return { ok: true, data: response.value };
@@ -70,7 +71,7 @@ export async function isDeleted(args: ConversationOwnerIdRequest): Promise<RpcRe
   }
 }
 
-export async function listDeleted(args: StringRequest): Promise<RpcResult<ConversationListPb>> {
+export async function listDeleted(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<ConversationListPb>> {
   try {
       const response = await conversationClient.listDeleted(args ?? {});
       return { ok: true, data: response };
@@ -79,7 +80,7 @@ export async function listDeleted(args: StringRequest): Promise<RpcResult<Conver
   }
 }
 
-export async function restore(args: ConversationOwnerIdRequest): Promise<RpcResult<void>> {
+export async function restore(args: MessageInitShape<typeof ConversationOwnerIdRequestSchema>): Promise<RpcResult<void>> {
   try {
       await conversationClient.restore(args ?? {});
       return { ok: true, data: undefined };
@@ -88,7 +89,7 @@ export async function restore(args: ConversationOwnerIdRequest): Promise<RpcResu
   }
 }
 
-export async function permanentDelete(args: ConversationOwnerIdRequest): Promise<RpcResult<void>> {
+export async function permanentDelete(args: MessageInitShape<typeof ConversationOwnerIdRequestSchema>): Promise<RpcResult<void>> {
   try {
       await conversationClient.permanentDelete(args ?? {});
       return { ok: true, data: undefined };
@@ -97,7 +98,7 @@ export async function permanentDelete(args: ConversationOwnerIdRequest): Promise
   }
 }
 
-export async function searchHistory(args: ConversationSearchHistoryRequest): Promise<RpcResult<HistorySearchResultPb>> {
+export async function searchHistory(args: MessageInitShape<typeof ConversationSearchHistoryRequestSchema>): Promise<RpcResult<HistorySearchResultPb>> {
   try {
       const response = await conversationClient.searchHistory(args ?? {});
       return { ok: true, data: response };
@@ -106,7 +107,7 @@ export async function searchHistory(args: ConversationSearchHistoryRequest): Pro
   }
 }
 
-export async function getCliSession(args: ConversationGetCliSessionRequest): Promise<RpcResult<string | null>> {
+export async function getCliSession(args: MessageInitShape<typeof ConversationGetCliSessionRequestSchema>): Promise<RpcResult<string | null>> {
   try {
       const response = await conversationClient.getCliSession(args ?? {});
       return { ok: true, data: response.present ? response.value : null };
@@ -115,7 +116,7 @@ export async function getCliSession(args: ConversationGetCliSessionRequest): Pro
   }
 }
 
-export async function setCliSession(args: ConversationSetCliSessionRequest): Promise<RpcResult<void>> {
+export async function setCliSession(args: MessageInitShape<typeof ConversationSetCliSessionRequestSchema>): Promise<RpcResult<void>> {
   try {
       await conversationClient.setCliSession(args ?? {});
       return { ok: true, data: undefined };
@@ -124,7 +125,7 @@ export async function setCliSession(args: ConversationSetCliSessionRequest): Pro
   }
 }
 
-export async function createShare(args: ConversationCreateShareRequest): Promise<RpcResult<ShareResultPb>> {
+export async function createShare(args: MessageInitShape<typeof ConversationCreateShareRequestSchema>): Promise<RpcResult<ShareResultPb>> {
   try {
       const response = await conversationClient.createShare(args ?? {});
       return { ok: true, data: response };
@@ -133,7 +134,7 @@ export async function createShare(args: ConversationCreateShareRequest): Promise
   }
 }
 
-export async function getShare(args: StringRequest): Promise<RpcResult<SharedConversationPb>> {
+export async function getShare(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<SharedConversationPb>> {
   try {
       const response = await conversationClient.getShare(args ?? {});
       return { ok: true, data: response };

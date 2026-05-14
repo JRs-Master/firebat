@@ -6,15 +6,16 @@
 
 import {
   EventService,
-  NumberRequest,
+  NumberRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const eventClient = createClient(EventService, transport);
 
-export async function listAuditLog(args: NumberRequest): Promise<RpcResult<unknown>> {
+export async function listAuditLog(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await eventClient.listAuditLog(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };

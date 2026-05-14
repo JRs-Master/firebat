@@ -149,17 +149,29 @@ function unwrapMeta(msgName, messages) {
   return { kind: 'message', dataType: msgName };
 }
 
-/** request message → arg signature. */
+/** request message → arg signature.
+ *
+ * protobuf-es 2.x — caller 가 plain object literal 박을 수 있도록 `MessageInitShape<typeof XSchema>`
+ * 박음. `Message<TName>` brand 강제 회피. createClient 가 init shape 받음 (자동 변환).
+ */
 function requestSig(msgName, messages) {
   if (!msgName || msgName === 'Empty') {
-    return { argType: 'void', toRequest: '{}' };
+    return { argType: 'void', schemaImport: null, toRequest: '{}' };
   }
   const msg = messages[msgName];
   if (!msg) {
-    return { argType: msgName, toRequest: 'args' };
+    return {
+      argType: `MessageInitShape<typeof ${msgName}Schema>`,
+      schemaImport: `${msgName}Schema`,
+      toRequest: 'args',
+    };
   }
-  // Empty 외 — 일반 typed Request message. import 필요.
-  return { argType: msgName, toRequest: 'args ?? {}' };
+  // Empty 외 — typed Request message. MessageInitShape + schema descriptor 사용.
+  return {
+    argType: `MessageInitShape<typeof ${msgName}Schema>`,
+    schemaImport: `${msgName}Schema`,
+    toRequest: 'args ?? {}',
+  };
 }
 
 /** typed function body 생성. */
@@ -170,6 +182,7 @@ function generateFunctionBody(rpc, messages, clientVar, serviceName) {
   const rpcCamel = publicFnName(serviceName, rpc.name);
   const req = requestSig(rpc.requestType, messages);
   const unwrap = unwrapMeta(rpc.responseType, messages);
+  const schemaImport = req.schemaImport;
 
   let unwrapLogic;
   if (unwrap.kind === 'void') {
@@ -184,7 +197,7 @@ function generateFunctionBody(rpc, messages, clientVar, serviceName) {
     unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response };`;
   }
 
-  return { rpcCamel, argType: req.argType, dataType: unwrap.dataType, unwrapLogic };
+  return { rpcCamel, argType: req.argType, dataType: unwrap.dataType, unwrapLogic, schemaImport };
 }
 
 // ─── Output 생성 ──────────────────────────────────────────────────────────
@@ -193,13 +206,18 @@ function generateServiceFile(svc, messages, aliases) {
   const fileName = serviceFileName(svc.name);
   const clientVar = `${fileName}Client`;
   const imports = new Set([svc.name]);
+  const schemaImports = new Set();
+  let needsInitShape = false;
   const lines = [];
 
   // 함수 본문 미리 생성 (import 필요한 type 식별 위함)
   const fnBodies = [];
   for (const rpc of svc.rpcs) {
-    const { rpcCamel, argType, dataType, unwrapLogic } = generateFunctionBody(rpc, messages, clientVar, svc.name);
-    if (argType !== 'void') imports.add(argType);
+    const { rpcCamel, argType, dataType, unwrapLogic, schemaImport } = generateFunctionBody(rpc, messages, clientVar, svc.name);
+    if (schemaImport) {
+      schemaImports.add(schemaImport);
+      needsInitShape = true;
+    }
     if (!['string', 'number', 'boolean', 'bigint', 'string | null', 'unknown', 'void'].includes(dataType)) {
       imports.add(dataType);
     }
@@ -225,13 +243,16 @@ function generateServiceFile(svc, messages, aliases) {
   lines.push('// 새 RPC 추가: 1) proto/firebat.proto 수정 2) npm run gen:proto 3) npm run gen:api');
   lines.push('// alias 추가: proto/adapter-overrides.json 의 aliases 영역');
   lines.push('');
-  const sortedImports = [...imports].filter(t => t !== 'Empty').sort();
+  const sortedImports = [...imports, ...schemaImports].filter(t => t !== 'Empty').sort();
   if (sortedImports.length > 0) {
     lines.push(`import {`);
     lines.push(`  ${sortedImports.join(',\n  ')},`);
     lines.push(`} from '../proto-gen/firebat_pb';`);
   } else {
     lines.push(`import { ${svc.name} } from '../proto-gen/firebat_pb';`);
+  }
+  if (needsInitShape) {
+    lines.push(`import { type MessageInitShape } from '@bufbuild/protobuf';`);
   }
   lines.push(`import { transport } from './_transport';`);
   lines.push(`import { createClient } from '@connectrpc/connect';`);

@@ -7,8 +7,9 @@
  *
  *   // 인증 필요 — auth 자동 검증 + 에러 wrap
  *   export const GET = withAuth(async (req) => {
- *     const result = await getCore().savePage(args);
- *     return NextResponse.json({ success: true, ...result });
+ *     const result = await savePage(args);
+ *     if (!result.ok) return NextResponse.json({ success: false, error: result.message }, { status: 400 });
+ *     return NextResponse.json({ success: true, ...result.data });
  *   });
  *
  *   // 공개 endpoint — 에러 wrap 만

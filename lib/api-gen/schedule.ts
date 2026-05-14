@@ -8,20 +8,21 @@ import {
   CronJobListPb,
   CronLogListPb,
   CronNotificationListPb,
-  NumberRequest,
-  ScheduleCronRequest,
+  NumberRequestSchema,
+  ScheduleCronRequestSchema,
   ScheduleService,
-  StringRequest,
-  ValidatePipelineRequest,
+  StringRequestSchema,
+  ValidatePipelineRequestSchema,
   ValidatePipelineResultPb,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const scheduleClient = createClient(ScheduleService, transport);
 
-export async function scheduleCron(args: ScheduleCronRequest): Promise<RpcResult<void>> {
+export async function scheduleCron(args: MessageInitShape<typeof ScheduleCronRequestSchema>): Promise<RpcResult<void>> {
   try {
       await scheduleClient.scheduleCron(args ?? {});
       return { ok: true, data: undefined };
@@ -30,7 +31,7 @@ export async function scheduleCron(args: ScheduleCronRequest): Promise<RpcResult
   }
 }
 
-export async function cancelCron(args: StringRequest): Promise<RpcResult<void>> {
+export async function cancelCron(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
   try {
       await scheduleClient.cancelCron(args ?? {});
       return { ok: true, data: undefined };
@@ -39,7 +40,7 @@ export async function cancelCron(args: StringRequest): Promise<RpcResult<void>> 
   }
 }
 
-export async function updateCron(args: ScheduleCronRequest): Promise<RpcResult<void>> {
+export async function updateCron(args: MessageInitShape<typeof ScheduleCronRequestSchema>): Promise<RpcResult<void>> {
   try {
       await scheduleClient.updateCron(args ?? {});
       return { ok: true, data: undefined };
@@ -57,7 +58,7 @@ export async function listCron(): Promise<RpcResult<CronJobListPb>> {
   }
 }
 
-export async function getLogs(args: NumberRequest): Promise<RpcResult<CronLogListPb>> {
+export async function getLogs(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<CronLogListPb>> {
   try {
       const response = await scheduleClient.getLogs(args ?? {});
       return { ok: true, data: response };
@@ -84,7 +85,7 @@ export async function consumeNotifications(): Promise<RpcResult<CronNotification
   }
 }
 
-export async function runNow(args: StringRequest): Promise<RpcResult<void>> {
+export async function runNow(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
   try {
       await scheduleClient.runNow(args ?? {});
       return { ok: true, data: undefined };
@@ -93,7 +94,7 @@ export async function runNow(args: StringRequest): Promise<RpcResult<void>> {
   }
 }
 
-export async function validatePipeline(args: ValidatePipelineRequest): Promise<RpcResult<ValidatePipelineResultPb>> {
+export async function validatePipeline(args: MessageInitShape<typeof ValidatePipelineRequestSchema>): Promise<RpcResult<ValidatePipelineResultPb>> {
   try {
       const response = await scheduleClient.validatePipeline(args ?? {});
       return { ok: true, data: response };

@@ -6,7 +6,7 @@
  * 인증 불필요 (사용자 페이지 접근, 공개 리소스).
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../lib/singleton';
+import { searchPages } from '../../../lib/api-gen/page';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,9 +20,9 @@ export async function GET(req: NextRequest) {
     // 너무 짧은 쿼리 — 빈 결과 (DB 부하 방지).
     return NextResponse.json({ success: true, query: trimmed, results: [] });
   }
-  const res = await getCore().searchPages(trimmed, limit);
-  if (!res.success) {
-    return NextResponse.json({ success: false, error: res.error ?? 'search failed' }, { status: 500 });
+  const res = await searchPages({ query: trimmed, limit: BigInt(limit) } as any);
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message ?? 'search failed' }, { status: 500 });
   }
-  return NextResponse.json({ success: true, query: trimmed, results: res.data ?? [] });
+  return NextResponse.json({ success: true, query: trimmed, results: res.data?.items ?? [] });
 }

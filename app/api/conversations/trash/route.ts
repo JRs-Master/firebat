@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
+import { listDeletedConversations } from '../../../../lib/api-gen/conversation';
 import { withAuth } from '../../../../lib/with-api-error';
 import { normalizeTimestamps } from '../../../../lib/util';
 
@@ -12,11 +12,11 @@ import { normalizeTimestamps } from '../../../../lib/util';
  * 응답: { success: true, conversations: [{ id, title, createdAt, updatedAt }] }
  */
 export const GET = withAuth(async () => {
-  const res = await getCore().listDeletedConversations('admin');
-  if (!res.success) {
-    return NextResponse.json({ success: false, error: res.error }, { status: 500 });
+  const res = await listDeletedConversations({ value: 'admin' });
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   }
-  const items = (res.data ?? []) as Array<Record<string, unknown>>;
+  const items = ((res.data?.items ?? []) as unknown) as Array<Record<string, unknown>>;
   return NextResponse.json({
     success: true,
     conversations: items.map(item => normalizeTimestamps(item)),

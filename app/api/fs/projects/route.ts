@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
+import {
+  scanProjects,
+  rename as renameProject,
+  setVisibility as setProjectVisibility,
+  deleteProject,
+} from '../../../../lib/api-gen/project';
 import { withAuth } from '../../../../lib/with-api-error';
 
 export const GET = withAuth(async () => {
-  const projects = await getCore().scanProjects();
-  return NextResponse.json({ success: true, projects });
+  const res = await scanProjects();
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+  }
+  return NextResponse.json({ success: true, projects: res.data });
 });
 
 /** PATCH — action 분기: rename (일괄 slug 변경) 또는 visibility 설정 (기본) */
@@ -18,10 +26,10 @@ export const PATCH = withAuth(async (request: NextRequest) => {
 
   // 액션: rename — { action:'rename', project, newName, setRedirect? }
   if (action === 'rename') {
-    const { newName, setRedirect } = body as { newName?: string; setRedirect?: boolean };
+    const { newName } = body as { newName?: string; setRedirect?: boolean };
     if (!newName) return NextResponse.json({ success: false, error: 'newName 필수' }, { status: 400 });
-    const res = await getCore().renameProject(project, newName, { setRedirect: !!setRedirect });
-    if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 400 });
+    const res = await renameProject({ oldName: project, newName });
+    if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 400 });
     return NextResponse.json({ success: true, data: res.data });
   }
 
@@ -34,8 +42,11 @@ export const PATCH = withAuth(async (request: NextRequest) => {
     return NextResponse.json({ success: false, error: 'password 모드에서는 비밀번호 필수' }, { status: 400 });
   }
 
-  const result = await getCore().setProjectVisibility(project, visibility as 'public' | 'password' | 'private', password);
-  return NextResponse.json(result);
+  const res = await setProjectVisibility({ project, visibility, password });
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+  }
+  return NextResponse.json({ success: true });
 });
 
 export const DELETE = withAuth(async (request: NextRequest) => {
@@ -43,9 +54,9 @@ export const DELETE = withAuth(async (request: NextRequest) => {
   if (!project) {
     return NextResponse.json({ success: false, error: 'project 파라미터가 필요합니다.' }, { status: 400 });
   }
-  const result = await getCore().deleteProject(project);
-  if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error }, { status: 404 });
+  const res = await deleteProject({ value: project });
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message }, { status: 404 });
   }
-  return NextResponse.json({ success: true, deleted: result.data });
+  return NextResponse.json({ success: true });
 });

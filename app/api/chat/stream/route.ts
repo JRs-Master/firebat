@@ -1,12 +1,23 @@
 import { NextRequest } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
-import type { FirebatCore } from '../../../../lib/types/firebat-types';
+import { requestActionWithTools } from '../../../../lib/api-gen/ai';
+import { getConversation, saveConversation } from '../../../../lib/api-gen/conversation';
 
 // CLI 모드 (Claude Code 등) 는 초기 MCP 도구 로딩·멀티턴 도구 사용에 수분 소요 가능.
 // Next.js 기본 타임아웃으로 SSE 끊기는 것 방지.
 export const maxDuration = 600; // 10분
 export const dynamic = 'force-dynamic';
+
+type ChatOpts = {
+  model?: string;
+  owner?: string;
+  image?: string;
+  previousResponseId?: string;
+  conversationId?: string;
+  planMode?: 'off' | 'auto' | 'always';
+  planExecuteId?: string;
+  planReviseId?: string;
+};
 
 /**
  * Function Calling SSE 스트리밍 엔드포인트 (User AI 유일 경로)
@@ -34,7 +45,7 @@ export async function POST(req: NextRequest) {
     : planMode === 'auto' ? 'auto'
     : undefined; // 'off' / false / undefined 모두 미전달 (default off)
 
-  const opts = {
+  const opts: ChatOpts = {
     model: config?.model as string | undefined,
     owner: 'admin',
     ...(image ? { image: image as string } : {}),
@@ -44,54 +55,24 @@ export async function POST(req: NextRequest) {
     ...(typeof planExecuteId === 'string' && planExecuteId ? { planExecuteId } : {}),
     ...(typeof planReviseId === 'string' && planReviseId ? { planReviseId } : {}),
   };
-  const core = getCore();
   const saveOpts = {
     systemId: typeof systemId === 'string' ? systemId : undefined,
     userId: typeof userId === 'string' ? userId : undefined,
     userPrompt: prompt,
     image: typeof image === 'string' ? image : undefined,
   };
-  return handleToolsMode(core, prompt, history, opts, req.signal, saveOpts);
+  return handleToolsMode(prompt, history, opts, req.signal, saveOpts);
 }
 
 /** Function Calling 모드 — 도구 호출 루프를 SSE로 스트리밍 */
 function handleToolsMode(
-  core: FirebatCore,
   prompt: string,
-  history: Array<{ role: 'user' | 'assistant'; content: string }>,
-  opts: { model?: string; owner?: string; image?: string; previousResponseId?: string; conversationId?: string; planMode?: 'off' | 'auto' | 'always'; planExecuteId?: string; planReviseId?: string },
+  _history: Array<{ role: 'user' | 'assistant'; content: string }>,
+  opts: ChatOpts,
   abortSignal?: AbortSignal,
   saveOpts?: { systemId?: string; userId?: string; userPrompt?: string; image?: string },
 ) {
   const encoder = new TextEncoder();
-
-  const toolLabel = (name: string): string => {
-    switch (name) {
-      case 'execute': return '모듈 실행 중';
-      case 'mcp_call': return '외부 서비스 연결 중';
-      case 'network_request': return 'API 호출 중';
-      case 'write_file': return '파일 저장 중';
-      case 'read_file': return '파일 읽는 중';
-      case 'save_page': return '페이지 저장 중';
-      case 'delete_page': return '페이지 삭제 중';
-      case 'schedule_task': return '스케줄 등록 중';
-      case 'cancel_task': return '스케줄 해제 중';
-      case 'run_task': return '파이프라인 실행 중';
-      case 'request_secret': return 'API 키 요청';
-      case 'suggest': return '선택지 제시';
-      case 'render_iframe': return 'iframe 위젯 렌더링 중';
-      case 'list_dir': return '폴더 목록 조회 중';
-      case 'list_pages': return '페이지 목록 조회 중';
-      case 'get_page': return '페이지 조회 중';
-      case 'delete_file': return '파일 삭제 중';
-      case 'list_cron_jobs': return '스케줄 목록 조회 중';
-      case 'search_history': return '과거 대화 검색 중';
-      default:
-        if (name.startsWith('sysmod_')) return `시스템 모듈 실행 중 (${name.replace('sysmod_', '')})`;
-        if (name.startsWith('mcp_')) return '외부 서비스 연결 중';
-        return name;
-    }
-  };
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -121,67 +102,75 @@ function handleToolsMode(
       }, 15000);
 
       try {
-        let stepIndex = 0;
+        const r = await requestActionWithTools({
+          prompt,
+          tools: { toolsJson: '[]' },
+          opts: { optsJson: JSON.stringify(opts ?? {}) },
+        } as any);
 
-        const result = await core.requestActionWithTools(prompt, history, opts, (info) => {
-          send('step', {
-            index: stepIndex,
-            type: info.name,
-            status: info.status,
-            description: toolLabel(info.name),
-            error: info.error,
+        if (!r.ok) {
+          send('error', { error: r.message });
+        } else {
+          const result = r.data as {
+            success?: boolean;
+            reply?: string;
+            executedActions?: unknown;
+            toolResults?: unknown;
+            data?: unknown;
+            error?: string;
+          };
+          const resultData = result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : undefined;
+          const resultSuggestions = resultData && 'suggestions' in resultData ? resultData.suggestions : undefined;
+          send('result', {
+            success: result.success,
+            reply: result.reply,
+            executedActions: result.executedActions,
+            toolResults: result.toolResults,
+            data: result.data,
+            suggestions: resultSuggestions,
+            error: result.error,
           });
-          if (info.status !== 'start') stepIndex++;
-        }, (chunk) => {
-          send('chunk', chunk);
-        });
 
-        const resultData = result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : undefined;
-        const resultSuggestions = resultData && 'suggestions' in resultData ? resultData.suggestions : undefined;
-        send('result', {
-          success: result.success,
-          reply: result.reply,
-          executedActions: result.executedActions,
-          toolResults: result.toolResults,
-          data: result.data,
-          suggestions: resultSuggestions,
-          error: result.error,
-        });
-
-        // ── 백엔드 주도 저장 (v0.1, 2026-04-22) ─────────────────────────────
-        // 프론트 state 가 꼬여도 (애니메이션 throttle·브라우저 crash 등) DB 는 정확한 최종 상태 보유.
-        // 클라이언트가 보낸 systemId 로 upsert → unionMerge 가 프론트 POST 와 자연 병합 (동일 ID 일치).
-        if (opts.conversationId && saveOpts?.systemId) {
-          try {
-            // user 메시지 + system(AI 응답) 메시지 쌍 저장
-            const userMsg = saveOpts.userId && saveOpts.userPrompt
-              ? { id: saveOpts.userId, role: 'user' as const, content: saveOpts.userPrompt, ...(saveOpts.image ? { image: saveOpts.image } : {}) }
-              : null;
-            // suggestions / pendingActions 포함 — 새로고침 후에도 ✓실행 버튼·승인 UI 복원
-            const resultPending = resultData && 'pendingActions' in resultData ? (resultData.pendingActions as unknown[] | undefined) : undefined;
-            const systemMsg = {
-              id: saveOpts.systemId,
-              role: 'system' as const,
-              content: result.reply || '',
-              executedActions: result.executedActions,
-              toolResults: result.toolResults,
-              data: result.data,
-              ...(resultSuggestions && Array.isArray(resultSuggestions) && resultSuggestions.length > 0 ? { suggestions: resultSuggestions } : {}),
-              ...(resultPending && Array.isArray(resultPending) && resultPending.length > 0 ? { pendingActions: resultPending } : {}),
-              ...(result.error ? { error: result.error } : {}),
-            };
-            const msgs = userMsg ? [userMsg, systemMsg] : [systemMsg];
-            // 기존 title 유지 — 없으면 첫 user 메시지 기반. ConversationManager.save 의 ON CONFLICT 는 title 덮어씀
-            // 이슈 방지: 기존 값 먼저 조회 후 re-post
-            const existing = await core.getConversation(opts.owner || 'admin', opts.conversationId);
-            const title = existing.success && existing.data
-              ? existing.data.title
-              : (saveOpts.userPrompt || '새 대화').slice(0, 28) + ((saveOpts.userPrompt || '').length > 28 ? '…' : '');
-            await core.saveConversation(opts.owner || 'admin', opts.conversationId, title, msgs);
-          } catch { /* 백엔드 저장 실패해도 프론트 saveToDb 가 백업 역할 — 조용히 무시 */ }
+          // ── 백엔드 주도 저장 (v0.1, 2026-04-22) ─────────────────────────────
+          // 프론트 state 가 꼬여도 (애니메이션 throttle·브라우저 crash 등) DB 는 정확한 최종 상태 보유.
+          // 클라이언트가 보낸 systemId 로 upsert → unionMerge 가 프론트 POST 와 자연 병합 (동일 ID 일치).
+          if (opts.conversationId && saveOpts?.systemId) {
+            try {
+              // user 메시지 + system(AI 응답) 메시지 쌍 저장
+              const userMsg = saveOpts.userId && saveOpts.userPrompt
+                ? { id: saveOpts.userId, role: 'user' as const, content: saveOpts.userPrompt, ...(saveOpts.image ? { image: saveOpts.image } : {}) }
+                : null;
+              // suggestions / pendingActions 포함 — 새로고침 후에도 ✓실행 버튼·승인 UI 복원
+              const resultPending = resultData && 'pendingActions' in resultData ? (resultData.pendingActions as unknown[] | undefined) : undefined;
+              const systemMsg = {
+                id: saveOpts.systemId,
+                role: 'system' as const,
+                content: result.reply || '',
+                executedActions: result.executedActions,
+                toolResults: result.toolResults,
+                data: result.data,
+                ...(resultSuggestions && Array.isArray(resultSuggestions) && resultSuggestions.length > 0 ? { suggestions: resultSuggestions } : {}),
+                ...(resultPending && Array.isArray(resultPending) && resultPending.length > 0 ? { pendingActions: resultPending } : {}),
+                ...(result.error ? { error: result.error } : {}),
+              };
+              const msgs = userMsg ? [userMsg, systemMsg] : [systemMsg];
+              // 기존 title 유지 — 없으면 첫 user 메시지 기반.
+              const owner = opts.owner || 'admin';
+              const existing = await getConversation({ owner, id: opts.conversationId });
+              const existingTitle = existing.ok && existing.data ? existing.data.title : '';
+              const title = existingTitle
+                || ((saveOpts.userPrompt || '새 대화').slice(0, 28) + ((saveOpts.userPrompt || '').length > 28 ? '…' : ''));
+              await saveConversation({
+                owner,
+                id: opts.conversationId,
+                title,
+                messagesJson: JSON.stringify(msgs),
+              });
+            } catch { /* 백엔드 저장 실패해도 프론트 saveToDb 가 백업 역할 — 조용히 무시 */ }
+          }
         }
       } catch (err: any) {
-        send('error', { error: err.message || '알 수 없는 오류' });
+        send('error', { error: err?.message || '알 수 없는 오류' });
       }
       clearInterval(keepAlive);
       try { abortSignal?.removeEventListener('abort', onAbort); } catch {}

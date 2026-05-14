@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
+import { findMediaUsage } from '../../../../lib/api-gen/page';
 import { withAuth } from '../../../../lib/with-api-error';
 
 /**
@@ -18,6 +18,7 @@ export const GET = withAuth(async (req: NextRequest) => {
   if (!slug) {
     return NextResponse.json({ success: false, error: 'slug 파라미터 필요' }, { status: 400 });
   }
-  const usage = await getCore().findMediaUsage(slug);
-  return NextResponse.json({ success: true, data: usage });
+  const res = await findMediaUsage({ value: slug } as any);
+  if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+  return NextResponse.json({ success: true, data: res.data?.entries ?? [] });
 });

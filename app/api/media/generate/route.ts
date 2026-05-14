@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
+import { generateImage } from '../../../../lib/api-gen/media';
 import { withAuth } from '../../../../lib/with-api-error';
 
 /**
@@ -40,9 +40,9 @@ export const POST = withAuth(async (req: NextRequest) => {
     ...(body.scope === 'system' ? { scope: 'system' as const } : { scope: 'user' as const }),
   };
 
-  const result = await getCore().generateImage(input);
-  if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error }, { status: 500 });
+  const result = await generateImage({ inputJson: JSON.stringify(input) } as any);
+  if (!result.ok) {
+    return NextResponse.json({ success: false, error: result.message }, { status: 500 });
   }
   return NextResponse.json({ success: true, data: result.data });
 });

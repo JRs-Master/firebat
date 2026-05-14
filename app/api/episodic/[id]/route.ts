@@ -5,7 +5,7 @@
  * DELETE /api/episodic/{id} — 삭제 (cascade event_entities)
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
+import { getEvent, updateEvent, deleteEvent } from '../../../../lib/api-gen/episodic';
 import { withAuth } from '../../../../lib/with-api-error';
 
 export const dynamic = 'force-dynamic';
@@ -20,8 +20,8 @@ function parseId(s: string): number | null {
 export const GET = withAuth(async (_req: NextRequest, { params }: Ctx) => {
   const id = parseId((await params).id);
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
-  const res = await getCore().getEvent(id);
-  if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
+  const res = await getEvent({ value: BigInt(id) } as any);
+  if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   if (!res.data) return NextResponse.json({ success: false, error: 'not found' }, { status: 404 });
   return NextResponse.json({ success: true, event: res.data });
 });
@@ -30,27 +30,40 @@ export const PATCH = withAuth(async (req: NextRequest, { params }: Ctx) => {
   const id = parseId((await params).id);
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
   const body = await req.json().catch(() => null);
-  const patch: { type?: string; title?: string; description?: string; who?: string; context?: Record<string, unknown>; occurredAt?: number; entityIds?: number[]; ttlDays?: number } = {};
-  if (typeof body?.type === 'string') patch.type = body.type;
+  const patch: {
+    eventType?: string;
+    title?: string;
+    description?: string;
+    who?: string;
+    contextJson?: string;
+    occurredAt?: bigint;
+    entityIdsJson?: string;
+    ttlDays?: bigint;
+  } = {};
+  if (typeof body?.type === 'string') patch.eventType = body.type;
   if (typeof body?.title === 'string') patch.title = body.title;
   if (typeof body?.description === 'string') patch.description = body.description;
   if (typeof body?.who === 'string') patch.who = body.who;
-  if (body?.context && typeof body.context === 'object' && !Array.isArray(body.context)) patch.context = body.context;
+  if (body?.context && typeof body.context === 'object' && !Array.isArray(body.context)) {
+    patch.contextJson = JSON.stringify(body.context);
+  }
   if (body?.occurredAt) {
     const t = new Date(body.occurredAt).getTime();
-    if (Number.isFinite(t)) patch.occurredAt = t;
+    if (Number.isFinite(t)) patch.occurredAt = BigInt(t);
   }
-  if (Array.isArray(body?.entityIds)) patch.entityIds = body.entityIds.filter((n: any) => Number.isInteger(n));
-  if (typeof body?.ttlDays === 'number' && body.ttlDays > 0) patch.ttlDays = body.ttlDays;
-  const res = await getCore().updateEvent(id, patch);
-  if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
+  if (Array.isArray(body?.entityIds)) {
+    patch.entityIdsJson = JSON.stringify(body.entityIds.filter((n: any) => Number.isInteger(n)));
+  }
+  if (typeof body?.ttlDays === 'number' && body.ttlDays > 0) patch.ttlDays = BigInt(body.ttlDays);
+  const res = await updateEvent({ id: BigInt(id), ...patch } as any);
+  if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true });
 });
 
 export const DELETE = withAuth(async (_req: NextRequest, { params }: Ctx) => {
   const id = parseId((await params).id);
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
-  const res = await getCore().deleteEvent(id);
-  if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
+  const res = await deleteEvent({ value: BigInt(id) } as any);
+  if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true });
 });

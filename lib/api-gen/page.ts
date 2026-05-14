@@ -6,20 +6,21 @@
 
 import {
   MediaUsageListPb,
-  PageFindRelatedRequest,
+  PageFindRelatedRequestSchema,
   PageListResponsePb,
   PageRecordPb,
-  PageRenameRequest,
-  PageSaveRequest,
+  PageRenameRequestSchema,
+  PageSaveRequestSchema,
   PageSaveResultPb,
-  PageSearchRequest,
+  PageSearchRequestSchema,
   PageService,
-  PageSetVisibilityRequest,
-  PageVerifyPasswordRequest,
+  PageSetVisibilityRequestSchema,
+  PageVerifyPasswordRequestSchema,
   StringListPb,
-  StringRequest,
+  StringRequestSchema,
   TagListPb,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
@@ -35,7 +36,7 @@ export async function list(): Promise<RpcResult<PageListResponsePb>> {
   }
 }
 
-export async function search(args: PageSearchRequest): Promise<RpcResult<PageListResponsePb>> {
+export async function search(args: MessageInitShape<typeof PageSearchRequestSchema>): Promise<RpcResult<PageListResponsePb>> {
   try {
       const response = await pageClient.search(args ?? {});
       return { ok: true, data: response };
@@ -44,7 +45,7 @@ export async function search(args: PageSearchRequest): Promise<RpcResult<PageLis
   }
 }
 
-export async function get(args: StringRequest): Promise<RpcResult<PageRecordPb>> {
+export async function get(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<PageRecordPb>> {
   try {
       const response = await pageClient.get(args ?? {});
       return { ok: true, data: response };
@@ -53,7 +54,7 @@ export async function get(args: StringRequest): Promise<RpcResult<PageRecordPb>>
   }
 }
 
-export async function save(args: PageSaveRequest): Promise<RpcResult<PageSaveResultPb>> {
+export async function save(args: MessageInitShape<typeof PageSaveRequestSchema>): Promise<RpcResult<PageSaveResultPb>> {
   try {
       const response = await pageClient.save(args ?? {});
       return { ok: true, data: response };
@@ -62,7 +63,7 @@ export async function save(args: PageSaveRequest): Promise<RpcResult<PageSaveRes
   }
 }
 
-export async function deletePage(args: StringRequest): Promise<RpcResult<void>> {
+export async function deletePage(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
   try {
       await pageClient.delete(args ?? {});
       return { ok: true, data: undefined };
@@ -71,7 +72,7 @@ export async function deletePage(args: StringRequest): Promise<RpcResult<void>> 
   }
 }
 
-export async function rename(args: PageRenameRequest): Promise<RpcResult<void>> {
+export async function rename(args: MessageInitShape<typeof PageRenameRequestSchema>): Promise<RpcResult<void>> {
   try {
       await pageClient.rename(args ?? {});
       return { ok: true, data: undefined };
@@ -80,7 +81,7 @@ export async function rename(args: PageRenameRequest): Promise<RpcResult<void>> 
   }
 }
 
-export async function getRedirect(args: StringRequest): Promise<RpcResult<string | null>> {
+export async function getRedirect(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<string | null>> {
   try {
       const response = await pageClient.getRedirect(args ?? {});
       return { ok: true, data: response.present ? response.value : null };
@@ -98,7 +99,7 @@ export async function listStatic(): Promise<RpcResult<StringListPb>> {
   }
 }
 
-export async function findMediaUsage(args: StringRequest): Promise<RpcResult<MediaUsageListPb>> {
+export async function findMediaUsage(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<MediaUsageListPb>> {
   try {
       const response = await pageClient.findMediaUsage(args ?? {});
       return { ok: true, data: response };
@@ -107,7 +108,7 @@ export async function findMediaUsage(args: StringRequest): Promise<RpcResult<Med
   }
 }
 
-export async function setVisibility(args: PageSetVisibilityRequest): Promise<RpcResult<void>> {
+export async function setVisibility(args: MessageInitShape<typeof PageSetVisibilityRequestSchema>): Promise<RpcResult<void>> {
   try {
       await pageClient.setVisibility(args ?? {});
       return { ok: true, data: undefined };
@@ -116,7 +117,7 @@ export async function setVisibility(args: PageSetVisibilityRequest): Promise<Rpc
   }
 }
 
-export async function verifyPassword(args: PageVerifyPasswordRequest): Promise<RpcResult<boolean>> {
+export async function verifyPassword(args: MessageInitShape<typeof PageVerifyPasswordRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await pageClient.verifyPassword(args ?? {});
       return { ok: true, data: response.value };
@@ -125,7 +126,7 @@ export async function verifyPassword(args: PageVerifyPasswordRequest): Promise<R
   }
 }
 
-export async function findRelated(args: PageFindRelatedRequest): Promise<RpcResult<PageListResponsePb>> {
+export async function findRelated(args: MessageInitShape<typeof PageFindRelatedRequestSchema>): Promise<RpcResult<PageListResponsePb>> {
   try {
       const response = await pageClient.findRelated(args ?? {});
       return { ok: true, data: response };
@@ -149,3 +150,7 @@ export const listStaticPages = listStatic;
 export const findRelatedPages = findRelated;
 export const getPageRedirect = getRedirect;
 export const verifyPagePassword = verifyPassword;
+export const savePage = save;
+export const renamePage = rename;
+export const getPage = get;
+export const setPageVisibility = setVisibility;

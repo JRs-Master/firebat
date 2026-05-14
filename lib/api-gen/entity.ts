@@ -5,27 +5,28 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  EntityFactSaveRequest,
-  EntityFactUpdateRequest,
-  EntityRetrieveContextRequest,
-  EntitySaveRequest,
+  EntityFactSaveRequestSchema,
+  EntityFactUpdateRequestSchema,
+  EntityRetrieveContextRequestSchema,
+  EntitySaveRequestSchema,
   EntitySaveResultPb,
-  EntitySearchFactsRequest,
-  EntitySearchRequest,
+  EntitySearchFactsRequestSchema,
+  EntitySearchRequestSchema,
   EntityService,
-  EntityTimelineRequest,
-  EntityUpdateRequest,
+  EntityTimelineRequestSchema,
+  EntityUpdateRequestSchema,
   FactSaveResultPb,
-  NumberRequest,
-  StringRequest,
+  NumberRequestSchema,
+  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const entityClient = createClient(EntityService, transport);
 
-export async function save(args: EntitySaveRequest): Promise<RpcResult<EntitySaveResultPb>> {
+export async function save(args: MessageInitShape<typeof EntitySaveRequestSchema>): Promise<RpcResult<EntitySaveResultPb>> {
   try {
       const response = await entityClient.save(args ?? {});
       return { ok: true, data: response };
@@ -34,7 +35,7 @@ export async function save(args: EntitySaveRequest): Promise<RpcResult<EntitySav
   }
 }
 
-export async function update(args: EntityUpdateRequest): Promise<RpcResult<void>> {
+export async function update(args: MessageInitShape<typeof EntityUpdateRequestSchema>): Promise<RpcResult<void>> {
   try {
       await entityClient.update(args ?? {});
       return { ok: true, data: undefined };
@@ -43,7 +44,7 @@ export async function update(args: EntityUpdateRequest): Promise<RpcResult<void>
   }
 }
 
-export async function deleteEntity(args: NumberRequest): Promise<RpcResult<void>> {
+export async function deleteEntity(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<void>> {
   try {
       await entityClient.delete(args ?? {});
       return { ok: true, data: undefined };
@@ -52,7 +53,7 @@ export async function deleteEntity(args: NumberRequest): Promise<RpcResult<void>
   }
 }
 
-export async function get(args: NumberRequest): Promise<RpcResult<unknown>> {
+export async function get(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await entityClient.get(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -61,7 +62,7 @@ export async function get(args: NumberRequest): Promise<RpcResult<unknown>> {
   }
 }
 
-export async function findByName(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function findByName(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await entityClient.findByName(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -70,7 +71,7 @@ export async function findByName(args: StringRequest): Promise<RpcResult<unknown
   }
 }
 
-export async function search(args: EntitySearchRequest): Promise<RpcResult<unknown>> {
+export async function search(args: MessageInitShape<typeof EntitySearchRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await entityClient.search(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -79,7 +80,7 @@ export async function search(args: EntitySearchRequest): Promise<RpcResult<unkno
   }
 }
 
-export async function saveFact(args: EntityFactSaveRequest): Promise<RpcResult<FactSaveResultPb>> {
+export async function saveFact(args: MessageInitShape<typeof EntityFactSaveRequestSchema>): Promise<RpcResult<FactSaveResultPb>> {
   try {
       const response = await entityClient.saveFact(args ?? {});
       return { ok: true, data: response };
@@ -88,7 +89,7 @@ export async function saveFact(args: EntityFactSaveRequest): Promise<RpcResult<F
   }
 }
 
-export async function updateFact(args: EntityFactUpdateRequest): Promise<RpcResult<void>> {
+export async function updateFact(args: MessageInitShape<typeof EntityFactUpdateRequestSchema>): Promise<RpcResult<void>> {
   try {
       await entityClient.updateFact(args ?? {});
       return { ok: true, data: undefined };
@@ -97,7 +98,7 @@ export async function updateFact(args: EntityFactUpdateRequest): Promise<RpcResu
   }
 }
 
-export async function deleteFact(args: NumberRequest): Promise<RpcResult<void>> {
+export async function deleteFact(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<void>> {
   try {
       await entityClient.deleteFact(args ?? {});
       return { ok: true, data: undefined };
@@ -106,7 +107,7 @@ export async function deleteFact(args: NumberRequest): Promise<RpcResult<void>> 
   }
 }
 
-export async function getFact(args: NumberRequest): Promise<RpcResult<unknown>> {
+export async function getFact(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await entityClient.getFact(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -115,7 +116,7 @@ export async function getFact(args: NumberRequest): Promise<RpcResult<unknown>> 
   }
 }
 
-export async function getTimeline(args: EntityTimelineRequest): Promise<RpcResult<unknown>> {
+export async function getTimeline(args: MessageInitShape<typeof EntityTimelineRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await entityClient.getTimeline(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -124,7 +125,7 @@ export async function getTimeline(args: EntityTimelineRequest): Promise<RpcResul
   }
 }
 
-export async function searchFacts(args: EntitySearchFactsRequest): Promise<RpcResult<unknown>> {
+export async function searchFacts(args: MessageInitShape<typeof EntitySearchFactsRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await entityClient.searchFacts(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -133,7 +134,7 @@ export async function searchFacts(args: EntitySearchFactsRequest): Promise<RpcRe
   }
 }
 
-export async function retrieveContext(args: EntityRetrieveContextRequest): Promise<RpcResult<unknown>> {
+export async function retrieveContext(args: MessageInitShape<typeof EntityRetrieveContextRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await entityClient.retrieveContext(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };

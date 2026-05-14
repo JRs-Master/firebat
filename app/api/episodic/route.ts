@@ -8,7 +8,7 @@
  * POST /api/episodic  — create (type/title/description/who/context/occurredAt/entityIds/ttlDays)
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../lib/singleton';
+import { searchEvents, listRecentEvents, saveEvent } from '../../../lib/api-gen/episodic';
 import { withAuth } from '../../../lib/with-api-error';
 
 export const dynamic = 'force-dynamic';
@@ -28,35 +28,40 @@ export const GET = withAuth(async (req: NextRequest) => {
   const limit = limitRaw ? Math.max(1, Math.min(500, parseInt(limitRaw, 10) || 50)) : 50;
   const hasFilter = query || type || who || entityId !== undefined || occurredAfter !== undefined || occurredBefore !== undefined;
   const res = hasFilter
-    ? await getCore().searchEvents({
-        query, type, who, entityId,
-        occurredAfter: Number.isFinite(occurredAfter as number) ? occurredAfter : undefined,
-        occurredBefore: Number.isFinite(occurredBefore as number) ? occurredBefore : undefined,
-        limit,
-      })
-    : await getCore().listRecentEvents({ limit });
-  if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
-  return NextResponse.json({ success: true, events: res.data ?? [] });
+    ? await searchEvents({
+        optsJson: JSON.stringify({
+          query, type, who, entityId,
+          occurredAfter: Number.isFinite(occurredAfter as number) ? occurredAfter : undefined,
+          occurredBefore: Number.isFinite(occurredBefore as number) ? occurredBefore : undefined,
+          limit,
+        }),
+      } as any)
+    : await listRecentEvents({ optsJson: JSON.stringify({ limit }) } as any);
+  if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+  return NextResponse.json({ success: true, events: (res.data as any) ?? [] });
 });
 
 export const POST = withAuth(async (req: NextRequest) => {
   const body = await req.json().catch(() => null);
   if (!body?.type || !body?.title) return NextResponse.json({ success: false, error: 'type + title 필수' }, { status: 400 });
-  let occurredAtMs: number | undefined;
+  let occurredAtMs: bigint | undefined;
   if (body.occurredAt) {
     const t = new Date(body.occurredAt).getTime();
-    if (Number.isFinite(t)) occurredAtMs = t;
+    if (Number.isFinite(t)) occurredAtMs = BigInt(t);
   }
-  const res = await getCore().saveEvent({
-    type: String(body.type),
+  const entityIds = Array.isArray(body.entityIds)
+    ? body.entityIds.filter((n: any) => Number.isInteger(n)).map((n: number) => BigInt(n))
+    : [];
+  const res = await saveEvent({
+    eventType: String(body.type),
     title: String(body.title),
     description: typeof body.description === 'string' ? body.description : undefined,
     who: typeof body.who === 'string' ? body.who : undefined,
-    context: body.context && typeof body.context === 'object' && !Array.isArray(body.context) ? body.context : undefined,
+    contextJson: body.context && typeof body.context === 'object' && !Array.isArray(body.context) ? JSON.stringify(body.context) : undefined,
     occurredAt: occurredAtMs,
-    entityIds: Array.isArray(body.entityIds) ? body.entityIds.filter((n: any) => Number.isInteger(n)) : undefined,
-    ttlDays: typeof body.ttlDays === 'number' && body.ttlDays > 0 ? body.ttlDays : undefined,
-  });
-  if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
+    entityIds,
+    ttlDays: typeof body.ttlDays === 'number' && body.ttlDays > 0 ? BigInt(body.ttlDays) : undefined,
+  } as any);
+  if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true, id: res.data?.id });
 });

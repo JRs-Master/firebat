@@ -1,6 +1,10 @@
 import { notFound, redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
-import { getCore } from '../../../lib/singleton';
+import { get as getPageRpc, getRedirect, verifyPassword as verifyPagePasswordRpc } from '../../../lib/api-gen/page';
+import { scan as scanProjects, verifyPassword as verifyProjectPasswordRpc, getVisibility as getProjectVisibility, getConfig as getProjectConfigRpc } from '../../../lib/api-gen/project';
+import { getCmsSettings } from '../../../lib/api-gen/module';
+import { isReady as isMediaReady } from '../../../lib/api-gen/media';
+import { parsePageRecord } from '../../../lib/util/page-pb-convert';
 import { ComponentRenderer } from './components';
 import { BASE_URL } from '../../../lib/base-url';
 import { SESSION_COOKIE_NAME } from '../../../lib/config';
@@ -8,6 +12,7 @@ import { headers } from 'next/headers';
 import { estimateReadingTime } from '../reading-time';
 import { CmsBreadcrumb } from '../breadcrumb';
 import { CmsRelatedPosts } from '../cms-related-posts';
+import { safeJsonParse } from '../../../lib/util/json';
 
 /** 실제 사용할 base URL 해석 —
  *   1. SEO 설정의 siteUrl (관리자가 Firebat 설정에서 입력, 최우선)
@@ -50,7 +55,8 @@ async function resolveVisibility(spec: { _visibility?: string; project?: string 
   if (pageVis === 'private' || pageVis === 'password') return pageVis;
   // 프로젝트 상속
   if (spec.project) {
-    const projectVis = await getCore().getProjectVisibility(spec.project);
+    const visRes = await getProjectVisibility({ value: spec.project });
+    const projectVis = visRes.ok ? visRes.data : undefined;
     if (projectVis === 'private' || projectVis === 'password') return projectVis;
   }
   return 'public';
@@ -61,14 +67,15 @@ type Props = { params: Promise<{ slug: string[] }>; searchParams?: Promise<{ pag
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const rawSlug = (await params).slug;
   const slug = safeDecodeSlug(rawSlug);
-  const core = getCore();
-  const result = await core.getPage(slug);
-  if (!result.success || !result.data) {
+  const result = await getPageRpc({ value: slug });
+  if (!result.ok || !result.data) {
     // projectRoot fallback — 1-segment URL 이 프로젝트명과 매칭되면 프로젝트 카탈로그 metadata
     if (!slug.includes('/')) {
-      const projects = await core.scanProjects();
+      const projectsRes = await scanProjects();
+      const projects = projectsRes.ok ? (projectsRes.data.projects ?? []) : [];
       if (projects.find((p) => p.name === slug)) {
-        const seo = await core.getCmsSettings();
+        const seoRes = await getCmsSettings();
+        const seo = (seoRes.ok ? seoRes.data : {}) as any;
         // RSS rel=alternate — RSS reader autodiscovery. 사이트 글로벌 + 프로젝트 RSS 둘 다 노출.
         const projectFeedAlts = seo.rssEnabled ? {
           types: {
@@ -89,7 +96,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     return { title: 'Not Found' };
   }
 
-  const spec = result.data;
+  const spec = parsePageRecord(result.data);
   const visibility = await resolveVisibility(spec);
 
   // 비공개 페이지는 메타데이터 최소화
@@ -103,7 +110,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   const head = spec.head ?? {};
-  const seo = await core.getCmsSettings();
+  const seoRes = await getCmsSettings();
+  const seo = (seoRes.ok ? seoRes.data : {}) as any;
   const baseUrl = await resolveBaseUrl(seo.siteUrl);
 
   const ogTitle = head.og?.title ?? head.title ?? slug;
@@ -114,7 +122,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const fallbackOg = `${baseUrl}/api/og?title=${encodeURIComponent(ogTitle)}&description=${encodeURIComponent(ogDesc)}`;
   let ogImage = fallbackOg;
   if (head.og?.image) {
-    const ready = await core.isMediaReady(head.og.image);
+    const readyRes = await isMediaReady({ value: head.og.image });
+    const ready = readyRes.ok ? readyRes.data : false;
     ogImage = ready ? head.og.image : fallbackOg;
   }
 
@@ -165,27 +174,28 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function DynamicPage({ params, searchParams }: Props) {
   const rawSlug = (await params).slug;
   const slug = safeDecodeSlug(rawSlug);
-  const core = getCore();
-  const result = await core.getPage(slug);
-  if (!result.success || !result.data) {
+  const result = await getPageRpc({ value: slug });
+  if (!result.ok || !result.data) {
     // 리디렉트 테이블 확인 — slug 변경/프로젝트 이동된 페이지 자동 이동
-    const redirectTo = await core.getPageRedirect(slug);
+    const redirectRes = await getRedirect({ value: slug });
+    const redirectTo = redirectRes.ok ? redirectRes.data : null;
     if (redirectTo) redirect(`/${redirectTo}`);
     // projectRoot fallback — 1-segment URL 이고 그 이름이 프로젝트로 등록되어 있으면
     // 해당 프로젝트의 모든 page list 페이지 렌더 (Phase 4 Step 3+4).
     if (!slug.includes('/')) {
-      const projects = await core.scanProjects();
+      const projectsRes = await scanProjects();
+      const projects = projectsRes.ok ? (projectsRes.data.projects ?? []) : [];
       const matched = projects.find((p) => p.name === slug);
       if (matched) {
         const sp = searchParams ? await searchParams : {};
         const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);
-        return <ProjectRootView projectName={slug} pageSlugs={matched.pageSlugs} currentPage={currentPage} />;
+        return <ProjectRootView projectName={slug} pageSlugs={matched.pageSlugs ?? []} currentPage={currentPage} />;
       }
     }
     notFound();
   }
 
-  const spec = result.data;
+  const spec = parsePageRecord(result.data);
   const visibility = await resolveVisibility(spec);
 
   // 비공개 페이지 — admin 로그인 상태면 미리보기 허용 (Phase 4 Step 7), 그 외 404
@@ -212,10 +222,11 @@ export default async function DynamicPage({ params, searchParams }: Props) {
     if (savedPw) {
       const pw = decodeURIComponent(savedPw);
       if (isProjectPassword && spec.project) {
-        verified = await core.verifyProjectPassword(spec.project, pw);
+        const verRes = await verifyProjectPasswordRpc({ project: spec.project, password: pw });
+        verified = verRes.ok && verRes.data === true;
       } else {
-        const res = await core.verifyPagePassword(slug, pw);
-        verified = res.success && res.data === true;
+        const res = await verifyPagePasswordRpc({ slug, password: pw });
+        verified = res.ok && res.data === true;
       }
     }
 
@@ -233,7 +244,8 @@ export default async function DynamicPage({ params, searchParams }: Props) {
 
   const head = spec.head ?? {};
   const body = spec.body ?? [];
-  const seo = await core.getCmsSettings();
+  const seoRes = await getCmsSettings();
+  const seo = (seoRes.ok ? seoRes.data : {}) as any;
   const siteUrl = await resolveBaseUrl(seo.siteUrl);
 
   // CMS Phase 3 — 프로젝트별 theme override.
@@ -245,7 +257,9 @@ export default async function DynamicPage({ params, searchParams }: Props) {
   let projectH2Style: string | undefined;
   let projectH3Style: string | undefined;
   if (spec.project) {
-    const projectConfig = await core.getProjectConfig(spec.project);
+    const cfgRes = await getProjectConfigRpc({ value: spec.project });
+    const cfgRaw = cfgRes.ok ? cfgRes.data : '';
+    const projectConfig = cfgRaw ? safeJsonParse<Record<string, any>>(cfgRaw, {}) : null;
     if (projectConfig) {
       const theme = projectConfig.theme as any;
       if (theme && typeof theme === 'object') {
@@ -384,9 +398,9 @@ export default async function DynamicPage({ params, searchParams }: Props) {
       <main className="min-h-screen bg-white">
         <div
           className="firebat-cms-content"
-          data-h1-style={projectH1Style ?? seo.theme.heading.h1}
-          data-h2-style={projectH2Style ?? seo.theme.heading.h2}
-          data-h3-style={projectH3Style ?? seo.theme.heading.h3}
+          data-h1-style={projectH1Style ?? seo.theme?.heading?.h1}
+          data-h2-style={projectH2Style ?? seo.theme?.heading?.h2}
+          data-h3-style={projectH3Style ?? seo.theme?.heading?.h3}
           style={projectThemeStyle}
         >
           {/* 콘텐츠 페이지 (project 설정된) 만 — Breadcrumb + Reading time 표시.
@@ -415,7 +429,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
           )}
           <ComponentRenderer components={body} />
           {/* 관련 글 — 콘텐츠 페이지 + showRelatedPosts ON 일 때만. keywords 0건이거나 매칭 0건이면 컴포넌트가 자체 미렌더. */}
-          {spec.project && seo.layout.showRelatedPosts && (
+          {spec.project && seo.layout?.showRelatedPosts && (
             <CmsRelatedPosts slug={slug} limit={seo.layout.relatedPostsCount || 5} siteLang={seo.siteLang} />
           )}
         </div>

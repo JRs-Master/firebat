@@ -6,21 +6,20 @@
  * POST /api/mcp/tools              — 도구 실행 { server, tool, arguments }
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
 import { withAuth } from '../../../../lib/with-api-error';
+import { listMcpTools, listAllMcpTools, callMcpTool } from '../../../../lib/api-gen/mcp';
 
 /** GET — 도구 목록 */
 export const GET = withAuth(async (req: NextRequest) => {
-  const core = getCore();
   const serverName = req.nextUrl.searchParams.get('server');
 
-  const result = serverName
-    ? await core.listMcpTools(serverName)
-    : await core.listAllMcpTools();
+  const res = serverName
+    ? await listMcpTools({ value: serverName })
+    : await listAllMcpTools();
 
-  return result.success
-    ? NextResponse.json({ success: true, tools: result.data })
-    : NextResponse.json({ success: false, error: result.error }, { status: 500 });
+  return res.ok
+    ? NextResponse.json({ success: true, tools: res.data })
+    : NextResponse.json({ success: false, error: res.message }, { status: 500 });
 });
 
 /** POST — 도구 실행 */
@@ -29,8 +28,8 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (!server || !tool) {
     return NextResponse.json({ success: false, error: 'server, tool 필수' }, { status: 400 });
   }
-  const result = await getCore().callMcpTool(server, tool, args ?? {});
-  return result.success
-    ? NextResponse.json({ success: true, data: result.data })
-    : NextResponse.json({ success: false, error: result.error }, { status: 500 });
+  const res = await callMcpTool({ server, tool, argumentsJson: JSON.stringify(args ?? {}) });
+  return res.ok
+    ? NextResponse.json({ success: true, data: res.data })
+    : NextResponse.json({ success: false, error: res.message }, { status: 500 });
 });

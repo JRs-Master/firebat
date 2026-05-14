@@ -1,8 +1,6 @@
 {
-  "_comment": "Phase 4 정공 (2026-05-13) — scripts/gen-adapter-tables.mjs 입력. 옛 manual facade name / WRAP_METHODS / 응답 wrap 패턴 보존용. 호출 site cutover 완료 시점에 본 파일 점진 폐기.",
-  "_aliases_doc": "옛 facade 명 → 'ServiceName.RpcName' 매핑. default 규칙 (rpcName + DomainCapitalized) 와 다른 옛 명명 보존 (주로 plural list / 도메인 약어).",
-  "_wrap_doc": "frontend 가 res.success / res.data / res.error 패턴 가정하는 method 목록. autoWrapResult 가 {success:true, data:T} wrap 적용.",
-  "_unwrap_doc": "response 의 unwrap field 명시 override. proto schema 기반 자동 결정과 다르거나 disable (null) 시 사용.",
+  "_comment": "Option 2 정공 (2026-05-15) — scripts/gen-api-client.mjs 입력. 옛 facade name → ServiceName.RpcName 매핑. caller 가 옛 명명 (예: savePage) 그대로 import 가능하도록 alias re-export.",
+  "_aliases_doc": "옛 facade 명 → 'ServiceName.RpcName' 매핑. proto schema 의 short name 외 옛 호출 컨벤션 (savePage / listPages 등) 보존.",
 
   "aliases": {
     "listPages": "PageService.List",
@@ -203,6 +201,13 @@
     "verifyPagePassword": "PageService.VerifyPassword",
     "verifyProjectPassword": "ProjectService.VerifyPassword",
     "getProjectConfig": "ProjectService.GetConfig",
+    "savePage": "PageService.Save",
+    "renamePage": "PageService.Rename",
+    "getPage": "PageService.Get",
+    "setPageVisibility": "PageService.SetVisibility",
+    "saveProject": "ProjectService.Save",
+    "setProjectVisibility": "ProjectService.SetVisibility",
+    "setProjectConfig": "ProjectService.SetConfig",
     "validateSession": "AuthService.ValidateSession",
     "validateToken": "AuthService.ValidateToken",
     "generateApiToken": "AuthService.GenerateApiToken",
@@ -214,45 +219,5 @@
     "isAdminSetup": "AuthService.IsAdminSetup",
     "verifyAdminPassword": "AuthService.VerifyAdminPassword",
     "validatePasswordPolicy": "AuthService.ValidatePasswordPolicy"
-  },
-
-  "wrap": [
-    "savePage", "deletePage", "renamePage", "getPage", "listPages", "searchPages",
-    "verifyPagePassword", "setPageVisibility", "getPageRedirect",
-    "listStaticPages", "findMediaUsage", "findRelatedPages", "listAllTags",
-    "saveProject", "deleteProject", "renameProject",
-    "verifyProjectPassword", "setProjectVisibility",
-    "listConversations", "getConversation", "saveConversation", "deleteConversation",
-    "listDeletedConversations", "restoreConversation", "permanentDeleteConversation",
-    "createShare",
-    "saveEntity", "updateEntity", "deleteEntity", "getEntity",
-    "findEntityByName", "searchEntities",
-    "saveEntityFact", "updateEntityFact", "deleteEntityFact", "getEntityFact",
-    "getEntityTimeline", "searchEntityFacts", "retrieveContext",
-    "saveEvent", "updateEvent", "deleteEvent", "getEvent",
-    "searchEvents", "listRecentEvents", "listEventsByEntity",
-    "linkEventEntity", "unlinkEventEntity",
-    "listMedia", "readMedia", "removeMedia", "searchMedia", "isMediaReady",
-    "generateImage", "startImageGeneration", "regenerateImage", "saveUpload",
-    "saveTempAttachment",
-    "getTemplate", "saveTemplate", "deleteTemplate",
-    "resolveCapability",
-    "callMcpTool", "generateApiToken",
-    "validateSession", "validateToken",
-    "scheduleTask", "scheduleCronJob", "cancelCronJob", "updateCronJob", "runCronJobNow",
-    "runTask",
-    "runModule", "sandboxExecute",
-    "getUserSecret", "setUserSecret", "deleteUserSecret",
-    "listUserModuleSecrets",
-    "readFile", "readFileBinary", "writeFile", "deleteFile", "globFiles",
-    "getMemoryIndex", "readMemoryFile", "listMemoryFiles", "saveMemoryFile", "deleteMemoryFile",
-    "executeTool",
-    "codeAssist",
-    "getTelegramWebhookStatus", "setupTelegramWebhook", "removeTelegramWebhook",
-    "cacheRead", "cacheGrep", "cacheAggregate", "cacheData",
-    "queryDatabase",
-    "listMcpTools", "listAllMcpTools"
-  ],
-
-  "unwrap": {}
+  }
 }

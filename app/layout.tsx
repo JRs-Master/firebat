@@ -5,11 +5,11 @@ import 'pretendard/dist/web/variable/pretendardvariable.css';
 import type { Metadata, Viewport } from 'next';
 
 // force-dynamic — build 시 Rust core (127.0.0.1:50051) 미접근. root layout 의
-// generateMetadata + RootLayout 박는 거 모두 getCore() 박음 → prerender 시도 시
+// generateMetadata + RootLayout 가 모두 typed client 통과 → prerender 시도 시
 // connection refused → build fail (NotFound + 모든 자식 페이지 영향).
-// runtime (production server) 에 Rust core 박혀있어 정상 응답.
+// runtime (production server) 에서 Rust core 가 떠 있어 정상 응답.
 export const dynamic = 'force-dynamic';
-import { getCore } from '../lib/singleton';
+import { getCmsSettings, getKakaoMapJsKey } from '../lib/api-gen/module';
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -25,7 +25,8 @@ export const viewport: Viewport = {
 const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const seo = await getCore().getCmsSettings();
+  const seoRes = await getCmsSettings();
+  const seo = (seoRes.ok ? seoRes.data : {}) as any;
   return {
     metadataBase: new URL(BASE_URL),
     title: seo.siteTitle,
@@ -37,10 +38,12 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   // SEO 설정 lang — 검색엔진 언어 인식 + 접근성. 미설정 시 'ko'.
-  const seo = await getCore().getCmsSettings();
+  const seoRes = await getCmsSettings();
+  const seo = (seoRes.ok ? seoRes.data : {}) as any;
   // 카카오맵 JS 키 — render_map 컴포넌트가 user / admin 양쪽 컨텍스트에서 모두 사용.
   // (user) layout 만 설정하면 admin 채팅 미리보기에서 Leaflet 폴백 됨 → root layout 으로 통합.
-  const kakaoMapJsKey = (await getCore().getKakaoMapJsKey()) || '';
+  const kakaoRes = await getKakaoMapJsKey();
+  const kakaoMapJsKey = kakaoRes.ok ? kakaoRes.data : '';
   return (
     <html lang={seo.siteLang || 'ko'}>
       <body className="antialiased bg-white text-gray-900">

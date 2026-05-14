@@ -7,7 +7,7 @@
  * 어드민 "이 대화 정리하기" 버튼이 호출. AI 도구 (consolidate_conversation) 도 같은 경로.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../lib/singleton';
+import { consolidate } from '../../../lib/api-gen/consolidation';
 import { withAuth } from '../../../lib/with-api-error';
 
 export const dynamic = 'force-dynamic';
@@ -17,10 +17,14 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (!body?.conversationId) {
     return NextResponse.json({ success: false, error: 'conversationId 필수' }, { status: 400 });
   }
-  const outcome = await getCore().consolidateConversation({
+  const res = await consolidate({
+    conversationId: String(body.conversationId),
     owner: typeof body.owner === 'string' ? body.owner : 'admin',
-    convId: String(body.conversationId),
-  });
+  } as any);
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+  }
+  const outcome = (res.data ?? {}) as { extracted?: unknown; saved?: unknown; skipped?: unknown; costUsd?: unknown };
   return NextResponse.json({
     success: true,
     extracted: outcome.extracted,

@@ -1,4 +1,5 @@
-import { getCore } from '../../lib/singleton';
+import { getCmsSettings } from '../../lib/api-gen/module';
+import { listPages, get as getPage } from '../../lib/api-gen/page';
 import { getBaseUrl } from '../../lib/base-url';
 import { specBodyToHtml, wrapCdata } from '../../lib/spec-to-rss-html';
 
@@ -16,8 +17,14 @@ import { specBodyToHtml, wrapCdata } from '../../lib/spec-to-rss-html';
  *  N+1: 각 페이지 getPage 로 head.description / keywords 받음. 페이지 ~100 미만 가정.
  *  RSS reader 가 시간당 1 회 정도 fetch 라 부담 없음. */
 export async function GET(req: Request) {
-  const core = getCore();
-  const seo = await core.getCmsSettings();
+  const seoRes = await getCmsSettings();
+  if (!seoRes.ok) {
+    return new Response('RSS feed is disabled', { status: 404 });
+  }
+  const seo = seoRes.data as {
+    rssEnabled?: boolean; siteUrl?: string; siteTitle?: string; siteDescription?: string;
+    siteLang?: string; jsonLdLogoUrl?: string; faviconUrl?: string;
+  };
 
   if (!seo.rssEnabled) {
     return new Response('RSS feed is disabled', { status: 404 });
@@ -26,16 +33,20 @@ export async function GET(req: Request) {
   const baseUrl = seo.siteUrl || getBaseUrl(req);
 
   // ?project= 파라미터 — rewrite 로 /{project}/feed.xml 형태도 여기로 라우팅됨.
-  const url = new URL(req.url);
-  const projectFilter = (url.searchParams.get('project') || '').trim();
+  const reqUrl = new URL(req.url);
+  const projectFilter = (reqUrl.searchParams.get('project') || '').trim();
 
-  const result = await core.listPages();
-  const allPages = result.success && result.data ? result.data : [];
+  const result = await listPages();
+  const allPages = result.ok ? (result.data.items ?? []) : [];
   // 공개 + 발행 페이지만 + 최신 순. project 필터 있으면 매칭만.
   const visiblePages = allPages
     .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
     .filter((p) => !projectFilter || p.project === projectFilter)
-    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
+    .sort((a, b) => {
+      const ua = typeof a.updatedAt === 'bigint' ? Number(a.updatedAt) : Number(a.updatedAt ?? 0);
+      const ub = typeof b.updatedAt === 'bigint' ? Number(b.updatedAt) : Number(b.updatedAt ?? 0);
+      return ub - ua;
+    });
 
   // 프로젝트별 RSS 인데 매칭 페이지 0건이면 404 — 존재하지 않는 프로젝트 보호.
   if (projectFilter && visiblePages.length === 0) {
@@ -49,12 +60,20 @@ export async function GET(req: Request) {
   const itemsXml: string[] = [];
   for (const page of visiblePages) {
     const url = `${baseUrl}/${page.slug.split('/').map(encodeURIComponent).join('/')}`;
-    const pubDate = page.updatedAt ? new Date(page.updatedAt.includes('T') ? page.updatedAt : page.updatedAt.replace(' ', 'T') + 'Z').toUTCString() : new Date().toUTCString();
-    const pageRes = await core.getPage(page.slug);
-    const spec = (pageRes.success && pageRes.data) || ({} as any);
-    const head = (spec.head || {}) as Record<string, any>;
-    const description: string = head.description || '';
-    const keywords: string[] = Array.isArray(head.keywords) ? head.keywords : [];
+    const updatedMs = typeof page.updatedAt === 'bigint' ? Number(page.updatedAt) : Number(page.updatedAt ?? 0);
+    const pubDate = updatedMs ? new Date(updatedMs).toUTCString() : new Date().toUTCString();
+    const pageRes = await getPage({ value: page.slug });
+    let spec: { head?: Record<string, unknown>; body?: unknown } = {};
+    if (pageRes.ok && pageRes.data && pageRes.data.spec) {
+      try {
+        spec = JSON.parse(pageRes.data.spec);
+      } catch {
+        spec = {};
+      }
+    }
+    const head = (spec.head || {}) as Record<string, unknown>;
+    const description: string = typeof head.description === 'string' ? head.description : '';
+    const keywords: string[] = Array.isArray(head.keywords) ? (head.keywords as string[]) : [];
     const bodyHtml = specBodyToHtml(spec.body);
     const categoriesXml = keywords
       .filter((k) => typeof k === 'string' && k.trim())
@@ -73,18 +92,18 @@ ${description ? `      <description>${escXml(description)}</description>\n` : ''
   const imageXml = logoUrl
     ? `    <image>
       <url>${escXml(logoUrl.startsWith('http') ? logoUrl : `${baseUrl}${logoUrl.startsWith('/') ? '' : '/'}${logoUrl}`)}</url>
-      <title>${escXml(seo.siteTitle)}</title>
+      <title>${escXml(seo.siteTitle ?? '')}</title>
       <link>${escXml(baseUrl)}</link>
     </image>\n`
     : '';
 
   // 프로젝트별 RSS — channel 제목·설명·self-link 에 프로젝트 컨텍스트 반영.
   const channelTitle = projectFilter
-    ? `${seo.siteTitle} — ${projectFilter}`
-    : seo.siteTitle;
+    ? `${seo.siteTitle ?? ''} — ${projectFilter}`
+    : (seo.siteTitle ?? '');
   const channelDescription = projectFilter
     ? `${projectFilter} 카테고리의 글`
-    : seo.siteDescription;
+    : (seo.siteDescription ?? '');
   const channelLink = projectFilter
     ? `${baseUrl}/${encodeURIComponent(projectFilter)}`
     : baseUrl;

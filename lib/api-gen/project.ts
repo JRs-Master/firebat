@@ -6,13 +6,14 @@
 
 import {
   ProjectListPb,
-  ProjectRenameRequest,
+  ProjectRenameRequestSchema,
   ProjectService,
-  ProjectSetConfigRequest,
-  ProjectSetVisibilityRequest,
-  ProjectVerifyPasswordRequest,
-  StringRequest,
+  ProjectSetConfigRequestSchema,
+  ProjectSetVisibilityRequestSchema,
+  ProjectVerifyPasswordRequestSchema,
+  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
@@ -28,7 +29,7 @@ export async function scan(): Promise<RpcResult<ProjectListPb>> {
   }
 }
 
-export async function setVisibility(args: ProjectSetVisibilityRequest): Promise<RpcResult<void>> {
+export async function setVisibility(args: MessageInitShape<typeof ProjectSetVisibilityRequestSchema>): Promise<RpcResult<void>> {
   try {
       await projectClient.setVisibility(args ?? {});
       return { ok: true, data: undefined };
@@ -37,7 +38,7 @@ export async function setVisibility(args: ProjectSetVisibilityRequest): Promise<
   }
 }
 
-export async function getVisibility(args: StringRequest): Promise<RpcResult<string>> {
+export async function getVisibility(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await projectClient.getVisibility(args ?? {});
       return { ok: true, data: response.visibility };
@@ -46,7 +47,7 @@ export async function getVisibility(args: StringRequest): Promise<RpcResult<stri
   }
 }
 
-export async function getConfig(args: StringRequest): Promise<RpcResult<string>> {
+export async function getConfig(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await projectClient.getConfig(args ?? {});
       return { ok: true, data: response.rawJson };
@@ -55,7 +56,7 @@ export async function getConfig(args: StringRequest): Promise<RpcResult<string>>
   }
 }
 
-export async function setConfig(args: ProjectSetConfigRequest): Promise<RpcResult<void>> {
+export async function setConfig(args: MessageInitShape<typeof ProjectSetConfigRequestSchema>): Promise<RpcResult<void>> {
   try {
       await projectClient.setConfig(args ?? {});
       return { ok: true, data: undefined };
@@ -64,7 +65,7 @@ export async function setConfig(args: ProjectSetConfigRequest): Promise<RpcResul
   }
 }
 
-export async function verifyPassword(args: ProjectVerifyPasswordRequest): Promise<RpcResult<boolean>> {
+export async function verifyPassword(args: MessageInitShape<typeof ProjectVerifyPasswordRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await projectClient.verifyPassword(args ?? {});
       return { ok: true, data: response.value };
@@ -73,7 +74,7 @@ export async function verifyPassword(args: ProjectVerifyPasswordRequest): Promis
   }
 }
 
-export async function deleteProject(args: StringRequest): Promise<RpcResult<void>> {
+export async function deleteProject(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
   try {
       await projectClient.delete(args ?? {});
       return { ok: true, data: undefined };
@@ -82,7 +83,7 @@ export async function deleteProject(args: StringRequest): Promise<RpcResult<void
   }
 }
 
-export async function rename(args: ProjectRenameRequest): Promise<RpcResult<void>> {
+export async function rename(args: MessageInitShape<typeof ProjectRenameRequestSchema>): Promise<RpcResult<void>> {
   try {
       await projectClient.rename(args ?? {});
       return { ok: true, data: undefined };
@@ -95,3 +96,5 @@ export const scanProjects = scan;
 export const listProjects = scan;
 export const verifyProjectPassword = verifyPassword;
 export const getProjectConfig = getConfig;
+export const setProjectVisibility = setVisibility;
+export const setProjectConfig = setConfig;

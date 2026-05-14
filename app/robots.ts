@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 import { headers } from 'next/headers';
-import { getCore } from '../lib/singleton';
+import { getCmsSettings } from '../lib/api-gen/module';
 import { BASE_URL } from '../lib/base-url';
 
 // Rust Core gRPC 호출하므로 prerender 우회 — sitemap/feed 와 같은 패턴.
@@ -9,9 +9,11 @@ export const dynamic = 'force-dynamic';
 /** 동적 robots.txt — SEO 모듈 설정에서 내용 로드.
  *  Next.js metadata route 는 req 객체 없지만 headers() API 로 요청 host 접근 가능. */
 export default async function robots(): Promise<MetadataRoute.Robots> {
-  const core = getCore();
-  const seo = await core.getCmsSettings();
-  const raw = seo.robotsTxt.trim();
+  const seoRes = await getCmsSettings();
+  const seo = (seoRes.ok ? seoRes.data : {}) as {
+    robotsTxt?: string; siteUrl?: string; sitemapEnabled?: boolean;
+  };
+  const raw = (seo.robotsTxt ?? '').trim();
 
   // 설정된 robots.txt를 파싱하여 Metadata API 형식으로 변환
   const rules: MetadataRoute.Robots['rules'] = [];

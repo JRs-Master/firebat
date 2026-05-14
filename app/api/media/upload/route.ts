@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
+import { saveUpload } from '../../../../lib/api-gen/media';
 import { withAuth } from '../../../../lib/with-api-error';
 
 /**
@@ -26,13 +26,23 @@ export const POST = withAuth(async (req: NextRequest) => {
     return NextResponse.json({ success: false, error: 'dataUrl 가 data URL 형식이 아닙니다.' }, { status: 400 });
   }
 
-  const result = await getCore().saveUpload({
-    binary: dataUrl,
-    ...(typeof body.filenameHint === 'string' && body.filenameHint ? { filenameHint: body.filenameHint } : {}),
+  // MediaSaveRequest { binaryBase64, contentType, optsJson }
+  // dataUrl 형식: 'data:image/png;base64,...' — content type 추출 + base64 부분만 분리.
+  const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+  const contentType = m ? m[1] : 'application/octet-stream';
+  const binaryBase64 = m ? m[2] : '';
+  const opts: Record<string, unknown> = {
     scope: body.scope === 'system' ? 'system' : 'user',
-  });
-  if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error }, { status: 500 });
+  };
+  if (typeof body.filenameHint === 'string' && body.filenameHint) opts.filenameHint = body.filenameHint;
+
+  const result = await saveUpload({
+    binaryBase64,
+    contentType,
+    optsJson: JSON.stringify(opts),
+  } as any);
+  if (!result.ok) {
+    return NextResponse.json({ success: false, error: result.message }, { status: 500 });
   }
   return NextResponse.json({ success: true, data: result.data });
 });

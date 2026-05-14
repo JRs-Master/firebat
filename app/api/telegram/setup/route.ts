@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
 import { withAuth } from '../../../../lib/with-api-error';
+import { getTelegramWebhookStatus, setupTelegramWebhook, removeTelegramWebhook } from '../../../../lib/api-gen/telegram';
 
 /**
  * 텔레그램 양방향 봇 webhook 등록·해제·상태 조회 — 어드민 전용.
@@ -13,7 +13,11 @@ import { withAuth } from '../../../../lib/with-api-error';
  */
 
 export const GET = withAuth(async () => {
-  const status = await getCore().getTelegramWebhookStatus();
+  const res = await getTelegramWebhookStatus();
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+  }
+  const status = (res.data as Record<string, unknown>) ?? {};
   return NextResponse.json({ success: true, ...status });
 });
 
@@ -22,17 +26,25 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (!body || typeof body.domain !== 'string') {
     return NextResponse.json({ success: false, error: 'domain 필요 (https://...)' }, { status: 400 });
   }
-  const result = await getCore().setupTelegramWebhook(body.domain.trim());
-  if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+  const res = await setupTelegramWebhook({ value: body.domain.trim() });
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message }, { status: 400 });
   }
-  return NextResponse.json({ success: true, webhookUrl: result.webhookUrl });
+  const inner = (res.data as { success?: boolean; error?: string; webhookUrl?: string }) ?? {};
+  if (inner.success === false) {
+    return NextResponse.json({ success: false, error: inner.error }, { status: 400 });
+  }
+  return NextResponse.json({ success: true, webhookUrl: inner.webhookUrl });
 });
 
 export const DELETE = withAuth(async () => {
-  const result = await getCore().removeTelegramWebhook();
-  if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error }, { status: 400 });
+  const res = await removeTelegramWebhook();
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message }, { status: 400 });
+  }
+  const inner = (res.data as { success?: boolean; error?: string }) ?? {};
+  if (inner.success === false) {
+    return NextResponse.json({ success: false, error: inner.error }, { status: 400 });
   }
   return NextResponse.json({ success: true });
 });

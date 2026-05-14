@@ -7,13 +7,14 @@
 import {
   CapabilityProviderListPb,
   CapabilityProviderPb,
-  CapabilityRegisterRequest,
+  CapabilityRegisterRequestSchema,
   CapabilityService,
-  CapabilitySetSettingsRequest,
+  CapabilitySetSettingsRequestSchema,
   CapabilitySettingsPb,
   CapabilitySummaryListPb,
-  StringRequest,
+  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
@@ -29,7 +30,7 @@ export async function list(): Promise<RpcResult<unknown>> {
   }
 }
 
-export async function register(args: CapabilityRegisterRequest): Promise<RpcResult<void>> {
+export async function register(args: MessageInitShape<typeof CapabilityRegisterRequestSchema>): Promise<RpcResult<void>> {
   try {
       await capabilityClient.register(args ?? {});
       return { ok: true, data: undefined };
@@ -38,7 +39,7 @@ export async function register(args: CapabilityRegisterRequest): Promise<RpcResu
   }
 }
 
-export async function getProviders(args: StringRequest): Promise<RpcResult<CapabilityProviderListPb>> {
+export async function getProviders(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<CapabilityProviderListPb>> {
   try {
       const response = await capabilityClient.getProviders(args ?? {});
       return { ok: true, data: response };
@@ -56,7 +57,7 @@ export async function listWithProviders(): Promise<RpcResult<CapabilitySummaryLi
   }
 }
 
-export async function resolve(args: StringRequest): Promise<RpcResult<CapabilityProviderPb>> {
+export async function resolve(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<CapabilityProviderPb>> {
   try {
       const response = await capabilityClient.resolve(args ?? {});
       return { ok: true, data: response };
@@ -65,7 +66,7 @@ export async function resolve(args: StringRequest): Promise<RpcResult<Capability
   }
 }
 
-export async function getSettings(args: StringRequest): Promise<RpcResult<CapabilitySettingsPb>> {
+export async function getSettings(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<CapabilitySettingsPb>> {
   try {
       const response = await capabilityClient.getSettings(args ?? {});
       return { ok: true, data: response };
@@ -74,7 +75,7 @@ export async function getSettings(args: StringRequest): Promise<RpcResult<Capabi
   }
 }
 
-export async function setSettings(args: CapabilitySetSettingsRequest): Promise<RpcResult<void>> {
+export async function setSettings(args: MessageInitShape<typeof CapabilitySetSettingsRequestSchema>): Promise<RpcResult<void>> {
   try {
       await capabilityClient.setSettings(args ?? {});
       return { ok: true, data: undefined };

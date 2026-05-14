@@ -1,12 +1,16 @@
-import { getCore } from '../../lib/singleton';
+import { getCmsSettings } from '../../lib/api-gen/module';
+import { listStatic } from '../../lib/api-gen/page';
 import { getBaseUrl } from '../../lib/base-url';
 
 export const dynamic = 'force-dynamic';
 
 /** GET /sitemap.xml — Sitemap Index */
 export async function GET(req: Request) {
-  const core = getCore();
-  const seo = await core.getCmsSettings();
+  const seoRes = await getCmsSettings();
+  if (!seoRes.ok) {
+    return new Response('Sitemap is disabled', { status: 404 });
+  }
+  const seo = seoRes.data as { sitemapEnabled?: boolean; siteUrl?: string };
 
   if (!seo.sitemapEnabled) {
     return new Response('Sitemap is disabled', { status: 404 });
@@ -18,7 +22,8 @@ export async function GET(req: Request) {
   ];
 
   // 정적 페이지가 있을 때만 포함
-  const staticPages = await core.listStaticPages();
+  const staticRes = await listStatic();
+  const staticPages = staticRes.ok ? (staticRes.data.values ?? []) : [];
   if (staticPages.length > 0) {
     sitemaps.push(`${baseUrl}/sitemap-pages.xml`);
   }

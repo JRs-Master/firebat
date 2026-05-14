@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
 import { withAuth } from '../../../../lib/with-api-error';
 import { ApiError } from '../../../../lib/api-error';
+import { runModule } from '../../../../lib/api-gen/module';
 
 /**
  * POST /api/module/run
@@ -12,6 +12,14 @@ export const POST = withAuth(async (req) => {
   if (!moduleName || typeof moduleName !== 'string') {
     throw new ApiError(400, '모듈 이름이 필요합니다.');
   }
-  const result = await getCore().runModule(moduleName, data ?? {});
-  return NextResponse.json(result, { status: result.success ? 200 : 400 });
+  const res = await runModule({ module: moduleName, dataJson: JSON.stringify(data ?? {}) });
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+  }
+  const out = res.data;
+  const parsedData = out.dataJson ? JSON.parse(out.dataJson) : undefined;
+  return NextResponse.json(
+    { success: out.success, data: parsedData, error: out.error, stderr: out.stderr, exitCode: out.exitCode },
+    { status: out.success ? 200 : 400 },
+  );
 });

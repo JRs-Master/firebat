@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
 import { logger } from '../../../../lib/util/logger';
+import { getTelegramWebhookSecret, isTelegramOwner, processTelegramMessage } from '../../../../lib/api-gen/telegram';
 
 /**
  * POST /api/telegram/webhook — 텔레그램 Bot API 가 호출하는 진입점.
@@ -11,17 +11,18 @@ import { logger } from '../../../../lib/util/logger';
  *   2. body.message.from.id 가 TELEGRAM_OWNER_IDS whitelist 안에 있는지 확인.
  *      → 외부인은 403, 메시지 무시. AI 도구 / 시크릿 / 모듈 실행까지 가능한 권한이라 owner 만 허용.
  *   3. text 가 비어있으면 (이미지·스티커·투표 등) 무시.
- *   4. core.processTelegramMessage 로 위임 — AI 호출 + sysmod_telegram 응답.
+ *   4. processTelegramMessage 로 위임 — AI 호출 + sysmod_telegram 응답.
  *   5. 텔레그램에 200 응답 — 처리 완료 신호 (실패해도 200, retry 폭탄 방어).
  *
  * 인증: 텔레그램 secret token 만 (admin 인증 X — 텔레그램 본체가 호출).
  *       owner whitelist 가 실질 권한 검증.
  */
 export async function POST(req: NextRequest) {
-  const core = getCore();
-
   // 1. Secret token 검증
-  const expectedSecret = await core.getTelegramWebhookSecret();
+  const secretRes = await getTelegramWebhookSecret();
+  const expectedSecret = secretRes.ok
+    ? (typeof secretRes.data === 'string' ? secretRes.data : (secretRes.data as { value?: string } | null)?.value ?? null)
+    : null;
   const incomingSecret = req.headers.get('x-telegram-bot-api-secret-token');
   if (!expectedSecret || incomingSecret !== expectedSecret) {
     return NextResponse.json({ ok: false, error: 'Invalid secret token' }, { status: 401 });
@@ -47,7 +48,8 @@ export async function POST(req: NextRequest) {
   if (!fromUserId || !chatId) {
     return NextResponse.json({ ok: true }); // 비정상 형태 무시
   }
-  if (!await core.isTelegramOwner(fromUserId)) {
+  const ownerRes = await isTelegramOwner({ value: String(fromUserId) });
+  if (!ownerRes.ok || ownerRes.data !== true) {
     // 외부인 — 무시 (응답 X). 텔레그램은 200 받아야 webhook 정상.
     return NextResponse.json({ ok: true });
   }
@@ -61,7 +63,7 @@ export async function POST(req: NextRequest) {
   // 5. AI 처리 — 응답은 sysmod_telegram 이 같은 chat 으로 송신.
   //    텔레그램에 빨리 200 응답해야 retry 안 일어남 → 처리는 비동기 fire-and-forget.
   //    실패는 logger 에 기록 (사용자 알림은 X — 무한 응답 루프 방지).
-  core.processTelegramMessage(text, chatId).catch((err: any) => {
+  processTelegramMessage({ text, chatId: String(chatId) }).catch((err: any) => {
     logger.error('telegram', 'processMessage 실패', err);
   });
 

@@ -5,16 +5,17 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  DatabaseQueryRequest,
+  DatabaseQueryRequestSchema,
   DatabaseService,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const databaseClient = createClient(DatabaseService, transport);
 
-export async function query(args: DatabaseQueryRequest): Promise<RpcResult<unknown>> {
+export async function query(args: MessageInitShape<typeof DatabaseQueryRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await databaseClient.query(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };

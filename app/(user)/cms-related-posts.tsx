@@ -5,8 +5,9 @@
  * 콘텐츠 페이지(project 설정된 + keywords 1+ 개) 본문 끝에 표시. 결과 0건이면 미렌더.
  * 카드 변형: list 패턴 (제목 + 메타 + 프로젝트 라벨).
  */
-import { getCore } from '../../lib/singleton';
+import { findRelatedPages } from '../../lib/api-gen/page';
 import { getServerTranslations, normalizeLang } from '../../lib/i18n-server';
+import { toPageListItem } from '../../lib/util/page-pb-convert';
 
 function formatDate(s: string | undefined, timeZone: string, lang: 'ko' | 'en'): string {
   if (!s) return '';
@@ -18,7 +19,8 @@ function formatDate(s: string | undefined, timeZone: string, lang: 'ko' | 'en'):
 }
 
 export async function CmsRelatedPosts({ slug, limit, siteLang }: { slug: string; limit: number; siteLang?: string }) {
-  const related = await getCore().findRelatedPages(slug, limit);
+  const res = await findRelatedPages({ slug, limit: BigInt(limit) } as any);
+  const related = res.ok ? (res.data.items ?? []).map(toPageListItem) : [];
   if (related.length === 0) return null;
   const lang = normalizeLang(siteLang);
   const t = getServerTranslations(siteLang);

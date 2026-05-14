@@ -7,33 +7,43 @@
  * 0 = 무제한. AiManager 가 매 turn 시작 시 Core.checkCostBudget() 호출 → 초과 시 LLM 호출 차단.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
 import { withAuth } from '../../../../lib/with-api-error';
+import { getCostBudget, setCostBudget, checkCostBudget } from '../../../../lib/api-gen/cost';
 
 export const GET = withAuth(async () => {
-  const core = getCore();
-  const budget = await core.getCostBudget();
-  const check = await core.checkCostBudget();
+  const budgetRes = await getCostBudget();
+  const checkRes = await checkCostBudget();
+  if (!budgetRes.ok) {
+    return NextResponse.json({ success: false, error: budgetRes.message }, { status: 500 });
+  }
+  if (!checkRes.ok) {
+    return NextResponse.json({ success: false, error: checkRes.message }, { status: 500 });
+  }
+  const budget = budgetRes.data;
+  const check = checkRes.data;
   return NextResponse.json({
     success: true,
     data: {
       ...budget,
-      dailySpentUsd: check.dailyUsd,
-      monthlySpentUsd: check.monthlyUsd,
-      dailySpentCalls: check.dailyCalls,
-      monthlySpentCalls: check.monthlyCalls,
+      dailySpentUsd: check.dailyUsedUsd,
+      monthlySpentUsd: check.monthlyUsedUsd,
+      dailySpentCalls: Number(check.dailyCalls ?? 0n),
+      monthlySpentCalls: Number(check.monthlyCalls ?? 0n),
     },
   });
 });
 
 export const POST = withAuth(async (req: NextRequest) => {
   const body = await req.json();
-  await getCore().setCostBudget({
+  const res = await setCostBudget({
     dailyUsd: Number(body?.dailyUsd) || 0,
     monthlyUsd: Number(body?.monthlyUsd) || 0,
-    dailyCalls: Number(body?.dailyCalls) || 0,
-    monthlyCalls: Number(body?.monthlyCalls) || 0,
-    alertAtPercent: Number(body?.alertAtPercent) || 80,
+    dailyCalls: BigInt(Number(body?.dailyCalls) || 0),
+    monthlyCalls: BigInt(Number(body?.monthlyCalls) || 0),
+    alertAtPercent: BigInt(Number(body?.alertAtPercent) || 80),
   });
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+  }
   return NextResponse.json({ success: true });
 });

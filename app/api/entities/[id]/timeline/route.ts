@@ -5,7 +5,7 @@
  *   body: { content, factType?, occurredAt?, tags?, ttlDays? }
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../../lib/singleton';
+import { getEntityTimeline, saveEntityFact } from '../../../../../lib/api-gen/entity';
 import { withAuth } from '../../../../../lib/with-api-error';
 
 export const dynamic = 'force-dynamic';
@@ -24,9 +24,13 @@ export const GET = withAuth(async (req: NextRequest, { params }: Ctx) => {
   const limitRaw = url.searchParams.get('limit');
   const limit = limitRaw ? Math.max(1, Math.min(500, parseInt(limitRaw, 10) || 100)) : 100;
   const orderBy = (url.searchParams.get('orderBy') as 'occurredAt' | 'createdAt') ?? undefined;
-  const res = await getCore().getEntityTimeline(id, { limit, orderBy });
-  if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
-  return NextResponse.json({ success: true, facts: res.data ?? [] });
+  const res = await getEntityTimeline({
+    entityId: BigInt(id),
+    limit: BigInt(limit),
+    orderBy,
+  } as any);
+  if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+  return NextResponse.json({ success: true, facts: (res.data as any) ?? [] });
 });
 
 export const POST = withAuth(async (req: NextRequest, { params }: Ctx) => {
@@ -34,19 +38,19 @@ export const POST = withAuth(async (req: NextRequest, { params }: Ctx) => {
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
   const body = await req.json().catch(() => null);
   if (!body?.content) return NextResponse.json({ success: false, error: 'content 필수' }, { status: 400 });
-  let occurredAtMs: number | undefined;
+  let occurredAtMs: bigint | undefined;
   if (body.occurredAt) {
     const t = new Date(body.occurredAt).getTime();
-    if (Number.isFinite(t)) occurredAtMs = t;
+    if (Number.isFinite(t)) occurredAtMs = BigInt(t);
   }
-  const res = await getCore().saveEntityFact({
-    entityId: id,
+  const res = await saveEntityFact({
+    entityId: BigInt(id),
     content: body.content,
     factType: typeof body.factType === 'string' ? body.factType : undefined,
     occurredAt: occurredAtMs,
-    tags: Array.isArray(body.tags) ? body.tags.filter((s: any) => typeof s === 'string') : undefined,
-    ttlDays: typeof body.ttlDays === 'number' && body.ttlDays > 0 ? body.ttlDays : undefined,
-  });
-  if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
+    tags: Array.isArray(body.tags) ? body.tags.filter((s: any) => typeof s === 'string') : [],
+    ttlDays: typeof body.ttlDays === 'number' && body.ttlDays > 0 ? BigInt(body.ttlDays) : undefined,
+  } as any);
+  if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true, factId: res.data?.id });
 });

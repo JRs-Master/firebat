@@ -4,12 +4,13 @@
  * GET /api/memory/stats → entities/facts/events 통계 + byType 분포.
  */
 import { NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
+import { getMemoryStats } from '../../../../lib/api-gen/consolidation';
 import { withAuth } from '../../../../lib/with-api-error';
 
 export const dynamic = 'force-dynamic';
 
 export const GET = withAuth(async () => {
-  const stats = await getCore().getMemoryStats();
-  return NextResponse.json({ success: true, ...stats });
+  const res = await getMemoryStats();
+  if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+  return NextResponse.json({ success: true, ...(res.data as any) });
 });

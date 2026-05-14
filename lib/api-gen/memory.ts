@@ -5,10 +5,11 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  MemorySaveFileRequest,
+  MemorySaveFileRequestSchema,
   MemoryService,
-  StringRequest,
+  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
@@ -24,7 +25,7 @@ export async function getIndex(): Promise<RpcResult<string>> {
   }
 }
 
-export async function readFile(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function readFile(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await memoryClient.readFile(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -42,7 +43,7 @@ export async function listFiles(): Promise<RpcResult<unknown>> {
   }
 }
 
-export async function saveFile(args: MemorySaveFileRequest): Promise<RpcResult<void>> {
+export async function saveFile(args: MessageInitShape<typeof MemorySaveFileRequestSchema>): Promise<RpcResult<void>> {
   try {
       await memoryClient.saveFile(args ?? {});
       return { ok: true, data: undefined };
@@ -51,7 +52,7 @@ export async function saveFile(args: MemorySaveFileRequest): Promise<RpcResult<v
   }
 }
 
-export async function deleteFile(args: StringRequest): Promise<RpcResult<void>> {
+export async function deleteFile(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
   try {
       await memoryClient.deleteFile(args ?? {});
       return { ok: true, data: undefined };

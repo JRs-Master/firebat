@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../lib/singleton';
+import { createShare } from '../../../lib/api-gen/conversation';
 import { withAuth } from '../../../lib/with-api-error';
 import { getBaseUrl } from '../../../lib/base-url';
 
@@ -29,24 +29,26 @@ export const POST = withAuth(async (req: NextRequest, _ctx, auth) => {
     ? body.title
     : (type === 'turn' ? '공유된 응답' : '공유된 대화');
 
-  const core = getCore();
-  const res = await core.createShare({
-    type,
+  const res = await createShare({
+    shareType: type,
     title,
-    messages,
+    messagesJson: JSON.stringify(messages),
     owner: auth.role,
     sourceConvId: conversationId,
     dedupKey,
   });
-  if (!res.success || !res.data) {
-    return NextResponse.json({ success: false, error: res.error || '공유 생성 실패' }, { status: 500 });
+  if (!res.ok || !res.data || !res.data.slug) {
+    return NextResponse.json(
+      { success: false, error: res.ok ? '공유 생성 실패' : res.message },
+      { status: 500 },
+    );
   }
   const base = getBaseUrl(req);
   return NextResponse.json({
     success: true,
     slug: res.data.slug,
     url: `${base}/share/${res.data.slug}`,
-    expiresAt: res.data.expiresAt,
+    expiresAt: typeof res.data.expiresAt === 'bigint' ? Number(res.data.expiresAt) : res.data.expiresAt,
     reused: res.data.reused === true,
   });
 });

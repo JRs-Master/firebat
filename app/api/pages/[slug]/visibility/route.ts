@@ -5,7 +5,7 @@
  * POST  /api/pages/:slug/visibility — 비밀번호 검증 (비인증 사용자용)
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../../lib/singleton';
+import { setVisibility as setPageVisibility, verifyPassword as verifyPagePassword } from '../../../../../lib/api-gen/page';
 import { withApiError, withAuth } from '../../../../../lib/with-api-error';
 
 function safeDecodeSlug(slug: string): string {
@@ -29,10 +29,10 @@ export const PATCH = withAuth(async (
     return NextResponse.json({ success: false, error: 'password 모드에서는 비밀번호 필수' }, { status: 400 });
   }
 
-  const result = await getCore().setPageVisibility(slug, visibility, password);
-  return result.success
+  const res = await setPageVisibility({ slug, visibility, password });
+  return res.ok
     ? NextResponse.json({ success: true })
-    : NextResponse.json({ success: false, error: result.error }, { status: 404 });
+    : NextResponse.json({ success: false, error: res.message }, { status: 404 });
 });
 
 /** POST — 비밀번호 검증 (비인증 사용자용 — withApiError 만, requireAuth 없음) */
@@ -48,9 +48,9 @@ export const POST = withApiError(async (
     return NextResponse.json({ success: false, error: '비밀번호 필수' }, { status: 400 });
   }
 
-  const result = await getCore().verifyPagePassword(slug, password);
-  if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error }, { status: 404 });
+  const res = await verifyPagePassword({ slug, password });
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message }, { status: 404 });
   }
-  return NextResponse.json({ success: true, verified: result.data });
+  return NextResponse.json({ success: true, verified: res.data });
 });

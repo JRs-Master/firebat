@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
+import { saveTempAttachment } from '../../../../lib/api-gen/media';
 import { withAuth } from '../../../../lib/with-api-error';
 
 /**
  * POST /api/media/attach-temp
  *
  * 채팅창 첨부 이미지 임시 저장 — sharp 0, raw 그대로. 응답: {slug, url}.
- * 메시지에는 URL slug 만 박힘 → fetch body 작게 유지 → keepalive 안정 (모바일
+ * 메시지에는 URL slug 만 들어가서 fetch body 작게 유지 → keepalive 안정 (모바일
  * 첨부 첫 시도 실패 root cause fix, 2026-05-11).
  *
  * 갤러리 (/api/media/upload) 와 분리 — 갤러리는 sharp + variants + 영구 저장.
@@ -27,9 +27,9 @@ export const POST = withAuth(async (req: NextRequest) => {
     return NextResponse.json({ success: false, error: 'dataUrl 가 data URL 형식이 아닙니다.' }, { status: 400 });
   }
 
-  const result = await getCore().saveTempAttachment(dataUrl);
-  if (!result.success) {
-    return NextResponse.json({ success: false, error: result.error }, { status: 500 });
+  const result = await saveTempAttachment({ dataUrl } as any);
+  if (!result.ok) {
+    return NextResponse.json({ success: false, error: result.message }, { status: 500 });
   }
   return NextResponse.json({ success: true, data: result.data });
 });

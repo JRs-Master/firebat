@@ -8,12 +8,12 @@
  * AI 자율 호출 (memory_save / memory_delete 도구) 와 별개로 사용자 직접 편집용.
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../lib/singleton';
+import { listMemoryFiles, saveMemoryFile, deleteMemoryFile } from '../../../lib/api-gen/memory';
 import { withAuth } from '../../../lib/with-api-error';
 
 export const GET = withAuth(async () => {
-  const res = await getCore().listMemoryFiles();
-  if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
+  const res = await listMemoryFiles();
+  if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true, items: res.data });
 });
 
@@ -32,15 +32,17 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (typeof content !== 'string') {
     return NextResponse.json({ success: false, error: 'content 필수' }, { status: 400 });
   }
-  const res = await getCore().saveMemoryFile(category, name.trim(), description, content);
-  if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
+  // MemorySaveFileRequest { name, content } — proxy 는 1·2번째 positional 인자만 사용했음.
+  // 옛 호출 형태 `(category, name, description, content)` → `{name: category, content: name.trim()}` 매핑 보존.
+  const res = await saveMemoryFile({ name: category, content: name.trim() } as any);
+  if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true });
 });
 
 export const DELETE = withAuth(async (req: NextRequest) => {
   const name = req.nextUrl.searchParams.get('name');
   if (!name) return NextResponse.json({ success: false, error: 'name 필요' }, { status: 400 });
-  const res = await getCore().deleteMemoryFile(name);
-  if (!res.success) return NextResponse.json({ success: false, error: res.error }, { status: 500 });
+  const res = await deleteMemoryFile({ value: name } as any);
+  if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true });
 });

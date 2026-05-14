@@ -5,18 +5,19 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  StorageGlobFilesRequest,
+  StorageGlobFilesRequestSchema,
   StorageService,
-  StorageWriteFileRequest,
-  StringRequest,
+  StorageWriteFileRequestSchema,
+  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const storageClient = createClient(StorageService, transport);
 
-export async function readFile(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function readFile(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await storageClient.readFile(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -25,7 +26,7 @@ export async function readFile(args: StringRequest): Promise<RpcResult<unknown>>
   }
 }
 
-export async function readFileBinary(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function readFileBinary(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await storageClient.readFileBinary(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -34,7 +35,7 @@ export async function readFileBinary(args: StringRequest): Promise<RpcResult<unk
   }
 }
 
-export async function writeFile(args: StorageWriteFileRequest): Promise<RpcResult<void>> {
+export async function writeFile(args: MessageInitShape<typeof StorageWriteFileRequestSchema>): Promise<RpcResult<void>> {
   try {
       await storageClient.writeFile(args ?? {});
       return { ok: true, data: undefined };
@@ -43,7 +44,7 @@ export async function writeFile(args: StorageWriteFileRequest): Promise<RpcResul
   }
 }
 
-export async function deleteFile(args: StringRequest): Promise<RpcResult<void>> {
+export async function deleteFile(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
   try {
       await storageClient.deleteFile(args ?? {});
       return { ok: true, data: undefined };
@@ -52,7 +53,7 @@ export async function deleteFile(args: StringRequest): Promise<RpcResult<void>> 
   }
 }
 
-export async function listDir(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function listDir(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await storageClient.listDir(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -61,7 +62,7 @@ export async function listDir(args: StringRequest): Promise<RpcResult<unknown>> 
   }
 }
 
-export async function listFiles(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function listFiles(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await storageClient.listFiles(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -70,7 +71,7 @@ export async function listFiles(args: StringRequest): Promise<RpcResult<unknown>
   }
 }
 
-export async function getFileTree(args: StringRequest): Promise<RpcResult<unknown>> {
+export async function getFileTree(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await storageClient.getFileTree(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -79,7 +80,7 @@ export async function getFileTree(args: StringRequest): Promise<RpcResult<unknow
   }
 }
 
-export async function globFiles(args: StorageGlobFilesRequest): Promise<RpcResult<unknown>> {
+export async function globFiles(args: MessageInitShape<typeof StorageGlobFilesRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await storageClient.globFiles(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };

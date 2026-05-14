@@ -1,6 +1,8 @@
-import { getCore } from '../../lib/singleton';
+import { getCmsSettings } from '../../lib/api-gen/module';
+import { listPages } from '../../lib/api-gen/page';
 import { BASE_URL } from '../../lib/base-url';
 import { CmsPageList, CmsPagination } from './cms-page-list';
+import { toPageListItem } from '../../lib/util/page-pb-convert';
 import type { Metadata } from 'next';
 
 export const dynamic = 'force-dynamic';
@@ -11,10 +13,11 @@ interface Props {
 
 /** 루트 페이지 SEO 메타데이터 — CMS 모듈 설정에서 로드 */
 export async function generateMetadata(): Promise<Metadata> {
-  const seo = await getCore().getCmsSettings();
+  const seoRes = await getCmsSettings();
+  const seo = (seoRes.ok ? seoRes.data : {}) as any;
   const siteUrl = seo.siteUrl || BASE_URL;
 
-  const ogImage = `${siteUrl}/api/og?title=${encodeURIComponent(seo.siteTitle)}&description=${encodeURIComponent(seo.siteDescription)}`;
+  const ogImage = `${siteUrl}/api/og?title=${encodeURIComponent(seo.siteTitle ?? '')}&description=${encodeURIComponent(seo.siteDescription ?? '')}`;
 
   return {
     title: seo.siteTitle,
@@ -34,14 +37,15 @@ export async function generateMetadata(): Promise<Metadata> {
 /** 홈 페이지 — Hero + 최근 글 목록 + 프로젝트 카탈로그.
  *  Phase 4 Step 3+4 — cardVariant + 페이지네이션. CmsHeader / CmsFooter 가 layout.tsx 에서 자연 wrap. */
 export default async function HomePage({ searchParams }: Props) {
-  const core = getCore();
-  const cms = await core.getCmsSettings();
+  const cmsRes = await getCmsSettings();
+  const cms = (cmsRes.ok ? cmsRes.data : {}) as any;
   const sp = await searchParams;
   const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);
-  const perPage = cms.layout.pageList.perPage;
+  const perPage = cms.layout?.pageList?.perPage ?? 10;
 
-  const pagesRes = await core.listPages();
-  const allPages = pagesRes.success && pagesRes.data ? pagesRes.data : [];
+  const pagesRes = await listPages();
+  const allItems = pagesRes.ok ? (pagesRes.data.items ?? []) : [];
+  const allPages = allItems.map(toPageListItem);
   // public + published 만, 최근 순
   const visiblePages = allPages
     .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
@@ -120,7 +124,7 @@ export default async function HomePage({ searchParams }: Props) {
         <CmsPageList
           pages={pagedPosts}
           emptyMessage="아직 발행된 글이 없습니다."
-          variant={cms.layout.pageList.cardVariant}
+          variant={cms.layout?.pageList?.cardVariant}
         />
         <CmsPagination basePath="/" currentPage={currentPage} totalPages={totalPages} />
       </section>

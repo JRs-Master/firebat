@@ -7,18 +7,19 @@
 import {
   BudgetCheckResultPb,
   CostBudgetPb,
-  CostGetStatsRequest,
+  CostGetStatsRequestSchema,
   CostService,
-  CostSetBudgetRequest,
+  CostSetBudgetRequestSchema,
   LlmCostStatsSummaryPb,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const costClient = createClient(CostService, transport);
 
-export async function getStats(args: CostGetStatsRequest): Promise<RpcResult<LlmCostStatsSummaryPb>> {
+export async function getStats(args: MessageInitShape<typeof CostGetStatsRequestSchema>): Promise<RpcResult<LlmCostStatsSummaryPb>> {
   try {
       const response = await costClient.getStats(args ?? {});
       return { ok: true, data: response };
@@ -45,7 +46,7 @@ export async function getBudget(): Promise<RpcResult<CostBudgetPb>> {
   }
 }
 
-export async function setBudget(args: CostSetBudgetRequest): Promise<RpcResult<void>> {
+export async function setBudget(args: MessageInitShape<typeof CostSetBudgetRequestSchema>): Promise<RpcResult<void>> {
   try {
       await costClient.setBudget(args ?? {});
       return { ok: true, data: undefined };

@@ -6,13 +6,16 @@
  * DELETE /api/mcp/servers?name=xxx — 서버 제거
  */
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../lib/singleton';
 import { withAuth } from '../../../../lib/with-api-error';
+import { listMcpServers, addMcpServer, removeMcpServer } from '../../../../lib/api-gen/mcp';
 
 /** GET — 등록된 MCP 서버 목록 */
 export const GET = withAuth(async () => {
-  const servers = await getCore().listMcpServers();
-  return NextResponse.json({ success: true, servers });
+  const res = await listMcpServers();
+  if (!res.ok) {
+    return NextResponse.json({ success: false, error: res.message }, { status: 500 });
+  }
+  return NextResponse.json({ success: true, servers: res.data });
 });
 
 /** POST — MCP 서버 추가/수정 */
@@ -27,19 +30,19 @@ export const POST = withAuth(async (req: NextRequest) => {
     return NextResponse.json({ success: false, error: 'transport는 stdio 또는 sse' }, { status: 400 });
   }
 
-  const result = await getCore().addMcpServer({
+  const res = await addMcpServer({
     name,
     transport,
-    command,
-    args,
-    env,
-    url,
+    command: command ?? undefined,
+    args: args ?? [],
+    envJson: JSON.stringify(env ?? {}),
+    url: url ?? undefined,
     enabled: enabled !== false,
   });
 
-  return result.success
+  return res.ok
     ? NextResponse.json({ success: true })
-    : NextResponse.json({ success: false, error: result.error }, { status: 500 });
+    : NextResponse.json({ success: false, error: res.message }, { status: 500 });
 });
 
 /** DELETE — MCP 서버 제거 */
@@ -47,8 +50,8 @@ export const DELETE = withAuth(async (req: NextRequest) => {
   const name = req.nextUrl.searchParams.get('name');
   if (!name) return NextResponse.json({ success: false, error: 'name 필요' }, { status: 400 });
 
-  const result = await getCore().removeMcpServer(name);
-  return result.success
+  const res = await removeMcpServer({ value: name });
+  return res.ok
     ? NextResponse.json({ success: true })
-    : NextResponse.json({ success: false, error: result.error }, { status: 500 });
+    : NextResponse.json({ success: false, error: res.message }, { status: 500 });
 });

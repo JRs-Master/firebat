@@ -1,17 +1,35 @@
 import type { Metadata } from 'next';
-import { getCore } from '../../../lib/singleton';
+import { getShare } from '../../../lib/api-gen/conversation';
 import { SharedMessageList } from './client';
 import { headers } from 'next/headers';
+import { safeJsonParse } from '../../../lib/util/json';
 
 export const dynamic = 'force-dynamic'; // 매 요청마다 DB 조회 (공유 만료 실시간 반영)
 
 type PageProps = { params: Promise<{ slug: string }> };
 
-async function loadShare(slug: string) {
-  const core = getCore();
-  const res = await core.getShare(slug);
-  if (!res.success || !res.data) return null;
-  return res.data;
+interface NormalizedShare {
+  slug: string;
+  title: string;
+  messages: Array<{ role?: string; content?: string }>;
+  expiresAt: number;
+  createdAt: number;
+  shareType: string;
+}
+
+async function loadShare(slug: string): Promise<NormalizedShare | null> {
+  const res = await getShare({ value: slug });
+  if (!res.ok || !res.data || !res.data.slug) return null;
+  const pb = res.data;
+  const messages = safeJsonParse<Array<{ role?: string; content?: string }>>(pb.messagesJson, []) ?? [];
+  return {
+    slug: pb.slug,
+    title: pb.title,
+    messages,
+    expiresAt: Number(pb.expiresAt ?? 0n),
+    createdAt: Number(pb.createdAt ?? 0n),
+    shareType: pb.shareType,
+  };
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
@@ -24,7 +42,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     };
   }
   // 첫 user 메시지로 설명 자동 생성
-  const firstUser = (share.messages as Array<{ role?: string; content?: string }>).find(m => m.role === 'user');
+  const firstUser = share.messages.find(m => m.role === 'user');
   const description = typeof firstUser?.content === 'string' ? firstUser.content.slice(0, 200) : 'Firebat 에서 공유된 대화';
   const hdrs = await headers();
   // baseUrl 우선순위: NEXT_PUBLIC_BASE_URL → 요청 host (nginx 자동 전달) → localhost 폴백

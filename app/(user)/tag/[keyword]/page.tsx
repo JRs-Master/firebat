@@ -7,7 +7,9 @@
  * 향후 Phase 8a (태그 관리 시스템) — alias / normalization / 자동 추적 등 발전.
  */
 import { notFound } from 'next/navigation';
-import { getCore } from '../../../../lib/singleton';
+import { listPages, get as getPageRpc } from '../../../../lib/api-gen/page';
+import { getCmsSettings } from '../../../../lib/api-gen/module';
+import { toPageListItem, parsePageRecord } from '../../../../lib/util/page-pb-convert';
 import { CmsPageList, CmsPagination } from '../../cms-page-list';
 import { normalizeTag } from '../../../../lib/tag-utils';
 import type { Metadata } from 'next';
@@ -27,19 +29,21 @@ function decodeKeyword(raw: string): string {
 /** 페이지의 head.keywords 에 매칭되는 keyword 인지 검사. case-insensitive + alias normalize.
  *  URL "/tag/ai" → CMS settings 의 tagAliases 보고 "AI" canonical 로 normalize → 그 canonical 매칭 페이지. */
 async function findMatchingPages(keyword: string): Promise<{ pages: PageListItem[]; canonical: string }> {
-  const core = getCore();
-  const aliases = (await core.getCmsSettings()).tagAliases;
+  const seoRes = await getCmsSettings();
+  const seo = (seoRes.ok ? seoRes.data : {}) as any;
+  const aliases = seo.tagAliases;
   const canonical = normalizeTag(keyword, aliases);
-  const allRes = await core.listPages();
-  const allPages = allRes.success && allRes.data ? allRes.data : [];
+  const allRes = await listPages();
+  const allPages = allRes.ok ? (allRes.data.items ?? []).map(toPageListItem) : [];
   const visible = allPages.filter(
     (p) => p.status === 'published' && (p.visibility ?? 'public') === 'public',
   );
   const matched: PageListItem[] = [];
   for (const p of visible) {
-    const pageRes = await core.getPage(p.slug);
-    if (!pageRes.success || !pageRes.data) continue;
-    const keywords = (pageRes.data.head?.keywords ?? []) as string[];
+    const pageRes = await getPageRpc({ value: p.slug });
+    if (!pageRes.ok || !pageRes.data) continue;
+    const spec = parsePageRecord(pageRes.data);
+    const keywords = (spec.head?.keywords ?? []) as string[];
     // 각 keyword 도 normalize 후 canonical 매칭
     if (keywords.some((k) => typeof k === 'string' && normalizeTag(k, aliases) === canonical)) {
       matched.push(p);
@@ -53,7 +57,8 @@ async function findMatchingPages(keyword: string): Promise<{ pages: PageListItem
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const keyword = decodeKeyword((await params).keyword);
-  const seo = await getCore().getCmsSettings();
+  const seoRes = await getCmsSettings();
+  const seo = (seoRes.ok ? seoRes.data : {}) as any;
   const canonical = normalizeTag(keyword, seo.tagAliases);
   return {
     title: `#${canonical} — ${seo.siteTitle}`,
@@ -67,10 +72,11 @@ export default async function TagPage({ params, searchParams }: Props) {
   const { pages, canonical } = await findMatchingPages(rawKeyword);
   if (pages.length === 0) notFound();
 
-  const cms = await getCore().getCmsSettings();
+  const cmsRes = await getCmsSettings();
+  const cms = (cmsRes.ok ? cmsRes.data : {}) as any;
   const sp = searchParams ? await searchParams : {};
   const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);
-  const perPage = cms.layout.pageList.perPage;
+  const perPage = cms.layout?.pageList?.perPage ?? 10;
   const totalPages = Math.max(1, Math.ceil(pages.length / perPage));
   const pagedPosts = pages.slice((currentPage - 1) * perPage, currentPage * perPage);
 
@@ -91,7 +97,7 @@ export default async function TagPage({ params, searchParams }: Props) {
         </p>
       </section>
       <section className="firebat-cms-content" style={{ paddingTop: '8px', paddingBottom: '64px' }}>
-        <CmsPageList pages={pagedPosts} variant={cms.layout.pageList.cardVariant} />
+        <CmsPageList pages={pagedPosts} variant={cms.layout?.pageList?.cardVariant} />
         <CmsPagination basePath={`/tag/${encodeURIComponent(canonical)}`} currentPage={currentPage} totalPages={totalPages} />
       </section>
     </main>

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCore } from '../../../../../lib/singleton';
+import { getUser as getUserSecret } from '../../../../../lib/api-gen/secret';
 import { getOAuthProvider } from '../../../../../lib/oauth-providers';
 import * as nodeCrypto from 'crypto';
 
@@ -24,14 +24,14 @@ export async function GET(
     );
   }
 
-  const core = getCore();
-  const apiKey = await core.getUserSecret(config.apiKeyVaultKey);
-  if (!apiKey) {
+  const apiKeyRes = await getUserSecret({ value: config.apiKeyVaultKey });
+  if (!apiKeyRes.ok || !apiKeyRes.data) {
     return NextResponse.json(
       { success: false, error: `${config.apiKeyVaultKey}를 먼저 API 키 설정에서 등록해주세요.` },
       { status: 400 },
     );
   }
+  const apiKey = apiKeyRes.data;
 
   // 콜백 URL — 현재 호스트 기준 동적 생성
   const host = req.headers.get('host') || 'localhost:3000';

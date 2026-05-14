@@ -1,21 +1,26 @@
-import { getCore } from '../../lib/singleton';
+import { getCmsSettings } from '../../lib/api-gen/module';
+import { listPages, listStatic } from '../../lib/api-gen/page';
 import { getBaseUrl } from '../../lib/base-url';
 
 export const dynamic = 'force-dynamic';
 
 /** GET /sitemap-pages.xml — 정적 페이지 사이트맵 */
 export async function GET(req: Request) {
-  const core = getCore();
-  const seo = await core.getCmsSettings();
+  const seoRes = await getCmsSettings();
+  if (!seoRes.ok) {
+    return new Response('Sitemap is disabled', { status: 404 });
+  }
+  const seo = seoRes.data as { sitemapEnabled?: boolean; siteUrl?: string };
 
   if (!seo.sitemapEnabled) {
     return new Response('Sitemap is disabled', { status: 404 });
   }
 
   const baseUrl = seo.siteUrl || getBaseUrl(req);
-  const result = await core.listPages();
-  const dbPages = result.success && result.data ? result.data : [];
-  const staticPages = await core.listStaticPages();
+  const result = await listPages();
+  const dbPages = result.ok ? (result.data.items ?? []) : [];
+  const staticRes = await listStatic();
+  const staticPages = staticRes.ok ? (staticRes.data.values ?? []) : [];
 
   const entries = staticPages
     .filter(slug => !dbPages.some(p => p.slug === slug))

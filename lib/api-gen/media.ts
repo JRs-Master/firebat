@@ -7,25 +7,26 @@
 import {
   GenerateImageResultPb,
   ImageModelListPb,
-  MediaGenerateRequest,
-  MediaListRequest,
+  MediaGenerateRequestSchema,
+  MediaListRequestSchema,
   MediaListResultPb,
   MediaReadPb,
-  MediaSaveRequest,
+  MediaSaveRequestSchema,
   MediaSaveResultPb,
-  MediaSaveTempAttachmentRequest,
+  MediaSaveTempAttachmentRequestSchema,
   MediaService,
-  MediaStartGenerationRequest,
+  MediaStartGenerationRequestSchema,
   StartGenerationPb,
-  StringRequest,
+  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
+import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
 
 const mediaClient = createClient(MediaService, transport);
 
-export async function read(args: StringRequest): Promise<RpcResult<MediaReadPb>> {
+export async function read(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<MediaReadPb>> {
   try {
       const response = await mediaClient.read(args ?? {});
       return { ok: true, data: response };
@@ -34,7 +35,7 @@ export async function read(args: StringRequest): Promise<RpcResult<MediaReadPb>>
   }
 }
 
-export async function list(args: MediaListRequest): Promise<RpcResult<MediaListResultPb>> {
+export async function list(args: MessageInitShape<typeof MediaListRequestSchema>): Promise<RpcResult<MediaListResultPb>> {
   try {
       const response = await mediaClient.list(args ?? {});
       return { ok: true, data: response };
@@ -43,7 +44,7 @@ export async function list(args: MediaListRequest): Promise<RpcResult<MediaListR
   }
 }
 
-export async function remove(args: StringRequest): Promise<RpcResult<void>> {
+export async function remove(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
   try {
       await mediaClient.remove(args ?? {});
       return { ok: true, data: undefined };
@@ -52,7 +53,7 @@ export async function remove(args: StringRequest): Promise<RpcResult<void>> {
   }
 }
 
-export async function isReady(args: StringRequest): Promise<RpcResult<boolean>> {
+export async function isReady(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await mediaClient.isReady(args ?? {});
       return { ok: true, data: response.value };
@@ -61,7 +62,7 @@ export async function isReady(args: StringRequest): Promise<RpcResult<boolean>> 
   }
 }
 
-export async function startGeneration(args: MediaStartGenerationRequest): Promise<RpcResult<StartGenerationPb>> {
+export async function startGeneration(args: MessageInitShape<typeof MediaStartGenerationRequestSchema>): Promise<RpcResult<StartGenerationPb>> {
   try {
       const response = await mediaClient.startGeneration(args ?? {});
       return { ok: true, data: response };
@@ -70,7 +71,7 @@ export async function startGeneration(args: MediaStartGenerationRequest): Promis
   }
 }
 
-export async function generate(args: MediaGenerateRequest): Promise<RpcResult<GenerateImageResultPb>> {
+export async function generate(args: MessageInitShape<typeof MediaGenerateRequestSchema>): Promise<RpcResult<GenerateImageResultPb>> {
   try {
       const response = await mediaClient.generate(args ?? {});
       return { ok: true, data: response };
@@ -79,7 +80,7 @@ export async function generate(args: MediaGenerateRequest): Promise<RpcResult<Ge
   }
 }
 
-export async function regenerate(args: StringRequest): Promise<RpcResult<GenerateImageResultPb>> {
+export async function regenerate(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<GenerateImageResultPb>> {
   try {
       const response = await mediaClient.regenerate(args ?? {});
       return { ok: true, data: response };
@@ -88,7 +89,7 @@ export async function regenerate(args: StringRequest): Promise<RpcResult<Generat
   }
 }
 
-export async function save(args: MediaSaveRequest): Promise<RpcResult<MediaSaveResultPb>> {
+export async function save(args: MessageInitShape<typeof MediaSaveRequestSchema>): Promise<RpcResult<MediaSaveResultPb>> {
   try {
       const response = await mediaClient.save(args ?? {});
       return { ok: true, data: response };
@@ -106,7 +107,7 @@ export async function getImageModel(): Promise<RpcResult<string>> {
   }
 }
 
-export async function setImageModel(args: StringRequest): Promise<RpcResult<void>> {
+export async function setImageModel(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
   try {
       await mediaClient.setImageModel(args ?? {});
       return { ok: true, data: undefined };
@@ -133,7 +134,7 @@ export async function getImageDefaultSize(): Promise<RpcResult<string | null>> {
   }
 }
 
-export async function setImageDefaultSize(args: StringRequest): Promise<RpcResult<void>> {
+export async function setImageDefaultSize(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
   try {
       await mediaClient.setImageDefaultSize(args ?? {});
       return { ok: true, data: undefined };
@@ -151,7 +152,7 @@ export async function getImageDefaultQuality(): Promise<RpcResult<string | null>
   }
 }
 
-export async function setImageDefaultQuality(args: StringRequest): Promise<RpcResult<void>> {
+export async function setImageDefaultQuality(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
   try {
       await mediaClient.setImageDefaultQuality(args ?? {});
       return { ok: true, data: undefined };
@@ -169,7 +170,7 @@ export async function getImageSettings(): Promise<RpcResult<string>> {
   }
 }
 
-export async function saveTempAttachment(args: MediaSaveTempAttachmentRequest): Promise<RpcResult<unknown>> {
+export async function saveTempAttachment(args: MessageInitShape<typeof MediaSaveTempAttachmentRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await mediaClient.saveTempAttachment(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };

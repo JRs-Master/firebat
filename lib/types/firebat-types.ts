@@ -51,20 +51,6 @@ export interface AuthSession {
 
 // ── Core Facade Shape ───────────────────────────────────────────────
 
-/**
- * Firebat Core facade interface — Frontend 가 `getCore()` 로 받는 객체의 shape.
- *
- * 실 구현은 `RustCoreProxy` (lib/rust-core-proxy.ts) — Proxy + Reflect 패턴으로 메서드 호출 시
- * `callCore('methodName', wrappedArgs)` 로 자동 변환 → gRPC → Rust Core.
- *
- * 본 type 은 Frontend 의 옛 호출 패턴 (`core.savePage(slug, spec)`) 과 호환성 유지용 — `any` 로
- * 노출. 정밀 typed shape 은 매니저별 typed proto stub 설정된 후 swap 가능.
- *
- * **중요**: 옛 TS `core/index.ts` 의 FirebatCore class 는 Phase B-4 cutover 후 폐기. 본 type 만
- * Frontend 가 의존.
- */
-export type FirebatCore = any;
-
 // ── 파이프라인 / Cron — Rust core/ports.rs 의 typed struct 와 1:1 ─────
 //
 // 2026-05-14 A1-full Step 4: 옛 `type X = unknown` 폐기. Rust serde rename_all="camelCase"
