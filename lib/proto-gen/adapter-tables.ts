@@ -353,6 +353,10 @@ export const METHOD_TABLE_AUTO: Record<string, AdapterMethodEntry> = {
   setModuleSettings: { service: 'ModuleService', rpc: 'SetSettings', requestType: 'ModuleSetSettingsRequest', responseType: 'Status', wrap: false, unwrapField: null },
   getModuleSettings: { service: 'ModuleService', rpc: 'GetSettings', requestType: 'StringRequest', responseType: 'RawJsonPb', wrap: false, unwrapField: null },
   restoreConversation: { service: 'ConversationService', rpc: 'Restore', requestType: 'ConversationOwnerIdRequest', responseType: 'Status', wrap: true, unwrapField: null },
+  getPageRedirect: { service: 'PageService', rpc: 'GetRedirect', requestType: 'StringRequest', responseType: 'OptionalStringPb', wrap: true, unwrapField: null },
+  verifyPagePassword: { service: 'PageService', rpc: 'VerifyPassword', requestType: 'PageVerifyPasswordRequest', responseType: 'BoolRequest', wrap: true, unwrapField: null },
+  verifyProjectPassword: { service: 'ProjectService', rpc: 'VerifyPassword', requestType: 'ProjectVerifyPasswordRequest', responseType: 'BoolRequest', wrap: true, unwrapField: null },
+  getProjectConfig: { service: 'ProjectService', rpc: 'GetConfig', requestType: 'StringRequest', responseType: 'ProjectConfigPb', wrap: false, unwrapField: null },
 };
 
 export const RESPONSE_UNWRAP_TABLE_AUTO: Record<string, string> = {};
