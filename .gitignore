@@ -1,6 +1,9 @@
 # 의존성 폴더
 node_modules/
 
+# 참조용 외부 문서 (xlsx) — git 관리 X, 작업 시 로컬에 두고 참조
+*.xlsx
+
 # Next.js 빌드 결과물
 .next/
 out/
