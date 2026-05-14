@@ -332,6 +332,10 @@ impl McpToolHandler for SysmodToolHandler {
 
 /// system/modules 의 config.json 스캔 → sysmod_<name> 도구 자동 등록.
 /// 옛 TS mcp/internal-server.ts:589-668 의 동적 노출 1:1.
+///
+/// 2026-05-14 옵션 C 박힘 — config.json 의 `domains` 필드 있으면 도메인별 별도 도구 N개 등록
+/// (sysmod_<name>_<domain>). 각 도구의 action enum 은 그 도메인의 actions 로 좁혀짐 (토큰 절감).
+/// 단일 sysmod index.mjs 가 모든 도메인 처리 — domain 분리는 LLM 노출 layer 만.
 pub async fn register_sysmod_tools(
     state: &Arc<McpServerState>,
     module_manager: Arc<ModuleManager>,
@@ -345,10 +349,15 @@ pub async fn register_sysmod_tools(
             Some(c) => c,
             None => continue,
         };
-        // sysmod_<name> — '-' → '_' 정규화 (옛 TS 1:1).
+        // domains 필드 있으면 → 도메인별 N 도구 등록 (옵션 C).
+        if let Some(domains) = config.get("domains").and_then(|v| v.as_array()) {
+            register_sysmod_domains(state, &entry.name, &config, domains, module_manager.clone())
+                .await;
+            continue;
+        }
+        // 기본 — 단일 도구 등록.
         let tool_name = format!("sysmod_{}", entry.name.replace('-', "_"));
         let description = build_sysmod_description(&entry.name, &config);
-        // inputSchema — config.input.properties 그대로 JSON Schema 으로 전달.
         let input_schema = config
             .get("input")
             .cloned()
@@ -359,6 +368,91 @@ pub async fn register_sysmod_tools(
             input_schema,
             handler: Arc::new(SysmodToolHandler {
                 module_name: entry.name.clone(),
+                module_manager: module_manager.clone(),
+            }),
+        };
+        state.register(tool).await;
+    }
+}
+
+/// config.domains 가 있을 때 — 각 domain 마다 sysmod_<name>_<domain> 도구 N개 등록.
+/// 모든 도구가 같은 SysmodToolHandler (단일 모듈) 로 라우팅 — action enum 만 도메인별 좁혀짐.
+async fn register_sysmod_domains(
+    state: &Arc<McpServerState>,
+    module_name: &str,
+    config: &Value,
+    domains: &[Value],
+    module_manager: Arc<ModuleManager>,
+) {
+    // base input schema (action / params / query / body / mock — domain 공통)
+    let base_input = config
+        .get("input")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({"type": "object", "properties": {}}));
+
+    for domain in domains {
+        let domain_name = match domain.get("name").and_then(|v| v.as_str()) {
+            Some(n) if !n.is_empty() => n,
+            _ => continue,
+        };
+        let domain_desc = domain
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let actions: Vec<Value> = domain
+            .get("actions")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        if actions.is_empty() {
+            continue;
+        }
+
+        // input schema 복사 + action enum 을 이 도메인의 actions 로 좁힘
+        let mut input_schema = base_input.clone();
+        if let Some(props) = input_schema
+            .get_mut("properties")
+            .and_then(|v| v.as_object_mut())
+        {
+            if let Some(action_field) = props.get_mut("action").and_then(|v| v.as_object_mut()) {
+                action_field.insert("enum".to_string(), Value::Array(actions.clone()));
+            }
+        }
+
+        let secrets_note = config
+            .get("secrets")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                let names: Vec<String> = arr
+                    .iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect();
+                if names.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "\n필요 시크릿: {} (미설정 시 request_secret 호출)",
+                        names.join(", ")
+                    )
+                }
+            })
+            .unwrap_or_default();
+        let description = format!(
+            "[시스템 모듈] {desc}\n총 {n}개 API. action 으로 API ID 직접 호출.{secrets_note}",
+            desc = if domain_desc.is_empty() { module_name } else { domain_desc },
+            n = actions.len(),
+        );
+        let tool_name = format!(
+            "sysmod_{}_{}",
+            module_name.replace('-', "_"),
+            domain_name.replace('-', "_")
+        );
+        let tool = McpTool {
+            name: tool_name,
+            description,
+            input_schema,
+            handler: Arc::new(SysmodToolHandler {
+                module_name: module_name.to_string(),
                 module_manager: module_manager.clone(),
             }),
         };
