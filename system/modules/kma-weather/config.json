@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "기상청 (KMA) 통합 — data.go.kr 6개 서비스 (단기예보 / 중기예보 / 기상특보 / 생활기상지수 / 지진정보 / 태풍정보). 위경도 입력 시 LCC 자동 변환으로 격자 좌표 (nx, ny) 자동 계산. 한국 지역만.",
+  "description": "기상청 (KMA) 통합 — data.go.kr 6개 서비스 (단기예보 / 중기예보 / 기상특보 / 생활기상지수 V5 / 지진정보 / 태풍정보). 위경도 입력 시 LCC 자동 변환으로 격자 좌표 (nx, ny) 자동 계산. 한국 지역만. 2026-05 기상청 생활기상지수 V4→V5 변경 + 체감온도(thermal-index) 폐기 반영.",
   "runtime": "node",
   "capability": "weather",
   "providerType": "api",
@@ -14,8 +14,8 @@
     "properties": {
       "action": {
         "type": "string",
-        "enum": ["short", "ultra-now", "ultra-short", "fcst-version", "medium-fcst", "medium-land", "medium-ta", "medium-sea", "alerts", "alerts-news", "alerts-prelim", "uv-index", "uv-index-v4", "thermal-index", "air-stagnation", "earthquake", "tsunami", "typhoon-list", "typhoon-info", "typhoon-forecast"],
-        "description": "short/ultra-now/ultra-short=단기예보 시리즈, fcst-version=예보 수정버전 조회, medium-fcst=중기 전망 (stnId, wfSv 텍스트), medium-land/ta/sea=중기 육상·기온·해상 (regId), alerts=기상특보 목록 (제목·발표시각), alerts-news=기상속보 본문 (ann 2000자), alerts-prelim=기상 예비특보 (pwn 현황+rem 참고), uv-index=자외선 V3 (areaNo+time), uv-index-v4=자외선 V4 (3시간×75h h0-h75), thermal-index=체감온도 V4 (areaNo+time+requestCode, 5-9월, 1시간×78h h1-h78), air-stagnation=대기정체지수 V4 (areaNo+time, 3시간×78h h3-h78), earthquake=지진통보문 (fromTmFc/toTmFc 8자리, 위도·경도·규모·진도·진앙위치), tsunami=지진해일통보문 (발표시각·발효시각·해당지역·진앙·규모·당부사항), typhoon-list/info/forecast=태풍 시리즈"
+        "enum": ["short", "ultra-now", "ultra-short", "fcst-version", "medium-fcst", "medium-land", "medium-ta", "medium-sea", "alerts", "alerts-news", "alerts-prelim", "uv-index", "uv-index-v5", "air-stagnation", "earthquake", "tsunami", "typhoon-list", "typhoon-info", "typhoon-forecast"],
+        "description": "short/ultra-now/ultra-short=단기예보 시리즈, fcst-version=예보 수정버전 조회, medium-fcst=중기 전망 (stnId, wfSv 텍스트), medium-land/ta/sea=중기 육상·기온·해상 (regId), alerts=기상특보 목록 (제목·발표시각), alerts-news=기상속보 본문 (ann 2000자), alerts-prelim=기상 예비특보 (pwn 현황+rem 참고), uv-index=자외선 V3 (areaNo+time, legacy), uv-index-v5=자외선 V5 (3시간×75h h0-h75, 2026-05 V4→V5 변경), air-stagnation=대기정체지수 V5 (areaNo+time, 3시간×78h h3-h78, 2026-05 V4→V5 변경), earthquake=지진통보문 (fromTmFc/toTmFc 8자리, 위도·경도·규모·진도·진앙위치), tsunami=지진해일통보문 (발표시각·발효시각·해당지역·진앙·규모·당부사항), typhoon-list/info/forecast=태풍 시리즈. (참고: 체감온도 thermal-index 는 2026-05 기상청 데이터 생산중단으로 폐기)"
       },
       "lat": {
         "type": "number",
@@ -43,7 +43,7 @@
       },
       "areaNo": {
         "type": "string",
-        "description": "[uv-index/uv-index-v4/thermal-index/air-stagnation] 행정구역코드 10자리 (예: 1100000000=서울). 공백 시 전체지점 조회"
+        "description": "[uv-index/uv-index-v5/air-stagnation] 행정구역코드 10자리 (예: 1100000000=서울). 공백 시 전체지점 조회"
       },
       "ftype": {
         "type": "string",
@@ -54,14 +54,9 @@
         "type": "string",
         "description": "[fcst-version] 발표일시분 yyyyMMddHHmm (각 base_time 기준)"
       },
-      "requestCode": {
-        "type": "string",
-        "enum": ["A41", "A42", "A44", "A45", "A46", "A47", "A48", "A49"],
-        "description": "[thermal-index] 대상환경별 코드. A41=노인, A42=어린이, A44=농촌, A45=비닐하우스, A46=취약거주환경, A47=도로, A48=건설현장, A49=조선소"
-      },
       "time": {
         "type": "string",
-        "description": "[uv-index/uv-index-v4/thermal-index/air-stagnation] 발표 시각 yyyyMMddHH 10자리. 미지정 시 현재 시각 자동"
+        "description": "[uv-index/uv-index-v5/air-stagnation] 발표 시각 yyyyMMddHH 10자리. 미지정 시 현재 시각 자동"
       },
       "tmFc": {
         "type": "string",

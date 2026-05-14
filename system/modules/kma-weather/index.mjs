@@ -14,10 +14,10 @@
  *   alerts       — 기상특보 목록 — WthrWrnInfoService/getWthrWrnList
  *   alerts-news  — 기상속보 — WthrWrnInfoService/getWthrBrkNews
  *   alerts-prelim — 기상예비특보 — WthrWrnInfoService/getWthrPwn
- *   uv-index     — 자외선지수 V3 — LivingWthrIdxServiceV3/getUVIdxV3
- *   uv-index-v4  — 자외선지수 V4 (3시간×75h) — LivingWthrIdxServiceV4/getUVIdxV4
- *   thermal-index — 체감온도 V4 (5-9월, 1시간×78h) — LivingWthrIdxServiceV4/getSenTaIdxV4 (areaNo+time+requestCode)
- *   air-stagnation — 대기정체지수 V4 (3시간×78h) — LivingWthrIdxServiceV4/getAirDiffusionIdxV4
+ *   uv-index     — 자외선지수 V3 — LivingWthrIdxServiceV3/getUVIdxV3 (legacy 호환)
+ *   uv-index-v5  — 자외선지수 V5 — LivingWthrIdxServiceV5/getUVIdxV5 (옛 V4 endpoint 폐기, 2026-05 기상청 변경)
+ *   air-stagnation — 대기정체지수 V5 — LivingWthrIdxServiceV5/getAirDiffusionIdxV5 (옛 V4 endpoint 폐기, 2026-05 기상청 변경)
+ *   체감온도 (thermal-index / getSenTaIdxV4) — 2026-05 기상청 데이터 생산중단으로 API 서비스 폐기됨
  *   earthquake   — 지진통보문 — EqkInfoService/getEqkMsg
  *   tsunami      — 지진해일통보문 — EqkInfoService/getTsunamiMsg
  *   typhoon-list — 태풍 통보문 목록 — TyphoonInfoService/getTyphoonInfoList (tmFc 단일)
@@ -318,12 +318,12 @@ async function main() {
       return out(true, { items: r.items });
     }
 
-    // ── 생활기상지수 V4 시리즈 (uv-index-v4 / thermal-index / air-stagnation) ──
-    if (action === 'uv-index-v4' || action === 'air-stagnation') {
+    // ── 생활기상지수 V5 시리즈 (uv-index-v5 / air-stagnation) — 2026-05 기상청 V4→V5 endpoint 변경 ──
+    if (action === 'uv-index-v5' || action === 'air-stagnation') {
       if (!areaNo) return out(false, undefined, `${action} 은 areaNo 필요 (10자리 행정구역코드)`);
       const t = data.time || ymdHm().slice(0, 10);
-      const path = action === 'uv-index-v4' ? '/LivingWthrIdxServiceV4/getUVIdxV4'
-                                            : '/LivingWthrIdxServiceV4/getAirDiffusionIdxV4';
+      const path = action === 'uv-index-v5' ? '/LivingWthrIdxServiceV5/getUVIdxV5'
+                                            : '/LivingWthrIdxServiceV5/getAirDiffusionIdxV5';
       const r = await callApi(serviceKey, path, {
         numOfRows: limit, pageNo: 1, areaNo, time: t,
       });
@@ -331,16 +331,13 @@ async function main() {
       return out(true, { items: r.items });
     }
 
+    // 옛 'uv-index-v4' / 'thermal-index' action — 2026-05 기상청 변경으로 폐기.
+    // 옛 cron / 사용자 호출 호환 위해 명시 에러 응답.
+    if (action === 'uv-index-v4') {
+      return out(false, undefined, 'uv-index-v4 는 2026-05 기상청 V4→V5 변경으로 폐기되었습니다. uv-index-v5 사용.');
+    }
     if (action === 'thermal-index') {
-      if (!areaNo) return out(false, undefined, 'thermal-index 는 areaNo 필요 (10자리 행정구역코드)');
-      const reqCode = data.requestCode;
-      if (!reqCode) return out(false, undefined, 'thermal-index 는 requestCode 필요 (A41=노인, A42=어린이, A44=농촌, A45=비닐하우스, A46=취약, A47=도로, A48=건설, A49=조선소)');
-      const t = data.time || ymdHm().slice(0, 10);
-      const r = await callApi(serviceKey, '/LivingWthrIdxServiceV4/getSenTaIdxV4', {
-        numOfRows: limit, pageNo: 1, areaNo, time: t, requestCode: reqCode,
-      });
-      if (!r.ok) return out(false, undefined, r.error);
-      return out(true, { items: r.items });
+      return out(false, undefined, '체감온도 (thermal-index) 는 2026-05 기상청 데이터 생산중단으로 API 서비스가 폐기되었습니다.');
     }
 
     // ── 지진/해일 시리즈 (EqkInfoService) — fromTmFc/toTmFc 8자리 ──
