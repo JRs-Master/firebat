@@ -115,20 +115,27 @@ function detectCollisions(services) {
   );
 }
 
-/** Response message → unwrap field (단일 array 또는 의미 있는 single field). */
+/** Response message → unwrap field — proto schema 기반 자동 감지.
+ *
+ * 2026-05-14 옵션 D-2 정공 — 단일 field message 자동 unwrap. hardcoded wrapper list 폐기 →
+ * proto schema 가 single source. 새 wrapper type 추가 시 자동 인식 (list 갱신 X).
+ *
+ * 회귀 fix: 옛 logic 의 `if (f.name === 'value') return null;` 가 runtime fallback
+ * (callTypedClient 의 `Object.keys.length===1`) 의존 박혀 protoc-gen-es 의 Message base
+ * `$typeName` 메타 키로 fallback 검사 실패 → 회귀 (isConversationDeleted 409 등).
+ *
+ * 별도 path 박힌 message:
+ *  - RawJsonPb {raw_json} → callTypedClient L119 가 string → JSON.parse (entry.unwrapField 보다 우선)
+ *  - OptionalStringPb {present, value} → fields=2 → null → callTypedClient L122 가 처리
+ *  - Status {ok, error, error_code} → fields=3 → null → caller 가 객체 받음
+ */
 function determineUnwrapField(msgName, messages) {
   if (!msgName || msgName === 'Empty') return null;
-  // 알려진 generic wrapper — callTypedClient 가 별도 처리
-  if (['RawJsonPb', 'OptionalStringPb', 'StringRequest', 'NumberRequest', 'BoolRequest', 'Status', 'IdRequest'].includes(msgName)) return null;
-
   const msg = messages[msgName];
   if (!msg || msg.fields.length === 0) return null;
-
   if (msg.fields.length === 1) {
     const f = msg.fields[0];
-    if (f.repeated) return camelCase(f.name);
-    // generic wrapper 와 충돌 회피
-    if (f.name === 'raw_json' || f.name === 'value') return null;
+    if (f.name === 'raw_json') return null; // RawJsonPb — callTypedClient 별도 path 위임
     return camelCase(f.name);
   }
   return null;
