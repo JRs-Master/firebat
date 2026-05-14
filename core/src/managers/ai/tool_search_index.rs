@@ -51,9 +51,9 @@ const CATEGORIES: &[CategoryDef] = &[
         id: "stock",
         label: "주식·증권",
         semantic_text: "주식 증권 시세 주가 종목 차트 캔들 OHLCV 이동평균 주문 매수 매도 체결 잔고 호가 거래량 코스피 코스닥 삼성전자 LG 현대 SK 상장 공시 재무 실적 ELW ETF 선물 옵션 채권 해외주식 미국주식 나스닥",
-        // 2026-05-14 Phase Stock-Split: 옛 sysmod_kiwoom / sysmod_korea_invest 폐기.
-        // 17 도메인 sysmod 으로 분리 (kiwoom-*, kis-*).
-        match_by_name: |n| n.starts_with("sysmod_kiwoom_") || n.starts_with("sysmod_kis_"),
+        // 2026-05-14 옵션 C — 단일 sysmod (kiwoom + korea-invest) + domains 분기.
+        // LLM 한테는 sysmod_kiwoom_<domain> / sysmod_korea_invest_<domain> 으로 노출.
+        match_by_name: |n| n.starts_with("sysmod_kiwoom_") || n.starts_with("sysmod_korea_invest_"),
         match_by_capability: &["stock-trading", "stock-quote"],
     },
     CategoryDef {
@@ -547,11 +547,11 @@ mod tests {
 
     #[test]
     fn categorize_tool_by_name() {
-        // 2026-05-14 Phase Stock-Split: 옛 sysmod_kiwoom / sysmod_korea_invest 폐기 → 17 도메인 sysmod.
+        // 2026-05-14 옵션 C: 단일 sysmod (kiwoom + korea-invest) + domains 분기.
         let t = tool("sysmod_kiwoom_quote", "");
         assert_eq!(categorize_tool(&t, None), Some("stock"));
 
-        let t = tool("sysmod_kis_overseas_stock", "");
+        let t = tool("sysmod_korea_invest_overseas_stock", "");
         assert_eq!(categorize_tool(&t, None), Some("stock"));
 
         let t = tool("sysmod_upbit", "");

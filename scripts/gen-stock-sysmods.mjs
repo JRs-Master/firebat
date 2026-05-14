@@ -1,36 +1,23 @@
 #!/usr/bin/env node
 /**
- * 도메인별 stock sysmod codegen — infra/data/stock-apis-{kiwoom,kis}.json 입력.
+ * 단일 stock sysmod codegen (옵션 C) — infra/data/stock-apis-{kiwoom,kis}.json 입력.
  *
- * Phase Stock-Split S2 (2026-05-14):
- * 옛 단일 sysmod_kiwoom (151 actions) + sysmod_korea_invest (277 actions) →
- * 17 도메인 sysmod 자동 분리. 각 sysmod 는 OAuth + callApi + throttle 자체 inline.
+ * Phase Stock-Split S2 v2 (2026-05-14):
+ * 옵션 C — 단일 sysmod 디렉토리 (system/modules/kiwoom + korea-invest) +
+ * config.json 의 `domains` 필드로 LLM 노출 layer 분리.
  *
- * 새 sysmod 디렉토리:
- *   system/modules/
- *     kiwoom-account/        — 계좌 33
- *     kiwoom-order/          — 주문 + 신용주문 + 금현물주문 12
- *     kiwoom-quote/          — 시세 + 종목정보 + 업종 62
- *     kiwoom-chart/          — 차트 21
- *     kiwoom-ranking/        — 순위정보 23
- *     kiwoom-investor/       — 기관/외국인 + 대차거래 + 공매도 9
- *     kiwoom-etf-elw/        — ETF + ELW 20
- *     kiwoom-condition-theme/— 조건검색 + 테마 6
- *     kis-stock-account/     — [국내주식] 주문/계좌 23
- *     kis-stock-quote/       — [국내주식] 기본시세 + 종목정보 + 업종/기타 61
- *     kis-stock-ranking/     — [국내주식] 순위분석 22
- *     kis-stock-analysis/    — [국내주식] 시세분석 28
- *     kis-stock-elw/         — [국내주식] ELW 시세 22
- *     kis-futures/           — [국내선물옵션] 기본시세 + 주문/계좌 24
- *     kis-bond/              — [장내채권] 기본시세 + 주문/계좌 15
- *     kis-overseas-stock/    — [해외주식] 기본시세 + 시세분석 + 주문/계좌 47
- *     kis-overseas-futures/  — [해외선물옵션] 기본시세 + 주문/계좌 31
+ * MCP register_sysmod_tools 의 domains 분기 (옵션 C, commit f18f30f) 가
+ * 각 domain 마다 sysmod_<name>_<domain> 도구 별도 등록 (action enum 좁힘).
  *
- * 호출 방식: action = API ID (예: "ka10001", "FHKST01010100") 직접.
- * 편의 alias (예: "price", "balance") 는 S2 후속 phase 에서 도메인별로 박음.
+ * 출력:
+ *   system/modules/kiwoom/{config.json, index.mjs}        — 208 APIs, 8 domains
+ *   system/modules/korea-invest/{config.json, index.mjs}  — 278 APIs, 9 domains
+ *
+ * 호출 방식: LLM 이 sysmod_kiwoom_account / sysmod_kiwoom_chart 등 호출 →
+ * MCP 가 모두 단일 sysmod_kiwoom 모듈로 라우팅 → action = API ID 분기.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -39,7 +26,7 @@ const ROOT = resolve(__dirname, '..');
 const MODULES_DIR = resolve(ROOT, 'system/modules');
 
 // ─────────────────────────────────────────────────────────────────
-// 도메인 매핑 — 키움 (대분류/중분류 → 도메인 sysmod)
+// 도메인 매핑 — 키움 (대분류/중분류 → 도메인)
 // ─────────────────────────────────────────────────────────────────
 const KIWOOM_DOMAIN_MAP = {
   '계좌': 'account',
@@ -57,12 +44,9 @@ const KIWOOM_DOMAIN_MAP = {
   'ELW': 'etf-elw',
   '조건검색': 'condition-theme',
   '테마': 'condition-theme',
-  '실시간시세': 'realtime', // WebSocket — 별도 phase
+  '실시간시세': 'realtime',
 };
 
-// ─────────────────────────────────────────────────────────────────
-// 도메인 매핑 — 한투 (메뉴 → 도메인 sysmod)
-// ─────────────────────────────────────────────────────────────────
 const KIS_DOMAIN_MAP = {
   '[국내주식] 주문/계좌': 'stock-account',
   '[국내주식] 기본시세': 'stock-quote',
@@ -71,7 +55,7 @@ const KIS_DOMAIN_MAP = {
   '[국내주식] 순위분석': 'stock-ranking',
   '[국내주식] 시세분석': 'stock-analysis',
   '[국내주식] ELW 시세': 'stock-elw',
-  '[국내주식] 실시간시세': 'stock-realtime', // 별도 phase
+  '[국내주식] 실시간시세': 'stock-realtime',
   '[국내선물옵션] 기본시세': 'futures',
   '[국내선물옵션] 주문/계좌': 'futures',
   '[장내채권] 기본시세': 'bond',
@@ -83,79 +67,123 @@ const KIS_DOMAIN_MAP = {
   '[해외선물옵션] 주문/계좌': 'overseas-futures',
 };
 
-// ─────────────────────────────────────────────────────────────────
-// 도메인별 한글 설명 (config.json description 용)
-// ─────────────────────────────────────────────────────────────────
 const KIWOOM_DOMAIN_DESC = {
   'account': '키움증권 계좌 (잔고·예수금·자산·수익률·체결·미체결·매매일지)',
   'order': '키움증권 주문 (현금/신용/금현물 매수·매도·정정·취소)',
   'quote': '키움증권 시세 + 종목정보 + 업종 (현재가·호가·체결·일별주가·종목기본정보)',
   'chart': '키움증권 차트 (틱/분봉/일봉/주봉/월봉/년봉 — 주식·업종·금현물)',
-  'ranking': '키움증권 실시간 순위정보 (등락률·거래량·호가잔량·외인·신용비율 등 23종)',
+  'ranking': '키움증권 실시간 순위정보 (등락률·거래량·호가잔량·외인·신용비율 등)',
   'investor': '키움증권 투자자 동향 (기관/외국인·대차거래·공매도)',
   'etf-elw': '키움증권 ETF + ELW (수익률·민감도·괴리율·조건검색)',
   'condition-theme': '키움증권 조건검색 + 테마 (사용자 정의 조건·테마 그룹별 종목)',
 };
 
 const KIS_DOMAIN_DESC = {
-  'stock-account': '한국투자증권 국내주식 주문/계좌 (잔고·매수가능·정정취소·예약주문·수익현황 23개)',
-  'stock-quote': '한국투자증권 국내주식 기본시세 + 종목정보 + 업종/기타 (현재가·호가·체결·일자별·종목정보 61개)',
-  'stock-ranking': '한국투자증권 국내주식 순위분석 (거래량·등락률·시가총액·수익자산지표 등 22개)',
-  'stock-analysis': '한국투자증권 국내주식 시세분석 (투자자·프로그램매매·신용잔고·체결강도·매물대 등 28개)',
-  'stock-elw': '한국투자증권 국내주식 ELW 시세 (현재가·민감도·변동성·기초자산·조건검색 22개)',
-  'futures': '한국투자증권 국내선물옵션 (시세 + 주문/계좌 24개) — 야간 포함',
-  'bond': '한국투자증권 장내채권 (시세 + 주문/계좌 15개)',
-  'overseas-stock': '한국투자증권 해외주식 (시세 + 시세분석 + 주문/계좌 47개) — 미국·아시아 포함',
-  'overseas-futures': '한국투자증권 해외선물옵션 (시세 + 주문/계좌 31개)',
+  'stock-account': '한국투자증권 국내주식 주문/계좌 (잔고·매수가능·정정취소·예약주문·수익현황)',
+  'stock-quote': '한국투자증권 국내주식 기본시세 + 종목정보 + 업종/기타 (현재가·호가·체결·일자별·종목정보)',
+  'stock-ranking': '한국투자증권 국내주식 순위분석 (거래량·등락률·시가총액·수익자산지표 등)',
+  'stock-analysis': '한국투자증권 국내주식 시세분석 (투자자·프로그램매매·신용잔고·체결강도·매물대 등)',
+  'stock-elw': '한국투자증권 국내주식 ELW 시세 (현재가·민감도·변동성·기초자산·조건검색)',
+  'futures': '한국투자증권 국내선물옵션 (시세 + 주문/계좌) — 야간 포함',
+  'bond': '한국투자증권 장내채권 (시세 + 주문/계좌)',
+  'overseas-stock': '한국투자증권 해외주식 (시세 + 시세분석 + 주문/계좌) — 미국·아시아 포함',
+  'overseas-futures': '한국투자증권 해외선물옵션 (시세 + 주문/계좌)',
+};
+
+const KIWOOM_DOMAIN_CAPABILITY = {
+  'account': 'stock-trading',
+  'order': 'stock-trading',
+  'quote': 'stock-quote',
+  'chart': 'stock-quote',
+  'ranking': 'stock-quote',
+  'investor': 'stock-quote',
+  'etf-elw': 'stock-quote',
+  'condition-theme': 'stock-quote',
+};
+
+const KIS_DOMAIN_CAPABILITY = {
+  'stock-account': 'stock-trading',
+  'stock-quote': 'stock-quote',
+  'stock-ranking': 'stock-quote',
+  'stock-analysis': 'stock-quote',
+  'stock-elw': 'stock-quote',
+  'futures': 'stock-trading',
+  'bond': 'stock-trading',
+  'overseas-stock': 'stock-trading',
+  'overseas-futures': 'stock-trading',
 };
 
 // ─────────────────────────────────────────────────────────────────
-// 키움 — API ID → URL 카테고리 매핑 (옛 sysmod 의 API_CATEGORY 1:1)
-// 키움은 모든 API 가 POST /api/dostk/{category} 에 apiId 헤더로 분기.
+// 키움 단일 sysmod 생성
 // ─────────────────────────────────────────────────────────────────
-const KIWOOM_URL_CATEGORY = {};
-// stock-apis-kiwoom.json 의 path 필드에서 자동 추출 (예: /api/dostk/stkinfo → "stkinfo")
-function loadKiwoomUrlCategory(apis) {
+function buildKiwoomBundle(apis) {
+  // URL 카테고리 추출 (apiId → "/api/dostk/{cat}")
+  const urlCategory = {};
+  const apiNames = {};
   for (const api of apis) {
-    if (!api.path) continue;
-    const m = api.path.match(/\/api\/dostk\/([^/]+)/);
-    if (m) KIWOOM_URL_CATEGORY[api.id] = m[1];
+    if (api.path) {
+      const m = api.path.match(/\/api\/dostk\/([^/]+)/);
+      if (m) urlCategory[api.id] = m[1];
+    }
+    apiNames[api.id] = api.name;
   }
-}
 
-// ─────────────────────────────────────────────────────────────────
-// codegen 헬퍼
-// ─────────────────────────────────────────────────────────────────
-function escapeJsString(s) {
-  return String(s).replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
-}
+  // 도메인별 group
+  const byDomain = {};
+  for (const api of apis) {
+    if (api.category === 'OAuth 인증') continue;
+    const domain = KIWOOM_DOMAIN_MAP[api.subCategory];
+    if (!domain || domain === 'realtime') continue; // realtime 별도 phase
+    (byDomain[domain] ||= []).push(api);
+  }
 
-function buildKiwoomConfig(domain, apis) {
-  const actions = apis.map((a) => a.id);
-  const lines = apis.map((a) => `  ${a.id} — ${a.name}`);
-  return {
-    name: `kiwoom-${domain}`,
+  // config.domains[] 생성
+  const domains = Object.entries(byDomain)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, apis]) => ({
+      name,
+      description: KIWOOM_DOMAIN_DESC[name] || `키움 ${name}`,
+      capability: KIWOOM_DOMAIN_CAPABILITY[name] || 'stock-quote',
+      actions: apis.map((a) => a.id).sort(),
+      actionsCount: apis.length,
+      actionsDetail: apis.map((a) => `  ${a.id} — ${a.name}`).join('\n'),
+    }));
+
+  // 전체 action enum (단일 sysmod 가 처리 가능한 모든 API ID)
+  const allActions = apis
+    .filter((a) => a.category !== 'OAuth 인증')
+    .map((a) => a.id)
+    .sort();
+
+  const config = {
+    name: 'kiwoom',
     type: 'module',
     scope: 'system',
     version: '1.0.0',
-    description: KIWOOM_DOMAIN_DESC[domain] || `키움증권 ${domain}`,
+    description: '키움증권 OPEN API 통합 sysmod — 208 REST API + 8 도메인 (계좌·주문·시세·차트·순위·투자자·ETF/ELW·조건검색/테마). 도메인별 별도 LLM 도구로 노출 (sysmod_kiwoom_account / sysmod_kiwoom_chart 등) — 단일 코드.',
     runtime: 'node',
-    capability: domain.includes('quote') || domain.includes('chart') || domain.includes('ranking') ? 'stock-quote' : 'stock-trading',
+    capability: 'stock-trading',
     providerType: 'api',
     secrets: ['KIWOOM_APP_KEY', 'KIWOOM_APP_SECRET'],
     tokenCache: { secretName: 'KIWOOM_ACCESS_TOKEN', ttlHours: 23 },
+    domains: domains.map(({ name, description, capability, actions, actionsCount, actionsDetail }) => ({
+      name,
+      description: `${description}\n총 ${actionsCount}개 API. action 으로 API ID 직접 호출:\n${actionsDetail}`,
+      capability,
+      actions,
+    })),
     input: {
       type: 'object',
       required: ['action'],
       properties: {
         action: {
           type: 'string',
-          enum: actions,
-          description: `키움 API ID 직접 호출. 본 sysmod 가 지원하는 API:\n${lines.join('\n')}`,
+          enum: allActions,
+          description: '키움 API ID 직접 호출 (예: ka10001 / kt00018). 도메인별 LLM 도구로 분리 노출되므로 각 도구는 자기 도메인의 actions 만 enum 으로 표시.',
         },
         params: {
           type: 'object',
-          description: '키움 API request body 의 모든 필드를 그대로 전달. 각 API 의 필드는 키움 REST API 문서 또는 위 action 설명 참조.',
+          description: '키움 API request body 의 모든 필드. 각 API 의 필드는 키움 REST API 공식 문서 참조.',
         },
         mock: {
           type: 'boolean',
@@ -166,40 +194,28 @@ function buildKiwoomConfig(domain, apis) {
     },
     output: {
       type: 'object',
-      properties: {
-        apiId: { type: 'string' },
-        action: { type: 'string' },
-      },
+      properties: { apiId: { type: 'string' }, name: { type: 'string' } },
     },
   };
-}
 
-function buildKiwoomIndex(domain, apis) {
-  const urlCategoryMap = {};
-  for (const a of apis) {
-    if (KIWOOM_URL_CATEGORY[a.id]) urlCategoryMap[a.id] = KIWOOM_URL_CATEGORY[a.id];
-  }
-  // metadata for runtime helpful error messages
-  const apiNames = {};
-  for (const a of apis) apiNames[a.id] = a.name;
-
-  return `#!/usr/bin/env node
+  const index = `#!/usr/bin/env node
 /**
- * Firebat System Module: kiwoom-${domain}
- * Phase Stock-Split S2 (2026-05-14) — codegen 생성. infra/data/stock-apis-kiwoom.json 입력.
+ * Firebat System Module: kiwoom (옵션 C 통합, 2026-05-14)
+ * 키움증권 OPEN API 통합 — 208 REST API. codegen 생성 (infra/data/stock-apis-kiwoom.json).
  *
- * ${KIWOOM_DOMAIN_DESC[domain] || domain}
- * ${apis.length}개 API. action = API ID 직접 호출 + params 가 request body.
+ * LLM 시점: config.json 의 domains[] 가 MCP register_sysmod_tools 에 의해 8개 별도 도구로 분리 등록
+ * (sysmod_kiwoom_account / sysmod_kiwoom_chart / sysmod_kiwoom_quote / ...). 모든 도구가 이 단일
+ * 모듈로 라우팅. action 으로 API ID (ka10001 등) 직접 호출.
  *
- * 옛 sysmod_kiwoom (151 actions) 의 도메인별 분리 — OAuth + callApi + throttle 자체 inline.
+ * OAuth + callApi + throttle (초당 5회) 내장.
  */
 
 const BASE_REAL = 'https://api.kiwoom.com';
 const BASE_MOCK = 'https://mockapi.kiwoom.com';
 
-// API ID → URL 카테고리 (POST /api/dostk/{category} + apiId 헤더)
-const URL_CATEGORY = ${JSON.stringify(urlCategoryMap, null, 2)};
-// API ID → 한글명 (에러 메시지 용)
+// API ID → URL 카테고리 (POST /api/dostk/{category} + api-id 헤더)
+const URL_CATEGORY = ${JSON.stringify(urlCategory, null, 2)};
+// API ID → 한글명 (에러 메시지 + 결과 enrichment)
 const API_NAMES = ${JSON.stringify(apiNames, null, 2)};
 
 async function getAccessToken(base, appKey, appSecret, forceNew = false) {
@@ -234,7 +250,7 @@ async function acquireSlot() {
 
 async function callApi(base, token, apiId, params = {}, retry = 2) {
   const category = URL_CATEGORY[apiId];
-  if (!category) throw new Error(\`이 sysmod 는 \${apiId} 를 지원하지 않습니다. 본 sysmod 가 지원하는 API: \${Object.keys(URL_CATEGORY).join(', ')}\`);
+  if (!category) throw new Error(\`알 수 없는 API ID: \${apiId}. 키움 REST API 문서 참조.\`);
   const url = \`\${base}/api/dostk/\${category}\`;
   await acquireSlot();
   const resp = await fetch(url, {
@@ -268,13 +284,13 @@ process.stdin.on('end', async () => {
     const { data } = JSON.parse(raw);
     const action = data?.action;
     if (!action) {
-      console.log(JSON.stringify({ success: false, error: 'data.action 필드가 필요합니다. 본 sysmod 의 API ID 중 하나를 지정하세요.' }));
+      console.log(JSON.stringify({ success: false, error: 'data.action 필드가 필요합니다. 키움 API ID (ka10001 등) 를 지정하세요.' }));
       return;
     }
     const appKey = process.env['KIWOOM_APP_KEY'];
     const appSecret = process.env['KIWOOM_APP_SECRET'];
     if (!appKey || !appSecret) {
-      console.log(JSON.stringify({ success: false, error: 'KIWOOM_APP_KEY / KIWOOM_APP_SECRET 이 설정되지 않았습니다. 설정 > 시스템 모듈 > kiwoom-${domain} 에서 등록해주세요.' }));
+      console.log(JSON.stringify({ success: false, error: 'KIWOOM_APP_KEY / KIWOOM_APP_SECRET 이 설정되지 않았습니다. 설정 > 시스템 모듈 > kiwoom 에서 등록하세요.' }));
       return;
     }
     const isMock = data.mock === true;
@@ -297,83 +313,112 @@ process.stdin.on('end', async () => {
   }
 });
 `;
+
+  return { config, index };
 }
 
-function buildKisConfig(domain, apis) {
-  const actions = apis.map((a) => a.id);
-  const lines = apis.map((a) => `  ${a.id} (TR_ID: ${a.trIdReal || 'N/A'}) — ${a.name}`);
-  return {
-    name: `kis-${domain}`,
+// ─────────────────────────────────────────────────────────────────
+// 한투 단일 sysmod 생성
+// ─────────────────────────────────────────────────────────────────
+function buildKisBundle(apis) {
+  // API metadata table (apiId → { method, path, trIdReal, trIdMock, name })
+  const apiTable = {};
+  for (const api of apis) {
+    apiTable[api.id] = {
+      method: api.method,
+      path: api.path,
+      trIdReal: api.trIdReal || '',
+      trIdMock: api.trIdMock || '',
+      name: api.name,
+    };
+  }
+
+  // 도메인별 group
+  const byDomain = {};
+  for (const api of apis) {
+    if (api.menu === 'OAuth인증') continue;
+    const domain = KIS_DOMAIN_MAP[api.menu];
+    if (!domain || domain === 'stock-realtime') continue;
+    (byDomain[domain] ||= []).push(api);
+  }
+
+  const domains = Object.entries(byDomain)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([name, apis]) => ({
+      name,
+      description: KIS_DOMAIN_DESC[name] || `한투 ${name}`,
+      capability: KIS_DOMAIN_CAPABILITY[name] || 'stock-quote',
+      actions: apis.map((a) => a.id).sort(),
+      actionsCount: apis.length,
+      actionsDetail: apis
+        .map((a) => `  ${a.id} (TR_ID: ${a.trIdReal || 'N/A'}) — ${a.name}`)
+        .join('\n'),
+    }));
+
+  const allActions = apis
+    .filter((a) => a.menu !== 'OAuth인증')
+    .map((a) => a.id)
+    .sort();
+
+  const config = {
+    name: 'korea-invest',
     type: 'module',
     scope: 'system',
     version: '1.0.0',
-    description: KIS_DOMAIN_DESC[domain] || `한국투자증권 ${domain}`,
+    description: '한국투자증권 OPEN API 통합 sysmod — 278 REST API + 9 도메인 (국내주식: 계좌/시세/순위/시세분석/ELW + 선물옵션·채권·해외주식·해외선물옵션). 도메인별 별도 LLM 도구로 노출.',
     runtime: 'node',
-    capability: domain.includes('quote') || domain.includes('ranking') || domain.includes('analysis') ? 'stock-quote' : 'stock-trading',
+    capability: 'stock-trading',
     providerType: 'api',
     secrets: ['KIS_APP_KEY', 'KIS_APP_SECRET'],
     tokenCache: { secretName: 'KIS_ACCESS_TOKEN', ttlHours: 23 },
+    domains: domains.map(({ name, description, capability, actions, actionsCount, actionsDetail }) => ({
+      name,
+      description: `${description}\n총 ${actionsCount}개 API. action 으로 API ID 직접 호출:\n${actionsDetail}`,
+      capability,
+      actions,
+    })),
     input: {
       type: 'object',
       required: ['action'],
       properties: {
         action: {
           type: 'string',
-          enum: actions,
-          description: `한투 API ID 직접 호출 (예: v1_국내주식-008). 본 sysmod 가 지원하는 API:\n${lines.join('\n')}`,
+          enum: allActions,
+          description: '한투 API ID 직접 호출 (예: v1_국내주식-008). 도메인별 LLM 도구로 분리 노출.',
         },
         query: {
           type: 'object',
-          description: '한투 API request query parameter (GET API 의 필수). 각 API 의 필드는 한투 OPEN API 문서 또는 위 action 설명 참조.',
+          description: '한투 API request query parameter (GET API 의 필수).',
         },
         body: {
           type: 'object',
-          description: '한투 API request body (POST API 의 필수). 각 API 의 필드는 한투 OPEN API 문서 또는 위 action 설명 참조.',
+          description: '한투 API request body (POST API 의 필수).',
         },
         mock: {
           type: 'boolean',
-          description: 'true 면 모의투자 도메인 (openapivts.koreainvestment.com:29443) 호출. 기본 false (실전).',
+          description: 'true 면 모의투자 도메인 호출. 기본 false (실전).',
         },
       },
       additionalProperties: false,
     },
     output: {
       type: 'object',
-      properties: {
-        apiId: { type: 'string' },
-        trId: { type: 'string' },
-      },
+      properties: { apiId: { type: 'string' }, trId: { type: 'string' }, name: { type: 'string' } },
     },
   };
-}
 
-function buildKisIndex(domain, apis) {
-  // metadata table: apiId → { method, path, trIdReal, trIdMock, name }
-  const apiTable = {};
-  for (const a of apis) {
-    apiTable[a.id] = {
-      method: a.method,
-      path: a.path,
-      trIdReal: a.trIdReal || '',
-      trIdMock: a.trIdMock || '',
-      name: a.name,
-    };
-  }
-  return `#!/usr/bin/env node
+  const index = `#!/usr/bin/env node
 /**
- * Firebat System Module: kis-${domain}
- * Phase Stock-Split S2 (2026-05-14) — codegen 생성. infra/data/stock-apis-kis.json 입력.
+ * Firebat System Module: korea-invest (옵션 C 통합, 2026-05-14)
+ * 한국투자증권 OPEN API 통합 — 278 REST API. codegen 생성.
  *
- * ${KIS_DOMAIN_DESC[domain] || domain}
- * ${apis.length}개 API. action = API ID 직접 호출 + (query|body) 가 request payload.
- *
- * 옛 sysmod_korea_invest (277 actions) 의 도메인별 분리 — OAuth + callApi 자체 inline.
+ * LLM 시점: config.json 의 domains[] 가 9개 별도 도구로 분리 등록.
+ * 단일 모듈로 라우팅 — action 으로 API ID 직접 호출, tr_id 자동 분기 (실전/모의).
  */
 
 const BASE_REAL = 'https://openapi.koreainvestment.com:9443';
 const BASE_MOCK = 'https://openapivts.koreainvestment.com:29443';
 
-// API ID → { method, path, trIdReal, trIdMock, name }
 const API_TABLE = ${JSON.stringify(apiTable, null, 2)};
 
 async function getAccessToken(base, appKey, appSecret, forceNew = false) {
@@ -393,7 +438,7 @@ async function getAccessToken(base, appKey, appSecret, forceNew = false) {
   return { token: json.access_token, isNew: true };
 }
 
-// Rate limit: 초당 20회 (한투 공식 한도 — 실전 기준)
+// Rate limit: 초당 20회 (한투 공식 한도)
 const RATE_LIMIT = 20;
 const WINDOW_MS = 1000;
 const _reqTimes = [];
@@ -408,7 +453,7 @@ async function acquireSlot() {
 
 async function callApi(base, token, appKey, appSecret, action, query = {}, body = {}, isMock = false, retry = 2) {
   const meta = API_TABLE[action];
-  if (!meta) throw new Error(\`이 sysmod 는 \${action} 을 지원하지 않습니다. 본 sysmod 가 지원하는 API: \${Object.keys(API_TABLE).join(', ')}\`);
+  if (!meta) throw new Error(\`알 수 없는 API ID: \${action}. 한투 OPEN API 문서 참조.\`);
   const trId = isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal;
   if (isMock && !meta.trIdMock) throw new Error(\`\${action} (\${meta.name}) 은 모의투자 미지원입니다.\`);
   let url = \`\${base}\${meta.path}\`;
@@ -447,13 +492,13 @@ process.stdin.on('end', async () => {
     const { data } = JSON.parse(raw);
     const action = data?.action;
     if (!action) {
-      console.log(JSON.stringify({ success: false, error: 'data.action 필드가 필요합니다. 본 sysmod 의 API ID 중 하나를 지정하세요.' }));
+      console.log(JSON.stringify({ success: false, error: 'data.action 필드가 필요합니다. 한투 API ID (v1_국내주식-008 등) 를 지정하세요.' }));
       return;
     }
     const appKey = process.env['KIS_APP_KEY'];
     const appSecret = process.env['KIS_APP_SECRET'];
     if (!appKey || !appSecret) {
-      console.log(JSON.stringify({ success: false, error: 'KIS_APP_KEY / KIS_APP_SECRET 이 설정되지 않았습니다. 설정 > 시스템 모듈 > kis-${domain} 에서 등록해주세요.' }));
+      console.log(JSON.stringify({ success: false, error: 'KIS_APP_KEY / KIS_APP_SECRET 이 설정되지 않았습니다. 설정 > 시스템 모듈 > korea-invest 에서 등록하세요.' }));
       return;
     }
     const isMock = data.mock === true;
@@ -478,6 +523,8 @@ process.stdin.on('end', async () => {
   }
 });
 `;
+
+  return { config, index };
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -487,53 +534,20 @@ function generate() {
   const kiwoomApis = JSON.parse(readFileSync(resolve(ROOT, 'infra/data/stock-apis-kiwoom.json'), 'utf8'));
   const kisApis = JSON.parse(readFileSync(resolve(ROOT, 'infra/data/stock-apis-kis.json'), 'utf8'));
 
-  loadKiwoomUrlCategory(kiwoomApis);
+  const kiwoomBundle = buildKiwoomBundle(kiwoomApis);
+  const kisBundle = buildKisBundle(kisApis);
 
-  // 키움 도메인별 group
-  const kiwoomByDomain = {};
-  for (const api of kiwoomApis) {
-    if (api.category === 'OAuth 인증') continue; // 공유 auth — sysmod 분리 X
-    const domain = KIWOOM_DOMAIN_MAP[api.subCategory];
-    if (!domain) {
-      console.warn(`⚠ 키움 매핑 미정의: ${api.category}/${api.subCategory} — ${api.id}`);
-      continue;
-    }
-    if (domain === 'realtime') continue; // WebSocket — 별도 phase
-    (kiwoomByDomain[domain] ||= []).push(api);
-  }
+  const kiwoomDir = resolve(MODULES_DIR, 'kiwoom');
+  mkdirSync(kiwoomDir, { recursive: true });
+  writeFileSync(resolve(kiwoomDir, 'config.json'), JSON.stringify(kiwoomBundle.config, null, 2), 'utf8');
+  writeFileSync(resolve(kiwoomDir, 'index.mjs'), kiwoomBundle.index, 'utf8');
+  console.log(`✓ system/modules/kiwoom — 208 APIs, ${kiwoomBundle.config.domains.length} domains`);
 
-  // 한투 도메인별 group
-  const kisByDomain = {};
-  for (const api of kisApis) {
-    if (api.menu === 'OAuth인증') continue;
-    const domain = KIS_DOMAIN_MAP[api.menu];
-    if (!domain) {
-      console.warn(`⚠ 한투 매핑 미정의: ${api.menu} — ${api.id}`);
-      continue;
-    }
-    if (domain === 'stock-realtime') continue; // 별도 phase
-    (kisByDomain[domain] ||= []).push(api);
-  }
-
-  // 키움 sysmod 생성
-  let created = 0;
-  for (const [domain, apis] of Object.entries(kiwoomByDomain)) {
-    const dir = resolve(MODULES_DIR, `kiwoom-${domain}`);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(resolve(dir, 'config.json'), JSON.stringify(buildKiwoomConfig(domain, apis), null, 2), 'utf8');
-    writeFileSync(resolve(dir, 'index.mjs'), buildKiwoomIndex(domain, apis), 'utf8');
-    console.log(`✓ kiwoom-${domain} (${apis.length} APIs)`);
-    created++;
-  }
-  for (const [domain, apis] of Object.entries(kisByDomain)) {
-    const dir = resolve(MODULES_DIR, `kis-${domain}`);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(resolve(dir, 'config.json'), JSON.stringify(buildKisConfig(domain, apis), null, 2), 'utf8');
-    writeFileSync(resolve(dir, 'index.mjs'), buildKisIndex(domain, apis), 'utf8');
-    console.log(`✓ kis-${domain} (${apis.length} APIs)`);
-    created++;
-  }
-  console.log(`\n총 ${created} 도메인 sysmod 생성 완료.`);
+  const kisDir = resolve(MODULES_DIR, 'korea-invest');
+  mkdirSync(kisDir, { recursive: true });
+  writeFileSync(resolve(kisDir, 'config.json'), JSON.stringify(kisBundle.config, null, 2), 'utf8');
+  writeFileSync(resolve(kisDir, 'index.mjs'), kisBundle.index, 'utf8');
+  console.log(`✓ system/modules/korea-invest — 278 APIs, ${kisBundle.config.domains.length} domains`);
 }
 
 generate();

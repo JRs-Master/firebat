@@ -171,7 +171,7 @@ interface FirebatInfraContainer {
 ### Step 1. 도구 정의 빌드
 `AiManager.buildToolDefinitions()` 가 매 요청마다 도구 목록 생성:
 - 정적 27개 Core 도구 (`render_*`, `image_gen`, `search_history`, `save_page`, `schedule_task` 등 — `core/managers/ai/tool-schemas.ts`)
-- 동적 sysmod 도구 (`sysmod_kiwoom_quote`, `sysmod_kis_stock_account`, `sysmod_naver-search` 등 — config.json description 자동 주입). 2026-05-14 Phase Stock-Split — 옛 단일 `sysmod_kiwoom` (151 actions) / `sysmod_korea_invest` (277 actions) → 17 도메인 sysmod 으로 분리 (codegen scripts/gen-stock-sysmods.mjs).
+- 동적 sysmod 도구 (`sysmod_kiwoom_quote`, `sysmod_korea_invest_stock_account`, `sysmod_naver-search` 등 — config.json description 자동 주입). 2026-05-14 옵션 C — 단일 sysmod (system/modules/kiwoom + korea-invest) + config.json `domains[]` 필드로 도메인별 LLM 도구 분리 노출. MCP register_sysmod_tools 가 domains 있으면 N 별도 도구 자동 등록 (action enum 좁힘). 17 도메인 도구 + 단일 코드 (~/scripts/gen-stock-sysmods.mjs codegen).
 - 외부 MCP 도구 (`mcp_*` 접두사로 서버별 prefix)
 
 ### Step 2. 멀티턴 도구 루프
