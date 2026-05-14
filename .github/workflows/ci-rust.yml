@@ -105,5 +105,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: firebat-core-linux-x86_64
-          path: target/release/firebat-core
+          # Phase 5 (2026-05-13) 외부화 후 infra/data/ 도 같이 배포 — llm-models.json
+          # 미배포 시 stub registry (모델 0) → frontend CLI/AI 모델 노출 안 됨.
+          # 외부화 prompts (infra/data/prompts/), stock-apis JSON 도 동시 동봉.
+          path: |
+            target/release/firebat-core
+            infra/data/**
           retention-days: 30
