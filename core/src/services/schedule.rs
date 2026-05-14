@@ -8,7 +8,10 @@ use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::schedule::ScheduleManager;
 use crate::managers::task::{PipelineStep, TaskManager};
-use crate::ports::{CronJobInfo, CronLogEntry, CronNotification, CronScheduleOptions};
+use crate::ports::{
+    CronJobInfo, CronLogEntry, CronNotification, CronNotify, CronRetry, CronRunWhen,
+    CronScheduleOptions,
+};
 use crate::proto::{
     schedule_service_server::ScheduleService, CronJobListPb, CronJobPb, CronLogEntryPb,
     CronLogListPb, CronNotificationListPb, CronNotificationPb, Empty, NumberRequest,
@@ -50,18 +53,29 @@ fn err_status(msg: impl Into<String>) -> Response<Status> {
 }
 
 /// ScheduleCronRequest → (job_id, target_path, CronScheduleOptions) 변환.
-/// 동적 JSON field (input_data / pipeline / run_when / retry / notify) 는 string 으로
-/// 전달되므로 serde_json::from_str 으로 Value 복원.
+/// inputData 만 동적 LLM payload (serde_json::Value) — 그 외 typed parse.
 fn parse_schedule_request(
     req: ScheduleCronRequest,
 ) -> Result<(String, String, CronScheduleOptions), String> {
-    let parse_value = |raw: Option<String>| -> Result<Option<serde_json::Value>, String> {
+    fn parse_value(raw: Option<String>) -> Result<Option<serde_json::Value>, String> {
         match raw {
             None => Ok(None),
             Some(s) if s.is_empty() => Ok(None),
             Some(s) => serde_json::from_str(&s).map(Some).map_err(|e| e.to_string()),
         }
-    };
+    }
+    fn parse_typed<T: serde::de::DeserializeOwned>(
+        raw: Option<String>,
+        label: &str,
+    ) -> Result<Option<T>, String> {
+        match raw {
+            None => Ok(None),
+            Some(s) if s.is_empty() => Ok(None),
+            Some(s) => serde_json::from_str(&s)
+                .map(Some)
+                .map_err(|e| format!("{label}: {e}")),
+        }
+    }
     let opts = CronScheduleOptions {
         cron_time: req.cron_time,
         run_at: req.run_at,
@@ -69,13 +83,13 @@ fn parse_schedule_request(
         start_at: req.start_at,
         end_at: req.end_at,
         input_data: parse_value(req.input_data_json)?,
-        pipeline: parse_value(req.pipeline_json)?,
+        pipeline: parse_typed::<Vec<PipelineStep>>(req.pipeline_json, "pipeline")?,
         title: req.title,
         description: req.description,
         one_shot: req.one_shot,
-        run_when: parse_value(req.run_when_json)?,
-        retry: parse_value(req.retry_json)?,
-        notify: parse_value(req.notify_json)?,
+        run_when: parse_typed::<CronRunWhen>(req.run_when_json, "runWhen")?,
+        retry: parse_typed::<CronRetry>(req.retry_json, "retry")?,
+        notify: parse_typed::<CronNotify>(req.notify_json, "notify")?,
         execution_mode: req.execution_mode,
         agent_prompt: req.agent_prompt,
     };

@@ -185,19 +185,17 @@ impl ScheduleManager {
             }
         }
 
-        // 2. retry loop
+        // 2. retry loop — typed CronRetry 직접 access.
         let retry_count = info
             .retry
             .as_ref()
-            .and_then(|r| r.get("count"))
-            .and_then(|v| v.as_i64())
+            .map(|r| r.count)
             .unwrap_or(0)
             .clamp(0, MAX_RETRY_COUNT);
         let retry_delay_ms = info
             .retry
             .as_ref()
-            .and_then(|r| r.get("delayMs"))
-            .and_then(|v| v.as_i64())
+            .and_then(|r| r.delay_ms)
             .unwrap_or(DEFAULT_RETRY_DELAY_MS);
 
         let mut result: Option<CronJobResult> = None;
@@ -372,31 +370,22 @@ impl ScheduleManager {
                 error = Some("ScheduleHooks 미저장 — agent 모드 cron 작동 안 함".to_string());
             }
         }
-        // Mode 2: pipeline
-        else if let Some(pipeline_value) = info.pipeline.as_ref().filter(|v| {
-            v.as_array().map(|a| !a.is_empty()).unwrap_or(false)
-        }) {
+        // Mode 2: pipeline — typed Vec<PipelineStep> 직접.
+        else if let Some(steps) = info.pipeline.as_ref().filter(|v| !v.is_empty()) {
             if let Some(h) = hooks {
-                let arr = pipeline_value.as_array().unwrap();
-                let total = arr.len() as i64;
+                let total = steps.len() as i64;
                 steps_total = Some(total);
                 h.log.info(&format!(
                     "[Cron] 파이프라인 실행: {} ({}단계, {:?})",
                     info.job_id, total, info.trigger
                 ));
-                let steps: Vec<PipelineStep> = match serde_json::from_value(pipeline_value.clone()) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        return self.build_result(info, start, false, Some(format!("pipeline 파싱 실패: {e}")), None, None, steps_total);
-                    }
-                };
-                let pipe_result = h.task.execute_pipeline(&steps).await;
+                let pipe_result = h.task.execute_pipeline(steps).await;
                 success = pipe_result.success;
                 if !success {
                     error = pipe_result.error.clone();
                 }
-                steps_executed = Some(arr.len() as i64); // 단순화 — 실제 진행 추적은 후속
-                output = Self::summarize_final_output(&steps, pipe_result.data.as_ref());
+                steps_executed = Some(total); // 단순화 — 실제 진행 추적은 후속
+                output = Self::summarize_final_output(steps, pipe_result.data.as_ref());
             } else {
                 error = Some("ScheduleHooks 미저장 — pipeline 모드 cron 작동 안 함".to_string());
             }
@@ -540,24 +529,21 @@ impl ScheduleManager {
     /// 일반 메커니즘: 어떤 조건도 sysmod 결과 + condition 으로 표현 (휴장일 / 잔고 / 부재 모드 등 enumerate X).
     async fn evaluate_run_when(
         &self,
-        run_when: &serde_json::Value,
+        run_when: &crate::ports::CronRunWhen,
         _job_id: &str,
         hooks: &ScheduleHooks,
     ) -> (bool, String) {
-        // 옛 TS schema: { check: { sysmod, action, inputData }, field, op, value }
-        let check = match run_when.get("check") {
-            Some(v) => v,
-            None => return (false, "runWhen.check 필드 누락".to_string()),
-        };
-        let sysmod = check.get("sysmod").and_then(|v| v.as_str()).unwrap_or("");
-        let action = check.get("action").and_then(|v| v.as_str()).unwrap_or("");
-        let input_data = check
-            .get("inputData")
-            .cloned()
+        // typed schema: { check: { sysmod, action, inputData? }, field, op, value? }
+        let sysmod = run_when.check.sysmod.as_str();
+        let action = run_when.check.action.as_str();
+        let input_data = run_when
+            .check
+            .input_data
+            .clone()
             .unwrap_or(serde_json::json!({}));
-        let field = run_when.get("field").and_then(|v| v.as_str()).unwrap_or("");
-        let op = run_when.get("op").and_then(|v| v.as_str()).unwrap_or("");
-        let expected = run_when.get("value");
+        let field = run_when.field.as_str();
+        let op = run_when.op.as_str();
+        let expected = run_when.value.as_ref();
 
         // sysmod path resolve — system/modules/<sysmod>/index.mjs
         let path = format!("system/modules/{}/index.mjs", sysmod);
@@ -616,16 +602,20 @@ impl ScheduleManager {
     /// fire-and-forget — 본 결과에 영향 X (caller 가 spawn).
     async fn fire_notify(
         &self,
-        notify: &serde_json::Value,
+        notify: &crate::ports::CronNotify,
         info: &CronTriggerInfo,
         result: &CronJobResult,
         hooks: &ScheduleHooks,
     ) -> InfraResult<()> {
-        let cfg_key = if result.success { "onSuccess" } else { "onError" };
-        let Some(cfg) = notify.get(cfg_key) else {
+        let cfg = if result.success {
+            notify.on_success.as_ref()
+        } else {
+            notify.on_error.as_ref()
+        };
+        let Some(cfg) = cfg else {
             return Ok(());
         };
-        let sysmod = cfg.get("sysmod").and_then(|v| v.as_str()).unwrap_or("");
+        let sysmod = cfg.sysmod.as_str();
         if sysmod.is_empty() {
             return Ok(());
         }
@@ -643,8 +633,8 @@ impl ScheduleManager {
             format!("❌ {title} 실패: {{error}}")
         };
         let tpl = cfg
-            .get("template")
-            .and_then(|v| v.as_str())
+            .template
+            .as_deref()
             .unwrap_or(&default_template);
 
         let output_str = result
@@ -664,8 +654,8 @@ impl ScheduleManager {
             .replace("{output}", &output_str);
 
         let mut input = serde_json::json!({"action": "send-message", "text": text});
-        if let Some(chat_id) = cfg.get("chatId") {
-            input["chatId"] = chat_id.clone();
+        if let Some(chat_id) = cfg.chat_id.as_ref() {
+            input["chatId"] = serde_json::Value::String(chat_id.clone());
         }
         hooks
             .sandbox

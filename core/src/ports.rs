@@ -1595,8 +1595,8 @@ pub struct CronNotifyHook {
 }
 
 /// CronScheduleOptions — 스케줄링 등록 옵션.
-/// 2026-05-13 A1-full Phase typed: runWhen / retry / notify 가 typed struct.
-/// pipeline / inputData 는 동적 schema 영역 — serde_json::Value 유지.
+/// 2026-05-14 A1-full Step 3: pipeline / runWhen / retry / notify 모두 typed.
+/// inputData 만 동적 LLM payload 영역 — serde_json::Value 유지.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CronScheduleOptions {
@@ -1613,7 +1613,7 @@ pub struct CronScheduleOptions {
     #[serde(rename = "inputData", default, skip_serializing_if = "Option::is_none")]
     pub input_data: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pipeline: Option<serde_json::Value>,
+    pub pipeline: Option<Vec<crate::managers::task::PipelineStep>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1621,11 +1621,11 @@ pub struct CronScheduleOptions {
     #[serde(rename = "oneShot", default, skip_serializing_if = "Option::is_none")]
     pub one_shot: Option<bool>,
     #[serde(rename = "runWhen", default, skip_serializing_if = "Option::is_none")]
-    pub run_when: Option<serde_json::Value>,
+    pub run_when: Option<CronRunWhen>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub retry: Option<serde_json::Value>,
+    pub retry: Option<CronRetry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub notify: Option<serde_json::Value>,
+    pub notify: Option<CronNotify>,
     #[serde(rename = "executionMode", default, skip_serializing_if = "Option::is_none")]
     pub execution_mode: Option<String>,
     #[serde(rename = "agentPrompt", default, skip_serializing_if = "Option::is_none")]
@@ -1659,15 +1659,15 @@ pub struct CronTriggerInfo {
     #[serde(rename = "inputData", default, skip_serializing_if = "Option::is_none")]
     pub input_data: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pipeline: Option<serde_json::Value>,
+    pub pipeline: Option<Vec<crate::managers::task::PipelineStep>>,
     #[serde(rename = "oneShot", default, skip_serializing_if = "Option::is_none")]
     pub one_shot: Option<bool>,
     #[serde(rename = "runWhen", default, skip_serializing_if = "Option::is_none")]
-    pub run_when: Option<serde_json::Value>,
+    pub run_when: Option<CronRunWhen>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub retry: Option<serde_json::Value>,
+    pub retry: Option<CronRetry>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub notify: Option<serde_json::Value>,
+    pub notify: Option<CronNotify>,
     #[serde(rename = "executionMode", default, skip_serializing_if = "Option::is_none")]
     pub execution_mode: Option<String>,
     #[serde(rename = "agentPrompt", default, skip_serializing_if = "Option::is_none")]
