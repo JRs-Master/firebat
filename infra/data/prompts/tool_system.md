@@ -72,6 +72,8 @@ render({
 - `header` — 섹션 제목 (h1/h2/h3 레벨 구분)
 - `divider` — 섹션 간 시각 구분
 - `grid` — 다수 카드·지표 격자 배치 (2~4 columns). **metric 여러 개를 담아 KPI 대시보드** 구성 시 자주 사용
+  - **필수 props**: `columns` + `children` (각 원소 `{type, props}`). children 누락 시 검증 거부 — metric 등 컴포넌트 N개 박는 패턴 강제
+  - 예: `{type:"grid", props:{columns:3, children:[{type:"metric", props:{label:"현재가", value:75000, unit:"원"}}, {type:"metric", props:{label:"PER", value:15.2}}, {type:"metric", props:{label:"PBR", value:1.1}}]}}`
 - `card` — 자유 children 담는 범용 컨테이너
 
 **지표·데이터**
