@@ -611,17 +611,35 @@ impl ProcessSandboxAdapter {
         }
 
         let trimmed = stdout_buf.trim();
-        let data: serde_json::Value = if trimmed.is_empty() {
+        let parsed: serde_json::Value = if trimmed.is_empty() {
             serde_json::Value::Null
         } else {
             serde_json::from_str(trimmed).unwrap_or_else(|_| serde_json::json!({"stdout": trimmed}))
         };
 
+        // sysmod stdout envelope 인식 — `{success, data, error}` 형태면 그대로 unwrap.
+        // exit 0 자체는 process 정상 종료만 의미 — sysmod 의 비즈니스 success 와 별개.
+        // 옛 sysmod 패턴 (`console.log(JSON.stringify({success:false, error:"..."}))`) 1:1 처리.
+        let (success, data, error) = if let Some(obj) = parsed.as_object() {
+            let has_success = obj.contains_key("success");
+            let has_envelope_field = has_success || obj.contains_key("data") || obj.contains_key("error");
+            if has_envelope_field {
+                let s = obj.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
+                let d = obj.get("data").cloned().unwrap_or(serde_json::Value::Null);
+                let e = obj.get("error").and_then(|v| v.as_str()).map(String::from);
+                (s, d, e)
+            } else {
+                (true, parsed, None)
+            }
+        } else {
+            (true, parsed, None)
+        };
+
         Ok(ModuleOutput {
             protocol_version: firebat_core::ports::MODULE_PROTOCOL_VERSION.to_string(),
-            success: true,
+            success,
             data,
-            error: None,
+            error,
             stderr: if stderr_buf.is_empty() { None } else { Some(stderr_buf) },
             exit_code,
         })
