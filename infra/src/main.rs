@@ -82,6 +82,10 @@ async fn main() -> Result<()> {
     let workspace_root: PathBuf = std::env::var("FIREBAT_WORKSPACE_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|_| std::env::current_dir().unwrap());
+
+    // i18n loader — language/{lang}.json + system/modules/*/lang + system/services/*/lang + system/prompts/*/lang 자동 scan.
+    firebat_core::i18n::init(&workspace_root);
+
     let listen_addr = std::env::var("FIREBAT_CORE_LISTEN")
         .unwrap_or_else(|_| "127.0.0.1:50051".to_string());
     let vault_db_path = std::env::var("FIREBAT_VAULT_DB")
