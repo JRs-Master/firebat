@@ -84,7 +84,7 @@ impl ScheduleManager {
             .await
     }
 
-    pub async fn cancel(&self, job_id: &str) -> InfraResult<()> {
+    pub async fn cancel(&self, job_id: &str) -> InfraResult<bool> {
         self.cron.cancel(job_id).await
     }
 

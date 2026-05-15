@@ -226,10 +226,17 @@ impl ScheduleService for ScheduleServiceImpl {
         req: Request<CancelCronRequest>,
     ) -> Result<Response<CancelCronResponse>, TonicStatus> {
         let job_id = req.into_inner().job_id;
-        self.manager
+        let cancelled = self
+            .manager
             .cancel(&job_id)
             .await
             .map_err(TonicStatus::internal)?;
+        if !cancelled {
+            return Err(TonicStatus::not_found(format!(
+                "cron 잡 {} 미등록",
+                job_id
+            )));
+        }
         Ok(Response::new(CancelCronResponse {}))
     }
 

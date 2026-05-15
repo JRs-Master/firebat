@@ -61,9 +61,8 @@ async fn schedule_then_list_via_grpc() {
 #[tokio::test]
 async fn cancel_unknown_returns_error() {
     let (svc, _dir) = service();
-    // 미존재 jobId → 에러 응답 (cron port 의 error msg 가 service impl 의 TonicStatus::internal
-    // 로 매핑됨). typed error (CronError::NotFound) 분리 박는 게 정공이지만 ICronPort + Manager +
-    // Adapter + Service 다 영향 — 별도 sprint. 본 test 는 에러 발생 검증.
+    // ICronPort.cancel 시그니처 `InfraResult<bool>` — Ok(false) = 미존재.
+    // service impl 가 NotFound 으로 매핑.
     let err = svc
         .cancel_cron(Request::new(CancelCronRequest {
             job_id: "none".to_string(),
@@ -71,5 +70,5 @@ async fn cancel_unknown_returns_error() {
         .await
         .err()
         .expect("cancel_cron 미존재 jobId 시 에러 응답 기대");
-    assert_eq!(err.code(), tonic::Code::Internal);
+    assert_eq!(err.code(), tonic::Code::NotFound);
 }

@@ -400,17 +400,17 @@ impl ICronPort for TokioCronAdapter {
         Ok(())
     }
 
-    async fn cancel(&self, job_id: &str) -> InfraResult<()> {
+    async fn cancel(&self, job_id: &str) -> InfraResult<bool> {
         let mut tasks = self.tasks.lock().await;
         if let Some(h) = tasks.remove(job_id) {
             h.abort();
         }
         let mut jobs = self.jobs.lock().unwrap();
         if jobs.remove(job_id).is_none() {
-            return Err(format!("cron 잡 {} 미등록", job_id));
+            return Ok(false);
         }
         self.flush_jobs(&jobs);
-        Ok(())
+        Ok(true)
     }
 
     async fn trigger_now(&self, job_id: &str) -> InfraResult<()> {

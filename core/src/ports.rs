@@ -1752,7 +1752,9 @@ pub trait ICronPort: Send + Sync {
         target_path: &str,
         opts: CronScheduleOptions,
     ) -> InfraResult<()>;
-    async fn cancel(&self, job_id: &str) -> InfraResult<()>;
+    /// 매 job 의 cancel 결과 — `Ok(true)` = cancelled, `Ok(false)` = job_id 미존재, `Err` = internal.
+    /// 옛 단순 `InfraResult<()>` 의 not_found 와 internal 구분 불가 문제 해결.
+    async fn cancel(&self, job_id: &str) -> InfraResult<bool>;
     async fn trigger_now(&self, job_id: &str) -> InfraResult<()>;
     fn list(&self) -> Vec<CronJobInfo>;
     fn set_timezone(&self, tz: &str);

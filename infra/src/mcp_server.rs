@@ -804,7 +804,8 @@ impl McpToolHandler for CancelTaskHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         let job_id = obj_str(&args, "jobId").ok_or_else(|| "jobId 필수".to_string())?;
         match self.schedule.cancel(&job_id).await {
-            Ok(()) => Ok(serde_json::json!({"success": true})),
+            Ok(true) => Ok(serde_json::json!({"success": true})),
+            Ok(false) => Ok(serde_json::json!({"success": false, "error": format!("cron 잡 {} 미등록", job_id)})),
             Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
         }
     }
