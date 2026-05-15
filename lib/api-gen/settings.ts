@@ -5,8 +5,8 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  SettingsGetAvailableAiAssistantModelsResponse,
-  SettingsGetAvailableAiModelsResponse,
+  AiAssistantModelPb,
+  AvailableAiModelPb,
   SettingsService,
   SettingsSetAiAssistantModelRequestSchema,
   SettingsSetAiModelRequestSchema,
@@ -158,19 +158,19 @@ export async function getAiAssistantDefault(): Promise<RpcResult<string>> {
   }
 }
 
-export async function getAvailableAiAssistantModels(): Promise<RpcResult<SettingsGetAvailableAiAssistantModelsResponse>> {
+export async function getAvailableAiAssistantModels(): Promise<RpcResult<AiAssistantModelPb[]>> {
   try {
       const response = await settingsClient.getAvailableAiAssistantModels({});
-      return { ok: true, data: response };
+      return { ok: true, data: response.models };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function getAvailableAiModels(): Promise<RpcResult<SettingsGetAvailableAiModelsResponse>> {
+export async function getAvailableAiModels(): Promise<RpcResult<AvailableAiModelPb[]>> {
   try {
       const response = await settingsClient.getAvailableAiModels({});
-      return { ok: true, data: response };
+      return { ok: true, data: response.models };
   } catch (err) {
     return toRpcError(err);
   }

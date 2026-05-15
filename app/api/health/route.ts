@@ -41,7 +41,7 @@ async function checkCron(): Promise<CheckResult> {
   try {
     const res = await listCron();
     if (!res.ok) return { ok: false, detail: res.message };
-    const jobs = res.data.jobs ?? [];
+    const jobs = res.data ?? [];
     return { ok: true, meta: { count: jobs.length } };
   } catch (err) {
     return { ok: false, detail: err instanceof Error ? err.message : String(err) };

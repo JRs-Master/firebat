@@ -44,7 +44,7 @@ export default async function HomePage({ searchParams }: Props) {
   const perPage = cms.layout?.pageList?.perPage ?? 10;
 
   const pagesRes = await listPages();
-  const allItems = pagesRes.ok ? (pagesRes.data.items ?? []) : [];
+  const allItems = pagesRes.ok ? (pagesRes.data ?? []) : [];
   const allPages = allItems.map(toPageListItem);
   // public + published 만, 최근 순
   const visiblePages = allPages

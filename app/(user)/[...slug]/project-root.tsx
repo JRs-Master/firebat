@@ -39,7 +39,7 @@ export async function ProjectRootView({ projectName, pageSlugs, currentPage = 1 
   const perPage = cms.layout?.pageList?.perPage ?? 10;
 
   const allPagesRes = await listPages();
-  const allPages = allPagesRes.ok ? (allPagesRes.data.items ?? []).map(toPageListItem) : [];
+  const allPages = allPagesRes.ok ? (allPagesRes.data ?? []).map(toPageListItem) : [];
   const projectPages = allPages
     .filter((p) => pageSlugs.includes(p.slug))
     .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')

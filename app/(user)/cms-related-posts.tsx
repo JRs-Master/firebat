@@ -20,7 +20,7 @@ function formatDate(s: string | undefined, timeZone: string, lang: 'ko' | 'en'):
 
 export async function CmsRelatedPosts({ slug, limit, siteLang }: { slug: string; limit: number; siteLang?: string }) {
   const res = await findRelatedPages({ slug, limit: BigInt(limit) } as any);
-  const related = res.ok ? (res.data.items ?? []).map(toPageListItem) : [];
+  const related = res.ok ? (res.data ?? []).map(toPageListItem) : [];
   if (related.length === 0) return null;
   const lang = normalizeLang(siteLang);
   const t = getServerTranslations(siteLang);

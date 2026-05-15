@@ -15,5 +15,5 @@ export const GET = withAuth(async () => {
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   }
-  return NextResponse.json({ success: true, tags: res.data?.tags ?? [] });
+  return NextResponse.json({ success: true, tags: res.data ?? [] });
 });

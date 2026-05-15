@@ -39,12 +39,12 @@ export const GET = withAuth(async (req: NextRequest) => {
     if (!notifRes.ok) {
       return NextResponse.json({ error: notifRes.message }, { status: 500 });
     }
-    notifications = notifRes.data.items ?? [];
+    notifications = notifRes.data ?? [];
   }
 
   return NextResponse.json({
-    jobs: jobsRes.data.jobs ?? [],
-    logs: logsRes.data.entries ?? [],
+    jobs: jobsRes.data ?? [],
+    logs: logsRes.data ?? [],
     notifications,
   });
 });

@@ -24,5 +24,5 @@ export async function GET(req: NextRequest) {
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message ?? 'search failed' }, { status: 500 });
   }
-  return NextResponse.json({ success: true, query: trimmed, results: res.data?.items ?? [] });
+  return NextResponse.json({ success: true, query: trimmed, results: res.data ?? [] });
 }

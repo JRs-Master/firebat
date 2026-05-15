@@ -6,9 +6,9 @@
 
 import {
   ProjectDeleteRequestSchema,
+  ProjectEntryPb,
   ProjectGetConfigRequestSchema,
   ProjectGetVisibilityRequestSchema,
-  ProjectListPb,
   ProjectRenameRequestSchema,
   ProjectService,
   ProjectSetConfigRequestSchema,
@@ -22,10 +22,10 @@ import { type RpcResult, toRpcError } from './types';
 
 const projectClient = createClient(ProjectService, transport);
 
-export async function scan(): Promise<RpcResult<ProjectListPb>> {
+export async function scan(): Promise<RpcResult<ProjectEntryPb[]>> {
   try {
       const response = await projectClient.scan({});
-      return { ok: true, data: response };
+      return { ok: true, data: response.projects };
   } catch (err) {
     return toRpcError(err);
   }

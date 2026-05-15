@@ -6,9 +6,9 @@
 
 import {
   CancelCronRequestSchema,
-  CronJobListPb,
-  CronLogListPb,
-  CronNotificationListPb,
+  CronJobPb,
+  CronLogEntryPb,
+  CronNotificationPb,
   GetCronLogsRequestSchema,
   RunCronNowRequestSchema,
   ScheduleCronRequestSchema,
@@ -51,19 +51,19 @@ export async function updateCron(args: MessageInitShape<typeof UpdateCronRequest
   }
 }
 
-export async function listCron(): Promise<RpcResult<CronJobListPb>> {
+export async function listCron(): Promise<RpcResult<CronJobPb[]>> {
   try {
       const response = await scheduleClient.listCron({});
-      return { ok: true, data: response };
+      return { ok: true, data: response.jobs };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function getLogs(args: MessageInitShape<typeof GetCronLogsRequestSchema>): Promise<RpcResult<CronLogListPb>> {
+export async function getLogs(args: MessageInitShape<typeof GetCronLogsRequestSchema>): Promise<RpcResult<CronLogEntryPb[]>> {
   try {
       const response = await scheduleClient.getLogs(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: response.entries };
   } catch (err) {
     return toRpcError(err);
   }
@@ -78,10 +78,10 @@ export async function clearLogs(): Promise<RpcResult<void>> {
   }
 }
 
-export async function consumeNotifications(): Promise<RpcResult<CronNotificationListPb>> {
+export async function consumeNotifications(): Promise<RpcResult<CronNotificationPb[]>> {
   try {
       const response = await scheduleClient.consumeNotifications({});
-      return { ok: true, data: response };
+      return { ok: true, data: response.items };
   } catch (err) {
     return toRpcError(err);
   }

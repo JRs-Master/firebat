@@ -5,7 +5,7 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  ModuleSecretListPb,
+  ModuleSecretEntryPb,
   SecretDeleteUserRequestSchema,
   SecretGetSystemRequestSchema,
   SecretGetUserRequestSchema,
@@ -56,10 +56,10 @@ export async function deleteUser(args: MessageInitShape<typeof SecretDeleteUserR
   }
 }
 
-export async function listUserModuleSecrets(): Promise<RpcResult<ModuleSecretListPb>> {
+export async function listUserModuleSecrets(): Promise<RpcResult<ModuleSecretEntryPb[]>> {
   try {
       const response = await secretClient.listUserModuleSecrets({});
-      return { ok: true, data: response };
+      return { ok: true, data: response.entries };
   } catch (err) {
     return toRpcError(err);
   }

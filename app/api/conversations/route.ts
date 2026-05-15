@@ -37,7 +37,7 @@ export const GET = withAuth(async (req: NextRequest) => {
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   }
-  const items = ((res.data?.items ?? []) as unknown) as Array<Record<string, unknown>>;
+  const items = ((res.data ?? []) as unknown) as Array<Record<string, unknown>>;
   return NextResponse.json({
     success: true,
     conversations: items.map(item => normalizeTimestamps(item)),

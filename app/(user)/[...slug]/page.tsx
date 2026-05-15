@@ -72,7 +72,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     // projectRoot fallback — 1-segment URL 이 프로젝트명과 매칭되면 프로젝트 카탈로그 metadata
     if (!slug.includes('/')) {
       const projectsRes = await scanProjects();
-      const projects = projectsRes.ok ? (projectsRes.data.projects ?? []) : [];
+      const projects = projectsRes.ok ? (projectsRes.data ?? []) : [];
       if (projects.find((p) => p.name === slug)) {
         const seoRes = await getCmsSettings();
         const seo = (seoRes.ok ? seoRes.data : {}) as any;
@@ -184,7 +184,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
     // 해당 프로젝트의 모든 page list 페이지 렌더 (Phase 4 Step 3+4).
     if (!slug.includes('/')) {
       const projectsRes = await scanProjects();
-      const projects = projectsRes.ok ? (projectsRes.data.projects ?? []) : [];
+      const projects = projectsRes.ok ? (projectsRes.data ?? []) : [];
       const matched = projects.find((p) => p.name === slug);
       if (matched) {
         const sp = searchParams ? await searchParams : {};

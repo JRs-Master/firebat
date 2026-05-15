@@ -33,7 +33,7 @@ export default async function NotFound() {
   const t = getServerTranslations(cms.siteLang);
   const listRes = await listPages();
   const recent = listRes.ok
-    ? (listRes.data.items ?? [])
+    ? (listRes.data ?? [])
         .map(toPageListItem)
         .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
         .slice(0, 6)

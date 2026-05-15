@@ -15,16 +15,15 @@ import {
   ConversationGetShareResponse,
   ConversationIsDeletedRequestSchema,
   ConversationListDeletedRequestSchema,
-  ConversationListDeletedResponse,
   ConversationListRequestSchema,
-  ConversationListResponse,
   ConversationPermanentDeleteRequestSchema,
   ConversationRestoreRequestSchema,
   ConversationSaveRequestSchema,
   ConversationSearchHistoryRequestSchema,
-  ConversationSearchHistoryResponse,
   ConversationService,
   ConversationSetCliSessionRequestSchema,
+  ConversationSummaryPb,
+  HistorySearchMatchPb,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -33,10 +32,10 @@ import { type RpcResult, toRpcError } from './types';
 
 const conversationClient = createClient(ConversationService, transport);
 
-export async function list(args: MessageInitShape<typeof ConversationListRequestSchema>): Promise<RpcResult<ConversationListResponse>> {
+export async function list(args: MessageInitShape<typeof ConversationListRequestSchema>): Promise<RpcResult<ConversationSummaryPb[]>> {
   try {
       const response = await conversationClient.list(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: response.items };
   } catch (err) {
     return toRpcError(err);
   }
@@ -78,10 +77,10 @@ export async function isDeleted(args: MessageInitShape<typeof ConversationIsDele
   }
 }
 
-export async function listDeleted(args: MessageInitShape<typeof ConversationListDeletedRequestSchema>): Promise<RpcResult<ConversationListDeletedResponse>> {
+export async function listDeleted(args: MessageInitShape<typeof ConversationListDeletedRequestSchema>): Promise<RpcResult<ConversationSummaryPb[]>> {
   try {
       const response = await conversationClient.listDeleted(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: response.items };
   } catch (err) {
     return toRpcError(err);
   }
@@ -105,10 +104,10 @@ export async function permanentDelete(args: MessageInitShape<typeof Conversation
   }
 }
 
-export async function searchHistory(args: MessageInitShape<typeof ConversationSearchHistoryRequestSchema>): Promise<RpcResult<ConversationSearchHistoryResponse>> {
+export async function searchHistory(args: MessageInitShape<typeof ConversationSearchHistoryRequestSchema>): Promise<RpcResult<HistorySearchMatchPb[]>> {
   try {
       const response = await conversationClient.searchHistory(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: response.matches };
   } catch (err) {
     return toRpcError(err);
   }

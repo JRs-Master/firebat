@@ -5,24 +5,22 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  MediaUsageListPb,
+  MediaUsageEntryPb,
   PageDeleteRequestSchema,
   PageFindMediaUsageRequestSchema,
   PageFindRelatedRequestSchema,
-  PageFindRelatedResponse,
   PageGetRedirectRequestSchema,
   PageGetRequestSchema,
-  PageListResponse,
+  PageListItemPb,
   PageRecordPb,
   PageRenameRequestSchema,
   PageSaveRequestSchema,
   PageSaveResultPb,
   PageSearchRequestSchema,
-  PageSearchResponse,
   PageService,
   PageSetVisibilityRequestSchema,
   PageVerifyPasswordRequestSchema,
-  TagListPb,
+  TagSummaryPb,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -31,19 +29,19 @@ import { type RpcResult, toRpcError } from './types';
 
 const pageClient = createClient(PageService, transport);
 
-export async function list(): Promise<RpcResult<PageListResponse>> {
+export async function list(): Promise<RpcResult<PageListItemPb[]>> {
   try {
       const response = await pageClient.list({});
-      return { ok: true, data: response };
+      return { ok: true, data: response.items };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function search(args: MessageInitShape<typeof PageSearchRequestSchema>): Promise<RpcResult<PageSearchResponse>> {
+export async function search(args: MessageInitShape<typeof PageSearchRequestSchema>): Promise<RpcResult<PageListItemPb[]>> {
   try {
       const response = await pageClient.search(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: response.items };
   } catch (err) {
     return toRpcError(err);
   }
@@ -103,10 +101,10 @@ export async function listStatic(): Promise<RpcResult<string[]>> {
   }
 }
 
-export async function findMediaUsage(args: MessageInitShape<typeof PageFindMediaUsageRequestSchema>): Promise<RpcResult<MediaUsageListPb>> {
+export async function findMediaUsage(args: MessageInitShape<typeof PageFindMediaUsageRequestSchema>): Promise<RpcResult<MediaUsageEntryPb[]>> {
   try {
       const response = await pageClient.findMediaUsage(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: response.entries };
   } catch (err) {
     return toRpcError(err);
   }
@@ -130,19 +128,19 @@ export async function verifyPassword(args: MessageInitShape<typeof PageVerifyPas
   }
 }
 
-export async function findRelated(args: MessageInitShape<typeof PageFindRelatedRequestSchema>): Promise<RpcResult<PageFindRelatedResponse>> {
+export async function findRelated(args: MessageInitShape<typeof PageFindRelatedRequestSchema>): Promise<RpcResult<PageListItemPb[]>> {
   try {
       const response = await pageClient.findRelated(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: response.items };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function listAllTags(): Promise<RpcResult<TagListPb>> {
+export async function listAllTags(): Promise<RpcResult<TagSummaryPb[]>> {
   try {
       const response = await pageClient.listAllTags({});
-      return { ok: true, data: response };
+      return { ok: true, data: response.tags };
   } catch (err) {
     return toRpcError(err);
   }

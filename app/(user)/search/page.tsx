@@ -46,7 +46,7 @@ export default async function SearchPage({ searchParams }: Props) {
   let tooShort = false;
   if (q.length >= 2) {
     const res = await searchPages({ query: q, limit: 200n } as any);
-    if (res.ok) results = (res.data.items ?? []).map(toPageListItem);
+    if (res.ok) results = (res.data ?? []).map(toPageListItem);
   } else if (q.length === 1) {
     tooShort = true;
   }

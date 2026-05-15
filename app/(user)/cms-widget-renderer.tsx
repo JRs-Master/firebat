@@ -53,7 +53,7 @@ function WidgetTitle({ text, area }: { text?: string; area: WidgetArea }) {
 
 async function RecentPostsWidget({ count, title, area }: { count: number; title?: string; area: WidgetArea }) {
   const allRes = await listPages();
-  const allItems = allRes.ok ? (allRes.data.items ?? []).map(toPageListItem) : [];
+  const allItems = allRes.ok ? (allRes.data ?? []).map(toPageListItem) : [];
   const recent = allItems
     .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
     .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
@@ -89,7 +89,7 @@ async function RecentPostsWidget({ count, title, area }: { count: number; title?
 async function CategoryListWidget({ title, area }: { title?: string; area: WidgetArea }) {
   const allRes = await listPages();
   const allPages = allRes.ok
-    ? (allRes.data.items ?? []).map(toPageListItem).filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
+    ? (allRes.data ?? []).map(toPageListItem).filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
     : [];
   const categoryMap = new Map<string, number>();
   for (const p of allPages) {
@@ -123,7 +123,7 @@ async function CategoryListWidget({ title, area }: { title?: string; area: Widge
 
 async function TagCloudWidget({ limit, title, area }: { limit: number; title?: string; area: WidgetArea }) {
   const tagsRes = await listAllTags();
-  const tags = tagsRes.ok ? (tagsRes.data.tags ?? []) : [];
+  const tags = tagsRes.ok ? (tagsRes.data ?? []) : [];
   const top = tags.slice(0, Math.max(1, limit));
   if (top.length === 0) return null;
   const maxCount = Number(top[0].count ?? 1n);

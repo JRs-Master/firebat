@@ -18,7 +18,7 @@ export async function GET(req: Request) {
 
   const baseUrl = seo.siteUrl || getBaseUrl(req);
   const result = await listPages();
-  const allPages = result.ok ? (result.data.items ?? []) : [];
+  const allPages = result.ok ? (result.data ?? []) : [];
   // 공개 페이지만 포함 (password, private 제외)
   const pages = allPages.filter(p => (p.visibility ?? 'public') === 'public');
 

@@ -7,11 +7,10 @@
 import {
   McpAddServerRequestSchema,
   McpCallToolRequestSchema,
-  McpListAllToolsResponse,
   McpListToolsRequestSchema,
-  McpListToolsResponse,
   McpRemoveServerRequestSchema,
   McpService,
+  McpToolInfoPb,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -47,19 +46,19 @@ export async function removeServer(args: MessageInitShape<typeof McpRemoveServer
   }
 }
 
-export async function listTools(args: MessageInitShape<typeof McpListToolsRequestSchema>): Promise<RpcResult<McpListToolsResponse>> {
+export async function listTools(args: MessageInitShape<typeof McpListToolsRequestSchema>): Promise<RpcResult<McpToolInfoPb[]>> {
   try {
       const response = await mcpClient.listTools(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: response.tools };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function listAllTools(): Promise<RpcResult<McpListAllToolsResponse>> {
+export async function listAllTools(): Promise<RpcResult<McpToolInfoPb[]>> {
   try {
       const response = await mcpClient.listAllTools({});
-      return { ok: true, data: response };
+      return { ok: true, data: response.tools };
   } catch (err) {
     return toRpcError(err);
   }

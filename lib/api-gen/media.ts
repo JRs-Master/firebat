@@ -5,7 +5,7 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  ImageModelListPb,
+  ImageModelPb,
   MediaGenerateRequestSchema,
   MediaGenerateResponse,
   MediaIsReadyRequestSchema,
@@ -123,10 +123,10 @@ export async function setImageModel(args: MessageInitShape<typeof MediaSetImageM
   }
 }
 
-export async function getAvailableImageModels(): Promise<RpcResult<ImageModelListPb>> {
+export async function getAvailableImageModels(): Promise<RpcResult<ImageModelPb[]>> {
   try {
       const response = await mediaClient.getAvailableImageModels({});
-      return { ok: true, data: response };
+      return { ok: true, data: response.models };
   } catch (err) {
     return toRpcError(err);
   }

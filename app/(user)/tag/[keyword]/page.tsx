@@ -34,7 +34,7 @@ async function findMatchingPages(keyword: string): Promise<{ pages: PageListItem
   const aliases = seo.tagAliases;
   const canonical = normalizeTag(keyword, aliases);
   const allRes = await listPages();
-  const allPages = allRes.ok ? (allRes.data.items ?? []).map(toPageListItem) : [];
+  const allPages = allRes.ok ? (allRes.data ?? []).map(toPageListItem) : [];
   const visible = allPages.filter(
     (p) => p.status === 'published' && (p.visibility ?? 'public') === 'public',
   );

@@ -18,7 +18,7 @@ export async function GET(req: Request) {
 
   const baseUrl = seo.siteUrl || getBaseUrl(req);
   const result = await listPages();
-  const dbPages = result.ok ? (result.data.items ?? []) : [];
+  const dbPages = result.ok ? (result.data ?? []) : [];
   const staticRes = await listStatic();
   const staticPages = staticRes.ok ? staticRes.data : [];
 

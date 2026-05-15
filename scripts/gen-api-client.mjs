@@ -183,6 +183,17 @@ function unwrapMeta(msgName, messages) {
     if (scalar && f.repeated) {
       return { kind: 'singleFieldArray', dataType: `${scalar}[]`, fieldName };
     }
+    // repeated message 단일 field → array unwrap (caller 가 array 직접 받음).
+    // 예: SettingsGetAvailableAiModelsResponse { repeated AvailableAiModelPb models = 1; }
+    // → caller 가 res.data.map(...) 직접 박음. message 타입은 import 박혀야.
+    if (!scalar && f.repeated && f.type !== 'string') {
+      return {
+        kind: 'singleFieldArrayMessage',
+        dataType: `${f.type}[]`,
+        fieldName,
+        messageImport: f.type,
+      };
+    }
   }
   return { kind: 'message', dataType: msgName };
 }
@@ -235,13 +246,24 @@ function generateFunctionBody(rpc, messages, clientVar, serviceName) {
     unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response.present ? response.value : null };`;
   } else if (unwrap.kind === 'optionalStringNamed') {
     unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response.present ? response.${unwrap.fieldName} : null };`;
-  } else if (unwrap.kind === 'singleField' || unwrap.kind === 'singleFieldArray') {
+  } else if (
+    unwrap.kind === 'singleField' ||
+    unwrap.kind === 'singleFieldArray' ||
+    unwrap.kind === 'singleFieldArrayMessage'
+  ) {
     unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response.${unwrap.fieldName} };`;
   } else {
     unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response };`;
   }
 
-  return { rpcCamel, argType: req.argType, dataType: unwrap.dataType, unwrapLogic, schemaImport };
+  return {
+    rpcCamel,
+    argType: req.argType,
+    dataType: unwrap.dataType,
+    unwrapLogic,
+    schemaImport,
+    messageImport: unwrap.messageImport,
+  };
 }
 
 // ─── Output 생성 ──────────────────────────────────────────────────────────
@@ -257,7 +279,7 @@ function generateServiceFile(svc, messages, aliases) {
   // 함수 본문 미리 생성 (import 필요한 type 식별 위함)
   const fnBodies = [];
   for (const rpc of svc.rpcs) {
-    const { rpcCamel, argType, dataType, unwrapLogic, schemaImport } = generateFunctionBody(rpc, messages, clientVar, svc.name);
+    const { rpcCamel, argType, dataType, unwrapLogic, schemaImport, messageImport } = generateFunctionBody(rpc, messages, clientVar, svc.name);
     if (schemaImport) {
       schemaImports.add(schemaImport);
       needsInitShape = true;
@@ -268,7 +290,9 @@ function generateServiceFile(svc, messages, aliases) {
     const isScalarArray = /^(string|number|boolean|bigint)\[\]$/.test(dataType);
     const isScalarUnion = /^(string|number|boolean|bigint) \| (undefined|null)$/.test(dataType);
     if (!isScalar && !isScalarArray && !isScalarUnion) {
-      imports.add(dataType);
+      // message[] 형태면 element type 만 import (예: `AvailableAiModelPb[]` → `AvailableAiModelPb`).
+      if (messageImport) imports.add(messageImport);
+      else imports.add(dataType);
     }
     fnBodies.push({ rpcCamel, argType, dataType, unwrapLogic, originalName: rpc.name });
   }

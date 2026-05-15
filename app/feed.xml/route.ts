@@ -37,7 +37,7 @@ export async function GET(req: Request) {
   const projectFilter = (reqUrl.searchParams.get('project') || '').trim();
 
   const result = await listPages();
-  const allPages = result.ok ? (result.data.items ?? []) : [];
+  const allPages = result.ok ? (result.data ?? []) : [];
   // 공개 + 발행 페이지만 + 최신 순. project 필터 있으면 매칭만.
   const visiblePages = allPages
     .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')

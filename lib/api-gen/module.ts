@@ -5,12 +5,11 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
+  ModuleEntryPb,
   ModuleGetConfigRequestSchema,
   ModuleGetSchemaRequestSchema,
   ModuleGetSettingsRequestSchema,
   ModuleIsEnabledRequestSchema,
-  ModuleListSystemResponse,
-  ModuleListUserResponse,
   ModuleOutputPb,
   ModuleRunRequestSchema,
   ModuleService,
@@ -33,19 +32,19 @@ export async function run(args: MessageInitShape<typeof ModuleRunRequestSchema>)
   }
 }
 
-export async function listSystem(): Promise<RpcResult<ModuleListSystemResponse>> {
+export async function listSystem(): Promise<RpcResult<ModuleEntryPb[]>> {
   try {
       const response = await moduleClient.listSystem({});
-      return { ok: true, data: response };
+      return { ok: true, data: response.entries };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function listUser(): Promise<RpcResult<ModuleListUserResponse>> {
+export async function listUser(): Promise<RpcResult<ModuleEntryPb[]>> {
   try {
       const response = await moduleClient.listUser({});
-      return { ok: true, data: response };
+      return { ok: true, data: response.entries };
   } catch (err) {
     return toRpcError(err);
   }
