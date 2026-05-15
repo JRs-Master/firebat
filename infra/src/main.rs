@@ -137,6 +137,13 @@ async fn main() -> Result<()> {
             .context("Vault DB open 실패")?,
     );
     let auth_port: Arc<dyn IAuthPort> = Arc::new(VaultAuthAdapter::new(vault.clone()));
+
+    // i18n default lang — vault `system:ui-lang` setting 박은 server 부팅 시점 단일 lookup.
+    // 사용자 SettingsModal 박은 lang 변경 시점 = settings RPC handler 박은 set_default_lang 호출
+    // (별도 step) 박은 즉시 반영. multi-user 환경 시점 = 매 RPC metadata propagation 별도 sprint.
+    let default_lang = firebat_infra::grpc_interceptor::resolve_default_lang(&vault);
+    firebat_core::i18n::set_default_lang(&default_lang);
+    tracing::info!(default_lang, "i18n: default lang from vault");
     let db: Arc<dyn IDatabasePort> = Arc::new(
         SqliteDatabaseAdapter::new(&app_db_path)
             .map_err(anyhow::Error::msg)

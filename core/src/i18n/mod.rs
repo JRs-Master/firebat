@@ -31,6 +31,12 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::RwLock;
 
+tokio::task_local! {
+    /// 매 RPC 진입 시점 tonic interceptor 박은 사용자 lang 박은 task-local.
+    /// `i18n::t(key, None, params)` 박은 시점 자동 read — 명시 lang 인자 박지 X 박은 caller 의 ergonomic.
+    static ACTIVE_LANG: String;
+}
+
 /// 매 lang 별 통합 lookup store.
 ///
 /// 매 영역 (core / module / service / prompt) 의 i18n 데이터를 단일 nested object 안 namespace 박은 통합.
@@ -44,6 +50,25 @@ struct I18nStore {
 }
 
 static STORE: RwLock<Option<I18nStore>> = RwLock::new(None);
+
+/// 사용자 lang 박은 server-side default — vault `system:ui:lang` setting 박은 lookup 박은 set.
+/// 매 RPC 호출 시점 task-local ACTIVE_LANG 박지 X 시점 fallback.
+pub fn set_default_lang(lang: impl Into<String>) {
+    if let Ok(mut guard) = STORE.write() {
+        if let Some(store) = guard.as_mut() {
+            store.default_lang = lang.into();
+        }
+    }
+}
+
+/// 현재 default lang 박은 read — main.rs 또는 SettingsModal RPC 박은 사용.
+pub fn current_default_lang() -> String {
+    STORE
+        .read()
+        .ok()
+        .and_then(|g| g.as_ref().map(|s| s.default_lang.clone()))
+        .unwrap_or_else(|| "ko".to_string())
+}
 
 /// 서버 부팅 시 i18n 데이터 초기 로드.
 ///
@@ -172,7 +197,7 @@ fn insert_namespaced(store: &mut I18nStore, lang: &str, ns: &str, name: &str, va
     }
 }
 
-/// i18n 키 lookup. fallback chain: lang → default_lang ("ko") → 키 자체 raw.
+/// i18n 키 lookup. fallback chain: lang 인자 → task-local ACTIVE_LANG → default_lang ("ko") → 키 자체 raw.
 ///
 /// **key 형식** — dot-notation namespace path:
 ///  - `core.error.module_not_found` → `language/{lang}.json` 의 `error.module_not_found`
@@ -186,12 +211,34 @@ pub fn t(key: &str, lang: Option<&str>, params: &[(&str, &str)]) -> String {
     let Some(Some(store)) = guard.as_deref().map(Option::as_ref) else {
         return key.to_string();
     };
-    lookup_in_store(store, key, lang, params)
+    // 명시 lang → task-local → default 순 fallback.
+    let resolved_lang = lang.map(String::from).or_else(active_lang);
+    lookup_in_store(store, key, resolved_lang.as_deref(), params)
 }
 
 /// system prompt 의 full text lookup — `prompt.{name}` 형식.
 pub fn prompt(name: &str, lang: Option<&str>) -> String {
     t(&format!("prompt.{name}"), lang, &[])
+}
+
+/// task-local ACTIVE_LANG 박은 read — tonic interceptor 박은 set 박힌 사용자 lang.
+/// task-local 박지 X 시점 (예: 비동기 spawn 박은 context 박지 X) None 반환.
+pub fn active_lang() -> Option<String> {
+    ACTIVE_LANG.try_with(|v| v.clone()).ok()
+}
+
+/// 지정 lang context 박은 async fn 실행 — tonic interceptor / test 박은 사용.
+///
+/// ```rust,ignore
+/// i18n::with_lang("en", async {
+///     let msg = i18n::t("core.error.module_not_found", None, &[]);
+/// }).await;
+/// ```
+pub async fn with_lang<F, T>(lang: impl Into<String>, fut: F) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    ACTIVE_LANG.scope(lang.into(), fut).await
 }
 
 /// internal — store 박은 lookup. test 박은 자체 store 인스턴스 박은 사용 가능 (STORE static race 회피).
