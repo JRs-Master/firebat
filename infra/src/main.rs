@@ -138,39 +138,12 @@ async fn main() -> Result<()> {
             .map_err(anyhow::Error::msg)
             .context("App DB open 실패")?,
     );
-    // Sandbox 어댑터 — OS 자동 감지. Phase B-post audit Track B (2026-05-06) 설정.
-    // - Linux: LinuxCgroupsSandbox 본격 (cgroup v2 + seccomp + network namespace)
-    // - 그 외: BasicProcessSandbox (path containment + timeout 만, OS 격리 0)
-    // env `FIREBAT_SANDBOX=basic` 로 강제 BasicProcessSandbox 사용 가능 (debug / 호환).
-    let sandbox: Arc<dyn ISandboxPort> = {
-        let force_basic = std::env::var("FIREBAT_SANDBOX")
-            .map(|v| v == "basic")
-            .unwrap_or(false);
-        #[cfg(target_os = "linux")]
-        let s: Arc<dyn ISandboxPort> = if force_basic {
-            tracing::info!("Sandbox: BasicProcessSandbox (FIREBAT_SANDBOX=basic, OS 격리 0)");
-            Arc::new(ProcessSandboxAdapter::new(workspace_root.clone()).with_vault(vault.clone()))
-        } else {
-            tracing::info!(
-                "Sandbox: LinuxCgroupsSandbox 본격 (cgroup v2 + seccomp + network namespace)"
-            );
-            Arc::new(
-                firebat_infra::adapters::sandbox_linux_cgroups::LinuxCgroupsSandboxAdapter::new(
-                    workspace_root.clone(),
-                )
-                .with_vault(vault.clone()),
-            )
-        };
-        #[cfg(not(target_os = "linux"))]
-        let s: Arc<dyn ISandboxPort> = {
-            let _ = force_basic; // Linux 외 OS 에선 항상 BasicProcessSandbox
-            tracing::info!(
-                "Sandbox: BasicProcessSandbox (non-Linux OS — Linux 진입 시 cgroups 활성)"
-            );
-            Arc::new(ProcessSandboxAdapter::new(workspace_root.clone()).with_vault(vault.clone()))
-        };
-        s
-    };
+    // Sandbox 어댑터 — BasicProcessSandbox 단일 (path containment + timeout 만).
+    // 옛 LinuxCgroupsSandbox (cgroup v2 + seccomp + network namespace) 폐기 (2026-05-15) —
+    // 단일 사용자 / 단일 운영자 환경에서 격리 가치 0 (사용자 본인 = 운영자 = trust). multi-tenant
+    // 시점 = docker / firecracker / gvisor 같은 표준 도구 도입 별도 sprint.
+    let sandbox: Arc<dyn ISandboxPort> =
+        Arc::new(ProcessSandboxAdapter::new(workspace_root.clone()).with_vault(vault.clone()));
     let mcp_client: Arc<dyn IMcpClientPort> = Arc::new(
         McpClientFileAdapter::new(mcp_servers_path)
             .map_err(anyhow::Error::msg)
