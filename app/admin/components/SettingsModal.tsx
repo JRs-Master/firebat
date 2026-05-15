@@ -2198,105 +2198,113 @@ function CapabilityTabContent() {
           <p className="text-[12px] sm:text-[13px] text-slate-400 py-4 text-center">등록된 기능이 없습니다</p>
         ) : (
           <div className="flex flex-col gap-1">
-            {caps.map(cap => (
-              <button
-                key={cap.id}
-                onClick={() => loadDetail(cap.id)}
-                className={`flex items-center justify-between px-3 py-2 rounded-lg border text-left transition-colors ${
-                  selectedCap === cap.id ? 'border-blue-300 bg-blue-50/50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
-                }`}
-              >
-                <div className="min-w-0">
-                  <span className="text-[13px] font-bold text-slate-700">{cap.label}</span>
-                  <span className="ml-1.5 text-[11px] text-slate-400 font-mono">{cap.id}</span>
-                  <p className="text-[11px] text-slate-400 truncate">{cap.description}</p>
-                </div>
-                <span className={`shrink-0 ml-2 text-[11px] px-2 py-0.5 rounded-full font-bold ${
-                  cap.providerCount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'
+            {caps.map(cap => {
+              const isOpen = selectedCap === cap.id;
+              return (
+                <div key={cap.id} className={`rounded-lg border transition-colors ${
+                  isOpen ? 'border-blue-300 bg-blue-50/50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
                 }`}>
-                  {cap.providerCount}개
-                </span>
-              </button>
-            ))}
+                  <button
+                    onClick={() => isOpen ? setSelectedCap(null) : loadDetail(cap.id)}
+                    className="w-full flex items-center justify-between px-3 py-2 text-left"
+                  >
+                    <div className="min-w-0">
+                      <span className="text-[13px] font-bold text-slate-700">{cap.label}</span>
+                      <span className="ml-1.5 text-[11px] text-slate-400 font-mono">{cap.id}</span>
+                      <p className="text-[11px] text-slate-400 truncate">{cap.description}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
+                        cap.providerCount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'
+                      }`}>
+                        {cap.providerCount}개
+                      </span>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                        className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
+                        <polyline points="6 9 12 15 18 9"/>
+                      </svg>
+                    </div>
+                  </button>
+
+                  {/* inline detail — 클릭한 capability row 안에서 expand/collapse */}
+                  {isOpen && (
+                    <div className="flex flex-col gap-3 px-3 pb-3 pt-1 border-t border-slate-200/60">
+                      {detailLoading ? (
+                        <div className="flex items-center justify-center py-6">
+                          <Loader2 size={16} className="animate-spin text-slate-400" />
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex flex-col gap-1.5">
+                            <label className="text-xs sm:text-sm font-bold text-slate-700">
+                              실행 순서 {providers.length > 1 && <span className="text-[10px] text-slate-400 font-normal ml-1">위에서부터 우선 실행</span>}
+                            </label>
+                            {providers.length === 0 ? (
+                              <p className="text-[12px] text-slate-400 py-2">등록된 provider가 없습니다</p>
+                            ) : (
+                              providers.map((p, i) => (
+                                <div key={p.moduleName} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg">
+                                  <span className="text-[11px] font-bold text-slate-400 w-4 text-center shrink-0">{i + 1}</span>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
+                                    p.providerType === 'api' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
+                                  }`}>
+                                    {p.providerType === 'api' ? 'API' : 'LOCAL'}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <span className="text-[13px] font-bold text-slate-700">{p.moduleName}</span>
+                                    <span className="ml-1.5 text-[10px] text-slate-400">{p.location}</span>
+                                  </div>
+                                  {providers.length > 1 && (
+                                    <div className="flex flex-col gap-0.5 shrink-0">
+                                      <Tooltip label="위로">
+                                        <button
+                                          onClick={() => moveProvider(i, -1)}
+                                          disabled={i === 0}
+                                          className="p-0.5 text-slate-400 hover:text-slate-700 disabled:text-slate-200 disabled:cursor-default transition-colors"
+                                        >
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
+                                        </button>
+                                      </Tooltip>
+                                      <Tooltip label="아래로">
+                                        <button
+                                          onClick={() => moveProvider(i, 1)}
+                                          disabled={i === providers.length - 1}
+                                          className="p-0.5 text-slate-400 hover:text-slate-700 disabled:text-slate-200 disabled:cursor-default transition-colors"
+                                        >
+                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                                        </button>
+                                      </Tooltip>
+                                    </div>
+                                  )}
+                                </div>
+                              ))
+                            )}
+                          </div>
+
+                          {providers.length > 1 && (orderChanged || orderFeedback) && (
+                            <div className="flex items-center gap-2">
+                              {orderChanged && (
+                                <button
+                                  onClick={saveOrder}
+                                  disabled={saving}
+                                  className="flex-1 px-3 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
+                                >
+                                  순서 저장
+                                </button>
+                              )}
+                              <FeedbackBadge state={saving ? 'loading' : orderFeedback} loadingLabel="저장 중" />
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
-
-      {selectedCap && (
-        <div className="flex flex-col gap-3 pt-2 border-t border-slate-100">
-          {detailLoading ? (
-            <div className="flex items-center justify-center py-6">
-              <Loader2 size={16} className="animate-spin text-slate-400" />
-            </div>
-          ) : (
-            <>
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">
-                  실행 순서 {providers.length > 1 && <span className="text-[10px] text-slate-400 font-normal ml-1">위에서부터 우선 실행</span>}
-                </label>
-                {providers.length === 0 ? (
-                  <p className="text-[12px] text-slate-400 py-2">등록된 provider가 없습니다</p>
-                ) : (
-                  providers.map((p, i) => (
-                    <div key={p.moduleName} className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
-                      {/* 순서 번호 */}
-                      <span className="text-[11px] font-bold text-slate-400 w-4 text-center shrink-0">{i + 1}</span>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
-                        p.providerType === 'api' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
-                      }`}>
-                        {p.providerType === 'api' ? 'API' : 'LOCAL'}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <span className="text-[13px] font-bold text-slate-700">{p.moduleName}</span>
-                        <span className="ml-1.5 text-[10px] text-slate-400">{p.location}</span>
-                      </div>
-                      {/* 순서 변경 버튼 */}
-                      {providers.length > 1 && (
-                        <div className="flex flex-col gap-0.5 shrink-0">
-                          <Tooltip label="위로">
-                            <button
-                              onClick={() => moveProvider(i, -1)}
-                              disabled={i === 0}
-                              className="p-0.5 text-slate-400 hover:text-slate-700 disabled:text-slate-200 disabled:cursor-default transition-colors"
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
-                            </button>
-                          </Tooltip>
-                          <Tooltip label="아래로">
-                            <button
-                              onClick={() => moveProvider(i, 1)}
-                              disabled={i === providers.length - 1}
-                              className="p-0.5 text-slate-400 hover:text-slate-700 disabled:text-slate-200 disabled:cursor-default transition-colors"
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-                            </button>
-                          </Tooltip>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* 순서 저장 */}
-              {providers.length > 1 && (orderChanged || orderFeedback) && (
-                <div className="flex items-center gap-2">
-                  {orderChanged && (
-                    <button
-                      onClick={saveOrder}
-                      disabled={saving}
-                      className="flex-1 px-3 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
-                    >
-                      순서 저장
-                    </button>
-                  )}
-                  <FeedbackBadge state={saving ? 'loading' : orderFeedback} loadingLabel="저장 중" />
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
     </>
   );
 }
