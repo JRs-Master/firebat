@@ -10,7 +10,7 @@
  * Phase 6 어드민 UI 전체 강화 시 entity 그래프 + episode timeline + memory health
  * dashboard 로 발전.
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useId } from 'react';
 import { Search, Plus, Trash2, X, Clock, Tag, Activity, Network } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
@@ -358,6 +358,8 @@ export function EntitiesPanel() {
 // ── Events sub-panel ──
 
 function EventsPanel() {
+  const queryId = useId();
+  const typeFilterId = useId();
   const [events, setEvents] = useState<EventItem[]>([]);
   const [typeFilter, setTypeFilter] = useState('');
   const [query, setQuery] = useState('');
@@ -413,7 +415,8 @@ function EventsPanel() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="검색"
-            className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="query" autoComplete="off" id="query"
+            aria-label="사건 검색"
+            className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="query" autoComplete="off" id={queryId}
           />
         </div>
         <input
@@ -421,7 +424,8 @@ function EventsPanel() {
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
           placeholder="type"
-          className="w-20 px-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="typeFilter" autoComplete="off" id="typeFilter"
+          aria-label="type 필터"
+          className="w-20 px-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="typeFilter" autoComplete="off" id={typeFilterId}
         />
       </div>
 
@@ -468,6 +472,8 @@ function EventsPanel() {
 }
 
 function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated: () => void }) {
+  const contentId = useId();
+  const factTypeId = useId();
   const [content, setContent] = useState('');
   const [factType, setFactType] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -493,13 +499,13 @@ function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated
 
   return (
     <div className="mt-2 pt-2 border-t border-slate-200">
-      <div className="text-[10px] font-bold text-slate-500 mb-1">+ 사실 추가</div>
+      <label className="text-[10px] font-bold text-slate-500 mb-1 block" htmlFor={contentId}>+ 사실 추가</label>
       <textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
         rows={2}
         placeholder="자연어 1-2 문장 (시간·수치 명시 권장)"
-        className="w-full text-[10px] px-1.5 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" name="content" autoComplete="off" id="content"
+        className="w-full text-[10px] px-1.5 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" name="content" autoComplete="off" id={contentId}
       />
       <div className="flex items-center gap-1 mt-1">
         <input
@@ -507,7 +513,8 @@ function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated
           value={factType}
           onChange={(e) => setFactType(e.target.value)}
           placeholder="type (선택, 예: transaction)"
-          className="flex-1 text-[10px] px-1.5 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="factType" autoComplete="off" id="factType"
+          aria-label="사실 type"
+          className="flex-1 text-[10px] px-1.5 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="factType" autoComplete="off" id={factTypeId}
         />
         <button
           onClick={submit}
@@ -522,6 +529,9 @@ function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated
 }
 
 function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const nameId = useId();
+  const typeId = useId();
+  const aliasesId = useId();
   const [name, setName] = useState('');
   const [type, setType] = useState('stock');
   const [aliases, setAliases] = useState('');
@@ -578,34 +588,34 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
         </div>
         <div className="px-4 py-3 space-y-3">
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="name">이름</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={nameId}>이름</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="예: 회사명, 봇 v1"
               className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus name="name" autoComplete="off" id="name"
+              autoFocus name="name" autoComplete="off" id={nameId}
             />
           </div>
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="type">Type</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={typeId}>Type</label>
             <input
               type="text"
               value={type}
               onChange={(e) => setType(e.target.value)}
               placeholder="stock / company / person / project / concept / event 등"
-              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="type" autoComplete="off" id="type"
+              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="type" autoComplete="off" id={typeId}
             />
           </div>
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="aliases">별칭 (선택)</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={aliasesId}>별칭 (선택)</label>
             <textarea
               value={aliases}
               onChange={(e) => setAliases(e.target.value)}
               rows={2}
               placeholder="줄바꿈 또는 콤마 분리. 예: 005930, 삼전"
-              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" name="aliases" autoComplete="off" id="aliases"
+              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" name="aliases" autoComplete="off" id={aliasesId}
             />
           </div>
           {error && <p className="text-[11px] text-red-600">{error}</p>}

@@ -6,7 +6,7 @@
  * 사이드바 노트 탭. list/read/write/delete sysmod 호출 (`/api/module/run`).
  * 데이터: data/notes/*.md (markdown + frontmatter).
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useId } from 'react';
 import { Search, Plus, Trash2, X, NotebookText } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
@@ -42,6 +42,7 @@ function formatDate(iso?: string): string {
 }
 
 export function NotesPanel() {
+  const queryId = useId();
   const [notes, setNotes] = useState<Note[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -120,7 +121,8 @@ export function NotesPanel() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="노트 검색"
-            className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="query" autoComplete="off" id="query"
+            aria-label="노트 검색"
+            className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="query" autoComplete="off" id={queryId}
           />
         </div>
         <Tooltip label="노트 추가">
@@ -225,6 +227,9 @@ export function NotesPanel() {
 }
 
 function NoteModal({ existing, onClose, onSaved }: { existing: Note | null; onClose: () => void; onSaved: () => void }) {
+  const titleId = useId();
+  const contentId = useId();
+  const tagsRawId = useId();
   const [title, setTitle] = useState(existing?.title ?? '');
   const [content, setContent] = useState(existing?.content ?? '');
   const [tagsRaw, setTagsRaw] = useState((existing?.tags ?? []).join(', '));
@@ -272,34 +277,34 @@ function NoteModal({ existing, onClose, onSaved }: { existing: Note | null; onCl
         </div>
         <div className="px-4 py-3 space-y-3">
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="title">제목</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={titleId}>제목</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="노트 제목"
               className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus name="title" autoComplete="off" id="title"
+              autoFocus name="title" autoComplete="off" id={titleId}
             />
           </div>
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="content">본문 (markdown OK)</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={contentId}>본문 (markdown OK)</label>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
               rows={10}
               placeholder="# 제목&#10;본문..."
-              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono resize-none" name="content" autoComplete="off" id="content"
+              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono resize-none" name="content" autoComplete="off" id={contentId}
             />
           </div>
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="tagsRaw">태그 (콤마 분리)</label>
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={tagsRawId}>태그 (콤마 분리)</label>
             <input
               type="text"
               value={tagsRaw}
               onChange={(e) => setTagsRaw(e.target.value)}
               placeholder="아이디어, todo, 매매"
-              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="tagsRaw" autoComplete="off" id="tagsRaw"
+              className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="tagsRaw" autoComplete="off" id={tagsRawId}
             />
           </div>
           {error && <p className="text-[11px] text-red-600">{error}</p>}

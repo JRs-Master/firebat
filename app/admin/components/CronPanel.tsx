@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Save, Settings, Play } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -360,6 +360,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
   onSaved: () => void;
   onDelete?: () => void;
 }) {
+  const endAtId = useId();
   const isNew = !job?.mode;
   const [jobId, setJobId] = useState(job?.jobId || '');
   const [mode, setMode] = useState<'cron' | 'once' | 'delay'>(
@@ -654,7 +655,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
               </div>
               {!permanent && (
                 <input type="datetime-local" value={endAt} onChange={e => setEndAt(e.target.value)}
-                  className="w-full px-3 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none focus:border-blue-400" name="endAt" autoComplete="off" id="endAt" />
+                  className="w-full px-3 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none focus:border-blue-400" name="endAt" autoComplete="off" id={endAtId} aria-label="종료 시각" />
               )}
             </div>
           )}

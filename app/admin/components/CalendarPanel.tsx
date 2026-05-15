@@ -10,7 +10,7 @@
  *
  * 데이터: data/calendar/events.jsonl (sysmod_calendar 모듈). cron 잡 linkedJobId 양방향.
  */
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react';
 import { Plus, Trash2, X, MapPin, Link as LinkIcon, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
@@ -421,6 +421,12 @@ function defaultStartAt(dateKey: string): string {
 }
 
 function CalendarModal({ existing, defaultDate, onClose, onSaved }: { existing: CalEvent | null; defaultDate?: string; onClose: () => void; onSaved: () => void }) {
+  const titleId = useId();
+  const startAtId = useId();
+  const endAtId = useId();
+  const locationId = useId();
+  const descriptionId = useId();
+  const tagsRawId = useId();
   const [title, setTitle] = useState(existing?.title ?? '');
   const [startAt, setStartAt] = useState(
     existing ? toLocalInputValue(existing.startAt) : (defaultDate ? defaultStartAt(defaultDate) : '')
@@ -469,30 +475,30 @@ function CalendarModal({ existing, defaultDate, onClose, onSaved }: { existing: 
         </div>
         <div className="px-4 py-3 space-y-3">
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="title">제목</label>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="일정 제목" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" autoFocus name="title" autoComplete="off" id="title" />
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={titleId}>제목</label>
+            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="일정 제목" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" autoFocus name="title" autoComplete="off" id={titleId} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="startAt">시작</label>
-              <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="startAt" autoComplete="off" id="startAt" />
+              <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={startAtId}>시작</label>
+              <input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="startAt" autoComplete="off" id={startAtId} />
             </div>
             <div>
-              <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="endAt">종료 (선택)</label>
-              <input type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="endAt" autoComplete="off" id="endAt" />
+              <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={endAtId}>종료 (선택)</label>
+              <input type="datetime-local" value={endAt} onChange={(e) => setEndAt(e.target.value)} className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="endAt" autoComplete="off" id={endAtId} />
             </div>
           </div>
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="location">장소 (선택)</label>
-            <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="예: 강남, Zoom 링크" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="location" autoComplete="off" id="location" />
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={locationId}>장소 (선택)</label>
+            <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="예: 강남, Zoom 링크" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="location" autoComplete="off" id={locationId} />
           </div>
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="description">설명 (선택)</label>
-            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="상세 메모" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" name="description" autoComplete="off" id="description" />
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={descriptionId}>설명 (선택)</label>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} placeholder="상세 메모" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" name="description" autoComplete="off" id={descriptionId} />
           </div>
           <div>
-            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor="tagsRaw">태그 (콤마 분리)</label>
-            <input type="text" value={tagsRaw} onChange={(e) => setTagsRaw(e.target.value)} placeholder="공모주, 매매, 미팅" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="tagsRaw" autoComplete="off" id="tagsRaw" />
+            <label className="text-[11px] font-bold text-slate-600 block mb-1" htmlFor={tagsRawId}>태그 (콤마 분리)</label>
+            <input type="text" value={tagsRaw} onChange={(e) => setTagsRaw(e.target.value)} placeholder="공모주, 매매, 미팅" className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="tagsRaw" autoComplete="off" id={tagsRawId} />
           </div>
           {error && <p className="text-[11px] text-red-600">{error}</p>}
         </div>

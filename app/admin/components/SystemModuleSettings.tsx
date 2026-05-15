@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
+import { useState, useEffect, useCallback, useRef, useId, Fragment } from 'react';
 import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, Code, Settings2, ExternalLink, ArrowLeft, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { TelegramWebhookSection } from './TelegramWebhookSection';
@@ -1130,6 +1130,7 @@ function VerificationsField({ label, description, value, onChange }: {
   onChange: (v: Array<{ filename: string; content: string }>) => void;
 }) {
   const t = useTranslations();
+  const baseId = useId();
   const addItem = () => onChange([...value, { filename: '', content: '' }]);
   const removeItem = (i: number) => onChange(value.filter((_, idx) => idx !== i));
   const updateItem = (i: number, patch: Partial<{ filename: string; content: string }>) => {
@@ -1147,7 +1148,10 @@ function VerificationsField({ label, description, value, onChange }: {
             {t('system_modules.common.verifications_empty')}
           </p>
         )}
-        {value.map((item, i) => (
+        {value.map((item, i) => {
+          const filenameId = `${baseId}-filename-${i}`;
+          const contentId = `${baseId}-content-${i}`;
+          return (
           <div key={i} className="flex flex-col gap-1.5 p-2.5 bg-slate-50 border border-slate-200 rounded-lg">
             <div className="flex items-center gap-2">
               <input
@@ -1155,7 +1159,8 @@ function VerificationsField({ label, description, value, onChange }: {
                 value={item.filename}
                 onChange={e => updateItem(i, { filename: e.target.value })}
                 placeholder={t('system_modules.common.verifications_filename_placeholder')}
-                className="flex-1 px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono" name="filename" autoComplete="off" id="filename"
+                aria-label={t('system_modules.common.verifications_filename_placeholder')}
+                className="flex-1 px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono" name="filename" autoComplete="off" id={filenameId}
               />
               <Tooltip label={t('common.delete')}>
                 <button
@@ -1171,11 +1176,13 @@ function VerificationsField({ label, description, value, onChange }: {
               value={item.content}
               onChange={e => updateItem(i, { content: e.target.value })}
               placeholder={t('system_modules.common.verifications_content_placeholder')}
+              aria-label={t('system_modules.common.verifications_content_placeholder')}
               rows={3}
-              className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono resize-y" name="content" autoComplete="off" id="content"
+              className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono resize-y" name="content" autoComplete="off" id={contentId}
             />
           </div>
-        ))}
+          );
+        })}
         <button
           onClick={addItem}
           className="flex items-center justify-center gap-1.5 px-3 py-2 text-[12px] font-bold text-blue-600 hover:bg-blue-50 border border-dashed border-blue-300 rounded-lg transition-colors"

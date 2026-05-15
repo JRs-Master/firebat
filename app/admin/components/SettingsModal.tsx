@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react';
 import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign, Brain, Plus } from 'lucide-react';
 import { McpServer } from '../types';
 import { useAiModels, thinkingLevelLabel } from '../hooks/use-ai-models';
@@ -2440,6 +2440,10 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
   onSave: (item: MemoryItem, isNew: boolean) => Promise<void>;
   onCancel: () => void;
 }) {
+  const categoryId = useId();
+  const nameId = useId();
+  const descriptionId = useId();
+  const contentId = useId();
   const [item, setItem] = useState(initial);
   const [saving, setSaving] = useState(false);
   const handleSubmit = async () => {
@@ -2456,45 +2460,45 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
         <h3 className="text-[14px] font-bold">{isNew ? '새 메모리' : `편집: ${item.name}`}</h3>
       </div>
       <div>
-        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor="category">카테고리</label>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor={categoryId}>카테고리</label>
         <select
           value={item.category}
           onChange={e => setItem({ ...item, category: e.target.value })}
           disabled={!isNew}
-          className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded disabled:bg-slate-100" name="category" id="category"
+          className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded disabled:bg-slate-100" name="category" id={categoryId}
         >
           {Object.entries(MEMORY_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
       </div>
       <div>
-        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor="name">이름 (영문, snake_case)</label>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor={nameId}>이름 (영문, snake_case)</label>
         <input
           type="text"
           value={item.name}
           onChange={e => setItem({ ...item, name: e.target.value.replace(/[^a-z0-9_-]/gi, '').toLowerCase() })}
           disabled={!isNew}
           placeholder="예: trading_style"
-          className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded disabled:bg-slate-100" name="name" autoComplete="off" id="name"
+          className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded disabled:bg-slate-100" name="name" autoComplete="off" id={nameId}
         />
       </div>
       <div>
-        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor="description">짧은 설명 (인덱스에 표시)</label>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor={descriptionId}>짧은 설명 (인덱스에 표시)</label>
         <input
           type="text"
           value={item.description}
           onChange={e => setItem({ ...item, description: e.target.value })}
           placeholder="예: 단타 위주, 장기 보유는 하지 않음"
-          className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded" name="description" autoComplete="off" id="description"
+          className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded" name="description" autoComplete="off" id={descriptionId}
         />
       </div>
       <div>
-        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor="content">본문 (마크다운)</label>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor={contentId}>본문 (마크다운)</label>
         <textarea
           value={item.content}
           onChange={e => setItem({ ...item, content: e.target.value })}
           rows={12}
           placeholder="자세한 룰·선호 내용을 입력해 주세요. AI 가 memory_read(name) 으로 조회합니다."
-          className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded font-mono resize-y" name="content" autoComplete="off" id="content"
+          className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded font-mono resize-y" name="content" autoComplete="off" id={contentId}
         />
       </div>
       <div className="flex justify-end gap-2">
