@@ -1,13 +1,13 @@
 //! gRPC TaskService impl — TaskManager wrapping.
 //!
-//! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
-//! From impl 정의 — core managers struct ↔ proto generated struct 변환.
+//! 매 RPC unique Request / Response — buf STANDARD 정공.
+//! 옛 공유 PipelineResultPb → TaskRunResponse 으로 단일화.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::task::{PipelineResult, PipelineStep, TaskManager};
-use crate::proto::{task_service_server::TaskService, PipelineResultPb, TaskRunRequest};
+use crate::proto::{task_service_server::TaskService, TaskRunRequest, TaskRunResponse};
 
 pub struct TaskServiceImpl {
     manager: Arc<TaskManager>,
@@ -21,9 +21,9 @@ impl TaskServiceImpl {
 
 // ─── proto ↔ core managers struct 변환 ────────────────────────────────────────
 
-impl From<PipelineResult> for PipelineResultPb {
+impl From<PipelineResult> for TaskRunResponse {
     fn from(r: PipelineResult) -> Self {
-        PipelineResultPb {
+        TaskRunResponse {
             success: r.success,
             data_json: r.data.as_ref().and_then(|v| serde_json::to_string(v).ok()),
             error: r.error,
@@ -36,7 +36,7 @@ impl TaskService for TaskServiceImpl {
     async fn run(
         &self,
         req: Request<TaskRunRequest>,
-    ) -> Result<Response<PipelineResultPb>, TonicStatus> {
+    ) -> Result<Response<TaskRunResponse>, TonicStatus> {
         let args = req.into_inner();
         let steps: Vec<PipelineStep> = if args.pipeline_json.is_empty() {
             Vec::new()

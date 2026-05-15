@@ -13,7 +13,7 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> },
 ) {
   const { slug } = await params;
-  const res = await getShare({ value: slug });
+  const res = await getShare({ slug: slug });
   const headers = { 'X-Robots-Tag': 'noindex, nofollow, noarchive' };
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 500, headers });

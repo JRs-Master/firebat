@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
   }
 
   // 2) 시간대 저장
-  const tzRes = await setTimezone({ value: timezone });
+  const tzRes = await setTimezone({ timezone: timezone });
   if (!tzRes.ok) {
     return NextResponse.json({ success: false, error: tzRes.message }, { status: 500 });
   }

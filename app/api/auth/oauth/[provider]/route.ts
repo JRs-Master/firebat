@@ -24,7 +24,7 @@ export async function GET(
     );
   }
 
-  const apiKeyRes = await getUserSecret({ value: config.apiKeyVaultKey });
+  const apiKeyRes = await getUserSecret({ name: config.apiKeyVaultKey });
   if (!apiKeyRes.ok || !apiKeyRes.data) {
     return NextResponse.json(
       { success: false, error: `${config.apiKeyVaultKey}를 먼저 API 키 설정에서 등록해주세요.` },

@@ -23,7 +23,7 @@ export async function GET(
     const dotIdx = filename.lastIndexOf('.');
     const slug = dotIdx > 0 ? filename.slice(0, dotIdx) : filename;
 
-    const res = await readMedia({ value: slug });
+    const res = await readMedia({ slug: slug });
     if (!res.ok) return new NextResponse(res.message || '서버 오류', { status: 500 });
     const payload = res.data;
     if (!payload || !payload.binaryBase64) return new NextResponse('Not found', { status: 404 });

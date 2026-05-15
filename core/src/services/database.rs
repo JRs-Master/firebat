@@ -5,8 +5,8 @@
 //! - `port.run_select_query(sql)` 위임 — adapter 가 SELECT/WITH 검증 + dialect 적응
 //! - SELECT/WITH 만 허용. INSERT/UPDATE/DELETE 는 어댑터에서 거부 (port 차원 가드)
 //!
-//! Step 3 (typed RPC) — JsonValue raw 폐기 + RawJsonPb 사용.
-//! Query 결과는 동적 row 배열 (스키마 불명) → RawJsonPb.
+//! 2026-05-15: buf STANDARD lint 정공 — unique Request/Response message 사용.
+//! Query 결과는 동적 row 배열 (스키마 불명) → DatabaseQueryResponse.raw_json.
 //!
 //! 향후 MariaDB / PostgreSQL adapter 설정될 때 dialect-specific SQL 처리도 어댑터 안에서.
 
@@ -14,7 +14,9 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::ports::IDatabasePort;
-use crate::proto::{database_service_server::DatabaseService, DatabaseQueryRequest, RawJsonPb};
+use crate::proto::{
+    database_service_server::DatabaseService, DatabaseQueryRequest, DatabaseQueryResponse,
+};
 
 pub struct DatabaseServiceImpl {
     db: Arc<dyn IDatabasePort>,
@@ -26,15 +28,12 @@ impl DatabaseServiceImpl {
     }
 }
 
-fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
-    RawJsonPb {
-        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
-    }
-}
-
 #[tonic::async_trait]
 impl DatabaseService for DatabaseServiceImpl {
-    async fn query(&self, req: Request<DatabaseQueryRequest>) -> Result<Response<RawJsonPb>, TonicStatus> {
+    async fn query(
+        &self,
+        req: Request<DatabaseQueryRequest>,
+    ) -> Result<Response<DatabaseQueryResponse>, TonicStatus> {
         let args = req.into_inner();
         // params 는 Phase B-17.5 minimum 단계에선 unused — adapter 가 raw SELECT 만 받음.
         // 향후 prepared statement 지원 시 port 시그니처 확장 (`run_select_query_with_params`).
@@ -55,7 +54,8 @@ impl DatabaseService for DatabaseServiceImpl {
             .into_iter()
             .map(serde_json::Value::Object)
             .collect();
-        Ok(Response::new(raw_json(&json_rows)))
+        let raw_json = serde_json::to_string(&json_rows).unwrap_or_else(|_| "[]".to_string());
+        Ok(Response::new(DatabaseQueryResponse { raw_json }))
     }
 }
 

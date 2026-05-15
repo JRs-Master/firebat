@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
   if (!fromUserId || !chatId) {
     return NextResponse.json({ ok: true }); // 비정상 형태 무시
   }
-  const ownerRes = await isTelegramOwner({ value: String(fromUserId) });
+  const ownerRes = await isTelegramOwner({ chatId: String(fromUserId) });
   if (!ownerRes.ok || ownerRes.data !== true) {
     // 외부인 — 무시 (응답 X). 텔레그램은 200 받아야 webhook 정상.
     return NextResponse.json({ ok: true });

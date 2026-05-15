@@ -5,7 +5,10 @@ use tempfile::tempdir;
 use tonic::Request;
 
 use firebat_core::ports::IStoragePort;
-use firebat_core::proto::{memory_service_server::MemoryService, Empty, MemorySaveFileRequest, StringRequest};
+use firebat_core::proto::{
+    memory_service_server::MemoryService, MemoryGetIndexRequest, MemoryListFilesRequest,
+    MemoryReadFileRequest, MemorySaveFileRequest,
+};
 use firebat_core::services::memory_file::MemoryServiceImpl;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 
@@ -26,8 +29,8 @@ async fn save_then_read_roundtrip() {
     .unwrap();
 
     let resp = svc
-        .read_file(Request::new(StringRequest {
-            value: "user_role".to_string(),
+        .read_file(Request::new(MemoryReadFileRequest {
+            name: "user_role".to_string(),
         }))
         .await
         .unwrap();
@@ -39,8 +42,8 @@ async fn save_then_read_roundtrip() {
 async fn path_traversal_rejected() {
     let (svc, _dir) = service();
     let resp = svc
-        .read_file(Request::new(StringRequest {
-            value: "../../../etc/passwd".to_string(),
+        .read_file(Request::new(MemoryReadFileRequest {
+            name: "../../../etc/passwd".to_string(),
         }))
         .await;
     assert!(resp.is_err());
@@ -57,7 +60,10 @@ async fn list_excludes_memory_md_and_non_md() {
     std::fs::write(mem_dir.join("feedback.md"), "y").unwrap();
     std::fs::write(mem_dir.join("readme.txt"), "z").unwrap(); // 비-md 제외
 
-    let resp = svc.list_files(Request::new(Empty {})).await.unwrap();
+    let resp = svc
+        .list_files(Request::new(MemoryListFilesRequest {}))
+        .await
+        .unwrap();
     let arr: Vec<String> = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert_eq!(arr.len(), 2);
     assert!(arr.contains(&"user_role.md".to_string()));
@@ -68,6 +74,9 @@ async fn list_excludes_memory_md_and_non_md() {
 #[tokio::test]
 async fn get_index_returns_empty_when_missing() {
     let (svc, _dir) = service();
-    let resp = svc.get_index(Request::new(Empty {})).await.unwrap();
-    assert_eq!(resp.into_inner().value, "");
+    let resp = svc
+        .get_index(Request::new(MemoryGetIndexRequest {}))
+        .await
+        .unwrap();
+    assert_eq!(resp.into_inner().content, "");
 }

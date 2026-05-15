@@ -1,8 +1,8 @@
 //! gRPC EpisodicService impl — EpisodicManager wrapping.
 //!
 //! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
-//! EventRecord 는 embedding 벡터 포함 도메인 타입이므로 조회 계열은 RawJsonPb.
-//! SaveEvent 결과는 FactSaveResultPb 재사용 (id + skipped + similarity 동일 구조).
+//! EventRecord 는 embedding 벡터 포함 도메인 타입 — 조회 계열은 raw_json string.
+//! 2026-05-15: buf STANDARD lint 정공 — 매 RPC unique Request/Response message.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -10,10 +10,14 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::episodic::EpisodicManager;
 use crate::ports::{EventSearchOpts, ListRecentOpts, SaveEventInput, UpdateEventPatch};
 use crate::proto::{
-    episodic_service_server::EpisodicService, Empty, EpisodicLinkEntityRequest,
-    EpisodicListByEntityRequest, EpisodicListRecentRequest, EpisodicSaveEventRequest,
-    EpisodicSearchEventsRequest, EpisodicUpdateEventRequest, FactSaveResultPb, NumberRequest,
-    RawJsonPb,
+    episodic_service_server::EpisodicService, EpisodicCleanupExpiredRequest,
+    EpisodicCleanupExpiredResponse, EpisodicDeleteEventRequest, EpisodicDeleteEventResponse,
+    EpisodicGetEventRequest, EpisodicGetEventResponse, EpisodicLinkEntityRequest,
+    EpisodicLinkEntityResponse, EpisodicListByEntityRequest, EpisodicListByEntityResponse,
+    EpisodicListRecentRequest, EpisodicListRecentResponse, EpisodicSaveEventRequest,
+    EpisodicSaveEventResponse, EpisodicSearchEventsRequest, EpisodicSearchEventsResponse,
+    EpisodicUnlinkEntityRequest, EpisodicUnlinkEntityResponse, EpisodicUpdateEventRequest,
+    EpisodicUpdateEventResponse,
 };
 
 pub struct EpisodicServiceImpl {
@@ -26,10 +30,8 @@ impl EpisodicServiceImpl {
     }
 }
 
-fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
-    RawJsonPb {
-        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
-    }
+fn raw_json_string(value: &impl serde::Serialize) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "null".to_string())
 }
 
 #[tonic::async_trait]
@@ -37,7 +39,7 @@ impl EpisodicService for EpisodicServiceImpl {
     async fn save_event(
         &self,
         req: Request<EpisodicSaveEventRequest>,
-    ) -> Result<Response<FactSaveResultPb>, TonicStatus> {
+    ) -> Result<Response<EpisodicSaveEventResponse>, TonicStatus> {
         let args = req.into_inner();
         let context = args
             .context_json
@@ -60,7 +62,7 @@ impl EpisodicService for EpisodicServiceImpl {
             })
             .await
         {
-            Ok((id, skipped, sim)) => Ok(Response::new(FactSaveResultPb {
+            Ok((id, skipped, sim)) => Ok(Response::new(EpisodicSaveEventResponse {
                 id,
                 skipped,
                 similarity: sim,
@@ -72,7 +74,7 @@ impl EpisodicService for EpisodicServiceImpl {
     async fn update_event(
         &self,
         req: Request<EpisodicUpdateEventRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
+    ) -> Result<Response<EpisodicUpdateEventResponse>, TonicStatus> {
         let args = req.into_inner();
         let context = args
             .context_json
@@ -99,27 +101,29 @@ impl EpisodicService for EpisodicServiceImpl {
                 },
             )
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(EpisodicUpdateEventResponse {}))
     }
 
     async fn delete_event(
         &self,
-        req: Request<NumberRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
-        let id = req.into_inner().value;
+        req: Request<EpisodicDeleteEventRequest>,
+    ) -> Result<Response<EpisodicDeleteEventResponse>, TonicStatus> {
+        let id = req.into_inner().id;
         self.manager
             .delete_event(id)
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(EpisodicDeleteEventResponse {}))
     }
 
     async fn get_event(
         &self,
-        req: Request<NumberRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let id = req.into_inner().value;
+        req: Request<EpisodicGetEventRequest>,
+    ) -> Result<Response<EpisodicGetEventResponse>, TonicStatus> {
+        let id = req.into_inner().id;
         match self.manager.get_event(id) {
-            Ok(rec) => Ok(Response::new(raw_json(&rec))),
+            Ok(rec) => Ok(Response::new(EpisodicGetEventResponse {
+                raw_json: raw_json_string(&rec),
+            })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -127,7 +131,7 @@ impl EpisodicService for EpisodicServiceImpl {
     async fn search_events(
         &self,
         req: Request<EpisodicSearchEventsRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+    ) -> Result<Response<EpisodicSearchEventsResponse>, TonicStatus> {
         let args = req.into_inner();
         let opts: EventSearchOpts = if args.opts_json.is_empty() {
             EventSearchOpts::default()
@@ -136,7 +140,9 @@ impl EpisodicService for EpisodicServiceImpl {
                 .map_err(|e| TonicStatus::invalid_argument(format!("opts_json: {e}")))?
         };
         match self.manager.search_events(opts).await {
-            Ok(list) => Ok(Response::new(raw_json(&list))),
+            Ok(list) => Ok(Response::new(EpisodicSearchEventsResponse {
+                raw_json: raw_json_string(&list),
+            })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -144,7 +150,7 @@ impl EpisodicService for EpisodicServiceImpl {
     async fn list_recent(
         &self,
         req: Request<EpisodicListRecentRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+    ) -> Result<Response<EpisodicListRecentResponse>, TonicStatus> {
         let args = req.into_inner();
         let opts: ListRecentOpts = if args.opts_json.is_empty() {
             ListRecentOpts::default()
@@ -153,7 +159,9 @@ impl EpisodicService for EpisodicServiceImpl {
                 .map_err(|e| TonicStatus::invalid_argument(format!("opts_json: {e}")))?
         };
         match self.manager.list_recent_events(opts) {
-            Ok(list) => Ok(Response::new(raw_json(&list))),
+            Ok(list) => Ok(Response::new(EpisodicListRecentResponse {
+                raw_json: raw_json_string(&list),
+            })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -161,7 +169,7 @@ impl EpisodicService for EpisodicServiceImpl {
     async fn list_by_entity(
         &self,
         req: Request<EpisodicListByEntityRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+    ) -> Result<Response<EpisodicListByEntityResponse>, TonicStatus> {
         let args = req.into_inner();
         match self
             .manager
@@ -172,7 +180,9 @@ impl EpisodicService for EpisodicServiceImpl {
             )
             .await
         {
-            Ok(list) => Ok(Response::new(raw_json(&list))),
+            Ok(list) => Ok(Response::new(EpisodicListByEntityResponse {
+                raw_json: raw_json_string(&list),
+            })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -180,31 +190,33 @@ impl EpisodicService for EpisodicServiceImpl {
     async fn link_entity(
         &self,
         req: Request<EpisodicLinkEntityRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
+    ) -> Result<Response<EpisodicLinkEntityResponse>, TonicStatus> {
         let args = req.into_inner();
         self.manager
             .link_entity(args.event_id, args.entity_id)
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(EpisodicLinkEntityResponse {}))
     }
 
     async fn unlink_entity(
         &self,
-        req: Request<EpisodicLinkEntityRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
+        req: Request<EpisodicUnlinkEntityRequest>,
+    ) -> Result<Response<EpisodicUnlinkEntityResponse>, TonicStatus> {
         let args = req.into_inner();
         self.manager
             .unlink_entity(args.event_id, args.entity_id)
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(EpisodicUnlinkEntityResponse {}))
     }
 
     async fn cleanup_expired(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<NumberRequest>, TonicStatus> {
+        _req: Request<EpisodicCleanupExpiredRequest>,
+    ) -> Result<Response<EpisodicCleanupExpiredResponse>, TonicStatus> {
         match self.manager.cleanup_expired() {
-            Ok(n) => Ok(Response::new(NumberRequest { value: n })),
+            Ok(n) => Ok(Response::new(EpisodicCleanupExpiredResponse {
+                cleaned: n,
+            })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }

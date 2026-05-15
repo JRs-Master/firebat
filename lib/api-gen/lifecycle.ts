@@ -7,8 +7,8 @@
 import {
   HealthInfo,
   LifecycleCaptureExceptionRequestSchema,
+  LifecycleGracefulShutdownRequestSchema,
   LifecycleService,
-  NumberRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -35,7 +35,7 @@ export async function captureException(args: MessageInitShape<typeof LifecycleCa
   }
 }
 
-export async function gracefulShutdown(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<void>> {
+export async function gracefulShutdown(args: MessageInitShape<typeof LifecycleGracefulShutdownRequestSchema>): Promise<RpcResult<void>> {
   try {
       await lifecycleClient.gracefulShutdown(args ?? {});
       return { ok: true, data: undefined };

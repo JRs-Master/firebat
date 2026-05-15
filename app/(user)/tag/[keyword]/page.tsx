@@ -40,7 +40,7 @@ async function findMatchingPages(keyword: string): Promise<{ pages: PageListItem
   );
   const matched: PageListItem[] = [];
   for (const p of visible) {
-    const pageRes = await getPageRpc({ value: p.slug });
+    const pageRes = await getPageRpc({ slug: p.slug });
     if (!pageRes.ok || !pageRes.data) continue;
     const spec = parsePageRecord(pageRes.data);
     const keywords = (spec.head?.keywords ?? []) as string[];

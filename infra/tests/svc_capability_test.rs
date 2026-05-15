@@ -7,7 +7,8 @@ use tonic::Request;
 use firebat_core::managers::capability::CapabilityManager;
 use firebat_core::ports::{ILogPort, IStoragePort, IVaultPort};
 use firebat_core::proto::{
-    capability_service_server::CapabilityService, CapabilitySetSettingsRequest, Empty, StringRequest,
+    capability_service_server::CapabilityService, CapabilityGetSettingsRequest,
+    CapabilityListRequest, CapabilitySetSettingsRequest,
 };
 use firebat_core::services::capability::CapabilityServiceImpl;
 use firebat_infra::adapters::log::ConsoleLogAdapter;
@@ -27,7 +28,10 @@ fn make_service() -> (CapabilityServiceImpl, TempDir) {
 #[tokio::test]
 async fn list_returns_builtin_via_grpc() {
     let (service, _dir) = make_service();
-    let resp = service.list(Request::new(Empty {})).await.unwrap();
+    let resp = service
+        .list(Request::new(CapabilityListRequest {}))
+        .await
+        .unwrap();
     let caps: serde_json::Value = serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert!(caps.get("web-scrape").is_some());
     assert!(caps.get("notification").is_some());
@@ -45,12 +49,13 @@ async fn settings_roundtrip_via_grpc() {
         }))
         .await
         .unwrap();
-    assert!(resp.into_inner().ok);
+    // CapabilitySetSettingsResponse 는 empty struct — 성공 여부는 Ok(_) 자체.
+    let _ = resp.into_inner();
 
     // get
     let resp = service
-        .get_settings(Request::new(StringRequest {
-            value: "notification".to_string(),
+        .get_settings(Request::new(CapabilityGetSettingsRequest {
+            cap_id: "notification".to_string(),
         }))
         .await
         .unwrap();

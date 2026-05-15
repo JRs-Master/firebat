@@ -22,8 +22,8 @@ function maskToken(token: string | null): { hasToken: boolean; masked: string } 
 
 export const GET = withAuth(async () => {
   const [tokenRes, createdRes] = await Promise.all([
-    getGeminiKey({ value: TOKEN_KEY }),
-    getGeminiKey({ value: CREATED_KEY }),
+    getGeminiKey({ key: TOKEN_KEY }),
+    getGeminiKey({ key: CREATED_KEY }),
   ]);
   const token = tokenRes.ok ? tokenRes.data : null;
   const created = createdRes.ok ? createdRes.data : null;

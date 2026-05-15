@@ -2,6 +2,8 @@
 //!
 //! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
 //! From impl 정의 — core port struct ↔ proto generated struct 변환.
+//!
+//! 2026-05-15 unique RPC message — Empty/StringRequest/RawJsonPb shared 폐기.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -9,8 +11,10 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::mcp::McpManager;
 use crate::ports::McpToolInfo;
 use crate::proto::{
-    mcp_service_server::McpService, Empty, McpAddServerRequest, McpCallToolRequest, McpToolInfoPb, McpToolListPb, RawJsonPb,
-    StringRequest,
+    mcp_service_server::McpService, McpAddServerRequest, McpAddServerResponse,
+    McpCallToolRequest, McpCallToolResponse, McpListAllToolsRequest, McpListServersRequest,
+    McpListServersResponse, McpListToolsRequest, McpRemoveServerRequest, McpRemoveServerResponse,
+    McpListAllToolsResponse, McpListToolsResponse, McpToolInfoPb,
 };
 
 pub struct McpServiceImpl {
@@ -23,10 +27,8 @@ impl McpServiceImpl {
     }
 }
 
-fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
-    RawJsonPb {
-        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
-    }
+fn to_raw_json(value: &impl serde::Serialize) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "null".to_string())
 }
 
 // ─── proto ↔ core port struct 변환 ─────────────────────────────────────────
@@ -49,12 +51,17 @@ impl From<McpToolInfo> for McpToolInfoPb {
 impl McpService for McpServiceImpl {
     async fn list_servers(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        Ok(Response::new(raw_json(&self.manager.list_servers())))
+        _req: Request<McpListServersRequest>,
+    ) -> Result<Response<McpListServersResponse>, TonicStatus> {
+        Ok(Response::new(McpListServersResponse {
+            raw_json: to_raw_json(&self.manager.list_servers()),
+        }))
     }
 
-    async fn add_server(&self, req: Request<McpAddServerRequest>) -> Result<Response<Empty>, TonicStatus> {
+    async fn add_server(
+        &self,
+        req: Request<McpAddServerRequest>,
+    ) -> Result<Response<McpAddServerResponse>, TonicStatus> {
         let args = req.into_inner();
         let transport = match args.transport.as_str() {
             "stdio" => crate::ports::McpTransport::Stdio,
@@ -84,30 +91,30 @@ impl McpService for McpServiceImpl {
             .add_server(config)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(McpAddServerResponse {}))
     }
 
     async fn remove_server(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
-        let name = req.into_inner().value;
+        req: Request<McpRemoveServerRequest>,
+    ) -> Result<Response<McpRemoveServerResponse>, TonicStatus> {
+        let name = req.into_inner().name;
         self.manager
             .remove_server(&name)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(McpRemoveServerResponse {}))
     }
 
     async fn list_tools(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<McpToolListPb>, TonicStatus> {
-        let server_name = req.into_inner().value;
+        req: Request<McpListToolsRequest>,
+    ) -> Result<Response<McpListToolsResponse>, TonicStatus> {
+        let server_name = req.into_inner().server;
         match self.manager.list_tools(&server_name).await {
             Ok(tools) => {
                 let pb_tools = tools.into_iter().map(Into::into).collect();
-                Ok(Response::new(McpToolListPb { tools: pb_tools }))
+                Ok(Response::new(McpListToolsResponse { tools: pb_tools }))
             }
             Err(e) => Err(TonicStatus::internal(e)),
         }
@@ -115,12 +122,12 @@ impl McpService for McpServiceImpl {
 
     async fn list_all_tools(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<McpToolListPb>, TonicStatus> {
+        _req: Request<McpListAllToolsRequest>,
+    ) -> Result<Response<McpListAllToolsResponse>, TonicStatus> {
         match self.manager.list_all_tools().await {
             Ok(tools) => {
                 let pb_tools = tools.into_iter().map(Into::into).collect();
-                Ok(Response::new(McpToolListPb { tools: pb_tools }))
+                Ok(Response::new(McpListAllToolsResponse { tools: pb_tools }))
             }
             Err(e) => Err(TonicStatus::internal(e)),
         }
@@ -129,7 +136,7 @@ impl McpService for McpServiceImpl {
     async fn call_tool(
         &self,
         req: Request<McpCallToolRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+    ) -> Result<Response<McpCallToolResponse>, TonicStatus> {
         let args = req.into_inner();
         let arguments: serde_json::Value = if args.arguments_json.is_empty() {
             serde_json::Value::Null
@@ -142,7 +149,9 @@ impl McpService for McpServiceImpl {
             .call_tool(&args.server, &args.tool, &arguments)
             .await
         {
-            Ok(value) => Ok(Response::new(raw_json(&value))),
+            Ok(value) => Ok(Response::new(McpCallToolResponse {
+                raw_json: to_raw_json(&value),
+            })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }

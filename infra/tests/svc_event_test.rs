@@ -5,7 +5,7 @@ use tonic::Request;
 
 use firebat_core::managers::event::{EventManager, FirebatEvent};
 use firebat_core::ports::ILogPort;
-use firebat_core::proto::{event_service_server::EventService, NumberRequest};
+use firebat_core::proto::{event_service_server::EventService, EventListAuditLogRequest};
 use firebat_core::services::event::EventServiceImpl;
 use firebat_infra::adapters::log::ConsoleLogAdapter;
 
@@ -30,7 +30,7 @@ async fn list_audit_log_via_grpc() {
     });
 
     let resp = service
-        .list_audit_log(Request::new(NumberRequest { value: 10 }))
+        .list_audit_log(Request::new(EventListAuditLogRequest { limit: 10 }))
         .await
         .unwrap();
     let log: Vec<serde_json::Value> = serde_json::from_str(&resp.into_inner().raw_json).unwrap();

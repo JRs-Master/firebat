@@ -5,7 +5,8 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  StringRequestSchema,
+  TemplateDeleteRequestSchema,
+  TemplateGetRequestSchema,
   TemplateSaveRequestSchema,
   TemplateService,
 } from '../proto-gen/firebat_pb';
@@ -25,7 +26,7 @@ export async function list(): Promise<RpcResult<unknown>> {
   }
 }
 
-export async function get(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
+export async function get(args: MessageInitShape<typeof TemplateGetRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await templateClient.get(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -43,7 +44,7 @@ export async function save(args: MessageInitShape<typeof TemplateSaveRequestSche
   }
 }
 
-export async function deleteTemplate(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
+export async function deleteTemplate(args: MessageInitShape<typeof TemplateDeleteRequestSchema>): Promise<RpcResult<void>> {
   try {
       await templateClient.delete(args ?? {});
       return { ok: true, data: undefined };

@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
 // 로그아웃
 export async function DELETE(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
-  if (token) void logout({ value: token });
+  if (token) void logout({ sessionToken: token });
 
   const res = NextResponse.json({ success: true });
   res.cookies.delete(SESSION_COOKIE_NAME);
@@ -78,7 +78,7 @@ export async function PATCH(req: NextRequest) {
   if (!currentPassword) {
     return NextResponse.json({ success: false, error: '현재 비밀번호가 틀렸습니다.' }, { status: 401 });
   }
-  const verifyRes = await verifyAdminPassword({ value: currentPassword });
+  const verifyRes = await verifyAdminPassword({ password: currentPassword });
   const isValid = verifyRes.ok && verifyRes.data === true;
   if (!isValid) {
     return NextResponse.json({ success: false, error: '현재 비밀번호가 틀렸습니다.' }, { status: 401 });

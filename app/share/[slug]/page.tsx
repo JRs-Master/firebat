@@ -18,7 +18,7 @@ interface NormalizedShare {
 }
 
 async function loadShare(slug: string): Promise<NormalizedShare | null> {
-  const res = await getShare({ value: slug });
+  const res = await getShare({ slug: slug });
   if (!res.ok || !res.data || !res.data.slug) return null;
   const pb = res.data;
   const messages = safeJsonParse<Array<{ role?: string; content?: string }>>(pb.messagesJson, []) ?? [];

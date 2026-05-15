@@ -28,7 +28,7 @@ async function resolvePageOverrides(): Promise<{ layoutMode?: LayoutMode; conten
     if (!pathname || pathname === '/' || pathname.startsWith('/api')) return {};
     const slug = decodeURIComponent(pathname.replace(/^\/+/, '').replace(/\/+$/, ''));
     if (!slug) return {};
-    const res = await getPageRpc({ value: slug });
+    const res = await getPageRpc({ slug });
     if (!res.ok || !res.data) return {};
     const parsed = parsePageRecord(res.data);
     const head = parsed.head ?? {};

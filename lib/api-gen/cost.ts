@@ -5,12 +5,12 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  BudgetCheckResultPb,
-  CostBudgetPb,
+  CostCheckBudgetResponse,
+  CostGetBudgetResponse,
   CostGetStatsRequestSchema,
+  CostGetStatsResponse,
   CostService,
   CostSetBudgetRequestSchema,
-  LlmCostStatsSummaryPb,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -19,7 +19,7 @@ import { type RpcResult, toRpcError } from './types';
 
 const costClient = createClient(CostService, transport);
 
-export async function getStats(args: MessageInitShape<typeof CostGetStatsRequestSchema>): Promise<RpcResult<LlmCostStatsSummaryPb>> {
+export async function getStats(args: MessageInitShape<typeof CostGetStatsRequestSchema>): Promise<RpcResult<CostGetStatsResponse>> {
   try {
       const response = await costClient.getStats(args ?? {});
       return { ok: true, data: response };
@@ -37,7 +37,7 @@ export async function flush(): Promise<RpcResult<void>> {
   }
 }
 
-export async function getBudget(): Promise<RpcResult<CostBudgetPb>> {
+export async function getBudget(): Promise<RpcResult<CostGetBudgetResponse>> {
   try {
       const response = await costClient.getBudget({});
       return { ok: true, data: response };
@@ -55,7 +55,7 @@ export async function setBudget(args: MessageInitShape<typeof CostSetBudgetReque
   }
 }
 
-export async function checkBudget(): Promise<RpcResult<BudgetCheckResultPb>> {
+export async function checkBudget(): Promise<RpcResult<CostCheckBudgetResponse>> {
   try {
       const response = await costClient.checkBudget({});
       return { ok: true, data: response };

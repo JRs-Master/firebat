@@ -2,6 +2,8 @@
 //!
 //! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
 //! From impl 정의 — core port struct ↔ proto generated struct 변환.
+//! 2026-05-15: 옛 공유 타입 (Empty / BoolRequest / StringRequest / NumberRequest / AuthSessionPb)
+//! → RPC 별 unique Request/Response 분리 (buf STANDARD lint RPC_REQUEST_RESPONSE_UNIQUE).
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -9,9 +11,15 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::auth::{ApiTokenInfo, AuthManager, LoginOutcome};
 use crate::ports::{AuthSession, SessionRole, SessionType};
 use crate::proto::{
-    auth_service_server::AuthService, AdminCredentialsPb, ApiTokenInfoPb, AuthLoginRequest,
-    AuthSessionPb, AuthSetAdminCredentialsRequest, AuthValidatePasswordPolicyRequest, BoolRequest,
-    Empty, LoginResponsePb, NumberRequest, StringRequest,
+    auth_service_server::AuthService, AdminCredentialsPb, ApiTokenInfoPb, AuthGenerateApiTokenRequest,
+    AuthGenerateApiTokenResponse, AuthGetAdminCredentialsRequest, AuthGetApiTokenInfoRequest,
+    AuthIsAdminSetupRequest, AuthIsAdminSetupResponse, AuthLoginRequest, AuthLogoutRequest,
+    AuthLogoutResponse, AuthRevokeApiTokensRequest, AuthRevokeApiTokensResponse, AuthSessionPb,
+    AuthSetAdminCredentialsRequest, AuthSetAdminCredentialsResponse, AuthValidateApiTokenRequest,
+    AuthValidateApiTokenResponse, AuthValidatePasswordPolicyRequest,
+    AuthValidatePasswordPolicyResponse, AuthValidateSessionRequest, AuthValidateSessionResponse,
+    AuthValidateTokenRequest, AuthValidateTokenResponse, AuthVerifyAdminPasswordRequest,
+    AuthVerifyAdminPasswordResponse, LoginResponsePb,
 };
 
 pub struct AuthServiceImpl {
@@ -46,7 +54,7 @@ impl From<AuthSession> for AuthSessionPb {
 }
 
 /// `Option<AuthSession>` → `AuthSessionPb` — None 은 token="" 빈 레코드.
-/// 클라이언트는 `token.is_empty()` 로 미인증 판정.
+/// 클라이언트는 `session.token.is_empty()` 로 미인증 판정.
 fn session_opt_to_pb(opt: Option<AuthSession>) -> AuthSessionPb {
     opt.map(Into::into).unwrap_or_default()
 }
@@ -65,7 +73,10 @@ impl From<ApiTokenInfo> for ApiTokenInfoPb {
 
 #[tonic::async_trait]
 impl AuthService for AuthServiceImpl {
-    async fn login(&self, req: Request<AuthLoginRequest>) -> Result<Response<LoginResponsePb>, TonicStatus> {
+    async fn login(
+        &self,
+        req: Request<AuthLoginRequest>,
+    ) -> Result<Response<LoginResponsePb>, TonicStatus> {
         let args = req.into_inner();
         let attempt_key = args.attempt_key.unwrap_or_default();
         let outcome = self.manager.login(&args.id, &args.password, &attempt_key);
@@ -97,75 +108,75 @@ impl AuthService for AuthServiceImpl {
 
     async fn logout(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<BoolRequest>, TonicStatus> {
-        let token = req.into_inner().value;
-        Ok(Response::new(BoolRequest {
-            value: self.manager.logout(&token),
+        req: Request<AuthLogoutRequest>,
+    ) -> Result<Response<AuthLogoutResponse>, TonicStatus> {
+        let token = req.into_inner().session_token;
+        Ok(Response::new(AuthLogoutResponse {
+            ok: self.manager.logout(&token),
         }))
     }
 
     async fn validate_session(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<AuthSessionPb>, TonicStatus> {
-        let token = req.into_inner().value;
-        Ok(Response::new(session_opt_to_pb(
-            self.manager.validate_session(&token),
-        )))
+        req: Request<AuthValidateSessionRequest>,
+    ) -> Result<Response<AuthValidateSessionResponse>, TonicStatus> {
+        let token = req.into_inner().session_token;
+        Ok(Response::new(AuthValidateSessionResponse {
+            session: Some(session_opt_to_pb(self.manager.validate_session(&token))),
+        }))
     }
 
     async fn validate_token(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<AuthSessionPb>, TonicStatus> {
-        let token = req.into_inner().value;
-        Ok(Response::new(session_opt_to_pb(
-            self.manager.validate_token(&token),
-        )))
+        req: Request<AuthValidateTokenRequest>,
+    ) -> Result<Response<AuthValidateTokenResponse>, TonicStatus> {
+        let token = req.into_inner().token;
+        Ok(Response::new(AuthValidateTokenResponse {
+            session: Some(session_opt_to_pb(self.manager.validate_token(&token))),
+        }))
     }
 
     async fn generate_api_token(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<StringRequest>, TonicStatus> {
-        let label = req.into_inner().value;
+        req: Request<AuthGenerateApiTokenRequest>,
+    ) -> Result<Response<AuthGenerateApiTokenResponse>, TonicStatus> {
+        let label = req.into_inner().label;
         let token = self.manager.generate_api_token(if label.is_empty() {
             None
         } else {
             Some(&label)
         });
-        Ok(Response::new(StringRequest { value: token }))
+        Ok(Response::new(AuthGenerateApiTokenResponse { token }))
     }
 
     async fn validate_api_token(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<AuthSessionPb>, TonicStatus> {
-        let token = req.into_inner().value;
-        Ok(Response::new(session_opt_to_pb(
-            self.manager.validate_api_token(&token),
-        )))
+        req: Request<AuthValidateApiTokenRequest>,
+    ) -> Result<Response<AuthValidateApiTokenResponse>, TonicStatus> {
+        let token = req.into_inner().token;
+        Ok(Response::new(AuthValidateApiTokenResponse {
+            session: Some(session_opt_to_pb(self.manager.validate_api_token(&token))),
+        }))
     }
 
     async fn revoke_api_tokens(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<NumberRequest>, TonicStatus> {
-        let count = self.manager.revoke_api_tokens() as i64;
-        Ok(Response::new(NumberRequest { value: count }))
+        _req: Request<AuthRevokeApiTokensRequest>,
+    ) -> Result<Response<AuthRevokeApiTokensResponse>, TonicStatus> {
+        let revoked_count = self.manager.revoke_api_tokens() as i64;
+        Ok(Response::new(AuthRevokeApiTokensResponse { revoked_count }))
     }
 
     async fn get_api_token_info(
         &self,
-        _req: Request<Empty>,
+        _req: Request<AuthGetApiTokenInfoRequest>,
     ) -> Result<Response<ApiTokenInfoPb>, TonicStatus> {
         Ok(Response::new(self.manager.get_api_token_info().into()))
     }
 
     async fn get_admin_credentials(
         &self,
-        _req: Request<Empty>,
+        _req: Request<AuthGetAdminCredentialsRequest>,
     ) -> Result<Response<AdminCredentialsPb>, TonicStatus> {
         let (id, password) = self.manager.get_admin_credentials();
         Ok(Response::new(AdminCredentialsPb { id, password }))
@@ -173,44 +184,44 @@ impl AuthService for AuthServiceImpl {
 
     async fn is_admin_setup(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<BoolRequest>, TonicStatus> {
-        Ok(Response::new(BoolRequest {
-            value: self.manager.is_admin_setup(),
+        _req: Request<AuthIsAdminSetupRequest>,
+    ) -> Result<Response<AuthIsAdminSetupResponse>, TonicStatus> {
+        Ok(Response::new(AuthIsAdminSetupResponse {
+            is_setup: self.manager.is_admin_setup(),
         }))
     }
 
     async fn verify_admin_password(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<BoolRequest>, TonicStatus> {
-        let plain = req.into_inner().value;
-        Ok(Response::new(BoolRequest {
-            value: self.manager.verify_admin_password(&plain),
+        req: Request<AuthVerifyAdminPasswordRequest>,
+    ) -> Result<Response<AuthVerifyAdminPasswordResponse>, TonicStatus> {
+        let plain = req.into_inner().password;
+        Ok(Response::new(AuthVerifyAdminPasswordResponse {
+            valid: self.manager.verify_admin_password(&plain),
         }))
     }
 
     async fn validate_password_policy(
         &self,
         req: Request<AuthValidatePasswordPolicyRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
+    ) -> Result<Response<AuthValidatePasswordPolicyResponse>, TonicStatus> {
         let args = req.into_inner();
         crate::managers::auth::AuthManager::validate_password_policy(
             &args.password,
             args.id.as_deref(),
         )
         .map_err(TonicStatus::invalid_argument)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(AuthValidatePasswordPolicyResponse {}))
     }
 
     async fn set_admin_credentials(
         &self,
         req: Request<AuthSetAdminCredentialsRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
+    ) -> Result<Response<AuthSetAdminCredentialsResponse>, TonicStatus> {
         let args = req.into_inner();
         self.manager
             .set_admin_credentials(args.id.as_deref(), args.password.as_deref());
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(AuthSetAdminCredentialsResponse {}))
     }
 }
 

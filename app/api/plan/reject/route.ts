@@ -10,6 +10,6 @@ export const POST = withAuth(async (req: NextRequest) => {
   const planId = req.nextUrl.searchParams.get('planId') || (await req.json().catch(() => ({}))).planId;
   if (!planId) return NextResponse.json({ success: false, error: 'planId required' }, { status: 400 });
 
-  const res = await rejectPending({ value: planId });
+  const res = await rejectPending({ planId });
   return NextResponse.json({ success: res.ok && res.data === true });
 });

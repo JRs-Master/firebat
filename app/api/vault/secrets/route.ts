@@ -11,9 +11,9 @@ export const GET = withAuth(async () => {
   if (!listRes.ok) {
     return NextResponse.json({ success: false, error: listRes.message }, { status: 500 });
   }
-  const names = listRes.data.values ?? [];
+  const names = listRes.data;
   const secrets = await Promise.all(names.map(async (name: string) => {
-    const valRes = await getUserSecret({ value: name });
+    const valRes = await getUserSecret({ name });
     const value = valRes.ok ? valRes.data : null;
     return {
       name,
@@ -53,7 +53,7 @@ export const DELETE = withAuth(async (req: NextRequest) => {
   const name = req.nextUrl.searchParams.get('name');
   if (!name) return NextResponse.json({ success: false, error: 'name 필요' }, { status: 400 });
 
-  const res = await deleteUserSecret({ value: name });
+  const res = await deleteUserSecret({ name });
   return res.ok
     ? NextResponse.json({ success: true })
     : NextResponse.json({ success: false, error: res.message || '삭제 실패' }, { status: 500 });

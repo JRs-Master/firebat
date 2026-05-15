@@ -21,8 +21,8 @@ export const POST = withAuth(async (req) => {
   const { id } = await req.json();
   if (!id) throw new ApiError(400, 'capability id 필요');
 
-  const providersRes = await getCapabilityProviders({ value: id });
-  const settingsRes = await getCapabilitySettings({ value: id });
+  const providersRes = await getCapabilityProviders({ capId: id });
+  const settingsRes = await getCapabilitySettings({ capId: id });
   const capsRes = await listCapabilities();
   if (!providersRes.ok) return NextResponse.json({ success: false, error: providersRes.message }, { status: 500 });
   if (!settingsRes.ok) return NextResponse.json({ success: false, error: settingsRes.message }, { status: 500 });
@@ -34,7 +34,9 @@ export const POST = withAuth(async (req) => {
     success: true,
     capability: { id, label: def?.label ?? id, description: def?.description ?? '' },
     providers: providersRes.data,
-    settings: settingsRes.data,
+    // settingsRes.data 는 string[] (CapabilitySettingsPb.providers 단일 field unwrap).
+    // frontend 가 옛 {providers} 객체 형식 기대 — 호환성 위해 wrap.
+    settings: { providers: settingsRes.data },
   });
 });
 

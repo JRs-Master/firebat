@@ -5,14 +5,15 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
+  CapabilityGetProvidersRequestSchema,
+  CapabilityGetSettingsRequestSchema,
   CapabilityProviderListPb,
   CapabilityProviderPb,
   CapabilityRegisterRequestSchema,
+  CapabilityResolveRequestSchema,
   CapabilityService,
   CapabilitySetSettingsRequestSchema,
-  CapabilitySettingsPb,
   CapabilitySummaryListPb,
-  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -39,7 +40,7 @@ export async function register(args: MessageInitShape<typeof CapabilityRegisterR
   }
 }
 
-export async function getProviders(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<CapabilityProviderListPb>> {
+export async function getProviders(args: MessageInitShape<typeof CapabilityGetProvidersRequestSchema>): Promise<RpcResult<CapabilityProviderListPb>> {
   try {
       const response = await capabilityClient.getProviders(args ?? {});
       return { ok: true, data: response };
@@ -57,7 +58,7 @@ export async function listWithProviders(): Promise<RpcResult<CapabilitySummaryLi
   }
 }
 
-export async function resolve(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<CapabilityProviderPb>> {
+export async function resolve(args: MessageInitShape<typeof CapabilityResolveRequestSchema>): Promise<RpcResult<CapabilityProviderPb>> {
   try {
       const response = await capabilityClient.resolve(args ?? {});
       return { ok: true, data: response };
@@ -66,10 +67,10 @@ export async function resolve(args: MessageInitShape<typeof StringRequestSchema>
   }
 }
 
-export async function getSettings(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<CapabilitySettingsPb>> {
+export async function getSettings(args: MessageInitShape<typeof CapabilityGetSettingsRequestSchema>): Promise<RpcResult<string[]>> {
   try {
       const response = await capabilityClient.getSettings(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: response.providers };
   } catch (err) {
     return toRpcError(err);
   }

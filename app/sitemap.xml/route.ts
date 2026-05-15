@@ -23,7 +23,7 @@ export async function GET(req: Request) {
 
   // 정적 페이지가 있을 때만 포함
   const staticRes = await listStatic();
-  const staticPages = staticRes.ok ? (staticRes.data.values ?? []) : [];
+  const staticPages = staticRes.ok ? staticRes.data : [];
   if (staticPages.length > 0) {
     sitemaps.push(`${baseUrl}/sitemap-pages.xml`);
   }

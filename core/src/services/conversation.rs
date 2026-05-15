@@ -1,7 +1,7 @@
 //! gRPC ConversationService impl — ConversationManager wrapping.
 //!
 //! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
-//! From impl 정의 — core port/manager struct ↔ proto generated struct 변환.
+//! 2026-05-15: buf STANDARD lint 정공 — 매 RPC unique Request/Response message.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -9,12 +9,19 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::conversation::{ConversationManager, HistorySearchMatch};
 use crate::ports::{ConversationRecord, ConversationSummary, IDatabasePort, SharedConversationRecord};
 use crate::proto::{
-    conversation_service_server::ConversationService, BoolRequest, ConversationCreateShareRequest,
-    ConversationGetCliSessionRequest, ConversationListPb, ConversationOwnerIdRequest,
-    ConversationRecordPb, ConversationSaveRequest, ConversationSearchHistoryRequest,
-    ConversationSetCliSessionRequest, ConversationSummaryPb, Empty, HistorySearchMatchPb,
-    HistorySearchResultPb, NumberRequest, OptionalStringPb, ShareResultPb, SharedConversationPb,
-    StringRequest,
+    conversation_service_server::ConversationService, ConversationCleanupExpiredSharesRequest,
+    ConversationCleanupExpiredSharesResponse, ConversationCleanupOldDeletedRequest,
+    ConversationCleanupOldDeletedResponse, ConversationCreateShareRequest,
+    ConversationCreateShareResponse, ConversationDeleteRequest, ConversationDeleteResponse,
+    ConversationGetCliSessionRequest, ConversationGetCliSessionResponse, ConversationGetRequest,
+    ConversationGetResponse, ConversationGetShareRequest, ConversationGetShareResponse,
+    ConversationIsDeletedRequest, ConversationIsDeletedResponse, ConversationListDeletedRequest,
+    ConversationListDeletedResponse, ConversationListRequest, ConversationListResponse,
+    ConversationPermanentDeleteRequest, ConversationPermanentDeleteResponse,
+    ConversationRestoreRequest, ConversationRestoreResponse, ConversationSaveRequest,
+    ConversationSaveResponse, ConversationSearchHistoryRequest, ConversationSearchHistoryResponse,
+    ConversationSetCliSessionRequest, ConversationSetCliSessionResponse, ConversationSummaryPb,
+    HistorySearchMatchPb,
 };
 
 pub struct ConversationServiceImpl {
@@ -52,9 +59,9 @@ impl From<ConversationSummary> for ConversationSummaryPb {
     }
 }
 
-impl From<ConversationRecord> for ConversationRecordPb {
+impl From<ConversationRecord> for ConversationGetResponse {
     fn from(r: ConversationRecord) -> Self {
-        ConversationRecordPb {
+        ConversationGetResponse {
             id: r.id,
             title: r.title,
             messages_json: serde_json::to_string(&r.messages)
@@ -83,9 +90,9 @@ impl From<HistorySearchMatch> for HistorySearchMatchPb {
     }
 }
 
-impl From<SharedConversationRecord> for SharedConversationPb {
+impl From<SharedConversationRecord> for ConversationGetShareResponse {
     fn from(r: SharedConversationRecord) -> Self {
-        SharedConversationPb {
+        ConversationGetShareResponse {
             slug: r.slug,
             share_type: r.share_type,
             title: r.title,
@@ -101,17 +108,17 @@ impl From<SharedConversationRecord> for SharedConversationPb {
 impl ConversationService for ConversationServiceImpl {
     async fn list(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<ConversationListPb>, TonicStatus> {
-        let owner = req.into_inner().value;
+        req: Request<ConversationListRequest>,
+    ) -> Result<Response<ConversationListResponse>, TonicStatus> {
+        let owner = req.into_inner().owner;
         let items = self.manager.list(&owner).into_iter().map(Into::into).collect();
-        Ok(Response::new(ConversationListPb { items }))
+        Ok(Response::new(ConversationListResponse { items }))
     }
 
     async fn get(
         &self,
-        req: Request<ConversationOwnerIdRequest>,
-    ) -> Result<Response<ConversationRecordPb>, TonicStatus> {
+        req: Request<ConversationGetRequest>,
+    ) -> Result<Response<ConversationGetResponse>, TonicStatus> {
         let args = req.into_inner();
         Ok(Response::new(
             self.manager
@@ -121,7 +128,10 @@ impl ConversationService for ConversationServiceImpl {
         ))
     }
 
-    async fn save(&self, req: Request<ConversationSaveRequest>) -> Result<Response<Empty>, TonicStatus> {
+    async fn save(
+        &self,
+        req: Request<ConversationSaveRequest>,
+    ) -> Result<Response<ConversationSaveResponse>, TonicStatus> {
         let args = req.into_inner();
         let messages: serde_json::Value = serde_json::from_str(&args.messages_json)
             .map_err(|e| TonicStatus::invalid_argument(format!("save messages_json: {e}")))?;
@@ -129,31 +139,34 @@ impl ConversationService for ConversationServiceImpl {
             .save(&args.owner, &args.id, &args.title, &messages, args.created_at)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(ConversationSaveResponse {}))
     }
 
-    async fn delete(&self, req: Request<ConversationOwnerIdRequest>) -> Result<Response<Empty>, TonicStatus> {
+    async fn delete(
+        &self,
+        req: Request<ConversationDeleteRequest>,
+    ) -> Result<Response<ConversationDeleteResponse>, TonicStatus> {
         let args = req.into_inner();
         self.manager
             .delete(&args.owner, &args.id)
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(ConversationDeleteResponse {}))
     }
 
     async fn is_deleted(
         &self,
-        req: Request<ConversationOwnerIdRequest>,
-    ) -> Result<Response<BoolRequest>, TonicStatus> {
+        req: Request<ConversationIsDeletedRequest>,
+    ) -> Result<Response<ConversationIsDeletedResponse>, TonicStatus> {
         let args = req.into_inner();
-        Ok(Response::new(BoolRequest {
-            value: self.manager.is_deleted(&args.owner, &args.id),
+        Ok(Response::new(ConversationIsDeletedResponse {
+            is_deleted: self.manager.is_deleted(&args.owner, &args.id),
         }))
     }
 
     async fn search_history(
         &self,
         req: Request<ConversationSearchHistoryRequest>,
-    ) -> Result<Response<HistorySearchResultPb>, TonicStatus> {
+    ) -> Result<Response<ConversationSearchHistoryResponse>, TonicStatus> {
         let args = req.into_inner();
         let opts = crate::managers::conversation::SearchHistoryOpts {
             current_conv_id: args.current_conv_id,
@@ -165,7 +178,9 @@ impl ConversationService for ConversationServiceImpl {
         match self.manager.search_history(&args.owner, &args.query, opts).await {
             Ok(matches) => {
                 let pb_matches = matches.into_iter().map(Into::into).collect();
-                Ok(Response::new(HistorySearchResultPb { matches: pb_matches }))
+                Ok(Response::new(ConversationSearchHistoryResponse {
+                    matches: pb_matches,
+                }))
             }
             Err(e) => Err(TonicStatus::internal(e)),
         }
@@ -174,22 +189,21 @@ impl ConversationService for ConversationServiceImpl {
     async fn get_cli_session(
         &self,
         req: Request<ConversationGetCliSessionRequest>,
-    ) -> Result<Response<OptionalStringPb>, TonicStatus> {
+    ) -> Result<Response<ConversationGetCliSessionResponse>, TonicStatus> {
         let args = req.into_inner();
         let session_id = self.manager.get_cli_session(&args.conversation_id, &args.current_model);
-        Ok(Response::new(OptionalStringPb {
-            value: session_id.clone().unwrap_or_default(),
-            present: session_id.is_some(),
+        Ok(Response::new(ConversationGetCliSessionResponse {
+            session_id,
         }))
     }
 
     async fn set_cli_session(
         &self,
         req: Request<ConversationSetCliSessionRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
+    ) -> Result<Response<ConversationSetCliSessionResponse>, TonicStatus> {
         let args = req.into_inner();
         if self.manager.set_cli_session(&args.conversation_id, &args.session_id, &args.model) {
-            Ok(Response::new(Empty {}))
+            Ok(Response::new(ConversationSetCliSessionResponse {}))
         } else {
             Err(TonicStatus::internal("set_cli_session 실패"))
         }
@@ -198,7 +212,7 @@ impl ConversationService for ConversationServiceImpl {
     async fn create_share(
         &self,
         req: Request<ConversationCreateShareRequest>,
-    ) -> Result<Response<ShareResultPb>, TonicStatus> {
+    ) -> Result<Response<ConversationCreateShareResponse>, TonicStatus> {
         let Some(db) = &self.db else {
             return Err(TonicStatus::failed_precondition(
                 "create_share: IDatabasePort 미설정",
@@ -220,7 +234,7 @@ impl ConversationService for ConversationServiceImpl {
             dedup_key: args.dedup_key,
         };
         match db.create_share(&input) {
-            Ok(result) => Ok(Response::new(ShareResultPb {
+            Ok(result) => Ok(Response::new(ConversationCreateShareResponse {
                 slug: result.slug,
                 expires_at: result.expires_at,
                 reused: result.reused,
@@ -231,12 +245,12 @@ impl ConversationService for ConversationServiceImpl {
 
     async fn get_share(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<SharedConversationPb>, TonicStatus> {
+        req: Request<ConversationGetShareRequest>,
+    ) -> Result<Response<ConversationGetShareResponse>, TonicStatus> {
         let Some(db) = &self.db else {
-            return Ok(Response::new(SharedConversationPb::default()));
+            return Ok(Response::new(ConversationGetShareResponse::default()));
         };
-        let slug = req.into_inner().value;
+        let slug = req.into_inner().slug;
         Ok(Response::new(
             db.get_share(&slug)
                 .map(Into::into)
@@ -246,57 +260,62 @@ impl ConversationService for ConversationServiceImpl {
 
     async fn cleanup_expired_shares(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<NumberRequest>, TonicStatus> {
+        _req: Request<ConversationCleanupExpiredSharesRequest>,
+    ) -> Result<Response<ConversationCleanupExpiredSharesResponse>, TonicStatus> {
         let Some(db) = &self.db else {
-            return Ok(Response::new(NumberRequest { value: 0 }));
+            return Ok(Response::new(ConversationCleanupExpiredSharesResponse {
+                cleaned: 0,
+            }));
         };
-        Ok(Response::new(NumberRequest {
-            value: db.cleanup_expired_shares(),
+        Ok(Response::new(ConversationCleanupExpiredSharesResponse {
+            cleaned: db.cleanup_expired_shares(),
         }))
     }
 
     async fn list_deleted(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<ConversationListPb>, TonicStatus> {
-        let owner = req.into_inner().value;
+        req: Request<ConversationListDeletedRequest>,
+    ) -> Result<Response<ConversationListDeletedResponse>, TonicStatus> {
+        let owner = req.into_inner().owner;
         let items = self
             .manager
             .list_deleted(&owner)
             .into_iter()
             .map(Into::into)
             .collect();
-        Ok(Response::new(ConversationListPb { items }))
+        Ok(Response::new(ConversationListDeletedResponse { items }))
     }
 
-    async fn restore(&self, req: Request<ConversationOwnerIdRequest>) -> Result<Response<Empty>, TonicStatus> {
+    async fn restore(
+        &self,
+        req: Request<ConversationRestoreRequest>,
+    ) -> Result<Response<ConversationRestoreResponse>, TonicStatus> {
         let args = req.into_inner();
         self.manager
             .restore(&args.owner, &args.id)
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(ConversationRestoreResponse {}))
     }
 
     async fn permanent_delete(
         &self,
-        req: Request<ConversationOwnerIdRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
+        req: Request<ConversationPermanentDeleteRequest>,
+    ) -> Result<Response<ConversationPermanentDeleteResponse>, TonicStatus> {
         let args = req.into_inner();
         self.manager
             .permanent_delete(&args.owner, &args.id)
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(ConversationPermanentDeleteResponse {}))
     }
 
     async fn cleanup_old_deleted(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<NumberRequest>, TonicStatus> {
+        _req: Request<ConversationCleanupOldDeletedRequest>,
+    ) -> Result<Response<ConversationCleanupOldDeletedResponse>, TonicStatus> {
         // 30일 retention — internal cron 이 호출. 응답: 삭제된 conversation 개수.
         const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
-        Ok(Response::new(NumberRequest {
-            value: self.manager.cleanup_old_deleted(RETENTION_MS),
+        Ok(Response::new(ConversationCleanupOldDeletedResponse {
+            cleaned: self.manager.cleanup_old_deleted(RETENTION_MS),
         }))
     }
 }

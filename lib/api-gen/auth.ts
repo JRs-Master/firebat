@@ -7,13 +7,20 @@
 import {
   AdminCredentialsPb,
   ApiTokenInfoPb,
+  AuthGenerateApiTokenRequestSchema,
   AuthLoginRequestSchema,
+  AuthLogoutRequestSchema,
   AuthService,
-  AuthSessionPb,
   AuthSetAdminCredentialsRequestSchema,
+  AuthValidateApiTokenRequestSchema,
+  AuthValidateApiTokenResponse,
   AuthValidatePasswordPolicyRequestSchema,
+  AuthValidateSessionRequestSchema,
+  AuthValidateSessionResponse,
+  AuthValidateTokenRequestSchema,
+  AuthValidateTokenResponse,
+  AuthVerifyAdminPasswordRequestSchema,
   LoginResponsePb,
-  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -31,16 +38,16 @@ export async function login(args: MessageInitShape<typeof AuthLoginRequestSchema
   }
 }
 
-export async function logout(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
+export async function logout(args: MessageInitShape<typeof AuthLogoutRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await authClient.logout(args ?? {});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.ok };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function validateSession(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<AuthSessionPb>> {
+export async function validateSession(args: MessageInitShape<typeof AuthValidateSessionRequestSchema>): Promise<RpcResult<AuthValidateSessionResponse>> {
   try {
       const response = await authClient.validateSession(args ?? {});
       return { ok: true, data: response };
@@ -49,7 +56,7 @@ export async function validateSession(args: MessageInitShape<typeof StringReques
   }
 }
 
-export async function validateToken(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<AuthSessionPb>> {
+export async function validateToken(args: MessageInitShape<typeof AuthValidateTokenRequestSchema>): Promise<RpcResult<AuthValidateTokenResponse>> {
   try {
       const response = await authClient.validateToken(args ?? {});
       return { ok: true, data: response };
@@ -58,16 +65,16 @@ export async function validateToken(args: MessageInitShape<typeof StringRequestS
   }
 }
 
-export async function generateApiToken(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<string>> {
+export async function generateApiToken(args: MessageInitShape<typeof AuthGenerateApiTokenRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await authClient.generateApiToken(args ?? {});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.token };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function validateApiToken(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<AuthSessionPb>> {
+export async function validateApiToken(args: MessageInitShape<typeof AuthValidateApiTokenRequestSchema>): Promise<RpcResult<AuthValidateApiTokenResponse>> {
   try {
       const response = await authClient.validateApiToken(args ?? {});
       return { ok: true, data: response };
@@ -79,7 +86,7 @@ export async function validateApiToken(args: MessageInitShape<typeof StringReque
 export async function revokeApiTokens(): Promise<RpcResult<bigint>> {
   try {
       const response = await authClient.revokeApiTokens({});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.revokedCount };
   } catch (err) {
     return toRpcError(err);
   }
@@ -115,16 +122,16 @@ export async function setAdminCredentials(args: MessageInitShape<typeof AuthSetA
 export async function isAdminSetup(): Promise<RpcResult<boolean>> {
   try {
       const response = await authClient.isAdminSetup({});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.isSetup };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function verifyAdminPassword(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
+export async function verifyAdminPassword(args: MessageInitShape<typeof AuthVerifyAdminPasswordRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await authClient.verifyAdminPassword(args ?? {});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.valid };
   } catch (err) {
     return toRpcError(err);
   }

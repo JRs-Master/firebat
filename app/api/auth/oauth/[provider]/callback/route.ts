@@ -44,7 +44,7 @@ export async function GET(
     return redirectToAdmin('OAuth state 검증 실패 — CSRF 의심. 다시 시도해주세요.', 'error');
   }
 
-  const apiKeyRes = await getUserSecret({ value: config.apiKeyVaultKey });
+  const apiKeyRes = await getUserSecret({ name: config.apiKeyVaultKey });
   if (!apiKeyRes.ok || !apiKeyRes.data) {
     return redirectToAdmin(`${config.apiKeyVaultKey} 가 Vault 에 없습니다.`, 'error');
   }
@@ -52,7 +52,7 @@ export async function GET(
 
   let clientSecret: string | null = null;
   if (config.clientSecretVaultKey) {
-    const secretRes = await getUserSecret({ value: config.clientSecretVaultKey });
+    const secretRes = await getUserSecret({ name: config.clientSecretVaultKey });
     clientSecret = secretRes.ok ? secretRes.data : null;
   }
 

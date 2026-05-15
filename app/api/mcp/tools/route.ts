@@ -14,7 +14,7 @@ export const GET = withAuth(async (req: NextRequest) => {
   const serverName = req.nextUrl.searchParams.get('server');
 
   const res = serverName
-    ? await listMcpTools({ value: serverName })
+    ? await listMcpTools({ server: serverName })
     : await listAllMcpTools();
 
   return res.ok

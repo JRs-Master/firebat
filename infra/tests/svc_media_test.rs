@@ -9,7 +9,7 @@ use tonic::Request;
 use firebat_core::managers::media::MediaManager;
 use firebat_core::ports::IMediaPort;
 use firebat_core::proto::{
-    media_service_server::MediaService, MediaListRequest, MediaSaveRequest, StringRequest,
+    media_service_server::MediaService, MediaIsReadyRequest, MediaListRequest, MediaSaveRequest,
 };
 use firebat_core::services::media::MediaServiceImpl;
 use firebat_infra::adapters::media::LocalMediaAdapter;
@@ -83,10 +83,10 @@ async fn save_then_list_via_grpc() {
 async fn is_ready_for_unknown_slug_false() {
     let (svc, _dir) = service();
     let resp = svc
-        .is_ready(Request::new(StringRequest {
-            value: "missing".to_string(),
+        .is_ready(Request::new(MediaIsReadyRequest {
+            slug: "missing".to_string(),
         }))
         .await
         .unwrap();
-    assert!(!resp.into_inner().value);
+    assert!(!resp.into_inner().ready);
 }

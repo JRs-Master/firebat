@@ -50,7 +50,7 @@ export const DELETE = withAuth(async (req: NextRequest) => {
   const name = req.nextUrl.searchParams.get('name');
   if (!name) return NextResponse.json({ success: false, error: 'name 필요' }, { status: 400 });
 
-  const res = await removeMcpServer({ value: name });
+  const res = await removeMcpServer({ name });
   return res.ok
     ? NextResponse.json({ success: true })
     : NextResponse.json({ success: false, error: res.message }, { status: 500 });

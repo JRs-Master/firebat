@@ -5,16 +5,19 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  StringRequestSchema,
   ToolBuildAiDefinitionsRequestSchema,
   ToolBuildMcpDescriptionsRequestSchema,
+  ToolClearActivePlanStateRequestSchema,
   ToolExecuteRequestSchema,
+  ToolGetActivePlanStateRequestSchema,
+  ToolGetDefinitionRequestSchema,
+  ToolGetStatsResponse,
   ToolListRequestSchema,
   ToolRegisterManyRequestSchema,
   ToolRegisterRequestSchema,
   ToolService,
   ToolSetActivePlanStateRequestSchema,
-  ToolStatsPb,
+  ToolUnregisterRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -41,16 +44,16 @@ export async function registerMany(args: MessageInitShape<typeof ToolRegisterMan
   }
 }
 
-export async function unregister(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
+export async function unregister(args: MessageInitShape<typeof ToolUnregisterRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await toolClient.unregister(args ?? {});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.removed };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function getDefinition(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
+export async function getDefinition(args: MessageInitShape<typeof ToolGetDefinitionRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await toolClient.getDefinition(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -95,7 +98,7 @@ export async function buildMcpDescriptions(args: MessageInitShape<typeof ToolBui
   }
 }
 
-export async function getStats(): Promise<RpcResult<ToolStatsPb>> {
+export async function getStats(): Promise<RpcResult<ToolGetStatsResponse>> {
   try {
       const response = await toolClient.getStats({});
       return { ok: true, data: response };
@@ -104,7 +107,7 @@ export async function getStats(): Promise<RpcResult<ToolStatsPb>> {
   }
 }
 
-export async function getActivePlanState(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
+export async function getActivePlanState(args: MessageInitShape<typeof ToolGetActivePlanStateRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await toolClient.getActivePlanState(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -122,7 +125,7 @@ export async function setActivePlanState(args: MessageInitShape<typeof ToolSetAc
   }
 }
 
-export async function clearActivePlanState(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
+export async function clearActivePlanState(args: MessageInitShape<typeof ToolClearActivePlanStateRequestSchema>): Promise<RpcResult<void>> {
   try {
       await toolClient.clearActivePlanState(args ?? {});
       return { ok: true, data: undefined };

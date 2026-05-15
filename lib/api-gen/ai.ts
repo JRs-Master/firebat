@@ -6,15 +6,18 @@
 
 import {
   AiCodeAssistRequestSchema,
+  AiConsumePendingRequestSchema,
   AiCreatePendingRequestSchema,
+  AiGetPendingRequestSchema,
   AiProcessRequestSchema,
+  AiRejectPendingRequestSchema,
   AiRequestActionWithToolsRequestSchema,
+  AiResolveCallTargetRequestSchema,
   AiRunAgentJobRequestSchema,
   AiService,
+  AiSetSubAgentEnabledRequestSchema,
   AiSpawnSubAgentRequestSchema,
   AiStorePlanRequestSchema,
-  BoolRequestSchema,
-  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -59,7 +62,7 @@ export async function runAgentJob(args: MessageInitShape<typeof AiRunAgentJobReq
   }
 }
 
-export async function resolveCallTarget(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
+export async function resolveCallTarget(args: MessageInitShape<typeof AiResolveCallTargetRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await aiClient.resolveCallTarget(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -80,13 +83,13 @@ export async function spawnSubAgent(args: MessageInitShape<typeof AiSpawnSubAgen
 export async function isSubAgentEnabled(): Promise<RpcResult<boolean>> {
   try {
       const response = await aiClient.isSubAgentEnabled({});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.enabled };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function setSubAgentEnabled(args: MessageInitShape<typeof BoolRequestSchema>): Promise<RpcResult<void>> {
+export async function setSubAgentEnabled(args: MessageInitShape<typeof AiSetSubAgentEnabledRequestSchema>): Promise<RpcResult<void>> {
   try {
       await aiClient.setSubAgentEnabled(args ?? {});
       return { ok: true, data: undefined };
@@ -98,13 +101,13 @@ export async function setSubAgentEnabled(args: MessageInitShape<typeof BoolReque
 export async function createPending(args: MessageInitShape<typeof AiCreatePendingRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await aiClient.createPending(args ?? {});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.planId };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function getPending(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
+export async function getPending(args: MessageInitShape<typeof AiGetPendingRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await aiClient.getPending(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -113,7 +116,7 @@ export async function getPending(args: MessageInitShape<typeof StringRequestSche
   }
 }
 
-export async function consumePending(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
+export async function consumePending(args: MessageInitShape<typeof AiConsumePendingRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await aiClient.consumePending(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -122,10 +125,10 @@ export async function consumePending(args: MessageInitShape<typeof StringRequest
   }
 }
 
-export async function rejectPending(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
+export async function rejectPending(args: MessageInitShape<typeof AiRejectPendingRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await aiClient.rejectPending(args ?? {});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.had };
   } catch (err) {
     return toRpcError(err);
   }

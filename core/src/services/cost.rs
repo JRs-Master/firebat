@@ -1,7 +1,7 @@
 //! gRPC CostService impl — CostManager wrapping.
 //!
 //! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
-//! From impl 정의 — core port struct ↔ proto generated struct 변환.
+//! 2026-05-15: buf STANDARD lint 정공 — 매 RPC unique Request/Response message.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -9,8 +9,10 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::cost::{CostBudget, CostManager, CostStatsFilter};
 use crate::ports::{LlmCostStatsRecord, LlmCostStatsSummary};
 use crate::proto::{
-    cost_service_server::CostService, BudgetCheckResultPb, CostBudgetPb, CostGetStatsRequest,
-    CostSetBudgetRequest, Empty, LlmCostStatsRecordPb, LlmCostStatsSummaryPb,
+    cost_service_server::CostService, CostCheckBudgetRequest, CostCheckBudgetResponse,
+    CostFlushRequest, CostFlushResponse, CostGetBudgetRequest, CostGetBudgetResponse,
+    CostGetStatsRequest, CostGetStatsResponse, CostSetBudgetRequest, CostSetBudgetResponse,
+    LlmCostStatsRecordPb,
 };
 
 pub struct CostServiceImpl {
@@ -38,9 +40,9 @@ impl From<LlmCostStatsRecord> for LlmCostStatsRecordPb {
     }
 }
 
-impl From<LlmCostStatsSummary> for LlmCostStatsSummaryPb {
+impl From<LlmCostStatsSummary> for CostGetStatsResponse {
     fn from(s: LlmCostStatsSummary) -> Self {
-        LlmCostStatsSummaryPb {
+        CostGetStatsResponse {
             total_input_tokens: s.total_input_tokens,
             total_output_tokens: s.total_output_tokens,
             total_cached_tokens: s.total_cached_tokens,
@@ -51,9 +53,9 @@ impl From<LlmCostStatsSummary> for LlmCostStatsSummaryPb {
     }
 }
 
-impl From<CostBudget> for CostBudgetPb {
+impl From<CostBudget> for CostGetBudgetResponse {
     fn from(b: CostBudget) -> Self {
-        CostBudgetPb {
+        CostGetBudgetResponse {
             daily_usd: b.daily_usd,
             monthly_usd: b.monthly_usd,
             daily_calls: b.daily_calls,
@@ -63,9 +65,9 @@ impl From<CostBudget> for CostBudgetPb {
     }
 }
 
-impl From<crate::managers::cost::BudgetCheckResult> for BudgetCheckResultPb {
+impl From<crate::managers::cost::BudgetCheckResult> for CostCheckBudgetResponse {
     fn from(r: crate::managers::cost::BudgetCheckResult) -> Self {
-        BudgetCheckResultPb {
+        CostCheckBudgetResponse {
             within_budget: r.within_budget,
             reason: r.reason,
             daily_used_usd: r.daily_used_usd,
@@ -86,7 +88,7 @@ impl CostService for CostServiceImpl {
     async fn get_stats(
         &self,
         req: Request<CostGetStatsRequest>,
-    ) -> Result<Response<LlmCostStatsSummaryPb>, TonicStatus> {
+    ) -> Result<Response<CostGetStatsResponse>, TonicStatus> {
         let args = req.into_inner();
         let filter = CostStatsFilter {
             since: args.since,
@@ -98,20 +100,26 @@ impl CostService for CostServiceImpl {
         Ok(Response::new(stats.into()))
     }
 
-    async fn flush(&self, _req: Request<Empty>) -> Result<Response<Empty>, TonicStatus> {
+    async fn flush(
+        &self,
+        _req: Request<CostFlushRequest>,
+    ) -> Result<Response<CostFlushResponse>, TonicStatus> {
         // Rust 에선 즉시 INSERT 라 별도 flush 불필요. ok 반환 (호환성).
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(CostFlushResponse {}))
     }
 
     async fn get_budget(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<CostBudgetPb>, TonicStatus> {
+        _req: Request<CostGetBudgetRequest>,
+    ) -> Result<Response<CostGetBudgetResponse>, TonicStatus> {
         let budget = self.manager.get_budget();
         Ok(Response::new(budget.into()))
     }
 
-    async fn set_budget(&self, req: Request<CostSetBudgetRequest>) -> Result<Response<Empty>, TonicStatus> {
+    async fn set_budget(
+        &self,
+        req: Request<CostSetBudgetRequest>,
+    ) -> Result<Response<CostSetBudgetResponse>, TonicStatus> {
         let args = req.into_inner();
         let budget = CostBudget {
             daily_usd: args.daily_usd,
@@ -121,7 +129,7 @@ impl CostService for CostServiceImpl {
             alert_at_percent: args.alert_at_percent,
         };
         if self.manager.set_budget(&budget) {
-            Ok(Response::new(Empty {}))
+            Ok(Response::new(CostSetBudgetResponse {}))
         } else {
             Err(TonicStatus::internal("set_budget 실패"))
         }
@@ -129,8 +137,8 @@ impl CostService for CostServiceImpl {
 
     async fn check_budget(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<BudgetCheckResultPb>, TonicStatus> {
+        _req: Request<CostCheckBudgetRequest>,
+    ) -> Result<Response<CostCheckBudgetResponse>, TonicStatus> {
         let result = self.manager.check_budget();
         Ok(Response::new(result.into()))
     }

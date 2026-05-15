@@ -55,7 +55,7 @@ async function resolveVisibility(spec: { _visibility?: string; project?: string 
   if (pageVis === 'private' || pageVis === 'password') return pageVis;
   // 프로젝트 상속
   if (spec.project) {
-    const visRes = await getProjectVisibility({ value: spec.project });
+    const visRes = await getProjectVisibility({ project: spec.project });
     const projectVis = visRes.ok ? visRes.data : undefined;
     if (projectVis === 'private' || projectVis === 'password') return projectVis;
   }
@@ -67,7 +67,7 @@ type Props = { params: Promise<{ slug: string[] }>; searchParams?: Promise<{ pag
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const rawSlug = (await params).slug;
   const slug = safeDecodeSlug(rawSlug);
-  const result = await getPageRpc({ value: slug });
+  const result = await getPageRpc({ slug });
   if (!result.ok || !result.data) {
     // projectRoot fallback — 1-segment URL 이 프로젝트명과 매칭되면 프로젝트 카탈로그 metadata
     if (!slug.includes('/')) {
@@ -122,7 +122,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const fallbackOg = `${baseUrl}/api/og?title=${encodeURIComponent(ogTitle)}&description=${encodeURIComponent(ogDesc)}`;
   let ogImage = fallbackOg;
   if (head.og?.image) {
-    const readyRes = await isMediaReady({ value: head.og.image });
+    const readyRes = await isMediaReady({ slug: head.og.image });
     const ready = readyRes.ok ? readyRes.data : false;
     ogImage = ready ? head.og.image : fallbackOg;
   }
@@ -174,10 +174,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 export default async function DynamicPage({ params, searchParams }: Props) {
   const rawSlug = (await params).slug;
   const slug = safeDecodeSlug(rawSlug);
-  const result = await getPageRpc({ value: slug });
+  const result = await getPageRpc({ slug });
   if (!result.ok || !result.data) {
     // 리디렉트 테이블 확인 — slug 변경/프로젝트 이동된 페이지 자동 이동
-    const redirectRes = await getRedirect({ value: slug });
+    const redirectRes = await getRedirect({ slug });
     const redirectTo = redirectRes.ok ? redirectRes.data : null;
     if (redirectTo) redirect(`/${redirectTo}`);
     // projectRoot fallback — 1-segment URL 이고 그 이름이 프로젝트로 등록되어 있으면
@@ -257,9 +257,11 @@ export default async function DynamicPage({ params, searchParams }: Props) {
   let projectH2Style: string | undefined;
   let projectH3Style: string | undefined;
   if (spec.project) {
-    const cfgRes = await getProjectConfigRpc({ value: spec.project });
-    const cfgRaw = cfgRes.ok ? cfgRes.data : '';
-    const projectConfig = cfgRaw ? safeJsonParse<Record<string, any>>(cfgRaw, {}) : null;
+    const cfgRes = await getProjectConfigRpc({ project: spec.project });
+    // codegen 자동 JSON.parse 산출 (raw_json single-field → unknown). null/object 모두 가능.
+    const projectConfig = (cfgRes.ok && cfgRes.data && typeof cfgRes.data === 'object')
+      ? (cfgRes.data as Record<string, any>)
+      : null;
     if (projectConfig) {
       const theme = projectConfig.theme as any;
       if (theme && typeof theme === 'object') {

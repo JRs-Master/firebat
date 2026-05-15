@@ -5,19 +5,22 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
+  EntityDeleteFactRequestSchema,
+  EntityDeleteRequestSchema,
   EntityFactSaveRequestSchema,
+  EntityFactSaveResponse,
   EntityFactUpdateRequestSchema,
+  EntityFindByNameRequestSchema,
+  EntityGetFactRequestSchema,
+  EntityGetRequestSchema,
   EntityRetrieveContextRequestSchema,
   EntitySaveRequestSchema,
-  EntitySaveResultPb,
+  EntitySaveResponse,
   EntitySearchFactsRequestSchema,
   EntitySearchRequestSchema,
   EntityService,
   EntityTimelineRequestSchema,
   EntityUpdateRequestSchema,
-  FactSaveResultPb,
-  NumberRequestSchema,
-  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -26,7 +29,7 @@ import { type RpcResult, toRpcError } from './types';
 
 const entityClient = createClient(EntityService, transport);
 
-export async function save(args: MessageInitShape<typeof EntitySaveRequestSchema>): Promise<RpcResult<EntitySaveResultPb>> {
+export async function save(args: MessageInitShape<typeof EntitySaveRequestSchema>): Promise<RpcResult<EntitySaveResponse>> {
   try {
       const response = await entityClient.save(args ?? {});
       return { ok: true, data: response };
@@ -44,7 +47,7 @@ export async function update(args: MessageInitShape<typeof EntityUpdateRequestSc
   }
 }
 
-export async function deleteEntity(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<void>> {
+export async function deleteEntity(args: MessageInitShape<typeof EntityDeleteRequestSchema>): Promise<RpcResult<void>> {
   try {
       await entityClient.delete(args ?? {});
       return { ok: true, data: undefined };
@@ -53,7 +56,7 @@ export async function deleteEntity(args: MessageInitShape<typeof NumberRequestSc
   }
 }
 
-export async function get(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<unknown>> {
+export async function get(args: MessageInitShape<typeof EntityGetRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await entityClient.get(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -62,7 +65,7 @@ export async function get(args: MessageInitShape<typeof NumberRequestSchema>): P
   }
 }
 
-export async function findByName(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
+export async function findByName(args: MessageInitShape<typeof EntityFindByNameRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await entityClient.findByName(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -80,7 +83,7 @@ export async function search(args: MessageInitShape<typeof EntitySearchRequestSc
   }
 }
 
-export async function saveFact(args: MessageInitShape<typeof EntityFactSaveRequestSchema>): Promise<RpcResult<FactSaveResultPb>> {
+export async function saveFact(args: MessageInitShape<typeof EntityFactSaveRequestSchema>): Promise<RpcResult<EntityFactSaveResponse>> {
   try {
       const response = await entityClient.saveFact(args ?? {});
       return { ok: true, data: response };
@@ -98,7 +101,7 @@ export async function updateFact(args: MessageInitShape<typeof EntityFactUpdateR
   }
 }
 
-export async function deleteFact(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<void>> {
+export async function deleteFact(args: MessageInitShape<typeof EntityDeleteFactRequestSchema>): Promise<RpcResult<void>> {
   try {
       await entityClient.deleteFact(args ?? {});
       return { ok: true, data: undefined };
@@ -107,7 +110,7 @@ export async function deleteFact(args: MessageInitShape<typeof NumberRequestSche
   }
 }
 
-export async function getFact(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<unknown>> {
+export async function getFact(args: MessageInitShape<typeof EntityGetFactRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await entityClient.getFact(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -146,7 +149,7 @@ export async function retrieveContext(args: MessageInitShape<typeof EntityRetrie
 export async function cleanupExpiredFacts(): Promise<RpcResult<bigint>> {
   try {
       const response = await entityClient.cleanupExpiredFacts({});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.cleaned };
   } catch (err) {
     return toRpcError(err);
   }

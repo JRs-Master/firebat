@@ -54,7 +54,7 @@ export const DELETE = withAuth(async (request: NextRequest) => {
   if (!project) {
     return NextResponse.json({ success: false, error: 'project 파라미터가 필요합니다.' }, { status: 400 });
   }
-  const res = await deleteProject({ value: project });
+  const res = await deleteProject({ project });
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 404 });
   }

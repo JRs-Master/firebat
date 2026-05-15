@@ -7,11 +7,11 @@
 import {
   StatusCompleteRequestSchema,
   StatusFailRequestSchema,
+  StatusGetRequestSchema,
   StatusListRequestSchema,
   StatusService,
   StatusStartRequestSchema,
   StatusUpdateRequestSchema,
-  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -56,7 +56,7 @@ export async function fail(args: MessageInitShape<typeof StatusFailRequestSchema
   }
 }
 
-export async function get(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
+export async function get(args: MessageInitShape<typeof StatusGetRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await statusClient.get(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };

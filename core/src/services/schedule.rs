@@ -2,6 +2,8 @@
 //!
 //! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
 //! From impl 정의 — core port struct ↔ proto generated struct 변환.
+//! 2026-05-15 — 옛 공유 타입 (Empty / StringRequest / NumberRequest) 폐기 + 매 RPC unique
+//! Request / Response.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -13,9 +15,12 @@ use crate::ports::{
     CronScheduleOptions,
 };
 use crate::proto::{
-    schedule_service_server::ScheduleService, CronJobListPb, CronJobPb, CronLogEntryPb,
-    CronLogListPb, CronNotificationListPb, CronNotificationPb, Empty, NumberRequest,
-    ScheduleCronRequest, StringRequest, ValidatePipelineRequest, ValidatePipelineResultPb,
+    schedule_service_server::ScheduleService, CancelCronRequest, CancelCronResponse,
+    ClearCronLogsRequest, ClearCronLogsResponse, ConsumeCronNotificationsRequest, CronJobListPb,
+    CronJobPb, CronLogEntryPb, CronLogListPb, CronNotificationListPb, CronNotificationPb,
+    GetCronLogsRequest, ListCronRequest, RunCronNowRequest, RunCronNowResponse,
+    ScheduleCronRequest, ScheduleCronResponse, UpdateCronRequest, UpdateCronResponse,
+    ValidatePipelineRequest, ValidatePipelineResultPb,
 };
 
 pub struct ScheduleServiceImpl {
@@ -36,48 +41,98 @@ impl ScheduleServiceImpl {
     }
 }
 
-/// ScheduleCronRequest → (job_id, target_path, CronScheduleOptions) 변환.
-/// inputData 만 동적 LLM payload (serde_json::Value) — 그 외 typed parse.
-fn parse_schedule_request(
-    req: ScheduleCronRequest,
-) -> Result<(String, String, CronScheduleOptions), String> {
-    fn parse_value(raw: Option<String>) -> Result<Option<serde_json::Value>, String> {
-        match raw {
-            None => Ok(None),
-            Some(s) if s.is_empty() => Ok(None),
-            Some(s) => serde_json::from_str(&s).map(Some).map_err(|e| e.to_string()),
+/// 동적 JSON value parse helper — silently None 이면 None, 비어있으면 None, 실제 parse 실패만 Err.
+fn parse_value(raw: Option<String>) -> Result<Option<serde_json::Value>, String> {
+    match raw {
+        None => Ok(None),
+        Some(s) if s.is_empty() => Ok(None),
+        Some(s) => serde_json::from_str(&s).map(Some).map_err(|e| e.to_string()),
+    }
+}
+/// typed schema 안에 박힌 동적 JSON 도 parse 동일 처리.
+fn parse_typed<T: serde::de::DeserializeOwned>(
+    raw: Option<String>,
+    label: &str,
+) -> Result<Option<T>, String> {
+    match raw {
+        None => Ok(None),
+        Some(s) if s.is_empty() => Ok(None),
+        Some(s) => serde_json::from_str(&s)
+            .map(Some)
+            .map_err(|e| format!("{label}: {e}")),
+    }
+}
+
+/// ScheduleCron / UpdateCron Request 공통 field 셋 (등록/수정 호환). proto schema 분리는
+/// buf STANDARD `RPC_REQUEST_RESPONSE_UNIQUE` 룰 정공이지만 변환 로직은 중복 회피.
+struct ScheduleArgs {
+    job_id: Option<String>,
+    target_path: String,
+    cron_time: Option<String>,
+    run_at: Option<String>,
+    delay_sec: Option<i64>,
+    start_at: Option<String>,
+    end_at: Option<String>,
+    input_data_json: Option<String>,
+    pipeline_json: Option<String>,
+    title: Option<String>,
+    description: Option<String>,
+    one_shot: Option<bool>,
+    run_when_json: Option<String>,
+    retry_json: Option<String>,
+    notify_json: Option<String>,
+    execution_mode: Option<String>,
+    agent_prompt: Option<String>,
+}
+
+impl From<ScheduleCronRequest> for ScheduleArgs {
+    fn from(r: ScheduleCronRequest) -> Self {
+        Self {
+            job_id: r.job_id, target_path: r.target_path,
+            cron_time: r.cron_time, run_at: r.run_at, delay_sec: r.delay_sec,
+            start_at: r.start_at, end_at: r.end_at,
+            input_data_json: r.input_data_json, pipeline_json: r.pipeline_json,
+            title: r.title, description: r.description, one_shot: r.one_shot,
+            run_when_json: r.run_when_json, retry_json: r.retry_json,
+            notify_json: r.notify_json, execution_mode: r.execution_mode,
+            agent_prompt: r.agent_prompt,
         }
     }
-    fn parse_typed<T: serde::de::DeserializeOwned>(
-        raw: Option<String>,
-        label: &str,
-    ) -> Result<Option<T>, String> {
-        match raw {
-            None => Ok(None),
-            Some(s) if s.is_empty() => Ok(None),
-            Some(s) => serde_json::from_str(&s)
-                .map(Some)
-                .map_err(|e| format!("{label}: {e}")),
+}
+impl From<UpdateCronRequest> for ScheduleArgs {
+    fn from(r: UpdateCronRequest) -> Self {
+        Self {
+            job_id: r.job_id, target_path: r.target_path,
+            cron_time: r.cron_time, run_at: r.run_at, delay_sec: r.delay_sec,
+            start_at: r.start_at, end_at: r.end_at,
+            input_data_json: r.input_data_json, pipeline_json: r.pipeline_json,
+            title: r.title, description: r.description, one_shot: r.one_shot,
+            run_when_json: r.run_when_json, retry_json: r.retry_json,
+            notify_json: r.notify_json, execution_mode: r.execution_mode,
+            agent_prompt: r.agent_prompt,
         }
     }
+}
+
+fn parse_schedule_args(args: ScheduleArgs) -> Result<(String, String, CronScheduleOptions), String> {
     let opts = CronScheduleOptions {
-        cron_time: req.cron_time,
-        run_at: req.run_at,
-        delay_sec: req.delay_sec,
-        start_at: req.start_at,
-        end_at: req.end_at,
-        input_data: parse_value(req.input_data_json)?,
-        pipeline: parse_typed::<Vec<PipelineStep>>(req.pipeline_json, "pipeline")?,
-        title: req.title,
-        description: req.description,
-        one_shot: req.one_shot,
-        run_when: parse_typed::<CronRunWhen>(req.run_when_json, "runWhen")?,
-        retry: parse_typed::<CronRetry>(req.retry_json, "retry")?,
-        notify: parse_typed::<CronNotify>(req.notify_json, "notify")?,
-        execution_mode: req.execution_mode,
-        agent_prompt: req.agent_prompt,
+        cron_time: args.cron_time,
+        run_at: args.run_at,
+        delay_sec: args.delay_sec,
+        start_at: args.start_at,
+        end_at: args.end_at,
+        input_data: parse_value(args.input_data_json)?,
+        pipeline: parse_typed::<Vec<PipelineStep>>(args.pipeline_json, "pipeline")?,
+        title: args.title,
+        description: args.description,
+        one_shot: args.one_shot,
+        run_when: parse_typed::<CronRunWhen>(args.run_when_json, "runWhen")?,
+        retry: parse_typed::<CronRetry>(args.retry_json, "retry")?,
+        notify: parse_typed::<CronNotify>(args.notify_json, "notify")?,
+        execution_mode: args.execution_mode,
+        agent_prompt: args.agent_prompt,
     };
-    Ok((req.job_id.unwrap_or_default(), req.target_path, opts))
+    Ok((args.job_id.unwrap_or_default(), args.target_path, opts))
 }
 
 // ─── proto ↔ core port struct 변환 ─────────────────────────────────────────
@@ -156,44 +211,44 @@ impl ScheduleService for ScheduleServiceImpl {
     async fn schedule_cron(
         &self,
         req: Request<ScheduleCronRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
-        let (job_id, target_path, opts) = parse_schedule_request(req.into_inner())
+    ) -> Result<Response<ScheduleCronResponse>, TonicStatus> {
+        let (job_id, target_path, opts) = parse_schedule_args(req.into_inner().into())
             .map_err(|e| TonicStatus::invalid_argument(format!("schedule args: {e}")))?;
         self.manager
             .schedule(&job_id, &target_path, opts)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(ScheduleCronResponse {}))
     }
 
     async fn cancel_cron(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
-        let job_id = req.into_inner().value;
+        req: Request<CancelCronRequest>,
+    ) -> Result<Response<CancelCronResponse>, TonicStatus> {
+        let job_id = req.into_inner().job_id;
         self.manager
             .cancel(&job_id)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(CancelCronResponse {}))
     }
 
     async fn update_cron(
         &self,
-        req: Request<ScheduleCronRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
-        let (job_id, target_path, opts) = parse_schedule_request(req.into_inner())
+        req: Request<UpdateCronRequest>,
+    ) -> Result<Response<UpdateCronResponse>, TonicStatus> {
+        let (job_id, target_path, opts) = parse_schedule_args(req.into_inner().into())
             .map_err(|e| TonicStatus::invalid_argument(format!("update args: {e}")))?;
         self.manager
             .update(&job_id, &target_path, opts)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(UpdateCronResponse {}))
     }
 
     async fn list_cron(
         &self,
-        _req: Request<Empty>,
+        _req: Request<ListCronRequest>,
     ) -> Result<Response<CronJobListPb>, TonicStatus> {
         let jobs = self.manager.list().into_iter().map(Into::into).collect();
         Ok(Response::new(CronJobListPb { jobs }))
@@ -201,22 +256,25 @@ impl ScheduleService for ScheduleServiceImpl {
 
     async fn get_logs(
         &self,
-        req: Request<NumberRequest>,
+        req: Request<GetCronLogsRequest>,
     ) -> Result<Response<CronLogListPb>, TonicStatus> {
-        let limit = req.into_inner().value;
+        let limit = req.into_inner().limit;
         let limit_opt = if limit > 0 { Some(limit as usize) } else { None };
         let entries = self.manager.get_logs(limit_opt).into_iter().map(Into::into).collect();
         Ok(Response::new(CronLogListPb { entries }))
     }
 
-    async fn clear_logs(&self, _req: Request<Empty>) -> Result<Response<Empty>, TonicStatus> {
+    async fn clear_logs(
+        &self,
+        _req: Request<ClearCronLogsRequest>,
+    ) -> Result<Response<ClearCronLogsResponse>, TonicStatus> {
         self.manager.clear_logs();
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(ClearCronLogsResponse {}))
     }
 
     async fn consume_notifications(
         &self,
-        _req: Request<Empty>,
+        _req: Request<ConsumeCronNotificationsRequest>,
     ) -> Result<Response<CronNotificationListPb>, TonicStatus> {
         let items = self
             .manager
@@ -229,14 +287,14 @@ impl ScheduleService for ScheduleServiceImpl {
 
     async fn run_now(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
-        let job_id = req.into_inner().value;
+        req: Request<RunCronNowRequest>,
+    ) -> Result<Response<RunCronNowResponse>, TonicStatus> {
+        let job_id = req.into_inner().job_id;
         self.manager
             .trigger_now(&job_id)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(RunCronNowResponse {}))
     }
 
     async fn validate_pipeline(

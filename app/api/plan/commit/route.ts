@@ -20,7 +20,7 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (!planId) return NextResponse.json({ success: false, error: 'planId required' }, { status: 400 });
 
   // 성공 전까지는 consume하지 않음 — 실패 시 재시도 가능
-  const pendingRes = await getPending({ value: planId });
+  const pendingRes = await getPending({ planId });
   if (!pendingRes.ok || !pendingRes.data) {
     return NextResponse.json({ success: false, error: 'Plan not found or expired' }, { status: 404 });
   }
@@ -62,13 +62,13 @@ export const POST = withAuth(async (req: NextRequest) => {
       }
       case 'delete_file': {
         const path = args.path as string;
-        const r = await deleteFile({ value: path });
+        const r = await deleteFile({ path: path });
         result = r.ok ? { success: true } : { success: false, error: r.message };
         break;
       }
       case 'delete_page': {
         const slug = args.slug as string;
-        const r = await deletePage({ value: slug });
+        const r = await deletePage({ slug });
         result = r.ok ? { success: true } : { success: false, error: r.message };
         break;
       }
@@ -125,7 +125,7 @@ export const POST = withAuth(async (req: NextRequest) => {
       }
       case 'cancel_task': {
         const jobId = args.jobId as string;
-        const r = await cancelCronJob({ value: jobId });
+        const r = await cancelCronJob({ jobId });
         result = r.ok ? { success: true } : { success: false, error: r.message };
         break;
       }
@@ -134,7 +134,7 @@ export const POST = withAuth(async (req: NextRequest) => {
     }
 
     // 성공 시에만 pending 소비 (실패 시 재시도 가능)
-    if (result.success) await consumePending({ value: planId });
+    if (result.success) await consumePending({ planId });
     return NextResponse.json(result);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

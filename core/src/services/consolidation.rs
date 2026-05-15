@@ -1,8 +1,10 @@
 //! gRPC ConsolidationService impl — ConsolidationManager wrapping.
 //!
 //! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
-//! AskLlmText → LlmTextResultPb (단순 텍스트), GetMemoryStats → MemoryStatsPb.
-//! Consolidate / ConsolidateInactive → 중첩 구조이므로 RawJsonPb.
+//! AskLlmText → ConsolidationAskLlmTextResponse (단순 텍스트), GetMemoryStats → MemoryStatsPb.
+//! Consolidate / ConsolidateInactive → 중첩 구조 raw_json field.
+//! 2026-05-15: 옛 공유 타입 (Empty / RawJsonPb / LlmTextResultPb) → RPC 별 unique
+//! Request/Response 분리 (buf STANDARD lint RPC_REQUEST_RESPONSE_UNIQUE).
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -10,8 +12,9 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::consolidation::{ConsolidationManager, ExtractionResult};
 use crate::proto::{
     consolidation_service_server::ConsolidationService, ConsolidationAskLlmTextRequest,
-    ConsolidationConsolidateInactiveRequest, ConsolidationConsolidateRequest, Empty,
-    LlmTextResultPb, MemoryStatsPb, RawJsonPb,
+    ConsolidationAskLlmTextResponse, ConsolidationConsolidateInactiveRequest,
+    ConsolidationConsolidateInactiveResponse, ConsolidationConsolidateRequest,
+    ConsolidationConsolidateResponse, ConsolidationGetMemoryStatsRequest, MemoryStatsPb,
 };
 
 pub struct ConsolidationServiceImpl {
@@ -24,10 +27,8 @@ impl ConsolidationServiceImpl {
     }
 }
 
-fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
-    RawJsonPb {
-        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
-    }
+fn to_raw_json(value: &impl serde::Serialize) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "null".to_string())
 }
 
 #[tonic::async_trait]
@@ -35,7 +36,7 @@ impl ConsolidationService for ConsolidationServiceImpl {
     async fn ask_llm_text(
         &self,
         req: Request<ConsolidationAskLlmTextRequest>,
-    ) -> Result<Response<LlmTextResultPb>, TonicStatus> {
+    ) -> Result<Response<ConsolidationAskLlmTextResponse>, TonicStatus> {
         let args = req.into_inner();
         let opts = crate::ports::LlmCallOpts {
             model: args.model,
@@ -44,7 +45,7 @@ impl ConsolidationService for ConsolidationServiceImpl {
             ..Default::default()
         };
         match self.manager.ask_llm_text(&args.prompt, &opts).await {
-            Ok(text) => Ok(Response::new(LlmTextResultPb { text })),
+            Ok(text) => Ok(Response::new(ConsolidationAskLlmTextResponse { text })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -56,7 +57,7 @@ impl ConsolidationService for ConsolidationServiceImpl {
     async fn consolidate(
         &self,
         req: Request<ConsolidationConsolidateRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+    ) -> Result<Response<ConsolidationConsolidateResponse>, TonicStatus> {
         let args = req.into_inner();
         // 분기 1: conversation_id 가 포함된 자동 추출 (LLM 호출) — frontend "이 대화 정리" 버튼 + AI 도구
         if let Some(conv_id) = args.conversation_id {
@@ -66,7 +67,9 @@ impl ConsolidationService for ConsolidationServiceImpl {
                 .consolidate_conversation(&owner, &conv_id, args.model_id.as_deref())
                 .await
             {
-                Ok(outcome) => Ok(Response::new(raw_json(&outcome))),
+                Ok(outcome) => Ok(Response::new(ConsolidationConsolidateResponse {
+                    raw_json: to_raw_json(&outcome),
+                })),
                 Err(e) => Err(TonicStatus::internal(e)),
             };
         }
@@ -91,7 +94,9 @@ impl ConsolidationService for ConsolidationServiceImpl {
             )
             .await
         {
-            Ok(outcome) => Ok(Response::new(raw_json(&outcome))),
+            Ok(outcome) => Ok(Response::new(ConsolidationConsolidateResponse {
+                raw_json: to_raw_json(&outcome),
+            })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
     }
@@ -99,7 +104,7 @@ impl ConsolidationService for ConsolidationServiceImpl {
     async fn consolidate_inactive(
         &self,
         req: Request<ConsolidationConsolidateInactiveRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+    ) -> Result<Response<ConsolidationConsolidateInactiveResponse>, TonicStatus> {
         let args = req.into_inner();
         let result = self
             .manager
@@ -109,12 +114,14 @@ impl ConsolidationService for ConsolidationServiceImpl {
                 args.limit_per_run.map(|v| v as usize),
             )
             .await;
-        Ok(Response::new(raw_json(&result)))
+        Ok(Response::new(ConsolidationConsolidateInactiveResponse {
+            raw_json: to_raw_json(&result),
+        }))
     }
 
     async fn get_memory_stats(
         &self,
-        _req: Request<Empty>,
+        _req: Request<ConsolidationGetMemoryStatsRequest>,
     ) -> Result<Response<MemoryStatsPb>, TonicStatus> {
         match self.manager.get_memory_stats() {
             Ok(stats) => {

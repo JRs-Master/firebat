@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { validateToken } from './api-gen/auth';
 import { SESSION_COOKIE_NAME } from './config';
 import type { AuthSession } from './types/firebat-types';
-import type { AuthSessionPb } from './proto-gen/firebat_pb';
+import type { AuthValidateTokenResponse } from './proto-gen/firebat_pb';
 
-/** AuthSessionPb → AuthSession 변환. token 빈 문자열이면 null (미인증). */
-function pbToSession(pb: AuthSessionPb | undefined | null): AuthSession | null {
+/** AuthValidateTokenResponse → AuthSession 변환. session.token 빈 문자열이면 null (미인증). */
+function pbToSession(resp: AuthValidateTokenResponse | undefined | null): AuthSession | null {
+  const pb = resp?.session;
   if (!pb || !pb.token) return null;
   return {
     token: pb.token,
@@ -29,7 +30,7 @@ export async function requireAuth(request: NextRequest): Promise<AuthSession | N
   const authHeader = request.headers.get('authorization');
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
-    const res = await validateToken({ value: token });
+    const res = await validateToken({ token });
     const session = res.ok ? pbToSession(res.data) : null;
     if (session) return session;
     return NextResponse.json({ error: 'Invalid or expired token' }, { status: 401 });
@@ -39,7 +40,7 @@ export async function requireAuth(request: NextRequest): Promise<AuthSession | N
   // legacy fallback 폐기 (2026-05-09) — 쿠키 string 만으로 admin 통과되던 보안 결함.
   const cookie = request.cookies.get(SESSION_COOKIE_NAME);
   if (cookie?.value) {
-    const res = await validateToken({ value: cookie.value });
+    const res = await validateToken({ token: cookie.value });
     const session = res.ok ? pbToSession(res.data) : null;
     if (session) return session;
   }

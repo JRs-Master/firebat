@@ -5,8 +5,8 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  PipelineResultPb,
   TaskRunRequestSchema,
+  TaskRunResponse,
   TaskService,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
@@ -16,7 +16,7 @@ import { type RpcResult, toRpcError } from './types';
 
 const taskClient = createClient(TaskService, transport);
 
-export async function run(args: MessageInitShape<typeof TaskRunRequestSchema>): Promise<RpcResult<PipelineResultPb>> {
+export async function run(args: MessageInitShape<typeof TaskRunRequestSchema>): Promise<RpcResult<TaskRunResponse>> {
   try {
       const response = await taskClient.run(args ?? {});
       return { ok: true, data: response };

@@ -10,7 +10,8 @@ use firebat_core::managers::episodic::EpisodicManager;
 use firebat_core::managers::memory_facade::MemoryFacade;
 use firebat_core::ports::{IEntityPort, IEpisodicPort, IMemoryFacadePort};
 use firebat_core::proto::{
-    consolidation_service_server::ConsolidationService, ConsolidationConsolidateRequest, Empty,
+    consolidation_service_server::ConsolidationService, ConsolidationConsolidateRequest,
+    ConsolidationGetMemoryStatsRequest,
 };
 use firebat_core::services::consolidation::ConsolidationServiceImpl;
 use firebat_infra::adapters::memory::SqliteMemoryAdapter;
@@ -52,7 +53,7 @@ async fn consolidate_then_stats_via_grpc() {
     assert_eq!(outcome["saved"]["facts"].as_array().unwrap().len(), 1);
 
     let stats_resp = svc
-        .get_memory_stats(Request::new(Empty {}))
+        .get_memory_stats(Request::new(ConsolidationGetMemoryStatsRequest {}))
         .await
         .unwrap();
     let stats = stats_resp.into_inner();

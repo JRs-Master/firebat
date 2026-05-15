@@ -11,10 +11,9 @@ lint:
     - PACKAGE_DIRECTORY_MATCH
     - ENUM_VALUE_PREFIX
     - ENUM_ZERO_VALUE_SUFFIX
-    # RPC unique message 룰 — 매 RPC 마다 별도 Request/Response message 박는 게 buf STANDARD 정공.
-    # 다만 Firebat 의 공유 타입 (StringRequest / BoolRequest / NumberRequest / Empty / RawJsonPb /
-    # OptionalStringPb) 박힌 영역 많음. 별도 sprint 로 점진 unique message 박기 — 그 때까지 lint pass.
-    - RPC_REQUEST_RESPONSE_UNIQUE
+    # message naming convention (`{ServiceFull}{RpcName}Request/Response`) — 매 RPC unique 박힘
+    # (`RPC_REQUEST_RESPONSE_UNIQUE` 통과) 후 schema stability 핵심 가치 박힘. naming 은 cosmetic.
+    # ~400 message rename 작업 vs 단일 사용자 환경 가치 0 — YAGNI. 외부 client / multi-tenant 시점 박음.
     - RPC_REQUEST_STANDARD_NAME
     - RPC_RESPONSE_STANDARD_NAME
 breaking:

@@ -5,13 +5,15 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
+  ProjectDeleteRequestSchema,
+  ProjectGetConfigRequestSchema,
+  ProjectGetVisibilityRequestSchema,
   ProjectListPb,
   ProjectRenameRequestSchema,
   ProjectService,
   ProjectSetConfigRequestSchema,
   ProjectSetVisibilityRequestSchema,
   ProjectVerifyPasswordRequestSchema,
-  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -38,7 +40,7 @@ export async function setVisibility(args: MessageInitShape<typeof ProjectSetVisi
   }
 }
 
-export async function getVisibility(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<string>> {
+export async function getVisibility(args: MessageInitShape<typeof ProjectGetVisibilityRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await projectClient.getVisibility(args ?? {});
       return { ok: true, data: response.visibility };
@@ -47,10 +49,10 @@ export async function getVisibility(args: MessageInitShape<typeof StringRequestS
   }
 }
 
-export async function getConfig(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<string>> {
+export async function getConfig(args: MessageInitShape<typeof ProjectGetConfigRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await projectClient.getConfig(args ?? {});
-      return { ok: true, data: response.rawJson };
+      return { ok: true, data: JSON.parse(response.rawJson) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -68,13 +70,13 @@ export async function setConfig(args: MessageInitShape<typeof ProjectSetConfigRe
 export async function verifyPassword(args: MessageInitShape<typeof ProjectVerifyPasswordRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await projectClient.verifyPassword(args ?? {});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.valid };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function deleteProject(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
+export async function deleteProject(args: MessageInitShape<typeof ProjectDeleteRequestSchema>): Promise<RpcResult<void>> {
   try {
       await projectClient.delete(args ?? {});
       return { ok: true, data: undefined };

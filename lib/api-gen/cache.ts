@@ -6,10 +6,10 @@
 
 import {
   CacheAggregateRequestSchema,
+  CacheDropRequestSchema,
   CacheGrepRequestSchema,
   CacheReadRequestSchema,
   CacheService,
-  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -45,7 +45,7 @@ export async function aggregate(args: MessageInitShape<typeof CacheAggregateRequ
   }
 }
 
-export async function drop(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
+export async function drop(args: MessageInitShape<typeof CacheDropRequestSchema>): Promise<RpcResult<void>> {
   try {
       await cacheClient.drop(args ?? {});
       return { ok: true, data: undefined };

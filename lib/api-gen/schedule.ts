@@ -5,13 +5,15 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
+  CancelCronRequestSchema,
   CronJobListPb,
   CronLogListPb,
   CronNotificationListPb,
-  NumberRequestSchema,
+  GetCronLogsRequestSchema,
+  RunCronNowRequestSchema,
   ScheduleCronRequestSchema,
   ScheduleService,
-  StringRequestSchema,
+  UpdateCronRequestSchema,
   ValidatePipelineRequestSchema,
   ValidatePipelineResultPb,
 } from '../proto-gen/firebat_pb';
@@ -31,7 +33,7 @@ export async function scheduleCron(args: MessageInitShape<typeof ScheduleCronReq
   }
 }
 
-export async function cancelCron(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
+export async function cancelCron(args: MessageInitShape<typeof CancelCronRequestSchema>): Promise<RpcResult<void>> {
   try {
       await scheduleClient.cancelCron(args ?? {});
       return { ok: true, data: undefined };
@@ -40,7 +42,7 @@ export async function cancelCron(args: MessageInitShape<typeof StringRequestSche
   }
 }
 
-export async function updateCron(args: MessageInitShape<typeof ScheduleCronRequestSchema>): Promise<RpcResult<void>> {
+export async function updateCron(args: MessageInitShape<typeof UpdateCronRequestSchema>): Promise<RpcResult<void>> {
   try {
       await scheduleClient.updateCron(args ?? {});
       return { ok: true, data: undefined };
@@ -58,7 +60,7 @@ export async function listCron(): Promise<RpcResult<CronJobListPb>> {
   }
 }
 
-export async function getLogs(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<CronLogListPb>> {
+export async function getLogs(args: MessageInitShape<typeof GetCronLogsRequestSchema>): Promise<RpcResult<CronLogListPb>> {
   try {
       const response = await scheduleClient.getLogs(args ?? {});
       return { ok: true, data: response };
@@ -85,7 +87,7 @@ export async function consumeNotifications(): Promise<RpcResult<CronNotification
   }
 }
 
-export async function runNow(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
+export async function runNow(args: MessageInitShape<typeof RunCronNowRequestSchema>): Promise<RpcResult<void>> {
   try {
       await scheduleClient.runNow(args ?? {});
       return { ok: true, data: undefined };

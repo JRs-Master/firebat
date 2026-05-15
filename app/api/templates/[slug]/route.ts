@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 export const GET = withAuth(async (_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) => {
   const { slug } = await params;
-  const res = await getTemplate({ value: slug });
+  const res = await getTemplate({ slug: slug });
   if (!res.ok || !res.data) {
     return NextResponse.json({ success: false, error: '템플릿을 찾을 수 없습니다.' }, { status: 404 });
   }
@@ -21,7 +21,7 @@ export const GET = withAuth(async (_req: NextRequest, { params }: { params: Prom
 
 export const DELETE = withAuth(async (_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) => {
   const { slug } = await params;
-  const res = await deleteTemplate({ value: slug });
+  const res = await deleteTemplate({ slug: slug });
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   }

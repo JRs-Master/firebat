@@ -43,7 +43,7 @@ export const DELETE = withAuth(async (req: NextRequest) => {
   if (!slug) {
     return NextResponse.json({ success: false, error: 'slug 파라미터가 필요합니다.' }, { status: 400 });
   }
-  const res = await deletePage({ value: slug });
+  const res = await deletePage({ slug });
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   }

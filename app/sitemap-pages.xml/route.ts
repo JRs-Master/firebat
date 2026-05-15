@@ -20,7 +20,7 @@ export async function GET(req: Request) {
   const result = await listPages();
   const dbPages = result.ok ? (result.data.items ?? []) : [];
   const staticRes = await listStatic();
-  const staticPages = staticRes.ok ? (staticRes.data.values ?? []) : [];
+  const staticPages = staticRes.ok ? staticRes.data : [];
 
   const entries = staticPages
     .filter(slug => !dbPages.some(p => p.slug === slug))

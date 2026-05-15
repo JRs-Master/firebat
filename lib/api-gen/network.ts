@@ -15,10 +15,10 @@ import { type RpcResult, toRpcError } from './types';
 
 const networkClient = createClient(NetworkService, transport);
 
-export async function fetch(args: MessageInitShape<typeof NetworkFetchRequestSchema>): Promise<RpcResult<unknown>> {
+export async function fetch(args: MessageInitShape<typeof NetworkFetchRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await networkClient.fetch(args ?? {});
-      return { ok: true, data: JSON.parse(response.rawJson) };
+      return { ok: true, data: response.responseJson };
   } catch (err) {
     return toRpcError(err);
   }

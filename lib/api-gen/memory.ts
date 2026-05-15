@@ -5,9 +5,10 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
+  MemoryDeleteFileRequestSchema,
+  MemoryReadFileRequestSchema,
   MemorySaveFileRequestSchema,
   MemoryService,
-  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -19,13 +20,13 @@ const memoryClient = createClient(MemoryService, transport);
 export async function getIndex(): Promise<RpcResult<string>> {
   try {
       const response = await memoryClient.getIndex({});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.content };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function readFile(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
+export async function readFile(args: MessageInitShape<typeof MemoryReadFileRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await memoryClient.readFile(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -52,7 +53,7 @@ export async function saveFile(args: MessageInitShape<typeof MemorySaveFileReque
   }
 }
 
-export async function deleteFile(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<void>> {
+export async function deleteFile(args: MessageInitShape<typeof MemoryDeleteFileRequestSchema>): Promise<RpcResult<void>> {
   try {
       await memoryClient.deleteFile(args ?? {});
       return { ok: true, data: undefined };

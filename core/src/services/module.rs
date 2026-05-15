@@ -2,6 +2,9 @@
 //!
 //! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
 //! From impl 정의 — core managers struct ↔ proto generated struct 변환.
+//!
+//! 2026-05-15 unique RPC message — Empty/StringRequest/BoolRequest/RawJsonPb shared 폐기 +
+//! RPC 별 명시 message. 동적 schema 응답 (config / settings 등) 은 단일 raw_json 필드 보존.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -9,9 +12,13 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::module::{ModuleManager, SystemEntry};
 use crate::ports::ModuleOutput;
 use crate::proto::{
-    module_service_server::ModuleService, BoolRequest, Empty, ModuleEntryPb, ModuleGetSchemaRequest,
-    ModuleListPb, ModuleOutputPb, ModuleRunRequest, ModuleSetEnabledRequest, ModuleSetSettingsRequest,
-    RawJsonPb, StringRequest,
+    module_service_server::ModuleService, ModuleEntryPb, ModuleGetCmsSettingsRequest,
+    ModuleGetCmsSettingsResponse, ModuleGetConfigRequest, ModuleGetConfigResponse,
+    ModuleGetKakaoMapJsKeyRequest, ModuleGetKakaoMapJsKeyResponse, ModuleGetSchemaRequest,
+    ModuleGetSchemaResponse, ModuleGetSettingsRequest, ModuleGetSettingsResponse,
+    ModuleIsEnabledRequest, ModuleIsEnabledResponse, ModuleListSystemResponse, ModuleListUserResponse, ModuleListSystemRequest,
+    ModuleListUserRequest, ModuleOutputPb, ModuleRunRequest, ModuleSetEnabledRequest,
+    ModuleSetEnabledResponse, ModuleSetSettingsRequest, ModuleSetSettingsResponse,
 };
 
 pub struct ModuleServiceImpl {
@@ -24,10 +31,8 @@ impl ModuleServiceImpl {
     }
 }
 
-fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
-    RawJsonPb {
-        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
-    }
+fn to_raw_json(value: &impl serde::Serialize) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "null".to_string())
 }
 
 // ─── proto ↔ core managers struct 변환 ────────────────────────────────────────
@@ -103,8 +108,8 @@ impl ModuleService for ModuleServiceImpl {
 
     async fn list_system(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<ModuleListPb>, TonicStatus> {
+        _req: Request<ModuleListSystemRequest>,
+    ) -> Result<Response<ModuleListSystemResponse>, TonicStatus> {
         let entries = self
             .manager
             .list_system()
@@ -112,13 +117,13 @@ impl ModuleService for ModuleServiceImpl {
             .into_iter()
             .map(Into::into)
             .collect();
-        Ok(Response::new(ModuleListPb { entries }))
+        Ok(Response::new(ModuleListSystemResponse { entries }))
     }
 
     async fn list_user(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<ModuleListPb>, TonicStatus> {
+        _req: Request<ModuleListUserRequest>,
+    ) -> Result<Response<ModuleListUserResponse>, TonicStatus> {
         let entries = self
             .manager
             .list_user_modules()
@@ -126,49 +131,55 @@ impl ModuleService for ModuleServiceImpl {
             .into_iter()
             .map(Into::into)
             .collect();
-        Ok(Response::new(ModuleListPb { entries }))
+        Ok(Response::new(ModuleListUserResponse { entries }))
     }
 
     async fn get_schema(
         &self,
         req: Request<ModuleGetSchemaRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+    ) -> Result<Response<ModuleGetSchemaResponse>, TonicStatus> {
         let args = req.into_inner();
         let config = self.manager.get_module_config(&args.scope, &args.name).await;
-        Ok(Response::new(raw_json(&config)))
+        Ok(Response::new(ModuleGetSchemaResponse {
+            raw_json: to_raw_json(&config),
+        }))
     }
 
     async fn get_settings(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let name = req.into_inner().value;
+        req: Request<ModuleGetSettingsRequest>,
+    ) -> Result<Response<ModuleGetSettingsResponse>, TonicStatus> {
+        let name = req.into_inner().name;
         let settings = self.manager.get_settings(&name);
-        Ok(Response::new(raw_json(&settings)))
+        Ok(Response::new(ModuleGetSettingsResponse {
+            raw_json: to_raw_json(&settings),
+        }))
     }
 
     async fn get_config(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+        req: Request<ModuleGetConfigRequest>,
+    ) -> Result<Response<ModuleGetConfigResponse>, TonicStatus> {
         // 옛 TS `Core.getModuleConfig(name)` 1:1 — `ModuleManager.getConfig(name)` 호출.
         // system/modules → system/services → user/modules 순서. 호출자 (e.g. /api/settings/modules)
         // 가 scope 모를 때 첫 hit 반환. 옛 코드 user scope 만 시도해 system 모듈 (browser-scrape /
         // kakao-talk / kiwoom 등) 의 secrets 자동 UI 생성 안 되던 버그 (2026-05-10 발견 후 fix).
-        let name = req.into_inner().value;
+        let name = req.into_inner().name;
         let config = self.manager.get_config_any_scope(&name).await;
-        Ok(Response::new(raw_json(&config)))
+        Ok(Response::new(ModuleGetConfigResponse {
+            raw_json: to_raw_json(&config),
+        }))
     }
 
     async fn set_settings(
         &self,
         req: Request<ModuleSetSettingsRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
+    ) -> Result<Response<ModuleSetSettingsResponse>, TonicStatus> {
         let args = req.into_inner();
         let settings: serde_json::Value = serde_json::from_str(&args.settings_json)
             .map_err(|e| TonicStatus::invalid_argument(format!("set_settings args: {e}")))?;
         if self.manager.set_settings(&args.name, &settings) {
-            Ok(Response::new(Empty {}))
+            Ok(Response::new(ModuleSetSettingsResponse {}))
         } else {
             Err(TonicStatus::internal("set_settings 실패"))
         }
@@ -176,21 +187,21 @@ impl ModuleService for ModuleServiceImpl {
 
     async fn is_enabled(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<BoolRequest>, TonicStatus> {
-        let name = req.into_inner().value;
-        Ok(Response::new(BoolRequest {
-            value: self.manager.is_enabled(&name),
+        req: Request<ModuleIsEnabledRequest>,
+    ) -> Result<Response<ModuleIsEnabledResponse>, TonicStatus> {
+        let name = req.into_inner().name;
+        Ok(Response::new(ModuleIsEnabledResponse {
+            enabled: self.manager.is_enabled(&name),
         }))
     }
 
     async fn set_enabled(
         &self,
         req: Request<ModuleSetEnabledRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
+    ) -> Result<Response<ModuleSetEnabledResponse>, TonicStatus> {
         let args = req.into_inner();
         if self.manager.set_enabled(&args.name, args.enabled) {
-            Ok(Response::new(Empty {}))
+            Ok(Response::new(ModuleSetEnabledResponse {}))
         } else {
             Err(TonicStatus::internal("set_enabled 실패"))
         }
@@ -198,24 +209,26 @@ impl ModuleService for ModuleServiceImpl {
 
     async fn get_cms_settings(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+        _req: Request<ModuleGetCmsSettingsRequest>,
+    ) -> Result<Response<ModuleGetCmsSettingsResponse>, TonicStatus> {
         let stored = self.manager.get_settings("cms");
         let merged = merge_with_defaults(stored);
-        Ok(Response::new(raw_json(&merged)))
+        Ok(Response::new(ModuleGetCmsSettingsResponse {
+            raw_json: to_raw_json(&merged),
+        }))
     }
 
     async fn get_kakao_map_js_key(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<StringRequest>, TonicStatus> {
+        _req: Request<ModuleGetKakaoMapJsKeyRequest>,
+    ) -> Result<Response<ModuleGetKakaoMapJsKeyResponse>, TonicStatus> {
         let settings = self.manager.get_settings("cms");
         let key = settings
             .get("kakaoMapJsKey")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        Ok(Response::new(StringRequest { value: key }))
+        Ok(Response::new(ModuleGetKakaoMapJsKeyResponse { key }))
     }
 }
 

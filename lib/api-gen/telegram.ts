@@ -5,9 +5,10 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
-  StringRequestSchema,
+  TelegramIsOwnerRequestSchema,
   TelegramProcessMessageRequestSchema,
   TelegramService,
+  TelegramSetupWebhookRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -16,7 +17,7 @@ import { type RpcResult, toRpcError } from './types';
 
 const telegramClient = createClient(TelegramService, transport);
 
-export async function setupWebhook(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<unknown>> {
+export async function setupWebhook(args: MessageInitShape<typeof TelegramSetupWebhookRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await telegramClient.setupWebhook(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -43,10 +44,10 @@ export async function getWebhookStatus(): Promise<RpcResult<unknown>> {
   }
 }
 
-export async function isOwner(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<boolean>> {
+export async function isOwner(args: MessageInitShape<typeof TelegramIsOwnerRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await telegramClient.isOwner(args ?? {});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.isOwner };
   } catch (err) {
     return toRpcError(err);
   }

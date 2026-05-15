@@ -2,6 +2,8 @@
 //!
 //! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
 //! From impl 정의 — core port struct ↔ proto generated struct 변환.
+//! 2026-05-15 — 옛 공유 타입 (Empty / StringRequest / BoolRequest / OptionalStringPb / StringListPb)
+//! 폐기 + 매 RPC unique Request / Response.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -9,11 +11,14 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::managers::page::{PageManager, TagSummary};
 use crate::ports::{MediaUsageEntry, PageListItem, PageRecord};
 use crate::proto::{
-    page_service_server::PageService, BoolRequest, Empty, MediaUsageEntryPb, MediaUsageListPb,
-    OptionalStringPb, PageFindRelatedRequest, PageListItemPb, PageListResponsePb, PageRecordPb,
-    PageRenameRequest, PageSaveRequest, PageSaveResultPb, PageSearchRequest,
-    PageSetVisibilityRequest, PageVerifyPasswordRequest, StringListPb, StringRequest,
-    TagListPb, TagSummaryPb,
+    page_service_server::PageService, MediaUsageEntryPb, MediaUsageListPb, PageDeleteRequest,
+    PageDeleteResponse, PageFindMediaUsageRequest, PageFindRelatedRequest, PageGetRedirectRequest,
+    PageGetRedirectResponse, PageGetRequest, PageListAllTagsRequest, PageListItemPb,
+    PageFindRelatedResponse, PageListRequest, PageListResponse, PageListStaticRequest,
+    PageListStaticResponse, PageSearchResponse,
+    PageRecordPb, PageRenameRequest, PageRenameResponse, PageSaveRequest, PageSaveResultPb,
+    PageSearchRequest, PageSetVisibilityRequest, PageSetVisibilityResponse, PageVerifyPasswordRequest,
+    PageVerifyPasswordResponse, TagListPb, TagSummaryPb,
 };
 
 pub struct PageServiceImpl {
@@ -44,10 +49,8 @@ impl From<PageListItem> for PageListItemPb {
     }
 }
 
-fn page_list_to_pb(items: Vec<PageListItem>) -> PageListResponsePb {
-    PageListResponsePb {
-        items: items.into_iter().map(Into::into).collect(),
-    }
+fn page_list_items_pb(items: Vec<PageListItem>) -> Vec<PageListItemPb> {
+    items.into_iter().map(Into::into).collect()
 }
 
 impl From<PageRecord> for PageRecordPb {
@@ -86,25 +89,30 @@ impl From<TagSummary> for TagSummaryPb {
 
 #[tonic::async_trait]
 impl PageService for PageServiceImpl {
-    async fn list(&self, _req: Request<Empty>) -> Result<Response<PageListResponsePb>, TonicStatus> {
-        Ok(Response::new(page_list_to_pb(self.manager.list())))
+    async fn list(
+        &self,
+        _req: Request<PageListRequest>,
+    ) -> Result<Response<PageListResponse>, TonicStatus> {
+        Ok(Response::new(PageListResponse {
+            items: page_list_items_pb(self.manager.list()),
+        }))
     }
 
     async fn search(
         &self,
         req: Request<PageSearchRequest>,
-    ) -> Result<Response<PageListResponsePb>, TonicStatus> {
+    ) -> Result<Response<PageSearchResponse>, TonicStatus> {
         let args = req.into_inner();
-        Ok(Response::new(page_list_to_pb(
-            self.manager.search(&args.query, args.limit.map(|v| v as usize)),
-        )))
+        Ok(Response::new(PageSearchResponse {
+            items: page_list_items_pb(self.manager.search(&args.query, args.limit.map(|v| v as usize))),
+        }))
     }
 
     async fn get(
         &self,
-        req: Request<StringRequest>,
+        req: Request<PageGetRequest>,
     ) -> Result<Response<PageRecordPb>, TonicStatus> {
-        let slug = req.into_inner().value;
+        let slug = req.into_inner().slug;
         Ok(Response::new(
             self.manager
                 .get(&slug)
@@ -143,30 +151,33 @@ impl PageService for PageServiceImpl {
 
     async fn delete(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
-        let slug = req.into_inner().value;
+        req: Request<PageDeleteRequest>,
+    ) -> Result<Response<PageDeleteResponse>, TonicStatus> {
+        let slug = req.into_inner().slug;
         self.manager
             .delete(&slug)
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(PageDeleteResponse {}))
     }
 
-    async fn rename(&self, req: Request<PageRenameRequest>) -> Result<Response<Empty>, TonicStatus> {
+    async fn rename(
+        &self,
+        req: Request<PageRenameRequest>,
+    ) -> Result<Response<PageRenameResponse>, TonicStatus> {
         let args = req.into_inner();
         self.manager
             .rename(&args.old_slug, &args.new_slug, args.set_redirect.unwrap_or(false))
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(PageRenameResponse {}))
     }
 
     async fn get_redirect(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<OptionalStringPb>, TonicStatus> {
-        let from = req.into_inner().value;
+        req: Request<PageGetRedirectRequest>,
+    ) -> Result<Response<PageGetRedirectResponse>, TonicStatus> {
+        let from = req.into_inner().slug;
         let to = self.manager.get_redirect(&from);
-        Ok(Response::new(OptionalStringPb {
+        Ok(Response::new(PageGetRedirectResponse {
             value: to.clone().unwrap_or_default(),
             present: to.is_some(),
         }))
@@ -174,17 +185,17 @@ impl PageService for PageServiceImpl {
 
     async fn list_static(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<StringListPb>, TonicStatus> {
+        _req: Request<PageListStaticRequest>,
+    ) -> Result<Response<PageListStaticResponse>, TonicStatus> {
         let slugs = self.manager.list_static().await;
-        Ok(Response::new(StringListPb { values: slugs }))
+        Ok(Response::new(PageListStaticResponse { slugs }))
     }
 
     async fn find_media_usage(
         &self,
-        req: Request<StringRequest>,
+        req: Request<PageFindMediaUsageRequest>,
     ) -> Result<Response<MediaUsageListPb>, TonicStatus> {
-        let media_slug = req.into_inner().value;
+        let media_slug = req.into_inner().media_slug;
         let entries = self
             .manager
             .find_media_usage(&media_slug)
@@ -197,40 +208,42 @@ impl PageService for PageServiceImpl {
     async fn set_visibility(
         &self,
         req: Request<PageSetVisibilityRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
+    ) -> Result<Response<PageSetVisibilityResponse>, TonicStatus> {
         let args = req.into_inner();
         self.manager
             .set_visibility(&args.slug, &args.visibility, args.password.as_deref())
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(PageSetVisibilityResponse {}))
     }
 
     async fn verify_password(
         &self,
         req: Request<PageVerifyPasswordRequest>,
-    ) -> Result<Response<BoolRequest>, TonicStatus> {
+    ) -> Result<Response<PageVerifyPasswordResponse>, TonicStatus> {
         let args = req.into_inner();
-        Ok(Response::new(BoolRequest {
-            value: self.manager.verify_password(&args.slug, &args.password),
+        Ok(Response::new(PageVerifyPasswordResponse {
+            valid: self.manager.verify_password(&args.slug, &args.password),
         }))
     }
 
     async fn find_related(
         &self,
         req: Request<PageFindRelatedRequest>,
-    ) -> Result<Response<PageListResponsePb>, TonicStatus> {
+    ) -> Result<Response<PageFindRelatedResponse>, TonicStatus> {
         let args = req.into_inner();
         let aliases = crate::utils::tag_utils::parse_tag_aliases(args.tag_aliases_raw.as_deref());
         let limit = args.limit.map(|v| v as usize).unwrap_or(5);
         let related = self
             .manager
             .find_related_pages(&args.slug, limit, &aliases);
-        Ok(Response::new(page_list_to_pb(related)))
+        Ok(Response::new(PageFindRelatedResponse {
+            items: page_list_items_pb(related),
+        }))
     }
 
     async fn list_all_tags(
         &self,
-        _req: Request<Empty>,
+        _req: Request<PageListAllTagsRequest>,
     ) -> Result<Response<TagListPb>, TonicStatus> {
         let aliases = crate::utils::tag_utils::TagAliases::new();
         let tags = self

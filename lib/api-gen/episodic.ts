@@ -5,15 +5,17 @@
 // alias 추가: proto/adapter-overrides.json 의 aliases 영역
 
 import {
+  EpisodicDeleteEventRequestSchema,
+  EpisodicGetEventRequestSchema,
   EpisodicLinkEntityRequestSchema,
   EpisodicListByEntityRequestSchema,
   EpisodicListRecentRequestSchema,
   EpisodicSaveEventRequestSchema,
+  EpisodicSaveEventResponse,
   EpisodicSearchEventsRequestSchema,
   EpisodicService,
+  EpisodicUnlinkEntityRequestSchema,
   EpisodicUpdateEventRequestSchema,
-  FactSaveResultPb,
-  NumberRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -22,7 +24,7 @@ import { type RpcResult, toRpcError } from './types';
 
 const episodicClient = createClient(EpisodicService, transport);
 
-export async function saveEvent(args: MessageInitShape<typeof EpisodicSaveEventRequestSchema>): Promise<RpcResult<FactSaveResultPb>> {
+export async function saveEvent(args: MessageInitShape<typeof EpisodicSaveEventRequestSchema>): Promise<RpcResult<EpisodicSaveEventResponse>> {
   try {
       const response = await episodicClient.saveEvent(args ?? {});
       return { ok: true, data: response };
@@ -40,7 +42,7 @@ export async function updateEvent(args: MessageInitShape<typeof EpisodicUpdateEv
   }
 }
 
-export async function deleteEvent(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<void>> {
+export async function deleteEvent(args: MessageInitShape<typeof EpisodicDeleteEventRequestSchema>): Promise<RpcResult<void>> {
   try {
       await episodicClient.deleteEvent(args ?? {});
       return { ok: true, data: undefined };
@@ -49,7 +51,7 @@ export async function deleteEvent(args: MessageInitShape<typeof NumberRequestSch
   }
 }
 
-export async function getEvent(args: MessageInitShape<typeof NumberRequestSchema>): Promise<RpcResult<unknown>> {
+export async function getEvent(args: MessageInitShape<typeof EpisodicGetEventRequestSchema>): Promise<RpcResult<unknown>> {
   try {
       const response = await episodicClient.getEvent(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
@@ -94,7 +96,7 @@ export async function linkEntity(args: MessageInitShape<typeof EpisodicLinkEntit
   }
 }
 
-export async function unlinkEntity(args: MessageInitShape<typeof EpisodicLinkEntityRequestSchema>): Promise<RpcResult<void>> {
+export async function unlinkEntity(args: MessageInitShape<typeof EpisodicUnlinkEntityRequestSchema>): Promise<RpcResult<void>> {
   try {
       await episodicClient.unlinkEntity(args ?? {});
       return { ok: true, data: undefined };
@@ -106,7 +108,7 @@ export async function unlinkEntity(args: MessageInitShape<typeof EpisodicLinkEnt
 export async function cleanupExpired(): Promise<RpcResult<bigint>> {
   try {
       const response = await episodicClient.cleanupExpired({});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.cleaned };
   } catch (err) {
     return toRpcError(err);
   }

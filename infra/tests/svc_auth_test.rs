@@ -6,7 +6,11 @@ use tonic::Request;
 
 use firebat_core::managers::auth::AuthManager;
 use firebat_core::ports::{IAuthPort, IVaultPort};
-use firebat_core::proto::{auth_service_server::AuthService, AuthLoginRequest, Empty, StringRequest};
+use firebat_core::proto::{
+    auth_service_server::AuthService, AuthGenerateApiTokenRequest, AuthGetApiTokenInfoRequest,
+    AuthIsAdminSetupRequest, AuthLoginRequest, AuthRevokeApiTokensRequest,
+    AuthValidateApiTokenRequest,
+};
 use firebat_core::services::auth::AuthServiceImpl;
 use firebat_infra::adapters::auth::VaultAuthAdapter;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
@@ -66,13 +70,19 @@ async fn is_admin_setup_via_grpc_reflects_state() {
     let manager = Arc::new(AuthManager::new(auth, vault));
     let service = AuthServiceImpl::new(manager.clone());
 
-    let resp = service.is_admin_setup(Request::new(Empty {})).await.unwrap();
-    assert!(!resp.into_inner().value);
+    let resp = service
+        .is_admin_setup(Request::new(AuthIsAdminSetupRequest {}))
+        .await
+        .unwrap();
+    assert!(!resp.into_inner().is_setup);
 
     // setup 후: true
     manager.set_admin_credentials(Some("testadmin"), Some("testpass"));
-    let resp = service.is_admin_setup(Request::new(Empty {})).await.unwrap();
-    assert!(resp.into_inner().value);
+    let resp = service
+        .is_admin_setup(Request::new(AuthIsAdminSetupRequest {}))
+        .await
+        .unwrap();
+    assert!(resp.into_inner().is_setup);
 }
 
 #[tokio::test]
@@ -80,35 +90,43 @@ async fn api_token_grpc_lifecycle() {
     let (service, _dir) = make_service();
     // 발급
     let resp = service
-        .generate_api_token(Request::new(StringRequest {
-            value: "MCP test".to_string(),
+        .generate_api_token(Request::new(AuthGenerateApiTokenRequest {
+            label: "MCP test".to_string(),
         }))
         .await
         .unwrap();
-    let token = resp.into_inner().value;
+    let token = resp.into_inner().token;
     assert!(token.starts_with("fbat_"));
 
     // 검증
     let resp = service
-        .validate_api_token(Request::new(StringRequest { value: token.clone() }))
+        .validate_api_token(Request::new(AuthValidateApiTokenRequest {
+            token: token.clone(),
+        }))
         .await
         .unwrap();
-    // AuthSessionPb — token="" 이면 미인증 (None 에 해당)
-    assert!(!resp.into_inner().token.is_empty());
+    // session.token="" 이면 미인증 (None 에 해당)
+    assert!(!resp.into_inner().session.unwrap().token.is_empty());
 
     // info
-    let resp = service.get_api_token_info(Request::new(Empty {})).await.unwrap();
+    let resp = service
+        .get_api_token_info(Request::new(AuthGetApiTokenInfoRequest {}))
+        .await
+        .unwrap();
     assert!(resp.into_inner().exists);
 
     // 폐기
-    let resp = service.revoke_api_tokens(Request::new(Empty {})).await.unwrap();
-    assert_eq!(resp.into_inner().value, 1);
+    let resp = service
+        .revoke_api_tokens(Request::new(AuthRevokeApiTokensRequest {}))
+        .await
+        .unwrap();
+    assert_eq!(resp.into_inner().revoked_count, 1);
 
     // 검증 실패
     let resp = service
-        .validate_api_token(Request::new(StringRequest { value: token }))
+        .validate_api_token(Request::new(AuthValidateApiTokenRequest { token }))
         .await
         .unwrap();
-    // 폐기 후 — token="" 빈 문자열로 미인증 표시
-    assert!(resp.into_inner().token.is_empty());
+    // 폐기 후 — session.token="" 빈 문자열로 미인증 표시
+    assert!(resp.into_inner().session.unwrap().token.is_empty());
 }

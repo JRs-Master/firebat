@@ -18,7 +18,7 @@ export const GET = withAuth(async (req: NextRequest) => {
   if (!slug) {
     return NextResponse.json({ success: false, error: 'slug 파라미터 필요' }, { status: 400 });
   }
-  const res = await findMediaUsage({ value: slug } as any);
+  const res = await findMediaUsage({ mediaSlug: slug });
   if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true, data: res.data?.entries ?? [] });
 });

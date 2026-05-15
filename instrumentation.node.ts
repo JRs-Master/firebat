@@ -20,7 +20,7 @@ if (!__gShut.__firebatShutdownWired) {
     console.log(`[Firebat] ${sig} 수신 — graceful shutdown 시작`);
     try {
       const { gracefulShutdown } = await import('./lib/api-gen/lifecycle');
-      await gracefulShutdown({ value: 25_000n });
+      await gracefulShutdown({ timeoutMs: 25_000n });
     } catch (err) {
       console.warn('[Firebat] shutdown 실패:', err);
     }

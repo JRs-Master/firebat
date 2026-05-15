@@ -5,8 +5,8 @@
 //! - IsOwner — Vault `system:telegram:owner-id` chat_id whitelist 매칭
 //! - ProcessMessage — webhook payload 파싱 (Phase B-17+ AiManager 연동 후 활성)
 //!
-//! Step 3 (typed RPC) — JsonValue raw 폐기 + RawJsonPb 사용.
-//! 모든 외부 Bot API 응답 및 process_message 결과 → RawJsonPb.
+//! 매 RPC unique Request / Response — buf STANDARD 정공.
+//! 옛 공유 타입 (StringRequest / BoolRequest / RawJsonPb / Empty) 폐기.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -15,8 +15,11 @@ use crate::managers::ai::AiManager;
 use crate::managers::module::ModuleManager;
 use crate::ports::{INetworkPort, IVaultPort, NetworkRequest};
 use crate::proto::{
-    telegram_service_server::TelegramService, BoolRequest, Empty, RawJsonPb, TelegramProcessMessageRequest,
-    StringRequest,
+    telegram_service_server::TelegramService, TelegramGetWebhookSecretRequest,
+    TelegramGetWebhookSecretResponse, TelegramGetWebhookStatusRequest,
+    TelegramGetWebhookStatusResponse, TelegramIsOwnerRequest, TelegramIsOwnerResponse,
+    TelegramProcessMessageRequest, TelegramProcessMessageResponse, TelegramRemoveWebhookRequest,
+    TelegramRemoveWebhookResponse, TelegramSetupWebhookRequest, TelegramSetupWebhookResponse,
 };
 
 pub struct TelegramServiceImpl {
@@ -69,19 +72,17 @@ impl TelegramServiceImpl {
     }
 }
 
-fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
-    RawJsonPb {
-        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
-    }
+fn to_raw(value: &impl serde::Serialize) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "null".to_string())
 }
 
 #[tonic::async_trait]
 impl TelegramService for TelegramServiceImpl {
     async fn setup_webhook(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let webhook_url = req.into_inner().value;
+        req: Request<TelegramSetupWebhookRequest>,
+    ) -> Result<Response<TelegramSetupWebhookResponse>, TonicStatus> {
+        let webhook_url = req.into_inner().webhook_url;
         let token = self
             .bot_token()
             .ok_or_else(|| TonicStatus::failed_precondition("TELEGRAM_BOT_TOKEN 미설정"))?;
@@ -103,13 +104,15 @@ impl TelegramService for TelegramServiceImpl {
             })
             .await
             .map_err(|e| TonicStatus::internal(format!("Telegram setWebhook: {e}")))?;
-        Ok(Response::new(raw_json(&resp.body)))
+        Ok(Response::new(TelegramSetupWebhookResponse {
+            raw_json: to_raw(&resp.body),
+        }))
     }
 
     async fn remove_webhook(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+        _req: Request<TelegramRemoveWebhookRequest>,
+    ) -> Result<Response<TelegramRemoveWebhookResponse>, TonicStatus> {
         let token = self
             .bot_token()
             .ok_or_else(|| TonicStatus::failed_precondition("TELEGRAM_BOT_TOKEN 미설정"))?;
@@ -125,13 +128,15 @@ impl TelegramService for TelegramServiceImpl {
             })
             .await
             .map_err(|e| TonicStatus::internal(format!("Telegram deleteWebhook: {e}")))?;
-        Ok(Response::new(raw_json(&resp.body)))
+        Ok(Response::new(TelegramRemoveWebhookResponse {
+            raw_json: to_raw(&resp.body),
+        }))
     }
 
     async fn get_webhook_status(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+        _req: Request<TelegramGetWebhookStatusRequest>,
+    ) -> Result<Response<TelegramGetWebhookStatusResponse>, TonicStatus> {
         let token = self
             .bot_token()
             .ok_or_else(|| TonicStatus::failed_precondition("TELEGRAM_BOT_TOKEN 미설정"))?;
@@ -147,43 +152,49 @@ impl TelegramService for TelegramServiceImpl {
             })
             .await
             .map_err(|e| TonicStatus::internal(format!("Telegram getWebhookInfo: {e}")))?;
-        Ok(Response::new(raw_json(&resp.body)))
+        Ok(Response::new(TelegramGetWebhookStatusResponse {
+            raw_json: to_raw(&resp.body),
+        }))
     }
 
     async fn is_owner(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<BoolRequest>, TonicStatus> {
-        let chat_id = req.into_inner().value;
+        req: Request<TelegramIsOwnerRequest>,
+    ) -> Result<Response<TelegramIsOwnerResponse>, TonicStatus> {
+        let chat_id = req.into_inner().chat_id;
         let owner = self
             .vault
             .get_secret("system:telegram:owner-id")
             .unwrap_or_default();
-        Ok(Response::new(BoolRequest {
-            value: !owner.is_empty() && owner == chat_id,
+        Ok(Response::new(TelegramIsOwnerResponse {
+            is_owner: !owner.is_empty() && owner == chat_id,
         }))
     }
 
     async fn get_webhook_secret(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+        _req: Request<TelegramGetWebhookSecretRequest>,
+    ) -> Result<Response<TelegramGetWebhookSecretResponse>, TonicStatus> {
         let secret = self.webhook_secret();
-        Ok(Response::new(raw_json(&serde_json::json!({"secret": secret}))))
+        Ok(Response::new(TelegramGetWebhookSecretResponse {
+            raw_json: to_raw(&serde_json::json!({"secret": secret})),
+        }))
     }
 
     async fn process_message(
         &self,
         req: Request<TelegramProcessMessageRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+    ) -> Result<Response<TelegramProcessMessageResponse>, TonicStatus> {
         let args = req.into_inner();
         let chat_id_str = args.chat_id;
 
         let (Some(ai), Some(module)) = (&self.ai, &self.module) else {
-            return Ok(Response::new(raw_json(&serde_json::json!({
-                "success": false,
-                "error": "AiManager + ModuleManager 미저장 — with_ai_and_module 후 활성"
-            }))));
+            return Ok(Response::new(TelegramProcessMessageResponse {
+                raw_json: to_raw(&serde_json::json!({
+                    "success": false,
+                    "error": "AiManager + ModuleManager 미저장 — with_ai_and_module 후 활성"
+                })),
+            }));
         };
 
         // 1. AI 호출 (history 없음, stateless — 옛 TS 1:1)
@@ -195,18 +206,22 @@ impl TelegramService for TelegramServiceImpl {
         let response = match ai_res {
             Ok(r) => r,
             Err(e) => {
-                return Ok(Response::new(raw_json(&serde_json::json!({
-                    "success": false,
-                    "error": format!("AI 응답 실패: {e}")
-                }))));
+                return Ok(Response::new(TelegramProcessMessageResponse {
+                    raw_json: to_raw(&serde_json::json!({
+                        "success": false,
+                        "error": format!("AI 응답 실패: {e}")
+                    })),
+                }));
             }
         };
         let reply = response.reply.trim().to_string();
         if reply.is_empty() {
-            return Ok(Response::new(raw_json(&serde_json::json!({
-                "success": false,
-                "error": "AI 응답 비어있음"
-            }))));
+            return Ok(Response::new(TelegramProcessMessageResponse {
+                raw_json: to_raw(&serde_json::json!({
+                    "success": false,
+                    "error": "AI 응답 비어있음"
+                })),
+            }));
         }
 
         // 2. sysmod_telegram send-message 로 응답 (chatId 명시) — 옛 TS 1:1.
@@ -225,14 +240,18 @@ impl TelegramService for TelegramServiceImpl {
             )
             .await;
         match send_res {
-            Ok(_) => Ok(Response::new(raw_json(&serde_json::json!({
-                "success": true,
-                "reply": reply,
-            })))),
-            Err(e) => Ok(Response::new(raw_json(&serde_json::json!({
-                "success": false,
-                "error": format!("응답 전송 실패: {e}")
-            })))),
+            Ok(_) => Ok(Response::new(TelegramProcessMessageResponse {
+                raw_json: to_raw(&serde_json::json!({
+                    "success": true,
+                    "reply": reply,
+                })),
+            })),
+            Err(e) => Ok(Response::new(TelegramProcessMessageResponse {
+                raw_json: to_raw(&serde_json::json!({
+                    "success": false,
+                    "error": format!("응답 전송 실패: {e}")
+                })),
+            })),
         }
     }
 }

@@ -2,6 +2,9 @@
 //!
 //! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
 //! From impl 정의 — core port/manager struct ↔ proto generated struct 변환.
+//!
+//! 2026-05-15 unique RPC message — Empty/StringRequest/BoolRequest/NumberRequest/OptionalStringPb/
+//! RawJsonPb shared 폐기. RPC 별 명시 message + 의미적 필드명 (slug / model / size 등).
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -11,12 +14,19 @@ use crate::ports::{
     ImageModelInfo, MediaFileRecord, MediaListOpts, MediaSaveOptions, MediaSaveResult, MediaVariant,
 };
 use crate::proto::{
-    media_service_server::MediaService, BoolRequest, Empty, GenerateImageResultPb, ImageModelListPb,
-    ImageModelPb, ImageSettingsPb, MediaFileRecordPb, MediaGenerateRequest, MediaListRequest,
-    MediaListResultPb, MediaReadPb, MediaSaveRequest, MediaSaveTempAttachmentRequest,
-    MediaStartGenerationRequest,
-    MediaSaveResultPb, MediaVariantPb, NumberRequest, OptionalStringPb, RawJsonPb,
-    StartGenerationPb, StringRequest,
+    media_service_server::MediaService, ImageModelListPb, ImageModelPb, MediaGenerateResponse,
+    MediaRegenerateResponse,
+    ImageSettingsPb, MediaCleanupOldAttachmentsRequest, MediaCleanupOldAttachmentsResponse,
+    MediaFileRecordPb, MediaGenerateRequest, MediaGetAvailableImageModelsRequest,
+    MediaGetImageDefaultQualityRequest, MediaGetImageDefaultQualityResponse,
+    MediaGetImageDefaultSizeRequest, MediaGetImageDefaultSizeResponse, MediaGetImageModelRequest,
+    MediaGetImageModelResponse, MediaGetImageSettingsRequest, MediaIsReadyRequest,
+    MediaIsReadyResponse, MediaListRequest, MediaListResultPb, MediaReadPb, MediaReadRequest,
+    MediaRegenerateRequest, MediaRemoveRequest, MediaRemoveResponse, MediaSaveRequest,
+    MediaSaveResultPb, MediaSaveTempAttachmentRequest, MediaSaveTempAttachmentResponse,
+    MediaSetImageDefaultQualityRequest, MediaSetImageDefaultQualityResponse,
+    MediaSetImageDefaultSizeRequest, MediaSetImageDefaultSizeResponse, MediaSetImageModelRequest,
+    MediaSetImageModelResponse, MediaStartGenerationRequest, MediaVariantPb, StartGenerationPb,
 };
 
 pub struct MediaServiceImpl {
@@ -86,9 +96,27 @@ impl From<MediaSaveResult> for MediaSaveResultPb {
     }
 }
 
-impl From<GenerateImageResult> for GenerateImageResultPb {
+impl From<GenerateImageResult> for MediaGenerateResponse {
     fn from(r: GenerateImageResult) -> Self {
-        GenerateImageResultPb {
+        MediaGenerateResponse {
+            url: r.url,
+            thumbnail_url: r.thumbnail_url,
+            variants: r.variants.into_iter().map(Into::into).collect(),
+            blurhash: r.blurhash,
+            width: r.width,
+            height: r.height,
+            slug: r.slug,
+            revised_prompt: r.revised_prompt,
+            model_id: r.model_id,
+            aspect_ratio: r.aspect_ratio,
+            cost_usd: r.cost_usd,
+        }
+    }
+}
+
+impl From<GenerateImageResult> for MediaRegenerateResponse {
+    fn from(r: GenerateImageResult) -> Self {
+        MediaRegenerateResponse {
             url: r.url,
             thumbnail_url: r.thumbnail_url,
             variants: r.variants.into_iter().map(Into::into).collect(),
@@ -123,9 +151,9 @@ impl From<ImageModelInfo> for ImageModelPb {
 impl MediaService for MediaServiceImpl {
     async fn read(
         &self,
-        req: Request<StringRequest>,
+        req: Request<MediaReadRequest>,
     ) -> Result<Response<MediaReadPb>, TonicStatus> {
-        let slug = req.into_inner().value;
+        let slug = req.into_inner().slug;
         match self.manager.read(&slug).await {
             Ok(Some((binary, content_type, record))) => {
                 Ok(Response::new(MediaReadPb {
@@ -161,23 +189,23 @@ impl MediaService for MediaServiceImpl {
 
     async fn remove(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
-        let slug = req.into_inner().value;
+        req: Request<MediaRemoveRequest>,
+    ) -> Result<Response<MediaRemoveResponse>, TonicStatus> {
+        let slug = req.into_inner().slug;
         self.manager
             .remove(&slug)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(MediaRemoveResponse {}))
     }
 
     async fn is_ready(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<BoolRequest>, TonicStatus> {
-        let slug = req.into_inner().value;
-        Ok(Response::new(BoolRequest {
-            value: self.manager.is_ready(&slug).await,
+        req: Request<MediaIsReadyRequest>,
+    ) -> Result<Response<MediaIsReadyResponse>, TonicStatus> {
+        let slug = req.into_inner().slug;
+        Ok(Response::new(MediaIsReadyResponse {
+            ready: self.manager.is_ready(&slug).await,
         }))
     }
 
@@ -197,7 +225,7 @@ impl MediaService for MediaServiceImpl {
     async fn generate(
         &self,
         req: Request<MediaGenerateRequest>,
-    ) -> Result<Response<GenerateImageResultPb>, TonicStatus> {
+    ) -> Result<Response<MediaGenerateResponse>, TonicStatus> {
         let args = req.into_inner();
         let input: GenerateImageInput = serde_json::from_str(&args.input_json)
             .map_err(|e| TonicStatus::invalid_argument(format!("input_json: {e}")))?;
@@ -209,9 +237,9 @@ impl MediaService for MediaServiceImpl {
 
     async fn regenerate(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<GenerateImageResultPb>, TonicStatus> {
-        let slug = req.into_inner().value;
+        req: Request<MediaRegenerateRequest>,
+    ) -> Result<Response<MediaRegenerateResponse>, TonicStatus> {
+        let slug = req.into_inner().slug;
         match self.manager.regenerate_image_by_slug(&slug).await {
             Ok((result, _new_slug)) => Ok(Response::new(result.into())),
             Err(e) => Err(TonicStatus::internal(e)),
@@ -240,27 +268,27 @@ impl MediaService for MediaServiceImpl {
 
     async fn get_image_model(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<StringRequest>, TonicStatus> {
-        Ok(Response::new(StringRequest {
-            value: self.manager.get_image_model(),
+        _req: Request<MediaGetImageModelRequest>,
+    ) -> Result<Response<MediaGetImageModelResponse>, TonicStatus> {
+        Ok(Response::new(MediaGetImageModelResponse {
+            model: self.manager.get_image_model(),
         }))
     }
 
     async fn set_image_model(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
-        let model_id = req.into_inner().value;
+        req: Request<MediaSetImageModelRequest>,
+    ) -> Result<Response<MediaSetImageModelResponse>, TonicStatus> {
+        let model_id = req.into_inner().model;
         self.manager
             .set_image_model(&model_id)
             .map_err(TonicStatus::invalid_argument)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(MediaSetImageModelResponse {}))
     }
 
     async fn get_available_image_models(
         &self,
-        _req: Request<Empty>,
+        _req: Request<MediaGetAvailableImageModelsRequest>,
     ) -> Result<Response<ImageModelListPb>, TonicStatus> {
         let models = self
             .manager
@@ -273,53 +301,53 @@ impl MediaService for MediaServiceImpl {
 
     async fn get_image_default_size(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<OptionalStringPb>, TonicStatus> {
+        _req: Request<MediaGetImageDefaultSizeRequest>,
+    ) -> Result<Response<MediaGetImageDefaultSizeResponse>, TonicStatus> {
         let val = self.manager.get_image_default_size();
-        Ok(Response::new(OptionalStringPb {
-            value: val.clone().unwrap_or_default(),
+        Ok(Response::new(MediaGetImageDefaultSizeResponse {
+            size: val.clone().unwrap_or_default(),
             present: val.is_some(),
         }))
     }
 
     async fn set_image_default_size(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
-        let size = req.into_inner().value;
+        req: Request<MediaSetImageDefaultSizeRequest>,
+    ) -> Result<Response<MediaSetImageDefaultSizeResponse>, TonicStatus> {
+        let size = req.into_inner().size;
         let arg = if size.is_empty() { None } else { Some(size.as_str()) };
         self.manager
             .set_image_default_size(arg)
             .map_err(TonicStatus::invalid_argument)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(MediaSetImageDefaultSizeResponse {}))
     }
 
     async fn get_image_default_quality(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<OptionalStringPb>, TonicStatus> {
+        _req: Request<MediaGetImageDefaultQualityRequest>,
+    ) -> Result<Response<MediaGetImageDefaultQualityResponse>, TonicStatus> {
         let val = self.manager.get_image_default_quality();
-        Ok(Response::new(OptionalStringPb {
-            value: val.clone().unwrap_or_default(),
+        Ok(Response::new(MediaGetImageDefaultQualityResponse {
+            quality: val.clone().unwrap_or_default(),
             present: val.is_some(),
         }))
     }
 
     async fn set_image_default_quality(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
-        let q = req.into_inner().value;
+        req: Request<MediaSetImageDefaultQualityRequest>,
+    ) -> Result<Response<MediaSetImageDefaultQualityResponse>, TonicStatus> {
+        let q = req.into_inner().quality;
         let arg = if q.is_empty() { None } else { Some(q.as_str()) };
         self.manager
             .set_image_default_quality(arg)
             .map_err(TonicStatus::invalid_argument)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(MediaSetImageDefaultQualityResponse {}))
     }
 
     async fn get_image_settings(
         &self,
-        _req: Request<Empty>,
+        _req: Request<MediaGetImageSettingsRequest>,
     ) -> Result<Response<ImageSettingsPb>, TonicStatus> {
         let settings = self.manager.get_image_settings();
         let raw_json = serde_json::to_string(&settings)
@@ -330,7 +358,7 @@ impl MediaService for MediaServiceImpl {
     async fn save_temp_attachment(
         &self,
         req: Request<MediaSaveTempAttachmentRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
+    ) -> Result<Response<MediaSaveTempAttachmentResponse>, TonicStatus> {
         let args = req.into_inner();
         match self.manager.save_temp_attachment(&args.data_url).await {
             Ok(url) => {
@@ -342,7 +370,7 @@ impl MediaService for MediaServiceImpl {
                     .map(|(s, _)| s.to_string())
                     .unwrap_or_default();
                 let body = serde_json::json!({ "slug": slug, "url": url });
-                Ok(Response::new(RawJsonPb {
+                Ok(Response::new(MediaSaveTempAttachmentResponse {
                     raw_json: body.to_string(),
                 }))
             }
@@ -352,13 +380,17 @@ impl MediaService for MediaServiceImpl {
 
     async fn cleanup_old_attachments(
         &self,
-        _req: Request<Empty>,
-    ) -> Result<Response<NumberRequest>, TonicStatus> {
+        _req: Request<MediaCleanupOldAttachmentsRequest>,
+    ) -> Result<Response<MediaCleanupOldAttachmentsResponse>, TonicStatus> {
         // 30일 retention — internal cron 이 호출. 응답: 삭제된 파일 개수.
         const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
         match self.manager.cleanup_old_attachments(RETENTION_MS).await {
-            Ok(n) => Ok(Response::new(NumberRequest { value: n })),
-            Err(_) => Ok(Response::new(NumberRequest { value: 0 })),
+            Ok(n) => Ok(Response::new(MediaCleanupOldAttachmentsResponse {
+                deleted_count: n,
+            })),
+            Err(_) => Ok(Response::new(MediaCleanupOldAttachmentsResponse {
+                deleted_count: 0,
+            })),
         }
     }
 }

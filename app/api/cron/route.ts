@@ -17,7 +17,7 @@ export const POST = withAuth(async (req: NextRequest) => {
   const jobId = req.nextUrl.searchParams.get('jobId');
   if (!jobId) return NextResponse.json({ error: 'jobId 필요' }, { status: 400 });
   // fire-and-forget — 긴 LLM 호출 대기 안 함. 클라이언트는 cron-logs SSE 또는 폴링으로 결과 확인
-  void runNow({ value: jobId });
+  void runNow({ jobId });
   return NextResponse.json({ success: true, message: '잡 트리거됨. cron-logs 에서 결과 확인.' });
 });
 
@@ -27,7 +27,7 @@ export const GET = withAuth(async (req: NextRequest) => {
   if (!jobsRes.ok) {
     return NextResponse.json({ error: jobsRes.message }, { status: 500 });
   }
-  const logsRes = await getLogs({ value: 50n });
+  const logsRes = await getLogs({ limit: 50n });
   if (!logsRes.ok) {
     return NextResponse.json({ error: logsRes.message }, { status: 500 });
   }
@@ -60,7 +60,7 @@ export const DELETE = withAuth(async (req: NextRequest) => {
   const jobId = req.nextUrl.searchParams.get('jobId');
   if (!jobId) return NextResponse.json({ error: 'jobId 필요' }, { status: 400 });
 
-  const res = await cancelCron({ value: jobId });
+  const res = await cancelCron({ jobId });
   if (!res.ok) {
     const status = res.code === 'NOT_FOUND' ? 404 : 500;
     return NextResponse.json({ error: res.message }, { status });

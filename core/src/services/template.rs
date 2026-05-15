@@ -1,14 +1,16 @@
 //! gRPC TemplateService impl — TemplateManager wrapping.
 //!
-//! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
-//! TemplateConfig / TemplateEntry 는 동적 spec 포함 도메인 타입 → RawJsonPb.
+//! 매 RPC unique Request / Response — buf STANDARD 정공.
+//! 옛 공유 타입 (StringRequest / RawJsonPb / Empty) 폐기.
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::template::{TemplateConfig, TemplateManager};
 use crate::proto::{
-    template_service_server::TemplateService, Empty, RawJsonPb, StringRequest, TemplateSaveRequest,
+    template_service_server::TemplateService, TemplateDeleteRequest, TemplateDeleteResponse,
+    TemplateGetRequest, TemplateGetResponse, TemplateListRequest, TemplateListResponse,
+    TemplateSaveRequest, TemplateSaveResponse,
 };
 
 pub struct TemplateServiceImpl {
@@ -21,29 +23,37 @@ impl TemplateServiceImpl {
     }
 }
 
-fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
-    RawJsonPb {
-        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
-    }
+fn to_raw(value: &impl serde::Serialize) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "null".to_string())
 }
 
 #[tonic::async_trait]
 impl TemplateService for TemplateServiceImpl {
-    async fn list(&self, _req: Request<Empty>) -> Result<Response<RawJsonPb>, TonicStatus> {
+    async fn list(
+        &self,
+        _req: Request<TemplateListRequest>,
+    ) -> Result<Response<TemplateListResponse>, TonicStatus> {
         let entries = self.manager.list().await;
-        Ok(Response::new(raw_json(&entries)))
+        Ok(Response::new(TemplateListResponse {
+            raw_json: to_raw(&entries),
+        }))
     }
 
     async fn get(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<RawJsonPb>, TonicStatus> {
-        let slug = req.into_inner().value;
+        req: Request<TemplateGetRequest>,
+    ) -> Result<Response<TemplateGetResponse>, TonicStatus> {
+        let slug = req.into_inner().slug;
         let config = self.manager.get(&slug).await;
-        Ok(Response::new(raw_json(&config)))
+        Ok(Response::new(TemplateGetResponse {
+            raw_json: to_raw(&config),
+        }))
     }
 
-    async fn save(&self, req: Request<TemplateSaveRequest>) -> Result<Response<Empty>, TonicStatus> {
+    async fn save(
+        &self,
+        req: Request<TemplateSaveRequest>,
+    ) -> Result<Response<TemplateSaveResponse>, TonicStatus> {
         let args = req.into_inner();
         let config: TemplateConfig = serde_json::from_str(&args.config_json)
             .map_err(|e| TonicStatus::invalid_argument(format!("save config_json 파싱: {e}")))?;
@@ -51,19 +61,19 @@ impl TemplateService for TemplateServiceImpl {
             .save(&args.slug, &config)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(TemplateSaveResponse {}))
     }
 
     async fn delete(
         &self,
-        req: Request<StringRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
-        let slug = req.into_inner().value;
+        req: Request<TemplateDeleteRequest>,
+    ) -> Result<Response<TemplateDeleteResponse>, TonicStatus> {
+        let slug = req.into_inner().slug;
         self.manager
             .delete(&slug)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(TemplateDeleteResponse {}))
     }
 }
 

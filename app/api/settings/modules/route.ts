@@ -8,8 +8,8 @@ export const GET = withAuth(async (req: NextRequest) => {
   if (!name) return NextResponse.json({ success: false, error: '모듈 이름 필요' }, { status: 400 });
 
   const [settingsRes, configRes] = await Promise.all([
-    getModuleSettings({ value: name }),
-    getModuleConfig({ value: name }),
+    getModuleSettings({ name }),
+    getModuleConfig({ name }),
   ]);
   return NextResponse.json({
     success: true,

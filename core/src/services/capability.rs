@@ -2,6 +2,8 @@
 //!
 //! Step 3 (typed RPC) — JsonValue raw 폐기 + proto generated typed message 사용.
 //! From impl 정의 — core capabilities struct ↔ proto generated struct 변환.
+//! 2026-05-15: 옛 공유 타입 (Empty / StringRequest / RawJsonPb) → RPC 별 unique
+//! Request/Response 분리 (buf STANDARD lint RPC_REQUEST_RESPONSE_UNIQUE).
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
@@ -9,9 +11,12 @@ use tonic::{Request, Response, Status as TonicStatus};
 use crate::capabilities::{CapabilityProvider, CapabilitySettings};
 use crate::managers::capability::{CapabilityManager, CapabilitySummary};
 use crate::proto::{
-    capability_service_server::CapabilityService, CapabilityProviderListPb, CapabilityProviderPb,
-    CapabilityRegisterRequest, CapabilitySetSettingsRequest, CapabilitySettingsPb,
-    CapabilitySummaryListPb, CapabilitySummaryPb, Empty, RawJsonPb, StringRequest,
+    capability_service_server::CapabilityService, CapabilityGetProvidersRequest,
+    CapabilityGetSettingsRequest, CapabilityListRequest, CapabilityListResponse,
+    CapabilityListWithProvidersRequest, CapabilityProviderListPb, CapabilityProviderPb,
+    CapabilityRegisterRequest, CapabilityRegisterResponse, CapabilityResolveRequest,
+    CapabilitySetSettingsRequest, CapabilitySetSettingsResponse, CapabilitySettingsPb,
+    CapabilitySummaryListPb, CapabilitySummaryPb,
 };
 
 pub struct CapabilityServiceImpl {
@@ -24,10 +29,8 @@ impl CapabilityServiceImpl {
     }
 }
 
-fn raw_json(value: &impl serde::Serialize) -> RawJsonPb {
-    RawJsonPb {
-        raw_json: serde_json::to_string(value).unwrap_or_else(|_| "null".to_string()),
-    }
+fn to_raw_json(value: &impl serde::Serialize) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "null".to_string())
 }
 
 // ─── proto ↔ core capabilities struct 변환 ─────────────────────────────────
@@ -57,29 +60,39 @@ impl From<CapabilitySummary> for CapabilitySummaryPb {
 
 impl From<CapabilitySettings> for CapabilitySettingsPb {
     fn from(s: CapabilitySettings) -> Self {
-        CapabilitySettingsPb { providers: s.providers }
+        CapabilitySettingsPb {
+            providers: s.providers,
+        }
     }
 }
 
 #[tonic::async_trait]
 impl CapabilityService for CapabilityServiceImpl {
-    async fn list(&self, _req: Request<Empty>) -> Result<Response<RawJsonPb>, TonicStatus> {
+    async fn list(
+        &self,
+        _req: Request<CapabilityListRequest>,
+    ) -> Result<Response<CapabilityListResponse>, TonicStatus> {
         let caps = self.manager.list();
-        Ok(Response::new(raw_json(&caps)))
+        Ok(Response::new(CapabilityListResponse {
+            raw_json: to_raw_json(&caps),
+        }))
     }
 
-    async fn register(&self, req: Request<CapabilityRegisterRequest>) -> Result<Response<Empty>, TonicStatus> {
+    async fn register(
+        &self,
+        req: Request<CapabilityRegisterRequest>,
+    ) -> Result<Response<CapabilityRegisterResponse>, TonicStatus> {
         let args = req.into_inner();
         self.manager
             .register(&args.id, &args.label, &args.description);
-        Ok(Response::new(Empty {}))
+        Ok(Response::new(CapabilityRegisterResponse {}))
     }
 
     async fn get_providers(
         &self,
-        req: Request<StringRequest>,
+        req: Request<CapabilityGetProvidersRequest>,
     ) -> Result<Response<CapabilityProviderListPb>, TonicStatus> {
-        let cap_id = req.into_inner().value;
+        let cap_id = req.into_inner().cap_id;
         let providers = self
             .manager
             .get_providers(&cap_id)
@@ -92,7 +105,7 @@ impl CapabilityService for CapabilityServiceImpl {
 
     async fn list_with_providers(
         &self,
-        _req: Request<Empty>,
+        _req: Request<CapabilityListWithProvidersRequest>,
     ) -> Result<Response<CapabilitySummaryListPb>, TonicStatus> {
         let summaries = self
             .manager
@@ -106,9 +119,9 @@ impl CapabilityService for CapabilityServiceImpl {
 
     async fn resolve(
         &self,
-        req: Request<StringRequest>,
+        req: Request<CapabilityResolveRequest>,
     ) -> Result<Response<CapabilityProviderPb>, TonicStatus> {
-        let cap_id = req.into_inner().value;
+        let cap_id = req.into_inner().cap_id;
         let resolved = self.manager.resolve(&cap_id).await;
         Ok(Response::new(match resolved {
             Some(p) => p.into(),
@@ -121,9 +134,9 @@ impl CapabilityService for CapabilityServiceImpl {
 
     async fn get_settings(
         &self,
-        req: Request<StringRequest>,
+        req: Request<CapabilityGetSettingsRequest>,
     ) -> Result<Response<CapabilitySettingsPb>, TonicStatus> {
-        let cap_id = req.into_inner().value;
+        let cap_id = req.into_inner().cap_id;
         let settings = self.manager.get_settings(&cap_id);
         Ok(Response::new(settings.into()))
     }
@@ -131,13 +144,13 @@ impl CapabilityService for CapabilityServiceImpl {
     async fn set_settings(
         &self,
         req: Request<CapabilitySetSettingsRequest>,
-    ) -> Result<Response<Empty>, TonicStatus> {
+    ) -> Result<Response<CapabilitySetSettingsResponse>, TonicStatus> {
         let args = req.into_inner();
         let settings = CapabilitySettings {
             providers: args.providers,
         };
         if self.manager.set_settings(&args.cap_id, &settings) {
-            Ok(Response::new(Empty {}))
+            Ok(Response::new(CapabilitySetSettingsResponse {}))
         } else {
             Err(TonicStatus::internal("set_settings 저장 실패"))
         }

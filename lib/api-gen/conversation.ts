@@ -6,18 +6,25 @@
 
 import {
   ConversationCreateShareRequestSchema,
+  ConversationCreateShareResponse,
+  ConversationDeleteRequestSchema,
   ConversationGetCliSessionRequestSchema,
-  ConversationListPb,
-  ConversationOwnerIdRequestSchema,
-  ConversationRecordPb,
+  ConversationGetRequestSchema,
+  ConversationGetResponse,
+  ConversationGetShareRequestSchema,
+  ConversationGetShareResponse,
+  ConversationIsDeletedRequestSchema,
+  ConversationListDeletedRequestSchema,
+  ConversationListDeletedResponse,
+  ConversationListRequestSchema,
+  ConversationListResponse,
+  ConversationPermanentDeleteRequestSchema,
+  ConversationRestoreRequestSchema,
   ConversationSaveRequestSchema,
   ConversationSearchHistoryRequestSchema,
+  ConversationSearchHistoryResponse,
   ConversationService,
   ConversationSetCliSessionRequestSchema,
-  HistorySearchResultPb,
-  ShareResultPb,
-  SharedConversationPb,
-  StringRequestSchema,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -26,7 +33,7 @@ import { type RpcResult, toRpcError } from './types';
 
 const conversationClient = createClient(ConversationService, transport);
 
-export async function list(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<ConversationListPb>> {
+export async function list(args: MessageInitShape<typeof ConversationListRequestSchema>): Promise<RpcResult<ConversationListResponse>> {
   try {
       const response = await conversationClient.list(args ?? {});
       return { ok: true, data: response };
@@ -35,7 +42,7 @@ export async function list(args: MessageInitShape<typeof StringRequestSchema>): 
   }
 }
 
-export async function get(args: MessageInitShape<typeof ConversationOwnerIdRequestSchema>): Promise<RpcResult<ConversationRecordPb>> {
+export async function get(args: MessageInitShape<typeof ConversationGetRequestSchema>): Promise<RpcResult<ConversationGetResponse>> {
   try {
       const response = await conversationClient.get(args ?? {});
       return { ok: true, data: response };
@@ -53,7 +60,7 @@ export async function save(args: MessageInitShape<typeof ConversationSaveRequest
   }
 }
 
-export async function deleteConversation(args: MessageInitShape<typeof ConversationOwnerIdRequestSchema>): Promise<RpcResult<void>> {
+export async function deleteConversation(args: MessageInitShape<typeof ConversationDeleteRequestSchema>): Promise<RpcResult<void>> {
   try {
       await conversationClient.delete(args ?? {});
       return { ok: true, data: undefined };
@@ -62,16 +69,16 @@ export async function deleteConversation(args: MessageInitShape<typeof Conversat
   }
 }
 
-export async function isDeleted(args: MessageInitShape<typeof ConversationOwnerIdRequestSchema>): Promise<RpcResult<boolean>> {
+export async function isDeleted(args: MessageInitShape<typeof ConversationIsDeletedRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await conversationClient.isDeleted(args ?? {});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.isDeleted };
   } catch (err) {
     return toRpcError(err);
   }
 }
 
-export async function listDeleted(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<ConversationListPb>> {
+export async function listDeleted(args: MessageInitShape<typeof ConversationListDeletedRequestSchema>): Promise<RpcResult<ConversationListDeletedResponse>> {
   try {
       const response = await conversationClient.listDeleted(args ?? {});
       return { ok: true, data: response };
@@ -80,7 +87,7 @@ export async function listDeleted(args: MessageInitShape<typeof StringRequestSch
   }
 }
 
-export async function restore(args: MessageInitShape<typeof ConversationOwnerIdRequestSchema>): Promise<RpcResult<void>> {
+export async function restore(args: MessageInitShape<typeof ConversationRestoreRequestSchema>): Promise<RpcResult<void>> {
   try {
       await conversationClient.restore(args ?? {});
       return { ok: true, data: undefined };
@@ -89,7 +96,7 @@ export async function restore(args: MessageInitShape<typeof ConversationOwnerIdR
   }
 }
 
-export async function permanentDelete(args: MessageInitShape<typeof ConversationOwnerIdRequestSchema>): Promise<RpcResult<void>> {
+export async function permanentDelete(args: MessageInitShape<typeof ConversationPermanentDeleteRequestSchema>): Promise<RpcResult<void>> {
   try {
       await conversationClient.permanentDelete(args ?? {});
       return { ok: true, data: undefined };
@@ -98,7 +105,7 @@ export async function permanentDelete(args: MessageInitShape<typeof Conversation
   }
 }
 
-export async function searchHistory(args: MessageInitShape<typeof ConversationSearchHistoryRequestSchema>): Promise<RpcResult<HistorySearchResultPb>> {
+export async function searchHistory(args: MessageInitShape<typeof ConversationSearchHistoryRequestSchema>): Promise<RpcResult<ConversationSearchHistoryResponse>> {
   try {
       const response = await conversationClient.searchHistory(args ?? {});
       return { ok: true, data: response };
@@ -107,10 +114,10 @@ export async function searchHistory(args: MessageInitShape<typeof ConversationSe
   }
 }
 
-export async function getCliSession(args: MessageInitShape<typeof ConversationGetCliSessionRequestSchema>): Promise<RpcResult<string | null>> {
+export async function getCliSession(args: MessageInitShape<typeof ConversationGetCliSessionRequestSchema>): Promise<RpcResult<string | undefined>> {
   try {
       const response = await conversationClient.getCliSession(args ?? {});
-      return { ok: true, data: response.present ? response.value : null };
+      return { ok: true, data: response.sessionId };
   } catch (err) {
     return toRpcError(err);
   }
@@ -125,7 +132,7 @@ export async function setCliSession(args: MessageInitShape<typeof ConversationSe
   }
 }
 
-export async function createShare(args: MessageInitShape<typeof ConversationCreateShareRequestSchema>): Promise<RpcResult<ShareResultPb>> {
+export async function createShare(args: MessageInitShape<typeof ConversationCreateShareRequestSchema>): Promise<RpcResult<ConversationCreateShareResponse>> {
   try {
       const response = await conversationClient.createShare(args ?? {});
       return { ok: true, data: response };
@@ -134,7 +141,7 @@ export async function createShare(args: MessageInitShape<typeof ConversationCrea
   }
 }
 
-export async function getShare(args: MessageInitShape<typeof StringRequestSchema>): Promise<RpcResult<SharedConversationPb>> {
+export async function getShare(args: MessageInitShape<typeof ConversationGetShareRequestSchema>): Promise<RpcResult<ConversationGetShareResponse>> {
   try {
       const response = await conversationClient.getShare(args ?? {});
       return { ok: true, data: response };
@@ -146,7 +153,7 @@ export async function getShare(args: MessageInitShape<typeof StringRequestSchema
 export async function cleanupExpiredShares(): Promise<RpcResult<bigint>> {
   try {
       const response = await conversationClient.cleanupExpiredShares({});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.cleaned };
   } catch (err) {
     return toRpcError(err);
   }
@@ -155,7 +162,7 @@ export async function cleanupExpiredShares(): Promise<RpcResult<bigint>> {
 export async function cleanupOldDeleted(): Promise<RpcResult<bigint>> {
   try {
       const response = await conversationClient.cleanupOldDeleted({});
-      return { ok: true, data: response.value };
+      return { ok: true, data: response.cleaned };
   } catch (err) {
     return toRpcError(err);
   }

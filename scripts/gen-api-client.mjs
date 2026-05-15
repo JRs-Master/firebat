@@ -119,7 +119,14 @@ function serviceFileName(serviceName) {
   return serviceName.replace(/Service$/, '').toLowerCase();
 }
 
-/** response message → unwrap meta. */
+/** response message → unwrap meta.
+ *
+ * 2026-05-15 — unique RPC message 정공 후에도 동작 보존:
+ *  - 옛 `RawJsonPb` shared 폐기 후 unique `XResponse { string raw_json = 1; }` 도
+ *    JSON.parse 자동 unwrap (옛 호출 site 의 parsed value 기대 보존).
+ *  - 옛 `OptionalStringPb { string value, bool present }` shared 폐기 후 unique
+ *    `XResponse { string <field>, bool present }` (field 명 자유) 도 string|null 자동 unwrap.
+ */
 function unwrapMeta(msgName, messages) {
   if (!msgName || msgName === 'Empty') {
     return { kind: 'void', dataType: 'void' };
@@ -131,11 +138,36 @@ function unwrapMeta(msgName, messages) {
   if (msgName === 'OptionalStringPb') {
     return { kind: 'optionalString', dataType: 'string | null' };
   }
-  if (!msg || msg.fields.length === 0) {
+  if (!msg) {
     return { kind: 'message', dataType: msgName };
+  }
+  // 빈 message body (예: PageDeleteResponse {}) → void.
+  if (msg.fields.length === 0) {
+    return { kind: 'void', dataType: 'void' };
+  }
+  // 2-field { string <X>, bool present } 패턴 → OptionalString 자동 인식.
+  // 옛 공유 OptionalStringPb 패턴을 매 RPC unique Response 박은 후 보존. field 명 자유.
+  if (msg.fields.length === 2) {
+    const stringField = msg.fields.find(
+      f => f.type === 'string' && !f.repeated && !f.optional && f.name !== 'present',
+    );
+    const presentField = msg.fields.find(
+      f => f.name === 'present' && f.type === 'bool' && !f.repeated,
+    );
+    if (stringField && presentField) {
+      return {
+        kind: 'optionalStringNamed',
+        dataType: 'string | null',
+        fieldName: camelCase(stringField.name),
+      };
+    }
   }
   if (msg.fields.length === 1) {
     const f = msg.fields[0];
+    // 단일 `string raw_json` field → RawJsonPb 동등 (JSON.parse).
+    if (f.type === 'string' && f.name === 'raw_json' && !f.repeated) {
+      return { kind: 'rawJson', dataType: 'unknown' };
+    }
     const fieldName = camelCase(f.name);
     let scalar = null;
     if (f.type === 'string') scalar = 'string';
@@ -143,7 +175,13 @@ function unwrapMeta(msgName, messages) {
       scalar = f.type === 'int64' || f.type === 'uint64' ? 'bigint' : 'number';
     } else if (f.type === 'bool') scalar = 'boolean';
     if (scalar && !f.repeated) {
-      return { kind: 'singleField', dataType: scalar, fieldName };
+      // optional 면 `T | undefined` — protobuf-es 의 optional field 가 undefined 반환.
+      const dataType = f.optional ? `${scalar} | undefined` : scalar;
+      return { kind: 'singleField', dataType, fieldName };
+    }
+    // repeated scalar 단일 field → array unwrap.
+    if (scalar && f.repeated) {
+      return { kind: 'singleFieldArray', dataType: `${scalar}[]`, fieldName };
     }
   }
   return { kind: 'message', dataType: msgName };
@@ -159,6 +197,10 @@ function requestSig(msgName, messages) {
     return { argType: 'void', schemaImport: null, toRequest: '{}' };
   }
   const msg = messages[msgName];
+  // 빈 body message (예: PageListRequest {}) → caller 인자 0개.
+  if (msg && msg.fields.length === 0) {
+    return { argType: 'void', schemaImport: null, toRequest: '{}' };
+  }
   if (!msg) {
     return {
       argType: `MessageInitShape<typeof ${msgName}Schema>`,
@@ -189,9 +231,11 @@ function generateFunctionBody(rpc, messages, clientVar, serviceName) {
     unwrapLogic = `      await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: undefined };`;
   } else if (unwrap.kind === 'rawJson') {
     unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: JSON.parse(response.rawJson) };`;
-  } else if (unwrap.kind === 'optionalString') {
+  } else if (unwrap.kind === 'optionalString' || unwrap.kind === 'optionalStringMessage') {
     unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response.present ? response.value : null };`;
-  } else if (unwrap.kind === 'singleField') {
+  } else if (unwrap.kind === 'optionalStringNamed') {
+    unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response.present ? response.${unwrap.fieldName} : null };`;
+  } else if (unwrap.kind === 'singleField' || unwrap.kind === 'singleFieldArray') {
     unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response.${unwrap.fieldName} };`;
   } else {
     unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response };`;
@@ -218,7 +262,12 @@ function generateServiceFile(svc, messages, aliases) {
       schemaImports.add(schemaImport);
       needsInitShape = true;
     }
-    if (!['string', 'number', 'boolean', 'bigint', 'string | null', 'unknown', 'void'].includes(dataType)) {
+    // scalar / array / unknown 은 import 불필요 — proto-gen 안 message type 만 import.
+    // `T | undefined` / `T | null` 같은 union 도 scalar 의 변형이라 import 박지 마.
+    const isScalar = ['string', 'number', 'boolean', 'bigint', 'string | null', 'unknown', 'void'].includes(dataType);
+    const isScalarArray = /^(string|number|boolean|bigint)\[\]$/.test(dataType);
+    const isScalarUnion = /^(string|number|boolean|bigint) \| (undefined|null)$/.test(dataType);
+    if (!isScalar && !isScalarArray && !isScalarUnion) {
       imports.add(dataType);
     }
     fnBodies.push({ rpcCamel, argType, dataType, unwrapLogic, originalName: rpc.name });

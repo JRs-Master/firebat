@@ -29,7 +29,7 @@ export const GET = withAuth(async (_req: NextRequest) => {
     imageModelRes, imageModelsRes, imageDefaultSizeRes, imageDefaultQualityRes,
     anthropicCacheEnabledRes, subAgentEnabledRes, uiLangRes,
   ] = await Promise.all([
-    getGeminiKey({ value: VK_SYSTEM_AI_ROUTER_ENABLED }),
+    getGeminiKey({ key: VK_SYSTEM_AI_ROUTER_ENABLED }),
     getTimezone(),
     getAiModel(),
     getAiThinkingLevel(),
@@ -44,7 +44,7 @@ export const GET = withAuth(async (_req: NextRequest) => {
     getImageDefaultQuality(),
     getAnthropicCacheEnabled(),
     isSubAgentEnabled(),
-    getGeminiKey({ value: VK_SYSTEM_UI_LANG }),
+    getGeminiKey({ key: VK_SYSTEM_UI_LANG }),
   ]);
 
   const routerEnabledRaw = routerEnabledRes.ok ? routerEnabledRes.data : null;
@@ -76,42 +76,42 @@ export const PATCH = withAuth(async (req: NextRequest) => {
   const body = await req.json();
 
   if (body.timezone) {
-    await setTimezone({ value: body.timezone });
+    await setTimezone({ timezone: body.timezone });
   }
   if (body.aiModel) {
-    await setAiModel({ value: body.aiModel });
+    await setAiModel({ model: body.aiModel });
   }
   if (body.aiThinkingLevel) {
-    await setAiThinkingLevel({ value: body.aiThinkingLevel });
+    await setAiThinkingLevel({ level: body.aiThinkingLevel });
   }
   if (typeof body.aiRouterEnabled === 'boolean') {
     await setGeminiKey({ key: VK_SYSTEM_AI_ROUTER_ENABLED, value: body.aiRouterEnabled ? 'true' : 'false' });
   }
   if (typeof body.aiAssistantModel === 'string' && body.aiAssistantModel) {
-    await setAiAssistantModel({ value: body.aiAssistantModel });
+    await setAiAssistantModel({ model: body.aiAssistantModel });
   }
   if (typeof body.userPrompt === 'string') {
-    await setUserPrompt({ value: body.userPrompt });
+    await setUserPrompt({ prompt: body.userPrompt });
   }
   if (body.lastModelByCategory && typeof body.lastModelByCategory === 'object') {
     await setLastModelByCategory({ byCategoryJson: JSON.stringify(body.lastModelByCategory ?? {}) });
   }
   if (typeof body.imageModel === 'string' && body.imageModel) {
-    await setImageModel({ value: body.imageModel });
+    await setImageModel({ model: body.imageModel });
   }
   if ('imageDefaultSize' in body) {
     const v = body.imageDefaultSize;
-    await setImageDefaultSize({ value: typeof v === 'string' && v ? v : '' });
+    await setImageDefaultSize({ size: typeof v === 'string' && v ? v : '' });
   }
   if ('imageDefaultQuality' in body) {
     const v = body.imageDefaultQuality;
-    await setImageDefaultQuality({ value: typeof v === 'string' && v ? v : '' });
+    await setImageDefaultQuality({ quality: typeof v === 'string' && v ? v : '' });
   }
   if (typeof body.anthropicCacheEnabled === 'boolean') {
-    await setAnthropicCacheEnabled({ value: body.anthropicCacheEnabled });
+    await setAnthropicCacheEnabled({ enabled: body.anthropicCacheEnabled });
   }
   if (typeof body.subAgentEnabled === 'boolean') {
-    await setSubAgentEnabled({ value: body.subAgentEnabled });
+    await setSubAgentEnabled({ enabled: body.subAgentEnabled });
   }
   if (body.interfaceLang === 'ko' || body.interfaceLang === 'en') {
     // 어드민 UI 언어 vault 저장 — i18n hook 의 LangProvider 가 fetch 시 활용.

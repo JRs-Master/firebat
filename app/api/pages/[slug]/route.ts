@@ -13,7 +13,7 @@ export const GET = withAuth(async (
 ) => {
   const rawSlug = (await params).slug;
   const slug = safeDecodeSlug(rawSlug);
-  const res = await getPage({ value: slug });
+  const res = await getPage({ slug });
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 404 });
   }

@@ -12,7 +12,7 @@ import { normalizeTimestamps } from '../../../../lib/util';
  * 응답: { success: true, conversations: [{ id, title, createdAt, updatedAt }] }
  */
 export const GET = withAuth(async () => {
-  const res = await listDeletedConversations({ value: 'admin' });
+  const res = await listDeletedConversations({ owner: 'admin' });
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   }

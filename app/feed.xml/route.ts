@@ -62,7 +62,7 @@ export async function GET(req: Request) {
     const url = `${baseUrl}/${page.slug.split('/').map(encodeURIComponent).join('/')}`;
     const updatedMs = typeof page.updatedAt === 'bigint' ? Number(page.updatedAt) : Number(page.updatedAt ?? 0);
     const pubDate = updatedMs ? new Date(updatedMs).toUTCString() : new Date().toUTCString();
-    const pageRes = await getPage({ value: page.slug });
+    const pageRes = await getPage({ slug: page.slug });
     let spec: { head?: Record<string, unknown>; body?: unknown } = {};
     if (pageRes.ok && pageRes.data && pageRes.data.spec) {
       try {

@@ -26,7 +26,7 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (!body || typeof body.domain !== 'string') {
     return NextResponse.json({ success: false, error: 'domain 필요 (https://...)' }, { status: 400 });
   }
-  const res = await setupTelegramWebhook({ value: body.domain.trim() });
+  const res = await setupTelegramWebhook({ webhookUrl: body.domain.trim() });
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 400 });
   }

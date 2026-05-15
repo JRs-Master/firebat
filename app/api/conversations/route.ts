@@ -33,7 +33,7 @@ export const GET = withAuth(async (req: NextRequest) => {
       conversation: normalizeTimestamps({ ...(raw ?? {}), messages }),
     });
   }
-  const res = await listConversations({ value: 'admin' });
+  const res = await listConversations({ owner: 'admin' });
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   }

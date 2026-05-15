@@ -20,7 +20,7 @@ export const GET = withAuth(async () => {
 
 /** 새 토큰 생성 — 기존 토큰 무효화, 원본은 이 응답에서만 노출 */
 export const POST = withAuth(async () => {
-  const tokenRes = await generateApiToken({ value: 'MCP API' });
+  const tokenRes = await generateApiToken({ label: 'MCP API' });
   if (!tokenRes.ok) {
     return NextResponse.json({ success: false, error: tokenRes.message }, { status: 500 });
   }

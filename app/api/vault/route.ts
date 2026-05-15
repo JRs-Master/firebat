@@ -22,7 +22,7 @@ function maskKey(key: string | null): { hasKey: boolean; maskedKey: string } {
 export const GET = withAuth(async () => {
   const keys: Record<string, { hasKey: boolean; maskedKey: string }> = {};
   const entries = Object.entries(PROVIDER_KEYS);
-  const values = await Promise.all(entries.map(([, vaultKey]) => getGeminiKey({ value: vaultKey })));
+  const values = await Promise.all(entries.map(([, vaultKey]) => getGeminiKey({ key: vaultKey })));
   entries.forEach(([field], i) => {
     const v = values[i];
     const raw = v && v.ok ? v.data : null;
