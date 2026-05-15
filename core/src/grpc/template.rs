@@ -55,8 +55,13 @@ impl TemplateService for TemplateServiceImpl {
         req: Request<TemplateSaveRequest>,
     ) -> Result<Response<TemplateSaveResponse>, TonicStatus> {
         let args = req.into_inner();
-        let config: TemplateConfig = serde_json::from_str(&args.config_json)
-            .map_err(|e| TonicStatus::invalid_argument(format!("save config_json 파싱: {e}")))?;
+        let config: TemplateConfig = serde_json::from_str(&args.config_json).map_err(|e| {
+            TonicStatus::invalid_argument(crate::i18n::t(
+                "core.error.template.save_config_parse_failed",
+                None,
+                &[("detail", &e.to_string())],
+            ))
+        })?;
         self.manager
             .save(&args.slug, &config)
             .await

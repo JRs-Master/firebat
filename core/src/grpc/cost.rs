@@ -131,7 +131,11 @@ impl CostService for CostServiceImpl {
         if self.manager.set_budget(&budget) {
             Ok(Response::new(CostSetBudgetResponse {}))
         } else {
-            Err(TonicStatus::internal("set_budget 실패"))
+            Err(TonicStatus::internal(crate::i18n::t(
+                "core.error.rpc.set_budget_failed",
+                None,
+                &[],
+            )))
         }
     }
 

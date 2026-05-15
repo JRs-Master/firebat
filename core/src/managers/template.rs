@@ -99,16 +99,21 @@ impl TemplateManager {
     /// 템플릿 저장 — upsert. spec.body 검증.
     pub async fn save(&self, slug: &str, config: &TemplateConfig) -> InfraResult<()> {
         if !is_safe_slug(slug) {
-            return Err("잘못된 템플릿 slug 입니다.".into());
+            return Err(crate::i18n::t("core.error.template.invalid_slug", None, &[]));
         }
         if config.name.is_empty() {
-            return Err("name 필수입니다.".into());
+            return Err(crate::i18n::t("core.error.template.name_required", None, &[]));
         }
         if config.spec.body.is_empty() {
-            return Err("spec.body 비어있을 수 없습니다.".into());
+            return Err(crate::i18n::t("core.error.template.body_empty", None, &[]));
         }
-        let json = serde_json::to_string_pretty(config)
-            .map_err(|e| format!("template JSON 직렬화 실패: {e}"))?;
+        let json = serde_json::to_string_pretty(config).map_err(|e| {
+            crate::i18n::t(
+                "core.error.template.serialize_failed",
+                None,
+                &[("detail", &e.to_string())],
+            )
+        })?;
         let path = format!("user/templates/{}/template.json", slug);
         self.storage.write(&path, &json).await
     }
@@ -116,7 +121,7 @@ impl TemplateManager {
     /// 템플릿 삭제 — 폴더 통째 제거.
     pub async fn delete(&self, slug: &str) -> InfraResult<()> {
         if !is_safe_slug(slug) {
-            return Err("잘못된 템플릿 slug 입니다.".into());
+            return Err(crate::i18n::t("core.error.template.invalid_slug", None, &[]));
         }
         let path = format!("user/templates/{}", slug);
         self.storage.delete(&path).await

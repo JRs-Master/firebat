@@ -149,6 +149,10 @@ impl ProjectService for ProjectServiceImpl {
         _req: Request<ProjectRenameRequest>,
     ) -> Result<Response<ProjectRenameResponse>, TonicStatus> {
         // Phase B-8 미구현 — Phase B-9 PageManager (DB) 와 함께 (slug rename + redirect).
-        Err(TonicStatus::unimplemented("rename — Phase B-9 와 같이 진행"))
+        Err(TonicStatus::unimplemented(crate::i18n::t(
+            "core.error.rpc.rename_unimplemented",
+            None,
+            &[],
+        )))
     }
 }

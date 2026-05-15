@@ -3,6 +3,135 @@
     "name": "English",
     "code": "en"
   },
+  "error": {
+    "module": {
+      "invalid_name": "Invalid module name.",
+      "not_found": "Module not found: {{name}}",
+      "entry_missing": "Module entry file not found: {{name}}",
+      "config_missing": "Module config.json not found: {{scope}}/{{name}}",
+      "input_validation_failed": "[{{name}}] Input validation failed: {{detail}}",
+      "input_validation_failed_scoped": "[{{scope}}/{{name}}] Input validation failed: {{detail}}",
+      "schema_format": "Schema format error: {{detail}}",
+      "input_schema_format": "Input schema format error: {{detail}}",
+      "output_schema_format": "Output schema format error: {{detail}}",
+      "unknown_validation": "Unknown validation failure"
+    },
+    "page": {
+      "save_failed": "Failed to save page: {{slug}}",
+      "delete_failed": "Failed to delete page: {{slug}}",
+      "visibility_failed": "Failed to set page visibility: {{slug}}",
+      "slug_empty": "New slug is empty.",
+      "slug_same": "Slug is identical to the existing one.",
+      "slug_whitespace": "Slug cannot contain whitespace.",
+      "slug_exists": "Slug already exists: {{slug}}",
+      "source_not_found": "Source page not found: {{slug}}",
+      "spec_serialize_failed": "Failed to serialize spec: {{detail}}"
+    },
+    "project": {
+      "name_empty": "New project name is empty.",
+      "name_same": "Project name is identical to the existing one.",
+      "name_invalid_chars": "Project name cannot contain slashes or whitespace.",
+      "name_invalid": "Invalid project name.",
+      "not_found": "Project not found.",
+      "config_serialize_failed": "Failed to serialize config: {{detail}}"
+    },
+    "template": {
+      "invalid_slug": "Invalid template slug.",
+      "name_required": "name is required.",
+      "body_empty": "spec.body cannot be empty.",
+      "serialize_failed": "Failed to serialize template JSON: {{detail}}",
+      "save_config_parse_failed": "Failed to parse save config_json: {{detail}}"
+    },
+    "conversation": {
+      "tombstoned": "Conversation {{id}} has been deleted (tombstone).",
+      "messages_not_array": "messages is not an array.",
+      "save_failed": "Failed to save conversation: {{id}}",
+      "delete_failed": "Failed to delete conversation: {{id}}",
+      "restore_failed": "Failed to restore conversation: {{id}}",
+      "permanent_delete_failed": "Failed to permanently delete conversation: {{id}}",
+      "messages_serialize_failed": "Failed to serialize messages: {{detail}}",
+      "embedding_failed": "Embedding failed: {{detail}}"
+    },
+    "media": {
+      "vault_unset": "Vault is not configured.",
+      "vault_save_failed": "Failed to save to Vault.",
+      "data_url_invalid": "dataUrl is not a valid data URL.",
+      "data_url_no_comma": "dataUrl does not contain a comma.",
+      "image_mime_only": "Only image MIME types are allowed: {{type}}",
+      "attachment_too_large": "Attachment image size exceeded (max 10MB, input {{size_kb}}KB).",
+      "base64_decode_failed": "Failed to decode base64: {{detail}}",
+      "unsupported_image_format": "Unsupported image format (only JPEG / PNG / WebP / GIF).",
+      "not_found": "Media not found.",
+      "prompt_missing": "Cannot regenerate — prompt information missing.",
+      "image_processor_missing": "image_processor not configured — cannot create placeholder.",
+      "image_gen_missing": "image_gen not configured — cannot generate image.",
+      "image_processor_missing_postprocess": "image_processor not configured — cannot post-process."
+    },
+    "auth": {
+      "password_too_short": "Password must be at least 8 characters.",
+      "password_policy_category": "Password must include at least 3 of: uppercase, lowercase, number, special character.",
+      "password_same_as_id": "Password cannot be the same as the ID."
+    },
+    "consolidation": {
+      "hook_unset": "ConsolidationAiHook not configured — call set_ai_hook with AiManager + ConversationManager to enable LLM auto-extraction.",
+      "hook_unset_short": "ConsolidationAiHook not configured — call set_ai_hook to activate.",
+      "conversation_not_found": "Conversation not found: {{id}}",
+      "messages_not_array": "messages is not an array.",
+      "llm_call_failed": "LLM call failed: {{detail}}"
+    },
+    "tool": {
+      "handler_not_registered": "Tool handler not registered: {{name}}"
+    },
+    "task": {
+      "execute_unimplemented": "EXECUTE not implemented (Phase B-16+) — path={{path}}",
+      "mcp_call_unimplemented": "MCP_CALL not implemented (Phase B-16+) — {{server}}/{{tool}}",
+      "network_request_unimplemented": "NETWORK_REQUEST not implemented (Phase B-16+) — url={{url}}",
+      "llm_transform_unimplemented": "LLM_TRANSFORM not implemented (Phase B-16+) — activates after AiManager is configured.",
+      "save_page_unimplemented": "SAVE_PAGE not implemented (Phase B-16+) — slug={{slug}}",
+      "tool_call_unimplemented": "TOOL_CALL not implemented (Phase B-16+) — tool={{tool}}"
+    },
+    "schedule": {
+      "trigger_required": "schedule: one of cronTime / runAt / delaySec must be specified.",
+      "trigger_event": "Cron fired: {{job_id}}",
+      "success_summary": "Cron run succeeded ({{duration_ms}}ms)",
+      "fail_summary": "Cron failed: {{detail}}",
+      "default_status_msg": "Cron run failed",
+      "default_job_title": "Cron job {{job_id}}",
+      "run_when_eval_failed": "runWhen evaluation error: {{detail}}",
+      "notify_success_template": "✓ {{title}} completed ({durationMs}ms)",
+      "notify_fail_template": "❌ {{title}} failed: {error}"
+    },
+    "cache": {
+      "expired_or_missing": "Cache key={{key}} expired or missing.",
+      "aggregate_unsupported": "Aggregate operation not supported: {{op}} (supported: count/sum/avg/min/max)"
+    },
+    "ai": {
+      "agent_prompt_empty": "agentPrompt is empty.",
+      "cost_limit_exceeded": "Cost limit exceeded: {{reason}}",
+      "cost_limit_exceeded_short": "Cost limit exceeded.",
+      "tool_dispatcher_unready": "Activates after ToolDispatcher full wiring — AiManager.resolve_call_target API exposure required.",
+      "args_json_parse_failed": "Failed to parse argsJson: {{detail}}",
+      "share_db_unset": "create_share: IDatabasePort not configured.",
+      "tool_arg_missing": "{{name}} is missing."
+    },
+    "telegram": {
+      "bot_token_missing": "TELEGRAM_BOT_TOKEN not configured.",
+      "ai_manager_unset": "AiManager + ModuleManager not configured — activates after with_ai_and_module.",
+      "ai_reply_failed": "AI reply failed: {{detail}}",
+      "ai_reply_empty": "AI reply is empty.",
+      "send_failed": "Failed to send response: {{detail}}"
+    },
+    "rpc": {
+      "set_user_failed": "set_user failed.",
+      "set_system_failed": "set_system failed.",
+      "delete_user_failed": "delete_user failed.",
+      "set_settings_failed": "Failed to save set_settings.",
+      "set_cli_session_failed": "set_cli_session failed.",
+      "set_budget_failed": "set_budget failed.",
+      "set_enabled_failed": "set_enabled failed.",
+      "rename_unimplemented": "rename — in progress with Phase B-9."
+    }
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",

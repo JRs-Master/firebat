@@ -358,13 +358,19 @@ impl AiManager {
                 let reason = check
                     .reason
                     .clone()
-                    .unwrap_or_else(|| "비용 한도 초과".to_string());
+                    .unwrap_or_else(|| {
+                        crate::i18n::t("core.error.ai.cost_limit_exceeded_short", None, &[])
+                    });
                 self.log.warn(&format!(
                     "[AiManager] 비용 한도 초과 — LLM 호출 차단: {}",
                     reason
                 ));
                 return Ok(AiResponse {
-                    error: Some(format!("비용 한도 초과: {}", reason)),
+                    error: Some(crate::i18n::t(
+                        "core.error.ai.cost_limit_exceeded",
+                        None,
+                        &[("reason", &reason)],
+                    )),
                     model_id: Some(self.llm.get_model_id()),
                     cost_usd: Some(0.0),
                     ..Default::default()
@@ -565,7 +571,9 @@ impl AiManager {
                         let reason = check
                             .reason
                             .clone()
-                            .unwrap_or_else(|| "비용 한도 초과".to_string());
+                            .unwrap_or_else(|| {
+                        crate::i18n::t("core.error.ai.cost_limit_exceeded_short", None, &[])
+                    });
                         self.log.warn(&format!(
                             "[AiManager] 비용 한도 초과 — LLM 호출 차단: {}",
                             reason
@@ -576,7 +584,11 @@ impl AiManager {
                             executed_actions: Vec::new(),
                             suggestions: Vec::new(),
                             pending_actions: Vec::new(),
-                            error: Some(format!("비용 한도 초과: {}", reason)),
+                            error: Some(crate::i18n::t(
+                        "core.error.ai.cost_limit_exceeded",
+                        None,
+                        &[("reason", &reason)],
+                    )),
                             model_id: Some(last_model_id.clone()),
                             cost_usd: Some(0.0),
                             tool_results: Vec::new(),

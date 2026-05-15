@@ -258,7 +258,11 @@ impl MediaService for MediaServiceImpl {
                 .map_err(|e| TonicStatus::invalid_argument(format!("opts_json: {e}")))?
         };
         let binary = base64_simple_decode(&args.binary_base64).map_err(|e| {
-            TonicStatus::invalid_argument(format!("base64 decode 실패: {e}"))
+            TonicStatus::invalid_argument(crate::i18n::t(
+                "core.error.media.base64_decode_failed",
+                None,
+                &[("detail", &e)],
+            ))
         })?;
         match self.manager.save(&binary, &args.content_type, opts).await {
             Ok(result) => Ok(Response::new(result.into())),

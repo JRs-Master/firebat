@@ -114,7 +114,7 @@ impl AiService for AiServiceImpl {
             return Ok(Response::new(AiRunAgentJobResponse {
                 raw_json: to_raw_json(&serde_json::json!({
                     "success": false,
-                    "error": "agentPrompt 가 비어있습니다."
+                    "error": crate::i18n::t("core.error.ai.agent_prompt_empty", None, &[])
                 })),
             }));
         }
@@ -163,7 +163,7 @@ impl AiService for AiServiceImpl {
             raw_json: to_raw_json(&serde_json::json!({
                 "identifier": identifier,
                 "kind": serde_json::Value::Null,
-                "note": "ToolDispatcher 풀 wiring 후 활성 — AiManager.resolve_call_target API 노출 필요"
+                "note": crate::i18n::t("core.error.ai.tool_dispatcher_unready", None, &[])
             })),
         }))
     }
@@ -212,8 +212,13 @@ impl AiService for AiServiceImpl {
         let raw_args: serde_json::Value = if args.args_json.is_empty() {
             serde_json::Value::Null
         } else {
-            serde_json::from_str(&args.args_json)
-                .map_err(|e| TonicStatus::invalid_argument(format!("argsJson 파싱 실패: {}", e)))?
+            serde_json::from_str(&args.args_json).map_err(|e| {
+                TonicStatus::invalid_argument(crate::i18n::t(
+                    "core.error.ai.args_json_parse_failed",
+                    None,
+                    &[("detail", &e.to_string())],
+                ))
+            })?
         };
         let typed = crate::utils::pending_tools::PendingActionArgs::from_call(&args.name, &raw_args)
             .map_err(TonicStatus::invalid_argument)?;

@@ -134,7 +134,11 @@ impl SysmodCacheAdapter {
 
     fn read_records(&self, key: &str) -> InfraResult<Vec<serde_json::Value>> {
         if !self.is_valid(key) {
-            return Err(format!("cache key={key} 만료됨 또는 미존재"));
+            return Err(crate::i18n::t(
+                "core.error.cache.expired_or_missing",
+                None,
+                &[("key", key)],
+            ));
         }
         let raw = std::fs::read_to_string(self.jsonl_path(key))
             .map_err(|e| format!("cache jsonl read 실패: {e}"))?;
@@ -262,7 +266,13 @@ impl SysmodCacheAdapter {
                 .cloned()
                 .fold(f64::NEG_INFINITY, f64::max)
                 .into(),
-            _ => return Err(format!("aggregate op 미지원: {op} (지원: count/sum/avg/min/max)")),
+            _ => {
+                return Err(crate::i18n::t(
+                    "core.error.cache.aggregate_unsupported",
+                    None,
+                    &[("op", op)],
+                ))
+            }
         };
         Ok(serde_json::json!({
             "field": field,

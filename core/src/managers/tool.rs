@@ -200,7 +200,11 @@ impl ToolManager {
         };
         match handler {
             Some(h) => h(args.clone()).await,
-            None => Err(format!("도구 핸들러 미등록: {name}")),
+            None => Err(crate::i18n::t(
+                "core.error.tool.handler_not_registered",
+                None,
+                &[("name", name)],
+            )),
         }
     }
 

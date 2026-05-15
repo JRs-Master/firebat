@@ -101,7 +101,11 @@ impl ConversationManager {
     ) -> InfraResult<()> {
         // Tombstone 검사 — 다른 기기에서 삭제된 대화면 reject (옛 TS 와 동일)
         if self.db.is_conversation_deleted(owner, id) {
-            return Err(format!("대화 {}는 삭제됨 (tombstone)", id));
+            return Err(crate::i18n::t(
+                "core.error.conversation.tombstoned",
+                None,
+                &[("id", id)],
+            ));
         }
 
         // 기존 messages 읽어 union merge — 옛 TS save:127-145 1:1.
@@ -115,7 +119,13 @@ impl ConversationManager {
                     .unwrap_or_default();
                 let incoming_arr: Vec<serde_json::Value> = match messages.as_array() {
                     Some(arr) => arr.clone(),
-                    None => return Err("messages 가 array 가 아닙니다".to_string()),
+                    None => {
+                        return Err(crate::i18n::t(
+                            "core.error.conversation.messages_not_array",
+                            None,
+                            &[],
+                        ))
+                    }
                 };
                 let merged = crate::utils::message_merge::union_merge_messages(
                     &existing_arr,
@@ -126,10 +136,19 @@ impl ConversationManager {
             None => messages.clone(),
         };
 
-        let messages_json = serde_json::to_string(&merged_messages)
-            .map_err(|e| format!("messages 직렬화 실패: {e}"))?;
+        let messages_json = serde_json::to_string(&merged_messages).map_err(|e| {
+            crate::i18n::t(
+                "core.error.conversation.messages_serialize_failed",
+                None,
+                &[("detail", &e.to_string())],
+            )
+        })?;
         if !self.db.save_conversation(owner, id, title, &messages_json, created_at) {
-            return Err(format!("대화 저장 실패: {}", id));
+            return Err(crate::i18n::t(
+                "core.error.conversation.save_failed",
+                None,
+                &[("id", id)],
+            ));
         }
 
         // 임베딩 sync — embedder 설정되어 있고 messages 가 array 일 때만.
@@ -159,14 +178,27 @@ impl ConversationManager {
         created_at: Option<i64>,
     ) -> InfraResult<()> {
         if self.db.is_conversation_deleted(owner, id) {
-            return Err(format!("대화 {}는 삭제됨 (tombstone)", id));
+            return Err(crate::i18n::t(
+                "core.error.conversation.tombstoned",
+                None,
+                &[("id", id)],
+            ));
         }
-        let messages_json = serde_json::to_string(messages)
-            .map_err(|e| format!("messages 직렬화 실패: {e}"))?;
+        let messages_json = serde_json::to_string(messages).map_err(|e| {
+            crate::i18n::t(
+                "core.error.conversation.messages_serialize_failed",
+                None,
+                &[("detail", &e.to_string())],
+            )
+        })?;
         if self.db.save_conversation(owner, id, title, &messages_json, created_at) {
             Ok(())
         } else {
-            Err(format!("대화 저장 실패: {}", id))
+            Err(crate::i18n::t(
+                "core.error.conversation.save_failed",
+                None,
+                &[("id", id)],
+            ))
         }
     }
 
@@ -177,7 +209,11 @@ impl ConversationManager {
         if self.db.delete_conversation(owner, id) {
             Ok(())
         } else {
-            Err(format!("대화 삭제 실패: {}", id))
+            Err(crate::i18n::t(
+                "core.error.conversation.delete_failed",
+                None,
+                &[("id", id)],
+            ))
         }
     }
 
@@ -197,7 +233,11 @@ impl ConversationManager {
         if self.db.restore_conversation(owner, id) {
             Ok(())
         } else {
-            Err(format!("대화 복원 실패: {}", id))
+            Err(crate::i18n::t(
+                "core.error.conversation.restore_failed",
+                None,
+                &[("id", id)],
+            ))
         }
     }
 
@@ -207,7 +247,11 @@ impl ConversationManager {
         if self.db.permanent_delete_conversation(owner, id) {
             Ok(())
         } else {
-            Err(format!("대화 영구 삭제 실패: {}", id))
+            Err(crate::i18n::t(
+                "core.error.conversation.permanent_delete_failed",
+                None,
+                &[("id", id)],
+            ))
         }
     }
 
@@ -366,10 +410,13 @@ impl ConversationManager {
             return Ok(vec![]);
         }
 
-        let q_vec = embedder
-            .embed_query(query)
-            .await
-            .map_err(|e| format!("임베딩 실패: {e}"))?;
+        let q_vec = embedder.embed_query(query).await.map_err(|e| {
+            crate::i18n::t(
+                "core.error.conversation.embedding_failed",
+                None,
+                &[("detail", &e.to_string())],
+            )
+        })?;
 
         let mut scored: Vec<HistorySearchMatch> = rows
             .into_iter()

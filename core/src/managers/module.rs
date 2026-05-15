@@ -74,7 +74,7 @@ impl ModuleManager {
         input_data: &serde_json::Value,
     ) -> InfraResult<ModuleOutput> {
         if !is_safe_name(module_name) {
-            return Err("잘못된 모듈 이름입니다.".into());
+            return Err(crate::i18n::t("core.error.module.invalid_name", None, &[]));
         }
         // user / system 모두 검색 — sysmod 도구는 system/modules/ 안 박힘.
         let (scope, dir_path, files) = {
@@ -94,19 +94,34 @@ impl ModuleManager {
             } else if let Some(e) = system_entries {
                 ("system", system_dir, pick(e))
             } else {
-                return Err(format!("모듈을 찾을 수 없습니다: {}", module_name));
+                return Err(crate::i18n::t(
+                    "core.error.module.not_found",
+                    None,
+                    &[("name", module_name)],
+                ));
             }
         };
         let entry = ENTRY_FILES
             .iter()
             .find(|f| files.contains(&f.to_string()))
-            .ok_or_else(|| format!("모듈 entry 파일을 찾을 수 없습니다: {}", module_name))?;
+            .ok_or_else(|| {
+                crate::i18n::t(
+                    "core.error.module.entry_missing",
+                    None,
+                    &[("name", module_name)],
+                )
+            })?;
 
         // Pre-spawn input validation — config.json 의 input schema 기준
         if let Some(config) = self.get_module_config(scope, module_name).await {
             if let Some(input_schema) = config.get("input") {
-                validate_value(input_data, input_schema)
-                    .map_err(|e| format!("[{}] 입력 검증 실패: {}", module_name, e))?;
+                validate_value(input_data, input_schema).map_err(|e| {
+                    crate::i18n::t(
+                        "core.error.module.input_validation_failed",
+                        None,
+                        &[("name", module_name), ("detail", &e)],
+                    )
+                })?;
             }
         }
 
@@ -321,13 +336,21 @@ pub fn validate_value(
     let compiled = jsonschema::JSONSchema::options()
         .with_draft(jsonschema::Draft::Draft7)
         .compile(schema)
-        .map_err(|e| format!("schema 자체 형식 오류: {}", e))?;
+        .map_err(|e| {
+            crate::i18n::t(
+                "core.error.module.schema_format",
+                None,
+                &[("detail", &e.to_string())],
+            )
+        })?;
     if let Err(errors) = compiled.validate(value) {
         let first = errors
             .into_iter()
             .next()
             .map(|e| format!("{} (path: {})", e, e.instance_path))
-            .unwrap_or_else(|| "알 수 없는 검증 실패".to_string());
+            .unwrap_or_else(|| {
+                crate::i18n::t("core.error.module.unknown_validation", None, &[])
+            });
         return Err(first);
     }
     Ok(())
@@ -340,13 +363,25 @@ pub fn validate_module_definition(config: &serde_json::Value) -> Result<(), Stri
         jsonschema::JSONSchema::options()
             .with_draft(jsonschema::Draft::Draft7)
             .compile(input_schema)
-            .map_err(|e| format!("input schema 형식 오류: {}", e))?;
+            .map_err(|e| {
+                crate::i18n::t(
+                    "core.error.module.input_schema_format",
+                    None,
+                    &[("detail", &e.to_string())],
+                )
+            })?;
     }
     if let Some(output_schema) = config.get("output") {
         jsonschema::JSONSchema::options()
             .with_draft(jsonschema::Draft::Draft7)
             .compile(output_schema)
-            .map_err(|e| format!("output schema 형식 오류: {}", e))?;
+            .map_err(|e| {
+                crate::i18n::t(
+                    "core.error.module.output_schema_format",
+                    None,
+                    &[("detail", &e.to_string())],
+                )
+            })?;
     }
     Ok(())
 }
@@ -361,16 +396,24 @@ impl ModuleManager {
         input_data: &serde_json::Value,
     ) -> Result<(), String> {
         if !is_safe_name(module_name) {
-            return Err("잘못된 모듈 이름입니다.".into());
+            return Err(crate::i18n::t("core.error.module.invalid_name", None, &[]));
         }
-        let config = self
-            .get_module_config(scope, module_name)
-            .await
-            .ok_or_else(|| format!("모듈 config.json 찾을 수 없습니다: {}/{}", scope, module_name))?;
+        let config = self.get_module_config(scope, module_name).await.ok_or_else(|| {
+            crate::i18n::t(
+                "core.error.module.config_missing",
+                None,
+                &[("scope", scope), ("name", module_name)],
+            )
+        })?;
         validate_module_definition(&config)?;
         if let Some(input_schema) = config.get("input") {
-            validate_value(input_data, input_schema)
-                .map_err(|e| format!("[{}/{}] 입력 검증 실패: {}", scope, module_name, e))?;
+            validate_value(input_data, input_schema).map_err(|e| {
+                crate::i18n::t(
+                    "core.error.module.input_validation_failed_scoped",
+                    None,
+                    &[("scope", scope), ("name", module_name), ("detail", &e)],
+                )
+            })?;
         }
         Ok(())
     }

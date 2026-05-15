@@ -379,11 +379,14 @@ impl MediaManager {
     }
 
     pub fn set_image_model(&self, model_id: &str) -> InfraResult<()> {
-        let vault = self.vault.as_ref().ok_or_else(|| "Vault 미설정".to_string())?;
+        let vault = self
+            .vault
+            .as_ref()
+            .ok_or_else(|| crate::i18n::t("core.error.media.vault_unset", None, &[]))?;
         if vault.set_secret(VK_IMAGE_MODEL, model_id) {
             Ok(())
         } else {
-            Err("Vault 저장 실패".to_string())
+            Err(crate::i18n::t("core.error.media.vault_save_failed", None, &[]))
         }
     }
 
@@ -395,12 +398,19 @@ impl MediaManager {
     }
 
     pub fn set_image_default_size(&self, size: Option<&str>) -> InfraResult<()> {
-        let vault = self.vault.as_ref().ok_or_else(|| "Vault 미설정".to_string())?;
+        let vault = self
+            .vault
+            .as_ref()
+            .ok_or_else(|| crate::i18n::t("core.error.media.vault_unset", None, &[]))?;
         let ok = match size {
             None => vault.delete_secret(VK_IMAGE_SIZE),
             Some(s) => vault.set_secret(VK_IMAGE_SIZE, s),
         };
-        if ok { Ok(()) } else { Err("Vault 저장 실패".to_string()) }
+        if ok {
+            Ok(())
+        } else {
+            Err(crate::i18n::t("core.error.media.vault_save_failed", None, &[]))
+        }
     }
 
     pub fn get_image_default_quality(&self) -> Option<String> {
@@ -411,12 +421,19 @@ impl MediaManager {
     }
 
     pub fn set_image_default_quality(&self, quality: Option<&str>) -> InfraResult<()> {
-        let vault = self.vault.as_ref().ok_or_else(|| "Vault 미설정".to_string())?;
+        let vault = self
+            .vault
+            .as_ref()
+            .ok_or_else(|| crate::i18n::t("core.error.media.vault_unset", None, &[]))?;
         let ok = match quality {
             None => vault.delete_secret(VK_IMAGE_QUALITY),
             Some(q) => vault.set_secret(VK_IMAGE_QUALITY, q),
         };
-        if ok { Ok(()) } else { Err("Vault 저장 실패".to_string()) }
+        if ok {
+            Ok(())
+        } else {
+            Err(crate::i18n::t("core.error.media.vault_save_failed", None, &[]))
+        }
     }
 
     pub fn list_image_models(&self) -> Vec<ImageModelInfo> {
@@ -511,11 +528,11 @@ impl MediaManager {
     pub async fn save_temp_attachment(&self, data_url: &str) -> InfraResult<String> {
         // dataUrl 파싱 — "data:image/png;base64,..."
         if !data_url.starts_with("data:") {
-            return Err("dataUrl 가 data URL 형식이 아닙니다".to_string());
+            return Err(crate::i18n::t("core.error.media.data_url_invalid", None, &[]));
         }
-        let comma = data_url
-            .find(',')
-            .ok_or_else(|| "dataUrl 에 , 가 없음".to_string())?;
+        let comma = data_url.find(',').ok_or_else(|| {
+            crate::i18n::t("core.error.media.data_url_no_comma", None, &[])
+        })?;
         let header = &data_url[5..comma]; // "image/png;base64"
         let b64 = &data_url[comma + 1..];
 
@@ -523,24 +540,40 @@ impl MediaManager {
         let semicolon = header.find(';').unwrap_or(header.len());
         let content_type = &header[..semicolon];
         if !content_type.starts_with("image/") {
-            return Err(format!("이미지 MIME 만 허용: {content_type}"));
+            return Err(crate::i18n::t(
+                "core.error.media.image_mime_only",
+                None,
+                &[("type", content_type)],
+            ));
         }
 
         // base64 → binary
         use base64::Engine;
         let binary = base64::engine::general_purpose::STANDARD
             .decode(b64)
-            .map_err(|e| format!("base64 decode 실패: {e}"))?;
+            .map_err(|e| {
+                crate::i18n::t(
+                    "core.error.media.base64_decode_failed",
+                    None,
+                    &[("detail", &e.to_string())],
+                )
+            })?;
 
         // 크기 제한 — 10MB
         const MAX_BYTES: usize = 10 * 1024 * 1024;
         if binary.len() > MAX_BYTES {
-            return Err(format!("첨부 이미지 크기 초과 (max 10MB, 박힌 {}KB)", binary.len() / 1024));
+            let size_kb = (binary.len() / 1024).to_string();
+            return Err(crate::i18n::t(
+                "core.error.media.attachment_too_large",
+                None,
+                &[("size_kb", &size_kb)],
+            ));
         }
 
         // magic byte 검증 — JPEG / PNG / WebP / GIF 만. SVG 차단 (XSS 가드).
-        let ext = detect_image_ext(&binary)
-            .ok_or_else(|| "지원하지 않는 이미지 형식 (JPEG / PNG / WebP / GIF 만)".to_string())?;
+        let ext = detect_image_ext(&binary).ok_or_else(|| {
+            crate::i18n::t("core.error.media.unsupported_image_format", None, &[])
+        })?;
 
         self.media.save_temp_attachment(&binary, ext).await
     }
@@ -627,11 +660,11 @@ impl MediaManager {
             .media
             .stat(slug)
             .await?
-            .ok_or_else(|| "미디어를 찾을 수 없습니다.".to_string())?;
+            .ok_or_else(|| crate::i18n::t("core.error.media.not_found", None, &[]))?;
         let prompt = stat
             .prompt
             .clone()
-            .ok_or_else(|| "프롬프트 정보가 없어 재생성할 수 없습니다.".to_string())?;
+            .ok_or_else(|| crate::i18n::t("core.error.media.prompt_missing", None, &[]))?;
         let input = GenerateImageInput {
             prompt,
             model: stat.model.clone(),
@@ -662,7 +695,7 @@ impl MediaManager {
         let processor = self
             .processor
             .as_ref()
-            .ok_or_else(|| "image_processor 미저장 — placeholder 생성 불가".to_string())?;
+            .ok_or_else(|| crate::i18n::t("core.error.media.image_processor_missing", None, &[]))?;
         let scope = input.scope.unwrap_or(MediaScope::User);
 
         // Cross-call hook 1: status.start — 어드민 ActiveJobsIndicator 가시화 (옛 TS 1:1)
@@ -841,11 +874,17 @@ impl MediaManager {
         let image_gen = self
             .image_gen
             .as_ref()
-            .ok_or_else(|| "image_gen 미저장 — 이미지 생성 불가".to_string())?;
+            .ok_or_else(|| crate::i18n::t("core.error.media.image_gen_missing", None, &[]))?;
         let processor = self
             .processor
             .as_ref()
-            .ok_or_else(|| "image_processor 미저장 — 후처리 불가".to_string())?;
+            .ok_or_else(|| {
+                crate::i18n::t(
+                    "core.error.media.image_processor_missing_postprocess",
+                    None,
+                    &[],
+                )
+            })?;
 
         let model_id = input
             .model

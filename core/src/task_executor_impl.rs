@@ -196,8 +196,13 @@ impl TaskExecutor for RealTaskExecutor {
     ) -> InfraResult<serde_json::Value> {
         self.log
             .info(&format!("[Pipeline] SAVE_PAGE → slug={}", slug));
-        let spec_str = serde_json::to_string(spec)
-            .map_err(|e| format!("spec 직렬화 실패: {e}"))?;
+        let spec_str = serde_json::to_string(spec).map_err(|e| {
+            crate::i18n::t(
+                "core.error.page.spec_serialize_failed",
+                None,
+                &[("detail", &e.to_string())],
+            )
+        })?;
         self.page
             .save(slug, &spec_str, "published", None, None, None)?;
         Ok(serde_json::json!({"slug": slug, "renamed": false}))

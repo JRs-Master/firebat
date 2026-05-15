@@ -112,15 +112,15 @@ impl ProjectManager {
     /// 프로젝트 일괄 삭제 — 모든 path + DB pages.
     pub async fn delete(&self, project: &str) -> InfraResult<ProjectDeleteResult> {
         if !is_safe_name(project) {
-            return Err("잘못된 프로젝트 이름입니다.".into());
+            return Err(crate::i18n::t("core.error.project.name_invalid", None, &[]));
         }
         let projects = self.scan().await;
         let entry = projects.iter().find(|p| p.name == project);
         let Some(entry) = entry else {
-            return Err("해당 프로젝트를 찾을 수 없습니다.".into());
+            return Err(crate::i18n::t("core.error.project.not_found", None, &[]));
         };
         if entry.paths.is_empty() && entry.page_slugs.is_empty() {
-            return Err("해당 프로젝트를 찾을 수 없습니다.".into());
+            return Err(crate::i18n::t("core.error.project.not_found", None, &[]));
         }
 
         for p in &entry.paths {
@@ -187,10 +187,15 @@ impl ProjectManager {
 
     pub async fn set_config(&self, name: &str, config: &serde_json::Value) -> InfraResult<()> {
         if !is_safe_name(name) {
-            return Err("잘못된 프로젝트 이름입니다.".into());
+            return Err(crate::i18n::t("core.error.project.name_invalid", None, &[]));
         }
-        let json = serde_json::to_string_pretty(config)
-            .map_err(|e| format!("config 직렬화 실패: {e}"))?;
+        let json = serde_json::to_string_pretty(config).map_err(|e| {
+            crate::i18n::t(
+                "core.error.project.config_serialize_failed",
+                None,
+                &[("detail", &e.to_string())],
+            )
+        })?;
         let path = format!("user/projects/{}/config.json", name);
         self.storage.write(&path, &json).await
     }

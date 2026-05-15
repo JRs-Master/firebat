@@ -132,12 +132,17 @@ pub struct StubTaskExecutor;
 #[async_trait::async_trait]
 impl TaskExecutor for StubTaskExecutor {
     async fn execute_module(&self, path: &str, _input: &Value) -> InfraResult<Value> {
-        Err(format!("EXECUTE 미구현 (Phase B-16+) — path={}", path))
+        Err(crate::i18n::t(
+            "core.error.task.execute_unimplemented",
+            None,
+            &[("path", path)],
+        ))
     }
     async fn call_mcp_tool(&self, server: &str, tool: &str, _args: &Value) -> InfraResult<Value> {
-        Err(format!(
-            "MCP_CALL 미구현 (Phase B-16+) — {}/{}",
-            server, tool
+        Err(crate::i18n::t(
+            "core.error.task.mcp_call_unimplemented",
+            None,
+            &[("server", server), ("tool", tool)],
         ))
     }
     async fn network_request(
@@ -147,10 +152,18 @@ impl TaskExecutor for StubTaskExecutor {
         _body: Option<&Value>,
         _headers: Option<&Value>,
     ) -> InfraResult<Value> {
-        Err(format!("NETWORK_REQUEST 미구현 (Phase B-16+) — url={}", url))
+        Err(crate::i18n::t(
+            "core.error.task.network_request_unimplemented",
+            None,
+            &[("url", url)],
+        ))
     }
     async fn llm_transform(&self, _instruction: &str, _input_text: &str) -> InfraResult<String> {
-        Err("LLM_TRANSFORM 미구현 (Phase B-16+) — AiManager 설정된 후 활성".to_string())
+        Err(crate::i18n::t(
+            "core.error.task.llm_transform_unimplemented",
+            None,
+            &[],
+        ))
     }
     async fn save_page(
         &self,
@@ -158,13 +171,18 @@ impl TaskExecutor for StubTaskExecutor {
         _spec: &Value,
         _allow_overwrite: bool,
     ) -> InfraResult<Value> {
-        Err(format!(
-            "SAVE_PAGE 미구현 (Phase B-16+) — slug={}",
-            slug
+        Err(crate::i18n::t(
+            "core.error.task.save_page_unimplemented",
+            None,
+            &[("slug", slug)],
         ))
     }
     async fn execute_tool(&self, tool: &str, _input: &Value) -> InfraResult<Value> {
-        Err(format!("TOOL_CALL 미구현 (Phase B-16+) — tool={}", tool))
+        Err(crate::i18n::t(
+            "core.error.task.tool_call_unimplemented",
+            None,
+            &[("tool", tool)],
+        ))
     }
 }
 

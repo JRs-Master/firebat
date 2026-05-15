@@ -181,7 +181,11 @@ impl ModuleService for ModuleServiceImpl {
         if self.manager.set_settings(&args.name, &settings) {
             Ok(Response::new(ModuleSetSettingsResponse {}))
         } else {
-            Err(TonicStatus::internal("set_settings 실패"))
+            Err(TonicStatus::internal(crate::i18n::t(
+                "core.error.rpc.set_settings_failed",
+                None,
+                &[],
+            )))
         }
     }
 
@@ -203,7 +207,11 @@ impl ModuleService for ModuleServiceImpl {
         if self.manager.set_enabled(&args.name, args.enabled) {
             Ok(Response::new(ModuleSetEnabledResponse {}))
         } else {
-            Err(TonicStatus::internal("set_enabled 실패"))
+            Err(TonicStatus::internal(crate::i18n::t(
+                "core.error.rpc.set_enabled_failed",
+                None,
+                &[],
+            )))
         }
     }
 

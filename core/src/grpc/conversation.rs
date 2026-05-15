@@ -205,7 +205,11 @@ impl ConversationService for ConversationServiceImpl {
         if self.manager.set_cli_session(&args.conversation_id, &args.session_id, &args.model) {
             Ok(Response::new(ConversationSetCliSessionResponse {}))
         } else {
-            Err(TonicStatus::internal("set_cli_session 실패"))
+            Err(TonicStatus::internal(crate::i18n::t(
+                "core.error.rpc.set_cli_session_failed",
+                None,
+                &[],
+            )))
         }
     }
 
@@ -214,9 +218,11 @@ impl ConversationService for ConversationServiceImpl {
         req: Request<ConversationCreateShareRequest>,
     ) -> Result<Response<ConversationCreateShareResponse>, TonicStatus> {
         let Some(db) = &self.db else {
-            return Err(TonicStatus::failed_precondition(
-                "create_share: IDatabasePort 미설정",
-            ));
+            return Err(TonicStatus::failed_precondition(crate::i18n::t(
+                "core.error.ai.share_db_unset",
+                None,
+                &[],
+            )));
         };
         let args = req.into_inner();
         let messages: Vec<serde_json::Value> = match serde_json::from_str(&args.messages_json) {

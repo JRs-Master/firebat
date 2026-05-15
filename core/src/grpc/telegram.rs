@@ -85,7 +85,13 @@ impl TelegramService for TelegramServiceImpl {
         let webhook_url = req.into_inner().webhook_url;
         let token = self
             .bot_token()
-            .ok_or_else(|| TonicStatus::failed_precondition("TELEGRAM_BOT_TOKEN 미설정"))?;
+            .ok_or_else(|| {
+                TonicStatus::failed_precondition(crate::i18n::t(
+                    "core.error.telegram.bot_token_missing",
+                    None,
+                    &[],
+                ))
+            })?;
         let secret = self.webhook_secret();
 
         let endpoint = format!("https://api.telegram.org/bot{}/setWebhook", token);
@@ -115,7 +121,13 @@ impl TelegramService for TelegramServiceImpl {
     ) -> Result<Response<TelegramRemoveWebhookResponse>, TonicStatus> {
         let token = self
             .bot_token()
-            .ok_or_else(|| TonicStatus::failed_precondition("TELEGRAM_BOT_TOKEN 미설정"))?;
+            .ok_or_else(|| {
+                TonicStatus::failed_precondition(crate::i18n::t(
+                    "core.error.telegram.bot_token_missing",
+                    None,
+                    &[],
+                ))
+            })?;
         let endpoint = format!("https://api.telegram.org/bot{}/deleteWebhook", token);
         let resp = self
             .network
@@ -139,7 +151,13 @@ impl TelegramService for TelegramServiceImpl {
     ) -> Result<Response<TelegramGetWebhookStatusResponse>, TonicStatus> {
         let token = self
             .bot_token()
-            .ok_or_else(|| TonicStatus::failed_precondition("TELEGRAM_BOT_TOKEN 미설정"))?;
+            .ok_or_else(|| {
+                TonicStatus::failed_precondition(crate::i18n::t(
+                    "core.error.telegram.bot_token_missing",
+                    None,
+                    &[],
+                ))
+            })?;
         let endpoint = format!("https://api.telegram.org/bot{}/getWebhookInfo", token);
         let resp = self
             .network
@@ -192,7 +210,7 @@ impl TelegramService for TelegramServiceImpl {
             return Ok(Response::new(TelegramProcessMessageResponse {
                 raw_json: to_raw(&serde_json::json!({
                     "success": false,
-                    "error": "AiManager + ModuleManager 미저장 — with_ai_and_module 후 활성"
+                    "error": crate::i18n::t("core.error.telegram.ai_manager_unset", None, &[])
                 })),
             }));
         };
@@ -209,7 +227,11 @@ impl TelegramService for TelegramServiceImpl {
                 return Ok(Response::new(TelegramProcessMessageResponse {
                     raw_json: to_raw(&serde_json::json!({
                         "success": false,
-                        "error": format!("AI 응답 실패: {e}")
+                        "error": crate::i18n::t(
+                            "core.error.telegram.ai_reply_failed",
+                            None,
+                            &[("detail", &e.to_string())],
+                        )
                     })),
                 }));
             }
@@ -219,7 +241,7 @@ impl TelegramService for TelegramServiceImpl {
             return Ok(Response::new(TelegramProcessMessageResponse {
                 raw_json: to_raw(&serde_json::json!({
                     "success": false,
-                    "error": "AI 응답 비어있음"
+                    "error": crate::i18n::t("core.error.telegram.ai_reply_empty", None, &[])
                 })),
             }));
         }
@@ -249,7 +271,11 @@ impl TelegramService for TelegramServiceImpl {
             Err(e) => Ok(Response::new(TelegramProcessMessageResponse {
                 raw_json: to_raw(&serde_json::json!({
                     "success": false,
-                    "error": format!("응답 전송 실패: {e}")
+                    "error": crate::i18n::t(
+                        "core.error.telegram.send_failed",
+                        None,
+                        &[("detail", &e.to_string())],
+                    )
                 })),
             })),
         }

@@ -69,7 +69,11 @@ impl PageManager {
         password: Option<&str>,
     ) -> InfraResult<()> {
         if !self.db.save_page(slug, spec, status, project, visibility, password) {
-            return Err(format!("페이지 저장 실패: {}", slug));
+            return Err(crate::i18n::t(
+                "core.error.page.save_failed",
+                None,
+                &[("slug", slug)],
+            ));
         }
         let slugs = Self::extract_media_slugs(spec);
         let slugs_vec: Vec<String> = slugs.into_iter().collect();
@@ -80,7 +84,11 @@ impl PageManager {
     /// 삭제 — DB delete + media_usage 정리.
     pub fn delete(&self, slug: &str) -> InfraResult<()> {
         if !self.db.delete_page(slug) {
-            return Err(format!("페이지 삭제 실패: {}", slug));
+            return Err(crate::i18n::t(
+                "core.error.page.delete_failed",
+                None,
+                &[("slug", slug)],
+            ));
         }
         self.db.delete_media_usage_for_page(slug);
         Ok(())
@@ -95,7 +103,11 @@ impl PageManager {
         if self.db.set_page_visibility(slug, visibility, password) {
             Ok(())
         } else {
-            Err(format!("visibility 설정 실패: {}", slug))
+            Err(crate::i18n::t(
+                "core.error.page.visibility_failed",
+                None,
+                &[("slug", slug)],
+            ))
         }
     }
 
@@ -117,21 +129,28 @@ impl PageManager {
             .to_string();
         let new_slug = Self::collapse_slashes(&new_slug);
         if new_slug.is_empty() {
-            return Err("새 slug 가 비어 있습니다.".into());
+            return Err(crate::i18n::t("core.error.page.slug_empty", None, &[]));
         }
         if old_slug == new_slug {
-            return Err("기존과 동일한 slug 입니다.".into());
+            return Err(crate::i18n::t("core.error.page.slug_same", None, &[]));
         }
         if new_slug.contains(char::is_whitespace) {
-            return Err("slug 에 공백을 넣을 수 없습니다.".into());
+            return Err(crate::i18n::t("core.error.page.slug_whitespace", None, &[]));
         }
         if self.db.get_page(&new_slug).is_some() {
-            return Err(format!("이미 존재하는 slug: {}", new_slug));
+            return Err(crate::i18n::t(
+                "core.error.page.slug_exists",
+                None,
+                &[("slug", new_slug.as_str())],
+            ));
         }
-        let cur = self
-            .db
-            .get_page(old_slug)
-            .ok_or_else(|| format!("원본 페이지 없음: {}", old_slug))?;
+        let cur = self.db.get_page(old_slug).ok_or_else(|| {
+            crate::i18n::t(
+                "core.error.page.source_not_found",
+                None,
+                &[("slug", old_slug)],
+            )
+        })?;
 
         // spec JSON 안의 slug / project 자동 동기
         let mut spec_value: serde_json::Value =
@@ -145,8 +164,13 @@ impl PageManager {
             spec_value["project"] = serde_json::Value::String(first_segment.clone());
             Some(first_segment)
         };
-        let spec_str = serde_json::to_string(&spec_value)
-            .map_err(|e| format!("spec 직렬화 실패: {e}"))?;
+        let spec_str = serde_json::to_string(&spec_value).map_err(|e| {
+            crate::i18n::t(
+                "core.error.page.spec_serialize_failed",
+                None,
+                &[("detail", &e.to_string())],
+            )
+        })?;
 
         // 새 slug 저장 → 옛 slug 삭제 (실패 시 옛 보존)
         self.save(
@@ -178,13 +202,17 @@ impl PageManager {
     ) -> InfraResult<Vec<RenameResult>> {
         let new_name_trimmed = new_name.trim();
         if new_name_trimmed.is_empty() {
-            return Err("새 프로젝트 이름이 비어 있습니다.".into());
+            return Err(crate::i18n::t("core.error.project.name_empty", None, &[]));
         }
         if old_name == new_name {
-            return Err("기존과 동일한 이름입니다.".into());
+            return Err(crate::i18n::t("core.error.project.name_same", None, &[]));
         }
         if new_name.chars().any(|c| c == '/' || c.is_whitespace()) {
-            return Err("프로젝트명에는 슬래시·공백 금지.".into());
+            return Err(crate::i18n::t(
+                "core.error.project.name_invalid_chars",
+                None,
+                &[],
+            ));
         }
         let slugs = self.db.list_pages_by_project(old_name);
         let mut renamed = Vec::new();

@@ -3,6 +3,135 @@
     "name": "한국어",
     "code": "ko"
   },
+  "error": {
+    "module": {
+      "invalid_name": "잘못된 모듈 이름입니다.",
+      "not_found": "모듈을 찾을 수 없습니다: {{name}}",
+      "entry_missing": "모듈 entry 파일을 찾을 수 없습니다: {{name}}",
+      "config_missing": "모듈 config.json 을 찾을 수 없습니다: {{scope}}/{{name}}",
+      "input_validation_failed": "[{{name}}] 입력 검증 실패: {{detail}}",
+      "input_validation_failed_scoped": "[{{scope}}/{{name}}] 입력 검증 실패: {{detail}}",
+      "schema_format": "schema 자체 형식 오류: {{detail}}",
+      "input_schema_format": "input schema 형식 오류: {{detail}}",
+      "output_schema_format": "output schema 형식 오류: {{detail}}",
+      "unknown_validation": "알 수 없는 검증 실패"
+    },
+    "page": {
+      "save_failed": "페이지 저장에 실패했습니다: {{slug}}",
+      "delete_failed": "페이지 삭제에 실패했습니다: {{slug}}",
+      "visibility_failed": "visibility 설정에 실패했습니다: {{slug}}",
+      "slug_empty": "새 slug 가 비어 있습니다.",
+      "slug_same": "기존과 동일한 slug 입니다.",
+      "slug_whitespace": "slug 에 공백을 넣을 수 없습니다.",
+      "slug_exists": "이미 존재하는 slug 입니다: {{slug}}",
+      "source_not_found": "원본 페이지를 찾을 수 없습니다: {{slug}}",
+      "spec_serialize_failed": "spec 직렬화에 실패했습니다: {{detail}}"
+    },
+    "project": {
+      "name_empty": "새 프로젝트 이름이 비어 있습니다.",
+      "name_same": "기존과 동일한 이름입니다.",
+      "name_invalid_chars": "프로젝트 이름에는 슬래시·공백을 사용할 수 없습니다.",
+      "name_invalid": "잘못된 프로젝트 이름입니다.",
+      "not_found": "해당 프로젝트를 찾을 수 없습니다.",
+      "config_serialize_failed": "config 직렬화에 실패했습니다: {{detail}}"
+    },
+    "template": {
+      "invalid_slug": "잘못된 템플릿 slug 입니다.",
+      "name_required": "name 은 필수 항목입니다.",
+      "body_empty": "spec.body 는 비어 있을 수 없습니다.",
+      "serialize_failed": "template JSON 직렬화에 실패했습니다: {{detail}}",
+      "save_config_parse_failed": "save config_json 파싱에 실패했습니다: {{detail}}"
+    },
+    "conversation": {
+      "tombstoned": "대화 {{id}} 는 삭제되었습니다 (tombstone).",
+      "messages_not_array": "messages 가 array 가 아닙니다.",
+      "save_failed": "대화 저장에 실패했습니다: {{id}}",
+      "delete_failed": "대화 삭제에 실패했습니다: {{id}}",
+      "restore_failed": "대화 복원에 실패했습니다: {{id}}",
+      "permanent_delete_failed": "대화 영구 삭제에 실패했습니다: {{id}}",
+      "messages_serialize_failed": "messages 직렬화에 실패했습니다: {{detail}}",
+      "embedding_failed": "임베딩에 실패했습니다: {{detail}}"
+    },
+    "media": {
+      "vault_unset": "Vault 가 설정되지 않았습니다.",
+      "vault_save_failed": "Vault 저장에 실패했습니다.",
+      "data_url_invalid": "dataUrl 이 data URL 형식이 아닙니다.",
+      "data_url_no_comma": "dataUrl 에 ',' 가 없습니다.",
+      "image_mime_only": "이미지 MIME 만 허용됩니다: {{type}}",
+      "attachment_too_large": "첨부 이미지 크기가 초과되었습니다 (max 10MB, 입력 {{size_kb}}KB).",
+      "base64_decode_failed": "base64 decode 에 실패했습니다: {{detail}}",
+      "unsupported_image_format": "지원하지 않는 이미지 형식입니다 (JPEG / PNG / WebP / GIF 만).",
+      "not_found": "미디어를 찾을 수 없습니다.",
+      "prompt_missing": "프롬프트 정보가 없어 재생성할 수 없습니다.",
+      "image_processor_missing": "image_processor 가 설정되지 않아 placeholder 를 생성할 수 없습니다.",
+      "image_gen_missing": "image_gen 이 설정되지 않아 이미지를 생성할 수 없습니다.",
+      "image_processor_missing_postprocess": "image_processor 가 설정되지 않아 후처리할 수 없습니다."
+    },
+    "auth": {
+      "password_too_short": "비밀번호는 8자 이상이어야 합니다.",
+      "password_policy_category": "비밀번호는 대문자·소문자·숫자·특수문자 중 3종류 이상을 포함해야 합니다.",
+      "password_same_as_id": "비밀번호는 ID 와 동일할 수 없습니다."
+    },
+    "consolidation": {
+      "hook_unset": "ConsolidationAiHook 이 설정되지 않았습니다 — set_ai_hook 으로 AiManager + ConversationManager 를 설정해야 LLM 자동 추출이 활성화됩니다.",
+      "hook_unset_short": "ConsolidationAiHook 이 설정되지 않았습니다 — set_ai_hook 설정 후 활성화됩니다.",
+      "conversation_not_found": "대화를 찾을 수 없습니다: {{id}}",
+      "messages_not_array": "messages 가 array 가 아닙니다.",
+      "llm_call_failed": "LLM 호출에 실패했습니다: {{detail}}"
+    },
+    "tool": {
+      "handler_not_registered": "도구 핸들러가 등록되지 않았습니다: {{name}}"
+    },
+    "task": {
+      "execute_unimplemented": "EXECUTE 가 구현되지 않았습니다 (Phase B-16+) — path={{path}}",
+      "mcp_call_unimplemented": "MCP_CALL 이 구현되지 않았습니다 (Phase B-16+) — {{server}}/{{tool}}",
+      "network_request_unimplemented": "NETWORK_REQUEST 가 구현되지 않았습니다 (Phase B-16+) — url={{url}}",
+      "llm_transform_unimplemented": "LLM_TRANSFORM 이 구현되지 않았습니다 (Phase B-16+) — AiManager 설정 후 활성화됩니다.",
+      "save_page_unimplemented": "SAVE_PAGE 가 구현되지 않았습니다 (Phase B-16+) — slug={{slug}}",
+      "tool_call_unimplemented": "TOOL_CALL 이 구현되지 않았습니다 (Phase B-16+) — tool={{tool}}"
+    },
+    "schedule": {
+      "trigger_required": "schedule: cronTime / runAt / delaySec 중 하나는 반드시 지정해야 합니다.",
+      "trigger_event": "cron 발화: {{job_id}}",
+      "success_summary": "cron 정상 실행 ({{duration_ms}}ms)",
+      "fail_summary": "cron 실패: {{detail}}",
+      "default_status_msg": "Cron 실행 실패",
+      "default_job_title": "Cron job {{job_id}} 실행",
+      "run_when_eval_failed": "runWhen 평가 예외: {{detail}}",
+      "notify_success_template": "✓ {{title}} 완료 ({durationMs}ms)",
+      "notify_fail_template": "❌ {{title}} 실패: {error}"
+    },
+    "cache": {
+      "expired_or_missing": "cache key={{key}} 가 만료되었거나 존재하지 않습니다.",
+      "aggregate_unsupported": "aggregate 연산이 지원되지 않습니다: {{op}} (지원: count/sum/avg/min/max)"
+    },
+    "ai": {
+      "agent_prompt_empty": "agentPrompt 가 비어 있습니다.",
+      "cost_limit_exceeded": "비용 한도가 초과되었습니다: {{reason}}",
+      "cost_limit_exceeded_short": "비용 한도가 초과되었습니다.",
+      "tool_dispatcher_unready": "ToolDispatcher 풀 wiring 후 활성화됩니다 — AiManager.resolve_call_target API 노출이 필요합니다.",
+      "args_json_parse_failed": "argsJson 파싱에 실패했습니다: {{detail}}",
+      "share_db_unset": "create_share: IDatabasePort 가 설정되지 않았습니다.",
+      "tool_arg_missing": "{{name}} 항목이 누락되었습니다."
+    },
+    "telegram": {
+      "bot_token_missing": "TELEGRAM_BOT_TOKEN 이 설정되지 않았습니다.",
+      "ai_manager_unset": "AiManager + ModuleManager 가 설정되지 않았습니다 — with_ai_and_module 후 활성화됩니다.",
+      "ai_reply_failed": "AI 응답에 실패했습니다: {{detail}}",
+      "ai_reply_empty": "AI 응답이 비어 있습니다.",
+      "send_failed": "응답 전송에 실패했습니다: {{detail}}"
+    },
+    "rpc": {
+      "set_user_failed": "set_user 에 실패했습니다.",
+      "set_system_failed": "set_system 에 실패했습니다.",
+      "delete_user_failed": "delete_user 에 실패했습니다.",
+      "set_settings_failed": "set_settings 저장에 실패했습니다.",
+      "set_cli_session_failed": "set_cli_session 에 실패했습니다.",
+      "set_budget_failed": "set_budget 에 실패했습니다.",
+      "set_enabled_failed": "set_enabled 에 실패했습니다.",
+      "rename_unimplemented": "rename — Phase B-9 와 같이 진행 중입니다."
+    }
+  },
   "common": {
     "save": "저장",
     "cancel": "취소",

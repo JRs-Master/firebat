@@ -235,7 +235,7 @@ impl ConsolidationManager {
             guard.clone()
         };
         let Some(hook) = hook else {
-            return Err("ConsolidationAiHook 미저장 — set_ai_hook 으로 AiManager + ConversationManager 설정해야 LLM 자동 추출 활성".to_string());
+            return Err(crate::i18n::t("core.error.consolidation.hook_unset", None, &[]));
         };
 
         // AI Assistant 토글 검사 — `system:ai-router:enabled` 가 false 면 자동 추출 skip.
@@ -277,14 +277,16 @@ impl ConsolidationManager {
         }
 
         // 1. 대화 fetch
-        let conv = hook
-            .conversation
-            .get(owner, conv_id)
-            .ok_or_else(|| format!("대화 없음: {}", conv_id))?;
-        let messages = conv
-            .messages
-            .as_array()
-            .ok_or_else(|| "messages 가 array 아님".to_string())?;
+        let conv = hook.conversation.get(owner, conv_id).ok_or_else(|| {
+            crate::i18n::t(
+                "core.error.consolidation.conversation_not_found",
+                None,
+                &[("id", conv_id)],
+            )
+        })?;
+        let messages = conv.messages.as_array().ok_or_else(|| {
+            crate::i18n::t("core.error.consolidation.messages_not_array", None, &[])
+        })?;
         if messages.len() < 2 {
             return Ok(ConsolidationOutcome::default());
         }
@@ -313,11 +315,13 @@ impl ConsolidationManager {
             thinking_level: Some("minimal".to_string()),
             ..Default::default()
         };
-        let response_text = hook
-            .ai
-            .ask_text(&full_prompt, &opts)
-            .await
-            .map_err(|e| format!("LLM 호출 실패: {e}"))?;
+        let response_text = hook.ai.ask_text(&full_prompt, &opts).await.map_err(|e| {
+            crate::i18n::t(
+                "core.error.consolidation.llm_call_failed",
+                None,
+                &[("detail", &e.to_string())],
+            )
+        })?;
 
         // 4. JSON 파싱 (코드 블록 fence 제거)
         let cleaned = strip_json_fence(&response_text);
@@ -573,7 +577,11 @@ impl ConsolidationManager {
             guard.clone()
         };
         let Some(hook) = hook else {
-            return Err("ConsolidationAiHook 미저장 — set_ai_hook 설정한 후 활성".to_string());
+            return Err(crate::i18n::t(
+                "core.error.consolidation.hook_unset_short",
+                None,
+                &[],
+            ));
         };
         hook.ai.ask_text(prompt, opts).await
     }

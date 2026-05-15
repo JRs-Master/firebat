@@ -73,10 +73,11 @@ impl ScheduleManager {
             opts.run_at.as_ref(),
             opts.delay_sec,
         ) {
-            return Err(
-                "schedule: cronTime / runAt / delaySec 중 하나는 반드시 지정하세요"
-                    .to_string(),
-            );
+            return Err(crate::i18n::t(
+                "core.error.schedule.trigger_required",
+                None,
+                &[],
+            ));
         }
         // Arc<dyn ICronPort> 를 clone 후 consume — trait 시그니처가 self: Arc<Self> 이므로.
         Arc::clone(&self.cron)
@@ -152,7 +153,11 @@ impl ScheduleManager {
             let job = h.status.start(
                 Some(format!("cron-{}", info.job_id)),
                 "cron".to_string(),
-                Some(format!("cron 발화: {}", info.job_id)),
+                Some(crate::i18n::t(
+                    "core.error.schedule.trigger_event",
+                    None,
+                    &[("job_id", &info.job_id)],
+                )),
                 None,
                 serde_json::json!({"jobId": info.job_id, "trigger": format!("{:?}", info.trigger)}),
             );
@@ -255,11 +260,19 @@ impl ScheduleManager {
         // result 영향 X). type='cron_trigger' / title=jobId / description=success/error 요약.
         if let Some(hooks) = &self.hooks {
             let description = if final_result.success {
-                format!("cron 정상 실행 ({}ms)", final_result.duration_ms)
+                crate::i18n::t(
+                    "core.error.schedule.success_summary",
+                    None,
+                    &[("duration_ms", &final_result.duration_ms.to_string())],
+                )
             } else {
-                format!(
-                    "cron 실패: {}",
-                    final_result.error.as_deref().unwrap_or("(unknown)")
+                crate::i18n::t(
+                    "core.error.schedule.fail_summary",
+                    None,
+                    &[(
+                        "detail",
+                        final_result.error.as_deref().unwrap_or("(unknown)"),
+                    )],
                 )
             };
             let _ = hooks
@@ -289,7 +302,9 @@ impl ScheduleManager {
                     final_result
                         .error
                         .clone()
-                        .unwrap_or_else(|| "Cron 실행 실패".to_string()),
+                        .unwrap_or_else(|| {
+                            crate::i18n::t("core.error.schedule.default_status_msg", None, &[])
+                        }),
                 );
             }
         }
@@ -332,7 +347,13 @@ impl ScheduleManager {
                     .filter(|p| !p.trim().is_empty())
                     .or(info.title.as_deref())
                     .map(String::from)
-                    .unwrap_or_else(|| format!("Cron job {} 실행", info.job_id));
+                    .unwrap_or_else(|| {
+                        crate::i18n::t(
+                            "core.error.schedule.default_job_title",
+                            None,
+                            &[("job_id", &info.job_id)],
+                        )
+                    });
                 h.log.info(&format!(
                     "[Cron] agent 실행: {} ({:?}) — prompt 길이 {}",
                     info.job_id,
@@ -593,7 +614,14 @@ impl ScheduleManager {
                     ),
                 )
             }
-            Err(e) => (false, format!("runWhen 평가 예외: {e}")),
+            Err(e) => (
+                false,
+                crate::i18n::t(
+                    "core.error.schedule.run_when_eval_failed",
+                    None,
+                    &[("detail", &e.to_string())],
+                ),
+            ),
         }
     }
 

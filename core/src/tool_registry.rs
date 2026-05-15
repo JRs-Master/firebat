@@ -93,7 +93,7 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let slug = args
                     .get("slug")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "slug 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "slug")]))?
                     .to_string();
                 match page.get(&slug) {
                     Some(record) => Ok(serde_json::to_value(record).unwrap_or_default()),
@@ -124,7 +124,7 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let slug = args
                     .get("slug")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "slug 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "slug")]))?
                     .to_string();
                 page.delete(&slug)?;
                 // AI 미개입 자동 hook — 사이드바 SSE 갱신 (옛 TS notifySidebar 패턴).
@@ -167,13 +167,18 @@ fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let slug = args
                     .get("slug")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "slug 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "slug")]))?
                     .to_string();
                 let spec = args
                     .get("spec")
-                    .ok_or_else(|| "spec 누락".to_string())?;
-                let spec_str = serde_json::to_string(spec)
-                    .map_err(|e| format!("spec 직렬화: {e}"))?;
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "spec")]))?;
+                let spec_str = serde_json::to_string(spec).map_err(|e| {
+                    crate::i18n::t(
+                        "core.error.page.spec_serialize_failed",
+                        None,
+                        &[("detail", &e.to_string())],
+                    )
+                })?;
                 let status = args
                     .get("status")
                     .and_then(|v| v.as_str())
@@ -222,7 +227,7 @@ fn register_storage_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let path = args
                     .get("path")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "path 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "path")]))?
                     .to_string();
                 let content = storage.read(&path).await?;
                 Ok(serde_json::json!({"path": path, "content": content}))
@@ -252,12 +257,12 @@ fn register_storage_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let path = args
                     .get("path")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "path 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "path")]))?
                     .to_string();
                 let content = args
                     .get("content")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "content 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "content")]))?
                     .to_string();
                 storage.write(&path, &content).await?;
                 Ok(serde_json::json!({"path": path, "written": content.len()}))
@@ -284,7 +289,7 @@ fn register_storage_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let path = args
                     .get("path")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "path 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "path")]))?
                     .to_string();
                 let entries = storage.list_dir(&path).await?;
                 let json: Vec<serde_json::Value> = entries
@@ -315,7 +320,7 @@ fn register_storage_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let path = args
                     .get("path")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "path 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "path")]))?
                     .to_string();
                 storage.delete(&path).await?;
                 Ok(serde_json::json!({"deleted": path}))
@@ -359,7 +364,7 @@ fn register_schedule_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let job_id = args
                     .get("jobId")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "jobId 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "jobId")]))?
                     .to_string();
                 schedule.cancel(&job_id).await?;
                 Ok(serde_json::json!({"cancelled": job_id}))
@@ -531,7 +536,7 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let slug = args
                     .get("slug")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "slug 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "slug")]))?
                     .to_string();
                 let (result, regen_from) = media.regenerate_image_by_slug(&slug).await?;
                 let mut value = serde_json::to_value(&result).unwrap_or_default();
@@ -555,7 +560,7 @@ fn parse_generate_image_input(
     let prompt = args
         .get("prompt")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| "prompt 누락".to_string())?
+        .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "prompt")]))?
         .to_string();
     let size = args.get("size").and_then(|v| v.as_str()).map(String::from);
     let quality = args
@@ -702,11 +707,11 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     entity_id: args
                         .get("entityId")
                         .and_then(|v| v.as_i64())
-                        .ok_or_else(|| "entityId 누락".to_string())?,
+                        .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "entityId")]))?,
                     content: args
                         .get("content")
                         .and_then(|v| v.as_str())
-                        .ok_or_else(|| "content 누락".to_string())?
+                        .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "content")]))?
                         .to_string(),
                     fact_type: args
                         .get("factType")
@@ -784,7 +789,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let entity_id = args
                     .get("entityId")
                     .and_then(|v| v.as_i64())
-                    .ok_or_else(|| "entityId 누락".to_string())?;
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "entityId")]))?;
                 let opts = TimelineOpts {
                     limit: args
                         .get("limit")
@@ -1004,7 +1009,7 @@ fn register_consolidation_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) 
                 let conv_id = args
                     .get("conversationId")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "conversationId 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "conversationId")]))?
                     .to_string();
                 let model_id = args
                     .get("modelId")
@@ -1081,7 +1086,7 @@ fn register_module_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let name = args
                     .get("name")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "name 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "name")]))?
                     .to_string();
                 let scope = args
                     .get("scope")
@@ -1135,12 +1140,12 @@ fn register_mcp_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                 let server = args
                     .get("server")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "server 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "server")]))?
                     .to_string();
                 let tool = args
                     .get("tool")
                     .and_then(|v| v.as_str())
-                    .ok_or_else(|| "tool 누락".to_string())?
+                    .ok_or_else(|| crate::i18n::t("core.error.ai.tool_arg_missing", None, &[("name", "tool")]))?
                     .to_string();
                 let arguments = args
                     .get("arguments")

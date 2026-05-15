@@ -152,7 +152,11 @@ impl CapabilityService for CapabilityServiceImpl {
         if self.manager.set_settings(&args.cap_id, &settings) {
             Ok(Response::new(CapabilitySetSettingsResponse {}))
         } else {
-            Err(TonicStatus::internal("set_settings 저장 실패"))
+            Err(TonicStatus::internal(crate::i18n::t(
+                "core.error.rpc.set_settings_failed",
+                None,
+                &[],
+            )))
         }
     }
 }

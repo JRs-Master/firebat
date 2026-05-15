@@ -57,7 +57,11 @@ impl SecretService for SecretServiceImpl {
         if self.manager.set_user(&args.name, &args.value) {
             Ok(Response::new(SecretSetUserResponse {}))
         } else {
-            Err(TonicStatus::internal("set_user 실패"))
+            Err(TonicStatus::internal(crate::i18n::t(
+                "core.error.rpc.set_user_failed",
+                None,
+                &[],
+            )))
         }
     }
 
@@ -81,7 +85,11 @@ impl SecretService for SecretServiceImpl {
         if self.manager.delete_user(&name) {
             Ok(Response::new(SecretDeleteUserResponse {}))
         } else {
-            Err(TonicStatus::not_found("delete_user 실패"))
+            Err(TonicStatus::not_found(crate::i18n::t(
+                "core.error.rpc.delete_user_failed",
+                None,
+                &[],
+            )))
         }
     }
 
@@ -125,7 +133,11 @@ impl SecretService for SecretServiceImpl {
             }
             Ok(Response::new(SecretSetSystemResponse {}))
         } else {
-            Err(TonicStatus::internal("set_system 실패"))
+            Err(TonicStatus::internal(crate::i18n::t(
+                "core.error.rpc.set_system_failed",
+                None,
+                &[],
+            )))
         }
     }
 }

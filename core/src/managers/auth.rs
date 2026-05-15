@@ -130,7 +130,7 @@ impl AuthManager {
         forbidden_id: Option<&str>,
     ) -> Result<(), String> {
         if password.len() < 8 {
-            return Err("비밀번호는 8자 이상이어야 합니다.".to_string());
+            return Err(crate::i18n::t("core.error.auth.password_too_short", None, &[]));
         }
         let mut categories = 0u8;
         if password.chars().any(|c| c.is_ascii_uppercase()) {
@@ -149,13 +149,19 @@ impl AuthManager {
             categories += 1;
         }
         if categories < 3 {
-            return Err(
-                "비밀번호는 대문자·소문자·숫자·특수문자 중 3종류 이상을 포함해야 합니다.".to_string(),
-            );
+            return Err(crate::i18n::t(
+                "core.error.auth.password_policy_category",
+                None,
+                &[],
+            ));
         }
         if let Some(id) = forbidden_id {
             if password.to_lowercase() == id.trim().to_lowercase() {
-                return Err("비밀번호는 ID와 동일할 수 없습니다.".to_string());
+                return Err(crate::i18n::t(
+                    "core.error.auth.password_same_as_id",
+                    None,
+                    &[],
+                ));
             }
         }
         Ok(())
