@@ -262,11 +262,17 @@ impl ProcessSandboxAdapter {
         self.runtimes.get(&ext)
     }
 
-    /// config.json 의 `packages` 배열 기반 선제적 패키지 install. 옛 TS preInstallFromManifest 1:1.
-    /// runtime: python (default) → pip3/pip/`<py> -m pip` 자동 탐색
-    /// runtime: node → `npm install <pkg> --prefix <module_dir> --quiet`
+    /// config.json 의 `packages` 배열 기반 선제적 패키지 install — workspace 격리.
+    ///
+    /// **Python**: `pip install --target {workspace}/python_modules {pkg}` — 매 패키지를 workspace
+    /// 안에 격리. 매 python 실행 시 `PYTHONPATH={workspace}/python_modules` 자동 주입 → import.
+    /// 시스템 전역 (/usr/lib/python3/site-packages) 잔존 0 — workspace 폴더 삭제 = 모든 deps 삭제.
+    /// Windows / macOS / Linux 동일 패턴.
+    ///
+    /// **Node**: `npm install <pkg> --prefix <module_dir>` — 매 sysmod 별 자체 node_modules.
+    ///
     /// 실패해도 silent (실 실행 시 retry 가 catch).
-    async fn pre_install_from_manifest(module_dir: &Path) {
+    async fn pre_install_from_manifest(module_dir: &Path, workspace_root: &Path) {
         let manifest_path = module_dir.join("config.json");
         let Ok(raw) = std::fs::read_to_string(&manifest_path) else {
             return;
@@ -298,12 +304,18 @@ impl ProcessSandboxAdapter {
                 } else {
                     format!("{py} -m pip")
                 };
+                // workspace 격리 install — /opt/firebat/python_modules/. 매 python 실행 시
+                // PYTHONPATH env 자동 주입 → import lookup. 시스템 전역 잔존 0.
+                let python_modules = workspace_root.join("python_modules");
+                let _ = std::fs::create_dir_all(&python_modules);
+                let target_arg = python_modules.to_string_lossy().to_string();
                 for pkg in packages {
                     let Some(pkg_name) = pkg.as_str() else { continue };
-                    // shell escape — pkg 이름 + version constraint 그대로 (옛 TS 와 동등)
                     let _ = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
                         .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
-                        .arg(format!("{pip} install {pkg_name} --quiet"))
+                        .arg(format!(
+                            "{pip} install --target \"{target_arg}\" --upgrade {pkg_name} --quiet"
+                        ))
                         .stdout(Stdio::null())
                         .stderr(Stdio::null())
                         .status()
@@ -344,7 +356,7 @@ impl ProcessSandboxAdapter {
 
     /// stderr 또는 stdout JSON 의 error 에서 패키지 누락 감지 → install → retry 1회.
     /// 옛 TS executeWithAutoInstall 의 retry loop 1:1 (단순화 — MAX_RETRIES 한도 안에서).
-    async fn try_auto_install(err_msg: &str, module_dir: &Path) -> bool {
+    async fn try_auto_install(err_msg: &str, module_dir: &Path, workspace_root: &Path) -> bool {
         // Python: `No module named 'pkg'` 또는 `No module named pkg` 매칭 (옛 TS 1:1)
         let py_re = regex::Regex::new(r"No module named '?([^'\s]+)'?").ok();
         if let Some(re) = &py_re {
@@ -364,9 +376,15 @@ impl ProcessSandboxAdapter {
                         } else {
                             "py -m pip".to_string()
                         };
+                        // workspace 격리 install — pre_install_from_manifest 와 동일 target.
+                        let python_modules = workspace_root.join("python_modules");
+                        let _ = std::fs::create_dir_all(&python_modules);
+                        let target_arg = python_modules.to_string_lossy().to_string();
                         let _ = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
                             .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
-                            .arg(format!("{pip} install {pkg_name} --quiet"))
+                            .arg(format!(
+                                "{pip} install --target \"{target_arg}\" --upgrade {pkg_name} --quiet"
+                            ))
                             .stdout(Stdio::null())
                             .stderr(Stdio::null())
                             .status()
@@ -434,7 +452,7 @@ impl ISandboxPort for ProcessSandboxAdapter {
             .parent()
             .map(PathBuf::from)
             .unwrap_or_else(|| self.workspace_root.clone());
-        Self::pre_install_from_manifest(&module_dir).await;
+        Self::pre_install_from_manifest(&module_dir, &self.workspace_root).await;
 
         // retry loop — 패키지 누락 감지 시 자동 install + 재시도 (옛 TS executeWithAutoInstall 1:1)
         let mut last_result: Option<ModuleOutput> = None;
@@ -469,7 +487,7 @@ impl ISandboxPort for ProcessSandboxAdapter {
             };
             // 마지막 시도 + 자동 install 시도 — 다음 attempt 에 retry 가능
             if attempt < MAX_RETRIES - 1
-                && Self::try_auto_install(&err_msg, &module_dir).await
+                && Self::try_auto_install(&err_msg, &module_dir, &self.workspace_root).await
             {
                 last_result = Some(result);
                 continue;
@@ -525,6 +543,20 @@ impl ProcessSandboxAdapter {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+
+        // workspace 격리 Python deps — pre_install_from_manifest 가 박은 `--target /opt/firebat/python_modules`
+        // 경로를 PYTHONPATH 로 자동 주입. 매 python sysmod 가 import 시점에 그 경로 lookup.
+        let python_modules = self.workspace_root.join("python_modules");
+        if python_modules.is_dir() {
+            let existing = std::env::var("PYTHONPATH").unwrap_or_default();
+            let new_path = if existing.is_empty() {
+                python_modules.to_string_lossy().to_string()
+            } else {
+                let sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+                format!("{}{}{}", python_modules.to_string_lossy(), sep, existing)
+            };
+            cmd.env("PYTHONPATH", new_path);
+        }
 
         // Vault secrets 자동 주입 (옛 TS loadSecretsEnv 1:1)
         for (k, v) in self.load_secrets_env(module_dir) {
@@ -858,7 +890,7 @@ mod tests {
         // 실제 install 은 환경 의존이라 false return 만 검증 (playwright 케이스로 install skip 강제)
         let dir = tempdir().unwrap();
         let _result =
-            ProcessSandboxAdapter::try_auto_install("No module named 'playwright'", dir.path())
+            ProcessSandboxAdapter::try_auto_install("No module named 'playwright'", dir.path(), dir.path())
                 .await;
         // playwright 는 옛 TS 와 동일 — auto install skip → false (또는 install 시도 안 함)
     }
