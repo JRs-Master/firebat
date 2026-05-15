@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useId } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import StockChart from '../../admin/chat-components/StockChart';
@@ -312,6 +312,8 @@ function FormComp({ bindModule, inputs = [], submitText = '실행' }: {
             </label>
             <input
               id={`f-${input.name}`}
+              name={input.name}
+              autoComplete="off"
               type={input.type ?? 'text'}
               required={input.required}
               placeholder={input.placeholder ?? ''}
@@ -772,22 +774,26 @@ function SliderComp({ label, min = 0, max = 100, step = 1, defaultValue, unit = 
   label?: string; min?: number; max?: number; step?: number; defaultValue?: number; unit?: string;
 }) {
   const [value, setValue] = useState(defaultValue ?? min);
+  const inputId = useId();
   return (
     <div className="space-y-2">
       {label && (
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-gray-700">{label}</span>
+          <label htmlFor={inputId} className="text-sm font-semibold text-gray-700">{label}</label>
           <span className="text-sm font-bold text-blue-600">{value}{unit}</span>
         </div>
       )}
       <input
         type="range"
+        id={inputId}
+        name={inputId}
+        autoComplete="off"
         min={min}
         max={max}
         step={step}
         value={value}
         onChange={e => setValue(Number(e.target.value))}
-        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600" name="value" autoComplete="off" id="value"
+        className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
       />
       {!label && <div className="text-right text-sm font-bold text-blue-600">{value}{unit}</div>}
     </div>

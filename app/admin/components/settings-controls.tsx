@@ -7,12 +7,29 @@
 'use client';
 import { Tooltip } from './Tooltip';
 
-import React from 'react';
+import React, { createContext, useContext, useId } from 'react';
 
 // ── Field / Section ────────────────────────────────────────────────
 
-export function FieldLabel({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <label className={`text-xs sm:text-sm font-bold text-slate-700 ${className}`}>{children}</label>;
+/**
+ * FieldContext — Field 가 useId 박은 unique id 를 FieldLabel + 자식 input 에 자동 전달.
+ * 옛 hardcoded `id="value"` / `id="value-40"` 박힘 → multiple instance 충돌 회피.
+ */
+const FieldContext = createContext<{ inputId: string } | null>(null);
+
+function useFieldId(): string | undefined {
+  const ctx = useContext(FieldContext);
+  return ctx?.inputId;
+}
+
+export function FieldLabel({ children, className = '', htmlFor }: { children: React.ReactNode; className?: string; htmlFor?: string }) {
+  const ctxId = useFieldId();
+  const targetId = htmlFor ?? ctxId;
+  return (
+    <label htmlFor={targetId} className={`text-xs sm:text-sm font-bold text-slate-700 ${className}`}>
+      {children}
+    </label>
+  );
 }
 
 export function HelpText({ children, className = '' }: { children: React.ReactNode; className?: string }) {
@@ -20,12 +37,15 @@ export function HelpText({ children, className = '' }: { children: React.ReactNo
 }
 
 export function Field({ label, help, children }: { label?: React.ReactNode; help?: React.ReactNode; children: React.ReactNode }) {
+  const inputId = useId();
   return (
-    <div className="flex flex-col gap-2">
-      {label && <FieldLabel>{label}</FieldLabel>}
-      {children}
-      {help && <HelpText>{help}</HelpText>}
-    </div>
+    <FieldContext.Provider value={{ inputId }}>
+      <div className="flex flex-col gap-2">
+        {label && <FieldLabel>{label}</FieldLabel>}
+        {children}
+        {help && <HelpText>{help}</HelpText>}
+      </div>
+    </FieldContext.Provider>
   );
 }
 
@@ -34,8 +54,10 @@ export function Field({ label, help, children }: { label?: React.ReactNode; help
 type TextKind = 'text' | 'password' | 'email';
 
 export function TextInput({
-  value, onChange, placeholder, type = 'text', className = '', disabled = false,
-}: { value: string; onChange: (v: string) => void; placeholder?: string; type?: TextKind; className?: string; disabled?: boolean }) {
+  value, onChange, placeholder, type = 'text', className = '', disabled = false, id, name,
+}: { value: string; onChange: (v: string) => void; placeholder?: string; type?: TextKind; className?: string; disabled?: boolean; id?: string; name?: string }) {
+  const ctxId = useFieldId();
+  const inputId = id ?? ctxId;
   return (
     <input
       type={type}
@@ -43,21 +65,29 @@ export function TextInput({
       disabled={disabled}
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
-      className={`w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 ${className}`} name="value-40" autoComplete="off" id="value-40"
+      id={inputId}
+      name={name ?? inputId}
+      autoComplete="off"
+      className={`w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 ${className}`}
     />
   );
 }
 
 export function Textarea({
-  value, onChange, placeholder, rows = 4, mono = false, className = '',
-}: { value: string; onChange: (v: string) => void; placeholder?: string; rows?: number; mono?: boolean; className?: string }) {
+  value, onChange, placeholder, rows = 4, mono = false, className = '', id, name,
+}: { value: string; onChange: (v: string) => void; placeholder?: string; rows?: number; mono?: boolean; className?: string; id?: string; name?: string }) {
+  const ctxId = useFieldId();
+  const inputId = id ?? ctxId;
   return (
     <textarea
       value={value}
       onChange={e => onChange(e.target.value)}
       placeholder={placeholder}
       rows={rows}
-      className={`w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg ${mono ? 'text-[12px] font-mono' : 'text-[13px] sm:text-[14px]'} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y ${className}`} name="value-55" autoComplete="off" id="value-55"
+      id={inputId}
+      name={name ?? inputId}
+      autoComplete="off"
+      className={`w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg ${mono ? 'text-[12px] font-mono' : 'text-[13px] sm:text-[14px]'} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y ${className}`}
     />
   );
 }
@@ -65,13 +95,17 @@ export function Textarea({
 // ── Select ─────────────────────────────────────────────────────────
 
 export function SelectInput<T extends string>({
-  value, onChange, options, placeholder,
-}: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; placeholder?: string }) {
+  value, onChange, options, placeholder, id, name,
+}: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; placeholder?: string; id?: string; name?: string }) {
+  const ctxId = useFieldId();
+  const inputId = id ?? ctxId;
   return (
     <select
       value={value}
       onChange={e => onChange(e.target.value as T)}
-      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer" name="value" id="value"
+      id={inputId}
+      name={name ?? inputId}
+      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer"
     >
       {placeholder && <option value="">{placeholder}</option>}
       {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
