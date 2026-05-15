@@ -76,24 +76,34 @@ impl ModuleManager {
         if !is_safe_name(module_name) {
             return Err("잘못된 모듈 이름입니다.".into());
         }
-        let dir_path = format!("user/modules/{}", module_name);
-        let entries = self
-            .storage
-            .list_dir(&dir_path)
-            .await
-            .map_err(|_| format!("모듈을 찾을 수 없습니다: {}", module_name))?;
-        let files: Vec<String> = entries
-            .iter()
-            .filter(|e| !e.is_directory)
-            .map(|e| e.name.clone())
-            .collect();
+        // user / system 모두 검색 — sysmod 도구는 system/modules/ 안 박힘.
+        let (scope, dir_path, files) = {
+            let user_dir = format!("user/modules/{}", module_name);
+            let system_dir = format!("system/modules/{}", module_name);
+            let user_entries = self.storage.list_dir(&user_dir).await.ok();
+            let system_entries = self.storage.list_dir(&system_dir).await.ok();
+            let pick = |entries: Vec<crate::ports::DirEntry>| -> Vec<String> {
+                entries
+                    .iter()
+                    .filter(|e| !e.is_directory)
+                    .map(|e| e.name.clone())
+                    .collect()
+            };
+            if let Some(e) = user_entries {
+                ("user", user_dir, pick(e))
+            } else if let Some(e) = system_entries {
+                ("system", system_dir, pick(e))
+            } else {
+                return Err(format!("모듈을 찾을 수 없습니다: {}", module_name));
+            }
+        };
         let entry = ENTRY_FILES
             .iter()
             .find(|f| files.contains(&f.to_string()))
             .ok_or_else(|| format!("모듈 entry 파일을 찾을 수 없습니다: {}", module_name))?;
 
         // Pre-spawn input validation — config.json 의 input schema 기준
-        if let Some(config) = self.get_module_config("user", module_name).await {
+        if let Some(config) = self.get_module_config(scope, module_name).await {
             if let Some(input_schema) = config.get("input") {
                 validate_value(input_data, input_schema)
                     .map_err(|e| format!("[{}] 입력 검증 실패: {}", module_name, e))?;
@@ -107,7 +117,7 @@ impl ModuleManager {
             .await?;
 
         // Post-spawn output validation — config.json 의 output schema 설정되어 있으면 검사 (선택)
-        if let Some(config) = self.get_module_config("user", module_name).await {
+        if let Some(config) = self.get_module_config(scope, module_name).await {
             if let Some(output_schema) = config.get("output") {
                 if let Err(e) = validate_value(&result.data, output_schema) {
                     tracing::warn!(
