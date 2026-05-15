@@ -914,7 +914,41 @@
       "format": "cli-gemini",
       "endpoint": "gemini",
       "features": {
-        "mcpConnector": true
+        "mcpConnector": true,
+        "thinking": true
+      },
+      "thinking": {
+        "kind": "thinking",
+        "levels": [
+          {
+            "value": "minimal",
+            "labels": {
+              "ko": "Minimal (최소, 빠름)",
+              "en": "Minimal (fastest)"
+            }
+          },
+          {
+            "value": "low",
+            "labels": {
+              "ko": "Low (낮음)",
+              "en": "Low"
+            }
+          },
+          {
+            "value": "medium",
+            "labels": {
+              "ko": "Medium (중간, 기본)",
+              "en": "Medium (default)"
+            }
+          },
+          {
+            "value": "high",
+            "labels": {
+              "ko": "High (높음)",
+              "en": "High"
+            }
+          }
+        ]
       },
       "execMode": "cli",
       "cliProvider": "gemini",
@@ -927,7 +961,41 @@
       "format": "cli-gemini",
       "endpoint": "gemini",
       "features": {
-        "mcpConnector": true
+        "mcpConnector": true,
+        "thinking": true
+      },
+      "thinking": {
+        "kind": "thinking",
+        "levels": [
+          {
+            "value": "minimal",
+            "labels": {
+              "ko": "Minimal (최소, 빠름)",
+              "en": "Minimal (fastest)"
+            }
+          },
+          {
+            "value": "low",
+            "labels": {
+              "ko": "Low (낮음)",
+              "en": "Low"
+            }
+          },
+          {
+            "value": "medium",
+            "labels": {
+              "ko": "Medium (중간, 기본)",
+              "en": "Medium (default)"
+            }
+          },
+          {
+            "value": "high",
+            "labels": {
+              "ko": "High (높음)",
+              "en": "High"
+            }
+          }
+        ]
       },
       "execMode": "cli",
       "cliProvider": "gemini",
@@ -940,7 +1008,41 @@
       "format": "cli-gemini",
       "endpoint": "gemini",
       "features": {
-        "mcpConnector": true
+        "mcpConnector": true,
+        "thinking": true
+      },
+      "thinking": {
+        "kind": "thinking",
+        "levels": [
+          {
+            "value": "minimal",
+            "labels": {
+              "ko": "Minimal (최소, 빠름)",
+              "en": "Minimal (fastest)"
+            }
+          },
+          {
+            "value": "low",
+            "labels": {
+              "ko": "Low (낮음)",
+              "en": "Low"
+            }
+          },
+          {
+            "value": "medium",
+            "labels": {
+              "ko": "Medium (중간, 기본)",
+              "en": "Medium (default)"
+            }
+          },
+          {
+            "value": "high",
+            "labels": {
+              "ko": "High (높음)",
+              "en": "High"
+            }
+          }
+        ]
       },
       "execMode": "cli",
       "cliProvider": "gemini",

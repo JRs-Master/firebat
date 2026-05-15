@@ -1065,6 +1065,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   <SelectInput value={modelValue} onChange={onAiModelChange} options={modelOptions} />
                 </Field>
 
+                {/* Thinking — 모델 드롭다운 바로 아래. API / CLI 둘 다 동일 위치. */}
+                {thinkingKind && thinkingOptions.length > 0 && (
+                  <Field label={thinkingLabel}>
+                    <SelectInput value={thinkingValue} onChange={setThinkingLevel} options={thinkingOptions} />
+                  </Field>
+                )}
+
                 {/* Anthropic prompt caching 토글 — Claude API 모드 전용 (모드=일반 AND 공급자=Anthropic) */}
                 {execMode === 'api' && aiMode === 'general' && aiProvider === 'anthropic' && (
                   <Field label="Prompt Caching" help="동일 prefix (system/tools) 를 5분 내 재사용하면 90% 비용이 절감되고 응답이 가속됩니다. 단발 호출이면 cache write 25% 추가 비용이 발생합니다. 같은 대화 멀티턴 위주면 ON, 짧은 단발 위주면 OFF 를 권장합니다.">
@@ -1176,12 +1183,6 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   </div>
                   );
                 })()}
-
-                {thinkingKind && thinkingOptions.length > 0 && (
-                  <Field label={thinkingLabel}>
-                    <SelectInput value={thinkingValue} onChange={setThinkingLevel} options={thinkingOptions} />
-                  </Field>
-                )}
 
                 {/* API 키 — API 모드에서만 노출. CLI 모드는 자체 인증이라 키 불필요 */}
                 {execMode === 'api' && (
