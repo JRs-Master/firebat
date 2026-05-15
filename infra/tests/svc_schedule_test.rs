@@ -10,7 +10,7 @@ use firebat_core::proto::{
     schedule_service_server::ScheduleService, CancelCronRequest, ListCronRequest,
     ScheduleCronRequest,
 };
-use firebat_core::services::schedule::ScheduleServiceImpl;
+use firebat_core::grpc::schedule::ScheduleServiceImpl;
 use firebat_infra::adapters::cron::TokioCronAdapter;
 
 fn service() -> (ScheduleServiceImpl, tempfile::TempDir) {

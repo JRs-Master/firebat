@@ -11,7 +11,7 @@ use firebat_core::ports::IMediaPort;
 use firebat_core::proto::{
     media_service_server::MediaService, MediaIsReadyRequest, MediaListRequest, MediaSaveRequest,
 };
-use firebat_core::services::media::MediaServiceImpl;
+use firebat_core::grpc::media::MediaServiceImpl;
 use firebat_infra::adapters::media::LocalMediaAdapter;
 
 fn service() -> (MediaServiceImpl, tempfile::TempDir) {

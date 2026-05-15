@@ -65,7 +65,7 @@ use firebat_core::{
         template_service_server::TemplateServiceServer,
         tool_service_server::ToolServiceServer,
     },
-    services,
+    grpc,
 };
 
 #[tokio::main(flavor = "multi_thread")]
@@ -463,41 +463,41 @@ async fn main() -> Result<()> {
     let schedule_manager = schedule_manager_with_hooks;
 
     // service impls
-    let template_service = services::template::TemplateServiceImpl::new(template_manager);
-    let secret_service = services::secret::SecretServiceImpl::new(secret_manager.clone());
-    let auth_service = services::auth::AuthServiceImpl::new(auth_manager.clone());
-    let event_service = services::event::EventServiceImpl::new(event_manager);
-    let capability_service = services::capability::CapabilityServiceImpl::new(capability_manager);
-    let status_service = services::status::StatusServiceImpl::new(status_manager);
-    let tool_service = services::tool::ToolServiceImpl::new(tool_manager.clone());
-    let cost_service = services::cost::CostServiceImpl::new(cost_manager);
-    let project_service = services::project::ProjectServiceImpl::new(project_manager);
-    let module_service = services::module::ModuleServiceImpl::new(module_manager.clone());
-    let page_service = services::page::PageServiceImpl::new(page_manager.clone());
+    let template_service = grpc::template::TemplateServiceImpl::new(template_manager);
+    let secret_service = grpc::secret::SecretServiceImpl::new(secret_manager.clone());
+    let auth_service = grpc::auth::AuthServiceImpl::new(auth_manager.clone());
+    let event_service = grpc::event::EventServiceImpl::new(event_manager);
+    let capability_service = grpc::capability::CapabilityServiceImpl::new(capability_manager);
+    let status_service = grpc::status::StatusServiceImpl::new(status_manager);
+    let tool_service = grpc::tool::ToolServiceImpl::new(tool_manager.clone());
+    let cost_service = grpc::cost::CostServiceImpl::new(cost_manager);
+    let project_service = grpc::project::ProjectServiceImpl::new(project_manager);
+    let module_service = grpc::module::ModuleServiceImpl::new(module_manager.clone());
+    let page_service = grpc::page::PageServiceImpl::new(page_manager.clone());
     // ConversationService — IDatabasePort 설정하여 create_share / get_share / cleanup_expired_shares 활성.
     // .clone() — internal 30d cleanup cron (Server::builder 직전) 도 같은 manager 참조.
     let conversation_service =
-        services::conversation::ConversationServiceImpl::new(conversation_manager.clone())
+        grpc::conversation::ConversationServiceImpl::new(conversation_manager.clone())
             .with_db(db.clone());
-    let mcp_service = services::mcp::McpServiceImpl::new(mcp_manager.clone());
-    let entity_service = services::entity::EntityServiceImpl::new(entity_manager.clone());
-    let episodic_service = services::episodic::EpisodicServiceImpl::new(episodic_manager.clone());
+    let mcp_service = grpc::mcp::McpServiceImpl::new(mcp_manager.clone());
+    let entity_service = grpc::entity::EntityServiceImpl::new(entity_manager.clone());
+    let episodic_service = grpc::episodic::EpisodicServiceImpl::new(episodic_manager.clone());
     let consolidation_service =
-        services::consolidation::ConsolidationServiceImpl::new(consolidation_manager);
+        grpc::consolidation::ConsolidationServiceImpl::new(consolidation_manager);
     // ScheduleService — TaskManager 설정하여 validate_pipeline 정밀 검증 활성
-    let schedule_service = services::schedule::ScheduleServiceImpl::new(schedule_manager.clone())
+    let schedule_service = grpc::schedule::ScheduleServiceImpl::new(schedule_manager.clone())
         .with_task_manager(task_manager.clone());
-    let task_service = services::task::TaskServiceImpl::new(task_manager.clone());
+    let task_service = grpc::task::TaskServiceImpl::new(task_manager.clone());
     // .clone() — internal 30d cleanup cron 박은 거 같은 manager 참조.
-    let media_service = services::media::MediaServiceImpl::new(media_manager.clone());
-    let ai_service = services::ai::AiServiceImpl::new(ai_manager.clone());
+    let media_service = grpc::media::MediaServiceImpl::new(media_manager.clone());
+    let ai_service = grpc::ai::AiServiceImpl::new(ai_manager.clone());
 
     // Phase B-17.5 — cross-cutting services (Storage / Settings / Network / Lifecycle).
     // Phase B-post audit A5 (2026-05-06): INetworkPort 저장 — services 의 reqwest 직접 의존 제거.
     let network_port: Arc<dyn INetworkPort> = Arc::new(ReqwestNetworkAdapter::new());
-    let storage_service = services::storage::StorageServiceImpl::new(storage.clone());
-    let settings_service = services::settings::SettingsServiceImpl::new(vault.clone());
-    let network_service = services::network::NetworkServiceImpl::new(network_port.clone());
+    let storage_service = grpc::storage::StorageServiceImpl::new(storage.clone());
+    let settings_service = grpc::settings::SettingsServiceImpl::new(vault.clone());
+    let network_service = grpc::network::NetworkServiceImpl::new(network_port.clone());
     // Phase B-17.5b — Cache / Telegram / Database 추가.
     let cache_dir = workspace_root.join("data").join("cache").join("sysmod-results");
     let cache_adapter = std::sync::Arc::new(
@@ -505,16 +505,16 @@ async fn main() -> Result<()> {
             .map_err(anyhow::Error::msg)
             .context("Cache 디렉토리 초기화 실패")?,
     );
-    let cache_service = services::cache::CacheServiceImpl::new(cache_adapter);
+    let cache_service = grpc::cache::CacheServiceImpl::new(cache_adapter);
     // TelegramService — AiManager + ModuleManager 설정하여 process_message webhook → AI → reply 활성
-    let telegram_service = services::telegram::TelegramServiceImpl::new(vault.clone(), network_port.clone())
+    let telegram_service = grpc::telegram::TelegramServiceImpl::new(vault.clone(), network_port.clone())
         .with_ai_and_module(ai_manager.clone(), module_manager.clone());
     // DatabaseService — raw SELECT escape hatch. 옛 raw rusqlite::Connection 직접 의존
     // (BIBLE Core 순수성 위반) → IDatabasePort port 위임으로 정정 (2026-05-06).
-    let database_service = services::database::DatabaseServiceImpl::new(db.clone());
-    let memory_file_service = services::memory_file::MemoryServiceImpl::new(storage.clone());
+    let database_service = grpc::database::DatabaseServiceImpl::new(db.clone());
+    let memory_file_service = grpc::memory_file::MemoryServiceImpl::new(storage.clone());
 
-    let lifecycle_service = services::lifecycle::LifecycleServiceImpl::new(vec![
+    let lifecycle_service = grpc::lifecycle::LifecycleServiceImpl::new(vec![
         "AiManager".to_string(),
         "PageManager".to_string(),
         "ProjectManager".to_string(),

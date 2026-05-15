@@ -9,7 +9,7 @@ use tonic::Request;
 
 use firebat_core::ports::IDatabasePort;
 use firebat_core::proto::{database_service_server::DatabaseService, DatabaseQueryRequest};
-use firebat_core::services::database::DatabaseServiceImpl;
+use firebat_core::grpc::database::DatabaseServiceImpl;
 use firebat_infra::adapters::database::SqliteDatabaseAdapter;
 
 fn make_svc() -> (DatabaseServiceImpl, tempfile::TempDir) {

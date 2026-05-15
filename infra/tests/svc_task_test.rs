@@ -7,7 +7,7 @@ use tonic::Request;
 use firebat_core::managers::task::{StubTaskExecutor, TaskExecutor, TaskManager};
 use firebat_core::ports::ILogPort;
 use firebat_core::proto::{task_service_server::TaskService, TaskRunRequest};
-use firebat_core::services::task::TaskServiceImpl;
+use firebat_core::grpc::task::TaskServiceImpl;
 use firebat_infra::adapters::log::ConsoleLogAdapter;
 
 fn service() -> TaskServiceImpl {

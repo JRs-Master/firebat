@@ -10,7 +10,7 @@ use firebat_core::proto::{
     capability_service_server::CapabilityService, CapabilityGetSettingsRequest,
     CapabilityListRequest, CapabilitySetSettingsRequest,
 };
-use firebat_core::services::capability::CapabilityServiceImpl;
+use firebat_core::grpc::capability::CapabilityServiceImpl;
 use firebat_infra::adapters::log::ConsoleLogAdapter;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;

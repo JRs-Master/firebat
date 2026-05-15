@@ -13,7 +13,7 @@ use firebat_core::proto::{
     consolidation_service_server::ConsolidationService, ConsolidationConsolidateRequest,
     ConsolidationGetMemoryStatsRequest,
 };
-use firebat_core::services::consolidation::ConsolidationServiceImpl;
+use firebat_core::grpc::consolidation::ConsolidationServiceImpl;
 use firebat_infra::adapters::memory::SqliteMemoryAdapter;
 
 fn service() -> (ConsolidationServiceImpl, TempDir) {

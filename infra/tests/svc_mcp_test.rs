@@ -9,7 +9,7 @@ use firebat_core::ports::{IMcpClientPort, McpServerConfig, McpTransport};
 use firebat_core::proto::{
     mcp_service_server::McpService, McpAddServerRequest, McpListServersRequest,
 };
-use firebat_core::services::mcp::McpServiceImpl;
+use firebat_core::grpc::mcp::McpServiceImpl;
 use firebat_infra::adapters::mcp_client::McpClientFileAdapter;
 
 fn make_service() -> (McpServiceImpl, tempfile::TempDir) {

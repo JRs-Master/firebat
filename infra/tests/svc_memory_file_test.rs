@@ -9,7 +9,7 @@ use firebat_core::proto::{
     memory_service_server::MemoryService, MemoryGetIndexRequest, MemoryListFilesRequest,
     MemoryReadFileRequest, MemorySaveFileRequest,
 };
-use firebat_core::services::memory_file::MemoryServiceImpl;
+use firebat_core::grpc::memory_file::MemoryServiceImpl;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 
 fn service() -> (MemoryServiceImpl, tempfile::TempDir) {

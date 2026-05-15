@@ -7,7 +7,7 @@ use tonic::Request;
 use firebat_core::managers::entity::EntityManager;
 use firebat_core::ports::IEntityPort;
 use firebat_core::proto::{entity_service_server::EntityService, EntitySaveRequest, EntitySearchRequest};
-use firebat_core::services::entity::EntityServiceImpl;
+use firebat_core::grpc::entity::EntityServiceImpl;
 use firebat_infra::adapters::memory::SqliteMemoryAdapter;
 
 fn service() -> (EntityServiceImpl, TempDir) {

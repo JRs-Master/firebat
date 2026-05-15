@@ -6,7 +6,7 @@ use tonic::Request;
 use firebat_core::managers::event::{EventManager, FirebatEvent};
 use firebat_core::ports::ILogPort;
 use firebat_core::proto::{event_service_server::EventService, EventListAuditLogRequest};
-use firebat_core::services::event::EventServiceImpl;
+use firebat_core::grpc::event::EventServiceImpl;
 use firebat_infra::adapters::log::ConsoleLogAdapter;
 
 #[tokio::test]

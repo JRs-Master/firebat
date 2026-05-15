@@ -10,7 +10,7 @@ use firebat_core::proto::{
     ai_service_server::AiService, AiProcessRequest, AiRequestActionWithToolsRequest, LlmCallOptsPb,
     ToolDefinitionsPb,
 };
-use firebat_core::services::ai::AiServiceImpl;
+use firebat_core::grpc::ai::AiServiceImpl;
 use firebat_infra::adapters::llm::StubLlmAdapter;
 use firebat_infra::adapters::log::ConsoleLogAdapter;
 

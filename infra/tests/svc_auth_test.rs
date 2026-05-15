@@ -11,7 +11,7 @@ use firebat_core::proto::{
     AuthIsAdminSetupRequest, AuthLoginRequest, AuthRevokeApiTokensRequest,
     AuthValidateApiTokenRequest,
 };
-use firebat_core::services::auth::AuthServiceImpl;
+use firebat_core::grpc::auth::AuthServiceImpl;
 use firebat_infra::adapters::auth::VaultAuthAdapter;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
 

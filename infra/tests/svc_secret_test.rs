@@ -10,7 +10,7 @@ use firebat_core::proto::{
     secret_service_server::SecretService, SecretDeleteUserRequest, SecretGetUserRequest,
     SecretListUserRequest, SecretSetUserRequest,
 };
-use firebat_core::services::secret::SecretServiceImpl;
+use firebat_core::grpc::secret::SecretServiceImpl;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
 

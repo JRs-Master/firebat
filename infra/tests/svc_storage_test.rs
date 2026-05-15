@@ -9,7 +9,7 @@ use firebat_core::proto::{
     storage_service_server::StorageService, StorageGetFileTreeRequest, StorageReadFileRequest,
     StorageWriteFileRequest,
 };
-use firebat_core::services::storage::StorageServiceImpl;
+use firebat_core::grpc::storage::StorageServiceImpl;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 
 #[tokio::test]

@@ -10,7 +10,7 @@ use firebat_core::proto::{
     template_service_server::TemplateService, TemplateDeleteRequest, TemplateGetRequest,
     TemplateListRequest, TemplateSaveRequest,
 };
-use firebat_core::services::template::TemplateServiceImpl;
+use firebat_core::grpc::template::TemplateServiceImpl;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 
 fn make_template(name: &str) -> TemplateConfig {

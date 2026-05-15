@@ -9,7 +9,7 @@ use firebat_core::ports::IEpisodicPort;
 use firebat_core::proto::{
     episodic_service_server::EpisodicService, EpisodicListRecentRequest, EpisodicSaveEventRequest,
 };
-use firebat_core::services::episodic::EpisodicServiceImpl;
+use firebat_core::grpc::episodic::EpisodicServiceImpl;
 use firebat_infra::adapters::memory::SqliteMemoryAdapter;
 
 #[tokio::test]

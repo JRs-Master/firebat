@@ -1,15 +1,15 @@
 #![recursion_limit = "256"]
-//! Firebat Core — managers + services + ports trait (hexagonal core).
+//! Firebat Core — managers + grpc + ports trait (hexagonal core).
 //!
 //! Phase B-4 cutover (TS 폐기, Rust 단일):
-//!  - `core` crate: managers + services + ports + utils (infra 의존 0건)
+//!  - `core` crate: managers + grpc + ports + utils (infra 의존 0건)
 //!  - `infra` crate: adapters + LLM + image_gen + main binary (`firebat-core`)
 //!
 //! 의존 단방향 — `infra → core`. core 는 trait 만 정의, infra 가 implement.
 
 pub mod ports;
 pub mod managers;
-pub mod services;
+pub mod grpc;
 pub mod vault_keys;
 pub mod capabilities;
 pub mod utils;

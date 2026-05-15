@@ -10,7 +10,7 @@ use firebat_core::proto::{
     SettingsGetTimezoneRequest, SettingsSetAnthropicCacheEnabledRequest,
     SettingsSetTimezoneRequest, SettingsSetUserPromptRequest,
 };
-use firebat_core::services::settings::SettingsServiceImpl;
+use firebat_core::grpc::settings::SettingsServiceImpl;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
 
 fn service() -> (SettingsServiceImpl, tempfile::TempDir) {
