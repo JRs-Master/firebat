@@ -5,7 +5,10 @@ use tempfile::tempdir;
 use tonic::Request;
 
 use firebat_core::ports::IStoragePort;
-use firebat_core::proto::{storage_service_server::StorageService, StorageWriteFileRequest, StringRequest};
+use firebat_core::proto::{
+    storage_service_server::StorageService, StorageGetFileTreeRequest, StorageReadFileRequest,
+    StorageWriteFileRequest,
+};
 use firebat_core::services::storage::StorageServiceImpl;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 
@@ -15,18 +18,16 @@ async fn write_then_read_via_grpc() {
     let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(dir.path()));
     let svc = StorageServiceImpl::new(storage);
 
-    let resp = svc
-        .write_file(Request::new(StorageWriteFileRequest {
-            path: "test.txt".to_string(),
-            content: "hi".to_string(),
-        }))
-        .await
-        .unwrap();
-    assert!(resp.into_inner().ok);
+    svc.write_file(Request::new(StorageWriteFileRequest {
+        path: "test.txt".to_string(),
+        content: "hi".to_string(),
+    }))
+    .await
+    .unwrap();
 
     let read = svc
-        .read_file(Request::new(StringRequest {
-            value: "test.txt".to_string(),
+        .read_file(Request::new(StorageReadFileRequest {
+            path: "test.txt".to_string(),
         }))
         .await
         .unwrap();
@@ -49,8 +50,8 @@ async fn get_file_tree_returns_recursive_structure() {
     .unwrap();
 
     let resp = svc
-        .get_file_tree(Request::new(StringRequest {
-            value: "root".to_string(),
+        .get_file_tree(Request::new(StorageGetFileTreeRequest {
+            path: "root".to_string(),
         }))
         .await
         .unwrap();

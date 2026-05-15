@@ -6,7 +6,10 @@ use tonic::Request;
 
 use firebat_core::managers::secret::SecretManager;
 use firebat_core::ports::{IStoragePort, IVaultPort};
-use firebat_core::proto::{secret_service_server::SecretService, Empty, SecretSetUserRequest, StringRequest};
+use firebat_core::proto::{
+    secret_service_server::SecretService, SecretDeleteUserRequest, SecretGetUserRequest,
+    SecretListUserRequest, SecretSetUserRequest,
+};
 use firebat_core::services::secret::SecretServiceImpl;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
@@ -24,20 +27,19 @@ fn make_service() -> (SecretServiceImpl, TempDir) {
 async fn user_secret_set_get_delete_via_grpc() {
     let (service, _dir) = make_service();
 
-    // set
-    let resp = service
+    // set — 응답 빈 struct, 성공 시 OK.
+    service
         .set_user(Request::new(SecretSetUserRequest {
             name: "FOO".to_string(),
             value: "bar".to_string(),
         }))
         .await
         .unwrap();
-    assert!(resp.into_inner().ok);
 
     // get
     let resp = service
-        .get_user(Request::new(StringRequest {
-            value: "FOO".to_string(),
+        .get_user(Request::new(SecretGetUserRequest {
+            name: "FOO".to_string(),
         }))
         .await
         .unwrap();
@@ -46,20 +48,25 @@ async fn user_secret_set_get_delete_via_grpc() {
     assert_eq!(inner.value, "bar");
 
     // list
-    let resp = service.list_user(Request::new(Empty {})).await.unwrap();
-    let names = resp.into_inner().values;
+    let resp = service
+        .list_user(Request::new(SecretListUserRequest {}))
+        .await
+        .unwrap();
+    let names = resp.into_inner().names;
     assert_eq!(names, vec!["FOO".to_string()]);
 
     // delete
-    let resp = service
-        .delete_user(Request::new(StringRequest {
-            value: "FOO".to_string(),
+    service
+        .delete_user(Request::new(SecretDeleteUserRequest {
+            name: "FOO".to_string(),
         }))
         .await
         .unwrap();
-    assert!(resp.into_inner().ok);
 
     // verify deleted
-    let resp = service.list_user(Request::new(Empty {})).await.unwrap();
-    assert_eq!(resp.into_inner().values.len(), 0);
+    let resp = service
+        .list_user(Request::new(SecretListUserRequest {}))
+        .await
+        .unwrap();
+    assert_eq!(resp.into_inner().names.len(), 0);
 }

@@ -7,7 +7,8 @@ use tonic::Request;
 use firebat_core::managers::schedule::ScheduleManager;
 use firebat_core::ports::ICronPort;
 use firebat_core::proto::{
-    schedule_service_server::ScheduleService, Empty, ScheduleCronRequest, StringRequest,
+    schedule_service_server::ScheduleService, CancelCronRequest, ListCronRequest,
+    ScheduleCronRequest,
 };
 use firebat_core::services::schedule::ScheduleServiceImpl;
 use firebat_infra::adapters::cron::TokioCronAdapter;
@@ -26,33 +27,31 @@ fn service() -> (ScheduleServiceImpl, tempfile::TempDir) {
 #[tokio::test]
 async fn schedule_then_list_via_grpc() {
     let (svc, _dir) = service();
-    let resp = svc
-        .schedule_cron(Request::new(ScheduleCronRequest {
-            job_id: Some("g1".to_string()),
-            target_path: "/p".to_string(),
-            mode: "cron".to_string(),
-            cron_time: Some("0 0 * * * *".to_string()),
-            run_at: None,
-            delay_sec: None,
-            start_at: None,
-            end_at: None,
-            input_data_json: None,
-            pipeline_json: None,
-            title: None,
-            description: None,
-            one_shot: None,
-            run_when_json: None,
-            retry_json: None,
-            notify_json: None,
-            execution_mode: None,
-            agent_prompt: None,
-        }))
-        .await
-        .unwrap();
-    assert!(resp.into_inner().ok);
+    svc.schedule_cron(Request::new(ScheduleCronRequest {
+        job_id: Some("g1".to_string()),
+        target_path: "/p".to_string(),
+        mode: "cron".to_string(),
+        cron_time: Some("0 0 * * * *".to_string()),
+        run_at: None,
+        delay_sec: None,
+        start_at: None,
+        end_at: None,
+        input_data_json: None,
+        pipeline_json: None,
+        title: None,
+        description: None,
+        one_shot: None,
+        run_when_json: None,
+        retry_json: None,
+        notify_json: None,
+        execution_mode: None,
+        agent_prompt: None,
+    }))
+    .await
+    .unwrap();
 
     let list = svc
-        .list_cron(Request::new(Empty {}))
+        .list_cron(Request::new(ListCronRequest {}))
         .await
         .unwrap()
         .into_inner();
@@ -62,12 +61,13 @@ async fn schedule_then_list_via_grpc() {
 #[tokio::test]
 async fn cancel_unknown_returns_error() {
     let (svc, _dir) = service();
-    let resp = svc
-        .cancel_cron(Request::new(StringRequest {
-            value: "none".to_string(),
+    // 미존재 jobId → tonic::Status NotFound 에러.
+    let err = svc
+        .cancel_cron(Request::new(CancelCronRequest {
+            job_id: "none".to_string(),
         }))
         .await
-        .unwrap();
-    let status = resp.into_inner();
-    assert!(!status.ok);
+        .err()
+        .expect("cancel_cron 미존재 jobId 시 에러 응답 기대");
+    assert_eq!(err.code(), tonic::Code::NotFound);
 }

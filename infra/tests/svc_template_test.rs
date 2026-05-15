@@ -6,7 +6,10 @@ use tonic::Request;
 
 use firebat_core::managers::template::{TemplateBlock, TemplateConfig, TemplateManager, TemplateSpec};
 use firebat_core::ports::IStoragePort;
-use firebat_core::proto::{template_service_server::TemplateService, Empty, StringRequest, TemplateSaveRequest};
+use firebat_core::proto::{
+    template_service_server::TemplateService, TemplateDeleteRequest, TemplateGetRequest,
+    TemplateListRequest, TemplateSaveRequest,
+};
 use firebat_core::services::template::TemplateServiceImpl;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 
@@ -32,19 +35,21 @@ async fn service_save_list_get_delete_roundtrip() {
     let manager = Arc::new(TemplateManager::new(storage));
     let service = TemplateServiceImpl::new(manager);
 
-    // Save
+    // Save — 응답 빈 struct.
     let cfg = make_template("주간 시황");
-    let resp = service
+    service
         .save(Request::new(TemplateSaveRequest {
             slug: "weekly".to_string(),
             config_json: serde_json::to_string(&cfg).unwrap(),
         }))
         .await
         .unwrap();
-    assert!(resp.into_inner().ok);
 
     // List
-    let resp = service.list(Request::new(Empty {})).await.unwrap();
+    let resp = service
+        .list(Request::new(TemplateListRequest {}))
+        .await
+        .unwrap();
     let raw = resp.into_inner().raw_json;
     let entries: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap();
     assert_eq!(entries.len(), 1);
@@ -52,8 +57,8 @@ async fn service_save_list_get_delete_roundtrip() {
 
     // Get
     let resp = service
-        .get(Request::new(StringRequest {
-            value: "weekly".to_string(),
+        .get(Request::new(TemplateGetRequest {
+            slug: "weekly".to_string(),
         }))
         .await
         .unwrap();
@@ -62,16 +67,18 @@ async fn service_save_list_get_delete_roundtrip() {
     assert_eq!(got.unwrap().name, "주간 시황");
 
     // Delete
-    let resp = service
-        .delete(Request::new(StringRequest {
-            value: "weekly".to_string(),
+    service
+        .delete(Request::new(TemplateDeleteRequest {
+            slug: "weekly".to_string(),
         }))
         .await
         .unwrap();
-    assert!(resp.into_inner().ok);
 
     // Verify deleted
-    let resp = service.list(Request::new(Empty {})).await.unwrap();
+    let resp = service
+        .list(Request::new(TemplateListRequest {}))
+        .await
+        .unwrap();
     let entries: Vec<serde_json::Value> =
         serde_json::from_str(&resp.into_inner().raw_json).unwrap();
     assert_eq!(entries.len(), 0);
@@ -84,14 +91,14 @@ async fn service_save_invalid_args_returns_error_status() {
     let manager = Arc::new(TemplateManager::new(storage));
     let service = TemplateServiceImpl::new(manager);
 
-    let resp = service
+    let err = service
         .save(Request::new(TemplateSaveRequest {
             slug: "broken".to_string(),
             config_json: "{ not valid json".to_string(),
         }))
         .await
-        .unwrap();
-    let status = resp.into_inner();
-    assert!(!status.ok);
-    assert!(status.error.contains("파싱"));
+        .err()
+        .expect("save invalid config_json 시 에러 응답 기대");
+    assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    assert!(err.message().contains("파싱") || err.message().contains("config_json"));
 }

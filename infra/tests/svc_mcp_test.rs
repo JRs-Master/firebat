@@ -24,19 +24,17 @@ fn make_service() -> (McpServiceImpl, tempfile::TempDir) {
 async fn add_then_list_via_grpc() {
     let (svc, _dir) = make_service();
 
-    let resp = svc
-        .add_server(Request::new(McpAddServerRequest {
-            name: "g1".to_string(),
-            transport: "stdio".to_string(),
-            command: Some("npx".to_string()),
-            args: vec!["server".to_string()],
-            env_json: "{}".to_string(),
-            url: None,
-            enabled: true,
-        }))
-        .await
-        .unwrap();
-    assert!(resp.into_inner().ok);
+    svc.add_server(Request::new(McpAddServerRequest {
+        name: "g1".to_string(),
+        transport: "stdio".to_string(),
+        command: Some("npx".to_string()),
+        args: vec!["server".to_string()],
+        env_json: "{}".to_string(),
+        url: None,
+        enabled: true,
+    }))
+    .await
+    .unwrap();
 
     let list = svc
         .list_servers(Request::new(McpListServersRequest {}))
@@ -52,7 +50,7 @@ async fn add_then_list_via_grpc() {
 #[tokio::test]
 async fn add_invalid_config_returns_error_status() {
     let (svc, _dir) = make_service();
-    let resp = svc
+    let err = svc
         .add_server(Request::new(McpAddServerRequest {
             name: "g1".to_string(),
             transport: "invalid_transport".to_string(),
@@ -63,8 +61,8 @@ async fn add_invalid_config_returns_error_status() {
             enabled: true,
         }))
         .await
-        .unwrap();
-    let status = resp.into_inner();
-    assert!(!status.ok);
-    assert!(status.error.contains("transport"));
+        .err()
+        .expect("add_server invalid transport 시 에러 응답 기대");
+    assert_eq!(err.code(), tonic::Code::InvalidArgument);
+    assert!(err.message().contains("transport"));
 }
