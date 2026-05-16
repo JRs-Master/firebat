@@ -10,6 +10,8 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "mcp": "firebat-core --mcp-stdio",
+    "postinstall": "node scripts/setup-embedder.mjs",
+    "setup:embedder": "node scripts/setup-embedder.mjs",
     "gen:proto": "buf generate && node scripts/gen-api-client.mjs && node scripts/gen-vault-keys.mjs",
     "gen:api": "node scripts/gen-api-client.mjs",
     "gen:vault": "node scripts/gen-vault-keys.mjs",
