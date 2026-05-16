@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::managers::conversation::{ConversationManager, SearchHistoryOpts};
 use crate::managers::entity::EntityManager;
 use crate::managers::episodic::EpisodicManager;
+use crate::managers::library::LibraryManager;
 use crate::ports::{
     EntityFactRecord, EntitySearchOpts, EventSearchOpts, FactSearchOpts, TimelineOpts,
 };
@@ -38,6 +39,9 @@ pub struct RetrievalLimits {
     /// 매 entity 의 timeline 추가 fact 수 (default 3)
     #[serde(rename = "factsPerEntity")]
     pub facts_per_entity: Option<usize>,
+    /// library_chunks 영역 매치 (default 5) — Phase 1 (2026-05-17 신설).
+    /// 매 Reference 영역 의 매 chunk 영역 cosine 매치 → top-K.
+    pub library: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -47,6 +51,7 @@ pub struct RetrievalStats {
     pub entities: usize,
     pub facts: usize,
     pub events: usize,
+    pub library: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -77,6 +82,7 @@ pub struct RetrievalEngine {
     conversation: Option<Arc<ConversationManager>>,
     entity: Option<Arc<EntityManager>>,
     episodic: Option<Arc<EpisodicManager>>,
+    library: Option<Arc<LibraryManager>>,
 }
 
 impl RetrievalEngine {
@@ -85,6 +91,7 @@ impl RetrievalEngine {
             conversation: None,
             entity: None,
             episodic: None,
+            library: None,
         }
     }
 
@@ -103,6 +110,13 @@ impl RetrievalEngine {
         self
     }
 
+    /// Library 영역 (Phase 1, 2026-05-17) — 매 query 시점 매 Reference 영역 의 매 chunk 영역
+    /// cosine 매치 → top-K → `<LIBRARY_CONTEXT>` 영역 prepend.
+    pub fn with_library(mut self, library: Arc<LibraryManager>) -> Self {
+        self.library = Some(library);
+        self
+    }
+
     /// 사용자 query → 4 source 병렬 검색 → 통합 contextSummary.
     /// 옛 TS retrieve(opts) 1:1.
     pub async fn retrieve(&self, opts: &RetrieveOpts) -> RetrievalResult {
@@ -118,15 +132,19 @@ impl RetrievalEngine {
             facts: opts.limits.facts.unwrap_or(5),
             events: opts.limits.events.unwrap_or(5),
             facts_per_entity: opts.limits.facts_per_entity.unwrap_or(3),
+            library: opts.limits.library.unwrap_or(5),
         };
 
-        // 4 source 병렬 검색 — tokio::join! (Promise.all 1:1)
+        // 5 source 병렬 검색 — tokio::join! (Promise.all 1:1)
+        // Library 영역 (Phase 1, 2026-05-17) — admin 영역 모든 Reference 영역 cosine 매치.
+        // 옛 chat 영역 = 매 Reference 자동 검색 (사용자 결정 영역 = 통합 영역).
         let history_fut = self.search_history_safe(query, opts, &lim);
         let entities_fut = self.search_entities_safe(query, &lim);
         let facts_fut = self.search_facts_safe(query, &lim);
         let events_fut = self.search_events_safe(query, &lim);
-        let (history, entities, facts, events) =
-            tokio::join!(history_fut, entities_fut, facts_fut, events_fut);
+        let library_fut = self.search_library_safe(query, opts, &lim);
+        let (history, entities, facts, events, library_hits) =
+            tokio::join!(history_fut, entities_fut, facts_fut, events_fut, library_fut);
 
         let mut sections: Vec<String> = Vec::new();
         let mut stats = RetrievalStats::default();
@@ -201,6 +219,26 @@ impl RetrievalEngine {
             let mut lines = vec![format!("[관련 사건 ({}건)]", events.len())];
             for e in &events {
                 lines.push(format_event_line(e));
+            }
+            sections.push(lines.join("\n"));
+        }
+
+        // 5) Library — Phase 1 (2026-05-17). 매 chunk 영역 cosine 매치 결과 + Source / page 영역
+        //    명시 (citation 영역). AI 답 시점 매 영역 인용 영역 박은 영역 (사용자 fact-check 영역).
+        if !library_hits.is_empty() {
+            stats.library = library_hits.len();
+            let mut lines = vec![format!("[관련 자료 ({}건)]", library_hits.len())];
+            for h in &library_hits {
+                let page_label = h
+                    .page_number
+                    .map(|p| format!(", p.{}", p))
+                    .unwrap_or_default();
+                lines.push(format!(
+                    "- [Source: {} ({}{}), score={:.3}]",
+                    h.source_name, h.reference_name, page_label, h.score
+                ));
+                let preview = slice_chars(&h.content, 300);
+                lines.push(format!("    {}", preview));
             }
             sections.push(lines.join("\n"));
         }
@@ -326,6 +364,28 @@ impl RetrievalEngine {
             Err(_) => Vec::new(),
         }
     }
+
+    /// Library 영역 (Phase 1, 2026-05-17) — 매 query 시점 admin 영역 매 Reference 영역
+    /// 의 매 chunk 영역 cosine 매치 → top library.
+    async fn search_library_safe(
+        &self,
+        query: &str,
+        opts: &RetrieveOpts,
+        lim: &ResolvedLimits,
+    ) -> Vec<crate::ports::LibraryHit> {
+        if lim.library == 0 {
+            return Vec::new();
+        }
+        let Some(library) = &self.library else {
+            return Vec::new();
+        };
+        let owner = opts.owner.as_deref().unwrap_or("admin");
+        // reference_ids 영역 빈 영역 = 매 admin Reference 영역 전체 (LibraryManager 영역 자연 처리)
+        match library.search(owner, &[], query, lim.library).await {
+            Ok(hits) => hits,
+            Err(_) => Vec::new(),
+        }
+    }
 }
 
 impl Default for RetrievalEngine {
@@ -341,6 +401,7 @@ struct ResolvedLimits {
     facts: usize,
     events: usize,
     facts_per_entity: usize,
+    library: usize,
 }
 
 /// `YYYY-MM-DD [type] content` (옛 TS 1:1).
