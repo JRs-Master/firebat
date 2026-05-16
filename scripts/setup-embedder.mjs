@@ -27,7 +27,12 @@ import { join } from 'node:path';
 
 const MODEL_ID = 'intfloat/multilingual-e5-small';
 const CACHE_DIR = join(homedir(), '.cache/huggingface/hub', `models--${MODEL_ID.replace(/\//g, '--')}`);
-const VENV_DIR = join(homedir(), '.firebat-venv');
+
+// Firebat self-contained — venv 도 source root 안 박음.
+// sandbox.rs 의 `<workspace>/python_modules` (sysmod deps 격리) 와 일관 패턴.
+// process.cwd() = `npm install` 박는 디렉토리 (source root, 예: /opt/firebat-src).
+// FIREBAT_VENV_DIR env 박혀있으면 override (custom workspace 환경).
+const VENV_DIR = process.env.FIREBAT_VENV_DIR || join(process.cwd(), '.venv');
 const VENV_HF_CLI = join(VENV_DIR, 'bin', 'huggingface-cli');
 
 if (process.env.FIREBAT_SKIP_EMBEDDER_PREFETCH === '1') {
