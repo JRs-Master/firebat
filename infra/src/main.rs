@@ -364,18 +364,17 @@ async fn main() -> Result<()> {
             mcp_manager.clone(),
         ),
     );
-    // FilePromptLoader — Phase prompt 외부화 (2026-05-13). 매 PromptBuilder.build() 시 file read.
-    // 운영자가 infra/data/prompts/{tool_system,cron_agent}.md 편집 + 다음 LLM 호출 시 즉시 반영.
-    let prompt_loader: Arc<dyn firebat_core::ports::IPromptLoaderPort> = Arc::new(
-        firebat_infra::adapters::prompt_loader::FilePromptLoader::discover(),
-    );
+    // 시스템 prompt 본문 — `system/prompts/{name}/lang/{lang}.md` 위치. 부팅 시점 `i18n::init`
+    // (main.rs:87) 의 통합 다국어 loader 가 자동 scan + `prompt.{name}` namespace 안 cache.
+    // PromptBuilder 가 매 build 시점 `i18n::prompt(name, None)` 직접 lookup — adapter wiring 0
+    // (2026-05-16 옛 IPromptLoaderPort / FilePromptLoader 폐기).
     // EnvConfigAdapter — std::env::var 직접 호출 추상화 (2026-05-13 Hexagonal 정공).
     let config_port: Arc<dyn firebat_core::ports::IConfigPort> = Arc::new(
         firebat_infra::adapters::config::EnvConfigAdapter::new(),
     );
     let ai_manager = Arc::new(
         AiManager::new(llm.clone(), tool_manager.clone(), logger.clone())
-            .with_prompt_builder(vault.clone(), prompt_loader.clone())
+            .with_prompt_builder(vault.clone())
             .with_config_port(config_port.clone())
             .with_system_context(module_manager.clone(), mcp_manager.clone())
             .with_history_resolver(conversation_manager.clone())

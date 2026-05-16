@@ -5,18 +5,22 @@
 //! - `Auto` — destructive·복합 작업만 propose_plan / suggest 강제
 //! - `Always` — 모든 요청에 plan 강제 (인사·단답 포함, 예외 0건)
 //!
-//! 외부화 (2026-05-13) — 옛 `include_str!` 컴파일 시점 박힘 폐기 + 매 호출 시 file read
-//! (`IPromptLoaderPort`). 운영자가 `infra/data/prompts/plan_mode_{always,auto}.md` 편집 + 즉시 반영.
+//! 외부화 (2026-05-13) — 옛 `include_str!` 컴파일 시점 박힘 폐기.
+//! 통합 i18n loader (`firebat_core::i18n`) 가 부팅 시점 `system/prompts/{name}/lang/{lang}.md` 자동 scan.
+//! 매 호출 시 `i18n::prompt(name, None)` lookup — 사용자 lang task-local 자동 적용.
+//!
+//! 옛 `IPromptLoaderPort` adapter 영역 폐기 (2026-05-16) — core 가 직접 i18n 사용.
 
-use crate::ports::{IPromptLoaderPort, PlanMode};
+use crate::i18n;
+use crate::ports::PlanMode;
 
 /// PlanMode 별 시스템 프롬프트 prefix. 옛 TS `planModePrefix` 1:1.
-/// 매 호출 시 file read — 운영자 .md 편집 즉시 반영.
-pub fn prefix(mode: PlanMode, loader: &dyn IPromptLoaderPort) -> String {
+/// 매 호출 시 i18n lookup — 사용자 lang task-local 자동 적용.
+pub fn prefix(mode: PlanMode) -> String {
     match mode {
         PlanMode::Off => String::new(),
-        PlanMode::Auto => loader.plan_mode_auto(),
-        PlanMode::Always => loader.plan_mode_always(),
+        PlanMode::Auto => i18n::prompt("plan_mode_auto", None),
+        PlanMode::Always => i18n::prompt("plan_mode_always", None),
     }
 }
 
@@ -34,5 +38,5 @@ pub fn prompt_hint(mode: PlanMode) -> Option<&'static str> {
     }
 }
 
-// 통합 검증 (file read + IPromptLoaderPort impl) 은 infra integration test 영역.
-// 본 module 의 단위 tests 는 file I/O 의존 — registry init 비슷한 setup 필요. 제거.
+// 통합 검증 (i18n init + prompt lookup) 은 infra integration test 영역.
+// 본 module 의 단위 tests 는 i18n init 의존 — 별도 setup 필요. 제거.

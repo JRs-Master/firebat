@@ -1230,23 +1230,10 @@ pub trait IConfigPort: Send + Sync {
     fn get(&self, key: &str) -> Option<String>;
 }
 
-/// IPromptLoaderPort — 시스템 prompt 외부 .md 파일 매 호출 시 read.
-///
-/// **운영 의도** (2026-05-13): 옛 `include_str!` 으로 컴파일 시점 박혀있던 prompt 를 runtime 외부화.
-/// 운영자가 `infra/data/prompts/{tool_system,cron_agent}.md` 직접 편집 + 다음 LLM 호출 시 즉시 반영.
-/// systemctl restart 0. 매 호출 시 file read 부담 = LLM latency (200-1000ms) 대비 0.1% 무시 가능.
-///
-/// Hexagonal 정공 — core 가 fs 직접 호출 안 함. infra adapter (`FilePromptLoader`) 가 file I/O 담당.
-pub trait IPromptLoaderPort: Send + Sync {
-    /// Tool system prompt (옛 prompt_tool_system.md). 파일 없으면 fallback stub.
-    fn tool_system(&self) -> String;
-    /// Cron agent prelude prompt (옛 prompt_cron_agent.md). 파일 없으면 fallback stub.
-    fn cron_agent(&self) -> String;
-    /// Plan mode "always" prefix prompt (옛 plan_mode_always.md).
-    fn plan_mode_always(&self) -> String;
-    /// Plan mode "auto" prefix prompt (옛 plan_mode_auto.md).
-    fn plan_mode_auto(&self) -> String;
-}
+// IPromptLoaderPort 폐기 (2026-05-16) — 시스템 prompt 영역이 `firebat_core::i18n` 의 통합
+// 다국어 service 안으로 흡수됨. 매 prompt 의 다국어 .md 파일은 `system/prompts/{name}/lang/{lang}.md`
+// 에 위치하며 `i18n::init()` 부팅 시점에 자동 scan + `prompt.{name}` namespace 안 lookup.
+// caller 는 `firebat_core::i18n::prompt(name, None)` 직접 호출 — adapter wiring 0.
 
 /// IMcpClientPort — 외부 MCP 서버 풀 클라이언트.
 ///

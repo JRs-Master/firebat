@@ -106,10 +106,12 @@ Next.js 어드민 / API route + Rust core (gRPC IPC) 분리 운영. Vultr system
 사용자 입력 → User AI (Plan 수립) → 결정론적 Core (검증) → Infra (실행) → 결과 → User AI → 사용자 응답
 ```
 
-### 제4항. AI 시스템 프롬프트 외부화 (2026-05-13 도입)
-시스템 프롬프트 4개 (`tool_system` / `cron_agent` / `plan_mode_always` / `plan_mode_auto`) 는 `infra/data/prompts/*.md` 외부 파일. **매 LLM 호출 시 file read** — 운영자가 .md 편집 + 다음 호출 시 즉시 반영 (systemctl restart 0). 옛 `include_str!` 컴파일 시점 박힘 패턴 폐기.
+### 제4항. AI 시스템 프롬프트 외부화 + 다국어 통합 (2026-05-13 도입 / 2026-05-16 i18n 통합)
+시스템 프롬프트 4개 (`tool_system` / `cron_agent` / `plan_mode_always` / `plan_mode_auto`) 는 `system/prompts/{name}/lang/{lang}.md` 외부 파일. 옛 `include_str!` 컴파일 시점 박힘 패턴 + `infra/data/prompts/*.md` 단일 한국어 영역 모두 폐기.
 
-Hexagonal 정공 — `core::ports::IPromptLoaderPort` trait + `infra::adapters::prompt_loader::FilePromptLoader` adapter. Core 가 std::fs 직접 호출 0. 사용자 프롬프트 (`system:user-prompt` Vault key) 는 runtime read 영역이라 외부화 미필요.
+부팅 시점 `firebat_core::i18n::init` 가 `system/prompts/` 자동 scan → `prompt.{name}` namespace 안 cache (lang 별). PromptBuilder 가 매 build 시점 `i18n::prompt(name, None)` 직접 lookup — 사용자 lang task-local 자동 적용 (tonic interceptor 가 set). 매 prompt 가 ko / en 등 lang 별 자체 .md 보유, lookup 실패 시 server-side default lang fallback.
+
+옛 `IPromptLoaderPort` trait + `FilePromptLoader` adapter 폐기 (2026-05-16) — core 가 i18n service 직접 사용, adapter wiring 0. .md 편집 후 systemctl restart 1회 필요 (i18n init 시점 cache). 사용자 프롬프트 (`system:user-prompt` Vault key) 는 runtime read 영역이라 외부화 미필요.
 
 ### 제5항. LLM 모델 + thinking JSON registry (2026-05-13 강화)
 모델 + thinking 모드 단일 source = `infra/data/llm-models.json`:

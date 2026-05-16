@@ -264,12 +264,10 @@ impl AiManager {
     }
 
     /// PromptBuilder 설정한 채로 부팅 — 시스템 프롬프트 자동 주입 활성.
-    pub fn with_prompt_builder(
-        mut self,
-        vault: Arc<dyn IVaultPort>,
-        loader: Arc<dyn crate::ports::IPromptLoaderPort>,
-    ) -> Self {
-        self.prompt_builder = Some(PromptBuilder::new(vault, loader));
+    /// Prompt md 본문은 통합 i18n loader (`firebat_core::i18n`) 가 부팅 시점에 자동 scan
+    /// (`system/prompts/{name}/lang/{lang}.md`). 별도 loader 어댑터 wiring 0.
+    pub fn with_prompt_builder(mut self, vault: Arc<dyn IVaultPort>) -> Self {
+        self.prompt_builder = Some(PromptBuilder::new(vault));
         self
     }
 

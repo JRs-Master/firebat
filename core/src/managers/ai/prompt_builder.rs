@@ -3,9 +3,12 @@
 //! 옛 TS `core/managers/ai/prompt-builder.ts` 1:1 port (823 LOC).
 //! buildToolSystemPrompt (500+ LOC) + buildCronAgentPrelude (12 룰) + buildTemplateBlock 통합.
 //!
-//! Prompt 본문은 외부 .md 파일 (`infra/data/prompts/{tool_system,cron_agent}.md`) 에서
-//! 매 build 시 file read (`IPromptLoaderPort`). 운영자가 직접 편집 + 다음 LLM 호출 시 즉시 반영.
-//! systemctl restart 0. 옛 `include_str!` 컴파일 시점 박힘 폐기 (2026-05-13).
+//! Prompt 본문은 외부 .md 파일 (`system/prompts/{name}/lang/{lang}.md`) 에서 부팅 시점에
+//! 통합 다국어 i18n loader (`firebat_core::i18n::init`) 가 자동 scan + `prompt.{name}` namespace 안 보관.
+//! 매 build 시점 `i18n::prompt(name, None)` lookup — 사용자 lang task-local 자동 적용 (interceptor 가 set).
+//! 운영자가 직접 편집 후 systemctl restart 1회 필요 (init 시점 cache).
+//!
+//! 옛 `IPromptLoaderPort` + `FilePromptLoader` 영역 폐기 (2026-05-16) — adapter wiring 0, core 가 직접 i18n 사용.
 //!
 //! Placeholder 형식:
 //!   - `{system_context}` — gatherSystemContext 결과 (sysmod 동적 description)
@@ -20,7 +23,8 @@ use std::sync::Arc;
 use chrono::{TimeZone, Utc};
 use chrono_tz::Tz;
 
-use crate::ports::{IPromptLoaderPort, IVaultPort};
+use crate::i18n;
+use crate::ports::IVaultPort;
 use crate::utils::timezone::resolve_user_tz;
 use crate::vault_keys::VK_SYSTEM_USER_PROMPT;
 
@@ -33,12 +37,11 @@ pub struct CronAgentContext {
 
 pub struct PromptBuilder {
     vault: Arc<dyn IVaultPort>,
-    loader: Arc<dyn IPromptLoaderPort>,
 }
 
 impl PromptBuilder {
-    pub fn new(vault: Arc<dyn IVaultPort>, loader: Arc<dyn IPromptLoaderPort>) -> Self {
-        Self { vault, loader }
+    pub fn new(vault: Arc<dyn IVaultPort>) -> Self {
+        Self { vault }
     }
 
     /// 사용자 timezone resolve — `utils::timezone::resolve_user_tz` 공용 helper 위임.
@@ -46,9 +49,9 @@ impl PromptBuilder {
         resolve_user_tz(&self.vault)
     }
 
-    /// PlanMode prefix — loader 통해 plan_mode_{always,auto}.md 매 호출 read.
+    /// PlanMode prefix — i18n::prompt 통해 plan_mode_{always,auto} 매 호출 lookup.
     pub fn plan_prefix(&self, mode: crate::ports::PlanMode) -> String {
-        super::plan_mode::prefix(mode, &*self.loader)
+        super::plan_mode::prefix(mode)
     }
 
     /// 현재 시각 한국어 표시 — 사용자 timezone 기준.
@@ -85,8 +88,9 @@ impl PromptBuilder {
         // 시스템 컨텍스트 — extra_context 설정되어 있으면 그것, 아니면 빈 string
         let system_context = extra_context.unwrap_or("(시스템 컨텍스트 미설정)");
 
-        // 매 build 시 file read — IPromptLoaderPort 가 file system 또는 fallback stub 반환.
-        let tool_template = self.loader.tool_system();
+        // i18n::prompt 통한 prompt full-text lookup — task-local 사용자 lang 자동 적용 (interceptor 가 set).
+        // 미설정 시 server-side default lang fallback (`i18n::set_default_lang`).
+        let tool_template = i18n::prompt("tool_system", None);
         let base = tool_template
             .replace("{system_context}", system_context)
             .replace("{user_tz}", user_tz_str)
@@ -100,7 +104,7 @@ impl PromptBuilder {
                 Some(t) => format!("제목: {}", t),
                 None => String::new(),
             };
-            let cron_template = self.loader.cron_agent();
+            let cron_template = i18n::prompt("cron_agent", None);
             let prelude = cron_template
                 .replace("{job_id}", &ctx.job_id)
                 .replace("{job_title_line}", &job_title_line)

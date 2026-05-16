@@ -60,7 +60,7 @@ Core가 Infra에게 요구하는 17개 포트 인터페이스. 모두 `core/src/
 | 15 | `IImageGenPort` | 이미지 생성 (OpenAI gpt-image / Gemini 3 Image) |
 | 16 | `IEntityPort` | 메모리 시스템 — Entity tier (entities + entity_facts CRUD, semantic search, dedup threshold) |
 | 17 | `IEpisodicPort` | 메모리 시스템 — Episodic tier (events + event_entities m2m CRUD, 시간순 사건 검색, dedup threshold) |
-| 18 | `IPromptLoaderPort` | 시스템 prompt 외부 .md 파일 매 호출 read (`tool_system` / `cron_agent` / `plan_mode_always` / `plan_mode_auto`). 운영자 편집 + 즉시 반영 (restart 0). 2026-05-13 도입. |
+| 18 | _(폐기)_ | 옛 `IPromptLoaderPort` (2026-05-13 도입, 2026-05-16 폐기) — 시스템 prompt 영역이 `firebat_core::i18n` 통합 다국어 service 안으로 흡수. `system/prompts/{name}/lang/{lang}.md` 자동 scan + `prompt.{name}` namespace lookup. PromptBuilder 가 `i18n::prompt(name, None)` 직접 호출 — adapter wiring 0. |
 
 **🟠 Known Issue — 미완성 포트 영역** (2026-05-13 점검):
 - `core/src/managers/ai/component_search_index.rs` + `tool_search_index.rs` 가 std::fs / std::env 직접 호출 — 벡터 캐시 (`component-embeddings.json` / `tool-search-embeddings.json`) 영속화 추상화 부재. `IEmbedderCachePort` 신설 가치 영역.

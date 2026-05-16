@@ -20,6 +20,7 @@ pub mod embedder;
 pub mod image_gen;
 pub mod image_processor;
 pub mod notifier_telegram;
-pub mod prompt_loader;
+// prompt_loader 폐기 (2026-05-16) — 시스템 prompt 영역은 `firebat_core::i18n` 의 통합 다국어
+// service 안에서 `system/prompts/{name}/lang/{lang}.md` 자동 scan + `prompt.{name}` lookup.
 pub mod embedder_cache;
 pub mod config;

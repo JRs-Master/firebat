@@ -1,13 +1,30 @@
 //! Integration tests for `core::managers::ai::prompt_builder::PromptBuilder`.
 //! Phase B-post audit E4 — inline tests 이관 (private const 정리 후).
+//!
+//! 2026-05-16: 옛 `IPromptLoaderPort` / `FilePromptLoader` 폐기 후 — `firebat_core::i18n`
+//! 통합 다국어 loader 가 `system/prompts/{name}/lang/{lang}.md` 자동 scan. 매 prompt build 시점
+//! `i18n::prompt(name, None)` lookup. 본 test 의 setup = workspace root 기준 `i18n::init` 1회 호출.
 
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Once};
 
 use firebat_core::managers::ai::prompt_builder::{CronAgentContext, PromptBuilder};
-use firebat_core::ports::{IPromptLoaderPort, IVaultPort};
+use firebat_core::ports::IVaultPort;
 use firebat_core::vault_keys::{VK_SYSTEM_TIMEZONE, VK_SYSTEM_USER_PROMPT};
-use firebat_infra::adapters::prompt_loader::FilePromptLoader;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
+
+static INIT_I18N: Once = Once::new();
+
+/// workspace root 기준 `i18n::init` 1회 — CARGO_MANIFEST_DIR = infra/ 의 부모.
+fn init_i18n_once() {
+    INIT_I18N.call_once(|| {
+        let workspace_root: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("infra crate 의 parent (workspace root)")
+            .to_path_buf();
+        firebat_core::i18n::init(&workspace_root);
+    });
+}
 
 fn vault() -> (Arc<dyn IVaultPort>, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
@@ -16,15 +33,9 @@ fn vault() -> (Arc<dyn IVaultPort>, tempfile::TempDir) {
     (v, dir)
 }
 
-/// 테스트용 prompt loader — CARGO_MANIFEST_DIR/../infra/data/prompts/ 기준.
-/// (이 test 가 infra crate 의 integration test 라 MANIFEST_DIR = infra/, prompts = infra/data/prompts/).
-fn prompt_loader() -> Arc<dyn IPromptLoaderPort> {
-    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("data/prompts");
-    Arc::new(FilePromptLoader::new(dir))
-}
-
 fn pb(v: Arc<dyn IVaultPort>) -> PromptBuilder {
-    PromptBuilder::new(v, prompt_loader())
+    init_i18n_once();
+    PromptBuilder::new(v)
 }
 
 #[test]
