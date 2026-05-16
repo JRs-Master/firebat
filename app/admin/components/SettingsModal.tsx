@@ -1243,6 +1243,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                             Gemini Flash Lite 가 아래 역할을 수행합니다. 출력은 JSON 스키마로 강제되어 구조적으로 안전합니다.
                           </div>
                           <ul className="text-[11px] text-slate-600 mt-1.5 space-y-0.5 list-disc list-inside leading-relaxed">
+                            <li><b>메모리 자동 prepend (recall)</b> — 매 사용자 query 시점 4-tier (history + entities + facts + events) 통합 검색 → 시스템 프롬프트 prepend</li>
+                            <li><b>메모리 자동 추출 (consolidation)</b> — 대화 종료 / 6h cron 시점 entity / fact / event 자동 추출 + E5 임베딩 저장</li>
                             <li><b>도구 선별</b> — Gemini(API) 계열에서만. GPT/Claude(API)·CLI 는 각자 MCP 가 처리</li>
                             <li><b>컴포넌트 선별</b> — search_components 호출 시 (모든 User AI 공통)</li>
                             <li><b>히스토리 쿼리 리라이트</b> — search_history 호출 시 대명사·지시어 해소</li>

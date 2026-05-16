@@ -383,6 +383,17 @@ async fn main() -> Result<()> {
     let config_port: Arc<dyn firebat_core::ports::IConfigPort> = Arc::new(
         firebat_infra::adapters::config::EnvConfigAdapter::new(),
     );
+    // RetrievalEngine — 매 사용자 query 시점 4-tier 통합 검색 (history + entities + facts + events).
+    // AiManager 가 vault `system:ai-router:enabled` 토글 검사 — true 시점만 호출 → 시스템 프롬프트
+    // `<MEMORY_CONTEXT>` 영역 prepend. ConsolidationManager 와 동일 토글 통합 제어 (사용자 결정
+    // 2026-05-17). 옛 Node 영역 의 자동 prepend path 1:1 복원 + 통합 정공.
+    let retrieval_engine = Arc::new(
+        firebat_core::managers::ai::retrieval_engine::RetrievalEngine::new()
+            .with_conversation(conversation_manager.clone())
+            .with_entity(entity_manager.clone())
+            .with_episodic(episodic_manager.clone()),
+    );
+
     let ai_manager = Arc::new(
         AiManager::new(llm.clone(), tool_manager.clone(), logger.clone())
             .with_prompt_builder(vault.clone())
@@ -391,7 +402,8 @@ async fn main() -> Result<()> {
             .with_history_resolver(conversation_manager.clone())
             .with_cost_manager(cost_manager.clone())
             .with_dynamic_tools(dynamic_tools_registry)
-            .with_vault(vault.clone()),
+            .with_vault(vault.clone())
+            .with_retrieval_engine(retrieval_engine),
     );
 
     // ConsolidationManager 의 LLM 자동 추출 활성 — AiManager + ConversationManager + Vault 설정된 후.
