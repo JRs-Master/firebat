@@ -3,7 +3,8 @@
 //! private fn 사용 test (`unwrap_module_result` / `parse_spec_if_string` /
 //! `is_module_level_failure` / `extract_module_error` / `path_to_module_parts`) 는 inline 유지.
 
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Once};
 use serde_json::json;
 
 use firebat_core::managers::task::{PipelineStep, StubTaskExecutor, TaskExecutor, TaskManager};
@@ -11,13 +12,27 @@ use firebat_core::managers::tool::{ToolDefinition, ToolManager};
 use firebat_core::ports::ILogPort;
 use firebat_infra::adapters::log::ConsoleLogAdapter;
 
+/// workspace root 기준 `i18n::init` 1회 — 미호출 시 i18n::t() 가 raw key 반환.
+fn init_i18n_once() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let workspace_root: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("infra crate 의 parent (workspace root)")
+            .to_path_buf();
+        firebat_core::i18n::init(&workspace_root);
+    });
+}
+
 fn make_manager() -> TaskManager {
+    init_i18n_once();
     let executor: Arc<dyn TaskExecutor> = Arc::new(StubTaskExecutor);
     let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
     TaskManager::new(executor, log)
 }
 
 fn make_manager_with_tools() -> TaskManager {
+    init_i18n_once();
     let executor: Arc<dyn TaskExecutor> = Arc::new(StubTaskExecutor);
     let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
     let tools = Arc::new(ToolManager::new());

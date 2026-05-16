@@ -1,14 +1,28 @@
 //! McpManager integration test — 옛 core inline tests 이관.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Once};
 use tempfile::TempDir;
 
 use firebat_core::managers::mcp::McpManager;
 use firebat_core::ports::{IMcpClientPort, McpServerConfig, McpTransport};
 use firebat_infra::adapters::mcp_client::McpClientFileAdapter;
 
+/// workspace root 기준 `i18n::init` 1회 — 미호출 시 i18n::t() 가 raw key 반환.
+fn init_i18n_once() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let workspace_root: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("infra crate 의 parent (workspace root)")
+            .to_path_buf();
+        firebat_core::i18n::init(&workspace_root);
+    });
+}
+
 fn make_manager() -> (McpManager, TempDir) {
+    init_i18n_once();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mcp.json");
     let client: Arc<dyn IMcpClientPort> = Arc::new(McpClientFileAdapter::new(path).unwrap());

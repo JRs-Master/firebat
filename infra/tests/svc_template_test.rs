@@ -1,6 +1,7 @@
 //! TemplateService gRPC integration test — 옛 core inline tests 이관.
 
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Once};
 use tempfile::tempdir;
 use tonic::Request;
 
@@ -12,6 +13,18 @@ use firebat_core::proto::{
 };
 use firebat_core::grpc::template::TemplateServiceImpl;
 use firebat_infra::adapters::storage::LocalStorageAdapter;
+
+/// workspace root 기준 `i18n::init` 1회 — 미호출 시 i18n::t() 가 raw key 반환.
+fn init_i18n_once() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let workspace_root: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("infra crate 의 parent (workspace root)")
+            .to_path_buf();
+        firebat_core::i18n::init(&workspace_root);
+    });
+}
 
 fn make_template(name: &str) -> TemplateConfig {
     TemplateConfig {
@@ -30,6 +43,7 @@ fn make_template(name: &str) -> TemplateConfig {
 
 #[tokio::test]
 async fn service_save_list_get_delete_roundtrip() {
+    init_i18n_once();
     let tmp = tempdir().unwrap();
     let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(tmp.path()));
     let manager = Arc::new(TemplateManager::new(storage));
@@ -86,6 +100,7 @@ async fn service_save_list_get_delete_roundtrip() {
 
 #[tokio::test]
 async fn service_save_invalid_args_returns_error_status() {
+    init_i18n_once();
     let tmp = tempdir().unwrap();
     let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(tmp.path()));
     let manager = Arc::new(TemplateManager::new(storage));

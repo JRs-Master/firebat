@@ -1,6 +1,7 @@
 //! ToolDispatcher integration test — 옛 core inline tests 이관.
 
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Once};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -8,7 +9,20 @@ use firebat_core::managers::ai::tool_dispatcher::{CallTarget, ToolDispatcher};
 use firebat_core::ports::{IStoragePort, ToolCall};
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 
+/// workspace root 기준 `i18n::init` 1회 — 미호출 시 i18n::t() 가 raw key 반환.
+fn init_i18n_once() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let workspace_root: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("infra crate 의 parent (workspace root)")
+            .to_path_buf();
+        firebat_core::i18n::init(&workspace_root);
+    });
+}
+
 fn make_dispatcher() -> (ToolDispatcher, TempDir) {
+    init_i18n_once();
     let tmp = tempfile::tempdir().unwrap();
     let storage: Arc<dyn IStoragePort> = Arc::new(LocalStorageAdapter::new(tmp.path()));
     (ToolDispatcher::new(storage), tmp)

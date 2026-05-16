@@ -2,7 +2,8 @@
 //!
 //! infra 의 `StubSandboxAdapter` 가 `#[cfg(test)]` 라 integration 안 보임 → 자체 stub 저장.
 
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Once};
 use tempfile::TempDir;
 
 use firebat_core::managers::module::ModuleManager;
@@ -11,6 +12,19 @@ use firebat_core::ports::{
 };
 use firebat_infra::adapters::storage::LocalStorageAdapter;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
+
+/// workspace root 기준 `i18n::init` 1회. 미호출 시 i18n::t() 가 raw key 반환 → 사용자 노출
+/// 메시지 substring 검증 test 실패. parallel test 호환 (Once::call_once).
+fn init_i18n_once() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let workspace_root: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("infra crate 의 parent (workspace root)")
+            .to_path_buf();
+        firebat_core::i18n::init(&workspace_root);
+    });
+}
 
 /// 자체 stub — inline `StubSandboxAdapter` 가 #[cfg(test)] 라 integration 안 보임.
 struct StubSandbox {
@@ -48,6 +62,7 @@ fn default_success() -> ModuleOutput {
 }
 
 fn make_manager() -> (ModuleManager, TempDir) {
+    init_i18n_once();
     let dir = tempfile::tempdir().unwrap();
     let sandbox: Arc<dyn ISandboxPort> = Arc::new(StubSandbox {
         fixed_output: ModuleOutput {
@@ -144,6 +159,7 @@ async fn run_unknown_module_returns_korean_error() {
 
 #[tokio::test]
 async fn run_no_entry_file_returns_korean_error() {
+    init_i18n_once();
     let dir = tempfile::tempdir().unwrap();
     let storage = LocalStorageAdapter::new(dir.path());
     storage
