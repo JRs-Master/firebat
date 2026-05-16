@@ -3,7 +3,8 @@
 //! private fn 사용 test (parse_size_hint / parse_aspect_ratio / compute_crop_dims /
 //! parse_media_url / ext_from_content_type) 는 inline 유지.
 
-use std::sync::Arc;
+use std::path::PathBuf;
+use std::sync::{Arc, Once};
 use tempfile::TempDir;
 
 use firebat_core::managers::media::{GenerateImageInput, MediaManager, SeoImageSettings};
@@ -15,7 +16,21 @@ use firebat_infra::adapters::image_processor::StubImageProcessorAdapter;
 use firebat_infra::adapters::media::LocalMediaAdapter;
 use firebat_infra::adapters::vault::SqliteVaultAdapter;
 
+/// workspace root 기준 `i18n::init` 1회 — CARGO_MANIFEST_DIR = infra/ 의 부모 = repo root.
+/// 미호출 시 `i18n::t()` 가 raw key 반환 → 사용자 노출 메시지 검증 test 실패.
+fn init_i18n_once() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let workspace_root: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("infra crate 의 parent (workspace root)")
+            .to_path_buf();
+        firebat_core::i18n::init(&workspace_root);
+    });
+}
+
 fn make_manager() -> (Arc<MediaManager>, TempDir) {
+    init_i18n_once();
     let dir = tempfile::tempdir().unwrap();
     let media: Arc<dyn IMediaPort> = Arc::new(LocalMediaAdapter::new(dir.path()));
     let vault: Arc<dyn IVaultPort> =
