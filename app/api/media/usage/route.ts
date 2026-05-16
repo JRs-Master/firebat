@@ -20,5 +20,5 @@ export const GET = withAuth(async (req: NextRequest) => {
   }
   const res = await findMediaUsage({ mediaSlug: slug });
   if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
-  return NextResponse.json({ success: true, data: res.data?.entries ?? [] });
+  return NextResponse.json({ success: true, data: res.data ?? [] });
 });
