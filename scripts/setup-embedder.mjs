@@ -56,7 +56,7 @@ if (existsSync(CACHE_DIR)) {
   process.exit(0);
 }
 
-console.log(`[firebat-setup] 임베딩 임베딩 모델 prefetch 시작 (~470MB)...`);
+console.log(`[firebat-setup] 임베딩 모델 prefetch 시작 (~1.1GB, safetensors 만)...`);
 
 function check(cmd) {
   const r = spawnSync('sh', ['-c', cmd], { stdio: 'ignore' });
@@ -99,9 +99,14 @@ if (check('hf --version')) {
   }
 }
 
-// 모델 다운로드
+// 모델 다운로드 — Rust hf-hub crate 영역 필요 file 만 (전체 repo 영역 박지 마, 9GB+ 영역 부담).
+// candle 영역 = safetensors + config + tokenizer 만 필요. pytorch_model.bin / onnx / sentence_transformers 영역 = 영역 0.
+// FIREBAT_EMBEDDER_DOWNLOAD_FULL=1 env 박은 영역 = 전체 repo 다운로드 (특수 영역).
+const downloadCmd = process.env.FIREBAT_EMBEDDER_DOWNLOAD_FULL === '1'
+  ? `"${cli}" download ${MODEL_ID}`
+  : `"${cli}" download ${MODEL_ID} config.json tokenizer.json model.safetensors`;
 try {
-  execSync(`"${cli}" download ${MODEL_ID}`, { stdio: 'inherit' });
+  execSync(downloadCmd, { stdio: 'inherit' });
   console.log(`[firebat-setup] 임베딩 모델 prefetch 완료 — ${CACHE_DIR}`);
 } catch (e) {
   console.warn(`[firebat-setup] 임베딩 모델 다운로드 실패 — 첫 채팅 시점 lazy 다운로드 폴백.`);
