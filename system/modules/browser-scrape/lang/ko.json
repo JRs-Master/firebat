@@ -1,0 +1,6 @@
+{
+  "error": {
+    "url_required": "data.url 필드가 필요합니다.",
+    "runtime": "{{message}}"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "error": {
+    "api_key_missing": "UPBIT_ACCESS_KEY and UPBIT_SECRET_KEY are required. Register at Settings > API Keys.",
+    "api_status": "Upbit API error ({{status}}): {{message}}",
+    "unknown_action": "Unknown action: {{action}}",
+    "input_parse": "Input parse failed: {{message}}",
+    "runtime": "{{message}}"
+  }
+}

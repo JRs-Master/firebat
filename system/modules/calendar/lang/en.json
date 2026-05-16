@@ -1,0 +1,14 @@
+{
+  "error": {
+    "stdin_parse": "Failed to parse stdin JSON.",
+    "add_title_required": "add action requires title.",
+    "add_startAt_required": "add action requires startAt (ISO 8601).",
+    "update_id_required": "update action requires id.",
+    "delete_id_required": "delete action requires id.",
+    "event_not_found": "Event not found: {{id}}",
+    "list_range_required": "list-range action requires fromTm/toTm (ISO date YYYY-MM-DD).",
+    "find_query_or_tag_required": "find action requires query or tag.",
+    "unknown_action": "Unknown action: {{action}}",
+    "runtime": "Exception: {{message}}"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "error": {
+    "stdin_parse": "stdin JSON 파싱 실패",
+    "api_key_missing": "DATA_GO_KR_API_KEY 환경변수 미설정",
+    "http_status": "HTTP {{status}}",
+    "xml_auth": "{{message}}",
+    "xml_unknown": "XML 응답 (서비스키 미등록 또는 활용신청 미승인 가능): {{body}}",
+    "json_parse": "JSON 파싱 실패: {{body}}",
+    "api_error": "API 오류 ({{code}}): {{message}}",
+    "coords_required": "{{action}} 는 lat/lon 또는 nx/ny 필요",
+    "medium_fcst_stnId_required": "medium-fcst 는 stnId 필요 (지점번호, 예: 108=전국, 109=서울·인천·경기)",
+    "medium_land_regId_required": "medium-land 는 regId 필요 (예: 11B00000 서울·인천·경기)",
+    "medium_ta_regId_required": "medium-ta 는 regId 필요 (예: 11B10101 서울)",
+    "medium_sea_regId_required": "medium-sea 는 regId 필요 (해상 코드, 예: 12A20000 서해중부)",
+    "fcst_version_ftype_required": "fcst-version 은 ftype 필요 (ODAM/VSRT/SHRT)",
+    "fcst_version_basedatetime_required": "fcst-version 은 basedatetime 필요 (yyyyMMddHHmm)",
+    "uv_index_areaNo_required": "uv-index 는 areaNo 필요 (10자리 행정구역코드)",
+    "areaNo_required": "{{action}} 은 areaNo 필요 (10자리 행정구역코드)",
+    "uv_index_v4_deprecated": "uv-index-v4 는 2026-05 기상청 V4→V5 변경으로 폐기되었습니다. uv-index-v5 사용.",
+    "thermal_index_deprecated": "체감온도 (thermal-index) 는 2026-05 기상청 데이터 생산중단으로 API 서비스가 폐기되었습니다.",
+    "typhoon_forecast_tmFc_required": "typhoon-forecast 는 tmFc 필요 (yyyyMMddHHmm 12자리)",
+    "typhoon_forecast_typhoonNo_required": "typhoon-forecast 는 typhoonNo 필요 (typSeq, 예: 18)",
+    "unknown_action": "알 수 없는 action: {{action}}",
+    "runtime": "예외: {{message}}"
+  }
+}

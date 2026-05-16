@@ -22,6 +22,15 @@ def out(success, data=None, error=None):
     sys.stdout.flush()
 
 
+def out_err(key, params=None):
+    """i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.yfinance.{key} 로 변환."""
+    msg = {'success': False, 'errorKey': key}
+    if params:
+        msg['errorParams'] = params
+    sys.stdout.write(json.dumps(msg, ensure_ascii=False, default=str))
+    sys.stdout.flush()
+
+
 def safe_float(v):
     """NaN / None / inf → None. 그 외 float."""
     try:
@@ -97,7 +106,7 @@ def main():
     if action == 'download':
         symbols = data.get('symbols') or []
         if not symbols:
-            return out(False, error="action='download' 에는 symbols 배열 필수")
+            return out_err('error.download_symbols_required')
         period = data.get('period', '1mo')
         interval = data.get('interval', '1d')
         limit = data.get('limit', 50)
@@ -116,14 +125,14 @@ def main():
         return out(True, result)
 
     if not symbol:
-        return out(False, error='symbol 필수 (action=download 시 symbols 배열)')
+        return out_err('error.symbol_required')
 
     t = yf.Ticker(symbol)
 
     if action == 'quote':
         info = t.info
         if not info or len(info) < 3:
-            return out(False, error=f'종목 정보 없음: {symbol} (코드 확인 또는 Yahoo 미지원)')
+            return out_err('error.quote_not_found', {'symbol': symbol})
         return out(True, {
             'symbol': symbol,
             'shortName': info.get('shortName'),
@@ -209,7 +218,7 @@ def main():
     if action == 'info':
         info = t.info
         if not info or len(info) < 3:
-            return out(False, error=f'종목 정보 없음: {symbol}')
+            return out_err('error.info_not_found', {'symbol': symbol})
         # NaN/inf 정제
         cleaned = {}
         for k, v in info.items():
@@ -232,7 +241,7 @@ def main():
         elif statement == 'cashflow':
             df = t.quarterly_cashflow if is_q else t.cashflow
         else:
-            return out(False, error=f"unknown statement: {statement} (income/balance/cashflow)")
+            return out_err('error.unknown_statement', {'statement': statement})
         return out(True, df_to_records(df))
 
     if action == 'dividends':
@@ -294,11 +303,11 @@ def main():
             })
         return out(True, result)
 
-    return out(False, error=f'unknown action: {action}')
+    return out_err('error.unknown_action', {'action': action})
 
 
 if __name__ == '__main__':
     try:
         main()
     except Exception as e:
-        out(False, error=f'{type(e).__name__}: {e}')
+        out_err('error.runtime', {'type': type(e).__name__, 'message': str(e)})

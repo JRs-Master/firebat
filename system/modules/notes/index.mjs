@@ -36,6 +36,13 @@ function out(success, data, error) {
   process.stdout.write(JSON.stringify(r));
 }
 
+/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.notes.{key} 로 변환. */
+function outErr(key, params) {
+  const r = { success: false, errorKey: key };
+  if (params && Object.keys(params).length > 0) r.errorParams = params;
+  process.stdout.write(JSON.stringify(r));
+}
+
 function ensureDir() {
   if (!existsSync(NOTES_DIR)) mkdirSync(NOTES_DIR, { recursive: true });
 }
@@ -77,7 +84,7 @@ async function main() {
   const raw = await readStdin();
   let input;
   try { input = JSON.parse(raw); }
-  catch { return out(false, undefined, 'stdin JSON 파싱 실패'); }
+  catch { return outErr('error.stdin_parse', {}); }
 
   const data = input.data ?? {};
   const { action } = data;
@@ -109,9 +116,9 @@ async function main() {
     }
 
     if (action === 'read') {
-      if (!data.slug) return out(false, undefined, 'read 는 slug 필요');
+      if (!data.slug) return outErr('error.read_slug_required', {});
       const fp = join(NOTES_DIR, `${sanitizeSlug(data.slug)}.md`);
-      if (!existsSync(fp)) return out(false, undefined, `노트 없음: ${data.slug}`);
+      if (!existsSync(fp)) return outErr('error.note_not_found', { slug: data.slug });
       const note = parseNote(readFileSync(fp, 'utf-8'));
       return out(true, { note: { slug: sanitizeSlug(data.slug), ...note } });
     }
@@ -134,9 +141,9 @@ async function main() {
     }
 
     if (action === 'delete') {
-      if (!data.slug) return out(false, undefined, 'delete 는 slug 필요');
+      if (!data.slug) return outErr('error.delete_slug_required', {});
       const fp = join(NOTES_DIR, `${sanitizeSlug(data.slug)}.md`);
-      if (!existsSync(fp)) return out(false, undefined, `노트 없음: ${data.slug}`);
+      if (!existsSync(fp)) return outErr('error.note_not_found', { slug: data.slug });
       unlinkSync(fp);
       return out(true, { deleted: true, slug: sanitizeSlug(data.slug) });
     }
@@ -145,7 +152,7 @@ async function main() {
       const q = (data.query || '').toLowerCase();
       const tagFilter = data.tag || null;
       const limit = data.limit || 20;
-      if (!q && !tagFilter) return out(false, undefined, 'search 는 query 또는 tag 필요');
+      if (!q && !tagFilter) return outErr('error.search_query_or_tag_required', {});
       const files = readdirSync(NOTES_DIR).filter(f => f.endsWith('.md'));
       const items = [];
       for (const f of files) {
@@ -169,9 +176,9 @@ async function main() {
       return out(true, { items: items.slice(0, limit), total: items.length });
     }
 
-    return out(false, undefined, `알 수 없는 action: ${action}`);
+    return outErr('error.unknown_action', { action: String(action) });
   } catch (e) {
-    return out(false, undefined, `예외: ${e?.message ?? String(e)}`);
+    return outErr('error.runtime', { message: e?.message ?? String(e) });
   }
 }
 

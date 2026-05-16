@@ -319,15 +319,49 @@ impl McpToolHandler for SysmodToolHandler {
                 if output.success {
                     Ok(serde_json::json!({ "success": true, "data": output.data }))
                 } else {
+                    // i18n lookup — sysmod 의 응답 `{success: false, errorKey: "X.Y", errorParams: {...}}`
+                    // → `module.{module_name}.X.Y` 의 i18n 변환. fallback: 옛 raw error string.
+                    let error_msg = resolve_sysmod_error(&self.module_name, &output);
                     Ok(serde_json::json!({
                         "success": false,
-                        "error": output.error.unwrap_or_else(|| "module failed".to_string()),
+                        "error": error_msg,
                     }))
                 }
             }
             Err(e) => Err(e),
         }
     }
+}
+
+/// sysmod 의 응답 `{errorKey, errorParams}` → i18n lookup. fallback: raw error.
+fn resolve_sysmod_error(module_name: &str, output: &firebat_core::ports::ModuleOutput) -> String {
+    // 새 패턴 — sysmod 의 envelope `{success: false, errorKey: "X.Y", errorParams: {...}}`.
+    // sandbox 의 ModuleOutput.error_key / error_params 박은 영역.
+    if let Some(key) = &output.error_key {
+        let params_obj = output.error_params.as_ref().and_then(|v| v.as_object());
+        let owned: Vec<(String, String)> = params_obj
+            .map(|obj| {
+                obj.iter()
+                    .map(|(k, v)| {
+                        let s = match v {
+                            serde_json::Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        };
+                        (k.clone(), s)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let refs: Vec<(&str, &str)> =
+            owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let full_key = format!("module.{}.{}", module_name, key);
+        return firebat_core::i18n::t(&full_key, None, &refs);
+    }
+    // 옛 raw error fallback (legacy 호환)
+    output
+        .error
+        .clone()
+        .unwrap_or_else(|| "module failed".to_string())
 }
 
 /// system/modules 의 config.json 스캔 → sysmod_<name> 도구 자동 등록.

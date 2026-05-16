@@ -48,7 +48,7 @@ def main():
         exclude_domains = data.get('excludeDomains', [])
 
         if not url:
-            print(json.dumps({"success": False, "error": "data.url 필드가 필요합니다."}))
+            print(json.dumps({"success": False, "errorKey": "error.url_required", "errorParams": {}}))
             return
 
         base_domain = extract_domain(url)
@@ -108,7 +108,7 @@ def main():
         }, ensure_ascii=False))
 
     except Exception as e:
-        print(json.dumps({"success": False, "error": str(e)}, ensure_ascii=False))
+        print(json.dumps({"success": False, "errorKey": "error.runtime", "errorParams": {"message": str(e)}}, ensure_ascii=False))
 
 if __name__ == '__main__':
     main()

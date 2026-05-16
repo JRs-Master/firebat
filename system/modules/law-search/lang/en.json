@@ -1,0 +1,16 @@
+{
+  "error": {
+    "action_required": "data.action field is required (search, detail, article).",
+    "oc_missing": "LAW_API_OC is not configured. Register API credential at Settings > System Modules > law-search (open.law.go.kr -> My Page -> Credentials).",
+    "unknown_action": "Unknown action: {{action}}. Use one of search / detail / article.",
+    "search_query_required": "search action requires query (search keyword).",
+    "detail_id_required": "detail action requires one of ID, MST, LM, or query (law name).",
+    "article_id_required": "article action requires ID, MST, or query (law name).",
+    "article_jo_required": "article action requires JO (article number, 6 digits). Examples: Article 2=000200, Article 10=001000",
+    "law_not_found": "Law \"{{lm}}\" not found.",
+    "network": "law.go.kr connection failed: {{message}} ({{cause}}). Please retry later.",
+    "api_status": "API {{status}}: {{body}}",
+    "api_result": "{{result}}: {{message}}",
+    "runtime": "{{message}}"
+  }
+}

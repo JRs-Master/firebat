@@ -273,6 +273,22 @@ function buildParams(action, input) {
   return p;
 }
 
+/** i18n 에러 — main 의 catch 에서 errorKey/errorParams 추출. */
+class I18nError extends Error {
+  constructor(key, params) {
+    super(key);
+    this.errorKey = key;
+    this.errorParams = params || {};
+  }
+}
+
+/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.upbit.{key} 로 변환. */
+function outErr(key, params) {
+  const r = { success: false, errorKey: key };
+  if (params && Object.keys(params).length > 0) r.errorParams = params;
+  console.log(JSON.stringify(r));
+}
+
 // ─── JWT 토큰 생성 (업비트 인증) ───
 function createToken(accessKey, secretKey, queryParams) {
   const payload = {
@@ -318,7 +334,7 @@ async function callApi(method, endpoint, params, accessKey, secretKey, needAuth)
 
   if (needAuth) {
     if (!accessKey || !secretKey) {
-      throw new Error('UPBIT_ACCESS_KEY, UPBIT_SECRET_KEY가 필요합니다. 설정 > API 키에서 등록해주세요.');
+      throw new I18nError('error.api_key_missing', {});
     }
     const token = createToken(accessKey, secretKey, method === 'GET' || method === 'DELETE' ? params : params);
     headers['Authorization'] = `Bearer ${token}`;
@@ -346,7 +362,7 @@ async function callApi(method, endpoint, params, accessKey, secretKey, needAuth)
 
   if (!res.ok) {
     const errMsg = data?.error?.message || data?.error?.name || text;
-    throw new Error(`업비트 API 오류 (${res.status}): ${errMsg}`);
+    throw new I18nError('error.api_status', { status: String(res.status), message: String(errMsg) });
   }
 
   return data;
@@ -373,7 +389,7 @@ async function main(input) {
     } else {
       const spec = ACTION_MAP[action];
       if (!spec) {
-        console.log(JSON.stringify({ success: false, error: `알 수 없는 액션: ${action}` }));
+        outErr('error.unknown_action', { action: String(action) });
         process.exit(1);
       }
       method = spec.method;
@@ -399,7 +415,8 @@ async function main(input) {
       },
     }));
   } catch (err) {
-    console.log(JSON.stringify({ success: false, error: err.message }));
+    if (err instanceof I18nError) outErr(err.errorKey, err.errorParams);
+    else outErr('error.runtime', { message: err.message });
     process.exit(1);
   }
 }
@@ -413,7 +430,7 @@ process.stdin.on('end', async () => {
     const input = parsed.data ?? parsed;
     await main(input);
   } catch (err) {
-    console.log(JSON.stringify({ success: false, error: `입력 파싱 실패: ${err.message}` }));
+    outErr('error.input_parse', { message: err.message });
     process.exit(1);
   }
 });

@@ -1,0 +1,26 @@
+{
+  "error": {
+    "stdin_parse": "Failed to parse stdin JSON.",
+    "api_key_missing": "DATA_GO_KR_API_KEY environment variable not set.",
+    "http_status": "HTTP {{status}}",
+    "xml_auth": "{{message}}",
+    "xml_unknown": "XML response (service key not registered or activation not approved): {{body}}",
+    "json_parse": "Failed to parse JSON: {{body}}",
+    "api_error": "API error ({{code}}): {{message}}",
+    "coords_required": "{{action}} requires lat/lon or nx/ny.",
+    "medium_fcst_stnId_required": "medium-fcst requires stnId (station number, e.g., 108=nationwide, 109=Seoul/Incheon/Gyeonggi).",
+    "medium_land_regId_required": "medium-land requires regId (e.g., 11B00000 Seoul/Incheon/Gyeonggi).",
+    "medium_ta_regId_required": "medium-ta requires regId (e.g., 11B10101 Seoul).",
+    "medium_sea_regId_required": "medium-sea requires regId (sea code, e.g., 12A20000 central Yellow Sea).",
+    "fcst_version_ftype_required": "fcst-version requires ftype (ODAM/VSRT/SHRT).",
+    "fcst_version_basedatetime_required": "fcst-version requires basedatetime (yyyyMMddHHmm).",
+    "uv_index_areaNo_required": "uv-index requires areaNo (10-digit administrative code).",
+    "areaNo_required": "{{action}} requires areaNo (10-digit administrative code).",
+    "uv_index_v4_deprecated": "uv-index-v4 deprecated due to KMA V4->V5 change in 2026-05. Use uv-index-v5.",
+    "thermal_index_deprecated": "thermal-index API discontinued due to KMA data production halt in 2026-05.",
+    "typhoon_forecast_tmFc_required": "typhoon-forecast requires tmFc (yyyyMMddHHmm 12 digits).",
+    "typhoon_forecast_typhoonNo_required": "typhoon-forecast requires typhoonNo (typSeq, e.g., 18).",
+    "unknown_action": "Unknown action: {{action}}",
+    "runtime": "Exception: {{message}}"
+  }
+}

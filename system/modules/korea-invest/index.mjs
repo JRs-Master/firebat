@@ -1959,6 +1959,15 @@ const API_TABLE = {
   }
 };
 
+/** i18n 에러 — main 의 catch 에서 errorKey/errorParams 추출. */
+class I18nError extends Error {
+  constructor(key, params) {
+    super(key);
+    this.errorKey = key;
+    this.errorParams = params || {};
+  }
+}
+
 async function getAccessToken(base, appKey, appSecret, forceNew = false) {
   if (!forceNew) {
     const cached = process.env['KIS_ACCESS_TOKEN'];
@@ -1970,9 +1979,9 @@ async function getAccessToken(base, appKey, appSecret, forceNew = false) {
     body: JSON.stringify({ grant_type: 'client_credentials', appkey: appKey, appsecret: appSecret }),
     signal: AbortSignal.timeout(10000),
   });
-  if (!resp.ok) throw new Error(`KIS 토큰 발급 실패: ${resp.status}`);
+  if (!resp.ok) throw new I18nError('error.token_issue_failed', { status: String(resp.status) });
   const json = await resp.json();
-  if (!json.access_token) throw new Error(`KIS 토큰 응답 오류: ${JSON.stringify(json)}`);
+  if (!json.access_token) throw new I18nError('error.token_response_invalid', { body: JSON.stringify(json) });
   return { token: json.access_token, isNew: true };
 }
 
@@ -1991,9 +2000,9 @@ async function acquireSlot() {
 
 async function callApi(base, token, appKey, appSecret, action, query = {}, body = {}, isMock = false, retry = 2) {
   const meta = API_TABLE[action];
-  if (!meta) throw new Error(`알 수 없는 API ID: ${action}. 한투 OPEN API 문서 참조.`);
+  if (!meta) throw new I18nError('error.unknown_api_id', { action });
   const trId = isMock && meta.trIdMock ? meta.trIdMock : meta.trIdReal;
-  if (isMock && !meta.trIdMock) throw new Error(`${action} (${meta.name}) 은 모의투자 미지원입니다.`);
+  if (isMock && !meta.trIdMock) throw new I18nError('error.mock_unsupported', { action, name: meta.name });
   let url = `${base}${meta.path}`;
   if (meta.method === 'GET' && Object.keys(query).length > 0) {
     const qs = new URLSearchParams(query).toString();
@@ -2017,9 +2026,16 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
   }
   if (!resp.ok) {
     const errText = await resp.text().catch(() => '');
-    throw new Error(`KIS API ${resp.status}: ${resp.statusText} ${errText}`.trim());
+    throw new I18nError('error.api_status', { status: String(resp.status), statusText: resp.statusText, body: errText });
   }
   return await resp.json();
+}
+
+/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.korea-invest.{key} 로 변환. */
+function outErr(key, params) {
+  const r = { success: false, errorKey: key };
+  if (params && Object.keys(params).length > 0) r.errorParams = params;
+  console.log(JSON.stringify(r));
 }
 
 let raw = '';
@@ -2030,13 +2046,13 @@ process.stdin.on('end', async () => {
     const { data } = JSON.parse(raw);
     const action = data?.action;
     if (!action) {
-      console.log(JSON.stringify({ success: false, error: 'data.action 필드가 필요합니다. 한투 API ID (v1_국내주식-008 등) 를 지정하세요.' }));
+      outErr('error.action_required', {});
       return;
     }
     const appKey = process.env['KIS_APP_KEY'];
     const appSecret = process.env['KIS_APP_SECRET'];
     if (!appKey || !appSecret) {
-      console.log(JSON.stringify({ success: false, error: 'KIS_APP_KEY / KIS_APP_SECRET 이 설정되지 않았습니다. 설정 > 시스템 모듈 > korea-invest 에서 등록하세요.' }));
+      outErr('error.api_key_missing', {});
       return;
     }
     const isMock = data.mock === true;
@@ -2057,6 +2073,7 @@ process.stdin.on('end', async () => {
     if (isNew) output.__updateSecrets = { KIS_ACCESS_TOKEN: token };
     console.log(JSON.stringify(output));
   } catch (e) {
-    console.log(JSON.stringify({ success: false, error: e.message }));
+    if (e instanceof I18nError) outErr(e.errorKey, e.errorParams);
+    else outErr('error.runtime', { message: e.message });
   }
 });

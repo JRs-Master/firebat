@@ -1,0 +1,14 @@
+{
+  "error": {
+    "api_key_missing": "NAVER_AD_API_KEY / NAVER_AD_SECRET_KEY / NAVER_AD_CUSTOMER_ID are not configured.",
+    "unknown_action": "Unknown action: {{action}}",
+    "api_status": "Naver Ads API {{status}}: {{body}}",
+    "keywords_required": "keywords array is required.",
+    "keywords_empty": "keywords array has no valid (non-empty) keywords.",
+    "id_required": "id or ids is required.",
+    "unknown_estimate_type": "Unknown estimateType: {{estimateType}}",
+    "unknown_subaction": "Unknown subAction: {{subAction}}",
+    "uri_required": "uri is required (e.g., /api/ncc/campaigns).",
+    "runtime": "{{message}}"
+  }
+}

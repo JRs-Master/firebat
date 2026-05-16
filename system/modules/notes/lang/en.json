@@ -1,0 +1,11 @@
+{
+  "error": {
+    "stdin_parse": "Failed to parse stdin JSON.",
+    "read_slug_required": "read action requires slug.",
+    "delete_slug_required": "delete action requires slug.",
+    "note_not_found": "Note not found: {{slug}}",
+    "search_query_or_tag_required": "search action requires query or tag.",
+    "unknown_action": "Unknown action: {{action}}",
+    "runtime": "Exception: {{message}}"
+  }
+}

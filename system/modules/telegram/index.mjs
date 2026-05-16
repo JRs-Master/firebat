@@ -33,20 +33,20 @@ process.stdin.on('end', async () => {
     const token = process.env['TELEGRAM_BOT_TOKEN'];
     const defaultChatId = process.env['TELEGRAM_CHAT_ID'];
 
-    if (!token) return out(false, 'TELEGRAM_BOT_TOKEN 이 설정되지 않았습니다. BotFather 로 발급 후 Vault 에 저장하세요.');
+    if (!token) return outErr('error.bot_token_missing', {});
 
     const chatId = String(data?.chatId || defaultChatId || '').trim();
-    if (!chatId) return out(false, 'chat_id 가 없습니다. 입력 chatId 또는 Vault 의 TELEGRAM_CHAT_ID 필요.');
+    if (!chatId) return outErr('error.chat_id_missing', {});
 
     switch (action) {
       case 'send-message':       return await handleSendMessage(token, chatId, data);
       case 'send-photo':         return await handleSendPhoto(token, chatId, data);
       case 'send-document':      return await handleSendDocument(token, chatId, data);
       case 'send-location':      return await handleSendLocation(token, chatId, data);
-      default:                   return out(false, `알 수 없는 액션: ${action}`);
+      default:                   return outErr('error.unknown_action', { action: String(action) });
     }
   } catch (err) {
-    out(false, err.message || String(err));
+    outErr('error.runtime', { message: err.message || String(err) });
   }
 });
 
@@ -67,13 +67,13 @@ async function tgRequest(token, method, payload) {
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.ok) {
-      const desc = json.description || `HTTP ${res.status}`;
-      return { ok: false, error: desc, status: res.status };
+      if (json.description) return { ok: false, errorKey: 'error.api_description', errorParams: { description: json.description }, status: res.status };
+      return { ok: false, errorKey: 'error.api_status', errorParams: { status: String(res.status) }, status: res.status };
     }
     return { ok: true, result: json.result };
   } catch (err) {
-    if (err.name === 'AbortError') return { ok: false, error: `timeout (${TIMEOUT / 1000}초 초과)` };
-    return { ok: false, error: err.message || String(err) };
+    if (err.name === 'AbortError') return { ok: false, errorKey: 'error.timeout', errorParams: { seconds: String(TIMEOUT / 1000) } };
+    return { ok: false, errorKey: 'error.runtime', errorParams: { message: err.message || String(err) } };
   } finally {
     clearTimeout(timer);
   }
@@ -85,7 +85,7 @@ async function tgRequest(token, method, payload) {
 
 async function handleSendMessage(token, chatId, data) {
   const text = (data?.text ?? '').trim();
-  if (!text) return out(false, 'text 가 비어 있습니다.');
+  if (!text) return outErr('error.text_empty', {});
   const payload = {
     chat_id: chatId,
     text,
@@ -93,12 +93,12 @@ async function handleSendMessage(token, chatId, data) {
   };
   if (data.parseMode) payload.parse_mode = data.parseMode;
   const r = await tgRequest(token, 'sendMessage', payload);
-  return r.ok ? out(true, null, { messageId: r.result?.message_id }) : out(false, r.error);
+  return r.ok ? out(true, null, { messageId: r.result?.message_id }) : outErr(r.errorKey, r.errorParams);
 }
 
 async function handleSendPhoto(token, chatId, data) {
   const photo = (data?.photoUrl ?? '').trim();
-  if (!photo) return out(false, 'photoUrl 이 비어 있습니다.');
+  if (!photo) return outErr('error.photo_url_empty', {});
   const payload = {
     chat_id: chatId,
     photo,
@@ -107,12 +107,12 @@ async function handleSendPhoto(token, chatId, data) {
   if (data.text) payload.caption = data.text;
   if (data.parseMode) payload.parse_mode = data.parseMode;
   const r = await tgRequest(token, 'sendPhoto', payload);
-  return r.ok ? out(true, null, { messageId: r.result?.message_id }) : out(false, r.error);
+  return r.ok ? out(true, null, { messageId: r.result?.message_id }) : outErr(r.errorKey, r.errorParams);
 }
 
 async function handleSendDocument(token, chatId, data) {
   const doc = (data?.documentUrl ?? '').trim();
-  if (!doc) return out(false, 'documentUrl 이 비어 있습니다.');
+  if (!doc) return outErr('error.document_url_empty', {});
   const payload = {
     chat_id: chatId,
     document: doc,
@@ -121,12 +121,12 @@ async function handleSendDocument(token, chatId, data) {
   if (data.text) payload.caption = data.text;
   if (data.parseMode) payload.parse_mode = data.parseMode;
   const r = await tgRequest(token, 'sendDocument', payload);
-  return r.ok ? out(true, null, { messageId: r.result?.message_id }) : out(false, r.error);
+  return r.ok ? out(true, null, { messageId: r.result?.message_id }) : outErr(r.errorKey, r.errorParams);
 }
 
 async function handleSendLocation(token, chatId, data) {
   if (typeof data?.latitude !== 'number' || typeof data?.longitude !== 'number') {
-    return out(false, 'latitude / longitude 가 number 여야 합니다.');
+    return outErr('error.lat_lon_number_required', {});
   }
   const payload = {
     chat_id: chatId,
@@ -135,7 +135,7 @@ async function handleSendLocation(token, chatId, data) {
     disable_notification: !!data.disableNotification,
   };
   const r = await tgRequest(token, 'sendLocation', payload);
-  return r.ok ? out(true, null, { messageId: r.result?.message_id }) : out(false, r.error);
+  return r.ok ? out(true, null, { messageId: r.result?.message_id }) : outErr(r.errorKey, r.errorParams);
 }
 
 // ────────────────────────────────────────────────────────────────────────
@@ -145,4 +145,11 @@ async function handleSendLocation(token, chatId, data) {
 function out(success, error, data = null) {
   const result = success ? { success, data } : { success, error };
   process.stdout.write(JSON.stringify(result));
+}
+
+/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.telegram.{key} 로 변환. */
+function outErr(key, params) {
+  const r = { success: false, errorKey: key };
+  if (params && Object.keys(params).length > 0) r.errorParams = params;
+  process.stdout.write(JSON.stringify(r));
 }

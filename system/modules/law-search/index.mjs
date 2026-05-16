@@ -16,24 +16,43 @@ const TIMEOUT = 20000;
 let raw = '';
 process.stdin.setEncoding('utf-8');
 process.stdin.on('data', c => { raw += c; });
+/** i18n 에러 — main 의 catch 에서 errorKey/errorParams 추출. */
+class I18nError extends Error {
+  constructor(key, params) {
+    super(key);
+    this.errorKey = key;
+    this.errorParams = params || {};
+  }
+}
+
 process.stdin.on('end', async () => {
   try {
     const { data } = JSON.parse(raw);
     const action = data?.action;
-    if (!action) return out(false, 'data.action 필드가 필요합니다. (search, detail, article)');
+    if (!action) return outErr('error.action_required', {});
 
     const OC = process.env['LAW_API_OC'];
-    if (!OC) return out(false, 'LAW_API_OC가 설정되지 않았습니다. 설정 > 시스템 모듈 > law-search에서 API 인증값을 등록해주세요. (open.law.go.kr → 마이페이지 → 인증값)');
+    if (!OC) return outErr('error.oc_missing', {});
 
     if (action === 'search') await handleSearch(OC, data);
     else if (action === 'detail') await handleDetail(OC, data);
     else if (action === 'article') await handleArticle(OC, data);
-    else out(false, `알 수 없는 action: ${action}. search / detail / article 중 하나를 사용하세요.`);
-  } catch (e) { out(false, e.message); }
+    else outErr('error.unknown_action', { action: String(action) });
+  } catch (e) {
+    if (e instanceof I18nError) outErr(e.errorKey, e.errorParams);
+    else outErr('error.runtime', { message: e.message });
+  }
 });
 
 function out(success, dataOrError) {
   console.log(JSON.stringify(success ? { success: true, data: dataOrError } : { success: false, error: dataOrError }));
+}
+
+/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.law-search.{key} 로 변환. */
+function outErr(key, params) {
+  const r = { success: false, errorKey: key };
+  if (params && Object.keys(params).length > 0) r.errorParams = params;
+  console.log(JSON.stringify(r));
 }
 
 // ── 공통 fetch ──────────────────────────────────────────────────────────────
@@ -44,19 +63,19 @@ async function apiFetch(url) {
   } catch (e) {
     // 네트워크 장애, DNS 실패, 타임아웃 등
     const cause = e.cause?.code || e.cause?.message || '';
-    throw new Error(`law.go.kr 접속 실패: ${e.message}${cause ? ` (${cause})` : ''}. 잠시 후 다시 시도해주세요.`);
+    throw new I18nError('error.network', { message: e.message, cause });
   }
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
-    throw new Error(`API ${resp.status}: ${t}`.trim());
+    throw new I18nError('error.api_status', { status: String(resp.status), body: t });
   }
   const text = await resp.text();
   try {
     const json = JSON.parse(text);
-    if (json.result) throw new Error(`${json.result}: ${json.msg || ''}`.trim());
+    if (json.result) throw new I18nError('error.api_result', { result: String(json.result), message: json.msg || '' });
     return json;
   } catch (e) {
-    if (e.message.startsWith('API ') || e.message.includes('검증') || e.message.includes('law.go.kr')) throw e;
+    if (e instanceof I18nError) throw e;
     // JSON 파싱 실패 — HTML/XML 응답일 수 있음
     return { _raw: text.slice(0, 10000) };
   }
@@ -68,7 +87,7 @@ async function apiFetch(url) {
 async function handleSearch(OC, data) {
   const target = data.target || 'law';
   const query = data.query;
-  if (!query) return out(false, 'search 액션에는 query(검색어)가 필요합니다.');
+  if (!query) return outErr('error.search_query_required', {});
 
   const p = new URLSearchParams({ OC, target, type: 'JSON', query });
 
@@ -163,7 +182,7 @@ async function handleDetail(OC, data) {
   if (!data.LM && data.query) data.LM = data.query;
 
   if (!id && !mst && !data.LM) {
-    return out(false, 'detail 액션에는 ID, MST, LM, 또는 query(법령명) 중 하나가 필요합니다.');
+    return outErr('error.detail_id_required', {});
   }
 
   const p = new URLSearchParams({ OC, target, type: 'JSON' });
@@ -226,11 +245,11 @@ async function handleArticle(OC, data) {
       mst = first['법령일련번호'] || first['법령MST'] || first.MST;
       id = first['법령ID'] || first.ID;
     }
-    if (!id && !mst) return out(false, `"${lm}" 법령을 찾을 수 없습니다.`);
+    if (!id && !mst) return outErr('error.law_not_found', { lm });
   }
 
-  if (!id && !mst) return out(false, 'article 액션에는 ID, MST, 또는 query(법령명)가 필요합니다.');
-  if (!jo) return out(false, 'article 액션에는 JO(조문번호, 6자리)가 필요합니다. 예: 제2조=000200, 제10조=001000');
+  if (!id && !mst) return outErr('error.article_id_required', {});
+  if (!jo) return outErr('error.article_jo_required', {});
 
   const p = new URLSearchParams({ OC, target: 'lawjosub', type: 'JSON' });
   if (id) p.set('ID', String(id));

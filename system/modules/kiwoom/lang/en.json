@@ -1,0 +1,11 @@
+{
+  "error": {
+    "action_required": "data.action field is required. Specify Kiwoom API ID (e.g., ka10001).",
+    "api_key_missing": "KIWOOM_APP_KEY / KIWOOM_APP_SECRET not configured. Register at Settings > System Modules > kiwoom.",
+    "token_issue_failed": "Failed to issue token: {{status}}",
+    "token_response_invalid": "Invalid token response: {{body}}",
+    "unknown_api_id": "Unknown API ID: {{apiId}}. Refer to Kiwoom REST API docs.",
+    "api_status": "Kiwoom API {{status}}: {{statusText}} {{body}}",
+    "runtime": "{{message}}"
+  }
+}

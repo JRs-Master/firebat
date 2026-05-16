@@ -1,0 +1,11 @@
+{
+  "error": {
+    "download_symbols_required": "action='download' 에는 symbols 배열 필수",
+    "symbol_required": "symbol 필수 (action=download 시 symbols 배열)",
+    "quote_not_found": "종목 정보 없음: {{symbol}} (코드 확인 또는 Yahoo 미지원)",
+    "info_not_found": "종목 정보 없음: {{symbol}}",
+    "unknown_statement": "unknown statement: {{statement}} (income/balance/cashflow)",
+    "unknown_action": "unknown action: {{action}}",
+    "runtime": "{{type}}: {{message}}"
+  }
+}

@@ -14,6 +14,22 @@ const TIMEOUT = 20000;
 let raw = '';
 process.stdin.setEncoding('utf-8');
 process.stdin.on('data', c => { raw += c; });
+/** i18n 에러 — main 의 catch 에서 errorKey/errorParams 추출. */
+class I18nError extends Error {
+  constructor(key, params) {
+    super(key);
+    this.errorKey = key;
+    this.errorParams = params || {};
+  }
+}
+
+/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.naver-ads.{key} 로 변환. */
+function outErr(key, params) {
+  const r = { success: false, errorKey: key };
+  if (params && Object.keys(params).length > 0) r.errorParams = params;
+  console.log(JSON.stringify(r));
+}
+
 process.stdin.on('end', async () => {
   try {
     const { data } = JSON.parse(raw);
@@ -23,7 +39,7 @@ process.stdin.on('end', async () => {
     const secretKey = process.env['NAVER_AD_SECRET_KEY'];
     const customerId = process.env['NAVER_AD_CUSTOMER_ID'];
     if (!apiKey || !secretKey || !customerId) {
-      return out(false, 'NAVER_AD_API_KEY / NAVER_AD_SECRET_KEY / NAVER_AD_CUSTOMER_ID가 설정되지 않았습니다.');
+      return outErr('error.api_key_missing', {});
     }
 
     const ctx = { apiKey, secretKey, customerId };
@@ -56,9 +72,12 @@ process.stdin.on('end', async () => {
       case 'list-shared-budgets': return await handleGet(ctx, '/api/ncc/shared-budgets', data);
       // 범용 API 직접 호출
       case 'raw': return await handleRaw(ctx, data);
-      default: return out(false, `알 수 없는 action: ${action}`);
+      default: return outErr('error.unknown_action', { action: String(action) });
     }
-  } catch (e) { out(false, e.message); }
+  } catch (e) {
+    if (e instanceof I18nError) outErr(e.errorKey, e.errorParams);
+    else outErr('error.runtime', { message: e.message });
+  }
 });
 
 function out(ok, d) { console.log(JSON.stringify(ok ? { success: true, data: d } : { success: false, error: d })); }
@@ -93,7 +112,7 @@ async function api(ctx, method, uri, queryParams, body) {
 
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
-    throw new Error(`네이버 광고 API ${resp.status}: ${t}`.trim());
+    throw new I18nError('error.api_status', { status: String(resp.status), body: t });
   }
 
   const text = await resp.text();
@@ -104,7 +123,7 @@ async function api(ctx, method, uri, queryParams, body) {
 async function handleKeywordTool(ctx, data) {
   const keywords = data?.keywords;
   if (!keywords || !Array.isArray(keywords) || keywords.length === 0) {
-    return out(false, 'keywords 배열이 필요합니다.');
+    return outErr('error.keywords_required', {});
   }
 
   // 네이버 광고 API 제약: hintKeywords 각 키워드는 공백 불가, 최대 5개
@@ -114,7 +133,7 @@ async function handleKeywordTool(ctx, data) {
     .filter(k => k.length > 0)
     .slice(0, 5);
   if (sanitized.length === 0) {
-    return out(false, 'keywords 배열에 유효한(비어있지 않은) 키워드가 없습니다.');
+    return outErr('error.keywords_empty', {});
   }
   const params = { hintKeywords: sanitized.join(',') };
   if (data.showDetail !== false) params.showDetail = '1';
@@ -155,7 +174,7 @@ async function handleStats(ctx, data) {
   const params = {};
   if (data.ids) params.ids = Array.isArray(data.ids) ? data.ids.join(',') : data.ids;
   else if (data.id) params.id = data.id;
-  else return out(false, 'id 또는 ids가 필요합니다.');
+  else return outErr('error.id_required', {});
 
   if (data.fields) params.fields = JSON.stringify(data.fields);
   if (data.timeRange) params.timeRange = typeof data.timeRange === 'string' ? data.timeRange : JSON.stringify(data.timeRange);
@@ -182,7 +201,7 @@ async function handleEstimate(ctx, data) {
   };
 
   const path = PATHS[estimateType];
-  if (!path) return out(false, `알 수 없는 estimateType: ${estimateType}`);
+  if (!path) return outErr('error.unknown_estimate_type', { estimateType: String(estimateType) });
 
   const body = {};
   if (data.device) body.device = data.device;
@@ -211,7 +230,7 @@ async function handleBizmoney(ctx, data) {
   };
 
   const path = PATHS[subAction];
-  if (!path) return out(false, `알 수 없는 subAction: ${subAction}`);
+  if (!path) return outErr('error.unknown_subaction', { subAction: String(subAction) });
 
   const params = {};
   if (data.searchStartDt) params.searchStartDt = data.searchStartDt;
@@ -224,7 +243,7 @@ async function handleBizmoney(ctx, data) {
 // ── 관리 키워드 조회 ─────────────────────────────────────────────────────────
 async function handleManagedKeywords(ctx, data) {
   const keywords = data?.keywords;
-  if (!keywords) return out(false, 'keywords 배열이 필요합니다.');
+  if (!keywords) return outErr('error.keywords_required', {});
   const params = { keywords: Array.isArray(keywords) ? keywords.join(',') : keywords };
   const json = await api(ctx, 'GET', '/api/ncc/managedKeyword', params);
   out(true, json);
@@ -258,7 +277,7 @@ async function handleGet(ctx, uri, data) {
 async function handleRaw(ctx, data) {
   const method = (data.method || 'GET').toUpperCase();
   const uri = data.uri;
-  if (!uri) return out(false, 'uri가 필요합니다. (예: /api/ncc/campaigns)');
+  if (!uri) return outErr('error.uri_required', {});
 
   const json = await api(ctx, method, uri, data.params || null, data.body || null);
   out(true, json);

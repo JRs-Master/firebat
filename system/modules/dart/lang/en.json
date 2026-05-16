@@ -1,0 +1,16 @@
+{
+  "error": {
+    "api_key_missing": "DART_API_KEY environment variable not set. Register at opendart.fss.or.kr to obtain.",
+    "lookup_query_required": "action='lookup' requires query (corp name / stock code / corp_code).",
+    "lookup_not_found": "No matching record: {{query}} (verify corp name / stock code / corp_code).",
+    "corp_code_resolve_failed": "Failed to resolve corp_code: {{query}}",
+    "company_corp_code_required": "action='company' requires corp_code (or query/stock_code for auto resolve).",
+    "financial_corp_code_required": "action='{{action}}' requires corp_code.",
+    "financial_period_required": "financial/financialAll requires bsns_year(YYYY) + reprt_code(1011/1012/1013/1014).",
+    "major_stock_corp_code_required": "action='majorStock' requires corp_code.",
+    "executive_stock_corp_code_required": "action='executiveStock' requires corp_code.",
+    "document_rcept_no_required": "action='document' requires rcept_no (receipt number from list result).",
+    "unknown_action": "Unknown action: {{action}}",
+    "runtime": "{{type}}: {{message}}"
+  }
+}

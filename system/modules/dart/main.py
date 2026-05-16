@@ -28,6 +28,15 @@ def out(success, data=None, error=None):
     sys.stdout.flush()
 
 
+def out_err(key, params=None):
+    """i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.dart.{key} 로 변환."""
+    msg = {'success': False, 'errorKey': key}
+    if params:
+        msg['errorParams'] = params
+    sys.stdout.write(json.dumps(msg, ensure_ascii=False, default=str))
+    sys.stdout.flush()
+
+
 def apply_subquery(records, limit=None, fields=None, where=None):
     """공통 sub-query — limit / fields / where 적용. 토큰 절감 핵심."""
     result = records or []
@@ -114,16 +123,16 @@ def main():
 
     api_key = os.environ.get('DART_API_KEY', '').strip()
     if not api_key:
-        return out(False, error='DART_API_KEY 환경변수 미설정. opendart.fss.or.kr 가입 후 발급.')
+        return out_err('error.api_key_missing')
 
     # action='lookup' — corp_code 매핑 utility (DART API 호출 X, 디스크 cache 만 사용)
     if action == 'lookup':
         query = data.get('query', '').strip()
         if not query:
-            return out(False, error="action='lookup' 에는 query 필수 (회사명/종목코드/corp_code)")
+            return out_err('error.lookup_query_required')
         result = lookup_query(query, api_key=api_key)
         if not result:
-            return out(False, error=f'매칭 종목 없음: {query} (회사명·종목코드·corp_code 확인)')
+            return out_err('error.lookup_not_found', {'query': query})
         return out(True, result)
 
     # 다른 액션 — corp_code 자동 변환
@@ -133,7 +142,7 @@ def main():
     if not corp_code and (stock_code or query):
         resolved = resolve_corp_code(stock_code or query, api_key=api_key)
         if not resolved:
-            return out(False, error=f'corp_code 매핑 실패: {stock_code or query}')
+            return out_err('error.corp_code_resolve_failed', {'query': stock_code or query})
         corp_code = resolved
 
     # action='list' — 공시 검색
@@ -174,7 +183,7 @@ def main():
     # action='company' — 기업개황
     if action == 'company':
         if not corp_code:
-            return out(False, error="action='company' 에는 corp_code 필수 (또는 query/stock_code 로 자동 변환)")
+            return out_err('error.company_corp_code_required')
         result = call_dart('company.json', {'corp_code': corp_code}, api_key)
         # 단일 record. fields 만 의미 있음.
         if data.get('fields'):
@@ -184,11 +193,11 @@ def main():
     # action='financial' / 'financialAll' — 재무
     if action in ('financial', 'financialAll'):
         if not corp_code:
-            return out(False, error=f"action='{action}' 에는 corp_code 필수")
+            return out_err('error.financial_corp_code_required', {'action': action})
         bsns_year = data.get('bsns_year')
         reprt_code = data.get('reprt_code')
         if not bsns_year or not reprt_code:
-            return out(False, error="financial/financialAll 에는 bsns_year(YYYY) + reprt_code(1011/1012/1013/1014) 필수")
+            return out_err('error.financial_period_required')
         endpoint = 'fnlttSinglAcnt.json' if action == 'financial' else 'fnlttSinglAcntAll.json'
         params = {'corp_code': corp_code, 'bsns_year': bsns_year, 'reprt_code': reprt_code}
         if action == 'financialAll':
@@ -201,7 +210,7 @@ def main():
     # action='majorStock' — 대량보유 5%+
     if action == 'majorStock':
         if not corp_code:
-            return out(False, error="action='majorStock' 에는 corp_code 필수")
+            return out_err('error.major_stock_corp_code_required')
         result = call_dart('majorstock.json', {'corp_code': corp_code}, api_key)
         records = result.get('list', [])
         records = apply_subquery(records, limit=data.get('limit'), fields=data.get('fields'), where=data.get('where'))
@@ -210,7 +219,7 @@ def main():
     # action='executiveStock' — 임원·주요주주 소유
     if action == 'executiveStock':
         if not corp_code:
-            return out(False, error="action='executiveStock' 에는 corp_code 필수")
+            return out_err('error.executive_stock_corp_code_required')
         result = call_dart('elestock.json', {'corp_code': corp_code}, api_key)
         records = result.get('list', [])
         records = apply_subquery(records, limit=data.get('limit'), fields=data.get('fields'), where=data.get('where'))
@@ -220,7 +229,7 @@ def main():
     if action == 'document':
         rcept_no = data.get('rcept_no', '').strip()
         if not rcept_no:
-            return out(False, error="action='document' 에는 rcept_no 필수 (list 결과의 접수번호)")
+            return out_err('error.document_rcept_no_required')
         # document.xml endpoint 는 직접 다운로드 zip 반환. URL 만 구성해서 반환.
         return out(True, {
             'rcept_no': rcept_no,
@@ -228,11 +237,11 @@ def main():
             'note': '브라우저로 다운로드 가능. zip 안에 XBRL/PDF 포함.',
         })
 
-    return out(False, error=f'unknown action: {action}')
+    return out_err('error.unknown_action', {'action': action})
 
 
 if __name__ == '__main__':
     try:
         main()
     except Exception as e:
-        out(False, error=f'{type(e).__name__}: {e}')
+        out_err('error.runtime', {'type': type(e).__name__, 'message': str(e)})

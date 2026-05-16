@@ -32,11 +32,11 @@ process.stdin.on('end', async () => {
     const restApiKey = process.env['KAKAO_REST_API_KEY'];
     const clientSecret = process.env['KAKAO_CLIENT_SECRET'];
 
-    if (!accessToken) return out(false, 'KAKAO_ACCESS_TOKEN이 설정되지 않았습니다.');
+    if (!accessToken) return outErr('error.access_token_missing', {});
 
     // 토큰 자동 갱신 래퍼
-    // - 핸들러가 { _error: '...' } 반환 → 검증 에러
-    // - 핸들러가 { _status, _error } 반환 → kapi 호출 실패 (401이면 토큰 갱신 후 재시도)
+    // - 핸들러가 { _errorKey, _errorParams? } 반환 → 검증 에러 (i18n)
+    // - 핸들러가 { _status, _statusBody } 반환 → kapi 호출 실패 (401이면 토큰 갱신 후 재시도)
     // - 핸들러가 { _ok: data } 반환 → 성공 데이터 (변환된 형태)
     // - 핸들러가 그 외 객체 반환 → 원본 kapi 응답 (성공, 변환 없음)
     let refreshedAccessToken = null;   // 401 재시도 성공 시 새 access token
@@ -52,7 +52,7 @@ process.stdin.on('end', async () => {
           if (refreshed.refreshToken) refreshedRefreshToken = refreshed.refreshToken;
           r = await fn(accessToken);
         } else {
-          return { _error: '토큰 갱신 실패. 카카오 연동을 다시 진행해주세요.' };
+          return { _errorKey: 'error.token_refresh_failed', _errorParams: {} };
         }
       }
       return r;
@@ -67,9 +67,9 @@ process.stdin.on('end', async () => {
     };
     const run = async (fn) => {
       const r = await withRetry(fn);
-      if (!r) return outRaw(withTokenUpdate({ success: false, error: '알 수 없는 오류' }));
-      if (r._error) return outRaw(withTokenUpdate({ success: false, error: r._error }));
-      if (r._status) return outRaw(withTokenUpdate({ success: false, error: r._error || `카카오 API ${r._status}` }));
+      if (!r) return outRaw(withTokenUpdate({ success: false, errorKey: 'error.unknown', errorParams: {} }));
+      if (r._errorKey) return outRaw(withTokenUpdate({ success: false, errorKey: r._errorKey, errorParams: r._errorParams || {} }));
+      if (r._status) return outRaw(withTokenUpdate({ success: false, errorKey: 'error.api_status', errorParams: { status: String(r._status), body: r._statusBody || '' } }));
       return outRaw(withTokenUpdate({ success: true, data: r._ok !== undefined ? r._ok : r }));
     };
 
@@ -83,13 +83,20 @@ process.stdin.on('end', async () => {
       case 'calendars': return await run(t => handleCalendars(t, data));
       case 'create-event': return await run(t => handleCreateEvent(t, data));
       case 'list-events': return await run(t => handleListEvents(t, data));
-      default: return out(false, `알 수 없는 action: ${action}`);
+      default: return outErr('error.unknown_action', { action: String(action) });
     }
-  } catch (e) { out(false, e.message); }
+  } catch (e) { outErr('error.runtime', { message: e.message }); }
 });
 
 function out(ok, d) { console.log(JSON.stringify(ok ? { success: true, data: d } : { success: false, error: d })); }
 function outRaw(obj) { console.log(JSON.stringify(obj)); }
+
+/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.kakao-talk.{key} 로 변환. */
+function outErr(key, params) {
+  const r = { success: false, errorKey: key };
+  if (params && Object.keys(params).length > 0) r.errorParams = params;
+  console.log(JSON.stringify(r));
+}
 
 async function kapiPost(token, url, formBody) {
   const resp = await fetch(url, {
@@ -100,7 +107,7 @@ async function kapiPost(token, url, formBody) {
   });
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
-    return { _status: resp.status, _error: `카카오 API ${resp.status}: ${t}` };
+    return { _status: resp.status, _statusBody: t };
   }
   return await resp.json();
 }
@@ -112,13 +119,13 @@ async function kapiGet(token, url) {
   });
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
-    return { _status: resp.status, _error: `카카오 API ${resp.status}: ${t}` };
+    return { _status: resp.status, _statusBody: t };
   }
   return await resp.json();
 }
 
-// kapi 응답이 에러면 그대로 통과(호출 쪽에서 _status / _error 확인), 성공이면 null.
-function kapiErr(result) { return result && (result._status || result._error) ? result : null; }
+// kapi 응답이 에러면 그대로 통과(호출 쪽에서 _status / _errorKey 확인), 성공이면 null.
+function kapiErr(result) { return result && (result._status || result._errorKey) ? result : null; }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  템플릿 빌더
@@ -178,7 +185,7 @@ function buildTemplate(data) {
   }
 
   if (type === 'location') {
-    if (!data.address) throw new Error('location 타입에는 address가 필요합니다.');
+    if (!data.address) throw new TemplateError('error.template_location_address', {});
     const content = {
       title: (data.title || data.text || '').slice(0, 200),
       description: data.description || '',
@@ -193,7 +200,7 @@ function buildTemplate(data) {
   }
 
   if (type === 'commerce') {
-    if (!data.regularPrice) throw new Error('commerce 타입에는 regularPrice가 필요합니다.');
+    if (!data.regularPrice) throw new TemplateError('error.template_commerce_price', {});
     const content = {
       title: (data.title || data.text || '').slice(0, 200),
       description: data.description || '',
@@ -213,7 +220,7 @@ function buildTemplate(data) {
   }
 
   if (type === 'calendar') {
-    if (!data.calendarId || !data.calendarIdType) throw new Error('calendar 타입에는 calendarId, calendarIdType(event/calendar)이 필요합니다.');
+    if (!data.calendarId || !data.calendarIdType) throw new TemplateError('error.template_calendar_required', {});
     const content = {
       title: (data.title || data.text || '').slice(0, 200),
       description: data.description || '',
@@ -225,15 +232,26 @@ function buildTemplate(data) {
     return tmpl;
   }
 
-  throw new Error(`알 수 없는 메시지 타입: ${type}. text/feed/list/location/commerce/calendar 중 하나를 사용하세요.`);
+  throw new TemplateError('error.template_unknown_type', { type: String(type) });
+}
+
+/** buildTemplate 의 i18n 에러 — handle* 에서 catch 후 _errorKey 반환. */
+class TemplateError extends Error {
+  constructor(key, params) {
+    super(key);
+    this.errorKey = key;
+    this.errorParams = params || {};
+  }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  나에게 보내기
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleSendMe(token, data) {
-  if (!data.text && !data.title) return { _error: 'text 또는 title이 필요합니다.' };
-  const tmpl = buildTemplate(data);
+  if (!data.text && !data.title) return { _errorKey: 'error.text_or_title_required', _errorParams: {} };
+  let tmpl;
+  try { tmpl = buildTemplate(data); }
+  catch (e) { if (e instanceof TemplateError) return { _errorKey: e.errorKey, _errorParams: e.errorParams }; throw e; }
   const body = `template_object=${encodeURIComponent(JSON.stringify(tmpl))}`;
   const result = await kapiPost(token, `${KAPI}/v2/api/talk/memo/default/send`, body);
   const err = kapiErr(result); if (err) return err;
@@ -244,7 +262,7 @@ async function handleSendMe(token, data) {
 //  나에게 스크랩 메시지 보내기
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleSendMeScrap(token, data) {
-  if (!data.requestUrl) return { _error: 'requestUrl이 필요합니다.' };
+  if (!data.requestUrl) return { _errorKey: 'error.request_url_required', _errorParams: {} };
   let body = `request_url=${encodeURIComponent(data.requestUrl)}`;
   if (data.templateId) body += `&template_id=${data.templateId}`;
   if (data.templateArgs) body += `&template_args=${encodeURIComponent(JSON.stringify(data.templateArgs))}`;
@@ -258,11 +276,13 @@ async function handleSendMeScrap(token, data) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleSendFriends(token, data) {
   if (!data.receiverUuids || !Array.isArray(data.receiverUuids) || data.receiverUuids.length === 0) {
-    return { _error: 'receiverUuids 배열이 필요합니다. friends 액션으로 UUID를 조회하세요.' };
+    return { _errorKey: 'error.receiver_uuids_required', _errorParams: {} };
   }
-  if (!data.text && !data.title) return { _error: 'text 또는 title이 필요합니다.' };
+  if (!data.text && !data.title) return { _errorKey: 'error.text_or_title_required', _errorParams: {} };
 
-  const tmpl = buildTemplate(data);
+  let tmpl;
+  try { tmpl = buildTemplate(data); }
+  catch (e) { if (e instanceof TemplateError) return { _errorKey: e.errorKey, _errorParams: e.errorParams }; throw e; }
   const uuids = JSON.stringify(data.receiverUuids.slice(0, 5));
   const body = `receiver_uuids=${encodeURIComponent(uuids)}&template_object=${encodeURIComponent(JSON.stringify(tmpl))}`;
   const result = await kapiPost(token, `${KAPI}/v1/api/talk/friends/message/default/send`, body);
@@ -335,7 +355,7 @@ async function handleCalendars(token, data) {
 //  캘린더 이벤트 생성
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleCreateEvent(token, data) {
-  if (!data.event) return { _error: 'event 객체가 필요합니다. {title, time:{start_at, end_at, time_zone}}' };
+  if (!data.event) return { _errorKey: 'error.event_object_required', _errorParams: {} };
   const body = new URLSearchParams();
   if (data.calendarId) body.set('calendar_id', data.calendarId);
   body.set('event', JSON.stringify(data.event));

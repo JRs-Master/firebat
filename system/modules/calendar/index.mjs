@@ -38,6 +38,13 @@ function out(success, data, error) {
   process.stdout.write(JSON.stringify(r));
 }
 
+/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.calendar.{key} 로 변환. */
+function outErr(key, params) {
+  const r = { success: false, errorKey: key };
+  if (params && Object.keys(params).length > 0) r.errorParams = params;
+  process.stdout.write(JSON.stringify(r));
+}
+
 function ensureFile() {
   if (!existsSync(CAL_DIR)) mkdirSync(CAL_DIR, { recursive: true });
   if (!existsSync(EVENTS_FILE)) writeFileSync(EVENTS_FILE, '', 'utf-8');
@@ -82,7 +89,7 @@ async function main() {
   const raw = await readStdin();
   let input;
   try { input = JSON.parse(raw); }
-  catch { return out(false, undefined, 'stdin JSON 파싱 실패'); }
+  catch { return outErr('error.stdin_parse', {}); }
 
   const data = input.data ?? {};
   const { action } = data;
@@ -90,8 +97,8 @@ async function main() {
 
   try {
     if (action === 'add') {
-      if (!data.title) return out(false, undefined, 'add 는 title 필요');
-      if (!data.startAt) return out(false, undefined, 'add 는 startAt 필요 (ISO 8601)');
+      if (!data.title) return outErr('error.add_title_required', {});
+      if (!data.startAt) return outErr('error.add_startAt_required', {});
       const now = new Date().toISOString();
       const ev = {
         id: genId(),
@@ -110,10 +117,10 @@ async function main() {
     }
 
     if (action === 'update') {
-      if (!data.id) return out(false, undefined, 'update 는 id 필요');
+      if (!data.id) return outErr('error.update_id_required', {});
       const events = loadEvents();
       const ev = events.get(data.id);
-      if (!ev || ev.deletedAt) return out(false, undefined, `이벤트 없음: ${data.id}`);
+      if (!ev || ev.deletedAt) return outErr('error.event_not_found', { id: data.id });
       const now = new Date().toISOString();
       const updated = {
         ...ev,
@@ -131,10 +138,10 @@ async function main() {
     }
 
     if (action === 'delete') {
-      if (!data.id) return out(false, undefined, 'delete 는 id 필요');
+      if (!data.id) return outErr('error.delete_id_required', {});
       const events = loadEvents();
       const ev = events.get(data.id);
-      if (!ev) return out(false, undefined, `이벤트 없음: ${data.id}`);
+      if (!ev) return outErr('error.event_not_found', { id: data.id });
       const now = new Date().toISOString();
       const deleted = { ...ev, deletedAt: now, updatedAt: now };
       appendEvent(deleted);
@@ -160,7 +167,7 @@ async function main() {
     }
 
     if (action === 'list-range') {
-      if (!data.fromTm || !data.toTm) return out(false, undefined, 'list-range 는 fromTm/toTm 필요 (ISO 일자 YYYY-MM-DD)');
+      if (!data.fromTm || !data.toTm) return outErr('error.list_range_required', {});
       const fromIso = `${data.fromTm}T00:00:00`;
       const toIso = `${data.toTm}T23:59:59`;
       const events = loadEvents();
@@ -177,7 +184,7 @@ async function main() {
 
     if (action === 'find') {
       const q = (data.query || '').toLowerCase();
-      if (!q && !data.tag) return out(false, undefined, 'find 는 query 또는 tag 필요');
+      if (!q && !data.tag) return outErr('error.find_query_or_tag_required', {});
       const events = loadEvents();
       const items = [];
       for (const ev of events.values()) {
@@ -193,9 +200,9 @@ async function main() {
       return out(true, { items: items.slice(0, data.limit || 50), total: items.length });
     }
 
-    return out(false, undefined, `알 수 없는 action: ${action}`);
+    return outErr('error.unknown_action', { action: String(action) });
   } catch (e) {
-    return out(false, undefined, `예외: ${e?.message ?? String(e)}`);
+    return outErr('error.runtime', { message: e?.message ?? String(e) });
   }
 }
 

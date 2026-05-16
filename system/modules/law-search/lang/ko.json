@@ -1,0 +1,16 @@
+{
+  "error": {
+    "action_required": "data.action 필드가 필요합니다. (search, detail, article)",
+    "oc_missing": "LAW_API_OC가 설정되지 않았습니다. 설정 > 시스템 모듈 > law-search에서 API 인증값을 등록해주세요. (open.law.go.kr → 마이페이지 → 인증값)",
+    "unknown_action": "알 수 없는 action: {{action}}. search / detail / article 중 하나를 사용하세요.",
+    "search_query_required": "search 액션에는 query(검색어)가 필요합니다.",
+    "detail_id_required": "detail 액션에는 ID, MST, LM, 또는 query(법령명) 중 하나가 필요합니다.",
+    "article_id_required": "article 액션에는 ID, MST, 또는 query(법령명)가 필요합니다.",
+    "article_jo_required": "article 액션에는 JO(조문번호, 6자리)가 필요합니다. 예: 제2조=000200, 제10조=001000",
+    "law_not_found": "\"{{lm}}\" 법령을 찾을 수 없습니다.",
+    "network": "law.go.kr 접속 실패: {{message}} ({{cause}}). 잠시 후 다시 시도해주세요.",
+    "api_status": "API {{status}}: {{body}}",
+    "api_result": "{{result}}: {{message}}",
+    "runtime": "{{message}}"
+  }
+}

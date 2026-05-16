@@ -1,0 +1,14 @@
+{
+  "error": {
+    "stdin_parse": "stdin JSON 파싱 실패",
+    "add_title_required": "add 는 title 필요",
+    "add_startAt_required": "add 는 startAt 필요 (ISO 8601)",
+    "update_id_required": "update 는 id 필요",
+    "delete_id_required": "delete 는 id 필요",
+    "event_not_found": "이벤트 없음: {{id}}",
+    "list_range_required": "list-range 는 fromTm/toTm 필요 (ISO 일자 YYYY-MM-DD)",
+    "find_query_or_tag_required": "find 는 query 또는 tag 필요",
+    "unknown_action": "알 수 없는 action: {{action}}",
+    "runtime": "예외: {{message}}"
+  }
+}

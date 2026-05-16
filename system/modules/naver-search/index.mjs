@@ -15,13 +15,22 @@
 let raw = '';
 process.stdin.setEncoding('utf-8');
 process.stdin.on('data', c => { raw += c; });
+/** i18n 에러 — main 의 catch 에서 errorKey/errorParams 추출. */
+class I18nError extends Error {
+  constructor(key, params) {
+    super(key);
+    this.errorKey = key;
+    this.errorParams = params || {};
+  }
+}
+
 process.stdin.on('end', async () => {
   try {
     const { data } = JSON.parse(raw);
 
     const clientId = process.env['NAVER_CLIENT_ID'];
     const clientSecret = process.env['NAVER_CLIENT_SECRET'];
-    if (!clientId || !clientSecret) return out(false, 'NAVER_CLIENT_ID / NAVER_CLIENT_SECRET이 설정되지 않았습니다.');
+    if (!clientId || !clientSecret) return outErr('error.api_key_missing', {});
 
     const ctx = { clientId, clientSecret };
     const action = data?.action || 'search';
@@ -38,7 +47,7 @@ process.stdin.on('end', async () => {
 
     // 검색 액션 (기존)
     const query = data?.query;
-    if (!query) return out(false, 'data.query 필드가 필요합니다.');
+    if (!query) return outErr('error.query_required', {});
 
     const type = data.type || 'webkr';
 
@@ -49,10 +58,20 @@ process.stdin.on('end', async () => {
 
     // 검색 API
     await handleSearch(ctx, type, query, data);
-  } catch (e) { out(false, e.message); }
+  } catch (e) {
+    if (e instanceof I18nError) outErr(e.errorKey, e.errorParams);
+    else outErr('error.runtime', { message: e.message });
+  }
 });
 
 function out(ok, d) { console.log(JSON.stringify(ok ? { success: true, data: d } : { success: false, error: d })); }
+
+/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.naver-search.{key} 로 변환. */
+function outErr(key, params) {
+  const r = { success: false, errorKey: key };
+  if (params && Object.keys(params).length > 0) r.errorParams = params;
+  console.log(JSON.stringify(r));
+}
 
 const strip = (s) => (s || '').replace(/<\/?b>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
 
@@ -99,7 +118,7 @@ async function handleSearch(ctx, type, query, data) {
 
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
-    return out(false, `네이버 검색 API ${resp.status}: ${t}`.trim());
+    return outErr('error.search_api_status', { status: String(resp.status), body: t });
   }
 
   const json = await resp.json();
@@ -191,7 +210,7 @@ async function handleUtility(ctx, type, query) {
 
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
-    return out(false, `네이버 API ${resp.status}: ${t}`.trim());
+    return outErr('error.utility_api_status', { status: String(resp.status), body: t });
   }
 
   const json = await resp.json();
@@ -220,7 +239,7 @@ async function datalabApi(ctx, path, body) {
 
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
-    throw new Error(`네이버 데이터랩 API ${resp.status}: ${t}`.trim());
+    throw new I18nError('error.datalab_api_status', { status: String(resp.status), body: t });
   }
 
   return await resp.json();
@@ -255,7 +274,7 @@ function formatDatalabResult(json) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleSearchTrend(ctx, data) {
   if (!data.keywordGroups || !Array.isArray(data.keywordGroups) || data.keywordGroups.length === 0) {
-    return out(false, 'keywordGroups 배열이 필요합니다. [{groupName, keywords}] 형식.');
+    return outErr('error.keyword_groups_required', {});
   }
 
   const body = {
@@ -281,7 +300,7 @@ async function handleSearchTrend(ctx, data) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleShoppingCategories(ctx, data) {
   if (!data.category || !Array.isArray(data.category) || data.category.length === 0) {
-    return out(false, 'category 배열이 필요합니다. [{name, param:["카테고리코드"]}] 형식.');
+    return outErr('error.category_required', {});
   }
 
   const body = {
@@ -308,9 +327,9 @@ async function handleShoppingCategories(ctx, data) {
 async function handleShoppingKeywords(ctx, data) {
   // 'category' 를 'categoryCode' 별칭으로 수용 (AI가 API 응답 필드명과 혼동하는 흔한 실수)
   const categoryCode = data.categoryCode ?? data.category;
-  if (!categoryCode) return out(false, 'categoryCode 필드가 필요합니다 (필드명은 "categoryCode", 예: "50000000"). 주요 카테고리: 50000000=패션의류, 50000003=디지털가전, 50000006=식품.');
+  if (!categoryCode) return outErr('error.category_code_required', {});
   if (!data.keyword || !Array.isArray(data.keyword) || data.keyword.length === 0) {
-    return out(false, 'keyword 배열이 필요합니다. [{name, param:["키워드"]}] 형식.');
+    return outErr('error.keyword_array_required', {});
   }
 
   const body = {
@@ -337,8 +356,8 @@ async function handleShoppingKeywords(ctx, data) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleShoppingBreakdown(ctx, data, breakdownType) {
   const categoryCode = data.categoryCode ?? data.category;
-  if (!categoryCode) return out(false, 'categoryCode 필드가 필요합니다 (필드명은 "categoryCode"). 주요 코드: 50000000=패션의류, 50000003=디지털가전, 50000006=식품.');
-  if (!data.keywordText) return out(false, 'keywordText(문자열)가 필요합니다.');
+  if (!categoryCode) return outErr('error.category_code_required_breakdown', {});
+  if (!data.keywordText) return outErr('error.keyword_text_required', {});
 
   const body = {
     startDate: data.startDate || threeMonthsAgo(),

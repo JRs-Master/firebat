@@ -1,0 +1,16 @@
+{
+  "error": {
+    "stdin_parse": "stdin JSON 파싱 실패",
+    "api_key_missing": "DATA_GO_KR_API_KEY 환경변수 미설정",
+    "action_required": "action 필수",
+    "lawdCd_required": "lawdCd 필수 (시군구 5자리, 예: 11680=서울 강남구)",
+    "dealYmd_required": "dealYmd 필수 (계약년월 6자리 YYYYMM, 예: 202604)",
+    "unknown_action": "알 수 없는 action: {{action}}. 유효: {{valid}}",
+    "lawdCd_format": "lawdCd 는 5자리 숫자 필수 (예: 11680)",
+    "dealYmd_format": "dealYmd 는 YYYYMM 6자리 필수 (예: 202604)",
+    "http_status": "HTTP {{status}}",
+    "xml_auth": "{{message}}",
+    "api_error": "API 오류 ({{code}}): {{message}}",
+    "runtime": "예외: {{message}}"
+  }
+}

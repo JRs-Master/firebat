@@ -1,0 +1,16 @@
+{
+  "error": {
+    "api_key_missing": "DART_API_KEY 환경변수 미설정. opendart.fss.or.kr 가입 후 발급.",
+    "lookup_query_required": "action='lookup' 에는 query 필수 (회사명/종목코드/corp_code)",
+    "lookup_not_found": "매칭 종목 없음: {{query}} (회사명·종목코드·corp_code 확인)",
+    "corp_code_resolve_failed": "corp_code 매핑 실패: {{query}}",
+    "company_corp_code_required": "action='company' 에는 corp_code 필수 (또는 query/stock_code 로 자동 변환)",
+    "financial_corp_code_required": "action='{{action}}' 에는 corp_code 필수",
+    "financial_period_required": "financial/financialAll 에는 bsns_year(YYYY) + reprt_code(1011/1012/1013/1014) 필수",
+    "major_stock_corp_code_required": "action='majorStock' 에는 corp_code 필수",
+    "executive_stock_corp_code_required": "action='executiveStock' 에는 corp_code 필수",
+    "document_rcept_no_required": "action='document' 에는 rcept_no 필수 (list 결과의 접수번호)",
+    "unknown_action": "unknown action: {{action}}",
+    "runtime": "{{type}}: {{message}}"
+  }
+}

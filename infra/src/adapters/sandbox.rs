@@ -500,6 +500,8 @@ impl ISandboxPort for ProcessSandboxAdapter {
             success: false,
             data: serde_json::Value::Null,
             error: Some("MAX_RETRIES 모두 실패".to_string()),
+            error_key: None,
+            error_params: None,
             stderr: None,
             exit_code: None,
         }))
@@ -637,6 +639,8 @@ impl ProcessSandboxAdapter {
                 success: false,
                 data: serde_json::Value::Null,
                 error: Some(combined_err),
+                error_key: None,
+                error_params: None,
                 stderr: if stderr_buf.is_empty() { None } else { Some(stderr_buf) },
                 exit_code,
             });
@@ -649,22 +653,27 @@ impl ProcessSandboxAdapter {
             serde_json::from_str(trimmed).unwrap_or_else(|_| serde_json::json!({"stdout": trimmed}))
         };
 
-        // sysmod stdout envelope 인식 — `{success, data, error}` 형태면 그대로 unwrap.
+        // sysmod stdout envelope 인식 — `{success, data, error, errorKey?, errorParams?}` 형태면 그대로 unwrap.
         // exit 0 자체는 process 정상 종료만 의미 — sysmod 의 비즈니스 success 와 별개.
-        // 옛 sysmod 패턴 (`console.log(JSON.stringify({success:false, error:"..."}))`) 1:1 처리.
-        let (success, data, error) = if let Some(obj) = parsed.as_object() {
+        // errorKey / errorParams = i18n 영역 (SysmodToolHandler 의 lookup 변환 입력).
+        let (success, data, error, error_key, error_params) = if let Some(obj) = parsed.as_object() {
             let has_success = obj.contains_key("success");
-            let has_envelope_field = has_success || obj.contains_key("data") || obj.contains_key("error");
+            let has_envelope_field = has_success
+                || obj.contains_key("data")
+                || obj.contains_key("error")
+                || obj.contains_key("errorKey");
             if has_envelope_field {
                 let s = obj.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
                 let d = obj.get("data").cloned().unwrap_or(serde_json::Value::Null);
                 let e = obj.get("error").and_then(|v| v.as_str()).map(String::from);
-                (s, d, e)
+                let ek = obj.get("errorKey").and_then(|v| v.as_str()).map(String::from);
+                let ep = obj.get("errorParams").cloned();
+                (s, d, e, ek, ep)
             } else {
-                (true, parsed, None)
+                (true, parsed, None, None, None)
             }
         } else {
-            (true, parsed, None)
+            (true, parsed, None, None, None)
         };
 
         Ok(ModuleOutput {
@@ -672,6 +681,8 @@ impl ProcessSandboxAdapter {
             success,
             data,
             error,
+            error_key,
+            error_params,
             stderr: if stderr_buf.is_empty() { None } else { Some(stderr_buf) },
             exit_code,
         })

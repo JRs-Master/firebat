@@ -1,0 +1,21 @@
+{
+  "error": {
+    "api_key_missing": "FIRECRAWL_API_KEY is not configured.",
+    "unknown_action": "Unknown action: {{action}}. Use one of scrape/crawl/map/extract.",
+    "url_required": "data.url field is required.",
+    "urls_required": "data.urls array is required (wildcards supported: \"example.com/*\").",
+    "api_status": "Firecrawl {{status}}: {{body}}",
+    "scrape_failed": "Scrape failed: {{message}}",
+    "crawl_start_status": "Firecrawl crawl start {{status}}: {{body}}",
+    "crawl_start_failed": "Crawl start failed: {{message}}",
+    "crawl_status": "Crawl {{status}}: {{message}}",
+    "crawl_timeout": "Crawl timeout ({{seconds}}s). crawlId: {{crawlId}}",
+    "map_status": "Firecrawl map {{status}}: {{body}}",
+    "map_failed": "URL map fetch failed: {{message}}",
+    "extract_start_status": "Firecrawl extract {{status}}: {{body}}",
+    "extract_start_failed": "Extract start failed: {{message}}",
+    "extract_failed": "Extract failed: {{message}}",
+    "extract_timeout": "Extract timeout. extractId: {{extractId}}",
+    "runtime": "{{message}}"
+  }
+}

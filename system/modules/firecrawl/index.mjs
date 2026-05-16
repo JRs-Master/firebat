@@ -15,7 +15,7 @@ process.stdin.on('end', async () => {
   try {
     const { data } = JSON.parse(raw);
     const apiKey = process.env['FIRECRAWL_API_KEY'];
-    if (!apiKey) return out(false, 'FIRECRAWL_API_KEY가 설정되지 않았습니다.');
+    if (!apiKey) return outErr('error.api_key_missing', {});
 
     const action = data?.action || 'scrape';
 
@@ -23,11 +23,18 @@ process.stdin.on('end', async () => {
     else if (action === 'crawl') await handleCrawl(apiKey, data);
     else if (action === 'map') await handleMap(apiKey, data);
     else if (action === 'extract') await handleExtract(apiKey, data);
-    else out(false, `알 수 없는 action: ${action}. scrape/crawl/map/extract 중 하나를 사용하세요.`);
-  } catch (e) { out(false, e.message); }
+    else outErr('error.unknown_action', { action: String(action) });
+  } catch (e) { outErr('error.runtime', { message: e.message }); }
 });
 
 function out(ok, d) { console.log(JSON.stringify(ok ? { success: true, data: d } : { success: false, error: d })); }
+
+/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.firecrawl.{key} 로 변환. */
+function outErr(key, params) {
+  const r = { success: false, errorKey: key };
+  if (params && Object.keys(params).length > 0) r.errorParams = params;
+  console.log(JSON.stringify(r));
+}
 
 function authHeaders(apiKey) {
   return { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` };
@@ -38,7 +45,7 @@ function authHeaders(apiKey) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleScrape(apiKey, data) {
   const url = data?.url;
-  if (!url) return out(false, 'data.url 필드가 필요합니다.');
+  if (!url) return outErr('error.url_required', {});
 
   const body = { url };
 
@@ -79,11 +86,11 @@ async function handleScrape(apiKey, data) {
 
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
-    return out(false, `Firecrawl ${resp.status}: ${t}`.trim());
+    return outErr('error.api_status', { status: String(resp.status), body: t });
   }
 
   const json = await resp.json();
-  if (!json.success) return out(false, json.error || '스크래핑 실패');
+  if (!json.success) return outErr('error.scrape_failed', { message: json.error || '' });
 
   const d = json.data || {};
   const maxLen = parseInt(process.env['MODULE_MAXTEXTLENGTH'] || '30000', 10);
@@ -120,7 +127,7 @@ async function handleScrape(apiKey, data) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleCrawl(apiKey, data) {
   const url = data?.url;
-  if (!url) return out(false, 'data.url 필드가 필요합니다.');
+  if (!url) return outErr('error.url_required', {});
 
   const body = { url };
   if (data.limit !== undefined) body.limit = data.limit;
@@ -145,11 +152,11 @@ async function handleCrawl(apiKey, data) {
 
   if (!startResp.ok) {
     const t = await startResp.text().catch(() => '');
-    return out(false, `Firecrawl crawl start ${startResp.status}: ${t}`.trim());
+    return outErr('error.crawl_start_status', { status: String(startResp.status), body: t });
   }
 
   const startJson = await startResp.json();
-  if (!startJson.success && !startJson.id) return out(false, startJson.error || '크롤 시작 실패');
+  if (!startJson.success && !startJson.id) return outErr('error.crawl_start_failed', { message: startJson.error || '' });
   const crawlId = startJson.id;
 
   // 폴링 (최대 5분)
@@ -171,11 +178,11 @@ async function handleCrawl(apiKey, data) {
       result = statusJson;
       break;
     } else if (statusJson.status === 'failed' || statusJson.status === 'cancelled') {
-      return out(false, `크롤 ${statusJson.status}: ${statusJson.error || ''}`);
+      return outErr('error.crawl_status', { status: statusJson.status, message: statusJson.error || '' });
     }
   }
 
-  if (!result) return out(false, `크롤 시간 초과 (${maxWait / 1000}초). crawlId: ${crawlId}`);
+  if (!result) return outErr('error.crawl_timeout', { seconds: String(maxWait / 1000), crawlId });
 
   const maxLen = parseInt(process.env['MODULE_MAXTEXTLENGTH'] || '30000', 10);
   const pages = (result.data || []).map(p => ({
@@ -192,7 +199,7 @@ async function handleCrawl(apiKey, data) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 async function handleMap(apiKey, data) {
   const url = data?.url;
-  if (!url) return out(false, 'data.url 필드가 필요합니다.');
+  if (!url) return outErr('error.url_required', {});
 
   const body = { url };
   if (data.limit !== undefined) body.limit = data.limit;
@@ -208,11 +215,11 @@ async function handleMap(apiKey, data) {
 
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
-    return out(false, `Firecrawl map ${resp.status}: ${t}`.trim());
+    return outErr('error.map_status', { status: String(resp.status), body: t });
   }
 
   const json = await resp.json();
-  if (!json.success) return out(false, json.error || 'URL 맵 조회 실패');
+  if (!json.success) return outErr('error.map_failed', { message: json.error || '' });
 
   out(true, { links: json.links || [] });
 }
@@ -223,7 +230,7 @@ async function handleMap(apiKey, data) {
 async function handleExtract(apiKey, data) {
   const urls = data?.urls;
   if (!urls || !Array.isArray(urls) || urls.length === 0) {
-    return out(false, 'data.urls 배열이 필요합니다. (와일드카드 지원: "example.com/*")');
+    return outErr('error.urls_required', {});
   }
 
   const body = { urls };
@@ -243,11 +250,11 @@ async function handleExtract(apiKey, data) {
 
   if (!startResp.ok) {
     const t = await startResp.text().catch(() => '');
-    return out(false, `Firecrawl extract ${startResp.status}: ${t}`.trim());
+    return outErr('error.extract_start_status', { status: String(startResp.status), body: t });
   }
 
   const startJson = await startResp.json();
-  if (!startJson.success && !startJson.id) return out(false, startJson.error || '추출 시작 실패');
+  if (!startJson.success && !startJson.id) return outErr('error.extract_start_failed', { message: startJson.error || '' });
 
   // 동기 응답 (즉시 완료된 경우)
   if (startJson.status === 'completed' && startJson.data) {
@@ -273,9 +280,9 @@ async function handleExtract(apiKey, data) {
     if (statusJson.status === 'completed') {
       return out(true, statusJson.data || statusJson);
     } else if (statusJson.status === 'failed') {
-      return out(false, `추출 실패: ${statusJson.error || ''}`);
+      return outErr('error.extract_failed', { message: statusJson.error || '' });
     }
   }
 
-  out(false, `추출 시간 초과. extractId: ${extractId}`);
+  outErr('error.extract_timeout', { extractId });
 }

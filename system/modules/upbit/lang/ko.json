@@ -1,0 +1,9 @@
+{
+  "error": {
+    "api_key_missing": "UPBIT_ACCESS_KEY, UPBIT_SECRET_KEY가 필요합니다. 설정 > API 키에서 등록해주세요.",
+    "api_status": "업비트 API 오류 ({{status}}): {{message}}",
+    "unknown_action": "알 수 없는 액션: {{action}}",
+    "input_parse": "입력 파싱 실패: {{message}}",
+    "runtime": "{{message}}"
+  }
+}

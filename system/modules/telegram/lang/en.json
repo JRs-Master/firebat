@@ -1,0 +1,15 @@
+{
+  "error": {
+    "bot_token_missing": "TELEGRAM_BOT_TOKEN is not configured. Obtain from BotFather and store in Vault.",
+    "chat_id_missing": "chat_id is missing. Provide chatId in input or set TELEGRAM_CHAT_ID in Vault.",
+    "unknown_action": "Unknown action: {{action}}",
+    "text_empty": "text is empty.",
+    "photo_url_empty": "photoUrl is empty.",
+    "document_url_empty": "documentUrl is empty.",
+    "lat_lon_number_required": "latitude / longitude must be numbers.",
+    "api_description": "{{description}}",
+    "api_status": "HTTP {{status}}",
+    "timeout": "timeout (exceeded {{seconds}}s)",
+    "runtime": "{{message}}"
+  }
+}

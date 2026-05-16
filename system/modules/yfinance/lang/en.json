@@ -1,0 +1,11 @@
+{
+  "error": {
+    "download_symbols_required": "action='download' requires symbols array.",
+    "symbol_required": "symbol is required (or symbols array for action=download).",
+    "quote_not_found": "No quote info: {{symbol}} (verify symbol or Yahoo support).",
+    "info_not_found": "No info: {{symbol}}",
+    "unknown_statement": "Unknown statement: {{statement}} (income/balance/cashflow)",
+    "unknown_action": "Unknown action: {{action}}",
+    "runtime": "{{type}}: {{message}}"
+  }
+}

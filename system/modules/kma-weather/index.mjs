@@ -151,21 +151,22 @@ async function callApi(serviceKey, path, params) {
 
   const res = await fetch(url.toString(), { method: 'GET' });
   if (!res.ok) {
-    return { ok: false, error: `HTTP ${res.status}` };
+    return { ok: false, errorKey: 'error.http_status', errorParams: { status: String(res.status) } };
   }
   const text = await res.text();
   // data.go.kr 일부 케이스 — XML 에러 메시지 (서비스키 미등록 등)
   if (text.trim().startsWith('<')) {
     const m = text.match(/<returnAuthMsg>([^<]+)<\/returnAuthMsg>/) || text.match(/<errMsg>([^<]+)<\/errMsg>/);
-    return { ok: false, error: m ? m[1] : `XML 응답 (서비스키 미등록 또는 활용신청 미승인 가능): ${text.slice(0, 200)}` };
+    if (m) return { ok: false, errorKey: 'error.xml_auth', errorParams: { message: m[1] } };
+    return { ok: false, errorKey: 'error.xml_unknown', errorParams: { body: text.slice(0, 200) } };
   }
   let json;
   try { json = JSON.parse(text); }
-  catch { return { ok: false, error: `JSON 파싱 실패: ${text.slice(0, 200)}` }; }
+  catch { return { ok: false, errorKey: 'error.json_parse', errorParams: { body: text.slice(0, 200) } }; }
 
   const header = json?.response?.header;
   if (header?.resultCode && header.resultCode !== '00') {
-    return { ok: false, error: `API 오류 (${header.resultCode}): ${header.resultMsg ?? '알 수 없음'}` };
+    return { ok: false, errorKey: 'error.api_error', errorParams: { code: header.resultCode, message: header.resultMsg ?? '' } };
   }
   const items = json?.response?.body?.items?.item ?? [];
   return { ok: true, items: Array.isArray(items) ? items : [items] };
@@ -190,17 +191,24 @@ function out(success, data, error) {
   process.stdout.write(JSON.stringify(result));
 }
 
+/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.kma-weather.{key} 로 변환. */
+function outErr(key, params) {
+  const r = { success: false, errorKey: key };
+  if (params && Object.keys(params).length > 0) r.errorParams = params;
+  process.stdout.write(JSON.stringify(r));
+}
+
 async function main() {
   const raw = await readStdin();
   let input;
   try { input = JSON.parse(raw); }
-  catch { return out(false, undefined, 'stdin JSON 파싱 실패'); }
+  catch { return outErr('error.stdin_parse', {}); }
 
   const data = input.data ?? {};
   const { action, lat, lon, nx: nxIn, ny: nyIn, regId, stnId, areaNo, tmFc, typhoonNo, fromTm, toTm, limit = 100 } = data;
 
   const serviceKey = process.env.DATA_GO_KR_API_KEY;
-  if (!serviceKey) return out(false, undefined, 'DATA_GO_KR_API_KEY 환경변수 미설정');
+  if (!serviceKey) return outErr('error.api_key_missing', {});
 
   // 위경도 → 격자 변환 (lat/lon 정의되어 있고 nx/ny 미지정 시)
   let nx = nxIn, ny = nyIn;
@@ -211,84 +219,84 @@ async function main() {
 
   try {
     if (action === 'short') {
-      if (nx == null || ny == null) return out(false, undefined, 'short 는 lat/lon 또는 nx/ny 필요');
+      if (nx == null || ny == null) return outErr('error.coords_required', { action });
       const { baseDate, baseTime } = shortBaseTime();
       const r = await callApi(serviceKey, '/VilageFcstInfoService_2.0/getVilageFcst', {
         numOfRows: limit, pageNo: 1, base_date: baseDate, base_time: baseTime, nx, ny,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, nx, ny, baseDate, baseTime });
     }
 
     if (action === 'ultra-now') {
-      if (nx == null || ny == null) return out(false, undefined, 'ultra-now 는 lat/lon 또는 nx/ny 필요');
+      if (nx == null || ny == null) return outErr('error.coords_required', { action });
       const { baseDate, baseTime } = ultraNowBaseTime();
       const r = await callApi(serviceKey, '/VilageFcstInfoService_2.0/getUltraSrtNcst', {
         numOfRows: limit, pageNo: 1, base_date: baseDate, base_time: baseTime, nx, ny,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, nx, ny, baseDate, baseTime });
     }
 
     if (action === 'ultra-short') {
-      if (nx == null || ny == null) return out(false, undefined, 'ultra-short 는 lat/lon 또는 nx/ny 필요');
+      if (nx == null || ny == null) return outErr('error.coords_required', { action });
       const { baseDate, baseTime } = ultraShortBaseTime();
       const r = await callApi(serviceKey, '/VilageFcstInfoService_2.0/getUltraSrtFcst', {
         numOfRows: limit, pageNo: 1, base_date: baseDate, base_time: baseTime, nx, ny,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, nx, ny, baseDate, baseTime });
     }
 
     if (action === 'medium-fcst') {
-      if (!stnId) return out(false, undefined, 'medium-fcst 는 stnId 필요 (지점번호, 예: 108=전국, 109=서울·인천·경기)');
+      if (!stnId) return outErr('error.medium_fcst_stnId_required', {});
       const t = tmFc || mediumTmFc();
       const r = await callApi(serviceKey, '/MidFcstInfoService/getMidFcst', {
         numOfRows: limit, pageNo: 1, stnId, tmFc: t,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, stnId, tmFc: t });
     }
 
     if (action === 'medium-land') {
-      if (!regId) return out(false, undefined, 'medium-land 는 regId 필요 (예: 11B00000 서울·인천·경기)');
+      if (!regId) return outErr('error.medium_land_regId_required', {});
       const t = tmFc || mediumTmFc();
       const r = await callApi(serviceKey, '/MidFcstInfoService/getMidLandFcst', {
         numOfRows: limit, pageNo: 1, regId, tmFc: t,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, regId, tmFc: t });
     }
 
     if (action === 'medium-ta') {
-      if (!regId) return out(false, undefined, 'medium-ta 는 regId 필요 (예: 11B10101 서울)');
+      if (!regId) return outErr('error.medium_ta_regId_required', {});
       const t = tmFc || mediumTmFc();
       const r = await callApi(serviceKey, '/MidFcstInfoService/getMidTa', {
         numOfRows: limit, pageNo: 1, regId, tmFc: t,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, regId, tmFc: t });
     }
 
     if (action === 'medium-sea') {
-      if (!regId) return out(false, undefined, 'medium-sea 는 regId 필요 (해상 코드, 예: 12A20000 서해중부)');
+      if (!regId) return outErr('error.medium_sea_regId_required', {});
       const t = tmFc || mediumTmFc();
       const r = await callApi(serviceKey, '/MidFcstInfoService/getMidSeaFcst', {
         numOfRows: limit, pageNo: 1, regId, tmFc: t,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, regId, tmFc: t });
     }
 
     if (action === 'fcst-version') {
       const ftypeIn = data.ftype;
       const baseDt = data.basedatetime;
-      if (!ftypeIn) return out(false, undefined, 'fcst-version 은 ftype 필요 (ODAM/VSRT/SHRT)');
-      if (!baseDt) return out(false, undefined, 'fcst-version 은 basedatetime 필요 (yyyyMMddHHmm)');
+      if (!ftypeIn) return outErr('error.fcst_version_ftype_required', {});
+      if (!baseDt) return outErr('error.fcst_version_basedatetime_required', {});
       const r = await callApi(serviceKey, '/VilageFcstInfoService_2.0/getFcstVersion', {
         numOfRows: limit, pageNo: 1, ftype: ftypeIn, basedatetime: baseDt,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items });
     }
 
@@ -303,41 +311,41 @@ async function main() {
       const params = { numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd };
       if (stnId) params.stnId = stnId;
       const r = await callApi(serviceKey, path, params);
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items });
     }
 
     // ── 생활기상지수 V3 (uv-index) ──
     if (action === 'uv-index') {
-      if (!areaNo) return out(false, undefined, 'uv-index 는 areaNo 필요 (10자리 행정구역코드)');
+      if (!areaNo) return outErr('error.uv_index_areaNo_required', {});
       const t = data.time || ymdHm().slice(0, 10);
       const r = await callApi(serviceKey, '/LivingWthrIdxServiceV3/getUVIdxV3', {
         numOfRows: limit, pageNo: 1, areaNo, time: t,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items });
     }
 
     // ── 생활기상지수 V5 시리즈 (uv-index-v5 / air-stagnation) — 2026-05 기상청 V4→V5 endpoint 변경 ──
     if (action === 'uv-index-v5' || action === 'air-stagnation') {
-      if (!areaNo) return out(false, undefined, `${action} 은 areaNo 필요 (10자리 행정구역코드)`);
+      if (!areaNo) return outErr('error.areaNo_required', { action });
       const t = data.time || ymdHm().slice(0, 10);
       const path = action === 'uv-index-v5' ? '/LivingWthrIdxServiceV5/getUVIdxV5'
                                             : '/LivingWthrIdxServiceV5/getAirDiffusionIdxV5';
       const r = await callApi(serviceKey, path, {
         numOfRows: limit, pageNo: 1, areaNo, time: t,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items });
     }
 
     // 옛 'uv-index-v4' / 'thermal-index' action — 2026-05 기상청 변경으로 폐기.
     // 옛 cron / 사용자 호출 호환 위해 명시 에러 응답.
     if (action === 'uv-index-v4') {
-      return out(false, undefined, 'uv-index-v4 는 2026-05 기상청 V4→V5 변경으로 폐기되었습니다. uv-index-v5 사용.');
+      return outErr('error.uv_index_v4_deprecated', {});
     }
     if (action === 'thermal-index') {
-      return out(false, undefined, '체감온도 (thermal-index) 는 2026-05 기상청 데이터 생산중단으로 API 서비스가 폐기되었습니다.');
+      return outErr('error.thermal_index_deprecated', {});
     }
 
     // ── 지진/해일 시리즈 (EqkInfoService) — fromTmFc/toTmFc 8자리 ──
@@ -348,7 +356,7 @@ async function main() {
       const r = await callApi(serviceKey, path, {
         numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items });
     }
 
@@ -361,7 +369,7 @@ async function main() {
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonInfoList', {
         numOfRows: limit, pageNo: 1, tmFc: t,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, tmFc: t });
     }
 
@@ -371,23 +379,23 @@ async function main() {
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonInfo', {
         numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items });
     }
 
     if (action === 'typhoon-forecast') {
-      if (!tmFc) return out(false, undefined, 'typhoon-forecast 는 tmFc 필요 (yyyyMMddHHmm 12자리)');
-      if (!typhoonNo) return out(false, undefined, 'typhoon-forecast 는 typhoonNo 필요 (typSeq, 예: 18)');
+      if (!tmFc) return outErr('error.typhoon_forecast_tmFc_required', {});
+      if (!typhoonNo) return outErr('error.typhoon_forecast_typhoonNo_required', {});
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonFcst', {
         numOfRows: limit, pageNo: 1, tmFc, typSeq: typhoonNo,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, tmFc, typhoonNo });
     }
 
-    return out(false, undefined, `알 수 없는 action: ${action}`);
+    return outErr('error.unknown_action', { action: String(action) });
   } catch (e) {
-    return out(false, undefined, `예외: ${e?.message ?? String(e)}`);
+    return outErr('error.runtime', { message: e?.message ?? String(e) });
   }
 }
 

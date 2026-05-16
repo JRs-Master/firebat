@@ -1,0 +1,12 @@
+{
+  "error": {
+    "action_required": "data.action field is required. Specify Korea Invest API ID (e.g., v1_국내주식-008).",
+    "api_key_missing": "KIS_APP_KEY / KIS_APP_SECRET not configured. Register at Settings > System Modules > korea-invest.",
+    "token_issue_failed": "KIS token issue failed: {{status}}",
+    "token_response_invalid": "KIS token response invalid: {{body}}",
+    "unknown_api_id": "Unknown API ID: {{action}}. Refer to Korea Invest OPEN API docs.",
+    "mock_unsupported": "{{action}} ({{name}}) does not support mock investment.",
+    "api_status": "KIS API {{status}}: {{statusText}} {{body}}",
+    "runtime": "{{message}}"
+  }
+}

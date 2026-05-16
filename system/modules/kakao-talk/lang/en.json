@@ -1,0 +1,18 @@
+{
+  "error": {
+    "access_token_missing": "KAKAO_ACCESS_TOKEN is not configured.",
+    "token_refresh_failed": "Failed to refresh token. Please re-connect Kakao integration.",
+    "unknown_action": "Unknown action: {{action}}",
+    "unknown": "Unknown error.",
+    "api_status": "Kakao API {{status}}: {{body}}",
+    "text_or_title_required": "text or title is required.",
+    "request_url_required": "requestUrl is required.",
+    "receiver_uuids_required": "receiverUuids array is required. Use friends action to query UUID.",
+    "event_object_required": "event object is required. {title, time:{start_at, end_at, time_zone}}",
+    "template_location_address": "location type requires address.",
+    "template_commerce_price": "commerce type requires regularPrice.",
+    "template_calendar_required": "calendar type requires calendarId and calendarIdType(event/calendar).",
+    "template_unknown_type": "Unknown message type: {{type}}. Use one of text/feed/list/location/commerce/calendar.",
+    "runtime": "{{message}}"
+  }
+}

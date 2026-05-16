@@ -1,0 +1,16 @@
+{
+  "error": {
+    "api_key_missing": "NAVER_CLIENT_ID / NAVER_CLIENT_SECRET are not configured.",
+    "query_required": "data.query field is required.",
+    "search_api_status": "Naver Search API {{status}}: {{body}}",
+    "utility_api_status": "Naver API {{status}}: {{body}}",
+    "datalab_api_status": "Naver DataLab API {{status}}: {{body}}",
+    "keyword_groups_required": "keywordGroups array is required. Format: [{groupName, keywords}].",
+    "category_required": "category array is required. Format: [{name, param:[\"category code\"]}].",
+    "category_code_required": "categoryCode field is required (field name is \"categoryCode\", e.g., \"50000000\"). Main categories: 50000000=Fashion, 50000003=Digital, 50000006=Food.",
+    "category_code_required_breakdown": "categoryCode field is required (field name is \"categoryCode\"). Main codes: 50000000=Fashion, 50000003=Digital, 50000006=Food.",
+    "keyword_array_required": "keyword array is required. Format: [{name, param:[\"keyword\"]}].",
+    "keyword_text_required": "keywordText (string) is required.",
+    "runtime": "{{message}}"
+  }
+}

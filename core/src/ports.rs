@@ -519,6 +519,13 @@ pub struct ModuleOutput {
     pub data: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// i18n key — `error.X.Y` 형태. SysmodToolHandler 가 `module.{name}.X.Y` 박은 lookup 변환.
+    /// 매 sysmod 가 응답 시점 박음 (옛 raw `error` 와 동시 박음 — fallback 호환).
+    #[serde(rename = "errorKey", default, skip_serializing_if = "Option::is_none")]
+    pub error_key: Option<String>,
+    /// i18n placeholder param — `{{name}}` 같은 영역 치환. 매 value = string.
+    #[serde(rename = "errorParams", default, skip_serializing_if = "Option::is_none")]
+    pub error_params: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stderr: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -540,6 +547,8 @@ impl Default for ModuleOutput {
             success: false,
             data: serde_json::Value::Null,
             error: None,
+            error_key: None,
+            error_params: None,
             stderr: None,
             exit_code: None,
         }

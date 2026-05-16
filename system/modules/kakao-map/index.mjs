@@ -30,14 +30,14 @@ async function callApi(restKey, path, params) {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    return { ok: false, error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+    return { ok: false, errorKey: 'error.http_status', errorParams: { status: String(res.status), body: text.slice(0, 200) } };
   }
   let json;
   try { json = await res.json(); }
-  catch { return { ok: false, error: 'JSON 파싱 실패' }; }
+  catch { return { ok: false, errorKey: 'error.json_parse', errorParams: {} }; }
 
   if (json?.errorType || json?.code) {
-    return { ok: false, error: `API 오류: ${json?.message || json?.msg || JSON.stringify(json).slice(0, 200)}` };
+    return { ok: false, errorKey: 'error.api_error', errorParams: { message: json?.message || json?.msg || JSON.stringify(json).slice(0, 200) } };
   }
 
   return { ok: true, items: json.documents ?? [], total: json.meta?.total_count ?? 0 };
@@ -59,46 +59,53 @@ function out(success, data, error) {
   process.stdout.write(JSON.stringify(result));
 }
 
+/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.kakao-map.{key} 로 변환. */
+function outErr(key, params) {
+  const r = { success: false, errorKey: key };
+  if (params && Object.keys(params).length > 0) r.errorParams = params;
+  process.stdout.write(JSON.stringify(r));
+}
+
 async function main() {
   const raw = await readStdin();
   let input;
   try { input = JSON.parse(raw); }
-  catch { return out(false, undefined, 'stdin JSON 파싱 실패'); }
+  catch { return outErr('error.stdin_parse', {}); }
 
   const data = input.data ?? {};
   const { action, address, lat, lon, keyword, categoryGroupCode, lat_center, lon_center, radius, limit = 15 } = data;
 
   const restKey = process.env.KAKAO_REST_API_KEY;
-  if (!restKey) return out(false, undefined, 'KAKAO_REST_API_KEY 미설정 (카카오톡 모듈과 같은 REST 키)');
+  if (!restKey) return outErr('error.rest_key_missing', {});
 
-  if (!action) return out(false, undefined, 'action 필수');
+  if (!action) return outErr('error.action_required', {});
   const safeLimit = Math.max(1, Math.min(45, limit));
 
   try {
     if (action === 'geocoding' || action === 'search-address') {
-      if (!address) return out(false, undefined, `${action} 은 address 필수`);
+      if (!address) return outErr('error.address_required', { action });
       const r = await callApi(restKey, '/search/address.json', {
         query: address,
         size: safeLimit,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, total: r.total });
     }
 
     if (action === 'reverse-geocoding') {
       if (typeof lat !== 'number' || typeof lon !== 'number') {
-        return out(false, undefined, 'reverse-geocoding 은 lat/lon (number) 필수');
+        return outErr('error.reverse_lat_lon_required', {});
       }
       const r = await callApi(restKey, '/geo/coord2address.json', {
         x: lon,  // 카카오 API: x=경도, y=위도
         y: lat,
       });
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, total: r.total });
     }
 
     if (action === 'search-keyword') {
-      if (!keyword) return out(false, undefined, 'search-keyword 는 keyword 필수');
+      if (!keyword) return outErr('error.keyword_required', {});
       const params = { query: keyword, size: safeLimit };
       if (categoryGroupCode) params.category_group_code = categoryGroupCode;
       if (typeof lat_center === 'number' && typeof lon_center === 'number') {
@@ -107,13 +114,13 @@ async function main() {
         if (radius) params.radius = Math.min(20000, radius);
       }
       const r = await callApi(restKey, '/search/keyword.json', params);
-      if (!r.ok) return out(false, undefined, r.error);
+      if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, total: r.total });
     }
 
-    return out(false, undefined, `알 수 없는 action: ${action}`);
+    return outErr('error.unknown_action', { action: String(action) });
   } catch (e) {
-    return out(false, undefined, `예외: ${e?.message ?? String(e)}`);
+    return outErr('error.runtime', { message: e?.message ?? String(e) });
   }
 }
 

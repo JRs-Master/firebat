@@ -49,7 +49,7 @@ async function callApi(serviceKey, path, params) {
   }
 
   const res = await fetch(url.toString(), { method: 'GET' });
-  if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+  if (!res.ok) return { ok: false, errorKey: 'error.http_status', errorParams: { status: String(res.status) } };
   const text = await res.text();
 
   // data.go.kr 의 RTMSDataSvc 시리즈는 기본 XML 응답 (dataType=JSON 무시되는 경우 있음)
@@ -63,12 +63,12 @@ async function callApi(serviceKey, path, params) {
   if (!json) {
     // 에러 체크
     const errMatch = text.match(/<returnAuthMsg>([^<]+)<\/returnAuthMsg>/) || text.match(/<errMsg>([^<]+)<\/errMsg>/);
-    if (errMatch) return { ok: false, error: errMatch[1] };
+    if (errMatch) return { ok: false, errorKey: 'error.xml_auth', errorParams: { message: errMatch[1] } };
 
     const resultCodeMatch = text.match(/<resultCode>([^<]+)<\/resultCode>/);
     if (resultCodeMatch && resultCodeMatch[1] !== '00' && resultCodeMatch[1] !== '000') {
       const msgMatch = text.match(/<resultMsg>([^<]+)<\/resultMsg>/);
-      return { ok: false, error: `API 오류 (${resultCodeMatch[1]}): ${msgMatch?.[1] ?? '알 수 없음'}` };
+      return { ok: false, errorKey: 'error.api_error', errorParams: { code: resultCodeMatch[1], message: msgMatch?.[1] ?? '' } };
     }
 
     // items 추출 — <item>...</item> 블록을 객체로
@@ -92,7 +92,7 @@ async function callApi(serviceKey, path, params) {
   // JSON 응답
   const header = json?.response?.header;
   if (header?.resultCode && header.resultCode !== '00' && header.resultCode !== '000') {
-    return { ok: false, error: `API 오류 (${header.resultCode}): ${header.resultMsg ?? '알 수 없음'}` };
+    return { ok: false, errorKey: 'error.api_error', errorParams: { code: header.resultCode, message: header.resultMsg ?? '' } };
   }
   const items = json?.response?.body?.items?.item ?? [];
   const itemArr = Array.isArray(items) ? items : (items && typeof items === 'object' ? [items] : []);
@@ -115,31 +115,38 @@ function out(success, data, error) {
   process.stdout.write(JSON.stringify(result));
 }
 
+/** i18n 에러 응답 — errorKey + errorParams. resolve_sysmod_error 가 module.molit-realestate.{key} 로 변환. */
+function outErr(key, params) {
+  const r = { success: false, errorKey: key };
+  if (params && Object.keys(params).length > 0) r.errorParams = params;
+  process.stdout.write(JSON.stringify(r));
+}
+
 async function main() {
   const raw = await readStdin();
   let input;
   try { input = JSON.parse(raw); }
-  catch { return out(false, undefined, 'stdin JSON 파싱 실패'); }
+  catch { return outErr('error.stdin_parse', {}); }
 
   const data = input.data ?? {};
   const { action, lawdCd, dealYmd, pageNo = 1, limit = 1000 } = data;
 
   const serviceKey = process.env.DATA_GO_KR_API_KEY;
-  if (!serviceKey) return out(false, undefined, 'DATA_GO_KR_API_KEY 환경변수 미설정');
+  if (!serviceKey) return outErr('error.api_key_missing', {});
 
-  if (!action) return out(false, undefined, 'action 필수');
-  if (!lawdCd) return out(false, undefined, 'lawdCd 필수 (시군구 5자리, 예: 11680=서울 강남구)');
-  if (!dealYmd) return out(false, undefined, 'dealYmd 필수 (계약년월 6자리 YYYYMM, 예: 202604)');
+  if (!action) return outErr('error.action_required', {});
+  if (!lawdCd) return outErr('error.lawdCd_required', {});
+  if (!dealYmd) return outErr('error.dealYmd_required', {});
 
   const endpoint = ACTION_ENDPOINTS[action];
-  if (!endpoint) return out(false, undefined, `알 수 없는 action: ${action}. 유효: ${Object.keys(ACTION_ENDPOINTS).join(', ')}`);
+  if (!endpoint) return outErr('error.unknown_action', { action: String(action), valid: Object.keys(ACTION_ENDPOINTS).join(', ') });
 
   // 파라미터 검증
   if (!/^\d{5}$/.test(String(lawdCd))) {
-    return out(false, undefined, 'lawdCd 는 5자리 숫자 필수 (예: 11680)');
+    return outErr('error.lawdCd_format', {});
   }
   if (!/^\d{6}$/.test(String(dealYmd))) {
-    return out(false, undefined, 'dealYmd 는 YYYYMM 6자리 필수 (예: 202604)');
+    return outErr('error.dealYmd_format', {});
   }
 
   try {
@@ -149,7 +156,7 @@ async function main() {
       pageNo,
       numOfRows: limit,
     });
-    if (!r.ok) return out(false, undefined, r.error);
+    if (!r.ok) return outErr(r.errorKey, r.errorParams);
 
     return out(true, {
       items: r.items,
@@ -159,7 +166,7 @@ async function main() {
       dealYmd,
     });
   } catch (e) {
-    return out(false, undefined, `예외: ${e?.message ?? String(e)}`);
+    return outErr('error.runtime', { message: e?.message ?? String(e) });
   }
 }
 

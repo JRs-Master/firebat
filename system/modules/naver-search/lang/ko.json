@@ -1,0 +1,16 @@
+{
+  "error": {
+    "api_key_missing": "NAVER_CLIENT_ID / NAVER_CLIENT_SECRET이 설정되지 않았습니다.",
+    "query_required": "data.query 필드가 필요합니다.",
+    "search_api_status": "네이버 검색 API {{status}}: {{body}}",
+    "utility_api_status": "네이버 API {{status}}: {{body}}",
+    "datalab_api_status": "네이버 데이터랩 API {{status}}: {{body}}",
+    "keyword_groups_required": "keywordGroups 배열이 필요합니다. [{groupName, keywords}] 형식.",
+    "category_required": "category 배열이 필요합니다. [{name, param:[\"카테고리코드\"]}] 형식.",
+    "category_code_required": "categoryCode 필드가 필요합니다 (필드명은 \"categoryCode\", 예: \"50000000\"). 주요 카테고리: 50000000=패션의류, 50000003=디지털가전, 50000006=식품.",
+    "category_code_required_breakdown": "categoryCode 필드가 필요합니다 (필드명은 \"categoryCode\"). 주요 코드: 50000000=패션의류, 50000003=디지털가전, 50000006=식품.",
+    "keyword_array_required": "keyword 배열이 필요합니다. [{name, param:[\"키워드\"]}] 형식.",
+    "keyword_text_required": "keywordText(문자열)가 필요합니다.",
+    "runtime": "{{message}}"
+  }
+}
