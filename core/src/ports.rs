@@ -721,6 +721,127 @@ pub trait IEmbedderPort: Send + Sync {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Library Phase 1 — Reference / Source / Chunk 영역 (2026-05-17 신설)
+// NotebookLM 같은 RAG 영역 — 매 Reference = 자료 그룹 (예: "법률 자료 2026").
+// 매 Source = 매 자료 (PDF / TXT / MD / URL / 직접 입력). 매 Chunk = E5 임베딩 단위.
+// ──────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryReference {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub owner: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibrarySource {
+    pub id: String,
+    pub reference_id: String,
+    pub name: String,
+    /// `"pdf"` / `"txt"` / `"md"` / `"url"` / `"text"` — 매 영역 의 추출 path 다름.
+    pub source_type: String,
+    pub source_url: Option<String>,
+    pub file_path: Option<String>,
+    pub full_text: String,
+    pub char_count: i64,
+    pub chunk_count: i64,
+    pub created_at: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryChunk {
+    pub id: String,
+    pub source_id: String,
+    pub chunk_index: i64,
+    pub content: String,
+    /// Arctic 1024-dim 영역 (4096 bytes). 매 chunk 단위 임베딩.
+    #[serde(skip)]
+    pub embedding: Option<Vec<u8>>,
+    /// PDF 영역의 page 번호 — citation 표시용.
+    pub page_number: Option<i64>,
+    pub start_char: i64,
+    pub end_char: i64,
+}
+
+/// 매 search hit — score + source 메타 + chunk 영역 포함.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryHit {
+    pub source_id: String,
+    pub source_name: String,
+    pub reference_id: String,
+    pub reference_name: String,
+    pub chunk_id: String,
+    pub chunk_index: i64,
+    pub content: String,
+    pub page_number: Option<i64>,
+    /// cosine similarity (0.0 ~ 1.0)
+    pub score: f32,
+}
+
+#[async_trait::async_trait]
+pub trait ILibraryPort: Send + Sync {
+    // Reference (그룹 단위 — 예: "법률 자료 2026")
+    async fn create_reference(
+        &self,
+        id: &str,
+        name: &str,
+        description: Option<&str>,
+        owner: &str,
+    ) -> InfraResult<()>;
+
+    async fn list_references(&self, owner: &str) -> InfraResult<Vec<LibraryReference>>;
+
+    async fn delete_reference(&self, id: &str) -> InfraResult<()>;
+
+    // Source (매 자료 단위)
+    async fn create_source(
+        &self,
+        id: &str,
+        reference_id: &str,
+        name: &str,
+        source_type: &str,
+        source_url: Option<&str>,
+        file_path: Option<&str>,
+        full_text: &str,
+    ) -> InfraResult<()>;
+
+    async fn list_sources(&self, reference_id: &str) -> InfraResult<Vec<LibrarySource>>;
+
+    async fn get_source(&self, id: &str) -> InfraResult<Option<LibrarySource>>;
+
+    async fn delete_source(&self, id: &str) -> InfraResult<()>;
+
+    // Chunk (매 임베딩 단위)
+    async fn save_chunk(
+        &self,
+        id: &str,
+        source_id: &str,
+        chunk_index: i64,
+        content: &str,
+        embedding: &[u8],
+        page_number: Option<i64>,
+        start_char: i64,
+        end_char: i64,
+    ) -> InfraResult<()>;
+
+    /// chunk_count 영역 업데이트 — Source 영역 박은 후 매 chunk 영역 저장 끝나는 시점.
+    async fn update_source_chunk_count(&self, source_id: &str, chunk_count: i64) -> InfraResult<()>;
+
+    /// 매 reference 영역의 모든 chunk 영역 — search 영역 박을 시점 cosine 영역.
+    async fn list_chunks_for_search(
+        &self,
+        reference_ids: &[String],
+    ) -> InfraResult<Vec<LibraryChunk>>;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Image Processor — 이미지 후처리 (resize/convert/blurhash/placeholder).
 // 옛 TS `infra/image-processor/sharp-adapter.ts` 1:1 port. Rust 측에서는 image-rs +
 // fast_image_resize + blurhash crate 조합 (sharp = libvips Node binding 의 Rust 등가).

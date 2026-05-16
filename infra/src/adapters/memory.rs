@@ -129,6 +129,50 @@ impl SqliteMemoryAdapter {
             );
             CREATE INDEX IF NOT EXISTS idx_event_entities_event ON event_entities(event_id);
             CREATE INDEX IF NOT EXISTS idx_event_entities_entity ON event_entities(entity_id);
+
+            -- Library Phase 1 — Reference / Source / Chunk 영역 (2026-05-17 신설)
+            -- NotebookLM 같은 RAG 영역 — 매 Reference = 자료 그룹, 매 Source = 매 자료, 매 Chunk = 임베딩 단위.
+            CREATE TABLE IF NOT EXISTS library_references (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                description TEXT,
+                owner TEXT NOT NULL DEFAULT 'admin',
+                created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
+                updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
+            );
+            CREATE INDEX IF NOT EXISTS idx_library_refs_owner ON library_references(owner);
+            CREATE INDEX IF NOT EXISTS idx_library_refs_updated ON library_references(updated_at DESC);
+
+            CREATE TABLE IF NOT EXISTS library_sources (
+                id TEXT PRIMARY KEY,
+                reference_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                source_type TEXT NOT NULL,             -- 'pdf' / 'txt' / 'md' / 'url' / 'text'
+                source_url TEXT,                       -- URL type 영역
+                file_path TEXT,                        -- 디스크 영역 (PDF 등 원본 파일)
+                full_text TEXT NOT NULL,               -- 추출된 전체 텍스트 (cache + 검색 영역)
+                char_count INTEGER NOT NULL DEFAULT 0,
+                chunk_count INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
+                FOREIGN KEY (reference_id) REFERENCES library_references(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_library_sources_ref ON library_sources(reference_id);
+            CREATE INDEX IF NOT EXISTS idx_library_sources_type ON library_sources(source_type);
+            CREATE INDEX IF NOT EXISTS idx_library_sources_created ON library_sources(created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS library_chunks (
+                id TEXT PRIMARY KEY,
+                source_id TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL,          -- 0-based 순서
+                content TEXT NOT NULL,                 -- ~500 토큰 텍스트
+                embedding BLOB,                        -- Arctic 1024-dim 영역 (4096 bytes)
+                page_number INTEGER,                   -- PDF page (citation 영역)
+                start_char INTEGER NOT NULL DEFAULT 0,
+                end_char INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (source_id) REFERENCES library_sources(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_library_chunks_source ON library_chunks(source_id);
+            CREATE INDEX IF NOT EXISTS idx_library_chunks_index ON library_chunks(source_id, chunk_index);
             "#,
         )
         .map_err(|e| format!("Memory schema 초기화 실패: {e}"))?;
