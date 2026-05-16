@@ -566,6 +566,34 @@ pub struct SandboxExecuteOpts {
     pub timeout_ms: Option<u64>,
 }
 
+/// Sysmod 패키지 status — 설정 화면 [설치] / [업그레이드] 버튼 UI + 진행 상태 표시.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageStatusKind {
+    /// pip 설치 완료 — workspace 디스크에 존재.
+    Installed,
+    /// 설치 안 됨 — 사용자가 설정 화면에서 [설치] 클릭 필요.
+    Missing,
+    /// StatusManager job Queued / Running.
+    InProgress,
+    /// 최근 install 시도 실패 — error 필드 참조.
+    Failed,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageStatus {
+    /// pip 패키지명 (version specifier 제거) — "playwright", "yfinance" 등.
+    pub name: String,
+    pub status: PackageStatusKind,
+    /// StatusManager job_id — frontend 가 진행 상세 polling 가능.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    /// Failed 시 사용자 노출 메시지 (이미 i18n 변환).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
 /// ISandboxPort — sysmod 자식 process spawn (Node / Python / etc).
 ///
 /// Phase B 의 minimum stub — 실 sysmod spawn 구현은 후속 phase 에서 저장.
@@ -584,6 +612,21 @@ pub trait ISandboxPort: Send + Sync {
     /// 모듈 실행 정책 결정 시 참조.
     /// Phase B-post audit (2026-05-06) 설정 — BIBLE Sandbox 정신 + 코드 현실 mismatch 정정 시작점.
     fn capabilities(&self) -> SandboxCapabilities;
+
+    /// 모듈 디렉토리의 config.json `packages` 배열 기반 install — 매 패키지 background spawn +
+    /// StatusManager job 등록. `upgrade=true` 시 `pip install --upgrade`.
+    /// 반환값 = 새로 시작한 job_id 목록 (이미 설치 / 진행 중 패키지는 제외).
+    /// silent install 폐기 (2026-05-16) — 매 install 은 설정 화면의 명시 trigger.
+    async fn install_packages(&self, module_dir: &str, upgrade: bool) -> InfraResult<Vec<String>> {
+        let _ = (module_dir, upgrade);
+        Ok(Vec::new())
+    }
+
+    /// 매 패키지 status 조회 — 설정 화면 polling.
+    async fn get_package_status(&self, module_dir: &str) -> InfraResult<Vec<PackageStatus>> {
+        let _ = module_dir;
+        Ok(Vec::new())
+    }
 }
 
 /// Sandbox 어댑터의 격리 능력 명세.

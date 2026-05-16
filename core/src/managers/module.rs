@@ -13,7 +13,10 @@
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
-use crate::ports::{ISandboxPort, IStoragePort, IVaultPort, InfraResult, ModuleOutput, SandboxExecuteOpts};
+use crate::ports::{
+    ISandboxPort, IStoragePort, IVaultPort, InfraResult, ModuleOutput, PackageStatus,
+    SandboxExecuteOpts,
+};
 use crate::vault_keys::vk_module_settings;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -286,6 +289,56 @@ impl ModuleManager {
         }
         settings["enabled"] = serde_json::Value::Bool(enabled);
         self.set_settings(module_name, &settings)
+    }
+
+    /// 모듈 이름 → 디스크 디렉토리 (system/modules → system/services → user/modules 순 첫 hit).
+    /// 매 install / status 호출자가 공유.
+    async fn resolve_module_dir(&self, module_name: &str) -> Option<String> {
+        if !is_safe_name(module_name) {
+            return None;
+        }
+        for candidate in [
+            format!("system/modules/{}", module_name),
+            format!("system/services/{}", module_name),
+            format!("user/modules/{}", module_name),
+        ] {
+            if self.storage.list_dir(&candidate).await.is_ok() {
+                return Some(candidate);
+            }
+        }
+        None
+    }
+
+    /// config.json `packages` 배열 → background install. `upgrade=true` 시 `pip install --upgrade`.
+    /// 반환값: spawn 한 StatusManager job_id 목록 (이미 설치 / 진행 중 패키지 제외).
+    pub async fn install_packages(
+        &self,
+        module_name: &str,
+        upgrade: bool,
+    ) -> InfraResult<Vec<String>> {
+        let dir = self.resolve_module_dir(module_name).await.ok_or_else(|| {
+            crate::i18n::t(
+                "core.error.module.not_found",
+                None,
+                &[("name", module_name)],
+            )
+        })?;
+        self.sandbox.install_packages(&dir, upgrade).await
+    }
+
+    /// 매 패키지 status — 설정 화면 polling 입력.
+    pub async fn get_package_status(
+        &self,
+        module_name: &str,
+    ) -> InfraResult<Vec<PackageStatus>> {
+        let dir = self.resolve_module_dir(module_name).await.ok_or_else(|| {
+            crate::i18n::t(
+                "core.error.module.not_found",
+                None,
+                &[("name", module_name)],
+            )
+        })?;
+        self.sandbox.get_package_status(&dir).await
     }
 
     // ─── private helpers ───

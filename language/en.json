@@ -14,7 +14,8 @@
       "schema_format": "Schema format error: {{detail}}",
       "input_schema_format": "Input schema format error: {{detail}}",
       "output_schema_format": "Output schema format error: {{detail}}",
-      "unknown_validation": "Unknown validation failure"
+      "unknown_validation": "Unknown validation failure",
+      "packages_missing": "[{{module}}] Required package '{{package}}' is not installed. Click [Install] in the Settings system tab."
     },
     "page": {
       "save_failed": "Failed to save page: {{slug}}",

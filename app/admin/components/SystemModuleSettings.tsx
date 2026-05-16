@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useId, Fragment } from 'react';
-import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, Code, Settings2, ExternalLink, ArrowLeft, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, Code, Settings2, ExternalLink, ArrowLeft, Plus, Trash2, ChevronLeft, ChevronRight, Package, Download, AlertCircle } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { TelegramWebhookSection } from './TelegramWebhookSection';
 import { confirmDialog } from './Dialog';
@@ -11,6 +11,7 @@ import { useTranslations, useLang } from '../../../lib/i18n';
 import type { Lang } from '../../../lib/i18n';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
+import { usePolling } from '../../../lib/hooks/use-polling';
 
 // ── 모듈별 설정 스키마 정의 ──────────────────────────────────────────────────
 type FieldType = 'text' | 'number' | 'toggle' | 'textarea' | 'oauth' | 'secret' | 'verifications' | 'color-presets' | 'color-overrides' | 'select' | 'widget-list';
@@ -617,6 +618,8 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
           </div>
           )}
+          {/* 패키지 상태 — settings 필드 없는 sysmod 도 packages 있을 수 있음 (예: yfinance) */}
+          <PackageStatusSection moduleName={resolvedName} />
           <div className="p-6 text-center text-slate-500 text-sm flex-1 flex items-center justify-center">
             {t('system_modules.common.no_settings')}
           </div>
@@ -638,6 +641,9 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
         </div>
         )}
+
+        {/* 패키지 상태 — config.json packages 설정된 sysmod (yfinance / playwright 등) 만 표시 */}
+        <PackageStatusSection moduleName={resolvedName} />
 
         {/* 탭 바 — SettingsModal 동일 패턴. 모바일은 터치 스크롤, PC는 드래그 + 호버 시 화살표 */}
         {hasTabs && (
@@ -1216,5 +1222,132 @@ function VerificationsField({ label, description, value, onChange }: {
         </button>
       </div>
     </>
+  );
+}
+
+// ── Sysmod 패키지 상태 영역 ──────────────────────────────────────────────────
+// silent install 폐기 (2026-05-16) — 매 sysmod 호출 시점 자동 install 폐기 + 설정 화면 명시 trigger.
+// 매 패키지 install = background spawn (heavy/light 구분 없음) + StatusManager job 등록.
+// 설정 화면 닫혀도 작업 계속 진행, 다시 열면 진행 상태 표시 (usePolling 2s).
+interface PackageStatusItem {
+  name: string;
+  status: 'installed' | 'missing' | 'in_progress' | 'failed';
+  jobId?: string;
+  error?: string;
+}
+
+export function PackageStatusSection({ moduleName }: { moduleName: string }) {
+  const [packages, setPackages] = useState<PackageStatusItem[] | null>(null);
+  const [installing, setInstalling] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const data = await apiGet<{ success: boolean; packages?: PackageStatusItem[] }>(
+        `/api/settings/modules/packages?module=${encodeURIComponent(moduleName)}`,
+        { category: 'system-module' },
+      );
+      if (data.success) setPackages(data.packages ?? []);
+    } catch (e) {
+      logger.debug('settings', 'package status 조회 실패', { error: e });
+    }
+  }, [moduleName]);
+
+  // 2s polling — 진행 중 패키지 있을 때만 의미. 없어도 부담 작음.
+  usePolling({ interval: 2000, onTick: fetchStatus, enabled: true });
+
+  const triggerInstall = useCallback(async (upgrade: boolean) => {
+    setInstalling(true);
+    setFeedback(null);
+    try {
+      const data = await apiPost<{ success: boolean; jobIds?: string[]; error?: string }>(
+        '/api/settings/modules/packages',
+        { module: moduleName, upgrade },
+        { category: 'system-module' },
+      );
+      if (data.success) {
+        const count = data.jobIds?.length ?? 0;
+        setFeedback(count === 0 ? '대상 패키지가 없습니다.' : `${count}개 패키지 작업을 시작했습니다.`);
+        await fetchStatus();
+      } else {
+        setFeedback(data.error ?? '요청에 실패했습니다.');
+      }
+    } catch (e) {
+      logger.debug('settings', 'install trigger 실패', { error: e });
+      setFeedback('요청에 실패했습니다.');
+    } finally {
+      setInstalling(false);
+      setTimeout(() => setFeedback(null), 3000);
+    }
+  }, [moduleName, fetchStatus]);
+
+  // packages === null = 아직 첫 fetch 전 (skeleton 안 박음 — 자연 idle).
+  // packages === [] = config.json packages 미설정 — 컴포넌트 자체 표시 안 함.
+  if (!packages || packages.length === 0) return null;
+
+  const missing = packages.filter(p => p.status === 'missing').length;
+  const inProgress = packages.filter(p => p.status === 'in_progress').length;
+  const installed = packages.filter(p => p.status === 'installed').length;
+  const failed = packages.filter(p => p.status === 'failed').length;
+
+  return (
+    <div className="px-4 sm:px-6 py-3 border-b border-slate-100 bg-slate-50/60">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-1.5 text-[12px] font-bold text-slate-600">
+          <Package size={13} className="text-indigo-500" />
+          패키지
+          <span className="text-[11px] font-medium text-slate-400">
+            ({installed} 설치됨{missing > 0 ? ` · ${missing} 미설치` : ''}{inProgress > 0 ? ` · ${inProgress} 진행 중` : ''}{failed > 0 ? ` · ${failed} 실패` : ''})
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {missing > 0 && (
+            <button
+              onClick={() => triggerInstall(false)}
+              disabled={installing || inProgress > 0}
+              className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors disabled:bg-slate-300"
+            >
+              <Download size={11} /> 설치
+            </button>
+          )}
+          {installed > 0 && (
+            <button
+              onClick={() => triggerInstall(true)}
+              disabled={installing || inProgress > 0}
+              className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={11} /> 업그레이드
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {packages.map(pkg => {
+          const badgeClass =
+            pkg.status === 'installed' ? 'bg-emerald-100 text-emerald-700' :
+            pkg.status === 'in_progress' ? 'bg-blue-100 text-blue-700' :
+            pkg.status === 'failed' ? 'bg-red-100 text-red-700' :
+            'bg-slate-200 text-slate-600';
+          const label =
+            pkg.status === 'installed' ? '설치됨' :
+            pkg.status === 'in_progress' ? '설치 중' :
+            pkg.status === 'failed' ? '실패' :
+            '미설치';
+          return (
+            <Tooltip key={pkg.name} label={pkg.error ?? label}>
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${badgeClass}`}>
+                {pkg.status === 'in_progress' && <Loader2 size={10} className="animate-spin" />}
+                {pkg.status === 'failed' && <AlertCircle size={10} />}
+                {pkg.name}
+                <span className="opacity-60">· {label}</span>
+              </span>
+            </Tooltip>
+          );
+        })}
+      </div>
+      {feedback && (
+        <p className="text-[11px] text-slate-500 italic mt-2">{feedback}</p>
+      )}
+    </div>
   );
 }

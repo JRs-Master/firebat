@@ -10,17 +10,18 @@ use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::module::{ModuleManager, SystemEntry};
-use crate::ports::ModuleOutput;
+use crate::ports::{ModuleOutput, PackageStatus, PackageStatusKind};
 use crate::proto::{
     module_service_server::ModuleService, ModuleEntryPb, ModuleGetCmsSettingsRequest,
     ModuleGetCmsSettingsResponse, ModuleGetConfigRequest, ModuleGetConfigResponse,
     ModuleGetKakaoMapJsKeyRequest, ModuleGetKakaoMapJsKeyResponse, ModuleGetLangRequest,
-    ModuleGetLangResponse, ModuleGetSchemaRequest, ModuleGetSchemaResponse,
-    ModuleGetSettingsRequest, ModuleGetSettingsResponse, ModuleIsEnabledRequest,
-    ModuleIsEnabledResponse, ModuleListSystemRequest, ModuleListSystemResponse,
-    ModuleListUserRequest, ModuleListUserResponse, ModuleOutputPb, ModuleRunRequest,
-    ModuleSetEnabledRequest, ModuleSetEnabledResponse, ModuleSetSettingsRequest,
-    ModuleSetSettingsResponse,
+    ModuleGetLangResponse, ModuleGetPackageStatusRequest, ModuleGetPackageStatusResponse,
+    ModuleGetSchemaRequest, ModuleGetSchemaResponse, ModuleGetSettingsRequest,
+    ModuleGetSettingsResponse, ModuleInstallPackagesRequest, ModuleInstallPackagesResponse,
+    ModuleIsEnabledRequest, ModuleIsEnabledResponse, ModuleListSystemRequest,
+    ModuleListSystemResponse, ModuleListUserRequest, ModuleListUserResponse, ModuleOutputPb,
+    ModuleRunRequest, ModuleSetEnabledRequest, ModuleSetEnabledResponse, ModuleSetSettingsRequest,
+    ModuleSetSettingsResponse, PackageStatusPb,
 };
 
 pub struct ModuleServiceImpl {
@@ -65,6 +66,28 @@ impl From<ModuleOutput> for ModuleOutputPb {
             stderr: o.stderr,
             exit_code: o.exit_code,
             protocol_version: o.protocol_version,
+            error_key: o.error_key,
+            error_params_json: o
+                .error_params
+                .as_ref()
+                .and_then(|v| serde_json::to_string(v).ok()),
+        }
+    }
+}
+
+impl From<PackageStatus> for PackageStatusPb {
+    fn from(s: PackageStatus) -> Self {
+        let status = match s.status {
+            PackageStatusKind::Installed => "installed",
+            PackageStatusKind::Missing => "missing",
+            PackageStatusKind::InProgress => "in_progress",
+            PackageStatusKind::Failed => "failed",
+        };
+        PackageStatusPb {
+            name: s.name,
+            status: status.to_string(),
+            job_id: s.job_id,
+            error: s.error,
         }
     }
 }
@@ -104,6 +127,8 @@ impl ModuleService for ModuleServiceImpl {
                 stderr: None,
                 exit_code: None,
                 protocol_version: "1.0".to_string(),
+                error_key: None,
+                error_params_json: None,
             })),
         }
     }
@@ -253,6 +278,35 @@ impl ModuleService for ModuleServiceImpl {
             .unwrap_or("")
             .to_string();
         Ok(Response::new(ModuleGetKakaoMapJsKeyResponse { key }))
+    }
+
+    async fn install_packages(
+        &self,
+        req: Request<ModuleInstallPackagesRequest>,
+    ) -> Result<Response<ModuleInstallPackagesResponse>, TonicStatus> {
+        let args = req.into_inner();
+        let job_ids = self
+            .manager
+            .install_packages(&args.module, args.upgrade)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(ModuleInstallPackagesResponse { job_ids }))
+    }
+
+    async fn get_package_status(
+        &self,
+        req: Request<ModuleGetPackageStatusRequest>,
+    ) -> Result<Response<ModuleGetPackageStatusResponse>, TonicStatus> {
+        let name = req.into_inner().module;
+        let packages = self
+            .manager
+            .get_package_status(&name)
+            .await
+            .map_err(TonicStatus::internal)?
+            .into_iter()
+            .map(Into::into)
+            .collect();
+        Ok(Response::new(ModuleGetPackageStatusResponse { packages }))
     }
 }
 

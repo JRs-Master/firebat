@@ -536,6 +536,10 @@ service ModuleService {
   rpc GetCmsSettings(ModuleGetCmsSettingsRequest) returns (ModuleGetCmsSettingsResponse);
   rpc GetLang(ModuleGetLangRequest) returns (ModuleGetLangResponse);
   rpc GetKakaoMapJsKey(ModuleGetKakaoMapJsKeyRequest) returns (ModuleGetKakaoMapJsKeyResponse);
+  // 패키지 install — 매 패키지 background spawn + StatusManager job. silent install 폐기 후
+  // 사용자 명시 trigger (설정 화면 [설치] / [업그레이드] 버튼) 박은 path. 2026-05-16.
+  rpc InstallPackages(ModuleInstallPackagesRequest) returns (ModuleInstallPackagesResponse);
+  rpc GetPackageStatus(ModuleGetPackageStatusRequest) returns (ModuleGetPackageStatusResponse);
 }
 
 /** 임의 JSON 직렬화 blob — 동적 스키마 / 설정값 전달용. raw_json = JSON 문자열 (null 이면 "null"). */
@@ -551,6 +555,10 @@ message ModuleOutputPb {
   optional string stderr = 4;
   optional int32 exit_code = 5;
   string protocol_version = 6;
+  /// i18n key — `core.module.packages_missing` / `module.{name}.X.Y` 형태. SysmodToolHandler / Frontend 가 lookup 변환.
+  optional string error_key = 7;
+  /// i18n placeholder param — `{{name}}` 치환. JSON object string (frontend 가 parse).
+  optional string error_params_json = 8;
 }
 
 /** ModuleEntry (SystemEntry) — 시스템·유저 모듈/서비스 항목. */
@@ -569,6 +577,34 @@ message ModuleListSystemResponse {
 
 message ModuleListUserResponse {
   repeated ModuleEntryPb entries = 1;
+}
+
+/** Sysmod 패키지 status — 설정 화면 [설치] / [업그레이드] 버튼 UI + 진행 상태 polling. */
+message PackageStatusPb {
+  string name = 1;
+  /// "installed" | "missing" | "in_progress" | "failed".
+  string status = 2;
+  optional string job_id = 3;
+  optional string error = 4;
+}
+
+message ModuleInstallPackagesRequest {
+  string module = 1;
+  /// true 시 `pip install --upgrade` — 이미 설치된 패키지를 최신 버전으로 갱신.
+  bool upgrade = 2;
+}
+
+message ModuleInstallPackagesResponse {
+  /// 새로 시작한 StatusManager job_id 목록 (이미 설치 / 진행 중 패키지는 제외).
+  repeated string job_ids = 1;
+}
+
+message ModuleGetPackageStatusRequest {
+  string module = 1;
+}
+
+message ModuleGetPackageStatusResponse {
+  repeated PackageStatusPb packages = 1;
 }
 
 // ─── TaskService typed Request / Response messages ─────────────────────────

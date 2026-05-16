@@ -8,14 +8,17 @@ import {
   ModuleEntryPb,
   ModuleGetConfigRequestSchema,
   ModuleGetLangRequestSchema,
+  ModuleGetPackageStatusRequestSchema,
   ModuleGetSchemaRequestSchema,
   ModuleGetSettingsRequestSchema,
+  ModuleInstallPackagesRequestSchema,
   ModuleIsEnabledRequestSchema,
   ModuleOutputPb,
   ModuleRunRequestSchema,
   ModuleService,
   ModuleSetEnabledRequestSchema,
   ModuleSetSettingsRequestSchema,
+  PackageStatusPb,
 } from '../proto-gen/firebat_pb';
 import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
@@ -127,6 +130,24 @@ export async function getKakaoMapJsKey(): Promise<RpcResult<string>> {
   try {
       const response = await moduleClient.getKakaoMapJsKey({});
       return { ok: true, data: response.key };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function installPackages(args: MessageInitShape<typeof ModuleInstallPackagesRequestSchema>): Promise<RpcResult<string[]>> {
+  try {
+      const response = await moduleClient.installPackages(args ?? {});
+      return { ok: true, data: response.jobIds };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function getPackageStatus(args: MessageInitShape<typeof ModuleGetPackageStatusRequestSchema>): Promise<RpcResult<PackageStatusPb[]>> {
+  try {
+      const response = await moduleClient.getPackageStatus(args ?? {});
+      return { ok: true, data: response.packages };
   } catch (err) {
     return toRpcError(err);
   }
