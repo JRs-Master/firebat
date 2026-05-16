@@ -8,6 +8,7 @@ pub mod auth;
 pub mod log;
 pub mod database;
 pub mod sandbox;
+pub mod library;
 pub mod mcp_client;
 pub mod memory;
 pub mod cron;
