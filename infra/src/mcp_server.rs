@@ -1180,16 +1180,38 @@ impl McpToolHandler for NetworkRequestHandler {
             .and_then(|v| serde_json::from_value(v.clone()).ok());
         let body = args.get("body").cloned();
         let timeout_ms = obj_i64(&args, "timeoutMs").unwrap_or(30_000) as u64;
+        tracing::info!(
+            url = %url,
+            method = %method,
+            timeout_ms = timeout_ms,
+            "[network_request] 호출 시작"
+        );
         let req = firebat_core::ports::NetworkRequest {
-            url,
-            method,
+            url: url.clone(),
+            method: method.clone(),
             headers,
             body,
             timeout_ms,
         };
         match self.network.fetch(req).await {
-            Ok(resp) => Ok(serde_json::json!({"success": true, "data": resp})),
-            Err(e) => Ok(serde_json::json!({"success": false, "error": e})),
+            Ok(resp) => {
+                let body_size = match &resp.body {
+                    serde_json::Value::String(s) => s.len(),
+                    other => other.to_string().len(),
+                };
+                tracing::info!(
+                    url = %url,
+                    status = resp.status,
+                    ok = resp.ok,
+                    body_size = body_size,
+                    "[network_request] 응답 수신"
+                );
+                Ok(serde_json::json!({"success": true, "data": resp}))
+            }
+            Err(e) => {
+                tracing::warn!(url = %url, error = %e, "[network_request] 실패");
+                Ok(serde_json::json!({"success": false, "error": e}))
+            }
         }
     }
 }
