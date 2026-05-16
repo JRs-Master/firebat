@@ -24,3 +24,4 @@ pub mod media;
 pub mod ai;
 pub mod storage;
 pub mod memory_facade;
+pub mod library;

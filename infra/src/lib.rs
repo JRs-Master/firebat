@@ -9,6 +9,7 @@
 pub mod adapters;
 pub mod llm;
 pub mod image_gen;
+pub mod library;
 pub mod mcp_server;
 pub mod grpc_interceptor;
 

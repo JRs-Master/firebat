@@ -90,6 +90,9 @@ candle-transformers = { version = "0.8", default-features = false }
 tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
 hf-hub = { version = "0.3", default-features = false, features = ["online", "tokio"] }
 
+# Library Phase 1 — PDF 텍스트 추출 (image / scanned PDF Phase 2 영역).
+pdf-extract = "0.7"
+
 [dev-dependencies]
 tempfile = "3"
 tokio = { version = "1", features = ["test-util", "rt-multi-thread", "macros", "fs"] }
