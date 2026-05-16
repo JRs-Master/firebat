@@ -13,21 +13,13 @@
       "key": "kakaoOAuth",
       "type": "oauth",
       "oauthUrl": "/api/auth/oauth/kakao",
-      "oauthSecrets": ["KAKAO_ACCESS_TOKEN"],
-      "i18n": {
-        "ko": { "label": "카카오 계정 연동", "description": "키 등록 후 연동하면 액세스 토큰이 자동 발급됩니다." },
-        "en": { "label": "Kakao account link", "description": "After registering keys, linking will issue an access token automatically." }
-      }
+      "oauthSecrets": ["KAKAO_ACCESS_TOKEN"]
     },
     {
       "key": "defaultType",
       "type": "text",
       "placeholder": "text",
-      "defaultValue": "text",
-      "i18n": {
-        "ko": { "label": "기본 메시지 타입", "description": "text · feed · list 중에서 선택합니다 (기본: text)." },
-        "en": { "label": "Default message type", "description": "Choose one of text, feed, or list (default: text)." }
-      }
+      "defaultValue": "text"
     }
   ],
   "input": {

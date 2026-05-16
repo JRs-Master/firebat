@@ -14,5 +14,15 @@
     "template_calendar_required": "calendar type requires calendarId and calendarIdType(event/calendar).",
     "template_unknown_type": "Unknown message type: {{type}}. Use one of text/feed/list/location/commerce/calendar.",
     "runtime": "{{message}}"
+  },
+  "settings": {
+    "kakaoOAuth": {
+      "label": "Kakao account link",
+      "description": "After registering keys, linking will issue an access token automatically."
+    },
+    "defaultType": {
+      "label": "Default message type",
+      "description": "Choose one of text, feed, or list (default: text)."
+    }
   }
 }

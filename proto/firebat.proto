@@ -505,6 +505,15 @@ message ModuleGetCmsSettingsResponse {
   // CMS settings (default + stored merge) JSON.
   string raw_json = 1;
 }
+message ModuleGetLangRequest {
+  string name = 1;
+  // 'ko' / 'en' — 미지정 시 'en' fallback.
+  string lang = 2;
+}
+message ModuleGetLangResponse {
+  // lang/{lang}.json 파일 객체 JSON. 미존재 시 "{}".
+  string raw_json = 1;
+}
 message ModuleGetKakaoMapJsKeyRequest {}
 message ModuleGetKakaoMapJsKeyResponse {
   // CMS settings 의 kakaoMapJsKey — 없으면 빈 string.
@@ -525,6 +534,7 @@ service ModuleService {
   rpc IsEnabled(ModuleIsEnabledRequest) returns (ModuleIsEnabledResponse);
   rpc SetEnabled(ModuleSetEnabledRequest) returns (ModuleSetEnabledResponse);
   rpc GetCmsSettings(ModuleGetCmsSettingsRequest) returns (ModuleGetCmsSettingsResponse);
+  rpc GetLang(ModuleGetLangRequest) returns (ModuleGetLangResponse);
   rpc GetKakaoMapJsKey(ModuleGetKakaoMapJsKeyRequest) returns (ModuleGetKakaoMapJsKeyResponse);
 }
 

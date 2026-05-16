@@ -77,29 +77,56 @@ function localize(
   return s;
 }
 
-function resolveConfigField(cf: ConfigSettingField, lang: Lang): SettingField {
+/**
+ * resolveConfigField — settings field 의 lang 별 label/description/placeholder/group/options 결정.
+ *
+ * **lookup 우선순위 (2026-05-16 분리 패턴 도입):**
+ *  1. langData (lang/{lang}.json 의 `settings.{field_key}` 영역) — 새 표준 영역
+ *  2. cf.i18n[lang] (config.json 의 inline i18n) — 옛 영역 (cms / 일부 system service 보존)
+ *  3. raw fallback (cf.placeholder / cf.options[i].label / cf.key)
+ *
+ * 5 sysmod (browser-scrape / kakao-talk / telegram / firecrawl + 향후 cms) 의 i18n 영역은
+ * `system/modules/{name}/lang/{lang}.json` 별도 파일로 이전. locality + 외부 AI 자연 작성 + i18n 통일.
+ */
+function resolveConfigField(
+  cf: ConfigSettingField,
+  lang: Lang,
+  langData: Record<string, any> | null,
+): SettingField {
+  // 1순위: lang/{lang}.json 의 settings.{field_key} 영역 (새 표준)
+  const langSettings = (langData?.settings as Record<string, any> | undefined) ?? {};
+  const langField = langSettings[cf.key] ?? {};
+
+  // 2순위: config.json 의 inline i18n (옛 영역 — cms 등 호환)
   const i18n = cf.i18n ?? {};
   const primary = i18n[lang] ?? {};
   const fallback = i18n['en'] ?? i18n['ko'] ?? {};
 
-  // select options 라벨 i18n 적용 — primary.options[i] / fallback.options[i] 우선, 미설정 시 raw label 유지
+  // select options 라벨 — langField.options[i] → primary.options[i] → fallback.options[i] → raw label
   let resolvedOptions = cf.options;
-  if (cf.options && (primary.options || fallback.options)) {
+  const hasOptionsI18n =
+    Array.isArray(langField.options) || primary.options || fallback.options;
+  if (cf.options && hasOptionsI18n) {
     resolvedOptions = cf.options.map((opt, i) => ({
       ...opt,
-      label: primary.options?.[i] ?? fallback.options?.[i] ?? opt.label,
+      label:
+        langField.options?.[i] ??
+        primary.options?.[i] ??
+        fallback.options?.[i] ??
+        opt.label,
     }));
   }
 
   return {
     key: cf.key,
     type: cf.type,
-    placeholder: primary.placeholder ?? fallback.placeholder ?? cf.placeholder,
+    placeholder:
+      langField.placeholder ?? primary.placeholder ?? fallback.placeholder ?? cf.placeholder,
     defaultValue: cf.defaultValue,
-    label: primary.label ?? fallback.label ?? cf.key,
-    description: primary.description ?? fallback.description,
+    label: langField.label ?? primary.label ?? fallback.label ?? cf.key,
+    description: langField.description ?? primary.description ?? fallback.description,
     tab: cf.tab,
-    group: primary.group ?? fallback.group ?? cf.group,
+    group: langField.group ?? primary.group ?? fallback.group ?? cf.group,
     oauthUrl: cf.oauthUrl,
     oauthSecrets: cf.oauthSecrets,
     secretName: cf.secretName,
@@ -125,13 +152,16 @@ const TAB_META: Record<string, { i18nKey: string; icon: typeof Globe }> = {
  * 일반 secret 필드는 config.json의 secrets 배열에서 자동 생성됨.
  *
  * **C 옵션 마이그레이션 (2026-05-10):** 옛 hardcoded 한국어 schema 들이 모듈 config.json 의
- * `settings_fields` (i18n.ko/en 자기완결) 으로 이전 완료. config.json 에 settings_fields 가
- * 정의된 모듈은 이 hardcoded schema 보다 우선 적용됨 (resolveFieldsFromConfig).
- * 5 모듈 이전 완료: browser-scrape / kakao-talk / telegram / firecrawl / cms.
+ * `settings_fields` 로 이전. config.json 에 settings_fields 가 정의된 모듈은
+ * 이 hardcoded schema 보다 우선 적용됨 (resolveFieldsFromConfig).
+ *
+ * **lang 분리 (2026-05-16):** settings_fields[].i18n inline 영역 → `lang/{lang}.json` 의
+ * `settings.{field_key}` 영역으로 이전. resolveConfigField 가 langData 1순위 lookup.
+ * 4 모듈 이전: browser-scrape / kakao-talk / telegram / firecrawl. cms 별도 step 보존.
  * mcp-server-app / mcp-server-llm 는 fields:[] (커스텀 렌더링) 만 유지 — 이전 불필요.
  */
 const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingField[] }> = {
-  // browser-scrape / kakao-talk / telegram / firecrawl 폐기 — config.json settings_fields 로 이전됨.
+  // browser-scrape / kakao-talk / telegram / firecrawl 폐기 — config.json settings_fields + lang/{lang}.json 로 이전됨.
   'mcp-server-app': {
     fields: [],  // 커스텀 렌더링 (앱 개발용 — Claude Code, Cursor, VS Code)
   },
@@ -245,25 +275,26 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
     bar.scrollBy({ left: dir === 'left' ? -120 : 120, behavior: 'smooth' });
   }, []);
 
-  // 초기 로드 — config.json + settings 동시 조회.
-  // lang 변경 시 schema 재계산 (config.json 의 i18n 영역에서 lang 별 label/description 다시 resolve).
+  // 초기 로드 — config.json + settings + lang/{lang}.json 동시 조회.
+  // lang 변경 시 schema 재계산 (lang 별 label/description 다시 resolve).
   useEffect(() => {
     setLoading(true);
-    apiGet<{ success: boolean; settings?: Record<string, unknown>; config?: Record<string, unknown> | null }>(
-      `/api/settings/modules?name=${encodeURIComponent(moduleName)}`,
+    apiGet<{ success: boolean; settings?: Record<string, unknown>; config?: Record<string, unknown> | null; lang?: Record<string, any> | null }>(
+      `/api/settings/modules?name=${encodeURIComponent(moduleName)}&lang=${encodeURIComponent(lang)}`,
       { category: 'system-module' },
     )
       .then(data => {
         if (data.success) {
           // config.json에서 secrets 자동 생성
           const config = data.config as Record<string, unknown> | null;
+          const langData = data.lang ?? null;
           const configSecrets = (config?.secrets as string[] | undefined) ?? [];
           const autoFields = secretsToFields(configSecrets);
 
           // 옵션 C — config.json 의 settings_fields 우선 (모듈 자기완결 i18n).
-          // 활성 lang 기준 i18n 영역에서 label/description/placeholder 자동 결정.
+          // 2026-05-16: lang/{lang}.json 의 settings.{field_key} 영역 우선 + config.json inline i18n 폴백.
           const configSettingsFields = (config?.settings_fields as ConfigSettingField[] | undefined) ?? [];
-          const configFields = configSettingsFields.map(cf => resolveConfigField(cf, lang));
+          const configFields = configSettingsFields.map(cf => resolveConfigField(cf, lang, langData));
 
           // 옛 hardcoded MODULE_SETTINGS_SCHEMA — config.json 미정의 모듈 fallback (cms / mcp-server-* 등).
           // settings_fields 가 정의된 모듈은 manual 무시.

@@ -7,6 +7,7 @@
 import {
   ModuleEntryPb,
   ModuleGetConfigRequestSchema,
+  ModuleGetLangRequestSchema,
   ModuleGetSchemaRequestSchema,
   ModuleGetSettingsRequestSchema,
   ModuleIsEnabledRequestSchema,
@@ -113,6 +114,15 @@ export async function getCmsSettings(): Promise<RpcResult<unknown>> {
   }
 }
 
+export async function getLang(args: MessageInitShape<typeof ModuleGetLangRequestSchema>): Promise<RpcResult<unknown>> {
+  try {
+      const response = await moduleClient.getLang(args ?? {});
+      return { ok: true, data: JSON.parse(response.rawJson) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
 export async function getKakaoMapJsKey(): Promise<RpcResult<string>> {
   try {
       const response = await moduleClient.getKakaoMapJsKey({});
@@ -134,3 +144,4 @@ export const sandboxExecute = run;
 export const setModuleEnabled = setEnabled;
 export const setModuleSettings = setSettings;
 export const getModuleSettings = getSettings;
+export const getModuleLang = getLang;

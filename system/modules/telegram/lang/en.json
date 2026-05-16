@@ -11,5 +11,11 @@
     "api_status": "HTTP {{status}}",
     "timeout": "timeout (exceeded {{seconds}}s)",
     "runtime": "{{message}}"
+  },
+  "settings": {
+    "bruteForceAlert": {
+      "label": "Login brute-force alert",
+      "description": "When 5 consecutive login failures trigger a 60-second lock, an alert is sent to Telegram immediately. Both TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be registered for delivery. When OFF (default), no alert is sent."
+    }
   }
 }

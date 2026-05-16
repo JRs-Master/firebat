@@ -2,5 +2,19 @@
   "error": {
     "url_required": "data.url 필드가 필요합니다.",
     "runtime": "{{message}}"
+  },
+  "settings": {
+    "timeout": {
+      "label": "타임아웃 (ms)",
+      "description": "페이지 로딩 제한 시간입니다."
+    },
+    "headless": {
+      "label": "Headless 모드",
+      "description": "브라우저 UI 없이 실행합니다."
+    },
+    "maxTextLength": {
+      "label": "최대 텍스트 길이",
+      "description": "추출 텍스트의 최대 글자 수입니다."
+    }
   }
 }

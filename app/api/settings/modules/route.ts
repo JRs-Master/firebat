@@ -1,20 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAuth } from '../../../../lib/with-api-error';
-import { getModuleSettings, getModuleConfig, setModuleSettings, setModuleEnabled } from '../../../../lib/api-gen/module';
+import { getModuleSettings, getModuleConfig, getModuleLang, setModuleSettings, setModuleEnabled } from '../../../../lib/api-gen/module';
 
-/** GET /api/settings/modules?name=browser-scrape — 모듈 설정 조회 */
+/** GET /api/settings/modules?name=browser-scrape&lang=ko — 모듈 설정 + config + lang i18n 동시 조회.
+ *  2026-05-16: lang/{lang}.json 분리 패턴 도입 — config.settings_fields[].i18n inline 영역 폐기,
+ *  settings.{field_key}.{label/description/...} 의 separate file lookup. */
 export const GET = withAuth(async (req: NextRequest) => {
   const name = req.nextUrl.searchParams.get('name');
   if (!name) return NextResponse.json({ success: false, error: '모듈 이름 필요' }, { status: 400 });
+  // lang 안전 — 'ko' / 'en' 만 허용. 미지정 시 Rust 가 'en' fallback.
+  const langParam = req.nextUrl.searchParams.get('lang') ?? '';
+  const lang = langParam === 'ko' || langParam === 'en' ? langParam : 'en';
 
-  const [settingsRes, configRes] = await Promise.all([
+  const [settingsRes, configRes, langRes] = await Promise.all([
     getModuleSettings({ name }),
     getModuleConfig({ name }),
+    getModuleLang({ name, lang }),
   ]);
   return NextResponse.json({
     success: true,
     settings: settingsRes.ok ? settingsRes.data : null,
     config: configRes.ok ? configRes.data : null,
+    lang: langRes.ok ? langRes.data : null,
   });
 });
 

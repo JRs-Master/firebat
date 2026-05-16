@@ -2,5 +2,19 @@
   "error": {
     "url_required": "data.url field is required.",
     "runtime": "{{message}}"
+  },
+  "settings": {
+    "timeout": {
+      "label": "Timeout (ms)",
+      "description": "Maximum page-load duration."
+    },
+    "headless": {
+      "label": "Headless mode",
+      "description": "Run the browser without a UI."
+    },
+    "maxTextLength": {
+      "label": "Max text length",
+      "description": "Maximum characters of extracted text."
+    }
   }
 }

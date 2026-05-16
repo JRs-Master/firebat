@@ -184,6 +184,7 @@
     "setModuleSettings": "ModuleService.SetSettings",
     "getModuleSettings": "ModuleService.GetSettings",
     "getCmsSettings": "ModuleService.GetCmsSettings",
+    "getModuleLang": "ModuleService.GetLang",
     "getKakaoMapJsKey": "ModuleService.GetKakaoMapJsKey",
     "runTask": "TaskService.Run",
     "validatePipeline": "ScheduleService.ValidatePipeline",

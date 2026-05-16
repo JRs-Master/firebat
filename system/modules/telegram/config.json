@@ -12,11 +12,7 @@
     {
       "key": "bruteForceAlert",
       "type": "toggle",
-      "defaultValue": false,
-      "i18n": {
-        "ko": { "label": "로그인 brute force 알림", "description": "5회 연속 로그인 실패로 60초 잠금이 발생하면 텔레그램으로 즉시 알림이 발송됩니다. TELEGRAM_BOT_TOKEN 과 TELEGRAM_CHAT_ID 가 모두 등록되어 있어야 발송됩니다. OFF 면 알림이 발송되지 않습니다 (기본값)." },
-        "en": { "label": "Login brute-force alert", "description": "When 5 consecutive login failures trigger a 60-second lock, an alert is sent to Telegram immediately. Both TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be registered for delivery. When OFF (default), no alert is sent." }
-      }
+      "defaultValue": false
     }
   ],
   "input": {

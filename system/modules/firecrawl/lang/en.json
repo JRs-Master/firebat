@@ -17,5 +17,11 @@
     "extract_failed": "Extract failed: {{message}}",
     "extract_timeout": "Extract timeout. extractId: {{extractId}}",
     "runtime": "{{message}}"
+  },
+  "settings": {
+    "maxTextLength": {
+      "label": "Max text length",
+      "description": "Maximum characters of the markdown result."
+    }
   }
 }

@@ -217,6 +217,42 @@ impl ModuleManager {
         None
     }
 
+    /// 모듈의 lang/{lang}.json 직접 파싱 — scope 무관 (system/modules → system/services → user/modules 순서).
+    /// 활성 lang 파일 미존재 시 영어 → 한국어 순으로 fallback. 모두 미존재 시 빈 object.
+    ///
+    /// 옵션 C 분리 패턴 (2026-05-16) — config.json 의 `settings_fields[].i18n` inline 영역을
+    /// 별도 파일로 분리. settings.{field_key}.{label,description,placeholder,group,options[]} 구조.
+    pub async fn get_module_lang(&self, name: &str, lang: &str) -> serde_json::Value {
+        if !is_safe_name(name) {
+            return serde_json::json!({});
+        }
+        // 안전 lang 만 허용 (path traversal 차단). 옛 i18n.tsx 와 동일 패턴.
+        let safe_lang = match lang {
+            "ko" | "en" => lang,
+            _ => "en",
+        };
+        let candidates = [
+            format!("system/modules/{}/lang/{}.json", name, safe_lang),
+            format!("system/services/{}/lang/{}.json", name, safe_lang),
+            format!("user/modules/{}/lang/{}.json", name, safe_lang),
+            // fallback: 활성 lang 파일 없으면 영어 시도 → 그 후 한국어
+            format!("system/modules/{}/lang/en.json", name),
+            format!("system/services/{}/lang/en.json", name),
+            format!("user/modules/{}/lang/en.json", name),
+            format!("system/modules/{}/lang/ko.json", name),
+            format!("system/services/{}/lang/ko.json", name),
+            format!("user/modules/{}/lang/ko.json", name),
+        ];
+        for path in candidates {
+            if let Ok(content) = self.storage.read(&path).await {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                    return parsed;
+                }
+            }
+        }
+        serde_json::json!({})
+    }
+
     /// 모듈 settings (Vault). 미존재 또는 파싱 실패 시 빈 object.
     pub fn get_settings(&self, module_name: &str) -> serde_json::Value {
         crate::utils::vault_json::vault_get_json::<serde_json::Value>(

@@ -17,5 +17,11 @@
     "extract_failed": "추출 실패: {{message}}",
     "extract_timeout": "추출 시간 초과. extractId: {{extractId}}",
     "runtime": "{{message}}"
+  },
+  "settings": {
+    "maxTextLength": {
+      "label": "최대 텍스트 길이",
+      "description": "마크다운 결과의 최대 글자 수입니다."
+    }
   }
 }

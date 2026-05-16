@@ -14,5 +14,15 @@
     "template_calendar_required": "calendar 타입에는 calendarId, calendarIdType(event/calendar)이 필요합니다.",
     "template_unknown_type": "알 수 없는 메시지 타입: {{type}}. text/feed/list/location/commerce/calendar 중 하나를 사용하세요.",
     "runtime": "{{message}}"
+  },
+  "settings": {
+    "kakaoOAuth": {
+      "label": "카카오 계정 연동",
+      "description": "키 등록 후 연동하면 액세스 토큰이 자동 발급됩니다."
+    },
+    "defaultType": {
+      "label": "기본 메시지 타입",
+      "description": "text · feed · list 중에서 선택합니다 (기본: text)."
+    }
   }
 }

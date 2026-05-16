@@ -14,11 +14,13 @@ use crate::ports::ModuleOutput;
 use crate::proto::{
     module_service_server::ModuleService, ModuleEntryPb, ModuleGetCmsSettingsRequest,
     ModuleGetCmsSettingsResponse, ModuleGetConfigRequest, ModuleGetConfigResponse,
-    ModuleGetKakaoMapJsKeyRequest, ModuleGetKakaoMapJsKeyResponse, ModuleGetSchemaRequest,
-    ModuleGetSchemaResponse, ModuleGetSettingsRequest, ModuleGetSettingsResponse,
-    ModuleIsEnabledRequest, ModuleIsEnabledResponse, ModuleListSystemResponse, ModuleListUserResponse, ModuleListSystemRequest,
-    ModuleListUserRequest, ModuleOutputPb, ModuleRunRequest, ModuleSetEnabledRequest,
-    ModuleSetEnabledResponse, ModuleSetSettingsRequest, ModuleSetSettingsResponse,
+    ModuleGetKakaoMapJsKeyRequest, ModuleGetKakaoMapJsKeyResponse, ModuleGetLangRequest,
+    ModuleGetLangResponse, ModuleGetSchemaRequest, ModuleGetSchemaResponse,
+    ModuleGetSettingsRequest, ModuleGetSettingsResponse, ModuleIsEnabledRequest,
+    ModuleIsEnabledResponse, ModuleListSystemRequest, ModuleListSystemResponse,
+    ModuleListUserRequest, ModuleListUserResponse, ModuleOutputPb, ModuleRunRequest,
+    ModuleSetEnabledRequest, ModuleSetEnabledResponse, ModuleSetSettingsRequest,
+    ModuleSetSettingsResponse,
 };
 
 pub struct ModuleServiceImpl {
@@ -223,6 +225,20 @@ impl ModuleService for ModuleServiceImpl {
         let merged = merge_with_defaults(stored);
         Ok(Response::new(ModuleGetCmsSettingsResponse {
             raw_json: to_raw_json(&merged),
+        }))
+    }
+
+    async fn get_lang(
+        &self,
+        req: Request<ModuleGetLangRequest>,
+    ) -> Result<Response<ModuleGetLangResponse>, TonicStatus> {
+        // 2026-05-16 — sysmod 설정화면 i18n 분리 (settings_fields[].i18n inline → lang/{lang}.json 별도 파일).
+        // any-scope 자동 탐색 + lang fallback (활성 lang → en → ko). 미존재 시 빈 object.
+        let args = req.into_inner();
+        let lang = if args.lang.is_empty() { "en" } else { &args.lang };
+        let data = self.manager.get_module_lang(&args.name, lang).await;
+        Ok(Response::new(ModuleGetLangResponse {
+            raw_json: to_raw_json(&data),
         }))
     }
 
