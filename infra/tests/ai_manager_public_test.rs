@@ -3,7 +3,8 @@
 //!
 //! 보존 inline tests (signature / dedup / is_past_iso / approval_gate_*) — private fn 사용.
 
-use std::sync::{Mutex, OnceLock};
+use std::path::PathBuf;
+use std::sync::{Mutex, Once, OnceLock};
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 
@@ -28,6 +29,20 @@ fn env_lock() -> std::sync::MutexGuard<'static, ()> {
     LOCK.get_or_init(|| Mutex::new(()))
         .lock()
         .unwrap_or_else(|e| e.into_inner())
+}
+
+/// workspace root 기준 `i18n::init` 1회 — CARGO_MANIFEST_DIR = infra/ 의 부모 = repo root.
+/// `language/` + `system/{modules,services,prompts}/` 자동 scan 후 STORE 채움.
+/// 미호출 시 `i18n::t()` 가 raw key 반환 → 사용자 노출 메시지 검증 test 실패.
+fn init_i18n_once() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let workspace_root: PathBuf = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("infra crate 의 parent (workspace root)")
+            .to_path_buf();
+        firebat_core::i18n::init(&workspace_root);
+    });
 }
 
 fn manager() -> AiManager {
@@ -95,6 +110,8 @@ async fn process_with_tools_opts_cron_agent_extends_max_turns() {
 #[tokio::test]
 async fn cost_budget_guard_blocks_when_exceeded() {
     // CostManager 설정한 채로 한도 초과 상태 만든 뒤 process_with_tools 호출 시 LLM 호출 차단 확인.
+    // i18n init 필수 — error 메시지가 `core.error.ai.cost_limit_exceeded` 키 lookup 거침.
+    init_i18n_once();
     let dir = tempfile::tempdir().unwrap();
     let db: Arc<dyn IDatabasePort> =
         Arc::new(SqliteDatabaseAdapter::new(dir.path().join("app.db")).unwrap());
