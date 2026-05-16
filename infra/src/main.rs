@@ -149,12 +149,8 @@ async fn main() -> Result<()> {
             .map_err(anyhow::Error::msg)
             .context("App DB open 실패")?,
     );
-    // Sandbox 어댑터 — BasicProcessSandbox 단일 (path containment + timeout 만).
-    // 옛 LinuxCgroupsSandbox (cgroup v2 + seccomp + network namespace) 폐기 (2026-05-15) —
-    // 단일 사용자 / 단일 운영자 환경에서 격리 가치 0 (사용자 본인 = 운영자 = trust). multi-tenant
-    // 시점 = docker / firecracker / gvisor 같은 표준 도구 도입 별도 sprint.
-    let sandbox: Arc<dyn ISandboxPort> =
-        Arc::new(ProcessSandboxAdapter::new(workspace_root.clone()).with_vault(vault.clone()));
+    // Sandbox 어댑터는 status_manager 의존 (heavy 패키지 background install 진행 상태 노출) —
+    // event_manager + status_manager wiring 박은 후 생성.
     let mcp_client: Arc<dyn IMcpClientPort> = Arc::new(
         McpClientFileAdapter::new(mcp_servers_path)
             .map_err(anyhow::Error::msg)
@@ -302,6 +298,21 @@ async fn main() -> Result<()> {
         logger.clone(),
     ));
     let status_manager = Arc::new(StatusManager::new(Some(event_manager.clone())));
+
+    // Sandbox 어댑터 — BasicProcessSandbox 단일 (path containment + timeout 만).
+    // 옛 LinuxCgroupsSandbox (cgroup v2 + seccomp + network namespace) 폐기 (2026-05-15) —
+    // 단일 사용자 / 단일 운영자 환경에서 격리 가치 0 (사용자 본인 = 운영자 = trust). multi-tenant
+    // 시점 = docker / firecracker / gvisor 같은 표준 도구 도입 별도 sprint.
+    //
+    // status_manager 주입 = config.json packages 의 heavy:true 엔트리 (playwright / pandas-large 등)
+    // 자동 background install + frontend ActiveJobsIndicator 진행 상태 노출. 일반 string entry
+    // 또는 heavy:false = 옛 동작 (foreground install).
+    let sandbox: Arc<dyn ISandboxPort> = Arc::new(
+        ProcessSandboxAdapter::new(workspace_root.clone())
+            .with_vault(vault.clone())
+            .with_status(status_manager.clone()),
+    );
+
     let tool_manager = Arc::new(ToolManager::new());
     let cost_manager = Arc::new(CostManager::new(db.clone(), vault.clone()));
     let project_manager = Arc::new(ProjectManager::new(

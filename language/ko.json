@@ -132,6 +132,11 @@
       "rename_unimplemented": "rename — Phase B-9 와 같이 진행 중입니다."
     }
   },
+  "install": {
+    "in_progress": "{{package}} 설치 중 — 약 {{estimatedSec}}초 소요됩니다. 완료 후 다시 시도해주세요.",
+    "completed": "{{package}} 설치가 완료되었습니다.",
+    "failed": "{{package}} 설치에 실패했습니다: {{error}}"
+  },
   "common": {
     "save": "저장",
     "cancel": "취소",

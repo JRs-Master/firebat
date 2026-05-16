@@ -132,6 +132,11 @@
       "rename_unimplemented": "rename — in progress with Phase B-9."
     }
   },
+  "install": {
+    "in_progress": "Installing {{package}} — approx {{estimatedSec}}s. Please retry after completion.",
+    "completed": "{{package}} install complete.",
+    "failed": "{{package}} install failed: {{error}}"
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",

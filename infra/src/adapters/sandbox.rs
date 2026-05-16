@@ -14,11 +14,82 @@ use std::sync::OnceLock;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
+use firebat_core::managers::status::StatusManager;
 use firebat_core::ports::{ISandboxPort, IVaultPort, InfraResult, ModuleOutput, SandboxExecuteOpts};
 
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 /// 패키지 누락 감지 → 자동 install → retry 시도 횟수. 옛 TS SANDBOX_MAX_RETRIES 1:1.
 const MAX_RETRIES: usize = 3;
+
+/// config.json `packages` 엔트리 정규화 형태 — heterogeneous string OR object 모두 흡수.
+///
+/// 호환 형태:
+/// - 문자열 (옛 형태): `"yfinance==0.2.51"` → `{name, heavy:false, estimated_sec:0, post_install:None}`
+/// - 객체 (heavy 패키지 형태):
+///   ```json
+///   {
+///     "name": "playwright==1.59.1",
+///     "heavy": true,
+///     "estimatedSec": 600,
+///     "postInstall": "python -m playwright install chromium"
+///   }
+///   ```
+///
+/// `heavy=true` 인 패키지 = pre-install 시점 background tokio::spawn + StatusManager 통합.
+/// 사용자 호출 즉시 응답 (`core.install.in_progress` errorKey) + 완료 후 자동 재시도 가능.
+#[derive(Debug, Clone)]
+struct PackageSpec {
+    name: String,
+    heavy: bool,
+    estimated_sec: u64,
+    post_install: Option<String>,
+}
+
+impl PackageSpec {
+    /// JSON 값 (string OR object) 정규화. 잘못된 형태 = None.
+    fn from_json(value: &serde_json::Value) -> Option<Self> {
+        if let Some(name) = value.as_str() {
+            return Some(Self {
+                name: name.to_string(),
+                heavy: false,
+                estimated_sec: 0,
+                post_install: None,
+            });
+        }
+        let obj = value.as_object()?;
+        let name = obj.get("name").and_then(|v| v.as_str())?.to_string();
+        let heavy = obj
+            .get("heavy")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let estimated_sec = obj
+            .get("estimatedSec")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let post_install = obj
+            .get("postInstall")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        Some(Self {
+            name,
+            heavy,
+            estimated_sec,
+            post_install,
+        })
+    }
+
+    /// pip install 시점 박은 패키지 식별자에서 version specifier 제거 — `playwright==1.59.1` → `playwright`.
+    /// StatusManager job id / 사용자 표시 메시지 박은 사용.
+    fn display_name(&self) -> &str {
+        for sep in ["==", ">=", "<=", "~=", "!=", ">", "<"] {
+            if let Some(idx) = self.name.find(sep) {
+                return &self.name[..idx];
+            }
+        }
+        &self.name
+    }
+}
 
 /// 런타임별 설치 안내 메시지 — 옛 TS INSTALL_GUIDES 1:1.
 fn install_guides() -> &'static HashMap<&'static str, &'static str> {
@@ -85,6 +156,32 @@ async fn is_available(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// try_auto_install 의 결과 — execute() 의 retry loop 가 다음 동작 결정.
+#[derive(Debug)]
+enum AutoInstallOutcome {
+    /// 매칭 실패 또는 install 시도 자체 안 함. 호출자는 result 그대로 반환.
+    None_,
+    /// install 완료 (foreground). 호출자는 retry 1회 진행.
+    Retry,
+    /// Heavy 패키지 background install 진행 중. 호출자는 result 의 error_key + error_params 박은
+    /// 친절 메시지 변환 후 즉시 반환 (retry 불가).
+    HeavyInProgress {
+        package: String,
+        estimated_sec: u64,
+    },
+}
+
+/// pip 우선순위 해결 — `pip3` → `pip` → `<py> -m pip` 순. 매 Python install 호출자가 공유.
+async fn resolve_pip_command(py: &str) -> String {
+    if is_available("pip3").await {
+        "pip3".to_string()
+    } else if is_available("pip").await {
+        "pip".to_string()
+    } else {
+        format!("{py} -m pip")
+    }
+}
+
 /// 실제로 동작하는 Python 커맨드 반환 — `python3` → `python` → `py` 순으로 검증.
 /// 옛 TS getWorkingPython 1:1. 첫 성공 binary 반환. 모두 실패 시 None.
 async fn get_working_python() -> Option<&'static str> {
@@ -122,6 +219,10 @@ pub struct ProcessSandboxAdapter {
     /// Vault — config.json `secrets` 배열의 키를 자동으로 env 에 주입.
     /// 옛 TS setVault / loadSecretsEnv 1:1. 미설정 시 secrets 주입 스킵.
     vault: Option<Arc<dyn IVaultPort>>,
+    /// StatusManager — heavy 패키지 (playwright / pandas-large / tensorflow 등) 의 background
+    /// install 진행 상태 추적. 미설정 시 heavy 패키지도 foreground (옛 동작과 동일) 진행.
+    /// 설정 시 사용자 호출 즉시 응답 (`core.install.in_progress` errorKey) + 완료 후 자동 재시도 가능.
+    status: Option<Arc<StatusManager>>,
     /// Pre-exec hook (Linux 한정) — 자식 프로세스 안에서 fork() 직후 exec() 직전 호출.
     /// LinuxCgroupsSandboxAdapter 가 저장 — cgroup attach + seccomp install + unshare.
     /// 미설정 시 옛 동작 (격리 0). Phase B-post Track B Stage 2+3 설정 (2026-05-06).
@@ -159,6 +260,7 @@ impl ProcessSandboxAdapter {
             workspace_root,
             runtimes,
             vault: None,
+            status: None,
             #[cfg(target_os = "linux")]
             pre_exec_hook: None,
         }
@@ -175,6 +277,22 @@ impl ProcessSandboxAdapter {
     /// 옛 TS sandbox.setVault 1:1. 미설정 시 secrets 자동 주입 비활성 (manual env 만 사용).
     pub fn with_vault(mut self, vault: Arc<dyn IVaultPort>) -> Self {
         self.vault = Some(vault);
+        self
+    }
+
+    /// StatusManager 주입 — heavy 패키지 (config.json `packages` 의 `heavy:true` 엔트리) install
+    /// 진행 상태를 ActiveJobsIndicator (frontend) 가 polling 가능한 형태로 노출.
+    ///
+    /// 흐름:
+    /// 1. pre-install 시점 / try_auto_install 시점에 heavy 패키지 감지
+    /// 2. `status.start(id="install-{name}", type="install", message="core.install.in_progress")`
+    /// 3. tokio::spawn 박은 background `pip install --target ... {name}` + 선택적 postInstall 실행
+    /// 4. 완료 = `status.complete()`, 실패 = `status.fail()`
+    /// 5. sysmod 다음 호출 시점 패키지 자연 import 가능
+    ///
+    /// 미설정 시 heavy 패키지도 foreground (옛 동작) 진행 — 사용자 호출 long block 발생.
+    pub fn with_status(mut self, status: Arc<StatusManager>) -> Self {
+        self.status = Some(status);
         self
     }
 
@@ -271,8 +389,13 @@ impl ProcessSandboxAdapter {
     ///
     /// **Node**: `npm install <pkg> --prefix <module_dir>` — 매 sysmod 별 자체 node_modules.
     ///
+    /// **Heavy 패키지** (`heavy: true` 명시 — playwright / pandas-large / tensorflow 등):
+    /// - StatusManager 주입되어 있으면 tokio::spawn background install + 즉시 반환
+    /// - 미주입 또는 light 패키지 = foreground install (옛 동작)
+    /// - postInstall 명령 (예: `python -m playwright install chromium`) install 성공 후 실행
+    ///
     /// 실패해도 silent (실 실행 시 retry 가 catch).
-    async fn pre_install_from_manifest(module_dir: &Path, workspace_root: &Path) {
+    async fn pre_install_from_manifest(&self, module_dir: &Path) {
         let manifest_path = module_dir.join("config.json");
         let Ok(raw) = std::fs::read_to_string(&manifest_path) else {
             return;
@@ -280,9 +403,16 @@ impl ProcessSandboxAdapter {
         let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) else {
             return;
         };
-        let Some(packages) = parsed.get("packages").and_then(|v| v.as_array()) else {
+        let Some(packages_raw) = parsed.get("packages").and_then(|v| v.as_array()) else {
             return;
         };
+        if packages_raw.is_empty() {
+            return;
+        }
+        let packages: Vec<PackageSpec> = packages_raw
+            .iter()
+            .filter_map(PackageSpec::from_json)
+            .collect();
         if packages.is_empty() {
             return;
         }
@@ -296,38 +426,20 @@ impl ProcessSandboxAdapter {
                 let Some(py) = get_working_python().await else {
                     return;
                 };
-                // pip 우선순위: pip3 → pip → `<py> -m pip`
-                let pip = if is_available("pip3").await {
-                    "pip3".to_string()
-                } else if is_available("pip").await {
-                    "pip".to_string()
-                } else {
-                    format!("{py} -m pip")
-                };
-                // workspace 격리 install — /opt/firebat/python_modules/. 매 python 실행 시
-                // PYTHONPATH env 자동 주입 → import lookup. 시스템 전역 잔존 0.
-                let python_modules = workspace_root.join("python_modules");
+                let pip = resolve_pip_command(py).await;
+                let python_modules = self.workspace_root.join("python_modules");
                 let _ = std::fs::create_dir_all(&python_modules);
-                let target_arg = python_modules.to_string_lossy().to_string();
-                for pkg in packages {
-                    let Some(pkg_name) = pkg.as_str() else { continue };
-                    let _ = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
-                        .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
-                        .arg(format!(
-                            "{pip} install --target \"{target_arg}\" --upgrade {pkg_name} --quiet"
-                        ))
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .status()
-                        .await;
+                for pkg in &packages {
+                    self.install_python_package(pkg, &pip, &python_modules).await;
                 }
             }
             "node" => {
-                for pkg in packages {
-                    let Some(pkg_name) = pkg.as_str() else { continue };
+                for pkg in &packages {
+                    // light vs heavy 동일 처리 (Node 영역은 heavy 패턴 미사용 — playwright 와
+                    // 같은 비대 binary 다운로드 사례 없음). 향후 heavy node 패키지 발생 시 분기 박음.
                     let _ = Command::new("npm")
                         .arg("install")
-                        .arg(pkg_name)
+                        .arg(&pkg.name)
                         .arg("--prefix")
                         .arg(module_dir)
                         .arg("--quiet")
@@ -343,6 +455,144 @@ impl ProcessSandboxAdapter {
         }
     }
 
+    /// Python 패키지 1건 install — light = foreground 동기, heavy + StatusManager 설정 = background.
+    ///
+    /// heavy 경로:
+    /// 1. 동일 job id (`install-{display_name}`) 가 이미 Running 상태면 중복 spawn skip
+    /// 2. `status.start()` → Queued
+    /// 3. tokio::spawn → `pip install --target ... {name}` + 선택적 postInstall (shell escape 단순)
+    /// 4. 성공 = `status.complete()`, 실패 = `status.fail()`
+    async fn install_python_package(&self, pkg: &PackageSpec, pip: &str, python_modules: &Path) {
+        let target_arg = python_modules.to_string_lossy().to_string();
+        let display_name = pkg.display_name().to_string();
+        let pkg_name = pkg.name.clone();
+        let install_cmd = format!(
+            "{pip} install --target \"{target_arg}\" --upgrade {pkg_name} --quiet"
+        );
+
+        // Light 패키지 = foreground (옛 동작 보존)
+        if !pkg.heavy || self.status.is_none() {
+            let _ = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
+                .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
+                .arg(&install_cmd)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .await;
+            // light 패키지의 postInstall 도 동기 실행 (heavy 가 아니면 짧을 거라 가정)
+            if let Some(post) = &pkg.post_install {
+                let _ = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
+                    .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
+                    .arg(post)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .await;
+            }
+            return;
+        }
+
+        // Heavy + StatusManager 설정 — background install + 진행 상태 노출
+        let status = self.status.clone().unwrap();
+        let job_id = format!("install-{display_name}");
+
+        // 이미 같은 job 실행 중이면 중복 spawn skip (사용자 반복 호출 시 race 회피)
+        if let Some(existing) = status.get(&job_id) {
+            use firebat_core::managers::status::JobStatusKind;
+            if matches!(existing.status, JobStatusKind::Queued | JobStatusKind::Running) {
+                return;
+            }
+        }
+
+        let post_install = pkg.post_install.clone();
+        let estimated_sec = pkg.estimated_sec;
+        let meta = serde_json::json!({
+            "package": display_name,
+            "estimatedSec": estimated_sec,
+        });
+        let start_msg = firebat_core::i18n::t(
+            "core.install.in_progress",
+            None,
+            &[
+                ("package", &display_name),
+                ("estimatedSec", &estimated_sec.to_string()),
+            ],
+        );
+        status.start(
+            Some(job_id.clone()),
+            "install".to_string(),
+            Some(start_msg),
+            None,
+            meta,
+        );
+
+        let status_bg = status.clone();
+        let display_for_bg = display_name.clone();
+        tokio::spawn(async move {
+            // 1. install
+            let install_status = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
+                .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
+                .arg(&install_cmd)
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .output()
+                .await;
+            let install_ok = install_status
+                .as_ref()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            if !install_ok {
+                let err = match install_status {
+                    Ok(o) => String::from_utf8_lossy(&o.stderr).to_string(),
+                    Err(e) => e.to_string(),
+                };
+                let msg = firebat_core::i18n::t(
+                    "core.install.failed",
+                    None,
+                    &[("package", &display_for_bg), ("error", &err)],
+                );
+                status_bg.fail(&job_id, msg);
+                return;
+            }
+            // 2. postInstall (선택) — install 성공 시점만 실행
+            if let Some(post) = &post_install {
+                let post_status = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
+                    .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
+                    .arg(post)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::piped())
+                    .output()
+                    .await;
+                let post_ok = post_status
+                    .as_ref()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+                if !post_ok {
+                    let err = match post_status {
+                        Ok(o) => String::from_utf8_lossy(&o.stderr).to_string(),
+                        Err(e) => e.to_string(),
+                    };
+                    let msg = firebat_core::i18n::t(
+                        "core.install.failed",
+                        None,
+                        &[("package", &display_for_bg), ("error", &err)],
+                    );
+                    status_bg.fail(&job_id, msg);
+                    return;
+                }
+            }
+            let done_msg = firebat_core::i18n::t(
+                "core.install.completed",
+                None,
+                &[("package", &display_for_bg)],
+            );
+            status_bg.complete(
+                &job_id,
+                Some(serde_json::json!({ "package": display_for_bg, "message": done_msg })),
+            );
+        });
+    }
+
     /// 런타임 binary 미설치 시 친절한 에러 — 옛 TS runtimeError 1:1.
     fn runtime_missing_error(runtime: &str) -> String {
         let guide = install_guides()
@@ -354,42 +604,71 @@ impl ProcessSandboxAdapter {
         )
     }
 
-    /// stderr 또는 stdout JSON 의 error 에서 패키지 누락 감지 → install → retry 1회.
-    /// 옛 TS executeWithAutoInstall 의 retry loop 1:1 (단순화 — MAX_RETRIES 한도 안에서).
-    async fn try_auto_install(err_msg: &str, module_dir: &Path, workspace_root: &Path) -> bool {
+    /// stderr 또는 stdout JSON 의 error 에서 패키지 누락 감지 → install → retry 결정.
+    ///
+    /// 반환값 — `AutoInstallOutcome`:
+    /// - `Retry` — install 완료 (또는 light 패키지의 foreground install 끝). 호출자는 retry.
+    /// - `None_` — 매칭 실패. retry 불가.
+    /// - `HeavyInProgress { package, estimated_sec }` — heavy 패키지 background install 진행 중.
+    ///   호출자는 ModuleOutput.error_key + error_params 박은 친절 메시지 변환 후 즉시 반환.
+    ///
+    /// Heavy 패키지 분기 — config.json `packages` 에서 매칭 entry 가 `heavy:true` 시:
+    /// 1. background install spawn (StatusManager 통해 진행 상태 노출)
+    /// 2. `HeavyInProgress` outcome 반환 — sysmod 의 ModuleNotFoundError → i18n 친절 메시지 변환
+    /// 3. 사용자 / AI 가 status job 완료 후 자연 재호출 — install 끝나있으니 import 성공
+    ///
+    /// 옛 TS executeWithAutoInstall 의 retry loop 일반 처리 logic.
+    async fn try_auto_install(&self, err_msg: &str, module_dir: &Path) -> AutoInstallOutcome {
         // Python: `No module named 'pkg'` 또는 `No module named pkg` 매칭 (옛 TS 1:1)
         let py_re = regex::Regex::new(r"No module named '?([^'\s]+)'?").ok();
         if let Some(re) = &py_re {
             if let Some(caps) = re.captures(err_msg) {
                 if let Some(import_name) = caps.get(1) {
                     let import = import_name.as_str().split('.').next().unwrap_or("");
-                    if import == "playwright" {
-                        // playwright 는 시스템 의존성 — 별도 처리 (옛 TS 와 동일 skip)
-                        return false;
-                    }
                     if !import.is_empty() {
-                        let pkg_name = py_import_to_pkg().get(import).copied().unwrap_or(import);
-                        let pip = if is_available("pip3").await {
-                            "pip3".to_string()
-                        } else if is_available("pip").await {
-                            "pip".to_string()
-                        } else {
-                            "py -m pip".to_string()
-                        };
-                        // workspace 격리 install — pre_install_from_manifest 와 동일 target.
-                        let python_modules = workspace_root.join("python_modules");
+                        // config.json packages 에서 matching entry 검색 (heavy 정보 lookup)
+                        let pkg_spec = self.lookup_package_spec(module_dir, import);
+                        let pkg_name = pkg_spec
+                            .as_ref()
+                            .map(|p| p.name.clone())
+                            .unwrap_or_else(|| {
+                                py_import_to_pkg()
+                                    .get(import)
+                                    .copied()
+                                    .unwrap_or(import)
+                                    .to_string()
+                            });
+                        let python_modules = self.workspace_root.join("python_modules");
                         let _ = std::fs::create_dir_all(&python_modules);
-                        let target_arg = python_modules.to_string_lossy().to_string();
-                        let _ = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
-                            .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
-                            .arg(format!(
-                                "{pip} install --target \"{target_arg}\" --upgrade {pkg_name} --quiet"
-                            ))
-                            .stdout(Stdio::null())
-                            .stderr(Stdio::null())
-                            .status()
-                            .await;
-                        return true; // retry 권장
+
+                        // Heavy 패키지 + StatusManager 설정 — background install + HeavyInProgress
+                        if let Some(spec) = &pkg_spec {
+                            if spec.heavy && self.status.is_some() {
+                                let pip = resolve_pip_command(
+                                    get_working_python().await.unwrap_or("python3"),
+                                )
+                                .await;
+                                self.install_python_package(spec, &pip, &python_modules).await;
+                                return AutoInstallOutcome::HeavyInProgress {
+                                    package: spec.display_name().to_string(),
+                                    estimated_sec: spec.estimated_sec,
+                                };
+                            }
+                        }
+
+                        // Light 패키지 (또는 config.json 에 없는 자동 의존성) = foreground install
+                        let synthetic = PackageSpec {
+                            name: pkg_name,
+                            heavy: false,
+                            estimated_sec: 0,
+                            post_install: None,
+                        };
+                        let pip = resolve_pip_command(
+                            get_working_python().await.unwrap_or("python3"),
+                        )
+                        .await;
+                        self.install_python_package(&synthetic, &pip, &python_modules).await;
+                        return AutoInstallOutcome::Retry;
                     }
                 }
             }
@@ -412,12 +691,41 @@ impl ProcessSandboxAdapter {
                             .stderr(Stdio::null())
                             .status()
                             .await;
-                        return true;
+                        return AutoInstallOutcome::Retry;
                     }
                 }
             }
         }
-        false
+        AutoInstallOutcome::None_
+    }
+
+    /// config.json packages 에서 import 명 매칭 — heavy 정보 lookup.
+    /// `import playwright` → `playwright==1.59.1` entry 의 PackageSpec 반환.
+    /// py_import_to_pkg 역매핑 (PIL → Pillow 등) 도 함께 검사.
+    fn lookup_package_spec(&self, module_dir: &Path, import_name: &str) -> Option<PackageSpec> {
+        let manifest_path = module_dir.join("config.json");
+        let raw = std::fs::read_to_string(&manifest_path).ok()?;
+        let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
+        let packages = parsed.get("packages")?.as_array()?;
+
+        // import 명 → 가능한 pip 패키지명 (직접 + 역매핑)
+        let mapped_pkg = py_import_to_pkg().get(import_name).copied();
+        let candidates: Vec<&str> = std::iter::once(import_name).chain(mapped_pkg).collect();
+
+        for raw_entry in packages {
+            let spec = PackageSpec::from_json(raw_entry)?;
+            let display = spec.display_name();
+            // 정확 일치 또는 case-insensitive 일치 (PIL vs pillow)
+            if candidates.iter().any(|c| {
+                display.eq_ignore_ascii_case(c)
+                    || spec.name.eq_ignore_ascii_case(c)
+                    // `playwright==1.59.1` 박은 prefix 검사 (Some(idx) 이미 display_name 박았으니 redundant 지만 안전)
+                    || spec.name.split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_' && ch != '-').next().map(|s| s.eq_ignore_ascii_case(c)).unwrap_or(false)
+            }) {
+                return Some(spec);
+            }
+        }
+        None
     }
 }
 
@@ -448,11 +756,12 @@ impl ISandboxPort for ProcessSandboxAdapter {
         }
 
         // 첫 실행 전 config.json packages 선제 install (옛 TS preInstallFromManifest 1:1)
+        // heavy 패키지 (StatusManager 통합) + light 패키지 자동 분기.
         let module_dir = full_path
             .parent()
             .map(PathBuf::from)
             .unwrap_or_else(|| self.workspace_root.clone());
-        Self::pre_install_from_manifest(&module_dir, &self.workspace_root).await;
+        self.pre_install_from_manifest(&module_dir).await;
 
         // retry loop — 패키지 누락 감지 시 자동 install + 재시도 (옛 TS executeWithAutoInstall 1:1)
         let mut last_result: Option<ModuleOutput> = None;
@@ -485,12 +794,40 @@ impl ISandboxPort for ProcessSandboxAdapter {
                     .map(String::from)
                     .unwrap_or_default()
             };
-            // 마지막 시도 + 자동 install 시도 — 다음 attempt 에 retry 가능
-            if attempt < MAX_RETRIES - 1
-                && Self::try_auto_install(&err_msg, &module_dir, &self.workspace_root).await
-            {
-                last_result = Some(result);
-                continue;
+            // 자동 install 시도 — outcome 분기:
+            //  - Retry: 다음 attempt 에 retry
+            //  - HeavyInProgress: result 에 i18n key 박은 친절 메시지 변환 후 즉시 반환
+            //  - None_: 매칭 실패 — result 그대로 반환
+            if attempt < MAX_RETRIES - 1 {
+                match self.try_auto_install(&err_msg, &module_dir).await {
+                    AutoInstallOutcome::Retry => {
+                        last_result = Some(result);
+                        continue;
+                    }
+                    AutoInstallOutcome::HeavyInProgress {
+                        package,
+                        estimated_sec,
+                    } => {
+                        let mut enriched = result;
+                        enriched.success = false;
+                        enriched.error_key = Some("core.install.in_progress".to_string());
+                        enriched.error_params = Some(serde_json::json!({
+                            "package": package,
+                            "estimatedSec": estimated_sec.to_string(),
+                        }));
+                        // raw error 도 친절 메시지로 변환 (i18n lookup — caller lang 자동 적용)
+                        enriched.error = Some(firebat_core::i18n::t(
+                            "core.install.in_progress",
+                            None,
+                            &[
+                                ("package", &package),
+                                ("estimatedSec", &estimated_sec.to_string()),
+                            ],
+                        ));
+                        return Ok(enriched);
+                    }
+                    AutoInstallOutcome::None_ => {}
+                }
             }
             return Ok(result);
         }
@@ -559,6 +896,14 @@ impl ProcessSandboxAdapter {
             };
             cmd.env("PYTHONPATH", new_path);
         }
+
+        // Heavy 패키지 의 binary cache workspace 격리 — playwright 가 `python -m playwright install
+        // chromium` 시 다운로드하는 browser binary (~300MB) 의 cache 경로 통일. 시스템 전역
+        // (~/.cache/ms-playwright) 잔존 0 — workspace 폴더 삭제 = 모든 binary 삭제.
+        // 매 heavy 패키지 추가 시 동일 패턴 (예: HuggingFace HF_HOME / TRANSFORMERS_CACHE) 박음.
+        let pw_browsers = self.workspace_root.join("playwright_browsers");
+        let _ = std::fs::create_dir_all(&pw_browsers);
+        cmd.env("PLAYWRIGHT_BROWSERS_PATH", pw_browsers.to_string_lossy().to_string());
 
         // Vault secrets 자동 주입 (옛 TS loadSecretsEnv 1:1)
         for (k, v) in self.load_secrets_env(module_dir) {
@@ -898,11 +1243,92 @@ mod tests {
 
     #[tokio::test]
     async fn try_auto_install_recognizes_python_no_module() {
-        // 실제 install 은 환경 의존이라 false return 만 검증 (playwright 케이스로 install skip 강제)
+        // 실 install 은 환경 의존이라 spawn 검증까지만. StatusManager 미설정 = light 폴백.
         let dir = tempdir().unwrap();
-        let _result =
-            ProcessSandboxAdapter::try_auto_install("No module named 'playwright'", dir.path(), dir.path())
-                .await;
-        // playwright 는 옛 TS 와 동일 — auto install skip → false (또는 install 시도 안 함)
+        let sandbox = ProcessSandboxAdapter::new(dir.path().to_path_buf());
+        let _result = sandbox
+            .try_auto_install("No module named 'requests'", dir.path())
+            .await;
+        // 호출이 panic 없이 끝나는 것만 검증 (실제 pip 호출은 환경 의존)
+    }
+
+    #[test]
+    fn package_spec_parses_string_entry() {
+        let v = serde_json::json!("yfinance==0.2.51");
+        let spec = PackageSpec::from_json(&v).unwrap();
+        assert_eq!(spec.name, "yfinance==0.2.51");
+        assert!(!spec.heavy);
+        assert_eq!(spec.estimated_sec, 0);
+        assert!(spec.post_install.is_none());
+        assert_eq!(spec.display_name(), "yfinance");
+    }
+
+    #[test]
+    fn package_spec_parses_object_entry() {
+        let v = serde_json::json!({
+            "name": "playwright==1.59.1",
+            "heavy": true,
+            "estimatedSec": 600,
+            "postInstall": "python -m playwright install chromium"
+        });
+        let spec = PackageSpec::from_json(&v).unwrap();
+        assert_eq!(spec.name, "playwright==1.59.1");
+        assert!(spec.heavy);
+        assert_eq!(spec.estimated_sec, 600);
+        assert_eq!(
+            spec.post_install.as_deref(),
+            Some("python -m playwright install chromium")
+        );
+        assert_eq!(spec.display_name(), "playwright");
+    }
+
+    #[test]
+    fn package_spec_object_missing_name_returns_none() {
+        let v = serde_json::json!({"heavy": true});
+        assert!(PackageSpec::from_json(&v).is_none());
+    }
+
+    #[test]
+    fn lookup_package_spec_finds_heavy_entry_by_import_name() {
+        let dir = tempdir().unwrap();
+        let module_dir = dir.path().join("system/modules/browser-scrape");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        let config = serde_json::json!({
+            "name": "browser-scrape",
+            "packages": [{
+                "name": "playwright==1.59.1",
+                "heavy": true,
+                "estimatedSec": 600
+            }]
+        });
+        std::fs::write(
+            module_dir.join("config.json"),
+            serde_json::to_string(&config).unwrap(),
+        )
+        .unwrap();
+
+        let sandbox = ProcessSandboxAdapter::new(dir.path().to_path_buf());
+        let spec = sandbox.lookup_package_spec(&module_dir, "playwright").unwrap();
+        assert!(spec.heavy);
+        assert_eq!(spec.estimated_sec, 600);
+    }
+
+    #[test]
+    fn lookup_package_spec_returns_none_for_unknown_import() {
+        let dir = tempdir().unwrap();
+        let module_dir = dir.path().join("system/modules/test");
+        std::fs::create_dir_all(&module_dir).unwrap();
+        let config = serde_json::json!({
+            "name": "test",
+            "packages": ["yfinance==0.2.51"]
+        });
+        std::fs::write(
+            module_dir.join("config.json"),
+            serde_json::to_string(&config).unwrap(),
+        )
+        .unwrap();
+
+        let sandbox = ProcessSandboxAdapter::new(dir.path().to_path_buf());
+        assert!(sandbox.lookup_package_spec(&module_dir, "playwright").is_none());
     }
 }

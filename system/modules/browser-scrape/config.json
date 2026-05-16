@@ -7,7 +7,14 @@
   "runtime": "python",
   "capability": "web-scrape",
   "providerType": "local",
-  "packages": ["playwright==1.59.1"],
+  "packages": [
+    {
+      "name": "playwright==1.59.1",
+      "heavy": true,
+      "estimatedSec": 600,
+      "postInstall": "python -m playwright install chromium"
+    }
+  ],
   "settings_fields": [
     {
       "key": "timeout",
