@@ -301,10 +301,6 @@
       "token_regenerate_title": "Regenerate token",
       "token_regenerate_message": "The existing token will be invalidated. Generate a new token?",
       "token_regenerate_ok": "Regenerate",
-      "mcp_app_title": "Firebat MCP Server (for apps)",
-      "mcp_llm_title": "Firebat MCP Server (for LLMs)",
-      "mcp_app_desc": "External AI tools (Claude Code, Cursor, VS Code, etc.) can connect to this Firebat server.",
-      "mcp_llm_desc": "Used when external LLMs such as OpenAI Responses API (hosted MCP) or Claude API need access to Firebat's full toolset.",
       "mcp_tab_sse": "SSE (API)",
       "mcp_tab_stdio": "stdio (SSH)",
       "mcp_auth_token": "Auth token",
@@ -314,30 +310,6 @@
       "mcp_stdio_ssh_required_title": "SSH key required",
       "mcp_stdio_ssh_required_body": "stdio mode requires an SSH key registered on the server. Ask your server administrator to register your SSH public key.",
       "mcp_stdio_ssh_required_note": "Replace SSH_KEY_PATH, USER, SERVER_IP, and the firebat path with actual values."
-    },
-    "color_overrides": {
-      "primary": "Primary color",
-      "accent": "Accent color",
-      "up": "Up color",
-      "down": "Down color",
-      "text": "Body text",
-      "text_muted": "Muted text",
-      "bg": "Page background",
-      "bg_card": "Card background",
-      "border": "Border"
-    },
-    "widget_list": {
-      "empty": "No widgets registered. Add one with the button below.",
-      "visibility_label": "Visibility",
-      "visibility_pc_only": "PC only",
-      "visibility_mobile_only": "Mobile only",
-      "visibility_all": "PC + Mobile",
-      "visibility_desktop": "PC only (sm+)",
-      "visibility_mobile": "Mobile only (<sm)",
-      "no_props": "No editable properties.",
-      "add": "+ Add widget",
-      "move_up": "Move up",
-      "move_down": "Move down"
     }
   }
 }

@@ -1,0 +1,540 @@
+{
+  "settings": {
+    "siteTitle": {
+      "label": "Site title",
+      "description": "Default site title used by SEO (OG, RSS, Sitemap, etc.)."
+    },
+    "siteDescription": {
+      "label": "Site description",
+      "description": "Default site description used by SEO."
+    },
+    "siteUrl": {
+      "label": "Site URL",
+      "description": "Base URL used by JSON-LD, Sitemap, etc. Leave blank to auto-detect from the request host."
+    },
+    "jsonLdEnabled": {
+      "label": "JSON-LD structured data",
+      "description": "Auto-injects WebSite + Organization schema."
+    },
+    "jsonLdOrganization": {
+      "label": "Organization / brand name",
+      "description": "Used as JSON-LD Organization name."
+    },
+    "jsonLdLogoUrl": {
+      "label": "Logo URL",
+      "description": "Logo image URL for JSON-LD Organization."
+    },
+    "siteLang": {
+      "label": "Site language",
+      "description": "Used as the HTML lang attribute. Affects search-engine language detection and accessibility. Default is ko; en / ja / zh-CN are also supported."
+    },
+    "faviconUrl": {
+      "label": "Favicon URL",
+      "description": "Custom favicon. Enter a gallery image URL or external URL. Leave blank to use the default icon.",
+      "placeholder": "/user/media/...png or https://..."
+    },
+    "layoutShowHeader": {
+      "label": "Show header",
+      "description": "Whether to render the top header on user pages. Default ON.",
+      "group": "Header"
+    },
+    "layoutSiteName": {
+      "label": "Site name",
+      "description": "Text logo shown on the left of the header. Fill in only when you want a value different from the General tab's siteTitle.",
+      "placeholder": "(leave blank to use the General tab site title)",
+      "group": "Header"
+    },
+    "layoutLogoUrl": {
+      "label": "Logo image (optional)",
+      "description": "Image URL shown next to the text logo. Leave blank to show text only.",
+      "placeholder": "/user/media/...png or https://...",
+      "group": "Header"
+    },
+    "layoutNavLinks": {
+      "label": "Nav links",
+      "description": "One line per \"label | path\". Rendered horizontally on the right of the header.",
+      "placeholder": "Home | /\nBlog | /blog\nAbout | /about\nContact | /contact",
+      "group": "Header"
+    },
+    "layoutHeaderSticky": {
+      "label": "Sticky (pin to top on scroll)",
+      "description": "position: sticky + top: 0 + z-index: 30. The header stays pinned to the top while scrolling. Default OFF.",
+      "group": "Header"
+    },
+    "layoutHeaderTransparentOnTop": {
+      "label": "Transparent on top",
+      "description": "Makes the header background transparent at the very top (scroll 0). On scroll, background and shadow fill in (modern site pattern). Recommended to combine with sticky=ON. Default OFF.",
+      "group": "Header"
+    },
+    "layoutHeaderMobileDrawer": {
+      "label": "Mobile hamburger drawer",
+      "description": "On mobile (<640px), replaces nav links with a hamburger button and a right-slide drawer. The drawer can include search, link list, and optional sidebar widgets. Desktop keeps horizontal nav. Default OFF.",
+      "group": "Header"
+    },
+    "layoutHeaderMobileDrawerIncludeSidebar": {
+      "label": "Include sidebar widgets in mobile drawer",
+      "description": "When the hamburger drawer is ON, displays sidebar widgets inside the drawer instead of the stacked body sidebar. Centralizes all mobile content (search / categories / recent posts / tags / nav). Default OFF.",
+      "group": "Header"
+    },
+    "headerWidgetsLeft": {
+      "label": "Left column widgets",
+      "description": "Widget array placed in the left header column. Defaults to (logo / site name) when empty.",
+      "group": "Header"
+    },
+    "headerWidgetsCenter": {
+      "label": "Center column widgets",
+      "description": "The center header column. Pushes to the right when empty.",
+      "group": "Header"
+    },
+    "headerWidgetsRight": {
+      "label": "Right column widgets",
+      "description": "The right header column. Defaults to (nav + search box + hamburger) when empty.",
+      "group": "Header"
+    },
+    "layoutMode": {
+      "label": "Body + sidebar mode",
+      "description": "Layout of the body area and sidebar. full = no sidebar / right = right sidebar / left = left sidebar / both = sidebars on both sides (same widgets mirrored) / boxed = no sidebar + boxed body (narrow max-width with border and shadow). Auto-stacked on mobile.",
+      "group": "Sidebar",
+      "options": [
+        "Full — no sidebar (default)",
+        "Right Sidebar",
+        "Left Sidebar",
+        "Both Sidebar — sidebars on both sides",
+        "Boxed — no sidebar, boxed body"
+      ]
+    },
+    "sidebarWidgets": {
+      "label": "Sidebar widgets",
+      "description": "Add / reorder / remove / set visibility (desktop / mobile) / edit props from the widget catalog. When set, the legacy toggles below are ignored. When empty, falls back to the legacy toggles.",
+      "group": "Sidebar"
+    },
+    "sidebarShowSearchBox": {
+      "label": "Search box (legacy)",
+      "description": "[Legacy toggle — used only when widgets are unset] Shows a search input in the sidebar. GET to /search.",
+      "group": "Sidebar"
+    },
+    "sidebarShowRecentPosts": {
+      "label": "Recent posts (legacy)",
+      "description": "[Legacy toggle] Shows a recent-posts list in the sidebar.",
+      "group": "Sidebar"
+    },
+    "sidebarRecentPostsCount": {
+      "label": "Recent posts count (legacy)",
+      "description": "[Legacy toggle] Number of recent posts.",
+      "group": "Sidebar"
+    },
+    "sidebarShowCategoryList": {
+      "label": "Category list (legacy)",
+      "description": "[Legacy toggle] Shows post counts per project.",
+      "group": "Sidebar"
+    },
+    "sidebarShowTagCloud": {
+      "label": "Tag cloud (legacy)",
+      "description": "[Legacy toggle] Based on head.keywords frequency.",
+      "group": "Sidebar"
+    },
+    "sidebarTagCloudLimit": {
+      "label": "Tag cloud size (legacy)",
+      "description": "[Legacy toggle] Number of tags shown in the cloud.",
+      "group": "Sidebar"
+    },
+    "sidebarShowSubscribe": {
+      "label": "Subscribe widget (legacy)",
+      "description": "[Legacy toggle] Shows an RSS feed.xml link.",
+      "group": "Sidebar"
+    },
+    "sidebarHtmlWidget": {
+      "label": "HTML widget (legacy)",
+      "description": "[Legacy toggle] Free-form HTML widget. Sanitized and inserted as inline DOM.",
+      "placeholder": "<div>Ad code / contact / about / etc.</div>",
+      "group": "Sidebar"
+    },
+    "layoutShowFooter": {
+      "label": "Show footer",
+      "description": "Whether to render the bottom footer on user pages. Default ON.",
+      "group": "Footer"
+    },
+    "layoutFooterText": {
+      "label": "Main text",
+      "description": "Footer main text. A standalone line under the 4 columns, used for copyright / legal notices. Limited HTML allowed (<a>, <strong>). Leave blank for an automatic © line.",
+      "placeholder": "© 2026 Site Name. All rights reserved.",
+      "group": "Footer"
+    },
+    "footerWidgetsCol1": {
+      "label": "Col 1 widgets",
+      "description": "Widget array for the first footer column.",
+      "group": "Footer"
+    },
+    "footerWidgetsCol2": {
+      "label": "Col 2 widgets",
+      "description": "The second footer column.",
+      "group": "Footer"
+    },
+    "footerWidgetsCol3": {
+      "label": "Col 3 widgets",
+      "description": "The third footer column.",
+      "group": "Footer"
+    },
+    "footerWidgetsCol4": {
+      "label": "Col 4 widgets",
+      "description": "The fourth footer column.",
+      "group": "Footer"
+    },
+    "footerColumn1Heading": {
+      "label": "Col 1 — heading (legacy)",
+      "description": "[Legacy] Auto-converted to a widget when widgets are unset.",
+      "placeholder": "About",
+      "group": "Footer"
+    },
+    "footerColumn1Content": {
+      "label": "Col 1 — content (legacy)",
+      "description": "[Legacy] HTML allowed.",
+      "placeholder": "<a href=\"/about\">About</a><br><a href=\"/contact\">Contact</a>",
+      "group": "Footer"
+    },
+    "footerColumn2Heading": {
+      "label": "Col 2 — heading (legacy)",
+      "description": "[Legacy]",
+      "placeholder": "Categories",
+      "group": "Footer"
+    },
+    "footerColumn2Content": {
+      "label": "Col 2 — content (legacy)",
+      "description": "[Legacy] HTML allowed.",
+      "placeholder": "<a href=\"/blog\">Blog</a>",
+      "group": "Footer"
+    },
+    "footerColumn3Heading": {
+      "label": "Col 3 — heading (legacy)",
+      "description": "[Legacy]",
+      "placeholder": "Subscribe",
+      "group": "Footer"
+    },
+    "footerColumn3Content": {
+      "label": "Col 3 — content (legacy)",
+      "description": "[Legacy] HTML allowed.",
+      "group": "Footer"
+    },
+    "footerColumn4Heading": {
+      "label": "Col 4 — heading (legacy)",
+      "description": "[Legacy]",
+      "placeholder": "Social",
+      "group": "Footer"
+    },
+    "footerColumn4Content": {
+      "label": "Col 4 — content (legacy)",
+      "description": "[Legacy] HTML allowed.",
+      "group": "Footer"
+    },
+    "pageListCardVariant": {
+      "label": "Post-card variant",
+      "description": "How post lists are displayed on the home / project / tag / search pages. list (vertical cards) / grid (2-3 column grid) / compact (title + date) / magazine (first post as a hero with large image, others as 2-column cards; featured image and excerpt are auto-extracted).",
+      "group": "Content · Post list",
+      "options": [
+        "List — vertical cards (default)",
+        "Grid — 2-3 column grid",
+        "Compact — title + date",
+        "Magazine — hero + 2-column cards"
+      ]
+    },
+    "pageListPerPage": {
+      "label": "Posts per page",
+      "description": "Number of posts shown per page. Pagination (?page=N) is applied automatically.",
+      "group": "Content · Post list"
+    },
+    "layoutShowReadingProgress": {
+      "label": "Show reading progress",
+      "description": "Shows a horizontal scroll-progress bar at the top of the page using the accent color from the design tokens. Default OFF.",
+      "group": "Content · Post list"
+    },
+    "layoutShowRelatedPosts": {
+      "label": "Related posts",
+      "description": "Shows a related-post list at the end of content pages (with project set), matched on head.keywords. Score = number of shared keywords. Auto-hidden when there are no keywords or no matches. Default ON.",
+      "group": "Content · Post list"
+    },
+    "layoutRelatedPostsCount": {
+      "label": "Related posts count",
+      "description": "Number of related posts shown (top N). Ties are broken by most recent updatedAt.",
+      "group": "Content · Post list"
+    },
+    "adsensePublisherId": {
+      "label": "AdSense Publisher ID",
+      "description": "Google AdSense Publisher ID. When set, the AdSense script is auto-injected into the head. Enable Auto Ads from the AdSense console (adsense.google.com → Auto ads → per-site ON). There is no separate toggle here — once the script is in place, the AdSense console controls ad placement and format."
+    },
+    "adsenseSlotHeaderBottom": {
+      "label": "Slot — below header",
+      "description": "AdSense ad-unit ID for the slot directly below the header. Hidden when empty."
+    },
+    "adsenseSlotPostTop": {
+      "label": "Slot — above content",
+      "description": "AdSense ad-unit ID placed just above the content. Hidden when empty."
+    },
+    "adsenseSlotPostBottom": {
+      "label": "Slot — below content",
+      "description": "AdSense ad-unit ID placed just below the content. Hidden when empty."
+    },
+    "adsenseSlotFooterTop": {
+      "label": "Slot — above footer",
+      "description": "AdSense ad-unit ID placed just above the footer. Hidden when empty."
+    },
+    "themePreset": {
+      "label": "Color preset",
+      "description": "One-click swap of primary / accent / up / down / text / background / border colors. 7 light + 3 dark = 10 presets.",
+      "group": "Color"
+    },
+    "__themeColorOverrides": {
+      "label": "Per-color overrides (optional)",
+      "description": "Fill in only the colors you want to override on top of the preset. Empty values keep the preset; only changed colors are overridden. RGBA (alpha) is supported via the 0-100% alpha slider.",
+      "group": "Color"
+    },
+    "themeFont": {
+      "label": "Font set",
+      "description": "Switches the body and heading fonts together. Pretendard Variable (Korean-optimized, default) / Noto Sans KR / Inter / Geist / Cal Sans. For external fonts, use \"External font CSS URLs\" + \"Font stack\" below.",
+      "group": "Font",
+      "options": [
+        "Pretendard Variable (Korean, default)",
+        "Noto Sans KR",
+        "Inter (Latin)",
+        "Geist (monochrome)",
+        "Cal Sans (headline)"
+      ]
+    },
+    "customFontUrls": {
+      "label": "External font CSS URLs",
+      "description": "External font CSS URLs (Google Fonts / Adobe Fonts / etc.). Multiple URLs are accepted, separated by newline or comma; only https:// is allowed. A link rel=stylesheet tag is auto-injected into the layout head.",
+      "group": "Font"
+    },
+    "themeFont_body": {
+      "label": "Body font stack (optional override)",
+      "description": "Body font stack when using an external font. Falls back to the \"Font set\" preset when blank. Example: \"Inter, -apple-system, sans-serif\".",
+      "group": "Font"
+    },
+    "themeFont_heading": {
+      "label": "Heading font stack (optional override)",
+      "description": "Heading font stack. Falls back to the preset when blank.",
+      "group": "Font"
+    },
+    "themeFont_mono": {
+      "label": "Mono font stack (optional override)",
+      "description": "Monospace / code font stack. Falls back to the preset when blank.",
+      "group": "Font"
+    },
+    "themeBaseFontSize": {
+      "label": "Body base font size",
+      "description": "Body font size in px. h1~h6 are derived from this value using the scale ratio. 16~18px is typical.",
+      "group": "Typography"
+    },
+    "themeScaleRatio": {
+      "label": "Typographic scale ratio",
+      "description": "Heading scale ratio. 1.125 (Major Second, subtle) / 1.2 (Minor Third) / 1.25 (Major Third, default) / 1.333 (Perfect Fourth, strong). h1 = base × ratio⁴.",
+      "group": "Typography"
+    },
+    "themeBodyLineHeight": {
+      "label": "Body line-height",
+      "description": "Body line-height multiplier. 1.5~1.8 is typical; 1.7+ is recommended for Korean text.",
+      "group": "Typography"
+    },
+    "themeHeadingLineHeight": {
+      "label": "Heading line-height",
+      "description": "Heading line-height multiplier. 1.0~1.5 (headings are compact).",
+      "group": "Typography"
+    },
+    "themeHeadingLetterSpacing": {
+      "label": "Heading letter-spacing",
+      "description": "Heading letter-spacing. CSS value (normal / -0.01em / -0.02em). Negative values = modern feel.",
+      "group": "Typography"
+    },
+    "themeBodyLetterSpacing": {
+      "label": "Body letter-spacing",
+      "description": "Body letter-spacing. Usually normal or a small positive value (0.01em).",
+      "group": "Typography"
+    },
+    "themeH1Style": {
+      "label": "H1 (heading) style",
+      "description": "h1 heading design. plain (plain text) / border-bottom (underline) / border-left (left accent bar) / underline (text underline) / bold-bg (highlighted box) / accent-square (accent square prefix).",
+      "group": "Heading style",
+      "options": [
+        "plain (simple)",
+        "border-bottom (underline)",
+        "border-left (left accent bar)",
+        "underline (text underline)",
+        "bold-bg (highlighted box)",
+        "accent-square (square prefix)"
+      ]
+    },
+    "themeH2Style": {
+      "label": "H2 (subheading) style",
+      "description": "h2 subheading design. Default border-left (left accent bar).",
+      "group": "Heading style",
+      "options": [
+        "plain (simple)",
+        "border-bottom (underline)",
+        "border-left (left accent bar, default)",
+        "underline (text underline)",
+        "bold-bg (highlighted box)",
+        "accent-square (square prefix)"
+      ]
+    },
+    "themeH3Style": {
+      "label": "H3 (sub-subheading) style",
+      "description": "h3 design. Default plain.",
+      "group": "Heading style",
+      "options": [
+        "plain (simple, default)",
+        "border-bottom (underline)",
+        "border-left (left accent bar)",
+        "underline (text underline)",
+        "bold-bg (highlighted box)",
+        "accent-square (square prefix)"
+      ]
+    },
+    "themeContentMaxWidth": {
+      "label": "Content max width",
+      "description": "Width of the body content area. px(1200px) / rem(75rem) / absolute. Default 1200px (wider than the legacy max-w-4xl 56rem ≈ 896px).",
+      "group": "Width · padding · radius"
+    },
+    "themePaddingMobile": {
+      "label": "Mobile horizontal padding",
+      "description": "Horizontal padding on screens ≤640px. Default 16px. Narrower: 12px / 8px. Wider: 20px.",
+      "group": "Width · padding · radius"
+    },
+    "themePaddingTablet": {
+      "label": "Tablet horizontal padding",
+      "description": "Horizontal padding for 641~1023px. Default 24px.",
+      "group": "Width · padding · radius"
+    },
+    "themePaddingDesktop": {
+      "label": "Desktop horizontal padding",
+      "description": "Horizontal padding for ≥1024px. Default 32px.",
+      "group": "Width · padding · radius"
+    },
+    "themeRadius": {
+      "label": "Card corner radius",
+      "description": "border-radius for cards / buttons / boxes. 0px (sharp modern) ~ 16px (round friendly). Default 8px.",
+      "group": "Width · padding · radius"
+    },
+    "sitemapEnabled": {
+      "label": "Generate sitemap",
+      "description": "Auto-generates /sitemap.xml."
+    },
+    "rssEnabled": {
+      "label": "RSS feed",
+      "description": "Auto-generates /feed.xml."
+    },
+    "robotsTxt": {
+      "label": "robots.txt",
+      "description": "Content of robots.txt."
+    },
+    "autoCanonical": {
+      "label": "Auto canonical URL",
+      "description": "When a page has no head.canonical, one is auto-generated from siteUrl + slug. Helps prevent duplicate content."
+    },
+    "twitterCardType": {
+      "label": "Twitter Card type",
+      "description": "summary (small card) or summary_large_image (large image). The latter is recommended for blogs and landing pages."
+    },
+    "twitterSite": {
+      "label": "Twitter site account",
+      "description": "The site's own Twitter handle (optional). Starts with @."
+    },
+    "twitterCreator": {
+      "label": "Twitter creator account",
+      "description": "The creator's Twitter handle (optional). Starts with @."
+    },
+    "tagAliases": {
+      "label": "Tag aliases (normalization)",
+      "description": "Per-line mapping in the format canonical: alias1, alias2. Case-insensitive normalization is applied when matching /tag/{keyword} URLs, so \"ai\" and \"인공지능\" both resolve to the \"AI\" page. listAllTags also reports merged frequency counts.",
+      "placeholder": "AI: ai, artificial-intelligence\nReview: review, 후기"
+    },
+    "imageWebp": {
+      "label": "WebP conversion",
+      "description": "Supported by most browsers; 25~35% smaller than the original."
+    },
+    "imageAvif": {
+      "label": "AVIF conversion",
+      "description": "Modern format ~20% smaller than WebP. Safari 16+, Chrome 85+."
+    },
+    "imageThumbnail": {
+      "label": "Generate thumbnail (256px)",
+      "description": "Gallery thumbnail — <slug>-thumb.webp."
+    },
+    "imageBlurhash": {
+      "label": "Blurhash LQIP",
+      "description": "Soft blur placeholder shown while loading (improves LCP; 32-char string)."
+    },
+    "imageVariants": {
+      "label": "Responsive widths (CSV)",
+      "description": "Generates WebP/AVIF pairs at each width — auto-applied to srcset."
+    },
+    "imageDefaultQuality": {
+      "label": "Default quality (1~100)",
+      "description": "WebP/AVIF/JPEG compression quality. 85 recommended."
+    },
+    "imageStripExif": {
+      "label": "Strip EXIF",
+      "description": "Removes capture location / device metadata (privacy and file size)."
+    },
+    "imageProgressive": {
+      "label": "Progressive encoding",
+      "description": "Progressive JPEG/WebP display — improves UX on slow networks."
+    },
+    "imageKeepOriginal": {
+      "label": "Keep original file",
+      "description": "When OFF, only variants are kept (saves space; recommended ON)."
+    },
+    "ogBgColor": {
+      "label": "Background color",
+      "description": "OG image background color (HEX)."
+    },
+    "ogAccentColor": {
+      "label": "Accent color",
+      "description": "Color for the top line and logo border."
+    },
+    "ogDomain": {
+      "label": "Domain label",
+      "description": "Domain text shown at the bottom-right of the OG image. Leave blank to auto-detect from the request host."
+    },
+    "headScripts": {
+      "label": "<head> scripts",
+      "description": "HTML inserted into every page's <head> (SSR — visible to crawlers).",
+      "placeholder": "<!-- Google Analytics, etc. -->"
+    },
+    "bodyScripts": {
+      "label": "</body> scripts",
+      "description": "HTML inserted just before every page's </body>.",
+      "placeholder": "<!-- Chat widget, etc. -->"
+    },
+    "adsTxt": {
+      "label": "ads.txt (legacy — verifications recommended)",
+      "description": "Response body for /ads.txt. Prefer leaving this empty and using the ads.txt entry under \"Site verification files\" below (unified verifications system)."
+    },
+    "verifications": {
+      "label": "Site verification files",
+      "description": "Unified management of every site-ownership file — Google Search Console (google{code}.html), AdSense (ads.txt), Naver Search Advisor (naverabc.html), Bing IndexNow (BingSiteAuth.xml), Yandex (yandex.html), and more. Register N (filename, content) pairs as needed."
+    }
+  },
+  "color_overrides": {
+    "primary": "Primary color",
+    "accent": "Accent color",
+    "up": "Up color",
+    "down": "Down color",
+    "text": "Body text",
+    "text_muted": "Muted text",
+    "bg": "Page background",
+    "bg_card": "Card background",
+    "border": "Border"
+  },
+  "widget_list": {
+    "empty": "No widgets registered. Add one with the button below.",
+    "visibility_label": "Visibility",
+    "visibility_pc_only": "PC only",
+    "visibility_mobile_only": "Mobile only",
+    "visibility_all": "PC + Mobile",
+    "visibility_desktop": "PC only (sm+)",
+    "visibility_mobile": "Mobile only (<sm)",
+    "no_props": "No editable properties.",
+    "add": "+ Add widget",
+    "move_up": "Move up",
+    "move_down": "Move down"
+  }
+}

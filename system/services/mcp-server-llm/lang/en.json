@@ -1,0 +1,4 @@
+{
+  "title": "Firebat MCP Server (for LLMs)",
+  "description": "Used when external LLMs such as OpenAI Responses API (hosted MCP) or Claude API need access to Firebat's full toolset."
+}

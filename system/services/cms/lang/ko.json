@@ -1,0 +1,525 @@
+{
+  "settings": {
+    "siteTitle": {
+      "label": "사이트 제목",
+      "description": "SEO 기본 사이트 제목입니다 (OG, RSS, Sitemap 등에 사용됩니다)."
+    },
+    "siteDescription": {
+      "label": "사이트 설명",
+      "description": "SEO 기본 사이트 설명입니다."
+    },
+    "siteUrl": {
+      "label": "사이트 URL",
+      "description": "JSON-LD, Sitemap 등에 사용되는 기본 URL 입니다. 비워두면 요청 host 가 자동 감지됩니다."
+    },
+    "jsonLdEnabled": {
+      "label": "JSON-LD 구조화 데이터",
+      "description": "WebSite + Organization 스키마가 자동 삽입됩니다."
+    },
+    "jsonLdOrganization": {
+      "label": "조직/브랜드명",
+      "description": "JSON-LD Organization name 으로 사용됩니다."
+    },
+    "jsonLdLogoUrl": {
+      "label": "로고 URL",
+      "description": "JSON-LD Organization 로고 이미지 URL 입니다."
+    },
+    "siteLang": {
+      "label": "사이트 언어",
+      "description": "HTML lang 속성으로 사용됩니다. 검색엔진 언어 인식과 접근성에 영향이 있습니다. 기본값은 ko 이며 en / ja / zh-CN 등도 사용할 수 있습니다."
+    },
+    "faviconUrl": {
+      "label": "Favicon URL",
+      "description": "커스텀 favicon 입니다. 갤러리 이미지 URL 또는 외부 URL 을 입력해 주세요. 비우면 기본 아이콘이 사용됩니다."
+    },
+    "layoutShowHeader": {
+      "label": "헤더 표시",
+      "description": "사용자 페이지 상단 헤더 표시 여부입니다. 기본 ON.",
+      "group": "헤더"
+    },
+    "layoutSiteName": {
+      "label": "사이트 이름",
+      "description": "헤더 좌측 텍스트 로고입니다. 일반 탭의 siteTitle 과 다른 값을 설정할 때만 입력해 주세요.",
+      "group": "헤더"
+    },
+    "layoutLogoUrl": {
+      "label": "로고 이미지 (선택)",
+      "description": "텍스트 로고 옆에 표시할 이미지 URL 입니다. 비우면 텍스트만 표시됩니다.",
+      "group": "헤더"
+    },
+    "layoutNavLinks": {
+      "label": "네비 링크",
+      "description": "한 줄당 \"라벨 | 경로\" 형식입니다. 헤더 우측에 가로로 나열됩니다.",
+      "group": "헤더"
+    },
+    "layoutHeaderSticky": {
+      "label": "Sticky (스크롤 시 상단 유지)",
+      "description": "position: sticky + top: 0 + z-index: 30. 스크롤 시에도 헤더가 상단에 고정됩니다. 기본 OFF.",
+      "group": "헤더"
+    },
+    "layoutHeaderTransparentOnTop": {
+      "label": "Transparent on top",
+      "description": "페이지 최상단(스크롤 0)일 때 헤더 배경이 투명해집니다. 스크롤 시 배경색과 그림자가 채워지는 모던 사이트 패턴입니다. sticky=ON 과 함께 사용하는 것을 권장합니다. 기본 OFF.",
+      "group": "헤더"
+    },
+    "layoutHeaderMobileDrawer": {
+      "label": "모바일 햄버거 drawer",
+      "description": "모바일(640px 미만)에서 nav 링크를 햄버거 버튼 + 우측 슬라이드 drawer 로 전환합니다. 검색 + 링크 list + (옵션) 사이드바 widgets 가 함께 표시됩니다. 데스크톱은 그대로 horizontal nav 입니다. 기본 OFF.",
+      "group": "헤더"
+    },
+    "layoutHeaderMobileDrawerIncludeSidebar": {
+      "label": "모바일 drawer 안에 사이드바 widgets 포함",
+      "description": "햄버거 drawer 가 ON 일 때 본문 stacked 사이드바 대신 drawer 안에 사이드바 widgets 를 통합 표시합니다. 한 곳에서 모든 모바일 콘텐츠 (검색 / 카테고리 / 최근글 / 태그 / nav) 가 모입니다. 기본 OFF.",
+      "group": "헤더"
+    },
+    "headerWidgetsLeft": {
+      "label": "좌 col 위젯",
+      "description": "헤더 좌측 col 에 배치할 widget 배열입니다. 비우면 기본 (로고 / 사이트명) 이 자동 사용됩니다.",
+      "group": "헤더"
+    },
+    "headerWidgetsCenter": {
+      "label": "중 col 위젯",
+      "description": "헤더 중앙 col 입니다. 비우면 우측으로 push 됩니다.",
+      "group": "헤더"
+    },
+    "headerWidgetsRight": {
+      "label": "우 col 위젯",
+      "description": "헤더 우측 col 입니다. 비우면 기본 (네비 + 검색박스 + 햄버거) 이 자동 사용됩니다.",
+      "group": "헤더"
+    },
+    "layoutMode": {
+      "label": "본문 + 사이드바 모드",
+      "description": "본문 영역과 사이드바 배치입니다. full = 사이드바 없음 / right = 우측 사이드바 / left = 좌측 사이드바 / both = 양쪽 사이드바 (같은 위젯 양쪽 표시) / boxed = 사이드바 없음 + 본문 boxed (좁은 max-width + 테두리·그림자). 모바일에선 자동 stacked 입니다.",
+      "group": "사이드바",
+      "options": [
+        "Full — 사이드바 없음 (기본)",
+        "Right Sidebar — 우측 사이드바",
+        "Left Sidebar — 좌측 사이드바",
+        "Both Sidebar — 양쪽 사이드바",
+        "Boxed — 사이드바 없음 + 본문 boxed"
+      ]
+    },
+    "sidebarWidgets": {
+      "label": "사이드바 위젯",
+      "description": "위젯 카탈로그에서 추가·순서 변경·삭제·표시 대상(PC/모바일)·props 편집이 가능합니다. 설정되어 있으면 아래 legacy toggle 은 무시됩니다. 빈 상태이면 toggle 호환 폴백이 사용됩니다.",
+      "group": "사이드바"
+    },
+    "sidebarShowSearchBox": {
+      "label": "검색 박스 (legacy)",
+      "description": "[옛 toggle, widgets 미설정 시] 사이드바에 검색 입력창을 표시합니다. /search 로 GET.",
+      "group": "사이드바"
+    },
+    "sidebarShowRecentPosts": {
+      "label": "최근 글 (legacy)",
+      "description": "[옛 toggle] 사이드바에 최근 글 list 를 표시합니다.",
+      "group": "사이드바"
+    },
+    "sidebarRecentPostsCount": {
+      "label": "최근 글 개수 (legacy)",
+      "description": "[옛 toggle] 최근 글 개수입니다.",
+      "group": "사이드바"
+    },
+    "sidebarShowCategoryList": {
+      "label": "카테고리 목록 (legacy)",
+      "description": "[옛 toggle] 프로젝트별 글 수를 표시합니다.",
+      "group": "사이드바"
+    },
+    "sidebarShowTagCloud": {
+      "label": "태그 cloud (legacy)",
+      "description": "[옛 toggle] head.keywords 빈도수를 기반으로 합니다.",
+      "group": "사이드바"
+    },
+    "sidebarTagCloudLimit": {
+      "label": "태그 cloud 개수 (legacy)",
+      "description": "[옛 toggle] 태그 cloud 표시 개수입니다.",
+      "group": "사이드바"
+    },
+    "sidebarShowSubscribe": {
+      "label": "구독 안내 (legacy)",
+      "description": "[옛 toggle] RSS feed.xml 링크를 표시합니다.",
+      "group": "사이드바"
+    },
+    "sidebarHtmlWidget": {
+      "label": "HTML 위젯 (legacy)",
+      "description": "[옛 toggle] 자유 HTML 위젯입니다. sanitize 후 inline DOM 으로 삽입됩니다.",
+      "group": "사이드바"
+    },
+    "layoutShowFooter": {
+      "label": "푸터 표시",
+      "description": "사용자 페이지 하단 푸터 표시 여부입니다. 기본 ON.",
+      "group": "푸터"
+    },
+    "layoutFooterText": {
+      "label": "메인 텍스트",
+      "description": "푸터 메인 텍스트입니다. 4 컬럼 아래 단독 line 으로 저작권·법적 고지 등에 사용됩니다. HTML 일부 (<a>, <strong>) 가 허용됩니다. 비우면 자동으로 © 표기가 추가됩니다.",
+      "group": "푸터"
+    },
+    "footerWidgetsCol1": {
+      "label": "Col 1 위젯",
+      "description": "푸터 첫 번째 컬럼의 widget 배열입니다.",
+      "group": "푸터"
+    },
+    "footerWidgetsCol2": {
+      "label": "Col 2 위젯",
+      "description": "푸터 두 번째 컬럼입니다.",
+      "group": "푸터"
+    },
+    "footerWidgetsCol3": {
+      "label": "Col 3 위젯",
+      "description": "푸터 세 번째 컬럼입니다.",
+      "group": "푸터"
+    },
+    "footerWidgetsCol4": {
+      "label": "Col 4 위젯",
+      "description": "푸터 네 번째 컬럼입니다.",
+      "group": "푸터"
+    },
+    "footerColumn1Heading": {
+      "label": "컬럼 1 — 제목 (legacy)",
+      "description": "[legacy] widgets 미설정 시 자동 widget 으로 변환됩니다.",
+      "group": "푸터"
+    },
+    "footerColumn1Content": {
+      "label": "컬럼 1 — 본문 (legacy)",
+      "description": "[legacy] HTML 이 허용됩니다.",
+      "group": "푸터"
+    },
+    "footerColumn2Heading": {
+      "label": "컬럼 2 — 제목 (legacy)",
+      "description": "[legacy]",
+      "group": "푸터"
+    },
+    "footerColumn2Content": {
+      "label": "컬럼 2 — 본문 (legacy)",
+      "description": "[legacy] HTML 이 허용됩니다.",
+      "group": "푸터"
+    },
+    "footerColumn3Heading": {
+      "label": "컬럼 3 — 제목 (legacy)",
+      "description": "[legacy]",
+      "group": "푸터"
+    },
+    "footerColumn3Content": {
+      "label": "컬럼 3 — 본문 (legacy)",
+      "description": "[legacy] HTML 이 허용됩니다.",
+      "group": "푸터"
+    },
+    "footerColumn4Heading": {
+      "label": "컬럼 4 — 제목 (legacy)",
+      "description": "[legacy]",
+      "group": "푸터"
+    },
+    "footerColumn4Content": {
+      "label": "컬럼 4 — 본문 (legacy)",
+      "description": "[legacy] HTML 이 허용됩니다.",
+      "group": "푸터"
+    },
+    "pageListCardVariant": {
+      "label": "글 카드 변형",
+      "description": "홈·프로젝트·태그·검색 페이지의 글 list 표시 방식입니다. list (세로 카드) / grid (격자 2-3열) / compact (제목+날짜 압축) / magazine (잡지 — 첫 글 hero 큰 이미지 + 나머지 2열 카드, featured image + excerpt 자동 추출).",
+      "group": "본문 · 글 list",
+      "options": [
+        "List — 세로 카드 (기본)",
+        "Grid — 격자 2-3열",
+        "Compact — 제목+날짜 압축",
+        "Magazine — 잡지 (hero + 2열 카드)"
+      ]
+    },
+    "pageListPerPage": {
+      "label": "페이지당 개수",
+      "description": "한 페이지에 표시할 글 개수입니다. 페이지네이션 (?page=N) 이 자동으로 적용됩니다.",
+      "group": "본문 · 글 list"
+    },
+    "layoutShowReadingProgress": {
+      "label": "읽기 진행도 표시",
+      "description": "페이지 상단에 스크롤 진행도 가로 바를 표시합니다. design tokens 의 accent 색이 사용됩니다. 기본 OFF.",
+      "group": "본문 · 글 list"
+    },
+    "layoutShowRelatedPosts": {
+      "label": "관련 글 추천",
+      "description": "콘텐츠 페이지(project 가 설정된) 본문 끝에 head.keywords 기반 매칭 글 list 를 표시합니다. score = 공유 keyword 개수입니다. 키워드가 0건이거나 매칭 0건이면 자동으로 미표시됩니다. 기본 ON.",
+      "group": "본문 · 글 list"
+    },
+    "layoutRelatedPostsCount": {
+      "label": "관련 글 개수",
+      "description": "관련 글 표시 개수 (top N) 입니다. 빈도가 동률이면 updatedAt 최신이 우선됩니다.",
+      "group": "본문 · 글 list"
+    },
+    "adsensePublisherId": {
+      "label": "AdSense Publisher ID",
+      "description": "Google AdSense Publisher ID 입니다. 설정하면 head 에 AdSense script 가 자동으로 inject 됩니다. Auto Ads 활성화는 AdSense 콘솔 (adsense.google.com → 자동 광고 → 사이트별 ON) 에서 진행해 주세요. Firebat 측에서는 별도 토글이 없으며, script 가 설정된 후엔 AdSense 콘솔이 광고 위치·형식을 결정합니다."
+    },
+    "adsenseSlotHeaderBottom": {
+      "label": "슬롯 — 헤더 아래",
+      "description": "AdSense 광고 단위 ID — 헤더 바로 아래 위치입니다. 비우면 미표시됩니다."
+    },
+    "adsenseSlotPostTop": {
+      "label": "슬롯 — 본문 위",
+      "description": "AdSense 광고 단위 ID — 본문 시작 위 위치입니다. 비우면 미표시됩니다."
+    },
+    "adsenseSlotPostBottom": {
+      "label": "슬롯 — 본문 아래",
+      "description": "AdSense 광고 단위 ID — 본문 끝 아래 위치입니다. 비우면 미표시됩니다."
+    },
+    "adsenseSlotFooterTop": {
+      "label": "슬롯 — 푸터 위",
+      "description": "AdSense 광고 단위 ID — 푸터 바로 위 위치입니다. 비우면 미표시됩니다."
+    },
+    "themePreset": {
+      "label": "색 프리셋",
+      "description": "클릭 한 번으로 primary/accent/up/down/text/배경/테두리 색이 일괄 변경됩니다. Light 7 + Dark 3 = 10 프리셋입니다.",
+      "group": "색"
+    },
+    "__themeColorOverrides": {
+      "label": "색 개별 편집 (선택)",
+      "description": "프리셋 위에 색을 개별 변경하고 싶을 때만 입력해 주세요. 빈 값은 프리셋 그대로 유지되며, 변경한 색만 덮어씁니다. RGBA (투명도) 가 지원되며 alpha 슬라이더로 0~100% 조절할 수 있습니다.",
+      "group": "색"
+    },
+    "themeFont": {
+      "label": "폰트 세트",
+      "description": "본문·제목 폰트를 통합 변경합니다. Pretendard Variable (한글 최적, 기본) / Noto Sans KR / Inter / Geist / Cal Sans. 외부 폰트는 아래 \"외부 폰트 CSS URL\" + \"폰트 stack\" 을 활용해 주세요.",
+      "group": "폰트",
+      "options": [
+        "Pretendard Variable (한글, 기본)",
+        "Noto Sans KR",
+        "Inter (라틴)",
+        "Geist (모노크롬)",
+        "Cal Sans (제목 강조)"
+      ]
+    },
+    "customFontUrls": {
+      "label": "외부 폰트 CSS URL",
+      "description": "Google Fonts / Adobe Fonts 등 외부 폰트 CSS URL 입니다. 줄바꿈 또는 콤마로 여러 URL 을 설정할 수 있으며 https:// 만 허용됩니다. layout 의 head 에 link rel=stylesheet 가 자동으로 inject 됩니다.",
+      "group": "폰트"
+    },
+    "themeFont_body": {
+      "label": "본문 폰트 stack (선택 override)",
+      "description": "외부 폰트 사용 시 본문 폰트 stack 입니다. 비우면 위의 \"폰트 세트\" 프리셋이 사용됩니다. 예: \"Inter, -apple-system, sans-serif\".",
+      "group": "폰트"
+    },
+    "themeFont_heading": {
+      "label": "제목 폰트 stack (선택 override)",
+      "description": "제목 폰트 stack 입니다. 비우면 프리셋이 사용됩니다.",
+      "group": "폰트"
+    },
+    "themeFont_mono": {
+      "label": "Mono 폰트 stack (선택 override)",
+      "description": "코드·등폭 폰트 stack 입니다. 비우면 프리셋이 사용됩니다.",
+      "group": "폰트"
+    },
+    "themeBaseFontSize": {
+      "label": "본문 base 폰트 사이즈",
+      "description": "본문 폰트 크기 (px) 입니다. h1~h6 가 이 값에서 ratio 로 derive 됩니다. 16~18px 가 일반적입니다.",
+      "group": "타이포그래피"
+    },
+    "themeScaleRatio": {
+      "label": "Typographic scale ratio",
+      "description": "제목 크기 비율입니다. 1.125 (Major Second 차분) / 1.2 (Minor Third) / 1.25 (Major Third 기본) / 1.333 (Perfect Fourth 강함). h1=base×ratio⁴.",
+      "group": "타이포그래피"
+    },
+    "themeBodyLineHeight": {
+      "label": "본문 line-height",
+      "description": "본문 줄 간격 배수입니다. 1.5~1.8 이 일반적이며 한국어는 1.7+ 를 권장합니다.",
+      "group": "타이포그래피"
+    },
+    "themeHeadingLineHeight": {
+      "label": "제목 line-height",
+      "description": "제목 줄 간격 배수입니다. 1.0~1.5 (제목은 컴팩트).",
+      "group": "타이포그래피"
+    },
+    "themeHeadingLetterSpacing": {
+      "label": "제목 letter-spacing",
+      "description": "제목 자간입니다. CSS 값 (normal / -0.01em / -0.02em). 음수 = 모던 느낌.",
+      "group": "타이포그래피"
+    },
+    "themeBodyLetterSpacing": {
+      "label": "본문 letter-spacing",
+      "description": "본문 자간입니다. 보통 normal 또는 약간 양수 (0.01em).",
+      "group": "타이포그래피"
+    },
+    "themeH1Style": {
+      "label": "H1 (제목) 스타일",
+      "description": "h1 제목 디자인입니다. plain (기본 텍스트) / border-bottom (밑줄) / border-left (좌측 accent 바) / underline / bold-bg (강조 박스) / accent-square (accent 사각형 prefix).",
+      "group": "제목 스타일",
+      "options": [
+        "plain (단순)",
+        "border-bottom (밑줄)",
+        "border-left (좌측 accent 바)",
+        "underline (텍스트 밑줄)",
+        "bold-bg (강조 배경 박스)",
+        "accent-square (사각형 prefix)"
+      ]
+    },
+    "themeH2Style": {
+      "label": "H2 (소제목) 스타일",
+      "description": "h2 소제목 디자인입니다. 기본 border-left (좌측 accent 바).",
+      "group": "제목 스타일",
+      "options": [
+        "plain (단순)",
+        "border-bottom (밑줄)",
+        "border-left (좌측 accent 바, 기본)",
+        "underline (텍스트 밑줄)",
+        "bold-bg (강조 배경 박스)",
+        "accent-square (사각형 prefix)"
+      ]
+    },
+    "themeH3Style": {
+      "label": "H3 (소소제목) 스타일",
+      "description": "h3 소소제목 디자인입니다. 기본 plain.",
+      "group": "제목 스타일",
+      "options": [
+        "plain (단순, 기본)",
+        "border-bottom (밑줄)",
+        "border-left (좌측 accent 바)",
+        "underline (텍스트 밑줄)",
+        "bold-bg (강조 배경 박스)",
+        "accent-square (사각형 prefix)"
+      ]
+    },
+    "themeContentMaxWidth": {
+      "label": "본문 최대 폭",
+      "description": "본문 콘텐츠 영역 폭입니다. px(1200px) / rem(75rem) / 절대값. 기본 1200px (이전 max-w-4xl 56rem ≈ 896px 대비 넓음).",
+      "group": "본문 폭 · 여백 · 모서리"
+    },
+    "themePaddingMobile": {
+      "label": "모바일 좌우 여백",
+      "description": "≤640px 화면 좌우 여백입니다. 기본 16px. 좁히려면 12px / 8px, 넓히려면 20px.",
+      "group": "본문 폭 · 여백 · 모서리"
+    },
+    "themePaddingTablet": {
+      "label": "태블릿 좌우 여백",
+      "description": "641~1023px 좌우 여백입니다. 기본 24px.",
+      "group": "본문 폭 · 여백 · 모서리"
+    },
+    "themePaddingDesktop": {
+      "label": "데스크톱 좌우 여백",
+      "description": "≥1024px 좌우 여백입니다. 기본 32px.",
+      "group": "본문 폭 · 여백 · 모서리"
+    },
+    "themeRadius": {
+      "label": "카드 모서리 둥글기",
+      "description": "카드·버튼·박스 border-radius 입니다. 0px (각진 모던) ~ 16px (둥근 친근). 기본 8px.",
+      "group": "본문 폭 · 여백 · 모서리"
+    },
+    "sitemapEnabled": {
+      "label": "Sitemap 생성",
+      "description": "/sitemap.xml 이 자동 생성됩니다."
+    },
+    "rssEnabled": {
+      "label": "RSS 피드",
+      "description": "/feed.xml 이 자동 생성됩니다."
+    },
+    "robotsTxt": {
+      "label": "robots.txt",
+      "description": "robots.txt 내용입니다."
+    },
+    "autoCanonical": {
+      "label": "자동 Canonical URL",
+      "description": "페이지 head.canonical 미지정 시 siteUrl + slug 으로 자동 생성됩니다. 중복 콘텐츠 방지에 도움이 됩니다."
+    },
+    "twitterCardType": {
+      "label": "Twitter Card 타입",
+      "description": "summary (작은 카드) 또는 summary_large_image (큰 이미지) 입니다. 블로그·랜딩은 후자를 권장합니다."
+    },
+    "twitterSite": {
+      "label": "Twitter 사이트 계정",
+      "description": "사이트 자체 트위터 계정 (선택) 입니다. @ 로 시작합니다."
+    },
+    "twitterCreator": {
+      "label": "Twitter 작성자 계정",
+      "description": "작성자 트위터 계정 (선택) 입니다. @ 로 시작합니다."
+    },
+    "tagAliases": {
+      "label": "태그 alias (정규화)",
+      "description": "canonical: alias1, alias2 형식으로 줄별 매핑입니다. /tag/{keyword} URL 매칭 시 case-insensitive normalize 가 적용되어 \"ai\"·\"인공지능\" 모두 \"AI\" 페이지로 통합됩니다. listAllTags 도 통합 빈도 카운트로 처리됩니다."
+    },
+    "imageWebp": {
+      "label": "WebP 변환",
+      "description": "대부분 브라우저에서 지원되며 원본 대비 25~35% 작아집니다."
+    },
+    "imageAvif": {
+      "label": "AVIF 변환",
+      "description": "최신 포맷이며 WebP 대비 20% 더 작습니다. Safari 16+, Chrome 85+."
+    },
+    "imageThumbnail": {
+      "label": "썸네일 생성 (256px)",
+      "description": "갤러리 썸네일 — <slug>-thumb.webp."
+    },
+    "imageBlurhash": {
+      "label": "Blurhash LQIP",
+      "description": "로딩 중 부드러운 블러 플레이스홀더 (LCP 개선, 32자 문자열)."
+    },
+    "imageVariants": {
+      "label": "반응형 너비 (CSV)",
+      "description": "각 너비마다 WebP/AVIF 쌍이 생성됩니다 — srcset 에 자동 반영됩니다."
+    },
+    "imageDefaultQuality": {
+      "label": "기본 품질 (1~100)",
+      "description": "WebP/AVIF/JPEG 압축 품질입니다. 85 권장."
+    },
+    "imageStripExif": {
+      "label": "EXIF 제거",
+      "description": "촬영 위치·장비 등 메타데이터를 제거합니다 (프라이버시·용량)."
+    },
+    "imageProgressive": {
+      "label": "Progressive 인코딩",
+      "description": "JPEG/WebP 점진 표시 — 느린 네트워크에서 UX 가 개선됩니다."
+    },
+    "imageKeepOriginal": {
+      "label": "원본 파일 유지",
+      "description": "끄면 variants 만 보관됩니다 (용량 절약, 권장: 켜둠)."
+    },
+    "ogBgColor": {
+      "label": "배경색",
+      "description": "OG 이미지 배경색 (HEX) 입니다."
+    },
+    "ogAccentColor": {
+      "label": "강조색",
+      "description": "상단 라인과 로고 테두리 색상입니다."
+    },
+    "ogDomain": {
+      "label": "도메인 표시",
+      "description": "OG 이미지 우하단 도메인 텍스트입니다. 비워두면 요청 host 가 자동 감지됩니다."
+    },
+    "headScripts": {
+      "label": "<head> 스크립트",
+      "description": "모든 페이지 <head> 에 삽입할 HTML 입니다 (SSR 설정 — crawler 가 인식)."
+    },
+    "bodyScripts": {
+      "label": "</body> 스크립트",
+      "description": "모든 페이지 </body> 앞에 삽입할 HTML 입니다."
+    },
+    "adsTxt": {
+      "label": "ads.txt (legacy — verifications 권장)",
+      "description": "/ads.txt 응답 내용입니다. 이 필드는 비워두고 아래 \"사이트 인증 파일\" 의 ads.txt 항목 사용을 권장합니다 (verifications 시스템 통합)."
+    },
+    "verifications": {
+      "label": "사이트 인증 파일",
+      "description": "Google Search Console (google{code}.html), AdSense (ads.txt), Naver Search Advisor (naverabc.html), Bing IndexNow (BingSiteAuth.xml), Yandex (yandex.html) 등 모든 사이트 소유권 인증 파일을 통합 관리합니다. (filename, content) 페어로 N개 등록 가능합니다."
+    }
+  },
+  "color_overrides": {
+    "primary": "주요 색 (primary)",
+    "accent": "강조 색 (accent)",
+    "up": "상승 색 (up)",
+    "down": "하락 색 (down)",
+    "text": "본문 텍스트",
+    "text_muted": "보조 텍스트",
+    "bg": "페이지 배경",
+    "bg_card": "카드 배경",
+    "border": "테두리"
+  },
+  "widget_list": {
+    "empty": "등록된 위젯이 없습니다. 아래 버튼으로 추가해 주세요.",
+    "visibility_label": "표시 대상",
+    "visibility_pc_only": "PC만",
+    "visibility_mobile_only": "모바일만",
+    "visibility_all": "PC + 모바일",
+    "visibility_desktop": "PC 만 (sm 이상)",
+    "visibility_mobile": "모바일 만 (sm 미만)",
+    "no_props": "편집 가능한 속성이 없습니다.",
+    "add": "+ 위젯 추가",
+    "move_up": "위로",
+    "move_down": "아래로"
+  }
+}

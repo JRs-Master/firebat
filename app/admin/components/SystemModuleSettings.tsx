@@ -66,8 +66,7 @@ interface ConfigSettingField {
 }
 
 /** i18n key 형태 ('system_modules.X.Y') 면 t() lookup, 그 외 raw 반환 (legacy hardcoded 한국어).
- *  config.json 의 settings_fields 가 풀어진 string + 옛 hardcoded MODULE_SETTINGS_SCHEMA 의
- *  한국어 raw label/description 모두 console warn 없이 그대로 표시. */
+ *  config.json 의 settings_fields 안 raw 라벨도 console warn 없이 그대로 표시. */
 function localize(
   t: (k: string, params?: Record<string, string | number>) => string,
   s: string | undefined,
@@ -148,26 +147,13 @@ const TAB_META: Record<string, { i18nKey: string; icon: typeof Globe }> = {
 };
 
 /**
- * 특수 설정이 필요한 모듈만 등록 (oauth, 커스텀 필드 등).
- * 일반 secret 필드는 config.json의 secrets 배열에서 자동 생성됨.
+ * 모듈 ↔ system service alias — 옛 이름으로 호출되어도 새 service 의 config/lang 로 dispatch.
  *
- * **C 옵션 마이그레이션 (2026-05-10):** 옛 hardcoded 한국어 schema 들이 모듈 config.json 의
- * `settings_fields` 로 이전. config.json 에 settings_fields 가 정의된 모듈은
- * 이 hardcoded schema 보다 우선 적용됨 (resolveFieldsFromConfig).
- *
- * **lang 분리 (2026-05-16):** settings_fields[].i18n inline 영역 → `lang/{lang}.json` 의
- * `settings.{field_key}` 영역으로 이전. resolveConfigField 가 langData 1순위 lookup.
- * 4 모듈 이전: browser-scrape / kakao-talk / telegram / firecrawl. cms 별도 step 보존.
- * mcp-server-app / mcp-server-llm 는 fields:[] (커스텀 렌더링) 만 유지 — 이전 불필요.
+ * 'seo' 옛 모듈명 → 'cms' service (2026-04-28 SEO → CMS rename 호환).
+ * 추가 alias 가 박힐 때 이 매핑만 늘리면 됨.
  */
-const MODULE_SETTINGS_SCHEMA: Record<string, { title?: string; fields: SettingField[] }> = {
-  // browser-scrape / kakao-talk / telegram / firecrawl 폐기 — config.json settings_fields + lang/{lang}.json 로 이전됨.
-  'mcp-server-app': {
-    fields: [],  // 커스텀 렌더링 (앱 개발용 — Claude Code, Cursor, VS Code)
-  },
-  'mcp-server-llm': {
-    fields: [],  // 커스텀 렌더링 (LLM 통신용 — OpenAI Responses API, Claude API)
-  },
+const MODULE_NAME_ALIASES: Record<string, string> = {
+  seo: 'cms',
 };
 
 /** config.json secrets 배열 → SettingField[] 자동 생성 */
@@ -192,9 +178,10 @@ interface Props {
 export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPage }: Props) {
   const t = useTranslations();
   const { lang } = useLang();
-  // 'seo' 옛 모듈명 → 'cms' fallback (2026-04-28 SEO → CMS rename 호환)
-  const manualSchema = MODULE_SETTINGS_SCHEMA[moduleName] ?? (moduleName === 'seo' ? MODULE_SETTINGS_SCHEMA['cms'] : undefined);
+  // 모듈명 alias resolve — 옛 이름 ('seo') 으로 호출되어도 새 service ('cms') 로 fetch.
+  const resolvedName = MODULE_NAME_ALIASES[moduleName] ?? moduleName;
   const [schema, setSchema] = useState<{ title: string; fields: SettingField[] } | null>(null);
+  const [langData, setLangData] = useState<Record<string, any> | null>(null);
   const [settings, setSettings] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -280,31 +267,26 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   useEffect(() => {
     setLoading(true);
     apiGet<{ success: boolean; settings?: Record<string, unknown>; config?: Record<string, unknown> | null; lang?: Record<string, any> | null }>(
-      `/api/settings/modules?name=${encodeURIComponent(moduleName)}&lang=${encodeURIComponent(lang)}`,
+      `/api/settings/modules?name=${encodeURIComponent(resolvedName)}&lang=${encodeURIComponent(lang)}`,
       { category: 'system-module' },
     )
       .then(data => {
         if (data.success) {
           // config.json에서 secrets 자동 생성
           const config = data.config as Record<string, unknown> | null;
-          const langData = data.lang ?? null;
+          const fetchedLang = data.lang ?? null;
+          setLangData(fetchedLang);
           const configSecrets = (config?.secrets as string[] | undefined) ?? [];
           const autoFields = secretsToFields(configSecrets);
 
           // 옵션 C — config.json 의 settings_fields 우선 (모듈 자기완결 i18n).
           // 2026-05-16: lang/{lang}.json 의 settings.{field_key} 영역 우선 + config.json inline i18n 폴백.
           const configSettingsFields = (config?.settings_fields as ConfigSettingField[] | undefined) ?? [];
-          const configFields = configSettingsFields.map(cf => resolveConfigField(cf, lang, langData));
+          const configFields = configSettingsFields.map(cf => resolveConfigField(cf, lang, fetchedLang));
 
-          // 옛 hardcoded MODULE_SETTINGS_SCHEMA — config.json 미정의 모듈 fallback (cms / mcp-server-* 등).
-          // settings_fields 가 정의된 모듈은 manual 무시.
-          const manualFields = configFields.length > 0 ? [] : (manualSchema?.fields ?? []);
-          const autoSecretNames = new Set(configSecrets);
-          const filteredManual = manualFields.filter(f => !(f.type === 'secret' && f.secretName && autoSecretNames.has(f.secretName)));
-
-          // 병합: 자동 secret + config.json fields + (legacy manual fallback)
-          const allFields = [...autoFields, ...configFields, ...filteredManual];
-          const title = manualSchema?.title || moduleName;
+          const allFields = [...autoFields, ...configFields];
+          // title — lang/{lang}.json 의 'title' 키 우선 (mcp-server-app / mcp-server-llm 등) → 옛 alias 입력값 → resolved 모듈명
+          const title = (fetchedLang?.title as string | undefined) || moduleName;
           setSchema({ title, fields: allFields });
 
           // 기본값과 저장된 값 병합
@@ -385,7 +367,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
     try {
       const data = await apiPatch<{ success: boolean }>(
         '/api/settings/modules',
-        { name: moduleName, settings },
+        { name: resolvedName, settings },
         { category: 'system-module' },
       );
       if (data.success) setSaved(true);
@@ -402,8 +384,8 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   const [mcpJsonCopied, setMcpJsonCopied] = useState(false);
 
   // 서비스별 엔드포인트 매핑 (app=외부용, llm=내부용)
-  const isMcpApp = moduleName === 'mcp-server-app';
-  const isMcpLlm = moduleName === 'mcp-server-llm';
+  const isMcpApp = resolvedName === 'mcp-server-app';
+  const isMcpLlm = resolvedName === 'mcp-server-llm';
   const mcpTokenEndpoint = isMcpLlm ? '/api/mcp-internal/token' : '/api/mcp/tokens';
   const mcpServerPath = isMcpLlm ? '/api/mcp-internal' : '/api/mcp';
 
@@ -462,10 +444,10 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
 
   // ── MCP 서버 커스텀 렌더링 (앱 개발용 / LLM 통신용 공용) ─────────────────────
   if (isMcpApp || isMcpLlm) {
-    const titleText = isMcpLlm ? t('system_modules.common.mcp_llm_title') : t('system_modules.common.mcp_app_title');
-    const descText = isMcpLlm
-      ? t('system_modules.common.mcp_llm_desc')
-      : t('system_modules.common.mcp_app_desc');
+    // title / description = system/services/mcp-server-{app,llm}/lang/{lang}.json 에서 lookup.
+    // 옛 system_modules.common.mcp_*_title/desc i18n 영역은 폐기.
+    const titleText = (langData?.title as string | undefined) ?? (isMcpLlm ? 'Firebat MCP Server (for LLMs)' : 'Firebat MCP Server (for apps)');
+    const descText = (langData?.description as string | undefined) ?? '';
     return (
       <div className={embeddedInPage ? 'flex flex-col h-full bg-white overflow-hidden' : 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden'}>
         <div className={embeddedInPage ? 'flex flex-col h-full w-full overflow-hidden' : 'bg-white w-full sm:max-w-2xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[70vh] sm:h-[80vh]'}>
@@ -704,7 +686,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           ) : (
             <>
             {/* OG 미리보기 */}
-            {activeTab === 'OG' && (moduleName === 'cms' || moduleName === 'seo') && (
+            {activeTab === 'OG' && resolvedName === 'cms' && (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs sm:text-sm font-bold text-slate-700">{t('system_modules.common.og_preview')}</label>
@@ -825,6 +807,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     settings={settings}
                     presetKey={settings.themePreset ?? 'slate-pro'}
                     onChange={(k, v) => handleChange(k, v)}
+                    langData={langData}
                   />
                 ) : field.type === 'widget-list' ? (
                   <WidgetListField
@@ -833,6 +816,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     area={(field.widgetArea ?? 'sidebar') as 'header' | 'sidebar' | 'footer'}
                     value={Array.isArray(settings[field.key]) ? settings[field.key] : undefined}
                     onChange={(next) => handleChange(field.key, next)}
+                    langData={langData}
                   />
                 ) : field.type === 'select' ? (
                   <>
@@ -894,7 +878,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
               </Fragment>
               );
             })}
-            {moduleName === 'telegram' && <TelegramWebhookSection />}
+            {resolvedName === 'telegram' && <TelegramWebhookSection />}
             </>
           )}
         </div>
@@ -986,16 +970,23 @@ function ColorPresetField({ label, description, value, onChange }: {
 }
 
 // ── 색 개별 편집 — 9 색 picker (themeColor_<key> Vault 키). 빈 값 = 프리셋 그대로.
-const COLOR_OVERRIDE_FIELDS: Array<{ key: string; i18nKey: string; defaultPresetKey: keyof (typeof COLOR_PRESETS)['slate-pro']['colors'] }> = [
-  { key: 'themeColor_primary',  i18nKey: 'system_modules.color_overrides.primary',   defaultPresetKey: 'primary' },
-  { key: 'themeColor_accent',   i18nKey: 'system_modules.color_overrides.accent',    defaultPresetKey: 'accent' },
-  { key: 'themeColor_up',       i18nKey: 'system_modules.color_overrides.up',        defaultPresetKey: 'up' },
-  { key: 'themeColor_down',     i18nKey: 'system_modules.color_overrides.down',      defaultPresetKey: 'down' },
-  { key: 'themeColor_text',     i18nKey: 'system_modules.color_overrides.text',      defaultPresetKey: 'text' },
-  { key: 'themeColor_textMuted',i18nKey: 'system_modules.color_overrides.text_muted',defaultPresetKey: 'textMuted' },
-  { key: 'themeColor_bg',       i18nKey: 'system_modules.color_overrides.bg',        defaultPresetKey: 'bg' },
-  { key: 'themeColor_bgCard',   i18nKey: 'system_modules.color_overrides.bg_card',   defaultPresetKey: 'bgCard' },
-  { key: 'themeColor_border',   i18nKey: 'system_modules.color_overrides.border',    defaultPresetKey: 'border' },
+// langKey = service.cms.color_overrides.{X} (cms 의 lang/{lang}.json 안 color_overrides 영역).
+// fallback = 영문 라벨 (lang lookup 실패 시 마지막 안전 표시).
+const COLOR_OVERRIDE_FIELDS: Array<{
+  key: string;
+  langKey: string;
+  fallback: string;
+  defaultPresetKey: keyof (typeof COLOR_PRESETS)['slate-pro']['colors'];
+}> = [
+  { key: 'themeColor_primary',   langKey: 'primary',    fallback: 'Primary color',     defaultPresetKey: 'primary' },
+  { key: 'themeColor_accent',    langKey: 'accent',     fallback: 'Accent color',      defaultPresetKey: 'accent' },
+  { key: 'themeColor_up',        langKey: 'up',         fallback: 'Up color',          defaultPresetKey: 'up' },
+  { key: 'themeColor_down',      langKey: 'down',       fallback: 'Down color',        defaultPresetKey: 'down' },
+  { key: 'themeColor_text',      langKey: 'text',       fallback: 'Body text',         defaultPresetKey: 'text' },
+  { key: 'themeColor_textMuted', langKey: 'text_muted', fallback: 'Muted text',        defaultPresetKey: 'textMuted' },
+  { key: 'themeColor_bg',        langKey: 'bg',         fallback: 'Page background',   defaultPresetKey: 'bg' },
+  { key: 'themeColor_bgCard',    langKey: 'bg_card',    fallback: 'Card background',   defaultPresetKey: 'bgCard' },
+  { key: 'themeColor_border',    langKey: 'border',     fallback: 'Border',            defaultPresetKey: 'border' },
 ];
 
 /** 색 입력 — hex(#RRGGBB) / rgb(...) / rgba(...) 모두 받아 정규화.
@@ -1036,15 +1027,18 @@ function formatColorValue(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${a.toFixed(2)})`;
 }
 
-function ColorOverridesField({ label, description, settings, presetKey, onChange }: {
+function ColorOverridesField({ label, description, settings, presetKey, onChange, langData }: {
   label: string;
   description?: string;
   settings: Record<string, any>;
   presetKey: string;
   onChange: (key: string, value: string) => void;
+  langData: Record<string, any> | null;
 }) {
   const t = useTranslations();
   const preset = COLOR_PRESETS[presetKey] ?? COLOR_PRESETS['slate-pro'];
+  // 색 라벨 lookup — service.cms.color_overrides.{X}. lookup miss 시 fallback (영문) 표시.
+  const colorLangArea = (langData?.color_overrides as Record<string, string> | undefined) ?? {};
   const resetAll = () => {
     for (const f of COLOR_OVERRIDE_FIELDS) onChange(f.key, '');
   };
@@ -1111,7 +1105,7 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
                 </div>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-bold text-slate-600 truncate">{t(f.i18nKey)}</p>
+                <p className="text-[11px] font-bold text-slate-600 truncate">{colorLangArea[f.langKey] ?? f.fallback}</p>
                 <input
                   type="text"
                   value={overrideValue}

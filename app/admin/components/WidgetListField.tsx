@@ -27,14 +27,21 @@ export function WidgetListField({
   area,
   value,
   onChange,
+  langData,
 }: {
   label: string;
   description?: string;
   area: WidgetArea;
   value: WidgetSlot[] | undefined;
   onChange: (next: WidgetSlot[]) => void;
+  /** cms (또는 호출 service) 의 lang/{lang}.json 의 widget_list 영역 — i18n lookup source. */
+  langData?: Record<string, any> | null;
 }) {
   const t = useTranslations();
+  // widget_list 영역 lookup — service.cms.widget_list.{X}.
+  // lookup miss 시 영문 fallback (lang 미존재 시 안전 표시).
+  const wl = (langData?.widget_list as Record<string, string> | undefined) ?? {};
+  const wlText = (k: string, fallback: string): string => wl[k] ?? fallback;
   const widgets = Array.isArray(value) ? value : [];
   const available = widgetsForArea(area);
   const [addPickerOpen, setAddPickerOpen] = useState(false);
@@ -96,7 +103,7 @@ export function WidgetListField({
 
       {widgets.length === 0 ? (
         <div className="text-center py-6 border border-dashed border-slate-300 rounded-lg text-xs text-slate-400">
-          {t('system_modules.widget_list.empty')}
+          {wlText('empty', 'No widgets registered. Add one with the button below.')}
         </div>
       ) : (
         <div className="flex flex-col gap-1.5">
@@ -121,7 +128,7 @@ export function WidgetListField({
                     <span className="text-xs font-bold text-slate-700">{meta?.label ?? slot.type}</span>
                     {slot.visibility && slot.visibility !== 'all' && (
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
-                        {slot.visibility === 'desktop' ? t('system_modules.widget_list.visibility_pc_only') : t('system_modules.widget_list.visibility_mobile_only')}
+                        {slot.visibility === 'desktop' ? wlText('visibility_pc_only', 'PC only') : wlText('visibility_mobile_only', 'Mobile only')}
                       </span>
                     )}
                   </button>
@@ -130,8 +137,8 @@ export function WidgetListField({
                     type="button"
                     onClick={() => moveUp(i)}
                     disabled={i === 0}
-                    title={t('system_modules.widget_list.move_up')}
-                    aria-label={t('system_modules.widget_list.move_up')}
+                    title={wlText('move_up', 'Move up')}
+                    aria-label={wlText('move_up', 'Move up')}
                     className="p-1 hover:bg-slate-100 rounded disabled:opacity-30 disabled:cursor-not-allowed bg-transparent border-0 cursor-pointer"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -142,8 +149,8 @@ export function WidgetListField({
                     type="button"
                     onClick={() => moveDown(i)}
                     disabled={i === widgets.length - 1}
-                    title={t('system_modules.widget_list.move_down')}
-                    aria-label={t('system_modules.widget_list.move_down')}
+                    title={wlText('move_down', 'Move down')}
+                    aria-label={wlText('move_down', 'Move down')}
                     className="p-1 hover:bg-slate-100 rounded disabled:opacity-30 disabled:cursor-not-allowed bg-transparent border-0 cursor-pointer"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -173,15 +180,15 @@ export function WidgetListField({
                     )}
                     {/* Visibility */}
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-bold text-slate-600 shrink-0">{t('system_modules.widget_list.visibility_label')}:</span>
+                      <span className="text-[11px] font-bold text-slate-600 shrink-0">{wlText('visibility_label', 'Visibility')}:</span>
                       <select
                         value={slot.visibility ?? 'all'}
                         onChange={(e) => updateSlot(i, { visibility: e.target.value as WidgetSlot['visibility'] })}
                         className="text-[11px] px-2 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="all" id="all"
                       >
-                        <option value="all">{t('system_modules.widget_list.visibility_all')}</option>
-                        <option value="desktop">{t('system_modules.widget_list.visibility_desktop')}</option>
-                        <option value="mobile">{t('system_modules.widget_list.visibility_mobile')}</option>
+                        <option value="all">{wlText('visibility_all', 'PC + Mobile')}</option>
+                        <option value="desktop">{wlText('visibility_desktop', 'PC only (sm+)')}</option>
+                        <option value="mobile">{wlText('visibility_mobile', 'Mobile only (<sm)')}</option>
                       </select>
                     </div>
                     {/* Props 편집 */}
@@ -234,7 +241,7 @@ export function WidgetListField({
                         })}
                       </div>
                     ) : (
-                      <p className="text-[11px] text-slate-400 italic">{t('system_modules.widget_list.no_props')}</p>
+                      <p className="text-[11px] text-slate-400 italic">{wlText('no_props', 'No editable properties.')}</p>
                     )}
                   </div>
                 )}
@@ -251,7 +258,7 @@ export function WidgetListField({
           onClick={() => setAddPickerOpen(!addPickerOpen)}
           className="w-full px-3 py-2 text-xs font-bold border-2 border-dashed border-slate-300 hover:border-blue-500 hover:text-blue-600 rounded-lg text-slate-600 transition-colors bg-white cursor-pointer"
         >
-          {t('system_modules.widget_list.add')}
+          {wlText('add', '+ Add widget')}
         </button>
         {addPickerOpen && (
           <>

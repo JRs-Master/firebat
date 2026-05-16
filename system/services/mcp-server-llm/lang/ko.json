@@ -1,0 +1,4 @@
+{
+  "title": "Firebat MCP 서버 (LLM 통신용)",
+  "description": "OpenAI Responses API (hosted MCP), Claude API 등 외부 LLM이 Firebat의 전체 도구 세트에 접근할 때 사용합니다."
+}
