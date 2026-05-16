@@ -74,6 +74,20 @@ async fn main() -> Result<()> {
     init_tracing();
     tracing::info!(version = firebat_core::version(), "Firebat Core 부팅");
 
+    // `--prefetch-embedder` flag — 서버 초기 설치 시 1회 호출. E5 모델 (~470MB) 다운로드 + cache 박은 후 exit.
+    // deploy script / systemd unit ExecStartPre 영역에서 호출. 첫 채팅 시 사용자 다운로드 delay 0.
+    if std::env::args().any(|a| a == "--prefetch-embedder") {
+        tracing::info!("[firebat-core] --prefetch-embedder — E5 모델 다운로드 시작");
+        let embedder = E5LocalEmbedderAdapter::new();
+        embedder
+            .embed_query("warmup")
+            .await
+            .map_err(anyhow::Error::msg)
+            .context("E5 prefetch 실패")?;
+        tracing::info!("[firebat-core] E5 prefetch 완료 — cache: ~/.cache/huggingface/hub/");
+        return Ok(());
+    }
+
     // Phase 5 정공 — LLM model registry JSON 로드. 옛 builtin_models() Rust 하드코드 폐기.
     // 파일 미발견 시 stub 폴백 (panic X). FIREBAT_LLM_MODELS_PATH env 으로 위치 override.
     firebat_infra::llm::registry_loader::init_from_file();
