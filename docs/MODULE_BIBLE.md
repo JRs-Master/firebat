@@ -180,13 +180,130 @@ Node ESM: `./` 또는 `../` 명시 상대 경로 사용 (예: `./helpers.mjs`).
 ## 제7장: 시스템 모듈 설정
 
 시스템 모듈은 Vault에 `system:module:<name>:settings` 키로 설정을 JSON 저장한다.
-어드민 UI의 `SystemModuleSettings` 모달에서 편집하며, `MODULE_SETTINGS_SCHEMA`에 모듈별 필드를 등록한다.
+어드민 UI의 `SystemModuleSettings` 모달에서 편집하며, **모듈 자신의 `config.json` 의 `settings_fields` 배열** 이 schema 정의한다 (옛 frontend 의 `MODULE_SETTINGS_SCHEMA` 하드코딩 영역 폐기, 2026-05-16).
 
-현재 등록된 설정 스키마:
-| 모듈 | 설정 필드 |
+### 제1항. config.json 의 settings_fields
+
+```json
+{
+  "name": "telegram",
+  "settings_fields": [
+    {
+      "key": "bot_token",
+      "type": "secret",
+      "secretName": "TELEGRAM_BOT_TOKEN"
+    },
+    {
+      "key": "default_chat_id",
+      "type": "text",
+      "tab": "기본",
+      "group": "수신자"
+    }
+  ]
+}
+```
+
+| field | 영역 |
 |---|---|
-| `seo` | sitemapEnabled, rssEnabled, robotsTxt, headScripts, bodyScripts, siteTitle, siteDescription |
-| `browser-scrape` | timeout, headless, maxTextLength |
+| `key` | settings 객체의 field 이름 |
+| `type` | `text` / `number` / `toggle` / `textarea` / `oauth` / `secret` / `select` / `widget-list` / `verifications` / `color-presets` / `color-overrides` |
+| `tab` | 탭 그룹 (없으면 기본 탭) |
+| `group` | 탭 안 sub-section heading |
+| `secretName` | secret type 전용 — Vault 키 이름 |
+| `oauthUrl` / `oauthSecrets` | oauth type 전용 |
+| `options` | select type 전용 |
+| `defaultValue` | 미설정 시 자동 적용 값 |
+
+---
+
+## 제8장: 모듈 i18n — `lang/{lang}.json` separate file 패턴
+
+시스템 서비스 / 모듈의 사용자 노출 텍스트 (label / description / placeholder / 에러 메시지 등) 는 **모듈 폴더 안 `lang/{lang}.json` 파일** 에 박는다 (2026-05-16 정공). 옛 `config.json` 의 `settings_fields[].i18n` inline 영역 폐기 — separate file 패턴으로 통합.
+
+### 제1항. 디렉토리 구조
+
+```
+system/modules/<name>/
+├── config.json              # settings_fields, packages, secrets 등 schema 정의
+├── main.py                  # entry
+├── lang/
+│   ├── ko.json              # 한국어 텍스트
+│   └── en.json              # 영어 텍스트
+└── ...
+```
+
+`system/services/<name>/` 도 동일 구조 박음.
+
+### 제2항. lang/{lang}.json 형식
+
+```json
+{
+  "title": "텔레그램",
+  "description": "텔레그램 봇 메시지 발송",
+  "settings": {
+    "bot_token": {
+      "label": "봇 토큰",
+      "description": "@BotFather 에서 생성한 봇의 HTTP API 토큰",
+      "placeholder": "1234567890:ABC..."
+    },
+    "default_chat_id": {
+      "label": "기본 chat_id",
+      "description": "수신자 chat_id (미입력 시 매 호출마다 명시 필요)",
+      "group": "수신자"
+    }
+  },
+  "error": {
+    "api_key_missing": "텔레그램 봇 토큰이 등록되지 않았습니다.",
+    "send_failed": "메시지 발송에 실패했습니다: {{detail}}"
+  }
+}
+```
+
+- **`title` / `description`** — 모듈 설정 모달의 헤더 + 설명
+- **`settings.{field_key}`** — `config.json` 의 `settings_fields[].key` 와 매칭 — label / description / placeholder / group / options 영역 박음
+- **`error.*`** — 모듈 runtime 에러 메시지 (i18n key `module.<name>.error.<key>` 으로 lookup)
+- `select` type 의 options 영역도 `settings.{field_key}.options` 에 lang 별 배열 박음 (config.json options 와 같은 길이의 병렬 매핑)
+
+### 제3항. lookup 우선순위
+
+`SystemModuleSettings` 컴포넌트의 `resolveConfigField` 가 매 field 의 사용자 노출 텍스트 결정:
+
+1. **`lang/{active_lang}.json` 의 `settings.{key}.{label|description|...}`** (1순위)
+2. **`lang/en.json` → `lang/ko.json`** fallback (활성 lang 미박힌 영역)
+3. **`config.json` 의 `settings_fields[].i18n[lang]`** (2순위 옛 호환, cms 보존 영역)
+4. **raw `key`** (최종 fallback)
+
+활성 lang = 사용자 SettingsModal 의 언어 토글 (Vault `system:ui-lang` 박음).
+
+### 제4항. runtime 에러 메시지 (sysmod stdout envelope)
+
+모듈이 `stdout` envelope 박을 때 i18n key 직접 박을 수 있다:
+
+```json
+{ "success": false, "error": "...", "errorKey": "module.telegram.error.api_key_missing" }
+```
+
+- `errorKey` field — i18n key (`module.{name}.error.{key}` 형태). `SysmodToolHandler` 가 활성 lang 박은 lookup 변환
+- `errorParams` field — `{{detail}}` 같은 placeholder 치환용 (optional, JSON object)
+- Frontend 의 도구 에러 뱃지에 변환된 사용자 lang 메시지 표시
+
+### 제5항. Rust core 의 GetLang RPC
+
+`ModuleService.GetLang(name, lang)` RPC 가 활성 lang 의 lang 객체 반환:
+- any-scope 자동 탐색 (`system/modules/{name}/lang/{lang}.json` → `system/services/{name}/lang/{lang}.json` → `user/modules/{name}/lang/{lang}.json`)
+- 활성 lang 미박은 영역 fallback chain — en → ko
+- 미존재 시 빈 객체
+
+`/api/settings/modules` route 가 호출 — 매 모듈 settings 화면 로드 시점 lang 객체도 동시 fetch.
+
+### 제6항. 새 모듈 작성 시 i18n 추가 (운영 룰)
+
+1. 모듈 디렉토리 안 `lang/` 박음
+2. 최소 2개 file (`ko.json` + `en.json`) — 다른 lang 박을 시점 자연 확장
+3. `settings_fields` 의 매 `key` 에 대응하는 `settings.{key}` 영역 박음 (label 필수, description / placeholder 선택)
+4. runtime error 메시지 박을 시점 `error.{key}` + envelope `errorKey: "module.<name>.error.<key>"` 박음
+
+> 옛 패턴 (`config.json` 의 `settings_fields[].i18n[ko].label`) 도 cms 모듈 영역에 잔존 — fallback 영역 박혀있어 옛 모듈 동작 영향 0. 새 모듈은 `lang/` separate file 패턴 정공.
 
 ---
 

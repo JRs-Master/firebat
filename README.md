@@ -317,32 +317,47 @@ Open `http://localhost:3000/admin` for the admin console. Frontend 가 `RustCore
 Rust core (gRPC :50051 + MCP HTTP :50052) + Next.js standalone (:3000) — systemd 별도 unit 운영. Caddy 가 reverse proxy + Let's Encrypt 자동 TLS.
 
 ```bash
-# 1. 디렉 구조 + system 디렉 symlink
+# 1. 디렉 구조 + source 영역 symlink (system + language 두 영역)
 mkdir -p /opt/firebat/{data,user/media,frontend}
 ln -sfn /opt/firebat-src/system /opt/firebat/system
+ln -sfn /opt/firebat-src/language /opt/firebat/language
 
-# 2. Rust binary 배치 (GHA artifact 또는 `cargo build --release` 결과)
+# 2. Python venv 의존 (E5 임베딩 모델 prefetch 용 — npm install postinstall 이 자동 사용)
+sudo apt install python3-venv
+
+# 3. Rust binary 배치 (GHA artifact 또는 `cargo build --release` 결과)
 cp target/release/firebat-core /opt/firebat/firebat-core
 chmod +x /opt/firebat/firebat-core
 
-# 3. Next.js standalone build + 배치
+# 4. Next.js standalone build + 배치
 cd /opt/firebat-src
 npm install --legacy-peer-deps && npm run build
+# ↑ postinstall 이 자동 실행 — E5 임베딩 모델 (~470MB) prefetch.
+#   venv (<source root>/.venv) 자동 생성 + huggingface_hub 설치 + 모델 다운로드.
+#   cache 박힌 후 매 npm install 시점 즉시 skip.
+#   skip: FIREBAT_SKIP_EMBEDDER_PREFETCH=1 또는 FIREBAT_EMBEDDER=stub
 rsync -a .next/standalone/ /opt/firebat/frontend/
 rsync -a .next/static/ /opt/firebat/frontend/.next/static/
 rsync -a language/ /opt/firebat/frontend/language/
 
-# 4. systemd unit 등록 (`/etc/systemd/system/firebat.service` + `firebat-frontend.service`)
+# 5. systemd unit 등록 (`/etc/systemd/system/firebat.service` + `firebat-frontend.service`)
 systemctl daemon-reload
 systemctl enable --now firebat firebat-frontend
 
-# 5. Caddy reverse proxy (자동 HTTPS)
+# 6. Caddy reverse proxy (자동 HTTPS)
 cp caddy/Caddyfile.example /etc/caddy/Caddyfile
 # /etc/caddy/Caddyfile 안 your-domain.com / 이메일 실 값 치환 후
 systemctl reload caddy
 ```
 
 **Update flow** — `git pull && npm run build && rsync` (frontend) + binary FTP / `cargo build` (Rust 변경 시) + `systemctl restart firebat firebat-frontend`.
+
+**System dependencies** (Vultr Debian 표준):
+- `python3-venv` — E5 임베딩 모델 prefetch venv (PEP 668 정공)
+- `python3` — sysmod (yfinance / playwright / etc) runtime + venv host
+- Optional: `pipx install huggingface_hub` 박은 시점 setup-embedder.mjs 가 시스템 PATH 의 `huggingface-cli` 자동 사용 (venv 생성 skip)
+
+**Self-contained 패턴** — 매 의존성 (venv / sysmod python_modules / playwright_browsers / node_modules) 모두 Firebat workspace 안 격리. 사용자 home 영역 잔존 0 (예외: HuggingFace 모델 cache `~/.cache/huggingface/hub/`).
 
 ### MCP Server (Rust 단일 binary 안 통합)
 
