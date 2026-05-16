@@ -11,7 +11,7 @@ use tonic::transport::Server;
 
 use firebat_infra::adapters::{
     auth::VaultAuthAdapter, cron::TokioCronAdapter, database::SqliteDatabaseAdapter,
-    embedder::{E5LocalEmbedderAdapter, StubEmbedderAdapter},
+    embedder::{ArcticLocalEmbedderAdapter, E5LocalEmbedderAdapter, StubEmbedderAdapter},
     image_gen::StubImageGenAdapter,
     image_processor::{ImageRsProcessorAdapter, StubImageProcessorAdapter},
     mcp_client::McpClientFileAdapter, media::LocalMediaAdapter,
@@ -156,18 +156,23 @@ async fn main() -> Result<()> {
             .map_err(anyhow::Error::msg)
             .context("MCP servers 파일 open 실패")?,
     );
-    // Phase B-18 Step 1 / 1.6 — IEmbedderPort. 옛 TS `infra/llm/embedder.ts` 1:1 패턴 (E5 prefix +
-    // 384-dim). env `FIREBAT_EMBEDDER` 으로 swap:
-    //   - `e5` (운영 default 권장): candle + intfloat/multilingual-e5-small 로컬 추론.
-    //          첫 실행 시 ~470MB 다운로드 (HuggingFace Hub, hf-hub 자동 캐싱).
-    //          진짜 의미 검색 활성 — search_history / search_entities / search_facts / search_events.
-    //   - `stub` (default — CI / 가벼운 dev): FNV-1a hash 결정론, 의미 검색 X.
-    //          모델 다운로드 없이 wiring 검증 + 단위 테스트 가능.
-    // 추후 Gemini API / OpenAI API 어댑터 설정할 때도 같은 env 패턴 — `gemini` / `openai-3-small` 등.
-    // 디폴트 e5 — 운영 사용자가 search_history / search_components / AI Router / 메모리 검색
-    // 모두 의미 검색 가능. dev/CI 는 명시적으로 `FIREBAT_EMBEDDER=stub` 설정하면 됨.
-    let embedder_kind = std::env::var("FIREBAT_EMBEDDER").unwrap_or_else(|_| "e5".to_string());
+    // IEmbedderPort — env `FIREBAT_EMBEDDER` 으로 swap:
+    //   - `arctic` (운영 default 권장, 2026-05-17): candle + Snowflake/snowflake-arctic-embed-l-v2.0
+    //          (XLM-RoBERTa-large 기반, 1024-dim, max_length 8192, ~1.1GB safetensors).
+    //          MTEB 다국어 65.8 + 한국어 매우 우수 + 긴 자료 영역 자연 (Library Phase 1 영역 정공).
+    //          첫 실행 시 자동 다운로드 (HuggingFace Hub, hf-hub 캐싱).
+    //   - `e5`: 옛 영역 — candle + intfloat/multilingual-e5-small (384-dim, max_length 512, ~470MB).
+    //          가벼운 환경 / 옛 데이터 호환 영역.
+    //   - `stub` (CI / dev): FNV-1a hash 결정론, 의미 검색 X. 모델 다운로드 없이 wiring 검증 + 단위 테스트.
+    // 추후 cloud provider (Gemini / OpenAI / Voyage 등) 추가 시 같은 env 패턴.
+    let embedder_kind = std::env::var("FIREBAT_EMBEDDER").unwrap_or_else(|_| "arctic".to_string());
     let embedder: Arc<dyn IEmbedderPort> = match embedder_kind.as_str() {
+        "arctic" => {
+            tracing::info!(
+                "Embedder: Arctic Embed L v2.0 (Snowflake/snowflake-arctic-embed-l-v2.0, 1024-dim, max_length 8192, 첫 호출 시 ~1.1GB 다운로드)"
+            );
+            Arc::new(ArcticLocalEmbedderAdapter::new())
+        }
         "e5" => {
             tracing::info!(
                 "Embedder: E5 local (intfloat/multilingual-e5-small, 384-dim, 첫 호출 시 모델 다운로드)"
@@ -175,7 +180,7 @@ async fn main() -> Result<()> {
             Arc::new(E5LocalEmbedderAdapter::new())
         }
         _ => {
-            tracing::info!("Embedder: stub (FNV-1a hash, 의미 검색 X — env FIREBAT_EMBEDDER=e5 으로 활성)");
+            tracing::info!("Embedder: stub (FNV-1a hash, 의미 검색 X — env FIREBAT_EMBEDDER=arctic 으로 활성)");
             Arc::new(StubEmbedderAdapter::new())
         }
     };

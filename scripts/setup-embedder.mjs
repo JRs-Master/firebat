@@ -25,7 +25,10 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-const MODEL_ID = 'intfloat/multilingual-e5-small';
+// 2026-05-17 default 영역 변경 — Snowflake Arctic Embed L v2.0 (XLM-RoBERTa-large 기반).
+// 1024-dim, max_length 8192, ~1.1GB. MTEB 다국어 65.8 + 한국어 매우 우수.
+// 옛 default = intfloat/multilingual-e5-small (384-dim, 512-len, ~470MB) — FIREBAT_EMBEDDER_MODEL_ID env 박은 영역 override.
+const MODEL_ID = process.env.FIREBAT_EMBEDDER_MODEL_ID || 'Snowflake/snowflake-arctic-embed-l-v2.0';
 const CACHE_DIR = join(homedir(), '.cache/huggingface/hub', `models--${MODEL_ID.replace(/\//g, '--')}`);
 
 // Firebat self-contained — venv 도 source root 안 생성.
@@ -49,11 +52,11 @@ if (process.env.FIREBAT_EMBEDDER === 'stub') {
 
 // 이미 cache 존재하면 skip (매 npm install 시점 부담 0)
 if (existsSync(CACHE_DIR)) {
-  console.log(`[firebat-setup] E5 cache 이미 존재 — skip (${CACHE_DIR})`);
+  console.log(`[firebat-setup] 임베딩 cache 이미 존재 — skip (${CACHE_DIR})`);
   process.exit(0);
 }
 
-console.log(`[firebat-setup] E5 임베딩 모델 prefetch 시작 (~470MB)...`);
+console.log(`[firebat-setup] 임베딩 임베딩 모델 prefetch 시작 (~470MB)...`);
 
 function check(cmd) {
   const r = spawnSync('sh', ['-c', cmd], { stdio: 'ignore' });
@@ -61,7 +64,7 @@ function check(cmd) {
 }
 
 if (!check('python3 --version')) {
-  console.warn('[firebat-setup] python3 미설치 — E5 prefetch skip. 첫 채팅 시점 lazy 다운로드 폴백.');
+  console.warn('[firebat-setup] python3 미설치 — prefetch skip. 첫 채팅 시점 lazy 다운로드 폴백.');
   process.exit(0);
 }
 
@@ -88,7 +91,7 @@ if (check('hf --version')) {
     // huggingface_hub 0.30+ 는 새 cli `hf` 만 설치 (옛 huggingface-cli deprecated).
     cli = existsSync(VENV_HF) ? VENV_HF : VENV_HF_CLI_LEGACY;
   } catch (e) {
-    console.warn(`[firebat-setup] venv 생성 실패 — E5 prefetch skip. 첫 채팅 시점 lazy 다운로드 폴백.`);
+    console.warn(`[firebat-setup] venv 생성 실패 — prefetch skip. 첫 채팅 시점 lazy 다운로드 폴백.`);
     console.warn(`  원인: ${e.message}`);
     console.warn(`  해결: sudo apt install python3-venv`);
     console.warn(`        또는: pipx install huggingface_hub (PATH 의 hf cli 자동 등록)`);
@@ -99,9 +102,9 @@ if (check('hf --version')) {
 // 모델 다운로드
 try {
   execSync(`"${cli}" download ${MODEL_ID}`, { stdio: 'inherit' });
-  console.log(`[firebat-setup] E5 모델 prefetch 완료 — ${CACHE_DIR}`);
+  console.log(`[firebat-setup] 임베딩 모델 prefetch 완료 — ${CACHE_DIR}`);
 } catch (e) {
-  console.warn(`[firebat-setup] E5 모델 다운로드 실패 — 첫 채팅 시점 lazy 다운로드 폴백.`);
+  console.warn(`[firebat-setup] 임베딩 모델 다운로드 실패 — 첫 채팅 시점 lazy 다운로드 폴백.`);
   console.warn(`  원인: ${e.message}`);
   process.exit(0);
 }
