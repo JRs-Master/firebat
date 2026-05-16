@@ -6,14 +6,18 @@
  * 다운로드 대상: `intfloat/multilingual-e5-small` (~470MB)
  * 캐시 경로: `~/.cache/huggingface/hub/` (Rust hf-hub crate 와 100% 호환)
  *
- * 의존: Python 3 + `huggingface_hub` 패키지. Vultr 같은 서버 환경은 Python 박혀있음
- * (sysmod yfinance / kma-weather / 등 의존).
+ * 의존: Python 3 + `huggingface_hub` 패키지.
+ *
+ * Python 환경 자동 검출 순서 (PEP 668 정공):
+ *  1. 시스템 PATH 의 `huggingface-cli` (pipx install / system install 사용자 영역)
+ *  2. 옛 venv (`~/.firebat-venv/bin/huggingface-cli`)
+ *  3. venv 자동 생성 + `huggingface_hub` 설치
  *
  * 실패 graceful — npm install 차단 0. fail 시 첫 채팅 시점 lazy 다운로드 폴백.
  *
  * skip 옵션:
- *   - 환경 변수 `FIREBAT_SKIP_EMBEDDER_PREFETCH=1` 박혀있으면 skip (CI / dev 환경 용)
- *   - 환경 변수 `FIREBAT_EMBEDDER=stub` 박혀있으면 skip (stub embedder 사용 시)
+ *   - `FIREBAT_SKIP_EMBEDDER_PREFETCH=1` — CI / dev 환경
+ *   - `FIREBAT_EMBEDDER=stub` — stub embedder 사용 시
  */
 
 import { execSync, spawnSync } from 'node:child_process';
@@ -23,6 +27,8 @@ import { join } from 'node:path';
 
 const MODEL_ID = 'intfloat/multilingual-e5-small';
 const CACHE_DIR = join(homedir(), '.cache/huggingface/hub', `models--${MODEL_ID.replace(/\//g, '--')}`);
+const VENV_DIR = join(homedir(), '.firebat-venv');
+const VENV_HF_CLI = join(VENV_DIR, 'bin', 'huggingface-cli');
 
 if (process.env.FIREBAT_SKIP_EMBEDDER_PREFETCH === '1') {
   console.log('[firebat-setup] FIREBAT_SKIP_EMBEDDER_PREFETCH=1 — skip');
@@ -41,7 +47,6 @@ if (existsSync(CACHE_DIR)) {
 
 console.log(`[firebat-setup] E5 임베딩 모델 prefetch 시작 (~470MB)...`);
 
-// Python 3 + huggingface_hub 패키지 존재 확인
 function check(cmd) {
   const r = spawnSync('sh', ['-c', cmd], { stdio: 'ignore' });
   return r.status === 0;
@@ -52,27 +57,36 @@ if (!check('python3 --version')) {
   process.exit(0);
 }
 
-if (!check('python3 -c "import huggingface_hub"')) {
-  console.log('[firebat-setup] huggingface_hub 패키지 설치 중...');
+// huggingface-cli 검출 경로 (PEP 668 정공):
+//  1. 시스템 PATH (pipx install 또는 system install 사용자 영역)
+//  2. 옛 venv (~/.firebat-venv)
+//  3. venv 자동 생성 + huggingface_hub 설치
+let cli = null;
+if (check('huggingface-cli --version')) {
+  cli = 'huggingface-cli';
+  console.log('[firebat-setup] 시스템 huggingface-cli 사용');
+} else if (existsSync(VENV_HF_CLI)) {
+  cli = VENV_HF_CLI;
+  console.log(`[firebat-setup] 옛 venv huggingface-cli 사용 (${VENV_HF_CLI})`);
+} else {
+  console.log(`[firebat-setup] venv 생성 + huggingface_hub 설치 (${VENV_DIR})...`);
   try {
-    // root user 면 --user 박지 X, 그 외 --user 박음 (graceful detection)
-    const userFlag = process.getuid && process.getuid() === 0 ? '' : '--user';
-    execSync(`pip3 install --quiet ${userFlag} huggingface_hub`, { stdio: 'inherit' });
+    // python3-venv 패키지 필요 (Debian/Ubuntu) — apt install python3-venv 박혀있어야.
+    execSync(`python3 -m venv "${VENV_DIR}"`, { stdio: 'inherit' });
+    execSync(`"${VENV_DIR}/bin/pip" install --quiet huggingface_hub`, { stdio: 'inherit' });
+    cli = VENV_HF_CLI;
   } catch (e) {
-    console.warn(`[firebat-setup] huggingface_hub 설치 실패 — E5 prefetch skip. 첫 채팅 시점 lazy 다운로드 폴백.`);
+    console.warn(`[firebat-setup] venv 생성 실패 — E5 prefetch skip. 첫 채팅 시점 lazy 다운로드 폴백.`);
     console.warn(`  원인: ${e.message}`);
+    console.warn(`  해결: sudo apt install python3-venv`);
+    console.warn(`        또는: pipx install huggingface_hub (PATH 안 huggingface-cli 박힘)`);
     process.exit(0);
   }
 }
 
-// 모델 다운로드 — `huggingface-cli download` 또는 `python -m huggingface_hub.commands.huggingface_cli download`
+// 모델 다운로드
 try {
-  // 표준 cli 우선 시도
-  let cliPath = 'huggingface-cli';
-  if (!check('huggingface-cli --help')) {
-    cliPath = 'python3 -m huggingface_hub.commands.huggingface_cli';
-  }
-  execSync(`${cliPath} download ${MODEL_ID}`, { stdio: 'inherit' });
+  execSync(`"${cli}" download ${MODEL_ID}`, { stdio: 'inherit' });
   console.log(`[firebat-setup] E5 모델 prefetch 완료 — ${CACHE_DIR}`);
 } catch (e) {
   console.warn(`[firebat-setup] E5 모델 다운로드 실패 — 첫 채팅 시점 lazy 다운로드 폴백.`);
