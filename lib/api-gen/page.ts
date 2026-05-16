@@ -26,13 +26,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const pageClient = createClient(PageService, transport);
 
 export async function list(): Promise<RpcResult<PageListItemPb[]>> {
   try {
       const response = await pageClient.list({});
-      return { ok: true, data: response.items };
+      return { ok: true, data: unBigInt(response.items) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -41,7 +42,7 @@ export async function list(): Promise<RpcResult<PageListItemPb[]>> {
 export async function search(args: MessageInitShape<typeof PageSearchRequestSchema>): Promise<RpcResult<PageListItemPb[]>> {
   try {
       const response = await pageClient.search(args ?? {});
-      return { ok: true, data: response.items };
+      return { ok: true, data: unBigInt(response.items) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -50,7 +51,7 @@ export async function search(args: MessageInitShape<typeof PageSearchRequestSche
 export async function get(args: MessageInitShape<typeof PageGetRequestSchema>): Promise<RpcResult<PageRecordPb>> {
   try {
       const response = await pageClient.get(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -59,7 +60,7 @@ export async function get(args: MessageInitShape<typeof PageGetRequestSchema>): 
 export async function save(args: MessageInitShape<typeof PageSaveRequestSchema>): Promise<RpcResult<PageSaveResultPb>> {
   try {
       const response = await pageClient.save(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -86,7 +87,7 @@ export async function rename(args: MessageInitShape<typeof PageRenameRequestSche
 export async function getRedirect(args: MessageInitShape<typeof PageGetRedirectRequestSchema>): Promise<RpcResult<string | null>> {
   try {
       const response = await pageClient.getRedirect(args ?? {});
-      return { ok: true, data: response.present ? response.value : null };
+      return { ok: true, data: response.present ? unBigInt(response.value) : null };
   } catch (err) {
     return toRpcError(err);
   }
@@ -95,7 +96,7 @@ export async function getRedirect(args: MessageInitShape<typeof PageGetRedirectR
 export async function listStatic(): Promise<RpcResult<string[]>> {
   try {
       const response = await pageClient.listStatic({});
-      return { ok: true, data: response.slugs };
+      return { ok: true, data: unBigInt(response.slugs) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -104,7 +105,7 @@ export async function listStatic(): Promise<RpcResult<string[]>> {
 export async function findMediaUsage(args: MessageInitShape<typeof PageFindMediaUsageRequestSchema>): Promise<RpcResult<MediaUsageEntryPb[]>> {
   try {
       const response = await pageClient.findMediaUsage(args ?? {});
-      return { ok: true, data: response.entries };
+      return { ok: true, data: unBigInt(response.entries) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -122,7 +123,7 @@ export async function setVisibility(args: MessageInitShape<typeof PageSetVisibil
 export async function verifyPassword(args: MessageInitShape<typeof PageVerifyPasswordRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await pageClient.verifyPassword(args ?? {});
-      return { ok: true, data: response.valid };
+      return { ok: true, data: unBigInt(response.valid) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -131,7 +132,7 @@ export async function verifyPassword(args: MessageInitShape<typeof PageVerifyPas
 export async function findRelated(args: MessageInitShape<typeof PageFindRelatedRequestSchema>): Promise<RpcResult<PageListItemPb[]>> {
   try {
       const response = await pageClient.findRelated(args ?? {});
-      return { ok: true, data: response.items };
+      return { ok: true, data: unBigInt(response.items) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -140,7 +141,7 @@ export async function findRelated(args: MessageInitShape<typeof PageFindRelatedR
 export async function listAllTags(): Promise<RpcResult<TagSummaryPb[]>> {
   try {
       const response = await pageClient.listAllTags({});
-      return { ok: true, data: response.tags };
+      return { ok: true, data: unBigInt(response.tags) };
   } catch (err) {
     return toRpcError(err);
   }

@@ -21,13 +21,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const episodicClient = createClient(EpisodicService, transport);
 
 export async function saveEvent(args: MessageInitShape<typeof EpisodicSaveEventRequestSchema>): Promise<RpcResult<EpisodicSaveEventResponse>> {
   try {
       const response = await episodicClient.saveEvent(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -108,7 +109,7 @@ export async function unlinkEntity(args: MessageInitShape<typeof EpisodicUnlinkE
 export async function cleanupExpired(): Promise<RpcResult<bigint>> {
   try {
       const response = await episodicClient.cleanupExpired({});
-      return { ok: true, data: response.cleaned };
+      return { ok: true, data: unBigInt(response.cleaned) };
   } catch (err) {
     return toRpcError(err);
   }

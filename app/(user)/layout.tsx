@@ -13,7 +13,7 @@ import { CmsAdSlot } from './cms-ad-slot';
 import { CmsReadingProgress } from './cms-reading-progress';
 import { CmsSidebar } from './cms-sidebar';
 import { BASE_URL } from '../../lib/base-url';
-import { tokensToCss } from '../../lib/design-tokens';
+import { tokensToCss, mergeTokens } from '../../lib/design-tokens';
 import { headers } from 'next/headers';
 import type { LayoutMode } from '../../lib/cms-layout';
 import { parsePageRecord } from '../../lib/util/page-pb-convert';
@@ -57,7 +57,9 @@ export default async function UserLayout({ children }: { children: React.ReactNo
   const layoutMode: LayoutMode = pageOverrides.layoutMode ?? seo.layout?.mode;
   const pageContentMaxWidth = pageOverrides.contentMaxWidth;
   // 사용자 설정 design tokens → :root CSS var 로 inject. globals.css 의 default 를 override.
-  const themeCss = `:root { ${tokensToCss(seo.theme)} }`;
+  // seo.theme 가 undefined 또는 partial 일 때 mergeTokens 가 default 와 deep merge 박은 후 전달.
+  // 옛 raw seo.theme 직접 전달 시 typography 영역 undefined 박혀 SSR error (2026-05-16 발견).
+  const themeCss = `:root { ${tokensToCss(mergeTokens(seo.theme))} }`;
 
   // JSON-LD 구조화 데이터 (WebSite + Organization)
   const jsonLd = seo.jsonLdEnabled ? {

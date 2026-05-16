@@ -23,6 +23,7 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const toolClient = createClient(ToolService, transport);
 
@@ -47,7 +48,7 @@ export async function registerMany(args: MessageInitShape<typeof ToolRegisterMan
 export async function unregister(args: MessageInitShape<typeof ToolUnregisterRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await toolClient.unregister(args ?? {});
-      return { ok: true, data: response.removed };
+      return { ok: true, data: unBigInt(response.removed) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -101,7 +102,7 @@ export async function buildMcpDescriptions(args: MessageInitShape<typeof ToolBui
 export async function getStats(): Promise<RpcResult<ToolGetStatsResponse>> {
   try {
       const response = await toolClient.getStats({});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }

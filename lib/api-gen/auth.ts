@@ -26,13 +26,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const authClient = createClient(AuthService, transport);
 
 export async function login(args: MessageInitShape<typeof AuthLoginRequestSchema>): Promise<RpcResult<LoginResponsePb>> {
   try {
       const response = await authClient.login(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -41,7 +42,7 @@ export async function login(args: MessageInitShape<typeof AuthLoginRequestSchema
 export async function logout(args: MessageInitShape<typeof AuthLogoutRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await authClient.logout(args ?? {});
-      return { ok: true, data: response.ok };
+      return { ok: true, data: unBigInt(response.ok) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -50,7 +51,7 @@ export async function logout(args: MessageInitShape<typeof AuthLogoutRequestSche
 export async function validateSession(args: MessageInitShape<typeof AuthValidateSessionRequestSchema>): Promise<RpcResult<AuthValidateSessionResponse>> {
   try {
       const response = await authClient.validateSession(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -59,7 +60,7 @@ export async function validateSession(args: MessageInitShape<typeof AuthValidate
 export async function validateToken(args: MessageInitShape<typeof AuthValidateTokenRequestSchema>): Promise<RpcResult<AuthValidateTokenResponse>> {
   try {
       const response = await authClient.validateToken(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -68,7 +69,7 @@ export async function validateToken(args: MessageInitShape<typeof AuthValidateTo
 export async function generateApiToken(args: MessageInitShape<typeof AuthGenerateApiTokenRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await authClient.generateApiToken(args ?? {});
-      return { ok: true, data: response.token };
+      return { ok: true, data: unBigInt(response.token) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -77,7 +78,7 @@ export async function generateApiToken(args: MessageInitShape<typeof AuthGenerat
 export async function validateApiToken(args: MessageInitShape<typeof AuthValidateApiTokenRequestSchema>): Promise<RpcResult<AuthValidateApiTokenResponse>> {
   try {
       const response = await authClient.validateApiToken(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -86,7 +87,7 @@ export async function validateApiToken(args: MessageInitShape<typeof AuthValidat
 export async function revokeApiTokens(): Promise<RpcResult<bigint>> {
   try {
       const response = await authClient.revokeApiTokens({});
-      return { ok: true, data: response.revokedCount };
+      return { ok: true, data: unBigInt(response.revokedCount) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -95,7 +96,7 @@ export async function revokeApiTokens(): Promise<RpcResult<bigint>> {
 export async function getApiTokenInfo(): Promise<RpcResult<ApiTokenInfoPb>> {
   try {
       const response = await authClient.getApiTokenInfo({});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -104,7 +105,7 @@ export async function getApiTokenInfo(): Promise<RpcResult<ApiTokenInfoPb>> {
 export async function getAdminCredentials(): Promise<RpcResult<AdminCredentialsPb>> {
   try {
       const response = await authClient.getAdminCredentials({});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -122,7 +123,7 @@ export async function setAdminCredentials(args: MessageInitShape<typeof AuthSetA
 export async function isAdminSetup(): Promise<RpcResult<boolean>> {
   try {
       const response = await authClient.isAdminSetup({});
-      return { ok: true, data: response.isSetup };
+      return { ok: true, data: unBigInt(response.isSetup) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -131,7 +132,7 @@ export async function isAdminSetup(): Promise<RpcResult<boolean>> {
 export async function verifyAdminPassword(args: MessageInitShape<typeof AuthVerifyAdminPasswordRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await authClient.verifyAdminPassword(args ?? {});
-      return { ok: true, data: response.valid };
+      return { ok: true, data: unBigInt(response.valid) };
   } catch (err) {
     return toRpcError(err);
   }

@@ -16,13 +16,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const costClient = createClient(CostService, transport);
 
 export async function getStats(args: MessageInitShape<typeof CostGetStatsRequestSchema>): Promise<RpcResult<CostGetStatsResponse>> {
   try {
       const response = await costClient.getStats(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -40,7 +41,7 @@ export async function flush(): Promise<RpcResult<void>> {
 export async function getBudget(): Promise<RpcResult<CostGetBudgetResponse>> {
   try {
       const response = await costClient.getBudget({});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -58,7 +59,7 @@ export async function setBudget(args: MessageInitShape<typeof CostSetBudgetReque
 export async function checkBudget(): Promise<RpcResult<CostCheckBudgetResponse>> {
   try {
       const response = await costClient.checkBudget({});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }

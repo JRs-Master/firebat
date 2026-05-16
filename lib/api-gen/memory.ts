@@ -14,13 +14,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const memoryClient = createClient(MemoryService, transport);
 
 export async function getIndex(): Promise<RpcResult<string>> {
   try {
       const response = await memoryClient.getIndex({});
-      return { ok: true, data: response.content };
+      return { ok: true, data: unBigInt(response.content) };
   } catch (err) {
     return toRpcError(err);
   }

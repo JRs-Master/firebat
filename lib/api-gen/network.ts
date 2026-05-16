@@ -12,13 +12,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const networkClient = createClient(NetworkService, transport);
 
 export async function fetch(args: MessageInitShape<typeof NetworkFetchRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await networkClient.fetch(args ?? {});
-      return { ok: true, data: response.responseJson };
+      return { ok: true, data: unBigInt(response.responseJson) };
   } catch (err) {
     return toRpcError(err);
   }

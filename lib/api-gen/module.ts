@@ -24,13 +24,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const moduleClient = createClient(ModuleService, transport);
 
 export async function run(args: MessageInitShape<typeof ModuleRunRequestSchema>): Promise<RpcResult<ModuleOutputPb>> {
   try {
       const response = await moduleClient.run(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -39,7 +40,7 @@ export async function run(args: MessageInitShape<typeof ModuleRunRequestSchema>)
 export async function listSystem(): Promise<RpcResult<ModuleEntryPb[]>> {
   try {
       const response = await moduleClient.listSystem({});
-      return { ok: true, data: response.entries };
+      return { ok: true, data: unBigInt(response.entries) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -48,7 +49,7 @@ export async function listSystem(): Promise<RpcResult<ModuleEntryPb[]>> {
 export async function listUser(): Promise<RpcResult<ModuleEntryPb[]>> {
   try {
       const response = await moduleClient.listUser({});
-      return { ok: true, data: response.entries };
+      return { ok: true, data: unBigInt(response.entries) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -93,7 +94,7 @@ export async function setSettings(args: MessageInitShape<typeof ModuleSetSetting
 export async function isEnabled(args: MessageInitShape<typeof ModuleIsEnabledRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await moduleClient.isEnabled(args ?? {});
-      return { ok: true, data: response.enabled };
+      return { ok: true, data: unBigInt(response.enabled) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -129,7 +130,7 @@ export async function getLang(args: MessageInitShape<typeof ModuleGetLangRequest
 export async function getKakaoMapJsKey(): Promise<RpcResult<string>> {
   try {
       const response = await moduleClient.getKakaoMapJsKey({});
-      return { ok: true, data: response.key };
+      return { ok: true, data: unBigInt(response.key) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -138,7 +139,7 @@ export async function getKakaoMapJsKey(): Promise<RpcResult<string>> {
 export async function installPackages(args: MessageInitShape<typeof ModuleInstallPackagesRequestSchema>): Promise<RpcResult<string[]>> {
   try {
       const response = await moduleClient.installPackages(args ?? {});
-      return { ok: true, data: response.jobIds };
+      return { ok: true, data: unBigInt(response.jobIds) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -147,7 +148,7 @@ export async function installPackages(args: MessageInitShape<typeof ModuleInstal
 export async function getPackageStatus(args: MessageInitShape<typeof ModuleGetPackageStatusRequestSchema>): Promise<RpcResult<PackageStatusPb[]>> {
   try {
       const response = await moduleClient.getPackageStatus(args ?? {});
-      return { ok: true, data: response.packages };
+      return { ok: true, data: unBigInt(response.packages) };
   } catch (err) {
     return toRpcError(err);
   }

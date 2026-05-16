@@ -30,13 +30,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const mediaClient = createClient(MediaService, transport);
 
 export async function read(args: MessageInitShape<typeof MediaReadRequestSchema>): Promise<RpcResult<MediaReadPb>> {
   try {
       const response = await mediaClient.read(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -45,7 +46,7 @@ export async function read(args: MessageInitShape<typeof MediaReadRequestSchema>
 export async function list(args: MessageInitShape<typeof MediaListRequestSchema>): Promise<RpcResult<MediaListResultPb>> {
   try {
       const response = await mediaClient.list(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -63,7 +64,7 @@ export async function remove(args: MessageInitShape<typeof MediaRemoveRequestSch
 export async function isReady(args: MessageInitShape<typeof MediaIsReadyRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await mediaClient.isReady(args ?? {});
-      return { ok: true, data: response.ready };
+      return { ok: true, data: unBigInt(response.ready) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -72,7 +73,7 @@ export async function isReady(args: MessageInitShape<typeof MediaIsReadyRequestS
 export async function startGeneration(args: MessageInitShape<typeof MediaStartGenerationRequestSchema>): Promise<RpcResult<StartGenerationPb>> {
   try {
       const response = await mediaClient.startGeneration(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -81,7 +82,7 @@ export async function startGeneration(args: MessageInitShape<typeof MediaStartGe
 export async function generate(args: MessageInitShape<typeof MediaGenerateRequestSchema>): Promise<RpcResult<MediaGenerateResponse>> {
   try {
       const response = await mediaClient.generate(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -90,7 +91,7 @@ export async function generate(args: MessageInitShape<typeof MediaGenerateReques
 export async function regenerate(args: MessageInitShape<typeof MediaRegenerateRequestSchema>): Promise<RpcResult<MediaRegenerateResponse>> {
   try {
       const response = await mediaClient.regenerate(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -99,7 +100,7 @@ export async function regenerate(args: MessageInitShape<typeof MediaRegenerateRe
 export async function save(args: MessageInitShape<typeof MediaSaveRequestSchema>): Promise<RpcResult<MediaSaveResultPb>> {
   try {
       const response = await mediaClient.save(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -108,7 +109,7 @@ export async function save(args: MessageInitShape<typeof MediaSaveRequestSchema>
 export async function getImageModel(): Promise<RpcResult<string>> {
   try {
       const response = await mediaClient.getImageModel({});
-      return { ok: true, data: response.model };
+      return { ok: true, data: unBigInt(response.model) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -126,7 +127,7 @@ export async function setImageModel(args: MessageInitShape<typeof MediaSetImageM
 export async function getAvailableImageModels(): Promise<RpcResult<ImageModelPb[]>> {
   try {
       const response = await mediaClient.getAvailableImageModels({});
-      return { ok: true, data: response.models };
+      return { ok: true, data: unBigInt(response.models) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -135,7 +136,7 @@ export async function getAvailableImageModels(): Promise<RpcResult<ImageModelPb[
 export async function getImageDefaultSize(): Promise<RpcResult<string | null>> {
   try {
       const response = await mediaClient.getImageDefaultSize({});
-      return { ok: true, data: response.present ? response.size : null };
+      return { ok: true, data: response.present ? unBigInt(response.size) : null };
   } catch (err) {
     return toRpcError(err);
   }
@@ -153,7 +154,7 @@ export async function setImageDefaultSize(args: MessageInitShape<typeof MediaSet
 export async function getImageDefaultQuality(): Promise<RpcResult<string | null>> {
   try {
       const response = await mediaClient.getImageDefaultQuality({});
-      return { ok: true, data: response.present ? response.quality : null };
+      return { ok: true, data: response.present ? unBigInt(response.quality) : null };
   } catch (err) {
     return toRpcError(err);
   }
@@ -189,7 +190,7 @@ export async function saveTempAttachment(args: MessageInitShape<typeof MediaSave
 export async function cleanupOldAttachments(): Promise<RpcResult<bigint>> {
   try {
       const response = await mediaClient.cleanupOldAttachments({});
-      return { ok: true, data: response.deletedCount };
+      return { ok: true, data: unBigInt(response.deletedCount) };
   } catch (err) {
     return toRpcError(err);
   }

@@ -19,13 +19,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const projectClient = createClient(ProjectService, transport);
 
 export async function scan(): Promise<RpcResult<ProjectEntryPb[]>> {
   try {
       const response = await projectClient.scan({});
-      return { ok: true, data: response.projects };
+      return { ok: true, data: unBigInt(response.projects) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -43,7 +44,7 @@ export async function setVisibility(args: MessageInitShape<typeof ProjectSetVisi
 export async function getVisibility(args: MessageInitShape<typeof ProjectGetVisibilityRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await projectClient.getVisibility(args ?? {});
-      return { ok: true, data: response.visibility };
+      return { ok: true, data: unBigInt(response.visibility) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -70,7 +71,7 @@ export async function setConfig(args: MessageInitShape<typeof ProjectSetConfigRe
 export async function verifyPassword(args: MessageInitShape<typeof ProjectVerifyPasswordRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await projectClient.verifyPassword(args ?? {});
-      return { ok: true, data: response.valid };
+      return { ok: true, data: unBigInt(response.valid) };
   } catch (err) {
     return toRpcError(err);
   }

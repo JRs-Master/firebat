@@ -237,6 +237,8 @@ function generateFunctionBody(rpc, messages, clientVar, serviceName) {
   const unwrap = unwrapMeta(rpc.responseType, messages);
   const schemaImport = req.schemaImport;
 
+  // 매 RPC 응답을 `unBigInt` 통과 — protobuf-es 의 i64 → bigint 출력이 NextResponse.json 의
+  // JSON.stringify 에서 throw 박는 영역 자동 차단. number 변환은 호출 site 영역 0.
   let unwrapLogic;
   if (unwrap.kind === 'void') {
     unwrapLogic = `      await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: undefined };`;
@@ -245,15 +247,15 @@ function generateFunctionBody(rpc, messages, clientVar, serviceName) {
   } else if (unwrap.kind === 'optionalString' || unwrap.kind === 'optionalStringMessage') {
     unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response.present ? response.value : null };`;
   } else if (unwrap.kind === 'optionalStringNamed') {
-    unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response.present ? response.${unwrap.fieldName} : null };`;
+    unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response.present ? unBigInt(response.${unwrap.fieldName}) : null };`;
   } else if (
     unwrap.kind === 'singleField' ||
     unwrap.kind === 'singleFieldArray' ||
     unwrap.kind === 'singleFieldArrayMessage'
   ) {
-    unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response.${unwrap.fieldName} };`;
+    unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: unBigInt(response.${unwrap.fieldName}) };`;
   } else {
-    unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: response };`;
+    unwrapLogic = `      const response = await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: unBigInt(response) };`;
   }
 
   return {
@@ -330,6 +332,7 @@ function generateServiceFile(svc, messages, aliases) {
   lines.push(`import { transport } from './_transport';`);
   lines.push(`import { createClient } from '@connectrpc/connect';`);
   lines.push(`import { type RpcResult, toRpcError } from './types';`);
+  lines.push(`import { unBigInt } from './_unbigint';`);
   lines.push('');
   lines.push(`const ${clientVar} = createClient(${svc.name}, transport);`);
   lines.push('');
@@ -407,6 +410,7 @@ function main() {
   // 옛 service 파일 정리 (이번 codegen 산출 외).
   const expectedFiles = new Set(parsed.services.map(s => `${serviceFileName(s.name)}.ts`));
   expectedFiles.add('_transport.ts');
+  expectedFiles.add('_unbigint.ts');
   expectedFiles.add('types.ts');
   expectedFiles.add('index.ts');
   for (const f of readdirSync(OUTPUT_DIR)) {

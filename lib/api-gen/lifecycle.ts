@@ -14,13 +14,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const lifecycleClient = createClient(LifecycleService, transport);
 
 export async function health(): Promise<RpcResult<HealthInfo>> {
   try {
       const response = await lifecycleClient.health({});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }

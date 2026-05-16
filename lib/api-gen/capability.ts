@@ -18,6 +18,7 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const capabilityClient = createClient(CapabilityService, transport);
 
@@ -42,7 +43,7 @@ export async function register(args: MessageInitShape<typeof CapabilityRegisterR
 export async function getProviders(args: MessageInitShape<typeof CapabilityGetProvidersRequestSchema>): Promise<RpcResult<CapabilityProviderPb[]>> {
   try {
       const response = await capabilityClient.getProviders(args ?? {});
-      return { ok: true, data: response.providers };
+      return { ok: true, data: unBigInt(response.providers) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -51,7 +52,7 @@ export async function getProviders(args: MessageInitShape<typeof CapabilityGetPr
 export async function listWithProviders(): Promise<RpcResult<CapabilitySummaryPb[]>> {
   try {
       const response = await capabilityClient.listWithProviders({});
-      return { ok: true, data: response.summaries };
+      return { ok: true, data: unBigInt(response.summaries) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -60,7 +61,7 @@ export async function listWithProviders(): Promise<RpcResult<CapabilitySummaryPb
 export async function resolve(args: MessageInitShape<typeof CapabilityResolveRequestSchema>): Promise<RpcResult<CapabilityProviderPb>> {
   try {
       const response = await capabilityClient.resolve(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -69,7 +70,7 @@ export async function resolve(args: MessageInitShape<typeof CapabilityResolveReq
 export async function getSettings(args: MessageInitShape<typeof CapabilityGetSettingsRequestSchema>): Promise<RpcResult<string[]>> {
   try {
       const response = await capabilityClient.getSettings(args ?? {});
-      return { ok: true, data: response.providers };
+      return { ok: true, data: unBigInt(response.providers) };
   } catch (err) {
     return toRpcError(err);
   }

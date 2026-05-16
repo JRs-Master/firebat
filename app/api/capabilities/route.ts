@@ -13,12 +13,8 @@ export const GET = withAuth(async () => {
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   }
-  // proto i64 (provider_count) 는 protobuf-es 에서 BigInt — NextResponse.json (JSON.stringify) 가 BigInt 직렬화 불가. Number 로 변환.
-  const capabilities = (res.data ?? []).map(c => ({
-    ...c,
-    providerCount: Number(c.providerCount),
-  }));
-  return NextResponse.json({ success: true, capabilities });
+  // proto i64 (provider_count) 는 codegen 의 unBigInt 가 자동 number 변환 — 호출 site 영역 0.
+  return NextResponse.json({ success: true, capabilities: res.data ?? [] });
 });
 
 /** POST /api/capabilities — 특정 capability의 provider 목록 + 설정 */

@@ -21,6 +21,7 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const scheduleClient = createClient(ScheduleService, transport);
 
@@ -54,7 +55,7 @@ export async function updateCron(args: MessageInitShape<typeof UpdateCronRequest
 export async function listCron(): Promise<RpcResult<CronJobPb[]>> {
   try {
       const response = await scheduleClient.listCron({});
-      return { ok: true, data: response.jobs };
+      return { ok: true, data: unBigInt(response.jobs) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -63,7 +64,7 @@ export async function listCron(): Promise<RpcResult<CronJobPb[]>> {
 export async function getLogs(args: MessageInitShape<typeof GetCronLogsRequestSchema>): Promise<RpcResult<CronLogEntryPb[]>> {
   try {
       const response = await scheduleClient.getLogs(args ?? {});
-      return { ok: true, data: response.entries };
+      return { ok: true, data: unBigInt(response.entries) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -81,7 +82,7 @@ export async function clearLogs(): Promise<RpcResult<void>> {
 export async function consumeNotifications(): Promise<RpcResult<CronNotificationPb[]>> {
   try {
       const response = await scheduleClient.consumeNotifications({});
-      return { ok: true, data: response.items };
+      return { ok: true, data: unBigInt(response.items) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -99,7 +100,7 @@ export async function runNow(args: MessageInitShape<typeof RunCronNowRequestSche
 export async function validatePipeline(args: MessageInitShape<typeof ValidatePipelineRequestSchema>): Promise<RpcResult<ValidatePipelineResultPb>> {
   try {
       const response = await scheduleClient.validatePipeline(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }

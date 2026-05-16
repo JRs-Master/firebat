@@ -13,13 +13,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const taskClient = createClient(TaskService, transport);
 
 export async function run(args: MessageInitShape<typeof TaskRunRequestSchema>): Promise<RpcResult<TaskRunResponse>> {
   try {
       const response = await taskClient.run(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }

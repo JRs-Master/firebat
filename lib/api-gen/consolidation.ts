@@ -15,13 +15,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const consolidationClient = createClient(ConsolidationService, transport);
 
 export async function askLlmText(args: MessageInitShape<typeof ConsolidationAskLlmTextRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await consolidationClient.askLlmText(args ?? {});
-      return { ok: true, data: response.text };
+      return { ok: true, data: unBigInt(response.text) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -48,7 +49,7 @@ export async function consolidateInactive(args: MessageInitShape<typeof Consolid
 export async function getMemoryStats(): Promise<RpcResult<MemoryStatsPb>> {
   try {
       const response = await consolidationClient.getMemoryStats({});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }

@@ -16,6 +16,7 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const mcpClient = createClient(McpService, transport);
 
@@ -49,7 +50,7 @@ export async function removeServer(args: MessageInitShape<typeof McpRemoveServer
 export async function listTools(args: MessageInitShape<typeof McpListToolsRequestSchema>): Promise<RpcResult<McpToolInfoPb[]>> {
   try {
       const response = await mcpClient.listTools(args ?? {});
-      return { ok: true, data: response.tools };
+      return { ok: true, data: unBigInt(response.tools) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -58,7 +59,7 @@ export async function listTools(args: MessageInitShape<typeof McpListToolsReques
 export async function listAllTools(): Promise<RpcResult<McpToolInfoPb[]>> {
   try {
       const response = await mcpClient.listAllTools({});
-      return { ok: true, data: response.tools };
+      return { ok: true, data: unBigInt(response.tools) };
   } catch (err) {
     return toRpcError(err);
   }

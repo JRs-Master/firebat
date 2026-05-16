@@ -14,6 +14,7 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const telegramClient = createClient(TelegramService, transport);
 
@@ -47,7 +48,7 @@ export async function getWebhookStatus(): Promise<RpcResult<unknown>> {
 export async function isOwner(args: MessageInitShape<typeof TelegramIsOwnerRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await telegramClient.isOwner(args ?? {});
-      return { ok: true, data: response.isOwner };
+      return { ok: true, data: unBigInt(response.isOwner) };
   } catch (err) {
     return toRpcError(err);
   }

@@ -17,13 +17,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const secretClient = createClient(SecretService, transport);
 
 export async function listUser(): Promise<RpcResult<string[]>> {
   try {
       const response = await secretClient.listUser({});
-      return { ok: true, data: response.names };
+      return { ok: true, data: unBigInt(response.names) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -41,7 +42,7 @@ export async function setUser(args: MessageInitShape<typeof SecretSetUserRequest
 export async function getUser(args: MessageInitShape<typeof SecretGetUserRequestSchema>): Promise<RpcResult<string | null>> {
   try {
       const response = await secretClient.getUser(args ?? {});
-      return { ok: true, data: response.present ? response.value : null };
+      return { ok: true, data: response.present ? unBigInt(response.value) : null };
   } catch (err) {
     return toRpcError(err);
   }
@@ -59,7 +60,7 @@ export async function deleteUser(args: MessageInitShape<typeof SecretDeleteUserR
 export async function listUserModuleSecrets(): Promise<RpcResult<ModuleSecretEntryPb[]>> {
   try {
       const response = await secretClient.listUserModuleSecrets({});
-      return { ok: true, data: response.entries };
+      return { ok: true, data: unBigInt(response.entries) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -68,7 +69,7 @@ export async function listUserModuleSecrets(): Promise<RpcResult<ModuleSecretEnt
 export async function getSystem(args: MessageInitShape<typeof SecretGetSystemRequestSchema>): Promise<RpcResult<string | null>> {
   try {
       const response = await secretClient.getSystem(args ?? {});
-      return { ok: true, data: response.present ? response.value : null };
+      return { ok: true, data: response.present ? unBigInt(response.value) : null };
   } catch (err) {
     return toRpcError(err);
   }

@@ -29,13 +29,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const conversationClient = createClient(ConversationService, transport);
 
 export async function list(args: MessageInitShape<typeof ConversationListRequestSchema>): Promise<RpcResult<ConversationSummaryPb[]>> {
   try {
       const response = await conversationClient.list(args ?? {});
-      return { ok: true, data: response.items };
+      return { ok: true, data: unBigInt(response.items) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -44,7 +45,7 @@ export async function list(args: MessageInitShape<typeof ConversationListRequest
 export async function get(args: MessageInitShape<typeof ConversationGetRequestSchema>): Promise<RpcResult<ConversationGetResponse>> {
   try {
       const response = await conversationClient.get(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -71,7 +72,7 @@ export async function deleteConversation(args: MessageInitShape<typeof Conversat
 export async function isDeleted(args: MessageInitShape<typeof ConversationIsDeletedRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await conversationClient.isDeleted(args ?? {});
-      return { ok: true, data: response.isDeleted };
+      return { ok: true, data: unBigInt(response.isDeleted) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -80,7 +81,7 @@ export async function isDeleted(args: MessageInitShape<typeof ConversationIsDele
 export async function listDeleted(args: MessageInitShape<typeof ConversationListDeletedRequestSchema>): Promise<RpcResult<ConversationSummaryPb[]>> {
   try {
       const response = await conversationClient.listDeleted(args ?? {});
-      return { ok: true, data: response.items };
+      return { ok: true, data: unBigInt(response.items) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -107,7 +108,7 @@ export async function permanentDelete(args: MessageInitShape<typeof Conversation
 export async function searchHistory(args: MessageInitShape<typeof ConversationSearchHistoryRequestSchema>): Promise<RpcResult<HistorySearchMatchPb[]>> {
   try {
       const response = await conversationClient.searchHistory(args ?? {});
-      return { ok: true, data: response.matches };
+      return { ok: true, data: unBigInt(response.matches) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -116,7 +117,7 @@ export async function searchHistory(args: MessageInitShape<typeof ConversationSe
 export async function getCliSession(args: MessageInitShape<typeof ConversationGetCliSessionRequestSchema>): Promise<RpcResult<string | undefined>> {
   try {
       const response = await conversationClient.getCliSession(args ?? {});
-      return { ok: true, data: response.sessionId };
+      return { ok: true, data: unBigInt(response.sessionId) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -134,7 +135,7 @@ export async function setCliSession(args: MessageInitShape<typeof ConversationSe
 export async function createShare(args: MessageInitShape<typeof ConversationCreateShareRequestSchema>): Promise<RpcResult<ConversationCreateShareResponse>> {
   try {
       const response = await conversationClient.createShare(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -143,7 +144,7 @@ export async function createShare(args: MessageInitShape<typeof ConversationCrea
 export async function getShare(args: MessageInitShape<typeof ConversationGetShareRequestSchema>): Promise<RpcResult<ConversationGetShareResponse>> {
   try {
       const response = await conversationClient.getShare(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -152,7 +153,7 @@ export async function getShare(args: MessageInitShape<typeof ConversationGetShar
 export async function cleanupExpiredShares(): Promise<RpcResult<bigint>> {
   try {
       const response = await conversationClient.cleanupExpiredShares({});
-      return { ok: true, data: response.cleaned };
+      return { ok: true, data: unBigInt(response.cleaned) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -161,7 +162,7 @@ export async function cleanupExpiredShares(): Promise<RpcResult<bigint>> {
 export async function cleanupOldDeleted(): Promise<RpcResult<bigint>> {
   try {
       const response = await conversationClient.cleanupOldDeleted({});
-      return { ok: true, data: response.cleaned };
+      return { ok: true, data: unBigInt(response.cleaned) };
   } catch (err) {
     return toRpcError(err);
   }

@@ -23,13 +23,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const aiClient = createClient(AiService, transport);
 
 export async function process(args: MessageInitShape<typeof AiProcessRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await aiClient.process(args ?? {});
-      return { ok: true, data: response.text };
+      return { ok: true, data: unBigInt(response.text) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -47,7 +48,7 @@ export async function requestActionWithTools(args: MessageInitShape<typeof AiReq
 export async function codeAssist(args: MessageInitShape<typeof AiCodeAssistRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await aiClient.codeAssist(args ?? {});
-      return { ok: true, data: response.text };
+      return { ok: true, data: unBigInt(response.text) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -83,7 +84,7 @@ export async function spawnSubAgent(args: MessageInitShape<typeof AiSpawnSubAgen
 export async function isSubAgentEnabled(): Promise<RpcResult<boolean>> {
   try {
       const response = await aiClient.isSubAgentEnabled({});
-      return { ok: true, data: response.enabled };
+      return { ok: true, data: unBigInt(response.enabled) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -101,7 +102,7 @@ export async function setSubAgentEnabled(args: MessageInitShape<typeof AiSetSubA
 export async function createPending(args: MessageInitShape<typeof AiCreatePendingRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await aiClient.createPending(args ?? {});
-      return { ok: true, data: response.planId };
+      return { ok: true, data: unBigInt(response.planId) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -128,7 +129,7 @@ export async function consumePending(args: MessageInitShape<typeof AiConsumePend
 export async function rejectPending(args: MessageInitShape<typeof AiRejectPendingRequestSchema>): Promise<RpcResult<boolean>> {
   try {
       const response = await aiClient.rejectPending(args ?? {});
-      return { ok: true, data: response.had };
+      return { ok: true, data: unBigInt(response.had) };
   } catch (err) {
     return toRpcError(err);
   }

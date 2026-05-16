@@ -26,13 +26,14 @@ import { type MessageInitShape } from '@bufbuild/protobuf';
 import { transport } from './_transport';
 import { createClient } from '@connectrpc/connect';
 import { type RpcResult, toRpcError } from './types';
+import { unBigInt } from './_unbigint';
 
 const entityClient = createClient(EntityService, transport);
 
 export async function save(args: MessageInitShape<typeof EntitySaveRequestSchema>): Promise<RpcResult<EntitySaveResponse>> {
   try {
       const response = await entityClient.save(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -86,7 +87,7 @@ export async function search(args: MessageInitShape<typeof EntitySearchRequestSc
 export async function saveFact(args: MessageInitShape<typeof EntityFactSaveRequestSchema>): Promise<RpcResult<EntityFactSaveResponse>> {
   try {
       const response = await entityClient.saveFact(args ?? {});
-      return { ok: true, data: response };
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
@@ -149,7 +150,7 @@ export async function retrieveContext(args: MessageInitShape<typeof EntityRetrie
 export async function cleanupExpiredFacts(): Promise<RpcResult<bigint>> {
   try {
       const response = await entityClient.cleanupExpiredFacts({});
-      return { ok: true, data: response.cleaned };
+      return { ok: true, data: unBigInt(response.cleaned) };
   } catch (err) {
     return toRpcError(err);
   }
