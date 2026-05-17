@@ -480,8 +480,13 @@ impl ProcessSandboxAdapter {
         let display_name = pkg.display_name().to_string();
         let pkg_name = pkg.name.clone();
         let upgrade_flag = if upgrade { " --upgrade" } else { "" };
+        // upgrade 시점에는 version specifier 제거 — `yfinance==0.2.51` 그대로 두면 pip 가
+        // 명시 버전 0.2.51 다시 설치 + `--upgrade` 플래그 무용. display_name (specifier 제거된
+        // 순수 패키지명) 사용해야 pip 가 PyPI 최신 가져옴. 첫 install 은 사용자가 명시한 버전
+        // 고정 (config.json 의 의도 존중).
+        let install_target = if upgrade { display_name.clone() } else { pkg_name.clone() };
         let install_cmd = format!(
-            "{pip} install --target \"{target_arg}\"{upgrade_flag} {pkg_name} --quiet"
+            "{pip} install --target \"{target_arg}\"{upgrade_flag} {install_target} --quiet"
         );
 
         let job_id = format!("install-{display_name}");
