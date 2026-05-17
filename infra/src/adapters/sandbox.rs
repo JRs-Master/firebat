@@ -1053,6 +1053,27 @@ impl ProcessSandboxAdapter {
             }
         }
 
+        // 진단 — sysmod 호출 시작. input 의 action / 주요 key 만 박음 (sensitive value 안 노출).
+        // 사용자가 journalctl 박은 영역 안 어떤 sysmod 어떤 action 호출했는지 즉시 명시.
+        let module_name = module_dir
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?");
+        let input_action = input_data
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let input_keys: Vec<&str> = input_data
+            .as_object()
+            .map(|o| o.keys().map(|k| k.as_str()).collect())
+            .unwrap_or_default();
+        tracing::info!(
+            module = module_name,
+            action = input_action,
+            input_keys = ?input_keys,
+            "[sandbox] sysmod 호출 시작"
+        );
+
         let mut child = cmd.spawn().map_err(|e| format!("spawn 실패: {e}"))?;
 
         if let Some(mut stdin) = child.stdin.take() {
@@ -1097,7 +1118,24 @@ impl ProcessSandboxAdapter {
         }
 
         let exit_code = exit_status.code();
+        // 진단 — sysmod 응답 결과. exit_code / stdout/stderr size 명시.
+        // stderr 안 짧으면 preview 도 박음 (Python error / Node error 명시 진단).
+        tracing::info!(
+            module = module_name,
+            action = input_action,
+            exit_code = ?exit_code,
+            stdout_size = stdout_buf.len(),
+            stderr_size = stderr_buf.len(),
+            "[sandbox] sysmod 호출 종료"
+        );
         if !exit_status.success() {
+            tracing::warn!(
+                module = module_name,
+                action = input_action,
+                exit_code = ?exit_code,
+                stderr_preview = %stderr_buf.chars().take(300).collect::<String>(),
+                "[sandbox] sysmod 비정상 종료"
+            );
             // stderr 에 패키지 누락 관련 정보가 있으니 error 에 포함 (try_auto_install 매칭용)
             let combined_err = if !stderr_buf.is_empty() {
                 stderr_buf.clone()
