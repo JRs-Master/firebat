@@ -1130,10 +1130,11 @@ impl AiManager {
                 });
             }
 
-            // 중간 turn text — dedup 후 blocks 에 push (옛 TS 1:1).
-            if !last_text.is_empty() {
-                push_text_block_dedup(&mut blocks, &last_text);
-            }
+            // 중간 turn text push 폐기 — 옛 TS port 동작 (매 turn push) 안 = 사용자 화면 안
+            // 답변 N번 반복 issue (multi-turn 안 매 turn text 모두 박혀 보임). final turn (도구
+            // 호출 0 박힌 영역, L849-851) 안만 push 정공.
+            // 옛 동작 호환 필요 시 = 사용자 결정 영역 안 복구 가능.
+            let _ = &last_text;
 
             // prior_results 누적 — 다음 turn 의 toolExchanges 로 LLM 에 전달.
             // 학습 로그용 + Gemini thought_signature echo 용 — turn 별 entry 보존.
