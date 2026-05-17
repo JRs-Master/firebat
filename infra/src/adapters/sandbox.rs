@@ -61,6 +61,20 @@ impl PackageSpec {
         Some(Self { name, post_install })
     }
 
+    /// `==X.Y.Z` specifier 안 명시 버전 추출. 다른 specifier (>=, ~=, <=, 등) = None.
+    /// 사용자 의도 = 고정 버전. caller 가 두 버전 비교 안 업그레이드 가능 여부 결정.
+    fn required_version(&self) -> Option<String> {
+        let idx = self.name.find("==")?;
+        let rest = &self.name[idx + 2..];
+        // 같은 패키지 안 추가 specifier 박혀있을 가능성 (예: `pkg==1.0.0,<2.0`) — 첫 specifier 까지만.
+        for sep in [",", ";", " "] {
+            if let Some(end) = rest.find(sep) {
+                return Some(rest[..end].trim().to_string());
+            }
+        }
+        Some(rest.trim().to_string())
+    }
+
     /// pip install 시점 패키지 식별자에서 version specifier 제거 — `playwright==1.59.1` → `playwright`.
     /// StatusManager job id / 사용자 표시 메시지에서 사용.
     fn display_name(&self) -> &str {
@@ -358,6 +372,7 @@ impl ProcessSandboxAdapter {
         pip: &str,
         python_modules: &Path,
         upgrade: bool,
+        module_dir: &Path,
     ) -> Option<String> {
         let Some(status) = self.status.clone() else {
             return None;
@@ -397,6 +412,10 @@ impl ProcessSandboxAdapter {
         let status_bg = status.clone();
         let display_for_bg = display_name.clone();
         let job_id_bg = job_id.clone();
+        let python_modules_bg = python_modules.to_path_buf();
+        let module_dir_bg = module_dir.to_path_buf();
+        let pkg_name_bg = pkg.name.clone();
+        let upgrade_bg = upgrade;
         tokio::spawn(async move {
             let install_status = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
                 .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
@@ -448,6 +467,23 @@ impl ProcessSandboxAdapter {
                     return;
                 }
             }
+            // upgrade=true 박힌 영역 안 install 끝난 후 config.json 자동 갱신 — 새 디스크 버전
+            // 추출 + `packages` 배열 안 매칭 spec 의 명시 버전 정정. 다음 install 시점 옛 버전
+            // 다시 박히지 않도록.
+            if upgrade_bg {
+                if let Err(e) = Self::update_manifest_version(
+                    &module_dir_bg,
+                    &python_modules_bg,
+                    &pkg_name_bg,
+                    &display_for_bg,
+                ) {
+                    tracing::warn!(
+                        package = %display_for_bg,
+                        error = %e,
+                        "[install] config.json 자동 갱신 실패 — install 자체는 성공"
+                    );
+                }
+            }
             let done_msg = firebat_core::i18n::t(
                 "core.install.completed",
                 None,
@@ -460,6 +496,69 @@ impl ProcessSandboxAdapter {
         });
 
         Some(job_id)
+    }
+
+    /// config.json `packages` 배열 안 매칭 spec 의 `==` 명시 버전 갱신.
+    /// upgrade 박힌 후 디스크 안 새 버전 추출 + manifest 정정 → 다음 install 시점 새 버전 그대로.
+    /// pkg_name = config.json 원본 spec (`requests==2.32.3`) / display = 추출된 패키지명 (`requests`).
+    fn update_manifest_version(
+        module_dir: &Path,
+        python_modules: &Path,
+        pkg_name: &str,
+        pkg_display: &str,
+    ) -> Result<(), String> {
+        // 디스크 안 새 버전 추출 (dist-info scan).
+        let probe = PackageSpec {
+            name: pkg_display.to_string(),
+            post_install: None,
+        };
+        let (_, new_version) = Self::installed_info(python_modules, &probe);
+        let Some(new_ver) = new_version else {
+            return Err("새 버전 추출 실패 (dist-info 0)".to_string());
+        };
+
+        // config.json 안 packages 배열 안 매칭 spec 정정.
+        let manifest_path = module_dir.join("config.json");
+        let raw = std::fs::read_to_string(&manifest_path)
+            .map_err(|e| format!("config.json 읽기: {e}"))?;
+        let mut parsed: serde_json::Value =
+            serde_json::from_str(&raw).map_err(|e| format!("config.json 파싱: {e}"))?;
+        let Some(packages) = parsed.get_mut("packages").and_then(|v| v.as_array_mut()) else {
+            return Err("packages 배열 0".to_string());
+        };
+        let new_spec = format!("{}=={}", pkg_display, new_ver);
+        let mut updated = false;
+        for entry in packages.iter_mut() {
+            match entry {
+                serde_json::Value::String(s) if s == pkg_name => {
+                    *entry = serde_json::Value::String(new_spec.clone());
+                    updated = true;
+                }
+                serde_json::Value::Object(obj) => {
+                    if let Some(serde_json::Value::String(n)) = obj.get("name") {
+                        if n == pkg_name {
+                            obj.insert("name".to_string(), serde_json::Value::String(new_spec.clone()));
+                            updated = true;
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if !updated {
+            return Err(format!("packages 안 '{pkg_name}' 매칭 0"));
+        }
+        // pretty + 2-space indent — 옛 config.json 영역 일관성 유지.
+        let serialized = serde_json::to_string_pretty(&parsed)
+            .map_err(|e| format!("config.json 직렬화: {e}"))?;
+        std::fs::write(&manifest_path, serialized)
+            .map_err(|e| format!("config.json 쓰기: {e}"))?;
+        tracing::info!(
+            package = %pkg_display,
+            new_version = %new_ver,
+            "[install] config.json 안 명시 버전 자동 갱신"
+        );
+        Ok(())
     }
 
     /// config.json `packages` 배열 파싱 — 매 호출자가 공유. 잘못된 형태 / 누락 시 빈 Vec.
@@ -505,7 +604,7 @@ impl ProcessSandboxAdapter {
                 continue;
             }
             if let Some(job_id) = self
-                .install_python_package(pkg, &pip, &python_modules, upgrade)
+                .install_python_package(pkg, &pip, &python_modules, upgrade, module_dir)
                 .await
             {
                 job_ids.push(job_id);
@@ -517,35 +616,55 @@ impl ProcessSandboxAdapter {
     /// 패키지 설치 여부 — `python_modules/{import_name}` 디렉토리 또는 `{import_name}.py` 존재 검사.
     /// import_name 은 패키지명에서 소문자 변환 + 하이픈 → 언더스코어 (pip 일반 패턴).
     /// 빠른 1차 판정 — 정확도 100% 보장은 아님 (가짜 진단 가능) 이지만 운영 충분.
-    fn is_package_installed(python_modules: &Path, pkg: &PackageSpec) -> bool {
+    /// 설치 여부 + 설치 버전 (dist-info 안 추출). 버전 추출 실패 시 = `Some((true, None))`.
+    fn installed_info(python_modules: &Path, pkg: &PackageSpec) -> (bool, Option<String>) {
         let display = pkg.display_name();
         let import_name = display.to_lowercase().replace('-', "_");
         let mut candidates = vec![import_name.clone()];
-        // 역매핑 — pip 패키지명 → import 명 (Pillow → PIL 등)
         for (import, pip_pkg) in py_import_to_pkg() {
             if pip_pkg.eq_ignore_ascii_case(display) {
                 candidates.push(import.to_string());
             }
         }
-        for name in &candidates {
-            if python_modules.join(name).is_dir() {
-                return true;
-            }
-            if python_modules.join(format!("{name}.py")).is_file() {
-                return true;
-            }
-            // pip 의 dist-info 디렉토리 존재 검사 — `playwright-1.59.1.dist-info`
-            if let Ok(entries) = std::fs::read_dir(python_modules) {
-                for entry in entries.flatten() {
-                    if let Some(n) = entry.file_name().to_str() {
-                        if n.starts_with(&format!("{name}-")) && n.ends_with(".dist-info") {
-                            return true;
-                        }
+        // dist-info 안 버전 추출 우선 (정확). 디렉토리 / .py 파일 fallback.
+        if let Ok(entries) = std::fs::read_dir(python_modules) {
+            let entries: Vec<_> = entries.flatten().collect();
+            for name in &candidates {
+                // `<name>-<version>.dist-info` 패턴 매칭. 옛 영역 = display 이름 + `-` prefix.
+                let prefix = format!("{}-", name.replace('-', "_"));
+                let prefix_dash = format!("{}-", name);
+                for entry in &entries {
+                    let n = entry.file_name();
+                    let Some(s) = n.to_str() else { continue };
+                    if !s.ends_with(".dist-info") {
+                        continue;
+                    }
+                    let stem = &s[..s.len() - ".dist-info".len()];
+                    let matched = stem
+                        .to_lowercase()
+                        .starts_with(&prefix.to_lowercase())
+                        || stem.to_lowercase().starts_with(&prefix_dash.to_lowercase());
+                    if matched {
+                        let version = stem.rsplit_once('-').map(|(_, v)| v.to_string());
+                        return (true, version);
                     }
                 }
             }
         }
-        false
+        // dist-info 0 박은 영역 fallback — 디렉토리 / py 파일 존재 시 설치 박힌 영역 (버전 0).
+        for name in &candidates {
+            if python_modules.join(name).is_dir() {
+                return (true, None);
+            }
+            if python_modules.join(format!("{name}.py")).is_file() {
+                return (true, None);
+            }
+        }
+        (false, None)
+    }
+
+    fn is_package_installed(python_modules: &Path, pkg: &PackageSpec) -> bool {
+        Self::installed_info(python_modules, pkg).0
     }
 
     /// 매 패키지 status 조회 — 설정 화면이 polling.
@@ -563,6 +682,9 @@ impl ProcessSandboxAdapter {
         for pkg in &packages {
             let display = pkg.display_name().to_string();
             let job_id = format!("install-{display}");
+            let required_version = pkg.required_version();
+            let (installed_disk, installed_version) =
+                Self::installed_info(&python_modules, pkg);
             let (kind, error) = if let Some(status) = &self.status {
                 use firebat_core::managers::status::JobStatusKind;
                 if let Some(job) = status.get(&job_id) {
@@ -577,30 +699,37 @@ impl ProcessSandboxAdapter {
                                 .or_else(|| job.message.clone())
                                 .or_else(|| Some("install 실패".into())),
                         ),
-                        // Done / Cancelled — 디스크 검증 후 installed/missing 분기
                         JobStatusKind::Done | JobStatusKind::Cancelled => {
-                            if Self::is_package_installed(&python_modules, pkg) {
+                            if installed_disk {
                                 (PackageStatusKind::Installed, None)
                             } else {
                                 (PackageStatusKind::Missing, None)
                             }
                         }
                     }
-                } else if Self::is_package_installed(&python_modules, pkg) {
+                } else if installed_disk {
                     (PackageStatusKind::Installed, None)
                 } else {
                     (PackageStatusKind::Missing, None)
                 }
-            } else if Self::is_package_installed(&python_modules, pkg) {
+            } else if installed_disk {
                 (PackageStatusKind::Installed, None)
             } else {
                 (PackageStatusKind::Missing, None)
             };
+            // upgrade_available = 두 버전 다 추출됨 + 다름. specifier `==` 외 (None) = 비교 불가 → false.
+            let upgrade_available = matches!(
+                (&installed_version, &required_version),
+                (Some(i), Some(r)) if i != r
+            );
             result.push(PackageStatus {
                 name: display,
                 status: kind,
                 job_id: Some(job_id),
                 error,
+                installed_version,
+                required_version,
+                upgrade_available,
             });
         }
         result

@@ -103,6 +103,9 @@ impl From<PackageStatus> for PackageStatusPb {
             status: status.to_string(),
             job_id: s.job_id,
             error: s.error,
+            installed_version: s.installed_version,
+            required_version: s.required_version,
+            upgrade_available: s.upgrade_available,
         }
     }
 }

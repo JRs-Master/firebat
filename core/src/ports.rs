@@ -592,6 +592,17 @@ pub struct PackageStatus {
     /// Failed 시 사용자 노출 메시지 (이미 i18n 변환).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// 디스크 안 설치 박힌 버전 (dist-info 안 추출) — `2.32.3` 형식. 미설치 / 추출 실패 = None.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed_version: Option<String>,
+    /// config.json 안 명시 버전 (`==X.Y.Z` specifier 안 매칭). 다른 specifier (>=, ~=) = None.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required_version: Option<String>,
+    /// 업그레이드 가능 — installed_version 박혀있고 required_version 박혀있고 두 값 다른 경우만 true.
+    /// frontend SystemModuleSettings 안 [업그레이드] 버튼 표시 조건. 옛 동작 안 항상 표시 박혔던 영역
+    /// 정정 — 진짜 업그레이드 박을 영역 있을 때만.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub upgrade_available: bool,
 }
 
 /// ISandboxPort — sysmod 자식 process spawn (Node / Python / etc).

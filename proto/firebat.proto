@@ -586,6 +586,13 @@ message PackageStatusPb {
   string status = 2;
   optional string job_id = 3;
   optional string error = 4;
+  /// 디스크 안 dist-info 추출 버전 (예: "2.32.3"). 미설치 / 추출 실패 시 비어있음.
+  optional string installed_version = 5;
+  /// config.json 안 `==X.Y.Z` 명시 버전. 다른 specifier (>=, ~= 등) 박힌 영역 비어있음.
+  optional string required_version = 6;
+  /// 업그레이드 가능 — installed_version + required_version 둘 다 추출 박힘 + 두 값 다른 경우만 true.
+  /// frontend [업그레이드] 버튼 표시 조건. 옛 동작 안 항상 표시 박혔던 영역 정정.
+  bool upgrade_available = 7;
 }
 
 message ModuleInstallPackagesRequest {

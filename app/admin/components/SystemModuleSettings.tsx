@@ -1239,6 +1239,9 @@ interface PackageStatusItem {
   status: 'installed' | 'missing' | 'in_progress' | 'failed';
   jobId?: string;
   error?: string;
+  installedVersion?: string;
+  requiredVersion?: string;
+  upgradeAvailable?: boolean;
 }
 
 export function PackageStatusSection({ moduleName }: { moduleName: string }) {
@@ -1315,7 +1318,7 @@ export function PackageStatusSection({ moduleName }: { moduleName: string }) {
               <Download size={11} /> 설치
             </button>
           )}
-          {installed > 0 && (
+          {packages.some(p => p.upgradeAvailable) && (
             <button
               onClick={() => triggerInstall(true)}
               disabled={installing || inProgress > 0}
