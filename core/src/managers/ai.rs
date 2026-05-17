@@ -1095,16 +1095,37 @@ impl AiManager {
 
             // 도구 결과 요약 — turn_results 안 매 entry 를 tool_results_summary 에 누적.
             // 옛 흐름은 CLI 자체 MCP loop 의 `response.tool_results` (L834-836) 만 push — 즉
-            // API 모드 (Function Calling — Gemini/Anthropic/OpenAI) 안 도구 호출 fail
-            // (예: render schema 검증 실패 — `blocks[1] (map) props 검증 실패: "lon" is a
-            // required property`) 가 ActionTags 에러 뱃지 UI 채널에 도달 못 했음. 사용자
-            // 가시화 부재 → 안건 5 미해결 잔존 부분. 본 push 박힘 후 ActionTags 가 자동
-            // 빨간 뱃지 + 클릭 시 schema 에러 본문 표시.
+            // API 모드 (Function Calling — Gemini/Anthropic/OpenAI) 안 도구 호출 fail (예: render
+            // schema 검증 실패 — `blocks[1] (map) props 검증 실패: "lon" is a required property`) 가
+            // ActionTags 에러 뱃지 UI 채널에 도달 못 했음. 본 push 적용 후 자동 활성.
+            //
+            // render 도구 graceful 부분 실패 (`result.failed` 배열 비어있지 않음) 도 ActionTags
+            // 가시화 — action.success=true 박혀있어도 일부 block 검증 실패 박힌 영역 사용자
+            // 안내 (빨간 뱃지 + 실패 안내 본문 펼침).
             for (tc, action) in turn_results.iter() {
+                let (success, error) = if action.success {
+                    let failed_arr = action
+                        .result
+                        .get("failed")
+                        .and_then(|v| v.as_array())
+                        .filter(|a| !a.is_empty());
+                    if let Some(arr) = failed_arr {
+                        let msg = arr
+                            .iter()
+                            .filter_map(|f| f.get("error").and_then(|v| v.as_str()))
+                            .collect::<Vec<_>>()
+                            .join("; ");
+                        (false, Some(format!("부분 실패: {}", msg)))
+                    } else {
+                        (true, action.error.clone())
+                    }
+                } else {
+                    (false, action.error.clone())
+                };
                 tool_results_summary.push(crate::ports::ToolResultSummary {
                     name: tc.name.clone(),
-                    success: action.success,
-                    error: action.error.clone(),
+                    success,
+                    error,
                     input: Some(tc.arguments.clone()),
                 });
             }

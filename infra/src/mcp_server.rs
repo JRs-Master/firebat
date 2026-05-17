@@ -515,29 +515,52 @@ impl McpToolHandler for RenderUnifiedHandler {
             return Err("render: 'blocks' 가 비어있습니다 (최소 1개 필요)".to_string());
         }
 
+        // block 별 graceful 처리 — 정상 block 은 rendered 에 push, 실패 block 은 failed 에 분리 push.
+        // 옛 흐름은 첫 fail 만나면 즉시 Err return → 통째 도구 호출 실패 → 사용자 화면 0 block.
+        // 정공 = 1개 block hallucinate (예: marker 안 lon 누락) 박혀도 나머지 정상 block 은 화면 표시 +
+        // 실패한 block 만 사용자 / AI 한테 에러 안내. AI 는 응답 안 `failed` 배열 보고 retry 결정 자율.
         let mut rendered = Vec::with_capacity(blocks.len());
+        let mut failed: Vec<Value> = Vec::new();
         for (idx, block) in blocks.iter().enumerate() {
-            let block_type = block
-                .get("type")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| format!("blocks[{idx}]: 'type' (string) 가 필요합니다"))?;
+            let block_type = match block.get("type").and_then(|v| v.as_str()) {
+                Some(t) => t,
+                None => {
+                    failed.push(serde_json::json!({
+                        "idx": idx,
+                        "type": Value::Null,
+                        "error": format!("blocks[{idx}]: 'type' (string) 가 필요합니다"),
+                    }));
+                    continue;
+                }
+            };
             let props = block
                 .get("props")
                 .cloned()
                 .unwrap_or_else(|| serde_json::json!({}));
 
-            let comp = firebat_core::managers::ai::component_registry::find_component(block_type)
-                .ok_or_else(|| {
-                    format!(
-                        "blocks[{idx}]: 알 수 없는 컴포넌트 '{}'. components.json 의 26 종 중 하나여야",
-                        block_type
-                    )
-                })?;
+            let comp = match firebat_core::managers::ai::component_registry::find_component(block_type) {
+                Some(c) => c,
+                None => {
+                    failed.push(serde_json::json!({
+                        "idx": idx,
+                        "type": block_type,
+                        "error": format!("알 수 없는 컴포넌트 '{}'. components.json 의 26 종 중 하나여야", block_type),
+                    }));
+                    continue;
+                }
+            };
 
-            // propsSchema 검증 — 실패 시 LLM 이 schema 맞춰 retry.
-            firebat_core::managers::module::validate_value(&props, &comp.props_schema).map_err(
-                |e| format!("blocks[{idx}] ({}) props 검증 실패: {}", block_type, e),
-            )?;
+            // propsSchema 검증 — 실패 block 만 분리, 정상 block 은 계속 push.
+            if let Err(e) =
+                firebat_core::managers::module::validate_value(&props, &comp.props_schema)
+            {
+                failed.push(serde_json::json!({
+                    "idx": idx,
+                    "type": block_type,
+                    "error": format!("props 검증 실패: {}", e),
+                }));
+                continue;
+            }
 
             rendered.push(serde_json::json!({
                 "type": "component",
@@ -546,9 +569,24 @@ impl McpToolHandler for RenderUnifiedHandler {
             }));
         }
 
+        // 모두 실패 — 옛 흐름 호환 위해 Err return (AI retry 유도).
+        if rendered.is_empty() && !failed.is_empty() {
+            let summary = failed
+                .iter()
+                .filter_map(|f| f.get("error").and_then(|v| v.as_str()))
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(format!(
+                "render: 모든 block 검증 실패 ({}). schema 맞춰 다시 호출하라.",
+                summary
+            ));
+        }
+
+        // 부분 성공 / 전체 성공 — success: true 박힘 + failed 배열은 사용자 / AI 안내용.
         Ok(serde_json::json!({
             "success": true,
             "blocks": rendered,
+            "failed": failed,
         }))
     }
 }
