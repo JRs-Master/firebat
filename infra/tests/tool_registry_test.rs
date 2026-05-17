@@ -20,6 +20,7 @@ use firebat_core::ports::{
     IMemoryFacadePort, ISandboxPort, IStoragePort, IVaultPort,
 };
 use firebat_core::tool_registry::{register_core_tools, CoreToolHandlers};
+use firebat_core::utils::sysmod_cache::SysmodCacheAdapter;
 use firebat_infra::adapters::cron::TokioCronAdapter;
 use firebat_infra::adapters::database::SqliteDatabaseAdapter;
 use firebat_infra::adapters::log::ConsoleLogAdapter;
@@ -69,6 +70,7 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
     let log: Arc<dyn ILogPort> = Arc::new(ConsoleLogAdapter::new());
     let event_mgr = Arc::new(EventManager::new(log));
 
+    let cache = Arc::new(SysmodCacheAdapter::new(dir.path().join("cache")).unwrap());
     let tools = Arc::new(ToolManager::new());
     register_core_tools(
         &tools,
@@ -84,6 +86,7 @@ async fn make_setup() -> (Arc<ToolManager>, tempfile::TempDir) {
             module: module_mgr,
             mcp: mcp_mgr,
             event: event_mgr,
+            cache,
         },
     );
     (tools, dir)
