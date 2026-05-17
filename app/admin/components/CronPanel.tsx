@@ -705,7 +705,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
                   value={agentPrompt}
                   onChange={e => setAgentPrompt(e.target.value)}
                   rows={6}
-                  placeholder={'예: "오늘 기준 다음 주 (월~금) 한국 증시 주요 일정 정리. 한투 ksd-puboffer/ksd-dividend + naver-search 로 실제 데이터 확보. 과거·미래 분간, hallucinate 금지. SAVE_PAGE stock/$dateYmd-weekly 로 발행. 텔레그램 알림."'}
+                  placeholder={'예: "이번 주 주제 리서치 + sysmod 데이터 수집 + 페이지 발행 + 텔레그램 알림. 출처·시점 명시, 과거·미래 분간, hallucinate 금지."'}
                   className="w-full px-3 py-2 text-[11px] border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y font-mono" name="agentPrompt" autoComplete="off" id="agentPrompt"
                 />
                 <p className="text-[10px] text-slate-400">트리거 시 AI 가 user message 로 받음. 잡 목적·필요 데이터·출력 형식·알림 명시.</p>

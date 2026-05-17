@@ -20,7 +20,7 @@ function parseId(s: string): number | null {
 export const GET = withAuth(async (_req: NextRequest, { params }: Ctx) => {
   const id = parseId((await params).id);
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
-  const res = await getEntity({ value: BigInt(id) } as any);
+  const res = await getEntity({ id: BigInt(id) });
   if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   if (!res.data) return NextResponse.json({ success: false, error: 'not found' }, { status: 404 });
   return NextResponse.json({ success: true, entity: res.data });
@@ -43,7 +43,7 @@ export const PATCH = withAuth(async (req: NextRequest, { params }: Ctx) => {
 export const DELETE = withAuth(async (_req: NextRequest, { params }: Ctx) => {
   const id = parseId((await params).id);
   if (id == null) return NextResponse.json({ success: false, error: 'invalid id' }, { status: 400 });
-  const res = await deleteEntity({ value: BigInt(id) } as any);
+  const res = await deleteEntity({ id: BigInt(id) });
   if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true });
 });

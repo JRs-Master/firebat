@@ -18,7 +18,7 @@
  *   <Tooltip label="Workspace"><button>...</button></Tooltip>
  *   <Tooltip label="..." side="top|bottom|left|right" delay={500}>...</Tooltip>
  */
-import React, { useState, useRef, useLayoutEffect, useCallback } from 'react';
+import React, { useState, useRef, useLayoutEffect, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
 type Side = 'top' | 'bottom' | 'left' | 'right';
@@ -92,6 +92,18 @@ export function Tooltip({ label, side = 'bottom', delay = 300, disabledOnTouch =
   useLayoutEffect(() => {
     if (open) compute();
   }, [open, compute]);
+
+  // unmount 시 pending setTimeout 정리 — trigger 가 사라져도 setOpen(true) 가
+  // 살아남아 tooltip 잔존하던 영역 (예: confirmDialog 같은 모달 닫힌 후 화면 좌상단
+  // 부유 tooltip).
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, []);
 
   // children 에 event handler + ref 주입
   const child = React.Children.only(children);

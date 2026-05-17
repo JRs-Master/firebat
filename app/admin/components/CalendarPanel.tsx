@@ -72,13 +72,20 @@ export function CalendarPanel() {
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const pickerRef = useRef<HTMLDivElement>(null);
 
-  // events fetch — 1년치 (cursor 기준 ±6개월). cursor 변경 시 재호출.
+  // events fetch — 과거 30일 ~ 미래 400일 범위. cursor 변경 시 재호출.
+  // sysmod_calendar.list-range 는 fromTm / toTm 임의 범위 지원 (list-upcoming 의 미래
+  // 전용 limitation 우회). 실 조회량 적어 한 번에 fetch 부담 없음.
   const fetchEvents = useCallback(async () => {
     setLoading(true);
     try {
-      // sysmod_calendar.list-upcoming 은 days=N 만 지원.
-      // 한 번에 1년치 + 과거 30일 fetch. 실 조회량 적어 부담 없음.
-      const result = await callCalendar('list-upcoming', { days: 400, includePast: 30, limit: 1000 });
+      const now = new Date();
+      const from = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const to = new Date(now.getTime() + 400 * 24 * 60 * 60 * 1000);
+      const result = await callCalendar('list-range', {
+        fromTm: ymd(from),
+        toTm: ymd(to),
+        limit: 1000,
+      });
       setEvents((result?.items ?? []) as CalEvent[]);
     } catch (err) {
       logger.error('calendar', 'fetch 실패', err);

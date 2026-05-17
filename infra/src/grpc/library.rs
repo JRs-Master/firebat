@@ -1,6 +1,6 @@
 //! LibraryServiceImpl — Library Phase 1 (2026-05-17) 의 gRPC 영역.
 //!
-//! infra 영역 박은 사유 — UploadSource RPC 영역 = pdf-extract / extract_text_file / extract_html
+//! infra 영역 박은 사유 — UploadSource RPC 영역 = pdf-extract / extract_text_file
 //! 영역 직접 호출 영역. 옛 영역 매 grpc service 영역 = core 영역 박혀있는데 — Library 영역 =
 //! Hexagonal port 영역 박지 마 (extractor 영역 = infra-only 영역).
 //!

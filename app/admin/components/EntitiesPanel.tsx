@@ -604,7 +604,7 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
               type="text"
               value={type}
               onChange={(e) => setType(e.target.value)}
-              placeholder="stock / company / person / project / concept / event 등"
+              placeholder="person / company / project / concept / event 등 자유 분류"
               className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="type" autoComplete="off" id={typeId}
             />
           </div>
@@ -614,7 +614,7 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
               value={aliases}
               onChange={(e) => setAliases(e.target.value)}
               rows={2}
-              placeholder="줄바꿈 또는 콤마 분리. 예: 005930, 삼전"
+              placeholder="줄바꿈 또는 콤마로 분리"
               className="w-full text-xs px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none" name="aliases" autoComplete="off" id={aliasesId}
             />
           </div>

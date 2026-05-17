@@ -3,7 +3,8 @@
 //! 매 Source 형식 영역 추출 path:
 //! - PDF — pdf-extract crate (텍스트 영역만, 스캔 PDF Phase 2 영역)
 //! - TXT / MD — 직접 read (UTF-8 영역만, BOM 영역 제거)
-//! - HTML — strip tags + 단순 text 영역 추출 (옛 sysmod_firecrawl / browser-scrape 영역 자연 활용 가능)
+//! - URL — Phase 1.5 영역 = sysmod_firecrawl 영역 frontend 영역 fetch + HTML strip
+//!   → backend 는 inline_text 로 받음. backend extract_html 영역 박지 X.
 //! - 직접 입력 — frontend textarea 영역 받음 (추출 영역 0, 직접 저장 영역)
 //!
 //! 반환 영역 — `ExtractedText { full_text, pages? }`. pages 영역 = PDF 영역만 매 영역 (page_num, start_char, end_char).
@@ -59,69 +60,6 @@ pub fn extract_text_file(path: &Path) -> Result<ExtractedText, String> {
     })
 }
 
-/// HTML 영역 추출 — 단순 tag strip 영역 (script / style 영역 제거 + text node 영역 추출).
-/// 정공 영역 = sysmod_firecrawl 영역 호출 영역 (Phase 1 영역 = HTML 영역도 자연 추출).
-/// 본 영역 = fallback (HTML 영역 직접 박힌 영역).
-pub fn extract_html(html: &str) -> Result<ExtractedText, String> {
-    // 매 영역 단순 tag strip — script / style 영역 제거 + tag 영역 제거.
-    let mut output = String::with_capacity(html.len());
-    let mut in_tag = false;
-    let mut in_script = false;
-    let mut in_style = false;
-    let bytes = html.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if !in_tag && bytes[i..].starts_with(b"<script") {
-            in_script = true;
-            in_tag = true;
-            i += 1;
-            continue;
-        }
-        if !in_tag && bytes[i..].starts_with(b"<style") {
-            in_style = true;
-            in_tag = true;
-            i += 1;
-            continue;
-        }
-        if in_script && bytes[i..].starts_with(b"</script>") {
-            in_script = false;
-            in_tag = true;
-            i += 9;
-            continue;
-        }
-        if in_style && bytes[i..].starts_with(b"</style>") {
-            in_style = false;
-            in_tag = true;
-            i += 8;
-            continue;
-        }
-        if in_script || in_style {
-            i += 1;
-            continue;
-        }
-        if bytes[i] == b'<' {
-            in_tag = true;
-            i += 1;
-            continue;
-        }
-        if bytes[i] == b'>' {
-            in_tag = false;
-            i += 1;
-            continue;
-        }
-        if !in_tag {
-            output.push(bytes[i] as char);
-        }
-        i += 1;
-    }
-    // 매 연속 영역 whitespace 영역 단순 normalize 영역 (` ` * N → ` `)
-    let normalized: String = output.split_whitespace().collect::<Vec<_>>().join(" ");
-    Ok(ExtractedText {
-        full_text: normalized,
-        pages: None,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,26 +71,5 @@ mod tests {
         let result = extract_text_file(tmp.path()).unwrap();
         assert_eq!(result.full_text, "hello world");
         assert!(result.pages.is_none());
-    }
-
-    #[test]
-    fn extract_html_strips_tags() {
-        let html = "<html><body><h1>Title</h1><p>Hello <b>world</b></p></body></html>";
-        let result = extract_html(html).unwrap();
-        assert_eq!(result.full_text, "Title Hello world");
-    }
-
-    #[test]
-    fn extract_html_strips_script_style() {
-        let html = "<style>body { color: red; }</style><script>alert(1)</script><p>Visible</p>";
-        let result = extract_html(html).unwrap();
-        assert_eq!(result.full_text, "Visible");
-    }
-
-    #[test]
-    fn extract_html_korean() {
-        let html = "<p>안녕하세요 <b>세계</b></p>";
-        let result = extract_html(html).unwrap();
-        assert_eq!(result.full_text, "안녕하세요 세계");
     }
 }
