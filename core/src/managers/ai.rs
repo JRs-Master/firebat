@@ -1032,8 +1032,17 @@ impl AiManager {
                 turn_results.push((call.clone(), action));
             }
 
-            // Render component blocks — RENDER_TOOL_MAP 매칭 + tc.name == "render" + result.component
-            // 옛 TS ai-manager.ts:1464-1478 1:1.
+            // Render component blocks — 3 가지 흐름 통합 처리:
+            //   (1) `render_iframe` — `{htmlContent, htmlHeight?, dependencies?}` → html block
+            //   (2) 통합 `render` 또는 옛 `render_<comp>` + `result.component` 단일 component →
+            //       `{type:component, name, props}` block. 옛 TS ai-manager.ts:1464-1478 1:1.
+            //   (3) 통합 `render` + `result.blocks` 배열 (RenderUnifiedHandler `{success:true,
+            //       blocks:[{type:component,name,props}, ...]}` 응답) → 배열 안 entry 그대로 push.
+            //       MCP 단일 render 도구 도입 이후 흐름 — 옛 (2) 매칭만 박혀있어 blocks 통째 누락
+            //       사용자 화면 미표시 사고. (안건 5 fix, 2026-05-17)
+            // 같은 turn 안 `suggest` 도구 결과 (`{suggestions:[...]}`) 도 cli_suggestions 누적 —
+            // 옛 CLI 만 처리하던 영역 = API 모드 (Gemini/Anthropic/OpenAI Function Calling) 안
+            // suggest 호출 결과 무시되던 사고 (안건 6 fix, 2026-05-17).
             let render_map = render_tool_map();
             for (tc, action) in turn_results.iter() {
                 if !action.success {
@@ -1049,6 +1058,17 @@ impl AiManager {
                         "htmlHeight": result.get("htmlHeight").cloned(),
                         "dependencies": result.get("dependencies").cloned(),
                     }));
+                } else if (tc.name == "render" || render_map.contains_key(tc.name.as_str()))
+                    && result
+                        .get("blocks")
+                        .and_then(|v| v.as_array())
+                        .is_some()
+                {
+                    if let Some(arr) = result.get("blocks").and_then(|v| v.as_array()) {
+                        for b in arr {
+                            blocks.push(b.clone());
+                        }
+                    }
                 } else if (tc.name == "render" || render_map.contains_key(tc.name.as_str()))
                     && result.get("component").is_some()
                 {
@@ -1066,6 +1086,10 @@ impl AiManager {
                         "name": component,
                         "props": props,
                     }));
+                } else if tc.name == "suggest" {
+                    if let Some(arr) = result.get("suggestions").and_then(|v| v.as_array()) {
+                        cli_suggestions.extend(arr.iter().cloned());
+                    }
                 }
             }
 
