@@ -87,6 +87,11 @@ pub struct AiResponse {
     /// 옛 TS 의 에러 뱃지 표시 메커니즘 1:1 — executedActions (이름만) 보완.
     #[serde(rename = "toolResults", default, skip_serializing_if = "Vec::is_empty")]
     pub tool_results: Vec<crate::ports::ToolResultSummary>,
+    /// Library Phase 1 단계 8.4 (2026-05-17) — RetrievalEngine 가 매 query 시점 매칭한
+    /// Library hit metadata. 답변 본문엔 출처 표기 박지 않고 (system prompt 룰), 대신
+    /// frontend 가 SourceTags 뱃지로 그려 클릭 → LibrarySourceModal 영역 노출.
+    #[serde(rename = "libraryHits", default, skip_serializing_if = "Vec::is_empty")]
+    pub library_hits: Vec<crate::ports::LibraryHit>,
 }
 
 pub struct AiManager {
@@ -400,6 +405,10 @@ impl AiManager {
 
         let mut effective_opts = opts.clone();
 
+        // Library Phase 1 단계 8.4 (2026-05-17) — retrieve_library_hits 누적. RetrievalEngine 가
+        // 매 query 시점 매칭한 결과 metadata. 함수 끝 AiResponse.library_hits 로 노출.
+        let mut retrieved_library_hits: Vec<crate::ports::LibraryHit> = Vec::new();
+
         // MCP 토큰 자동 주입 — vault 에서 `system:internal-mcp-token` 가져와 LlmCallOpts 에 추가.
         // hosted MCP 모델 (CLI 3종 / Anthropic API / OpenAI Responses API) 이 Firebat MCP
         // server 인증할 때 사용. caller 가 안 주면 vault 에서 자동 조회.
@@ -545,6 +554,10 @@ impl AiManager {
                                 result.context_summary
                             ));
                         }
+                        // hit metadata 영역 보관 — 함수 끝 AiResponse.library_hits 로 노출.
+                        if !result.library_hits.is_empty() {
+                            retrieved_library_hits = result.library_hits;
+                        }
                     }
                 }
                 let extra = if extra_parts.is_empty() {
@@ -645,6 +658,7 @@ impl AiManager {
                             model_id: Some(last_model_id.clone()),
                             cost_usd: Some(0.0),
                             tool_results: Vec::new(),
+                            library_hits: Vec::new(),
                         });
                     }
                 }
@@ -1039,6 +1053,7 @@ impl AiManager {
             model_id: Some(last_model_id),
             cost_usd: Some(total_cost),
             tool_results: tool_results_summary,
+            library_hits: retrieved_library_hits,
         })
     }
 
