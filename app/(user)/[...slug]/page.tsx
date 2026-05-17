@@ -192,7 +192,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
         return <ProjectRootView projectName={slug} pageSlugs={matched.pageSlugs ?? []} currentPage={currentPage} />;
       }
     }
-    notFound();
+    redirect('/404');
   }
 
   const spec = parsePageRecord(result.data);
@@ -206,7 +206,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
     if (adminToken) {
       isAdminPreview = true;
     } else {
-      notFound();
+      redirect('/404');
     }
   }
 
