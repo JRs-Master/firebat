@@ -179,8 +179,12 @@ fn mask_key_value(s: &str, key: &str) -> String {
                     continue;
                 }
             }
-            // 키 이후 separator (`:` / `=`) + optional space + optional quote → value.
+            // 키 이후 close-quote (`"` / `'`) 박힐 수 있음 — JSON 안 `"apikey":"value"` 형식 호환.
+            // 옛 mask_key_value 안 close-quote skip 0 → JSON 매칭 fail → api-key 노출 사고.
             let mut after = key_end;
+            if after < bytes.len() && (bytes[after] == b'"' || bytes[after] == b'\'') {
+                after += 1;
+            }
             while after < bytes.len() && (bytes[after] == b' ' || bytes[after] == b'\t') {
                 after += 1;
             }
@@ -339,6 +343,15 @@ mod tests {
         assert!(out.contains("api-key: [REDACTED]"), "out: {out}");
         assert!(out.contains("customer-id: [REDACTED]"), "out: {out}");
         assert!(!out.contains("01000000"));
+    }
+
+    #[test]
+    fn redacts_json_apikey() {
+        // 사용자 보고 케이스 — `"apikey":"dddd"` JSON 형식. key 뒤 close-quote skip 박혀야 매칭.
+        let s = r#"{"apikey":"dddd","status":403,"detail":"API-KEY 'dddd' is invalid."}"#;
+        let out = redact_string(s);
+        assert!(!out.contains("\"dddd\""), "out: {out}");
+        assert!(out.contains("[REDACTED]"), "out: {out}");
     }
 
     #[test]
