@@ -14,8 +14,8 @@ type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
 /**
  * LibraryPanel — Library 영역 (Phase 1, 2026-05-17).
  *
- * NotebookLM 같은 RAG 영역. 매 Reference = 자료 그룹 (예: "법률 자료 2026").
- * 진입 시 = Reference list. 매 Reference 클릭 → LibraryReferenceDetail 영역 (Source list + 업로드).
+ * NotebookLM 같은 RAG. 매 Reference = 자료 그룹 (사용자가 자유 분류).
+ * 진입 시 = Reference list. 매 Reference 클릭 → LibraryReferenceDetail (Source list + 업로드).
  */
 export function LibraryPanel() {
   const [refs, setRefs] = useState<LibraryReferencePb[]>([]);
@@ -129,7 +129,7 @@ export function LibraryPanel() {
               type="text"
               value={newName}
               onChange={e => setNewName(e.target.value)}
-              placeholder="예: 법률 자료 2026"
+              placeholder="자료 그룹 이름"
               className="w-full px-2 py-1.5 text-[12px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               name="newRefName"
               autoComplete="off"
@@ -142,7 +142,7 @@ export function LibraryPanel() {
               type="text"
               value={newDescription}
               onChange={e => setNewDescription(e.target.value)}
-              placeholder="예: 민법전 + 대법원 판례"
+              placeholder="이 그룹의 자료 설명 (선택)"
               className="w-full px-2 py-1.5 text-[12px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               name="newRefDesc"
               autoComplete="off"

@@ -2532,7 +2532,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
           value={item.name}
           onChange={e => setItem({ ...item, name: e.target.value.replace(/[^a-z0-9_-]/gi, '').toLowerCase() })}
           disabled={!isNew}
-          placeholder="예: trading_style"
+          placeholder="식별자 (snake_case)"
           className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded disabled:bg-slate-100" name="name" autoComplete="off" id={nameId}
         />
       </div>
@@ -2542,7 +2542,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
           type="text"
           value={item.description}
           onChange={e => setItem({ ...item, description: e.target.value })}
-          placeholder="예: 단타 위주, 장기 보유는 하지 않음"
+          placeholder="한 줄 설명"
           className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded" name="description" autoComplete="off" id={descriptionId}
         />
       </div>

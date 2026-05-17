@@ -78,15 +78,16 @@ export function Tooltip({ label, side = 'bottom', delay = 300, disabledOnTouch =
     setCoords({ x, y, transform });
   }, [side]);
 
-  const show = () => {
+  const show = useCallback(() => {
     if (isTouch && disabledOnTouch) return;
     timerRef.current = setTimeout(() => setOpen(true), delay);
-  };
-  const hide = () => {
+  }, [isTouch, disabledOnTouch, delay]);
+
+  const hide = useCallback(() => {
     if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null; }
     setOpen(false);
     setCoords(null);
-  };
+  }, []);
 
   // 열린 후 DOM mount 되면 좌표 계산
   useLayoutEffect(() => {
@@ -104,6 +105,50 @@ export function Tooltip({ label, side = 'bottom', delay = 300, disabledOnTouch =
       }
     };
   }, []);
+
+  // open 상태 안전망 — mouseleave 가 fire 안 되는 케이스 cover:
+  //  (a) 사이드바 panel 토글 / collapse 로 trigger 가 가려진 경우
+  //  (b) 모달 / dialog 가 trigger 위 덮인 경우
+  //  (c) 페이지 scroll / resize 로 trigger 위치 변경된 경우
+  //  (d) 탭 background / 다른 창 focus 이동
+  // → document pointermove + window scroll/resize/blur 로 trigger bounds 영역
+  //    벗어남 감지 시 즉시 hide.
+  useEffect(() => {
+    if (!open) return;
+
+    const checkBounds = () => {
+      const el = triggerRef.current;
+      if (!el) { hide(); return; }
+      const r = el.getBoundingClientRect();
+      // size 0 (display none / width 0) 또는 viewport 밖 = trigger 사라짐
+      if (r.width === 0 || r.height === 0 ||
+          r.bottom < 0 || r.right < 0 ||
+          r.top > window.innerHeight || r.left > window.innerWidth) {
+        hide();
+      }
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      const el = triggerRef.current;
+      if (!el) { hide(); return; }
+      const r = el.getBoundingClientRect();
+      const inside = e.clientX >= r.left && e.clientX <= r.right &&
+                     e.clientY >= r.top && e.clientY <= r.bottom;
+      if (!inside) hide();
+    };
+
+    window.addEventListener('scroll', checkBounds, true);
+    window.addEventListener('resize', checkBounds);
+    window.addEventListener('blur', hide);
+    document.addEventListener('pointermove', onPointerMove);
+
+    return () => {
+      window.removeEventListener('scroll', checkBounds, true);
+      window.removeEventListener('resize', checkBounds);
+      window.removeEventListener('blur', hide);
+      document.removeEventListener('pointermove', onPointerMove);
+    };
+  }, [open, hide]);
 
   // children 에 event handler + ref 주입
   const child = React.Children.only(children);

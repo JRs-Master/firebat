@@ -1099,7 +1099,7 @@ export function Sidebar({
                 value={renameInput}
                 onChange={e => setRenameInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !renaming) submitRename(); }}
-                placeholder={renameTarget.type === 'page' ? '새 slug (예: bitcoin/2026-04-20-review)' : '새 프로젝트 이름 (예: bitcoin-reviews)'}
+                placeholder={renameTarget.type === 'page' ? '새 slug' : '새 프로젝트 이름'}
                 autoFocus
                 disabled={renaming}
                 aria-label={renameTarget.type === 'page' ? '새 slug' : '새 프로젝트 이름'}

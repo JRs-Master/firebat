@@ -515,7 +515,7 @@ function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated
           type="text"
           value={factType}
           onChange={(e) => setFactType(e.target.value)}
-          placeholder="type (선택, 예: transaction)"
+          placeholder="type 필터 (선택)"
           aria-label="사실 type"
           className="flex-1 text-[10px] px-1.5 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="factType" autoComplete="off" id={factTypeId}
         />

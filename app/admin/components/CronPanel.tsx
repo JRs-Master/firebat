@@ -759,7 +759,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
                     {runWhenText && <button onClick={() => setRunWhenText('')} type="button" className="text-[10px] text-slate-400 hover:text-red-500 transition-colors">제거</button>}
                   </div>
                   <textarea value={runWhenText} onChange={e => setRunWhenText(e.target.value)}
-                    placeholder={'{\n  "check": { "sysmod": "korea-invest", "action": "is-business-day" },\n  "field": "$prev.isBusinessDay",\n  "op": "==",\n  "value": "true"\n}'}
+                    placeholder={'{\n  "check": { "sysmod": "<module>", "action": "<action>" },\n  "field": "$prev.<field>",\n  "op": "==",\n  "value": "<expected>"\n}'}
                     rows={5}
                     aria-label="runWhen 조건"
                     className="w-full px-3 py-2 text-[11px] font-mono border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y" name="runWhenText" autoComplete="off" id={runWhenTextId} />
