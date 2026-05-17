@@ -7,6 +7,7 @@ import { confirmDialog, alertDialog } from './Dialog';
 import { logger } from '../../../lib/util/logger';
 import { listSources, deleteSource, uploadSource } from '../../../lib/api-gen/library';
 import type { LibraryReferencePb, LibrarySourcePb } from '../../../lib/proto-gen/firebat_pb';
+import { LibrarySourceModal } from './LibrarySourceModal';
 
 type UploadMode = 'file' | 'text';
 
@@ -37,6 +38,7 @@ export function LibraryReferenceDetail({
   const [sources, setSources] = useState<LibrarySourcePb[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
   const [mode, setMode] = useState<UploadMode>('file');
   const [pickedFile, setPickedFile] = useState<File | null>(null);
   const [textName, setTextName] = useState('');
@@ -299,7 +301,8 @@ export function LibraryReferenceDetail({
             {sources.map(src => (
               <div
                 key={src.id}
-                className="group flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 transition-colors"
+                onClick={() => setPreviewId(src.id)}
+                className="group flex items-center gap-2 px-3 py-2.5 border-b border-slate-100 hover:bg-slate-50 cursor-pointer transition-colors"
               >
                 {typeIcon(src.sourceType)}
                 <div className="flex-1 min-w-0">
@@ -316,7 +319,7 @@ export function LibraryReferenceDetail({
                 </div>
                 <Tooltip label="삭제">
                   <button
-                    onClick={() => handleDelete(src)}
+                    onClick={e => { e.stopPropagation(); handleDelete(src); }}
                     className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-600 transition-all"
                   >
                     <Trash2 size={13} />
@@ -327,6 +330,10 @@ export function LibraryReferenceDetail({
           </div>
         )}
       </div>
+
+      {previewId && (
+        <LibrarySourceModal sourceId={previewId} onClose={() => setPreviewId(null)} />
+      )}
     </div>
   );
 }
