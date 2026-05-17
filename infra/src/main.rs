@@ -314,6 +314,16 @@ async fn main() -> Result<()> {
     ));
     let status_manager = Arc::new(StatusManager::new(Some(event_manager.clone())));
 
+    // SysmodCacheAdapter — sysmod 응답 안 `_cache` envelope (50행+ 큰 시계열) 자동 저장.
+    // sandbox 가 envelope 인식 → cacheKey 박은 응답 변환 → AI 가 cache_read / cache_grep /
+    // cache_aggregate gRPC 도구 호출 박은 영역. yfinance / 한투 / 키움 / DART 등 큰 응답 토큰 절약.
+    let cache_dir = workspace_root.join("data").join("cache").join("sysmod-results");
+    let cache_adapter = Arc::new(
+        firebat_core::utils::sysmod_cache::SysmodCacheAdapter::new(cache_dir)
+            .map_err(anyhow::Error::msg)
+            .context("Cache 디렉토리 초기화 실패")?,
+    );
+
     // Sandbox 어댑터 — BasicProcessSandbox 단일 (path containment + timeout 만).
     // 옛 LinuxCgroupsSandbox (cgroup v2 + seccomp + network namespace) 폐기 (2026-05-15) —
     // 단일 사용자 / 단일 운영자 환경에서 격리 가치 0 (사용자 본인 = 운영자 = trust). multi-tenant
@@ -322,10 +332,12 @@ async fn main() -> Result<()> {
     // status_manager 주입 = config.json packages 의 heavy:true 엔트리 (playwright / pandas-large 등)
     // 자동 background install + frontend ActiveJobsIndicator 진행 상태 노출. 일반 string entry
     // 또는 heavy:false = 옛 동작 (foreground install).
+    // cache_adapter 주입 = sysmod 응답 안 `_cache` envelope 자동 인식.
     let sandbox: Arc<dyn ISandboxPort> = Arc::new(
         ProcessSandboxAdapter::new(workspace_root.clone())
             .with_vault(vault.clone())
-            .with_status(status_manager.clone()),
+            .with_status(status_manager.clone())
+            .with_cache(cache_adapter.clone()),
     );
 
     let tool_manager = Arc::new(ToolManager::new());
@@ -578,13 +590,9 @@ async fn main() -> Result<()> {
     let settings_service = grpc::settings::SettingsServiceImpl::new(vault.clone());
     let network_service = grpc::network::NetworkServiceImpl::new(network_port.clone());
     // Phase B-17.5b — Cache / Telegram / Database 추가.
-    let cache_dir = workspace_root.join("data").join("cache").join("sysmod-results");
-    let cache_adapter = std::sync::Arc::new(
-        firebat_core::utils::sysmod_cache::SysmodCacheAdapter::new(cache_dir)
-            .map_err(anyhow::Error::msg)
-            .context("Cache 디렉토리 초기화 실패")?,
-    );
-    let cache_service = grpc::cache::CacheServiceImpl::new(cache_adapter);
+    // cache_adapter 는 sandbox 박는 시점에 박혀있음 (L325 영역). 같은 인스턴스 공유 — gRPC CacheService
+    // 의 read / grep / aggregate / drop 호출이 sandbox 가 박은 cache 영역과 동일 디렉토리 접근.
+    let cache_service = grpc::cache::CacheServiceImpl::new(cache_adapter.clone());
     // TelegramService — AiManager + ModuleManager 설정하여 process_message webhook → AI → reply 활성
     let telegram_service = grpc::telegram::TelegramServiceImpl::new(vault.clone(), network_port.clone())
         .with_ai_and_module(ai_manager.clone(), module_manager.clone());

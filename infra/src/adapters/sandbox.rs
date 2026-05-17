@@ -21,6 +21,7 @@ use firebat_core::ports::{
     ISandboxPort, IVaultPort, InfraResult, ModuleOutput, PackageStatus, PackageStatusKind,
     SandboxExecuteOpts,
 };
+use firebat_core::utils::sysmod_cache::SysmodCacheAdapter;
 
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
 const PYPI_CACHE_TTL: Duration = Duration::from_secs(3600);
@@ -277,6 +278,11 @@ pub struct ProcessSandboxAdapter {
     /// install 진행 상태 추적. 미설정 시 heavy 패키지도 foreground (옛 동작과 동일) 진행.
     /// 설정 시 사용자 호출 즉시 응답 (`core.install.in_progress` errorKey) + 완료 후 자동 재시도 가능.
     status: Option<Arc<StatusManager>>,
+    /// SysmodCacheAdapter — sysmod 응답 안 `_cache` envelope 박혀있으면 자동 cache 저장.
+    /// 옛 TS 흐름 1:1 — yfinance / 한투 / 키움 / DART 같은 큰 시계열 응답 (50행+) 안 records 통째
+    /// LLM context 박지 않고 cacheKey 받아 cache_read / cache_grep / cache_aggregate 도구 사용.
+    /// 미설정 시 `_cache` 박힌 응답도 그대로 통과 (옛 호환).
+    cache: Option<Arc<SysmodCacheAdapter>>,
     /// Pre-exec hook (Linux 한정) — 자식 프로세스 안에서 fork() 직후 exec() 직전 호출.
     /// LinuxCgroupsSandboxAdapter 가 저장 — cgroup attach + seccomp install + unshare.
     /// 미설정 시 옛 동작 (격리 0). Phase B-post Track B Stage 2+3 설정 (2026-05-06).
@@ -315,9 +321,17 @@ impl ProcessSandboxAdapter {
             runtimes,
             vault: None,
             status: None,
+            cache: None,
             #[cfg(target_os = "linux")]
             pre_exec_hook: None,
         }
+    }
+
+    /// SysmodCacheAdapter 주입 — sysmod 응답 안 `_cache` envelope 자동 인식.
+    /// 미설정 시 `_cache` 박힌 응답 그대로 통과 (옛 호환).
+    pub fn with_cache(mut self, cache: Arc<SysmodCacheAdapter>) -> Self {
+        self.cache = Some(cache);
+        self
     }
 
     /// Runtime 등록 — 새 언어 (Ruby / Bun / Deno) 추가 시 ctor 후 호출.
@@ -1196,6 +1210,77 @@ impl ProcessSandboxAdapter {
             }
         } else {
             (true, parsed, None, None, None)
+        };
+
+        // `_cache` envelope 인식 — sysmod 가 큰 응답 (50행+) 시 data.{_cache: {records, sysmod, action,
+        // params, ttlSec}} 박은 영역 자동 SysmodCacheAdapter 저장. AI 가 records 통째 받지 않고 _cacheKey
+        // 만 받아 cache_read / cache_grep / cache_aggregate gRPC 도구 호출. 토큰 절약.
+        // 미설정 (cache None) 또는 cache.data() fail 시 `_cache` 영역 그대로 통과 (옛 호환).
+        let data = if let Some(cache) = &self.cache {
+            if let Some(obj) = data.as_object().cloned() {
+                let mut obj = obj;
+                if let Some(cache_envelope) = obj.remove("_cache") {
+                    if let Some(c_obj) = cache_envelope.as_object() {
+                        let records_opt = c_obj
+                            .get("records")
+                            .and_then(|v| v.as_array())
+                            .cloned();
+                        let sysmod_name = c_obj
+                            .get("sysmod")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(module_name);
+                        let action_name = c_obj
+                            .get("action")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(input_action);
+                        let params = c_obj
+                            .get("params")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null);
+                        let ttl_sec = c_obj.get("ttlSec").and_then(|v| v.as_i64());
+                        if let Some(records) = records_opt {
+                            let record_count = records.len();
+                            match cache.data(sysmod_name, action_name, params, records, ttl_sec) {
+                                Ok(key) => {
+                                    obj.insert(
+                                        "_cacheKey".to_string(),
+                                        serde_json::Value::String(key.clone()),
+                                    );
+                                    obj.insert(
+                                        "_cacheMeta".to_string(),
+                                        serde_json::json!({
+                                            "sysmod": sysmod_name,
+                                            "action": action_name,
+                                            "recordCount": record_count,
+                                            "ttlSec": ttl_sec,
+                                        }),
+                                    );
+                                    tracing::info!(
+                                        module = module_name,
+                                        action = input_action,
+                                        cache_key = %key,
+                                        record_count,
+                                        "[sandbox] _cache envelope → SysmodCacheAdapter 저장"
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::warn!(
+                                        module = module_name,
+                                        action = input_action,
+                                        error = %e,
+                                        "[sandbox] _cache 저장 실패 — envelope 폐기"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                serde_json::Value::Object(obj)
+            } else {
+                data
+            }
+        } else {
+            data
         };
 
         Ok(ModuleOutput {
