@@ -106,6 +106,7 @@ impl From<PackageStatus> for PackageStatusPb {
             installed_version: s.installed_version,
             required_version: s.required_version,
             upgrade_available: s.upgrade_available,
+            latest_version: s.latest_version,
         }
     }
 }

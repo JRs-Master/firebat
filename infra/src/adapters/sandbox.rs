@@ -11,8 +11,10 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
+use tokio::sync::Mutex as TokioMutex;
 
 use firebat_core::managers::status::StatusManager;
 use firebat_core::ports::{
@@ -21,6 +23,77 @@ use firebat_core::ports::{
 };
 
 const DEFAULT_TIMEOUT_MS: u64 = 60_000;
+const PYPI_CACHE_TTL: Duration = Duration::from_secs(3600);
+
+/// PyPI registry 안 최신 버전 캐시 — 매 polling 시 network 호출 부담 차단. 1시간 TTL.
+/// HashMap<package_name, (Instant, Option<latest_version>)>.
+/// None 박힌 영역 = network fail 또는 PyPI 안 패키지 없음 — 같은 TTL 동안 재시도 X.
+fn pypi_cache() -> &'static TokioMutex<HashMap<String, (Instant, Option<String>)>> {
+    static CACHE: OnceLock<TokioMutex<HashMap<String, (Instant, Option<String>)>>> = OnceLock::new();
+    CACHE.get_or_init(|| TokioMutex::new(HashMap::new()))
+}
+
+/// PyPI JSON API 안 최신 stable 버전 조회. 1시간 캐시. 호출 site = `get_package_status_for_module`.
+async fn fetch_latest_pypi_version(pkg_name: &str) -> Option<String> {
+    {
+        let cache = pypi_cache().lock().await;
+        if let Some((stored_at, version)) = cache.get(pkg_name) {
+            if stored_at.elapsed() < PYPI_CACHE_TTL {
+                return version.clone();
+            }
+        }
+    }
+    let url = format!("https://pypi.org/pypi/{}/json", pkg_name);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .ok()?;
+    let result: Option<String> = match client.get(&url).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            match resp.json::<serde_json::Value>().await {
+                Ok(json) => json
+                    .get("info")
+                    .and_then(|v| v.get("version"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                Err(_) => None,
+            }
+        }
+        _ => None,
+    };
+    let mut cache = pypi_cache().lock().await;
+    cache.insert(pkg_name.to_string(), (Instant::now(), result.clone()));
+    result
+}
+
+/// semver-like 비교 — `2.32.3` vs `2.32.4` 형식 안 dot 분리 + 숫자 ordering.
+/// 두 영역 다 같은 길이 가정 X (한 쪽 박혀있고 다른 쪽 0 = 0 으로 보충).
+/// 비교 결과: latest > required → true (업그레이드 가능), 그 외 false.
+fn is_version_newer(latest: &str, required: &str) -> bool {
+    let parse = |s: &str| -> Vec<u64> {
+        s.split('.')
+            .map(|p| {
+                // 안 `1.2.3rc1` 같은 영역 — rc/a/b 만나면 digit 만 추출 (보수적).
+                let digits: String = p.chars().take_while(|c| c.is_ascii_digit()).collect();
+                digits.parse::<u64>().unwrap_or(0)
+            })
+            .collect()
+    };
+    let a = parse(latest);
+    let b = parse(required);
+    let max = a.len().max(b.len());
+    for i in 0..max {
+        let av = *a.get(i).unwrap_or(&0);
+        let bv = *b.get(i).unwrap_or(&0);
+        if av > bv {
+            return true;
+        }
+        if av < bv {
+            return false;
+        }
+    }
+    false
+}
 
 /// config.json `packages` 엔트리 정규화 형태 — heterogeneous string OR object 모두 흡수.
 ///
@@ -717,10 +790,18 @@ impl ProcessSandboxAdapter {
             } else {
                 (PackageStatusKind::Missing, None)
             };
-            // upgrade_available = 두 버전 다 추출됨 + 다름. specifier `==` 외 (None) = 비교 불가 → false.
+            // 설치 박힌 패키지만 PyPI 체크 (미설치 = 업그레이드 의미 0). 1시간 캐시 박혀
+            // 매 polling 시 network 호출 부담 차단.
+            let latest_version = if matches!(kind, PackageStatusKind::Installed) {
+                fetch_latest_pypi_version(&display).await
+            } else {
+                None
+            };
+            // upgrade_available = PyPI latest > config 명시 버전. specifier `==` 외 박힌 영역
+            // (required_version = None) = 비교 불가 → false (보수적).
             let upgrade_available = matches!(
-                (&installed_version, &required_version),
-                (Some(i), Some(r)) if i != r
+                (&latest_version, &required_version),
+                (Some(l), Some(r)) if is_version_newer(l, r)
             );
             result.push(PackageStatus {
                 name: display,
@@ -729,6 +810,7 @@ impl ProcessSandboxAdapter {
                 error,
                 installed_version,
                 required_version,
+                latest_version,
                 upgrade_available,
             });
         }

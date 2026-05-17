@@ -1241,6 +1241,7 @@ interface PackageStatusItem {
   error?: string;
   installedVersion?: string;
   requiredVersion?: string;
+  latestVersion?: string;
   upgradeAvailable?: boolean;
 }
 

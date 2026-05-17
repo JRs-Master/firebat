@@ -593,14 +593,19 @@ pub struct PackageStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     /// 디스크 안 설치 박힌 버전 (dist-info 안 추출) — `2.32.3` 형식. 미설치 / 추출 실패 = None.
+    /// 사용자 표시 정보 (참고용) — 업그레이드 판단에는 사용 X.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installed_version: Option<String>,
     /// config.json 안 명시 버전 (`==X.Y.Z` specifier 안 매칭). 다른 specifier (>=, ~=) = None.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub required_version: Option<String>,
-    /// 업그레이드 가능 — installed_version 박혀있고 required_version 박혀있고 두 값 다른 경우만 true.
+    /// PyPI registry 안 최신 stable 버전 (`https://pypi.org/pypi/<pkg>/json` 조회). 1시간 캐시.
+    /// 네트워크 실패 / 미설치 패키지 = None.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_version: Option<String>,
+    /// 업그레이드 가능 — `latest_version > required_version` (semver 비교) 인 경우만 true.
     /// frontend SystemModuleSettings 안 [업그레이드] 버튼 표시 조건. 옛 동작 안 항상 표시 박혔던 영역
-    /// 정정 — 진짜 업그레이드 박을 영역 있을 때만.
+    /// 정정 — PyPI 안 새 버전 존재 + 사용자가 업그레이드 박을 가치 있을 때만.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub upgrade_available: bool,
 }
