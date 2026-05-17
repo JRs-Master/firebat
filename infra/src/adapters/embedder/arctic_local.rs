@@ -167,9 +167,15 @@ impl ArcticLocalEmbedderAdapter {
     }
 
     fn build_api(&self) -> Result<Api, String> {
-        // hf-hub 0.3 영역 default endpoint env (HF_ENDPOINT) 없으면 "relative URL"
-        // 에러. systemd unit 에 Environment=HF_ENDPOINT=https://huggingface.co 박음.
-        let mut builder = hf_hub::api::tokio::ApiBuilder::new();
+        // 옛 commit `3418b4b` 안 HF_ENDPOINT env fix = 잘못된 진단. hf-hub 0.3 안 env 안
+        // 읽음. 0.4 upgrade + `with_endpoint` 명시 호출 정공 (e5_local.rs 와 동일 패턴).
+        let endpoint = std::env::var("HF_ENDPOINT")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "https://huggingface.co".to_string());
+        tracing::info!(endpoint = %endpoint, "[ArcticEmbedder] hf-hub endpoint 설정");
+        let mut builder = hf_hub::api::tokio::ApiBuilder::new()
+            .with_endpoint(endpoint);
         if let Some(dir) = &self.cache_dir {
             builder = builder.with_cache_dir(dir.clone());
         }

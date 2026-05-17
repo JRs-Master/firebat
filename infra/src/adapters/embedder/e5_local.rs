@@ -172,13 +172,20 @@ impl E5LocalEmbedderAdapter {
     }
 
     fn build_api(&self) -> Result<Api, String> {
-        // hf-hub 0.3 의 default endpoint 가 일부 환경에서 비어있어 "relative URL without
-        // a base" 에러 → OnceCell 이 Err 면 cache 안 박혀 매 호출마다 무한 retry loop
-        // (사용자 admin chat 박을 때마다 5 source 병렬 → 25개 동시 retry → CPU/메모리
-        // 폭주 → OOM). systemd unit 에 `Environment=HF_ENDPOINT=https://huggingface.co`
-        // 박아 hf-hub 영역 env 통해 base URL 인식. 코드 영역 with_endpoint method 0
-        // (hf-hub 0.3 API 한계).
-        let mut builder = hf_hub::api::tokio::ApiBuilder::new();
+        // 옛 commit `3418b4b` 안 `HF_ENDPOINT` env 자동 default 박은 fix = 잘못된 진단.
+        // hf-hub 0.3 안 env 안 읽음 + default endpoint = "https://huggingface.co" 자체 박혀있음.
+        // 실측 결과 사용자 환경 안 `relative URL without a base` 에러 여전히 발생.
+        //
+        // 새 fix: hf-hub 0.4 upgrade + `with_endpoint` 명시 호출. 0.4 안 method 신설 + env 인식.
+        // endpoint 명시로 우회 방어 (default 이미 박혀있지만 환경 안 어떤 영역 안 빈 값 박힐
+        // 가능성 차단). 디버그 log 박아 사용자 환경 안 진짜 endpoint 값 확인.
+        let endpoint = std::env::var("HF_ENDPOINT")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "https://huggingface.co".to_string());
+        tracing::info!(endpoint = %endpoint, "[E5Embedder] hf-hub endpoint 설정");
+        let mut builder = hf_hub::api::tokio::ApiBuilder::new()
+            .with_endpoint(endpoint);
         if let Some(dir) = &self.cache_dir {
             builder = builder.with_cache_dir(dir.clone());
         }

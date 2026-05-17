@@ -88,7 +88,7 @@ candle-core = { version = "0.8", default-features = false }
 candle-nn = { version = "0.8", default-features = false }
 candle-transformers = { version = "0.8", default-features = false }
 tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
-hf-hub = { version = "0.3", default-features = false, features = ["online", "tokio"] }
+hf-hub = { version = "0.4", default-features = false, features = ["tokio", "default-tls"] }
 
 # Library Phase 1 — PDF 텍스트 추출 (image / scanned PDF Phase 2 영역).
 pdf-extract = "0.7"
