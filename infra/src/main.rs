@@ -75,6 +75,14 @@ async fn main() -> Result<()> {
     init_tracing();
     tracing::info!(version = firebat_core::version(), "Firebat Core 부팅");
 
+    // hf-hub 0.3 의 default endpoint env (HF_ENDPOINT) 가 일부 환경에서 비어있어
+    // "relative URL without a base" 에러 발생 → embedder 모델 다운로드 fail → OnceCell
+    // 영역 Err 반환 시 cache 안 박혀 매 호출마다 무한 retry loop → CPU/메모리 폭주 → OOM.
+    // startup 시점 default 박아 root cause 차단. env 박혀있으면 사용자 영역 그대로 사용.
+    if std::env::var("HF_ENDPOINT").is_err() {
+        std::env::set_var("HF_ENDPOINT", "https://huggingface.co");
+    }
+
     // Phase 5 정공 — LLM model registry JSON 로드. 옛 builtin_models() Rust 하드코드 폐기.
     // 파일 미발견 시 stub 폴백 (panic X). FIREBAT_LLM_MODELS_PATH env 으로 위치 override.
     firebat_infra::llm::registry_loader::init_from_file();

@@ -172,6 +172,12 @@ impl E5LocalEmbedderAdapter {
     }
 
     fn build_api(&self) -> Result<Api, String> {
+        // hf-hub 0.3 의 default endpoint 가 일부 환경에서 비어있어 "relative URL without
+        // a base" 에러 → OnceCell 이 Err 면 cache 안 박혀 매 호출마다 무한 retry loop
+        // (사용자 admin chat 박을 때마다 5 source 병렬 → 25개 동시 retry → CPU/메모리
+        // 폭주 → OOM). systemd unit 에 `Environment=HF_ENDPOINT=https://huggingface.co`
+        // 박아 hf-hub 영역 env 통해 base URL 인식. 코드 영역 with_endpoint method 0
+        // (hf-hub 0.3 API 한계).
         let mut builder = hf_hub::api::tokio::ApiBuilder::new();
         if let Some(dir) = &self.cache_dir {
             builder = builder.with_cache_dir(dir.clone());

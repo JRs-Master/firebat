@@ -266,7 +266,7 @@ export function LibraryReferenceDetail({
                     type="text"
                     value={textName}
                     onChange={e => setTextName(e.target.value)}
-                    placeholder="예: 회사 내부 정책 v3"
+                    placeholder="자료 제목"
                     className="w-full px-2 py-1.5 text-[12px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     name="textName"
                     autoComplete="off"

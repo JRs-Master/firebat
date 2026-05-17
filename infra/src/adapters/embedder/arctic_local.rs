@@ -167,6 +167,8 @@ impl ArcticLocalEmbedderAdapter {
     }
 
     fn build_api(&self) -> Result<Api, String> {
+        // hf-hub 0.3 영역 default endpoint env (HF_ENDPOINT) 없으면 "relative URL"
+        // 에러. systemd unit 에 Environment=HF_ENDPOINT=https://huggingface.co 박음.
         let mut builder = hf_hub::api::tokio::ApiBuilder::new();
         if let Some(dir) = &self.cache_dir {
             builder = builder.with_cache_dir(dir.clone());
