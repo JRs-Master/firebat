@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { apiPost } from '../../../lib/api-fetch';
 
@@ -17,6 +17,7 @@ export function PasswordGate({ slug, title, isProjectPassword, projectName }: Pr
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const passwordId = useId();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,12 +68,17 @@ export function PasswordGate({ slug, title, isProjectPassword, projectName }: Pr
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+          <label htmlFor={passwordId} className="sr-only">비밀번호</label>
           <input
+            id={passwordId}
+            name="password"
             type="password"
             value={password}
             onChange={e => { setPassword(e.target.value); setError(''); }}
             placeholder="비밀번호 입력"
+            autoComplete="current-password"
             autoFocus
+            aria-label="비밀번호"
             className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-[15px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
           />
           {error && (

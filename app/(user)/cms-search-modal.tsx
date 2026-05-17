@@ -8,7 +8,7 @@
  *
  * 결과 클릭 시 모달 close + 페이지 navigation. 모든 페이지 검색 (private 제외, password 포함).
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useId } from 'react';
 import { apiGet } from '../../lib/api-fetch';
 
 interface SearchResult {
@@ -45,6 +45,7 @@ function SearchModal({ onClose }: { onClose: () => void }) {
   const [tooShort, setTooShort] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const queryId = useId();
 
   // ESC 닫기 + body scroll lock + autoFocus
   useEffect(() => {
@@ -123,14 +124,19 @@ function SearchModal({ onClose }: { onClose: () => void }) {
               <circle cx="11" cy="11" r="7" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
+            <label htmlFor={queryId} className="sr-only">검색어</label>
             <input
               ref={inputRef}
+              id={queryId}
+              name="query"
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="검색어 입력..."
+              autoComplete="off"
+              aria-label="검색어"
               className="flex-1 bg-transparent border-0 outline-none text-base"
-              style={{ color: 'var(--cms-text)' }} name="query" autoComplete="off" id="query"
+              style={{ color: 'var(--cms-text)' }}
             />
             {loading && (
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin" style={{ color: 'var(--cms-text-muted)' }} aria-hidden="true">

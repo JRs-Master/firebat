@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useId, useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Loader2, X, Copy, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
@@ -39,6 +39,7 @@ interface MediaItem {
 const PAGE_SIZE = 48;
 
 export function GalleryPanel() {
+  const searchId = useId();
   const [items, setItems] = useState<MediaItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -158,12 +159,14 @@ export function GalleryPanel() {
       <div className="shrink-0 flex flex-col gap-2 px-3 py-3 border-b border-slate-100 bg-slate-50/50">
         <div className="relative">
           <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <label htmlFor={searchId} className="sr-only">갤러리 검색</label>
           <input
             type="text"
             placeholder="프롬프트·파일명·모델로 검색"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-7 pr-2 py-1.5 text-[12px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="search" autoComplete="off" id="search"
+            aria-label="갤러리 검색"
+            className="w-full pl-7 pr-2 py-1.5 text-[12px] bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="gallerySearch" autoComplete="off" id={searchId}
           />
         </div>
         <div className="flex gap-1">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useId, useState, useEffect, useCallback } from 'react';
 import { Loader2, RefreshCw, X } from 'lucide-react';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog } from './Dialog';
@@ -19,6 +19,7 @@ import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
  * 등록 해제: "비활성화" 버튼 → DELETE /api/telegram/setup
  */
 export function TelegramWebhookSection() {
+  const domainId = useId();
   const [status, setStatus] = useState<{
     active: boolean;
     url?: string;
@@ -137,13 +138,15 @@ export function TelegramWebhookSection() {
       )}
 
       <div className="flex flex-col sm:flex-row gap-2">
+        <label htmlFor={domainId} className="sr-only">텔레그램 웹훅 도메인</label>
         <input
           type="text"
           value={domain}
           onChange={e => { setDomain(e.target.value); setMessage(null); }}
           placeholder="https://your-domain.com"
           disabled={busy}
-          className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] sm:text-[13px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50" name="domain" autoComplete="off" id="domain"
+          aria-label="텔레그램 웹훅 도메인"
+          className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] sm:text-[13px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-50" name="webhookDomain" autoComplete="url" id={domainId}
         />
         {status?.active ? (
           <button

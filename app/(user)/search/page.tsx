@@ -69,12 +69,16 @@ export default async function SearchPage({ searchParams }: Props) {
 
         {/* 검색 form — GET method 로 ?q= 갱신, 페이지 reload */}
         <form method="get" action="/search" className="mt-5 flex items-stretch gap-2 max-w-xl">
+          <label htmlFor="search-query" className="sr-only">{t('common.search')}</label>
           <input
+            id="search-query"
             type="search"
             name="q"
             defaultValue={q}
             placeholder={t('page.search_placeholder')}
+            autoComplete="off"
             autoFocus
+            aria-label={t('common.search')}
             className="flex-1 px-3 py-2 text-sm border rounded outline-none"
             style={{
               background: 'var(--cms-bg-card)',

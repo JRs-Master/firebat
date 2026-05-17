@@ -9,7 +9,7 @@
  * 사용:
  *   <WidgetListField area="sidebar" value={widgets} onChange={setWidgets} />
  */
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import {
   type WidgetSlot,
   type WidgetType,
@@ -38,6 +38,8 @@ export function WidgetListField({
   langData?: Record<string, any> | null;
 }) {
   const t = useTranslations();
+  // a11y — 매 widget slot index + prop key 별 stable id base.
+  const widgetIdBase = useId();
   // widget_list 영역 lookup — service.cms.widget_list.{X}.
   // lookup miss 시 영문 fallback (lang 미존재 시 안전 표시).
   const wl = (langData?.widget_list as Record<string, string> | undefined) ?? {};
@@ -184,7 +186,8 @@ export function WidgetListField({
                       <select
                         value={slot.visibility ?? 'all'}
                         onChange={(e) => updateSlot(i, { visibility: e.target.value as WidgetSlot['visibility'] })}
-                        className="text-[11px] px-2 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="all" id="all"
+                        aria-label={wlText('visibility_label', 'Visibility')}
+                        className="text-[11px] px-2 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name={`visibility-${i}`} id={`${widgetIdBase}-visibility-${i}`}
                       >
                         <option value="all">{wlText('visibility_all', 'PC + Mobile')}</option>
                         <option value="desktop">{wlText('visibility_desktop', 'PC only (sm+)')}</option>
@@ -215,14 +218,14 @@ export function WidgetListField({
                           }
                           return (
                             <div key={p.key} className="flex flex-col gap-1">
-                              <label className="text-[11px] font-bold text-slate-600">{p.label}</label>
+                              <label className="text-[11px] font-bold text-slate-600" htmlFor={`${widgetIdBase}-prop-${i}-${p.key}`}>{p.label}</label>
                               {p.type === 'textarea' ? (
                                 <textarea
                                   value={typeof eff === 'string' ? eff : ''}
                                   onChange={(e) => updateProp(i, p.key, e.target.value)}
                                   placeholder={p.placeholder}
                                   rows={3}
-                                  className="text-[11px] px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono" name="eff" autoComplete="off" id="eff"
+                                  className="text-[11px] px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 font-mono" name={`prop-${i}-${p.key}`} autoComplete="off" id={`${widgetIdBase}-prop-${i}-${p.key}`}
                                 />
                               ) : (
                                 <input
@@ -230,7 +233,7 @@ export function WidgetListField({
                                   value={eff == null ? '' : String(eff)}
                                   onChange={(e) => updateProp(i, p.key, p.type === 'number' ? Number(e.target.value) : e.target.value)}
                                   placeholder={p.placeholder}
-                                  className="text-[11px] px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="Stringeff" autoComplete="off" id="Stringeff"
+                                  className="text-[11px] px-2 py-1.5 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name={`prop-${i}-${p.key}`} autoComplete="off" id={`${widgetIdBase}-prop-${i}-${p.key}`}
                                 />
                               )}
                               {p.description && (

@@ -179,6 +179,8 @@ interface Props {
 export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPage }: Props) {
   const t = useTranslations();
   const { lang } = useLang();
+  // a11y — 매 field key 별 stable id 의 base (`${fieldIdBase}-${field.key}`).
+  const fieldIdBase = useId();
   // 모듈명 alias resolve — 옛 이름 ('seo') 으로 호출되어도 새 service ('cms') 로 fetch.
   const resolvedName = MODULE_NAME_ALIASES[moduleName] ?? moduleName;
   const [schema, setSchema] = useState<{ title: string; fields: SettingField[] } | null>(null);
@@ -826,11 +828,11 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                   />
                 ) : field.type === 'select' ? (
                   <>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700" htmlFor="field798">{localize(t, field.label)}</label>
+                    <label className="text-xs sm:text-sm font-bold text-slate-700" htmlFor={`${fieldIdBase}-${field.key}`}>{localize(t, field.label)}</label>
                     <select
                       value={settings[field.key] ?? field.defaultValue ?? ''}
                       onChange={e => handleChange(field.key, e.target.value)}
-                      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="field798" id="field798"
+                      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name={field.key} id={`${fieldIdBase}-${field.key}`}
                     >
                       {(field.options ?? []).map(opt => (
                         <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -857,14 +859,14 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                   </label>
                 ) : (
                   <>
-                    <label className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</label>
+                    <label className="text-xs sm:text-sm font-bold text-slate-700" htmlFor={`${fieldIdBase}-${field.key}`}>{localize(t, field.label)}</label>
                     {field.type === 'textarea' ? (
                       <textarea
                         value={settings[field.key] ?? ''}
                         onChange={e => handleChange(field.key, e.target.value)}
                         placeholder={field.placeholder}
                         rows={4}
-                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono resize-y" name="field830" autoComplete="off" id="field830"
+                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono resize-y" name={field.key} autoComplete="off" id={`${fieldIdBase}-${field.key}`}
                       />
                     ) : (
                       <input
@@ -872,7 +874,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                         value={settings[field.key] ?? ''}
                         onChange={e => handleChange(field.key, field.type === 'number' ? Number(e.target.value) : e.target.value)}
                         placeholder={field.placeholder}
-                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="field838" autoComplete="off" id="field838"
+                        className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name={field.key} autoComplete="off" id={`${fieldIdBase}-${field.key}`}
                       />
                     )}
                     {field.description && (
@@ -1042,6 +1044,7 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
   langData: Record<string, any> | null;
 }) {
   const t = useTranslations();
+  const colorIdBase = useId();
   const preset = COLOR_PRESETS[presetKey] ?? COLOR_PRESETS['slate-pro'];
   // 색 라벨 lookup — service.cms.color_overrides.{X}. lookup miss 시 fallback (영문) 표시.
   const colorLangArea = (langData?.color_overrides as Record<string, string> | undefined) ?? {};
@@ -1102,7 +1105,8 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
                     type="color"
                     value={displayHex}
                     onChange={e => handleHexChange(e.target.value)}
-                    className="absolute inset-0 w-full h-full cursor-pointer border-0 p-0 opacity-0" name="displayHex" autoComplete="off" id="displayHex"
+                    aria-label={`${colorLangArea[f.langKey] ?? f.fallback} 색상 선택`}
+                    className="absolute inset-0 w-full h-full cursor-pointer border-0 p-0 opacity-0" name={`color-${f.key}`} autoComplete="off" id={`${colorIdBase}-color-${f.key}`}
                   />
                   <div
                     className="absolute inset-0"
@@ -1117,7 +1121,8 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
                   value={overrideValue}
                   onChange={e => handleTextChange(e.target.value)}
                   placeholder={presetValue}
-                  className={`w-full text-[10px] font-mono border-0 bg-transparent focus:outline-none ${isOverridden ? 'text-slate-700' : 'text-slate-400'}`} name="overrideValue" autoComplete="off" id="overrideValue"
+                  aria-label={`${colorLangArea[f.langKey] ?? f.fallback} 색상 값`}
+                  className={`w-full text-[10px] font-mono border-0 bg-transparent focus:outline-none ${isOverridden ? 'text-slate-700' : 'text-slate-400'}`} name={`override-${f.key}`} autoComplete="off" id={`${colorIdBase}-override-${f.key}`}
                 />
                 {/* Alpha slider — hex picker 와 별도 (native color picker 가 alpha 미지원) */}
                 <div className="flex items-center gap-1.5 mt-0.5">
@@ -1128,7 +1133,7 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
                     value={Math.round(displayAlpha * 100)}
                     onChange={e => handleAlphaChange(parseInt(e.target.value, 10))}
                     className="flex-1 h-1 cursor-pointer"
-                    aria-label={t('system_modules.common.alpha_label')} name="rounddisplayAlpha100" autoComplete="off" id="rounddisplayAlpha100"
+                    aria-label={t('system_modules.common.alpha_label')} name={`alpha-${f.key}`} autoComplete="off" id={`${colorIdBase}-alpha-${f.key}`}
                   />
                   <span className="text-[9px] text-slate-400 font-mono w-7 text-right tabular-nums">
                     {Math.round(displayAlpha * 100)}%

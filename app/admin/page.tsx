@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo, useId } from 'react';
 import { useRouter } from 'next/navigation';
 import { Send, Cpu, AlertTriangle, Blocks, Ghost, ExternalLink, X, Check, Copy, CheckCheck, ImagePlus, Plus, Square, ListChecks, Share2, Image as ImageIcon } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -123,6 +123,8 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
 }) {
+  // a11y — 매 카드 안 inline 입력 칸의 stable id base. SuggestionButtons 매 마운트마다 unique.
+  const inlineInputBaseId = useId();
   // 카드 내 aggregate state
   const [toggleValues, setToggleValues] = useState<Record<number, Set<string>>>({});
   const [inputValues, setInputValues] = useState<Record<number, string[]>>({});  // idx → 여러 칸 배열
@@ -297,7 +299,11 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
                       rows={1}
                       style={{ resize: 'none', overflow: 'hidden' }}
                       onInput={e => { const t = e.currentTarget; t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 200) + 'px'; }}
-                      className={`flex-1 px-3 py-1.5 border rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 bg-white ${borderCls}`} name="val" autoComplete="off" id="val"
+                      id={`${inlineInputBaseId}-${i}-${subIdx}`}
+                      name={`inlineInput-${i}-${subIdx}`}
+                      autoComplete="off"
+                      aria-label={item.label || (isRevise ? '수정 입력' : '입력')}
+                      className={`flex-1 px-3 py-1.5 border rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 bg-white ${borderCls}`}
                     />
                     {rows.length > 1 && (
                       <Tooltip label="이 칸 삭제">
@@ -933,6 +939,9 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
 export default function AdminConsole() {
   const router = useRouter();
   const t = useTranslations();
+  // a11y — chat 입력창 / 이미지 file picker 의 안정 id (DevTools "form field id 중복" 회피).
+  const chatInputId = useId();
+  const imageFileInputId = useId();
   // CMS 설정 클릭 시 /admin/cms 로 이동 — sessionStorage flag 로 직접 URL 진입 차단.
   // sysmod 'cms' 만 분기, 그 외는 모달 그대로.
   const handleOpenModuleSettings = useCallback((name: string) => {
@@ -1232,26 +1241,35 @@ export default function AdminConsole() {
                     </Tooltip>
                   </div>
                 )}
+                <label htmlFor={chatInputId} className="sr-only">{t('admin_chat.placeholder_default')}</label>
                 <textarea
+                  id={chatInputId}
+                  name="chatInput"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
                   disabled={loading}
+                  autoComplete="off"
+                  aria-label={t('admin_chat.placeholder_default')}
                   style={{ touchAction: 'pan-y', overscrollBehavior: 'contain', WebkitUserSelect: 'text', WebkitOverflowScrolling: 'touch' }}
                   className="w-full min-h-[56px] sm:min-h-[90px] max-h-[250px] px-4 sm:px-5 pt-3 sm:pt-4 pb-1 bg-transparent outline-none resize-none text-[16px] leading-relaxed text-slate-800 disabled:opacity-50 select-text overflow-y-auto"
                   placeholder={
                     loading
                       ? t('admin_chat.placeholder_loading')
                       : (inputMode === 'image' ? t('admin_chat.placeholder_image_mode') : t('admin_chat.placeholder_default'))
-                  } name="input" autoComplete="off" id="input"
+                  }
                 />
                 <input
                   ref={imageInputRef}
+                  id={imageFileInputId}
+                  name="chatImageAttach"
                   type="file"
                   accept="image/*"
+                  autoComplete="off"
+                  aria-label="이미지 첨부"
                   className="hidden"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); e.target.value = ''; }} name="field1235" autoComplete="off" id="field1235"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); e.target.value = ''; }}
                 />
                 <div className="flex items-center justify-between px-2 sm:px-3 py-2">
                   <div className="flex items-center gap-1">

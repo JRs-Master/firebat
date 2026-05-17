@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { ChevronDown, ChevronRight, Plug, KeyRound, CheckCircle2 } from 'lucide-react';
 import { apiPost } from '../../../lib/api-fetch';
 
@@ -33,6 +33,7 @@ export function McpResultCollapsible({ data }: { data: any[] }) {
 
 /** 시크릿 입력 인라인 컴포넌트 — AI의 REQUEST_SECRET 액션 응답용 */
 export function SecretInput({ name, prompt, helpUrl }: { name: string; prompt: string; helpUrl?: string }) {
+  const inputId = useId();
   const [value, setValue] = useState('');
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
@@ -75,12 +76,17 @@ export function SecretInput({ name, prompt, helpUrl }: { name: string; prompt: s
         </div>
       </div>
       <div className="flex gap-2">
+        <label htmlFor={inputId} className="sr-only">{name}</label>
         <input
+          id={inputId}
+          name={name}
           type="password"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSave()}
           placeholder={`${name} 입력...`}
+          autoComplete="off"
+          aria-label={name}
           className="flex-1 px-3 py-2 text-sm border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
         />
         <button

@@ -53,6 +53,23 @@ export function SettingsModal(props: Props) {
 function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenModuleSettings, initialTab }: Props) {
   const t = useTranslations();
   const { lang: uiLang, setLang: setUiLang } = useLang();
+  // a11y — 안정 form field id (DevTools "Duplicate form field id" 회피 + label-input 매칭).
+  const userTimezoneId = useId();
+  const adminCurrentPwId = useId();
+  const adminNewIdId = useId();
+  const adminNewPwId = useId();
+  const anthropicCacheId = useId();
+  const subAgentEnabledId = useId();
+  const aiRouterEnabledId = useId();
+  const newSecretNameId = useId();
+  const newSecretValueId = useId();
+  const mcpEditCommandId = useId();
+  const mcpEditArgsId = useId();
+  const mcpEditUrlId = useId();
+  const mcpNewNameId = useId();
+  const mcpNewCommandId = useId();
+  const mcpNewArgsId = useId();
+  const mcpNewUrlId = useId();
   // useAiModels 컴포넌트 상단 호출 — inferModeProvider / categoryOf 가 aiModelsList 참조하므로 hoist 보장.
   const { models: aiModelsList } = useAiModels();
   // 비용·메모리는 AI 탭 하위 sub-tab 으로 통합 — initialTab='cost'/'memory' 면 자동으로 AI 탭 + sub-tab 으로 변환.
@@ -816,11 +833,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
               {/* 타임존 */}
               <div className="flex flex-col gap-2">
-                <label className="text-xs sm:text-sm font-bold text-slate-700" htmlFor="userTimezone">{t('settings.timezone')}</label>
+                <label className="text-xs sm:text-sm font-bold text-slate-700" htmlFor={userTimezoneId}>{t('settings.timezone')}</label>
                 <select
                   value={userTimezone}
                   onChange={e => setUserTimezone(e.target.value)}
-                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer" name="userTimezone" id="userTimezone"
+                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 cursor-pointer" name="userTimezone" id={userTimezoneId}
                 >
                   {TIMEZONE_OPTIONS.map(opt => (
                     <option key={opt.value} value={opt.value}>{timezoneLabel(opt, uiLang)}</option>
@@ -835,10 +852,14 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
                 <label className="text-xs sm:text-sm font-bold text-slate-700 pt-1">관리자 계정 변경</label>
                 <input
+                  id={adminCurrentPwId}
+                  name="currentPassword"
                   type="password"
                   value={adminCurrentPw}
                   onChange={e => { setAdminCurrentPw(e.target.value); setAdminPwError(''); }}
                   placeholder="현재 비밀번호"
+                  autoComplete="current-password"
+                  aria-label="현재 비밀번호"
                   className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 <input
@@ -846,13 +867,19 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   value={adminNewId}
                   onChange={e => setAdminNewId(e.target.value)}
                   placeholder="새 아이디"
-                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="adminNewId" autoComplete="off" id="adminNewId"
+                  autoComplete="username"
+                  aria-label="새 아이디"
+                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="adminNewId" id={adminNewIdId}
                 />
                 <input
+                  id={adminNewPwId}
+                  name="newPassword"
                   type="password"
                   value={adminNewPw}
                   onChange={e => setAdminNewPw(e.target.value)}
                   placeholder="새 비밀번호"
+                  autoComplete="new-password"
+                  aria-label="새 비밀번호"
                   className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 {adminPwError && <p className="text-[10px] sm:text-xs text-red-500 font-medium">{adminPwError}</p>}
@@ -1084,7 +1111,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           setAnthropicCacheEnabled(next);
                           await apiPatch('/api/settings', { anthropicCacheEnabled: next }, { category: 'settings' });
                         }}
-                        className="w-4 h-4 cursor-pointer" name="anthropicCacheEnabled" autoComplete="off" id="anthropicCacheEnabled"
+                        aria-label="Anthropic prompt cache 활성"
+                        className="w-4 h-4 cursor-pointer" name="anthropicCacheEnabled" autoComplete="off" id={anthropicCacheId}
                       />
                       <span className="text-[12px] text-slate-700">{anthropicCacheEnabled ? '활성 (cache_control 마커 적용)' : '비활성 (기본)'}</span>
                     </label>
@@ -1102,7 +1130,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         setSubAgentEnabled(next);
                         await apiPatch('/api/settings', { subAgentEnabled: next }, { category: 'settings' });
                       }}
-                      className="w-4 h-4 cursor-pointer" name="subAgentEnabled" autoComplete="off" id="subAgentEnabled"
+                      aria-label="Sub-agent 병렬 활성"
+                      className="w-4 h-4 cursor-pointer" name="subAgentEnabled" autoComplete="off" id={subAgentEnabledId}
                     />
                     <span className="text-[12px] text-slate-700">{subAgentEnabled ? '활성 (spawn_subagent 도구 노출)' : '비활성 (기본 — 도구 자체 미노출)'}</span>
                   </label>
@@ -1235,7 +1264,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           className="mt-0.5"
                           checked={aiRouterEnabled}
                           disabled={!hasGeminiKey}
-                          onChange={e => setAiRouterEnabled(e.target.checked)} name="aiRouterEnabled" autoComplete="off" id="aiRouterEnabled"
+                          onChange={e => setAiRouterEnabled(e.target.checked)}
+                          aria-label="AI 어시스턴트 활성"
+                          name="aiRouterEnabled" autoComplete="off" id={aiRouterEnabledId}
                         />
                         <div className="flex-1">
                           <div className="text-[13px] font-bold text-slate-800">AI 어시스턴트 활성화</div>
@@ -1559,6 +1590,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                             <div className="flex gap-1.5">
                               <input
                                 type="password"
+                                name="editSecretValue"
+                                autoComplete="new-password"
+                                aria-label={`${s.name} 새 값`}
                                 value={editingSecret.value}
                                 onChange={e => setEditingSecret({ name: s.name, value: e.target.value })}
                                 placeholder="새 값 입력"
@@ -1615,14 +1649,19 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     value={newSecretName}
                     onChange={e => setNewSecretName(e.target.value)}
                     placeholder="키 이름"
-                    className="flex-1 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="newSecretName" autoComplete="off" id="newSecretName"
+                    aria-label="키 이름"
+                    className="flex-1 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="newSecretName" autoComplete="off" id={newSecretNameId}
                   />
                   <input
+                    id={newSecretValueId}
+                    name="newSecretValue"
                     type="password"
                     value={newSecretValue}
                     onChange={e => setNewSecretValue(e.target.value)}
                     placeholder="키 값"
                     onKeyDown={e => e.key === 'Enter' && addSecret()}
+                    autoComplete="new-password"
+                    aria-label="키 값"
                     className="flex-1 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                   <button
@@ -1873,14 +1912,16 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                   value={mcpEditCommand}
                                   onChange={e => setMcpEditCommand(e.target.value)}
                                   placeholder="명령어"
-                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditCommand" autoComplete="off" id="mcpEditCommand"
+                                  aria-label="MCP 명령어"
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditCommand" autoComplete="off" id={mcpEditCommandId}
                                 />
                                 <input
                                   type="text"
                                   value={mcpEditArgs}
                                   onChange={e => setMcpEditArgs(e.target.value)}
                                   placeholder="인자 (공백 구분)"
-                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditArgs" autoComplete="off" id="mcpEditArgs"
+                                  aria-label="MCP 인자"
+                                  className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditArgs" autoComplete="off" id={mcpEditArgsId}
                                 />
                               </>
                             ) : (
@@ -1889,7 +1930,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                 value={mcpEditUrl}
                                 onChange={e => setMcpEditUrl(e.target.value)}
                                 placeholder="SSE URL"
-                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditUrl" autoComplete="off" id="mcpEditUrl"
+                                aria-label="MCP SSE URL"
+                                className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditUrl" autoComplete="off" id={mcpEditUrlId}
                               />
                             )}
                             <div className="flex gap-1.5 justify-end">
@@ -1953,13 +1995,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
               {/* 새 MCP 서버 추가 */}
               <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
-                <label className="text-xs sm:text-sm font-bold text-slate-700 pt-1" htmlFor="mcpNewName">서버 추가</label>
+                <label className="text-xs sm:text-sm font-bold text-slate-700 pt-1" htmlFor={mcpNewNameId}>서버 추가</label>
                 <input
                   type="text"
                   value={mcpNewName}
                   onChange={e => setMcpNewName(e.target.value)}
                   placeholder="서버 이름 (예: gmail, slack)"
-                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewName" autoComplete="off" id="mcpNewName"
+                  className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewName" autoComplete="off" id={mcpNewNameId}
                 />
                 <div className="flex gap-2">
                   <button
@@ -1982,14 +2024,16 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       value={mcpNewCommand}
                       onChange={e => setMcpNewCommand(e.target.value)}
                       placeholder="실행 명령어 (예: npx, python)"
-                      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewCommand" autoComplete="off" id="mcpNewCommand"
+                      aria-label="새 MCP 명령어"
+                      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewCommand" autoComplete="off" id={mcpNewCommandId}
                     />
                     <input
                       type="text"
                       value={mcpNewArgs}
                       onChange={e => setMcpNewArgs(e.target.value)}
                       placeholder="인자 (공백 구분, 예: -y @anthropic/mcp-gmail)"
-                      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewArgs" autoComplete="off" id="mcpNewArgs"
+                      aria-label="새 MCP 인자"
+                      className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewArgs" autoComplete="off" id={mcpNewArgsId}
                     />
                   </>
                 ) : (
@@ -1998,7 +2042,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     value={mcpNewUrl}
                     onChange={e => setMcpNewUrl(e.target.value)}
                     placeholder="SSE 서버 URL (예: http://localhost:3001/sse)"
-                    className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewUrl" autoComplete="off" id="mcpNewUrl"
+                    aria-label="새 MCP SSE URL"
+                    className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewUrl" autoComplete="off" id={mcpNewUrlId}
                   />
                 )}
                 <button
@@ -2539,6 +2584,11 @@ type BudgetState = {
 };
 
 function CostBudgetSection() {
+  const dailyUsdId = useId();
+  const monthlyUsdId = useId();
+  const dailyCallsId = useId();
+  const monthlyCallsId = useId();
+  const alertAtPercentId = useId();
   const [budget, setBudget] = useState<BudgetState | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -2610,30 +2660,30 @@ function CostBudgetSection() {
       <p className="text-[11px] text-slate-500 mb-2">USD 한도 = API 모드 (pay-per-token). 호출 수 한도 = 모든 모드 (CLI 구독 포함).</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1" htmlFor="dailyUsd">일일 USD</label>
-          <input type="number" min="0" step="0.5" value={budget.dailyUsd} onChange={e => setBudget({ ...budget, dailyUsd: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="dailyUsd" autoComplete="off" id="dailyUsd" />
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={dailyUsdId}>일일 USD</label>
+          <input type="number" min="0" step="0.5" value={budget.dailyUsd} onChange={e => setBudget({ ...budget, dailyUsd: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="dailyUsd" autoComplete="off" id={dailyUsdId} />
           {renderProgress('usd', budget.dailyUsd, budget.dailySpentUsd, dailyU)}
         </div>
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1" htmlFor="monthlyUsd">월간 USD</label>
-          <input type="number" min="0" step="5" value={budget.monthlyUsd} onChange={e => setBudget({ ...budget, monthlyUsd: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="monthlyUsd" autoComplete="off" id="monthlyUsd" />
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={monthlyUsdId}>월간 USD</label>
+          <input type="number" min="0" step="5" value={budget.monthlyUsd} onChange={e => setBudget({ ...budget, monthlyUsd: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="monthlyUsd" autoComplete="off" id={monthlyUsdId} />
           {renderProgress('usd', budget.monthlyUsd, budget.monthlySpentUsd, monthlyU)}
         </div>
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1" htmlFor="dailyCalls">일일 호출 수</label>
-          <input type="number" min="0" step="10" value={budget.dailyCalls} onChange={e => setBudget({ ...budget, dailyCalls: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="dailyCalls" autoComplete="off" id="dailyCalls" />
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={dailyCallsId}>일일 호출 수</label>
+          <input type="number" min="0" step="10" value={budget.dailyCalls} onChange={e => setBudget({ ...budget, dailyCalls: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="dailyCalls" autoComplete="off" id={dailyCallsId} />
           {renderProgress('calls', budget.dailyCalls, budget.dailySpentCalls, dailyC)}
         </div>
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1" htmlFor="monthlyCalls">월간 호출 수</label>
-          <input type="number" min="0" step="100" value={budget.monthlyCalls} onChange={e => setBudget({ ...budget, monthlyCalls: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="monthlyCalls" autoComplete="off" id="monthlyCalls" />
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={monthlyCallsId}>월간 호출 수</label>
+          <input type="number" min="0" step="100" value={budget.monthlyCalls} onChange={e => setBudget({ ...budget, monthlyCalls: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="monthlyCalls" autoComplete="off" id={monthlyCallsId} />
           {renderProgress('calls', budget.monthlyCalls, budget.monthlySpentCalls, monthlyC)}
         </div>
       </div>
       <div className="flex items-end gap-3">
         <div className="flex-1">
-          <label className="text-[11px] text-slate-500 block mb-1" htmlFor="alertAtPercent">알림 임계 (%) — progress bar 진해지는 기준</label>
-          <input type="number" min="1" max="100" step="5" value={budget.alertAtPercent} onChange={e => setBudget({ ...budget, alertAtPercent: Number(e.target.value) || 80 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="alertAtPercent" autoComplete="off" id="alertAtPercent" />
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={alertAtPercentId}>알림 임계 (%) — progress bar 진해지는 기준</label>
+          <input type="number" min="1" max="100" step="5" value={budget.alertAtPercent} onChange={e => setBudget({ ...budget, alertAtPercent: Number(e.target.value) || 80 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="alertAtPercent" autoComplete="off" id={alertAtPercentId} />
         </div>
         <button onClick={save} disabled={saving} className="px-3 py-1.5 text-[12px] bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-50">
           {savedFlash ? '✓ 저장됨' : saving ? '저장 중...' : '한도 저장'}

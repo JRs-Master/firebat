@@ -5,7 +5,7 @@
  * user/templates/* 의 list 표시 + 클릭 시 모나코 에디터로 template.json 편집.
  * 새 템플릿 만들기 — inline 모달 (rename 패턴 차용, native prompt/alert 회피).
  */
-import { useState, useCallback } from 'react';
+import { useId, useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, FileCode } from 'lucide-react';
 import { Tooltip } from './Tooltip';
@@ -37,6 +37,7 @@ const STARTER_TEMPLATE = {
 };
 
 export function TemplatesPanel({ onEditFile }: { onEditFile?: (filePath: string) => void }) {
+  const newSlugId = useId();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [newSlug, setNewSlug] = useState('');
@@ -185,6 +186,7 @@ export function TemplatesPanel({ onEditFile }: { onEditFile?: (filePath: string)
               <p className="text-[11px] text-slate-500 mt-0.5">slug 입력 → 빈 template.json 생성 후 모나코 에디터로 편집</p>
             </div>
             <div className="px-5 py-4 flex flex-col gap-3">
+              <label htmlFor={newSlugId} className="sr-only">템플릿 slug</label>
               <input
                 type="text"
                 value={newSlug}
@@ -196,7 +198,8 @@ export function TemplatesPanel({ onEditFile }: { onEditFile?: (filePath: string)
                 placeholder="slug (예: weekly-summary)"
                 autoFocus
                 disabled={submitting}
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100" name="newSlug" autoComplete="off" id="newSlug"
+                aria-label="템플릿 slug"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-slate-100" name="newSlug" autoComplete="off" id={newSlugId}
               />
               <p className="text-[10px] text-slate-400">slug 는 영숫자·하이픈·언더스코어만. user/templates/{'{slug}'}/template.json 에 저장.</p>
             </div>

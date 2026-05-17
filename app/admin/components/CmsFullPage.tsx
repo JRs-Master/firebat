@@ -11,7 +11,7 @@
  *   - 우측 (60% / 모바일 hidden) — iframe `/` 라이브 미리보기 + 새로고침 버튼
  *   - 저장 시 우측 자동 새로고침 (변경 즉시 확인)
  */
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useId, useRef, useState, useCallback } from 'react';
 import { RefreshCw, X, ArrowLeft, ExternalLink, Monitor, Tablet, Smartphone } from 'lucide-react';
 import { SystemModuleSettings } from './SystemModuleSettings';
 
@@ -28,6 +28,7 @@ interface Props {
 }
 
 export function CmsFullPage({ onClose, onBack }: Props) {
+  const previewPathId = useId();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [iframeKey, setIframeKey] = useState(0);  // key 변경으로 강제 새로고침
   const [previewPath, setPreviewPath] = useState('/');
@@ -93,13 +94,15 @@ export function CmsFullPage({ onClose, onBack }: Props) {
           })}
         </div>
         {/* 미리보기 path 입력 (PC 만) */}
+        <label htmlFor={previewPathId} className="sr-only">미리보기 경로</label>
         <input
           type="text"
           value={previewPath}
           onChange={(e) => setPreviewPath(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') refreshIframe(); }}
           placeholder="/"
-          className="hidden md:block px-2 py-1 text-xs border border-slate-300 rounded w-40" name="previewPath" autoComplete="off" id="previewPath"
+          aria-label="미리보기 경로"
+          className="hidden md:block px-2 py-1 text-xs border border-slate-300 rounded w-40" name="previewPath" autoComplete="off" id={previewPathId}
         />
         <button
           onClick={refreshIframe}

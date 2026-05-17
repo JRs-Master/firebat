@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useId, useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { X, Save, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send, Trash2, User, RotateCcw, Cpu } from 'lucide-react';
 import { useAiModels, thinkingLevelLabel } from '../hooks/use-ai-models';
@@ -78,6 +78,7 @@ interface FileEditorProps {
 }
 
 export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: FileEditorProps) {
+  const aiInstructionId = useId();
   const isPageMode = !!pageSlug;
   // Rust core::llm::config::builtin_models() 단일 source — fetch + module-cache.
   const { models: AI_MODELS } = useAiModels();
@@ -811,7 +812,8 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                     placeholder={isPageMode ? '"헤더 색 바꿔줘" 또는 "/" 로 명령어' : '수정할 내용 또는 "/" 로 명령어 (Enter 전송)'}
                     rows={2}
                     disabled={aiLoading}
-                    className="flex-1 bg-[#252540] border border-violet-700/40 rounded-lg px-2.5 py-2 text-[12.5px] text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-violet-500 transition-colors disabled:opacity-50" name="aiInstruction" autoComplete="off" id="aiInstruction"
+                    aria-label="AI 수정 지시"
+                    className="flex-1 bg-[#252540] border border-violet-700/40 rounded-lg px-2.5 py-2 text-[12.5px] text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-violet-500 transition-colors disabled:opacity-50" name="aiInstruction" autoComplete="off" id={aiInstructionId}
                   />
                   <Tooltip label="전송 (Enter)">
                     <button

@@ -61,6 +61,7 @@ interface MemoryStats {
 }
 
 export function EntitiesPanel() {
+  const entitySearchId = useId();
   const [subTab, setSubTab] = useState<'entities' | 'events'>('entities');
   const [entities, setEntities] = useState<Entity[]>([]);
   const [query, setQuery] = useState('');
@@ -204,12 +205,14 @@ export function EntitiesPanel() {
       <div className="px-2 py-2 border-b border-slate-200/80 flex items-center gap-1">
         <div className="flex-1 relative">
           <Search size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+          <label htmlFor={entitySearchId} className="sr-only">엔티티 검색</label>
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="검색 (자연어 OK)"
-            className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="query-197" autoComplete="off" id="query-197"
+            aria-label="엔티티 검색"
+            className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="entitySearch" autoComplete="off" id={entitySearchId}
           />
         </div>
         <Tooltip label="엔티티 추가">

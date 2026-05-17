@@ -361,6 +361,18 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
   onDelete?: () => void;
 }) {
   const endAtId = useId();
+  const advancedCronId = useId();
+  const freqIntervalId = useId();
+  const freqHourId = useId();
+  const freqMinuteId = useId();
+  const runAtId = useId();
+  const delaySecId = useId();
+  const permanentId = useId();
+  const agentPromptId = useId();
+  const oneShotId = useId();
+  const runWhenTextId = useId();
+  const retryTextId = useId();
+  const notifyTextId = useId();
   const isNew = !job?.mode;
   const [jobId, setJobId] = useState(job?.jobId || '');
   const [mode, setMode] = useState<'cron' | 'once' | 'delay'>(
@@ -566,9 +578,11 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
 
               {freqType === 'advanced' ? (
                 <div className="space-y-1.5">
+                  <label htmlFor={advancedCronId} className="sr-only">고급 cron 표현식</label>
                   <input value={advancedCron} onChange={e => setAdvancedCron(e.target.value)}
                     placeholder="분 시 일 월 요일 (예: 0 9 * * *)"
-                    className="w-full px-3 py-1.5 text-[12px] font-mono border border-slate-300 rounded-lg outline-none focus:border-blue-400" name="advancedCron" autoComplete="off" id="advancedCron" />
+                    aria-label="고급 cron 표현식"
+                    className="w-full px-3 py-1.5 text-[12px] font-mono border border-slate-300 rounded-lg outline-none focus:border-blue-400" name="advancedCron" autoComplete="off" id={advancedCronId} />
                   {advancedCron && (
                     <p className="text-[10px] text-blue-600 px-1">→ {describeCron(advancedCron)}</p>
                   )}
@@ -590,7 +604,8 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
                     <div className="flex items-center gap-2">
                       <input type="number" min={1} max={freqType === 'minutes' ? 59 : 23} value={freqInterval}
                         onChange={e => setFreqInterval(Number(e.target.value) || 1)}
-                        className="w-16 px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none text-center" name="freqInterval" autoComplete="off" id="freqInterval" />
+                        aria-label={freqType === 'minutes' ? '분 단위 간격' : '시간 단위 간격'}
+                        className="w-16 px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none text-center" name="freqInterval" autoComplete="off" id={freqIntervalId} />
                       <span className="text-[12px] text-slate-600">{freqType === 'minutes' ? '분' : '시간'}마다 실행</span>
                     </div>
                   )}
@@ -612,11 +627,13 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
                     <div className="flex items-center gap-2">
                       <input type="number" min={0} max={23} value={freqHour}
                         onChange={e => setFreqHour(Number(e.target.value))}
-                        className="w-14 px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none text-center" name="freqHour" autoComplete="off" id="freqHour" />
+                        aria-label="시"
+                        className="w-14 px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none text-center" name="freqHour" autoComplete="off" id={freqHourId} />
                       <span className="text-[12px] text-slate-600">시</span>
                       <input type="number" min={0} max={59} value={freqMinute}
                         onChange={e => setFreqMinute(Number(e.target.value))}
-                        className="w-14 px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none text-center" name="freqMinute" autoComplete="off" id="freqMinute" />
+                        aria-label="분"
+                        className="w-14 px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none text-center" name="freqMinute" autoComplete="off" id={freqMinuteId} />
                       <span className="text-[12px] text-slate-600">분</span>
                     </div>
                   )}
@@ -627,17 +644,17 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
 
           {mode === 'once' && (
             <div>
-              <label className="text-[11px] font-semibold text-slate-500 mb-1 block" htmlFor="runAt">실행 시각</label>
+              <label className="text-[11px] font-semibold text-slate-500 mb-1 block" htmlFor={runAtId}>실행 시각</label>
               <input type="datetime-local" value={runAt} onChange={e => setRunAt(e.target.value)}
-                className="w-full px-3 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none focus:border-blue-400" name="runAt" autoComplete="off" id="runAt" />
+                className="w-full px-3 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none focus:border-blue-400" name="runAt" autoComplete="off" id={runAtId} />
             </div>
           )}
 
           {mode === 'delay' && (
             <div className="flex items-center gap-2">
-              <label className="text-[11px] font-semibold text-slate-500 shrink-0" htmlFor="delaySec">지연</label>
+              <label className="text-[11px] font-semibold text-slate-500 shrink-0" htmlFor={delaySecId}>지연</label>
               <input type="number" min={1} value={delaySec} onChange={e => setDelaySec(e.target.value)}
-                placeholder="300" className="w-20 px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none text-center" name="delaySec" autoComplete="off" id="delaySec" />
+                placeholder="300" className="w-20 px-2 py-1.5 text-[12px] border border-slate-300 rounded-lg outline-none text-center" name="delaySec" autoComplete="off" id={delaySecId} />
               <span className="text-[12px] text-slate-600">초 후 실행</span>
             </div>
           )}
@@ -646,10 +663,10 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
           {mode === 'cron' && (
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <label className="text-[11px] font-semibold text-slate-500" htmlFor="permanent">종료 시각</label>
+                <label className="text-[11px] font-semibold text-slate-500" htmlFor={endAtId}>종료 시각</label>
                 <label className="flex items-center gap-1 cursor-pointer">
                   <input type="checkbox" checked={permanent} onChange={e => setPermanent(e.target.checked)}
-                    className="w-3 h-3 rounded border-slate-300" name="permanent" autoComplete="off" id="permanent" />
+                    className="w-3 h-3 rounded border-slate-300" name="permanent" autoComplete="off" id={permanentId} aria-label="종료 시각 영구" />
                   <span className="text-[10px] text-slate-400">영구</span>
                 </label>
               </div>
@@ -701,12 +718,14 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
             ) : (
               <div className="mt-1.5 space-y-1">
                 <p className="text-[10px] text-slate-400">트리거마다 AI Function Calling 사이클로 실행. 도구 자유 사용·검증·콘텐츠 생성 가능 (비용 ↑). 블로그·리포트·일정 정리에 사용.</p>
+                <label htmlFor={agentPromptId} className="sr-only">AI Agent 프롬프트</label>
                 <textarea
                   value={agentPrompt}
                   onChange={e => setAgentPrompt(e.target.value)}
                   rows={6}
                   placeholder={'예: "이번 주 주제 리서치 + sysmod 데이터 수집 + 페이지 발행 + 텔레그램 알림. 출처·시점 명시, 과거·미래 분간, hallucinate 금지."'}
-                  className="w-full px-3 py-2 text-[11px] border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y font-mono" name="agentPrompt" autoComplete="off" id="agentPrompt"
+                  aria-label="AI Agent 프롬프트"
+                  className="w-full px-3 py-2 text-[11px] border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y font-mono" name="agentPrompt" autoComplete="off" id={agentPromptId}
                 />
                 <p className="text-[10px] text-slate-400">트리거 시 AI 가 user message 로 받음. 잡 목적·필요 데이터·출력 형식·알림 명시.</p>
               </div>
@@ -729,7 +748,7 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
                 {/* oneShot */}
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={oneShot} onChange={e => setOneShot(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded border-slate-300" name="oneShot" autoComplete="off" id="oneShot" />
+                    className="w-3.5 h-3.5 rounded border-slate-300" name="oneShot" autoComplete="off" id={oneShotId} aria-label="oneShot — 첫 성공 시 자동 취소" />
                   <span className="text-[11px] text-slate-600">oneShot — 첫 성공 시 자동 취소</span>
                 </label>
 
@@ -742,7 +761,8 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
                   <textarea value={runWhenText} onChange={e => setRunWhenText(e.target.value)}
                     placeholder={'{\n  "check": { "sysmod": "korea-invest", "action": "is-business-day" },\n  "field": "$prev.isBusinessDay",\n  "op": "==",\n  "value": "true"\n}'}
                     rows={5}
-                    className="w-full px-3 py-2 text-[11px] font-mono border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y" name="runWhenText" autoComplete="off" id="runWhenText" />
+                    aria-label="runWhen 조건"
+                    className="w-full px-3 py-2 text-[11px] font-mono border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y" name="runWhenText" autoComplete="off" id={runWhenTextId} />
                 </div>
 
                 {/* retry */}
@@ -754,7 +774,8 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
                   <textarea value={retryText} onChange={e => setRetryText(e.target.value)}
                     placeholder={'{ "count": 3, "delayMs": 30000 }'}
                     rows={2}
-                    className="w-full px-3 py-2 text-[11px] font-mono border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y" name="retryText" autoComplete="off" id="retryText" />
+                    aria-label="retry 정책"
+                    className="w-full px-3 py-2 text-[11px] font-mono border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y" name="retryText" autoComplete="off" id={retryTextId} />
                 </div>
 
                 {/* notify */}
@@ -766,7 +787,8 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
                   <textarea value={notifyText} onChange={e => setNotifyText(e.target.value)}
                     placeholder={'{\n  "onSuccess": { "sysmod": "telegram", "template": "✓ {title} 완료" },\n  "onError": { "sysmod": "telegram", "template": "❌ {title} 실패: {error}" }\n}'}
                     rows={6}
-                    className="w-full px-3 py-2 text-[11px] font-mono border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y" name="notifyText" autoComplete="off" id="notifyText" />
+                    aria-label="notify hook"
+                    className="w-full px-3 py-2 text-[11px] font-mono border border-slate-300 rounded-lg outline-none focus:border-blue-400 resize-y" name="notifyText" autoComplete="off" id={notifyTextId} />
                   <p className="text-[10px] text-slate-400 mt-1">placeholder: {'{title} {jobId} {error} {durationMs} {output}'}</p>
                 </div>
               </div>
