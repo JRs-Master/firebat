@@ -94,6 +94,36 @@ pub struct AiResponse {
     pub library_hits: Vec<crate::ports::LibraryHit>,
 }
 
+/// AiResponse 안 모든 사용자 노출 string 필드 안 시크릿 / 토큰 마스킹. process_with_tools_opts
+/// 종료 직전 단일 게이트 — 외부 API 응답 본문 안 api-key / customer-id / Bearer / JWT / sk-* /
+/// AIza* / Telegram bot token 등이 도구 결과 / 에러 메시지 / reply / blocks 안에 그대로 흘러가
+/// 사용자 채팅 화면 노출되는 사고 차단.
+fn redact_response(mut r: AiResponse) -> AiResponse {
+    use crate::utils::redactor::{redact_string, redact_value};
+    r.reply = redact_string(&r.reply);
+    if let Some(ref err) = r.error.clone() {
+        r.error = Some(redact_string(err));
+    }
+    r.blocks = r.blocks.into_iter().map(|v| redact_value(&v)).collect();
+    r.executed_actions = r.executed_actions.into_iter().map(|v| redact_value(&v)).collect();
+    r.suggestions = r.suggestions.into_iter().map(|v| redact_value(&v)).collect();
+    r.pending_actions = r.pending_actions.into_iter().map(|v| redact_value(&v)).collect();
+    r.tool_results = r
+        .tool_results
+        .into_iter()
+        .map(|mut t| {
+            if let Some(ref err) = t.error.clone() {
+                t.error = Some(redact_string(err));
+            }
+            if let Some(input) = t.input.clone() {
+                t.input = Some(redact_value(&input));
+            }
+            t
+        })
+        .collect();
+    r
+}
+
 pub struct AiManager {
     llm: Arc<dyn ILlmPort>,
     tools: Arc<ToolManager>,
@@ -385,7 +415,7 @@ impl AiManager {
                     "[AiManager] 비용 한도 초과 — LLM 호출 차단: {}",
                     reason
                 ));
-                return Ok(AiResponse {
+                return Ok(redact_response(AiResponse {
                     error: Some(crate::i18n::t(
                         "core.error.ai.cost_limit_exceeded",
                         None,
@@ -394,7 +424,7 @@ impl AiManager {
                     model_id: Some(self.llm.get_model_id()),
                     cost_usd: Some(0.0),
                     ..Default::default()
-                });
+                }));
             }
         }
 
@@ -456,7 +486,7 @@ impl AiManager {
                 .model
                 .clone()
                 .unwrap_or_else(|| self.llm.get_model_id());
-            return Ok(AiResponse {
+            return Ok(redact_response(AiResponse {
                 error: Some(
                     "MCP 토큰이 등록되어 있지 않습니다. 설정 - 시스템 - mcp-server-llm 에서 토큰을 생성해 주세요."
                         .to_string(),
@@ -464,7 +494,7 @@ impl AiManager {
                 model_id: Some(model_id),
                 cost_usd: Some(0.0),
                 ..Default::default()
-            });
+            }));
         }
 
         // 도구 list 결정:
@@ -693,7 +723,7 @@ impl AiManager {
                             "[AiManager] 비용 한도 초과 — LLM 호출 차단: {}",
                             reason
                         ));
-                        return Ok(AiResponse {
+                        return Ok(redact_response(AiResponse {
                             reply: String::new(),
                             blocks: Vec::new(),
                             executed_actions: Vec::new(),
@@ -708,7 +738,7 @@ impl AiManager {
                             cost_usd: Some(0.0),
                             tool_results: Vec::new(),
                             library_hits: Vec::new(),
-                        });
+                        }));
                     }
                 }
             }
@@ -1092,7 +1122,10 @@ impl AiManager {
         // logger.info("[USER_AI_TRAINING] {...}") 출력 시 log adapter 가 별도 JSONL 파일로 분기.
         self.training_log_contents(prompt, &tool_exchanges, &clean_reply);
 
-        Ok(AiResponse {
+        // 시크릿 / 토큰 redaction — 외부 API 응답 본문 안 api-key / customer-id / Bearer / JWT 등이
+        // 도구 결과 / 에러 메시지 / 응답 텍스트 안에 그대로 흘러가 사용자 채팅 화면 노출되는 사고
+        // 차단. 본 layer 단일 게이트 — 도구별 / sysmod별 개별 mask 작업 불필요.
+        let response = AiResponse {
             reply: clean_reply,
             blocks: final_blocks,
             executed_actions,
@@ -1103,7 +1136,8 @@ impl AiManager {
             cost_usd: Some(total_cost),
             tool_results: tool_results_summary,
             library_hits: retrieved_library_hits,
-        })
+        };
+        Ok(redact_response(response))
     }
 
     /// Vertex AI 파인튜닝 학습 데이터 기록 — 옛 TS `trainingLogContents` 1:1.
