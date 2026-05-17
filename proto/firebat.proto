@@ -2436,6 +2436,211 @@ service LibraryService {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// ChatbotService — system service chatbot (Phase 1, 2026-05-17).
+// 외부 워드프레스 사이트 연결용. admin chat 과 별개 (대화 / 메시지 테이블 분리).
+// ──────────────────────────────────────────────────────────────────────────
+
+message ChatbotInstancePb {
+  string id = 1;
+  string slug = 2;
+  string name = 3;
+  string description = 4;
+  string system_prompt = 5;
+  repeated string allowed_references = 6;   // Library Reference id 배열
+  repeated string allowed_sysmods = 7;       // sysmod 이름 배열
+  string model_id = 8;
+  bool enabled = 9;
+  string api_token = 10;
+  repeated string allowed_domains = 11;      // origin whitelist
+  int64 created_at = 12;
+  int64 updated_at = 13;
+}
+
+message ChatbotConversationPb {
+  string id = 1;
+  string instance_id = 2;
+  string session_id = 3;
+  string title = 4;
+  int64 created_at = 5;
+  int64 updated_at = 6;
+}
+
+message ChatbotMessagePb {
+  string id = 1;
+  string conversation_id = 2;
+  string role = 3;             // 'user' / 'system'
+  string content = 4;
+  string data_json = 5;        // blocks / tool_results 등
+  int64 created_at = 6;
+}
+
+// ─── Instance CRUD (admin 전용) ────────────────────────────────────────────
+
+message ChatbotCreateInstanceRequest {
+  string slug = 1;
+  string name = 2;
+  string description = 3;
+  string system_prompt = 4;
+  repeated string allowed_references = 5;
+  repeated string allowed_sysmods = 6;
+  string model_id = 7;
+  bool enabled = 8;
+  repeated string allowed_domains = 9;
+}
+message ChatbotCreateInstanceResponse {
+  string id = 1;
+}
+
+message ChatbotListInstancesRequest {}
+message ChatbotListInstancesResponse {
+  repeated ChatbotInstancePb instances = 1;
+}
+
+message ChatbotGetInstanceRequest {
+  string id = 1;
+}
+message ChatbotGetInstanceResponse {
+  ChatbotInstancePb instance = 1;
+}
+
+message ChatbotGetInstanceBySlugRequest {
+  string slug = 1;
+}
+message ChatbotGetInstanceBySlugResponse {
+  ChatbotInstancePb instance = 1;
+}
+
+message ChatbotUpdateInstanceRequest {
+  string id = 1;
+  // 매 필드 optional (proto3 optional) — 미설정 = 옛 값 유지.
+  optional string name = 2;
+  optional string description = 3;
+  optional string system_prompt = 4;
+  // repeated field 의 optional 영역 = 별도 has_xxx flag 영역 박지 X. 대신 'patch' 의미면
+  // 매 update RPC 호출 때 전체 배열 박아 (덮어쓰기). 빈 배열 = clear.
+  repeated string allowed_references = 5;
+  bool replace_allowed_references = 6;
+  repeated string allowed_sysmods = 7;
+  bool replace_allowed_sysmods = 8;
+  optional string model_id = 9;
+  optional bool enabled = 10;
+  repeated string allowed_domains = 11;
+  bool replace_allowed_domains = 12;
+}
+message ChatbotUpdateInstanceResponse {}
+
+message ChatbotDeleteInstanceRequest {
+  string id = 1;
+}
+message ChatbotDeleteInstanceResponse {}
+
+message ChatbotRotateApiTokenRequest {
+  string id = 1;
+}
+message ChatbotRotateApiTokenResponse {
+  string new_token = 1;
+}
+
+// ─── 외부 endpoint 검증 ────────────────────────────────────────────────────
+
+message ChatbotAuthenticateRequest {
+  string slug = 1;
+  string api_token = 2;
+  string origin = 3;            // request origin (빈 = 검사 skip)
+}
+message ChatbotAuthenticateResponse {
+  ChatbotInstancePb instance = 1;
+}
+
+// ─── Conversation ─────────────────────────────────────────────────────────
+
+message ChatbotEnsureConversationRequest {
+  string instance_id = 1;
+  string session_id = 2;
+}
+message ChatbotEnsureConversationResponse {
+  string conversation_id = 1;
+}
+
+message ChatbotListConversationsRequest {
+  string instance_id = 1;
+  string session_id = 2;
+}
+message ChatbotListConversationsResponse {
+  repeated ChatbotConversationPb conversations = 1;
+}
+
+message ChatbotGetConversationRequest {
+  string id = 1;
+}
+message ChatbotGetConversationResponse {
+  ChatbotConversationPb conversation = 1;
+}
+
+message ChatbotDeleteConversationRequest {
+  string id = 1;
+}
+message ChatbotDeleteConversationResponse {}
+
+message ChatbotUpdateConversationTitleRequest {
+  string id = 1;
+  string title = 2;
+}
+message ChatbotUpdateConversationTitleResponse {}
+
+// ─── Message ──────────────────────────────────────────────────────────────
+
+message ChatbotAppendUserMessageRequest {
+  string conversation_id = 1;
+  string content = 2;
+}
+message ChatbotAppendUserMessageResponse {
+  string message_id = 1;
+}
+
+message ChatbotAppendSystemMessageRequest {
+  string conversation_id = 1;
+  string content = 2;
+  string data_json = 3;
+}
+message ChatbotAppendSystemMessageResponse {
+  string message_id = 1;
+}
+
+message ChatbotListMessagesRequest {
+  string conversation_id = 1;
+}
+message ChatbotListMessagesResponse {
+  repeated ChatbotMessagePb messages = 1;
+}
+
+service ChatbotService {
+  // Instance CRUD (admin)
+  rpc CreateInstance(ChatbotCreateInstanceRequest) returns (ChatbotCreateInstanceResponse);
+  rpc ListInstances(ChatbotListInstancesRequest) returns (ChatbotListInstancesResponse);
+  rpc GetInstance(ChatbotGetInstanceRequest) returns (ChatbotGetInstanceResponse);
+  rpc GetInstanceBySlug(ChatbotGetInstanceBySlugRequest) returns (ChatbotGetInstanceBySlugResponse);
+  rpc UpdateInstance(ChatbotUpdateInstanceRequest) returns (ChatbotUpdateInstanceResponse);
+  rpc DeleteInstance(ChatbotDeleteInstanceRequest) returns (ChatbotDeleteInstanceResponse);
+  rpc RotateApiToken(ChatbotRotateApiTokenRequest) returns (ChatbotRotateApiTokenResponse);
+
+  // 외부 endpoint 검증
+  rpc Authenticate(ChatbotAuthenticateRequest) returns (ChatbotAuthenticateResponse);
+
+  // Conversation
+  rpc EnsureConversation(ChatbotEnsureConversationRequest) returns (ChatbotEnsureConversationResponse);
+  rpc ListConversations(ChatbotListConversationsRequest) returns (ChatbotListConversationsResponse);
+  rpc GetConversation(ChatbotGetConversationRequest) returns (ChatbotGetConversationResponse);
+  rpc DeleteConversation(ChatbotDeleteConversationRequest) returns (ChatbotDeleteConversationResponse);
+  rpc UpdateConversationTitle(ChatbotUpdateConversationTitleRequest) returns (ChatbotUpdateConversationTitleResponse);
+
+  // Message
+  rpc AppendUserMessage(ChatbotAppendUserMessageRequest) returns (ChatbotAppendUserMessageResponse);
+  rpc AppendSystemMessage(ChatbotAppendSystemMessageRequest) returns (ChatbotAppendSystemMessageResponse);
+  rpc ListMessages(ChatbotListMessagesRequest) returns (ChatbotListMessagesResponse);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Phase B 진행 시 변환 룰:
 //  1. JsonArgs / JsonValue → 매니저별 typed message 로 swap
 //  2. tonic-build 가 Rust 구조체 자동 생성
