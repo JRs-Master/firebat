@@ -47,8 +47,10 @@ impl SecretManager {
             .collect()
     }
 
+    /// 사용자 시크릿 저장 — 앞뒤 공백 자동 제거. 복사붙여넣기 시 줄바꿈 / 탭 / 공백 혼입 방지.
+    /// frontend trim 만 의존하면 API 직접 호출 시 우회 가능. 백엔드 단일 경로 안 일관성 보장.
     pub fn set_user(&self, name: &str, value: &str) -> bool {
-        self.vault.set_secret(&vk_user_secret(name), value)
+        self.vault.set_secret(&vk_user_secret(name), value.trim())
     }
 
     pub fn get_user(&self, name: &str) -> Option<String> {
@@ -114,8 +116,9 @@ impl SecretManager {
         self.vault.get_secret(key)
     }
 
+    /// 시스템 시크릿 저장 — 앞뒤 공백 자동 제거 (모듈 secret 도 본 메서드 통과).
     pub fn set_system(&self, key: &str, value: &str) -> bool {
-        self.vault.set_secret(key, value)
+        self.vault.set_secret(key, value.trim())
     }
 }
 
