@@ -731,12 +731,17 @@ impl ProcessSandboxAdapter {
             }
         }
         // dist-info 안 버전 추출 우선 (정확). 디렉토리 / .py 파일 fallback.
+        // pip --target --upgrade 가 옛 dist-info 자동 cleanup 안 함 (pip 알려진 동작) — 옛/새
+        // 두 dist-info 가 같이 있을 수 있어, 매칭 중 가장 새 버전 선택.
+        // 또한 prefix 가 광범위 (예: "requests-" → "requests-oauthlib-*" 도 매칭) 피하기 위해
+        // 다음 segment 가 숫자로 시작하는 경우만 진짜 version (예: "requests-2.34.2"). 다른 패키지
+        // (requests-oauthlib 등) 는 다음 segment 가 알파벳이라 제외.
         if let Ok(entries) = std::fs::read_dir(python_modules) {
             let entries: Vec<_> = entries.flatten().collect();
             for name in &candidates {
-                // `<name>-<version>.dist-info` 패턴 매칭. 옛 영역 = display 이름 + `-` prefix.
                 let prefix = format!("{}-", name.replace('-', "_"));
                 let prefix_dash = format!("{}-", name);
+                let mut versions: Vec<String> = Vec::new();
                 for entry in &entries {
                     let n = entry.file_name();
                     let Some(s) = n.to_str() else { continue };
@@ -744,14 +749,32 @@ impl ProcessSandboxAdapter {
                         continue;
                     }
                     let stem = &s[..s.len() - ".dist-info".len()];
-                    let matched = stem
-                        .to_lowercase()
-                        .starts_with(&prefix.to_lowercase())
-                        || stem.to_lowercase().starts_with(&prefix_dash.to_lowercase());
-                    if matched {
-                        let version = stem.rsplit_once('-').map(|(_, v)| v.to_string());
-                        return (true, version);
+                    let lc = stem.to_lowercase();
+                    let matched_prefix = if lc.starts_with(&prefix.to_lowercase()) {
+                        Some(prefix.len())
+                    } else if lc.starts_with(&prefix_dash.to_lowercase()) {
+                        Some(prefix_dash.len())
+                    } else {
+                        None
+                    };
+                    if let Some(plen) = matched_prefix {
+                        let rest = &stem[plen..];
+                        if rest.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
+                            versions.push(rest.to_string());
+                        }
                     }
+                }
+                if !versions.is_empty() {
+                    versions.sort_by(|a, b| {
+                        if is_version_newer(b, a) {
+                            std::cmp::Ordering::Greater
+                        } else if is_version_newer(a, b) {
+                            std::cmp::Ordering::Less
+                        } else {
+                            std::cmp::Ordering::Equal
+                        }
+                    });
+                    return (true, Some(versions[0].clone()));
                 }
             }
         }
