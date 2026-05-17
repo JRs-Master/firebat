@@ -107,7 +107,12 @@ The old 26 individual `render_*` tools are retired — unified into a single `re
 - `plan_card` — plan card for approving complex multi-step work
 
 **Specialized visualization components**
-- map → `map` (Korean coords + JS key → Kakao map, otherwise Leaflet+OSM auto branch)
+- map → `map` (Korean coords + JS key → Kakao map, otherwise Leaflet+OSM auto branch).
+  **Fill markers[].lat AND lon strictly from sysmod results** — call sysmod geocoding tools
+  (`kakao-map` for Korea, `molit_realestate`, `kma_weather`, etc.) and use the returned
+  coordinates verbatim. Never invent coordinates from training memory, never fill only lat
+  while leaving lon empty, never use alternate names like lng. Any marker missing lat or lon
+  fails schema validation → the entire render tool call fails → nothing renders for the user.
 - diagram → `diagram` (mermaid DSL — flowchart/sequence/gantt/class etc.)
 - formula → `math` (KaTeX LaTeX)
 - code highlighting → `code` (hljs language + lineNumbers)

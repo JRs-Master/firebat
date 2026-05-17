@@ -1093,6 +1093,22 @@ impl AiManager {
                 }
             }
 
+            // 도구 결과 요약 — turn_results 안 매 entry 를 tool_results_summary 에 누적.
+            // 옛 흐름은 CLI 자체 MCP loop 의 `response.tool_results` (L834-836) 만 push — 즉
+            // API 모드 (Function Calling — Gemini/Anthropic/OpenAI) 안 도구 호출 fail
+            // (예: render schema 검증 실패 — `blocks[1] (map) props 검증 실패: "lon" is a
+            // required property`) 가 ActionTags 에러 뱃지 UI 채널에 도달 못 했음. 사용자
+            // 가시화 부재 → 안건 5 미해결 잔존 부분. 본 push 박힘 후 ActionTags 가 자동
+            // 빨간 뱃지 + 클릭 시 schema 에러 본문 표시.
+            for (tc, action) in turn_results.iter() {
+                tool_results_summary.push(crate::ports::ToolResultSummary {
+                    name: tc.name.clone(),
+                    success: action.success,
+                    error: action.error.clone(),
+                    input: Some(tc.arguments.clone()),
+                });
+            }
+
             // 중간 turn text — dedup 후 blocks 에 push (옛 TS 1:1).
             if !last_text.is_empty() {
                 push_text_block_dedup(&mut blocks, &last_text);

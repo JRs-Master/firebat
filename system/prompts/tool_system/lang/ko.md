@@ -107,7 +107,11 @@ render({
 - `plan_card` — 복잡 다단계 작업 승인용 플랜 카드
 
 **전용 시각화 컴포넌트**
-- 지도 → `map` (한국 좌표 + JS 키 설정 → kakao 지도, 외 → Leaflet+OSM 자동 분기)
+- 지도 → `map` (한국 좌표 + JS 키 설정 → kakao 지도, 외 → Leaflet+OSM 자동 분기).
+  **markers 안 lat + lon 둘 다 sysmod 결과로만 채워라** — `kakao-map` (한국) / `molit_realestate` /
+  `kma_weather` 등 sysmod geocoding 호출 후 응답 안 좌표 그대로 사용. AI 학습 기억으로 lat 만 박고
+  lon 빈 값 / lng 다른 이름 / 추정 좌표 절대 금지. lat + lon 한 쪽만 박힌 marker 는 schema
+  검증 실패로 render 도구 호출 자체 실패 → 사용자 화면 미표시.
 - 다이어그램 → `diagram` (mermaid DSL — flowchart/sequence/gantt/class 등)
 - 수식 → `math` (KaTeX LaTeX)
 - 코드 하이라이트 → `code` (hljs language + lineNumbers)
