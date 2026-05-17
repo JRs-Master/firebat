@@ -61,6 +61,35 @@ system/modules/<name>/
 Python: `sys.path[0]` = entry 의 디렉토리 (자동) — 절대/상대 import 모두 OK.
 Node ESM: `./` 또는 `../` 명시 상대 경로 사용 (예: `./helpers.mjs`).
 
+### 모듈 자체 codegen (선택)
+
+외부 API 명세 (예: 한투 / 키움 OPEN API 안 100+ REST 엔드포인트) 가 거대하거나 자주
+변경 박힌 영역 = 모듈 자체 안 `scripts/` 디렉토리 박은 영역 안 codegen 사용. Firebat 영역
+안 sysmod-specific 코드 박지 마라 — 단일 책임 위반.
+
+```
+system/modules/<name>/
+├── config.json            # codegen 결과 (또는 수동 작성)
+├── index.mjs              # codegen 결과 (또는 수동 작성)
+├── _apis.json             # codegen input — 명세 메타데이터 (선택)
+└── scripts/
+    ├── extract-apis.mjs   # 외부 명세 파일 (xlsx / OpenAPI / 등) → _apis.json
+    └── gen.mjs            # _apis.json → config.json + index.mjs
+```
+
+사용:
+```sh
+cd system/modules/<name>
+node scripts/extract-apis.mjs    # 명세 → _apis.json
+node scripts/gen.mjs             # _apis.json → config + index
+```
+
+운영 룰:
+- **Firebat 영역 안 sysmod-specific 코드 박지 마라** — `scripts/`, `infra/data/<sysmod>-*.json`, `core/src/<sysmod>` 등 모두 모듈 자체 안 박음
+- 외부 명세 파일 (xlsx / etc) = `.gitignore` 박힌 영역 — 사용자 본인 로컬 reference
+- 단순 모듈 (수동 작성 가능 영역) 안 `scripts/` 디렉토리 = 0 (옵션)
+- 예시 — `system/modules/kiwoom/scripts/`, `system/modules/korea-invest/scripts/`
+
 ---
 
 ## 제2장: 격리와 안정성 (Isolation)
