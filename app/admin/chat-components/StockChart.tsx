@@ -413,10 +413,11 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       >
         <svg
           viewBox={`0 0 ${W} ${priceH}`}
-          className={useHScroll ? 'h-auto block' : 'w-full h-auto block'}
+          className={useHScroll ? 'block' : 'w-full block'}
           width={useHScroll ? W : undefined}
-          preserveAspectRatio="xMidYMid meet"
-          style={{ touchAction: 'pan-y' }}
+          height={useHScroll ? priceH : undefined}
+          preserveAspectRatio="none"
+          style={{ touchAction: 'pan-y', aspectRatio: useHScroll ? undefined : `${W} / ${priceH}` }}
         >
           {/* 가로 그리드 */}
           {priceTicks.map(t => {
@@ -566,14 +567,22 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           })()}
         </svg>
 
-        {/* 호버 툴팁 — 마우스 위치 기준 */}
-        {hoverBar && hoverPos && (
+        {/* 호버 툴팁 — 마우스 위치 기준 (커서 하단 가까울 때 위로 flip, 컨테이너 안 clamp) */}
+        {hoverBar && hoverPos && (() => {
+          const containerH = priceBoxRef.current?.clientHeight ?? 280;
+          const containerW = priceBoxRef.current?.clientWidth ?? 800;
+          const tooltipH = 130;
+          const flipUp = hoverPos.y + tooltipH + 16 > containerH;
+          const top = flipUp
+            ? Math.max(4, hoverPos.y - tooltipH - 8)
+            : Math.min(containerH - tooltipH - 4, Math.max(4, hoverPos.y - 8));
+          return (
           <div
             className="absolute pointer-events-none bg-slate-900/95 text-white rounded-lg px-3 py-2 text-[11px] shadow-lg whitespace-nowrap z-10"
             style={{
               left: hoverPos.x + 14,
-              top: Math.max(4, hoverPos.y - 8),
-              transform: hoverPos.x > 0.6 * (priceBoxRef.current?.clientWidth ?? 800)
+              top,
+              transform: hoverPos.x > 0.6 * containerW
                 ? 'translateX(calc(-100% - 28px))' : undefined,
               minWidth: 140,
             }}
@@ -594,12 +603,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
               ))}
             </div>
           </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* 거래량 차트 */}
       <div className="relative">
-        <svg viewBox={`0 0 ${W} ${volH}`} className="w-full h-auto block" preserveAspectRatio="xMidYMid meet">
+        <svg viewBox={`0 0 ${W} ${volH}`} className="w-full block" preserveAspectRatio="none" style={{ aspectRatio: `${W} / ${volH}` }}>
           {volTicks.map(t => {
             const y = yVol(t);
             return (
