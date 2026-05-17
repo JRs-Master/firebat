@@ -158,15 +158,18 @@ async fn main() -> Result<()> {
             .context("MCP servers 파일 open 실패")?,
     );
     // IEmbedderPort — env `FIREBAT_EMBEDDER` 으로 swap:
-    //   - `arctic` (운영 default 권장, 2026-05-17): candle + Snowflake/snowflake-arctic-embed-l-v2.0
-    //          (XLM-RoBERTa-large 기반, 1024-dim, max_length 8192, ~1.1GB safetensors).
-    //          MTEB 다국어 65.8 + 한국어 매우 우수 + 긴 자료 영역 자연 (Library Phase 1 영역 정공).
-    //          첫 실행 시 자동 다운로드 (HuggingFace Hub, hf-hub 캐싱).
-    //   - `e5`: 옛 영역 — candle + intfloat/multilingual-e5-small (384-dim, max_length 512, ~470MB).
-    //          가벼운 환경 / 옛 데이터 호환 영역.
+    //   - `e5` (운영 default, 2026-05-17 정정): candle + intfloat/multilingual-e5-small
+    //          (BertModel 기반, 384-dim, max_length 512, ~470MB safetensors).
+    //          MTEB 다국어 56.9 / 한국어 retrieval 충분. Vultr 1vCPU + 1GB RAM 환경 안정.
+    //          본인 사용 시나리오 (자료 5개 미만) 정확도 체감 영역 작음.
+    //   - `arctic`: candle + Snowflake/snowflake-arctic-embed-l-v2.0
+    //          (XLM-RoBERTa-large, 1024-dim, max_length 8192, ~1.1GB safetensors).
+    //          MTEB 다국어 65.8 + 한국어 매우 우수 + 긴 자료 단일 chunk 가능.
+    //          단 Vultr 1vCPU 환경에서 inference CPU 95% 폭주 + heap 2.5GB swap thrashing.
+    //          외부 사이트 운영 (lawassistant 등, 자료 100+, 외부 트래픽) + Vultr 4GB+ vCPU 2+ 환경 권장.
     //   - `stub` (CI / dev): FNV-1a hash 결정론, 의미 검색 X. 모델 다운로드 없이 wiring 검증 + 단위 테스트.
     // 추후 cloud provider (Gemini / OpenAI / Voyage 등) 추가 시 같은 env 패턴.
-    let embedder_kind = std::env::var("FIREBAT_EMBEDDER").unwrap_or_else(|_| "arctic".to_string());
+    let embedder_kind = std::env::var("FIREBAT_EMBEDDER").unwrap_or_else(|_| "e5".to_string());
     let embedder: Arc<dyn IEmbedderPort> = match embedder_kind.as_str() {
         "arctic" => {
             tracing::info!(
