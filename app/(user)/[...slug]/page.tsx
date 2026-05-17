@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { get as getPageRpc, getRedirect, verifyPassword as verifyPagePasswordRpc } from '../../../lib/api-gen/page';
+import { getInstanceBySlug } from '../../../lib/api-gen/chatbot';
 import { scan as scanProjects, verifyPassword as verifyProjectPasswordRpc, getVisibility as getProjectVisibility, getConfig as getProjectConfigRpc } from '../../../lib/api-gen/project';
 import { getCmsSettings } from '../../../lib/api-gen/module';
 import { isReady as isMediaReady } from '../../../lib/api-gen/media';
@@ -190,6 +191,43 @@ export default async function DynamicPage({ params, searchParams }: Props) {
         const sp = searchParams ? await searchParams : {};
         const currentPage = Math.max(1, parseInt(sp.page || '1') || 1);
         return <ProjectRootView projectName={slug} pageSlugs={matched.pageSlugs ?? []} currentPage={currentPage} />;
+      }
+    }
+    // chatbot fallback — cms page / project 미박힘 영역 안 = 마지막 segment 박은 영역 안
+    // chatbot instance 매칭. 사용자 입장 안 = 임의 prefix path 박은 영역 안 동작:
+    //   /lawassistant            → slug = lawassistant
+    //   /chat/lawassistant       → slug = lawassistant
+    //   /demo/foo/lawassistant   → slug = lawassistant
+    // chatbot.slug 자체 = `/` 박지 X 박은 영역 (Rust validate_slug 안 영숫자/하이픈/언더스코어).
+    const lastSegment = slug.split('/').filter(Boolean).pop() ?? '';
+    if (lastSegment) {
+      const chatbotRes = await getInstanceBySlug({ slug: lastSegment });
+      if (chatbotRes.ok && chatbotRes.data?.instance && chatbotRes.data.instance.enabled) {
+        const instance = chatbotRes.data.instance;
+        const h = await headers();
+        const proto = h.get('x-forwarded-proto') || 'http';
+        const host = h.get('x-forwarded-host') || h.get('host') || 'localhost:3000';
+        const firebatUrl = `${proto}://${host}`;
+        return (
+          <main className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-4">
+            <div className="text-center max-w-md mb-8">
+              <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 mb-2">{instance.name}</h1>
+              {instance.description && (
+                <p className="text-base text-slate-500">{instance.description}</p>
+              )}
+              <p className="mt-4 text-[12px] text-slate-400">
+                오른쪽 아래 💬 버튼을 눌러 채팅을 시작하세요.
+              </p>
+            </div>
+            <script
+              src={`${firebatUrl}/api/chatbot/widget.js`}
+              data-slug={instance.slug}
+              data-token={instance.apiToken}
+              data-firebat-url={firebatUrl}
+              async
+            />
+          </main>
+        );
       }
     }
     redirect('/404');

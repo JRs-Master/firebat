@@ -128,8 +128,8 @@ export function ChatbotPanel() {
               id={slugId}
               type="text"
               value={newSlug}
-              onChange={e => setNewSlug(e.target.value.replace(/[^a-zA-Z0-9_-]/g, '').toLowerCase())}
-              placeholder="영숫자 / 하이픈 / 언더스코어"
+              onChange={e => setNewSlug(e.target.value.replace(/[\s/?#&=]/g, ''))}
+              placeholder="영숫자 / 한글 / 하이픈 / 언더스코어"
               className="w-full px-2 py-1.5 text-[12px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               name="newChatbotSlug"
               autoComplete="off"

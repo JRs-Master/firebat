@@ -17,19 +17,20 @@ use crate::ports::{
     ChatbotMessage, IChatbotPort, InfraResult, LlmCallOpts,
 };
 
-/// slug 검증 — URL safe (영숫자 + 하이픈 + 언더스코어 only). 빈 문자열 금지.
+/// slug 검증 — URL safe (Unicode alnum + 한글 + 하이픈 + 언더스코어). 빈 문자열 금지.
+/// 길이 = byte 기준 64 (한글 1자 = UTF-8 3 byte).
 pub fn validate_slug(slug: &str) -> Result<(), String> {
     if slug.is_empty() {
         return Err("slug 가 비어있습니다.".to_string());
     }
     if slug.len() > 64 {
-        return Err("slug 는 64자 이하여야 합니다.".to_string());
+        return Err("slug 는 64 byte 이하여야 합니다 (한글 1자 = 3 byte).".to_string());
     }
-    if !slug
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return Err("slug 는 영숫자 / 하이픈 / 언더스코어만 허용됩니다.".to_string());
+    if !slug.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        return Err(
+            "slug 는 영숫자 / 한글 / 하이픈 / 언더스코어만 허용됩니다. 공백 / 슬래시 / 기호 금지."
+                .to_string(),
+        );
     }
     Ok(())
 }

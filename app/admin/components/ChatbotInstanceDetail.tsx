@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useId } from 'react';
-import { ArrowLeft, Save, RotateCcw, Copy, Loader2, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Save, RotateCcw, Copy, Loader2, ExternalLink, CheckCircle2 } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { logger } from '../../../lib/util/logger';
@@ -41,6 +41,7 @@ export function ChatbotInstanceDetail({
   const [allowedDomains, setAllowedDomains] = useState(instance.allowedDomains.join('\n'));
   const [apiToken, setApiToken] = useState(instance.apiToken);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   // 모든 Library Reference + sysmod list 영역 multi-select 위해 로드
   const [references, setReferences] = useState<LibraryReferencePb[]>([]);
@@ -119,6 +120,10 @@ export function ChatbotInstanceDetail({
       );
       if (!res.success) {
         await alertDialog({ title: '저장 실패', message: res.error ?? '오류가 발생했습니다.' });
+      } else {
+        // 성공 안내 — CheckCircle icon 2초 표시 후 자동 사라짐 (옛 settings 패턴).
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
       }
     } catch (e) {
       logger.debug('chatbot', 'update_instance 실패', { error: e });
