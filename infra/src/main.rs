@@ -408,8 +408,10 @@ async fn main() -> Result<()> {
         firebat_core::managers::ai::retrieval_engine::RetrievalEngine::new()
             .with_conversation(conversation_manager.clone())
             .with_entity(entity_manager.clone())
-            .with_episodic(episodic_manager.clone())
-            .with_library(library_manager.clone()),
+            .with_episodic(episodic_manager.clone()),
+        // .with_library(library_manager.clone()), // 임시 비활성 (2026-05-17) — Library 도입 후 OOM 의심 trigger 검증.
+        //                                            매 query 시점 search_library_safe → embed_query → Arctic mmap page-in 추가 호출이
+        //                                            Vultr 950MB 한계 영역에서 OOM 트리거 가능성. 사고 재발 X 면 trigger 확정.
     );
 
     let ai_manager = Arc::new(
