@@ -368,7 +368,7 @@ impl ProcessSandboxAdapter {
     /// 1. `<module_dir>/config.json` 파싱 → `secrets: ["KEY1", "KEY2"]` 배열
     /// 2. 각 키마다 Vault `user:KEY` 조회 → env 저장
     /// 3. 모듈 settings (`system:module:<name>:settings`) 의 모든 필드 → `MODULE_<KEY>` env 주입
-    /// 4. tokenCache 패턴 (옛 TS) — Phase B-19+ 후속
+    /// 4. tokenCache.secretName 박은 영역 안 vault 조회 → env 주입 (옛 OAuth token cache 로드)
     fn load_secrets_env(&self, module_dir: &Path) -> HashMap<String, String> {
         let mut env: HashMap<String, String> = HashMap::new();
         let Some(vault) = &self.vault else {
@@ -389,6 +389,18 @@ impl ProcessSandboxAdapter {
                     if let Some(value) = vault.get_secret(&format!("user:{name}")) {
                         env.insert(name.to_string(), value);
                     }
+                }
+            }
+        }
+
+        // 1b. tokenCache.secretName 박은 영역 안 vault 조회 → env 주입.
+        // 옛 OAuth token (예: KIS_ACCESS_TOKEN / KIWOOM_ACCESS_TOKEN) 박은 영역 안 매 호출 마다
+        // 토큰 발급 호출 안 발생 — 한투 / 키움 측 rate limit 안 403 issue. cached token 박힌 영역
+        // 안 즉시 사용 + 만료 박힌 영역 안 sysmod 자체 안 forceNew 재시도.
+        if let Some(token_cache) = parsed.get("tokenCache").and_then(|v| v.as_object()) {
+            if let Some(secret_name) = token_cache.get("secretName").and_then(|v| v.as_str()) {
+                if let Some(value) = vault.get_secret(&format!("user:{secret_name}")) {
+                    env.insert(secret_name.to_string(), value);
                 }
             }
         }
@@ -1111,15 +1123,29 @@ impl ProcessSandboxAdapter {
             serde_json::from_str(trimmed).unwrap_or_else(|_| serde_json::json!({"stdout": trimmed}))
         };
 
-        // sysmod stdout envelope 인식 — `{success, data, error, errorKey?, errorParams?}` 형태면 그대로 unwrap.
+        // sysmod stdout envelope 인식 — `{success, data, error, errorKey?, errorParams?, __updateSecrets?}` 형태면 그대로 unwrap.
         // exit 0 자체는 process 정상 종료만 의미 — sysmod 의 비즈니스 success 와 별개.
         // errorKey / errorParams = i18n 영역 (SysmodToolHandler 의 lookup 변환 입력).
+        // __updateSecrets = OAuth token cache save — sysmod 안 새 token 발급 박은 영역 안 vault
+        // 업데이트. 한투 / 키움 같은 OAuth sysmod 안 매 호출 마다 발급 호출 박지 X (rate limit 차단).
         let (success, data, error, error_key, error_params) = if let Some(obj) = parsed.as_object() {
             let has_success = obj.contains_key("success");
             let has_envelope_field = has_success
                 || obj.contains_key("data")
                 || obj.contains_key("error")
                 || obj.contains_key("errorKey");
+            // __updateSecrets 파싱 + vault 업데이트 (cache save).
+            if let Some(updates) = obj.get("__updateSecrets").and_then(|v| v.as_object()) {
+                if let Some(vault) = &self.vault {
+                    for (key, val) in updates {
+                        if let Some(s) = val.as_str() {
+                            if !s.is_empty() {
+                                vault.set_secret(&format!("user:{key}"), s);
+                            }
+                        }
+                    }
+                }
+            }
             if has_envelope_field {
                 let s = obj.get("success").and_then(|v| v.as_bool()).unwrap_or(true);
                 let d = obj.get("data").cloned().unwrap_or(serde_json::Value::Null);
