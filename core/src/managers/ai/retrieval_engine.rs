@@ -21,7 +21,7 @@ use crate::managers::entity::EntityManager;
 use crate::managers::episodic::EpisodicManager;
 use crate::managers::library::LibraryManager;
 use crate::ports::{
-    EntityFactRecord, EntitySearchOpts, EventSearchOpts, FactSearchOpts, TimelineOpts,
+    EntityFactRecord, EntitySearchOpts, EventSearchOpts, FactSearchOpts, LibraryHit, TimelineOpts,
 };
 
 /// 매 source 별 limit. 옛 TS `RetrievalLimits` 1:1.
@@ -62,6 +62,11 @@ pub struct RetrievalResult {
     pub context_summary: String,
     /// 디버그 — 각 source 의 매칭 수
     pub stats: RetrievalStats,
+    /// Library 매치된 hit 영역 (Phase 1 단계 8.4, 2026-05-17) — 답변 외부에 SourceTags
+    /// 뱃지로 노출. context_summary 안에 텍스트로 박힌 `[Source: ...]` 와 별개로 metadata 로 전달.
+    /// 답변 본문에는 인용 표기 박지 마라는 시스템 prompt 룰과 짝.
+    #[serde(rename = "libraryHits", default)]
+    pub library_hits: Vec<LibraryHit>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -247,6 +252,7 @@ impl RetrievalEngine {
             return RetrievalResult {
                 context_summary: String::new(),
                 stats,
+                library_hits,
             };
         }
 
@@ -257,6 +263,7 @@ impl RetrievalEngine {
         RetrievalResult {
             context_summary,
             stats,
+            library_hits,
         }
     }
 
