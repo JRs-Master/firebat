@@ -1,6 +1,6 @@
 {
   "error": {
-    "api_key_missing": "NAVER_AD_API_KEY / NAVER_AD_SECRET_KEY / NAVER_AD_CUSTOMER_ID are not configured.",
+    "api_key_missing": "NAVER_AD_ACCESS_LICENSE_KEY / NAVER_AD_SECRET_KEY / NAVER_AD_CUSTOMER_ID are not configured.",
     "unknown_action": "Unknown action: {{action}}",
     "api_status": "Naver Ads API {{status}}: {{body}}",
     "keywords_required": "keywords array is required.",

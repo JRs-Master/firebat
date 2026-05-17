@@ -35,14 +35,16 @@ process.stdin.on('end', async () => {
     const { data } = JSON.parse(raw);
     const action = data?.action || 'keyword-tool';
 
-    const apiKey = process.env['NAVER_AD_API_KEY'];
+    const accessLicense = process.env['NAVER_AD_ACCESS_LICENSE_KEY'];
     const secretKey = process.env['NAVER_AD_SECRET_KEY'];
     const customerId = process.env['NAVER_AD_CUSTOMER_ID'];
-    if (!apiKey || !secretKey || !customerId) {
+    if (!accessLicense || !secretKey || !customerId) {
       return outErr('error.api_key_missing', {});
     }
 
-    const ctx = { apiKey, secretKey, customerId };
+    // 네이버 검색광고 API 시그니처 명명 — `apiKey` 는 사실 `Access License`. 옛 이름 그대로
+    // 사용 시 사용자 혼란 (네이버 콘솔 안 "Access License" 라벨 vs Firebat "API KEY" 불일치).
+    const ctx = { apiKey: accessLicense, secretKey, customerId };
 
     switch (action) {
       case 'keyword-tool': return await handleKeywordTool(ctx, data);
@@ -112,6 +114,8 @@ async function api(ctx, method, uri, queryParams, body) {
 
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
+    // 민감 정보 마스킹은 Rust AiManager 안 단일 게이트 (`core/src/utils/redactor.rs`) 가 처리.
+    // sysmod 별 개별 sanitize 불필요 — 응답 본문 그대로 forward 후 사용자 노출 직전 통과.
     throw new I18nError('error.api_status', { status: String(resp.status), body: t });
   }
 
