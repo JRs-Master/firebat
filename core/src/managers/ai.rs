@@ -442,11 +442,7 @@ impl AiManager {
         // MCP 토큰 자동 주입 — vault 에서 `system:internal-mcp-token` 가져와 LlmCallOpts 에 추가.
         // hosted MCP 모델 (CLI 3종 / Anthropic API / OpenAI Responses API) 이 Firebat MCP
         // server 인증할 때 사용. caller 가 안 주면 vault 에서 자동 조회.
-        //
-        // 단, chatbot_context 박혀있으면 mcp_token 주입 0 — 외부 사이트 위젯 안에서 hosted MCP
-        // 영역 자체 loop 박힘 = admin 도구 전체 노출 영역. Function Calling 흐름 (effective_tools
-        // schema + filter) 강제 박힘 후 supports_hosted_mcp 영역 자연 false (token 0).
-        if effective_opts.mcp_token.is_none() && ai_opts.chatbot_context.is_none() {
+        if effective_opts.mcp_token.is_none() {
             if let Some(vault) = &self.vault {
                 let token = vault.get_secret("system:internal-mcp-token");
                 if let Some(t) = token.filter(|s| !s.is_empty()) {
