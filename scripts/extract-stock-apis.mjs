@@ -168,18 +168,18 @@ function extractKisDetail(ws) {
 }
 
 // ─────────────────────────────────────────────────────────────────
-function writeJson(filename, data) {
-  const outPath = resolve(ROOT, 'infra/data', filename);
+function writeJson(relPath, data) {
+  const outPath = resolve(ROOT, relPath);
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, JSON.stringify(data, null, 2), 'utf8');
-  console.log(`✓ ${filename} — ${data.length} APIs`);
+  console.log(`✓ ${relPath} — ${data.length} APIs`);
 }
 
 const kiwoomApis = extractKiwoom();
-writeJson('stock-apis-kiwoom.json', kiwoomApis);
+writeJson('system/modules/kiwoom/_apis.json', kiwoomApis);
 
 const kisApis = extractKis();
-writeJson('stock-apis-kis.json', kisApis);
+writeJson('system/modules/korea-invest/_apis.json', kisApis);
 
 // 분류 통계
 const kiwoomCats = new Set();

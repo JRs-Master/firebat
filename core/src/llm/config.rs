@@ -295,7 +295,7 @@ fn cli_codex(id: &str, name: &str) -> LlmModelConfig {
 
 /// 빌트인 LLM 모델 carousel — frontend types.ts AI_MODELS 와 1:1 매칭.
 ///
-/// Phase 5 정공 (2026-05-13) — 옛 Rust 하드코드 폐기. `infra/data/llm-models.json` source.
+/// Phase 5 정공 (2026-05-13) — 옛 Rust 하드코드 폐기. `system/llm/models.json` source.
 /// infra startup 에 `registry_loader::init_from_file()` 호출 → 본 함수가 registry 에서 가져옴.
 ///
 /// 새 모델 추가 = JSON edit + restart (Rust 재빌드 0).

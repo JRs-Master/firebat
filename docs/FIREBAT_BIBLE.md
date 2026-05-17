@@ -113,8 +113,8 @@ Next.js 어드민 / API route + Rust core (gRPC IPC) 분리 운영. Vultr system
 
 옛 `IPromptLoaderPort` trait + `FilePromptLoader` adapter 폐기 (2026-05-16) — core 가 i18n service 직접 사용, adapter wiring 0. .md 편집 후 systemctl restart 1회 필요 (i18n init 시점 cache). 사용자 프롬프트 (`system:user-prompt` Vault key) 는 runtime read 영역이라 외부화 미필요.
 
-### 제5항. LLM 모델 + thinking JSON registry (2026-05-13 강화)
-모델 + thinking 모드 단일 source = `infra/data/llm-models.json`:
+### 제5항. LLM 모델 + thinking JSON registry (2026-05-13 강화, 2026-05-17 위치 이동)
+모델 + thinking 모드 단일 source = `system/llm/models.json` (옛 `infra/data/llm-models.json` 에서 이동 — system/ 디렉토리가 prompts / modules / llm 같은 영역의 일관된 부모):
 - 25 모델 entry (Anthropic / Google / Vertex / OpenAI / CLI)
 - 각 모델별 thinking 필드 — kind (reasoning / thinking / extendedThinking) + levels (i18n labels {ko, en})
 - 새 모델 추가 = JSON 1 file 수정 + restart (Rust 재빌드 0). thinking 레벨 변경도 동일.

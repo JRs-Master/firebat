@@ -65,7 +65,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // api 모드: 키 기반, pay-per-token (기존)
   // cli 모드: 구독 기반, 자체 인증 (월정액 Claude Pro/Max, ChatGPT Plus, Gemini Advanced 등)
   type CliProvider = 'claude' | 'codex' | 'gemini';
-  // 모델 분류 — JSON registry (infra/data/llm-models.json) 단일 source. entry.execMode/cliProvider/category 만 read.
+  // 모델 분류 — JSON registry (system/llm/models.json) 단일 source. entry.execMode/cliProvider/category 만 read.
   // 옛 prefix 분기 (model.startsWith('cli-') 등) 폐기 (2026-05-13). entry 미준비 시점 = 기본값 + useEffect sync.
   const inferModeProvider = (model: string): { execMode: 'api' | 'cli'; mode: 'general' | 'vertex'; provider: 'openai' | 'google' | 'anthropic'; cliProvider: CliProvider } => {
     const entry = aiModelsList.find(m => m.value === model);

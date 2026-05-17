@@ -1,11 +1,13 @@
 //! LLM model registry JSON loader — Phase 5 정공 (2026-05-13).
 //!
-//! `infra/data/llm-models.json` 파일 → `firebat_core::llm::registry::LlmRegistry` 로드.
+//! `system/llm/models.json` 파일 → `firebat_core::llm::registry::LlmRegistry` 로드.
 //! infra crate 만 파일 I/O 책임 (BIBLE Hexagonal).
 //!
 //! main.rs 가 startup 에 `init_from_file()` 1회 호출 → core registry 채움.
 //!
-//! 파일 위치 override: env `FIREBAT_LLM_MODELS_PATH`. 기본 = 컴파일 시 디렉토리 기반 추적 → CWD 기반.
+//! 파일 위치 override: env `FIREBAT_LLM_MODELS_PATH`. 기본 = workspace root 기준 system/llm/models.json
+//! 후보 chain. (옛 위치 `infra/data/llm-models.json` 도 fallback 으로 잠시 보존 — 운영 서버
+//! 갱신 race 보호. 2026-06+ 제거 안전.)
 
 use firebat_core::llm::registry::{init, LlmRegistry};
 use std::path::PathBuf;
@@ -24,9 +26,12 @@ fn default_paths() -> Vec<PathBuf> {
     if let Ok(env_path) = std::env::var("FIREBAT_LLM_MODELS_PATH") {
         paths.push(PathBuf::from(env_path));
     }
-    // 개발 환경 — workspace root 기준
+    // 개발 환경 — workspace root 기준 (새 위치)
+    paths.push(PathBuf::from("system/llm/models.json"));
+    // production 운영 — 설치 디렉토리 (새 위치)
+    paths.push(PathBuf::from("/opt/firebat/system/llm/models.json"));
+    // 옛 위치 — 운영 서버 갱신 race 보호 fallback
     paths.push(PathBuf::from("infra/data/llm-models.json"));
-    // production 운영 — 설치 디렉토리
     paths.push(PathBuf::from("/opt/firebat/infra/data/llm-models.json"));
     paths.push(PathBuf::from("data/llm-models.json"));
     paths

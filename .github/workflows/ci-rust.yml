@@ -101,21 +101,24 @@ jobs:
         env:
           CARGO_BUILD_JOBS: 4
 
-      - name: Stage artifact (binary + data 평면화)
+      - name: Stage artifact (binary + system 데이터 평면화)
         # zip 안 path 가 target/release/firebat-core 형태로 박히면 사용자가 두 번
-        # unzip 작업 (target/release/ 들어가서 binary + infra/data/ 별도) → 부담.
+        # unzip 작업 (target/release/ 들어가서 binary + system/ 별도) → 부담.
         # stage 디렉토리에 평면화해 unzip 즉시 rsync 가능.
+        #
+        # 2026-05-17 — `infra/data/{llm-models.json, stock-apis-*.json}` 가 `system/llm/models.json`
+        # + `system/modules/{kiwoom,korea-invest}/_apis.json` 로 이동. system/ 가 prompts + modules + llm
+        # 일관된 부모.
         run: |
-          mkdir -p artifact/infra
+          mkdir -p artifact
           cp target/release/firebat-core artifact/
-          cp -r infra/data artifact/infra/
+          cp -r system artifact/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: firebat-core-linux-x86_64
-          # zip 구조: firebat-core (top) + infra/data/{prompts,llm-models.json,stock-apis-*.json}
-          # Phase 5 (2026-05-13) 외부화 후 infra/data/ 미배포 시 stub registry / prompt
-          # → frontend CLI/AI 모델 노출 안 됨 + LLM 어색.
+          # zip 구조: firebat-core (top) + system/{prompts,llm/models.json,modules/*}
+          # system/ 미배포 시 stub registry / prompt → frontend CLI/AI 모델 노출 안 됨 + LLM 어색.
           path: artifact/**
           retention-days: 30

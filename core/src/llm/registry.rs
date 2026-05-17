@@ -1,6 +1,6 @@
 //! LLM model registry — Phase 5 정공 (2026-05-13).
 //!
-//! 옛 `builtin_models()` 의 Rust 하드코드 폐기. JSON 파일 (`infra/data/llm-models.json`) 에서
+//! 옛 `builtin_models()` 의 Rust 하드코드 폐기. JSON 파일 (`system/llm/models.json`) 에서
 //! 로드 → infra 가 startup 에 본 모듈의 `init()` 호출 → core 매니저들이 `registry()` 로 접근.
 //!
 //! BIBLE Hexagonal 준수 — core 는 파일 I/O 0. infra 가 로드 + 본 모듈 OnceLock 채움.
@@ -14,7 +14,7 @@
 //!   let model = registry.find_model("gemini-3.1-flash-lite");
 //!
 //! 새 모델 추가:
-//!   1. infra/data/llm-models.json 수정 (모델 entry 추가)
+//!   1. system/llm/models.json 수정 (모델 entry 추가)
 //!   2. systemctl restart firebat (재빌드 0)
 //!
 //! 새 default assistant model:
