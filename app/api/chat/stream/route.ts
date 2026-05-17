@@ -116,18 +116,31 @@ function handleToolsMode(
             reply?: string;
             executedActions?: unknown;
             toolResults?: unknown;
+            blocks?: unknown;
+            suggestions?: unknown;
+            pendingActions?: unknown;
             data?: unknown;
             error?: string;
           };
-          const resultData = result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : undefined;
-          const resultSuggestions = resultData && 'suggestions' in resultData ? resultData.suggestions : undefined;
+          // AiResponse 안 = blocks / suggestions / pendingActions / etc 모두 top-level 박힘.
+          // 단 옛 frontend (useChat.ts) 안 = `ev.data.data?.blocks` 박은 영역 (옛 TS port 안
+          // `result.data` 안 박힌 영역 가정). 즉 backend send 안 `data` 안 = top-level 필드 mirror
+          // 박은 영역 = frontend 옛 매핑 호환. 옛 `result.data` 박은 영역 (이미 객체 박혀있으면)
+          // 도 같이 박힘 — 옛 호환.
+          const passthroughData = result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {};
+          const mergedData: Record<string, unknown> = {
+            ...passthroughData,
+            blocks: result.blocks,
+            suggestions: result.suggestions,
+            pendingActions: result.pendingActions,
+          };
           send('result', {
             success: result.success,
             reply: result.reply,
             executedActions: result.executedActions,
             toolResults: result.toolResults,
-            data: result.data,
-            suggestions: resultSuggestions,
+            data: mergedData,
+            suggestions: result.suggestions,
             error: result.error,
           });
 
@@ -140,17 +153,20 @@ function handleToolsMode(
               const userMsg = saveOpts.userId && saveOpts.userPrompt
                 ? { id: saveOpts.userId, role: 'user' as const, content: saveOpts.userPrompt, ...(saveOpts.image ? { image: saveOpts.image } : {}) }
                 : null;
-              // suggestions / pendingActions 포함 — 새로고침 후에도 ✓실행 버튼·승인 UI 복원
-              const resultPending = resultData && 'pendingActions' in resultData ? (resultData.pendingActions as unknown[] | undefined) : undefined;
+              // suggestions / pendingActions 포함 — 새로고침 후에도 ✓실행 버튼·승인 UI 복원.
+              // `data` 안 mergedData 박힌 영역 그대로 (top-level blocks / suggestions / pendingActions
+              // mirror — frontend `ev.data.data.blocks` 매핑 호환).
+              const suggestionsArr = Array.isArray(result.suggestions) ? (result.suggestions as unknown[]) : undefined;
+              const pendingArr = Array.isArray(result.pendingActions) ? (result.pendingActions as unknown[]) : undefined;
               const systemMsg = {
                 id: saveOpts.systemId,
                 role: 'system' as const,
                 content: result.reply || '',
                 executedActions: result.executedActions,
                 toolResults: result.toolResults,
-                data: result.data,
-                ...(resultSuggestions && Array.isArray(resultSuggestions) && resultSuggestions.length > 0 ? { suggestions: resultSuggestions } : {}),
-                ...(resultPending && Array.isArray(resultPending) && resultPending.length > 0 ? { pendingActions: resultPending } : {}),
+                data: mergedData,
+                ...(suggestionsArr && suggestionsArr.length > 0 ? { suggestions: suggestionsArr } : {}),
+                ...(pendingArr && pendingArr.length > 0 ? { pendingActions: pendingArr } : {}),
                 ...(result.error ? { error: result.error } : {}),
               };
               const msgs = userMsg ? [userMsg, systemMsg] : [systemMsg];
