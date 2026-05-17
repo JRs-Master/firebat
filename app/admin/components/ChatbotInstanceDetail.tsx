@@ -50,6 +50,15 @@ export function ChatbotInstanceDetail({
   const descId = useId();
   const promptId = useId();
   const domainsId = useId();
+  const embedId = useId();
+
+  // 외부 위젯 embed snippet 영역 firebat URL 자동 결정 (SSR 호환 — 빈 초기값 + client effect).
+  const [firebatUrl, setFirebatUrl] = useState('');
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      setFirebatUrl(window.location.origin);
+    }
+  }, []);
 
   useEffect(() => {
     // Library Reference 목록 (admin 영역 — 본인 자료)
@@ -137,6 +146,26 @@ export function ChatbotInstanceDetail({
       logger.debug('chatbot', 'rotate_api_token 실패', { error: e });
     }
   }, [instance.id]);
+
+  // embed snippet 영역 build — 사용자가 외부 사이트 HTML 영역 박는 영역.
+  const embedSnippet = firebatUrl
+    ? `<script
+  src="${firebatUrl}/api/chatbot/widget.js"
+  data-slug="${instance.slug}"
+  data-token="${apiToken}"
+  data-firebat-url="${firebatUrl}"
+  async
+></script>`
+    : '(서버 URL 결정 중...)';
+
+  const handleCopyEmbed = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(embedSnippet);
+      await alertDialog({ title: '복사됨', message: '위젯 코드가 클립보드에 복사됐습니다. 외부 사이트 HTML 영역에 박아주세요.' });
+    } catch (e) {
+      logger.debug('chatbot', 'copy_embed 실패', { error: e });
+    }
+  }, [embedSnippet]);
 
   const handleCopyToken = useCallback(async () => {
     try {
@@ -331,6 +360,33 @@ export function ChatbotInstanceDetail({
             </Tooltip>
           </div>
           <p className="text-[10px] text-slate-400">위젯 HTML/JS 영역에 박아 인증. 재발급 시 옛 토큰 즉시 무효.</p>
+        </div>
+
+        {/* 외부 위젯 embed snippet — 워드프레스 등 외부 사이트 HTML 안 박는 코드 */}
+        <div className="flex flex-col gap-1">
+          <label htmlFor={embedId} className="text-[11px] font-bold text-slate-600">위젯 embed 코드</label>
+          <div className="relative">
+            <textarea
+              id={embedId}
+              value={embedSnippet}
+              readOnly
+              rows={7}
+              className="w-full px-2 py-1.5 text-[11px] font-mono border border-slate-300 rounded bg-slate-50 resize-none"
+              name="chatbotEmbedSnippet"
+              onClick={e => (e.target as HTMLTextAreaElement).select()}
+            />
+            <button
+              onClick={handleCopyEmbed}
+              className="absolute top-1.5 right-1.5 p-1 text-slate-500 hover:text-blue-600 transition-colors border border-slate-300 rounded bg-white"
+              aria-label="복사"
+            >
+              <Copy size={12} />
+            </button>
+          </div>
+          <p className="text-[10px] text-slate-400">
+            외부 사이트 (워드프레스 등) HTML 안 &lt;/body&gt; 직전에 박으면 즉시 챗봇 활성. allowed_domains
+            설정 영역 비어있으면 모든 origin 허용 (개발). 운영 시 도메인 명시 권장.
+          </p>
         </div>
       </div>
     </div>
