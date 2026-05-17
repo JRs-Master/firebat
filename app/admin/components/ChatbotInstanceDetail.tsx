@@ -213,10 +213,10 @@ export function ChatbotInstanceDetail({
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors disabled:bg-slate-300"
+          className={`flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-white rounded transition-colors disabled:bg-slate-300 ${saved ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}
         >
-          {saving ? <Loader2 size={11} className="animate-spin" /> : <Save size={11} />}
-          저장
+          {saving ? <Loader2 size={11} className="animate-spin" /> : saved ? <CheckCircle2 size={11} /> : <Save size={11} />}
+          {saved ? '저장됨' : '저장'}
         </button>
       </div>
 
