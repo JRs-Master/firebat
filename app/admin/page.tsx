@@ -611,10 +611,15 @@ function ActionTags({ actions, steps, toolResults }: { actions: string[]; steps?
     if (!counts.has(a)) order.push(a);
     counts.set(a, (counts.get(a) || 0) + 1);
   }
-  // 도구 이름 → CLI 자체 MCP loop 의 toolResults 안의 실패 결과 매칭 (옛 TS 의 에러 뱃지 메커니즘 1:1).
+  // 도구 이름 → toolResults 안 fail 결과 매칭 (옛 TS 에러 뱃지 메커니즘 1:1).
   const errorFromTool = (action: string): string | null => {
     const t = toolResults?.find(r => r.name === action && !r.success);
     return t?.error || null;
+  };
+  // 도구 이름 → toolResults 안 input 매칭 (success/fail 무관, 첫 매칭). 같은 도구 N회 호출 시 첫 호출만.
+  const inputFromTool = (action: string): unknown => {
+    const t = toolResults?.find(r => r.name === action);
+    return t?.input;
   };
   return (
     <div className="flex flex-col gap-1">
@@ -627,8 +632,8 @@ function ActionTags({ actions, steps, toolResults }: { actions: string[]; steps?
           return (
             <div
               key={i}
-              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium ${isError ? 'bg-red-50 border border-red-100 text-red-600 cursor-pointer hover:bg-red-100' : 'bg-slate-50 border border-slate-200 text-slate-500'} transition-colors`}
-              onClick={isError ? () => setOpenIdx(openIdx === i ? null : i) : undefined}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium cursor-pointer transition-colors ${isError ? 'bg-red-50 border border-red-100 text-red-600 hover:bg-red-100' : 'bg-slate-50 border border-slate-200 text-slate-500 hover:bg-slate-100'}`}
+              onClick={() => setOpenIdx(openIdx === i ? null : i)}
             >
               {isError ? <AlertTriangle size={10} className="text-red-400" /> : <Blocks size={10} className="text-slate-400" />}
               {action}{n > 1 && <span className="text-slate-400 ml-0.5">×{n}</span>}
@@ -640,12 +645,25 @@ function ActionTags({ actions, steps, toolResults }: { actions: string[]; steps?
         const action = order[openIdx];
         const step = steps?.find(s => s.type === action && s.status === 'error');
         const toolErr = errorFromTool(action);
-        const msg = step?.error || toolErr;
-        return msg ? (
-          <div className="px-3 py-2 bg-red-50/50 border border-red-100 rounded-md text-[12px] font-mono text-red-600 leading-relaxed break-all">
-            {msg}
+        const errMsg = step?.error || toolErr;
+        const input = inputFromTool(action);
+        return (
+          <div className="flex flex-col gap-1.5">
+            {errMsg && (
+              <div className="px-3 py-2 bg-red-50/50 border border-red-100 rounded-md text-[12px] font-mono text-red-600 leading-relaxed break-all">
+                {errMsg}
+              </div>
+            )}
+            {input !== undefined && input !== null && (
+              <div className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-md text-[11px] font-mono text-slate-600 leading-relaxed break-all whitespace-pre-wrap">
+                {JSON.stringify(input, null, 2)}
+              </div>
+            )}
+            {!errMsg && (input === undefined || input === null) && (
+              <div className="px-3 py-2 text-[11px] text-slate-400 italic">호출 정보 없음</div>
+            )}
           </div>
-        ) : null;
+        );
       })()}
     </div>
   );
