@@ -927,13 +927,40 @@ impl ISandboxPort for ProcessSandboxAdapter {
         if target_path.contains("..") || target_path.starts_with('/') {
             return Err(format!("workspace zone 밖 path 거부: {}", target_path));
         }
-        let full_path = self.workspace_root.join(target_path);
+        // path entry 자동 탐색 — AI 가 path 박을 때 entry 확장자 (.mjs / .py 등) 추측해서 틀린 경우
+        // (예: yfinance 가 main.py 인데 AI 가 index.mjs 박음) 디렉토리 안 실재하는 entry 자동 선택.
+        // ModuleManager.Run 의 ENTRY_FILES 자동 탐색과 동일 fallback — Pipeline EXECUTE / 다른 호출
+        // site 일반화. 옛 동작 호환 — full_path 실재하면 그대로 사용.
+        let resolved_path = {
+            let initial = self.workspace_root.join(target_path);
+            if initial.exists() {
+                target_path.to_string()
+            } else {
+                let dir_part = std::path::Path::new(target_path)
+                    .parent()
+                    .map(|p| p.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                if dir_part.is_empty() {
+                    target_path.to_string()
+                } else {
+                    const ENTRY_FILES: &[&str] =
+                        &["main.py", "index.mjs", "index.js", "main.mjs", "main.sh", "main.php"];
+                    let dir_full = self.workspace_root.join(&dir_part);
+                    ENTRY_FILES
+                        .iter()
+                        .find(|f| dir_full.join(f).exists())
+                        .map(|f| format!("{}/{}", dir_part, f))
+                        .unwrap_or_else(|| target_path.to_string())
+                }
+            }
+        };
+        let full_path = self.workspace_root.join(&resolved_path);
         if !full_path.exists() {
             return Err(format!("모듈 entry 없음: {}", target_path));
         }
         let runtime = self
-            .resolve_runtime(target_path)
-            .ok_or_else(|| format!("지원되지 않는 모듈 확장자: {}", target_path))?
+            .resolve_runtime(&resolved_path)
+            .ok_or_else(|| format!("지원되지 않는 모듈 확장자: {}", resolved_path))?
             .clone();
 
         // 런타임 binary 미설치 → 친절한 에러 (옛 TS runtimeError 1:1)

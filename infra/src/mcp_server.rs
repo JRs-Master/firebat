@@ -533,7 +533,7 @@ impl McpToolHandler for RenderUnifiedHandler {
                     continue;
                 }
             };
-            let props = block
+            let mut props = block
                 .get("props")
                 .cloned()
                 .unwrap_or_else(|| serde_json::json!({}));
@@ -549,6 +549,42 @@ impl McpToolHandler for RenderUnifiedHandler {
                     continue;
                 }
             };
+
+            // AI hallucination normalize — AI 가 schema 잘못 학습해서 'name' / 'currency' 등 박는 경우
+            // 자주 발생. additionalProperties false + required title 박혀있어도 description 강화로
+            // 해결 안 됨 (commit `2cedd5b` 이후 또 발생). 검증 전 흡수.
+            //   1. 'name' 박혀있고 'title' 없으면 → 'title' 매핑 (의미상 동일, stock_chart 같은
+            //      component 안 옛에 'name' 박았던 적 있어 AI 가 학습 잔재)
+            //   2. additionalProperties false 박힌 schema 안 = 명시 안 박힌 키 자동 drop (검증 fail
+            //      차단). schema 안 명시 박힌 키만 retain.
+            if let Some(obj) = props.as_object_mut() {
+                if !obj.contains_key("title") {
+                    if let Some(name_val) = obj.remove("name") {
+                        obj.insert("title".to_string(), name_val);
+                    }
+                }
+                let schema_props = comp
+                    .props_schema
+                    .get("properties")
+                    .and_then(|v| v.as_object());
+                let additional_false = comp
+                    .props_schema
+                    .get("additionalProperties")
+                    .and_then(|v| v.as_bool())
+                    == Some(false);
+                if additional_false {
+                    if let Some(known) = schema_props {
+                        let extras: Vec<String> = obj
+                            .keys()
+                            .filter(|k| !known.contains_key(k.as_str()))
+                            .cloned()
+                            .collect();
+                        for k in extras {
+                            obj.remove(&k);
+                        }
+                    }
+                }
+            }
 
             // propsSchema 검증 — 실패 block 만 분리, 정상 block 은 계속 push.
             if let Err(e) =
