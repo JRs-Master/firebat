@@ -207,11 +207,28 @@ async function handleEstimate(ctx, data) {
   const path = PATHS[estimateType];
   if (!path) return outErr('error.unknown_estimate_type', { estimateType: String(estimateType) });
 
+  // 입력 검증 — 네이버 측 BadRequest 차단 + AI 한테 명시 안내. estimateType 별 필수 필드 다름:
+  //   - performance-bulk: items 배열 (≥1) 필수
+  //   - 그 외 (performance / average-position-bid / median-bid / exposure-minimum-bid): key 필수
+  //   - performance: bid 추가 필수
+  if (estimateType === 'performance-bulk') {
+    if (!Array.isArray(data.items) || data.items.length === 0) {
+      return outErr('error.items_required', {});
+    }
+  } else {
+    if (!data.key) {
+      return outErr('error.key_required', { estimateType, keyType });
+    }
+    if (estimateType === 'performance' && (data.bid === undefined || data.bid === null)) {
+      return outErr('error.bid_required', {});
+    }
+  }
+
   const body = {};
   if (data.device) body.device = data.device;
   if (data.keywordplus !== undefined) body.keywordplus = data.keywordplus;
   if (data.key) body.key = data.key;
-  if (data.bid) body.bid = data.bid;
+  if (data.bid !== undefined && data.bid !== null) body.bid = data.bid;
   if (data.items) body.items = data.items;
 
   const json = await api(ctx, 'POST', path, null, body);
@@ -282,6 +299,12 @@ async function handleRaw(ctx, data) {
   const method = (data.method || 'GET').toUpperCase();
   const uri = data.uri;
   if (!uri) return outErr('error.uri_required', {});
+
+  // POST / PUT / PATCH 안 = body 필수 (네이버 측 `failed to parse body` 차단). GET / DELETE 안 = body 0 OK.
+  const requiresBody = ['POST', 'PUT', 'PATCH'].includes(method);
+  if (requiresBody && (!data.body || Object.keys(data.body).length === 0)) {
+    return outErr('error.raw_body_required', { method });
+  }
 
   const json = await api(ctx, method, uri, data.params || null, data.body || null);
   out(true, json);

@@ -9,6 +9,10 @@
     "unknown_estimate_type": "알 수 없는 estimateType: {{estimateType}}",
     "unknown_subaction": "알 수 없는 subAction: {{subAction}}",
     "uri_required": "uri가 필요합니다. (예: /api/ncc/campaigns)",
+    "items_required": "estimate performance-bulk 호출에는 items 배열 (최소 1개) 이 필요합니다. items: [{key, device, bid, keywordplus}, ...] 형식.",
+    "key_required": "estimate {{estimateType}} 호출에는 key (keyType={{keyType}} 형식) 가 필요합니다.",
+    "bid_required": "estimate performance 호출에는 bid (입찰가) 가 필요합니다.",
+    "raw_body_required": "raw {{method}} 호출에는 body 가 필요합니다.",
     "runtime": "{{message}}"
   }
 }

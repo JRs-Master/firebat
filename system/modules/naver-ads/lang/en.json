@@ -9,6 +9,10 @@
     "unknown_estimate_type": "Unknown estimateType: {{estimateType}}",
     "unknown_subaction": "Unknown subAction: {{subAction}}",
     "uri_required": "uri is required (e.g., /api/ncc/campaigns).",
+    "items_required": "estimate performance-bulk requires items array (min 1). Format: items: [{key, device, bid, keywordplus}, ...].",
+    "key_required": "estimate {{estimateType}} requires key (keyType={{keyType}} format).",
+    "bid_required": "estimate performance requires bid (bid amount).",
+    "raw_body_required": "raw {{method}} call requires body.",
     "runtime": "{{message}}"
   }
 }
