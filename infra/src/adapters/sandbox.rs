@@ -1132,14 +1132,21 @@ impl ProcessSandboxAdapter {
         }
 
         let exit_code = exit_status.code();
-        // 진단 — sysmod 응답 결과. exit_code / stdout/stderr size 명시.
-        // stderr 안 짧으면 preview 도 박음 (Python error / Node error 명시 진단).
+        // 진단 — sysmod 응답 결과. exit_code / stdout / stderr size + preview 명시.
+        // 정상 종료 (exit 0) 박혀있어도 stderr 박혀있으면 진단 가치 큼 (Python warning / yfinance 라이브러리
+        // 안 HTTP 차단 메시지 / pandas FutureWarning / fail 가능성 명시). 옛 흐름 = exit != 0 시점만
+        // stderr_preview 박은 영역 → 정상 종료 + 비즈니스 fail 영역 진단 불가.
+        // stdout preview 도 박음 — out_err / 빈 records 박혀있으면 짧은 응답 직접 확인 가능.
+        let stdout_preview: String = stdout_buf.chars().take(300).collect();
+        let stderr_preview: String = stderr_buf.chars().take(300).collect();
         tracing::info!(
             module = module_name,
             action = input_action,
             exit_code = ?exit_code,
             stdout_size = stdout_buf.len(),
             stderr_size = stderr_buf.len(),
+            stdout_preview = %stdout_preview,
+            stderr_preview = %stderr_preview,
             "[sandbox] sysmod 호출 종료"
         );
         if !exit_status.success() {
