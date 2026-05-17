@@ -51,6 +51,7 @@ export function ChatbotInstanceDetail({
   const promptId = useId();
   const domainsId = useId();
   const embedId = useId();
+  const enabledId = useId();
 
   // 외부 위젯 embed snippet 영역 firebat URL 자동 결정 (SSR 호환 — 빈 초기값 + client effect).
   const [firebatUrl, setFirebatUrl] = useState('');
@@ -217,8 +218,9 @@ export function ChatbotInstanceDetail({
       {/* settings 본문 */}
       <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3">
         {/* 활성 / 비활성 toggle */}
-        <label className="flex items-center gap-2 text-[12px] font-semibold text-slate-700 cursor-pointer">
+        <label htmlFor={enabledId} className="flex items-center gap-2 text-[12px] font-semibold text-slate-700 cursor-pointer">
           <input
+            id={enabledId}
             type="checkbox"
             checked={enabled}
             onChange={e => setEnabled(e.target.checked)}
@@ -277,20 +279,24 @@ export function ChatbotInstanceDetail({
             <p className="text-[11px] text-slate-400 italic">Library Reference 가 없습니다. Library 탭에서 먼저 자료를 추가해주세요.</p>
           ) : (
             <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-slate-200 rounded p-1.5">
-              {references.map(ref => (
-                <label key={ref.id} className="flex items-center gap-2 text-[12px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded">
-                  <input
-                    type="checkbox"
-                    name="allowedReferences"
-                    value={ref.id}
-                    checked={allowedReferences.includes(ref.id)}
-                    onChange={() => toggleReference(ref.id)}
-                    className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    aria-label={`Reference ${ref.name}`}
-                  />
-                  <span className="truncate">{ref.name}</span>
-                </label>
-              ))}
+              {references.map(ref => {
+                const refInputId = `chatbot-ref-${ref.id}`;
+                return (
+                  <label key={ref.id} htmlFor={refInputId} className="flex items-center gap-2 text-[12px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded">
+                    <input
+                      id={refInputId}
+                      type="checkbox"
+                      name="allowedReferences"
+                      value={ref.id}
+                      checked={allowedReferences.includes(ref.id)}
+                      onChange={() => toggleReference(ref.id)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      aria-label={`Reference ${ref.name}`}
+                    />
+                    <span className="truncate">{ref.name}</span>
+                  </label>
+                );
+              })}
             </div>
           )}
         </div>
@@ -302,23 +308,27 @@ export function ChatbotInstanceDetail({
             <p className="text-[11px] text-slate-400 italic">시스템 모듈 목록을 불러오는 중...</p>
           ) : (
             <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-slate-200 rounded p-1.5">
-              {sysmods.map(mod => (
-                <label key={mod.name} className="flex items-center gap-2 text-[12px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded">
-                  <input
-                    type="checkbox"
-                    name="allowedSysmods"
-                    value={mod.name}
-                    checked={allowedSysmods.includes(mod.name)}
-                    onChange={() => toggleSysmod(mod.name)}
-                    className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    aria-label={`sysmod ${mod.name}`}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-mono text-[11px] text-slate-700">{mod.name}</div>
-                    {mod.description && <div className="text-[10px] text-slate-400 truncate">{mod.description}</div>}
-                  </div>
-                </label>
-              ))}
+              {sysmods.map(mod => {
+                const modInputId = `chatbot-sysmod-${mod.name}`;
+                return (
+                  <label key={mod.name} htmlFor={modInputId} className="flex items-center gap-2 text-[12px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded">
+                    <input
+                      id={modInputId}
+                      type="checkbox"
+                      name="allowedSysmods"
+                      value={mod.name}
+                      checked={allowedSysmods.includes(mod.name)}
+                      onChange={() => toggleSysmod(mod.name)}
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      aria-label={`sysmod ${mod.name}`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-mono text-[11px] text-slate-700">{mod.name}</div>
+                      {mod.description && <div className="text-[10px] text-slate-400 truncate">{mod.description}</div>}
+                    </div>
+                  </label>
+                );
+              })}
             </div>
           )}
         </div>
