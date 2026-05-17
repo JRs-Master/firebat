@@ -1,0 +1,4 @@
+{
+  "name": "Chatbot",
+  "description": "Chatbot widget system for external sites (WordPress, etc.). Per-instance slug / API token / allowed library references / allowed sysmods / allowed origin domains. Instances, widget snippets, and conversation history are managed in the sidebar 'Chatbot' tab."
+}
