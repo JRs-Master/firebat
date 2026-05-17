@@ -442,7 +442,7 @@ async fn main() -> Result<()> {
             .with_system_context(module_manager.clone(), mcp_manager.clone())
             .with_history_resolver(conversation_manager.clone())
             .with_cost_manager(cost_manager.clone())
-            .with_dynamic_tools(dynamic_tools_registry)
+            .with_dynamic_tools(dynamic_tools_registry.clone())
             .with_vault(vault.clone())
             .with_retrieval_engine(retrieval_engine),
     );
@@ -546,7 +546,8 @@ async fn main() -> Result<()> {
     let tool_service = grpc::tool::ToolServiceImpl::new(tool_manager.clone());
     let cost_service = grpc::cost::CostServiceImpl::new(cost_manager);
     let project_service = grpc::project::ProjectServiceImpl::new(project_manager);
-    let module_service = grpc::module::ModuleServiceImpl::new(module_manager.clone());
+    let module_service = grpc::module::ModuleServiceImpl::new(module_manager.clone())
+        .with_dynamic_tools(dynamic_tools_registry.clone());
     let page_service = grpc::page::PageServiceImpl::new(page_manager.clone());
     // ConversationService — IDatabasePort 설정하여 create_share / get_share / cleanup_expired_shares 활성.
     // .clone() — internal 30d cleanup cron (Server::builder 직전) 도 같은 manager 참조.

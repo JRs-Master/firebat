@@ -9,6 +9,7 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
+use crate::managers::ai::dynamic_tools::DynamicToolRegistry;
 use crate::managers::module::{ModuleManager, SystemEntry};
 use crate::ports::{ModuleOutput, PackageStatus, PackageStatusKind};
 use crate::proto::{
@@ -26,11 +27,25 @@ use crate::proto::{
 
 pub struct ModuleServiceImpl {
     manager: Arc<ModuleManager>,
+    /// 옵션 — 토글 / settings 변경 시 AI 도구 cache 즉시 무효화. None 시 60초 TTL 자연 만료 대기.
+    dynamic_tools: Option<Arc<DynamicToolRegistry>>,
 }
 
 impl ModuleServiceImpl {
     pub fn new(manager: Arc<ModuleManager>) -> Self {
-        Self { manager }
+        Self { manager, dynamic_tools: None }
+    }
+
+    /// 토글 / settings 변경 직후 AI 가 즉시 갱신된 도구 목록 인식하도록 cache invalidate 연결.
+    pub fn with_dynamic_tools(mut self, registry: Arc<DynamicToolRegistry>) -> Self {
+        self.dynamic_tools = Some(registry);
+        self
+    }
+
+    async fn invalidate_tools_cache(&self) {
+        if let Some(reg) = &self.dynamic_tools {
+            reg.invalidate().await;
+        }
     }
 }
 
@@ -206,6 +221,8 @@ impl ModuleService for ModuleServiceImpl {
         let settings: serde_json::Value = serde_json::from_str(&args.settings_json)
             .map_err(|e| TonicStatus::invalid_argument(format!("set_settings args: {e}")))?;
         if self.manager.set_settings(&args.name, &settings) {
+            // enabled 토글 또는 시크릿 설정 변경 시 AI 도구 cache 즉시 무효화.
+            self.invalidate_tools_cache().await;
             Ok(Response::new(ModuleSetSettingsResponse {}))
         } else {
             Err(TonicStatus::internal(crate::i18n::t(
@@ -232,6 +249,8 @@ impl ModuleService for ModuleServiceImpl {
     ) -> Result<Response<ModuleSetEnabledResponse>, TonicStatus> {
         let args = req.into_inner();
         if self.manager.set_enabled(&args.name, args.enabled) {
+            // 토글 직후 AI 가 즉시 갱신 도구 목록 인식 — 60초 TTL 자연 만료 대기 안 함.
+            self.invalidate_tools_cache().await;
             Ok(Response::new(ModuleSetEnabledResponse {}))
         } else {
             Err(TonicStatus::internal(crate::i18n::t(
