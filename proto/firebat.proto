@@ -2319,6 +2319,123 @@ service LifecycleService {
 // 위 LifecycleService 에 통합됨
 
 // ──────────────────────────────────────────────────────────────────────────
+// LibraryService — Phase 1 (2026-05-17). NotebookLM 같은 RAG 영역.
+// 매 Reference = 자료 그룹 (예: "법률 자료 2026"), 매 Source = 매 자료 (PDF / TXT / MD / URL / 직접 입력),
+// 매 Chunk = ~500 토큰 임베딩 단위. RetrievalEngine 5tier 영역 자연 통합.
+// ──────────────────────────────────────────────────────────────────────────
+
+message LibraryReferencePb {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string owner = 4;
+  int64 created_at = 5;
+  int64 updated_at = 6;
+}
+
+message LibrarySourcePb {
+  string id = 1;
+  string reference_id = 2;
+  string name = 3;
+  // "pdf" / "txt" / "md" / "url" / "text"
+  string source_type = 4;
+  string source_url = 5;
+  string file_path = 6;
+  string full_text = 7;
+  int64 char_count = 8;
+  int64 chunk_count = 9;
+  int64 created_at = 10;
+}
+
+message LibraryHitPb {
+  string source_id = 1;
+  string source_name = 2;
+  string reference_id = 3;
+  string reference_name = 4;
+  string chunk_id = 5;
+  int64 chunk_index = 6;
+  string content = 7;
+  optional int64 page_number = 8;
+  float score = 9;
+}
+
+// Reference CRUD
+message LibraryCreateReferenceRequest {
+  string name = 1;
+  string description = 2;
+  string owner = 3;
+}
+message LibraryCreateReferenceResponse {
+  string id = 1;
+}
+message LibraryListReferencesRequest {
+  string owner = 1;
+}
+message LibraryListReferencesResponse {
+  repeated LibraryReferencePb references = 1;
+}
+message LibraryDeleteReferenceRequest {
+  string id = 1;
+}
+message LibraryDeleteReferenceResponse {}
+
+// Source CRUD
+message LibraryUploadSourceRequest {
+  string reference_id = 1;
+  string name = 2;
+  // "pdf" / "txt" / "md" / "url" / "text"
+  string source_type = 3;
+  // 매 source_type 별 한 영역만 박음. text/url 영역 = inline_text 직접, pdf/txt/md 영역 = file_path 영역.
+  string source_url = 4;
+  string file_path = 5;
+  string inline_text = 6;
+}
+message LibraryUploadSourceResponse {
+  string source_id = 1;
+  int64 chunk_count = 2;
+}
+message LibraryListSourcesRequest {
+  string reference_id = 1;
+}
+message LibraryListSourcesResponse {
+  repeated LibrarySourcePb sources = 1;
+}
+message LibraryGetSourceRequest {
+  string id = 1;
+}
+message LibraryGetSourceResponse {
+  LibrarySourcePb source = 1;
+}
+message LibraryDeleteSourceRequest {
+  string id = 1;
+}
+message LibraryDeleteSourceResponse {}
+
+// Search
+message LibrarySearchRequest {
+  string owner = 1;
+  string query = 2;
+  // 빈 배열 = 매 admin Reference 영역 전체 자동 매치.
+  repeated string reference_ids = 3;
+  // 0 = default 5.
+  int64 top_k = 4;
+}
+message LibrarySearchResponse {
+  repeated LibraryHitPb hits = 1;
+}
+
+service LibraryService {
+  rpc CreateReference(LibraryCreateReferenceRequest) returns (LibraryCreateReferenceResponse);
+  rpc ListReferences(LibraryListReferencesRequest) returns (LibraryListReferencesResponse);
+  rpc DeleteReference(LibraryDeleteReferenceRequest) returns (LibraryDeleteReferenceResponse);
+  rpc UploadSource(LibraryUploadSourceRequest) returns (LibraryUploadSourceResponse);
+  rpc ListSources(LibraryListSourcesRequest) returns (LibraryListSourcesResponse);
+  rpc GetSource(LibraryGetSourceRequest) returns (LibraryGetSourceResponse);
+  rpc DeleteSource(LibraryDeleteSourceRequest) returns (LibraryDeleteSourceResponse);
+  rpc Search(LibrarySearchRequest) returns (LibrarySearchResponse);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Phase B 진행 시 변환 룰:
 //  1. JsonArgs / JsonValue → 매니저별 typed message 로 swap
 //  2. tonic-build 가 Rust 구조체 자동 생성

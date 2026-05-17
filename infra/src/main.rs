@@ -37,6 +37,7 @@ use firebat_core::{
     },
     proto::{
         ai_service_server::AiServiceServer,
+        library_service_server::LibraryServiceServer,
         auth_service_server::AuthServiceServer,
         memory_service_server::MemoryServiceServer,
         capability_service_server::CapabilityServiceServer,
@@ -534,6 +535,9 @@ async fn main() -> Result<()> {
     let episodic_service = grpc::episodic::EpisodicServiceImpl::new(episodic_manager.clone());
     let consolidation_service =
         grpc::consolidation::ConsolidationServiceImpl::new(consolidation_manager);
+    // Library — Phase 1 (2026-05-17). infra/grpc/library.rs 영역 (extractor 영역 의존 — pdf-extract / extract_text_file).
+    let library_service =
+        firebat_infra::grpc::library::LibraryServiceImpl::new(library_manager.clone());
     // ScheduleService — TaskManager 설정하여 validate_pipeline 정밀 검증 활성
     let schedule_service = grpc::schedule::ScheduleServiceImpl::new(schedule_manager.clone())
         .with_task_manager(task_manager.clone());
@@ -761,6 +765,7 @@ async fn main() -> Result<()> {
         .add_service(TaskServiceServer::new(task_service))
         .add_service(MediaServiceServer::new(media_service))
         .add_service(AiServiceServer::new(ai_service))
+        .add_service(LibraryServiceServer::new(library_service))
         .add_service(StorageServiceServer::new(storage_service))
         .add_service(SettingsServiceServer::new(settings_service))
         .add_service(NetworkServiceServer::new(network_service))
