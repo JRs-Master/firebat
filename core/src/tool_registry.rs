@@ -26,6 +26,7 @@ use crate::ports::{
     ListRecentOpts, MediaListOpts, MediaScope, SaveEntityInput, SaveEventInput, SaveFactInput,
     TimelineOpts,
 };
+use crate::utils::sysmod_cache::SysmodCacheAdapter;
 
 pub struct CoreToolHandlers {
     pub page: Arc<PageManager>,
@@ -41,6 +42,10 @@ pub struct CoreToolHandlers {
     /// SSE 알림 — save_page / delete_page / save_module 등 사이드바 갱신 자동 발행
     /// (옛 TS core/index.ts:734+ notifySidebar 패턴 1:1).
     pub event: Arc<EventManager>,
+    /// 큰 sysmod 응답 (yfinance / 한투 / 키움 / DART 등 50행+ 시계열) 의 `_cache` envelope
+    /// 자동 저장 + AI 가 cache_read / cache_grep / cache_aggregate / cache_drop 도구로 조회.
+    /// sandbox 가 envelope 변환 후 cacheKey 만 AI 에게 전달 — main context 토큰 절약.
+    pub cache: Arc<SysmodCacheAdapter>,
 }
 
 /// 정적 도구 N개 등록. ToolManager.register (메타) + register_handler (closure).
@@ -56,6 +61,159 @@ pub fn register_core_tools(tools: &Arc<ToolManager>, h: CoreToolHandlers) {
     register_consolidation_tools(tools, &h);
     register_module_tools(tools, &h);
     register_mcp_tools(tools, &h);
+    register_cache_tools(tools, &h);
+}
+
+fn register_cache_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
+    // cache_read — pagination 으로 records 가져오기
+    tools.register(ToolDefinition {
+        name: "cache_read".to_string(),
+        description: "sysmod `_cacheKey` 의 records 페이지네이션 조회. 큰 시계열 (yfinance/한투/키움/DART 등) 응답에서 일부만 가져올 때 사용. offset/limit 으로 자르기.".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "cacheKey": {"type": "string", "description": "sysmod 응답의 `_cacheKey` 값"},
+                "offset": {"type": "integer", "description": "시작 인덱스 (기본 0)"},
+                "limit": {"type": "integer", "description": "최대 행 수 (기본 50)"}
+            },
+            "required": ["cacheKey"]
+        }),
+        source: "core".to_string(),
+    });
+    let cache = h.cache.clone();
+    tools.register_handler(
+        "cache_read",
+        make_handler(move |args| {
+            let cache = cache.clone();
+            async move {
+                let key = args
+                    .get("cacheKey")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "cache_read: cacheKey 필수".to_string())?
+                    .to_string();
+                let offset = args.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+                cache.read(&key, offset, limit)
+            }
+        }),
+    );
+
+    // cache_grep — 조건 필터 (9 op)
+    tools.register(ToolDefinition {
+        name: "cache_grep".to_string(),
+        description: "sysmod `_cacheKey` records 안 조건 필터. field=점 표기 (예: `close`, `meta.symbol`), op=eq/ne/gt/gte/lt/lte/contains/in, value=비교값.".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "cacheKey": {"type": "string"},
+                "field": {"type": "string", "description": "필드 경로 (점 표기)"},
+                "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "contains", "in"]},
+                "value": {"description": "비교값 (op 따라 타입 다름)"}
+            },
+            "required": ["cacheKey", "field", "op", "value"]
+        }),
+        source: "core".to_string(),
+    });
+    let cache = h.cache.clone();
+    tools.register_handler(
+        "cache_grep",
+        make_handler(move |args| {
+            let cache = cache.clone();
+            async move {
+                let key = args
+                    .get("cacheKey")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "cache_grep: cacheKey 필수".to_string())?
+                    .to_string();
+                let field = args
+                    .get("field")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "cache_grep: field 필수".to_string())?
+                    .to_string();
+                let op = args
+                    .get("op")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "cache_grep: op 필수".to_string())?
+                    .to_string();
+                let value = args
+                    .get("value")
+                    .cloned()
+                    .ok_or_else(|| "cache_grep: value 필수".to_string())?;
+                cache.grep(&key, &field, &op, &value)
+            }
+        }),
+    );
+
+    // cache_aggregate — 집계 (count/sum/avg/min/max)
+    tools.register(ToolDefinition {
+        name: "cache_aggregate".to_string(),
+        description: "sysmod `_cacheKey` records 집계. op=count/sum/avg/min/max. field=숫자 필드 경로 (count 는 무시).".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "cacheKey": {"type": "string"},
+                "field": {"type": "string", "description": "숫자 필드 경로 (점 표기)"},
+                "op": {"type": "string", "enum": ["count", "sum", "avg", "min", "max"]}
+            },
+            "required": ["cacheKey", "field", "op"]
+        }),
+        source: "core".to_string(),
+    });
+    let cache = h.cache.clone();
+    tools.register_handler(
+        "cache_aggregate",
+        make_handler(move |args| {
+            let cache = cache.clone();
+            async move {
+                let key = args
+                    .get("cacheKey")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "cache_aggregate: cacheKey 필수".to_string())?
+                    .to_string();
+                let field = args
+                    .get("field")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let op = args
+                    .get("op")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "cache_aggregate: op 필수".to_string())?
+                    .to_string();
+                cache.aggregate(&key, &field, &op)
+            }
+        }),
+    );
+
+    // cache_drop — 단일 key 삭제
+    tools.register(ToolDefinition {
+        name: "cache_drop".to_string(),
+        description: "sysmod `_cacheKey` 삭제 (재발급 강제 또는 LRU 정리).".to_string(),
+        parameters: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "cacheKey": {"type": "string"}
+            },
+            "required": ["cacheKey"]
+        }),
+        source: "core".to_string(),
+    });
+    let cache = h.cache.clone();
+    tools.register_handler(
+        "cache_drop",
+        make_handler(move |args| {
+            let cache = cache.clone();
+            async move {
+                let key = args
+                    .get("cacheKey")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "cache_drop: cacheKey 필수".to_string())?
+                    .to_string();
+                cache.drop_key(&key)?;
+                Ok(serde_json::json!({"dropped": key}))
+            }
+        }),
+    );
 }
 
 fn register_page_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {

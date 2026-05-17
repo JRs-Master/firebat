@@ -484,6 +484,7 @@ async fn main() -> Result<()> {
             module: module_manager.clone(),
             mcp: mcp_manager.clone(),
             event: event_manager.clone(),
+            cache: cache_adapter.clone(),
         },
     );
 
