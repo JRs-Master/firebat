@@ -268,7 +268,7 @@ export function ChatbotInstanceDetail({
 
         {/* 허용 Library References */}
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-bold text-slate-600">허용 자료 (Library Reference)</label>
+          <div className="text-[11px] font-bold text-slate-600">허용 자료 (Library Reference)</div>
           {references.length === 0 ? (
             <p className="text-[11px] text-slate-400 italic">Library Reference 가 없습니다. Library 탭에서 먼저 자료를 추가해주세요.</p>
           ) : (
@@ -277,6 +277,8 @@ export function ChatbotInstanceDetail({
                 <label key={ref.id} className="flex items-center gap-2 text-[12px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded">
                   <input
                     type="checkbox"
+                    name="allowedReferences"
+                    value={ref.id}
                     checked={allowedReferences.includes(ref.id)}
                     onChange={() => toggleReference(ref.id)}
                     className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
@@ -291,7 +293,7 @@ export function ChatbotInstanceDetail({
 
         {/* 허용 sysmod */}
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-bold text-slate-600">허용 시스템 모듈 (sysmod)</label>
+          <div className="text-[11px] font-bold text-slate-600">허용 시스템 모듈 (sysmod)</div>
           {sysmods.length === 0 ? (
             <p className="text-[11px] text-slate-400 italic">시스템 모듈 목록을 불러오는 중...</p>
           ) : (
@@ -300,6 +302,8 @@ export function ChatbotInstanceDetail({
                 <label key={mod.name} className="flex items-center gap-2 text-[12px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded">
                   <input
                     type="checkbox"
+                    name="allowedSysmods"
+                    value={mod.name}
                     checked={allowedSysmods.includes(mod.name)}
                     onChange={() => toggleSysmod(mod.name)}
                     className="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
@@ -332,7 +336,7 @@ export function ChatbotInstanceDetail({
 
         {/* API 토큰 */}
         <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-bold text-slate-600">API 토큰 (워드프레스 위젯 인증)</label>
+          <div className="text-[11px] font-bold text-slate-600">API 토큰 (워드프레스 위젯 인증)</div>
           <div className="flex items-center gap-1.5">
             <input
               type="text"
