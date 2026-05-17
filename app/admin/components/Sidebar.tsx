@@ -1,7 +1,7 @@
 'use client';
 
 import { useId, useState, useEffect, useCallback, useRef } from 'react';
-import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen } from 'lucide-react';
+import { FolderTree, MessageSquare, ChevronRight, ChevronDown, Plus, Trash2, Globe, Pencil, ExternalLink, Settings, Package, FileCode, Clock, MoreHorizontal, Eye, EyeOff, Lock, PanelLeftClose, Share2, CheckCheck, Image as ImageIcon, LayoutTemplate, Brain, NotebookText, Calendar as CalendarIcon, Sparkles, RotateCcw, X, BookOpen, Bot } from 'lucide-react';
 import { FileEditor } from './FileEditor';
 import { CronPanel, ScheduleModal } from './CronPanel';
 import { GalleryPanel } from './GalleryPanel';
@@ -10,6 +10,7 @@ import { NotesPanel } from './NotesPanel';
 import { CalendarPanel } from './CalendarPanel';
 import { TemplatesPanel } from './TemplatesPanel';
 import { LibraryPanel } from './LibraryPanel';
+import { ChatbotPanel } from './ChatbotPanel';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog, alertDialog } from './Dialog';
@@ -33,7 +34,7 @@ export type ConversationMeta = {
   updatedAt?: number;
 };
 
-type TabId = 'workspace' | 'chats' | 'gallery' | 'templates' | 'entities' | 'notes' | 'calendar' | 'library';
+type TabId = 'workspace' | 'chats' | 'gallery' | 'templates' | 'entities' | 'notes' | 'calendar' | 'library' | 'chatbot';
 
 const TABS: { id: TabId; label: string; Icon: typeof FolderTree; tooltip: string }[] = [
   { id: 'workspace', label: '워크스페이스', Icon: FolderTree, tooltip: 'Workspace' },
@@ -41,6 +42,7 @@ const TABS: { id: TabId; label: string; Icon: typeof FolderTree; tooltip: string
   { id: 'gallery', label: '갤러리', Icon: ImageIcon, tooltip: '갤러리' },
   { id: 'templates', label: '템플릿', Icon: LayoutTemplate, tooltip: '템플릿' },
   { id: 'library', label: 'Library', Icon: BookOpen, tooltip: 'Library — 자료 영역 + RAG 검색' },
+  { id: 'chatbot', label: 'Chatbot', Icon: Bot, tooltip: 'Chatbot — 외부 사이트 연결 인스턴스 관리' },
   { id: 'entities', label: 'Recall', Icon: Sparkles, tooltip: 'Recall (엔티티 + 사건)' },
   { id: 'notes', label: '노트', Icon: NotebookText, tooltip: '노트' },
   { id: 'calendar', label: '일정', Icon: CalendarIcon, tooltip: '일정' },
@@ -555,6 +557,8 @@ export function Sidebar({
         <TemplatesPanel onEditFile={onEditFile} />
       ) : tab === 'library' ? (
         <LibraryPanel />
+      ) : tab === 'chatbot' ? (
+        <ChatbotPanel />
       ) : tab === 'entities' ? (
         <EntitiesPanel />
       ) : tab === 'notes' ? (
