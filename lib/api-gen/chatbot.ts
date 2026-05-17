@@ -25,6 +25,8 @@ import {
   ChatbotListMessagesRequestSchema,
   ChatbotMessagePb,
   ChatbotRotateApiTokenRequestSchema,
+  ChatbotSendMessageRequestSchema,
+  ChatbotSendMessageResponse,
   ChatbotService,
   ChatbotUpdateConversationTitleRequestSchema,
   ChatbotUpdateInstanceRequestSchema,
@@ -176,6 +178,15 @@ export async function listMessages(args: MessageInitShape<typeof ChatbotListMess
   try {
       const response = await chatbotClient.listMessages(args ?? {});
       return { ok: true, data: unBigInt(response.messages) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function sendMessage(args: MessageInitShape<typeof ChatbotSendMessageRequestSchema>): Promise<RpcResult<ChatbotSendMessageResponse>> {
+  try {
+      const response = await chatbotClient.sendMessage(args ?? {});
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }

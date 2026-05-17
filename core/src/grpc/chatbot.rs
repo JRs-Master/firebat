@@ -5,6 +5,7 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
+use crate::managers::ai::AiManager;
 use crate::managers::chatbot::{ChatbotManager, CreateInstanceInput, UpdateInstanceInput};
 use crate::ports::ChatbotInstance;
 use crate::proto::{
@@ -20,18 +21,19 @@ use crate::proto::{
     ChatbotInstancePb, ChatbotListConversationsRequest, ChatbotListConversationsResponse,
     ChatbotListInstancesRequest, ChatbotListInstancesResponse, ChatbotListMessagesRequest,
     ChatbotListMessagesResponse, ChatbotMessagePb, ChatbotRotateApiTokenRequest,
-    ChatbotRotateApiTokenResponse, ChatbotUpdateConversationTitleRequest,
-    ChatbotUpdateConversationTitleResponse, ChatbotUpdateInstanceRequest,
-    ChatbotUpdateInstanceResponse,
+    ChatbotRotateApiTokenResponse, ChatbotSendMessageRequest, ChatbotSendMessageResponse,
+    ChatbotUpdateConversationTitleRequest, ChatbotUpdateConversationTitleResponse,
+    ChatbotUpdateInstanceRequest, ChatbotUpdateInstanceResponse,
 };
 
 pub struct ChatbotServiceImpl {
     manager: Arc<ChatbotManager>,
+    ai: Arc<AiManager>,
 }
 
 impl ChatbotServiceImpl {
-    pub fn new(manager: Arc<ChatbotManager>) -> Self {
-        Self { manager }
+    pub fn new(manager: Arc<ChatbotManager>, ai: Arc<AiManager>) -> Self {
+        Self { manager, ai }
     }
 }
 
@@ -346,6 +348,64 @@ impl ChatbotService for ChatbotServiceImpl {
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(ChatbotListMessagesResponse {
             messages: messages.into_iter().map(message_to_pb).collect(),
+        }))
+    }
+
+    // ─── 외부 endpoint 통합 entry ───────────────────────────────────────────
+
+    async fn send_message(
+        &self,
+        req: Request<ChatbotSendMessageRequest>,
+    ) -> Result<Response<ChatbotSendMessageResponse>, TonicStatus> {
+        let args = req.into_inner();
+        if args.user_message.trim().is_empty() {
+            return Err(TonicStatus::invalid_argument("user_message 가 비어있습니다."));
+        }
+        if args.session_id.trim().is_empty() {
+            return Err(TonicStatus::invalid_argument("session_id 가 비어있습니다."));
+        }
+
+        // 1. 인증
+        let origin = if args.origin.is_empty() { None } else { Some(args.origin.as_str()) };
+        let instance = self
+            .manager
+            .authenticate(&args.slug, &args.api_token, origin)
+            .await
+            .map_err(TonicStatus::permission_denied)?;
+
+        // 2. 대화 ensure
+        let conversation_id = self
+            .manager
+            .ensure_conversation(&instance.id, &args.session_id)
+            .await
+            .map_err(TonicStatus::internal)?;
+
+        // 3. user 메시지 영속화 (선반영 — AI 실패해도 흐름 보존)
+        let _ = self
+            .manager
+            .append_user_message(&conversation_id, &args.user_message)
+            .await;
+
+        // 4. AI 호출 (가드 + history + 영속화 통합)
+        let response = self
+            .manager
+            .send_message(
+                self.ai.clone(),
+                &instance,
+                &conversation_id,
+                &args.user_message,
+            )
+            .await
+            .map_err(TonicStatus::internal)?;
+
+        // 5. raw_json 영역 직렬화 (admin chat 영역 동일 포맷)
+        let raw_json = serde_json::to_string(&response).map_err(|e| {
+            TonicStatus::internal(format!("AiResponse 직렬화 실패: {e}"))
+        })?;
+
+        Ok(Response::new(ChatbotSendMessageResponse {
+            conversation_id,
+            raw_json,
         }))
     }
 }

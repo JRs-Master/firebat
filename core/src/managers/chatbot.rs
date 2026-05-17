@@ -11,8 +11,10 @@
 
 use std::sync::Arc;
 
+use crate::managers::ai::{AiManager, AiResponse};
 use crate::ports::{
-    ChatbotConversation, ChatbotInstance, ChatbotMessage, IChatbotPort, InfraResult,
+    AiRequestOpts, ChatMessage, ChatbotContext, ChatbotConversation, ChatbotInstance,
+    ChatbotMessage, IChatbotPort, InfraResult, LlmCallOpts,
 };
 
 /// slug 검증 — URL safe (영숫자 + 하이픈 + 언더스코어 only). 빈 문자열 금지.
@@ -298,6 +300,105 @@ impl ChatbotManager {
         conversation_id: &str,
     ) -> InfraResult<Vec<ChatbotMessage>> {
         self.port.list_messages(conversation_id).await
+    }
+
+    /// 외부 chatbot endpoint 가 호출하는 통합 entry — 가드 + history 영역 적용 + AiManager 호출 +
+    /// AI 응답 영역 chatbot_messages 영속화.
+    ///
+    /// 흐름:
+    ///   1. instance 영역 allowed_sysmods / allowed_references 영역 ChatbotContext 빌드
+    ///   2. 옛 user 메시지 영역 이전 메시지 영역 recent N 영역 ChatMessage 영역 빌드 (history prepend 용)
+    ///   3. AiRequestOpts + LlmCallOpts 영역 빌드 + AiManager.process_with_tools_opts 호출
+    ///   4. AI 응답 영역 chatbot_messages 영역 append_system_message 영역 영속화
+    ///   5. AiResponse 영역 반환 (route layer 가 SSE 영역 wrap)
+    pub async fn send_message(
+        &self,
+        ai: Arc<AiManager>,
+        instance: &ChatbotInstance,
+        conversation_id: &str,
+        user_message: &str,
+    ) -> InfraResult<AiResponse> {
+        const HISTORY_RECENT_LIMIT: usize = 10;
+
+        // 옛 user 메시지 영역 모두 영역 listMessages (현재 user 메시지 영역 옛 영역 append_user_message
+        // 영역 박혀있는 영역 = caller 영역 책임). recent N 영역 빌드.
+        let all_messages = self.port.list_messages(conversation_id).await?;
+        let start = all_messages.len().saturating_sub(HISTORY_RECENT_LIMIT);
+        let recent = &all_messages[start..];
+        let history: Vec<ChatMessage> = recent
+            .iter()
+            .filter_map(|m| {
+                let content = m.content.clone().unwrap_or_default();
+                if content.trim().is_empty() {
+                    return None;
+                }
+                Some(ChatMessage {
+                    role: match m.role.as_str() {
+                        "system" => "assistant".to_string(),
+                        other => other.to_string(),
+                    },
+                    content: serde_json::Value::String(content),
+                    image: None,
+                    image_mime_type: None,
+                })
+            })
+            .collect();
+
+        let chatbot_ctx = ChatbotContext {
+            instance_id: instance.id.clone(),
+            allowed_sysmods: instance.allowed_sysmods.clone(),
+            allowed_references: instance.allowed_references.clone(),
+            history,
+        };
+
+        let system_prompt = instance
+            .system_prompt
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+        let model_id = instance
+            .model_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .map(String::from);
+
+        let llm_opts = LlmCallOpts {
+            owner: Some(format!("chatbot:{}", instance.id)),
+            conversation_id: Some(conversation_id.to_string()),
+            system_prompt,
+            model: model_id.clone(),
+            ..Default::default()
+        };
+
+        let ai_opts = AiRequestOpts {
+            owner: Some(format!("chatbot:{}", instance.id)),
+            conversation_id: Some(conversation_id.to_string()),
+            model: model_id,
+            chatbot_context: Some(chatbot_ctx),
+            ..Default::default()
+        };
+
+        let response = ai
+            .process_with_tools_opts(user_message, &[], &llm_opts, &ai_opts)
+            .await?;
+
+        // AI 응답 영역 chatbot_messages 영속화. data_json 영역 blocks + tool_results + suggestions 영역.
+        let data_payload = serde_json::json!({
+            "executedActions": response.executed_actions,
+            "toolResults": response.tool_results,
+            "blocks": response.blocks,
+            "suggestions": response.suggestions,
+            "libraryHits": response.library_hits,
+        });
+        let _ = self
+            .append_system_message(
+                conversation_id,
+                Some(response.reply.clone()),
+                Some(data_payload.to_string()),
+            )
+            .await;
+
+        Ok(response)
     }
 }
 

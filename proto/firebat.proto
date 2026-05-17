@@ -2614,6 +2614,31 @@ message ChatbotListMessagesResponse {
   repeated ChatbotMessagePb messages = 1;
 }
 
+// ─── 외부 endpoint 통합 send_message ──────────────────────────────────────
+// 외부 chatbot endpoint (POST /api/chatbot/<slug>/chat) 가 호출하는 단일 RPC.
+// 옛 Authenticate + EnsureConversation + AppendUserMessage + AI 호출 + AppendSystemMessage
+// 5 RPC 분리 호출 영역 (route layer 안 비즈니스 흐름 leak) 단일 entry 영역 통합.
+//
+// Manager 안 흐름:
+//   1. authenticate (slug + api_token + origin) → instance
+//   2. ensure_conversation (instance_id + session_id) → conversation_id
+//   3. append_user_message
+//   4. ChatbotContext (allowed_sysmods / allowed_references / history) 빌드 + AiManager 호출
+//   5. AI 응답 영역 append_system_message
+//
+// 응답 raw_json = AiResponse (reply + blocks + suggestions + tool_results 등).
+message ChatbotSendMessageRequest {
+  string slug = 1;
+  string api_token = 2;
+  string origin = 3;
+  string session_id = 4;
+  string user_message = 5;
+}
+message ChatbotSendMessageResponse {
+  string conversation_id = 1;
+  string raw_json = 2;          // AiResponse JSON — admin chat 영역 동일 포맷
+}
+
 service ChatbotService {
   // Instance CRUD (admin)
   rpc CreateInstance(ChatbotCreateInstanceRequest) returns (ChatbotCreateInstanceResponse);
@@ -2638,6 +2663,9 @@ service ChatbotService {
   rpc AppendUserMessage(ChatbotAppendUserMessageRequest) returns (ChatbotAppendUserMessageResponse);
   rpc AppendSystemMessage(ChatbotAppendSystemMessageRequest) returns (ChatbotAppendSystemMessageResponse);
   rpc ListMessages(ChatbotListMessagesRequest) returns (ChatbotListMessagesResponse);
+
+  // 외부 endpoint 통합 entry — 인증 + 대화 ensure + AI 호출 + 영속화 통합
+  rpc SendMessage(ChatbotSendMessageRequest) returns (ChatbotSendMessageResponse);
 }
 
 // ──────────────────────────────────────────────────────────────────────────

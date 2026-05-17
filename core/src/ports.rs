@@ -1293,6 +1293,33 @@ pub struct AiRequestOpts {
     /// Cron agent 모드 — 사용자 부재 자율 발행. MAX_TOOL_TURNS 25 + 승인 게이트 우회.
     #[serde(rename = "cronAgent", default, skip_serializing_if = "Option::is_none")]
     pub cron_agent: Option<CronAgentOpts>,
+    /// Chatbot 컨텍스트 — 외부 사이트 챗봇 인스턴스 안에서 호출 시 set. None = admin 정상 모드.
+    /// 박혀있으면 AiManager 가:
+    ///   - 도구 list 안 sysmod_* 영역 `allowed_sysmods` 만 retain + mcp_* 영역 차단
+    ///     (외부 도용 방지 — admin 내장 도구 노출 최소)
+    ///   - RetrievalEngine 의 library 영역 `allowed_references` 안 Reference ID 만 검색
+    ///   - HistoryResolver 우회 + `history` 영역 직접 prepend (chatbot_conversations 별도 테이블)
+    #[serde(rename = "chatbotContext", default, skip_serializing_if = "Option::is_none")]
+    pub chatbot_context: Option<ChatbotContext>,
+}
+
+/// Chatbot 컨텍스트 — `AiRequestOpts.chatbot_context` 안 값.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatbotContext {
+    /// 인스턴스 ID (logging / 추적 영역).
+    #[serde(rename = "instanceId")]
+    pub instance_id: String,
+    /// 허용 sysmod 이름 배열 (예: `["yfinance", "korea-invest"]`). 빈 배열 = 모든 sysmod 차단.
+    #[serde(rename = "allowedSysmods", default)]
+    pub allowed_sysmods: Vec<String>,
+    /// 허용 Library Reference ID 배열. 빈 배열 = library 검색 0.
+    #[serde(rename = "allowedReferences", default)]
+    pub allowed_references: Vec<String>,
+    /// chatbot 대화 history — chatbot_messages 테이블 영역 recent N 메시지.
+    /// AiManager 가 system_prompt 영역 prepend 박힘 (HistoryResolver 우회).
+    #[serde(default)]
+    pub history: Vec<ChatMessage>,
 }
 
 /// Cron agent 컨텍스트 — 옛 TS `AiRequestOpts.cronAgent` 1:1.

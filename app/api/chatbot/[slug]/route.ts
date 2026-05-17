@@ -23,20 +23,24 @@ import { ApiError } from '../../../../lib/api-error';
 /**
  * Chatbot RPC dispatcher — POST /api/chatbot/{op}.
  *
+ * 경로 param 이름이 {slug} 인 사유: Next.js 가 같은 부모 폴더 안 sibling dynamic
+ * 라우트끼리 param 이름 동일을 강제 (외부 chat endpoint 가 /api/chatbot/[slug]/chat).
+ * 의미상으로는 op 이름 (create-instance / list-instances 등) 가 들어옴.
+ *
  * client component (ChatbotPanel / InstanceDetail) 가 호출. 옛 Library 패턴 동일
  * (lib/api-gen/chatbot 의 _transport 가 @connectrpc/connect-node 포함 → client
  * 직접 import 시 node:http2 bundle 영역 fail).
  *
- * 외부 endpoint (POST /api/chatbot/<slug>/chat) 는 별도 route — 단계 7 에서 신설.
+ * 외부 endpoint (POST /api/chatbot/<slug>/chat) 는 sibling route — 단계 7 신설.
  * 본 dispatcher = admin UI 전용 (인증 필요).
  */
-interface Ctx { params: Promise<{ op: string }> }
+interface Ctx { params: Promise<{ slug: string }> }
 
 export const POST = withAuth(async (req: NextRequest, { params }: Ctx) => {
-  const { op } = await params;
+  const { slug } = await params;
   const body = await req.json().catch(() => ({}));
 
-  const result = await dispatch(op, body);
+  const result = await dispatch(slug, body);
   if (!result.ok) {
     return NextResponse.json({ success: false, error: result.message }, { status: 500 });
   }

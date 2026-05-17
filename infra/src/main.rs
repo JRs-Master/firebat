@@ -561,8 +561,10 @@ async fn main() -> Result<()> {
     // Library — Phase 1 (2026-05-17). infra/grpc/library.rs 영역 (extractor 영역 의존 — pdf-extract / extract_text_file).
     let library_service =
         firebat_infra::grpc::library::LibraryServiceImpl::new(library_manager.clone());
-    // Chatbot — Phase 1 (2026-05-17). core/grpc/chatbot.rs 영역 (ChatbotManager 만 의존).
-    let chatbot_service = grpc::chatbot::ChatbotServiceImpl::new(chatbot_manager.clone());
+    // Chatbot — Phase 1 (2026-05-17). core/grpc/chatbot.rs 영역. SendMessage RPC 안 AiManager 의존
+    // (외부 endpoint 통합 entry — 인증 + 대화 ensure + AI 호출 + 가드 + 영속화 한 RPC 안 흐름).
+    let chatbot_service =
+        grpc::chatbot::ChatbotServiceImpl::new(chatbot_manager.clone(), ai_manager.clone());
     // ScheduleService — TaskManager 설정하여 validate_pipeline 정밀 검증 활성
     let schedule_service = grpc::schedule::ScheduleServiceImpl::new(schedule_manager.clone())
         .with_task_manager(task_manager.clone());

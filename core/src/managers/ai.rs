@@ -412,7 +412,11 @@ impl AiManager {
         // MCP 토큰 자동 주입 — vault 에서 `system:internal-mcp-token` 가져와 LlmCallOpts 에 추가.
         // hosted MCP 모델 (CLI 3종 / Anthropic API / OpenAI Responses API) 이 Firebat MCP
         // server 인증할 때 사용. caller 가 안 주면 vault 에서 자동 조회.
-        if effective_opts.mcp_token.is_none() {
+        //
+        // 단, chatbot_context 박혀있으면 mcp_token 주입 0 — 외부 사이트 위젯 안에서 hosted MCP
+        // 영역 자체 loop 박힘 = admin 도구 전체 노출 영역. Function Calling 흐름 (effective_tools
+        // schema + filter) 강제 박힘 후 supports_hosted_mcp 영역 자연 false (token 0).
+        if effective_opts.mcp_token.is_none() && ai_opts.chatbot_context.is_none() {
             if let Some(vault) = &self.vault {
                 let token = vault.get_secret("system:internal-mcp-token");
                 if let Some(t) = token.filter(|s| !s.is_empty()) {
@@ -478,7 +482,24 @@ impl AiManager {
             if let Some(dyn_reg) = &self.dynamic_tools {
                 dyn_reg.refresh().await;
             }
-            auto_tools = self.build_tool_definitions();
+            let mut tools_built = self.build_tool_definitions();
+            // chatbot 영역 도구 필터 — 외부 사이트 안 admin 도구 노출 차단.
+            // 허용 영역 = (1) `sysmod_<name>` 안 name 영역 allowed_sysmods 안 들어있는 것
+            //              (2) `render_*` 영역 (UI 렌더 도구, 안전)
+            // 그 외 = mcp_* / propose_plan / suggest / schedule_task / save_page / search_history /
+            //         run_user_module / list_user_modules / get_user_module / write_module 등 모두 차단.
+            if let Some(ctx) = &ai_opts.chatbot_context {
+                let allowed: std::collections::HashSet<String> =
+                    ctx.allowed_sysmods.iter().cloned().collect();
+                tools_built.retain(|t| {
+                    if let Some(name) = t.name.strip_prefix("sysmod_") {
+                        allowed.contains(name)
+                    } else {
+                        t.name.starts_with("render_")
+                    }
+                });
+            }
+            auto_tools = tools_built;
             &auto_tools
         } else {
             tools
@@ -504,7 +525,28 @@ impl AiManager {
                         extra_parts.push(ctx);
                     }
                 }
-                if let Some(hr) = &self.history_resolver {
+                // chatbot 영역 = HistoryResolver 우회 + chatbot_context.history 직접 format prepend.
+                // chatbot_conversations 영역 별도 테이블이라 HistoryResolver (admin conversations 영역 의존) 미적용.
+                if let Some(ctx) = &ai_opts.chatbot_context {
+                    if !ctx.history.is_empty() {
+                        let mut s = String::from("## 최근 대화 컨텍스트\n");
+                        for msg in ctx.history.iter() {
+                            let role_label = match msg.role.as_str() {
+                                "user" => "사용자",
+                                "assistant" | "system" => "AI",
+                                _ => continue,
+                            };
+                            let content_str = msg.content.as_str().unwrap_or("");
+                            let preview: String = content_str.chars().take(200).collect();
+                            if !preview.trim().is_empty() {
+                                s.push_str(&format!("- [{}]: {}\n", role_label, preview));
+                            }
+                        }
+                        if s.lines().count() > 1 {
+                            extra_parts.push(s);
+                        }
+                    }
+                } else if let Some(hr) = &self.history_resolver {
                     let owner = effective_opts
                         .owner
                         .as_deref()
@@ -541,11 +583,18 @@ impl AiManager {
                             .as_deref()
                             .or(ai_opts.conversation_id.as_deref())
                             .map(String::from);
+                        // chatbot_context 박혀있으면 library 검색 영역 안 allowed_references 만 제한.
+                        // None = 옛 admin 흐름 (owner 영역 전체 Reference 자연 처리).
+                        let reference_filter = ai_opts
+                            .chatbot_context
+                            .as_ref()
+                            .map(|c| c.allowed_references.clone());
                         let retrieve_opts = retrieval_engine::RetrieveOpts {
                             query: prompt.to_string(),
                             owner,
                             current_conv_id: conv_id,
                             limits: retrieval_engine::RetrievalLimits::default(),
+                            reference_filter,
                         };
                         let result = engine.retrieve(&retrieve_opts).await;
                         if !result.context_summary.is_empty() {
