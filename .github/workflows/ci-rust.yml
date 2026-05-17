@@ -101,24 +101,19 @@ jobs:
         env:
           CARGO_BUILD_JOBS: 4
 
-      - name: Stage artifact (binary + system 데이터 평면화)
-        # zip 안 path 가 target/release/firebat-core 형태로 박히면 사용자가 두 번
-        # unzip 작업 (target/release/ 들어가서 binary + system/ 별도) → 부담.
-        # stage 디렉토리에 평면화해 unzip 즉시 rsync 가능.
-        #
-        # 2026-05-17 — `infra/data/{llm-models.json, stock-apis-*.json}` 가 `system/llm/models.json`
-        # + `system/modules/{kiwoom,korea-invest}/_apis.json` 로 이동. system/ 가 prompts + modules + llm
-        # 일관된 부모.
+      - name: Stage artifact (binary only)
+        # artifact = Rust binary 만. system/ (LLM registry + prompts + sysmod) 은 git pull 흐름
+        # (`/opt/firebat-src/system` symlink → `/opt/firebat/system`) 으로 운영 서버에 도달 — artifact
+        # 영역에 같이 박으면 중복.
         run: |
           mkdir -p artifact
           cp target/release/firebat-core artifact/
-          cp -r system artifact/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: firebat-core-linux-x86_64
-          # zip 구조: firebat-core (top) + system/{prompts,llm/models.json,modules/*}
-          # system/ 미배포 시 stub registry / prompt → frontend CLI/AI 모델 노출 안 됨 + LLM 어색.
+          # zip 안 내용 = firebat-core 단일 파일. unzip 즉시 FTP 업로드 가능.
+          # system/ 영역은 `/opt/firebat-src` 에서 git pull 로 갱신.
           path: artifact/**
           retention-days: 30
