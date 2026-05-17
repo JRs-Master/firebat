@@ -5,7 +5,7 @@ import { ArrowLeft, Save, RotateCcw, Copy, Loader2, ExternalLink } from 'lucide-
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { logger } from '../../../lib/util/logger';
-import { apiPost } from '../../../lib/api-fetch';
+import { apiGet, apiPost } from '../../../lib/api-fetch';
 import type { ChatbotInstancePb, LibraryReferencePb } from '../../../lib/proto-gen/firebat_pb';
 
 type ChatbotApiResponse<T> = { success: boolean; data?: T; error?: string };
@@ -70,15 +70,17 @@ export function ChatbotInstanceDetail({
       if (res.success && res.data) setReferences(res.data);
     }).catch(e => logger.debug('chatbot', 'load_references 실패', { error: e }));
 
-    // sysmod 목록 (settings 영역 API 재사용)
-    fetch('/api/settings/modules?scope=system')
-      .then(r => r.json())
-      .then(d => {
-        if (d?.success && Array.isArray(d?.entries)) {
-          setSysmods(d.entries.map((e: any) => ({ name: e.name, description: e.description })));
-        }
-      })
-      .catch(e => logger.debug('chatbot', 'load_sysmods 실패', { error: e }));
+    // sysmod 목록 — `/api/fs/system-modules` (SettingsModal 안 박은 영역 동일).
+    // 옛 `/api/settings/modules?scope=system` 박은 영역 = 단일 모듈 조회 endpoint 안 잘못된 호출 →
+    // `name 필요` 400 BadRequest 박힌 영역 정정.
+    apiGet<{ success: boolean; modules?: Array<{ name: string; description?: string }> }>(
+      '/api/fs/system-modules',
+      { category: 'chatbot' },
+    ).then(d => {
+      if (d.success && Array.isArray(d.modules)) {
+        setSysmods(d.modules.map(m => ({ name: m.name, description: m.description })));
+      }
+    }).catch(e => logger.debug('chatbot', 'load_sysmods 실패', { error: e }));
   }, []);
 
   const toggleReference = (id: string) => {
@@ -119,6 +121,8 @@ export function ChatbotInstanceDetail({
       }
     } catch (e) {
       logger.debug('chatbot', 'update_instance 실패', { error: e });
+      // silent fail 차단 — 사용자 시점 안 동작 0 박은 영역 명시 안내. network error / RPC fail 등.
+      await alertDialog({ title: '저장 실패', message: (e as Error)?.message ?? '네트워크 또는 서버 오류' });
     } finally {
       setSaving(false);
     }
