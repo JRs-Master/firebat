@@ -113,12 +113,10 @@ impl PageService for PageServiceImpl {
         req: Request<PageGetRequest>,
     ) -> Result<Response<PageRecordPb>, TonicStatus> {
         let slug = req.into_inner().slug;
-        Ok(Response::new(
-            self.manager
-                .get(&slug)
-                .map(Into::into)
-                .unwrap_or_default(),
-        ))
+        match self.manager.get(&slug) {
+            Some(record) => Ok(Response::new(record.into())),
+            None => Err(TonicStatus::not_found(format!("page '{slug}' not found"))),
+        }
     }
 
     async fn save(
