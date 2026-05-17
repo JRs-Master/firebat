@@ -31,3 +31,4 @@ pub mod cache;
 pub mod telegram;
 pub mod database;
 pub mod memory_file;
+pub mod chatbot;
