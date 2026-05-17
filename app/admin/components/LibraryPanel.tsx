@@ -1,17 +1,15 @@
 'use client';
 
 import { useState, useEffect, useCallback, useId } from 'react';
-import { BookOpen, Plus, Trash2, ChevronRight, ArrowLeft, Loader2 } from 'lucide-react';
+import { BookOpen, Plus, Trash2, ChevronRight, Loader2 } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { logger } from '../../../lib/util/logger';
-import {
-  createReference,
-  listReferences,
-  deleteReference,
-} from '../../../lib/api-gen/library';
-import { LibraryReferencePb } from '../../../lib/proto-gen/firebat_pb';
+import { apiPost } from '../../../lib/api-fetch';
+import type { LibraryReferencePb } from '../../../lib/proto-gen/firebat_pb';
 import { LibraryReferenceDetail } from './LibraryReferenceDetail';
+
+type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
 
 /**
  * LibraryPanel — Library 영역 (Phase 1, 2026-05-17).
@@ -32,8 +30,12 @@ export function LibraryPanel() {
   const loadRefs = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listReferences({ owner: 'admin' });
-      if (res.ok && res.data) setRefs(res.data);
+      const res = await apiPost<LibraryApiResponse<LibraryReferencePb[]>>(
+        '/api/library/list-references',
+        { owner: 'admin' },
+        { category: 'library' },
+      );
+      if (res.success && res.data) setRefs(res.data);
     } catch (e) {
       logger.debug('library', 'list_references 실패', { error: e });
     } finally {
@@ -48,18 +50,22 @@ export function LibraryPanel() {
   const handleCreate = useCallback(async () => {
     if (!newName.trim()) return;
     try {
-      const res = await createReference({
-        name: newName.trim(),
-        description: newDescription.trim(),
-        owner: 'admin',
-      });
-      if (res.ok) {
+      const res = await apiPost<LibraryApiResponse<string>>(
+        '/api/library/create-reference',
+        {
+          name: newName.trim(),
+          description: newDescription.trim(),
+          owner: 'admin',
+        },
+        { category: 'library' },
+      );
+      if (res.success) {
         setNewName('');
         setNewDescription('');
         setCreating(false);
         await loadRefs();
       } else {
-        await alertDialog({ title: '생성 실패', message: res.message ?? '오류가 발생했습니다.' });
+        await alertDialog({ title: '생성 실패', message: res.error ?? '오류가 발생했습니다.' });
       }
     } catch (e) {
       logger.debug('library', 'create_reference 실패', { error: e });
@@ -75,8 +81,12 @@ export function LibraryPanel() {
     });
     if (!ok) return;
     try {
-      const res = await deleteReference({ id: ref.id });
-      if (res.ok) await loadRefs();
+      const res = await apiPost<LibraryApiResponse<void>>(
+        '/api/library/delete-reference',
+        { id: ref.id },
+        { category: 'library' },
+      );
+      if (res.success) await loadRefs();
     } catch (e) {
       logger.debug('library', 'delete_reference 실패', { error: e });
     }

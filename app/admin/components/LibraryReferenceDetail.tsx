@@ -5,9 +5,11 @@ import { ArrowLeft, Trash2, FileText, Globe, FileType, Loader2, Plus, Upload, Ty
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { logger } from '../../../lib/util/logger';
-import { listSources, deleteSource, uploadSource } from '../../../lib/api-gen/library';
+import { apiPost } from '../../../lib/api-fetch';
 import type { LibraryReferencePb, LibrarySourcePb } from '../../../lib/proto-gen/firebat_pb';
 import { LibrarySourceModal } from './LibrarySourceModal';
+
+type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
 
 type UploadMode = 'file' | 'text';
 
@@ -52,8 +54,12 @@ export function LibraryReferenceDetail({
   const loadSources = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await listSources({ referenceId: reference.id });
-      if (res.ok && res.data) setSources(res.data);
+      const res = await apiPost<LibraryApiResponse<LibrarySourcePb[]>>(
+        '/api/library/list-sources',
+        { referenceId: reference.id },
+        { category: 'library' },
+      );
+      if (res.success && res.data) setSources(res.data);
     } catch (e) {
       logger.debug('library', 'list_sources 실패', { error: e });
     } finally {
@@ -79,8 +85,12 @@ export function LibraryReferenceDetail({
     });
     if (!ok) return;
     try {
-      const res = await deleteSource({ id: src.id });
-      if (res.ok) await loadSources();
+      const res = await apiPost<LibraryApiResponse<void>>(
+        '/api/library/delete-source',
+        { id: src.id },
+        { category: 'library' },
+      );
+      if (res.success) await loadSources();
     } catch (e) {
       logger.debug('library', 'delete_source 실패', { error: e });
     }
@@ -133,14 +143,17 @@ export function LibraryReferenceDetail({
     if (!textName.trim() || !textBody.trim()) return;
     setBusy(true);
     try {
-      const res = await uploadSource({
-        referenceId: reference.id,
-        name: textName.trim(),
-        sourceType: 'text',
-        inlineText: textBody,
-      });
-      if (!res.ok) {
-        await alertDialog({ title: '저장 실패', message: res.message ?? 'UploadSource 실패' });
+      const res = await apiPost<LibraryApiResponse<{ sourceId: string; chunkCount: number }>>(
+        '/api/library/upload-text-source',
+        {
+          referenceId: reference.id,
+          name: textName.trim(),
+          inlineText: textBody,
+        },
+        { category: 'library' },
+      );
+      if (!res.success) {
+        await alertDialog({ title: '저장 실패', message: res.error ?? 'UploadSource 실패' });
         return;
       }
       resetForm();

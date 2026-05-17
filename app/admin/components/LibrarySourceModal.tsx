@@ -2,9 +2,11 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { X, Loader2, FileText, Globe, FileType } from 'lucide-react';
-import { getSource } from '../../../lib/api-gen/library';
+import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import type { LibrarySourcePb } from '../../../lib/proto-gen/firebat_pb';
+
+type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
 
 /**
  * LibrarySourceModal — 매 Source 의 full_text 원본 표시.
@@ -31,13 +33,17 @@ export function LibrarySourceModal({
       setLoading(true);
       setError(null);
       try {
-        const res = await getSource({ id: sourceId });
+        const res = await apiPost<LibraryApiResponse<{ source?: LibrarySourcePb }>>(
+          '/api/library/get-source',
+          { id: sourceId },
+          { category: 'library' },
+        );
         if (!alive) return;
-        if (!res.ok) {
-          setError(res.message ?? 'Source 조회 실패');
+        if (!res.success) {
+          setError(res.error ?? 'Source 조회 실패');
           return;
         }
-        setSource(res.data.source ?? null);
+        setSource(res.data?.source ?? null);
       } catch (e) {
         if (!alive) return;
         logger.debug('library', 'get_source 실패', { error: e });
