@@ -162,6 +162,7 @@ export type ResultPayload = {
   thoughts?: string;
   executedActions?: string[];
   toolResults?: Message['toolResults'];
+  libraryHits?: Message['libraryHits'];
   data?: any;
   error?: string;
   suggestions?: Message['suggestions'];
@@ -282,6 +283,7 @@ function applyAction(state: Message[], action: ChatAction): Message[] {
               : (action.hasAnimation ? '' : (p.reply ?? m.content)),
             executedActions: p.executedActions || [],
             toolResults: p.toolResults && p.toolResults.length > 0 ? p.toolResults : undefined,
+            libraryHits: p.libraryHits && p.libraryHits.length > 0 ? p.libraryHits : undefined,
             data: newData,
             error: p.error,
             suggestions: p.suggestions && p.suggestions.length > 0 ? p.suggestions : undefined,

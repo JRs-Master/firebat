@@ -30,6 +30,23 @@ export type ToolResultSummary = {
   input?: Record<string, unknown>;
 };
 
+/**
+ * Library Phase 1 단계 8.4 (2026-05-17) — RetrievalEngine 매칭 hit metadata.
+ * 답변 본문에 출처 표기 박지 마라는 시스템 prompt 룰과 짝. 메시지 아래 SourceTags
+ * 뱃지로 노출 + 클릭 → LibrarySourceModal 안 원본 영역.
+ */
+export type LibrarySourceHit = {
+  sourceId: string;
+  sourceName: string;
+  referenceId: string;
+  referenceName: string;
+  chunkId: string;
+  chunkIndex: number;
+  content: string;
+  pageNumber?: number;
+  score: number;
+};
+
 export type Message = {
   id: string;
   role: 'user' | 'system';
@@ -37,6 +54,7 @@ export type Message = {
   thoughts?: string;
   executedActions?: string[];
   toolResults?: ToolResultSummary[];
+  libraryHits?: LibrarySourceHit[];
   data?: any;
   error?: string;
   isThinking?: boolean;

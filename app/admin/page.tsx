@@ -16,6 +16,7 @@ import { Tooltip } from './components/Tooltip';
 import { FeedbackBadge } from './components/FeedbackBadge';
 import { ActiveJobsIndicator } from './components/ActiveJobsIndicator';
 import { BlockErrorBoundary } from './components/BlockErrorBoundary';
+import { SourceTags } from './components/SourceTags';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
 import { readSetting, writeSetting } from './hooks/settings-manager';
@@ -899,6 +900,11 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
               {/* 실행 완료된 액션 태그 — 최하단, 미니멀 */}
               {msg.executedActions && msg.executedActions.length > 0 && (
                 <ActionTags actions={msg.executedActions} steps={msg.steps} toolResults={msg.toolResults} />
+              )}
+
+              {/* Library 출처 뱃지 — RetrievalEngine 매칭 결과 (Phase 1 단계 8.4). */}
+              {msg.libraryHits && msg.libraryHits.length > 0 && (
+                <SourceTags hits={msg.libraryHits} />
               )}
             </div>
           )}
