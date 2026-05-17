@@ -185,17 +185,35 @@ fn mask_key_value(s: &str, key: &str) -> String {
             if after < bytes.len() && (bytes[after] == b'"' || bytes[after] == b'\'') {
                 after += 1;
             }
-            while after < bytes.len() && (bytes[after] == b' ' || bytes[after] == b'\t') {
-                after += 1;
+            // separator 매칭 2 영역:
+            //   case (a) `: ` / `=` separator + 일반 value (quoted 또는 word boundary)
+            //   case (b) 공백 + quoted value (`API-KEY 'dddd' is invalid` 형식)
+            // case (b) 안 공백 다음 quote 박혀있어야 매칭 — 자연어 영역 "api-key is required" 안 false
+            // positive 차단 (다음 char = word 박혀 case (b) X).
+            let mut sep_kind: Option<u8> = None; // b':' / b'=' = case (a), b'\'' / b'"' = case (b)
+            // 공백 skip 박은 후 separator / quote 확인.
+            let mut probe = after;
+            while probe < bytes.len() && (bytes[probe] == b' ' || bytes[probe] == b'\t') {
+                probe += 1;
             }
-            if after >= bytes.len() || (bytes[after] != b':' && bytes[after] != b'=') {
+            if probe < bytes.len() && (bytes[probe] == b':' || bytes[probe] == b'=') {
+                sep_kind = Some(bytes[probe]);
+                after = probe + 1;
+            } else if probe > after && probe < bytes.len() && (bytes[probe] == b'"' || bytes[probe] == b'\'') {
+                // case (b) — key 직후 1+ 공백 + quoted value
+                sep_kind = Some(bytes[probe]);
+                after = probe;
+            }
+            let Some(sk) = sep_kind else {
                 out.push_str(&s[cursor..key_end]);
                 cursor = key_end;
                 continue;
-            }
-            after += 1;
-            while after < bytes.len() && (bytes[after] == b' ' || bytes[after] == b'\t') {
-                after += 1;
+            };
+            // case (a) 안 공백 skip + value 추출. case (b) 안 already at quote.
+            if sk == b':' || sk == b'=' {
+                while after < bytes.len() && (bytes[after] == b' ' || bytes[after] == b'\t') {
+                    after += 1;
+                }
             }
             // value 시작. quote 우선 매칭.
             let quote = if after < bytes.len() && (bytes[after] == b'"' || bytes[after] == b'\'') {
@@ -352,6 +370,24 @@ mod tests {
         let out = redact_string(s);
         assert!(!out.contains("\"dddd\""), "out: {out}");
         assert!(out.contains("[REDACTED]"), "out: {out}");
+    }
+
+    #[test]
+    fn redacts_space_quoted_value() {
+        // `API-KEY 'dddd' is invalid` — separator 0 + 공백 + quoted value 형식.
+        let s = "API-KEY 'dddd' is invalid.";
+        let out = redact_string(s);
+        assert!(!out.contains("'dddd'"), "out: {out}");
+        assert!(out.contains("[REDACTED]"), "out: {out}");
+    }
+
+    #[test]
+    fn does_not_redact_natural_language() {
+        // 자연어 안 `api-key is required` — 공백 + word (quote 0). false positive 차단.
+        let s = "api-key is required";
+        let out = redact_string(s);
+        assert!(out.contains("required"), "out: {out}");
+        assert!(!out.contains("[REDACTED]"), "out: {out}");
     }
 
     #[test]
