@@ -25,3 +25,4 @@ pub mod ai;
 pub mod storage;
 pub mod memory_facade;
 pub mod library;
+pub mod chatbot;
