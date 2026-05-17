@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useId, Fragment } from 'react
 import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, Code, Settings2, ExternalLink, ArrowLeft, Plus, Trash2, ChevronLeft, ChevronRight, Package, Download, AlertCircle } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { TelegramWebhookSection } from './TelegramWebhookSection';
+import { ChatbotPanel } from './ChatbotPanel';
 import { confirmDialog } from './Dialog';
 import { COLOR_PRESETS } from '../../../lib/design-tokens';
 import { WidgetListField } from './WidgetListField';
@@ -389,6 +390,30 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   // 서비스별 엔드포인트 매핑 (app=외부용, llm=내부용)
   const isMcpApp = resolvedName === 'mcp-server-app';
   const isMcpLlm = resolvedName === 'mcp-server-llm';
+  const isChatbot = resolvedName === 'chatbot';
+
+  // chatbot service — 옛 사이드바 별도 탭 박은 영역 폐기. 시스템 탭 안 통합 — modal 안 ChatbotPanel
+  // 직접 render. settings_fields 영역 X (인스턴스 N + 위젯 코드 + 대화 내역 등 복잡 UI).
+  if (isChatbot) {
+    return (
+      <div className={embeddedInPage ? 'flex flex-col h-full bg-white overflow-hidden' : 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden'}>
+        <div className={embeddedInPage ? 'flex flex-col h-full w-full overflow-hidden' : 'bg-white w-full sm:max-w-3xl sm:rounded-2xl rounded-t-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-[80vh] sm:h-[85vh]'}>
+          {!embeddedInPage && (
+            <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 bg-slate-50 shrink-0">
+              <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
+                {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors mr-1"><ArrowLeft size={18} /></button>}
+                Chatbot
+              </h2>
+              <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
+            </div>
+          )}
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <ChatbotPanel />
+          </div>
+        </div>
+      </div>
+    );
+  }
   const mcpTokenEndpoint = isMcpLlm ? '/api/mcp-internal/token' : '/api/mcp/tokens';
   const mcpServerPath = isMcpLlm ? '/api/mcp-internal' : '/api/mcp';
 
