@@ -294,23 +294,14 @@ impl ModuleService for ModuleServiceImpl {
         &self,
         _req: Request<ModuleGetKakaoMapJsKeyRequest>,
     ) -> Result<Response<ModuleGetKakaoMapJsKeyResponse>, TonicStatus> {
-        // Fallback chain — 사용자가 두 곳 중 어느 한 곳만 입력해도 동작:
-        //   1. CMS settings 의 `kakaoMapJsKey` (cms 설정에서 입력)
-        //   2. kakao-map 모듈 시크릿 `KAKAO_MAP_JS_KEY` (sysmod 시크릿 탭에서 입력)
-        // 두 경로가 옛에 분리되어 사용자가 혼란. 한 곳만 박혀있어도 layout SSR 정상.
-        let settings = self.manager.get_settings("cms");
-        let cms_key = settings
-            .get("kakaoMapJsKey")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
-        let key = if !cms_key.is_empty() {
-            cms_key.to_string()
-        } else {
-            self.manager
-                .vault()
-                .get_secret("user:KAKAO_MAP_JS_KEY")
-                .unwrap_or_default()
-        };
+        // kakao-map 모듈 시크릿 단일 경로 — admin 시스템 모듈 → kakao-map → 시크릿 탭에 입력한
+        // KAKAO_MAP_JS_KEY 직접 읽음. 옛 CMS settings 의 kakaoMapJsKey path 는 admin UI 입력 field
+        // 없는 죽은 path 였음 (사용자가 입력할 곳 없음). 모듈 시크릿이 원래 의도된 단일 경로.
+        let key = self
+            .manager
+            .vault()
+            .get_secret("user:KAKAO_MAP_JS_KEY")
+            .unwrap_or_default();
         Ok(Response::new(ModuleGetKakaoMapJsKeyResponse { key }))
     }
 
