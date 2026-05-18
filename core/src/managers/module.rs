@@ -56,6 +56,12 @@ impl ModuleManager {
         }
     }
 
+    /// Vault 직접 접근 — 시크릿 fallback chain (CMS settings 가 비었을 때 모듈 시크릿) 같은
+    /// 패턴에서 사용. 일반 모듈 흐름은 sandbox 가 자동 주입.
+    pub fn vault(&self) -> &Arc<dyn IVaultPort> {
+        &self.vault
+    }
+
     /// 직접 경로 실행 (EXECUTE / 파이프라인 등).
     pub async fn execute(
         &self,
