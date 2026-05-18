@@ -1954,7 +1954,8 @@ function MapComp({
         }
       }
     }
-  }, [safeMarkers, safeCircles, finalCenter.lat, finalCenter.lon, finalZoom, provider]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(safeMarkers), JSON.stringify(safeCircles), finalCenter.lat, finalCenter.lon, finalZoom, provider]);
 
   return (
     <div
