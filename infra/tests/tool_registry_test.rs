@@ -166,9 +166,9 @@ async fn registered_tool_count() {
     let stats = tools.stats();
     // page: 4 + storage: 4 + schedule: 3 + media: 3 (search/image_gen/regenerate) +
     // conversation: 1 + entity: 5 + episodic: 3 + consolidation: 2 +
-    // module: 3 + mcp: 2 = 30
-    assert_eq!(stats.total, 30);
-    assert_eq!(stats.by_source.get("core").copied(), Some(30));
+    // module: 3 + mcp: 2 + cache: 4 (read/grep/aggregate/drop) = 34
+    assert_eq!(stats.total, 34);
+    assert_eq!(stats.by_source.get("core").copied(), Some(34));
 }
 
 #[tokio::test]
