@@ -495,6 +495,15 @@ async function callApi(base, token, apiId, params = {}, retry = 2) {
   }
   if (!resp.ok) {
     const errText = await resp.text().catch(() => '');
+    // 키움 토큰 만료 박은 영역 = HTTP 4xx/5xx + body 안 return_code 3 또는
+    // 'Token이 유효하지 않습니다' / 'token.*invalid' 박은 영역.
+    // throw 박지 X + parsed body 반환 → main 의 isTokenInvalid 분기 통과 → 자동 재발급.
+    try {
+      const parsed = JSON.parse(errText);
+      if (parsed?.return_code === 3 || /Token이 유효하지 않습니다|token.*invalid/i.test(parsed?.return_msg || '')) {
+        return parsed;
+      }
+    } catch {}
     throw new I18nError('error.api_status', { status: String(resp.status), statusText: resp.statusText, body: errText });
   }
   return await resp.json();
