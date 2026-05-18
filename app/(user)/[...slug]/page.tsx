@@ -94,6 +94,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         };
       }
     }
+    // chatbot fallback metadata — 페이지/프로젝트 미매칭 시 마지막 segment 가 chatbot slug 인지
+    // 확인. 페이지 본문 (DynamicPage 의 chatbot fallback) 과 정합 — title = instance.name.
+    const lastSegment = slug.split('/').filter(Boolean).pop() ?? '';
+    if (lastSegment) {
+      const chatbotRes = await getInstanceBySlug({ slug: lastSegment });
+      if (chatbotRes.ok && chatbotRes.data?.instance && chatbotRes.data.instance.enabled) {
+        const instance = chatbotRes.data.instance;
+        return {
+          title: instance.name,
+          description: instance.description || `${instance.name} 챗봇`,
+          robots: 'noindex, nofollow',
+        };
+      }
+    }
     return { title: 'Not Found' };
   }
 
