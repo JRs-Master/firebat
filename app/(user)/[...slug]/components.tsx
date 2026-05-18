@@ -1788,7 +1788,11 @@ function MapComp({
   useEffect(() => {
     if (!ref.current) return;
     const container = ref.current;
+    // 옛 instance cleanup — StrictMode 두 번 호출 / chat re-render 시 "Map container is already
+    // initialized" 차단. Leaflet 가 container 의 `_leaflet_id` 안에 marker 박는데, innerHTML 만
+    // clear 박으면 그 marker 안 남아 두 번째 init fail. 명시 delete 박은 후 재초기화.
     container.innerHTML = '';
+    delete (container as any)._leaflet_id;
 
     // provider 결정
     const kakaoKey = (typeof window !== 'undefined' && (window as any).__KAKAO_MAP_JS_KEY) || '';
