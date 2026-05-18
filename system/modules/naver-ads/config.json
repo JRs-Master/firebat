@@ -136,6 +136,10 @@
           }
         }
       },
+      "period": {
+        "type": "string",
+        "description": "[estimate:performance-bulk] 평가 기간 (일 수, 예: '7', '30', '90'). 미지정 시 default '30'"
+      },
       "subAction": {
         "type": "string",
         "enum": ["balance", "charge-history", "exhaust-history", "period-history"],

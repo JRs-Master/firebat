@@ -230,6 +230,13 @@ async function handleEstimate(ctx, data) {
   if (data.key) body.key = data.key;
   if (data.bid !== undefined && data.bid !== null) body.bid = data.bid;
   if (data.items) body.items = data.items;
+  // period — performance-bulk 의 필수 field. AI 가 명시 안 박으면 default '30' (30일).
+  // 네이버 API 가 'period is empty' 400 박는 영역 차단.
+  if (estimateType === 'performance-bulk') {
+    body.period = data.period ?? '30';
+  } else if (data.period !== undefined) {
+    body.period = data.period;
+  }
 
   const json = await api(ctx, 'POST', path, null, body);
   out(true, json);
