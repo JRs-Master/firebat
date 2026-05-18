@@ -206,21 +206,29 @@ render({
 
 ## sysmod 결과 cache 패턴 (특수 — 큰 데이터 효율)
 
-큰 응답 받았을 때 메인 context 안 더럽힘. sysmod 자체가 결정 (records 인라인 / cacheKey 반환).
+큰 응답 (50행+ 시계열 등) 받았을 때 메인 context 토큰 절약. sandbox 가 sysmod 응답 안 `_cache` envelope 자동 인식 → SysmodCacheAdapter 저장 → 응답에 `_cacheKey` + `_cacheMeta` 박음. AI 는 records 통째 받지 않고 `_cacheKey` 만 받아 cache_* 도구로 분리 조회.
 
 **sysmod 응답 형태**:
-- **인라인** (작은 결과): `{success, data: {price: 1000, ...}}` — AI 가 그대로 사용.
-- **cache** (큰 결과): `{success, data: {cacheKey: "...", cacheRows: 2500, cacheColumns: [...]}}`. AI 는 `cacheKey` 받아 다음 도구 호출.
+- **인라인** (작은 결과, < 50행): `{success, data: {symbol: "005930", records: [...]}}` — AI 가 records 그대로 사용.
+- **cache** (큰 결과, 50행+): `{success, data: {symbol: "005930", period: "3mo", firstDate: "...", lastDate: "...", _cacheKey: "yfinance-history-xxx-1234", _cacheMeta: {sysmod: "yfinance", action: "history", recordCount: 59, ttlSec: 600}}}`. records 박지 X, `_cacheKey` 만 박힘.
 
-**cacheKey 받았을 때 호출 흐름**:
-- 일부만 필요 → `cache_read(cacheKey, offset, limit, fields)` (페이징 + 필드 추출).
-- 조건 필터 → `cache_grep(cacheKey, {field, op, value})` (op: eq/ne/gt/gte/lt/lte/contains/in/regex).
-- 집계 → `cache_aggregate(cacheKey, op, field, by?)` (avg/sum/min/max/count + groupBy).
-- 끝나면 → `cache_drop(cacheKey)` (선택. TTL 자동 만료).
+**`_cacheKey` 받았을 때 호출 흐름**:
+- 일부만 필요 → `cache_read({cacheKey: "...", offset: 0, limit: 50})` (페이지네이션).
+- 조건 필터 → `cache_grep({cacheKey: "...", field: "close", op: "gt", value: 200000})` (op: eq/ne/gt/gte/lt/lte/contains/in).
+- 집계 → `cache_aggregate({cacheKey: "...", field: "close", op: "avg"})` (count/sum/avg/min/max).
+- 끝나면 → `cache_drop({cacheKey: "..."})` (선택. 5분 TTL 자동 만료).
+
+**중요 — 도구 argument 이름**: schema 안 parameter 이름 = `cacheKey` (underscore 없음). 응답 field 이름 = `_cacheKey` (underscore 있음). 응답에서 `_cacheKey` 값 추출 → 도구 호출 시 `cacheKey` argument 에 박음.
 
 **호출 금지**:
-- cacheKey 없는 응답에 cache_* 호출 (records 직접 설정되어 있으면 그대로 사용).
-- 작은 결과 (10행 미만) — 인라인 사용.
+- `_cacheKey` 없는 응답에 cache_* 호출 (records 인라인 박혀있으면 그대로 사용).
+- 작은 결과 (50행 미만) — 인라인 records 사용.
+
+**예시 (yfinance 60일 일봉)**:
+1. `sysmod_yfinance({action: "history", symbol: "005930.KS", period: "3mo"})` 호출
+2. 응답 = `{success, data: {symbol, period, firstDate, lastDate, _cacheKey: "yfinance-history-xxx", _cacheMeta: {recordCount: 59, ...}}}`
+3. `cache_read({cacheKey: "yfinance-history-xxx", offset: 0, limit: 60})` 호출 → records 60건 받음
+4. render 도구에 records 전달 → 차트 그림
 
 ## 모듈 작성 (특수)
 - I/O: stdin JSON → stdout 마지막 줄 {"success":true,"data":{...}}. sys.argv 금지.
