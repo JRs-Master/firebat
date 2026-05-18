@@ -387,39 +387,15 @@ function AutoResizeIframe({ src, initialHeight, dependencies }: { src: string; i
 }
 
 // ─── Thinking 블록 — 버블 상단에 항상 표시 ──────────────────────────────────
-function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: string; thinkingText?: string; isActive?: boolean }) {
+function ThinkingBlock({ statusText: _statusText, thinkingText, isActive }: { statusText?: string; thinkingText?: string; isActive?: boolean }) {
+  // 사용자 요청 — thinking 메시지 (statusText / thinkingText 본문) 출력 X. 동작 중일 때 spinner 만.
+  // 본문 글자 크기 일관성 위해 작은 글자 progress 텍스트 박지 X.
   if (!isActive && !thinkingText) return null;
-  if (thinkingText === THINKING_STATUS.DONE) {
-    return (
-      <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
-        <Cpu size={13} className="shrink-0" />
-        <span>{THINKING_STATUS.DONE}</span>
-      </div>
-    );
-  }
-  if (statusText) {
-    return (
-      <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
-        <div className="animate-spin shrink-0"><Cpu size={13} /></div>
-        <span className="truncate">{statusText}</span>
-      </div>
-    );
-  }
-  if (thinkingText) {
-    const lines = thinkingText.split('\n').filter(l => l.trim());
-    const last = lines.length > 0 ? lines[lines.length - 1].trim() : '';
-    const content = last.length > 50 ? last.slice(-50) + '…' : last;
-    return (
-      <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
-        <div className="animate-spin shrink-0"><Cpu size={13} /></div>
-        <span className="truncate">생각 중... {content}</span>
-      </div>
-    );
-  }
+  if (thinkingText === THINKING_STATUS.DONE) return null;
+  if (!isActive) return null;
   return (
-    <div className="flex items-center gap-2 text-slate-400 text-[12px] sm:text-[13px]">
+    <div className="flex items-center gap-2 text-slate-400">
       <div className="animate-spin shrink-0"><Cpu size={13} /></div>
-      <span>생각 중...</span>
     </div>
   );
 }
