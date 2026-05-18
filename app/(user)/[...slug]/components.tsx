@@ -1828,6 +1828,9 @@ function MapComp({
             const url = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
             return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(22, 22), { offset: new w.kakao.maps.Point(11, 11) });
           };
+          // 단일 openInfo 박은 영역 — 새 마커 클릭 시 옛 InfoWindow 자동 close. 옛 흐름은 매 마커
+          // 별도 InfoWindow + click 시 본인 open 만 → 옛 popup 안 닫혀 누적되던 문제.
+          let openInfo: any = null;
           for (const m of safeMarkers) {
             const opts: { position: any; title: string; image?: any } = {
               position: new w.kakao.maps.LatLng(m.lat, m.lon),
@@ -1840,11 +1843,17 @@ function MapComp({
             const rawPopup = m.popup ? String(m.popup) : m.label;
             const popupText = sanitizePopupHtml(rawPopup);
             if (popupText) {
+              // content div 안 word-break + white-space: normal — 카카오 InfoWindow wrapper 의 nowrap
+              // 기본을 명시 override. line-height 1.4 로 2줄 이상 가독성.
               const info = new w.kakao.maps.InfoWindow({
-                content: `<div style="padding:6px 10px;font-size:12px;max-width:240px;">${popupText}</div>`,
+                content: `<div style="padding:6px 10px;font-size:12px;max-width:240px;line-height:1.4;white-space:normal;word-break:break-word;">${popupText}</div>`,
                 removable: true,
               });
-              w.kakao.maps.event.addListener(marker, 'click', () => info.open(map, marker));
+              w.kakao.maps.event.addListener(marker, 'click', () => {
+                if (openInfo && openInfo !== info) openInfo.close();
+                info.open(map, marker);
+                openInfo = info;
+              });
             }
           }
           // 마커 2+ 시 자동 bounds fit — 모든 마커 + 원 보이도록 줌 자동
