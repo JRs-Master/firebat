@@ -1959,7 +1959,7 @@ function MapComp({
 
   return (
     <div
-      className="relative rounded-xl border border-gray-100 shadow-sm overflow-hidden"
+      className="relative isolate rounded-xl border border-gray-100 shadow-sm overflow-hidden"
       style={{ height: finalHeight, width: '100%' }}
     >
       <div ref={ref} style={{ height: '100%', width: '100%' }} />
