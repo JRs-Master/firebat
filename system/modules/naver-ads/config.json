@@ -50,6 +50,11 @@
         "type": "integer",
         "description": "[keyword-tool] 월"
       },
+      "includeHintKeywords": {
+        "type": "boolean",
+        "default": false,
+        "description": "[keyword-tool] hintKeywords 자체 (입력 키워드) 도 결과에 포함. 입력 키워드의 검색량/CTR 직접 보려면 true"
+      },
       "id": {
         "type": "string",
         "description": "[stats/get-*] 단일 엔티티 ID (캠페인/광고그룹/키워드/소재)"

@@ -145,6 +145,11 @@ async function handleKeywordTool(ctx, data) {
   if (data.biztpId) params.biztpId = data.biztpId;
   if (data.event) params.event = String(data.event);
   if (data.month) params.month = String(data.month);
+  // includeHintKeywords — '1' 박으면 hintKeywords 자체 결과도 포함 (default 미포함).
+  // AI 가 입력 키워드 자체의 검색량 / CTR 박는 영역 = 명시 '1' 박는 영역.
+  if (data.includeHintKeywords !== undefined) {
+    params.includeHintKeywords = data.includeHintKeywords ? '1' : '0';
+  }
 
   const json = await api(ctx, 'GET', '/keywordstool', params);
 
@@ -160,6 +165,8 @@ async function handleKeywordTool(ctx, data) {
       monthlyAveMobileCtr: item.monthlyAveMobileCtr ?? 0,
       plAvgDepth: item.plAvgDepth ?? 0,
       compIdx: item.compIdx || '',
+      // 관련도 점수 — 입력 hintKeyword 와의 의미 유사도. AI 가 추천 정렬 / 필터 박을 때 활용.
+      relatedPoint: item.related_point ?? null,
     };
     if (item.monthlyPcQcCntList) entry.monthlyPcQcCntList = item.monthlyPcQcCntList;
     if (item.monthlyMobileQcCntList) entry.monthlyMobileQcCntList = item.monthlyMobileQcCntList;
