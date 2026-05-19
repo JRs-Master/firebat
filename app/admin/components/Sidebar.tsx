@@ -93,6 +93,12 @@ export function Sidebar({
   const [trashOpen, setTrashOpen] = useState(false);
 
   const reloadTrash = useCallback(async () => {
+    // hub mode = admin 휴지통 호출 차단 (admin DB 데이터 공유 금지). hub_conversations 의
+    // 휴지통은 backend 별도 영역 (현재 미구현 — 사용자 보고 시점에 신설).
+    if (hubMode) {
+      setTrashConvs([]);
+      return;
+    }
     try {
       const data = await apiGet<{ success?: boolean; conversations?: ConversationMeta[] }>(
         '/api/conversations/trash',
@@ -102,7 +108,7 @@ export function Sidebar({
         setTrashConvs(data.conversations);
       }
     } catch { /* silent — 다음 trigger 시 재시도 */ }
-  }, []);
+  }, [hubMode]);
 
   const handleRestoreConv = useCallback(async (id: string) => {
     try {
@@ -472,10 +478,9 @@ export function Sidebar({
   };
 
   /* ── VSCode activity bar — 항상 표시 (PC: inline, 모바일: slide-in 안). ── */
-  // Hub page mode 박혀있어도 모든 탭 노출 — 사용자 본인이 admin cookie 박힌 채 hub URL 방문 시
-  // 자기 영역 박은 도구 (workspace / gallery 등) 박을 수 있게. anonymous 방문자 (cookie 박지 X)
-  // 박은 영역에서는 admin API 호출 시 401 자연 표시. 사이드바 설정 버튼 + 헤더 로그아웃 만 hide.
-  const visibleTabs = TABS;
+  // hub page mode = chats 탭만 노출. 나머지 admin 영역 (workspace / gallery / templates /
+  // library / entities / notes / calendar) 전부 hide — admin 데이터와 완전 분리 (사용자 의도).
+  const visibleTabs = hubMode ? TABS.filter(t => t.id === 'chats') : TABS;
   const renderActivityBar = () => (
     // z-50 — 펼친 panel(z-40) 위로. 활동 바 항상 클릭 가능 + 다른 탭 즉시 전환.
     <div className="w-12 bg-white flex flex-col items-center py-3 gap-2 shrink-0 border-r border-slate-200 relative z-50">
