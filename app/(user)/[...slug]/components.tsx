@@ -668,10 +668,15 @@ function sanitizeHtmlBlock(content: string): string {
 
 function HtmlComp({ content, dependencies }: { content: string; dependencies?: string[] }) {
   // 분기 — dependencies 있으면 iframe srcDoc 격리 (Leaflet/Mermaid 등 CDN library 시각화).
-  //        없으면 sanitize 후 inline DOM (광고 게재·SEO 인덱싱 정상).
+  //        <script> 태그 박혀있으면 자동 iframe srcDoc — inline DOM 의 DOMPurify 가
+  //        XSS 방어 표준으로 <script> 자동 제거하므로 BMI 계산기 등 인터랙티브 페이지
+  //        스크립트 실행 0 issue 자동 fix (사용자 보고 2026-05-19).
+  //        그 외 (광고·SEO 인덱싱 정상 정적 HTML) = 옛 inline DOM.
   const hasDeps = !!(dependencies && dependencies.length > 0);
+  const hasScript = /<script\b/i.test(content);
+  const useIframe = hasDeps || hasScript;
 
-  if (!hasDeps) {
+  if (!useIframe) {
     // inline DOM — sanitize 후 직접 저장.
     // wrapper class 로 scope 한정 — AI 가 설정한 <style> 안 body/html selector 가 페이지 root 영향 주지 않게.
     // 광고·SEO 인덱싱 정상 + iframe height squeeze 문제 자연 해결.
