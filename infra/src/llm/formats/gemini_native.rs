@@ -226,9 +226,8 @@ impl GeminiNativeHandler {
         if let Some(t) = opts.temperature {
             gen["temperature"] = serde_json::Value::from(t);
         }
-        if let Some(m) = opts.max_tokens {
-            gen["maxOutputTokens"] = serde_json::Value::from(m);
-        }
+        // Default 8192 — 모든 API 어댑터 일관 default (옛 node 버전 박은 답변 길이 회복).
+        gen["maxOutputTokens"] = serde_json::Value::from(opts.max_tokens.unwrap_or(8192));
         // thinking — config.features.thinking 활성 모델만
         let thinking_enabled = config.features.thinking;
         if thinking_enabled {

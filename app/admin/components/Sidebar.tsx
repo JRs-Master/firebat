@@ -472,9 +472,10 @@ export function Sidebar({
   };
 
   /* ── VSCode activity bar — 항상 표시 (PC: inline, 모바일: slide-in 안). ── */
-  // Hub page mode = 익명 방문자라 admin 전용 탭 (workspace / gallery / templates / library / entities / notes / calendar) 자동 hide.
-  // chats 탭만 노출 — 본인 세션 대화 영역.
-  const visibleTabs = hubMode ? TABS.filter(t => t.id === 'chats') : TABS;
+  // Hub page mode 박혀있어도 모든 탭 노출 — 사용자 본인이 admin cookie 박힌 채 hub URL 방문 시
+  // 자기 영역 박은 도구 (workspace / gallery 등) 박을 수 있게. anonymous 방문자 (cookie 박지 X)
+  // 박은 영역에서는 admin API 호출 시 401 자연 표시. 사이드바 설정 버튼 + 헤더 로그아웃 만 hide.
+  const visibleTabs = TABS;
   const renderActivityBar = () => (
     // z-50 — 펼친 panel(z-40) 위로. 활동 바 항상 클릭 가능 + 다른 탭 즉시 전환.
     <div className="w-12 bg-white flex flex-col items-center py-3 gap-2 shrink-0 border-r border-slate-200 relative z-50">

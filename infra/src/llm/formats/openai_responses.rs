@@ -104,9 +104,8 @@ impl FormatHandler for OpenAiResponsesHandler {
         if let Some(t) = opts.temperature {
             body["temperature"] = serde_json::Value::from(t);
         }
-        if let Some(m) = opts.max_tokens {
-            body["max_output_tokens"] = serde_json::Value::from(m);
-        }
+        // Default 8192 — 모든 API 어댑터 일관 default (옛 node 버전 박은 답변 길이 회복).
+        body["max_output_tokens"] = serde_json::Value::from(opts.max_tokens.unwrap_or(8192));
 
         let response = http_client()
             .post(&config.endpoint)
@@ -198,9 +197,8 @@ impl FormatHandler for OpenAiResponsesHandler {
                 body["instructions"] = serde_json::Value::String(sp.to_string());
             }
         }
-        if let Some(m) = opts.max_tokens {
-            body["max_output_tokens"] = serde_json::Value::from(m);
-        }
+        // Default 8192 — 모든 API 어댑터 일관 default (옛 node 버전 박은 답변 길이 회복).
+        body["max_output_tokens"] = serde_json::Value::from(opts.max_tokens.unwrap_or(8192));
 
         let response = http_client()
             .post(&config.endpoint)
