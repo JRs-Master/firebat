@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
+import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
 
 export type OhlcvBar = {
   date: string; // YYYY-MM-DD or YYYYMMDD
@@ -91,6 +92,13 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 툴팁 위치용 실시간 마우스 좌표 (컨테이너 기준)
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
+  // 차트 영역 cap — 모바일 320px / PC 480px. SSR null 시 320 fallback.
+  // 비-스크롤 모드만 적용 (가로 스크롤 모드는 SVG 자체 width=W 박힘).
+  // 거래량은 가격 영역의 80/280 ≈ 28.6% 비례 (옛 viewBox 비율 유지).
+  const chartMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
+  const priceChartHeight = chartMaxH ? `${chartMaxH}px` : '320px';
+  const volChartHeight = chartMaxH ? `${Math.floor(chartMaxH * 80 / 280)}px` : '92px';
+
   // 유효 데이터만 + 오래된 → 최신 순서로 정렬 (API가 역순 반환 가능)
   // data가 undefined/null/비배열이어도 크래시 방지
   const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -170,7 +178,12 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const priceH = 280;
   const volH = 80;
   const padLeft = 50;
-  const padRight = 56;
+  // Y축 라벨 우측 영역 — 가격 자릿수 기반 동적. toLocaleString 폰트 10px 기준 자릿수 × ~6px + 12 여백.
+  // 작은 가격대 (5만, 6자리) = 56 그대로. 큰 가격대 (1억, 11자리) ≈ 78px. 라벨 잘림 0.
+  const maxPriceDigits = safeData.length > 0
+    ? Math.max(...safeData.map(d => d.high)).toLocaleString('ko-KR').length
+    : 8;
+  const padRight = Math.max(56, maxPriceDigits * 6 + 12);
   const padTop = 18;
   const padBottom = 24;
   // viewBox 너비 — 가로 스크롤 모드면 봉 수에 비례 확장. plot 영역도 자동 확장.
@@ -417,7 +430,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
           width={useHScroll ? W : undefined}
           height={useHScroll ? priceH : undefined}
           preserveAspectRatio="none"
-          style={{ touchAction: 'pan-y', aspectRatio: useHScroll ? undefined : `${W} / ${priceH}` }}
+          style={{ touchAction: 'pan-y', height: useHScroll ? undefined : priceChartHeight }}
         >
           {/* 가로 그리드 */}
           {priceTicks.map(t => {
@@ -609,7 +622,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
 
       {/* 거래량 차트 */}
       <div className="relative">
-        <svg viewBox={`0 0 ${W} ${volH}`} className="w-full block" preserveAspectRatio="none" style={{ aspectRatio: `${W} / ${volH}` }}>
+        <svg viewBox={`0 0 ${W} ${volH}`} className="w-full block" preserveAspectRatio="none" style={{ height: volChartHeight }}>
           {volTicks.map(t => {
             const y = yVol(t);
             return (
