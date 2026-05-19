@@ -83,9 +83,14 @@ impl ProjectManager {
             }
         }
 
-        // DB pages — project 필드
+        // DB pages — project 필드.
+        // hub-scoped page (project='hub:<instance_id>') = root 사이트 catalog noindex —
+        // 사용자 의도 "지 사이드바 안에서만 갖고 놀고". scanProjects 박은 영역 자동 제외.
         for page in self.db.list_pages() {
             if let Some(project) = &page.project {
+                if project.starts_with("hub:") {
+                    continue;
+                }
                 map.entry(project.clone())
                     .or_insert_with(|| (Vec::new(), Vec::new()))
                     .1

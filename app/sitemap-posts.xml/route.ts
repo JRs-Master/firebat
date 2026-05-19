@@ -19,8 +19,11 @@ export async function GET(req: Request) {
   const baseUrl = seo.siteUrl || getBaseUrl(req);
   const result = await listPages();
   const allPages = result.ok ? (result.data ?? []) : [];
-  // 공개 페이지만 포함 (password, private 제외)
-  const pages = allPages.filter(p => (p.visibility ?? 'public') === 'public');
+  // 공개 페이지만 포함 (password, private 제외).
+  // hub-scoped page (project='hub:<id>') = sitemap 자동 제외 (사용자 의도 — hub 본인 영역만).
+  const pages = allPages
+    .filter(p => (p.visibility ?? 'public') === 'public')
+    .filter(p => !p.project?.startsWith('hub:'));
 
   const entries = [
     // 홈페이지

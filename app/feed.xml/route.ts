@@ -39,8 +39,10 @@ export async function GET(req: Request) {
   const result = await listPages();
   const allPages = result.ok ? (result.data ?? []) : [];
   // 공개 + 발행 페이지만 + 최신 순. project 필터 있으면 매칭만.
+  // hub-scoped page (project='hub:<id>') = root 사이트 catalog noindex (사용자 의도 — hub 사용자 본인 영역만).
   const visiblePages = allPages
     .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
+    .filter((p) => !p.project?.startsWith('hub:'))
     .filter((p) => !projectFilter || p.project === projectFilter)
     .sort((a, b) => {
       const ua = typeof a.updatedAt === 'bigint' ? Number(a.updatedAt) : Number(a.updatedAt ?? 0);

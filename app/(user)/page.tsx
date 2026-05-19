@@ -46,9 +46,11 @@ export default async function HomePage({ searchParams }: Props) {
   const pagesRes = await listPages();
   const allItems = pagesRes.ok ? (pagesRes.data ?? []) : [];
   const allPages = allItems.map(toPageListItem);
-  // public + published 만, 최근 순
+  // public + published 만, 최근 순.
+  // hub-scoped page (project='hub:<id>') = root 사이트 catalog noindex — 최신글 목록 / 프로젝트 카탈로그 모두 제외.
   const visiblePages = allPages
     .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
+    .filter((p) => !p.project?.startsWith('hub:'))
     .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''));
 
   const totalPages = Math.max(1, Math.ceil(visiblePages.length / perPage));

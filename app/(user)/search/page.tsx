@@ -46,7 +46,12 @@ export default async function SearchPage({ searchParams }: Props) {
   let tooShort = false;
   if (q.length >= 2) {
     const res = await searchPages({ query: q, limit: 200n } as any);
-    if (res.ok) results = (res.data ?? []).map(toPageListItem);
+    if (res.ok) {
+      // hub-scoped page (project='hub:<id>') = root 사이트 검색 noindex.
+      results = (res.data ?? [])
+        .map(toPageListItem)
+        .filter((p) => !p.project?.startsWith('hub:'));
+    }
   } else if (q.length === 1) {
     tooShort = true;
   }

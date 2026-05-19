@@ -54,8 +54,10 @@ function WidgetTitle({ text, area }: { text?: string; area: WidgetArea }) {
 async function RecentPostsWidget({ count, title, area }: { count: number; title?: string; area: WidgetArea }) {
   const allRes = await listPages();
   const allItems = allRes.ok ? (allRes.data ?? []).map(toPageListItem) : [];
+  // hub-scoped page (project='hub:<id>') = '최근 글' 위젯 noindex.
   const recent = allItems
     .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
+    .filter((p) => !p.project?.startsWith('hub:'))
     .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
     .slice(0, Math.max(1, count));
   if (recent.length === 0) return null;
@@ -88,8 +90,11 @@ async function RecentPostsWidget({ count, title, area }: { count: number; title?
 
 async function CategoryListWidget({ title, area }: { title?: string; area: WidgetArea }) {
   const allRes = await listPages();
+  // hub-scoped page (project='hub:<id>') = '카테고리' 위젯 noindex.
   const allPages = allRes.ok
-    ? (allRes.data ?? []).map(toPageListItem).filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
+    ? (allRes.data ?? []).map(toPageListItem)
+        .filter((p) => p.status === 'published' && (p.visibility ?? 'public') === 'public')
+        .filter((p) => !p.project?.startsWith('hub:'))
     : [];
   const categoryMap = new Map<string, number>();
   for (const p of allPages) {

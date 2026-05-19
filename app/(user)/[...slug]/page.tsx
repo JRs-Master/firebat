@@ -71,13 +71,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const rawSlug = (await params).slug;
   const slug = safeDecodeSlug(rawSlug);
   const result = await getPageRpc({ slug });
-  // hub-scoped page (project='hub:' prefix) = root 사이트 noindex (Not Found).
-  if (result.ok && result.data) {
-    const parsed = parsePageRecord(result.data);
-    if (parsed.project && parsed.project.startsWith('hub:')) {
-      return { title: 'Not Found' };
-    }
-  }
   if (!result.ok || !result.data) {
     // projectRoot fallback — 1-segment URL 이 프로젝트명과 매칭되면 프로젝트 카탈로그 metadata
     if (!slug.includes('/')) {
@@ -200,14 +193,6 @@ export default async function DynamicPage({ params, searchParams }: Props) {
   const rawSlug = (await params).slug;
   const slug = safeDecodeSlug(rawSlug);
   const result = await getPageRpc({ slug });
-  // hub-scoped page (project = 'hub:<instance_id>' prefix) 박은 영역 = root 사이트 노출 X.
-  // 사용자 의도 = hub 안 사이드바 박은 영역만 박힘. 공유 (`/share/<slug>`) 는 별도 영역 (옛 영역 OK).
-  if (result.ok && result.data) {
-    const parsed = parsePageRecord(result.data);
-    if (parsed.project && parsed.project.startsWith('hub:')) {
-      redirect('/404');
-    }
-  }
   if (!result.ok || !result.data) {
     // 리디렉트 테이블 확인 — slug 변경/프로젝트 이동된 페이지 자동 이동
     const redirectRes = await getRedirect({ slug });

@@ -35,8 +35,11 @@ async function findMatchingPages(keyword: string): Promise<{ pages: PageListItem
   const canonical = normalizeTag(keyword, aliases);
   const allRes = await listPages();
   const allPages = allRes.ok ? (allRes.data ?? []).map(toPageListItem) : [];
+  // hub-scoped page (project='hub:<id>') = root 사이트 tag catalog noindex.
   const visible = allPages.filter(
-    (p) => p.status === 'published' && (p.visibility ?? 'public') === 'public',
+    (p) => p.status === 'published'
+      && (p.visibility ?? 'public') === 'public'
+      && !p.project?.startsWith('hub:'),
   );
   const matched: PageListItem[] = [];
   for (const p of visible) {
