@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic';
 
 import { getCmsSettings } from '../../lib/api-gen/module';
 import { get as getPageRpc } from '../../lib/api-gen/page';
+import { getInstanceBySlug } from '../../lib/api-gen/hub';
 import { SeoScripts } from './seo-scripts';
 import { CmsHeader } from './cms-header';
 import { CmsFooter } from './cms-footer';
@@ -47,8 +48,33 @@ async function resolvePageOverrides(): Promise<{ layoutMode?: LayoutMode; conten
   }
 }
 
-/** User 페이지 레이아웃 — SEO head/body 스크립트 + JSON-LD + Design Tokens + Header/Footer 주입 */
+/** Hub instance 매칭 검사 — `/<slug>` URL 박혀있고 page / project 미매칭 시 hub fallback 영역.
+ *  박혀있으면 admin chat UI 가 page.tsx 안에서 직접 mount → 본 layout 박은 CMS 헤더 / 사이드바
+ *  / footer 등 영역 모두 hide. children 만 박음. */
+async function isHubInstancePage(): Promise<boolean> {
+  try {
+    const h = await headers();
+    const pathname = h.get('x-firebat-pathname') ?? '';
+    if (!pathname || pathname === '/' || pathname.startsWith('/api')) return false;
+    const slug = decodeURIComponent(pathname.replace(/^\/+/, '').replace(/\/+$/, ''));
+    if (!slug || slug.includes('/')) return false;
+    // page / project 매칭 우선 — 박혀있으면 hub 아님.
+    const pageRes = await getPageRpc({ slug });
+    if (pageRes.ok && pageRes.data) return false;
+    const hubRes = await getInstanceBySlug({ slug });
+    return !!(hubRes.ok && hubRes.data?.instance && hubRes.data.instance.enabled && hubRes.data.instance.exposePage);
+  } catch {
+    return false;
+  }
+}
+
+/** User 페이지 레이아웃 — SEO head/body 스크립트 + JSON-LD + Design Tokens + Header/Footer 주입.
+ *  Hub instance 매칭 영역 = layout 자체 우회 (children 만 박음) — admin chat UI 가 본인 layout
+ *  (ConsoleLayoutInner) 박혀있어 중복 헤더 / footer 박힘 회피. */
 export default async function UserLayout({ children }: { children: React.ReactNode }) {
+  if (await isHubInstancePage()) {
+    return <>{children}</>;
+  }
   const seoRes = await getCmsSettings();
   const seo = (seoRes.ok ? seoRes.data : {}) as any;
   const siteUrl = seo.siteUrl || BASE_URL;

@@ -2389,6 +2389,14 @@ pub trait IHubPort: Send + Sync {
         session_id: &str,
     ) -> InfraResult<String>;
 
+    /// (instance_id, session_id) → 항상 새 conversation 생성 + id 반환. multi-conv 영역에서
+    /// 사용자가 "새 대화" 박을 때 호출. ensure 와 달리 옛 conv 있어도 새 conv 추가.
+    async fn create_conversation(
+        &self,
+        instance_id: &str,
+        session_id: &str,
+    ) -> InfraResult<String>;
+
     async fn list_conversations(
         &self,
         instance_id: &str,

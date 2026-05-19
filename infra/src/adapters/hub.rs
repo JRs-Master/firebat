@@ -258,6 +258,25 @@ impl IHubPort for SqliteHubAdapter {
         Ok(id)
     }
 
+    async fn create_conversation(
+        &self,
+        instance_id: &str,
+        session_id: &str,
+    ) -> InfraResult<String> {
+        // 옛 conv 있어도 항상 새 conv 박음 — multi-conv 시나리오.
+        let conn = self.conn.lock().unwrap();
+        let id = uuid::Uuid::new_v4().to_string();
+        let ts = now_ms();
+        conn.execute(
+            "INSERT INTO hub_conversations
+                (id, instance_id, session_id, title, created_at, updated_at)
+             VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
+            params![id, instance_id, session_id, ts, ts],
+        )
+        .map_err(|e| format!("hub_conversations insert: {e}"))?;
+        Ok(id)
+    }
+
     async fn list_conversations(
         &self,
         instance_id: &str,

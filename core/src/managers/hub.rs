@@ -265,6 +265,15 @@ impl HubManager {
         self.port.ensure_conversation(instance_id, session_id).await
     }
 
+    /// 항상 새 conversation 생성 — multi-conv 영역에서 사이드바 "새 대화" 박을 때 호출.
+    pub async fn create_conversation(
+        &self,
+        instance_id: &str,
+        session_id: &str,
+    ) -> InfraResult<String> {
+        self.port.create_conversation(instance_id, session_id).await
+    }
+
     pub async fn list_conversations(
         &self,
         instance_id: &str,

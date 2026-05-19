@@ -2,6 +2,8 @@ import { notFound, redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { get as getPageRpc, getRedirect, verifyPassword as verifyPagePasswordRpc } from '../../../lib/api-gen/page';
 import { getInstanceBySlug } from '../../../lib/api-gen/hub';
+import { ConsoleLayoutInner } from '../../admin/layout-client';
+import { HubChatClient } from '../../hub/[slug]/HubChatClient';
 import { scan as scanProjects, verifyPassword as verifyProjectPasswordRpc, getVisibility as getProjectVisibility, getConfig as getProjectConfigRpc } from '../../../lib/api-gen/project';
 import { getCmsSettings } from '../../../lib/api-gen/module';
 import { isReady as isMediaReady } from '../../../lib/api-gen/media';
@@ -211,33 +213,22 @@ export default async function DynamicPage({ params, searchParams }: Props) {
     // hub fallback — 단일 segment URL (`/<slug>`) 만 hub 매칭. hub.slug 는 `/` 미포함
     // (Rust validate_slug 가 영숫자/하이픈/언더스코어만 허용).
     //
-    // 옛 마지막 segment 매칭 (catch-all `/chat/<slug>` 등) 폐기 — admin UI 의 "Hub 페이지 열기"
-    // 링크 (옛 /chat/<slug>) 와 실제 URL `/<slug>` 가 동시 동작해 사용자 혼동.
-    //
-    // 노출 모드:
-    //   instance.exposePage = true  → /<slug> 풀스크린 chat 자동 활성
-    //   instance.exposePage = false → URL 노출 안 함 (404). widget 임베드 전용 인스턴스.
+    // `/<slug>` 박힌 영역 = admin chat UI 직접 mount (ConsoleLayoutInner + ConsolePage). (user)
+    // layout 박은 CMS 헤더 / 사이드바 영역은 layout.tsx 가 hub mode 검출 후 자동 hide.
     if (!slug.includes('/')) {
       const hubRes = await getInstanceBySlug({ slug });
       if (hubRes.ok && hubRes.data?.instance && hubRes.data.instance.enabled && hubRes.data.instance.exposePage) {
         const instance = hubRes.data.instance;
-        const h = await headers();
-        const proto = h.get('x-forwarded-proto') || 'http';
-        const host = h.get('x-forwarded-host') || h.get('host') || 'localhost:3000';
-        const firebatUrl = `${proto}://${host}`;
         return (
-          <main className="fixed inset-0 bg-white">
-            <script
-              src={`${firebatUrl}/api/hub/widget.js`}
-              data-slug={instance.slug}
-              data-token={instance.apiToken}
-              data-firebat-url={firebatUrl}
-              data-fullscreen="true"
-              data-title={instance.name}
-              data-description={instance.description ?? ''}
-              async
+          <ConsoleLayoutInner hubMode>
+            <HubChatClient
+              slug={instance.slug}
+              apiToken={instance.apiToken}
+              instanceName={instance.name}
+              instanceDescription={instance.description}
+              modelId={instance.modelId || undefined}
             />
-          </main>
+          </ConsoleLayoutInner>
         );
       }
     }
