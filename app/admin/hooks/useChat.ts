@@ -114,14 +114,79 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   };
 
   // ── 초기화: DB 우선 로드 (다기기 동기화 보장). 실패 시에만 localStorage 폴백 ──
-  // Hub mode 박혀있으면 /api/conversations 호출 skip — admin 인증 필수라 401. localStorage 만 fallback.
-  // hub conversation 영역은 backend (hub_conversations DB) 가 영속화 + 별도 RPC (HubService.list_conversations)
-  // 사용해야 표시 가능. 본 영역에서는 admin DB 호출 자체 skip.
+  // Hub mode 박혀있으면 admin /api/conversations 호출 skip + /api/hub/<slug>/sessions 호출.
+  // hub_conversations DB 박은 영역에서 다기기 동기화 + 본격 multi-conv 박힘.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (hubContext) {
-        // hub mode 초기 로드 = localStorage 만 사용 (admin 인증 우회).
+        // hub mode 초기 로드 — hub_conversations DB 호출 + 활성 conv 의 messages list.
+        try {
+          const listRes = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sessions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Api-Token': hubContext.apiToken,
+              'X-Session-Id': hubContext.sessionId,
+            },
+            body: JSON.stringify({ op: 'list-conversations' }),
+          }).then(r => r.json()).catch(() => null);
+
+          if (listRes?.success && !cancelled) {
+            type HubConv = { id: string; title?: string; createdAt: number; updatedAt: number };
+            const remote: HubConv[] = listRes.conversations ?? [];
+            remote.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
+
+            const savedActiveId = localStorage.getItem(activeConvStorageKey) ?? '';
+            const activeId = remote.find(r => r.id === savedActiveId)?.id ?? remote[0]?.id ?? '';
+
+            let activeMessages: Message[] = [];
+            if (activeId) {
+              try {
+                const msgRes = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sessions`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-Api-Token': hubContext.apiToken,
+                    'X-Session-Id': hubContext.sessionId,
+                  },
+                  body: JSON.stringify({ op: 'list-messages', id: activeId }),
+                }).then(r => r.json()).catch(() => null);
+                if (msgRes?.success) {
+                  // backend hub_messages → frontend Message 변환.
+                  type HubMsg = { id: string; role: string; content?: string; dataJson?: string; createdAt: number };
+                  const hubMsgs: HubMsg[] = msgRes.messages ?? [];
+                  activeMessages = hubMsgs.map(m => ({
+                    id: m.id,
+                    role: m.role === 'system' ? 'system' as const : 'user' as const,
+                    content: m.content ?? '',
+                    ...(m.dataJson ? { data: safeJsonParse<Record<string, unknown>>(m.dataJson, {}) } : {}),
+                  } as Message));
+                }
+              } catch (e) {
+                logger.debug('useChat', 'hub list-messages 실패', { error: e });
+              }
+            }
+            const cleanedActive = cleanMessages(activeMessages);
+            const fullList: Conversation[] = remote.map(r => ({
+              id: r.id,
+              title: r.title || '새 대화',
+              createdAt: r.createdAt,
+              updatedAt: r.updatedAt,
+              messages: r.id === activeId ? cleanedActive : [],
+            }));
+            setConversations(fullList);
+            localStorage.setItem(convStorageKey, JSON.stringify(fullList));
+            if (activeId) {
+              setActiveConvId(activeId);
+              dispatch({ type: 'LOAD', messages: cleanedActive });
+            }
+            return;
+          }
+        } catch (e) {
+          logger.debug('useChat', 'hub list-conversations 실패 → localStorage 폴백', { error: e });
+        }
+        // RPC fail → localStorage fallback.
         const raw = localStorage.getItem(convStorageKey);
         if (raw) {
           try {
@@ -426,6 +491,44 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
 
   // ── 대화 관리 ──────────────────────────────────────────────────────────────
   const handleNewConv = useCallback(() => {
+    if (hubContext) {
+      // hub mode = backend create-conversation 호출 → hub_conversations DB 새 conv 박힌 후 id 받음.
+      // sessionId 박은 영역 = 그대로 (multi-conv 박을 수 있어야 옛 conv 영역 사이드바 잔존).
+      (async () => {
+        try {
+          const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sessions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Api-Token': hubContext.apiToken,
+              'X-Session-Id': hubContext.sessionId,
+            },
+            body: JSON.stringify({ op: 'create-conversation' }),
+          }).then(r => r.json());
+          if (res?.success && res.conversationId) {
+            const newConv: Conversation = {
+              id: res.conversationId,
+              title: '새 대화',
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              messages: [INIT_MESSAGE],
+            };
+            setConversations(prev => {
+              const updated = [...prev, newConv];
+              localStorage.setItem(convStorageKey, JSON.stringify(updated));
+              return updated;
+            });
+            setActiveConvId(newConv.id);
+            dispatch({ type: 'LOAD', messages: [INIT_MESSAGE] });
+          } else {
+            logger.warn('useChat', 'hub create-conversation 실패', { error: res?.error });
+          }
+        } catch (e) {
+          logger.warn('useChat', 'hub create-conversation 네트워크 실패', { error: e });
+        }
+      })();
+      return;
+    }
     const newConv = makeConv();
     setConversations(prev => {
       const updated = [...prev, newConv];
@@ -434,7 +537,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     });
     setActiveConvId(newConv.id);
     dispatch({ type: 'LOAD', messages: [INIT_MESSAGE] });
-  }, [setActiveConvId]);
+  }, [hubContext, setActiveConvId]);
 
   const handleSelectConv = useCallback((id: string) => {
     if (id === activeConvId) return;
@@ -482,7 +585,20 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   }, [activeConvId, conversations, setActiveConvId]);
 
   const handleDeleteConv = useCallback((id: string) => {
-    apiDelete(`/api/conversations?id=${encodeURIComponent(id)}`, { category: 'useChat' }).catch(() => {});
+    if (hubContext) {
+      // hub mode = backend delete-conversation (messages cascade) 호출.
+      fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sessions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Token': hubContext.apiToken,
+          'X-Session-Id': hubContext.sessionId,
+        },
+        body: JSON.stringify({ op: 'delete-conversation', id }),
+      }).catch(() => {});
+    } else {
+      apiDelete(`/api/conversations?id=${encodeURIComponent(id)}`, { category: 'useChat' }).catch(() => {});
+    }
     setConversations(prev => {
       const updated = prev.filter(c => c.id !== id);
       localStorage.setItem(convStorageKey, JSON.stringify(updated));

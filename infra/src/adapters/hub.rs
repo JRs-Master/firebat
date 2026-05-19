@@ -219,6 +219,21 @@ impl IHubPort for SqliteHubAdapter {
 
     async fn delete_instance(&self, id: &str) -> InfraResult<()> {
         let conn = self.conn.lock().unwrap();
+        // SQLite 의 PRAGMA foreign_keys 가 OFF 박혀있어도 명시 cascade 박음 (defense-in-depth):
+        //   instance 삭제 → 그 instance 의 모든 conversations + messages 같이 삭제.
+        // hub_messages 가 conversation_id FK 박혀있어 conv 삭제 시 messages 도 같이 박혀야.
+        // 순서: messages → conversations → instance (자식 → 부모).
+        conn.execute(
+            "DELETE FROM hub_messages WHERE conversation_id IN
+                (SELECT id FROM hub_conversations WHERE instance_id = ?1)",
+            params![id],
+        )
+        .map_err(|e| format!("hub_messages cascade delete: {e}"))?;
+        conn.execute(
+            "DELETE FROM hub_conversations WHERE instance_id = ?1",
+            params![id],
+        )
+        .map_err(|e| format!("hub_conversations cascade delete: {e}"))?;
         conn.execute("DELETE FROM hub_instances WHERE id = ?1", params![id])
             .map_err(|e| format!("hub_instances delete: {e}"))?;
         Ok(())
@@ -315,6 +330,12 @@ impl IHubPort for SqliteHubAdapter {
 
     async fn delete_conversation(&self, id: &str) -> InfraResult<()> {
         let conn = self.conn.lock().unwrap();
+        // 명시 cascade — messages 먼저 삭제 + conversation 삭제. SQLite foreign_keys OFF 박혀있어도 OK.
+        conn.execute(
+            "DELETE FROM hub_messages WHERE conversation_id = ?1",
+            params![id],
+        )
+        .map_err(|e| format!("hub_messages cascade delete: {e}"))?;
         conn.execute(
             "DELETE FROM hub_conversations WHERE id = ?1",
             params![id],
