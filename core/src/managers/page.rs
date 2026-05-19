@@ -58,7 +58,11 @@ impl PageManager {
         self.db.get_page(slug)
     }
 
-    /// 저장 — DB save + media_usage 인덱스 동기. spec 파싱 실패해도 저장 진행.
+    /// 저장 — DB save + media_usage 인덱스 동기.
+    ///
+    /// PageSpec schema 강제: spec.body 가 Component 배열이어야 함 (string 또는 잘못된 type
+    /// 박혔으면 reject). 옛 cutover 잔재 / AI 가 spec.body 에 raw HTML string 박은 silent
+    /// fail 차단 — 페이지 접속 시 헤더만 노출되고 본문 0 박는 영역 root cause fix.
     pub fn save(
         &self,
         slug: &str,
@@ -68,6 +72,7 @@ impl PageManager {
         visibility: Option<&str>,
         password: Option<&str>,
     ) -> InfraResult<()> {
+        Self::validate_spec(spec)?;
         if !self.db.save_page(slug, spec, status, project, visibility, password) {
             return Err(crate::i18n::t(
                 "core.error.page.save_failed",
@@ -79,6 +84,31 @@ impl PageManager {
         let slugs_vec: Vec<String> = slugs.into_iter().collect();
         self.db.replace_media_usage(slug, &slugs_vec);
         Ok(())
+    }
+
+    /// PageSpec schema 검증 — body 가 Component 배열인지 확인.
+    /// JSON 파싱 실패 또는 body 가 string / 객체 등 잘못된 type 박혔으면 명확한 에러 메시지 반환.
+    fn validate_spec(spec: &str) -> InfraResult<()> {
+        let v: serde_json::Value = serde_json::from_str(spec).map_err(|e| {
+            format!("PageSpec JSON 파싱 실패: {e}")
+        })?;
+        if !v.is_object() {
+            return Err("PageSpec 은 객체여야 합니다.".to_string());
+        }
+        match v.get("body") {
+            None | Some(serde_json::Value::Null) => Ok(()),
+            Some(b) if b.is_array() => Ok(()),
+            Some(b) if b.is_string() => Err(
+                "PageSpec.body 는 Component 배열이어야 합니다 (string 금지). \
+                 HTML 통째 임베드는 body:[{type:\"Html\", props:{content:\"<!DOCTYPE html>...\"}}] \
+                 형식으로 감싸세요."
+                    .to_string(),
+            ),
+            Some(_) => Err(
+                "PageSpec.body 는 Component 배열이어야 합니다 (string / 객체 / 숫자 금지)."
+                    .to_string(),
+            ),
+        }
     }
 
     /// 삭제 — DB delete + media_usage 정리.

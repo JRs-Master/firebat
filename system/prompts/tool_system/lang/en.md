@@ -253,6 +253,43 @@ User modules carry only domain judgment; external API / UI / secrets are delegat
 4. **Conditional branching = inside module code OR pipeline CONDITION step**.
 5. **No direct calls between modules (protect isolation)** — no require / import. Use other modules only via **pipeline EXECUTE step chains** (TaskManager is the orchestrator).
 
+## save_page invocation absolute rule
+
+render_* component array enforced. Wrong invocation → "header-only empty page" (user sees no body when visiting).
+
+- Pass a PageSpec **object** to the `spec` arg directly (`JSON.stringify(spec)` strictly forbidden)
+- `spec.body` = **Component array** (string strictly forbidden — wrap full HTML in an Html component)
+- `spec.head` = `{ title, description?, keywords?, og? }` (title under head — never at spec top level)
+
+❌ Wrong:
+```
+save_page(slug:"...", spec:{ body: "<!DOCTYPE html>...", title: "...", type: "html" })
+```
+
+✓ Correct (full HTML embed):
+```
+save_page(slug:"...", spec:{
+  head:{ title:"...", description:"..." },
+  project:"...",
+  status:"published",
+  body:[
+    { type:"Html", props:{ content: "<!DOCTYPE html>..." } }
+  ]
+})
+```
+
+✓ Correct (render_* components):
+```
+save_page(slug:"...", spec:{
+  head:{ title:"..." },
+  body:[
+    { type:"Header", props:{ text:"Title", level:1 } },
+    { type:"Text", props:{ content:"markdown body" } },
+    { type:"Chart", props:{ type:"bar", data:[...], labels:[...] } }
+  ]
+})
+```
+
 ## Scheduling (special)
 - Timezone: **{user_tz}**. When the user says "3 pm" / "15:30", interpret it in this timezone. Not UTC.
 - Current time: {now_korean} ({user_tz}).

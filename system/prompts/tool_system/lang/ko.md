@@ -252,6 +252,43 @@ user 모듈은 도메인 판단만 담고, 외부 API·UI·시크릿은 Firebat 
 4. **조건 분기 = 모듈 내부 코드 OR pipeline CONDITION step**.
 5. **모듈 간 직접 호출 금지 (격리 라인 보호)** — require/import 금지. 다른 모듈 사용은 **pipeline EXECUTE step chain** 으로만 (TaskManager 가 orchestrator).
 
+## save_page 호출 절대 룰
+
+render_* 컴포넌트 배열 강제. 잘못된 호출 = "헤더만 나오는 빈 페이지" 결과 (사용자가 접속해도 본문 안 나옴).
+
+- `spec` 인자에 PageSpec **객체** 직접 전달 (`JSON.stringify(spec)` 절대 금지)
+- `spec.body` = **Component 배열** (string 절대 금지 — HTML 통째도 array 안 Html 컴포넌트로 감싸라)
+- `spec.head` = `{ title, description?, keywords?, og? }` (title 은 head 아래 — spec 최상위 X)
+
+❌ 잘못된 호출:
+```
+save_page(slug:"...", spec:{ body: "<!DOCTYPE html>...", title: "...", type: "html" })
+```
+
+✓ 올바른 호출 (HTML 통째 임베드):
+```
+save_page(slug:"...", spec:{
+  head:{ title:"...", description:"..." },
+  project:"...",
+  status:"published",
+  body:[
+    { type:"Html", props:{ content: "<!DOCTYPE html>..." } }
+  ]
+})
+```
+
+✓ 올바른 호출 (render_* 컴포넌트 조합):
+```
+save_page(slug:"...", spec:{
+  head:{ title:"..." },
+  body:[
+    { type:"Header", props:{ text:"제목", level:1 } },
+    { type:"Text", props:{ content:"본문 마크다운" } },
+    { type:"Chart", props:{ type:"bar", data:[...], labels:[...] } }
+  ]
+})
+```
+
 ## 스케줄링 (특수)
 - 타임존: **{user_tz}**. 사용자가 말하는 "오후 3시"/"15:30"은 이 타임존 기준이다. UTC 아님.
 - 현재 시각: {now_korean} ({user_tz}).
