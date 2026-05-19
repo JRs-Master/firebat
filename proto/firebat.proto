@@ -2591,6 +2591,13 @@ message HubEnsureConversationRequest {
 message HubEnsureConversationResponse {
   string conversation_id = 1;
 }
+message HubCreateConversationRequest {
+  string instance_id = 1;
+  string session_id = 2;
+}
+message HubCreateConversationResponse {
+  string conversation_id = 1;
+}
 
 message HubListConversationsRequest {
   string instance_id = 1;
@@ -2685,6 +2692,7 @@ service HubService {
 
   // Conversation
   rpc EnsureConversation(HubEnsureConversationRequest) returns (HubEnsureConversationResponse);
+  rpc CreateConversation(HubCreateConversationRequest) returns (HubCreateConversationResponse);
   rpc ListConversations(HubListConversationsRequest) returns (HubListConversationsResponse);
   rpc GetConversation(HubGetConversationRequest) returns (HubGetConversationResponse);
   rpc DeleteConversation(HubDeleteConversationRequest) returns (HubDeleteConversationResponse);

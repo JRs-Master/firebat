@@ -14,6 +14,7 @@ use crate::proto::{
     HubAppendUserMessageResponse, HubAuthenticateRequest, HubAuthenticateResponse,
     HubConversationPb, HubCreateInstanceRequest, HubCreateInstanceResponse,
     HubDeleteConversationRequest, HubDeleteConversationResponse,
+    HubCreateConversationRequest, HubCreateConversationResponse,
     HubDeleteInstanceRequest, HubDeleteInstanceResponse, HubEnsureConversationRequest,
     HubEnsureConversationResponse, HubGetConversationRequest,
     HubGetConversationResponse, HubGetInstanceBySlugRequest,
@@ -250,6 +251,21 @@ impl HubService for HubServiceImpl {
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(HubEnsureConversationResponse {
+            conversation_id,
+        }))
+    }
+
+    async fn create_conversation(
+        &self,
+        req: Request<HubCreateConversationRequest>,
+    ) -> Result<Response<HubCreateConversationResponse>, TonicStatus> {
+        let args = req.into_inner();
+        let conversation_id = self
+            .manager
+            .create_conversation(&args.instance_id, &args.session_id)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(HubCreateConversationResponse {
             conversation_id,
         }))
     }

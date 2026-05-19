@@ -10,6 +10,7 @@ import {
   HubAuthenticateRequestSchema,
   HubAuthenticateResponse,
   HubConversationPb,
+  HubCreateConversationRequestSchema,
   HubCreateInstanceRequestSchema,
   HubDeleteConversationRequestSchema,
   HubDeleteInstanceRequestSchema,
@@ -114,6 +115,15 @@ export async function authenticate(args: MessageInitShape<typeof HubAuthenticate
 export async function ensureConversation(args: MessageInitShape<typeof HubEnsureConversationRequestSchema>): Promise<RpcResult<string>> {
   try {
       const response = await hubClient.ensureConversation(args ?? {});
+      return { ok: true, data: unBigInt(response.conversationId) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function createConversation(args: MessageInitShape<typeof HubCreateConversationRequestSchema>): Promise<RpcResult<string>> {
+  try {
+      const response = await hubClient.createConversation(args ?? {});
       return { ok: true, data: unBigInt(response.conversationId) };
   } catch (err) {
     return toRpcError(err);
