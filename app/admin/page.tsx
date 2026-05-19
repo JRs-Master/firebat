@@ -930,7 +930,22 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
 }
 
 // ─── 메인 ────────────────────────────────────────────────────────────────────
+// Hub page mode context — anonymous 방문자가 hub instance 로 접근 시 채워짐.
+// 박혀있으면 admin 전용 기능 (사이드바 settings / 헤더 logout / multi-conv local storage)
+// 자동 hide + useChat 가 /api/hub/<slug>/chat 호출 박음.
+export interface HubContext {
+  slug: string;
+  apiToken: string;
+  instanceName: string;
+  instanceDescription?: string;
+  modelId?: string;
+}
+
 export default function AdminConsole() {
+  return <ConsolePage hubContext={undefined} />;
+}
+
+export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
   const router = useRouter();
   const t = useTranslations();
   // a11y — chat 입력창 / 이미지 file picker 의 안정 id (DevTools "form field id 중복" 회피).
@@ -961,6 +976,38 @@ export default function AdminConsole() {
 
   const fetchFileTree = useCallback(async () => {}, []);
 
+  // Hub page mode 의 sessionId — localStorage sticky (방문자 동일 세션 유지) + handleNewConv 시 갱신.
+  const [hubSessionId, setHubSessionId] = useState('');
+  useEffect(() => {
+    if (!hubContext) return;
+    const key = `firebat-hub-session-${hubContext.slug}`;
+    let sid = '';
+    try { sid = localStorage.getItem(key) ?? ''; } catch {}
+    if (!sid) {
+      sid = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      try { localStorage.setItem(key, sid); } catch {}
+    }
+    setHubSessionId(sid);
+  }, [hubContext]);
+  const resetHubSession = useCallback(() => {
+    if (!hubContext) return;
+    const key = `firebat-hub-session-${hubContext.slug}`;
+    const sid = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    try { localStorage.setItem(key, sid); } catch {}
+    setHubSessionId(sid);
+  }, [hubContext]);
+
+  const hubChatContext = hubContext && hubSessionId ? {
+    slug: hubContext.slug,
+    apiToken: hubContext.apiToken,
+    sessionId: hubSessionId,
+    onResetSession: resetHubSession,
+  } : undefined;
+
   const {
     messages, input, setInput, loading,
     attachedImage, setAttachedImage,
@@ -971,7 +1018,7 @@ export default function AdminConsole() {
     planMode, setPlanMode,
     inputMode, setInputMode,
     refreshConversations,
-  } = useChat(aiModel, fetchFileTree);
+  } = useChat(aiModel, fetchFileTree, hubChatContext);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
 
@@ -1126,15 +1173,16 @@ export default function AdminConsole() {
         activeConvId={activeConvId}
         activeMessages={messages}
         onSelectConv={handleSelectConv}
-        onNewConv={handleNewConv}
+        onNewConv={() => { if (hubContext) resetHubSession(); handleNewConv(); }}
         onDeleteConv={handleDeleteConv}
         onRefreshChats={refreshConversations}
         aiModel={aiModel}
-        onOpenSettings={() => setShowSettings(true)}
-        onEditFile={(filePath) => setEditingFile(filePath)}
-        onOpenModuleSettings={handleOpenModuleSettings}
+        onOpenSettings={hubContext ? undefined : () => setShowSettings(true)}
+        onEditFile={hubContext ? undefined : (filePath: string) => setEditingFile(filePath)}
+        onOpenModuleSettings={hubContext ? undefined : handleOpenModuleSettings}
         mobileOpen={mobileMenuOpen}
         onMobileOpenChange={setMobileMenuOpen}
+        hubMode={!!hubContext}
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
@@ -1363,8 +1411,12 @@ export default function AdminConsole() {
           </div>
         </div>
 
+        {/* Hub page mode = 익명 방문자라 admin 전용 모달 (FileEditor / SettingsModal /
+            SystemModuleSettings) 자동 mount 차단 — 사이드바 진입 경로 자체도 차단 박혀있어
+            상태 변경 자체가 불가능하지만 defense-in-depth 박음. */}
+
         {/* 파일 에디터 모달 */}
-        {editingFile && (
+        {!hubContext && editingFile && (
           <FileEditor
             filePath={editingFile}
             aiModel={aiModel}
@@ -1374,7 +1426,7 @@ export default function AdminConsole() {
         )}
 
         {/* 설정 모달 */}
-        {showSettings && (
+        {!hubContext && showSettings && (
           <SettingsModal
             aiModel={aiModel}
             onAiModelChange={setAiModel}
@@ -1386,7 +1438,7 @@ export default function AdminConsole() {
         )}
 
         {/* 시스템 모듈 설정 모달 — cms 는 라우트 (/admin/cms) 로 이동, 그 외는 모달 그대로 */}
-        {editingModule && (
+        {!hubContext && editingModule && (
           <SystemModuleSettings
             moduleName={editingModule}
             onClose={() => setEditingModule(null)}

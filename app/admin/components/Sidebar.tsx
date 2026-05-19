@@ -65,6 +65,8 @@ interface SidebarProps {
   /** 외부에서 사이드바 열기 요청 (모바일 햄버거) */
   mobileOpen?: boolean;
   onMobileOpenChange?: (open: boolean) => void;
+  /** Hub page mode — anonymous 방문자라 settings / workspace / templates / gallery 등 admin 전용 탭 hide. */
+  hubMode?: boolean;
 }
 
 export function Sidebar({
@@ -74,6 +76,7 @@ export function Sidebar({
   onRefreshChats,
   aiModel, onOpenSettings, onEditFile, onOpenModuleSettings,
   mobileOpen, onMobileOpenChange,
+  hubMode,
 }: SidebarProps) {
   const renameInputId = useId();
   const renameSetRedirectId = useId();
@@ -466,10 +469,13 @@ export function Sidebar({
   };
 
   /* ── VSCode activity bar — 항상 표시 (PC: inline, 모바일: slide-in 안). ── */
+  // Hub page mode = 익명 방문자라 admin 전용 탭 (workspace / gallery / templates / library / entities / notes / calendar) 자동 hide.
+  // chats 탭만 노출 — 본인 세션 대화 영역.
+  const visibleTabs = hubMode ? TABS.filter(t => t.id === 'chats') : TABS;
   const renderActivityBar = () => (
     // z-50 — 펼친 panel(z-40) 위로. 활동 바 항상 클릭 가능 + 다른 탭 즉시 전환.
     <div className="w-12 bg-white flex flex-col items-center py-3 gap-2 shrink-0 border-r border-slate-200 relative z-50">
-      {TABS.map(t => {
+      {visibleTabs.map(t => {
         const isActive = tab === t.id && !collapsed;
         const Icon = t.Icon;
         const button = (
@@ -500,7 +506,8 @@ export function Sidebar({
         );
       })}
       <div className="flex-1" />
-      {onOpenSettings && (
+      {/* Hub page mode = 익명 방문자 → settings 진입 금지 */}
+      {onOpenSettings && !hubMode && (
         <Tooltip label="설정" side="right">
           <button
             type="button"

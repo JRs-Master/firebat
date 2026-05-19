@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useTranslations } from '../../lib/i18n';
 import { apiPost } from '../../lib/api-fetch';
 
-export function ConsoleLayoutInner({ children }: { children: React.ReactNode }) {
+export function ConsoleLayoutInner({ children, hubMode }: { children: React.ReactNode; hubMode?: boolean }) {
   const t = useTranslations();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -55,9 +55,12 @@ export function ConsoleLayoutInner({ children }: { children: React.ReactNode }) 
             <span className="bg-gray-100 text-gray-500 px-1 py-0.5 rounded text-[9px] uppercase font-bold tracking-widest border border-gray-200">V1.0</span>
           </h1>
         </div>
-        <button onClick={handleLogout} className="text-[12px] border border-[#eaeaea] bg-white rounded-md px-2.5 py-1 font-medium text-gray-500 hover:text-black hover:bg-gray-50 transition-colors shadow-sm">
-          {t('common.logout')}
-        </button>
+        {/* Hub page mode = 익명 방문자라 logout 의미 X — hide */}
+        {!hubMode && (
+          <button onClick={handleLogout} className="text-[12px] border border-[#eaeaea] bg-white rounded-md px-2.5 py-1 font-medium text-gray-500 hover:text-black hover:bg-gray-50 transition-colors shadow-sm">
+            {t('common.logout')}
+          </button>
+        )}
       </header>
       <main className="flex-1 flex overflow-hidden">
         {children}

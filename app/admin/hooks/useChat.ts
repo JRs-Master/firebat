@@ -39,7 +39,18 @@ function parseSSE(buffer: string): { events: { event: string; data: any }[]; rem
   return { events, remaining };
 }
 
-export function useChat(aiModel: string, onRefresh: () => void) {
+/** Hub page mode 컨텍스트 — anonymous 방문자가 hub instance 호출 시 박힘.
+ *  박혀있으면 useChat 가 /api/hub/<slug>/chat SSE 로 분기 + sessionId / apiToken 박음.
+ *  단일 conv (sessionId sticky) — admin 의 multi-conv localStorage 패턴 우회. */
+export interface UseChatHubContext {
+  slug: string;
+  apiToken: string;
+  /** localStorage 안 sticky 세션 UUID — handleNewConv 시 갱신. */
+  sessionId: string;
+  onResetSession: () => void;
+}
+
+export function useChat(aiModel: string, onRefresh: () => void, hubContext?: UseChatHubContext) {
   const t = useTranslations();
   const [messages, dispatch] = useReducer(chatReducer, [INIT_MESSAGE]);
   // 최신 messages ref — queueMicrotask / async 콜백에서 stale closure 회피
@@ -618,24 +629,38 @@ export function useChat(aiModel: string, onRefresh: () => void) {
       };
       resetWatchdog();
 
-      const res = await fetch('/api/chat/stream', {
+      // Hub page mode 분기 — hubContext 박혀있으면 /api/hub/<slug>/chat 호출 (익명 + apiToken).
+      // 옛 admin 의 /api/chat/stream 호출 분기 = hubContext 없을 때.
+      const isHubMode = !!hubContext;
+      const endpoint = isHubMode
+        ? `/api/hub/${encodeURIComponent(hubContext.slug)}/chat`
+        : '/api/chat/stream';
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (isHubMode) {
+        headers['X-Api-Token'] = hubContext.apiToken;
+        headers['X-Session-Id'] = hubContext.sessionId;
+      }
+      const body: Record<string, unknown> = isHubMode
+        ? { message: userPrompt }
+        : {
+            prompt: userPrompt,
+            config: { model: aiModel },
+            history: chatHistory,
+            mode: 'tools',
+            planMode,
+            systemId,
+            userId: `u-${id}`,
+            ...(meta?.planExecuteId ? { planExecuteId: meta.planExecuteId } : {}),
+            ...(meta?.planReviseId ? { planReviseId: meta.planReviseId } : {}),
+            ...(activeConvId ? { conversationId: activeConvId } : {}),
+            ...(imageData ? { image: imageData } : {}),
+            ...(previousResponseId ? { previousResponseId } : {}),
+          };
+      const res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         signal: ctrl.signal,
-        body: JSON.stringify({
-          prompt: userPrompt,
-          config: { model: aiModel },
-          history: chatHistory,
-          mode: 'tools',
-          planMode,
-          systemId, // 백엔드 주도 저장용 — 스트림 완료 시 서버가 같은 ID 로 DB 에 upsert
-          userId: `u-${id}`, // 같이 저장 (user 메시지도 백엔드 저장으로 통일)
-          ...(meta?.planExecuteId ? { planExecuteId: meta.planExecuteId } : {}),
-          ...(meta?.planReviseId ? { planReviseId: meta.planReviseId } : {}),
-          ...(activeConvId ? { conversationId: activeConvId } : {}),
-          ...(imageData ? { image: imageData } : {}),
-          ...(previousResponseId ? { previousResponseId } : {}),
-        }),
+        body: JSON.stringify(body),
       });
 
       const reader = res.body?.getReader();

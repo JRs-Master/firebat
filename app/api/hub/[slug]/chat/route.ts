@@ -134,19 +134,34 @@ function streamResponse(args: {
           } catch (err) {
             logger.debug('hub', 'rawJson 파싱 실패', { error: err });
           }
+          // admin chat (`/api/chat/stream`) 의 result event 형식과 통일 — useChat 의 RESULT
+          // 처리 (ev.data.data.blocks / ev.data.data.pendingActions 등) 그대로 reuse 가능.
+          // top-level + data 안 mirror 동시 박음 — frontend 옛 매핑 호환.
           const reply = typeof aiResponse.reply === 'string' ? aiResponse.reply : '';
-          const data = aiResponse.data;
+          const executedActions = aiResponse.executedActions;
+          const toolResults = aiResponse.toolResults;
           const blocks = aiResponse.blocks;
           const suggestions = aiResponse.suggestions;
+          const pendingActions = aiResponse.pendingActions;
           const success = aiResponse.success !== false;
           const error = typeof aiResponse.error === 'string' ? aiResponse.error : undefined;
+          const passthroughData = (aiResponse.data && typeof aiResponse.data === 'object')
+            ? aiResponse.data as Record<string, unknown>
+            : {};
+          const mergedData: Record<string, unknown> = {
+            ...passthroughData,
+            blocks,
+            suggestions,
+            pendingActions,
+            conversationId,
+          };
 
           send('result', {
-            conversationId,
             success,
             reply,
-            data,
-            blocks,
+            executedActions,
+            toolResults,
+            data: mergedData,
             suggestions,
             error,
           });
