@@ -74,8 +74,8 @@ export function ChatbotPanel() {
 
   const handleDelete = useCallback(async (instance: ChatbotInstancePb) => {
     const ok = await confirmDialog({
-      title: '챗봇 삭제',
-      message: `"${instance.name}" (slug: ${instance.slug}) 영역 모든 대화와 메시지가 같이 삭제됩니다. 진행하시겠습니까?`,
+      title: 'Hub 삭제',
+      message: `"${instance.name}" (slug: ${instance.slug}) 의 모든 대화와 메시지가 같이 삭제됩니다. 진행하시겠습니까?`,
       okLabel: '삭제',
       danger: true,
     });
@@ -108,18 +108,18 @@ export function ChatbotPanel() {
       <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 bg-slate-50/60 shrink-0">
         <div className="flex items-center gap-1.5 text-[12px] font-bold text-slate-700">
           <Bot size={13} className="text-emerald-500" />
-          Chatbot
+          Hub
           <span className="text-[11px] font-medium text-slate-400">({instances.length})</span>
         </div>
         <button
           onClick={() => setCreating(c => !c)}
           className="flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded transition-colors"
         >
-          <Plus size={11} /> {creating ? '취소' : '새 챗봇'}
+          <Plus size={11} /> {creating ? '취소' : '새 Hub'}
         </button>
       </div>
 
-      {/* 새 챗봇 생성 form */}
+      {/* 새 Hub 생성 form */}
       {creating && (
         <div className="px-3 py-3 border-b border-slate-100 bg-blue-50/40 flex flex-col gap-2 shrink-0">
           <div className="flex flex-col gap-1">
@@ -142,7 +142,7 @@ export function ChatbotPanel() {
               type="text"
               value={newName}
               onChange={e => setNewName(e.target.value)}
-              placeholder="챗봇 이름"
+              placeholder="Hub 이름"
               className="w-full px-2 py-1.5 text-[12px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               name="newChatbotName"
               autoComplete="off"
@@ -155,7 +155,7 @@ export function ChatbotPanel() {
           >
             생성
           </button>
-          <p className="text-[10px] text-slate-400">생성 후 상세 화면에서 system prompt / 허용 자료 / 허용 모듈 / 허용 도메인 영역 설정</p>
+          <p className="text-[10px] text-slate-400">생성 후 상세 화면에서 system prompt / 허용 자료 / 허용 모듈 / 허용 도메인 설정</p>
         </div>
       )}
 
@@ -167,8 +167,8 @@ export function ChatbotPanel() {
           </div>
         ) : instances.length === 0 ? (
           <p className="text-[12px] text-slate-400 italic text-center py-8 px-3">
-            챗봇이 없습니다.<br />
-            "새 챗봇" 버튼으로 인스턴스를 만들어주세요.
+            Hub 가 없습니다.<br />
+            "새 Hub" 버튼으로 인스턴스를 만들어주세요.
           </p>
         ) : (
           <div className="flex flex-col">

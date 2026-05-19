@@ -200,7 +200,7 @@ export function ChatbotInstanceDetail({
           <div className="text-[12px] font-bold text-slate-700 truncate">{instance.name}</div>
           <div className="text-[10px] text-slate-400 truncate font-mono">{instance.slug}</div>
         </div>
-        <Tooltip label="챗봇 페이지 열기">
+        <Tooltip label="Hub 페이지 열기">
           <a
             href={`/chat/${instance.slug}`}
             target="_blank"
@@ -271,7 +271,7 @@ export function ChatbotInstanceDetail({
             value={systemPrompt}
             onChange={e => setSystemPrompt(e.target.value)}
             rows={6}
-            placeholder="이 챗봇의 역할 / 답변 톤 / 금지 영역 등을 기술"
+            placeholder="이 Hub 의 역할 / 답변 톤 / 금지 항목 등을 기술"
             className="w-full px-2 py-1.5 text-[12px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y font-mono"
             name="chatbotSystemPrompt"
           />
@@ -407,7 +407,7 @@ export function ChatbotInstanceDetail({
             </button>
           </div>
           <p className="text-[10px] text-slate-400">
-            외부 사이트 (워드프레스 등) HTML 안 &lt;/body&gt; 직전에 박으면 즉시 챗봇 활성. allowed_domains
+            외부 사이트 (워드프레스 등) HTML 안 &lt;/body&gt; 직전에 박으면 즉시 Hub 활성. allowed_domains
             설정 영역 비어있으면 모든 origin 허용 (개발). 운영 시 도메인 명시 권장.
           </p>
         </div>

@@ -402,7 +402,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
             <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-100 bg-slate-50 shrink-0">
               <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
                 {onBack && <button onClick={onBack} className="text-slate-400 hover:text-slate-600 transition-colors mr-1"><ArrowLeft size={18} /></button>}
-                Chatbot
+                Hub
               </h2>
               <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={22} /></button>
             </div>

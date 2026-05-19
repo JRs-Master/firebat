@@ -1,4 +1,4 @@
 {
-  "name": "Chatbot",
-  "description": "Chatbot widget system for external sites (WordPress, etc.). Per-instance slug / API token / allowed library references / allowed sysmods / allowed origin domains. Instances, widget snippets, and conversation history are managed in the sidebar 'Chatbot' tab."
+  "name": "Hub",
+  "description": "AI conversation Hub for external users. Per-instance slug / API token / allowed library references / allowed sysmods / allowed origin domains. Mode-based exposure — widget (floating bubble for external site embed) / page (full-screen URL on our site). Instances, widget snippets, and conversation history are managed in the system tab 'Hub' section."
 }
