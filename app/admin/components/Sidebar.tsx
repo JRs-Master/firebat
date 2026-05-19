@@ -601,7 +601,7 @@ export function Sidebar({
       ) : tab === 'templates' ? (
         <TemplatesPanel onEditFile={onEditFile} />
       ) : tab === 'library' ? (
-        <LibraryPanel />
+        <LibraryPanel hubContext={hubShareContext} />
       ) : tab === 'entities' ? (
         <EntitiesPanel />
       ) : tab === 'notes' ? (

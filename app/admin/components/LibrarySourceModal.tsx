@@ -5,6 +5,7 @@ import { X, Loader2, FileText, Globe, FileType } from 'lucide-react';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import type { LibrarySourcePb } from '../../../lib/proto-gen/firebat_pb';
+import type { LibraryHubContext } from './LibraryPanel';
 
 type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
 
@@ -18,9 +19,11 @@ type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
  */
 export function LibrarySourceModal({
   sourceId,
+  hubContext,
   onClose,
 }: {
   sourceId: string;
+  hubContext?: LibraryHubContext;
   onClose: () => void;
 }) {
   const [source, setSource] = useState<LibrarySourcePb | null>(null);
@@ -33,14 +36,27 @@ export function LibrarySourceModal({
       setLoading(true);
       setError(null);
       try {
-        const res = await apiPost<LibraryApiResponse<{ source?: LibrarySourcePb }>>(
-          '/api/library/get-source',
-          { id: sourceId },
-          { category: 'library' },
-        );
+        const fetchRes = hubContext
+          ? await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/library`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Api-Token': hubContext.apiToken,
+                'X-Session-Id': hubContext.sessionId,
+              },
+              body: JSON.stringify({ op: 'get-source', id: sourceId }),
+            }).then(r => r.json()).catch(() => null)
+          : null;
+        const res = hubContext
+          ? (fetchRes as LibraryApiResponse<{ source?: LibrarySourcePb }>)
+          : await apiPost<LibraryApiResponse<{ source?: LibrarySourcePb }>>(
+              '/api/library/get-source',
+              { id: sourceId },
+              { category: 'library' },
+            );
         if (!alive) return;
-        if (!res.success) {
-          setError(res.error ?? 'Source 조회 실패');
+        if (!res?.success) {
+          setError(res?.error ?? 'Source 조회 실패');
           return;
         }
         setSource(res.data?.source ?? null);
@@ -53,7 +69,7 @@ export function LibrarySourceModal({
       }
     })();
     return () => { alive = false; };
-  }, [sourceId]);
+  }, [sourceId, hubContext]);
 
   const pages = useMemo<string[]>(() => {
     if (!source) return [];

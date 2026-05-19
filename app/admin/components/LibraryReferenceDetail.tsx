@@ -8,6 +8,7 @@ import { logger } from '../../../lib/util/logger';
 import { apiPost } from '../../../lib/api-fetch';
 import type { LibraryReferencePb, LibrarySourcePb } from '../../../lib/proto-gen/firebat_pb';
 import { LibrarySourceModal } from './LibrarySourceModal';
+import type { LibraryHubContext } from './LibraryPanel';
 
 type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
 
@@ -25,16 +26,18 @@ function extOf(filename: string): string {
  * LibraryReferenceDetail — 매 Reference 안 Source list / 업로드 / 삭제 UI.
  *
  * 업로드 모드 2종:
- *  - 파일 (pdf / txt / md) — multipart → `/api/library/upload-and-extract` → 서버 temp → UploadSource RPC
+ *  - 파일 (pdf / txt / md) — multipart → upload-and-extract endpoint → 서버 temp → UploadSource RPC
  *  - 직접 입력 (textarea) — source_type='text' + inline_text → uploadSource RPC 직접 호출
  *
- * URL 영역 = Phase 1.5 (server-side fetch + HTML strip 필요).
+ * hub mode (hubContext 박힌 경우) — admin /api/library/* 대신 익명 /api/hub/<slug>/library/* 호출.
  */
 export function LibraryReferenceDetail({
   reference,
+  hubContext,
   onBack,
 }: {
   reference: LibraryReferencePb;
+  hubContext?: LibraryHubContext;
   onBack: () => void;
 }) {
   const [sources, setSources] = useState<LibrarySourcePb[]>([]);
@@ -51,13 +54,29 @@ export function LibraryReferenceDetail({
   const textNameId = useId();
   const textBodyId = useId();
 
+  // hub / admin 분기 헬퍼 — admin 은 /api/library/{op}, hub 는 /api/hub/<slug>/library + body.op.
+  const libraryFetch = useCallback(async <T,>(op: string, payload: Record<string, unknown>): Promise<LibraryApiResponse<T>> => {
+    if (hubContext) {
+      const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/library`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Token': hubContext.apiToken,
+          'X-Session-Id': hubContext.sessionId,
+        },
+        body: JSON.stringify({ op, ...payload }),
+      });
+      return res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }));
+    }
+    return apiPost<LibraryApiResponse<T>>(`/api/library/${op}`, payload, { category: 'library' });
+  }, [hubContext]);
+
   const loadSources = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiPost<LibraryApiResponse<LibrarySourcePb[]>>(
-        '/api/library/list-sources',
+      const res = await libraryFetch<LibrarySourcePb[]>(
+        'list-sources',
         { referenceId: reference.id },
-        { category: 'library' },
       );
       if (res.success && res.data) setSources(res.data);
     } catch (e) {
@@ -65,7 +84,7 @@ export function LibraryReferenceDetail({
     } finally {
       setLoading(false);
     }
-  }, [reference.id]);
+  }, [reference.id, libraryFetch]);
 
   useEffect(() => { loadSources(); }, [loadSources]);
 
@@ -85,16 +104,12 @@ export function LibraryReferenceDetail({
     });
     if (!ok) return;
     try {
-      const res = await apiPost<LibraryApiResponse<void>>(
-        '/api/library/delete-source',
-        { id: src.id },
-        { category: 'library' },
-      );
+      const res = await libraryFetch<void>('delete-source', { id: src.id });
       if (res.success) await loadSources();
     } catch (e) {
       logger.debug('library', 'delete_source 실패', { error: e });
     }
-  }, [loadSources]);
+  }, [loadSources, libraryFetch]);
 
   const handleFilePick = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null;
@@ -122,7 +137,15 @@ export function LibraryReferenceDetail({
       fd.append('referenceId', reference.id);
       fd.append('name', pickedFile.name);
       fd.append('sourceType', sourceType);
-      const res = await fetch('/api/library/upload-and-extract', { method: 'POST', body: fd });
+      const url = hubContext
+        ? `/api/hub/${encodeURIComponent(hubContext.slug)}/library/upload`
+        : '/api/library/upload-and-extract';
+      const headers: Record<string, string> = {};
+      if (hubContext) {
+        headers['X-Api-Token'] = hubContext.apiToken;
+        headers['X-Session-Id'] = hubContext.sessionId;
+      }
+      const res = await fetch(url, { method: 'POST', headers, body: fd });
       const json = await res.json().catch(() => null);
       if (!res.ok || !json?.success) {
         await alertDialog({ title: '업로드 실패', message: json?.error ?? `HTTP ${res.status}` });
@@ -137,20 +160,19 @@ export function LibraryReferenceDetail({
     } finally {
       setBusy(false);
     }
-  }, [pickedFile, reference.id, resetForm, loadSources]);
+  }, [pickedFile, reference.id, resetForm, loadSources, hubContext]);
 
   const submitText = useCallback(async () => {
     if (!textName.trim() || !textBody.trim()) return;
     setBusy(true);
     try {
-      const res = await apiPost<LibraryApiResponse<{ sourceId: string; chunkCount: number }>>(
-        '/api/library/upload-text-source',
+      const res = await libraryFetch<{ sourceId: string; chunkCount: number }>(
+        'upload-text-source',
         {
           referenceId: reference.id,
           name: textName.trim(),
           inlineText: textBody,
         },
-        { category: 'library' },
       );
       if (!res.success) {
         await alertDialog({ title: '저장 실패', message: res.error ?? 'UploadSource 실패' });
@@ -165,7 +187,7 @@ export function LibraryReferenceDetail({
     } finally {
       setBusy(false);
     }
-  }, [textName, textBody, reference.id, resetForm, loadSources]);
+  }, [textName, textBody, reference.id, resetForm, loadSources, libraryFetch]);
 
   const typeIcon = (type: string) => {
     if (type === 'pdf' || type === 'txt' || type === 'md') return <FileText size={13} className="text-slate-500" />;
@@ -345,7 +367,11 @@ export function LibraryReferenceDetail({
       </div>
 
       {previewId && (
-        <LibrarySourceModal sourceId={previewId} onClose={() => setPreviewId(null)} />
+        <LibrarySourceModal
+          sourceId={previewId}
+          hubContext={hubContext}
+          onClose={() => setPreviewId(null)}
+        />
       )}
     </div>
   );

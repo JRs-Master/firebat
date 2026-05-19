@@ -11,13 +11,18 @@ import { LibraryReferenceDetail } from './LibraryReferenceDetail';
 
 type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
 
+export type LibraryHubContext = { slug: string; apiToken: string; sessionId: string };
+
 /**
  * LibraryPanel — Library 영역 (Phase 1, 2026-05-17).
  *
  * NotebookLM 같은 RAG. 매 Reference = 자료 그룹 (사용자가 자유 분류).
  * 진입 시 = Reference list. 매 Reference 클릭 → LibraryReferenceDetail (Source list + 업로드).
+ *
+ * hub mode (hubContext prop 박힌 경우) — admin /api/library/[op] 대신
+ * 익명 /api/hub/<slug>/library 호출. owner 자동 hub-scoped (방문자 자료 격리).
  */
-export function LibraryPanel() {
+export function LibraryPanel({ hubContext }: { hubContext?: LibraryHubContext } = {}) {
   const [refs, setRefs] = useState<LibraryReferencePb[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -27,13 +32,29 @@ export function LibraryPanel() {
   const nameId = useId();
   const descId = useId();
 
+  // hub mode 면 익명 endpoint, 아니면 admin endpoint. owner 영역은 hub 가 자동 주입.
+  const libraryFetch = useCallback(async <T,>(op: string, payload: Record<string, unknown>): Promise<LibraryApiResponse<T>> => {
+    if (hubContext) {
+      const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/library`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Token': hubContext.apiToken,
+          'X-Session-Id': hubContext.sessionId,
+        },
+        body: JSON.stringify({ op, ...payload }),
+      });
+      return res.json().catch(() => ({ success: false, error: `HTTP ${res.status}` }));
+    }
+    return apiPost<LibraryApiResponse<T>>(`/api/library/${op}`, payload, { category: 'library' });
+  }, [hubContext]);
+
   const loadRefs = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiPost<LibraryApiResponse<LibraryReferencePb[]>>(
-        '/api/library/list-references',
-        { owner: 'admin' },
-        { category: 'library' },
+      const res = await libraryFetch<LibraryReferencePb[]>(
+        'list-references',
+        { owner: 'admin' }, // hub mode 면 backend 가 hub-scoped owner 덮어씀
       );
       if (res.success && res.data) setRefs(res.data);
     } catch (e) {
@@ -41,7 +62,7 @@ export function LibraryPanel() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [libraryFetch]);
 
   useEffect(() => {
     loadRefs();
@@ -50,14 +71,13 @@ export function LibraryPanel() {
   const handleCreate = useCallback(async () => {
     if (!newName.trim()) return;
     try {
-      const res = await apiPost<LibraryApiResponse<string>>(
-        '/api/library/create-reference',
+      const res = await libraryFetch<string>(
+        'create-reference',
         {
           name: newName.trim(),
           description: newDescription.trim(),
           owner: 'admin',
         },
-        { category: 'library' },
       );
       if (res.success) {
         setNewName('');
@@ -70,7 +90,7 @@ export function LibraryPanel() {
     } catch (e) {
       logger.debug('library', 'create_reference 실패', { error: e });
     }
-  }, [newName, newDescription, loadRefs]);
+  }, [newName, newDescription, loadRefs, libraryFetch]);
 
   const handleDelete = useCallback(async (ref: LibraryReferencePb) => {
     const ok = await confirmDialog({
@@ -81,22 +101,19 @@ export function LibraryPanel() {
     });
     if (!ok) return;
     try {
-      const res = await apiPost<LibraryApiResponse<void>>(
-        '/api/library/delete-reference',
-        { id: ref.id },
-        { category: 'library' },
-      );
+      const res = await libraryFetch<void>('delete-reference', { id: ref.id });
       if (res.success) await loadRefs();
     } catch (e) {
       logger.debug('library', 'delete_reference 실패', { error: e });
     }
-  }, [loadRefs]);
+  }, [loadRefs, libraryFetch]);
 
-  // Reference 진입 = LibraryReferenceDetail 영역 (Source list + 업로드 UI)
+  // Reference 진입 = LibraryReferenceDetail (Source list + 업로드 UI)
   if (selectedRef) {
     return (
       <LibraryReferenceDetail
         reference={selectedRef}
+        hubContext={hubContext}
         onBack={() => { setSelectedRef(null); loadRefs(); }}
       />
     );
