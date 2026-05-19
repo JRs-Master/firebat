@@ -19,7 +19,7 @@ import { BlockErrorBoundary } from './components/BlockErrorBoundary';
 import { SourceTags } from './components/SourceTags';
 import { ComponentRenderer } from '../(user)/[...slug]/components';
 import { useChat } from './hooks/useChat';
-import { readSetting, writeSetting } from './hooks/settings-manager';
+import { readSetting, writeSetting, setSettingsKeyPrefix } from './hooks/settings-manager';
 import { useTranslations } from '../../lib/i18n';
 import { THINKING_STATUS, isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from './hooks/chat-manager';
 import { createShareLink, copyToClipboard } from './hooks/share-helper';
@@ -958,6 +958,22 @@ export default function AdminConsole() {
 export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
   const router = useRouter();
   const t = useTranslations();
+  // settings-manager 의 module-level keyPrefix 설정 — hub mode 면 모든 useSetting / readSetting /
+  // writeSetting 호출이 'firebat_<key>__hub-<slug>' suffix 자동 박음. admin 로그인 상태로 hub URL
+  // 접속해도 admin localStorage 절대 사용 X.
+  // useState initializer 안에서 동기 호출 — 첫 렌더 전에 prefix 설정되어야 useSetting initializer
+  // 가 올바른 키 읽음. useEffect 는 첫 렌더 후 실행이라 race.
+  useState(() => {
+    setSettingsKeyPrefix(hubContext ? `hub-${hubContext.slug}` : null);
+    return null;
+  });
+  useEffect(() => {
+    setSettingsKeyPrefix(hubContext ? `hub-${hubContext.slug}` : null);
+    return () => {
+      // unmount 시 prefix 해제 — 다음 admin 진입 시 admin 키 정상 사용.
+      if (hubContext) setSettingsKeyPrefix(null);
+    };
+  }, [hubContext]);
   // a11y — chat 입력창 / 이미지 file picker 의 안정 id (DevTools "form field id 중복" 회피).
   const chatInputId = useId();
   const imageFileInputId = useId();

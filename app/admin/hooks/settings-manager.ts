@@ -73,11 +73,32 @@ function deserialize<K extends keyof SettingsSchema>(key: K, raw: string): Setti
   return raw as unknown as SettingsSchema[K];
 }
 
+// ── module-level 키 prefix ───────────────────────────────────────────────────
+// hub page mode 에서는 admin localStorage 키 사용 금지. ConsolePage 가 hubContext 있을 때
+// setKeyPrefix(`hub-<slug>`) 호출 → 모든 useSetting / readSetting / writeSetting 자동 분기.
+// 호출 site 마다 옵션 박을 필요 없음 — 한 곳에서 set / clear.
+let currentKeyPrefix: string | null = null;
+
+export function setSettingsKeyPrefix(prefix: string | null): void {
+  if (currentKeyPrefix === prefix) return;
+  currentKeyPrefix = prefix;
+  // 모든 구독자 재계산 (prefix 바뀐 후 새 키 읽기)
+  for (const set of subscribers.values()) {
+    for (const cb of set) cb();
+  }
+  // snapshot 캐시 전부 무효화 — 키 자체가 바뀜
+  snapshotCache.clear();
+}
+
+function effectiveKey<K extends keyof SettingsSchema>(key: K): string {
+  return currentKeyPrefix ? `${key}__${currentKeyPrefix}` : (key as string);
+}
+
 // ── 즉시 접근 API (훅 밖에서 사용) ──────────────────────────────────────────
 export function readSetting<K extends keyof SettingsSchema>(key: K): SettingsSchema[K] {
   if (typeof window === 'undefined') return DEFAULTS[key];
   try {
-    const raw = localStorage.getItem(key);
+    const raw = localStorage.getItem(effectiveKey(key));
     if (raw === null) return DEFAULTS[key];
     return deserialize(key, raw);
   } catch {
@@ -88,10 +109,10 @@ export function readSetting<K extends keyof SettingsSchema>(key: K): SettingsSch
 export function writeSetting<K extends keyof SettingsSchema>(key: K, value: SettingsSchema[K]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(key, serialize(key, value));
-    // 훅 밖에서 직접 호출 시에도 snapshot 캐시 무효화 + 구독자 알림 — hook 의 notify 와 동일 효과
-    invalidateSnapshot(key as string);
-    notify(key as string);
+    const realKey = effectiveKey(key);
+    localStorage.setItem(realKey, serialize(key, value));
+    invalidateSnapshot(realKey);
+    notify(realKey);
   } catch (e) { logger.debug('settings', `localStorage write 실패 (${String(key)})`, { error: e }); }
 }
 
@@ -116,13 +137,14 @@ const snapshotCache = new Map<string, { raw: string | null; value: unknown }>();
 
 function getStableSnapshot<K extends keyof SettingsSchema>(key: K): SettingsSchema[K] {
   if (typeof window === 'undefined') return DEFAULTS[key];
-  const raw = localStorage.getItem(key);
-  const cached = snapshotCache.get(key as string);
+  const realKey = effectiveKey(key);
+  const raw = localStorage.getItem(realKey);
+  const cached = snapshotCache.get(realKey);
   if (cached && cached.raw === raw) return cached.value as SettingsSchema[K];
   const value = raw === null ? DEFAULTS[key] : (() => {
     try { return deserialize(key, raw); } catch { return DEFAULTS[key]; }
   })();
-  snapshotCache.set(key as string, { raw, value });
+  snapshotCache.set(realKey, { raw, value });
   return value;
 }
 
@@ -169,8 +191,10 @@ function getServerSnapshot<K extends keyof SettingsSchema>(key: K): SettingsSche
 export function useSetting<K extends keyof SettingsSchema>(
   key: K,
 ): [SettingsSchema[K], (value: SettingsSchema[K] | ((prev: SettingsSchema[K]) => SettingsSchema[K])) => void] {
+  // subscribe / notify 모두 effectiveKey 기반 — prefix 일치 안 하면 update 누락.
+  // currentKeyPrefix 자체가 module-level 이라 prefix 변경 시 setSettingsKeyPrefix 가 모든 listener 호출.
   const value = useSyncExternalStore<SettingsSchema[K]>(
-    useCallback(cb => subscribe(key, cb), [key]),
+    useCallback(cb => subscribe(effectiveKey(key), cb), [key]),
     useCallback(() => getStableSnapshot(key), [key]),
     useCallback(() => getServerSnapshot(key), [key]),
   );
@@ -178,7 +202,7 @@ export function useSetting<K extends keyof SettingsSchema>(
   const update = useCallback((next: SettingsSchema[K] | ((prev: SettingsSchema[K]) => SettingsSchema[K])) => {
     const prev = readSetting(key);
     const resolved = typeof next === 'function' ? (next as (p: SettingsSchema[K]) => SettingsSchema[K])(prev) : next;
-    writeSetting(key, resolved); // writeSetting 내부에서 이미 invalidate + notify
+    writeSetting(key, resolved);
   }, [key]);
 
   return [value, update];
