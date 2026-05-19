@@ -6,38 +6,38 @@ import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { logger } from '../../../lib/util/logger';
 import { apiPost } from '../../../lib/api-fetch';
-import type { ChatbotInstancePb } from '../../../lib/proto-gen/firebat_pb';
-import { ChatbotInstanceDetail } from './ChatbotInstanceDetail';
+import type { HubInstancePb } from '../../../lib/proto-gen/firebat_pb';
+import { HubInstanceDetail } from './HubInstanceDetail';
 
-type ChatbotApiResponse<T> = { success: boolean; data?: T; error?: string };
+type HubApiResponse<T> = { success: boolean; data?: T; error?: string };
 
 /**
- * ChatbotPanel — Chatbot Phase 1 (2026-05-17). system service chatbot.
+ * HubPanel — Hub Phase 1 (2026-05-17). system service hub.
  *
  * 외부 워드프레스 사이트 연결용 챗봇 인스턴스 관리. 매 instance 별 slug, 시스템 prompt,
  * 허용 Library Reference + sysmod 영역 분리 설정.
  */
-export function ChatbotPanel() {
-  const [instances, setInstances] = useState<ChatbotInstancePb[]>([]);
+export function HubPanel() {
+  const [instances, setInstances] = useState<HubInstancePb[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [newSlug, setNewSlug] = useState('');
   const [newName, setNewName] = useState('');
-  const [selectedInstance, setSelectedInstance] = useState<ChatbotInstancePb | null>(null);
+  const [selectedInstance, setSelectedInstance] = useState<HubInstancePb | null>(null);
   const slugId = useId();
   const nameId = useId();
 
   const loadInstances = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiPost<ChatbotApiResponse<ChatbotInstancePb[]>>(
-        '/api/chatbot/list-instances',
+      const res = await apiPost<HubApiResponse<HubInstancePb[]>>(
+        '/api/hub/list-instances',
         {},
-        { category: 'chatbot' },
+        { category: 'hub' },
       );
       if (res.success && res.data) setInstances(res.data ?? []);
     } catch (e) {
-      logger.debug('chatbot', 'list_instances 실패', { error: e });
+      logger.debug('hub', 'list_instances 실패', { error: e });
     } finally {
       setLoading(false);
     }
@@ -50,14 +50,14 @@ export function ChatbotPanel() {
   const handleCreate = useCallback(async () => {
     if (!newSlug.trim() || !newName.trim()) return;
     try {
-      const res = await apiPost<ChatbotApiResponse<{ id: string }>>(
-        '/api/chatbot/create-instance',
+      const res = await apiPost<HubApiResponse<{ id: string }>>(
+        '/api/hub/create-instance',
         {
           slug: newSlug.trim(),
           name: newName.trim(),
           enabled: true,
         },
-        { category: 'chatbot' },
+        { category: 'hub' },
       );
       if (res.success) {
         setNewSlug('');
@@ -68,11 +68,11 @@ export function ChatbotPanel() {
         await alertDialog({ title: '생성 실패', message: res.error ?? '오류가 발생했습니다.' });
       }
     } catch (e) {
-      logger.debug('chatbot', 'create_instance 실패', { error: e });
+      logger.debug('hub', 'create_instance 실패', { error: e });
     }
   }, [newSlug, newName, loadInstances]);
 
-  const handleDelete = useCallback(async (instance: ChatbotInstancePb) => {
+  const handleDelete = useCallback(async (instance: HubInstancePb) => {
     const ok = await confirmDialog({
       title: 'Hub 삭제',
       message: `"${instance.name}" (slug: ${instance.slug}) 의 모든 대화와 메시지가 같이 삭제됩니다. 진행하시겠습니까?`,
@@ -81,21 +81,21 @@ export function ChatbotPanel() {
     });
     if (!ok) return;
     try {
-      const res = await apiPost<ChatbotApiResponse<void>>(
-        '/api/chatbot/delete-instance',
+      const res = await apiPost<HubApiResponse<void>>(
+        '/api/hub/delete-instance',
         { id: instance.id },
-        { category: 'chatbot' },
+        { category: 'hub' },
       );
       if (res.success) await loadInstances();
     } catch (e) {
-      logger.debug('chatbot', 'delete_instance 실패', { error: e });
+      logger.debug('hub', 'delete_instance 실패', { error: e });
     }
   }, [loadInstances]);
 
   // instance 선택 시 = settings 편집 화면
   if (selectedInstance) {
     return (
-      <ChatbotInstanceDetail
+      <HubInstanceDetail
         instance={selectedInstance}
         onBack={() => { setSelectedInstance(null); loadInstances(); }}
       />
@@ -131,7 +131,7 @@ export function ChatbotPanel() {
               onChange={e => setNewSlug(e.target.value.replace(/[\s/?#&=]/g, ''))}
               placeholder="영숫자 / 한글 / 하이픈 / 언더스코어"
               className="w-full px-2 py-1.5 text-[12px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              name="newChatbotSlug"
+              name="newHubSlug"
               autoComplete="off"
             />
           </div>
@@ -144,7 +144,7 @@ export function ChatbotPanel() {
               onChange={e => setNewName(e.target.value)}
               placeholder="Hub 이름"
               className="w-full px-2 py-1.5 text-[12px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              name="newChatbotName"
+              name="newHubName"
               autoComplete="off"
             />
           </div>

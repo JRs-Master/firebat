@@ -1,0 +1,10 @@
+{
+  "name": "hub",
+  "type": "service",
+  "scope": "system",
+  "version": "1.0.0",
+  "description": "외부 사이트 (워드프레스 등) 챗봇 위젯 시스템. 인스턴스 별 슬러그 / API 토큰 / 허용 자료 / 허용 sysmod / 허용 도메인 관리. 인스턴스 / 위젯 코드 / 대화 내역은 사이드바 'Hub' 탭에서.",
+  "runtime": "none",
+  "providerType": "none",
+  "settings_fields": []
+}

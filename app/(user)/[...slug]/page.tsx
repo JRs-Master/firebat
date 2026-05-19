@@ -1,7 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { get as getPageRpc, getRedirect, verifyPassword as verifyPagePasswordRpc } from '../../../lib/api-gen/page';
-import { getInstanceBySlug } from '../../../lib/api-gen/chatbot';
+import { getInstanceBySlug } from '../../../lib/api-gen/hub';
 import { scan as scanProjects, verifyPassword as verifyProjectPasswordRpc, getVisibility as getProjectVisibility, getConfig as getProjectConfigRpc } from '../../../lib/api-gen/project';
 import { getCmsSettings } from '../../../lib/api-gen/module';
 import { isReady as isMediaReady } from '../../../lib/api-gen/media';
@@ -94,13 +94,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         };
       }
     }
-    // chatbot fallback metadata — 페이지/프로젝트 미매칭 시 마지막 segment 가 chatbot slug 인지
-    // 확인. 페이지 본문 (DynamicPage 의 chatbot fallback) 과 정합 — title = instance.name.
+    // hub fallback metadata — 페이지/프로젝트 미매칭 시 마지막 segment 가 hub slug 인지
+    // 확인. 페이지 본문 (DynamicPage 의 hub fallback) 과 정합 — title = instance.name.
     const lastSegment = slug.split('/').filter(Boolean).pop() ?? '';
     if (lastSegment) {
-      const chatbotRes = await getInstanceBySlug({ slug: lastSegment });
-      if (chatbotRes.ok && chatbotRes.data?.instance && chatbotRes.data.instance.enabled) {
-        const instance = chatbotRes.data.instance;
+      const hubRes = await getInstanceBySlug({ slug: lastSegment });
+      if (hubRes.ok && hubRes.data?.instance && hubRes.data.instance.enabled) {
+        const instance = hubRes.data.instance;
         return {
           title: instance.name,
           description: instance.description || `${instance.name} 챗봇`,
@@ -207,17 +207,17 @@ export default async function DynamicPage({ params, searchParams }: Props) {
         return <ProjectRootView projectName={slug} pageSlugs={matched.pageSlugs ?? []} currentPage={currentPage} />;
       }
     }
-    // chatbot fallback — cms page / project 미박힘 영역 안 = 마지막 segment 박은 영역 안
-    // chatbot instance 매칭. 사용자 입장 안 = 임의 prefix path 박은 영역 안 동작:
+    // hub fallback — cms page / project 미박힘 영역 안 = 마지막 segment 박은 영역 안
+    // hub instance 매칭. 사용자 입장 안 = 임의 prefix path 박은 영역 안 동작:
     //   /lawassistant            → slug = lawassistant
     //   /chat/lawassistant       → slug = lawassistant
     //   /demo/foo/lawassistant   → slug = lawassistant
-    // chatbot.slug 자체 = `/` 박지 X 박은 영역 (Rust validate_slug 안 영숫자/하이픈/언더스코어).
+    // hub.slug 자체 = `/` 박지 X 박은 영역 (Rust validate_slug 안 영숫자/하이픈/언더스코어).
     const lastSegment = slug.split('/').filter(Boolean).pop() ?? '';
     if (lastSegment) {
-      const chatbotRes = await getInstanceBySlug({ slug: lastSegment });
-      if (chatbotRes.ok && chatbotRes.data?.instance && chatbotRes.data.instance.enabled) {
-        const instance = chatbotRes.data.instance;
+      const hubRes = await getInstanceBySlug({ slug: lastSegment });
+      if (hubRes.ok && hubRes.data?.instance && hubRes.data.instance.enabled) {
+        const instance = hubRes.data.instance;
         const h = await headers();
         const proto = h.get('x-forwarded-proto') || 'http';
         const host = h.get('x-forwarded-host') || h.get('host') || 'localhost:3000';
@@ -234,7 +234,7 @@ export default async function DynamicPage({ params, searchParams }: Props) {
               </p>
             </div>
             <script
-              src={`${firebatUrl}/api/chatbot/widget.js`}
+              src={`${firebatUrl}/api/hub/widget.js`}
               data-slug={instance.slug}
               data-token={instance.apiToken}
               data-firebat-url={firebatUrl}

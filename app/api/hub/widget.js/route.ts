@@ -1,13 +1,13 @@
 /**
- * Chatbot 외부 위젯 JS — GET /api/chatbot/widget.js
+ * Hub 외부 위젯 JS — GET /api/hub/widget.js
  *
  * 외부 사이트 (워드프레스 등) 안 박히는 `<script src="...">` 영역 응답. self-contained vanilla JS —
  * 의존성 0, framework 0. data-slug / data-token / data-firebat-url 영역 script tag 자체 안 명시.
  *
- * snippet 예시 (admin ChatbotInstanceDetail 안 자동 생성):
+ * snippet 예시 (admin HubInstanceDetail 안 자동 생성):
  *
  *   <script
- *     src="https://firebat.example.com/api/chatbot/widget.js"
+ *     src="https://firebat.example.com/api/hub/widget.js"
  *     data-slug="lawassistant"
  *     data-token="32-byte-hex-token"
  *     data-firebat-url="https://firebat.example.com"
@@ -17,7 +17,7 @@
  * 위젯 동작:
  *   - 우측 하단 floating 버튼 → 클릭 시 chat panel 영역 토글
  *   - localStorage 안 session_id (UUID) 영역 박힘 — 같은 방문자 대화 유지
- *   - POST /api/chatbot/<slug>/chat 영역 SSE 응답 parse → 메시지 list 영역 표시
+ *   - POST /api/hub/<slug>/chat 영역 SSE 응답 parse → 메시지 list 영역 표시
  */
 export const dynamic = 'force-dynamic';
 
@@ -39,13 +39,13 @@ const WIDGET_JS = `(function() {
     // legacy 브라우저 — async script 호환 영역
     var scripts = document.getElementsByTagName('script');
     for (var i = scripts.length - 1; i >= 0; i--) {
-      if (scripts[i].src && scripts[i].src.indexOf('/api/chatbot/widget.js') !== -1) {
+      if (scripts[i].src && scripts[i].src.indexOf('/api/hub/widget.js') !== -1) {
         SCRIPT = scripts[i];
         break;
       }
     }
   }
-  if (!SCRIPT) { console.error('[firebat-chatbot] script tag 추출 실패'); return; }
+  if (!SCRIPT) { console.error('[firebat-hub] script tag 추출 실패'); return; }
 
   var SLUG = SCRIPT.getAttribute('data-slug') || '';
   var TOKEN = SCRIPT.getAttribute('data-token') || '';
@@ -57,16 +57,16 @@ const WIDGET_JS = `(function() {
     })();
 
   if (!SLUG || !TOKEN || !FIREBAT_URL) {
-    console.error('[firebat-chatbot] data-slug / data-token / data-firebat-url 필수');
+    console.error('[firebat-hub] data-slug / data-token / data-firebat-url 필수');
     return;
   }
 
   // 같은 페이지 중복 박힘 방지
-  if (window.__firebatChatbotLoaded) return;
-  window.__firebatChatbotLoaded = true;
+  if (window.__firebatHubLoaded) return;
+  window.__firebatHubLoaded = true;
 
   // 방문자 식별 session_id — localStorage 안 영구 (UUID v4)
-  var SESSION_KEY = 'firebat-chatbot-session-' + SLUG;
+  var SESSION_KEY = 'firebat-hub-session-' + SLUG;
   var sessionId = '';
   try { sessionId = localStorage.getItem(SESSION_KEY) || ''; } catch (e) {}
   if (!sessionId) {
@@ -181,7 +181,7 @@ const WIDGET_JS = `(function() {
     sendBtn.disabled = true;
 
     try {
-      var endpoint = FIREBAT_URL.replace(/\\/$/, '') + '/api/chatbot/' + encodeURIComponent(SLUG) + '/chat';
+      var endpoint = FIREBAT_URL.replace(/\\/$/, '') + '/api/hub/' + encodeURIComponent(SLUG) + '/chat';
       var res = await fetch(endpoint, {
         method: 'POST',
         headers: {

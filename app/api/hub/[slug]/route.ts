@@ -16,22 +16,22 @@ import {
   appendUserMessage,
   appendSystemMessage,
   listMessages,
-} from '../../../../lib/api-gen/chatbot';
+} from '../../../../lib/api-gen/hub';
 import { withAuth } from '../../../../lib/with-api-error';
 import { ApiError } from '../../../../lib/api-error';
 
 /**
- * Chatbot RPC dispatcher — POST /api/chatbot/{op}.
+ * Hub RPC dispatcher — POST /api/hub/{op}.
  *
  * 경로 param 이름이 {slug} 인 사유: Next.js 가 같은 부모 폴더 안 sibling dynamic
- * 라우트끼리 param 이름 동일을 강제 (외부 chat endpoint 가 /api/chatbot/[slug]/chat).
+ * 라우트끼리 param 이름 동일을 강제 (외부 chat endpoint 가 /api/hub/[slug]/chat).
  * 의미상으로는 op 이름 (create-instance / list-instances 등) 가 들어옴.
  *
- * client component (ChatbotPanel / InstanceDetail) 가 호출. 옛 Library 패턴 동일
- * (lib/api-gen/chatbot 의 _transport 가 @connectrpc/connect-node 포함 → client
+ * client component (HubPanel / InstanceDetail) 가 호출. 옛 Library 패턴 동일
+ * (lib/api-gen/hub 의 _transport 가 @connectrpc/connect-node 포함 → client
  * 직접 import 시 node:http2 bundle 영역 fail).
  *
- * 외부 endpoint (POST /api/chatbot/<slug>/chat) 는 sibling route — 단계 7 신설.
+ * 외부 endpoint (POST /api/hub/<slug>/chat) 는 sibling route — 단계 7 신설.
  * 본 dispatcher = admin UI 전용 (인증 필요).
  */
 interface Ctx { params: Promise<{ slug: string }> }

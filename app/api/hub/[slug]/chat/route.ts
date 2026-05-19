@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { sendMessage } from '../../../../../lib/api-gen/chatbot';
+import { sendMessage } from '../../../../../lib/api-gen/hub';
 import { logger } from '../../../../../lib/util/logger';
 
 // AI 응답 대기 시간 고려 (CLI 모드 멀티턴 도구 호출 포함 가능). admin chat 과 동일.
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 interface Ctx { params: Promise<{ slug: string }> }
 
 /**
- * 외부 chatbot endpoint — POST /api/chatbot/<slug>/chat
+ * 외부 hub endpoint — POST /api/hub/<slug>/chat
  *
  * 워드프레스 등 외부 사이트 위젯이 호출. admin auth 미사용. 대신:
  *   - Header `X-Api-Token` (인스턴스 발급 token)
@@ -18,11 +18,11 @@ interface Ctx { params: Promise<{ slug: string }> }
  *
  * Body: `{ message: string }`
  *
- * 비즈니스 흐름은 모두 Rust ChatbotService.SendMessage RPC 안에서 처리:
+ * 비즈니스 흐름은 모두 Rust HubService.SendMessage RPC 안에서 처리:
  *   1. authenticate (slug + api_token + origin)
  *   2. ensure_conversation (instance_id + session_id)
  *   3. append_user_message
- *   4. ChatbotContext (allowed_sysmods / allowed_references / history) + AiManager 호출
+ *   4. HubContext (allowed_sysmods / allowed_references / history) + AiManager 호출
  *   5. append_system_message
  *
  * route 는 HTTP/SSE 어댑터 역할만 — header 영역 추출 + SSE wrap.
@@ -81,7 +81,7 @@ function streamResponse(args: {
         try {
           safeEnqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
         } catch (err) {
-          logger.debug('chatbot', 'SSE send 실패', { event, error: err });
+          logger.debug('hub', 'SSE send 실패', { event, error: err });
         }
       };
 
@@ -110,7 +110,7 @@ function streamResponse(args: {
           try {
             aiResponse = JSON.parse(rawJson);
           } catch (err) {
-            logger.debug('chatbot', 'rawJson 파싱 실패', { error: err });
+            logger.debug('hub', 'rawJson 파싱 실패', { error: err });
           }
           const reply = typeof aiResponse.reply === 'string' ? aiResponse.reply : '';
           const data = aiResponse.data;

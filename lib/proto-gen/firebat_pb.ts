@@ -11150,9 +11150,9 @@ export const LibrarySearchResponseSchema: GenMessage<LibrarySearchResponse> = /*
   messageDesc(file_firebat, 512);
 
 /**
- * @generated from message firebat.v1.ChatbotInstancePb
+ * @generated from message firebat.v1.HubInstancePb
  */
-export type ChatbotInstancePb = Message<"firebat.v1.ChatbotInstancePb"> & {
+export type HubInstancePb = Message<"firebat.v1.HubInstancePb"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -11226,16 +11226,16 @@ export type ChatbotInstancePb = Message<"firebat.v1.ChatbotInstancePb"> & {
 };
 
 /**
- * Describes the message firebat.v1.ChatbotInstancePb.
- * Use `create(ChatbotInstancePbSchema)` to create a new message.
+ * Describes the message firebat.v1.HubInstancePb.
+ * Use `create(HubInstancePbSchema)` to create a new message.
  */
-export const ChatbotInstancePbSchema: GenMessage<ChatbotInstancePb> = /*@__PURE__*/
+export const HubInstancePbSchema: GenMessage<HubInstancePb> = /*@__PURE__*/
   messageDesc(file_firebat, 513);
 
 /**
- * @generated from message firebat.v1.ChatbotConversationPb
+ * @generated from message firebat.v1.HubConversationPb
  */
-export type ChatbotConversationPb = Message<"firebat.v1.ChatbotConversationPb"> & {
+export type HubConversationPb = Message<"firebat.v1.HubConversationPb"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -11268,16 +11268,16 @@ export type ChatbotConversationPb = Message<"firebat.v1.ChatbotConversationPb"> 
 };
 
 /**
- * Describes the message firebat.v1.ChatbotConversationPb.
- * Use `create(ChatbotConversationPbSchema)` to create a new message.
+ * Describes the message firebat.v1.HubConversationPb.
+ * Use `create(HubConversationPbSchema)` to create a new message.
  */
-export const ChatbotConversationPbSchema: GenMessage<ChatbotConversationPb> = /*@__PURE__*/
+export const HubConversationPbSchema: GenMessage<HubConversationPb> = /*@__PURE__*/
   messageDesc(file_firebat, 514);
 
 /**
- * @generated from message firebat.v1.ChatbotMessagePb
+ * @generated from message firebat.v1.HubMessagePb
  */
-export type ChatbotMessagePb = Message<"firebat.v1.ChatbotMessagePb"> & {
+export type HubMessagePb = Message<"firebat.v1.HubMessagePb"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -11314,16 +11314,16 @@ export type ChatbotMessagePb = Message<"firebat.v1.ChatbotMessagePb"> & {
 };
 
 /**
- * Describes the message firebat.v1.ChatbotMessagePb.
- * Use `create(ChatbotMessagePbSchema)` to create a new message.
+ * Describes the message firebat.v1.HubMessagePb.
+ * Use `create(HubMessagePbSchema)` to create a new message.
  */
-export const ChatbotMessagePbSchema: GenMessage<ChatbotMessagePb> = /*@__PURE__*/
+export const HubMessagePbSchema: GenMessage<HubMessagePb> = /*@__PURE__*/
   messageDesc(file_firebat, 515);
 
 /**
- * @generated from message firebat.v1.ChatbotCreateInstanceRequest
+ * @generated from message firebat.v1.HubCreateInstanceRequest
  */
-export type ChatbotCreateInstanceRequest = Message<"firebat.v1.ChatbotCreateInstanceRequest"> & {
+export type HubCreateInstanceRequest = Message<"firebat.v1.HubCreateInstanceRequest"> & {
   /**
    * @generated from field: string slug = 1;
    */
@@ -11371,16 +11371,16 @@ export type ChatbotCreateInstanceRequest = Message<"firebat.v1.ChatbotCreateInst
 };
 
 /**
- * Describes the message firebat.v1.ChatbotCreateInstanceRequest.
- * Use `create(ChatbotCreateInstanceRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubCreateInstanceRequest.
+ * Use `create(HubCreateInstanceRequestSchema)` to create a new message.
  */
-export const ChatbotCreateInstanceRequestSchema: GenMessage<ChatbotCreateInstanceRequest> = /*@__PURE__*/
+export const HubCreateInstanceRequestSchema: GenMessage<HubCreateInstanceRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 516);
 
 /**
- * @generated from message firebat.v1.ChatbotCreateInstanceResponse
+ * @generated from message firebat.v1.HubCreateInstanceResponse
  */
-export type ChatbotCreateInstanceResponse = Message<"firebat.v1.ChatbotCreateInstanceResponse"> & {
+export type HubCreateInstanceResponse = Message<"firebat.v1.HubCreateInstanceResponse"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -11388,46 +11388,46 @@ export type ChatbotCreateInstanceResponse = Message<"firebat.v1.ChatbotCreateIns
 };
 
 /**
- * Describes the message firebat.v1.ChatbotCreateInstanceResponse.
- * Use `create(ChatbotCreateInstanceResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubCreateInstanceResponse.
+ * Use `create(HubCreateInstanceResponseSchema)` to create a new message.
  */
-export const ChatbotCreateInstanceResponseSchema: GenMessage<ChatbotCreateInstanceResponse> = /*@__PURE__*/
+export const HubCreateInstanceResponseSchema: GenMessage<HubCreateInstanceResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 517);
 
 /**
- * @generated from message firebat.v1.ChatbotListInstancesRequest
+ * @generated from message firebat.v1.HubListInstancesRequest
  */
-export type ChatbotListInstancesRequest = Message<"firebat.v1.ChatbotListInstancesRequest"> & {
+export type HubListInstancesRequest = Message<"firebat.v1.HubListInstancesRequest"> & {
 };
 
 /**
- * Describes the message firebat.v1.ChatbotListInstancesRequest.
- * Use `create(ChatbotListInstancesRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubListInstancesRequest.
+ * Use `create(HubListInstancesRequestSchema)` to create a new message.
  */
-export const ChatbotListInstancesRequestSchema: GenMessage<ChatbotListInstancesRequest> = /*@__PURE__*/
+export const HubListInstancesRequestSchema: GenMessage<HubListInstancesRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 518);
 
 /**
- * @generated from message firebat.v1.ChatbotListInstancesResponse
+ * @generated from message firebat.v1.HubListInstancesResponse
  */
-export type ChatbotListInstancesResponse = Message<"firebat.v1.ChatbotListInstancesResponse"> & {
+export type HubListInstancesResponse = Message<"firebat.v1.HubListInstancesResponse"> & {
   /**
-   * @generated from field: repeated firebat.v1.ChatbotInstancePb instances = 1;
+   * @generated from field: repeated firebat.v1.HubInstancePb instances = 1;
    */
-  instances: ChatbotInstancePb[];
+  instances: HubInstancePb[];
 };
 
 /**
- * Describes the message firebat.v1.ChatbotListInstancesResponse.
- * Use `create(ChatbotListInstancesResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubListInstancesResponse.
+ * Use `create(HubListInstancesResponseSchema)` to create a new message.
  */
-export const ChatbotListInstancesResponseSchema: GenMessage<ChatbotListInstancesResponse> = /*@__PURE__*/
+export const HubListInstancesResponseSchema: GenMessage<HubListInstancesResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 519);
 
 /**
- * @generated from message firebat.v1.ChatbotGetInstanceRequest
+ * @generated from message firebat.v1.HubGetInstanceRequest
  */
-export type ChatbotGetInstanceRequest = Message<"firebat.v1.ChatbotGetInstanceRequest"> & {
+export type HubGetInstanceRequest = Message<"firebat.v1.HubGetInstanceRequest"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -11435,33 +11435,33 @@ export type ChatbotGetInstanceRequest = Message<"firebat.v1.ChatbotGetInstanceRe
 };
 
 /**
- * Describes the message firebat.v1.ChatbotGetInstanceRequest.
- * Use `create(ChatbotGetInstanceRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubGetInstanceRequest.
+ * Use `create(HubGetInstanceRequestSchema)` to create a new message.
  */
-export const ChatbotGetInstanceRequestSchema: GenMessage<ChatbotGetInstanceRequest> = /*@__PURE__*/
+export const HubGetInstanceRequestSchema: GenMessage<HubGetInstanceRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 520);
 
 /**
- * @generated from message firebat.v1.ChatbotGetInstanceResponse
+ * @generated from message firebat.v1.HubGetInstanceResponse
  */
-export type ChatbotGetInstanceResponse = Message<"firebat.v1.ChatbotGetInstanceResponse"> & {
+export type HubGetInstanceResponse = Message<"firebat.v1.HubGetInstanceResponse"> & {
   /**
-   * @generated from field: firebat.v1.ChatbotInstancePb instance = 1;
+   * @generated from field: firebat.v1.HubInstancePb instance = 1;
    */
-  instance?: ChatbotInstancePb | undefined;
+  instance?: HubInstancePb | undefined;
 };
 
 /**
- * Describes the message firebat.v1.ChatbotGetInstanceResponse.
- * Use `create(ChatbotGetInstanceResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubGetInstanceResponse.
+ * Use `create(HubGetInstanceResponseSchema)` to create a new message.
  */
-export const ChatbotGetInstanceResponseSchema: GenMessage<ChatbotGetInstanceResponse> = /*@__PURE__*/
+export const HubGetInstanceResponseSchema: GenMessage<HubGetInstanceResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 521);
 
 /**
- * @generated from message firebat.v1.ChatbotGetInstanceBySlugRequest
+ * @generated from message firebat.v1.HubGetInstanceBySlugRequest
  */
-export type ChatbotGetInstanceBySlugRequest = Message<"firebat.v1.ChatbotGetInstanceBySlugRequest"> & {
+export type HubGetInstanceBySlugRequest = Message<"firebat.v1.HubGetInstanceBySlugRequest"> & {
   /**
    * @generated from field: string slug = 1;
    */
@@ -11469,33 +11469,33 @@ export type ChatbotGetInstanceBySlugRequest = Message<"firebat.v1.ChatbotGetInst
 };
 
 /**
- * Describes the message firebat.v1.ChatbotGetInstanceBySlugRequest.
- * Use `create(ChatbotGetInstanceBySlugRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubGetInstanceBySlugRequest.
+ * Use `create(HubGetInstanceBySlugRequestSchema)` to create a new message.
  */
-export const ChatbotGetInstanceBySlugRequestSchema: GenMessage<ChatbotGetInstanceBySlugRequest> = /*@__PURE__*/
+export const HubGetInstanceBySlugRequestSchema: GenMessage<HubGetInstanceBySlugRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 522);
 
 /**
- * @generated from message firebat.v1.ChatbotGetInstanceBySlugResponse
+ * @generated from message firebat.v1.HubGetInstanceBySlugResponse
  */
-export type ChatbotGetInstanceBySlugResponse = Message<"firebat.v1.ChatbotGetInstanceBySlugResponse"> & {
+export type HubGetInstanceBySlugResponse = Message<"firebat.v1.HubGetInstanceBySlugResponse"> & {
   /**
-   * @generated from field: firebat.v1.ChatbotInstancePb instance = 1;
+   * @generated from field: firebat.v1.HubInstancePb instance = 1;
    */
-  instance?: ChatbotInstancePb | undefined;
+  instance?: HubInstancePb | undefined;
 };
 
 /**
- * Describes the message firebat.v1.ChatbotGetInstanceBySlugResponse.
- * Use `create(ChatbotGetInstanceBySlugResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubGetInstanceBySlugResponse.
+ * Use `create(HubGetInstanceBySlugResponseSchema)` to create a new message.
  */
-export const ChatbotGetInstanceBySlugResponseSchema: GenMessage<ChatbotGetInstanceBySlugResponse> = /*@__PURE__*/
+export const HubGetInstanceBySlugResponseSchema: GenMessage<HubGetInstanceBySlugResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 523);
 
 /**
- * @generated from message firebat.v1.ChatbotUpdateInstanceRequest
+ * @generated from message firebat.v1.HubUpdateInstanceRequest
  */
-export type ChatbotUpdateInstanceRequest = Message<"firebat.v1.ChatbotUpdateInstanceRequest"> & {
+export type HubUpdateInstanceRequest = Message<"firebat.v1.HubUpdateInstanceRequest"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -11563,29 +11563,29 @@ export type ChatbotUpdateInstanceRequest = Message<"firebat.v1.ChatbotUpdateInst
 };
 
 /**
- * Describes the message firebat.v1.ChatbotUpdateInstanceRequest.
- * Use `create(ChatbotUpdateInstanceRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubUpdateInstanceRequest.
+ * Use `create(HubUpdateInstanceRequestSchema)` to create a new message.
  */
-export const ChatbotUpdateInstanceRequestSchema: GenMessage<ChatbotUpdateInstanceRequest> = /*@__PURE__*/
+export const HubUpdateInstanceRequestSchema: GenMessage<HubUpdateInstanceRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 524);
 
 /**
- * @generated from message firebat.v1.ChatbotUpdateInstanceResponse
+ * @generated from message firebat.v1.HubUpdateInstanceResponse
  */
-export type ChatbotUpdateInstanceResponse = Message<"firebat.v1.ChatbotUpdateInstanceResponse"> & {
+export type HubUpdateInstanceResponse = Message<"firebat.v1.HubUpdateInstanceResponse"> & {
 };
 
 /**
- * Describes the message firebat.v1.ChatbotUpdateInstanceResponse.
- * Use `create(ChatbotUpdateInstanceResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubUpdateInstanceResponse.
+ * Use `create(HubUpdateInstanceResponseSchema)` to create a new message.
  */
-export const ChatbotUpdateInstanceResponseSchema: GenMessage<ChatbotUpdateInstanceResponse> = /*@__PURE__*/
+export const HubUpdateInstanceResponseSchema: GenMessage<HubUpdateInstanceResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 525);
 
 /**
- * @generated from message firebat.v1.ChatbotDeleteInstanceRequest
+ * @generated from message firebat.v1.HubDeleteInstanceRequest
  */
-export type ChatbotDeleteInstanceRequest = Message<"firebat.v1.ChatbotDeleteInstanceRequest"> & {
+export type HubDeleteInstanceRequest = Message<"firebat.v1.HubDeleteInstanceRequest"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -11593,29 +11593,29 @@ export type ChatbotDeleteInstanceRequest = Message<"firebat.v1.ChatbotDeleteInst
 };
 
 /**
- * Describes the message firebat.v1.ChatbotDeleteInstanceRequest.
- * Use `create(ChatbotDeleteInstanceRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubDeleteInstanceRequest.
+ * Use `create(HubDeleteInstanceRequestSchema)` to create a new message.
  */
-export const ChatbotDeleteInstanceRequestSchema: GenMessage<ChatbotDeleteInstanceRequest> = /*@__PURE__*/
+export const HubDeleteInstanceRequestSchema: GenMessage<HubDeleteInstanceRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 526);
 
 /**
- * @generated from message firebat.v1.ChatbotDeleteInstanceResponse
+ * @generated from message firebat.v1.HubDeleteInstanceResponse
  */
-export type ChatbotDeleteInstanceResponse = Message<"firebat.v1.ChatbotDeleteInstanceResponse"> & {
+export type HubDeleteInstanceResponse = Message<"firebat.v1.HubDeleteInstanceResponse"> & {
 };
 
 /**
- * Describes the message firebat.v1.ChatbotDeleteInstanceResponse.
- * Use `create(ChatbotDeleteInstanceResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubDeleteInstanceResponse.
+ * Use `create(HubDeleteInstanceResponseSchema)` to create a new message.
  */
-export const ChatbotDeleteInstanceResponseSchema: GenMessage<ChatbotDeleteInstanceResponse> = /*@__PURE__*/
+export const HubDeleteInstanceResponseSchema: GenMessage<HubDeleteInstanceResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 527);
 
 /**
- * @generated from message firebat.v1.ChatbotRotateApiTokenRequest
+ * @generated from message firebat.v1.HubRotateApiTokenRequest
  */
-export type ChatbotRotateApiTokenRequest = Message<"firebat.v1.ChatbotRotateApiTokenRequest"> & {
+export type HubRotateApiTokenRequest = Message<"firebat.v1.HubRotateApiTokenRequest"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -11623,16 +11623,16 @@ export type ChatbotRotateApiTokenRequest = Message<"firebat.v1.ChatbotRotateApiT
 };
 
 /**
- * Describes the message firebat.v1.ChatbotRotateApiTokenRequest.
- * Use `create(ChatbotRotateApiTokenRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubRotateApiTokenRequest.
+ * Use `create(HubRotateApiTokenRequestSchema)` to create a new message.
  */
-export const ChatbotRotateApiTokenRequestSchema: GenMessage<ChatbotRotateApiTokenRequest> = /*@__PURE__*/
+export const HubRotateApiTokenRequestSchema: GenMessage<HubRotateApiTokenRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 528);
 
 /**
- * @generated from message firebat.v1.ChatbotRotateApiTokenResponse
+ * @generated from message firebat.v1.HubRotateApiTokenResponse
  */
-export type ChatbotRotateApiTokenResponse = Message<"firebat.v1.ChatbotRotateApiTokenResponse"> & {
+export type HubRotateApiTokenResponse = Message<"firebat.v1.HubRotateApiTokenResponse"> & {
   /**
    * @generated from field: string new_token = 1;
    */
@@ -11640,16 +11640,16 @@ export type ChatbotRotateApiTokenResponse = Message<"firebat.v1.ChatbotRotateApi
 };
 
 /**
- * Describes the message firebat.v1.ChatbotRotateApiTokenResponse.
- * Use `create(ChatbotRotateApiTokenResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubRotateApiTokenResponse.
+ * Use `create(HubRotateApiTokenResponseSchema)` to create a new message.
  */
-export const ChatbotRotateApiTokenResponseSchema: GenMessage<ChatbotRotateApiTokenResponse> = /*@__PURE__*/
+export const HubRotateApiTokenResponseSchema: GenMessage<HubRotateApiTokenResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 529);
 
 /**
- * @generated from message firebat.v1.ChatbotAuthenticateRequest
+ * @generated from message firebat.v1.HubAuthenticateRequest
  */
-export type ChatbotAuthenticateRequest = Message<"firebat.v1.ChatbotAuthenticateRequest"> & {
+export type HubAuthenticateRequest = Message<"firebat.v1.HubAuthenticateRequest"> & {
   /**
    * @generated from field: string slug = 1;
    */
@@ -11669,33 +11669,33 @@ export type ChatbotAuthenticateRequest = Message<"firebat.v1.ChatbotAuthenticate
 };
 
 /**
- * Describes the message firebat.v1.ChatbotAuthenticateRequest.
- * Use `create(ChatbotAuthenticateRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubAuthenticateRequest.
+ * Use `create(HubAuthenticateRequestSchema)` to create a new message.
  */
-export const ChatbotAuthenticateRequestSchema: GenMessage<ChatbotAuthenticateRequest> = /*@__PURE__*/
+export const HubAuthenticateRequestSchema: GenMessage<HubAuthenticateRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 530);
 
 /**
- * @generated from message firebat.v1.ChatbotAuthenticateResponse
+ * @generated from message firebat.v1.HubAuthenticateResponse
  */
-export type ChatbotAuthenticateResponse = Message<"firebat.v1.ChatbotAuthenticateResponse"> & {
+export type HubAuthenticateResponse = Message<"firebat.v1.HubAuthenticateResponse"> & {
   /**
-   * @generated from field: firebat.v1.ChatbotInstancePb instance = 1;
+   * @generated from field: firebat.v1.HubInstancePb instance = 1;
    */
-  instance?: ChatbotInstancePb | undefined;
+  instance?: HubInstancePb | undefined;
 };
 
 /**
- * Describes the message firebat.v1.ChatbotAuthenticateResponse.
- * Use `create(ChatbotAuthenticateResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubAuthenticateResponse.
+ * Use `create(HubAuthenticateResponseSchema)` to create a new message.
  */
-export const ChatbotAuthenticateResponseSchema: GenMessage<ChatbotAuthenticateResponse> = /*@__PURE__*/
+export const HubAuthenticateResponseSchema: GenMessage<HubAuthenticateResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 531);
 
 /**
- * @generated from message firebat.v1.ChatbotEnsureConversationRequest
+ * @generated from message firebat.v1.HubEnsureConversationRequest
  */
-export type ChatbotEnsureConversationRequest = Message<"firebat.v1.ChatbotEnsureConversationRequest"> & {
+export type HubEnsureConversationRequest = Message<"firebat.v1.HubEnsureConversationRequest"> & {
   /**
    * @generated from field: string instance_id = 1;
    */
@@ -11708,16 +11708,16 @@ export type ChatbotEnsureConversationRequest = Message<"firebat.v1.ChatbotEnsure
 };
 
 /**
- * Describes the message firebat.v1.ChatbotEnsureConversationRequest.
- * Use `create(ChatbotEnsureConversationRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubEnsureConversationRequest.
+ * Use `create(HubEnsureConversationRequestSchema)` to create a new message.
  */
-export const ChatbotEnsureConversationRequestSchema: GenMessage<ChatbotEnsureConversationRequest> = /*@__PURE__*/
+export const HubEnsureConversationRequestSchema: GenMessage<HubEnsureConversationRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 532);
 
 /**
- * @generated from message firebat.v1.ChatbotEnsureConversationResponse
+ * @generated from message firebat.v1.HubEnsureConversationResponse
  */
-export type ChatbotEnsureConversationResponse = Message<"firebat.v1.ChatbotEnsureConversationResponse"> & {
+export type HubEnsureConversationResponse = Message<"firebat.v1.HubEnsureConversationResponse"> & {
   /**
    * @generated from field: string conversation_id = 1;
    */
@@ -11725,16 +11725,16 @@ export type ChatbotEnsureConversationResponse = Message<"firebat.v1.ChatbotEnsur
 };
 
 /**
- * Describes the message firebat.v1.ChatbotEnsureConversationResponse.
- * Use `create(ChatbotEnsureConversationResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubEnsureConversationResponse.
+ * Use `create(HubEnsureConversationResponseSchema)` to create a new message.
  */
-export const ChatbotEnsureConversationResponseSchema: GenMessage<ChatbotEnsureConversationResponse> = /*@__PURE__*/
+export const HubEnsureConversationResponseSchema: GenMessage<HubEnsureConversationResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 533);
 
 /**
- * @generated from message firebat.v1.ChatbotListConversationsRequest
+ * @generated from message firebat.v1.HubListConversationsRequest
  */
-export type ChatbotListConversationsRequest = Message<"firebat.v1.ChatbotListConversationsRequest"> & {
+export type HubListConversationsRequest = Message<"firebat.v1.HubListConversationsRequest"> & {
   /**
    * @generated from field: string instance_id = 1;
    */
@@ -11747,33 +11747,33 @@ export type ChatbotListConversationsRequest = Message<"firebat.v1.ChatbotListCon
 };
 
 /**
- * Describes the message firebat.v1.ChatbotListConversationsRequest.
- * Use `create(ChatbotListConversationsRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubListConversationsRequest.
+ * Use `create(HubListConversationsRequestSchema)` to create a new message.
  */
-export const ChatbotListConversationsRequestSchema: GenMessage<ChatbotListConversationsRequest> = /*@__PURE__*/
+export const HubListConversationsRequestSchema: GenMessage<HubListConversationsRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 534);
 
 /**
- * @generated from message firebat.v1.ChatbotListConversationsResponse
+ * @generated from message firebat.v1.HubListConversationsResponse
  */
-export type ChatbotListConversationsResponse = Message<"firebat.v1.ChatbotListConversationsResponse"> & {
+export type HubListConversationsResponse = Message<"firebat.v1.HubListConversationsResponse"> & {
   /**
-   * @generated from field: repeated firebat.v1.ChatbotConversationPb conversations = 1;
+   * @generated from field: repeated firebat.v1.HubConversationPb conversations = 1;
    */
-  conversations: ChatbotConversationPb[];
+  conversations: HubConversationPb[];
 };
 
 /**
- * Describes the message firebat.v1.ChatbotListConversationsResponse.
- * Use `create(ChatbotListConversationsResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubListConversationsResponse.
+ * Use `create(HubListConversationsResponseSchema)` to create a new message.
  */
-export const ChatbotListConversationsResponseSchema: GenMessage<ChatbotListConversationsResponse> = /*@__PURE__*/
+export const HubListConversationsResponseSchema: GenMessage<HubListConversationsResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 535);
 
 /**
- * @generated from message firebat.v1.ChatbotGetConversationRequest
+ * @generated from message firebat.v1.HubGetConversationRequest
  */
-export type ChatbotGetConversationRequest = Message<"firebat.v1.ChatbotGetConversationRequest"> & {
+export type HubGetConversationRequest = Message<"firebat.v1.HubGetConversationRequest"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -11781,33 +11781,33 @@ export type ChatbotGetConversationRequest = Message<"firebat.v1.ChatbotGetConver
 };
 
 /**
- * Describes the message firebat.v1.ChatbotGetConversationRequest.
- * Use `create(ChatbotGetConversationRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubGetConversationRequest.
+ * Use `create(HubGetConversationRequestSchema)` to create a new message.
  */
-export const ChatbotGetConversationRequestSchema: GenMessage<ChatbotGetConversationRequest> = /*@__PURE__*/
+export const HubGetConversationRequestSchema: GenMessage<HubGetConversationRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 536);
 
 /**
- * @generated from message firebat.v1.ChatbotGetConversationResponse
+ * @generated from message firebat.v1.HubGetConversationResponse
  */
-export type ChatbotGetConversationResponse = Message<"firebat.v1.ChatbotGetConversationResponse"> & {
+export type HubGetConversationResponse = Message<"firebat.v1.HubGetConversationResponse"> & {
   /**
-   * @generated from field: firebat.v1.ChatbotConversationPb conversation = 1;
+   * @generated from field: firebat.v1.HubConversationPb conversation = 1;
    */
-  conversation?: ChatbotConversationPb | undefined;
+  conversation?: HubConversationPb | undefined;
 };
 
 /**
- * Describes the message firebat.v1.ChatbotGetConversationResponse.
- * Use `create(ChatbotGetConversationResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubGetConversationResponse.
+ * Use `create(HubGetConversationResponseSchema)` to create a new message.
  */
-export const ChatbotGetConversationResponseSchema: GenMessage<ChatbotGetConversationResponse> = /*@__PURE__*/
+export const HubGetConversationResponseSchema: GenMessage<HubGetConversationResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 537);
 
 /**
- * @generated from message firebat.v1.ChatbotDeleteConversationRequest
+ * @generated from message firebat.v1.HubDeleteConversationRequest
  */
-export type ChatbotDeleteConversationRequest = Message<"firebat.v1.ChatbotDeleteConversationRequest"> & {
+export type HubDeleteConversationRequest = Message<"firebat.v1.HubDeleteConversationRequest"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -11815,29 +11815,29 @@ export type ChatbotDeleteConversationRequest = Message<"firebat.v1.ChatbotDelete
 };
 
 /**
- * Describes the message firebat.v1.ChatbotDeleteConversationRequest.
- * Use `create(ChatbotDeleteConversationRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubDeleteConversationRequest.
+ * Use `create(HubDeleteConversationRequestSchema)` to create a new message.
  */
-export const ChatbotDeleteConversationRequestSchema: GenMessage<ChatbotDeleteConversationRequest> = /*@__PURE__*/
+export const HubDeleteConversationRequestSchema: GenMessage<HubDeleteConversationRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 538);
 
 /**
- * @generated from message firebat.v1.ChatbotDeleteConversationResponse
+ * @generated from message firebat.v1.HubDeleteConversationResponse
  */
-export type ChatbotDeleteConversationResponse = Message<"firebat.v1.ChatbotDeleteConversationResponse"> & {
+export type HubDeleteConversationResponse = Message<"firebat.v1.HubDeleteConversationResponse"> & {
 };
 
 /**
- * Describes the message firebat.v1.ChatbotDeleteConversationResponse.
- * Use `create(ChatbotDeleteConversationResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubDeleteConversationResponse.
+ * Use `create(HubDeleteConversationResponseSchema)` to create a new message.
  */
-export const ChatbotDeleteConversationResponseSchema: GenMessage<ChatbotDeleteConversationResponse> = /*@__PURE__*/
+export const HubDeleteConversationResponseSchema: GenMessage<HubDeleteConversationResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 539);
 
 /**
- * @generated from message firebat.v1.ChatbotUpdateConversationTitleRequest
+ * @generated from message firebat.v1.HubUpdateConversationTitleRequest
  */
-export type ChatbotUpdateConversationTitleRequest = Message<"firebat.v1.ChatbotUpdateConversationTitleRequest"> & {
+export type HubUpdateConversationTitleRequest = Message<"firebat.v1.HubUpdateConversationTitleRequest"> & {
   /**
    * @generated from field: string id = 1;
    */
@@ -11850,29 +11850,29 @@ export type ChatbotUpdateConversationTitleRequest = Message<"firebat.v1.ChatbotU
 };
 
 /**
- * Describes the message firebat.v1.ChatbotUpdateConversationTitleRequest.
- * Use `create(ChatbotUpdateConversationTitleRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubUpdateConversationTitleRequest.
+ * Use `create(HubUpdateConversationTitleRequestSchema)` to create a new message.
  */
-export const ChatbotUpdateConversationTitleRequestSchema: GenMessage<ChatbotUpdateConversationTitleRequest> = /*@__PURE__*/
+export const HubUpdateConversationTitleRequestSchema: GenMessage<HubUpdateConversationTitleRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 540);
 
 /**
- * @generated from message firebat.v1.ChatbotUpdateConversationTitleResponse
+ * @generated from message firebat.v1.HubUpdateConversationTitleResponse
  */
-export type ChatbotUpdateConversationTitleResponse = Message<"firebat.v1.ChatbotUpdateConversationTitleResponse"> & {
+export type HubUpdateConversationTitleResponse = Message<"firebat.v1.HubUpdateConversationTitleResponse"> & {
 };
 
 /**
- * Describes the message firebat.v1.ChatbotUpdateConversationTitleResponse.
- * Use `create(ChatbotUpdateConversationTitleResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubUpdateConversationTitleResponse.
+ * Use `create(HubUpdateConversationTitleResponseSchema)` to create a new message.
  */
-export const ChatbotUpdateConversationTitleResponseSchema: GenMessage<ChatbotUpdateConversationTitleResponse> = /*@__PURE__*/
+export const HubUpdateConversationTitleResponseSchema: GenMessage<HubUpdateConversationTitleResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 541);
 
 /**
- * @generated from message firebat.v1.ChatbotAppendUserMessageRequest
+ * @generated from message firebat.v1.HubAppendUserMessageRequest
  */
-export type ChatbotAppendUserMessageRequest = Message<"firebat.v1.ChatbotAppendUserMessageRequest"> & {
+export type HubAppendUserMessageRequest = Message<"firebat.v1.HubAppendUserMessageRequest"> & {
   /**
    * @generated from field: string conversation_id = 1;
    */
@@ -11885,16 +11885,16 @@ export type ChatbotAppendUserMessageRequest = Message<"firebat.v1.ChatbotAppendU
 };
 
 /**
- * Describes the message firebat.v1.ChatbotAppendUserMessageRequest.
- * Use `create(ChatbotAppendUserMessageRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubAppendUserMessageRequest.
+ * Use `create(HubAppendUserMessageRequestSchema)` to create a new message.
  */
-export const ChatbotAppendUserMessageRequestSchema: GenMessage<ChatbotAppendUserMessageRequest> = /*@__PURE__*/
+export const HubAppendUserMessageRequestSchema: GenMessage<HubAppendUserMessageRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 542);
 
 /**
- * @generated from message firebat.v1.ChatbotAppendUserMessageResponse
+ * @generated from message firebat.v1.HubAppendUserMessageResponse
  */
-export type ChatbotAppendUserMessageResponse = Message<"firebat.v1.ChatbotAppendUserMessageResponse"> & {
+export type HubAppendUserMessageResponse = Message<"firebat.v1.HubAppendUserMessageResponse"> & {
   /**
    * @generated from field: string message_id = 1;
    */
@@ -11902,16 +11902,16 @@ export type ChatbotAppendUserMessageResponse = Message<"firebat.v1.ChatbotAppend
 };
 
 /**
- * Describes the message firebat.v1.ChatbotAppendUserMessageResponse.
- * Use `create(ChatbotAppendUserMessageResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubAppendUserMessageResponse.
+ * Use `create(HubAppendUserMessageResponseSchema)` to create a new message.
  */
-export const ChatbotAppendUserMessageResponseSchema: GenMessage<ChatbotAppendUserMessageResponse> = /*@__PURE__*/
+export const HubAppendUserMessageResponseSchema: GenMessage<HubAppendUserMessageResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 543);
 
 /**
- * @generated from message firebat.v1.ChatbotAppendSystemMessageRequest
+ * @generated from message firebat.v1.HubAppendSystemMessageRequest
  */
-export type ChatbotAppendSystemMessageRequest = Message<"firebat.v1.ChatbotAppendSystemMessageRequest"> & {
+export type HubAppendSystemMessageRequest = Message<"firebat.v1.HubAppendSystemMessageRequest"> & {
   /**
    * @generated from field: string conversation_id = 1;
    */
@@ -11929,16 +11929,16 @@ export type ChatbotAppendSystemMessageRequest = Message<"firebat.v1.ChatbotAppen
 };
 
 /**
- * Describes the message firebat.v1.ChatbotAppendSystemMessageRequest.
- * Use `create(ChatbotAppendSystemMessageRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubAppendSystemMessageRequest.
+ * Use `create(HubAppendSystemMessageRequestSchema)` to create a new message.
  */
-export const ChatbotAppendSystemMessageRequestSchema: GenMessage<ChatbotAppendSystemMessageRequest> = /*@__PURE__*/
+export const HubAppendSystemMessageRequestSchema: GenMessage<HubAppendSystemMessageRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 544);
 
 /**
- * @generated from message firebat.v1.ChatbotAppendSystemMessageResponse
+ * @generated from message firebat.v1.HubAppendSystemMessageResponse
  */
-export type ChatbotAppendSystemMessageResponse = Message<"firebat.v1.ChatbotAppendSystemMessageResponse"> & {
+export type HubAppendSystemMessageResponse = Message<"firebat.v1.HubAppendSystemMessageResponse"> & {
   /**
    * @generated from field: string message_id = 1;
    */
@@ -11946,16 +11946,16 @@ export type ChatbotAppendSystemMessageResponse = Message<"firebat.v1.ChatbotAppe
 };
 
 /**
- * Describes the message firebat.v1.ChatbotAppendSystemMessageResponse.
- * Use `create(ChatbotAppendSystemMessageResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubAppendSystemMessageResponse.
+ * Use `create(HubAppendSystemMessageResponseSchema)` to create a new message.
  */
-export const ChatbotAppendSystemMessageResponseSchema: GenMessage<ChatbotAppendSystemMessageResponse> = /*@__PURE__*/
+export const HubAppendSystemMessageResponseSchema: GenMessage<HubAppendSystemMessageResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 545);
 
 /**
- * @generated from message firebat.v1.ChatbotListMessagesRequest
+ * @generated from message firebat.v1.HubListMessagesRequest
  */
-export type ChatbotListMessagesRequest = Message<"firebat.v1.ChatbotListMessagesRequest"> & {
+export type HubListMessagesRequest = Message<"firebat.v1.HubListMessagesRequest"> & {
   /**
    * @generated from field: string conversation_id = 1;
    */
@@ -11963,32 +11963,32 @@ export type ChatbotListMessagesRequest = Message<"firebat.v1.ChatbotListMessages
 };
 
 /**
- * Describes the message firebat.v1.ChatbotListMessagesRequest.
- * Use `create(ChatbotListMessagesRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubListMessagesRequest.
+ * Use `create(HubListMessagesRequestSchema)` to create a new message.
  */
-export const ChatbotListMessagesRequestSchema: GenMessage<ChatbotListMessagesRequest> = /*@__PURE__*/
+export const HubListMessagesRequestSchema: GenMessage<HubListMessagesRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 546);
 
 /**
- * @generated from message firebat.v1.ChatbotListMessagesResponse
+ * @generated from message firebat.v1.HubListMessagesResponse
  */
-export type ChatbotListMessagesResponse = Message<"firebat.v1.ChatbotListMessagesResponse"> & {
+export type HubListMessagesResponse = Message<"firebat.v1.HubListMessagesResponse"> & {
   /**
-   * @generated from field: repeated firebat.v1.ChatbotMessagePb messages = 1;
+   * @generated from field: repeated firebat.v1.HubMessagePb messages = 1;
    */
-  messages: ChatbotMessagePb[];
+  messages: HubMessagePb[];
 };
 
 /**
- * Describes the message firebat.v1.ChatbotListMessagesResponse.
- * Use `create(ChatbotListMessagesResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubListMessagesResponse.
+ * Use `create(HubListMessagesResponseSchema)` to create a new message.
  */
-export const ChatbotListMessagesResponseSchema: GenMessage<ChatbotListMessagesResponse> = /*@__PURE__*/
+export const HubListMessagesResponseSchema: GenMessage<HubListMessagesResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 547);
 
 /**
  * ─── 외부 endpoint 통합 send_message ──────────────────────────────────────
- * 외부 chatbot endpoint (POST /api/chatbot/<slug>/chat) 가 호출하는 단일 RPC.
+ * 외부 hub endpoint (POST /api/hub/<slug>/chat) 가 호출하는 단일 RPC.
  * 옛 Authenticate + EnsureConversation + AppendUserMessage + AI 호출 + AppendSystemMessage
  * 5 RPC 분리 호출 영역 (route layer 안 비즈니스 흐름 leak) 단일 entry 영역 통합.
  * 
@@ -11996,14 +11996,14 @@ export const ChatbotListMessagesResponseSchema: GenMessage<ChatbotListMessagesRe
  *   1. authenticate (slug + api_token + origin) → instance
  *   2. ensure_conversation (instance_id + session_id) → conversation_id
  *   3. append_user_message
- *   4. ChatbotContext (allowed_sysmods / allowed_references / history) 빌드 + AiManager 호출
+ *   4. HubContext (allowed_sysmods / allowed_references / history) 빌드 + AiManager 호출
  *   5. AI 응답 영역 append_system_message
  * 
  * 응답 raw_json = AiResponse (reply + blocks + suggestions + tool_results 등).
  *
- * @generated from message firebat.v1.ChatbotSendMessageRequest
+ * @generated from message firebat.v1.HubSendMessageRequest
  */
-export type ChatbotSendMessageRequest = Message<"firebat.v1.ChatbotSendMessageRequest"> & {
+export type HubSendMessageRequest = Message<"firebat.v1.HubSendMessageRequest"> & {
   /**
    * @generated from field: string slug = 1;
    */
@@ -12031,16 +12031,16 @@ export type ChatbotSendMessageRequest = Message<"firebat.v1.ChatbotSendMessageRe
 };
 
 /**
- * Describes the message firebat.v1.ChatbotSendMessageRequest.
- * Use `create(ChatbotSendMessageRequestSchema)` to create a new message.
+ * Describes the message firebat.v1.HubSendMessageRequest.
+ * Use `create(HubSendMessageRequestSchema)` to create a new message.
  */
-export const ChatbotSendMessageRequestSchema: GenMessage<ChatbotSendMessageRequest> = /*@__PURE__*/
+export const HubSendMessageRequestSchema: GenMessage<HubSendMessageRequest> = /*@__PURE__*/
   messageDesc(file_firebat, 548);
 
 /**
- * @generated from message firebat.v1.ChatbotSendMessageResponse
+ * @generated from message firebat.v1.HubSendMessageResponse
  */
-export type ChatbotSendMessageResponse = Message<"firebat.v1.ChatbotSendMessageResponse"> & {
+export type HubSendMessageResponse = Message<"firebat.v1.HubSendMessageResponse"> & {
   /**
    * @generated from field: string conversation_id = 1;
    */
@@ -12055,10 +12055,10 @@ export type ChatbotSendMessageResponse = Message<"firebat.v1.ChatbotSendMessageR
 };
 
 /**
- * Describes the message firebat.v1.ChatbotSendMessageResponse.
- * Use `create(ChatbotSendMessageResponseSchema)` to create a new message.
+ * Describes the message firebat.v1.HubSendMessageResponse.
+ * Use `create(HubSendMessageResponseSchema)` to create a new message.
  */
-export const ChatbotSendMessageResponseSchema: GenMessage<ChatbotSendMessageResponse> = /*@__PURE__*/
+export const HubSendMessageResponseSchema: GenMessage<HubSendMessageResponse> = /*@__PURE__*/
   messageDesc(file_firebat, 549);
 
 /**
@@ -14250,154 +14250,154 @@ export const LibraryService: GenService<{
   serviceDesc(file_firebat, 28);
 
 /**
- * @generated from service firebat.v1.ChatbotService
+ * @generated from service firebat.v1.HubService
  */
-export const ChatbotService: GenService<{
+export const HubService: GenService<{
   /**
    * Instance CRUD (admin)
    *
-   * @generated from rpc firebat.v1.ChatbotService.CreateInstance
+   * @generated from rpc firebat.v1.HubService.CreateInstance
    */
   createInstance: {
     methodKind: "unary";
-    input: typeof ChatbotCreateInstanceRequestSchema;
-    output: typeof ChatbotCreateInstanceResponseSchema;
+    input: typeof HubCreateInstanceRequestSchema;
+    output: typeof HubCreateInstanceResponseSchema;
   },
   /**
-   * @generated from rpc firebat.v1.ChatbotService.ListInstances
+   * @generated from rpc firebat.v1.HubService.ListInstances
    */
   listInstances: {
     methodKind: "unary";
-    input: typeof ChatbotListInstancesRequestSchema;
-    output: typeof ChatbotListInstancesResponseSchema;
+    input: typeof HubListInstancesRequestSchema;
+    output: typeof HubListInstancesResponseSchema;
   },
   /**
-   * @generated from rpc firebat.v1.ChatbotService.GetInstance
+   * @generated from rpc firebat.v1.HubService.GetInstance
    */
   getInstance: {
     methodKind: "unary";
-    input: typeof ChatbotGetInstanceRequestSchema;
-    output: typeof ChatbotGetInstanceResponseSchema;
+    input: typeof HubGetInstanceRequestSchema;
+    output: typeof HubGetInstanceResponseSchema;
   },
   /**
-   * @generated from rpc firebat.v1.ChatbotService.GetInstanceBySlug
+   * @generated from rpc firebat.v1.HubService.GetInstanceBySlug
    */
   getInstanceBySlug: {
     methodKind: "unary";
-    input: typeof ChatbotGetInstanceBySlugRequestSchema;
-    output: typeof ChatbotGetInstanceBySlugResponseSchema;
+    input: typeof HubGetInstanceBySlugRequestSchema;
+    output: typeof HubGetInstanceBySlugResponseSchema;
   },
   /**
-   * @generated from rpc firebat.v1.ChatbotService.UpdateInstance
+   * @generated from rpc firebat.v1.HubService.UpdateInstance
    */
   updateInstance: {
     methodKind: "unary";
-    input: typeof ChatbotUpdateInstanceRequestSchema;
-    output: typeof ChatbotUpdateInstanceResponseSchema;
+    input: typeof HubUpdateInstanceRequestSchema;
+    output: typeof HubUpdateInstanceResponseSchema;
   },
   /**
-   * @generated from rpc firebat.v1.ChatbotService.DeleteInstance
+   * @generated from rpc firebat.v1.HubService.DeleteInstance
    */
   deleteInstance: {
     methodKind: "unary";
-    input: typeof ChatbotDeleteInstanceRequestSchema;
-    output: typeof ChatbotDeleteInstanceResponseSchema;
+    input: typeof HubDeleteInstanceRequestSchema;
+    output: typeof HubDeleteInstanceResponseSchema;
   },
   /**
-   * @generated from rpc firebat.v1.ChatbotService.RotateApiToken
+   * @generated from rpc firebat.v1.HubService.RotateApiToken
    */
   rotateApiToken: {
     methodKind: "unary";
-    input: typeof ChatbotRotateApiTokenRequestSchema;
-    output: typeof ChatbotRotateApiTokenResponseSchema;
+    input: typeof HubRotateApiTokenRequestSchema;
+    output: typeof HubRotateApiTokenResponseSchema;
   },
   /**
    * 외부 endpoint 검증
    *
-   * @generated from rpc firebat.v1.ChatbotService.Authenticate
+   * @generated from rpc firebat.v1.HubService.Authenticate
    */
   authenticate: {
     methodKind: "unary";
-    input: typeof ChatbotAuthenticateRequestSchema;
-    output: typeof ChatbotAuthenticateResponseSchema;
+    input: typeof HubAuthenticateRequestSchema;
+    output: typeof HubAuthenticateResponseSchema;
   },
   /**
    * Conversation
    *
-   * @generated from rpc firebat.v1.ChatbotService.EnsureConversation
+   * @generated from rpc firebat.v1.HubService.EnsureConversation
    */
   ensureConversation: {
     methodKind: "unary";
-    input: typeof ChatbotEnsureConversationRequestSchema;
-    output: typeof ChatbotEnsureConversationResponseSchema;
+    input: typeof HubEnsureConversationRequestSchema;
+    output: typeof HubEnsureConversationResponseSchema;
   },
   /**
-   * @generated from rpc firebat.v1.ChatbotService.ListConversations
+   * @generated from rpc firebat.v1.HubService.ListConversations
    */
   listConversations: {
     methodKind: "unary";
-    input: typeof ChatbotListConversationsRequestSchema;
-    output: typeof ChatbotListConversationsResponseSchema;
+    input: typeof HubListConversationsRequestSchema;
+    output: typeof HubListConversationsResponseSchema;
   },
   /**
-   * @generated from rpc firebat.v1.ChatbotService.GetConversation
+   * @generated from rpc firebat.v1.HubService.GetConversation
    */
   getConversation: {
     methodKind: "unary";
-    input: typeof ChatbotGetConversationRequestSchema;
-    output: typeof ChatbotGetConversationResponseSchema;
+    input: typeof HubGetConversationRequestSchema;
+    output: typeof HubGetConversationResponseSchema;
   },
   /**
-   * @generated from rpc firebat.v1.ChatbotService.DeleteConversation
+   * @generated from rpc firebat.v1.HubService.DeleteConversation
    */
   deleteConversation: {
     methodKind: "unary";
-    input: typeof ChatbotDeleteConversationRequestSchema;
-    output: typeof ChatbotDeleteConversationResponseSchema;
+    input: typeof HubDeleteConversationRequestSchema;
+    output: typeof HubDeleteConversationResponseSchema;
   },
   /**
-   * @generated from rpc firebat.v1.ChatbotService.UpdateConversationTitle
+   * @generated from rpc firebat.v1.HubService.UpdateConversationTitle
    */
   updateConversationTitle: {
     methodKind: "unary";
-    input: typeof ChatbotUpdateConversationTitleRequestSchema;
-    output: typeof ChatbotUpdateConversationTitleResponseSchema;
+    input: typeof HubUpdateConversationTitleRequestSchema;
+    output: typeof HubUpdateConversationTitleResponseSchema;
   },
   /**
    * Message
    *
-   * @generated from rpc firebat.v1.ChatbotService.AppendUserMessage
+   * @generated from rpc firebat.v1.HubService.AppendUserMessage
    */
   appendUserMessage: {
     methodKind: "unary";
-    input: typeof ChatbotAppendUserMessageRequestSchema;
-    output: typeof ChatbotAppendUserMessageResponseSchema;
+    input: typeof HubAppendUserMessageRequestSchema;
+    output: typeof HubAppendUserMessageResponseSchema;
   },
   /**
-   * @generated from rpc firebat.v1.ChatbotService.AppendSystemMessage
+   * @generated from rpc firebat.v1.HubService.AppendSystemMessage
    */
   appendSystemMessage: {
     methodKind: "unary";
-    input: typeof ChatbotAppendSystemMessageRequestSchema;
-    output: typeof ChatbotAppendSystemMessageResponseSchema;
+    input: typeof HubAppendSystemMessageRequestSchema;
+    output: typeof HubAppendSystemMessageResponseSchema;
   },
   /**
-   * @generated from rpc firebat.v1.ChatbotService.ListMessages
+   * @generated from rpc firebat.v1.HubService.ListMessages
    */
   listMessages: {
     methodKind: "unary";
-    input: typeof ChatbotListMessagesRequestSchema;
-    output: typeof ChatbotListMessagesResponseSchema;
+    input: typeof HubListMessagesRequestSchema;
+    output: typeof HubListMessagesResponseSchema;
   },
   /**
    * 외부 endpoint 통합 entry — 인증 + 대화 ensure + AI 호출 + 영속화 통합
    *
-   * @generated from rpc firebat.v1.ChatbotService.SendMessage
+   * @generated from rpc firebat.v1.HubService.SendMessage
    */
   sendMessage: {
     methodKind: "unary";
-    input: typeof ChatbotSendMessageRequestSchema;
-    output: typeof ChatbotSendMessageResponseSchema;
+    input: typeof HubSendMessageRequestSchema;
+    output: typeof HubSendMessageResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_firebat, 29);

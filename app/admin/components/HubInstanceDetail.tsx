@@ -6,15 +6,15 @@ import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost } from '../../../lib/api-fetch';
-import type { ChatbotInstancePb, LibraryReferencePb } from '../../../lib/proto-gen/firebat_pb';
+import type { HubInstancePb, LibraryReferencePb } from '../../../lib/proto-gen/firebat_pb';
 
-type ChatbotApiResponse<T> = { success: boolean; data?: T; error?: string };
+type HubApiResponse<T> = { success: boolean; data?: T; error?: string };
 type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
 
 interface SysmodEntry { name: string; description?: string }
 
 /**
- * ChatbotInstanceDetail — 매 chatbot 의 settings 편집 UI.
+ * HubInstanceDetail — 매 hub 의 settings 편집 UI.
  *
  * 편집 항목:
  *  - name / description
@@ -25,11 +25,11 @@ interface SysmodEntry { name: string; description?: string }
  *  - enabled (활성 / 비활성 toggle)
  *  - api_token (표시 + 복사 + rotate)
  */
-export function ChatbotInstanceDetail({
+export function HubInstanceDetail({
   instance,
   onBack,
 }: {
-  instance: ChatbotInstancePb;
+  instance: HubInstancePb;
   onBack: () => void;
 }) {
   const [name, setName] = useState(instance.name);
@@ -67,22 +67,22 @@ export function ChatbotInstanceDetail({
     apiPost<LibraryApiResponse<LibraryReferencePb[]>>(
       '/api/library/list-references',
       { owner: 'admin' },
-      { category: 'chatbot' },
+      { category: 'hub' },
     ).then(res => {
       if (res.success && res.data) setReferences(res.data);
-    }).catch(e => logger.debug('chatbot', 'load_references 실패', { error: e }));
+    }).catch(e => logger.debug('hub', 'load_references 실패', { error: e }));
 
     // sysmod 목록 — `/api/fs/system-modules` (SettingsModal 안 박은 영역 동일).
     // 옛 `/api/settings/modules?scope=system` 박은 영역 = 단일 모듈 조회 endpoint 안 잘못된 호출 →
     // `name 필요` 400 BadRequest 박힌 영역 정정.
     apiGet<{ success: boolean; modules?: Array<{ name: string; description?: string }> }>(
       '/api/fs/system-modules',
-      { category: 'chatbot' },
+      { category: 'hub' },
     ).then(d => {
       if (d.success && Array.isArray(d.modules)) {
         setSysmods(d.modules.map(m => ({ name: m.name, description: m.description })));
       }
-    }).catch(e => logger.debug('chatbot', 'load_sysmods 실패', { error: e }));
+    }).catch(e => logger.debug('hub', 'load_sysmods 실패', { error: e }));
   }, []);
 
   const toggleReference = (id: string) => {
@@ -101,8 +101,8 @@ export function ChatbotInstanceDetail({
     setSaving(true);
     try {
       const domains = allowedDomains.split('\n').map(s => s.trim()).filter(Boolean);
-      const res = await apiPost<ChatbotApiResponse<void>>(
-        '/api/chatbot/update-instance',
+      const res = await apiPost<HubApiResponse<void>>(
+        '/api/hub/update-instance',
         {
           id: instance.id,
           name,
@@ -116,7 +116,7 @@ export function ChatbotInstanceDetail({
           allowedDomains: domains,
           replaceAllowedDomains: true,
         },
-        { category: 'chatbot' },
+        { category: 'hub' },
       );
       if (!res.success) {
         await alertDialog({ title: '저장 실패', message: res.error ?? '오류가 발생했습니다.' });
@@ -126,7 +126,7 @@ export function ChatbotInstanceDetail({
         setTimeout(() => setSaved(false), 2000);
       }
     } catch (e) {
-      logger.debug('chatbot', 'update_instance 실패', { error: e });
+      logger.debug('hub', 'update_instance 실패', { error: e });
       // silent fail 차단 — 사용자 시점 안 동작 0 박은 영역 명시 안내. network error / RPC fail 등.
       await alertDialog({ title: '저장 실패', message: (e as Error)?.message ?? '네트워크 또는 서버 오류' });
     } finally {
@@ -143,24 +143,24 @@ export function ChatbotInstanceDetail({
     });
     if (!ok) return;
     try {
-      const res = await apiPost<ChatbotApiResponse<{ newToken: string }>>(
-        '/api/chatbot/rotate-api-token',
+      const res = await apiPost<HubApiResponse<{ newToken: string }>>(
+        '/api/hub/rotate-api-token',
         { id: instance.id },
-        { category: 'chatbot' },
+        { category: 'hub' },
       );
       if (res.success && res.data) {
         setApiToken(res.data.newToken);
         await alertDialog({ title: '토큰 재발급 완료', message: '새 토큰이 적용됐습니다.' });
       }
     } catch (e) {
-      logger.debug('chatbot', 'rotate_api_token 실패', { error: e });
+      logger.debug('hub', 'rotate_api_token 실패', { error: e });
     }
   }, [instance.id]);
 
   // embed snippet 영역 build — 사용자가 외부 사이트 HTML 영역 박는 영역.
   const embedSnippet = firebatUrl
     ? `<script
-  src="${firebatUrl}/api/chatbot/widget.js"
+  src="${firebatUrl}/api/hub/widget.js"
   data-slug="${instance.slug}"
   data-token="${apiToken}"
   data-firebat-url="${firebatUrl}"
@@ -173,7 +173,7 @@ export function ChatbotInstanceDetail({
       await navigator.clipboard.writeText(embedSnippet);
       await alertDialog({ title: '복사됨', message: '위젯 코드가 클립보드에 복사됐습니다. 외부 사이트 HTML 영역에 박아주세요.' });
     } catch (e) {
-      logger.debug('chatbot', 'copy_embed 실패', { error: e });
+      logger.debug('hub', 'copy_embed 실패', { error: e });
     }
   }, [embedSnippet]);
 
@@ -230,7 +230,7 @@ export function ChatbotInstanceDetail({
             checked={enabled}
             onChange={e => setEnabled(e.target.checked)}
             className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-            name="chatbotEnabled"
+            name="hubEnabled"
           />
           <span>활성 (외부 호출 허용)</span>
         </label>
@@ -244,7 +244,7 @@ export function ChatbotInstanceDetail({
             value={name}
             onChange={e => setName(e.target.value)}
             className="w-full px-2 py-1.5 text-[12px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            name="chatbotName"
+            name="hubName"
             autoComplete="off"
           />
         </div>
@@ -258,7 +258,7 @@ export function ChatbotInstanceDetail({
             value={description}
             onChange={e => setDescription(e.target.value)}
             className="w-full px-2 py-1.5 text-[12px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            name="chatbotDescription"
+            name="hubDescription"
             autoComplete="off"
           />
         </div>
@@ -273,7 +273,7 @@ export function ChatbotInstanceDetail({
             rows={6}
             placeholder="이 Hub 의 역할 / 답변 톤 / 금지 항목 등을 기술"
             className="w-full px-2 py-1.5 text-[12px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y font-mono"
-            name="chatbotSystemPrompt"
+            name="hubSystemPrompt"
           />
         </div>
 
@@ -285,7 +285,7 @@ export function ChatbotInstanceDetail({
           ) : (
             <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-slate-200 rounded p-1.5">
               {references.map(ref => {
-                const refInputId = `chatbot-ref-${ref.id}`;
+                const refInputId = `hub-ref-${ref.id}`;
                 return (
                   <label key={ref.id} htmlFor={refInputId} className="flex items-center gap-2 text-[12px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded">
                     <input
@@ -314,7 +314,7 @@ export function ChatbotInstanceDetail({
           ) : (
             <div className="flex flex-col gap-1 max-h-48 overflow-y-auto border border-slate-200 rounded p-1.5">
               {sysmods.map(mod => {
-                const modInputId = `chatbot-sysmod-${mod.name}`;
+                const modInputId = `hub-sysmod-${mod.name}`;
                 return (
                   <label key={mod.name} htmlFor={modInputId} className="flex items-center gap-2 text-[12px] cursor-pointer hover:bg-slate-50 px-1.5 py-1 rounded">
                     <input
@@ -348,7 +348,7 @@ export function ChatbotInstanceDetail({
             rows={3}
             placeholder="https://example.com&#10;https://blog.example.com"
             className="w-full px-2 py-1.5 text-[11px] border border-slate-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y font-mono"
-            name="chatbotAllowedDomains"
+            name="hubAllowedDomains"
           />
           <p className="text-[10px] text-slate-400">한 줄에 하나. 빈 영역 = 모든 origin 허용 (개발 영역).</p>
         </div>
@@ -363,7 +363,7 @@ export function ChatbotInstanceDetail({
               readOnly
               className="flex-1 px-2 py-1.5 text-[11px] font-mono border border-slate-300 rounded bg-slate-50"
               aria-label="API 토큰"
-              name="chatbotApiToken"
+              name="hubApiToken"
             />
             <Tooltip label="복사">
               <button
@@ -395,7 +395,7 @@ export function ChatbotInstanceDetail({
               readOnly
               rows={7}
               className="w-full px-2 py-1.5 text-[11px] font-mono border border-slate-300 rounded bg-slate-50 resize-none"
-              name="chatbotEmbedSnippet"
+              name="hubEmbedSnippet"
               onClick={e => (e.target as HTMLTextAreaElement).select()}
             />
             <button
