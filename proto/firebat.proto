@@ -2446,11 +2446,11 @@ service LibraryService {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// ChatbotService — system service chatbot (Phase 1, 2026-05-17).
+// HubService — system service hub (Phase 1, 2026-05-17).
 // 외부 워드프레스 사이트 연결용. admin chat 과 별개 (대화 / 메시지 테이블 분리).
 // ──────────────────────────────────────────────────────────────────────────
 
-message ChatbotInstancePb {
+message HubInstancePb {
   string id = 1;
   string slug = 2;
   string name = 3;
@@ -2466,7 +2466,7 @@ message ChatbotInstancePb {
   int64 updated_at = 13;
 }
 
-message ChatbotConversationPb {
+message HubConversationPb {
   string id = 1;
   string instance_id = 2;
   string session_id = 3;
@@ -2475,7 +2475,7 @@ message ChatbotConversationPb {
   int64 updated_at = 6;
 }
 
-message ChatbotMessagePb {
+message HubMessagePb {
   string id = 1;
   string conversation_id = 2;
   string role = 3;             // 'user' / 'system'
@@ -2486,7 +2486,7 @@ message ChatbotMessagePb {
 
 // ─── Instance CRUD (admin 전용) ────────────────────────────────────────────
 
-message ChatbotCreateInstanceRequest {
+message HubCreateInstanceRequest {
   string slug = 1;
   string name = 2;
   string description = 3;
@@ -2497,30 +2497,30 @@ message ChatbotCreateInstanceRequest {
   bool enabled = 8;
   repeated string allowed_domains = 9;
 }
-message ChatbotCreateInstanceResponse {
+message HubCreateInstanceResponse {
   string id = 1;
 }
 
-message ChatbotListInstancesRequest {}
-message ChatbotListInstancesResponse {
-  repeated ChatbotInstancePb instances = 1;
+message HubListInstancesRequest {}
+message HubListInstancesResponse {
+  repeated HubInstancePb instances = 1;
 }
 
-message ChatbotGetInstanceRequest {
+message HubGetInstanceRequest {
   string id = 1;
 }
-message ChatbotGetInstanceResponse {
-  ChatbotInstancePb instance = 1;
+message HubGetInstanceResponse {
+  HubInstancePb instance = 1;
 }
 
-message ChatbotGetInstanceBySlugRequest {
+message HubGetInstanceBySlugRequest {
   string slug = 1;
 }
-message ChatbotGetInstanceBySlugResponse {
-  ChatbotInstancePb instance = 1;
+message HubGetInstanceBySlugResponse {
+  HubInstancePb instance = 1;
 }
 
-message ChatbotUpdateInstanceRequest {
+message HubUpdateInstanceRequest {
   string id = 1;
   // 매 필드 optional (proto3 optional) — 미설정 = 옛 값 유지.
   optional string name = 2;
@@ -2537,95 +2537,95 @@ message ChatbotUpdateInstanceRequest {
   repeated string allowed_domains = 11;
   bool replace_allowed_domains = 12;
 }
-message ChatbotUpdateInstanceResponse {}
+message HubUpdateInstanceResponse {}
 
-message ChatbotDeleteInstanceRequest {
+message HubDeleteInstanceRequest {
   string id = 1;
 }
-message ChatbotDeleteInstanceResponse {}
+message HubDeleteInstanceResponse {}
 
-message ChatbotRotateApiTokenRequest {
+message HubRotateApiTokenRequest {
   string id = 1;
 }
-message ChatbotRotateApiTokenResponse {
+message HubRotateApiTokenResponse {
   string new_token = 1;
 }
 
 // ─── 외부 endpoint 검증 ────────────────────────────────────────────────────
 
-message ChatbotAuthenticateRequest {
+message HubAuthenticateRequest {
   string slug = 1;
   string api_token = 2;
   string origin = 3;            // request origin (빈 = 검사 skip)
 }
-message ChatbotAuthenticateResponse {
-  ChatbotInstancePb instance = 1;
+message HubAuthenticateResponse {
+  HubInstancePb instance = 1;
 }
 
 // ─── Conversation ─────────────────────────────────────────────────────────
 
-message ChatbotEnsureConversationRequest {
+message HubEnsureConversationRequest {
   string instance_id = 1;
   string session_id = 2;
 }
-message ChatbotEnsureConversationResponse {
+message HubEnsureConversationResponse {
   string conversation_id = 1;
 }
 
-message ChatbotListConversationsRequest {
+message HubListConversationsRequest {
   string instance_id = 1;
   string session_id = 2;
 }
-message ChatbotListConversationsResponse {
-  repeated ChatbotConversationPb conversations = 1;
+message HubListConversationsResponse {
+  repeated HubConversationPb conversations = 1;
 }
 
-message ChatbotGetConversationRequest {
+message HubGetConversationRequest {
   string id = 1;
 }
-message ChatbotGetConversationResponse {
-  ChatbotConversationPb conversation = 1;
+message HubGetConversationResponse {
+  HubConversationPb conversation = 1;
 }
 
-message ChatbotDeleteConversationRequest {
+message HubDeleteConversationRequest {
   string id = 1;
 }
-message ChatbotDeleteConversationResponse {}
+message HubDeleteConversationResponse {}
 
-message ChatbotUpdateConversationTitleRequest {
+message HubUpdateConversationTitleRequest {
   string id = 1;
   string title = 2;
 }
-message ChatbotUpdateConversationTitleResponse {}
+message HubUpdateConversationTitleResponse {}
 
 // ─── Message ──────────────────────────────────────────────────────────────
 
-message ChatbotAppendUserMessageRequest {
+message HubAppendUserMessageRequest {
   string conversation_id = 1;
   string content = 2;
 }
-message ChatbotAppendUserMessageResponse {
+message HubAppendUserMessageResponse {
   string message_id = 1;
 }
 
-message ChatbotAppendSystemMessageRequest {
+message HubAppendSystemMessageRequest {
   string conversation_id = 1;
   string content = 2;
   string data_json = 3;
 }
-message ChatbotAppendSystemMessageResponse {
+message HubAppendSystemMessageResponse {
   string message_id = 1;
 }
 
-message ChatbotListMessagesRequest {
+message HubListMessagesRequest {
   string conversation_id = 1;
 }
-message ChatbotListMessagesResponse {
-  repeated ChatbotMessagePb messages = 1;
+message HubListMessagesResponse {
+  repeated HubMessagePb messages = 1;
 }
 
 // ─── 외부 endpoint 통합 send_message ──────────────────────────────────────
-// 외부 chatbot endpoint (POST /api/chatbot/<slug>/chat) 가 호출하는 단일 RPC.
+// 외부 hub endpoint (POST /api/hub/<slug>/chat) 가 호출하는 단일 RPC.
 // 옛 Authenticate + EnsureConversation + AppendUserMessage + AI 호출 + AppendSystemMessage
 // 5 RPC 분리 호출 영역 (route layer 안 비즈니스 흐름 leak) 단일 entry 영역 통합.
 //
@@ -2633,49 +2633,49 @@ message ChatbotListMessagesResponse {
 //   1. authenticate (slug + api_token + origin) → instance
 //   2. ensure_conversation (instance_id + session_id) → conversation_id
 //   3. append_user_message
-//   4. ChatbotContext (allowed_sysmods / allowed_references / history) 빌드 + AiManager 호출
+//   4. HubContext (allowed_sysmods / allowed_references / history) 빌드 + AiManager 호출
 //   5. AI 응답 영역 append_system_message
 //
 // 응답 raw_json = AiResponse (reply + blocks + suggestions + tool_results 등).
-message ChatbotSendMessageRequest {
+message HubSendMessageRequest {
   string slug = 1;
   string api_token = 2;
   string origin = 3;
   string session_id = 4;
   string user_message = 5;
 }
-message ChatbotSendMessageResponse {
+message HubSendMessageResponse {
   string conversation_id = 1;
   string raw_json = 2;          // AiResponse JSON — admin chat 영역 동일 포맷
 }
 
-service ChatbotService {
+service HubService {
   // Instance CRUD (admin)
-  rpc CreateInstance(ChatbotCreateInstanceRequest) returns (ChatbotCreateInstanceResponse);
-  rpc ListInstances(ChatbotListInstancesRequest) returns (ChatbotListInstancesResponse);
-  rpc GetInstance(ChatbotGetInstanceRequest) returns (ChatbotGetInstanceResponse);
-  rpc GetInstanceBySlug(ChatbotGetInstanceBySlugRequest) returns (ChatbotGetInstanceBySlugResponse);
-  rpc UpdateInstance(ChatbotUpdateInstanceRequest) returns (ChatbotUpdateInstanceResponse);
-  rpc DeleteInstance(ChatbotDeleteInstanceRequest) returns (ChatbotDeleteInstanceResponse);
-  rpc RotateApiToken(ChatbotRotateApiTokenRequest) returns (ChatbotRotateApiTokenResponse);
+  rpc CreateInstance(HubCreateInstanceRequest) returns (HubCreateInstanceResponse);
+  rpc ListInstances(HubListInstancesRequest) returns (HubListInstancesResponse);
+  rpc GetInstance(HubGetInstanceRequest) returns (HubGetInstanceResponse);
+  rpc GetInstanceBySlug(HubGetInstanceBySlugRequest) returns (HubGetInstanceBySlugResponse);
+  rpc UpdateInstance(HubUpdateInstanceRequest) returns (HubUpdateInstanceResponse);
+  rpc DeleteInstance(HubDeleteInstanceRequest) returns (HubDeleteInstanceResponse);
+  rpc RotateApiToken(HubRotateApiTokenRequest) returns (HubRotateApiTokenResponse);
 
   // 외부 endpoint 검증
-  rpc Authenticate(ChatbotAuthenticateRequest) returns (ChatbotAuthenticateResponse);
+  rpc Authenticate(HubAuthenticateRequest) returns (HubAuthenticateResponse);
 
   // Conversation
-  rpc EnsureConversation(ChatbotEnsureConversationRequest) returns (ChatbotEnsureConversationResponse);
-  rpc ListConversations(ChatbotListConversationsRequest) returns (ChatbotListConversationsResponse);
-  rpc GetConversation(ChatbotGetConversationRequest) returns (ChatbotGetConversationResponse);
-  rpc DeleteConversation(ChatbotDeleteConversationRequest) returns (ChatbotDeleteConversationResponse);
-  rpc UpdateConversationTitle(ChatbotUpdateConversationTitleRequest) returns (ChatbotUpdateConversationTitleResponse);
+  rpc EnsureConversation(HubEnsureConversationRequest) returns (HubEnsureConversationResponse);
+  rpc ListConversations(HubListConversationsRequest) returns (HubListConversationsResponse);
+  rpc GetConversation(HubGetConversationRequest) returns (HubGetConversationResponse);
+  rpc DeleteConversation(HubDeleteConversationRequest) returns (HubDeleteConversationResponse);
+  rpc UpdateConversationTitle(HubUpdateConversationTitleRequest) returns (HubUpdateConversationTitleResponse);
 
   // Message
-  rpc AppendUserMessage(ChatbotAppendUserMessageRequest) returns (ChatbotAppendUserMessageResponse);
-  rpc AppendSystemMessage(ChatbotAppendSystemMessageRequest) returns (ChatbotAppendSystemMessageResponse);
-  rpc ListMessages(ChatbotListMessagesRequest) returns (ChatbotListMessagesResponse);
+  rpc AppendUserMessage(HubAppendUserMessageRequest) returns (HubAppendUserMessageResponse);
+  rpc AppendSystemMessage(HubAppendSystemMessageRequest) returns (HubAppendSystemMessageResponse);
+  rpc ListMessages(HubListMessagesRequest) returns (HubListMessagesResponse);
 
   // 외부 endpoint 통합 entry — 인증 + 대화 ensure + AI 호출 + 영속화 통합
-  rpc SendMessage(ChatbotSendMessageRequest) returns (ChatbotSendMessageResponse);
+  rpc SendMessage(HubSendMessageRequest) returns (HubSendMessageResponse);
 }
 
 // ──────────────────────────────────────────────────────────────────────────

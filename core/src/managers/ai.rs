@@ -509,12 +509,12 @@ impl AiManager {
                 dyn_reg.refresh().await;
             }
             let mut tools_built = self.build_tool_definitions();
-            // chatbot 영역 도구 필터 — 외부 사이트 안 admin 도구 노출 차단.
+            // hub 영역 도구 필터 — 외부 사이트 안 admin 도구 노출 차단.
             // 허용 영역 = (1) `sysmod_<name>` 안 name 영역 allowed_sysmods 안 들어있는 것
             //              (2) `render_*` 영역 (UI 렌더 도구, 안전)
             // 그 외 = mcp_* / propose_plan / suggest / schedule_task / save_page / search_history /
             //         run_user_module / list_user_modules / get_user_module / write_module 등 모두 차단.
-            if let Some(ctx) = &ai_opts.chatbot_context {
+            if let Some(ctx) = &ai_opts.hub_context {
                 let allowed: std::collections::HashSet<String> =
                     ctx.allowed_sysmods.iter().cloned().collect();
                 tools_built.retain(|t| {
@@ -551,9 +551,9 @@ impl AiManager {
                         extra_parts.push(ctx);
                     }
                 }
-                // chatbot 영역 = HistoryResolver 우회 + chatbot_context.history 직접 format prepend.
-                // chatbot_conversations 영역 별도 테이블이라 HistoryResolver (admin conversations 영역 의존) 미적용.
-                if let Some(ctx) = &ai_opts.chatbot_context {
+                // hub 영역 = HistoryResolver 우회 + hub_context.history 직접 format prepend.
+                // hub_conversations 영역 별도 테이블이라 HistoryResolver (admin conversations 영역 의존) 미적용.
+                if let Some(ctx) = &ai_opts.hub_context {
                     if !ctx.history.is_empty() {
                         let mut s = String::from("## 최근 대화 컨텍스트\n");
                         for msg in ctx.history.iter() {
@@ -609,10 +609,10 @@ impl AiManager {
                             .as_deref()
                             .or(ai_opts.conversation_id.as_deref())
                             .map(String::from);
-                        // chatbot_context 박혀있으면 library 검색 영역 안 allowed_references 만 제한.
+                        // hub_context 박혀있으면 library 검색 영역 안 allowed_references 만 제한.
                         // None = 옛 admin 흐름 (owner 영역 전체 Reference 자연 처리).
                         let reference_filter = ai_opts
-                            .chatbot_context
+                            .hub_context
                             .as_ref()
                             .map(|c| c.allowed_references.clone());
                         let retrieve_opts = retrieval_engine::RetrieveOpts {

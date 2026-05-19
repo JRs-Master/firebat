@@ -1,46 +1,46 @@
-//! gRPC ChatbotService impl — ChatbotManager wrapping.
+//! gRPC HubService impl — HubManager wrapping.
 //!
-//! Chatbot Phase 1 (2026-05-17). 매 RPC unique Request / Response (Phase B-typed).
+//! Hub Phase 1 (2026-05-17). 매 RPC unique Request / Response (Phase B-typed).
 
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
 use crate::managers::ai::AiManager;
-use crate::managers::chatbot::{ChatbotManager, CreateInstanceInput, UpdateInstanceInput};
-use crate::ports::ChatbotInstance;
+use crate::managers::hub::{HubManager, CreateInstanceInput, UpdateInstanceInput};
+use crate::ports::HubInstance;
 use crate::proto::{
-    chatbot_service_server::ChatbotService, ChatbotAppendSystemMessageRequest,
-    ChatbotAppendSystemMessageResponse, ChatbotAppendUserMessageRequest,
-    ChatbotAppendUserMessageResponse, ChatbotAuthenticateRequest, ChatbotAuthenticateResponse,
-    ChatbotConversationPb, ChatbotCreateInstanceRequest, ChatbotCreateInstanceResponse,
-    ChatbotDeleteConversationRequest, ChatbotDeleteConversationResponse,
-    ChatbotDeleteInstanceRequest, ChatbotDeleteInstanceResponse, ChatbotEnsureConversationRequest,
-    ChatbotEnsureConversationResponse, ChatbotGetConversationRequest,
-    ChatbotGetConversationResponse, ChatbotGetInstanceBySlugRequest,
-    ChatbotGetInstanceBySlugResponse, ChatbotGetInstanceRequest, ChatbotGetInstanceResponse,
-    ChatbotInstancePb, ChatbotListConversationsRequest, ChatbotListConversationsResponse,
-    ChatbotListInstancesRequest, ChatbotListInstancesResponse, ChatbotListMessagesRequest,
-    ChatbotListMessagesResponse, ChatbotMessagePb, ChatbotRotateApiTokenRequest,
-    ChatbotRotateApiTokenResponse, ChatbotSendMessageRequest, ChatbotSendMessageResponse,
-    ChatbotUpdateConversationTitleRequest, ChatbotUpdateConversationTitleResponse,
-    ChatbotUpdateInstanceRequest, ChatbotUpdateInstanceResponse,
+    hub_service_server::HubService, HubAppendSystemMessageRequest,
+    HubAppendSystemMessageResponse, HubAppendUserMessageRequest,
+    HubAppendUserMessageResponse, HubAuthenticateRequest, HubAuthenticateResponse,
+    HubConversationPb, HubCreateInstanceRequest, HubCreateInstanceResponse,
+    HubDeleteConversationRequest, HubDeleteConversationResponse,
+    HubDeleteInstanceRequest, HubDeleteInstanceResponse, HubEnsureConversationRequest,
+    HubEnsureConversationResponse, HubGetConversationRequest,
+    HubGetConversationResponse, HubGetInstanceBySlugRequest,
+    HubGetInstanceBySlugResponse, HubGetInstanceRequest, HubGetInstanceResponse,
+    HubInstancePb, HubListConversationsRequest, HubListConversationsResponse,
+    HubListInstancesRequest, HubListInstancesResponse, HubListMessagesRequest,
+    HubListMessagesResponse, HubMessagePb, HubRotateApiTokenRequest,
+    HubRotateApiTokenResponse, HubSendMessageRequest, HubSendMessageResponse,
+    HubUpdateConversationTitleRequest, HubUpdateConversationTitleResponse,
+    HubUpdateInstanceRequest, HubUpdateInstanceResponse,
 };
 
-pub struct ChatbotServiceImpl {
-    manager: Arc<ChatbotManager>,
+pub struct HubServiceImpl {
+    manager: Arc<HubManager>,
     ai: Arc<AiManager>,
 }
 
-impl ChatbotServiceImpl {
-    pub fn new(manager: Arc<ChatbotManager>, ai: Arc<AiManager>) -> Self {
+impl HubServiceImpl {
+    pub fn new(manager: Arc<HubManager>, ai: Arc<AiManager>) -> Self {
         Self { manager, ai }
     }
 }
 
 // ─── 변환 헬퍼 ────────────────────────────────────────────────────────────
 
-fn instance_to_pb(i: ChatbotInstance) -> ChatbotInstancePb {
-    ChatbotInstancePb {
+fn instance_to_pb(i: HubInstance) -> HubInstancePb {
+    HubInstancePb {
         id: i.id,
         slug: i.slug,
         name: i.name,
@@ -57,8 +57,8 @@ fn instance_to_pb(i: ChatbotInstance) -> ChatbotInstancePb {
     }
 }
 
-fn conversation_to_pb(c: crate::ports::ChatbotConversation) -> ChatbotConversationPb {
-    ChatbotConversationPb {
+fn conversation_to_pb(c: crate::ports::HubConversation) -> HubConversationPb {
+    HubConversationPb {
         id: c.id,
         instance_id: c.instance_id,
         session_id: c.session_id,
@@ -68,8 +68,8 @@ fn conversation_to_pb(c: crate::ports::ChatbotConversation) -> ChatbotConversati
     }
 }
 
-fn message_to_pb(m: crate::ports::ChatbotMessage) -> ChatbotMessagePb {
-    ChatbotMessagePb {
+fn message_to_pb(m: crate::ports::HubMessage) -> HubMessagePb {
+    HubMessagePb {
         id: m.id,
         conversation_id: m.conversation_id,
         role: m.role,
@@ -80,13 +80,13 @@ fn message_to_pb(m: crate::ports::ChatbotMessage) -> ChatbotMessagePb {
 }
 
 #[tonic::async_trait]
-impl ChatbotService for ChatbotServiceImpl {
+impl HubService for HubServiceImpl {
     // ─── Instance CRUD ────────────────────────────────────────────────────
 
     async fn create_instance(
         &self,
-        req: Request<ChatbotCreateInstanceRequest>,
-    ) -> Result<Response<ChatbotCreateInstanceResponse>, TonicStatus> {
+        req: Request<HubCreateInstanceRequest>,
+    ) -> Result<Response<HubCreateInstanceResponse>, TonicStatus> {
         let args = req.into_inner();
         let input = CreateInstanceInput {
             slug: args.slug,
@@ -104,27 +104,27 @@ impl ChatbotService for ChatbotServiceImpl {
             .create_instance(input)
             .await
             .map_err(TonicStatus::invalid_argument)?;
-        Ok(Response::new(ChatbotCreateInstanceResponse { id }))
+        Ok(Response::new(HubCreateInstanceResponse { id }))
     }
 
     async fn list_instances(
         &self,
-        _req: Request<ChatbotListInstancesRequest>,
-    ) -> Result<Response<ChatbotListInstancesResponse>, TonicStatus> {
+        _req: Request<HubListInstancesRequest>,
+    ) -> Result<Response<HubListInstancesResponse>, TonicStatus> {
         let instances = self
             .manager
             .list_instances()
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(ChatbotListInstancesResponse {
+        Ok(Response::new(HubListInstancesResponse {
             instances: instances.into_iter().map(instance_to_pb).collect(),
         }))
     }
 
     async fn get_instance(
         &self,
-        req: Request<ChatbotGetInstanceRequest>,
-    ) -> Result<Response<ChatbotGetInstanceResponse>, TonicStatus> {
+        req: Request<HubGetInstanceRequest>,
+    ) -> Result<Response<HubGetInstanceResponse>, TonicStatus> {
         let id = req.into_inner().id;
         let instance = self
             .manager
@@ -132,15 +132,15 @@ impl ChatbotService for ChatbotServiceImpl {
             .await
             .map_err(TonicStatus::internal)?
             .ok_or_else(|| TonicStatus::not_found(format!("instance \"{id}\" 가 없습니다.")))?;
-        Ok(Response::new(ChatbotGetInstanceResponse {
+        Ok(Response::new(HubGetInstanceResponse {
             instance: Some(instance_to_pb(instance)),
         }))
     }
 
     async fn get_instance_by_slug(
         &self,
-        req: Request<ChatbotGetInstanceBySlugRequest>,
-    ) -> Result<Response<ChatbotGetInstanceBySlugResponse>, TonicStatus> {
+        req: Request<HubGetInstanceBySlugRequest>,
+    ) -> Result<Response<HubGetInstanceBySlugResponse>, TonicStatus> {
         let slug = req.into_inner().slug;
         let instance = self
             .manager
@@ -148,15 +148,15 @@ impl ChatbotService for ChatbotServiceImpl {
             .await
             .map_err(TonicStatus::internal)?
             .ok_or_else(|| TonicStatus::not_found(format!("slug \"{slug}\" 가 없습니다.")))?;
-        Ok(Response::new(ChatbotGetInstanceBySlugResponse {
+        Ok(Response::new(HubGetInstanceBySlugResponse {
             instance: Some(instance_to_pb(instance)),
         }))
     }
 
     async fn update_instance(
         &self,
-        req: Request<ChatbotUpdateInstanceRequest>,
-    ) -> Result<Response<ChatbotUpdateInstanceResponse>, TonicStatus> {
+        req: Request<HubUpdateInstanceRequest>,
+    ) -> Result<Response<HubUpdateInstanceResponse>, TonicStatus> {
         let args = req.into_inner();
         let patch = UpdateInstanceInput {
             name: args.name,
@@ -184,40 +184,40 @@ impl ChatbotService for ChatbotServiceImpl {
             .update_instance(&args.id, patch)
             .await
             .map_err(TonicStatus::invalid_argument)?;
-        Ok(Response::new(ChatbotUpdateInstanceResponse {}))
+        Ok(Response::new(HubUpdateInstanceResponse {}))
     }
 
     async fn delete_instance(
         &self,
-        req: Request<ChatbotDeleteInstanceRequest>,
-    ) -> Result<Response<ChatbotDeleteInstanceResponse>, TonicStatus> {
+        req: Request<HubDeleteInstanceRequest>,
+    ) -> Result<Response<HubDeleteInstanceResponse>, TonicStatus> {
         let id = req.into_inner().id;
         self.manager
             .delete_instance(&id)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(ChatbotDeleteInstanceResponse {}))
+        Ok(Response::new(HubDeleteInstanceResponse {}))
     }
 
     async fn rotate_api_token(
         &self,
-        req: Request<ChatbotRotateApiTokenRequest>,
-    ) -> Result<Response<ChatbotRotateApiTokenResponse>, TonicStatus> {
+        req: Request<HubRotateApiTokenRequest>,
+    ) -> Result<Response<HubRotateApiTokenResponse>, TonicStatus> {
         let id = req.into_inner().id;
         let new_token = self
             .manager
             .rotate_api_token(&id)
             .await
             .map_err(TonicStatus::invalid_argument)?;
-        Ok(Response::new(ChatbotRotateApiTokenResponse { new_token }))
+        Ok(Response::new(HubRotateApiTokenResponse { new_token }))
     }
 
     // ─── 외부 endpoint 검증 ───────────────────────────────────────────────
 
     async fn authenticate(
         &self,
-        req: Request<ChatbotAuthenticateRequest>,
-    ) -> Result<Response<ChatbotAuthenticateResponse>, TonicStatus> {
+        req: Request<HubAuthenticateRequest>,
+    ) -> Result<Response<HubAuthenticateResponse>, TonicStatus> {
         let args = req.into_inner();
         let origin = if args.origin.is_empty() { None } else { Some(args.origin.as_str()) };
         let instance = self
@@ -225,7 +225,7 @@ impl ChatbotService for ChatbotServiceImpl {
             .authenticate(&args.slug, &args.api_token, origin)
             .await
             .map_err(TonicStatus::permission_denied)?;
-        Ok(Response::new(ChatbotAuthenticateResponse {
+        Ok(Response::new(HubAuthenticateResponse {
             instance: Some(instance_to_pb(instance)),
         }))
     }
@@ -234,38 +234,38 @@ impl ChatbotService for ChatbotServiceImpl {
 
     async fn ensure_conversation(
         &self,
-        req: Request<ChatbotEnsureConversationRequest>,
-    ) -> Result<Response<ChatbotEnsureConversationResponse>, TonicStatus> {
+        req: Request<HubEnsureConversationRequest>,
+    ) -> Result<Response<HubEnsureConversationResponse>, TonicStatus> {
         let args = req.into_inner();
         let conversation_id = self
             .manager
             .ensure_conversation(&args.instance_id, &args.session_id)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(ChatbotEnsureConversationResponse {
+        Ok(Response::new(HubEnsureConversationResponse {
             conversation_id,
         }))
     }
 
     async fn list_conversations(
         &self,
-        req: Request<ChatbotListConversationsRequest>,
-    ) -> Result<Response<ChatbotListConversationsResponse>, TonicStatus> {
+        req: Request<HubListConversationsRequest>,
+    ) -> Result<Response<HubListConversationsResponse>, TonicStatus> {
         let args = req.into_inner();
         let conversations = self
             .manager
             .list_conversations(&args.instance_id, &args.session_id)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(ChatbotListConversationsResponse {
+        Ok(Response::new(HubListConversationsResponse {
             conversations: conversations.into_iter().map(conversation_to_pb).collect(),
         }))
     }
 
     async fn get_conversation(
         &self,
-        req: Request<ChatbotGetConversationRequest>,
-    ) -> Result<Response<ChatbotGetConversationResponse>, TonicStatus> {
+        req: Request<HubGetConversationRequest>,
+    ) -> Result<Response<HubGetConversationResponse>, TonicStatus> {
         let id = req.into_inner().id;
         let conversation = self
             .manager
@@ -273,56 +273,56 @@ impl ChatbotService for ChatbotServiceImpl {
             .await
             .map_err(TonicStatus::internal)?
             .ok_or_else(|| TonicStatus::not_found(format!("conversation \"{id}\" 가 없습니다.")))?;
-        Ok(Response::new(ChatbotGetConversationResponse {
+        Ok(Response::new(HubGetConversationResponse {
             conversation: Some(conversation_to_pb(conversation)),
         }))
     }
 
     async fn delete_conversation(
         &self,
-        req: Request<ChatbotDeleteConversationRequest>,
-    ) -> Result<Response<ChatbotDeleteConversationResponse>, TonicStatus> {
+        req: Request<HubDeleteConversationRequest>,
+    ) -> Result<Response<HubDeleteConversationResponse>, TonicStatus> {
         let id = req.into_inner().id;
         self.manager
             .delete_conversation(&id)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(ChatbotDeleteConversationResponse {}))
+        Ok(Response::new(HubDeleteConversationResponse {}))
     }
 
     async fn update_conversation_title(
         &self,
-        req: Request<ChatbotUpdateConversationTitleRequest>,
-    ) -> Result<Response<ChatbotUpdateConversationTitleResponse>, TonicStatus> {
+        req: Request<HubUpdateConversationTitleRequest>,
+    ) -> Result<Response<HubUpdateConversationTitleResponse>, TonicStatus> {
         let args = req.into_inner();
         self.manager
             .update_conversation_title(&args.id, &args.title)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(ChatbotUpdateConversationTitleResponse {}))
+        Ok(Response::new(HubUpdateConversationTitleResponse {}))
     }
 
     // ─── Message ─────────────────────────────────────────────────────────
 
     async fn append_user_message(
         &self,
-        req: Request<ChatbotAppendUserMessageRequest>,
-    ) -> Result<Response<ChatbotAppendUserMessageResponse>, TonicStatus> {
+        req: Request<HubAppendUserMessageRequest>,
+    ) -> Result<Response<HubAppendUserMessageResponse>, TonicStatus> {
         let args = req.into_inner();
         let message_id = self
             .manager
             .append_user_message(&args.conversation_id, &args.content)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(ChatbotAppendUserMessageResponse {
+        Ok(Response::new(HubAppendUserMessageResponse {
             message_id,
         }))
     }
 
     async fn append_system_message(
         &self,
-        req: Request<ChatbotAppendSystemMessageRequest>,
-    ) -> Result<Response<ChatbotAppendSystemMessageResponse>, TonicStatus> {
+        req: Request<HubAppendSystemMessageRequest>,
+    ) -> Result<Response<HubAppendSystemMessageResponse>, TonicStatus> {
         let args = req.into_inner();
         let content = if args.content.is_empty() { None } else { Some(args.content) };
         let data_json = if args.data_json.is_empty() { None } else { Some(args.data_json) };
@@ -331,22 +331,22 @@ impl ChatbotService for ChatbotServiceImpl {
             .append_system_message(&args.conversation_id, content, data_json)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(ChatbotAppendSystemMessageResponse {
+        Ok(Response::new(HubAppendSystemMessageResponse {
             message_id,
         }))
     }
 
     async fn list_messages(
         &self,
-        req: Request<ChatbotListMessagesRequest>,
-    ) -> Result<Response<ChatbotListMessagesResponse>, TonicStatus> {
+        req: Request<HubListMessagesRequest>,
+    ) -> Result<Response<HubListMessagesResponse>, TonicStatus> {
         let conversation_id = req.into_inner().conversation_id;
         let messages = self
             .manager
             .list_messages(&conversation_id)
             .await
             .map_err(TonicStatus::internal)?;
-        Ok(Response::new(ChatbotListMessagesResponse {
+        Ok(Response::new(HubListMessagesResponse {
             messages: messages.into_iter().map(message_to_pb).collect(),
         }))
     }
@@ -355,8 +355,8 @@ impl ChatbotService for ChatbotServiceImpl {
 
     async fn send_message(
         &self,
-        req: Request<ChatbotSendMessageRequest>,
-    ) -> Result<Response<ChatbotSendMessageResponse>, TonicStatus> {
+        req: Request<HubSendMessageRequest>,
+    ) -> Result<Response<HubSendMessageResponse>, TonicStatus> {
         let args = req.into_inner();
         if args.user_message.trim().is_empty() {
             return Err(TonicStatus::invalid_argument("user_message 가 비어있습니다."));
@@ -403,7 +403,7 @@ impl ChatbotService for ChatbotServiceImpl {
             TonicStatus::internal(format!("AiResponse 직렬화 실패: {e}"))
         })?;
 
-        Ok(Response::new(ChatbotSendMessageResponse {
+        Ok(Response::new(HubSendMessageResponse {
             conversation_id,
             raw_json,
         }))

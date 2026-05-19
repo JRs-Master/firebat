@@ -1,6 +1,6 @@
-//! ChatbotManager — Chatbot Phase 1 (2026-05-17) 의 비즈니스 로직.
+//! HubManager — Hub Phase 1 (2026-05-17) 의 비즈니스 로직.
 //!
-//! system service `chatbot` 의 instance / conversation / message 영역 CRUD wrapper.
+//! system service `hub` 의 instance / conversation / message 영역 CRUD wrapper.
 //! 외부 워드프레스 사이트 영역 연결용. admin chat 과 별개 (테이블 분리).
 //!
 //! 책임:
@@ -13,8 +13,8 @@ use std::sync::Arc;
 
 use crate::managers::ai::{AiManager, AiResponse};
 use crate::ports::{
-    AiRequestOpts, ChatMessage, ChatbotContext, ChatbotConversation, ChatbotInstance,
-    ChatbotMessage, IChatbotPort, InfraResult, LlmCallOpts,
+    AiRequestOpts, ChatMessage, HubContext, HubConversation, HubInstance,
+    HubMessage, IHubPort, InfraResult, LlmCallOpts,
 };
 
 /// slug 검증 — URL safe (Unicode alnum + 한글 + 하이픈 + 언더스코어). 빈 문자열 금지.
@@ -69,12 +69,12 @@ pub struct UpdateInstanceInput {
     pub allowed_domains: Option<Vec<String>>,
 }
 
-pub struct ChatbotManager {
-    port: Arc<dyn IChatbotPort>,
+pub struct HubManager {
+    port: Arc<dyn IHubPort>,
 }
 
-impl ChatbotManager {
-    pub fn new(port: Arc<dyn IChatbotPort>) -> Self {
+impl HubManager {
+    pub fn new(port: Arc<dyn IHubPort>) -> Self {
         Self { port }
     }
 
@@ -88,7 +88,7 @@ impl ChatbotManager {
 
     // ─── Instance CRUD ────────────────────────────────────────────────────
 
-    /// 새 chatbot instance 생성. slug 검증 + api_token 자동 + slug 중복 확인.
+    /// 새 hub instance 생성. slug 검증 + api_token 자동 + slug 중복 확인.
     pub async fn create_instance(&self, input: CreateInstanceInput) -> InfraResult<String> {
         validate_slug(&input.slug)?;
         if self
@@ -101,7 +101,7 @@ impl ChatbotManager {
         }
         let id = uuid::Uuid::new_v4().to_string();
         let ts = Self::now_ms();
-        let instance = ChatbotInstance {
+        let instance = HubInstance {
             id: id.clone(),
             slug: input.slug,
             name: input.name,
@@ -120,18 +120,18 @@ impl ChatbotManager {
         Ok(id)
     }
 
-    pub async fn list_instances(&self) -> InfraResult<Vec<ChatbotInstance>> {
+    pub async fn list_instances(&self) -> InfraResult<Vec<HubInstance>> {
         self.port.list_instances().await
     }
 
-    pub async fn get_instance(&self, id: &str) -> InfraResult<Option<ChatbotInstance>> {
+    pub async fn get_instance(&self, id: &str) -> InfraResult<Option<HubInstance>> {
         self.port.get_instance(id).await
     }
 
     pub async fn get_instance_by_slug(
         &self,
         slug: &str,
-    ) -> InfraResult<Option<ChatbotInstance>> {
+    ) -> InfraResult<Option<HubInstance>> {
         self.port.get_instance_by_slug(slug).await
     }
 
@@ -201,14 +201,14 @@ impl ChatbotManager {
         slug: &str,
         api_token: &str,
         origin: Option<&str>,
-    ) -> InfraResult<ChatbotInstance> {
+    ) -> InfraResult<HubInstance> {
         let instance = self
             .port
             .get_instance_by_slug(slug)
             .await?
-            .ok_or_else(|| "chatbot 가 없습니다.".to_string())?;
+            .ok_or_else(|| "hub 가 없습니다.".to_string())?;
         if !instance.enabled {
-            return Err("비활성된 chatbot 입니다.".to_string());
+            return Err("비활성된 hub 입니다.".to_string());
         }
         // 상수 시간 비교 — timing-attack 방어. simple eq 영역 length-leak 있지만 충분.
         if !constant_time_eq(instance.api_token.as_bytes(), api_token.as_bytes()) {
@@ -240,11 +240,11 @@ impl ChatbotManager {
         &self,
         instance_id: &str,
         session_id: &str,
-    ) -> InfraResult<Vec<ChatbotConversation>> {
+    ) -> InfraResult<Vec<HubConversation>> {
         self.port.list_conversations(instance_id, session_id).await
     }
 
-    pub async fn get_conversation(&self, id: &str) -> InfraResult<Option<ChatbotConversation>> {
+    pub async fn get_conversation(&self, id: &str) -> InfraResult<Option<HubConversation>> {
         self.port.get_conversation(id).await
     }
 
@@ -264,7 +264,7 @@ impl ChatbotManager {
         content: &str,
     ) -> InfraResult<String> {
         let id = uuid::Uuid::new_v4().to_string();
-        let msg = ChatbotMessage {
+        let msg = HubMessage {
             id: id.clone(),
             conversation_id: conversation_id.to_string(),
             role: "user".to_string(),
@@ -284,7 +284,7 @@ impl ChatbotManager {
         data_json: Option<String>,
     ) -> InfraResult<String> {
         let id = uuid::Uuid::new_v4().to_string();
-        let msg = ChatbotMessage {
+        let msg = HubMessage {
             id: id.clone(),
             conversation_id: conversation_id.to_string(),
             role: "system".to_string(),
@@ -299,23 +299,23 @@ impl ChatbotManager {
     pub async fn list_messages(
         &self,
         conversation_id: &str,
-    ) -> InfraResult<Vec<ChatbotMessage>> {
+    ) -> InfraResult<Vec<HubMessage>> {
         self.port.list_messages(conversation_id).await
     }
 
-    /// 외부 chatbot endpoint 가 호출하는 통합 entry — 가드 + history 영역 적용 + AiManager 호출 +
-    /// AI 응답 영역 chatbot_messages 영속화.
+    /// 외부 hub endpoint 가 호출하는 통합 entry — 가드 + history 영역 적용 + AiManager 호출 +
+    /// AI 응답 영역 hub_messages 영속화.
     ///
     /// 흐름:
-    ///   1. instance 영역 allowed_sysmods / allowed_references 영역 ChatbotContext 빌드
+    ///   1. instance 영역 allowed_sysmods / allowed_references 영역 HubContext 빌드
     ///   2. 옛 user 메시지 영역 이전 메시지 영역 recent N 영역 ChatMessage 영역 빌드 (history prepend 용)
     ///   3. AiRequestOpts + LlmCallOpts 영역 빌드 + AiManager.process_with_tools_opts 호출
-    ///   4. AI 응답 영역 chatbot_messages 영역 append_system_message 영역 영속화
+    ///   4. AI 응답 영역 hub_messages 영역 append_system_message 영역 영속화
     ///   5. AiResponse 영역 반환 (route layer 가 SSE 영역 wrap)
     pub async fn send_message(
         &self,
         ai: Arc<AiManager>,
-        instance: &ChatbotInstance,
+        instance: &HubInstance,
         conversation_id: &str,
         user_message: &str,
     ) -> InfraResult<AiResponse> {
@@ -345,7 +345,7 @@ impl ChatbotManager {
             })
             .collect();
 
-        let chatbot_ctx = ChatbotContext {
+        let hub_ctx = HubContext {
             instance_id: instance.id.clone(),
             allowed_sysmods: instance.allowed_sysmods.clone(),
             allowed_references: instance.allowed_references.clone(),
@@ -364,7 +364,7 @@ impl ChatbotManager {
             .map(String::from);
 
         let llm_opts = LlmCallOpts {
-            owner: Some(format!("chatbot:{}", instance.id)),
+            owner: Some(format!("hub:{}", instance.id)),
             conversation_id: Some(conversation_id.to_string()),
             system_prompt,
             model: model_id.clone(),
@@ -372,10 +372,10 @@ impl ChatbotManager {
         };
 
         let ai_opts = AiRequestOpts {
-            owner: Some(format!("chatbot:{}", instance.id)),
+            owner: Some(format!("hub:{}", instance.id)),
             conversation_id: Some(conversation_id.to_string()),
             model: model_id,
-            chatbot_context: Some(chatbot_ctx),
+            hub_context: Some(hub_ctx),
             ..Default::default()
         };
 
@@ -383,7 +383,7 @@ impl ChatbotManager {
             .process_with_tools_opts(user_message, &[], &llm_opts, &ai_opts)
             .await?;
 
-        // AI 응답 영역 chatbot_messages 영속화. data_json 영역 blocks + tool_results + suggestions 영역.
+        // AI 응답 영역 hub_messages 영속화. data_json 영역 blocks + tool_results + suggestions 영역.
         let data_payload = serde_json::json!({
             "executedActions": response.executed_actions,
             "toolResults": response.tool_results,

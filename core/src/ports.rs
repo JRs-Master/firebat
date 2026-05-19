@@ -1309,20 +1309,20 @@ pub struct AiRequestOpts {
     /// Cron agent 모드 — 사용자 부재 자율 발행. MAX_TOOL_TURNS 25 + 승인 게이트 우회.
     #[serde(rename = "cronAgent", default, skip_serializing_if = "Option::is_none")]
     pub cron_agent: Option<CronAgentOpts>,
-    /// Chatbot 컨텍스트 — 외부 사이트 챗봇 인스턴스 안에서 호출 시 set. None = admin 정상 모드.
+    /// Hub 컨텍스트 — 외부 사이트 챗봇 인스턴스 안에서 호출 시 set. None = admin 정상 모드.
     /// 박혀있으면 AiManager 가:
     ///   - 도구 list 안 sysmod_* 영역 `allowed_sysmods` 만 retain + mcp_* 영역 차단
     ///     (외부 도용 방지 — admin 내장 도구 노출 최소)
     ///   - RetrievalEngine 의 library 영역 `allowed_references` 안 Reference ID 만 검색
-    ///   - HistoryResolver 우회 + `history` 영역 직접 prepend (chatbot_conversations 별도 테이블)
-    #[serde(rename = "chatbotContext", default, skip_serializing_if = "Option::is_none")]
-    pub chatbot_context: Option<ChatbotContext>,
+    ///   - HistoryResolver 우회 + `history` 영역 직접 prepend (hub_conversations 별도 테이블)
+    #[serde(rename = "hubContext", default, skip_serializing_if = "Option::is_none")]
+    pub hub_context: Option<HubContext>,
 }
 
-/// Chatbot 컨텍스트 — `AiRequestOpts.chatbot_context` 안 값.
+/// Hub 컨텍스트 — `AiRequestOpts.hub_context` 안 값.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChatbotContext {
+pub struct HubContext {
     /// 인스턴스 ID (logging / 추적 영역).
     #[serde(rename = "instanceId")]
     pub instance_id: String,
@@ -1332,7 +1332,7 @@ pub struct ChatbotContext {
     /// 허용 Library Reference ID 배열. 빈 배열 = library 검색 0.
     #[serde(rename = "allowedReferences", default)]
     pub allowed_references: Vec<String>,
-    /// chatbot 대화 history — chatbot_messages 테이블 영역 recent N 메시지.
+    /// hub 대화 history — hub_messages 테이블 영역 recent N 메시지.
     /// AiManager 가 system_prompt 영역 prepend 박힘 (HistoryResolver 우회).
     #[serde(default)]
     pub history: Vec<ChatMessage>,
@@ -2310,13 +2310,13 @@ pub trait INetworkPort: Send + Sync {
     async fn fetch(&self, req: NetworkRequest) -> InfraResult<NetworkResponse>;
 }
 
-// ─── Chatbot Phase 1 (2026-05-17) ─────────────────────────────────────────
-// system service `chatbot` 의 데이터 모델 + Port. 외부 워드프레스 사이트 연결용.
+// ─── Hub Phase 1 (2026-05-17) ─────────────────────────────────────────
+// system service `hub` 의 데이터 모델 + Port. 외부 워드프레스 사이트 연결용.
 // admin chat 과 별개 (conversation / message 테이블 분리).
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChatbotInstance {
+pub struct HubInstance {
     pub id: String,
     pub slug: String,                       // URL (예: "lawassistant")
     pub name: String,
@@ -2334,7 +2334,7 @@ pub struct ChatbotInstance {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChatbotConversation {
+pub struct HubConversation {
     pub id: String,
     pub instance_id: String,
     pub session_id: String,                 // 방문자 localStorage UUID
@@ -2345,7 +2345,7 @@ pub struct ChatbotConversation {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChatbotMessage {
+pub struct HubMessage {
     pub id: String,
     pub conversation_id: String,
     pub role: String,                       // "user" / "system"
@@ -2355,18 +2355,18 @@ pub struct ChatbotMessage {
 }
 
 #[async_trait::async_trait]
-pub trait IChatbotPort: Send + Sync {
+pub trait IHubPort: Send + Sync {
     // ── Instance CRUD ──
-    async fn create_instance(&self, instance: &ChatbotInstance) -> InfraResult<()>;
+    async fn create_instance(&self, instance: &HubInstance) -> InfraResult<()>;
 
-    async fn list_instances(&self) -> InfraResult<Vec<ChatbotInstance>>;
+    async fn list_instances(&self) -> InfraResult<Vec<HubInstance>>;
 
-    async fn get_instance(&self, id: &str) -> InfraResult<Option<ChatbotInstance>>;
+    async fn get_instance(&self, id: &str) -> InfraResult<Option<HubInstance>>;
 
-    /// slug 영역 lookup — 외부 endpoint 에서 /api/chatbot/<slug>/chat 호출 시.
-    async fn get_instance_by_slug(&self, slug: &str) -> InfraResult<Option<ChatbotInstance>>;
+    /// slug 영역 lookup — 외부 endpoint 에서 /api/hub/<slug>/chat 호출 시.
+    async fn get_instance_by_slug(&self, slug: &str) -> InfraResult<Option<HubInstance>>;
 
-    async fn update_instance(&self, instance: &ChatbotInstance) -> InfraResult<()>;
+    async fn update_instance(&self, instance: &HubInstance) -> InfraResult<()>;
 
     async fn delete_instance(&self, id: &str) -> InfraResult<()>;
 
@@ -2382,9 +2382,9 @@ pub trait IChatbotPort: Send + Sync {
         &self,
         instance_id: &str,
         session_id: &str,
-    ) -> InfraResult<Vec<ChatbotConversation>>;
+    ) -> InfraResult<Vec<HubConversation>>;
 
-    async fn get_conversation(&self, id: &str) -> InfraResult<Option<ChatbotConversation>>;
+    async fn get_conversation(&self, id: &str) -> InfraResult<Option<HubConversation>>;
 
     async fn delete_conversation(&self, id: &str) -> InfraResult<()>;
 
@@ -2392,8 +2392,8 @@ pub trait IChatbotPort: Send + Sync {
     async fn update_conversation_title(&self, id: &str, title: &str) -> InfraResult<()>;
 
     // ── Message CRUD ──
-    async fn append_message(&self, msg: &ChatbotMessage) -> InfraResult<()>;
+    async fn append_message(&self, msg: &HubMessage) -> InfraResult<()>;
 
-    async fn list_messages(&self, conversation_id: &str) -> InfraResult<Vec<ChatbotMessage>>;
+    async fn list_messages(&self, conversation_id: &str) -> InfraResult<Vec<HubMessage>>;
 }
 

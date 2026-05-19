@@ -1,11 +1,11 @@
-//! SqliteChatbotAdapter — IChatbotPort 의 SQLite 구현 (memory.db 통합).
+//! SqliteHubAdapter — IHubPort 의 SQLite 구현 (memory.db 통합).
 //!
-//! Chatbot Phase 1 (2026-05-17) — system service `chatbot`. 외부 워드프레스 사이트 영역 연결용.
+//! Hub Phase 1 (2026-05-17) — system service `hub`. 외부 워드프레스 사이트 영역 연결용.
 //! 매 instance = 매 챗봇 (slug 별), 매 conversation = (instance, session_id) 별 대화,
 //! 매 message = 대화 안 메시지.
 //!
-//! Schema = `infra/src/adapters/memory.rs::initialize()` 영역에 박혀있음 (chatbot_instances /
-//! chatbot_conversations / chatbot_messages 3 tables). 부팅 시점 SqliteMemoryAdapter 가 자동.
+//! Schema = `infra/src/adapters/memory.rs::initialize()` 영역에 박혀있음 (hub_instances /
+//! hub_conversations / hub_messages 3 tables). 부팅 시점 SqliteMemoryAdapter 가 자동.
 //! 본 어댑터 = 별도 Connection (Mutex) — 옛 Library 패턴 동일.
 
 use rusqlite::{params, Connection};
@@ -13,21 +13,21 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use firebat_core::ports::{
-    ChatbotConversation, ChatbotInstance, ChatbotMessage, IChatbotPort, InfraResult,
+    HubConversation, HubInstance, HubMessage, IHubPort, InfraResult,
 };
 
-pub struct SqliteChatbotAdapter {
+pub struct SqliteHubAdapter {
     conn: Mutex<Connection>,
 }
 
-impl SqliteChatbotAdapter {
+impl SqliteHubAdapter {
     pub fn new(db_path: impl AsRef<Path>) -> Result<Self, String> {
         let path = db_path.as_ref();
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Chatbot DB 디렉토리 생성 실패: {e}"))?;
+                .map_err(|e| format!("Hub DB 디렉토리 생성 실패: {e}"))?;
         }
-        let conn = Connection::open(path).map_err(|e| format!("Chatbot DB open 실패: {e}"))?;
+        let conn = Connection::open(path).map_err(|e| format!("Hub DB open 실패: {e}"))?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -36,10 +36,10 @@ impl SqliteChatbotAdapter {
     #[cfg(test)]
     pub fn new_in_memory() -> Result<Self, String> {
         let conn = Connection::open_in_memory()
-            .map_err(|e| format!("Chatbot DB in-memory open 실패: {e}"))?;
+            .map_err(|e| format!("Hub DB in-memory open 실패: {e}"))?;
         conn.execute_batch(
             r#"
-            CREATE TABLE chatbot_instances (
+            CREATE TABLE hub_instances (
                 id TEXT PRIMARY KEY,
                 slug TEXT NOT NULL UNIQUE,
                 name TEXT NOT NULL,
@@ -54,27 +54,27 @@ impl SqliteChatbotAdapter {
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             );
-            CREATE TABLE chatbot_conversations (
+            CREATE TABLE hub_conversations (
                 id TEXT PRIMARY KEY,
                 instance_id TEXT NOT NULL,
                 session_id TEXT NOT NULL,
                 title TEXT,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
-                FOREIGN KEY (instance_id) REFERENCES chatbot_instances(id) ON DELETE CASCADE
+                FOREIGN KEY (instance_id) REFERENCES hub_instances(id) ON DELETE CASCADE
             );
-            CREATE TABLE chatbot_messages (
+            CREATE TABLE hub_messages (
                 id TEXT PRIMARY KEY,
                 conversation_id TEXT NOT NULL,
                 role TEXT NOT NULL,
                 content TEXT,
                 data_json TEXT,
                 created_at INTEGER NOT NULL,
-                FOREIGN KEY (conversation_id) REFERENCES chatbot_conversations(id) ON DELETE CASCADE
+                FOREIGN KEY (conversation_id) REFERENCES hub_conversations(id) ON DELETE CASCADE
             );
             "#,
         )
-        .map_err(|e| format!("Chatbot test schema 초기화 실패: {e}"))?;
+        .map_err(|e| format!("Hub test schema 초기화 실패: {e}"))?;
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -98,13 +98,13 @@ fn vec_to_json_array(v: &[String]) -> String {
 }
 
 #[async_trait::async_trait]
-impl IChatbotPort for SqliteChatbotAdapter {
+impl IHubPort for SqliteHubAdapter {
     // ─── Instance CRUD ────────────────────────────────────────────────────
 
-    async fn create_instance(&self, instance: &ChatbotInstance) -> InfraResult<()> {
+    async fn create_instance(&self, instance: &HubInstance) -> InfraResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO chatbot_instances (
+            "INSERT INTO hub_instances (
                 id, slug, name, description, system_prompt,
                 allowed_references, allowed_sysmods, model_id, enabled,
                 api_token, allowed_domains, created_at, updated_at
@@ -125,64 +125,64 @@ impl IChatbotPort for SqliteChatbotAdapter {
                 instance.updated_at,
             ],
         )
-        .map_err(|e| format!("chatbot_instances insert: {e}"))?;
+        .map_err(|e| format!("hub_instances insert: {e}"))?;
         Ok(())
     }
 
-    async fn list_instances(&self) -> InfraResult<Vec<ChatbotInstance>> {
+    async fn list_instances(&self) -> InfraResult<Vec<HubInstance>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
                 "SELECT id, slug, name, description, system_prompt,
                         allowed_references, allowed_sysmods, model_id, enabled,
                         api_token, allowed_domains, created_at, updated_at
-                 FROM chatbot_instances
+                 FROM hub_instances
                  ORDER BY updated_at DESC",
             )
-            .map_err(|e| format!("chatbot_instances list prepare: {e}"))?;
+            .map_err(|e| format!("hub_instances list prepare: {e}"))?;
         let rows = stmt
             .query_map([], row_to_instance)
-            .map_err(|e| format!("chatbot_instances list query: {e}"))?;
+            .map_err(|e| format!("hub_instances list query: {e}"))?;
         let mut out = Vec::new();
         for r in rows {
-            out.push(r.map_err(|e| format!("chatbot_instances list row: {e}"))?);
+            out.push(r.map_err(|e| format!("hub_instances list row: {e}"))?);
         }
         Ok(out)
     }
 
-    async fn get_instance(&self, id: &str) -> InfraResult<Option<ChatbotInstance>> {
+    async fn get_instance(&self, id: &str) -> InfraResult<Option<HubInstance>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
                 "SELECT id, slug, name, description, system_prompt,
                         allowed_references, allowed_sysmods, model_id, enabled,
                         api_token, allowed_domains, created_at, updated_at
-                 FROM chatbot_instances WHERE id = ?1",
+                 FROM hub_instances WHERE id = ?1",
             )
-            .map_err(|e| format!("chatbot_instances get prepare: {e}"))?;
+            .map_err(|e| format!("hub_instances get prepare: {e}"))?;
         let result = stmt.query_row(params![id], row_to_instance).ok();
         Ok(result)
     }
 
-    async fn get_instance_by_slug(&self, slug: &str) -> InfraResult<Option<ChatbotInstance>> {
+    async fn get_instance_by_slug(&self, slug: &str) -> InfraResult<Option<HubInstance>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
                 "SELECT id, slug, name, description, system_prompt,
                         allowed_references, allowed_sysmods, model_id, enabled,
                         api_token, allowed_domains, created_at, updated_at
-                 FROM chatbot_instances WHERE slug = ?1",
+                 FROM hub_instances WHERE slug = ?1",
             )
-            .map_err(|e| format!("chatbot_instances get_by_slug prepare: {e}"))?;
+            .map_err(|e| format!("hub_instances get_by_slug prepare: {e}"))?;
         let result = stmt.query_row(params![slug], row_to_instance).ok();
         Ok(result)
     }
 
-    async fn update_instance(&self, instance: &ChatbotInstance) -> InfraResult<()> {
+    async fn update_instance(&self, instance: &HubInstance) -> InfraResult<()> {
         let conn = self.conn.lock().unwrap();
         let updated_at = now_ms();
         conn.execute(
-            "UPDATE chatbot_instances SET
+            "UPDATE hub_instances SET
                 slug = ?1, name = ?2, description = ?3, system_prompt = ?4,
                 allowed_references = ?5, allowed_sysmods = ?6, model_id = ?7, enabled = ?8,
                 api_token = ?9, allowed_domains = ?10, updated_at = ?11
@@ -202,14 +202,14 @@ impl IChatbotPort for SqliteChatbotAdapter {
                 instance.id,
             ],
         )
-        .map_err(|e| format!("chatbot_instances update: {e}"))?;
+        .map_err(|e| format!("hub_instances update: {e}"))?;
         Ok(())
     }
 
     async fn delete_instance(&self, id: &str) -> InfraResult<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM chatbot_instances WHERE id = ?1", params![id])
-            .map_err(|e| format!("chatbot_instances delete: {e}"))?;
+        conn.execute("DELETE FROM hub_instances WHERE id = ?1", params![id])
+            .map_err(|e| format!("hub_instances delete: {e}"))?;
         Ok(())
     }
 
@@ -224,7 +224,7 @@ impl IChatbotPort for SqliteChatbotAdapter {
         // 옛 (instance_id, session_id) 의 마지막 활성 대화 찾기.
         let existing: Option<String> = conn
             .query_row(
-                "SELECT id FROM chatbot_conversations
+                "SELECT id FROM hub_conversations
                  WHERE instance_id = ?1 AND session_id = ?2
                  ORDER BY updated_at DESC LIMIT 1",
                 params![instance_id, session_id],
@@ -238,12 +238,12 @@ impl IChatbotPort for SqliteChatbotAdapter {
         let id = uuid::Uuid::new_v4().to_string();
         let ts = now_ms();
         conn.execute(
-            "INSERT INTO chatbot_conversations
+            "INSERT INTO hub_conversations
                 (id, instance_id, session_id, title, created_at, updated_at)
              VALUES (?1, ?2, ?3, NULL, ?4, ?5)",
             params![id, instance_id, session_id, ts, ts],
         )
-        .map_err(|e| format!("chatbot_conversations insert: {e}"))?;
+        .map_err(|e| format!("hub_conversations insert: {e}"))?;
         Ok(id)
     }
 
@@ -251,34 +251,34 @@ impl IChatbotPort for SqliteChatbotAdapter {
         &self,
         instance_id: &str,
         session_id: &str,
-    ) -> InfraResult<Vec<ChatbotConversation>> {
+    ) -> InfraResult<Vec<HubConversation>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
                 "SELECT id, instance_id, session_id, title, created_at, updated_at
-                 FROM chatbot_conversations
+                 FROM hub_conversations
                  WHERE instance_id = ?1 AND session_id = ?2
                  ORDER BY updated_at DESC",
             )
-            .map_err(|e| format!("chatbot_conversations list prepare: {e}"))?;
+            .map_err(|e| format!("hub_conversations list prepare: {e}"))?;
         let rows = stmt
             .query_map(params![instance_id, session_id], row_to_conversation)
-            .map_err(|e| format!("chatbot_conversations list query: {e}"))?;
+            .map_err(|e| format!("hub_conversations list query: {e}"))?;
         let mut out = Vec::new();
         for r in rows {
-            out.push(r.map_err(|e| format!("chatbot_conversations list row: {e}"))?);
+            out.push(r.map_err(|e| format!("hub_conversations list row: {e}"))?);
         }
         Ok(out)
     }
 
-    async fn get_conversation(&self, id: &str) -> InfraResult<Option<ChatbotConversation>> {
+    async fn get_conversation(&self, id: &str) -> InfraResult<Option<HubConversation>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
                 "SELECT id, instance_id, session_id, title, created_at, updated_at
-                 FROM chatbot_conversations WHERE id = ?1",
+                 FROM hub_conversations WHERE id = ?1",
             )
-            .map_err(|e| format!("chatbot_conversations get prepare: {e}"))?;
+            .map_err(|e| format!("hub_conversations get prepare: {e}"))?;
         let result = stmt.query_row(params![id], row_to_conversation).ok();
         Ok(result)
     }
@@ -286,10 +286,10 @@ impl IChatbotPort for SqliteChatbotAdapter {
     async fn delete_conversation(&self, id: &str) -> InfraResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "DELETE FROM chatbot_conversations WHERE id = ?1",
+            "DELETE FROM hub_conversations WHERE id = ?1",
             params![id],
         )
-        .map_err(|e| format!("chatbot_conversations delete: {e}"))?;
+        .map_err(|e| format!("hub_conversations delete: {e}"))?;
         Ok(())
     }
 
@@ -297,19 +297,19 @@ impl IChatbotPort for SqliteChatbotAdapter {
         let conn = self.conn.lock().unwrap();
         let ts = now_ms();
         conn.execute(
-            "UPDATE chatbot_conversations SET title = ?1, updated_at = ?2 WHERE id = ?3",
+            "UPDATE hub_conversations SET title = ?1, updated_at = ?2 WHERE id = ?3",
             params![title, ts, id],
         )
-        .map_err(|e| format!("chatbot_conversations update_title: {e}"))?;
+        .map_err(|e| format!("hub_conversations update_title: {e}"))?;
         Ok(())
     }
 
     // ─── Message ──────────────────────────────────────────────────────────
 
-    async fn append_message(&self, msg: &ChatbotMessage) -> InfraResult<()> {
+    async fn append_message(&self, msg: &HubMessage) -> InfraResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO chatbot_messages
+            "INSERT INTO hub_messages
                 (id, conversation_id, role, content, data_json, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
@@ -321,32 +321,32 @@ impl IChatbotPort for SqliteChatbotAdapter {
                 msg.created_at,
             ],
         )
-        .map_err(|e| format!("chatbot_messages insert: {e}"))?;
+        .map_err(|e| format!("hub_messages insert: {e}"))?;
         // 대화 updated_at 갱신.
         conn.execute(
-            "UPDATE chatbot_conversations SET updated_at = ?1 WHERE id = ?2",
+            "UPDATE hub_conversations SET updated_at = ?1 WHERE id = ?2",
             params![msg.created_at, msg.conversation_id],
         )
-        .map_err(|e| format!("chatbot_conversations touch: {e}"))?;
+        .map_err(|e| format!("hub_conversations touch: {e}"))?;
         Ok(())
     }
 
-    async fn list_messages(&self, conversation_id: &str) -> InfraResult<Vec<ChatbotMessage>> {
+    async fn list_messages(&self, conversation_id: &str) -> InfraResult<Vec<HubMessage>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
             .prepare(
                 "SELECT id, conversation_id, role, content, data_json, created_at
-                 FROM chatbot_messages
+                 FROM hub_messages
                  WHERE conversation_id = ?1
                  ORDER BY created_at ASC",
             )
-            .map_err(|e| format!("chatbot_messages list prepare: {e}"))?;
+            .map_err(|e| format!("hub_messages list prepare: {e}"))?;
         let rows = stmt
             .query_map(params![conversation_id], row_to_message)
-            .map_err(|e| format!("chatbot_messages list query: {e}"))?;
+            .map_err(|e| format!("hub_messages list query: {e}"))?;
         let mut out = Vec::new();
         for r in rows {
-            out.push(r.map_err(|e| format!("chatbot_messages list row: {e}"))?);
+            out.push(r.map_err(|e| format!("hub_messages list row: {e}"))?);
         }
         Ok(out)
     }
@@ -354,8 +354,8 @@ impl IChatbotPort for SqliteChatbotAdapter {
 
 // ─── row → struct 매핑 ──────────────────────────────────────────────────────
 
-fn row_to_instance(row: &rusqlite::Row) -> rusqlite::Result<ChatbotInstance> {
-    Ok(ChatbotInstance {
+fn row_to_instance(row: &rusqlite::Row) -> rusqlite::Result<HubInstance> {
+    Ok(HubInstance {
         id: row.get(0)?,
         slug: row.get(1)?,
         name: row.get(2)?,
@@ -372,8 +372,8 @@ fn row_to_instance(row: &rusqlite::Row) -> rusqlite::Result<ChatbotInstance> {
     })
 }
 
-fn row_to_conversation(row: &rusqlite::Row) -> rusqlite::Result<ChatbotConversation> {
-    Ok(ChatbotConversation {
+fn row_to_conversation(row: &rusqlite::Row) -> rusqlite::Result<HubConversation> {
+    Ok(HubConversation {
         id: row.get(0)?,
         instance_id: row.get(1)?,
         session_id: row.get(2)?,
@@ -383,8 +383,8 @@ fn row_to_conversation(row: &rusqlite::Row) -> rusqlite::Result<ChatbotConversat
     })
 }
 
-fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<ChatbotMessage> {
-    Ok(ChatbotMessage {
+fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<HubMessage> {
+    Ok(HubMessage {
         id: row.get(0)?,
         conversation_id: row.get(1)?,
         role: row.get(2)?,
@@ -398,9 +398,9 @@ fn row_to_message(row: &rusqlite::Row) -> rusqlite::Result<ChatbotMessage> {
 mod tests {
     use super::*;
 
-    fn make_instance(slug: &str) -> ChatbotInstance {
+    fn make_instance(slug: &str) -> HubInstance {
         let ts = now_ms();
-        ChatbotInstance {
+        HubInstance {
             id: uuid::Uuid::new_v4().to_string(),
             slug: slug.to_string(),
             name: slug.to_string(),
@@ -419,7 +419,7 @@ mod tests {
 
     #[tokio::test]
     async fn instance_crud_roundtrip() {
-        let adapter = SqliteChatbotAdapter::new_in_memory().unwrap();
+        let adapter = SqliteHubAdapter::new_in_memory().unwrap();
         let inst = make_instance("test-slug");
         adapter.create_instance(&inst).await.unwrap();
 
@@ -455,7 +455,7 @@ mod tests {
 
     #[tokio::test]
     async fn conversation_ensure_returns_same_id_for_same_session() {
-        let adapter = SqliteChatbotAdapter::new_in_memory().unwrap();
+        let adapter = SqliteHubAdapter::new_in_memory().unwrap();
         let inst = make_instance("c-test");
         adapter.create_instance(&inst).await.unwrap();
 
@@ -478,7 +478,7 @@ mod tests {
 
     #[tokio::test]
     async fn messages_append_and_list_ordered() {
-        let adapter = SqliteChatbotAdapter::new_in_memory().unwrap();
+        let adapter = SqliteHubAdapter::new_in_memory().unwrap();
         let inst = make_instance("m-test");
         adapter.create_instance(&inst).await.unwrap();
         let conv_id = adapter
@@ -487,7 +487,7 @@ mod tests {
             .unwrap();
 
         for i in 0..3 {
-            let msg = ChatbotMessage {
+            let msg = HubMessage {
                 id: uuid::Uuid::new_v4().to_string(),
                 conversation_id: conv_id.clone(),
                 role: if i % 2 == 0 { "user".into() } else { "system".into() },

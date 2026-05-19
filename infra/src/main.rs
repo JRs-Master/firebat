@@ -38,7 +38,7 @@ use firebat_core::{
     proto::{
         ai_service_server::AiServiceServer,
         library_service_server::LibraryServiceServer,
-        chatbot_service_server::ChatbotServiceServer,
+        hub_service_server::HubServiceServer,
         auth_service_server::AuthServiceServer,
         memory_service_server::MemoryServiceServer,
         capability_service_server::CapabilityServiceServer,
@@ -421,15 +421,15 @@ async fn main() -> Result<()> {
         firebat_core::managers::library::LibraryManager::new(library_port, embedder.clone()),
     );
 
-    // Chatbot — Phase 1 (2026-05-17). system service chatbot. 외부 워드프레스 사이트 영역 연결용.
+    // Hub — Phase 1 (2026-05-17). system service hub. 외부 워드프레스 사이트 영역 연결용.
     // memory.db 통합 (schema = SqliteMemoryAdapter::initialize 영역 박혀있음).
-    let chatbot_port: Arc<dyn firebat_core::ports::IChatbotPort> = Arc::new(
-        firebat_infra::adapters::chatbot::SqliteChatbotAdapter::new(&memory_db_path)
+    let hub_port: Arc<dyn firebat_core::ports::IHubPort> = Arc::new(
+        firebat_infra::adapters::hub::SqliteHubAdapter::new(&memory_db_path)
             .map_err(anyhow::Error::msg)
-            .context("Chatbot DB open 실패")?,
+            .context("Hub DB open 실패")?,
     );
-    let chatbot_manager = Arc::new(
-        firebat_core::managers::chatbot::ChatbotManager::new(chatbot_port),
+    let hub_manager = Arc::new(
+        firebat_core::managers::hub::HubManager::new(hub_port),
     );
 
     // RetrievalEngine — 매 사용자 query 시점 5-tier 통합 검색 (history + entities + facts + events + library).
@@ -572,10 +572,10 @@ async fn main() -> Result<()> {
     // Library — Phase 1 (2026-05-17). infra/grpc/library.rs 영역 (extractor 영역 의존 — pdf-extract / extract_text_file).
     let library_service =
         firebat_infra::grpc::library::LibraryServiceImpl::new(library_manager.clone());
-    // Chatbot — Phase 1 (2026-05-17). core/grpc/chatbot.rs 영역. SendMessage RPC 안 AiManager 의존
+    // Hub — Phase 1 (2026-05-17). core/grpc/hub.rs 영역. SendMessage RPC 안 AiManager 의존
     // (외부 endpoint 통합 entry — 인증 + 대화 ensure + AI 호출 + 가드 + 영속화 한 RPC 안 흐름).
-    let chatbot_service =
-        grpc::chatbot::ChatbotServiceImpl::new(chatbot_manager.clone(), ai_manager.clone());
+    let hub_service =
+        grpc::hub::HubServiceImpl::new(hub_manager.clone(), ai_manager.clone());
     // ScheduleService — TaskManager 설정하여 validate_pipeline 정밀 검증 활성
     let schedule_service = grpc::schedule::ScheduleServiceImpl::new(schedule_manager.clone())
         .with_task_manager(task_manager.clone());
@@ -800,7 +800,7 @@ async fn main() -> Result<()> {
         .add_service(MediaServiceServer::new(media_service))
         .add_service(AiServiceServer::new(ai_service))
         .add_service(LibraryServiceServer::new(library_service))
-        .add_service(ChatbotServiceServer::new(chatbot_service))
+        .add_service(HubServiceServer::new(hub_service))
         .add_service(StorageServiceServer::new(storage_service))
         .add_service(SettingsServiceServer::new(settings_service))
         .add_service(NetworkServiceServer::new(network_service))

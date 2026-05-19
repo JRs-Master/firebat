@@ -174,9 +174,9 @@ impl SqliteMemoryAdapter {
             CREATE INDEX IF NOT EXISTS idx_library_chunks_source ON library_chunks(source_id);
             CREATE INDEX IF NOT EXISTS idx_library_chunks_index ON library_chunks(source_id, chunk_index);
 
-            -- Chatbot Phase 1 (2026-05-17) — system service chatbot 인스턴스 settings + 대화 + 메시지.
+            -- Hub Phase 1 (2026-05-17) — system service hub 인스턴스 settings + 대화 + 메시지.
             -- 외부 워드프레스 사이트 영역 연결용. admin chat 과 별개 (conversation / message 테이블 분리).
-            CREATE TABLE IF NOT EXISTS chatbot_instances (
+            CREATE TABLE IF NOT EXISTS hub_instances (
                 id TEXT PRIMARY KEY,
                 slug TEXT NOT NULL UNIQUE,             -- URL 영역 (예: lawassistant)
                 name TEXT NOT NULL,
@@ -191,33 +191,33 @@ impl SqliteMemoryAdapter {
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL
             );
-            CREATE INDEX IF NOT EXISTS idx_chatbot_instances_slug ON chatbot_instances(slug);
-            CREATE INDEX IF NOT EXISTS idx_chatbot_instances_updated ON chatbot_instances(updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_hub_instances_slug ON hub_instances(slug);
+            CREATE INDEX IF NOT EXISTS idx_hub_instances_updated ON hub_instances(updated_at DESC);
 
-            CREATE TABLE IF NOT EXISTS chatbot_conversations (
+            CREATE TABLE IF NOT EXISTS hub_conversations (
                 id TEXT PRIMARY KEY,
-                instance_id TEXT NOT NULL,             -- chatbot_instances.id FK
+                instance_id TEXT NOT NULL,             -- hub_instances.id FK
                 session_id TEXT NOT NULL,              -- 방문자 localStorage UUID (동일성 유지)
                 title TEXT,                            -- 자동 생성 (첫 user 메시지 영역 요약)
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
-                FOREIGN KEY (instance_id) REFERENCES chatbot_instances(id) ON DELETE CASCADE
+                FOREIGN KEY (instance_id) REFERENCES hub_instances(id) ON DELETE CASCADE
             );
-            CREATE INDEX IF NOT EXISTS idx_chatbot_conv_instance ON chatbot_conversations(instance_id);
-            CREATE INDEX IF NOT EXISTS idx_chatbot_conv_session ON chatbot_conversations(instance_id, session_id);
-            CREATE INDEX IF NOT EXISTS idx_chatbot_conv_updated ON chatbot_conversations(updated_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_hub_conv_instance ON hub_conversations(instance_id);
+            CREATE INDEX IF NOT EXISTS idx_hub_conv_session ON hub_conversations(instance_id, session_id);
+            CREATE INDEX IF NOT EXISTS idx_hub_conv_updated ON hub_conversations(updated_at DESC);
 
-            CREATE TABLE IF NOT EXISTS chatbot_messages (
+            CREATE TABLE IF NOT EXISTS hub_messages (
                 id TEXT PRIMARY KEY,
                 conversation_id TEXT NOT NULL,
                 role TEXT NOT NULL,                    -- 'user' / 'system'
                 content TEXT,                          -- 본문 (system 영역 reply text)
                 data_json TEXT,                        -- 영역 (blocks / tool_results / library_hits 등 raw JSON)
                 created_at INTEGER NOT NULL,
-                FOREIGN KEY (conversation_id) REFERENCES chatbot_conversations(id) ON DELETE CASCADE
+                FOREIGN KEY (conversation_id) REFERENCES hub_conversations(id) ON DELETE CASCADE
             );
-            CREATE INDEX IF NOT EXISTS idx_chatbot_msg_conv ON chatbot_messages(conversation_id);
-            CREATE INDEX IF NOT EXISTS idx_chatbot_msg_created ON chatbot_messages(conversation_id, created_at);
+            CREATE INDEX IF NOT EXISTS idx_hub_msg_conv ON hub_messages(conversation_id);
+            CREATE INDEX IF NOT EXISTS idx_hub_msg_created ON hub_messages(conversation_id, created_at);
             "#,
         )
         .map_err(|e| format!("Memory schema 초기화 실패: {e}"))?;

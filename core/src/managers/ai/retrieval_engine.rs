@@ -77,7 +77,7 @@ pub struct RetrieveOpts {
     pub limits: RetrievalLimits,
     /// Library 검색 영역 제한 — 명시되면 그 Reference ID 만 cosine 매치 대상.
     /// 빈 Vec 또는 None = 무제한 (옛 admin 흐름 — owner 영역 전체 Reference).
-    /// chatbot 컨텍스트 안에서 instance.allowed_references 만 검색하기 위함.
+    /// hub 컨텍스트 안에서 instance.allowed_references 만 검색하기 위함.
     pub reference_filter: Option<Vec<String>>,
 }
 
@@ -391,8 +391,8 @@ impl RetrievalEngine {
             return Vec::new();
         };
         let owner = opts.owner.as_deref().unwrap_or("admin");
-        // reference_filter 명시 시 그 ID 만 검색 (chatbot 안 allowed_references 영역).
-        //   - Some(빈 Vec) = library 검색 0 (chatbot 안 모든 자료 차단)
+        // reference_filter 명시 시 그 ID 만 검색 (hub 안 allowed_references 영역).
+        //   - Some(빈 Vec) = library 검색 0 (hub 안 모든 자료 차단)
         //   - Some(N 개) = 그 N 개 Reference ID 만 검색
         //   - None = 무제한 (옛 admin 흐름 — owner 영역 전체 Reference, LibraryManager 자연 처리)
         let reference_ids: Vec<String> = match &opts.reference_filter {
