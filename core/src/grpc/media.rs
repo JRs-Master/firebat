@@ -22,6 +22,7 @@ use crate::proto::{
     MediaGetImageDefaultSizeRequest, MediaGetImageDefaultSizeResponse, MediaGetImageModelRequest,
     MediaGetImageModelResponse, MediaGetImageSettingsRequest, MediaIsReadyRequest,
     MediaIsReadyResponse, MediaListRequest, MediaListResultPb, MediaReadPb, MediaReadRequest,
+    MediaReadTempAttachmentRequest, MediaReadTempAttachmentResponse,
     MediaRegenerateRequest, MediaRemoveRequest, MediaRemoveResponse, MediaSaveRequest,
     MediaSaveResultPb, MediaSaveTempAttachmentRequest, MediaSaveTempAttachmentResponse,
     MediaSetImageDefaultQualityRequest, MediaSetImageDefaultQualityResponse,
@@ -395,6 +396,28 @@ impl MediaService for MediaServiceImpl {
             Err(_) => Ok(Response::new(MediaCleanupOldAttachmentsResponse {
                 deleted_count: 0,
             })),
+        }
+    }
+
+    async fn read_temp_attachment(
+        &self,
+        req: Request<MediaReadTempAttachmentRequest>,
+    ) -> Result<Response<MediaReadTempAttachmentResponse>, TonicStatus> {
+        let args = req.into_inner();
+        match self.manager.read_temp_attachment(&args.filename).await {
+            Ok(Some((binary, content_type))) => {
+                Ok(Response::new(MediaReadTempAttachmentResponse {
+                    found: true,
+                    binary,
+                    content_type,
+                }))
+            }
+            Ok(None) => Ok(Response::new(MediaReadTempAttachmentResponse {
+                found: false,
+                binary: Vec::new(),
+                content_type: String::new(),
+            })),
+            Err(e) => Err(TonicStatus::internal(e)),
         }
     }
 }

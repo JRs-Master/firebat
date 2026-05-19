@@ -1467,6 +1467,14 @@ message MediaCleanupOldAttachmentsResponse {
   // 삭제된 파일 개수.
   int64 deleted_count = 1;
 }
+message MediaReadTempAttachmentRequest {
+  string filename = 1;       // <slug>.<ext> — path traversal 가드는 adapter 안.
+}
+message MediaReadTempAttachmentResponse {
+  bool found = 1;
+  bytes binary = 2;
+  string content_type = 3;
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // 13. MediaService — MediaManager
@@ -1495,6 +1503,8 @@ service MediaService {
   /// 30일 retention cleanup — 임시 첨부 영역 (user/attachments/) 의 오래된 파일 삭제.
   /// internal cron 이 6h 마다 호출.
   rpc CleanupOldAttachments(MediaCleanupOldAttachmentsRequest) returns (MediaCleanupOldAttachmentsResponse);
+  /// 채팅 첨부 read — `/user/attachments/<filename>` URL handler 가 호출. binary + content_type 반환.
+  rpc ReadTempAttachment(MediaReadTempAttachmentRequest) returns (MediaReadTempAttachmentResponse);
 }
 
 // ─── EventService typed Request / Response messages ────────────────────────

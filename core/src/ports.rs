@@ -2201,6 +2201,14 @@ pub trait IMediaPort: Send + Sync {
     /// 보안: caller (MediaManager) 가 magic byte 검증 + 크기 제한 박은 후 호출.
     async fn save_temp_attachment(&self, binary: &[u8], ext: &str) -> InfraResult<String>;
 
+    /// 채팅 첨부 임시 이미지 read — `/user/attachments/<filename>` URL handler 가 호출.
+    /// Returns: (binary, content_type). 미존재 시 Ok(None).
+    /// filename = `<slug>.<ext>` (path traversal 가드 — `..` / `/` 차단은 caller 책임).
+    async fn read_temp_attachment(
+        &self,
+        filename: &str,
+    ) -> InfraResult<Option<(Vec<u8>, String)>>;
+
     /// 30일 retention cleanup — `cutoff_ms` 보다 mtime 이 오래된 임시 첨부 일괄 삭제.
     /// 응답: 삭제된 파일 개수.
     async fn cleanup_old_attachments(&self, cutoff_ms: i64) -> InfraResult<i64>;

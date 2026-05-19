@@ -578,6 +578,15 @@ impl MediaManager {
         self.media.save_temp_attachment(&binary, ext).await
     }
 
+    /// 채팅 첨부 임시 이미지 read — `/user/attachments/<filename>` URL handler 가 호출.
+    /// Returns: (binary, content_type). 미존재 시 Ok(None).
+    pub async fn read_temp_attachment(
+        &self,
+        filename: &str,
+    ) -> InfraResult<Option<(Vec<u8>, String)>> {
+        self.media.read_temp_attachment(filename).await
+    }
+
     /// 30일 retention cleanup — internal cron 이 6h 마다 호출.
     pub async fn cleanup_old_attachments(&self, retention_ms: i64) -> InfraResult<i64> {
         let cutoff = crate::utils::time::now_ms() - retention_ms;

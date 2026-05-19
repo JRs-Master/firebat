@@ -416,6 +416,38 @@ impl IMediaPort for LocalMediaAdapter {
         Ok(format!("/user/attachments/{filename}"))
     }
 
+    /// 채팅 첨부 read — `/user/attachments/<filename>` URL handler 가 호출.
+    /// path traversal 가드 + ext 기반 content-type 추론.
+    async fn read_temp_attachment(
+        &self,
+        filename: &str,
+    ) -> InfraResult<Option<(Vec<u8>, String)>> {
+        // path traversal 가드 — slug 영역 영숫자/하이픈/언더스코어/점 만 허용 (Rust make_slug 산출 패턴).
+        if filename.is_empty()
+            || filename.contains('/')
+            || filename.contains('\\')
+            || filename.contains("..")
+        {
+            return Ok(None);
+        }
+        let path = self.root.join("user").join("attachments").join(filename);
+        let binary = match tokio::fs::read(&path).await {
+            Ok(b) => b,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(format!("attachment read: {e}")),
+        };
+        // 확장자 기반 content-type — save_temp_attachment 가 detect_image_ext 박은 ext 만 박음 (jpg/png/webp/gif).
+        let ext = filename.rsplit_once('.').map(|(_, e)| e).unwrap_or("");
+        let content_type = match ext.to_lowercase().as_str() {
+            "jpg" | "jpeg" => "image/jpeg",
+            "png" => "image/png",
+            "webp" => "image/webp",
+            "gif" => "image/gif",
+            _ => "application/octet-stream",
+        };
+        Ok(Some((binary, content_type.to_string())))
+    }
+
     /// 30일 retention cleanup — `cutoff_ms` 보다 mtime 이 오래된 파일 일괄 삭제.
     /// 응답: 삭제된 파일 개수.
     async fn cleanup_old_attachments(&self, cutoff_ms: i64) -> InfraResult<i64> {

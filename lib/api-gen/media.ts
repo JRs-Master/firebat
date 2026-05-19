@@ -13,6 +13,8 @@ import {
   MediaListResultPb,
   MediaReadPb,
   MediaReadRequestSchema,
+  MediaReadTempAttachmentRequestSchema,
+  MediaReadTempAttachmentResponse,
   MediaRegenerateRequestSchema,
   MediaRegenerateResponse,
   MediaRemoveRequestSchema,
@@ -191,6 +193,15 @@ export async function cleanupOldAttachments(): Promise<RpcResult<bigint>> {
   try {
       const response = await mediaClient.cleanupOldAttachments({});
       return { ok: true, data: unBigInt(response.deletedCount) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function readTempAttachment(args: MessageInitShape<typeof MediaReadTempAttachmentRequestSchema>): Promise<RpcResult<MediaReadTempAttachmentResponse>> {
+  try {
+      const response = await mediaClient.readTempAttachment(args ?? {});
+      return { ok: true, data: unBigInt(response) };
   } catch (err) {
     return toRpcError(err);
   }
