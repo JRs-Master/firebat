@@ -73,6 +73,14 @@ impl PageManager {
         password: Option<&str>,
     ) -> InfraResult<()> {
         Self::validate_spec(spec)?;
+        // hub-scoped page (project='hub:<id>') 박은 영역 = reserved check 박지 X — 내부 영역.
+        // 일반 page 박은 영역만 시스템 예약 slug (api / admin / user / hub / system / login / share 등) 차단.
+        let is_hub_scoped = project
+            .map(|p| p.starts_with("hub:"))
+            .unwrap_or(false);
+        if !is_hub_scoped {
+            crate::utils::slug_validator::check_reserved(slug)?;
+        }
         if !self.db.save_page(slug, spec, status, project, visibility, password) {
             return Err(crate::i18n::t(
                 "core.error.page.save_failed",

@@ -102,16 +102,29 @@ impl HubManager {
 
     // ─── Instance CRUD ────────────────────────────────────────────────────
 
-    /// 새 hub instance 생성. slug 검증 + api_token 자동 + slug 중복 확인.
+    /// 새 hub instance 생성. slug 검증 + api_token 자동 + slug 중복 확인 (hub + page + reserved).
     pub async fn create_instance(&self, input: CreateInstanceInput) -> InfraResult<String> {
         validate_slug(&input.slug)?;
+        // 시스템 예약 영역 (api / admin / user / hub / system / login / share / feed.xml 등) 차단.
+        crate::utils::slug_validator::check_reserved(&input.slug)?;
+        // hub 영역 중복 검사
         if self
             .port
             .get_instance_by_slug(&input.slug)
             .await?
             .is_some()
         {
-            return Err(format!("slug \"{}\" 가 이미 존재합니다.", input.slug));
+            return Err(format!("slug \"{}\" 가 이미 hub 로 박혀있습니다.", input.slug));
+        }
+        // page 영역 중복 검사 — page slug 박은 영역 hub slug 박은 영역 같이 박은 영역 차단.
+        // root /<slug> URL 박은 영역 page 우선 매칭 → hub 가 숨겨지던 silent fail 회피.
+        if let Some(page) = &self.page {
+            if page.get(&input.slug).is_some() {
+                return Err(format!(
+                    "slug \"{}\" 가 이미 page 로 박혀있습니다.",
+                    input.slug
+                ));
+            }
         }
         let id = uuid::Uuid::new_v4().to_string();
         let ts = Self::now_ms();
