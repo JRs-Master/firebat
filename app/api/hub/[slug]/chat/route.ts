@@ -36,6 +36,9 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const apiToken = req.headers.get('x-api-token') ?? '';
   const sessionId = req.headers.get('x-session-id') ?? '';
   const origin = req.headers.get('origin') ?? '';
+  // 우리 사이트 자신의 호스트 — Rust HubManager 가 origin == self host 면 자동 허용 (admin demo / page mode).
+  // x-forwarded-host = Caddy reverse proxy 가 전달하는 사용자 원본 host. 폴백 = req.headers.get('host').
+  const selfHost = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? '';
 
   if (!apiToken) {
     return jsonResponse(401, { error: 'X-Api-Token 헤더가 필요합니다.' });
@@ -55,7 +58,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return jsonResponse(400, { error: 'message 필드가 필요합니다.' });
   }
 
-  return streamResponse({ slug, apiToken, sessionId, origin, userMessage, abortSignal: req.signal });
+  return streamResponse({ slug, apiToken, sessionId, origin, selfHost, userMessage, abortSignal: req.signal });
 }
 
 function streamResponse(args: {
@@ -63,10 +66,11 @@ function streamResponse(args: {
   apiToken: string;
   sessionId: string;
   origin: string;
+  selfHost: string;
   userMessage: string;
   abortSignal: AbortSignal;
 }) {
-  const { slug, apiToken, sessionId, origin, userMessage, abortSignal } = args;
+  const { slug, apiToken, sessionId, origin, selfHost, userMessage, abortSignal } = args;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -98,12 +102,30 @@ function streamResponse(args: {
           slug,
           apiToken,
           origin,
+          selfHost,
           sessionId,
           userMessage,
         });
 
         if (!r.ok) {
-          send('error', { error: r.message });
+          // Rust HubManager 의 UNAUTHORIZED_ORIGIN: sentinel — 무단 임베드 발견 시.
+          // 403 reject 대신 Firebat 광고 메시지 + 사이트 링크 SSE 응답 — 무단 사용자 활용 트래픽화.
+          const UNAUTHORIZED_PREFIX = 'UNAUTHORIZED_ORIGIN:';
+          if (r.message.includes(UNAUTHORIZED_PREFIX)) {
+            send('result', {
+              conversationId: '',
+              success: true,
+              reply:
+                '🔥 **Firebat Just Imagine. Firebat runs.**\n\n' +
+                '이 챗봇은 무단으로 임베드되어 있습니다. ' +
+                '직접 만든 AI 어시스턴트를 본인 사이트에 설치하고 싶으시다면 ' +
+                '[firebat.co.kr](https://firebat.co.kr) 에서 무료로 시작하실 수 있습니다.',
+              blocks: undefined,
+              suggestions: ['firebat.co.kr 둘러보기'],
+            });
+          } else {
+            send('error', { error: r.message });
+          }
         } else {
           const { conversationId, rawJson } = r.data;
           let aiResponse: Record<string, unknown> = {};
