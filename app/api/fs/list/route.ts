@@ -3,7 +3,7 @@ import { getFileTree } from '../../../../lib/api-gen/storage';
 import { withAuth } from '../../../../lib/with-api-error';
 
 export const GET = withAuth(async () => {
-  const res = await getFileTree({ value: 'user' } as any);
+  const res = await getFileTree({ path: 'user' });
   if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true, tree: res.data });
 });

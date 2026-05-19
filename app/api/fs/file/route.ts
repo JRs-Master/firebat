@@ -7,7 +7,7 @@ export const GET = withAuth(async (request: NextRequest) => {
   if (!targetPath) {
     return NextResponse.json({ success: false, error: 'path 파라미터가 필요합니다.' }, { status: 400 });
   }
-  const result = await readFile({ value: targetPath } as any);
+  const result = await readFile({ path: targetPath });
   if (!result.ok) {
     return NextResponse.json({ success: false, error: result.message }, { status: result.message?.includes('Kernel Block') ? 403 : 500 });
   }
@@ -20,7 +20,7 @@ export const PUT = withAuth(async (request: NextRequest) => {
   if (!targetPath || content === undefined) {
     return NextResponse.json({ success: false, error: 'path와 content가 필요합니다.' }, { status: 400 });
   }
-  const result = await writeFile({ path: targetPath, content } as any);
+  const result = await writeFile({ path: targetPath, content });
   if (!result.ok) {
     return NextResponse.json({ success: false, error: result.message }, { status: result.message?.includes('Kernel Block') ? 403 : 500 });
   }

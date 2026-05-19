@@ -42,7 +42,7 @@ export const POST = withAuth(async (req: NextRequest) => {
 export const DELETE = withAuth(async (req: NextRequest) => {
   const name = req.nextUrl.searchParams.get('name');
   if (!name) return NextResponse.json({ success: false, error: 'name 필요' }, { status: 400 });
-  const res = await deleteMemoryFile({ value: name } as any);
+  const res = await deleteMemoryFile({ name });
   if (!res.ok) return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   return NextResponse.json({ success: true });
 });

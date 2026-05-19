@@ -11,7 +11,7 @@ export const POST = withAuth(async (req: NextRequest) => {
   if (!slug) {
     return NextResponse.json({ success: false, error: 'slug 파라미터가 필요합니다.' }, { status: 400 });
   }
-  const result = await regenerateImage({ value: slug } as any);
+  const result = await regenerateImage({ slug });
   if (!result.ok) {
     return NextResponse.json({ success: false, error: result.message }, { status: 500 });
   }

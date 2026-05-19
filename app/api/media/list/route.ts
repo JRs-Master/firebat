@@ -14,7 +14,7 @@ export const GET = withAuth(async (req: NextRequest) => {
   const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
   const search = url.searchParams.get('search') || undefined;
 
-  const result = await listMedia({ optsJson: JSON.stringify({ scope, limit, offset, search }) } as any);
+  const result = await listMedia({ optsJson: JSON.stringify({ scope, limit, offset, search }) });
   if (!result.ok) {
     return NextResponse.json({ success: false, error: result.message }, { status: 500 });
   }
@@ -27,7 +27,7 @@ export const DELETE = withAuth(async (req: NextRequest) => {
   if (!slug) {
     return NextResponse.json({ success: false, error: 'slug 파라미터가 필요합니다.' }, { status: 400 });
   }
-  const result = await removeMedia({ value: slug } as any);
+  const result = await removeMedia({ slug });
   if (!result.ok) {
     return NextResponse.json({ success: false, error: result.message }, { status: 500 });
   }

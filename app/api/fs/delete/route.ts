@@ -7,7 +7,7 @@ export const DELETE = withAuth(async (request: NextRequest) => {
   if (!targetPath) {
     return NextResponse.json({ success: false, error: 'path 파라미터가 필요합니다.' }, { status: 400 });
   }
-  const result = await deleteFile({ value: targetPath } as any);
+  const result = await deleteFile({ path: targetPath });
   if (!result.ok) {
     return NextResponse.json({ success: false, error: result.message }, { status: result.message?.includes('Kernel Block') ? 403 : 500 });
   }
