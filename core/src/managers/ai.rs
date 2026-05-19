@@ -586,9 +586,11 @@ impl AiManager {
             //   (2) `render_*` — UI 렌더 도구
             //   (3) read-only / 정보 조회 — list_*, get_*, search_*, suggest, propose_plan, cache_*
             //   (4) 채팅 컨텍스트 — recall / library 검색 박은 영역
+            //   (5) `save_page` — hub-scoped (project='hub:<slug>' 자동, root /<slug> 노출 0,
+            //                     hub 삭제 시 cascade). 사용자 의도 = "지 사이드바 안에서 갖고 놀고 공유 돼야".
             //
             // 차단 영역 (destructive — admin DB 영구 변경):
-            //   save_page / delete_page / delete_file / write_file / write_module /
+            //   delete_page / delete_file / write_file / write_module /
             //   schedule_task / cancel_task / run_task / run_module / run_user_module /
             //   request_secret / mcp_* (admin 권한 도구)
             if let Some(ctx) = &ai_opts.hub_context {
@@ -600,7 +602,7 @@ impl AiManager {
                     if let Some(sysmod_name) = name.strip_prefix("sysmod_") {
                         return allowed.contains(sysmod_name);
                     }
-                    // render_* / read-only / 컨텍스트 도구 = 허용
+                    // render_* / read-only / 컨텍스트 / save_page (hub-scoped) = 허용
                     if name.starts_with("render_")
                         || name.starts_with("list_")
                         || name.starts_with("get_")
@@ -608,10 +610,11 @@ impl AiManager {
                         || name.starts_with("cache_")
                         || name == "suggest"
                         || name == "propose_plan"
+                        || name == "save_page"
                     {
                         return true;
                     }
-                    // 그 외 (destructive: save_page / write_* / delete_* / schedule_task /
+                    // 그 외 (destructive: write_* / delete_* / schedule_task /
                     // run_task / run_module / mcp_* / request_secret 등) = 차단
                     false
                 });
@@ -1067,8 +1070,28 @@ impl AiManager {
                     }
                 }
 
+                // hub_context 박혀있고 save_page 박은 영역 = project 자동 'hub:<instance_id>'
+                // 강제 (사용자 의도 = hub 안 page 박은 영역 root 사이트 노출 0 + hub 삭제 시 cascade).
+                // AI 가 박은 project 영역 override — 익명 방문자 박은 영역도 다른 project 침투 차단.
+                let hub_scoped_call: Option<ToolCall>;
+                let effective_call: &ToolCall = if call.name == "save_page"
+                    && ai_opts.hub_context.is_some()
+                {
+                    let ctx = ai_opts.hub_context.as_ref().unwrap();
+                    let mut new_call = call.clone();
+                    if let serde_json::Value::Object(ref mut m) = new_call.arguments {
+                        m.insert(
+                            "project".to_string(),
+                            serde_json::Value::String(format!("hub:{}", ctx.instance_id)),
+                        );
+                    }
+                    hub_scoped_call = Some(new_call);
+                    hub_scoped_call.as_ref().unwrap()
+                } else {
+                    call
+                };
                 // Layer 1 + 2 retry guard — 모든 도구 동일 적용 (특정 도구 하드코딩 X).
-                let cache_key = tool_cache_key(&call.name, &call.arguments);
+                let cache_key = tool_cache_key(&effective_call.name, &effective_call.arguments);
                 let action = if turn_call_set.contains(&cache_key) {
                     // Layer 2: 이번 turn 에 이미 같은 호출 → 즉시 reject
                     self.log.warn(&format!(
@@ -1106,7 +1129,7 @@ impl AiManager {
                             result: cached_with_flag,
                         }
                     } else {
-                        let result = self.dispatch_tool(call).await;
+                        let result = self.dispatch_tool(effective_call).await;
                         if result.success {
                             set_cached_tool_result(&cache_key, &result.result);
                         }

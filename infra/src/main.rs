@@ -429,7 +429,8 @@ async fn main() -> Result<()> {
             .context("Hub DB open 실패")?,
     );
     let hub_manager = Arc::new(
-        firebat_core::managers::hub::HubManager::new(hub_port),
+        firebat_core::managers::hub::HubManager::new(hub_port)
+            .with_page(page_manager.clone()),
     );
 
     // RetrievalEngine — 매 사용자 query 시점 5-tier 통합 검색 (history + entities + facts + events + library).

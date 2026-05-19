@@ -76,11 +76,20 @@ pub struct UpdateInstanceInput {
 
 pub struct HubManager {
     port: Arc<dyn IHubPort>,
+    /// PageManager (옵션) — hub instance 삭제 시 hub-scoped page (project='hub:<instance_id>')
+    /// cascade 박음. 미설정 시 cascade skip.
+    page: Option<Arc<crate::managers::page::PageManager>>,
 }
 
 impl HubManager {
     pub fn new(port: Arc<dyn IHubPort>) -> Self {
-        Self { port }
+        Self { port, page: None }
+    }
+
+    /// PageManager 설정 — hub instance 삭제 시 hub-scoped page (project='hub:<id>') cascade 박음.
+    pub fn with_page(mut self, page: Arc<crate::managers::page::PageManager>) -> Self {
+        self.page = Some(page);
+        self
     }
 
     fn now_ms() -> i64 {
@@ -189,6 +198,18 @@ impl HubManager {
     }
 
     pub async fn delete_instance(&self, id: &str) -> InfraResult<()> {
+        // hub-scoped page cascade — project = 'hub:<id>' 박은 모든 page 영역 같이 삭제.
+        // PageManager 설정되어 있을 때만 동작 (옛 호환 — 미설정 시 skip).
+        if let Some(page) = &self.page {
+            let project_key = format!("hub:{}", id);
+            let pages = page.list();
+            for p in pages {
+                if p.project.as_deref() == Some(project_key.as_str()) {
+                    let _ = page.delete(&p.slug);
+                }
+            }
+        }
+        // hub_instances + conversations + messages cascade (adapter 박음)
         self.port.delete_instance(id).await
     }
 
