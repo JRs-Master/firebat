@@ -478,9 +478,10 @@ export function Sidebar({
   };
 
   /* ── VSCode activity bar — 항상 표시 (PC: inline, 모바일: slide-in 안). ── */
-  // 모든 탭 노출. hub mode 박혀있어도 hide 안 함 — 사용자 의도 "설정/로그아웃 빼고 다 작동".
-  // 단 각 패널 내부 fetch / DB 호출은 hub mode 에서 admin 데이터 분리 (각 영역 hub_scope 필요).
-  const visibleTabs = TABS;
+  // hub mode = chats 탭만 노출. 나머지 admin 영역 (workspace / gallery / templates / library /
+  // entities / notes / calendar) 박힐 hub_scope 별도 데이터 영역 미박힘 → admin DB 호출 시
+  // throw → /500 redirect. 분리 박은 후 점진 노출 (각 영역 hub_scope 추가 시점).
+  const visibleTabs = hubMode ? TABS.filter(t => t.id === 'chats') : TABS;
   const renderActivityBar = () => (
     // z-50 — 펼친 panel(z-40) 위로. 활동 바 항상 클릭 가능 + 다른 탭 즉시 전환.
     <div className="w-12 bg-white flex flex-col items-center py-3 gap-2 shrink-0 border-r border-slate-200 relative z-50">
