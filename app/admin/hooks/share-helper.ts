@@ -14,10 +14,31 @@ type ShareInput = {
   messages: unknown[];
   /** 재사용 키 — 같은 값으로 24h 내 여러번 요청 시 DB 에서 기존 slug 반환 (device 공유) */
   dedupKey?: string;
+  /** Hub page mode 박혀있으면 endpoint 분기 — /api/share (admin auth) → /api/hub/<slug>/share (anonymous + apiToken). */
+  hubContext?: { slug: string; apiToken: string; sessionId: string };
 };
 
 export async function createShareLink(input: ShareInput): Promise<{ url: string; expiresAt: number; reused?: boolean } | { error: string }> {
   try {
+    // Hub mode 분기 — anonymous endpoint 호출 + X-Api-Token + X-Session-Id 헤더.
+    if (input.hubContext) {
+      const { slug, apiToken, sessionId } = input.hubContext;
+      const { hubContext: _h, ...payload } = input;
+      const res = await fetch(`/api/hub/${encodeURIComponent(slug)}/share`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Api-Token': apiToken,
+          'X-Session-Id': sessionId,
+        },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => null);
+      if (!data?.success || !data.url) {
+        return { error: data?.error || '공유 생성 실패' };
+      }
+      return { url: data.url, expiresAt: data.expiresAt ?? 0, reused: data.reused };
+    }
     const data = await apiPost<{ success: boolean; url?: string; expiresAt?: number; reused?: boolean; error?: string }>(
       '/api/share',
       input,

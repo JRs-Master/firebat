@@ -67,6 +67,8 @@ interface SidebarProps {
   onMobileOpenChange?: (open: boolean) => void;
   /** Hub page mode — anonymous 방문자라 settings / workspace / templates / gallery 등 admin 전용 탭 hide. */
   hubMode?: boolean;
+  /** Hub page mode 박혀있으면 share-helper 의 createShareLink 분기 인자. */
+  hubShareContext?: { slug: string; apiToken: string; sessionId: string };
 }
 
 export function Sidebar({
@@ -77,6 +79,7 @@ export function Sidebar({
   aiModel, onOpenSettings, onEditFile, onOpenModuleSettings,
   mobileOpen, onMobileOpenChange,
   hubMode,
+  hubShareContext,
 }: SidebarProps) {
   const renameInputId = useId();
   const renameSetRedirectId = useId();
@@ -960,6 +963,7 @@ export function Sidebar({
                         convId={conv.id}
                         title={conv.title}
                         liveMessages={conv.id === activeConvId ? activeMessages : undefined}
+                        hubShareContext={hubShareContext}
                       />
                       <Tooltip label="Recall 에 정리하기 (entity / fact / event 추출)">
                         <button
@@ -1232,7 +1236,7 @@ export function Sidebar({
 }
 
 /** 대화 전체 공유 버튼 — 클릭 시 DB 에서 메시지 fetch → 공유 생성 → 클립보드 복사 */
-function ShareConvButton({ convId, title, liveMessages }: { convId: string; title: string; liveMessages?: unknown[] }) {
+function ShareConvButton({ convId, title, liveMessages, hubShareContext }: { convId: string; title: string; liveMessages?: unknown[]; hubShareContext?: { slug: string; apiToken: string; sessionId: string } }) {
   const [status, setStatus] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
   const handleShare = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1267,7 +1271,7 @@ function ShareConvButton({ convId, title, liveMessages }: { convId: string; titl
       //    동일 시점 여러 device 에서 같은 turn 공유 시도하면 같은 length+lastId → 재사용 OK.
       const lastMsg = messages[messages.length - 1] as { id?: string } | undefined;
       const dedupKey = `full:${convId}:${messages.length}:${lastMsg?.id ?? ''}`;
-      const shareRes = await createShareLink({ type: 'full', conversationId: convId, title, messages, dedupKey });
+      const shareRes = await createShareLink({ type: 'full', conversationId: convId, title, messages, dedupKey, hubContext: hubShareContext });
       if ('error' in shareRes) {
         setStatus('error');
         setTimeout(() => setStatus('idle'), 2200);

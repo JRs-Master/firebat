@@ -548,15 +548,16 @@ function CopyButton({ text }: { text: string }) {
 }
 
 /** 단일턴 (user + AI 응답 한 쌍) 공유 버튼. 복사 버튼 옆에 배치.
- *  POST /api/share 로 24시간 TTL 공유 slug 생성 → 클립보드 복사 + 토스트. */
-function ShareTurnButton({ messages, conversationId, title, msgId }: { messages: unknown[]; conversationId: string; title?: string; msgId?: string }) {
+ *  POST /api/share 로 24시간 TTL 공유 slug 생성 → 클립보드 복사 + 토스트.
+ *  Hub mode 박혀있으면 POST /api/hub/<slug>/share 로 분기 (anonymous + apiToken). */
+function ShareTurnButton({ messages, conversationId, title, msgId, hubContext }: { messages: unknown[]; conversationId: string; title?: string; msgId?: string; hubContext?: { slug: string; apiToken: string; sessionId: string } }) {
   const [status, setStatus] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
   const handleShare = useCallback(async () => {
     if (status === 'sharing') return;
     setStatus('sharing');
     // 백엔드 DB 가 dedupKey 기반 재사용 담당 — 24h 내 같은 메시지 공유 요청이면 기존 slug 반환
     const dedupKey = msgId ? `turn:${conversationId}:${msgId}` : undefined;
-    const res = await createShareLink({ type: 'turn', conversationId, title, messages, dedupKey });
+    const res = await createShareLink({ type: 'turn', conversationId, title, messages, dedupKey, hubContext });
     if ('error' in res) {
       setStatus('error');
       setTimeout(() => setStatus('idle'), 2200);
@@ -565,7 +566,7 @@ function ShareTurnButton({ messages, conversationId, title, msgId }: { messages:
     const ok = await copyToClipboard(res.url);
     setStatus(ok ? 'done' : 'error');
     setTimeout(() => setStatus('idle'), 2200);
-  }, [messages, conversationId, title, status, msgId]);
+  }, [messages, conversationId, title, status, msgId, hubContext]);
   const badgeState: 'ok' | 'err' | 'loading' | null =
     status === 'done' ? 'ok' : status === 'error' ? 'err' : status === 'sharing' ? 'loading' : null;
   return (
@@ -674,7 +675,7 @@ function ErrorCollapsible({ error, label }: { error: string; label?: string }) {
 }
 
 // ─── 메시지 버블 ─────────────────────────────────────────────────────────────
-function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApprovePending, onRejectPending, onApprovePendingAction, shareContext }: {
+function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApprovePending, onRejectPending, onApprovePendingAction, shareContext, hubContext }: {
   msg: Message;
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
@@ -684,6 +685,8 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
   onApprovePendingAction?: (msgId: string, planId: string, action: 'now' | 'reschedule', newRunAt?: string) => void;
   /** 단일턴 공유용 — user 메시지 + 현재 system 메시지 쌍. 없으면 공유 버튼 숨김. */
   shareContext?: { conversationId: string; turnMessages: unknown[] };
+  /** Hub page mode — share 호출 시 /api/hub/<slug>/share 분기 (anonymous + apiToken). */
+  hubContext?: { slug: string; apiToken: string; sessionId: string };
 }) {
   // 초기 인사 메시지 — 히어로 (스크롤에 밀려 올라가며 사라짐)
   if (msg.id === 'system-init') {
@@ -927,7 +930,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
           return full ? (
             <div className="flex justify-end pr-1 gap-0.5 items-center">
               <CopyButton text={full} />
-              {shareContext && <ShareTurnButton msgId={msg.id} messages={shareContext.turnMessages} conversationId={shareContext.conversationId} />}
+              {shareContext && <ShareTurnButton msgId={msg.id} messages={shareContext.turnMessages} conversationId={shareContext.conversationId} hubContext={hubContext} />}
             </div>
           ) : null;
         })()}
@@ -1190,6 +1193,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
         mobileOpen={mobileMenuOpen}
         onMobileOpenChange={setMobileMenuOpen}
         hubMode={!!hubContext}
+        hubShareContext={hubChatContext}
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
@@ -1228,6 +1232,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   onApprovePendingAction={(msgId, planId, action, newRunAt) => handleApprovePending(msgId, planId, action, newRunAt)}
                   onRejectPending={handleRejectPending}
                   shareContext={shareContext}
+                  hubContext={hubChatContext}
                 />
               );
             })}
