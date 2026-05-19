@@ -378,7 +378,7 @@ async fn main() -> Result<()> {
     //   - event: 갤러리 SSE refresh (placeholder 등장 + 백그라운드 swap 시점 모두)
     //   - episodic: image_gen 사건 자동 리콜 누적 (AI 미개입)
     let media_manager = Arc::new(
-        MediaManager::new(media)
+        MediaManager::new(media.clone())
             .with_image_gen(image_gen.clone())
             .with_processor(image_processor.clone())
             .with_vault(vault.clone())
@@ -453,6 +453,7 @@ async fn main() -> Result<()> {
             .with_cost_manager(cost_manager.clone())
             .with_dynamic_tools(dynamic_tools_registry.clone())
             .with_vault(vault.clone())
+            .with_media(media.clone())
             .with_retrieval_engine(retrieval_engine),
     );
 

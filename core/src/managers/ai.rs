@@ -164,6 +164,13 @@ pub struct AiManager {
     /// vault 의 `system:ai-router:enabled` 토글 검사 — ConsolidationManager 와 동일 토글 통합 제어
     /// (옛 사용자 결정 2026-05-17). 미설정 또는 토글 false 시 호출 skip.
     retrieval_engine: Option<Arc<retrieval_engine::RetrievalEngine>>,
+    /// IMediaPort (옵션) — opts.image 가 slug URL (`/user/attachments/<filename>` 또는
+    /// `/user/media/<slug>.<ext>`) 박혀있을 때 fs read + base64 data URL 변환 박는 layer.
+    /// 옛 frontend = base64 data URL 직접 박았는데 2026-05-11 commit `6af42b2` 후 slug URL
+    /// 박는 방식으로 전환. LLM adapter (cli_image_helper 등) 영역의 base64 가정 코드는 그대로
+    /// 박혀있어 slug URL 박혀있으면 decode fail → LLM API "could not be processed" 결과.
+    /// 본 layer 가 LLM 호출 전 image 영역 data URL 형태 강제 박음.
+    media: Option<Arc<dyn crate::ports::IMediaPort>>,
 }
 
 impl AiManager {
@@ -186,7 +193,48 @@ impl AiManager {
             vault: None,
             config_port: None,
             retrieval_engine: None,
+            media: None,
         }
+    }
+
+    /// IMediaPort 설정 — opts.image 가 slug URL 박혀있으면 fs read + base64 data URL 변환 활성.
+    /// 미설정 시 변환 skip (옛 동작 — base64 가정 코드 그대로).
+    pub fn with_media(mut self, media: Arc<dyn crate::ports::IMediaPort>) -> Self {
+        self.media = Some(media);
+        self
+    }
+
+    /// opts.image 가 slug URL (`/user/attachments/<filename>` 또는 `/user/media/<slug>.<ext>`)
+    /// 박혀있으면 fs read + base64 data URL 변환. 박혀있지 X 또는 변환 fail 시 옛 값 그대로.
+    /// LLM adapter (cli_image_helper / anthropic 등) 의 base64 가정 코드 호환.
+    async fn resolve_image_to_data_url(&self, image: &str) -> Option<String> {
+        // 옛 base64 data URL 박은 영역 — 변환 불필요
+        if image.starts_with("data:") {
+            return Some(image.to_string());
+        }
+        let media = self.media.as_ref()?;
+        // 채팅 임시 첨부 (`/user/attachments/<filename>`)
+        if let Some(filename) = image.strip_prefix("/user/attachments/") {
+            if let Ok(Some((binary, content_type))) =
+                media.read_temp_attachment(filename).await
+            {
+                use base64::Engine;
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&binary);
+                return Some(format!("data:{};base64,{}", content_type, b64));
+            }
+            return None;
+        }
+        // 갤러리 (`/user/media/<slug>.<ext>`) — slug 영역 추출 후 read RPC 호출
+        if let Some(rest) = image.strip_prefix("/user/media/") {
+            let slug = rest.rsplit_once('.').map(|(s, _)| s).unwrap_or(rest);
+            if let Ok(Some((binary, content_type, _record))) = media.read(slug).await {
+                use base64::Engine;
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&binary);
+                return Some(format!("data:{};base64,{}", content_type, b64));
+            }
+            return None;
+        }
+        None
     }
 
     /// RetrievalEngine 설정 — 매 사용자 query 시점 4-tier 통합 검색 + 시스템 프롬프트 prepend.
@@ -434,6 +482,28 @@ impl AiManager {
         // 거도 도구 schema 박혀가지만 LLM 이 자체 응답).
 
         let mut effective_opts = opts.clone();
+
+        // 이미지 slug URL → data URL 변환 (옛 commit `6af42b2` 후 frontend 가 base64 → slug URL
+        // 전환했는데 LLM adapter 영역의 base64 가정 코드는 그대로라 발생한 silent fail fix).
+        // /user/attachments/<filename> 또는 /user/media/<slug>.<ext> 박혀있으면 fs read + base64
+        // data URL 변환. data: prefix 박혀있거나 변환 불가면 옛 값 그대로 (회귀 안전).
+        if let Some(img) = &effective_opts.image {
+            if !img.starts_with("data:") {
+                if let Some(data_url) = self.resolve_image_to_data_url(img).await {
+                    self.log.info(&format!(
+                        "[AiManager] image slug URL → data URL 변환 (slug URL len={}, data URL len={})",
+                        img.len(),
+                        data_url.len()
+                    ));
+                    effective_opts.image = Some(data_url);
+                } else {
+                    self.log.warn(&format!(
+                        "[AiManager] image slug URL 변환 실패 (read fail) — 옛 값 그대로 LLM 전달: {}",
+                        img
+                    ));
+                }
+            }
+        }
 
         // Library Phase 1 단계 8.4 (2026-05-17) — retrieve_library_hits 누적. RetrievalEngine 가
         // 매 query 시점 매칭한 결과 metadata. 함수 끝 AiResponse.library_hits 로 노출.
