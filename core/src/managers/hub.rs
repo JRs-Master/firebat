@@ -54,6 +54,9 @@ pub struct CreateInstanceInput {
     pub model_id: Option<String>,
     pub enabled: bool,
     pub allowed_domains: Vec<String>,
+    // 노출 형태 — None = default true (양쪽 노출 시작)
+    pub expose_widget: Option<bool>,
+    pub expose_page: Option<bool>,
 }
 
 /// 부분 update — 매 필드 Option (None = 변경 X). enabled / api_token 영역 별도 토글 메서드.
@@ -67,6 +70,8 @@ pub struct UpdateInstanceInput {
     pub model_id: Option<String>,
     pub enabled: Option<bool>,
     pub allowed_domains: Option<Vec<String>>,
+    pub expose_widget: Option<bool>,
+    pub expose_page: Option<bool>,
 }
 
 pub struct HubManager {
@@ -115,6 +120,9 @@ impl HubManager {
             allowed_domains: input.allowed_domains,
             created_at: ts,
             updated_at: ts,
+            // 노출 형태 default — 둘 다 true (새 instance 양쪽 노출 시작)
+            expose_widget: input.expose_widget.unwrap_or(true),
+            expose_page: input.expose_page.unwrap_or(true),
         };
         self.port.create_instance(&instance).await?;
         Ok(id)
@@ -170,6 +178,12 @@ impl HubManager {
         if let Some(v) = patch.allowed_domains {
             current.allowed_domains = v;
         }
+        if let Some(v) = patch.expose_widget {
+            current.expose_widget = v;
+        }
+        if let Some(v) = patch.expose_page {
+            current.expose_page = v;
+        }
         current.updated_at = Self::now_ms();
         self.port.update_instance(&current).await
     }
@@ -194,13 +208,19 @@ impl HubManager {
 
     // ─── 외부 endpoint 영역 검증 헬퍼 ──────────────────────────────────────
 
-    /// (slug, api_token, origin) → 인증 + 활성 검증. Ok(instance) 또는 Err(reason).
-    /// 외부 endpoint 영역 호출 시 매번 박힘.
+    /// Sentinel — origin 검증 fail (외부 무단 임베드) 시 반환. Frontend route 가 이 prefix
+    /// 검출하면 광고 메시지 SSE 응답 (단순 403 reject 박지 X — Firebat 광고 효과 활용).
+    pub const UNAUTHORIZED_ORIGIN_PREFIX: &'static str = "UNAUTHORIZED_ORIGIN:";
+
+    /// (slug, api_token, origin, self_host) → 인증 + 활성 + origin 검증.
+    /// origin == self_host = 자동 허용 (page 풀스크린 / admin demo).
+    /// 외부 origin = allowed_domains 매칭만. 미매칭 = UNAUTHORIZED_ORIGIN: sentinel Err.
     pub async fn authenticate(
         &self,
         slug: &str,
         api_token: &str,
         origin: Option<&str>,
+        self_host: Option<&str>,
     ) -> InfraResult<HubInstance> {
         let instance = self
             .port
@@ -210,16 +230,25 @@ impl HubManager {
         if !instance.enabled {
             return Err("비활성된 hub 입니다.".to_string());
         }
-        // 상수 시간 비교 — timing-attack 방어. simple eq 영역 length-leak 있지만 충분.
+        // 상수 시간 비교 — timing-attack 방어.
         if !constant_time_eq(instance.api_token.as_bytes(), api_token.as_bytes()) {
             return Err("api_token 이 잘못됐습니다.".to_string());
         }
-        // origin 검사 — allowed_domains 빈 배열 = 모든 origin 허용 (개발 영역). 명시되면 일치 origin 만.
-        if !instance.allowed_domains.is_empty() {
-            let origin_str = origin.unwrap_or("");
-            if !instance.allowed_domains.iter().any(|d| d == origin_str) {
+        // origin 검사:
+        // 1. origin 빈 영역 (curl / native app / direct fetch) = 통과 (browser CORS 없음)
+        // 2. origin = self_host (우리 사이트 page mode / admin demo) = 자동 허용
+        // 3. origin = allowed_domains 매칭 = OK
+        // 4. 외부 origin + allowed_domains 미매칭 = UNAUTHORIZED_ORIGIN: sentinel
+        if let Some(origin_str) = origin.filter(|s| !s.is_empty()) {
+            let host_match = self_host
+                .map(|h| origin_matches_host(origin_str, h))
+                .unwrap_or(false);
+            let in_allowlist = instance.allowed_domains.iter().any(|d| d == origin_str);
+            if !host_match && !in_allowlist {
                 return Err(format!(
-                    "허용되지 않은 origin: {origin_str}",
+                    "{}{}",
+                    Self::UNAUTHORIZED_ORIGIN_PREFIX,
+                    origin_str
                 ));
             }
         }
@@ -401,6 +430,20 @@ impl HubManager {
 
         Ok(response)
     }
+}
+
+/// origin (scheme + host[:port]) 가 host (호스트 only) 와 같은 사이트인지 판정.
+/// page mode / admin demo 가 자기 서버에서 위젯 호출할 때 자동 허용용.
+/// 예: origin="https://firebat.co.kr", host="firebat.co.kr" → true.
+fn origin_matches_host(origin: &str, host: &str) -> bool {
+    if origin == host {
+        return true;
+    }
+    let origin_host = origin
+        .strip_prefix("https://")
+        .or_else(|| origin.strip_prefix("http://"))
+        .unwrap_or(origin);
+    origin_host == host
 }
 
 /// 상수 시간 byte 비교 — timing-attack 방어. 길이 일치 확인은 별도 (길이 자체 leak 영역

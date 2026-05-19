@@ -2461,9 +2461,12 @@ message HubInstancePb {
   string model_id = 8;
   bool enabled = 9;
   string api_token = 10;
-  repeated string allowed_domains = 11;      // origin whitelist
+  repeated string allowed_domains = 11;      // origin whitelist (외부 사이트만, self host 자동 허용)
   int64 created_at = 12;
   int64 updated_at = 13;
+  // 노출 형태 (boolean 2개 — 한 instance 가 widget / page 둘 다 활성 가능). default 둘 다 true.
+  bool expose_widget = 14;                    // 외부 사이트 임베드 풍선 widget (allowed_domains 검증)
+  bool expose_page = 15;                      // 우리 사이트 풀스크린 URL `/<slug>` (self host 자동 허용)
 }
 
 message HubConversationPb {
@@ -2496,6 +2499,9 @@ message HubCreateInstanceRequest {
   string model_id = 7;
   bool enabled = 8;
   repeated string allowed_domains = 9;
+  // 노출 형태 — 미설정 시 default 둘 다 true (양쪽 노출 시작)
+  optional bool expose_widget = 10;
+  optional bool expose_page = 11;
 }
 message HubCreateInstanceResponse {
   string id = 1;
@@ -2536,6 +2542,9 @@ message HubUpdateInstanceRequest {
   optional bool enabled = 10;
   repeated string allowed_domains = 11;
   bool replace_allowed_domains = 12;
+  // 노출 형태 patch (None = 옛 값 유지)
+  optional bool expose_widget = 13;
+  optional bool expose_page = 14;
 }
 message HubUpdateInstanceResponse {}
 
@@ -2557,6 +2566,7 @@ message HubAuthenticateRequest {
   string slug = 1;
   string api_token = 2;
   string origin = 3;            // request origin (빈 = 검사 skip)
+  string self_host = 4;         // 우리 사이트 host. origin 일치 시 자동 허용 (page mode)
 }
 message HubAuthenticateResponse {
   HubInstancePb instance = 1;
@@ -2643,6 +2653,7 @@ message HubSendMessageRequest {
   string origin = 3;
   string session_id = 4;
   string user_message = 5;
+  string self_host = 6;         // 우리 사이트 host. origin 일치 시 자동 허용 (page mode)
 }
 message HubSendMessageResponse {
   string conversation_id = 1;

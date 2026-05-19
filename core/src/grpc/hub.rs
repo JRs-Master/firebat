@@ -54,6 +54,8 @@ fn instance_to_pb(i: HubInstance) -> HubInstancePb {
         allowed_domains: i.allowed_domains,
         created_at: i.created_at,
         updated_at: i.updated_at,
+        expose_widget: i.expose_widget,
+        expose_page: i.expose_page,
     }
 }
 
@@ -98,6 +100,8 @@ impl HubService for HubServiceImpl {
             model_id: if args.model_id.is_empty() { None } else { Some(args.model_id) },
             enabled: args.enabled,
             allowed_domains: args.allowed_domains,
+            expose_widget: args.expose_widget,
+            expose_page: args.expose_page,
         };
         let id = self
             .manager
@@ -179,6 +183,8 @@ impl HubService for HubServiceImpl {
             } else {
                 None
             },
+            expose_widget: args.expose_widget,
+            expose_page: args.expose_page,
         };
         self.manager
             .update_instance(&args.id, patch)
@@ -220,9 +226,10 @@ impl HubService for HubServiceImpl {
     ) -> Result<Response<HubAuthenticateResponse>, TonicStatus> {
         let args = req.into_inner();
         let origin = if args.origin.is_empty() { None } else { Some(args.origin.as_str()) };
+        let self_host = if args.self_host.is_empty() { None } else { Some(args.self_host.as_str()) };
         let instance = self
             .manager
-            .authenticate(&args.slug, &args.api_token, origin)
+            .authenticate(&args.slug, &args.api_token, origin, self_host)
             .await
             .map_err(TonicStatus::permission_denied)?;
         Ok(Response::new(HubAuthenticateResponse {
@@ -367,9 +374,10 @@ impl HubService for HubServiceImpl {
 
         // 1. 인증
         let origin = if args.origin.is_empty() { None } else { Some(args.origin.as_str()) };
+        let self_host = if args.self_host.is_empty() { None } else { Some(args.self_host.as_str()) };
         let instance = self
             .manager
-            .authenticate(&args.slug, &args.api_token, origin)
+            .authenticate(&args.slug, &args.api_token, origin, self_host)
             .await
             .map_err(TonicStatus::permission_denied)?;
 

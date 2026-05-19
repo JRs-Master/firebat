@@ -189,7 +189,9 @@ impl SqliteMemoryAdapter {
                 api_token TEXT NOT NULL,               -- 외부 호출 인증 (자동 생성, 32 byte hex)
                 allowed_domains TEXT NOT NULL DEFAULT '[]',     -- JSON array of origin (CORS / origin 검사)
                 created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL
+                updated_at INTEGER NOT NULL,
+                expose_widget INTEGER NOT NULL DEFAULT 1,       -- 1=widget 임베드 노출, 0=숨김
+                expose_page INTEGER NOT NULL DEFAULT 1          -- 1=/hub/{slug} 풀스크린 노출, 0=숨김
             );
             CREATE INDEX IF NOT EXISTS idx_hub_instances_slug ON hub_instances(slug);
             CREATE INDEX IF NOT EXISTS idx_hub_instances_updated ON hub_instances(updated_at DESC);

@@ -2321,15 +2321,18 @@ pub struct HubInstance {
     pub slug: String,                       // URL (예: "lawassistant")
     pub name: String,
     pub description: Option<String>,
-    pub system_prompt: Option<String>,      // 챗봇 페르소나 / 가드레일
+    pub system_prompt: Option<String>,      // Hub 페르소나 / 가드레일
     pub allowed_references: Vec<String>,    // Library Reference id 배열
     pub allowed_sysmods: Vec<String>,       // sysmod 이름 배열 (빈 = 0개 노출)
     pub model_id: Option<String>,           // LLM 영역. None = system default
     pub enabled: bool,
     pub api_token: String,                  // 외부 호출 인증 (32 byte hex 자동 생성)
-    pub allowed_domains: Vec<String>,       // origin whitelist (예: "https://lawassistant.com")
+    pub allowed_domains: Vec<String>,       // origin whitelist (외부 사이트 임베드만, self host 자동 허용)
     pub created_at: i64,
     pub updated_at: i64,
+    // 노출 형태 — 한 instance 가 widget / page 둘 다 활성 가능. default 둘 다 true.
+    pub expose_widget: bool,                // 외부 사이트 임베드 풍선 widget (allowed_domains 검증)
+    pub expose_page: bool,                  // 우리 사이트 풀스크린 URL `/<slug>` (self host 자동 허용)
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
