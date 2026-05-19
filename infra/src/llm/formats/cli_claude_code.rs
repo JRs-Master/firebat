@@ -546,7 +546,16 @@ impl ClaudeCodeCliHandler {
                         .unwrap_or_else(|| "실행 오류".to_string());
                     error_msg = Some(r);
                 } else {
-                    outcome.text = std::mem::take(&mut current_text);
+                    // result.result field 박은 영역 = Claude Code stream-json 박은 영역 final answer.
+                    // 옛 node 박은 영역 박은 영역에서 그 영역 박은 영역 = 답변 길이 회복.
+                    // 박지 X 박은 영역 (옛 동작) = current_text 박음 폴백.
+                    let result_text = ev
+                        .get("result")
+                        .and_then(|v| v.as_str())
+                        .map(String::from)
+                        .filter(|s| !s.is_empty());
+                    outcome.text = result_text
+                        .unwrap_or_else(|| std::mem::take(&mut current_text));
                 }
                 let cost_usd = ev
                     .get("total_cost_usd")
