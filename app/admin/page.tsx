@@ -386,16 +386,23 @@ function AutoResizeIframe({ src, initialHeight, dependencies }: { src: string; i
   );
 }
 
-// ─── Thinking 블록 — 버블 상단에 항상 표시 ──────────────────────────────────
-function ThinkingBlock({ statusText: _statusText, thinkingText, isActive }: { statusText?: string; thinkingText?: string; isActive?: boolean }) {
-  // 사용자 요청 — thinking 메시지 (statusText / thinkingText 본문) 출력 X. 동작 중일 때 spinner 만.
-  // 본문 글자 크기 일관성 위해 작은 글자 progress 텍스트 박지 X.
+// ─── Thinking 블록 — spinner + "생각중" 라벨 + thinkingText 같은 줄 inline 박힘.
+function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: string; thinkingText?: string; isActive?: boolean }) {
   if (!isActive && !thinkingText) return null;
-  if (thinkingText === THINKING_STATUS.DONE) return null;
-  if (!isActive) return null;
+  if (thinkingText === THINKING_STATUS.DONE && !isActive) return null;
+  const sentinelValues = Object.values(THINKING_STATUS);
+  const isSentinel = thinkingText ? sentinelValues.includes(thinkingText as (typeof sentinelValues)[number]) : true;
+  const label = statusText || (isActive ? '생각중' : '');
+  const bodyText = (!isSentinel && thinkingText) ? thinkingText : '';
   return (
-    <div className="flex items-center gap-2 text-slate-400">
-      <div className="animate-spin shrink-0"><Cpu size={13} /></div>
+    <div className="flex items-start gap-2 text-slate-400 flex-wrap">
+      {isActive && <div className="animate-spin shrink-0 mt-0.5"><Cpu size={13} /></div>}
+      {label && <span className="text-[12px] text-slate-500 shrink-0">{label}</span>}
+      {bodyText && (
+        <span className="text-[12px] text-slate-400 leading-relaxed break-words whitespace-pre-wrap">
+          {bodyText}
+        </span>
+      )}
     </div>
   );
 }

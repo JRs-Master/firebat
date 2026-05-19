@@ -444,6 +444,17 @@ async fn main() -> Result<()> {
             .with_library(library_manager.clone()),
     );
 
+    // ToolDispatcher — approval gate (check_needs_approval + pre_validate_pending_args) 활성.
+    // 옛 영역 wiring 박지 X 박혀 save_page 수정 시 승인 UI 안 나오던 영역 fix (사용자 보고 2026-05-19).
+    // page / schedule / mcp 박은 영역 박혀있어 destructive 도구 (save_page 덮어쓰기 / delete_page /
+    // delete_file / schedule_task / cancel_task) 호출 시 pending action 박힘.
+    let tool_dispatcher = Arc::new(
+        firebat_core::managers::ai::tool_dispatcher::ToolDispatcher::new(storage.clone())
+            .with_page(page_manager.clone())
+            .with_schedule(schedule_manager.clone())
+            .with_mcp(mcp_manager.clone()),
+    );
+
     let ai_manager = Arc::new(
         AiManager::new(llm.clone(), tool_manager.clone(), logger.clone())
             .with_prompt_builder(vault.clone())
@@ -454,6 +465,7 @@ async fn main() -> Result<()> {
             .with_dynamic_tools(dynamic_tools_registry.clone())
             .with_vault(vault.clone())
             .with_media(media.clone())
+            .with_tool_dispatcher(tool_dispatcher.clone())
             .with_retrieval_engine(retrieval_engine),
     );
 
