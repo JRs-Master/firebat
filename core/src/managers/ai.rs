@@ -579,20 +579,41 @@ impl AiManager {
                 dyn_reg.refresh().await;
             }
             let mut tools_built = self.build_tool_definitions();
-            // hub 영역 도구 필터 — 외부 사이트 안 admin 도구 노출 차단.
-            // 허용 영역 = (1) `sysmod_<name>` 안 name 영역 allowed_sysmods 안 들어있는 것
-            //              (2) `render_*` 영역 (UI 렌더 도구, 안전)
-            // 그 외 = mcp_* / propose_plan / suggest / schedule_task / save_page / search_history /
-            //         run_user_module / list_user_modules / get_user_module / write_module 등 모두 차단.
+            // hub 영역 도구 필터 — 외부 사이트 안 destructive (admin DB 영구 변경) 만 차단.
+            //
+            // 허용 영역:
+            //   (1) `sysmod_<name>` — allowed_sysmods 박은 영역만 (instance 설정 제어)
+            //   (2) `render_*` — UI 렌더 도구
+            //   (3) read-only / 정보 조회 — list_*, get_*, search_*, suggest, propose_plan, cache_*
+            //   (4) 채팅 컨텍스트 — recall / library 검색 박은 영역
+            //
+            // 차단 영역 (destructive — admin DB 영구 변경):
+            //   save_page / delete_page / delete_file / write_file / write_module /
+            //   schedule_task / cancel_task / run_task / run_module / run_user_module /
+            //   request_secret / mcp_* (admin 권한 도구)
             if let Some(ctx) = &ai_opts.hub_context {
                 let allowed: std::collections::HashSet<String> =
                     ctx.allowed_sysmods.iter().cloned().collect();
                 tools_built.retain(|t| {
-                    if let Some(name) = t.name.strip_prefix("sysmod_") {
-                        allowed.contains(name)
-                    } else {
-                        t.name.starts_with("render_")
+                    let name = t.name.as_str();
+                    // sysmod_<name>: allowed 박은 영역만
+                    if let Some(sysmod_name) = name.strip_prefix("sysmod_") {
+                        return allowed.contains(sysmod_name);
                     }
+                    // render_* / read-only / 컨텍스트 도구 = 허용
+                    if name.starts_with("render_")
+                        || name.starts_with("list_")
+                        || name.starts_with("get_")
+                        || name.starts_with("search_")
+                        || name.starts_with("cache_")
+                        || name == "suggest"
+                        || name == "propose_plan"
+                    {
+                        return true;
+                    }
+                    // 그 외 (destructive: save_page / write_* / delete_* / schedule_task /
+                    // run_task / run_module / mcp_* / request_secret 등) = 차단
+                    false
                 });
             }
             auto_tools = tools_built;
