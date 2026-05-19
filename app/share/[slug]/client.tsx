@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { ComponentRenderer } from '../../(user)/[...slug]/components';
 import { isSuggestionClickUserMessage, isSectionStartBlock, escapeHtmlTagMentions } from '../../admin/hooks/chat-manager';
+import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
 
 // 공유 페이지 전용 읽기 전용 메시지 리스트. 어드민 MessageBubble 의 인터랙티브 요소
 // (plan-confirm, pendingActions, suggestions, 복사·공유 버튼) 는 모두 제거 — 읽기만.
@@ -44,6 +45,9 @@ const mdComponents = {
 };
 
 function MessageRow({ msg }: { msg: ShareMessage }) {
+  // HTML iframe block 의 default height — 모바일 320px / PC 480px 캡.
+  const iframeMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
+  const iframeDefaultHeight = iframeMaxH ? `${iframeMaxH}px` : '320px';
   if (msg.role === 'user') {
     return (
       <div className="flex w-full gap-4 items-start justify-end">
@@ -85,7 +89,7 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
                   srcDoc={b.htmlContent}
                   sandbox="allow-scripts"
                   className={`w-full border border-slate-200 rounded-xl bg-white block ${wrapCls}`}
-                  style={{ height: b.htmlHeight || '400px' }}
+                  style={{ height: b.htmlHeight || iframeDefaultHeight }}
                   title="Shared HTML"
                 />
               );

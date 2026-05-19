@@ -28,13 +28,13 @@ import { useViewportMaxHeight } from '../../lib/use-viewport-size';
 import { logger } from '../../lib/util/logger';
 import { apiGet, apiPost } from '../../lib/api-fetch';
 
-/** 마크다운 table wrapper — viewport quirk 우회 + MUI/Antd 표준 (400px 캡) + 작은 폰 50%. */
+/** 마크다운 table wrapper — viewport quirk 우회 + 모바일 320px / PC 480px 캡. */
 function MarkdownTableBox(props: any) {
-  const maxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 400 });
+  const maxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
   return (
     <div
       className="overflow-auto mb-2 rounded-xl border border-slate-200"
-      style={{ maxHeight: maxH ? `${maxH}px` : '70vh' }}
+      style={{ maxHeight: maxH ? `${maxH}px` : '480px' }}
     >
       <table className="min-w-full text-[13px] border-separate border-spacing-0" {...props} />
     </div>

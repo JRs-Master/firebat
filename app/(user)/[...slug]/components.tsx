@@ -409,8 +409,8 @@ function TableComp({ headers = [], rows = [], stickyCol, striped, align, cellAli
   // stickyCol: 미지정 시 4열 이상이면 자동 활성 (첫 열 = 행 라벨 추정)
   const firstColSticky = stickyCol ?? (headers.length >= 4);
 
-  // viewport quirk 우회 — MUI/Antd 표준 (400px 캡) + 작은 폰만 50% 비율 보호. 데스크톱 70%.
-  const maxHeightPx = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 400 });
+  // viewport quirk 우회 — 모바일 320px / PC 480px 캡 + 비율 보호 (작은 폰 50% / 데스크톱 70%).
+  const maxHeightPx = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
 
   /** 정렬: AI 가 align 배열로 명시한 값만 사용. 미지정 시 column 전체 left (cells), center (header).
    *  per-cell 자동 감지 제거 — column 안에서 cell 마다 정렬 다르게 보이는 문제 차단. */
@@ -1771,8 +1771,9 @@ function MapComp({
   const safeMarkers = Array.isArray(markers) ? markers.filter(m => typeof m?.lat === 'number' && typeof m?.lon === 'number') : [];
   const safeCircles = Array.isArray(circles) ? circles.filter(c => typeof c?.lat === 'number' && typeof c?.lon === 'number' && typeof c?.radius === 'number' && c.radius > 0) : [];
   const safeLegend = Array.isArray(legend) ? legend.filter(l => l?.color && l?.label) : [];
-  // 모바일 세로 너무 길어지지 않게 cap — 50vh 와 user 지정 height 중 작은 값 (CSS min). 기본 400px.
-  const finalHeight = height || 'min(400px, 50vh)';
+  // 모바일 320px / PC 480px 캡 + 비율 보호 (작은 폰 50% / 데스크톱 70%).
+  const mapMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
+  const finalHeight = height || (mapMaxH ? `${mapMaxH}px` : '320px');
   const finalZoom = typeof zoom === 'number' ? zoom : 12;
 
   // 중심 좌표 — center 명시 우선, 없으면 markers 평균
@@ -2134,7 +2135,9 @@ function SlideshowComp({ images, autoplay, autoplayDelay, height }: {
   images: SlideImage[]; autoplay?: boolean | null; autoplayDelay?: number | null; height?: string | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const finalHeight = height || '400px';
+  // 모바일 320px / PC 480px 캡 + 비율 보호.
+  const slideMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
+  const finalHeight = height || (slideMaxH ? `${slideMaxH}px` : '320px');
   useEffect(() => {
     if (!ref.current || images.length === 0) return;
     const container = ref.current;
@@ -2180,7 +2183,9 @@ function LottieComp({ src, loop, autoplay, height }: {
   src: string; loop: boolean; autoplay: boolean; height?: string | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const finalHeight = height || '300px';
+  // 모바일 320px / PC 480px 캡 + 비율 보호.
+  const lottieMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
+  const finalHeight = height || (lottieMaxH ? `${lottieMaxH}px` : '320px');
   useEffect(() => {
     if (!ref.current || !src) return;
     const container = ref.current;
@@ -2209,7 +2214,9 @@ function NetworkComp({ nodes, edges, layout, height }: {
   nodes: NetworkNode[]; edges: NetworkEdge[]; layout?: string | null; height?: string | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const finalHeight = height || '400px';
+  // 모바일 320px / PC 480px 캡 + 비율 보호.
+  const netMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
+  const finalHeight = height || (netMaxH ? `${netMaxH}px` : '320px');
   useEffect(() => {
     if (!ref.current || nodes.length === 0) return;
     const container = ref.current;
