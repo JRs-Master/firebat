@@ -60,7 +60,7 @@ interface MemoryStats {
   events: { total: number; byType: Array<{ type: string; count: number }> };
 }
 
-export function EntitiesPanel() {
+export function EntitiesPanel({ hubMode }: { hubMode?: boolean } = {}) {
   const entitySearchId = useId();
   const [subTab, setSubTab] = useState<'entities' | 'events'>('entities');
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -73,6 +73,12 @@ export function EntitiesPanel() {
   const [stats, setStats] = useState<MemoryStats | null>(null);
 
   const fetchEntities = useCallback(async (q: string) => {
+    // hub mode = admin Recall 호출 차단. 빈 목록 (추후 hub-scoped entity owner 스키마 확장 영역).
+    if (hubMode) {
+      setEntities([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -86,16 +92,18 @@ export function EntitiesPanel() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [hubMode]);
 
   useEffect(() => {
     fetchEntities('');
-    apiGet<{ success: boolean } & MemoryStats>('/api/memory/stats', { category: 'entities' })
-      .then(d => {
-        if (d?.success) setStats({ entities: d.entities, facts: d.facts, events: d.events });
-      })
-      .catch(() => {});
-  }, [fetchEntities]);
+    if (!hubMode) {
+      apiGet<{ success: boolean } & MemoryStats>('/api/memory/stats', { category: 'entities' })
+        .then(d => {
+          if (d?.success) setStats({ entities: d.entities, facts: d.facts, events: d.events });
+        })
+        .catch(() => {});
+    }
+  }, [fetchEntities, hubMode]);
 
   // Debounced search
   useEffect(() => {

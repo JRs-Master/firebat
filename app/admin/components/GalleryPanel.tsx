@@ -38,7 +38,7 @@ interface MediaItem {
 
 const PAGE_SIZE = 48;
 
-export function GalleryPanel() {
+export function GalleryPanel({ hubMode }: { hubMode?: boolean } = {}) {
   const searchId = useId();
   const [items, setItems] = useState<MediaItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -52,6 +52,14 @@ export function GalleryPanel() {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchList = useCallback(async (reset: boolean) => {
+    // hub mode = admin 갤러리 호출 차단 (admin 미디어 노출 금지). 빈 목록 반환.
+    // 추후 hub-scoped 미디어 저장 (`user/hub/<slug>/media/`) 분리 시 익명 endpoint 추가.
+    if (hubMode) {
+      setItems([]);
+      setTotal(0);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -70,7 +78,7 @@ export function GalleryPanel() {
     } finally {
       setLoading(false);
     }
-  }, [scope, search, offset]);
+  }, [scope, search, offset, hubMode]);
 
   // scope/search 변경 시 리셋 — debounced for search
   useEffect(() => {

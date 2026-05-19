@@ -59,7 +59,7 @@ function formatDateTime(iso: string): string {
   return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-export function CalendarPanel() {
+export function CalendarPanel({ hubMode }: { hubMode?: boolean } = {}) {
   const today = useMemo(() => new Date(), []);
   const [cursorYear, setCursorYear] = useState(today.getFullYear());
   const [cursorMonth, setCursorMonth] = useState(today.getMonth()); // 0-indexed
@@ -76,6 +76,12 @@ export function CalendarPanel() {
   // sysmod_calendar.list-range 는 fromTm / toTm 임의 범위 지원 (list-upcoming 의 미래
   // 전용 limitation 우회). 실 조회량 적어 한 번에 fetch 부담 없음.
   const fetchEvents = useCallback(async () => {
+    // hub mode = admin calendar sysmod 호출 차단. 빈 목록 (sysmod 자체 hub-aware 분리 추후 작업).
+    if (hubMode) {
+      setEvents([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const now = new Date();
@@ -92,7 +98,7 @@ export function CalendarPanel() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [hubMode]);
 
   useEffect(() => {
     fetchEvents();

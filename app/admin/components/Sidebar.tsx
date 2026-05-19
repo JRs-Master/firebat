@@ -227,6 +227,8 @@ export function Sidebar({
   const [pwInput, setPwInput] = useState('');
 
   const fetchProjects = useCallback(async () => {
+    // hub mode = admin 프로젝트 호출 차단. workspace 탭 비어보임 (hub 자료는 chat 안 save_page 흐름).
+    if (hubMode) { setProjects([]); setModuleEntries({}); return; }
     try {
       const data = await apiGet<{ success: boolean; projects?: Project[] }>(
         '/api/fs/projects',
@@ -255,7 +257,7 @@ export function Sidebar({
         setModuleEntries(entries);
       }
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
-  }, []);
+  }, [hubMode]);
 
   const [pages, setPages] = useState<PageInfo[]>([]);
   const [deletingPage, setDeletingPage] = useState<string | null>(null);
@@ -263,6 +265,9 @@ export function Sidebar({
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
 
   const fetchPages = useCallback(async () => {
+    // hub mode = admin 페이지 호출 차단. hub-scoped (project='hub:<id>') page 도 admin endpoint 가
+    // 거르므로 hub 방문자에게 안 보임 정상.
+    if (hubMode) { setPages([]); return; }
     try {
       const data = await apiGet<{ success: boolean; pages?: PageInfo[] }>(
         '/api/pages',
@@ -270,7 +275,7 @@ export function Sidebar({
       );
       if (data.success) setPages(data.pages ?? []);
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
-  }, []);
+  }, [hubMode]);
 
   const refreshAllRef = useRef(() => {});
   const refreshAll = useCallback(() => {
@@ -597,22 +602,22 @@ export function Sidebar({
   const panelBody = (
     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
       {tab === 'gallery' ? (
-        <GalleryPanel />
+        <GalleryPanel hubMode={hubMode} />
       ) : tab === 'templates' ? (
-        <TemplatesPanel onEditFile={onEditFile} />
+        <TemplatesPanel onEditFile={onEditFile} hubMode={hubMode} />
       ) : tab === 'library' ? (
         <LibraryPanel hubContext={hubShareContext} />
       ) : tab === 'entities' ? (
-        <EntitiesPanel />
+        <EntitiesPanel hubMode={hubMode} />
       ) : tab === 'notes' ? (
-        <NotesPanel />
+        <NotesPanel hubMode={hubMode} />
       ) : tab === 'calendar' ? (
-        <CalendarPanel />
+        <CalendarPanel hubMode={hubMode} />
       ) : tab === 'workspace' ? (
         <div className="flex flex-col h-full overflow-y-auto overscroll-contain">
 
           {/* ── CRON JOBS 섹션 ── */}
-          <CronPanel />
+          <CronPanel hubMode={hubMode} />
 
           {/* ── PROJECTS 섹션 ── */}
           <div className="flex-shrink-0">

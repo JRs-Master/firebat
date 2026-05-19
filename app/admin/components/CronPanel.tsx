@@ -52,7 +52,7 @@ interface CronLog {
   stepsTotal?: number;
 }
 
-export function CronPanel() {
+export function CronPanel({ hubMode }: { hubMode?: boolean } = {}) {
   const queryClient = useQueryClient();
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [running, setRunning] = useState<string | null>(null);
@@ -62,12 +62,15 @@ export function CronPanel() {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
   const { data: cronData } = useQuery({
-    queryKey: ['cron'],
-    queryFn: () =>
-      apiGet<{ jobs?: CronJob[]; logs?: CronLog[] }>('/api/cron', { category: 'cron' }).catch((e) => {
+    queryKey: ['cron', hubMode ? 'hub' : 'admin'],
+    queryFn: () => {
+      // hub mode = admin cron 호출 차단 (admin 스케줄 노출 금지). 빈 목록.
+      if (hubMode) return Promise.resolve({ jobs: [] as CronJob[], logs: [] as CronLog[] });
+      return apiGet<{ jobs?: CronJob[]; logs?: CronLog[] }>('/api/cron', { category: 'cron' }).catch((e) => {
         logger.debug('cron', 'fetch 실패', { error: e });
         return { jobs: [], logs: [] };
-      }),
+      });
+    },
   });
   const jobs = cronData?.jobs ?? [];
   const logs = cronData?.logs ?? [];
@@ -77,13 +80,14 @@ export function CronPanel() {
   );
 
   // SSE (cron:complete / sidebar:refresh) + window 'firebat-refresh' 통합 수신
-  // EventsManager 싱글톤이 EventSource 1개만 유지 — Sidebar 와 공유.
-  useSidebarRefresh(invalidateCron);
+  // EventsManager 싱글톤이 EventSource 1개만 유지 — Sidebar 와 공유. hub mode 면 no-op.
+  useSidebarRefresh(hubMode ? () => {} : invalidateCron);
 
-  // 알림 폴링 (페이지 열기용, 30초 간격). 탭 백그라운드 시 자동 일시정지.
+  // 알림 폴링 (페이지 열기용, 30초 간격). 탭 백그라운드 시 자동 일시정지. hub mode 면 skip.
   usePolling({
     interval: 30 * TIME.SECOND_MS,
     onTick: async () => {
+      if (hubMode) return;
       try {
         const nData = await apiGet<{ notifications?: Array<{ url: string }> }>('/api/cron?notify=poll', { category: 'cron' });
         for (const n of nData.notifications ?? []) window.open(n.url, '_blank');

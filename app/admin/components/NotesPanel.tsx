@@ -41,7 +41,7 @@ function formatDate(iso?: string): string {
   return isNaN(d.getTime()) ? iso : d.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-export function NotesPanel() {
+export function NotesPanel({ hubMode }: { hubMode?: boolean } = {}) {
   const queryId = useId();
   const [notes, setNotes] = useState<Note[]>([]);
   const [query, setQuery] = useState('');
@@ -52,6 +52,12 @@ export function NotesPanel() {
   const [editing, setEditing] = useState<Note | null>(null);
 
   const fetchNotes = useCallback(async (q: string) => {
+    // hub mode = admin notes sysmod 호출 차단. 빈 목록 (sysmod 자체 hub-aware 분리 추후 작업).
+    if (hubMode) {
+      setNotes([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const result = q.trim()
@@ -63,7 +69,7 @@ export function NotesPanel() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [hubMode]);
 
   useEffect(() => {
     fetchNotes('');

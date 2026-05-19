@@ -36,17 +36,26 @@ const STARTER_TEMPLATE = {
   },
 };
 
-export function TemplatesPanel({ onEditFile }: { onEditFile?: (filePath: string) => void }) {
+export function TemplatesPanel({
+  onEditFile,
+  hubMode,
+}: {
+  onEditFile?: (filePath: string) => void;
+  hubMode?: boolean;
+}) {
   const newSlugId = useId();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [newSlug, setNewSlug] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // hub mode = admin 템플릿 호출 차단. 빈 목록 반환 (추후 hub-scoped 템플릿 스키마 확장 영역).
   const { data, isLoading } = useQuery({
-    queryKey: ['templates'],
+    queryKey: ['templates', hubMode ? 'hub' : 'admin'],
     queryFn: () =>
-      apiGet<{ success: boolean; templates: TemplateEntry[] }>('/api/templates', { category: 'templates' }),
+      hubMode
+        ? Promise.resolve({ success: true, templates: [] as TemplateEntry[] })
+        : apiGet<{ success: boolean; templates: TemplateEntry[] }>('/api/templates', { category: 'templates' }),
   });
   const templates = data?.templates ?? [];
   const loading = isLoading;
