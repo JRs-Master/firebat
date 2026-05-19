@@ -1003,20 +1003,22 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
   const fetchFileTree = useCallback(async () => {}, []);
 
   // Hub page mode 의 sessionId — localStorage sticky (방문자 동일 세션 유지) + handleNewConv 시 갱신.
-  const [hubSessionId, setHubSessionId] = useState('');
-  useEffect(() => {
-    if (!hubContext) return;
+  // useState initializer 안에서 동기 처리 — 첫 렌더 직전에 sid 확정. 옛에 useEffect 로 했더니
+  // 첫 렌더 = hubSessionId='' → hubChatContext=undefined → useChat 의 init useEffect 가 admin
+  // path 진입 (admin /api/conversations 호출) → admin 대화가 hub 사이드바에 잠시 노출되는 race.
+  const [hubSessionId, setHubSessionId] = useState<string>(() => {
+    if (!hubContext || typeof window === 'undefined') return '';
     const key = `firebat-hub-session-${hubContext.slug}`;
-    let sid = '';
-    try { sid = localStorage.getItem(key) ?? ''; } catch {}
-    if (!sid) {
-      sid = (typeof crypto !== 'undefined' && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      try { localStorage.setItem(key, sid); } catch {}
-    }
-    setHubSessionId(sid);
-  }, [hubContext]);
+    try {
+      const cached = localStorage.getItem(key);
+      if (cached) return cached;
+    } catch {}
+    const sid = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    try { localStorage.setItem(key, sid); } catch {}
+    return sid;
+  });
   const resetHubSession = useCallback(() => {
     if (!hubContext) return;
     const key = `firebat-hub-session-${hubContext.slug}`;
