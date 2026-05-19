@@ -3,6 +3,7 @@
 import React, { useState, useCallback, useEffect, useRef, useId } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import StockChart from '../../admin/chat-components/StockChart';
 import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
 import { apiPost } from '../../../lib/api-fetch';
@@ -144,9 +145,14 @@ function formatNumberString(v: string | number | null | undefined): string {
 
 function TextComp({ content }: { content: string }) {
   const normalized = normalizeEscapes(content);
+  // 한국어 + `(`/`)` 인접 영역에서 ReactMarkdown commonmark 의 **bold** 인식 실패 회피 —
+  // 명시적으로 <strong> 변환 + rehypeRaw 로 HTML 통과 (admin chat renderMarkdown 동일 패턴).
+  const withStrong = normalized
+    .replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*\*/g, '');
   return (
     <div className="text-gray-700 text-base sm:text-lg leading-relaxed prose prose-sm max-w-none">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{normalized}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{withStrong}</ReactMarkdown>
     </div>
   );
 }

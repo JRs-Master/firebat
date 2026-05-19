@@ -115,7 +115,7 @@ impl FormatHandler for AnthropicMessagesHandler {
         let cache_enabled = opts.anthropic_cache_enabled.unwrap_or(false);
         let mut body = serde_json::json!({
             "model": config.id,
-            "max_tokens": opts.max_tokens.unwrap_or(4096),
+            "max_tokens": opts.max_tokens.unwrap_or(8192),
             "messages": [{"role": "user", "content": prompt}],
         });
         // system block — cache 토글 ON 시 `[{type:'text', text, cache_control:{type:'ephemeral'}}]`
@@ -250,7 +250,7 @@ impl FormatHandler for AnthropicMessagesHandler {
 
         let mut body = serde_json::json!({
             "model": config.id,
-            "max_tokens": opts.max_tokens.unwrap_or(4096),
+            "max_tokens": opts.max_tokens.unwrap_or(8192),
             "messages": messages,
             "tools": tool_defs,
         });
