@@ -208,7 +208,7 @@ export function HubInstanceDetail({
         </div>
         <Tooltip label="Hub 페이지 열기">
           <a
-            href={`/chat/${instance.slug}`}
+            href={`/${instance.slug}`}
             target="_blank"
             rel="noopener noreferrer"
             className="p-1 text-slate-400 hover:text-blue-600 transition-colors"

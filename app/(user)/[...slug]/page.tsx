@@ -94,12 +94,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         };
       }
     }
-    // hub fallback metadata — 페이지/프로젝트 미매칭 시 마지막 segment 가 hub slug 인지
-    // 확인. 페이지 본문 (DynamicPage 의 hub fallback) 과 정합 — title = instance.name.
+    // hub fallback metadata — 단일 segment URL (`/<slug>`) 만 hub 매칭.
     // exposePage=false 면 URL 자체를 노출하지 않으므로 Not Found.
-    const lastSegment = slug.split('/').filter(Boolean).pop() ?? '';
-    if (lastSegment) {
-      const hubRes = await getInstanceBySlug({ slug: lastSegment });
+    // 옛 마지막 segment 매칭 (catch-all) 폐기 — `/chat/<slug>` 와 `/<slug>` 가 동시 동작해
+    // 사용자 혼동 발생 (admin UI 가 박은 링크와 실제 hub URL 불일치).
+    if (!slug.includes('/')) {
+      const hubRes = await getInstanceBySlug({ slug });
       if (hubRes.ok && hubRes.data?.instance && hubRes.data.instance.enabled && hubRes.data.instance.exposePage) {
         const instance = hubRes.data.instance;
         return {
@@ -208,19 +208,17 @@ export default async function DynamicPage({ params, searchParams }: Props) {
         return <ProjectRootView projectName={slug} pageSlugs={matched.pageSlugs ?? []} currentPage={currentPage} />;
       }
     }
-    // hub fallback — cms page / project 미매칭 시 마지막 segment 가 hub instance slug 인지 확인.
-    // 사용자 입장에서는 임의 prefix path 와 동작 가능:
-    //   /lawassistant            → slug = lawassistant
-    //   /chat/lawassistant       → slug = lawassistant
-    //   /demo/foo/lawassistant   → slug = lawassistant
-    // hub.slug 자체에는 `/` 가 없음 (Rust validate_slug 가 영숫자/하이픈/언더스코어만 허용).
+    // hub fallback — 단일 segment URL (`/<slug>`) 만 hub 매칭. hub.slug 는 `/` 미포함
+    // (Rust validate_slug 가 영숫자/하이픈/언더스코어만 허용).
+    //
+    // 옛 마지막 segment 매칭 (catch-all `/chat/<slug>` 등) 폐기 — admin UI 의 "Hub 페이지 열기"
+    // 링크 (옛 /chat/<slug>) 와 실제 URL `/<slug>` 가 동시 동작해 사용자 혼동.
     //
     // 노출 모드:
     //   instance.exposePage = true  → /<slug> 풀스크린 chat 자동 활성
     //   instance.exposePage = false → URL 노출 안 함 (404). widget 임베드 전용 인스턴스.
-    const lastSegment = slug.split('/').filter(Boolean).pop() ?? '';
-    if (lastSegment) {
-      const hubRes = await getInstanceBySlug({ slug: lastSegment });
+    if (!slug.includes('/')) {
+      const hubRes = await getInstanceBySlug({ slug });
       if (hubRes.ok && hubRes.data?.instance && hubRes.data.instance.enabled && hubRes.data.instance.exposePage) {
         const instance = hubRes.data.instance;
         const h = await headers();
