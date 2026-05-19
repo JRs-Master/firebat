@@ -23,8 +23,11 @@ import {
   HubGetInstanceResponse,
   HubInstancePb,
   HubListConversationsRequestSchema,
+  HubListDeletedConversationsRequestSchema,
   HubListMessagesRequestSchema,
   HubMessagePb,
+  HubPermanentDeleteConversationRequestSchema,
+  HubRestoreConversationRequestSchema,
   HubRotateApiTokenRequestSchema,
   HubSendMessageRequestSchema,
   HubSendMessageResponse,
@@ -151,6 +154,33 @@ export async function getConversation(args: MessageInitShape<typeof HubGetConver
 export async function deleteConversation(args: MessageInitShape<typeof HubDeleteConversationRequestSchema>): Promise<RpcResult<void>> {
   try {
       await hubClient.deleteConversation(args ?? {});
+      return { ok: true, data: undefined };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function listDeletedConversations(args: MessageInitShape<typeof HubListDeletedConversationsRequestSchema>): Promise<RpcResult<HubConversationPb[]>> {
+  try {
+      const response = await hubClient.listDeletedConversations(args ?? {});
+      return { ok: true, data: unBigInt(response.conversations) };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function restoreConversation(args: MessageInitShape<typeof HubRestoreConversationRequestSchema>): Promise<RpcResult<void>> {
+  try {
+      await hubClient.restoreConversation(args ?? {});
+      return { ok: true, data: undefined };
+  } catch (err) {
+    return toRpcError(err);
+  }
+}
+
+export async function permanentDeleteConversation(args: MessageInitShape<typeof HubPermanentDeleteConversationRequestSchema>): Promise<RpcResult<void>> {
+  try {
+      await hubClient.permanentDeleteConversation(args ?? {});
       return { ok: true, data: undefined };
   } catch (err) {
     return toRpcError(err);

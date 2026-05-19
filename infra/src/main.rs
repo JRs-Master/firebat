@@ -679,6 +679,7 @@ async fn main() -> Result<()> {
     {
         let conv_mgr = conversation_manager.clone();
         let media_mgr = media_manager.clone();
+        let hub_mgr = hub_manager.clone();
         tokio::spawn(async move {
             const RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
             const INTERVAL_SECS: u64 = 6 * 60 * 60;
@@ -690,11 +691,16 @@ async fn main() -> Result<()> {
                     .cleanup_old_attachments(RETENTION_MS)
                     .await
                     .unwrap_or(0);
-                if removed_convs > 0 || removed_atts > 0 {
+                let removed_hub_convs = hub_mgr
+                    .cleanup_old_deleted_conversations(RETENTION_MS)
+                    .await
+                    .unwrap_or(0);
+                if removed_convs > 0 || removed_atts > 0 || removed_hub_convs > 0 {
                     tracing::info!(
                         removed_convs,
                         removed_atts,
-                        "[30d cleanup] 휴지통 + 임시 첨부 cascade 삭제 완료"
+                        removed_hub_convs,
+                        "[30d cleanup] 휴지통 + 임시 첨부 + hub 휴지통 cascade 삭제 완료"
                     );
                 }
             }

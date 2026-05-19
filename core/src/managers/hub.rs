@@ -316,12 +316,40 @@ impl HubManager {
         self.port.list_conversations(instance_id, session_id).await
     }
 
+    /// 휴지통 목록 — (instance_id, session_id) scope. deleted_at IS NOT NULL.
+    pub async fn list_deleted_conversations(
+        &self,
+        instance_id: &str,
+        session_id: &str,
+    ) -> InfraResult<Vec<HubConversation>> {
+        self.port
+            .list_deleted_conversations(instance_id, session_id)
+            .await
+    }
+
     pub async fn get_conversation(&self, id: &str) -> InfraResult<Option<HubConversation>> {
         self.port.get_conversation(id).await
     }
 
+    /// soft delete — 휴지통으로 이동. deleted_at 갱신.
     pub async fn delete_conversation(&self, id: &str) -> InfraResult<()> {
         self.port.delete_conversation(id).await
+    }
+
+    /// 휴지통에서 복원 — deleted_at NULL.
+    pub async fn restore_conversation(&self, id: &str) -> InfraResult<()> {
+        self.port.restore_conversation(id).await
+    }
+
+    /// 영구 삭제 — hard delete. messages cascade.
+    pub async fn permanent_delete_conversation(&self, id: &str) -> InfraResult<()> {
+        self.port.permanent_delete_conversation(id).await
+    }
+
+    /// 30일 retention cleanup — internal cron 이 호출.
+    pub async fn cleanup_old_deleted_conversations(&self, retention_ms: i64) -> InfraResult<i64> {
+        let cutoff = crate::utils::time::now_ms() - retention_ms;
+        self.port.cleanup_old_deleted_conversations(cutoff).await
     }
 
     pub async fn update_conversation_title(&self, id: &str, title: &str) -> InfraResult<()> {

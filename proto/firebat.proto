@@ -2619,6 +2619,24 @@ message HubDeleteConversationRequest {
 }
 message HubDeleteConversationResponse {}
 
+message HubListDeletedConversationsRequest {
+  string instance_id = 1;
+  string session_id = 2;
+}
+message HubListDeletedConversationsResponse {
+  repeated HubConversationPb conversations = 1;
+}
+
+message HubRestoreConversationRequest {
+  string id = 1;
+}
+message HubRestoreConversationResponse {}
+
+message HubPermanentDeleteConversationRequest {
+  string id = 1;
+}
+message HubPermanentDeleteConversationResponse {}
+
 message HubUpdateConversationTitleRequest {
   string id = 1;
   string title = 2;
@@ -2696,6 +2714,9 @@ service HubService {
   rpc ListConversations(HubListConversationsRequest) returns (HubListConversationsResponse);
   rpc GetConversation(HubGetConversationRequest) returns (HubGetConversationResponse);
   rpc DeleteConversation(HubDeleteConversationRequest) returns (HubDeleteConversationResponse);
+  rpc ListDeletedConversations(HubListDeletedConversationsRequest) returns (HubListDeletedConversationsResponse);
+  rpc RestoreConversation(HubRestoreConversationRequest) returns (HubRestoreConversationResponse);
+  rpc PermanentDeleteConversation(HubPermanentDeleteConversationRequest) returns (HubPermanentDeleteConversationResponse);
   rpc UpdateConversationTitle(HubUpdateConversationTitleRequest) returns (HubUpdateConversationTitleResponse);
 
   // Message

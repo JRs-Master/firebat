@@ -20,11 +20,14 @@ use crate::proto::{
     HubGetConversationResponse, HubGetInstanceBySlugRequest,
     HubGetInstanceBySlugResponse, HubGetInstanceRequest, HubGetInstanceResponse,
     HubInstancePb, HubListConversationsRequest, HubListConversationsResponse,
+    HubListDeletedConversationsRequest, HubListDeletedConversationsResponse,
     HubListInstancesRequest, HubListInstancesResponse, HubListMessagesRequest,
-    HubListMessagesResponse, HubMessagePb, HubRotateApiTokenRequest,
-    HubRotateApiTokenResponse, HubSendMessageRequest, HubSendMessageResponse,
-    HubUpdateConversationTitleRequest, HubUpdateConversationTitleResponse,
-    HubUpdateInstanceRequest, HubUpdateInstanceResponse,
+    HubListMessagesResponse, HubMessagePb,
+    HubPermanentDeleteConversationRequest, HubPermanentDeleteConversationResponse,
+    HubRestoreConversationRequest, HubRestoreConversationResponse,
+    HubRotateApiTokenRequest, HubRotateApiTokenResponse, HubSendMessageRequest,
+    HubSendMessageResponse, HubUpdateConversationTitleRequest,
+    HubUpdateConversationTitleResponse, HubUpdateInstanceRequest, HubUpdateInstanceResponse,
 };
 
 pub struct HubServiceImpl {
@@ -311,6 +314,45 @@ impl HubService for HubServiceImpl {
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(HubDeleteConversationResponse {}))
+    }
+
+    async fn list_deleted_conversations(
+        &self,
+        req: Request<HubListDeletedConversationsRequest>,
+    ) -> Result<Response<HubListDeletedConversationsResponse>, TonicStatus> {
+        let args = req.into_inner();
+        let conversations = self
+            .manager
+            .list_deleted_conversations(&args.instance_id, &args.session_id)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(HubListDeletedConversationsResponse {
+            conversations: conversations.into_iter().map(conversation_to_pb).collect(),
+        }))
+    }
+
+    async fn restore_conversation(
+        &self,
+        req: Request<HubRestoreConversationRequest>,
+    ) -> Result<Response<HubRestoreConversationResponse>, TonicStatus> {
+        let id = req.into_inner().id;
+        self.manager
+            .restore_conversation(&id)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(HubRestoreConversationResponse {}))
+    }
+
+    async fn permanent_delete_conversation(
+        &self,
+        req: Request<HubPermanentDeleteConversationRequest>,
+    ) -> Result<Response<HubPermanentDeleteConversationResponse>, TonicStatus> {
+        let id = req.into_inner().id;
+        self.manager
+            .permanent_delete_conversation(&id)
+            .await
+            .map_err(TonicStatus::internal)?;
+        Ok(Response::new(HubPermanentDeleteConversationResponse {}))
     }
 
     async fn update_conversation_title(

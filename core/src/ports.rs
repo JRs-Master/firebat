@@ -2403,9 +2403,27 @@ pub trait IHubPort: Send + Sync {
         session_id: &str,
     ) -> InfraResult<Vec<HubConversation>>;
 
+    /// 휴지통 목록 — deleted_at IS NOT NULL. 최신 삭제 순.
+    async fn list_deleted_conversations(
+        &self,
+        instance_id: &str,
+        session_id: &str,
+    ) -> InfraResult<Vec<HubConversation>>;
+
     async fn get_conversation(&self, id: &str) -> InfraResult<Option<HubConversation>>;
 
+    /// soft delete — deleted_at 갱신. 30일 후 cron 이 영구 삭제.
     async fn delete_conversation(&self, id: &str) -> InfraResult<()>;
+
+    /// 휴지통에서 복원 — deleted_at NULL.
+    async fn restore_conversation(&self, id: &str) -> InfraResult<()>;
+
+    /// 영구 삭제 — hard delete. messages cascade.
+    async fn permanent_delete_conversation(&self, id: &str) -> InfraResult<()>;
+
+    /// 30일 retention cleanup — `cutoff_ms` 이전 deleted_at row 일괄 hard delete.
+    /// 응답: 삭제된 row 개수.
+    async fn cleanup_old_deleted_conversations(&self, cutoff_ms: i64) -> InfraResult<i64>;
 
     /// title 자동 업데이트 (첫 user 메시지 요약 등).
     async fn update_conversation_title(&self, id: &str, title: &str) -> InfraResult<()>;

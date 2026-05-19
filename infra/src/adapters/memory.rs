@@ -200,9 +200,10 @@ impl SqliteMemoryAdapter {
                 id TEXT PRIMARY KEY,
                 instance_id TEXT NOT NULL,             -- hub_instances.id FK
                 session_id TEXT NOT NULL,              -- 방문자 localStorage UUID (동일성 유지)
-                title TEXT,                            -- 자동 생성 (첫 user 메시지 영역 요약)
+                title TEXT,                            -- 자동 생성 (첫 user 메시지 요약)
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
+                deleted_at INTEGER,                    -- soft delete. NULL = 정상, 값 = 휴지통 (30일 후 cron 영구 삭제)
                 FOREIGN KEY (instance_id) REFERENCES hub_instances(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_hub_conv_instance ON hub_conversations(instance_id);
@@ -230,6 +231,8 @@ impl SqliteMemoryAdapter {
             "ALTER TABLE entities ADD COLUMN embedding BLOB",
             "ALTER TABLE entity_facts ADD COLUMN embedding BLOB",
             "ALTER TABLE events ADD COLUMN embedding BLOB",
+            // Hub Phase 1 휴지통 분리 (2026-05-19) — 옛 schema 호환.
+            "ALTER TABLE hub_conversations ADD COLUMN deleted_at INTEGER",
         ] {
             let _ = conn.execute(stmt, []);
         }

@@ -63,6 +63,7 @@ impl SqliteHubAdapter {
                 title TEXT,
                 created_at INTEGER NOT NULL,
                 updated_at INTEGER NOT NULL,
+                deleted_at INTEGER,
                 FOREIGN KEY (instance_id) REFERENCES hub_instances(id) ON DELETE CASCADE
             );
             CREATE TABLE hub_messages (
@@ -302,7 +303,7 @@ impl IHubPort for SqliteHubAdapter {
             .prepare(
                 "SELECT id, instance_id, session_id, title, created_at, updated_at
                  FROM hub_conversations
-                 WHERE instance_id = ?1 AND session_id = ?2
+                 WHERE instance_id = ?1 AND session_id = ?2 AND deleted_at IS NULL
                  ORDER BY updated_at DESC",
             )
             .map_err(|e| format!("hub_conversations list prepare: {e}"))?;
@@ -312,6 +313,30 @@ impl IHubPort for SqliteHubAdapter {
         let mut out = Vec::new();
         for r in rows {
             out.push(r.map_err(|e| format!("hub_conversations list row: {e}"))?);
+        }
+        Ok(out)
+    }
+
+    async fn list_deleted_conversations(
+        &self,
+        instance_id: &str,
+        session_id: &str,
+    ) -> InfraResult<Vec<HubConversation>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, instance_id, session_id, title, created_at, updated_at
+                 FROM hub_conversations
+                 WHERE instance_id = ?1 AND session_id = ?2 AND deleted_at IS NOT NULL
+                 ORDER BY deleted_at DESC",
+            )
+            .map_err(|e| format!("hub_conversations list_deleted prepare: {e}"))?;
+        let rows = stmt
+            .query_map(params![instance_id, session_id], row_to_conversation)
+            .map_err(|e| format!("hub_conversations list_deleted query: {e}"))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| format!("hub_conversations list_deleted row: {e}"))?);
         }
         Ok(out)
     }
@@ -329,8 +354,31 @@ impl IHubPort for SqliteHubAdapter {
     }
 
     async fn delete_conversation(&self, id: &str) -> InfraResult<()> {
+        // soft delete — deleted_at 만 갱신. 30일 후 cron 이 영구 삭제.
+        // 사용자가 휴지통에서 복원 (restore_conversation) 하면 deleted_at NULL.
         let conn = self.conn.lock().unwrap();
-        // 명시 cascade — messages 먼저 삭제 + conversation 삭제. SQLite foreign_keys OFF 박혀있어도 OK.
+        let ts = now_ms();
+        conn.execute(
+            "UPDATE hub_conversations SET deleted_at = ?1 WHERE id = ?2",
+            params![ts, id],
+        )
+        .map_err(|e| format!("hub_conversations soft delete: {e}"))?;
+        Ok(())
+    }
+
+    async fn restore_conversation(&self, id: &str) -> InfraResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE hub_conversations SET deleted_at = NULL WHERE id = ?1",
+            params![id],
+        )
+        .map_err(|e| format!("hub_conversations restore: {e}"))?;
+        Ok(())
+    }
+
+    async fn permanent_delete_conversation(&self, id: &str) -> InfraResult<()> {
+        // hard delete — messages cascade. 휴지통 명시 클릭 또는 30일 retention cron 이 호출.
+        let conn = self.conn.lock().unwrap();
         conn.execute(
             "DELETE FROM hub_messages WHERE conversation_id = ?1",
             params![id],
@@ -340,8 +388,26 @@ impl IHubPort for SqliteHubAdapter {
             "DELETE FROM hub_conversations WHERE id = ?1",
             params![id],
         )
-        .map_err(|e| format!("hub_conversations delete: {e}"))?;
+        .map_err(|e| format!("hub_conversations hard delete: {e}"))?;
         Ok(())
+    }
+
+    async fn cleanup_old_deleted_conversations(&self, cutoff_ms: i64) -> InfraResult<i64> {
+        // deleted_at < cutoff 인 row + 자식 hub_messages cascade hard delete. 30d retention cron 이 호출.
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM hub_messages WHERE conversation_id IN
+                (SELECT id FROM hub_conversations WHERE deleted_at IS NOT NULL AND deleted_at < ?1)",
+            params![cutoff_ms],
+        )
+        .map_err(|e| format!("hub_messages cleanup cascade: {e}"))?;
+        let removed = conn
+            .execute(
+                "DELETE FROM hub_conversations WHERE deleted_at IS NOT NULL AND deleted_at < ?1",
+                params![cutoff_ms],
+            )
+            .map_err(|e| format!("hub_conversations cleanup: {e}"))?;
+        Ok(removed as i64)
     }
 
     async fn update_conversation_title(&self, id: &str, title: &str) -> InfraResult<()> {

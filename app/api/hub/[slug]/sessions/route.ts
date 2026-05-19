@@ -4,8 +4,11 @@ import {
   ensureConversation,
   createConversation,
   listConversations,
+  listDeletedConversations,
   getConversation,
   deleteConversation,
+  restoreConversation,
+  permanentDeleteConversation,
   updateConversationTitle,
   listMessages,
 } from '../../../../../lib/api-gen/hub';
@@ -101,6 +104,29 @@ export async function POST(req: NextRequest, { params }: Ctx) {
         const guard = await ensureConvOwnership(id);
         if (guard) return guard;
         const res = await deleteConversation({ id });
+        if (!res.ok) return jsonResponse(500, { error: res.message });
+        return NextResponse.json({ success: true });
+      }
+      case 'list-deleted-conversations': {
+        const res = await listDeletedConversations({ instanceId: instance.id, sessionId });
+        if (!res.ok) return jsonResponse(500, { error: res.message });
+        return NextResponse.json({ success: true, conversations: res.data ?? [] });
+      }
+      case 'restore-conversation': {
+        const id = String(body.id ?? '');
+        if (!id) return jsonResponse(400, { error: 'id 필수' });
+        const guard = await ensureConvOwnership(id);
+        if (guard) return guard;
+        const res = await restoreConversation({ id });
+        if (!res.ok) return jsonResponse(500, { error: res.message });
+        return NextResponse.json({ success: true });
+      }
+      case 'permanent-delete-conversation': {
+        const id = String(body.id ?? '');
+        if (!id) return jsonResponse(400, { error: 'id 필수' });
+        const guard = await ensureConvOwnership(id);
+        if (guard) return guard;
+        const res = await permanentDeleteConversation({ id });
         if (!res.ok) return jsonResponse(500, { error: res.message });
         return NextResponse.json({ success: true });
       }

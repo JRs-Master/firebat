@@ -92,11 +92,39 @@ export function Sidebar({
   const [trashConvs, setTrashConvs] = useState<ConversationMeta[]>([]);
   const [trashOpen, setTrashOpen] = useState(false);
 
+  // 휴지통 fetch 헬퍼 — hub mode 면 익명 hub session endpoint 호출, 아니면 admin endpoint.
+  // hub mode 휴지통은 (instance_id, session_id) scope 으로 backend 자동 격리.
+  const hubFetchJson = useCallback(async (op: string, payload?: Record<string, unknown>) => {
+    if (!hubShareContext) return null;
+    const res = await fetch(`/api/hub/${encodeURIComponent(hubShareContext.slug)}/sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Token': hubShareContext.apiToken,
+        'X-Session-Id': hubShareContext.sessionId,
+      },
+      body: JSON.stringify({ op, ...(payload ?? {}) }),
+    });
+    return res.json().catch(() => null);
+  }, [hubShareContext]);
+
   const reloadTrash = useCallback(async () => {
-    // hub mode = admin 휴지통 호출 차단 (admin DB 데이터 공유 금지). hub_conversations 의
-    // 휴지통은 backend 별도 영역 (현재 미구현 — 사용자 보고 시점에 신설).
     if (hubMode) {
-      setTrashConvs([]);
+      if (!hubShareContext) { setTrashConvs([]); return; }
+      try {
+        const data = await hubFetchJson('list-deleted-conversations');
+        if (data?.success && Array.isArray(data.conversations)) {
+          const mapped: ConversationMeta[] = data.conversations.map((c: any) => ({
+            id: c.id,
+            title: c.title || '새 대화',
+            createdAt: typeof c.createdAt === 'number' ? c.createdAt : Number(c.createdAt ?? 0),
+            updatedAt: typeof c.updatedAt === 'number' ? c.updatedAt : Number(c.updatedAt ?? 0),
+          }));
+          setTrashConvs(mapped);
+        } else {
+          setTrashConvs([]);
+        }
+      } catch { /* silent — 다음 trigger 시 재시도 */ }
       return;
     }
     try {
@@ -108,15 +136,17 @@ export function Sidebar({
         setTrashConvs(data.conversations);
       }
     } catch { /* silent — 다음 trigger 시 재시도 */ }
-  }, [hubMode]);
+  }, [hubMode, hubShareContext, hubFetchJson]);
 
   const handleRestoreConv = useCallback(async (id: string) => {
     try {
-      const data = await apiPost<{ success?: boolean; error?: string }>(
-        '/api/conversations/restore',
-        { id },
-        { category: 'sidebar' },
-      );
+      const data = hubMode
+        ? await hubFetchJson('restore-conversation', { id })
+        : await apiPost<{ success?: boolean; error?: string }>(
+            '/api/conversations/restore',
+            { id },
+            { category: 'sidebar' },
+          );
       if (!data?.success) {
         await alertDialog({ title: '복원 실패', message: data?.error ?? '알 수 없는 오류', danger: true });
         return;
@@ -126,7 +156,7 @@ export function Sidebar({
     } catch (e: any) {
       await alertDialog({ title: '복원 실패', message: e?.message ?? String(e), danger: true });
     }
-  }, [reloadTrash, onRefreshChats]);
+  }, [hubMode, hubFetchJson, reloadTrash, onRefreshChats]);
 
   const handlePermanentDeleteConv = useCallback(async (id: string, title: string) => {
     const ok = await confirmDialog({
@@ -137,11 +167,13 @@ export function Sidebar({
     });
     if (!ok) return;
     try {
-      const data = await apiPost<{ success?: boolean; error?: string }>(
-        '/api/conversations/permanent-delete',
-        { id },
-        { category: 'sidebar' },
-      );
+      const data = hubMode
+        ? await hubFetchJson('permanent-delete-conversation', { id })
+        : await apiPost<{ success?: boolean; error?: string }>(
+            '/api/conversations/permanent-delete',
+            { id },
+            { category: 'sidebar' },
+          );
       if (!data?.success) {
         await alertDialog({ title: '영구 삭제 실패', message: data?.error ?? '알 수 없는 오류', danger: true });
         return;
@@ -150,7 +182,7 @@ export function Sidebar({
     } catch (e: any) {
       await alertDialog({ title: '영구 삭제 실패', message: e?.message ?? String(e), danger: true });
     }
-  }, [reloadTrash]);
+  }, [hubMode, hubFetchJson, reloadTrash]);
 
   // 사이드바 펼칠 때 + chats 탭 선택 시 DB 에서 대화 재조회 (모바일↔PC 동기화) + 휴지통 reload
   const refreshChatsRef = useRef(onRefreshChats);
@@ -478,10 +510,8 @@ export function Sidebar({
   };
 
   /* ── VSCode activity bar — 항상 표시 (PC: inline, 모바일: slide-in 안). ── */
-  // hub mode = chats 탭만 노출. 나머지 admin 영역 (workspace / gallery / templates / library /
-  // entities / notes / calendar) 박힐 hub_scope 별도 데이터 영역 미박힘 → admin DB 호출 시
-  // throw → /500 redirect. 분리 박은 후 점진 노출 (각 영역 hub_scope 추가 시점).
-  const visibleTabs = hubMode ? TABS.filter(t => t.id === 'chats') : TABS;
+  // 모든 탭 노출. 각 panel 컴포넌트가 hubMode prop 받아 hub_scope 분리 (별도 RPC scope 박음).
+  const visibleTabs = TABS;
   const renderActivityBar = () => (
     // z-50 — 펼친 panel(z-40) 위로. 활동 바 항상 클릭 가능 + 다른 탭 즉시 전환.
     <div className="w-12 bg-white flex flex-col items-center py-3 gap-2 shrink-0 border-r border-slate-200 relative z-50">
