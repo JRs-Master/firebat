@@ -1844,10 +1844,11 @@ function MapComp({
             const rawPopup = m.popup ? String(m.popup) : m.label;
             const popupText = sanitizePopupHtml(rawPopup);
             if (popupText) {
-              // content div 안 word-break + white-space: normal — 카카오 InfoWindow wrapper 의 nowrap
-              // 기본을 명시 override. line-height 1.4 로 2줄 이상 가독성.
+              // 1줄 강제 (white-space: nowrap) — 카카오 InfoWindow 의 흰 말풍선 background 가
+              // wrap 박힌 2번째 줄 height 자동 적응 0 → 영역 넘어가서 표시되는 SDK 한계 회피.
+              // content 자연 너비 + padding 으로 흰 박스 자동 fit. 긴 내용은 화면 너비 기준 cap.
               const info = new w.kakao.maps.InfoWindow({
-                content: `<div style="padding:6px 10px;font-size:12px;max-width:240px;line-height:1.4;white-space:normal;word-break:break-word;">${popupText}</div>`,
+                content: `<div style="padding:6px 10px;font-size:12px;line-height:1.4;white-space:nowrap;max-width:min(420px,calc(100vw - 80px));overflow:hidden;text-overflow:ellipsis;">${popupText}</div>`,
                 removable: true,
               });
               w.kakao.maps.event.addListener(marker, 'click', () => {
