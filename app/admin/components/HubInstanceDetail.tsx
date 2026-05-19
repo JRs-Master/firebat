@@ -36,6 +36,8 @@ export function HubInstanceDetail({
   const [description, setDescription] = useState(instance.description);
   const [systemPrompt, setSystemPrompt] = useState(instance.systemPrompt);
   const [enabled, setEnabled] = useState(instance.enabled);
+  const [exposeWidget, setExposeWidget] = useState(instance.exposeWidget);
+  const [exposePage, setExposePage] = useState(instance.exposePage);
   const [allowedReferences, setAllowedReferences] = useState<string[]>(instance.allowedReferences);
   const [allowedSysmods, setAllowedSysmods] = useState<string[]>(instance.allowedSysmods);
   const [allowedDomains, setAllowedDomains] = useState(instance.allowedDomains.join('\n'));
@@ -53,6 +55,8 @@ export function HubInstanceDetail({
   const domainsId = useId();
   const embedId = useId();
   const enabledId = useId();
+  const exposeWidgetId = useId();
+  const exposePageId = useId();
 
   // 외부 위젯 embed snippet 영역 firebat URL 자동 결정 (SSR 호환 — 빈 초기값 + client effect).
   const [firebatUrl, setFirebatUrl] = useState('');
@@ -109,6 +113,8 @@ export function HubInstanceDetail({
           description,
           systemPrompt,
           enabled,
+          exposeWidget,
+          exposePage,
           allowedReferences,
           replaceAllowedReferences: true,
           allowedSysmods,
@@ -132,7 +138,7 @@ export function HubInstanceDetail({
     } finally {
       setSaving(false);
     }
-  }, [instance.id, name, description, systemPrompt, enabled, allowedReferences, allowedSysmods, allowedDomains]);
+  }, [instance.id, name, description, systemPrompt, enabled, exposeWidget, exposePage, allowedReferences, allowedSysmods, allowedDomains]);
 
   const handleRotateToken = useCallback(async () => {
     const ok = await confirmDialog({
@@ -234,6 +240,39 @@ export function HubInstanceDetail({
           />
           <span>활성 (외부 호출 허용)</span>
         </label>
+
+        {/* 노출 모드 — widget / page boolean 2개 (둘 다 동시 가능). 둘 다 OFF = instance 사실상 비활성. */}
+        <div className="flex flex-col gap-1 border border-slate-200 rounded p-2 bg-slate-50/50">
+          <div className="text-[11px] font-bold text-slate-600 mb-1">노출 모드</div>
+          <label htmlFor={exposeWidgetId} className="flex items-start gap-2 text-[12px] text-slate-700 cursor-pointer">
+            <input
+              id={exposeWidgetId}
+              type="checkbox"
+              checked={exposeWidget}
+              onChange={e => setExposeWidget(e.target.checked)}
+              className="w-4 h-4 mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              name="hubExposeWidget"
+            />
+            <div className="flex flex-col">
+              <span className="font-semibold">위젯 임베드</span>
+              <span className="text-[10px] text-slate-400">외부 사이트 (워드프레스 등) HTML 에 위젯 코드 박아 호출. allowed_domains 검증.</span>
+            </div>
+          </label>
+          <label htmlFor={exposePageId} className="flex items-start gap-2 text-[12px] text-slate-700 cursor-pointer mt-1">
+            <input
+              id={exposePageId}
+              type="checkbox"
+              checked={exposePage}
+              onChange={e => setExposePage(e.target.checked)}
+              className="w-4 h-4 mt-0.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              name="hubExposePage"
+            />
+            <div className="flex flex-col">
+              <span className="font-semibold">페이지 노출</span>
+              <span className="text-[10px] text-slate-400">우리 사이트 /{instance.slug} URL 풀스크린 chat. self host 자동 허용.</span>
+            </div>
+          </label>
+        </div>
 
         {/* 이름 */}
         <div className="flex flex-col gap-1">

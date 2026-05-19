@@ -61,6 +61,9 @@ async function dispatch(op: string, args: any): Promise<{ ok: true; data: unknow
         modelId: args?.modelId ?? '',
         enabled: args?.enabled !== false,
         allowedDomains: Array.isArray(args?.allowedDomains) ? args.allowedDomains.map(String) : [],
+        // 노출 모드 — undefined / null = backend default (둘 다 true)
+        exposeWidget: typeof args?.exposeWidget === 'boolean' ? args.exposeWidget : undefined,
+        exposePage: typeof args?.exposePage === 'boolean' ? args.exposePage : undefined,
       });
     case 'list-instances':
       return listInstances();
@@ -82,6 +85,8 @@ async function dispatch(op: string, args: any): Promise<{ ok: true; data: unknow
         enabled: args?.enabled,
         allowedDomains: Array.isArray(args?.allowedDomains) ? args.allowedDomains.map(String) : [],
         replaceAllowedDomains: args?.replaceAllowedDomains === true,
+        exposeWidget: typeof args?.exposeWidget === 'boolean' ? args.exposeWidget : undefined,
+        exposePage: typeof args?.exposePage === 'boolean' ? args.exposePage : undefined,
       });
     case 'delete-instance':
       return deleteInstance({ id: String(args?.id ?? '') });
