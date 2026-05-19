@@ -55,6 +55,10 @@ const WIDGET_JS = `(function() {
       var m = src.match(/^(https?:\\/\\/[^\\/]+)/);
       return m ? m[1] : '';
     })();
+  // page mode (자기 사이트 /<slug> 풀스크린) — 토글 버튼 숨김 + 패널 전체 화면 + 자동 open.
+  var FULLSCREEN = SCRIPT.getAttribute('data-fullscreen') === 'true';
+  var TITLE_ATTR = SCRIPT.getAttribute('data-title') || '';
+  var DESC_ATTR = SCRIPT.getAttribute('data-description') || '';
 
   if (!SLUG || !TOKEN || !FIREBAT_URL) {
     console.error('[firebat-hub] data-slug / data-token / data-firebat-url 필수');
@@ -79,11 +83,7 @@ const WIDGET_JS = `(function() {
 
   // ─── 스타일 ─────────────────────────────────────────────────────────
   var STYLE = document.createElement('style');
-  STYLE.textContent = [
-    '#firebat-cb-toggle { position: fixed; right: 20px; bottom: 20px; width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: white; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; z-index: 99998; font-size: 24px; transition: transform 0.2s; }',
-    '#firebat-cb-toggle:hover { transform: scale(1.05); }',
-    '#firebat-cb-panel { position: fixed; right: 20px; bottom: 88px; width: 360px; height: 520px; max-height: calc(100vh - 120px); background: white; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); display: none; flex-direction: column; z-index: 99999; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }',
-    '#firebat-cb-panel.open { display: flex; }',
+  var commonStyle = [
     '#firebat-cb-header { padding: 14px 16px; border-bottom: 1px solid #e5e7eb; font-weight: 600; color: #1f2937; display: flex; align-items: center; justify-content: space-between; }',
     '#firebat-cb-close { background: transparent; border: none; cursor: pointer; color: #9ca3af; font-size: 20px; padding: 0; width: 24px; height: 24px; }',
     '#firebat-cb-messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; background: #f9fafb; }',
@@ -97,13 +97,38 @@ const WIDGET_JS = `(function() {
     '#firebat-cb-input:focus { border-color: #2563eb; }',
     '#firebat-cb-send { padding: 8px 16px; background: #2563eb; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; }',
     '#firebat-cb-send:disabled { background: #9ca3af; cursor: not-allowed; }',
+  ];
+  var widgetStyle = [
+    '#firebat-cb-toggle { position: fixed; right: 20px; bottom: 20px; width: 56px; height: 56px; border-radius: 50%; background: #2563eb; color: white; border: none; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; z-index: 99998; font-size: 24px; transition: transform 0.2s; }',
+    '#firebat-cb-toggle:hover { transform: scale(1.05); }',
+    '#firebat-cb-panel { position: fixed; right: 20px; bottom: 88px; width: 360px; height: 520px; max-height: calc(100vh - 120px); background: white; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); display: none; flex-direction: column; z-index: 99999; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }',
+    '#firebat-cb-panel.open { display: flex; }',
     '@media (max-width: 480px) {',
     '  #firebat-cb-panel { right: 8px; left: 8px; bottom: 80px; width: auto; }',
     '}',
-  ].join('\\n');
+  ];
+  // page mode: 토글 버튼 숨김 + 패널 전체 화면 + 콘텐츠 가운데 정렬 (Claude / ChatGPT 풀스크린 패턴).
+  var fullscreenStyle = [
+    '#firebat-cb-toggle { display: none !important; }',
+    '#firebat-cb-close { display: none !important; }',
+    '#firebat-cb-panel { position: fixed; inset: 0; width: 100vw; height: 100dvh; max-height: none; border-radius: 0; box-shadow: none; display: flex !important; flex-direction: column; z-index: 99999; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: white; }',
+    '#firebat-cb-messages { max-width: 760px; width: 100%; margin: 0 auto; padding: 16px 24px; box-sizing: border-box; }',
+    '#firebat-cb-form { max-width: 760px; width: 100%; margin: 0 auto; padding: 16px 24px; box-sizing: border-box; }',
+  ];
+  STYLE.textContent = commonStyle.concat(FULLSCREEN ? fullscreenStyle : widgetStyle).join('\\n');
   document.head.appendChild(STYLE);
 
   // ─── DOM 영역 ──────────────────────────────────────────────────────
+  // 헤더 타이틀 — page mode 면 instance.name, 위젯 모드면 기본 문구.
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function(ch) {
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[ch];
+    });
+  }
+  var headerTitle = FULLSCREEN
+    ? (TITLE_ATTR ? escapeHtml(TITLE_ATTR) : '챗봇')
+    : '도움이 필요하신가요?';
+
   var toggle = document.createElement('button');
   toggle.id = 'firebat-cb-toggle';
   toggle.setAttribute('aria-label', '챗봇 열기');
@@ -113,7 +138,7 @@ const WIDGET_JS = `(function() {
   panel.id = 'firebat-cb-panel';
   panel.innerHTML = [
     '<div id="firebat-cb-header">',
-    '  <span>도움이 필요하신가요?</span>',
+    '  <span>' + headerTitle + '</span>',
     '  <button id="firebat-cb-close" aria-label="닫기">\\u2715</button>',
     '</div>',
     '<div id="firebat-cb-messages"></div>',
@@ -131,6 +156,25 @@ const WIDGET_JS = `(function() {
   var input = panel.querySelector('#firebat-cb-input');
   var sendBtn = panel.querySelector('#firebat-cb-send');
   var closeBtn = panel.querySelector('#firebat-cb-close');
+
+  // page mode: 패널 자동 open + input focus.
+  if (FULLSCREEN) {
+    panel.classList.add('open');
+    setTimeout(function() { try { input.focus(); } catch (e) {} }, 100);
+    // description 박혀있으면 첫 메시지 자리에 안내문 — chat 시작 hint.
+    if (DESC_ATTR) {
+      var hint = document.createElement('div');
+      hint.className = 'firebat-cb-msg ai';
+      hint.style.alignSelf = 'center';
+      hint.style.maxWidth = '100%';
+      hint.style.textAlign = 'center';
+      hint.style.background = 'transparent';
+      hint.style.border = 'none';
+      hint.style.color = '#6b7280';
+      hint.textContent = DESC_ATTR;
+      msgList.appendChild(hint);
+    }
+  }
 
   toggle.addEventListener('click', function() {
     panel.classList.toggle('open');

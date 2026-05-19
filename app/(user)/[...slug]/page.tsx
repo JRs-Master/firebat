@@ -96,10 +96,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     }
     // hub fallback metadata — 페이지/프로젝트 미매칭 시 마지막 segment 가 hub slug 인지
     // 확인. 페이지 본문 (DynamicPage 의 hub fallback) 과 정합 — title = instance.name.
+    // exposePage=false 면 URL 자체를 노출하지 않으므로 Not Found.
     const lastSegment = slug.split('/').filter(Boolean).pop() ?? '';
     if (lastSegment) {
       const hubRes = await getInstanceBySlug({ slug: lastSegment });
-      if (hubRes.ok && hubRes.data?.instance && hubRes.data.instance.enabled) {
+      if (hubRes.ok && hubRes.data?.instance && hubRes.data.instance.enabled && hubRes.data.instance.exposePage) {
         const instance = hubRes.data.instance;
         return {
           title: instance.name,
@@ -207,37 +208,35 @@ export default async function DynamicPage({ params, searchParams }: Props) {
         return <ProjectRootView projectName={slug} pageSlugs={matched.pageSlugs ?? []} currentPage={currentPage} />;
       }
     }
-    // hub fallback — cms page / project 미박힘 영역 안 = 마지막 segment 박은 영역 안
-    // hub instance 매칭. 사용자 입장 안 = 임의 prefix path 박은 영역 안 동작:
+    // hub fallback — cms page / project 미매칭 시 마지막 segment 가 hub instance slug 인지 확인.
+    // 사용자 입장에서는 임의 prefix path 와 동작 가능:
     //   /lawassistant            → slug = lawassistant
     //   /chat/lawassistant       → slug = lawassistant
     //   /demo/foo/lawassistant   → slug = lawassistant
-    // hub.slug 자체 = `/` 박지 X 박은 영역 (Rust validate_slug 안 영숫자/하이픈/언더스코어).
+    // hub.slug 자체에는 `/` 가 없음 (Rust validate_slug 가 영숫자/하이픈/언더스코어만 허용).
+    //
+    // 노출 모드:
+    //   instance.exposePage = true  → /<slug> 풀스크린 chat 자동 활성
+    //   instance.exposePage = false → URL 노출 안 함 (404). widget 임베드 전용 인스턴스.
     const lastSegment = slug.split('/').filter(Boolean).pop() ?? '';
     if (lastSegment) {
       const hubRes = await getInstanceBySlug({ slug: lastSegment });
-      if (hubRes.ok && hubRes.data?.instance && hubRes.data.instance.enabled) {
+      if (hubRes.ok && hubRes.data?.instance && hubRes.data.instance.enabled && hubRes.data.instance.exposePage) {
         const instance = hubRes.data.instance;
         const h = await headers();
         const proto = h.get('x-forwarded-proto') || 'http';
         const host = h.get('x-forwarded-host') || h.get('host') || 'localhost:3000';
         const firebatUrl = `${proto}://${host}`;
         return (
-          <main className="min-h-screen bg-slate-50 flex flex-col items-center justify-center px-4">
-            <div className="text-center max-w-md mb-8">
-              <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 mb-2">{instance.name}</h1>
-              {instance.description && (
-                <p className="text-base text-slate-500">{instance.description}</p>
-              )}
-              <p className="mt-4 text-[12px] text-slate-400">
-                오른쪽 아래 💬 버튼을 눌러 채팅을 시작하세요.
-              </p>
-            </div>
+          <main className="fixed inset-0 bg-white">
             <script
               src={`${firebatUrl}/api/hub/widget.js`}
               data-slug={instance.slug}
               data-token={instance.apiToken}
               data-firebat-url={firebatUrl}
+              data-fullscreen="true"
+              data-title={instance.name}
+              data-description={instance.description ?? ''}
               async
             />
           </main>
