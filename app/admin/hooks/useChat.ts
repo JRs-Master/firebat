@@ -64,15 +64,23 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvIdState] = useState('');
-  const [planMode, setPlanMode] = useSetting('firebat_plan_mode');
+  // localStorage key — hub page mode 박혀있으면 hub-{slug} suffix 박아 admin 영역과 분리.
+  // 단일 단말 안에서 admin 본인 + hub 방문자 chat 영역 섞이지 않게 함. 분리 박지 X 박으면
+  // hub 방문자 chat 가 admin 사이드바에 나오거나 admin chat 이 hub UI 에 나오는 incident 발생.
+  const convStorageKey = hubContext ? `firebat_conversations__hub-${hubContext.slug}` : 'firebat_conversations';
+  const activeConvStorageKey = hubContext ? `firebat_active_conv__hub-${hubContext.slug}` : 'firebat_active_conv';
+  const [planModeAdmin, setPlanModeRaw] = useSetting('firebat_plan_mode');
   const [inputMode, setInputMode] = useSetting('firebat_input_mode');
+  // hub 방문자 = anonymous, plan mode 의미 0 (사용자 본인이 박은 admin plan_mode 영역 영향 차단).
+  const planMode = hubContext ? 'off' : planModeAdmin;
+  const setPlanMode = hubContext ? (() => { /* hub mode 박혀있을 때 plan_mode 변경 차단 */ }) : setPlanModeRaw;
 
   // activeConvId 는 훅 밖 useSetting 초기화 타이밍 race 가 있어 useState + 수동 동기화 유지
   const setActiveConvId = useCallback((id: string) => {
     setActiveConvIdState(id);
     if (typeof window !== 'undefined') {
-      if (id) localStorage.setItem('firebat_active_conv', id);
-      else localStorage.removeItem('firebat_active_conv');
+      if (id) localStorage.setItem(activeConvStorageKey, id);
+      else localStorage.removeItem(activeConvStorageKey);
     }
   }, []);
 
@@ -106,9 +114,34 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   };
 
   // ── 초기화: DB 우선 로드 (다기기 동기화 보장). 실패 시에만 localStorage 폴백 ──
+  // Hub mode 박혀있으면 /api/conversations 호출 skip — admin 인증 필수라 401. localStorage 만 fallback.
+  // hub conversation 영역은 backend (hub_conversations DB) 가 영속화 + 별도 RPC (HubService.list_conversations)
+  // 사용해야 표시 가능. 본 영역에서는 admin DB 호출 자체 skip.
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (hubContext) {
+        // hub mode 초기 로드 = localStorage 만 사용 (admin 인증 우회).
+        const raw = localStorage.getItem(convStorageKey);
+        if (raw) {
+          try {
+            const parsed: Conversation[] = JSON.parse(raw);
+            if (!cancelled) {
+              setConversations(parsed);
+              const savedActiveId = localStorage.getItem(activeConvStorageKey) ?? '';
+              const active = parsed.find(c => c.id === savedActiveId) ?? parsed[0];
+              if (active) {
+                setActiveConvId(active.id);
+                dispatch({ type: 'LOAD', messages: active.messages ?? [] });
+              }
+            }
+          } catch (e) {
+            logger.warn('useChat', 'hub localStorage 파싱 실패', { error: e });
+            localStorage.removeItem(convStorageKey);
+          }
+        }
+        return;
+      }
       try {
         const listData = await apiGet<{ success?: boolean; conversations?: Array<{ id: string; title: string; createdAt: number; updatedAt: number }> }>(
           '/api/conversations',
@@ -118,7 +151,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
           const remote = listData.conversations ?? [];
           remote.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
 
-          const savedActiveId = localStorage.getItem('firebat_active_conv') ?? '';
+          const savedActiveId = localStorage.getItem(activeConvStorageKey) ?? '';
           const activeId = remote.find(r => r.id === savedActiveId)?.id ?? remote[0]?.id ?? '';
 
           let activeMessages: Message[] = [];
@@ -143,7 +176,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
           }));
 
           setConversations(fullList);
-          localStorage.setItem('firebat_conversations', JSON.stringify(fullList));
+          localStorage.setItem(convStorageKey, JSON.stringify(fullList));
           if (activeId) {
             setActiveConvId(activeId);
             dispatch({ type: 'LOAD', messages: cleanedActive });
@@ -153,20 +186,20 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       } catch { /* DB 실패 → offline 폴백 */ }
 
       if (cancelled) return;
-      const raw = localStorage.getItem('firebat_conversations');
+      const raw = localStorage.getItem(convStorageKey);
       if (!raw) return;
       try {
         const convs = safeJsonParse<Conversation[]>(raw, []);
         if (convs.length === 0) return;
         setConversations(convs);
-        const savedActiveId = localStorage.getItem('firebat_active_conv') ?? '';
+        const savedActiveId = localStorage.getItem(activeConvStorageKey) ?? '';
         const mostRecent = convs.reduce((a, b) => ((b.updatedAt ?? b.createdAt) > (a.updatedAt ?? a.createdAt) ? b : a));
         const active = convs.find(c => c.id === savedActiveId) ?? mostRecent;
         setActiveConvId(active.id);
         dispatch({ type: 'LOAD', messages: cleanMessages(active.messages) });
       } catch (e) {
         logger.warn('useChat', 'localStorage 폴백 파싱 실패', { error: e });
-        localStorage.removeItem('firebat_conversations');
+        localStorage.removeItem(convStorageKey);
       }
     })();
     return () => { cancelled = true; };
@@ -195,7 +228,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
           : c,
       );
       updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
-      localStorage.setItem('firebat_conversations', JSON.stringify(updated));
+      localStorage.setItem(convStorageKey, JSON.stringify(updated));
       return updated;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -203,8 +236,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
 
   // DB 저장 — 명시 호출. union merge 로 안전.
   // **실패 시 1회 retry + 콘솔 경고** (v0.1, 2026-04-27): silent .catch 로 묻혀서 pending status 손실 진단 불가했던 문제 가시화.
+  // Hub mode 박혀있으면 saveToDb 자체 skip — /api/conversations 는 admin 인증 필수라 401 silent fail.
+  // hub backend (/api/hub/<slug>/chat) 가 hub_conversations DB 자동 박아 영속화 OK.
   const saveToDbRef = useRef<(convId: string, msgs: Message[]) => void>(() => {});
   saveToDbRef.current = (convId: string, msgs: Message[]) => {
+    if (hubContext) return;
     if (!convId) return;
     const cleanMsgs = cleanMessages(msgs);
     const firstUser = cleanMsgs.find(m => m.role === 'user');
@@ -225,7 +261,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       if (res.status === 409) {
         setConversations(prev => {
           const updated = prev.filter(c => c.id !== convId);
-          localStorage.setItem('firebat_conversations', JSON.stringify(updated));
+          localStorage.setItem(convStorageKey, JSON.stringify(updated));
           return updated;
         });
         if (activeConvId === convId) {
@@ -274,7 +310,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
             return !hasRealMessages;
           });
           if (filtered.length === prev.length) return prev;
-          localStorage.setItem('firebat_conversations', JSON.stringify(filtered));
+          localStorage.setItem(convStorageKey, JSON.stringify(filtered));
           return filtered;
         });
       }
@@ -316,7 +352,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
           ? { ...c, messages: remoteMsgs, updatedAt: remoteUpdatedAt }
           : c);
         updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
-        localStorage.setItem('firebat_conversations', JSON.stringify(updated));
+        localStorage.setItem(convStorageKey, JSON.stringify(updated));
         return updated;
       });
     } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
@@ -393,7 +429,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     const newConv = makeConv();
     setConversations(prev => {
       const updated = [...prev, newConv];
-      localStorage.setItem('firebat_conversations', JSON.stringify(updated));
+      localStorage.setItem(convStorageKey, JSON.stringify(updated));
       return updated;
     });
     setActiveConvId(newConv.id);
@@ -438,7 +474,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
             ? { ...c, messages: remoteMsgs, updatedAt: Math.max(remoteUpdatedAt, localUpdatedAt) }
             : c);
           updated.sort((a, b) => (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt));
-          localStorage.setItem('firebat_conversations', JSON.stringify(updated));
+          localStorage.setItem(convStorageKey, JSON.stringify(updated));
           return updated;
         });
       } catch (e) { logger.debug('chat', 'operation 실패', { error: e }); }
@@ -449,7 +485,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     apiDelete(`/api/conversations?id=${encodeURIComponent(id)}`, { category: 'useChat' }).catch(() => {});
     setConversations(prev => {
       const updated = prev.filter(c => c.id !== id);
-      localStorage.setItem('firebat_conversations', JSON.stringify(updated));
+      localStorage.setItem(convStorageKey, JSON.stringify(updated));
       if (id === activeConvId) {
         if (updated.length === 0) {
           setActiveConvId('');
@@ -519,7 +555,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       const newConv = makeConv();
       setConversations(prev => {
         const updated = [...prev, newConv];
-        localStorage.setItem('firebat_conversations', JSON.stringify(updated));
+        localStorage.setItem(convStorageKey, JSON.stringify(updated));
         return updated;
       });
       setActiveConvId(newConv.id);
@@ -593,7 +629,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     }));
 
     // 저장 시점 1: 유저 메시지 DB 즉시 반영 (다음 프레임에 최신 messages ref 로)
-    const convIdForSave = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
+    const convIdForSave = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
     if (convIdForSave) {
       queueMicrotask(() => saveToDbRef.current(convIdForSave, messagesRef.current));
     }
@@ -757,7 +793,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       // queueMicrotask 안에서 messagesRef.current 가 pre-FINALIZE 라 system 메시지가 아직 streaming:true →
       // cleanMessages 필터링 → DB 에 user 만 박혀 AI 답변 영구 손실. (2026-05-11 진단)
       // chatReducer 를 동기 호출해 finalized snapshot 을 만들어 race 차단.
-      const convIdForSave2 = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
+      const convIdForSave2 = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
       if (convIdForSave2) {
         const finalizedMsgs = chatReducer(messagesRef.current, { type: 'FINALIZE', id: systemId });
         saveToDbRef.current(convIdForSave2, finalizedMsgs);
@@ -775,7 +811,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   // 1) localStorage 즉시 동기 갱신 — useEffect 비동기 갱신 race 우회.
   // 2) DB POST 응답 await 후 실패 시 콘솔 경고 + 1회 retry — silent .catch 로 묻혔던 문제 가시화.
   const persistPendingChange = useCallback((msgId: string, planId: string, patch: Partial<{ status: 'approved' | 'rejected' | 'past-runat' | 'error'; errorMessage: string; originalRunAt: string }>) => {
-    const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
+    const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
     if (!convId) return;
     const updated = messagesRef.current.map(m =>
       m.id !== msgId
@@ -784,11 +820,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     );
     // 1) localStorage 즉시 동기 갱신 — 새로고침 시 로컬 캐시가 우선 로드되므로 status 보존 보장
     try {
-      const raw = typeof window !== 'undefined' ? localStorage.getItem('firebat_conversations') : null;
+      const raw = typeof window !== 'undefined' ? localStorage.getItem(convStorageKey) : null;
       if (raw) {
         const convs = safeJsonParse<Conversation[]>(raw, []);
         const next = convs.map(c => c.id === convId ? { ...c, messages: cleanMessages(updated), updatedAt: Date.now() } : c);
-        localStorage.setItem('firebat_conversations', JSON.stringify(next));
+        localStorage.setItem(convStorageKey, JSON.stringify(next));
       }
     } catch (e) { logger.warn('useChat', 'localStorage pending status update 실패', { error: e }); }
     // 2) DB POST — 실패 시 1회 retry. 그래도 실패면 콘솔 경고 (조용히 묻히지 않게).
@@ -832,7 +868,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
 
   // Suggestion 클릭 시 해당 메시지의 suggestions 클리어 + DB 즉시 저장 — 새로고침 시 카드 재등장 차단
   const consumeSuggestions = useCallback((msgId: string) => {
-    const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem('firebat_active_conv') : null);
+    const convId = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
     if (!convId) {
       dispatch({ type: 'CONSUME_SUGGESTIONS', msgId });
       return;
