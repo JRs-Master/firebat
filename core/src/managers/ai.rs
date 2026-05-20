@@ -28,6 +28,55 @@ pub mod dynamic_tools;
 
 use std::collections::HashSet;
 use std::sync::Arc;
+use tokio::sync::mpsc;
+
+/// 도구 이름 → 한국어 진행 라벨. streaming step event 의 description 박음.
+/// 옛 TS chat stream route 의 toolLabel 영역 1:1.
+fn tool_label(name: &str) -> String {
+    match name {
+        "execute" => "모듈 실행 중".to_string(),
+        "mcp_call" => "외부 서비스 연결 중".to_string(),
+        "network_request" => "API 호출 중".to_string(),
+        "write_file" => "파일 저장 중".to_string(),
+        "read_file" => "파일 읽는 중".to_string(),
+        "save_page" => "페이지 저장 중".to_string(),
+        "delete_page" => "페이지 삭제 중".to_string(),
+        "schedule_task" => "스케줄 등록 중".to_string(),
+        "cancel_task" => "스케줄 해제 중".to_string(),
+        "run_task" => "파이프라인 실행 중".to_string(),
+        "request_secret" => "API 키 요청".to_string(),
+        "suggest" => "선택지 제시".to_string(),
+        "render_iframe" => "iframe 위젯 렌더링 중".to_string(),
+        "list_dir" => "폴더 목록 조회 중".to_string(),
+        "list_pages" => "페이지 목록 조회 중".to_string(),
+        "get_page" => "페이지 조회 중".to_string(),
+        "delete_file" => "파일 삭제 중".to_string(),
+        "list_cron_jobs" => "스케줄 목록 조회 중".to_string(),
+        "search_history" => "과거 대화 검색 중".to_string(),
+        "image_gen" => "이미지 생성 중".to_string(),
+        "save_entity" | "save_event" | "save_entity_fact" => "메모리 저장 중".to_string(),
+        n if n.starts_with("sysmod_") => format!("시스템 모듈 실행 중 ({})", &n["sysmod_".len()..]),
+        n if n.starts_with("mcp_") => "외부 서비스 연결 중".to_string(),
+        n if n.starts_with("render_") => "컴포넌트 렌더링 중".to_string(),
+        n => n.to_string(),
+    }
+}
+
+/// AI streaming event — process_with_tools_opts_with_emit 가 매 단계 시점 채널 박음.
+/// gRPC server-stream impl 가 mpsc → tonic Stream 매핑 박음.
+#[derive(Debug, Clone)]
+pub enum AiStreamEvent {
+    /// 매 turn 의 reasoning text 또는 thinking 영역.
+    /// `event_type`: "text" | "thinking"
+    Chunk { event_type: String, content: String },
+    /// 도구 호출 진행 — start / done / error.
+    Step {
+        name: String,
+        status: String,
+        description: Option<String>,
+        error_message: Option<String>,
+    },
+}
 
 use crate::managers::ai::history_resolver::HistoryResolver;
 use crate::managers::ai::prompt_builder::PromptBuilder;
@@ -442,6 +491,8 @@ impl AiManager {
     /// - Approval gate 통합 (ToolDispatcher 와이어링 후)
     /// - CLI session resume / Plan store integration / Auto search_history
     /// - internallyUsedTools / innerBlocks / innerPending / innerSuggestions (LlmToolResponse 확장 후)
+    /// streaming variant — `emit` channel 박혀있으면 매 turn 의 reasoning chunk + 도구 호출 step
+    /// 영역 채널 박힘. None 이면 옛 unary 동작 (event 발생 0).
     pub async fn process_with_tools_opts(
         &self,
         prompt: &str,
@@ -449,6 +500,28 @@ impl AiManager {
         opts: &LlmCallOpts,
         ai_opts: &AiRequestOpts,
     ) -> InfraResult<AiResponse> {
+        self.process_with_tools_opts_with_emit(prompt, tools, opts, ai_opts, None)
+            .await
+    }
+
+    /// streaming variant — emit 채널 받음. mpsc::Sender 박혀있으면 매 turn 의 reasoning chunk +
+    /// 도구 호출 step 영역 채널 박힘. None = 옛 unary 동작 (event 발생 0).
+    /// gRPC server-stream impl 가 본 메서드 통해 채널 박음 → tonic Stream 변환.
+    pub async fn process_with_tools_opts_with_emit(
+        &self,
+        prompt: &str,
+        tools: &[ToolDefinition],
+        opts: &LlmCallOpts,
+        ai_opts: &AiRequestOpts,
+        emit: Option<mpsc::Sender<AiStreamEvent>>,
+    ) -> InfraResult<AiResponse> {
+        // emit helper — None 이면 no-op. Some 이면 try_send (back-pressure 시 silent drop —
+        // streaming 영역 안 critical 이벤트 X, drop 박혀도 final result 영역 그대로).
+        let emit_event = |evt: AiStreamEvent| {
+            if let Some(tx) = &emit {
+                let _ = tx.try_send(evt);
+            }
+        };
         // Cost budget guard — fast path 보다 먼저. fast path 도 LLM 호출 발생 → 한도 초과 시 차단.
         if let Some(cost) = &self.cost {
             let check = cost.check_budget();
@@ -859,6 +932,15 @@ impl AiManager {
                 .await?;
             last_text = response.text.clone();
             last_model_id = response.model_id.clone();
+
+            // streaming chunk emit — 매 turn LLM 의 reasoning text 영역 사용자한테 즉시 보임.
+            // 옛 TS Core 안 박혀있던 영역. emit 채널 None 이면 no-op.
+            if !last_text.trim().is_empty() {
+                emit_event(AiStreamEvent::Chunk {
+                    event_type: "text".to_string(),
+                    content: last_text.clone(),
+                });
+            }
             if let Some(c) = response.cost_usd {
                 total_cost += c;
             }
@@ -1144,10 +1226,24 @@ impl AiManager {
                             result: cached_with_flag,
                         }
                     } else {
+                        // streaming step emit — 도구 호출 시작.
+                        emit_event(AiStreamEvent::Step {
+                            name: effective_call.name.clone(),
+                            status: "start".to_string(),
+                            description: Some(tool_label(&effective_call.name)),
+                            error_message: None,
+                        });
                         let result = self.dispatch_tool(effective_call).await;
                         if result.success {
                             set_cached_tool_result(&cache_key, &result.result);
                         }
+                        // streaming step emit — 도구 호출 완료 / 에러.
+                        emit_event(AiStreamEvent::Step {
+                            name: effective_call.name.clone(),
+                            status: if result.success { "done".to_string() } else { "error".to_string() },
+                            description: Some(tool_label(&effective_call.name)),
+                            error_message: result.error.clone(),
+                        });
                         result
                     }
                 };

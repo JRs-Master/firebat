@@ -7,19 +7,22 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status as TonicStatus};
 
-use crate::managers::ai::AiManager;
+use crate::managers::ai::{AiManager, AiStreamEvent};
 use crate::ports::{LlmCallOpts, ToolDefinition};
 use crate::proto::{
-    ai_service_server::AiService, AiCodeAssistRequest, AiCodeAssistResponse,
-    AiConsumePendingRequest, AiConsumePendingResponse, AiCreatePendingRequest,
-    AiCreatePendingResponse, AiGetPendingRequest, AiGetPendingResponse,
-    AiIsSubAgentEnabledRequest, AiIsSubAgentEnabledResponse, AiProcessRequest, AiProcessResponse,
-    AiRejectPendingRequest, AiRejectPendingResponse, AiRequestActionWithToolsRequest,
-    AiRequestActionWithToolsResponse, AiResolveCallTargetRequest, AiResolveCallTargetResponse,
+    ai_service_server::AiService, ai_stream_event_pb::Event as AiStreamEventOneof,
+    AiChunkEventPb, AiCodeAssistRequest, AiCodeAssistResponse, AiConsumePendingRequest,
+    AiConsumePendingResponse, AiCreatePendingRequest, AiCreatePendingResponse,
+    AiErrorEventPb, AiGetPendingRequest, AiGetPendingResponse, AiIsSubAgentEnabledRequest,
+    AiIsSubAgentEnabledResponse, AiProcessRequest, AiProcessResponse, AiRejectPendingRequest,
+    AiRejectPendingResponse, AiRequestActionWithToolsRequest, AiRequestActionWithToolsResponse,
+    AiResolveCallTargetRequest, AiResolveCallTargetResponse, AiResultEventPb,
     AiRunAgentJobRequest, AiRunAgentJobResponse, AiSetSubAgentEnabledRequest,
     AiSetSubAgentEnabledResponse, AiSpawnSubAgentRequest, AiSpawnSubAgentResponse,
-    AiStorePlanRequest, AiStorePlanResponse,
+    AiStepEventPb, AiStorePlanRequest, AiStorePlanResponse, AiStreamEventPb,
 };
+use std::pin::Pin;
+use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
 
 pub struct AiServiceImpl {
     manager: Arc<AiManager>,
@@ -91,6 +94,100 @@ impl AiService for AiServiceImpl {
             })),
             Err(e) => Err(TonicStatus::internal(e)),
         }
+    }
+
+    type StreamRequestActionWithToolsStream =
+        Pin<Box<dyn Stream<Item = Result<AiStreamEventPb, TonicStatus>> + Send + 'static>>;
+
+    /// 진짜 streaming RPC — 매 turn reasoning chunk / 도구 호출 step / 최종 result event 영역
+    /// server-stream 박음. AiManager.process_with_tools_opts_with_emit 안 mpsc 채널 박음 →
+    /// 본 fn 가 ReceiverStream 통해 tonic Stream 변환.
+    async fn stream_request_action_with_tools(
+        &self,
+        req: Request<AiRequestActionWithToolsRequest>,
+    ) -> Result<Response<Self::StreamRequestActionWithToolsStream>, TonicStatus> {
+        let args = req.into_inner();
+        let opts = parse_opts(args.opts);
+        let tools = parse_tools(args.tools);
+        let prompt = args.prompt.clone();
+
+        // mpsc 채널 — AiManager 가 emit 박음. capacity = 256 (chunk 영역 buffer).
+        let (event_tx, event_rx) = tokio::sync::mpsc::channel::<AiStreamEvent>(256);
+        // 최종 result / error 영역 채널 — process_with_tools_opts_with_emit 의 InfraResult 받음.
+        let (final_tx, mut final_rx) =
+            tokio::sync::mpsc::channel::<Result<crate::managers::ai::AiResponse, String>>(1);
+
+        let manager = self.manager.clone();
+        tokio::spawn(async move {
+            let opts_local = opts;
+            let ai_opts = crate::ports::AiRequestOpts::default();
+            let res = manager
+                .process_with_tools_opts_with_emit(
+                    &prompt,
+                    &tools,
+                    &opts_local,
+                    &ai_opts,
+                    Some(event_tx),
+                )
+                .await;
+            let _ = final_tx.send(res).await;
+        });
+
+        // ReceiverStream 통해 매 event → AiStreamEventPb 매핑. 마지막에 final_rx 의 result/error 박힘.
+        let event_stream = ReceiverStream::new(event_rx).map(|evt| match evt {
+            AiStreamEvent::Chunk { event_type, content } => {
+                Ok(AiStreamEventPb {
+                    event: Some(AiStreamEventOneof::Chunk(AiChunkEventPb { event_type, content })),
+                })
+            }
+            AiStreamEvent::Step { name, status, description, error_message } => {
+                Ok(AiStreamEventPb {
+                    event: Some(AiStreamEventOneof::Step(AiStepEventPb {
+                        name,
+                        status,
+                        description,
+                        error_message,
+                    })),
+                })
+            }
+        });
+
+        // final_rx 영역 stream 끝에 박음. 옛 event_stream 종료 후 final result event 박힘.
+        let final_stream = async_stream::stream! {
+            // event channel 영역 닫힐 때까지 그대로 emit.
+            let mut event_stream = event_stream;
+            while let Some(item) = event_stream.next().await {
+                yield item;
+            }
+            // 종료 후 final result / error event 박음.
+            match final_rx.recv().await {
+                Some(Ok(response)) => {
+                    yield Ok(AiStreamEventPb {
+                        event: Some(AiStreamEventOneof::Result(AiResultEventPb {
+                            raw_json: to_raw_json(&response),
+                        })),
+                    });
+                }
+                Some(Err(e)) => {
+                    yield Ok(AiStreamEventPb {
+                        event: Some(AiStreamEventOneof::Error(AiErrorEventPb {
+                            error_message: e,
+                        })),
+                    });
+                }
+                None => {
+                    // final channel closed without value — internal error.
+                    yield Ok(AiStreamEventPb {
+                        event: Some(AiStreamEventOneof::Error(AiErrorEventPb {
+                            error_message: "AI streaming 영역 final result 채널 닫힘".to_string(),
+                        })),
+                    });
+                }
+            }
+        };
+
+        let pinned: Self::StreamRequestActionWithToolsStream = Box::pin(final_stream);
+        Ok(Response::new(pinned))
     }
 
     async fn code_assist(

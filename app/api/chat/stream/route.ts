@@ -1,7 +1,10 @@
 import { NextRequest } from 'next/server';
 import { requireAuth, isAuthError } from '../../../../lib/auth-guard';
-import { requestActionWithTools } from '../../../../lib/api-gen/ai';
+import { createClient } from '@connectrpc/connect';
+import { AiService } from '../../../../lib/proto-gen/firebat_pb';
+import { transport } from '../../../../lib/api-gen/_transport';
 import { getConversation, saveConversation } from '../../../../lib/api-gen/conversation';
+import { unBigInt } from '../../../../lib/api-gen/_unbigint';
 
 // CLI 모드 (Claude Code 등) 는 초기 MCP 도구 로딩·멀티턴 도구 사용에 수분 소요 가능.
 // Next.js 기본 타임아웃으로 SSE 끊기는 것 방지.
@@ -102,31 +105,59 @@ function handleToolsMode(
       }, 15000);
 
       try {
-        const r = await requestActionWithTools({
+        // 진짜 streaming RPC — Rust core 가 매 turn 의 reasoning chunk + 도구 호출 step + 최종
+        // result event 영역 server-stream 박음. 옛 unary requestActionWithTools 폐기.
+        const aiClient = createClient(AiService, transport);
+        const aiStream = aiClient.streamRequestActionWithTools({
           prompt,
           tools: { toolsJson: '[]' },
           opts: { optsJson: JSON.stringify(opts ?? {}) },
         } as any);
 
-        if (!r.ok) {
-          send('error', { error: r.message });
-        } else {
-          const result = r.data as {
-            success?: boolean;
-            reply?: string;
-            executedActions?: unknown;
-            toolResults?: unknown;
-            blocks?: unknown;
-            suggestions?: unknown;
-            pendingActions?: unknown;
-            data?: unknown;
-            error?: string;
-          };
-          // AiResponse 안 = blocks / suggestions / pendingActions / etc 모두 top-level 박힘.
-          // 단 옛 frontend (useChat.ts) 안 = `ev.data.data?.blocks` 박은 영역 (옛 TS port 안
-          // `result.data` 안 박힌 영역 가정). 즉 backend send 안 `data` 안 = top-level 필드 mirror
-          // 박은 영역 = frontend 옛 매핑 호환. 옛 `result.data` 박은 영역 (이미 객체 박혀있으면)
-          // 도 같이 박힘 — 옛 호환.
+        let finalResult: {
+          success?: boolean;
+          reply?: string;
+          executedActions?: unknown;
+          toolResults?: unknown;
+          blocks?: unknown;
+          suggestions?: unknown;
+          pendingActions?: unknown;
+          data?: unknown;
+          error?: string;
+        } | null = null;
+        let stepIndex = 0;
+
+        for await (const ev of aiStream) {
+          const evt: any = unBigInt(ev);
+          const oneof = evt?.event;
+          if (!oneof) continue;
+          if (oneof.case === 'chunk') {
+            const v = oneof.value;
+            send('chunk', { type: v.eventType, content: v.content });
+          } else if (oneof.case === 'step') {
+            const v = oneof.value;
+            const stepStart = v.status === 'start';
+            send('step', {
+              index: stepIndex,
+              type: v.name,
+              status: v.status,
+              description: v.description ?? v.name,
+              error: v.errorMessage ?? undefined,
+            });
+            if (!stepStart) stepIndex++;
+          } else if (oneof.case === 'result') {
+            try {
+              finalResult = JSON.parse(oneof.value.rawJson);
+            } catch (e) {
+              send('error', { error: `result JSON 파싱 실패: ${(e as Error).message}` });
+            }
+          } else if (oneof.case === 'error') {
+            send('error', { error: oneof.value.errorMessage });
+          }
+        }
+
+        if (finalResult) {
+          const result = finalResult;
           const passthroughData = result.data && typeof result.data === 'object' ? (result.data as Record<string, unknown>) : {};
           const mergedData: Record<string, unknown> = {
             ...passthroughData,

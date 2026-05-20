@@ -99,6 +99,40 @@ message AiRequestActionWithToolsRequest {
 // AiResponse JSON — reply / executedActions / blocks / toolResults / error 등 다형.
 message AiRequestActionWithToolsResponse { string raw_json = 1; }
 
+// ─── Streaming RPC — SSE chunk / step / result event ─────────────────────────
+// 옛 TS Core 안 callback 두 개 (step + chunk) 박혀있던 영역. Rust core unary RPC 시점에
+// SSE event 영역 0 박혀 thinking-style 진행 메시지 영역 안 보임. server-stream RPC 박힘.
+//
+// 이벤트:
+//   - chunk: 매 turn AI 의 reasoning text 또는 thinking 영역 (도구 호출 사이 박힌 진행 메시지)
+//   - step:  매 도구 호출 시작 / 완료 / 에러
+//   - result: 최종 AiResponse JSON
+//   - error:  치명적 에러 (stream 종료)
+message AiChunkEventPb {
+  string event_type = 1; // "text" | "thinking"
+  string content = 2;
+}
+message AiStepEventPb {
+  string name = 1;       // 도구 이름 (예: "save_page", "sysmod_notes")
+  string status = 2;     // "start" | "done" | "error"
+  optional string description = 3;
+  optional string error_message = 4;
+}
+message AiResultEventPb {
+  string raw_json = 1;   // AiResponse JSON (옛 unary RequestActionWithTools 응답 형태)
+}
+message AiErrorEventPb {
+  string error_message = 1;
+}
+message AiStreamEventPb {
+  oneof event {
+    AiChunkEventPb chunk = 1;
+    AiStepEventPb step = 2;
+    AiResultEventPb result = 3;
+    AiErrorEventPb error = 4;
+  }
+}
+
 message AiCodeAssistRequest {
   string prompt = 1;
   LlmCallOptsPb opts = 2;
@@ -162,6 +196,8 @@ message AiStorePlanResponse {}
 service AiService {
   rpc Process(AiProcessRequest) returns (AiProcessResponse);
   rpc RequestActionWithTools(AiRequestActionWithToolsRequest) returns (AiRequestActionWithToolsResponse);
+  // 진짜 streaming — 매 turn reasoning chunk / 도구 호출 step / 최종 result event 영역 server-stream.
+  rpc StreamRequestActionWithTools(AiRequestActionWithToolsRequest) returns (stream AiStreamEventPb);
   rpc CodeAssist(AiCodeAssistRequest) returns (AiCodeAssistResponse);
   rpc RunAgentJob(AiRunAgentJobRequest) returns (AiRunAgentJobResponse);
   rpc ResolveCallTarget(AiResolveCallTargetRequest) returns (AiResolveCallTargetResponse);

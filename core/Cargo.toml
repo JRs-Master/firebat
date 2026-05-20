@@ -18,9 +18,11 @@ tonic = "0.12"
 prost = "0.13"
 
 # async / 비동기 런타임
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs", "process", "io-util", "time"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "fs", "process", "io-util", "time", "sync"] }
 async-trait = "0.1"
 futures-util = "0.3"
+tokio-stream = "0.1"
+async-stream = "0.3"
 
 # 직렬화
 serde = { version = "1", features = ["derive"] }
