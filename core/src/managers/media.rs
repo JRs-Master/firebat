@@ -85,6 +85,9 @@ pub struct GenerateImageInput {
     pub scope: Option<MediaScope>,
     #[serde(rename = "aspectRatio", default, skip_serializing_if = "Option::is_none")]
     pub aspect_ratio: Option<String>,
+    /// AI 가 hub_context 박혀있을 때 자동 주입 — 생성 결과 `user/hub/<id>/media/` 영역에 저장.
+    #[serde(rename = "hubOwner", default, skip_serializing_if = "Option::is_none")]
+    pub hub_owner: Option<String>,
     /// `"attention" | "entropy" | "center"` 또는 `{"x": 0.5, "y": 0.5}` (옛 TS 1:1).
     /// 직렬화 일반화: focus_point 는 string 또는 object — Value 그대로 보존.
     #[serde(rename = "focusPoint", default, skip_serializing_if = "Option::is_none")]
@@ -742,7 +745,7 @@ impl MediaManager {
             quality: input.quality.clone(),
             aspect_ratio: input.aspect_ratio.clone(),
             source: Some("ai-generated".to_string()),
-            hub_owner: None,
+            hub_owner: input.hub_owner.clone(),
         };
         let saved = self
             .media
@@ -949,6 +952,7 @@ impl MediaManager {
                     quality: quality.clone(),
                     aspect_ratio: input.aspect_ratio.clone(),
                     source: Some("ai-generated".to_string()),
+                    hub_owner: input.hub_owner.clone(),
                     ..Default::default()
                 };
                 let _ = self.media.save_error_record(&err_opts, &e).await;
@@ -1039,6 +1043,7 @@ impl MediaManager {
                 quality: quality.clone(),
                 aspect_ratio: applied_aspect_ratio.clone(),
                 source: Some("ai-generated".to_string()),
+                hub_owner: input.hub_owner.clone(),
                 ..Default::default()
             };
             self.media

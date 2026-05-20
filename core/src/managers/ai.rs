@@ -1070,20 +1070,31 @@ impl AiManager {
                     }
                 }
 
-                // hub_context 박혀있고 save_page 박은 영역 = project 자동 'hub:<instance_id>'
-                // 강제 (사용자 의도 = hub 안 page 박은 영역 root 사이트 노출 0 + hub 삭제 시 cascade).
-                // AI 가 박은 project 영역 override — 익명 방문자 박은 영역도 다른 project 침투 차단.
+                // hub_context 박혀있을 때 모든 도구 호출 시점에 owner / hub_owner / _hubScope /
+                // project 일괄 자동 주입. 도구가 자기 받는 field 만 알아채고 무시 — 도구별
+                // 매핑 테이블 별도 박을 필요 X. 일관 정공.
+                //
+                // 매핑:
+                //   - owner = 'hub:<id>' (Entity / Library / Cron / Templates 영역)
+                //   - hubOwner = '<id>' (Media — camelCase 영역)
+                //   - _hubScope = '<id>' (sysmod 의 input.data 영역 — notes / calendar)
+                //   - project = 'hub:<id>' (save_page 만 적용 — 다른 도구 의미 X 다만 안전)
+                //
+                // visitor 가 admin 자료에 침투하는 silent leak 차단 — AI 가 박은 owner 영역
+                // override 강제 (도구 호출 안 visitor 의도 외 admin owner 박으려 해도 차단).
                 let hub_scoped_call: Option<ToolCall>;
-                let effective_call: &ToolCall = if call.name == "save_page"
-                    && ai_opts.hub_context.is_some()
-                {
+                let effective_call: &ToolCall = if ai_opts.hub_context.is_some() {
                     let ctx = ai_opts.hub_context.as_ref().unwrap();
+                    let inst_id = ctx.instance_id.clone();
+                    let scoped_owner = format!("hub:{}", inst_id);
                     let mut new_call = call.clone();
                     if let serde_json::Value::Object(ref mut m) = new_call.arguments {
-                        m.insert(
-                            "project".to_string(),
-                            serde_json::Value::String(format!("hub:{}", ctx.instance_id)),
-                        );
+                        m.insert("owner".to_string(), serde_json::Value::String(scoped_owner.clone()));
+                        m.insert("hubOwner".to_string(), serde_json::Value::String(inst_id.clone()));
+                        m.insert("_hubScope".to_string(), serde_json::Value::String(inst_id.clone()));
+                        if call.name == "save_page" {
+                            m.insert("project".to_string(), serde_json::Value::String(scoped_owner));
+                        }
                     }
                     hub_scoped_call = Some(new_call);
                     hub_scoped_call.as_ref().unwrap()

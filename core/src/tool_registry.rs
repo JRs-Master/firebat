@@ -613,7 +613,8 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         .get("offset")
                         .and_then(|v| v.as_u64())
                         .map(|n| n as usize),
-                    hub_owner: None,
+                    // AiManager 가 hub_context 박혀있을 때 자동 주입 (camelCase 'hubOwner').
+                    hub_owner: args.get("hubOwner").and_then(|v| v.as_str()).map(String::from),
                 };
                 let result = media.list(opts).await?;
                 Ok(serde_json::to_value(result).unwrap_or_default())
@@ -743,6 +744,7 @@ fn parse_generate_image_input(
             base64: obj.get("base64").and_then(|v| v.as_str()).map(String::from),
         }
     });
+    let hub_owner = args.get("hubOwner").and_then(|v| v.as_str()).map(String::from);
     Ok(GenerateImageInput {
         prompt,
         size,
@@ -753,6 +755,7 @@ fn parse_generate_image_input(
         aspect_ratio,
         focus_point,
         reference_image,
+        hub_owner,
     })
 }
 
@@ -822,6 +825,9 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     aliases: Vec<String>,
                     #[serde(default)]
                     metadata: Option<serde_json::Value>,
+                    // AiManager 안에서 hub_context 박혀있을 때 자동 주입 (visitor 자료 격리).
+                    #[serde(default)]
+                    owner: Option<String>,
                 }
                 let parsed: Args = serde_json::from_value(args)
                     .map_err(|e| format!("save_entity args: {e}"))?;
@@ -832,7 +838,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         aliases: parsed.aliases,
                         metadata: parsed.metadata,
                         source_conv_id: None,
-                        owner: None,
+                        owner: parsed.owner,
                     })
                     .await?;
                 Ok(serde_json::json!({"id": id, "created": created}))
@@ -963,7 +969,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         .get("orderBy")
                         .and_then(|v| v.as_str())
                         .map(String::from),
-                    owner: None,
+                    owner: args.get("owner").and_then(|v| v.as_str()).map(String::from),
                 };
                 let result = entity.get_entity_timeline(entity_id, opts)?;
                 Ok(serde_json::to_value(result).unwrap_or_default())
@@ -1040,6 +1046,9 @@ fn register_episodic_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                     ttl_days: Option<i64>,
                     #[serde(rename = "dedupThreshold", default)]
                     dedup_threshold: Option<f64>,
+                    // AiManager 가 hub_context 박혀있으면 자동 주입.
+                    #[serde(default)]
+                    owner: Option<String>,
                 }
                 let parsed: Args = serde_json::from_value(args)
                     .map_err(|e| format!("save_event args: {e}"))?;
@@ -1055,7 +1064,7 @@ fn register_episodic_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         source_conv_id: None,
                         ttl_days: parsed.ttl_days,
                         dedup_threshold: parsed.dedup_threshold,
-                        owner: None,
+                        owner: parsed.owner,
                     })
                     .await?;
                 Ok(serde_json::json!({"id": id, "skipped": skipped, "similarity": sim}))
