@@ -613,6 +613,7 @@ fn register_media_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         .get("offset")
                         .and_then(|v| v.as_u64())
                         .map(|n| n as usize),
+                    hub_owner: None,
                 };
                 let result = media.list(opts).await?;
                 Ok(serde_json::to_value(result).unwrap_or_default())

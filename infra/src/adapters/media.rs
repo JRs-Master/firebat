@@ -37,6 +37,19 @@ impl LocalMediaAdapter {
         self.root.join(scope.as_str()).join("media")
     }
 
+    /// hub_owner 가 있으면 `user/hub/<id>/media/`, 없으면 일반 scope_dir.
+    fn effective_dir(&self, scope: MediaScope, hub_owner: Option<&str>) -> PathBuf {
+        match hub_owner {
+            Some(id) if !id.is_empty() && Self::is_safe_hub_id(id) => self.root.join("user").join("hub").join(id).join("media"),
+            _ => self.scope_dir(scope),
+        }
+    }
+
+    /// hub_owner path traversal 가드 — 영숫자 / 하이픈 / 언더스코어만 허용.
+    fn is_safe_hub_id(id: &str) -> bool {
+        !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    }
+
     fn ext_from_content_type(content_type: &str) -> &'static str {
         match content_type.to_lowercase().as_str() {
             "image/png" => "png",
@@ -83,6 +96,15 @@ impl LocalMediaAdapter {
         self.scope_dir(scope).join(format!("{slug}.{ext}"))
     }
 
+    /// hub-aware meta path — hub_owner 있으면 hub dir, 없으면 일반 scope_dir.
+    fn meta_path_hub(&self, scope: MediaScope, hub_owner: Option<&str>, slug: &str) -> PathBuf {
+        self.effective_dir(scope, hub_owner).join(format!("{slug}.meta.json"))
+    }
+
+    fn binary_path_hub(&self, scope: MediaScope, hub_owner: Option<&str>, slug: &str, ext: &str) -> PathBuf {
+        self.effective_dir(scope, hub_owner).join(format!("{slug}.{ext}"))
+    }
+
     async fn write_meta(
         &self,
         scope: MediaScope,
@@ -115,8 +137,26 @@ impl LocalMediaAdapter {
         None
     }
 
+    /// hub-aware find — hub_owner 있으면 그 hub dir 만 검색, 없으면 admin (user + system).
+    async fn find_record_hub(&self, slug: &str, hub_owner: Option<&str>) -> Option<(MediaScope, MediaFileRecord)> {
+        if let Some(id) = hub_owner.filter(|id| !id.is_empty() && Self::is_safe_hub_id(id)) {
+            let path = self.effective_dir(MediaScope::User, Some(id)).join(format!("{slug}.meta.json"));
+            if let Ok(raw) = tokio::fs::read_to_string(&path).await {
+                if let Ok(record) = serde_json::from_str::<MediaFileRecord>(&raw) {
+                    return Some((MediaScope::User, record));
+                }
+            }
+            return None;
+        }
+        self.find_record(slug).await
+    }
+
     fn url_for(scope: MediaScope, slug: &str, ext: &str) -> String {
         format!("/{}/media/{}.{}", scope.as_str(), slug, ext)
+    }
+
+    fn url_for_hub(hub_owner: &str, slug: &str, ext: &str) -> String {
+        format!("/user/hub/{}/media/{}.{}", hub_owner, slug, ext)
     }
 }
 
@@ -129,13 +169,19 @@ impl IMediaPort for LocalMediaAdapter {
         opts: &MediaSaveOptions,
     ) -> InfraResult<MediaSaveResult> {
         let scope = opts.scope.unwrap_or(MediaScope::User);
+        let hub_owner = opts.hub_owner.as_deref().filter(|s| !s.is_empty());
+        if let Some(id) = hub_owner {
+            if !Self::is_safe_hub_id(id) {
+                return Err("media hub_owner: 잘못된 형식".to_string());
+            }
+        }
         let ext = opts
             .ext
             .clone()
             .unwrap_or_else(|| Self::ext_from_content_type(content_type).to_string());
         let slug = Self::make_slug(opts.filename_hint.as_deref());
 
-        let bin_path = self.binary_path(scope, &slug, &ext);
+        let bin_path = self.binary_path_hub(scope, hub_owner, &slug, &ext);
         if let Some(parent) = bin_path.parent() {
             tokio::fs::create_dir_all(parent)
                 .await
@@ -167,12 +213,27 @@ impl IMediaPort for LocalMediaAdapter {
             status: Some("done".to_string()),
             error_msg: None,
             source: opts.source.clone().or_else(|| Some("ai-generated".to_string())),
+            hub_owner: hub_owner.map(String::from),
         };
-        self.write_meta(scope, &slug, &record).await?;
+        // hub-aware meta write
+        let meta_path = self.meta_path_hub(scope, hub_owner, &slug);
+        if let Some(parent) = meta_path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| format!("meta dir 생성 실패: {e}"))?;
+        }
+        let raw = serde_json::to_vec_pretty(&record).map_err(|e| format!("meta 직렬화 실패: {e}"))?;
+        tokio::fs::write(&meta_path, raw)
+            .await
+            .map_err(|e| format!("meta write 실패: {e}"))?;
 
+        let url = match hub_owner {
+            Some(id) => Self::url_for_hub(id, &slug, &ext),
+            None => Self::url_for(scope, &slug, &ext),
+        };
         Ok(MediaSaveResult {
             slug: slug.clone(),
-            url: Self::url_for(scope, &slug, &ext),
+            url,
             thumbnail_url: None,
             variants: Vec::new(),
             blurhash: None,
@@ -211,6 +272,7 @@ impl IMediaPort for LocalMediaAdapter {
             status: Some("error".to_string()),
             error_msg: Some(error_msg.to_string()),
             source: opts.source.clone().or_else(|| Some("ai-generated".to_string())),
+            hub_owner: opts.hub_owner.clone(),
         };
         self.write_meta(scope, &slug, &record).await?;
         Ok(slug)
@@ -220,6 +282,8 @@ impl IMediaPort for LocalMediaAdapter {
         &self,
         slug: &str,
     ) -> InfraResult<Option<(Vec<u8>, String, MediaFileRecord)>> {
+        // read 는 hub_owner 인자 없음 — admin scope 우선 + 매 hub dir 스캔 X (URL handler 가
+        // hub-scoped URL 영역 별도 처리해야). 본 메서드는 admin only path.
         let Some((scope, record)) = self.find_record(slug).await else {
             return Ok(None);
         };
@@ -252,13 +316,18 @@ impl IMediaPort for LocalMediaAdapter {
     }
 
     async fn list(&self, opts: &MediaListOpts) -> InfraResult<MediaListResult> {
-        let scopes: Vec<MediaScope> = match opts.scope {
-            Some(s) => vec![s],
-            None => vec![MediaScope::User, MediaScope::System],
+        // hub_owner 있으면 `user/hub/<id>/media/` 만 스캔. 없으면 admin scope (user/system).
+        let dirs: Vec<PathBuf> = if let Some(id) = opts.hub_owner.as_deref().filter(|id| !id.is_empty() && Self::is_safe_hub_id(id)) {
+            vec![self.effective_dir(MediaScope::User, Some(id))]
+        } else {
+            let scopes: Vec<MediaScope> = match opts.scope {
+                Some(s) => vec![s],
+                None => vec![MediaScope::User, MediaScope::System],
+            };
+            scopes.into_iter().map(|s| self.scope_dir(s)).collect()
         };
         let mut all: Vec<MediaFileRecord> = Vec::new();
-        for scope in scopes {
-            let dir = self.scope_dir(scope);
+        for dir in dirs {
             let mut entries = match tokio::fs::read_dir(&dir).await {
                 Ok(e) => e,
                 Err(_) => continue,

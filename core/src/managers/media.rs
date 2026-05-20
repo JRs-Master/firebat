@@ -742,6 +742,7 @@ impl MediaManager {
             quality: input.quality.clone(),
             aspect_ratio: input.aspect_ratio.clone(),
             source: Some("ai-generated".to_string()),
+            hub_owner: None,
         };
         let saved = self
             .media

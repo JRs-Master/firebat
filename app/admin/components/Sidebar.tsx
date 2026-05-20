@@ -602,7 +602,7 @@ export function Sidebar({
   const panelBody = (
     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
       {tab === 'gallery' ? (
-        <GalleryPanel hubMode={hubMode} />
+        <GalleryPanel hubMode={hubMode} hubContext={hubShareContext} />
       ) : tab === 'templates' ? (
         <TemplatesPanel onEditFile={onEditFile} hubMode={hubMode} hubContext={hubShareContext} />
       ) : tab === 'library' ? (

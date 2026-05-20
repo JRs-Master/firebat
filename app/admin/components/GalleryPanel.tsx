@@ -38,7 +38,15 @@ interface MediaItem {
 
 const PAGE_SIZE = 48;
 
-export function GalleryPanel({ hubMode }: { hubMode?: boolean } = {}) {
+export type GalleryHubContext = { slug: string; apiToken: string; sessionId: string };
+
+export function GalleryPanel({
+  hubMode,
+  hubContext,
+}: {
+  hubMode?: boolean;
+  hubContext?: GalleryHubContext;
+} = {}) {
   const searchId = useId();
   const [items, setItems] = useState<MediaItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -52,33 +60,39 @@ export function GalleryPanel({ hubMode }: { hubMode?: boolean } = {}) {
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchList = useCallback(async (reset: boolean) => {
-    // hub mode = admin 갤러리 호출 차단 (admin 미디어 노출 금지). 빈 목록 반환.
-    // 추후 hub-scoped 미디어 저장 (`user/hub/<slug>/media/`) 분리 시 익명 endpoint 추가.
-    if (hubMode) {
-      setItems([]);
-      setTotal(0);
-      setLoading(false);
-      return;
-    }
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set('scope', scope);
       params.set('limit', String(PAGE_SIZE));
       params.set('offset', String(reset ? 0 : offset));
       if (search) params.set('search', search);
-      const data = await apiGet<{ success: boolean; items: MediaItem[]; total?: number }>(
-        `/api/media/list?${params.toString()}`,
-        { category: 'gallery' },
-      ).catch(() => null);
+      // hub mode = 익명 hub endpoint 호출. owner 자동 hub-scoped.
+      let data: { success: boolean; items: MediaItem[]; total?: number } | null = null;
+      if (hubMode && hubContext) {
+        const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/media?${params.toString()}`, {
+          headers: {
+            'X-Api-Token': hubContext.apiToken,
+            'X-Session-Id': hubContext.sessionId,
+          },
+        });
+        data = await res.json().catch(() => null);
+      } else if (!hubMode) {
+        params.set('scope', scope);
+        data = await apiGet<{ success: boolean; items: MediaItem[]; total?: number }>(
+          `/api/media/list?${params.toString()}`,
+          { category: 'gallery' },
+        ).catch(() => null);
+      }
       if (data?.success) {
-        setItems(prev => reset ? data.items : [...prev, ...data.items]);
+        setItems(prev => reset ? data!.items : [...prev, ...data!.items]);
         setTotal(data.total || 0);
+      } else {
+        if (reset) { setItems([]); setTotal(0); }
       }
     } finally {
       setLoading(false);
     }
-  }, [scope, search, offset, hubMode]);
+  }, [scope, search, offset, hubMode, hubContext]);
 
   // scope/search 변경 시 리셋 — debounced for search
   useEffect(() => {

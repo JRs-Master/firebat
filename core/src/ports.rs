@@ -2061,6 +2061,9 @@ pub struct MediaSaveOptions {
     pub aspect_ratio: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>, // "ai-generated" / "upload"
+    /// hub instance id — Some 이면 `user/hub/<id>/media/` 영역에 저장 (scope 무시).
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "hubOwner")]
+    pub hub_owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -2134,6 +2137,10 @@ pub struct MediaFileRecord {
     pub error_msg: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    /// hub instance id — Some 이면 hub-scoped (`user/hub/<id>/media/<slug>.<ext>`).
+    /// None = admin scope (user/system).
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "hubOwner")]
+    pub hub_owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -2147,6 +2154,10 @@ pub struct MediaListOpts {
     pub offset: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search: Option<String>,
+    /// hub instance id — Some 이면 `user/hub/<id>/media/` 영역만 조회 (scope 무시).
+    /// None = admin 영역 (`user/media` + `system/media`).
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "hubOwner")]
+    pub hub_owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
