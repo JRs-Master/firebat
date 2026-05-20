@@ -1491,7 +1491,13 @@ pub struct EntityRecord {
     pub created_at: i64,
     #[serde(rename = "updatedAt")]
     pub updated_at: i64,
+    /// 데이터 격리 — "admin" = 본인 메모리 (default), "hub:<instance_id>" = hub 방문자 메모리.
+    /// hub mode 안 admin 데이터 접근 차단 + admin 안 hub 데이터 노출 차단 양방향.
+    #[serde(default = "default_owner")]
+    pub owner: String,
 }
+
+fn default_owner() -> String { "admin".to_string() }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1512,6 +1518,10 @@ pub struct EntityFactRecord {
     pub expires_at: Option<i64>,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
+    /// owner — entity 의 owner 와 동일 (cascade 일관성). entity_facts.owner 갱신 자체는
+    /// adapter 가 entity 의 owner 자동 매핑.
+    #[serde(default = "default_owner")]
+    pub owner: String,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -1525,6 +1535,9 @@ pub struct EntitySearchOpts {
     pub limit: Option<usize>,
     #[serde(default)]
     pub offset: Option<usize>,
+    /// owner filter — None = admin (default), Some("hub:<id>") = 해당 hub.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -1546,6 +1559,8 @@ pub struct FactSearchOpts {
     pub limit: Option<usize>,
     #[serde(default)]
     pub offset: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1555,6 +1570,8 @@ pub struct SaveEntityInput {
     pub aliases: Vec<String>,
     pub metadata: Option<serde_json::Value>,
     pub source_conv_id: Option<String>,
+    /// None = admin (default), Some("hub:<id>") = 해당 hub.
+    pub owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1595,6 +1612,8 @@ pub struct TimelineOpts {
     pub offset: Option<usize>,
     #[serde(rename = "orderBy", default)]
     pub order_by: Option<String>, // "occurredAt" | "createdAt"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
 /// IEntityPort — Phase 1 entity tier port.
@@ -1652,6 +1671,8 @@ pub struct EventRecord {
     pub expires_at: Option<i64>,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
+    #[serde(default = "default_owner")]
+    pub owner: String,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -1673,6 +1694,8 @@ pub struct EventSearchOpts {
     pub limit: Option<usize>,
     #[serde(default)]
     pub offset: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1687,6 +1710,8 @@ pub struct SaveEventInput {
     pub source_conv_id: Option<String>,
     pub ttl_days: Option<i64>,
     pub dedup_threshold: Option<f64>,
+    /// None = admin (default), Some("hub:<id>") = 해당 hub.
+    pub owner: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1712,6 +1737,8 @@ pub struct ListRecentOpts {
     pub limit: Option<usize>,
     #[serde(default)]
     pub offset: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
 // ──────────────────────────────────────────────────────────────────────────

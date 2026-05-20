@@ -608,7 +608,7 @@ export function Sidebar({
       ) : tab === 'library' ? (
         <LibraryPanel hubContext={hubShareContext} />
       ) : tab === 'entities' ? (
-        <EntitiesPanel hubMode={hubMode} />
+        <EntitiesPanel hubMode={hubMode} hubContext={hubShareContext} />
       ) : tab === 'notes' ? (
         <NotesPanel hubMode={hubMode} />
       ) : tab === 'calendar' ? (

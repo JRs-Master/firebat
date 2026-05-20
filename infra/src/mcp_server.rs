@@ -1017,6 +1017,7 @@ impl McpToolHandler for SaveEntityHandler {
                 .unwrap_or_default(),
             metadata: args.get("metadata").cloned(),
             source_conv_id: obj_str(&args, "sourceConvId"),
+            owner: obj_str(&args, "owner"),
         };
         match self.entity.save_entity(input).await {
             Ok((id, created)) => Ok(serde_json::json!({"success": true, "id": id, "created": created})),
@@ -1121,6 +1122,7 @@ impl McpToolHandler for SaveEventHandler {
             source_conv_id: obj_str(&args, "sourceConvId"),
             ttl_days: obj_i64(&args, "ttlDays"),
             dedup_threshold: args.get("dedupThreshold").and_then(|v| v.as_f64()),
+            owner: obj_str(&args, "owner"),
         };
         match self.episodic.save_event(input).await {
             Ok((id, skipped, sim)) => Ok(serde_json::json!({

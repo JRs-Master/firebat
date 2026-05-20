@@ -362,6 +362,7 @@ impl ConsolidationManager {
                     aliases: e.aliases.clone(),
                     metadata: e.metadata.clone(),
                     source_conv_id: source_conv_id.map(String::from),
+                    owner: None,
                 })
                 .await
             {
@@ -454,6 +455,7 @@ impl ConsolidationManager {
                     source_conv_id: source_conv_id.map(String::from),
                     ttl_days: None,
                     dedup_threshold: event_dedup_threshold,
+                    owner: None,
                 })
                 .await
             {

@@ -59,6 +59,7 @@ impl EpisodicService for EpisodicServiceImpl {
                 source_conv_id: args.source_conv_id,
                 ttl_days: args.ttl_days,
                 dedup_threshold: args.dedup_threshold,
+                owner: args.owner.filter(|s| !s.is_empty()),
             })
             .await
         {

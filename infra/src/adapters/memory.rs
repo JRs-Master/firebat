@@ -67,6 +67,8 @@ impl SqliteMemoryAdapter {
         conn.execute_batch(
             r#"
             -- Entities (Phase 1)
+            -- owner: "admin" = 본인 메모리 (default), "hub:<instance_id>" = 해당 hub 격리.
+            -- UNIQUE(name, type, owner) — 다른 owner 가 같은 (name, type) 박을 수 있어야.
             CREATE TABLE IF NOT EXISTS entities (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -75,11 +77,13 @@ impl SqliteMemoryAdapter {
                 metadata TEXT,
                 embedding BLOB,
                 source_conv_id TEXT,
+                owner TEXT NOT NULL DEFAULT 'admin',
                 created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
                 updated_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
-                UNIQUE(name, type)
+                UNIQUE(name, type, owner)
             );
             CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(type);
+            CREATE INDEX IF NOT EXISTS idx_entities_owner ON entities(owner);
             CREATE INDEX IF NOT EXISTS idx_entities_updated ON entities(updated_at DESC);
 
             -- Entity Facts (Phase 1)
@@ -93,6 +97,7 @@ impl SqliteMemoryAdapter {
                 embedding BLOB,
                 source_conv_id TEXT,
                 expires_at INTEGER,
+                owner TEXT NOT NULL DEFAULT 'admin',
                 created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000),
                 FOREIGN KEY (entity_id) REFERENCES entities(id) ON DELETE CASCADE
             );
@@ -100,6 +105,7 @@ impl SqliteMemoryAdapter {
             CREATE INDEX IF NOT EXISTS idx_facts_type ON entity_facts(fact_type);
             CREATE INDEX IF NOT EXISTS idx_facts_occurred ON entity_facts(occurred_at DESC);
             CREATE INDEX IF NOT EXISTS idx_facts_expires ON entity_facts(expires_at);
+            CREATE INDEX IF NOT EXISTS idx_facts_owner ON entity_facts(owner);
 
             -- Events (Phase 2)
             CREATE TABLE IF NOT EXISTS events (
@@ -113,11 +119,13 @@ impl SqliteMemoryAdapter {
                 occurred_at INTEGER NOT NULL,
                 source_conv_id TEXT,
                 expires_at INTEGER,
+                owner TEXT NOT NULL DEFAULT 'admin',
                 created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
             );
             CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
             CREATE INDEX IF NOT EXISTS idx_events_occurred ON events(occurred_at DESC);
             CREATE INDEX IF NOT EXISTS idx_events_expires ON events(expires_at);
+            CREATE INDEX IF NOT EXISTS idx_events_owner ON events(owner);
 
             -- Event-Entity m2m
             CREATE TABLE IF NOT EXISTS event_entities (
@@ -233,6 +241,11 @@ impl SqliteMemoryAdapter {
             "ALTER TABLE events ADD COLUMN embedding BLOB",
             // Hub Phase 1 휴지통 분리 (2026-05-19) — 옛 schema 호환.
             "ALTER TABLE hub_conversations ADD COLUMN deleted_at INTEGER",
+            // Hub Phase 1 메모리 격리 (2026-05-20) — 옛 schema 호환. UNIQUE(name, type) 제약은
+            // 옛 schema 그대로 (옛 데이터 admin 그대로 유지). 새 데이터부터 owner 매핑.
+            "ALTER TABLE entities ADD COLUMN owner TEXT NOT NULL DEFAULT 'admin'",
+            "ALTER TABLE entity_facts ADD COLUMN owner TEXT NOT NULL DEFAULT 'admin'",
+            "ALTER TABLE events ADD COLUMN owner TEXT NOT NULL DEFAULT 'admin'",
         ] {
             let _ = conn.execute(stmt, []);
         }
@@ -258,6 +271,8 @@ impl SqliteMemoryAdapter {
     fn entity_from_row(row: &rusqlite::Row, fact_count: i64) -> rusqlite::Result<EntityRecord> {
         let aliases_raw: Option<String> = row.get(3)?;
         let metadata_raw: Option<String> = row.get(4)?;
+        // owner column 영역 — 옛 schema 호환 위해 try_get (없으면 'admin').
+        let owner: String = row.get::<_, Option<String>>(8).ok().flatten().unwrap_or_else(|| "admin".to_string());
         Ok(EntityRecord {
             id: row.get(0)?,
             name: row.get(1)?,
@@ -268,11 +283,13 @@ impl SqliteMemoryAdapter {
             fact_count,
             created_at: row.get(6)?,
             updated_at: row.get(7)?,
+            owner,
         })
     }
 
     fn fact_from_row(row: &rusqlite::Row) -> rusqlite::Result<EntityFactRecord> {
         let tags_raw: Option<String> = row.get(5)?;
+        let owner: String = row.get::<_, Option<String>>(9).ok().flatten().unwrap_or_else(|| "admin".to_string());
         Ok(EntityFactRecord {
             id: row.get(0)?,
             entity_id: row.get(1)?,
@@ -283,6 +300,7 @@ impl SqliteMemoryAdapter {
             source_conv_id: row.get(6)?,
             expires_at: row.get(7)?,
             created_at: row.get(8)?,
+            owner,
         })
     }
 
@@ -371,13 +389,14 @@ impl IEntityPort for SqliteMemoryAdapter {
             .await;
 
         let now = now_ms();
+        let owner = input.owner.clone().unwrap_or_else(|| "admin".to_string());
         let conn = self.conn.lock().unwrap();
 
-        // upsert by UNIQUE(name, type)
+        // upsert by UNIQUE(name, type, owner) — 다른 owner 가 같은 (name, type) 박을 수 있어야.
         let existing: Option<i64> = conn
             .query_row(
-                "SELECT id FROM entities WHERE name = ?1 AND type = ?2",
-                params![input.name, input.entity_type],
+                "SELECT id FROM entities WHERE name = ?1 AND type = ?2 AND owner = ?3",
+                params![input.name, input.entity_type, owner],
                 |r| r.get(0),
             )
             .ok();
@@ -405,8 +424,8 @@ impl IEntityPort for SqliteMemoryAdapter {
             Ok((id, false))
         } else {
             conn.execute(
-                "INSERT INTO entities (name, type, aliases, metadata, embedding, source_conv_id, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
+                "INSERT INTO entities (name, type, aliases, metadata, embedding, source_conv_id, owner, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
                 params![
                     input.name,
                     input.entity_type,
@@ -414,6 +433,7 @@ impl IEntityPort for SqliteMemoryAdapter {
                     metadata_json,
                     embedding,
                     input.source_conv_id,
+                    owner,
                     now
                 ],
             )
@@ -487,7 +507,7 @@ impl IEntityPort for SqliteMemoryAdapter {
             )
             .unwrap_or(0);
         let result = conn.query_row(
-            "SELECT id, name, type, aliases, metadata, source_conv_id, created_at, updated_at FROM entities WHERE id = ?1",
+            "SELECT id, name, type, aliases, metadata, source_conv_id, created_at, updated_at, owner FROM entities WHERE id = ?1",
             params![id],
             |row| Self::entity_from_row(row, fact_count),
         );
@@ -500,11 +520,12 @@ impl IEntityPort for SqliteMemoryAdapter {
 
     fn find_entity_by_name(&self, name: &str) -> InfraResult<Option<EntityRecord>> {
         let conn = self.conn.lock().unwrap();
-        // canonical name 또는 alias 매칭 — alias 는 JSON LIKE
+        // canonical name 또는 alias 매칭 — alias 는 JSON LIKE. owner 영역 = admin scope 만
+        // (find_entity_by_name 은 owner 인자 없으므로 admin default — hub-aware lookup 은 search_entities 통해).
         let row = conn.query_row(
-            r#"SELECT id, name, type, aliases, metadata, source_conv_id, created_at, updated_at
+            r#"SELECT id, name, type, aliases, metadata, source_conv_id, created_at, updated_at, owner
                FROM entities
-               WHERE name = ?1 OR aliases LIKE ?2
+               WHERE (name = ?1 OR aliases LIKE ?2) AND owner = 'admin'
                ORDER BY updated_at DESC LIMIT 1"#,
             params![name, format!("%\"{}\"%", name)],
             |row| Self::entity_from_row(row, 0),
@@ -532,6 +553,8 @@ impl IEntityPort for SqliteMemoryAdapter {
         let offset = opts.offset.unwrap_or(0);
         let has_query = !opts.query.trim().is_empty();
         let has_embedder = self.embedder.is_some();
+        // owner filter — None = admin scope only.
+        let owner_filter = opts.owner.clone().unwrap_or_else(|| "admin".to_string());
 
         // Cosine 모드 — query 설정되어 있고 embedder 설정되어 있으면 후보 row + embedding 가져와 cosine 정렬.
         // 옛 TS searchEntities 의 hasSemanticQuery 분기 1:1.
@@ -544,10 +567,10 @@ impl IEntityPort for SqliteMemoryAdapter {
 
             let conn = self.conn.lock().unwrap();
             let mut sql = String::from(
-                r#"SELECT id, name, type, aliases, metadata, source_conv_id, created_at, updated_at, embedding
-                   FROM entities WHERE 1=1"#,
+                r#"SELECT id, name, type, aliases, metadata, source_conv_id, created_at, updated_at, owner, embedding
+                   FROM entities WHERE owner = ?"#,
             );
-            let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![];
+            let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(owner_filter.clone())];
             if let Some(t) = &opts.entity_type {
                 sql.push_str(" AND type = ?");
                 values.push(Box::new(t.clone()));
@@ -557,7 +580,7 @@ impl IEntityPort for SqliteMemoryAdapter {
             let rows = stmt
                 .query_map(value_refs.as_slice(), |row| {
                     let entity = Self::entity_from_row(row, 0)?;
-                    let blob: Option<Vec<u8>> = row.get(8)?;
+                    let blob: Option<Vec<u8>> = row.get(9)?;
                     Ok((entity, blob))
                 })
                 .map_err(|e| format!("search rows: {e}"))?;
@@ -592,10 +615,10 @@ impl IEntityPort for SqliteMemoryAdapter {
         let q_pattern = format!("%{}%", opts.query);
         let alias_pattern = format!("%\"{}\"%", opts.query);
         let mut sql = String::from(
-            r#"SELECT id, name, type, aliases, metadata, source_conv_id, created_at, updated_at
-               FROM entities WHERE 1=1"#,
+            r#"SELECT id, name, type, aliases, metadata, source_conv_id, created_at, updated_at, owner
+               FROM entities WHERE owner = ?"#,
         );
-        let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![];
+        let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(owner_filter)];
         if let Some(t) = &opts.entity_type {
             sql.push_str(" AND type = ?");
             values.push(Box::new(t.clone()));
@@ -701,10 +724,18 @@ impl IEntityPort for SqliteMemoryAdapter {
             serde_json::to_string(&input.tags).map_err(|e| format!("tags 직렬화: {e}"))?;
         let expires_at = input.ttl_days.map(|d| now + d * 24 * 60 * 60 * 1000);
         let conn = self.conn.lock().unwrap();
+        // fact.owner = 부모 entity 의 owner 자동 매핑 (cascade 일관성).
+        let entity_owner: String = conn
+            .query_row(
+                "SELECT owner FROM entities WHERE id = ?1",
+                params![input.entity_id],
+                |r| r.get(0),
+            )
+            .unwrap_or_else(|_| "admin".to_string());
         conn.execute(
             r#"INSERT INTO entity_facts
-               (entity_id, content, fact_type, occurred_at, tags, embedding, source_conv_id, expires_at, created_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)"#,
+               (entity_id, content, fact_type, occurred_at, tags, embedding, source_conv_id, expires_at, owner, created_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"#,
             params![
                 input.entity_id,
                 input.content,
@@ -714,6 +745,7 @@ impl IEntityPort for SqliteMemoryAdapter {
                 embedding,
                 input.source_conv_id,
                 expires_at,
+                entity_owner,
                 now
             ],
         )
@@ -784,7 +816,7 @@ impl IEntityPort for SqliteMemoryAdapter {
     fn get_fact(&self, id: i64) -> InfraResult<Option<EntityFactRecord>> {
         let conn = self.conn.lock().unwrap();
         let result = conn.query_row(
-            r#"SELECT id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at
+            r#"SELECT id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, owner
                FROM entity_facts WHERE id = ?1"#,
             params![id],
             Self::fact_from_row,
@@ -808,14 +840,15 @@ impl IEntityPort for SqliteMemoryAdapter {
             Some("createdAt") => "created_at",
             _ => "COALESCE(occurred_at, created_at)",
         };
+        let owner = opts.owner.clone().unwrap_or_else(|| "admin".to_string());
         let sql = format!(
-            r#"SELECT id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at
-               FROM entity_facts WHERE entity_id = ?1 ORDER BY {} DESC LIMIT ?2 OFFSET ?3"#,
+            r#"SELECT id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, owner
+               FROM entity_facts WHERE entity_id = ?1 AND owner = ?2 ORDER BY {} DESC LIMIT ?3 OFFSET ?4"#,
             order
         );
         let mut stmt = conn.prepare(&sql).map_err(|e| format!("timeline prepare: {e}"))?;
         let rows = stmt
-            .query_map(params![entity_id, limit, offset], Self::fact_from_row)
+            .query_map(params![entity_id, owner, limit, offset], Self::fact_from_row)
             .map_err(|e| format!("timeline query: {e}"))?;
         let mut out = Vec::new();
         for r in rows {
@@ -837,15 +870,16 @@ impl IEntityPort for SqliteMemoryAdapter {
             select_embedding: bool,
         ) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
             let cols = if select_embedding {
-                "id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, embedding"
+                "id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, owner, embedding"
             } else {
-                "id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at"
+                "id, entity_id, content, fact_type, occurred_at, tags, source_conv_id, expires_at, created_at, owner"
             };
+            let owner = opts.owner.clone().unwrap_or_else(|| "admin".to_string());
             let mut sql = format!(
-                "SELECT {} FROM entity_facts WHERE (expires_at IS NULL OR expires_at > ?)",
+                "SELECT {} FROM entity_facts WHERE owner = ? AND (expires_at IS NULL OR expires_at > ?)",
                 cols
             );
-            let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(now_ms())];
+            let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(owner), Box::new(now_ms())];
             if let Some(eid) = opts.entity_id {
                 sql.push_str(" AND entity_id = ?");
                 values.push(Box::new(eid));
@@ -880,7 +914,7 @@ impl IEntityPort for SqliteMemoryAdapter {
             let rows = stmt
                 .query_map(value_refs.as_slice(), |r| {
                     let fact = Self::fact_from_row(r)?;
-                    let blob: Option<Vec<u8>> = r.get(9)?;
+                    let blob: Option<Vec<u8>> = r.get(10)?;
                     Ok((fact, blob))
                 })
                 .map_err(|e| format!("search facts query: {e}"))?;
@@ -984,6 +1018,7 @@ impl SqliteMemoryAdapter {
         entity_ids: Vec<i64>,
     ) -> rusqlite::Result<EventRecord> {
         let context_raw: Option<String> = row.get(5)?;
+        let owner: String = row.get::<_, Option<String>>(10).ok().flatten().unwrap_or_else(|| "admin".to_string());
         Ok(EventRecord {
             id: row.get(0)?,
             event_type: row.get(1)?,
@@ -996,6 +1031,7 @@ impl SqliteMemoryAdapter {
             source_conv_id: row.get(7)?,
             expires_at: row.get(8)?,
             created_at: row.get(9)?,
+            owner,
         })
     }
 
@@ -1091,10 +1127,11 @@ impl IEpisodicPort for SqliteMemoryAdapter {
         };
         let expires_at = input.ttl_days.map(|d| now + d * 24 * 60 * 60 * 1000);
 
+        let owner = input.owner.clone().unwrap_or_else(|| "admin".to_string());
         conn.execute(
             r#"INSERT INTO events
-               (type, title, description, who, context, embedding, occurred_at, source_conv_id, expires_at, created_at)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"#,
+               (type, title, description, who, context, embedding, occurred_at, source_conv_id, expires_at, owner, created_at)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)"#,
             params![
                 input.event_type,
                 input.title,
@@ -1105,6 +1142,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                 occurred_at,
                 input.source_conv_id,
                 expires_at,
+                owner,
                 now
             ],
         )
@@ -1199,7 +1237,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
         let conn = self.conn.lock().unwrap();
         let entity_ids = Self::fetch_event_entity_ids(&conn, id);
         let result = conn.query_row(
-            r#"SELECT id, type, title, description, who, context, occurred_at, source_conv_id, expires_at, created_at
+            r#"SELECT id, type, title, description, who, context, occurred_at, source_conv_id, expires_at, created_at, owner
                FROM events WHERE id = ?1"#,
             params![id],
             |row| self.event_from_row_with_entities(row, entity_ids.clone()),
@@ -1225,16 +1263,17 @@ impl IEpisodicPort for SqliteMemoryAdapter {
             apply_query_like: bool,
         ) -> (String, Vec<Box<dyn rusqlite::ToSql>>) {
             let cols = if select_embedding {
-                "e.id, e.type, e.title, e.description, e.who, e.context, e.occurred_at, e.source_conv_id, e.expires_at, e.created_at, e.embedding"
+                "e.id, e.type, e.title, e.description, e.who, e.context, e.occurred_at, e.source_conv_id, e.expires_at, e.created_at, e.owner, e.embedding"
             } else {
-                "e.id, e.type, e.title, e.description, e.who, e.context, e.occurred_at, e.source_conv_id, e.expires_at, e.created_at"
+                "e.id, e.type, e.title, e.description, e.who, e.context, e.occurred_at, e.source_conv_id, e.expires_at, e.created_at, e.owner"
             };
+            let owner = opts.owner.clone().unwrap_or_else(|| "admin".to_string());
             let mut sql = format!("SELECT DISTINCT {} FROM events e", cols);
             if opts.entity_id.is_some() {
                 sql.push_str(" INNER JOIN event_entities ee ON ee.event_id = e.id");
             }
-            sql.push_str(" WHERE (e.expires_at IS NULL OR e.expires_at > ?)");
-            let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(now_ms())];
+            sql.push_str(" WHERE e.owner = ? AND (e.expires_at IS NULL OR e.expires_at > ?)");
+            let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(owner), Box::new(now_ms())];
 
             if apply_query_like && !opts.query.trim().is_empty() {
                 let pat = format!("%{}%", opts.query);
@@ -1291,14 +1330,15 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                         row.get::<_, Option<String>>(7)?,
                         row.get::<_, Option<i64>>(8)?,
                         row.get::<_, i64>(9)?,
-                        row.get::<_, Option<Vec<u8>>>(10)?,
+                        row.get::<_, Option<String>>(10)?,
+                        row.get::<_, Option<Vec<u8>>>(11)?,
                     ))
                 })
                 .map_err(|e| format!("search events query: {e}"))?;
 
             let mut candidates: Vec<(Vec<u8>, EventRecord)> = Vec::new();
             for r in rows {
-                let (id, ty, title, desc, who, ctx, occ, conv, exp, created, blob) =
+                let (id, ty, title, desc, who, ctx, occ, conv, exp, created, row_owner, blob) =
                     r.map_err(|e| format!("search events row: {e}"))?;
                 let Some(b) = blob else { continue };
                 if b.is_empty() {
@@ -1319,6 +1359,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                         source_conv_id: conv,
                         expires_at: exp,
                         created_at: created,
+                        owner: row_owner.unwrap_or_else(|| "admin".to_string()),
                     },
                 ));
             }
@@ -1347,12 +1388,13 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                     row.get::<_, Option<String>>(7)?,
                     row.get::<_, Option<i64>>(8)?,
                     row.get::<_, i64>(9)?,
+                    row.get::<_, Option<String>>(10)?,
                 ))
             })
             .map_err(|e| format!("search events query: {e}"))?;
         let mut out = Vec::new();
         for r in rows {
-            let (id, ty, title, desc, who, ctx, occ, conv, exp, created) =
+            let (id, ty, title, desc, who, ctx, occ, conv, exp, created, row_owner) =
                 r.map_err(|e| format!("search events row: {e}"))?;
             let entity_ids = Self::fetch_event_entity_ids(&conn, id);
             out.push(EventRecord {
@@ -1367,6 +1409,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                 source_conv_id: conv,
                 expires_at: exp,
                 created_at: created,
+                owner: row_owner.unwrap_or_else(|| "admin".to_string()),
             });
         }
         Ok(out)
@@ -1376,12 +1419,13 @@ impl IEpisodicPort for SqliteMemoryAdapter {
         // sync 유지 — search_events 의 query-empty fallback path 와 동일 SQL 직접 저장.
         let limit = opts.limit.unwrap_or(20).min(200) as i64;
         let offset = opts.offset.unwrap_or(0) as i64;
+        let owner = opts.owner.clone().unwrap_or_else(|| "admin".to_string());
         let conn = self.conn.lock().unwrap();
         let mut sql = String::from(
-            r#"SELECT e.id, e.type, e.title, e.description, e.who, e.context, e.occurred_at, e.source_conv_id, e.expires_at, e.created_at
-               FROM events e WHERE (e.expires_at IS NULL OR e.expires_at > ?)"#,
+            r#"SELECT e.id, e.type, e.title, e.description, e.who, e.context, e.occurred_at, e.source_conv_id, e.expires_at, e.created_at, e.owner
+               FROM events e WHERE e.owner = ? AND (e.expires_at IS NULL OR e.expires_at > ?)"#,
         );
-        let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(now_ms())];
+        let mut values: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(owner), Box::new(now_ms())];
         if let Some(t) = &opts.event_type {
             sql.push_str(" AND e.type = ?");
             values.push(Box::new(t.clone()));
@@ -1409,12 +1453,13 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                     row.get::<_, Option<String>>(7)?,
                     row.get::<_, Option<i64>>(8)?,
                     row.get::<_, i64>(9)?,
+                    row.get::<_, Option<String>>(10)?,
                 ))
             })
             .map_err(|e| format!("list_recent_events query: {e}"))?;
         let mut out = Vec::new();
         for r in rows {
-            let (id, ty, title, desc, who, ctx, occ, conv, exp, created) =
+            let (id, ty, title, desc, who, ctx, occ, conv, exp, created, row_owner) =
                 r.map_err(|e| format!("list_recent_events row: {e}"))?;
             let entity_ids = Self::fetch_event_entity_ids(&conn, id);
             out.push(EventRecord {
@@ -1429,6 +1474,7 @@ impl IEpisodicPort for SqliteMemoryAdapter {
                 source_conv_id: conv,
                 expires_at: exp,
                 created_at: created,
+                owner: row_owner.unwrap_or_else(|| "admin".to_string()),
             });
         }
         Ok(out)

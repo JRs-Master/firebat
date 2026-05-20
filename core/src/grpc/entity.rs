@@ -59,6 +59,7 @@ impl EntityService for EntityServiceImpl {
                 aliases: args.aliases,
                 metadata,
                 source_conv_id: args.source_conv_id,
+                owner: args.owner.filter(|s| !s.is_empty()),
             })
             .await;
         match result {
@@ -240,6 +241,7 @@ impl EntityService for EntityServiceImpl {
                 limit: args.limit.map(|v| v as usize),
                 offset: args.offset.map(|v| v as usize),
                 order_by: args.order_by,
+                owner: args.owner.filter(|s| !s.is_empty()),
             },
         ) {
             Ok(list) => Ok(Response::new(EntityTimelineResponse {

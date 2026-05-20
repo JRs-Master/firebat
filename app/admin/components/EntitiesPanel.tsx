@@ -60,7 +60,15 @@ interface MemoryStats {
   events: { total: number; byType: Array<{ type: string; count: number }> };
 }
 
-export function EntitiesPanel({ hubMode }: { hubMode?: boolean } = {}) {
+export type EntitiesHubContext = { slug: string; apiToken: string; sessionId: string };
+
+export function EntitiesPanel({
+  hubMode,
+  hubContext,
+}: {
+  hubMode?: boolean;
+  hubContext?: EntitiesHubContext;
+} = {}) {
   const entitySearchId = useId();
   const [subTab, setSubTab] = useState<'entities' | 'events'>('entities');
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -72,11 +80,31 @@ export function EntitiesPanel({ hubMode }: { hubMode?: boolean } = {}) {
   const [showCreate, setShowCreate] = useState(false);
   const [stats, setStats] = useState<MemoryStats | null>(null);
 
+  // hub fetch 헬퍼 — admin = /api/entities, hub = /api/hub/<slug>/entities dispatcher.
+  const hubFetch = useCallback(async (op: string, payload: Record<string, unknown>) => {
+    if (!hubContext) return null;
+    const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/entities`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Token': hubContext.apiToken,
+        'X-Session-Id': hubContext.sessionId,
+      },
+      body: JSON.stringify({ op, ...payload }),
+    });
+    return res.json().catch(() => null);
+  }, [hubContext]);
+
   const fetchEntities = useCallback(async (q: string) => {
-    // hub mode = admin Recall 호출 차단. 빈 목록 (추후 hub-scoped entity owner 스키마 확장 영역).
     if (hubMode) {
-      setEntities([]);
-      setLoading(false);
+      if (!hubContext) { setEntities([]); setLoading(false); return; }
+      setLoading(true);
+      try {
+        const data = await hubFetch('search', { query: q.trim(), limit: 100 });
+        if (data?.success) setEntities(data.entities ?? []);
+      } finally {
+        setLoading(false);
+      }
       return;
     }
     setLoading(true);
@@ -92,7 +120,7 @@ export function EntitiesPanel({ hubMode }: { hubMode?: boolean } = {}) {
     } finally {
       setLoading(false);
     }
-  }, [hubMode]);
+  }, [hubMode, hubContext, hubFetch]);
 
   useEffect(() => {
     fetchEntities('');
@@ -113,6 +141,13 @@ export function EntitiesPanel({ hubMode }: { hubMode?: boolean } = {}) {
 
   const fetchTimeline = async (entityId: number) => {
     if (timeline[entityId]) return;
+    if (hubMode && hubContext) {
+      const data = await hubFetch('timeline', { entityId, limit: 50 });
+      if (data?.success) {
+        setTimeline(prev => ({ ...prev, [entityId]: data.facts ?? [] }));
+      }
+      return;
+    }
     const data = await apiGet<{ success: boolean; facts?: Fact[] }>(
       `/api/entities/${entityId}/timeline?limit=50`,
       { category: 'entities' },
@@ -124,6 +159,8 @@ export function EntitiesPanel({ hubMode }: { hubMode?: boolean } = {}) {
 
   const fetchEntityEvents = async (entityId: number) => {
     if (entityEvents[entityId]) return;
+    // hub mode 안 events 영역 별도 endpoint 없음 — 빈 목록 (entities timeline 만 활성).
+    if (hubMode) { setEntityEvents(prev => ({ ...prev, [entityId]: [] })); return; }
     const data = await apiGet<{ success: boolean; events?: EventItem[] }>(
       `/api/episodic?entityId=${entityId}&limit=50`,
       { category: 'entities' },

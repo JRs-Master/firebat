@@ -831,6 +831,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         aliases: parsed.aliases,
                         metadata: parsed.metadata,
                         source_conv_id: None,
+                        owner: None,
                     })
                     .await?;
                 Ok(serde_json::json!({"id": id, "created": created}))
@@ -961,6 +962,7 @@ fn register_entity_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         .get("orderBy")
                         .and_then(|v| v.as_str())
                         .map(String::from),
+                    owner: None,
                 };
                 let result = entity.get_entity_timeline(entity_id, opts)?;
                 Ok(serde_json::to_value(result).unwrap_or_default())
@@ -1052,6 +1054,7 @@ fn register_episodic_tools(tools: &Arc<ToolManager>, h: &CoreToolHandlers) {
                         source_conv_id: None,
                         ttl_days: parsed.ttl_days,
                         dedup_threshold: parsed.dedup_threshold,
+                        owner: None,
                     })
                     .await?;
                 Ok(serde_json::json!({"id": id, "skipped": skipped, "similarity": sim}))

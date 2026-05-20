@@ -1748,6 +1748,8 @@ message EntitySaveRequest {
   // 임의 메타 JSON. 빈 string 이면 None.
   optional string metadata_json = 4;
   optional string source_conv_id = 5;
+  // 빈 string = admin (default), "hub:<id>" = 해당 hub 격리.
+  optional string owner = 6;
 }
 message EntitySaveResponse {
   int64 id = 1;
@@ -1825,6 +1827,7 @@ message EntityTimelineRequest {
   optional int64 limit = 2;
   optional int64 offset = 3;
   optional string order_by = 4;
+  optional string owner = 5;
 }
 message EntityTimelineResponse {
   string raw_json = 1;
@@ -1884,6 +1887,8 @@ message EpisodicSaveEventRequest {
   optional string source_conv_id = 8;
   optional int64 ttl_days = 9;
   optional double dedup_threshold = 10;
+  // 빈 string = admin (default), "hub:<id>" = 해당 hub 격리.
+  optional string owner = 11;
 }
 message EpisodicSaveEventResponse {
   int64 id = 1;

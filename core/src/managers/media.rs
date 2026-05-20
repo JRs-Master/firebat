@@ -827,6 +827,7 @@ impl MediaManager {
                                 source_conv_id: None,
                                 ttl_days: None,
                                 dedup_threshold: None,
+                                owner: None,
                             })
                             .await;
                     }
@@ -1262,6 +1263,7 @@ impl MediaManager {
                         source_conv_id: None,
                         ttl_days: None,
                         dedup_threshold: None,
+                        owner: None,
                     })
                     .await;
             }
