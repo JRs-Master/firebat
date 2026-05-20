@@ -1,10 +1,29 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useTranslations } from '../../lib/i18n';
+import { LangProvider, useTranslations } from '../../lib/i18n';
 import { apiPost } from '../../lib/api-fetch';
 
+/** hub page wrapper — visitor navigator.language 자동 감지 박은 nested LangProvider.
+ *  admin cookie / localStorage 영역 영향 0 (forceLocale 박혀있어 admin 설정 안 박음). */
 export function ConsoleLayoutInner({ children, hubMode }: { children: React.ReactNode; hubMode?: boolean }) {
+  if (hubMode) {
+    return (
+      <LangProvider forceLocale={detectVisitorLang()}>
+        <ConsoleLayoutBody hubMode>{children}</ConsoleLayoutBody>
+      </LangProvider>
+    );
+  }
+  return <ConsoleLayoutBody>{children}</ConsoleLayoutBody>;
+}
+
+function detectVisitorLang(): 'ko' | 'en' {
+  if (typeof navigator === 'undefined') return 'en';
+  const nav = navigator.language?.toLowerCase() || '';
+  return nav.startsWith('ko') ? 'ko' : 'en';
+}
+
+function ConsoleLayoutBody({ children, hubMode }: { children: React.ReactNode; hubMode?: boolean }) {
   const t = useTranslations();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 

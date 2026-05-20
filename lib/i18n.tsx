@@ -67,12 +67,17 @@ export function LangProvider({
   children,
   initial,
   enableServerSync = false,
+  forceLocale,
 }: {
   children: React.ReactNode;
   initial?: Lang;
   enableServerSync?: boolean;
+  /** 강제 lang — admin cookie / localStorage 무시. hub page 안 visitor navigator 자동 감지 영역 박음.
+   *  박혀있으면 setLang 도 no-op (localStorage / cookie 박지 않음 — admin 설정 영역 영향 0). */
+  forceLocale?: Lang;
 }) {
   const [lang, setLangState] = useState<Lang>(() => {
+    if (forceLocale && isValidLang(forceLocale)) return forceLocale;
     if (initial && isValidLang(initial)) return initial;
     return INITIAL_LANG;
   });
@@ -80,6 +85,11 @@ export function LangProvider({
   // 마운트 후 동기화
   useEffect(() => {
     let cancelled = false;
+    if (forceLocale && isValidLang(forceLocale)) {
+      // forceLocale 박혀있으면 admin saved / server sync 영역 모두 무시.
+      if (forceLocale !== lang) setLangState(forceLocale);
+      return () => { cancelled = true; };
+    }
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (isValidLang(saved) && saved !== lang) setLangState(saved);
@@ -105,6 +115,8 @@ export function LangProvider({
   }, [enableServerSync]); // enableServerSync 변경 시 재발화 (보통 mount 1회)
 
   const setLang = useCallback((next: Lang) => {
+    // forceLocale 박혀있으면 setLang no-op (admin 설정 영역 안 박음).
+    if (forceLocale) return;
     setLangState(next);
     if (typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEY, next);
@@ -118,7 +130,7 @@ export function LangProvider({
         body: JSON.stringify({ interfaceLang: next }),
       }).catch(() => {});
     }
-  }, [enableServerSync]);
+  }, [enableServerSync, forceLocale]);
 
   return <LangContext.Provider value={{ lang, setLang }}>{children}</LangContext.Provider>;
 }
