@@ -1131,6 +1131,11 @@ pub struct ChatMessage {
 pub struct LlmCallOpts {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// 플랜 모드 — frontend 안 `planMode` 박은 영역 (off/auto/always). 매니저 안 AiRequestOpts.plan_mode
+    /// 매핑 박음. 옛 시점 안 = AiRequestOpts 만 박혀있고 LlmCallOpts 안 박혀있지 않아 frontend 가
+    /// 박은 planMode 영역 backend 안 무시 박혔던 root cause.
+    #[serde(rename = "planMode", default)]
+    pub plan_mode: PlanMode,
     #[serde(rename = "thinkingLevel", default, skip_serializing_if = "Option::is_none")]
     pub thinking_level: Option<String>,
     #[serde(rename = "systemPrompt", default, skip_serializing_if = "Option::is_none")]

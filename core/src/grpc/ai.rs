@@ -84,9 +84,12 @@ impl AiService for AiServiceImpl {
         let args = req.into_inner();
         let opts = parse_opts(args.opts);
         let tools = parse_tools(args.tools);
+        // LlmCallOpts.plan_mode → AiRequestOpts.plan_mode 매핑 (frontend planMode 영역 backend 전파).
+        let mut ai_opts = crate::ports::AiRequestOpts::default();
+        ai_opts.plan_mode = opts.plan_mode;
         match self
             .manager
-            .process_with_tools(&args.prompt, &tools, &opts)
+            .process_with_tools_opts(&args.prompt, &tools, &opts, &ai_opts)
             .await
         {
             Ok(response) => Ok(Response::new(AiRequestActionWithToolsResponse {
@@ -120,7 +123,9 @@ impl AiService for AiServiceImpl {
         let manager = self.manager.clone();
         tokio::spawn(async move {
             let opts_local = opts;
-            let ai_opts = crate::ports::AiRequestOpts::default();
+            // LlmCallOpts.plan_mode → AiRequestOpts.plan_mode 매핑 (frontend planMode 영역 전파).
+            let mut ai_opts = crate::ports::AiRequestOpts::default();
+            ai_opts.plan_mode = opts_local.plan_mode;
             let res = manager
                 .process_with_tools_opts_with_emit(
                     &prompt,
