@@ -1002,7 +1002,16 @@ impl AiManager {
             last_model_id = response.model_id.clone();
 
             // streaming chunk emit — 매 turn LLM 의 reasoning text 영역 사용자한테 즉시 보임.
-            // 옛 TS Core 안 박혀있던 영역. emit 채널 None 이면 no-op.
+            // thinking 먼저 (있을 때만) → text 다음. frontend ThinkingBlock 가 thinking content
+            // bodyText 영역 표시 + text 는 답변 본문 영역 표시 (옛 TS Core 1:1 흐름).
+            if let Some(thinking) = response.thinking_text.as_deref() {
+                if !thinking.trim().is_empty() {
+                    emit_event(AiStreamEvent::Chunk {
+                        event_type: "thinking".to_string(),
+                        content: thinking.to_string(),
+                    });
+                }
+            }
             if !last_text.trim().is_empty() {
                 emit_event(AiStreamEvent::Chunk {
                     event_type: "text".to_string(),

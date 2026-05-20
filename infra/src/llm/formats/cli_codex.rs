@@ -555,6 +555,7 @@ impl FormatHandler for CodexCliHandler {
             suggestions: outcome.suggestions,
             raw_model_parts: None,
             tool_results: outcome.tool_results,
+            thinking_text: None,
         })
     }
 }

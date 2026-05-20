@@ -595,6 +595,7 @@ impl FormatHandler for GeminiCliHandler {
             suggestions: outcome.suggestions,
             raw_model_parts: None,
             tool_results: outcome.tool_results,
+            thinking_text: None,
         })
     }
 }

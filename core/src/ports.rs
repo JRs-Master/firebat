@@ -1265,6 +1265,12 @@ pub struct LlmToolResponse {
     /// 형식: `{name: string, success: bool, error?: string, input?: object}`.
     #[serde(rename = "toolResults", default, skip_serializing_if = "Vec::is_empty")]
     pub tool_results: Vec<ToolResultSummary>,
+    /// extended thinking / reasoning content — API 모드 어댑터가 응답 안 thinking 블록 별도 추출 후 set.
+    /// Anthropic Extended Thinking 의 `content[type=thinking]`, OpenAI Responses 의
+    /// `output[type=reasoning].summary[*].text`, Gemini Native + Vertex 의 `parts[thought=true].text` 통합.
+    /// AiManager 가 매 turn 결과 시점 이 영역 emit (`event_type="thinking"`) → frontend ThinkingBlock bodyText.
+    #[serde(rename = "thinkingText", default, skip_serializing_if = "Option::is_none")]
+    pub thinking_text: Option<String>,
 }
 
 /// CLI 자체 MCP loop 안에서 호출된 도구 한 건의 결과 요약. Frontend 에러 뱃지 표시 용.

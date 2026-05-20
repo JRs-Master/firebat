@@ -20,11 +20,15 @@ impl OpenAiResponsesHandler {
         Self
     }
 
-    fn parse_response(body: &serde_json::Value) -> (String, Vec<ToolCall>, i64, i64) {
+    fn parse_response(
+        body: &serde_json::Value,
+    ) -> (String, Vec<ToolCall>, i64, i64, Option<String>) {
         let mut text = String::new();
+        let mut thinking_text = String::new();
         let mut tool_calls = Vec::new();
         // Responses API 의 output 은 array — { type: "message", content: [{ type: "output_text", text }] }
         // 또는 { type: "function_call", call_id, name, arguments }
+        // 또는 { type: "reasoning", summary: [{ type: "summary_text", text }] } — o-series / GPT-5 reasoning 모델.
         if let Some(output) = body.get("output").and_then(|v| v.as_array()) {
             for item in output {
                 let item_type = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
@@ -36,6 +40,20 @@ impl OpenAiResponsesHandler {
                                     if let Some(t) = c.get("text").and_then(|v| v.as_str()) {
                                         text.push_str(t);
                                     }
+                                }
+                            }
+                        }
+                    }
+                    "reasoning" => {
+                        // reasoning.summary[*].text — reasoning 모델 (o1 / o3 / GPT-5) 가
+                        // emit 박는 thinking 요약. text 가 비어있을 수도 (encrypted_content 만).
+                        if let Some(summary) = item.get("summary").and_then(|v| v.as_array()) {
+                            for s in summary {
+                                if let Some(t) = s.get("text").and_then(|v| v.as_str()) {
+                                    if !thinking_text.is_empty() {
+                                        thinking_text.push('\n');
+                                    }
+                                    thinking_text.push_str(t);
                                 }
                             }
                         }
@@ -78,7 +96,12 @@ impl OpenAiResponsesHandler {
             .and_then(|u| u.get("output_tokens"))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
-        (text, tool_calls, tokens_in, tokens_out)
+        let thinking_opt = if thinking_text.is_empty() {
+            None
+        } else {
+            Some(thinking_text)
+        };
+        (text, tool_calls, tokens_in, tokens_out, thinking_opt)
     }
 }
 
@@ -127,7 +150,7 @@ impl FormatHandler for OpenAiResponsesHandler {
                     .unwrap_or("(unknown)")
             ));
         }
-        let (text, _calls, tokens_in, tokens_out) = Self::parse_response(&body_json);
+        let (text, _calls, tokens_in, tokens_out, _thinking) = Self::parse_response(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
         Ok(LlmTextResponse {
             text,
@@ -220,7 +243,8 @@ impl FormatHandler for OpenAiResponsesHandler {
                     .unwrap_or("(unknown)")
             ));
         }
-        let (text, tool_calls, tokens_in, tokens_out) = Self::parse_response(&body_json);
+        let (text, tool_calls, tokens_in, tokens_out, thinking_text) =
+            Self::parse_response(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
         Ok(LlmToolResponse {
             text,
@@ -229,6 +253,7 @@ impl FormatHandler for OpenAiResponsesHandler {
             cost_usd: Some(cost),
             tokens_in: Some(tokens_in),
             tokens_out: Some(tokens_out),
+            thinking_text,
             ..Default::default()
         })
     }

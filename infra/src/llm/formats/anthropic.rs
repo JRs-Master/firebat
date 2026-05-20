@@ -55,9 +55,12 @@ impl AnthropicMessagesHandler {
     }
 
     /// Anthropic 응답에서 사용량 + content 추출.
-    /// 응답 schema: { content: [{type: "text", text: ...}, {type: "tool_use", id, name, input}], usage: {input_tokens, output_tokens} }
-    fn parse_response(body: &serde_json::Value) -> (String, Vec<ToolCall>, i64, i64) {
+    /// 응답 schema: { content: [{type: "text", text: ...}, {type: "thinking", thinking: ...}, {type: "tool_use", id, name, input}], usage: {input_tokens, output_tokens} }
+    fn parse_response(
+        body: &serde_json::Value,
+    ) -> (String, Vec<ToolCall>, i64, i64, Option<String>) {
         let mut text = String::new();
+        let mut thinking_text = String::new();
         let mut tool_calls = Vec::new();
         if let Some(content) = body.get("content").and_then(|v| v.as_array()) {
             for block in content {
@@ -66,6 +69,15 @@ impl AnthropicMessagesHandler {
                     "text" => {
                         if let Some(t) = block.get("text").and_then(|v| v.as_str()) {
                             text.push_str(t);
+                        }
+                    }
+                    "thinking" => {
+                        // Extended Thinking — `thinking` 필드에 reasoning text 박힘.
+                        if let Some(t) = block.get("thinking").and_then(|v| v.as_str()) {
+                            if !thinking_text.is_empty() {
+                                thinking_text.push('\n');
+                            }
+                            thinking_text.push_str(t);
                         }
                     }
                     "tool_use" => {
@@ -96,7 +108,12 @@ impl AnthropicMessagesHandler {
             .and_then(|u| u.get("output_tokens"))
             .and_then(|v| v.as_i64())
             .unwrap_or(0);
-        (text, tool_calls, tokens_in, tokens_out)
+        let thinking_opt = if thinking_text.is_empty() {
+            None
+        } else {
+            Some(thinking_text)
+        };
+        (text, tool_calls, tokens_in, tokens_out, thinking_opt)
     }
 }
 
@@ -158,7 +175,7 @@ impl FormatHandler for AnthropicMessagesHandler {
                     .unwrap_or("(unknown)")
             ));
         }
-        let (text, _tool_calls, tokens_in, tokens_out) = Self::parse_response(&body_json);
+        let (text, _tool_calls, tokens_in, tokens_out, _thinking) = Self::parse_response(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
         Ok(LlmTextResponse {
             text,
@@ -290,7 +307,8 @@ impl FormatHandler for AnthropicMessagesHandler {
                     .unwrap_or("(unknown)")
             ));
         }
-        let (text, tool_calls, tokens_in, tokens_out) = Self::parse_response(&body_json);
+        let (text, tool_calls, tokens_in, tokens_out, thinking_text) =
+            Self::parse_response(&body_json);
         let cost = compute_cost(config, tokens_in, tokens_out);
         Ok(LlmToolResponse {
             text,
@@ -299,6 +317,7 @@ impl FormatHandler for AnthropicMessagesHandler {
             cost_usd: Some(cost),
             tokens_in: Some(tokens_in),
             tokens_out: Some(tokens_out),
+            thinking_text,
             ..Default::default()
         })
     }
