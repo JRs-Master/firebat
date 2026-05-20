@@ -36,12 +36,16 @@ const STARTER_TEMPLATE = {
   },
 };
 
+export type TemplatesHubContext = { slug: string; apiToken: string; sessionId: string };
+
 export function TemplatesPanel({
   onEditFile,
   hubMode,
+  hubContext,
 }: {
   onEditFile?: (filePath: string) => void;
   hubMode?: boolean;
+  hubContext?: TemplatesHubContext;
 }) {
   const newSlugId = useId();
   const queryClient = useQueryClient();
@@ -49,13 +53,31 @@ export function TemplatesPanel({
   const [newSlug, setNewSlug] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // hub mode = admin 템플릿 호출 차단. 빈 목록 반환 (추후 hub-scoped 템플릿 스키마 확장 영역).
+  // hub fetch 헬퍼 — admin 은 /api/templates, hub 는 /api/hub/<slug>/templates dispatcher.
+  const hubFetch = useCallback(async (op: string, payload: Record<string, unknown>) => {
+    if (!hubContext) return null;
+    const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/templates`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Token': hubContext.apiToken,
+        'X-Session-Id': hubContext.sessionId,
+      },
+      body: JSON.stringify({ op, ...payload }),
+    });
+    return res.json().catch(() => null);
+  }, [hubContext]);
+
   const { data, isLoading } = useQuery({
-    queryKey: ['templates', hubMode ? 'hub' : 'admin'],
-    queryFn: () =>
-      hubMode
-        ? Promise.resolve({ success: true, templates: [] as TemplateEntry[] })
-        : apiGet<{ success: boolean; templates: TemplateEntry[] }>('/api/templates', { category: 'templates' }),
+    queryKey: ['templates', hubMode && hubContext ? `hub-${hubContext.slug}` : 'admin'],
+    queryFn: async () => {
+      if (hubMode) {
+        if (!hubContext) return { success: true, templates: [] as TemplateEntry[] };
+        const json = await hubFetch('list', {});
+        return (json ?? { success: true, templates: [] }) as { success: boolean; templates: TemplateEntry[] };
+      }
+      return apiGet<{ success: boolean; templates: TemplateEntry[] }>('/api/templates', { category: 'templates' });
+    },
   });
   const templates = data?.templates ?? [];
   const loading = isLoading;
@@ -90,22 +112,25 @@ export function TemplatesPanel({
     }
     setSubmitting(true);
     try {
-      const res = await apiPost<{ success: boolean; error?: string }>(
-        '/api/templates',
-        { slug, config: STARTER_TEMPLATE },
-        { category: 'templates' },
-      );
-      if (!res.success) {
-        await alertDialog({ title: '생성 실패', message: res.error || '알 수 없는 오류', danger: true });
+      const res = hubMode && hubContext
+        ? await hubFetch('save', { slug, config: STARTER_TEMPLATE })
+        : await apiPost<{ success: boolean; error?: string }>(
+            '/api/templates',
+            { slug, config: STARTER_TEMPLATE },
+            { category: 'templates' },
+          );
+      if (!res?.success) {
+        await alertDialog({ title: '생성 실패', message: res?.error || '알 수 없는 오류', danger: true });
         return;
       }
       await invalidate();
       setCreating(false);
-      onEditFile?.(`user/templates/${slug}/template.json`);
+      // hub mode 면 FileEditor 가 admin filesystem 호출이라 의미 0 — skip.
+      if (!hubMode) onEditFile?.(`user/templates/${slug}/template.json`);
     } finally {
       setSubmitting(false);
     }
-  }, [newSlug, templates, invalidate, onEditFile]);
+  }, [newSlug, templates, invalidate, onEditFile, hubMode, hubContext, hubFetch]);
 
   const handleDelete = useCallback(async (slug: string) => {
     if (!await confirmDialog({
@@ -114,16 +139,18 @@ export function TemplatesPanel({
       danger: true,
       okLabel: '삭제',
     })) return;
-    const res = await apiDelete<{ success: boolean; error?: string }>(
-      `/api/templates/${encodeURIComponent(slug)}`,
-      { category: 'templates' },
-    );
-    if (!res.success) {
-      await alertDialog({ title: '삭제 실패', message: res.error || '알 수 없는 오류', danger: true });
+    const res = hubMode && hubContext
+      ? await hubFetch('delete', { slug })
+      : await apiDelete<{ success: boolean; error?: string }>(
+          `/api/templates/${encodeURIComponent(slug)}`,
+          { category: 'templates' },
+        );
+    if (!res?.success) {
+      await alertDialog({ title: '삭제 실패', message: res?.error || '알 수 없는 오류', danger: true });
       return;
     }
     await invalidate();
-  }, [invalidate]);
+  }, [invalidate, hubMode, hubContext, hubFetch]);
 
   return (
     <div className="flex flex-col h-full">

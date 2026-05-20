@@ -58,9 +58,26 @@ impl TemplateManager {
         Self { storage }
     }
 
-    /// 템플릿 목록 — `user/templates/` 안 디렉토리 스캔. 잘못된 JSON 은 silent skip.
-    pub async fn list(&self) -> Vec<TemplateEntry> {
-        let Ok(entries) = self.storage.list_dir("user/templates").await else {
+    /// owner 기준 base path — None = admin (`user/templates/`),
+    /// Some(hub_id) = `user/hub/<id>/templates/` (hub 방문자 격리).
+    /// hub_id 가 path traversal 안전한 형태인지 검증.
+    fn base_path(owner: Option<&str>) -> InfraResult<String> {
+        match owner {
+            None => Ok("user/templates".to_string()),
+            Some(hub_id) => {
+                if !is_safe_slug(hub_id) {
+                    return Err(crate::i18n::t("core.error.template.invalid_slug", None, &[]));
+                }
+                Ok(format!("user/hub/{}/templates", hub_id))
+            }
+        }
+    }
+
+    /// 템플릿 목록 — owner 기준 디렉토리 스캔. None = admin, Some(hub_id) = 해당 hub.
+    /// 잘못된 JSON 은 silent skip.
+    pub async fn list(&self, owner: Option<&str>) -> Vec<TemplateEntry> {
+        let Ok(base) = Self::base_path(owner) else { return vec![]; };
+        let Ok(entries) = self.storage.list_dir(&base).await else {
             return vec![];
         };
         let mut out = Vec::new();
@@ -69,7 +86,7 @@ impl TemplateManager {
                 continue;
             }
             let slug = e.name.clone();
-            let path = format!("user/templates/{}/template.json", slug);
+            let path = format!("{}/{}/template.json", base, slug);
             let Ok(json) = self.storage.read(&path).await else {
                 continue;
             };
@@ -87,17 +104,23 @@ impl TemplateManager {
     }
 
     /// 템플릿 1건 조회 — 없으면 None.
-    pub async fn get(&self, slug: &str) -> Option<TemplateConfig> {
+    pub async fn get(&self, owner: Option<&str>, slug: &str) -> Option<TemplateConfig> {
         if !is_safe_slug(slug) {
             return None;
         }
-        let path = format!("user/templates/{}/template.json", slug);
+        let base = Self::base_path(owner).ok()?;
+        let path = format!("{}/{}/template.json", base, slug);
         let json = self.storage.read(&path).await.ok()?;
         serde_json::from_str(&json).ok()
     }
 
     /// 템플릿 저장 — upsert. spec.body 검증.
-    pub async fn save(&self, slug: &str, config: &TemplateConfig) -> InfraResult<()> {
+    pub async fn save(
+        &self,
+        owner: Option<&str>,
+        slug: &str,
+        config: &TemplateConfig,
+    ) -> InfraResult<()> {
         if !is_safe_slug(slug) {
             return Err(crate::i18n::t("core.error.template.invalid_slug", None, &[]));
         }
@@ -114,16 +137,18 @@ impl TemplateManager {
                 &[("detail", &e.to_string())],
             )
         })?;
-        let path = format!("user/templates/{}/template.json", slug);
+        let base = Self::base_path(owner)?;
+        let path = format!("{}/{}/template.json", base, slug);
         self.storage.write(&path, &json).await
     }
 
     /// 템플릿 삭제 — 폴더 통째 제거.
-    pub async fn delete(&self, slug: &str) -> InfraResult<()> {
+    pub async fn delete(&self, owner: Option<&str>, slug: &str) -> InfraResult<()> {
         if !is_safe_slug(slug) {
             return Err(crate::i18n::t("core.error.template.invalid_slug", None, &[]));
         }
-        let path = format!("user/templates/{}", slug);
+        let base = Self::base_path(owner)?;
+        let path = format!("{}/{}", base, slug);
         self.storage.delete(&path).await
     }
 }

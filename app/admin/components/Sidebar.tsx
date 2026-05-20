@@ -604,7 +604,7 @@ export function Sidebar({
       {tab === 'gallery' ? (
         <GalleryPanel hubMode={hubMode} />
       ) : tab === 'templates' ? (
-        <TemplatesPanel onEditFile={onEditFile} hubMode={hubMode} />
+        <TemplatesPanel onEditFile={onEditFile} hubMode={hubMode} hubContext={hubShareContext} />
       ) : tab === 'library' ? (
         <LibraryPanel hubContext={hubShareContext} />
       ) : tab === 'entities' ? (

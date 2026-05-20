@@ -2017,20 +2017,29 @@ service ConsolidationService {
 }
 
 // ─── TemplateService typed Request / Response messages ─────────────────────
-message TemplateListRequest {}
+// owner 영역 = 빈 string = admin (`user/templates/`), 값 = hub instance id (`user/hub/<id>/templates/`).
+// hub 방문자가 admin 자료 못 보게 backend 가 격리.
+message TemplateListRequest { string owner = 1; }
 message TemplateListResponse { string raw_json = 1; }
 
-message TemplateGetRequest { string slug = 1; }
+message TemplateGetRequest {
+  string slug = 1;
+  string owner = 2;
+}
 message TemplateGetResponse { string raw_json = 1; }
 
 message TemplateSaveRequest {
   string slug = 1;
   // 동적 TemplateConfig JSON.
   string config_json = 2;
+  string owner = 3;
 }
 message TemplateSaveResponse {}
 
-message TemplateDeleteRequest { string slug = 1; }
+message TemplateDeleteRequest {
+  string slug = 1;
+  string owner = 2;
+}
 message TemplateDeleteResponse {}
 
 // ──────────────────────────────────────────────────────────────────────────

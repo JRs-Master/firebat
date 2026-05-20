@@ -7,6 +7,7 @@
 import {
   TemplateDeleteRequestSchema,
   TemplateGetRequestSchema,
+  TemplateListRequestSchema,
   TemplateSaveRequestSchema,
   TemplateService,
 } from '../proto-gen/firebat_pb';
@@ -18,9 +19,9 @@ import { unBigInt } from './_unbigint';
 
 const templateClient = createClient(TemplateService, transport);
 
-export async function list(): Promise<RpcResult<unknown>> {
+export async function list(args: MessageInitShape<typeof TemplateListRequestSchema>): Promise<RpcResult<unknown>> {
   try {
-      const response = await templateClient.list({});
+      const response = await templateClient.list(args ?? {});
       return { ok: true, data: JSON.parse(response.rawJson) };
   } catch (err) {
     return toRpcError(err);

@@ -27,13 +27,18 @@ fn to_raw(value: &impl serde::Serialize) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| "null".to_string())
 }
 
+fn owner_opt(owner: &str) -> Option<&str> {
+    if owner.is_empty() { None } else { Some(owner) }
+}
+
 #[tonic::async_trait]
 impl TemplateService for TemplateServiceImpl {
     async fn list(
         &self,
-        _req: Request<TemplateListRequest>,
+        req: Request<TemplateListRequest>,
     ) -> Result<Response<TemplateListResponse>, TonicStatus> {
-        let entries = self.manager.list().await;
+        let owner = req.into_inner().owner;
+        let entries = self.manager.list(owner_opt(&owner)).await;
         Ok(Response::new(TemplateListResponse {
             raw_json: to_raw(&entries),
         }))
@@ -43,8 +48,8 @@ impl TemplateService for TemplateServiceImpl {
         &self,
         req: Request<TemplateGetRequest>,
     ) -> Result<Response<TemplateGetResponse>, TonicStatus> {
-        let slug = req.into_inner().slug;
-        let config = self.manager.get(&slug).await;
+        let args = req.into_inner();
+        let config = self.manager.get(owner_opt(&args.owner), &args.slug).await;
         Ok(Response::new(TemplateGetResponse {
             raw_json: to_raw(&config),
         }))
@@ -63,7 +68,7 @@ impl TemplateService for TemplateServiceImpl {
             ))
         })?;
         self.manager
-            .save(&args.slug, &config)
+            .save(owner_opt(&args.owner), &args.slug, &config)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(TemplateSaveResponse {}))
@@ -73,9 +78,9 @@ impl TemplateService for TemplateServiceImpl {
         &self,
         req: Request<TemplateDeleteRequest>,
     ) -> Result<Response<TemplateDeleteResponse>, TonicStatus> {
-        let slug = req.into_inner().slug;
+        let args = req.into_inner();
         self.manager
-            .delete(&slug)
+            .delete(owner_opt(&args.owner), &args.slug)
             .await
             .map_err(TonicStatus::internal)?;
         Ok(Response::new(TemplateDeleteResponse {}))
