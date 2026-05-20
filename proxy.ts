@@ -57,6 +57,9 @@ export function proxy(request: NextRequest) {
   // 사이트 소유권 인증 파일 — Google/AdSense/Naver/Bing crawler 가 토큰 없이 접근.
   // (next.config.mjs rewrites 로 /:file.txt|html|xml → /api/verifications/:file 라우팅)
   if (pathname.startsWith('/api/verifications/') && request.method === 'GET') return NextResponse.next();
+  // Hub endpoints — 외부 사이트 위젯 / 익명 방문자 호출. X-Api-Token + X-Session-Id +
+  // allowed_domains 자체 검증. admin 쿠키 X. widget.js (static JS) 도 익명 접근 허용.
+  if (pathname.startsWith('/api/hub/')) return NextResponse.next();
   // 이미지는 /media/ (api 밖) 로 이전되어 여기서 처리 불필요 — nginx 또는 app/media 라우트가 직접 서빙.
 
   // ── /api/* — 쿠키 또는 Bearer 없으면 401 ──
