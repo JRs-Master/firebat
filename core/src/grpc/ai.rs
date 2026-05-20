@@ -20,6 +20,7 @@ use crate::proto::{
     AiRunAgentJobRequest, AiRunAgentJobResponse, AiSetSubAgentEnabledRequest,
     AiSetSubAgentEnabledResponse, AiSpawnSubAgentRequest, AiSpawnSubAgentResponse,
     AiStepEventPb, AiStorePlanRequest, AiStorePlanResponse, AiStreamEventPb,
+    AiStreamRequestActionWithToolsRequest,
 };
 use std::pin::Pin;
 use tokio_stream::{wrappers::ReceiverStream, Stream, StreamExt};
@@ -107,7 +108,7 @@ impl AiService for AiServiceImpl {
     /// 본 fn 가 ReceiverStream 통해 tonic Stream 변환.
     async fn stream_request_action_with_tools(
         &self,
-        req: Request<AiRequestActionWithToolsRequest>,
+        req: Request<AiStreamRequestActionWithToolsRequest>,
     ) -> Result<Response<Self::StreamRequestActionWithToolsStream>, TonicStatus> {
         let args = req.into_inner();
         let opts = parse_opts(args.opts);

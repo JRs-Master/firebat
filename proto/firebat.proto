@@ -133,6 +133,14 @@ message AiStreamEventPb {
   }
 }
 
+// streaming RPC 전용 Request — buf STANDARD lint (RPC_REQUEST_RESPONSE_UNIQUE) 영역 매 RPC 안
+// unique Request 강제. 옛 AiRequestActionWithToolsRequest 영역 그대로 박혀있고 stream 안 별도.
+message AiStreamRequestActionWithToolsRequest {
+  string prompt = 1;
+  ToolDefinitionsPb tools = 2;
+  LlmCallOptsPb opts = 3;
+}
+
 message AiCodeAssistRequest {
   string prompt = 1;
   LlmCallOptsPb opts = 2;
@@ -197,7 +205,7 @@ service AiService {
   rpc Process(AiProcessRequest) returns (AiProcessResponse);
   rpc RequestActionWithTools(AiRequestActionWithToolsRequest) returns (AiRequestActionWithToolsResponse);
   // 진짜 streaming — 매 turn reasoning chunk / 도구 호출 step / 최종 result event 영역 server-stream.
-  rpc StreamRequestActionWithTools(AiRequestActionWithToolsRequest) returns (stream AiStreamEventPb);
+  rpc StreamRequestActionWithTools(AiStreamRequestActionWithToolsRequest) returns (stream AiStreamEventPb);
   rpc CodeAssist(AiCodeAssistRequest) returns (AiCodeAssistResponse);
   rpc RunAgentJob(AiRunAgentJobRequest) returns (AiRunAgentJobResponse);
   rpc ResolveCallTarget(AiResolveCallTargetRequest) returns (AiResolveCallTargetResponse);
