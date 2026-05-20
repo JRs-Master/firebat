@@ -235,20 +235,9 @@ impl SqliteMemoryAdapter {
 
         // 마이그레이션 — 옛 (Phase B-12) DB 는 embedding 컬럼 미저장. ALTER TABLE 으로 추가.
         // SQLite 는 ADD COLUMN IF NOT EXISTS 미지원 — try/catch 로 이미 존재하면 무시 (옛 TS 동등 패턴).
-        for stmt in [
-            "ALTER TABLE entities ADD COLUMN embedding BLOB",
-            "ALTER TABLE entity_facts ADD COLUMN embedding BLOB",
-            "ALTER TABLE events ADD COLUMN embedding BLOB",
-            // Hub Phase 1 휴지통 분리 (2026-05-19) — 옛 schema 호환.
-            "ALTER TABLE hub_conversations ADD COLUMN deleted_at INTEGER",
-            // Hub Phase 1 메모리 격리 (2026-05-20) — 옛 schema 호환. UNIQUE(name, type) 제약은
-            // 옛 schema 그대로 (옛 데이터 admin 그대로 유지). 새 데이터부터 owner 매핑.
-            "ALTER TABLE entities ADD COLUMN owner TEXT NOT NULL DEFAULT 'admin'",
-            "ALTER TABLE entity_facts ADD COLUMN owner TEXT NOT NULL DEFAULT 'admin'",
-            "ALTER TABLE events ADD COLUMN owner TEXT NOT NULL DEFAULT 'admin'",
-        ] {
-            let _ = conn.execute(stmt, []);
-        }
+        // 옛 schema → 새 schema 마이그 영역 폐기 (2026-05-20). 사용자 본인 운영 영역 = data/memory.db
+        // 삭제 후 재기동 → 새 schema 자동 생성. 옛 자료 호환 부담 0 정공.
+        // (옛 embedding ALTER 영역 / deleted_at / owner 영역 모두 새 CREATE TABLE 안 박혀있음.)
         Ok(())
     }
 }
