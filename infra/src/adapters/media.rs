@@ -149,6 +149,8 @@ impl LocalMediaAdapter {
     }
 
     /// hub-aware find — hub_owner 있으면 그 hub dir 만 검색, 없으면 admin (user + system).
+    /// 추후 hub-scoped read endpoint 박는 시점에 사용 (현재 dead code 영역 보존).
+    #[allow(dead_code)]
     async fn find_record_hub(&self, slug: &str, hub_owner: Option<&str>) -> Option<(MediaScope, MediaFileRecord)> {
         if let Some(id) = hub_owner.filter(|id| !id.is_empty() && Self::is_safe_hub_id(id)) {
             let path = self.effective_dir(MediaScope::User, Some(id)).join(format!("{slug}.meta.json"));

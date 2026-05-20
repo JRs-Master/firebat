@@ -33,6 +33,7 @@ async fn save_then_search_via_grpc() {
             source_conv_id: None,
             ttl_days: None,
             dedup_threshold: None,
+            owner: None,
         }))
         .await
         .unwrap();

@@ -1559,6 +1559,7 @@ mod tests {
                 aliases: vec!["005930".to_string(), "Samsung".to_string()],
                 metadata: Some(serde_json::json!({"sector": "tech"})),
                 source_conv_id: Some("c1".to_string()),
+                owner: None,
             })
             .await
             .unwrap();

@@ -55,13 +55,14 @@ async fn service_save_list_get_delete_roundtrip() {
         .save(Request::new(TemplateSaveRequest {
             slug: "weekly".to_string(),
             config_json: serde_json::to_string(&cfg).unwrap(),
+            owner: String::new(),
         }))
         .await
         .unwrap();
 
     // List
     let resp = service
-        .list(Request::new(TemplateListRequest {}))
+        .list(Request::new(TemplateListRequest { owner: String::new() }))
         .await
         .unwrap();
     let raw = resp.into_inner().raw_json;
@@ -73,6 +74,7 @@ async fn service_save_list_get_delete_roundtrip() {
     let resp = service
         .get(Request::new(TemplateGetRequest {
             slug: "weekly".to_string(),
+            owner: String::new(),
         }))
         .await
         .unwrap();
@@ -84,13 +86,14 @@ async fn service_save_list_get_delete_roundtrip() {
     service
         .delete(Request::new(TemplateDeleteRequest {
             slug: "weekly".to_string(),
+            owner: String::new(),
         }))
         .await
         .unwrap();
 
     // Verify deleted
     let resp = service
-        .list(Request::new(TemplateListRequest {}))
+        .list(Request::new(TemplateListRequest { owner: String::new() }))
         .await
         .unwrap();
     let entries: Vec<serde_json::Value> =
@@ -110,6 +113,7 @@ async fn service_save_invalid_args_returns_error_status() {
         .save(Request::new(TemplateSaveRequest {
             slug: "broken".to_string(),
             config_json: "{ not valid json".to_string(),
+            owner: String::new(),
         }))
         .await
         .err()

@@ -28,6 +28,7 @@ async fn save_then_search_via_grpc() {
             aliases: vec!["t".to_string()],
             metadata_json: None,
             source_conv_id: None,
+            owner: None,
         }))
         .await
         .unwrap();
