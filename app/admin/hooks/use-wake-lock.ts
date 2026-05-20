@@ -39,8 +39,13 @@ export function useWakeLock(active: boolean): void {
 
     let sentinel: WakeLockSentinel | null = null;
     let disposed = false;
+    let onRelease: (() => void) | null = null;
 
     const acquire = async () => {
+      // 옛 sentinel 영역 cleanup — 자동 release 박힌 sentinel 영역 listener 영역 제거.
+      if (sentinel && onRelease) {
+        try { sentinel.removeEventListener('release', onRelease); } catch { /* ignore */ }
+      }
       try {
         const got = await wakeLockApi.request('screen');
         if (disposed) {
@@ -48,12 +53,25 @@ export function useWakeLock(active: boolean): void {
           return;
         }
         sentinel = got;
+        // release event listener — 모바일 안 visibility hidden / 사용자 활동 0 영역 등 시점에
+        // 브라우저가 자동 release. sentinel 영역 nullify 박혀야 visibilitychange 안 재acquire 박힘.
+        onRelease = () => {
+          sentinel = null;
+          // 활성 상태인데 visible 면 즉시 재시도 (브라우저가 일관 reject 박으면 무한 retry 0 —
+          // request() reject 시점에 sentinel 영역 그대로 null 박혀 catch 안 silent).
+          if (!disposed && document.visibilityState === 'visible') {
+            void acquire();
+          }
+        };
+        got.addEventListener('release', onRelease);
       } catch { /* 권한 거부·secure context 미충족 등 — 조용히 skip */ }
     };
 
     const onVisibility = () => {
-      if (document.visibilityState === 'visible' && !sentinel && !disposed) {
-        // 탭 복귀 시 재획득 — 숨김 상태에서 브라우저가 자동 해제하기 때문
+      // 옛 hook 안 `!sentinel` 영역 박혀있었는데 — 자동 release 박힌 sentinel 영역 nullify 안 박혀
+      // 영구 skip 박은 영역 = root cause. 새 = release listener 가 nullify 박음 + 본 영역 = sentinel
+      // 영역 null 또는 released 박힌 영역 재acquire.
+      if (document.visibilityState === 'visible' && !disposed && (!sentinel || sentinel.released)) {
         void acquire();
       }
     };
@@ -64,10 +82,16 @@ export function useWakeLock(active: boolean): void {
     return () => {
       disposed = true;
       document.removeEventListener('visibilitychange', onVisibility);
-      if (sentinel && !sentinel.released) {
-        void sentinel.release().catch(() => {});
+      if (sentinel) {
+        if (onRelease) {
+          try { sentinel.removeEventListener('release', onRelease); } catch { /* ignore */ }
+        }
+        if (!sentinel.released) {
+          void sentinel.release().catch(() => {});
+        }
       }
       sentinel = null;
+      onRelease = null;
     };
   }, [active]);
 }
