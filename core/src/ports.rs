@@ -1860,6 +1860,11 @@ pub struct CronScheduleOptions {
     pub execution_mode: Option<String>,
     #[serde(rename = "agentPrompt", default, skip_serializing_if = "Option::is_none")]
     pub agent_prompt: Option<String>,
+    /// 데이터 격리 — None = admin (default), Some("hub:<id>") = 해당 hub visitor 소유.
+    /// visitor 가 chat 안 자기 cron 박을 때 AI 가 자동 주입. admin endpoint 는 owner=None,
+    /// 익명 hub endpoint 는 owner='hub:<instance.id>' 강제.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

@@ -89,6 +89,17 @@ impl ScheduleManager {
         self.cron.cancel(job_id).await
     }
 
+    /// owner-aware cancel — owner 가 일치하는 job 만 cancel. visitor 가 다른 hub / admin 자료 못 박음.
+    pub async fn cancel_owned(&self, job_id: &str, owner: Option<&str>) -> InfraResult<bool> {
+        let owned = self.cron.list().into_iter().any(|j| {
+            j.job_id == job_id && j.options.owner.as_deref() == owner
+        });
+        if !owned {
+            return Err("이 cron 작업에 접근할 권한이 없습니다.".to_string());
+        }
+        self.cron.cancel(job_id).await
+    }
+
     pub async fn update(
         &self,
         job_id: &str,
@@ -105,6 +116,14 @@ impl ScheduleManager {
 
     pub fn list(&self) -> Vec<CronJobInfo> {
         self.cron.list()
+    }
+
+    /// owner-filter list — None = admin scope only, Some("hub:<id>") = 해당 hub 자료.
+    pub fn list_by_owner(&self, owner: Option<&str>) -> Vec<CronJobInfo> {
+        self.cron.list()
+            .into_iter()
+            .filter(|j| j.options.owner.as_deref() == owner)
+            .collect()
     }
 
     pub fn get_logs(&self, limit: Option<usize>) -> Vec<CronLogEntry> {

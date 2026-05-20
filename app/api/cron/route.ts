@@ -21,7 +21,8 @@ export const POST = withAuth(async (req: NextRequest) => {
   return NextResponse.json({ success: true, message: '잡 트리거됨. cron-logs 에서 결과 확인.' });
 });
 
-/** GET /api/cron — 크론 잡 목록 + 실행 로그 + 페이지 열기 알림 */
+/** GET /api/cron — 크론 잡 목록 + 실행 로그 + 페이지 열기 알림.
+ *  admin scope only — hub-scoped 자료 (owner='hub:<id>') 필터로 제외 (visitor 의 사적 cron 노출 차단). */
 export const GET = withAuth(async (req: NextRequest) => {
   const jobsRes = await listCron();
   if (!jobsRes.ok) {
@@ -42,8 +43,11 @@ export const GET = withAuth(async (req: NextRequest) => {
     notifications = notifRes.data ?? [];
   }
 
+  // hub-scoped 자료 필터 — owner 시작 'hub:' 모두 제외 (admin 자료만 표시).
+  const adminJobs = (jobsRes.data ?? []).filter((j: any) => !j.owner || !j.owner.startsWith('hub:'));
+
   return NextResponse.json({
-    jobs: jobsRes.data ?? [],
+    jobs: adminJobs,
     logs: logsRes.data ?? [],
     notifications,
   });

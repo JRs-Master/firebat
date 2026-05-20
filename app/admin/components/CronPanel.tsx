@@ -52,7 +52,15 @@ interface CronLog {
   stepsTotal?: number;
 }
 
-export function CronPanel({ hubMode }: { hubMode?: boolean } = {}) {
+export type CronHubContext = { slug: string; apiToken: string; sessionId: string };
+
+export function CronPanel({
+  hubMode,
+  hubContext,
+}: {
+  hubMode?: boolean;
+  hubContext?: CronHubContext;
+} = {}) {
   const queryClient = useQueryClient();
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [running, setRunning] = useState<string | null>(null);
@@ -62,10 +70,25 @@ export function CronPanel({ hubMode }: { hubMode?: boolean } = {}) {
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
   const { data: cronData } = useQuery({
-    queryKey: ['cron', hubMode ? 'hub' : 'admin'],
-    queryFn: () => {
-      // hub mode = admin cron 호출 차단 (admin 스케줄 노출 금지). 빈 목록.
-      if (hubMode) return Promise.resolve({ jobs: [] as CronJob[], logs: [] as CronLog[] });
+    queryKey: ['cron', hubMode && hubContext ? `hub-${hubContext.slug}` : 'admin'],
+    queryFn: async () => {
+      if (hubMode) {
+        // 익명 hub endpoint — owner='hub:<id>' 인 작업만 노출.
+        if (!hubContext) return { jobs: [] as CronJob[], logs: [] as CronLog[] };
+        try {
+          const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/cron`, {
+            headers: {
+              'X-Api-Token': hubContext.apiToken,
+              'X-Session-Id': hubContext.sessionId,
+            },
+          });
+          const data = await res.json().catch(() => null);
+          if (data?.success) return { jobs: data.jobs ?? [], logs: data.logs ?? [] };
+        } catch (e) {
+          logger.debug('cron', 'hub fetch 실패', { error: e });
+        }
+        return { jobs: [], logs: [] };
+      }
       return apiGet<{ jobs?: CronJob[]; logs?: CronLog[] }>('/api/cron', { category: 'cron' }).catch((e) => {
         logger.debug('cron', 'fetch 실패', { error: e });
         return { jobs: [], logs: [] };
@@ -80,7 +103,7 @@ export function CronPanel({ hubMode }: { hubMode?: boolean } = {}) {
   );
 
   // SSE (cron:complete / sidebar:refresh) + window 'firebat-refresh' 통합 수신
-  // EventsManager 싱글톤이 EventSource 1개만 유지 — Sidebar 와 공유. hub mode 면 no-op.
+  // EventsManager 싱글톤이 EventSource 1개만 유지 — Sidebar 와 공유. hub mode 면 no-op (admin SSE 수신 X).
   useSidebarRefresh(hubMode ? () => {} : invalidateCron);
 
   // 알림 폴링 (페이지 열기용, 30초 간격). 탭 백그라운드 시 자동 일시정지. hub mode 면 skip.
@@ -99,7 +122,17 @@ export function CronPanel({ hubMode }: { hubMode?: boolean } = {}) {
     if (!await confirmDialog({ title: '잡 해제', message: `잡 "${jobId}"을(를) 해제하시겠습니까?`, danger: true, okLabel: '해제' })) return;
     setCancelling(jobId);
     try {
-      await apiDelete(`/api/cron?jobId=${encodeURIComponent(jobId)}`, { category: 'cron' });
+      if (hubMode && hubContext) {
+        await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/cron?jobId=${encodeURIComponent(jobId)}`, {
+          method: 'DELETE',
+          headers: {
+            'X-Api-Token': hubContext.apiToken,
+            'X-Session-Id': hubContext.sessionId,
+          },
+        });
+      } else {
+        await apiDelete(`/api/cron?jobId=${encodeURIComponent(jobId)}`, { category: 'cron' });
+      }
       invalidateCron();
     } finally {
       setCancelling(null);

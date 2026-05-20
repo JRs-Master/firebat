@@ -631,7 +631,7 @@ export function Sidebar({
         <div className="flex flex-col h-full overflow-y-auto overscroll-contain">
 
           {/* ── CRON JOBS 섹션 ── */}
-          <CronPanel hubMode={hubMode} />
+          <CronPanel hubMode={hubMode} hubContext={hubShareContext} />
 
           {/* ── PROJECTS 섹션 ── */}
           <div className="flex-shrink-0">

@@ -696,6 +696,8 @@ message CronJobPb {
   optional string notify_json = 17;
   optional string execution_mode = 18;
   optional string agent_prompt = 19;
+  // 빈 string = admin (default), "hub:<id>" = hub visitor 소유.
+  optional string owner = 20;
 }
 
 message CronJobListPb {
