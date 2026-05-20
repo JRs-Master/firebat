@@ -387,16 +387,27 @@ function AutoResizeIframe({ src, initialHeight, dependencies }: { src: string; i
 }
 
 // ─── Thinking 블록 — spinner + "생각중" 라벨 + thinkingText 같은 줄 inline 박힘.
-function ThinkingBlock({ statusText, thinkingText, isActive }: { statusText?: string; thinkingText?: string; isActive?: boolean }) {
-  if (!isActive && !thinkingText) return null;
-  if (thinkingText === THINKING_STATUS.DONE && !isActive) return null;
+// 완료 후엔 spinner 끄고 "답변완료" 라벨 유지 (옛 동작 — 응답 끝났는지 사용자가 즉시 인지).
+function ThinkingBlock({
+  statusText,
+  thinkingText,
+  isActive,
+  isComplete,
+}: {
+  statusText?: string;
+  thinkingText?: string;
+  isActive?: boolean;
+  isComplete?: boolean;
+}) {
+  if (!isActive && !isComplete && !thinkingText) return null;
   const sentinelValues = Object.values(THINKING_STATUS);
   const isSentinel = thinkingText ? sentinelValues.includes(thinkingText as (typeof sentinelValues)[number]) : true;
-  const label = statusText || (isActive ? '생각중' : '');
+  const label = statusText || (isActive ? '생각중' : (isComplete ? '답변완료' : ''));
   const bodyText = (!isSentinel && thinkingText) ? thinkingText : '';
   return (
     <div className="flex items-start gap-2 text-slate-400 flex-wrap">
       {isActive && <div className="animate-spin shrink-0 mt-0.5"><Cpu size={13} /></div>}
+      {!isActive && isComplete && <div className="shrink-0 mt-0.5 text-emerald-500"><Cpu size={13} /></div>}
       {label && <span className="text-[12px] text-slate-500 shrink-0">{label}</span>}
       {bodyText && (
         <span className="text-[12px] text-slate-400 leading-relaxed break-words whitespace-pre-wrap">
@@ -728,10 +739,21 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
       {/* 첫 줄이 유령 아이콘 중앙(높이 44px의 ~50%)에 맞도록 pt-3 */}
       <div className="flex flex-col gap-1 flex-1 min-w-0 sm:pt-3">
         <div className="flex flex-col gap-3 w-full">
-          {/* thinking — 버블 상단에 항상 표시 */}
-          {(msg.isThinking || msg.thinkingText) && (
-            <ThinkingBlock statusText={msg.statusText} thinkingText={msg.thinkingText} isActive={msg.isThinking && !msg.streaming} />
-          )}
+          {/* thinking — 버블 상단에 항상 표시. spinner = thinking 또는 streaming 또는 executing 중.
+              완료 후엔 spinner 꺼지고 "답변완료" 라벨 유지 (옛 sentinel DONE 시점). */}
+          {(() => {
+            const active = !!(msg.isThinking || msg.streaming || msg.executing);
+            const complete = !active && msg.thinkingText === THINKING_STATUS.DONE;
+            if (!active && !complete && !msg.thinkingText) return null;
+            return (
+              <ThinkingBlock
+                statusText={msg.statusText}
+                thinkingText={msg.thinkingText}
+                isActive={active}
+                isComplete={complete}
+              />
+            );
+          })()}
           {(!msg.isThinking || msg.streaming || msg.content) && (
             <div className="flex flex-col gap-5">
               {/* 인라인 블록 렌더링 — text/html 순서 보존 (Claude 스타일) */}

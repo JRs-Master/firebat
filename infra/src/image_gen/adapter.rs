@@ -65,10 +65,14 @@ impl ConfigDrivenImageGenAdapter {
     }
 
     /// 모델 ID 해석 — 옛 TS `resolveConfig` 1:1 (직접 매칭 → prefix 매칭 → default).
+    ///
+    /// 사용자가 명시 모델 선택 0 + FIREBAT_DEFAULT_IMAGE_MODEL env 미설정 시점 `None` 반환.
+    /// 옛 동작 = registry HashMap 의 임의 첫 값 (iteration order 비결정) → CLI 모델 무작위 선택 →
+    /// codex binary 미설치 환경에서 spawn 실패. 명시 선택 0 시 어댑터가 명확 에러 emit 정공.
     fn resolve_config(&self, model_id: Option<&str>) -> Option<&ImageGenModelConfig> {
         let id = model_id.unwrap_or(&self.default_model_id);
         if id.is_empty() {
-            return self.registry.values().next();
+            return None;
         }
         if let Some(direct) = self.registry.get(id) {
             return Some(direct);
@@ -79,10 +83,12 @@ impl ConfigDrivenImageGenAdapter {
                 return Some(cfg);
             }
         }
-        // fallback — default model 또는 첫 번째
-        self.registry
-            .get(&self.default_model_id)
-            .or_else(|| self.registry.values().next())
+        // fallback — default model (registry 안 명시 박힐 때만). 임의 첫 값 fallback 폐기.
+        if !self.default_model_id.is_empty() {
+            self.registry.get(&self.default_model_id)
+        } else {
+            None
+        }
     }
 }
 

@@ -657,11 +657,22 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     let imageData: string | null = attachedImage;
     if (imageData && imageData.startsWith('data:') && inputMode !== 'image') {
       try {
-        const upJson = await apiPost<{ success?: boolean; data?: { url?: string }; error?: string }>(
-          '/api/media/attach-temp',
-          { dataUrl: imageData },
-          { category: 'useChat' },
-        );
+        // hub mode: 익명 visitor 가 호출 가능한 hub-scoped endpoint 사용. admin endpoint
+        // (`/api/media/attach-temp`) 는 withAuth 강제라 401 → 첨부 silent fail root cause.
+        const upUrl = hubContext
+          ? `/api/hub/${encodeURIComponent(hubContext.slug)}/media/attach-temp`
+          : '/api/media/attach-temp';
+        const upHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (hubContext) {
+          upHeaders['X-Api-Token'] = hubContext.apiToken;
+          upHeaders['X-Session-Id'] = hubContext.sessionId;
+        }
+        const upRes = await fetch(upUrl, {
+          method: 'POST',
+          headers: upHeaders,
+          body: JSON.stringify({ dataUrl: imageData }),
+        });
+        const upJson = await upRes.json() as { success?: boolean; data?: { url?: string }; error?: string };
         if (upJson?.success && upJson?.data?.url) {
           imageData = upJson.data.url;
         } else {
@@ -688,6 +699,12 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       setActiveConvId(newConv.id);
     }
 
+    // 사용자가 submit 박은 시점 = 항상 하단 강제. 옛 동작 = dispatch 후 setRef → useEffect
+    // race 로 자동 스크롤 effect 가 옛 false ref 값 보고 skip 박던 영역. dispatch 보다 먼저 ref
+    // 박아 effect 가 새 length 변화 영역 안 ref=true 그대로 read.
+    // AI 답변 stream 중에는 chunk 가 messages length 변화 없어 자동 scroll 발화 0 → 사용자
+    // 가 직접 내리며 보게 (옛 직접 박지 X).
+    isNearBottomRef.current = true;
     if (isSuggestion) {
       dispatch({ type: 'SEND_SUGGESTION', systemId });
     } else {
@@ -700,7 +717,6 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     // StatusManager job 은 server 가 발행 → ActiveJobsIndicator 자동 표시.
     if (inputMode === 'image' && !isSuggestion && !meta?.planExecuteId && !meta?.planReviseId) {
       setLoading(true);
-      isNearBottomRef.current = true;
       requestAnimationFrame(() => requestAnimationFrame(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
       }));
@@ -749,8 +765,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       return;
     }
 
-    // 명령 전송 직후엔 무조건 하단으로
-    isNearBottomRef.current = true;
+    // 명령 전송 직후엔 무조건 하단으로 — isNearBottomRef 는 dispatch 박기 전 박혀있어
+    // useEffect 자동 scroll 가 발화 박힘. 추가 명시 scrollIntoView — smooth animation 영역
+    // 마지막 chatEnd 위치 보장 (DOM update 후 두 rAF 영역).
     requestAnimationFrame(() => requestAnimationFrame(() => {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }));
