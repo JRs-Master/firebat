@@ -25,7 +25,27 @@ interface Note {
   updatedAt?: string;
 }
 
-async function callNotes(action: string, data: Record<string, unknown>): Promise<any> {
+export type NotesHubContext = { slug: string; apiToken: string; sessionId: string };
+
+async function callNotes(
+  action: string,
+  data: Record<string, unknown>,
+  hubContext?: NotesHubContext,
+): Promise<any> {
+  if (hubContext) {
+    const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sysmod`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Token': hubContext.apiToken,
+        'X-Session-Id': hubContext.sessionId,
+      },
+      body: JSON.stringify({ module: 'notes', action, data }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!json?.success) throw new Error(json?.error || 'sysmod_notes 실패');
+    return json.data;
+  }
   const json = await apiPost<{ success: boolean; data?: unknown; error?: string }>(
     '/api/module/run',
     { module: 'notes', data: { action, ...data } },
@@ -41,7 +61,13 @@ function formatDate(iso?: string): string {
   return isNaN(d.getTime()) ? iso : d.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-export function NotesPanel({ hubMode }: { hubMode?: boolean } = {}) {
+export function NotesPanel({
+  hubMode,
+  hubContext,
+}: {
+  hubMode?: boolean;
+  hubContext?: NotesHubContext;
+} = {}) {
   const queryId = useId();
   const [notes, setNotes] = useState<Note[]>([]);
   const [query, setQuery] = useState('');
@@ -52,24 +78,20 @@ export function NotesPanel({ hubMode }: { hubMode?: boolean } = {}) {
   const [editing, setEditing] = useState<Note | null>(null);
 
   const fetchNotes = useCallback(async (q: string) => {
-    // hub mode = admin notes sysmod 호출 차단. 빈 목록 (sysmod 자체 hub-aware 분리 추후 작업).
-    if (hubMode) {
-      setNotes([]);
-      setLoading(false);
-      return;
-    }
+    // hub mode 면 익명 hub sysmod endpoint 통해 호출 — sysmod 가 _hubScope 받아 자기 데이터 디렉토리 사용.
+    if (hubMode && !hubContext) { setNotes([]); setLoading(false); return; }
     setLoading(true);
     try {
       const result = q.trim()
-        ? await callNotes('search', { query: q.trim(), limit: 100 })
-        : await callNotes('list', { limit: 100 });
+        ? await callNotes('search', { query: q.trim(), limit: 100 }, hubContext)
+        : await callNotes('list', { limit: 100 }, hubContext);
       setNotes((result?.items ?? []) as Note[]);
     } catch (err) {
       logger.error('notes', 'fetch 실패', err);
     } finally {
       setLoading(false);
     }
-  }, [hubMode]);
+  }, [hubMode, hubContext]);
 
   useEffect(() => {
     fetchNotes('');
@@ -88,7 +110,7 @@ export function NotesPanel({ hubMode }: { hubMode?: boolean } = {}) {
     setExpandedSlug(slug);
     if (!details[slug]) {
       try {
-        const result = await callNotes('read', { slug });
+        const result = await callNotes('read', { slug }, hubContext);
         if (result?.note) setDetails(prev => ({ ...prev, [slug]: result.note }));
       } catch { /* ignore */ }
     }
@@ -104,7 +126,7 @@ export function NotesPanel({ hubMode }: { hubMode?: boolean } = {}) {
     });
     if (!ok) return;
     try {
-      await callNotes('delete', { slug: note.slug });
+      await callNotes('delete', { slug: note.slug }, hubContext);
       setNotes(prev => prev.filter(n => n.slug !== note.slug));
       setDetails(prev => {
         const next = { ...prev };
@@ -218,6 +240,7 @@ export function NotesPanel({ hubMode }: { hubMode?: boolean } = {}) {
       {showCreate && (
         <NoteModal
           existing={editing}
+          hubContext={hubContext}
           onClose={() => { setShowCreate(false); setEditing(null); }}
           onSaved={() => {
             setShowCreate(false);
@@ -232,7 +255,7 @@ export function NotesPanel({ hubMode }: { hubMode?: boolean } = {}) {
   );
 }
 
-function NoteModal({ existing, onClose, onSaved }: { existing: Note | null; onClose: () => void; onSaved: () => void }) {
+function NoteModal({ existing, hubContext, onClose, onSaved }: { existing: Note | null; hubContext?: NotesHubContext; onClose: () => void; onSaved: () => void }) {
   const titleId = useId();
   const contentId = useId();
   const tagsRawId = useId();
@@ -265,7 +288,7 @@ function NoteModal({ existing, onClose, onSaved }: { existing: Note | null; onCl
         title: parsed.data.title.trim(),
         content: parsed.data.content,
         tags: tags.length > 0 ? tags : undefined,
-      });
+      }, hubContext);
       onSaved();
     } catch (err: any) {
       setError(err.message || '저장 실패');

@@ -28,7 +28,27 @@ interface CalEvent {
   linkedJobId?: string;
 }
 
-async function callCalendar(action: string, data: Record<string, unknown>): Promise<any> {
+export type CalendarHubContext = { slug: string; apiToken: string; sessionId: string };
+
+async function callCalendar(
+  action: string,
+  data: Record<string, unknown>,
+  hubContext?: CalendarHubContext,
+): Promise<any> {
+  if (hubContext) {
+    const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sysmod`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Token': hubContext.apiToken,
+        'X-Session-Id': hubContext.sessionId,
+      },
+      body: JSON.stringify({ module: 'calendar', action, data }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!json?.success) throw new Error(json?.error || 'sysmod_calendar 실패');
+    return json.data;
+  }
   const json = await apiPost<{ success: boolean; data?: unknown; error?: string }>(
     '/api/module/run',
     { module: 'calendar', data: { action, ...data } },
@@ -59,7 +79,13 @@ function formatDateTime(iso: string): string {
   return d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-export function CalendarPanel({ hubMode }: { hubMode?: boolean } = {}) {
+export function CalendarPanel({
+  hubMode,
+  hubContext,
+}: {
+  hubMode?: boolean;
+  hubContext?: CalendarHubContext;
+} = {}) {
   const today = useMemo(() => new Date(), []);
   const [cursorYear, setCursorYear] = useState(today.getFullYear());
   const [cursorMonth, setCursorMonth] = useState(today.getMonth()); // 0-indexed
@@ -76,12 +102,8 @@ export function CalendarPanel({ hubMode }: { hubMode?: boolean } = {}) {
   // sysmod_calendar.list-range 는 fromTm / toTm 임의 범위 지원 (list-upcoming 의 미래
   // 전용 limitation 우회). 실 조회량 적어 한 번에 fetch 부담 없음.
   const fetchEvents = useCallback(async () => {
-    // hub mode = admin calendar sysmod 호출 차단. 빈 목록 (sysmod 자체 hub-aware 분리 추후 작업).
-    if (hubMode) {
-      setEvents([]);
-      setLoading(false);
-      return;
-    }
+    // hub mode 면 익명 hub sysmod endpoint 통해 호출 — sysmod 가 _hubScope 받아 자기 데이터 디렉토리 사용.
+    if (hubMode && !hubContext) { setEvents([]); setLoading(false); return; }
     setLoading(true);
     try {
       const now = new Date();
@@ -91,14 +113,14 @@ export function CalendarPanel({ hubMode }: { hubMode?: boolean } = {}) {
         fromTm: ymd(from),
         toTm: ymd(to),
         limit: 1000,
-      });
+      }, hubContext);
       setEvents((result?.items ?? []) as CalEvent[]);
     } catch (err) {
       logger.error('calendar', 'fetch 실패', err);
     } finally {
       setLoading(false);
     }
-  }, [hubMode]);
+  }, [hubMode, hubContext]);
 
   useEffect(() => {
     fetchEvents();
@@ -183,7 +205,7 @@ export function CalendarPanel({ hubMode }: { hubMode?: boolean } = {}) {
     });
     if (!ok) return;
     try {
-      await callCalendar('delete', { id: e.id });
+      await callCalendar('delete', { id: e.id }, hubContext);
       setEvents(prev => prev.filter(x => x.id !== e.id));
     } catch (err: any) {
       await alertDialog({ title: '삭제 실패', message: err?.message ?? String(err), danger: true });
@@ -401,6 +423,7 @@ export function CalendarPanel({ hubMode }: { hubMode?: boolean } = {}) {
         <CalendarModal
           existing={editing}
           defaultDate={selectedDate}
+          hubContext={hubContext}
           onClose={() => { setShowCreate(false); setEditing(null); }}
           onSaved={() => {
             setShowCreate(false);
@@ -433,7 +456,7 @@ function defaultStartAt(dateKey: string): string {
   return `${dateKey}T09:00`;
 }
 
-function CalendarModal({ existing, defaultDate, onClose, onSaved }: { existing: CalEvent | null; defaultDate?: string; onClose: () => void; onSaved: () => void }) {
+function CalendarModal({ existing, defaultDate, hubContext, onClose, onSaved }: { existing: CalEvent | null; defaultDate?: string; hubContext?: CalendarHubContext; onClose: () => void; onSaved: () => void }) {
   const titleId = useId();
   const startAtId = useId();
   const endAtId = useId();
@@ -470,7 +493,7 @@ function CalendarModal({ existing, defaultDate, onClose, onSaved }: { existing: 
         ...(tags.length > 0 ? { tags } : {}),
       };
       if (existing) data.id = existing.id;
-      await callCalendar(action, data);
+      await callCalendar(action, data, hubContext);
       onSaved();
     } catch (err: any) {
       setError(err.message || '저장 실패');

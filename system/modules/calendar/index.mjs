@@ -19,8 +19,16 @@
 import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-const CAL_DIR = 'data/calendar';
-const EVENTS_FILE = join(CAL_DIR, 'events.jsonl');
+/** calendar 데이터 디렉토리 — input._hubScope 박혀있으면 hub-scoped path 분기.
+ *  admin: `data/calendar/`, hub visitor: `data/hub/<instance_id>/calendar/`. */
+function resolveCalDir(hubScope) {
+  if (!hubScope || typeof hubScope !== 'string') return 'data/calendar';
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(hubScope)) return 'data/calendar';
+  return `data/hub/${hubScope}/calendar`;
+}
+
+let CAL_DIR = 'data/calendar';
+let EVENTS_FILE = join(CAL_DIR, 'events.jsonl');
 
 function readStdin() {
   return new Promise((resolve, reject) => {
@@ -94,6 +102,9 @@ async function main() {
   const data = input.data ?? {};
   const { action } = data;
   const includeDeleted = data.includeDeleted === true;
+  // hub 모드 — input.data._hubScope 박혀있으면 데이터 디렉토리 분기.
+  CAL_DIR = resolveCalDir(data._hubScope);
+  EVENTS_FILE = join(CAL_DIR, 'events.jsonl');
 
   try {
     if (action === 'add') {

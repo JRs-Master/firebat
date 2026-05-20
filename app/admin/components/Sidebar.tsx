@@ -669,9 +669,9 @@ export function Sidebar({
       ) : tab === 'entities' ? (
         <EntitiesPanel hubMode={hubMode} hubContext={hubShareContext} />
       ) : tab === 'notes' ? (
-        <NotesPanel hubMode={hubMode} />
+        <NotesPanel hubMode={hubMode} hubContext={hubShareContext} />
       ) : tab === 'calendar' ? (
-        <CalendarPanel hubMode={hubMode} />
+        <CalendarPanel hubMode={hubMode} hubContext={hubShareContext} />
       ) : tab === 'workspace' ? (
         <div className="flex flex-col h-full overflow-y-auto overscroll-contain">
 

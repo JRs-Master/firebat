@@ -18,7 +18,17 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
 
-const NOTES_DIR = 'data/notes';
+/** notes 데이터 디렉토리 — input._hubScope 받으면 hub-scoped path 박음.
+ *  admin: `data/notes/`, hub visitor: `data/hub/<instance_id>/notes/`.
+ *  매 호출 시점 동적 결정 — input 안 _hubScope field 가 instance.id (영숫자 / 하이픈 / 언더스코어). */
+function resolveNotesDir(hubScope) {
+  if (!hubScope || typeof hubScope !== 'string') return 'data/notes';
+  // path traversal 가드 — 영숫자 / 하이픈 / 언더스코어만 허용.
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(hubScope)) return 'data/notes';
+  return `data/hub/${hubScope}/notes`;
+}
+
+let NOTES_DIR = 'data/notes';
 
 function readStdin() {
   return new Promise((resolve, reject) => {
@@ -88,6 +98,8 @@ async function main() {
 
   const data = input.data ?? {};
   const { action } = data;
+  // hub 모드 — input.data._hubScope 박혀있으면 데이터 디렉토리 분기.
+  NOTES_DIR = resolveNotesDir(data._hubScope);
 
   ensureDir();
 
