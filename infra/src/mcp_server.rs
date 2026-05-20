@@ -1221,7 +1221,9 @@ pub struct ProposePlanHandler;
 #[async_trait::async_trait]
 impl McpToolHandler for ProposePlanHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
-        // propose_plan — plan store 박은 후 planId 반환. 옛 TS lib/plan-store.ts 1:1.
+        // propose_plan — plan store 박은 후 PlanCard component + plan-confirm/revise suggestions 응답.
+        // 옛 TS mcp/internal-server.ts 1:1 — AiManager result_processor 가 component='PlanCard' →
+        // blocks 안 PlanCard 자동 변환 + suggestions 영역 frontend 가 ✓실행 / ⚙수정 버튼 UI.
         let plan_id = format!("plan_{}", uuid::Uuid::new_v4().simple());
         let title = obj_str(&args, "title").unwrap_or_default();
         let steps: Vec<firebat_core::utils::plan_store::PlanStep> = args
@@ -1234,12 +1236,40 @@ impl McpToolHandler for ProposePlanHandler {
             .and_then(|v| serde_json::from_value(v.clone()).ok());
         firebat_core::utils::plan_store::store_plan(firebat_core::utils::plan_store::PlanInsert {
             plan_id: plan_id.clone(),
-            title,
-            steps,
-            estimated_time,
-            risks,
+            title: title.clone(),
+            steps: steps.clone(),
+            estimated_time: estimated_time.clone(),
+            risks: risks.clone(),
         });
-        Ok(serde_json::json!({"success": true, "planId": plan_id}))
+        // steps / risks 영역 serde_json::Value 변환 — frontend 안 그대로 props 사용.
+        let steps_json = serde_json::to_value(&steps).unwrap_or(serde_json::Value::Array(vec![]));
+        let risks_json = risks
+            .as_ref()
+            .map(|r| serde_json::to_value(r).unwrap_or(serde_json::Value::Array(vec![])))
+            .unwrap_or(serde_json::Value::Null);
+        let est_time_json = estimated_time
+            .as_ref()
+            .map(|s| serde_json::Value::String(s.clone()))
+            .unwrap_or(serde_json::Value::Null);
+        Ok(serde_json::json!({
+            "success": true,
+            "planId": plan_id,
+            "component": "PlanCard",
+            "props": {
+                "planId": plan_id,
+                "title": title,
+                "steps": steps_json,
+                "estimatedTime": est_time_json,
+                "risks": risks_json,
+            },
+            // ✓실행 = plan-confirm → AiManager 가 plan_execute_id 받아 다음 turn prompt 안 강제 주입.
+            // ⚙수정 = plan-revise → 사용자 입력 박은 후 AI 가 plan 재작성.
+            "suggestions": [
+                { "type": "plan-confirm", "planId": plan_id, "label": "✓ 실행" },
+                { "type": "plan-revise", "planId": plan_id, "label": "⚙ 수정 제안", "placeholder": "예: 1단계 빼고, 차트도 추가해줘" },
+                "✕ 취소"
+            ]
+        }))
     }
 }
 
