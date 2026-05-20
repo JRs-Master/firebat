@@ -7,7 +7,9 @@ export const GET = withAuth(async () => {
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   }
-  return NextResponse.json({ success: true, pages: res.data });
+  // admin scope only — hub-scoped page (project='hub:<id>') 노출 차단 (visitor privacy 격리).
+  const adminPages = (res.data ?? []).filter((p: any) => !p.project || !p.project.startsWith('hub:'));
+  return NextResponse.json({ success: true, pages: adminPages });
 });
 
 export const POST = withAuth(async (req: NextRequest) => {
