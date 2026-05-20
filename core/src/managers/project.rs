@@ -114,6 +114,59 @@ impl ProjectManager {
         result
     }
 
+    /// hub-scoped 프로젝트 스캔 — `user/hub/<id>/modules/*/config.json` + DB pages 안 project=`hub:<id>` 매칭.
+    /// admin 자료 노출 0 — visitor 자기 hub 영역만.
+    pub async fn scan_for_hub(&self, hub_id: &str) -> Vec<ProjectEntry> {
+        if !is_safe_name(hub_id) {
+            return Vec::new();
+        }
+        let hub_project_key = format!("hub:{}", hub_id);
+        let mut map: HashMap<String, (Vec<String>, Vec<String>)> = HashMap::new();
+
+        // user/hub/<id>/modules/*/config.json
+        let modules_dir = format!("user/hub/{}/modules", hub_id);
+        if let Ok(entries) = self.storage.list_dir(&modules_dir).await {
+            for entry in entries {
+                if !entry.is_directory {
+                    continue;
+                }
+                let path = format!("user/hub/{}/modules/{}/config.json", hub_id, entry.name);
+                let Ok(content) = self.storage.read(&path).await else { continue };
+                let Ok(parsed): Result<serde_json::Value, _> = serde_json::from_str(&content)
+                else { continue };
+                let project_name = parsed
+                    .get("project")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(hub_project_key.as_str())
+                    .to_string();
+                map.entry(project_name)
+                    .or_insert_with(|| (Vec::new(), Vec::new()))
+                    .0
+                    .push(format!("user/hub/{}/modules/{}", hub_id, entry.name));
+            }
+        }
+
+        // DB pages — 본 hub 의 project 매칭만.
+        for page in self.db.list_pages() {
+            if page.project.as_deref() == Some(hub_project_key.as_str()) {
+                map.entry(hub_project_key.clone())
+                    .or_insert_with(|| (Vec::new(), Vec::new()))
+                    .1
+                    .push(page.slug);
+            }
+        }
+
+        let mut result: Vec<ProjectEntry> = map
+            .into_iter()
+            .map(|(name, (paths, page_slugs))| {
+                let visibility = self.get_visibility(&name);
+                ProjectEntry { name, paths, page_slugs, visibility }
+            })
+            .collect();
+        result.sort_by(|a, b| a.name.cmp(&b.name));
+        result
+    }
+
     /// 프로젝트 일괄 삭제 — 모든 path + DB pages.
     pub async fn delete(&self, project: &str) -> InfraResult<ProjectDeleteResult> {
         if !is_safe_name(project) {

@@ -404,7 +404,10 @@ message ProjectConfigPb {
 
 // ─── ProjectService typed Request / Response messages ──────────────────────
 // 2026-05-15 buf STANDARD 정공 — 매 RPC 마다 unique Request / Response message.
-message ProjectScanRequest {}
+message ProjectScanRequest {
+  // 빈 string = admin scope, 값 = hub instance id (`user/hub/<id>/modules/...` + project='hub:<id>' page)
+  optional string hub_id = 1;
+}
 message ProjectSetVisibilityRequest {
   string project = 1;
   string visibility = 2;

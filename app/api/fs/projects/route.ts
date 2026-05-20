@@ -8,7 +8,7 @@ import {
 import { withAuth } from '../../../../lib/with-api-error';
 
 export const GET = withAuth(async () => {
-  const res = await scanProjects();
+  const res = await scanProjects({});
   if (!res.ok) {
     return NextResponse.json({ success: false, error: res.message }, { status: 500 });
   }

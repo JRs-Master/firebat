@@ -10,6 +10,7 @@ import {
   ProjectGetConfigRequestSchema,
   ProjectGetVisibilityRequestSchema,
   ProjectRenameRequestSchema,
+  ProjectScanRequestSchema,
   ProjectService,
   ProjectSetConfigRequestSchema,
   ProjectSetVisibilityRequestSchema,
@@ -23,9 +24,9 @@ import { unBigInt } from './_unbigint';
 
 const projectClient = createClient(ProjectService, transport);
 
-export async function scan(): Promise<RpcResult<ProjectEntryPb[]>> {
+export async function scan(args: MessageInitShape<typeof ProjectScanRequestSchema>): Promise<RpcResult<ProjectEntryPb[]>> {
   try {
-      const response = await projectClient.scan({});
+      const response = await projectClient.scan(args ?? {});
       return { ok: true, data: unBigInt(response.projects) };
   } catch (err) {
     return toRpcError(err);

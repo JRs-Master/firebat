@@ -227,8 +227,53 @@ export function Sidebar({
   const [pwInput, setPwInput] = useState('');
 
   const fetchProjects = useCallback(async () => {
-    // hub mode = admin 프로젝트 호출 차단. workspace 탭 비어보임 (hub 자료는 chat 안 save_page 흐름).
-    if (hubMode) { setProjects([]); setModuleEntries({}); return; }
+    // hub mode = 익명 hub endpoint 호출. owner = `hub:<instance.id>` 인 자료만.
+    if (hubMode) {
+      if (!hubShareContext) { setProjects([]); setModuleEntries({}); return; }
+      try {
+        const res = await fetch(`/api/hub/${encodeURIComponent(hubShareContext.slug)}/fs`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Token': hubShareContext.apiToken,
+            'X-Session-Id': hubShareContext.sessionId,
+          },
+          body: JSON.stringify({ op: 'projects' }),
+        });
+        const data = await res.json().catch(() => null);
+        if (data?.success) {
+          const projectList = (data.projects ?? []) as Project[];
+          setProjects(projectList);
+          const allPaths = projectList.flatMap(p => p.paths);
+          const entries: Record<string, string> = {};
+          await Promise.all(allPaths.map(async (p) => {
+            try {
+              const treeRes = await fetch(`/api/hub/${encodeURIComponent(hubShareContext.slug)}/fs`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Api-Token': hubShareContext.apiToken,
+                  'X-Session-Id': hubShareContext.sessionId,
+                },
+                body: JSON.stringify({ op: 'tree', root: p }),
+              });
+              const tree = await treeRes.json().catch(() => null);
+              const files: string[] = [];
+              if (tree?.success && tree.tree?.[0]?.children) {
+                for (const n of tree.tree[0].children) {
+                  if (!n.isDirectory) files.push(n.name);
+                }
+              }
+              entries[p] = findModuleEntryWithFallback(files);
+            } catch (e) { logger.debug('sidebar', 'hub tree 실패', { error: e }); }
+          }));
+          setModuleEntries(entries);
+        } else {
+          setProjects([]); setModuleEntries({});
+        }
+      } catch (e) { logger.debug('sidebar', 'hub projects 실패', { error: e }); }
+      return;
+    }
     try {
       const data = await apiGet<{ success: boolean; projects?: Project[] }>(
         '/api/fs/projects',
@@ -257,7 +302,7 @@ export function Sidebar({
         setModuleEntries(entries);
       }
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
-  }, [hubMode]);
+  }, [hubMode, hubShareContext]);
 
   const [pages, setPages] = useState<PageInfo[]>([]);
   const [deletingPage, setDeletingPage] = useState<string | null>(null);

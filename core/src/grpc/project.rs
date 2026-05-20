@@ -59,9 +59,14 @@ fn visibility_to_pb(v: ProjectVisibility) -> ProjectVisibilityPb {
 impl ProjectService for ProjectServiceImpl {
     async fn scan(
         &self,
-        _req: Request<ProjectScanRequest>,
+        req: Request<ProjectScanRequest>,
     ) -> Result<Response<ProjectListPb>, TonicStatus> {
-        let projects = self.manager.scan().await.into_iter().map(Into::into).collect();
+        let hub_id = req.into_inner().hub_id.filter(|s| !s.is_empty());
+        let projects = match hub_id {
+            Some(id) => self.manager.scan_for_hub(&id).await,
+            None => self.manager.scan().await,
+        };
+        let projects = projects.into_iter().map(Into::into).collect();
         Ok(Response::new(ProjectListPb { projects }))
     }
 
