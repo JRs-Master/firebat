@@ -355,6 +355,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
 
   // DB 재조회 — 사이드바 펼침·탭 전환·visibility change 등 여러 지점에서 호출
   const refreshConversations = useCallback(async () => {
+    // hub mode 안 admin /api/conversations 호출 차단 — hub 대화 = hub_conversations 별개 테이블,
+    // 초기 mount effect 안 /api/hub/<slug>/sessions 영역만 호출. 본 refresh 영역 호출 0.
+    if (hubContext) return;
     // 스트리밍·도구 실행 중 여부 — 이 경우 로컬 우선이지만, 모바일 백그라운드 throttling 으로
     // SSE 가 조용히 끊어진 경우 DB 쪽이 진짜 응답 보유. 아래 per-message 비교로 판단.
     const hasInflight = messagesRef.current.some(m => m.isThinking || m.executing || m.streaming);
@@ -429,6 +432,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   // visibilitychange=hidden 안전망 / visible 재조회
   useEffect(() => {
     const flush = () => {
+      // hub mode 안 admin /api/conversations sendBeacon 차단 — 옛 누락 영역 fix.
+      // hub 대화 = hub_conversations 별개 테이블 (HubManager.send_message 안 backend 영속화).
+      // 본 flush 안 sendBeacon 박으면 admin conversations 테이블 안 owner='admin' 박혀 저장 →
+      // admin 사이드바 대화 목록 안 hub 대화 노출.
+      if (hubContext) return;
       if (!activeConvId || messagesRef.current.length === 0) return;
       const cleanMsgs = cleanMessages(messagesRef.current);
       if (cleanMsgs.length === 0) return;
