@@ -265,9 +265,23 @@ export function Sidebar({
   const [selectedItem, setSelectedItem] = useState<string | null>(null);
 
   const fetchPages = useCallback(async () => {
-    // hub mode = admin 페이지 호출 차단. hub-scoped (project='hub:<id>') page 도 admin endpoint 가
-    // 거르므로 hub 방문자에게 안 보임 정상.
-    if (hubMode) { setPages([]); return; }
+    // hub mode = 익명 hub endpoint 호출. visitor 가 chat save_page 도구로 만든 hub-scoped page 영역만 노출.
+    // admin endpoint 차단 (admin 자료 노출 금지).
+    if (hubMode) {
+      if (!hubShareContext) { setPages([]); return; }
+      try {
+        const res = await fetch(`/api/hub/${encodeURIComponent(hubShareContext.slug)}/pages`, {
+          headers: {
+            'X-Api-Token': hubShareContext.apiToken,
+            'X-Session-Id': hubShareContext.sessionId,
+          },
+        });
+        const data = await res.json().catch(() => null);
+        if (data?.success) setPages(data.pages ?? []);
+        else setPages([]);
+      } catch (e) { logger.debug('sidebar', 'hub pages 실패', { error: e }); }
+      return;
+    }
     try {
       const data = await apiGet<{ success: boolean; pages?: PageInfo[] }>(
         '/api/pages',
@@ -275,7 +289,7 @@ export function Sidebar({
       );
       if (data.success) setPages(data.pages ?? []);
     } catch (e) { logger.debug('sidebar', 'operation 실패', { error: e }); }
-  }, [hubMode]);
+  }, [hubMode, hubShareContext]);
 
   const refreshAllRef = useRef(() => {});
   const refreshAll = useCallback(() => {
