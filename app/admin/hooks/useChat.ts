@@ -271,7 +271,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       }
     })();
     return () => { cancelled = true; };
-  }, [setActiveConvId]);
+  }, [setActiveConvId, hubContext]);
 
   // ── 대화 저장 — localStorage 는 messages 변경마다, DB 는 확정 시점에만 ──
   useEffect(() => {
@@ -462,7 +462,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       window.removeEventListener('pagehide', flush);
       window.removeEventListener('focus', refreshConversations);
     };
-  }, [activeConvId, conversations, refreshConversations]);
+  }, [activeConvId, conversations, refreshConversations, hubContext]);
 
   // fallback 메시지 (TIMEOUT/INVISIBLE/EMPTY_REPLY/NETWORK) 표시 시 DB 자동 polling.
   // race: SSE 60초 timeout 직후 백엔드 67초에 DB write → visibilitychange 한 번만 발화 시 놓침.
@@ -640,7 +640,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       }
       return updated;
     });
-  }, [activeConvId, setActiveConvId]);
+  }, [activeConvId, setActiveConvId, hubContext]);
 
   // ── 전송 ───────────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(async (overrideText?: string, isSuggestion?: boolean, meta?: { planExecuteId?: string; planReviseId?: string }) => {
@@ -979,7 +979,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         saveToDbRef.current(convIdForSave2, finalizedMsgs);
       }
     }
-  }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage, planMode, inputMode, setActiveConvId]);
+  }, [input, loading, activeConvId, messages, aiModel, onRefresh, attachedImage, planMode, inputMode, setActiveConvId, hubContext]);
 
   // 레거시 JSON 모드의 handleConfirmPlan / handleRejectPlan 은 v0.1, 2026-04-22 제거됨.
   // 현재는 propose_plan 도구 → PlanCard (render_* blocks) → suggestions 의 plan-confirm 버튼으로
