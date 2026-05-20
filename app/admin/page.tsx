@@ -407,7 +407,7 @@ function ThinkingBlock({
   return (
     <div className="flex items-start gap-2 text-slate-400 flex-wrap">
       {isActive && <div className="animate-spin shrink-0 mt-0.5"><Cpu size={13} /></div>}
-      {!isActive && isComplete && <div className="shrink-0 mt-0.5 text-emerald-500"><Cpu size={13} /></div>}
+      {!isActive && isComplete && <div className="shrink-0 mt-0.5"><Cpu size={13} /></div>}
       {label && <span className="text-[12px] text-slate-500 shrink-0">{label}</span>}
       {bodyText && (
         <span className="text-[12px] text-slate-400 leading-relaxed break-words whitespace-pre-wrap">

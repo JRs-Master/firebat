@@ -194,6 +194,18 @@ export function Sidebar({
     }
   }, [collapsed, tab, reloadTrash]);
 
+  // 휴지통 토글 펼침 시 자동 fresh — 옛 = 사이드바 열린 시점 1회만 박혀 삭제 직후 빈 상태.
+  useEffect(() => {
+    if (trashOpen) reloadTrash();
+  }, [trashOpen, reloadTrash]);
+
+  // 외부 trigger — useChat.handleDeleteConv 안 backend delete 완료 후 emit. 휴지통 즉시 fresh.
+  useEffect(() => {
+    const onRefreshTrash = () => { reloadTrash(); };
+    window.addEventListener('firebat-refresh-trash', onRefreshTrash);
+    return () => window.removeEventListener('firebat-refresh-trash', onRefreshTrash);
+  }, [reloadTrash]);
+
   useEffect(() => {
     const checkMobile = () => window.innerWidth < 768;
     // PC/모바일 모두 기본 접힘으로 시작

@@ -598,17 +598,32 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   const handleDeleteConv = useCallback((id: string) => {
     if (hubContext) {
       // hub mode = backend delete-conversation (messages cascade) 호출.
-      fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sessions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Api-Token': hubContext.apiToken,
-          'X-Session-Id': hubContext.sessionId,
-        },
-        body: JSON.stringify({ op: 'delete-conversation', id }),
-      }).catch(() => {});
+      // 모바일 — 사이드바 닫힘 / 페이지 lifecycle 영역 fetch abort 가능. `keepalive: true` 박아
+      // 요청 완료 보장 (휴지통 미진입 race fix).
+      // PC 휴지통 즉시 노출 안 됨 race — backend delete RPC 완료 직후 'firebat-refresh-trash'
+      // 이벤트 emit → Sidebar 가 listen 후 reloadTrash 호출.
+      void (async () => {
+        try {
+          await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sessions`, {
+            method: 'POST',
+            keepalive: true,
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Api-Token': hubContext.apiToken,
+              'X-Session-Id': hubContext.sessionId,
+            },
+            body: JSON.stringify({ op: 'delete-conversation', id }),
+          });
+        } catch { /* silent — 사용자 영역 사이드바 conv 영역 이미 제거 */ }
+        try { window.dispatchEvent(new Event('firebat-refresh-trash')); } catch { /* SSR / 환경 영역 무시 */ }
+      })();
     } else {
-      apiDelete(`/api/conversations?id=${encodeURIComponent(id)}`, { category: 'useChat' }).catch(() => {});
+      void (async () => {
+        try {
+          await apiDelete(`/api/conversations?id=${encodeURIComponent(id)}`, { category: 'useChat' });
+        } catch { /* silent — 옛 동작 유지 */ }
+        try { window.dispatchEvent(new Event('firebat-refresh-trash')); } catch {}
+      })();
     }
     setConversations(prev => {
       const updated = prev.filter(c => c.id !== id);
@@ -634,7 +649,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
 
     // AI 모델 미선택 가드 — 사용자 메시지는 표시하되 system bubble 에 안내 에러 즉시 표시.
     // 채팅창은 활성이라 사용자가 자유롭게 입력 가능, 전송 시점에 안내.
-    if (!aiModel) {
+    // hub mode 는 가드 skip — backend HubService.SendMessage 가 instance.model_id 자동 사용 (visitor 가 모델 설정 영역 0).
+    if (!aiModel && !hubContext) {
       const id = Date.now().toString();
       const systemId = `s-${id}`;
       // hook 안 — useTranslations 호출 X (호출은 React Component 안만). localStorage 직접 분기.
@@ -847,6 +863,21 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         signal: ctrl.signal,
         body: JSON.stringify(body),
       });
+
+      // SSE 아닌 일반 JSON 응답 (401 / 403 / 500 / CORS 등) — content-type 으로 판별 후
+      // 즉시 ERROR dispatch. 옛 = 일반 JSON body 를 SSE parser 가 읽어서 events=0 → done →
+      // invariant INVISIBLE fallback. 모바일 (삼성 인터넷 등) 안 header 누락 시 401 → invariant
+      // "응답이 비어있습니다 (SSE 연결 누락 가능성)" 표시되어 root cause 가려지는 영역 fix.
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!res.ok || !contentType.includes('text/event-stream')) {
+        let errMsg = `요청 실패 (HTTP ${res.status})`;
+        try {
+          const errJson = await res.json();
+          if (errJson?.error) errMsg = String(errJson.error);
+        } catch { /* body 가 JSON 아님 — 기본 메시지 유지 */ }
+        dispatch({ type: 'ERROR', id: systemId, error: errMsg });
+        return;
+      }
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error('스트림을 읽을 수 없습니다.');
