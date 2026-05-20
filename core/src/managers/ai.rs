@@ -1351,11 +1351,14 @@ impl AiManager {
                 });
             }
 
-            // 중간 turn text push 폐기 — 옛 TS port 동작 (매 turn push) 안 = 사용자 화면 안
-            // 답변 N번 반복 issue (multi-turn 안 매 turn text 모두 박혀 보임). final turn (도구
-            // 호출 0 박힌 영역, L849-851) 안만 push 정공.
-            // 옛 동작 호환 필요 시 = 사용자 결정 영역 안 복구 가능.
-            let _ = &last_text;
+            // 중간 turn text → blocks push (옛 TS Core 동작 복원, 2026-05-20).
+            // 옛 commit e9c66c6 안 폐기 영역 = 답변 N번 반복 issue. 다만 폐기 후 사용자 보고 =
+            // "답변 길이 짧음" — multi-turn AI 의 reasoning text 영역 답변 안 사라짐.
+            // push_text_block_dedup 의 70% similarity 매칭 안 옛 turn text 영역 final turn 안 자동
+            // 중복 차단. final turn 안 같은 내용 박힌 영역 skip — 옛 중복 issue 영역 자동 가드.
+            if !last_text.trim().is_empty() {
+                push_text_block_dedup(&mut blocks, &last_text);
+            }
 
             // prior_results 누적 — 다음 turn 의 toolExchanges 로 LLM 에 전달.
             // 학습 로그용 + Gemini thought_signature echo 용 — turn 별 entry 보존.
