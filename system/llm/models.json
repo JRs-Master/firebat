@@ -242,8 +242,8 @@
       "category": "api-google"
     },
     {
-      "id": "gemini-3-flash-preview",
-      "displayName": "Gemini 3 Flash",
+      "id": "gemini-3.5-flash",
+      "displayName": "Gemini 3.5 Flash",
       "provider": "Google",
       "format": "gemini-native",
       "endpoint": "https://generativelanguage.googleapis.com",
@@ -353,8 +353,8 @@
       "category": "vertex-google"
     },
     {
-      "id": "vertex-gemini-3-flash-preview",
-      "displayName": "Gemini 3 Flash (Vertex)",
+      "id": "vertex-gemini-3.5-flash",
+      "displayName": "Gemini 3.5 Flash (Vertex)",
       "provider": "Vertex",
       "format": "vertex-gemini",
       "endpoint": "https://aiplatform.googleapis.com",

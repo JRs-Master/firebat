@@ -219,7 +219,7 @@ Entity / Episodic 어댑터는 `database.db` (raw SQLite Database) + Embedder + 
 |---|---|---|
 | `DATA_DIR` | `data` | 데이터 저장 경로 |
 | `DB_PATH` | `data/app.db` | SQLite DB 경로 |
-| `DEFAULT_MODEL` | `gemini-3-flash-preview` | 기본 LLM 모델 |
+| `DEFAULT_MODEL` | `gemini-3.5-flash` | 기본 LLM 모델 |
 | `LLM_TIMEOUT_MS` | `60000` | LLM 타임아웃 |
 | `SANDBOX_TIMEOUT_MS` | `30000` | 샌드박스 타임아웃 |
 | `CRON_DEFAULT_TIMEZONE` | `Asia/Seoul` | 기본 타임존 |
