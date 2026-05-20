@@ -42,8 +42,12 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   const offset = Math.max(0, parseInt(url.searchParams.get('offset') || '0', 10) || 0);
   const search = url.searchParams.get('search') || undefined;
 
+  // visitor 별 격리 — hubOwner = `<instance_id>:<session_id>`.
+  const sessionId = req.headers.get('x-session-id') ?? '';
+  const scopeId = `${auth.instanceId}:${sessionId}`;
+
   try {
-    const result = await listMedia({ optsJson: JSON.stringify({ limit, offset, search, hubOwner: auth.instanceId }) });
+    const result = await listMedia({ optsJson: JSON.stringify({ limit, offset, search, hubOwner: scopeId }) });
     if (!result.ok) return NextResponse.json({ success: false, error: result.message }, { status: 500 });
     return NextResponse.json({ success: true, items: result.data?.items ?? [], total: result.data?.total ?? 0 });
   } catch (err) {
@@ -59,8 +63,10 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
 
   const mediaSlug = req.nextUrl.searchParams.get('slug');
   if (!mediaSlug) return NextResponse.json({ success: false, error: 'slug 파라미터가 필요합니다.' }, { status: 400 });
-  // hub 소유 확인 — list 호출해 본 hub 안 자료인지 검증. 정공 (admin endpoint 우회 차단).
-  const list = await listMedia({ optsJson: JSON.stringify({ hubOwner: auth.instanceId, limit: 200, offset: 0 }) });
+  // visitor 별 격리 — hubOwner = `<instance_id>:<session_id>` 매칭만 통과.
+  const sessionId = req.headers.get('x-session-id') ?? '';
+  const scopeId = `${auth.instanceId}:${sessionId}`;
+  const list = await listMedia({ optsJson: JSON.stringify({ hubOwner: scopeId, limit: 200, offset: 0 }) });
   if (!list.ok) return NextResponse.json({ success: false, error: list.message }, { status: 500 });
   const ownsMedia = (list.data?.items ?? []).some(item => item.slug === mediaSlug);
   if (!ownsMedia) return NextResponse.json({ success: false, error: '이 자료에 접근할 권한이 없습니다.' }, { status: 403 });

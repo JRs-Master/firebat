@@ -37,15 +37,26 @@ impl LocalMediaAdapter {
         self.root.join(scope.as_str()).join("media")
     }
 
-    /// hub_owner 가 있으면 `user/hub/<id>/media/`, 없으면 일반 scope_dir.
+    /// hub_owner 영역 path 분기:
+    /// - 빈 string / 형식 오류: 일반 scope_dir
+    /// - `<instance_id>` (instance 단위): `user/hub/<id>/media/`
+    /// - `<instance_id>:<session_id>` (visitor 별 격리): `user/hub/<id>/<sid>/media/`
     fn effective_dir(&self, scope: MediaScope, hub_owner: Option<&str>) -> PathBuf {
-        match hub_owner {
-            Some(id) if !id.is_empty() && Self::is_safe_hub_id(id) => self.root.join("user").join("hub").join(id).join("media"),
+        let Some(raw) = hub_owner.filter(|s| !s.is_empty()) else {
+            return self.scope_dir(scope);
+        };
+        let parts: Vec<&str> = raw.split(':').collect();
+        for p in &parts {
+            if !Self::is_safe_hub_id(p) { return self.scope_dir(scope); }
+        }
+        match parts.len() {
+            1 => self.root.join("user").join("hub").join(parts[0]).join("media"),
+            2 => self.root.join("user").join("hub").join(parts[0]).join(parts[1]).join("media"),
             _ => self.scope_dir(scope),
         }
     }
 
-    /// hub_owner path traversal 가드 — 영숫자 / 하이픈 / 언더스코어만 허용.
+    /// hub_owner part path traversal 가드 — 영숫자 / 하이픈 / 언더스코어만 허용.
     fn is_safe_hub_id(id: &str) -> bool {
         !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
     }
@@ -156,7 +167,9 @@ impl LocalMediaAdapter {
     }
 
     fn url_for_hub(hub_owner: &str, slug: &str, ext: &str) -> String {
-        format!("/user/hub/{}/media/{}.{}", hub_owner, slug, ext)
+        // hub_owner = `<inst>` 또는 `<inst>:<sid>`. URL 영역 `/` 분리 박힘.
+        let path_part = hub_owner.replace(':', "/");
+        format!("/user/hub/{}/media/{}.{}", path_part, slug, ext)
     }
 }
 

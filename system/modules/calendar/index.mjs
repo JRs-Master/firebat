@@ -20,11 +20,18 @@ import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync } fr
 import { join } from 'node:path';
 
 /** calendar 데이터 디렉토리 — input._hubScope 박혀있으면 hub-scoped path 분기.
- *  admin: `data/calendar/`, hub visitor: `data/hub/<instance_id>/calendar/`. */
+ *  - admin: `data/calendar/`
+ *  - hub instance 단위 (옛 호환): `data/hub/<instance_id>/calendar/`
+ *  - hub visitor 별 (`<instance_id>:<session_id>`): `data/hub/<instance_id>/<session_id>/calendar/` */
 function resolveCalDir(hubScope) {
   if (!hubScope || typeof hubScope !== 'string') return 'data/calendar';
-  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(hubScope)) return 'data/calendar';
-  return `data/hub/${hubScope}/calendar`;
+  const parts = hubScope.split(':');
+  for (const p of parts) {
+    if (!p || !/^[a-zA-Z0-9_-]{1,64}$/.test(p)) return 'data/calendar';
+  }
+  if (parts.length === 1) return `data/hub/${parts[0]}/calendar`;
+  if (parts.length === 2) return `data/hub/${parts[0]}/${parts[1]}/calendar`;
+  return 'data/calendar';
 }
 
 let CAL_DIR = 'data/calendar';

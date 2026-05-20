@@ -57,11 +57,13 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ success: false, error: '이 sysmod 는 본 hub 에 허용되지 않았습니다.' }, { status: 403 });
   }
 
-  // input.data._hubScope 자동 주입 — sysmod 가 데이터 디렉토리 분기.
+  // visitor 별 격리 — _hubScope = `<instance_id>:<session_id>` 자동 주입.
+  // sysmod 가 resolveNotesDir / resolveCalDir 안에서 분리 (data/hub/<inst>/<sid>/notes/...).
+  const sessionId = req.headers.get('x-session-id') ?? '';
   const moduleInput = {
     action: String(body.action ?? ''),
     ...body.data,
-    _hubScope: auth.instance.id,
+    _hubScope: `${auth.instance.id}:${sessionId}`,
   };
 
   try {

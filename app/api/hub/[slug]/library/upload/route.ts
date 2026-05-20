@@ -43,7 +43,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   }
   const instance = authRes.data?.instance;
   if (!instance) return jsonResponse(500, { error: 'instance 조회 실패' });
-  const hubOwner = `hub:${instance.id}`;
+  // visitor 별 격리 — `hub:<instance_id>:<session_id>` 형태.
+  const hubOwner = `hub:${instance.id}:${sessionId}`;
 
   const form = await req.formData().catch(() => null);
   if (!form) return jsonResponse(400, { error: 'multipart/form-data 필요' });

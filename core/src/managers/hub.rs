@@ -445,8 +445,14 @@ impl HubManager {
             })
             .collect();
 
+        // session_id 영역 — conversation 조회로 visitor 별 자료 격리 owner 영역에 박힘.
+        // hub:<instance_id>:<session_id> 형태 owner 가 매 도구 호출 시 ai.rs 안 자동 주입.
+        let conv = self.port.get_conversation(conversation_id).await?;
+        let session_id = conv.as_ref().map(|c| c.session_id.clone()).unwrap_or_default();
+
         let hub_ctx = HubContext {
             instance_id: instance.id.clone(),
+            session_id,
             allowed_sysmods: instance.allowed_sysmods.clone(),
             allowed_references: instance.allowed_references.clone(),
             history,

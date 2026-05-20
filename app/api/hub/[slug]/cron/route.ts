@@ -37,7 +37,9 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   const { slug } = await params;
   const auth = await authHub(req, slug);
   if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
-  const expectedOwner = `hub:${auth.instanceId}`;
+  // visitor 별 격리 — owner = `hub:<instance_id>:<session_id>` 매칭.
+  const sessionId = req.headers.get('x-session-id') ?? '';
+  const expectedOwner = `hub:${auth.instanceId}:${sessionId}`;
 
   try {
     const jobsRes = await listCron();
@@ -54,7 +56,8 @@ export async function DELETE(req: NextRequest, { params }: Ctx) {
   const { slug } = await params;
   const auth = await authHub(req, slug);
   if (!auth.ok) return NextResponse.json({ success: false, error: auth.error }, { status: auth.status });
-  const expectedOwner = `hub:${auth.instanceId}`;
+  const sessionId = req.headers.get('x-session-id') ?? '';
+  const expectedOwner = `hub:${auth.instanceId}:${sessionId}`;
 
   const jobId = req.nextUrl.searchParams.get('jobId');
   if (!jobId) return NextResponse.json({ success: false, error: 'jobId 필요' }, { status: 400 });

@@ -19,13 +19,20 @@ import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, unlinkS
 import { join, basename } from 'node:path';
 
 /** notes 데이터 디렉토리 — input._hubScope 받으면 hub-scoped path 박음.
- *  admin: `data/notes/`, hub visitor: `data/hub/<instance_id>/notes/`.
- *  매 호출 시점 동적 결정 — input 안 _hubScope field 가 instance.id (영숫자 / 하이픈 / 언더스코어). */
+ *  - admin: `data/notes/`
+ *  - hub instance 단위 (옛 호환, sid 빈 영역): `data/hub/<instance_id>/notes/`
+ *  - hub visitor 별 격리 (`<instance_id>:<session_id>` 형태): `data/hub/<instance_id>/<session_id>/notes/`
+ *  매 호출 시점 동적 결정 — _hubScope 영역 안 ':' 분리 / 영숫자·하이픈·언더스코어 가드. */
 function resolveNotesDir(hubScope) {
   if (!hubScope || typeof hubScope !== 'string') return 'data/notes';
-  // path traversal 가드 — 영숫자 / 하이픈 / 언더스코어만 허용.
-  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(hubScope)) return 'data/notes';
-  return `data/hub/${hubScope}/notes`;
+  const parts = hubScope.split(':');
+  // 매 part 영역 path traversal 가드.
+  for (const p of parts) {
+    if (!p || !/^[a-zA-Z0-9_-]{1,64}$/.test(p)) return 'data/notes';
+  }
+  if (parts.length === 1) return `data/hub/${parts[0]}/notes`;
+  if (parts.length === 2) return `data/hub/${parts[0]}/${parts[1]}/notes`;
+  return 'data/notes';
 }
 
 let NOTES_DIR = 'data/notes';

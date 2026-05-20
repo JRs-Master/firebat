@@ -1071,29 +1071,33 @@ impl AiManager {
                 }
 
                 // hub_context 박혀있을 때 모든 도구 호출 시점에 owner / hub_owner / _hubScope /
-                // project 일괄 자동 주입. 도구가 자기 받는 field 만 알아채고 무시 — 도구별
-                // 매핑 테이블 별도 박을 필요 X. 일관 정공.
+                // project 일괄 자동 주입. 도구가 자기 받는 field 만 알아채고 무시.
                 //
-                // 매핑:
-                //   - owner = 'hub:<id>' (Entity / Library / Cron / Templates 영역)
-                //   - hubOwner = '<id>' (Media — camelCase 영역)
-                //   - _hubScope = '<id>' (sysmod 의 input.data 영역 — notes / calendar)
-                //   - project = 'hub:<id>' (save_page 만 적용 — 다른 도구 의미 X 다만 안전)
+                // owner / hubOwner / _hubScope 영역 = `<instance_id>:<session_id>` 형태 —
+                // visitor 별 격리 (같은 hub 안 다른 방문자 자료 노출 0). session_id 빈 string
+                // 박혀있으면 옛 호환 (instance 단위만).
                 //
-                // visitor 가 admin 자료에 침투하는 silent leak 차단 — AI 가 박은 owner 영역
-                // override 강제 (도구 호출 안 visitor 의도 외 admin owner 박으려 해도 차단).
+                // project = `hub:<instance_id>` (save_page 만 — 페이지 URL 영역 root /<slug>
+                // 충돌 회피, instance 단위 그대로). visitor 별 page = chat 자료지 page 자료 X.
+                //
+                // visitor 가 admin / 다른 visitor 자료에 침투하는 silent leak 차단 — AI 가
+                // 박은 owner 영역 override 강제.
                 let hub_scoped_call: Option<ToolCall>;
                 let effective_call: &ToolCall = if ai_opts.hub_context.is_some() {
                     let ctx = ai_opts.hub_context.as_ref().unwrap();
                     let inst_id = ctx.instance_id.clone();
-                    let scoped_owner = format!("hub:{}", inst_id);
+                    let sid = ctx.session_id.clone();
+                    // visitor 별 격리 owner — sid 빈 string 면 옛 호환 (instance 단위).
+                    let scope_id = if sid.is_empty() { inst_id.clone() } else { format!("{}:{}", inst_id, sid) };
+                    let owner_field = format!("hub:{}", scope_id);
+                    let project_field = format!("hub:{}", inst_id);
                     let mut new_call = call.clone();
                     if let serde_json::Value::Object(ref mut m) = new_call.arguments {
-                        m.insert("owner".to_string(), serde_json::Value::String(scoped_owner.clone()));
-                        m.insert("hubOwner".to_string(), serde_json::Value::String(inst_id.clone()));
-                        m.insert("_hubScope".to_string(), serde_json::Value::String(inst_id.clone()));
+                        m.insert("owner".to_string(), serde_json::Value::String(owner_field));
+                        m.insert("hubOwner".to_string(), serde_json::Value::String(scope_id.clone()));
+                        m.insert("_hubScope".to_string(), serde_json::Value::String(scope_id));
                         if call.name == "save_page" {
-                            m.insert("project".to_string(), serde_json::Value::String(scoped_owner));
+                            m.insert("project".to_string(), serde_json::Value::String(project_field));
                         }
                     }
                     hub_scoped_call = Some(new_call);

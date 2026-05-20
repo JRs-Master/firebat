@@ -1326,6 +1326,11 @@ pub struct HubContext {
     /// 인스턴스 ID (logging / 추적 영역).
     #[serde(rename = "instanceId")]
     pub instance_id: String,
+    /// 방문자 session id — owner 영역에 같이 박혀 visitor 끼리 자료 격리.
+    /// `hub:<instance_id>:<session_id>` 형태 owner 가 매 도구 호출 시 자동 주입.
+    /// 빈 string = 옛 호환 (visitor 격리 X, instance 단위만).
+    #[serde(rename = "sessionId", default)]
+    pub session_id: String,
     /// 허용 sysmod 이름 배열 (예: `["yfinance", "korea-invest"]`). 빈 배열 = 모든 sysmod 차단.
     #[serde(rename = "allowedSysmods", default)]
     pub allowed_sysmods: Vec<String>,
