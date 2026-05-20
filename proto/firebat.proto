@@ -2744,6 +2744,8 @@ message HubSendMessageRequest {
   string session_id = 4;
   string user_message = 5;
   string self_host = 6;         // 우리 사이트 host. origin 일치 시 자동 허용 (page mode)
+  // visitor 가 박은 plan mode (off / auto / always). 빈 string = off.
+  string plan_mode = 7;
 }
 message HubSendMessageResponse {
   string conversation_id = 1;

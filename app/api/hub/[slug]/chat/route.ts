@@ -47,7 +47,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return jsonResponse(400, { error: 'X-Session-Id 헤더가 필요합니다.' });
   }
 
-  let body: { message?: string } = {};
+  let body: { message?: string; planMode?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -57,8 +57,10 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   if (!userMessage) {
     return jsonResponse(400, { error: 'message 필드가 필요합니다.' });
   }
+  // visitor 의 plan mode — Rust HubService.SendMessage 가 받아 LlmCallOpts.plan_mode + AiRequestOpts.plan_mode 박음.
+  const planMode = typeof body.planMode === 'string' ? body.planMode : '';
 
-  return streamResponse({ slug, apiToken, sessionId, origin, selfHost, userMessage, abortSignal: req.signal });
+  return streamResponse({ slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, abortSignal: req.signal });
 }
 
 function streamResponse(args: {
@@ -68,9 +70,10 @@ function streamResponse(args: {
   origin: string;
   selfHost: string;
   userMessage: string;
+  planMode: string;
   abortSignal: AbortSignal;
 }) {
-  const { slug, apiToken, sessionId, origin, selfHost, userMessage, abortSignal } = args;
+  const { slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, abortSignal } = args;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -105,6 +108,7 @@ function streamResponse(args: {
           selfHost,
           sessionId,
           userMessage,
+          planMode,
         });
 
         if (!r.ok) {

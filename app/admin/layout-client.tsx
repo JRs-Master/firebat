@@ -2,15 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import { LangProvider, useTranslations } from '../../lib/i18n';
+import { FirebatQueryProvider } from '../../lib/query-client';
 import { apiPost } from '../../lib/api-fetch';
 
-/** hub page wrapper — visitor navigator.language 자동 감지 박은 nested LangProvider.
- *  admin cookie / localStorage 영역 영향 0 (forceLocale 박혀있어 admin 설정 안 박음). */
+/** hub page wrapper — visitor navigator.language 자동 감지 박은 nested LangProvider
+ *  + FirebatQueryProvider (CronPanel / TemplatesPanel / GalleryPanel 안 useQuery 동작 영역).
+ *  admin layout 안 박혀있던 provider 가 (user) route 영역 안 박혀있지 않아 hub mode 안
+ *  사이드바 panel 진입 시 "No QueryClient set" throw 박혔던 영역 fix. */
 export function ConsoleLayoutInner({ children, hubMode }: { children: React.ReactNode; hubMode?: boolean }) {
   if (hubMode) {
     return (
       <LangProvider forceLocale={detectVisitorLang()}>
-        <ConsoleLayoutBody hubMode>{children}</ConsoleLayoutBody>
+        <FirebatQueryProvider>
+          <ConsoleLayoutBody hubMode>{children}</ConsoleLayoutBody>
+        </FirebatQueryProvider>
       </LangProvider>
     );
   }

@@ -452,7 +452,12 @@ impl HubService for HubServiceImpl {
             .append_user_message(&conversation_id, &args.user_message)
             .await;
 
-        // 4. AI 호출 (가드 + history + 영속화 통합)
+        // 4. AI 호출 (가드 + history + 영속화 통합). visitor 의 plan_mode 영역 전파.
+        let plan_mode = match args.plan_mode.as_str() {
+            "always" => crate::ports::PlanMode::Always,
+            "auto" => crate::ports::PlanMode::Auto,
+            _ => crate::ports::PlanMode::Off,
+        };
         let response = self
             .manager
             .send_message(
@@ -460,6 +465,7 @@ impl HubService for HubServiceImpl {
                 &instance,
                 &conversation_id,
                 &args.user_message,
+                plan_mode,
             )
             .await
             .map_err(TonicStatus::internal)?;

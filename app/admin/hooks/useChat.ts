@@ -70,10 +70,13 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   const convStorageKey = hubContext ? `firebat_conversations__hub-${hubContext.slug}` : 'firebat_conversations';
   const activeConvStorageKey = hubContext ? `firebat_active_conv__hub-${hubContext.slug}` : 'firebat_active_conv';
   const [planModeAdmin, setPlanModeRaw] = useSetting('firebat_plan_mode');
+  // hub mode 안 visitor 도 plan mode 영역 박을 수 있어야 — settings prefix (`hub-<slug>` localStorage)
+  // 가 admin 영역과 별도 박혀있어 admin 설정 영역 영향 0.
   const [inputMode, setInputMode] = useSetting('firebat_input_mode');
-  // hub 방문자 = anonymous, plan mode 의미 0 (사용자 본인이 박은 admin plan_mode 영역 영향 차단).
-  const planMode = hubContext ? 'off' : planModeAdmin;
-  const setPlanMode = hubContext ? (() => { /* hub mode 박혀있을 때 plan_mode 변경 차단 */ }) : setPlanModeRaw;
+  // hub visitor 도 plan mode 박을 수 있음 — settings prefix (`hub-<slug>`) 별도 박혀있어
+  // admin 의 plan_mode 영역 영향 0. setPlanMode 그대로 노출.
+  const planMode = planModeAdmin;
+  const setPlanMode = setPlanModeRaw;
 
   // activeConvId 는 훅 밖 useSetting 초기화 타이밍 race 가 있어 useState + 수동 동기화 유지
   const setActiveConvId = useCallback((id: string) => {
@@ -793,7 +796,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         headers['X-Session-Id'] = hubContext.sessionId;
       }
       const body: Record<string, unknown> = isHubMode
-        ? { message: userPrompt }
+        ? { message: userPrompt, planMode }
         : {
             prompt: userPrompt,
             config: { model: aiModel },
