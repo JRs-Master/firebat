@@ -261,6 +261,34 @@ impl ToolDispatcher {
                     summary: format!("예약 해제: {}", label),
                 })
             }
+            "run_task" => {
+                // pipeline 안에 destructive step 박혀있으면 승인 게이트 발동.
+                // (delete_file / delete_page / write_file / save_page — schedule_task 와 같은 분류.)
+                // schedule_task 가 예약 시점에 게이트 박혔던 것과 달리 run_task 는 즉시 실행이라
+                // 옛 TS 도 게이트 없었지만 destructive step 박힌 pipeline 은 명시 승인 정공.
+                let pipeline = args.get("pipeline").and_then(|v| v.as_array())?;
+                let destructive: Vec<String> = pipeline
+                    .iter()
+                    .filter_map(|step| step.as_object())
+                    .filter_map(|step| step.get("type").and_then(|v| v.as_str()))
+                    .filter(|t| matches!(*t, "write_file" | "save_page" | "delete_file" | "delete_page"))
+                    .map(String::from)
+                    .collect();
+                if destructive.is_empty() {
+                    return None;
+                }
+                let title = args
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("(제목 없음)");
+                Some(ApprovalSummary {
+                    summary: format!(
+                        "즉시 실행 (파괴적 단계 포함): {} — {} step",
+                        title,
+                        destructive.join(", ")
+                    ),
+                })
+            }
             _ => None,
         }
     }

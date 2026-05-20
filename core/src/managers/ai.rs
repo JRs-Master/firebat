@@ -808,12 +808,65 @@ impl AiManager {
                     Some(extra_parts.join("\n\n"))
                 };
                 let base_prompt = pb.build(extra.as_deref(), None);
-                let plan_prefix = pb.plan_prefix(ai_opts.plan_mode);
-                effective_opts.system_prompt = Some(if plan_prefix.is_empty() {
+
+                // plan_execute_id / plan_revise_id 우선 처리 — 사용자 ✓실행 / ⚙수정 클릭 후 follow-up
+                // turn. plan_store 에서 조회 → 시스템 프롬프트 prepend + 옛 plan_prefix 우회 (plan 카드
+                // 재제안 안 함). 옛 TS `planExecuteRule` 흐름 1:1.
+                let plan_instruction: Option<String> = if let Some(pid) =
+                    ai_opts.plan_execute_id.as_deref().filter(|s| !s.is_empty())
+                {
+                    if let Some(plan) = crate::utils::plan_store::get_plan(pid) {
+                        let inst = crate::utils::plan_store::plan_to_instruction(&plan, None);
+                        crate::utils::plan_store::delete_plan(pid);
+                        self.log.info(&format!(
+                            "[AiManager] plan_execute_id 처리: {} (title={})",
+                            pid, plan.title
+                        ));
+                        Some(inst)
+                    } else {
+                        self.log.warn(&format!(
+                            "[AiManager] plan_execute_id {} 조회 실패 (만료 또는 부재) — 일반 흐름 진행",
+                            pid
+                        ));
+                        None
+                    }
+                } else if let Some(rid) =
+                    ai_opts.plan_revise_id.as_deref().filter(|s| !s.is_empty())
+                {
+                    if let Some(plan) = crate::utils::plan_store::get_plan(rid) {
+                        let inst = crate::utils::plan_store::plan_to_revise_instruction(&plan, prompt);
+                        // revise 시 plan_store 항목 보존 — AI 가 propose_plan 재호출 후 새 planId 발급함.
+                        self.log.info(&format!(
+                            "[AiManager] plan_revise_id 처리: {} (title={})",
+                            rid, plan.title
+                        ));
+                        Some(inst)
+                    } else {
+                        self.log.warn(&format!(
+                            "[AiManager] plan_revise_id {} 조회 실패 — 일반 흐름 진행",
+                            rid
+                        ));
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                let plan_prefix = if plan_instruction.is_some() {
+                    // 사용자가 이미 plan 결정한 단계 — 옛 plan_mode prefix (plan 카드 재제안 강제) 우회.
+                    String::new()
+                } else {
+                    pb.plan_prefix(ai_opts.plan_mode)
+                };
+                let mut composed = if plan_prefix.is_empty() {
                     base_prompt
                 } else {
                     format!("{}\n\n{}", plan_prefix, base_prompt)
-                });
+                };
+                if let Some(inst) = plan_instruction {
+                    composed = format!("{}\n\n{}", inst, composed);
+                }
+                effective_opts.system_prompt = Some(composed);
             }
         }
 
@@ -859,9 +912,24 @@ impl AiManager {
         }
 
         // 첫 turn user prompt — plan_mode hint prefix 자동 주입 (옛 TS promptForLlm 첫 turn 분기 1:1).
-        let prompt_with_hint: String = match plan_mode::prompt_hint(ai_opts.plan_mode) {
-            Some(hint) => format!("{}\n\n{}", hint, prompt),
-            None => prompt.to_string(),
+        // plan_execute_id / plan_revise_id 박혀있으면 hint skip (시스템 프롬프트 안 plan_instruction 박힘).
+        let skip_plan_hint = ai_opts
+            .plan_execute_id
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .is_some()
+            || ai_opts
+                .plan_revise_id
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .is_some();
+        let prompt_with_hint: String = if skip_plan_hint {
+            prompt.to_string()
+        } else {
+            match plan_mode::prompt_hint(ai_opts.plan_mode) {
+                Some(hint) => format!("{}\n\n{}", hint, prompt),
+                None => prompt.to_string(),
+            }
         };
 
         // OpenAI Responses API previous_response_id — 멀티턴 토큰 절감.

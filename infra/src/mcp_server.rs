@@ -67,6 +67,9 @@ pub struct McpServerState {
     pub vault: Arc<dyn IVaultPort>,
     /// AuthManager — 외부 사용자 API token 검증. 미설정 시 internal token only 모드.
     pub auth: Option<Arc<AuthManager>>,
+    /// ModuleManager — sysmod 활성화 토글 검사 (tools/list 시점 비활성 sysmod 필터).
+    /// 미설정 시 list 필터 0 (옛 호환). call-time gate 는 handler 안에서 별도 수행.
+    pub module_manager: Option<Arc<ModuleManager>>,
 }
 
 impl McpServerState {
@@ -75,12 +78,19 @@ impl McpServerState {
             tools: RwLock::new(HashMap::new()),
             vault,
             auth: None,
+            module_manager: None,
         }
     }
 
     /// 외부 사용자 API token 검증 활성 — AuthManager 설정.
     pub fn with_auth(mut self, auth: Arc<AuthManager>) -> Self {
         self.auth = Some(auth);
+        self
+    }
+
+    /// sysmod enabled 토글 검사 — tools/list 시점 비활성 sysmod 필터.
+    pub fn with_module_manager(mut self, mm: Arc<ModuleManager>) -> Self {
+        self.module_manager = Some(mm);
         self
     }
 
@@ -138,6 +148,27 @@ struct ContentBlock {
     #[serde(rename = "type")]
     block_type: &'static str,
     text: String,
+}
+
+/// 도구 가시성 — `sysmod_<name>` 영역만 enabled 토글 검사. 기타 도구 (render_* / builtin / mcp_*) 는 항상 가시.
+/// ModuleManager 미설정 시 가시 (옛 호환).
+fn is_tool_visible(state: &Arc<McpServerState>, tool_name: &str) -> bool {
+    let Some(mm) = &state.module_manager else {
+        return true;
+    };
+    let Some(rest) = tool_name.strip_prefix("sysmod_") else {
+        return true;
+    };
+    // 도메인 분리 도구 (sysmod_<name>_<domain>) — 첫 segment 가 module name. config 안 `-` 박혀있으면 `_` 로 등록됨.
+    // 매칭 시 두 변형 모두 시도 — module 이름이 정확히 hit 박힐 때까지.
+    let candidate = rest.split('_').next().unwrap_or(rest);
+    let with_dash = candidate.replace('_', "-");
+    if mm.is_enabled(candidate) || mm.is_enabled(&with_dash) {
+        return true;
+    }
+    // 두 candidate 모두 disabled — 단 module 자체 존재 0 시 (builtin 등 sysmod_ 접두인데 module 아닌 도구)
+    // false negative 방지: 어떤 이름이라도 module 미존재 면 default true 처리 어렵. 보수적으로 disabled 처리.
+    false
 }
 
 /// Bearer token 검증 — 두 source 받음 (옛 frontend mcp-internal + mcp-app 통합):
@@ -200,6 +231,7 @@ async fn handle_rpc(
             let tools = state.tools.read().await;
             let items: Vec<ToolListItem> = tools
                 .values()
+                .filter(|t| is_tool_visible(&state, &t.name))
                 .map(|t| ToolListItem {
                     name: t.name.clone(),
                     description: t.description.clone(),
@@ -309,6 +341,18 @@ pub struct SysmodToolHandler {
 #[async_trait::async_trait]
 impl McpToolHandler for SysmodToolHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
+        // 활성화 토글 가드 — 사용자가 시스템 설정에서 OFF 한 sysmod 는 호출 시점 차단.
+        // tools/list 는 시작 시점 1회 등록이라 캐시된 도구 list 가 enabled 토글 변경 반영 0
+        // (CLI 모드 / hosted MCP 가 list 캐시 박음). 호출 시점 가드가 single source of truth.
+        if !self.module_manager.is_enabled(&self.module_name) {
+            return Ok(serde_json::json!({
+                "success": false,
+                "error": format!(
+                    "모듈 '{}' 가 비활성화되어 있습니다. 시스템 설정에서 활성화 후 다시 시도하세요.",
+                    self.module_name
+                ),
+            }));
+        }
         let data = if args.is_null() {
             Value::Object(Default::default())
         } else {
@@ -1681,6 +1725,7 @@ async fn dispatch_method(
             let tools = state.tools.read().await;
             let items: Vec<ToolListItem> = tools
                 .values()
+                .filter(|t| is_tool_visible(state, &t.name))
                 .map(|t| ToolListItem {
                     name: t.name.clone(),
                     description: t.description.clone(),

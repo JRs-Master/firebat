@@ -47,7 +47,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return jsonResponse(400, { error: 'X-Session-Id 헤더가 필요합니다.' });
   }
 
-  let body: { message?: string; planMode?: string } = {};
+  let body: { message?: string; planMode?: string; planExecuteId?: string; planReviseId?: string } = {};
   try {
     body = await req.json();
   } catch {
@@ -59,8 +59,12 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   }
   // visitor 의 plan mode — Rust HubService.SendMessage 가 받아 LlmCallOpts.plan_mode + AiRequestOpts.plan_mode 박음.
   const planMode = typeof body.planMode === 'string' ? body.planMode : '';
+  // ✓실행 / ⚙수정 제안 — visitor 가 plan card 클릭 시 frontend 가 동봉. Rust HubService 가 plan_store 조회 후
+  // 시스템 프롬프트 안 plan_to_instruction / plan_to_revise_instruction 주입.
+  const planExecuteId = typeof body.planExecuteId === 'string' ? body.planExecuteId : '';
+  const planReviseId = typeof body.planReviseId === 'string' ? body.planReviseId : '';
 
-  return streamResponse({ slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, abortSignal: req.signal });
+  return streamResponse({ slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, planExecuteId, planReviseId, abortSignal: req.signal });
 }
 
 function streamResponse(args: {
@@ -71,9 +75,11 @@ function streamResponse(args: {
   selfHost: string;
   userMessage: string;
   planMode: string;
+  planExecuteId: string;
+  planReviseId: string;
   abortSignal: AbortSignal;
 }) {
-  const { slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, abortSignal } = args;
+  const { slug, apiToken, sessionId, origin, selfHost, userMessage, planMode, planExecuteId, planReviseId, abortSignal } = args;
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
@@ -109,6 +115,8 @@ function streamResponse(args: {
           sessionId,
           userMessage,
           planMode,
+          planExecuteId,
+          planReviseId,
         });
 
         if (!r.ok) {

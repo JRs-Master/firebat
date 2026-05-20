@@ -719,7 +719,8 @@ async fn main() -> Result<()> {
     if std::env::args().any(|a| a == "--mcp-stdio") {
         let mcp_state = std::sync::Arc::new(
             firebat_infra::mcp_server::McpServerState::new(vault.clone())
-                .with_auth(auth_manager.clone()),
+                .with_auth(auth_manager.clone())
+                .with_module_manager(module_manager.clone()),
         );
         firebat_infra::mcp_server::register_sysmod_tools(&mcp_state, module_manager.clone()).await;
         firebat_infra::mcp_server::register_render_tools(&mcp_state).await;
@@ -753,7 +754,8 @@ async fn main() -> Result<()> {
     if mcp_enabled {
         let mcp_state = std::sync::Arc::new(
             firebat_infra::mcp_server::McpServerState::new(vault.clone())
-                .with_auth(auth_manager.clone()),
+                .with_auth(auth_manager.clone())
+                .with_module_manager(module_manager.clone()),
         );
         // sysmod 자동 등록 — system/modules/*/config.json 스캔 → sysmod_<name>.
         firebat_infra::mcp_server::register_sysmod_tools(&mcp_state, module_manager.clone()).await;

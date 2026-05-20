@@ -2754,6 +2754,10 @@ message HubSendMessageRequest {
   string self_host = 6;         // 우리 사이트 host. origin 일치 시 자동 허용 (page mode)
   // visitor 가 박은 plan mode (off / auto / always). 빈 string = off.
   string plan_mode = 7;
+  // 사용자 ✓실행 클릭 시점 frontend 가 동봉. 빈 string = 일반 turn.
+  string plan_execute_id = 8;
+  // 사용자 ⚙수정 제안 후 텍스트 입력 시점 frontend 가 동봉. 빈 string = 일반 turn.
+  string plan_revise_id = 9;
 }
 message HubSendMessageResponse {
   string conversation_id = 1;

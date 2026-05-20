@@ -51,6 +51,20 @@ fn parse_opts(opts: Option<crate::proto::LlmCallOptsPb>) -> LlmCallOpts {
     .unwrap_or_default()
 }
 
+/// 같은 opts_json 안에 박힌 AiRequestOpts 필드 (planMode / planExecuteId / planReviseId / owner /
+/// conversationId / hubContext 등) 추출. frontend 가 LlmCallOpts + AiRequestOpts 영역 단일 JSON 으로
+/// 보내기 때문에 양쪽 동시 parse 필요. unknown field 는 serde 가 자연 무시.
+fn parse_ai_opts(opts: Option<&crate::proto::LlmCallOptsPb>) -> crate::ports::AiRequestOpts {
+    opts.and_then(|o| {
+        if o.opts_json.is_empty() {
+            None
+        } else {
+            serde_json::from_str::<crate::ports::AiRequestOpts>(&o.opts_json).ok()
+        }
+    })
+    .unwrap_or_default()
+}
+
 /// ToolDefinitionsPb (string tools_json) → Vec<ToolDefinition>. None / empty 면 빈 배열.
 fn parse_tools(tools: Option<crate::proto::ToolDefinitionsPb>) -> Vec<ToolDefinition> {
     tools
@@ -83,11 +97,13 @@ impl AiService for AiServiceImpl {
         req: Request<AiRequestActionWithToolsRequest>,
     ) -> Result<Response<AiRequestActionWithToolsResponse>, TonicStatus> {
         let args = req.into_inner();
+        let mut ai_opts = parse_ai_opts(args.opts.as_ref());
         let opts = parse_opts(args.opts);
         let tools = parse_tools(args.tools);
-        // LlmCallOpts.plan_mode → AiRequestOpts.plan_mode 매핑 (frontend planMode 영역 backend 전파).
-        let mut ai_opts = crate::ports::AiRequestOpts::default();
-        ai_opts.plan_mode = opts.plan_mode;
+        // LlmCallOpts.plan_mode → AiRequestOpts.plan_mode 동기화 (parse_ai_opts 가 못 잡은 경우 fallback).
+        if matches!(ai_opts.plan_mode, crate::ports::PlanMode::Off) {
+            ai_opts.plan_mode = opts.plan_mode;
+        }
         match self
             .manager
             .process_with_tools_opts(&args.prompt, &tools, &opts, &ai_opts)
@@ -111,9 +127,14 @@ impl AiService for AiServiceImpl {
         req: Request<AiStreamRequestActionWithToolsRequest>,
     ) -> Result<Response<Self::StreamRequestActionWithToolsStream>, TonicStatus> {
         let args = req.into_inner();
+        let mut ai_opts = parse_ai_opts(args.opts.as_ref());
         let opts = parse_opts(args.opts);
         let tools = parse_tools(args.tools);
         let prompt = args.prompt.clone();
+        // LlmCallOpts.plan_mode → AiRequestOpts.plan_mode 동기화 (parse_ai_opts 가 못 잡은 경우 fallback).
+        if matches!(ai_opts.plan_mode, crate::ports::PlanMode::Off) {
+            ai_opts.plan_mode = opts.plan_mode;
+        }
 
         // mpsc 채널 — AiManager 가 emit 박음. capacity = 256 (chunk 영역 buffer).
         let (event_tx, event_rx) = tokio::sync::mpsc::channel::<AiStreamEvent>(256);
@@ -124,15 +145,13 @@ impl AiService for AiServiceImpl {
         let manager = self.manager.clone();
         tokio::spawn(async move {
             let opts_local = opts;
-            // LlmCallOpts.plan_mode → AiRequestOpts.plan_mode 매핑 (frontend planMode 영역 전파).
-            let mut ai_opts = crate::ports::AiRequestOpts::default();
-            ai_opts.plan_mode = opts_local.plan_mode;
+            let ai_opts_local = ai_opts;
             let res = manager
                 .process_with_tools_opts_with_emit(
                     &prompt,
                     &tools,
                     &opts_local,
-                    &ai_opts,
+                    &ai_opts_local,
                     Some(event_tx),
                 )
                 .await;

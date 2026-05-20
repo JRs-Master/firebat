@@ -1322,6 +1322,16 @@ pub struct AiRequestOpts {
     ///   - HistoryResolver 우회 + `history` 영역 직접 prepend (hub_conversations 별도 테이블)
     #[serde(rename = "hubContext", default, skip_serializing_if = "Option::is_none")]
     pub hub_context: Option<HubContext>,
+    /// 사용자가 직전 plan card 의 ✓실행 버튼 누른 시점 frontend 가 동봉하는 planId.
+    /// 설정되어 있으면 AiManager 가 plan_store 조회 → 시스템 프롬프트 안 plan_to_instruction 주입 +
+    /// consume_plan 으로 일회성 처리. 옛 TS `planExecuteId` 1:1.
+    #[serde(rename = "planExecuteId", default, skip_serializing_if = "Option::is_none")]
+    pub plan_execute_id: Option<String>,
+    /// 사용자가 직전 plan card 의 ⚙수정 제안 안 텍스트 입력 후 전송한 시점 frontend 가 동봉하는 planId.
+    /// 설정되어 있으면 AiManager 가 plan_store 조회 → 시스템 프롬프트 안 plan_to_revise_instruction 주입 →
+    /// AI 가 propose_plan 도구 재호출 강제. 옛 TS `planReviseId` 1:1.
+    #[serde(rename = "planReviseId", default, skip_serializing_if = "Option::is_none")]
+    pub plan_revise_id: Option<String>,
 }
 
 /// Hub 컨텍스트 — `AiRequestOpts.hub_context` 안 값.

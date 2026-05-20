@@ -804,7 +804,12 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         headers['X-Session-Id'] = hubContext.sessionId;
       }
       const body: Record<string, unknown> = isHubMode
-        ? { message: userPrompt, planMode }
+        ? {
+            message: userPrompt,
+            planMode,
+            ...(meta?.planExecuteId ? { planExecuteId: meta.planExecuteId } : {}),
+            ...(meta?.planReviseId ? { planReviseId: meta.planReviseId } : {}),
+          }
         : {
             prompt: userPrompt,
             config: { model: aiModel },

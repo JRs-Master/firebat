@@ -419,6 +419,8 @@ impl HubManager {
         conversation_id: &str,
         user_message: &str,
         plan_mode: crate::ports::PlanMode,
+        plan_execute_id: Option<String>,
+        plan_revise_id: Option<String>,
     ) -> InfraResult<AiResponse> {
         const HISTORY_RECENT_LIMIT: usize = 10;
 
@@ -485,6 +487,8 @@ impl HubManager {
             model: model_id,
             hub_context: Some(hub_ctx),
             plan_mode,
+            plan_execute_id,
+            plan_revise_id,
             ..Default::default()
         };
 
