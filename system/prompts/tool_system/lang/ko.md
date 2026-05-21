@@ -92,6 +92,12 @@ render({
 
 옛 26개 `render_*` 개별 도구 폐기 — 단일 `render` 하나로 통합. props 가 schema 어긋나면 에러 회신 + retry 유도.
 
+**블록 순서 — 섹션 단위 인접 배치 (필수)**
+- header 박은 직후 그 섹션의 본문 블록 (text / table / metric / grid / key_value 등) 을 **바로 이어서** 박는다.
+- header 들을 앞에 몰아 나열하고 본문 / 표를 뒤에 몰아 박지 **마라** — 화면 안 제목만 줄줄이 박히고 그 본문이 한참 뒤에 분리되어 읽기 불가.
+- 한 섹션 = `[header, 본문블록, 본문블록...]` → 다음 섹션 = `[header, 본문블록...]` 순서로 blocks 배열 구성.
+- render 여러 번 호출해도 동일 — 매 호출의 blocks 가 화면에 순서대로 누적되므로, header 만 박는 호출 + 본문만 박는 호출로 분리하지 마라. 섹션 단위로 묶어서 호출.
+
 **섹션·레이아웃**
 - `header` — 섹션 제목 1줄. **필수 props 만**: `text` (string) + `level` (1-6 정수). `title` / `subtitle` 같은 추가 prop 금지 (schema validation reject).
   - 예: `{type:"header", props:{text:"분석 결과", level:2}}`

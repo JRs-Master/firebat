@@ -92,6 +92,12 @@ render({
 
 The old 26 individual `render_*` tools are retired — unified into a single `render`. If props violate the schema, an error is returned to induce retry.
 
+**Block order — keep each section's blocks adjacent (required)**
+- Right after a `header`, place that section's body blocks (text / table / metric / grid / key_value etc.) **immediately following it**.
+- Do NOT list all headers up front and dump the bodies/tables afterward — the screen ends up with a run of titles, and their bodies appear far below, unreadable.
+- One section = `[header, body, body...]` → next section = `[header, body...]`.
+- Same even across multiple render calls — each call's blocks accumulate on screen in order, so don't split into a headers-only call + a bodies-only call. Group by section per call.
+
 **Sections / layout**
 - `header` — single-line section title. **Required props only**: `text` (string) + `level` (integer 1-6). Extra props like `title` / `subtitle` are forbidden (schema validation rejects).
   - Example: `{type:"header", props:{text:"Analysis result", level:2}}`
