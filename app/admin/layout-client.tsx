@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { LangProvider, useTranslations } from '../../lib/i18n';
 import { FirebatQueryProvider } from '../../lib/query-client';
 import { apiPost } from '../../lib/api-fetch';
+import { setEventsHubMode } from './hooks/events-manager';
 
 /** hub page wrapper — visitor lang server-side detect (cookie + Accept-Language)
  *  → SSR/client 동일 locale → hydration mismatch 차단. 옛 navigator.language 박은
@@ -22,6 +23,12 @@ export function ConsoleLayoutInner({
    *  Accept-Language header 박은 영역 detect 후 prop 박음. undefined 박힌 영역 = admin path */
   initialLang?: 'ko' | 'en';
 }) {
+  // hub mode = 익명 visitor → admin SSE `/api/events` 구독 차단 (인증 실패 무한 재연결 fix).
+  // module-level 플래그라 render 시점 즉시 set — useEffect 박으면 첫 subscribe (Sidebar mount)
+  // 보다 늦어 race. 본 컴포넌트 mount = hub page 진입 시점이라 동기 set 안전.
+  if (typeof window !== 'undefined') {
+    setEventsHubMode(!!hubMode);
+  }
   if (hubMode) {
     return (
       <LangProvider forceLocale={initialLang ?? 'ko'}>

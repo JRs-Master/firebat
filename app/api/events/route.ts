@@ -36,15 +36,17 @@ export async function GET(req: NextRequest) {
         }
       });
 
+      // keepalive 15s — 옛 30s 는 Caddy / reverse proxy idle timeout (보통 ~30s) 경계와
+      // 겹쳐 ping 전 연결 중단 → ERR_INCOMPLETE_CHUNKED_ENCODING + EventSource 무한 재연결.
+      // hub chat SSE (15s) 와 통일.
       keepalive = setInterval(() => {
         if (closed) return;
         try { controller.enqueue(encoder.encode(': ping\n\n')); }
         catch (e) {
-          // 30s ping 실패 = 클라이언트 끊김. 진단 가시화 + cleanup.
           logger.debug('events', 'SSE keepalive ping 실패 — 클라이언트 끊김 추정', { error: e });
           cleanup();
         }
-      }, 30000);
+      }, 15000);
     },
     cancel() { cleanup(); },
   });

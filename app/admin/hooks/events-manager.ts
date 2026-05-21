@@ -53,6 +53,10 @@ class EventBusSingleton {
   };
 
   private connect() {
+    // hub mode (익명 visitor) = admin SSE `/api/events` (requireAuth 필요) 구독 금지.
+    // 옛 = hub page 안 Sidebar / GalleryPanel 등이 구독 → 인증 실패로 SSE 중단 →
+    // EventSource 무한 재연결 (ERR_INCOMPLETE_CHUNKED_ENCODING 반복).
+    if (eventsHubMode) return;
     if (this.es) return;
     try {
       this.es = new EventSource('/api/events');
@@ -93,6 +97,13 @@ class EventBusSingleton {
 
 // 모듈 스코프 싱글톤 — 페이지 전체에서 1 EventSource
 const bus = new EventBusSingleton();
+
+// hub page mode 플래그 — true 면 admin SSE `/api/events` 구독 차단 (익명 visitor 인증 없음).
+// ConsoleLayoutInner (hub mode) 가 mount 시 setEventsHubMode(true) 호출.
+let eventsHubMode = false;
+export function setEventsHubMode(v: boolean) {
+  eventsHubMode = v;
+}
 
 /** SSE 이벤트 구독. types 배열에 포함된 이벤트만 handler 호출.
  *  handler 는 리렌더마다 새로 만들어져도 OK — 내부적으로 ref 로 안정화. */
