@@ -5,14 +5,26 @@ import { LangProvider, useTranslations } from '../../lib/i18n';
 import { FirebatQueryProvider } from '../../lib/query-client';
 import { apiPost } from '../../lib/api-fetch';
 
-/** hub page wrapper — visitor navigator.language 자동 감지 박은 nested LangProvider
- *  + FirebatQueryProvider (CronPanel / TemplatesPanel / GalleryPanel 안 useQuery 동작 영역).
+/** hub page wrapper — visitor lang server-side detect (cookie + Accept-Language)
+ *  → SSR/client 동일 locale → hydration mismatch 차단. 옛 navigator.language 박은
+ *  client-only 영역 = SSR 시 'en' / client 시 동적 → React #418 (hydration text mismatch).
+ *  + FirebatQueryProvider (CronPanel / TemplatesPanel / GalleryPanel 안 useQuery 동작).
  *  admin layout 안 박혀있던 provider 가 (user) route 영역 안 박혀있지 않아 hub mode 안
  *  사이드바 panel 진입 시 "No QueryClient set" throw 박혔던 영역 fix. */
-export function ConsoleLayoutInner({ children, hubMode }: { children: React.ReactNode; hubMode?: boolean }) {
+export function ConsoleLayoutInner({
+  children,
+  hubMode,
+  initialLang,
+}: {
+  children: React.ReactNode;
+  hubMode?: boolean;
+  /** server-side 박은 visitor lang — hub fallback render 영역 (server component) 안 cookie +
+   *  Accept-Language header 박은 영역 detect 후 prop 박음. undefined 박힌 영역 = admin path */
+  initialLang?: 'ko' | 'en';
+}) {
   if (hubMode) {
     return (
-      <LangProvider forceLocale={detectVisitorLang()}>
+      <LangProvider forceLocale={initialLang ?? 'ko'}>
         <FirebatQueryProvider>
           <ConsoleLayoutBody hubMode>{children}</ConsoleLayoutBody>
         </FirebatQueryProvider>
@@ -20,12 +32,6 @@ export function ConsoleLayoutInner({ children, hubMode }: { children: React.Reac
     );
   }
   return <ConsoleLayoutBody>{children}</ConsoleLayoutBody>;
-}
-
-function detectVisitorLang(): 'ko' | 'en' {
-  if (typeof navigator === 'undefined') return 'en';
-  const nav = navigator.language?.toLowerCase() || '';
-  return nav.startsWith('ko') ? 'ko' : 'en';
 }
 
 function ConsoleLayoutBody({ children, hubMode }: { children: React.ReactNode; hubMode?: boolean }) {

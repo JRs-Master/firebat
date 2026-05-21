@@ -219,8 +219,21 @@ export default async function DynamicPage({ params, searchParams }: Props) {
       const hubRes = await getInstanceBySlug({ slug });
       if (hubRes.ok && hubRes.data?.instance && hubRes.data.instance.enabled && hubRes.data.instance.exposePage) {
         const instance = hubRes.data.instance;
+        // visitor lang server-side detect — cookie (사용자 옛 선택) → Accept-Language → 'ko' 기본.
+        // navigator.language client-only 박은 영역 hydration mismatch (React #418) root cause 박혀
+        // server side 동일 결과 박은 영역 박음.
+        const cookieStore = await cookies();
+        const cookieLang = cookieStore.get('firebat_ui_lang')?.value;
+        const hdrs = await headers();
+        const acceptLang = hdrs.get('accept-language') || '';
+        const visitorLang: 'ko' | 'en' =
+          cookieLang === 'ko' || cookieLang === 'en'
+            ? cookieLang
+            : acceptLang.toLowerCase().startsWith('ko')
+              ? 'ko'
+              : 'en';
         return (
-          <ConsoleLayoutInner hubMode>
+          <ConsoleLayoutInner hubMode initialLang={visitorLang}>
             <HubChatClient
               slug={instance.slug}
               apiToken={instance.apiToken}

@@ -145,6 +145,7 @@ export function GalleryPanel({
       );
       if (data.success) {
         setItems(prev => prev.filter(i => i.slug !== slug));
+        setTotal(prev => Math.max(0, prev - 1));
         setSelectedIndex(null);
       } else {
         await alertDialog({ title: '삭제 실패', message: data.error || 'unknown', danger: true });
