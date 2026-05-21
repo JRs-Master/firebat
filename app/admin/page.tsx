@@ -722,7 +722,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
           {msg.image && (
             <img src={msg.image} alt="첨부 이미지" className="max-w-[240px] max-h-[180px] rounded-2xl border border-slate-600 shadow-md object-cover" />
           )}
-          <div className="bg-slate-800 text-white px-4 py-3 sm:px-6 sm:py-4 rounded-3xl rounded-tr-sm shadow-md text-[14px] sm:text-[15.5px] leading-relaxed break-words border border-slate-700 w-fit">
+          <div className="bg-slate-800 text-white px-4 py-3 sm:px-6 sm:py-4 rounded-3xl rounded-tr-sm shadow-md text-[15px] sm:text-[16px] font-medium leading-relaxed break-words border border-slate-700 w-fit">
             {msg.content}
           </div>
         </div>
