@@ -2,28 +2,26 @@
  * useWakeLock — 모바일 브라우저 화면 자동 잠금 방지.
  *
  * 사용처: AI 응답 중에 화면이 꺼지면 SSE 연결이 throttle 또는 drop 되어
- *   응답이 실종되거나 "로봇 사라짐" 증상 발생. 응답 중엔 화면 켜둠.
+ *   응답이 실종되거나 "로봇 사라짐" 증상 발생. chat 페이지 박힌 동안 화면 켜둠.
  *
  * 동작:
- *  - active=true 동안 `navigator.wakeLock.request('screen')` 유지
- *  - active=false / 언마운트 / 탭 숨김 → release
- *  - 탭 다시 보이면 active 상태면 재획득 (visibilitychange)
+ *  - active=true 동안 `navigator.wakeLock.request('screen')` 1회 호출
+ *  - visibility hidden → visible 복귀 시 sentinel.released 확인 후 재acquire
+ *  - 옛 `96f8030` 안 release event listener + 즉시 재acquire 박은 영역 폐기 — 모바일
+ *    background throttle 시점 OS 가 release → 재acquire reject (영구 reject 가능) →
+ *    silent catch → 영구 미박힘 root cause. 옛 `f6941bb` (node 시점 동작 영역) 단순
+ *    영역 복원.
  *
- * 지원: iOS Safari 16.4+, Android Chrome/Firefox 등 대부분 모던 브라우저
- * 제약: HTTPS 필요, secure context. PC 브라우저에서도 동작하지만 사용자 입력 없이 오래 유지 시 일부 OS 가 해제.
- *
- * 폴백: Wake Lock API 미지원 환경에선 조용히 no-op (에러 throw 없음).
+ * 지원: iOS Safari 16.4+, Android Chrome/Firefox 등 모던 브라우저.
+ * 제약: HTTPS / secure context. 미지원 환경 no-op.
  */
 'use client';
 
 import { useEffect } from 'react';
 
-// Wake Lock API 타입 — TS 기본 타입에 빠져있어 수동 정의
 interface WakeLockSentinel {
   released: boolean;
   release(): Promise<void>;
-  addEventListener(type: 'release', listener: () => void): void;
-  removeEventListener(type: 'release', listener: () => void): void;
 }
 
 interface NavigatorWakeLock {
@@ -35,42 +33,28 @@ export function useWakeLock(active: boolean): void {
     if (!active) return;
     if (typeof navigator === 'undefined') return;
     const wakeLockApi = (navigator as Navigator & { wakeLock?: NavigatorWakeLock }).wakeLock;
-    if (!wakeLockApi) return; // 미지원 환경 — 조용히 pass
+    if (!wakeLockApi) return;
 
     let sentinel: WakeLockSentinel | null = null;
     let disposed = false;
-    let onRelease: (() => void) | null = null;
 
     const acquire = async () => {
-      // 옛 sentinel 영역 cleanup — 자동 release 박힌 sentinel 영역 listener 영역 제거.
-      if (sentinel && onRelease) {
-        try { sentinel.removeEventListener('release', onRelease); } catch { /* ignore */ }
-      }
       try {
         const got = await wakeLockApi.request('screen');
         if (disposed) {
-          try { await got.release(); } catch { /* 이미 해제 */ }
+          try { await got.release(); } catch {}
           return;
         }
         sentinel = got;
-        // release event listener — 모바일 안 visibility hidden / 사용자 활동 0 영역 등 시점에
-        // 브라우저가 자동 release. sentinel 영역 nullify 박혀야 visibilitychange 안 재acquire 박힘.
-        onRelease = () => {
-          sentinel = null;
-          // 활성 상태인데 visible 면 즉시 재시도 (브라우저가 일관 reject 박으면 무한 retry 0 —
-          // request() reject 시점에 sentinel 영역 그대로 null 박혀 catch 안 silent).
-          if (!disposed && document.visibilityState === 'visible') {
-            void acquire();
-          }
-        };
-        got.addEventListener('release', onRelease);
-      } catch { /* 권한 거부·secure context 미충족 등 — 조용히 skip */ }
+      } catch { /* 권한 / secure context / OS 영역 reject — 조용히 skip */ }
     };
 
     const onVisibility = () => {
-      // 옛 hook 안 `!sentinel` 영역 박혀있었는데 — 자동 release 박힌 sentinel 영역 nullify 안 박혀
-      // 영구 skip 박은 영역 = root cause. 새 = release listener 가 nullify 박음 + 본 영역 = sentinel
-      // 영역 null 또는 released 박힌 영역 재acquire.
+      // visibility hidden → 브라우저 자동 release → released=true 박힘.
+      // visible 복귀 시 released 박힌 영역 재acquire. 옛 commit `96f8030` 안 release
+      // event listener 박은 영역 = 즉시 재acquire → OS 일관 reject 영구 미박힘 root cause.
+      // 본 영역 = visibility 변경 시점에만 재acquire — OS 안 user-initiated 영역 박혀
+      // 재acquire 박힘.
       if (document.visibilityState === 'visible' && !disposed && (!sentinel || sentinel.released)) {
         void acquire();
       }
@@ -82,16 +66,10 @@ export function useWakeLock(active: boolean): void {
     return () => {
       disposed = true;
       document.removeEventListener('visibilitychange', onVisibility);
-      if (sentinel) {
-        if (onRelease) {
-          try { sentinel.removeEventListener('release', onRelease); } catch { /* ignore */ }
-        }
-        if (!sentinel.released) {
-          void sentinel.release().catch(() => {});
-        }
+      if (sentinel && !sentinel.released) {
+        void sentinel.release().catch(() => {});
       }
       sentinel = null;
-      onRelease = null;
     };
   }, [active]);
 }
