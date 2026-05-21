@@ -662,6 +662,17 @@ impl McpToolHandler for RenderUnifiedHandler {
             ));
         }
 
+        // 부분 성공 시 진단 — 검증 실패 block 이 silent skip 되어 사용자 화면 안 header 만 박히고
+        // 본문 빠짐 root cause 추적. journalctl 안 어떤 block 이 왜 실패했는지 확정.
+        if !failed.is_empty() {
+            tracing::warn!(
+                rendered_count = rendered.len(),
+                failed_count = failed.len(),
+                failed = %serde_json::to_string(&failed).unwrap_or_default(),
+                "[render] 일부 block 검증 실패 — silent skip (사용자 화면 미표시)"
+            );
+        }
+
         // 부분 성공 / 전체 성공 — success: true 박힘 + failed 배열은 사용자 / AI 안내용.
         Ok(serde_json::json!({
             "success": true,
