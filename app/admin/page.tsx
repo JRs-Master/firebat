@@ -768,7 +768,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                     return (
                       <BlockErrorBoundary key={i} label={label}>
                         {b.type === 'text' ? (
-                          <div className={`text-slate-800 text-[15px] leading-relaxed space-y-1 ${wrapCls}`}>{renderMarkdown(b.text)}</div>
+                          <div className={`text-slate-800 text-[15px] sm:text-[16px] font-medium leading-relaxed space-y-1 ${wrapCls}`}>{renderMarkdown(b.text)}</div>
                         ) : b.type === 'html' ? (
                           <div className={wrapCls}><AutoResizeIframe src={b.htmlContent as string} initialHeight={b.htmlHeight} dependencies={(b as { dependencies?: string[] }).dependencies} /></div>
                         ) : b.type === 'component' ? (
@@ -781,7 +781,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
               ) : (
                 <>
                   {msg.content && (
-                    <div className="text-slate-800 text-[15px] leading-relaxed space-y-1">
+                    <div className="text-slate-800 text-[15px] sm:text-[16px] font-medium leading-relaxed space-y-1">
                       {renderMarkdown(msg.content)}
                     </div>
                   )}
