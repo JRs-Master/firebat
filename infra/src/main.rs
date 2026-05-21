@@ -73,7 +73,8 @@ use firebat_core::{
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
     // Phase B-17.5c — tracing 초기화 (env RUST_LOG / FIREBAT_LOG_FORMAT=json 토글)
-    init_tracing();
+    // 로그 시스템 1단계 (2026-05-21) — reload handle 받아 SIGHUP 시 런타임 filter 재적용.
+    let log_reload_handle = init_tracing();
     tracing::info!(version = firebat_core::version(), "Firebat Core 부팅");
 
     // 옛 commit `3418b4b` 안 HF_ENDPOINT env 자동 default 박은 fix = 잘못된 진단 — hf-hub 0.3
@@ -92,6 +93,48 @@ async fn main() -> Result<()> {
 
     // i18n loader — language/{lang}.json + system/modules/*/lang + system/services/*/lang + system/prompts/*/lang 자동 scan.
     firebat_core::i18n::init(&workspace_root);
+
+    // 로그 필터 런타임 reload — SIGHUP 시 data/log-filter.txt 읽어서 EnvFilter 재적용.
+    // ssh 에서 `echo "info,law-search=debug" > data/log-filter.txt && systemctl kill -s HUP firebat`
+    // → 즉시 반영 (재빌드 / 재시작 0). 진단 로그는 코드 곳곳 tracing::debug! 로 이미 박혀있어
+    // 평소엔 info 두고 진단 시 해당 카테고리만 켜는 흐름. (로그 시스템 1단계, 2026-05-21)
+    #[cfg(unix)]
+    {
+        let wr = workspace_root.clone();
+        let handle = log_reload_handle.clone();
+        tokio::spawn(async move {
+            let mut sighup = match tokio::signal::unix::signal(
+                tokio::signal::unix::SignalKind::hangup(),
+            ) {
+                Ok(s) => s,
+                Err(e) => {
+                    tracing::warn!(error = %e, "[log] SIGHUP handler 등록 실패");
+                    return;
+                }
+            };
+            loop {
+                sighup.recv().await;
+                let path = wr.join("data").join("log-filter.txt");
+                let filter_str = std::fs::read_to_string(&path)
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_else(|_| "info".to_string());
+                match firebat_infra::adapters::tracing_log::reload_log_filter(
+                    &handle,
+                    &filter_str,
+                ) {
+                    Ok(_) => {
+                        tracing::info!(filter = %filter_str, "[log] 필터 reload (SIGHUP)")
+                    }
+                    Err(e) => tracing::warn!(
+                        error = %e,
+                        filter = %filter_str,
+                        "[log] 필터 reload 실패 — 기존 유지"
+                    ),
+                }
+            }
+        });
+    }
+    let _ = &log_reload_handle; // non-unix 빌드 안 unused 경고 회피
 
     let listen_addr = std::env::var("FIREBAT_CORE_LISTEN")
         .unwrap_or_else(|_| "127.0.0.1:50051".to_string());

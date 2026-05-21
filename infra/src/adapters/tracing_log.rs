@@ -6,8 +6,13 @@
 //!
 //! 비동기 컨텍스트에서 매 요청 Span 활성화 시 자동으로 correlation_id 설정
 //! (spans 내부에서 호출되는 모든 log event 가 inherit).
+//!
+//! 로그 시스템 1단계 (2026-05-21) — EnvFilter reload layer 도입. SIGHUP 시 `reload_log_filter`
+//! 로 런타임에 레벨/카테고리 동적 변경 (재빌드 / 재시작 0). 진단 로그는 코드 곳곳에 이미
+//! tracing::debug! 로 박혀있어, 평소엔 off (info) 두고 진단 시 카테고리만 켜는 흐름.
 
 use firebat_core::ports::ILogPort;
+use tracing_subscriber::{prelude::*, reload, EnvFilter, Registry};
 
 pub struct TracingLogAdapter;
 
@@ -38,29 +43,48 @@ impl ILogPort for TracingLogAdapter {
     }
 }
 
-/// 부팅 시 1회 호출 — tracing-subscriber 초기화.
-/// env RUST_LOG 기준 filter (default "info"). FIREBAT_LOG_FORMAT=json → JSON 출력.
-pub fn init_tracing() {
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+/// EnvFilter reload handle — SIGHUP 시 main.rs 가 `reload_log_filter` 에 전달.
+/// inner subscriber = Registry (reload layer 가 registry 위에 wrap).
+pub type LogReloadHandle = reload::Handle<EnvFilter, Registry>;
+
+/// 부팅 시 1회 호출 — tracing-subscriber 초기화 + reload handle 반환.
+/// env RUST_LOG 기준 초기 filter (default "info"). FIREBAT_LOG_FORMAT=json → JSON 출력.
+/// 반환 handle 로 런타임 filter reload (SIGHUP).
+pub fn init_tracing() -> LogReloadHandle {
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let (filter_layer, reload_handle) = reload::Layer::new(filter);
 
     let json_format = std::env::var("FIREBAT_LOG_FORMAT")
         .map(|v| v.eq_ignore_ascii_case("json"))
         .unwrap_or(false);
 
+    let registry = tracing_subscriber::registry().with(filter_layer);
     if json_format {
-        tracing_subscriber::fmt()
-            .json()
-            .with_env_filter(filter)
-            .with_target(true)
-            .with_current_span(true)
+        registry
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_target(true)
+                    .with_current_span(true),
+            )
             .init();
     } else {
-        tracing_subscriber::fmt()
-            .with_env_filter(filter)
-            .with_target(true)
+        registry
+            .with(tracing_subscriber::fmt::layer().with_target(true))
             .init();
     }
+
+    reload_handle
+}
+
+/// 런타임 filter reload — SIGHUP handler 에서 `data/log-filter.txt` 내용으로 호출.
+/// 예: "info,firebat_infra::adapters::sandbox=debug,law-search=debug".
+/// 파싱 실패 / handle 오류 시 Err — 기존 filter 유지 (서버 중단 X).
+pub fn reload_log_filter(handle: &LogReloadHandle, filter_str: &str) -> Result<(), String> {
+    let new_filter = EnvFilter::try_new(filter_str).map_err(|e| e.to_string())?;
+    handle.reload(new_filter).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Correlation ID 생성 — uuid v4. 매 gRPC RPC 진입 시 호출.
