@@ -551,10 +551,29 @@ pub struct RenderUnifiedHandler;
 #[async_trait::async_trait]
 impl McpToolHandler for RenderUnifiedHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
-        let blocks = args
-            .get("blocks")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| "render: 'blocks' (array) 가 필요합니다".to_string())?;
+        // args 형태 robustness — 일부 CLI 어댑터 / 모델이 args 를 stringified JSON 으로 박거나
+        // blocks 배열 자체를 직접 박는 경우 수용. 옛 = args.get("blocks") 단일 경로라
+        // 'blocks (array) 가 필요합니다' 거짓 거부 (AI 가 정상 {blocks:[...]} 박아도).
+        let parsed_args: Value = match args.as_str() {
+            Some(s) => serde_json::from_str(s).unwrap_or(args.clone()),
+            None => args.clone(),
+        };
+        // blocks 값도 stringified 일 수 있음 (blocks: "[...]") → parse.
+        let blocks_val = parsed_args.get("blocks").cloned();
+        let blocks_owned: Vec<Value> = if let Some(bv) = blocks_val {
+            match bv {
+                Value::Array(a) => a,
+                Value::String(s) => serde_json::from_str::<Vec<Value>>(&s)
+                    .map_err(|_| "render: 'blocks' 가 array 가 아닙니다".to_string())?,
+                _ => return Err("render: 'blocks' (array) 가 필요합니다".to_string()),
+            }
+        } else if let Value::Array(a) = &parsed_args {
+            // args 자체가 blocks 배열인 경우
+            a.clone()
+        } else {
+            return Err("render: 'blocks' (array) 가 필요합니다".to_string());
+        };
+        let blocks = &blocks_owned;
         if blocks.is_empty() {
             return Err("render: 'blocks' 가 비어있습니다 (최소 1개 필요)".to_string());
         }
