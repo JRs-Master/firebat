@@ -58,11 +58,10 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   messagesRef.current = messages;
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
-  // 모바일 화면 자동 잠금 방지 — chat 페이지 박힌 동안 무조건 유지.
-  // 옛 = loading=true 동안만 유지 → 응답 도착 후 release → 사용자가 답변 읽는 동안 OS 화면 자동
-  // 잠금 박혀 SSE 끊김 / 답변 본문 read 중 화면 꺼짐 사용자 보고. 새 = chat 페이지 mount 박은
-  // 영역 안 무조건 wake lock. unmount 시 자동 release (페이지 이동 / 새 탭 등).
-  useWakeLock(true);
+  // 모바일 화면 자동 잠금 방지 — AI 응답 중 SSE 끊김 / "로봇 사라짐" 방지.
+  // loading=true 동안만 유지. 응답 후 사용자가 답변 read 박는 동안 = 터치/스크롤 박혀
+  // OS 자동 잠금 안 박힘. 일정 시간 후 잠금 = OS default 정공.
+  useWakeLock(loading);
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvIdState] = useState('');
