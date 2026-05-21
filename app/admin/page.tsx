@@ -43,10 +43,10 @@ function MarkdownTableBox(props: any) {
 
 // ─── 마크다운 커스텀 컴포넌트 ───────────────────────────────────────────────
 const mdComponents = {
-  h1: (props: any) => <h1 className="text-[18px] font-bold text-slate-800 mt-5 mb-2" {...props} />,
-  h2: (props: any) => <h2 className="text-[16px] font-bold text-slate-800 mt-4 mb-1.5" {...props} />,
-  h3: (props: any) => <h3 className="text-[15px] font-bold text-slate-800 mt-3 mb-1" {...props} />,
-  h4: (props: any) => <h4 className="text-[14px] font-bold text-slate-700 mt-2 mb-1" {...props} />,
+  h1: (props: any) => <h1 className="text-[18px] sm:text-[19px] font-extrabold text-slate-800 mt-5 mb-2" {...props} />,
+  h2: (props: any) => <h2 className="text-[16px] sm:text-[17px] font-bold text-slate-800 mt-4 mb-1.5" {...props} />,
+  h3: (props: any) => <h3 className="text-[15px] sm:text-[16px] font-bold text-slate-800 mt-3 mb-1" {...props} />,
+  h4: (props: any) => <h4 className="text-[15px] font-semibold text-slate-700 mt-2 mb-1" {...props} />,
   p: (props: any) => <p className="mb-2 last:mb-0" {...props} />,
   ul: (props: any) => <ul className="list-disc list-outside ml-5 mb-2 space-y-1" {...props} />,
   ol: (props: any) => <ol className="list-decimal list-outside ml-5 mb-2 space-y-1" {...props} />,
@@ -768,7 +768,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                     return (
                       <BlockErrorBoundary key={i} label={label}>
                         {b.type === 'text' ? (
-                          <div className={`text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1 ${wrapCls}`}>{renderMarkdown(b.text)}</div>
+                          <div className={`text-slate-800 text-[15px] leading-relaxed space-y-1 ${wrapCls}`}>{renderMarkdown(b.text)}</div>
                         ) : b.type === 'html' ? (
                           <div className={wrapCls}><AutoResizeIframe src={b.htmlContent as string} initialHeight={b.htmlHeight} dependencies={(b as { dependencies?: string[] }).dependencies} /></div>
                         ) : b.type === 'component' ? (
@@ -781,7 +781,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
               ) : (
                 <>
                   {msg.content && (
-                    <div className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">
+                    <div className="text-slate-800 text-[15px] leading-relaxed space-y-1">
                       {renderMarkdown(msg.content)}
                     </div>
                   )}

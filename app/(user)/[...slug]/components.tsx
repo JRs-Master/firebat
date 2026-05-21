@@ -106,8 +106,19 @@ function HeaderComp({ text, level = 1, align }: { text: string; level?: number; 
     5: 'font-semibold',
     6: 'font-semibold',
   };
+  // 폰트 크기 명시 — chat 안엔 .firebat-cms-content wrapper 가 없어 globals.css h1..h6 rule 미적용
+  // (브라우저 기본 크기 = 위계 들쭉날쭉). 본문 15px 기준 단계적 위계. save_page 안에선
+  // .firebat-cms-content h1..h6 (CMS typography 토큰) 이 CSS specificity 로 우선 → 사용자 커스텀 유지.
+  const sizes: Record<number, string> = {
+    1: 'text-[18px] sm:text-[19px]',
+    2: 'text-[16px] sm:text-[17px]',
+    3: 'text-[15px] sm:text-[16px]',
+    4: 'text-[15px]',
+    5: 'text-[15px]',
+    6: 'text-[15px]',
+  };
   const alignCls = align === 'center' ? 'text-center' : align === 'right' ? 'text-right' : '';
-  const cls = `${weights[clampedLevel] ?? weights[1]} ${alignCls}`;
+  const cls = `${weights[clampedLevel] ?? weights[1]} ${sizes[clampedLevel] ?? sizes[1]} ${alignCls}`;
   const clean = cleanPlainText(text);
   if (clampedLevel === 1) return <h1 className={cls}>{clean}</h1>;
   if (clampedLevel === 2) return <h2 className={cls}>{clean}</h2>;
@@ -151,7 +162,7 @@ function TextComp({ content }: { content: string }) {
     .replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*\*/g, '');
   return (
-    <div className="text-gray-700 text-[14px] sm:text-[15px] leading-relaxed prose prose-sm max-w-none">
+    <div className="text-gray-700 text-[15px] leading-relaxed prose prose-sm max-w-none">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{withStrong}</ReactMarkdown>
     </div>
   );
@@ -985,7 +996,7 @@ function ListComp({ items, ordered = false }: { items: string[]; ordered?: boole
   return (
     <Tag className={`space-y-1.5 pl-5 ${ordered ? 'list-decimal' : 'list-disc'} text-gray-700`}>
       {items.map((item, i) => (
-        <li key={i} className="text-[14px] sm:text-[15px] leading-relaxed">{cleanPlainText(item)}</li>
+        <li key={i} className="text-[15px] leading-relaxed">{cleanPlainText(item)}</li>
       ))}
     </Tag>
   );
