@@ -15,7 +15,7 @@
 import { useReducer, useState, useRef, useEffect, useCallback } from 'react';
 import { Message, Conversation, INIT_MESSAGE, makeConv, PendingAction } from '../types';
 import { ConversationMeta } from '../components/Sidebar';
-import { chatReducer, cleanMessages, FALLBACK_I18N_KEYS, isFallbackContent } from './chat-manager';
+import { chatReducer, cleanMessages, FALLBACK_I18N_KEYS, isFallbackContent, THINKING_STATUS } from './chat-manager';
 import { useTranslations } from '../../../lib/i18n';
 import { useSetting } from './settings-manager';
 import { useWakeLock } from './use-wake-lock';
@@ -165,6 +165,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
                     role: m.role === 'system' ? 'system' as const : 'user' as const,
                     content: m.content ?? '',
                     ...(m.dataJson ? { data: safeJsonParse<Record<string, unknown>>(m.dataJson, {}) } : {}),
+                    // reload 후 옛 system 메시지 안 thinkingText 누락 → ThinkingBlock 의 `!complete &&
+                    // !thinkingText` 조건 안 null return → '답변완료' 라벨 사라짐. backend hub_messages
+                    // schema 안 thinkingText field 박지 X (admin Message 와 차이). 변환 시 system role
+                    // 박은 영역 안 default DONE 박음.
+                    ...(m.role === 'system' ? { thinkingText: THINKING_STATUS.DONE } : {}),
                   } as Message));
                 }
               } catch (e) {
