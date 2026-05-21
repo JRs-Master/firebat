@@ -57,19 +57,26 @@ function outErr(key, params) {
 
 // ── 공통 fetch ──────────────────────────────────────────────────────────────
 async function apiFetch(url) {
+  // 진단 로그 — sandbox 안 stdout/stderr capture (backend tracing log 안 박힘).
+  // ECONNRESET 등 root cause 추적 위해 URL + 응답 status + body preview 박음.
+  console.error(`[law-search] fetch: ${url}`);
   let resp;
   try {
     resp = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT) });
   } catch (e) {
     // 네트워크 장애, DNS 실패, 타임아웃 등
     const cause = e.cause?.code || e.cause?.message || '';
+    console.error(`[law-search] fetch error: name=${e.name} message=${e.message} cause.code=${e.cause?.code || ''} cause.errno=${e.cause?.errno || ''} cause.syscall=${e.cause?.syscall || ''} cause.address=${e.cause?.address || ''}`);
     throw new I18nError('error.network', { message: e.message, cause });
   }
+  console.error(`[law-search] response: status=${resp.status} content-type=${resp.headers.get('content-type') || ''}`);
   if (!resp.ok) {
     const t = await resp.text().catch(() => '');
+    console.error(`[law-search] non-ok body: ${t.slice(0, 500)}`);
     throw new I18nError('error.api_status', { status: String(resp.status), body: t });
   }
   const text = await resp.text();
+  console.error(`[law-search] body preview: ${text.slice(0, 300)}`);
   try {
     const json = JSON.parse(text);
     if (json.result) throw new I18nError('error.api_result', { result: String(json.result), message: json.msg || '' });
