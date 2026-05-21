@@ -48,13 +48,13 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const moduleName = String(body.module ?? '');
   if (!moduleName) return NextResponse.json({ success: false, error: 'module 필수' }, { status: 400 });
 
-  // 안전 list 매칭 — 외부 시스템 통합 sysmod 영역 차단 (kakao / naver / kiwoom 등 admin 자격 필요).
+  // 안전 list 매칭 — notes / calendar = 사이드바 패널 안 visitor 본인 데이터 sysmod (자체 host).
+  // 외부 시스템 통합 sysmod (kakao / naver / kiwoom 등 admin 자격 필요) 는 본 list 부재로 차단.
+  // instance.allowed_sysmods (AI 도구 호출 허용 list, admin 설정) 와는 별개 — sidebar panel 기본
+  // 기능이라 allowed_sysmods 매칭 가드 적용 안 함. 옛 = allowed_sysmods 가드 박혀 visitor 사이드바
+  // calendar/notes panel 이 403 (demo instance 의 allowed_sysmods 에 미포함 시).
   if (!HUB_ALLOWED_SYSMODS.has(moduleName)) {
     return NextResponse.json({ success: false, error: `hub 안 허용되지 않은 sysmod: ${moduleName}` }, { status: 403 });
-  }
-  // 추가 가드 — instance.allowed_sysmods 검사 (admin 이 hub 설정에서 명시 허용한 영역만).
-  if (auth.instance.allowedSysmods && !auth.instance.allowedSysmods.includes(moduleName)) {
-    return NextResponse.json({ success: false, error: '이 sysmod 는 본 hub 에 허용되지 않았습니다.' }, { status: 403 });
   }
 
   // visitor 별 격리 — _hubScope = `<instance_id>:<session_id>` 자동 주입.
