@@ -1051,12 +1051,19 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
     setHubSessionId(sid);
   }, [hubContext]);
 
-  const hubChatContext = hubContext && hubSessionId ? {
-    slug: hubContext.slug,
-    apiToken: hubContext.apiToken,
-    sessionId: hubSessionId,
-    onResetSession: resetHubSession,
-  } : undefined;
+  // useMemo 강제 — 옛 = 매 렌더 새 객체 reference. useChat 의 useEffect dependency 안 hubContext
+  // 박혀 (commit `4d48d4d`) 매 렌더 useEffect 재발화 → fetch list-conversations + dispatch LOAD →
+  // messages state 안 SEND_USER 직후 system isThinking 메시지 reset → ThinkingBlock 사라짐 +
+  // 사이드바 제목 ↔ "새 대화" 깜빡 root cause.
+  const hubChatContext = useMemo(() => {
+    if (!hubContext || !hubSessionId) return undefined;
+    return {
+      slug: hubContext.slug,
+      apiToken: hubContext.apiToken,
+      sessionId: hubSessionId,
+      onResetSession: resetHubSession,
+    };
+  }, [hubContext, hubSessionId, resetHubSession]);
 
   const {
     messages, input, setInput, loading,
