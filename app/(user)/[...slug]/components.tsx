@@ -151,7 +151,7 @@ function TextComp({ content }: { content: string }) {
     .replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*\*/g, '');
   return (
-    <div className="text-gray-700 text-base sm:text-lg leading-relaxed prose prose-sm max-w-none">
+    <div className="text-gray-700 text-[15px] leading-relaxed prose prose-sm max-w-none">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{withStrong}</ReactMarkdown>
     </div>
   );
@@ -985,7 +985,7 @@ function ListComp({ items, ordered = false }: { items: string[]; ordered?: boole
   return (
     <Tag className={`space-y-1.5 pl-5 ${ordered ? 'list-decimal' : 'list-disc'} text-gray-700`}>
       {items.map((item, i) => (
-        <li key={i} className="text-base leading-relaxed">{cleanPlainText(item)}</li>
+        <li key={i} className="text-[15px] leading-relaxed">{cleanPlainText(item)}</li>
       ))}
     </Tag>
   );
