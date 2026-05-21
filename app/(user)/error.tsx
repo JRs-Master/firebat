@@ -6,6 +6,7 @@
  * 사용자 확인 후 다시 redirect 모드 복원 가능.
  */
 import { useEffect } from 'react';
+import { logger } from '../../lib/util/logger';
 
 export default function Error({
   error,
@@ -15,9 +16,9 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    // 콘솔 안 즉시 박음 — 모바일 remote debug 영역 활용.
-    // eslint-disable-next-line no-console
-    console.error('[error boundary]', error);
+    // logger 경유 — 브라우저 console + /api/log 서버 수집 (firebat-frontend journalctl).
+    // hub 익명 visitor 페이지 crash 가 운영자 ssh 에서 보임 (로그 Phase 2).
+    logger.error('error-boundary', '(user) 페이지 렌더 에러', error, { digest: error.digest });
   }, [error]);
 
   return (

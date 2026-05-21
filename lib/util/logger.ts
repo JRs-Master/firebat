@@ -69,11 +69,26 @@ function emit(level: LogLevel, category: string, msg: string, ctx?: Record<strin
   if (!shouldLog(level)) return;
   const safeCtx = redactContext(ctx);
   const prefix = `[firebat:${category}]`;
-  // console.* 분기 — DevTools 가 level filter 자동 적용. 추후 remote sink 추가 시 분기 추가.
+  // console.* 분기 — DevTools 가 level filter 자동 적용.
   if (level === 'error') console.error(prefix, msg, safeCtx ?? '');
   else if (level === 'warn') console.warn(prefix, msg, safeCtx ?? '');
   else if (level === 'info') console.info(prefix, msg, safeCtx ?? '');
   else console.debug(prefix, msg, safeCtx ?? '');
+
+  // remote sink — 브라우저의 error/warn 을 /api/log 로 전송 → firebat-frontend journalctl 합류.
+  // hub 익명 visitor 브라우저 에러가 운영자 ssh 에서 안 보이던 영역 fix (로그 Phase 2).
+  // 브라우저(window) + error/warn 만. debug/info 는 console 전용 (폭주 방지).
+  // 실패 silent — 여기서 logger 재호출 금지 (무한 루프 차단).
+  if (typeof window !== 'undefined' && (level === 'error' || level === 'warn')) {
+    try {
+      fetch('/api/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level, category, msg, context: safeCtx }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch { /* 무시 — console 출력은 이미 됨 */ }
+  }
 }
 
 /**

@@ -60,6 +60,9 @@ export function proxy(request: NextRequest) {
   // Hub endpoints — 외부 사이트 위젯 / 익명 방문자 호출. X-Api-Token + X-Session-Id +
   // allowed_domains 자체 검증. admin 쿠키 X. widget.js (static JS) 도 익명 접근 허용.
   if (pathname.startsWith('/api/hub/')) return NextResponse.next();
+  // 클라이언트 로그 수집 — hub 익명 visitor 브라우저 error/warn → 서버 journalctl.
+  // 인증 면제 (visitor 인증 없음). size cap + error/warn 만 (route 안 처리).
+  if (pathname === '/api/log' && request.method === 'POST') return NextResponse.next();
   // 이미지는 /media/ (api 밖) 로 이전되어 여기서 처리 불필요 — nginx 또는 app/media 라우트가 직접 서빙.
 
   // ── /api/* — 쿠키 또는 Bearer 없으면 401 ──
