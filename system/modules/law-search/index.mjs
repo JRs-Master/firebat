@@ -10,7 +10,7 @@
  * 7가지 target: law, prec, admrul, ordin, detc, expc, trty
  */
 
-const BASE = 'http://www.law.go.kr/DRF';
+const BASE = 'https://www.law.go.kr/DRF';
 const TIMEOUT = 20000;
 
 let raw = '';
