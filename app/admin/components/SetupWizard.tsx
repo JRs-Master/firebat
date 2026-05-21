@@ -169,7 +169,7 @@ export function SetupWizard({ onComplete }: Props) {
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* 언어 — 최상단 (외국인이 한글 위자드에 막히지 않게) */}
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-gray-700 block">{t('setup.interface_lang')}</label>
+          <span className="text-sm font-medium text-gray-700 block">{t('setup.interface_lang')}</span>
           <div className="flex gap-2">
             {(['ko', 'en'] as const).map(l => (
               <button

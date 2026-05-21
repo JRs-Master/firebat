@@ -98,7 +98,7 @@ export function WidgetListField({
 
   return (
     <>
-      <label className="text-xs sm:text-sm font-bold text-slate-700">{label}</label>
+      <span className="text-xs sm:text-sm font-bold text-slate-700">{label}</span>
       {description && (
         <p className="text-[10px] sm:text-xs text-slate-400 font-medium mb-2">{description}</p>
       )}
@@ -203,17 +203,19 @@ export function WidgetListField({
                           const eff = val ?? def;
                           if (p.type === 'toggle') {
                             return (
-                              <label key={p.key} className="flex items-center justify-between cursor-pointer">
+                              <div key={p.key} className="flex items-center justify-between">
                                 <span className="text-[11px] font-bold text-slate-600">{p.label}</span>
                                 <button
                                   type="button"
+                                  role="switch"
+                                  aria-checked={!!eff}
+                                  aria-label={p.label}
                                   onClick={() => updateProp(i, p.key, !eff)}
-                                  className={`relative w-9 h-5 rounded-full transition-colors ${eff ? 'bg-blue-500' : 'bg-slate-300'}`}
-                                  aria-pressed={!!eff}
+                                  className={`relative w-9 h-5 rounded-full transition-colors cursor-pointer ${eff ? 'bg-blue-500' : 'bg-slate-300'}`}
                                 >
                                   <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${eff ? 'translate-x-4' : 'translate-x-0.5'}`} />
                                 </button>
-                              </label>
+                              </div>
                             );
                           }
                           return (

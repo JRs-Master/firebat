@@ -814,7 +814,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             <>
               {/* 인터페이스 언어 */}
               <div className="flex flex-col gap-2">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">{t('settings.interface_lang')}</label>
+                <span className="text-xs sm:text-sm font-bold text-slate-700">{t('settings.interface_lang')}</span>
                 <div className="flex gap-2">
                   {(['ko', 'en'] as const).map(l => (
                     <button
@@ -855,7 +855,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
               {/* 관리자 계정 변경 */}
               <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
-                <label className="text-xs sm:text-sm font-bold text-slate-700 pt-1">관리자 계정 변경</label>
+                <span className="text-xs sm:text-sm font-bold text-slate-700 pt-1">관리자 계정 변경</span>
                 <input
                   id={adminCurrentPwId}
                   name="currentPassword"
@@ -1521,7 +1521,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               {/* 모듈 필요 API 키 (config.json에서 자동 수집) */}
               {moduleSecrets.length > 0 && (
                 <div className="flex flex-col gap-2">
-                  <label className="text-xs sm:text-sm font-bold text-slate-700">모듈 필요 API 키</label>
+                  <span className="text-xs sm:text-sm font-bold text-slate-700">모듈 필요 API 키</span>
                   <p className="text-[10px] sm:text-xs text-slate-400 font-medium -mt-1">
                     모듈의 config.json에서 자동으로 감지된 키입니다.
                   </p>
@@ -1589,7 +1589,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               {/* 저장된 시크릿 목록 (모듈에서 감지되지 않은 수동 등록 키) */}
               {userSecrets.filter(s => !moduleSecrets.some(ms => ms.secretName === s.name)).length > 0 && (
                 <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
-                  <label className="text-xs sm:text-sm font-bold text-slate-700 pt-1">기타 저장된 키</label>
+                  <span className="text-xs sm:text-sm font-bold text-slate-700 pt-1">기타 저장된 키</span>
                   <div className="flex flex-col gap-1.5">
                     {userSecrets.filter(s => !moduleSecrets.some(ms => ms.secretName === s.name)).map(s => (
                       <div key={s.name} className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
@@ -1651,7 +1651,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
               {/* 수동 키 추가 */}
               <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
-                <label className="text-xs sm:text-sm font-bold text-slate-700 pt-1">키 수동 추가</label>
+                <span className="text-xs sm:text-sm font-bold text-slate-700 pt-1">키 수동 추가</span>
                 <div className="flex gap-1.5">
                   <input
                     type="text"
@@ -1692,7 +1692,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               <div className="flex flex-col gap-3 pb-4 border-b border-slate-200 hidden">
                 <div className="flex items-center gap-2">
                   <Server size={16} className="text-blue-600" />
-                  <label className="text-xs sm:text-sm font-bold text-slate-700">Firebat MCP 서버</label>
+                  <span className="text-xs sm:text-sm font-bold text-slate-700">Firebat MCP 서버</span>
                 </div>
                 <p className="text-[11px] sm:text-[12px] text-slate-400 -mt-1">
                   외부 AI 도구(Claude Code, Cursor, VS Code 등)에서 이 파이어뱃 서버에 연결할 수 있습니다.
@@ -1861,7 +1861,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
               {/* 등록된 MCP 서버 목록 */}
               <div className="flex flex-col gap-2">
-                <label className="text-xs sm:text-sm font-bold text-slate-700">외부 MCP 서버</label>
+                <span className="text-xs sm:text-sm font-bold text-slate-700">외부 MCP 서버</span>
                 {mcpLoading ? (
                   <div className="flex items-center justify-center py-6 min-h-[80px]">
                     <Loader2 size={18} className="animate-spin text-slate-400" />
@@ -2246,7 +2246,7 @@ function CapabilityTabContent() {
   return (
     <>
       <div className="flex flex-col gap-2">
-        <label className="text-xs sm:text-sm font-bold text-slate-700">Capability 목록</label>
+        <span className="text-xs sm:text-sm font-bold text-slate-700">Capability 목록</span>
         <p className="text-[10px] sm:text-xs text-slate-400 font-medium -mt-1">
           같은 기능을 수행하는 모듈들의 실행 우선순위를 관리합니다.
         </p>
@@ -2292,9 +2292,9 @@ function CapabilityTabContent() {
                       ) : (
                         <>
                           <div className="flex flex-col gap-1.5">
-                            <label className="text-xs sm:text-sm font-bold text-slate-700">
+                            <span className="text-xs sm:text-sm font-bold text-slate-700">
                               실행 순서 {providers.length > 1 && <span className="text-[10px] text-slate-400 font-normal ml-1">위에서부터 우선 실행</span>}
-                            </label>
+                            </span>
                             {providers.length === 0 ? (
                               <p className="text-[12px] text-slate-400 py-2">등록된 provider가 없습니다</p>
                             ) : (

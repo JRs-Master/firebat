@@ -722,7 +722,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
             {activeTab === 'OG' && resolvedName === 'cms' && (
               <div className="flex flex-col gap-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs sm:text-sm font-bold text-slate-700">{t('system_modules.common.og_preview')}</label>
+                  <span className="text-xs sm:text-sm font-bold text-slate-700">{t('system_modules.common.og_preview')}</span>
                   <a
                     href="/api/og"
                     target="_blank"
@@ -970,7 +970,7 @@ function ColorPresetField({ label, description, value, onChange }: {
 }) {
   return (
     <>
-      <label className="text-xs sm:text-sm font-bold text-slate-700">{label}</label>
+      <span className="text-xs sm:text-sm font-bold text-slate-700">{label}</span>
       {description && (
         <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{description}</p>
       )}
@@ -1087,7 +1087,7 @@ function ColorOverridesField({ label, description, settings, presetKey, onChange
   return (
     <>
       <div className="flex items-center justify-between">
-        <label className="text-xs sm:text-sm font-bold text-slate-700">{label}</label>
+        <span className="text-xs sm:text-sm font-bold text-slate-700">{label}</span>
         {hasAnyOverride && (
           <button
             type="button"
@@ -1206,7 +1206,7 @@ function VerificationsField({ label, description, value, onChange }: {
   };
   return (
     <>
-      <label className="text-xs sm:text-sm font-bold text-slate-700">{label}</label>
+      <span className="text-xs sm:text-sm font-bold text-slate-700">{label}</span>
       {description && (
         <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{description}</p>
       )}

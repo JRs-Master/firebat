@@ -106,7 +106,7 @@ export function TelegramWebhookSection() {
   return (
     <div className="flex flex-col gap-3 pt-3 mt-2 border-t border-slate-200">
       <div className="flex items-center justify-between">
-        <label className="text-xs sm:text-sm font-bold text-slate-700">양방향 봇 (Webhook)</label>
+        <span className="text-xs sm:text-sm font-bold text-slate-700">양방향 봇 (Webhook)</span>
         <div className="flex items-center gap-2 text-[11px] sm:text-[12px]">
           {status?.active ? (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium bg-emerald-100 text-emerald-700">

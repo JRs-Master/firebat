@@ -25,8 +25,11 @@ function useFieldId(): string | undefined {
 export function FieldLabel({ children, className = '', htmlFor }: { children: React.ReactNode; className?: string; htmlFor?: string }) {
   const ctxId = useFieldId();
   const targetId = htmlFor ?? ctxId;
+  const cls = `text-xs sm:text-sm font-bold text-slate-700 ${className}`;
+  // 연결할 form field id 가 없으면(Field 컨텍스트 밖 그룹 헤딩) label 대신 span 사용 — a11y 경고 회피.
+  if (!targetId) return <span className={cls}>{children}</span>;
   return (
-    <label htmlFor={targetId} className={`text-xs sm:text-sm font-bold text-slate-700 ${className}`}>
+    <label htmlFor={targetId} className={cls}>
       {children}
     </label>
   );
