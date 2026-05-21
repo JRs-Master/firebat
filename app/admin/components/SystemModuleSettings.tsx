@@ -760,7 +760,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                 <div className="flex flex-col gap-1.5 mb-1">
                 {field.type === 'secret' ? (
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</label>
+                    <label className="text-xs sm:text-sm font-bold text-slate-700" htmlFor={`${fieldIdBase}-${field.key}`}>{localize(t, field.label)}</label>
                     {secretSaved[field.key] ? (
                       <div className="flex items-center gap-2">
                         <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex-1">
@@ -776,10 +776,13 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     ) : (
                       <div className="flex items-center gap-2">
                         <input
+                          id={`${fieldIdBase}-${field.key}`}
+                          name={field.key}
                           type="password"
                           value={secretValues[field.key] ?? ''}
                           onChange={e => setSecretValues(prev => ({ ...prev, [field.key]: e.target.value }))}
                           placeholder={field.placeholder}
+                          autoComplete="new-password"
                           className="flex-1 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
                         <button
@@ -797,7 +800,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                   </div>
                 ) : field.type === 'oauth' ? (
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</label>
+                    <span className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</span>
                     <div className="flex items-center gap-2">
                       {oauthStatus[field.key] ? (
                         <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg flex-1">
@@ -868,7 +871,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                     )}
                   </>
                 ) : field.type === 'toggle' ? (
-                  <label className="flex items-center justify-between cursor-pointer">
+                  <div className="flex items-center justify-between">
                     <div>
                       <span className="text-xs sm:text-sm font-bold text-slate-700">{localize(t, field.label)}</span>
                       {field.description && (
@@ -876,12 +879,16 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                       )}
                     </div>
                     <button
+                      type="button"
+                      role="switch"
+                      aria-checked={!!settings[field.key]}
+                      aria-label={localize(t, field.label)}
                       onClick={() => handleChange(field.key, !settings[field.key])}
-                      className={`relative w-11 h-6 rounded-full transition-colors ${settings[field.key] ? 'bg-blue-500' : 'bg-slate-300'}`}
+                      className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${settings[field.key] ? 'bg-blue-500' : 'bg-slate-300'}`}
                     >
                       <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${settings[field.key] ? 'translate-x-5' : ''}`} />
                     </button>
-                  </label>
+                  </div>
                 ) : (
                   <>
                     <label className="text-xs sm:text-sm font-bold text-slate-700" htmlFor={`${fieldIdBase}-${field.key}`}>{localize(t, field.label)}</label>

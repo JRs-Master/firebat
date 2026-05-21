@@ -63,6 +63,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const aiRouterEnabledId = useId();
   const newSecretNameId = useId();
   const newSecretValueId = useId();
+  const moduleSecretIdBase = useId();
   const mcpEditCommandId = useId();
   const mcpEditArgsId = useId();
   const mcpEditUrlId = useId();
@@ -70,6 +71,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const mcpNewCommandId = useId();
   const mcpNewArgsId = useId();
   const mcpNewUrlId = useId();
+  const openaiKeyId = useId();
+  const googleKeyId = useId();
+  const anthropicKeyId = useId();
+  const vertexSaId = useId();
   // useAiModels 컴포넌트 상단 호출 — inferModeProvider / categoryOf 가 aiModelsList 참조하므로 hoist 보장.
   const { models: aiModelsList } = useAiModels();
   // 비용·메모리는 AI 탭 하위 sub-tab 으로 통합 — initialTab='cost'/'memory' 면 자동으로 AI 탭 + sub-tab 으로 변환.
@@ -1220,32 +1225,32 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
                   {aiMode === 'general' && effectiveProvider === 'openai' && (
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[11px] text-slate-500">OpenAI</label>
-                      <TextInput type="password" value={geminiApiKey} onChange={setGeminiApiKey} placeholder="sk-proj-..." />
+                      <label className="text-[11px] text-slate-500" htmlFor={openaiKeyId}>OpenAI</label>
+                      <TextInput type="password" value={geminiApiKey} onChange={setGeminiApiKey} placeholder="sk-proj-..." id={openaiKeyId} name="openaiApiKey" />
                       <HelpText className="!text-[10px]">platform.openai.com → API Keys</HelpText>
                     </div>
                   )}
 
                   {aiMode === 'general' && effectiveProvider === 'google' && (
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[11px] text-slate-500">Google AI Studio</label>
-                      <TextInput type="password" value={googleApiKey} onChange={setGoogleApiKey} placeholder="AIza..." />
+                      <label className="text-[11px] text-slate-500" htmlFor={googleKeyId}>Google AI Studio</label>
+                      <TextInput type="password" value={googleApiKey} onChange={setGoogleApiKey} placeholder="AIza..." id={googleKeyId} name="googleApiKey" />
                       <HelpText className="!text-[10px]">aistudio.google.com → Get API key</HelpText>
                     </div>
                   )}
 
                   {aiMode === 'general' && effectiveProvider === 'anthropic' && (
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[11px] text-slate-500">Anthropic</label>
-                      <TextInput type="password" value={anthropicApiKey} onChange={setAnthropicApiKey} placeholder="sk-ant-..." />
+                      <label className="text-[11px] text-slate-500" htmlFor={anthropicKeyId}>Anthropic</label>
+                      <TextInput type="password" value={anthropicApiKey} onChange={setAnthropicApiKey} placeholder="sk-ant-..." id={anthropicKeyId} name="anthropicApiKey" />
                       <HelpText className="!text-[10px]">console.anthropic.com → API Keys</HelpText>
                     </div>
                   )}
 
                   {aiMode === 'vertex' && (
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[11px] text-slate-500">Google Vertex AI 서비스 계정 JSON</label>
-                      <Textarea value={vertexSaJson} onChange={setVertexSaJson} placeholder='{"type":"service_account","project_id":"...","private_key":"..."}' rows={5} mono />
+                      <label className="text-[11px] text-slate-500" htmlFor={vertexSaId}>Google Vertex AI 서비스 계정 JSON</label>
+                      <Textarea value={vertexSaJson} onChange={setVertexSaJson} placeholder='{"type":"service_account","project_id":"...","private_key":"..."}' rows={5} mono id={vertexSaId} name="vertexServiceAccountJson" />
                       <HelpText className="!text-[10px]">GCP Console → IAM → 서비스 계정 → 키 생성 (JSON 전체 붙여넣기)</HelpText>
                     </div>
                   )}
@@ -1542,10 +1547,14 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         ) : (
                           <div className="flex gap-1.5">
                             <input
+                              id={`${moduleSecretIdBase}-${ms.secretName}`}
+                              name={ms.secretName}
+                              aria-label={`${ms.secretName} 값`}
                               type="password"
                               value={moduleSecretValues[ms.secretName] || ''}
                               onChange={e => setModuleSecretValues(prev => ({ ...prev, [ms.secretName]: e.target.value }))}
                               placeholder={ms.hasValue ? '새 값 입력' : '키 값 입력'}
+                              autoComplete="new-password"
                               onKeyDown={e => {
                                 if (e.key === 'Enter') saveModuleSecret(ms.secretName);
                                 if (e.key === 'Escape' && ms.hasValue) setModuleSecretValues(prev => { const n = { ...prev }; delete n[ms.secretName]; return n; });
