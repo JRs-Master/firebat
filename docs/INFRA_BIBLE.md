@@ -47,10 +47,16 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
 - **읽기 허용 구역**: `app/(user)/`, `user/`, `docs/`, `system/modules/`, `system/services/`
 - `listDir(path)`: `{name, isDirectory}[]` 반환.
 
-### 2. Log Adapter (`infra/log/`)
-- `ILogPort` 구현 (info/warn/error/debug 4레벨).
-- 파일 로깅: `data/logs/app-YYYY-MM-DD.log` (일반) + `data/logs/training-YYYY-MM-DD.jsonl` (학습 데이터).
-- `[USER_AI_TRAINING]`, `[CORE_AI_TRAINING]` 프리픽스 감지 시 JSONL 자동 분리 저장.
+### 2. Log Adapter (`infra/src/adapters/tracing_log.rs` + `log_buffer.rs`)
+`TracingLogAdapter` 가 `ILogPort` (info/warn/error/debug 4레벨 + `log_with(category, level, msg)`) 를 `tracing` crate 으로 구현. `init_tracing(log_db_path)` 가 부팅 시 1회 layer 를 fan-out 구성하고 reload handle 을 반환한다 (로그 시스템 sprint, 2026-05-21~05-23).
+
+**layer 구성 (fan-out)** — `reload::Layer<EnvFilter>` (global) → `fmt`(journalctl) + `LogBufferLayer`(sqlite ring). 필터 통과 event 가 journalctl 과 sqlite 둘 다 기록.
+
+- **런타임 레벨 변경 (재빌드 0)**: SIGHUP 시 `data/log-filter.txt` 내용으로 `reload_log_filter` 호출 → EnvFilter 교체. 예: `info,firebat_infra::adapters::sandbox=debug,ai=debug`. admin 로그 탭의 filter 토글도 같은 경로.
+- **sqlite ring buffer**: `data/logs.db` 별도 db (app.db / vault.db 와 분리, WAL). 최근 5000건 유지 — writer thread (rusqlite blocking, tokio 비오염) 가 mpsc 수신해 insert, 매 100건마다 ring trim. admin 로그 탭 (LogService.QueryLogs) 이 read-only conn 으로 조회.
+- **category**: tracing `target` 은 컴파일 시점 static str 이라 런타임 category 를 못 넣는다. `log_with` 가 category 를 tracing **field** 로 전달 → `MessageVisitor` 가 추출해 `LogRow.target` 으로 승격 → admin 탭 prefix 필터가 매니저 단위 동작. 매니저는 `self.log.*` 그대로 호출하고, main.rs 생성 시점에 `CategoryLogger` wrapper (core) 로 감싸 category 자동 주입 (conversation / media / ai / task / cron).
+- **frontend 수집**: 브라우저 logger 가 error/warn 을 `/api/log` 로 POST → firebat-frontend journalctl 에 `[client:<category>]` 출력 (hub visitor 브라우저 에러 가시화).
+- 범위 한정 (observability paradox 룰): 조회 / 필터 / 토글만. 대시보드 / 그래프 / 알림 미도입.
 
 ### 3. Sandbox Adapter (`infra/sandbox/`)
 - `ISandboxPort` 구현.

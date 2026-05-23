@@ -215,6 +215,19 @@ After 1 week of auto-trading, "How did Samsung do?" returns full timeline (recom
 
 > 🇰🇷 **메모리 시스템 4-tier** — 대화는 휘발해도 사실은 영속. 자동매매·블로그 운영 깊어질수록 가치 폭발. Core hook 자동 saveEvent / 6시간 cron 자동 LLM 후처리 / cosine 중복 검출 / RetrievalEngine 자동 prepend — 사용자 명시 호출 0회로도 "삼성전자 1주 전 추천 결과는?" 즉시 답변. (Phase 1-6 완료, Phase 3 Vector store 는 entity 1000+ 시점 deferred)
 
+### Observability — Runtime Logs
+
+`tracing`-based logging with a single layer fan-out: one `reload::Layer<EnvFilter>` (global filter) → `fmt` (journalctl) + a sqlite ring buffer (`data/logs.db`, last 5000 rows, WAL, isolated from app/vault DBs).
+
+- **Runtime level changes, zero rebuild** — SIGHUP reloads the filter from `data/log-filter.txt` (e.g. `info,firebat_infra::adapters::sandbox=debug,ai=debug`). Diagnostic logs stay off (`info`) day-to-day and flip on per category only when investigating.
+- **Admin log tab** — Settings → Logs: level / prefix / time filters over the ring buffer + a runtime filter-reload toggle (UI button instead of ssh SIGHUP), served by `LogService` gRPC.
+- **Manager categories** — `ILogPort.log_with(category, level, msg)` passes the category as a tracing *field* (target is compile-time static), promoted to the sqlite `target` column so manager logs (conversation / media / ai / task / cron) filter by category. Managers keep calling `self.log.*`; a `CategoryLogger` wrapper injects the category at construction.
+- **Frontend collection** — the browser logger POSTs error/warn to `/api/log`, surfaced in the `firebat-frontend` journal as `[client:<category>]` (hub-visitor browser errors made visible).
+
+Scope is intentionally narrow (observability-paradox rule): query / filter / toggle only — no dashboards, graphs, or alerts.
+
+> 🇰🇷 **런타임 로그** — `tracing` 단일 layer fan-out (reload EnvFilter → journalctl + sqlite ring 5000건). SIGHUP 으로 런타임 레벨/카테고리 동적 변경 (재빌드 0), admin 설정 로그 탭에서 필터·reload 토글. 매니저 로그는 `CategoryLogger` 로 category 자동 주입 → 탭에서 매니저 단위 필터. 브라우저 error/warn 도 `/api/log` 로 수집. 범위는 조회/필터/토글만 (대시보드·알림 미도입).
+
 ### i18n — Self-built (ko / en, no dependency)
 
 Custom i18n system in `lib/i18n.tsx` (~100 LOC, no `next-intl` / `react-intl` dep). Two domains separated:
@@ -436,6 +449,8 @@ firebat/                      # Cargo workspace root (Cargo.toml — members: co
 └── data/                     # Runtime data (gitignored)
     ├── app.db                #   Pages / conversations DB
     ├── vault.db              #   Secret store
+    ├── logs.db               #   sqlite ring buffer (admin log tab, last 5000)
+    ├── log-filter.txt        #   Runtime tracing filter (SIGHUP reload)
     ├── cron-jobs.json        #   Persisted cron jobs
     └── logs/                 #   App logs + JSONL training data
 ```
