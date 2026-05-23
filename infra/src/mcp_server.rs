@@ -685,6 +685,7 @@ impl McpToolHandler for RenderUnifiedHandler {
         // 본문 빠짐 root cause 추적. journalctl 안 어떤 block 이 왜 실패했는지 확정.
         if !failed.is_empty() {
             tracing::warn!(
+                target: "render",
                 rendered_count = rendered.len(),
                 failed_count = failed.len(),
                 failed = %serde_json::to_string(&failed).unwrap_or_default(),
@@ -1361,6 +1362,7 @@ impl McpToolHandler for NetworkRequestHandler {
         let body = args.get("body").cloned();
         let timeout_ms = obj_i64(&args, "timeoutMs").unwrap_or(30_000) as u64;
         tracing::info!(
+            target: "network",
             url = %url,
             method = %method,
             timeout_ms = timeout_ms,
@@ -1380,6 +1382,7 @@ impl McpToolHandler for NetworkRequestHandler {
                     other => other.to_string().len(),
                 };
                 tracing::info!(
+                    target: "network",
                     url = %url,
                     status = resp.status,
                     ok = resp.ok,
@@ -1389,7 +1392,7 @@ impl McpToolHandler for NetworkRequestHandler {
                 Ok(serde_json::json!({"success": true, "data": resp}))
             }
             Err(e) => {
-                tracing::warn!(url = %url, error = %e, "[network_request] 실패");
+                tracing::warn!(target: "network", url = %url, error = %e, "[network_request] 실패");
                 Ok(serde_json::json!({"success": false, "error": e}))
             }
         }
@@ -1642,7 +1645,7 @@ pub async fn serve(state: Arc<McpServerState>) -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .map_err(|e| format!("MCP listener bind 실패 ({addr}): {e}"))?;
-    tracing::info!("MCP HTTP server listening on {addr}");
+    tracing::info!(target: "mcp", "MCP HTTP server listening on {addr}");
     axum::serve(listener, router)
         .await
         .map_err(|e| format!("MCP serve 실패: {e}"))?;
@@ -1658,7 +1661,7 @@ pub async fn serve(state: Arc<McpServerState>) -> Result<(), String> {
 /// 도구 호출 패턴은 HTTP 와 동일 (initialize / tools/list / tools/call).
 pub async fn serve_stdio(state: Arc<McpServerState>) -> Result<(), String> {
     use tokio::io::{AsyncBufReadExt, BufReader};
-    tracing::info!("MCP stdio server 시작 (외부 사용자 진입용)");
+    tracing::info!(target: "mcp", "MCP stdio server 시작 (외부 사용자 진입용)");
     let stdin = tokio::io::stdin();
     let mut stdout = tokio::io::stdout();
     let mut reader = BufReader::new(stdin).lines();

@@ -582,6 +582,7 @@ impl ProcessSandboxAdapter {
                     &display_for_bg,
                 ) {
                     tracing::warn!(
+                        target: "sandbox",
                         package = %display_for_bg,
                         error = %e,
                         "[install] config.json 자동 갱신 실패 — install 자체는 성공"
@@ -658,6 +659,7 @@ impl ProcessSandboxAdapter {
         std::fs::write(&manifest_path, serialized)
             .map_err(|e| format!("config.json 쓰기: {e}"))?;
         tracing::info!(
+            target: "sandbox",
             package = %pkg_display,
             new_version = %new_ver,
             "[install] config.json 안 명시 버전 자동 갱신"
@@ -1137,6 +1139,7 @@ impl ProcessSandboxAdapter {
             .map(|o| o.keys().map(|k| k.as_str()).collect())
             .unwrap_or_default();
         tracing::info!(
+            target: "sandbox",
             module = module_name,
             action = input_action,
             input_keys = ?input_keys,
@@ -1195,6 +1198,7 @@ impl ProcessSandboxAdapter {
         let stdout_preview: String = stdout_buf.chars().take(300).collect();
         let stderr_preview: String = stderr_buf.chars().take(300).collect();
         tracing::info!(
+            target: "sandbox",
             module = module_name,
             action = input_action,
             exit_code = ?exit_code,
@@ -1206,6 +1210,7 @@ impl ProcessSandboxAdapter {
         );
         if !exit_status.success() {
             tracing::warn!(
+                target: "sandbox",
                 module = module_name,
                 action = input_action,
                 exit_code = ?exit_code,
@@ -1318,6 +1323,7 @@ impl ProcessSandboxAdapter {
                                         }),
                                     );
                                     tracing::info!(
+                                        target: "sandbox",
                                         module = module_name,
                                         action = input_action,
                                         cache_key = %key,
@@ -1327,6 +1333,7 @@ impl ProcessSandboxAdapter {
                                 }
                                 Err(e) => {
                                     tracing::warn!(
+                                        target: "sandbox",
                                         module = module_name,
                                         action = input_action,
                                         error = %e,

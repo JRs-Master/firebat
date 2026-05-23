@@ -79,6 +79,7 @@ impl E5LocalEmbedderAdapter {
                 let result = self.load_state().await;
                 if let Err(ref e) = result {
                     tracing::error!(
+                        target: "embedder",
                         model_id = E5_MODEL_ID,
                         cache_dir = ?self.cache_dir,
                         error = %e,
@@ -93,6 +94,7 @@ impl E5LocalEmbedderAdapter {
 
     async fn load_state(&self) -> Result<Arc<E5State>, String> {
         tracing::info!(
+            target: "embedder",
             model_id = E5_MODEL_ID,
             cache_dir = ?self.cache_dir,
             "[E5Embedder] 모델 로드 시작 — 첫 호출 시 ~470MB 다운로드"
@@ -105,26 +107,26 @@ impl E5LocalEmbedderAdapter {
             "main".to_string(),
         ));
 
-        tracing::debug!("[E5Embedder] config.json 다운로드 시도");
+        tracing::debug!(target: "embedder", "[E5Embedder] config.json 다운로드 시도");
         let config_path = repo
             .get("config.json")
             .await
             .map_err(|e| format!("E5 config.json 다운로드 실패: {e}"))?;
-        tracing::debug!(path = ?config_path, "[E5Embedder] config.json 받음");
+        tracing::debug!(target: "embedder", path = ?config_path, "[E5Embedder] config.json 받음");
 
-        tracing::debug!("[E5Embedder] tokenizer.json 다운로드 시도");
+        tracing::debug!(target: "embedder", "[E5Embedder] tokenizer.json 다운로드 시도");
         let tokenizer_path = repo
             .get("tokenizer.json")
             .await
             .map_err(|e| format!("E5 tokenizer.json 다운로드 실패: {e}"))?;
-        tracing::debug!(path = ?tokenizer_path, "[E5Embedder] tokenizer.json 받음");
+        tracing::debug!(target: "embedder", path = ?tokenizer_path, "[E5Embedder] tokenizer.json 받음");
 
-        tracing::debug!("[E5Embedder] model.safetensors 다운로드 시도 (~470MB)");
+        tracing::debug!(target: "embedder", "[E5Embedder] model.safetensors 다운로드 시도 (~470MB)");
         let weights_path = repo
             .get("model.safetensors")
             .await
             .map_err(|e| format!("E5 model.safetensors 다운로드 실패: {e}"))?;
-        tracing::info!(path = ?weights_path, "[E5Embedder] safetensors 받음");
+        tracing::info!(target: "embedder", path = ?weights_path, "[E5Embedder] safetensors 받음");
 
         let config_str = std::fs::read_to_string(&config_path)
             .map_err(|e| format!("config.json 읽기: {e}"))?;
@@ -160,9 +162,10 @@ impl E5LocalEmbedderAdapter {
         let model = BertModel::load(vb, &config).map_err(|e| format!("BertModel 로드: {e}"))?;
 
         tracing::info!(
+            target: "embedder",
             model_id = E5_MODEL_ID,
             dim = E5_DIM,
-            "[E5Embedder] 모델 로드 완료 — OnceCell cache 박힘 (다음 호출은 hf_hub init 0)"
+            "[E5Embedder] 모델 로드 완료 — OnceCell cache (다음 호출은 hf_hub init 0)"
         );
         Ok(Arc::new(E5State {
             model,
@@ -183,7 +186,7 @@ impl E5LocalEmbedderAdapter {
             .ok()
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "https://huggingface.co".to_string());
-        tracing::info!(endpoint = %endpoint, "[E5Embedder] hf-hub endpoint 설정");
+        tracing::info!(target: "embedder", endpoint = %endpoint, "[E5Embedder] hf-hub endpoint 설정");
         let mut builder = hf_hub::api::tokio::ApiBuilder::new()
             .with_endpoint(endpoint);
         if let Some(dir) = &self.cache_dir {
