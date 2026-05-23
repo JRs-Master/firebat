@@ -54,7 +54,7 @@ export function useWakeLock(active: boolean): void {
       // OS / 브라우저가 lock 을 해제한 시점. visible 중에 이게 찍히면 = "잡았는데 OS 가 선점
       // 해제" → request reject 가 아니라 다른 root cause. hidden 전환 자동 release 와 구분 위해
       // visibilityState 같이 기록.
-      logger.warn('wakelock', 'wake lock release 이벤트', {
+      logger.debug('wakelock', 'wake lock release 이벤트', {
         visibility: typeof document !== 'undefined' ? document.visibilityState : undefined,
         disposed,
       });
@@ -69,7 +69,7 @@ export function useWakeLock(active: boolean): void {
         }
         sentinel = got;
         try { got.addEventListener('release', onRelease); } catch {}
-        logger.warn('wakelock', 'wake lock acquire 성공', {
+        logger.debug('wakelock', 'wake lock acquire 성공', {
           visibility: typeof document !== 'undefined' ? document.visibilityState : undefined,
         });
       } catch (e) {
@@ -87,7 +87,7 @@ export function useWakeLock(active: boolean): void {
       // visibility hidden → 브라우저 자동 release → released=true.
       // visible 복귀 시 released 면 재acquire. user-initiated 컨텍스트라 OS reject 회피.
       if (document.visibilityState === 'visible' && !disposed && (!sentinel || sentinel.released)) {
-        logger.warn('wakelock', 'visible 복귀 → 재acquire 시도', {});
+        logger.debug('wakelock', 'visible 복귀 → 재acquire 시도', {});
         void acquire();
       }
     };
