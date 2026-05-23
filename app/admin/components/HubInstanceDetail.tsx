@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect, useCallback, useId } from 'react';
-import { ArrowLeft, Save, RotateCcw, Copy, Loader2, ExternalLink, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, RotateCcw, Copy, ExternalLink } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost } from '../../../lib/api-fetch';
+import { SaveButton, type SaveButtonState } from './SaveButton';
 import type { HubInstancePb, LibraryReferencePb } from '../../../lib/proto-gen/firebat_pb';
 
 type HubApiResponse<T> = { success: boolean; data?: T; error?: string };
@@ -216,14 +217,10 @@ export function HubInstanceDetail({
             <ExternalLink size={14} />
           </a>
         </Tooltip>
-        <button
+        <SaveButton
+          state={(saving ? 'saving' : saved ? 'saved' : 'idle') as SaveButtonState}
           onClick={handleSave}
-          disabled={saving}
-          className={`flex items-center gap-1 px-2 py-1 text-[11px] font-bold text-white rounded transition-colors disabled:bg-slate-300 ${saved ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-        >
-          {saving ? <Loader2 size={11} className="animate-spin" /> : saved ? <CheckCircle2 size={11} /> : <Save size={11} />}
-          {saved ? '저장됨' : '저장'}
-        </button>
+        />
       </div>
 
       {/* settings 본문 */}

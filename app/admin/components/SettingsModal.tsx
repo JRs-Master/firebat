@@ -9,6 +9,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { useSetting, writeSetting } from '../hooks/settings-manager';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
+import { SaveButton, type SaveButtonState } from './SaveButton';
 import { confirmDialog, alertDialog } from './Dialog';
 import { LogPanel } from './LogPanel';
 import { useLang, useTranslations, type Lang } from '../../../lib/i18n';
@@ -1333,14 +1334,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     </FieldLabel>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-slate-400">{userPrompt.length} / {USER_PROMPT_MAX_CHARS}</span>
-                      <FeedbackBadge state={userPromptSaving ? 'loading' : userPromptSaved ? 'ok' : null} okLabel="저장됨" loadingLabel="저장 중" />
-                      <button
+                      <SaveButton
+                        state={(userPromptSaving ? 'saving' : userPromptSaved ? 'saved' : 'idle') as SaveButtonState}
                         onClick={saveUserPrompt}
-                        disabled={userPromptSaving}
-                        className="px-2.5 py-1 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-300 text-white text-[11px] font-bold rounded-md transition-colors"
-                      >
-                        저장
-                      </button>
+                      />
                     </div>
                   </div>
                   <Textarea
@@ -1570,14 +1567,17 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                               autoFocus={ms.hasValue}
                               className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             />
-                            <button
+                            <SaveButton
+                              size="md"
+                              state={(
+                                moduleSecretSaving === ms.secretName ? 'saving' :
+                                moduleSecretFeedback[ms.secretName] === 'ok' ? 'saved' :
+                                moduleSecretFeedback[ms.secretName] === 'err' ? 'error' :
+                                'idle'
+                              ) as SaveButtonState}
+                              disabled={!moduleSecretValues[ms.secretName]?.trim()}
                               onClick={() => saveModuleSecret(ms.secretName)}
-                              disabled={!moduleSecretValues[ms.secretName]?.trim() || moduleSecretSaving === ms.secretName}
-                              className="px-3 py-1.5 text-[12px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors shrink-0"
-                            >
-                              저장
-                            </button>
-                            <FeedbackBadge state={moduleSecretSaving === ms.secretName ? 'loading' : moduleSecretFeedback[ms.secretName]} loadingLabel="저장 중" />
+                            />
                             {ms.hasValue && (
                               <button
                                 onClick={() => setModuleSecretValues(prev => { const n = { ...prev }; delete n[ms.secretName]; return n; })}
@@ -1623,15 +1623,15 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                 }}
                                 className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               />
-                              <button
+                              <SaveButton
+                                size="md"
+                                disabled={!editingSecret.value.trim()}
                                 onClick={async () => {
                                   if (!editingSecret.value.trim()) return;
                                   await apiPost('/api/vault/secrets', { name: s.name, value: editingSecret.value.trim() }, { category: 'settings' });
                                   setEditingSecret(null); fetchSecrets();
                                 }}
-                                disabled={!editingSecret.value.trim()}
-                                className="px-3 py-1.5 text-[12px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors shrink-0"
-                              >저장</button>
+                              />
                               <button onClick={() => setEditingSecret(null)} className="px-2 py-1.5 text-[12px] text-slate-400 hover:text-slate-600 transition-colors shrink-0">취소</button>
                             </div>
                           </div>
@@ -1958,14 +1958,15 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                               >
                                 취소
                               </button>
-                              <button
+                              <SaveButton
+                                state={(
+                                  mcpEditSaving ? 'saving' :
+                                  mcpEditFeedback === 'ok' ? 'saved' :
+                                  mcpEditFeedback === 'err' ? 'error' :
+                                  'idle'
+                                ) as SaveButtonState}
                                 onClick={() => saveEditMcp(s)}
-                                disabled={mcpEditSaving}
-                                className="px-2.5 py-1 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded transition-colors"
-                              >
-                                저장
-                              </button>
-                              <FeedbackBadge state={mcpEditSaving ? 'loading' : mcpEditFeedback} loadingLabel="저장 중" />
+                              />
                             </div>
                           </div>
                         )}
@@ -2151,7 +2152,6 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         </div>
 
         <div className="px-3 sm:px-6 py-2.5 sm:py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2 sm:gap-3 shrink-0">
-          <FeedbackBadge state={mainSaveState} okLabel="저장됨" errLabel="저장 실패" loadingLabel="저장 중" />
           <button
             onClick={onClose}
             disabled={mainSaveState === 'loading'}
@@ -2159,13 +2159,16 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
           >
             닫기
           </button>
-          <button
+          <SaveButton
+            size="md"
+            state={(
+              mainSaveState === 'loading' ? 'saving' :
+              mainSaveState === 'ok' ? 'saved' :
+              mainSaveState === 'err' ? 'error' :
+              'idle'
+            ) as SaveButtonState}
             onClick={handleSave}
-            disabled={mainSaveState === 'loading'}
-            className="px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm disabled:bg-slate-300"
-          >
-            저장
-          </button>
+          />
         </div>
       </div>
     </div>
@@ -2350,15 +2353,19 @@ function CapabilityTabContent() {
                           {providers.length > 1 && (orderChanged || orderFeedback) && (
                             <div className="flex items-center gap-2">
                               {orderChanged && (
-                                <button
+                                <SaveButton
+                                  size="md"
+                                  state={(
+                                    saving ? 'saving' :
+                                    orderFeedback === 'ok' ? 'saved' :
+                                    orderFeedback === 'err' ? 'error' :
+                                    'idle'
+                                  ) as SaveButtonState}
+                                  label="순서 저장"
+                                  className="flex-1"
                                   onClick={saveOrder}
-                                  disabled={saving}
-                                  className="flex-1 px-3 py-2 text-[13px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
-                                >
-                                  순서 저장
-                                </button>
+                                />
                               )}
-                              <FeedbackBadge state={saving ? 'loading' : orderFeedback} loadingLabel="저장 중" />
                             </div>
                           )}
                         </>
@@ -2577,13 +2584,12 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
       </div>
       <div className="flex justify-end gap-2">
         <button onClick={onCancel} className="px-4 py-2 text-[13px] text-slate-600 hover:bg-slate-100 rounded">취소</button>
-        <button
+        <SaveButton
+          size="md"
+          state={(saving ? 'saving' : 'idle') as SaveButtonState}
+          disabled={!item.name.trim() || !item.description.trim()}
           onClick={handleSubmit}
-          disabled={saving || !item.name.trim() || !item.description.trim()}
-          className="px-4 py-2 text-[13px] bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-50"
-        >
-          {saving ? '저장 중...' : '저장'}
-        </button>
+        />
       </div>
     </div>
   );
@@ -2704,9 +2710,11 @@ function CostBudgetSection() {
           <label className="text-[11px] text-slate-500 block mb-1" htmlFor={alertAtPercentId}>알림 임계 (%) — progress bar 진해지는 기준</label>
           <input type="number" min="1" max="100" step="5" value={budget.alertAtPercent} onChange={e => setBudget({ ...budget, alertAtPercent: Number(e.target.value) || 80 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="alertAtPercent" autoComplete="off" id={alertAtPercentId} />
         </div>
-        <button onClick={save} disabled={saving} className="px-3 py-1.5 text-[12px] bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-50">
-          {savedFlash ? '✓ 저장됨' : saving ? '저장 중...' : '한도 저장'}
-        </button>
+        <SaveButton
+          state={(saving ? 'saving' : savedFlash ? 'saved' : 'idle') as SaveButtonState}
+          label="한도 저장"
+          onClick={save}
+        />
       </div>
       <p className="text-[10px] text-slate-400 mt-2">현재 사용량: 오늘 ${budget.dailySpentUsd.toFixed(2)} / {budget.dailySpentCalls.toLocaleString()} 회 · 이달 ${budget.monthlySpentUsd.toFixed(2)} / {budget.monthlySpentCalls.toLocaleString()} 회</p>
     </div>

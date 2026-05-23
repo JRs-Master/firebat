@@ -3,6 +3,7 @@
 import { useId, useState } from 'react';
 import { ChevronDown, ChevronRight, Plug, KeyRound, CheckCircle2 } from 'lucide-react';
 import { apiPost } from '../../../lib/api-fetch';
+import { SaveButton, type SaveButtonState } from './SaveButton';
 
 /** MCP 결과 접기/펼치기 컴포넌트 */
 export function McpResultCollapsible({ data }: { data: any[] }) {
@@ -89,12 +90,12 @@ export function SecretInput({ name, prompt, helpUrl }: { name: string; prompt: s
           aria-label={name}
           className="flex-1 px-3 py-2 text-sm border border-amber-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-amber-400"
         />
-        <button
+        <SaveButton
+          size="md"
+          state={status as SaveButtonState}
+          disabled={!value.trim()}
           onClick={handleSave}
-          disabled={!value.trim() || status === 'saving'}
-          className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-300 text-white text-sm font-bold rounded-lg transition-colors">
-          {status === 'saving' ? '저장 중...' : '저장'}
-        </button>
+        />
       </div>
       {status === 'error' && (
         <p className="text-xs text-red-600">저장에 실패했습니다. 다시 시도해주세요.</p>

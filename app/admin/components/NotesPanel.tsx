@@ -14,6 +14,7 @@ import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
+import { SaveButton, type SaveButtonState } from './SaveButton';
 
 interface Note {
   slug: string;
@@ -340,13 +341,11 @@ function NoteModal({ existing, hubContext, onClose, onSaved }: { existing: Note 
         </div>
         <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-slate-200 bg-slate-50">
           <button onClick={onClose} className="px-3 py-1 text-xs text-slate-600 hover:bg-slate-200 rounded">취소</button>
-          <button
+          <SaveButton
+            state={(submitting ? 'saving' : 'idle') as SaveButtonState}
+            label={existing ? undefined : '추가'}
             onClick={submit}
-            disabled={submitting}
-            className="px-3 py-1 text-xs font-bold bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-40"
-          >
-            {existing ? '저장' : '추가'}
-          </button>
+          />
         </div>
       </div>
     </div>

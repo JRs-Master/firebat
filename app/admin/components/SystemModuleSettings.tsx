@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useId, Fragment } from 'react';
-import { X, Blocks, Save, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, Code, Settings2, ExternalLink, ArrowLeft, Plus, Trash2, ChevronLeft, ChevronRight, Package, Download, AlertCircle } from 'lucide-react';
+import { X, Blocks, Loader2, CheckCircle2, LinkIcon, Unlink, RefreshCw, Copy, Check, Globe, Terminal, Server, Image, Code, Settings2, ExternalLink, ArrowLeft, Plus, Trash2, ChevronLeft, ChevronRight, Package, Download, AlertCircle } from 'lucide-react';
+import { SaveButton, type SaveButtonState } from './SaveButton';
 import { Tooltip } from './Tooltip';
 import { TelegramWebhookSection } from './TelegramWebhookSection';
 import { HubPanel } from './HubPanel';
@@ -927,14 +928,7 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
         {(() => {
           const hasNonSecretFields = schema?.fields.some(f => f.type !== 'secret' && f.type !== 'oauth');
           return (
-            <div className="px-3 sm:px-6 py-2.5 sm:py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-between shrink-0">
-              <div>
-                {saved && (
-                  <span className="flex items-center gap-1.5 text-emerald-600 text-[13px] font-bold">
-                    <CheckCircle2 size={15} /> {t('system_modules.common.saved')}
-                  </span>
-                )}
-              </div>
+            <div className="px-3 sm:px-6 py-2.5 sm:py-5 bg-slate-50 border-t border-slate-100 flex items-center justify-end shrink-0">
               <div className="flex gap-2 sm:gap-3">
                 <button
                   onClick={onClose}
@@ -943,14 +937,11 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
                   {t('system_modules.common.close')}
                 </button>
                 {hasNonSecretFields && (
-                  <button
+                  <SaveButton
+                    size="md"
+                    state={(saving ? 'saving' : saved ? 'saved' : 'idle') as SaveButtonState}
                     onClick={handleSave}
-                    disabled={saving}
-                    className="flex items-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors shadow-sm"
-                  >
-                    {saving ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-                    {saving ? t('system_modules.common.saving') : t('system_modules.common.save')}
-                  </button>
+                  />
                 )}
               </div>
             </div>

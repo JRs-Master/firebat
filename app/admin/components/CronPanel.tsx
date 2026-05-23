@@ -2,7 +2,8 @@
 
 import { useState, useCallback, useId } from 'react';
 import { createPortal } from 'react-dom';
-import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Save, Settings, Play } from 'lucide-react';
+import { Clock, Timer, CalendarClock, Repeat, Trash2, Loader2, AlertCircle, CheckCircle2, ChevronDown, ChevronRight, X, Settings, Play } from 'lucide-react';
+import { SaveButton, type SaveButtonState } from './SaveButton';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { Tooltip } from './Tooltip';
@@ -848,11 +849,11 @@ export function ScheduleModal({ job, onClose, onSaved, onDelete }: {
             <button onClick={onClose} className="px-3 py-1.5 text-[12px] font-semibold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">
               취소
             </button>
-            <button onClick={handleSave} disabled={saving}
-              className="flex items-center gap-1.5 px-4 py-1.5 text-[12px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50">
-              {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-              {isNew ? '등록' : '저장'}
-            </button>
+            <SaveButton
+              state={(saving ? 'saving' : 'idle') as SaveButtonState}
+              label={isNew ? '등록' : undefined}
+              onClick={handleSave}
+            />
           </div>
         </div>
       </div>

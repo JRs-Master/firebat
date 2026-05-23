@@ -2,13 +2,13 @@
 
 import { useId, useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
-import { X, Save, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send, Trash2, User, RotateCcw, Cpu } from 'lucide-react';
+import { X, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send, Trash2, User, RotateCcw, Cpu } from 'lucide-react';
+import { SaveButton, type SaveButtonState } from './SaveButton';
 import { useAiModels, thinkingLevelLabel } from '../hooks/use-ai-models';
 import { useLang } from '../../../lib/i18n';
 import { readSetting } from '../hooks/settings-manager';
 import { tryUnwrapJson } from '../../../lib/json-normalize';
 import { Tooltip } from './Tooltip';
-import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog } from './Dialog';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiPut } from '../../../lib/api-fetch';
@@ -446,15 +446,17 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
             )}
 
             <span className="text-[11px] text-slate-500 font-mono">Ctrl+S</span>
-            <FeedbackBadge state={saving ? 'loading' : saveFeedback} loadingLabel="저장 중" />
-            <button
+            <SaveButton
+              size="md"
+              state={(
+                saving ? 'saving' :
+                saveFeedback === 'ok' ? 'saved' :
+                saveFeedback === 'err' ? 'error' :
+                'idle'
+              ) as SaveButtonState}
+              disabled={!isDirty || loading || (isPageMode && !!jsonError)}
               onClick={handleSave}
-              disabled={!isDirty || saving || loading || (isPageMode && !!jsonError)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:text-slate-500 text-white text-[13px] font-bold rounded-lg transition-colors"
-            >
-              <Save size={13} />
-              저장
-            </button>
+            />
             <button
               onClick={handleClose}
               className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"

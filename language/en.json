@@ -149,6 +149,7 @@
     "loading": "Loading...",
     "saving": "Saving...",
     "saved": "Saved",
+    "save_failed": "Save failed",
     "error": "Error",
     "retry": "Try again",
     "back": "Back",

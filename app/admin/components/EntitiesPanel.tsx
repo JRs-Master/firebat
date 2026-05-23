@@ -17,6 +17,7 @@ import { confirmDialog } from './Dialog';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
+import { SaveButton, type SaveButtonState } from './SaveButton';
 
 interface Entity {
   id: number;
@@ -564,13 +565,11 @@ function CreateFactInline({ entityId, onCreated }: { entityId: number; onCreated
           aria-label="사실 type"
           className="flex-1 text-[10px] px-1.5 py-1 border border-slate-300 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" name="factType" autoComplete="off" id={factTypeId}
         />
-        <button
+        <SaveButton
+          state={(submitting ? 'saving' : 'idle') as SaveButtonState}
+          disabled={!content.trim()}
           onClick={submit}
-          disabled={!content.trim() || submitting}
-          className="px-2 py-1 text-[10px] font-bold bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          저장
-        </button>
+        />
       </div>
     </div>
   );
@@ -675,13 +674,12 @@ function CreateEntityModal({ onClose, onCreated }: { onClose: () => void; onCrea
           >
             취소
           </button>
-          <button
+          <SaveButton
+            state={(submitting ? 'saving' : 'idle') as SaveButtonState}
+            label="추가"
+            disabled={!name.trim() || !type.trim()}
             onClick={submit}
-            disabled={submitting || !name.trim() || !type.trim()}
-            className="px-3 py-1 text-xs font-bold bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            추가
-          </button>
+          />
         </div>
       </div>
     </div>
