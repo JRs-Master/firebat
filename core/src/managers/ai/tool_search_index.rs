@@ -275,6 +275,11 @@ impl ToolSearchIndex {
 
     /// 카테고리 vector 인덱스 빌드 — 부팅 1회. 옛 TS buildCategoryIndex 1:1.
     async fn build_category_index(&self) -> InfraResult<Vec<(String, Vec<f32>)>> {
+        tracing::info!(
+            category = "tool_search",
+            "도구 검색 인덱스 구축 시작 — 카테고리 {}개",
+            CATEGORIES.len()
+        );
         let disk = load_disk_cache(self.cache_port.as_ref());
         let mut result: Vec<(String, Vec<f32>)> = Vec::new();
         let mut new_cache: HashMap<String, DiskCacheEntry> = HashMap::new();
@@ -307,6 +312,13 @@ impl ToolSearchIndex {
         save_disk_cache(self.cache_port.as_ref(), &new_cache);
         eprintln!(
             "[ToolSearch] 카테고리 인덱스 빌드: {}개 (재사용 {}, 임베딩 {})",
+            CATEGORIES.len(),
+            reused,
+            embedded
+        );
+        tracing::info!(
+            category = "tool_search",
+            "도구 검색 인덱스 구축 완료 — 카테고리 {}개 (재사용 {}, 신규 {})",
             CATEGORIES.len(),
             reused,
             embedded
@@ -383,6 +395,13 @@ impl ToolSearchIndex {
             eprintln!(
                 "[ToolSearch] 도구 인덱스 업데이트: 재사용 {}, 임베딩 {}",
                 reused, embedded
+            );
+            tracing::info!(
+                category = "tool_search",
+                "도구 검색 인덱스 구축 — 도구 {}개 (재사용 {}, 신규 {})",
+                tools.len(),
+                reused,
+                embedded
             );
         }
         tool_vecs.clone()

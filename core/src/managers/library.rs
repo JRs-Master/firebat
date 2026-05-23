@@ -83,6 +83,12 @@ impl LibraryManager {
 
         // 2. Chunking
         let chunks = chunk_text(extracted_text, CHUNK_SIZE, CHUNK_OVERLAP);
+        tracing::info!(
+            category = "library",
+            "라이브러리 자료 인덱싱 시작 — 자료='{}' 청크 {}개",
+            name,
+            chunks.len()
+        );
 
         // 3. 매 chunk 영역 — Arctic 임베딩 + 저장
         for (idx, (content, start_char, end_char)) in chunks.iter().enumerate() {
@@ -114,6 +120,12 @@ impl LibraryManager {
         self.library
             .update_source_chunk_count(&source_id, chunks.len() as i64)
             .await?;
+        tracing::info!(
+            category = "library",
+            "라이브러리 자료 인덱싱 완료 — 자료='{}' 청크 {}개",
+            name,
+            chunks.len()
+        );
         Ok(source_id)
     }
 
@@ -156,6 +168,12 @@ impl LibraryManager {
         }
 
         // query 임베딩
+        tracing::info!(
+            category = "library",
+            "라이브러리 검색 — query='{}' 대상 reference {}개",
+            query,
+            target_refs.len()
+        );
         let q_vec = self.embedder.embed_query(query).await?;
 
         // 매 chunk 영역 cosine — list_chunks_for_search 영역

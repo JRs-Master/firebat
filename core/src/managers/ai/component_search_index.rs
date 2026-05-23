@@ -84,6 +84,11 @@ async fn ensure_index(
     embedder: &dyn IEmbedderPort,
     cache_port: &dyn IEmbedderCachePort,
 ) -> InfraResult<HashMap<String, Vec<f32>>> {
+    tracing::info!(
+        category = "component_search",
+        "컴포넌트 인덱스 구축 시작 — 컴포넌트 {}개",
+        components().len()
+    );
     let disk = load_disk_cache(cache_port);
     let mut result: HashMap<String, Vec<f32>> = HashMap::new();
     let mut fresh: HashMap<String, DiskCacheEntry> = HashMap::new();
@@ -125,6 +130,13 @@ async fn ensure_index(
     save_disk_cache(cache_port, &fresh);
     eprintln!(
         "[ComponentSearch] 인덱스 빌드: {}개 (재사용 {}, 임베딩 {})",
+        components().len(),
+        reused,
+        embedded
+    );
+    tracing::info!(
+        category = "component_search",
+        "컴포넌트 인덱스 구축 완료 — 컴포넌트 {}개 (재사용 {}, 신규 {})",
         components().len(),
         reused,
         embedded

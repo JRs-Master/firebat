@@ -326,6 +326,7 @@ impl ConversationManager {
         let now = crate::utils::time::now_ms();
 
         let mut keep_idx: std::collections::HashSet<i64> = std::collections::HashSet::new();
+        let mut embedded_count = 0usize;
 
         for (i, msg) in messages.iter().enumerate() {
             let i_idx = i as i64;
@@ -357,6 +358,7 @@ impl ConversationManager {
                         created_at: now,
                     };
                     let _ = self.db.upsert_conversation_embedding(&row);
+                    embedded_count += 1;
                 }
                 Err(e) => {
                     if let Some(log) = &self.log {
@@ -366,6 +368,15 @@ impl ConversationManager {
                         ));
                     }
                 }
+            }
+        }
+
+        if embedded_count > 0 {
+            if let Some(log) = &self.log {
+                log.info(&format!(
+                    "대화 임베딩 갱신 — 신규/변경 {}건 (conv={})",
+                    embedded_count, conv_id
+                ));
             }
         }
 
