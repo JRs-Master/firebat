@@ -170,6 +170,18 @@ pub trait ILogPort: Send + Sync {
     fn warn(&self, msg: &str);
     fn error(&self, msg: &str);
     fn debug(&self, msg: &str);
+
+    /// category 명시 로그 — admin 로그 탭 / sqlite 필터용. 기존 4 메서드는 category 없이
+    /// 호출되므로, 카테고리를 붙이고 싶은 매니저는 CategoryLogger 로 감싸 이 메서드로 라우팅한다.
+    /// default 구현은 category 를 무시하고 level 별 기존 메서드로 위임 (하위 호환).
+    fn log_with(&self, _category: &str, level: &str, msg: &str) {
+        match level {
+            "warn" => self.warn(msg),
+            "error" => self.error(msg),
+            "debug" => self.debug(msg),
+            _ => self.info(msg),
+        }
+    }
 }
 
 /// 알림 우선순위 — adapter 가 채널 선택 / 무음 시간 / rate-limit 결정에 활용.

@@ -406,7 +406,10 @@ async fn main() -> Result<()> {
     let conversation_manager = Arc::new(
         ConversationManager::new(db.clone())
             .with_embedder(embedder.clone())
-            .with_log(logger.clone()),
+            .with_log(Arc::new(firebat_core::utils::category_logger::CategoryLogger::new(
+                logger.clone(),
+                "conversation",
+            ))),
     );
     let mcp_manager = Arc::new(McpManager::new(mcp_client));
     let entity_manager = Arc::new(EntityManager::new(entity_port));
@@ -430,7 +433,10 @@ async fn main() -> Result<()> {
             .with_image_gen(image_gen.clone())
             .with_processor(image_processor.clone())
             .with_vault(vault.clone())
-            .with_log(logger.clone())
+            .with_log(Arc::new(firebat_core::utils::category_logger::CategoryLogger::new(
+                logger.clone(),
+                "media",
+            )))
             .with_cost(cost_manager.clone())
             .with_status(status_manager.clone())
             .with_event(event_manager.clone())
@@ -505,7 +511,14 @@ async fn main() -> Result<()> {
     );
 
     let ai_manager = Arc::new(
-        AiManager::new(llm.clone(), tool_manager.clone(), logger.clone())
+        AiManager::new(
+            llm.clone(),
+            tool_manager.clone(),
+            Arc::new(firebat_core::utils::category_logger::CategoryLogger::new(
+                logger.clone(),
+                "ai",
+            )),
+        )
             .with_prompt_builder(vault.clone())
             .with_config_port(config_port.clone())
             .with_system_context(module_manager.clone(), mcp_manager.clone())
@@ -570,7 +583,13 @@ async fn main() -> Result<()> {
     // 등록된 정적 도구 27개 + 동적 sysmod_* / mcp_* 자동으로 hint 매칭.
     // StatusManager 저장 — pipeline 실행 가시화 (어드민 ActiveJobsIndicator 자동 표시).
     let task_manager = Arc::new(
-        TaskManager::new(task_executor, logger.clone())
+        TaskManager::new(
+            task_executor,
+            Arc::new(firebat_core::utils::category_logger::CategoryLogger::new(
+                logger.clone(),
+                "task",
+            )),
+        )
             .with_tools(tool_manager.clone())
             .with_status(status_manager.clone()),
     );
@@ -586,7 +605,10 @@ async fn main() -> Result<()> {
                 ai: ai_manager.clone(),
                 sandbox: sandbox.clone(),
                 tools: tool_manager.clone(),
-                log: logger.clone(),
+                log: Arc::new(firebat_core::utils::category_logger::CategoryLogger::new(
+                    logger.clone(),
+                    "cron",
+                )),
                 episodic: episodic_manager.clone(),
                 status: status_manager.clone(),
                 event: event_manager.clone(),

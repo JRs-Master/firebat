@@ -62,29 +62,43 @@ fn level_rank(level: &str) -> i32 {
 }
 
 /// tracing Event 의 message + 부가 field 를 단일 문자열로 합치는 visitor.
+/// `category` field 는 별도로 잡아 LogRow.target 으로 승격 (메시지 합치기에서 제외).
 #[derive(Default)]
 struct MessageVisitor {
     message: String,
     fields: Vec<String>,
+    /// CategoryLogger 가 붙인 category field — 있으면 meta.target() 대신 LogRow.target 으로 사용.
+    category: Option<String>,
 }
 
 impl Visit for MessageVisitor {
     fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "message" {
-            self.message = format!("{value:?}");
-            // tracing 의 message 는 보통 따옴표 포함 Debug — 양끝 따옴표 제거.
-            if self.message.starts_with('"') && self.message.ends_with('"') && self.message.len() >= 2 {
-                self.message = self.message[1..self.message.len() - 1].to_string();
+        match field.name() {
+            "message" => {
+                self.message = format!("{value:?}");
+                // tracing 의 message 는 보통 따옴표 포함 Debug — 양끝 따옴표 제거.
+                if self.message.starts_with('"')
+                    && self.message.ends_with('"')
+                    && self.message.len() >= 2
+                {
+                    self.message = self.message[1..self.message.len() - 1].to_string();
+                }
             }
-        } else {
-            self.fields.push(format!("{}={value:?}", field.name()));
+            "category" => {
+                let mut c = format!("{value:?}");
+                if c.starts_with('"') && c.ends_with('"') && c.len() >= 2 {
+                    c = c[1..c.len() - 1].to_string();
+                }
+                self.category = Some(c);
+            }
+            name => self.fields.push(format!("{name}={value:?}")),
         }
     }
     fn record_str(&mut self, field: &Field, value: &str) {
-        if field.name() == "message" {
-            self.message = value.to_string();
-        } else {
-            self.fields.push(format!("{}={value}", field.name()));
+        match field.name() {
+            "message" => self.message = value.to_string(),
+            "category" => self.category = Some(value.to_string()),
+            name => self.fields.push(format!("{name}={value}")),
         }
     }
 }
@@ -123,10 +137,15 @@ impl<S: Subscriber> Layer<S> for LogBufferLayer {
         if message.len() > 4000 {
             message.truncate(4000);
         }
+        // category field 가 있으면 (CategoryLogger 경유 매니저 로그) target 으로 승격 —
+        // admin 로그 탭의 prefix 필터가 매니저 category 단위로 동작. 없으면 meta.target() (tracing 직접 호출).
+        let target = visitor
+            .category
+            .unwrap_or_else(|| meta.target().to_string());
         let row = LogRow {
             ts_ms: now_ms(),
             level: meta.level().to_string(),
-            target: meta.target().to_string(),
+            target,
             message,
         };
         // send 실패 (writer thread 종료) = silent — 로그 1건 누락이 서버 죽이면 안 됨.

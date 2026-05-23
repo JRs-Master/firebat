@@ -45,6 +45,19 @@ impl ILogPort for TracingLogAdapter {
     fn debug(&self, msg: &str) {
         tracing::debug!(message = msg);
     }
+
+    /// category 를 tracing field 로 기록 — target 은 컴파일 시점 static str 이라 런타임 값을
+    /// 넣을 수 없으므로 field 로 전달한다. LogBufferLayer 의 MessageVisitor 가 이 `category`
+    /// field 를 추출해 sqlite LogRow.target 에 우선 저장 → admin 로그 탭의 prefix 필터가
+    /// 매니저 category 단위로 동작.
+    fn log_with(&self, category: &str, level: &str, msg: &str) {
+        match level {
+            "warn" => tracing::warn!(category = category, message = msg),
+            "error" => tracing::error!(category = category, message = msg),
+            "debug" => tracing::debug!(category = category, message = msg),
+            _ => tracing::info!(category = category, message = msg),
+        }
+    }
 }
 
 /// EnvFilter reload handle — SIGHUP 시 main.rs 가 `reload_log_filter` 에 전달.
