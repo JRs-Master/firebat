@@ -1168,7 +1168,10 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
 
   // 초기화 — 서버(Vault) 설정을 localStorage 에 sync. DB 가 진실의 원천, localStorage 는 fast path cache.
   // valid 모델 list 도 같은 응답 (data.aiModels — Rust core::llm::config::builtin_models()) 에 포함.
+  // hub mode = 익명 visitor → `/api/settings` 는 admin 전용 (proxy 401). 모델은 backend hub
+  // chat endpoint 가 소유자 설정으로 서버 주입하므로 visitor 가 조회할 필요 자체가 없다.
   useEffect(() => {
+    if (hubContext) return;
     (async () => {
       let loadedFromServer = false;
       let validIds: Set<string> | null = null;
@@ -1200,7 +1203,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
         setAiModel(savedModel && isValid(savedModel) ? savedModel : '');
       }
     })();
-  }, []);
+  }, [hubContext]);
 
   // 레이아웃 헤더 햄버거 토글 이벤트 수신
   useEffect(() => {
