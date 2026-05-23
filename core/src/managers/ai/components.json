@@ -932,7 +932,8 @@
                   "neutral",
                   "warning",
                   "info"
-                ]
+                ],
+                "default": "neutral"
               }
             }
           }
