@@ -9,7 +9,7 @@
 import crypto from 'crypto';
 
 const BASE = 'https://api.searchad.naver.com';
-const TIMEOUT = 20000;
+const TIMEOUT = 45000;
 
 let raw = '';
 process.stdin.setEncoding('utf-8');

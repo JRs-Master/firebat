@@ -1977,7 +1977,7 @@ async function getAccessToken(base, appKey, appSecret, forceNew = false) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ grant_type: 'client_credentials', appkey: appKey, appsecret: appSecret }),
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(30000),
   });
   if (!resp.ok) throw new I18nError('error.token_issue_failed', { status: String(resp.status) });
   const json = await resp.json();
@@ -2017,7 +2017,7 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
     'custtype': 'P',
   };
   await acquireSlot();
-  const init = { method: meta.method, headers, signal: AbortSignal.timeout(15000) };
+  const init = { method: meta.method, headers, signal: AbortSignal.timeout(45000) };
   if (meta.method !== 'GET' && Object.keys(body).length > 0) init.body = JSON.stringify(body);
   const resp = await fetch(url, init);
   if (resp.status === 429 && retry > 0) {
