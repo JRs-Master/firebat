@@ -448,6 +448,17 @@ impl HubManager {
             })
             .collect();
 
+        // 진단 — "같은 세션 연속 대화인데 이전 맥락을 못 본다" 증상 추적. conversation_id /
+        // 전체 메시지 수 / history 로 prepend 되는 수를 기록. 다음 재현에서 total=1(현재 메시지뿐)
+        // 이면 ensure_conversation 이 새/다른 conv 를 줬다는 뜻, total>1 인데 history=0 이면 필터 문제.
+        tracing::info!(
+            category = "hub",
+            "hub send_message — conv={} 전체메시지={} history={}",
+            conversation_id,
+            all_messages.len(),
+            history.len()
+        );
+
         // session_id 영역 — conversation 조회로 visitor 별 자료 격리 owner 영역에 박힘.
         // hub:<instance_id>:<session_id> 형태 owner 가 매 도구 호출 시 ai.rs 안 자동 주입.
         let conv = self.port.get_conversation(conversation_id).await?;
