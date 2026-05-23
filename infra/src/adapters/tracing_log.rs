@@ -11,8 +11,12 @@
 //! 로 런타임에 레벨/카테고리 동적 변경 (재빌드 / 재시작 0). 진단 로그는 코드 곳곳에 이미
 //! tracing::debug! 로 박혀있어, 평소엔 off (info) 두고 진단 시 카테고리만 켜는 흐름.
 
+use std::path::PathBuf;
+
 use firebat_core::ports::ILogPort;
 use tracing_subscriber::{prelude::*, reload, EnvFilter, Registry};
+
+use crate::adapters::log_buffer::LogBufferLayer;
 
 pub struct TracingLogAdapter;
 
@@ -50,7 +54,11 @@ pub type LogReloadHandle = reload::Handle<EnvFilter, Registry>;
 /// 부팅 시 1회 호출 — tracing-subscriber 초기화 + reload handle 반환.
 /// env RUST_LOG 기준 초기 filter (default "info"). FIREBAT_LOG_FORMAT=json → JSON 출력.
 /// 반환 handle 로 런타임 filter reload (SIGHUP).
-pub fn init_tracing() -> LogReloadHandle {
+///
+/// layer 구성 (fan-out): reload EnvFilter (global) → fmt(journalctl) + LogBufferLayer(sqlite ring).
+/// filter 통과 event 가 journalctl + sqlite 둘 다 기록. SIGHUP reload 시 둘 다 레벨 변경.
+/// log_db_path = data/logs.db (sqlite ring buffer, 최근 5000건). admin 로그 탭 (Phase 5) 조회용.
+pub fn init_tracing(log_db_path: PathBuf) -> LogReloadHandle {
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new("info"));
     let (filter_layer, reload_handle) = reload::Layer::new(filter);
@@ -59,7 +67,10 @@ pub fn init_tracing() -> LogReloadHandle {
         .map(|v| v.eq_ignore_ascii_case("json"))
         .unwrap_or(false);
 
-    let registry = tracing_subscriber::registry().with(filter_layer);
+    let log_layer = LogBufferLayer::new(log_db_path, 5000);
+    let registry = tracing_subscriber::registry()
+        .with(filter_layer)
+        .with(log_layer);
     if json_format {
         registry
             .with(

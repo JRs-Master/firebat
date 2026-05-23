@@ -18,6 +18,7 @@ pub mod llm;
 pub mod network;
 // cache (SysmodCacheAdapter) 는 file I/O 만 의존 → core/utils/sysmod_cache.rs 로 이동.
 pub mod tracing_log;
+pub mod log_buffer;
 pub mod embedder;
 pub mod image_gen;
 pub mod image_processor;

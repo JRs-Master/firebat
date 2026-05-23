@@ -72,9 +72,18 @@ use firebat_core::{
 
 #[tokio::main(flavor = "multi_thread")]
 async fn main() -> Result<()> {
+    // workspace root — init_tracing 의 logs.db 경로 결정에 필요해 tracing 전에 선언.
+    let workspace_root: PathBuf = std::env::var("FIREBAT_WORKSPACE_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| std::env::current_dir().unwrap());
+
     // Phase B-17.5c — tracing 초기화 (env RUST_LOG / FIREBAT_LOG_FORMAT=json 토글)
-    // 로그 시스템 1단계 (2026-05-21) — reload handle 받아 SIGHUP 시 런타임 filter 재적용.
-    let log_reload_handle = init_tracing();
+    // 로그 시스템 (2026-05-21) — reload handle (SIGHUP 런타임 filter) + sqlite ring layer
+    // (data/logs.db, admin 로그 탭 조회용) fan-out.
+    let log_db_path = std::env::var("FIREBAT_LOGS_DB")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| workspace_root.join("data").join("logs.db"));
+    let log_reload_handle = init_tracing(log_db_path);
     tracing::info!(version = firebat_core::version(), "Firebat Core 부팅");
 
     // 옛 commit `3418b4b` 안 HF_ENDPOINT env 자동 default 박은 fix = 잘못된 진단 — hf-hub 0.3
@@ -85,11 +94,6 @@ async fn main() -> Result<()> {
     // Phase 5 정공 — LLM model registry JSON 로드. 옛 builtin_models() Rust 하드코드 폐기.
     // 파일 미발견 시 stub 폴백 (panic X). FIREBAT_LLM_MODELS_PATH env 으로 위치 override.
     firebat_infra::llm::registry_loader::init_from_file();
-
-    // 환경 변수 — workspace root + listen address + vault DB path
-    let workspace_root: PathBuf = std::env::var("FIREBAT_WORKSPACE_ROOT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| std::env::current_dir().unwrap());
 
     // i18n loader — language/{lang}.json + system/modules/*/lang + system/services/*/lang + system/prompts/*/lang 자동 scan.
     firebat_core::i18n::init(&workspace_root);
