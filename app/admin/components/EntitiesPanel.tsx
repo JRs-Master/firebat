@@ -14,6 +14,7 @@ import { useState, useEffect, useCallback, useId } from 'react';
 import { Search, Plus, Trash2, X, Clock, Tag, Activity, Network } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
+import { useTranslations } from '../../../lib/i18n';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
@@ -70,6 +71,7 @@ export function EntitiesPanel({
   hubMode?: boolean;
   hubContext?: EntitiesHubContext;
 } = {}) {
+  const t = useTranslations();
   const entitySearchId = useId();
   const [subTab, setSubTab] = useState<'entities' | 'events'>('entities');
   const [entities, setEntities] = useState<Entity[]>([]);
@@ -136,8 +138,8 @@ export function EntitiesPanel({
 
   // Debounced search
   useEffect(() => {
-    const t = setTimeout(() => fetchEntities(query), 250);
-    return () => clearTimeout(t);
+    const handle = setTimeout(() => fetchEntities(query), 250);
+    return () => clearTimeout(handle);
   }, [query, fetchEntities]);
 
   const fetchTimeline = async (entityId: number) => {
@@ -261,7 +263,7 @@ export function EntitiesPanel({
             className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="entitySearch" autoComplete="off" id={entitySearchId}
           />
         </div>
-        <Tooltip label="엔티티 추가">
+        <Tooltip label={t('entity.add')}>
           <button
             onClick={() => setShowCreate(true)}
             className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md"
@@ -297,7 +299,7 @@ export function EntitiesPanel({
                         <span className="text-[9px] text-slate-400 tabular-nums shrink-0">{e.factCount}</span>
                       )}
                     </button>
-                    <Tooltip label="삭제">
+                    <Tooltip label={t('common.delete')}>
                       <button
                         onClick={() => handleDelete(e)}
                         className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"
@@ -330,9 +332,9 @@ export function EntitiesPanel({
                               <div className="text-[10px] text-slate-700 leading-snug whitespace-pre-wrap break-words">{f.content}</div>
                               <div className="mt-1 flex flex-wrap items-center gap-1 text-[9px] text-slate-400">
                                 {f.factType && <span className="px-1 rounded bg-slate-100 text-slate-600">{f.factType}</span>}
-                                {f.tags.map((t, i) => (
+                                {f.tags.map((tag, i) => (
                                   <span key={i} className="inline-flex items-center gap-0.5 px-1 rounded bg-blue-50 text-blue-600">
-                                    <Tag size={8} />{t}
+                                    <Tag size={8} />{tag}
                                   </span>
                                 ))}
                                 <span className="ml-auto tabular-nums">
@@ -407,6 +409,7 @@ export function EntitiesPanel({
 // ── Events sub-panel ──
 
 function EventsPanel() {
+  const t = useTranslations();
   const queryId = useId();
   const typeFilterId = useId();
   const [events, setEvents] = useState<EventItem[]>([]);
@@ -432,8 +435,8 @@ function EventsPanel() {
   }, [typeFilter, query]);
 
   useEffect(() => {
-    const t = setTimeout(fetchEvents, 250);
-    return () => clearTimeout(t);
+    const handle = setTimeout(fetchEvents, 250);
+    return () => clearTimeout(handle);
   }, [fetchEvents]);
 
   const handleDelete = async (id: number) => {
@@ -491,7 +494,7 @@ function EventsPanel() {
                 <div className="flex items-center gap-1 mb-1">
                   <span className="text-[9px] px-1 py-0.5 rounded bg-blue-50 text-blue-700 shrink-0 font-bold">{e.type}</span>
                   <span className="text-[10px] text-slate-700 font-medium truncate flex-1">{e.title}</span>
-                  <Tooltip label="삭제">
+                  <Tooltip label={t('common.delete')}>
                     <button
                       onClick={() => handleDelete(e.id)}
                       className="p-0.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"

@@ -123,6 +123,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
   loading: boolean;
   onSuggestion?: (text: string, meta?: { planExecuteId?: string; planReviseId?: string }) => void;
 }) {
+  const t = useTranslations();
   // a11y — 매 카드 안 inline 입력 칸의 stable id base. SuggestionButtons 매 마운트마다 unique.
   const inlineInputBaseId = useId();
   // 카드 내 aggregate state
@@ -306,7 +307,7 @@ function SuggestionButtons({ suggestions, loading, onSuggestion }: {
                       className={`flex-1 px-3 py-1.5 border rounded-lg text-[13px] text-slate-700 focus:outline-none focus:ring-2 bg-white ${borderCls}`}
                     />
                     {rows.length > 1 && (
-                      <Tooltip label="이 칸 삭제">
+                      <Tooltip label={t('admin_page_chat.delete_message')}>
                         <button onClick={() => removeInputRow(i, subIdx)}
                           className="p-1.5 text-slate-400 hover:text-red-500 shrink-0 rounded-md hover:bg-red-50 transition-colors">
                           <X size={14} />
@@ -529,6 +530,7 @@ function serializeBlockToMarkdown(b: any): string {
 }
 
 function CopyButton({ text }: { text: string }) {
+  const tr = useTranslations();
   const [copied, setCopied] = useState(false);
   const handleCopy = useCallback(() => {
     const showOk = () => {
@@ -545,7 +547,7 @@ function CopyButton({ text }: { text: string }) {
   }, [text]);
   return (
     <div className="relative inline-flex">
-      <Tooltip label="복사">
+      <Tooltip label={tr('common.copy')}>
         <button
           onClick={handleCopy}
           className="p-1 rounded text-slate-300 hover:text-slate-500 transition-colors"
@@ -562,6 +564,7 @@ function CopyButton({ text }: { text: string }) {
  *  POST /api/share 로 24시간 TTL 공유 slug 생성 → 클립보드 복사 + 토스트.
  *  Hub mode 박혀있으면 POST /api/hub/<slug>/share 로 분기 (anonymous + apiToken). */
 function ShareTurnButton({ messages, conversationId, title, msgId, hubContext }: { messages: unknown[]; conversationId: string; title?: string; msgId?: string; hubContext?: { slug: string; apiToken: string; sessionId: string } }) {
+  const t = useTranslations();
   const [status, setStatus] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
   const handleShare = useCallback(async () => {
     if (status === 'sharing') return;
@@ -582,7 +585,7 @@ function ShareTurnButton({ messages, conversationId, title, msgId, hubContext }:
     status === 'done' ? 'ok' : status === 'error' ? 'err' : status === 'sharing' ? 'loading' : null;
   return (
     <div className="relative inline-flex">
-      <Tooltip label="이 응답 공유 (24h)">
+      <Tooltip label={t('admin_page_chat.share_response')}>
         <button
           onClick={handleShare}
           disabled={status === 'sharing'}
@@ -1371,7 +1374,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                   type="file"
                   accept="image/*"
                   autoComplete="off"
-                  aria-label="이미지 첨부"
+                  aria-label={t('chat_input.attach_image')}
                   className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageSelect(f); e.target.value = ''; }}
                 />
@@ -1394,7 +1397,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                               className="flex items-center gap-2.5 w-full px-4 py-2.5 text-[13px] font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                             >
                               <ImagePlus size={16} className="text-slate-400" />
-                              이미지 첨부
+                              {t('chat_input.attach_image')}
                             </button>
                           </div>
                         </>
@@ -1403,12 +1406,12 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                     {/* 플랜모드 3단계 토글 — OFF / AUTO / ALWAYS 순환. 이미지 모드일 땐 의미 없음 (비활성) */}
                     {(() => {
                       const planTooltip = inputMode === 'image'
-                        ? '이미지 모드에선 사용 안 됨'
+                        ? t('chat_input.plan_image_mode_disabled')
                         : planMode === 'always'
-                          ? '플랜 ALWAYS — 모든 요청에 plan 카드 (클릭 → OFF)'
+                          ? t('chat_input.plan_mode_always_tooltip')
                           : planMode === 'auto'
-                            ? '플랜 AUTO — destructive·복합 작업만 plan (클릭 → ALWAYS)'
-                            : '플랜 OFF — AI 자유 판단 (클릭 → AUTO)';
+                            ? t('chat_input.plan_mode_auto_tooltip')
+                            : t('chat_input.plan_mode_off_tooltip');
                       const planLabel = planMode === 'always' ? 'ALWAYS' : planMode === 'auto' ? 'AUTO' : 'OFF';
                       const planClass = planMode === 'always'
                         ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
@@ -1433,7 +1436,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                       );
                     })()}
                     {/* 이미지 모드 토글 — LLM 우회 직접 image_gen */}
-                    <Tooltip label={inputMode === 'image' ? '이미지 모드 (LLM 우회 직접 생성)' : '이미지 모드로 전환'}>
+                    <Tooltip label={inputMode === 'image' ? t('chat_input.image_mode_on') : t('chat_input.image_mode_toggle')}>
                     <button
                       onClick={() => setInputMode(inputMode === 'image' ? 'text' : 'image')}
                       disabled={loading}
@@ -1444,13 +1447,13 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                       }`}
                     >
                       <ImageIcon size={14} />
-                      <span>이미지</span>
+                      <span>{t('chat_input.image_label')}</span>
                     </button>
                     </Tooltip>
                     {/* StatusManager 활성 작업 인디케이터 — 활성·종료 작업 0이면 자동 숨김 */}
                     <ActiveJobsIndicator />
                   </div>
-                  <Tooltip label={loading ? '생성 중지' : '전송'}>
+                  <Tooltip label={loading ? t('chat_input.stop_generation') : t('chat_input.send')}>
                   <button
                     onClick={() => loading ? handleStop() : handleSubmit()}
                     disabled={!loading && !input.trim()}

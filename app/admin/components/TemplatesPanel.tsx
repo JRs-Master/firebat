@@ -9,6 +9,7 @@ import { useId, useState, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus, Trash2, FileCode } from 'lucide-react';
 import { Tooltip } from './Tooltip';
+import { useTranslations } from '../../../lib/i18n';
 import { confirmDialog, alertDialog } from './Dialog';
 import { apiGet, apiPost, apiDelete } from '../../../lib/api-fetch';
 
@@ -47,6 +48,7 @@ export function TemplatesPanel({
   hubMode?: boolean;
   hubContext?: TemplatesHubContext;
 }) {
+  const t = useTranslations();
   const newSlugId = useId();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
@@ -156,7 +158,7 @@ export function TemplatesPanel({
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200/80">
         <span className="text-[10px] font-extrabold tracking-widest text-slate-400">TEMPLATES</span>
-        <Tooltip label="새 템플릿">
+        <Tooltip label={t('templates_panel.new_template')}>
           <button
             onClick={openCreate}
             className="p-1 rounded text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
@@ -181,20 +183,20 @@ export function TemplatesPanel({
           </div>
         ) : (
           <div className="space-y-0.5 px-2 py-1">
-            {templates.map(t => (
+            {templates.map(tpl => (
               <div
-                key={t.slug}
+                key={tpl.slug}
                 className="group flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-slate-100 cursor-pointer"
-                onClick={() => onEditFile?.(`user/templates/${t.slug}/template.json`)}
+                onClick={() => onEditFile?.(`user/templates/${tpl.slug}/template.json`)}
               >
                 <FileCode size={13} className="shrink-0 text-slate-400" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12px] font-bold text-slate-700 truncate">{t.name}</div>
-                  <div className="text-[10px] text-slate-400 truncate">{t.slug}</div>
+                  <div className="text-[12px] font-bold text-slate-700 truncate">{tpl.name}</div>
+                  <div className="text-[10px] text-slate-400 truncate">{tpl.slug}</div>
                 </div>
-                <Tooltip label="삭제">
+                <Tooltip label={t('common.delete')}>
                   <button
-                    onClick={(e) => { e.stopPropagation(); handleDelete(t.slug); }}
+                    onClick={(e) => { e.stopPropagation(); handleDelete(tpl.slug); }}
                     className="p-1 text-slate-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
                     aria-label="삭제"
                   >

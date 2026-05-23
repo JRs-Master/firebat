@@ -11,6 +11,7 @@ import { CalendarPanel } from './CalendarPanel';
 import { TemplatesPanel } from './TemplatesPanel';
 import { LibraryPanel } from './LibraryPanel';
 import { Tooltip } from './Tooltip';
+import { useTranslations } from '../../../lib/i18n';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useSidebarRefresh } from '../hooks/events-manager';
@@ -81,6 +82,7 @@ export function Sidebar({
   hubMode,
   hubShareContext,
 }: SidebarProps) {
+  const t = useTranslations();
   const renameInputId = useId();
   const renameSetRedirectId = useId();
   const [tab, setTab] = useState<TabId>('workspace');
@@ -572,7 +574,7 @@ export function Sidebar({
       setCollapsed(false);
     }
   };
-  const activeTab = TABS.find(t => t.id === tab) ?? TABS[0];
+  const activeTab = TABS.find(item => item.id === tab) ?? TABS[0];
   const ActiveIcon = activeTab.Icon;
 
   const formatDate = (ts: number) => {
@@ -624,7 +626,7 @@ export function Sidebar({
       <div className="flex-1" />
       {/* Hub page mode = 익명 방문자 → settings 진입 금지 */}
       {onOpenSettings && !hubMode && (
-        <Tooltip label="설정" side="right">
+        <Tooltip label={t('common.settings')} side="right">
           <button
             type="button"
             onClick={() => { onOpenSettings(); if (isMobile) closeSidebar(); }}
@@ -635,7 +637,7 @@ export function Sidebar({
         </Tooltip>
       )}
       {isMobile && (
-        <Tooltip label="사이드바 닫기" side="right">
+        <Tooltip label={t('sidebar_actions.close_sidebar')} side="right">
           <button
             type="button"
             onClick={closeSidebar}
@@ -655,7 +657,7 @@ export function Sidebar({
       <ActiveIcon size={15} className="w-[15px] h-[15px] text-slate-700 shrink-0" />
       <span className="text-sm font-semibold text-slate-800 truncate flex-1 antialiased">{activeTab.label}</span>
       {!isMobile && (
-        <Tooltip label="패널 접기">
+        <Tooltip label={t('sidebar_actions.collapse_panel')}>
           <button
             type="button"
             onClick={() => setCollapsed(true)}
@@ -747,7 +749,7 @@ export function Sidebar({
                             <Lock size={10} className="text-slate-400 shrink-0" />
                           )}
                           {mainSlug && (
-                            <Tooltip label="열기">
+                            <Tooltip label={t('common.open')}>
                               <button
                                 onClick={(e) => { e.stopPropagation(); window.open(`/${mainSlug}`, '_blank'); setSelectedItem(null); }}
                                 className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors"
@@ -757,7 +759,7 @@ export function Sidebar({
                             </Tooltip>
                           )}
                           <div className="relative" ref={openMenu === `proj:${mp.name}` ? menuRef : undefined}>
-                            <Tooltip label="더보기">
+                            <Tooltip label={t('common.more')}>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -886,7 +888,7 @@ export function Sidebar({
                                   <span className={rowActionsClass(pgSelected)}>
                                     {pg.visibility === 'private' && <EyeOff size={9} className="text-slate-400 shrink-0" />}
                                     {pg.visibility === 'password' && <Lock size={9} className="text-slate-400 shrink-0" />}
-                                    <Tooltip label="열기">
+                                    <Tooltip label={t('common.open')}>
                                       <button
                                         onClick={(e) => { e.stopPropagation(); window.open(`/${pg.slug}`, '_blank'); setSelectedItem(null); }}
                                         className="p-0.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors"
@@ -895,7 +897,7 @@ export function Sidebar({
                                       </button>
                                     </Tooltip>
                                     <div className="relative" ref={openMenu === `page:${pg.slug}` ? menuRef : undefined}>
-                                      <Tooltip label="더보기">
+                                      <Tooltip label={t('common.more')}>
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
@@ -972,7 +974,7 @@ export function Sidebar({
                                   </Tooltip>
                                   <span className={rowActionsClass(modSelected)}>
                                     {!isMobile && (
-                                      <Tooltip label="편집">
+                                      <Tooltip label={t('common.edit')}>
                                         <button
                                           onClick={(e) => { e.stopPropagation(); handleOpenModule(p); setSelectedItem(null); }}
                                           className="p-0.5 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 active:bg-amber-100 transition-colors"
@@ -982,7 +984,7 @@ export function Sidebar({
                                       </Tooltip>
                                     )}
                                     <div className="relative" ref={openMenu === `mod:${p}` ? menuRef : undefined}>
-                                      <Tooltip label="더보기">
+                                      <Tooltip label={t('common.more')}>
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
@@ -1110,7 +1112,7 @@ export function Sidebar({
                           <Sparkles size={11} />
                         </button>
                       </Tooltip>
-                      <Tooltip label="삭제">
+                      <Tooltip label={t('common.delete')}>
                         <button
                           onClick={(e) => { e.stopPropagation(); onDeleteConv(conv.id); setSelectedItem(null); }}
                           className="p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 active:bg-red-100 rounded transition-colors"
@@ -1155,7 +1157,7 @@ export function Sidebar({
                         <p className="text-[10px] text-slate-400 mt-0.5">30일 후 자동 삭제</p>
                       </div>
                       <span className={rowActionsClass(false)}>
-                        <Tooltip label="복원">
+                        <Tooltip label={t('common.restore')}>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleRestoreConv(conv.id); }}
                             className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100 rounded transition-colors"
@@ -1163,7 +1165,7 @@ export function Sidebar({
                             <RotateCcw size={11} />
                           </button>
                         </Tooltip>
-                        <Tooltip label="영구 삭제">
+                        <Tooltip label={t('sidebar_actions.permanent_delete')}>
                           <button
                             onClick={(e) => { e.stopPropagation(); handlePermanentDeleteConv(conv.id, conv.title); }}
                             className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 active:bg-red-100 rounded transition-colors"
@@ -1350,6 +1352,7 @@ export function Sidebar({
 
 /** 대화 전체 공유 버튼 — 클릭 시 DB 에서 메시지 fetch → 공유 생성 → 클립보드 복사 */
 function ShareConvButton({ convId, title, liveMessages, hubShareContext }: { convId: string; title: string; liveMessages?: unknown[]; hubShareContext?: { slug: string; apiToken: string; sessionId: string } }) {
+  const t = useTranslations();
   const [status, setStatus] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
   const handleShare = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -1403,7 +1406,7 @@ function ShareConvButton({ convId, title, liveMessages, hubShareContext }: { con
     status === 'done' ? 'ok' : status === 'error' ? 'err' : status === 'sharing' ? 'loading' : null;
   return (
     <div className="relative inline-flex">
-      <Tooltip label="이 대화 공유 (24h)">
+      <Tooltip label={t('sidebar_actions.share_conversation')}>
         <button
           onClick={handleShare}
           disabled={status === 'sharing'}

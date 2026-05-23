@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { X, Loader2, AlertTriangle, Bot, Sparkles, Check, Copy, Eye, Send, Trash2, User, RotateCcw, Cpu } from 'lucide-react';
 import { SaveButton, type SaveButtonState } from './SaveButton';
 import { useAiModels, thinkingLevelLabel } from '../hooks/use-ai-models';
-import { useLang } from '../../../lib/i18n';
+import { useLang, useTranslations } from '../../../lib/i18n';
 import { readSetting } from '../hooks/settings-manager';
 import { tryUnwrapJson } from '../../../lib/json-normalize';
 import { Tooltip } from './Tooltip';
@@ -78,6 +78,7 @@ interface FileEditorProps {
 }
 
 export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: FileEditorProps) {
+  const t = useTranslations();
   const aiInstructionId = useId();
   const isPageMode = !!pageSlug;
   // Rust core::llm::config::builtin_models() 단일 source — fetch + module-cache.
@@ -561,7 +562,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                 <span className="text-[10px] text-slate-500 bg-slate-800/60 px-2 py-0.5 rounded-full">{selectionInfo}</span>
                 <div className="flex-1" />
                 {chat.length > 0 && (
-                  <Tooltip label="대화 삭제">
+                  <Tooltip label={t('file_editor.delete_conversation')}>
                     <button
                       onClick={clearChat}
                       className="p-1 text-slate-500 hover:text-red-400 rounded transition-colors"
@@ -570,7 +571,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                     </button>
                   </Tooltip>
                 )}
-                <Tooltip label="사이드바 닫기">
+                <Tooltip label={t('file_editor.close_sidebar')}>
                   <button
                     onClick={() => setAiOpen(false)}
                     className="p-1 text-slate-500 hover:text-slate-300 rounded transition-colors"
@@ -589,7 +590,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                     {localModel && localThinking && ' · '}
                     {localThinking && <>thinking: <b>{localThinking}</b></>}
                   </span>
-                  <Tooltip label="어드민 설정으로 복원">
+                  <Tooltip label={t('file_editor.restore_admin')}>
                     <button
                       onClick={() => { setLocalModel(null); setLocalThinking(null); }}
                       className="ml-auto flex items-center gap-1 text-amber-400 hover:text-amber-200"
@@ -645,7 +646,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                           </div>
                           <div className="flex items-center gap-1.5 mt-1.5">
                             {turn.mode === 'code' && (
-                              <Tooltip label="적용 전 변경점 미리보기">
+                              <Tooltip label={t('file_editor.preview_changes')}>
                                 <button
                                   onClick={() => setDiffTurnId(turn.id)}
                                   className="flex items-center gap-1 px-2 py-1 bg-blue-600/80 hover:bg-blue-600 text-white text-[11px] font-bold rounded transition-colors"
@@ -667,7 +668,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                                 <Check size={11} /> 적용됨
                               </span>
                             )}
-                            <Tooltip label="복사">
+                            <Tooltip label={t('common.copy')}>
                               <button
                                 onClick={() => copyTurn(turn.id, idx)}
                                 className="flex items-center gap-1 px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-[11px] rounded transition-colors"
@@ -817,7 +818,7 @@ export function FileEditor({ filePath, pageSlug, aiModel, onClose, onSaved }: Fi
                     aria-label="AI 수정 지시"
                     className="flex-1 bg-[#252540] border border-violet-700/40 rounded-lg px-2.5 py-2 text-[12.5px] text-slate-200 placeholder-slate-500 resize-none focus:outline-none focus:border-violet-500 transition-colors disabled:opacity-50" name="aiInstruction" autoComplete="off" id={aiInstructionId}
                   />
-                  <Tooltip label="전송 (Enter)">
+                  <Tooltip label={t('file_editor.send_enter')}>
                     <button
                       onClick={() => handleAiSubmit()}
                       disabled={!aiInstruction.trim() || aiLoading}

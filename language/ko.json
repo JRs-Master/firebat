@@ -159,7 +159,22 @@
     "submit": "제출",
     "yes": "예",
     "no": "아니요",
-    "more": "더 보기"
+    "more": "더 보기",
+    "add": "추가",
+    "today": "오늘",
+    "copy": "복사",
+    "preview": "미리보기",
+    "open": "열기",
+    "apply": "적용",
+    "run_now": "지금 실행",
+    "settings": "설정",
+    "deactivate": "해제",
+    "activate": "활성",
+    "inactive": "비활성",
+    "restore": "복원",
+    "regenerate": "재발급",
+    "move_up": "위로",
+    "move_down": "아래로"
   },
   "login": {
     "title": "Firebat 로그인",
@@ -318,5 +333,84 @@
       "mcp_stdio_ssh_required_body": "stdio 모드는 서버에 SSH 키가 등록되어 있어야 합니다. 서버 관리자에게 SSH 공개키 등록을 요청하세요.",
       "mcp_stdio_ssh_required_note": "SSH_KEY_PATH, USER, SERVER_IP, firebat 경로를 실제 값으로 변경하세요."
     }
+  },
+  "calendar": {
+    "previous_month": "이전 달",
+    "next_month": "다음 달",
+    "add_event": "일정 추가",
+    "cron_linked": "Cron 잡: {jobId}"
+  },
+  "cron": {
+    "clear_logs": "로그 전체 삭제"
+  },
+  "entity": {
+    "add": "엔티티 추가"
+  },
+  "notes_panel": {
+    "add_note": "노트 추가"
+  },
+  "file_editor": {
+    "delete_conversation": "대화 삭제",
+    "close_sidebar": "사이드바 닫기",
+    "restore_admin": "어드민 설정으로 복원",
+    "preview_changes": "적용 전 변경점 미리보기",
+    "send_enter": "전송 (Enter)"
+  },
+  "chat_input": {
+    "attach_image": "이미지 첨부",
+    "plan_image_mode_disabled": "이미지 모드에선 사용 안 됨",
+    "plan_mode_always_tooltip": "플랜 ALWAYS — 모든 요청에 plan 카드 (클릭 → OFF)",
+    "plan_mode_auto_tooltip": "플랜 AUTO — destructive·복합 작업만 plan (클릭 → ALWAYS)",
+    "plan_mode_off_tooltip": "플랜 OFF — AI 자유 판단 (클릭 → AUTO)",
+    "image_mode_on": "이미지 모드 (LLM 우회 직접 생성)",
+    "image_mode_toggle": "이미지 모드로 전환",
+    "image_label": "이미지",
+    "stop_generation": "생성 중지",
+    "send": "전송"
+  },
+  "file_tree": {
+    "open_in_browser": "브라우저에서 열기"
+  },
+  "gallery_modal": {
+    "previous_image": "이전 (←)",
+    "next_image": "다음 (→)"
+  },
+  "sidebar_actions": {
+    "close_sidebar": "사이드바 닫기",
+    "collapse_panel": "패널 접기",
+    "share_conversation": "이 대화 공유 (24h)",
+    "permanent_delete": "영구 삭제"
+  },
+  "templates_panel": {
+    "new_template": "새 템플릿"
+  },
+  "admin_page_chat": {
+    "delete_message": "이 칸 삭제",
+    "share_response": "이 응답 공유 (24h)"
+  },
+  "settings_modal": {
+    "current_password_placeholder": "현재 비밀번호",
+    "current_password_label": "현재 비밀번호",
+    "new_id_placeholder": "새 아이디",
+    "new_id_label": "새 아이디",
+    "new_password_placeholder": "새 비밀번호",
+    "new_password_label": "새 비밀번호",
+    "preferences_placeholder": "원하는 톤·언어·도메인 지식·포맷 선호 등을 자유롭게 입력해 주세요 (선택 사항입니다)",
+    "new_value_placeholder": "새 값 입력",
+    "key_name_placeholder": "키 이름",
+    "key_name_label": "키 이름",
+    "key_value_placeholder": "키 값",
+    "key_value_label": "키 값",
+    "command_placeholder": "명령어",
+    "args_placeholder": "인자 (공백 구분)",
+    "server_name_placeholder": "서버 이름 (예: gmail, slack)",
+    "mcp_command_placeholder": "실행 명령어 (예: npx, python)",
+    "mcp_command_label": "새 MCP 명령어",
+    "mcp_args_placeholder": "인자 (공백 구분, 예: -y @anthropic/mcp-gmail)",
+    "mcp_args_label": "새 MCP 인자",
+    "mcp_sse_url_label": "새 MCP SSE URL",
+    "memory_slug_placeholder": "식별자 (snake_case)",
+    "memory_summary_placeholder": "한 줄 설명",
+    "memory_body_placeholder": "자세한 룰·선호 내용을 입력해 주세요. AI 가 memory_read(name) 으로 조회합니다."
   }
 }

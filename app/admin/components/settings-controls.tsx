@@ -6,6 +6,7 @@
  */
 'use client';
 import { Tooltip } from './Tooltip';
+import { useTranslations } from '../../../lib/i18n';
 
 import React, { createContext, useContext, useId } from 'react';
 
@@ -147,8 +148,9 @@ export function SegButtons<T extends string>({
 // ── Toggle switch (모듈 on/off 스타일) ────────────────────────────
 
 export function Toggle({ checked, onChange, title }: { checked: boolean; onChange: (v: boolean) => void; title?: string }) {
+  const t = useTranslations();
   return (
-    <Tooltip label={title ?? (checked ? '활성' : '비활성')}>
+    <Tooltip label={title ?? (checked ? t('common.activate') : t('common.inactive'))}>
       <button
         onClick={() => onChange(!checked)}
         className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${checked ? 'bg-blue-500' : 'bg-slate-300'}`}

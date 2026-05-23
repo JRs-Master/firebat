@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback, useId } from 'react';
 import { Search, Plus, Trash2, X, NotebookText } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
+import { useTranslations } from '../../../lib/i18n';
 import { apiPost } from '../../../lib/api-fetch';
 import { logger } from '../../../lib/util/logger';
 import { z } from 'zod';
@@ -69,6 +70,7 @@ export function NotesPanel({
   hubMode?: boolean;
   hubContext?: NotesHubContext;
 } = {}) {
+  const t = useTranslations();
   const queryId = useId();
   const [notes, setNotes] = useState<Note[]>([]);
   const [query, setQuery] = useState('');
@@ -99,8 +101,8 @@ export function NotesPanel({
   }, [fetchNotes]);
 
   useEffect(() => {
-    const t = setTimeout(() => fetchNotes(query), 250);
-    return () => clearTimeout(t);
+    const handle = setTimeout(() => fetchNotes(query), 250);
+    return () => clearTimeout(handle);
   }, [query, fetchNotes]);
 
   const handleExpand = async (slug: string) => {
@@ -154,7 +156,7 @@ export function NotesPanel({
             className="w-full pl-6 pr-2 py-1.5 text-[11px] border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" name="query" autoComplete="off" id={queryId}
           />
         </div>
-        <Tooltip label="노트 추가">
+        <Tooltip label={t('notes_panel.add_note')}>
           <button
             onClick={() => { setEditing(null); setShowCreate(true); }}
             className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md"
@@ -191,14 +193,14 @@ export function NotesPanel({
                         )}
                         {n.tags && n.tags.length > 0 && (
                           <div className="flex flex-wrap gap-0.5 mt-0.5">
-                            {n.tags.slice(0, 3).map((t, i) => (
-                              <span key={i} className="text-[9px] px-1 rounded bg-slate-100 text-slate-500">#{t}</span>
+                            {n.tags.slice(0, 3).map((tag, i) => (
+                              <span key={i} className="text-[9px] px-1 rounded bg-slate-100 text-slate-500">#{tag}</span>
                             ))}
                           </div>
                         )}
                       </div>
                     </button>
-                    <Tooltip label="편집">
+                    <Tooltip label={t('common.edit')}>
                       <button
                         onClick={() => { setEditing(detail || n); setShowCreate(true); }}
                         className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
@@ -209,7 +211,7 @@ export function NotesPanel({
                         </svg>
                       </button>
                     </Tooltip>
-                    <Tooltip label="삭제">
+                    <Tooltip label={t('common.delete')}>
                       <button
                         onClick={() => handleDelete(n)}
                         className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"

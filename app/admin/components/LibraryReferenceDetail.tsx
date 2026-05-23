@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useId } from 'react';
 import { ArrowLeft, Trash2, FileText, Globe, FileType, Loader2, Plus, Upload, Type, X } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
+import { useTranslations } from '../../../lib/i18n';
 import { logger } from '../../../lib/util/logger';
 import { apiPost } from '../../../lib/api-fetch';
 import type { LibraryReferencePb, LibrarySourcePb } from '../../../lib/proto-gen/firebat_pb';
@@ -40,6 +41,7 @@ export function LibraryReferenceDetail({
   hubContext?: LibraryHubContext;
   onBack: () => void;
 }) {
+  const t = useTranslations();
   const [sources, setSources] = useState<LibrarySourcePb[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -352,7 +354,7 @@ export function LibraryReferenceDetail({
                     <span>{Number(src.chunkCount)} chunks</span>
                   </div>
                 </div>
-                <Tooltip label="삭제">
+                <Tooltip label={t('common.delete')}>
                   <button
                     onClick={e => { e.stopPropagation(); handleDelete(src); }}
                     className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-600 transition-all"

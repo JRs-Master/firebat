@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Search, Loader2, X, Copy, Trash2, Image as ImageIcon, Sparkles, Calendar, Ruler, Crop, ChevronLeft, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Tooltip } from './Tooltip';
+import { useTranslations } from '../../../lib/i18n';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog, alertDialog } from './Dialog';
 import { useEvents } from '../hooks/events-manager';
@@ -318,6 +319,7 @@ function MediaDetailModal({
   /** 페이지 사용처 — 비어있으면 '사용 안 됨' 표시. PageManager 인덱스에서 자동 갱신. */
   usage: Array<{ pageSlug: string; usedAt: number }>;
 }) {
+  const t = useTranslations();
   const isError = item.status === 'error';
   const canRegenerate = !!item.prompt; // prompt 있어야 재실행 가능
   const [copiedField, setCopiedField] = useState<string | null>(null);
@@ -382,7 +384,7 @@ function MediaDetailModal({
           <div className="flex items-center gap-1 shrink-0">
             <span className="text-[11px] text-slate-400 tabular-nums px-1">{index + 1} / {total}</span>
             {/* 헤더 화살표 — PC 전용 (모바일은 이미지 좌우 floating 버튼으로 대체, 중복 회피) */}
-            <Tooltip label="이전 (←)">
+            <Tooltip label={t('gallery_modal.previous_image')}>
               <button
                 onClick={onPrev}
                 disabled={!hasPrev}
@@ -392,7 +394,7 @@ function MediaDetailModal({
                 <ChevronLeft size={18} />
               </button>
             </Tooltip>
-            <Tooltip label="다음 (→)">
+            <Tooltip label={t('gallery_modal.next_image')}>
               <button
                 onClick={onNext}
                 disabled={!hasNext}

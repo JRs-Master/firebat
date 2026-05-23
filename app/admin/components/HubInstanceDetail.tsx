@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useId } from 'react';
 import { ArrowLeft, RotateCcw, Copy, ExternalLink } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
+import { useTranslations } from '../../../lib/i18n';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost } from '../../../lib/api-fetch';
 import { SaveButton, type SaveButtonState } from './SaveButton';
@@ -33,6 +34,7 @@ export function HubInstanceDetail({
   instance: HubInstancePb;
   onBack: () => void;
 }) {
+  const t = useTranslations();
   const [name, setName] = useState(instance.name);
   const [description, setDescription] = useState(instance.description);
   const [systemPrompt, setSystemPrompt] = useState(instance.systemPrompt);
@@ -401,7 +403,7 @@ export function HubInstanceDetail({
               aria-label="API 토큰"
               name="hubApiToken"
             />
-            <Tooltip label="복사">
+            <Tooltip label={t('common.copy')}>
               <button
                 onClick={handleCopyToken}
                 className="p-1.5 text-slate-500 hover:text-blue-600 transition-colors border border-slate-300 rounded"
@@ -409,7 +411,7 @@ export function HubInstanceDetail({
                 <Copy size={13} />
               </button>
             </Tooltip>
-            <Tooltip label="재발급">
+            <Tooltip label={t('common.regenerate')}>
               <button
                 onClick={handleRotateToken}
                 className="p-1.5 text-slate-500 hover:text-red-600 transition-colors border border-slate-300 rounded"

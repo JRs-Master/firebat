@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSidebarRefresh } from '../hooks/events-manager';
 import { Tooltip } from './Tooltip';
 import { confirmDialog } from './Dialog';
+import { useTranslations } from '../../../lib/i18n';
 import { rowActionsClass } from '../utils/row-actions';
 import { logger } from '../../../lib/util/logger';
 import { apiGet, apiPost, apiDelete, apiPut } from '../../../lib/api-fetch';
@@ -62,6 +63,7 @@ export function CronPanel({
   hubMode?: boolean;
   hubContext?: CronHubContext;
 } = {}) {
+  const t = useTranslations();
   const queryClient = useQueryClient();
   const [cancelling, setCancelling] = useState<string | null>(null);
   const [running, setRunning] = useState<string | null>(null);
@@ -265,7 +267,7 @@ export function CronPanel({
                 </p>
               </div>
               <span className={rowActionsClass(jobSelected)}>
-                <Tooltip label="지금 실행">
+                <Tooltip label={t('common.run_now')}>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleRunNow(job.jobId); setSelectedJobId(null); }}
                     disabled={running === job.jobId}
@@ -274,7 +276,7 @@ export function CronPanel({
                     {running === job.jobId ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
                   </button>
                 </Tooltip>
-                <Tooltip label="설정">
+                <Tooltip label={t('common.settings')}>
                   <button
                     onClick={(e) => { e.stopPropagation(); setEditing(job); setSelectedJobId(null); }}
                     className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
@@ -282,7 +284,7 @@ export function CronPanel({
                     <Settings size={11} />
                   </button>
                 </Tooltip>
-                <Tooltip label="해제">
+                <Tooltip label={t('common.deactivate')}>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleCancel(job.jobId); setSelectedJobId(null); }}
                     disabled={cancelling === job.jobId}
@@ -309,7 +311,7 @@ export function CronPanel({
               최근 실행 로그 ({logs.length})
             </button>
             {showLogs && (
-              <Tooltip label="로그 전체 삭제">
+              <Tooltip label={t('cron.clear_logs')}>
                 <button
                   onClick={handleClearLogs}
                   className="p-0.5 text-slate-400 hover:text-red-500 transition-colors"

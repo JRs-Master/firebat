@@ -12,6 +12,7 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react';
 import { Plus, Trash2, X, MapPin, Link as LinkIcon, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+import { useTranslations } from '../../../lib/i18n';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { apiPost } from '../../../lib/api-fetch';
@@ -87,6 +88,7 @@ export function CalendarPanel({
   hubMode?: boolean;
   hubContext?: CalendarHubContext;
 } = {}) {
+  const t = useTranslations();
   const today = useMemo(() => new Date(), []);
   const [cursorYear, setCursorYear] = useState(today.getFullYear());
   const [cursorMonth, setCursorMonth] = useState(today.getMonth()); // 0-indexed
@@ -224,7 +226,7 @@ export function CalendarPanel({
     <div className="flex flex-col h-full overflow-hidden">
       {/* 상단 네비 — 월 이동 / year·month picker / 오늘 / 추가 */}
       <div className="px-2 py-2 border-b border-slate-200/80 flex items-center gap-1 relative" ref={pickerRef}>
-        <Tooltip label="이전 달">
+        <Tooltip label={t('calendar.previous_month')}>
           <button onClick={goPrevMonth} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md">
             <ChevronLeft size={13} />
           </button>
@@ -243,12 +245,12 @@ export function CalendarPanel({
             {MONTH_NAMES[cursorMonth]} <ChevronDown size={10} className="text-slate-400" />
           </button>
         </div>
-        <Tooltip label="다음 달">
+        <Tooltip label={t('calendar.next_month')}>
           <button onClick={goNextMonth} className="p-1.5 text-slate-500 hover:bg-slate-100 rounded-md">
             <ChevronRight size={13} />
           </button>
         </Tooltip>
-        <Tooltip label="오늘">
+        <Tooltip label={t('common.today')}>
           <button
             onClick={goToday}
             className="px-2 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-100 rounded-md border border-slate-200"
@@ -256,7 +258,7 @@ export function CalendarPanel({
             오늘
           </button>
         </Tooltip>
-        <Tooltip label="일정 추가">
+        <Tooltip label={t('calendar.add_event')}>
           <button
             onClick={() => { setEditing(null); setShowCreate(true); }}
             className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md"
@@ -382,11 +384,11 @@ export function CalendarPanel({
                       <div className="text-[10px] text-slate-600 mt-0.5 line-clamp-2 whitespace-pre-wrap break-words">{e.description}</div>
                     )}
                     <div className="flex flex-wrap items-center gap-1 mt-0.5">
-                      {(e.tags ?? []).slice(0, 4).map((t, i) => (
-                        <span key={i} className="text-[9px] px-1 rounded bg-slate-100 text-slate-500">#{t}</span>
+                      {(e.tags ?? []).slice(0, 4).map((tag, i) => (
+                        <span key={i} className="text-[9px] px-1 rounded bg-slate-100 text-slate-500">#{tag}</span>
                       ))}
                       {e.linkedJobId && (
-                        <Tooltip label={`Cron 잡: ${e.linkedJobId}`}>
+                        <Tooltip label={t('calendar.cron_linked', { jobId: e.linkedJobId })}>
                           <span className="text-[9px] px-1 rounded bg-purple-50 text-purple-600 inline-flex items-center gap-0.5">
                             <LinkIcon size={8} /> cron
                           </span>
@@ -394,7 +396,7 @@ export function CalendarPanel({
                       )}
                     </div>
                   </div>
-                  <Tooltip label="편집">
+                  <Tooltip label={t('common.edit')}>
                     <button
                       onClick={() => { setEditing(e); setShowCreate(true); }}
                       className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded"
@@ -405,7 +407,7 @@ export function CalendarPanel({
                       </svg>
                     </button>
                   </Tooltip>
-                  <Tooltip label="삭제">
+                  <Tooltip label={t('common.delete')}>
                     <button
                       onClick={() => handleDelete(e)}
                       className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded"

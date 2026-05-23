@@ -754,7 +754,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               type="button"
               onClick={() => scrollTabs('left')}
               className="hidden sm:flex absolute left-0 top-0 bottom-0 z-20 w-7 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-r from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
-              aria-label="이전 탭"
+              aria-label={t('system_modules.common.prev_tab')}
             ><ChevronLeft size={16} /></button>
           )}
           {scrollState.canRight && (
@@ -762,7 +762,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               type="button"
               onClick={() => scrollTabs('right')}
               className="hidden sm:flex absolute right-0 top-0 bottom-0 z-20 w-7 items-center justify-center text-slate-400 hover:text-slate-700 bg-gradient-to-l from-white via-white to-transparent opacity-0 group-hover:opacity-100 transition-opacity"
-              aria-label="다음 탭"
+              aria-label={t('system_modules.common.next_tab')}
             ><ChevronRight size={16} /></button>
           )}
           <div ref={tabBarRef} className="flex px-3 sm:px-6 bg-white overflow-x-auto scrollbar-none select-none cursor-grab">
@@ -871,18 +871,18 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   type="password"
                   value={adminCurrentPw}
                   onChange={e => { setAdminCurrentPw(e.target.value); setAdminPwError(''); }}
-                  placeholder="현재 비밀번호"
+                  placeholder={t('settings_modal.current_password_placeholder')}
                   autoComplete="current-password"
-                  aria-label="현재 비밀번호"
+                  aria-label={t('settings_modal.current_password_label')}
                   className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 <input
                   type="text"
                   value={adminNewId}
                   onChange={e => setAdminNewId(e.target.value)}
-                  placeholder="새 아이디"
+                  placeholder={t('settings_modal.new_id_placeholder')}
                   autoComplete="username"
-                  aria-label="새 아이디"
+                  aria-label={t('settings_modal.new_id_label')}
                   className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="adminNewId" id={adminNewIdId}
                 />
                 <input
@@ -891,9 +891,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   type="password"
                   value={adminNewPw}
                   onChange={e => setAdminNewPw(e.target.value)}
-                  placeholder="새 비밀번호"
+                  placeholder={t('settings_modal.new_password_placeholder')}
                   autoComplete="new-password"
-                  aria-label="새 비밀번호"
+                  aria-label={t('settings_modal.new_password_label')}
                   className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 {adminPwError && <p className="text-[10px] sm:text-xs text-red-500 font-medium">{adminPwError}</p>}
@@ -1344,7 +1344,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     value={userPrompt}
                     onChange={(v) => setUserPrompt(v.slice(0, USER_PROMPT_MAX_CHARS))}
                     rows={6}
-                    placeholder="원하는 톤·언어·도메인 지식·포맷 선호 등을 자유롭게 입력해 주세요 (선택 사항입니다)"
+                    placeholder={t('settings_modal.preferences_placeholder')}
                   />
                   <HelpText>
                     User AI (어드민 채팅) 시스템 프롬프트 뒤에 주입됩니다. 비어두면 주입되지 않으며 모델 본연의 응답이 사용됩니다.
@@ -1612,7 +1612,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                 aria-label={`${s.name} 새 값`}
                                 value={editingSecret.value}
                                 onChange={e => setEditingSecret({ name: s.name, value: e.target.value })}
-                                placeholder="새 값 입력"
+                                placeholder={t('settings_modal.new_value_placeholder')}
                                 autoFocus
                                 onKeyDown={async e => {
                                   if (e.key === 'Enter' && editingSecret.value.trim()) {
@@ -1665,8 +1665,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     type="text"
                     value={newSecretName}
                     onChange={e => setNewSecretName(e.target.value)}
-                    placeholder="키 이름"
-                    aria-label="키 이름"
+                    placeholder={t('settings_modal.key_name_placeholder')}
+                    aria-label={t('settings_modal.key_name_label')}
                     className="flex-1 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="newSecretName" autoComplete="off" id={newSecretNameId}
                   />
                   <input
@@ -1675,10 +1675,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     type="password"
                     value={newSecretValue}
                     onChange={e => setNewSecretValue(e.target.value)}
-                    placeholder="키 값"
+                    placeholder={t('settings_modal.key_value_placeholder')}
                     onKeyDown={e => e.key === 'Enter' && addSecret()}
                     autoComplete="new-password"
-                    aria-label="키 값"
+                    aria-label={t('settings_modal.key_value_label')}
                     className="flex-1 px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                   <button
@@ -1739,7 +1739,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           {mcpTokenRaw}
                         </code>
                         <div className="relative">
-                          <Tooltip label="복사">
+                          <Tooltip label={t('common.copy')}>
                             <button
                               onClick={() => copyToClipboard(mcpTokenRaw, setMcpTokenCopied)}
                               className="shrink-0 p-1.5 rounded hover:bg-amber-100 transition-colors"
@@ -1805,7 +1805,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                             VS Code / Cursor MCP 설정에 아래 JSON을 추가하세요.
                           </p>
                           <div className="relative">
-                            <Tooltip label="복사">
+                            <Tooltip label={t('common.copy')}>
                               <button
                                 onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)}
                                 className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
@@ -1842,7 +1842,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                             SSH를 통해 서버에 직접 접속하여 실행합니다.
                           </p>
                           <div className="relative">
-                            <Tooltip label="복사">
+                            <Tooltip label={t('common.copy')}>
                               <button
                                 onClick={() => copyToClipboard(jsonConfig, setMcpJsonCopied)}
                                 className="shrink-0 p-1 rounded hover:bg-slate-100 transition-colors"
@@ -1895,7 +1895,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                             )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0 ml-2">
-                            <Tooltip label="편집">
+                            <Tooltip label={t('common.edit')}>
                               <button
                                 onClick={() => isEditing ? setMcpEditing(null) : startEditMcp(s)}
                                 className={`p-1 rounded transition-colors ${isEditing ? 'text-blue-600 bg-blue-50' : 'text-slate-400 hover:text-amber-600 hover:bg-amber-50'}`}
@@ -1928,16 +1928,16 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                   type="text"
                                   value={mcpEditCommand}
                                   onChange={e => setMcpEditCommand(e.target.value)}
-                                  placeholder="명령어"
-                                  aria-label="MCP 명령어"
+                                  placeholder={t('settings_modal.command_placeholder')}
+                                  aria-label={t('settings_modal.mcp_command_label')}
                                   className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditCommand" autoComplete="off" id={mcpEditCommandId}
                                 />
                                 <input
                                   type="text"
                                   value={mcpEditArgs}
                                   onChange={e => setMcpEditArgs(e.target.value)}
-                                  placeholder="인자 (공백 구분)"
-                                  aria-label="MCP 인자"
+                                  placeholder={t('settings_modal.args_placeholder')}
+                                  aria-label={t('settings_modal.mcp_args_label')}
                                   className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditArgs" autoComplete="off" id={mcpEditArgsId}
                                 />
                               </>
@@ -2018,7 +2018,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   type="text"
                   value={mcpNewName}
                   onChange={e => setMcpNewName(e.target.value)}
-                  placeholder="서버 이름 (예: gmail, slack)"
+                  placeholder={t('settings_modal.server_name_placeholder')}
                   className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewName" autoComplete="off" id={mcpNewNameId}
                 />
                 <div className="flex gap-2">
@@ -2041,16 +2041,16 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       type="text"
                       value={mcpNewCommand}
                       onChange={e => setMcpNewCommand(e.target.value)}
-                      placeholder="실행 명령어 (예: npx, python)"
-                      aria-label="새 MCP 명령어"
+                      placeholder={t('settings_modal.mcp_command_placeholder')}
+                      aria-label={t('settings_modal.mcp_command_label')}
                       className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewCommand" autoComplete="off" id={mcpNewCommandId}
                     />
                     <input
                       type="text"
                       value={mcpNewArgs}
                       onChange={e => setMcpNewArgs(e.target.value)}
-                      placeholder="인자 (공백 구분, 예: -y @anthropic/mcp-gmail)"
-                      aria-label="새 MCP 인자"
+                      placeholder={t('settings_modal.mcp_args_placeholder')}
+                      aria-label={t('settings_modal.mcp_args_label')}
                       className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewArgs" autoComplete="off" id={mcpNewArgsId}
                     />
                   </>
@@ -2060,7 +2060,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     value={mcpNewUrl}
                     onChange={e => setMcpNewUrl(e.target.value)}
                     placeholder="SSE 서버 URL (예: http://localhost:3001/sse)"
-                    aria-label="새 MCP SSE URL"
+                    aria-label={t('settings_modal.mcp_sse_url_label')}
                     className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewUrl" autoComplete="off" id={mcpNewUrlId}
                   />
                 )}
@@ -2098,7 +2098,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           </div>
                           <Settings size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
                         </button>
-                        <Tooltip label={m.enabled !== false ? '활성' : '비활성'}>
+                        <Tooltip label={m.enabled !== false ? t('common.activate') : t('common.inactive')}>
                           <button
                             onClick={(e) => { e.stopPropagation(); toggleModuleEnabled(m.name, m.enabled === false); }}
                             className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${m.enabled !== false ? 'bg-blue-500' : 'bg-slate-300'}`}
@@ -2127,7 +2127,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           </div>
                           <Settings size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />
                         </button>
-                        <Tooltip label={m.enabled !== false ? '활성' : '비활성'}>
+                        <Tooltip label={m.enabled !== false ? t('common.activate') : t('common.inactive')}>
                           <button
                             onClick={(e) => { e.stopPropagation(); toggleModuleEnabled(m.name, m.enabled === false); }}
                             className={`relative w-9 h-5 rounded-full transition-colors shrink-0 ${m.enabled !== false ? 'bg-blue-500' : 'bg-slate-300'}`}
@@ -2180,6 +2180,7 @@ type CapInfo = { id: string; label: string; description: string; providerCount: 
 type ProviderInfo = { moduleName: string; providerType: 'local' | 'api'; location: 'system' | 'user'; description: string };
 
 function CapabilityTabContent() {
+  const t = useTranslations();
   const [caps, setCaps] = useState<CapInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCap, setSelectedCap] = useState<string | null>(null);
@@ -2325,7 +2326,7 @@ function CapabilityTabContent() {
                                   </div>
                                   {providers.length > 1 && (
                                     <div className="flex flex-col gap-0.5 shrink-0">
-                                      <Tooltip label="위로">
+                                      <Tooltip label={t('common.move_up')}>
                                         <button
                                           onClick={() => moveProvider(i, -1)}
                                           disabled={i === 0}
@@ -2334,7 +2335,7 @@ function CapabilityTabContent() {
                                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="18 15 12 9 6 15"/></svg>
                                         </button>
                                       </Tooltip>
-                                      <Tooltip label="아래로">
+                                      <Tooltip label={t('common.move_down')}>
                                         <button
                                           onClick={() => moveProvider(i, 1)}
                                           disabled={i === providers.length - 1}
@@ -2410,6 +2411,7 @@ const MEMORY_CATEGORY_LABELS: Record<string, string> = {
 };
 
 function MemoryTabContent() {
+  const t = useTranslations();
   const [items, setItems] = useState<MemoryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<MemoryItem | null>(null);
@@ -2494,14 +2496,14 @@ function MemoryTabContent() {
                   <button
                     onClick={() => setEditing(it)}
                     className="text-slate-400 hover:text-blue-500 p-1"
-                    aria-label="편집"
+                    aria-label={t('common.edit')}
                   >
                     <Pencil size={14} />
                   </button>
                   <button
                     onClick={() => remove(it.name)}
                     className="text-slate-400 hover:text-red-500 p-1"
-                    aria-label="삭제"
+                    aria-label={t('common.delete')}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -2521,6 +2523,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
   onSave: (item: MemoryItem, isNew: boolean) => Promise<void>;
   onCancel: () => void;
 }) {
+  const t = useTranslations();
   const categoryId = useId();
   const nameId = useId();
   const descriptionId = useId();
@@ -2558,7 +2561,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
           value={item.name}
           onChange={e => setItem({ ...item, name: e.target.value.replace(/[^a-z0-9_-]/gi, '').toLowerCase() })}
           disabled={!isNew}
-          placeholder="식별자 (snake_case)"
+          placeholder={t('settings_modal.memory_slug_placeholder')}
           className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded disabled:bg-slate-100" name="name" autoComplete="off" id={nameId}
         />
       </div>
@@ -2568,7 +2571,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
           type="text"
           value={item.description}
           onChange={e => setItem({ ...item, description: e.target.value })}
-          placeholder="한 줄 설명"
+          placeholder={t('settings_modal.memory_summary_placeholder')}
           className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded" name="description" autoComplete="off" id={descriptionId}
         />
       </div>
@@ -2578,7 +2581,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
           value={item.content}
           onChange={e => setItem({ ...item, content: e.target.value })}
           rows={12}
-          placeholder="자세한 룰·선호 내용을 입력해 주세요. AI 가 memory_read(name) 으로 조회합니다."
+          placeholder={t('settings_modal.memory_body_placeholder')}
           className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded font-mono resize-y" name="content" autoComplete="off" id={contentId}
         />
       </div>

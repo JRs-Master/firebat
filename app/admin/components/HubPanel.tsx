@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useId } from 'react';
 import { Bot, Plus, Trash2, ChevronRight, Loader2 } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
+import { useTranslations } from '../../../lib/i18n';
 import { logger } from '../../../lib/util/logger';
 import { apiPost } from '../../../lib/api-fetch';
 import type { HubInstancePb } from '../../../lib/proto-gen/firebat_pb';
@@ -18,6 +19,7 @@ type HubApiResponse<T> = { success: boolean; data?: T; error?: string };
  * 허용 Library Reference + sysmod 영역 분리 설정.
  */
 export function HubPanel() {
+  const t = useTranslations();
   const [instances, setInstances] = useState<HubInstancePb[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -185,7 +187,7 @@ export function HubPanel() {
                   </div>
                   <div className="text-[10px] text-slate-400 truncate mt-0.5 font-mono">{inst.slug}</div>
                 </div>
-                <Tooltip label="삭제">
+                <Tooltip label={t('common.delete')}>
                   <button
                     onClick={e => { e.stopPropagation(); handleDelete(inst); }}
                     className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-600 transition-all"

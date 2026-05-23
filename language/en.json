@@ -159,7 +159,22 @@
     "submit": "Submit",
     "yes": "Yes",
     "no": "No",
-    "more": "More"
+    "more": "More",
+    "add": "Add",
+    "today": "Today",
+    "copy": "Copy",
+    "preview": "Preview",
+    "open": "Open",
+    "apply": "Apply",
+    "run_now": "Run now",
+    "settings": "Settings",
+    "deactivate": "Deactivate",
+    "activate": "Active",
+    "inactive": "Inactive",
+    "restore": "Restore",
+    "regenerate": "Regenerate",
+    "move_up": "Move up",
+    "move_down": "Move down"
   },
   "login": {
     "title": "Sign in to Firebat",
@@ -318,5 +333,84 @@
       "mcp_stdio_ssh_required_body": "stdio mode requires an SSH key registered on the server. Ask your server administrator to register your SSH public key.",
       "mcp_stdio_ssh_required_note": "Replace SSH_KEY_PATH, USER, SERVER_IP, and the firebat path with actual values."
     }
+  },
+  "calendar": {
+    "previous_month": "Previous month",
+    "next_month": "Next month",
+    "add_event": "Add event",
+    "cron_linked": "Cron job: {jobId}"
+  },
+  "cron": {
+    "clear_logs": "Clear all logs"
+  },
+  "entity": {
+    "add": "Add entity"
+  },
+  "notes_panel": {
+    "add_note": "Add note"
+  },
+  "file_editor": {
+    "delete_conversation": "Delete conversation",
+    "close_sidebar": "Close sidebar",
+    "restore_admin": "Restore admin settings",
+    "preview_changes": "Preview changes before applying",
+    "send_enter": "Send (Enter)"
+  },
+  "chat_input": {
+    "attach_image": "Attach image",
+    "plan_image_mode_disabled": "Not available in image mode",
+    "plan_mode_always_tooltip": "Plan ALWAYS — show plan card for every request (click → OFF)",
+    "plan_mode_auto_tooltip": "Plan AUTO — plan only for destructive/complex tasks (click → ALWAYS)",
+    "plan_mode_off_tooltip": "Plan OFF — let AI decide freely (click → AUTO)",
+    "image_mode_on": "Image mode (bypass LLM, direct generation)",
+    "image_mode_toggle": "Switch to image mode",
+    "image_label": "Image",
+    "stop_generation": "Stop generation",
+    "send": "Send"
+  },
+  "file_tree": {
+    "open_in_browser": "Open in browser"
+  },
+  "gallery_modal": {
+    "previous_image": "Previous (←)",
+    "next_image": "Next (→)"
+  },
+  "sidebar_actions": {
+    "close_sidebar": "Close sidebar",
+    "collapse_panel": "Collapse panel",
+    "share_conversation": "Share this conversation (24h)",
+    "permanent_delete": "Delete permanently"
+  },
+  "templates_panel": {
+    "new_template": "New template"
+  },
+  "admin_page_chat": {
+    "delete_message": "Delete this message",
+    "share_response": "Share this response (24h)"
+  },
+  "settings_modal": {
+    "current_password_placeholder": "Current password",
+    "current_password_label": "Current password",
+    "new_id_placeholder": "New username",
+    "new_id_label": "New username",
+    "new_password_placeholder": "New password",
+    "new_password_label": "New password",
+    "preferences_placeholder": "Feel free to describe preferred tone, language, domain knowledge, format, etc. (optional)",
+    "new_value_placeholder": "Enter new value",
+    "key_name_placeholder": "Key name",
+    "key_name_label": "Key name",
+    "key_value_placeholder": "Key value",
+    "key_value_label": "Key value",
+    "command_placeholder": "Command",
+    "args_placeholder": "Arguments (space-separated)",
+    "server_name_placeholder": "Server name (e.g. gmail, slack)",
+    "mcp_command_placeholder": "Run command (e.g. npx, python)",
+    "mcp_command_label": "New MCP command",
+    "mcp_args_placeholder": "Arguments (space-separated, e.g. -y @anthropic/mcp-gmail)",
+    "mcp_args_label": "New MCP arguments",
+    "mcp_sse_url_label": "New MCP SSE URL",
+    "memory_slug_placeholder": "Identifier (snake_case)",
+    "memory_summary_placeholder": "One-line description",
+    "memory_body_placeholder": "Describe detailed rules or preferences. AI looks this up via memory_read(name)."
   }
 }

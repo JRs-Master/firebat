@@ -8,6 +8,7 @@ import {
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
 import { apiDelete } from '../../../lib/api-fetch';
+import { useTranslations } from '../../../lib/i18n';
 
 export interface TreeNode {
   name: string;
@@ -42,6 +43,7 @@ interface NodeProps {
 }
 
 const TreeNodeComponent = ({ node, depth, onRefresh, onEdit }: NodeProps) => {
+  const t = useTranslations();
   const [isOpen, setIsOpen] = useState(depth < 2);
   const [deleting, setDeleting] = useState(false);
 
@@ -103,7 +105,7 @@ const TreeNodeComponent = ({ node, depth, onRefresh, onEdit }: NodeProps) => {
         <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ml-1 flex-shrink-0">
           {/* 열기 (page.tsx만) */}
           {pageUrl && (
-            <Tooltip label="브라우저에서 열기">
+            <Tooltip label={t('file_tree.open_in_browser')}>
               <button
                 onClick={handleOpen}
                 className="p-1 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
@@ -115,7 +117,7 @@ const TreeNodeComponent = ({ node, depth, onRefresh, onEdit }: NodeProps) => {
 
           {/* 편집 (파일만) */}
           {!node.isDirectory && canDelete && (
-            <Tooltip label="편집">
+            <Tooltip label={t('common.edit')}>
               <button
                 onClick={(e) => { e.stopPropagation(); onEdit?.(node.path); }}
                 className="p-1 rounded text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
@@ -127,7 +129,7 @@ const TreeNodeComponent = ({ node, depth, onRefresh, onEdit }: NodeProps) => {
 
           {/* 삭제 */}
           {canDelete && (
-            <Tooltip label="삭제">
+            <Tooltip label={t('common.delete')}>
               <button
                 onClick={handleDelete}
                 disabled={deleting}

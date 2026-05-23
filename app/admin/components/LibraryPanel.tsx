@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useId } from 'react';
 import { BookOpen, Plus, Trash2, ChevronRight, Loader2 } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 import { confirmDialog, alertDialog } from './Dialog';
+import { useTranslations } from '../../../lib/i18n';
 import { logger } from '../../../lib/util/logger';
 import { apiPost } from '../../../lib/api-fetch';
 import type { LibraryReferencePb } from '../../../lib/proto-gen/firebat_pb';
@@ -23,6 +24,7 @@ export type LibraryHubContext = { slug: string; apiToken: string; sessionId: str
  * 익명 /api/hub/<slug>/library 호출. owner 자동 hub-scoped (방문자 자료 격리).
  */
 export function LibraryPanel({ hubContext }: { hubContext?: LibraryHubContext } = {}) {
+  const t = useTranslations();
   const [refs, setRefs] = useState<LibraryReferencePb[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -204,7 +206,7 @@ export function LibraryPanel({ hubContext }: { hubContext?: LibraryHubContext } 
                     </div>
                   )}
                 </div>
-                <Tooltip label="삭제">
+                <Tooltip label={t('common.delete')}>
                   <button
                     onClick={e => { e.stopPropagation(); handleDelete(ref); }}
                     className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-600 transition-all"
