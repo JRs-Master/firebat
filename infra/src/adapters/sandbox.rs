@@ -334,6 +334,93 @@ impl ProcessSandboxAdapter {
         self
     }
 
+    /// auto-cache fallback — envelope 미박힌 sysmod 응답에서 가장 큰 배열 필드 1개를
+    /// SysmodCacheAdapter 로 저장 + in-place truncate + `_cacheKey` / `_cacheMeta` 형제 필드 주입.
+    ///
+    /// 룰:
+    /// - data 가 object 가 아니면 변형 없음
+    /// - `_cacheKey` 가 이미 있으면 skip (명시 envelope 처리 결과 우선)
+    /// - 길이 < `AUTO_CACHE_THRESHOLD`(30) 인 배열은 skip
+    /// - 한 응답당 가장 큰 배열 1개만 자동 캐싱
+    /// - cache.data() 실패 시 원본 data 그대로 통과 (warn log)
+    fn apply_auto_cache(
+        data: serde_json::Value,
+        cache: &SysmodCacheAdapter,
+        module_name: &str,
+        input_action: &str,
+    ) -> serde_json::Value {
+        const AUTO_CACHE_THRESHOLD: usize = 30;
+        const AUTO_CACHE_PREVIEW: usize = 5;
+        let mut obj = match data.as_object().cloned() {
+            Some(o) => o,
+            None => return data,
+        };
+        if obj.contains_key("_cacheKey") {
+            return serde_json::Value::Object(obj);
+        }
+        let largest: Option<(String, usize)> = obj
+            .iter()
+            .filter_map(|(k, v)| v.as_array().map(|a| (k.clone(), a.len())))
+            .filter(|(_, l)| *l >= AUTO_CACHE_THRESHOLD)
+            .max_by_key(|(_, l)| *l);
+        let (field_name, total_count) = match largest {
+            Some(t) => t,
+            None => return serde_json::Value::Object(obj),
+        };
+        let records = match obj.get(&field_name).and_then(|v| v.as_array()).cloned() {
+            Some(r) => r,
+            None => return serde_json::Value::Object(obj),
+        };
+        let action_label = format!("{}:{}", input_action, field_name);
+        match cache.data(
+            module_name,
+            &action_label,
+            serde_json::Value::Null,
+            records,
+            None,
+        ) {
+            Ok(key) => {
+                if let Some(arr) = obj.get_mut(&field_name).and_then(|v| v.as_array_mut()) {
+                    arr.truncate(AUTO_CACHE_PREVIEW);
+                }
+                obj.insert(
+                    "_cacheKey".to_string(),
+                    serde_json::Value::String(key.clone()),
+                );
+                obj.insert(
+                    "_cacheMeta".to_string(),
+                    serde_json::json!({
+                        "sysmod": module_name,
+                        "action": action_label,
+                        "fieldName": field_name,
+                        "totalCount": total_count,
+                        "truncatedTo": AUTO_CACHE_PREVIEW,
+                        "autoCached": true,
+                    }),
+                );
+                tracing::info!(
+                    target: "sandbox",
+                    module = module_name,
+                    action = input_action,
+                    field = %field_name,
+                    cache_key = %key,
+                    total = total_count,
+                    "[sandbox] auto-cache 적용 — 큰 배열 필드를 cache 로 추출"
+                );
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "sandbox",
+                    module = module_name,
+                    action = input_action,
+                    error = %e,
+                    "[sandbox] auto-cache 저장 실패 — 폐기"
+                );
+            }
+        }
+        serde_json::Value::Object(obj)
+    }
+
     /// Runtime 등록 — 새 언어 (Ruby / Bun / Deno) 추가 시 ctor 후 호출.
     /// 코드 분기 추가 없이 dispatch table 확장.
     pub fn with_runtime(mut self, ext: impl Into<String>, spec: RuntimeSpec) -> Self {
@@ -1352,6 +1439,16 @@ impl ProcessSandboxAdapter {
             data
         };
 
+        // auto-cache fallback — envelope 미박힌 sysmod 응답에서 큰 배열 필드 1개를 sandbox 단에서
+        // 자동 SysmodCacheAdapter 저장. AI 가 records 통째 받지 않고 _cacheKey + 짧은 preview 만 받음.
+        // 명시 `_cache` envelope 처리 후 이미 `_cacheKey` 채워졌으면 skip (옛 호환 + 모듈이 풍부한
+        // preview 박은 자유 보존). 한 응답당 가장 큰 배열 1개만 자동 캐싱 (over-engineering 회피).
+        let data = if let Some(cache) = &self.cache {
+            Self::apply_auto_cache(data, cache, module_name, input_action)
+        } else {
+            data
+        };
+
         Ok(ModuleOutput {
             protocol_version: firebat_core::ports::MODULE_PROTOCOL_VERSION.to_string(),
             success,
@@ -1688,5 +1785,151 @@ mod tests {
             post_install: None,
         };
         assert!(!ProcessSandboxAdapter::is_package_installed(dir.path(), &spec));
+    }
+
+    fn make_cache(dir: &std::path::Path) -> Arc<SysmodCacheAdapter> {
+        Arc::new(SysmodCacheAdapter::new(dir.join("cache")).unwrap())
+    }
+
+    #[test]
+    fn apply_auto_cache_truncates_large_array_field() {
+        let tmp = tempdir().unwrap();
+        let cache = make_cache(tmp.path());
+        // items 40개 — threshold 30 초과
+        let items: Vec<serde_json::Value> = (0..40)
+            .map(|i| serde_json::json!({"id": i, "name": format!("row{}", i)}))
+            .collect();
+        let data = serde_json::json!({ "items": items });
+
+        let out = ProcessSandboxAdapter::apply_auto_cache(
+            data,
+            cache.as_ref(),
+            "law-search",
+            "search",
+        );
+
+        let obj = out.as_object().expect("object 결과");
+        // items 5개로 truncate
+        let arr = obj.get("items").and_then(|v| v.as_array()).expect("items 배열");
+        assert_eq!(arr.len(), 5);
+        // _cacheKey + _cacheMeta 주입
+        assert!(obj.get("_cacheKey").and_then(|v| v.as_str()).is_some());
+        let meta = obj.get("_cacheMeta").and_then(|v| v.as_object()).expect("meta");
+        assert_eq!(meta.get("totalCount").and_then(|v| v.as_u64()), Some(40));
+        assert_eq!(meta.get("truncatedTo").and_then(|v| v.as_u64()), Some(5));
+        assert_eq!(meta.get("autoCached").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            meta.get("fieldName").and_then(|v| v.as_str()),
+            Some("items")
+        );
+        assert_eq!(
+            meta.get("action").and_then(|v| v.as_str()),
+            Some("search:items")
+        );
+        assert_eq!(
+            meta.get("sysmod").and_then(|v| v.as_str()),
+            Some("law-search")
+        );
+    }
+
+    #[test]
+    fn apply_auto_cache_skips_small_arrays() {
+        let tmp = tempdir().unwrap();
+        let cache = make_cache(tmp.path());
+        // items 10개 — threshold 30 미만
+        let items: Vec<serde_json::Value> = (0..10)
+            .map(|i| serde_json::json!({"id": i}))
+            .collect();
+        let data = serde_json::json!({ "items": items.clone(), "meta": "x" });
+
+        let out = ProcessSandboxAdapter::apply_auto_cache(
+            data,
+            cache.as_ref(),
+            "tiny-mod",
+            "query",
+        );
+
+        let obj = out.as_object().expect("object 결과");
+        // items 그대로 (truncate 안 됨)
+        let arr = obj.get("items").and_then(|v| v.as_array()).expect("items 배열");
+        assert_eq!(arr.len(), 10);
+        // _cacheKey / _cacheMeta 미주입
+        assert!(obj.get("_cacheKey").is_none());
+        assert!(obj.get("_cacheMeta").is_none());
+    }
+
+    #[test]
+    fn apply_auto_cache_respects_existing_cache_key() {
+        let tmp = tempdir().unwrap();
+        let cache = make_cache(tmp.path());
+        // envelope 처리 결과 시뮬레이션 — _cacheKey 이미 박혀있음
+        let items: Vec<serde_json::Value> = (0..40)
+            .map(|i| serde_json::json!({"id": i}))
+            .collect();
+        let data = serde_json::json!({
+            "items": items.clone(),
+            "_cacheKey": "pre-existing-key",
+            "_cacheMeta": {"sysmod": "x", "action": "y", "recordCount": 40},
+        });
+
+        let out = ProcessSandboxAdapter::apply_auto_cache(
+            data,
+            cache.as_ref(),
+            "mod",
+            "act",
+        );
+
+        let obj = out.as_object().expect("object 결과");
+        // items 그대로 (envelope 처리 본인 영역)
+        let arr = obj.get("items").and_then(|v| v.as_array()).expect("items 배열");
+        assert_eq!(arr.len(), 40);
+        // 기존 _cacheKey 유지
+        assert_eq!(
+            obj.get("_cacheKey").and_then(|v| v.as_str()),
+            Some("pre-existing-key")
+        );
+    }
+
+    #[test]
+    fn apply_auto_cache_picks_largest_when_multiple_arrays() {
+        let tmp = tempdir().unwrap();
+        let cache = make_cache(tmp.path());
+        // big 50개 + small 35개 → big 1개만 캐싱
+        let big: Vec<serde_json::Value> =
+            (0..50).map(|i| serde_json::json!({"k": i})).collect();
+        let small: Vec<serde_json::Value> =
+            (0..35).map(|i| serde_json::json!({"k": i})).collect();
+        let data = serde_json::json!({ "big": big, "small": small.clone() });
+
+        let out = ProcessSandboxAdapter::apply_auto_cache(
+            data,
+            cache.as_ref(),
+            "mod",
+            "act",
+        );
+
+        let obj = out.as_object().expect("object 결과");
+        // big 만 truncate
+        assert_eq!(obj.get("big").and_then(|v| v.as_array()).map(|a| a.len()), Some(5));
+        // small 은 그대로
+        assert_eq!(obj.get("small").and_then(|v| v.as_array()).map(|a| a.len()), Some(35));
+        let meta = obj.get("_cacheMeta").and_then(|v| v.as_object()).expect("meta");
+        assert_eq!(meta.get("fieldName").and_then(|v| v.as_str()), Some("big"));
+        assert_eq!(meta.get("totalCount").and_then(|v| v.as_u64()), Some(50));
+    }
+
+    #[test]
+    fn apply_auto_cache_non_object_data_unchanged() {
+        let tmp = tempdir().unwrap();
+        let cache = make_cache(tmp.path());
+        // data 자체가 배열 (object 아님) — 변형 0
+        let data = serde_json::json!([1, 2, 3]);
+        let out = ProcessSandboxAdapter::apply_auto_cache(
+            data.clone(),
+            cache.as_ref(),
+            "mod",
+            "act",
+        );
+        assert_eq!(out, data);
     }
 }
