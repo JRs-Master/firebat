@@ -11,7 +11,10 @@
  */
 
 const BASE = 'https://www.law.go.kr/DRF';
-const TIMEOUT = 20000;
+// law.go.kr 국가법령 Open API 는 응답이 느릴 때가 잦다. 옛 원본엔 타임아웃이 없어
+// (끝까지 대기) 느려도 결과를 받았는데, 속도 최적화 리팩터(25e0eea)에서 20s 상한이
+// 들어가며 느린 응답이 자주 잘렸다. 넉넉히 45s — sandbox/watchdog(2분) 안쪽이라 안전.
+const TIMEOUT = 45000;
 
 let raw = '';
 process.stdin.setEncoding('utf-8');
