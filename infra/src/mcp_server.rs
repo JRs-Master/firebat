@@ -647,6 +647,39 @@ impl McpToolHandler for RenderUnifiedHandler {
                         }
                     }
                 }
+                // 누락된 required prop 보정 — components.json schema 는 cosmetic / default 있는
+                // 옵션(stickyCol / striped / level 등)도 required 로 두지만, MCP inputSchema 는
+                // strict 강제가 아니라 Claude 같은 provider 는 이를 생략한다. validate_value 만
+                // 이를 막아 멀쩡한 block 이 silent skip → 사용자 화면에서 누락. renderer 는 이미
+                // 누락 prop 을 기본값으로 처리하므로, 검증 전 schema default(있으면) 또는 null(허용
+                // 타입일 때)을 주입해 통과시킨다. default 도 null 도 없는 필수 prop(text / headers /
+                // children 등) 누락은 그대로 실패 → AI 재시도 유도 (진짜 데이터 누락이므로).
+                if let (Some(required), Some(known)) = (
+                    comp.props_schema.get("required").and_then(|v| v.as_array()),
+                    schema_props,
+                ) {
+                    for req in required {
+                        let Some(key) = req.as_str() else { continue };
+                        if obj.contains_key(key) {
+                            continue;
+                        }
+                        let Some(prop) = known.get(key) else { continue };
+                        if let Some(default) = prop.get("default") {
+                            obj.insert(key.to_string(), default.clone());
+                        } else {
+                            let allows_null = match prop.get("type") {
+                                Some(serde_json::Value::String(s)) => s == "null",
+                                Some(serde_json::Value::Array(arr)) => {
+                                    arr.iter().any(|x| x.as_str() == Some("null"))
+                                }
+                                _ => false,
+                            };
+                            if allows_null {
+                                obj.insert(key.to_string(), serde_json::Value::Null);
+                            }
+                        }
+                    }
+                }
             }
 
             // propsSchema 검증 — 실패 block 만 분리, 정상 block 은 계속 push.

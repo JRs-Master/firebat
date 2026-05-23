@@ -314,6 +314,7 @@
             5,
             6
           ],
+          "default": 2,
           "description": "기본 2"
         }
       }
