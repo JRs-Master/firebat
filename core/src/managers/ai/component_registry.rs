@@ -52,6 +52,115 @@ pub fn component_names() -> Vec<&'static str> {
     components().iter().map(|c| c.name.as_str()).collect()
 }
 
+/// schema 의 `"type"` 가 주어진 type 이름(예: "object" / "array" / "null")을 허용하는지 판정.
+/// `"type"` 가 단일 문자열이면 일치 여부, 배열이면 포함 여부를 본다.
+fn schema_allows_type(schema: &serde_json::Value, type_name: &str) -> bool {
+    match schema.get("type") {
+        Some(serde_json::Value::String(s)) => s == type_name,
+        Some(serde_json::Value::Array(arr)) => arr.iter().any(|x| x.as_str() == Some(type_name)),
+        _ => false,
+    }
+}
+
+/// props 를 schema 에 맞춰 재귀적으로 정리 — 검증 통과 가능하게 보정하되, 보정 불가한
+/// 필수 누락은 그대로 남겨 (top-level validate 에서 실패 → AI 재시도). 동작:
+///  - object: additionalProperties:false 면 미지 키 drop / 각 known prop 재귀 / optional prop 의
+///    값이 sub-schema 위반이면 drop(→ renderer 기본값) / 누락 required 는 default 또는 null(허용
+///    시) 채움
+///  - array: 각 item 을 items schema 로 재귀
+///  - scalar: no-op (상위에서 enum/type 판정)
+///
+/// required prop 은 위반이어도 drop 하지 않는다 (drop 하면 "없음"이 되어 어차피 실패 — 차이 없고,
+/// gotKeys 진단으로 synonym 여부 보려면 원본 유지가 낫다). default/null 도 없는 필수 누락만 실패
+/// 유지.
+pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Value) {
+    if schema_allows_type(schema, "object") {
+        let Some(obj) = value.as_object_mut() else {
+            return;
+        };
+
+        // schema(불변) 에서 properties / additionalProperties / required 먼저 추출 —
+        // value 의 mutable borrow 와 충돌하지 않게 정보부터 모은다.
+        let properties = schema.get("properties").and_then(|v| v.as_object());
+        let additional_false = schema.get("additionalProperties").and_then(|v| v.as_bool())
+            == Some(false);
+        let required: std::collections::HashSet<&str> = schema
+            .get("required")
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|x| x.as_str()).collect())
+            .unwrap_or_default();
+
+        // 1. additionalProperties:false 면 properties 에 없는 키 전부 drop.
+        if additional_false {
+            if let Some(known) = properties {
+                let extras: Vec<String> = obj
+                    .keys()
+                    .filter(|k| !known.contains_key(k.as_str()))
+                    .cloned()
+                    .collect();
+                for k in extras {
+                    obj.remove(&k);
+                }
+            }
+        }
+
+        // 2. 각 known prop 이 value 에 있으면 sub-schema 로 재귀 (중첩 먼저 정리).
+        if let Some(known) = properties {
+            for (key, sub_schema) in known {
+                if let Some(v) = obj.get_mut(key.as_str()) {
+                    sanitize_to_schema(v, sub_schema);
+                }
+            }
+
+            // 3. optional prop 중 재귀 후에도 sub-schema 위반인 값은 drop (→ renderer 기본값).
+            //    required prop 은 위반이어도 그대로 둔다.
+            let to_drop: Vec<String> = known
+                .iter()
+                .filter(|(key, _)| !required.contains(key.as_str()))
+                .filter_map(|(key, sub_schema)| {
+                    obj.get(key.as_str()).and_then(|v| {
+                        if crate::managers::module::validate_value(v, sub_schema).is_err() {
+                            Some(key.clone())
+                        } else {
+                            None
+                        }
+                    })
+                })
+                .collect();
+            for k in to_drop {
+                obj.remove(&k);
+            }
+
+            // 4. 누락 required 보정 — sub-schema 에 default 있으면 그 값, 없고 null 허용 타입이면 null.
+            //    둘 다 없으면 그대로 누락 (상위 validate 실패 → AI 재시도).
+            for key in &required {
+                if obj.contains_key(*key) {
+                    continue;
+                }
+                let Some(sub_schema) = known.get(*key) else {
+                    continue;
+                };
+                if let Some(default) = sub_schema.get("default") {
+                    obj.insert(key.to_string(), default.clone());
+                } else if schema_allows_type(sub_schema, "null") {
+                    obj.insert(key.to_string(), serde_json::Value::Null);
+                }
+            }
+        }
+    } else if schema_allows_type(schema, "array") {
+        let Some(items_schema) = schema.get("items") else {
+            return;
+        };
+        let Some(arr) = value.as_array_mut() else {
+            return;
+        };
+        for item in arr.iter_mut() {
+            sanitize_to_schema(item, items_schema);
+        }
+    }
+    // scalar: no-op.
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,5 +215,79 @@ mod tests {
         assert!(names.contains(&"stock_chart"));
         assert!(names.contains(&"table"));
         assert!(names.contains(&"network"));
+    }
+
+    use crate::managers::module::validate_value;
+    use serde_json::json;
+
+    #[test]
+    fn sanitize_drops_nested_optional_enum_violation() {
+        // 중첩 배열 안 객체의 optional enum 위반 — items[].type = "info" 는 enum
+        // ["default","success","warning","error"] 위반. top-level 정규화로는 못 잡던 사례.
+        let schema = &find_component("timeline").unwrap().props_schema;
+        let mut props = json!({
+            "items": [
+                { "date": "2026-01-01", "title": "시작", "type": "info" }
+            ]
+        });
+        sanitize_to_schema(&mut props, schema);
+
+        // items[0].type 가 제거되어야 한다.
+        assert!(
+            props["items"][0].get("type").is_none(),
+            "enum 위반 optional prop 'type' 이 제거되어야 함"
+        );
+        // 필수 키는 보존.
+        assert_eq!(props["items"][0]["date"], "2026-01-01");
+        assert_eq!(props["items"][0]["title"], "시작");
+        // 정리 후 검증 통과.
+        assert!(
+            validate_value(&props, schema).is_ok(),
+            "sanitize 후 timeline 검증 통과해야 함"
+        );
+    }
+
+    #[test]
+    fn sanitize_fills_nullable_required_and_drops_unknown() {
+        // table: stickyCol(nullable) 은 required 지만 누락 → null 채움.
+        // 미지 키(bogus) 는 additionalProperties:false 라 제거.
+        let schema = &find_component("table").unwrap().props_schema;
+        let mut props = json!({
+            "headers": ["A", "B"],
+            "rows": [["1", "2"], ["3", "4"]],
+            "bogus": "should be dropped"
+        });
+        sanitize_to_schema(&mut props, schema);
+
+        assert_eq!(
+            props["stickyCol"],
+            serde_json::Value::Null,
+            "nullable required 'stickyCol' 이 null 로 채워져야 함"
+        );
+        assert!(
+            props.get("bogus").is_none(),
+            "미지 키 'bogus' 가 제거되어야 함"
+        );
+        assert!(
+            validate_value(&props, schema).is_ok(),
+            "sanitize 후 table 검증 통과해야 함"
+        );
+    }
+
+    #[test]
+    fn sanitize_keeps_missing_required_without_default_failing() {
+        // header: text 는 required + default/null 없음 → 보정 안 함 → 여전히 검증 실패.
+        let schema = &find_component("header").unwrap().props_schema;
+        let mut props = json!({ "level": 3 });
+        sanitize_to_schema(&mut props, schema);
+
+        assert!(
+            props.get("text").is_none(),
+            "보정 불가한 필수 'text' 는 채워지지 않아야 함"
+        );
+        assert!(
+            validate_value(&props, schema).is_err(),
+            "필수 'text' 누락은 sanitize 후에도 검증 실패해야 함"
+        );
     }
 }

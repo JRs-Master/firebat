@@ -621,74 +621,25 @@ impl McpToolHandler for RenderUnifiedHandler {
                 }
             };
 
-            // AI hallucination normalize — AI 가 schema 잘못 학습해서 'name' / 'currency' 등 박는 경우
-            // 자주 발생. additionalProperties false + required title 박혀있어도 description 강화로
+            // AI hallucination normalize — AI 가 schema 잘못 학습해서 'name' / 'currency' 등 보내는
+            // 경우 자주 발생. additionalProperties false + required title 명시 + description 강화로도
             // 해결 안 됨 (commit `2cedd5b` 이후 또 발생). 검증 전 흡수.
-            //   1. 'name' 박혀있고 'title' 없으면 → 'title' 매핑 (의미상 동일, stock_chart 같은
-            //      component 안 옛에 'name' 박았던 적 있어 AI 가 학습 잔재)
-            //   2. additionalProperties false 박힌 schema 안 = 명시 안 박힌 키 자동 drop (검증 fail
-            //      차단). schema 안 명시 박힌 키만 retain.
+            //   1. 'name' 이 있고 'title' 이 없으면 → 'title' 매핑 (의미상 동일, stock_chart 같은
+            //      component 안 옛에 'name' 쓰던 적 있어 AI 가 학습한 잔재). sanitize 전에 처리.
+            //   2. sanitize_to_schema 가 나머지 정규화를 재귀적으로 수행 — additionalProperties:false
+            //      미지 키 drop / 중첩 객체·배열의 optional enum·type 위반 drop / 누락 required 의
+            //      default·null 채움. top-level 만 처리하던 옛 인라인 로직의 중첩 누락을 일반화.
             if let Some(obj) = props.as_object_mut() {
                 if !obj.contains_key("title") {
                     if let Some(name_val) = obj.remove("name") {
                         obj.insert("title".to_string(), name_val);
                     }
                 }
-                let schema_props = comp
-                    .props_schema
-                    .get("properties")
-                    .and_then(|v| v.as_object());
-                let additional_false = comp
-                    .props_schema
-                    .get("additionalProperties")
-                    .and_then(|v| v.as_bool())
-                    == Some(false);
-                if additional_false {
-                    if let Some(known) = schema_props {
-                        let extras: Vec<String> = obj
-                            .keys()
-                            .filter(|k| !known.contains_key(k.as_str()))
-                            .cloned()
-                            .collect();
-                        for k in extras {
-                            obj.remove(&k);
-                        }
-                    }
-                }
-                // 누락된 required prop 보정 — components.json schema 는 cosmetic / default 있는
-                // 옵션(stickyCol / striped / level 등)도 required 로 두지만, MCP inputSchema 는
-                // strict 강제가 아니라 Claude 같은 provider 는 이를 생략한다. validate_value 만
-                // 이를 막아 멀쩡한 block 이 silent skip → 사용자 화면에서 누락. renderer 는 이미
-                // 누락 prop 을 기본값으로 처리하므로, 검증 전 schema default(있으면) 또는 null(허용
-                // 타입일 때)을 주입해 통과시킨다. default 도 null 도 없는 필수 prop(text / headers /
-                // children 등) 누락은 그대로 실패 → AI 재시도 유도 (진짜 데이터 누락이므로).
-                if let (Some(required), Some(known)) = (
-                    comp.props_schema.get("required").and_then(|v| v.as_array()),
-                    schema_props,
-                ) {
-                    for req in required {
-                        let Some(key) = req.as_str() else { continue };
-                        if obj.contains_key(key) {
-                            continue;
-                        }
-                        let Some(prop) = known.get(key) else { continue };
-                        if let Some(default) = prop.get("default") {
-                            obj.insert(key.to_string(), default.clone());
-                        } else {
-                            let allows_null = match prop.get("type") {
-                                Some(serde_json::Value::String(s)) => s == "null",
-                                Some(serde_json::Value::Array(arr)) => {
-                                    arr.iter().any(|x| x.as_str() == Some("null"))
-                                }
-                                _ => false,
-                            };
-                            if allows_null {
-                                obj.insert(key.to_string(), serde_json::Value::Null);
-                            }
-                        }
-                    }
-                }
             }
+            firebat_core::managers::ai::component_registry::sanitize_to_schema(
+                &mut props,
+                &comp.props_schema,
+            );
 
             // propsSchema 검증 — 실패 block 만 분리, 정상 block 은 계속 push.
             if let Err(e) =
