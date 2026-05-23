@@ -13,6 +13,7 @@ pub mod library;
 pub mod grpc;
 pub mod mcp_server;
 pub mod grpc_interceptor;
+pub mod log_service;
 
 /// Generated proto module — `firebat_core::proto` 의 re-export.
 /// infra 는 자체 build.rs 없음 — core 가 proto 컴파일 담당.

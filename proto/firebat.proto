@@ -2798,6 +2798,42 @@ service HubService {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// LogService — 로그 시스템 Phase 4 (2026-05-21). sqlite ring buffer (data/logs.db)
+// 조회 + 런타임 filter 동적 변경 (SIGHUP 대신 RPC). admin 로그 탭 (Phase 5) 사용.
+// ──────────────────────────────────────────────────────────────────────────
+service LogService {
+  rpc QueryLogs(LogQueryRequest) returns (LogQueryResponse);
+  rpc SetLogFilter(SetLogFilterRequest) returns (SetLogFilterResponse);
+}
+
+message LogEntryPb {
+  int64 ts_ms = 1;
+  string level = 2;
+  string target = 3;
+  string message = 4;
+}
+
+message LogQueryRequest {
+  string min_level = 1;      // "" = 전체 ("ERROR"/"WARN"/"INFO"/"DEBUG")
+  string target_prefix = 2;  // "" = 전체
+  int64 since_ms = 3;        // 0 = 전체
+  int32 limit = 4;           // 0 = default 200
+}
+
+message LogQueryResponse {
+  repeated LogEntryPb entries = 1;
+}
+
+message SetLogFilterRequest {
+  string filter = 1;  // EnvFilter 문자열 (예: "info,firebat_infra::adapters::sandbox=debug")
+}
+
+message SetLogFilterResponse {
+  bool ok = 1;
+  string error = 2;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Phase B 진행 시 변환 룰:
 //  1. JsonArgs / JsonValue → 매니저별 typed message 로 swap
 //  2. tonic-build 가 Rust 구조체 자동 생성

@@ -39,6 +39,7 @@ use firebat_core::{
         ai_service_server::AiServiceServer,
         library_service_server::LibraryServiceServer,
         hub_service_server::HubServiceServer,
+        log_service_server::LogServiceServer,
         auth_service_server::AuthServiceServer,
         memory_service_server::MemoryServiceServer,
         capability_service_server::CapabilityServiceServer,
@@ -83,7 +84,7 @@ async fn main() -> Result<()> {
     let log_db_path = std::env::var("FIREBAT_LOGS_DB")
         .map(PathBuf::from)
         .unwrap_or_else(|_| workspace_root.join("data").join("logs.db"));
-    let log_reload_handle = init_tracing(log_db_path);
+    let log_reload_handle = init_tracing(log_db_path.clone());
     tracing::info!(version = firebat_core::version(), "Firebat Core 부팅");
 
     // 옛 commit `3418b4b` 안 HF_ENDPOINT env 자동 default 박은 fix = 잘못된 진단 — hf-hub 0.3
@@ -878,6 +879,9 @@ async fn main() -> Result<()> {
         .add_service(TelegramServiceServer::new(telegram_service))
         .add_service(DatabaseServiceServer::new(database_service))
         .add_service(MemoryServiceServer::new(memory_file_service))
+        .add_service(LogServiceServer::new(
+            firebat_infra::log_service::LogServiceImpl::new(log_db_path, log_reload_handle.clone()),
+        ))
         // Phase B-17.5 cross-cutting 8개 모두 설정. 남은 건 Phase D Tauri.
         .serve_with_shutdown(addr, shutdown)
         .await
