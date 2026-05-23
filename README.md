@@ -166,16 +166,19 @@ Exposes 20+ tools: page CRUD, file CRUD, module execution + introspection (`list
 - **Auto package install**: Declare dependencies in `config.json.packages` — installed on first run
 - **Secret injection**: Vault values passed as env vars — the AI never sees the raw secret
 - **Timeout**: 30 seconds per execution
+- **Auto-cache for large responses**: the sandbox detects a sysmod response's largest top-level array (≥30 items) and stores it in the `SysmodCacheAdapter`, returning a small 5-item preview plus a `_cacheKey` to the model. The AI drills in with `cache_read` / `cache_grep` / `cache_aggregate` instead of paying full-array tokens. Modules need no code change — yfinance's existing explicit `_cache` envelope still takes priority for rich previews.
 
-> 🇰🇷 **샌드박스 실행** — 언어 중립(Python/JS/PHP/Rust/WASM/Shell), `config.json` `packages` 기반 자동 설치, Vault 시크릿을 환경변수로만 주입(AI는 키 값을 모름), 30초 타임아웃.
+> 🇰🇷 **샌드박스 실행** — 언어 중립(Python/JS/PHP/Rust/WASM/Shell), `config.json` `packages` 기반 자동 설치, Vault 시크릿을 환경변수로만 주입(AI는 키 값을 모름), 30초 타임아웃. **응답 자동 캐싱**: 큰 배열 필드(≥30)는 sandbox가 자동으로 SysmodCacheAdapter에 저장하고 5개 미리보기 + `_cacheKey`만 AI에 전달 → LLM 토큰 절약, 모듈 코드 수정 0.
 
 ### Built-in Components
 
-Define UI via PageSpec JSON and Firebat renders it automatically. The AI can also call these directly in chat through `render_*` tools:
+Define UI via PageSpec JSON and Firebat renders it automatically. In chat, the AI emits them through a single unified `render({blocks: [{type, props}, ...]})` tool:
 
 `Header` · `Text` · `Card` · `Grid` · `Form` · `Image` · `Button` · `Table` · `Html` · `Divider` · `List` · `Slider` · `Tabs` · `Accordion` · `Progress` · `Badge` · `Alert` · `Callout` · `Carousel` · `Countdown` · `Chart` · `Metric` · `Timeline` · `Compare` · `KeyValue` · `StatusBadge` · `StockChart`
 
-> 🇰🇷 **빌트인 컴포넌트** — PageSpec JSON으로 선언하면 자동 렌더링. 채팅에서는 AI가 `render_*` 도구로 직접 호출합니다. 총 27종 (Header/Text/Card/Grid/Form/… + 신규 Metric/Timeline/Compare/KeyValue/StatusBadge + 전용 StockChart).
+Each block's `props` is validated against the component's JSON Schema. A recursive **`sanitize_to_schema`** runs first so the AI's natural output (synonym keys dropped by `additionalProperties:false`, optional enum/type mismatches, nullable required props missing) passes without losing the block: extras are dropped, missing required props are filled from `default` or `null` where allowed, and optional props that still fail validation get pruned so the renderer's default kicks in — recursing into nested objects and arrays. Truly-missing essential props still surface as a `failed[]` entry with `gotKeys` (the original keys the AI sent) so the model can retry with the right shape.
+
+> 🇰🇷 **빌트인 컴포넌트** — PageSpec JSON으로 선언하면 자동 렌더링. 채팅에서는 AI가 단일 `render({blocks:[...]})` 도구로 호출. 각 block의 `props`는 컴포넌트 JSON Schema로 검증되며, 검증 전에 **재귀 `sanitize_to_schema`**가 돌아 AI 출력을 자동 정리합니다 — `additionalProperties:false`의 미지 키 drop, 누락 required는 `default`/null 채움, optional 위반(잘못된 enum/타입)은 drop(렌더러 기본값 적용), 중첩 객체·배열까지 재귀. 진짜 필수가 빠진 경우만 `failed[]`로 `gotKeys`(AI가 보낸 원본 키)와 함께 노출해 재시도 신호.
 
 ### Capability-Provider System
 

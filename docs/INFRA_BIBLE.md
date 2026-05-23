@@ -70,6 +70,10 @@ Infra는 Core의 순수성을 지키기 위해 물리적 세계(파일 시스템
   - **엄격 검증**: 키는 대문자/숫자/언더스코어(`^[A-Z0-9_]+$`)만, 값은 string + 8KB 제한, **config.json `secrets` 배열에 선언된 이름만 허용** (오염 방지).
   - `tokenCache` 키와 일치하면 `ttlHours` 기반 `__expires` 자동 기록 (TTL 만료 후 자동 갱신 흐름에 연계).
   - 예: 카카오톡 모듈이 401 → refresh_token으로 갱신 → 새 `KAKAO_ACCESS_TOKEN`(+ rotating `KAKAO_REFRESH_TOKEN`)을 `__updateSecrets`로 반환 → Vault 영속 → 다음 실행 시 재사용.
+- **`_cache` envelope + auto-cache 일반화** (2026-05-23): sysmod 응답이 크면 LLM 컨텍스트에 통째 박지 않고 SysmodCacheAdapter 에 저장 → AI 는 `_cacheKey` + 작은 preview 만 받고 필요 시 `cache_read` / `cache_grep` / `cache_aggregate` 로 drill-in.
+  - **명시 envelope** (모듈 opt-in): 모듈이 `data._cache = {records, sysmod, action, params, ttlSec}` + 풍부한 preview 형제 필드 (예: yfinance 의 `firstDate` / `lastDate`) 박으면 sandbox 가 이를 인식해 cache 저장 + `_cache` 제거 + `_cacheKey` / `_cacheMeta` 주입.
+  - **auto-cache fallback** (모듈 변경 0): 명시 envelope 없을 때 sandbox 가 `data` 의 직접 자식 배열 중 가장 큰 것을 자동 추출 — 길이 `AUTO_CACHE_THRESHOLD`(30) 이상이면 cache 저장 + 첫 `AUTO_CACHE_PREVIEW`(5) 개로 in-place truncate + `_cacheKey` / `_cacheMeta {fieldName, totalCount, autoCached:true}` 주입. 한 응답당 1개. **admin · hub 공통 경로** (모든 sysmod 자동 혜택 — law-search / naver-search / kiwoom 등).
+  - 명시 envelope 처리에서 `_cacheKey` 박혔으면 auto-cache 는 skip — 모듈 의도 우선.
 
 ### 4. LLM Adapter (`infra/llm/config-adapter.ts` + format handlers) — 2026-04-18 Config-driven 개편
 - `ILlmPort` 구현은 **ConfigDrivenAdapter 단일**. 프로바이더별 개별 어댑터 금지.

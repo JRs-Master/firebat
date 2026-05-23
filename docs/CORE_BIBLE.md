@@ -181,7 +181,7 @@ interface FirebatInfraContainer {
 
 ### Step 3. 도구 dispatch
 `AiManager.executeToolCall(name, args)` switch dispatch (Phase 6c 분리 예정):
-- `render_*` → `{component, props}` 반환 (UI block)
+- `render` (단일 통합 도구, 2026-05-14 옵션 E 이후) — `{blocks: [{type, props}]}` 배열을 받아 각 block 의 props 를 components.json 의 컴포넌트 schema 로 검증·렌더. AI 가 prop 키를 추측해도 통과 가능하게 **`sanitize_to_schema(value, schema)` 재귀 sanitizer**(`core/src/managers/ai/component_registry.rs`)가 검증 전 정리: additionalProperties 미지 키 drop / 누락 required 는 schema `default` 또는 null 채움 / optional prop 의 enum·type 위반은 drop(→ renderer 기본값) / 배열·중첩 객체까지 재귀. 검증 실패 block 은 silent skip 대신 `failed` 배열에 `gotKeys`(정규화 전 원본 키 — synonym 진단용) + error 포함하여 AI 에게 retry 신호.
 - `image_gen` → MediaManager.generate (StatusManager wrap, gallery:refresh emit)
 - `save_page` → PageManager.save + media_usage 인덱스 갱신
 - `schedule_task` / `run_task` → ScheduleManager / TaskManager (PIPELINE_STEP_SCHEMA 7-step 검증)
