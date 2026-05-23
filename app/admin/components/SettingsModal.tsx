@@ -401,7 +401,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   };
 
   const deleteSecret = async (name: string) => {
-    if (!await confirmDialog({ title: '키 삭제', message: `"${name}" 키를 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
+    if (!await confirmDialog({ title: t('settings_modal.secret_delete_title'), message: t('settings_modal.secret_delete_message', { name }), danger: true, okLabel: t('settings_modal.secret_delete_ok') })) return;
     await apiDelete(`/api/vault/secrets?name=${encodeURIComponent(name)}`, { category: 'settings' });
     fetchSecrets();
   };
@@ -441,20 +441,20 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       const testData = await apiGet<{ success: boolean; error?: string }>(
         `/api/mcp/tools?server=${encodeURIComponent(name)}`,
         { category: 'settings' },
-      ).catch(() => ({ success: false, error: 'fetch 실패' }));
+      ).catch(() => ({ success: false, error: t('settings_modal.mcp_fetch_failed') }));
 
       if (testData.success) {
         setMcpNewName(''); setMcpNewCommand(''); setMcpNewArgs(''); setMcpNewUrl('');
       } else {
         await apiDelete(`/api/mcp/servers?name=${encodeURIComponent(name)}`, { category: 'settings' });
-        await alertDialog({ title: '연결 실패', message: `연결 실패로 등록이 취소되었습니다.\n\n${testData.error}`, danger: true });
+        await alertDialog({ title: t('settings_modal.mcp_connect_failed_title'), message: t('settings_modal.mcp_connect_failed_message', { error: String(testData.error ?? '') }), danger: true });
       }
       fetchMcpServers();
     } finally { setMcpSaving(false); }
   };
 
   const deleteMcpServer = async (name: string) => {
-    if (!await confirmDialog({ title: 'MCP 서버 제거', message: `"${name}" MCP 서버를 제거하시겠습니까?`, danger: true, okLabel: '제거' })) return;
+    if (!await confirmDialog({ title: t('settings_modal.mcp_remove_title'), message: t('settings_modal.mcp_remove_message', { name }), danger: true, okLabel: t('settings_modal.mcp_remove_ok') })) return;
     await apiDelete(`/api/mcp/servers?name=${encodeURIComponent(name)}`, { category: 'settings' });
     setMcpEditing(null);
     fetchMcpServers();
@@ -516,7 +516,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             if (ev.data.success) {
               setMcpAuth(prev => prev ? { ...prev, step: 'done' } : null);
             } else {
-              setMcpAuth(prev => prev ? { ...prev, step: 'error', error: '인증 실패' } : null);
+              setMcpAuth(prev => prev ? { ...prev, step: 'error', error: t('settings_modal.mcp_oauth_failed') } : null);
             }
           }
         };
@@ -528,7 +528,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               setMcpAuth(prev => {
                 if (prev?.step === 'waiting') {
                   window.removeEventListener('message', handler);
-                  return { ...prev, step: 'error', error: '인증 창이 닫혔습니다. 다시 시도해 주세요.' };
+                  return { ...prev, step: 'error', error: t('settings_modal.mcp_oauth_popup_closed') };
                 }
                 return prev;
               });
@@ -555,7 +555,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   }, []);
 
   const generateMcpToken = async () => {
-    if (mcpTokenInfo.exists && !await confirmDialog({ title: '토큰 재생성', message: '기존 토큰이 무효화됩니다. 새 토큰을 생성하시겠습니까?', danger: true, okLabel: '재생성' })) return;
+    if (mcpTokenInfo.exists && !await confirmDialog({ title: t('settings_modal.mcp_token_regenerate_title'), message: t('settings_modal.mcp_token_regenerate_message'), danger: true, okLabel: t('settings_modal.mcp_token_regenerate_ok') })) return;
     setMcpTokenLoading(true);
     try {
       const data = await apiPost<{ success: boolean; token?: string; hint?: string; createdAt?: string }>(
@@ -571,7 +571,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   };
 
   const revokeMcpToken = async () => {
-    if (!await confirmDialog({ title: '토큰 폐기', message: '토큰을 폐기하면 SSE(API) 연결이 즉시 차단됩니다. 계속하시겠습니까?', danger: true, okLabel: '폐기' })) return;
+    if (!await confirmDialog({ title: t('settings_modal.mcp_token_revoke_title'), message: t('settings_modal.mcp_token_revoke_message'), danger: true, okLabel: t('settings_modal.mcp_token_revoke_ok') })) return;
     await apiDelete('/api/mcp/tokens', { category: 'settings' });
     setMcpTokenInfo({ exists: false, hint: null, createdAt: null });
     setMcpTokenRaw(null);
@@ -701,7 +701,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         newId: z.string(),
         newPassword: z.string(),
       }).refine((v) => v.newId.trim().length > 0 || v.newPassword.trim().length > 0, {
-        message: '새 ID 또는 새 비밀번호 중 하나는 입력해야 합니다.',
+        message: t('settings_modal.admin_pw_either_required'),
         path: ['newPassword'],
       });
       const parsed = validateForm(adminPwSchema, {
@@ -710,7 +710,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         newPassword: adminNewPw,
       });
       if (!parsed.success) {
-        setAdminPwError(Object.values(parsed.errors)[0] ?? '입력 오류');
+        setAdminPwError(Object.values(parsed.errors)[0] ?? t('settings_modal.admin_pw_input_error'));
         setMainSaveState('err');
         setTimeout(() => setMainSaveState(null), 2000);
         return;
@@ -723,7 +723,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
         );
         setAdminCurrentPw(''); setAdminNewId(''); setAdminNewPw(''); setAdminPwError('');
       } catch (err: any) {
-        setAdminPwError(err?.responseBody?.error ?? err?.message ?? '계정 변경에 실패했습니다.');
+        setAdminPwError(err?.responseBody?.error ?? err?.message ?? t('settings_modal.admin_pw_change_failed'));
         setMainSaveState('err');
         setTimeout(() => setMainSaveState(null), 2000);
         return;
@@ -771,7 +771,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             data-active={settingsTab === 'general'}
             className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors whitespace-nowrap ${settingsTab === 'general' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
-            일반
+            {t('settings_modal.tab_general')}
           </button>
           <button
             onClick={() => switchTab('ai')}
@@ -785,35 +785,35 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             data-active={settingsTab === 'secrets'}
             className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'secrets' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
-            <KeyRound size={14} /> API 키
+            <KeyRound size={14} /> {t('settings_modal.tab_secrets')}
           </button>
           <button
             onClick={() => switchTab('mcp')}
             data-active={settingsTab === 'mcp'}
             className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'mcp' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
-            <Plug size={14} /> 외부 MCP
+            <Plug size={14} /> {t('settings_modal.tab_mcp')}
           </button>
           <button
             onClick={() => switchTab('capabilities')}
             data-active={settingsTab === 'capabilities'}
             className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'capabilities' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
-            <Layers size={14} /> 기능
+            <Layers size={14} /> {t('settings_modal.tab_capabilities')}
           </button>
           <button
             onClick={() => switchTab('system')}
             data-active={settingsTab === 'system'}
             className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'system' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
-            <Cpu size={14} /> 시스템
+            <Cpu size={14} /> {t('settings_modal.tab_system')}
           </button>
           <button
             onClick={() => switchTab('logs')}
             data-active={settingsTab === 'logs'}
             className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'logs' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
-            <ScrollText size={14} /> 로그
+            <ScrollText size={14} /> {t('settings_modal.tab_logs')}
           </button>
           </div>
         </div>
@@ -858,13 +858,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   ))}
                 </select>
                 <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
-                  크론 스케줄링과 AI 시간 기준에 반영됩니다
+                  {t('settings_modal.timezone_help')}
                 </p>
               </div>
 
               {/* 관리자 계정 변경 */}
               <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
-                <span className="text-xs sm:text-sm font-bold text-slate-700 pt-1">관리자 계정 변경</span>
+                <span className="text-xs sm:text-sm font-bold text-slate-700 pt-1">{t('settings_modal.admin_account_change')}</span>
                 <input
                   id={adminCurrentPwId}
                   name="currentPassword"
@@ -897,11 +897,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
                 {adminPwError && <p className="text-[10px] sm:text-xs text-red-500 font-medium">{adminPwError}</p>}
-                <p className="text-[10px] sm:text-xs text-slate-400 font-medium">현재 비밀번호 입력 필수. 빈칸은 기존 유지.</p>
+                <p className="text-[10px] sm:text-xs text-slate-400 font-medium">{t('settings_modal.admin_account_change_hint')}</p>
                 <p className="text-[10px] sm:text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5 leading-relaxed">
-                  ⚠ 비밀번호 변경 시 기존 로그인 세션은 모두 무효화됩니다.
-                  외부 도구 (MCP / API) 에서 사용 중인 API 토큰은 자동 폐기되지 않으니,
-                  보안 강화를 위해 MCP 탭에서 토큰을 재발급하시는 것을 권장합니다.
+                  {t('settings_modal.admin_account_change_warning')}
                 </p>
               </div>
 
@@ -946,7 +944,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             // 모델 드롭다운용 option 배열
             const modelOptions = modelsForProvider.length > 0
               ? modelsForProvider.map(m => ({ value: m.value, label: m.label }))
-              : [{ value: '', label: '사용 가능한 모델 없음' }];
+              : [{ value: '', label: t('settings_modal.image_no_model_option') }];
             const modelValue = modelsForProvider.some(m => m.value === aiModel) ? aiModel : (modelsForProvider[0]?.value ?? '');
             // Thinking — JSON registry single source. 옛 hardcoded prefix 기반 polices 폐기 (2026-05-13).
             const modelEntry = aiModelsList.find(m => m.value === modelValue);
@@ -970,28 +968,28 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 <div className="flex items-center gap-1 border-b border-slate-200 mb-3">
                   {([
                     { v: 'llm', label: 'LLM' },
-                    { v: 'prompt', label: '프롬프트' },
-                    { v: 'image', label: '이미지' },
-                    { v: 'cost', label: '비용' },
-                    { v: 'memory', label: '메모리' },
-                  ] as const).map(t => (
+                    { v: 'prompt', label: t('settings_modal.ai_sub_tab_prompt') },
+                    { v: 'image', label: t('settings_modal.ai_sub_tab_image') },
+                    { v: 'cost', label: t('settings_modal.ai_sub_tab_cost') },
+                    { v: 'memory', label: t('settings_modal.ai_sub_tab_memory') },
+                  ] as const).map(tab => (
                     <button
-                      key={t.v}
-                      onClick={() => setAiSubTab(t.v)}
+                      key={tab.v}
+                      onClick={() => setAiSubTab(tab.v)}
                       className={`px-3 py-1.5 text-xs sm:text-sm font-bold border-b-2 transition-colors whitespace-nowrap ${
-                        aiSubTab === t.v
+                        aiSubTab === tab.v
                           ? 'border-blue-500 text-blue-600'
                           : 'border-transparent text-slate-400 hover:text-slate-600'
                       }`}
                     >
-                      {t.label}
+                      {tab.label}
                     </button>
                   ))}
                 </div>
                 {aiSubTab === 'cost' && <CostTabContent />}
                 {aiSubTab === 'memory' && <MemoryTabContent />}
                 {aiSubTab === 'llm' && (<>
-                <Field label="실행 모드" help="API: 각 공급자 키 기반 pay-per-token · CLI: Claude Pro/Max, ChatGPT Plus 등 구독 계정 직접 사용 (월정액)">
+                <Field label={t('settings_modal.exec_mode_label')} help={t('settings_modal.exec_mode_help')}>
                   <SegButtons<'api' | 'cli'>
                     value={execMode}
                     onChange={(em) => {
@@ -1018,12 +1016,12 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         restoreOrFirst(newCat, firstApi?.value);
                       }
                     }}
-                    options={[{ value: 'api', label: 'API' }, { value: 'cli', label: 'CLI (구독)' }]}
+                    options={[{ value: 'api', label: t('settings_modal.exec_mode_api') }, { value: 'cli', label: t('settings_modal.exec_mode_cli') }]}
                   />
                 </Field>
 
                 {execMode === 'api' && (
-                <Field label="모드" help="일반 모드: 각 공급자 직통 API · Vertex 모드: GCP Vertex AI (Service Account 인증)">
+                <Field label={t('settings_modal.mode_label')} help={t('settings_modal.mode_help')}>
                   <SegButtons<'general' | 'vertex'>
                     value={aiMode}
                     onChange={(m) => {
@@ -1049,13 +1047,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       });
                       restoreOrFirst(newCat, nextModels[0]?.value);
                     }}
-                    options={[{ value: 'general', label: '일반' }, { value: 'vertex', label: 'Vertex' }]}
+                    options={[{ value: 'general', label: t('settings_modal.mode_general') }, { value: 'vertex', label: 'Vertex' }]}
                   />
                 </Field>
                 )}
 
                 {execMode === 'api' && (
-                <Field label="공급자">
+                <Field label={t('settings_modal.provider_label')}>
                   <SegButtons<'openai' | 'google' | 'anthropic'>
                     value={effectiveProvider}
                     onChange={(p) => {
@@ -1084,7 +1082,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 )}
 
                 {execMode === 'cli' && (
-                <Field label="공급자" help="Anthropic Claude Code / OpenAI Codex / Google Gemini CLI — 구독 계정으로 인증">
+                <Field label={t('settings_modal.provider_label')} help={t('settings_modal.cli_provider_help')}>
                   <SegButtons<CliProvider>
                     value={cliProvider}
                     onChange={(p) => {
@@ -1102,7 +1100,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 </Field>
                 )}
 
-                <Field label="모델">
+                <Field label={t('settings_modal.model_label')}>
                   <SelectInput value={modelValue} onChange={onAiModelChange} options={modelOptions} />
                 </Field>
 
@@ -1115,7 +1113,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
                 {/* Anthropic prompt caching 토글 — Claude API 모드 전용 (모드=일반 AND 공급자=Anthropic) */}
                 {execMode === 'api' && aiMode === 'general' && aiProvider === 'anthropic' && (
-                  <Field label="Prompt Caching" help="동일 prefix (system/tools) 를 5분 내 재사용하면 90% 비용이 절감되고 응답이 가속됩니다. 단발 호출이면 cache write 25% 추가 비용이 발생합니다. 같은 대화 멀티턴 위주면 ON, 짧은 단발 위주면 OFF 를 권장합니다.">
+                  <Field label={t('settings_modal.prompt_caching_label')} help={t('settings_modal.prompt_caching_help')}>
                     <label className="flex items-center gap-2 cursor-pointer select-none">
                       <input
                         type="checkbox"
@@ -1125,16 +1123,16 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           setAnthropicCacheEnabled(next);
                           await apiPatch('/api/settings', { anthropicCacheEnabled: next }, { category: 'settings' });
                         }}
-                        aria-label="Anthropic prompt cache 활성"
+                        aria-label={t('settings_modal.prompt_caching_aria')}
                         className="w-4 h-4 cursor-pointer" name="anthropicCacheEnabled" autoComplete="off" id={anthropicCacheId}
                       />
-                      <span className="text-[12px] text-slate-700">{anthropicCacheEnabled ? '활성 (cache_control 마커 적용)' : '비활성 (기본)'}</span>
+                      <span className="text-[12px] text-slate-700">{anthropicCacheEnabled ? t('settings_modal.prompt_caching_on') : t('settings_modal.prompt_caching_off')}</span>
                     </label>
                   </Field>
                 )}
 
                 {/* Sub-agent 병렬 토글 — 모든 모드에 노출. ON 시 spawn_subagent 도구 LLM 한테 노출 */}
-                <Field label="Sub-agent 병렬" help="큰 작업 (다종목 백테스트·여러 분석) 을 sub-agent 에 위임하고 병렬 실행하여 시간이 1/N 로 단축됩니다. 단 sub-agent 마다 LLM 호출이 추가되어 API 모드면 비용이 N배 증가하고 CLI 모드면 한도/메모리 부담이 늘어납니다. 기본값은 OFF 입니다.">
+                <Field label={t('settings_modal.subagent_label')} help={t('settings_modal.subagent_help')}>
                   <label className="flex items-center gap-2 cursor-pointer select-none">
                     <input
                       type="checkbox"
@@ -1144,10 +1142,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         setSubAgentEnabled(next);
                         await apiPatch('/api/settings', { subAgentEnabled: next }, { category: 'settings' });
                       }}
-                      aria-label="Sub-agent 병렬 활성"
+                      aria-label={t('settings_modal.subagent_aria')}
                       className="w-4 h-4 cursor-pointer" name="subAgentEnabled" autoComplete="off" id={subAgentEnabledId}
                     />
-                    <span className="text-[12px] text-slate-700">{subAgentEnabled ? '활성 (spawn_subagent 도구 노출)' : '비활성 (기본 — 도구 자체 미노출)'}</span>
+                    <span className="text-[12px] text-slate-700">{subAgentEnabled ? t('settings_modal.subagent_on') : t('settings_modal.subagent_off')}</span>
                   </label>
                 </Field>
 
@@ -1164,28 +1162,28 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       name: 'Claude Code',
                       install: 'npm i -g @anthropic-ai/claude-code',
                       login: 'claude auth login',
-                      subscription: 'Claude Pro/Max 구독',
+                      subscription: t('settings_modal.cli_subscription_claude'),
                       apiProvider: 'claude-code',
                     },
                     codex: {
                       name: 'Codex CLI',
                       install: 'npm i -g @openai/codex',
                       login: 'codex login',
-                      subscription: 'ChatGPT Plus/Pro 구독',
+                      subscription: t('settings_modal.cli_subscription_codex'),
                       apiProvider: 'codex',
                     },
                     gemini: {
                       name: 'Gemini CLI',
                       install: 'npm i -g @google/gemini-cli',
                       login: 'gemini auth login',
-                      subscription: 'Google AI Pro 구독 (또는 무료 티어)',
+                      subscription: t('settings_modal.cli_subscription_gemini'),
                       apiProvider: 'gemini',
                     },
                   };
                   const g = guide[cliProvider];
                   return (
                   <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
-                    <FieldLabel>CLI 인증 상태 — {g.name}</FieldLabel>
+                    <FieldLabel>{t('settings_modal.cli_status_label', { name: g.name })}</FieldLabel>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -1201,23 +1199,23 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         }}
                         className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 disabled:bg-slate-400 text-white text-[12px] font-bold rounded-lg"
                       >
-                        {cliChecking ? '확인 중...' : '상태 확인'}
+                        {cliChecking ? t('settings_modal.cli_checking') : t('settings_modal.cli_check_button')}
                       </button>
                       {cliStatus && (
                         <span className={`text-[12px] font-bold ${cliStatus.loggedIn ? 'text-green-600' : cliStatus.installed ? 'text-amber-600' : 'text-red-600'}`}>
-                          {cliStatus.loggedIn ? '● 설치·인증 완료' : cliStatus.installed ? '● 설치됨 (인증 필요)' : '● 미설치'}
+                          {cliStatus.loggedIn ? t('settings_modal.cli_status_logged_in') : cliStatus.installed ? t('settings_modal.cli_status_installed') : t('settings_modal.cli_status_not_installed')}
                         </span>
                       )}
                     </div>
                     <div className="text-[11px] text-slate-500 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                      <b>{g.name} 사용 안내</b>
+                      <b>{t('settings_modal.cli_guide_title', { name: g.name })}</b>
                       <ul className="mt-1 ml-4 list-disc space-y-0.5">
-                        <li>서버 터미널에서 CLI 설치 + 로그인 필요 (브라우저 기반 OAuth)</li>
-                        <li>설치: <code className="bg-white px-1 rounded">{g.install}</code></li>
-                        <li>로그인: <code className="bg-white px-1 rounded">{g.login}</code></li>
-                        <li>로그인 후 위 "상태 확인" 버튼으로 검증</li>
-                        <li>구독 기반 — {g.subscription} 으로 API 키 없이 동작</li>
-                        <li><span className="text-amber-700 font-bold">TOS 주의</span>: 개인 사용에 한함. 다른 사용자 서비스 백엔드로 사용 시 위반 리스크</li>
+                        <li>{t('settings_modal.cli_guide_install_step')}</li>
+                        <li>{t('settings_modal.cli_guide_install_label')}<code className="bg-white px-1 rounded">{g.install}</code></li>
+                        <li>{t('settings_modal.cli_guide_login_label')}<code className="bg-white px-1 rounded">{g.login}</code></li>
+                        <li>{t('settings_modal.cli_guide_verify')}</li>
+                        <li>{t('settings_modal.cli_guide_subscription', { subscription: g.subscription })}</li>
+                        <li><span className="text-amber-700 font-bold">{t('settings_modal.cli_guide_tos_label')}</span>: {t('settings_modal.cli_guide_tos')}</li>
                       </ul>
                       {cliStatus?.error && (
                         <div className="mt-2 text-red-600 font-mono text-[10px]">{cliStatus.error.slice(0, 200)}</div>
@@ -1230,7 +1228,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 {/* API 키 — API 모드에서만 노출. CLI 모드는 자체 인증이라 키 불필요 */}
                 {execMode === 'api' && (
                 <div className="pt-2 border-t border-slate-100 flex flex-col gap-3">
-                  <FieldLabel>공급자 API 키</FieldLabel>
+                  <FieldLabel>{t('settings_modal.provider_api_keys')}</FieldLabel>
 
                   {aiMode === 'general' && effectiveProvider === 'openai' && (
                     <div className="flex flex-col gap-1.5">
@@ -1258,9 +1256,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
                   {aiMode === 'vertex' && (
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[11px] text-slate-500" htmlFor={vertexSaId}>Google Vertex AI 서비스 계정 JSON</label>
+                      <label className="text-[11px] text-slate-500" htmlFor={vertexSaId}>{t('settings_modal.vertex_sa_label')}</label>
                       <Textarea value={vertexSaJson} onChange={setVertexSaJson} placeholder='{"type":"service_account","project_id":"...","private_key":"..."}' rows={5} mono id={vertexSaId} name="vertexServiceAccountJson" />
-                      <HelpText className="!text-[10px]">GCP Console → IAM → 서비스 계정 → 키 생성 (JSON 전체 붙여넣기)</HelpText>
+                      <HelpText className="!text-[10px]">{t('settings_modal.vertex_sa_help')}</HelpText>
                     </div>
                   )}
                 </div>
@@ -1271,7 +1269,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   const hasGeminiKey = !!googleApiKey || !!vertexSaJson;
                   return (
                     <div className="pt-4 border-t border-slate-100 flex flex-col gap-2">
-                      <FieldLabel>AI 어시스턴트</FieldLabel>
+                      <FieldLabel>{t('settings_modal.ai_assistant_label')}</FieldLabel>
                       <label className={`flex items-start gap-2 p-3 rounded-xl border ${hasGeminiKey ? 'border-slate-200 hover:bg-slate-50 cursor-pointer' : 'border-slate-100 bg-slate-50 cursor-not-allowed opacity-60'}`}>
                         <input
                           type="checkbox"
@@ -1279,37 +1277,35 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           checked={aiRouterEnabled}
                           disabled={!hasGeminiKey}
                           onChange={e => setAiRouterEnabled(e.target.checked)}
-                          aria-label="AI 어시스턴트 활성"
+                          aria-label={t('settings_modal.ai_assistant_aria')}
                           name="aiRouterEnabled" autoComplete="off" id={aiRouterEnabledId}
                         />
                         <div className="flex-1">
-                          <div className="text-[13px] font-bold text-slate-800">AI 어시스턴트 활성화</div>
+                          <div className="text-[13px] font-bold text-slate-800">{t('settings_modal.ai_assistant_enable')}</div>
                           <div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                            Gemini Flash Lite 가 아래 역할을 수행합니다. 출력은 JSON 스키마로 강제되어 구조적으로 안전합니다.
+                            {t('settings_modal.ai_assistant_desc')}
                           </div>
                           <ul className="text-[11px] text-slate-600 mt-1.5 space-y-0.5 list-disc list-inside leading-relaxed">
-                            <li><b>메모리 자동 prepend (recall)</b> — 매 사용자 query 시점 4-tier (history + entities + facts + events) 통합 검색 → 시스템 프롬프트 prepend</li>
-                            <li><b>메모리 자동 추출 (consolidation)</b> — 대화 종료 / 6h cron 시점 entity / fact / event 자동 추출 + E5 임베딩 저장</li>
-                            <li><b>도구 선별</b> — Gemini(API) 계열에서만. GPT/Claude(API)·CLI 는 각자 MCP 가 처리</li>
-                            <li><b>컴포넌트 선별</b> — search_components 호출 시 (모든 User AI 공통)</li>
-                            <li><b>히스토리 쿼리 리라이트</b> — search_history 호출 시 대명사·지시어 해소</li>
-                            <li><b>히스토리 결과 재랭킹</b> — 벡터 top-N 에서 의미적 top-K 선별</li>
+                            <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_recall') }} />
+                            <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_consolidation') }} />
+                            <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_tool_select') }} />
+                            <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_component_select') }} />
+                            <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_history_rewrite') }} />
+                            <li dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_role_history_rerank') }} />
                           </ul>
-                          <div className="text-[11px] text-slate-500 mt-1.5 leading-relaxed">
-                            <b className="text-slate-600">CLI 모드</b>: 최근 10턴 대화만 prompt 에 번들되므로, 10턴 넘는 장기 대화나 다른 대화 참조가 필요할 때 AI Assistant 가 search_history 호출 품질을 보강합니다.
-                          </div>
+                          <div className="text-[11px] text-slate-500 mt-1.5 leading-relaxed" dangerouslySetInnerHTML={{ __html: t('settings_modal.ai_assistant_cli_note') }} />
                           <div className="text-[11px] text-slate-400 mt-1.5">
-                            결과는 캐시되어 시간이 지날수록 LLM 호출이 줄어듭니다.
+                            {t('settings_modal.ai_assistant_cache_note')}
                           </div>
                           {!hasGeminiKey && (
                             <div className="text-[11px] text-amber-600 mt-1.5 font-bold">
-                              ⚠️ Gemini(Google AI Studio) 또는 Vertex API 키를 먼저 등록하세요.
+                              {t('settings_modal.ai_assistant_no_key_warning')}
                             </div>
                           )}
                         </div>
                       </label>
                       {aiRouterEnabled && (
-                        <Field label="AI Assistant 모델">
+                        <Field label={t('settings_modal.ai_assistant_model_label')}>
                           <SelectInput
                             value={aiAssistantModel}
                             onChange={setAiAssistantModel}
@@ -1330,7 +1326,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <FieldLabel>
-                      사용자 지시사항 <span className="text-[10px] font-normal text-slate-400">(User AI 전용)</span>
+                      {t('settings_modal.user_prompt_label')} <span className="text-[10px] font-normal text-slate-400">{t('settings_modal.user_prompt_scope_note')}</span>
                     </FieldLabel>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] text-slate-400">{userPrompt.length} / {USER_PROMPT_MAX_CHARS}</span>
@@ -1347,8 +1343,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     placeholder={t('settings_modal.preferences_placeholder')}
                   />
                   <HelpText>
-                    User AI (어드민 채팅) 시스템 프롬프트 뒤에 주입됩니다. 비어두면 주입되지 않으며 모델 본연의 응답이 사용됩니다.
-                    Code Assistant·AI Assistant 에는 적용되지 않습니다.
+                    {t('settings_modal.user_prompt_help')}
                   </HelpText>
                 </div>
                 )}
@@ -1356,9 +1351,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                 {/* 이미지 생성 모델 — image_gen 도구 호출 시 사용 */}
                 {aiSubTab === 'image' && (
                 <div>
-                  <FieldLabel>이미지 생성 모델</FieldLabel>
+                  <FieldLabel>{t('settings_modal.image_model_label')}</FieldLabel>
                   <HelpText>
-                    AI 가 image_gen 도구 호출 시 사용할 모델입니다. 서버에 자동 저장되어 /api/media URL 이 반환되며 render_image·블로그 포스팅 등에 재사용됩니다.
+                    {t('settings_modal.image_model_help')}
                   </HelpText>
                   {(() => {
                     // Mode 판정: format prefix 로 API/CLI 구분
@@ -1411,27 +1406,27 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       anthropic: 'Anthropic', google: 'Google', openai: 'OpenAI',
                     };
                     const sizeLabels: Record<string, string> = {
-                      'auto': '자동 (모델 판단)',
+                      'auto': t('settings_modal.image_size_auto'),
                       // OpenAI gpt-image-1/2 픽셀 사이즈
-                      '1024x1024': '정사각 1024×1024 (1:1)',
-                      '1536x1024': '가로 1536×1024 (3:2, 블로그 헤더)',
-                      '1024x1536': '세로 1024×1536 (2:3, 포스터)',
+                      '1024x1024': t('settings_modal.image_size_1024_square'),
+                      '1536x1024': t('settings_modal.image_size_1536_landscape'),
+                      '1024x1536': t('settings_modal.image_size_1024_portrait'),
                       // Gemini aspect ratios (프롬프트 힌트로 전달)
-                      '1:1': '정사각 1:1',
-                      '16:9': '와이드 16:9 (유튜브 썸네일·블로그)',
-                      '9:16': '세로 9:16 (쇼츠·릴스·스토리)',
-                      '4:3': '클래식 4:3',
-                      '3:4': '세로 3:4',
+                      '1:1': t('settings_modal.image_aspect_square'),
+                      '16:9': t('settings_modal.image_aspect_wide'),
+                      '9:16': t('settings_modal.image_aspect_story'),
+                      '4:3': t('settings_modal.image_aspect_classic'),
+                      '3:4': t('settings_modal.image_aspect_portrait'),
                     };
                     const qualityLabels: Record<string, string> = {
-                      'low': '낮음 (빠름, 저렴)',
-                      'medium': '보통 (권장)',
-                      'high': '높음 (품질 최고, 고비용)',
-                      'standard': '표준',
+                      'low': t('settings_modal.image_quality_low'),
+                      'medium': t('settings_modal.image_quality_medium'),
+                      'high': t('settings_modal.image_quality_high'),
+                      'standard': t('settings_modal.image_quality_standard'),
                     };
 
                     if (imageModels.length === 0) {
-                      return <div className="text-[12px] text-slate-400 mt-2">등록된 이미지 모델이 없습니다. infra/image/configs/ 에 JSON 추가 필요.</div>;
+                      return <div className="text-[12px] text-slate-400 mt-2">{t('settings_modal.image_no_models')}</div>;
                     }
 
                     const hasModesAvailable = {
@@ -1441,37 +1436,37 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
                     return (
                       <div className="flex flex-col gap-3 mt-2">
-                        <Field label="실행 모드" help="API: 공급자 API 키 pay-per-image · CLI: Codex/Gemini CLI 구독 (월정액)">
+                        <Field label={t('settings_modal.exec_mode_label')} help={t('settings_modal.image_exec_mode_help')}>
                           <SegButtons<'api' | 'cli'>
                             value={imageExecMode}
                             onChange={switchMode}
                             options={[
-                              { value: 'api', label: `API${hasModesAvailable.api ? '' : ' (없음)'}` },
-                              { value: 'cli', label: `CLI (구독)${hasModesAvailable.cli ? '' : ' (없음)'}` },
+                              { value: 'api', label: `${t('settings_modal.exec_mode_api')}${hasModesAvailable.api ? '' : t('settings_modal.image_mode_unavailable')}` },
+                              { value: 'cli', label: `${t('settings_modal.exec_mode_cli')}${hasModesAvailable.cli ? '' : t('settings_modal.image_mode_unavailable')}` },
                             ]}
                           />
                         </Field>
-                        <Field label="공급자">
+                        <Field label={t('settings_modal.provider_label')}>
                           <SegButtons<string>
                             value={activeProvider}
                             onChange={(p) => { if (providersWithModel.has(p)) switchProvider(p); }}
                             options={CANONICAL_PROVIDERS.map(p => ({
                               value: p,
-                              label: providersWithModel.has(p) ? providerLabels[p] : `${providerLabels[p]} (미지원)`,
+                              label: providersWithModel.has(p) ? providerLabels[p] : `${providerLabels[p]}${t('settings_modal.image_provider_unavailable_suffix')}`,
                             }))}
                           />
                         </Field>
-                        <Field label="모델">
+                        <Field label={t('settings_modal.model_label')}>
                           <SelectInput
                             value={imageModel}
                             onChange={saveImageModel}
                             options={modelsForProvider.length > 0
                               ? modelsForProvider.map(m => ({ value: m.id, label: m.displayName }))
-                              : [{ value: '', label: '사용 가능한 모델 없음' }]}
+                              : [{ value: '', label: t('settings_modal.image_no_model_option') }]}
                           />
                         </Field>
                         {currentModel?.sizes && currentModel.sizes.length > 0 && (
-                          <Field label="기본 사이즈" help="사용자 명령이 우선합니다. 미지정 시 이 값으로 폴백됩니다.">
+                          <Field label={t('settings_modal.image_default_size')} help={t('settings_modal.image_default_help')}>
                             <SelectInput
                               value={imageDefaultSize || (currentModel.sizes.includes('auto') ? 'auto' : currentModel.sizes[0])}
                               onChange={saveSize}
@@ -1480,7 +1475,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           </Field>
                         )}
                         {currentModel?.qualities && currentModel.qualities.length > 0 && (
-                          <Field label="기본 품질" help="사용자 명령이 우선합니다. 미지정 시 이 값으로 폴백됩니다.">
+                          <Field label={t('settings_modal.image_default_quality')} help={t('settings_modal.image_default_help')}>
                             <SelectInput
                               value={imageDefaultQuality || (currentModel.qualities.includes('medium') ? 'medium' : currentModel.qualities[0])}
                               onChange={saveQuality}
@@ -1490,11 +1485,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         )}
                         {currentModel?.requiresOrganizationVerification && (
                           <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2.5 py-1.5 leading-relaxed">
-                            ⚠️ <b>{currentModel.displayName}</b> 은 OpenAI 조직 인증 필요.{' '}
+                            {t('settings_modal.image_org_verify_warning_prefix')}<b>{currentModel.displayName}</b>{t('settings_modal.image_org_verify_warning_suffix')}{' '}
                             <a href="https://platform.openai.com/settings/organization/general" target="_blank" rel="noopener noreferrer" className="underline font-bold">
                               platform.openai.com
-                            </a>{' '}
-                            에서 Verify Organization 한 번 (반영 최대 15분).
+                            </a>{t('settings_modal.image_org_verify_link_suffix')}
                           </div>
                         )}
                         {currentModel?.subscription && (() => {
@@ -1503,9 +1497,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           };
                           const cliBin = cliBinByProvider[currentModel.provider] ?? 'cli';
                           return (
-                            <div className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2.5 py-1.5 leading-relaxed">
-                              💳 구독 기반 — API 키 불필요. 서버에 <code className="text-[10px] bg-white px-1 rounded">{cliBin}</code> CLI 가 설치되고 로그인되어 있어야 합니다.
-                            </div>
+                            <div className="text-[11px] text-blue-700 bg-blue-50 border border-blue-200 rounded-md px-2.5 py-1.5 leading-relaxed" dangerouslySetInnerHTML={{ __html: t('settings_modal.image_subscription_note', { bin: cliBin }) }} />
                           );
                         })()}
                       </div>
@@ -1519,16 +1511,14 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
           {settingsTab === 'secrets' && (
             <>
-              <p className="text-[11px] sm:text-[12px] text-slate-400 font-medium -mt-1 mb-1">
-                LLM 공급자 키(OpenAI / Google / Anthropic / Vertex)는 <span className="font-bold text-blue-600">AI 탭</span>에서 관리하세요.
-              </p>
+              <p className="text-[11px] sm:text-[12px] text-slate-400 font-medium -mt-1 mb-1" dangerouslySetInnerHTML={{ __html: t('settings_modal.secrets_llm_note') }} />
 
               {/* 모듈 필요 API 키 (config.json에서 자동 수집) */}
               {moduleSecrets.length > 0 && (
                 <div className="flex flex-col gap-2">
-                  <span className="text-xs sm:text-sm font-bold text-slate-700">모듈 필요 API 키</span>
+                  <span className="text-xs sm:text-sm font-bold text-slate-700">{t('settings_modal.secrets_module_keys')}</span>
                   <p className="text-[10px] sm:text-xs text-slate-400 font-medium -mt-1">
-                    모듈의 config.json에서 자동으로 감지된 키입니다.
+                    {t('settings_modal.secrets_module_keys_hint')}
                   </p>
                   <div className="flex flex-col gap-1.5">
                     {moduleSecrets.map(ms => (
@@ -1539,13 +1529,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         </div>
                         {ms.hasValue && !moduleSecretValues[ms.secretName] && moduleSecretValues[ms.secretName] !== '' ? (
                           <div className="flex items-center justify-between">
-                            <span className="text-[11px] text-emerald-600 font-medium">✓ 등록됨</span>
+                            <span className="text-[11px] text-emerald-600 font-medium">{t('settings_modal.secrets_registered_badge')}</span>
                             <div className="flex items-center gap-2">
                               <button onClick={() => setModuleSecretValues(prev => ({ ...prev, [ms.secretName]: '' }))} className="text-slate-400 hover:text-blue-500 transition-colors">
                                 <Pencil size={13} />
                               </button>
                               <button onClick={() => deleteSecret(ms.secretName)} className="text-[11px] text-slate-400 hover:text-red-500 transition-colors">
-                                삭제
+                                {t('settings_modal.secret_delete_button')}
                               </button>
                             </div>
                           </div>
@@ -1554,11 +1544,11 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                             <input
                               id={`${moduleSecretIdBase}-${ms.secretName}`}
                               name={ms.secretName}
-                              aria-label={`${ms.secretName} 값`}
+                              aria-label={t('settings_modal.secrets_module_value_aria', { name: ms.secretName })}
                               type="password"
                               value={moduleSecretValues[ms.secretName] || ''}
                               onChange={e => setModuleSecretValues(prev => ({ ...prev, [ms.secretName]: e.target.value }))}
-                              placeholder={ms.hasValue ? '새 값 입력' : '키 값 입력'}
+                              placeholder={ms.hasValue ? t('settings_modal.secrets_module_new_value_placeholder') : t('settings_modal.secrets_module_init_value_placeholder')}
                               autoComplete="new-password"
                               onKeyDown={e => {
                                 if (e.key === 'Enter') saveModuleSecret(ms.secretName);
@@ -1583,7 +1573,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                 onClick={() => setModuleSecretValues(prev => { const n = { ...prev }; delete n[ms.secretName]; return n; })}
                                 className="px-2 py-1.5 text-[12px] text-slate-400 hover:text-slate-600 transition-colors shrink-0"
                               >
-                                취소
+                                {t('common.cancel')}
                               </button>
                             )}
                           </div>
@@ -1597,7 +1587,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               {/* 저장된 시크릿 목록 (모듈에서 감지되지 않은 수동 등록 키) */}
               {userSecrets.filter(s => !moduleSecrets.some(ms => ms.secretName === s.name)).length > 0 && (
                 <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
-                  <span className="text-xs sm:text-sm font-bold text-slate-700 pt-1">기타 저장된 키</span>
+                  <span className="text-xs sm:text-sm font-bold text-slate-700 pt-1">{t('settings_modal.secrets_other')}</span>
                   <div className="flex flex-col gap-1.5">
                     {userSecrets.filter(s => !moduleSecrets.some(ms => ms.secretName === s.name)).map(s => (
                       <div key={s.name} className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg">
@@ -1609,7 +1599,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                 type="password"
                                 name="editSecretValue"
                                 autoComplete="new-password"
-                                aria-label={`${s.name} 새 값`}
+                                aria-label={t('settings_modal.secrets_other_new_value_aria', { name: s.name })}
                                 value={editingSecret.value}
                                 onChange={e => setEditingSecret({ name: s.name, value: e.target.value })}
                                 placeholder={t('settings_modal.new_value_placeholder')}
@@ -1632,7 +1622,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                   setEditingSecret(null); fetchSecrets();
                                 }}
                               />
-                              <button onClick={() => setEditingSecret(null)} className="px-2 py-1.5 text-[12px] text-slate-400 hover:text-slate-600 transition-colors shrink-0">취소</button>
+                              <button onClick={() => setEditingSecret(null)} className="px-2 py-1.5 text-[12px] text-slate-400 hover:text-slate-600 transition-colors shrink-0">{t('common.cancel')}</button>
                             </div>
                           </div>
                         ) : (
@@ -1659,7 +1649,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
               {/* 수동 키 추가 */}
               <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
-                <span className="text-xs sm:text-sm font-bold text-slate-700 pt-1">키 수동 추가</span>
+                <span className="text-xs sm:text-sm font-bold text-slate-700 pt-1">{t('settings_modal.secrets_manual_add')}</span>
                 <div className="flex gap-1.5">
                   <input
                     type="text"
@@ -1686,9 +1676,9 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     disabled={!newSecretName.trim() || !newSecretValue.trim() || secretSaving}
                     className="px-3 py-2 text-[13px] sm:text-[14px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors shrink-0"
                   >
-                    추가
+                    {t('settings_modal.secret_add_button')}
                   </button>
-                  <FeedbackBadge state={secretSaving ? 'loading' : secretFeedback} okLabel="추가됨" errLabel="실패" loadingLabel="추가 중" />
+                  <FeedbackBadge state={secretSaving ? 'loading' : secretFeedback} okLabel={t('settings_modal.secret_add_ok')} errLabel={t('settings_modal.secret_add_err')} loadingLabel={t('settings_modal.secret_add_loading')} />
                 </div>
               </div>
             </>
@@ -1700,23 +1690,23 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               <div className="flex flex-col gap-3 pb-4 border-b border-slate-200 hidden">
                 <div className="flex items-center gap-2">
                   <Server size={16} className="text-blue-600" />
-                  <span className="text-xs sm:text-sm font-bold text-slate-700">Firebat MCP 서버</span>
+                  <span className="text-xs sm:text-sm font-bold text-slate-700">{t('settings_modal.mcp_firebat_server')}</span>
                 </div>
                 <p className="text-[11px] sm:text-[12px] text-slate-400 -mt-1">
-                  외부 AI 도구(Claude Code, Cursor, VS Code 등)에서 이 파이어뱃 서버에 연결할 수 있습니다.
+                  {t('settings_modal.mcp_firebat_intro')}
                 </p>
 
                 {/* 토큰 관리 */}
                 <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col gap-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-[12px] sm:text-[13px] font-bold text-slate-600">인증 토큰</span>
+                    <span className="text-[12px] sm:text-[13px] font-bold text-slate-600">{t('settings_modal.mcp_auth_token')}</span>
                     <div className="flex items-center gap-1.5">
                       {mcpTokenInfo.exists && (
                         <button
                           onClick={revokeMcpToken}
                           className="text-[10px] sm:text-[11px] px-2 py-0.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
                         >
-                          폐기
+                          {t('settings_modal.mcp_token_revoke')}
                         </button>
                       )}
                       <button
@@ -1725,7 +1715,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         className="text-[10px] sm:text-[11px] px-2.5 py-1 font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded transition-colors flex items-center gap-1"
                       >
                         {mcpTokenLoading ? <Loader2 size={10} className="animate-spin" /> : <RefreshCw size={10} />}
-                        {mcpTokenInfo.exists ? '재생성' : '토큰 생성'}
+                        {mcpTokenInfo.exists ? t('settings_modal.mcp_token_regenerate') : t('settings_modal.mcp_token_generate')}
                       </button>
                     </div>
                   </div>
@@ -1733,7 +1723,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   {/* 토큰 1회 표시 (생성 직후) */}
                   {mcpTokenRaw && (
                     <div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 flex flex-col gap-1.5">
-                      <p className="text-[10px] sm:text-[11px] font-bold text-amber-700">이 토큰은 다시 볼 수 없습니다. 지금 복사하세요.</p>
+                      <p className="text-[10px] sm:text-[11px] font-bold text-amber-700">{t('settings_modal.mcp_token_once_warning')}</p>
                       <div className="flex items-center gap-1.5">
                         <code className="flex-1 text-[11px] sm:text-[12px] font-mono bg-white border border-amber-200 rounded px-2 py-1 text-slate-700 break-all select-all">
                           {mcpTokenRaw}
@@ -1747,7 +1737,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                               <Copy size={14} className="text-amber-600" />
                             </button>
                           </Tooltip>
-                          <FeedbackBadge state={mcpTokenCopied ? 'ok' : null} okLabel="복사됨" absolute />
+                          <FeedbackBadge state={mcpTokenCopied ? 'ok' : null} okLabel={t('settings_modal.mcp_token_copied')} absolute />
                         </div>
                       </div>
                     </div>
@@ -1759,14 +1749,14 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       <code className="font-mono bg-white border border-slate-200 rounded px-2 py-0.5 text-slate-600">{mcpTokenInfo.hint}</code>
                       {mcpTokenInfo.createdAt && (
                         <span className="text-slate-400">
-                          생성: {new Date(mcpTokenInfo.createdAt).toLocaleDateString('ko-KR')}
+                          {t('settings_modal.mcp_token_created_prefix', { date: new Date(mcpTokenInfo.createdAt).toLocaleDateString(uiLang === 'ko' ? 'ko-KR' : 'en-US') })}
                         </span>
                       )}
                     </div>
                   )}
 
                   {!mcpTokenInfo.exists && !mcpTokenRaw && (
-                    <p className="text-[10px] sm:text-[11px] text-slate-400">토큰이 없습니다. SSE(API) 연결을 사용하려면 토큰을 생성하세요.</p>
+                    <p className="text-[10px] sm:text-[11px] text-slate-400">{t('settings_modal.mcp_token_missing')}</p>
                   )}
                 </div>
 
@@ -1789,7 +1779,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
                   {mcpJsonTab === 'api' && (() => {
                     const sseUrl = `${window.location.origin}/api/mcp`;
-                    const tokenValue = mcpTokenRaw || (mcpTokenInfo.exists ? '<생성된 토큰>' : '<토큰을 먼저 생성하세요>');
+                    const tokenValue = mcpTokenRaw || (mcpTokenInfo.exists ? t('settings_modal.mcp_json_token_placeholder_generated') : t('settings_modal.mcp_json_token_placeholder_create_first'));
                     const jsonConfig = JSON.stringify({
                       mcpServers: {
                         firebat: {
@@ -1802,7 +1792,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       <div className="p-3 flex flex-col gap-2">
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] sm:text-[11px] text-slate-500">
-                            VS Code / Cursor MCP 설정에 아래 JSON을 추가하세요.
+                            {t('settings_modal.mcp_json_api_intro')}
                           </p>
                           <div className="relative">
                             <Tooltip label={t('common.copy')}>
@@ -1813,14 +1803,14 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                 <Copy size={12} className="text-slate-400" />
                               </button>
                             </Tooltip>
-                            <FeedbackBadge state={mcpJsonCopied ? 'ok' : null} okLabel="복사됨" absolute />
+                            <FeedbackBadge state={mcpJsonCopied ? 'ok' : null} okLabel={t('settings_modal.mcp_token_copied')} absolute />
                           </div>
                         </div>
                         <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">
                           {jsonConfig}
                         </pre>
                         {!mcpTokenInfo.exists && (
-                          <p className="text-[10px] text-amber-600 font-bold">위에서 토큰을 먼저 생성하세요.</p>
+                          <p className="text-[10px] text-amber-600 font-bold">{t('settings_modal.mcp_json_token_required')}</p>
                         )}
                       </div>
                     );
@@ -1839,7 +1829,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                       <div className="p-3 flex flex-col gap-2">
                         <div className="flex items-center justify-between">
                           <p className="text-[10px] sm:text-[11px] text-slate-500">
-                            SSH를 통해 서버에 직접 접속하여 실행합니다.
+                            {t('settings_modal.mcp_json_stdio_intro')}
                           </p>
                           <div className="relative">
                             <Tooltip label={t('common.copy')}>
@@ -1850,16 +1840,16 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                 <Copy size={12} className="text-slate-400" />
                               </button>
                             </Tooltip>
-                            <FeedbackBadge state={mcpJsonCopied ? 'ok' : null} okLabel="복사됨" absolute />
+                            <FeedbackBadge state={mcpJsonCopied ? 'ok' : null} okLabel={t('settings_modal.mcp_token_copied')} absolute />
                           </div>
                         </div>
                         <pre className="text-[10px] sm:text-[11px] font-mono bg-slate-900 text-green-400 rounded-lg p-3 overflow-x-auto whitespace-pre leading-relaxed">
                           {jsonConfig}
                         </pre>
                         <div className="bg-amber-50 border border-amber-200 rounded-lg p-2.5 text-[10px] sm:text-[11px] text-amber-700 flex flex-col gap-1">
-                          <p className="font-bold">SSH 키 필수</p>
-                          <p>stdio 모드는 서버에 SSH 키가 등록되어 있어야 합니다. 서버 관리자에게 SSH 공개키 등록을 요청하세요.</p>
-                          <p className="text-amber-500 mt-0.5">SSH_KEY_PATH, USER, SERVER_IP, firebat 경로를 실제 값으로 변경하세요.</p>
+                          <p className="font-bold">{t('settings_modal.mcp_stdio_ssh_key_required')}</p>
+                          <p>{t('settings_modal.mcp_stdio_ssh_key_desc')}</p>
+                          <p className="text-amber-500 mt-0.5">{t('settings_modal.mcp_stdio_ssh_path_hint')}</p>
                         </div>
                       </div>
                     );
@@ -1869,13 +1859,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
               {/* 등록된 MCP 서버 목록 */}
               <div className="flex flex-col gap-2">
-                <span className="text-xs sm:text-sm font-bold text-slate-700">외부 MCP 서버</span>
+                <span className="text-xs sm:text-sm font-bold text-slate-700">{t('settings_modal.mcp_external_servers')}</span>
                 {mcpLoading ? (
                   <div className="flex items-center justify-center py-6 min-h-[80px]">
                     <Loader2 size={18} className="animate-spin text-slate-400" />
                   </div>
                 ) : mcpServers.length === 0 ? (
-                  <p className="text-[12px] sm:text-[13px] text-slate-400 py-4 text-center min-h-[80px] flex items-center justify-center">등록된 MCP 서버가 없습니다</p>
+                  <p className="text-[12px] sm:text-[13px] text-slate-400 py-4 text-center min-h-[80px] flex items-center justify-center">{t('settings_modal.mcp_no_servers')}</p>
                 ) : (
                   <div className="flex flex-col gap-1.5">
                     {mcpServers.map(s => {
@@ -1904,13 +1894,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                               </button>
                             </Tooltip>
                             {s.transport === 'stdio' && (
-                              <Tooltip label="OAuth 인증">
+                              <Tooltip label={t('settings_modal.mcp_oauth_tooltip')}>
                                 <button
                                   onClick={() => startMcpAuth(s.name)}
                                   disabled={mcpAuth?.server === s.name && mcpAuth.step === 'starting'}
                                   className="text-[11px] px-2 py-1 rounded font-bold text-slate-500 hover:text-amber-600 hover:bg-amber-50 border border-slate-200 transition-colors disabled:opacity-50"
                                 >
-                                  인증
+                                  {t('settings_modal.mcp_oauth_button')}
                                 </button>
                               </Tooltip>
                             )}
@@ -1947,7 +1937,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                 value={mcpEditUrl}
                                 onChange={e => setMcpEditUrl(e.target.value)}
                                 placeholder="SSE URL"
-                                aria-label="MCP SSE URL"
+                                aria-label={t('settings_modal.mcp_sse_url_aria')}
                                 className="w-full px-2 py-1 bg-white border border-slate-300 rounded text-[12px] focus:outline-none focus:ring-1 focus:ring-blue-500" name="mcpEditUrl" autoComplete="off" id={mcpEditUrlId}
                               />
                             )}
@@ -1956,7 +1946,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                                 onClick={() => setMcpEditing(null)}
                                 className="px-2.5 py-1 text-[11px] font-bold text-slate-500 hover:bg-slate-200 rounded transition-colors"
                               >
-                                취소
+                                {t('common.cancel')}
                               </button>
                               <SaveButton
                                 state={(
@@ -1975,24 +1965,24 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                           <div className="mt-1.5 border border-slate-200 rounded-lg overflow-hidden">
                             {mcpAuth.step === 'starting' && (
                               <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 text-[11px] text-slate-500">
-                                <Loader2 size={12} className="animate-spin" /> 인증 준비 중...
+                                <Loader2 size={12} className="animate-spin" /> {t('settings_modal.mcp_oauth_starting')}
                               </div>
                             )}
                             {mcpAuth.step === 'waiting' && (
                               <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-[11px] text-amber-700">
                                 <Loader2 size={12} className="animate-spin" />
-                                <span>Google 로그인 창에서 인증을 완료하면 자동으로 처리됩니다</span>
+                                <span>{t('settings_modal.mcp_oauth_waiting')}</span>
                                 {mcpAuth.authUrl && (
                                   <button onClick={() => window.open(mcpAuth.authUrl!, 'mcp-oauth', 'width=500,height=700,left=200,top=100')}
                                     className="ml-auto text-[10px] text-blue-600 hover:text-blue-800 underline whitespace-nowrap">
-                                    다시 열기
+                                    {t('settings_modal.mcp_oauth_reopen')}
                                   </button>
                                 )}
                               </div>
                             )}
                             {mcpAuth.step === 'done' && (
                               <div className="flex items-center justify-between px-3 py-2 bg-green-50 text-[11px] text-green-700 font-bold">
-                                <span>인증 완료!</span>
+                                <span>{t('settings_modal.mcp_oauth_done')}</span>
                                 <button onClick={() => setMcpAuth(null)} className="text-green-500 hover:text-green-700"><X size={14} /></button>
                               </div>
                             )}
@@ -2013,7 +2003,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
 
               {/* 새 MCP 서버 추가 */}
               <div className="flex flex-col gap-2 pt-1 border-t border-slate-100">
-                <label className="text-xs sm:text-sm font-bold text-slate-700 pt-1" htmlFor={mcpNewNameId}>서버 추가</label>
+                <label className="text-xs sm:text-sm font-bold text-slate-700 pt-1" htmlFor={mcpNewNameId}>{t('settings_modal.mcp_server_add_label')}</label>
                 <input
                   type="text"
                   value={mcpNewName}
@@ -2026,13 +2016,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     onClick={() => setMcpNewTransport('stdio')}
                     className={`flex-1 px-3 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-lg border transition-colors ${mcpNewTransport === 'stdio' ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-300 text-slate-400 hover:text-slate-600'}`}
                   >
-                    stdio (로컬)
+                    {t('settings_modal.mcp_transport_stdio')}
                   </button>
                   <button
                     onClick={() => setMcpNewTransport('sse')}
                     className={`flex-1 px-3 py-1.5 text-[12px] sm:text-[13px] font-bold rounded-lg border transition-colors ${mcpNewTransport === 'sse' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-300 text-slate-400 hover:text-slate-600'}`}
                   >
-                    SSE (원격)
+                    {t('settings_modal.mcp_transport_sse')}
                   </button>
                 </div>
                 {mcpNewTransport === 'stdio' ? (
@@ -2059,7 +2049,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                     type="text"
                     value={mcpNewUrl}
                     onChange={e => setMcpNewUrl(e.target.value)}
-                    placeholder="SSE 서버 URL (예: http://localhost:3001/sse)"
+                    placeholder={t('settings_modal.mcp_sse_url_placeholder')}
                     aria-label={t('settings_modal.mcp_sse_url_label')}
                     className="w-full px-2.5 py-1.5 sm:px-3 sm:py-2 bg-white border border-slate-300 rounded-lg text-[13px] sm:text-[14px] focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500" name="mcpNewUrl" autoComplete="off" id={mcpNewUrlId}
                   />
@@ -2069,10 +2059,10 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                   disabled={!mcpNewName.trim() || (mcpNewTransport === 'stdio' ? !mcpNewCommand.trim() : !mcpNewUrl.trim()) || mcpSaving}
                   className="w-full px-3 py-2 text-[13px] sm:text-[14px] font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
                 >
-                  {mcpSaving ? '연결 테스트 중...' : '추가'}
+                  {mcpSaving ? t('settings_modal.mcp_add_testing') : t('settings_modal.mcp_add_button')}
                 </button>
                 <p className="text-[10px] sm:text-xs text-slate-400 font-medium">
-                  등록된 MCP 서버의 도구는 AI가 자동으로 인식하여 호출할 수 있습니다.
+                  {t('settings_modal.mcp_add_hint')}
                 </p>
               </div>
             </>
@@ -2086,7 +2076,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               {/* 서비스 */}
               {sysModules.filter(m => (m.entryType ?? m.type) === 'service').length > 0 && (
                 <div>
-                  <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5 mb-2"><Wrench size={11} /> 서비스</p>
+                  <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5 mb-2"><Wrench size={11} /> {t('settings_modal.system_service')}</p>
                   <div className="space-y-1">
                     {sysModules.filter(m => (m.entryType ?? m.type) === 'service').map(m => (
                       <div key={m.name} className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors group ${m.enabled === false ? 'border-slate-100 bg-slate-50/50 opacity-60' : 'border-slate-200 hover:border-blue-200 hover:bg-blue-50/50'}`}>
@@ -2115,7 +2105,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               {/* 모듈 */}
               {sysModules.filter(m => (m.entryType ?? m.type) !== 'service').length > 0 && (
                 <div>
-                  <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5 mb-2"><Blocks size={11} /> 모듈</p>
+                  <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase flex items-center gap-1.5 mb-2"><Blocks size={11} /> {t('settings_modal.system_module')}</p>
                   <div className="space-y-1">
                     {sysModules.filter(m => (m.entryType ?? m.type) !== 'service').map(m => (
                       <div key={m.name} className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition-colors group ${m.enabled === false ? 'border-slate-100 bg-slate-50/50 opacity-60' : 'border-slate-200 hover:border-blue-200 hover:bg-blue-50/50'}`}>
@@ -2142,7 +2132,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               )}
 
               {sysModules.length === 0 && (
-                <p className="text-[13px] text-slate-400 italic text-center py-8">시스템 항목이 없습니다</p>
+                <p className="text-[13px] text-slate-400 italic text-center py-8">{t('settings_modal.system_no_items')}</p>
               )}
             </div>
           )}
@@ -2157,7 +2147,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             disabled={mainSaveState === 'loading'}
             className="px-4 py-2 sm:px-5 sm:py-2.5 text-[13px] sm:text-[14px] font-bold text-slate-600 hover:bg-slate-200 bg-slate-100 rounded-lg transition-colors disabled:opacity-50"
           >
-            닫기
+            {t('common.close')}
           </button>
           <SaveButton
             size="md"
@@ -2260,12 +2250,12 @@ function CapabilityTabContent() {
   return (
     <>
       <div className="flex flex-col gap-2">
-        <span className="text-xs sm:text-sm font-bold text-slate-700">Capability 목록</span>
+        <span className="text-xs sm:text-sm font-bold text-slate-700">{t('settings_modal.capability_list')}</span>
         <p className="text-[10px] sm:text-xs text-slate-400 font-medium -mt-1">
-          같은 기능을 수행하는 모듈들의 실행 우선순위를 관리합니다.
+          {t('settings_modal.capability_list_hint')}
         </p>
         {caps.length === 0 ? (
-          <p className="text-[12px] sm:text-[13px] text-slate-400 py-4 text-center">등록된 기능이 없습니다</p>
+          <p className="text-[12px] sm:text-[13px] text-slate-400 py-4 text-center">{t('settings_modal.capability_none')}</p>
         ) : (
           <div className="flex flex-col gap-1">
             {caps.map(cap => {
@@ -2287,7 +2277,7 @@ function CapabilityTabContent() {
                       <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${
                         cap.providerCount > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'
                       }`}>
-                        {cap.providerCount}개
+                        {cap.providerCount}{t('settings_modal.capability_count_suffix')}
                       </span>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
                         className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}>
@@ -2307,10 +2297,10 @@ function CapabilityTabContent() {
                         <>
                           <div className="flex flex-col gap-1.5">
                             <span className="text-xs sm:text-sm font-bold text-slate-700">
-                              실행 순서 {providers.length > 1 && <span className="text-[10px] text-slate-400 font-normal ml-1">위에서부터 우선 실행</span>}
+                              {t('settings_modal.capability_exec_order')} {providers.length > 1 && <span className="text-[10px] text-slate-400 font-normal ml-1">{t('settings_modal.capability_exec_order_hint')}</span>}
                             </span>
                             {providers.length === 0 ? (
-                              <p className="text-[12px] text-slate-400 py-2">등록된 provider가 없습니다</p>
+                              <p className="text-[12px] text-slate-400 py-2">{t('settings_modal.capability_no_providers')}</p>
                             ) : (
                               providers.map((p, i) => (
                                 <div key={p.moduleName} className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 rounded-lg">
@@ -2362,7 +2352,7 @@ function CapabilityTabContent() {
                                     orderFeedback === 'err' ? 'error' :
                                     'idle'
                                   ) as SaveButtonState}
-                                  label="순서 저장"
+                                  label={t('settings_modal.capability_save_order')}
                                   className="flex-1"
                                   onClick={saveOrder}
                                 />
@@ -2403,11 +2393,12 @@ interface CostStats {
 
 // ── Memory tab — Firebat AI 자율 메모리 CRUD ──
 type MemoryItem = { category: string; name: string; description: string; content: string };
-const MEMORY_CATEGORY_LABELS: Record<string, string> = {
-  user: '사용자 (User)',
-  feedback: '행동 룰 (Feedback)',
-  project: '프로젝트 (Project)',
-  reference: '외부 참조 (Reference)',
+const MEMORY_CATEGORY_KEYS = ['user', 'feedback', 'project', 'reference'] as const;
+const MEMORY_CATEGORY_I18N: Record<string, string> = {
+  user: 'settings_modal.memory_category_user',
+  feedback: 'settings_modal.memory_category_feedback',
+  project: 'settings_modal.memory_category_project',
+  reference: 'settings_modal.memory_category_reference',
 };
 
 function MemoryTabContent() {
@@ -2435,18 +2426,18 @@ function MemoryTabContent() {
       item,
       { category: 'memory' },
     );
-    if (!data.success) { await alertDialog({ title: '저장 실패', message: data.error ?? '알 수 없는 오류', danger: true }); return; }
+    if (!data.success) { await alertDialog({ title: t('settings_modal.memory_save_failed_title'), message: data.error ?? t('settings_modal.memory_unknown_error'), danger: true }); return; }
     setEditing(null); setCreating(false);
     void load();
   };
 
   const remove = async (name: string) => {
-    if (!await confirmDialog({ title: '메모리 삭제', message: `"${name}" 메모리를 삭제하시겠습니까?`, danger: true, okLabel: '삭제' })) return;
+    if (!await confirmDialog({ title: t('settings_modal.memory_delete_title'), message: t('settings_modal.memory_delete_message', { name }), danger: true, okLabel: t('settings_modal.memory_delete_ok') })) return;
     const data = await apiDelete<{ success: boolean; error?: string }>(
       `/api/memory?name=${encodeURIComponent(name)}`,
       { category: 'memory' },
     );
-    if (!data.success) { await alertDialog({ title: '삭제 실패', message: data.error ?? '알 수 없는 오류', danger: true }); return; }
+    if (!data.success) { await alertDialog({ title: t('settings_modal.memory_delete_failed_title'), message: data.error ?? t('settings_modal.memory_unknown_error'), danger: true }); return; }
     void load();
   };
 
@@ -2464,27 +2455,27 @@ function MemoryTabContent() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-[13px] text-slate-500">
-          AI 가 자율 저장하는 사용자 룰·선호·도메인 컨텍스트. 매 대화 시 시스템 프롬프트에 인덱스 자동 prepend.
+          {t('settings_modal.memory_intro')}
         </p>
         <button
           onClick={() => setCreating(true)}
           className="px-3 py-1.5 text-[12px] bg-blue-500 hover:bg-blue-600 text-white rounded flex items-center gap-1"
         >
-          <Plus size={12} /> 새 메모리
+          <Plus size={12} /> {t('settings_modal.memory_new')}
         </button>
       </div>
       {loading ? (
-        <p className="text-[13px] text-slate-400 italic text-center py-8">불러오는 중...</p>
+        <p className="text-[13px] text-slate-400 italic text-center py-8">{t('settings_modal.memory_loading')}</p>
       ) : items.length === 0 ? (
         <p className="text-[13px] text-slate-400 italic text-center py-8">
-          아직 저장된 메모리 없음. AI 가 사용자 룰·선호 발견 시 자동 저장합니다.<br />
-          또는 "새 메모리" 버튼으로 직접 추가 가능.
+          {t('settings_modal.memory_empty_line1')}<br />
+          {t('settings_modal.memory_empty_line2')}
         </p>
       ) : (
-        Object.keys(MEMORY_CATEGORY_LABELS).map(cat => grouped[cat].length > 0 && (
+        MEMORY_CATEGORY_KEYS.map(cat => grouped[cat].length > 0 && (
           <div key={cat}>
             <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase mb-2">
-              {MEMORY_CATEGORY_LABELS[cat]} ({grouped[cat].length})
+              {t(MEMORY_CATEGORY_I18N[cat])} ({grouped[cat].length})
             </p>
             <div className="space-y-1">
               {grouped[cat].map(it => (
@@ -2541,21 +2532,21 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
         <button onClick={onCancel} className="text-slate-600 hover:text-slate-900 p-1">
           <ChevronLeft size={16} />
         </button>
-        <h3 className="text-[14px] font-bold">{isNew ? '새 메모리' : `편집: ${item.name}`}</h3>
+        <h3 className="text-[14px] font-bold">{isNew ? t('settings_modal.memory_new') : t('settings_modal.memory_edit_title', { name: item.name })}</h3>
       </div>
       <div>
-        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor={categoryId}>카테고리</label>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor={categoryId}>{t('settings_modal.memory_category_label')}</label>
         <select
           value={item.category}
           onChange={e => setItem({ ...item, category: e.target.value })}
           disabled={!isNew}
           className="w-full px-3 py-2 text-[13px] border border-slate-300 rounded disabled:bg-slate-100" name="category" id={categoryId}
         >
-          {Object.entries(MEMORY_CATEGORY_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          {MEMORY_CATEGORY_KEYS.map(k => <option key={k} value={k}>{t(MEMORY_CATEGORY_I18N[k])}</option>)}
         </select>
       </div>
       <div>
-        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor={nameId}>이름 (영문, snake_case)</label>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor={nameId}>{t('settings_modal.memory_name_label')}</label>
         <input
           type="text"
           value={item.name}
@@ -2566,7 +2557,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
         />
       </div>
       <div>
-        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor={descriptionId}>짧은 설명 (인덱스에 표시)</label>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor={descriptionId}>{t('settings_modal.memory_description_label')}</label>
         <input
           type="text"
           value={item.description}
@@ -2576,7 +2567,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
         />
       </div>
       <div>
-        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor={contentId}>본문 (마크다운)</label>
+        <label className="text-[11px] font-bold tracking-wider text-slate-400 uppercase block mb-1" htmlFor={contentId}>{t('settings_modal.memory_content_label')}</label>
         <textarea
           value={item.content}
           onChange={e => setItem({ ...item, content: e.target.value })}
@@ -2586,7 +2577,7 @@ function MemoryEditForm({ initial, isNew, onSave, onCancel }: {
         />
       </div>
       <div className="flex justify-end gap-2">
-        <button onClick={onCancel} className="px-4 py-2 text-[13px] text-slate-600 hover:bg-slate-100 rounded">취소</button>
+        <button onClick={onCancel} className="px-4 py-2 text-[13px] text-slate-600 hover:bg-slate-100 rounded">{t('common.cancel')}</button>
         <SaveButton
           size="md"
           state={(saving ? 'saving' : 'idle') as SaveButtonState}
@@ -2612,6 +2603,7 @@ type BudgetState = {
 };
 
 function CostBudgetSection() {
+  const t = useTranslations();
   const dailyUsdId = useId();
   const monthlyUsdId = useId();
   const dailyCallsId = useId();
@@ -2648,7 +2640,7 @@ function CostBudgetSection() {
         { category: 'budget' },
       );
       if (data.success) { setSavedFlash(true); setTimeout(() => setSavedFlash(false), 2000); void load(); }
-      else await alertDialog({ title: '저장 실패', message: data.error ?? '알 수 없는 오류', danger: true });
+      else await alertDialog({ title: t('settings_modal.cost_budget_save_failed_title'), message: data.error ?? t('settings_modal.memory_unknown_error'), danger: true });
     } finally { setSaving(false); }
   };
 
@@ -2668,7 +2660,7 @@ function CostBudgetSection() {
 
   const renderProgress = (kind: 'usd' | 'calls', limit: number, spent: number, calc: { pct: number; over: boolean; alert: boolean }) => {
     if (limit <= 0) return null;
-    const fmt = kind === 'usd' ? (n: number) => `$${n.toFixed(2)}` : (n: number) => `${n.toLocaleString()} 회`;
+    const fmt = kind === 'usd' ? (n: number) => `$${n.toFixed(2)}` : (n: number) => t('settings_modal.cost_progress_calls_unit', { value: n.toLocaleString() });
     return (
       <div className="mt-1.5">
         <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
@@ -2682,49 +2674,51 @@ function CostBudgetSection() {
   return (
     <div className="border border-slate-200 rounded-lg p-3 bg-slate-50">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">한도 (0 = 무제한)</p>
-        {anyOver && <span className="text-[11px] font-bold text-red-600">⚠ 한도 초과 — LLM 호출 차단됨</span>}
+        <p className="text-[11px] font-bold tracking-wider text-slate-500 uppercase">{t('settings_modal.cost_budget_limits_label')}</p>
+        {anyOver && <span className="text-[11px] font-bold text-red-600">{t('settings_modal.cost_budget_over_warning')}</span>}
       </div>
-      <p className="text-[11px] text-slate-500 mb-2">USD 한도 = API 모드 (pay-per-token). 호출 수 한도 = 모든 모드 (CLI 구독 포함).</p>
+      <p className="text-[11px] text-slate-500 mb-2">{t('settings_modal.cost_budget_explainer')}</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2">
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={dailyUsdId}>일일 USD</label>
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={dailyUsdId}>{t('settings_modal.cost_budget_daily_usd')}</label>
           <input type="number" min="0" step="0.5" value={budget.dailyUsd} onChange={e => setBudget({ ...budget, dailyUsd: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="dailyUsd" autoComplete="off" id={dailyUsdId} />
           {renderProgress('usd', budget.dailyUsd, budget.dailySpentUsd, dailyU)}
         </div>
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={monthlyUsdId}>월간 USD</label>
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={monthlyUsdId}>{t('settings_modal.cost_budget_monthly_usd')}</label>
           <input type="number" min="0" step="5" value={budget.monthlyUsd} onChange={e => setBudget({ ...budget, monthlyUsd: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="monthlyUsd" autoComplete="off" id={monthlyUsdId} />
           {renderProgress('usd', budget.monthlyUsd, budget.monthlySpentUsd, monthlyU)}
         </div>
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={dailyCallsId}>일일 호출 수</label>
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={dailyCallsId}>{t('settings_modal.cost_budget_daily_calls')}</label>
           <input type="number" min="0" step="10" value={budget.dailyCalls} onChange={e => setBudget({ ...budget, dailyCalls: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="dailyCalls" autoComplete="off" id={dailyCallsId} />
           {renderProgress('calls', budget.dailyCalls, budget.dailySpentCalls, dailyC)}
         </div>
         <div>
-          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={monthlyCallsId}>월간 호출 수</label>
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={monthlyCallsId}>{t('settings_modal.cost_budget_monthly_calls')}</label>
           <input type="number" min="0" step="100" value={budget.monthlyCalls} onChange={e => setBudget({ ...budget, monthlyCalls: Number(e.target.value) || 0 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="monthlyCalls" autoComplete="off" id={monthlyCallsId} />
           {renderProgress('calls', budget.monthlyCalls, budget.monthlySpentCalls, monthlyC)}
         </div>
       </div>
       <div className="flex items-end gap-3">
         <div className="flex-1">
-          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={alertAtPercentId}>알림 임계 (%) — progress bar 진해지는 기준</label>
+          <label className="text-[11px] text-slate-500 block mb-1" htmlFor={alertAtPercentId}>{t('settings_modal.cost_budget_alert_label')}</label>
           <input type="number" min="1" max="100" step="5" value={budget.alertAtPercent} onChange={e => setBudget({ ...budget, alertAtPercent: Number(e.target.value) || 80 })} className="w-full px-2 py-1.5 text-[13px] border border-slate-300 rounded" name="alertAtPercent" autoComplete="off" id={alertAtPercentId} />
         </div>
         <SaveButton
           state={(saving ? 'saving' : savedFlash ? 'saved' : 'idle') as SaveButtonState}
-          label="한도 저장"
+          label={t('settings_modal.cost_budget_save')}
           onClick={save}
         />
       </div>
-      <p className="text-[10px] text-slate-400 mt-2">현재 사용량: 오늘 ${budget.dailySpentUsd.toFixed(2)} / {budget.dailySpentCalls.toLocaleString()} 회 · 이달 ${budget.monthlySpentUsd.toFixed(2)} / {budget.monthlySpentCalls.toLocaleString()} 회</p>
+      <p className="text-[10px] text-slate-400 mt-2">{t('settings_modal.cost_budget_usage_note', { dailyUsd: budget.dailySpentUsd.toFixed(2), dailyCalls: budget.dailySpentCalls.toLocaleString(), monthlyUsd: budget.monthlySpentUsd.toFixed(2), monthlyCalls: budget.monthlySpentCalls.toLocaleString() })}</p>
     </div>
   );
 }
 
 function CostTabContent() {
+  const t = useTranslations();
+  const { lang: uiLang } = useLang();
   const [stats, setStats] = useState<CostStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2743,7 +2737,7 @@ function CostTabContent() {
     )
       .then(data => {
         if (data.success) setStats(data.data ?? null);
-        else setError(data.error || '조회 실패');
+        else setError(data.error || t('settings_modal.cost_query_failed'));
       })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
@@ -2779,47 +2773,47 @@ function CostTabContent() {
     return Array.from(map.values()).sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls);
   }, [stats]);
 
-  const fmtNum = (n: number) => n.toLocaleString('ko-KR');
+  const fmtNum = (n: number) => n.toLocaleString(uiLang === 'ko' ? 'ko-KR' : 'en-US');
   const fmtUsd = (n: number) => `$${n.toFixed(4)}`;
 
   return (
     <div className="flex flex-col gap-4">
       <CostBudgetSection />
       <div className="flex items-center justify-between">
-        <p className="text-[13px] text-slate-600">최근 <strong className="text-slate-800 inline-block min-w-[2.5em] tabular-nums">{days}일</strong> LLM 호출 누적. CLI 구독 모델은 cost=0 (token만 추적).</p>
+        <p className="text-[13px] text-slate-600" dangerouslySetInnerHTML={{ __html: t('settings_modal.cost_summary_intro', { days: String(days) }) }} />
         <div className="flex gap-1">
           {[7, 30, 90].map(d => (
             <button key={d} onClick={() => setDays(d)} className={`px-2.5 py-1 text-[11px] font-bold rounded-md transition-colors ${days === d ? 'bg-slate-800 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
-              {d}일
+              {d}{t('settings_modal.cost_range_days_suffix')}
             </button>
           ))}
         </div>
       </div>
 
-      {loading && <div className="text-center py-8 text-slate-400 text-[13px]"><Loader2 size={16} className="inline animate-spin mr-2" />로딩 중...</div>}
+      {loading && <div className="text-center py-8 text-slate-400 text-[13px]"><Loader2 size={16} className="inline animate-spin mr-2" />{t('settings_modal.cost_loading')}</div>}
       {error && <div className="text-[13px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>}
 
       {stats && !loading && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">호출 수</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalCalls)}</p></div>
-            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">입력 토큰</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalInputTokens)}</p></div>
-            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">출력 토큰</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalOutputTokens)}</p></div>
-            <div className="border border-blue-200 bg-blue-50 rounded-lg p-3"><p className="text-[10px] font-bold text-blue-500 uppercase">비용 USD</p><p className="text-[18px] font-bold text-blue-700 tabular-nums">{fmtUsd(stats.totalCostUsd)}</p></div>
+            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_calls')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalCalls)}</p></div>
+            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_input_tokens')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalInputTokens)}</p></div>
+            <div className="border border-slate-200 rounded-lg p-3"><p className="text-[10px] font-bold text-slate-400 uppercase">{t('settings_modal.cost_metric_output_tokens')}</p><p className="text-[18px] font-bold text-slate-800 tabular-nums">{fmtNum(stats.totalOutputTokens)}</p></div>
+            <div className="border border-blue-200 bg-blue-50 rounded-lg p-3"><p className="text-[10px] font-bold text-blue-500 uppercase">{t('settings_modal.cost_metric_cost_usd')}</p><p className="text-[18px] font-bold text-blue-700 tabular-nums">{fmtUsd(stats.totalCostUsd)}</p></div>
           </div>
 
           {modelTotals.length > 0 && (
             <div>
-              <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase mb-2">모델별</p>
+              <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase mb-2">{t('settings_modal.cost_section_by_model')}</p>
               <div className="border border-slate-200 rounded-lg overflow-hidden">
                 <table className="w-full text-[12px]">
                   <thead className="bg-slate-50">
                     <tr>
-                      <th className="px-3 py-2 text-left font-bold text-slate-600">모델</th>
-                      <th className="px-3 py-2 text-right font-bold text-slate-600">호출</th>
-                      <th className="px-3 py-2 text-right font-bold text-slate-600">입력</th>
-                      <th className="px-3 py-2 text-right font-bold text-slate-600">출력</th>
-                      <th className="px-3 py-2 text-right font-bold text-slate-600">비용</th>
+                      <th className="px-3 py-2 text-left font-bold text-slate-600">{t('settings_modal.cost_column_model')}</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">{t('settings_modal.cost_column_calls')}</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">{t('settings_modal.cost_column_input')}</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">{t('settings_modal.cost_column_output')}</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">{t('settings_modal.cost_column_cost')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2840,16 +2834,16 @@ function CostTabContent() {
 
           {dailyTotals.length > 0 && (
             <div>
-              <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase mb-2">일별</p>
+              <p className="text-[11px] font-bold tracking-wider text-slate-400 uppercase mb-2">{t('settings_modal.cost_section_daily')}</p>
               <div className="border border-slate-200 rounded-lg overflow-hidden max-h-[300px] overflow-y-auto">
                 <table className="w-full text-[12px]">
                   <thead className="bg-slate-50 sticky top-0">
                     <tr>
-                      <th className="px-3 py-2 text-left font-bold text-slate-600">일자</th>
-                      <th className="px-3 py-2 text-right font-bold text-slate-600">호출</th>
-                      <th className="px-3 py-2 text-right font-bold text-slate-600">입력</th>
-                      <th className="px-3 py-2 text-right font-bold text-slate-600">출력</th>
-                      <th className="px-3 py-2 text-right font-bold text-slate-600">비용</th>
+                      <th className="px-3 py-2 text-left font-bold text-slate-600">{t('settings_modal.cost_column_date')}</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">{t('settings_modal.cost_column_calls')}</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">{t('settings_modal.cost_column_input')}</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">{t('settings_modal.cost_column_output')}</th>
+                      <th className="px-3 py-2 text-right font-bold text-slate-600">{t('settings_modal.cost_column_cost')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2869,7 +2863,7 @@ function CostTabContent() {
           )}
 
           {stats.totalCalls === 0 && (
-            <div className="text-center py-8 text-slate-400 text-[13px]">최근 {days}일 LLM 호출 기록 없음</div>
+            <div className="text-center py-8 text-slate-400 text-[13px]">{t('settings_modal.cost_empty_message', { days: String(days) })}</div>
           )}
         </>
       )}
