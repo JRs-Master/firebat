@@ -722,7 +722,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
           {msg.image && (
             <img src={msg.image} alt="첨부 이미지" className="max-w-[240px] max-h-[180px] rounded-2xl border border-slate-600 shadow-md object-cover" />
           )}
-          <div className="bg-slate-800 text-white px-4 py-3 sm:px-6 sm:py-4 rounded-3xl rounded-tr-sm shadow-md text-[15px] sm:text-[16px] font-medium leading-relaxed break-words border border-slate-700 w-fit">
+          <div className="bg-slate-800 text-white px-4 py-3 sm:px-6 sm:py-4 rounded-3xl rounded-tr-sm shadow-md text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed break-words border border-slate-700 w-fit">
             {msg.content}
           </div>
         </div>
@@ -768,7 +768,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
                     return (
                       <BlockErrorBoundary key={i} label={label}>
                         {b.type === 'text' ? (
-                          <div className={`text-slate-800 text-[15px] sm:text-[16px] font-medium leading-relaxed space-y-1 ${wrapCls}`}>{renderMarkdown(b.text)}</div>
+                          <div className={`text-slate-800 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed space-y-1 ${wrapCls}`}>{renderMarkdown(b.text)}</div>
                         ) : b.type === 'html' ? (
                           <div className={wrapCls}><AutoResizeIframe src={b.htmlContent as string} initialHeight={b.htmlHeight} dependencies={(b as { dependencies?: string[] }).dependencies} /></div>
                         ) : b.type === 'component' ? (
@@ -781,7 +781,7 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
               ) : (
                 <>
                   {msg.content && (
-                    <div className="text-slate-800 text-[15px] sm:text-[16px] font-medium leading-relaxed space-y-1">
+                    <div className="text-slate-800 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed space-y-1">
                       {renderMarkdown(msg.content)}
                     </div>
                   )}
