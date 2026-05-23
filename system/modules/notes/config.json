@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Firebat 자체 노트 — 마크다운 file-based (data/notes/*.md). AI 가 자율 read/write/search. 외부 동기화 없음 (의도). sysmod_calendar 와 같이 Firebat 안에서 데이터·도구 chain 으로 통합 사용.",
+  "description": "Built-in Firebat notes — markdown file-based (data/notes/*.md). AI autonomously reads/writes/searches. No external sync (by design). Integrates with other Firebat tools (e.g. sysmod_calendar) via data and tool chains.",
   "runtime": "node",
   "capability": "note",
   "providerType": "local",
@@ -15,37 +15,37 @@
       "action": {
         "type": "string",
         "enum": ["list", "read", "write", "delete", "search"],
-        "description": "list=노트 목록 (옵션 tag 필터), read=slug 로 본문 read, write=새 노트 또는 update (slug 같으면 덮어씀), delete=slug 로 soft-delete (휴지통 X — 즉시 삭제), search=full-text + tag 검색"
+        "description": "list=list notes (optional tag filter), read=read content by slug, write=create or update a note (overwrites if slug exists), delete=delete by slug (no trash — immediate deletion), search=full-text + tag search"
       },
       "slug": {
         "type": "string",
-        "description": "[read/write/delete] 노트 식별자. 영문·숫자·_·-. write 시 미지정이면 자동 생성 (YYYY-MM-DD-rand)."
+        "description": "[read/write/delete] Note identifier. Allowed characters: letters, digits, _, -. If omitted on write, auto-generated as YYYY-MM-DD-rand."
       },
       "title": {
         "type": "string",
-        "description": "[write] 노트 제목 (frontmatter 에 저장)"
+        "description": "[write] Note title (stored in frontmatter)"
       },
       "content": {
         "type": "string",
-        "description": "[write] 노트 본문 (마크다운)"
+        "description": "[write] Note body (markdown)"
       },
       "tags": {
         "type": "array",
         "items": { "type": "string" },
-        "description": "[write] 태그 배열. [list/search] 필터 (단일 tag 매칭)"
+        "description": "[write] Tag array. [list/search] Filter (single tag match)"
       },
       "tag": {
         "type": "string",
-        "description": "[list/search] 단일 태그 필터"
+        "description": "[list/search] Single tag filter"
       },
       "query": {
         "type": "string",
-        "description": "[search] 검색어 (title + content + tag full-text)"
+        "description": "[search] Search query (full-text over title + content + tag)"
       },
       "limit": {
         "type": "integer",
         "default": 20,
-        "description": "[list/search] 최대 결과 수"
+        "description": "[list/search] Maximum number of results"
       }
     },
     "additionalProperties": false
@@ -53,10 +53,10 @@
   "output": {
     "type": "object",
     "properties": {
-      "items": { "type": "array", "description": "list/search 결과 (slug, title, tags, createdAt, contentPreview)" },
-      "note": { "type": "object", "description": "read 결과 (slug, title, tags, content, createdAt, updatedAt)" },
-      "slug": { "type": "string", "description": "write 후 저장된 slug" },
-      "deleted": { "type": "boolean", "description": "delete 결과" }
+      "items": { "type": "array", "description": "Results of list/search (slug, title, tags, createdAt, contentPreview)" },
+      "note": { "type": "object", "description": "Result of read (slug, title, tags, content, createdAt, updatedAt)" },
+      "slug": { "type": "string", "description": "Slug saved after write" },
+      "deleted": { "type": "boolean", "description": "Result of delete" }
     }
   }
 }

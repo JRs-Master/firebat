@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Firebat 자체 일정 — JSONL file (data/calendar/events.jsonl). 외부 동기화 없음 (의도). Firebat cron·노트·매매 등 다른 sysmod 와 자연 chain — 일정과 cron 잡을 linkedJobId 로 연결해 양방향 추적 가능.",
+  "description": "Built-in Firebat calendar — JSONL file (data/calendar/events.jsonl). No external sync (by design). Chains naturally with other sysmods (cron, notes, trading) — link calendar events to cron jobs via linkedJobId for two-way tracking.",
   "runtime": "node",
   "capability": "calendar",
   "providerType": "local",
@@ -15,71 +15,71 @@
       "action": {
         "type": "string",
         "enum": ["list-upcoming", "list-range", "add", "update", "delete", "find"],
-        "description": "list-upcoming=오늘부터 N일 (기본 7), list-range=fromTm~toTm 범위, add=새 일정 (id 자동 생성), update=id 로 수정 (필드 patch), delete=id 로 soft-delete (deletedAt 기록), find=title/description/tags 검색"
+        "description": "list-upcoming=next N days from today (default 7), list-range=fromTm~toTm range, add=new event (id auto-generated), update=patch fields by id, delete=soft-delete by id (records deletedAt), find=search title/description/tags"
       },
       "id": {
         "type": "string",
-        "description": "[update/delete] 이벤트 ID. add 결과로 받음."
+        "description": "[update/delete] Event ID (returned by the add action)."
       },
       "title": {
         "type": "string",
-        "description": "[add/update] 일정 제목"
+        "description": "[add/update] Event title"
       },
       "startAt": {
         "type": "string",
-        "description": "[add/update] 시작 시각 ISO 8601 (예: 2026-05-04T09:00:00+09:00)"
+        "description": "[add/update] Start time ISO 8601 (e.g., 2026-05-04T09:00:00+09:00)"
       },
       "endAt": {
         "type": "string",
-        "description": "[add/update] 종료 시각 ISO (선택). 미지정 = startAt 부터 1시간"
+        "description": "[add/update] End time ISO (optional). If omitted, defaults to startAt + 1 hour"
       },
       "location": {
         "type": "string",
-        "description": "[add/update] 장소 (선택)"
+        "description": "[add/update] Location (optional)"
       },
       "description": {
         "type": "string",
-        "description": "[add/update] 상세 설명 (선택). 공모주 배정 정보·매매 메모 등 자유 기록"
+        "description": "[add/update] Detailed notes (optional). Free-form text for IPO allocation info, trading notes, etc."
       },
       "tags": {
         "type": "array",
         "items": { "type": "string" },
-        "description": "[add/update] 태그 (자유 문자열). find 필터에 활용"
+        "description": "[add/update] Tags (free-form strings). Used by find filters"
       },
       "linkedJobId": {
         "type": "string",
-        "description": "[add/update] 연동된 cron 잡 ID — 일정과 cron 잡 양방향 추적. AI 가 schedule_task 로 cron 등록 후 받은 jobId 를 여기 박으면 일정 update/delete 시 cron 도 같이 정리 가능"
+        "description": "[add/update] Linked cron job ID — enables two-way tracking between events and cron jobs. After AI registers a cron via schedule_task, pass the returned jobId here so that updating or deleting the event also cleans up the cron"
       },
       "fromTm": {
         "type": "string",
-        "description": "[list-range] 시작 ISO 일자 (YYYY-MM-DD)"
+        "description": "[list-range] Start date ISO (YYYY-MM-DD)"
       },
       "toTm": {
         "type": "string",
-        "description": "[list-range] 종료 ISO 일자"
+        "description": "[list-range] End date ISO"
       },
       "days": {
         "type": "integer",
         "default": 7,
-        "description": "[list-upcoming] 오늘부터 N일 (기본 7)"
+        "description": "[list-upcoming] Next N days from today (default 7)"
       },
       "query": {
         "type": "string",
-        "description": "[find] 검색어 (title/description/tags full-text)"
+        "description": "[find] Search query (full-text over title/description/tags)"
       },
       "tag": {
         "type": "string",
-        "description": "[find/list-*] 태그 필터"
+        "description": "[find/list-*] Tag filter"
       },
       "includeDeleted": {
         "type": "boolean",
         "default": false,
-        "description": "soft-delete 된 이벤트 포함 여부"
+        "description": "Whether to include soft-deleted events"
       },
       "limit": {
         "type": "integer",
         "default": 50,
-        "description": "최대 결과 수"
+        "description": "Maximum number of results"
       }
     },
     "additionalProperties": false
@@ -87,9 +87,9 @@
   "output": {
     "type": "object",
     "properties": {
-      "items": { "type": "array", "description": "list-* / find 결과 (id, title, startAt, endAt, tags, linkedJobId, ...)" },
-      "event": { "type": "object", "description": "add/update 결과 단일 이벤트" },
-      "deleted": { "type": "boolean", "description": "delete 결과" }
+      "items": { "type": "array", "description": "Results of list-* / find (id, title, startAt, endAt, tags, linkedJobId, ...)" },
+      "event": { "type": "object", "description": "Single event returned by add/update" },
+      "deleted": { "type": "boolean", "description": "Result of delete" }
     }
   }
 }

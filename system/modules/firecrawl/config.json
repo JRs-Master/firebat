@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "2.0.0",
-  "description": "Firecrawl API v1 기반 웹 스크래퍼. 4가지 액션: scrape(단일 URL 스크래핑), crawl(사이트 전체 크롤링), map(URL 목록 수집), extract(LLM 구조화 데이터 추출). JS 렌더링·브라우저 액션(click/write/press/scroll/wait/screenshot)·LLM JSON 추출·위치 기반 스크래핑 지원.",
+  "description": "Web scraper based on Firecrawl API v1. Four actions: scrape (single URL), crawl (entire site), map (collect URL list), extract (LLM-structured data extraction). Supports JS rendering, browser actions (click/write/press/scroll/wait/screenshot), LLM JSON extraction, and location-based scraping.",
   "runtime": "node",
   "capability": "web-scrape",
   "providerType": "api",
@@ -23,199 +23,199 @@
         "type": "string",
         "enum": ["scrape", "crawl", "map", "extract"],
         "default": "scrape",
-        "description": "scrape=단일 URL 스크래핑, crawl=사이트 전체 크롤링, map=URL 목록 수집(스크래핑 없음), extract=LLM 구조화 데이터 추출"
+        "description": "scrape=single URL scrape, crawl=full site crawl, map=collect URL list (no scraping), extract=LLM-structured data extraction"
       },
       "url": {
         "type": "string",
-        "description": "[scrape/crawl/map] 대상 URL"
+        "description": "[scrape/crawl/map] Target URL"
       },
       "urls": {
         "type": "array",
         "items": { "type": "string" },
-        "description": "[extract] 대상 URL 배열. 와일드카드 지원 (example.com/*)"
+        "description": "[extract] Target URL array. Supports wildcards (example.com/*)"
       },
       "keyword": {
         "type": "string",
-        "description": "[scrape] 키워드 포함 섹션만 추출 (자체 후처리)"
+        "description": "[scrape] Extract only sections containing the keyword (post-processed locally)"
       },
       "formats": {
         "type": "array",
         "items": { "type": "string", "enum": ["markdown", "html", "rawHtml", "json", "links", "screenshot", "screenshot@fullPage"] },
         "default": ["markdown"],
-        "description": "[scrape] 반환 포맷. json=LLM 구조화 추출 (jsonOptions 필요)"
+        "description": "[scrape] Return formats. json=LLM-structured extraction (requires jsonOptions)"
       },
       "onlyMainContent": {
         "type": "boolean",
         "default": true,
-        "description": "[scrape] 메인 콘텐츠만 추출 (nav/footer 제외)"
+        "description": "[scrape] Extract only the main content (excludes nav/footer)"
       },
       "includeTags": {
         "type": "array",
         "items": { "type": "string" },
-        "description": "[scrape] 포함할 HTML 태그 목록"
+        "description": "[scrape] HTML tags to include"
       },
       "excludeTags": {
         "type": "array",
         "items": { "type": "string" },
-        "description": "[scrape] 제외할 HTML 태그 목록"
+        "description": "[scrape] HTML tags to exclude"
       },
       "headers": {
         "type": "object",
         "additionalProperties": { "type": "string" },
-        "description": "[scrape] 커스텀 HTTP 헤더"
+        "description": "[scrape] Custom HTTP headers"
       },
       "waitFor": {
         "type": "integer",
-        "description": "[scrape] 페이지 로드 후 대기 (ms). CSS 선택자 문자열도 가능"
+        "description": "[scrape] Wait after page load (ms). Also accepts a CSS selector string"
       },
       "timeout": {
         "type": "integer",
         "default": 30000,
-        "description": "[scrape] 요청 타임아웃 (ms)"
+        "description": "[scrape] Request timeout (ms)"
       },
       "mobile": {
         "type": "boolean",
         "default": false,
-        "description": "[scrape] 모바일 뷰포트 사용"
+        "description": "[scrape] Use a mobile viewport"
       },
       "skipTlsVerification": {
         "type": "boolean",
         "default": false,
-        "description": "[scrape] TLS 인증서 검증 건너뛰기"
+        "description": "[scrape] Skip TLS certificate verification"
       },
       "removeBase64Images": {
         "type": "boolean",
         "default": true,
-        "description": "[scrape] base64 이미지 제거"
+        "description": "[scrape] Strip base64 images"
       },
       "maxAge": {
         "type": "integer",
         "default": 0,
-        "description": "[scrape] 캐시 최대 수명 (ms). 0=캐시 미사용"
+        "description": "[scrape] Maximum cache age (ms). 0=disable cache"
       },
       "location": {
         "type": "object",
         "properties": {
-          "country": { "type": "string", "description": "ISO 3166-1 alpha-2 국가코드 (US, KR 등)" },
-          "languages": { "type": "array", "items": { "type": "string" }, "description": "선호 언어 배열 (ko, en 등)" }
+          "country": { "type": "string", "description": "ISO 3166-1 alpha-2 country code (e.g., US, KR)" },
+          "languages": { "type": "array", "items": { "type": "string" }, "description": "Preferred language array (e.g., ko, en)" }
         },
-        "description": "[scrape/map] 위치/언어 기반 스크래핑"
+        "description": "[scrape/map] Location/language-based scraping"
       },
       "actions": {
         "type": "array",
         "items": {
           "type": "object",
           "properties": {
-            "type": { "type": "string", "enum": ["click", "write", "press", "scroll", "wait", "screenshot", "scrape", "executeJavaScript"], "description": "액션 타입" },
-            "selector": { "type": "string", "description": "[click/write] CSS 선택자" },
-            "text": { "type": "string", "description": "[write] 입력할 텍스트" },
-            "key": { "type": "string", "description": "[press] 키보드 키 (Enter, Tab 등)" },
-            "milliseconds": { "type": "integer", "description": "[wait] 대기 시간 (ms)" },
-            "fullPage": { "type": "boolean", "description": "[screenshot] 전체 페이지 캡처" },
-            "direction": { "type": "string", "enum": ["up", "down"], "description": "[scroll] 스크롤 방향" },
-            "amount": { "type": "integer", "description": "[scroll] 스크롤 양 (px)" },
-            "script": { "type": "string", "description": "[executeJavaScript] JS 코드" }
+            "type": { "type": "string", "enum": ["click", "write", "press", "scroll", "wait", "screenshot", "scrape", "executeJavaScript"], "description": "Action type" },
+            "selector": { "type": "string", "description": "[click/write] CSS selector" },
+            "text": { "type": "string", "description": "[write] Text to type" },
+            "key": { "type": "string", "description": "[press] Keyboard key (Enter, Tab, etc.)" },
+            "milliseconds": { "type": "integer", "description": "[wait] Wait time (ms)" },
+            "fullPage": { "type": "boolean", "description": "[screenshot] Capture full page" },
+            "direction": { "type": "string", "enum": ["up", "down"], "description": "[scroll] Scroll direction" },
+            "amount": { "type": "integer", "description": "[scroll] Scroll amount (px)" },
+            "script": { "type": "string", "description": "[executeJavaScript] JS code" }
           }
         },
-        "description": "[scrape] 스크래핑 전 브라우저 액션 배열. 로그인, 버튼 클릭, 무한 스크롤 등"
+        "description": "[scrape] Browser actions to run before scraping. Login, button clicks, infinite scroll, etc."
       },
       "jsonOptions": {
         "type": "object",
         "properties": {
-          "schema": { "type": "object", "description": "JSON Schema로 추출할 데이터 구조 정의" },
-          "prompt": { "type": "string", "description": "추출할 데이터 자연어 설명" },
-          "systemPrompt": { "type": "string", "description": "LLM 시스템 프롬프트" }
+          "schema": { "type": "object", "description": "Data structure to extract, defined as a JSON Schema" },
+          "prompt": { "type": "string", "description": "Natural-language description of the data to extract" },
+          "systemPrompt": { "type": "string", "description": "LLM system prompt" }
         },
-        "description": "[scrape] formats에 'json' 포함 시 LLM 기반 구조화 추출 옵션"
+        "description": "[scrape] Options for LLM-based structured extraction when formats includes 'json'"
       },
       "limit": {
         "type": "integer",
-        "description": "[crawl] 최대 페이지 수 (기본 10000). [map] 최대 URL 수"
+        "description": "[crawl] Maximum number of pages (default 10000). [map] Maximum number of URLs"
       },
       "maxDiscoveryDepth": {
         "type": "integer",
-        "description": "[crawl] 루트 URL 기준 최대 링크 깊이"
+        "description": "[crawl] Maximum link depth from the root URL"
       },
       "includePaths": {
         "type": "array",
         "items": { "type": "string" },
-        "description": "[crawl] 포함할 URL 경로 정규식 패턴"
+        "description": "[crawl] Regex patterns for URL paths to include"
       },
       "excludePaths": {
         "type": "array",
         "items": { "type": "string" },
-        "description": "[crawl] 제외할 URL 경로 정규식 패턴"
+        "description": "[crawl] Regex patterns for URL paths to exclude"
       },
       "crawlEntireDomain": {
         "type": "boolean",
         "default": false,
-        "description": "[crawl] 상위/형제 URL까지 크롤"
+        "description": "[crawl] Crawl parent and sibling URLs as well"
       },
       "allowSubdomains": {
         "type": "boolean",
         "default": false,
-        "description": "[crawl] 서브도메인까지 크롤"
+        "description": "[crawl] Crawl subdomains too"
       },
       "allowExternalLinks": {
         "type": "boolean",
         "default": false,
-        "description": "[crawl/extract] 외부 링크 따라가기"
+        "description": "[crawl/extract] Follow external links"
       },
       "sitemap": {
         "type": "string",
         "enum": ["include", "skip", "only"],
-        "description": "[crawl] 사이트맵 처리. include=포함, skip=무시, only=사이트맵만"
+        "description": "[crawl] Sitemap handling. include=include, skip=ignore, only=sitemap only"
       },
       "ignoreQueryParameters": {
         "type": "boolean",
         "default": false,
-        "description": "[crawl] 쿼리 파라미터 다른 같은 경로 중복 방지"
+        "description": "[crawl] Deduplicate the same path with different query parameters"
       },
       "delay": {
         "type": "number",
-        "description": "[crawl] 스크래핑 간격 (초)"
+        "description": "[crawl] Delay between scrapes (seconds)"
       },
       "maxConcurrency": {
         "type": "integer",
-        "description": "[crawl] 최대 동시 스크래핑 수"
+        "description": "[crawl] Maximum concurrent scrapes"
       },
       "scrapeOptions": {
         "type": "object",
-        "description": "[crawl] 각 페이지 스크래핑 옵션 (formats, actions 등)"
+        "description": "[crawl] Per-page scraping options (formats, actions, etc.)"
       },
       "search": {
         "type": "string",
-        "description": "[map] 특정 URL 검색 키워드"
+        "description": "[map] Search keyword to filter URLs"
       },
       "prompt": {
         "type": "string",
-        "description": "[extract] 추출할 데이터 자연어 설명"
+        "description": "[extract] Natural-language description of the data to extract"
       },
       "schema": {
         "type": "object",
-        "description": "[extract] JSON Schema로 추출할 데이터 구조 정의"
+        "description": "[extract] Data structure to extract, defined as a JSON Schema"
       },
       "systemPrompt": {
         "type": "string",
-        "description": "[extract] LLM 시스템 프롬프트"
+        "description": "[extract] LLM system prompt"
       },
       "enableWebSearch": {
         "type": "boolean",
-        "description": "[extract] 웹 검색으로 관련 정보 보강"
+        "description": "[extract] Augment with related information via web search"
       },
       "showSources": {
         "type": "boolean",
-        "description": "[extract] 출처 URL 표시"
+        "description": "[extract] Include source URLs"
       },
       "maxWaitMs": {
         "type": "integer",
         "default": 300000,
-        "description": "[crawl/extract] 최대 대기 시간 (ms). crawl 기본 5분, extract 기본 2분"
+        "description": "[crawl/extract] Maximum wait time (ms). crawl defaults to 5 minutes, extract to 2 minutes"
       },
       "pollInterval": {
         "type": "integer",
         "default": 5000,
-        "description": "[crawl] 폴링 간격 (ms)"
+        "description": "[crawl] Polling interval (ms)"
       }
     },
     "additionalProperties": false
@@ -223,17 +223,17 @@
   "output": {
     "type": "object",
     "properties": {
-      "url": { "type": "string", "description": "[scrape] 최종 URL" },
-      "title": { "type": "string", "description": "[scrape] 페이지 제목" },
-      "text": { "type": "string", "description": "[scrape] 마크다운 본문" },
-      "html": { "type": "string", "description": "[scrape] HTML (formats에 html 포함 시)" },
-      "links": { "type": "array", "description": "[scrape/map] 링크 목록" },
-      "screenshot": { "type": "string", "description": "[scrape] 스크린샷 URL" },
-      "json": { "type": "object", "description": "[scrape] LLM 추출 JSON (formats에 json 포함 시)" },
-      "pages": { "type": "array", "description": "[crawl] 크롤링된 페이지 배열 [{url, title, text}]" },
-      "crawlId": { "type": "string", "description": "[crawl] 크롤 작업 ID" },
-      "total": { "type": "integer", "description": "[crawl] 총 크롤 페이지 수" }
+      "url": { "type": "string", "description": "[scrape] Final URL" },
+      "title": { "type": "string", "description": "[scrape] Page title" },
+      "text": { "type": "string", "description": "[scrape] Markdown body" },
+      "html": { "type": "string", "description": "[scrape] HTML (when formats includes html)" },
+      "links": { "type": "array", "description": "[scrape/map] List of links" },
+      "screenshot": { "type": "string", "description": "[scrape] Screenshot URL" },
+      "json": { "type": "object", "description": "[scrape] LLM-extracted JSON (when formats includes json)" },
+      "pages": { "type": "array", "description": "[crawl] Array of crawled pages [{url, title, text}]" },
+      "crawlId": { "type": "string", "description": "[crawl] Crawl job ID" },
+      "total": { "type": "integer", "description": "[crawl] Total number of crawled pages" }
     },
-    "description": "scrape→{url,title,text,...}, crawl→{crawlId,total,pages[]}, map→{links[]}, extract→추출 데이터"
+    "description": "scrape→{url,title,text,...}, crawl→{crawlId,total,pages[]}, map→{links[]}, extract→extracted data"
   }
 }

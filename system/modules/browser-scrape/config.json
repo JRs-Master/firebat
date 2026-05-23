@@ -3,7 +3,7 @@
   "type": "module",
   "scope": "system",
   "version": "1.0.0",
-  "description": "Playwright 기반 JS 렌더링 웹 스크래퍼. 동적 JS 페이지, 검색엔진 결과 등 정적 requests로 불가한 모든 페이지에 사용.",
+  "description": "Playwright-based JS-rendering web scraper. Use for any page that cannot be fetched with static requests — dynamic JS pages, search engine results, etc.",
   "runtime": "python",
   "capability": "web-scrape",
   "providerType": "local",
@@ -41,65 +41,65 @@
       "url": {
         "type": "string",
         "format": "uri",
-        "description": "스크래핑할 URL"
+        "description": "URL to scrape"
       },
       "selector": {
         "type": "string",
-        "description": "CSS 선택자. 지정하면 해당 요소만 반환"
+        "description": "CSS selector. If provided, returns only the matching element"
       },
       "waitFor": {
         "type": "string",
         "enum": ["networkidle", "load", "domcontentloaded", "commit"],
         "default": "networkidle",
-        "description": "페이지 로드 대기 전략"
+        "description": "Page load wait strategy"
       },
       "waitForSelector": {
         "type": "string",
-        "description": "이 CSS 선택자가 나타날 때까지 추가 대기"
+        "description": "Wait until this CSS selector appears"
       },
       "excludeDomains": {
         "type": "array",
         "items": { "type": "string" },
-        "description": "링크 필터링 시 제외할 도메인 목록"
+        "description": "List of domains to exclude when filtering links"
       },
       "viewport": {
         "type": "object",
         "properties": {
-          "width":  { "type": "integer", "default": 1280, "description": "뷰포트 너비" },
-          "height": { "type": "integer", "default": 720, "description": "뷰포트 높이" }
+          "width":  { "type": "integer", "default": 1280, "description": "Viewport width" },
+          "height": { "type": "integer", "default": 720, "description": "Viewport height" }
         },
         "additionalProperties": false,
-        "description": "브라우저 뷰포트 크기"
+        "description": "Browser viewport size"
       },
       "locale": {
         "type": "string",
         "default": "ko-KR",
-        "description": "브라우저 로케일 (BCP 47)"
+        "description": "Browser locale (BCP 47)"
       },
       "timezoneId": {
         "type": "string",
         "default": "Asia/Seoul",
-        "description": "브라우저 타임존 (IANA)"
+        "description": "Browser timezone (IANA)"
       },
       "extraHeaders": {
         "type": "object",
         "additionalProperties": { "type": "string" },
-        "description": "추가 HTTP 헤더"
+        "description": "Additional HTTP headers"
       },
       "javascriptEnabled": {
         "type": "boolean",
         "default": true,
-        "description": "JavaScript 실행 여부"
+        "description": "Whether to execute JavaScript"
       },
       "screenshot": {
         "type": "boolean",
         "default": false,
-        "description": "스크린샷 캡처 (base64 반환)"
+        "description": "Capture a screenshot (returned as base64)"
       },
       "fullPage": {
         "type": "boolean",
         "default": false,
-        "description": "전체 페이지 스크린샷 (screenshot=true 시)"
+        "description": "Full-page screenshot (when screenshot=true)"
       }
     },
     "additionalProperties": false
@@ -108,21 +108,21 @@
     "type": "object",
     "required": ["url", "title", "text"],
     "properties": {
-      "url":   { "type": "string", "description": "최종 URL (리다이렉트 후)" },
-      "title": { "type": "string", "description": "페이지 제목" },
-      "text":  { "type": "string", "description": "페이지 본문 텍스트" },
+      "url":   { "type": "string", "description": "Final URL (after redirects)" },
+      "title": { "type": "string", "description": "Page title" },
+      "text":  { "type": "string", "description": "Page body text" },
       "links": {
         "type": "array",
         "items": {
           "type": "object",
           "required": ["href", "text"],
           "properties": {
-            "href": { "type": "string", "description": "링크 URL" },
-            "text": { "type": "string", "description": "링크 텍스트" }
+            "href": { "type": "string", "description": "Link URL" },
+            "text": { "type": "string", "description": "Link text" }
           },
           "additionalProperties": false
         },
-        "description": "페이지 내 외부 링크 (최대 10개)"
+        "description": "External links on the page (up to 10)"
       },
       "firstLink": {
         "type": ["object", "null"],
@@ -131,11 +131,11 @@
           "text": { "type": "string" }
         },
         "additionalProperties": false,
-        "description": "첫 번째 외부 링크"
+        "description": "First external link"
       },
       "screenshot": {
         "type": "string",
-        "description": "스크린샷 base64 데이터 (screenshot=true 시)"
+        "description": "Screenshot base64 data (when screenshot=true)"
       }
     },
     "additionalProperties": false
