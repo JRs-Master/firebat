@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo, useId } from 'react';
-import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign, Brain, Plus } from 'lucide-react';
+import { Settings, X, KeyRound, Plug, Loader2, Trash2, Layers, Pencil, Copy, Check, RefreshCw, Server, Terminal, Globe, Cpu, Wrench, Blocks, ChevronLeft, ChevronRight, DollarSign, Brain, Plus, ScrollText } from 'lucide-react';
 import { McpServer } from '../types';
 import { useAiModels, thinkingLevelLabel } from '../hooks/use-ai-models';
 import { Field, FieldLabel, HelpText, TextInput, Textarea, SelectInput, SegButtons } from './settings-controls';
@@ -10,6 +10,7 @@ import { useSetting, writeSetting } from '../hooks/settings-manager';
 import { Tooltip } from './Tooltip';
 import { FeedbackBadge } from './FeedbackBadge';
 import { confirmDialog, alertDialog } from './Dialog';
+import { LogPanel } from './LogPanel';
 import { useLang, useTranslations, type Lang } from '../../../lib/i18n';
 import { TIMEZONE_OPTIONS, timezoneLabel } from '../../../lib/timezones';
 import { logger } from '../../../lib/util/logger';
@@ -78,7 +79,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   // useAiModels 컴포넌트 상단 호출 — inferModeProvider / categoryOf 가 aiModelsList 참조하므로 hoist 보장.
   const { models: aiModelsList } = useAiModels();
   // 비용·메모리는 AI 탭 하위 sub-tab 으로 통합 — initialTab='cost'/'memory' 면 자동으로 AI 탭 + sub-tab 으로 변환.
-  const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system'>(() => {
+  const [settingsTab, setSettingsTab] = useState<'general' | 'ai' | 'secrets' | 'mcp' | 'capabilities' | 'system' | 'logs'>(() => {
     if (initialTab === 'cost' || initialTab === 'memory') return 'ai';
     return (initialTab ?? 'general') as any;
   });
@@ -805,6 +806,13 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
             className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'system' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
             <Cpu size={14} /> 시스템
+          </button>
+          <button
+            onClick={() => switchTab('logs')}
+            data-active={settingsTab === 'logs'}
+            className={`px-3 sm:px-4 py-2.5 text-[13px] sm:text-[14px] font-bold border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${settingsTab === 'logs' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          >
+            <ScrollText size={14} /> 로그
           </button>
           </div>
         </div>
@@ -2137,6 +2145,8 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
               )}
             </div>
           )}
+
+          {settingsTab === 'logs' && <LogPanel />}
 
         </div>
 
