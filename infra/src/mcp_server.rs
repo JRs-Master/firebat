@@ -601,6 +601,14 @@ impl McpToolHandler for RenderUnifiedHandler {
                 .cloned()
                 .unwrap_or_else(|| serde_json::json!({}));
 
+            // 정규화(synonym 매핑 / extras drop) 전 Claude 가 실제 보낸 키 — 검증 실패 진단용.
+            // 핵심 prop(text/children/headers 등) 누락 시, Claude 가 다른 키(label/items/columns)로
+            // 보냈는지(→ synonym 매핑 필요) 통째 누락인지 구분하려면 원본 키가 필요하다.
+            let original_keys: Vec<String> = props
+                .as_object()
+                .map(|o| o.keys().cloned().collect())
+                .unwrap_or_default();
+
             let comp = match firebat_core::managers::ai::component_registry::find_component(block_type) {
                 Some(c) => c,
                 None => {
@@ -690,6 +698,7 @@ impl McpToolHandler for RenderUnifiedHandler {
                     "idx": idx,
                     "type": block_type,
                     "error": format!("props 검증 실패: {}", e),
+                    "gotKeys": original_keys,
                 }));
                 continue;
             }
