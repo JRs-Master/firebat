@@ -58,7 +58,7 @@ function serialize<K extends keyof SettingsSchema>(key: K, value: SettingsSchema
 }
 
 function deserialize<K extends keyof SettingsSchema>(key: K, raw: string): SettingsSchema[K] {
-  const def = DEFAULTS[key];
+  const def = defaultFor(key);
   // firebat_plan_mode 마이그레이션: 'true'/'false' → 'always'/'off' (이전 boolean 토글 호환)
   if (key === 'firebat_plan_mode') {
     if (raw === 'true') return 'always' as unknown as SettingsSchema[K];
@@ -94,15 +94,25 @@ function effectiveKey<K extends keyof SettingsSchema>(key: K): string {
   return currentKeyPrefix ? `${key}__${currentKeyPrefix}` : (key as string);
 }
 
+/** key 의 기본값. hub page mode (prefix 'hub-') 에서는 plan mode 기본을 'auto' 로 —
+ *  방문자가 복합·destructive 작업 전에 계획을 먼저 확인하도록. 방문자가 토글로 명시
+ *  변경하면 그 값이 localStorage 에 저장돼 우선한다 (default 는 미설정일 때만). */
+function defaultFor<K extends keyof SettingsSchema>(key: K): SettingsSchema[K] {
+  if (key === 'firebat_plan_mode' && currentKeyPrefix?.startsWith('hub-')) {
+    return 'auto' as unknown as SettingsSchema[K];
+  }
+  return DEFAULTS[key];
+}
+
 // ── 즉시 접근 API (훅 밖에서 사용) ──────────────────────────────────────────
 export function readSetting<K extends keyof SettingsSchema>(key: K): SettingsSchema[K] {
-  if (typeof window === 'undefined') return DEFAULTS[key];
+  if (typeof window === 'undefined') return defaultFor(key);
   try {
     const raw = localStorage.getItem(effectiveKey(key));
-    if (raw === null) return DEFAULTS[key];
+    if (raw === null) return defaultFor(key);
     return deserialize(key, raw);
   } catch {
-    return DEFAULTS[key];
+    return defaultFor(key);
   }
 }
 
@@ -136,13 +146,13 @@ const subscribers = new Map<string, Set<() => void>>();
 const snapshotCache = new Map<string, { raw: string | null; value: unknown }>();
 
 function getStableSnapshot<K extends keyof SettingsSchema>(key: K): SettingsSchema[K] {
-  if (typeof window === 'undefined') return DEFAULTS[key];
+  if (typeof window === 'undefined') return defaultFor(key);
   const realKey = effectiveKey(key);
   const raw = localStorage.getItem(realKey);
   const cached = snapshotCache.get(realKey);
   if (cached && cached.raw === raw) return cached.value as SettingsSchema[K];
-  const value = raw === null ? DEFAULTS[key] : (() => {
-    try { return deserialize(key, raw); } catch { return DEFAULTS[key]; }
+  const value = raw === null ? defaultFor(key) : (() => {
+    try { return deserialize(key, raw); } catch { return defaultFor(key); }
   })();
   snapshotCache.set(realKey, { raw, value });
   return value;
