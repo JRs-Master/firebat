@@ -981,6 +981,11 @@
       "required": [
         "expression"
       ],
+      "synonyms": {
+        "content": "expression",
+        "latex": "expression",
+        "formula": "expression"
+      },
       "properties": {
         "expression": {
           "type": "string",
