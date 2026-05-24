@@ -119,7 +119,7 @@ The old 26 individual `render_*` tools are retired — unified into a single `re
 - `stock_chart` — OHLCV time series (stocks)
 - `chart` — bar / line / pie / donut
 - `table` — comparison table (numeric cells auto-colored +/−)
-- `compare` — A vs B contrast (compare two targets by attribute)
+- `compare` — A vs B contrast (compare two targets by attribute). shape: `{left:{label, items:[{key,value}]}, right:{label, items:[{key,value}]}, title?}` — left/right are separate objects (flat form `{leftLabel,rightLabel,rows}` is rejected)
 - `timeline` — chronology / events (date + title + description, type-colored dot)
 - `progress` — progress / achievement / score
 

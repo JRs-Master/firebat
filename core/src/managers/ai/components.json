@@ -359,7 +359,8 @@
         },
         "ordered": {
           "type": "boolean",
-          "description": "번호 매기기 (true) 또는 글머리 (false)"
+          "default": false,
+          "description": "번호 매기기 (true) 또는 글머리 (false). 기본 false."
         }
       }
     }

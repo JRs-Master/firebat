@@ -119,7 +119,7 @@ render({
 - `stock_chart` — OHLCV 시계열 (주식)
 - `chart` — 막대·선·원형·도넛
 - `table` — 비교 표 (수치 셀은 +/− 색상 자동)
-- `compare` — A vs B 대조 (두 대상 속성별 비교)
+- `compare` — A vs B 대조 (두 대상 속성별 비교). shape: `{left:{label, items:[{key,value}]}, right:{label, items:[{key,value}]}, title?}` — left/right 각각 별도 객체 (flat 형태 `{leftLabel,rightLabel,rows}` 금지)
 - `timeline` — 연대기·이벤트 (날짜 + 제목 + 설명, 타입별 색 점)
 - `progress` — 진행률·달성률·점수
 
