@@ -98,6 +98,10 @@ impl GeminiCliHandler {
             })
         };
 
+        // thinking 출력 활성 — 옛 Node 버전 (이전 주석) 은 'Comparing Major Tech Stocks I'm now...'
+        // 같은 reasoning 누출 차단 목적으로 includeThoughts:false 였으나, 현재는 frontend ThinkingBlock
+        // 본문에 thinking 을 가시화하므로 stream 안 thought part 를 받아야 한다. budget -1 = 무제한
+        // (Gemini 권장 default). 인라인 [Thought:true/false] 마커 파서가 이미 본문/thinking 분리.
         let settings = serde_json::json!({
             "mcpServers": mcp_servers,
             "autoMemory": false,
@@ -108,7 +112,7 @@ impl GeminiCliHandler {
                 "WebFetchTool", "WebSearchTool", "MemoryTool", "GlobTool", "GrepTool",
                 "EnterPlanMode", "ExitPlanMode", "PlanMode"
             ],
-            "model": { "thinkingConfig": { "includeThoughts": false, "thinkingBudget": 0 } },
+            "model": { "thinkingConfig": { "includeThoughts": true, "thinkingBudget": -1 } },
             "ui": { "inlineThinkingMode": "off" }
         });
         let payload = serde_json::to_string_pretty(&settings).ok()?;
@@ -299,21 +303,43 @@ impl GeminiCliHandler {
                 let is_thought_event =
                     ev.get("thought").and_then(|v| v.as_bool()).unwrap_or(false);
                 if is_thought_event {
-                    // event-level thought 플래그 → 통째 thinking 으로
+                    // event-level thought 플래그 → 통째 thinking 누적.
+                    // 옛 Node 의 onChunk({type:'thinking', content}) 와 동등.
+                    if !raw.is_empty() {
+                        if !outcome.thinking_acc.is_empty() {
+                            outcome.thinking_acc.push('\n');
+                        }
+                        outcome.thinking_acc.push_str(&raw);
+                    }
                     continue;
                 }
-                // 인라인 [Thought: true/false] 마커 stateful 파서
+                // 인라인 [Thought: true/false] 마커 stateful 파서 — text 와 thinking 분리 누적.
                 let mut cursor = 0usize;
                 let bytes = raw.as_bytes();
                 let pattern = "[Thought:";
+                // 본문 segment 처리 — isInThought 상태에 따라 text_parts 또는 thinking_acc 누적.
+                let push_segment = |seg: &str,
+                                    in_thought: bool,
+                                    text_parts: &mut Vec<String>,
+                                    thinking_acc: &mut String| {
+                    if seg.trim().is_empty() {
+                        return;
+                    }
+                    if in_thought {
+                        if !thinking_acc.is_empty() {
+                            thinking_acc.push('\n');
+                        }
+                        thinking_acc.push_str(seg);
+                    } else {
+                        text_parts.push(seg.to_string());
+                    }
+                };
                 while let Some(idx) = raw[cursor..].find(pattern) {
                     let abs_idx = cursor + idx;
                     // 마커 이전 segment
                     if abs_idx > cursor {
                         let seg = &raw[cursor..abs_idx];
-                        if !seg.trim().is_empty() && !is_in_thought {
-                            text_parts.push(seg.to_string());
-                        }
+                        push_segment(seg, is_in_thought, &mut text_parts, &mut outcome.thinking_acc);
                     }
                     // ] 찾기
                     let close_search = &raw[abs_idx..];
@@ -328,9 +354,7 @@ impl GeminiCliHandler {
                 }
                 if cursor < raw.len() {
                     let seg = &raw[cursor..];
-                    if !seg.trim().is_empty() && !is_in_thought {
-                        text_parts.push(seg.to_string());
-                    }
+                    push_segment(seg, is_in_thought, &mut text_parts, &mut outcome.thinking_acc);
                 }
                 continue;
             }
@@ -356,6 +380,12 @@ impl GeminiCliHandler {
                 }
                 let bare = Self::strip_gemini_mcp_prefix(raw_name).to_string();
                 outcome.used_tools.push(bare.clone());
+                // 도구 호출 마커 — frontend ThinkingBlock 본문에 누적 표시.
+                // 옛 Node 의 onChunk({type:'thinking', content:'[도구 호출: name]'}) 와 동등.
+                if !outcome.thinking_acc.is_empty() {
+                    outcome.thinking_acc.push('\n');
+                }
+                outcome.thinking_acc.push_str(&format!("[도구 호출: {}]", bare));
                 if let Some(id) = tool_id {
                     pending_calls.insert(
                         id,
@@ -513,6 +543,10 @@ struct CliRunOutcome {
     rendered_blocks: Vec<serde_json::Value>,
     pending_actions: Vec<serde_json::Value>,
     suggestions: Vec<serde_json::Value>,
+    /// thought 본문 (event-level + 인라인 마커) + 도구 호출 마커 누적. 옛 Node 의
+    /// onChunk({type:'thinking', ...}) 와 동등 — frontend ThinkingBlock bodyText 에 표시.
+    /// streaming chunk emit 은 아직 X (turn 종료 후 batch 표시).
+    thinking_acc: String,
 }
 
 struct PendingMcpCall {
@@ -595,7 +629,7 @@ impl FormatHandler for GeminiCliHandler {
             suggestions: outcome.suggestions,
             raw_model_parts: None,
             tool_results: outcome.tool_results,
-            thinking_text: None,
+            thinking_text: if outcome.thinking_acc.is_empty() { None } else { Some(outcome.thinking_acc) },
         })
     }
 }

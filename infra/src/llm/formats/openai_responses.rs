@@ -76,6 +76,14 @@ impl OpenAiResponsesHandler {
                             .unwrap_or("{}");
                         let arguments =
                             serde_json::from_str(args_str).unwrap_or(serde_json::json!({}));
+                        // 도구 호출 마커 — frontend ThinkingBlock 본문에 누적 표시.
+                        // 옛 Node 의 onChunk({type:'thinking', content:'[도구 호출: name]'}) 와 동등.
+                        if !name.is_empty() {
+                            if !thinking_text.is_empty() {
+                                thinking_text.push('\n');
+                            }
+                            thinking_text.push_str(&format!("[도구 호출: {}]", name));
+                        }
                         tool_calls.push(ToolCall {
                             id: call_id,
                             name,

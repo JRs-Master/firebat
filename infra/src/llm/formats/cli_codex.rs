@@ -308,8 +308,37 @@ impl CodexCliHandler {
                         }
                         continue;
                     }
-                    // reasoning: thinking 누적 (UI 별도 채널 후속)
+                    // reasoning: thinking 누적 — frontend ThinkingBlock 본문에 표시.
+                    // 옛 Node 의 onChunk({type:'thinking', content: item.text}) 와 동등.
+                    // 동일 item 의 started/updated/completed 중복 emit 회피 — completed 만 채택.
                     if item_type == "reasoning" {
+                        if ev_type == "item.completed" {
+                            // codex stream-json 의 reasoning 형태:
+                            //   { item: { type: "reasoning", text: "..." } }
+                            // text 가 비어있고 summary 만 있는 변형도 일부 모델에서 관측 — fallback.
+                            let reasoning_text = item
+                                .get("text")
+                                .and_then(|v| v.as_str())
+                                .map(String::from)
+                                .or_else(|| {
+                                    item.get("summary")
+                                        .and_then(|s| s.as_array())
+                                        .map(|arr| {
+                                            arr.iter()
+                                                .filter_map(|s| s.get("text").and_then(|t| t.as_str()))
+                                                .collect::<Vec<_>>()
+                                                .join("\n")
+                                        })
+                                });
+                            if let Some(t) = reasoning_text {
+                                if !t.is_empty() {
+                                    if !outcome.thinking_acc.is_empty() {
+                                        outcome.thinking_acc.push('\n');
+                                    }
+                                    outcome.thinking_acc.push_str(&t);
+                                }
+                            }
+                        }
                         continue;
                     }
                     // mcp_tool_call: 도구 호출 + 결과
@@ -323,6 +352,12 @@ impl CodexCliHandler {
                         }
                         if ev_type == "item.started" {
                             outcome.used_tools.push(tool_name.to_string());
+                            // 도구 호출 마커 — frontend ThinkingBlock 본문에 누적 표시.
+                            // 옛 Node 의 onChunk({type:'thinking', content:'[도구 호출: name]'}) 와 동등.
+                            if !outcome.thinking_acc.is_empty() {
+                                outcome.thinking_acc.push('\n');
+                            }
+                            outcome.thinking_acc.push_str(&format!("[도구 호출: {}]", tool_name));
                             continue;
                         }
                         if ev_type == "item.completed" && server == "firebat" {
@@ -490,6 +525,10 @@ struct CliRunOutcome {
     rendered_blocks: Vec<serde_json::Value>,
     pending_actions: Vec<serde_json::Value>,
     suggestions: Vec<serde_json::Value>,
+    /// reasoning event 본문 + 도구 호출 마커 누적. 옛 Node 의 onChunk({type:'thinking', ...})
+    /// 와 동등 — frontend ThinkingBlock bodyText 에 표시되어 사용자가 AI 의 추론·도구 호출
+    /// 흐름을 본다. streaming chunk emit 은 아직 X (turn 종료 후 batch 표시).
+    thinking_acc: String,
 }
 
 // codex 의 mcp_tool_call 은 item.completed 한 이벤트에 server/tool/arguments/result 모두 포함되어
@@ -555,7 +594,7 @@ impl FormatHandler for CodexCliHandler {
             suggestions: outcome.suggestions,
             raw_model_parts: None,
             tool_results: outcome.tool_results,
-            thinking_text: None,
+            thinking_text: if outcome.thinking_acc.is_empty() { None } else { Some(outcome.thinking_acc) },
         })
     }
 }
