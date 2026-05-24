@@ -606,8 +606,18 @@ impl TaskManager {
                             } else {
                                 serde_json::to_string_pretty(r).unwrap_or_default()
                             };
+                            // UTF-8 char boundary 보호 — 한국어/일본어/중국어 3-4 byte char 중간에서
+                                                        // slice 하면 즉시 panic (process abort → systemd restart). naive
+                                                        // `&s[..1500]` 패턴이 한글 데이터에서 터지던 사고(2026-05-24, molit-realestate
+                                                        // 한글 아파트명 응답에서 'thread panicked: end byte index 1500 is not a
+                                                        // char boundary; it is inside 젼' 발생) 대응. 1500 위치가 char 중간이면
+                                                        // 그 직전 boundary 로 내려서 자른다.
                             let trimmed = if s.len() > 1500 {
-                                format!("{}...(생략)", &s[..1500])
+                                let mut end = 1500;
+                                while end > 0 && !s.is_char_boundary(end) {
+                                    end -= 1;
+                                }
+                                format!("{}...(생략)", &s[..end])
                             } else {
                                 s
                             };
