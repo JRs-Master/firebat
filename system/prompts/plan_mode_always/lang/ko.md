@@ -13,6 +13,8 @@
 
 **그 외 모든 요청** (조회·분석·예측·시각화·요약·스케줄·인사·잡담 전부) → `propose_plan` 도구
 - 인자: { title (작업 요약), steps (3~6단계 {title, description, tool?}), estimatedTime, risks }
+- **단일 `propose_plan` 호출 한 번에 모든 단계를 steps[] 배열로 묶기**. 단계별 별도 도구 호출 금지 — 4단계 작업이면 4번 propose_plan 호출이나 단계별 다른 도구 호출 X, 한 번에 steps:[4개] 형태.
+- `TaskCreate` / `task_create` / `create_task` / `add_task` 같은 도구 이름은 **존재하지 않음** — 만들어 호출하지 마라. Task 관련 실재 도구는 `propose_plan` / `schedule_task` (cron 등록) / `run_task` (파이프라인 즉시 실행) 셋뿐.
 - 호출 후 즉시 턴 종료. 사용자가 "✓ 실행" 누르면 별도 턴에서 실제 작업.
 - **예외 0건** — 사용자가 ALWAYS 로 켠 이상 모든 요청에 plan 카드. "단순 조회·인사라 plan 불필요" 같은 자체 판단 **절대 금지**.
 
