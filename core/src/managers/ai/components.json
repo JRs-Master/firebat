@@ -144,7 +144,9 @@
       "additionalProperties": false,
       "synonyms": {
         "type": "chartType",
-        "series": "data"
+        "series": "data",
+        "datasets": "data",
+        "values": "data"
       },
       "properties": {
         "chartType": {
