@@ -90,6 +90,26 @@ pub fn sanitize_to_schema(value: &mut serde_json::Value, schema: &serde_json::Va
             .map(|arr| arr.iter().filter_map(|x| x.as_str()).collect())
             .unwrap_or_default();
 
+        // 0. synonym renaming — schema 가 선언한 synonyms 맵 (`{wrong: correct, ...}`) 으로
+        //    AI 가 자연스럽게 쓰는 prop 키를 표준 키로 통합. 예: chart 의 `type → chartType`
+        //    (block-level type 과 헷갈림 회피), `series → data` (대부분 차트 라이브러리 관례).
+        //    extras drop 보다 먼저 실행해야 synonym key 가 미지(未知) 키로 삭제되는 것을 막는다.
+        //    correct 가 이미 있으면 wrong 은 그냥 drop (correct 우선).
+        if let Some(synonyms) = schema.get("synonyms").and_then(|v| v.as_object()) {
+            for (wrong, correct_val) in synonyms {
+                let Some(correct) = correct_val.as_str() else { continue };
+                if obj.contains_key(wrong) {
+                    let value = obj.remove(wrong);
+                    if !obj.contains_key(correct) {
+                        if let Some(v) = value {
+                            obj.insert(correct.to_string(), v);
+                        }
+                    }
+                    // correct 이미 있으면 value 폐기 (이미 drop 됨).
+                }
+            }
+        }
+
         // 1. additionalProperties:false 면 properties 에 없는 키 전부 drop.
         if additional_false {
             if let Some(known) = properties {

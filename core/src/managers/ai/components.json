@@ -142,6 +142,10 @@
         "title"
       ],
       "additionalProperties": false,
+      "synonyms": {
+        "type": "chartType",
+        "series": "data"
+      },
       "properties": {
         "chartType": {
           "type": "string",
