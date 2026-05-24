@@ -2098,8 +2098,11 @@ function MathComp({ expression, block }: { expression: string; block: boolean })
       }
     });
   }, [expression, block]);
-  if (block) return <div className="my-3 text-center" ref={ref as any} />;
-  return <span ref={ref} />;
+  // overflow-x-auto + max-w-full — 모바일에서 긴 수식 (양도차익 = 양도가액 − (행사가격 + 행사이익)
+  // 같은 다항식 + brace label) 이 화면 너비 초과 시 페이지 레이아웃 깨뜨림 방지. 수식 내부 가로 스크롤로 격리.
+  if (block) return <div className="my-3 text-center overflow-x-auto max-w-full" ref={ref as any} />;
+  // inline 모드도 같은 보호 (긴 수식 inline 사용 시) — align-bottom 으로 텍스트 baseline 유지.
+  return <span ref={ref} className="inline-block max-w-full overflow-x-auto align-bottom" />;
 }
 
 // ── Code (highlight.js) ─────────────────────────────────────────────────────
