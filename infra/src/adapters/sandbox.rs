@@ -296,13 +296,23 @@ impl ProcessSandboxAdapter {
         let python_bin =
             std::env::var("FIREBAT_PYTHON_BIN").unwrap_or_else(|_| "python3".to_string());
 
+        // Node sysmod 공통 prelude (옵션) — undici fetch IPv4 우선 강제.
+        // 일부 호스트 DNS 가 IPv4+IPv6 양쪽 응답 + IPv6 outbound 일시 끊김 시점 fetch failed
+        // (api.telegram.org 사례). file 미존재 시 args 0 = 옛 동작과 동일.
+        let prelude = workspace_root.join("system/modules/_runtime/ipv4-prelude.cjs");
+        let node_args: Vec<String> = if prelude.is_file() {
+            vec!["--require".to_string(), prelude.to_string_lossy().into_owned()]
+        } else {
+            Vec::new()
+        };
+
         let mut runtimes = HashMap::new();
         for ext in ["mjs", "js", "cjs", "ts"] {
             runtimes.insert(
                 ext.to_string(),
                 RuntimeSpec {
                     command: node_bin.clone(),
-                    args: vec![],
+                    args: node_args.clone(),
                 },
             );
         }
