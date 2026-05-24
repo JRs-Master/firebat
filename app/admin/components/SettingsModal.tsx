@@ -17,7 +17,6 @@ import { TIMEZONE_OPTIONS, timezoneLabel } from '../../../lib/timezones';
 import { logger } from '../../../lib/util/logger';
 import { USER_PROMPT_MAX_CHARS } from '../../../lib/config';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
-import { getPackageStatus } from '../../../lib/api-gen/module';
 import { TIME } from '../../../lib/util/time';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
@@ -297,9 +296,14 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       const results = await Promise.all(
         moduleNames.map(async name => {
           try {
-            const res = await getPackageStatus({ module: name });
-            if (res.ok && res.data) {
-              const hasUpgrade = res.data.some(p => p.upgradeAvailable === true);
+            // API route 경유 — typed gRPC client(`lib/api-gen/module`) 는 node:http2 의존이라
+            // browser bundle 에 못 들어감 (build error). server-side route 가 typed client 호출 + JSON 반환.
+            const res = await apiGet<{ success: boolean; packages?: Array<{ upgradeAvailable?: boolean }> }>(
+              `/api/settings/modules/packages?module=${encodeURIComponent(name)}`,
+              { category: 'settings' },
+            );
+            if (res.success && Array.isArray(res.packages)) {
+              const hasUpgrade = res.packages.some(p => p.upgradeAvailable === true);
               return [name, hasUpgrade] as const;
             }
           } catch (e) {
