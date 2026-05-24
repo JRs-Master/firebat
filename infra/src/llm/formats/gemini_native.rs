@@ -558,7 +558,10 @@ mod tests {
         assert!(raw.is_some());
         let raw_arr = raw.unwrap();
         assert_eq!(raw_arr.as_array().unwrap().len(), 2);
-        assert!(thinking.is_none());
+        // 새 동작 (commit d9cd9f3): function_call 인식 시 thinking_text 에 "[도구 호출: name]"
+        // 마커 누적 → tool 만 있고 thought part 없어도 Some 반환. 옛 is_none 가정 갱신.
+        assert!(thinking.is_some());
+        assert!(thinking.unwrap().contains("[도구 호출:"));
     }
 
     #[test]

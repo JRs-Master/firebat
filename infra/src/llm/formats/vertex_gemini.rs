@@ -578,6 +578,9 @@ mod tests {
         assert_eq!(calls[0].name, "save_page");
         assert_eq!(tin, 100);
         assert_eq!(tout, 50);
-        assert!(thinking.is_none());
+        // 새 동작 (commit d9cd9f3): function_call 인식 시 thinking_text 에 "[도구 호출: name]"
+        // 마커 누적 → tool 만 있고 thought part 없어도 Some 반환. 옛 is_none 가정 갱신.
+        assert!(thinking.is_some());
+        assert!(thinking.unwrap().contains("[도구 호출:"));
     }
 }
