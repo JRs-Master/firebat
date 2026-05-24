@@ -17,6 +17,7 @@ import { TIMEZONE_OPTIONS, timezoneLabel } from '../../../lib/timezones';
 import { logger } from '../../../lib/util/logger';
 import { USER_PROMPT_MAX_CHARS } from '../../../lib/config';
 import { apiGet, apiPost, apiPatch, apiDelete } from '../../../lib/api-fetch';
+import { getPackageStatus } from '../../../lib/api-gen/module';
 import { TIME } from '../../../lib/util/time';
 import { z } from 'zod';
 import { validateForm } from '../../../lib/form-validation';
@@ -283,6 +284,34 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
       if (data.success) setSysModules(data.modules ?? []);
     } catch (e) { logger.debug('settings', 'operation 실패', { error: e }); }
   }, []);
+  // 모듈별 패키지 업그레이드 가용 여부 — 리스트에 뱃지 표시용. sysModules 로드 후 병렬 fetch.
+  // PyPI 결과는 sandbox 어댑터에서 1시간 캐시되므로 매 시스템 탭 진입에 PyPI 호출 부담 0.
+  const [moduleUpgradeMap, setModuleUpgradeMap] = useState<Record<string, boolean>>({});
+  useEffect(() => {
+    if (sysModules.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const moduleNames = sysModules
+        .filter(m => (m.entryType ?? m.type) !== 'service')
+        .map(m => m.name);
+      const results = await Promise.all(
+        moduleNames.map(async name => {
+          try {
+            const res = await getPackageStatus({ module: name });
+            if (res.ok && res.data) {
+              const hasUpgrade = res.data.some(p => p.upgradeAvailable === true);
+              return [name, hasUpgrade] as const;
+            }
+          } catch (e) {
+            logger.debug('settings', `package status fetch 실패 (${name})`, { error: e });
+          }
+          return [name, false] as const;
+        }),
+      );
+      if (!cancelled) setModuleUpgradeMap(Object.fromEntries(results));
+    })();
+    return () => { cancelled = true; };
+  }, [sysModules]);
   const toggleModuleEnabled = useCallback(async (name: string, enabled: boolean) => {
     // 낙관적 UI 업데이트
     setSysModules(prev => prev.map(m => m.name === name ? { ...m, enabled } : m));
@@ -2112,7 +2141,14 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
                         <button onClick={() => onOpenModuleSettings?.(m.name)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
                           <Blocks size={16} className="text-indigo-500 shrink-0" />
                           <div className="min-w-0 flex-1">
-                            <p className="text-[13px] font-semibold text-slate-700">{m.name}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="text-[13px] font-semibold text-slate-700">{m.name}</p>
+                              {moduleUpgradeMap[m.name] && (
+                                <span className="text-[10px] font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded shrink-0">
+                                  {t('settings_modal.upgrade_available_badge')}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[11px] text-slate-400 truncate">{m.description}</p>
                           </div>
                           <Settings size={14} className="text-slate-300 group-hover:text-blue-500 transition-colors shrink-0" />

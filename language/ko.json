@@ -640,6 +640,7 @@
     "cost_column_output": "출력",
     "cost_column_cost": "비용",
     "cost_column_date": "일자",
-    "cost_empty_message": "최근 {{days}}일 LLM 호출 기록 없음"
+    "cost_empty_message": "최근 {{days}}일 LLM 호출 기록 없음",
+    "upgrade_available_badge": "업데이트"
   }
 }
