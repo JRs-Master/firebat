@@ -34,7 +34,7 @@ const nextConfig = {
         source: '/:file(.+\\.(?:txt|html|xml))',
         destination: '/api/verifications/:file',
       },
-      // 옛 Chatbot → Hub 리네임 호환 — 외부 사이트에 박힌 옛 widget script 가 `/api/chatbot/widget.js`
+      // 옛 Chatbot → Hub 리네임 호환 — 외부 사이트에 설치된 옛 widget script 가 `/api/chatbot/widget.js`
       // 호출하는 영역. 새 URL = `/api/hub/widget.js`. 호환 layer 보존 (옛 widget 사용자 영향 0).
       {
         source: '/api/chatbot/:path*',

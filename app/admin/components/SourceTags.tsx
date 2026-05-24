@@ -9,11 +9,11 @@ import type { LibrarySourceHit } from '../types';
  * SourceTags — Library Phase 1 단계 8.4 (2026-05-17).
  *
  * AI 답변에 RetrievalEngine 이 매칭한 Library hit 들을 뱃지로 노출. 답변 본문에는
- * 출처 표기 박지 않고 (system prompt 룰), 이 뱃지가 단일 source.
+ * 출처 표기 하지 않고 (system prompt 룰), 이 뱃지가 단일 source.
  *
  * - 매 source 별 dedup (chunkIndex 여러 개여도 sourceId 별 한 뱃지)
  * - 클릭 → LibrarySourceModal (full_text + page 별)
- * - ActionTags 와 같은 줄 (msg.executedActions 옆 또는 아래) 박힘
+ * - ActionTags 와 같은 줄 (msg.executedActions 옆 또는 아래) 표시
  */
 export function SourceTags({ hits }: { hits: LibrarySourceHit[] }) {
   const [previewId, setPreviewId] = useState<string | null>(null);

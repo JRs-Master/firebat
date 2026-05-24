@@ -350,7 +350,7 @@ cd /opt/firebat-src
 npm install --legacy-peer-deps && npm run build
 # ↑ postinstall 이 자동 실행 — E5 임베딩 모델 (~470MB) prefetch.
 #   venv (<source root>/.venv) 자동 생성 + huggingface_hub 설치 + 모델 다운로드.
-#   cache 박힌 후 매 npm install 시점 즉시 skip.
+#   cache 가 생성된 이후 매 npm install 시점 즉시 skip.
 #   skip: FIREBAT_SKIP_EMBEDDER_PREFETCH=1 또는 FIREBAT_EMBEDDER=stub
 rsync -a .next/standalone/ /opt/firebat/frontend/
 rsync -a .next/static/ /opt/firebat/frontend/.next/static/
@@ -371,7 +371,7 @@ systemctl reload caddy
 **System dependencies** (Vultr Debian 표준):
 - `python3-venv` — E5 임베딩 모델 prefetch venv (PEP 668 정공)
 - `python3` — sysmod (yfinance / playwright / etc) runtime + venv host
-- Optional: `pipx install huggingface_hub` 박은 시점 setup-embedder.mjs 가 시스템 PATH 의 `huggingface-cli` 자동 사용 (venv 생성 skip)
+- Optional: `pipx install huggingface_hub` 설치한 경우 setup-embedder.mjs 가 시스템 PATH 의 `huggingface-cli` 자동 사용 (venv 생성 skip)
 
 **Self-contained 패턴** — 매 의존성 (venv / sysmod python_modules / playwright_browsers / node_modules) 모두 Firebat workspace 안 격리. 사용자 home 영역 잔존 0 (예외: HuggingFace 모델 cache `~/.cache/huggingface/hub/`).
 

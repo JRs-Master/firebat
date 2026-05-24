@@ -49,7 +49,7 @@ fn parse_value(raw: Option<String>) -> Result<Option<serde_json::Value>, String>
         Some(s) => serde_json::from_str(&s).map(Some).map_err(|e| e.to_string()),
     }
 }
-/// typed schema 안에 박힌 동적 JSON 도 parse 동일 처리.
+/// typed schema 안에 들어간 동적 JSON 도 parse 동일 처리.
 fn parse_typed<T: serde::de::DeserializeOwned>(
     raw: Option<String>,
     label: &str,
@@ -131,7 +131,7 @@ fn parse_schedule_args(args: ScheduleArgs) -> Result<(String, String, CronSchedu
         notify: parse_typed::<CronNotify>(args.notify_json, "notify")?,
         execution_mode: args.execution_mode,
         agent_prompt: args.agent_prompt,
-        // admin RPC 호출 = owner None. hub 익명 endpoint 가 직접 owner='hub:<id>' 박음.
+        // admin RPC 호출 = owner None. hub 익명 endpoint 가 직접 owner='hub:<id>' 주입.
         owner: None,
     };
     Ok((args.job_id.unwrap_or_default(), args.target_path, opts))

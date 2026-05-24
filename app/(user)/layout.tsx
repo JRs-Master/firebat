@@ -48,9 +48,9 @@ async function resolvePageOverrides(): Promise<{ layoutMode?: LayoutMode; conten
   }
 }
 
-/** Hub instance 매칭 검사 — `/<slug>` URL 박혀있고 page / project 미매칭 시 hub fallback 영역.
- *  박혀있으면 admin chat UI 가 page.tsx 안에서 직접 mount → 본 layout 박은 CMS 헤더 / 사이드바
- *  / footer 등 영역 모두 hide. children 만 박음. */
+/** Hub instance 매칭 검사 — `/<slug>` URL 이고 page / project 미매칭 시 hub fallback.
+ *  매칭되면 admin chat UI 가 page.tsx 안에서 직접 mount → 본 layout 의 CMS 헤더 / 사이드바
+ *  / footer 등 모두 hide. children 만 그대로 렌더. */
 async function isHubInstancePage(): Promise<boolean> {
   try {
     const h = await headers();
@@ -58,7 +58,7 @@ async function isHubInstancePage(): Promise<boolean> {
     if (!pathname || pathname === '/' || pathname.startsWith('/api')) return false;
     const slug = decodeURIComponent(pathname.replace(/^\/+/, '').replace(/\/+$/, ''));
     if (!slug || slug.includes('/')) return false;
-    // page / project 매칭 우선 — 박혀있으면 hub 아님.
+    // page / project 매칭 우선 — 매칭되면 hub 아님.
     const pageRes = await getPageRpc({ slug });
     if (pageRes.ok && pageRes.data) return false;
     const hubRes = await getInstanceBySlug({ slug });
@@ -69,8 +69,8 @@ async function isHubInstancePage(): Promise<boolean> {
 }
 
 /** User 페이지 레이아웃 — SEO head/body 스크립트 + JSON-LD + Design Tokens + Header/Footer 주입.
- *  Hub instance 매칭 영역 = layout 자체 우회 (children 만 박음) — admin chat UI 가 본인 layout
- *  (ConsoleLayoutInner) 박혀있어 중복 헤더 / footer 박힘 회피. */
+ *  Hub instance 매칭 시 = layout 자체 우회 (children 만 렌더) — admin chat UI 가 본인 layout
+ *  (ConsoleLayoutInner) 을 가지고 있어 중복 헤더 / footer 회피. */
 export default async function UserLayout({ children }: { children: React.ReactNode }) {
   if (await isHubInstancePage()) {
     return <>{children}</>;
@@ -83,8 +83,8 @@ export default async function UserLayout({ children }: { children: React.ReactNo
   const layoutMode: LayoutMode = pageOverrides.layoutMode ?? seo.layout?.mode;
   const pageContentMaxWidth = pageOverrides.contentMaxWidth;
   // 사용자 설정 design tokens → :root CSS var 로 inject. globals.css 의 default 를 override.
-  // seo.theme 가 undefined 또는 partial 일 때 mergeTokens 가 default 와 deep merge 박은 후 전달.
-  // 옛 raw seo.theme 직접 전달 시 typography 영역 undefined 박혀 SSR error (2026-05-16 발견).
+  // seo.theme 가 undefined 또는 partial 일 때 mergeTokens 가 default 와 deep merge 후 전달.
+  // 옛 raw seo.theme 직접 전달 시 typography 가 undefined 라 SSR error (2026-05-16 발견).
   const themeCss = `:root { ${tokensToCss(mergeTokens(seo.theme))} }`;
 
   // JSON-LD 구조화 데이터 (WebSite + Organization)

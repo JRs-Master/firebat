@@ -87,10 +87,10 @@ async fn main() -> Result<()> {
     let log_reload_handle = init_tracing(log_db_path.clone());
     tracing::info!(version = firebat_core::version(), "Firebat Core 부팅");
 
-    // 옛 commit `3418b4b` 안 HF_ENDPOINT env 자동 default 박은 fix = 잘못된 진단 — hf-hub 0.3
-    // 안 env 안 읽음 + default endpoint = "https://huggingface.co" 자체 박혀있음. 사용자 환경
-    // 안 동일 에러 여전히 발생. 진짜 fix = hf-hub 0.4 upgrade + 각 어댑터 안 `with_endpoint`
-    // 명시 호출 (e5_local.rs / arctic_local.rs). 본 영역 env set 폐기.
+    // 옛 commit `3418b4b` 의 HF_ENDPOINT env 자동 default 설정 fix = 잘못된 진단 — hf-hub 0.3
+    // 은 env 를 안 읽음 + default endpoint = "https://huggingface.co" 자체에 있음. 사용자 환경
+    // 에서 동일 에러 여전히 발생. 진짜 fix = hf-hub 0.4 upgrade + 각 어댑터에서 `with_endpoint`
+    // 명시 호출 (e5_local.rs / arctic_local.rs). 본 위치의 env set 폐기.
 
     // Phase 5 정공 — LLM model registry JSON 로드. 옛 builtin_models() Rust 하드코드 폐기.
     // 파일 미발견 시 stub 폴백 (panic X). FIREBAT_LLM_MODELS_PATH env 으로 위치 override.
@@ -101,7 +101,7 @@ async fn main() -> Result<()> {
 
     // 로그 필터 런타임 reload — SIGHUP 시 data/log-filter.txt 읽어서 EnvFilter 재적용.
     // ssh 에서 `echo "info,law-search=debug" > data/log-filter.txt && systemctl kill -s HUP firebat`
-    // → 즉시 반영 (재빌드 / 재시작 0). 진단 로그는 코드 곳곳 tracing::debug! 로 이미 박혀있어
+    // → 즉시 반영 (재빌드 / 재시작 0). 진단 로그는 코드 곳곳 tracing::debug! 로 이미 들어가 있어서
     // 평소엔 info 두고 진단 시 해당 카테고리만 켜는 흐름. (로그 시스템 1단계, 2026-05-21)
     #[cfg(unix)]
     {
@@ -164,7 +164,7 @@ async fn main() -> Result<()> {
     let cron_notifications_path = std::env::var("FIREBAT_CRON_NOTIFICATIONS")
         .map(PathBuf::from)
         .unwrap_or_else(|_| workspace_root.join("data").join("cron-notifications.json"));
-    // 옛 FIREBAT_TIMEZONE env 박은 분기 폐기 → vault single source (아래 vault 선언 후 결정).
+    // 옛 FIREBAT_TIMEZONE env 분기 폐기 → vault single source (아래 vault 선언 후 결정).
     // 옛 위치 (L108) 의 결정은 vault 미선언 → vault.get_secret 호출 불가. cron adapter (L215)
     // 직전으로 이동.
     let addr = listen_addr.parse().with_context(|| {
@@ -193,9 +193,9 @@ async fn main() -> Result<()> {
     );
     let auth_port: Arc<dyn IAuthPort> = Arc::new(VaultAuthAdapter::new(vault.clone()));
 
-    // i18n default lang — vault `system:ui-lang` setting 박은 server 부팅 시점 단일 lookup.
-    // 사용자 SettingsModal 박은 lang 변경 시점 = settings RPC handler 박은 set_default_lang 호출
-    // (별도 step) 박은 즉시 반영. multi-user 환경 시점 = 매 RPC metadata propagation 별도 sprint.
+    // i18n default lang — vault `system:ui-lang` setting 을 server 부팅 시점에 단일 lookup.
+    // 사용자가 SettingsModal 에서 lang 변경 시점 = settings RPC handler 가 set_default_lang 호출
+    // (별도 step) 로 즉시 반영. multi-user 환경 도입 시점 = 매 RPC metadata propagation 별도 sprint.
     let default_lang = firebat_infra::grpc_interceptor::resolve_default_lang(&vault);
     firebat_core::i18n::set_default_lang(&default_lang);
     tracing::info!(default_lang, "i18n: default lang from vault");
@@ -205,7 +205,7 @@ async fn main() -> Result<()> {
             .context("App DB open 실패")?,
     );
     // Sandbox 어댑터는 status_manager 의존 (heavy 패키지 background install 진행 상태 노출) —
-    // event_manager + status_manager wiring 박은 후 생성.
+    // event_manager + status_manager wiring 후 생성.
     let mcp_client: Arc<dyn IMcpClientPort> = Arc::new(
         McpClientFileAdapter::new(mcp_servers_path)
             .map_err(anyhow::Error::msg)
@@ -253,10 +253,10 @@ async fn main() -> Result<()> {
     );
     let entity_port: Arc<dyn IEntityPort> = memory_adapter.clone();
     let episodic_port: Arc<dyn IEpisodicPort> = memory_adapter.clone();
-    // Timezone single source — vault (SetupWizard 박은 값) 우선, env fallback, default Asia/Seoul.
-    // 2026-05-14: 옛 systemd unit 의 FIREBAT_TIMEZONE env 박은 패턴 폐기 가능 → vault single source.
+    // Timezone single source — vault (SetupWizard 에서 설정한 값) 우선, env fallback, default Asia/Seoul.
+    // 2026-05-14: 옛 systemd unit 의 FIREBAT_TIMEZONE env 패턴 폐기 가능 → vault single source.
     // child sysmod 가 process.env.FIREBAT_TZ / TZ 자동 inherit (sandbox spawn 시 부모 env 전달).
-    // 변경 시점에 systemctl restart 필요 (env 변경은 부팅 시점에만 박힘 — main thread 안전).
+    // 변경 시점에 systemctl restart 필요 (env 변경은 부팅 시점에만 적용 — main thread 안전).
     let default_timezone = vault
         .get_secret(firebat_core::vault_keys::VK_SYSTEM_TIMEZONE)
         .filter(|s| !s.is_empty())
@@ -363,8 +363,8 @@ async fn main() -> Result<()> {
     let status_manager = Arc::new(StatusManager::new(Some(event_manager.clone())));
 
     // SysmodCacheAdapter — sysmod 응답 안 `_cache` envelope (50행+ 큰 시계열) 자동 저장.
-    // sandbox 가 envelope 인식 → cacheKey 박은 응답 변환 → AI 가 cache_read / cache_grep /
-    // cache_aggregate gRPC 도구 호출 박은 영역. yfinance / 한투 / 키움 / DART 등 큰 응답 토큰 절약.
+    // sandbox 가 envelope 인식 → cacheKey 가 들어간 응답으로 변환 → AI 가 cache_read / cache_grep /
+    // cache_aggregate gRPC 도구 호출. yfinance / 한투 / 키움 / DART 등 큰 응답 토큰 절약.
     let cache_dir = workspace_root.join("data").join("cache").join("sysmod-results");
     let cache_adapter = Arc::new(
         firebat_core::utils::sysmod_cache::SysmodCacheAdapter::new(cache_dir)
@@ -464,7 +464,7 @@ async fn main() -> Result<()> {
     let config_port: Arc<dyn firebat_core::ports::IConfigPort> = Arc::new(
         firebat_infra::adapters::config::EnvConfigAdapter::new(),
     );
-    // Library — Phase 1 (2026-05-17). NotebookLM 같은 RAG 영역. memory.db 자연 활용 (schema 영역 박혀있음).
+    // Library — Phase 1 (2026-05-17). NotebookLM 같은 RAG. memory.db 자연 활용 (schema 가 이미 정의됨).
     // 매 Reference / Source / Chunk CRUD + Arctic 임베딩 + cosine 검색.
     let library_port: Arc<dyn firebat_core::ports::ILibraryPort> = Arc::new(
         firebat_infra::adapters::library::SqliteLibraryAdapter::new(&memory_db_path)
@@ -476,7 +476,7 @@ async fn main() -> Result<()> {
     );
 
     // Hub — Phase 1 (2026-05-17). system service hub. 외부 워드프레스 사이트 영역 연결용.
-    // memory.db 통합 (schema = SqliteMemoryAdapter::initialize 영역 박혀있음).
+    // memory.db 통합 (schema = SqliteMemoryAdapter::initialize 안에 정의되어 있음).
     let hub_port: Arc<dyn firebat_core::ports::IHubPort> = Arc::new(
         firebat_infra::adapters::hub::SqliteHubAdapter::new(&memory_db_path)
             .map_err(anyhow::Error::msg)
@@ -500,9 +500,9 @@ async fn main() -> Result<()> {
     );
 
     // ToolDispatcher — approval gate (check_needs_approval + pre_validate_pending_args) 활성.
-    // 옛 영역 wiring 박지 X 박혀 save_page 수정 시 승인 UI 안 나오던 영역 fix (사용자 보고 2026-05-19).
-    // page / schedule / mcp 박은 영역 박혀있어 destructive 도구 (save_page 덮어쓰기 / delete_page /
-    // delete_file / schedule_task / cancel_task) 호출 시 pending action 박힘.
+    // 옛에 wiring 누락 상태로 있어 save_page 수정 시 승인 UI 안 나오던 fix (사용자 보고 2026-05-19).
+    // page / schedule / mcp 가 연결되어 있어 destructive 도구 (save_page 덮어쓰기 / delete_page /
+    // delete_file / schedule_task / cancel_task) 호출 시 pending action 생성.
     let tool_dispatcher = Arc::new(
         firebat_core::managers::ai::tool_dispatcher::ToolDispatcher::new(storage.clone())
             .with_page(page_manager.clone())
@@ -664,7 +664,7 @@ async fn main() -> Result<()> {
     let schedule_service = grpc::schedule::ScheduleServiceImpl::new(schedule_manager.clone())
         .with_task_manager(task_manager.clone());
     let task_service = grpc::task::TaskServiceImpl::new(task_manager.clone());
-    // .clone() — internal 30d cleanup cron 박은 거 같은 manager 참조.
+    // .clone() — internal 30d cleanup cron 과 같은 manager 참조 공유.
     let media_service = grpc::media::MediaServiceImpl::new(media_manager.clone());
     let ai_service = grpc::ai::AiServiceImpl::new(ai_manager.clone());
 
@@ -675,8 +675,8 @@ async fn main() -> Result<()> {
     let settings_service = grpc::settings::SettingsServiceImpl::new(vault.clone());
     let network_service = grpc::network::NetworkServiceImpl::new(network_port.clone());
     // Phase B-17.5b — Cache / Telegram / Database 추가.
-    // cache_adapter 는 sandbox 박는 시점에 박혀있음 (L325 영역). 같은 인스턴스 공유 — gRPC CacheService
-    // 의 read / grep / aggregate / drop 호출이 sandbox 가 박은 cache 영역과 동일 디렉토리 접근.
+    // cache_adapter 는 sandbox 생성 시점에 만들어 있음 (L325). 같은 인스턴스 공유 — gRPC CacheService
+    // 의 read / grep / aggregate / drop 호출이 sandbox 가 저장한 cache 와 동일 디렉토리 접근.
     let cache_service = grpc::cache::CacheServiceImpl::new(cache_adapter.clone());
     // TelegramService — AiManager + ModuleManager 설정하여 process_message webhook → AI → reply 활성
     let telegram_service = grpc::telegram::TelegramServiceImpl::new(vault.clone(), network_port.clone())
@@ -778,14 +778,14 @@ async fn main() -> Result<()> {
     }
 
     // MCP HTTP server (Phase E, 2026-05-12) — firebat-core binary 안 별도 axum endpoint.
-    // 2026-05-14 default true 박힘 — 옛 dual-run 의도 (Node mcp/internal-server.ts 와 같이)
-    // Phase E 완전 cutover 후 의미 사라짐. 매 운영 unit 마다 env 박는 부담 + 신규 설치 누락
+    // 2026-05-14 default true — 옛 dual-run 의도 (Node mcp/internal-server.ts 와 동시 운영)
+    // Phase E 완전 cutover 후 의미 사라짐. 매 운영 unit 마다 env 설정 부담 + 신규 설치 누락
     // silent 발생 (자체 sysmod LLM 노출 안 됨) 해소. FIREBAT_MCP_ENABLED=false 명시 시만 비활성.
     let mcp_enabled = std::env::var("FIREBAT_MCP_ENABLED")
         .map(|v| v != "false" && v != "0")
         .unwrap_or(true);
     // stdio MCP 모드 — 외부 사용자 (Claude desktop / Cursor / npm run mcp) 진입.
-    // argv 에 `--mcp-stdio` 박혀있으면 gRPC server 부팅 X, stdio MCP server 만 실행 후 종료.
+    // argv 에 `--mcp-stdio` 가 있으면 gRPC server 부팅 X, stdio MCP server 만 실행 후 종료.
     if std::env::args().any(|a| a == "--mcp-stdio") {
         let mcp_state = std::sync::Arc::new(
             firebat_infra::mcp_server::McpServerState::new(vault.clone())

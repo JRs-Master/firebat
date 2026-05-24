@@ -4,7 +4,7 @@
 //! 어댑터는 `infra/src/adapters/network.rs::ReqwestNetworkAdapter`.
 //!
 //! Step 3 (typed RPC) — JsonValue raw 폐기 + 매 RPC unique Request / Response.
-//! 2026-05-15 — 옛 공유 RawJsonPb 폐기 + unique NetworkFetchResponse 박힘.
+//! 2026-05-15 — 옛 공유 RawJsonPb 폐기 + unique NetworkFetchResponse 도입.
 //! NetworkResponse 는 status/headers/body 복합 구조 → response_json 안에 직렬화.
 
 use std::sync::Arc;

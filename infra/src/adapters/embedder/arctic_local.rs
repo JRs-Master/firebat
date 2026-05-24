@@ -12,10 +12,10 @@
 //! BGE-M3 와 차이:
 //!   - 메모리 절반 (1.1GB vs 2.27GB) — 가성비 영역
 //!   - 정확도 영역 ~1.2% 영역 차이 (사용자 사용 영역 체감 0)
-//!   - 후속 주자 (2024-12) + Snowflake 의 enterprise 영역 안정 + 다음 버전 영역 박을 가능성 ↑
+//!   - 후속 주자 (2024-12) + Snowflake 의 enterprise 영역 안정 + 다음 버전 출시 가능성 ↑
 //!
 //! E5 와 차이:
-//!   - prefix 영역 없음 (Arctic = query / passage prefix 박지 X)
+//!   - prefix 없음 (Arctic = query / passage prefix 사용 X)
 //!   - dim 1024 (E5-small 384)
 //!   - max_length 8192 (E5 512)
 //!   - architecture XLM-RoBERTa (E5 BertModel)
@@ -188,7 +188,7 @@ impl ArcticLocalEmbedderAdapter {
     }
 
     /// 단일 텍스트 → mean-pooled + L2-normalized 1024-dim Vec<f32>.
-    /// Arctic Embed = prefix 영역 박지 X (E5 와 다름).
+    /// Arctic Embed = prefix 사용 X (E5 와 다름).
     async fn embed_text(&self, text: &str) -> InfraResult<Vec<f32>> {
         let state = self.ensure_loaded().await?;
         let encoding = state
@@ -267,7 +267,7 @@ impl IEmbedderPort for ArcticLocalEmbedderAdapter {
     }
 
     async fn embed_query(&self, text: &str) -> InfraResult<Vec<f32>> {
-        // Arctic Embed v2.0 = query / passage prefix 박지 X — 단순 text 영역 입력
+        // Arctic Embed v2.0 = query / passage prefix 사용 X — 단순 text 입력
         self.embed_text(text).await
     }
 

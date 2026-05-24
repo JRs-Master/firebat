@@ -32,27 +32,27 @@ use std::path::Path;
 use std::sync::RwLock;
 
 tokio::task_local! {
-    /// 매 RPC 진입 시점 tonic interceptor 박은 사용자 lang 박은 task-local.
-    /// `i18n::t(key, None, params)` 박은 시점 자동 read — 명시 lang 인자 박지 X 박은 caller 의 ergonomic.
+    /// 매 RPC 진입 시점 tonic interceptor 가 설정한 사용자 lang 을 담는 task-local.
+    /// `i18n::t(key, None, params)` 호출 시점에 자동 read — 명시 lang 인자가 없는 caller 의 ergonomic.
     static ACTIVE_LANG: String;
 }
 
 /// 매 lang 별 통합 lookup store.
 ///
-/// 매 영역 (core / module / service / prompt) 의 i18n 데이터를 단일 nested object 안 namespace 박은 통합.
-/// 매 lookup 시점에 사용자 lang 박은 매 key path 박은 lookup.
+/// 매 영역 (core / module / service / prompt) 의 i18n 데이터를 단일 nested object 안 namespace 로 통합.
+/// 매 lookup 시점에 사용자 lang 으로 매 key path 를 조회.
 #[derive(Debug, Default)]
 struct I18nStore {
     /// `{lang: {core: {...}, module: {name: {...}}, service: {name: {...}}, prompt: {name: "..."}}}`
     by_lang: HashMap<String, JsonValue>,
-    /// 사용자 의 default lang — vault 의 interfaceLang setting 박은 후 server-side fallback.
+    /// 사용자의 default lang — vault 의 interfaceLang setting 적용 후 server-side fallback.
     default_lang: String,
 }
 
 static STORE: RwLock<Option<I18nStore>> = RwLock::new(None);
 
-/// 사용자 lang 박은 server-side default — vault `system:ui:lang` setting 박은 lookup 박은 set.
-/// 매 RPC 호출 시점 task-local ACTIVE_LANG 박지 X 시점 fallback.
+/// 사용자 lang 의 server-side default — vault `system:ui:lang` setting 을 lookup 후 set.
+/// 매 RPC 호출 시점 task-local ACTIVE_LANG 이 없는 경우 fallback.
 pub fn set_default_lang(lang: impl Into<String>) {
     if let Ok(mut guard) = STORE.write() {
         if let Some(store) = guard.as_mut() {
@@ -61,7 +61,7 @@ pub fn set_default_lang(lang: impl Into<String>) {
     }
 }
 
-/// 현재 default lang 박은 read — main.rs 또는 SettingsModal RPC 박은 사용.
+/// 현재 default lang read — main.rs 또는 SettingsModal RPC 에서 사용.
 pub fn current_default_lang() -> String {
     STORE
         .read()
@@ -80,7 +80,7 @@ pub fn init(workspace_root: &Path) {
     tracing::info!("i18n: {} lang(s) loaded", lang_count);
 }
 
-/// internal — workspace 박은 후 매 영역 scan + I18nStore 빌드. test 박은 자체 store 인스턴스 박은 사용.
+/// internal — workspace 주어진 후 매 영역 scan + I18nStore 빌드. test 에서는 자체 store 인스턴스 사용.
 fn build_store(workspace_root: &Path) -> I18nStore {
     let mut store = I18nStore::default();
     store.default_lang = "ko".to_string();
@@ -205,7 +205,7 @@ fn insert_namespaced(store: &mut I18nStore, lang: &str, ns: &str, name: &str, va
 ///  - `service.cms.title` → `system/services/cms/lang/{lang}.json` 의 `title`
 ///  - `prompt.tool_system` → `system/prompts/tool_system/lang/{lang}.md` 의 full text
 ///
-/// **params** — `{{name}}` 같은 placeholder 치환. `&[("name", "yfinance")]` 박은 단순 string replace.
+/// **params** — `{{name}}` 같은 placeholder 치환. `&[("name", "yfinance")]` 형태의 단순 string replace.
 pub fn t(key: &str, lang: Option<&str>, params: &[(&str, &str)]) -> String {
     let guard = STORE.read().ok();
     let Some(Some(store)) = guard.as_deref().map(Option::as_ref) else {
@@ -221,13 +221,13 @@ pub fn prompt(name: &str, lang: Option<&str>) -> String {
     t(&format!("prompt.{name}"), lang, &[])
 }
 
-/// task-local ACTIVE_LANG 박은 read — tonic interceptor 박은 set 박힌 사용자 lang.
-/// task-local 박지 X 시점 (예: 비동기 spawn 박은 context 박지 X) None 반환.
+/// task-local ACTIVE_LANG read — tonic interceptor 가 설정한 사용자 lang.
+/// task-local 이 없는 시점 (예: 비동기 spawn 한 context 가 없을 때) None 반환.
 pub fn active_lang() -> Option<String> {
     ACTIVE_LANG.try_with(|v| v.clone()).ok()
 }
 
-/// 지정 lang context 박은 async fn 실행 — tonic interceptor / test 박은 사용.
+/// 지정 lang context 로 async fn 실행 — tonic interceptor / test 에서 사용.
 ///
 /// ```rust,ignore
 /// i18n::with_lang("en", async {
@@ -241,7 +241,7 @@ where
     ACTIVE_LANG.scope(lang.into(), fut).await
 }
 
-/// internal — store 박은 lookup. test 박은 자체 store 인스턴스 박은 사용 가능 (STORE static race 회피).
+/// internal — store lookup. test 에서는 자체 store 인스턴스 사용 가능 (STORE static race 회피).
 fn lookup_in_store(store: &I18nStore, key: &str, lang: Option<&str>, params: &[(&str, &str)]) -> String {
     let active_lang = lang.unwrap_or(&store.default_lang);
     let raw = lookup_in_lang(store, active_lang, key)
@@ -271,7 +271,7 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
-    // 매 test 박은 자체 store 박은 사용 — STORE static race 회피 (parallel cargo test 호환).
+    // 매 test 가 자체 store 인스턴스를 사용 — STORE static race 회피 (parallel cargo test 호환).
 
     #[test]
     fn lookup_global_core_namespace() {

@@ -679,7 +679,7 @@ function sanitizeHtmlBlock(content: string): string {
 
 function HtmlComp({ content, dependencies }: { content: string; dependencies?: string[] }) {
   // 분기 — dependencies 있으면 iframe srcDoc 격리 (Leaflet/Mermaid 등 CDN library 시각화).
-  //        <script> 태그 박혀있으면 자동 iframe srcDoc — inline DOM 의 DOMPurify 가
+  //        <script> 태그가 있으면 자동 iframe srcDoc — inline DOM 의 DOMPurify 가
   //        XSS 방어 표준으로 <script> 자동 제거하므로 BMI 계산기 등 인터랙티브 페이지
   //        스크립트 실행 0 issue 자동 fix (사용자 보고 2026-05-19).
   //        그 외 (광고·SEO 인덱싱 정상 정적 HTML) = 옛 inline DOM.
@@ -1812,8 +1812,8 @@ function MapComp({
     if (!ref.current) return;
     const container = ref.current;
     // 옛 instance cleanup — StrictMode 두 번 호출 / chat re-render 시 "Map container is already
-    // initialized" 차단. Leaflet 가 container 의 `_leaflet_id` 안에 marker 박는데, innerHTML 만
-    // clear 박으면 그 marker 안 남아 두 번째 init fail. 명시 delete 박은 후 재초기화.
+    // initialized" 차단. Leaflet 가 container 의 `_leaflet_id` 안에 marker 를 남기는데, innerHTML 만
+    // clear 하면 그 marker 가 남아 두 번째 init fail. 명시 delete 후 재초기화.
     container.innerHTML = '';
     delete (container as any)._leaflet_id;
 
@@ -1851,8 +1851,8 @@ function MapComp({
             const url = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
             return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(22, 22), { offset: new w.kakao.maps.Point(11, 11) });
           };
-          // 단일 openInfo 박은 영역 — 새 마커 클릭 시 옛 InfoWindow 자동 close. 옛 흐름은 매 마커
-          // 별도 InfoWindow + click 시 본인 open 만 → 옛 popup 안 닫혀 누적되던 문제.
+          // 단일 openInfo 추적 — 새 마커 클릭 시 옛 InfoWindow 자동 close. 옛 흐름은 매 마커
+          // 별도 InfoWindow + click 시 본인 open 만 → 옛 popup 이 닫히지 않아 누적되던 문제.
           let openInfo: any = null;
           for (const m of safeMarkers) {
             const opts: { position: any; title: string; image?: any } = {

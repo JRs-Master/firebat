@@ -20,7 +20,7 @@ export type LibraryHubContext = { slug: string; apiToken: string; sessionId: str
  * NotebookLM 같은 RAG. 매 Reference = 자료 그룹 (사용자가 자유 분류).
  * 진입 시 = Reference list. 매 Reference 클릭 → LibraryReferenceDetail (Source list + 업로드).
  *
- * hub mode (hubContext prop 박힌 경우) — admin /api/library/[op] 대신
+ * hub mode (hubContext prop 전달된 경우) — admin /api/library/[op] 대신
  * 익명 /api/hub/<slug>/library 호출. owner 자동 hub-scoped (방문자 자료 격리).
  */
 export function LibraryPanel({ hubContext }: { hubContext?: LibraryHubContext } = {}) {

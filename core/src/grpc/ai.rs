@@ -51,8 +51,8 @@ fn parse_opts(opts: Option<crate::proto::LlmCallOptsPb>) -> LlmCallOpts {
     .unwrap_or_default()
 }
 
-/// 같은 opts_json 안에 박힌 AiRequestOpts 필드 (planMode / planExecuteId / planReviseId / owner /
-/// conversationId / hubContext 등) 추출. frontend 가 LlmCallOpts + AiRequestOpts 영역 단일 JSON 으로
+/// 같은 opts_json 안에 들어간 AiRequestOpts 필드 (planMode / planExecuteId / planReviseId / owner /
+/// conversationId / hubContext 등) 추출. frontend 가 LlmCallOpts + AiRequestOpts 를 단일 JSON 으로
 /// 보내기 때문에 양쪽 동시 parse 필요. unknown field 는 serde 가 자연 무시.
 fn parse_ai_opts(opts: Option<&crate::proto::LlmCallOptsPb>) -> crate::ports::AiRequestOpts {
     opts.and_then(|o| {
@@ -119,8 +119,8 @@ impl AiService for AiServiceImpl {
     type StreamRequestActionWithToolsStream =
         Pin<Box<dyn Stream<Item = Result<AiStreamEventPb, TonicStatus>> + Send + 'static>>;
 
-    /// 진짜 streaming RPC — 매 turn reasoning chunk / 도구 호출 step / 최종 result event 영역
-    /// server-stream 박음. AiManager.process_with_tools_opts_with_emit 안 mpsc 채널 박음 →
+    /// 진짜 streaming RPC — 매 turn reasoning chunk / 도구 호출 step / 최종 result event 를
+    /// server-stream 으로 보냄. AiManager.process_with_tools_opts_with_emit 안 mpsc 채널을 통해 →
     /// 본 fn 가 ReceiverStream 통해 tonic Stream 변환.
     async fn stream_request_action_with_tools(
         &self,
@@ -136,7 +136,7 @@ impl AiService for AiServiceImpl {
             ai_opts.plan_mode = opts.plan_mode;
         }
 
-        // mpsc 채널 — AiManager 가 emit 박음. capacity = 256 (chunk 영역 buffer).
+        // mpsc 채널 — AiManager 가 emit 호출. capacity = 256 (chunk buffer).
         let (event_tx, event_rx) = tokio::sync::mpsc::channel::<AiStreamEvent>(256);
         // 최종 result / error 영역 채널 — process_with_tools_opts_with_emit 의 InfraResult 받음.
         let (final_tx, mut final_rx) =
@@ -158,7 +158,7 @@ impl AiService for AiServiceImpl {
             let _ = final_tx.send(res).await;
         });
 
-        // ReceiverStream 통해 매 event → AiStreamEventPb 매핑. 마지막에 final_rx 의 result/error 박힘.
+        // ReceiverStream 통해 매 event → AiStreamEventPb 매핑. 마지막에 final_rx 의 result/error 가 들어감.
         let event_stream = ReceiverStream::new(event_rx).map(|evt| match evt {
             AiStreamEvent::Chunk { event_type, content } => {
                 Ok(AiStreamEventPb {
@@ -177,14 +177,14 @@ impl AiService for AiServiceImpl {
             }
         });
 
-        // final_rx 영역 stream 끝에 박음. 옛 event_stream 종료 후 final result event 박힘.
+        // final_rx 를 stream 끝에 붙임. 옛 event_stream 종료 후 final result event 가 들어감.
         let final_stream = async_stream::stream! {
             // event channel 영역 닫힐 때까지 그대로 emit.
             let mut event_stream = event_stream;
             while let Some(item) = event_stream.next().await {
                 yield item;
             }
-            // 종료 후 final result / error event 박음.
+            // 종료 후 final result / error event 발행.
             match final_rx.recv().await {
                 Some(Ok(response)) => {
                     yield Ok(AiStreamEventPb {

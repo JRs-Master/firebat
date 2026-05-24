@@ -64,8 +64,8 @@ Node ESM: `./` 또는 `../` 명시 상대 경로 사용 (예: `./helpers.mjs`).
 ### 모듈 자체 codegen (선택)
 
 외부 API 명세 (예: 한투 / 키움 OPEN API 안 100+ REST 엔드포인트) 가 거대하거나 자주
-변경 박힌 영역 = 모듈 자체 안 `scripts/` 디렉토리 박은 영역 안 codegen 사용. Firebat 영역
-안 sysmod-specific 코드 박지 마라 — 단일 책임 위반.
+변경되는 경우 = 모듈 자체 안 `scripts/` 디렉토리에서 codegen 사용. Firebat 영역
+안에 sysmod-specific 코드를 두지 마라 — 단일 책임 위반.
 
 ```
 system/modules/<name>/
@@ -85,9 +85,9 @@ node scripts/gen.mjs             # _apis.json → config + index
 ```
 
 운영 룰:
-- **Firebat 영역 안 sysmod-specific 코드 박지 마라** — `scripts/`, `infra/data/<sysmod>-*.json`, `core/src/<sysmod>` 등 모두 모듈 자체 안 박음
-- 외부 명세 파일 (xlsx / etc) = `.gitignore` 박힌 영역 — 사용자 본인 로컬 reference
-- 단순 모듈 (수동 작성 가능 영역) 안 `scripts/` 디렉토리 = 0 (옵션)
+- **Firebat 영역 안에 sysmod-specific 코드를 두지 마라** — `scripts/`, `infra/data/<sysmod>-*.json`, `core/src/<sysmod>` 등 모두 모듈 자체 안으로
+- 외부 명세 파일 (xlsx / etc) = `.gitignore` 처리된 영역 — 사용자 본인 로컬 reference
+- 단순 모듈 (수동 작성 가능한 경우) 의 `scripts/` 디렉토리 = 0 (옵션)
 - 예시 — `system/modules/kiwoom/scripts/`, `system/modules/korea-invest/scripts/`
 
 ---
@@ -247,7 +247,7 @@ node scripts/gen.mjs             # _apis.json → config + index
 
 ## 제8장: 모듈 i18n — `lang/{lang}.json` separate file 패턴
 
-시스템 서비스 / 모듈의 사용자 노출 텍스트 (label / description / placeholder / 에러 메시지 등) 는 **모듈 폴더 안 `lang/{lang}.json` 파일** 에 박는다 (2026-05-16 정공). 옛 `config.json` 의 `settings_fields[].i18n` inline 영역 폐기 — separate file 패턴으로 통합.
+시스템 서비스 / 모듈의 사용자 노출 텍스트 (label / description / placeholder / 에러 메시지 등) 는 **모듈 폴더 안 `lang/{lang}.json` 파일** 에 두는 것이 정공 (2026-05-16). 옛 `config.json` 의 `settings_fields[].i18n` inline 영역 폐기 — separate file 패턴으로 통합.
 
 ### 제1항. 디렉토리 구조
 
@@ -261,7 +261,7 @@ system/modules/<name>/
 └── ...
 ```
 
-`system/services/<name>/` 도 동일 구조 박음.
+`system/services/<name>/` 도 동일 구조를 따른다.
 
 ### 제2항. lang/{lang}.json 형식
 
@@ -289,30 +289,30 @@ system/modules/<name>/
 ```
 
 - **`title` / `description`** — 모듈 설정 모달의 헤더 + 설명
-- **`settings.{field_key}`** — `config.json` 의 `settings_fields[].key` 와 매칭 — label / description / placeholder / group / options 영역 박음
+- **`settings.{field_key}`** — `config.json` 의 `settings_fields[].key` 와 매칭 — label / description / placeholder / group / options 항목 정의
 - **`error.*`** — 모듈 runtime 에러 메시지 (i18n key `module.<name>.error.<key>` 으로 lookup)
-- `select` type 의 options 영역도 `settings.{field_key}.options` 에 lang 별 배열 박음 (config.json options 와 같은 길이의 병렬 매핑)
+- `select` type 의 options 도 `settings.{field_key}.options` 에 lang 별 배열로 정의 (config.json options 와 같은 길이의 병렬 매핑)
 
 ### 제3항. lookup 우선순위
 
 `SystemModuleSettings` 컴포넌트의 `resolveConfigField` 가 매 field 의 사용자 노출 텍스트 결정:
 
 1. **`lang/{active_lang}.json` 의 `settings.{key}.{label|description|...}`** (1순위)
-2. **`lang/en.json` → `lang/ko.json`** fallback (활성 lang 미박힌 영역)
+2. **`lang/en.json` → `lang/ko.json`** fallback (활성 lang 에 정의 없는 항목)
 3. **`config.json` 의 `settings_fields[].i18n[lang]`** (2순위 옛 호환, cms 보존 영역)
 4. **raw `key`** (최종 fallback)
 
-활성 lang = 사용자 SettingsModal 의 언어 토글 (Vault `system:ui-lang` 박음).
+활성 lang = 사용자 SettingsModal 의 언어 토글 (Vault `system:ui-lang` 에 저장).
 
 ### 제4항. runtime 에러 메시지 (sysmod stdout envelope)
 
-모듈이 `stdout` envelope 박을 때 i18n key 직접 박을 수 있다:
+모듈이 `stdout` envelope 에 i18n key 를 직접 넣을 수 있다:
 
 ```json
 { "success": false, "error": "...", "errorKey": "module.telegram.error.api_key_missing" }
 ```
 
-- `errorKey` field — i18n key (`module.{name}.error.{key}` 형태). `SysmodToolHandler` 가 활성 lang 박은 lookup 변환
+- `errorKey` field — i18n key (`module.{name}.error.{key}` 형태). `SysmodToolHandler` 가 활성 lang 기준으로 lookup 변환
 - `errorParams` field — `{{detail}}` 같은 placeholder 치환용 (optional, JSON object)
 - Frontend 의 도구 에러 뱃지에 변환된 사용자 lang 메시지 표시
 
@@ -320,19 +320,19 @@ system/modules/<name>/
 
 `ModuleService.GetLang(name, lang)` RPC 가 활성 lang 의 lang 객체 반환:
 - any-scope 자동 탐색 (`system/modules/{name}/lang/{lang}.json` → `system/services/{name}/lang/{lang}.json` → `user/modules/{name}/lang/{lang}.json`)
-- 활성 lang 미박은 영역 fallback chain — en → ko
+- 활성 lang 에 정의 없는 항목은 fallback chain — en → ko
 - 미존재 시 빈 객체
 
 `/api/settings/modules` route 가 호출 — 매 모듈 settings 화면 로드 시점 lang 객체도 동시 fetch.
 
 ### 제6항. 새 모듈 작성 시 i18n 추가 (운영 룰)
 
-1. 모듈 디렉토리 안 `lang/` 박음
-2. 최소 2개 file (`ko.json` + `en.json`) — 다른 lang 박을 시점 자연 확장
-3. `settings_fields` 의 매 `key` 에 대응하는 `settings.{key}` 영역 박음 (label 필수, description / placeholder 선택)
-4. runtime error 메시지 박을 시점 `error.{key}` + envelope `errorKey: "module.<name>.error.<key>"` 박음
+1. 모듈 디렉토리 안에 `lang/` 디렉토리 생성
+2. 최소 2개 file (`ko.json` + `en.json`) — 다른 lang 이 필요해질 때 자연 확장
+3. `settings_fields` 의 매 `key` 에 대응하는 `settings.{key}` 항목 정의 (label 필수, description / placeholder 선택)
+4. runtime error 메시지가 필요한 경우 `error.{key}` + envelope `errorKey: "module.<name>.error.<key>"` 사용
 
-> 옛 패턴 (`config.json` 의 `settings_fields[].i18n[ko].label`) 도 cms 모듈 영역에 잔존 — fallback 영역 박혀있어 옛 모듈 동작 영향 0. 새 모듈은 `lang/` separate file 패턴 정공.
+> 옛 패턴 (`config.json` 의 `settings_fields[].i18n[ko].label`) 도 cms 모듈 쪽에 잔존 — fallback 이 있어 옛 모듈 동작 영향 0. 새 모듈은 `lang/` separate file 패턴 정공.
 
 ---
 

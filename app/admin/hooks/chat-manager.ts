@@ -30,7 +30,7 @@ export const FALLBACK_I18N_KEYS = {
   ABORTED: 'admin_chat.fallback_aborted',
 } as const;
 
-// reducer / pure module 영역의 폴백 — t() 호출 불가. ko 기본값 박힘. isFallbackContent 가 lang 무관 매칭.
+// reducer / pure module 영역의 폴백 — t() 호출 불가. ko 기본값 사용. isFallbackContent 가 lang 무관 매칭.
 export const FALLBACK = {
   EMPTY_REPLY: (koMessages as any).admin_chat.fallback_empty_reply,
   INVISIBLE: (koMessages as any).admin_chat.fallback_invisible,

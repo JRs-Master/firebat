@@ -19,7 +19,7 @@
 import { readFileSync, writeFileSync, existsSync, appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-/** calendar 데이터 디렉토리 — input._hubScope 박혀있으면 hub-scoped path 분기.
+/** calendar 데이터 디렉토리 — input._hubScope 가 있으면 hub-scoped path 분기.
  *  - admin: `data/calendar/`
  *  - hub instance 단위 (옛 호환): `data/hub/<instance_id>/calendar/`
  *  - hub visitor 별 (`<instance_id>:<session_id>`): `data/hub/<instance_id>/<session_id>/calendar/` */
@@ -109,7 +109,7 @@ async function main() {
   const data = input.data ?? {};
   const { action } = data;
   const includeDeleted = data.includeDeleted === true;
-  // hub 모드 — input.data._hubScope 박혀있으면 데이터 디렉토리 분기.
+  // hub 모드 — input.data._hubScope 가 있으면 데이터 디렉토리 분기.
   CAL_DIR = resolveCalDir(data._hubScope);
   EVENTS_FILE = join(CAL_DIR, 'events.jsonl');
 

@@ -39,8 +39,8 @@ function parseSSE(buffer: string): { events: { event: string; data: any }[]; rem
   return { events, remaining };
 }
 
-/** Hub page mode 컨텍스트 — anonymous 방문자가 hub instance 호출 시 박힘.
- *  박혀있으면 useChat 가 /api/hub/<slug>/chat SSE 로 분기 + sessionId / apiToken 박음.
+/** Hub page mode 컨텍스트 — anonymous 방문자가 hub instance 호출 시 전달.
+ *  지정되면 useChat 가 /api/hub/<slug>/chat SSE 로 분기 + sessionId / apiToken 사용.
  *  단일 conv (sessionId sticky) — admin 의 multi-conv localStorage 패턴 우회. */
 export interface UseChatHubContext {
   slug: string;
@@ -59,23 +59,23 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   // 모바일 화면 자동 잠금 방지 — AI 응답 중 SSE 끊김 / "로봇 사라짐" 방지.
-  // loading=true 동안만 유지. 응답 후 사용자가 답변 read 박는 동안 = 터치/스크롤 박혀
-  // OS 자동 잠금 안 박힘. 일정 시간 후 잠금 = OS default 정공.
+  // loading=true 동안만 유지. 응답 후 사용자가 답변 읽는 동안 = 터치/스크롤 발생해
+  // OS 자동 잠금이 일어나지 않음. 일정 시간 후 잠금 = OS default 정공.
   useWakeLock(loading);
   const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvIdState] = useState('');
-  // localStorage key — hub page mode 박혀있으면 hub-{slug} suffix 박아 admin 영역과 분리.
-  // 단일 단말 안에서 admin 본인 + hub 방문자 chat 영역 섞이지 않게 함. 분리 박지 X 박으면
+  // localStorage key — hub page mode 이면 hub-{slug} suffix 붙여 admin 영역과 분리.
+  // 단일 단말 안에서 admin 본인 + hub 방문자 chat 가 섞이지 않게 함. 분리하지 않으면
   // hub 방문자 chat 가 admin 사이드바에 나오거나 admin chat 이 hub UI 에 나오는 incident 발생.
   const convStorageKey = hubContext ? `firebat_conversations__hub-${hubContext.slug}` : 'firebat_conversations';
   const activeConvStorageKey = hubContext ? `firebat_active_conv__hub-${hubContext.slug}` : 'firebat_active_conv';
   const [planModeAdmin, setPlanModeRaw] = useSetting('firebat_plan_mode');
-  // hub mode 안 visitor 도 plan mode 영역 박을 수 있어야 — settings prefix (`hub-<slug>` localStorage)
-  // 가 admin 영역과 별도 박혀있어 admin 설정 영역 영향 0.
+  // hub mode 안 visitor 도 plan mode 사용 가능해야 — settings prefix (`hub-<slug>` localStorage)
+  // 가 admin 영역과 별도라 admin 설정 영향 0.
   const [inputMode, setInputMode] = useSetting('firebat_input_mode');
-  // hub visitor 도 plan mode 박을 수 있음 — settings prefix (`hub-<slug>`) 별도 박혀있어
-  // admin 의 plan_mode 영역 영향 0. setPlanMode 그대로 노출.
+  // hub visitor 도 plan mode 사용 가능 — settings prefix (`hub-<slug>`) 별도라
+  // admin 의 plan_mode 영향 0. setPlanMode 그대로 노출.
   const planMode = planModeAdmin;
   const setPlanMode = setPlanModeRaw;
 
@@ -118,8 +118,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   };
 
   // ── 초기화: DB 우선 로드 (다기기 동기화 보장). 실패 시에만 localStorage 폴백 ──
-  // Hub mode 박혀있으면 admin /api/conversations 호출 skip + /api/hub/<slug>/sessions 호출.
-  // hub_conversations DB 박은 영역에서 다기기 동기화 + 본격 multi-conv 박힘.
+  // Hub mode 이면 admin /api/conversations 호출 skip + /api/hub/<slug>/sessions 호출.
+  // hub_conversations DB 에서 다기기 동기화 + 본격 multi-conv 동작.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -167,8 +167,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
                     ...(m.dataJson ? { data: safeJsonParse<Record<string, unknown>>(m.dataJson, {}) } : {}),
                     // reload 후 옛 system 메시지 안 thinkingText 누락 → ThinkingBlock 의 `!complete &&
                     // !thinkingText` 조건 안 null return → '답변완료' 라벨 사라짐. backend hub_messages
-                    // schema 안 thinkingText field 박지 X (admin Message 와 차이). 변환 시 system role
-                    // 박은 영역 안 default DONE 박음.
+                    // schema 안 thinkingText field 없음 (admin Message 와 차이). 변환 시 system role
+                    // 인 경우 default DONE 사용.
                     ...(m.role === 'system' ? { thinkingText: THINKING_STATUS.DONE } : {}),
                   } as Message));
                 }
@@ -310,8 +310,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
 
   // DB 저장 — 명시 호출. union merge 로 안전.
   // **실패 시 1회 retry + 콘솔 경고** (v0.1, 2026-04-27): silent .catch 로 묻혀서 pending status 손실 진단 불가했던 문제 가시화.
-  // Hub mode 박혀있으면 saveToDb 자체 skip — /api/conversations 는 admin 인증 필수라 401 silent fail.
-  // hub backend (/api/hub/<slug>/chat) 가 hub_conversations DB 자동 박아 영속화 OK.
+  // Hub mode 이면 saveToDb 자체 skip — /api/conversations 는 admin 인증 필수라 401 silent fail.
+  // hub backend (/api/hub/<slug>/chat) 가 hub_conversations DB 자동 기록해 영속화 OK.
   const saveToDbRef = useRef<(convId: string, msgs: Message[]) => void>(() => {});
   saveToDbRef.current = (convId: string, msgs: Message[]) => {
     if (hubContext) return;
@@ -438,9 +438,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   // visibilitychange=hidden 안전망 / visible 재조회
   useEffect(() => {
     const flush = () => {
-      // hub mode 안 admin /api/conversations sendBeacon 차단 — 옛 누락 영역 fix.
-      // hub 대화 = hub_conversations 별개 테이블 (HubManager.send_message 안 backend 영속화).
-      // 본 flush 안 sendBeacon 박으면 admin conversations 테이블 안 owner='admin' 박혀 저장 →
+      // hub mode 안 admin /api/conversations sendBeacon 차단 — 옛 누락 fix.
+      // hub 대화 = hub_conversations 별개 테이블 (HubManager.send_message 가 backend 영속화).
+      // 본 flush 안 sendBeacon 호출 시 admin conversations 테이블 안 owner='admin' 으로 저장 →
       // admin 사이드바 대화 목록 안 hub 대화 노출.
       if (hubContext) return;
       if (!activeConvId || messagesRef.current.length === 0) return;
@@ -509,8 +509,8 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   // ── 대화 관리 ──────────────────────────────────────────────────────────────
   const handleNewConv = useCallback(() => {
     if (hubContext) {
-      // hub mode = backend create-conversation 호출 → hub_conversations DB 새 conv 박힌 후 id 받음.
-      // sessionId 박은 영역 = 그대로 (multi-conv 박을 수 있어야 옛 conv 영역 사이드바 잔존).
+      // hub mode = backend create-conversation 호출 → hub_conversations DB 새 conv 생성 후 id 받음.
+      // sessionId 는 그대로 (multi-conv 가능해야 옛 conv 가 사이드바에 잔존).
       (async () => {
         try {
           const res = await fetch(`/api/hub/${encodeURIComponent(hubContext.slug)}/sessions`, {
@@ -604,7 +604,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   const handleDeleteConv = useCallback((id: string) => {
     if (hubContext) {
       // hub mode = backend delete-conversation (messages cascade) 호출.
-      // 모바일 — 사이드바 닫힘 / 페이지 lifecycle 영역 fetch abort 가능. `keepalive: true` 박아
+      // 모바일 — 사이드바 닫힘 / 페이지 lifecycle 영역 fetch abort 가능. `keepalive: true` 로
       // 요청 완료 보장 (휴지통 미진입 race fix).
       // PC 휴지통 즉시 노출 안 됨 race — backend delete RPC 완료 직후 'firebat-refresh-trash'
       // 이벤트 emit → Sidebar 가 listen 후 reloadTrash 호출.
@@ -721,11 +721,11 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       setActiveConvId(newConv.id);
     }
 
-    // 사용자가 submit 박은 시점 = 항상 하단 강제. 옛 동작 = dispatch 후 setRef → useEffect
-    // race 로 자동 스크롤 effect 가 옛 false ref 값 보고 skip 박던 영역. dispatch 보다 먼저 ref
-    // 박아 effect 가 새 length 변화 영역 안 ref=true 그대로 read.
+    // 사용자가 submit 한 시점 = 항상 하단 강제. 옛 동작 = dispatch 후 setRef → useEffect
+    // race 로 자동 스크롤 effect 가 옛 false ref 값 보고 skip 하던 부분. dispatch 보다 먼저 ref
+    // 갱신해 effect 가 새 length 변화 시 ref=true 그대로 read.
     // AI 답변 stream 중에는 chunk 가 messages length 변화 없어 자동 scroll 발화 0 → 사용자
-    // 가 직접 내리며 보게 (옛 직접 박지 X).
+    // 가 직접 내리며 보게 (옛 직접 호출 X).
     isNearBottomRef.current = true;
     if (isSuggestion) {
       dispatch({ type: 'SEND_SUGGESTION', systemId });
@@ -787,9 +787,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       return;
     }
 
-    // 명령 전송 직후엔 무조건 하단으로 — isNearBottomRef 는 dispatch 박기 전 박혀있어
-    // useEffect 자동 scroll 가 발화 박힘. 추가 명시 scrollIntoView — smooth animation 영역
-    // 마지막 chatEnd 위치 보장 (DOM update 후 두 rAF 영역).
+    // 명령 전송 직후엔 무조건 하단으로 — isNearBottomRef 는 dispatch 전에 갱신해
+    // useEffect 자동 scroll 발화. 추가 명시 scrollIntoView — smooth animation 으로
+    // 마지막 chatEnd 위치 보장 (DOM update 후 두 rAF 통해서).
     requestAnimationFrame(() => requestAnimationFrame(() => {
       chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }));
@@ -831,7 +831,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       };
       resetWatchdog();
 
-      // Hub page mode 분기 — hubContext 박혀있으면 /api/hub/<slug>/chat 호출 (익명 + apiToken).
+      // Hub page mode 분기 — hubContext 가 있으면 /api/hub/<slug>/chat 호출 (익명 + apiToken).
       // 옛 admin 의 /api/chat/stream 호출 분기 = hubContext 없을 때.
       const isHubMode = !!hubContext;
       const endpoint = isHubMode
@@ -977,7 +977,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
       // 저장 시점 2: AI 응답 완료 직후 DB 반영.
       // ⚠️ 직전 dispatch(FINALIZE) 는 React batched commit 이라 microtask 보다 늦게 적용될 수 있음.
       // queueMicrotask 안에서 messagesRef.current 가 pre-FINALIZE 라 system 메시지가 아직 streaming:true →
-      // cleanMessages 필터링 → DB 에 user 만 박혀 AI 답변 영구 손실. (2026-05-11 진단)
+      // cleanMessages 필터링 → DB 에 user 만 저장되어 AI 답변 영구 손실. (2026-05-11 진단)
       // chatReducer 를 동기 호출해 finalized snapshot 을 만들어 race 차단.
       const convIdForSave2 = activeConvId || (typeof window !== 'undefined' ? localStorage.getItem(activeConvStorageKey) : null);
       if (convIdForSave2) {

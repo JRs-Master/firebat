@@ -72,8 +72,8 @@ export function LangProvider({
   children: React.ReactNode;
   initial?: Lang;
   enableServerSync?: boolean;
-  /** 강제 lang — admin cookie / localStorage 무시. hub page 안 visitor navigator 자동 감지 영역 박음.
-   *  박혀있으면 setLang 도 no-op (localStorage / cookie 박지 않음 — admin 설정 영역 영향 0). */
+  /** 강제 lang — admin cookie / localStorage 무시. hub page 안 visitor navigator 자동 감지에 사용.
+   *  설정되어 있으면 setLang 도 no-op (localStorage / cookie 기록 X — admin 설정 영향 0). */
   forceLocale?: Lang;
 }) {
   const [lang, setLangState] = useState<Lang>(() => {
@@ -86,7 +86,7 @@ export function LangProvider({
   useEffect(() => {
     let cancelled = false;
     if (forceLocale && isValidLang(forceLocale)) {
-      // forceLocale 박혀있으면 admin saved / server sync 영역 모두 무시.
+      // forceLocale 이 있으면 admin saved / server sync 모두 무시.
       if (forceLocale !== lang) setLangState(forceLocale);
       return () => { cancelled = true; };
     }
@@ -115,7 +115,7 @@ export function LangProvider({
   }, [enableServerSync]); // enableServerSync 변경 시 재발화 (보통 mount 1회)
 
   const setLang = useCallback((next: Lang) => {
-    // forceLocale 박혀있으면 setLang no-op (admin 설정 영역 안 박음).
+    // forceLocale 이 있으면 setLang no-op (admin 설정에 기록 X).
     if (forceLocale) return;
     setLangState(next);
     if (typeof window !== 'undefined') {

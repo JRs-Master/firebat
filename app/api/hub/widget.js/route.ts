@@ -15,9 +15,9 @@
  *   ></script>
  *
  * 위젯 동작:
- *   - 우측 하단 floating 버튼 → 클릭 시 chat panel 영역 토글
- *   - localStorage 안 session_id (UUID) 영역 박힘 — 같은 방문자 대화 유지
- *   - POST /api/hub/<slug>/chat 영역 SSE 응답 parse → 메시지 list 영역 표시
+ *   - 우측 하단 floating 버튼 → 클릭 시 chat panel 토글
+ *   - localStorage 안 session_id (UUID) 보존 — 같은 방문자 대화 유지
+ *   - POST /api/hub/<slug>/chat 의 SSE 응답 parse → 메시지 list 에 표시
  */
 export const dynamic = 'force-dynamic';
 
@@ -65,7 +65,7 @@ const WIDGET_JS = `(function() {
     return;
   }
 
-  // 같은 페이지 중복 박힘 방지
+  // 같은 페이지 중복 로드 방지
   if (window.__firebatHubLoaded) return;
   window.__firebatHubLoaded = true;
 
@@ -161,7 +161,7 @@ const WIDGET_JS = `(function() {
   if (FULLSCREEN) {
     panel.classList.add('open');
     setTimeout(function() { try { input.focus(); } catch (e) {} }, 100);
-    // description 박혀있으면 첫 메시지 자리에 안내문 — chat 시작 hint.
+    // description 이 있으면 첫 메시지 자리에 안내문 — chat 시작 hint.
     if (DESC_ATTR) {
       var hint = document.createElement('div');
       hint.className = 'firebat-cb-msg ai';

@@ -7,11 +7,11 @@ import { apiPost } from '../../lib/api-fetch';
 import { setEventsHubMode } from './hooks/events-manager';
 
 /** hub page wrapper — visitor lang server-side detect (cookie + Accept-Language)
- *  → SSR/client 동일 locale → hydration mismatch 차단. 옛 navigator.language 박은
- *  client-only 영역 = SSR 시 'en' / client 시 동적 → React #418 (hydration text mismatch).
+ *  → SSR/client 동일 locale → hydration mismatch 차단. 옛 navigator.language 사용한
+ *  client-only 부분 = SSR 시 'en' / client 시 동적 → React #418 (hydration text mismatch).
  *  + FirebatQueryProvider (CronPanel / TemplatesPanel / GalleryPanel 안 useQuery 동작).
- *  admin layout 안 박혀있던 provider 가 (user) route 영역 안 박혀있지 않아 hub mode 안
- *  사이드바 panel 진입 시 "No QueryClient set" throw 박혔던 영역 fix. */
+ *  admin layout 안에 있던 provider 가 (user) route 쪽에는 없어 hub mode 안
+ *  사이드바 panel 진입 시 "No QueryClient set" throw 가 일어나던 fix. */
 export function ConsoleLayoutInner({
   children,
   hubMode,
@@ -19,12 +19,12 @@ export function ConsoleLayoutInner({
 }: {
   children: React.ReactNode;
   hubMode?: boolean;
-  /** server-side 박은 visitor lang — hub fallback render 영역 (server component) 안 cookie +
-   *  Accept-Language header 박은 영역 detect 후 prop 박음. undefined 박힌 영역 = admin path */
+  /** server-side 에서 결정한 visitor lang — hub fallback render (server component) 안 cookie +
+   *  Accept-Language header 로 detect 후 prop 전달. undefined = admin path */
   initialLang?: 'ko' | 'en';
 }) {
   // hub mode = 익명 visitor → admin SSE `/api/events` 구독 차단 (인증 실패 무한 재연결 fix).
-  // module-level 플래그라 render 시점 즉시 set — useEffect 박으면 첫 subscribe (Sidebar mount)
+  // module-level 플래그라 render 시점 즉시 set — useEffect 안에 두면 첫 subscribe (Sidebar mount)
   // 보다 늦어 race. 본 컴포넌트 mount = hub page 진입 시점이라 동기 set 안전.
   if (typeof window !== 'undefined') {
     setEventsHubMode(!!hubMode);

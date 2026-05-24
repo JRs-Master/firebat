@@ -14,7 +14,7 @@ type ShareInput = {
   messages: unknown[];
   /** 재사용 키 — 같은 값으로 24h 내 여러번 요청 시 DB 에서 기존 slug 반환 (device 공유) */
   dedupKey?: string;
-  /** Hub page mode 박혀있으면 endpoint 분기 — /api/share (admin auth) → /api/hub/<slug>/share (anonymous + apiToken). */
+  /** Hub page mode 이면 endpoint 분기 — /api/share (admin auth) → /api/hub/<slug>/share (anonymous + apiToken). */
   hubContext?: { slug: string; apiToken: string; sessionId: string };
 };
 

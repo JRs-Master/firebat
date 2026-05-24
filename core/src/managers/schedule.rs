@@ -89,7 +89,7 @@ impl ScheduleManager {
         self.cron.cancel(job_id).await
     }
 
-    /// owner-aware cancel — owner 가 일치하는 job 만 cancel. visitor 가 다른 hub / admin 자료 못 박음.
+    /// owner-aware cancel — owner 가 일치하는 job 만 cancel. visitor 가 다른 hub / admin 자료에 접근 불가.
     pub async fn cancel_owned(&self, job_id: &str, owner: Option<&str>) -> InfraResult<bool> {
         let owned = self.cron.list().into_iter().any(|j| {
             j.job_id == job_id && j.options.owner.as_deref() == owner

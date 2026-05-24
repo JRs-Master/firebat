@@ -44,7 +44,7 @@ impl LlmRegistry {
 /// process-wide 단일 instance. infra 의 main.rs 가 startup 에 채움.
 static REGISTRY: OnceLock<LlmRegistry> = OnceLock::new();
 
-/// Registry 초기화 — infra 가 startup 에 1회 호출. 두 번째 호출은 무시 (이미 박힘).
+/// Registry 초기화 — infra 가 startup 에 1회 호출. 두 번째 호출은 무시 (이미 설정됨).
 pub fn init(reg: LlmRegistry) {
     let _ = REGISTRY.set(reg);
 }

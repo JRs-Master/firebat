@@ -4,7 +4,7 @@
 //! 매 instance = 매 챗봇 (slug 별), 매 conversation = (instance, session_id) 별 대화,
 //! 매 message = 대화 안 메시지.
 //!
-//! Schema = `infra/src/adapters/memory.rs::initialize()` 영역에 박혀있음 (hub_instances /
+//! Schema = `infra/src/adapters/memory.rs::initialize()` 안에 정의되어 있음 (hub_instances /
 //! hub_conversations / hub_messages 3 tables). 부팅 시점 SqliteMemoryAdapter 가 자동.
 //! 본 어댑터 = 별도 Connection (Mutex) — 옛 Library 패턴 동일.
 
@@ -220,9 +220,9 @@ impl IHubPort for SqliteHubAdapter {
 
     async fn delete_instance(&self, id: &str) -> InfraResult<()> {
         let conn = self.conn.lock().unwrap();
-        // SQLite 의 PRAGMA foreign_keys 가 OFF 박혀있어도 명시 cascade 박음 (defense-in-depth):
+        // SQLite 의 PRAGMA foreign_keys 가 OFF 라도 명시 cascade 수행 (defense-in-depth):
         //   instance 삭제 → 그 instance 의 모든 conversations + messages 같이 삭제.
-        // hub_messages 가 conversation_id FK 박혀있어 conv 삭제 시 messages 도 같이 박혀야.
+        // hub_messages 가 conversation_id FK 를 가져서 conv 삭제 시 messages 도 같이 삭제되어야 함.
         // 순서: messages → conversations → instance (자식 → 부모).
         conn.execute(
             "DELETE FROM hub_messages WHERE conversation_id IN
@@ -279,7 +279,7 @@ impl IHubPort for SqliteHubAdapter {
         instance_id: &str,
         session_id: &str,
     ) -> InfraResult<String> {
-        // 옛 conv 있어도 항상 새 conv 박음 — multi-conv 시나리오.
+        // 옛 conv 있어도 항상 새 conv 생성 — multi-conv 시나리오.
         let conn = self.conn.lock().unwrap();
         let id = uuid::Uuid::new_v4().to_string();
         let ts = now_ms();

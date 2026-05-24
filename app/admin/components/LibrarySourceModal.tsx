@@ -12,10 +12,10 @@ type LibraryApiResponse<T> = { success: boolean; data?: T; error?: string };
 /**
  * LibrarySourceModal — 매 Source 의 full_text 원본 표시.
  *
- * PDF 영역은 extractor 가 `\x0c` (form feed) 로 page boundary 박은 상태.
- * 모달이 \x0c 으로 split 하여 page 별 섹션 + 페이지 번호 영역 표시.
+ * PDF 의 경우 extractor 가 `\x0c` (form feed) 로 page boundary 표시.
+ * 모달이 \x0c 으로 split 하여 page 별 섹션 + 페이지 번호 표시.
  *
- * URL / TXT / MD / text 영역은 page 0 단일 섹션.
+ * URL / TXT / MD / text 의 경우 page 0 단일 섹션.
  */
 export function LibrarySourceModal({
   sourceId,

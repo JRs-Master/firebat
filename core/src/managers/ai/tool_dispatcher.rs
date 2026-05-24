@@ -262,10 +262,10 @@ impl ToolDispatcher {
                 })
             }
             "run_task" => {
-                // pipeline 안에 destructive step 박혀있으면 승인 게이트 발동.
+                // pipeline 안에 destructive step 이 있으면 승인 게이트 발동.
                 // (delete_file / delete_page / write_file / save_page — schedule_task 와 같은 분류.)
-                // schedule_task 가 예약 시점에 게이트 박혔던 것과 달리 run_task 는 즉시 실행이라
-                // 옛 TS 도 게이트 없었지만 destructive step 박힌 pipeline 은 명시 승인 정공.
+                // schedule_task 가 예약 시점에 게이트가 있었던 것과 달리 run_task 는 즉시 실행이라
+                // 옛 TS 도 게이트 없었지만 destructive step 이 포함된 pipeline 은 명시 승인 정공.
                 let pipeline = args.get("pipeline").and_then(|v| v.as_array())?;
                 let destructive: Vec<String> = pipeline
                     .iter()

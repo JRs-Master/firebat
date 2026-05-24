@@ -107,7 +107,7 @@ async fn list_silent_skips_invalid_json() {
 
 #[tokio::test]
 async fn hub_owner_isolation() {
-    // admin / hub-A / hub-B 가 같은 slug 박아도 독립.
+    // admin / hub-A / hub-B 가 같은 slug 를 써도 독립.
     let (mgr, _dir) = make_manager();
     mgr.save(None, "common", &make_template("admin 본문"))
         .await

@@ -546,9 +546,9 @@ impl ClaudeCodeCliHandler {
                         .unwrap_or_else(|| "실행 오류".to_string());
                     error_msg = Some(r);
                 } else {
-                    // result.result field 박은 영역 = Claude Code stream-json 박은 영역 final answer.
-                    // 옛 node 박은 영역 박은 영역에서 그 영역 박은 영역 = 답변 길이 회복.
-                    // 박지 X 박은 영역 (옛 동작) = current_text 박음 폴백.
+                    // result.result field 가 Claude Code stream-json 의 final answer.
+                    // 옛 node 버전에서 이 필드를 사용해 답변 길이 회복.
+                    // 이 필드가 없는 경우 (옛 동작) = current_text 를 폴백으로 사용.
                     let result_text = ev
                         .get("result")
                         .and_then(|v| v.as_str())

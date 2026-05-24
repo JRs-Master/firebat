@@ -5,12 +5,12 @@
 //!
 //! 프로토콜: JSON-RPC 2.0 over HTTP (MCP "streamable HTTP transport" 표준).
 //!  - POST /mcp — JSON-RPC 메시지 수신 + 응답
-//!  - GET /mcp — Server-Sent Events (선택적 streaming, 추후 박음)
+//!  - GET /mcp — Server-Sent Events (선택적 streaming, 추후 도입)
 //!
 //! 인증: Bearer token (Vault `system:internal-mcp-token`) — Authorization 헤더 검증.
 //!
 //! 도구 registry: McpToolRegistry trait 으로 추상화. 호출자가 핸들러 + schema 등록.
-//! 초기 박은 핸들러는 ToolManager 의 list/execute 위임 — 추후 sysmod / render_* / pending 등록 확장.
+//! 초기 핸들러는 ToolManager 의 list/execute 위임 — 추후 sysmod / render_* / pending 등록 확장.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -159,8 +159,8 @@ fn is_tool_visible(state: &Arc<McpServerState>, tool_name: &str) -> bool {
     let Some(rest) = tool_name.strip_prefix("sysmod_") else {
         return true;
     };
-    // 도메인 분리 도구 (sysmod_<name>_<domain>) — 첫 segment 가 module name. config 안 `-` 박혀있으면 `_` 로 등록됨.
-    // 매칭 시 두 변형 모두 시도 — module 이름이 정확히 hit 박힐 때까지.
+    // 도메인 분리 도구 (sysmod_<name>_<domain>) — 첫 segment 가 module name. config 안 `-` 가 있으면 `_` 로 등록됨.
+    // 매칭 시 두 변형 모두 시도 — module 이름이 정확히 hit 할 때까지.
     let candidate = rest.split('_').next().unwrap_or(rest);
     let with_dash = candidate.replace('_', "-");
     if mm.is_enabled(candidate) || mm.is_enabled(&with_dash) {
@@ -319,7 +319,7 @@ async fn handle_sse(
     if let Err(status) = verify_token(&state, &headers) {
         return (status, "unauthorized").into_response();
     }
-    // SSE streaming — 추후 박음 (listChanged 알림 등).
+    // SSE streaming — 추후 도입 (listChanged 알림 등).
     // 현재는 빈 응답 (Claude CLI 의 long-polling 형 streamable HTTP 호환 위해 200 응답만).
     (StatusCode::OK, "").into_response()
 }
@@ -343,7 +343,7 @@ impl McpToolHandler for SysmodToolHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
         // 활성화 토글 가드 — 사용자가 시스템 설정에서 OFF 한 sysmod 는 호출 시점 차단.
         // tools/list 는 시작 시점 1회 등록이라 캐시된 도구 list 가 enabled 토글 변경 반영 0
-        // (CLI 모드 / hosted MCP 가 list 캐시 박음). 호출 시점 가드가 single source of truth.
+        // (CLI 모드 / hosted MCP 가 list 캐시 보유). 호출 시점 가드가 single source of truth.
         if !self.module_manager.is_enabled(&self.module_name) {
             return Ok(serde_json::json!({
                 "success": false,
@@ -380,7 +380,7 @@ impl McpToolHandler for SysmodToolHandler {
 /// sysmod 의 응답 `{errorKey, errorParams}` → i18n lookup. fallback: raw error.
 fn resolve_sysmod_error(module_name: &str, output: &firebat_core::ports::ModuleOutput) -> String {
     // 새 패턴 — sysmod 의 envelope `{success: false, errorKey: "X.Y", errorParams: {...}}`.
-    // sandbox 의 ModuleOutput.error_key / error_params 박은 영역.
+    // sandbox 의 ModuleOutput.error_key / error_params 가 채워진 경로.
     if let Some(key) = &output.error_key {
         let params_obj = output.error_params.as_ref().and_then(|v| v.as_object());
         let owned: Vec<(String, String)> = params_obj
@@ -411,7 +411,7 @@ fn resolve_sysmod_error(module_name: &str, output: &firebat_core::ports::ModuleO
 /// system/modules 의 config.json 스캔 → sysmod_<name> 도구 자동 등록.
 /// 옛 TS mcp/internal-server.ts:589-668 의 동적 노출 1:1.
 ///
-/// 2026-05-14 옵션 C 박힘 — config.json 의 `domains` 필드 있으면 도메인별 별도 도구 N개 등록
+/// 2026-05-14 옵션 C 적용 — config.json 의 `domains` 필드 있으면 도메인별 별도 도구 N개 등록
 /// (sysmod_<name>_<domain>). 각 도구의 action enum 은 그 도메인의 actions 로 좁혀짐 (토큰 절감).
 /// 단일 sysmod index.mjs 가 모든 도메인 처리 — domain 분리는 LLM 노출 layer 만.
 pub async fn register_sysmod_tools(
@@ -551,9 +551,9 @@ pub struct RenderUnifiedHandler;
 #[async_trait::async_trait]
 impl McpToolHandler for RenderUnifiedHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
-        // args 형태 robustness — 일부 CLI 어댑터 / 모델이 args 를 stringified JSON 으로 박거나
-        // blocks 배열 자체를 직접 박는 경우 수용. 옛 = args.get("blocks") 단일 경로라
-        // 'blocks (array) 가 필요합니다' 거짓 거부 (AI 가 정상 {blocks:[...]} 박아도).
+        // args 형태 robustness — 일부 CLI 어댑터 / 모델이 args 를 stringified JSON 으로 보내거나
+        // blocks 배열 자체를 직접 보내는 경우 수용. 옛 = args.get("blocks") 단일 경로라
+        // 'blocks (array) 가 필요합니다' 거짓 거부 (AI 가 정상 {blocks:[...]} 보냈을 때도).
         let parsed_args: Value = match args.as_str() {
             Some(s) => serde_json::from_str(s).unwrap_or(args.clone()),
             None => args.clone(),
@@ -580,7 +580,7 @@ impl McpToolHandler for RenderUnifiedHandler {
 
         // block 별 graceful 처리 — 정상 block 은 rendered 에 push, 실패 block 은 failed 에 분리 push.
         // 옛 흐름은 첫 fail 만나면 즉시 Err return → 통째 도구 호출 실패 → 사용자 화면 0 block.
-        // 정공 = 1개 block hallucinate (예: marker 안 lon 누락) 박혀도 나머지 정상 block 은 화면 표시 +
+        // 정공 = 1개 block hallucinate (예: marker 안 lon 누락) 이 있어도 나머지 정상 block 은 화면 표시 +
         // 실패한 block 만 사용자 / AI 한테 에러 안내. AI 는 응답 안 `failed` 배열 보고 retry 결정 자율.
         let mut rendered = Vec::with_capacity(blocks.len());
         let mut failed: Vec<Value> = Vec::new();
@@ -686,7 +686,7 @@ impl McpToolHandler for RenderUnifiedHandler {
             );
         }
 
-        // 부분 성공 / 전체 성공 — success: true 박힘 + failed 배열은 사용자 / AI 안내용.
+        // 부분 성공 / 전체 성공 — success: true 설정 + failed 배열은 사용자 / AI 안내용.
         Ok(serde_json::json!({
             "success": true,
             "blocks": rendered,
@@ -1289,7 +1289,7 @@ pub struct ProposePlanHandler;
 #[async_trait::async_trait]
 impl McpToolHandler for ProposePlanHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
-        // propose_plan — plan store 박은 후 PlanCard component + plan-confirm/revise suggestions 응답.
+        // propose_plan — plan store 저장 후 PlanCard component + plan-confirm/revise suggestions 응답.
         // 옛 TS mcp/internal-server.ts 1:1 — AiManager result_processor 가 component='PlanCard' →
         // blocks 안 PlanCard 자동 변환 + suggestions 영역 frontend 가 ✓실행 / ⚙수정 버튼 UI.
         let plan_id = format!("plan_{}", uuid::Uuid::new_v4().simple());
@@ -1331,7 +1331,7 @@ impl McpToolHandler for ProposePlanHandler {
                 "risks": risks_json,
             },
             // ✓실행 = plan-confirm → AiManager 가 plan_execute_id 받아 다음 turn prompt 안 강제 주입.
-            // ⚙수정 = plan-revise → 사용자 입력 박은 후 AI 가 plan 재작성.
+            // ⚙수정 = plan-revise → 사용자 입력 받은 후 AI 가 plan 재작성.
             "suggestions": [
                 { "type": "plan-confirm", "planId": plan_id, "label": "✓ 실행" },
                 { "type": "plan-revise", "planId": plan_id, "label": "⚙ 수정 제안", "placeholder": "예: 1단계 빼고, 차트도 추가해줘" },

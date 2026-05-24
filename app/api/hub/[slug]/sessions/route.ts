@@ -17,9 +17,9 @@ import { logger } from '../../../../../lib/util/logger';
 /**
  * POST /api/hub/[slug]/sessions
  *
- * 익명 hub 방문자가 자기 세션 영역 CRUD 박을 수 있게 박은 dispatcher. admin auth 우회 (withAuth X).
- * 인증 = X-Api-Token + X-Session-Id header. instance.api_token 매칭 + sessionId 박은 영역
- * 권한 가드 (다른 사용자 sessionId 박은 영역 접근 차단).
+ * 익명 hub 방문자가 자기 세션 CRUD 할 수 있게 만든 dispatcher. admin auth 우회 (withAuth X).
+ * 인증 = X-Api-Token + X-Session-Id header. instance.api_token 매칭 + sessionId 기반
+ * 권한 가드 (다른 사용자 sessionId 접근 차단).
  *
  * Body: `{ op: 'list-conversations' | 'create-conversation' | 'get-conversation' |
  *          'delete-conversation' | 'update-conversation-title' | 'list-messages',
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   if (!apiToken) return jsonResponse(401, { error: 'X-Api-Token 헤더가 필요합니다.' });
   if (!sessionId) return jsonResponse(400, { error: 'X-Session-Id 헤더가 필요합니다.' });
 
-  // 인증 — slug + apiToken + origin/self_host 검증. UNAUTHORIZED_ORIGIN sentinel 박혀있으면 403.
+  // 인증 — slug + apiToken + origin/self_host 검증. UNAUTHORIZED_ORIGIN sentinel 이면 403.
   const authRes = await authenticate({ slug, apiToken, origin, selfHost });
   if (!authRes.ok) {
     const msg = authRes.message ?? '인증 실패';

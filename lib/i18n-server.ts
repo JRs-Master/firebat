@@ -1,10 +1,10 @@
 /**
  * i18n server — Server Component (RSC) 전용 헬퍼.
  *
- * **분리 사유** (2026-05-11): `lib/i18n.tsx` 의 `'use client'` 안에 박혀있던
+ * **분리 사유** (2026-05-11): `lib/i18n.tsx` 의 `'use client'` 안에 있던
  * `getServerTranslations` 가 server 에서 호출되면 Next.js 가 "client function 을
  * server 에서 못 부름" 에러 던짐 → NotFound 폴백 → admin hydration mismatch (#418)
- * 까지 chain. 이 파일에는 `'use client'` 박지 마라.
+ * 까지 chain. 이 파일에는 `'use client'` 추가 X.
  *
  * 사용 예:
  *   const t = getServerTranslations(cms.siteLang);

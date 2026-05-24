@@ -126,7 +126,7 @@ impl SecretService for SecretServiceImpl {
         let args = req.into_inner();
         if self.manager.set_system(&args.key, &args.value) {
             // VK_SYSTEM_UI_LANG 변경 시점 — i18n default lang 즉시 reload.
-            // server 재부팅 X 박은 사용자 즉시 반영 박은 path. set_default_lang 의 RwLock write
+            // server 재부팅 없이 사용자에게 즉시 반영하는 경로. set_default_lang 의 RwLock write
             // 단일 atomic op = blocking 0.
             if args.key == crate::vault_keys::VK_SYSTEM_UI_LANG && !args.value.is_empty() {
                 crate::i18n::set_default_lang(&args.value);

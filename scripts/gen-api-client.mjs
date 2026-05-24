@@ -92,7 +92,7 @@ function pascalCase(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** JavaScript reserved word — 함수명 직접 사용 불가. service prefix 박은 형태로 fallback. */
+/** JavaScript reserved word — 함수명 직접 사용 불가. service prefix 붙인 형태로 fallback. */
 const RESERVED_WORDS = new Set([
   'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
   'delete', 'do', 'else', 'enum', 'export', 'extends', 'false', 'finally', 'for',
@@ -146,7 +146,7 @@ function unwrapMeta(msgName, messages) {
     return { kind: 'void', dataType: 'void' };
   }
   // 2-field { string <X>, bool present } 패턴 → OptionalString 자동 인식.
-  // 옛 공유 OptionalStringPb 패턴을 매 RPC unique Response 박은 후 보존. field 명 자유.
+  // 옛 공유 OptionalStringPb 패턴을 매 RPC unique Response 안에서도 보존. field 명 자유.
   if (msg.fields.length === 2) {
     const stringField = msg.fields.find(
       f => f.type === 'string' && !f.repeated && !f.optional && f.name !== 'present',
@@ -185,7 +185,7 @@ function unwrapMeta(msgName, messages) {
     }
     // repeated message 단일 field → array unwrap (caller 가 array 직접 받음).
     // 예: SettingsGetAvailableAiModelsResponse { repeated AvailableAiModelPb models = 1; }
-    // → caller 가 res.data.map(...) 직접 박음. message 타입은 import 박혀야.
+    // → caller 가 res.data.map(...) 직접 호출. message 타입은 import 필요.
     if (!scalar && f.repeated && f.type !== 'string') {
       return {
         kind: 'singleFieldArrayMessage',
@@ -200,8 +200,8 @@ function unwrapMeta(msgName, messages) {
 
 /** request message → arg signature.
  *
- * protobuf-es 2.x — caller 가 plain object literal 박을 수 있도록 `MessageInitShape<typeof XSchema>`
- * 박음. `Message<TName>` brand 강제 회피. createClient 가 init shape 받음 (자동 변환).
+ * protobuf-es 2.x — caller 가 plain object literal 사용할 수 있도록 `MessageInitShape<typeof XSchema>`
+ * 사용. `Message<TName>` brand 강제 회피. createClient 가 init shape 받음 (자동 변환).
  */
 function requestSig(msgName, messages) {
   if (!msgName || msgName === 'Empty') {
@@ -238,7 +238,7 @@ function generateFunctionBody(rpc, messages, clientVar, serviceName) {
   const schemaImport = req.schemaImport;
 
   // 매 RPC 응답을 `unBigInt` 통과 — protobuf-es 의 i64 → bigint 출력이 NextResponse.json 의
-  // JSON.stringify 에서 throw 박는 영역 자동 차단. number 변환은 호출 site 영역 0.
+  // JSON.stringify 에서 throw 가 일어나는 부분 자동 차단. number 변환은 호출 site 부담 0.
   let unwrapLogic;
   if (unwrap.kind === 'void') {
     unwrapLogic = `      await ${clientVar}.${clientMethod}(${req.toRequest});\n      return { ok: true, data: undefined };`;
@@ -287,7 +287,7 @@ function generateServiceFile(svc, messages, aliases) {
       needsInitShape = true;
     }
     // scalar / array / unknown 은 import 불필요 — proto-gen 안 message type 만 import.
-    // `T | undefined` / `T | null` 같은 union 도 scalar 의 변형이라 import 박지 마.
+    // `T | undefined` / `T | null` 같은 union 도 scalar 의 변형이라 import 불필요.
     const isScalar = ['string', 'number', 'boolean', 'bigint', 'string | null', 'unknown', 'void'].includes(dataType);
     const isScalarArray = /^(string|number|boolean|bigint)\[\]$/.test(dataType);
     const isScalarUnion = /^(string|number|boolean|bigint) \| (undefined|null)$/.test(dataType);

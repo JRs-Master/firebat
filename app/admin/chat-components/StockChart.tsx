@@ -93,7 +93,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
   // 차트 영역 cap — 모바일 320px / PC 480px. SSR null 시 320 fallback.
-  // 비-스크롤 모드만 적용 (가로 스크롤 모드는 SVG 자체 width=W 박힘).
+  // 비-스크롤 모드만 적용 (가로 스크롤 모드는 SVG 자체 width=W 고정).
   // 거래량은 가격 영역의 80/280 ≈ 28.6% 비례 (옛 viewBox 비율 유지).
   const chartMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
   const priceChartHeight = chartMaxH ? `${chartMaxH}px` : '320px';

@@ -61,8 +61,8 @@ impl PageManager {
     /// 저장 — DB save + media_usage 인덱스 동기.
     ///
     /// PageSpec schema 강제: spec.body 가 Component 배열이어야 함 (string 또는 잘못된 type
-    /// 박혔으면 reject). 옛 cutover 잔재 / AI 가 spec.body 에 raw HTML string 박은 silent
-    /// fail 차단 — 페이지 접속 시 헤더만 노출되고 본문 0 박는 영역 root cause fix.
+    /// 이면 reject). 옛 cutover 잔재 / AI 가 spec.body 에 raw HTML string 을 넣었던 silent
+    /// fail 차단 — 페이지 접속 시 헤더만 노출되고 본문이 비어 보이던 root cause fix.
     pub fn save(
         &self,
         slug: &str,
@@ -73,8 +73,8 @@ impl PageManager {
         password: Option<&str>,
     ) -> InfraResult<()> {
         Self::validate_spec(spec)?;
-        // hub-scoped page (project='hub:<id>') 박은 영역 = reserved check 박지 X — 내부 영역.
-        // 일반 page 박은 영역만 시스템 예약 slug (api / admin / user / hub / system / login / share 등) 차단.
+        // hub-scoped page (project='hub:<id>') = reserved check 생략 — 내부 영역.
+        // 일반 page 만 시스템 예약 slug (api / admin / user / hub / system / login / share 등) 차단.
         let is_hub_scoped = project
             .map(|p| p.starts_with("hub:"))
             .unwrap_or(false);
@@ -95,7 +95,7 @@ impl PageManager {
     }
 
     /// PageSpec schema 검증 — body 가 Component 배열인지 확인.
-    /// JSON 파싱 실패 또는 body 가 string / 객체 등 잘못된 type 박혔으면 명확한 에러 메시지 반환.
+    /// JSON 파싱 실패 또는 body 가 string / 객체 등 잘못된 type 이면 명확한 에러 메시지 반환.
     fn validate_spec(spec: &str) -> InfraResult<()> {
         let v: serde_json::Value = serde_json::from_str(spec).map_err(|e| {
             format!("PageSpec JSON 파싱 실패: {e}")

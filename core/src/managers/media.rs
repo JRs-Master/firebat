@@ -85,7 +85,7 @@ pub struct GenerateImageInput {
     pub scope: Option<MediaScope>,
     #[serde(rename = "aspectRatio", default, skip_serializing_if = "Option::is_none")]
     pub aspect_ratio: Option<String>,
-    /// AI 가 hub_context 박혀있을 때 자동 주입 — 생성 결과 `user/hub/<id>/media/` 영역에 저장.
+    /// AI 가 hub_context 가 있을 때 자동 주입 — 생성 결과 `user/hub/<id>/media/` 에 저장.
     #[serde(rename = "hubOwner", default, skip_serializing_if = "Option::is_none")]
     pub hub_owner: Option<String>,
     /// `"attention" | "entropy" | "center"` 또는 `{"x": 0.5, "y": 0.5}` (옛 TS 1:1).
@@ -525,7 +525,7 @@ impl MediaManager {
         self.media.save(binary, content_type, &opts).await
     }
 
-    /// 채팅 첨부 이미지 임시 저장 — sharp 0 (raw). 보안 검증 박은 후 IMediaPort 위임.
+    /// 채팅 첨부 이미지 임시 저장 — sharp 0 (raw). 보안 검증 통과 후 IMediaPort 위임.
     /// Args: dataUrl (`data:image/...;base64,...`). Response: `/user/attachments/<slug>.<ext>` URL.
     /// 30일 후 cleanup_old_attachments 가 자동 삭제. 갤러리 (`/user/media/`) 와 분리.
     pub async fn save_temp_attachment(&self, data_url: &str) -> InfraResult<String> {

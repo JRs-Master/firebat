@@ -30,7 +30,7 @@ function extOf(filename: string): string {
  *  - 파일 (pdf / txt / md) — multipart → upload-and-extract endpoint → 서버 temp → UploadSource RPC
  *  - 직접 입력 (textarea) — source_type='text' + inline_text → uploadSource RPC 직접 호출
  *
- * hub mode (hubContext 박힌 경우) — admin /api/library/* 대신 익명 /api/hub/<slug>/library/* 호출.
+ * hub mode (hubContext 전달된 경우) — admin /api/library/* 대신 익명 /api/hub/<slug>/library/* 호출.
  */
 export function LibraryReferenceDetail({
   reference,

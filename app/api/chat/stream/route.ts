@@ -106,7 +106,7 @@ function handleToolsMode(
 
       try {
         // 진짜 streaming RPC — Rust core 가 매 turn 의 reasoning chunk + 도구 호출 step + 최종
-        // result event 영역 server-stream 박음. 옛 unary requestActionWithTools 폐기.
+        // result event 를 server-stream 으로 전송. 옛 unary requestActionWithTools 폐기.
         const aiClient = createClient(AiService, transport);
         const aiStream = aiClient.streamRequestActionWithTools({
           prompt,
@@ -185,7 +185,7 @@ function handleToolsMode(
                 ? { id: saveOpts.userId, role: 'user' as const, content: saveOpts.userPrompt, ...(saveOpts.image ? { image: saveOpts.image } : {}) }
                 : null;
               // suggestions / pendingActions 포함 — 새로고침 후에도 ✓실행 버튼·승인 UI 복원.
-              // `data` 안 mergedData 박힌 영역 그대로 (top-level blocks / suggestions / pendingActions
+              // `data` 안 mergedData 그대로 (top-level blocks / suggestions / pendingActions
               // mirror — frontend `ev.data.data.blocks` 매핑 호환).
               const suggestionsArr = Array.isArray(result.suggestions) ? (result.suggestions as unknown[]) : undefined;
               const pendingArr = Array.isArray(result.pendingActions) ? (result.pendingActions as unknown[]) : undefined;

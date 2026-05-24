@@ -214,9 +214,9 @@ async fn soft_delete_preserves_embeddings_for_restore() {
     mgr.delete("admin", "c1").unwrap();
     // soft delete — 임베딩 그대로 (cascade hard delete X).
     assert_eq!(mgr.list_embeddings("admin", "c1").len(), 1);
-    // tombstone 박힘 (다기기 stale POST 차단).
+    // tombstone 설정됨 (다기기 stale POST 차단).
     assert!(mgr.is_deleted("admin", "c1"));
-    // 휴지통 목록에 박힘.
+    // 휴지통 목록에 들어감.
     assert_eq!(mgr.list_deleted("admin").len(), 1);
 }
 

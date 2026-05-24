@@ -1,12 +1,12 @@
-//! SqliteLibraryAdapter — ILibraryPort 의 SQLite 영역 (memory.db 자연 활용).
+//! SqliteLibraryAdapter — ILibraryPort 의 SQLite 구현 (memory.db 자연 활용).
 //!
-//! Library Phase 1 (2026-05-17) — NotebookLM 같은 RAG 영역. 매 Reference = 자료 그룹,
+//! Library Phase 1 (2026-05-17) — NotebookLM 같은 RAG. 매 Reference = 자료 그룹,
 //! 매 Source = 매 자료, 매 Chunk = 임베딩 단위.
 //!
-//! Schema = `infra/src/adapters/memory.rs::initialize()` 영역에 박혀있음 (library_references /
-//! library_sources / library_chunks 3 tables). 매 부팅 시점 SqliteMemoryAdapter 영역에서 자동 영역.
-//! 본 영역 = 별도 Connection (Mutex 영역) — write 영역 거의 없는 영역 (Source 업로드 시점만) →
-//! 동시 영역 lock 부담 영역 작음.
+//! Schema = `infra/src/adapters/memory.rs::initialize()` 안에 정의되어 있음 (library_references /
+//! library_sources / library_chunks 3 tables). 매 부팅 시점 SqliteMemoryAdapter 가 자동 초기화.
+//! 본 어댑터 = 별도 Connection (Mutex) — write 거의 없음 (Source 업로드 시점만) →
+//! 동시 lock 부담 작음.
 
 use rusqlite::{params, Connection};
 use std::path::Path;
@@ -28,8 +28,8 @@ impl SqliteLibraryAdapter {
                 .map_err(|e| format!("Library DB 디렉토리 생성 실패: {e}"))?;
         }
         let conn = Connection::open(path).map_err(|e| format!("Library DB open 실패: {e}"))?;
-        // schema 영역 = SqliteMemoryAdapter::initialize 영역 박혀있어 영역 자연 (매 부팅 시점 박힘).
-        // 본 영역 = 단독 영역 박을 시점도 안전 — SqliteMemoryAdapter::new 영역 박은 영역 후 박음.
+        // schema = SqliteMemoryAdapter::initialize 안에 정의되어 있어 부팅 시점 자동 적용.
+        // 본 어댑터 = 단독 호출도 안전 — SqliteMemoryAdapter::new 호출 후에 사용.
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -39,8 +39,8 @@ impl SqliteLibraryAdapter {
     pub fn new_in_memory() -> Result<Self, String> {
         let conn = Connection::open_in_memory()
             .map_err(|e| format!("Library DB in-memory open 실패: {e}"))?;
-        // test 영역 — schema 영역 박지 X — SqliteMemoryAdapter::new_in_memory 영역과 별도 영역.
-        // 본 영역 박을 시점 schema 영역 필요 → 직접 박음.
+        // test 용 — schema 자동 초기화 없음 — SqliteMemoryAdapter::new_in_memory 와 별도 path.
+        // 본 어댑터 사용 시점에 schema 가 필요 → 직접 생성.
         conn.execute_batch(
             r#"
             CREATE TABLE IF NOT EXISTS library_references (
@@ -274,7 +274,7 @@ impl ILibraryPort for SqliteLibraryAdapter {
             return Ok(Vec::new());
         }
         let conn = self.conn.lock().map_err(|e| format!("conn lock: {e}"))?;
-        // dynamic IN clause — placeholder 영역 매 reference_id 별 박음
+        // dynamic IN clause — placeholder 를 매 reference_id 별 생성
         let placeholders = (1..=reference_ids.len())
             .map(|i| format!("?{i}"))
             .collect::<Vec<_>>()

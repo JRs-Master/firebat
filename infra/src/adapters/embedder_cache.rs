@@ -21,7 +21,7 @@ impl FileEmbedderCacheAdapter {
         Self { dir }
     }
 
-    /// 명시 path 박는 ctor — 테스트 + deployment 명시용.
+    /// 명시 path 받는 ctor — 테스트 + deployment 명시용.
     pub fn new(dir: impl Into<PathBuf>) -> Self {
         Self { dir: dir.into() }
     }

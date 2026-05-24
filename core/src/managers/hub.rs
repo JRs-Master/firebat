@@ -77,7 +77,7 @@ pub struct UpdateInstanceInput {
 pub struct HubManager {
     port: Arc<dyn IHubPort>,
     /// PageManager (옵션) — hub instance 삭제 시 hub-scoped page (project='hub:<instance_id>')
-    /// cascade 박음. 미설정 시 cascade skip.
+    /// cascade 처리. 미설정 시 cascade skip.
     page: Option<Arc<crate::managers::page::PageManager>>,
 }
 
@@ -86,7 +86,7 @@ impl HubManager {
         Self { port, page: None }
     }
 
-    /// PageManager 설정 — hub instance 삭제 시 hub-scoped page (project='hub:<id>') cascade 박음.
+    /// PageManager 설정 — hub instance 삭제 시 hub-scoped page (project='hub:<id>') cascade 처리.
     pub fn with_page(mut self, page: Arc<crate::managers::page::PageManager>) -> Self {
         self.page = Some(page);
         self
@@ -114,14 +114,14 @@ impl HubManager {
             .await?
             .is_some()
         {
-            return Err(format!("slug \"{}\" 가 이미 hub 로 박혀있습니다.", input.slug));
+            return Err(format!("slug \"{}\" 가 이미 hub 로 등록되어 있습니다.", input.slug));
         }
-        // page 영역 중복 검사 — page slug 박은 영역 hub slug 박은 영역 같이 박은 영역 차단.
-        // root /<slug> URL 박은 영역 page 우선 매칭 → hub 가 숨겨지던 silent fail 회피.
+        // page 중복 검사 — 같은 slug 가 page 와 hub 양쪽에 동시에 등록되는 것을 차단.
+        // root /<slug> URL 에서 page 가 우선 매칭되어 hub 가 숨겨지던 silent fail 회피.
         if let Some(page) = &self.page {
             if page.get(&input.slug).is_some() {
                 return Err(format!(
-                    "slug \"{}\" 가 이미 page 로 박혀있습니다.",
+                    "slug \"{}\" 가 이미 page 로 등록되어 있습니다.",
                     input.slug
                 ));
             }
@@ -211,7 +211,7 @@ impl HubManager {
     }
 
     pub async fn delete_instance(&self, id: &str) -> InfraResult<()> {
-        // hub-scoped page cascade — project = 'hub:<id>' 박은 모든 page 영역 같이 삭제.
+        // hub-scoped page cascade — project = 'hub:<id>' 인 모든 page 같이 삭제.
         // PageManager 설정되어 있을 때만 동작 (옛 호환 — 미설정 시 skip).
         if let Some(page) = &self.page {
             let project_key = format!("hub:{}", id);
@@ -222,11 +222,11 @@ impl HubManager {
                 }
             }
         }
-        // hub_instances + conversations + messages cascade (adapter 박음)
+        // hub_instances + conversations + messages cascade (adapter 가 처리)
         self.port.delete_instance(id).await
     }
 
-    /// api_token 재발급 (옛 token 무효, 매 워드프레스 위젯 영역 다시 박아야 함).
+    /// api_token 재발급 (옛 token 무효, 매 워드프레스 위젯에 다시 등록해야 함).
     pub async fn rotate_api_token(&self, id: &str) -> InfraResult<String> {
         let mut current = self
             .port
@@ -243,7 +243,7 @@ impl HubManager {
     // ─── 외부 endpoint 영역 검증 헬퍼 ──────────────────────────────────────
 
     /// Sentinel — origin 검증 fail (외부 무단 임베드) 시 반환. Frontend route 가 이 prefix
-    /// 검출하면 광고 메시지 SSE 응답 (단순 403 reject 박지 X — Firebat 광고 효과 활용).
+    /// 검출하면 광고 메시지 SSE 응답 (단순 403 reject 하지 않음 — Firebat 광고 효과 활용).
     pub const UNAUTHORIZED_ORIGIN_PREFIX: &'static str = "UNAUTHORIZED_ORIGIN:";
 
     /// (slug, api_token, origin, self_host) → 인증 + 활성 + origin 검증.
@@ -299,7 +299,7 @@ impl HubManager {
         self.port.ensure_conversation(instance_id, session_id).await
     }
 
-    /// 항상 새 conversation 생성 — multi-conv 영역에서 사이드바 "새 대화" 박을 때 호출.
+    /// 항상 새 conversation 생성 — multi-conv 모드에서 사이드바 "새 대화" 누를 때 호출.
     pub async fn create_conversation(
         &self,
         instance_id: &str,
@@ -424,8 +424,8 @@ impl HubManager {
     ) -> InfraResult<AiResponse> {
         const HISTORY_RECENT_LIMIT: usize = 10;
 
-        // 옛 user 메시지 영역 모두 영역 listMessages (현재 user 메시지 영역 옛 영역 append_user_message
-        // 영역 박혀있는 영역 = caller 영역 책임). recent N 영역 빌드.
+        // 옛 user 메시지를 모두 listMessages (현재 user 메시지는 caller 가 append_user_message 로
+        // 이미 기록한 상태 = caller 책임). recent N 으로 빌드.
         let all_messages = self.port.list_messages(conversation_id).await?;
         let start = all_messages.len().saturating_sub(HISTORY_RECENT_LIMIT);
         let recent = &all_messages[start..];
@@ -459,7 +459,7 @@ impl HubManager {
             history.len()
         );
 
-        // session_id 영역 — conversation 조회로 visitor 별 자료 격리 owner 영역에 박힘.
+        // session_id — conversation 조회로 visitor 별 자료 격리 owner 에 들어감.
         // hub:<instance_id>:<session_id> 형태 owner 가 매 도구 호출 시 ai.rs 안 자동 주입.
         let conv = self.port.get_conversation(conversation_id).await?;
         let session_id = conv.as_ref().map(|c| c.session_id.clone()).unwrap_or_default();

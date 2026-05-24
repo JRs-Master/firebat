@@ -9,7 +9,7 @@
 //!
 //! 로그 시스템 1단계 (2026-05-21) — EnvFilter reload layer 도입. SIGHUP 시 `reload_log_filter`
 //! 로 런타임에 레벨/카테고리 동적 변경 (재빌드 / 재시작 0). 진단 로그는 코드 곳곳에 이미
-//! tracing::debug! 로 박혀있어, 평소엔 off (info) 두고 진단 시 카테고리만 켜는 흐름.
+//! tracing::debug! 로 들어가 있어, 평소엔 off (info) 두고 진단 시 카테고리만 켜는 흐름.
 
 use std::path::PathBuf;
 

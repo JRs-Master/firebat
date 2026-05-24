@@ -32,7 +32,7 @@ function findKisXlsx() {
 
 const xlsxPath = findKisXlsx();
 if (!xlsxPath) {
-  console.error('한국투자증권_오픈API_*.xlsx 가 없습니다. 저장소 root 또는 본 모듈 디렉토리에 위치 박혀야 함.');
+  console.error('한국투자증권_오픈API_*.xlsx 가 없습니다. 저장소 root 또는 본 모듈 디렉토리에 두어야 합니다.');
   process.exit(1);
 }
 

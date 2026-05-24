@@ -85,7 +85,7 @@ impl ModuleManager {
         if !is_safe_name(module_name) {
             return Err(crate::i18n::t("core.error.module.invalid_name", None, &[]));
         }
-        // user / system 모두 검색 — sysmod 도구는 system/modules/ 안 박힘.
+        // user / system 모두 검색 — sysmod 도구는 system/modules/ 에 있음.
         let (scope, dir_path, files) = {
             let user_dir = format!("user/modules/{}", module_name);
             let system_dir = format!("system/modules/{}", module_name);

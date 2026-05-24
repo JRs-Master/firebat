@@ -99,7 +99,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     // hub fallback metadata — 단일 segment URL (`/<slug>`) 만 hub 매칭.
     // exposePage=false 면 URL 자체를 노출하지 않으므로 Not Found.
     // 옛 마지막 segment 매칭 (catch-all) 폐기 — `/chat/<slug>` 와 `/<slug>` 가 동시 동작해
-    // 사용자 혼동 발생 (admin UI 가 박은 링크와 실제 hub URL 불일치).
+    // 사용자 혼동 발생 (admin UI 가 노출하는 링크와 실제 hub URL 불일치).
     if (!slug.includes('/')) {
       const hubRes = await getInstanceBySlug({ slug });
       if (hubRes.ok && hubRes.data?.instance && hubRes.data.instance.enabled && hubRes.data.instance.exposePage) {
@@ -213,15 +213,15 @@ export default async function DynamicPage({ params, searchParams }: Props) {
     // hub fallback — 단일 segment URL (`/<slug>`) 만 hub 매칭. hub.slug 는 `/` 미포함
     // (Rust validate_slug 가 영숫자/하이픈/언더스코어만 허용).
     //
-    // `/<slug>` 박힌 영역 = admin chat UI 직접 mount (ConsoleLayoutInner + ConsolePage). (user)
-    // layout 박은 CMS 헤더 / 사이드바 영역은 layout.tsx 가 hub mode 검출 후 자동 hide.
+    // `/<slug>` 매칭 시 = admin chat UI 직접 mount (ConsoleLayoutInner + ConsolePage). (user)
+    // layout 의 CMS 헤더 / 사이드바는 layout.tsx 가 hub mode 검출 후 자동 hide.
     if (!slug.includes('/')) {
       const hubRes = await getInstanceBySlug({ slug });
       if (hubRes.ok && hubRes.data?.instance && hubRes.data.instance.enabled && hubRes.data.instance.exposePage) {
         const instance = hubRes.data.instance;
         // visitor lang server-side detect — cookie (사용자 옛 선택) → Accept-Language → 'ko' 기본.
-        // navigator.language client-only 박은 영역 hydration mismatch (React #418) root cause 박혀
-        // server side 동일 결과 박은 영역 박음.
+        // navigator.language client-only 사용 시 hydration mismatch (React #418) root cause 라
+        // server side 에서 동일 결과를 계산해 전달.
         const cookieStore = await cookies();
         const cookieLang = cookieStore.get('firebat_ui_lang')?.value;
         const hdrs = await headers();

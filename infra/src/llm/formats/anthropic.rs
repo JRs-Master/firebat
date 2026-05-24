@@ -72,7 +72,7 @@ impl AnthropicMessagesHandler {
                         }
                     }
                     "thinking" => {
-                        // Extended Thinking — `thinking` 필드에 reasoning text 박힘.
+                        // Extended Thinking — `thinking` 필드에 reasoning text 가 들어감.
                         if let Some(t) = block.get("thinking").and_then(|v| v.as_str()) {
                             if !thinking_text.is_empty() {
                                 thinking_text.push('\n');

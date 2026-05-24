@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   const category = String(body.category ?? 'unknown').slice(0, 40);
   const msg = String(body.msg ?? '').slice(0, 2000);
   const ctx = body.context ? JSON.stringify(body.context).slice(0, 4000) : '';
-  // 브라우저 식별 단서 — UA 끝부분만 (full UA 는 길어 cap). PII 인 IP 는 안 박음.
+  // 브라우저 식별 단서 — UA 끝부분만 (full UA 는 길어 cap). PII 인 IP 는 기록 X.
   const ua = (req.headers.get('user-agent') ?? '').slice(0, 80);
 
   const line = `[client:${category}] ${msg}${ctx ? ` ${ctx}` : ''}${ua ? ` | ua=${ua}` : ''}`;

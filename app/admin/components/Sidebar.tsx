@@ -68,7 +68,7 @@ interface SidebarProps {
   onMobileOpenChange?: (open: boolean) => void;
   /** Hub page mode — anonymous 방문자라 settings / workspace / templates / gallery 등 admin 전용 탭 hide. */
   hubMode?: boolean;
-  /** Hub page mode 박혀있으면 share-helper 의 createShareLink 분기 인자. */
+  /** Hub page mode 이면 share-helper 의 createShareLink 분기 인자. */
   hubShareContext?: { slug: string; apiToken: string; sessionId: string };
 }
 
@@ -196,7 +196,7 @@ export function Sidebar({
     }
   }, [collapsed, tab, reloadTrash]);
 
-  // 휴지통 토글 펼침 시 자동 fresh — 옛 = 사이드바 열린 시점 1회만 박혀 삭제 직후 빈 상태.
+  // 휴지통 토글 펼침 시 자동 fresh — 옛 = 사이드바 열린 시점 1회만 로드해서 삭제 직후 빈 상태.
   useEffect(() => {
     if (trashOpen) reloadTrash();
   }, [trashOpen, reloadTrash]);
@@ -588,7 +588,7 @@ export function Sidebar({
   };
 
   /* ── VSCode activity bar — 항상 표시 (PC: inline, 모바일: slide-in 안). ── */
-  // 모든 탭 노출. 각 panel 컴포넌트가 hubMode prop 받아 hub_scope 분리 (별도 RPC scope 박음).
+  // 모든 탭 노출. 각 panel 컴포넌트가 hubMode prop 받아 hub_scope 분리 (별도 RPC scope 사용).
   const visibleTabs = TABS;
   const renderActivityBar = () => (
     // z-50 — 펼친 panel(z-40) 위로. 활동 바 항상 클릭 가능 + 다른 탭 즉시 전환.

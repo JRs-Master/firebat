@@ -109,7 +109,7 @@ function SettingsModalInner({ aiModel, onAiModelChange, onClose, onSave, onOpenM
   const [aiProvider, setAiProvider] = useState<'openai' | 'google' | 'anthropic'>(_initMp.provider);
   const [cliProvider, setCliProvider] = useState<CliProvider>(_initMp.cliProvider);
 
-  // useAiModels React Query ready 시점 entry 준비 — useState 가 옛 기본값에 박힌 상태면 sync.
+  // useAiModels React Query ready 시점 entry 준비 — useState 가 옛 기본값에 머문 상태면 sync.
   // 매 마운트 시 첫 render 는 aiModelsList 빈 list → 기본값 (api/openai/general) → ready 후 자동 갱신.
   // aiModel 변경 시점에도 같이 동작 (e.g. 다른 탭에서 model 바꾼 후 SettingsModal 열기).
   useEffect(() => {

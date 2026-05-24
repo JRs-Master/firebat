@@ -145,8 +145,8 @@ async function handleKeywordTool(ctx, data) {
   if (data.biztpId) params.biztpId = data.biztpId;
   if (data.event) params.event = String(data.event);
   if (data.month) params.month = String(data.month);
-  // includeHintKeywords — '1' 박으면 hintKeywords 자체 결과도 포함 (default 미포함).
-  // AI 가 입력 키워드 자체의 검색량 / CTR 박는 영역 = 명시 '1' 박는 영역.
+  // includeHintKeywords — '1' 넘기면 hintKeywords 자체 결과도 포함 (default 미포함).
+  // AI 가 입력 키워드 자체의 검색량 / CTR 필요한 경우 = 명시 '1' 전달.
   if (data.includeHintKeywords !== undefined) {
     params.includeHintKeywords = data.includeHintKeywords ? '1' : '0';
   }
@@ -165,7 +165,7 @@ async function handleKeywordTool(ctx, data) {
       monthlyAveMobileCtr: item.monthlyAveMobileCtr ?? 0,
       plAvgDepth: item.plAvgDepth ?? 0,
       compIdx: item.compIdx || '',
-      // 관련도 점수 — 입력 hintKeyword 와의 의미 유사도. AI 가 추천 정렬 / 필터 박을 때 활용.
+      // 관련도 점수 — 입력 hintKeyword 와의 의미 유사도. AI 가 추천 정렬 / 필터링에 활용.
       relatedPoint: item.related_point ?? null,
     };
     if (item.monthlyPcQcCntList) entry.monthlyPcQcCntList = item.monthlyPcQcCntList;
@@ -237,8 +237,8 @@ async function handleEstimate(ctx, data) {
   if (data.key) body.key = data.key;
   if (data.bid !== undefined && data.bid !== null) body.bid = data.bid;
   if (data.items) body.items = data.items;
-  // period — performance-bulk 의 필수 field. AI 가 명시 안 박으면 default '30' (30일).
-  // 네이버 API 가 'period is empty' 400 박는 영역 차단.
+  // period — performance-bulk 의 필수 field. AI 가 명시 안 하면 default '30' (30일).
+  // 네이버 API 가 'period is empty' 400 응답하는 부분 차단.
   if (estimateType === 'performance-bulk') {
     body.period = data.period ?? '30';
   } else if (data.period !== undefined) {

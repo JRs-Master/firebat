@@ -6,8 +6,8 @@ import { getBaseUrl } from '../../../../../lib/base-url';
 /**
  * POST /api/hub/[slug]/share — 익명 hub 방문자의 자기 대화 공유.
  *
- * 옛 /api/share 박은 영역 = withAuth (admin auth 필수) → hub anonymous 접근 차단.
- * 본 endpoint = X-Api-Token + X-Session-Id 검증 박은 영역 + 옛 createShare RPC 호출.
+ * 옛 /api/share 는 withAuth (admin auth 필수) → hub anonymous 접근 차단.
+ * 본 endpoint = X-Api-Token + X-Session-Id 검증 후 옛 createShare RPC 호출.
  *
  * Body: { type: 'turn' | 'full', conversationId?, title?, messages, dedupKey? }
  * → { success: true, slug, url, expiresAt }

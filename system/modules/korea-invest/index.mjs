@@ -2026,8 +2026,8 @@ async function callApi(base, token, appKey, appSecret, action, query = {}, body 
   }
   if (!resp.ok) {
     const errText = await resp.text().catch(() => '');
-    // KIS 토큰 만료 박은 영역 = HTTP 500 + body 안 rt_cd "1" + msg1 의 'token' / '토큰'.
-    // throw 박지 X + parsed body 반환 → main 의 isTokenInvalid 분기 박은 영역 통과 → 자동 재발급.
+    // KIS 토큰 만료 조건 = HTTP 500 + body 안 rt_cd "1" + msg1 의 'token' / '토큰'.
+    // throw 하지 않고 parsed body 반환 → main 의 isTokenInvalid 분기 통과 → 자동 재발급.
     if (resp.status === 500) {
       try {
         const parsed = JSON.parse(errText);

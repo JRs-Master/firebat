@@ -76,7 +76,7 @@ function deserialize<K extends keyof SettingsSchema>(key: K, raw: string): Setti
 // ── module-level 키 prefix ───────────────────────────────────────────────────
 // hub page mode 에서는 admin localStorage 키 사용 금지. ConsolePage 가 hubContext 있을 때
 // setKeyPrefix(`hub-<slug>`) 호출 → 모든 useSetting / readSetting / writeSetting 자동 분기.
-// 호출 site 마다 옵션 박을 필요 없음 — 한 곳에서 set / clear.
+// 호출 site 마다 옵션 전달할 필요 없음 — 한 곳에서 set / clear.
 let currentKeyPrefix: string | null = null;
 
 export function setSettingsKeyPrefix(prefix: string | null): void {

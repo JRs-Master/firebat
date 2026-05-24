@@ -387,7 +387,7 @@ function AutoResizeIframe({ src, initialHeight, dependencies }: { src: string; i
   );
 }
 
-// ─── Thinking 블록 — spinner + "생각중" 라벨 + thinkingText 같은 줄 inline 박힘.
+// ─── Thinking 블록 — spinner + "생각중" 라벨 + thinkingText 같은 줄 inline 표시.
 // 완료 후엔 spinner 끄고 "답변완료" 라벨 유지 (옛 동작 — 응답 끝났는지 사용자가 즉시 인지).
 function ThinkingBlock({
   statusText,
@@ -562,7 +562,7 @@ function CopyButton({ text }: { text: string }) {
 
 /** 단일턴 (user + AI 응답 한 쌍) 공유 버튼. 복사 버튼 옆에 배치.
  *  POST /api/share 로 24시간 TTL 공유 slug 생성 → 클립보드 복사 + 토스트.
- *  Hub mode 박혀있으면 POST /api/hub/<slug>/share 로 분기 (anonymous + apiToken). */
+ *  Hub mode 이면 POST /api/hub/<slug>/share 로 분기 (anonymous + apiToken). */
 function ShareTurnButton({ messages, conversationId, title, msgId, hubContext }: { messages: unknown[]; conversationId: string; title?: string; msgId?: string; hubContext?: { slug: string; apiToken: string; sessionId: string } }) {
   const t = useTranslations();
   const [status, setStatus] = useState<'idle' | 'sharing' | 'done' | 'error'>('idle');
@@ -966,8 +966,8 @@ function MessageBubble({ msg, loading, onSuggestion, onConsumeSuggestions, onApp
 
 // ─── 메인 ────────────────────────────────────────────────────────────────────
 // Hub page mode context — anonymous 방문자가 hub instance 로 접근 시 채워짐.
-// 박혀있으면 admin 전용 기능 (사이드바 settings / 헤더 logout / multi-conv local storage)
-// 자동 hide + useChat 가 /api/hub/<slug>/chat 호출 박음.
+// 채워지면 admin 전용 기능 (사이드바 settings / 헤더 logout / multi-conv local storage)
+// 자동 hide + useChat 가 /api/hub/<slug>/chat 호출.
 export interface HubContext {
   slug: string;
   apiToken: string;
@@ -984,7 +984,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
   const router = useRouter();
   const t = useTranslations();
   // settings-manager 의 module-level keyPrefix 설정 — hub mode 면 모든 useSetting / readSetting /
-  // writeSetting 호출이 'firebat_<key>__hub-<slug>' suffix 자동 박음. admin 로그인 상태로 hub URL
+  // writeSetting 호출이 'firebat_<key>__hub-<slug>' suffix 자동 사용. admin 로그인 상태로 hub URL
   // 접속해도 admin localStorage 절대 사용 X.
   // useState initializer 안에서 동기 호출 — 첫 렌더 전에 prefix 설정되어야 useSetting initializer
   // 가 올바른 키 읽음. useEffect 는 첫 렌더 후 실행이라 race.
@@ -1055,7 +1055,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
   }, [hubContext]);
 
   // useMemo 강제 — 옛 = 매 렌더 새 객체 reference. useChat 의 useEffect dependency 안 hubContext
-  // 박혀 (commit `4d48d4d`) 매 렌더 useEffect 재발화 → fetch list-conversations + dispatch LOAD →
+  // 가 있어 (commit `4d48d4d`) 매 렌더 useEffect 재발화 → fetch list-conversations + dispatch LOAD →
   // messages state 안 SEND_USER 직후 system isThinking 메시지 reset → ThinkingBlock 사라짐 +
   // 사이드바 제목 ↔ "새 대화" 깜빡 root cause.
   const hubChatContext = useMemo(() => {
@@ -1477,8 +1477,8 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
         </div>
 
         {/* Hub page mode = 익명 방문자라 admin 전용 모달 (FileEditor / SettingsModal /
-            SystemModuleSettings) 자동 mount 차단 — 사이드바 진입 경로 자체도 차단 박혀있어
-            상태 변경 자체가 불가능하지만 defense-in-depth 박음. */}
+            SystemModuleSettings) 자동 mount 차단 — 사이드바 진입 경로 자체도 차단되어 있어
+            상태 변경 자체가 불가능하지만 defense-in-depth 차원에서 추가. */}
 
         {/* 파일 에디터 모달 */}
         {!hubContext && editingFile && (

@@ -393,8 +393,8 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
   const isMcpLlm = resolvedName === 'mcp-server-llm';
   const isHub = resolvedName === 'hub';
 
-  // hub service — 옛 사이드바 별도 탭 박은 영역 폐기. 시스템 탭 안 통합 — modal 안 HubPanel
-  // 직접 render. settings_fields 영역 X (인스턴스 N + 위젯 코드 + 대화 내역 등 복잡 UI).
+  // hub service — 옛 사이드바 별도 탭 폐기. 시스템 탭 안에 통합 — modal 안 HubPanel
+  // 직접 render. settings_fields 사용 X (인스턴스 N + 위젯 코드 + 대화 내역 등 복잡 UI).
   if (isHub) {
     return (
       <div className={embeddedInPage ? 'flex flex-col h-full bg-white overflow-hidden' : 'fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/40 backdrop-blur-sm overflow-hidden'}>
@@ -1313,7 +1313,7 @@ export function PackageStatusSection({ moduleName }: { moduleName: string }) {
     }
   }, [moduleName, fetchStatus]);
 
-  // packages === null = 아직 첫 fetch 전 (skeleton 안 박음 — 자연 idle).
+  // packages === null = 아직 첫 fetch 전 (skeleton 표시 X — 자연 idle).
   // packages === [] = config.json packages 미설정 — 컴포넌트 자체 표시 안 함.
   if (!packages || packages.length === 0) return null;
 

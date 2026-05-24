@@ -15,7 +15,7 @@ use crate::ports::{
 };
 
 /// Chunking 영역 — Phase 1 단순 영역 (~500 토큰 + 50 overlap).
-/// 토큰 영역 = 단순 영역 = char 영역 (1 char ~= 1 token 영역 가정 — 한국어 영역 ~1.5x 영역 박을 수 있음).
+/// 토큰 단위 = 단순 char 단위 (1 char ~= 1 token 가정 — 한국어는 ~1.5x 가 될 수 있음).
 const CHUNK_SIZE: usize = 500;
 const CHUNK_OVERLAP: usize = 50;
 
@@ -52,7 +52,7 @@ impl LibraryManager {
         self.library.delete_reference(id).await
     }
 
-    // ─── Source upload — 매 영역 추출 path 박은 후 호출 ─────────────────────
+    // ─── Source upload — 텍스트 추출 후 호출 ─────────────────────
 
     /// Source 생성 + Chunking + Arctic 임베딩 + DB 저장 영역 통합.
     /// `extracted_text` = infra/src/library/extractor.rs 영역에서 추출된 결과 (PDF / TXT / MD / URL / text).
@@ -144,7 +144,7 @@ impl LibraryManager {
     // ─── 검색 — query → cosine 매치 → top-K LibraryHit ──────────────────────
 
     /// 매 reference_ids 영역의 매 chunk 영역 cosine 매치 → top_k.
-    /// reference_ids 영역 미박은 영역 (빈 배열) = 매 admin reference 영역 전체.
+    /// reference_ids 미지정 (빈 배열) = 매 admin reference 전체 대상.
     pub async fn search(
         &self,
         owner: &str,
@@ -179,7 +179,7 @@ impl LibraryManager {
         // 매 chunk 영역 cosine — list_chunks_for_search 영역
         let chunks = self.library.list_chunks_for_search(&target_refs).await?;
 
-        // Source / Reference 메타 매핑 영역 — 매 chunk 영역의 source_id 영역 박은 후 name 영역.
+        // Source / Reference 메타 매핑 — 매 chunk 의 source_id 를 받은 후 name 조회.
         // 단순 영역 = 매 chunk 별 매 source / reference 영역 lookup (N+1 영역 가능, 다만 chunk 영역 수천 영역까지 자연).
         let mut hits: Vec<LibraryHit> = Vec::with_capacity(chunks.len());
         for chunk in chunks {
@@ -191,7 +191,7 @@ impl LibraryManager {
             // source / reference 메타 영역 — 매 chunk 별 lookup (캐싱 영역 Phase 2 영역 자연 추가)
             let source = self.library.get_source(&chunk.source_id).await?;
             let Some(source) = source else { continue };
-            // reference name 영역 — 매 reference 영역 list 박은 후 lookup (캐싱 영역 Phase 2)
+            // reference name — 매 reference list 조회 후 lookup (캐싱은 Phase 2)
             let ref_name = self
                 .library
                 .list_references(owner)
@@ -221,7 +221,7 @@ impl LibraryManager {
 
 /// 단순 Chunking 영역 (Phase 1) — char 영역 기준 ~CHUNK_SIZE + CHUNK_OVERLAP overlap.
 /// 반환값 = `[(content, start_char, end_char), ...]`.
-/// 매 chunk 영역 = 매 boundary 영역 자연 단어 boundary 영역 박지 X (Phase 2 영역 — token boundary 영역).
+/// 매 chunk boundary 는 자연 단어 boundary 가 아님 (Phase 2 에서 token boundary 도입 예정).
 fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<(String, usize, usize)> {
     if text.is_empty() {
         return Vec::new();

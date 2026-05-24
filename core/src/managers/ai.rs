@@ -30,7 +30,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-/// 도구 이름 → 한국어 진행 라벨. streaming step event 의 description 박음.
+/// 도구 이름 → 한국어 진행 라벨. streaming step event 의 description 으로 사용.
 /// 옛 TS chat stream route 의 toolLabel 영역 1:1.
 fn tool_label(name: &str) -> String {
     match name {
@@ -62,8 +62,8 @@ fn tool_label(name: &str) -> String {
     }
 }
 
-/// AI streaming event — process_with_tools_opts_with_emit 가 매 단계 시점 채널 박음.
-/// gRPC server-stream impl 가 mpsc → tonic Stream 매핑 박음.
+/// AI streaming event — process_with_tools_opts_with_emit 가 매 단계 시점 채널로 전송.
+/// gRPC server-stream impl 가 mpsc → tonic Stream 매핑 수행.
 #[derive(Debug, Clone)]
 pub enum AiStreamEvent {
     /// 매 turn 의 reasoning text 또는 thinking 영역.
@@ -106,8 +106,8 @@ const TEMP_TOOL_TURN: f64 = 0.2;
 /// 최종 응답 turn — 자연스럽고 풍부한 표현. 옛 TS 1:1.
 const TEMP_FINAL_TURN: f64 = 0.85;
 
-// 옛 is_simple_chat fast path 폐기 (2026-05-11) — 길이 / 키워드 휴리스틱 박은 거 일반 fix
-// 못 박음. 짧은 query 가 fast path 박혀 도구 schema 누락 → "삼성전자 현재가 얼마야" 같은
+// 옛 is_simple_chat fast path 폐기 (2026-05-11) — 길이 / 키워드 휴리스틱 기반은 일반 fix
+// 가 안 됨. 짧은 query 가 fast path 로 빠져 도구 schema 가 누락 → "삼성전자 현재가 얼마야" 같은
 // 자연 query 가 sysmod 호출 못 하던 root cause. 새 keyword 추가는 또 다른 개별 fix.
 // 진짜 일반 = 도구 schema 항상 박고 LLM 자체 판단 위임. 토큰 비용 약간 ↑ 단 정확성 ↑.
 
@@ -137,7 +137,7 @@ pub struct AiResponse {
     #[serde(rename = "toolResults", default, skip_serializing_if = "Vec::is_empty")]
     pub tool_results: Vec<crate::ports::ToolResultSummary>,
     /// Library Phase 1 단계 8.4 (2026-05-17) — RetrievalEngine 가 매 query 시점 매칭한
-    /// Library hit metadata. 답변 본문엔 출처 표기 박지 않고 (system prompt 룰), 대신
+    /// Library hit metadata. 답변 본문엔 출처 표기 없이 (system prompt 룰), 대신
     /// frontend 가 SourceTags 뱃지로 그려 클릭 → LibrarySourceModal 영역 노출.
     #[serde(rename = "libraryHits", default, skip_serializing_if = "Vec::is_empty")]
     pub library_hits: Vec<crate::ports::LibraryHit>,
@@ -214,11 +214,11 @@ pub struct AiManager {
     /// (옛 사용자 결정 2026-05-17). 미설정 또는 토글 false 시 호출 skip.
     retrieval_engine: Option<Arc<retrieval_engine::RetrievalEngine>>,
     /// IMediaPort (옵션) — opts.image 가 slug URL (`/user/attachments/<filename>` 또는
-    /// `/user/media/<slug>.<ext>`) 박혀있을 때 fs read + base64 data URL 변환 박는 layer.
-    /// 옛 frontend = base64 data URL 직접 박았는데 2026-05-11 commit `6af42b2` 후 slug URL
-    /// 박는 방식으로 전환. LLM adapter (cli_image_helper 등) 영역의 base64 가정 코드는 그대로
-    /// 박혀있어 slug URL 박혀있으면 decode fail → LLM API "could not be processed" 결과.
-    /// 본 layer 가 LLM 호출 전 image 영역 data URL 형태 강제 박음.
+    /// `/user/media/<slug>.<ext>`) 형태일 때 fs read + base64 data URL 변환을 수행하는 layer.
+    /// 옛 frontend = base64 data URL 직접 전송이었는데 2026-05-11 commit `6af42b2` 후 slug URL
+    /// 전송 방식으로 전환. LLM adapter (cli_image_helper 등) 의 base64 가정 코드는 그대로
+    /// 남아 있어 slug URL 그대로 가면 decode fail → LLM API "could not be processed" 결과.
+    /// 본 layer 가 LLM 호출 전 image 부분을 data URL 형태로 강제 변환.
     media: Option<Arc<dyn crate::ports::IMediaPort>>,
 }
 
@@ -246,7 +246,7 @@ impl AiManager {
         }
     }
 
-    /// IMediaPort 설정 — opts.image 가 slug URL 박혀있으면 fs read + base64 data URL 변환 활성.
+    /// IMediaPort 설정 — opts.image 가 slug URL 일 때 fs read + base64 data URL 변환 활성.
     /// 미설정 시 변환 skip (옛 동작 — base64 가정 코드 그대로).
     pub fn with_media(mut self, media: Arc<dyn crate::ports::IMediaPort>) -> Self {
         self.media = Some(media);
@@ -254,10 +254,10 @@ impl AiManager {
     }
 
     /// opts.image 가 slug URL (`/user/attachments/<filename>` 또는 `/user/media/<slug>.<ext>`)
-    /// 박혀있으면 fs read + base64 data URL 변환. 박혀있지 X 또는 변환 fail 시 옛 값 그대로.
+    /// 일 때 fs read + base64 data URL 변환 수행. 해당 형태가 아니거나 변환 fail 시 옛 값 그대로.
     /// LLM adapter (cli_image_helper / anthropic 등) 의 base64 가정 코드 호환.
     async fn resolve_image_to_data_url(&self, image: &str) -> Option<String> {
-        // 옛 base64 data URL 박은 영역 — 변환 불필요
+        // 이미 base64 data URL 형태 — 변환 불필요
         if image.starts_with("data:") {
             return Some(image.to_string());
         }
@@ -491,8 +491,8 @@ impl AiManager {
     /// - Approval gate 통합 (ToolDispatcher 와이어링 후)
     /// - CLI session resume / Plan store integration / Auto search_history
     /// - internallyUsedTools / innerBlocks / innerPending / innerSuggestions (LlmToolResponse 확장 후)
-    /// streaming variant — `emit` channel 박혀있으면 매 turn 의 reasoning chunk + 도구 호출 step
-    /// 영역 채널 박힘. None 이면 옛 unary 동작 (event 발생 0).
+    /// streaming variant — `emit` channel 이 설정되어 있으면 매 turn 의 reasoning chunk + 도구 호출 step
+    /// 이 채널로 전송됨. None 이면 옛 unary 동작 (event 발생 0).
     pub async fn process_with_tools_opts(
         &self,
         prompt: &str,
@@ -504,9 +504,9 @@ impl AiManager {
             .await
     }
 
-    /// streaming variant — emit 채널 받음. mpsc::Sender 박혀있으면 매 turn 의 reasoning chunk +
-    /// 도구 호출 step 영역 채널 박힘. None = 옛 unary 동작 (event 발생 0).
-    /// gRPC server-stream impl 가 본 메서드 통해 채널 박음 → tonic Stream 변환.
+    /// streaming variant — emit 채널 받음. mpsc::Sender 가 있으면 매 turn 의 reasoning chunk +
+    /// 도구 호출 step 이 채널로 전송됨. None = 옛 unary 동작 (event 발생 0).
+    /// gRPC server-stream impl 가 본 메서드를 통해 채널을 받아 → tonic Stream 변환.
     pub async fn process_with_tools_opts_with_emit(
         &self,
         prompt: &str,
@@ -516,7 +516,7 @@ impl AiManager {
         emit: Option<mpsc::Sender<AiStreamEvent>>,
     ) -> InfraResult<AiResponse> {
         // emit helper — None 이면 no-op. Some 이면 try_send (back-pressure 시 silent drop —
-        // streaming 영역 안 critical 이벤트 X, drop 박혀도 final result 영역 그대로).
+        // streaming 안에 critical 이벤트는 없고, drop 되어도 final result 는 그대로 전달).
         let emit_event = |evt: AiStreamEvent| {
             if let Some(tx) = &emit {
                 let _ = tx.try_send(evt);
@@ -549,17 +549,17 @@ impl AiManager {
             }
         }
 
-        // 옛 fast path (is_simple_chat 박은 휴리스틱) 폐기 (2026-05-11).
-        // 짧은 query 가 fast path 박혀 sysmod 도구 누락 → "삼성전자 현재가 얼마야" 같은
-        // 자연 query 가 도구 호출 못 하던 root cause. LLM 자체 판단 위임 (단순 인사 박은
-        // 거도 도구 schema 박혀가지만 LLM 이 자체 응답).
+        // 옛 fast path (is_simple_chat 휴리스틱) 폐기 (2026-05-11).
+        // 짧은 query 가 fast path 로 빠져 sysmod 도구 누락 → "삼성전자 현재가 얼마야" 같은
+        // 자연 query 가 도구 호출 못 하던 root cause. LLM 자체 판단 위임 (단순 인사도
+        // 도구 schema 는 같이 전달되지만 LLM 이 자체 응답).
 
         let mut effective_opts = opts.clone();
 
         // 이미지 slug URL → data URL 변환 (옛 commit `6af42b2` 후 frontend 가 base64 → slug URL
         // 전환했는데 LLM adapter 영역의 base64 가정 코드는 그대로라 발생한 silent fail fix).
-        // /user/attachments/<filename> 또는 /user/media/<slug>.<ext> 박혀있으면 fs read + base64
-        // data URL 변환. data: prefix 박혀있거나 변환 불가면 옛 값 그대로 (회귀 안전).
+        // /user/attachments/<filename> 또는 /user/media/<slug>.<ext> 형태이면 fs read + base64
+        // data URL 변환. data: prefix 가 이미 있거나 변환 불가면 옛 값 그대로 (회귀 안전).
         if let Some(img) = &effective_opts.image {
             if !img.starts_with("data:") {
                 if let Some(data_url) = self.resolve_image_to_data_url(img).await {
@@ -595,7 +595,7 @@ impl AiManager {
         }
         // MCP base URL 결정 — FIREBAT_MCP_BASE_URL env 또는 Vault `system:mcp-base-url` 우선,
         // 미설정 시 Next.js 폴백 (`http://127.0.0.1:3000`). 새 Rust MCP endpoint 으로 전환 시
-        // env 또는 Vault 에 `http://127.0.0.1:50052` (default FIREBAT_MCP_LISTEN) 박음.
+        // env 또는 Vault 에 `http://127.0.0.1:50052` (default FIREBAT_MCP_LISTEN) 을 설정.
         if effective_opts.mcp_base_url.is_none() {
             if let Some(cfg) = &self.config_port {
                 if let Some(env_url) = cfg.get("FIREBAT_MCP_BASE_URL") {
@@ -652,13 +652,13 @@ impl AiManager {
                 dyn_reg.refresh().await;
             }
             let mut tools_built = self.build_tool_definitions();
-            // hub 영역 도구 필터 — 외부 사이트 안 destructive (admin DB 영구 변경) 만 차단.
+            // hub 모드 도구 필터 — 외부 사이트 안 destructive (admin DB 영구 변경) 만 차단.
             //
             // 허용 영역:
-            //   (1) `sysmod_<name>` — allowed_sysmods 박은 영역만 (instance 설정 제어)
+            //   (1) `sysmod_<name>` — allowed_sysmods 에 있는 것만 (instance 설정 제어)
             //   (2) `render_*` — UI 렌더 도구
             //   (3) read-only / 정보 조회 — list_*, get_*, search_*, suggest, propose_plan, cache_*
-            //   (4) 채팅 컨텍스트 — recall / library 검색 박은 영역
+            //   (4) 채팅 컨텍스트 — recall / library 검색 부분
             //   (5) `save_page` — hub-scoped (project='hub:<slug>' 자동, root /<slug> 노출 0,
             //                     hub 삭제 시 cascade). 사용자 의도 = "지 사이드바 안에서 갖고 놀고 공유 돼야".
             //
@@ -671,7 +671,7 @@ impl AiManager {
                     ctx.allowed_sysmods.iter().cloned().collect();
                 tools_built.retain(|t| {
                     let name = t.name.as_str();
-                    // sysmod_<name>: allowed 박은 영역만
+                    // sysmod_<name>: allowed 에 있는 것만
                     if let Some(sysmod_name) = name.strip_prefix("sysmod_") {
                         return allowed.contains(sysmod_name);
                     }
@@ -776,8 +776,8 @@ impl AiManager {
                             .as_deref()
                             .or(ai_opts.conversation_id.as_deref())
                             .map(String::from);
-                        // hub_context 박혀있으면 library 검색 영역 안 allowed_references 만 제한.
-                        // None = 옛 admin 흐름 (owner 영역 전체 Reference 자연 처리).
+                        // hub_context 가 있으면 library 검색을 allowed_references 로 제한.
+                        // None = 옛 admin 흐름 (owner 전체 Reference 자연 처리).
                         let reference_filter = ai_opts
                             .hub_context
                             .as_ref()
@@ -912,7 +912,7 @@ impl AiManager {
         }
 
         // 첫 turn user prompt — plan_mode hint prefix 자동 주입 (옛 TS promptForLlm 첫 turn 분기 1:1).
-        // plan_execute_id / plan_revise_id 박혀있으면 hint skip (시스템 프롬프트 안 plan_instruction 박힘).
+        // plan_execute_id / plan_revise_id 가 있으면 hint skip (시스템 프롬프트에 plan_instruction 들어감).
         let skip_plan_hint = ai_opts
             .plan_execute_id
             .as_deref()
@@ -1164,7 +1164,7 @@ impl AiManager {
                                     continue;
                                 }
                             };
-                            // typed args 를 그대로 serialize → frontend pending JSON 에 들어감 (name field 자동 박힘).
+                            // typed args 를 그대로 serialize → frontend pending JSON 에 들어감 (name field 자동 포함).
                             let args_json = serde_json::to_value(&typed_args)
                                 .unwrap_or(serde_json::Value::Null);
                             let plan_id = create_pending(typed_args, &approval.summary);
@@ -1229,18 +1229,18 @@ impl AiManager {
                     }
                 }
 
-                // hub_context 박혀있을 때 모든 도구 호출 시점에 owner / hub_owner / _hubScope /
+                // hub_context 가 있을 때 모든 도구 호출 시점에 owner / hub_owner / _hubScope /
                 // project 일괄 자동 주입. 도구가 자기 받는 field 만 알아채고 무시.
                 //
-                // owner / hubOwner / _hubScope 영역 = `<instance_id>:<session_id>` 형태 —
-                // visitor 별 격리 (같은 hub 안 다른 방문자 자료 노출 0). session_id 빈 string
-                // 박혀있으면 옛 호환 (instance 단위만).
+                // owner / hubOwner / _hubScope = `<instance_id>:<session_id>` 형태 —
+                // visitor 별 격리 (같은 hub 안 다른 방문자 자료 노출 0). session_id 가 빈 string
+                // 일 경우 옛 호환 (instance 단위만).
                 //
-                // project = `hub:<instance_id>` (save_page 만 — 페이지 URL 영역 root /<slug>
+                // project = `hub:<instance_id>` (save_page 만 — 페이지 URL 의 root /<slug>
                 // 충돌 회피, instance 단위 그대로). visitor 별 page = chat 자료지 page 자료 X.
                 //
                 // visitor 가 admin / 다른 visitor 자료에 침투하는 silent leak 차단 — AI 가
-                // 박은 owner 영역 override 강제.
+                // 넣은 owner 를 override 강제.
                 let hub_scoped_call: Option<ToolCall>;
                 let effective_call: &ToolCall = if ai_opts.hub_context.is_some() {
                     let ctx = ai_opts.hub_context.as_ref().unwrap();
@@ -1336,7 +1336,7 @@ impl AiManager {
             //       `{type:component, name, props}` block. 옛 TS ai-manager.ts:1464-1478 1:1.
             //   (3) 통합 `render` + `result.blocks` 배열 (RenderUnifiedHandler `{success:true,
             //       blocks:[{type:component,name,props}, ...]}` 응답) → 배열 안 entry 그대로 push.
-            //       MCP 단일 render 도구 도입 이후 흐름 — 옛 (2) 매칭만 박혀있어 blocks 통째 누락
+            //       MCP 단일 render 도구 도입 이후 흐름 — 옛 (2) 매칭만 있어 blocks 통째 누락
             //       사용자 화면 미표시 사고. (안건 5 fix, 2026-05-17)
             // 같은 turn 안 `suggest` 도구 결과 (`{suggestions:[...]}`) 도 cli_suggestions 누적 —
             // 옛 CLI 만 처리하던 영역 = API 모드 (Gemini/Anthropic/OpenAI Function Calling) 안
@@ -1398,7 +1398,7 @@ impl AiManager {
             // ActionTags 에러 뱃지 UI 채널에 도달 못 했음. 본 push 적용 후 자동 활성.
             //
             // render 도구 graceful 부분 실패 (`result.failed` 배열 비어있지 않음) 도 ActionTags
-            // 가시화 — action.success=true 박혀있어도 일부 block 검증 실패 박힌 영역 사용자
+            // 가시화 — action.success=true 라도 일부 block 검증 실패가 있는 영역 사용자
             // 안내 (빨간 뱃지 + 실패 안내 본문 펼침).
             for (tc, action) in turn_results.iter() {
                 let (success, error) = if action.success {
@@ -1432,7 +1432,7 @@ impl AiManager {
             // 옛 commit e9c66c6 안 폐기 영역 = 답변 N번 반복 issue. 다만 폐기 후 사용자 보고 =
             // "답변 길이 짧음" — multi-turn AI 의 reasoning text 영역 답변 안 사라짐.
             // push_text_block_dedup 의 70% similarity 매칭 안 옛 turn text 영역 final turn 안 자동
-            // 중복 차단. final turn 안 같은 내용 박힌 영역 skip — 옛 중복 issue 영역 자동 가드.
+            // 중복 차단. final turn 에 같은 내용이 있으면 skip — 옛 중복 issue 영역 자동 가드.
             if !last_text.trim().is_empty() {
                 push_text_block_dedup(&mut blocks, &last_text);
             }

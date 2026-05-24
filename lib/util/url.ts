@@ -1,7 +1,7 @@
 /**
  * URL utility — Phase 1 정공 (2026-05-13).
  *
- * `lib/base-url.ts::getBaseUrl` 박혀있는데 path 결합 / query string 빌딩은 매 호출 site
+ * `lib/base-url.ts::getBaseUrl` 가 있는데 path 결합 / query string 빌딩은 매 호출 site
  * manual 처리. 본 모듈이 path / query 빌딩 표준 제공.
  */
 

@@ -1,9 +1,9 @@
 /**
  * i18n shared — server / client 공용 pure logic.
  *
- * **분리 사유** (2026-05-11): 이 파일은 `'use client'` directive 없이 박혀있어
+ * **분리 사유** (2026-05-11): 이 파일은 `'use client'` directive 없이 작성되어
  * server component / client component 양쪽에서 import 가능. `lib/i18n.tsx` 의
- * `'use client'` 안에 박혀있던 translate / normalizeLang / FALLBACK_LANG 등 pure
+ * `'use client'` 안에 있던 translate / normalizeLang / FALLBACK_LANG 등 pure
  * 함수를 server (RSC) 가 호출 못하던 NotFound 폴백 발생 → admin hydration mismatch
  * (#418) 까지 chain 되던 문제 차단.
  *
@@ -30,7 +30,7 @@ export const FALLBACK_LANG: Lang = 'en';
  *  FALLBACK 으로 영문 렌더, client 는 localStorage 의 'ko' 로 한국어 렌더 → text node
  *  mismatch → React #418. server / client 가 같은 값 반환하도록 통일.
  *  값 = 'en' — SetupWizard / FALLBACK 과 동일한 글로벌 default. 한국어 사용자는
- *  localStorage 'ko' 박혀있어 마운트 직후 useEffect 에서 즉시 전환 (한 프레임 flash). */
+ *  localStorage 에 'ko' 가 있어 마운트 직후 useEffect 에서 즉시 전환 (한 프레임 flash). */
 export const INITIAL_LANG: Lang = 'en';
 
 export function isValidLang(v: unknown): v is Lang {

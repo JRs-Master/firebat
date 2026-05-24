@@ -28,7 +28,7 @@ const PYPI_CACHE_TTL: Duration = Duration::from_secs(3600);
 
 /// PyPI registry 안 최신 버전 캐시 — 매 polling 시 network 호출 부담 차단. 1시간 TTL.
 /// HashMap<package_name, (Instant, Option<latest_version>)>.
-/// None 박힌 영역 = network fail 또는 PyPI 안 패키지 없음 — 같은 TTL 동안 재시도 X.
+/// None 값 = network fail 또는 PyPI 안 패키지 없음 — 같은 TTL 동안 재시도 X.
 fn pypi_cache() -> &'static TokioMutex<HashMap<String, (Instant, Option<String>)>> {
     static CACHE: OnceLock<TokioMutex<HashMap<String, (Instant, Option<String>)>>> = OnceLock::new();
     CACHE.get_or_init(|| TokioMutex::new(HashMap::new()))
@@ -68,7 +68,7 @@ async fn fetch_latest_pypi_version(pkg_name: &str) -> Option<String> {
 }
 
 /// semver-like 비교 — `2.32.3` vs `2.32.4` 형식 안 dot 분리 + 숫자 ordering.
-/// 두 영역 다 같은 길이 가정 X (한 쪽 박혀있고 다른 쪽 0 = 0 으로 보충).
+/// 두 쪽 다 같은 길이 가정 X (한 쪽만 있고 다른 쪽이 짧으면 0 으로 보충).
 /// 비교 결과: latest > required → true (업그레이드 가능), 그 외 false.
 fn is_version_newer(latest: &str, required: &str) -> bool {
     let parse = |s: &str| -> Vec<u64> {
@@ -140,7 +140,7 @@ impl PackageSpec {
     fn required_version(&self) -> Option<String> {
         let idx = self.name.find("==")?;
         let rest = &self.name[idx + 2..];
-        // 같은 패키지 안 추가 specifier 박혀있을 가능성 (예: `pkg==1.0.0,<2.0`) — 첫 specifier 까지만.
+        // 같은 패키지에 추가 specifier 가 있을 가능성 (예: `pkg==1.0.0,<2.0`) — 첫 specifier 까지만.
         for sep in [",", ";", " "] {
             if let Some(end) = rest.find(sep) {
                 return Some(rest[..end].trim().to_string());
@@ -278,10 +278,10 @@ pub struct ProcessSandboxAdapter {
     /// install 진행 상태 추적. 미설정 시 heavy 패키지도 foreground (옛 동작과 동일) 진행.
     /// 설정 시 사용자 호출 즉시 응답 (`core.install.in_progress` errorKey) + 완료 후 자동 재시도 가능.
     status: Option<Arc<StatusManager>>,
-    /// SysmodCacheAdapter — sysmod 응답 안 `_cache` envelope 박혀있으면 자동 cache 저장.
-    /// 옛 TS 흐름 1:1 — yfinance / 한투 / 키움 / DART 같은 큰 시계열 응답 (50행+) 안 records 통째
-    /// LLM context 박지 않고 cacheKey 받아 cache_read / cache_grep / cache_aggregate 도구 사용.
-    /// 미설정 시 `_cache` 박힌 응답도 그대로 통과 (옛 호환).
+    /// SysmodCacheAdapter — sysmod 응답에 `_cache` envelope 가 있으면 자동 cache 저장.
+    /// 옛 TS 흐름 1:1 — yfinance / 한투 / 키움 / DART 같은 큰 시계열 응답 (50행+) 의 records 통째를
+    /// LLM context 에 넣지 않고 cacheKey 받아 cache_read / cache_grep / cache_aggregate 도구 사용.
+    /// 미설정 시 `_cache` 가 있는 응답도 그대로 통과 (옛 호환).
     cache: Option<Arc<SysmodCacheAdapter>>,
     /// Pre-exec hook (Linux 한정) — 자식 프로세스 안에서 fork() 직후 exec() 직전 호출.
     /// LinuxCgroupsSandboxAdapter 가 저장 — cgroup attach + seccomp install + unshare.
@@ -328,13 +328,13 @@ impl ProcessSandboxAdapter {
     }
 
     /// SysmodCacheAdapter 주입 — sysmod 응답 안 `_cache` envelope 자동 인식.
-    /// 미설정 시 `_cache` 박힌 응답 그대로 통과 (옛 호환).
+    /// 미설정 시 `_cache` 가 있는 응답 그대로 통과 (옛 호환).
     pub fn with_cache(mut self, cache: Arc<SysmodCacheAdapter>) -> Self {
         self.cache = Some(cache);
         self
     }
 
-    /// auto-cache fallback — envelope 미박힌 sysmod 응답에서 가장 큰 배열 필드 1개를
+    /// auto-cache fallback — envelope 가 없는 sysmod 응답에서 가장 큰 배열 필드 1개를
     /// SysmodCacheAdapter 로 저장 + in-place truncate + `_cacheKey` / `_cacheMeta` 형제 필드 주입.
     ///
     /// 룰:
@@ -469,7 +469,7 @@ impl ProcessSandboxAdapter {
     /// 1. `<module_dir>/config.json` 파싱 → `secrets: ["KEY1", "KEY2"]` 배열
     /// 2. 각 키마다 Vault `user:KEY` 조회 → env 저장
     /// 3. 모듈 settings (`system:module:<name>:settings`) 의 모든 필드 → `MODULE_<KEY>` env 주입
-    /// 4. tokenCache.secretName 박은 영역 안 vault 조회 → env 주입 (옛 OAuth token cache 로드)
+    /// 4. tokenCache.secretName 으로 vault 조회 → env 주입 (옛 OAuth token cache 로드)
     fn load_secrets_env(&self, module_dir: &Path) -> HashMap<String, String> {
         let mut env: HashMap<String, String> = HashMap::new();
         let Some(vault) = &self.vault else {
@@ -494,10 +494,10 @@ impl ProcessSandboxAdapter {
             }
         }
 
-        // 1b. tokenCache.secretName 박은 영역 안 vault 조회 → env 주입.
-        // 옛 OAuth token (예: KIS_ACCESS_TOKEN / KIWOOM_ACCESS_TOKEN) 박은 영역 안 매 호출 마다
-        // 토큰 발급 호출 안 발생 — 한투 / 키움 측 rate limit 안 403 issue. cached token 박힌 영역
-        // 안 즉시 사용 + 만료 박힌 영역 안 sysmod 자체 안 forceNew 재시도.
+        // 1b. tokenCache.secretName 으로 vault 조회 → env 주입.
+        // 옛 OAuth token (예: KIS_ACCESS_TOKEN / KIWOOM_ACCESS_TOKEN) 이 매 호출마다
+        // 토큰 발급 호출을 일으키지 않도록 — 한투 / 키움 측 rate limit 403 issue 방어. cached token 이 있으면
+        // 즉시 사용 + 만료된 경우 sysmod 자체에서 forceNew 재시도.
         if let Some(token_cache) = parsed.get("tokenCache").and_then(|v| v.as_object()) {
             if let Some(secret_name) = token_cache.get("secretName").and_then(|v| v.as_str()) {
                 if let Some(value) = vault.get_secret(&format!("user:{secret_name}")) {
@@ -658,9 +658,9 @@ impl ProcessSandboxAdapter {
                     return;
                 }
             }
-            // upgrade=true 박힌 영역 안 install 끝난 후 config.json 자동 갱신 — 새 디스크 버전
-            // 추출 + `packages` 배열 안 매칭 spec 의 명시 버전 정정. 다음 install 시점 옛 버전
-            // 다시 박히지 않도록.
+            // upgrade=true 인 경우 install 끝난 후 config.json 자동 갱신 — 새 디스크 버전
+            // 추출 + `packages` 배열에서 매칭되는 spec 의 명시 버전 정정. 다음 install 시점에 옛 버전이
+            // 다시 들어가지 않도록.
             if upgrade_bg {
                 if let Err(e) = Self::update_manifest_version(
                     &module_dir_bg,
@@ -691,7 +691,7 @@ impl ProcessSandboxAdapter {
     }
 
     /// config.json `packages` 배열 안 매칭 spec 의 `==` 명시 버전 갱신.
-    /// upgrade 박힌 후 디스크 안 새 버전 추출 + manifest 정정 → 다음 install 시점 새 버전 그대로.
+    /// upgrade 완료 후 디스크의 새 버전 추출 + manifest 정정 → 다음 install 시점에 새 버전 그대로.
     /// pkg_name = config.json 원본 spec (`requests==2.32.3`) / display = 추출된 패키지명 (`requests`).
     fn update_manifest_version(
         module_dir: &Path,
@@ -772,7 +772,7 @@ impl ProcessSandboxAdapter {
             .collect()
     }
 
-    /// 매 패키지 background spawn — 사용자 명시 trigger (설정 화면 [설치] 버튼) 박은 path.
+    /// 매 패키지 background spawn — 사용자 명시 trigger (설정 화면 [설치] 버튼) 경로.
     /// `upgrade=false` 시 첫 install / `upgrade=true` 시 `pip install --upgrade`.
     /// 반환값: spawn 한 job_id 목록 (이미 설치 / 진행 중 인 패키지는 제외).
     pub(crate) async fn install_packages_for_module(
@@ -867,7 +867,7 @@ impl ProcessSandboxAdapter {
                 }
             }
         }
-        // dist-info 0 박은 영역 fallback — 디렉토리 / py 파일 존재 시 설치 박힌 영역 (버전 0).
+        // dist-info 0 인 경우 fallback — 디렉토리 / py 파일 존재 시 설치된 상태 (버전 0).
         for name in &candidates {
             if python_modules.join(name).is_dir() {
                 return (true, None);
@@ -933,14 +933,14 @@ impl ProcessSandboxAdapter {
             } else {
                 (PackageStatusKind::Missing, None)
             };
-            // 설치 박힌 패키지만 PyPI 체크 (미설치 = 업그레이드 의미 0). 1시간 캐시 박혀
+            // 설치된 패키지만 PyPI 체크 (미설치 = 업그레이드 의미 0). 1시간 캐시 적용으로
             // 매 polling 시 network 호출 부담 차단.
             let latest_version = if matches!(kind, PackageStatusKind::Installed) {
                 fetch_latest_pypi_version(&display).await
             } else {
                 None
             };
-            // upgrade_available = PyPI latest > config 명시 버전. specifier `==` 외 박힌 영역
+            // upgrade_available = PyPI latest > config 명시 버전. specifier `==` 외 형태인 경우
             // (required_version = None) = 비교 불가 → false (보수적).
             let upgrade_available = matches!(
                 (&latest_version, &required_version),
@@ -1016,8 +1016,8 @@ impl ISandboxPort for ProcessSandboxAdapter {
         if target_path.contains("..") || target_path.starts_with('/') {
             return Err(format!("workspace zone 밖 path 거부: {}", target_path));
         }
-        // path entry 자동 탐색 — AI 가 path 박을 때 entry 확장자 (.mjs / .py 등) 추측해서 틀린 경우
-        // (예: yfinance 가 main.py 인데 AI 가 index.mjs 박음) 디렉토리 안 실재하는 entry 자동 선택.
+        // path entry 자동 탐색 — AI 가 path 를 줄 때 entry 확장자 (.mjs / .py 등) 를 잘못 추측한 경우
+        // (예: yfinance 가 main.py 인데 AI 가 index.mjs 라고 보낼 때) 디렉토리 안 실재하는 entry 자동 선택.
         // ModuleManager.Run 의 ENTRY_FILES 자동 탐색과 동일 fallback — Pipeline EXECUTE / 다른 호출
         // site 일반화. 옛 동작 호환 — full_path 실재하면 그대로 사용.
         let resolved_path = {
@@ -1166,7 +1166,7 @@ impl ProcessSandboxAdapter {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        // workspace 격리 Python deps — pre_install_from_manifest 가 박은 `--target /opt/firebat/python_modules`
+        // workspace 격리 Python deps — pre_install_from_manifest 가 사용하는 `--target /opt/firebat/python_modules`
         // 경로를 PYTHONPATH 로 자동 주입. 매 python sysmod 가 import 시점에 그 경로 lookup.
         let python_modules = self.workspace_root.join("python_modules");
         if python_modules.is_dir() {
@@ -1183,7 +1183,7 @@ impl ProcessSandboxAdapter {
         // Heavy 패키지 의 binary cache workspace 격리 — playwright 가 `python -m playwright install
         // chromium` 시 다운로드하는 browser binary (~300MB) 의 cache 경로 통일. 시스템 전역
         // (~/.cache/ms-playwright) 잔존 0 — workspace 폴더 삭제 = 모든 binary 삭제.
-        // 매 heavy 패키지 추가 시 동일 패턴 (예: HuggingFace HF_HOME / TRANSFORMERS_CACHE) 박음.
+        // 매 heavy 패키지 추가 시 동일 패턴 적용 (예: HuggingFace HF_HOME / TRANSFORMERS_CACHE).
         let pw_browsers = self.workspace_root.join("playwright_browsers");
         let _ = std::fs::create_dir_all(&pw_browsers);
         cmd.env("PLAYWRIGHT_BROWSERS_PATH", pw_browsers.to_string_lossy().to_string());
@@ -1211,8 +1211,8 @@ impl ProcessSandboxAdapter {
             }
         }
 
-        // 진단 — sysmod 호출 시작. input 의 action / 주요 key 만 박음 (sensitive value 안 노출).
-        // 사용자가 journalctl 박은 영역 안 어떤 sysmod 어떤 action 호출했는지 즉시 명시.
+        // 진단 — sysmod 호출 시작. input 의 action / 주요 key 만 기록 (sensitive value 비노출).
+        // 사용자가 journalctl 에서 어떤 sysmod 의 어떤 action 호출했는지 즉시 확인.
         let module_name = module_dir
             .file_name()
             .and_then(|s| s.to_str())
@@ -1278,10 +1278,10 @@ impl ProcessSandboxAdapter {
 
         let exit_code = exit_status.code();
         // 진단 — sysmod 응답 결과. exit_code / stdout / stderr size + preview 명시.
-        // 정상 종료 (exit 0) 박혀있어도 stderr 박혀있으면 진단 가치 큼 (Python warning / yfinance 라이브러리
-        // 안 HTTP 차단 메시지 / pandas FutureWarning / fail 가능성 명시). 옛 흐름 = exit != 0 시점만
-        // stderr_preview 박은 영역 → 정상 종료 + 비즈니스 fail 영역 진단 불가.
-        // stdout preview 도 박음 — out_err / 빈 records 박혀있으면 짧은 응답 직접 확인 가능.
+        // 정상 종료 (exit 0) 라도 stderr 가 있으면 진단 가치 큼 (Python warning / yfinance 라이브러리
+        // 안 HTTP 차단 메시지 / pandas FutureWarning / fail 가능성 명시). 옛 흐름은 exit != 0 시점만
+        // stderr_preview 출력 → 정상 종료 + 비즈니스 fail 인 경우 진단 불가.
+        // stdout preview 도 출력 — out_err / 빈 records 가 있으면 짧은 응답 직접 확인 가능.
         let stdout_preview: String = stdout_buf.chars().take(300).collect();
         let stderr_preview: String = stderr_buf.chars().take(300).collect();
         tracing::info!(
@@ -1332,8 +1332,8 @@ impl ProcessSandboxAdapter {
         // sysmod stdout envelope 인식 — `{success, data, error, errorKey?, errorParams?, __updateSecrets?}` 형태면 그대로 unwrap.
         // exit 0 자체는 process 정상 종료만 의미 — sysmod 의 비즈니스 success 와 별개.
         // errorKey / errorParams = i18n 영역 (SysmodToolHandler 의 lookup 변환 입력).
-        // __updateSecrets = OAuth token cache save — sysmod 안 새 token 발급 박은 영역 안 vault
-        // 업데이트. 한투 / 키움 같은 OAuth sysmod 안 매 호출 마다 발급 호출 박지 X (rate limit 차단).
+        // __updateSecrets = OAuth token cache save — sysmod 가 새 token 발급한 결과를 vault 에
+        // 업데이트. 한투 / 키움 같은 OAuth sysmod 가 매 호출마다 발급 호출을 하지 않도록 (rate limit 차단).
         let (success, data, error, error_key, error_params) = if let Some(obj) = parsed.as_object() {
             let has_success = obj.contains_key("success");
             let has_envelope_field = has_success
@@ -1367,7 +1367,7 @@ impl ProcessSandboxAdapter {
         };
 
         // `_cache` envelope 인식 — sysmod 가 큰 응답 (50행+) 시 data.{_cache: {records, sysmod, action,
-        // params, ttlSec}} 박은 영역 자동 SysmodCacheAdapter 저장. AI 가 records 통째 받지 않고 _cacheKey
+        // params, ttlSec}} 형태일 때 자동 SysmodCacheAdapter 저장. AI 가 records 통째 받지 않고 _cacheKey
         // 만 받아 cache_read / cache_grep / cache_aggregate gRPC 도구 호출. 토큰 절약.
         // 미설정 (cache None) 또는 cache.data() fail 시 `_cache` 영역 그대로 통과 (옛 호환).
         let data = if let Some(cache) = &self.cache {
@@ -1439,10 +1439,10 @@ impl ProcessSandboxAdapter {
             data
         };
 
-        // auto-cache fallback — envelope 미박힌 sysmod 응답에서 큰 배열 필드 1개를 sandbox 단에서
+        // auto-cache fallback — envelope 가 없는 sysmod 응답에서 큰 배열 필드 1개를 sandbox 단에서
         // 자동 SysmodCacheAdapter 저장. AI 가 records 통째 받지 않고 _cacheKey + 짧은 preview 만 받음.
         // 명시 `_cache` envelope 처리 후 이미 `_cacheKey` 채워졌으면 skip (옛 호환 + 모듈이 풍부한
-        // preview 박은 자유 보존). 한 응답당 가장 큰 배열 1개만 자동 캐싱 (over-engineering 회피).
+        // preview 를 만들 자유 보존). 한 응답당 가장 큰 배열 1개만 자동 캐싱 (over-engineering 회피).
         let data = if let Some(cache) = &self.cache {
             Self::apply_auto_cache(data, cache, module_name, input_action)
         } else {
@@ -1862,7 +1862,7 @@ mod tests {
     fn apply_auto_cache_respects_existing_cache_key() {
         let tmp = tempdir().unwrap();
         let cache = make_cache(tmp.path());
-        // envelope 처리 결과 시뮬레이션 — _cacheKey 이미 박혀있음
+        // envelope 처리 결과 시뮬레이션 — _cacheKey 이미 존재
         let items: Vec<serde_json::Value> = (0..40)
             .map(|i| serde_json::json!({"id": i}))
             .collect();

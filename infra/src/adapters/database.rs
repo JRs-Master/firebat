@@ -70,7 +70,7 @@ impl SqliteDatabaseAdapter {
                 cli_session_id TEXT,
                 cli_model TEXT,
                 active_plan_state TEXT,
-                -- soft-delete 타임스탬프 (ms epoch). NULL = 활성, 휴지통 = 박힘.
+                -- soft-delete 타임스탬프 (ms epoch). NULL = 활성, 휴지통 = 값 있음.
                 -- 30일 후 internal cleanup cron 이 cascade hard delete.
                 -- ⚠️ 옛 DB 호환 — IF NOT EXISTS 라 옛 schema 그대로면 이 컬럼 무시됨.
                 -- 아래 ALTER migration 이 옛 DB 에도 컬럼 추가 (idempotent).
@@ -153,8 +153,8 @@ impl SqliteDatabaseAdapter {
         .map_err(|e| format!("DB schema 초기화 실패: {e}"))?;
 
         // ── migration — 옛 DB 에 conversations.deleted_at 컬럼 추가 ──
-        // CREATE TABLE IF NOT EXISTS 는 옛 schema 보존 → 새 컬럼 자동 안 박힘.
-        // ALTER 박은 후 컬럼 이미 박혀있으면 SQLite 가 에러 — .ok() 로 무시 (idempotent).
+        // CREATE TABLE IF NOT EXISTS 는 옛 schema 보존 → 새 컬럼 자동 추가 안 됨.
+        // ALTER 실행 후 컬럼 이미 존재하면 SQLite 가 에러 — .ok() 로 무시 (idempotent).
         // soft-delete (휴지통 30일 retention) 위한 필수 컬럼. 2026-05-11 도입.
         conn.execute(
             "ALTER TABLE conversations ADD COLUMN deleted_at INTEGER",
@@ -509,7 +509,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
     fn delete_conversation(&self, owner: &str, id: &str) -> bool {
         let Ok(conn) = self.conn.lock() else { return false };
         let now = firebat_core::utils::time::now_ms();
-        // soft delete — conversations.deleted_at 박음 + tombstone 기록 (다기기 stale POST 차단).
+        // soft delete — conversations.deleted_at 설정 + tombstone 기록 (다기기 stale POST 차단).
         // 30일 후 cleanup_old_deleted_conversations 가 cascade hard delete (row + 임베딩).
         // 임베딩은 여기서 보존 — restore 시 살아있어야 함.
         let r1 = conn.execute(
@@ -536,7 +536,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
 
     fn list_deleted_conversations(&self, owner: &str) -> Vec<ConversationSummary> {
         let Ok(conn) = self.conn.lock() else { return vec![] };
-        // deleted_at 박힌 대화만. 최신 삭제 순.
+        // deleted_at 이 있는 대화만. 최신 삭제 순.
         let Ok(mut stmt) = conn.prepare(
             "SELECT id, title, created_at, updated_at FROM conversations
              WHERE owner = ?1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC",
@@ -557,7 +557,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
 
     fn restore_conversation(&self, owner: &str, id: &str) -> bool {
         let Ok(conn) = self.conn.lock() else { return false };
-        // deleted_at NULL 박음 + tombstone 제거 — 다기기에서 정상 동기화 가능.
+        // deleted_at NULL 설정 + tombstone 제거 — 다기기에서 정상 동기화 가능.
         let r1 = conn.execute(
             "UPDATE conversations SET deleted_at = NULL WHERE id = ?1 AND owner = ?2",
             params![id, owner],
@@ -571,7 +571,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
 
     fn permanent_delete_conversation(&self, owner: &str, id: &str) -> bool {
         let Ok(conn) = self.conn.lock() else { return false };
-        // hard delete — row + 임베딩 cascade. tombstone 박힌 그대로 (다기기 stale POST 차단).
+        // hard delete — row + 임베딩 cascade. tombstone 은 그대로 유지 (다기기 stale POST 차단).
         let r1 = conn.execute(
             "DELETE FROM conversations WHERE id = ?1 AND owner = ?2",
             params![id, owner],
@@ -741,7 +741,7 @@ impl IDatabasePort for SqliteDatabaseAdapter {
         let Ok(conn) = self.conn.lock() else { return vec![] };
         let Ok(mut stmt) = conn.prepare(
             // c.deleted_at IS NULL — 휴지통 (soft-deleted) 대화의 임베딩 검색 결과에서 제외.
-            // restore 시 다시 검색 가능 (deleted_at NULL 박힘).
+            // restore 시 다시 검색 가능 (deleted_at NULL 로 복원).
             "SELECT e.conv_id, c.title, e.owner, e.msg_idx, e.role,
                     e.content_hash, e.content_preview, e.embedding, e.created_at
              FROM conversation_embeddings e

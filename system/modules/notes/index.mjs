@@ -18,9 +18,9 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join, basename } from 'node:path';
 
-/** notes 데이터 디렉토리 — input._hubScope 받으면 hub-scoped path 박음.
+/** notes 데이터 디렉토리 — input._hubScope 받으면 hub-scoped path 분기.
  *  - admin: `data/notes/`
- *  - hub instance 단위 (옛 호환, sid 빈 영역): `data/hub/<instance_id>/notes/`
+ *  - hub instance 단위 (옛 호환, sid 빈 경우): `data/hub/<instance_id>/notes/`
  *  - hub visitor 별 격리 (`<instance_id>:<session_id>` 형태): `data/hub/<instance_id>/<session_id>/notes/`
  *  매 호출 시점 동적 결정 — _hubScope 영역 안 ':' 분리 / 영숫자·하이픈·언더스코어 가드. */
 function resolveNotesDir(hubScope) {
@@ -105,7 +105,7 @@ async function main() {
 
   const data = input.data ?? {};
   const { action } = data;
-  // hub 모드 — input.data._hubScope 박혀있으면 데이터 디렉토리 분기.
+  // hub 모드 — input.data._hubScope 가 있으면 데이터 디렉토리 분기.
   NOTES_DIR = resolveNotesDir(data._hubScope);
 
   ensureDir();

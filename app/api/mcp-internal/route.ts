@@ -4,7 +4,7 @@
  * Phase E cutover (2026-05-12) — 옛 Node @modelcontextprotocol/sdk 폐기.
  * 모든 도구 (sysmod / render_* / page / file / schedule / entity / episodic / search_history /
  * image_gen / network_request 등 60+) 가 Rust firebat-core binary 의 axum endpoint
- * (default 127.0.0.1:50052) 에 박혀있음. 본 route 는 frontend 의 `/api/mcp-internal`
+ * (default 127.0.0.1:50052) 에 존재. 본 route 는 frontend 의 `/api/mcp-internal`
  * 경로 호출을 그 endpoint 으로 그대로 전달 — 옛 호출자 (CLI 어댑터 / OpenAI Responses) 호환.
  *
  * FIREBAT_MCP_BASE_URL env (default http://127.0.0.1:50052) + FIREBAT_MCP_PATH env (default /mcp).

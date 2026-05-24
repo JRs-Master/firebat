@@ -5,7 +5,7 @@
 //! - `Auto` — destructive·복합 작업만 propose_plan / suggest 강제
 //! - `Always` — 모든 요청에 plan 강제 (인사·단답 포함, 예외 0건)
 //!
-//! 외부화 (2026-05-13) — 옛 `include_str!` 컴파일 시점 박힘 폐기.
+//! 외부화 (2026-05-13) — 옛 `include_str!` 컴파일 시점 삽입 폐기.
 //! 통합 i18n loader (`firebat_core::i18n`) 가 부팅 시점 `system/prompts/{name}/lang/{lang}.md` 자동 scan.
 //! 매 호출 시 `i18n::prompt(name, None)` lookup — 사용자 lang task-local 자동 적용.
 //!

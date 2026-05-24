@@ -79,9 +79,9 @@ export function HubInstanceDetail({
       if (res.success && res.data) setReferences(res.data);
     }).catch(e => logger.debug('hub', 'load_references 실패', { error: e }));
 
-    // sysmod 목록 — `/api/fs/system-modules` (SettingsModal 안 박은 영역 동일).
-    // 옛 `/api/settings/modules?scope=system` 박은 영역 = 단일 모듈 조회 endpoint 안 잘못된 호출 →
-    // `name 필요` 400 BadRequest 박힌 영역 정정.
+    // sysmod 목록 — `/api/fs/system-modules` (SettingsModal 에서 쓰는 것과 동일).
+    // 옛 `/api/settings/modules?scope=system` = 단일 모듈 조회 endpoint 에 잘못된 호출 →
+    // `name 필요` 400 BadRequest 였던 부분 정정.
     apiGet<{ success: boolean; modules?: Array<{ name: string; description?: string }> }>(
       '/api/fs/system-modules',
       { category: 'hub' },
@@ -136,7 +136,7 @@ export function HubInstanceDetail({
       }
     } catch (e) {
       logger.debug('hub', 'update_instance 실패', { error: e });
-      // silent fail 차단 — 사용자 시점 안 동작 0 박은 영역 명시 안내. network error / RPC fail 등.
+      // silent fail 차단 — 사용자 시점에서 동작 0 인 부분 명시 안내. network error / RPC fail 등.
       await alertDialog({ title: '저장 실패', message: (e as Error)?.message ?? '네트워크 또는 서버 오류' });
     } finally {
       setSaving(false);
@@ -166,7 +166,7 @@ export function HubInstanceDetail({
     }
   }, [instance.id]);
 
-  // embed snippet 영역 build — 사용자가 외부 사이트 HTML 영역 박는 영역.
+  // embed snippet build — 사용자가 외부 사이트 HTML 에 삽입하는 코드.
   const embedSnippet = firebatUrl
     ? `<script
   src="${firebatUrl}/api/hub/widget.js"
@@ -180,7 +180,7 @@ export function HubInstanceDetail({
   const handleCopyEmbed = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(embedSnippet);
-      await alertDialog({ title: '복사됨', message: '위젯 코드가 클립보드에 복사됐습니다. 외부 사이트 HTML 영역에 박아주세요.' });
+      await alertDialog({ title: '복사됨', message: '위젯 코드가 클립보드에 복사됐습니다. 외부 사이트 HTML 에 붙여넣어 주세요.' });
     } catch (e) {
       logger.debug('hub', 'copy_embed 실패', { error: e });
     }
@@ -254,7 +254,7 @@ export function HubInstanceDetail({
             />
             <div className="flex flex-col">
               <span className="font-semibold">위젯 임베드</span>
-              <span className="text-[10px] text-slate-400">외부 사이트 (워드프레스 등) HTML 에 위젯 코드 박아 호출. allowed_domains 검증.</span>
+              <span className="text-[10px] text-slate-400">외부 사이트 (워드프레스 등) HTML 에 위젯 코드 삽입해 호출. allowed_domains 검증.</span>
             </div>
           </label>
           <label htmlFor={exposePageId} className="flex items-start gap-2 text-[12px] text-slate-700 cursor-pointer mt-1">
@@ -420,10 +420,10 @@ export function HubInstanceDetail({
               </button>
             </Tooltip>
           </div>
-          <p className="text-[10px] text-slate-400">위젯 HTML/JS 영역에 박아 인증. 재발급 시 옛 토큰 즉시 무효.</p>
+          <p className="text-[10px] text-slate-400">위젯 HTML/JS 에 넣어 인증. 재발급 시 옛 토큰 즉시 무효.</p>
         </div>
 
-        {/* 외부 위젯 embed snippet — 워드프레스 등 외부 사이트 HTML 안 박는 코드 */}
+        {/* 외부 위젯 embed snippet — 워드프레스 등 외부 사이트 HTML 에 넣는 코드 */}
         <div className="flex flex-col gap-1">
           <label htmlFor={embedId} className="text-[11px] font-bold text-slate-600">위젯 embed 코드</label>
           <div className="relative">

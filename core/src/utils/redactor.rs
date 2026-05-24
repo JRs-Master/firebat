@@ -188,10 +188,10 @@ fn mask_key_value(s: &str, key: &str) -> String {
             // separator 매칭 2 영역:
             //   case (a) `: ` / `=` separator + 일반 value (quoted 또는 word boundary)
             //   case (b) 공백 + quoted value (`API-KEY 'dddd' is invalid` 형식)
-            // case (b) 안 공백 다음 quote 박혀있어야 매칭 — 자연어 영역 "api-key is required" 안 false
-            // positive 차단 (다음 char = word 박혀 case (b) X).
+            // case (b) 는 공백 다음 quote 가 있어야 매칭 — 자연어 "api-key is required" 의 false
+            // positive 차단 (다음 char = word 면 case (b) 가 아님).
             let mut sep_kind: Option<u8> = None; // b':' / b'=' = case (a), b'\'' / b'"' = case (b)
-            // 공백 skip 박은 후 separator / quote 확인.
+            // 공백 skip 후 separator / quote 확인.
             let mut probe = after;
             while probe < bytes.len() && (bytes[probe] == b' ' || bytes[probe] == b'\t') {
                 probe += 1;
@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn redacts_json_apikey() {
-        // 사용자 보고 케이스 — `"apikey":"dddd"` JSON 형식. key 뒤 close-quote skip 박혀야 매칭.
+        // 사용자 보고 케이스 — `"apikey":"dddd"` JSON 형식. key 뒤 close-quote skip 이 되어야 매칭.
         let s = r#"{"apikey":"dddd","status":403,"detail":"API-KEY 'dddd' is invalid."}"#;
         let out = redact_string(s);
         assert!(!out.contains("\"dddd\""), "out: {out}");

@@ -1,11 +1,11 @@
 /**
- * `/500` route — (user) route group 안 error 박힌 영역 안 client redirect 박은 target.
+ * `/500` route — (user) route group 안 error 가 일어난 부분에서 client redirect 한 target.
  *
- * 옛 (user)/error.tsx 안 = (user) layout 안 자동 wrap (header 박힘). 사용자 의도 X.
- * 새 흐름 — (user)/error.tsx 안 router.replace('/500') 박은 영역 + 본 route 안 단순 page
+ * 옛 (user)/error.tsx 안 = (user) layout 안 자동 wrap (header 포함). 사용자 의도 X.
+ * 새 흐름 — (user)/error.tsx 안 router.replace('/500') 호출 + 본 route 안 단순 page
  * render (root layout 만 wrap, header 0).
  *
- * status code 200 박힘 (client-side redirect). 진짜 500 status 박지 X — UI 의도 우선.
+ * status code 200 (client-side redirect). 진짜 500 status 사용 X — UI 의도 우선.
  */
 import type { Metadata } from 'next';
 

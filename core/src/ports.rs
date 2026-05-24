@@ -290,15 +290,15 @@ pub trait IDatabasePort: Send + Sync {
         messages_json: &str,
         created_at: Option<i64>,
     ) -> bool;
-    /// 삭제 — soft delete. conversations.deleted_at 박음 + tombstone 기록.
+    /// 삭제 — soft delete. conversations.deleted_at 설정 + tombstone 기록.
     /// 30일 후 cleanup_old_deleted 가 cascade hard delete.
     fn delete_conversation(&self, owner: &str, id: &str) -> bool;
     fn is_conversation_deleted(&self, owner: &str, id: &str) -> bool;
     /// 휴지통 목록 — deleted_at IS NOT NULL 인 conversations. 최신 삭제 순.
     fn list_deleted_conversations(&self, owner: &str) -> Vec<ConversationSummary>;
-    /// 휴지통에서 복원 — deleted_at NULL 박음. tombstone 도 제거 (다기기 동기화).
+    /// 휴지통에서 복원 — deleted_at NULL 설정. tombstone 도 제거 (다기기 동기화).
     fn restore_conversation(&self, owner: &str, id: &str) -> bool;
-    /// 영구 삭제 — row 자체 + 임베딩 cascade. tombstone 박힌 그대로 (다기기 stale POST 차단).
+    /// 영구 삭제 — row 자체 + 임베딩 cascade. tombstone 은 그대로 유지 (다기기 stale POST 차단).
     fn permanent_delete_conversation(&self, owner: &str, id: &str) -> bool;
     /// 30일 retention cleanup — `cutoff_ms` 보다 이전에 삭제된 거 일괄 hard delete.
     /// 응답: 삭제된 conversation 개수.
@@ -531,8 +531,8 @@ pub struct ModuleOutput {
     pub data: serde_json::Value,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    /// i18n key — `error.X.Y` 형태. SysmodToolHandler 가 `module.{name}.X.Y` 박은 lookup 변환.
-    /// 매 sysmod 가 응답 시점 박음 (옛 raw `error` 와 동시 박음 — fallback 호환).
+    /// i18n key — `error.X.Y` 형태. SysmodToolHandler 가 `module.{name}.X.Y` 형태로 lookup 변환.
+    /// 매 sysmod 가 응답 시점에 설정 (옛 raw `error` 와 동시 설정 — fallback 호환).
     #[serde(rename = "errorKey", default, skip_serializing_if = "Option::is_none")]
     pub error_key: Option<String>,
     /// i18n placeholder param — `{{name}}` 같은 영역 치환. 매 value = string.
@@ -604,7 +604,7 @@ pub struct PackageStatus {
     /// Failed 시 사용자 노출 메시지 (이미 i18n 변환).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
-    /// 디스크 안 설치 박힌 버전 (dist-info 안 추출) — `2.32.3` 형식. 미설치 / 추출 실패 = None.
+    /// 디스크에 설치된 버전 (dist-info 에서 추출) — `2.32.3` 형식. 미설치 / 추출 실패 = None.
     /// 사용자 표시 정보 (참고용) — 업그레이드 판단에는 사용 X.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub installed_version: Option<String>,
@@ -616,8 +616,8 @@ pub struct PackageStatus {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub latest_version: Option<String>,
     /// 업그레이드 가능 — `latest_version > required_version` (semver 비교) 인 경우만 true.
-    /// frontend SystemModuleSettings 안 [업그레이드] 버튼 표시 조건. 옛 동작 안 항상 표시 박혔던 영역
-    /// 정정 — PyPI 안 새 버전 존재 + 사용자가 업그레이드 박을 가치 있을 때만.
+    /// frontend SystemModuleSettings 안 [업그레이드] 버튼 표시 조건. 옛 동작은 항상 표시였던 것을
+    /// 정정 — PyPI 에 새 버전 존재 + 사용자가 업그레이드할 가치 있을 때만.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub upgrade_available: bool,
 }
@@ -859,10 +859,10 @@ pub trait ILibraryPort: Send + Sync {
         end_char: i64,
     ) -> InfraResult<()>;
 
-    /// chunk_count 영역 업데이트 — Source 영역 박은 후 매 chunk 영역 저장 끝나는 시점.
+    /// chunk_count 업데이트 — Source 생성 후 매 chunk 저장이 끝나는 시점.
     async fn update_source_chunk_count(&self, source_id: &str, chunk_count: i64) -> InfraResult<()>;
 
-    /// 매 reference 영역의 모든 chunk 영역 — search 영역 박을 시점 cosine 영역.
+    /// 매 reference 의 모든 chunk — search 시점에 cosine 비교용.
     async fn list_chunks_for_search(
         &self,
         reference_ids: &[String],
@@ -1143,9 +1143,9 @@ pub struct ChatMessage {
 pub struct LlmCallOpts {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// 플랜 모드 — frontend 안 `planMode` 박은 영역 (off/auto/always). 매니저 안 AiRequestOpts.plan_mode
-    /// 매핑 박음. 옛 시점 안 = AiRequestOpts 만 박혀있고 LlmCallOpts 안 박혀있지 않아 frontend 가
-    /// 박은 planMode 영역 backend 안 무시 박혔던 root cause.
+    /// 플랜 모드 — frontend 의 `planMode` 값 (off/auto/always). 매니저는 AiRequestOpts.plan_mode 로
+    /// 매핑. 옛에는 AiRequestOpts 에만 있고 LlmCallOpts 에는 없어서 frontend 가
+    /// 보낸 planMode 가 backend 에서 무시되던 root cause.
     #[serde(rename = "planMode", default)]
     pub plan_mode: PlanMode,
     #[serde(rename = "thinkingLevel", default, skip_serializing_if = "Option::is_none")]
@@ -1333,7 +1333,7 @@ pub struct AiRequestOpts {
     #[serde(rename = "cronAgent", default, skip_serializing_if = "Option::is_none")]
     pub cron_agent: Option<CronAgentOpts>,
     /// Hub 컨텍스트 — 외부 사이트 챗봇 인스턴스 안에서 호출 시 set. None = admin 정상 모드.
-    /// 박혀있으면 AiManager 가:
+    /// 설정되어 있으면 AiManager 가:
     ///   - 도구 list 안 sysmod_* 영역 `allowed_sysmods` 만 retain + mcp_* 영역 차단
     ///     (외부 도용 방지 — admin 내장 도구 노출 최소)
     ///   - RetrievalEngine 의 library 영역 `allowed_references` 안 Reference ID 만 검색
@@ -1359,7 +1359,7 @@ pub struct HubContext {
     /// 인스턴스 ID (logging / 추적 영역).
     #[serde(rename = "instanceId")]
     pub instance_id: String,
-    /// 방문자 session id — owner 영역에 같이 박혀 visitor 끼리 자료 격리.
+    /// 방문자 session id — owner 에 포함되어 visitor 끼리 자료 격리.
     /// `hub:<instance_id>:<session_id>` 형태 owner 가 매 도구 호출 시 자동 주입.
     /// 빈 string = 옛 호환 (visitor 격리 X, instance 단위만).
     #[serde(rename = "sessionId", default)]
@@ -1371,7 +1371,7 @@ pub struct HubContext {
     #[serde(rename = "allowedReferences", default)]
     pub allowed_references: Vec<String>,
     /// hub 대화 history — hub_messages 테이블 영역 recent N 메시지.
-    /// AiManager 가 system_prompt 영역 prepend 박힘 (HistoryResolver 우회).
+    /// AiManager 가 system_prompt 영역에 prepend (HistoryResolver 우회).
     #[serde(default)]
     pub history: Vec<ChatMessage>,
 }
@@ -1397,11 +1397,11 @@ pub trait ILlmPort: Send + Sync {
     fn get_model_id(&self) -> String;
     /// MCP 자체 처리 모델 여부 — CLI 3종 (Claude Code / Codex / Gemini) +
     /// Anthropic API (Claude messages) + OpenAI Responses API 가 hosted MCP connector
-    /// 또는 자체 MCP loop 박혀 Firebat MCP server (`/api/mcp-internal`) 인증 토큰
+    /// 또는 자체 MCP loop 를 통해 Firebat MCP server (`/api/mcp-internal`) 인증 토큰
     /// (`opts.mcp_token`) 만 있으면 도구 schema 별도 전달 불필요.
     /// false 응답 모델 (Gemini native / Vertex / 옛 OpenAI Chat) 은 ai.rs 의
-    /// effective_tools schema 박혀가야 함 (Function Calling 표준).
-    /// opts.model 박혀있으면 그 모델 기준, 없으면 current default 기준.
+    /// effective_tools schema 가 전달되어야 함 (Function Calling 표준).
+    /// opts.model 이 있으면 그 모델 기준, 없으면 current default 기준.
     /// 미구현 implementor 는 default false (안전한 쪽).
     fn supports_hosted_mcp(&self, _opts: &LlmCallOpts) -> bool { false }
     async fn ask_text(&self, prompt: &str, opts: &LlmCallOpts) -> InfraResult<LlmTextResponse>;
@@ -1455,7 +1455,7 @@ pub struct McpToolInfo {
 /// IEmbedderCachePort — embedding vector disk 영속화.
 ///
 /// 옛 component_search_index / tool_search_index 가 std::fs / std::env 직접 호출하던 영역을
-/// Hexagonal 정공 박힌 port 로 추상화 (2026-05-13).
+/// Hexagonal 정공 port 로 추상화 (2026-05-13).
 ///
 /// Core 가 fs / env 호출 0 — `infra::adapters::embedder_cache::FileEmbedderCacheAdapter` 가 file I/O 담당.
 /// cache_name = "component-embeddings.json" / "tool-embeddings.json" 등 파일명. 디렉토리는 adapter resolve.
@@ -1468,7 +1468,7 @@ pub trait IEmbedderCachePort: Send + Sync {
 
 /// IConfigPort — env / config 영역 추상화.
 ///
-/// 옛 std::env::var 직접 호출하던 영역 (FIREBAT_MCP_BASE_URL 등) Hexagonal 정공 박힘 (2026-05-13).
+/// 옛 std::env::var 직접 호출하던 영역 (FIREBAT_MCP_BASE_URL 등) Hexagonal 정공 적용 (2026-05-13).
 /// adapter = `infra::adapters::config::EnvConfigAdapter` — std::env::var 래핑.
 pub trait IConfigPort: Send + Sync {
     /// config key (예: "FIREBAT_MCP_BASE_URL") → 값 또는 None.
@@ -1800,7 +1800,7 @@ pub enum CronTriggerType {
 }
 
 /// runWhen 의 cron pre-condition 평가 — sysmod 호출 결과 의 특정 field 비교.
-/// schema: `{ check: { sysmod, action, inputData? }, field, op, value }`. 2026-05-13 typed 박힘 (옛 JSON Value).
+/// schema: `{ check: { sysmod, action, inputData? }, field, op, value }`. 2026-05-13 typed 적용 (옛 JSON Value).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CronRunWhen {
@@ -1827,7 +1827,7 @@ pub struct CronRunWhenCheck {
     pub input_data: Option<serde_json::Value>,
 }
 
-/// 실행 실패 시 retry 정책 — `{ count, delayMs? }`. 2026-05-13 typed 박힘.
+/// 실행 실패 시 retry 정책 — `{ count, delayMs? }`. 2026-05-13 typed 적용.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CronRetry {
@@ -1838,7 +1838,7 @@ pub struct CronRetry {
     pub delay_ms: Option<i64>,
 }
 
-/// 알림 hook — 성공/실패 시 sysmod 호출 + template 치환. 2026-05-13 typed 박힘.
+/// 알림 hook — 성공/실패 시 sysmod 호출 + template 치환. 2026-05-13 typed 적용.
 /// schema: `{ onSuccess?: { sysmod, template?, chatId? }, onError?: {...} }`.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1899,7 +1899,7 @@ pub struct CronScheduleOptions {
     #[serde(rename = "agentPrompt", default, skip_serializing_if = "Option::is_none")]
     pub agent_prompt: Option<String>,
     /// 데이터 격리 — None = admin (default), Some("hub:<id>") = 해당 hub visitor 소유.
-    /// visitor 가 chat 안 자기 cron 박을 때 AI 가 자동 주입. admin endpoint 는 owner=None,
+    /// visitor 가 chat 안에서 자기 cron 을 만들 때 AI 가 자동 주입. admin endpoint 는 owner=None,
     /// 익명 hub endpoint 는 owner='hub:<instance.id>' 강제.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner: Option<String>,
@@ -2279,7 +2279,7 @@ pub trait IMediaPort: Send + Sync {
     /// 채팅 첨부 이미지 임시 저장 — sharp variants 0, raw 그대로. 별도 디렉토리 (`user/attachments/`).
     /// 갤러리 (`user/media/`) 와 분리 — 1회성 첨부 누적 차단 + 30일 후 cleanup cron 이 자동 삭제.
     /// 응답: `/user/attachments/<slug>.<ext>` URL.
-    /// 보안: caller (MediaManager) 가 magic byte 검증 + 크기 제한 박은 후 호출.
+    /// 보안: caller (MediaManager) 가 magic byte 검증 + 크기 제한 처리 후 호출.
     async fn save_temp_attachment(&self, binary: &[u8], ext: &str) -> InfraResult<String>;
 
     /// 채팅 첨부 임시 이미지 read — `/user/attachments/<filename>` URL handler 가 호출.
@@ -2471,7 +2471,7 @@ pub trait IHubPort: Send + Sync {
     ) -> InfraResult<String>;
 
     /// (instance_id, session_id) → 항상 새 conversation 생성 + id 반환. multi-conv 영역에서
-    /// 사용자가 "새 대화" 박을 때 호출. ensure 와 달리 옛 conv 있어도 새 conv 추가.
+    /// 사용자가 "새 대화" 누를 때 호출. ensure 와 달리 옛 conv 있어도 새 conv 추가.
     async fn create_conversation(
         &self,
         instance_id: &str,

@@ -4,7 +4,7 @@
 //! - PDF — pdf-extract crate (텍스트 영역만, 스캔 PDF Phase 2 영역)
 //! - TXT / MD — 직접 read (UTF-8 영역만, BOM 영역 제거)
 //! - URL — Phase 1.5 영역 = sysmod_firecrawl 영역 frontend 영역 fetch + HTML strip
-//!   → backend 는 inline_text 로 받음. backend extract_html 영역 박지 X.
+//!   → backend 는 inline_text 로 받음. backend extract_html 도입 X.
 //! - 직접 입력 — frontend textarea 영역 받음 (추출 영역 0, 직접 저장 영역)
 //!
 //! 반환 영역 — `ExtractedText { full_text, pages? }`. pages 영역 = PDF 영역만 매 영역 (page_num, start_char, end_char).
@@ -20,8 +20,8 @@ pub struct ExtractedText {
 }
 
 /// PDF 영역 추출 — pdf-extract crate (텍스트 영역만).
-/// 스캔 PDF (이미지 영역) = Phase 2 영역 OCR 영역 박은 후 자연 영역.
-/// 매 page 영역 boundary 영역 = `\x0c` (form feed) 영역 박은 영역 (pdf-extract 영역 자연).
+/// 스캔 PDF (이미지) = Phase 2 OCR 도입 후 자연 처리.
+/// 매 page boundary = `\x0c` (form feed) 문자 (pdf-extract 자연 동작).
 pub fn extract_pdf(path: &Path) -> Result<ExtractedText, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("PDF read 실패: {e}"))?;
     let full_text = pdf_extract::extract_text_from_mem(&bytes)
@@ -38,7 +38,7 @@ pub fn extract_pdf(path: &Path) -> Result<ExtractedText, String> {
             page_num += 1;
         }
     }
-    // 마지막 page 영역 (form feed 영역 박지 X 영역)
+    // 마지막 page (form feed 가 없는 부분)
     if start < full_text.chars().count() {
         pages.push((page_num, start, full_text.chars().count()));
     }

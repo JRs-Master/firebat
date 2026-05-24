@@ -46,7 +46,7 @@ impl OpenAiResponsesHandler {
                     }
                     "reasoning" => {
                         // reasoning.summary[*].text — reasoning 모델 (o1 / o3 / GPT-5) 가
-                        // emit 박는 thinking 요약. text 가 비어있을 수도 (encrypted_content 만).
+                        // emit 하는 thinking 요약. text 가 비어있을 수도 (encrypted_content 만).
                         if let Some(summary) = item.get("summary").and_then(|v| v.as_array()) {
                             for s in summary {
                                 if let Some(t) = s.get("text").and_then(|v| v.as_str()) {
@@ -127,7 +127,7 @@ impl FormatHandler for OpenAiResponsesHandler {
         if let Some(t) = opts.temperature {
             body["temperature"] = serde_json::Value::from(t);
         }
-        // Default 8192 — 모든 API 어댑터 일관 default (옛 node 버전 박은 답변 길이 회복).
+        // Default 8192 — 모든 API 어댑터 일관 default (옛 node 버전의 답변 길이 회복).
         body["max_output_tokens"] = serde_json::Value::from(opts.max_tokens.unwrap_or(8192));
 
         let response = http_client()
@@ -220,7 +220,7 @@ impl FormatHandler for OpenAiResponsesHandler {
                 body["instructions"] = serde_json::Value::String(sp.to_string());
             }
         }
-        // Default 8192 — 모든 API 어댑터 일관 default (옛 node 버전 박은 답변 길이 회복).
+        // Default 8192 — 모든 API 어댑터 일관 default (옛 node 버전의 답변 길이 회복).
         body["max_output_tokens"] = serde_json::Value::from(opts.max_tokens.unwrap_or(8192));
 
         let response = http_client()

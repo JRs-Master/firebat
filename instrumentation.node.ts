@@ -8,7 +8,7 @@
  * install path 폐기 (commit 897a08c) 와 일관. 매 sysmod 호출 시점 패키지 누락 시 envelope errorKey
  * (`core.error.module.packages_missing`) 반환 + 사용자가 설정 화면에서 [설치] 버튼으로 명시 trigger.
  */
-export {}; // module 표기 — 부수 효과만 박는 파일이지만 ESM 의 module 인식 위해 빈 export
+export {}; // module 표기 — 부수 효과만 있는 파일이지만 ESM 의 module 인식 위해 빈 export
 
 // SIGTERM / SIGINT graceful shutdown — Core 작업 완료 대기 + Cost flush.
 // systemd unit TimeoutStopSec=30s 와 호환 (Core 는 25s, 5s 여유).

@@ -2,16 +2,16 @@
 /**
  * 키움 sysmod codegen — `_apis.json` 입력 → `config.json` + `index.mjs` 생성.
  *
- * 입력: `system/modules/kiwoom/_apis.json` (extract-apis.mjs 안 박은 영역)
+ * 입력: `system/modules/kiwoom/_apis.json` (extract-apis.mjs 가 생성)
  * 출력: `system/modules/kiwoom/{config.json, index.mjs}` — 208 APIs, 8 domains
  *
  * 도메인별 별도 LLM 도구 노출 (sysmod_kiwoom_account / sysmod_kiwoom_chart 등) —
- * MCP register_sysmod_tools 안 domains[] 분기 박힘. action = API ID 직접 호출.
+ * MCP register_sysmod_tools 안 domains[] 분기. action = API ID 직접 호출.
  *
  * 사용:
  *   cd system/modules/kiwoom && node scripts/gen.mjs
  *
- * 옛 영역: `scripts/gen-stock-sysmods.mjs` 안 kiwoom + kis 통합 박힌 영역.
+ * 옛 위치: `scripts/gen-stock-sysmods.mjs` 안 kiwoom + kis 통합 코드.
  * 단일 책임 정공 — sysmod 자체 안 자체 codegen.
  */
 

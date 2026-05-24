@@ -70,7 +70,7 @@ impl E5LocalEmbedderAdapter {
 
     /// 모델 + tokenizer 로드 — 첫 호출 시 hf-hub 으로 자동 다운로드, 이후 shared `Arc<E5State>`.
     /// OnceCell 의 `get_or_try_init` 으로 race-safe.
-    /// 다운로드 fail 시 OnceCell 가 cache 박지 X → 매 임베딩 호출마다 재시도 (silent retry 패턴 방어).
+    /// 다운로드 fail 시 OnceCell 가 cache 하지 않음 → 매 임베딩 호출마다 재시도 (silent retry 패턴 방어).
     /// fail 원인을 명확히 보이도록 error 영역에 tracing::error! 추가.
     async fn ensure_loaded(&self) -> Result<Arc<E5State>, String> {
         let state = self
@@ -175,13 +175,13 @@ impl E5LocalEmbedderAdapter {
     }
 
     fn build_api(&self) -> Result<Api, String> {
-        // 옛 commit `3418b4b` 안 `HF_ENDPOINT` env 자동 default 박은 fix = 잘못된 진단.
-        // hf-hub 0.3 안 env 안 읽음 + default endpoint = "https://huggingface.co" 자체 박혀있음.
-        // 실측 결과 사용자 환경 안 `relative URL without a base` 에러 여전히 발생.
+        // 옛 commit `3418b4b` 의 `HF_ENDPOINT` env 자동 default 설정 fix = 잘못된 진단.
+        // hf-hub 0.3 은 env 를 안 읽고 + default endpoint = "https://huggingface.co" 자체에 있음.
+        // 실측 결과 사용자 환경에서 `relative URL without a base` 에러 여전히 발생.
         //
-        // 새 fix: hf-hub 0.4 upgrade + `with_endpoint` 명시 호출. 0.4 안 method 신설 + env 인식.
-        // endpoint 명시로 우회 방어 (default 이미 박혀있지만 환경 안 어떤 영역 안 빈 값 박힐
-        // 가능성 차단). 디버그 log 박아 사용자 환경 안 진짜 endpoint 값 확인.
+        // 새 fix: hf-hub 0.4 upgrade + `with_endpoint` 명시 호출. 0.4 에 method 신설 + env 인식.
+        // endpoint 명시로 우회 방어 (default 이미 있지만 환경에 따라 어떤 부분에 빈 값이 들어갈
+        // 가능성 차단). 디버그 log 추가로 사용자 환경의 진짜 endpoint 값 확인.
         let endpoint = std::env::var("HF_ENDPOINT")
             .ok()
             .filter(|s| !s.is_empty())

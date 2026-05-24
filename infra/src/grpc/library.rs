@@ -1,8 +1,8 @@
 //! LibraryServiceImpl — Library Phase 1 (2026-05-17) 의 gRPC 영역.
 //!
-//! infra 영역 박은 사유 — UploadSource RPC 영역 = pdf-extract / extract_text_file
-//! 영역 직접 호출 영역. 옛 영역 매 grpc service 영역 = core 영역 박혀있는데 — Library 영역 =
-//! Hexagonal port 영역 박지 마 (extractor 영역 = infra-only 영역).
+//! infra 에 둔 사유 — UploadSource RPC 가 pdf-extract / extract_text_file 를
+//! 직접 호출. 옛에는 매 grpc service 가 core 안에 있었는데 — Library 는
+//! Hexagonal port 화하지 않음 (extractor 가 infra-only 라서).
 //!
 //! 매 source_type 영역 처리 path:
 //! - `text` — inline_text 영역 직접 저장 (frontend 영역 textarea 영역)
@@ -38,7 +38,7 @@ impl LibraryServiceImpl {
     }
 }
 
-// ─── proto ↔ core struct 변환 (orphan rule 영역 — infra 영역에서 From impl 박지 X, 직접 함수 영역) ──
+// ─── proto ↔ core struct 변환 (orphan rule — infra 에서 From impl 정의 불가, 직접 함수로) ──
 
 fn ref_to_pb(r: firebat_core::ports::LibraryReference) -> LibraryReferencePb {
     LibraryReferencePb {
@@ -134,7 +134,7 @@ impl LibraryService for LibraryServiceImpl {
         //  - "text" — inline_text 직접
         //  - "txt" / "md" — file_path read
         //  - "pdf" — file_path pdf-extract
-        //  - "url" — source_url fetch (Phase 1.5 영역) — 현재 = inline_text 영역 만 (frontend 영역에서 fetch + strip 박은 영역)
+        //  - "url" — source_url fetch (Phase 1.5) — 현재 = inline_text 만 (frontend 에서 fetch + strip 처리)
         let (extracted_text, page_numbers): (String, Option<Vec<(usize, usize, usize)>>) =
             match args.source_type.as_str() {
                 "text" | "url" => (args.inline_text.clone(), None),
@@ -172,7 +172,7 @@ impl LibraryService for LibraryServiceImpl {
             .await
             .map_err(TonicStatus::internal)?;
 
-        // chunk_count 영역 = get_source 영역 한 번 더 (or 매니저 반환 영역 박은 영역) — 단순 영역 한 번 더 read
+        // chunk_count 채우기 위해 get_source 한 번 더 (or 매니저 반환값 사용) — 단순하게 한 번 더 read
         let source = self
             .manager
             .get_source(&source_id)

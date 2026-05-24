@@ -17,7 +17,7 @@ import { ApiError } from '../../../../lib/api-error';
  *
  * `lib/api-gen/library` 가 `@connectrpc/connect-node` 를 transitively 가져와서
  * client component (LibraryPanel 등) 가 직접 import 하면 Turbopack bundle 에
- * `node:http2` 가 박혀 빌드 fail. 그래서 client 는 본 dispatcher 를 통해 호출.
+ * `node:http2` 가 포함되어 빌드 fail. 그래서 client 는 본 dispatcher 를 통해 호출.
  *
  * 8 op:
  *  - list-references / create-reference / delete-reference

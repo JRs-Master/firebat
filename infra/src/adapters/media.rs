@@ -149,7 +149,7 @@ impl LocalMediaAdapter {
     }
 
     /// hub-aware find — hub_owner 있으면 그 hub dir 만 검색, 없으면 admin (user + system).
-    /// 추후 hub-scoped read endpoint 박는 시점에 사용 (현재 dead code 영역 보존).
+    /// 추후 hub-scoped read endpoint 도입 시점에 사용 (현재 dead code 로 보존).
     #[allow(dead_code)]
     async fn find_record_hub(&self, slug: &str, hub_owner: Option<&str>) -> Option<(MediaScope, MediaFileRecord)> {
         if let Some(id) = hub_owner.filter(|id| !id.is_empty() && Self::is_safe_hub_id(id)) {
@@ -169,7 +169,7 @@ impl LocalMediaAdapter {
     }
 
     fn url_for_hub(hub_owner: &str, slug: &str, ext: &str) -> String {
-        // hub_owner = `<inst>` 또는 `<inst>:<sid>`. URL 영역 `/` 분리 박힘.
+        // hub_owner = `<inst>` 또는 `<inst>:<sid>`. URL 에서는 `/` 로 분리.
         let path_part = hub_owner.replace(':', "/");
         format!("/user/hub/{}/media/{}.{}", path_part, slug, ext)
     }
@@ -520,7 +520,7 @@ impl IMediaPort for LocalMediaAdapter {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(format!("attachment read: {e}")),
         };
-        // 확장자 기반 content-type — save_temp_attachment 가 detect_image_ext 박은 ext 만 박음 (jpg/png/webp/gif).
+        // 확장자 기반 content-type — save_temp_attachment 가 detect_image_ext 결과 ext 만 사용 (jpg/png/webp/gif).
         let ext = filename.rsplit_once('.').map(|(_, e)| e).unwrap_or("");
         let content_type = match ext.to_lowercase().as_str() {
             "jpg" | "jpeg" => "image/jpeg",

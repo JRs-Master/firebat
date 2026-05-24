@@ -363,11 +363,11 @@ export const AiRequestActionWithToolsResponseSchema: GenMessage<AiRequestActionW
 
 /**
  * ─── Streaming RPC — SSE chunk / step / result event ─────────────────────────
- * 옛 TS Core 안 callback 두 개 (step + chunk) 박혀있던 영역. Rust core unary RPC 시점에
- * SSE event 영역 0 박혀 thinking-style 진행 메시지 영역 안 보임. server-stream RPC 박힘.
- * 
+ * 옛 TS Core 안 callback 두 개 (step + chunk) 가 있던 자리. Rust core unary RPC 시점에
+ * SSE event 가 없어 thinking-style 진행 메시지가 안 보임. server-stream RPC 추가.
+ *
  * 이벤트:
- *   - chunk: 매 turn AI 의 reasoning text 또는 thinking 영역 (도구 호출 사이 박힌 진행 메시지)
+ *   - chunk: 매 turn AI 의 reasoning text 또는 thinking 텍스트 (도구 호출 사이 진행 메시지)
  *   - step:  매 도구 호출 시작 / 완료 / 에러
  *   - result: 최종 AiResponse JSON
  *   - error:  치명적 에러 (stream 종료)
@@ -509,8 +509,8 @@ export const AiStreamEventPbSchema: GenMessage<AiStreamEventPb> = /*@__PURE__*/
   messageDesc(file_firebat, 20);
 
 /**
- * streaming RPC 전용 Request — buf STANDARD lint (RPC_REQUEST_RESPONSE_UNIQUE) 영역 매 RPC 안
- * unique Request 강제. 옛 AiRequestActionWithToolsRequest 영역 그대로 박혀있고 stream 안 별도.
+ * streaming RPC 전용 Request — buf STANDARD lint (RPC_REQUEST_RESPONSE_UNIQUE) 가 매 RPC 의
+ * unique Request 강제. 옛 AiRequestActionWithToolsRequest 그대로 유지하고 stream 용 별도 추가.
  *
  * @generated from message firebat.v1.AiStreamRequestActionWithToolsRequest
  */
@@ -2820,7 +2820,7 @@ export type PackageStatusPb = Message<"firebat.v1.PackageStatusPb"> & {
   installedVersion?: string | undefined;
 
   /**
-   * / config.json 안 `==X.Y.Z` 명시 버전. 다른 specifier (>=, ~= 등) 박힌 영역 비어있음.
+   * / config.json 안 `==X.Y.Z` 명시 버전. 다른 specifier (>=, ~= 등) 사용 시 비어있음.
    *
    * @generated from field: optional string required_version = 6;
    */
@@ -3046,7 +3046,7 @@ export const CronRunWhenCheckPbSchema: GenMessage<CronRunWhenCheckPb> = /*@__PUR
 
 /**
  * *
- * Cron Retry — 실패 시 retry 정책. 2026-05-13 typed 박힘.
+ * Cron Retry — 실패 시 retry 정책. 2026-05-13 typed 추가.
  *
  * @generated from message firebat.v1.CronRetryPb
  */
@@ -3071,7 +3071,7 @@ export const CronRetryPbSchema: GenMessage<CronRetryPb> = /*@__PURE__*/
 
 /**
  * *
- * Cron Notify — 성공/실패 시 sysmod 호출 hook. 2026-05-13 typed 박힘.
+ * Cron Notify — 성공/실패 시 sysmod 호출 hook. 2026-05-13 typed 추가.
  *
  * @generated from message firebat.v1.CronNotifyPb
  */
@@ -11226,7 +11226,7 @@ export type LibraryUploadSourceRequest = Message<"firebat.v1.LibraryUploadSource
   sourceType: string;
 
   /**
-   * 매 source_type 별 한 영역만 박음. text/url 영역 = inline_text 직접, pdf/txt/md 영역 = file_path 영역.
+   * 매 source_type 별 한 곳만 사용. text/url = inline_text 직접, pdf/txt/md = file_path.
    *
    * @generated from field: string source_url = 4;
    */
@@ -11823,8 +11823,8 @@ export type HubUpdateInstanceRequest = Message<"firebat.v1.HubUpdateInstanceRequ
   systemPrompt?: string | undefined;
 
   /**
-   * repeated field 의 optional 영역 = 별도 has_xxx flag 영역 박지 X. 대신 'patch' 의미면
-   * 매 update RPC 호출 때 전체 배열 박아 (덮어쓰기). 빈 배열 = clear.
+   * repeated field 의 optional 표현 = 별도 has_xxx flag 사용 X. 대신 'patch' 의미면
+   * 매 update RPC 호출 때 전체 배열 전달 (덮어쓰기). 빈 배열 = clear.
    *
    * @generated from field: repeated string allowed_references = 5;
    */
@@ -12498,7 +12498,7 @@ export type HubSendMessageRequest = Message<"firebat.v1.HubSendMessageRequest"> 
   selfHost: string;
 
   /**
-   * visitor 가 박은 plan mode (off / auto / always). 빈 string = off.
+   * visitor 가 설정한 plan mode (off / auto / always). 빈 string = off.
    *
    * @generated from field: string plan_mode = 7;
    */
@@ -13176,7 +13176,7 @@ export const ModuleService: GenService<{
   },
   /**
    * 패키지 install — 매 패키지 background spawn + StatusManager job. silent install 폐기 후
-   * 사용자 명시 trigger (설정 화면 [설치] / [업그레이드] 버튼) 박은 path. 2026-05-16.
+   * 사용자 명시 trigger (설정 화면 [설치] / [업그레이드] 버튼) 호출 path. 2026-05-16.
    *
    * @generated from rpc firebat.v1.ModuleService.InstallPackages
    */

@@ -63,8 +63,8 @@ pub struct RetrievalResult {
     /// 디버그 — 각 source 의 매칭 수
     pub stats: RetrievalStats,
     /// Library 매치된 hit 영역 (Phase 1 단계 8.4, 2026-05-17) — 답변 외부에 SourceTags
-    /// 뱃지로 노출. context_summary 안에 텍스트로 박힌 `[Source: ...]` 와 별개로 metadata 로 전달.
-    /// 답변 본문에는 인용 표기 박지 마라는 시스템 prompt 룰과 짝.
+    /// 뱃지로 노출. context_summary 안에 텍스트로 들어간 `[Source: ...]` 와 별개로 metadata 로 전달.
+    /// 답변 본문에는 인용 표기 하지 마라는 시스템 prompt 룰과 짝.
     #[serde(rename = "libraryHits", default)]
     pub library_hits: Vec<LibraryHit>,
 }
@@ -232,8 +232,8 @@ impl RetrievalEngine {
             sections.push(lines.join("\n"));
         }
 
-        // 5) Library — Phase 1 (2026-05-17). 매 chunk 영역 cosine 매치 결과 + Source / page 영역
-        //    명시 (citation 영역). AI 답 시점 매 영역 인용 영역 박은 영역 (사용자 fact-check 영역).
+        // 5) Library — Phase 1 (2026-05-17). 매 chunk cosine 매치 결과 + Source / page 명시 (citation).
+        //    AI 답변 시점에 인용 부분을 표기 (사용자 fact-check 용).
         if !library_hits.is_empty() {
             stats.library = library_hits.len();
             let mut lines = vec![format!("[관련 자료 ({}건)]", library_hits.len())];

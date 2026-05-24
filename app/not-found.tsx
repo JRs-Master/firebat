@@ -1,10 +1,10 @@
 /**
  * Root-level 404 — 모든 미매칭 경로 (user / admin 영역 모두) fallback.
  *
- * 옛 `(user)/not-found.tsx` 안 (user) layout 안 header / footer wrap 박혀 미존재 slug 안에서도
- * header 표시 박힌 영역 정공 폐기. 모든 미존재 경로 = root not-found.tsx (header 0, 단순 404).
+ * 옛 `(user)/not-found.tsx` 는 (user) layout 안 header / footer wrap 때문에 미존재 slug 에서도
+ * header 가 표시되던 부분 폐기. 모든 미존재 경로 = root not-found.tsx (header 0, 단순 404).
  *
- * default style 박힘 — cms theme variable 미적용 (root 영역 안 layout 박지 X).
+ * default style 사용 — cms theme variable 미적용 (root 영역 안 layout 없음).
  */
 import type { Metadata } from 'next';
 

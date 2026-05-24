@@ -16,7 +16,7 @@ export const dynamic = 'force-dynamic';
 interface Ctx { params: Promise<{ slug: string }> }
 
 // hub visitor 가 호출 가능한 sysmod whitelist — 외부 API 통합 (kakao / naver 등) 차단.
-// 자체 host 데이터 sysmod 만 허용. 새 sysmod 추가 시 본 list 박혀야.
+// 자체 host 데이터 sysmod 만 허용. 새 sysmod 추가 시 본 list 갱신 필요.
 const HUB_ALLOWED_SYSMODS = new Set(['notes', 'calendar']);
 
 async function authHub(req: NextRequest, slug: string): Promise<{ ok: true; instance: { id: string; allowedSysmods?: string[] } } | { ok: false; status: number; error: string }> {
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   // 안전 list 매칭 — notes / calendar = 사이드바 패널 안 visitor 본인 데이터 sysmod (자체 host).
   // 외부 시스템 통합 sysmod (kakao / naver / kiwoom 등 admin 자격 필요) 는 본 list 부재로 차단.
   // instance.allowed_sysmods (AI 도구 호출 허용 list, admin 설정) 와는 별개 — sidebar panel 기본
-  // 기능이라 allowed_sysmods 매칭 가드 적용 안 함. 옛 = allowed_sysmods 가드 박혀 visitor 사이드바
+  // 기능이라 allowed_sysmods 매칭 가드 적용 안 함. 옛 = allowed_sysmods 가드 때문에 visitor 사이드바
   // calendar/notes panel 이 403 (demo instance 의 allowed_sysmods 에 미포함 시).
   if (!HUB_ALLOWED_SYSMODS.has(moduleName)) {
     return NextResponse.json({ success: false, error: `hub 안 허용되지 않은 sysmod: ${moduleName}` }, { status: 403 });

@@ -68,7 +68,7 @@ impl SqliteMemoryAdapter {
             r#"
             -- Entities (Phase 1)
             -- owner: "admin" = 본인 메모리 (default), "hub:<instance_id>" = 해당 hub 격리.
-            -- UNIQUE(name, type, owner) — 다른 owner 가 같은 (name, type) 박을 수 있어야.
+            -- UNIQUE(name, type, owner) — 다른 owner 가 같은 (name, type) 을 가질 수 있어야 함.
             CREATE TABLE IF NOT EXISTS entities (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -237,7 +237,7 @@ impl SqliteMemoryAdapter {
         // SQLite 는 ADD COLUMN IF NOT EXISTS 미지원 — try/catch 로 이미 존재하면 무시 (옛 TS 동등 패턴).
         // 옛 schema → 새 schema 마이그 영역 폐기 (2026-05-20). 사용자 본인 운영 영역 = data/memory.db
         // 삭제 후 재기동 → 새 schema 자동 생성. 옛 자료 호환 부담 0 정공.
-        // (옛 embedding ALTER 영역 / deleted_at / owner 영역 모두 새 CREATE TABLE 안 박혀있음.)
+        // (옛 embedding ALTER / deleted_at / owner 컬럼 모두 새 CREATE TABLE 안에 정의되어 있음.)
         Ok(())
     }
 }
@@ -384,7 +384,7 @@ impl IEntityPort for SqliteMemoryAdapter {
         let owner = input.owner.clone().unwrap_or_else(|| "admin".to_string());
         let conn = self.conn.lock().unwrap();
 
-        // upsert by UNIQUE(name, type, owner) — 다른 owner 가 같은 (name, type) 박을 수 있어야.
+        // upsert by UNIQUE(name, type, owner) — 다른 owner 가 같은 (name, type) 을 가질 수 있어야 함.
         let existing: Option<i64> = conn
             .query_row(
                 "SELECT id FROM entities WHERE name = ?1 AND type = ?2 AND owner = ?3",

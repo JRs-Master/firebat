@@ -57,7 +57,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   if (!userMessage) {
     return jsonResponse(400, { error: 'message 필드가 필요합니다.' });
   }
-  // visitor 의 plan mode — Rust HubService.SendMessage 가 받아 LlmCallOpts.plan_mode + AiRequestOpts.plan_mode 박음.
+  // visitor 의 plan mode — Rust HubService.SendMessage 가 받아 LlmCallOpts.plan_mode + AiRequestOpts.plan_mode 로 전달.
   const planMode = typeof body.planMode === 'string' ? body.planMode : '';
   // ✓실행 / ⚙수정 제안 — visitor 가 plan card 클릭 시 frontend 가 동봉. Rust HubService 가 plan_store 조회 후
   // 시스템 프롬프트 안 plan_to_instruction / plan_to_revise_instruction 주입.
@@ -148,7 +148,7 @@ function streamResponse(args: {
           }
           // admin chat (`/api/chat/stream`) 의 result event 형식과 통일 — useChat 의 RESULT
           // 처리 (ev.data.data.blocks / ev.data.data.pendingActions 등) 그대로 reuse 가능.
-          // top-level + data 안 mirror 동시 박음 — frontend 옛 매핑 호환.
+          // top-level + data 안 mirror 동시 노출 — frontend 옛 매핑 호환.
           const reply = typeof aiResponse.reply === 'string' ? aiResponse.reply : '';
           const executedActions = aiResponse.executedActions;
           const toolResults = aiResponse.toolResults;

@@ -32,8 +32,8 @@ export type ToolResultSummary = {
 
 /**
  * Library Phase 1 단계 8.4 (2026-05-17) — RetrievalEngine 매칭 hit metadata.
- * 답변 본문에 출처 표기 박지 마라는 시스템 prompt 룰과 짝. 메시지 아래 SourceTags
- * 뱃지로 노출 + 클릭 → LibrarySourceModal 안 원본 영역.
+ * 답변 본문에 출처 표기 하지 말라는 시스템 prompt 룰과 짝. 메시지 아래 SourceTags
+ * 뱃지로 노출 + 클릭 → LibrarySourceModal 안 원본 표시.
  */
 export type LibrarySourceHit = {
   sourceId: string;

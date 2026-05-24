@@ -13,8 +13,8 @@ import React, { createContext, useContext, useId } from 'react';
 // ── Field / Section ────────────────────────────────────────────────
 
 /**
- * FieldContext — Field 가 useId 박은 unique id 를 FieldLabel + 자식 input 에 자동 전달.
- * 옛 hardcoded `id="value"` / `id="value-40"` 박힘 → multiple instance 충돌 회피.
+ * FieldContext — Field 가 useId 로 만든 unique id 를 FieldLabel + 자식 input 에 자동 전달.
+ * 옛 hardcoded `id="value"` / `id="value-40"` → multiple instance 충돌 회피.
  */
 const FieldContext = createContext<{ inputId: string } | null>(null);
 

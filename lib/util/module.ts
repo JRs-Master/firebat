@@ -1,7 +1,7 @@
 /**
  * Module entry / sysmod utility — Phase 9 정공 (2026-05-13).
  *
- * 옛 Sidebar.tsx 안 박혀있던 module entry 자동 탐색 로직 통합.
+ * 옛 Sidebar.tsx 안에 있던 module entry 자동 탐색 로직 통합.
  * 같은 패턴이 Rust ModuleService.Run, AI runModule 도구, sysmod loader 등 여러 곳에서 필요.
  *
  * 사용:

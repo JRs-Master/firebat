@@ -107,7 +107,7 @@ Next.js 어드민 / API route + Rust core (gRPC IPC) 분리 운영. Vultr system
 ```
 
 ### 제4항. AI 시스템 프롬프트 외부화 + 다국어 통합 (2026-05-13 도입 / 2026-05-16 i18n 통합)
-시스템 프롬프트 4개 (`tool_system` / `cron_agent` / `plan_mode_always` / `plan_mode_auto`) 는 `system/prompts/{name}/lang/{lang}.md` 외부 파일. 옛 `include_str!` 컴파일 시점 박힘 패턴 + `infra/data/prompts/*.md` 단일 한국어 영역 모두 폐기.
+시스템 프롬프트 4개 (`tool_system` / `cron_agent` / `plan_mode_always` / `plan_mode_auto`) 는 `system/prompts/{name}/lang/{lang}.md` 외부 파일. 옛 `include_str!` 컴파일 시점 정적 포함 패턴 + `infra/data/prompts/*.md` 단일 한국어 영역 모두 폐기.
 
 부팅 시점 `firebat_core::i18n::init` 가 `system/prompts/` 자동 scan → `prompt.{name}` namespace 안 cache (lang 별). PromptBuilder 가 매 build 시점 `i18n::prompt(name, None)` 직접 lookup — 사용자 lang task-local 자동 적용 (tonic interceptor 가 set). 매 prompt 가 ko / en 등 lang 별 자체 .md 보유, lookup 실패 시 server-side default lang fallback.
 

@@ -10,7 +10,7 @@
  * 사용:
  *   cd system/modules/kiwoom && node scripts/extract-apis.mjs
  *
- * 옛 영역: `scripts/extract-stock-apis.mjs` 안 kiwoom + kis 통합 박힌 영역.
+ * 옛 위치: `scripts/extract-stock-apis.mjs` 안 kiwoom + kis 통합 코드.
  * 단일 책임 정공 — sysmod 자체 안 자체 codegen.
  */
 
