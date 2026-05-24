@@ -371,7 +371,17 @@ impl ClaudeCodeCliHandler {
                                 }
                             }
                             "thinking" => {
-                                // Extended thinking 블록 — 본문 누적 X (UI thinking 표시는 별도 streaming 채널, 후속).
+                                // Extended thinking 본문 — outcome.thinking_acc 에 누적해 final response 의
+                                // thinking_text 로 전달 (frontend ThinkingBlock bodyText). 옛 Node 의 onChunk
+                                // ({type:'thinking', content}) 와 동등.
+                                if let Some(t) = c.get("thinking").and_then(|v| v.as_str()) {
+                                    if !t.is_empty() {
+                                        if !outcome.thinking_acc.is_empty() {
+                                            outcome.thinking_acc.push('\n');
+                                        }
+                                        outcome.thinking_acc.push_str(t);
+                                    }
+                                }
                             }
                             "tool_use" => {
                                 let raw_name = c.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -380,6 +390,13 @@ impl ClaudeCodeCliHandler {
                                 }
                                 let bare = Self::strip_mcp_prefix(raw_name).to_string();
                                 outcome.used_tools.push(bare.clone());
+                                // 도구 호출 마커도 thinking 본문에 추가 — 사용자가 turn 중 어떤 도구가
+                                // 호출됐는지 자연어로 본다. 옛 Node 의 onChunk({type:'thinking',
+                                // content:'[도구 호출: name]'}) 와 동등.
+                                if !outcome.thinking_acc.is_empty() {
+                                    outcome.thinking_acc.push('\n');
+                                }
+                                outcome.thinking_acc.push_str(&format!("[도구 호출: {bare}]"));
                                 let tool_use_id =
                                     c.get("id").and_then(|v| v.as_str()).map(String::from);
                                 if let Some(id) = tool_use_id {
@@ -594,6 +611,11 @@ struct CliRunOutcome {
     pending_actions: Vec<serde_json::Value>,
     suggestions: Vec<serde_json::Value>,
     cost_usd: f64,
+    /// Extended thinking 본문 + 도구 호출 마커 누적. 옛 Node 의 onChunk({type:'thinking', ...})
+    /// 와 동등 — frontend ThinkingBlock bodyText 에 표시되어 사용자가 AI 의 추론·도구 호출
+    /// 흐름을 본다. 옛 Rust 는 None 반환이라 표시 0 이었음 (사용자 보고 2026-05-24).
+    /// streaming chunk emit 은 아직 X (batch 결과 시점 채워서 turn 종료 후 표시).
+    thinking_acc: String,
 }
 
 struct PendingToolUse {
@@ -678,7 +700,7 @@ impl FormatHandler for ClaudeCodeCliHandler {
             suggestions: outcome.suggestions,
             raw_model_parts: None,
             tool_results: outcome.tool_results,
-            thinking_text: None,
+            thinking_text: if outcome.thinking_acc.is_empty() { None } else { Some(outcome.thinking_acc) },
         })
     }
 }
