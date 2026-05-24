@@ -793,12 +793,57 @@ impl McpToolHandler for GetPageHandler {
     }
 }
 
+/// admin context 면 pending 박은 결과 반환 (Some). cron context 면 None — caller 가 기존 동작 진행.
+///
+/// 옛 TS commit 262bc78 의 `globalThis.__firebatCronAgentJobId` 분기 Rust port. CLI 모델의 자체
+/// MCP loop 가 destructive 도구 (save_page / delete_* / schedule_task / cancel_task) 호출 시
+/// 본 helper 통과 — admin chat 호출이면 pending action 생성 → 사용자 ✓ 박혀야 실행. cron 자동
+/// 실행 영역 (CronContextGuard 활성) 이면 우회 후 직접 실행.
+fn pending_or_passthrough(
+    args: &Value,
+    tool_name: &str,
+    summary_fn: impl FnOnce(&Value) -> String,
+) -> Option<Value> {
+    if firebat_core::utils::cron_context::is_cron_context_active() {
+        return None;
+    }
+    let pending_args = match firebat_core::utils::pending_tools::PendingActionArgs::from_call(
+        tool_name, args,
+    ) {
+        Ok(t) => t,
+        Err(e) => return Some(serde_json::json!({"success": false, "error": e})),
+    };
+    let summary = summary_fn(args);
+    let plan_id = firebat_core::utils::pending_tools::create_pending(pending_args, &summary);
+    Some(serde_json::json!({
+        "success": true,
+        "pending": true,
+        "planId": plan_id,
+        "name": tool_name,
+        "summary": summary,
+        "args": args,
+        "message": format!(
+            "'{}' — 사용자 승인 대기 중입니다. 자동으로 실행되지 않았습니다.",
+            summary
+        ),
+    }))
+}
+
 pub struct SavePageHandler {
     pub page: Arc<PageManager>,
 }
 #[async_trait::async_trait]
 impl McpToolHandler for SavePageHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
+        // admin context → pending 박음 (사용자 승인 카드). cron context → 직접 실행.
+        // 옛 TS commit 262bc78 의 globalThis.__firebatCronAgentJobId 분기 Rust port.
+        if let Some(r) = pending_or_passthrough(&args, "save_page", |s| {
+            let slug = obj_str(s, "slug").unwrap_or_default();
+            let overwrite = s.get("allowOverwrite").and_then(|v| v.as_bool()).unwrap_or(false);
+            format!("페이지 저장: /{}{}", slug, if overwrite { " (덮어쓰기)" } else { "" })
+        }) {
+            return Ok(r);
+        }
         let slug = obj_str(&args, "slug").ok_or_else(|| "slug 필수".to_string())?;
         let spec = args
             .get("spec")
@@ -828,6 +873,11 @@ pub struct DeletePageHandler {
 #[async_trait::async_trait]
 impl McpToolHandler for DeletePageHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
+        if let Some(r) = pending_or_passthrough(&args, "delete_page", |s| {
+            format!("페이지 삭제: /{}", obj_str(s, "slug").unwrap_or_default())
+        }) {
+            return Ok(r);
+        }
         let slug = obj_str(&args, "slug").ok_or_else(|| "slug 필수".to_string())?;
         match self.page.delete(&slug) {
             Ok(()) => Ok(serde_json::json!({"success": true})),
@@ -873,6 +923,11 @@ pub struct DeleteFileHandler {
 #[async_trait::async_trait]
 impl McpToolHandler for DeleteFileHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
+        if let Some(r) = pending_or_passthrough(&args, "delete_file", |s| {
+            format!("파일 삭제: {}", obj_str(s, "path").unwrap_or_default())
+        }) {
+            return Ok(r);
+        }
         let path = obj_str(&args, "path").ok_or_else(|| "path 필수".to_string())?;
         match self.storage.delete(&path).await {
             Ok(()) => Ok(serde_json::json!({"success": true})),
@@ -944,6 +999,20 @@ pub struct ScheduleTaskHandler {
 #[async_trait::async_trait]
 impl McpToolHandler for ScheduleTaskHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
+        if let Some(r) = pending_or_passthrough(&args, "schedule_task", |s| {
+            let title = obj_str(s, "title").unwrap_or_else(|| "(제목 없음)".to_string());
+            let when = obj_str(s, "cronTime")
+                .or_else(|| obj_str(s, "runAt"))
+                .or_else(|| {
+                    s.get("delaySec")
+                        .and_then(|v| v.as_i64())
+                        .map(|d| format!("{}초 후", d))
+                })
+                .unwrap_or_default();
+            format!("예약 등록: {} ({})", title, when)
+        }) {
+            return Ok(r);
+        }
         let job_id = obj_str(&args, "jobId").unwrap_or_default();
         let target_path = obj_str(&args, "targetPath").unwrap_or_default();
         let opts: CronScheduleOptions = serde_json::from_value(args.clone()).unwrap_or_default();
@@ -960,6 +1029,11 @@ pub struct CancelTaskHandler {
 #[async_trait::async_trait]
 impl McpToolHandler for CancelTaskHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
+        if let Some(r) = pending_or_passthrough(&args, "cancel_task", |s| {
+            format!("예약 해제: {}", obj_str(s, "jobId").unwrap_or_default())
+        }) {
+            return Ok(r);
+        }
         let job_id = obj_str(&args, "jobId").ok_or_else(|| "jobId 필수".to_string())?;
         match self.schedule.cancel(&job_id).await {
             Ok(true) => Ok(serde_json::json!({"success": true})),

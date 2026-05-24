@@ -379,6 +379,12 @@ impl ScheduleManager {
                     info.trigger,
                     prompt.len()
                 ));
+                // Cron context 활성 — CLI 모델의 자체 MCP loop 안에서 destructive 도구
+                // (schedule_task / save_page / delete_*) 호출 시 mcp_server.rs handler 가
+                // is_cron_context_active() 검사 → 우회 후 직접 실행. 옛 TS commit 262bc78 의
+                // globalThis.__firebatCronAgentJobId 패턴 Rust port. Guard drop = 자동 unset.
+                let _cron_guard = crate::utils::cron_context::CronContextGuard::enter();
+
                 // cron_agent 컨텍스트 명시 — AiManager 가 (1) MAX_TOOL_TURNS 25 적용,
                 // (2) approval gate 우회 (server-side 자율 실행),
                 // (3) PromptBuilder 가 cron 전용 system_prompt 박음 (system/prompts/cron_agent).
