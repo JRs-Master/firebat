@@ -379,7 +379,29 @@ impl ScheduleManager {
                     info.trigger,
                     prompt.len()
                 ));
-                match h.ai.process_with_tools(&prompt, &[], &LlmCallOpts::default()).await {
+                // cron_agent 컨텍스트 명시 — AiManager 가 (1) MAX_TOOL_TURNS 25 적용,
+                // (2) approval gate 우회 (server-side 자율 실행),
+                // (3) PromptBuilder 가 cron 전용 system_prompt 박음 (system/prompts/cron_agent).
+                // 옛 호출 (process_with_tools 단순 진입점) 은 AiRequestOpts::default 박아
+                // cron_agent: None → LLM 이 admin chat 표준 prompt 만 받아 cron agentPrompt 를
+                // 사용자 신규 요청처럼 잘못 해석 → "예약 완료" 답변만 박고 sysmod 호출 0 silent fail.
+                let ai_opts = crate::ports::AiRequestOpts {
+                    cron_agent: Some(crate::ports::CronAgentOpts {
+                        job_id: info.job_id.clone(),
+                        title: info.title.clone(),
+                    }),
+                    ..Default::default()
+                };
+                match h
+                    .ai
+                    .process_with_tools_opts(
+                        &prompt,
+                        &[],
+                        &LlmCallOpts::default(),
+                        &ai_opts,
+                    )
+                    .await
+                {
                     Ok(res) => {
                         success = res.error.is_none();
                         if !success {

@@ -320,6 +320,30 @@ save_page(slug:"...", spec:{
 - 즉시 복합 실행은 run_task, 예약은 schedule_task.
 - 크론 형식 "분 시 일 월 요일" (이 타임존 기준 해석됨). 시각이 지났으면 사용자 확인, 자의적 조정 금지.
 
+### schedule_task 인자 필수 규칙 — 한 번에 정확히 등록 (절대 룰)
+
+**mode 필드만 박고 해당 시각 필드를 누락하면 즉시 reject 됨** (validator: "cronTime / runAt / delaySec 중 하나는 반드시 지정해야 합니다"). 같은 실수를 반복하면 사용자 승인 카드도 안 뜬다. mode 와 시각 필드는 **반드시 짝으로** 박는다:
+
+| mode | 같이 박아야 하는 필드 | 예시 값 |
+|---|---|---|
+| `"cron"` | `cronTime` | `"0 8 * * *"` (매일 8시) |
+| `"runAt"` | `runAt` | `"2026-05-24T14:35:00+09:00"` (KST 14:35) |
+| `"delay"` | `delaySec` | `300` (5분 후) |
+
+**틀린 예** (validator reject):
+```json
+{ "mode": "runAt", "jobId": "...", "targetPath": "agent" }      ← runAt 필드 누락
+{ "mode": "cron", "jobId": "...", "targetPath": "agent" }       ← cronTime 필드 누락
+```
+
+**정공 예**:
+```json
+{ "mode": "runAt", "runAt": "2026-05-24T14:35:00+09:00", "jobId": "...", "targetPath": "agent" }
+{ "mode": "cron", "cronTime": "0 8 * * *", "jobId": "...", "targetPath": "agent" }
+```
+
+호출 전에 mode 값을 보고 그에 대응하는 시각 필드가 인자에 들어있는지 self-check. 둘 다 들어있어야 호출. 한 번 reject 되면 같은 실수 반복 절대 금지 — 시각 필드 채워서 1회 재시도로 끝낸다.
+
 ### 실행 모드 선택 (executionMode) — 잡 등록 시 AI 자율 판단
 
 | 분류 | executionMode | 사용 |

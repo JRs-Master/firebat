@@ -807,7 +807,19 @@ impl AiManager {
                 } else {
                     Some(extra_parts.join("\n\n"))
                 };
-                let base_prompt = pb.build(extra.as_deref(), None);
+                // cron_agent 옵션 → PromptBuilder 의 CronAgentContext 변환.
+                // ai_opts.cron_agent 가 Some 일 때만 cron 전용 prelude (system/prompts/cron_agent)
+                // 가 base 시스템 프롬프트 앞에 prepend 됨. cron 발화 시 LLM 이 "이건 자동 실행이다,
+                // 즉시 도구 호출 박아라" 인식 — 옛에 schedule.rs 가 cron_agent 박지 않아 admin chat
+                // 표준 prompt 만 받음 → LLM 이 agentPrompt 를 "신규 사용자 요청" 으로 잘못 해석 →
+                // sysmod 호출 0 silent fail issue 의 진짜 root cause.
+                let cron_ctx = ai_opts.cron_agent.as_ref().map(|c| {
+                    crate::managers::ai::prompt_builder::CronAgentContext {
+                        job_id: c.job_id.clone(),
+                        title: c.title.clone(),
+                    }
+                });
+                let base_prompt = pb.build(extra.as_deref(), cron_ctx.as_ref());
 
                 // plan_execute_id / plan_revise_id 우선 처리 — 사용자 ✓실행 / ⚙수정 클릭 후 follow-up
                 // turn. plan_store 에서 조회 → 시스템 프롬프트 prepend + 옛 plan_prefix 우회 (plan 카드
