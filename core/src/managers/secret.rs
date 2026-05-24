@@ -82,26 +82,25 @@ impl SecretManager {
             let Ok(parsed): Result<serde_json::Value, _> = serde_json::from_str(&content) else {
                 continue;
             };
-            let secrets = match parsed.get("secrets").and_then(|v| v.as_array()) {
-                Some(arr) => arr,
-                None => continue,
-            };
+            // secrets 배열 — string|object union (MODULE_BIBLE 제4장). 빈 / 없는 영역 skip.
+            let secrets = crate::utils::secret_schema::parse_secrets(&parsed);
+            if secrets.is_empty() {
+                continue;
+            }
             let module_name = parsed
                 .get("name")
                 .and_then(|v| v.as_str())
                 .unwrap_or(&entry.name)
                 .to_string();
-            for s in secrets {
-                let Some(secret_name) = s.as_str() else {
-                    continue;
-                };
-                if seen.contains(secret_name) {
+            for meta in secrets {
+                if seen.contains(&meta.name) {
                     continue;
                 }
-                seen.insert(secret_name.to_string());
-                let has_value = self.get_user(secret_name).is_some();
+                let secret_name = meta.name.clone();
+                seen.insert(secret_name.clone());
+                let has_value = self.get_user(&secret_name).is_some();
                 result.push(ModuleSecretEntry {
-                    secret_name: secret_name.to_string(),
+                    secret_name,
                     module_name: module_name.clone(),
                     has_value,
                 });

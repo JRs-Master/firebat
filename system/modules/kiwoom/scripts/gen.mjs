@@ -107,7 +107,11 @@ function build(apis) {
     runtime: 'node',
     capability: 'stock-trading',
     providerType: 'api',
-    secrets: ['KIWOOM_APP_KEY', 'KIWOOM_APP_SECRET'],
+    secrets: [
+      { name: 'KIWOOM_APP_KEY',      type: 'key' },
+      { name: 'KIWOOM_APP_SECRET',   type: 'key' },
+      { name: 'KIWOOM_ACCESS_TOKEN', type: 'token', lifetimeSec: 82800 },
+    ],
     tokenCache: { secretName: 'KIWOOM_ACCESS_TOKEN', ttlHours: 23 },
     domains: domains.map(({ name, description, capability, actions, actionsCount, actionsDetail }) => ({
       name,

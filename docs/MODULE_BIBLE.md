@@ -170,6 +170,67 @@ node scripts/gen.mjs             # _apis.json → config + index
 - 모듈 코드에서 접근: `os.environ["KEY_NAME"]` (Python), `process.env["KEY_NAME"]` (Node).
 - AI는 키 값을 절대 모른다 — `REQUEST_SECRET` 액션으로 사용자에게 입력을 요청한다.
 
+### 제1항. secrets 항목 schema — string | object union (2026-05-24)
+
+`secrets` 배열의 각 항목은 두 가지 형태 모두 허용:
+
+**옛 호환 (string)** — 사용자 직접 입력 키 (만료 X). `type: "key"` 와 동등:
+```json
+"secrets": ["TELEGRAM_BOT_TOKEN", "NAVER_AD_API_KEY"]
+```
+
+**일반 (object)** — 메타데이터 명시. 자동 발급/갱신 토큰 구분 + lifetime 명시:
+```json
+"secrets": [
+  { "name": "KIS_APP_KEY",       "type": "key" },
+  { "name": "KIS_APP_SECRET",    "type": "key" },
+  { "name": "KIS_ACCESS_TOKEN",  "type": "token", "lifetimeSec": 82800 },
+  { "name": "KAKAO_ACCESS_TOKEN",  "type": "token", "lifetimeSec": 21600,  "refreshFrom": "KAKAO_REFRESH_TOKEN" },
+  { "name": "KAKAO_REFRESH_TOKEN", "type": "token", "lifetimeSec": 5184000 }
+]
+```
+
+| field | 영역 |
+|---|---|
+| `name` | Vault 키 이름 (필수) |
+| `type` | `"key"` — 사용자 입력 / `"token"` — 자동 발급 (OAuth · API token cache 등) |
+| `lifetimeSec` | token 만료 (초). 자동 갱신 cron 의 trigger 시점 결정 (lifetime × 0.8 도달 시 refresh) |
+| `refreshFrom` | refresh_token 의 vault 키 이름 — access 만료 시 본 키로 갱신 (kakao OAuth refresh 패턴) |
+
+### 제2항. type 별 동작 차이
+
+- **`type: "key"`** — 어드민 UI 의 설정 모달에 **입력 필드 노출**. 사용자가 직접 등록.
+- **`type: "token"`** — 어드민 UI 안 입력 필드 **숨김** (사용자가 직접 입력하면 안 되는 자동 관리 영역). OAuth 콜백 / sysmod 의 `__updateSecrets` envelope 으로 자동 발급. 상태는 OAuth 연동 indicator 또는 시크릿 목록 (`/api/vault/secrets`) 에서만 확인.
+
+`settings_fields` 안 `type: "oauth"` 항목의 `oauthSecrets` 배열에 박힌 secret 이름도 동일하게 입력 필드 자동 숨김 — type 명시 안 박혀있어도 OAuth 관리 영역으로 추론.
+
+### 제3항. `__updateSecrets` envelope — sysmod 자동 vault 저장
+
+sysmod 가 stdout 에 다음 envelope 박으면 sandbox 가 자동으로 vault 에 저장:
+
+```json
+{
+  "success": true,
+  "data": { ... },
+  "__updateSecrets": {
+    "KIS_ACCESS_TOKEN": "eyJhbGciOi..."
+  }
+}
+```
+
+용도:
+- OAuth 토큰 발급 결과를 캐시 — 다음 호출 시 sandbox 가 vault → env 로 자동 주입 → 모듈이 cached token 사용
+- 한투 / 키움 같은 rate-limited token 발급 차단
+- kakao OAuth refresh 결과 캐시
+
+### 제4항. legacy `tokenCache` 필드 (옛 호환)
+
+옛 한투 / 키움 모듈은 `tokenCache: { secretName, ttlHours }` 박혀있음 — 기능은 위 제1항 `{ type: "token", lifetimeSec }` 와 동등. 새 모듈은 `secrets` 안 object 형태 사용 권장.
+
+### 제5항. 자동 갱신 cron (선택 — 트리거 도달 시 도입)
+
+`lifetimeSec` 명시된 token 에 대해 system cron 이 만료 80% 도달 시점 refresh trigger. 현재는 sysmod 가 호출 시점에 만료 감지 → forceNew 재시도 패턴 (한투/키움) 사용 중 — 자동 cron 은 OAuth refresh API 가 있는 사례 (kakao 등) 가 활성 사용될 때 도입. 옛 호환: `lifetimeSec` 없는 항목 = 갱신 cron 등록 X.
+
 ---
 
 ## 제5장: 표준 I/O 프로토콜

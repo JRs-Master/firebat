@@ -159,9 +159,39 @@ const MODULE_NAME_ALIASES: Record<string, string> = {
   seo: 'cms',
 };
 
-/** config.json secrets 배열 → SettingField[] 자동 생성 */
-function secretsToFields(secrets: string[]): SettingField[] {
-  return secrets.map(name => ({
+/**
+ * config.json `secrets` 항목 — string (옛) | object (MODULE_BIBLE 제4장 일반화).
+ * object 형태: { name, type?: 'key'|'token', lifetimeSec?, refreshFrom? }
+ */
+type SecretEntry = string | { name: string; type?: 'key' | 'token'; lifetimeSec?: number; refreshFrom?: string };
+
+interface ParsedSecret {
+  name: string;
+  kind: 'key' | 'token';
+}
+
+function parseSecretEntries(secrets: SecretEntry[] | undefined): ParsedSecret[] {
+  if (!Array.isArray(secrets)) return [];
+  const out: ParsedSecret[] = [];
+  for (const entry of secrets) {
+    if (typeof entry === 'string') {
+      out.push({ name: entry, kind: 'key' });
+    } else if (entry && typeof entry === 'object' && typeof entry.name === 'string') {
+      out.push({ name: entry.name, kind: entry.type === 'token' ? 'token' : 'key' });
+    }
+  }
+  return out;
+}
+
+/**
+ * config.json secrets 배열 → SettingField[] 자동 생성.
+ * type='token' (자동 발급 OAuth/cache) 항목은 입력 필드 생성하지 않음 — 사용자 직접 입력 금지.
+ * `hiddenNames` 에 박힌 이름 (settings_fields 의 oauth.oauthSecrets) 도 동일 제외.
+ */
+function secretsToFields(secrets: SecretEntry[], hiddenNames: Set<string>): SettingField[] {
+  return parseSecretEntries(secrets)
+    .filter(s => s.kind !== 'token' && !hiddenNames.has(s.name))
+    .map(({ name }) => ({
     key: `_secret_${name}`,
     label: name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
     type: 'secret' as FieldType,
@@ -281,13 +311,22 @@ export function SystemModuleSettings({ moduleName, onClose, onBack, embeddedInPa
           const config = data.config as Record<string, unknown> | null;
           const fetchedLang = data.lang ?? null;
           setLangData(fetchedLang);
-          const configSecrets = (config?.secrets as string[] | undefined) ?? [];
-          const autoFields = secretsToFields(configSecrets);
+          const configSecrets = (config?.secrets as SecretEntry[] | undefined) ?? [];
 
           // 옵션 C — config.json 의 settings_fields 우선 (모듈 자기완결 i18n).
           // 2026-05-16: lang/{lang}.json 의 settings.{field_key} 영역 우선 + config.json inline i18n 폴백.
           const configSettingsFields = (config?.settings_fields as ConfigSettingField[] | undefined) ?? [];
           const configFields = configSettingsFields.map(cf => resolveConfigField(cf, lang, fetchedLang));
+
+          // OAuth 가 자동 발급 관리하는 secret 이름 수집 — 자동 입력 필드 노출 차단.
+          // (옛 형태: secrets 안 type 미명시 + settings_fields 의 oauth.oauthSecrets 에 박힌 영역.)
+          const oauthManagedNames = new Set<string>();
+          for (const cf of configFields) {
+            if (cf.type === 'oauth' && Array.isArray(cf.oauthSecrets)) {
+              for (const s of cf.oauthSecrets) oauthManagedNames.add(s);
+            }
+          }
+          const autoFields = secretsToFields(configSecrets, oauthManagedNames);
 
           const allFields = [...autoFields, ...configFields];
           // title — lang/{lang}.json 의 'title' 키 우선 (mcp-server-app / mcp-server-llm 등) → 옛 alias 입력값 → resolved 모듈명

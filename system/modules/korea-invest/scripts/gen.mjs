@@ -106,7 +106,11 @@ function build(apis) {
     runtime: 'node',
     capability: 'stock-trading',
     providerType: 'api',
-    secrets: ['KIS_APP_KEY', 'KIS_APP_SECRET'],
+    secrets: [
+      { name: 'KIS_APP_KEY',      type: 'key' },
+      { name: 'KIS_APP_SECRET',   type: 'key' },
+      { name: 'KIS_ACCESS_TOKEN', type: 'token', lifetimeSec: 82800 },
+    ],
     tokenCache: { secretName: 'KIS_ACCESS_TOKEN', ttlHours: 23 },
     domains: domains.map(({ name, description, capability, actions, actionsCount, actionsDetail }) => ({
       name,

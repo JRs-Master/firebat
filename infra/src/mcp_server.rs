@@ -497,24 +497,15 @@ async fn register_sysmod_domains(
             }
         }
 
-        let secrets_note = config
-            .get("secrets")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                let names: Vec<String> = arr
-                    .iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect();
-                if names.is_empty() {
-                    String::new()
-                } else {
-                    format!(
-                        "\n필요 시크릿: {} (미설정 시 request_secret 호출)",
-                        names.join(", ")
-                    )
-                }
-            })
-            .unwrap_or_default();
+        let names = firebat_core::utils::secret_schema::secret_names(config);
+        let secrets_note = if names.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "\n필요 시크릿: {} (미설정 시 request_secret 호출)",
+                names.join(", ")
+            )
+        };
         let description = format!(
             "[시스템 모듈] {desc}\n총 {n}개 API. action 으로 API ID 직접 호출.{secrets_note}",
             desc = if domain_desc.is_empty() { module_name } else { domain_desc },
@@ -747,21 +738,12 @@ fn build_sysmod_description(name: &str, config: &Value) -> String {
         .and_then(|v| v.as_str())
         .map(|c| format!("\ncapability: {c}"))
         .unwrap_or_default();
-    let secrets = config
-        .get("secrets")
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            let names: Vec<String> = arr
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect();
-            if names.is_empty() {
-                String::new()
-            } else {
-                format!("\n필요 시크릿: {} (미설정 시 request_secret 호출)", names.join(", "))
-            }
-        })
-        .unwrap_or_default();
+    let names = firebat_core::utils::secret_schema::secret_names(config);
+    let secrets = if names.is_empty() {
+        String::new()
+    } else {
+        format!("\n필요 시크릿: {} (미설정 시 request_secret 호출)", names.join(", "))
+    };
     format!("[시스템 모듈] {base}{cap}{secrets}")
 }
 

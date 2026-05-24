@@ -483,14 +483,12 @@ impl ProcessSandboxAdapter {
             return env;
         };
 
-        // 1. secrets 배열 → user: 접두사로 Vault 조회
-        if let Some(secrets) = parsed.get("secrets").and_then(|v| v.as_array()) {
-            for s in secrets {
-                if let Some(name) = s.as_str() {
-                    if let Some(value) = vault.get_secret(&format!("user:{name}")) {
-                        env.insert(name.to_string(), value);
-                    }
-                }
+        // 1. secrets 배열 → user: 접두사로 Vault 조회.
+        // string entry (옛 호환) + object entry ({name, type, lifetimeSec?, refreshFrom?}) 양쪽 지원.
+        // type=token 영역도 동일하게 env 주입 — sysmod 가 cached token 으로 즉시 사용 가능.
+        for meta in firebat_core::utils::secret_schema::parse_secrets(&parsed) {
+            if let Some(value) = vault.get_secret(&format!("user:{}", meta.name)) {
+                env.insert(meta.name, value);
             }
         }
 

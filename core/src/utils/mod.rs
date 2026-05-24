@@ -19,6 +19,7 @@ pub mod vault_json;
 pub mod mod_scan;
 pub mod slug_validator;
 pub mod category_logger;
+pub mod secret_schema;
 
 /// 테스트 직렬화용 — `pending_tools` / `plan_store` 가 같은 `FIREBAT_DATA_DIR` env var 를
 /// 변경하므로 cross-module 직렬화 필요. 두 module 의 tests 가 같은 lock 사용.

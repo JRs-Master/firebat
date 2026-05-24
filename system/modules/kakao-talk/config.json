@@ -7,13 +7,18 @@
   "runtime": "node",
   "capability": "notification",
   "providerType": "api",
-  "secrets": ["KAKAO_ACCESS_TOKEN", "KAKAO_REFRESH_TOKEN", "KAKAO_REST_API_KEY", "KAKAO_CLIENT_SECRET"],
+  "secrets": [
+    { "name": "KAKAO_REST_API_KEY",   "type": "key" },
+    { "name": "KAKAO_CLIENT_SECRET",  "type": "key" },
+    { "name": "KAKAO_ACCESS_TOKEN",   "type": "token", "lifetimeSec": 21600,   "refreshFrom": "KAKAO_REFRESH_TOKEN" },
+    { "name": "KAKAO_REFRESH_TOKEN",  "type": "token", "lifetimeSec": 5184000 }
+  ],
   "settings_fields": [
     {
       "key": "kakaoOAuth",
       "type": "oauth",
       "oauthUrl": "/api/auth/oauth/kakao",
-      "oauthSecrets": ["KAKAO_ACCESS_TOKEN"]
+      "oauthSecrets": ["KAKAO_ACCESS_TOKEN", "KAKAO_REFRESH_TOKEN"]
     },
     {
       "key": "defaultType",
