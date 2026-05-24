@@ -1461,14 +1461,21 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
         handler: Arc::new(ExecuteHandler { module: deps.module }),
     }).await;
 
-    // Schedule / Task
+    // Schedule / Task — trigger 시각은 cronTime/runAt/delaySec 중 직접 하나만 박음.
+    // 옛에 mode field 박혀있어 AI 가 `mode: "runAt"` 박고 실제 runAt 누락 → validator reject 반복.
+    // core/src/tool_registry.rs 의 schedule_task schema 와 일관성 박힘.
     state.register(McpTool {
         name: "schedule_task".into(),
-        description: "크론 / 일회성 작업 예약. inputSchema: {jobId?, targetPath, mode, cronTime?, runAt?, ...}.".into(),
+        description: "크론 / 일회성 작업 예약. trigger 시각은 cronTime(반복: '0 8 * * *' 형태) / runAt(1회 ISO 8601 + timezone offset, 예: '2026-05-25T14:35:00+09:00') / delaySec(N초 후) 중 정확히 하나의 field 를 직접 박는다. 'mode' 같은 별도 field 박지 마라 — schema 에 없다.".into(),
         input_schema: schema_object(serde_json::json!({
-            "jobId": {"type": "string"},
-            "targetPath": {"type": "string"},
-            "mode": {"type": "string"}
+            "jobId": {"type": "string", "description": "고유 job id (이미 박힌 jobId 면 덮어쓰기)"},
+            "targetPath": {"type": "string", "description": "agent | <pipeline 식별자>"},
+            "cronTime": {"type": "string", "description": "반복 cron 표현식 (분 시 일 월 요일). 없으면 runAt/delaySec 중 하나 박음"},
+            "runAt": {"type": "string", "description": "1회 실행 ISO 8601 (반드시 timezone offset 포함, 예: +09:00)"},
+            "delaySec": {"type": "integer", "description": "N 초 후 1회 실행"},
+            "title": {"type": "string"},
+            "agentPrompt": {"type": "string", "description": "executionMode=agent 일 때 AI 가 받는 자연어 지시문"},
+            "executionMode": {"type": "string", "enum": ["pipeline", "agent"], "description": "pipeline(기본 — step 배열 결정적 실행) 또는 agent(매 trigger 마다 LLM Function Calling)"}
         })),
         handler: Arc::new(ScheduleTaskHandler { schedule: deps.schedule.clone() }),
     }).await;

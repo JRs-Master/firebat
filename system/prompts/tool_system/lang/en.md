@@ -321,30 +321,6 @@ save_page(slug:"...", spec:{
 - For immediate composite execution use run_task; for scheduling use schedule_task.
 - Cron format: "min hour day month weekday" (interpreted in this timezone). If the time has passed, confirm with the user; do not adjust arbitrarily.
 
-### schedule_task argument rules — get it right on the first call (absolute rule)
-
-**Specifying only `mode` and omitting the matching time field gets immediately rejected** (validator: "one of cronTime / runAt / delaySec must be specified"). Repeating the same mistake also means no user approval card appears. `mode` and the time field must **always be paired**:
-
-| mode | required time field | example value |
-|---|---|---|
-| `"cron"` | `cronTime` | `"0 8 * * *"` (daily 8am) |
-| `"runAt"` | `runAt` | `"2026-05-24T14:35:00+09:00"` (KST 14:35) |
-| `"delay"` | `delaySec` | `300` (after 5 min) |
-
-**Wrong examples** (validator reject):
-```json
-{ "mode": "runAt", "jobId": "...", "targetPath": "agent" }     ← missing runAt field
-{ "mode": "cron", "jobId": "...", "targetPath": "agent" }      ← missing cronTime field
-```
-
-**Correct examples**:
-```json
-{ "mode": "runAt", "runAt": "2026-05-24T14:35:00+09:00", "jobId": "...", "targetPath": "agent" }
-{ "mode": "cron", "cronTime": "0 8 * * *", "jobId": "...", "targetPath": "agent" }
-```
-
-Before calling, self-check whether the time field corresponding to your `mode` value is present in the arguments. Only call when both are present. If rejected once, never repeat the same mistake — fill in the time field and retry exactly once.
-
 ### Execution mode selection (executionMode) — AI judges autonomously at job registration
 
 | Classification | executionMode | Use |
