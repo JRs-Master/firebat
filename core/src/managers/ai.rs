@@ -899,6 +899,14 @@ impl AiManager {
         // cron agent 모드는 approval gate 우회 (UI 없는 server-side 자율 발행).
         let approval_enabled = self.dispatcher.is_some() && ai_opts.cron_agent.is_none();
 
+        // Hub visitor 호출 — CLI 모델의 자체 MCP loop 안에서 MCP server handler 가
+        // active_allowed_sysmods() 검사 → 미허용 sysmod / destructive 도구 호출 차단.
+        // ai.rs:669-694 의 hub filter 는 tools.is_empty() 분기 (API 모델) 만 적용 →
+        // CLI 모델 path 영역의 보안 영역 fix. Guard drop = 자동 unset.
+        let _hub_guard = ai_opts.hub_context.as_ref().map(|ctx| {
+            crate::utils::hub_context::HubContextGuard::enter(ctx.allowed_sysmods.clone())
+        });
+
         // Layer 2 per-turn duplicate guard — turn 안에서 같은 (name + args) 두 번째 호출 차단.
         // 옛 TS `turnCallSet` 1:1.
         let mut turn_call_set: HashSet<String>;

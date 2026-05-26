@@ -341,6 +341,18 @@ pub struct SysmodToolHandler {
 #[async_trait::async_trait]
 impl McpToolHandler for SysmodToolHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
+        // Hub visitor 가드 — hub_context 활성 상태에서 allowed_sysmods 에 박지 않은 sysmod 호출 차단.
+        // ai.rs:669-694 의 hub filter 는 tools.is_empty() 분기 (API 모델) 만 박혀있어 CLI 모델
+        // (supports_mcp=true) 의 자체 MCP loop 영역에서는 우회 박힘. 본 가드 = MCP path 보안 영역.
+        if firebat_core::utils::hub_context::is_sysmod_blocked_for_hub(&self.module_name) {
+            return Ok(serde_json::json!({
+                "success": false,
+                "error": format!(
+                    "이 hub 에서는 sysmod '{}' 사용이 허용되지 않습니다.",
+                    self.module_name
+                ),
+            }));
+        }
         // 활성화 토글 가드 — 사용자가 시스템 설정에서 OFF 한 sysmod 는 호출 시점 차단.
         // tools/list 는 시작 시점 1회 등록이라 캐시된 도구 list 가 enabled 토글 변경 반영 0
         // (CLI 모드 / hosted MCP 가 list 캐시 보유). 호출 시점 가드가 single source of truth.
@@ -804,6 +816,17 @@ fn pending_or_passthrough(
     tool_name: &str,
     summary_fn: impl FnOnce(&Value) -> String,
 ) -> Option<Value> {
+    // Hub visitor 영역 = destructive 도구 사용 차단 (ai.rs:686-687 admin path 와 일관 X).
+    // hub visitor 가 admin DB 영구 손실 (페이지 덮어쓰기 / 파일 삭제 / 등) 박는 영역 차단.
+    if firebat_core::utils::hub_context::is_hub_context_active() {
+        return Some(serde_json::json!({
+            "success": false,
+            "error": format!(
+                "이 hub 에서는 destructive 도구 '{}' 사용이 허용되지 않습니다.",
+                tool_name
+            ),
+        }));
+    }
     if firebat_core::utils::cron_context::is_cron_context_active() {
         return None;
     }
