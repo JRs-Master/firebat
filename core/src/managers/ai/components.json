@@ -1241,8 +1241,7 @@
             "type": "object",
             "required": [
               "lat",
-              "lon",
-              "label"
+              "lon"
             ],
             "properties": {
               "lat": {
@@ -1254,8 +1253,11 @@
                 "description": "경도 — sysmod geocoding 결과만 사용. AI 기억으로 하지 마라."
               },
               "label": {
-                "type": "string",
-                "description": "마커 위 짧은 라벨"
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "마커 위 짧은 라벨. optional — 카카오맵 / Leaflet 모두 라벨 없이도 마커 자체 박힘. 박지 못해 검증 실패로 block silent skip 박는 영역 차단."
               },
               "popup": {
                 "type": [
