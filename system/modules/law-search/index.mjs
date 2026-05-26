@@ -272,7 +272,11 @@ async function handleArticle(OC, data) {
 //  파싱 유틸
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function cleanObject(obj) {
-  if (!obj || typeof obj !== 'object') return obj;
+  // null / undefined → 빈 object — config.output schema (root type=object) 와 일관성.
+  // 옛에 null 그대로 반환 박혀 envelope `{success:true, data:null}` 박힘 → ModuleManager
+  // validate_value warning ("null is not of type object") 박는 영역 root cause.
+  if (obj == null) return {};
+  if (typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.map(cleanObject);
   const result = {};
   for (const [k, v] of Object.entries(obj)) {
