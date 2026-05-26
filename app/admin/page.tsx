@@ -1236,7 +1236,7 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
         activeConvId={activeConvId}
         activeMessages={messages}
         onSelectConv={handleSelectConv}
-        onNewConv={() => { if (hubContext) resetHubSession(); handleNewConv(); }}
+        onNewConv={handleNewConv}
         onDeleteConv={handleDeleteConv}
         onRefreshChats={refreshConversations}
         aiModel={aiModel}
