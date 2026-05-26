@@ -554,6 +554,25 @@ pub struct RenderUnifiedHandler;
 #[async_trait::async_trait]
 impl McpToolHandler for RenderUnifiedHandler {
     async fn call(&self, args: Value) -> Result<Value, String> {
+        // 진단 log — args 영역 실제 형태 확인 (Issue 3 root cause 진단용).
+        // CLI 자체 MCP loop / API 모델 / etc 각 path 가 args 박는 형태 다를 가능성 추적.
+        // root cause 확정 박은 후 본 log 영역 제거.
+        let args_preview: String = serde_json::to_string(&args)
+            .unwrap_or_default()
+            .chars()
+            .take(300)
+            .collect();
+        let args_type = if args.is_array() { "array" }
+            else if args.is_string() { "string" }
+            else if args.is_object() { "object" }
+            else if args.is_null() { "null" }
+            else { "other" };
+        tracing::info!(
+            target: "render",
+            "[Render] args type={} preview={}",
+            args_type,
+            args_preview
+        );
         // args 형태 robustness — 일부 CLI 어댑터 / 모델이 args 를 stringified JSON 으로 보내거나
         // blocks 배열 자체를 직접 보내는 경우 수용. 옛 = args.get("blocks") 단일 경로라
         // 'blocks (array) 가 필요합니다' 거짓 거부 (AI 가 정상 {blocks:[...]} 보냈을 때도).
