@@ -267,6 +267,13 @@
         "message"
       ],
       "additionalProperties": false,
+      "synonyms": {
+        "content": "message",
+        "text": "message",
+        "body": "message",
+        "variant": "type",
+        "kind": "type"
+      },
       "properties": {
         "message": {
           "type": "string",

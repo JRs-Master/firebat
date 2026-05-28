@@ -1836,10 +1836,8 @@ type MapLegend = {
   label: string;
 };
 
-/** 마커 icon 영역 → emoji 매핑. typhoon = 🌀 (대형) / forecast = ⭕ (점선 모양) / current = 📍 / 카테고리 이모지. */
+/** 마커 icon 영역 → emoji 매핑. typhoon / forecast 는 SVG 별도 박음 (아래). current = 📍 / 카테고리 이모지. */
 const MARKER_ICON_EMOJI: Record<string, string> = {
-  typhoon: '🌀',
-  forecast: '⭕',
   current: '📍',
   bank: '🏦',
   pharmacy: '💊',
@@ -1850,12 +1848,26 @@ const MARKER_ICON_EMOJI: Record<string, string> = {
   restaurant: '🍴',
 };
 
-/** size 영역 → marker pixel 영역. */
+/** size 영역 → marker pixel 영역. 옛 emoji base 32 → 22 축소 (위험 반경 circles 보다 작게). */
 function markerPixelSize(size?: string | null, isEmoji = false): number {
-  const base = isEmoji ? 32 : 18;
-  if (size === 'large') return Math.round(base * 1.6);
-  if (size === 'small') return Math.round(base * 0.7);
+  const base = isEmoji ? 22 : 14;
+  if (size === 'large') return Math.round(base * 1.3);
+  if (size === 'small') return Math.round(base * 0.75);
   return base;
+}
+
+/** 태풍 현재 위치 동심원 (◎ — 네이버 태풍 영역 형태). 🌀 emoji 대체. color 기본 빨강. data URI 반환. */
+function typhoonSvgUrl(size: number, color = '#dc2626'): string {
+  const c = size / 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${c}" cy="${c}" r="${c - 2}" fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-width="1.5" stroke-opacity="0.5"/><circle cx="${c}" cy="${c}" r="${c * 0.58}" fill="${color}" fill-opacity="0.3" stroke="${color}" stroke-width="1.5" stroke-opacity="0.7"/><circle cx="${c}" cy="${c}" r="${c * 0.28}" fill="${color}"/></svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
+/** 채워진 색 원 SVG (forecast 예상 위치 등). 점선 border 폐기 — 위험 반경은 circles 영역. data URI 반환. */
+function colorCircleSvgUrl(color: string, size: number): string {
+  const r = size / 2 - 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="${color}" stroke="white" stroke-width="2"/></svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
 /** multi-line label 영역 → HTML \<br\> 변환. sanitize 박은 후. */
@@ -1971,17 +1983,15 @@ function MapComp({
             const url = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
             return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(size, size), { offset: new w.kakao.maps.Point(size/2, size/2) });
           };
-          const makeEmojiMarkerImage = (emoji: string, size: number, isDashed = false) => {
-            // emoji 영역 = SVG text + 옵션 dashed circle border (forecast 영역).
+          const makeEmojiMarkerImage = (emoji: string, size: number) => {
             const cx = size / 2;
             const fontSize = Math.round(size * 0.7);
-            const border = isDashed
-              ? `<circle cx="${cx}" cy="${cx}" r="${cx - 2}" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="4 3"/>`
-              : '';
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${border}<text x="${cx}" y="${cx}" font-size="${fontSize}" text-anchor="middle" dominant-baseline="central">${emoji}</text></svg>`;
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><text x="${cx}" y="${cx}" font-size="${fontSize}" text-anchor="middle" dominant-baseline="central">${emoji}</text></svg>`;
             const url = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
             return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(size, size), { offset: new w.kakao.maps.Point(cx, cx) });
           };
+          const makeDataUriImage = (url: string, size: number) =>
+            new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(size, size), { offset: new w.kakao.maps.Point(size / 2, size / 2) });
           // 단일 openInfo 추적 — 새 마커 클릭 시 옛 InfoWindow 자동 close. 옛 흐름은 매 마커
           // 별도 InfoWindow + click 시 본인 open 만 → 옛 popup 이 닫히지 않아 누적되던 문제.
           let openInfo: any = null;
@@ -1990,11 +2000,17 @@ function MapComp({
               position: new w.kakao.maps.LatLng(m.lat, m.lon),
               title: m.label,
             };
-            // icon 박힌 영역 = emoji marker (태풍 / 카테고리 영역). 옛 영역 = color circle.
-            const emoji = m.icon ? MARKER_ICON_EMOJI[m.icon] : null;
-            if (emoji) {
+            // icon 분기 — typhoon = 동심원 SVG (네이버 형태) / forecast = 작은 채워진 원 /
+            // current·카테고리 = emoji / 그 외 + color = color circle.
+            if (m.icon === 'typhoon') {
+              const size = markerPixelSize(m.size ?? 'large', true);
+              opts.image = makeDataUriImage(typhoonSvgUrl(size, colorHex(m.color, '#dc2626')), size);
+            } else if (m.icon === 'forecast') {
+              const size = markerPixelSize(m.size ?? 'small', false);
+              opts.image = makeDataUriImage(colorCircleSvgUrl(colorHex(m.color, '#f97316'), size), size);
+            } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
               const size = markerPixelSize(m.size, true);
-              opts.image = makeEmojiMarkerImage(emoji, size, m.icon === 'forecast');
+              opts.image = makeEmojiMarkerImage(MARKER_ICON_EMOJI[m.icon], size);
             } else if (m.color) {
               opts.image = makeColorMarkerImage(colorHex(m.color, '#ef4444'), markerPixelSize(m.size, false));
             }
@@ -2088,18 +2104,30 @@ function MapComp({
           }).addTo(map);
         }
         for (const m of safeMarkers) {
-          const emoji = m.icon ? MARKER_ICON_EMOJI[m.icon] : null;
           let icon;
-          if (emoji) {
-            // emoji 영역 = divIcon 안 큰 size + 선택 점선 border (forecast 영역).
+          // icon 분기 — typhoon = 동심원 SVG (네이버 형태) / forecast = 작은 채워진 원 /
+          // current·카테고리 = emoji / 그 외 + color = color circle.
+          if (m.icon === 'typhoon') {
+            const size = markerPixelSize(m.size ?? 'large', true);
+            icon = L.divIcon({
+              className: 'firebat-map-marker-typhoon',
+              html: `<img src="${typhoonSvgUrl(size, colorHex(m.color, '#dc2626'))}" width="${size}" height="${size}" style="display:block"/>`,
+              iconSize: [size, size],
+              iconAnchor: [size / 2, size / 2],
+            });
+          } else if (m.icon === 'forecast') {
+            const size = markerPixelSize(m.size ?? 'small', false);
+            icon = L.divIcon({
+              className: 'firebat-map-marker-forecast',
+              html: `<img src="${colorCircleSvgUrl(colorHex(m.color, '#f97316'), size)}" width="${size}" height="${size}" style="display:block"/>`,
+              iconSize: [size, size],
+              iconAnchor: [size / 2, size / 2],
+            });
+          } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
             const size = markerPixelSize(m.size, true);
-            const isDashed = m.icon === 'forecast';
-            const border = isDashed
-              ? 'border:2px dashed #94a3b8;border-radius:50%;background:rgba(255,255,255,0.9);'
-              : '';
             icon = L.divIcon({
               className: 'firebat-map-marker-emoji',
-              html: `<div style="display:flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;font-size:${Math.round(size * 0.7)}px;line-height:1;${border}">${emoji}</div>`,
+              html: `<div style="display:flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;font-size:${Math.round(size * 0.7)}px;line-height:1;">${MARKER_ICON_EMOJI[m.icon]}</div>`,
               iconSize: [size, size],
               iconAnchor: [size / 2, size / 2],
             });
