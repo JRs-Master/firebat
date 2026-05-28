@@ -259,7 +259,7 @@
   {
     "name": "callout",
     "componentType": "Callout",
-    "description": "정보 강조 박스 (info / success / warning / error 타입). 본문 안에 팁·주의·참고 영역 박는 영역. AlertComp 영역 재사용. 옛 node render_callout 영역.",
+    "description": "정보 강조 박스. 본문 안 팁·주의·참고 강조용. info/success/warning/error/tip/accent/highlight/neutral 타입 (AlertComp 재사용).",
     "semanticText": "콜아웃 callout 정보 강조 박스 알림 팁 참고 주의 info success warning error",
     "propsSchema": {
       "type": "object",
@@ -299,7 +299,7 @@
             "object",
             "null"
           ],
-          "description": "CTA 버튼 — { label, href } 박힌 영역 박으면 본문 아래 버튼",
+          "description": "CTA 버튼 — { label, href } 지정 시 본문 아래 버튼",
           "properties": {
             "label": { "type": "string" },
             "href": { "type": "string" }

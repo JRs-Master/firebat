@@ -40,6 +40,8 @@ const TYPE_ALIAS: Record<string, string> = {
   html: 'Html', slider: 'Slider', tabs: 'Tabs', accordion: 'Accordion', progress: 'Progress',
   badge: 'Badge', alert: 'Alert', callout: 'Callout', list: 'List', carousel: 'Carousel',
   countdown: 'Countdown', chart: 'Chart', ad_slot: 'AdSlot', adslot: 'AdSlot',
+  diagram: 'Diagram', math: 'Math', code: 'Code', slideshow: 'Slideshow',
+  lottie: 'Lottie', network: 'Network', map: 'Map',
 };
 
 function ComponentSwitch({ comp }: { comp: ComponentDef }) {
