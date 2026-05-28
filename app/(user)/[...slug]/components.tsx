@@ -1864,16 +1864,17 @@ function markerPixelSize(size?: string | null, isEmoji = false): number {
   return base;
 }
 
-/** 최대풍속 (m/s) → 기상청 태풍 강도 단계 색. 약 초록 → 중 노랑 → 강 주황 → 매우강 빨강 → 초강력 보라.
- *  공식 분류 = 풍속 기준 (2020+). windSpeed 없으면 null (caller 가 color fallback). */
+/** 최대풍속 (m/s) → 기상청 공식 태풍 강도 단계 색 (범례 일치).
+ *  강도1 약(17~24) 초록 → 강도2 중(25~32) 파랑 → 강도3 강(33~43) 노랑 → 강도4 매우강(44~53) 주황
+ *  → 강도5 초강력(54+) 빨강. 17 미만 = 열대저압부(TD) 회색. windSpeed 없으면 null (caller 가 color fallback). */
 function typhoonColorByWind(ws?: number | null): string | null {
   if (typeof ws !== 'number' || !Number.isFinite(ws)) return null;
-  if (ws >= 54) return '#a855f7'; // 초강력 (보라)
-  if (ws >= 44) return '#ef4444'; // 매우 강 (빨강)
-  if (ws >= 33) return '#f97316'; // 강 (주황)
-  if (ws >= 25) return '#eab308'; // 중 (노랑)
-  if (ws >= 17) return '#22c55e'; // 약 (초록)
-  return '#3b82f6';               // 열대저압부 (파랑)
+  if (ws >= 54) return '#ef4444'; // 강도5 초강력 (빨강)
+  if (ws >= 44) return '#f97316'; // 강도4 매우강 (주황)
+  if (ws >= 33) return '#eab308'; // 강도3 강 (노랑)
+  if (ws >= 25) return '#3b82f6'; // 강도2 중 (파랑)
+  if (ws >= 17) return '#22c55e'; // 강도1 약 (초록)
+  return '#9ca3af';               // 열대저압부 TD (<17, 회색)
 }
 
 /** 태풍 현재 위치 — 네이버식 동심원 + 중심 소용돌이 (형태만 네이버, 색은 AI color / 기본 빨강=위험). data URI 반환. */
