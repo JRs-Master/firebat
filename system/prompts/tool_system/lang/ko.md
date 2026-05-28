@@ -174,14 +174,22 @@ render({
         {"lat": 29.5, "lon": 128.5, "icon": "forecast", "label": "8/16 06시\n제주 남쪽 해상\n중심기압 980 hPa\n최대풍속 35 m/s"}
       ],
       "lines": [{"points":[{"lat":24.5,"lon":127.1},{"lat":26.8,"lon":126.9},{"lat":29.5,"lon":128.5}], "color":"#ef4444", "style":"dashed", "label":"예상 경로"}],
-      "circles": [
-        {"lat": 26.8, "lon": 126.9, "radius": 200000, "color": "#fbbf24", "style": "dashed"},
-        {"lat": 29.5, "lon": 128.5, "radius": 250000, "color": "#fbbf24", "style": "dashed"}
-      ]
+      "cone": {
+        "points": [
+          {"lat": 24.5, "lon": 127.1, "radius": 80000},
+          {"lat": 26.8, "lon": 126.9, "radius": 180000},
+          {"lat": 29.5, "lon": 128.5, "radius": 260000}
+        ],
+        "color": "#6366f1"
+      }
     }
   }
   ```
-  circles 영역 = 70% 확률반경 (radius 영역 = 미터 단위). 예상 위치별 박음.
+
+  **cone (예측 영역) = 네이버 태풍 예측 영역 정공** — 각 예상 위치 개별 원 (circles) 대신 경로 전체
+  감싸는 부드러운 영역. 현재 위치 (좁음) → 마지막 예상 (넓음) 점점 커지는 cone. radius = 각 시점
+  확률반경 (m, 시간 갈수록 ↑). kma_weather typhoon-forecast 의 radPr (확률반경 km → ×1000 m) 사용.
+  태풍 = cone 우선 (circles 보다 네이버식 자연). circles 는 특정 1개 위치 반경 강조 시만.
 - 다이어그램 → `diagram` (mermaid DSL — flowchart/sequence/gantt/class 등)
 - 수식 → `math` (KaTeX LaTeX)
 - 코드 하이라이트 → `code` (hljs language + lineNumbers)

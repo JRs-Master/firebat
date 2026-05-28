@@ -1433,6 +1433,32 @@
             }
           }
         },
+        "cone": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "예측 영역 cone — 경로 따라 점점 넓어지는 부드러운 영역 (네이버 태풍 예측 영역). 각 예상 위치 개별 원 (circles) 대신 경로 전체 감싸는 단일 polygon. 태풍 예측 오차 영역 = 현재 위치 (좁음) → 마지막 예상 (넓음).",
+          "properties": {
+            "points": {
+              "type": "array",
+              "description": "경로 점 + 각 점 반경 (최소 2점). 현재 위치 → 예상 위치 순서. radius = 각 시점 확률반경 (m). 태풍 = kma_weather typhoon-forecast 의 radPr(확률반경 km→m) 또는 rad15(강풍반경).",
+              "items": {
+                "type": "object",
+                "required": ["lat", "lon", "radius"],
+                "properties": {
+                  "lat": { "type": "number" },
+                  "lon": { "type": "number" },
+                  "radius": { "type": "number", "description": "해당 시점 반경 m (예: 200000 = 200km). 시간 갈수록 커짐 (예측 오차 ↑)" }
+                }
+              }
+            },
+            "color": {
+              "type": ["string", "null"],
+              "description": "cone fill/외곽 색상. 기본 indigo (#6366f1)."
+            }
+          }
+        },
         "legend": {
           "type": [
             "array",

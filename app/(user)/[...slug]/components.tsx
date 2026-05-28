@@ -78,7 +78,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'KeyValue':      return <KeyValueComp title={p.title} items={p.items ?? []} columns={p.columns} />;
     case 'StatusBadge':   return <StatusBadgeComp items={p.items ?? []} />;
     case 'PlanCard':      return <PlanCardComp title={p.title ?? ''} steps={p.steps ?? []} estimatedTime={p.estimatedTime} risks={p.risks} />;
-    case 'Map':           return <MapComp markers={p.markers ?? []} circles={p.circles} lines={p.lines} legend={p.legend} center={p.center} zoom={p.zoom} height={p.height} provider={p.provider} />;
+    case 'Map':           return <MapComp markers={p.markers ?? []} circles={p.circles} lines={p.lines} cone={p.cone} legend={p.legend} center={p.center} zoom={p.zoom} height={p.height} provider={p.provider} />;
     case 'Diagram':       return <DiagramComp code={p.code ?? ''} theme={p.theme} />;
     case 'Math':          return <MathComp expression={p.expression ?? ''} block={p.block !== false} />;
     case 'Code':          return <CodeComp code={p.code ?? ''} language={p.language ?? 'plaintext'} showLineNumbers={p.showLineNumbers !== false} title={p.title} />;
@@ -1831,6 +1831,12 @@ type MapLine = {
   label?: string | null;
 };
 
+type MapCone = {
+  /** 경로 점 + 각 점 반경 (meter) — 점점 넓어지는 예측 영역 (네이버 태풍 cone). */
+  points: { lat: number; lon: number; radius: number }[];
+  color?: string | null;
+};
+
 type MapLegend = {
   color: string;
   label: string;
@@ -1856,8 +1862,8 @@ function markerPixelSize(size?: string | null, isEmoji = false): number {
   return base;
 }
 
-/** 태풍 현재 위치 — 네이버식 동심원 + 중심 소용돌이. 🌀 emoji 대체. color 기본 초록 (네이버). data URI 반환. */
-function typhoonSvgUrl(size: number, color = '#16a34a'): string {
+/** 태풍 현재 위치 — 네이버식 동심원 + 중심 소용돌이 (형태만 네이버, 색은 AI color / 기본 빨강=위험). data URI 반환. */
+function typhoonSvgUrl(size: number, color = '#dc2626'): string {
   const c = size / 2;
   // 동심원 2 겹 (확률 반경 느낌) + 중심 흰 원 + 소용돌이 2 path (태풍 눈).
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
@@ -1882,6 +1888,29 @@ function labelToHtml(label: string): string {
   return sanitizePopupHtml(label).replace(/\n/g, '<br>');
 }
 
+/** cone (예측 영역) polygon — 경로 점 + 각 점 반경 (meter) → 경로 따라 점점 넓어지는 영역.
+ *  네이버 태풍 예측 cone 형태. 각 점 진행방향 수직 좌/우 반경 offset → 좌측경계 + 우측경계 역순 닫힘. */
+function conePolygonCoords(pts: { lat: number; lon: number; radius: number }[]): [number, number][] {
+  if (pts.length < 2) return [];
+  const left: [number, number][] = [];
+  const right: [number, number][] = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i];
+    const prev = pts[i - 1] ?? p;
+    const next = pts[i + 1] ?? p;
+    const dx = next.lon - prev.lon;
+    const dy = next.lat - prev.lat;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len; // 좌측 수직 단위 x
+    const ny = dx / len;  // 좌측 수직 단위 y
+    const dLat = p.radius / 111320;
+    const dLon = p.radius / (111320 * Math.cos((p.lat * Math.PI) / 180));
+    left.push([p.lon + nx * dLon, p.lat + ny * dLat]);
+    right.push([p.lon - nx * dLon, p.lat - ny * dLat]);
+  }
+  return [...left, ...right.reverse(), left[0]];
+}
+
 /** 원 polygon 좌표 (meter 반경 → N 각형 [lon, lat] 배열). MapLibre circle layer 영역 (meter 단위 X). */
 function circlePolygonCoords(lat: number, lon: number, radiusM: number, points = 64): [number, number][] {
   const coords: [number, number][] = [];
@@ -1900,7 +1929,7 @@ function buildMarkerEl(m: MapMarker): HTMLDivElement {
   el.style.cursor = 'pointer';
   if (m.icon === 'typhoon') {
     const size = markerPixelSize(m.size ?? 'large', true);
-    el.innerHTML = `<img src="${typhoonSvgUrl(size, colorHex(m.color, '#16a34a'))}" width="${size}" height="${size}" style="display:block"/>`;
+    el.innerHTML = `<img src="${typhoonSvgUrl(size, colorHex(m.color, '#dc2626'))}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon === 'forecast') {
     const size = markerPixelSize(m.size ?? 'small', false);
     el.innerHTML = `<img src="${colorCircleSvgUrl(colorHex(m.color, '#f97316'), size)}" width="${size}" height="${size}" style="display:block"/>`;
@@ -1937,11 +1966,12 @@ function sanitizePopupHtml(html: string): string {
 }
 
 function MapComp({
-  markers, circles, lines, legend, center, zoom, height, provider,
+  markers, circles, lines, cone, legend, center, zoom, height, provider,
 }: {
   markers: MapMarker[];
   circles?: MapCircle[] | null;
   lines?: MapLine[] | null;
+  cone?: MapCone | null;
   legend?: MapLegend[] | null;
   center?: { lat: number; lon: number } | null;
   zoom?: number | null;
@@ -1949,6 +1979,9 @@ function MapComp({
   provider?: 'auto' | 'leaflet' | 'kakao' | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const safeCone = cone && Array.isArray(cone.points) && cone.points.length >= 2
+    && cone.points.every(p => typeof p?.lat === 'number' && typeof p?.lon === 'number' && typeof p?.radius === 'number')
+    ? cone : null;
   const safeMarkers = Array.isArray(markers) ? markers.filter(m => typeof m?.lat === 'number' && typeof m?.lon === 'number') : [];
   const safeCircles = Array.isArray(circles) ? circles.filter(c => typeof c?.lat === 'number' && typeof c?.lon === 'number' && typeof c?.radius === 'number' && c.radius > 0) : [];
   const safeLines = Array.isArray(lines) ? lines.filter(ln => Array.isArray(ln?.points) && ln.points.length >= 2 && ln.points.every(p => typeof p?.lat === 'number' && typeof p?.lon === 'number')) : [];
@@ -1991,6 +2024,22 @@ function MapComp({
             center: new w.kakao.maps.LatLng(finalCenter.lat, finalCenter.lon),
             level: Math.max(1, Math.min(14, 15 - finalZoom)),  // Leaflet zoom (12=도시) → kakao level (3=동네)
           });
+          // cone (예측 영역) — 경로 + 반경 → 부드러운 polygon (네이버 태풍 cone). circles 보다 먼저 (아래 깔림).
+          if (safeCone) {
+            const coords = conePolygonCoords(safeCone.points);
+            if (coords.length >= 4) {
+              const coneColor = colorHex(safeCone.color, '#6366f1');
+              const path = coords.map(([lon, lat]) => new w.kakao.maps.LatLng(lat, lon));
+              new w.kakao.maps.Polygon({
+                path,
+                strokeWeight: 1,
+                strokeColor: coneColor,
+                strokeOpacity: 0.4,
+                fillColor: coneColor,
+                fillOpacity: 0.18,
+              }).setMap(map);
+            }
+          }
           // 반경 원 (circles) — 카카오 strokeStyle: 'dashed' / 'solid'
           for (const c of safeCircles) {
             new w.kakao.maps.Circle({
@@ -2044,7 +2093,7 @@ function MapComp({
             // current·카테고리 = emoji / 그 외 + color = color circle.
             if (m.icon === 'typhoon') {
               const size = markerPixelSize(m.size ?? 'large', true);
-              opts.image = makeDataUriImage(typhoonSvgUrl(size, colorHex(m.color, '#16a34a')), size);
+              opts.image = makeDataUriImage(typhoonSvgUrl(size, colorHex(m.color, '#dc2626')), size);
             } else if (m.icon === 'forecast') {
               const size = markerPixelSize(m.size ?? 'small', false);
               opts.image = makeDataUriImage(colorCircleSvgUrl(colorHex(m.color, '#f97316'), size), size);
@@ -2075,7 +2124,7 @@ function MapComp({
             }
           }
           // 마커 2+ 시 자동 bounds fit — 모든 마커 + 원 + 선 영역 보이도록 줌 자동
-          if (safeMarkers.length + safeCircles.length + safeLines.length >= 2) {
+          if (safeMarkers.length + safeCircles.length + safeLines.length + (safeCone ? safeCone.points.length : 0) >= 2) {
             const bounds = new w.kakao.maps.LatLngBounds();
             for (const m of safeMarkers) bounds.extend(new w.kakao.maps.LatLng(m.lat, m.lon));
             for (const c of safeCircles) {
@@ -2090,6 +2139,7 @@ function MapComp({
             for (const ln of safeLines) {
               for (const p of ln.points) bounds.extend(new w.kakao.maps.LatLng(p.lat, p.lon));
             }
+            if (safeCone) for (const p of safeCone.points) bounds.extend(new w.kakao.maps.LatLng(p.lat, p.lon));
             if (!bounds.isEmpty()) map.setBounds(bounds);
           }
         });
@@ -2139,6 +2189,17 @@ function MapComp({
               } catch { /* 일부 layer setLayoutProperty 실패 무시 */ }
             }
           }
+          // cone (예측 영역) — 경로 + 각 점 반경 → 점점 넓어지는 부드러운 polygon (네이버 태풍 cone).
+          // circles (각 위치 개별 원) 보다 먼저 그려 아래 깔림. 반투명 fill + 옅은 외곽선.
+          if (safeCone) {
+            const coords = conePolygonCoords(safeCone.points);
+            if (coords.length >= 4) {
+              const coneColor = colorHex(safeCone.color, '#6366f1');
+              map.addSource('fb-cone', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [coords] } } });
+              map.addLayer({ id: 'fb-cone-fill', type: 'fill', source: 'fb-cone', paint: { 'fill-color': coneColor, 'fill-opacity': 0.18 } });
+              map.addLayer({ id: 'fb-cone-line', type: 'line', source: 'fb-cone', paint: { 'line-color': coneColor, 'line-width': 1, 'line-opacity': 0.4 } });
+            }
+          }
           // circles (위험 반경) — GeoJSON polygon (meter → 64각형). 점선 = 위험 반경 표준.
           if (safeCircles.length > 0) {
             const features = safeCircles.map(c => ({
@@ -2174,7 +2235,7 @@ function MapComp({
           }
         }
         // bounds fit — 마커 + 원 + 선 2+ 시 모두 보이도록 자동 줌.
-        if (safeMarkers.length + safeCircles.length + safeLines.length >= 2) {
+        if (safeMarkers.length + safeCircles.length + safeLines.length + (safeCone ? safeCone.points.length : 0) >= 2) {
           const bounds = new ml.LngLatBounds();
           for (const m of safeMarkers) bounds.extend([m.lon, m.lat]);
           for (const c of safeCircles) {
@@ -2184,6 +2245,7 @@ function MapComp({
             bounds.extend([c.lon - dLon, c.lat - dLat]);
           }
           for (const ln of safeLines) for (const p of ln.points) bounds.extend([p.lon, p.lat]);
+          if (safeCone) for (const p of safeCone.points) bounds.extend([p.lon, p.lat]);
           if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 40, maxZoom: 13, duration: 0 });
         }
       };
