@@ -2180,6 +2180,10 @@ function MapComp({
               opts.image = makeEmojiMarkerImage(MARKER_ICON_EMOJI[m.icon], size);
             } else if (m.color) {
               opts.image = makeColorMarkerImage(colorHex(m.color, '#ef4444'), markerPixelSize(m.size, false));
+            } else {
+              // icon·color 미지정 — 기본 핀 명시. 옛 = opts.image 비워 카카오 기본 마커에 의존했는데
+              // 그 마커 이미지가 환경(CSP/차단)에 따라 안 그려져 빈 네모로 보이던 문제 차단.
+              opts.image = makeEmojiMarkerImage('📍', markerPixelSize(m.size ?? 'medium', true));
             }
             const marker = new w.kakao.maps.Marker(opts);
             marker.setMap(map);
