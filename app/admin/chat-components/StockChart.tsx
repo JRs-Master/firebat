@@ -92,13 +92,12 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 툴팁 위치용 실시간 마우스 좌표 (컨테이너 기준)
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
-  // 차트 영역 cap — 모바일 200px / PC 240px. SSR null 시 200 fallback.
-  // 옛 = 320/240 박은 영역 → chat content area (vh~600) 박은 영역에서 50%+ 박힘. 사용자 보고 "화면 꽉찬 영역".
+  // 차트 영역 cap — 모바일 180px / PC 240px. SSR null 시 180 fallback.
   // 비-스크롤 모드만 적용 (가로 스크롤 모드는 SVG 자체 width=W 고정).
   // 거래량은 가격 영역의 80/280 ≈ 28.6% 비례 (옛 viewBox 비율 유지).
-  const chartMaxH = useViewportMaxHeight({ mobile: 0.3, desktop: 0.35, mobileMaxPx: 200, desktopMaxPx: 240 });
-  const priceChartHeight = chartMaxH ? `${chartMaxH}px` : '200px';
-  const volChartHeight = chartMaxH ? `${Math.floor(chartMaxH * 80 / 280)}px` : '58px';
+  const chartMaxH = useViewportMaxHeight({ mobile: 0.28, desktop: 0.35, mobileMaxPx: 180, desktopMaxPx: 240 });
+  const priceChartHeight = chartMaxH ? `${chartMaxH}px` : '180px';
+  const volChartHeight = chartMaxH ? `${Math.floor(chartMaxH * 80 / 280)}px` : '52px';
 
   // 유효 데이터만 + 오래된 → 최신 순서로 정렬 (API가 역순 반환 가능)
   // data가 undefined/null/비배열이어도 크래시 방지
