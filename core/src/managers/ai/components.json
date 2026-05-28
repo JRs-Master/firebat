@@ -1346,6 +1346,13 @@
                 ],
                 "enum": ["small", "medium", "large", null],
                 "description": "마커 크기. 옛 default = medium. 태풍 영역 = large (현재 위치 강조)."
+              },
+              "windSpeed": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "description": "[typhoon/forecast 전용] 최대풍속 m/s — 기상청 강도 단계 색 자동 (약<25 초록 / 중25~33 노랑 / 강33~44 주황 / 매우강44~54 빨강 / 초강력54+ 보라). kma_weather typhoon-forecast 의 ws 사용. 박으면 color 보다 우선."
               }
             }
           }

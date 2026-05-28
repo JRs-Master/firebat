@@ -169,9 +169,9 @@ render({
     "props": {
       "center": {"lat": 27.0, "lon": 128.0},
       "markers": [
-        {"lat": 24.5, "lon": 127.1, "icon": "typhoon", "size": "large", "label": "현재 위치\n8/14 06시\n중심기압 970 hPa\n최대풍속 40 m/s"},
-        {"lat": 26.8, "lon": 126.9, "icon": "forecast", "label": "8/15 06시\n오키나와 남남서 해상\n중심기압 975 hPa\n최대풍속 38 m/s"},
-        {"lat": 29.5, "lon": 128.5, "icon": "forecast", "label": "8/16 06시\n제주 남쪽 해상\n중심기압 980 hPa\n최대풍속 35 m/s"}
+        {"lat": 24.5, "lon": 127.1, "icon": "typhoon", "size": "large", "windSpeed": 40, "label": "현재 위치\n8/14 06시\n중심기압 970 hPa\n최대풍속 40 m/s"},
+        {"lat": 26.8, "lon": 126.9, "icon": "forecast", "windSpeed": 38, "label": "8/15 06시\n오키나와 남남서 해상\n중심기압 975 hPa\n최대풍속 38 m/s"},
+        {"lat": 29.5, "lon": 128.5, "icon": "forecast", "windSpeed": 35, "label": "8/16 06시\n제주 남쪽 해상\n중심기압 980 hPa\n최대풍속 35 m/s"}
       ],
       "lines": [{"points":[{"lat":24.5,"lon":127.1},{"lat":26.8,"lon":126.9},{"lat":29.5,"lon":128.5}], "color":"#ef4444", "style":"dashed", "label":"예상 경로"}],
       "cone": {
@@ -190,6 +190,10 @@ render({
   감싸는 부드러운 영역. 현재 위치 (좁음) → 마지막 예상 (넓음) 점점 커지는 cone. radius = 각 시점
   확률반경 (m, 시간 갈수록 ↑). kma_weather typhoon-forecast 의 radPr (확률반경 km → ×1000 m) 사용.
   태풍 = cone 우선 (circles 보다 네이버식 자연). circles 는 특정 1개 위치 반경 강조 시만.
+
+  **markers[].windSpeed (태풍 강도 색)** — typhoon/forecast 마커에 최대풍속 (m/s, kma typhoon-forecast 의 ws)
+  박으면 기상청 강도 단계 색 자동: 약(<25)=초록 / 중(25~33)=노랑 / 강(33~44)=주황 / 매우강(44~54)=빨강 /
+  초강력(54+)=보라. windSpeed 박으면 color 보다 우선. 태풍 = windSpeed 박는 게 정공 (강도 한눈에).
 - 다이어그램 → `diagram` (mermaid DSL — flowchart/sequence/gantt/class 등)
 - 수식 → `math` (KaTeX LaTeX)
 - 코드 하이라이트 → `code` (hljs language + lineNumbers)

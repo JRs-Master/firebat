@@ -1808,6 +1808,8 @@ type MapMarker = {
   icon?: string | null;
   /** 마커 크기 — small / medium(기본) / large. 태풍 현재 위치 = large */
   size?: 'small' | 'medium' | 'large' | null;
+  /** 최대풍속 m/s — typhoon/forecast 마커 색 자동 (기상청 강도 단계). 박혀있으면 color 우선. */
+  windSpeed?: number | null;
 };
 
 type MapCircle = {
@@ -1862,6 +1864,18 @@ function markerPixelSize(size?: string | null, isEmoji = false): number {
   return base;
 }
 
+/** 최대풍속 (m/s) → 기상청 태풍 강도 단계 색. 약 초록 → 중 노랑 → 강 주황 → 매우강 빨강 → 초강력 보라.
+ *  공식 분류 = 풍속 기준 (2020+). windSpeed 없으면 null (caller 가 color fallback). */
+function typhoonColorByWind(ws?: number | null): string | null {
+  if (typeof ws !== 'number' || !Number.isFinite(ws)) return null;
+  if (ws >= 54) return '#a855f7'; // 초강력 (보라)
+  if (ws >= 44) return '#ef4444'; // 매우 강 (빨강)
+  if (ws >= 33) return '#f97316'; // 강 (주황)
+  if (ws >= 25) return '#eab308'; // 중 (노랑)
+  if (ws >= 17) return '#22c55e'; // 약 (초록)
+  return '#3b82f6';               // 열대저압부 (파랑)
+}
+
 /** 태풍 현재 위치 — 네이버식 동심원 + 중심 소용돌이 (형태만 네이버, 색은 AI color / 기본 빨강=위험). data URI 반환. */
 function typhoonSvgUrl(size: number, color = '#dc2626'): string {
   const c = size / 2;
@@ -1886,6 +1900,33 @@ function colorCircleSvgUrl(color: string, size: number): string {
 /** multi-line label 영역 → HTML \<br\> 변환. sanitize 박은 후. */
 function labelToHtml(label: string): string {
   return sanitizePopupHtml(label).replace(/\n/g, '<br>');
+}
+
+/** 지도 popup 카드 HTML — 첫 줄 = 헤더, 나머지 = 본문 (라벨:값 행). 색 = Firebat 디자인 통일 (slate).
+ *  마커 색 (태풍 빨강 등) 과 무관 — popup 은 디자인 일관성 위해 slate 헤더 + 흰 본문. rawLabel = multi-line (\n). */
+function buildPopupCardHtml(rawLabel: string): string {
+  const clean = sanitizePopupHtml(rawLabel);
+  const lines = clean.split('\n').map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return '';
+  const [head, ...body] = lines;
+  // 본문 각 줄 — "라벨 값" 패턴이면 라벨(연회색) + 값(진하게) 분리, 아니면 한 줄 그대로.
+  const bodyRows = body
+    .map((line) => {
+      const m = line.match(/^(\S+)\s+(.+)$/);
+      if (m) {
+        return `<div style="display:flex;justify-content:space-between;gap:12px;padding:1px 0;"><span style="color:#94a3b8;">${m[1]}</span><span style="color:#1e293b;font-weight:600;">${m[2]}</span></div>`;
+      }
+      return `<div style="color:#475569;padding:1px 0;">${line}</div>`;
+    })
+    .join('');
+  // 우리식 카드 — Firebat StockChart / Card 컴포넌트 스타일 (흰 배경 + 제목 bold + border 구분, 색 헤더 X).
+  // 둥근 모서리 + 그림자 + border 는 popup wrapper CSS (firebat-map-popup).
+  return (
+    `<div style="min-width:140px;font-family:'Pretendard Variable',Pretendard,sans-serif;">`
+    + `<div style="font-weight:700;font-size:13px;color:#0f172a;padding:9px 13px 7px;border-bottom:1px solid #e2e8f0;">${head}</div>`
+    + (bodyRows ? `<div style="padding:8px 13px;font-size:12px;line-height:1.55;">${bodyRows}</div>` : '')
+    + `</div>`
+  );
 }
 
 /** cone (예측 영역) polygon — 경로 점 + 각 점 반경 (meter) → 경로 따라 점점 넓어지는 영역.
@@ -1929,10 +1970,13 @@ function buildMarkerEl(m: MapMarker): HTMLDivElement {
   el.style.cursor = 'pointer';
   if (m.icon === 'typhoon') {
     const size = markerPixelSize(m.size ?? 'large', true);
-    el.innerHTML = `<img src="${typhoonSvgUrl(size, colorHex(m.color, '#dc2626'))}" width="${size}" height="${size}" style="display:block"/>`;
+    // 색 = 풍속 따라 강도 단계 (windSpeed) 우선, 없으면 AI color / 기본 빨강.
+    const tColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
+    el.innerHTML = `<img src="${typhoonSvgUrl(size, tColor)}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon === 'forecast') {
     const size = markerPixelSize(m.size ?? 'small', false);
-    el.innerHTML = `<img src="${colorCircleSvgUrl(colorHex(m.color, '#f97316'), size)}" width="${size}" height="${size}" style="display:block"/>`;
+    const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#f97316');
+    el.innerHTML = `<img src="${colorCircleSvgUrl(fColor, size)}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
     const size = markerPixelSize(m.size, true);
     el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;font-size:${Math.round(size * 0.7)}px;line-height:1;">${MARKER_ICON_EMOJI[m.icon]}</div>`;
@@ -2093,10 +2137,12 @@ function MapComp({
             // current·카테고리 = emoji / 그 외 + color = color circle.
             if (m.icon === 'typhoon') {
               const size = markerPixelSize(m.size ?? 'large', true);
-              opts.image = makeDataUriImage(typhoonSvgUrl(size, colorHex(m.color, '#dc2626')), size);
+              const tColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
+              opts.image = makeDataUriImage(typhoonSvgUrl(size, tColor), size);
             } else if (m.icon === 'forecast') {
               const size = markerPixelSize(m.size ?? 'small', false);
-              opts.image = makeDataUriImage(colorCircleSvgUrl(colorHex(m.color, '#f97316'), size), size);
+              const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#f97316');
+              opts.image = makeDataUriImage(colorCircleSvgUrl(fColor, size), size);
             } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
               const size = markerPixelSize(m.size, true);
               opts.image = makeEmojiMarkerImage(MARKER_ICON_EMOJI[m.icon], size);
@@ -2105,15 +2151,13 @@ function MapComp({
             }
             const marker = new w.kakao.maps.Marker(opts);
             marker.setMap(map);
-            // popup — m.popup 우선, 없으면 m.label (multi-line 영역 \\n → <br>).
-            // dangerous URL (javascript:/data:/vbscript:) 만 sanitize, 정상 https 링크 유지.
-            const rawPopup = m.popup ? sanitizePopupHtml(m.popup) : labelToHtml(m.label);
-            const popupText = rawPopup;
-            if (popupText) {
-              // 2-3줄 자연 wrap + 3줄 초과 스크롤. line-height 1.4 × font 12 = 16.8px/줄 ×
-              // 3줄 ≈ 50px + padding 13 = 63px max-height. 화면 너비 적응 (min 420 / 100vw - 80).
+            // popup — m.popup (HTML 그대로) 우선, 없으면 m.label → 우리식 카드 (헤더 + 라벨:값 본문).
+            const cardHtml = m.popup
+              ? `<div style="padding:8px 12px;font-size:12px;line-height:1.5;max-width:min(280px,calc(100vw - 80px));word-break:break-word;">${sanitizePopupHtml(m.popup)}</div>`
+              : buildPopupCardHtml(m.label);
+            if (cardHtml) {
               const info = new w.kakao.maps.InfoWindow({
-                content: `<div style="padding:6px 10px;font-size:12px;line-height:1.4;white-space:normal;word-break:break-word;max-width:min(420px,calc(100vw - 80px));max-height:63px;overflow-y:auto;">${popupText}</div>`,
+                content: `<div style="max-width:min(280px,calc(100vw - 80px));overflow:hidden;border-radius:10px;">${cardHtml}</div>`,
                 removable: true,
               });
               w.kakao.maps.event.addListener(marker, 'click', () => {
@@ -2226,11 +2270,13 @@ function MapComp({
         // markers — maplibregl.Marker (HTML element). style load 무관 즉시 추가 OK.
         for (const m of safeMarkers) {
           const marker = new ml.Marker({ element: buildMarkerEl(m) }).setLngLat([m.lon, m.lat]).addTo(map);
-          const popupText = m.popup ? sanitizePopupHtml(m.popup) : labelToHtml(m.label);
-          if (popupText) {
+          // popup — m.popup (HTML 그대로) 우선, 없으면 m.label → 우리식 카드 (헤더 + 라벨:값 본문).
+          const cardHtml = m.popup
+            ? `<div style="padding:9px 13px;font-size:12px;line-height:1.5;">${sanitizePopupHtml(m.popup)}</div>`
+            : buildPopupCardHtml(m.label);
+          if (cardHtml) {
             marker.setPopup(
-              new ml.Popup({ offset: 14, closeButton: true, maxWidth: '260px' })
-                .setHTML(`<div style="font-size:12px;line-height:1.4;word-break:break-word;">${popupText}</div>`)
+              new ml.Popup({ offset: 16, closeButton: true, maxWidth: '280px', className: 'firebat-map-popup' }).setHTML(cardHtml)
             );
           }
         }

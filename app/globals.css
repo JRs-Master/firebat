@@ -417,3 +417,23 @@ html::-webkit-scrollbar-thumb:hover,
   color: var(--cms-text);
   font-family: var(--cms-font-heading);
 }
+
+/* 지도 popup — 우리식 카드 (Firebat Card 컴포넌트 스타일: 흰 배경 + 둥근 + 그림자 + slate border). */
+.firebat-map-popup .maplibregl-popup-content {
+  padding: 0;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.16);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+.firebat-map-popup .maplibregl-popup-close-button {
+  width: 22px;
+  height: 22px;
+  font-size: 16px;
+  color: #94a3b8;
+  border-radius: 6px;
+}
+.firebat-map-popup .maplibregl-popup-close-button:hover {
+  background: #f1f5f9;
+  color: #475569;
+}
