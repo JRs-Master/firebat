@@ -140,15 +140,22 @@ impl ModuleManager {
             .execute(&target, input_data, &SandboxExecuteOpts::default())
             .await?;
 
-        // Post-spawn output validation — config.json 의 output schema 설정되어 있으면 검사 (선택)
-        if let Some(config) = self.get_module_config(scope, module_name).await {
-            if let Some(output_schema) = config.get("output") {
-                if let Err(e) = validate_value(&result.data, output_schema) {
-                    tracing::warn!(
-                        module = module_name,
-                        error = %e,
-                        "[ModuleManager] 출력 schema 위반 — 모듈 stdout 이 config.output 어김"
-                    );
+        // Post-spawn output validation — config.json 의 output schema 설정되어 있으면 검사 (선택).
+        // success:false 박은 영역 (outErr 호출 영역) = envelope `{success:false, errorKey, errorParams}`
+        // 형태라 `data` field 박지 못함 → sandbox.rs 영역에서 result.data = Value::Null 박힘.
+        // output schema 영역 = success 박은 정상 응답의 data 영역만 검증 박는 게 정공.
+        // success:false 박은 영역 검증 박은 영역 = 옛 kma-weather (API key 미설정) 영역에서
+        // "null is not of type object" warning 박은 root cause.
+        if result.success {
+            if let Some(config) = self.get_module_config(scope, module_name).await {
+                if let Some(output_schema) = config.get("output") {
+                    if let Err(e) = validate_value(&result.data, output_schema) {
+                        tracing::warn!(
+                            module = module_name,
+                            error = %e,
+                            "[ModuleManager] 출력 schema 위반 — 모듈 stdout 이 config.output 어김"
+                        );
+                    }
                 }
             }
         }
