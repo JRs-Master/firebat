@@ -148,11 +148,49 @@ impl HistoryResolver {
             };
         }
 
-        let mut lines = vec![format!("[관련 과거 대화 ({}개 매칭)]", picked.len())];
+        // 진단 — 벡터(E5) 회상 품질 (admin 로그 탭): 매칭 수 / top score / spread.
+        // E5 유지 vs 다른 임베딩 모델 교체 판단용.
+        tracing::info!(target: "ai", count = picked.len(), top_score = top1, spread = spread, "search_history 벡터 회상");
+
+        // 매칭 대화의 Q&A 페어 full 원문 — 옛 200자 preview → 전체 (E5 가 고른 대화 통째로).
+        // user 매칭이면 다음 assistant, assistant 매칭이면 이전 user 를 같이 (한 덩어리).
+        let mut lines = vec![format!("[관련 과거 대화 ({}건)]", picked.len())];
+        let mut seen: std::collections::HashSet<(String, usize)> = std::collections::HashSet::new();
         for m in &picked {
-            let role_label = if m.role == "user" { "사용자" } else { "AI" };
-            let preview: String = m.content_preview.chars().take(PREVIEW_MAX).collect();
-            lines.push(format!("[{}]: {}", role_label, preview));
+            let mi = m.msg_idx as usize;
+            let pair_mi = if m.role == "user" { mi + 1 } else { mi.saturating_sub(1) };
+            let lo = mi.min(pair_mi);
+            let hi = mi.max(pair_mi);
+            if !seen.insert((m.conv_id.clone(), lo)) {
+                continue; // 같은 Q&A 페어 중복 방지
+            }
+            let mut got_full = false;
+            if let Some(conv) = self.conversation.get(owner, &m.conv_id) {
+                if let Some(msgs) = conv.messages.as_array() {
+                    let idxs: Vec<usize> = if lo == hi { vec![lo] } else { vec![lo, hi] };
+                    for idx in idxs {
+                        if let Some(msg) = msgs.get(idx) {
+                            let role = msg.get("role").and_then(|v| v.as_str()).unwrap_or("");
+                            let label = match role {
+                                "user" => "사용자",
+                                "assistant" | "system" => "AI",
+                                _ => continue,
+                            };
+                            let content = msg.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                            if !content.trim().is_empty() {
+                                lines.push(format!("[{}]: {}", label, content));
+                                got_full = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if !got_full {
+                // full 조회 실패 — preview(잘림) fallback.
+                let role_label = if m.role == "user" { "사용자" } else { "AI" };
+                let preview: String = m.content_preview.chars().take(PREVIEW_MAX).collect();
+                lines.push(format!("[{}]: {}", role_label, preview));
+            }
         }
         HistoryResolveResult {
             recent_history,

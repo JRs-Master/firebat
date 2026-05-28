@@ -749,8 +749,23 @@ impl AiManager {
                         .conversation_id
                         .as_deref()
                         .or(ai_opts.conversation_id.as_deref());
+                    // 직전 연속성 — recent N턴 (현재 대화 그대로).
                     if let Some(hist) = hr.resolve(owner, conv_id) {
                         extra_parts.push(hist);
+                    }
+                    // 관련 과거 회상 — 벡터(E5) 검색. embedder 만 있으면 작동 (ai-router 토글 무관 —
+                    // 4-tier RetrievalEngine 과 별개). 현재 대화 밖 의미 매칭 대화를 full Q&A 로 주입.
+                    let search = hr
+                        .compress_history_with_search(
+                            prompt,
+                            &history_resolver::CompressHistoryOpts {
+                                owner: Some(owner.to_string()),
+                                current_conv_id: conv_id.map(String::from),
+                            },
+                        )
+                        .await;
+                    if !search.context_summary.is_empty() {
+                        extra_parts.push(search.context_summary);
                     }
                 }
 
