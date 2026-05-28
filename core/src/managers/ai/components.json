@@ -2,13 +2,12 @@
   {
     "name": "stock_chart",
     "componentType": "StockChart",
-    "description": "주식 캔들 차트 (OHLCV 일봉·분봉). 주가 시세 시각화 시 사용. 매수/매도 포인트, 이동평균선 표시 가능. 필수 props: symbol(코드) + title(한글명) + data(OHLCV 배열). 'name' 키 사용 금지 — 종목 한글명은 'title' prop 사용.",
+    "description": "주식 캔들 차트 (OHLCV 일봉·분봉). 주가 시세 시각화 시 사용. 매수/매도 포인트, 이동평균선 표시 가능. 필수 props: symbol(코드) + data(OHLCV 배열). title 영역은 optional (있으면 종목 한글명, 박지 않으면 symbol 영역 사용). 'name' 키 사용 금지 — 종목 한글명 박을 때 'title' prop 사용.",
     "semanticText": "주식 종목 시세 주가 캔들 일봉 분봉 차트 OHLCV 이동평균 MA 골든크로스 데드크로스 거래량 저항 지지 매수 매도 포인트 005930 삼성전자 코스피 코스닥 투자 분석",
     "propsSchema": {
       "type": "object",
       "required": [
         "symbol",
-        "title",
         "data"
       ],
       "additionalProperties": false,

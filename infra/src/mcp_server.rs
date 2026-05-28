@@ -261,7 +261,30 @@ async fn handle_rpc(
                 tools.get(&name).map(|t| t.handler.clone())
             };
             let Some(handler) = tool else {
-                return rpc_error(id, -32601, &format!("tool not found: {}", name));
+                // unknown tool — JSON-RPC error 박지 말고 tool result (isError: true) 박음.
+                // 옛 = -32601 rpc_error 박은 영역. 단 CLI 자체 MCP loop (Claude Code / Codex / Gemini CLI)
+                // 안에서 JSON-RPC error 영역은 LLM 에 명확 전달 박지 못해 hallucinate 도구
+                // (TaskCreate / TaskUpdate / task_create / add_task 등) 호출 retry 박는 영역.
+                // tool result 형태로 박으면 LLM 이 "다음 turn 영역에서 정공 도구 선택" 인식.
+                let available_preview: Vec<String> = {
+                    let tools = state.tools.read().await;
+                    let mut keys: Vec<String> = tools.keys().cloned().collect();
+                    keys.sort();
+                    keys.into_iter().take(15).collect()
+                };
+                let msg = format!(
+                    "'{}' 도구는 존재하지 않습니다. 'TaskCreate' / 'TaskUpdate' / 'task_create' / 'add_task' 같은 영역은 hallucinate 도구 — 박지 마라. 실제 도구: 예약 = schedule_task / 즉시 실행 = run_task / plan 카드 = propose_plan. 'tools/list' 영역 박은 도구만 사용. 일부 사용 가능 도구: {}",
+                    name,
+                    available_preview.join(", ")
+                );
+                let content = vec![ContentBlock {
+                    block_type: "text",
+                    text: serde_json::json!({ "error": msg }).to_string(),
+                }];
+                return rpc_success(
+                    id,
+                    serde_json::json!({ "content": content, "isError": true }),
+                );
             };
             match handler.call(args).await {
                 Ok(result) => {
@@ -1883,7 +1906,25 @@ async fn dispatch_method(
                 tools.get(&name).map(|t| t.handler.clone())
             };
             let Some(handler) = handler else {
-                return Err((-32601, format!("tool not found: {}", name)));
+                // unknown tool — JSON-RPC error 박지 말고 tool result (isError: true) 박음 (옛 HTTP path 와 동일).
+                // CLI 자체 MCP loop 안에서 JSON-RPC error 영역은 LLM 에 명확 전달 박지 못해 hallucinate
+                // 도구 (TaskCreate / TaskUpdate / task_create / add_task 등) retry 박는 영역.
+                let available_preview: Vec<String> = {
+                    let tools = state.tools.read().await;
+                    let mut keys: Vec<String> = tools.keys().cloned().collect();
+                    keys.sort();
+                    keys.into_iter().take(15).collect()
+                };
+                let msg = format!(
+                    "'{}' 도구는 존재하지 않습니다. 'TaskCreate' / 'TaskUpdate' / 'task_create' / 'add_task' 같은 영역은 hallucinate 도구 — 박지 마라. 실제 도구: 예약 = schedule_task / 즉시 실행 = run_task / plan 카드 = propose_plan. 'tools/list' 영역 박은 도구만 사용. 일부 사용 가능 도구: {}",
+                    name,
+                    available_preview.join(", ")
+                );
+                let text = serde_json::json!({ "error": msg }).to_string();
+                return Ok(Some(serde_json::json!({
+                    "content": [{ "type": "text", "text": text }],
+                    "isError": true
+                })));
             };
             match handler.call(args).await {
                 Ok(result) => {
