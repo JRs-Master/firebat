@@ -711,7 +711,12 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
     const id = Date.now().toString();
     const systemId = `s-${id}`;
 
-    if (!activeConvId) {
+    // conversationId 를 첫 턴부터 확보 — setActiveConvId 는 비동기 state 라 같은 함수 안에서
+    // activeConvId 는 빈 값 그대로 (stale closure). 지역 변수로 잡아 요청 body 에 첫 턴부터 포함.
+    // 이게 빠지면 첫 턴 backend hr.resolve(회상)·CLI session_id 저장이 conv_id=None 으로 죽어
+    // 대화 초반 맥락이 영구 소실됨.
+    let effectiveConvId = activeConvId;
+    if (!effectiveConvId) {
       const newConv = makeConv();
       setConversations(prev => {
         const updated = [...prev, newConv];
@@ -719,6 +724,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
         return updated;
       });
       setActiveConvId(newConv.id);
+      effectiveConvId = newConv.id;
     }
 
     // 사용자가 submit 한 시점 = 항상 하단 강제. 옛 동작 = dispatch 후 setRef → useEffect
@@ -859,7 +865,7 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
             userId: `u-${id}`,
             ...(meta?.planExecuteId ? { planExecuteId: meta.planExecuteId } : {}),
             ...(meta?.planReviseId ? { planReviseId: meta.planReviseId } : {}),
-            ...(activeConvId ? { conversationId: activeConvId } : {}),
+            ...(effectiveConvId ? { conversationId: effectiveConvId } : {}),
             ...(imageData ? { image: imageData } : {}),
             ...(previousResponseId ? { previousResponseId } : {}),
           };

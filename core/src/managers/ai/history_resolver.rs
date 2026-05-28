@@ -25,8 +25,9 @@ const SEARCH_LIMIT: usize = 10;
 /// 최종 picked 최대.
 const PICK_MAX: usize = 5;
 
-const RECENT_MESSAGE_LIMIT: usize = 5;
-const PREVIEW_MAX: usize = 200;
+const RECENT_MESSAGE_LIMIT: usize = 12; // recent 회상 = 6 Q&A 턴 (직전 대화 연속성)
+const PREVIEW_MAX: usize = 200; // 벡터 검색 매칭 미리보기 (compress_history_with_search)
+const RECENT_FULL_MAX: usize = 1200; // recent 회상 메시지 상한 — 옛 200자 trim 이 "단편적 기억" 원인
 
 #[derive(Debug, Clone, Default)]
 pub struct CompressHistoryOpts {
@@ -194,8 +195,8 @@ impl HistoryResolver {
                 .get("content")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
-            // 200자 trim — 토큰 절감
-            let preview: String = content.chars().take(200).collect();
+            // 직전 대화는 full 에 가깝게 (1200자 상한) — 옛 200자 trim 이 "단편적 기억" 원인.
+            let preview: String = content.chars().take(RECENT_FULL_MAX).collect();
             if !preview.trim().is_empty() {
                 s.push_str(&format!("- [{}]: {}\n", role_label, preview));
             }
