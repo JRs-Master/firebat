@@ -1856,10 +1856,17 @@ function markerPixelSize(size?: string | null, isEmoji = false): number {
   return base;
 }
 
-/** 태풍 현재 위치 동심원 (◎ — 네이버 태풍 영역 형태). 🌀 emoji 대체. color 기본 빨강. data URI 반환. */
-function typhoonSvgUrl(size: number, color = '#dc2626'): string {
+/** 태풍 현재 위치 — 네이버식 동심원 + 중심 소용돌이. 🌀 emoji 대체. color 기본 초록 (네이버). data URI 반환. */
+function typhoonSvgUrl(size: number, color = '#16a34a'): string {
   const c = size / 2;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${c}" cy="${c}" r="${c - 2}" fill="${color}" fill-opacity="0.18" stroke="${color}" stroke-width="1.5" stroke-opacity="0.5"/><circle cx="${c}" cy="${c}" r="${c * 0.58}" fill="${color}" fill-opacity="0.3" stroke="${color}" stroke-width="1.5" stroke-opacity="0.7"/><circle cx="${c}" cy="${c}" r="${c * 0.28}" fill="${color}"/></svg>`;
+  // 동심원 2 겹 (확률 반경 느낌) + 중심 흰 원 + 소용돌이 2 path (태풍 눈).
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
+    + `<circle cx="${c}" cy="${c}" r="${c - 2}" fill="${color}" fill-opacity="0.15" stroke="${color}" stroke-width="1.5" stroke-opacity="0.5"/>`
+    + `<circle cx="${c}" cy="${c}" r="${c * 0.62}" fill="${color}"/>`
+    + `<path d="M${c} ${c * 0.5} Q${c * 1.45} ${c * 0.7} ${c} ${c}" stroke="white" stroke-width="${size * 0.07}" fill="none" stroke-linecap="round"/>`
+    + `<path d="M${c} ${c * 1.5} Q${c * 0.55} ${c * 1.3} ${c} ${c}" stroke="white" stroke-width="${size * 0.07}" fill="none" stroke-linecap="round"/>`
+    + `<circle cx="${c}" cy="${c}" r="${size * 0.06}" fill="white"/>`
+    + `</svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
@@ -1893,7 +1900,7 @@ function buildMarkerEl(m: MapMarker): HTMLDivElement {
   el.style.cursor = 'pointer';
   if (m.icon === 'typhoon') {
     const size = markerPixelSize(m.size ?? 'large', true);
-    el.innerHTML = `<img src="${typhoonSvgUrl(size, colorHex(m.color, '#dc2626'))}" width="${size}" height="${size}" style="display:block"/>`;
+    el.innerHTML = `<img src="${typhoonSvgUrl(size, colorHex(m.color, '#16a34a'))}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon === 'forecast') {
     const size = markerPixelSize(m.size ?? 'small', false);
     el.innerHTML = `<img src="${colorCircleSvgUrl(colorHex(m.color, '#f97316'), size)}" width="${size}" height="${size}" style="display:block"/>`;
@@ -2037,7 +2044,7 @@ function MapComp({
             // current·카테고리 = emoji / 그 외 + color = color circle.
             if (m.icon === 'typhoon') {
               const size = markerPixelSize(m.size ?? 'large', true);
-              opts.image = makeDataUriImage(typhoonSvgUrl(size, colorHex(m.color, '#dc2626')), size);
+              opts.image = makeDataUriImage(typhoonSvgUrl(size, colorHex(m.color, '#16a34a')), size);
             } else if (m.icon === 'forecast') {
               const size = markerPixelSize(m.size ?? 'small', false);
               opts.image = makeDataUriImage(colorCircleSvgUrl(colorHex(m.color, '#f97316'), size), size);
