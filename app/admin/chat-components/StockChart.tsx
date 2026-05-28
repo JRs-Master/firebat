@@ -103,8 +103,23 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const cap = containerMaxH ?? 320;
   // 차트 영역 (봉 + 거래량) = 전체 cap - 헤더 추정. 최소 140 보장.
   const chartAreaH = Math.max(cap - headerEstPx, 140);
-  const priceChartHeight = `${Math.floor(chartAreaH * 280 / 360)}px`;  // 봉 영역 (옛 280/360 비율)
+  const priceChartHeightPx = Math.floor(chartAreaH * 280 / 360);  // 봉 영역 px (옛 280/360 비율)
+  const priceChartHeight = `${priceChartHeightPx}px`;
   const volChartHeight = `${Math.floor(chartAreaH * 80 / 360)}px`;      // 거래량 (옛 80/360 비율)
+
+  // 봉 영역 실제 렌더 width 측정 — viewBox 영역 동적 (찌그러짐 fix). preserveAspectRatio="none" 박은
+  // 영역에서 viewBox aspect (W:priceH) ≠ box aspect (boxW:priceChartHeightPx) 면 봉이 가로/세로 stretch
+  // 찌그러짐. viewBox priceH 영역을 box 비율 맞춰 동적 계산 → 찌그러짐 0 + 크로스헤어 1:1 유지.
+  const [boxW, setBoxW] = useState(720);
+  useEffect(() => {
+    if (!priceBoxRef.current) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w && w > 0) setBoxW(w);
+    });
+    ro.observe(priceBoxRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   // 유효 데이터만 + 오래된 → 최신 순서로 정렬 (API가 역순 반환 가능)
   // data가 undefined/null/비배열이어도 크래시 방지
@@ -182,7 +197,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const SCROLL_THRESHOLD = 60;
   const MIN_BAR_PX = 12; // 봉 1개 minimum 가로 픽셀
   const useHScroll = safeData.length > SCROLL_THRESHOLD;
-  const priceH = 280;
+  // viewBox priceH 동적 — 비-스크롤 모드는 box 비율 (boxW : priceChartHeightPx) 에 viewBox aspect
+  // (720 : priceH) 맞춤 → preserveAspectRatio="none" stretch 찌그러짐 0. 가로 스크롤 모드는 옛 280 고정.
+  const priceH = useHScroll ? 280 : Math.max(Math.round(720 * priceChartHeightPx / boxW), 100);
   const volH = 80;
   const padLeft = 50;
   // Y축 라벨 우측 영역 — 가격 자릿수 기반 동적. toLocaleString 폰트 10px 기준 자릿수 × ~6px + 12 여백.

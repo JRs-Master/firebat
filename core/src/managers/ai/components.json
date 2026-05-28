@@ -284,8 +284,8 @@
             "string",
             "null"
           ],
-          "enum": ["info", "success", "warning", "error", null],
-          "description": "콜아웃 타입. info(기본) / success(녹색) / warning(주황) / error(빨강)"
+          "enum": ["info", "success", "warning", "warn", "error", "danger", "tip", "accent", "highlight", "neutral", null],
+          "description": "콜아웃 타입. info(파랑·기본) / success(녹색) / warning(주황) / error(빨강) / tip(보라·💡) / accent(주황·🔥) / highlight(노랑·⭐) / neutral(회색·📎)"
         },
         "title": {
           "type": [

@@ -141,6 +141,8 @@ function mediumTmFc(d = new Date()) {
 // ─────────────────────────────────────────────────────────────────────────
 // HTTP 호출
 // ─────────────────────────────────────────────────────────────────────────
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
 async function callApi(serviceKey, path, params) {
   const url = new URL(`${BASE}${path}`);
   url.searchParams.set('serviceKey', serviceKey);
@@ -149,7 +151,24 @@ async function callApi(serviceKey, path, params) {
     if (v != null && v !== '') url.searchParams.set(k, String(v));
   }
 
-  const res = await fetch(url.toString(), { method: 'GET' });
+  // 기상청 서버 5xx 일시 오류 (502/503/504) + 네트워크 fail = 짧은 간격 retry (최대 3 시도).
+  // 옛에 AI 가 502 받고 매 turn 6 번 호출하던 영역 — 모듈 자체 retry 로 간헐 오류 흡수.
+  // 4xx (키 미등록 등) 는 retry 무의미 → 즉시 반환.
+  const MAX_TRIES = 3;
+  let res;
+  for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
+    try {
+      res = await fetch(url.toString(), { method: 'GET' });
+    } catch (e) {
+      if (attempt < MAX_TRIES - 1) { await sleep(800 * (attempt + 1)); continue; }
+      return { ok: false, errorKey: 'error.runtime', errorParams: { message: e.message || String(e) } };
+    }
+    if (res.status >= 500 && res.status < 600 && attempt < MAX_TRIES - 1) {
+      await sleep(800 * (attempt + 1));
+      continue;
+    }
+    break;
+  }
   if (!res.ok) {
     return { ok: false, errorKey: 'error.http_status', errorParams: { status: String(res.status) } };
   }
