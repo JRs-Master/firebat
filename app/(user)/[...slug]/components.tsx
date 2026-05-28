@@ -1875,6 +1875,39 @@ function labelToHtml(label: string): string {
   return sanitizePopupHtml(label).replace(/\n/g, '<br>');
 }
 
+/** 원 polygon 좌표 (meter 반경 → N 각형 [lon, lat] 배열). MapLibre circle layer 영역 (meter 단위 X). */
+function circlePolygonCoords(lat: number, lon: number, radiusM: number, points = 64): [number, number][] {
+  const coords: [number, number][] = [];
+  const dLatBase = radiusM / 111320;
+  const dLonBase = radiusM / (111320 * Math.cos((lat * Math.PI) / 180));
+  for (let i = 0; i <= points; i++) {
+    const theta = (i / points) * 2 * Math.PI;
+    coords.push([lon + dLonBase * Math.cos(theta), lat + dLatBase * Math.sin(theta)]);
+  }
+  return coords;
+}
+
+/** marker icon → HTML element (MapLibre maplibregl.Marker 의 element). Leaflet divIcon 영역과 동일 로직. */
+function buildMarkerEl(m: MapMarker): HTMLDivElement {
+  const el = document.createElement('div');
+  el.style.cursor = 'pointer';
+  if (m.icon === 'typhoon') {
+    const size = markerPixelSize(m.size ?? 'large', true);
+    el.innerHTML = `<img src="${typhoonSvgUrl(size, colorHex(m.color, '#dc2626'))}" width="${size}" height="${size}" style="display:block"/>`;
+  } else if (m.icon === 'forecast') {
+    const size = markerPixelSize(m.size ?? 'small', false);
+    el.innerHTML = `<img src="${colorCircleSvgUrl(colorHex(m.color, '#f97316'), size)}" width="${size}" height="${size}" style="display:block"/>`;
+  } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
+    const size = markerPixelSize(m.size, true);
+    el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;font-size:${Math.round(size * 0.7)}px;line-height:1;">${MARKER_ICON_EMOJI[m.icon]}</div>`;
+  } else {
+    const color = colorHex(m.color, '#ef4444');
+    const size = markerPixelSize(m.size, false);
+    el.innerHTML = `<div style="background:${color};border:2px solid white;border-radius:50%;width:${size}px;height:${size}px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>`;
+  }
+  return el;
+}
+
 const COLOR_TO_HEX: Record<string, string> = {
   red: '#ef4444', blue: '#3b82f6', green: '#22c55e',
   orange: '#f97316', purple: '#a855f7', yellow: '#eab308', gray: '#6b7280',
@@ -2068,118 +2101,101 @@ function MapComp({
         }
       }
     } else {
-      // Leaflet (default fallback)
+      // MapLibre GL JS — OpenFreeMap vector tile (한글 라벨 + lang 분기). 옛 Leaflet (CartoDB 래스터,
+      // 영어/한자 고정) 대체. 래스터 타일 = 언어 고정 / vector tile = 클라이언트 lang 따라 라벨 렌더.
+      // 한국 좌표는 위쪽 Kakao 분기, 그 외 (동아시아 등) 만 본 MapLibre.
       const w = window as any;
-      const initLeaflet = () => {
-        const L = w.L;
-        if (!L) return;
-        const map = L.map(container).setView([finalCenter.lat, finalCenter.lon], finalZoom);
-        // OSM 공식 타일은 Referer 정책으로 403 차단 — CartoDB light_all 사용 (밝은 톤, OSM 데이터 기반)
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-          attribution: '© OpenStreetMap © CARTO',
-          subdomains: 'abcd',
-          maxZoom: 19,
-        }).addTo(map);
-        // 반경 원 (circles) — Leaflet L.circle, dashArray 로 점선
-        for (const c of safeCircles) {
-          const color = colorHex(c.color, '#3b82f6');
-          L.circle([c.lat, c.lon], {
-            radius: c.radius,
-            color,
-            weight: 2,
-            opacity: 0.6,
-            fillColor: color,
-            fillOpacity: 0.05,
-            ...(c.style === 'solid' ? {} : { dashArray: '6 6' }),
-          }).addTo(map);
-        }
-        // Polyline (lines) — 태풍 경로 / 항공 경로 영역. style=dashed = 예상 경로.
-        for (const ln of safeLines) {
-          const color = colorHex(ln.color, '#ef4444');
-          L.polyline(ln.points.map(p => [p.lat, p.lon]), {
-            color,
-            weight: ln.weight || 3,
-            opacity: 0.8,
-            ...(ln.style === 'dashed' ? { dashArray: '8 6' } : {}),
-          }).addTo(map);
-        }
-        for (const m of safeMarkers) {
-          let icon;
-          // icon 분기 — typhoon = 동심원 SVG (네이버 형태) / forecast = 작은 채워진 원 /
-          // current·카테고리 = emoji / 그 외 + color = color circle.
-          if (m.icon === 'typhoon') {
-            const size = markerPixelSize(m.size ?? 'large', true);
-            icon = L.divIcon({
-              className: 'firebat-map-marker-typhoon',
-              html: `<img src="${typhoonSvgUrl(size, colorHex(m.color, '#dc2626'))}" width="${size}" height="${size}" style="display:block"/>`,
-              iconSize: [size, size],
-              iconAnchor: [size / 2, size / 2],
-            });
-          } else if (m.icon === 'forecast') {
-            const size = markerPixelSize(m.size ?? 'small', false);
-            icon = L.divIcon({
-              className: 'firebat-map-marker-forecast',
-              html: `<img src="${colorCircleSvgUrl(colorHex(m.color, '#f97316'), size)}" width="${size}" height="${size}" style="display:block"/>`,
-              iconSize: [size, size],
-              iconAnchor: [size / 2, size / 2],
-            });
-          } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
-            const size = markerPixelSize(m.size, true);
-            icon = L.divIcon({
-              className: 'firebat-map-marker-emoji',
-              html: `<div style="display:flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;font-size:${Math.round(size * 0.7)}px;line-height:1;">${MARKER_ICON_EMOJI[m.icon]}</div>`,
-              iconSize: [size, size],
-              iconAnchor: [size / 2, size / 2],
-            });
-          } else {
-            const color = colorHex(m.color, '#ef4444');
-            const size = markerPixelSize(m.size, false);
-            icon = L.divIcon({
-              className: 'firebat-map-marker',
-              html: `<div style="background:${color};border:2px solid white;border-radius:50%;width:${size}px;height:${size}px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>`,
-              iconSize: [size, size],
-              iconAnchor: [size / 2, size / 2],
-            });
+      const lang = (typeof document !== 'undefined' && document.documentElement.lang === 'en') ? 'en' : 'ko';
+      const initMapLibre = () => {
+        const ml = w.maplibregl;
+        if (!ml) return;
+        const map = new ml.Map({
+          container,
+          style: 'https://tiles.openfreemap.org/styles/bright',
+          center: [finalCenter.lon, finalCenter.lat],
+          zoom: Math.max(1, finalZoom - 1),
+        });
+        map.addControl(new ml.NavigationControl({ showCompass: false }), 'top-left');
+        map.on('load', () => {
+          // lang 분기 — symbol layer text-field = name:{lang} 우선 → name:latin → name (현지어) fallback.
+          // 한국어 lang = 동아시아 전역 한글 라벨 (네이버처럼). 영어 lang = name:latin (영문).
+          for (const layer of map.getStyle().layers) {
+            const lo = layer.layout as Record<string, unknown> | undefined;
+            if (layer.type === 'symbol' && lo && 'text-field' in lo) {
+              try {
+                map.setLayoutProperty(layer.id, 'text-field', [
+                  'coalesce',
+                  ['get', `name:${lang}`],
+                  ['get', 'name:latin'],
+                  ['get', 'name'],
+                ]);
+              } catch { /* 일부 layer setLayoutProperty 실패 무시 */ }
+            }
           }
-          const mk = L.marker([m.lat, m.lon], { icon, title: m.label }).addTo(map);
-          // popup — m.popup 우선, 없으면 m.label (multi-line \\n → <br>).
+          // circles (위험 반경) — GeoJSON polygon (meter → 64각형). 점선 = 위험 반경 표준.
+          if (safeCircles.length > 0) {
+            const features = safeCircles.map(c => ({
+              type: 'Feature' as const,
+              properties: { color: colorHex(c.color, '#3b82f6') },
+              geometry: { type: 'Polygon' as const, coordinates: [circlePolygonCoords(c.lat, c.lon, c.radius)] },
+            }));
+            map.addSource('fb-circles', { type: 'geojson', data: { type: 'FeatureCollection', features } });
+            map.addLayer({ id: 'fb-circles-fill', type: 'fill', source: 'fb-circles', paint: { 'fill-color': ['get', 'color'] as any, 'fill-opacity': 0.05 } });
+            map.addLayer({ id: 'fb-circles-line', type: 'line', source: 'fb-circles', paint: { 'line-color': ['get', 'color'] as any, 'line-width': 2, 'line-opacity': 0.55, 'line-dasharray': [2, 2] as any } });
+          }
+          // lines (polyline) — GeoJSON LineString. solid / dashed 2 layer 분리 (paint property = layer 단위).
+          if (safeLines.length > 0) {
+            const features = safeLines.map(ln => ({
+              type: 'Feature' as const,
+              properties: { color: colorHex(ln.color, '#ef4444'), width: ln.weight || 3, dashed: ln.style === 'dashed' },
+              geometry: { type: 'LineString' as const, coordinates: ln.points.map(p => [p.lon, p.lat]) },
+            }));
+            map.addSource('fb-lines', { type: 'geojson', data: { type: 'FeatureCollection', features } });
+            map.addLayer({ id: 'fb-lines-solid', type: 'line', source: 'fb-lines', filter: ['!', ['get', 'dashed']] as any, paint: { 'line-color': ['get', 'color'] as any, 'line-width': ['get', 'width'] as any, 'line-opacity': 0.85 } });
+            map.addLayer({ id: 'fb-lines-dashed', type: 'line', source: 'fb-lines', filter: ['get', 'dashed'] as any, paint: { 'line-color': ['get', 'color'] as any, 'line-width': ['get', 'width'] as any, 'line-opacity': 0.85, 'line-dasharray': [2, 1.5] as any } });
+          }
+        });
+        // markers — maplibregl.Marker (HTML element). style load 무관 즉시 추가 OK.
+        for (const m of safeMarkers) {
+          const marker = new ml.Marker({ element: buildMarkerEl(m) }).setLngLat([m.lon, m.lat]).addTo(map);
           const popupText = m.popup ? sanitizePopupHtml(m.popup) : labelToHtml(m.label);
-          if (popupText) mk.bindPopup(popupText);
+          if (popupText) {
+            marker.setPopup(
+              new ml.Popup({ offset: 14, closeButton: true, maxWidth: '260px' })
+                .setHTML(`<div style="font-size:12px;line-height:1.4;word-break:break-word;">${popupText}</div>`)
+            );
+          }
         }
-        // 마커 2+ 시 자동 bounds fit — 모든 마커 + 원 + 선 영역 보이도록 줌 자동
+        // bounds fit — 마커 + 원 + 선 2+ 시 모두 보이도록 자동 줌.
         if (safeMarkers.length + safeCircles.length + safeLines.length >= 2) {
-          const layers = [
-            ...safeMarkers.map(m => L.latLng(m.lat, m.lon)),
-            ...safeCircles.flatMap(c => {
-              const dLat = c.radius / 111000;
-              const dLon = c.radius / (111000 * Math.cos(c.lat * Math.PI / 180));
-              return [
-                L.latLng(c.lat + dLat, c.lon),
-                L.latLng(c.lat - dLat, c.lon),
-                L.latLng(c.lat, c.lon + dLon),
-                L.latLng(c.lat, c.lon - dLon),
-              ];
-            }),
-            ...safeLines.flatMap(ln => ln.points.map(p => L.latLng(p.lat, p.lon))),
-          ];
-          if (layers.length > 0) map.fitBounds(L.latLngBounds(layers), { padding: [30, 30] });
+          const bounds = new ml.LngLatBounds();
+          for (const m of safeMarkers) bounds.extend([m.lon, m.lat]);
+          for (const c of safeCircles) {
+            const dLat = c.radius / 111000;
+            const dLon = c.radius / (111000 * Math.cos((c.lat * Math.PI) / 180));
+            bounds.extend([c.lon + dLon, c.lat + dLat]);
+            bounds.extend([c.lon - dLon, c.lat - dLat]);
+          }
+          for (const ln of safeLines) for (const p of ln.points) bounds.extend([p.lon, p.lat]);
+          if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 40, maxZoom: 13, duration: 0 });
         }
       };
-      if (w.L) initLeaflet();
+      // CDN 동적 로드 — maplibre-gl JS + CSS.
+      if (w.maplibregl) initMapLibre();
       else {
-        const existingCss = document.querySelector(`link[href*="leaflet"]`);
+        const existingCss = document.querySelector(`link[href*="maplibre-gl"]`);
         if (!existingCss) {
           const css = document.createElement('link');
           css.rel = 'stylesheet';
-          css.href = 'https://unpkg.com/leaflet@1/dist/leaflet.css';
+          css.href = 'https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css';
           document.head.appendChild(css);
         }
-        const existing = document.querySelector(`script[src*="leaflet.js"]`);
-        if (existing) existing.addEventListener('load', initLeaflet);
+        const existing = document.querySelector(`script[src*="maplibre-gl.js"]`);
+        if (existing) existing.addEventListener('load', initMapLibre);
         else {
           const s = document.createElement('script');
-          s.src = 'https://unpkg.com/leaflet@1/dist/leaflet.js';
-          s.onload = initLeaflet;
+          s.src = 'https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js';
+          s.onload = initMapLibre;
           document.head.appendChild(s);
         }
       }
