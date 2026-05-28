@@ -1956,27 +1956,51 @@ function buildPopupCardHtml(rawLabel: string): string {
   );
 }
 
-/** cone (예측 영역) polygon — 경로 점 + 각 점 반경 (meter) → 경로 따라 점점 넓어지는 영역.
- *  네이버 태풍 예측 cone 형태. 각 점 진행방향 수직 좌/우 반경 offset → 좌측경계 + 우측경계 역순 닫힘. */
+/** cone (예측 영역) polygon — 원들의 외접선 envelope (각 원에 정확히 접함, 접선 오차 0).
+ *  네이버/기상청 태풍 cone 형태: 첫 원에서 양 갈래로 시작 → 외접선으로 원들 감쌈 → 마지막 원 반경만큼
+ *  반원으로 둥글게 마감. meter 좌표(등거리 근사)에서 기하 계산 후 lon/lat 환산. */
 function conePolygonCoords(pts: { lat: number; lon: number; radius: number }[]): [number, number][] {
   if (pts.length < 2) return [];
+  const refLat = (pts[0].lat * Math.PI) / 180;
+  const mLat = 111320;
+  const mLon = 111320 * Math.cos(refLat);
+  const xy = pts.map((p) => ({ x: p.lon * mLon, y: p.lat * mLat, r: p.radius }));
+  const toLL = (x: number, y: number): [number, number] => [x / mLon, y / mLat];
+
   const left: [number, number][] = [];
   const right: [number, number][] = [];
-  for (let i = 0; i < pts.length; i++) {
-    const p = pts[i];
-    const prev = pts[i - 1] ?? p;
-    const next = pts[i + 1] ?? p;
-    const dx = next.lon - prev.lon;
-    const dy = next.lat - prev.lat;
-    const len = Math.hypot(dx, dy) || 1;
-    const nx = -dy / len; // 좌측 수직 단위 x
-    const ny = dx / len;  // 좌측 수직 단위 y
-    const dLat = p.radius / 111320;
-    const dLon = p.radius / (111320 * Math.cos((p.lat * Math.PI) / 180));
-    left.push([p.lon + nx * dLon, p.lat + ny * dLat]);
-    right.push([p.lon - nx * dLon, p.lat - ny * dLat]);
+  let qL = { x: 0, y: 1 };
+  let qR = { x: 0, y: -1 };
+  // 세그먼트마다 외접선(external tangent) 접점 방향 q 계산 — 반지름 변화량만큼 접선이 기울어짐.
+  for (let i = 0; i < xy.length - 1; i++) {
+    const a = xy[i], b = xy[i + 1];
+    let ux = b.x - a.x, uy = b.y - a.y;
+    const d = Math.hypot(ux, uy) || 1;
+    ux /= d; uy /= d;
+    const beta = Math.asin(Math.max(-1, Math.min(1, (b.r - a.r) / d)));
+    const cb = Math.cos(beta), sb = Math.sin(beta);
+    const nx = -uy, ny = ux; // 진행방향 왼쪽 법선
+    qL = { x: nx * cb - ux * sb, y: ny * cb - uy * sb };
+    qR = { x: -nx * cb - ux * sb, y: -ny * cb - uy * sb };
+    left.push(toLL(a.x + a.r * qL.x, a.y + a.r * qL.y));
+    left.push(toLL(b.x + b.r * qL.x, b.y + b.r * qL.y));
+    right.push(toLL(a.x + a.r * qR.x, a.y + a.r * qR.y));
+    right.push(toLL(b.x + b.r * qR.x, b.y + b.r * qR.y));
   }
-  return [...left, ...right.reverse(), left[0]];
+  // 마지막 원 반원 마감 — left 접점 → 전방(진행방향) → right 접점 호 (반경 = 마지막 확률반경).
+  const lp = xy[xy.length - 1];
+  const aL = Math.atan2(qL.y, qL.x);
+  const aR = Math.atan2(qR.y, qR.x);
+  let delta = aR - aL;
+  while (delta > 0) delta -= 2 * Math.PI; // 전방으로 도는 시계방향 호 (음수)
+  const cap: [number, number][] = [];
+  const steps = 14;
+  for (let s = 1; s < steps; s++) {
+    const ang = aL + (delta * s) / steps;
+    cap.push(toLL(lp.x + lp.r * Math.cos(ang), lp.y + lp.r * Math.sin(ang)));
+  }
+  // left 전진 → 끝 반원 → right 역순 → 시작점 닫힘 (첫 원에서 양 갈래 시작).
+  return [...left, ...cap, ...right.reverse(), left[0]];
 }
 
 /** 원 polygon 좌표 (meter 반경 → N 각형 [lon, lat] 배열). MapLibre circle layer 영역 (meter 단위 X). */
