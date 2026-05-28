@@ -1846,16 +1846,27 @@ type MapLegend = {
   label: string;
 };
 
-/** 마커 icon 영역 → emoji 매핑. typhoon / forecast 는 SVG 별도 박음 (아래). current = 📍 / 카테고리 이모지. */
+/** 마커 icon → emoji 매핑. typhoon / forecast 는 SVG 소용돌이 (아래). current = 📍 / 카테고리 이모지. */
 const MARKER_ICON_EMOJI: Record<string, string> = {
   current: '📍',
-  bank: '🏦',
-  pharmacy: '💊',
-  hospital: '🏥',
-  school: '🏫',
-  convenience: '🏪',
-  cafe: '☕',
-  restaurant: '🍴',
+  // 음식
+  restaurant: '🍴', cafe: '☕', bakery: '🍰', bar: '🍺',
+  // 금융
+  bank: '🏦', atm: '🏧',
+  // 의료
+  hospital: '🏥', pharmacy: '💊', clinic: '🩺', dental: '🦷',
+  // 교육
+  school: '🏫', library: '📖', academy: '✏️', university: '🎓',
+  // 쇼핑
+  convenience: '🏪', mart: '🛒', mall: '🏬',
+  // 교통
+  subway: '🚇', bus: '🚌', train: '🚉', parking: '🅿️', gas: '⛽', airport: '✈️',
+  // 숙박·여가
+  hotel: '🏨', park: '🌳', gym: '🏋️', cinema: '🎬',
+  // 공공
+  police: '🚓', fire: '🚒', post: '📮', gov: '🏛️', church: '⛪',
+  // 주거·업무
+  home: '🏠', office: '🏢',
 };
 
 /** size 영역 → marker pixel 영역. 옛 emoji base 32 → 22 축소 (위험 반경 circles 보다 작게). */
@@ -1894,29 +1905,21 @@ function typhoonGradeNum(ws?: number | null): string | null {
 function typhoonSvgUrl(size: number, color = '#dc2626', grade: string | null = null): string {
   const c = size / 2;
   // 강도 번호 있으면 중앙 흰 원판 + 색 숫자, 없으면 작은 흰 눈.
+  // 강도 번호 있으면 중앙 흰 원판 + 색 숫자 (정중앙 — central baseline + dy 보정), 없으면 작은 흰 눈.
   const center = grade
-    ? `<circle cx="${c}" cy="${c}" r="${size * 0.24}" fill="white"/><text x="${c}" y="${c}" text-anchor="middle" dominant-baseline="central" fill="${color}" font-size="${size * 0.32}" font-weight="800" font-family="sans-serif">${grade}</text>`
+    ? `<circle cx="${c}" cy="${c}" r="${size * 0.26}" fill="white"/><text x="${c}" y="${c}" text-anchor="middle" dominant-baseline="central" dy="0.04em" fill="${color}" font-size="${size * 0.34}" font-weight="800" font-family="sans-serif">${grade}</text>`
     : `<circle cx="${c}" cy="${c}" r="${size * 0.06}" fill="white"/>`;
+  // 태풍 나선 — 중심에서 바깥으로 휘감는 2팔 (회전 대칭, cubic). 옛 Q호 2개 = 레몬 모양이라 교체.
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
     + `<circle cx="${c}" cy="${c}" r="${c - 2}" fill="${color}" fill-opacity="0.15" stroke="${color}" stroke-width="1.5" stroke-opacity="0.5"/>`
     + `<circle cx="${c}" cy="${c}" r="${c * 0.62}" fill="${color}"/>`
-    + `<path d="M${c} ${c * 0.5} Q${c * 1.45} ${c * 0.7} ${c} ${c}" stroke="white" stroke-width="${size * 0.07}" fill="none" stroke-linecap="round"/>`
-    + `<path d="M${c} ${c * 1.5} Q${c * 0.55} ${c * 1.3} ${c} ${c}" stroke="white" stroke-width="${size * 0.07}" fill="none" stroke-linecap="round"/>`
+    + `<path d="M${c} ${c} C ${c} ${c * 0.48} ${c * 1.5} ${c * 0.62} ${c * 1.32} ${c}" stroke="white" stroke-width="${size * 0.08}" fill="none" stroke-linecap="round"/>`
+    + `<path d="M${c} ${c} C ${c} ${c * 1.52} ${c * 0.5} ${c * 1.38} ${c * 0.68} ${c}" stroke="white" stroke-width="${size * 0.08}" fill="none" stroke-linecap="round"/>`
     + center
     + `</svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
-/** 채워진 색 원 SVG (forecast 예상 위치) + 중앙 강도 번호 (grade). data URI 반환. */
-function colorCircleSvgUrl(color: string, size: number, grade: string | null = null): string {
-  const r = size / 2 - 2;
-  const c = size / 2;
-  const txt = grade
-    ? `<text x="${c}" y="${c}" text-anchor="middle" dominant-baseline="central" fill="white" font-size="${size * 0.56}" font-weight="800" font-family="sans-serif">${grade}</text>`
-    : '';
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${c}" cy="${c}" r="${r}" fill="${color}" stroke="white" stroke-width="2"/>${txt}</svg>`;
-  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
-}
 
 /** multi-line label 영역 → HTML \<br\> 변환. sanitize 박은 후. */
 function labelToHtml(label: string): string {
@@ -1998,9 +2001,10 @@ function buildMarkerEl(m: MapMarker): HTMLDivElement {
     const tColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
     el.innerHTML = `<img src="${typhoonSvgUrl(size, tColor, typhoonGradeNum(m.windSpeed))}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon === 'forecast') {
+    // 예상 위치도 현재 위치와 같은 태풍 소용돌이 (크기만 작게 medium). 밋밋한 원 대신.
     const size = markerPixelSize(m.size ?? 'medium', true);
-    const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#f97316');
-    el.innerHTML = `<img src="${colorCircleSvgUrl(fColor, size, typhoonGradeNum(m.windSpeed))}" width="${size}" height="${size}" style="display:block"/>`;
+    const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
+    el.innerHTML = `<img src="${typhoonSvgUrl(size, fColor, typhoonGradeNum(m.windSpeed))}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
     const size = markerPixelSize(m.size, true);
     el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;font-size:${Math.round(size * 0.7)}px;line-height:1;">${MARKER_ICON_EMOJI[m.icon]}</div>`;
@@ -2039,7 +2043,7 @@ function MapComp({
   markers: MapMarker[];
   circles?: MapCircle[] | null;
   lines?: MapLine[] | null;
-  cone?: MapCone | null;
+  cone?: MapCone | MapCone[] | null;
   legend?: MapLegend[] | null;
   center?: { lat: number; lon: number } | null;
   zoom?: number | null;
@@ -2047,9 +2051,10 @@ function MapComp({
   provider?: 'auto' | 'leaflet' | 'kakao' | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const safeCone = cone && Array.isArray(cone.points) && cone.points.length >= 2
-    && cone.points.every(p => typeof p?.lat === 'number' && typeof p?.lon === 'number' && typeof p?.radius === 'number')
-    ? cone : null;
+  // cone 은 단일 또는 배열 수용 — 네이버식 태풍 = 크기 cone(강풍반경) + 확률 cone(70%) 2개 겹침.
+  const coneArr: MapCone[] = Array.isArray(cone) ? cone : cone ? [cone] : [];
+  const safeCones = coneArr.filter(c => c && Array.isArray(c.points) && c.points.length >= 2
+    && c.points.every(p => typeof p?.lat === 'number' && typeof p?.lon === 'number' && typeof p?.radius === 'number'));
   const safeMarkers = Array.isArray(markers) ? markers.filter(m => typeof m?.lat === 'number' && typeof m?.lon === 'number') : [];
   const safeCircles = Array.isArray(circles) ? circles.filter(c => typeof c?.lat === 'number' && typeof c?.lon === 'number' && typeof c?.radius === 'number' && c.radius > 0) : [];
   const safeLines = Array.isArray(lines) ? lines.filter(ln => Array.isArray(ln?.points) && ln.points.length >= 2 && ln.points.every(p => typeof p?.lat === 'number' && typeof p?.lon === 'number')) : [];
@@ -2099,11 +2104,12 @@ function MapComp({
           });
           resizeObserver = new ResizeObserver(() => map.relayout());
           resizeObserver.observe(container);
-          // cone (예측 영역) — 경로 + 반경 → 부드러운 polygon (네이버 태풍 cone). circles 보다 먼저 (아래 깔림).
-          if (safeCone) {
-            const coords = conePolygonCoords(safeCone.points);
+          // cone (예측 영역) — 경로 + 반경 → 부드러운 polygon. 네이버식 = 크기(강풍) + 확률(70%) 2개 겹침.
+          // circles 보다 먼저 (아래 깔림). 색은 각 cone.color (크기 cyan / 확률 indigo).
+          for (const cn of safeCones) {
+            const coords = conePolygonCoords(cn.points);
             if (coords.length >= 4) {
-              const coneColor = colorHex(safeCone.color, '#6366f1');
+              const coneColor = colorHex(cn.color, '#6366f1');
               const path = coords.map(([lon, lat]) => new w.kakao.maps.LatLng(lat, lon));
               new w.kakao.maps.Polygon({
                 path,
@@ -2111,14 +2117,13 @@ function MapComp({
                 strokeColor: coneColor,
                 strokeOpacity: 0.4,
                 fillColor: coneColor,
-                fillOpacity: 0.18,
+                fillOpacity: 0.15,
               }).setMap(map);
             }
           }
-          // 반경 원 (circles) = 예측 오차 영역. 색은 cone 과 통일 (indigo). 강도(풍속) 색은 마커만.
-          const coneColorK = colorHex(safeCone?.color, '#6366f1');
+          // 반경 원 (circles) = 비태풍 영역(강남 반경 등). 색은 c.color (기본 indigo). 강도색은 마커만.
           for (const c of safeCircles) {
-            const cColor = colorHex(c.color, coneColorK);
+            const cColor = colorHex(c.color, '#6366f1');
             new w.kakao.maps.Circle({
               center: new w.kakao.maps.LatLng(c.lat, c.lon),
               radius: c.radius,
@@ -2175,18 +2180,15 @@ function MapComp({
               opts.image = makeDataUriImage(typhoonSvgUrl(size, tColor, typhoonGradeNum(m.windSpeed)), size);
             } else if (m.icon === 'forecast') {
               const size = markerPixelSize(m.size ?? 'medium', true);
-              const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#f97316');
-              opts.image = makeDataUriImage(colorCircleSvgUrl(fColor, size, typhoonGradeNum(m.windSpeed)), size);
+              const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
+              opts.image = makeDataUriImage(typhoonSvgUrl(size, fColor, typhoonGradeNum(m.windSpeed)), size);
             } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
               const size = markerPixelSize(m.size, true);
               opts.image = makeEmojiMarkerImage(MARKER_ICON_EMOJI[m.icon], size);
             } else if (m.color) {
               opts.image = makeColorMarkerImage(colorHex(m.color, '#ef4444'), markerPixelSize(m.size, false));
-            } else {
-              // icon·color 미지정 — 기본 핀 명시. 옛 = opts.image 비워 카카오 기본 마커에 의존했는데
-              // 그 마커 이미지가 환경(CSP/차단)에 따라 안 그려져 빈 네모로 보이던 문제 차단.
-              opts.image = makeEmojiMarkerImage('📍', markerPixelSize(m.size ?? 'medium', true));
             }
+            // icon·color 미지정 — opts.image 비워둠 = 카카오 기본 마커 (빨간 핀). 옛 동작 복원.
             const marker = new w.kakao.maps.Marker(opts);
             marker.setMap(map);
             // popup — m.popup (HTML 그대로) 우선, 없으면 m.label → 우리식 카드 (헤더 + 라벨:값 본문).
@@ -2206,7 +2208,8 @@ function MapComp({
             }
           }
           // 마커 2+ 시 자동 bounds fit — 모든 마커 + 원 + 선 영역 보이도록 줌 자동
-          if (safeMarkers.length + safeCircles.length + safeLines.length + (safeCone ? safeCone.points.length : 0) >= 2) {
+          const conePts = safeCones.reduce((a, c) => a + c.points.length, 0);
+          if (safeMarkers.length + safeCircles.length + safeLines.length + conePts >= 2) {
             const bounds = new w.kakao.maps.LatLngBounds();
             for (const m of safeMarkers) bounds.extend(new w.kakao.maps.LatLng(m.lat, m.lon));
             for (const c of safeCircles) {
@@ -2221,7 +2224,7 @@ function MapComp({
             for (const ln of safeLines) {
               for (const p of ln.points) bounds.extend(new w.kakao.maps.LatLng(p.lat, p.lon));
             }
-            if (safeCone) for (const p of safeCone.points) bounds.extend(new w.kakao.maps.LatLng(p.lat, p.lon));
+            for (const cn of safeCones) for (const p of cn.points) bounds.extend(new w.kakao.maps.LatLng(p.lat, p.lon));
             if (!bounds.isEmpty()) map.setBounds(bounds);
           }
         });
@@ -2279,24 +2282,23 @@ function MapComp({
               } catch { /* 일부 layer setLayoutProperty 실패 무시 */ }
             }
           }
-          // cone (예측 영역) — 경로 + 각 점 반경 → 점점 넓어지는 부드러운 polygon (네이버 태풍 cone).
-          // circles (각 위치 개별 원) 보다 먼저 그려 아래 깔림. 반투명 fill + 옅은 외곽선.
-          if (safeCone) {
-            const coords = conePolygonCoords(safeCone.points);
+          // cone (예측 영역) — 경로 + 각 점 반경 → 점점 넓어지는 부드러운 polygon.
+          // 네이버식 = 크기(강풍) + 확률(70%) 2개 겹침. 색은 각 cone.color (크기 cyan / 확률 indigo).
+          // circles 보다 먼저 그려 아래 깔림.
+          safeCones.forEach((cn, ci) => {
+            const coords = conePolygonCoords(cn.points);
             if (coords.length >= 4) {
-              const coneColor = colorHex(safeCone.color, '#6366f1');
-              map.addSource('fb-cone', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [coords] } } });
-              map.addLayer({ id: 'fb-cone-fill', type: 'fill', source: 'fb-cone', paint: { 'fill-color': coneColor, 'fill-opacity': 0.18 } });
-              map.addLayer({ id: 'fb-cone-line', type: 'line', source: 'fb-cone', paint: { 'line-color': coneColor, 'line-width': 1, 'line-opacity': 0.4 } });
+              const coneColor = colorHex(cn.color, '#6366f1');
+              map.addSource(`fb-cone-${ci}`, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [coords] } } });
+              map.addLayer({ id: `fb-cone-fill-${ci}`, type: 'fill', source: `fb-cone-${ci}`, paint: { 'fill-color': coneColor, 'fill-opacity': 0.15 } });
+              map.addLayer({ id: `fb-cone-line-${ci}`, type: 'line', source: `fb-cone-${ci}`, paint: { 'line-color': coneColor, 'line-width': 1, 'line-opacity': 0.4 } });
             }
-          }
-          // circles (예상 위치 확률반경) = 예측 오차 영역 (강도 표현 X). 색은 cone 과 통일 (기본 indigo).
-          // 강도(풍속) 색은 마커만 — 확률반경에 강도 색 칠하면 의미 혼동. 점선 [4,3].
+          });
+          // circles = 비태풍 영역(강남 반경 등). 색은 c.color (기본 indigo). 강도색은 마커만. 점선 [4,3].
           if (safeCircles.length > 0) {
-            const coneColor = colorHex(safeCone?.color, '#6366f1');
             const features = safeCircles.map(c => ({
               type: 'Feature' as const,
-              properties: { color: colorHex(c.color, coneColor) },
+              properties: { color: colorHex(c.color, '#6366f1') },
               geometry: { type: 'Polygon' as const, coordinates: [circlePolygonCoords(c.lat, c.lon, c.radius)] },
             }));
             map.addSource('fb-circles', { type: 'geojson', data: { type: 'FeatureCollection', features } });
@@ -2329,7 +2331,8 @@ function MapComp({
           }
         }
         // bounds fit — 마커 + 원 + 선 2+ 시 모두 보이도록 자동 줌.
-        if (safeMarkers.length + safeCircles.length + safeLines.length + (safeCone ? safeCone.points.length : 0) >= 2) {
+        const conePts = safeCones.reduce((a, c) => a + c.points.length, 0);
+        if (safeMarkers.length + safeCircles.length + safeLines.length + conePts >= 2) {
           const bounds = new ml.LngLatBounds();
           for (const m of safeMarkers) bounds.extend([m.lon, m.lat]);
           for (const c of safeCircles) {
@@ -2339,7 +2342,7 @@ function MapComp({
             bounds.extend([c.lon - dLon, c.lat - dLat]);
           }
           for (const ln of safeLines) for (const p of ln.points) bounds.extend([p.lon, p.lat]);
-          if (safeCone) for (const p of safeCone.points) bounds.extend([p.lon, p.lat]);
+          for (const cn of safeCones) for (const p of cn.points) bounds.extend([p.lon, p.lat]);
           if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 40, maxZoom: 13, duration: 0 });
         }
       };

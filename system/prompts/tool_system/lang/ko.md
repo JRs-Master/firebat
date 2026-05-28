@@ -137,12 +137,14 @@ render({
   lon 빈 값 / lng 다른 이름 / 추정 좌표 절대 금지. lat + lon 한 쪽만 채워진 marker 는 schema
   검증 실패로 render 도구 호출 자체 실패 → 사용자 화면 미표시.
 
-  **markers[].icon** — 카테고리별 emoji 마커. 종류:
-  - `typhoon` (🌀 대형) — 태풍 현재 위치 강조
-  - `forecast` (⭕ 점선) — 태풍 예상 위치
-  - `current` (📍) — 현재 위치 강조
-  - `bank` (🏦) / `pharmacy` (💊) / `hospital` (🏥) / `school` (🏫) / `convenience` (🏪) / `cafe` (☕) / `restaurant` (🍴)
-  icon 을 지정하지 않으면 기본 원 모양 (color 에 따라 색).
+  **markers[].icon** — 카테고리별 emoji 마커. typhoon/forecast 는 태풍 소용돌이 SVG (강도색+번호). 종류:
+  - `typhoon` (🌀) — 태풍 현재 위치 / `forecast` — 태풍 예상 위치 (현재와 같은 소용돌이, 작게) / `current` (📍)
+  - 음식: `restaurant` 🍴 / `cafe` ☕ / `bakery` 🍰 / `bar` 🍺
+  - 금융·의료: `bank` 🏦 / `atm` 🏧 / `hospital` 🏥 / `pharmacy` 💊 / `clinic` 🩺 / `dental` 🦷
+  - 교육: `school` 🏫 / `library` 📖 / `academy` ✏️ / `university` 🎓
+  - 쇼핑·교통: `convenience` 🏪 / `mart` 🛒 / `mall` 🏬 / `subway` 🚇 / `bus` 🚌 / `train` 🚉 / `parking` 🅿️ / `gas` ⛽ / `airport` ✈️
+  - 기타: `hotel` 🏨 / `park` 🌳 / `gym` 🏋️ / `cinema` 🎬 / `police` 🚓 / `fire` 🚒 / `post` 📮 / `gov` 🏛️ / `church` ⛪ / `home` 🏠 / `office` 🏢
+  icon 을 지정하지 않으면 기본 마커 (카카오 = 기본 핀, 그 외 = color 원).
 
   **markers[].size** — `small` / `medium`(기본) / `large`. 태풍 현재 위치 = `large`.
 
@@ -184,34 +186,20 @@ render({
         {"lat": 26.8, "lon": 126.9, "icon": "forecast", "windSpeed": 38, "label": "8/15 06시\n오키나와 남남서 해상\n중심기압: 975 hPa\n최대풍속: 38 m/s"},
         {"lat": 29.5, "lon": 128.5, "icon": "forecast", "windSpeed": 35, "label": "8/16 06시\n제주 남쪽 해상\n중심기압: 980 hPa\n최대풍속: 35 m/s"}
       ],
-      "lines": [{"points":[{"lat":24.5,"lon":127.1},{"lat":26.8,"lon":126.9},{"lat":29.5,"lon":128.5}], "color":"#ef4444", "style":"dashed", "label":"예상 경로"}],
-      "circles": [
-        {"lat": 26.8, "lon": 126.9, "radius": 80000},
-        {"lat": 29.5, "lon": 128.5, "radius": 130000}
-      ],
-      "cone": {
-        "points": [
-          {"lat": 24.5, "lon": 127.1, "radius": 80000},
-          {"lat": 26.8, "lon": 126.9, "radius": 180000},
-          {"lat": 29.5, "lon": 128.5, "radius": 260000}
-        ],
-        "color": "#6366f1"
-      }
+      "lines": [{"points":[{"lat":24.5,"lon":127.1},{"lat":26.8,"lon":126.9},{"lat":29.5,"lon":128.5}], "color":"#64748b", "style":"dashed", "label":"예상 경로"}],
+      "cone": [
+        {"points":[{"lat":24.5,"lon":127.1,"radius":330000},{"lat":26.8,"lon":126.9,"radius":350000},{"lat":29.5,"lon":128.5,"radius":380000}], "color":"#06b6d4"},
+        {"points":[{"lat":24.5,"lon":127.1,"radius":40000},{"lat":26.8,"lon":126.9,"radius":180000},{"lat":29.5,"lon":128.5,"radius":290000}], "color":"#6366f1"}
+      ]
     }
   }
   ```
   label 의 "중심기압: 970 hPa" 처럼 `라벨: 값` (콜론) 형태로 쓰면 팝업 카드가 라벨(좌)·값(우) 정렬.
 
-  **cone + circles 둘 다 쓰는 게 네이버식 정공** — cone = 경로 전체 감싸는 부드러운 예측 영역 (현재 좁음 →
-  마지막 넓음). circles = 각 예상 위치 확률반경 원 (radPr × 1000). 네이버 태풍 지도 = 두 영역 겹쳐 표시.
-  cone.radius 는 예측 오차 누적이라 circles 의 radPr 보다 크게 잡는다 (시각 강조). **확률반경 circles · 예상
-  경로 선은 cone 과 색·두께 자동 통일** (frontend 처리) — 확률반경 circles 는 color 를 생략하면 cone(indigo)
-  과 통일된다. 확률반경은 예측 오차 영역이라 강도 색을 쓰지 않는다.
-
-  **현재 위치 영향권 (강풍·폭풍반경)** — 현재 위치에만 circles 로 강풍반경 (rad15 km × 1000, color `#3b82f6`
-  파랑) + 폭풍반경 (rad25 km × 1000, color `#a855f7` 보라) 을 추가하면 기상청처럼 영향권 표시. rad25=0 (약한
-  태풍) 이면 폭풍반경 생략. 강풍반경 > 폭풍반경 (큰 파랑 안에 작은 보라). 예상 위치마다 다 넣으면 원이 너무
-  많아 지저분하니 현재 위치만.
+  **cone 2개 = 네이버식 정공** (cone 은 배열) — 크기 cone(강풍반경 rad15 × 1000, color `#06b6d4` cyan, 넓은
+  배경) + 확률 cone(70% 확률반경 radPr × 1000, color `#6366f1` indigo, 예측 오차). 둘 다 경로 전체 감싸는
+  부드러운 영역 (현재 좁음 → 마지막 넓음). 두 영역 겹쳐 = 네이버 태풍 지도. 예상 경로 선(lines)은 강도색과
+  안 겹치게 slate `#64748b` dashed 권장. circles 는 비태풍 영역(강남 반경 등) 전용 — 태풍은 cone 2개로 충분.
 
   **markers[].windSpeed (태풍 강도 색·번호) = 마커 전용** — typhoon/forecast 마커에만 최대풍속 (m/s, kma
   typhoon-forecast 의 ws) 을 넣으면 기상청 공식 강도 단계 색 + 마커 중앙 강도 번호(1~5) 자동 (범례 일치): 강도1 약(17~24)=초록 /

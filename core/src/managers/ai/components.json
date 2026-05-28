@@ -2,7 +2,7 @@
   {
     "name": "stock_chart",
     "componentType": "StockChart",
-    "description": "주식 캔들 차트 (OHLCV 일봉·분봉). 주가 시세 시각화 시 사용. 매수/매도 포인트, 이동평균선 표시 가능. 필수 props: symbol(코드) + data(OHLCV 배열). title 영역은 optional (있으면 종목 한글명, 박지 않으면 symbol 영역 사용). 'name' 키 사용 금지 — 종목 한글명 박을 때 'title' prop 사용.",
+    "description": "주식 캔들 차트 (OHLCV 일봉·분봉). 주가 시세 시각화 시 사용. 매수/매도 포인트, 이동평균선 표시 가능. 필수 props: symbol(코드) + data(OHLCV 배열). title 은 optional (있으면 종목 한글명, 없으면 symbol 사용). 'name' 키 사용 금지 — 종목 한글명은 'title' prop 사용.",
     "semanticText": "주식 종목 시세 주가 캔들 일봉 분봉 차트 OHLCV 이동평균 MA 골든크로스 데드크로스 거래량 저항 지지 매수 매도 포인트 005930 삼성전자 코스피 코스닥 투자 분석",
     "propsSchema": {
       "type": "object",
@@ -1308,7 +1308,7 @@
                   "string",
                   "null"
                 ],
-                "description": "마커 위 라벨. \\n 박은 multi-line 영역 박음 (예: '2026-05-27 18:00\\n오키나와 남남서 해상\\n중심기압 980 hPa\\n최대풍속 35 m/s' — 기상청 태풍 예보 영역). 박지 않아도 마커 자체 박힘."
+                "description": "마커 위 라벨. \\n 으로 multi-line 가능 (예: '2026-05-27 18:00\\n오키나와 남남서 해상\\n중심기압: 980 hPa\\n최대풍속: 35 m/s' — 기상청 태풍 예보 형태). 없어도 마커는 표시됨."
               },
               "popup": {
                 "type": [
@@ -1337,7 +1337,7 @@
                   "null"
                 ],
                 "enum": ["default", "typhoon", "forecast", "current", "bank", "pharmacy", "hospital", "school", "convenience", "cafe", "restaurant", null],
-                "description": "마커 아이콘. default(원 — 기본) / typhoon(🌀 태풍 현재 위치) / forecast(점선 원 — 태풍 예상 위치) / current(현재 위치 강조) / bank·pharmacy·hospital·school·convenience·cafe·restaurant (카테고리별 이모지 아이콘). frontend 영역에서 icon 박힌 영역 = 큰 size + 강조 박힘."
+                "description": "마커 아이콘. typhoon(🌀 태풍 현재) / forecast(태풍 예상, 현재와 같은 소용돌이) / current(📍) / 음식 restaurant·cafe·bakery·bar / 금융의료 bank·atm·hospital·pharmacy·clinic·dental / 교육 school·library·academy·university / 쇼핑교통 convenience·mart·mall·subway·bus·train·parking·gas·airport / 기타 hotel·park·gym·cinema·police·fire·post·gov·church·home·office. 미지정 시 기본 마커."
               },
               "size": {
                 "type": [
@@ -1352,7 +1352,7 @@
                   "number",
                   "null"
                 ],
-                "description": "[typhoon/forecast 전용] 최대풍속 m/s — 기상청 강도 단계 색 자동 (약<25 초록 / 중25~33 노랑 / 강33~44 주황 / 매우강44~54 빨강 / 초강력54+ 보라). kma_weather typhoon-forecast 의 ws 사용. 박으면 color 보다 우선."
+                "description": "[typhoon/forecast 전용] 최대풍속 m/s — 기상청 공식 강도 단계 색 + 마커 중앙 번호(1~5) 자동 (강도1 약17~24 초록 / 강도2 중25~32 파랑 / 강도3 강33~43 노랑 / 강도4 매우강44~53 주황 / 강도5 초강력54+ 빨강 / 열대저압부<17 회색). kma_weather typhoon-forecast 의 ws 사용. 지정 시 color 보다 우선."
               }
             }
           }
@@ -1381,7 +1381,7 @@
               },
               "color": {
                 "type": ["string", "null"],
-                "description": "선 색상. 기본 red (태풍 경로 영역). hex / 색이름 박음."
+                "description": "선 색상. 기본 red. 태풍 예상 경로는 slate(#64748b) 권장 (강도색과 구분). hex / 색이름."
               },
               "weight": {
                 "type": ["number", "null"],
@@ -1442,27 +1442,31 @@
         },
         "cone": {
           "type": [
-            "object",
+            "array",
             "null"
           ],
-          "description": "예측 영역 cone — 경로 따라 점점 넓어지는 부드러운 영역 (네이버 태풍 예측 영역). 각 예상 위치 개별 원 (circles) 대신 경로 전체 감싸는 단일 polygon. 태풍 예측 오차 영역 = 현재 위치 (좁음) → 마지막 예상 (넓음).",
-          "properties": {
-            "points": {
-              "type": "array",
-              "description": "경로 점 + 각 점 반경 (최소 2점). 현재 위치 → 예상 위치 순서. radius = 각 시점 확률반경 (m). 태풍 = kma_weather typhoon-forecast 의 radPr(확률반경 km→m) 또는 rad15(강풍반경).",
-              "items": {
-                "type": "object",
-                "required": ["lat", "lon", "radius"],
-                "properties": {
-                  "lat": { "type": "number" },
-                  "lon": { "type": "number" },
-                  "radius": { "type": "number", "description": "해당 시점 반경 m (예: 200000 = 200km). 시간 갈수록 커짐 (예측 오차 ↑)" }
+          "description": "예측 영역 cone (배열 — 여러 개 겹침 가능). 네이버식 태풍 = 크기 cone(강풍반경 rad15, color #06b6d4 cyan) + 확률 cone(70% 확률반경 radPr, color #6366f1 indigo) 2개. 각 cone = 경로 따라 점점 넓어지는 부드러운 영역. 단일 cone 도 가능.",
+          "items": {
+            "type": "object",
+            "required": ["points"],
+            "properties": {
+              "points": {
+                "type": "array",
+                "description": "경로 점 + 각 점 반경 (최소 2점). 현재 위치 → 예상 위치 순서. radius = 각 시점 반경 m. 크기 cone = rad15(강풍반경 km × 1000), 확률 cone = radPr(확률반경 km × 1000).",
+                "items": {
+                  "type": "object",
+                  "required": ["lat", "lon", "radius"],
+                  "properties": {
+                    "lat": { "type": "number" },
+                    "lon": { "type": "number" },
+                    "radius": { "type": "number", "description": "해당 시점 반경 m (예: 200000 = 200km)" }
+                  }
                 }
+              },
+              "color": {
+                "type": ["string", "null"],
+                "description": "cone fill/외곽 색상. 크기 cone = #06b6d4 (cyan), 확률 cone = #6366f1 (indigo)."
               }
-            },
-            "color": {
-              "type": ["string", "null"],
-              "description": "cone fill/외곽 색상. 기본 indigo (#6366f1)."
             }
           }
         },
