@@ -107,7 +107,11 @@ function cleanMarkdown(text: string): string {
 
 function renderMarkdown(text: string) {
   // cleanMarkdown → escapeHtmlTagMentions 순서: JSON/render 블록 제거 후, 남은 텍스트의 HTML 태그 이름 보호.
-  return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{escapeHtmlTagMentions(cleanMarkdown(text))}</ReactMarkdown>;
+  // **bold** 가 한국어/괄호 인접 시 commonmark 인식 실패(raw ** 노출) → 명시적 <strong> 변환 (user TextComp 동일).
+  const withStrong = escapeHtmlTagMentions(cleanMarkdown(text))
+    .replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*\*/g, '');
+  return <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{withStrong}</ReactMarkdown>;
 }
 
 // ─── 선택지 버튼 (단일 버튼 + 카드 aggregate: toggle + multi-input + plan-revise) ───

@@ -77,7 +77,7 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
             if (b.type === 'text' && b.text) {
               return (
                 <div key={i} className={`text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1 ${wrapCls}`}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{escapeHtmlTagMentions(b.text)}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{escapeHtmlTagMentions(b.text).replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>').replace(/\*\*/g, '')}</ReactMarkdown>
                 </div>
               );
             }
@@ -105,7 +105,7 @@ function MessageRow({ msg }: { msg: ShareMessage }) {
           })
         ) : msg.content ? (
           <div className="text-slate-800 text-[14px] sm:text-[15px] leading-relaxed space-y-1">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{escapeHtmlTagMentions(msg.content ?? '')}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={mdComponents}>{escapeHtmlTagMentions(msg.content ?? '').replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>').replace(/\*\*/g, '')}</ReactMarkdown>
           </div>
         ) : null}
       </div>
