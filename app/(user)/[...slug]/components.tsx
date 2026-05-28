@@ -78,7 +78,7 @@ function ComponentSwitch({ comp }: { comp: ComponentDef }) {
     case 'KeyValue':      return <KeyValueComp title={p.title} items={p.items ?? []} columns={p.columns} />;
     case 'StatusBadge':   return <StatusBadgeComp items={p.items ?? []} />;
     case 'PlanCard':      return <PlanCardComp title={p.title ?? ''} steps={p.steps ?? []} estimatedTime={p.estimatedTime} risks={p.risks} />;
-    case 'Map':           return <MapComp markers={p.markers ?? []} circles={p.circles} legend={p.legend} center={p.center} zoom={p.zoom} height={p.height} provider={p.provider} />;
+    case 'Map':           return <MapComp markers={p.markers ?? []} circles={p.circles} lines={p.lines} legend={p.legend} center={p.center} zoom={p.zoom} height={p.height} provider={p.provider} />;
     case 'Diagram':       return <DiagramComp code={p.code ?? ''} theme={p.theme} />;
     case 'Math':          return <MathComp expression={p.expression ?? ''} block={p.block !== false} />;
     case 'Code':          return <CodeComp code={p.code ?? ''} language={p.language ?? 'plaintext'} showLineNumbers={p.showLineNumbers !== false} title={p.title} />;
@@ -1736,10 +1736,15 @@ function PlanCardComp({ title, steps, estimatedTime, risks }: {
 type MapMarker = {
   lat: number;
   lon: number;
+  /** \n 박은 multi-line 영역 박음 — 옛 단일 줄 텍스트 + 새 기상청 태풍 예보 형태 양쪽 지원 */
   label: string;
   popup?: string | null;
   color?: string | null;
   type?: string | null;
+  /** 마커 아이콘 — default(원) / typhoon(🌀) / forecast(점선) / current(강조) / bank·pharmacy·hospital·school·convenience·cafe·restaurant (카테고리별 이모지) */
+  icon?: string | null;
+  /** 마커 크기 — small / medium(기본) / large. 태풍 현재 위치 = large */
+  size?: 'small' | 'medium' | 'large' | null;
 };
 
 type MapCircle = {
@@ -1752,10 +1757,48 @@ type MapCircle = {
   style?: 'solid' | 'dashed' | null;
 };
 
+type MapLine = {
+  /** 선 좌표 — 최소 2 점 */
+  points: { lat: number; lon: number }[];
+  color?: string | null;
+  /** 선 굵기 px — 기본 3 */
+  weight?: number | null;
+  /** 'solid'(기본) | 'dashed' — 예상 경로는 dashed */
+  style?: 'solid' | 'dashed' | null;
+  label?: string | null;
+};
+
 type MapLegend = {
   color: string;
   label: string;
 };
+
+/** 마커 icon 영역 → emoji 매핑. typhoon = 🌀 (대형) / forecast = ⭕ (점선 모양) / current = 📍 / 카테고리 이모지. */
+const MARKER_ICON_EMOJI: Record<string, string> = {
+  typhoon: '🌀',
+  forecast: '⭕',
+  current: '📍',
+  bank: '🏦',
+  pharmacy: '💊',
+  hospital: '🏥',
+  school: '🏫',
+  convenience: '🏪',
+  cafe: '☕',
+  restaurant: '🍴',
+};
+
+/** size 영역 → marker pixel 영역. */
+function markerPixelSize(size?: string | null, isEmoji = false): number {
+  const base = isEmoji ? 32 : 18;
+  if (size === 'large') return Math.round(base * 1.6);
+  if (size === 'small') return Math.round(base * 0.7);
+  return base;
+}
+
+/** multi-line label 영역 → HTML \<br\> 변환. sanitize 박은 후. */
+function labelToHtml(label: string): string {
+  return sanitizePopupHtml(label).replace(/\n/g, '<br>');
+}
 
 const COLOR_TO_HEX: Record<string, string> = {
   red: '#ef4444', blue: '#3b82f6', green: '#22c55e',
@@ -1779,10 +1822,11 @@ function sanitizePopupHtml(html: string): string {
 }
 
 function MapComp({
-  markers, circles, legend, center, zoom, height, provider,
+  markers, circles, lines, legend, center, zoom, height, provider,
 }: {
   markers: MapMarker[];
   circles?: MapCircle[] | null;
+  lines?: MapLine[] | null;
   legend?: MapLegend[] | null;
   center?: { lat: number; lon: number } | null;
   zoom?: number | null;
@@ -1792,6 +1836,7 @@ function MapComp({
   const ref = useRef<HTMLDivElement>(null);
   const safeMarkers = Array.isArray(markers) ? markers.filter(m => typeof m?.lat === 'number' && typeof m?.lon === 'number') : [];
   const safeCircles = Array.isArray(circles) ? circles.filter(c => typeof c?.lat === 'number' && typeof c?.lon === 'number' && typeof c?.radius === 'number' && c.radius > 0) : [];
+  const safeLines = Array.isArray(lines) ? lines.filter(ln => Array.isArray(ln?.points) && ln.points.length >= 2 && ln.points.every(p => typeof p?.lat === 'number' && typeof p?.lon === 'number')) : [];
   const safeLegend = Array.isArray(legend) ? legend.filter(l => l?.color && l?.label) : [];
   // 모바일 320px / PC 480px 캡 + 비율 보호 (작은 폰 50% / 데스크톱 70%).
   const mapMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.7, mobileMaxPx: 320, desktopMaxPx: 480 });
@@ -1844,12 +1889,35 @@ function MapComp({
               fillOpacity: 0.05,
             }).setMap(map);
           }
-          // 마커 — m.color 명시 시 컬러 svg, 없으면 카카오 기본 (한국 사용자에게 익숙).
+          // Polyline (lines) — 태풍 경로 / 항공 경로 / 도보 경로 영역. style=dashed 박힌 영역 = 예상 경로.
+          for (const ln of safeLines) {
+            const path = ln.points.map(p => new w.kakao.maps.LatLng(p.lat, p.lon));
+            new w.kakao.maps.Polyline({
+              path,
+              strokeWeight: ln.weight || 3,
+              strokeColor: colorHex(ln.color, '#ef4444'),
+              strokeOpacity: 0.8,
+              strokeStyle: ln.style === 'dashed' ? 'dash' : 'solid',
+            }).setMap(map);
+          }
+          // 마커 — icon 박힌 영역 = emoji divIcon (태풍 / 카테고리), 옛 영역 = color svg circle.
           // 클릭 시 항상 우리 popup 표시 (label 또는 m.popup), kakao 기본 place_url javascript:void 링크 회피.
-          const makeColorMarkerImage = (color: string) => {
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="8" fill="${color}" stroke="white" stroke-width="2"/></svg>`;
+          const makeColorMarkerImage = (color: string, size = 22) => {
+            const r = Math.floor(size / 2) - 3;
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="${color}" stroke="white" stroke-width="2"/></svg>`;
             const url = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
-            return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(22, 22), { offset: new w.kakao.maps.Point(11, 11) });
+            return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(size, size), { offset: new w.kakao.maps.Point(size/2, size/2) });
+          };
+          const makeEmojiMarkerImage = (emoji: string, size: number, isDashed = false) => {
+            // emoji 영역 = SVG text + 옵션 dashed circle border (forecast 영역).
+            const cx = size / 2;
+            const fontSize = Math.round(size * 0.7);
+            const border = isDashed
+              ? `<circle cx="${cx}" cy="${cx}" r="${cx - 2}" fill="none" stroke="#94a3b8" stroke-width="2" stroke-dasharray="4 3"/>`
+              : '';
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">${border}<text x="${cx}" y="${cx}" font-size="${fontSize}" text-anchor="middle" dominant-baseline="central">${emoji}</text></svg>`;
+            const url = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+            return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(size, size), { offset: new w.kakao.maps.Point(cx, cx) });
           };
           // 단일 openInfo 추적 — 새 마커 클릭 시 옛 InfoWindow 자동 close. 옛 흐름은 매 마커
           // 별도 InfoWindow + click 시 본인 open 만 → 옛 popup 이 닫히지 않아 누적되던 문제.
@@ -1859,12 +1927,20 @@ function MapComp({
               position: new w.kakao.maps.LatLng(m.lat, m.lon),
               title: m.label,
             };
-            if (m.color) opts.image = makeColorMarkerImage(colorHex(m.color, '#ef4444'));
+            // icon 박힌 영역 = emoji marker (태풍 / 카테고리 영역). 옛 영역 = color circle.
+            const emoji = m.icon ? MARKER_ICON_EMOJI[m.icon] : null;
+            if (emoji) {
+              const size = markerPixelSize(m.size, true);
+              opts.image = makeEmojiMarkerImage(emoji, size, m.icon === 'forecast');
+            } else if (m.color) {
+              opts.image = makeColorMarkerImage(colorHex(m.color, '#ef4444'), markerPixelSize(m.size, false));
+            }
             const marker = new w.kakao.maps.Marker(opts);
             marker.setMap(map);
-            // popup — m.popup 우선, 없으면 m.label. dangerous URL (javascript:/data:/vbscript:) 만 sanitize, 정상 https 링크 유지.
-            const rawPopup = m.popup ? String(m.popup) : m.label;
-            const popupText = sanitizePopupHtml(rawPopup);
+            // popup — m.popup 우선, 없으면 m.label (multi-line 영역 \\n → <br>).
+            // dangerous URL (javascript:/data:/vbscript:) 만 sanitize, 정상 https 링크 유지.
+            const rawPopup = m.popup ? sanitizePopupHtml(m.popup) : labelToHtml(m.label);
+            const popupText = rawPopup;
             if (popupText) {
               // 2-3줄 자연 wrap + 3줄 초과 스크롤. line-height 1.4 × font 12 = 16.8px/줄 ×
               // 3줄 ≈ 50px + padding 13 = 63px max-height. 화면 너비 적응 (min 420 / 100vw - 80).
@@ -1879,8 +1955,8 @@ function MapComp({
               });
             }
           }
-          // 마커 2+ 시 자동 bounds fit — 모든 마커 + 원 보이도록 줌 자동
-          if (safeMarkers.length + safeCircles.length >= 2) {
+          // 마커 2+ 시 자동 bounds fit — 모든 마커 + 원 + 선 영역 보이도록 줌 자동
+          if (safeMarkers.length + safeCircles.length + safeLines.length >= 2) {
             const bounds = new w.kakao.maps.LatLngBounds();
             for (const m of safeMarkers) bounds.extend(new w.kakao.maps.LatLng(m.lat, m.lon));
             for (const c of safeCircles) {
@@ -1891,6 +1967,9 @@ function MapComp({
               bounds.extend(new w.kakao.maps.LatLng(c.lat - dLat, c.lon));
               bounds.extend(new w.kakao.maps.LatLng(c.lat, c.lon + dLon));
               bounds.extend(new w.kakao.maps.LatLng(c.lat, c.lon - dLon));
+            }
+            for (const ln of safeLines) {
+              for (const p of ln.points) bounds.extend(new w.kakao.maps.LatLng(p.lat, p.lon));
             }
             if (!bounds.isEmpty()) map.setBounds(bounds);
           }
@@ -1935,22 +2014,49 @@ function MapComp({
             ...(c.style === 'solid' ? {} : { dashArray: '6 6' }),
           }).addTo(map);
         }
+        // Polyline (lines) — 태풍 경로 / 항공 경로 영역. style=dashed = 예상 경로.
+        for (const ln of safeLines) {
+          const color = colorHex(ln.color, '#ef4444');
+          L.polyline(ln.points.map(p => [p.lat, p.lon]), {
+            color,
+            weight: ln.weight || 3,
+            opacity: 0.8,
+            ...(ln.style === 'dashed' ? { dashArray: '8 6' } : {}),
+          }).addTo(map);
+        }
         for (const m of safeMarkers) {
-          const color = colorHex(m.color, '#ef4444');
-          const icon = L.divIcon({
-            className: 'firebat-map-marker',
-            html: `<div style="background:${color};border:2px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>`,
-            iconSize: [18, 18],
-            iconAnchor: [9, 9],
-          });
+          const emoji = m.icon ? MARKER_ICON_EMOJI[m.icon] : null;
+          let icon;
+          if (emoji) {
+            // emoji 영역 = divIcon 안 큰 size + 선택 점선 border (forecast 영역).
+            const size = markerPixelSize(m.size, true);
+            const isDashed = m.icon === 'forecast';
+            const border = isDashed
+              ? 'border:2px dashed #94a3b8;border-radius:50%;background:rgba(255,255,255,0.9);'
+              : '';
+            icon = L.divIcon({
+              className: 'firebat-map-marker-emoji',
+              html: `<div style="display:flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;font-size:${Math.round(size * 0.7)}px;line-height:1;${border}">${emoji}</div>`,
+              iconSize: [size, size],
+              iconAnchor: [size / 2, size / 2],
+            });
+          } else {
+            const color = colorHex(m.color, '#ef4444');
+            const size = markerPixelSize(m.size, false);
+            icon = L.divIcon({
+              className: 'firebat-map-marker',
+              html: `<div style="background:${color};border:2px solid white;border-radius:50%;width:${size}px;height:${size}px;box-shadow:0 1px 3px rgba(0,0,0,0.4)"></div>`,
+              iconSize: [size, size],
+              iconAnchor: [size / 2, size / 2],
+            });
+          }
           const mk = L.marker([m.lat, m.lon], { icon, title: m.label }).addTo(map);
-          // popup — m.popup 우선, 없으면 m.label. dangerous URL 만 sanitize, 정상 링크 유지.
-          const rawPopup = m.popup ? String(m.popup) : m.label;
-          const popupText = sanitizePopupHtml(rawPopup);
+          // popup — m.popup 우선, 없으면 m.label (multi-line \\n → <br>).
+          const popupText = m.popup ? sanitizePopupHtml(m.popup) : labelToHtml(m.label);
           if (popupText) mk.bindPopup(popupText);
         }
-        // 마커 2+ 시 자동 bounds fit — 모든 마커 + 원 보이도록 줌 자동
-        if (safeMarkers.length + safeCircles.length >= 2) {
+        // 마커 2+ 시 자동 bounds fit — 모든 마커 + 원 + 선 영역 보이도록 줌 자동
+        if (safeMarkers.length + safeCircles.length + safeLines.length >= 2) {
           const layers = [
             ...safeMarkers.map(m => L.latLng(m.lat, m.lon)),
             ...safeCircles.flatMap(c => {
@@ -1963,6 +2069,7 @@ function MapComp({
                 L.latLng(c.lat, c.lon - dLon),
               ];
             }),
+            ...safeLines.flatMap(ln => ln.points.map(p => L.latLng(p.lat, p.lon))),
           ];
           if (layers.length > 0) map.fitBounds(L.latLngBounds(layers), { padding: [30, 30] });
         }
@@ -1987,7 +2094,7 @@ function MapComp({
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(safeMarkers), JSON.stringify(safeCircles), finalCenter.lat, finalCenter.lon, finalZoom, provider]);
+  }, [JSON.stringify(safeMarkers), JSON.stringify(safeCircles), JSON.stringify(safeLines), finalCenter.lat, finalCenter.lon, finalZoom, provider]);
 
   return (
     <div

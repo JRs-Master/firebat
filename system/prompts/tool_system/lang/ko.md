@@ -135,6 +135,53 @@ render({
   `kma_weather` 등 sysmod geocoding 호출 후 응답에 담긴 좌표 그대로 사용. AI 학습 기억으로 lat 만 넣고
   lon 빈 값 / lng 다른 이름 / 추정 좌표 절대 금지. lat + lon 한 쪽만 채워진 marker 는 schema
   검증 실패로 render 도구 호출 자체 실패 → 사용자 화면 미표시.
+
+  **markers[].icon 영역** — 카테고리별 emoji 마커 박음. 종류:
+  - `typhoon` (🌀 대형) — 태풍 현재 위치 강조
+  - `forecast` (⭕ 점선) — 태풍 예상 위치
+  - `current` (📍) — 현재 위치 강조
+  - `bank` (🏦) / `pharmacy` (💊) / `hospital` (🏥) / `school` (🏫) / `convenience` (🏪) / `cafe` (☕) / `restaurant` (🍴)
+  icon 박지 않으면 옛 원 모양 박힘 (color 박힌 영역에 따라 색).
+
+  **markers[].size 영역** — `small` / `medium`(기본) / `large`. 태풍 현재 위치 = `large` 박음.
+
+  **markers[].label 영역** — `\n` 박은 multi-line 영역 박음 (옛 단일 줄도 정공). 기상청 태풍 예보 형태:
+  ```
+  "label": "2026-08-15 18:00\n오키나와 남남서 해상\n중심기압 980 hPa\n최대풍속 35 m/s"
+  ```
+
+  **lines 영역 (polyline)** — 태풍 경로 / 항공 경로 / 도보 경로 영역. 좌표 chain + 색상 + 점선 옵션:
+  ```
+  "lines": [{
+    "points": [{"lat":24.5,"lon":127.1},{"lat":26.8,"lon":126.9},{"lat":29.5,"lon":128.5}],
+    "color": "#ef4444",
+    "weight": 3,
+    "style": "dashed",
+    "label": "태풍 12호 예상 경로"
+  }]
+  ```
+  태풍 영역 = `solid` (실제 이동) + `dashed` (예상 경로) 영역 분리 박는 게 정공.
+
+  **태풍 경로 영역 박는 정공 패턴** (kma_weather typhoon-forecast 호출 후):
+  ```json
+  {
+    "type": "map",
+    "props": {
+      "center": {"lat": 27.0, "lon": 128.0},
+      "markers": [
+        {"lat": 24.5, "lon": 127.1, "icon": "typhoon", "size": "large", "label": "현재 위치\n8/14 06시\n중심기압 970 hPa\n최대풍속 40 m/s"},
+        {"lat": 26.8, "lon": 126.9, "icon": "forecast", "label": "8/15 06시\n오키나와 남남서 해상\n중심기압 975 hPa\n최대풍속 38 m/s"},
+        {"lat": 29.5, "lon": 128.5, "icon": "forecast", "label": "8/16 06시\n제주 남쪽 해상\n중심기압 980 hPa\n최대풍속 35 m/s"}
+      ],
+      "lines": [{"points":[{"lat":24.5,"lon":127.1},{"lat":26.8,"lon":126.9},{"lat":29.5,"lon":128.5}], "color":"#ef4444", "style":"dashed", "label":"예상 경로"}],
+      "circles": [
+        {"lat": 26.8, "lon": 126.9, "radius": 200000, "color": "#fbbf24", "style": "dashed"},
+        {"lat": 29.5, "lon": 128.5, "radius": 250000, "color": "#fbbf24", "style": "dashed"}
+      ]
+    }
+  }
+  ```
+  circles 영역 = 70% 확률반경 (radius 영역 = 미터 단위). 예상 위치별 박음.
 - 다이어그램 → `diagram` (mermaid DSL — flowchart/sequence/gantt/class 등)
 - 수식 → `math` (KaTeX LaTeX)
 - 코드 하이라이트 → `code` (hljs language + lineNumbers)
