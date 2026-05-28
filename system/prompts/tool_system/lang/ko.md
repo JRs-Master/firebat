@@ -204,9 +204,14 @@ render({
 
   **cone + circles 둘 다 쓰는 게 네이버식 정공** — cone = 경로 전체 감싸는 부드러운 예측 영역 (현재 좁음 →
   마지막 넓음). circles = 각 예상 위치 확률반경 원 (radPr × 1000). 네이버 태풍 지도 = 두 영역 겹쳐 표시.
-  cone.radius 는 예측 오차 누적이라 circles 의 radPr 보다 크게 잡는다 (시각 강조). **확률반경 · 예상 경로 선은
-  cone 과 색·두께 자동 통일** (frontend 처리) — circles 에 color 를 지정하지 마라 (cone indigo 와 통일).
-  확률반경은 예측 오차 영역이라 강도 색을 쓰지 않는다.
+  cone.radius 는 예측 오차 누적이라 circles 의 radPr 보다 크게 잡는다 (시각 강조). **확률반경 circles · 예상
+  경로 선은 cone 과 색·두께 자동 통일** (frontend 처리) — 확률반경 circles 는 color 를 생략하면 cone(indigo)
+  과 통일된다. 확률반경은 예측 오차 영역이라 강도 색을 쓰지 않는다.
+
+  **현재 위치 영향권 (강풍·폭풍반경)** — 현재 위치에만 circles 로 강풍반경 (rad15 km × 1000, color `#3b82f6`
+  파랑) + 폭풍반경 (rad25 km × 1000, color `#a855f7` 보라) 을 추가하면 기상청처럼 영향권 표시. rad25=0 (약한
+  태풍) 이면 폭풍반경 생략. 강풍반경 > 폭풍반경 (큰 파랑 안에 작은 보라). 예상 위치마다 다 넣으면 원이 너무
+  많아 지저분하니 현재 위치만.
 
   **markers[].windSpeed (태풍 강도 색·번호) = 마커 전용** — typhoon/forecast 마커에만 최대풍속 (m/s, kma
   typhoon-forecast 의 ws) 을 넣으면 기상청 공식 강도 단계 색 + 마커 중앙 강도 번호(1~5) 자동 (범례 일치): 강도1 약(17~24)=초록 /
