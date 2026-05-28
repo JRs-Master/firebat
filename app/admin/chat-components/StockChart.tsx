@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
-import { useViewportMaxHeight } from '../../../lib/use-viewport-size';
+import { useViewportMaxHeight, useViewportSize } from '../../../lib/use-viewport-size';
 
 export type OhlcvBar = {
   date: string; // YYYY-MM-DD or YYYYMMDD
@@ -93,12 +93,18 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
   // 차트 전체 영역 cap — 모바일 320px / PC 480px. breakpoint 640 (sm). SSR null 시 320 fallback.
-  // 사용자 정정 (2026-05-26) — 봉 영역 (가격 SVG) 만 cap 박은 영역 = 잘못. 차트 전체 영역
-  // (헤더 + 4 카드 + 범례 + 봉 영역 + 거래량) 합 박은 영역에 maxHeight 박음. 봉 영역 = 나머지
-  // 영역 flex-1 자동 채움 (비율 자동). 비-스크롤 모드만 적용 (가로 스크롤은 SVG width=W 고정).
+  // 사용자 정정 (2026-05-26): 차트 전체 영역 (헤더 + 4 카드 + 범례 + 봉 + 거래량) = cap 박음.
+  // 봉 영역 = 차트 영역 (헤더 뺀 나머지) 의 약 78% (옛 280/360 비율) — 봉 ≥ 2/3 요청 충족.
+  // flexbox (flex-1 + SVG h-full) 폐기 — 봉/거래량 겹침 발생 → 명시 px 방식 복원.
   const containerMaxH = useViewportMaxHeight({ mobile: 0.5, desktop: 0.6, breakpoint: 640, mobileMaxPx: 320, desktopMaxPx: 480 });
-  // 거래량 = 전체 cap 의 16% 고정 px. 봉 영역 = flex-1 로 나머지 자동 (헤더/4카드/범례 뺀 영역).
-  const volChartHeight = containerMaxH ? `${Math.floor(containerMaxH * 0.16)}px` : '52px';
+  // 헤더 영역 (제목+가격+4카드+범례+gap+padding) 추정 px — breakpoint 640 기준. 정확 measure 대신 근사.
+  const { vw: _vwForHeader } = useViewportSize();
+  const headerEstPx = (_vwForHeader != null && _vwForHeader < 640) ? 125 : 155;
+  const cap = containerMaxH ?? 320;
+  // 차트 영역 (봉 + 거래량) = 전체 cap - 헤더 추정. 최소 140 보장.
+  const chartAreaH = Math.max(cap - headerEstPx, 140);
+  const priceChartHeight = `${Math.floor(chartAreaH * 280 / 360)}px`;  // 봉 영역 (옛 280/360 비율)
+  const volChartHeight = `${Math.floor(chartAreaH * 80 / 360)}px`;      // 거래량 (옛 80/360 비율)
 
   // 유효 데이터만 + 오래된 → 최신 순서로 정렬 (API가 역순 반환 가능)
   // data가 undefined/null/비배열이어도 크래시 방지
@@ -362,10 +368,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const hoverX = hoverIdx != null ? xs[hoverIdx] : null;
 
   return (
-    <div
-      className="flex flex-col gap-2.5 bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-sm overflow-hidden"
-      style={{ maxHeight: useHScroll ? undefined : (containerMaxH ? `${containerMaxH}px` : undefined) }}
-    >
+    <div className="flex flex-col gap-2.5 bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-sm">
       {/* 헤더 */}
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div className="flex flex-col">
@@ -415,7 +418,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       {/* 가격 차트 (드래그 팬 + 휠/핀치 줌) */}
       <div
         ref={priceBoxRef}
-        className={`relative select-none ${canPan && !useHScroll ? 'cursor-grab active:cursor-grabbing' : ''} ${useHScroll ? 'overflow-x-auto scrollbar-thin' : 'flex-1 min-h-0'}`}
+        className={`relative select-none ${canPan && !useHScroll ? 'cursor-grab active:cursor-grabbing' : ''} ${useHScroll ? 'overflow-x-auto scrollbar-thin' : ''}`}
         onPointerMove={handlePointer}
         onPointerLeave={handleLeave}
         onMouseDown={handleMouseDown}
@@ -430,11 +433,11 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
       >
         <svg
           viewBox={`0 0 ${W} ${priceH}`}
-          className={useHScroll ? 'block' : 'w-full h-full block'}
+          className={useHScroll ? 'block' : 'w-full block'}
           width={useHScroll ? W : undefined}
           height={useHScroll ? priceH : undefined}
           preserveAspectRatio="none"
-          style={{ touchAction: 'pan-y' }}
+          style={{ touchAction: 'pan-y', height: useHScroll ? undefined : priceChartHeight }}
         >
           {/* 가로 그리드 */}
           {priceTicks.map(t => {
