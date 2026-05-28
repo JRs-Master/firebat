@@ -92,10 +92,12 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // 툴팁 위치용 실시간 마우스 좌표 (컨테이너 기준)
   const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
 
-  // 차트 영역 cap — 모바일 180px / PC 240px. SSR null 시 180 fallback.
+  // 차트 영역 cap — 모바일 180px / PC 240px. breakpoint 640 (sm). SSR null 시 180 fallback.
+  // 옛 breakpoint 768 박은 영역 = 큰 폰 / 태블릿 영역 (vw 640~768) 박은 영역에서 desktop 박혀
+  // mobile cap 박지 못한 영역. tailwind sm breakpoint 640 박는 게 정공.
   // 비-스크롤 모드만 적용 (가로 스크롤 모드는 SVG 자체 width=W 고정).
   // 거래량은 가격 영역의 80/280 ≈ 28.6% 비례 (옛 viewBox 비율 유지).
-  const chartMaxH = useViewportMaxHeight({ mobile: 0.28, desktop: 0.35, mobileMaxPx: 180, desktopMaxPx: 240 });
+  const chartMaxH = useViewportMaxHeight({ mobile: 0.28, desktop: 0.35, breakpoint: 640, mobileMaxPx: 180, desktopMaxPx: 240 });
   const priceChartHeight = chartMaxH ? `${chartMaxH}px` : '180px';
   const volChartHeight = chartMaxH ? `${Math.floor(chartMaxH * 80 / 280)}px` : '52px';
 
