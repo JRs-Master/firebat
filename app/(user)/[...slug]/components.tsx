@@ -1479,17 +1479,16 @@ function PieChartInteractive({ segments, titleBlock, unit, showPct = true, isDou
           onTouchEnd={() => { /* slice onTouchStart 영역에서 박은 active 영역 유지 — 외부 박은 영역에서만 해제 */ }}
         >
           {arcs.map((arc, i) => {
-            const isActive = active === i;
-            const r = isActive ? ACTIVE_RADIUS : RADIUS;
+            // 사용자 요청 (2026-05-26) — slice 영역 시각 변경 0 (opacity / scale 박지 마라).
+            // hover 박은 영역만 목록 영역 background 박힘. slice 영역은 trigger 역할만.
             return (
               <path
                 key={i}
-                d={arcPath(arc.a0, arc.a1, r, INNER_RADIUS)}
+                d={arcPath(arc.a0, arc.a1, RADIUS, INNER_RADIUS)}
                 fill={arc.color}
                 stroke="white"
                 strokeWidth={1.5}
-                opacity={active === null || isActive ? 1 : 0.55}
-                style={{ cursor: 'pointer', transition: 'opacity 0.15s' }}
+                style={{ cursor: 'pointer' }}
                 onMouseEnter={() => setActive(i)}
                 onMouseLeave={() => setActive(null)}
                 onTouchStart={(e) => { e.preventDefault(); setActive(active === i ? null : i); }}
@@ -1500,11 +1499,13 @@ function PieChartInteractive({ segments, titleBlock, unit, showPct = true, isDou
         <div className="space-y-1.5">
           {segments.map((seg, i) => {
             const isActive = active === i;
-            const dim = active !== null && !isActive;
+            // font-weight 변경 영역 박지 마라 — bold 박은 영역 = 글자 폭 변경 → row 안 텍스트 이동 발생.
+            // 활성 표시 = background 영역만 박음 (폭 변경 0). 다른 항목 dim 영역도 폐기 — slice 영역
+            // 변경 0 + 다른 항목 변경 0 = 사용자 요청 "선택만 되게" 정공.
             return (
               <div
                 key={i}
-                className={`flex items-center gap-2 text-sm px-2 py-1 rounded transition-all cursor-pointer ${isActive ? 'bg-gray-100 font-semibold' : ''} ${dim ? 'opacity-50' : ''}`}
+                className={`flex items-center gap-2 text-sm px-2 py-1 rounded cursor-pointer ${isActive ? 'bg-gray-100' : ''}`}
                 onMouseEnter={() => setActive(i)}
                 onMouseLeave={() => setActive(null)}
                 onTouchStart={() => setActive(active === i ? null : i)}
