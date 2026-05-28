@@ -1430,13 +1430,6 @@
                 ],
                 "description": "원 색상 (markers 의 color 와 동일 형식). 기본 blue."
               },
-              "windSpeed": {
-                "type": [
-                  "number",
-                  "null"
-                ],
-                "description": "최대풍속 m/s — 박혀있으면 기상청 태풍 강도 단계 색 자동 (color 우선). 태풍 예상 위치 확률반경 = typhoon-forecast 의 ws 박으면 강도별 색 통일."
-              },
               "style": {
                 "type": [
                   "string",

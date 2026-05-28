@@ -185,8 +185,8 @@ render({
       ],
       "lines": [{"points":[{"lat":24.5,"lon":127.1},{"lat":26.8,"lon":126.9},{"lat":29.5,"lon":128.5}], "color":"#ef4444", "style":"dashed", "label":"예상 경로"}],
       "circles": [
-        {"lat": 26.8, "lon": 126.9, "radius": 80000, "windSpeed": 38},
-        {"lat": 29.5, "lon": 128.5, "radius": 130000, "windSpeed": 35}
+        {"lat": 26.8, "lon": 126.9, "radius": 80000},
+        {"lat": 29.5, "lon": 128.5, "radius": 130000}
       ],
       "cone": {
         "points": [
@@ -202,12 +202,15 @@ render({
   label 의 "중심기압: 970 hPa" 처럼 `라벨: 값` (콜론) 형태로 박으면 팝업 카드가 라벨(좌)·값(우) 정렬.
 
   **cone + circles 둘 다 박는 게 네이버식 정공** — cone = 경로 전체 감싸는 부드러운 예측 영역 (현재 좁음 →
-  마지막 넓음). circles = 각 예상 위치 확률반경 원 (radPr × 1000, `windSpeed` 박으면 강도 색). 네이버 태풍
-  지도 = 두 영역 겹쳐 표시. cone.radius 는 예측 오차 누적이라 circles 의 radPr 보다 크게 잡음 (시각 강조).
+  마지막 넓음). circles = 각 예상 위치 확률반경 원 (radPr × 1000). 네이버 태풍 지도 = 두 영역 겹쳐 표시.
+  cone.radius 는 예측 오차 누적이라 circles 의 radPr 보다 크게 잡음 (시각 강조). **확률반경 · 예상 경로 선은
+  cone 과 색·두께 자동 통일** (frontend 처리) — circles 에 color 박지 마라 (cone indigo 와 통일). 확률반경은
+  예측 오차 영역이라 강도 색 X.
 
-  **markers[].windSpeed (태풍 강도 색)** — typhoon/forecast 마커 · circles 에 최대풍속 (m/s, ws) 박으면
+  **markers[].windSpeed (태풍 강도 색) = 마커 전용** — typhoon/forecast 마커에만 최대풍속 (m/s, ws) 박으면
   기상청 강도 단계 색 자동: 약(<25)=초록 / 중(25~33)=노랑 / 강(33~44)=주황 / 매우강(44~54)=빨강 /
-  초강력(54+)=보라. windSpeed 박으면 color 보다 우선. 태풍 = windSpeed 박는 게 정공 (강도 한눈에).
+  초강력(54+)=보라. windSpeed 박으면 color 보다 우선. 강도는 위치 마커로만 표현 (circles/cone 색에 강도 X).
+  태풍 = 각 forecast 마커에 windSpeed 박는 게 정공 (강도 한눈에).
 
   **markers[].windSpeed (태풍 강도 색)** — typhoon/forecast 마커에 최대풍속 (m/s, kma typhoon-forecast 의 ws)
   박으면 기상청 강도 단계 색 자동: 약(<25)=초록 / 중(25~33)=노랑 / 강(33~44)=주황 / 매우강(44~54)=빨강 /
