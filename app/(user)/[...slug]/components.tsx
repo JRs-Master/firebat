@@ -1820,6 +1820,8 @@ type MapCircle = {
   color?: string | null;
   /** 'solid' | 'dashed' (기본 dashed). Leaflet 은 dashArray, 카카오는 strokeStyle */
   style?: 'solid' | 'dashed' | null;
+  /** 최대풍속 m/s — 박혀있으면 기상청 강도 단계 색 (color 우선). 태풍 예상 위치 확률반경 색 통일용. */
+  windSpeed?: number | null;
 };
 
 type MapLine = {
@@ -1909,14 +1911,17 @@ function buildPopupCardHtml(rawLabel: string): string {
   const lines = clean.split('\n').map((l) => l.trim()).filter(Boolean);
   if (lines.length === 0) return '';
   const [head, ...body] = lines;
-  // 본문 각 줄 — "라벨 값" 패턴이면 라벨(연회색) + 값(진하게) 분리, 아니면 한 줄 그대로.
+  // 본문 각 줄 — "라벨: 값" (콜론) 패턴만 라벨(연회색) 좌 + 값(진하게) 우 분리. 콜론 없으면 한 줄 그대로.
+  // 옛 공백 분리 = "오키나와 인근 해상" → "오키나와"+"인근 해상" 오작동 → 콜론 기준으로 정정.
   const bodyRows = body
     .map((line) => {
-      const m = line.match(/^(\S+)\s+(.+)$/);
-      if (m) {
-        return `<div style="display:flex;justify-content:space-between;gap:12px;padding:1px 0;"><span style="color:#94a3b8;">${m[1]}</span><span style="color:#1e293b;font-weight:600;">${m[2]}</span></div>`;
+      const idx = line.indexOf(':');
+      if (idx > 0 && idx < line.length - 1) {
+        const k = line.slice(0, idx).trim();
+        const v = line.slice(idx + 1).trim();
+        return `<div style="display:flex;justify-content:space-between;gap:12px;padding:1px 0;"><span style="color:#94a3b8;">${k}</span><span style="color:#1e293b;font-weight:600;">${v}</span></div>`;
       }
-      return `<div style="color:#475569;padding:1px 0;">${line}</div>`;
+      return `<div style="color:#334155;padding:1px 0;">${line}</div>`;
     })
     .join('');
   // 우리식 카드 — Firebat StockChart / Card 컴포넌트 스타일 (흰 배경 + 제목 bold + border 구분, 색 헤더 X).
@@ -2084,17 +2089,18 @@ function MapComp({
               }).setMap(map);
             }
           }
-          // 반경 원 (circles) — 카카오 strokeStyle: 'dashed' / 'solid'
+          // 반경 원 (circles) — windSpeed 박혀있으면 강도 단계 색. 채움/외곽 강조 (점선 흐릿 → 뚜렷).
           for (const c of safeCircles) {
+            const cColor = typhoonColorByWind(c.windSpeed) ?? colorHex(c.color, '#3b82f6');
             new w.kakao.maps.Circle({
               center: new w.kakao.maps.LatLng(c.lat, c.lon),
               radius: c.radius,
-              strokeWeight: 2,
-              strokeColor: colorHex(c.color, '#3b82f6'),
-              strokeOpacity: 0.6,
-              strokeStyle: c.style === 'solid' ? 'solid' : 'dashed',
-              fillColor: colorHex(c.color, '#3b82f6'),
-              fillOpacity: 0.05,
+              strokeWeight: 3,
+              strokeColor: cColor,
+              strokeOpacity: 0.8,
+              strokeStyle: c.style === 'solid' ? 'solid' : 'shortdash',
+              fillColor: cColor,
+              fillOpacity: 0.13,
             }).setMap(map);
           }
           // Polyline (lines) — 태풍 경로 / 항공 경로 / 도보 경로 영역. style=dashed 박힌 영역 = 예상 경로.
@@ -2244,16 +2250,17 @@ function MapComp({
               map.addLayer({ id: 'fb-cone-line', type: 'line', source: 'fb-cone', paint: { 'line-color': coneColor, 'line-width': 1, 'line-opacity': 0.4 } });
             }
           }
-          // circles (위험 반경) — GeoJSON polygon (meter → 64각형). 점선 = 위험 반경 표준.
+          // circles (예상 위치 확률반경) — GeoJSON polygon (meter → 64각형).
+          // windSpeed 박혀있으면 강도 단계 색 (color 우선). 점선 흐릿 → 채움/외곽 강조 (점선 큼 [4,3]).
           if (safeCircles.length > 0) {
             const features = safeCircles.map(c => ({
               type: 'Feature' as const,
-              properties: { color: colorHex(c.color, '#3b82f6') },
+              properties: { color: typhoonColorByWind(c.windSpeed) ?? colorHex(c.color, '#3b82f6') },
               geometry: { type: 'Polygon' as const, coordinates: [circlePolygonCoords(c.lat, c.lon, c.radius)] },
             }));
             map.addSource('fb-circles', { type: 'geojson', data: { type: 'FeatureCollection', features } });
-            map.addLayer({ id: 'fb-circles-fill', type: 'fill', source: 'fb-circles', paint: { 'fill-color': ['get', 'color'] as any, 'fill-opacity': 0.05 } });
-            map.addLayer({ id: 'fb-circles-line', type: 'line', source: 'fb-circles', paint: { 'line-color': ['get', 'color'] as any, 'line-width': 2, 'line-opacity': 0.55, 'line-dasharray': [2, 2] as any } });
+            map.addLayer({ id: 'fb-circles-fill', type: 'fill', source: 'fb-circles', paint: { 'fill-color': ['get', 'color'] as any, 'fill-opacity': 0.13 } });
+            map.addLayer({ id: 'fb-circles-line', type: 'line', source: 'fb-circles', paint: { 'line-color': ['get', 'color'] as any, 'line-width': 2.5, 'line-opacity': 0.8, 'line-dasharray': [4, 3] as any } });
           }
           // lines (polyline) — GeoJSON LineString. solid / dashed 2 layer 분리 (paint property = layer 단위).
           if (safeLines.length > 0) {

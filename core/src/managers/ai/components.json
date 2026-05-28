@@ -1404,7 +1404,7 @@
             "array",
             "null"
           ],
-          "description": "반경 원. 강남역 1.5km 반경, 학군 권역 등 영역 표시용. 좌표는 markers 와 동일 — sysmod 결과만.",
+          "description": "반경 원. 강남역 1.5km 반경, 학군 권역, 태풍 예상 위치 확률반경 등 영역 표시용. 좌표는 markers 와 동일 — sysmod 결과만.",
           "items": {
             "type": "object",
             "required": [
@@ -1421,7 +1421,7 @@
               },
               "radius": {
                 "type": "number",
-                "description": "반경 m (예: 1500 = 1.5km)"
+                "description": "반경 m (예: 1500 = 1.5km). 태풍 = kma_weather typhoon-forecast 의 radPr(확률반경 km) × 1000."
               },
               "color": {
                 "type": [
@@ -1429,6 +1429,13 @@
                   "null"
                 ],
                 "description": "원 색상 (markers 의 color 와 동일 형식). 기본 blue."
+              },
+              "windSpeed": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "description": "최대풍속 m/s — 박혀있으면 기상청 태풍 강도 단계 색 자동 (color 우선). 태풍 예상 위치 확률반경 = typhoon-forecast 의 ws 박으면 강도별 색 통일."
               },
               "style": {
                 "type": [

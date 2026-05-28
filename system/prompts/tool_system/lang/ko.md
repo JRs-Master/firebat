@@ -162,18 +162,32 @@ render({
   ```
   태풍 영역 = `solid` (실제 이동) + `dashed` (예상 경로) 영역 분리 박는 게 정공.
 
-  **태풍 경로 영역 박는 정공 패턴** (kma_weather typhoon-forecast 호출 후):
+  **태풍 호출 = `typhoon-forecast` 단독으로 충분** — 인자 없이 (또는 `typhoonNo` 만) 호출하면 모듈이
+  활성 태풍 최신 발표시각 (tmFc) 을 자동 탐색해 예상 경로를 반환. `typhoon-list` 먼저 호출 후 발표시각을
+  넘기는 chain 불필요 (옛 tmFc 12자리 추출 실패 → 모듈 자동화). 특정 태풍만 = `typhoonNo` 박음.
+
+  **typhoon-forecast 결과 item → 시각화 매핑** (각 item = 예보 시각별 1행):
+  - `lat` / `lon` → marker · circle · cone · line 좌표
+  - `ws` (최대풍속 m/s) → `windSpeed` (강도 단계 색 자동)
+  - `radPr` (확률반경 km) → circle · cone 의 `radius` = `radPr × 1000` (m)
+  - `ps` (중심기압 hPa) · `fcLocKo` (예상 지명) · `tm` (예보시각 12자리) → `label`
+
+  **태풍 경로 영역 박는 정공 패턴** (typhoon-forecast 결과 매핑):
   ```json
   {
     "type": "map",
     "props": {
       "center": {"lat": 27.0, "lon": 128.0},
       "markers": [
-        {"lat": 24.5, "lon": 127.1, "icon": "typhoon", "size": "large", "windSpeed": 40, "label": "현재 위치\n8/14 06시\n중심기압 970 hPa\n최대풍속 40 m/s"},
-        {"lat": 26.8, "lon": 126.9, "icon": "forecast", "windSpeed": 38, "label": "8/15 06시\n오키나와 남남서 해상\n중심기압 975 hPa\n최대풍속 38 m/s"},
-        {"lat": 29.5, "lon": 128.5, "icon": "forecast", "windSpeed": 35, "label": "8/16 06시\n제주 남쪽 해상\n중심기압 980 hPa\n최대풍속 35 m/s"}
+        {"lat": 24.5, "lon": 127.1, "icon": "typhoon", "size": "large", "windSpeed": 40, "label": "현재 위치\n8/14 06시\n중심기압: 970 hPa\n최대풍속: 40 m/s"},
+        {"lat": 26.8, "lon": 126.9, "icon": "forecast", "windSpeed": 38, "label": "8/15 06시\n오키나와 남남서 해상\n중심기압: 975 hPa\n최대풍속: 38 m/s"},
+        {"lat": 29.5, "lon": 128.5, "icon": "forecast", "windSpeed": 35, "label": "8/16 06시\n제주 남쪽 해상\n중심기압: 980 hPa\n최대풍속: 35 m/s"}
       ],
       "lines": [{"points":[{"lat":24.5,"lon":127.1},{"lat":26.8,"lon":126.9},{"lat":29.5,"lon":128.5}], "color":"#ef4444", "style":"dashed", "label":"예상 경로"}],
+      "circles": [
+        {"lat": 26.8, "lon": 126.9, "radius": 80000, "windSpeed": 38},
+        {"lat": 29.5, "lon": 128.5, "radius": 130000, "windSpeed": 35}
+      ],
       "cone": {
         "points": [
           {"lat": 24.5, "lon": 127.1, "radius": 80000},
@@ -185,11 +199,15 @@ render({
     }
   }
   ```
+  label 의 "중심기압: 970 hPa" 처럼 `라벨: 값` (콜론) 형태로 박으면 팝업 카드가 라벨(좌)·값(우) 정렬.
 
-  **cone (예측 영역) = 네이버 태풍 예측 영역 정공** — 각 예상 위치 개별 원 (circles) 대신 경로 전체
-  감싸는 부드러운 영역. 현재 위치 (좁음) → 마지막 예상 (넓음) 점점 커지는 cone. radius = 각 시점
-  확률반경 (m, 시간 갈수록 ↑). kma_weather typhoon-forecast 의 radPr (확률반경 km → ×1000 m) 사용.
-  태풍 = cone 우선 (circles 보다 네이버식 자연). circles 는 특정 1개 위치 반경 강조 시만.
+  **cone + circles 둘 다 박는 게 네이버식 정공** — cone = 경로 전체 감싸는 부드러운 예측 영역 (현재 좁음 →
+  마지막 넓음). circles = 각 예상 위치 확률반경 원 (radPr × 1000, `windSpeed` 박으면 강도 색). 네이버 태풍
+  지도 = 두 영역 겹쳐 표시. cone.radius 는 예측 오차 누적이라 circles 의 radPr 보다 크게 잡음 (시각 강조).
+
+  **markers[].windSpeed (태풍 강도 색)** — typhoon/forecast 마커 · circles 에 최대풍속 (m/s, ws) 박으면
+  기상청 강도 단계 색 자동: 약(<25)=초록 / 중(25~33)=노랑 / 강(33~44)=주황 / 매우강(44~54)=빨강 /
+  초강력(54+)=보라. windSpeed 박으면 color 보다 우선. 태풍 = windSpeed 박는 게 정공 (강도 한눈에).
 
   **markers[].windSpeed (태풍 강도 색)** — typhoon/forecast 마커에 최대풍속 (m/s, kma typhoon-forecast 의 ws)
   박으면 기상청 강도 단계 색 자동: 약(<25)=초록 / 중(25~33)=노랑 / 강(33~44)=주황 / 매우강(44~54)=빨강 /

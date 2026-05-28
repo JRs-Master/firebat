@@ -410,14 +410,33 @@ async function main() {
     }
 
     if (action === 'typhoon-forecast') {
-      if (!tmFc) return outErr('error.typhoon_forecast_tmFc_required', {});
-      if (!typhoonNo) return outErr('error.typhoon_forecast_typhoonNo_required', {});
+      // tmFc (발표시각 12자리) 미지정 시 자동 탐색 — getTyphoonInfoList 의 announceTime 이 곧 forecast tmFc.
+      // AI 가 typhoon-list → typhoon-forecast chain 의 12자리 발표시각 추출에 자주 실패 → 모듈이 자동 채움.
+      // typhoonNo 만 주면 그 태풍 최신 통보문, 둘 다 없으면 활성 태풍 중 최신 발표.
+      let fc = tmFc;
+      let seq = typhoonNo;
+      if (!fc) {
+        const days = [todayYmd(), todayYmd(new Date(Date.now() - 86400000))];
+        let cands = [];
+        for (const d of days) {
+          const lr = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonInfoList', { numOfRows: 50, pageNo: 1, tmFc: d });
+          if (lr.ok && Array.isArray(lr.items)) cands = cands.concat(lr.items);
+        }
+        if (seq != null) cands = cands.filter((x) => String(x.typhoonSeq) === String(seq));
+        if (!cands.length) {
+          return out(true, { items: [], note: seq != null ? `태풍 ${seq}호 통보문 박지 못한 영역` : '활성 태풍 통보문 박지 못한 영역 (한국 영역 태풍 시즌 = 7~10 월 중심)' });
+        }
+        cands.sort((a, b) => String(b.announceTime).localeCompare(String(a.announceTime)));
+        fc = cands[0].announceTime;
+        if (seq == null) seq = cands[0].typhoonSeq;
+      }
+      if (seq == null) return outErr('error.typhoon_forecast_typhoonNo_required', {});
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonFcst', {
-        numOfRows: limit, pageNo: 1, tmFc, typSeq: typhoonNo,
+        numOfRows: limit, pageNo: 1, tmFc: fc, typSeq: seq,
       });
-      if (isNoData(r)) return out(true, { items: [], tmFc, typhoonNo, note: '본 태풍 박힌 예상 정보 박지 못한 영역' });
+      if (isNoData(r)) return out(true, { items: [], tmFc: fc, typhoonNo: seq, note: '본 태풍 예상 정보 박지 못한 영역' });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
-      return out(true, { items: r.items, tmFc, typhoonNo });
+      return out(true, { items: r.items, tmFc: fc, typhoonNo: seq });
     }
 
     return outErr('error.unknown_action', { action: String(action) });
