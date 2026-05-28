@@ -97,9 +97,9 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   // mobile cap 박지 못한 영역. tailwind sm breakpoint 640 박는 게 정공.
   // 비-스크롤 모드만 적용 (가로 스크롤 모드는 SVG 자체 width=W 고정).
   // 거래량은 가격 영역의 80/280 ≈ 28.6% 비례 (옛 viewBox 비율 유지).
-  const chartMaxH = useViewportMaxHeight({ mobile: 0.28, desktop: 0.35, breakpoint: 640, mobileMaxPx: 180, desktopMaxPx: 240 });
-  const priceChartHeight = chartMaxH ? `${chartMaxH}px` : '180px';
-  const volChartHeight = chartMaxH ? `${Math.floor(chartMaxH * 80 / 280)}px` : '52px';
+  const chartMaxH = useViewportMaxHeight({ mobile: 0.2, desktop: 0.35, breakpoint: 640, mobileMaxPx: 120, desktopMaxPx: 240 });
+  const priceChartHeight = chartMaxH ? `${chartMaxH}px` : '120px';
+  const volChartHeight = chartMaxH ? `${Math.floor(chartMaxH * 80 / 280)}px` : '34px';
 
   // 유효 데이터만 + 오래된 → 최신 순서로 정렬 (API가 역순 반환 가능)
   // data가 undefined/null/비배열이어도 크래시 방지
