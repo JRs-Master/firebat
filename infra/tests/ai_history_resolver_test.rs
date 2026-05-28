@@ -189,7 +189,7 @@ async fn compress_with_strong_match_returns_context() {
 fn resolve_limits_to_recent_n() {
     let (mgr, _dir) = manager();
     let mut msgs: Vec<serde_json::Value> = Vec::new();
-    for i in 0..10 {
+    for i in 0..20 {
         msgs.push(serde_json::json!({
             "role": "user",
             "content": format!("message {}", i)
@@ -199,7 +199,8 @@ fn resolve_limits_to_recent_n() {
     mgr.save_sync("admin", "c1", "long", &messages, None).unwrap();
     let resolver = HistoryResolver::new(mgr);
     let ctx = resolver.resolve("admin", Some("c1")).unwrap();
-    // RECENT_MESSAGE_LIMIT = 5, 가장 처음 메시지 (message 0~4) 는 미포함
+    // RECENT_MESSAGE_LIMIT = 12, 가장 오래된 메시지 (message 0~7) 는 미포함
     assert!(!ctx.contains("message 0"));
-    assert!(ctx.contains("message 9"));
+    assert!(!ctx.contains("message 7"));
+    assert!(ctx.contains("message 19"));
 }
