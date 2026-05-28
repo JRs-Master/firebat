@@ -1877,24 +1877,42 @@ function typhoonColorByWind(ws?: number | null): string | null {
   return '#9ca3af';               // 열대저압부 TD (<17, 회색)
 }
 
-/** 태풍 현재 위치 — 네이버식 동심원 + 중심 소용돌이 (형태만 네이버, 색은 AI color / 기본 빨강=위험). data URI 반환. */
-function typhoonSvgUrl(size: number, color = '#dc2626'): string {
+/** 최대풍속 (m/s) → 기상청 태풍 강도 번호 (1~5). 17 미만 = TD (열대저압부) → 'T'. windSpeed 없으면 null. */
+function typhoonGradeNum(ws?: number | null): string | null {
+  if (typeof ws !== 'number' || !Number.isFinite(ws)) return null;
+  if (ws >= 54) return '5';
+  if (ws >= 44) return '4';
+  if (ws >= 33) return '3';
+  if (ws >= 25) return '2';
+  if (ws >= 17) return '1';
+  return 'T'; // 열대저압부
+}
+
+/** 태풍 현재 위치 — 동심원 + 소용돌이 + 중앙 강도 번호 (grade). 색 = 강도 단계. data URI 반환. */
+function typhoonSvgUrl(size: number, color = '#dc2626', grade: string | null = null): string {
   const c = size / 2;
-  // 동심원 2 겹 (확률 반경 느낌) + 중심 흰 원 + 소용돌이 2 path (태풍 눈).
+  // 강도 번호 있으면 중앙 흰 원판 + 색 숫자, 없으면 작은 흰 눈.
+  const center = grade
+    ? `<circle cx="${c}" cy="${c}" r="${size * 0.24}" fill="white"/><text x="${c}" y="${c}" text-anchor="middle" dominant-baseline="central" fill="${color}" font-size="${size * 0.32}" font-weight="800" font-family="sans-serif">${grade}</text>`
+    : `<circle cx="${c}" cy="${c}" r="${size * 0.06}" fill="white"/>`;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`
     + `<circle cx="${c}" cy="${c}" r="${c - 2}" fill="${color}" fill-opacity="0.15" stroke="${color}" stroke-width="1.5" stroke-opacity="0.5"/>`
     + `<circle cx="${c}" cy="${c}" r="${c * 0.62}" fill="${color}"/>`
     + `<path d="M${c} ${c * 0.5} Q${c * 1.45} ${c * 0.7} ${c} ${c}" stroke="white" stroke-width="${size * 0.07}" fill="none" stroke-linecap="round"/>`
     + `<path d="M${c} ${c * 1.5} Q${c * 0.55} ${c * 1.3} ${c} ${c}" stroke="white" stroke-width="${size * 0.07}" fill="none" stroke-linecap="round"/>`
-    + `<circle cx="${c}" cy="${c}" r="${size * 0.06}" fill="white"/>`
+    + center
     + `</svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
-/** 채워진 색 원 SVG (forecast 예상 위치 등). 점선 border 폐기 — 위험 반경은 circles 영역. data URI 반환. */
-function colorCircleSvgUrl(color: string, size: number): string {
+/** 채워진 색 원 SVG (forecast 예상 위치) + 중앙 강도 번호 (grade). data URI 반환. */
+function colorCircleSvgUrl(color: string, size: number, grade: string | null = null): string {
   const r = size / 2 - 2;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="${color}" stroke="white" stroke-width="2"/></svg>`;
+  const c = size / 2;
+  const txt = grade
+    ? `<text x="${c}" y="${c}" text-anchor="middle" dominant-baseline="central" fill="white" font-size="${size * 0.56}" font-weight="800" font-family="sans-serif">${grade}</text>`
+    : '';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${c}" cy="${c}" r="${r}" fill="${color}" stroke="white" stroke-width="2"/>${txt}</svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
@@ -1974,13 +1992,13 @@ function buildMarkerEl(m: MapMarker): HTMLDivElement {
   el.style.cursor = 'pointer';
   if (m.icon === 'typhoon') {
     const size = markerPixelSize(m.size ?? 'large', true);
-    // 색 = 풍속 따라 강도 단계 (windSpeed) 우선, 없으면 AI color / 기본 빨강.
+    // 색 = 풍속 따라 강도 단계 (windSpeed) 우선, 없으면 AI color / 기본 빨강. 중앙 강도 번호 (1~5).
     const tColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
-    el.innerHTML = `<img src="${typhoonSvgUrl(size, tColor)}" width="${size}" height="${size}" style="display:block"/>`;
+    el.innerHTML = `<img src="${typhoonSvgUrl(size, tColor, typhoonGradeNum(m.windSpeed))}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon === 'forecast') {
     const size = markerPixelSize(m.size ?? 'medium', true);
     const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#f97316');
-    el.innerHTML = `<img src="${colorCircleSvgUrl(fColor, size)}" width="${size}" height="${size}" style="display:block"/>`;
+    el.innerHTML = `<img src="${colorCircleSvgUrl(fColor, size, typhoonGradeNum(m.windSpeed))}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
     const size = markerPixelSize(m.size, true);
     el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;font-size:${Math.round(size * 0.7)}px;line-height:1;">${MARKER_ICON_EMOJI[m.icon]}</div>`;
@@ -2152,11 +2170,11 @@ function MapComp({
             if (m.icon === 'typhoon') {
               const size = markerPixelSize(m.size ?? 'large', true);
               const tColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
-              opts.image = makeDataUriImage(typhoonSvgUrl(size, tColor), size);
+              opts.image = makeDataUriImage(typhoonSvgUrl(size, tColor, typhoonGradeNum(m.windSpeed)), size);
             } else if (m.icon === 'forecast') {
-              const size = markerPixelSize(m.size ?? 'small', false);
+              const size = markerPixelSize(m.size ?? 'medium', true);
               const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#f97316');
-              opts.image = makeDataUriImage(colorCircleSvgUrl(fColor, size), size);
+              opts.image = makeDataUriImage(colorCircleSvgUrl(fColor, size, typhoonGradeNum(m.windSpeed)), size);
             } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
               const size = markerPixelSize(m.size, true);
               opts.image = makeEmojiMarkerImage(MARKER_ICON_EMOJI[m.icon], size);
@@ -2238,6 +2256,11 @@ function MapComp({
           // lang 분기 — symbol layer text-field = name:{lang} 우선 → name:latin → name (현지어) fallback.
           // 한국어 lang = 동아시아 전역 한글 라벨 (네이버처럼). 영어 lang = name:latin (영문).
           for (const layer of map.getStyle().layers) {
+            // 행정·해상 경계선 (점선 포함) 숨김 — 태풍/날씨 지도에 불필요 + 뱃길로 오인.
+            if (layer.type === 'line' && /boundary/i.test(layer.id)) {
+              try { map.setLayoutProperty(layer.id, 'visibility', 'none'); } catch { /* 무시 */ }
+              continue;
+            }
             const lo = layer.layout as Record<string, unknown> | undefined;
             if (layer.type === 'symbol' && lo && 'text-field' in lo) {
               try {

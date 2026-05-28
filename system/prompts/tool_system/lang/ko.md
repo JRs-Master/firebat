@@ -208,8 +208,8 @@ render({
   cone 과 색·두께 자동 통일** (frontend 처리) — circles 에 color 를 지정하지 마라 (cone indigo 와 통일).
   확률반경은 예측 오차 영역이라 강도 색을 쓰지 않는다.
 
-  **markers[].windSpeed (태풍 강도 색) = 마커 전용** — typhoon/forecast 마커에만 최대풍속 (m/s, kma
-  typhoon-forecast 의 ws) 을 넣으면 기상청 공식 강도 단계 색 자동 (범례 일치): 강도1 약(17~24)=초록 /
+  **markers[].windSpeed (태풍 강도 색·번호) = 마커 전용** — typhoon/forecast 마커에만 최대풍속 (m/s, kma
+  typhoon-forecast 의 ws) 을 넣으면 기상청 공식 강도 단계 색 + 마커 중앙 강도 번호(1~5) 자동 (범례 일치): 강도1 약(17~24)=초록 /
   강도2 중(25~32)=파랑 / 강도3 강(33~43)=노랑 / 강도4 매우강(44~53)=주황 / 강도5 초강력(54+)=빨강 /
   열대저압부(<17)=회색. windSpeed 가 있으면 color 보다 우선. 강도는 위치 마커로만 표현 (circles/cone 색에는
   강도 X). 태풍 = 각 forecast 마커에 windSpeed 를 넣는 게 정공 (강도 한눈에).
