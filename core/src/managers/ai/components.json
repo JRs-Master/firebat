@@ -1301,7 +1301,7 @@
                   "string",
                   "null"
                 ],
-                "description": "마커 위 짧은 라벨. optional — 카카오맵 / Leaflet 모두 라벨 없이도 마커 자체 박힘. 박지 못해 검증 실패로 block silent skip 박는 영역 차단."
+                "description": "마커 위 라벨. \\n 박은 multi-line 영역 박음 (예: '2026-05-27 18:00\\n오키나와 남남서 해상\\n중심기압 980 hPa\\n최대풍속 35 m/s' — 기상청 태풍 예보 영역). 박지 않아도 마커 자체 박힘."
               },
               "popup": {
                 "type": [
@@ -1323,6 +1323,64 @@
                   "null"
                 ],
                 "description": "카테고리 분류 — real-estate / weather / poi 등 (UI 그룹화 용)"
+              },
+              "icon": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": ["default", "typhoon", "forecast", "current", "bank", "pharmacy", "hospital", "school", "convenience", "cafe", "restaurant", null],
+                "description": "마커 아이콘. default(원 — 기본) / typhoon(🌀 태풍 현재 위치) / forecast(점선 원 — 태풍 예상 위치) / current(현재 위치 강조) / bank·pharmacy·hospital·school·convenience·cafe·restaurant (카테고리별 이모지 아이콘). frontend 영역에서 icon 박힌 영역 = 큰 size + 강조 박힘."
+              },
+              "size": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": ["small", "medium", "large", null],
+                "description": "마커 크기. 옛 default = medium. 태풍 영역 = large (현재 위치 강조)."
+              }
+            }
+          }
+        },
+        "lines": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "Polyline — 선 연결 영역. 태풍 경로 (현재 → 예상 위치 chain), 항공 경로, 도보 경로 등. 각 line = 좌표 배열. 좌표는 markers 와 동일 — sysmod 결과만.",
+          "items": {
+            "type": "object",
+            "required": ["points"],
+            "properties": {
+              "points": {
+                "type": "array",
+                "description": "선 좌표 배열 [{lat, lon}, ...]. 최소 2 개.",
+                "items": {
+                  "type": "object",
+                  "required": ["lat", "lon"],
+                  "properties": {
+                    "lat": { "type": "number" },
+                    "lon": { "type": "number" }
+                  }
+                }
+              },
+              "color": {
+                "type": ["string", "null"],
+                "description": "선 색상. 기본 red (태풍 경로 영역). hex / 색이름 박음."
+              },
+              "weight": {
+                "type": ["number", "null"],
+                "description": "선 굵기 px. 기본 3."
+              },
+              "style": {
+                "type": ["string", "null"],
+                "enum": ["solid", "dashed", null],
+                "description": "solid(실선, 기본) / dashed(점선 — 예상 경로 영역)."
+              },
+              "label": {
+                "type": ["string", "null"],
+                "description": "선 영역 라벨 (옵션) — 예: '태풍 12 호'"
               }
             }
           }

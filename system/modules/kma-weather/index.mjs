@@ -364,11 +364,17 @@ async function main() {
     // typhoon-list: tmFc 단일 (8자리) — fromTmFc/toTmFc 아님
     // typhoon-info: fromTmFc/toTmFc (8자리) — tmFc 12자리 아님
     // typhoon-forecast: tmFc (12자리) + typSeq (typhoonSeq 아님)
+    // 태풍 NO_DATA 영역 처리 — 한국 영역 태풍 시즌 7~10 월 중심. 5~6 월 / 11~3 월 = 통보문 0 건 정공.
+    // 옛 = outErr 박은 영역 → AI 입장 "에러" 해석 → 사용자에게 잘못된 안내. 정공 = 빈 items 박는 영역.
+    // 기상청 API 영역 NO_DATA = resultCode='03' + resultMsg='NO_DATA' (callApi line 169).
+    const isNoData = (r) => !r.ok && r.errorKey === 'error.api_error' && r.errorParams?.code === '03';
+
     if (action === 'typhoon-list') {
       const t = tmFc || todayYmd();
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonInfoList', {
         numOfRows: limit, pageNo: 1, tmFc: t,
       });
+      if (isNoData(r)) return out(true, { items: [], tmFc: t, note: '발표시각 당일 태풍 통보문 박지 못한 영역 (한국 영역 태풍 시즌 = 7~10 월 중심)' });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, tmFc: t });
     }
@@ -379,6 +385,7 @@ async function main() {
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonInfo', {
         numOfRows: limit, pageNo: 1, fromTmFc: fromYmd, toTmFc: toYmd,
       });
+      if (isNoData(r)) return out(true, { items: [], fromTmFc: fromYmd, toTmFc: toYmd, note: '본 기간 태풍 통보문 박지 못한 영역' });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items });
     }
@@ -389,6 +396,7 @@ async function main() {
       const r = await callApi(serviceKey, '/TyphoonInfoService/getTyphoonFcst', {
         numOfRows: limit, pageNo: 1, tmFc, typSeq: typhoonNo,
       });
+      if (isNoData(r)) return out(true, { items: [], tmFc, typhoonNo, note: '본 태풍 박힌 예상 정보 박지 못한 영역' });
       if (!r.ok) return outErr(r.errorKey, r.errorParams);
       return out(true, { items: r.items, tmFc, typhoonNo });
     }
