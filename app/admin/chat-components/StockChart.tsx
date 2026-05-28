@@ -363,7 +363,7 @@ export default function StockChart({ symbol, title, data, indicators = ['MA5', '
   const hoverX = hoverIdx != null ? xs[hoverIdx] : null;
 
   return (
-    <div className="flex flex-col gap-4 bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm">
+    <div className="flex flex-col gap-2.5 bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 shadow-sm">
       {/* 헤더 */}
       <div className="flex items-start justify-between flex-wrap gap-2">
         <div className="flex flex-col">
