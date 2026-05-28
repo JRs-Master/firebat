@@ -1217,19 +1217,12 @@ function ChartComp({ type = 'bar', data, labels, series: seriesProp, title, subt
 
   if (type === 'pie' || type === 'doughnut') {
     const total = firstSeriesData.reduce((s, v) => s + v, 0) || 1;
-    // 세그먼트 정보 사전 계산 — 호버 툴팁용
+    // 세그먼트 정보 사전 계산 — hover/touch highlight 영역.
     const segments = firstSeriesData.map((v, i) => {
       const pct = (v / total) * 100;
       return { label: labels[i] ?? `#${i}`, value: v, pct, color: pieColors[i % pieColors.length] };
     });
-    let cum = 0;
-    const gradientParts = segments.map(seg => {
-      const start = cum; cum += seg.pct;
-      return `${seg.color} ${start}% ${cum}%`;
-    });
-    const gradient = `conic-gradient(${gradientParts.join(', ')})`;
-
-    return <PieChartInteractive segments={segments} gradient={gradient} titleBlock={titleBlock} unit={unit} showPct={showPct} />;
+    return <PieChartInteractive segments={segments} titleBlock={titleBlock} unit={unit} showPct={showPct} isDoughnut={type === 'doughnut'} />;
   }
 
   // bar chart — single-series 만 (firstSeriesData 사용).
@@ -1428,32 +1421,101 @@ function BarChartInteractive({ data, labels, titleBlock, unit: _unit, showValues
 }
 
 // 파이/도넛 차트 호버 인터랙션 분리 — 클라이언트 상태 보유
-function PieChartInteractive({ segments, gradient, titleBlock, unit, showPct = true }: {
+function PieChartInteractive({ segments, titleBlock, unit, showPct = true, isDoughnut = false }: {
   segments: Array<{ label: string; value: number; pct: number; color: string }>;
-  gradient: string;
   titleBlock: React.ReactNode;
   unit?: string;
   showPct?: boolean;
+  isDoughnut?: boolean;
 }) {
-  // 툴팁 제거 (v0.1, 2026-04-22) — legend 에 label + value + pct 이미 표시됨.
-  // tooltip 은 derived 계산 (pct toFixed 등) 이 AI 잘못된 데이터를 증폭시킴.
+  // hover/touch highlight 영역 — PC hover + 모바일 tap 양쪽 같은 activeIndex state 사용.
+  // SVG path 영역으로 박아 slice 영역 hover 박힘 (옛 conic-gradient 영역 = 못 박은 영역).
+  const [active, setActive] = React.useState<number | null>(null);
+
+  // SVG arc path 영역 계산.
+  const SIZE = 160;
+  const CENTER = SIZE / 2;
+  const RADIUS = 76;
+  const INNER_RADIUS = isDoughnut ? 44 : 0;
+  const ACTIVE_RADIUS = RADIUS + 6; // hover 시 살짝 튀어나옴
+
+  // 누적 각도 영역 — 0~2π 영역에서 12시 방향 (-π/2) 시작.
+  let cumAngle = -Math.PI / 2;
+  const arcs = segments.map(seg => {
+    const angle = (seg.pct / 100) * Math.PI * 2;
+    const a0 = cumAngle;
+    const a1 = cumAngle + angle;
+    cumAngle = a1;
+    return { ...seg, a0, a1 };
+  });
+
+  /** SVG path d 영역 — arc 영역. r 영역 박은 outer radius 사용 (active 영역 = 더 큰 r). */
+  const arcPath = (a0: number, a1: number, r: number, ri = 0) => {
+    const largeArc = a1 - a0 > Math.PI ? 1 : 0;
+    const x0 = CENTER + Math.cos(a0) * r;
+    const y0 = CENTER + Math.sin(a0) * r;
+    const x1 = CENTER + Math.cos(a1) * r;
+    const y1 = CENTER + Math.sin(a1) * r;
+    if (ri > 0) {
+      const xi0 = CENTER + Math.cos(a0) * ri;
+      const yi0 = CENTER + Math.sin(a0) * ri;
+      const xi1 = CENTER + Math.cos(a1) * ri;
+      const yi1 = CENTER + Math.sin(a1) * ri;
+      return `M ${x0} ${y0} A ${r} ${r} 0 ${largeArc} 1 ${x1} ${y1} L ${xi1} ${yi1} A ${ri} ${ri} 0 ${largeArc} 0 ${xi0} ${yi0} Z`;
+    }
+    return `M ${CENTER} ${CENTER} L ${x0} ${y0} A ${r} ${r} 0 ${largeArc} 1 ${x1} ${y1} Z`;
+  };
+
   return (
     <div className="space-y-3">
       {titleBlock}
       <div className="flex items-center justify-center gap-6">
-        <div
-          className="relative w-40 h-40 rounded-full shadow-sm border border-gray-100"
-          style={{ background: gradient }}
-        />
+        <svg
+          width={SIZE}
+          height={SIZE}
+          viewBox={`0 0 ${SIZE} ${SIZE}`}
+          className="drop-shadow-sm shrink-0"
+          // 모바일 영역 — pie 외부 박은 영역 터치 시 active 해제.
+          onTouchEnd={() => { /* slice onTouchStart 영역에서 박은 active 영역 유지 — 외부 박은 영역에서만 해제 */ }}
+        >
+          {arcs.map((arc, i) => {
+            const isActive = active === i;
+            const r = isActive ? ACTIVE_RADIUS : RADIUS;
+            return (
+              <path
+                key={i}
+                d={arcPath(arc.a0, arc.a1, r, INNER_RADIUS)}
+                fill={arc.color}
+                stroke="white"
+                strokeWidth={1.5}
+                opacity={active === null || isActive ? 1 : 0.55}
+                style={{ cursor: 'pointer', transition: 'opacity 0.15s' }}
+                onMouseEnter={() => setActive(i)}
+                onMouseLeave={() => setActive(null)}
+                onTouchStart={(e) => { e.preventDefault(); setActive(active === i ? null : i); }}
+              />
+            );
+          })}
+        </svg>
         <div className="space-y-1.5">
-          {segments.map((seg, i) => (
-            <div key={i} className="flex items-center gap-2 text-sm px-1 py-0.5">
-              <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: seg.color }} />
-              <span className="text-gray-700">{seg.label}</span>
-              <span className="text-gray-500 ml-2">{seg.value.toLocaleString('ko-KR')}{unit || ''}</span>
-              {showPct && <span className="text-gray-400 ml-auto">{seg.pct.toFixed(1)}%</span>}
-            </div>
-          ))}
+          {segments.map((seg, i) => {
+            const isActive = active === i;
+            const dim = active !== null && !isActive;
+            return (
+              <div
+                key={i}
+                className={`flex items-center gap-2 text-sm px-2 py-1 rounded transition-all cursor-pointer ${isActive ? 'bg-gray-100 font-semibold' : ''} ${dim ? 'opacity-50' : ''}`}
+                onMouseEnter={() => setActive(i)}
+                onMouseLeave={() => setActive(null)}
+                onTouchStart={() => setActive(active === i ? null : i)}
+              >
+                <span className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: seg.color }} />
+                <span className="text-gray-700">{seg.label}</span>
+                <span className="text-gray-500 ml-2">{seg.value.toLocaleString('ko-KR')}{unit || ''}</span>
+                {showPct && <span className="text-gray-400 ml-auto">{seg.pct.toFixed(1)}%</span>}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
