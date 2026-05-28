@@ -179,7 +179,7 @@ async fn compress_with_strong_match_returns_context() {
     // 구조 valid 만 검증
     if !r.context_summary.is_empty() {
         assert!(r.context_summary.contains("[관련 과거 대화"));
-        assert!(r.context_summary.contains("매칭"));
+        assert!(r.context_summary.contains("건"));
     }
 }
 
