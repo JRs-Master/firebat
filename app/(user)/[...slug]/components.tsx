@@ -1882,6 +1882,24 @@ function markerDeviceScale(): number {
   return (typeof window !== 'undefined' && window.innerWidth >= 640) ? 1.25 : 1.0;
 }
 
+/** 카테고리 마커 핀 — 표준 지도 핀(아래 뾰족 + 위 둥근 머리, 흰 바탕 + slate 테두리) 안에 이모지.
+ *  끝(tip)이 좌표 지점을 가리킴 (anchor=bottom / offset=tip). data URI 반환. 크기 w × round(w*1.32). */
+function buildPinSvgUrl(emoji: string, w: number): string {
+  const r = w / 2 - 1.5;
+  const cx = w / 2;
+  const cy = r + 1.5;
+  const h = Math.round(w * 1.32);
+  const tipY = h - 0.5;
+  // 머리 원 + 아래로 모이는 tail (teardrop): bottom tip → 왼쪽 → 머리 원 arc → 오른쪽 → tip.
+  const path = `M ${cx} ${tipY} C ${cx - r * 0.55} ${cy + r * 1.05}, ${cx - r} ${cy + r * 0.35}, ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} C ${cx + r} ${cy + r * 0.35}, ${cx + r * 0.55} ${cy + r * 1.05}, ${cx} ${tipY} Z`;
+  const fontSize = Math.round(r * 1.0);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`
+    + `<path d="${path}" fill="white" stroke="#64748b" stroke-width="1.5"/>`
+    + `<text x="${cx}" y="${cy}" font-size="${fontSize}" text-anchor="middle" dominant-baseline="central">${emoji}</text>`
+    + `</svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+}
+
 /** 최대풍속 (m/s) → 기상청 공식 태풍 강도 단계 색 (범례 일치).
  *  강도1 약(17~24) 초록 → 강도2 중(25~32) 파랑 → 강도3 강(33~43) 노랑 → 강도4 매우강(44~53) 주황
  *  → 강도5 초강력(54+) 빨강. 17 미만 = 열대저압부(TD) 회색. windSpeed 없으면 null (caller 가 color fallback). */
@@ -2015,8 +2033,10 @@ function buildMarkerEl(m: MapMarker): HTMLDivElement {
     const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
     el.innerHTML = `<img src="${typhoonSvgUrl(size, fColor, typhoonGradeNum(m.windSpeed))}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
-    const size = markerPixelSize(m.size, true);
-    el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;width:${size}px;height:${size}px;font-size:${Math.round(size * 0.7)}px;line-height:1;">${MARKER_ICON_EMOJI[m.icon]}</div>`;
+    // 표준 핀(아래 뾰족 + 둥근 머리)에 이모지 — 지도 위에서 또렷. 끝이 좌표 지점(anchor=bottom).
+    const headW = Math.round(markerPixelSize(m.size ?? 'medium', true) * markerDeviceScale());
+    const h = Math.round(headW * 1.32);
+    el.innerHTML = `<img src="${buildPinSvgUrl(MARKER_ICON_EMOJI[m.icon], headW)}" width="${headW}" height="${h}" style="display:block;filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3))"/>`;
   } else {
     const color = colorHex(m.color, '#ef4444');
     const size = markerPixelSize(m.size, false);
@@ -2165,12 +2185,11 @@ function MapComp({
             const url = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
             return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(size, size), { offset: new w.kakao.maps.Point(size/2, size/2) });
           };
-          const makeEmojiMarkerImage = (emoji: string, size: number) => {
-            const cx = size / 2;
-            const fontSize = Math.round(size * 0.7);
-            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><text x="${cx}" y="${cx}" font-size="${fontSize}" text-anchor="middle" dominant-baseline="central">${emoji}</text></svg>`;
-            const url = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
-            return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(size, size), { offset: new w.kakao.maps.Point(cx, cx) });
+          const makeEmojiMarkerImage = (emoji: string, headW: number) => {
+            // 표준 핀(아래 뾰족 + 둥근 머리)에 이모지. 끝(tip)이 좌표 지점 → offset = (headW/2, h).
+            const h = Math.round(headW * 1.32);
+            const url = buildPinSvgUrl(emoji, headW);
+            return new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(headW, h), { offset: new w.kakao.maps.Point(headW / 2, h) });
           };
           const makeDataUriImage = (url: string, size: number) =>
             new w.kakao.maps.MarkerImage(url, new w.kakao.maps.Size(size, size), { offset: new w.kakao.maps.Point(size / 2, size / 2) });
@@ -2347,7 +2366,9 @@ function MapComp({
         });
         // markers — maplibregl.Marker (HTML element). style load 무관 즉시 추가 OK.
         for (const m of safeMarkers) {
-          const marker = new ml.Marker({ element: buildMarkerEl(m) }).setLngLat([m.lon, m.lat]).addTo(map);
+          // 카테고리 핀은 anchor=bottom (끝이 좌표 지점). 그 외(태풍 소용돌이·원)는 center.
+          const isPin = !!(m.icon && MARKER_ICON_EMOJI[m.icon]);
+          const marker = new ml.Marker({ element: buildMarkerEl(m), anchor: isPin ? 'bottom' : 'center' }).setLngLat([m.lon, m.lat]).addTo(map);
           // popup — m.popup (HTML 그대로) 우선, 없으면 m.label → 우리식 카드 (헤더 + 라벨:값 본문).
           const cardHtml = m.popup
             ? `<div style="padding:9px 13px;font-size:12px;line-height:1.5;">${sanitizePopupHtml(m.popup)}</div>`
