@@ -1293,7 +1293,9 @@ export function ConsolePage({ hubContext }: { hubContext?: HubContext }) {
                 />
               );
             })}
-            <div className="h-48 sm:h-64 shrink-0 pointer-events-none" />
+            {/* 하단 spacer = 입력창 오버레이 높이 ≈. 마지막 메시지가 입력창 바로 위에 오게.
+                모바일 입력창(~130px)에 맞춰 h-36(144). 옛 h-48(192) 은 모바일에서 ~60px 빈 틈 발생. */}
+            <div className="h-36 sm:h-64 shrink-0 pointer-events-none" />
             <div ref={chatEndRef} />
           </div>
         </div>
