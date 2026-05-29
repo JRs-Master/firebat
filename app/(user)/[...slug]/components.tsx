@@ -1877,6 +1877,11 @@ function markerPixelSize(size?: string | null, isEmoji = false): number {
   return base;
 }
 
+/** 태풍 마커 디바이스 배율 — 모바일은 그대로(잘 보임), PC(≥640px)는 지도가 커서 마커가 작아 보여 확대. */
+function markerDeviceScale(): number {
+  return (typeof window !== 'undefined' && window.innerWidth >= 640) ? 1.5 : 1.0;
+}
+
 /** 최대풍속 (m/s) → 기상청 공식 태풍 강도 단계 색 (범례 일치).
  *  강도1 약(17~24) 초록 → 강도2 중(25~32) 파랑 → 강도3 강(33~43) 노랑 → 강도4 매우강(44~53) 주황
  *  → 강도5 초강력(54+) 빨강. 17 미만 = 열대저압부(TD) 회색. windSpeed 없으면 null (caller 가 color fallback). */
@@ -2014,18 +2019,45 @@ function circlePolygonCoords(lat: number, lon: number, radiusM: number, points =
   return coords;
 }
 
+/** cone 을 MultiPolygon(원들 + 구간 사다리꼴)의 union 으로 — 단일 경계 polygon 의 자기 교차(fold)
+ *  회피. 각 점 = 확률반경 원, 인접 점 사이 = 수직 offset 사다리꼴. fill nonzero 라 겹쳐도 균일 채움 →
+ *  급격히 꺾여도 fold 없이 부드러운 tube. 끝/시작 = 원이라 자동 둥근 마감. 외곽선 없이 fill 전용. */
+function coneMultiPolygon(pts: { lat: number; lon: number; radius: number }[]): [number, number][][][] {
+  const polys: [number, number][][][] = [];
+  for (const p of pts) {
+    polys.push([circlePolygonCoords(p.lat, p.lon, p.radius)]);
+  }
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const refLat = (a.lat * Math.PI) / 180;
+    const mLat = 111320, mLon = 111320 * Math.cos(refLat);
+    let dx = (b.lon - a.lon) * mLon, dy = (b.lat - a.lat) * mLat;
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+    const nx = -dy, ny = dx; // 왼쪽 법선 (meter)
+    const off = (p: { lat: number; lon: number }, r: number, sign: number): [number, number] => {
+      const pmLon = 111320 * Math.cos((p.lat * Math.PI) / 180);
+      return [p.lon + (sign * r * nx) / pmLon, p.lat + (sign * r * ny) / mLat];
+    };
+    const lA = off(a, a.radius, 1), lB = off(b, b.radius, 1);
+    const rB = off(b, b.radius, -1), rA = off(a, a.radius, -1);
+    polys.push([[lA, lB, rB, rA, lA]]);
+  }
+  return polys;
+}
+
 /** marker icon → HTML element (MapLibre maplibregl.Marker 의 element). Leaflet divIcon 영역과 동일 로직. */
 function buildMarkerEl(m: MapMarker): HTMLDivElement {
   const el = document.createElement('div');
   el.style.cursor = 'pointer';
   if (m.icon === 'typhoon') {
-    const size = markerPixelSize(m.size ?? 'large', true);
+    const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale()); // 태풍 마커는 크게
     // 색 = 풍속 따라 강도 단계 (windSpeed) 우선, 없으면 AI color / 기본 빨강. 중앙 강도 번호 (1~5).
     const tColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
     el.innerHTML = `<img src="${typhoonSvgUrl(size, tColor, typhoonGradeNum(m.windSpeed))}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon === 'forecast') {
-    // 예상 위치도 현재 위치와 같은 태풍 소용돌이 (크기만 작게 medium). 밋밋한 원 대신.
-    const size = markerPixelSize(m.size ?? 'medium', true);
+    // 예상 위치도 현재 위치와 같은 태풍 소용돌이 (현재보다 약간 작게). 밋밋한 원 대신.
+    const size = Math.round(markerPixelSize(m.size ?? 'medium', true) * markerDeviceScale());
     const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
     el.innerHTML = `<img src="${typhoonSvgUrl(size, fColor, typhoonGradeNum(m.windSpeed))}" width="${size}" height="${size}" style="display:block"/>`;
   } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
@@ -2198,11 +2230,11 @@ function MapComp({
             // icon 분기 — typhoon = 동심원 SVG (네이버 형태) / forecast = 작은 채워진 원 /
             // current·카테고리 = emoji / 그 외 + color = color circle.
             if (m.icon === 'typhoon') {
-              const size = markerPixelSize(m.size ?? 'large', true);
+              const size = Math.round(markerPixelSize(m.size ?? 'large', true) * markerDeviceScale());
               const tColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
               opts.image = makeDataUriImage(typhoonSvgUrl(size, tColor, typhoonGradeNum(m.windSpeed)), size);
             } else if (m.icon === 'forecast') {
-              const size = markerPixelSize(m.size ?? 'medium', true);
+              const size = Math.round(markerPixelSize(m.size ?? 'medium', true) * markerDeviceScale());
               const fColor = typhoonColorByWind(m.windSpeed) ?? colorHex(m.color, '#dc2626');
               opts.image = makeDataUriImage(typhoonSvgUrl(size, fColor, typhoonGradeNum(m.windSpeed)), size);
             } else if (m.icon && MARKER_ICON_EMOJI[m.icon]) {
@@ -2279,10 +2311,13 @@ function MapComp({
           style: 'https://tiles.openfreemap.org/styles/bright',
           center: [finalCenter.lon, finalCenter.lat],
           zoom: Math.max(1, finalZoom - 1),
-          // attribution = 항상 접힘(ⓘ 아이콘). compact 미지정 시 넓은 화면에서 자동 펼침 → 강제 접음.
-          attributionControl: { compact: true },
+          // 기본 attribution 끄고 아래서 compact 명시 — 넓은 화면 자동 펼침 차단 (생성자 옵션만으론 일부
+          // 빌드에서 펼쳐진 채 뜨던 것 확실히 접음).
+          attributionControl: false,
         });
         mapInstance = map;
+        // attribution = 항상 ⓘ 접힘 (OpenFreeMap 표기 의무 준수하되 펼침 X).
+        try { map.addControl(new ml.AttributionControl({ compact: true }), 'bottom-right'); } catch { /* 무시 */ }
         resizeObserver = new ResizeObserver(() => map.resize());
         resizeObserver.observe(container);
         // +/- 줌 버튼(NavigationControl) 미표시 — 휠/핀치 줌으로 충분, 화면 깔끔하게.
@@ -2290,10 +2325,15 @@ function MapComp({
           // lang 분기 — symbol layer text-field = name:{lang} 우선 → name:latin → name (현지어) fallback.
           // 한국어 lang = 동아시아 전역 한글 라벨 (네이버처럼). 영어 lang = name:latin (영문).
           for (const layer of map.getStyle().layers) {
-            // 행정·해상 경계선 (국경/주경계/분쟁경계/점선 포함) 숨김 — 태풍/날씨 지도에 불필요 + 뱃길로 오인.
-            if (layer.type === 'line' && /bound|admin|disput/i.test(layer.id)) {
-              try { map.setLayoutProperty(layer.id, 'visibility', 'none'); } catch { /* 무시 */ }
-              continue;
+            // 행정·해상 경계선 숨김 — 태풍/날씨 지도에 불필요 + 뱃길로 오인. id 매칭(국경/주경계/분쟁) +
+            // 점선(line-dasharray) 라인 전부 숨김 (경계선은 거의 점선, id 가 달라도 dasharray 로 포착).
+            if (layer.type === 'line') {
+              let dashed = false;
+              try { dashed = Array.isArray(map.getPaintProperty(layer.id, 'line-dasharray')); } catch { /* 무시 */ }
+              if (dashed || /bound|admin|disput/i.test(layer.id)) {
+                try { map.setLayoutProperty(layer.id, 'visibility', 'none'); } catch { /* 무시 */ }
+                continue;
+              }
             }
             const lo = layer.layout as Record<string, unknown> | undefined;
             if (layer.type === 'symbol' && lo && 'text-field' in lo) {
@@ -2315,12 +2355,12 @@ function MapComp({
           // 네이버식 = 크기(강풍) + 확률(70%) 2개 겹침. 색은 각 cone.color (크기 cyan / 확률 indigo).
           // circles 보다 먼저 그려 아래 깔림.
           safeCones.forEach((cn, ci) => {
-            const coords = conePolygonCoords(cn.points);
-            if (coords.length >= 4) {
+            const mp = coneMultiPolygon(cn.points);
+            if (mp.length >= 2) {
               const coneColor = colorHex(cn.color, '#6366f1');
-              map.addSource(`fb-cone-${ci}`, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [coords] } } });
-              map.addLayer({ id: `fb-cone-fill-${ci}`, type: 'fill', source: `fb-cone-${ci}`, paint: { 'fill-color': coneColor, 'fill-opacity': 0.15 } });
-              map.addLayer({ id: `fb-cone-line-${ci}`, type: 'line', source: `fb-cone-${ci}`, paint: { 'line-color': coneColor, 'line-width': 1, 'line-opacity': 0.4 } });
+              // MultiPolygon(원+사다리꼴 union) fill 전용 — 외곽선 없음(내부 경계 노출·fold 방지).
+              map.addSource(`fb-cone-${ci}`, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: mp } } });
+              map.addLayer({ id: `fb-cone-fill-${ci}`, type: 'fill', source: `fb-cone-${ci}`, paint: { 'fill-color': coneColor, 'fill-opacity': 0.16 } });
             }
           });
           // circles = 비태풍 영역(강남 반경 등). 색은 c.color (기본 indigo). 강도색은 마커만. 점선 [4,3].

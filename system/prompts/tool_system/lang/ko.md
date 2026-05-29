@@ -186,7 +186,7 @@ render({
         {"lat": 26.8, "lon": 126.9, "icon": "forecast", "windSpeed": 38, "label": "8/15 06시\n오키나와 남남서 해상\n중심기압: 975 hPa\n최대풍속: 38 m/s"},
         {"lat": 29.5, "lon": 128.5, "icon": "forecast", "windSpeed": 35, "label": "8/16 06시\n제주 남쪽 해상\n중심기압: 980 hPa\n최대풍속: 35 m/s"}
       ],
-      "lines": [{"points":[{"lat":24.5,"lon":127.1},{"lat":26.8,"lon":126.9},{"lat":29.5,"lon":128.5}], "color":"#6366f1", "style":"solid", "label":"예상 경로"}],
+      "lines": [{"points":[{"lat":24.5,"lon":127.1},{"lat":26.8,"lon":126.9},{"lat":29.5,"lon":128.5}], "color":"#6366f1", "weight":2, "style":"solid", "label":"예상 경로"}],
       "cone": [
         {"points":[{"lat":24.5,"lon":127.1,"radius":330000},{"lat":26.8,"lon":126.9,"radius":350000},{"lat":29.5,"lon":128.5,"radius":380000}], "color":"#06b6d4"},
         {"points":[{"lat":24.5,"lon":127.1,"radius":40000},{"lat":26.8,"lon":126.9,"radius":180000},{"lat":29.5,"lon":128.5,"radius":290000}], "color":"#6366f1"}
@@ -199,7 +199,7 @@ render({
   **cone 2개 = 네이버식 정공** (cone 은 배열) — 크기 cone(강풍반경 rad15 × 1000, color `#06b6d4` cyan, 넓은
   배경) + 확률 cone(70% 확률반경 radPr × 1000, color `#6366f1` indigo, 예측 오차). 둘 다 경로 전체 감싸는
   부드러운 영역 (현재 좁음 → 마지막 넓음, 끝은 확률반경만큼 반원 마감). 두 영역 겹쳐 = 네이버 태풍 지도.
-  예상 경로 선(lines)은 cone 과 같은 indigo `#6366f1` solid 권장. circles 는 비태풍 영역(강남 반경 등) 전용 —
+  예상 경로 선(lines)은 cone 과 같은 indigo `#6366f1` solid + 얇게(weight 2) 권장. circles 는 비태풍 영역(강남 반경 등) 전용 —
   태풍은 cone 2개로 충분 (확률 cone 의 둥근 끝이 곧 마지막 확률반경).
 
   **markers[].windSpeed (태풍 강도 색·번호) = 마커 전용** — typhoon/forecast 마커에만 최대풍속 (m/s, kma
