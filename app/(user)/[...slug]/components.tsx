@@ -920,8 +920,17 @@ function BadgeComp({ text, color = 'blue' }: { text: string; color?: string }) {
     purple: 'bg-purple-100 text-purple-700',
     gray: 'bg-gray-100 text-gray-700',
     orange: 'bg-orange-100 text-orange-700',
+    // 의미값 (variant) → 색 매핑 — AI 가 success/warning 등으로 보내도 대응.
+    success: 'bg-green-100 text-green-700',
+    warning: 'bg-amber-100 text-amber-700',
+    error: 'bg-red-100 text-red-700',
+    danger: 'bg-red-100 text-red-700',
+    info: 'bg-blue-100 text-blue-700',
+    neutral: 'bg-gray-100 text-gray-700',
+    amber: 'bg-amber-100 text-amber-700',
+    slate: 'bg-slate-100 text-slate-700',
   };
-  const cls = colors[color] ?? colors.blue;
+  const cls = colors[(color || 'blue').toLowerCase()] ?? colors.blue;
 
   return (
     <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${cls}`}>
@@ -1151,7 +1160,16 @@ function normalizeChartData(
   data: number[] | Record<string, number[]> | unknown,
   explicitSeries?: ChartSeries[]
 ): ChartSeries[] {
-  if (Array.isArray(explicitSeries) && explicitSeries.length > 0) return explicitSeries;
+  // explicitSeries — {name,values}(우리식) 또는 {label,data}(Chart.js datasets) 둘 다 흡수.
+  if (Array.isArray(explicitSeries) && explicitSeries.length > 0) {
+    return explicitSeries
+      .map((s) => {
+        const any = s as { name?: string; label?: string; values?: number[]; data?: number[]; color?: string };
+        const values = Array.isArray(any.values) ? any.values : Array.isArray(any.data) ? any.data : [];
+        return { name: any.name ?? any.label ?? '', values, color: any.color };
+      })
+      .filter((s) => s.values.length > 0);
+  }
   if (Array.isArray(data)) return [{ name: '', values: data as number[] }];
   if (data && typeof data === 'object') {
     return Object.entries(data as Record<string, unknown>)

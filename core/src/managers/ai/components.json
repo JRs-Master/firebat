@@ -136,16 +136,13 @@
       "type": "object",
       "required": [
         "chartType",
-        "labels",
-        "data",
-        "title"
+        "labels"
       ],
       "additionalProperties": false,
       "synonyms": {
         "type": "chartType",
-        "series": "data",
-        "datasets": "data",
-        "values": "data"
+        "values": "data",
+        "datasets": "series"
       },
       "properties": {
         "chartType": {
@@ -164,9 +161,23 @@
           }
         },
         "data": {
-          "type": "array",
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "단일 series 수치 배열 (number[]). 다중 series 면 data 대신 series 사용.",
           "items": {
             "type": "number"
+          }
+        },
+        "series": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "다중 series. 각 항목 = { label(또는 name), data(또는 values): number[] }. Chart.js datasets 형식도 그대로 허용.",
+          "items": {
+            "type": "object"
           }
         },
         "title": {
@@ -241,17 +252,25 @@
     "propsSchema": {
       "type": "object",
       "required": [
-        "text",
-        "color"
+        "text"
       ],
       "additionalProperties": false,
+      "synonyms": {
+        "variant": "color",
+        "kind": "color",
+        "style": "color",
+        "type": "color"
+      },
       "properties": {
         "text": {
           "type": "string"
         },
         "color": {
-          "type": "string",
-          "description": "색상 (blue, red, green, amber, slate 등)"
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "색상/상태. 색 이름(blue/red/green/yellow/purple/gray/orange) 또는 의미값(success/warning/error/danger/info/neutral). 생략 시 기본 blue."
         }
       }
     }
