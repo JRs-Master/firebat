@@ -273,7 +273,7 @@ async fn handle_rpc(
                     keys.into_iter().take(15).collect()
                 };
                 let msg = format!(
-                    "'{}' 도구는 존재하지 않습니다. 'TaskCreate' / 'TaskUpdate' / 'task_create' / 'add_task' 같은 영역은 hallucinate 도구 — 박지 마라. 실제 도구: 예약 = schedule_task / 즉시 실행 = run_task / plan 카드 = propose_plan. 'tools/list' 영역 박은 도구만 사용. 일부 사용 가능 도구: {}",
+                    "'{}' 도구는 존재하지 않습니다. 'TaskCreate' / 'TaskUpdate' / 'task_create' / 'add_task' 같은 이름은 hallucinate 도구 — 호출하지 마세요. 실제 도구: 예약 = schedule_task / 즉시 실행 = run_task / plan 카드 = propose_plan. 'tools/list' 에 있는 도구만 사용. 일부 사용 가능 도구: {}",
                     name,
                     available_preview.join(", ")
                 );
@@ -1605,11 +1605,11 @@ pub async fn register_builtin_tools(state: &Arc<McpServerState>, deps: BuiltinDe
     // core/src/tool_registry.rs 의 schedule_task schema 와 일관성 유지.
     state.register(McpTool {
         name: "schedule_task".into(),
-        description: "크론 / 일회성 작업 예약. trigger 시각은 cronTime(반복: '0 8 * * *' 형태) / runAt(1회 ISO 8601 + timezone offset, 예: '2026-05-25T14:35:00+09:00') / delaySec(N초 후) 중 정확히 하나의 field 를 직접 박는다. 'mode' 같은 별도 field 박지 마라 — schema 에 없다.".into(),
+        description: "크론 / 일회성 작업 예약. trigger 시각은 cronTime(반복: '0 8 * * *' 형태) / runAt(1회 ISO 8601 + timezone offset, 예: '2026-05-25T14:35:00+09:00') / delaySec(N초 후) 중 정확히 하나의 field 만 지정한다. 'mode' 같은 별도 field 는 넣지 마라 — schema 에 없다.".into(),
         input_schema: schema_object(serde_json::json!({
-            "jobId": {"type": "string", "description": "고유 job id (이미 박힌 jobId 면 덮어쓰기)"},
+            "jobId": {"type": "string", "description": "고유 job id (이미 있는 jobId 면 덮어쓰기)"},
             "targetPath": {"type": "string", "description": "agent | <pipeline 식별자>"},
-            "cronTime": {"type": "string", "description": "반복 cron 표현식 (분 시 일 월 요일). 없으면 runAt/delaySec 중 하나 박음"},
+            "cronTime": {"type": "string", "description": "반복 cron 표현식 (분 시 일 월 요일). 없으면 runAt/delaySec 중 하나 지정"},
             "runAt": {"type": "string", "description": "1회 실행 ISO 8601 (반드시 timezone offset 포함, 예: +09:00)"},
             "delaySec": {"type": "integer", "description": "N 초 후 1회 실행"},
             "title": {"type": "string"},
@@ -1916,7 +1916,7 @@ async fn dispatch_method(
                     keys.into_iter().take(15).collect()
                 };
                 let msg = format!(
-                    "'{}' 도구는 존재하지 않습니다. 'TaskCreate' / 'TaskUpdate' / 'task_create' / 'add_task' 같은 영역은 hallucinate 도구 — 박지 마라. 실제 도구: 예약 = schedule_task / 즉시 실행 = run_task / plan 카드 = propose_plan. 'tools/list' 영역 박은 도구만 사용. 일부 사용 가능 도구: {}",
+                    "'{}' 도구는 존재하지 않습니다. 'TaskCreate' / 'TaskUpdate' / 'task_create' / 'add_task' 같은 이름은 hallucinate 도구 — 호출하지 마세요. 실제 도구: 예약 = schedule_task / 즉시 실행 = run_task / plan 카드 = propose_plan. 'tools/list' 에 있는 도구만 사용. 일부 사용 가능 도구: {}",
                     name,
                     available_preview.join(", ")
                 );

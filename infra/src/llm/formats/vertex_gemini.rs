@@ -408,7 +408,7 @@ impl FormatHandler for VertexGeminiHandler {
             .filter(|s| !s.is_empty())
             .ok_or_else(|| {
                 format!(
-                    "Vertex SA JSON 미설정 — Vault `{}` 박으세요 (Service Account JSON 전체)",
+                    "Vertex SA JSON 미설정 — Vault `{}` 에 넣으세요 (Service Account JSON 전체)",
                     config.api_key_vault_key.as_deref().unwrap_or("(미정의)")
                 )
             })?;
@@ -460,7 +460,7 @@ impl FormatHandler for VertexGeminiHandler {
             .filter(|s| !s.is_empty())
             .ok_or_else(|| {
                 format!(
-                    "Vertex SA JSON 미설정 — Vault `{}` 박으세요 (Service Account JSON 전체)",
+                    "Vertex SA JSON 미설정 — Vault `{}` 에 넣으세요 (Service Account JSON 전체)",
                     config.api_key_vault_key.as_deref().unwrap_or("(미정의)")
                 )
             })?;
