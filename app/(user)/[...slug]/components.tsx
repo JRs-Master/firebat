@@ -1972,35 +1972,31 @@ function circlePolygonCoords(lat: number, lon: number, radiusM: number, points =
   return coords;
 }
 
-/** cone = 볼록 조각(각 점 원 + 구간 외접선 사다리꼴)의 union MultiPolygon.
- *  단일 ring envelope 와 달리 전역 자기교차(stray 박스)·fold 가 원천적으로 없음 (조각마다 볼록).
- *  사다리꼴 변 = 외접선(두 원에 접함)이라 원이 옆으로 안 튀어나옴 → 구슬 꿰기 없음.
- *  원이 양 끝 둥근 마감 + 꺾이는 바깥 코너 라운딩 (첫 점 원 = 현재 위치 뒤 반원). fill nonzero 균일 채움. */
+/** cone = 경로를 ~25km 간격으로 촘촘히 보간해 작은 원을 빽빽이 깐 union MultiPolygon.
+ *  원들이 거의 겹쳐(간격 ≪ 반경) union 이 매끈한 tube → 구슬 꿰기 0 (구슬은 원이 듬성듬성할 때만).
+ *  외접선 사다리꼴 방식은 반지름이 점 간격보다 빨리 커지면 degenerate → 원만 남아 구슬됨 → 폐기.
+ *  조각이 전부 볼록 원이라 stray 박스/fold 도 없음. 첫·끝 원 = 현재 뒤 / 마지막 앞 둥근 마감. */
 function coneMultiPolygon(pts: { lat: number; lon: number; radius: number }[]): [number, number][][][] {
   const polys: [number, number][][][] = [];
-  for (const p of pts) {
-    polys.push([circlePolygonCoords(p.lat, p.lon, p.radius)]);
-  }
   const mLat = 111320;
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
-    const dx0 = (b.lon - a.lon) * mLat * Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
-    const dy0 = (b.lat - a.lat) * mLat;
-    const d = Math.hypot(dx0, dy0) || 1;
-    const ux = dx0 / d, uy = dy0 / d;
-    const nx = -uy, ny = ux; // 왼쪽 법선
-    const beta = Math.asin(Math.max(-1, Math.min(1, (b.radius - a.radius) / d))); // 외접선 기울기
-    const cb = Math.cos(beta), sb = Math.sin(beta);
-    const qLx = nx * cb - ux * sb, qLy = ny * cb - uy * sb;   // 왼쪽 접점 방향
-    const qRx = -nx * cb - ux * sb, qRy = -ny * cb - uy * sb; // 오른쪽 접점 방향
-    const offDir = (p: { lat: number; lon: number }, r: number, qx: number, qy: number): [number, number] => {
-      const pmLon = mLat * Math.cos((p.lat * Math.PI) / 180);
-      return [p.lon + (r * qx) / pmLon, p.lat + (r * qy) / mLat];
-    };
-    const lA = offDir(a, a.radius, qLx, qLy), lB = offDir(b, b.radius, qLx, qLy);
-    const rA = offDir(a, a.radius, qRx, qRy), rB = offDir(b, b.radius, qRx, qRy);
-    polys.push([[lA, lB, rB, rA, lA]]);
+    const dx = (b.lon - a.lon) * mLat * Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+    const dy = (b.lat - a.lat) * mLat;
+    const d = Math.hypot(dx, dy) || 1;
+    const steps = Math.max(6, Math.min(48, Math.round(d / 25000))); // ~25km 간격 (간격 ≪ 반경 → 매끈)
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      polys.push([circlePolygonCoords(
+        a.lat + (b.lat - a.lat) * t,
+        a.lon + (b.lon - a.lon) * t,
+        a.radius + (b.radius - a.radius) * t,
+        28,
+      )]);
+    }
   }
+  const last = pts[pts.length - 1];
+  polys.push([circlePolygonCoords(last.lat, last.lon, last.radius, 28)]);
   return polys;
 }
 
