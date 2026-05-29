@@ -479,7 +479,9 @@ export function useChat(aiModel: string, onRefresh: () => void, hubContext?: Use
   useEffect(() => {
     if (!activeConvId || !fallbackFingerprint) return;
     let attempts = 0;
-    const MAX_ATTEMPTS = 36;  // 5s × 36 = 3분
+    // 5s × 120 = 10분 — CLI 플랜 실행(도구 16+ 호출)은 watchdog(2분) 넘겨 false-timeout 떠도
+    // 서버는 계속 돌아 DB 저장하므로, 긴 실행까지 답이 자동 복구되게 폴링 창 넉넉히 (옛 3분 → 부족).
+    const MAX_ATTEMPTS = 120;
     const interval = setInterval(() => {
       attempts++;
       void refreshConversations();
