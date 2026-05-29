@@ -1455,9 +1455,9 @@ function PieChartInteractive({ segments, titleBlock, unit, showPct = true, isDou
   // SVG arc path 영역 계산.
   const SIZE = 160;
   const CENTER = SIZE / 2;
-  const RADIUS = 76;
-  const INNER_RADIUS = isDoughnut ? 44 : 0;
-  const ACTIVE_RADIUS = RADIUS + 6; // hover 시 살짝 튀어나옴
+  const RADIUS = 70; // pop-out(+7) 이 viewBox 안 넘게 여유
+  const INNER_RADIUS = isDoughnut ? 40 : 0;
+  const POP = 7; // 선택 조각 바깥으로 튀어나오는 거리
 
   // 누적 각도 영역 — 0~2π 영역에서 12시 방향 (-π/2) 시작.
   let cumAngle = -Math.PI / 2;
@@ -1499,8 +1499,11 @@ function PieChartInteractive({ segments, titleBlock, unit, showPct = true, isDou
           onTouchEnd={() => { /* slice onTouchStart 영역에서 박은 active 영역 유지 — 외부 박은 영역에서만 해제 */ }}
         >
           {arcs.map((arc, i) => {
-            // 사용자 요청 (2026-05-26) — slice 영역 시각 변경 0 (opacity / scale 박지 마라).
-            // hover 박은 영역만 목록 영역 background 박힘. slice 영역은 trigger 역할만.
+            // 선택 조각 = 중심각 방향으로 살짝 pop-out (분리). 다른 조각·범례 글자 이동 0 (translate 만).
+            const isActive = active === i;
+            const mid = (arc.a0 + arc.a1) / 2;
+            const tx = isActive ? Math.cos(mid) * POP : 0;
+            const ty = isActive ? Math.sin(mid) * POP : 0;
             return (
               <path
                 key={i}
@@ -1508,7 +1511,8 @@ function PieChartInteractive({ segments, titleBlock, unit, showPct = true, isDou
                 fill={arc.color}
                 stroke="white"
                 strokeWidth={1.5}
-                style={{ cursor: 'pointer' }}
+                transform={`translate(${tx.toFixed(2)} ${ty.toFixed(2)})`}
+                style={{ cursor: 'pointer', transition: 'transform 0.15s ease' }}
                 onMouseEnter={() => setActive(i)}
                 onMouseLeave={() => setActive(null)}
                 onTouchStart={(e) => { e.preventDefault(); setActive(active === i ? null : i); }}
@@ -1519,13 +1523,12 @@ function PieChartInteractive({ segments, titleBlock, unit, showPct = true, isDou
         <div className="space-y-1.5">
           {segments.map((seg, i) => {
             const isActive = active === i;
-            // font-weight 변경 영역 박지 마라 — bold 박은 영역 = 글자 폭 변경 → row 안 텍스트 이동 발생.
-            // 활성 표시 = background 영역만 박음 (폭 변경 0). 다른 항목 dim 영역도 폐기 — slice 영역
-            // 변경 0 + 다른 항목 변경 0 = 사용자 요청 "선택만 되게" 정공.
+            // font-weight 변경 금지 — bold 면 글자 폭 변경 → row 텍스트 이동. 활성 표시 = background 만
+            // (폭 변경 0). 선택 잘 보이게 bg-slate-200 (옛 gray-100 은 너무 연함). ring/border 도 금지(이동).
             return (
               <div
                 key={i}
-                className={`flex items-center gap-2 text-sm px-2 py-1 rounded cursor-pointer ${isActive ? 'bg-gray-100' : ''}`}
+                className={`flex items-center gap-2 text-sm px-2 py-1 rounded cursor-pointer transition-colors ${isActive ? 'bg-slate-200' : ''}`}
                 onMouseEnter={() => setActive(i)}
                 onMouseLeave={() => setActive(null)}
                 onTouchStart={() => setActive(active === i ? null : i)}
