@@ -36,6 +36,12 @@ concurrency:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  # rust-lld(Rust 1.96 기본 링커)가 candle+gemm 정적 링크된 거대한 테스트 바이너리들을 lld 내부
+  # 멀티스레드(parallelFor)로 동시 링크하다 러너 메모리 고갈 → SIGBUS(core dumped). lld 단일 스레드로
+  # 강제해 parallelFor 크래시 경로를 회피하고 링크 피크 메모리를 낮춘다.
+  RUSTFLAGS: "-Clink-arg=-Wl,--threads=1"
+  # 동시 컴파일/링크 잡 4→2 — 동시에 링크되는 거대 바이너리 수를 줄여 피크 메모리 추가 절감.
+  CARGO_BUILD_JOBS: "2"
 
 jobs:
   rust:
@@ -64,13 +70,9 @@ jobs:
 
       - name: cargo check
         run: cargo check -p firebat-core -p firebat-infra --all-targets
-        env:
-          CARGO_BUILD_JOBS: 4
 
       - name: cargo test (infra)
         run: cargo test -p firebat-infra --tests
-        env:
-          CARGO_BUILD_JOBS: 4
 
   release-binary:
     name: Release binary
@@ -98,8 +100,6 @@ jobs:
 
       - name: cargo build --release
         run: cargo build --release -p firebat-infra --bin firebat-core
-        env:
-          CARGO_BUILD_JOBS: 4
 
       - name: Stage artifact (binary only)
         # artifact = Rust binary 만. system/ (LLM registry + prompts + sysmod) 은 git pull 흐름
