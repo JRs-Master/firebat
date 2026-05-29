@@ -1877,9 +1877,9 @@ function markerPixelSize(size?: string | null, isEmoji = false): number {
   return base;
 }
 
-/** 태풍 마커 디바이스 배율 — 모바일은 그대로(잘 보임), PC(≥640px)는 지도가 커서 마커가 작아 보여 확대. */
+/** 태풍 마커 디바이스 배율 — 모바일은 그대로(잘 보임), PC(≥640px)는 지도가 커서 마커가 작아 보여 약간 확대. */
 function markerDeviceScale(): number {
-  return (typeof window !== 'undefined' && window.innerWidth >= 640) ? 1.5 : 1.0;
+  return (typeof window !== 'undefined' && window.innerWidth >= 640) ? 1.25 : 1.0;
 }
 
 /** 최대풍속 (m/s) → 기상청 공식 태풍 강도 단계 색 (범례 일치).
