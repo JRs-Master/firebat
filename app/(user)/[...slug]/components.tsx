@@ -1975,6 +1975,8 @@ function conePolygonCoords(pts: { lat: number; lon: number; radius: number }[]):
   const right: [number, number][] = [];
   let qL = { x: 0, y: 1 };
   let qR = { x: 0, y: -1 };
+  let qL0 = { x: 0, y: 1 };
+  let qR0 = { x: 0, y: -1 };
   // 세그먼트마다 외접선(external tangent) 접점 방향 q 계산 — 반지름 변화량만큼 접선이 기울어짐.
   for (let i = 0; i < xy.length - 1; i++) {
     const a = xy[i], b = xy[i + 1];
@@ -1986,25 +1988,37 @@ function conePolygonCoords(pts: { lat: number; lon: number; radius: number }[]):
     const nx = -uy, ny = ux; // 진행방향 왼쪽 법선
     qL = { x: nx * cb - ux * sb, y: ny * cb - uy * sb };
     qR = { x: -nx * cb - ux * sb, y: -ny * cb - uy * sb };
+    if (i === 0) { qL0 = qL; qR0 = qR; }
     left.push(toLL(a.x + a.r * qL.x, a.y + a.r * qL.y));
     left.push(toLL(b.x + b.r * qL.x, b.y + b.r * qL.y));
     right.push(toLL(a.x + a.r * qR.x, a.y + a.r * qR.y));
     right.push(toLL(b.x + b.r * qR.x, b.y + b.r * qR.y));
   }
-  // 마지막 원 반원 마감 — left 접점 → 전방(진행방향) → right 접점 호 (반경 = 마지막 확률반경).
+  const steps = 14;
+  // 마지막 원 반원 마감 (전방) — left 접점 → 전방 → right 접점 호 (반경 = 마지막 반경).
   const lp = xy[xy.length - 1];
   const aL = Math.atan2(qL.y, qL.x);
   const aR = Math.atan2(qR.y, qR.x);
   let delta = aR - aL;
-  while (delta > 0) delta -= 2 * Math.PI; // 전방으로 도는 시계방향 호 (음수)
+  while (delta > 0) delta -= 2 * Math.PI; // 전방 시계방향 호
   const cap: [number, number][] = [];
-  const steps = 14;
   for (let s = 1; s < steps; s++) {
     const ang = aL + (delta * s) / steps;
     cap.push(toLL(lp.x + lp.r * Math.cos(ang), lp.y + lp.r * Math.sin(ang)));
   }
-  // left 전진 → 끝 반원 → right 역순 → 시작점 닫힘 (첫 원에서 양 갈래 시작).
-  return [...left, ...cap, ...right.reverse(), left[0]];
+  // 첫 원 반원 마감 (후방) — 현재 위치 뒤쪽 둥글게 (반경 = 첫 반경: 크기 cone 크게 / 확률 cone 작게).
+  const fp = xy[0];
+  const aR0 = Math.atan2(qR0.y, qR0.x);
+  const aL0 = Math.atan2(qL0.y, qL0.x);
+  let dS = aL0 - aR0;
+  while (dS > 0) dS -= 2 * Math.PI; // 후방 시계방향 호
+  const startCap: [number, number][] = [];
+  for (let s = 1; s < steps; s++) {
+    const ang = aR0 + (dS * s) / steps;
+    startCap.push(toLL(fp.x + fp.r * Math.cos(ang), fp.y + fp.r * Math.sin(ang)));
+  }
+  // left 전진 → 끝 반원 → right 역순 → 시작점 뒤 반원 → 닫힘.
+  return [...left, ...cap, ...right.reverse(), ...startCap, left[0]];
 }
 
 /** 원 polygon 좌표 (meter 반경 → N 각형 [lon, lat] 배열). MapLibre circle layer 영역 (meter 단위 X). */
@@ -2017,39 +2031,6 @@ function circlePolygonCoords(lat: number, lon: number, radiusM: number, points =
     coords.push([lon + dLonBase * Math.cos(theta), lat + dLatBase * Math.sin(theta)]);
   }
   return coords;
-}
-
-/** cone 을 MultiPolygon(원들 + 구간 사다리꼴)의 union 으로 — 단일 경계 polygon 의 자기 교차(fold) 회피.
- *  사다리꼴 변은 **외접선**(두 원에 접함, 반지름 변화량 beta 만큼 기울임)이라 원이 옆으로 안 튀어나옴 →
- *  구슬 꿰기(beading) 없이 매끈한 tube. 원은 양 끝 둥근 마감 + 꺾이는 바깥쪽 코너 라운딩 담당. fill nonzero
- *  라 겹쳐도 균일 채움 → 급커브에서도 fold 없음. 외곽선 없이 fill 전용. */
-function coneMultiPolygon(pts: { lat: number; lon: number; radius: number }[]): [number, number][][][] {
-  const polys: [number, number][][][] = [];
-  for (const p of pts) {
-    polys.push([circlePolygonCoords(p.lat, p.lon, p.radius)]);
-  }
-  const mLat = 111320;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i], b = pts[i + 1];
-    let dx = (b.lon - a.lon) * mLat * Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
-    let dy = (b.lat - a.lat) * mLat;
-    const d = Math.hypot(dx, dy) || 1;
-    dx /= d; dy /= d;
-    const nx = -dy, ny = dx; // 왼쪽 법선 (meter)
-    // 외접선 기울기 — 반지름 변화량. 변이 두 원에 동시에 접하도록.
-    const beta = Math.asin(Math.max(-1, Math.min(1, (b.radius - a.radius) / d)));
-    const cb = Math.cos(beta), sb = Math.sin(beta);
-    const qLx = nx * cb - dx * sb, qLy = ny * cb - dy * sb;   // 왼쪽 접점 방향
-    const qRx = -nx * cb - dx * sb, qRy = -ny * cb - dy * sb; // 오른쪽 접점 방향
-    const offDir = (p: { lat: number; lon: number }, r: number, qx: number, qy: number): [number, number] => {
-      const pmLon = mLat * Math.cos((p.lat * Math.PI) / 180);
-      return [p.lon + (r * qx) / pmLon, p.lat + (r * qy) / mLat];
-    };
-    const lA = offDir(a, a.radius, qLx, qLy), lB = offDir(b, b.radius, qLx, qLy);
-    const rA = offDir(a, a.radius, qRx, qRy), rB = offDir(b, b.radius, qRx, qRy);
-    polys.push([[lA, lB, rB, rA, lA]]);
-  }
-  return polys;
 }
 
 /** marker icon → HTML element (MapLibre maplibregl.Marker 의 element). Leaflet divIcon 영역과 동일 로직. */
@@ -2317,17 +2298,20 @@ function MapComp({
           style: 'https://tiles.openfreemap.org/styles/bright',
           center: [finalCenter.lon, finalCenter.lat],
           zoom: Math.max(1, finalZoom - 1),
-          // 기본 attribution 끄고 아래서 compact 명시 — 넓은 화면 자동 펼침 차단 (생성자 옵션만으론 일부
-          // 빌드에서 펼쳐진 채 뜨던 것 확실히 접음).
-          attributionControl: false,
         });
         mapInstance = map;
-        // attribution = 항상 ⓘ 접힘 (OpenFreeMap 표기 의무 준수하되 펼침 X).
-        try { map.addControl(new ml.AttributionControl({ compact: true }), 'bottom-right'); } catch { /* 무시 */ }
+        // attribution 항상 ⓘ 접힘 — 생성자 옵션·compact 옵션이 일부 빌드에서 안 먹어 펼쳐진 채 뜨므로,
+        // MapLibre 가 쓰는 DOM 클래스(maplibregl-compact)를 직접 부여 + 펼침(-show) 제거. 표기 의무는
+        // 유지(ⓘ 클릭 시 보임)하되 평소엔 접힘.
+        const collapseAttrib = () => {
+          const el = container.querySelector('.maplibregl-ctrl-attrib');
+          if (el) { el.classList.add('maplibregl-compact'); el.classList.remove('maplibregl-compact-show'); }
+        };
         resizeObserver = new ResizeObserver(() => map.resize());
         resizeObserver.observe(container);
         // +/- 줌 버튼(NavigationControl) 미표시 — 휠/핀치 줌으로 충분, 화면 깔끔하게.
         map.on('load', () => {
+          collapseAttrib();
           // lang 분기 — symbol layer text-field = name:{lang} 우선 → name:latin → name (현지어) fallback.
           // 한국어 lang = 동아시아 전역 한글 라벨 (네이버처럼). 영어 lang = name:latin (영문).
           for (const layer of map.getStyle().layers) {
@@ -2361,11 +2345,12 @@ function MapComp({
           // 네이버식 = 크기(강풍) + 확률(70%) 2개 겹침. 색은 각 cone.color (크기 cyan / 확률 indigo).
           // circles 보다 먼저 그려 아래 깔림.
           safeCones.forEach((cn, ci) => {
-            const mp = coneMultiPolygon(cn.points);
-            if (mp.length >= 2) {
+            const coords = conePolygonCoords(cn.points);
+            if (coords.length >= 4) {
               const coneColor = colorHex(cn.color, '#6366f1');
-              // MultiPolygon(원+사다리꼴 union) fill 전용 — 외곽선 없음(내부 경계 노출·fold 방지).
-              map.addSource(`fb-cone-${ci}`, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: mp } } });
+              // 매끈한 외접선 envelope (양 끝 둥근 반원). fill 전용 — 외곽선 없음(급커브 자기교차는
+              // nonzero 채움이라 안 보임). 옛 MultiPolygon 원 union 은 구슬 꿰기처럼 보여 폐기.
+              map.addSource(`fb-cone-${ci}`, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [coords] } } });
               map.addLayer({ id: `fb-cone-fill-${ci}`, type: 'fill', source: `fb-cone-${ci}`, paint: { 'fill-color': coneColor, 'fill-opacity': 0.16 } });
             }
           });
