@@ -1994,28 +1994,63 @@ function circlePolygonCoords(lat: number, lon: number, radiusM: number, points =
  *  원들이 거의 겹쳐(간격 ≪ 반경) union 이 매끈한 tube → 구슬 꿰기 0 (구슬은 원이 듬성듬성할 때만).
  *  외접선 사다리꼴 방식은 반지름이 점 간격보다 빨리 커지면 degenerate → 원만 남아 구슬됨 → 폐기.
  *  조각이 전부 볼록 원이라 stray 박스/fold 도 없음. 첫·끝 원 = 현재 뒤 / 마지막 앞 둥근 마감. */
-function coneMultiPolygon(pts: { lat: number; lon: number; radius: number }[]): [number, number][][][] {
-  const polys: [number, number][][][] = [];
+function coneSinglePolygon(pts: { lat: number; lon: number; radius: number }[]): [number, number][] {
+  if (pts.length < 2) return [];
   const mLat = 111320;
+  // 1) 경로를 ~30km 간격으로 보간 (반지름도 선형). 촘촘 → 곡선 매끈.
+  const dense: { lat: number; lon: number; r: number }[] = [];
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
     const dx = (b.lon - a.lon) * mLat * Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
     const dy = (b.lat - a.lat) * mLat;
     const d = Math.hypot(dx, dy) || 1;
-    const steps = Math.max(6, Math.min(48, Math.round(d / 25000))); // ~25km 간격 (간격 ≪ 반경 → 매끈)
+    const steps = Math.max(1, Math.min(40, Math.round(d / 30000)));
     for (let s = 0; s < steps; s++) {
       const t = s / steps;
-      polys.push([circlePolygonCoords(
-        a.lat + (b.lat - a.lat) * t,
-        a.lon + (b.lon - a.lon) * t,
-        a.radius + (b.radius - a.radius) * t,
-        28,
-      )]);
+      dense.push({ lat: a.lat + (b.lat - a.lat) * t, lon: a.lon + (b.lon - a.lon) * t, r: a.radius + (b.radius - a.radius) * t });
     }
   }
-  const last = pts[pts.length - 1];
-  polys.push([circlePolygonCoords(last.lat, last.lon, last.radius, 28)]);
-  return polys;
+  dense.push({ lat: pts[pts.length - 1].lat, lon: pts[pts.length - 1].lon, r: pts[pts.length - 1].radius });
+
+  const off = (p: { lat: number; lon: number }, r: number, dirX: number, dirY: number): [number, number] => {
+    const pmLon = mLat * Math.cos((p.lat * Math.PI) / 180);
+    return [p.lon + (r * dirX) / pmLon, p.lat + (r * dirY) / mLat];
+  };
+  // 2) 각 점 수직 offset 좌/우 경계 (단일 ring → 겹침 0 → 균일 투명도).
+  const left: [number, number][] = [];
+  const right: [number, number][] = [];
+  const dirAt = (i: number): { ux: number; uy: number } => {
+    const prev = dense[Math.max(0, i - 1)], next = dense[Math.min(dense.length - 1, i + 1)];
+    let ux = (next.lon - prev.lon) * mLat * Math.cos((dense[i].lat * Math.PI) / 180);
+    let uy = (next.lat - prev.lat) * mLat;
+    const len = Math.hypot(ux, uy) || 1;
+    return { ux: ux / len, uy: uy / len };
+  };
+  for (let i = 0; i < dense.length; i++) {
+    const { ux, uy } = dirAt(i);
+    const nx = -uy, ny = ux; // 왼쪽 법선
+    left.push(off(dense[i], dense[i].r, nx, ny));
+    right.push(off(dense[i], dense[i].r, -nx, -ny));
+  }
+  // 3) 양 끝 반원 마감 (전방/후방) — 시계방향 π 호. 첫 원 = 현재 위치 뒤 반원.
+  const STEPS = 12;
+  const capArc = (p: { lat: number; lon: number }, r: number, startAng: number): [number, number][] => {
+    const out: [number, number][] = [];
+    for (let s = 1; s < STEPS; s++) {
+      const ang = startAng - (Math.PI * s) / STEPS;
+      out.push(off(p, r, Math.cos(ang), Math.sin(ang)));
+    }
+    return out;
+  };
+  const lastDir = dirAt(dense.length - 1);
+  const frontStart = Math.atan2(lastDir.uy, lastDir.ux) + Math.PI / 2; // left 법선각 → CW π → right 법선각
+  const front = capArc(dense[dense.length - 1], dense[dense.length - 1].r, frontStart);
+  const firstDir = dirAt(0);
+  const backStart = Math.atan2(firstDir.uy, firstDir.ux) - Math.PI / 2; // right 법선각 → CW π(후방 경유) → left 법선각
+  const back = capArc(dense[0], dense[0].r, backStart);
+
+  // left 전진 → 전방 반원 → right 역순 → 후방 반원 → 닫힘. 단일 ring.
+  return [...left, ...front, ...right.reverse(), ...back, left[0]];
 }
 
 /** marker icon → HTML element (MapLibre maplibregl.Marker 의 element). Leaflet divIcon 영역과 동일 로직. */
@@ -2137,19 +2172,17 @@ function MapComp({
           // circles 보다 먼저 (아래 깔림). 색은 각 cone.color (크기 cyan / 확률 indigo).
           for (const cn of safeCones) {
             const coneColor = colorHex(cn.color, '#6366f1');
-            // 볼록 조각(원+사다리꼴) 각각 Polygon — 단일 ring stray 박스 회피, fill 만(외곽선 0).
-            for (const poly of coneMultiPolygon(cn.points)) {
-              const ring = poly[0];
-              if (!ring || ring.length < 3) continue;
-              const path = ring.map(([lon, lat]) => new w.kakao.maps.LatLng(lat, lon));
-              new w.kakao.maps.Polygon({
-                path,
-                strokeWeight: 0,
-                strokeOpacity: 0,
-                fillColor: coneColor,
-                fillOpacity: 0.09,
-              }).setMap(map);
-            }
+            // 단일 ring 폴리곤 — 겹침 0 → 투명도 균일. 촘촘 보간 매끈 + 양 끝 둥근. 외곽선 0.
+            const ring = coneSinglePolygon(cn.points);
+            if (ring.length < 4) continue;
+            const path = ring.map(([lon, lat]) => new w.kakao.maps.LatLng(lat, lon));
+            new w.kakao.maps.Polygon({
+              path,
+              strokeWeight: 0,
+              strokeOpacity: 0,
+              fillColor: coneColor,
+              fillOpacity: 0.16,
+            }).setMap(map);
           }
           // 반경 원 (circles) = 비태풍 영역(강남 반경 등). 색은 c.color (기본 indigo). 강도색은 마커만.
           for (const c of safeCircles) {
@@ -2332,12 +2365,12 @@ function MapComp({
           // 네이버식 = 크기(강풍) + 확률(70%) 2개 겹침. 색은 각 cone.color (크기 cyan / 확률 indigo).
           // circles 보다 먼저 그려 아래 깔림.
           safeCones.forEach((cn, ci) => {
-            const mp = coneMultiPolygon(cn.points);
-            if (mp.length >= 2) {
+            const ring = coneSinglePolygon(cn.points);
+            if (ring.length >= 4) {
               const coneColor = colorHex(cn.color, '#6366f1');
-              // 볼록 조각 union MultiPolygon — 단일 ring envelope 의 stray 박스/fold 없음 + 외접선이라 구슬 없음.
-              map.addSource(`fb-cone-${ci}`, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: mp } } });
-              map.addLayer({ id: `fb-cone-fill-${ci}`, type: 'fill', source: `fb-cone-${ci}`, paint: { 'fill-color': coneColor, 'fill-opacity': 0.09 } });
+              // 단일 ring 폴리곤 — 겹침 0 → 투명도 균일(누적 X). 촘촘 보간이라 매끈 + 양 끝 둥근 마감.
+              map.addSource(`fb-cone-${ci}`, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [ring] } } });
+              map.addLayer({ id: `fb-cone-fill-${ci}`, type: 'fill', source: `fb-cone-${ci}`, paint: { 'fill-color': coneColor, 'fill-opacity': 0.16 } });
             }
           });
           // circles = 비태풍 영역(강남 반경 등). 색은 c.color (기본 indigo). 강도색은 마커만. 점선 [4,3].
