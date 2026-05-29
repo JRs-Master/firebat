@@ -163,8 +163,8 @@ export function LogPanel() {
         ) : (
           entries.map((e, i) => (
             <div key={i} className="flex items-start gap-2 py-1 border-b border-slate-50 last:border-0 text-[12px] font-mono">
-              <span className="text-slate-400 shrink-0 tabular-nums">
-                {new Date(e.tsMs).toLocaleTimeString('ko-KR', { hour12: false })}
+              <span className="text-slate-400 shrink-0 tabular-nums" title={new Date(e.tsMs).toLocaleString('ko-KR', { hour12: false })}>
+                {new Date(e.tsMs).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })}
               </span>
               <span className={`shrink-0 px-1 rounded border text-[10px] font-bold ${LEVEL_COLOR[e.level.toUpperCase()] ?? LEVEL_COLOR.INFO}`}>
                 {e.level}
