@@ -2286,7 +2286,15 @@ function MapComp({
             for (const ln of safeLines) {
               for (const p of ln.points) bounds.extend(new w.kakao.maps.LatLng(p.lat, p.lon));
             }
-            for (const cn of safeCones) for (const p of cn.points) bounds.extend(new w.kakao.maps.LatLng(p.lat, p.lon));
+            // cone 폭(반경)까지 포함 — 가장자리 안 잘리게.
+            for (const cn of safeCones) for (const p of cn.points) {
+              const dLat = p.radius / 111000;
+              const dLon = p.radius / (111000 * Math.cos(p.lat * Math.PI / 180));
+              bounds.extend(new w.kakao.maps.LatLng(p.lat + dLat, p.lon));
+              bounds.extend(new w.kakao.maps.LatLng(p.lat - dLat, p.lon));
+              bounds.extend(new w.kakao.maps.LatLng(p.lat, p.lon + dLon));
+              bounds.extend(new w.kakao.maps.LatLng(p.lat, p.lon - dLon));
+            }
             if (!bounds.isEmpty()) map.setBounds(bounds);
           }
         });
@@ -2424,8 +2432,14 @@ function MapComp({
             bounds.extend([c.lon - dLon, c.lat - dLat]);
           }
           for (const ln of safeLines) for (const p of ln.points) bounds.extend([p.lon, p.lat]);
-          for (const cn of safeCones) for (const p of cn.points) bounds.extend([p.lon, p.lat]);
-          if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 40, maxZoom: 13, duration: 0 });
+          // cone 은 중심선뿐 아니라 폭(반경)까지 포함해야 가장자리 안 잘림.
+          for (const cn of safeCones) for (const p of cn.points) {
+            const dLat = p.radius / 111000;
+            const dLon = p.radius / (111000 * Math.cos((p.lat * Math.PI) / 180));
+            bounds.extend([p.lon + dLon, p.lat + dLat]);
+            bounds.extend([p.lon - dLon, p.lat - dLat]);
+          }
+          if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 56, maxZoom: 13, duration: 0 });
         }
       };
       // CDN 동적 로드 — maplibre-gl JS + CSS.
