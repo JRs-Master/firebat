@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn anthropic_pricing_passthrough() {
-        let m = anthropic_api("claude-opus-4-7", "Claude Opus 4.7", 5.0, 25.0);
+        let m = anthropic_api("claude-opus-4-8", "Claude Opus 4.8", 5.0, 25.0);
         let p = m.pricing.expect("opus pricing");
         assert_eq!(p.input, 5.0);
         assert_eq!(p.output, 25.0);

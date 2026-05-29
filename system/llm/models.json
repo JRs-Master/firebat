@@ -2,8 +2,8 @@
   "defaultAssistantModel": "gemini-3.1-flash-lite",
   "models": [
     {
-      "id": "claude-opus-4-7",
-      "displayName": "Claude Opus 4.7",
+      "id": "claude-opus-4-8",
+      "displayName": "Claude Opus 4.8",
       "provider": "Anthropic",
       "format": "anthropic-messages",
       "endpoint": "https://api.anthropic.com/v1/messages",
@@ -746,8 +746,8 @@
       "category": "cli-claude"
     },
     {
-      "id": "cli-claude-code-opus-4-7",
-      "displayName": "Claude Code CLI (Opus 4.7)",
+      "id": "cli-claude-code-opus-4-8",
+      "displayName": "Claude Code CLI (Opus 4.8)",
       "provider": "CLI",
       "format": "cli-claude-code",
       "endpoint": "claude",
