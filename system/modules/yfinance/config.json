@@ -67,7 +67,7 @@
     "additionalProperties": false
   },
   "output": {
-    "type": "object",
-    "description": "Result shape varies by action. action='quote' → {symbol, price, change, changePct, marketCap, peRatio, ...} / action='history' → [{date, open, high, low, close, volume, dividends, stockSplits}, ...] / shape differs per action."
+    "type": ["object", "array"],
+    "description": "Result shape varies by action. action='quote' → object {symbol, price, change, changePct, marketCap, peRatio, ...} / action='history'·'financials'·'income-statement' 등 → array [{...}, ...] (재무제표 = [{날짜: 값, _index: 항목명}, ...]). 액션마다 object 또는 array."
   }
 }

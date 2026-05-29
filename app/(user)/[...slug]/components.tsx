@@ -160,9 +160,7 @@ function TextComp({ content }: { content: string }) {
   const normalized = normalizeEscapes(content);
   // 한국어 + `(`/`)` 인접 영역에서 ReactMarkdown commonmark 의 **bold** 인식 실패 회피 —
   // 명시적으로 <strong> 변환 + rehypeRaw 로 HTML 통과 (admin chat renderMarkdown 동일 패턴).
-  const withStrong = normalized
-    .replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*\*/g, '');
+  const withStrong = mdBoldFix(normalized);
   return (
     <div className="text-gray-700 text-[15px] sm:text-[16px] font-normal sm:font-medium leading-relaxed prose prose-sm max-w-none">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>{withStrong}</ReactMarkdown>
@@ -953,6 +951,12 @@ const alertMdComponents = {
   br: () => <br />,
 };
 
+/** **bold** → <strong> 변환 — 한국어/괄호 인접 시 commonmark 가 인식 못해 raw "**" 노출되는 것 보강.
+ *  rehypeRaw 와 함께 사용. TextComp / AlertComp(callout) 공용. */
+function mdBoldFix(s: string): string {
+  return s.replace(/\*\*([^\n*]+?)\*\*/g, '<strong>$1</strong>').replace(/\*\*/g, '');
+}
+
 function AlertComp({ message, type = 'info', title, action }: {
   message: string;
   type?: string;
@@ -982,11 +986,11 @@ function AlertComp({ message, type = 'info', title, action }: {
       <div className="min-w-0 flex-1">
         {normTitle && (
           <div className={`font-bold text-sm mb-1 ${s.text}`}>
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={alertMdComponents}>{normTitle}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={alertMdComponents}>{mdBoldFix(normTitle)}</ReactMarkdown>
           </div>
         )}
         <div className={`text-sm ${s.text} prose-sm break-words`}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={alertMdComponents}>{normMessage}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={alertMdComponents}>{mdBoldFix(normMessage)}</ReactMarkdown>
         </div>
         {action?.label && action?.href && (
           <a
