@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use firebat_core::llm::config::{builtin_models, LlmModelConfig};
 use crate::llm::formats;
 use firebat_core::ports::{
-    ILlmPort, IVaultPort, InfraResult, LlmCallOpts, LlmTextResponse, LlmToolResponse,
+    ILlmPort, IVaultPort, InfraResult, LlmCallOpts, LlmStreamSink, LlmTextResponse, LlmToolResponse,
     ToolDefinition, ToolResult,
 };
 
@@ -34,6 +34,21 @@ pub trait FormatHandler: Send + Sync {
         prior_results: &[ToolResult],
         opts: &LlmCallOpts,
     ) -> InfraResult<LlmToolResponse>;
+
+    /// 스트리밍 변형 — 기본 = ask_with_tools 위임 (sink 무시). CLI 핸들러만 override.
+    async fn ask_with_tools_streaming(
+        &self,
+        config: &LlmModelConfig,
+        api_key: Option<&str>,
+        prompt: &str,
+        tools: &[ToolDefinition],
+        prior_results: &[ToolResult],
+        opts: &LlmCallOpts,
+        emit: Option<LlmStreamSink>,
+    ) -> InfraResult<LlmToolResponse> {
+        let _ = emit;
+        self.ask_with_tools(config, api_key, prompt, tools, prior_results, opts).await
+    }
 }
 
 pub struct ConfigDrivenAdapter {
@@ -226,6 +241,25 @@ impl ILlmPort for ConfigDrivenAdapter {
         let enriched_opts = self.enrich_opts_for_format(&config, opts);
         handler
             .ask_with_tools(&config, api_key.as_deref(), prompt, tools, prior_results, &enriched_opts)
+            .await
+    }
+
+    async fn ask_with_tools_streaming(
+        &self,
+        prompt: &str,
+        tools: &[ToolDefinition],
+        prior_results: &[ToolResult],
+        opts: &LlmCallOpts,
+        emit: Option<LlmStreamSink>,
+    ) -> InfraResult<LlmToolResponse> {
+        let config = self.select_config(opts)?;
+        let handler = self
+            .handler_for(&config.format)
+            .ok_or_else(|| format!("LLM format 핸들러 미설정: {}", config.format))?;
+        let api_key = self.fetch_api_key(&config);
+        let enriched_opts = self.enrich_opts_for_format(&config, opts);
+        handler
+            .ask_with_tools_streaming(&config, api_key.as_deref(), prompt, tools, prior_results, &enriched_opts, emit)
             .await
     }
 }

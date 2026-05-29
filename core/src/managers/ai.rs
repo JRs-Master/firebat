@@ -522,6 +522,32 @@ impl AiManager {
                 let _ = tx.try_send(evt);
             }
         };
+        // CLI 어댑터 streaming sink — LlmStreamEvent(thinking/tool step)를 turn 중 받아 AiStreamEvent 로
+        // 매핑해 emit 채널로 포워딩. CLI 가 stdout 파싱하며 try_send → 사용자가 "생각중" 옆에 추론·도구
+        // 진행 실시간 표시. emit 채널 없으면 sink None (어댑터는 batch 동작). ToolStep 의 한글 라벨은
+        // core 의 tool_label 로 매핑.
+        let llm_sink: Option<crate::ports::LlmStreamSink> = if let Some(out_tx) = emit.clone() {
+            let (llm_tx, mut llm_rx) =
+                tokio::sync::mpsc::channel::<crate::ports::LlmStreamEvent>(64);
+            tokio::spawn(async move {
+                while let Some(ev) = llm_rx.recv().await {
+                    let mapped = match ev {
+                        crate::ports::LlmStreamEvent::Thinking(t) => AiStreamEvent::Chunk {
+                            event_type: "thinking".to_string(),
+                            content: t,
+                        },
+                        crate::ports::LlmStreamEvent::ToolStep { name, status } => {
+                            let description = Some(tool_label(&name));
+                            AiStreamEvent::Step { name, status, description, error_message: None }
+                        }
+                    };
+                    let _ = out_tx.try_send(mapped);
+                }
+            });
+            Some(llm_tx)
+        } else {
+            None
+        };
         // Cost budget guard — fast path 보다 먼저. fast path 도 LLM 호출 발생 → 한도 초과 시 차단.
         if let Some(cost) = &self.cost {
             let check = cost.check_budget();
@@ -1035,7 +1061,13 @@ impl AiManager {
 
             let response = self
                 .llm
-                .ask_with_tools(llm_prompt, effective_tools, &prior_results, &turn_opts)
+                .ask_with_tools_streaming(
+                    llm_prompt,
+                    effective_tools,
+                    &prior_results,
+                    &turn_opts,
+                    llm_sink.clone(),
+                )
                 .await?;
             last_text = response.text.clone();
             last_model_id = response.model_id.clone();

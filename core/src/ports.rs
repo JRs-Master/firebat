@@ -1386,6 +1386,21 @@ pub struct CronAgentOpts {
     pub title: Option<String>,
 }
 
+/// LLM 어댑터 → AiManager 스트리밍 이벤트 (turn 중 실시간). CLI 어댑터가 stream-json 을 줄 단위로
+/// 파싱하며 thinking 본문 / 도구 호출 진행을 흘려보냄. AiManager 가 AiStreamEvent 로 매핑해 frontend
+/// 로 전달 → "생각중" 옆 추론·도구 진행 표시. (API 어댑터는 batch 라 미사용 — 기본 동작.)
+#[derive(Debug, Clone)]
+pub enum LlmStreamEvent {
+    /// extended thinking / reasoning 본문 조각.
+    Thinking(String),
+    /// 도구 호출 진행 — status: "start" | "done" | "error".
+    ToolStep { name: String, status: String },
+}
+
+/// 스트리밍 sink — 어댑터가 turn 중 try_send. None 이면 비스트리밍 (기존 batch 동작).
+/// 채널 방식 (Arc<dyn Fn> 호출 문법 모호성 회피). AiManager 가 받아 AiStreamEvent 로 매핑.
+pub type LlmStreamSink = tokio::sync::mpsc::Sender<LlmStreamEvent>;
+
 /// ILlmPort — 옛 TS ILlmPort Rust port.
 ///
 /// Phase B-16 minimum: trait 정의 + Stub 구현체 (실 LLM 호출 없음, dispatch 흐름만 작동).
@@ -1412,6 +1427,20 @@ pub trait ILlmPort: Send + Sync {
         prior_results: &[ToolResult],
         opts: &LlmCallOpts,
     ) -> InfraResult<LlmToolResponse>;
+
+    /// 스트리밍 변형 — emit sink 가 있으면 어댑터가 turn 중 thinking/tool step 을 흘려보냄.
+    /// 기본 구현 = 비스트리밍 ask_with_tools 위임 (sink 무시). CLI 어댑터만 override 해 실시간 emit.
+    async fn ask_with_tools_streaming(
+        &self,
+        prompt: &str,
+        tools: &[ToolDefinition],
+        prior_results: &[ToolResult],
+        opts: &LlmCallOpts,
+        emit: Option<LlmStreamSink>,
+    ) -> InfraResult<LlmToolResponse> {
+        let _ = emit;
+        self.ask_with_tools(prompt, tools, prior_results, opts).await
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────

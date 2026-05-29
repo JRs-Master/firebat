@@ -16,14 +16,15 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Stdio;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 
 use crate::llm::adapter::FormatHandler;
 use crate::llm::formats::cli_image_helper::extract_image_base64;
 use firebat_core::llm::config::LlmModelConfig;
 use firebat_core::ports::{
-    InfraResult, LlmCallOpts, LlmTextResponse, LlmToolResponse, ToolDefinition, ToolResult,
+    InfraResult, LlmCallOpts, LlmStreamEvent, LlmStreamSink, LlmTextResponse, LlmToolResponse,
+    ToolDefinition, ToolResult,
 };
 use firebat_core::utils::render_map::render_tool_map;
 
@@ -247,13 +248,15 @@ impl ClaudeCodeCliHandler {
     }
 
     /// stream-json line 파싱 + tool 결과 매칭 → 풍부 메타 누적.
-    /// 옛 TS `processLine` + `runClaude` 1:1 port (onChunk 콜백 제외 — Rust streaming infra 후속).
+    /// 옛 TS `processLine` + `runClaude` 1:1 port. emit 있으면 turn 중 thinking/tool step 실시간 흘림
+    /// (stdout 줄 단위 streaming) — 옛 Node onChunk 콜백 동등. emit None 이면 누적만 (batch 동작).
     async fn run_cli(
         binary: &str,
         prompt: &str,
         opts: &LlmCallOpts,
         with_tools: bool,
         mcp_config_path: Option<&str>,
+        emit: Option<&LlmStreamSink>,
     ) -> InfraResult<CliRunOutcome> {
         let image_data = extract_image_base64(opts.image.as_deref(), opts.image_mime_type.as_deref());
         let has_image = image_data.is_some();
@@ -301,15 +304,20 @@ impl ClaudeCodeCliHandler {
             }
         }
 
-        let output = child.wait_with_output().await.map_err(|e| {
-            format!("Claude Code CLI wait 실패: {e}")
-        })?;
-
-        // 종료 후 캐시 청소 — silent. 옛 TS child.on('close', ...) 1:1.
-        Self::cleanup_claude_cache_files().await;
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr_buf = String::from_utf8_lossy(&output.stderr).to_string();
+        // stdout 줄 단위 streaming — 옛 wait_with_output batch 대신. 각 stream-json 라인을 즉시 파싱·emit.
+        let stdout_pipe = child
+            .stdout
+            .take()
+            .ok_or_else(|| "Claude Code CLI stdout 파이프 없음".to_string())?;
+        let stderr_pipe = child.stderr.take();
+        // stderr 동시 드레인 — pipe 버퍼 막힘(deadlock) 방지.
+        let stderr_task = tokio::spawn(async move {
+            let mut buf = String::new();
+            if let Some(se) = stderr_pipe {
+                let _ = BufReader::new(se).read_to_string(&mut buf).await;
+            }
+            buf
+        });
 
         let mut outcome = CliRunOutcome::default();
         let mut current_text = String::new();
@@ -317,11 +325,16 @@ impl ClaudeCodeCliHandler {
         let mut errored = false;
         let mut error_msg: Option<String> = None;
 
-        for line in stdout.lines() {
+        let mut reader = BufReader::new(stdout_pipe).lines();
+        while let Some(line) = reader
+            .next_line()
+            .await
+            .map_err(|e| format!("Claude Code CLI stdout 읽기 실패: {e}"))?
+        {
             if line.trim().is_empty() {
                 continue;
             }
-            let ev: serde_json::Value = match serde_json::from_str(line) {
+            let ev: serde_json::Value = match serde_json::from_str(&line) {
                 Ok(v) => v,
                 Err(_) => continue,
             };
@@ -380,6 +393,10 @@ impl ClaudeCodeCliHandler {
                                             outcome.thinking_acc.push('\n');
                                         }
                                         outcome.thinking_acc.push_str(t);
+                                        // 실시간 emit — frontend ThinkingBlock bodyText 누적.
+                                        if let Some(tx) = emit {
+                                            let _ = tx.try_send(LlmStreamEvent::Thinking(t.to_string()));
+                                        }
                                     }
                                 }
                             }
@@ -397,6 +414,13 @@ impl ClaudeCodeCliHandler {
                                     outcome.thinking_acc.push('\n');
                                 }
                                 outcome.thinking_acc.push_str(&format!("[도구 호출: {bare}]"));
+                                // 실시간 emit — frontend "생각중 → 도구 진행" 표시 (ToolStep start).
+                                if let Some(tx) = emit {
+                                    let _ = tx.try_send(LlmStreamEvent::ToolStep {
+                                        name: bare.clone(),
+                                        status: "start".to_string(),
+                                    });
+                                }
                                 let tool_use_id =
                                     c.get("id").and_then(|v| v.as_str()).map(String::from);
                                 if let Some(id) = tool_use_id {
@@ -464,6 +488,13 @@ impl ClaudeCodeCliHandler {
                                 error: error_msg,
                                 input: Some(pending.input.clone()),
                             });
+                            // 실시간 emit — 도구 완료/에러 (ToolStep done|error).
+                            if let Some(tx) = emit {
+                                let _ = tx.try_send(LlmStreamEvent::ToolStep {
+                                    name: pending.name.clone(),
+                                    status: if success { "done".to_string() } else { "error".to_string() },
+                                });
+                            }
                         }
                         if !payload.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
                             continue;
@@ -582,6 +613,14 @@ impl ClaudeCodeCliHandler {
             }
         }
 
+        // stdout 스트림 종료 → 프로세스 wait + stderr 수거 + 캐시 청소.
+        let status = child
+            .wait()
+            .await
+            .map_err(|e| format!("Claude Code CLI wait 실패: {e}"))?;
+        let stderr_buf = stderr_task.await.unwrap_or_default();
+        Self::cleanup_claude_cache_files().await;
+
         if errored {
             return Err(error_msg.unwrap_or_else(|| "Claude Code CLI 알 수 없는 에러".to_string()));
         }
@@ -590,10 +629,10 @@ impl ClaudeCodeCliHandler {
             outcome.text = current_text;
         }
         // exit code 비정상
-        if !output.status.success() {
+        if !status.success() {
             return Err(format!(
                 "Claude Code 비정상 종료 (exit {:?}): {}",
-                output.status.code(),
+                status.code(),
                 stderr_buf.chars().take(500).collect::<String>()
             ));
         }
@@ -633,7 +672,7 @@ impl FormatHandler for ClaudeCodeCliHandler {
         opts: &LlmCallOpts,
     ) -> InfraResult<LlmTextResponse> {
         // 단순 텍스트 — MCP / 도구 미설정. system_prompt 만 활용.
-        let outcome = Self::run_cli(&config.endpoint, prompt, opts, false, None).await?;
+        let outcome = Self::run_cli(&config.endpoint, prompt, opts, false, None, None).await?;
         Ok(LlmTextResponse {
             text: outcome.text,
             model_id: config.id.clone(),
@@ -649,8 +688,23 @@ impl FormatHandler for ClaudeCodeCliHandler {
         api_key: Option<&str>,
         prompt: &str,
         tools: &[ToolDefinition],
+        prior_results: &[ToolResult],
+        opts: &LlmCallOpts,
+    ) -> InfraResult<LlmToolResponse> {
+        // 비스트리밍 = 스트리밍 변형에 emit None 위임 (단일 구현).
+        self.ask_with_tools_streaming(config, api_key, prompt, tools, prior_results, opts, None)
+            .await
+    }
+
+    async fn ask_with_tools_streaming(
+        &self,
+        config: &LlmModelConfig,
+        api_key: Option<&str>,
+        prompt: &str,
+        tools: &[ToolDefinition],
         _prior_results: &[ToolResult],
         opts: &LlmCallOpts,
+        emit: Option<LlmStreamSink>,
     ) -> InfraResult<LlmToolResponse> {
         // 도구 0건 (단순 텍스트) — ask_text 위임. 단 hosted MCP / CLI 자체 loop 모델
         // (features.mcp_connector=true) 은 빈 tools 여도 MCP config + 권한 모드가 필요하므로
@@ -669,7 +723,7 @@ impl FormatHandler for ClaudeCodeCliHandler {
                 ..Default::default()
             });
         }
-        // MCP config 박기 — opts.mcp_token 우선, 없으면 stdio fallback.
+        // MCP config — opts.mcp_token 우선, 없으면 stdio fallback.
         let mcp_config_path = Self::ensure_mcp_config_file(
             opts.mcp_token.as_deref(),
             opts.mcp_base_url.as_deref(),
@@ -677,12 +731,14 @@ impl FormatHandler for ClaudeCodeCliHandler {
         let mcp_path_str = mcp_config_path
             .as_ref()
             .map(|p| p.to_string_lossy().to_string());
+        let streamed = emit.is_some();
         let outcome = Self::run_cli(
             &config.endpoint,
             prompt,
             opts,
             true,
             mcp_path_str.as_deref(),
+            emit.as_ref(),
         )
         .await?;
         Ok(LlmToolResponse {
@@ -700,7 +756,12 @@ impl FormatHandler for ClaudeCodeCliHandler {
             suggestions: outcome.suggestions,
             raw_model_parts: None,
             tool_results: outcome.tool_results,
-            thinking_text: if outcome.thinking_acc.is_empty() { None } else { Some(outcome.thinking_acc) },
+            // 스트리밍 시 thinking_acc 는 turn 중 이미 emit 됨 → AiManager post-emit 중복 방지 위해 None.
+            thinking_text: if streamed || outcome.thinking_acc.is_empty() {
+                None
+            } else {
+                Some(outcome.thinking_acc)
+            },
         })
     }
 }
