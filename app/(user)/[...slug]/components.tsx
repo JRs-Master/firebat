@@ -1960,67 +1960,6 @@ function buildPopupCardHtml(rawLabel: string): string {
   );
 }
 
-/** cone (예측 영역) polygon — 원들의 외접선 envelope (각 원에 정확히 접함, 접선 오차 0).
- *  네이버/기상청 태풍 cone 형태: 첫 원에서 양 갈래로 시작 → 외접선으로 원들 감쌈 → 마지막 원 반경만큼
- *  반원으로 둥글게 마감. meter 좌표(등거리 근사)에서 기하 계산 후 lon/lat 환산. */
-function conePolygonCoords(pts: { lat: number; lon: number; radius: number }[]): [number, number][] {
-  if (pts.length < 2) return [];
-  const refLat = (pts[0].lat * Math.PI) / 180;
-  const mLat = 111320;
-  const mLon = 111320 * Math.cos(refLat);
-  const xy = pts.map((p) => ({ x: p.lon * mLon, y: p.lat * mLat, r: p.radius }));
-  const toLL = (x: number, y: number): [number, number] => [x / mLon, y / mLat];
-
-  const left: [number, number][] = [];
-  const right: [number, number][] = [];
-  let qL = { x: 0, y: 1 };
-  let qR = { x: 0, y: -1 };
-  let qL0 = { x: 0, y: 1 };
-  let qR0 = { x: 0, y: -1 };
-  // 세그먼트마다 외접선(external tangent) 접점 방향 q 계산 — 반지름 변화량만큼 접선이 기울어짐.
-  for (let i = 0; i < xy.length - 1; i++) {
-    const a = xy[i], b = xy[i + 1];
-    let ux = b.x - a.x, uy = b.y - a.y;
-    const d = Math.hypot(ux, uy) || 1;
-    ux /= d; uy /= d;
-    const beta = Math.asin(Math.max(-1, Math.min(1, (b.r - a.r) / d)));
-    const cb = Math.cos(beta), sb = Math.sin(beta);
-    const nx = -uy, ny = ux; // 진행방향 왼쪽 법선
-    qL = { x: nx * cb - ux * sb, y: ny * cb - uy * sb };
-    qR = { x: -nx * cb - ux * sb, y: -ny * cb - uy * sb };
-    if (i === 0) { qL0 = qL; qR0 = qR; }
-    left.push(toLL(a.x + a.r * qL.x, a.y + a.r * qL.y));
-    left.push(toLL(b.x + b.r * qL.x, b.y + b.r * qL.y));
-    right.push(toLL(a.x + a.r * qR.x, a.y + a.r * qR.y));
-    right.push(toLL(b.x + b.r * qR.x, b.y + b.r * qR.y));
-  }
-  const steps = 14;
-  // 마지막 원 반원 마감 (전방) — left 접점 → 전방 → right 접점 호 (반경 = 마지막 반경).
-  const lp = xy[xy.length - 1];
-  const aL = Math.atan2(qL.y, qL.x);
-  const aR = Math.atan2(qR.y, qR.x);
-  let delta = aR - aL;
-  while (delta > 0) delta -= 2 * Math.PI; // 전방 시계방향 호
-  const cap: [number, number][] = [];
-  for (let s = 1; s < steps; s++) {
-    const ang = aL + (delta * s) / steps;
-    cap.push(toLL(lp.x + lp.r * Math.cos(ang), lp.y + lp.r * Math.sin(ang)));
-  }
-  // 첫 원 반원 마감 (후방) — 현재 위치 뒤쪽 둥글게 (반경 = 첫 반경: 크기 cone 크게 / 확률 cone 작게).
-  const fp = xy[0];
-  const aR0 = Math.atan2(qR0.y, qR0.x);
-  const aL0 = Math.atan2(qL0.y, qL0.x);
-  let dS = aL0 - aR0;
-  while (dS > 0) dS -= 2 * Math.PI; // 후방 시계방향 호
-  const startCap: [number, number][] = [];
-  for (let s = 1; s < steps; s++) {
-    const ang = aR0 + (dS * s) / steps;
-    startCap.push(toLL(fp.x + fp.r * Math.cos(ang), fp.y + fp.r * Math.sin(ang)));
-  }
-  // left 전진 → 끝 반원 → right 역순 → 시작점 뒤 반원 → 닫힘.
-  return [...left, ...cap, ...right.reverse(), ...startCap, left[0]];
-}
-
 /** 원 polygon 좌표 (meter 반경 → N 각형 [lon, lat] 배열). MapLibre circle layer 영역 (meter 단위 X). */
 function circlePolygonCoords(lat: number, lon: number, radiusM: number, points = 64): [number, number][] {
   const coords: [number, number][] = [];
@@ -2031,6 +1970,38 @@ function circlePolygonCoords(lat: number, lon: number, radiusM: number, points =
     coords.push([lon + dLonBase * Math.cos(theta), lat + dLatBase * Math.sin(theta)]);
   }
   return coords;
+}
+
+/** cone = 볼록 조각(각 점 원 + 구간 외접선 사다리꼴)의 union MultiPolygon.
+ *  단일 ring envelope 와 달리 전역 자기교차(stray 박스)·fold 가 원천적으로 없음 (조각마다 볼록).
+ *  사다리꼴 변 = 외접선(두 원에 접함)이라 원이 옆으로 안 튀어나옴 → 구슬 꿰기 없음.
+ *  원이 양 끝 둥근 마감 + 꺾이는 바깥 코너 라운딩 (첫 점 원 = 현재 위치 뒤 반원). fill nonzero 균일 채움. */
+function coneMultiPolygon(pts: { lat: number; lon: number; radius: number }[]): [number, number][][][] {
+  const polys: [number, number][][][] = [];
+  for (const p of pts) {
+    polys.push([circlePolygonCoords(p.lat, p.lon, p.radius)]);
+  }
+  const mLat = 111320;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const dx0 = (b.lon - a.lon) * mLat * Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+    const dy0 = (b.lat - a.lat) * mLat;
+    const d = Math.hypot(dx0, dy0) || 1;
+    const ux = dx0 / d, uy = dy0 / d;
+    const nx = -uy, ny = ux; // 왼쪽 법선
+    const beta = Math.asin(Math.max(-1, Math.min(1, (b.radius - a.radius) / d))); // 외접선 기울기
+    const cb = Math.cos(beta), sb = Math.sin(beta);
+    const qLx = nx * cb - ux * sb, qLy = ny * cb - uy * sb;   // 왼쪽 접점 방향
+    const qRx = -nx * cb - ux * sb, qRy = -ny * cb - uy * sb; // 오른쪽 접점 방향
+    const offDir = (p: { lat: number; lon: number }, r: number, qx: number, qy: number): [number, number] => {
+      const pmLon = mLat * Math.cos((p.lat * Math.PI) / 180);
+      return [p.lon + (r * qx) / pmLon, p.lat + (r * qy) / mLat];
+    };
+    const lA = offDir(a, a.radius, qLx, qLy), lB = offDir(b, b.radius, qLx, qLy);
+    const rA = offDir(a, a.radius, qRx, qRy), rB = offDir(b, b.radius, qRx, qRy);
+    polys.push([[lA, lB, rB, rA, lA]]);
+  }
+  return polys;
 }
 
 /** marker icon → HTML element (MapLibre maplibregl.Marker 의 element). Leaflet divIcon 영역과 동일 로직. */
@@ -2149,15 +2120,16 @@ function MapComp({
           // cone (예측 영역) — 경로 + 반경 → 부드러운 polygon. 네이버식 = 크기(강풍) + 확률(70%) 2개 겹침.
           // circles 보다 먼저 (아래 깔림). 색은 각 cone.color (크기 cyan / 확률 indigo).
           for (const cn of safeCones) {
-            const coords = conePolygonCoords(cn.points);
-            if (coords.length >= 4) {
-              const coneColor = colorHex(cn.color, '#6366f1');
-              const path = coords.map(([lon, lat]) => new w.kakao.maps.LatLng(lat, lon));
+            const coneColor = colorHex(cn.color, '#6366f1');
+            // 볼록 조각(원+사다리꼴) 각각 Polygon — 단일 ring stray 박스 회피, fill 만(외곽선 0).
+            for (const poly of coneMultiPolygon(cn.points)) {
+              const ring = poly[0];
+              if (!ring || ring.length < 3) continue;
+              const path = ring.map(([lon, lat]) => new w.kakao.maps.LatLng(lat, lon));
               new w.kakao.maps.Polygon({
                 path,
-                strokeWeight: 1,
-                strokeColor: coneColor,
-                strokeOpacity: 0.4,
+                strokeWeight: 0,
+                strokeOpacity: 0,
                 fillColor: coneColor,
                 fillOpacity: 0.15,
               }).setMap(map);
@@ -2345,12 +2317,11 @@ function MapComp({
           // 네이버식 = 크기(강풍) + 확률(70%) 2개 겹침. 색은 각 cone.color (크기 cyan / 확률 indigo).
           // circles 보다 먼저 그려 아래 깔림.
           safeCones.forEach((cn, ci) => {
-            const coords = conePolygonCoords(cn.points);
-            if (coords.length >= 4) {
+            const mp = coneMultiPolygon(cn.points);
+            if (mp.length >= 2) {
               const coneColor = colorHex(cn.color, '#6366f1');
-              // 매끈한 외접선 envelope (양 끝 둥근 반원). fill 전용 — 외곽선 없음(급커브 자기교차는
-              // nonzero 채움이라 안 보임). 옛 MultiPolygon 원 union 은 구슬 꿰기처럼 보여 폐기.
-              map.addSource(`fb-cone-${ci}`, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [coords] } } });
+              // 볼록 조각 union MultiPolygon — 단일 ring envelope 의 stray 박스/fold 없음 + 외접선이라 구슬 없음.
+              map.addSource(`fb-cone-${ci}`, { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'MultiPolygon', coordinates: mp } } });
               map.addLayer({ id: `fb-cone-fill-${ci}`, type: 'fill', source: `fb-cone-${ci}`, paint: { 'fill-color': coneColor, 'fill-opacity': 0.16 } });
             }
           });
